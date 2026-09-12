@@ -8,7 +8,7 @@ use three_rs::nodes::NodeBuilder;
 use three_rs::textures::{CubeTexture, DepthTexture, Image, Texture};
 
 fn show(label: &str, material: &MeshBasicNodeMaterial, ctx: SetupContext) {
-    let flow = setup(material, &ctx);
+    let flow = setup(material, &ctx, None);
     let program = NodeBuilder::new().build(&flow);
     println!("########## {label} — vertex");
     println!("{}", program.vertex_wgsl);
@@ -55,6 +55,7 @@ fn main() {
         SetupContext {
             instance_count: Some(1000),
             instanced: true,
+            light_count: 0,
         },
     );
 
