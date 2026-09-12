@@ -275,3 +275,23 @@ differences, each verified to be pixel-neutral.
   match.
 * **Canvas format.** `rgba8unorm` instead of Chrome's preferred `bgra8unorm`,
   so readback is already in comparator order. Same 8-bit unorm precision.
+* **Declaration order.** `var<private>` declarations and `fn` definitions are
+  emitted in the order the flow first reaches them; Three emits them in its own
+  cache order. The set is identical, so naga sees the same program.
+* **`VERTEX_` sub-builds.** Three runs `subBuild( node, 'VERTEX' )` for the
+  position chain, which gives its vertex stage a second name for every node
+  (`VERTEX_nodeVarN`) and one extra temp: `nodeVarN = cameraProjectionMatrix *
+  vec4( v_positionView, 1.0 ); v_modelViewProjection = nodeVarN;`. This port
+  writes the varying directly. Cosmetic.
+* **Property-assignment temps.** Where Three writes `nodeVarN = expr; prop =
+  nodeVarN;` this port writes `prop = expr;`, and Three's no-op
+  `indirectDiffuse = vec4<f32>( 0.0, 0.0, 0.0, 0.0 ).xyz;` is omitted.
+* **Instance buffer binding indices.** The two bindings of the instanced
+  material's object group are swapped relative to the dump; the layout is built
+  from the same descriptors the shader is, so they cannot disagree.
+* **Matrix column index literal.** `m[ 0u ]` where Three prints `m[ 0 ]`.
+* **JPEG decode.** `TextureLoader` decodes through `zune-jpeg`; Chromium uses
+  libjpeg-turbo, so the inverse DCT rounds differently. Measured on
+  `uv_grid_opengl.jpg` against the browser's own decode: 34030 of 4194304
+  channels differ by 1, 4428 by 2, 16 by 3; worst per-texel RGB distance 3.46,
+  against a comparator threshold of 44.
