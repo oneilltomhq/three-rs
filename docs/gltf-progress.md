@@ -51,7 +51,22 @@ too because it exercises two skins and a split mesh.
   Soldier: 69 nodes, 2 skins (49 + 2 bones), 4 clips × 156 tracks, counts.
   Plus `michelle_mixer_at_zero`: `clipAction( SambaDance ).play()`,
   `update( 0 )`, `updateMatrixWorld( true )`, and two bone `matrixWorld`s
-  (`mixamorigHips`, `mixamorigLeftHand`) against three's, to 1e-6.
+  (`mixamorigHips`, `mixamorigLeftHand`) against three's, to 1e-6. And
+  `michelle_skinning_at_zero`: `Skeleton::update()`'s first two flattened bone
+  matrices and `applyBoneTransform( 0, … )`, also against three's at t = 0.
+
+## Two things that will bite the rung worker
+
+- `GLTFLoader` binds with the **identity** bind matrix
+  (`mesh.bind( skeleton, _identityMatrix )`) — glTF joints are already relative
+  to the skin. The work is done by `bindMatrixInverse`, which in the default
+  `AttachedBindMode` is recomputed from `matrixWorld` — so
+  **`SkinnedMesh::update_matrix_world()` has to run every frame**, not just
+  `node.update_matrix_world()`. Getting this wrong scales the skin by the node's
+  scale (a factor of 100 on Michelle) and is silent.
+- The order the tests use, and the renderer must use: mixer writes the tree →
+  `scene.update_matrix_world( true )` → `skinned_mesh.update_matrix_world( true )`
+  → `skeleton.update()` → upload `bone_matrices`.
 
 ## Next, in order
 

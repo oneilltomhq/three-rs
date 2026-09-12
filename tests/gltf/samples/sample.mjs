@@ -40,3 +40,26 @@ import { AnimationMixer } from '/home/tom/src/vendor/three.js/build/three.module
     res();
   }, rej));
 }
+
+// Skeleton.update() output at t = 0 — what the skinning shader consumes.
+{
+  const buf = fs.readFileSync('/home/tom/src/vendor/three.js/examples/models/gltf/Michelle.glb');
+  await new Promise((res, rej) => loader.parse(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength), '', (gltf) => {
+    const mixer = new AnimationMixer(gltf.scene);
+    mixer.clipAction(gltf.animations[0]).play();
+    mixer.update(0);
+    gltf.scene.updateMatrixWorld(true);
+    let skinned; gltf.scene.traverse(o => { if (o.isSkinnedMesh) skinned = o; });
+    skinned.skeleton.update();
+    console.log('### skeleton.update');
+    console.log('boneMatrices[0..16]', JSON.stringify(Array.from(skinned.skeleton.boneMatrices.slice(0, 16))));
+    console.log('boneMatrices[16..32]', JSON.stringify(Array.from(skinned.skeleton.boneMatrices.slice(16, 32))));
+    skinned.computeBoundingBox();
+    console.log('bbox', JSON.stringify(skinned.boundingBox.min.toArray()), JSON.stringify(skinned.boundingBox.max.toArray()));
+    const v = new (Object.getPrototypeOf(skinned.position).constructor)();
+    v.fromBufferAttribute(skinned.geometry.attributes.position, 0);
+    skinned.applyBoneTransform(0, v);
+    console.log('applyBoneTransform(0)', JSON.stringify(v.toArray()));
+    res();
+  }, rej));
+}

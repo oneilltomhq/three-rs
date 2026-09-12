@@ -207,3 +207,82 @@ fn michelle_mixer_at_zero() {
         }
     }
 }
+
+/// What the skinning shader consumes: `Skeleton.update()`'s flattened
+/// `boneMatrices`, and `SkinnedMesh.applyBoneTransform` / `computeBoundingBox`,
+/// all at t = 0 of `SambaDance`, against three's.
+#[test]
+fn michelle_skinning_at_zero() {
+    use three_rs::animation::AnimationMixer;
+    use three_rs::math::Vector3;
+
+    let mut gltf = GLTFLoader::load(format!("{MODELS}/Michelle.glb")).unwrap();
+
+    let mut mixer = AnimationMixer::new(Box::new(gltf.scene_resolver()));
+    let action = mixer.clip_action(&gltf.animations[0], None, None);
+    mixer.play(action);
+    mixer.update(0.0);
+    gltf.scene.update_matrix_world(true);
+
+    // `SkinnedMesh.updateMatrixWorld` is where `bindMatrixInverse` comes from
+    // in `AttachedBindMode`; the renderer calls it every frame.
+    gltf.skinned_meshes[0].update_matrix_world(true);
+    let mesh = &gltf.skinned_meshes[0];
+    gltf.skins[0].borrow_mut().update();
+
+    let expected: [f32; 32] = [
+        0.822_734_117_507_934_6,
+        -0.018_857_240_676_879_883,
+        -0.568_113_505_840_301_5,
+        0.0,
+        -0.024_164_615_198_969_84,
+        0.997_385_740_280_151_4,
+        -0.068_100_892_007_350_92,
+        0.0,
+        0.567_912_518_978_118_9,
+        0.069_757_185_876_369_48,
+        0.820_127_606_391_906_7,
+        0.0,
+        0.026_579_812_169_075_012,
+        -0.034_598_868_340_253_83,
+        0.072_963_453_829_288_48,
+        1.0,
+        0.681_407_332_420_349_1,
+        0.066_141_523_420_810_7,
+        -0.728_909_671_306_610_1,
+        0.0,
+        0.012_672_048_993_408_68,
+        0.994_692_862_033_844,
+        0.102_104_954_421_520_23,
+        0.0,
+        0.731_794_655_323_028_6,
+        -0.078_811_824_321_746_83,
+        0.676_952_958_106_994_6,
+        0.0,
+        -0.012_397_086_247_801_78,
+        -0.032_505_188_137_292_86,
+        -0.112_112_060_189_247_13,
+        1.0,
+    ];
+
+    let skeleton = gltf.skins[0].borrow();
+    for (i, expected) in expected.iter().enumerate() {
+        let got = skeleton.bone_matrices[i];
+        assert!(
+            (got - expected).abs() < 1e-6,
+            "boneMatrices[{i}]: {got} != {expected}"
+        );
+    }
+    drop(skeleton);
+
+    // `applyBoneTransform( 0, v.fromBufferAttribute( position, 0 ) )`
+    let position = mesh.geometry.position().unwrap();
+    let mut vertex = Vector3::new(position.get_x(0), position.get_y(0), position.get_z(0));
+    mesh.apply_bone_transform(0, &mut vertex);
+
+    let expected = [8.248_729_752_697_153, 2.609_101_503_364_952_7, -143.658_634_049_021_8];
+    for (i, expected) in expected.iter().enumerate() {
+        let got = vertex.get_component(i);
+        assert!((got - expected).abs() < 1e-5, "applyBoneTransform[{i}]: {got}");
+    }
+}

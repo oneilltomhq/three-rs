@@ -652,12 +652,11 @@ impl GLTFLoader {
             mesh.morph_target_dictionary = primitive.morph_target_dictionary.clone();
             mesh.normalize_skin_weights();
 
-            // `GLTFParser`'s bind matrix: `mesh.bind( skeleton, bindMatrix )`
-            // with the *mesh's* inverse world matrix, so the skin is applied in
-            // the mesh's own space.
-            let mut bind_matrix = primitive.node.borrow().matrix_world;
-            bind_matrix.invert();
-            mesh.bind(skins[skin].clone(), Some(bind_matrix));
+            // `mesh.bind( skeleton, _identityMatrix )`: glTF joint transforms
+            // are already relative to the skin, so the bind matrix is identity
+            // and it is `bindMatrixInverse` (tracked from `matrixWorld`, the
+            // `AttachedBindMode` default) that does the work.
+            mesh.bind(skins[skin].clone(), Some(Matrix4::identity()));
 
             skinned_meshes.push(mesh);
         }
