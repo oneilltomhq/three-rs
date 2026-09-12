@@ -1,10 +1,16 @@
 # rung 5 — `webgpu_lights_phong`, done
 
-**Status: passing.** `webgpu_lights_phong` differs in 4 of 100000 pixels
-(0.004%, limit 0.1%); rungs 1–4 are unchanged at 0 / 45 / 0 / 1. The generated
-WGSL is structurally identical to the dumps — same bindings, same uniform
-layout, same expression order — modulo the cosmetic set listed in
-`docs/nodes.md` §8.
+**Status: passing, and merged onto the tree walk.** `webgpu_lights_phong` differs
+in 4 of 100000 pixels (0.004%, limit 0.1%); rungs 1–4 are unchanged at
+0 / 45 / 0 / 1. The generated WGSL is structurally identical to the dumps — same
+bindings, same uniform layout, same expression order — modulo the cosmetic set
+listed in `docs/nodes.md` §8.
+
+Rung 5 landed first against the old flat `Scene.children: Vec<Child>` list and
+was then merged onto `port`'s real scene-graph render path. The merge is
+pixel-neutral and byte-neutral in the shaders: `cargo run --example dump_wgsl`
+is identical before and after, because nothing in `src/nodes` or the material
+flow moved — only where the renderer gets its objects and its lights from.
 
 This note keeps the reading of Three's dumps (§§1–7 below) because the next
 lighting rungs (6, 7, 8) build on it. Two of its warnings turned out to be
@@ -14,7 +20,7 @@ wrong; both are corrected in place.
 
 | area | what |
 |---|---|
-| lights | `src/lights/{light,point_light}.rs`, `Scene.lights` + `Scene::drawables()` (a light's children are drawn, its world matrix composed through it) |
+| lights | `src/lights/{light,point_light}.rs` — `Payload::Light( PointLight )` with `object.is_light` set, added with plain `scene.add( &light )`; the bulb sphere is an ordinary child and draws through the tree walk |
 | node system | `Node::If`/`Select` lowering for `getDistanceAttenuation`, `LightsNode` (render-group per-light uniforms, selective `lights([…])` from `material.lights_node`), sub-build layers (`docs/nodes.md` §7) |
 | materials | `MaterialKind::Phong` on the one `NodeMaterial` struct, `src/materials/phong.rs` (`BRDF_Lambert`, `F_Schlick`, `D_BlinnPhong`, `BRDF_BlinnPhong`, `PhongLightingModel`), `specularNode`, `normalNode`, `lights = false` |
 | TSL | `floor`, `sign`, `exp2`, `length`, `smoothstep`, `dpdx`, `dpdy`, `tsl_mod_float`, `checker()`, `fog()` / `range_fog_factor()`, `normal_map()`, `tangent_view()` / `bitangent_view()` / `tbn_view_matrix()` |
@@ -70,10 +76,47 @@ Both were invisible to the WGSL diff, because neither is in the shader text.
   lightDirection )` is given a var when its usage count looks like 1, and why
   `bitangentViewFrame = ( a * b )` skips the `vec3<f32>()` widening that
   `tangentViewFrame` gets.
-* `Scene.children` is still flat (`Child`), with lights' children spliced in by
-  `drawables()`. `docs/scene-graph.md`'s deferred fold into a real tree is
-  still deferred; rung 8 (bulb as a child of the light, plus nesting) is where
-  it will stop paying.
+* Only `PointLight`. `AmbientLight` / `DirectionalLight` / `SpotLight` and
+  shadows belong to rungs 6–8.
+
+## Merging onto the tree walk (2026-09-13)
+
+`git merge port` (cdf834a) into rung5 (0e197ec): two conflicted files,
+`src/objects/scene.rs` and `src/renderer/mod.rs`. What the resolution did:
+
+* **Deleted** `Scene.lights`, `Scene::add_light()`, `Scene::drawables()` and
+  rung 5's `Scene::update_matrix_world` light-children loop, plus the
+  `render_list_order()` / `apply_matrix4_vector4()` pair in `src/renderer/mod.rs`
+  that the real `RenderList` replaces. `Scene` keeps only the one field rung 5
+  added, `fog_node`.
+* **Lights became a payload.** `PointLight::new()` returns a `Node` with
+  `Payload::Light( PointLight )` and `object.is_light = true`; `Light` and
+  `PointLight` no longer own an `Object3D`, and `PointLight.children` /
+  `PointLight::add()` are gone — a bulb is `light.add( &mesh )` through
+  `Object3DNode`. `Object3D::light()` / `light_mut()` reach the payload.
+  `PointLight::world_position( &matrix_world )` is an associated function now,
+  because the matrix lives on the node.
+* **`LightState` maps from `render_list.lights`**, not `scene.lights` — that is
+  `lightsArray`, i.e. scene-traversal order, which is what
+  `LightsNode.setLights()` sees and what `UniformSource::Light*( i )` indexes.
+  The example adds its four lights before the three teapots, exactly as
+  `webgpu_lights_phong.html` does, so traversal order is add order and the
+  uniform triples land in Three's slots. `SetupContext.light_count` is
+  `render_list.lights.len()`.
+* **`Renderable`'s rung-5 fields** (`fog` from `scene.fog_node`, and
+  `light_count` inside `SetupContext`) were reapplied at the rewritten
+  construction site, which now reads `item.matrix_world` and
+  `item.node.borrow().mesh()`.
+
+A second-order effect worth knowing: the bulb spheres are now reached *through*
+the lights during traversal, so they enter the opaque list before the teapots
+rather than after them, as `drawables()` had it. The pixels do not move because
+`painterSortStable` sorts on `z` and tie-breaks on `Object3D.id`, and the ids are
+still allocated in the same order (each `add_light` builds its mesh, then its
+light).
+
+`dump_wgsl` needed no change at all: it drives `setup()` + `NodeBuilder` on
+materials directly and never builds a scene.
 
 ## Where the dumps are and how to get them again
 

@@ -16,8 +16,8 @@ use std::rc::Rc;
 
 use three_rs::testing::DeterministicRandom;
 use three_rs::{
-    sphere_geometry, Child, Color, CubeTextureLoader, Mesh, MeshBasicNodeMaterial,
-    PerspectiveCamera, Renderer, RendererParameters, Scene, Vector3,
+    sphere_geometry, Color, CubeTextureLoader, Mesh, MeshBasicNodeMaterial, PerspectiveCamera,
+    Renderer, RendererParameters, Scene, Vector3,
 };
 
 pub const INNER_WIDTH: f64 = 800.0;
@@ -73,17 +73,19 @@ pub fn init() -> App {
     let mut random = DeterministicRandom::new();
 
     for _ in 0..500 {
-        let mut mesh = Mesh::new(geometry.clone());
-        mesh.material = Some(material.clone());
+        let mesh = Mesh::new(geometry.clone());
+        {
+            let mut object = mesh.borrow_mut();
+            object.mesh_mut().unwrap().material = Some(material.clone());
 
-        mesh.object.position.x = random.next() * 10.0 - 5.0;
-        mesh.object.position.y = random.next() * 10.0 - 5.0;
-        mesh.object.position.z = random.next() * 10.0 - 5.0;
+            object.position.x = random.next() * 10.0 - 5.0;
+            object.position.y = random.next() * 10.0 - 5.0;
+            object.position.z = random.next() * 10.0 - 5.0;
 
-        let scale = random.next() * 3.0 + 1.0;
-        mesh.object.scale.set(scale, scale, scale);
-
-        scene.add(mesh);
+            let scale = random.next() * 3.0 + 1.0;
+            object.scale.set(scale, scale, scale);
+        }
+        scene.add(&mesh);
     }
 
     //
@@ -112,13 +114,12 @@ pub fn animate(app: &mut App) {
 
     app.camera.look_at(&Vector3::ZERO);
 
-    for (i, child) in app.scene.children.iter_mut().enumerate() {
-        let Child::Mesh(sphere) = child else {
-            continue;
-        };
-
-        sphere.object.position.x = 5.0 * (timer + i as f64).cos();
-        sphere.object.position.y = 5.0 * (timer + i as f64 * 1.1).sin();
+    // `for ( let i = 0 … spheres.length )` — the scene holds nothing but the
+    // spheres, so `scene.children` *is* the page's `spheres` array.
+    for (i, sphere) in app.scene.children().iter().enumerate() {
+        let mut sphere = sphere.borrow_mut();
+        sphere.position.x = 5.0 * (timer + i as f64).cos();
+        sphere.position.y = 5.0 * (timer + i as f64 * 1.1).sin();
     }
 
     app.renderer.render(&mut app.scene, &mut app.camera);

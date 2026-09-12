@@ -20,6 +20,7 @@
 
 use std::rc::Rc;
 
+use three_rs::core::{Node, Object3DNode};
 use three_rs::nodes::tsl::{checker, fog, mix, normal_map, range_fog_factor, texture, uv};
 use three_rs::textures::Wrapping;
 use three_rs::{
@@ -36,6 +37,9 @@ pub struct App {
     pub renderer: Renderer,
     pub scene: Scene,
     pub camera: PerspectiveCamera,
+    /// `light1` … `light4`, the page's module-level handles, which `animate()`
+    /// moves. They are in the scene, so the renderer finds them by walking it.
+    pub lights: Vec<Node>,
 }
 
 fn examples_dir() -> std::path::PathBuf {
@@ -73,32 +77,38 @@ pub fn init() -> App {
 
     // lights
 
-    // `addLight( hexColor, power = 1700, distance = 100 )`: the sphere mesh is a
-    // child of the light, so it inherits the light's world matrix.
-    let add_light = |scene: &mut Scene, hex: u32| {
+    // `addLight( hexColor, power = 1700, distance = 100 )`: the sphere mesh is an
+    // ordinary child of the light, so it inherits the light's world matrix and
+    // draws through the scene walk, while the light itself is collected into
+    // `RenderList.lights` instead of being drawn.
+    let add_light = |scene: &Scene, hex: u32| -> Node {
         let mut material = MeshPhongNodeMaterial::phong(Color::default());
         material.color_node = Some(Color::from_hex(hex).into());
         material.lights = false;
 
-        let mut mesh = Mesh::new(sphere_geometry.clone());
-        mesh.material = Some(material);
+        let mesh = Mesh::new(sphere_geometry.clone());
+        mesh.borrow_mut().mesh_mut().unwrap().material = Some(material);
 
-        let mut light = PointLight::new(Color::from_hex(hex), 1.0, 100.0);
-        light.set_power(1700.0);
-        light.add(mesh);
+        let light = PointLight::new(Color::from_hex(hex), 1.0, 100.0);
+        light.borrow_mut().light_mut().unwrap().set_power(1700.0);
+        light.add(&mesh);
 
-        scene.add_light(light);
+        scene.add(&light);
+        light
     };
 
-    add_light(&mut scene, 0x0040ff);
-    add_light(&mut scene, 0xffffff);
-    add_light(&mut scene, 0x80ff80);
-    add_light(&mut scene, 0xffaa00);
+    let lights = vec![
+        add_light(&scene, 0x0040ff),
+        add_light(&scene, 0xffffff),
+        add_light(&scene, 0x80ff80),
+        add_light(&scene, 0xffaa00),
+    ];
 
     // light nodes ( selective lights )
 
-    // `lights( [ light1 ] )` / `lights( [ light2 ] )` — indices into
-    // `Scene.lights`, which is the order the lights were added in.
+    // `lights( [ light1 ] )` / `lights( [ light2 ] )` — indices into the
+    // renderer's light list, which is scene-traversal order; the four lights are
+    // added before the teapots, so it is the order they were added in.
     let blue_lights_node = vec![0];
     let white_lights_node = vec![1];
 
@@ -109,15 +119,15 @@ pub fn init() -> App {
     let mut left_material = MeshPhongNodeMaterial::phong(Color::from_hex(0x555555));
     left_material.lights_node = Some(blue_lights_node);
     left_material.specular_node = Some(texture(&alpha_texture));
-    let mut left_object = Mesh::new(geometry_teapot.clone());
-    left_object.material = Some(left_material);
-    left_object.object.position.x = -3.0;
+    let left_object = Mesh::new(geometry_teapot.clone());
+    left_object.borrow_mut().mesh_mut().unwrap().material = Some(left_material);
+    left_object.borrow_mut().position.x = -3.0;
 
     let mut centre_material = MeshPhongNodeMaterial::phong(Color::from_hex(0x555555));
     centre_material.normal_node = Some(normal_map(texture(&normal_map_texture)));
     centre_material.shininess = 80.0;
-    let mut centre_object = Mesh::new(geometry_teapot.clone());
-    centre_object.material = Some(centre_material);
+    let centre_object = Mesh::new(geometry_teapot.clone());
+    centre_object.borrow_mut().mesh_mut().unwrap().material = Some(centre_material);
 
     let mut right_material = MeshPhongNodeMaterial::phong(Color::from_hex(0x555555));
     right_material.lights_node = Some(white_lights_node);
@@ -127,23 +137,22 @@ pub fn init() -> App {
         checker(uv().mul(5.0)),
     ));
     right_material.shininess = 90.0;
-    let mut right_object = Mesh::new(geometry_teapot);
-    right_object.material = Some(right_material);
-    right_object.object.position.x = 3.0;
+    let right_object = Mesh::new(geometry_teapot);
+    right_object.borrow_mut().mesh_mut().unwrap().material = Some(right_material);
+    right_object.borrow_mut().position.x = 3.0;
 
-    for object in [&mut left_object, &mut centre_object, &mut right_object] {
+    for object in [&left_object, &centre_object, &right_object] {
         // `object.rotation.y = …` in three.js runs `Euler.onChange`, which is
         // `quaternion.setFromEuler( rotation, false )`; `set_rotation` is that
         // pair, and the matrix is composed from the quaternion.
-        object
-            .object
-            .set_rotation(0.0, std::f64::consts::PI * -0.5, 0.0);
-        object.object.position.y = -1.0;
+        let mut object = object.borrow_mut();
+        object.set_rotation(0.0, std::f64::consts::PI * -0.5, 0.0);
+        object.position.y = -1.0;
     }
 
-    scene.add(left_object);
-    scene.add(centre_object);
-    scene.add(right_object);
+    scene.add(&left_object);
+    scene.add(&centre_object);
+    scene.add(&right_object);
 
     // renderer
 
@@ -155,6 +164,7 @@ pub fn init() -> App {
         renderer,
         scene,
         camera,
+        lights,
     }
 }
 
@@ -164,28 +174,28 @@ pub fn animate(app: &mut App) {
     let light_time = 0.0f64;
 
     {
-        let light = &mut app.scene.lights[0];
-        light.object_mut().position.x = (light_time * 0.7).sin() * 3.0;
-        light.object_mut().position.y = (light_time * 0.5).cos() * 4.0;
-        light.object_mut().position.z = (light_time * 0.3).cos() * 3.0;
+        let mut light = app.lights[0].borrow_mut();
+        light.position.x = (light_time * 0.7).sin() * 3.0;
+        light.position.y = (light_time * 0.5).cos() * 4.0;
+        light.position.z = (light_time * 0.3).cos() * 3.0;
     }
     {
-        let light = &mut app.scene.lights[1];
-        light.object_mut().position.x = (light_time * 0.3).cos() * 3.0;
-        light.object_mut().position.y = (light_time * 0.5).sin() * 4.0;
-        light.object_mut().position.z = (light_time * 0.7).sin() * 3.0;
+        let mut light = app.lights[1].borrow_mut();
+        light.position.x = (light_time * 0.3).cos() * 3.0;
+        light.position.y = (light_time * 0.5).sin() * 4.0;
+        light.position.z = (light_time * 0.7).sin() * 3.0;
     }
     {
-        let light = &mut app.scene.lights[2];
-        light.object_mut().position.x = (light_time * 0.7).sin() * 3.0;
-        light.object_mut().position.y = (light_time * 0.3).cos() * 4.0;
-        light.object_mut().position.z = (light_time * 0.5).sin() * 3.0;
+        let mut light = app.lights[2].borrow_mut();
+        light.position.x = (light_time * 0.7).sin() * 3.0;
+        light.position.y = (light_time * 0.3).cos() * 4.0;
+        light.position.z = (light_time * 0.5).sin() * 3.0;
     }
     {
-        let light = &mut app.scene.lights[3];
-        light.object_mut().position.x = (light_time * 0.3).sin() * 3.0;
-        light.object_mut().position.y = (light_time * 0.7).cos() * 4.0;
-        light.object_mut().position.z = (light_time * 0.5).sin() * 3.0;
+        let mut light = app.lights[3].borrow_mut();
+        light.position.x = (light_time * 0.3).sin() * 3.0;
+        light.position.y = (light_time * 0.7).cos() * 4.0;
+        light.position.z = (light_time * 0.5).sin() * 3.0;
     }
 
     app.renderer.render(&mut app.scene, &mut app.camera);

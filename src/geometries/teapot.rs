@@ -8,8 +8,7 @@
 //! The control-point tables below are copied verbatim out of the addon.
 
 use crate::core::{BufferAttribute, BufferGeometry, Index};
-use crate::geometries::math_extras::{matrix4_set, matrix4_transpose, Vector4};
-use crate::math::{Matrix4, Vector3};
+use crate::math::{Matrix4, Vector3, Vector4};
 
 /// `teapotPatches` from `TeapotGeometry.js`, 32 * 4 * 4 Bezier spline patches.
 const TEAPOT_PATCHES: [usize; 512] = [
@@ -398,8 +397,7 @@ pub fn teapot_geometry_full(
 
     // Bezier form
     let mut ms = Matrix4::identity();
-    matrix4_set(
-        &mut ms,
+    ms.set(
         -1.0, 3.0, -3.0, 1.0, //
         3.0, -6.0, 3.0, 0.0, //
         -3.0, 3.0, 0.0, 0.0, //
@@ -444,7 +442,7 @@ pub fn teapot_geometry_full(
     let mut vtdir = Vector3::ZERO;
 
     let mut mst = ms;
-    matrix4_transpose(&mut mst);
+    mst.transpose();
 
     let min_patches = if body { 0 } else { 20 };
     let max_patches = if bottom { 32 } else { 28 };
@@ -491,9 +489,9 @@ pub fn teapot_geometry_full(
                 }
             }
 
-            matrix4_set(
-                &mut gmx, g[0], g[1], g[2], g[3], g[4], g[5], g[6], g[7], g[8], g[9], g[10], g[11],
-                g[12], g[13], g[14], g[15],
+            gmx.set(
+                g[0], g[1], g[2], g[3], g[4], g[5], g[6], g[7], g[8], g[9], g[10], g[11], g[12],
+                g[13], g[14], g[15],
             );
 
             tmtx.multiply_matrices(&gmx, &ms);
@@ -535,10 +533,11 @@ pub fn teapot_geometry_full(
                     }
                 }
 
-                vsp = Vector4::from_array(&sp);
-                vtp = Vector4::from_array(&tp);
-                vdsp = Vector4::from_array(&dsp);
-                vdtp = Vector4::from_array(&dtp);
+                // `new Vector4().fromArray( sp )`
+                vsp = *Vector4::default().from_array(&sp, 0);
+                vtp = *Vector4::default().from_array(&tp, 0);
+                vdsp = *Vector4::default().from_array(&dsp, 0);
+                vdtp = *Vector4::default().from_array(&dtp, 0);
 
                 // do for x,y,z
                 for i in 0..3 {

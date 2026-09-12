@@ -7,7 +7,9 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::core::node::{Node, WeakNode};
+use crate::core::Layers;
 use crate::math::{Euler, Matrix4, Quaternion, Vector3};
+use crate::objects::{InstancedBufferAttribute, Mesh, Payload};
 
 /// three.js' module-level `let _object3DId = 0`.
 fn next_id() -> u32 {
@@ -37,6 +39,13 @@ pub struct Object3D {
     pub children: Vec<Node>,
     /// `Object3D.visible`.
     pub visible: bool,
+    /// `Object3D.layers` — tested against the camera's in `_projectObject`.
+    pub layers: Layers,
+    /// `Object3D.renderOrder`. On a `Group` it becomes the `groupOrder` of
+    /// everything below it; on a drawable it is the second render-list sort key.
+    pub render_order: f64,
+    /// `Object3D.frustumCulled`.
+    pub frustum_culled: bool,
     /// `Object3D.matrixAutoUpdate` (`Object3D.DEFAULT_MATRIX_AUTO_UPDATE`).
     pub matrix_auto_update: bool,
     /// `Object3D.matrixWorldAutoUpdate` (`DEFAULT_MATRIX_WORLD_AUTO_UPDATE`).
@@ -60,6 +69,9 @@ pub struct Object3D {
     pub up: Vector3,
     pub matrix: Matrix4,
     pub matrix_world: Matrix4,
+    /// What three.js would get from subclassing: the `Mesh`/`InstancedMesh`
+    /// state that makes this node drawable. See [`Payload`].
+    pub payload: Payload,
 }
 
 impl Default for Object3D {
@@ -71,6 +83,9 @@ impl Default for Object3D {
             parent: None,
             children: Vec::new(),
             visible: true,
+            layers: Layers::default(),
+            render_order: 0.0,
+            frustum_culled: true,
             matrix_auto_update: true,
             matrix_world_auto_update: true,
             matrix_world_needs_update: false,
@@ -86,6 +101,7 @@ impl Default for Object3D {
             up: Vector3::new(0.0, 1.0, 0.0),
             matrix: Matrix4::identity(),
             matrix_world: Matrix4::identity(),
+            payload: Payload::None,
         }
     }
 }
@@ -102,6 +118,9 @@ impl Clone for Object3D {
             parent: None,
             children: Vec::new(),
             visible: self.visible,
+            layers: self.layers,
+            render_order: self.render_order,
+            frustum_culled: self.frustum_culled,
             matrix_auto_update: self.matrix_auto_update,
             matrix_world_auto_update: self.matrix_world_auto_update,
             matrix_world_needs_update: self.matrix_world_needs_update,
@@ -116,6 +135,7 @@ impl Clone for Object3D {
             up: self.up,
             matrix: self.matrix,
             matrix_world: self.matrix_world,
+            payload: self.payload.clone(),
         }
     }
 }
@@ -129,6 +149,55 @@ impl Object3D {
     /// This object, moved into a scene-graph [`Node`].
     pub fn into_node(self) -> Node {
         Rc::new(RefCell::new(self))
+    }
+
+    /// `object.isMesh` — see [`Payload::is_mesh`].
+    pub fn is_mesh(&self) -> bool {
+        self.payload.is_mesh()
+    }
+
+    /// `object.isInstancedMesh`.
+    pub fn is_instanced_mesh(&self) -> bool {
+        self.payload.is_instanced_mesh()
+    }
+
+    /// `Mesh.geometry` / `Mesh.material` when this node is a mesh.
+    pub fn mesh(&self) -> Option<&Mesh> {
+        self.payload.mesh()
+    }
+
+    pub fn mesh_mut(&mut self) -> Option<&mut Mesh> {
+        self.payload.mesh_mut()
+    }
+
+    /// The `PointLight` state when `is_light` is true — `Light.color`,
+    /// `Light.intensity`, `PointLight.distance`, `PointLight.decay`.
+    pub fn light(&self) -> Option<&crate::lights::PointLight> {
+        self.payload.light()
+    }
+
+    pub fn light_mut(&mut self) -> Option<&mut crate::lights::PointLight> {
+        self.payload.light_mut()
+    }
+
+    /// `InstancedMesh.count`, else 1.
+    pub fn instance_count(&self) -> u32 {
+        self.payload.count()
+    }
+
+    /// `InstancedMesh.instanceMatrix`.
+    pub fn instance_matrix(&self) -> Option<&InstancedBufferAttribute> {
+        self.payload.instance_matrix()
+    }
+
+    /// `InstancedMesh.setMatrixAt( index, matrix )`, reached through the payload.
+    ///
+    /// Panics if this node is not an `InstancedMesh`, the way the JS would throw.
+    pub fn set_matrix_at(&mut self, index: usize, matrix: &Matrix4) {
+        self.payload
+            .instanced_mesh_mut()
+            .expect("three-rs: setMatrixAt on an object that is not an InstancedMesh")
+            .set_matrix_at(index, matrix);
     }
 
     /// `object.rotation.set( x, y, z )` — the Euler `onChange` callback then

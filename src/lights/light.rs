@@ -1,12 +1,13 @@
 //! Port of `three.js/src/lights/Light.js`.
 
-use crate::core::Object3D;
 use crate::math::Color;
 
-/// `class Light extends Object3D`. The subclasses here keep a `Light` by
-/// composition, the same shape `Mesh`/`Scene` use for `Object3D`.
+/// `class Light extends Object3D`. In this port the `Object3D` half is the
+/// scene-graph [`Node`](crate::core::Node) that carries the light as a
+/// [`Payload`](crate::objects::Payload), so this struct is only what `Light`
+/// adds to `Object3D` — the same shape `Mesh` has.
+#[derive(Clone)]
 pub struct Light {
-    pub object: Object3D,
     /// `this.color = new Color( color )`.
     pub color: Color,
     /// `this.intensity = intensity` (candela for the punctual lights).
@@ -16,13 +17,7 @@ pub struct Light {
 impl Light {
     /// `new Light( color, intensity = 1 )`.
     pub fn new(color: Color, intensity: f64) -> Self {
-        let mut object = Object3D::default();
-        object.object_type = "Light";
-        Self {
-            object,
-            color,
-            intensity,
-        }
+        Self { color, intensity }
     }
 }
 

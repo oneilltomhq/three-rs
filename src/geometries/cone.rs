@@ -1,7 +1,7 @@
 //! Port of `three.js/src/geometries/ConeGeometry.js`.
 
 use crate::core::BufferGeometry;
-use crate::geometries::{cylinder_geometry_full, Group};
+use crate::geometries::cylinder_geometry_full;
 
 /// `new ConeGeometry( radius, height, radialSegments, heightSegments )` with the
 /// default `openEnded`/`thetaStart`/`thetaLength`.
@@ -20,7 +20,6 @@ pub fn cone_geometry(
         0.0,
         std::f64::consts::PI * 2.0,
     )
-    .0
 }
 
 pub fn cone_geometry_full(
@@ -31,7 +30,7 @@ pub fn cone_geometry_full(
     open_ended: bool,
     theta_start: f64,
     theta_length: f64,
-) -> (BufferGeometry, Vec<Group>) {
+) -> BufferGeometry {
     cylinder_geometry_full(
         0.0,
         radius,

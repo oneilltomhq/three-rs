@@ -72,6 +72,12 @@ pub struct MeshBasicNodeMaterial {
     /// `NodeMaterial.fragmentNode` — replaces the whole fragment flow.
     pub fragment_node: Option<NodeRef>,
     pub side: Side,
+    /// `Material.visible` — `_projectObject()` skips an object whose material is
+    /// not visible.
+    pub visible: bool,
+    /// `Material.transparent` — which of the render list's two arrays the object
+    /// goes into, and so whether it is sorted front-to-back or back-to-front.
+    pub transparent: bool,
     pub depth_test: bool,
     pub depth_write: bool,
     /// `Background`'s material samples the cube map through the background
@@ -105,6 +111,8 @@ impl Default for MeshBasicNodeMaterial {
             vertex_node: None,
             fragment_node: None,
             side: Side::Front,
+            visible: true,
+            transparent: false,
             depth_test: true,
             depth_write: true,
             name: "",

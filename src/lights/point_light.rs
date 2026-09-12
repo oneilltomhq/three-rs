@@ -2,11 +2,12 @@
 //! adds shadows).
 
 use super::Light;
-use crate::core::Object3D;
+use crate::core::{Node, Object3D};
 use crate::math::{Color, Vector3};
-use crate::objects::Child;
+use crate::objects::Payload;
 
 /// `class PointLight extends Light`.
+#[derive(Clone)]
 pub struct PointLight {
     pub light: Light,
     /// `this.distance` — the cutoff distance; `0` means no cutoff. The shader
@@ -14,30 +15,24 @@ pub struct PointLight {
     pub distance: f64,
     /// `this.decay`, default 2.
     pub decay: f64,
-    /// `light.add( mesh )`: the example hangs a small sphere off each light, so
-    /// a light is the first object in this port with children of its own.
-    pub children: Vec<Child>,
 }
 
 impl PointLight {
-    /// `new PointLight( color, intensity, distance = 0, decay = 2 )`.
-    pub fn new(color: Color, intensity: f64, distance: f64) -> Self {
-        let mut light = Light::new(color, intensity);
-        light.object.object_type = "PointLight";
-        Self {
-            light,
+    /// `new PointLight( color, intensity, distance = 0, decay = 2 )`, as a
+    /// scene-graph [`Node`]. `object.is_light` is what
+    /// `Renderer._projectObject()` branches on, so the node is collected into
+    /// `RenderList.lights` and never drawn — while anything added under it (the
+    /// example's bulb sphere) is an ordinary child and draws through the walk.
+    pub fn new(color: Color, intensity: f64, distance: f64) -> Node {
+        let mut object = Object3D::default();
+        object.object_type = "PointLight";
+        object.is_light = true;
+        object.payload = Payload::Light(Self {
+            light: Light::new(color, intensity),
             distance,
             decay: 2.0,
-            children: Vec::new(),
-        }
-    }
-
-    pub fn object(&self) -> &Object3D {
-        &self.light.object
-    }
-
-    pub fn object_mut(&mut self) -> &mut Object3D {
-        &mut self.light.object
+        });
+        object.into_node()
     }
 
     /// `get power()` — luminous power in lumens, `intensity * 4π` for an
@@ -51,16 +46,12 @@ impl PointLight {
         self.light.intensity = power / (4.0 * std::f64::consts::PI);
     }
 
-    /// `light.add( mesh )`.
-    pub fn add(&mut self, child: impl Into<Child>) {
-        self.children.push(child.into());
-    }
-
     /// The world-space position the lighting uniforms are built from
     /// (`Object3D.matrixWorld`'s translation, before the camera view matrix).
-    pub fn world_position(&self) -> Vector3 {
+    /// The matrix lives on the node, so the caller passes it in.
+    pub fn world_position(matrix_world: &crate::math::Matrix4) -> Vector3 {
         let mut v = Vector3::default();
-        v.set_from_matrix_position(&self.light.object.matrix_world);
+        v.set_from_matrix_position(matrix_world);
         v
     }
 }

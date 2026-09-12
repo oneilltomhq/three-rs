@@ -7,6 +7,7 @@ mod mipmap;
 /// Additive seam for the interactive viewer; see `present.rs`.
 mod present;
 mod programs;
+mod render_list;
 mod render_target;
 
 use std::collections::HashMap;
@@ -15,15 +16,17 @@ use std::rc::Rc;
 use mipmap::{create_mipmap_pipeline, MipmapShader};
 pub use programs::{LightState, RenderState, UniformContext};
 use programs::{PipelineKey, Program};
+pub use render_list::{project_object, ProjectCamera, RenderItem, RenderList};
 pub use render_target::{RenderTarget, RenderTargetInner, RenderTargetOptions};
 
 use crate::cameras::{OrthographicCamera, PerspectiveCamera};
-use crate::nodes::tsl::FogNode;
 use crate::core::{BufferGeometry, Index};
 use crate::geometries::{quad_geometry, sphere_geometry};
+use crate::lights::PointLight;
 use crate::materials::{self, MeshBasicNodeMaterial, SetupContext, Side};
 use crate::math::{Color, Matrix4, Vector2};
 use crate::nodes::node::{BufferSource, TextureSource};
+use crate::nodes::tsl::FogNode;
 use crate::nodes::wgsl::TextureKind;
 use crate::nodes::{BindingDesc, NodeBuilder};
 use crate::objects::{Background, InstancedBufferAttribute, QuadMesh, Scene};
@@ -110,6 +113,10 @@ pub struct Renderer {
 
     /// `Renderer._clearColor`: black, alpha 1.
     clear_color: [f64; 4],
+
+    /// `Renderer.sortObjects`. With it off, `_projectObject()` leaves each render
+    /// item's `z` alone and the lists keep traversal order.
+    pub sort_objects: bool,
 
     canvas: Option<CanvasTarget>,
     render_target: Option<RenderTarget>,
@@ -202,6 +209,7 @@ impl Renderer {
             width: 300.0,
             height: 150.0,
             clear_color: [0.0, 0.0, 0.0, 1.0],
+            sort_objects: true,
             canvas: None,
             render_target: None,
             frame_buffer_target: None,
@@ -253,15 +261,18 @@ impl Renderer {
 
     /// `renderer.render( scene, camera )`.
     pub fn render(&mut self, scene: &mut Scene, camera: &mut PerspectiveCamera) {
+        // `Renderer.render()`: `scene.updateMatrixWorld()` then
+        // `camera.updateMatrixWorld()`, both honouring `matrixAutoUpdate` /
+        // `matrixWorldAutoUpdate`.
         scene.update_matrix_world();
         camera.update_matrix_world();
 
-        // `Renderer._renderScene()` → `_projectObject()` fills the render list,
-        // then `renderList.finish()` sorts the opaque items; `_background.update()`
-        // runs after the sort and unshifts the skybox, so it draws first.
-        let order = render_list_order(scene, camera);
+        // `Renderer._renderScene()`: `_projectObject()` walks the real scene
+        // graph into the render list, `finish()`/`sort()` order it, and
+        // `_background.update()` then unshifts the skybox, so it draws first.
+        let render_list = self.project_scene(scene, camera);
 
-        let mut items = Vec::with_capacity(order.len() + 1);
+        let mut items = Vec::with_capacity(render_list.len() + 1);
 
         // The skybox first, exactly where `renderList.unshift()` puts it.
         if let Some(Background::CubeTexture(background)) = scene.background.clone() {
@@ -286,28 +297,33 @@ impl Renderer {
             });
         }
 
-        let drawables = scene.drawables();
-        for &index in order.iter() {
-            let child = drawables[index];
+        for item in render_list.items() {
+            let object = item.node.borrow();
+            let mesh = object
+                .mesh()
+                .expect("three-rs: the render list only holds meshes");
+
+            // `_renderObjects()`: `scene.overrideMaterial` replaces the object's
+            // own material for every object in the list.
             let material: &MeshBasicNodeMaterial = scene
                 .override_material
                 .as_ref()
-                .or(child.mesh().material.as_ref())
+                .or(mesh.material.as_ref())
                 .expect("three-rs: a mesh needs a material");
 
-            let instance_count = child.count();
-            let instance_matrix = child.instance_matrix().cloned();
+            let instance_count = object.instance_count();
+            let instance_matrix = object.instance_matrix().cloned();
 
             items.push(Renderable {
-                geometry: child.mesh().geometry.clone(),
+                geometry: mesh.geometry.clone(),
                 material: material.clone(),
                 setup: SetupContext {
                     instance_count: instance_matrix.as_ref().map(|_| instance_count as usize),
                     instanced: instance_matrix.is_some(),
-                    light_count: scene.lights.len(),
+                    light_count: render_list.lights.len(),
                 },
                 fog: scene.fog_node.clone(),
-                model_world: child.object().matrix_world,
+                model_world: item.matrix_world,
                 instance_matrix,
                 instance_count,
             });
@@ -322,14 +338,22 @@ impl Renderer {
         };
 
         // `LightsNode.setupLights()`: each light resolves to its colour scaled
-        // by intensity plus its position in view space. The list order is
-        // `Scene.lights` order, which is what `UniformSource::Light*( i )` indexes.
-        let lights: Vec<LightState> = scene
+        // by intensity plus its position in view space. The list is
+        // `RenderList.lightsArray` — scene-traversal order, which is the order
+        // `LightsNode.setLights()` receives and which `UniformSource::Light*( i )`
+        // indexes.
+        let lights: Vec<LightState> = render_list
             .lights
             .iter()
-            .map(|light| {
-                let mut view_position = light.world_position();
+            .map(|node| {
+                let object = node.borrow();
+                let light = object
+                    .light()
+                    .expect("three-rs: the light list only holds lights");
+
+                let mut view_position = PointLight::world_position(&object.matrix_world);
                 view_position.apply_matrix4(&camera.matrix_world_inverse);
+
                 let c = light.light.color;
                 let intensity = light.light.intensity;
                 LightState {
@@ -351,6 +375,24 @@ impl Renderer {
         };
 
         self.render_list(&items, camera_uniforms, Some(clear));
+    }
+
+    /// `Renderer._renderScene()`'s render-list half: `renderList.begin()`,
+    /// `_projectObject( scene, … )`, `finish()` and `sort()`.
+    ///
+    /// Public so a caller can inspect what a frame would draw — the e2e harness
+    /// and the lights work of later rungs both want the list without the draw.
+    pub fn project_scene(&self, scene: &Scene, camera: &PerspectiveCamera) -> RenderList {
+        let mut render_list = RenderList::new();
+        project_object(
+            &scene.node,
+            &ProjectCamera::new(camera),
+            0.0,
+            &mut render_list,
+            self.sort_objects,
+        );
+        render_list.sort();
+        render_list
     }
 
     /// `QuadMesh.render( renderer )`: the material's `vertexNode` is swapped for
@@ -1498,48 +1540,6 @@ impl Renderer {
             }
         }
     }
-}
-
-/// `RenderList.finish()`'s `painterSortStable` over the opaque items, which is
-/// the only list the ladder fills.
-///
-/// `Renderer._projectObject()` computes each item's `z` as the geometry's
-/// bounding-sphere centre pushed through `matrixWorld` and then through
-/// `projectionMatrix * matrixWorldInverse`, keeping the unnormalised clip-space
-/// `z`. `groupOrder` and `renderOrder` are 0 everywhere here, and the `id`
-/// tie-break matches creation order, so a stable sort on `z` reproduces it.
-fn render_list_order(scene: &Scene, camera: &PerspectiveCamera) -> Vec<usize> {
-    let mut proj_screen_matrix = Matrix4::identity();
-    proj_screen_matrix.multiply_matrices(&camera.projection_matrix, &camera.matrix_world_inverse);
-
-    let mut items: Vec<(usize, f64)> = scene
-        .drawables()
-        .into_iter()
-        .enumerate()
-        .map(|(index, child)| {
-            let center = child.mesh().geometry.bounding_sphere_center();
-            let v = apply_matrix4_vector4(
-                &child.object().matrix_world,
-                [center.x, center.y, center.z, 1.0],
-            );
-            let v = apply_matrix4_vector4(&proj_screen_matrix, v);
-            (index, v[2])
-        })
-        .collect();
-
-    items.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
-    items.into_iter().map(|(index, _)| index).collect()
-}
-
-/// `Vector4.applyMatrix4()` — no perspective divide, unlike `Vector3`'s.
-fn apply_matrix4_vector4(m: &Matrix4, v: [f64; 4]) -> [f64; 4] {
-    let e = &m.elements;
-    [
-        e[0] * v[0] + e[4] * v[1] + e[8] * v[2] + e[12] * v[3],
-        e[1] * v[0] + e[5] * v[1] + e[9] * v[2] + e[13] * v[3],
-        e[2] * v[0] + e[6] * v[1] + e[10] * v[2] + e[14] * v[3],
-        e[3] * v[0] + e[7] * v[1] + e[11] * v[2] + e[15] * v[3],
-    ]
 }
 
 /// The canvas colour format. Chrome's preferred WebGPU canvas format on this
