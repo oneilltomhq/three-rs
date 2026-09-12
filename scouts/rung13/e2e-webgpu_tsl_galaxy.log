@@ -1,0 +1,8 @@
+
+> three@0.186.0 test-e2e-webgpu
+> node test/e2e/puppeteer.js --webgpu webgpu_tsl_galaxy
+
+[32mDiff 0.0% in file: webgpu_tsl_galaxy (4.1s)[39m
+[32mTEST PASSED! 1 screenshots rendered correctly.[39m
+Closing...
+EXIT=0
