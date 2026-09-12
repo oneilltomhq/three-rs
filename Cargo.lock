@@ -1486,7 +1486,6 @@ dependencies = [
  "bytemuck",
  "owned_ttf_parser",
  "serde_json",
- "tiny-skia",
 ]
 
 [[package]]

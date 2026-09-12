@@ -11,9 +11,14 @@
 //! renderer work and `BatchedText`, which need the GPU and are not in this
 //! crate yet — `text::Text` carries the layout surface they will plug into.
 
+pub mod edt;
+pub mod raster;
 pub mod vector_font;
+pub mod vector_font_atlas;
 
+pub use edt::{compute_sdf, compute_sdf_default, edt_1d, edt_2d};
 pub use vector_font::{BBox, PathCommand, VectorFont};
+pub use vector_font_atlas::{GlyphMetrics, VectorFontAtlas};
 
 /// The constant set used by lib3's *test* (`src/sdf/index.js`), which matches
 /// neither `FontAtlas` (128/64/8/16) nor `VectorFontAtlas` (256/64/—/32). The

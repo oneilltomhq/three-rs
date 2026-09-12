@@ -9,11 +9,14 @@ edition = "2021"
 # opentype.js's first-hit semantics need the lookup *type* filter, and
 # ttf-parser keeps `LookupSubtables::kind` private.
 #
+# tiny-skia was evaluated as the filler and dropped — see the evidence table in
+# `src/raster.rs`'s module doc. It is not a dependency, so the crate has no
+# rasterisation dependency at all.
+#
 # owned_ttf_parser is ttf-parser plus a self-referential owning wrapper, so
 # `VectorFont` can own its bytes without a lifetime parameter. The plan
 # (§2.2) blesses this: "no behavioural difference".
 owned_ttf_parser = { version = "0.25", default-features = false, features = ["std", "opentype-layout"] }
-tiny-skia = { version = "0.11", default-features = false, features = ["std", "simd"] }
 bytemuck = { version = "1", features = ["derive"] }
 
 [dev-dependencies]
