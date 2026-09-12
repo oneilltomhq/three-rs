@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "d3/hierarchy"]
+members = [".", "d3/hierarchy", "sdf-text"]
 
 [package]
 name = "three-rs"
