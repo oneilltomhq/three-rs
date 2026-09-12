@@ -1,12 +1,17 @@
 //! Ports of `three.js/src/materials/nodes` — under `WebGPURenderer` every
 //! material is a `NodeMaterial`, so this is the only material path.
 
+pub mod blending;
 mod node_material;
 pub mod phong;
 
 pub use node_material::{
     background_color_node, background_vertex_node, instanced_range, output_fragment_node,
     quad_vertex_node, render_output, setup, SetupContext,
+};
+
+pub use blending::{
+    blend_factor, blend_operation, BlendEquation, BlendFactor, BlendMode, Blending,
 };
 
 use crate::math::Color;
@@ -78,6 +83,24 @@ pub struct MeshBasicNodeMaterial {
     /// `Material.transparent` — which of the render list's two arrays the object
     /// goes into, and so whether it is sorted front-to-back or back-to-front.
     pub transparent: bool,
+    /// `Material.blending` — `NormalBlending` by default, which together with
+    /// `transparent: false` is what keeps a pipeline blend-state-free.
+    pub blending: Blending,
+    /// `Material.premultipliedAlpha` — selects the other half of the
+    /// `_getBlending()` table.
+    pub premultiplied_alpha: bool,
+    /// `Material.alphaToCoverage`. Only `builder.isOpaque()` reads it so far;
+    /// the pipeline's `alphaToCoverageEnabled` is still hardcoded false.
+    pub alpha_to_coverage: bool,
+    /// `Material.blendSrc` / `.blendDst` / `.blendEquation` and the three
+    /// `*Alpha` overrides (`None` is Three's `null`), read only under
+    /// `CustomBlending`.
+    pub blend_src: BlendFactor,
+    pub blend_dst: BlendFactor,
+    pub blend_equation: BlendEquation,
+    pub blend_src_alpha: Option<BlendFactor>,
+    pub blend_dst_alpha: Option<BlendFactor>,
+    pub blend_equation_alpha: Option<BlendEquation>,
     pub depth_test: bool,
     pub depth_write: bool,
     /// `Background`'s material samples the cube map through the background
@@ -113,6 +136,15 @@ impl Default for MeshBasicNodeMaterial {
             side: Side::Front,
             visible: true,
             transparent: false,
+            blending: Blending::Normal,
+            premultiplied_alpha: false,
+            alpha_to_coverage: false,
+            blend_src: BlendFactor::SrcAlpha,
+            blend_dst: BlendFactor::OneMinusSrcAlpha,
+            blend_equation: BlendEquation::Add,
+            blend_src_alpha: None,
+            blend_dst_alpha: None,
+            blend_equation_alpha: None,
             depth_test: true,
             depth_write: true,
             name: "",
@@ -123,6 +155,40 @@ impl Default for MeshBasicNodeMaterial {
 impl MeshBasicNodeMaterial {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// The blending fields `WebGPUPipelineUtils._getBlending()` reads, gathered
+    /// into the struct the table takes.
+    pub fn blend_mode(&self) -> BlendMode {
+        BlendMode {
+            blending: self.blending,
+            premultiplied_alpha: self.premultiplied_alpha,
+            blend_src: self.blend_src,
+            blend_dst: self.blend_dst,
+            blend_equation: self.blend_equation,
+            blend_src_alpha: self.blend_src_alpha,
+            blend_dst_alpha: self.blend_dst_alpha,
+            blend_equation_alpha: self.blend_equation_alpha,
+        }
+    }
+
+    /// `WebGPUPipelineUtils.createRenderPipeline()`'s `materialBlending`: the
+    /// blend state of the colour target, or `None` when the gate says the
+    /// pipeline gets none at all.
+    pub fn blend_state(&self) -> Option<wgpu::BlendState> {
+        let mode = self.blend_mode();
+        if blending::needs_blend_state(&mode, self.transparent) {
+            blending::blending(&mode)
+        } else {
+            None
+        }
+    }
+
+    /// `NodeBuilder.isOpaque()` — `transparent === false && blending ===
+    /// NormalBlending && alphaToCoverage === false`. What decides whether
+    /// `setupDiffuseColor()` ends with `diffuseColor.a = 1.0`.
+    pub fn is_opaque(&self) -> bool {
+        !self.transparent && self.blending == Blending::Normal && !self.alpha_to_coverage
     }
 
     /// `new MeshPhongNodeMaterial( { color } )`. `NodeMaterial.lights` is true

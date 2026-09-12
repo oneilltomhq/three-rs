@@ -18,6 +18,10 @@ pub struct RenderState {
     pub side: Side,
     pub depth_test: bool,
     pub depth_write: bool,
+    /// `WebGPUPipelineUtils.createRenderPipeline()`'s `materialBlending`, i.e.
+    /// `MeshBasicNodeMaterial::blend_state()`. Part of the key because an
+    /// additive and an opaque pipeline share one program.
+    pub blend: Option<wgpu::BlendState>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -130,8 +134,9 @@ impl Program {
                 compilation_options: Default::default(),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: state.color_format,
-                    // Opaque material: three.js emits no blend state.
-                    blend: None,
+                    // `undefined` for an opaque `NormalBlending` material, which
+                    // is every rung up to 9; see `materials::blending`.
+                    blend: state.blend,
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
             }),

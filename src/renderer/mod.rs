@@ -516,6 +516,7 @@ impl Renderer {
                 side: item.material.side,
                 depth_test: item.material.depth_test,
                 depth_write: item.material.depth_write,
+                blend: item.material.blend_state(),
             };
             let pipeline = PipelineKey {
                 program: program_key,
