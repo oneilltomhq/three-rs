@@ -53,7 +53,7 @@ pub fn init() -> App {
     );
     camera.look_at(&Vector3::ZERO);
 
-    let mut scene = Scene::new();
+    let scene = Scene::new();
 
     let mut material = MeshBasicNodeMaterial::new();
 

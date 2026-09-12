@@ -87,12 +87,6 @@ impl RenderList {
         }
     }
 
-    /// `RenderList.unshift(…)`, which is how `Background.update()` puts the
-    /// skybox in front of the sorted opaque list.
-    pub fn unshift_opaque(&mut self, item: RenderItem) {
-        self.opaque.insert(0, item);
-    }
-
     /// `RenderList.pushLight( light )`.
     fn push_light(&mut self, light: Node) {
         self.lights.push(light);
