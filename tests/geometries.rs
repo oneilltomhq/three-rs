@@ -1,0 +1,22 @@
+//! Ports of `three.js/test/unit/src/geometries/*.tests.js`.
+//!
+//! Laid out as one integration-test binary with the per-geometry modules under
+//! `tests/geometry/` so no new `[[test]]` target is needed in `Cargo.toml`.
+
+#[path = "geometry/support.rs"]
+mod support;
+
+#[path = "geometry/batch1.rs"]
+mod batch1;
+
+#[path = "geometry/teapot.rs"]
+mod teapot;
+
+#[path = "geometry/batch2.rs"]
+mod batch2;
+
+#[path = "geometry/batch0.rs"]
+mod batch0;
+
+#[path = "geometry/rounded_box.rs"]
+mod rounded_box;
