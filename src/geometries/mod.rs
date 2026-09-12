@@ -6,7 +6,6 @@ mod circle;
 mod cone;
 mod cylinder;
 mod lathe;
-mod math_extras;
 mod non_indexed;
 mod plane;
 mod polyhedron;
@@ -24,7 +23,6 @@ pub use circle::{circle_geometry, circle_geometry_full};
 pub use cone::{cone_geometry, cone_geometry_full};
 pub use cylinder::{cylinder_geometry, cylinder_geometry_full};
 pub use lathe::{lathe_default_points, lathe_geometry, lathe_geometry_full};
-pub use math_extras::{matrix4_set, matrix4_transpose, vector3_lerp, Vector4};
 pub use non_indexed::to_non_indexed;
 pub use plane::plane_geometry;
 pub use polyhedron::{

@@ -3,7 +3,6 @@
 //! `Dodecahedron`).
 
 use crate::core::{BufferAttribute, BufferGeometry};
-use crate::geometries::math_extras::vector3_lerp;
 use crate::math::Vector3;
 
 /// `new PolyhedronGeometry( vertices, indices, radius, detail )`.
@@ -114,9 +113,9 @@ fn subdivide_face(
         v.push(Vec::new());
 
         let mut aj = *a;
-        vector3_lerp(&mut aj, c, i as f64 / cols as f64);
+        aj.lerp(c, i as f64 / cols as f64);
         let mut bj = *b;
-        vector3_lerp(&mut bj, c, i as f64 / cols as f64);
+        bj.lerp(c, i as f64 / cols as f64);
 
         let rows = cols - i;
 
@@ -125,7 +124,7 @@ fn subdivide_face(
                 v[i].push(aj);
             } else {
                 let mut p = aj;
-                vector3_lerp(&mut p, &bj, j as f64 / rows as f64);
+                p.lerp(&bj, j as f64 / rows as f64);
                 v[i].push(p);
             }
         }
