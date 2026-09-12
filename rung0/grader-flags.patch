@@ -1,0 +1,22 @@
+diff --git a/test/e2e/puppeteer.js b/test/e2e/puppeteer.js
+index 8d1ca92..d99f3d9 100644
+--- a/test/e2e/puppeteer.js
++++ b/test/e2e/puppeteer.js
+@@ -208,7 +208,7 @@ async function main() {
+ 		'--hide-scrollbars',
+ 		'--enable-unsafe-webgpu',
+ 		'--enable-features=Vulkan',
+-		'--disable-vulkan-surface',
++		'--use-angle=vulkan',
+ 		'--ignore-gpu-blocklist',
+ 		'--disable-gpu-driver-bug-workarounds',
+ 		'--disable-gpu-watchdog',
+@@ -219,7 +219,7 @@ async function main() {
+ 
+ 	const launchOptions = {
+ 		headless: ( 'CI' in process.env || process.env.VISIBLE ) ? false : 'new',
+-		env: { ...process.env, VK_DRIVER_FILES: '/usr/share/vulkan/icd.d/lvp_icd.x86_64.json' },
++		env: { ...process.env },
+ 		args: flags,
+ 		defaultViewport: viewport,
+ 		handleSIGINT: false,

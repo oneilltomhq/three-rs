@@ -1,0 +1,22 @@
+
+> three@0.185.0 test-e2e-webgpu
+> node test/e2e/puppeteer.js --webgpu webgpu_camera webgpu_instance_mesh webgpu_materials_basic webgpu_rtt webgpu_lights_phong webgpu_morphtargets webgpu_shadowmap webgpu_lights_physical webgpu_materials webgpu_postprocessing webgpu_skinning webgpu_mesh_batch webgpu_compute_points webgpu_tsl_galaxy
+
+[31mError: Diff wrong in 0.9% of pixels in file: webgpu_camera (3.0s)[39m
+[32mDiff 0.0% in file: webgpu_compute_points (3.0s)[39m
+[32mDiff 0.1% in file: webgpu_instance_mesh (3.0s)[39m
+[32mDiff 0.0% in file: webgpu_lights_phong (3.0s)[39m
+[32mDiff 0.0% in file: webgpu_lights_physical (3.1s)[39m
+[32mDiff 0.0% in file: webgpu_materials (3.0s)[39m
+[32mDiff 0.0% in file: webgpu_materials_basic (3.0s)[39m
+[32mDiff 0.0% in file: webgpu_mesh_batch (3.0s)[39m
+[32mDiff 0.0% in file: webgpu_morphtargets (3.0s)[39m
+[31mError: Diff wrong in 0.1% of pixels in file: webgpu_postprocessing (3.0s)[39m
+[32mDiff 0.0% in file: webgpu_rtt (3.0s)[39m
+[32mDiff 0.0% in file: webgpu_shadowmap (3.0s)[39m
+[32mDiff 0.0% in file: webgpu_skinning (2.9s)[39m
+[32mDiff 0.0% in file: webgpu_tsl_galaxy (3.0s)[39m
+[31mList of failed screenshots: webgpu_camera webgpu_postprocessing[39m
+[31mIf you are sure that everything is correct, try to run "npm run make-screenshot webgpu_camera webgpu_postprocessing". If this does not help, add remaining screenshots to the exception list.[39m
+[31mTEST FAILED! 2 from 14 screenshots have not rendered correctly.[39m
+Closing...

@@ -1,0 +1,16 @@
+
+> three@0.185.0 test-e2e-webgpu
+> node test/e2e/puppeteer.js --webgpu webgpu_camera_array webgpu_camera_logarithmicdepthbuffer webgpu_materials_toon webgpu_geometry_loft webgpu_lines_fat webgpu_sprites webgpu_instance_sprites webgpu_lines_fat_wireframe
+
+[32mDiff 0.0% in file: webgpu_camera_array (2.9s)[39m
+[31mError: Diff wrong in 1.1% of pixels in file: webgpu_camera_logarithmicdepthbuffer (3.1s)[39m
+[32mDiff 0.0% in file: webgpu_geometry_loft (3.4s)[39m
+[32mDiff 0.0% in file: webgpu_instance_sprites (3.0s)[39m
+[32mDiff 0.0% in file: webgpu_lines_fat (3.0s)[39m
+[32mDiff 0.1% in file: webgpu_lines_fat_wireframe (3.0s)[39m
+[32mDiff 0.0% in file: webgpu_materials_toon (3.2s)[39m
+[32mDiff 0.0% in file: webgpu_sprites (2.9s)[39m
+[31mList of failed screenshots: webgpu_camera_logarithmicdepthbuffer[39m
+[31mIf you are sure that everything is correct, try to run "npm run make-screenshot webgpu_camera_logarithmicdepthbuffer". If this does not help, add remaining screenshots to the exception list.[39m
+[31mTEST FAILED! 1 from 8 screenshots have not rendered correctly.[39m
+Closing...

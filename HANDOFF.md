@@ -45,16 +45,16 @@ Facts the Rust harness must reproduce exactly:
 
 ## Rung 0 — calibrate the grader on this machine
 
-Before any Rust: `cd ~/src/vendor/three.js && npm ci && npm run
-test-e2e-webgpu <ladder names>`. Any example that does not pass with
-Three itself on this GPU is dropped from the ladder. Keep the run log.
-(`node_modules` is not installed yet; expect a Chromium download.)
+Done 2026-09-12, see `rung0/RUNG0.md`. The stock grader renders black on
+this machine (lavapipe override + `--disable-vulkan-surface`); apply
+`rung0/grader-flags.patch` to the vendor checkout. The grader then runs on
+the Intel adapter, and the ladder below is what survived it.
 
 ## The ladder
 
 | # | example | forces into three-rs |
 |---|---|---|
-| 1 | webgpu_camera | scene graph, Perspective/OrthographicCamera, Group, Mesh, Points, LineSegments (CameraHelper), wireframe MeshBasicMaterial, viewport/scissor, clear colour |
+| 1 | webgpu_depth_texture | scene graph, PerspectiveCamera, Mesh, TorusKnotGeometry, MeshBasicNodeMaterial (overrideMaterial), scene.background, deterministic Math.random, RenderTarget + DepthTexture, QuadMesh, texture() node. (webgpu_camera dropped at rung 0: 0.9% point/line coverage diff with Three itself.) |
 | 2 | webgpu_instance_mesh | InstancedMesh, per-instance matrix + colour, BufferGeometryLoader (JSON) |
 | 3 | webgpu_materials_basic | TextureLoader (PNG), CubeTexture, envMap reflection/refraction, scene.background |
 | 4 | webgpu_rtt | first real TSL: texture(), uniform(), colorNode; RenderTarget, QuadMesh |
@@ -62,7 +62,7 @@ Three itself on this GPU is dropped from the ladder. Keep the run log.
 | 6 | webgpu_morphtargets | morph attributes, AmbientLight |
 | 7 | webgpu_shadowmap | spot + directional shadow maps, Fog, ACES tone mapping, custom Fn() on shadow/colour |
 | 8 | webgpu_lights_physical or webgpu_materials | MeshStandard/Physical PBR — director reads both and picks |
-| 9 | webgpu_postprocessing | RenderPipeline, pass(), DotScreen/RGBShift display nodes |
+| 9 | webgpu_postprocessing_* (director picks; plain webgpu_postprocessing dropped at rung 0, sits on the 0.1% line) | RenderPipeline, pass(), display nodes |
 | 10 | webgpu_skinning | GLTFLoader addon, SkinnedMesh, AnimationMixer at t=0 |
 | 11 | webgpu_mesh_batch | BatchedMesh (what crush's BatchedText sits on) |
 | 12 | webgpu_compute_points | compute via TSL, storage buffers |

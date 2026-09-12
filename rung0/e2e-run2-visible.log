@@ -1,0 +1,11 @@
+
+> three@0.185.0 test-e2e-webgpu
+> node test/e2e/puppeteer.js --webgpu webgpu_camera webgpu_rtt webgpu_materials_basic
+
+[31mError: Diff wrong in 99.7% of pixels in file: webgpu_camera (3.0s)[39m
+[31mError: Diff wrong in 100.0% of pixels in file: webgpu_materials_basic (3.0s)[39m
+[31mError: Diff wrong in 100.0% of pixels in file: webgpu_rtt (3.0s)[39m
+[31mList of failed screenshots: webgpu_camera webgpu_materials_basic webgpu_rtt[39m
+[31mIf you are sure that everything is correct, try to run "npm run make-screenshot webgpu_camera webgpu_materials_basic webgpu_rtt". If this does not help, add remaining screenshots to the exception list.[39m
+[31mTEST FAILED! 3 from 3 screenshots have not rendered correctly.[39m
+Closing...

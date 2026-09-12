@@ -1,0 +1,27 @@
+
+> three@0.185.0 test-e2e-webgpu
+> node test/e2e/puppeteer.js --webgpu webgpu_camera webgpu_instance_mesh webgpu_materials_basic webgpu_rtt webgpu_lights_phong webgpu_morphtargets webgpu_shadowmap webgpu_lights_physical webgpu_materials webgpu_postprocessing webgpu_skinning webgpu_mesh_batch webgpu_compute_points webgpu_tsl_galaxy
+
+[31mError: Diff wrong in 17.0% of pixels in file: webgpu_camera (3.0s)[39m
+[32mDiff 0.0% in file: webgpu_compute_points (3.0s)[39m
+[Browser] webgpu_instance_mesh: JSHandle:THREE.WebGPURenderer: WebGPU is not available, running under WebGL2 backend.
+[31mError: Diff wrong in 0.2% of pixels in file: webgpu_instance_mesh (6.5s)[39m
+[31mError: Diff wrong in 5.8% of pixels in file: webgpu_lights_phong (3.0s)[39m
+[Browser] webgpu_lights_physical: JSHandle:THREE.WebGPURenderer: WebGPU is not available, running under WebGL2 backend.
+[Browser] webgpu_lights_physical: JSHandle:THREE.TSL: ".toInspector()" is only available with WebGPU.
+[32mDiff 0.0% in file: webgpu_lights_physical (3.9s)[39m
+[31mError: Diff wrong in 18.0% of pixels in file: webgpu_materials (3.0s)[39m
+[Browser] webgpu_materials_basic: JSHandle:THREE.WebGPURenderer: WebGPU is not available, running under WebGL2 backend.
+[32mDiff 0.0% in file: webgpu_materials_basic (3.6s)[39m
+[31mError: Diff wrong in 100.0% of pixels in file: webgpu_mesh_batch (2.9s)[39m
+[31mError: Diff wrong in 100.0% of pixels in file: webgpu_morphtargets (2.9s)[39m
+[31mError: Diff wrong in 19.6% of pixels in file: webgpu_postprocessing (2.9s)[39m
+[31mError: Diff wrong in 100.0% of pixels in file: webgpu_rtt (3.0s)[39m
+[31mError: Diff wrong in 97.9% of pixels in file: webgpu_shadowmap (3.0s)[39m
+[Browser] webgpu_skinning: JSHandle:THREE.WebGPURenderer: WebGPU is not available, running under WebGL2 backend.
+[32mDiff 0.0% in file: webgpu_skinning (3.7s)[39m
+[31mError: Diff wrong in 97.5% of pixels in file: webgpu_tsl_galaxy (3.0s)[39m
+[31mList of failed screenshots: webgpu_camera webgpu_instance_mesh webgpu_lights_phong webgpu_materials webgpu_mesh_batch webgpu_morphtargets webgpu_postprocessing webgpu_rtt webgpu_shadowmap webgpu_tsl_galaxy[39m
+[31mIf you are sure that everything is correct, try to run "npm run make-screenshot webgpu_camera webgpu_instance_mesh webgpu_lights_phong webgpu_materials webgpu_mesh_batch webgpu_morphtargets webgpu_postprocessing webgpu_rtt webgpu_shadowmap webgpu_tsl_galaxy". If this does not help, add remaining screenshots to the exception list.[39m
+[31mTEST FAILED! 10 from 14 screenshots have not rendered correctly.[39m
+Closing...
