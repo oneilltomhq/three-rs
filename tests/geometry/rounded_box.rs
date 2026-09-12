@@ -2,9 +2,8 @@
 //! No three.js unit test exists, so the bit-exactness sample is the gate.
 
 use super::support::*;
-use three_rs::geometries::{
-    box_geometry, rounded_box_geometry, rounded_box_geometry_with_groups, to_non_indexed, Group,
-};
+use three_rs::core::Group;
+use three_rs::geometries::{box_geometry, rounded_box_geometry, to_non_indexed};
 
 include!("samples/rounded_box.rs");
 
@@ -59,16 +58,16 @@ fn rounded_box_std_tests() {
 
 #[test]
 fn rounded_box_samples() {
-    for (sample, (g, groups)) in [
-        (&RBOX_DEFAULT, rounded_box_geometry_with_groups(1.0, 1.0, 1.0, 2, 0.1)),
+    for (sample, g) in [
+        (&RBOX_DEFAULT, rounded_box_geometry(1.0, 1.0, 1.0, 2, 0.1)),
         // webgpu_postprocessing_ao
-        (&RBOX_SEAT, rounded_box_geometry_with_groups(0.9, 0.25, 0.8, 4, 0.06)),
-        (&RBOX_BACKREST, rounded_box_geometry_with_groups(0.9, 0.6, 0.12, 4, 0.04)),
+        (&RBOX_SEAT, rounded_box_geometry(0.9, 0.25, 0.8, 4, 0.06)),
+        (&RBOX_BACKREST, rounded_box_geometry(0.9, 0.6, 0.12, 4, 0.04)),
         // the un-rounded escape hatch keeps the index, so it is still a plain box
-        (&RBOX_NOROUND, rounded_box_geometry_with_groups(2.0, 3.0, 4.0, 0, 0.5)),
+        (&RBOX_NOROUND, rounded_box_geometry(2.0, 3.0, 4.0, 0, 0.5)),
         // radius is clamped to half the shortest side
-        (&RBOX_CLAMPED, rounded_box_geometry_with_groups(1.0, 1.0, 1.0, 2, 10.0)),
+        (&RBOX_CLAMPED, rounded_box_geometry(1.0, 1.0, 1.0, 2, 10.0)),
     ] {
-        check_sample_with_groups(sample, &g, &groups);
+        check_sample(sample, &g);
     }
 }

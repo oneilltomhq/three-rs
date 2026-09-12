@@ -1,28 +1,7 @@
 //! Port of `three.js/src/geometries/BoxGeometry.js`.
 
-use crate::core::{BufferAttribute, BufferGeometry};
-use crate::geometries::Group;
+use crate::core::{BufferAttribute, BufferGeometry, Group};
 use crate::math::Vector3;
-
-/// `new BoxGeometry( width, height, depth, widthSegments, heightSegments, depthSegments )`.
-pub fn box_geometry(
-    width: f64,
-    height: f64,
-    depth: f64,
-    width_segments: usize,
-    height_segments: usize,
-    depth_segments: usize,
-) -> BufferGeometry {
-    box_geometry_with_groups(
-        width,
-        height,
-        depth,
-        width_segments,
-        height_segments,
-        depth_segments,
-    )
-    .0
-}
 
 /// `new BoxGeometry()` — all defaults.
 pub fn box_geometry_default() -> BufferGeometry {
@@ -45,14 +24,18 @@ fn set_component(v: &mut Vector3, axis: Axis, value: f64) {
     }
 }
 
-pub fn box_geometry_with_groups(
+/// `new BoxGeometry( width, height, depth, widthSegments, heightSegments, depthSegments )`.
+///
+/// Sets the six groups (one per side) that three.js' `BoxGeometry` adds for
+/// multi-material support.
+pub fn box_geometry(
     width: f64,
     height: f64,
     depth: f64,
     width_segments: usize,
     height_segments: usize,
     depth_segments: usize,
-) -> (BufferGeometry, Vec<Group>) {
+) -> BufferGeometry {
     // buffers
 
     let mut indices: Vec<u32> = Vec::new();
@@ -171,7 +154,11 @@ pub fn box_geometry_with_groups(
 
         // add a group to the geometry. this will ensure multi material support
 
-        groups.push(Group::new(*group_start, group_count, material_index));
+        groups.push(Group {
+            start: *group_start,
+            count: group_count,
+            material_index,
+        });
 
         // calculate new start value for groups
 
@@ -229,5 +216,8 @@ pub fn box_geometry_with_groups(
     geometry.set_attribute("position", BufferAttribute::new(vertices, 3));
     geometry.set_attribute("normal", BufferAttribute::new(normals, 3));
     geometry.set_attribute("uv", BufferAttribute::new(uvs, 2));
-    (geometry, groups)
+    for group in groups {
+        geometry.add_group(group.start, group.count, group.material_index);
+    }
+    geometry
 }

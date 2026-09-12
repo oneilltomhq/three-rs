@@ -5,9 +5,10 @@
 //! three.js itself.
 
 use super::support::*;
+use three_rs::core::Group;
 use three_rs::geometries::{
-    box_geometry, box_geometry_default, box_geometry_with_groups, cone_geometry, cone_geometry_full,
-    cylinder_geometry, cylinder_geometry_full, plane_geometry, Group,
+    box_geometry, box_geometry_default, cone_geometry, cone_geometry_full, cylinder_geometry,
+    cylinder_geometry_full, plane_geometry,
 };
 
 include!("samples/batch1.rs");
@@ -27,25 +28,20 @@ fn box_geometry_std_tests() {
         check_index_is_narrowest(label, &g);
     }
 
-    let (g, groups) = box_geometry_with_groups(10.0, 20.0, 30.0, 2, 3, 4);
-    check_groups_cover_index("BoxGeometry(10,20,30,2,3,4)", &g, &groups);
-    assert_eq!(groups.len(), 6, "a box has one group per side");
+    let g = box_geometry(10.0, 20.0, 30.0, 2, 3, 4);
+    check_groups_cover_index("BoxGeometry(10,20,30,2,3,4)", &g);
+    assert_eq!(g.groups.len(), 6, "a box has one group per side");
 }
 
 #[test]
 fn box_geometry_samples() {
-    let (g, groups) = box_geometry_with_groups(1.0, 1.0, 1.0, 1, 1, 1);
-    check_sample_with_groups(&BOX_DEFAULT, &g, &groups);
-
-    let (g, groups) = box_geometry_with_groups(10.0, 20.0, 30.0, 1, 1, 1);
-    check_sample_with_groups(&BOX_10_20_30, &g, &groups);
-
-    let (g, groups) = box_geometry_with_groups(10.0, 20.0, 30.0, 2, 3, 4);
-    check_sample_with_groups(&BOX_SEGMENTED, &g, &groups);
-
+    check_sample(&BOX_DEFAULT, &box_geometry(1.0, 1.0, 1.0, 1, 1, 1));
+    check_sample(&BOX_10_20_30, &box_geometry(10.0, 20.0, 30.0, 1, 1, 1));
+    check_sample(&BOX_SEGMENTED, &box_geometry(10.0, 20.0, 30.0, 2, 3, 4));
     // webgpu_morphtargets
-    let (g, groups) = box_geometry_with_groups(2.0, 2.0, 2.0, 32, 32, 32);
-    check_sample_with_groups(&BOX_MORPH, &g, &groups);
+    check_sample(&BOX_MORPH, &box_geometry(2.0, 2.0, 2.0, 32, 32, 32));
+    // `box_geometry_default()` is `new BoxGeometry()`, groups included
+    check_sample(&BOX_DEFAULT, &box_geometry_default());
 }
 
 #[test]
@@ -87,18 +83,18 @@ fn cylinder_geometry_std_tests() {
 
     for (i, p) in full.iter().enumerate() {
         let label = format!("CylinderGeometry #{i}");
-        let (g, groups) = cylinder_geometry_full(p.0, p.1, p.2, p.3, p.4, p.5, p.6, p.7);
+        let g = cylinder_geometry_full(p.0, p.1, p.2, p.3, p.4, p.5, p.6, p.7);
         run_std_geometry_tests(&label, &g);
         check_index_is_narrowest(&label, &g);
-        check_groups_cover_index(&label, &g, &groups);
+        check_groups_cover_index(&label, &g);
         // capped cylinders get torso + two caps, open-ended ones only the torso
-        assert_eq!(groups.len(), if p.5 { 1 } else { 3 }, "{label}: group count");
+        assert_eq!(g.groups.len(), if p.5 { 1 } else { 3 }, "{label}: group count");
     }
 }
 
 #[test]
 fn cylinder_geometry_samples() {
-    let (g, groups) = cylinder_geometry_full(
+    let g = cylinder_geometry_full(
         1.0,
         1.0,
         1.0,
@@ -108,13 +104,13 @@ fn cylinder_geometry_samples() {
         0.0,
         std::f64::consts::PI * 2.0,
     );
-    check_sample_with_groups(&CYLINDER_DEFAULT, &g, &groups);
+    check_sample(&CYLINDER_DEFAULT, &g);
 
-    let (g, groups) = cylinder_geometry_full(10.0, 20.0, 30.0, 20, 30, true, 0.1, 2.0);
-    check_sample_with_groups(&CYLINDER_FULL, &g, &groups);
+    let g = cylinder_geometry_full(10.0, 20.0, 30.0, 20, 30, true, 0.1, 2.0);
+    check_sample(&CYLINDER_FULL, &g);
 
     // webgpu_shadowmap
-    let (g, groups) = cylinder_geometry_full(
+    let g = cylinder_geometry_full(
         0.75,
         0.75,
         7.0,
@@ -124,34 +120,73 @@ fn cylinder_geometry_samples() {
         0.0,
         std::f64::consts::PI * 2.0,
     );
-    check_sample_with_groups(&CYLINDER_SHADOWMAP, &g, &groups);
-    // the convenience wrapper must agree with the full form
+    check_sample(&CYLINDER_SHADOWMAP, &g);
+    // the convenience wrapper must agree with the full form, groups included
+    let wrapper = cylinder_geometry(0.75, 0.75, 7.0, 32);
     assert_eq!(
-        cylinder_geometry(0.75, 0.75, 7.0, 32).position().unwrap().array,
+        wrapper.position().unwrap().array,
         g.position().unwrap().array
     );
+    assert_eq!(wrapper.groups, g.groups);
 }
 
 #[test]
 fn cone_geometry_std_tests() {
-    let (g, groups) = cone_geometry_full(1.0, 1.0, 32, 1, false, 0.0, std::f64::consts::PI * 2.0);
+    let g = cone_geometry_full(1.0, 1.0, 32, 1, false, 0.0, std::f64::consts::PI * 2.0);
     run_std_geometry_tests("ConeGeometry()", &g);
-    check_groups_cover_index("ConeGeometry()", &g, &groups);
+    check_groups_cover_index("ConeGeometry()", &g);
     // radiusTop is 0, so the top cap is skipped: torso + bottom cap
-    assert_eq!(groups.len(), 2);
-    assert_eq!(groups[1].material_index, 2);
+    assert_eq!(g.groups.len(), 2);
+    assert_eq!(g.groups[1].material_index, 2);
 }
 
 #[test]
 fn cone_geometry_samples() {
-    let (g, groups) = cone_geometry_full(1.0, 1.0, 32, 1, false, 0.0, std::f64::consts::PI * 2.0);
-    check_sample_with_groups(&CONE_DEFAULT, &g, &groups);
+    let g = cone_geometry_full(1.0, 1.0, 32, 1, false, 0.0, std::f64::consts::PI * 2.0);
+    check_sample(&CONE_DEFAULT, &g);
 
     // webgpu_mesh_batch
-    let (g, groups) = cone_geometry_full(1.0, 2.0, 32, 1, false, 0.0, std::f64::consts::PI * 2.0);
-    check_sample_with_groups(&CONE_BATCH, &g, &groups);
+    let g = cone_geometry_full(1.0, 2.0, 32, 1, false, 0.0, std::f64::consts::PI * 2.0);
+    check_sample(&CONE_BATCH, &g);
+    let wrapper = cone_geometry(1.0, 2.0, 32, 1);
     assert_eq!(
-        cone_geometry(1.0, 2.0, 32, 1).position().unwrap().array,
+        wrapper.position().unwrap().array,
         g.position().unwrap().array
     );
+    assert_eq!(wrapper.groups, g.groups);
+}
+
+/// Only `BoxGeometry` and `CylinderGeometry` (so `ConeGeometry` too) call
+/// `addGroup()` in `three.js/src/geometries`; every other generator leaves
+/// `BufferGeometry.groups` empty. The fold-in of the old `*_with_groups()`
+/// tuples must not have given any of them one.
+#[test]
+fn only_box_and_cylinder_set_groups() {
+    use three_rs::geometries::*;
+
+    assert_eq!(box_geometry_default().groups.len(), 6);
+    assert_eq!(cylinder_geometry(1.0, 1.0, 1.0, 32).groups.len(), 3);
+    assert_eq!(cone_geometry(1.0, 1.0, 32, 1).groups.len(), 2);
+    // the addon extends BoxGeometry, so it inherits the six sides
+    assert_eq!(rounded_box_geometry(1.0, 1.0, 1.0, 2, 0.1).groups.len(), 6);
+
+    for (label, g) in [
+        ("CapsuleGeometry", capsule_geometry(1.0, 1.0, 4, 8, 1)),
+        ("CircleGeometry", circle_geometry(1.0, 32)),
+        ("LatheGeometry", lathe_geometry(&lathe_default_points(), 12)),
+        ("PlaneGeometry", plane_geometry(1.0, 1.0, 1, 1)),
+        ("IcosahedronGeometry", icosahedron_geometry(1.0, 0)),
+        ("DodecahedronGeometry", dodecahedron_geometry(1.0, 0)),
+        ("OctahedronGeometry", octahedron_geometry(1.0, 0)),
+        ("TetrahedronGeometry", tetrahedron_geometry(1.0, 0)),
+        ("QuadGeometry", quad_geometry()),
+        ("RingGeometry", ring_geometry(0.5, 1.0, 32, 1)),
+        ("SphereGeometry", sphere_geometry(1.0, 32, 16)),
+        ("TeapotGeometry", teapot_geometry(1.0, 4)),
+        ("TorusGeometry", torus_geometry(1.0, 0.4, 12, 48)),
+        ("TorusKnotGeometry", torus_knot_geometry(1.0, 0.4, 64, 8, 2.0, 3.0)),
+    ] {
+        assert!(g.groups.is_empty(), "{label}: three.js sets no groups");
+    }
+
 }

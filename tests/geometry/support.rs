@@ -19,8 +19,7 @@
 
 #![allow(dead_code)]
 
-use three_rs::core::{BufferGeometry, Index};
-use three_rs::geometries::Group;
+use three_rs::core::{BufferGeometry, Group, Index};
 
 /// Every sampled value is a `Float32Array` entry widened to `f64`, so three.js
 /// and the port must agree exactly; the epsilon only absorbs decimal printing.
@@ -90,14 +89,6 @@ fn index_values(index: &Index) -> Vec<u32> {
 }
 
 pub fn check_sample(sample: &GeometrySample, geometry: &BufferGeometry) {
-    check_sample_with_groups(sample, geometry, &[]);
-}
-
-pub fn check_sample_with_groups(
-    sample: &GeometrySample,
-    geometry: &BufferGeometry,
-    groups: &[Group],
-) {
     let expr = sample.expr;
 
     match &sample.position {
@@ -140,7 +131,7 @@ pub fn check_sample_with_groups(
         None => assert!(geometry.index.is_none(), "{expr}: unexpected index"),
     }
 
-    assert_eq!(groups, sample.groups, "{expr}: groups");
+    assert_eq!(geometry.groups, sample.groups, "{expr}: groups");
 
     // bounding box / sphere, the part of `runStdGeometryTests` that constrains
     // the data rather than the object identity.
@@ -285,9 +276,9 @@ pub fn check_index_is_narrowest(label: &str, geometry: &BufferGeometry) {
 
 /// Groups must tile the index buffer exactly, the way three.js' generators build
 /// them.
-pub fn check_groups_cover_index(label: &str, geometry: &BufferGeometry, groups: &[Group]) {
+pub fn check_groups_cover_index(label: &str, geometry: &BufferGeometry) {
     let mut expected_start = 0usize;
-    for (i, g) in groups.iter().enumerate() {
+    for (i, g) in geometry.groups.iter().enumerate() {
         assert_eq!(g.start, expected_start, "{label}: groups[{i}].start");
         expected_start += g.count;
     }

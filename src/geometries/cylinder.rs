@@ -1,7 +1,6 @@
 //! Port of `three.js/src/geometries/CylinderGeometry.js`.
 
-use crate::core::{BufferAttribute, BufferGeometry};
-use crate::geometries::Group;
+use crate::core::{BufferAttribute, BufferGeometry, Group};
 use crate::math::Vector3;
 
 /// `new CylinderGeometry( radiusTop, radiusBottom, height, radialSegments )`
@@ -22,9 +21,10 @@ pub fn cylinder_geometry(
         0.0,
         std::f64::consts::PI * 2.0,
     )
-    .0
 }
 
+/// `new CylinderGeometry( ... )` — sets the torso group plus one group per cap,
+/// as three.js does.
 #[allow(clippy::too_many_arguments)]
 pub fn cylinder_geometry_full(
     radius_top: f64,
@@ -35,7 +35,7 @@ pub fn cylinder_geometry_full(
     open_ended: bool,
     theta_start: f64,
     theta_length: f64,
-) -> (BufferGeometry, Vec<Group>) {
+) -> BufferGeometry {
     // buffers
 
     let mut indices: Vec<u32> = Vec::new();
@@ -143,7 +143,11 @@ pub fn cylinder_geometry_full(
             }
         }
 
-        groups.push(Group::new(group_start, group_count, 0));
+        groups.push(Group {
+            start: group_start,
+            count: group_count,
+            material_index: 0,
+        });
         group_start += group_count;
     }
 
@@ -193,7 +197,10 @@ pub fn cylinder_geometry_full(
     geometry.set_attribute("position", BufferAttribute::new(vertices, 3));
     geometry.set_attribute("normal", BufferAttribute::new(normals, 3));
     geometry.set_attribute("uv", BufferAttribute::new(uvs, 2));
-    (geometry, groups)
+    for group in groups {
+        geometry.add_group(group.start, group.count, group.material_index);
+    }
+    geometry
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -314,10 +321,10 @@ fn generate_cap(
         group_count += 3;
     }
 
-    groups.push(Group::new(
-        *group_start,
-        group_count,
-        if top { 1 } else { 2 },
-    ));
+    groups.push(Group {
+        start: *group_start,
+        count: group_count,
+        material_index: if top { 1 } else { 2 },
+    });
     *group_start += group_count;
 }

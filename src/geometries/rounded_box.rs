@@ -4,7 +4,7 @@
 //! (`new RoundedBoxGeometry( 0.9, 0.25, 0.8, 4, 0.06 )`).
 
 use crate::core::BufferGeometry;
-use crate::geometries::{box_geometry_with_groups, to_non_indexed, Group};
+use crate::geometries::{box_geometry, to_non_indexed};
 use crate::math::Vector3;
 
 /// `Math.sign()` — `0`, `-0` and `NaN` come back unchanged, which `f64::signum`
@@ -92,6 +92,9 @@ fn get_uv(
 }
 
 /// `new RoundedBoxGeometry( width, height, depth, segments, radius )`.
+///
+/// The addon extends `BoxGeometry`, so it inherits the box's six groups —
+/// which index the pre-`toNonIndexed()` index buffer, exactly as in three.js.
 pub fn rounded_box_geometry(
     width: f64,
     height: f64,
@@ -99,18 +102,6 @@ pub fn rounded_box_geometry(
     segments: usize,
     radius: f64,
 ) -> BufferGeometry {
-    rounded_box_geometry_with_groups(width, height, depth, segments, radius).0
-}
-
-/// The addon extends `BoxGeometry`, so it inherits the box's six groups —
-/// which index the pre-`toNonIndexed()` index buffer, exactly as in three.js.
-pub fn rounded_box_geometry_with_groups(
-    width: f64,
-    height: f64,
-    depth: f64,
-    segments: usize,
-    radius: f64,
-) -> (BufferGeometry, Vec<Group>) {
     // calculate total segments needed &
     // ensure it's odd so that we have a plane connecting the rounded corners
     let total_segments = segments * 2 + 1;
@@ -119,13 +110,13 @@ pub fn rounded_box_geometry_with_groups(
     let radius = (width / 2.0).min(height / 2.0).min(depth / 2.0).min(radius);
 
     // start with a unit box geometry, its vertices will be modified to form the rounded box
-    let (mut geometry, groups) =
-        box_geometry_with_groups(1.0, 1.0, 1.0, total_segments, total_segments, total_segments);
+    let mut geometry =
+        box_geometry(1.0, 1.0, 1.0, total_segments, total_segments, total_segments);
 
     // if totalSegments is 1, no rounding is needed - return regular box
     // (the addon returns the *unit* box here, width/height/depth unused)
     if total_segments == 1 {
-        return (geometry, groups);
+        return geometry;
     }
 
     let geometry2 = to_non_indexed(&geometry);
@@ -248,5 +239,5 @@ pub fn rounded_box_geometry_with_groups(
     geometry.set_attribute("position", positions_attr);
     geometry.set_attribute("normal", normals);
     geometry.set_attribute("uv", uvs);
-    (geometry, groups)
+    geometry
 }
