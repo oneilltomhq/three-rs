@@ -6,6 +6,7 @@ use super::phong::{self, PointLightUniforms};
 use super::{MaterialKind, MeshBasicNodeMaterial};
 use crate::nodes::node::Type;
 use crate::nodes::tsl::*;
+use crate::nodes::tsl::FogNode;
 use crate::nodes::{MaterialFlow, NodeRef};
 
 /// The per-render-object facts three.js reads off `builder.object` and
@@ -36,7 +37,11 @@ fn to_vec4(node: NodeRef) -> NodeRef {
 }
 
 /// `NodeMaterial.setup()`.
-pub fn setup(material: &MeshBasicNodeMaterial, ctx: &SetupContext) -> MaterialFlow {
+pub fn setup(
+    material: &MeshBasicNodeMaterial,
+    ctx: &SetupContext,
+    fog: Option<&FogNode>,
+) -> MaterialFlow {
     let mut pre_vertex = Vec::new();
     let mut fragment = Vec::new();
 
@@ -125,6 +130,25 @@ pub fn setup(material: &MeshBasicNodeMaterial, ctx: &SetupContext) -> MaterialFl
 
         // `basicOutput = vec4( outgoingLight, diffuseColor.a ).max( 0 )`.
         vec4_join(vec![outgoing, diffuse_color().w()]).max(float(0.0))
+    };
+
+    // `NodeMaterial.setupOutput()`: `scene.fogNode` mixes over the colour only,
+    // leaving the alpha — `vec4( mix( output.rgb, fogColor, factor ), output.a )`.
+    let output = match fog {
+        Some(fog) => {
+            fragment.push(output_property().assign(output));
+            let mixed = vec4_join(vec![
+                mix(
+                    output_property().xyz(),
+                    fog.color.clone(),
+                    fog.factor.clone(),
+                ),
+                output_property().w(),
+            ]);
+            fragment.push(output_property().assign(mixed.clone()));
+            mixed
+        }
+        None => output,
     };
 
     // --- the vertex flow

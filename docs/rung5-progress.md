@@ -5,7 +5,7 @@ dumped and read, and the leaf pieces are in; the builder does not yet generate a
 Phong shader.** e2e unchanged throughout — rungs 1–4 at 0 / 45 / 0 / 1 after
 every commit, no fifth test registered yet, every commit compiles.
 
-### Done (5 commits on `rung5`)
+### Done (10 commits on `rung5`)
 
 | commit | what |
 |---|---|

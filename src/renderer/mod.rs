@@ -18,6 +18,7 @@ use programs::{PipelineKey, Program};
 pub use render_target::{RenderTarget, RenderTargetInner, RenderTargetOptions};
 
 use crate::cameras::{OrthographicCamera, PerspectiveCamera};
+use crate::nodes::tsl::FogNode;
 use crate::core::{BufferGeometry, Index};
 use crate::geometries::{quad_geometry, sphere_geometry};
 use crate::materials::{self, MeshBasicNodeMaterial, SetupContext, Side};
@@ -71,6 +72,11 @@ struct Renderable {
     geometry: Rc<BufferGeometry>,
     material: MeshBasicNodeMaterial,
     setup: SetupContext,
+    /// `scene.fogNode`, which `NodeMaterial.setupOutput()` applies to every
+    /// material in the scene. Carried per item rather than on `SetupContext` so
+    /// that stays `Copy`; the background and the quad passes get `None`, which
+    /// is what three.js' own `fog = false` on those materials amounts to.
+    fog: Option<FogNode>,
     model_world: Matrix4,
     instance_matrix: Option<InstancedBufferAttribute>,
     instance_count: u32,
@@ -271,6 +277,7 @@ impl Renderer {
                 geometry: self.background_geometry(),
                 material,
                 setup: SetupContext::default(),
+                fog: None,
                 // `Background.mesh` is never added to the scene, so its
                 // `matrixWorld` stays the identity.
                 model_world: Matrix4::identity(),
@@ -299,6 +306,7 @@ impl Renderer {
                     instanced: instance_matrix.is_some(),
                     light_count: scene.lights.len(),
                 },
+                fog: scene.fog_node.clone(),
                 model_world: child.object().matrix_world,
                 instance_matrix,
                 instance_count,
@@ -353,6 +361,7 @@ impl Renderer {
         material.vertex_node = Some(materials::quad_vertex_node());
 
         let items = [Renderable {
+            fog: None,
             geometry: self.quad_geometry(),
             material,
             setup: SetupContext::default(),
@@ -433,7 +442,7 @@ impl Renderer {
 
             // `NodeMaterial.setup()` → `NodeBuilder.build()`: the WGSL and the
             // bindings the material declares.
-            let flow = materials::setup(&item.material, &item.setup);
+            let flow = materials::setup(&item.material, &item.setup, item.fog.as_ref());
             let node = NodeBuilder::new().build(&flow);
             let program_key = node.cache_key;
             if !self.programs.contains_key(&program_key) {
@@ -570,6 +579,7 @@ impl Renderer {
         ));
 
         let items = [Renderable {
+            fog: None,
             geometry: self.quad_geometry(),
             material,
             setup: SetupContext::default(),
