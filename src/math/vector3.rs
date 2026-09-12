@@ -225,7 +225,7 @@ impl Vector3 {
     /// `Vector3.unproject()`: normalised device coordinates back to world space.
     pub fn unproject(&mut self, camera: &crate::cameras::PerspectiveCamera) -> &mut Self {
         self.apply_matrix4(&camera.projection_matrix_inverse)
-            .apply_matrix4(&camera.object.matrix_world)
+            .apply_matrix4(&camera.node.borrow().matrix_world)
     }
 
     /// `Vector3.transformDirection()`.

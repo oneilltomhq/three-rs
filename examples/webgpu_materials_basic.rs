@@ -42,9 +42,9 @@ fn examples_dir() -> std::path::PathBuf {
 }
 
 pub fn init() -> App {
-    let mut camera =
+    let camera =
         PerspectiveCamera::new(60.0, INNER_WIDTH / INNER_HEIGHT, 0.01, 100.0);
-    camera.object.position.z = 3.0;
+    camera.node.borrow_mut().position.z = 3.0;
 
     let path = examples_dir().join("textures/cube/pisa");
     let format = "png";
@@ -108,9 +108,12 @@ pub fn animate(app: &mut App) {
 
     // `mouseX` / `mouseY` are 0 with no pointer events, and the camera starts at
     // x = y = 0, so both of these are no-ops.
-    let position = &mut app.camera.object.position;
-    position.x += (0.0 - position.x) * 0.05;
-    position.y += (0.0 - position.y) * 0.05;
+    {
+        let mut camera_object = app.camera.node.borrow_mut();
+        let position = &mut camera_object.position;
+        position.x += (0.0 - position.x) * 0.05;
+        position.y += (0.0 - position.y) * 0.05;
+    }
 
     app.camera.look_at(&Vector3::ZERO);
 

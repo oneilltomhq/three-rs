@@ -70,8 +70,8 @@ pub fn init() -> App {
     let torus = Mesh::new(Rc::new(torus_geometry(3.0, 1.0, 16, 32)));
     mask_scene2.add(&torus);
 
-    let mut camera = PerspectiveCamera::new(50.0, INNER_WIDTH / INNER_HEIGHT, 1.0, 1000.0);
-    camera.object.position.z = 10.0;
+    let camera = PerspectiveCamera::new(50.0, INNER_WIDTH / INNER_HEIGHT, 1.0, 1000.0);
+    camera.node.borrow_mut().position.z = 10.0;
 
     // textures
 

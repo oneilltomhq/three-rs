@@ -30,7 +30,7 @@ pub struct App {
 
 pub fn init() -> App {
     let mut camera = PerspectiveCamera::new(70.0, INNER_WIDTH / INNER_HEIGHT, 1.0, 20.0);
-    camera.object.position.z = 4.0;
+    camera.node.borrow_mut().position.z = 4.0;
 
     let mut scene = Scene::new();
     scene.set_background(Color::from_hex(0x222222));

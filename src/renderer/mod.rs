@@ -385,7 +385,7 @@ impl Renderer {
         let camera_uniforms = UniformContext {
             camera_projection: camera.projection_matrix,
             camera_view: camera.matrix_world_inverse,
-            camera_world: camera.object.matrix_world,
+            camera_world: camera.node.borrow().matrix_world,
             time: self.time,
             lights: &lights,
             ..Default::default()
