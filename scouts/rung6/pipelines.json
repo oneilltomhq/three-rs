@@ -1,0 +1,161 @@
+[
+	{
+		"label": "renderPipeline_MeshPhongMaterial_17",
+		"vertex": {
+			"module": "vertex",
+			"moduleIndex": 0,
+			"entryPoint": "main",
+			"buffers": [
+				{
+					"arrayStride": 12,
+					"attributes": [
+						{
+							"shaderLocation": 0,
+							"offset": 0,
+							"format": "float32x3"
+						}
+					],
+					"stepMode": "vertex"
+				}
+			]
+		},
+		"fragment": {
+			"module": "fragment",
+			"moduleIndex": 1,
+			"entryPoint": "main",
+			"targets": [
+				{
+					"format": "rgba16float",
+					"writeMask": 15
+				}
+			]
+		},
+		"compute": null,
+		"primitive": {
+			"topology": "triangle-list",
+			"frontFace": "ccw",
+			"cullMode": "back"
+		},
+		"depthStencil": {
+			"format": "depth24plus",
+			"depthWriteEnabled": true,
+			"depthCompare": "less-equal"
+		},
+		"multisample": {
+			"count": 4,
+			"mask": 4294967295,
+			"alphaToCoverageEnabled": false
+		},
+		"layout": [
+			{
+				"entries": [
+					{
+						"binding": 0,
+						"visibility": 7,
+						"buffer": {}
+					}
+				]
+			},
+			{
+				"entries": [
+					{
+						"binding": 0,
+						"visibility": 7,
+						"buffer": {}
+					},
+					{
+						"binding": 1,
+						"visibility": 1,
+						"buffer": {}
+					},
+					{
+						"binding": 2,
+						"visibility": 1,
+						"texture": {
+							"sampleType": "float",
+							"viewDimension": "2d-array"
+						}
+					}
+				]
+			}
+		]
+	},
+	{
+		"label": "renderPipeline_outputColorTransform_19",
+		"vertex": {
+			"module": "vertex_outputColorTransform",
+			"moduleIndex": 2,
+			"entryPoint": "main",
+			"buffers": [
+				{
+					"arrayStride": 12,
+					"attributes": [
+						{
+							"shaderLocation": 0,
+							"offset": 0,
+							"format": "float32x3"
+						}
+					],
+					"stepMode": "vertex"
+				}
+			]
+		},
+		"fragment": {
+			"module": "fragment_outputColorTransform",
+			"moduleIndex": 3,
+			"entryPoint": "main",
+			"targets": [
+				{
+					"format": "rgba8unorm",
+					"writeMask": 15
+				}
+			]
+		},
+		"compute": null,
+		"primitive": {
+			"topology": "triangle-list",
+			"frontFace": "ccw",
+			"cullMode": "back"
+		},
+		"depthStencil": {
+			"format": "depth24plus",
+			"depthWriteEnabled": true,
+			"depthCompare": "less-equal"
+		},
+		"multisample": {
+			"count": 1,
+			"mask": 4294967295,
+			"alphaToCoverageEnabled": false
+		},
+		"layout": [
+			{
+				"entries": [
+					{
+						"binding": 0,
+						"visibility": 7,
+						"buffer": {}
+					}
+				]
+			},
+			{
+				"entries": [
+					{
+						"binding": 0,
+						"visibility": 2,
+						"sampler": {}
+					},
+					{
+						"binding": 1,
+						"visibility": 2,
+						"texture": {}
+					},
+					{
+						"binding": 2,
+						"visibility": 7,
+						"buffer": {}
+					}
+				]
+			}
+		]
+	}
+]

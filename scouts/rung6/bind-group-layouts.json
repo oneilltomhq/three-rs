@@ -1,0 +1,52 @@
+[
+	{
+		"entries": [
+			{
+				"binding": 0,
+				"visibility": 7,
+				"buffer": {}
+			}
+		]
+	},
+	{
+		"entries": [
+			{
+				"binding": 0,
+				"visibility": 7,
+				"buffer": {}
+			},
+			{
+				"binding": 1,
+				"visibility": 1,
+				"buffer": {}
+			},
+			{
+				"binding": 2,
+				"visibility": 1,
+				"texture": {
+					"sampleType": "float",
+					"viewDimension": "2d-array"
+				}
+			}
+		]
+	},
+	{
+		"entries": [
+			{
+				"binding": 0,
+				"visibility": 2,
+				"sampler": {}
+			},
+			{
+				"binding": 1,
+				"visibility": 2,
+				"texture": {}
+			},
+			{
+				"binding": 2,
+				"visibility": 7,
+				"buffer": {}
+			}
+		]
+	}
+]
