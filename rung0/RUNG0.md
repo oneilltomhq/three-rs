@@ -54,3 +54,11 @@ webgpu_materials_lightmap, webgpu_multiple_elements, webgpu_occlusion,
 webgpu_textures_2d-array, webgpu_procedural_texture, webgpu_cubemap_adjustments,
 webgpu_geometry_loft, webgpu_instance_sprites, webgpu_lines_fat,
 webgpu_materials_toon, webgpu_sprites.
+
+## Rung 9 candidates (e2e-run7, graded 2026-09-12 22:30)
+
+0.0% and eligible: webgpu_postprocessing_3dlut, _anamorphic, _bloom, _ca,
+_direct, _masking, _transition. Marginal (0.1% rounded, pass): _fxaa, _sobel.
+Fail: _afterimage 0.5%, _pixel 0.4%, _retro 1.5%. Director picks from the
+0.0% set when rung 9 comes; _direct is the likely simplest (pass() + a
+single display node), _bloom the most representative of later needs.
