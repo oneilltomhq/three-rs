@@ -21,7 +21,7 @@ use three_rs::math::{Matrix4, Vector3};
 
 fn geometry_with(vertices: Vec<f32>) -> BufferGeometry {
     let mut geometry = BufferGeometry::new();
-    geometry.position = Some(BufferAttribute::new(vertices, 3));
+    geometry.set_attribute("position", BufferAttribute::new(vertices, 3));
     geometry
 }
 
@@ -29,8 +29,7 @@ fn normals_for_vertices(vertices: Vec<f32>) -> Vec<f32> {
     let mut geometry = geometry_with(vertices);
     geometry.compute_vertex_normals();
     let normal = geometry
-        .normal
-        .as_ref()
+        .normal()
         .expect("normal attribute was created");
     normal.array.clone()
 }
@@ -83,7 +82,7 @@ fn apply_matrix4() {
     );
     geometry.apply_matrix4(&matrix);
 
-    let position = &geometry.position.as_ref().unwrap().array;
+    let position = &geometry.position().unwrap().array;
     let m = matrix.elements;
     assert!(
         position[0] as f64 == m[12] && position[1] as f64 == m[13] && position[2] as f64 == m[14],
@@ -101,7 +100,7 @@ fn scale() {
 
     geometry.scale(1.0, 2.0, 3.0);
 
-    let pos = &geometry.position.as_ref().unwrap().array;
+    let pos = &geometry.position().unwrap().array;
     assert!(
         pos[0] == -1.0
             && pos[1] == -2.0
@@ -261,18 +260,18 @@ fn compute_vertex_normals_indexed() {
     flipped_normals.apply_matrix4(&flip);
 
     let mut a = BufferGeometry::new();
-    a.position = Some(position.clone());
+    a.set_attribute("position", position.clone());
     a.compute_vertex_normals();
-    attribute_equals(&normal, a.normal.as_ref().unwrap());
+    attribute_equals(&normal, a.normal().unwrap());
 
     // a second time, to see if the existing normals get properly reset
     a.compute_vertex_normals();
-    attribute_equals(&normal, a.normal.as_ref().unwrap());
+    attribute_equals(&normal, a.normal().unwrap());
 
     // indexed geometry
     let mut a = BufferGeometry::new();
-    a.position = Some(position);
+    a.set_attribute("position", position);
     a.set_index(&[0, 2, 1, 3, 5, 4]);
     a.compute_vertex_normals();
-    attribute_equals(&flipped_normals, a.normal.as_ref().unwrap());
+    attribute_equals(&flipped_normals, a.normal().unwrap());
 }

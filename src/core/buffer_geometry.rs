@@ -1,7 +1,7 @@
 //! Port of `three.js/src/core/BufferGeometry.js` (interleaved-free `f32`
 //! attributes plus a `u16`/`u32` index).
 
-use crate::math::{Matrix3, Matrix4, Vector3};
+use crate::math::{Matrix3, Matrix4, Quaternion, Vector3};
 
 #[derive(Clone, Debug)]
 pub struct BufferAttribute {
@@ -140,6 +140,32 @@ pub struct BoundingBox {
 }
 
 impl BoundingBox {
+    /// `Box3.makeEmpty()`.
+    pub fn empty() -> Self {
+        Self {
+            min: Vector3::new(f64::INFINITY, f64::INFINITY, f64::INFINITY),
+            max: Vector3::new(f64::NEG_INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY),
+        }
+    }
+
+    /// `Box3.setFromBufferAttribute()`.
+    pub fn from_buffer_attribute(attribute: &BufferAttribute) -> Self {
+        let mut box3 = Self::empty();
+
+        for i in 0..attribute.count() {
+            box3.expand_by_point(&attribute.get_vector3(i));
+        }
+
+        box3
+    }
+
+    /// `Box3.expandByPoint()`.
+    pub fn expand_by_point(&mut self, point: &Vector3) -> &mut Self {
+        self.min.min(point);
+        self.max.max(point);
+        self
+    }
+
     /// `Box3.getCenter()`.
     pub fn center(&self) -> Vector3 {
         Vector3::new(
@@ -172,20 +198,160 @@ impl Index {
     }
 }
 
-/// A geometry with the named attributes three.js uses (`position`, `normal`,
-/// `uv`). Rung 1 only consumes `position`, but the full set is generated so the
-/// data matches three.js byte for byte.
+/// One entry of `BufferGeometry.groups`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Group {
+    pub start: usize,
+    pub count: usize,
+    pub material_index: usize,
+}
+
+/// `BufferGeometry.drawRange`. `count: None` is three.js' `Infinity` ("draw
+/// everything"), which has no `usize` spelling.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DrawRange {
+    pub start: usize,
+    pub count: Option<usize>,
+}
+
+impl Default for DrawRange {
+    fn default() -> Self {
+        Self {
+            start: 0,
+            count: None,
+        }
+    }
+}
+
+/// Port of `BufferGeometry`'s state: the named attribute map, the index, morph
+/// attributes, groups and the draw range.
+///
+/// `attributes` is a `Vec` of pairs rather than a `HashMap` because three.js'
+/// `attributes` is a plain object, and `toNonIndexed()` and the renderer both
+/// iterate it in insertion order.
 #[derive(Clone, Debug, Default)]
 pub struct BufferGeometry {
-    pub position: Option<BufferAttribute>,
-    pub normal: Option<BufferAttribute>,
-    pub uv: Option<BufferAttribute>,
+    attributes: Vec<(String, BufferAttribute)>,
     pub index: Option<Index>,
+    /// `BufferGeometry.morphAttributes` — per name, one attribute per morph
+    /// target.
+    morph_attributes: Vec<(String, Vec<BufferAttribute>)>,
+    /// `BufferGeometry.morphTargetsRelative`.
+    pub morph_targets_relative: bool,
+    /// `BufferGeometry.groups`.
+    pub groups: Vec<Group>,
+    /// `BufferGeometry.drawRange`.
+    pub draw_range: DrawRange,
 }
 
 impl BufferGeometry {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// `BufferGeometry.getAttribute( name )`.
+    pub fn get_attribute(&self, name: &str) -> Option<&BufferAttribute> {
+        self.attributes
+            .iter()
+            .find(|(key, _)| key == name)
+            .map(|(_, attribute)| attribute)
+    }
+
+    /// `BufferGeometry.getAttribute( name )`, mutably.
+    pub fn get_attribute_mut(&mut self, name: &str) -> Option<&mut BufferAttribute> {
+        self.attributes
+            .iter_mut()
+            .find(|(key, _)| key == name)
+            .map(|(_, attribute)| attribute)
+    }
+
+    /// `BufferGeometry.setAttribute( name, attribute )`.
+    pub fn set_attribute(&mut self, name: &str, attribute: BufferAttribute) -> &mut Self {
+        match self.attributes.iter_mut().find(|(key, _)| key == name) {
+            // a JS object keeps the key's original position on reassignment
+            Some(slot) => slot.1 = attribute,
+            None => self.attributes.push((name.to_string(), attribute)),
+        }
+
+        self
+    }
+
+    /// `BufferGeometry.deleteAttribute( name )`.
+    pub fn delete_attribute(&mut self, name: &str) -> &mut Self {
+        self.attributes.retain(|(key, _)| key != name);
+        self
+    }
+
+    /// `BufferGeometry.hasAttribute( name )`.
+    pub fn has_attribute(&self, name: &str) -> bool {
+        self.get_attribute(name).is_some()
+    }
+
+    /// `for ( const name in geometry.attributes )`, in insertion order.
+    pub fn attributes(&self) -> impl Iterator<Item = (&str, &BufferAttribute)> {
+        self.attributes
+            .iter()
+            .map(|(name, attribute)| (name.as_str(), attribute))
+    }
+
+    /// `geometry.attributes.position`.
+    pub fn position(&self) -> Option<&BufferAttribute> {
+        self.get_attribute("position")
+    }
+
+    /// `geometry.attributes.normal`.
+    pub fn normal(&self) -> Option<&BufferAttribute> {
+        self.get_attribute("normal")
+    }
+
+    /// `geometry.attributes.uv`.
+    pub fn uv(&self) -> Option<&BufferAttribute> {
+        self.get_attribute("uv")
+    }
+
+    /// `geometry.morphAttributes[ name ]`.
+    pub fn get_morph_attribute(&self, name: &str) -> Option<&[BufferAttribute]> {
+        self.morph_attributes
+            .iter()
+            .find(|(key, _)| key == name)
+            .map(|(_, attributes)| attributes.as_slice())
+    }
+
+    /// `geometry.morphAttributes[ name ] = attributes`.
+    pub fn set_morph_attribute(&mut self, name: &str, attributes: Vec<BufferAttribute>) -> &mut Self {
+        match self.morph_attributes.iter_mut().find(|(key, _)| key == name) {
+            Some(slot) => slot.1 = attributes,
+            None => self.morph_attributes.push((name.to_string(), attributes)),
+        }
+
+        self
+    }
+
+    /// `for ( const name in geometry.morphAttributes )`, in insertion order.
+    pub fn morph_attributes(&self) -> impl Iterator<Item = (&str, &[BufferAttribute])> {
+        self.morph_attributes
+            .iter()
+            .map(|(name, attributes)| (name.as_str(), attributes.as_slice()))
+    }
+
+    /// `BufferGeometry.addGroup( start, count, materialIndex )`.
+    pub fn add_group(&mut self, start: usize, count: usize, material_index: usize) {
+        self.groups.push(Group {
+            start,
+            count,
+            material_index,
+        });
+    }
+
+    /// `BufferGeometry.clearGroups()`.
+    pub fn clear_groups(&mut self) {
+        self.groups = Vec::new();
+    }
+
+    /// `BufferGeometry.setDrawRange( start, count )`.
+    pub fn set_draw_range(&mut self, start: usize, count: usize) {
+        self.draw_range.start = start;
+        self.draw_range.count = Some(count);
     }
 
     /// `BufferGeometry.setIndex( array )` — picks `Uint16` when it fits, the
@@ -219,29 +385,38 @@ impl BufferGeometry {
     /// position )`. `None` when there is no position attribute (three.js leaves
     /// `boundingBox` alone in that case).
     pub fn compute_bounding_box(&self) -> Option<BoundingBox> {
-        let position = self.position.as_ref()?;
+        let position = self.position()?;
 
-        let mut min = Vector3::new(f64::INFINITY, f64::INFINITY, f64::INFINITY);
-        let mut max = Vector3::new(f64::NEG_INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
+        let mut bounding_box = BoundingBox::from_buffer_attribute(position);
 
-        for i in 0..position.count() {
-            let v = position.get_vector3(i);
-            min.x = min.x.min(v.x);
-            min.y = min.y.min(v.y);
-            min.z = min.z.min(v.z);
-            max.x = max.x.max(v.x);
-            max.y = max.y.max(v.y);
-            max.z = max.z.max(v.z);
+        // process morph attributes if present
+        if let Some(morph_positions) = self.get_morph_attribute("position") {
+            for morph_attribute in morph_positions {
+                let box3 = BoundingBox::from_buffer_attribute(morph_attribute);
+
+                if self.morph_targets_relative {
+                    let mut vector = Vector3::ZERO;
+                    vector.add_vectors(&bounding_box.min, &box3.min);
+                    bounding_box.expand_by_point(&vector);
+
+                    vector.add_vectors(&bounding_box.max, &box3.max);
+                    bounding_box.expand_by_point(&vector);
+                } else {
+                    bounding_box.expand_by_point(&box3.min);
+                    bounding_box.expand_by_point(&box3.max);
+                }
+            }
         }
 
-        Some(BoundingBox { min, max })
+        Some(bounding_box)
     }
 
     /// `BufferGeometry.computeBoundingSphere()`: the bounding box's centre, then
     /// the largest distance from it to any vertex (which beats the box's own
     /// sphere by up to sqrt(3)).
     pub fn compute_bounding_sphere(&self) -> Option<BoundingSphere> {
-        let position = self.position.as_ref()?;
+        let position = self.position()?;
+        // `_box` already has the morph targets expanded into it
         let center = self.compute_bounding_box()?.center();
 
         let mut max_radius_sq: f64 = 0.0;
@@ -249,6 +424,22 @@ impl BufferGeometry {
         for i in 0..position.count() {
             let v = position.get_vector3(i);
             max_radius_sq = max_radius_sq.max(center.distance_to_squared(&v));
+        }
+
+        // process morph attributes if present
+        if let Some(morph_positions) = self.get_morph_attribute("position") {
+            for morph_attribute in morph_positions {
+                for j in 0..morph_attribute.count() {
+                    let mut vector = morph_attribute.get_vector3(j);
+
+                    if self.morph_targets_relative {
+                        let offset = position.get_vector3(j);
+                        vector.add(&offset);
+                    }
+
+                    max_radius_sq = max_radius_sq.max(center.distance_to_squared(&vector));
+                }
+            }
         }
 
         Some(BoundingSphere {
@@ -262,11 +453,11 @@ impl BufferGeometry {
     /// The accumulation runs through the `normal` attribute itself, so every
     /// partial sum is rounded to `f32` before the next triangle adds to it.
     pub fn compute_vertex_normals(&mut self) {
-        let Some(position) = self.position.clone() else {
+        let Some(position) = self.position().cloned() else {
             return;
         };
 
-        let needs_new = match &self.normal {
+        let needs_new = match self.normal() {
             Some(normal) => normal.count() != position.count(),
             None => true,
         };
@@ -274,7 +465,7 @@ impl BufferGeometry {
         let mut normal = if needs_new {
             BufferAttribute::new(vec![0.0; position.count() * 3], 3)
         } else {
-            let mut normal = self.normal.take().unwrap();
+            let mut normal = self.normal().cloned().unwrap();
             for i in 0..normal.count() {
                 normal.set_xyz(i, 0.0, 0.0, 0.0);
             }
@@ -343,14 +534,14 @@ impl BufferGeometry {
             }
         }
 
-        self.normal = Some(normal);
+        self.set_attribute("normal", normal);
 
         self.normalize_normals();
     }
 
     /// `BufferGeometry.normalizeNormals()`.
     pub fn normalize_normals(&mut self) {
-        let Some(normal) = self.normal.as_mut() else {
+        let Some(normal) = self.get_attribute_mut("normal") else {
             return;
         };
 
@@ -363,11 +554,11 @@ impl BufferGeometry {
 
     /// `BufferGeometry.applyMatrix4()`.
     pub fn apply_matrix4(&mut self, matrix: &Matrix4) -> &mut Self {
-        if let Some(position) = self.position.as_mut() {
+        if let Some(position) = self.get_attribute_mut("position") {
             position.apply_matrix4(matrix);
         }
 
-        if let Some(normal) = self.normal.as_mut() {
+        if let Some(normal) = self.get_attribute_mut("normal") {
             let mut normal_matrix = Matrix3::identity();
             normal_matrix.get_normal_matrix(matrix);
             normal.apply_normal_matrix(&normal_matrix);
@@ -381,5 +572,119 @@ impl BufferGeometry {
         let mut m1 = Matrix4::identity();
         m1.make_scale(x, y, z);
         self.apply_matrix4(&m1)
+    }
+
+    /// `BufferGeometry.applyQuaternion()`.
+    pub fn apply_quaternion(&mut self, q: &Quaternion) -> &mut Self {
+        let mut m1 = Matrix4::identity();
+        m1.make_rotation_from_quaternion(q);
+        self.apply_matrix4(&m1)
+    }
+
+    /// `BufferGeometry.rotateX()` — rotates the geometry about the world x-axis.
+    pub fn rotate_x(&mut self, angle: f64) -> &mut Self {
+        let mut m1 = Matrix4::identity();
+        m1.make_rotation_x(angle);
+        self.apply_matrix4(&m1)
+    }
+
+    /// `BufferGeometry.rotateY()`.
+    pub fn rotate_y(&mut self, angle: f64) -> &mut Self {
+        let mut m1 = Matrix4::identity();
+        m1.make_rotation_y(angle);
+        self.apply_matrix4(&m1)
+    }
+
+    /// `BufferGeometry.rotateZ()`.
+    pub fn rotate_z(&mut self, angle: f64) -> &mut Self {
+        let mut m1 = Matrix4::identity();
+        m1.make_rotation_z(angle);
+        self.apply_matrix4(&m1)
+    }
+
+    /// `BufferGeometry.translate()`.
+    pub fn translate(&mut self, x: f64, y: f64, z: f64) -> &mut Self {
+        let mut m1 = Matrix4::identity();
+        m1.make_translation(x, y, z);
+        self.apply_matrix4(&m1)
+    }
+
+    /// `BufferGeometry.lookAt()` — rotates the geometry so its +Z points away
+    /// from `vector`, through a scratch `Object3D` exactly as three.js does.
+    pub fn look_at(&mut self, vector: &Vector3) -> &mut Self {
+        let mut object = crate::core::Object3D::default();
+        object.look_at(vector);
+        object.update_matrix();
+
+        let matrix = object.matrix;
+        self.apply_matrix4(&matrix)
+    }
+
+    /// `BufferGeometry.center()`.
+    pub fn center(&mut self) -> &mut Self {
+        let Some(bounding_box) = self.compute_bounding_box() else {
+            return self;
+        };
+
+        let mut offset = bounding_box.center();
+        offset.negate();
+
+        self.translate(offset.x, offset.y, offset.z)
+    }
+
+    /// `BufferGeometry.toNonIndexed()`.
+    pub fn to_non_indexed(&self) -> Self {
+        let Some(index) = self.index.as_ref() else {
+            // `BufferGeometry.toNonIndexed(): BufferGeometry is already
+            // non-indexed.`
+            return self.clone();
+        };
+
+        let indices: Vec<usize> = match index {
+            Index::U16(v) => v.iter().map(|&i| i as usize).collect(),
+            Index::U32(v) => v.iter().map(|&i| i as usize).collect(),
+        };
+
+        let convert = |attribute: &BufferAttribute| -> BufferAttribute {
+            let item_size = attribute.item_size;
+            let mut array2 = Vec::with_capacity(indices.len() * item_size);
+
+            for &i in &indices {
+                let index = i * item_size;
+                array2.extend_from_slice(&attribute.array[index..index + item_size]);
+            }
+
+            BufferAttribute::new(array2, item_size)
+        };
+
+        let mut geometry2 = Self::new();
+
+        // attributes
+        for (name, attribute) in self.attributes() {
+            geometry2.set_attribute(name, convert(attribute));
+        }
+
+        // morph attributes
+        let morph: Vec<(String, Vec<BufferAttribute>)> = self
+            .morph_attributes()
+            .map(|(name, attributes)| {
+                (
+                    name.to_string(),
+                    attributes.iter().map(convert).collect::<Vec<_>>(),
+                )
+            })
+            .collect();
+        for (name, attributes) in morph {
+            geometry2.set_morph_attribute(&name, attributes);
+        }
+
+        geometry2.morph_targets_relative = self.morph_targets_relative;
+
+        // groups
+        for group in &self.groups {
+            geometry2.add_group(group.start, group.count, group.material_index);
+        }
+
+        geometry2
     }
 }

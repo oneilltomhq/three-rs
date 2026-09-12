@@ -1058,8 +1058,7 @@ impl Renderer {
         }
 
         let position = geometry
-            .position
-            .as_ref()
+            .position()
             .expect("three-rs: geometry without a position attribute");
 
         let position_buffer = self.create_buffer_init(
@@ -1068,7 +1067,7 @@ impl Renderer {
             wgpu::BufferUsages::VERTEX,
         );
 
-        let normal_buffer = geometry.normal.as_ref().map(|normal| {
+        let normal_buffer = geometry.normal().map(|normal| {
             self.create_buffer_init(
                 "three-rs normal",
                 bytemuck::cast_slice(&normal.array),
