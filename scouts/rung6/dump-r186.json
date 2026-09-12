@@ -1,0 +1,379 @@
+{
+	"modules": [
+		{
+			"index": 0,
+			"label": "vertex",
+			"code": "// Three.js r186 - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n@binding( 2 ) @group( 1 ) var nodeUniform2 : texture_2d_array<f32>;\n\nstruct NodeBuffer_1029Struct {\n\tvalue : array< vec4<f32>, 2 >\n};\n@binding( 1 ) @group( 1 )\nvar<uniform> NodeBuffer_1029 : NodeBuffer_1029Struct;\n\nstruct objectStruct {\n\tnodeUniform0 : f32,\n\tnodeUniform3 : vec3<f32>,\n\tnodeUniform4 : f32,\n\tnodeUniform5 : f32,\n\tnodeUniform6 : vec3<f32>,\n\tnodeUniform7 : vec3<f32>,\n\tnodeUniform8 : f32,\n\tnodeUniform11 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform9 : vec3<f32>,\n\tnodeUniform13 : vec3<f32>,\n\tnodeUniform14 : f32,\n\tnodeUniform15 : f32,\n\tnodeUniform12 : vec3<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) v_positionView : vec3<f32>,\n\t@location( 1 ) v_positionViewDirection : vec3<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> nodeVar0 : f32;\nvar<private> nodeVar1 : f32;\nvar<private> nodeVar2 : i32;\nvar<private> nodeVar3 : i32;\nvar<private> nodeVar4 : vec2<i32>;\nvar<private> nodeVar5 : vec4<f32>;\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar34 : vec4<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @builtin( vertex_index ) vertexIndex : u32,\n\t@location( 0 ) position : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tpositionLocal = position;\n\tpositionLocal = ( positionLocal * vec3<f32>( object.nodeUniform0 ) );\n\n\tfor ( var i : i32 = 0; i < 2; i ++ ) {\n\n\t\tnodeVar0 = 0.0;\n\t\tnodeVar1 = NodeBuffer_1029.value[ i ].x;\n\t\tnodeVar0 = nodeVar1;\n\n\t\tif ( ( nodeVar0 != 0.0 ) ) {\n\n\t\t\tnodeVar2 = ( ( i32( vertexIndex ) * 1 ) + 0 );\n\t\t\tnodeVar3 = ( nodeVar2 / 4096 );\n\t\t\tnodeVar4 = vec2<i32>( ( nodeVar2 - ( nodeVar3 * 4096 ) ), nodeVar3 );\n\t\t\tnodeVar5 = textureLoad( nodeUniform2, nodeVar4, i, u32( 0u ) );\n\t\t\tpositionLocal = ( positionLocal + ( nodeVar5.xyz * vec3<f32>( nodeVar0 ) ) );\n\t\t\t\n\n\t\t}\n\n\n\t}\n\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform11 );\n\tvaryings.v_positionView = ( modelViewMatrix * vec4<f32>( positionLocal, 1.0 ) ).xyz;\n\tvaryings.v_positionViewDirection = ( - varyings.v_positionView );\n\tVERTEX_nodeVar34 = ( render.cameraProjectionMatrix * vec4<f32>( varyings.v_positionView, 1.0 ) );\n\tVERTEX_v_modelViewProjection = VERTEX_nodeVar34;\n\n\t// result\n\n\tvaryings.builtinClipSpace = VERTEX_v_modelViewProjection;\n\n\treturn varyings;\n\n}\n"
+		},
+		{
+			"index": 1,
+			"label": "fragment",
+			"code": "// Three.js r186 - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n\nstruct objectStruct {\n\tnodeUniform0 : f32,\n\tnodeUniform3 : vec3<f32>,\n\tnodeUniform4 : f32,\n\tnodeUniform5 : f32,\n\tnodeUniform6 : vec3<f32>,\n\tnodeUniform7 : vec3<f32>,\n\tnodeUniform8 : f32,\n\tnodeUniform11 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform9 : vec3<f32>,\n\tnodeUniform13 : vec3<f32>,\n\tnodeUniform14 : f32,\n\tnodeUniform15 : f32,\n\tnodeUniform12 : vec3<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\n// vars\nvar<private> DiffuseColor : vec4<f32>;\nvar<private> Shininess : f32;\nvar<private> SpecularColor : vec3<f32>;\nvar<private> EmissiveColor : vec3<f32>;\nvar<private> Output : vec4<f32>;\nvar<private> irradiance : vec3<f32>;\nvar<private> nodeVar6 : vec3<f32>;\nvar<private> directDiffuse : vec3<f32>;\nvar<private> normalFlat : vec3<f32>;\nvar<private> normalViewGeometry : vec3<f32>;\nvar<private> NORMAL_normalView : vec3<f32>;\nvar<private> normalView : vec3<f32>;\nvar<private> nodeVar7 : vec3<f32>;\nvar<private> nodeVar8 : vec3<f32>;\nvar<private> nodeVar9 : f32;\nvar<private> nodeVar10 : f32;\nvar<private> nodeVar11 : f32;\nvar<private> nodeVar12 : f32;\nvar<private> nodeVar13 : f32;\nvar<private> nodeVar14 : vec3<f32>;\nvar<private> nodeVar15 : vec3<f32>;\nvar<private> nodeVar16 : vec3<f32>;\nvar<private> nodeVar17 : vec3<f32>;\nvar<private> nodeVar18 : vec3<f32>;\nvar<private> directSpecular : vec3<f32>;\nvar<private> positionViewDirection : vec3<f32>;\nvar<private> nodeVar19 : vec3<f32>;\nvar<private> nodeVar20 : f32;\nvar<private> nodeVar21 : f32;\nvar<private> nodeVar22 : vec3<f32>;\nvar<private> nodeVar23 : vec3<f32>;\nvar<private> nodeVar24 : vec3<f32>;\nvar<private> nodeVar25 : vec3<f32>;\nvar<private> indirectDiffuse : vec3<f32>;\nvar<private> nodeVar26 : vec4<f32>;\nvar<private> nodeVar27 : vec4<f32>;\nvar<private> nodeVar28 : vec4<f32>;\nvar<private> ambientOcclusion : f32;\nvar<private> nodeVar29 : vec3<f32>;\nvar<private> totalDiffuse : vec3<f32>;\nvar<private> nodeVar30 : vec3<f32>;\nvar<private> totalSpecular : vec3<f32>;\nvar<private> indirectSpecular : vec3<f32>;\nvar<private> nodeVar31 : vec3<f32>;\nvar<private> outgoingLight : vec3<f32>;\nvar<private> nodeVar32 : vec3<f32>;\nvar<private> nodeVar33 : vec4<f32>;\n\n// codes\n\n\n@fragment\nfn main( @location( 0 ) v_positionView : vec3<f32>,\n\t@location( 1 ) v_positionViewDirection : vec3<f32> ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\tDiffuseColor = vec4<f32>( object.nodeUniform3, 1.0 );\n\tDiffuseColor.w = ( DiffuseColor.w * object.nodeUniform4 );\n\tDiffuseColor.w = 1.0;\n\tShininess = max( object.nodeUniform5, 0.0001 );\n\tSpecularColor = object.nodeUniform6;\n\tEmissiveColor = ( object.nodeUniform7 * vec3<f32>( object.nodeUniform8 ) );\n\tirradiance = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar6 = ( irradiance + render.nodeUniform9 );\n\tirradiance = nodeVar6;\n\tdirectDiffuse = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnormalFlat = normalize( cross( dpdx( v_positionView ), - dpdy( v_positionView ) ) );\n\tnormalViewGeometry = normalFlat;\n\tNORMAL_normalView = normalViewGeometry;\n\tnormalView = NORMAL_normalView;\n\tnodeVar7 = ( render.nodeUniform12 - v_positionView );\n\tnodeVar8 = normalize( nodeVar7 );\n\tnodeVar9 = dot( normalView, nodeVar8 );\n\n\tif ( ( render.nodeUniform14 > 0.0 ) ) {\n\n\t\tnodeVar11 = length( nodeVar7 );\n\t\tnodeVar12 = ( nodeVar11 / render.nodeUniform14 );\n\t\tnodeVar13 = clamp( ( 1.0 - ( ( ( nodeVar12 * nodeVar12 ) * nodeVar12 ) * nodeVar12 ) ), 0.0, 1.0 );\n\t\tnodeVar10 = ( ( 1.0 / max( pow( nodeVar11, render.nodeUniform15 ), 0.01 ) ) * ( nodeVar13 * nodeVar13 ) );\n\n\t} else {\n\n\t\tnodeVar10 = ( 1.0 / max( pow( length( nodeVar7 ), render.nodeUniform15 ), 0.01 ) );\n\n\t}\n\n\tnodeVar14 = ( render.nodeUniform13 * vec3<f32>( nodeVar10 ) );\n\tnodeVar15 = ( vec3<f32>( clamp( nodeVar9, 0.0, 1.0 ) ) * nodeVar14 );\n\tnodeVar16 = ( DiffuseColor.xyz * vec3<f32>( 0.3183098861837907 ) );\n\tnodeVar17 = ( nodeVar15 * nodeVar16 );\n\tnodeVar18 = ( directDiffuse + nodeVar17 );\n\tdirectDiffuse = nodeVar18;\n\tdirectSpecular = vec3<f32>( 0.0, 0.0, 0.0 );\n\tpositionViewDirection = normalize( v_positionViewDirection );\n\tnodeVar19 = normalize( ( nodeVar8 + positionViewDirection ) );\n\tnodeVar20 = clamp( dot( positionViewDirection, nodeVar19 ), 0.0, 1.0 );\n\tnodeVar21 = exp2( ( ( ( nodeVar20 * -5.55473 ) - 6.98316 ) * nodeVar20 ) );\n\tnodeVar22 = ( ( ( ( SpecularColor * vec3<f32>( ( 1.0 - nodeVar21 ) ) ) + vec3<f32>( ( 1.0 * nodeVar21 ) ) ) * vec3<f32>( 0.25 ) ) * vec3<f32>( ( ( ( ( Shininess * 0.5 ) + 1.0 ) * 0.3183098861837907 ) * pow( clamp( dot( normalView, nodeVar19 ), 0.0, 1.0 ), Shininess ) ) ) );\n\tnodeVar23 = ( nodeVar15 * nodeVar22 );\n\tnodeVar24 = ( nodeVar23 * vec3<f32>( 1.0 ) );\n\tnodeVar25 = ( directSpecular + nodeVar24 );\n\tdirectSpecular = nodeVar25;\n\tindirectDiffuse = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar26 = ( DiffuseColor * vec4<f32>( 0.3183098861837907 ) );\n\tnodeVar27 = ( vec4<f32>( irradiance, 1.0 ) * nodeVar26 );\n\tnodeVar28 = ( vec4<f32>( indirectDiffuse, 1.0 ) + nodeVar27 );\n\tindirectDiffuse = nodeVar28.xyz;\n\tambientOcclusion = 1.0;\n\tnodeVar29 = ( indirectDiffuse * vec3<f32>( ambientOcclusion ) );\n\tindirectDiffuse = nodeVar29;\n\tnodeVar30 = ( directDiffuse + indirectDiffuse );\n\ttotalDiffuse = nodeVar30;\n\tindirectSpecular = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar31 = ( directSpecular + indirectSpecular );\n\ttotalSpecular = nodeVar31;\n\tnodeVar32 = ( totalDiffuse + totalSpecular );\n\toutgoingLight = nodeVar32;\n\tnodeVar33 = max( vec4<f32>( ( outgoingLight + EmissiveColor ), DiffuseColor.w ), vec4<f32>( 0.0 ) );\n\tOutput = nodeVar33;\n\n\t// result\n\n\toutput.color = nodeVar33;\n\n\treturn output;\n\n}\n"
+		},
+		{
+			"index": 2,
+			"label": "vertex_outputColorTransform",
+			"code": "// Three.js r186 - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform1 : vec2<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform4 : mat4x4<f32>\n};\n@binding( 2 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar2 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> v_positionView : vec3<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) position : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform4 );\n\tpositionLocal = position;\n\tv_positionView = ( modelViewMatrix * vec4<f32>( positionLocal, 1.0 ) ).xyz;\n\tVERTEX_nodeVar2 = ( render.cameraProjectionMatrix * vec4<f32>( v_positionView, 1.0 ) );\n\tVERTEX_v_modelViewProjection = VERTEX_nodeVar2;\n\n\t// result\n\n\tvaryings.builtinClipSpace = VERTEX_v_modelViewProjection;\n\n\treturn varyings;\n\n}\n"
+		},
+		{
+			"index": 3,
+			"label": "fragment_outputColorTransform",
+			"code": "// Three.js r186 - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 0 ) @group( 1 ) var nodeUniform0_sampler : sampler;\n@binding( 1 ) @group( 1 ) var nodeUniform0 : texture_2d<f32>;\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform1 : vec2<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\n// vars\nvar<private> nodeVar0 : vec4<f32>;\nvar<private> nodeVar1 : vec4<f32>;\n\n// codes\nfn fn1 ( color : vec4<f32> ) -> vec4<f32> {\n\n\tvar nodeVar0 : vec4<f32>;\n\n\n\tif ( ( color.w == 0.0 ) ) {\n\n\t\tnodeVar0 = vec4<f32>( 0.0, 0.0, 0.0, 0.0 );\n\n\t} else {\n\n\t\tnodeVar0 = vec4<f32>( ( color.xyz / vec3<f32>( color.w ) ), color.w );\n\n\t}\n\n\n\treturn nodeVar0;\n\n}\n\n\nfn sRGBTransferOETF ( color : vec3<f32> ) -> vec3<f32> {\n\n\t\n\n\n\treturn mix( ( ( pow( color, vec3<f32>( 0.41666 ) ) * vec3<f32>( 1.055 ) ) - vec3<f32>( 0.055 ) ), ( color * vec3<f32>( 12.92 ) ), vec3<f32>( ( color <= vec3<f32>( 0.0031308 ) ) ) );\n\n}\n\n\nfn fn0 ( color : vec4<f32> ) -> vec4<f32> {\n\n\t\n\n\n\treturn vec4<f32>( ( color.xyz * vec3<f32>( color.w ) ), color.w );\n\n}\n\n\n\n\n@fragment\nfn main( @builtin( position ) fragCoord : vec4<f32> ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\tnodeVar0 = textureSample( nodeUniform0, nodeUniform0_sampler, ( fragCoord.xy / render.nodeUniform1 ) );\n\tnodeVar1 = fn1( vec4<f32>( nodeVar0.xyz, clamp( nodeVar0.w, 0.0, 1.0 ) ) );\n\n\t// result\n\n\toutput.color = fn0( vec4<f32>( sRGBTransferOETF( nodeVar1.xyz ), nodeVar1.w ) );\n\n\treturn output;\n\n}\n"
+		}
+	],
+	"pipelines": [
+		{
+			"kind": "createRenderPipeline",
+			"descriptor": {
+				"label": "renderPipeline_MeshPhongMaterial_17",
+				"layout": {
+					"__gpu": "GPUPipelineLayout",
+					"label": ""
+				},
+				"vertex": {
+					"module": {
+						"__module": 0
+					},
+					"entryPoint": "main",
+					"buffers": [
+						{
+							"arrayStride": 12,
+							"attributes": [
+								{
+									"shaderLocation": 0,
+									"offset": 0,
+									"format": "float32x3"
+								}
+							],
+							"stepMode": "vertex"
+						}
+					]
+				},
+				"primitive": {
+					"topology": "triangle-list",
+					"frontFace": "ccw",
+					"cullMode": "back"
+				},
+				"depthStencil": {
+					"format": "depth24plus",
+					"depthWriteEnabled": true,
+					"depthCompare": "less-equal"
+				},
+				"multisample": {
+					"count": 4,
+					"mask": 4294967295,
+					"alphaToCoverageEnabled": false
+				},
+				"fragment": {
+					"module": {
+						"__module": 1
+					},
+					"entryPoint": "main",
+					"targets": [
+						{
+							"format": "rgba16float",
+							"writeMask": 15
+						}
+					]
+				}
+			}
+		},
+		{
+			"kind": "createRenderPipeline",
+			"descriptor": {
+				"label": "renderPipeline_outputColorTransform_19",
+				"layout": {
+					"__gpu": "GPUPipelineLayout",
+					"label": ""
+				},
+				"vertex": {
+					"module": {
+						"__module": 2
+					},
+					"entryPoint": "main",
+					"buffers": [
+						{
+							"arrayStride": 12,
+							"attributes": [
+								{
+									"shaderLocation": 0,
+									"offset": 0,
+									"format": "float32x3"
+								}
+							],
+							"stepMode": "vertex"
+						}
+					]
+				},
+				"primitive": {
+					"topology": "triangle-list",
+					"frontFace": "ccw",
+					"cullMode": "back"
+				},
+				"depthStencil": {
+					"format": "depth24plus",
+					"depthWriteEnabled": true,
+					"depthCompare": "less-equal"
+				},
+				"multisample": {
+					"count": 1,
+					"mask": 4294967295,
+					"alphaToCoverageEnabled": false
+				},
+				"fragment": {
+					"module": {
+						"__module": 3
+					},
+					"entryPoint": "main",
+					"targets": [
+						{
+							"format": "rgba8unorm",
+							"writeMask": 15
+						}
+					]
+				}
+			}
+		}
+	],
+	"layouts": [
+		{
+			"index": 0,
+			"descriptor": {
+				"entries": [
+					{
+						"binding": 0,
+						"visibility": 7,
+						"buffer": {}
+					}
+				]
+			}
+		},
+		{
+			"index": 1,
+			"descriptor": {
+				"entries": [
+					{
+						"binding": 0,
+						"visibility": 7,
+						"buffer": {}
+					},
+					{
+						"binding": 1,
+						"visibility": 1,
+						"buffer": {}
+					},
+					{
+						"binding": 2,
+						"visibility": 1,
+						"texture": {
+							"sampleType": "float",
+							"viewDimension": "2d-array"
+						}
+					}
+				]
+			}
+		},
+		{
+			"index": 2,
+			"descriptor": {
+				"entries": [
+					{
+						"binding": 0,
+						"visibility": 2,
+						"sampler": {}
+					},
+					{
+						"binding": 1,
+						"visibility": 2,
+						"texture": {}
+					},
+					{
+						"binding": 2,
+						"visibility": 7,
+						"buffer": {}
+					}
+				]
+			}
+		}
+	],
+	"textures": [
+		{
+			"label": "",
+			"size": {
+				"width": 800,
+				"height": 500,
+				"depthOrArrayLayers": 1
+			},
+			"mipLevelCount": 1,
+			"sampleCount": 1,
+			"dimension": "2d",
+			"format": "rgba16float",
+			"usage": 23,
+			"viewFormats": []
+		},
+		{
+			"label": "-msaa",
+			"size": {
+				"width": 800,
+				"height": 500,
+				"depthOrArrayLayers": 1
+			},
+			"mipLevelCount": 1,
+			"sampleCount": 4,
+			"dimension": "2d",
+			"format": "rgba16float",
+			"usage": 23,
+			"viewFormats": []
+		},
+		{
+			"label": "",
+			"size": {
+				"width": 800,
+				"height": 500,
+				"depthOrArrayLayers": 1
+			},
+			"mipLevelCount": 1,
+			"sampleCount": 4,
+			"dimension": "2d",
+			"format": "depth24plus",
+			"usage": 23,
+			"viewFormats": []
+		},
+		{
+			"label": "",
+			"size": {
+				"width": 4096,
+				"height": 2,
+				"depthOrArrayLayers": 2
+			},
+			"mipLevelCount": 1,
+			"sampleCount": 1,
+			"dimension": "2d",
+			"format": "rgba32float",
+			"usage": 23,
+			"viewFormats": []
+		},
+		{
+			"label": "depthBuffer",
+			"size": {
+				"width": 800,
+				"height": 500,
+				"depthOrArrayLayers": 1
+			},
+			"mipLevelCount": 1,
+			"sampleCount": 1,
+			"dimension": "2d",
+			"format": "depth24plus",
+			"usage": 23,
+			"viewFormats": []
+		}
+	],
+	"samplers": [
+		{
+			"label": "",
+			"addressModeU": "clamp-to-edge",
+			"addressModeV": "clamp-to-edge",
+			"addressModeW": "clamp-to-edge",
+			"magFilter": "linear",
+			"minFilter": "linear",
+			"mipmapFilter": "nearest",
+			"lodMinClamp": 0,
+			"lodMaxClamp": 32,
+			"maxAnisotropy": 1
+		}
+	],
+	"passes": [
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"resolveTarget": {
+							"__gpu": "GPUTextureView",
+							"label": "colorAttachment_0"
+						},
+						"clearValue": {
+							"r": 0.2746773120495699,
+							"g": 0.5028864580233624,
+							"b": 0.6583748172725346,
+							"a": 1
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"depthStencilAttachment": {
+					"view": {
+						"__gpu": "GPUTextureView",
+						"label": ""
+					},
+					"depthLoadOp": "clear",
+					"depthStoreOp": "store",
+					"depthClearValue": 1,
+					"depthReadOnly": false,
+					"stencilClearValue": 0,
+					"stencilReadOnly": false
+				},
+				"maxDrawCount": 50000000
+			},
+			"ops": [
+				[
+					"setPipeline",
+					"pipeline:renderPipeline_MeshPhongMaterial_17"
+				],
+				[
+					"drawIndexed",
+					36864,
+					1,
+					0,
+					0,
+					0
+				]
+			]
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "load",
+						"storeOp": "store"
+					}
+				],
+				"depthStencilAttachment": {
+					"view": {
+						"__gpu": "GPUTextureView",
+						"label": ""
+					},
+					"depthLoadOp": "load",
+					"depthStoreOp": "store",
+					"depthReadOnly": false,
+					"stencilClearValue": 0,
+					"stencilReadOnly": false
+				},
+				"maxDrawCount": 50000000
+			},
+			"ops": [
+				[
+					"setPipeline",
+					"pipeline:renderPipeline_outputColorTransform_19"
+				],
+				[
+					"draw",
+					3,
+					1,
+					0,
+					0
+				]
+			]
+		}
+	]
+}

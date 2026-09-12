@@ -28,6 +28,6 @@ After the merges `port` is at the animation merge commit: 635 tests + 4 e2e (0 /
 
 Rungs 6, 7, 8, 9 scouted 2026-09-12 23:20–23:31. Picks made: rung 8 = webgpu_lights_physical, rung 9 = webgpu_postprocessing_masking (see HANDOFF ladder). Common thread: rungs 6, 7 and 8 all nest objects (camera→light, Group→light, light→bulb); rung 5's Scene::drawables() covers light children only, so the first of these to land should make the renderer walk the real Node tree.
 
-## Next session, before rung 6
+## Re-pin to r186 (done 2026-09-13 00:05)
 
-Re-pin the vendor three.js from 3d010ef to the r186 tag (fetched 2026-09-12 23:30, not yet checked out; the pull aborted on the grader patch, which is intended). Steps: checkout r186, `git apply handoff/rung0/grader-flags.patch`, re-run rung 0 calibration (references may have changed upstream), re-run rungs 1–5, re-dump the scout WGSL with the recipes in scouts/rungN/PLAN.md, and update the commit in HANDOFF.md. d33 pins the same commit and moves with it.
+Vendor three.js moved 3d010ef → 148ef33 (tag r186); grader-flags.patch applied unchanged. Rung 0 recalibrated on all nine ladder examples plus textures_2d-array: every number identical to 3d010ef (instance_mesh still 0.1% pass). No ladder reference JPEG changed; port e2e 0/45/0/1 unchanged. Scout WGSL for rungs 6–9 re-dumped (`-r186` suffix): byte-identical except the banner and one renamed NodeBuffer struct in rung 6. Chrome moved .54 → .75 under puppeteer-core 25.10.0 with no visible effect. Details: rung0/REPIN-r186.md. d33 should bump its pin to 148ef33 too.

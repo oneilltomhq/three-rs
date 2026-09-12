@@ -1,0 +1,2892 @@
+{
+	"modules": [
+		{
+			"index": 0,
+			"label": "vertex",
+			"code": "// Three.js r186 - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform11 : vec3<f32>,\n\tnodeUniform12 : f32,\n\tnodeUniform13 : f32,\n\tnodeUniform15 : vec3<f32>,\n\tnodeUniform17 : vec3<f32>,\n\tnodeUniform14 : vec3<f32>,\n\tnodeUniform10 : vec3<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform0 : vec3<f32>,\n\tnodeUniform1 : f32,\n\tnodeUniform2 : f32,\n\tnodeUniform3 : f32,\n\tnodeUniform5 : mat3x3<f32>,\n\tnodeUniform6 : vec3<f32>,\n\tnodeUniform7 : f32,\n\tnodeUniform9 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) v_positionView : vec3<f32>,\n\t@location( 1 ) v_normalViewGeometry : vec3<f32>,\n\t@location( 2 ) v_positionViewDirection : vec3<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> normalLocal : vec3<f32>;\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar140 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) normal : vec3<f32>,\n\t@location( 1 ) position : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tnormalLocal = normal;\n\tvaryings.v_normalViewGeometry = normalize( ( render.cameraViewMatrix * vec4<f32>( ( object.nodeUniform5 * normalLocal ), 0.0 ) ).xyz );\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform9 );\n\tpositionLocal = position;\n\tvaryings.v_positionView = ( modelViewMatrix * vec4<f32>( positionLocal, 1.0 ) ).xyz;\n\tvaryings.v_positionViewDirection = ( - varyings.v_positionView );\n\tVERTEX_nodeVar140 = ( render.cameraProjectionMatrix * vec4<f32>( varyings.v_positionView, 1.0 ) );\n\tVERTEX_v_modelViewProjection = VERTEX_nodeVar140;\n\n\t// result\n\n\tvaryings.builtinClipSpace = VERTEX_v_modelViewProjection;\n\n\treturn varyings;\n\n}\n"
+		},
+		{
+			"index": 1,
+			"label": "fragment",
+			"code": "// Three.js r186 - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 1 ) @group( 1 ) var nodeUniform8_sampler : sampler;\n@binding( 2 ) @group( 1 ) var nodeUniform8 : texture_2d<f32>;\n\nstruct objectStruct {\n\tnodeUniform0 : vec3<f32>,\n\tnodeUniform1 : f32,\n\tnodeUniform2 : f32,\n\tnodeUniform3 : f32,\n\tnodeUniform5 : mat3x3<f32>,\n\tnodeUniform6 : vec3<f32>,\n\tnodeUniform7 : f32,\n\tnodeUniform9 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform11 : vec3<f32>,\n\tnodeUniform12 : f32,\n\tnodeUniform13 : f32,\n\tnodeUniform15 : vec3<f32>,\n\tnodeUniform17 : vec3<f32>,\n\tnodeUniform14 : vec3<f32>,\n\tnodeUniform10 : vec3<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\n// vars\nvar<private> DiffuseColor : vec4<f32>;\nvar<private> Metalness : f32;\nvar<private> Roughness : f32;\nvar<private> normalViewGeometry : vec3<f32>;\nvar<private> nodeVar0 : vec3<f32>;\nvar<private> SpecularColor : vec3<f32>;\nvar<private> SpecularColorBlended : vec3<f32>;\nvar<private> SpecularF90 : f32;\nvar<private> DiffuseContribution : vec3<f32>;\nvar<private> EmissiveColor : vec3<f32>;\nvar<private> Output : vec4<f32>;\nvar<private> NORMAL_normalView : vec3<f32>;\nvar<private> normalView : vec3<f32>;\nvar<private> positionViewDirection : vec3<f32>;\nvar<private> nodeVar1 : f32;\nvar<private> nodeVar2 : vec2<f32>;\nvar<private> nodeVar3 : f32;\nvar<private> nodeVar4 : f32;\nvar<private> nodeVar5 : f32;\nvar<private> nodeVar6 : f32;\nvar<private> nodeVar7 : vec3<f32>;\nvar<private> nodeVar8 : vec3<f32>;\nvar<private> nodeVar9 : vec3<f32>;\nvar<private> nodeVar10 : vec3<f32>;\nvar<private> nodeVar11 : f32;\nvar<private> nodeVar12 : f32;\nvar<private> nodeVar13 : f32;\nvar<private> nodeVar14 : f32;\nvar<private> nodeVar15 : f32;\nvar<private> nodeVar16 : vec3<f32>;\nvar<private> nodeVar17 : vec3<f32>;\nvar<private> nodeVar18 : vec3<f32>;\nvar<private> directDiffuse : vec3<f32>;\nvar<private> nodeVar19 : vec3<f32>;\nvar<private> nodeVar20 : vec3<f32>;\nvar<private> nodeVar21 : vec3<f32>;\nvar<private> nodeVar22 : vec3<f32>;\nvar<private> nodeVar23 : f32;\nvar<private> nodeVar24 : f32;\nvar<private> nodeVar25 : f32;\nvar<private> nodeVar26 : vec3<f32>;\nvar<private> nodeVar27 : vec3<f32>;\nvar<private> nodeVar28 : vec3<f32>;\nvar<private> nodeVar29 : vec3<f32>;\nvar<private> nodeVar30 : vec3<f32>;\nvar<private> directSpecular : vec3<f32>;\nvar<private> nodeVar31 : vec3<f32>;\nvar<private> nodeVar32 : f32;\nvar<private> nodeVar33 : f32;\nvar<private> nodeVar34 : f32;\nvar<private> nodeVar35 : vec3<f32>;\nvar<private> nodeVar36 : vec3<f32>;\nvar<private> nodeVar37 : vec3<f32>;\nvar<private> nodeVar38 : vec3<f32>;\nvar<private> irradiance : vec3<f32>;\nvar<private> normalWorld : vec3<f32>;\nvar<private> nodeVar39 : f32;\nvar<private> nodeVar40 : f32;\nvar<private> nodeVar41 : f32;\nvar<private> nodeVar42 : vec3<f32>;\nvar<private> nodeVar43 : vec3<f32>;\nvar<private> nodeVar44 : vec3<f32>;\nvar<private> nodeVar45 : vec3<f32>;\nvar<private> nodeVar46 : vec3<f32>;\nvar<private> nodeVar47 : f32;\nvar<private> nodeVar48 : vec3<f32>;\nvar<private> nodeVar49 : vec3<f32>;\nvar<private> nodeVar50 : vec3<f32>;\nvar<private> nodeVar51 : vec3<f32>;\nvar<private> nodeVar52 : vec3<f32>;\nvar<private> nodeVar53 : vec3<f32>;\nvar<private> nodeVar54 : vec3<f32>;\nvar<private> nodeVar55 : f32;\nvar<private> nodeVar56 : f32;\nvar<private> nodeVar57 : f32;\nvar<private> nodeVar58 : vec3<f32>;\nvar<private> nodeVar59 : vec3<f32>;\nvar<private> nodeVar60 : vec3<f32>;\nvar<private> nodeVar61 : vec3<f32>;\nvar<private> nodeVar62 : vec3<f32>;\nvar<private> nodeVar63 : vec3<f32>;\nvar<private> nodeVar64 : vec3<f32>;\nvar<private> nodeVar65 : vec3<f32>;\nvar<private> nodeVar66 : vec3<f32>;\nvar<private> nodeVar67 : vec3<f32>;\nvar<private> nodeVar68 : vec3<f32>;\nvar<private> nodeVar69 : vec3<f32>;\nvar<private> nodeVar70 : vec3<f32>;\nvar<private> indirectDiffuse : vec3<f32>;\nvar<private> nodeVar71 : vec3<f32>;\nvar<private> singleScatteringDielectric : vec3<f32>;\nvar<private> multiScatteringDielectric : vec3<f32>;\nvar<private> singleScatteringMetallic : vec3<f32>;\nvar<private> multiScatteringMetallic : vec3<f32>;\nvar<private> nodeVar72 : vec3<f32>;\nvar<private> nodeVar73 : f32;\nvar<private> nodeVar74 : vec3<f32>;\nvar<private> nodeVar75 : vec3<f32>;\nvar<private> nodeVar76 : vec3<f32>;\nvar<private> nodeVar77 : vec3<f32>;\nvar<private> nodeVar78 : vec3<f32>;\nvar<private> nodeVar79 : vec3<f32>;\nvar<private> nodeVar80 : vec3<f32>;\nvar<private> nodeVar81 : f32;\nvar<private> nodeVar82 : f32;\nvar<private> nodeVar83 : f32;\nvar<private> nodeVar84 : vec3<f32>;\nvar<private> nodeVar85 : vec3<f32>;\nvar<private> nodeVar86 : vec3<f32>;\nvar<private> nodeVar87 : vec3<f32>;\nvar<private> nodeVar88 : vec3<f32>;\nvar<private> nodeVar89 : vec3<f32>;\nvar<private> nodeVar90 : vec3<f32>;\nvar<private> nodeVar91 : f32;\nvar<private> nodeVar92 : vec3<f32>;\nvar<private> nodeVar93 : vec3<f32>;\nvar<private> nodeVar94 : vec3<f32>;\nvar<private> nodeVar95 : vec3<f32>;\nvar<private> nodeVar96 : vec3<f32>;\nvar<private> nodeVar97 : vec3<f32>;\nvar<private> nodeVar98 : vec3<f32>;\nvar<private> nodeVar99 : f32;\nvar<private> nodeVar100 : f32;\nvar<private> nodeVar101 : f32;\nvar<private> nodeVar102 : vec3<f32>;\nvar<private> nodeVar103 : vec3<f32>;\nvar<private> nodeVar104 : vec3<f32>;\nvar<private> nodeVar105 : vec3<f32>;\nvar<private> nodeVar106 : vec3<f32>;\nvar<private> nodeVar107 : vec3<f32>;\nvar<private> radiance : vec3<f32>;\nvar<private> nodeVar108 : vec3<f32>;\nvar<private> nodeVar109 : vec3<f32>;\nvar<private> nodeVar110 : vec3<f32>;\nvar<private> iblIrradiance : vec3<f32>;\nvar<private> nodeVar111 : vec3<f32>;\nvar<private> nodeVar112 : vec3<f32>;\nvar<private> nodeVar113 : vec3<f32>;\nvar<private> nodeVar114 : vec3<f32>;\nvar<private> nodeVar115 : vec3<f32>;\nvar<private> nodeVar116 : vec3<f32>;\nvar<private> nodeVar117 : vec3<f32>;\nvar<private> nodeVar118 : vec3<f32>;\nvar<private> nodeVar119 : vec3<f32>;\nvar<private> nodeVar120 : vec3<f32>;\nvar<private> indirectSpecular : vec3<f32>;\nvar<private> nodeVar121 : vec3<f32>;\nvar<private> nodeVar122 : vec3<f32>;\nvar<private> ambientOcclusion : f32;\nvar<private> nodeVar123 : vec3<f32>;\nvar<private> nodeVar124 : f32;\nvar<private> nodeVar125 : f32;\nvar<private> nodeVar126 : f32;\nvar<private> nodeVar127 : f32;\nvar<private> nodeVar128 : f32;\nvar<private> nodeVar129 : f32;\nvar<private> nodeVar130 : f32;\nvar<private> nodeVar131 : f32;\nvar<private> nodeVar132 : f32;\nvar<private> nodeVar133 : f32;\nvar<private> nodeVar134 : f32;\nvar<private> nodeVar135 : vec3<f32>;\nvar<private> totalDiffuse : vec3<f32>;\nvar<private> nodeVar136 : vec3<f32>;\nvar<private> totalSpecular : vec3<f32>;\nvar<private> nodeVar137 : vec3<f32>;\nvar<private> outgoingLight : vec3<f32>;\nvar<private> nodeVar138 : vec3<f32>;\nvar<private> nodeVar139 : vec4<f32>;\n\n// codes\nfn V_GGX_SmithCorrelated ( alpha : f32, dotNL : f32, dotNV : f32 ) -> f32 {\n\n\tvar nodeVar0 : f32;\n\n\tnodeVar0 = ( alpha * alpha );\n\n\treturn ( 0.5 / max( ( ( dotNL * sqrt( ( nodeVar0 + ( ( 1.0 - nodeVar0 ) * ( dotNV * dotNV ) ) ) ) ) + ( dotNV * sqrt( ( nodeVar0 + ( ( 1.0 - nodeVar0 ) * ( dotNL * dotNL ) ) ) ) ) ), 0.000001 ) );\n\n}\n\n\nfn D_GGX ( alpha : f32, dotNH : f32 ) -> f32 {\n\n\tvar nodeVar0 : f32;\n\tvar nodeVar1 : f32;\n\n\tnodeVar0 = ( alpha * alpha );\n\tnodeVar1 = ( 1.0 - ( ( dotNH * dotNH ) * ( 1.0 - nodeVar0 ) ) );\n\n\treturn ( ( nodeVar0 / ( nodeVar1 * nodeVar1 ) ) * 0.3183098861837907 );\n\n}\n\n\n\n\n@fragment\nfn main( @location( 0 ) v_positionView : vec3<f32>,\n\t@location( 1 ) v_normalViewGeometry : vec3<f32>,\n\t@location( 2 ) v_positionViewDirection : vec3<f32> ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\tDiffuseColor = vec4<f32>( object.nodeUniform0, 1.0 );\n\tDiffuseColor.w = ( DiffuseColor.w * object.nodeUniform1 );\n\tDiffuseColor.w = 1.0;\n\tMetalness = object.nodeUniform2;\n\tnormalViewGeometry = normalize( v_normalViewGeometry );\n\tnodeVar0 = max( abs( dpdx( normalViewGeometry ) ), abs( - dpdy( normalViewGeometry ) ) );\n\tRoughness = min( ( max( object.nodeUniform3, 0.0525 ) + max( max( nodeVar0.x, nodeVar0.y ), nodeVar0.z ) ), 1.0 );\n\tSpecularColor = vec3<f32>( 0.04, 0.04, 0.04 );\n\tSpecularColorBlended = mix( vec3<f32>( 0.04, 0.04, 0.04 ), DiffuseColor.xyz, Metalness );\n\tSpecularF90 = 1.0;\n\tDiffuseContribution = ( DiffuseColor.xyz * vec3<f32>( ( 1.0 - object.nodeUniform2 ) ) );\n\tEmissiveColor = ( object.nodeUniform6 * vec3<f32>( object.nodeUniform7 ) );\n\tNORMAL_normalView = normalViewGeometry;\n\tnormalView = NORMAL_normalView;\n\tpositionViewDirection = normalize( v_positionViewDirection );\n\tnodeVar1 = dot( normalView, positionViewDirection );\n\tnodeVar2 = textureSample( nodeUniform8, nodeUniform8_sampler, vec2<f32>( Roughness, clamp( nodeVar1, 0.0, 1.0 ) ) ).xy;\n\tlet dfg = nodeVar2;\n\tnodeVar3 = ( dfg.x + dfg.y );\n\tnodeVar4 = ( 1.0 / nodeVar3 );\n\tnodeVar5 = nodeVar4;\n\tnodeVar6 = ( nodeVar5 - 1.0 );\n\tnodeVar7 = ( SpecularColorBlended * vec3<f32>( nodeVar6 ) );\n\tnodeVar8 = ( nodeVar7 + vec3<f32>( 1.0 ) );\n\tlet multiScatteringCompensation = nodeVar8;\n\tnodeVar9 = ( render.nodeUniform10 - v_positionView );\n\tnodeVar10 = normalize( nodeVar9 );\n\tnodeVar11 = dot( normalView, nodeVar10 );\n\n\tif ( ( render.nodeUniform12 > 0.0 ) ) {\n\n\t\tnodeVar13 = length( nodeVar9 );\n\t\tnodeVar14 = ( nodeVar13 / render.nodeUniform12 );\n\t\tnodeVar15 = clamp( ( 1.0 - ( ( ( nodeVar14 * nodeVar14 ) * nodeVar14 ) * nodeVar14 ) ), 0.0, 1.0 );\n\t\tnodeVar12 = ( ( 1.0 / max( pow( nodeVar13, render.nodeUniform13 ), 0.01 ) ) * ( nodeVar15 * nodeVar15 ) );\n\n\t} else {\n\n\t\tnodeVar12 = ( 1.0 / max( pow( length( nodeVar9 ), render.nodeUniform13 ), 0.01 ) );\n\n\t}\n\n\tnodeVar16 = ( render.nodeUniform11 * vec3<f32>( nodeVar12 ) );\n\tnodeVar17 = ( vec3<f32>( clamp( nodeVar11, 0.0, 1.0 ) ) * nodeVar16 );\n\tnodeVar18 = nodeVar17;\n\tdirectDiffuse = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar19 = ( DiffuseContribution * vec3<f32>( 0.3183098861837907 ) );\n\tnodeVar20 = ( nodeVar18 * nodeVar19 );\n\tnodeVar21 = ( nodeVar10 + positionViewDirection );\n\tnodeVar22 = normalize( nodeVar21 );\n\tnodeVar23 = dot( positionViewDirection, nodeVar22 );\n\tnodeVar24 = clamp( nodeVar23, 0.0, 1.0 );\n\tnodeVar25 = exp2( ( ( ( nodeVar24 * -5.55473 ) - 6.98316 ) * nodeVar24 ) );\n\tnodeVar26 = ( ( SpecularColor * vec3<f32>( ( 1.0 - nodeVar25 ) ) ) + vec3<f32>( ( SpecularF90 * nodeVar25 ) ) );\n\tnodeVar27 = ( vec3<f32>( 1.0 ) - nodeVar26 );\n\tnodeVar28 = nodeVar27;\n\tnodeVar29 = ( nodeVar20 * nodeVar28 );\n\tnodeVar30 = ( directDiffuse + nodeVar29 );\n\tdirectDiffuse = nodeVar30;\n\tdirectSpecular = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar31 = normalize( ( nodeVar10 + positionViewDirection ) );\n\tnodeVar32 = clamp( dot( positionViewDirection, nodeVar31 ), 0.0, 1.0 );\n\tnodeVar33 = exp2( ( ( ( nodeVar32 * -5.55473 ) - 6.98316 ) * nodeVar32 ) );\n\tnodeVar34 = ( Roughness * Roughness );\n\tnodeVar35 = ( ( ( ( SpecularColorBlended * vec3<f32>( ( 1.0 - nodeVar33 ) ) ) + vec3<f32>( ( 1.0 * nodeVar33 ) ) ) * vec3<f32>( V_GGX_SmithCorrelated( nodeVar34, clamp( dot( normalView, nodeVar10 ), 0.0, 1.0 ), clamp( dot( normalView, positionViewDirection ), 0.0, 1.0 ) ) ) ) * vec3<f32>( D_GGX( nodeVar34, clamp( dot( normalView, nodeVar31 ), 0.0, 1.0 ) ) ) );\n\tnodeVar36 = ( nodeVar18 * nodeVar35 );\n\tnodeVar37 = ( nodeVar36 * multiScatteringCompensation );\n\tnodeVar38 = ( directSpecular + nodeVar37 );\n\tdirectSpecular = nodeVar38;\n\tirradiance = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnormalWorld = normalize( ( vec4<f32>( normalView, 0.0 ) * render.cameraViewMatrix ).xyz );\n\tnodeVar39 = dot( normalWorld, normalize( render.nodeUniform17 ) );\n\tnodeVar40 = ( nodeVar39 * 0.5 );\n\tnodeVar41 = ( nodeVar40 + 0.5 );\n\tnodeVar42 = mix( render.nodeUniform14, render.nodeUniform15, nodeVar41 );\n\tnodeVar43 = ( irradiance + nodeVar42 );\n\tirradiance = nodeVar43;\n\tnodeVar44 = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar45 = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar46 = ( SpecularColor * vec3<f32>( dfg.x ) );\n\tnodeVar47 = ( SpecularF90 * dfg.y );\n\tnodeVar48 = ( nodeVar46 + vec3<f32>( nodeVar47 ) );\n\tnodeVar49 = ( nodeVar44 + nodeVar48 );\n\tnodeVar44 = nodeVar49;\n\tnodeVar50 = ( vec3<f32>( 1.0 ) - SpecularColor );\n\tnodeVar51 = nodeVar50;\n\tnodeVar52 = ( nodeVar51 * vec3<f32>( 0.047619 ) );\n\tnodeVar53 = ( SpecularColor + nodeVar52 );\n\tnodeVar54 = ( nodeVar48 * nodeVar53 );\n\tnodeVar55 = ( dfg.x + dfg.y );\n\tnodeVar56 = ( 1.0 - nodeVar55 );\n\tnodeVar57 = nodeVar56;\n\tnodeVar58 = ( vec3<f32>( nodeVar57 ) * nodeVar53 );\n\tnodeVar59 = ( vec3<f32>( 1.0 ) - nodeVar58 );\n\tnodeVar60 = nodeVar59;\n\tnodeVar61 = ( nodeVar54 / nodeVar60 );\n\tnodeVar62 = ( nodeVar61 * vec3<f32>( nodeVar57 ) );\n\tnodeVar63 = ( nodeVar45 + nodeVar62 );\n\tnodeVar45 = nodeVar63;\n\tnodeVar64 = ( DiffuseContribution * vec3<f32>( 0.3183098861837907 ) );\n\tnodeVar65 = ( irradiance * nodeVar64 );\n\tnodeVar66 = ( nodeVar44 + nodeVar45 );\n\tnodeVar67 = ( vec3<f32>( 1.0 ) - nodeVar66 );\n\tnodeVar68 = nodeVar67;\n\tnodeVar69 = ( nodeVar65 * nodeVar68 );\n\tnodeVar70 = nodeVar69;\n\tindirectDiffuse = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar71 = ( indirectDiffuse + nodeVar70 );\n\tindirectDiffuse = nodeVar71;\n\tsingleScatteringDielectric = vec3<f32>( 0.0, 0.0, 0.0 );\n\tmultiScatteringDielectric = vec3<f32>( 0.0, 0.0, 0.0 );\n\tsingleScatteringMetallic = vec3<f32>( 0.0, 0.0, 0.0 );\n\tmultiScatteringMetallic = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar72 = ( SpecularColor * vec3<f32>( dfg.x ) );\n\tnodeVar73 = ( SpecularF90 * dfg.y );\n\tnodeVar74 = ( nodeVar72 + vec3<f32>( nodeVar73 ) );\n\tnodeVar75 = ( singleScatteringDielectric + nodeVar74 );\n\tsingleScatteringDielectric = nodeVar75;\n\tnodeVar76 = ( vec3<f32>( 1.0 ) - SpecularColor );\n\tnodeVar77 = nodeVar76;\n\tnodeVar78 = ( nodeVar77 * vec3<f32>( 0.047619 ) );\n\tnodeVar79 = ( SpecularColor + nodeVar78 );\n\tnodeVar80 = ( nodeVar74 * nodeVar79 );\n\tnodeVar81 = ( dfg.x + dfg.y );\n\tnodeVar82 = ( 1.0 - nodeVar81 );\n\tnodeVar83 = nodeVar82;\n\tnodeVar84 = ( vec3<f32>( nodeVar83 ) * nodeVar79 );\n\tnodeVar85 = ( vec3<f32>( 1.0 ) - nodeVar84 );\n\tnodeVar86 = nodeVar85;\n\tnodeVar87 = ( nodeVar80 / nodeVar86 );\n\tnodeVar88 = ( nodeVar87 * vec3<f32>( nodeVar83 ) );\n\tnodeVar89 = ( multiScatteringDielectric + nodeVar88 );\n\tmultiScatteringDielectric = nodeVar89;\n\tnodeVar90 = ( DiffuseColor.xyz * vec3<f32>( dfg.x ) );\n\tnodeVar91 = ( SpecularF90 * dfg.y );\n\tnodeVar92 = ( nodeVar90 + vec3<f32>( nodeVar91 ) );\n\tnodeVar93 = ( singleScatteringMetallic + nodeVar92 );\n\tsingleScatteringMetallic = nodeVar93;\n\tnodeVar94 = ( vec3<f32>( 1.0 ) - DiffuseColor.xyz );\n\tnodeVar95 = nodeVar94;\n\tnodeVar96 = ( nodeVar95 * vec3<f32>( 0.047619 ) );\n\tnodeVar97 = ( DiffuseColor.xyz + nodeVar96 );\n\tnodeVar98 = ( nodeVar92 * nodeVar97 );\n\tnodeVar99 = ( dfg.x + dfg.y );\n\tnodeVar100 = ( 1.0 - nodeVar99 );\n\tnodeVar101 = nodeVar100;\n\tnodeVar102 = ( vec3<f32>( nodeVar101 ) * nodeVar97 );\n\tnodeVar103 = ( vec3<f32>( 1.0 ) - nodeVar102 );\n\tnodeVar104 = nodeVar103;\n\tnodeVar105 = ( nodeVar98 / nodeVar104 );\n\tnodeVar106 = ( nodeVar105 * vec3<f32>( nodeVar101 ) );\n\tnodeVar107 = ( multiScatteringMetallic + nodeVar106 );\n\tmultiScatteringMetallic = nodeVar107;\n\tradiance = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar108 = mix( singleScatteringDielectric, singleScatteringMetallic, Metalness );\n\tnodeVar109 = ( radiance * nodeVar108 );\n\tnodeVar110 = mix( multiScatteringDielectric, multiScatteringMetallic, Metalness );\n\tiblIrradiance = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar111 = ( iblIrradiance * vec3<f32>( 0.3183098861837907 ) );\n\tnodeVar112 = ( nodeVar110 * nodeVar111 );\n\tnodeVar113 = ( nodeVar109 + nodeVar112 );\n\tnodeVar114 = nodeVar113;\n\tnodeVar115 = ( singleScatteringDielectric + multiScatteringDielectric );\n\tnodeVar116 = ( vec3<f32>( 1.0 ) - nodeVar115 );\n\tnodeVar117 = nodeVar116;\n\tnodeVar118 = ( DiffuseContribution * nodeVar117 );\n\tnodeVar119 = ( nodeVar118 * nodeVar111 );\n\tnodeVar120 = nodeVar119;\n\tindirectSpecular = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar121 = ( indirectSpecular + nodeVar114 );\n\tindirectSpecular = nodeVar121;\n\tnodeVar122 = ( indirectDiffuse + nodeVar120 );\n\tindirectDiffuse = nodeVar122;\n\tambientOcclusion = 1.0;\n\tnodeVar123 = ( indirectDiffuse * vec3<f32>( ambientOcclusion ) );\n\tindirectDiffuse = nodeVar123;\n\tnodeVar124 = dot( normalView, positionViewDirection );\n\tnodeVar125 = ( clamp( nodeVar124, 0.0, 1.0 ) + ambientOcclusion );\n\tnodeVar126 = ( Roughness * -16.0 );\n\tnodeVar127 = ( 1.0 - nodeVar126 );\n\tnodeVar128 = nodeVar127;\n\tnodeVar129 = ( - nodeVar128 );\n\tnodeVar130 = exp2( nodeVar129 );\n\tnodeVar131 = pow( nodeVar125, nodeVar130 );\n\tnodeVar132 = ( 1.0 - nodeVar131 );\n\tnodeVar133 = nodeVar132;\n\tnodeVar134 = ( ambientOcclusion - nodeVar133 );\n\tnodeVar135 = ( indirectSpecular * vec3<f32>( clamp( nodeVar134, 0.0, 1.0 ) ) );\n\tindirectSpecular = nodeVar135;\n\tnodeVar136 = ( directDiffuse + indirectDiffuse );\n\ttotalDiffuse = nodeVar136;\n\tnodeVar137 = ( directSpecular + indirectSpecular );\n\ttotalSpecular = nodeVar137;\n\tnodeVar138 = ( totalDiffuse + totalSpecular );\n\toutgoingLight = nodeVar138;\n\tnodeVar139 = max( vec4<f32>( ( outgoingLight + EmissiveColor ), DiffuseColor.w ), vec4<f32>( 0.0 ) );\n\tOutput = nodeVar139;\n\n\t// result\n\n\toutput.color = nodeVar139;\n\n\treturn output;\n\n}\n"
+		},
+		{
+			"index": 2,
+			"label": "mipmap",
+			"code": "\nstruct VarysStruct {\n\t@builtin( position ) Position: vec4f,\n\t@location( 0 ) vTex : vec2f,\n\t@location( 1 ) @interpolate(flat, either) vBaseArrayLayer: u32,\n};\n\n@group( 0 ) @binding ( 2 )\nvar<uniform> flipY: u32;\n\n@vertex\nfn mainVS(\n\t\t@builtin( vertex_index ) vertexIndex : u32,\n\t\t@builtin( instance_index ) instanceIndex : u32 ) -> VarysStruct {\n\n\tvar Varys : VarysStruct;\n\n\tvar pos = array(\n\t\tvec2f( -1, -1 ),\n\t\tvec2f( -1,  3 ),\n\t\tvec2f(  3, -1 ),\n\t);\n\n\tlet p = pos[ vertexIndex ];\n\tlet mult = select( vec2f( 0.5, -0.5 ), vec2f( 0.5, 0.5 ), flipY != 0 );\n\tVarys.vTex = p * mult + vec2f( 0.5 );\n\tVarys.Position = vec4f( p, 0, 1 );\n\tVarys.vBaseArrayLayer = instanceIndex;\n\n\treturn Varys;\n\n}\n\n@group( 0 ) @binding( 0 )\nvar imgSampler : sampler;\n\n@group( 0 ) @binding( 1 )\nvar img2d : texture_2d<f32>;\n\n@fragment\nfn main_2d( Varys: VarysStruct ) -> @location( 0 ) vec4<f32> {\n\n\treturn textureSample( img2d, imgSampler, Varys.vTex );\n\n}\n\n@group( 0 ) @binding( 1 )\nvar img2dArray : texture_2d_array<f32>;\n\n@fragment\nfn main_2d_array( Varys: VarysStruct ) -> @location( 0 ) vec4<f32> {\n\n\treturn textureSample( img2dArray, imgSampler, Varys.vTex, Varys.vBaseArrayLayer );\n\n}\n\nconst faceMat = array(\n  mat3x3f(  0,  0,  -2,  0, -2,   0,  1,  1,   1 ),   // pos-x\n  mat3x3f(  0,  0,   2,  0, -2,   0, -1,  1,  -1 ),   // neg-x\n  mat3x3f(  2,  0,   0,  0,  0,   2, -1,  1,  -1 ),   // pos-y\n  mat3x3f(  2,  0,   0,  0,  0,  -2, -1, -1,   1 ),   // neg-y\n  mat3x3f(  2,  0,   0,  0, -2,   0, -1,  1,   1 ),   // pos-z\n  mat3x3f( -2,  0,   0,  0, -2,   0,  1,  1,  -1 ),   // neg-z\n);\n\n@group( 0 ) @binding( 1 )\nvar imgCube : texture_cube<f32>;\n\n@fragment\nfn main_cube( Varys: VarysStruct ) -> @location( 0 ) vec4<f32> {\n\n\treturn textureSample( imgCube, imgSampler, faceMat[ Varys.vBaseArrayLayer ] * vec3f( fract( Varys.vTex ), 1 ) );\n\n}\n"
+		},
+		{
+			"index": 3,
+			"label": "vertex",
+			"code": "// Three.js r186 - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform15 : vec3<f32>,\n\tnodeUniform16 : f32,\n\tnodeUniform17 : f32,\n\tnodeUniform19 : vec3<f32>,\n\tnodeUniform21 : vec3<f32>,\n\tnodeUniform18 : vec3<f32>,\n\tnodeUniform14 : vec3<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform0 : vec3<f32>,\n\tnodeUniform2 : mat3x3<f32>,\n\tnodeUniform3 : f32,\n\tnodeUniform4 : f32,\n\tnodeUniform6 : mat3x3<f32>,\n\tnodeUniform7 : f32,\n\tnodeUniform9 : mat3x3<f32>,\n\tnodeUniform10 : vec3<f32>,\n\tnodeUniform11 : f32,\n\tnodeUniform13 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) v_positionView : vec3<f32>,\n\t@location( 1 ) v_normalViewGeometry : vec3<f32>,\n\t@location( 2 ) v_positionViewDirection : vec3<f32>,\n\t@location( 3 ) nodeVarying6 : vec2<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> normalLocal : vec3<f32>;\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar142 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) uv : vec2<f32>,\n\t@location( 1 ) normal : vec3<f32>,\n\t@location( 2 ) position : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tvaryings.nodeVarying6 = uv;\n\tnormalLocal = normal;\n\tvaryings.v_normalViewGeometry = normalize( ( render.cameraViewMatrix * vec4<f32>( ( object.nodeUniform9 * normalLocal ), 0.0 ) ).xyz );\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform13 );\n\tpositionLocal = position;\n\tvaryings.v_positionView = ( modelViewMatrix * vec4<f32>( positionLocal, 1.0 ) ).xyz;\n\tvaryings.v_positionViewDirection = ( - varyings.v_positionView );\n\tVERTEX_nodeVar142 = ( render.cameraProjectionMatrix * vec4<f32>( varyings.v_positionView, 1.0 ) );\n\tVERTEX_v_modelViewProjection = VERTEX_nodeVar142;\n\n\t// result\n\n\tvaryings.builtinClipSpace = VERTEX_v_modelViewProjection;\n\n\treturn varyings;\n\n}\n"
+		},
+		{
+			"index": 4,
+			"label": "fragment",
+			"code": "// Three.js r186 - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 1 ) @group( 1 ) var nodeUniform1_sampler : sampler;\n@binding( 2 ) @group( 1 ) var nodeUniform1 : texture_2d<f32>;\n@binding( 3 ) @group( 1 ) var nodeUniform5_sampler : sampler;\n@binding( 4 ) @group( 1 ) var nodeUniform5 : texture_2d<f32>;\n@binding( 5 ) @group( 1 ) var nodeUniform12_sampler : sampler;\n@binding( 6 ) @group( 1 ) var nodeUniform12 : texture_2d<f32>;\n\nstruct objectStruct {\n\tnodeUniform0 : vec3<f32>,\n\tnodeUniform2 : mat3x3<f32>,\n\tnodeUniform3 : f32,\n\tnodeUniform4 : f32,\n\tnodeUniform6 : mat3x3<f32>,\n\tnodeUniform7 : f32,\n\tnodeUniform9 : mat3x3<f32>,\n\tnodeUniform10 : vec3<f32>,\n\tnodeUniform11 : f32,\n\tnodeUniform13 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform15 : vec3<f32>,\n\tnodeUniform16 : f32,\n\tnodeUniform17 : f32,\n\tnodeUniform19 : vec3<f32>,\n\tnodeUniform21 : vec3<f32>,\n\tnodeUniform18 : vec3<f32>,\n\tnodeUniform14 : vec3<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\n// vars\nvar<private> DiffuseColor : vec4<f32>;\nvar<private> nodeVar0 : vec4<f32>;\nvar<private> Metalness : f32;\nvar<private> nodeVar1 : vec4<f32>;\nvar<private> Roughness : f32;\nvar<private> normalViewGeometry : vec3<f32>;\nvar<private> nodeVar2 : vec3<f32>;\nvar<private> SpecularColor : vec3<f32>;\nvar<private> SpecularColorBlended : vec3<f32>;\nvar<private> SpecularF90 : f32;\nvar<private> DiffuseContribution : vec3<f32>;\nvar<private> EmissiveColor : vec3<f32>;\nvar<private> Output : vec4<f32>;\nvar<private> NORMAL_normalView : vec3<f32>;\nvar<private> normalView : vec3<f32>;\nvar<private> positionViewDirection : vec3<f32>;\nvar<private> nodeVar3 : f32;\nvar<private> nodeVar4 : vec2<f32>;\nvar<private> nodeVar5 : f32;\nvar<private> nodeVar6 : f32;\nvar<private> nodeVar7 : f32;\nvar<private> nodeVar8 : f32;\nvar<private> nodeVar9 : vec3<f32>;\nvar<private> nodeVar10 : vec3<f32>;\nvar<private> nodeVar11 : vec3<f32>;\nvar<private> nodeVar12 : vec3<f32>;\nvar<private> nodeVar13 : f32;\nvar<private> nodeVar14 : f32;\nvar<private> nodeVar15 : f32;\nvar<private> nodeVar16 : f32;\nvar<private> nodeVar17 : f32;\nvar<private> nodeVar18 : vec3<f32>;\nvar<private> nodeVar19 : vec3<f32>;\nvar<private> nodeVar20 : vec3<f32>;\nvar<private> directDiffuse : vec3<f32>;\nvar<private> nodeVar21 : vec3<f32>;\nvar<private> nodeVar22 : vec3<f32>;\nvar<private> nodeVar23 : vec3<f32>;\nvar<private> nodeVar24 : vec3<f32>;\nvar<private> nodeVar25 : f32;\nvar<private> nodeVar26 : f32;\nvar<private> nodeVar27 : f32;\nvar<private> nodeVar28 : vec3<f32>;\nvar<private> nodeVar29 : vec3<f32>;\nvar<private> nodeVar30 : vec3<f32>;\nvar<private> nodeVar31 : vec3<f32>;\nvar<private> nodeVar32 : vec3<f32>;\nvar<private> directSpecular : vec3<f32>;\nvar<private> nodeVar33 : vec3<f32>;\nvar<private> nodeVar34 : f32;\nvar<private> nodeVar35 : f32;\nvar<private> nodeVar36 : f32;\nvar<private> nodeVar37 : vec3<f32>;\nvar<private> nodeVar38 : vec3<f32>;\nvar<private> nodeVar39 : vec3<f32>;\nvar<private> nodeVar40 : vec3<f32>;\nvar<private> irradiance : vec3<f32>;\nvar<private> normalWorld : vec3<f32>;\nvar<private> nodeVar41 : f32;\nvar<private> nodeVar42 : f32;\nvar<private> nodeVar43 : f32;\nvar<private> nodeVar44 : vec3<f32>;\nvar<private> nodeVar45 : vec3<f32>;\nvar<private> nodeVar46 : vec3<f32>;\nvar<private> nodeVar47 : vec3<f32>;\nvar<private> nodeVar48 : vec3<f32>;\nvar<private> nodeVar49 : f32;\nvar<private> nodeVar50 : vec3<f32>;\nvar<private> nodeVar51 : vec3<f32>;\nvar<private> nodeVar52 : vec3<f32>;\nvar<private> nodeVar53 : vec3<f32>;\nvar<private> nodeVar54 : vec3<f32>;\nvar<private> nodeVar55 : vec3<f32>;\nvar<private> nodeVar56 : vec3<f32>;\nvar<private> nodeVar57 : f32;\nvar<private> nodeVar58 : f32;\nvar<private> nodeVar59 : f32;\nvar<private> nodeVar60 : vec3<f32>;\nvar<private> nodeVar61 : vec3<f32>;\nvar<private> nodeVar62 : vec3<f32>;\nvar<private> nodeVar63 : vec3<f32>;\nvar<private> nodeVar64 : vec3<f32>;\nvar<private> nodeVar65 : vec3<f32>;\nvar<private> nodeVar66 : vec3<f32>;\nvar<private> nodeVar67 : vec3<f32>;\nvar<private> nodeVar68 : vec3<f32>;\nvar<private> nodeVar69 : vec3<f32>;\nvar<private> nodeVar70 : vec3<f32>;\nvar<private> nodeVar71 : vec3<f32>;\nvar<private> nodeVar72 : vec3<f32>;\nvar<private> indirectDiffuse : vec3<f32>;\nvar<private> nodeVar73 : vec3<f32>;\nvar<private> singleScatteringDielectric : vec3<f32>;\nvar<private> multiScatteringDielectric : vec3<f32>;\nvar<private> singleScatteringMetallic : vec3<f32>;\nvar<private> multiScatteringMetallic : vec3<f32>;\nvar<private> nodeVar74 : vec3<f32>;\nvar<private> nodeVar75 : f32;\nvar<private> nodeVar76 : vec3<f32>;\nvar<private> nodeVar77 : vec3<f32>;\nvar<private> nodeVar78 : vec3<f32>;\nvar<private> nodeVar79 : vec3<f32>;\nvar<private> nodeVar80 : vec3<f32>;\nvar<private> nodeVar81 : vec3<f32>;\nvar<private> nodeVar82 : vec3<f32>;\nvar<private> nodeVar83 : f32;\nvar<private> nodeVar84 : f32;\nvar<private> nodeVar85 : f32;\nvar<private> nodeVar86 : vec3<f32>;\nvar<private> nodeVar87 : vec3<f32>;\nvar<private> nodeVar88 : vec3<f32>;\nvar<private> nodeVar89 : vec3<f32>;\nvar<private> nodeVar90 : vec3<f32>;\nvar<private> nodeVar91 : vec3<f32>;\nvar<private> nodeVar92 : vec3<f32>;\nvar<private> nodeVar93 : f32;\nvar<private> nodeVar94 : vec3<f32>;\nvar<private> nodeVar95 : vec3<f32>;\nvar<private> nodeVar96 : vec3<f32>;\nvar<private> nodeVar97 : vec3<f32>;\nvar<private> nodeVar98 : vec3<f32>;\nvar<private> nodeVar99 : vec3<f32>;\nvar<private> nodeVar100 : vec3<f32>;\nvar<private> nodeVar101 : f32;\nvar<private> nodeVar102 : f32;\nvar<private> nodeVar103 : f32;\nvar<private> nodeVar104 : vec3<f32>;\nvar<private> nodeVar105 : vec3<f32>;\nvar<private> nodeVar106 : vec3<f32>;\nvar<private> nodeVar107 : vec3<f32>;\nvar<private> nodeVar108 : vec3<f32>;\nvar<private> nodeVar109 : vec3<f32>;\nvar<private> radiance : vec3<f32>;\nvar<private> nodeVar110 : vec3<f32>;\nvar<private> nodeVar111 : vec3<f32>;\nvar<private> nodeVar112 : vec3<f32>;\nvar<private> iblIrradiance : vec3<f32>;\nvar<private> nodeVar113 : vec3<f32>;\nvar<private> nodeVar114 : vec3<f32>;\nvar<private> nodeVar115 : vec3<f32>;\nvar<private> nodeVar116 : vec3<f32>;\nvar<private> nodeVar117 : vec3<f32>;\nvar<private> nodeVar118 : vec3<f32>;\nvar<private> nodeVar119 : vec3<f32>;\nvar<private> nodeVar120 : vec3<f32>;\nvar<private> nodeVar121 : vec3<f32>;\nvar<private> nodeVar122 : vec3<f32>;\nvar<private> indirectSpecular : vec3<f32>;\nvar<private> nodeVar123 : vec3<f32>;\nvar<private> nodeVar124 : vec3<f32>;\nvar<private> ambientOcclusion : f32;\nvar<private> nodeVar125 : vec3<f32>;\nvar<private> nodeVar126 : f32;\nvar<private> nodeVar127 : f32;\nvar<private> nodeVar128 : f32;\nvar<private> nodeVar129 : f32;\nvar<private> nodeVar130 : f32;\nvar<private> nodeVar131 : f32;\nvar<private> nodeVar132 : f32;\nvar<private> nodeVar133 : f32;\nvar<private> nodeVar134 : f32;\nvar<private> nodeVar135 : f32;\nvar<private> nodeVar136 : f32;\nvar<private> nodeVar137 : vec3<f32>;\nvar<private> totalDiffuse : vec3<f32>;\nvar<private> nodeVar138 : vec3<f32>;\nvar<private> totalSpecular : vec3<f32>;\nvar<private> nodeVar139 : vec3<f32>;\nvar<private> outgoingLight : vec3<f32>;\nvar<private> nodeVar140 : vec3<f32>;\nvar<private> nodeVar141 : vec4<f32>;\n\n// codes\nfn V_GGX_SmithCorrelated ( alpha : f32, dotNL : f32, dotNV : f32 ) -> f32 {\n\n\tvar nodeVar0 : f32;\n\n\tnodeVar0 = ( alpha * alpha );\n\n\treturn ( 0.5 / max( ( ( dotNL * sqrt( ( nodeVar0 + ( ( 1.0 - nodeVar0 ) * ( dotNV * dotNV ) ) ) ) ) + ( dotNV * sqrt( ( nodeVar0 + ( ( 1.0 - nodeVar0 ) * ( dotNL * dotNL ) ) ) ) ) ), 0.000001 ) );\n\n}\n\n\nfn D_GGX ( alpha : f32, dotNH : f32 ) -> f32 {\n\n\tvar nodeVar0 : f32;\n\tvar nodeVar1 : f32;\n\n\tnodeVar0 = ( alpha * alpha );\n\tnodeVar1 = ( 1.0 - ( ( dotNH * dotNH ) * ( 1.0 - nodeVar0 ) ) );\n\n\treturn ( ( nodeVar0 / ( nodeVar1 * nodeVar1 ) ) * 0.3183098861837907 );\n\n}\n\n\n\n\n@fragment\nfn main( @location( 0 ) v_positionView : vec3<f32>,\n\t@location( 1 ) v_normalViewGeometry : vec3<f32>,\n\t@location( 2 ) v_positionViewDirection : vec3<f32>,\n\t@location( 3 ) nodeVarying6 : vec2<f32> ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\tnodeVar0 = textureSample( nodeUniform1, nodeUniform1_sampler, ( object.nodeUniform2 * vec3<f32>( nodeVarying6, 1.0 ) ).xy );\n\tDiffuseColor = ( vec4<f32>( object.nodeUniform0, 1.0 ) * nodeVar0 );\n\tDiffuseColor.w = ( DiffuseColor.w * object.nodeUniform3 );\n\tDiffuseColor.w = 1.0;\n\tnodeVar1 = textureSample( nodeUniform5, nodeUniform5_sampler, ( object.nodeUniform6 * vec3<f32>( nodeVarying6, 1.0 ) ).xy );\n\tMetalness = ( object.nodeUniform4 * nodeVar1.z );\n\tnormalViewGeometry = normalize( v_normalViewGeometry );\n\tnodeVar2 = max( abs( dpdx( normalViewGeometry ) ), abs( - dpdy( normalViewGeometry ) ) );\n\tRoughness = min( ( max( object.nodeUniform7, 0.0525 ) + max( max( nodeVar2.x, nodeVar2.y ), nodeVar2.z ) ), 1.0 );\n\tSpecularColor = vec3<f32>( 0.04, 0.04, 0.04 );\n\tSpecularColorBlended = mix( vec3<f32>( 0.04, 0.04, 0.04 ), DiffuseColor.xyz, Metalness );\n\tSpecularF90 = 1.0;\n\tDiffuseContribution = ( DiffuseColor.xyz * vec3<f32>( ( 1.0 - ( object.nodeUniform4 * nodeVar1.z ) ) ) );\n\tEmissiveColor = ( object.nodeUniform10 * vec3<f32>( object.nodeUniform11 ) );\n\tNORMAL_normalView = normalViewGeometry;\n\tnormalView = NORMAL_normalView;\n\tpositionViewDirection = normalize( v_positionViewDirection );\n\tnodeVar3 = dot( normalView, positionViewDirection );\n\tnodeVar4 = textureSample( nodeUniform12, nodeUniform12_sampler, vec2<f32>( Roughness, clamp( nodeVar3, 0.0, 1.0 ) ) ).xy;\n\tlet dfg = nodeVar4;\n\tnodeVar5 = ( dfg.x + dfg.y );\n\tnodeVar6 = ( 1.0 / nodeVar5 );\n\tnodeVar7 = nodeVar6;\n\tnodeVar8 = ( nodeVar7 - 1.0 );\n\tnodeVar9 = ( SpecularColorBlended * vec3<f32>( nodeVar8 ) );\n\tnodeVar10 = ( nodeVar9 + vec3<f32>( 1.0 ) );\n\tlet multiScatteringCompensation = nodeVar10;\n\tnodeVar11 = ( render.nodeUniform14 - v_positionView );\n\tnodeVar12 = normalize( nodeVar11 );\n\tnodeVar13 = dot( normalView, nodeVar12 );\n\n\tif ( ( render.nodeUniform16 > 0.0 ) ) {\n\n\t\tnodeVar15 = length( nodeVar11 );\n\t\tnodeVar16 = ( nodeVar15 / render.nodeUniform16 );\n\t\tnodeVar17 = clamp( ( 1.0 - ( ( ( nodeVar16 * nodeVar16 ) * nodeVar16 ) * nodeVar16 ) ), 0.0, 1.0 );\n\t\tnodeVar14 = ( ( 1.0 / max( pow( nodeVar15, render.nodeUniform17 ), 0.01 ) ) * ( nodeVar17 * nodeVar17 ) );\n\n\t} else {\n\n\t\tnodeVar14 = ( 1.0 / max( pow( length( nodeVar11 ), render.nodeUniform17 ), 0.01 ) );\n\n\t}\n\n\tnodeVar18 = ( render.nodeUniform15 * vec3<f32>( nodeVar14 ) );\n\tnodeVar19 = ( vec3<f32>( clamp( nodeVar13, 0.0, 1.0 ) ) * nodeVar18 );\n\tnodeVar20 = nodeVar19;\n\tdirectDiffuse = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar21 = ( DiffuseContribution * vec3<f32>( 0.3183098861837907 ) );\n\tnodeVar22 = ( nodeVar20 * nodeVar21 );\n\tnodeVar23 = ( nodeVar12 + positionViewDirection );\n\tnodeVar24 = normalize( nodeVar23 );\n\tnodeVar25 = dot( positionViewDirection, nodeVar24 );\n\tnodeVar26 = clamp( nodeVar25, 0.0, 1.0 );\n\tnodeVar27 = exp2( ( ( ( nodeVar26 * -5.55473 ) - 6.98316 ) * nodeVar26 ) );\n\tnodeVar28 = ( ( SpecularColor * vec3<f32>( ( 1.0 - nodeVar27 ) ) ) + vec3<f32>( ( SpecularF90 * nodeVar27 ) ) );\n\tnodeVar29 = ( vec3<f32>( 1.0 ) - nodeVar28 );\n\tnodeVar30 = nodeVar29;\n\tnodeVar31 = ( nodeVar22 * nodeVar30 );\n\tnodeVar32 = ( directDiffuse + nodeVar31 );\n\tdirectDiffuse = nodeVar32;\n\tdirectSpecular = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar33 = normalize( ( nodeVar12 + positionViewDirection ) );\n\tnodeVar34 = clamp( dot( positionViewDirection, nodeVar33 ), 0.0, 1.0 );\n\tnodeVar35 = exp2( ( ( ( nodeVar34 * -5.55473 ) - 6.98316 ) * nodeVar34 ) );\n\tnodeVar36 = ( Roughness * Roughness );\n\tnodeVar37 = ( ( ( ( SpecularColorBlended * vec3<f32>( ( 1.0 - nodeVar35 ) ) ) + vec3<f32>( ( 1.0 * nodeVar35 ) ) ) * vec3<f32>( V_GGX_SmithCorrelated( nodeVar36, clamp( dot( normalView, nodeVar12 ), 0.0, 1.0 ), clamp( dot( normalView, positionViewDirection ), 0.0, 1.0 ) ) ) ) * vec3<f32>( D_GGX( nodeVar36, clamp( dot( normalView, nodeVar33 ), 0.0, 1.0 ) ) ) );\n\tnodeVar38 = ( nodeVar20 * nodeVar37 );\n\tnodeVar39 = ( nodeVar38 * multiScatteringCompensation );\n\tnodeVar40 = ( directSpecular + nodeVar39 );\n\tdirectSpecular = nodeVar40;\n\tirradiance = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnormalWorld = normalize( ( vec4<f32>( normalView, 0.0 ) * render.cameraViewMatrix ).xyz );\n\tnodeVar41 = dot( normalWorld, normalize( render.nodeUniform21 ) );\n\tnodeVar42 = ( nodeVar41 * 0.5 );\n\tnodeVar43 = ( nodeVar42 + 0.5 );\n\tnodeVar44 = mix( render.nodeUniform18, render.nodeUniform19, nodeVar43 );\n\tnodeVar45 = ( irradiance + nodeVar44 );\n\tirradiance = nodeVar45;\n\tnodeVar46 = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar47 = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar48 = ( SpecularColor * vec3<f32>( dfg.x ) );\n\tnodeVar49 = ( SpecularF90 * dfg.y );\n\tnodeVar50 = ( nodeVar48 + vec3<f32>( nodeVar49 ) );\n\tnodeVar51 = ( nodeVar46 + nodeVar50 );\n\tnodeVar46 = nodeVar51;\n\tnodeVar52 = ( vec3<f32>( 1.0 ) - SpecularColor );\n\tnodeVar53 = nodeVar52;\n\tnodeVar54 = ( nodeVar53 * vec3<f32>( 0.047619 ) );\n\tnodeVar55 = ( SpecularColor + nodeVar54 );\n\tnodeVar56 = ( nodeVar50 * nodeVar55 );\n\tnodeVar57 = ( dfg.x + dfg.y );\n\tnodeVar58 = ( 1.0 - nodeVar57 );\n\tnodeVar59 = nodeVar58;\n\tnodeVar60 = ( vec3<f32>( nodeVar59 ) * nodeVar55 );\n\tnodeVar61 = ( vec3<f32>( 1.0 ) - nodeVar60 );\n\tnodeVar62 = nodeVar61;\n\tnodeVar63 = ( nodeVar56 / nodeVar62 );\n\tnodeVar64 = ( nodeVar63 * vec3<f32>( nodeVar59 ) );\n\tnodeVar65 = ( nodeVar47 + nodeVar64 );\n\tnodeVar47 = nodeVar65;\n\tnodeVar66 = ( DiffuseContribution * vec3<f32>( 0.3183098861837907 ) );\n\tnodeVar67 = ( irradiance * nodeVar66 );\n\tnodeVar68 = ( nodeVar46 + nodeVar47 );\n\tnodeVar69 = ( vec3<f32>( 1.0 ) - nodeVar68 );\n\tnodeVar70 = nodeVar69;\n\tnodeVar71 = ( nodeVar67 * nodeVar70 );\n\tnodeVar72 = nodeVar71;\n\tindirectDiffuse = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar73 = ( indirectDiffuse + nodeVar72 );\n\tindirectDiffuse = nodeVar73;\n\tsingleScatteringDielectric = vec3<f32>( 0.0, 0.0, 0.0 );\n\tmultiScatteringDielectric = vec3<f32>( 0.0, 0.0, 0.0 );\n\tsingleScatteringMetallic = vec3<f32>( 0.0, 0.0, 0.0 );\n\tmultiScatteringMetallic = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar74 = ( SpecularColor * vec3<f32>( dfg.x ) );\n\tnodeVar75 = ( SpecularF90 * dfg.y );\n\tnodeVar76 = ( nodeVar74 + vec3<f32>( nodeVar75 ) );\n\tnodeVar77 = ( singleScatteringDielectric + nodeVar76 );\n\tsingleScatteringDielectric = nodeVar77;\n\tnodeVar78 = ( vec3<f32>( 1.0 ) - SpecularColor );\n\tnodeVar79 = nodeVar78;\n\tnodeVar80 = ( nodeVar79 * vec3<f32>( 0.047619 ) );\n\tnodeVar81 = ( SpecularColor + nodeVar80 );\n\tnodeVar82 = ( nodeVar76 * nodeVar81 );\n\tnodeVar83 = ( dfg.x + dfg.y );\n\tnodeVar84 = ( 1.0 - nodeVar83 );\n\tnodeVar85 = nodeVar84;\n\tnodeVar86 = ( vec3<f32>( nodeVar85 ) * nodeVar81 );\n\tnodeVar87 = ( vec3<f32>( 1.0 ) - nodeVar86 );\n\tnodeVar88 = nodeVar87;\n\tnodeVar89 = ( nodeVar82 / nodeVar88 );\n\tnodeVar90 = ( nodeVar89 * vec3<f32>( nodeVar85 ) );\n\tnodeVar91 = ( multiScatteringDielectric + nodeVar90 );\n\tmultiScatteringDielectric = nodeVar91;\n\tnodeVar92 = ( DiffuseColor.xyz * vec3<f32>( dfg.x ) );\n\tnodeVar93 = ( SpecularF90 * dfg.y );\n\tnodeVar94 = ( nodeVar92 + vec3<f32>( nodeVar93 ) );\n\tnodeVar95 = ( singleScatteringMetallic + nodeVar94 );\n\tsingleScatteringMetallic = nodeVar95;\n\tnodeVar96 = ( vec3<f32>( 1.0 ) - DiffuseColor.xyz );\n\tnodeVar97 = nodeVar96;\n\tnodeVar98 = ( nodeVar97 * vec3<f32>( 0.047619 ) );\n\tnodeVar99 = ( DiffuseColor.xyz + nodeVar98 );\n\tnodeVar100 = ( nodeVar94 * nodeVar99 );\n\tnodeVar101 = ( dfg.x + dfg.y );\n\tnodeVar102 = ( 1.0 - nodeVar101 );\n\tnodeVar103 = nodeVar102;\n\tnodeVar104 = ( vec3<f32>( nodeVar103 ) * nodeVar99 );\n\tnodeVar105 = ( vec3<f32>( 1.0 ) - nodeVar104 );\n\tnodeVar106 = nodeVar105;\n\tnodeVar107 = ( nodeVar100 / nodeVar106 );\n\tnodeVar108 = ( nodeVar107 * vec3<f32>( nodeVar103 ) );\n\tnodeVar109 = ( multiScatteringMetallic + nodeVar108 );\n\tmultiScatteringMetallic = nodeVar109;\n\tradiance = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar110 = mix( singleScatteringDielectric, singleScatteringMetallic, Metalness );\n\tnodeVar111 = ( radiance * nodeVar110 );\n\tnodeVar112 = mix( multiScatteringDielectric, multiScatteringMetallic, Metalness );\n\tiblIrradiance = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar113 = ( iblIrradiance * vec3<f32>( 0.3183098861837907 ) );\n\tnodeVar114 = ( nodeVar112 * nodeVar113 );\n\tnodeVar115 = ( nodeVar111 + nodeVar114 );\n\tnodeVar116 = nodeVar115;\n\tnodeVar117 = ( singleScatteringDielectric + multiScatteringDielectric );\n\tnodeVar118 = ( vec3<f32>( 1.0 ) - nodeVar117 );\n\tnodeVar119 = nodeVar118;\n\tnodeVar120 = ( DiffuseContribution * nodeVar119 );\n\tnodeVar121 = ( nodeVar120 * nodeVar113 );\n\tnodeVar122 = nodeVar121;\n\tindirectSpecular = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar123 = ( indirectSpecular + nodeVar116 );\n\tindirectSpecular = nodeVar123;\n\tnodeVar124 = ( indirectDiffuse + nodeVar122 );\n\tindirectDiffuse = nodeVar124;\n\tambientOcclusion = 1.0;\n\tnodeVar125 = ( indirectDiffuse * vec3<f32>( ambientOcclusion ) );\n\tindirectDiffuse = nodeVar125;\n\tnodeVar126 = dot( normalView, positionViewDirection );\n\tnodeVar127 = ( clamp( nodeVar126, 0.0, 1.0 ) + ambientOcclusion );\n\tnodeVar128 = ( Roughness * -16.0 );\n\tnodeVar129 = ( 1.0 - nodeVar128 );\n\tnodeVar130 = nodeVar129;\n\tnodeVar131 = ( - nodeVar130 );\n\tnodeVar132 = exp2( nodeVar131 );\n\tnodeVar133 = pow( nodeVar127, nodeVar132 );\n\tnodeVar134 = ( 1.0 - nodeVar133 );\n\tnodeVar135 = nodeVar134;\n\tnodeVar136 = ( ambientOcclusion - nodeVar135 );\n\tnodeVar137 = ( indirectSpecular * vec3<f32>( clamp( nodeVar136, 0.0, 1.0 ) ) );\n\tindirectSpecular = nodeVar137;\n\tnodeVar138 = ( directDiffuse + indirectDiffuse );\n\ttotalDiffuse = nodeVar138;\n\tnodeVar139 = ( directSpecular + indirectSpecular );\n\ttotalSpecular = nodeVar139;\n\tnodeVar140 = ( totalDiffuse + totalSpecular );\n\toutgoingLight = nodeVar140;\n\tnodeVar141 = max( vec4<f32>( ( outgoingLight + EmissiveColor ), DiffuseColor.w ), vec4<f32>( 0.0 ) );\n\tOutput = nodeVar141;\n\n\t// result\n\n\toutput.color = nodeVar141;\n\n\treturn output;\n\n}\n"
+		},
+		{
+			"index": 5,
+			"label": "vertex_ShadowMaterial",
+			"code": "// Three.js r186 - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform1 : mat3x3<f32>,\n\tnodeUniform2 : f32,\n\tnodeUniform5 : mat4x4<f32>\n};\n@binding( 2 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) nodeVarying4 : vec2<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar2 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> v_positionView : vec3<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) uv : vec2<f32>,\n\t@location( 1 ) position : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tvaryings.nodeVarying4 = uv;\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform5 );\n\tpositionLocal = position;\n\tv_positionView = ( modelViewMatrix * vec4<f32>( positionLocal, 1.0 ) ).xyz;\n\tVERTEX_nodeVar2 = ( render.cameraProjectionMatrix * vec4<f32>( v_positionView, 1.0 ) );\n\tVERTEX_v_modelViewProjection = VERTEX_nodeVar2;\n\n\t// result\n\n\tvaryings.builtinClipSpace = VERTEX_v_modelViewProjection;\n\n\treturn varyings;\n\n}\n"
+		},
+		{
+			"index": 6,
+			"label": "fragment_ShadowMaterial",
+			"code": "// Three.js r186 - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 0 ) @group( 1 ) var nodeUniform0_sampler : sampler;\n@binding( 1 ) @group( 1 ) var nodeUniform0 : texture_2d<f32>;\n\nstruct objectStruct {\n\tnodeUniform1 : mat3x3<f32>,\n\tnodeUniform2 : f32,\n\tnodeUniform5 : mat4x4<f32>\n};\n@binding( 2 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// vars\nvar<private> DiffuseColor : vec4<f32>;\nvar<private> nodeVar0 : vec4<f32>;\nvar<private> Output : vec4<f32>;\nvar<private> nodeVar1 : vec4<f32>;\n\n// codes\n\n\n@fragment\nfn main( @location( 0 ) nodeVarying4 : vec2<f32> ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\tnodeVar0 = textureSample( nodeUniform0, nodeUniform0_sampler, ( object.nodeUniform1 * vec3<f32>( nodeVarying4, 1.0 ) ).xy );\n\tDiffuseColor = vec4<f32>( vec3<f32>( 0.0, 0.0, 0.0 ), ( 1.0 * nodeVar0.w ) );\n\tDiffuseColor.w = ( DiffuseColor.w * object.nodeUniform2 );\n\tnodeVar1 = max( vec4<f32>( DiffuseColor.xyz, DiffuseColor.w ), vec4<f32>( 0.0 ) );\n\tOutput = nodeVar1;\n\n\t// result\n\n\toutput.color = nodeVar1;\n\n\treturn output;\n\n}\n"
+		},
+		{
+			"index": 7,
+			"label": "vertex",
+			"code": "// Three.js r186 - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform18 : vec3<f32>,\n\tnodeUniform29 : f32,\n\tnodeUniform30 : f32,\n\tnodeUniform32 : vec3<f32>,\n\tnodeUniform33 : vec3<f32>,\n\tnodeUniform31 : vec3<f32>,\n\tnodeUniform17 : vec3<f32>,\n\tnodeUniform19 : mat4x4<f32>,\n\tnodeUniform23 : f32,\n\tnodeUniform22 : f32,\n\tnodeUniform21 : f32,\n\tnodeUniform24 : f32,\n\tnodeUniform26 : f32,\n\tnodeUniform27 : vec2<f32>,\n\tnodeUniform28 : f32\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform0 : vec3<f32>,\n\tnodeUniform2 : mat3x3<f32>,\n\tnodeUniform3 : f32,\n\tnodeUniform4 : f32,\n\tnodeUniform5 : f32,\n\tnodeUniform7 : mat3x3<f32>,\n\tnodeUniform9 : mat3x3<f32>,\n\tnodeUniform10 : vec3<f32>,\n\tnodeUniform11 : f32,\n\tnodeUniform13 : mat4x4<f32>,\n\tnodeUniform15 : mat3x3<f32>,\n\tnodeUniform16 : f32\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) v_positionView : vec3<f32>,\n\t@location( 1 ) v_normalViewGeometry : vec3<f32>,\n\t@location( 2 ) v_positionViewDirection : vec3<f32>,\n\t@location( 3 ) v_positionWorld : vec3<f32>,\n\t@location( 4 ) nodeVarying7 : vec2<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> normalLocal : vec3<f32>;\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar178 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) uv : vec2<f32>,\n\t@location( 1 ) normal : vec3<f32>,\n\t@location( 2 ) position : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tvaryings.nodeVarying7 = uv;\n\tnormalLocal = normal;\n\tvaryings.v_normalViewGeometry = normalize( ( render.cameraViewMatrix * vec4<f32>( ( object.nodeUniform9 * normalLocal ), 0.0 ) ).xyz );\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform13 );\n\tpositionLocal = position;\n\tvaryings.v_positionView = ( modelViewMatrix * vec4<f32>( positionLocal, 1.0 ) ).xyz;\n\tvaryings.v_positionViewDirection = ( - varyings.v_positionView );\n\tvaryings.v_positionWorld = ( object.nodeUniform13 * vec4<f32>( positionLocal, 1.0 ) ).xyz;\n\tVERTEX_nodeVar178 = ( render.cameraProjectionMatrix * vec4<f32>( varyings.v_positionView, 1.0 ) );\n\tVERTEX_v_modelViewProjection = VERTEX_nodeVar178;\n\n\t// result\n\n\tvaryings.builtinClipSpace = VERTEX_v_modelViewProjection;\n\n\treturn varyings;\n\n}\n"
+		},
+		{
+			"index": 8,
+			"label": "fragment",
+			"code": "// Three.js r186 - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 1 ) @group( 1 ) var nodeUniform1_sampler : sampler;\n@binding( 2 ) @group( 1 ) var nodeUniform1 : texture_2d<f32>;\n@binding( 3 ) @group( 1 ) var nodeUniform6_sampler : sampler;\n@binding( 4 ) @group( 1 ) var nodeUniform6 : texture_2d<f32>;\n@binding( 5 ) @group( 1 ) var nodeUniform12_sampler : sampler;\n@binding( 6 ) @group( 1 ) var nodeUniform12 : texture_2d<f32>;\n@binding( 7 ) @group( 1 ) var nodeUniform14_sampler : sampler;\n@binding( 8 ) @group( 1 ) var nodeUniform14 : texture_2d<f32>;\n@binding( 9 ) @group( 1 ) var nodeUniform25_sampler : sampler_comparison;\n@binding( 10 ) @group( 1 ) var nodeUniform25 : texture_depth_cube;\n\nstruct objectStruct {\n\tnodeUniform0 : vec3<f32>,\n\tnodeUniform2 : mat3x3<f32>,\n\tnodeUniform3 : f32,\n\tnodeUniform4 : f32,\n\tnodeUniform5 : f32,\n\tnodeUniform7 : mat3x3<f32>,\n\tnodeUniform9 : mat3x3<f32>,\n\tnodeUniform10 : vec3<f32>,\n\tnodeUniform11 : f32,\n\tnodeUniform13 : mat4x4<f32>,\n\tnodeUniform15 : mat3x3<f32>,\n\tnodeUniform16 : f32\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform18 : vec3<f32>,\n\tnodeUniform29 : f32,\n\tnodeUniform30 : f32,\n\tnodeUniform32 : vec3<f32>,\n\tnodeUniform33 : vec3<f32>,\n\tnodeUniform31 : vec3<f32>,\n\tnodeUniform17 : vec3<f32>,\n\tnodeUniform19 : mat4x4<f32>,\n\tnodeUniform23 : f32,\n\tnodeUniform22 : f32,\n\tnodeUniform21 : f32,\n\tnodeUniform24 : f32,\n\tnodeUniform26 : f32,\n\tnodeUniform27 : vec2<f32>,\n\tnodeUniform28 : f32\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\n// vars\nvar<private> DiffuseColor : vec4<f32>;\nvar<private> nodeVar0 : vec4<f32>;\nvar<private> Metalness : f32;\nvar<private> Roughness : f32;\nvar<private> nodeVar1 : vec4<f32>;\nvar<private> normalViewGeometry : vec3<f32>;\nvar<private> nodeVar2 : vec3<f32>;\nvar<private> SpecularColor : vec3<f32>;\nvar<private> SpecularColorBlended : vec3<f32>;\nvar<private> SpecularF90 : f32;\nvar<private> DiffuseContribution : vec3<f32>;\nvar<private> EmissiveColor : vec3<f32>;\nvar<private> Output : vec4<f32>;\nvar<private> nodeVar3 : vec3<f32>;\nvar<private> NORMAL_normalView : vec3<f32>;\nvar<private> nodeVar4 : vec3<f32>;\nvar<private> nodeVar5 : f32;\nvar<private> nodeVar6 : f32;\nvar<private> nodeVar7 : vec4<f32>;\nvar<private> nodeVar8 : vec4<f32>;\nvar<private> nodeVar9 : vec4<f32>;\nvar<private> nodeVar10 : vec2<f32>;\nvar<private> normalView : vec3<f32>;\nvar<private> positionViewDirection : vec3<f32>;\nvar<private> nodeVar11 : f32;\nvar<private> nodeVar12 : vec2<f32>;\nvar<private> nodeVar13 : f32;\nvar<private> nodeVar14 : f32;\nvar<private> nodeVar15 : f32;\nvar<private> nodeVar16 : f32;\nvar<private> nodeVar17 : vec3<f32>;\nvar<private> nodeVar18 : vec3<f32>;\nvar<private> nodeVar19 : vec3<f32>;\nvar<private> nodeVar20 : vec3<f32>;\nvar<private> nodeVar21 : f32;\nvar<private> shadowPositionWorld : vec3<f32>;\nvar<private> normalWorld : vec3<f32>;\nvar<private> nodeVar22 : f32;\nvar<private> nodeVar23 : f32;\nvar<private> nodeVar24 : f32;\nvar<private> nodeVar25 : f32;\nvar<private> nodeVar26 : vec3<f32>;\nvar<private> nodeVar27 : vec3<f32>;\nvar<private> nodeVar28 : vec3<f32>;\nvar<private> nodeVar29 : vec3<f32>;\nvar<private> nodeVar30 : f32;\nvar<private> nodeVar31 : vec2<f32>;\nvar<private> nodeVar32 : vec3<f32>;\nvar<private> nodeVar33 : f32;\nvar<private> nodeVar34 : vec3<f32>;\nvar<private> nodeVar35 : f32;\nvar<private> nodeVar36 : vec2<f32>;\nvar<private> nodeVar37 : vec3<f32>;\nvar<private> nodeVar38 : f32;\nvar<private> nodeVar39 : vec2<f32>;\nvar<private> nodeVar40 : vec3<f32>;\nvar<private> nodeVar41 : f32;\nvar<private> nodeVar42 : vec2<f32>;\nvar<private> nodeVar43 : vec3<f32>;\nvar<private> nodeVar44 : f32;\nvar<private> nodeVar45 : vec2<f32>;\nvar<private> nodeVar46 : vec3<f32>;\nvar<private> nodeVar47 : f32;\nvar<private> nodeVar48 : f32;\nvar<private> nodeVar49 : vec3<f32>;\nvar<private> nodeVar50 : f32;\nvar<private> nodeVar51 : f32;\nvar<private> nodeVar52 : f32;\nvar<private> nodeVar53 : f32;\nvar<private> nodeVar54 : vec3<f32>;\nvar<private> nodeVar55 : vec3<f32>;\nvar<private> nodeVar56 : vec3<f32>;\nvar<private> directDiffuse : vec3<f32>;\nvar<private> nodeVar57 : vec3<f32>;\nvar<private> nodeVar58 : vec3<f32>;\nvar<private> nodeVar59 : vec3<f32>;\nvar<private> nodeVar60 : vec3<f32>;\nvar<private> nodeVar61 : f32;\nvar<private> nodeVar62 : f32;\nvar<private> nodeVar63 : f32;\nvar<private> nodeVar64 : vec3<f32>;\nvar<private> nodeVar65 : vec3<f32>;\nvar<private> nodeVar66 : vec3<f32>;\nvar<private> nodeVar67 : vec3<f32>;\nvar<private> nodeVar68 : vec3<f32>;\nvar<private> directSpecular : vec3<f32>;\nvar<private> nodeVar69 : vec3<f32>;\nvar<private> nodeVar70 : f32;\nvar<private> nodeVar71 : f32;\nvar<private> nodeVar72 : f32;\nvar<private> nodeVar73 : vec3<f32>;\nvar<private> nodeVar74 : vec3<f32>;\nvar<private> nodeVar75 : vec3<f32>;\nvar<private> nodeVar76 : vec3<f32>;\nvar<private> irradiance : vec3<f32>;\nvar<private> nodeVar77 : f32;\nvar<private> nodeVar78 : f32;\nvar<private> nodeVar79 : f32;\nvar<private> nodeVar80 : vec3<f32>;\nvar<private> nodeVar81 : vec3<f32>;\nvar<private> nodeVar82 : vec3<f32>;\nvar<private> nodeVar83 : vec3<f32>;\nvar<private> nodeVar84 : vec3<f32>;\nvar<private> nodeVar85 : f32;\nvar<private> nodeVar86 : vec3<f32>;\nvar<private> nodeVar87 : vec3<f32>;\nvar<private> nodeVar88 : vec3<f32>;\nvar<private> nodeVar89 : vec3<f32>;\nvar<private> nodeVar90 : vec3<f32>;\nvar<private> nodeVar91 : vec3<f32>;\nvar<private> nodeVar92 : vec3<f32>;\nvar<private> nodeVar93 : f32;\nvar<private> nodeVar94 : f32;\nvar<private> nodeVar95 : f32;\nvar<private> nodeVar96 : vec3<f32>;\nvar<private> nodeVar97 : vec3<f32>;\nvar<private> nodeVar98 : vec3<f32>;\nvar<private> nodeVar99 : vec3<f32>;\nvar<private> nodeVar100 : vec3<f32>;\nvar<private> nodeVar101 : vec3<f32>;\nvar<private> nodeVar102 : vec3<f32>;\nvar<private> nodeVar103 : vec3<f32>;\nvar<private> nodeVar104 : vec3<f32>;\nvar<private> nodeVar105 : vec3<f32>;\nvar<private> nodeVar106 : vec3<f32>;\nvar<private> nodeVar107 : vec3<f32>;\nvar<private> nodeVar108 : vec3<f32>;\nvar<private> indirectDiffuse : vec3<f32>;\nvar<private> nodeVar109 : vec3<f32>;\nvar<private> singleScatteringDielectric : vec3<f32>;\nvar<private> multiScatteringDielectric : vec3<f32>;\nvar<private> singleScatteringMetallic : vec3<f32>;\nvar<private> multiScatteringMetallic : vec3<f32>;\nvar<private> nodeVar110 : vec3<f32>;\nvar<private> nodeVar111 : f32;\nvar<private> nodeVar112 : vec3<f32>;\nvar<private> nodeVar113 : vec3<f32>;\nvar<private> nodeVar114 : vec3<f32>;\nvar<private> nodeVar115 : vec3<f32>;\nvar<private> nodeVar116 : vec3<f32>;\nvar<private> nodeVar117 : vec3<f32>;\nvar<private> nodeVar118 : vec3<f32>;\nvar<private> nodeVar119 : f32;\nvar<private> nodeVar120 : f32;\nvar<private> nodeVar121 : f32;\nvar<private> nodeVar122 : vec3<f32>;\nvar<private> nodeVar123 : vec3<f32>;\nvar<private> nodeVar124 : vec3<f32>;\nvar<private> nodeVar125 : vec3<f32>;\nvar<private> nodeVar126 : vec3<f32>;\nvar<private> nodeVar127 : vec3<f32>;\nvar<private> nodeVar128 : vec3<f32>;\nvar<private> nodeVar129 : f32;\nvar<private> nodeVar130 : vec3<f32>;\nvar<private> nodeVar131 : vec3<f32>;\nvar<private> nodeVar132 : vec3<f32>;\nvar<private> nodeVar133 : vec3<f32>;\nvar<private> nodeVar134 : vec3<f32>;\nvar<private> nodeVar135 : vec3<f32>;\nvar<private> nodeVar136 : vec3<f32>;\nvar<private> nodeVar137 : f32;\nvar<private> nodeVar138 : f32;\nvar<private> nodeVar139 : f32;\nvar<private> nodeVar140 : vec3<f32>;\nvar<private> nodeVar141 : vec3<f32>;\nvar<private> nodeVar142 : vec3<f32>;\nvar<private> nodeVar143 : vec3<f32>;\nvar<private> nodeVar144 : vec3<f32>;\nvar<private> nodeVar145 : vec3<f32>;\nvar<private> radiance : vec3<f32>;\nvar<private> nodeVar146 : vec3<f32>;\nvar<private> nodeVar147 : vec3<f32>;\nvar<private> nodeVar148 : vec3<f32>;\nvar<private> iblIrradiance : vec3<f32>;\nvar<private> nodeVar149 : vec3<f32>;\nvar<private> nodeVar150 : vec3<f32>;\nvar<private> nodeVar151 : vec3<f32>;\nvar<private> nodeVar152 : vec3<f32>;\nvar<private> nodeVar153 : vec3<f32>;\nvar<private> nodeVar154 : vec3<f32>;\nvar<private> nodeVar155 : vec3<f32>;\nvar<private> nodeVar156 : vec3<f32>;\nvar<private> nodeVar157 : vec3<f32>;\nvar<private> nodeVar158 : vec3<f32>;\nvar<private> indirectSpecular : vec3<f32>;\nvar<private> nodeVar159 : vec3<f32>;\nvar<private> nodeVar160 : vec3<f32>;\nvar<private> ambientOcclusion : f32;\nvar<private> nodeVar161 : vec3<f32>;\nvar<private> nodeVar162 : f32;\nvar<private> nodeVar163 : f32;\nvar<private> nodeVar164 : f32;\nvar<private> nodeVar165 : f32;\nvar<private> nodeVar166 : f32;\nvar<private> nodeVar167 : f32;\nvar<private> nodeVar168 : f32;\nvar<private> nodeVar169 : f32;\nvar<private> nodeVar170 : f32;\nvar<private> nodeVar171 : f32;\nvar<private> nodeVar172 : f32;\nvar<private> nodeVar173 : vec3<f32>;\nvar<private> totalDiffuse : vec3<f32>;\nvar<private> nodeVar174 : vec3<f32>;\nvar<private> totalSpecular : vec3<f32>;\nvar<private> nodeVar175 : vec3<f32>;\nvar<private> outgoingLight : vec3<f32>;\nvar<private> nodeVar176 : vec3<f32>;\nvar<private> nodeVar177 : vec4<f32>;\n\n// codes\nfn interleavedGradientNoise ( position : vec2<f32> ) -> f32 {\n\n\t\n\n\n\treturn fract( ( 52.9829189 * fract( dot( position, vec2<f32>( 0.06711056, 0.00583715 ) ) ) ) );\n\n}\n\n\nfn vogelDiskSample ( sampleIndex : i32, samplesCount : i32, phi : f32 ) -> vec2<f32> {\n\n\tvar nodeVar0 : f32;\n\n\tnodeVar0 = ( ( f32( sampleIndex ) * 2.399963229728653 ) + phi );\n\n\treturn ( vec2<f32>( cos( nodeVar0 ), sin( nodeVar0 ) ) * vec2<f32>( sqrt( ( ( f32( sampleIndex ) + 0.5 ) / f32( samplesCount ) ) ) ) );\n\n}\n\n\nfn V_GGX_SmithCorrelated ( alpha : f32, dotNL : f32, dotNV : f32 ) -> f32 {\n\n\tvar nodeVar0 : f32;\n\n\tnodeVar0 = ( alpha * alpha );\n\n\treturn ( 0.5 / max( ( ( dotNL * sqrt( ( nodeVar0 + ( ( 1.0 - nodeVar0 ) * ( dotNV * dotNV ) ) ) ) ) + ( dotNV * sqrt( ( nodeVar0 + ( ( 1.0 - nodeVar0 ) * ( dotNL * dotNL ) ) ) ) ) ), 0.000001 ) );\n\n}\n\n\nfn D_GGX ( alpha : f32, dotNH : f32 ) -> f32 {\n\n\tvar nodeVar0 : f32;\n\tvar nodeVar1 : f32;\n\n\tnodeVar0 = ( alpha * alpha );\n\tnodeVar1 = ( 1.0 - ( ( dotNH * dotNH ) * ( 1.0 - nodeVar0 ) ) );\n\n\treturn ( ( nodeVar0 / ( nodeVar1 * nodeVar1 ) ) * 0.3183098861837907 );\n\n}\n\n\n\n\n@fragment\nfn main( @location( 0 ) v_positionView : vec3<f32>,\n\t@location( 1 ) v_normalViewGeometry : vec3<f32>,\n\t@location( 2 ) v_positionViewDirection : vec3<f32>,\n\t@location( 3 ) v_positionWorld : vec3<f32>,\n\t@location( 4 ) nodeVarying7 : vec2<f32>,\n\t@builtin( front_facing ) isFront : bool,\n\t@builtin( position ) fragCoord : vec4<f32> ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\tnodeVar0 = textureSample( nodeUniform1, nodeUniform1_sampler, ( object.nodeUniform2 * vec3<f32>( nodeVarying7, 1.0 ) ).xy );\n\tDiffuseColor = ( vec4<f32>( object.nodeUniform0, 1.0 ) * nodeVar0 );\n\tDiffuseColor.w = ( DiffuseColor.w * object.nodeUniform3 );\n\tDiffuseColor.w = 1.0;\n\tMetalness = object.nodeUniform4;\n\tnodeVar1 = textureSample( nodeUniform6, nodeUniform6_sampler, ( object.nodeUniform7 * vec3<f32>( nodeVarying7, 1.0 ) ).xy );\n\tnormalViewGeometry = normalize( v_normalViewGeometry );\n\tnodeVar2 = max( abs( dpdx( normalViewGeometry ) ), abs( - dpdy( normalViewGeometry ) ) );\n\tRoughness = min( ( max( ( object.nodeUniform5 * nodeVar1.y ), 0.0525 ) + max( max( nodeVar2.x, nodeVar2.y ), nodeVar2.z ) ), 1.0 );\n\tSpecularColor = vec3<f32>( 0.04, 0.04, 0.04 );\n\tSpecularColorBlended = mix( vec3<f32>( 0.04, 0.04, 0.04 ), DiffuseColor.xyz, Metalness );\n\tSpecularF90 = 1.0;\n\tDiffuseContribution = ( DiffuseColor.xyz * vec3<f32>( ( 1.0 - object.nodeUniform4 ) ) );\n\tEmissiveColor = ( object.nodeUniform10 * vec3<f32>( object.nodeUniform11 ) );\n\tnodeVar3 = normalize( dpdx( v_positionView ) );\n\tNORMAL_normalView = normalViewGeometry;\n\tnodeVar4 = cross( normalize( - dpdy( v_positionView ) ), NORMAL_normalView );\n\tnodeVar5 = ( ( f32( isFront ) * 2.0 ) - 1.0 );\n\tnodeVar6 = ( dot( nodeVar3, nodeVar4 ) * nodeVar5 );\n\tnodeVar7 = textureSample( nodeUniform14, nodeUniform14_sampler, ( object.nodeUniform15 * vec3<f32>( ( nodeVarying7 + dpdx( nodeVarying7 ) ), 1.0 ) ).xy );\n\tnodeVar8 = textureSample( nodeUniform14, nodeUniform14_sampler, ( object.nodeUniform15 * vec3<f32>( nodeVarying7, 1.0 ) ).xy );\n\tnodeVar9 = textureSample( nodeUniform14, nodeUniform14_sampler, ( object.nodeUniform15 * vec3<f32>( ( nodeVarying7 + - dpdy( nodeVarying7 ) ), 1.0 ) ).xy );\n\tnodeVar10 = ( vec2<f32>( ( nodeVar7.x - nodeVar8.x ), ( nodeVar9.x - nodeVar8.x ) ) * vec2<f32>( object.nodeUniform16 ) );\n\tnormalView = normalize( ( ( vec3<f32>( abs( nodeVar6 ) ) * NORMAL_normalView ) - ( vec3<f32>( sign( nodeVar6 ) ) * ( ( vec3<f32>( nodeVar10.x ) * nodeVar4 ) + ( vec3<f32>( nodeVar10.y ) * cross( NORMAL_normalView, nodeVar3 ) ) ) ) ) );\n\tpositionViewDirection = normalize( v_positionViewDirection );\n\tnodeVar11 = dot( normalView, positionViewDirection );\n\tnodeVar12 = textureSample( nodeUniform12, nodeUniform12_sampler, vec2<f32>( Roughness, clamp( nodeVar11, 0.0, 1.0 ) ) ).xy;\n\tlet dfg = nodeVar12;\n\tnodeVar13 = ( dfg.x + dfg.y );\n\tnodeVar14 = ( 1.0 / nodeVar13 );\n\tnodeVar15 = nodeVar14;\n\tnodeVar16 = ( nodeVar15 - 1.0 );\n\tnodeVar17 = ( SpecularColorBlended * vec3<f32>( nodeVar16 ) );\n\tnodeVar18 = ( nodeVar17 + vec3<f32>( 1.0 ) );\n\tlet multiScatteringCompensation = nodeVar18;\n\tnodeVar19 = ( render.nodeUniform17 - v_positionView );\n\tnodeVar20 = normalize( nodeVar19 );\n\tnodeVar21 = dot( normalView, nodeVar20 );\n\tshadowPositionWorld = v_positionWorld;\n\tnormalWorld = normalize( ( vec4<f32>( normalView, 0.0 ) * render.cameraViewMatrix ).xyz );\n\tlet nodeConst0 = ( render.nodeUniform19 * vec4<f32>( ( shadowPositionWorld + ( normalWorld * vec3<f32>( render.nodeUniform21 ) ) ), 1.0 ) ).xyz;\n\tlet nodeConst1 = abs( nodeConst0 );\n\tnodeVar22 = 1.0;\n\tnodeVar23 = max( max( nodeConst1.x, nodeConst1.y ), nodeConst1.z );\n\n\tif ( ( ( ( nodeVar23 - render.nodeUniform22 ) <= 0.0 ) && ( ( nodeVar23 - render.nodeUniform23 ) >= 0.0 ) ) ) {\n\n\t\tnodeVar24 = ( - nodeVar23 );\n\t\tnodeVar25 = ( ( ( render.nodeUniform23 + nodeVar24 ) * render.nodeUniform22 ) / ( ( render.nodeUniform22 - render.nodeUniform23 ) * nodeVar24 ) );\n\t\tnodeVar25 = ( nodeVar25 + render.nodeUniform24 );\n\t\tnodeVar26 = normalize( nodeConst0 );\n\t\tnodeVar28 = abs( nodeVar26 );\n\n\t\tif ( ( nodeVar28.x > nodeVar28.z ) ) {\n\n\t\t\tnodeVar27 = vec3<f32>( 0.0, 1.0, 0.0 );\n\n\t\t} else {\n\n\t\t\tnodeVar27 = vec3<f32>( 1.0, 0.0, 0.0 );\n\n\t\t}\n\n\t\tnodeVar29 = normalize( cross( nodeVar26, nodeVar27 ) );\n\t\tnodeVar30 = ( interleavedGradientNoise( fragCoord.xy ) * 6.28318530718 );\n\t\tnodeVar31 = vogelDiskSample( 0, 5, nodeVar30 );\n\t\tnodeVar32 = cross( nodeVar26, nodeVar29 );\n\t\tnodeVar33 = ( render.nodeUniform26 / render.nodeUniform27.x );\n\t\tnodeVar34 = ( nodeVar26 + ( ( ( nodeVar29 * vec3<f32>( nodeVar31.x ) ) + ( nodeVar32 * vec3<f32>( nodeVar31.y ) ) ) * vec3<f32>( nodeVar33 ) ) );\n\t\tnodeVar35 = textureSampleCompare( nodeUniform25, nodeUniform25_sampler, vec3<f32>( nodeVar34.x, ( - nodeVar34.y ), nodeVar34.z ), nodeVar25 );\n\t\tnodeVar36 = vogelDiskSample( 1, 5, nodeVar30 );\n\t\tnodeVar37 = ( nodeVar26 + ( ( ( nodeVar29 * vec3<f32>( nodeVar36.x ) ) + ( nodeVar32 * vec3<f32>( nodeVar36.y ) ) ) * vec3<f32>( nodeVar33 ) ) );\n\t\tnodeVar38 = textureSampleCompare( nodeUniform25, nodeUniform25_sampler, vec3<f32>( nodeVar37.x, ( - nodeVar37.y ), nodeVar37.z ), nodeVar25 );\n\t\tnodeVar39 = vogelDiskSample( 2, 5, nodeVar30 );\n\t\tnodeVar40 = ( nodeVar26 + ( ( ( nodeVar29 * vec3<f32>( nodeVar39.x ) ) + ( nodeVar32 * vec3<f32>( nodeVar39.y ) ) ) * vec3<f32>( nodeVar33 ) ) );\n\t\tnodeVar41 = textureSampleCompare( nodeUniform25, nodeUniform25_sampler, vec3<f32>( nodeVar40.x, ( - nodeVar40.y ), nodeVar40.z ), nodeVar25 );\n\t\tnodeVar42 = vogelDiskSample( 3, 5, nodeVar30 );\n\t\tnodeVar43 = ( nodeVar26 + ( ( ( nodeVar29 * vec3<f32>( nodeVar42.x ) ) + ( nodeVar32 * vec3<f32>( nodeVar42.y ) ) ) * vec3<f32>( nodeVar33 ) ) );\n\t\tnodeVar44 = textureSampleCompare( nodeUniform25, nodeUniform25_sampler, vec3<f32>( nodeVar43.x, ( - nodeVar43.y ), nodeVar43.z ), nodeVar25 );\n\t\tnodeVar45 = vogelDiskSample( 4, 5, nodeVar30 );\n\t\tnodeVar46 = ( nodeVar26 + ( ( ( nodeVar29 * vec3<f32>( nodeVar45.x ) ) + ( nodeVar32 * vec3<f32>( nodeVar45.y ) ) ) * vec3<f32>( nodeVar33 ) ) );\n\t\tnodeVar47 = textureSampleCompare( nodeUniform25, nodeUniform25_sampler, vec3<f32>( nodeVar46.x, ( - nodeVar46.y ), nodeVar46.z ), nodeVar25 );\n\t\tnodeVar22 = ( ( ( ( ( nodeVar35 + nodeVar38 ) + nodeVar41 ) + nodeVar44 ) + nodeVar47 ) * 0.2 );\n\t\t\n\n\t}\n\n\tnodeVar48 = mix( 1.0, nodeVar22, render.nodeUniform28 );\n\tnodeVar49 = ( render.nodeUniform18 * vec3<f32>( nodeVar48 ) );\n\n\tif ( ( render.nodeUniform29 > 0.0 ) ) {\n\n\t\tnodeVar51 = length( nodeVar19 );\n\t\tnodeVar52 = ( nodeVar51 / render.nodeUniform29 );\n\t\tnodeVar53 = clamp( ( 1.0 - ( ( ( nodeVar52 * nodeVar52 ) * nodeVar52 ) * nodeVar52 ) ), 0.0, 1.0 );\n\t\tnodeVar50 = ( ( 1.0 / max( pow( nodeVar51, render.nodeUniform30 ), 0.01 ) ) * ( nodeVar53 * nodeVar53 ) );\n\n\t} else {\n\n\t\tnodeVar50 = ( 1.0 / max( pow( length( nodeVar19 ), render.nodeUniform30 ), 0.01 ) );\n\n\t}\n\n\tnodeVar54 = ( nodeVar49 * vec3<f32>( nodeVar50 ) );\n\tnodeVar55 = ( vec3<f32>( clamp( nodeVar21, 0.0, 1.0 ) ) * nodeVar54 );\n\tnodeVar56 = nodeVar55;\n\tdirectDiffuse = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar57 = ( DiffuseContribution * vec3<f32>( 0.3183098861837907 ) );\n\tnodeVar58 = ( nodeVar56 * nodeVar57 );\n\tnodeVar59 = ( nodeVar20 + positionViewDirection );\n\tnodeVar60 = normalize( nodeVar59 );\n\tnodeVar61 = dot( positionViewDirection, nodeVar60 );\n\tnodeVar62 = clamp( nodeVar61, 0.0, 1.0 );\n\tnodeVar63 = exp2( ( ( ( nodeVar62 * -5.55473 ) - 6.98316 ) * nodeVar62 ) );\n\tnodeVar64 = ( ( SpecularColor * vec3<f32>( ( 1.0 - nodeVar63 ) ) ) + vec3<f32>( ( SpecularF90 * nodeVar63 ) ) );\n\tnodeVar65 = ( vec3<f32>( 1.0 ) - nodeVar64 );\n\tnodeVar66 = nodeVar65;\n\tnodeVar67 = ( nodeVar58 * nodeVar66 );\n\tnodeVar68 = ( directDiffuse + nodeVar67 );\n\tdirectDiffuse = nodeVar68;\n\tdirectSpecular = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar69 = normalize( ( nodeVar20 + positionViewDirection ) );\n\tnodeVar70 = clamp( dot( positionViewDirection, nodeVar69 ), 0.0, 1.0 );\n\tnodeVar71 = exp2( ( ( ( nodeVar70 * -5.55473 ) - 6.98316 ) * nodeVar70 ) );\n\tnodeVar72 = ( Roughness * Roughness );\n\tnodeVar73 = ( ( ( ( SpecularColorBlended * vec3<f32>( ( 1.0 - nodeVar71 ) ) ) + vec3<f32>( ( 1.0 * nodeVar71 ) ) ) * vec3<f32>( V_GGX_SmithCorrelated( nodeVar72, clamp( dot( normalView, nodeVar20 ), 0.0, 1.0 ), clamp( dot( normalView, positionViewDirection ), 0.0, 1.0 ) ) ) ) * vec3<f32>( D_GGX( nodeVar72, clamp( dot( normalView, nodeVar69 ), 0.0, 1.0 ) ) ) );\n\tnodeVar74 = ( nodeVar56 * nodeVar73 );\n\tnodeVar75 = ( nodeVar74 * multiScatteringCompensation );\n\tnodeVar76 = ( directSpecular + nodeVar75 );\n\tdirectSpecular = nodeVar76;\n\tirradiance = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar77 = dot( normalWorld, normalize( render.nodeUniform33 ) );\n\tnodeVar78 = ( nodeVar77 * 0.5 );\n\tnodeVar79 = ( nodeVar78 + 0.5 );\n\tnodeVar80 = mix( render.nodeUniform31, render.nodeUniform32, nodeVar79 );\n\tnodeVar81 = ( irradiance + nodeVar80 );\n\tirradiance = nodeVar81;\n\tnodeVar82 = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar83 = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar84 = ( SpecularColor * vec3<f32>( dfg.x ) );\n\tnodeVar85 = ( SpecularF90 * dfg.y );\n\tnodeVar86 = ( nodeVar84 + vec3<f32>( nodeVar85 ) );\n\tnodeVar87 = ( nodeVar82 + nodeVar86 );\n\tnodeVar82 = nodeVar87;\n\tnodeVar88 = ( vec3<f32>( 1.0 ) - SpecularColor );\n\tnodeVar89 = nodeVar88;\n\tnodeVar90 = ( nodeVar89 * vec3<f32>( 0.047619 ) );\n\tnodeVar91 = ( SpecularColor + nodeVar90 );\n\tnodeVar92 = ( nodeVar86 * nodeVar91 );\n\tnodeVar93 = ( dfg.x + dfg.y );\n\tnodeVar94 = ( 1.0 - nodeVar93 );\n\tnodeVar95 = nodeVar94;\n\tnodeVar96 = ( vec3<f32>( nodeVar95 ) * nodeVar91 );\n\tnodeVar97 = ( vec3<f32>( 1.0 ) - nodeVar96 );\n\tnodeVar98 = nodeVar97;\n\tnodeVar99 = ( nodeVar92 / nodeVar98 );\n\tnodeVar100 = ( nodeVar99 * vec3<f32>( nodeVar95 ) );\n\tnodeVar101 = ( nodeVar83 + nodeVar100 );\n\tnodeVar83 = nodeVar101;\n\tnodeVar102 = ( DiffuseContribution * vec3<f32>( 0.3183098861837907 ) );\n\tnodeVar103 = ( irradiance * nodeVar102 );\n\tnodeVar104 = ( nodeVar82 + nodeVar83 );\n\tnodeVar105 = ( vec3<f32>( 1.0 ) - nodeVar104 );\n\tnodeVar106 = nodeVar105;\n\tnodeVar107 = ( nodeVar103 * nodeVar106 );\n\tnodeVar108 = nodeVar107;\n\tindirectDiffuse = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar109 = ( indirectDiffuse + nodeVar108 );\n\tindirectDiffuse = nodeVar109;\n\tsingleScatteringDielectric = vec3<f32>( 0.0, 0.0, 0.0 );\n\tmultiScatteringDielectric = vec3<f32>( 0.0, 0.0, 0.0 );\n\tsingleScatteringMetallic = vec3<f32>( 0.0, 0.0, 0.0 );\n\tmultiScatteringMetallic = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar110 = ( SpecularColor * vec3<f32>( dfg.x ) );\n\tnodeVar111 = ( SpecularF90 * dfg.y );\n\tnodeVar112 = ( nodeVar110 + vec3<f32>( nodeVar111 ) );\n\tnodeVar113 = ( singleScatteringDielectric + nodeVar112 );\n\tsingleScatteringDielectric = nodeVar113;\n\tnodeVar114 = ( vec3<f32>( 1.0 ) - SpecularColor );\n\tnodeVar115 = nodeVar114;\n\tnodeVar116 = ( nodeVar115 * vec3<f32>( 0.047619 ) );\n\tnodeVar117 = ( SpecularColor + nodeVar116 );\n\tnodeVar118 = ( nodeVar112 * nodeVar117 );\n\tnodeVar119 = ( dfg.x + dfg.y );\n\tnodeVar120 = ( 1.0 - nodeVar119 );\n\tnodeVar121 = nodeVar120;\n\tnodeVar122 = ( vec3<f32>( nodeVar121 ) * nodeVar117 );\n\tnodeVar123 = ( vec3<f32>( 1.0 ) - nodeVar122 );\n\tnodeVar124 = nodeVar123;\n\tnodeVar125 = ( nodeVar118 / nodeVar124 );\n\tnodeVar126 = ( nodeVar125 * vec3<f32>( nodeVar121 ) );\n\tnodeVar127 = ( multiScatteringDielectric + nodeVar126 );\n\tmultiScatteringDielectric = nodeVar127;\n\tnodeVar128 = ( DiffuseColor.xyz * vec3<f32>( dfg.x ) );\n\tnodeVar129 = ( SpecularF90 * dfg.y );\n\tnodeVar130 = ( nodeVar128 + vec3<f32>( nodeVar129 ) );\n\tnodeVar131 = ( singleScatteringMetallic + nodeVar130 );\n\tsingleScatteringMetallic = nodeVar131;\n\tnodeVar132 = ( vec3<f32>( 1.0 ) - DiffuseColor.xyz );\n\tnodeVar133 = nodeVar132;\n\tnodeVar134 = ( nodeVar133 * vec3<f32>( 0.047619 ) );\n\tnodeVar135 = ( DiffuseColor.xyz + nodeVar134 );\n\tnodeVar136 = ( nodeVar130 * nodeVar135 );\n\tnodeVar137 = ( dfg.x + dfg.y );\n\tnodeVar138 = ( 1.0 - nodeVar137 );\n\tnodeVar139 = nodeVar138;\n\tnodeVar140 = ( vec3<f32>( nodeVar139 ) * nodeVar135 );\n\tnodeVar141 = ( vec3<f32>( 1.0 ) - nodeVar140 );\n\tnodeVar142 = nodeVar141;\n\tnodeVar143 = ( nodeVar136 / nodeVar142 );\n\tnodeVar144 = ( nodeVar143 * vec3<f32>( nodeVar139 ) );\n\tnodeVar145 = ( multiScatteringMetallic + nodeVar144 );\n\tmultiScatteringMetallic = nodeVar145;\n\tradiance = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar146 = mix( singleScatteringDielectric, singleScatteringMetallic, Metalness );\n\tnodeVar147 = ( radiance * nodeVar146 );\n\tnodeVar148 = mix( multiScatteringDielectric, multiScatteringMetallic, Metalness );\n\tiblIrradiance = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar149 = ( iblIrradiance * vec3<f32>( 0.3183098861837907 ) );\n\tnodeVar150 = ( nodeVar148 * nodeVar149 );\n\tnodeVar151 = ( nodeVar147 + nodeVar150 );\n\tnodeVar152 = nodeVar151;\n\tnodeVar153 = ( singleScatteringDielectric + multiScatteringDielectric );\n\tnodeVar154 = ( vec3<f32>( 1.0 ) - nodeVar153 );\n\tnodeVar155 = nodeVar154;\n\tnodeVar156 = ( DiffuseContribution * nodeVar155 );\n\tnodeVar157 = ( nodeVar156 * nodeVar149 );\n\tnodeVar158 = nodeVar157;\n\tindirectSpecular = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar159 = ( indirectSpecular + nodeVar152 );\n\tindirectSpecular = nodeVar159;\n\tnodeVar160 = ( indirectDiffuse + nodeVar158 );\n\tindirectDiffuse = nodeVar160;\n\tambientOcclusion = 1.0;\n\tnodeVar161 = ( indirectDiffuse * vec3<f32>( ambientOcclusion ) );\n\tindirectDiffuse = nodeVar161;\n\tnodeVar162 = dot( normalView, positionViewDirection );\n\tnodeVar163 = ( clamp( nodeVar162, 0.0, 1.0 ) + ambientOcclusion );\n\tnodeVar164 = ( Roughness * -16.0 );\n\tnodeVar165 = ( 1.0 - nodeVar164 );\n\tnodeVar166 = nodeVar165;\n\tnodeVar167 = ( - nodeVar166 );\n\tnodeVar168 = exp2( nodeVar167 );\n\tnodeVar169 = pow( nodeVar163, nodeVar168 );\n\tnodeVar170 = ( 1.0 - nodeVar169 );\n\tnodeVar171 = nodeVar170;\n\tnodeVar172 = ( ambientOcclusion - nodeVar171 );\n\tnodeVar173 = ( indirectSpecular * vec3<f32>( clamp( nodeVar172, 0.0, 1.0 ) ) );\n\tindirectSpecular = nodeVar173;\n\tnodeVar174 = ( directDiffuse + indirectDiffuse );\n\ttotalDiffuse = nodeVar174;\n\tnodeVar175 = ( directSpecular + indirectSpecular );\n\ttotalSpecular = nodeVar175;\n\tnodeVar176 = ( totalDiffuse + totalSpecular );\n\toutgoingLight = nodeVar176;\n\tnodeVar177 = max( vec4<f32>( ( outgoingLight + EmissiveColor ), DiffuseColor.w ), vec4<f32>( 0.0 ) );\n\tOutput = nodeVar177;\n\n\t// result\n\n\toutput.color = nodeVar177;\n\n\treturn output;\n\n}\n"
+		},
+		{
+			"index": 9,
+			"label": "vertex",
+			"code": "// Three.js r186 - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform16 : vec3<f32>,\n\tnodeUniform17 : f32,\n\tnodeUniform18 : f32,\n\tnodeUniform20 : vec3<f32>,\n\tnodeUniform22 : vec3<f32>,\n\tnodeUniform19 : vec3<f32>,\n\tnodeUniform15 : vec3<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform0 : vec3<f32>,\n\tnodeUniform2 : mat3x3<f32>,\n\tnodeUniform3 : f32,\n\tnodeUniform4 : f32,\n\tnodeUniform5 : f32,\n\tnodeUniform7 : mat3x3<f32>,\n\tnodeUniform8 : vec3<f32>,\n\tnodeUniform9 : f32,\n\tnodeUniform11 : mat4x4<f32>,\n\tnodeUniform13 : mat3x3<f32>,\n\tnodeUniform14 : f32\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) v_positionView : vec3<f32>,\n\t@location( 1 ) v_normalViewGeometry : vec3<f32>,\n\t@location( 2 ) v_positionViewDirection : vec3<f32>,\n\t@location( 3 ) nodeVarying6 : vec2<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> normalLocal : vec3<f32>;\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar149 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) uv : vec2<f32>,\n\t@location( 1 ) normal : vec3<f32>,\n\t@location( 2 ) position : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tvaryings.nodeVarying6 = uv;\n\tnormalLocal = normal;\n\tvaryings.v_normalViewGeometry = normalize( ( render.cameraViewMatrix * vec4<f32>( ( object.nodeUniform7 * normalLocal ), 0.0 ) ).xyz );\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform11 );\n\tpositionLocal = position;\n\tvaryings.v_positionView = ( modelViewMatrix * vec4<f32>( positionLocal, 1.0 ) ).xyz;\n\tvaryings.v_positionViewDirection = ( - varyings.v_positionView );\n\tVERTEX_nodeVar149 = ( render.cameraProjectionMatrix * vec4<f32>( varyings.v_positionView, 1.0 ) );\n\tVERTEX_v_modelViewProjection = VERTEX_nodeVar149;\n\n\t// result\n\n\tvaryings.builtinClipSpace = VERTEX_v_modelViewProjection;\n\n\treturn varyings;\n\n}\n"
+		},
+		{
+			"index": 10,
+			"label": "fragment",
+			"code": "// Three.js r186 - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 1 ) @group( 1 ) var nodeUniform1_sampler : sampler;\n@binding( 2 ) @group( 1 ) var nodeUniform1 : texture_2d<f32>;\n@binding( 3 ) @group( 1 ) var nodeUniform10_sampler : sampler;\n@binding( 4 ) @group( 1 ) var nodeUniform10 : texture_2d<f32>;\n@binding( 5 ) @group( 1 ) var nodeUniform12_sampler : sampler;\n@binding( 6 ) @group( 1 ) var nodeUniform12 : texture_2d<f32>;\n\nstruct objectStruct {\n\tnodeUniform0 : vec3<f32>,\n\tnodeUniform2 : mat3x3<f32>,\n\tnodeUniform3 : f32,\n\tnodeUniform4 : f32,\n\tnodeUniform5 : f32,\n\tnodeUniform7 : mat3x3<f32>,\n\tnodeUniform8 : vec3<f32>,\n\tnodeUniform9 : f32,\n\tnodeUniform11 : mat4x4<f32>,\n\tnodeUniform13 : mat3x3<f32>,\n\tnodeUniform14 : f32\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform16 : vec3<f32>,\n\tnodeUniform17 : f32,\n\tnodeUniform18 : f32,\n\tnodeUniform20 : vec3<f32>,\n\tnodeUniform22 : vec3<f32>,\n\tnodeUniform19 : vec3<f32>,\n\tnodeUniform15 : vec3<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\n// vars\nvar<private> DiffuseColor : vec4<f32>;\nvar<private> nodeVar0 : vec4<f32>;\nvar<private> Metalness : f32;\nvar<private> Roughness : f32;\nvar<private> normalViewGeometry : vec3<f32>;\nvar<private> nodeVar1 : vec3<f32>;\nvar<private> SpecularColor : vec3<f32>;\nvar<private> SpecularColorBlended : vec3<f32>;\nvar<private> SpecularF90 : f32;\nvar<private> DiffuseContribution : vec3<f32>;\nvar<private> EmissiveColor : vec3<f32>;\nvar<private> Output : vec4<f32>;\nvar<private> nodeVar2 : vec3<f32>;\nvar<private> NORMAL_normalView : vec3<f32>;\nvar<private> nodeVar3 : vec3<f32>;\nvar<private> nodeVar4 : f32;\nvar<private> nodeVar5 : f32;\nvar<private> nodeVar6 : vec4<f32>;\nvar<private> nodeVar7 : vec4<f32>;\nvar<private> nodeVar8 : vec4<f32>;\nvar<private> nodeVar9 : vec2<f32>;\nvar<private> normalView : vec3<f32>;\nvar<private> positionViewDirection : vec3<f32>;\nvar<private> nodeVar10 : f32;\nvar<private> nodeVar11 : vec2<f32>;\nvar<private> nodeVar12 : f32;\nvar<private> nodeVar13 : f32;\nvar<private> nodeVar14 : f32;\nvar<private> nodeVar15 : f32;\nvar<private> nodeVar16 : vec3<f32>;\nvar<private> nodeVar17 : vec3<f32>;\nvar<private> nodeVar18 : vec3<f32>;\nvar<private> nodeVar19 : vec3<f32>;\nvar<private> nodeVar20 : f32;\nvar<private> nodeVar21 : f32;\nvar<private> nodeVar22 : f32;\nvar<private> nodeVar23 : f32;\nvar<private> nodeVar24 : f32;\nvar<private> nodeVar25 : vec3<f32>;\nvar<private> nodeVar26 : vec3<f32>;\nvar<private> nodeVar27 : vec3<f32>;\nvar<private> directDiffuse : vec3<f32>;\nvar<private> nodeVar28 : vec3<f32>;\nvar<private> nodeVar29 : vec3<f32>;\nvar<private> nodeVar30 : vec3<f32>;\nvar<private> nodeVar31 : vec3<f32>;\nvar<private> nodeVar32 : f32;\nvar<private> nodeVar33 : f32;\nvar<private> nodeVar34 : f32;\nvar<private> nodeVar35 : vec3<f32>;\nvar<private> nodeVar36 : vec3<f32>;\nvar<private> nodeVar37 : vec3<f32>;\nvar<private> nodeVar38 : vec3<f32>;\nvar<private> nodeVar39 : vec3<f32>;\nvar<private> directSpecular : vec3<f32>;\nvar<private> nodeVar40 : vec3<f32>;\nvar<private> nodeVar41 : f32;\nvar<private> nodeVar42 : f32;\nvar<private> nodeVar43 : f32;\nvar<private> nodeVar44 : vec3<f32>;\nvar<private> nodeVar45 : vec3<f32>;\nvar<private> nodeVar46 : vec3<f32>;\nvar<private> nodeVar47 : vec3<f32>;\nvar<private> irradiance : vec3<f32>;\nvar<private> normalWorld : vec3<f32>;\nvar<private> nodeVar48 : f32;\nvar<private> nodeVar49 : f32;\nvar<private> nodeVar50 : f32;\nvar<private> nodeVar51 : vec3<f32>;\nvar<private> nodeVar52 : vec3<f32>;\nvar<private> nodeVar53 : vec3<f32>;\nvar<private> nodeVar54 : vec3<f32>;\nvar<private> nodeVar55 : vec3<f32>;\nvar<private> nodeVar56 : f32;\nvar<private> nodeVar57 : vec3<f32>;\nvar<private> nodeVar58 : vec3<f32>;\nvar<private> nodeVar59 : vec3<f32>;\nvar<private> nodeVar60 : vec3<f32>;\nvar<private> nodeVar61 : vec3<f32>;\nvar<private> nodeVar62 : vec3<f32>;\nvar<private> nodeVar63 : vec3<f32>;\nvar<private> nodeVar64 : f32;\nvar<private> nodeVar65 : f32;\nvar<private> nodeVar66 : f32;\nvar<private> nodeVar67 : vec3<f32>;\nvar<private> nodeVar68 : vec3<f32>;\nvar<private> nodeVar69 : vec3<f32>;\nvar<private> nodeVar70 : vec3<f32>;\nvar<private> nodeVar71 : vec3<f32>;\nvar<private> nodeVar72 : vec3<f32>;\nvar<private> nodeVar73 : vec3<f32>;\nvar<private> nodeVar74 : vec3<f32>;\nvar<private> nodeVar75 : vec3<f32>;\nvar<private> nodeVar76 : vec3<f32>;\nvar<private> nodeVar77 : vec3<f32>;\nvar<private> nodeVar78 : vec3<f32>;\nvar<private> nodeVar79 : vec3<f32>;\nvar<private> indirectDiffuse : vec3<f32>;\nvar<private> nodeVar80 : vec3<f32>;\nvar<private> singleScatteringDielectric : vec3<f32>;\nvar<private> multiScatteringDielectric : vec3<f32>;\nvar<private> singleScatteringMetallic : vec3<f32>;\nvar<private> multiScatteringMetallic : vec3<f32>;\nvar<private> nodeVar81 : vec3<f32>;\nvar<private> nodeVar82 : f32;\nvar<private> nodeVar83 : vec3<f32>;\nvar<private> nodeVar84 : vec3<f32>;\nvar<private> nodeVar85 : vec3<f32>;\nvar<private> nodeVar86 : vec3<f32>;\nvar<private> nodeVar87 : vec3<f32>;\nvar<private> nodeVar88 : vec3<f32>;\nvar<private> nodeVar89 : vec3<f32>;\nvar<private> nodeVar90 : f32;\nvar<private> nodeVar91 : f32;\nvar<private> nodeVar92 : f32;\nvar<private> nodeVar93 : vec3<f32>;\nvar<private> nodeVar94 : vec3<f32>;\nvar<private> nodeVar95 : vec3<f32>;\nvar<private> nodeVar96 : vec3<f32>;\nvar<private> nodeVar97 : vec3<f32>;\nvar<private> nodeVar98 : vec3<f32>;\nvar<private> nodeVar99 : vec3<f32>;\nvar<private> nodeVar100 : f32;\nvar<private> nodeVar101 : vec3<f32>;\nvar<private> nodeVar102 : vec3<f32>;\nvar<private> nodeVar103 : vec3<f32>;\nvar<private> nodeVar104 : vec3<f32>;\nvar<private> nodeVar105 : vec3<f32>;\nvar<private> nodeVar106 : vec3<f32>;\nvar<private> nodeVar107 : vec3<f32>;\nvar<private> nodeVar108 : f32;\nvar<private> nodeVar109 : f32;\nvar<private> nodeVar110 : f32;\nvar<private> nodeVar111 : vec3<f32>;\nvar<private> nodeVar112 : vec3<f32>;\nvar<private> nodeVar113 : vec3<f32>;\nvar<private> nodeVar114 : vec3<f32>;\nvar<private> nodeVar115 : vec3<f32>;\nvar<private> nodeVar116 : vec3<f32>;\nvar<private> radiance : vec3<f32>;\nvar<private> nodeVar117 : vec3<f32>;\nvar<private> nodeVar118 : vec3<f32>;\nvar<private> nodeVar119 : vec3<f32>;\nvar<private> iblIrradiance : vec3<f32>;\nvar<private> nodeVar120 : vec3<f32>;\nvar<private> nodeVar121 : vec3<f32>;\nvar<private> nodeVar122 : vec3<f32>;\nvar<private> nodeVar123 : vec3<f32>;\nvar<private> nodeVar124 : vec3<f32>;\nvar<private> nodeVar125 : vec3<f32>;\nvar<private> nodeVar126 : vec3<f32>;\nvar<private> nodeVar127 : vec3<f32>;\nvar<private> nodeVar128 : vec3<f32>;\nvar<private> nodeVar129 : vec3<f32>;\nvar<private> indirectSpecular : vec3<f32>;\nvar<private> nodeVar130 : vec3<f32>;\nvar<private> nodeVar131 : vec3<f32>;\nvar<private> ambientOcclusion : f32;\nvar<private> nodeVar132 : vec3<f32>;\nvar<private> nodeVar133 : f32;\nvar<private> nodeVar134 : f32;\nvar<private> nodeVar135 : f32;\nvar<private> nodeVar136 : f32;\nvar<private> nodeVar137 : f32;\nvar<private> nodeVar138 : f32;\nvar<private> nodeVar139 : f32;\nvar<private> nodeVar140 : f32;\nvar<private> nodeVar141 : f32;\nvar<private> nodeVar142 : f32;\nvar<private> nodeVar143 : f32;\nvar<private> nodeVar144 : vec3<f32>;\nvar<private> totalDiffuse : vec3<f32>;\nvar<private> nodeVar145 : vec3<f32>;\nvar<private> totalSpecular : vec3<f32>;\nvar<private> nodeVar146 : vec3<f32>;\nvar<private> outgoingLight : vec3<f32>;\nvar<private> nodeVar147 : vec3<f32>;\nvar<private> nodeVar148 : vec4<f32>;\n\n// codes\nfn V_GGX_SmithCorrelated ( alpha : f32, dotNL : f32, dotNV : f32 ) -> f32 {\n\n\tvar nodeVar0 : f32;\n\n\tnodeVar0 = ( alpha * alpha );\n\n\treturn ( 0.5 / max( ( ( dotNL * sqrt( ( nodeVar0 + ( ( 1.0 - nodeVar0 ) * ( dotNV * dotNV ) ) ) ) ) + ( dotNV * sqrt( ( nodeVar0 + ( ( 1.0 - nodeVar0 ) * ( dotNL * dotNL ) ) ) ) ) ), 0.000001 ) );\n\n}\n\n\nfn D_GGX ( alpha : f32, dotNH : f32 ) -> f32 {\n\n\tvar nodeVar0 : f32;\n\tvar nodeVar1 : f32;\n\n\tnodeVar0 = ( alpha * alpha );\n\tnodeVar1 = ( 1.0 - ( ( dotNH * dotNH ) * ( 1.0 - nodeVar0 ) ) );\n\n\treturn ( ( nodeVar0 / ( nodeVar1 * nodeVar1 ) ) * 0.3183098861837907 );\n\n}\n\n\n\n\n@fragment\nfn main( @location( 0 ) v_positionView : vec3<f32>,\n\t@location( 1 ) v_normalViewGeometry : vec3<f32>,\n\t@location( 2 ) v_positionViewDirection : vec3<f32>,\n\t@location( 3 ) nodeVarying6 : vec2<f32>,\n\t@builtin( front_facing ) isFront : bool ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\tnodeVar0 = textureSample( nodeUniform1, nodeUniform1_sampler, ( object.nodeUniform2 * vec3<f32>( nodeVarying6, 1.0 ) ).xy );\n\tDiffuseColor = ( vec4<f32>( object.nodeUniform0, 1.0 ) * nodeVar0 );\n\tDiffuseColor.w = ( DiffuseColor.w * object.nodeUniform3 );\n\tDiffuseColor.w = 1.0;\n\tMetalness = object.nodeUniform4;\n\tnormalViewGeometry = normalize( v_normalViewGeometry );\n\tnodeVar1 = max( abs( dpdx( normalViewGeometry ) ), abs( - dpdy( normalViewGeometry ) ) );\n\tRoughness = min( ( max( object.nodeUniform5, 0.0525 ) + max( max( nodeVar1.x, nodeVar1.y ), nodeVar1.z ) ), 1.0 );\n\tSpecularColor = vec3<f32>( 0.04, 0.04, 0.04 );\n\tSpecularColorBlended = mix( vec3<f32>( 0.04, 0.04, 0.04 ), DiffuseColor.xyz, Metalness );\n\tSpecularF90 = 1.0;\n\tDiffuseContribution = ( DiffuseColor.xyz * vec3<f32>( ( 1.0 - object.nodeUniform4 ) ) );\n\tEmissiveColor = ( object.nodeUniform8 * vec3<f32>( object.nodeUniform9 ) );\n\tnodeVar2 = normalize( dpdx( v_positionView ) );\n\tNORMAL_normalView = normalViewGeometry;\n\tnodeVar3 = cross( normalize( - dpdy( v_positionView ) ), NORMAL_normalView );\n\tnodeVar4 = ( ( f32( isFront ) * 2.0 ) - 1.0 );\n\tnodeVar5 = ( dot( nodeVar2, nodeVar3 ) * nodeVar4 );\n\tnodeVar6 = textureSample( nodeUniform12, nodeUniform12_sampler, ( object.nodeUniform13 * vec3<f32>( ( nodeVarying6 + dpdx( nodeVarying6 ) ), 1.0 ) ).xy );\n\tnodeVar7 = textureSample( nodeUniform12, nodeUniform12_sampler, ( object.nodeUniform13 * vec3<f32>( nodeVarying6, 1.0 ) ).xy );\n\tnodeVar8 = textureSample( nodeUniform12, nodeUniform12_sampler, ( object.nodeUniform13 * vec3<f32>( ( nodeVarying6 + - dpdy( nodeVarying6 ) ), 1.0 ) ).xy );\n\tnodeVar9 = ( vec2<f32>( ( nodeVar6.x - nodeVar7.x ), ( nodeVar8.x - nodeVar7.x ) ) * vec2<f32>( object.nodeUniform14 ) );\n\tnormalView = normalize( ( ( vec3<f32>( abs( nodeVar5 ) ) * NORMAL_normalView ) - ( vec3<f32>( sign( nodeVar5 ) ) * ( ( vec3<f32>( nodeVar9.x ) * nodeVar3 ) + ( vec3<f32>( nodeVar9.y ) * cross( NORMAL_normalView, nodeVar2 ) ) ) ) ) );\n\tpositionViewDirection = normalize( v_positionViewDirection );\n\tnodeVar10 = dot( normalView, positionViewDirection );\n\tnodeVar11 = textureSample( nodeUniform10, nodeUniform10_sampler, vec2<f32>( Roughness, clamp( nodeVar10, 0.0, 1.0 ) ) ).xy;\n\tlet dfg = nodeVar11;\n\tnodeVar12 = ( dfg.x + dfg.y );\n\tnodeVar13 = ( 1.0 / nodeVar12 );\n\tnodeVar14 = nodeVar13;\n\tnodeVar15 = ( nodeVar14 - 1.0 );\n\tnodeVar16 = ( SpecularColorBlended * vec3<f32>( nodeVar15 ) );\n\tnodeVar17 = ( nodeVar16 + vec3<f32>( 1.0 ) );\n\tlet multiScatteringCompensation = nodeVar17;\n\tnodeVar18 = ( render.nodeUniform15 - v_positionView );\n\tnodeVar19 = normalize( nodeVar18 );\n\tnodeVar20 = dot( normalView, nodeVar19 );\n\n\tif ( ( render.nodeUniform17 > 0.0 ) ) {\n\n\t\tnodeVar22 = length( nodeVar18 );\n\t\tnodeVar23 = ( nodeVar22 / render.nodeUniform17 );\n\t\tnodeVar24 = clamp( ( 1.0 - ( ( ( nodeVar23 * nodeVar23 ) * nodeVar23 ) * nodeVar23 ) ), 0.0, 1.0 );\n\t\tnodeVar21 = ( ( 1.0 / max( pow( nodeVar22, render.nodeUniform18 ), 0.01 ) ) * ( nodeVar24 * nodeVar24 ) );\n\n\t} else {\n\n\t\tnodeVar21 = ( 1.0 / max( pow( length( nodeVar18 ), render.nodeUniform18 ), 0.01 ) );\n\n\t}\n\n\tnodeVar25 = ( render.nodeUniform16 * vec3<f32>( nodeVar21 ) );\n\tnodeVar26 = ( vec3<f32>( clamp( nodeVar20, 0.0, 1.0 ) ) * nodeVar25 );\n\tnodeVar27 = nodeVar26;\n\tdirectDiffuse = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar28 = ( DiffuseContribution * vec3<f32>( 0.3183098861837907 ) );\n\tnodeVar29 = ( nodeVar27 * nodeVar28 );\n\tnodeVar30 = ( nodeVar19 + positionViewDirection );\n\tnodeVar31 = normalize( nodeVar30 );\n\tnodeVar32 = dot( positionViewDirection, nodeVar31 );\n\tnodeVar33 = clamp( nodeVar32, 0.0, 1.0 );\n\tnodeVar34 = exp2( ( ( ( nodeVar33 * -5.55473 ) - 6.98316 ) * nodeVar33 ) );\n\tnodeVar35 = ( ( SpecularColor * vec3<f32>( ( 1.0 - nodeVar34 ) ) ) + vec3<f32>( ( SpecularF90 * nodeVar34 ) ) );\n\tnodeVar36 = ( vec3<f32>( 1.0 ) - nodeVar35 );\n\tnodeVar37 = nodeVar36;\n\tnodeVar38 = ( nodeVar29 * nodeVar37 );\n\tnodeVar39 = ( directDiffuse + nodeVar38 );\n\tdirectDiffuse = nodeVar39;\n\tdirectSpecular = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar40 = normalize( ( nodeVar19 + positionViewDirection ) );\n\tnodeVar41 = clamp( dot( positionViewDirection, nodeVar40 ), 0.0, 1.0 );\n\tnodeVar42 = exp2( ( ( ( nodeVar41 * -5.55473 ) - 6.98316 ) * nodeVar41 ) );\n\tnodeVar43 = ( Roughness * Roughness );\n\tnodeVar44 = ( ( ( ( SpecularColorBlended * vec3<f32>( ( 1.0 - nodeVar42 ) ) ) + vec3<f32>( ( 1.0 * nodeVar42 ) ) ) * vec3<f32>( V_GGX_SmithCorrelated( nodeVar43, clamp( dot( normalView, nodeVar19 ), 0.0, 1.0 ), clamp( dot( normalView, positionViewDirection ), 0.0, 1.0 ) ) ) ) * vec3<f32>( D_GGX( nodeVar43, clamp( dot( normalView, nodeVar40 ), 0.0, 1.0 ) ) ) );\n\tnodeVar45 = ( nodeVar27 * nodeVar44 );\n\tnodeVar46 = ( nodeVar45 * multiScatteringCompensation );\n\tnodeVar47 = ( directSpecular + nodeVar46 );\n\tdirectSpecular = nodeVar47;\n\tirradiance = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnormalWorld = normalize( ( vec4<f32>( normalView, 0.0 ) * render.cameraViewMatrix ).xyz );\n\tnodeVar48 = dot( normalWorld, normalize( render.nodeUniform22 ) );\n\tnodeVar49 = ( nodeVar48 * 0.5 );\n\tnodeVar50 = ( nodeVar49 + 0.5 );\n\tnodeVar51 = mix( render.nodeUniform19, render.nodeUniform20, nodeVar50 );\n\tnodeVar52 = ( irradiance + nodeVar51 );\n\tirradiance = nodeVar52;\n\tnodeVar53 = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar54 = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar55 = ( SpecularColor * vec3<f32>( dfg.x ) );\n\tnodeVar56 = ( SpecularF90 * dfg.y );\n\tnodeVar57 = ( nodeVar55 + vec3<f32>( nodeVar56 ) );\n\tnodeVar58 = ( nodeVar53 + nodeVar57 );\n\tnodeVar53 = nodeVar58;\n\tnodeVar59 = ( vec3<f32>( 1.0 ) - SpecularColor );\n\tnodeVar60 = nodeVar59;\n\tnodeVar61 = ( nodeVar60 * vec3<f32>( 0.047619 ) );\n\tnodeVar62 = ( SpecularColor + nodeVar61 );\n\tnodeVar63 = ( nodeVar57 * nodeVar62 );\n\tnodeVar64 = ( dfg.x + dfg.y );\n\tnodeVar65 = ( 1.0 - nodeVar64 );\n\tnodeVar66 = nodeVar65;\n\tnodeVar67 = ( vec3<f32>( nodeVar66 ) * nodeVar62 );\n\tnodeVar68 = ( vec3<f32>( 1.0 ) - nodeVar67 );\n\tnodeVar69 = nodeVar68;\n\tnodeVar70 = ( nodeVar63 / nodeVar69 );\n\tnodeVar71 = ( nodeVar70 * vec3<f32>( nodeVar66 ) );\n\tnodeVar72 = ( nodeVar54 + nodeVar71 );\n\tnodeVar54 = nodeVar72;\n\tnodeVar73 = ( DiffuseContribution * vec3<f32>( 0.3183098861837907 ) );\n\tnodeVar74 = ( irradiance * nodeVar73 );\n\tnodeVar75 = ( nodeVar53 + nodeVar54 );\n\tnodeVar76 = ( vec3<f32>( 1.0 ) - nodeVar75 );\n\tnodeVar77 = nodeVar76;\n\tnodeVar78 = ( nodeVar74 * nodeVar77 );\n\tnodeVar79 = nodeVar78;\n\tindirectDiffuse = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar80 = ( indirectDiffuse + nodeVar79 );\n\tindirectDiffuse = nodeVar80;\n\tsingleScatteringDielectric = vec3<f32>( 0.0, 0.0, 0.0 );\n\tmultiScatteringDielectric = vec3<f32>( 0.0, 0.0, 0.0 );\n\tsingleScatteringMetallic = vec3<f32>( 0.0, 0.0, 0.0 );\n\tmultiScatteringMetallic = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar81 = ( SpecularColor * vec3<f32>( dfg.x ) );\n\tnodeVar82 = ( SpecularF90 * dfg.y );\n\tnodeVar83 = ( nodeVar81 + vec3<f32>( nodeVar82 ) );\n\tnodeVar84 = ( singleScatteringDielectric + nodeVar83 );\n\tsingleScatteringDielectric = nodeVar84;\n\tnodeVar85 = ( vec3<f32>( 1.0 ) - SpecularColor );\n\tnodeVar86 = nodeVar85;\n\tnodeVar87 = ( nodeVar86 * vec3<f32>( 0.047619 ) );\n\tnodeVar88 = ( SpecularColor + nodeVar87 );\n\tnodeVar89 = ( nodeVar83 * nodeVar88 );\n\tnodeVar90 = ( dfg.x + dfg.y );\n\tnodeVar91 = ( 1.0 - nodeVar90 );\n\tnodeVar92 = nodeVar91;\n\tnodeVar93 = ( vec3<f32>( nodeVar92 ) * nodeVar88 );\n\tnodeVar94 = ( vec3<f32>( 1.0 ) - nodeVar93 );\n\tnodeVar95 = nodeVar94;\n\tnodeVar96 = ( nodeVar89 / nodeVar95 );\n\tnodeVar97 = ( nodeVar96 * vec3<f32>( nodeVar92 ) );\n\tnodeVar98 = ( multiScatteringDielectric + nodeVar97 );\n\tmultiScatteringDielectric = nodeVar98;\n\tnodeVar99 = ( DiffuseColor.xyz * vec3<f32>( dfg.x ) );\n\tnodeVar100 = ( SpecularF90 * dfg.y );\n\tnodeVar101 = ( nodeVar99 + vec3<f32>( nodeVar100 ) );\n\tnodeVar102 = ( singleScatteringMetallic + nodeVar101 );\n\tsingleScatteringMetallic = nodeVar102;\n\tnodeVar103 = ( vec3<f32>( 1.0 ) - DiffuseColor.xyz );\n\tnodeVar104 = nodeVar103;\n\tnodeVar105 = ( nodeVar104 * vec3<f32>( 0.047619 ) );\n\tnodeVar106 = ( DiffuseColor.xyz + nodeVar105 );\n\tnodeVar107 = ( nodeVar101 * nodeVar106 );\n\tnodeVar108 = ( dfg.x + dfg.y );\n\tnodeVar109 = ( 1.0 - nodeVar108 );\n\tnodeVar110 = nodeVar109;\n\tnodeVar111 = ( vec3<f32>( nodeVar110 ) * nodeVar106 );\n\tnodeVar112 = ( vec3<f32>( 1.0 ) - nodeVar111 );\n\tnodeVar113 = nodeVar112;\n\tnodeVar114 = ( nodeVar107 / nodeVar113 );\n\tnodeVar115 = ( nodeVar114 * vec3<f32>( nodeVar110 ) );\n\tnodeVar116 = ( multiScatteringMetallic + nodeVar115 );\n\tmultiScatteringMetallic = nodeVar116;\n\tradiance = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar117 = mix( singleScatteringDielectric, singleScatteringMetallic, Metalness );\n\tnodeVar118 = ( radiance * nodeVar117 );\n\tnodeVar119 = mix( multiScatteringDielectric, multiScatteringMetallic, Metalness );\n\tiblIrradiance = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar120 = ( iblIrradiance * vec3<f32>( 0.3183098861837907 ) );\n\tnodeVar121 = ( nodeVar119 * nodeVar120 );\n\tnodeVar122 = ( nodeVar118 + nodeVar121 );\n\tnodeVar123 = nodeVar122;\n\tnodeVar124 = ( singleScatteringDielectric + multiScatteringDielectric );\n\tnodeVar125 = ( vec3<f32>( 1.0 ) - nodeVar124 );\n\tnodeVar126 = nodeVar125;\n\tnodeVar127 = ( DiffuseContribution * nodeVar126 );\n\tnodeVar128 = ( nodeVar127 * nodeVar120 );\n\tnodeVar129 = nodeVar128;\n\tindirectSpecular = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar130 = ( indirectSpecular + nodeVar123 );\n\tindirectSpecular = nodeVar130;\n\tnodeVar131 = ( indirectDiffuse + nodeVar129 );\n\tindirectDiffuse = nodeVar131;\n\tambientOcclusion = 1.0;\n\tnodeVar132 = ( indirectDiffuse * vec3<f32>( ambientOcclusion ) );\n\tindirectDiffuse = nodeVar132;\n\tnodeVar133 = dot( normalView, positionViewDirection );\n\tnodeVar134 = ( clamp( nodeVar133, 0.0, 1.0 ) + ambientOcclusion );\n\tnodeVar135 = ( Roughness * -16.0 );\n\tnodeVar136 = ( 1.0 - nodeVar135 );\n\tnodeVar137 = nodeVar136;\n\tnodeVar138 = ( - nodeVar137 );\n\tnodeVar139 = exp2( nodeVar138 );\n\tnodeVar140 = pow( nodeVar134, nodeVar139 );\n\tnodeVar141 = ( 1.0 - nodeVar140 );\n\tnodeVar142 = nodeVar141;\n\tnodeVar143 = ( ambientOcclusion - nodeVar142 );\n\tnodeVar144 = ( indirectSpecular * vec3<f32>( clamp( nodeVar143, 0.0, 1.0 ) ) );\n\tindirectSpecular = nodeVar144;\n\tnodeVar145 = ( directDiffuse + indirectDiffuse );\n\ttotalDiffuse = nodeVar145;\n\tnodeVar146 = ( directSpecular + indirectSpecular );\n\ttotalSpecular = nodeVar146;\n\tnodeVar147 = ( totalDiffuse + totalSpecular );\n\toutgoingLight = nodeVar147;\n\tnodeVar148 = max( vec4<f32>( ( outgoingLight + EmissiveColor ), DiffuseColor.w ), vec4<f32>( 0.0 ) );\n\tOutput = nodeVar148;\n\n\t// result\n\n\toutput.color = nodeVar148;\n\n\treturn output;\n\n}\n"
+		},
+		{
+			"index": 11,
+			"label": "vertex_outputColorTransform",
+			"code": "// Three.js r186 - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform1 : vec2<f32>,\n\tnodeUniform2 : f32\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform5 : mat4x4<f32>\n};\n@binding( 2 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar3 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> v_positionView : vec3<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) position : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform5 );\n\tpositionLocal = position;\n\tv_positionView = ( modelViewMatrix * vec4<f32>( positionLocal, 1.0 ) ).xyz;\n\tVERTEX_nodeVar3 = ( render.cameraProjectionMatrix * vec4<f32>( v_positionView, 1.0 ) );\n\tVERTEX_v_modelViewProjection = VERTEX_nodeVar3;\n\n\t// result\n\n\tvaryings.builtinClipSpace = VERTEX_v_modelViewProjection;\n\n\treturn varyings;\n\n}\n"
+		},
+		{
+			"index": 12,
+			"label": "fragment_outputColorTransform",
+			"code": "// Three.js r186 - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 0 ) @group( 1 ) var nodeUniform0_sampler : sampler;\n@binding( 1 ) @group( 1 ) var nodeUniform0 : texture_2d<f32>;\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform1 : vec2<f32>,\n\tnodeUniform2 : f32\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\n// vars\nvar<private> nodeVar0 : vec4<f32>;\nvar<private> nodeVar1 : vec4<f32>;\nvar<private> nodeVar2 : vec4<f32>;\n\n// codes\nfn fn1 ( color : vec4<f32> ) -> vec4<f32> {\n\n\tvar nodeVar0 : vec4<f32>;\n\n\n\tif ( ( color.w == 0.0 ) ) {\n\n\t\tnodeVar0 = vec4<f32>( 0.0, 0.0, 0.0, 0.0 );\n\n\t} else {\n\n\t\tnodeVar0 = vec4<f32>( ( color.xyz / vec3<f32>( color.w ) ), color.w );\n\n\t}\n\n\n\treturn nodeVar0;\n\n}\n\n\nfn reinhardToneMapping ( color : vec3<f32>, exposure : f32 ) -> vec3<f32> {\n\n\tvar nodeVar0 : vec3<f32>;\n\n\tnodeVar0 = ( color * vec3<f32>( exposure ) );\n\n\treturn clamp( ( nodeVar0 / ( nodeVar0 + vec3<f32>( 1.0 ) ) ), vec3<f32>( 0.0 ), vec3<f32>( 1.0 ) );\n\n}\n\n\nfn sRGBTransferOETF ( color : vec3<f32> ) -> vec3<f32> {\n\n\t\n\n\n\treturn mix( ( ( pow( color, vec3<f32>( 0.41666 ) ) * vec3<f32>( 1.055 ) ) - vec3<f32>( 0.055 ) ), ( color * vec3<f32>( 12.92 ) ), vec3<f32>( ( color <= vec3<f32>( 0.0031308 ) ) ) );\n\n}\n\n\nfn fn0 ( color : vec4<f32> ) -> vec4<f32> {\n\n\t\n\n\n\treturn vec4<f32>( ( color.xyz * vec3<f32>( color.w ) ), color.w );\n\n}\n\n\n\n\n@fragment\nfn main( @builtin( position ) fragCoord : vec4<f32> ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\tnodeVar0 = textureSample( nodeUniform0, nodeUniform0_sampler, ( fragCoord.xy / render.nodeUniform1 ) );\n\tnodeVar1 = fn1( vec4<f32>( nodeVar0.xyz, clamp( nodeVar0.w, 0.0, 1.0 ) ) );\n\tnodeVar2 = vec4<f32>( reinhardToneMapping( nodeVar1.xyz, render.nodeUniform2 ), nodeVar1.w );\n\n\t// result\n\n\toutput.color = fn0( vec4<f32>( sRGBTransferOETF( nodeVar2.xyz ), nodeVar2.w ) );\n\n\treturn output;\n\n}\n"
+		}
+	],
+	"pipelines": [
+		{
+			"kind": "createRenderPipeline",
+			"descriptor": {
+				"label": "renderPipeline_MeshStandardMaterial_17",
+				"layout": {
+					"__gpu": "GPUPipelineLayout",
+					"label": ""
+				},
+				"vertex": {
+					"module": {
+						"__module": 0
+					},
+					"entryPoint": "main",
+					"buffers": [
+						{
+							"arrayStride": 12,
+							"attributes": [
+								{
+									"shaderLocation": 0,
+									"offset": 0,
+									"format": "float32x3"
+								}
+							],
+							"stepMode": "vertex"
+						},
+						{
+							"arrayStride": 12,
+							"attributes": [
+								{
+									"shaderLocation": 1,
+									"offset": 0,
+									"format": "float32x3"
+								}
+							],
+							"stepMode": "vertex"
+						}
+					]
+				},
+				"primitive": {
+					"topology": "triangle-list",
+					"frontFace": "ccw",
+					"cullMode": "back"
+				},
+				"depthStencil": {
+					"format": "depth24plus",
+					"depthWriteEnabled": true,
+					"depthCompare": "less-equal"
+				},
+				"multisample": {
+					"count": 1,
+					"mask": 4294967295,
+					"alphaToCoverageEnabled": false
+				},
+				"fragment": {
+					"module": {
+						"__module": 1
+					},
+					"entryPoint": "main",
+					"targets": [
+						{
+							"format": "rgba16float",
+							"writeMask": 15
+						}
+					]
+				}
+			}
+		},
+		{
+			"kind": "createRenderPipeline",
+			"descriptor": {
+				"label": "mipmap-rgba8unorm-srgb-2d-array",
+				"layout": "auto",
+				"vertex": {
+					"module": {
+						"__module": 2
+					}
+				},
+				"primitive": {},
+				"multisample": {
+					"count": 1,
+					"mask": 4294967295,
+					"alphaToCoverageEnabled": false
+				},
+				"fragment": {
+					"module": {
+						"__module": 2
+					},
+					"entryPoint": "main_2d_array",
+					"targets": [
+						{
+							"format": "rgba8unorm-srgb"
+						}
+					]
+				}
+			}
+		},
+		{
+			"kind": "createRenderPipeline",
+			"descriptor": {
+				"label": "renderPipeline_MeshStandardMaterial_20",
+				"layout": {
+					"__gpu": "GPUPipelineLayout",
+					"label": ""
+				},
+				"vertex": {
+					"module": {
+						"__module": 3
+					},
+					"entryPoint": "main",
+					"buffers": [
+						{
+							"arrayStride": 8,
+							"attributes": [
+								{
+									"shaderLocation": 0,
+									"offset": 0,
+									"format": "float32x2"
+								}
+							],
+							"stepMode": "vertex"
+						},
+						{
+							"arrayStride": 12,
+							"attributes": [
+								{
+									"shaderLocation": 1,
+									"offset": 0,
+									"format": "float32x3"
+								}
+							],
+							"stepMode": "vertex"
+						},
+						{
+							"arrayStride": 12,
+							"attributes": [
+								{
+									"shaderLocation": 2,
+									"offset": 0,
+									"format": "float32x3"
+								}
+							],
+							"stepMode": "vertex"
+						}
+					]
+				},
+				"primitive": {
+					"topology": "triangle-list",
+					"frontFace": "ccw",
+					"cullMode": "back"
+				},
+				"depthStencil": {
+					"format": "depth24plus",
+					"depthWriteEnabled": true,
+					"depthCompare": "less-equal"
+				},
+				"multisample": {
+					"count": 1,
+					"mask": 4294967295,
+					"alphaToCoverageEnabled": false
+				},
+				"fragment": {
+					"module": {
+						"__module": 4
+					},
+					"entryPoint": "main",
+					"targets": [
+						{
+							"format": "rgba16float",
+							"writeMask": 15
+						}
+					]
+				}
+			}
+		},
+		{
+			"kind": "createRenderPipeline",
+			"descriptor": {
+				"label": "renderPipeline_ShadowMaterial_24",
+				"layout": {
+					"__gpu": "GPUPipelineLayout",
+					"label": ""
+				},
+				"vertex": {
+					"module": {
+						"__module": 5
+					},
+					"entryPoint": "main",
+					"buffers": [
+						{
+							"arrayStride": 8,
+							"attributes": [
+								{
+									"shaderLocation": 0,
+									"offset": 0,
+									"format": "float32x2"
+								}
+							],
+							"stepMode": "vertex"
+						},
+						{
+							"arrayStride": 12,
+							"attributes": [
+								{
+									"shaderLocation": 1,
+									"offset": 0,
+									"format": "float32x3"
+								}
+							],
+							"stepMode": "vertex"
+						}
+					]
+				},
+				"primitive": {
+					"topology": "triangle-list",
+					"frontFace": "cw",
+					"cullMode": "back"
+				},
+				"depthStencil": {
+					"format": "depth24plus",
+					"depthWriteEnabled": true,
+					"depthCompare": "less-equal"
+				},
+				"multisample": {
+					"count": 1,
+					"mask": 4294967295,
+					"alphaToCoverageEnabled": false
+				},
+				"fragment": {
+					"module": {
+						"__module": 6
+					},
+					"entryPoint": "main",
+					"targets": [
+						{
+							"format": "rgba8unorm",
+							"writeMask": 15
+						}
+					]
+				}
+			}
+		},
+		{
+			"kind": "createRenderPipeline",
+			"descriptor": {
+				"label": "mipmap-rgba8unorm-2d-array",
+				"layout": "auto",
+				"vertex": {
+					"module": {
+						"__module": 2
+					}
+				},
+				"primitive": {},
+				"multisample": {
+					"count": 1,
+					"mask": 4294967295,
+					"alphaToCoverageEnabled": false
+				},
+				"fragment": {
+					"module": {
+						"__module": 2
+					},
+					"entryPoint": "main_2d_array",
+					"targets": [
+						{
+							"format": "rgba8unorm"
+						}
+					]
+				}
+			}
+		},
+		{
+			"kind": "createRenderPipeline",
+			"descriptor": {
+				"label": "renderPipeline_MeshStandardMaterial_18",
+				"layout": {
+					"__gpu": "GPUPipelineLayout",
+					"label": ""
+				},
+				"vertex": {
+					"module": {
+						"__module": 7
+					},
+					"entryPoint": "main",
+					"buffers": [
+						{
+							"arrayStride": 8,
+							"attributes": [
+								{
+									"shaderLocation": 0,
+									"offset": 0,
+									"format": "float32x2"
+								}
+							],
+							"stepMode": "vertex"
+						},
+						{
+							"arrayStride": 12,
+							"attributes": [
+								{
+									"shaderLocation": 1,
+									"offset": 0,
+									"format": "float32x3"
+								}
+							],
+							"stepMode": "vertex"
+						},
+						{
+							"arrayStride": 12,
+							"attributes": [
+								{
+									"shaderLocation": 2,
+									"offset": 0,
+									"format": "float32x3"
+								}
+							],
+							"stepMode": "vertex"
+						}
+					]
+				},
+				"primitive": {
+					"topology": "triangle-list",
+					"frontFace": "ccw",
+					"cullMode": "back"
+				},
+				"depthStencil": {
+					"format": "depth24plus",
+					"depthWriteEnabled": true,
+					"depthCompare": "less-equal"
+				},
+				"multisample": {
+					"count": 1,
+					"mask": 4294967295,
+					"alphaToCoverageEnabled": false
+				},
+				"fragment": {
+					"module": {
+						"__module": 8
+					},
+					"entryPoint": "main",
+					"targets": [
+						{
+							"format": "rgba16float",
+							"writeMask": 15
+						}
+					]
+				}
+			}
+		},
+		{
+			"kind": "createRenderPipeline",
+			"descriptor": {
+				"label": "renderPipeline_MeshStandardMaterial_19",
+				"layout": {
+					"__gpu": "GPUPipelineLayout",
+					"label": ""
+				},
+				"vertex": {
+					"module": {
+						"__module": 9
+					},
+					"entryPoint": "main",
+					"buffers": [
+						{
+							"arrayStride": 8,
+							"attributes": [
+								{
+									"shaderLocation": 0,
+									"offset": 0,
+									"format": "float32x2"
+								}
+							],
+							"stepMode": "vertex"
+						},
+						{
+							"arrayStride": 12,
+							"attributes": [
+								{
+									"shaderLocation": 1,
+									"offset": 0,
+									"format": "float32x3"
+								}
+							],
+							"stepMode": "vertex"
+						},
+						{
+							"arrayStride": 12,
+							"attributes": [
+								{
+									"shaderLocation": 2,
+									"offset": 0,
+									"format": "float32x3"
+								}
+							],
+							"stepMode": "vertex"
+						}
+					]
+				},
+				"primitive": {
+					"topology": "triangle-list",
+					"frontFace": "ccw",
+					"cullMode": "back"
+				},
+				"depthStencil": {
+					"format": "depth24plus",
+					"depthWriteEnabled": true,
+					"depthCompare": "less-equal"
+				},
+				"multisample": {
+					"count": 1,
+					"mask": 4294967295,
+					"alphaToCoverageEnabled": false
+				},
+				"fragment": {
+					"module": {
+						"__module": 10
+					},
+					"entryPoint": "main",
+					"targets": [
+						{
+							"format": "rgba16float",
+							"writeMask": 15
+						}
+					]
+				}
+			}
+		},
+		{
+			"kind": "createRenderPipeline",
+			"descriptor": {
+				"label": "renderPipeline_outputColorTransform_26",
+				"layout": {
+					"__gpu": "GPUPipelineLayout",
+					"label": ""
+				},
+				"vertex": {
+					"module": {
+						"__module": 11
+					},
+					"entryPoint": "main",
+					"buffers": [
+						{
+							"arrayStride": 12,
+							"attributes": [
+								{
+									"shaderLocation": 0,
+									"offset": 0,
+									"format": "float32x3"
+								}
+							],
+							"stepMode": "vertex"
+						}
+					]
+				},
+				"primitive": {
+					"topology": "triangle-list",
+					"frontFace": "ccw",
+					"cullMode": "back"
+				},
+				"depthStencil": {
+					"format": "depth24plus",
+					"depthWriteEnabled": true,
+					"depthCompare": "less-equal"
+				},
+				"multisample": {
+					"count": 1,
+					"mask": 4294967295,
+					"alphaToCoverageEnabled": false
+				},
+				"fragment": {
+					"module": {
+						"__module": 12
+					},
+					"entryPoint": "main",
+					"targets": [
+						{
+							"format": "rgba8unorm",
+							"writeMask": 15
+						}
+					]
+				}
+			}
+		}
+	],
+	"layouts": [
+		{
+			"index": 0,
+			"descriptor": {
+				"entries": [
+					{
+						"binding": 0,
+						"visibility": 7,
+						"buffer": {}
+					}
+				]
+			}
+		},
+		{
+			"index": 1,
+			"descriptor": {
+				"entries": [
+					{
+						"binding": 0,
+						"visibility": 7,
+						"buffer": {}
+					},
+					{
+						"binding": 1,
+						"visibility": 2,
+						"sampler": {}
+					},
+					{
+						"binding": 2,
+						"visibility": 2,
+						"texture": {}
+					}
+				]
+			}
+		},
+		{
+			"index": 2,
+			"descriptor": {
+				"entries": [
+					{
+						"binding": 0,
+						"visibility": 7,
+						"buffer": {}
+					},
+					{
+						"binding": 1,
+						"visibility": 2,
+						"sampler": {}
+					},
+					{
+						"binding": 2,
+						"visibility": 2,
+						"texture": {}
+					},
+					{
+						"binding": 3,
+						"visibility": 2,
+						"sampler": {}
+					},
+					{
+						"binding": 4,
+						"visibility": 2,
+						"texture": {}
+					},
+					{
+						"binding": 5,
+						"visibility": 2,
+						"sampler": {}
+					},
+					{
+						"binding": 6,
+						"visibility": 2,
+						"texture": {}
+					}
+				]
+			}
+		},
+		{
+			"index": 3,
+			"descriptor": {
+				"entries": [
+					{
+						"binding": 0,
+						"visibility": 2,
+						"sampler": {}
+					},
+					{
+						"binding": 1,
+						"visibility": 2,
+						"texture": {}
+					},
+					{
+						"binding": 2,
+						"visibility": 7,
+						"buffer": {}
+					}
+				]
+			}
+		},
+		{
+			"index": 4,
+			"descriptor": {
+				"entries": [
+					{
+						"binding": 0,
+						"visibility": 7,
+						"buffer": {}
+					},
+					{
+						"binding": 1,
+						"visibility": 2,
+						"sampler": {}
+					},
+					{
+						"binding": 2,
+						"visibility": 2,
+						"texture": {}
+					},
+					{
+						"binding": 3,
+						"visibility": 2,
+						"sampler": {}
+					},
+					{
+						"binding": 4,
+						"visibility": 2,
+						"texture": {}
+					},
+					{
+						"binding": 5,
+						"visibility": 2,
+						"sampler": {}
+					},
+					{
+						"binding": 6,
+						"visibility": 2,
+						"texture": {}
+					},
+					{
+						"binding": 7,
+						"visibility": 2,
+						"sampler": {}
+					},
+					{
+						"binding": 8,
+						"visibility": 2,
+						"texture": {}
+					},
+					{
+						"binding": 9,
+						"visibility": 2,
+						"sampler": {
+							"type": "comparison"
+						}
+					},
+					{
+						"binding": 10,
+						"visibility": 2,
+						"texture": {
+							"sampleType": "depth",
+							"viewDimension": "cube"
+						}
+					}
+				]
+			}
+		}
+	],
+	"textures": [
+		{
+			"label": "",
+			"size": {
+				"width": 800,
+				"height": 500,
+				"depthOrArrayLayers": 1
+			},
+			"mipLevelCount": 1,
+			"sampleCount": 1,
+			"dimension": "2d",
+			"format": "rgba16float",
+			"usage": 23,
+			"viewFormats": []
+		},
+		{
+			"label": "",
+			"size": {
+				"width": 800,
+				"height": 500,
+				"depthOrArrayLayers": 1
+			},
+			"mipLevelCount": 1,
+			"sampleCount": 1,
+			"dimension": "2d",
+			"format": "depth24plus",
+			"usage": 23,
+			"viewFormats": []
+		},
+		{
+			"label": "DFG_LUT",
+			"size": {
+				"width": 16,
+				"height": 16,
+				"depthOrArrayLayers": 1
+			},
+			"mipLevelCount": 1,
+			"sampleCount": 1,
+			"dimension": "2d",
+			"format": "rg16float",
+			"usage": 23,
+			"viewFormats": []
+		},
+		{
+			"label": "",
+			"size": {
+				"width": 2048,
+				"height": 1024,
+				"depthOrArrayLayers": 1
+			},
+			"mipLevelCount": 12,
+			"sampleCount": 1,
+			"dimension": "2d",
+			"format": "rgba8unorm-srgb",
+			"usage": 23,
+			"viewFormats": []
+		},
+		{
+			"label": "",
+			"size": {
+				"width": 2048,
+				"height": 1024,
+				"depthOrArrayLayers": 1
+			},
+			"mipLevelCount": 12,
+			"sampleCount": 1,
+			"dimension": "2d",
+			"format": "rgba8unorm-srgb",
+			"usage": 23,
+			"viewFormats": []
+		},
+		{
+			"label": "PointShadowMap",
+			"size": {
+				"width": 512,
+				"height": 512,
+				"depthOrArrayLayers": 6
+			},
+			"mipLevelCount": 1,
+			"sampleCount": 1,
+			"dimension": "2d",
+			"format": "rgba8unorm",
+			"usage": 23,
+			"viewFormats": [],
+			"textureBindingViewDimension": "cube"
+		},
+		{
+			"label": "PointShadowDepthTexture",
+			"size": {
+				"width": 512,
+				"height": 512,
+				"depthOrArrayLayers": 6
+			},
+			"mipLevelCount": 1,
+			"sampleCount": 1,
+			"dimension": "2d",
+			"format": "depth24plus",
+			"usage": 23,
+			"viewFormats": [],
+			"textureBindingViewDimension": "cube"
+		},
+		{
+			"label": "",
+			"size": {
+				"width": 1024,
+				"height": 1024,
+				"depthOrArrayLayers": 1
+			},
+			"mipLevelCount": 11,
+			"sampleCount": 1,
+			"dimension": "2d",
+			"format": "rgba8unorm-srgb",
+			"usage": 23,
+			"viewFormats": []
+		},
+		{
+			"label": "",
+			"size": {
+				"width": 2048,
+				"height": 1024,
+				"depthOrArrayLayers": 1
+			},
+			"mipLevelCount": 12,
+			"sampleCount": 1,
+			"dimension": "2d",
+			"format": "rgba8unorm-srgb",
+			"usage": 23,
+			"viewFormats": []
+		},
+		{
+			"label": "",
+			"size": {
+				"width": 2048,
+				"height": 1024,
+				"depthOrArrayLayers": 1
+			},
+			"mipLevelCount": 12,
+			"sampleCount": 1,
+			"dimension": "2d",
+			"format": "rgba8unorm",
+			"usage": 23,
+			"viewFormats": []
+		},
+		{
+			"label": "",
+			"size": {
+				"width": 2048,
+				"height": 1024,
+				"depthOrArrayLayers": 1
+			},
+			"mipLevelCount": 12,
+			"sampleCount": 1,
+			"dimension": "2d",
+			"format": "rgba8unorm",
+			"usage": 23,
+			"viewFormats": []
+		},
+		{
+			"label": "",
+			"size": {
+				"width": 1024,
+				"height": 1024,
+				"depthOrArrayLayers": 1
+			},
+			"mipLevelCount": 11,
+			"sampleCount": 1,
+			"dimension": "2d",
+			"format": "rgba8unorm",
+			"usage": 23,
+			"viewFormats": []
+		},
+		{
+			"label": "depthBuffer",
+			"size": {
+				"width": 800,
+				"height": 500,
+				"depthOrArrayLayers": 1
+			},
+			"mipLevelCount": 1,
+			"sampleCount": 1,
+			"dimension": "2d",
+			"format": "depth24plus",
+			"usage": 23,
+			"viewFormats": []
+		}
+	],
+	"samplers": [
+		{
+			"label": "",
+			"addressModeU": "clamp-to-edge",
+			"addressModeV": "clamp-to-edge",
+			"addressModeW": "clamp-to-edge",
+			"magFilter": "linear",
+			"minFilter": "linear",
+			"mipmapFilter": "nearest",
+			"lodMinClamp": 0,
+			"lodMaxClamp": 32,
+			"maxAnisotropy": 1
+		},
+		{
+			"label": "",
+			"addressModeU": "clamp-to-edge",
+			"addressModeV": "clamp-to-edge",
+			"addressModeW": "clamp-to-edge",
+			"magFilter": "linear",
+			"minFilter": "linear",
+			"mipmapFilter": "linear",
+			"lodMinClamp": 0,
+			"lodMaxClamp": 32,
+			"maxAnisotropy": 4
+		},
+		{
+			"minFilter": "linear"
+		},
+		{
+			"minFilter": "nearest"
+		},
+		{
+			"label": "",
+			"addressModeU": "repeat",
+			"addressModeV": "repeat",
+			"addressModeW": "clamp-to-edge",
+			"magFilter": "linear",
+			"minFilter": "linear",
+			"mipmapFilter": "linear",
+			"lodMinClamp": 0,
+			"lodMaxClamp": 32,
+			"maxAnisotropy": 4
+		},
+		{
+			"label": "",
+			"addressModeU": "clamp-to-edge",
+			"addressModeV": "clamp-to-edge",
+			"addressModeW": "clamp-to-edge",
+			"magFilter": "linear",
+			"minFilter": "linear",
+			"mipmapFilter": "nearest",
+			"lodMinClamp": 0,
+			"lodMaxClamp": 32,
+			"compare": "less-equal",
+			"maxAnisotropy": 1
+		}
+	],
+	"passes": [
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": "colorAttachment_0"
+						},
+						"clearValue": {
+							"r": 0,
+							"g": 0,
+							"b": 0,
+							"a": 0
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"depthStencilAttachment": {
+					"view": {
+						"__gpu": "GPUTextureView",
+						"label": ""
+					},
+					"depthLoadOp": "clear",
+					"depthStoreOp": "store",
+					"depthClearValue": 1,
+					"depthReadOnly": false,
+					"stencilClearValue": 0,
+					"stencilReadOnly": false
+				},
+				"maxDrawCount": 50000000
+			},
+			"ops": [
+				[
+					"setPipeline",
+					"pipeline:renderPipeline_MeshStandardMaterial_17"
+				],
+				[
+					"drawIndexed",
+					672,
+					1,
+					0,
+					0,
+					0
+				],
+				[
+					"setPipeline",
+					"pipeline:renderPipeline_MeshStandardMaterial_20"
+				],
+				[
+					"drawIndexed",
+					5952,
+					1,
+					0,
+					0,
+					0
+				],
+				[
+					"setPipeline",
+					"pipeline:renderPipeline_MeshStandardMaterial_18"
+				],
+				[
+					"drawIndexed",
+					6,
+					1,
+					0,
+					0,
+					0
+				],
+				[
+					"setPipeline",
+					"pipeline:renderPipeline_MeshStandardMaterial_19"
+				],
+				[
+					"drawIndexed",
+					36,
+					1,
+					0,
+					0,
+					0
+				],
+				[
+					"drawIndexed",
+					36,
+					1,
+					0,
+					0,
+					0
+				],
+				[
+					"drawIndexed",
+					36,
+					1,
+					0,
+					0,
+					0
+				]
+			]
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": "colorAttachment_0"
+						},
+						"clearValue": {
+							"r": 0,
+							"g": 0,
+							"b": 0,
+							"a": 1
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"depthStencilAttachment": {
+					"view": {
+						"__gpu": "GPUTextureView",
+						"label": ""
+					},
+					"depthLoadOp": "clear",
+					"depthStoreOp": "store",
+					"depthClearValue": 1,
+					"depthReadOnly": false,
+					"stencilClearValue": 0,
+					"stencilReadOnly": false
+				}
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": "colorAttachment_0"
+						},
+						"clearValue": {
+							"r": 0,
+							"g": 0,
+							"b": 0,
+							"a": 1
+						},
+						"loadOp": "load",
+						"storeOp": "store"
+					}
+				],
+				"depthStencilAttachment": {
+					"view": {
+						"__gpu": "GPUTextureView",
+						"label": ""
+					},
+					"depthLoadOp": "load",
+					"depthStoreOp": "store",
+					"depthClearValue": 1,
+					"depthReadOnly": false,
+					"stencilClearValue": 0,
+					"stencilReadOnly": false
+				},
+				"maxDrawCount": 50000000
+			},
+			"ops": [
+				[
+					"setViewport",
+					0,
+					0,
+					512,
+					512,
+					0,
+					1
+				],
+				[
+					"setPipeline",
+					"pipeline:renderPipeline_ShadowMaterial_24"
+				],
+				[
+					"drawIndexed",
+					36,
+					1,
+					0,
+					0,
+					0
+				]
+			]
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": "colorAttachment_0"
+						},
+						"clearValue": {
+							"r": 0,
+							"g": 0,
+							"b": 0,
+							"a": 1
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"depthStencilAttachment": {
+					"view": {
+						"__gpu": "GPUTextureView",
+						"label": ""
+					},
+					"depthLoadOp": "clear",
+					"depthStoreOp": "store",
+					"depthClearValue": 1,
+					"depthReadOnly": false,
+					"stencilClearValue": 0,
+					"stencilReadOnly": false
+				}
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": "colorAttachment_0"
+						},
+						"clearValue": {
+							"r": 0,
+							"g": 0,
+							"b": 0,
+							"a": 1
+						},
+						"loadOp": "load",
+						"storeOp": "store"
+					}
+				],
+				"depthStencilAttachment": {
+					"view": {
+						"__gpu": "GPUTextureView",
+						"label": ""
+					},
+					"depthLoadOp": "load",
+					"depthStoreOp": "store",
+					"depthClearValue": 1,
+					"depthReadOnly": false,
+					"stencilClearValue": 0,
+					"stencilReadOnly": false
+				},
+				"maxDrawCount": 50000000
+			},
+			"ops": [
+				[
+					"setViewport",
+					0,
+					0,
+					512,
+					512,
+					0,
+					1
+				]
+			]
+		},
+		{
+			"descriptor": {
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": "colorAttachment_0"
+						},
+						"clearValue": {
+							"r": 0,
+							"g": 0,
+							"b": 0,
+							"a": 1
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"depthStencilAttachment": {
+					"view": {
+						"__gpu": "GPUTextureView",
+						"label": ""
+					},
+					"depthLoadOp": "clear",
+					"depthStoreOp": "store",
+					"depthClearValue": 1,
+					"depthReadOnly": false,
+					"stencilClearValue": 0,
+					"stencilReadOnly": false
+				}
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": "colorAttachment_0"
+						},
+						"clearValue": {
+							"r": 0,
+							"g": 0,
+							"b": 0,
+							"a": 1
+						},
+						"loadOp": "load",
+						"storeOp": "store"
+					}
+				],
+				"depthStencilAttachment": {
+					"view": {
+						"__gpu": "GPUTextureView",
+						"label": ""
+					},
+					"depthLoadOp": "load",
+					"depthStoreOp": "store",
+					"depthClearValue": 1,
+					"depthReadOnly": false,
+					"stencilClearValue": 0,
+					"stencilReadOnly": false
+				},
+				"maxDrawCount": 50000000
+			},
+			"ops": [
+				[
+					"setViewport",
+					0,
+					0,
+					512,
+					512,
+					0,
+					1
+				],
+				[
+					"setPipeline",
+					"pipeline:renderPipeline_ShadowMaterial_24"
+				],
+				[
+					"drawIndexed",
+					5952,
+					1,
+					0,
+					0,
+					0
+				],
+				[
+					"drawIndexed",
+					36,
+					1,
+					0,
+					0,
+					0
+				]
+			]
+		},
+		{
+			"descriptor": {
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": "colorAttachment_0"
+						},
+						"clearValue": {
+							"r": 0,
+							"g": 0,
+							"b": 0,
+							"a": 1
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"depthStencilAttachment": {
+					"view": {
+						"__gpu": "GPUTextureView",
+						"label": ""
+					},
+					"depthLoadOp": "clear",
+					"depthStoreOp": "store",
+					"depthClearValue": 1,
+					"depthReadOnly": false,
+					"stencilClearValue": 0,
+					"stencilReadOnly": false
+				}
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": "colorAttachment_0"
+						},
+						"clearValue": {
+							"r": 0,
+							"g": 0,
+							"b": 0,
+							"a": 1
+						},
+						"loadOp": "load",
+						"storeOp": "store"
+					}
+				],
+				"depthStencilAttachment": {
+					"view": {
+						"__gpu": "GPUTextureView",
+						"label": ""
+					},
+					"depthLoadOp": "load",
+					"depthStoreOp": "store",
+					"depthClearValue": 1,
+					"depthReadOnly": false,
+					"stencilClearValue": 0,
+					"stencilReadOnly": false
+				},
+				"maxDrawCount": 50000000
+			},
+			"ops": [
+				[
+					"setViewport",
+					0,
+					0,
+					512,
+					512,
+					0,
+					1
+				]
+			]
+		},
+		{
+			"descriptor": {
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": "colorAttachment_0"
+						},
+						"clearValue": {
+							"r": 0,
+							"g": 0,
+							"b": 0,
+							"a": 1
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"depthStencilAttachment": {
+					"view": {
+						"__gpu": "GPUTextureView",
+						"label": ""
+					},
+					"depthLoadOp": "clear",
+					"depthStoreOp": "store",
+					"depthClearValue": 1,
+					"depthReadOnly": false,
+					"stencilClearValue": 0,
+					"stencilReadOnly": false
+				}
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": "colorAttachment_0"
+						},
+						"clearValue": {
+							"r": 0,
+							"g": 0,
+							"b": 0,
+							"a": 1
+						},
+						"loadOp": "load",
+						"storeOp": "store"
+					}
+				],
+				"depthStencilAttachment": {
+					"view": {
+						"__gpu": "GPUTextureView",
+						"label": ""
+					},
+					"depthLoadOp": "load",
+					"depthStoreOp": "store",
+					"depthClearValue": 1,
+					"depthReadOnly": false,
+					"stencilClearValue": 0,
+					"stencilReadOnly": false
+				},
+				"maxDrawCount": 50000000
+			},
+			"ops": [
+				[
+					"setViewport",
+					0,
+					0,
+					512,
+					512,
+					0,
+					1
+				]
+			]
+		},
+		{
+			"descriptor": {
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": "colorAttachment_0"
+						},
+						"clearValue": {
+							"r": 0,
+							"g": 0,
+							"b": 0,
+							"a": 1
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"depthStencilAttachment": {
+					"view": {
+						"__gpu": "GPUTextureView",
+						"label": ""
+					},
+					"depthLoadOp": "clear",
+					"depthStoreOp": "store",
+					"depthClearValue": 1,
+					"depthReadOnly": false,
+					"stencilClearValue": 0,
+					"stencilReadOnly": false
+				}
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": "colorAttachment_0"
+						},
+						"clearValue": {
+							"r": 0,
+							"g": 0,
+							"b": 0,
+							"a": 1
+						},
+						"loadOp": "load",
+						"storeOp": "store"
+					}
+				],
+				"depthStencilAttachment": {
+					"view": {
+						"__gpu": "GPUTextureView",
+						"label": ""
+					},
+					"depthLoadOp": "load",
+					"depthStoreOp": "store",
+					"depthClearValue": 1,
+					"depthReadOnly": false,
+					"stencilClearValue": 0,
+					"stencilReadOnly": false
+				},
+				"maxDrawCount": 50000000
+			},
+			"ops": [
+				[
+					"setViewport",
+					0,
+					0,
+					512,
+					512,
+					0,
+					1
+				],
+				[
+					"setPipeline",
+					"pipeline:renderPipeline_ShadowMaterial_24"
+				],
+				[
+					"drawIndexed",
+					36,
+					1,
+					0,
+					0,
+					0
+				]
+			]
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "load",
+						"storeOp": "store"
+					}
+				],
+				"depthStencilAttachment": {
+					"view": {
+						"__gpu": "GPUTextureView",
+						"label": ""
+					},
+					"depthLoadOp": "load",
+					"depthStoreOp": "store",
+					"depthReadOnly": false,
+					"stencilClearValue": 0,
+					"stencilReadOnly": false
+				},
+				"maxDrawCount": 50000000
+			},
+			"ops": [
+				[
+					"setPipeline",
+					"pipeline:renderPipeline_outputColorTransform_26"
+				],
+				[
+					"draw",
+					3,
+					1,
+					0,
+					0
+				]
+			]
+		}
+	]
+}

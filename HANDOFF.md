@@ -6,7 +6,7 @@ image comparison against Three's reference screenshots.
 
 ## Sources
 
-- `~/src/vendor/three.js` @ 3d010ef. Port from `src/`; `renderers/webgl*`
+- `~/src/vendor/three.js` @ 148ef33 (tag r186; was 3d010ef until 2026-09-13, see rung0/REPIN-r186.md). Port from `src/`; `renderers/webgl*`
   is out of scope. Addons (`examples/jsm/`) only as a rung needs them.
 - `~/src/vendor/wgpu` @ v30.0.0-223. Vulkan backend, Intel Iris Xe, Mesa.
 

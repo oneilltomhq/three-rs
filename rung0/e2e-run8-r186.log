@@ -1,0 +1,16 @@
+
+> three@0.186.0 test-e2e-webgpu
+> node test/e2e/puppeteer.js --webgpu webgpu_depth_texture webgpu_instance_mesh webgpu_materials_basic webgpu_rtt webgpu_lights_phong webgpu_morphtargets webgpu_shadowmap webgpu_lights_physical webgpu_postprocessing_masking webgpu_textures_2d-array
+
+[32mDiff 0.0% in file: webgpu_depth_texture (3.7s)[39m
+[32mDiff 0.1% in file: webgpu_instance_mesh (3.4s)[39m
+[32mDiff 0.0% in file: webgpu_lights_phong (3.6s)[39m
+[32mDiff 0.0% in file: webgpu_lights_physical (3.8s)[39m
+[32mDiff 0.0% in file: webgpu_materials_basic (3.6s)[39m
+[32mDiff 0.0% in file: webgpu_morphtargets (3.6s)[39m
+[32mDiff 0.0% in file: webgpu_postprocessing_masking (3.7s)[39m
+[32mDiff 0.0% in file: webgpu_rtt (3.6s)[39m
+[32mDiff 0.0% in file: webgpu_shadowmap (3.6s)[39m
+[32mDiff 0.0% in file: webgpu_textures_2d-array (3.6s)[39m
+[32mTEST PASSED! 10 screenshots rendered correctly.[39m
+Closing...

@@ -1,7 +1,7 @@
 # Rung 0 — grader calibration (2026-09-12)
 
 Machine: Fedora 43, Intel Iris Xe (RPL-U), Mesa 25.3.6, Chrome 152.0.7977.54
-via puppeteer 25, node 24.13. three.js @ 3d010ef, `npm ci` clean (npm-ci.log).
+via puppeteer 25, node 24.13. three.js @ 148ef33 (r186; recalibrated from 3d010ef 2026-09-13, Chrome 152.0.7977.75 via puppeteer-core 25.10.0, see REPIN-r186.md), `npm ci` clean (npm-ci.log).
 
 ## What the stock grader does here
 

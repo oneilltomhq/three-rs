@@ -1,0 +1,792 @@
+{
+	"modules": [
+		{
+			"index": 0,
+			"label": "vertex",
+			"code": "// Three.js r186 - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform0 : vec3<f32>,\n\tnodeUniform1 : f32,\n\tnodeUniform4 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar1 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> v_positionView : vec3<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) position : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform4 );\n\tpositionLocal = position;\n\tv_positionView = ( modelViewMatrix * vec4<f32>( positionLocal, 1.0 ) ).xyz;\n\tVERTEX_nodeVar1 = ( render.cameraProjectionMatrix * vec4<f32>( v_positionView, 1.0 ) );\n\tVERTEX_v_modelViewProjection = VERTEX_nodeVar1;\n\n\t// result\n\n\tvaryings.builtinClipSpace = VERTEX_v_modelViewProjection;\n\n\treturn varyings;\n\n}\n"
+		},
+		{
+			"index": 1,
+			"label": "fragment",
+			"code": "// Three.js r186 - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n\nstruct objectStruct {\n\tnodeUniform0 : vec3<f32>,\n\tnodeUniform1 : f32,\n\tnodeUniform4 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// vars\nvar<private> DiffuseColor : vec4<f32>;\nvar<private> Output : vec4<f32>;\nvar<private> nodeVar0 : vec4<f32>;\n\n// codes\n\n\n@fragment\nfn main(  ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\tDiffuseColor = vec4<f32>( object.nodeUniform0, 1.0 );\n\tDiffuseColor.w = ( DiffuseColor.w * object.nodeUniform1 );\n\tDiffuseColor.w = 1.0;\n\tnodeVar0 = max( vec4<f32>( DiffuseColor.xyz, DiffuseColor.w ), vec4<f32>( 0.0 ) );\n\tOutput = nodeVar0;\n\n\t// result\n\n\toutput.color = nodeVar0;\n\n\treturn output;\n\n}\n"
+		},
+		{
+			"index": 2,
+			"label": "mipmap",
+			"code": "\nstruct VarysStruct {\n\t@builtin( position ) Position: vec4f,\n\t@location( 0 ) vTex : vec2f,\n\t@location( 1 ) @interpolate(flat, either) vBaseArrayLayer: u32,\n};\n\n@group( 0 ) @binding ( 2 )\nvar<uniform> flipY: u32;\n\n@vertex\nfn mainVS(\n\t\t@builtin( vertex_index ) vertexIndex : u32,\n\t\t@builtin( instance_index ) instanceIndex : u32 ) -> VarysStruct {\n\n\tvar Varys : VarysStruct;\n\n\tvar pos = array(\n\t\tvec2f( -1, -1 ),\n\t\tvec2f( -1,  3 ),\n\t\tvec2f(  3, -1 ),\n\t);\n\n\tlet p = pos[ vertexIndex ];\n\tlet mult = select( vec2f( 0.5, -0.5 ), vec2f( 0.5, 0.5 ), flipY != 0 );\n\tVarys.vTex = p * mult + vec2f( 0.5 );\n\tVarys.Position = vec4f( p, 0, 1 );\n\tVarys.vBaseArrayLayer = instanceIndex;\n\n\treturn Varys;\n\n}\n\n@group( 0 ) @binding( 0 )\nvar imgSampler : sampler;\n\n@group( 0 ) @binding( 1 )\nvar img2d : texture_2d<f32>;\n\n@fragment\nfn main_2d( Varys: VarysStruct ) -> @location( 0 ) vec4<f32> {\n\n\treturn textureSample( img2d, imgSampler, Varys.vTex );\n\n}\n\n@group( 0 ) @binding( 1 )\nvar img2dArray : texture_2d_array<f32>;\n\n@fragment\nfn main_2d_array( Varys: VarysStruct ) -> @location( 0 ) vec4<f32> {\n\n\treturn textureSample( img2dArray, imgSampler, Varys.vTex, Varys.vBaseArrayLayer );\n\n}\n\nconst faceMat = array(\n  mat3x3f(  0,  0,  -2,  0, -2,   0,  1,  1,   1 ),   // pos-x\n  mat3x3f(  0,  0,   2,  0, -2,   0, -1,  1,  -1 ),   // neg-x\n  mat3x3f(  2,  0,   0,  0,  0,   2, -1,  1,  -1 ),   // pos-y\n  mat3x3f(  2,  0,   0,  0,  0,  -2, -1, -1,   1 ),   // neg-y\n  mat3x3f(  2,  0,   0,  0, -2,   0, -1,  1,   1 ),   // pos-z\n  mat3x3f( -2,  0,   0,  0, -2,   0,  1,  1,  -1 ),   // neg-z\n);\n\n@group( 0 ) @binding( 1 )\nvar imgCube : texture_cube<f32>;\n\n@fragment\nfn main_cube( Varys: VarysStruct ) -> @location( 0 ) vec4<f32> {\n\n\treturn textureSample( imgCube, imgSampler, faceMat[ Varys.vBaseArrayLayer ] * vec3f( fract( Varys.vTex ), 1 ) );\n\n}\n"
+		},
+		{
+			"index": 3,
+			"label": "vertex_RenderPipeline",
+			"code": "// Three.js r186 - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) nodeVarying0 : vec2<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> nodeVar10 : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @builtin( vertex_index ) vertexIndex : u32,\n\t@location( 0 ) uv : vec2<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tvaryings.nodeVarying0 = uv;\n\tnodeVar10 = vec4<f32>( array< f32, 3 >( -1.0, -1.0, 3.0 )[ vertexIndex ], array< f32, 3 >( 3.0, -1.0, -1.0 )[ vertexIndex ], 0.0, 1.0 );\n\n\t// result\n\n\tvaryings.builtinClipSpace = nodeVar10;\n\n\treturn varyings;\n\n}\n"
+		},
+		{
+			"index": 4,
+			"label": "fragment_RenderPipeline",
+			"code": "// Three.js r186 - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 0 ) @group( 0 ) var nodeUniform0_sampler : sampler;\n@binding( 1 ) @group( 0 ) var nodeUniform0 : texture_2d<f32>;\n@binding( 2 ) @group( 0 ) var nodeUniform1_sampler : sampler;\n@binding( 3 ) @group( 0 ) var nodeUniform1 : texture_2d<f32>;\n@binding( 5 ) @group( 0 ) var nodeUniform3_sampler : sampler;\n@binding( 6 ) @group( 0 ) var nodeUniform3 : texture_2d<f32>;\n@binding( 7 ) @group( 0 ) var nodeUniform4_sampler : sampler;\n@binding( 8 ) @group( 0 ) var nodeUniform4 : texture_2d<f32>;\n@binding( 9 ) @group( 0 ) var nodeUniform6_sampler : sampler;\n@binding( 10 ) @group( 0 ) var nodeUniform6 : texture_2d<f32>;\n\nstruct objectStruct {\n\tnodeUniform2 : mat3x3<f32>,\n\tnodeUniform5 : mat3x3<f32>\n};\n@binding( 4 ) @group( 0 )\nvar<uniform> object : objectStruct;\n\n// vars\nvar<private> nodeVar0 : vec4<f32>;\nvar<private> nodeVar1 : vec4<f32>;\nvar<private> nodeVar2 : vec4<f32>;\nvar<private> nodeVar3 : vec4<f32>;\nvar<private> nodeVar4 : vec4<f32>;\nvar<private> nodeVar5 : vec4<f32>;\nvar<private> nodeVar6 : vec4<f32>;\nvar<private> nodeVar7 : vec4<f32>;\nvar<private> nodeVar8 : vec4<f32>;\nvar<private> nodeVar9 : vec4<f32>;\n\n// codes\nfn fn1 ( color : vec4<f32> ) -> vec4<f32> {\n\n\tvar nodeVar0 : vec4<f32>;\n\n\n\tif ( ( color.w == 0.0 ) ) {\n\n\t\tnodeVar0 = vec4<f32>( 0.0, 0.0, 0.0, 0.0 );\n\n\t} else {\n\n\t\tnodeVar0 = vec4<f32>( ( color.xyz / vec3<f32>( color.w ) ), color.w );\n\n\t}\n\n\n\treturn nodeVar0;\n\n}\n\n\nfn sRGBTransferOETF ( color : vec3<f32> ) -> vec3<f32> {\n\n\t\n\n\n\treturn mix( ( ( pow( color, vec3<f32>( 0.41666 ) ) * vec3<f32>( 1.055 ) ) - vec3<f32>( 0.055 ) ), ( color * vec3<f32>( 12.92 ) ), vec3<f32>( ( color <= vec3<f32>( 0.0031308 ) ) ) );\n\n}\n\n\nfn fn0 ( color : vec4<f32> ) -> vec4<f32> {\n\n\t\n\n\n\treturn vec4<f32>( ( color.xyz * vec3<f32>( color.w ) ), color.w );\n\n}\n\n\n\n\n@fragment\nfn main( @location( 0 ) nodeVarying0 : vec2<f32> ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\tnodeVar0 = textureSample( nodeUniform0, nodeUniform0_sampler, nodeVarying0 );\n\tnodeVar1 = nodeVar0;\n\tnodeVar2 = textureSample( nodeUniform1, nodeUniform1_sampler, ( object.nodeUniform2 * vec3<f32>( nodeVarying0, 1.0 ) ).xy );\n\tnodeVar3 = textureSample( nodeUniform3, nodeUniform3_sampler, nodeVarying0 );\n\tnodeVar4 = nodeVar3;\n\tnodeVar5 = textureSample( nodeUniform4, nodeUniform4_sampler, ( object.nodeUniform5 * vec3<f32>( nodeVarying0, 1.0 ) ).xy );\n\tnodeVar6 = textureSample( nodeUniform6, nodeUniform6_sampler, nodeVarying0 );\n\tnodeVar7 = nodeVar6;\n\tnodeVar8 = mix( mix( nodeVar1, nodeVar2, nodeVar4.w ), nodeVar5, nodeVar7.w );\n\tnodeVar9 = fn1( vec4<f32>( nodeVar8.xyz, clamp( nodeVar8.w, 0.0, 1.0 ) ) );\n\n\t// result\n\n\toutput.color = fn0( vec4<f32>( sRGBTransferOETF( nodeVar9.xyz ), nodeVar9.w ) );\n\n\treturn output;\n\n}\n"
+		}
+	],
+	"pipelines": [
+		{
+			"kind": "createRenderPipeline",
+			"descriptor": {
+				"label": "renderPipeline_MeshBasicMaterial_17",
+				"layout": {
+					"__gpu": "GPUPipelineLayout",
+					"label": ""
+				},
+				"vertex": {
+					"module": {
+						"__module": 0
+					},
+					"entryPoint": "main",
+					"buffers": [
+						{
+							"arrayStride": 12,
+							"attributes": [
+								{
+									"shaderLocation": 0,
+									"offset": 0,
+									"format": "float32x3"
+								}
+							],
+							"stepMode": "vertex"
+						}
+					]
+				},
+				"primitive": {
+					"topology": "triangle-list",
+					"frontFace": "ccw",
+					"cullMode": "back"
+				},
+				"depthStencil": {
+					"format": "depth24plus",
+					"depthWriteEnabled": true,
+					"depthCompare": "less-equal"
+				},
+				"multisample": {
+					"count": 1,
+					"mask": 4294967295,
+					"alphaToCoverageEnabled": false
+				},
+				"fragment": {
+					"module": {
+						"__module": 1
+					},
+					"entryPoint": "main",
+					"targets": [
+						{
+							"format": "rgba16float",
+							"writeMask": 15
+						}
+					]
+				}
+			}
+		},
+		{
+			"kind": "createRenderPipeline",
+			"descriptor": {
+				"label": "mipmap-rgba8unorm-srgb-2d-array",
+				"layout": "auto",
+				"vertex": {
+					"module": {
+						"__module": 2
+					}
+				},
+				"primitive": {},
+				"multisample": {
+					"count": 1,
+					"mask": 4294967295,
+					"alphaToCoverageEnabled": false
+				},
+				"fragment": {
+					"module": {
+						"__module": 2
+					},
+					"entryPoint": "main_2d_array",
+					"targets": [
+						{
+							"format": "rgba8unorm-srgb"
+						}
+					]
+				}
+			}
+		},
+		{
+			"kind": "createRenderPipeline",
+			"descriptor": {
+				"label": "renderPipeline_RenderPipeline_19",
+				"layout": {
+					"__gpu": "GPUPipelineLayout",
+					"label": ""
+				},
+				"vertex": {
+					"module": {
+						"__module": 3
+					},
+					"entryPoint": "main",
+					"buffers": [
+						{
+							"arrayStride": 8,
+							"attributes": [
+								{
+									"shaderLocation": 0,
+									"offset": 0,
+									"format": "float32x2"
+								}
+							],
+							"stepMode": "vertex"
+						}
+					]
+				},
+				"primitive": {
+					"topology": "triangle-list",
+					"frontFace": "ccw",
+					"cullMode": "back"
+				},
+				"depthStencil": {
+					"format": "depth24plus",
+					"depthWriteEnabled": true,
+					"depthCompare": "less-equal"
+				},
+				"multisample": {
+					"count": 1,
+					"mask": 4294967295,
+					"alphaToCoverageEnabled": false
+				},
+				"fragment": {
+					"module": {
+						"__module": 4
+					},
+					"entryPoint": "main",
+					"targets": [
+						{
+							"format": "rgba8unorm",
+							"writeMask": 15
+						}
+					]
+				}
+			}
+		}
+	],
+	"layouts": [
+		{
+			"index": 0,
+			"descriptor": {
+				"entries": [
+					{
+						"binding": 0,
+						"visibility": 7,
+						"buffer": {}
+					}
+				]
+			}
+		},
+		{
+			"index": 1,
+			"descriptor": {
+				"entries": [
+					{
+						"binding": 0,
+						"visibility": 2,
+						"sampler": {}
+					},
+					{
+						"binding": 1,
+						"visibility": 2,
+						"texture": {}
+					},
+					{
+						"binding": 2,
+						"visibility": 2,
+						"sampler": {}
+					},
+					{
+						"binding": 3,
+						"visibility": 2,
+						"texture": {}
+					},
+					{
+						"binding": 4,
+						"visibility": 7,
+						"buffer": {}
+					},
+					{
+						"binding": 5,
+						"visibility": 2,
+						"sampler": {}
+					},
+					{
+						"binding": 6,
+						"visibility": 2,
+						"texture": {}
+					},
+					{
+						"binding": 7,
+						"visibility": 2,
+						"sampler": {}
+					},
+					{
+						"binding": 8,
+						"visibility": 2,
+						"texture": {}
+					},
+					{
+						"binding": 9,
+						"visibility": 2,
+						"sampler": {}
+					},
+					{
+						"binding": 10,
+						"visibility": 2,
+						"texture": {}
+					}
+				]
+			}
+		}
+	],
+	"textures": [
+		{
+			"label": "depthBuffer",
+			"size": {
+				"width": 800,
+				"height": 500,
+				"depthOrArrayLayers": 1
+			},
+			"mipLevelCount": 1,
+			"sampleCount": 1,
+			"dimension": "2d",
+			"format": "depth24plus",
+			"usage": 23,
+			"viewFormats": []
+		},
+		{
+			"label": "output",
+			"size": {
+				"width": 800,
+				"height": 500,
+				"depthOrArrayLayers": 1
+			},
+			"mipLevelCount": 1,
+			"sampleCount": 1,
+			"dimension": "2d",
+			"format": "rgba16float",
+			"usage": 23,
+			"viewFormats": []
+		},
+		{
+			"label": "depth",
+			"size": {
+				"width": 800,
+				"height": 500,
+				"depthOrArrayLayers": 1
+			},
+			"mipLevelCount": 1,
+			"sampleCount": 1,
+			"dimension": "2d",
+			"format": "depth24plus",
+			"usage": 23,
+			"viewFormats": []
+		},
+		{
+			"label": "output",
+			"size": {
+				"width": 800,
+				"height": 500,
+				"depthOrArrayLayers": 1
+			},
+			"mipLevelCount": 1,
+			"sampleCount": 1,
+			"dimension": "2d",
+			"format": "rgba16float",
+			"usage": 23,
+			"viewFormats": []
+		},
+		{
+			"label": "depth",
+			"size": {
+				"width": 800,
+				"height": 500,
+				"depthOrArrayLayers": 1
+			},
+			"mipLevelCount": 1,
+			"sampleCount": 1,
+			"dimension": "2d",
+			"format": "depth24plus",
+			"usage": 23,
+			"viewFormats": []
+		},
+		{
+			"label": "output",
+			"size": {
+				"width": 800,
+				"height": 500,
+				"depthOrArrayLayers": 1
+			},
+			"mipLevelCount": 1,
+			"sampleCount": 1,
+			"dimension": "2d",
+			"format": "rgba16float",
+			"usage": 23,
+			"viewFormats": []
+		},
+		{
+			"label": "depth",
+			"size": {
+				"width": 800,
+				"height": 500,
+				"depthOrArrayLayers": 1
+			},
+			"mipLevelCount": 1,
+			"sampleCount": 1,
+			"dimension": "2d",
+			"format": "depth24plus",
+			"usage": 23,
+			"viewFormats": []
+		},
+		{
+			"label": "",
+			"size": {
+				"width": 758,
+				"height": 600,
+				"depthOrArrayLayers": 1
+			},
+			"mipLevelCount": 1,
+			"sampleCount": 1,
+			"dimension": "2d",
+			"format": "rgba8unorm-srgb",
+			"usage": 23,
+			"viewFormats": []
+		},
+		{
+			"label": "",
+			"size": {
+				"width": 4096,
+				"height": 2048,
+				"depthOrArrayLayers": 1
+			},
+			"mipLevelCount": 13,
+			"sampleCount": 1,
+			"dimension": "2d",
+			"format": "rgba8unorm-srgb",
+			"usage": 23,
+			"viewFormats": []
+		}
+	],
+	"samplers": [
+		{
+			"label": "",
+			"addressModeU": "clamp-to-edge",
+			"addressModeV": "clamp-to-edge",
+			"addressModeW": "clamp-to-edge",
+			"magFilter": "linear",
+			"minFilter": "linear",
+			"mipmapFilter": "nearest",
+			"lodMinClamp": 0,
+			"lodMaxClamp": 32,
+			"maxAnisotropy": 1
+		},
+		{
+			"label": "",
+			"addressModeU": "clamp-to-edge",
+			"addressModeV": "clamp-to-edge",
+			"addressModeW": "clamp-to-edge",
+			"magFilter": "linear",
+			"minFilter": "linear",
+			"mipmapFilter": "linear",
+			"lodMinClamp": 0,
+			"lodMaxClamp": 32,
+			"maxAnisotropy": 1
+		},
+		{
+			"minFilter": "linear"
+		},
+		{
+			"minFilter": "nearest"
+		}
+	],
+	"passes": [
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"clearValue": {
+							"r": 0,
+							"g": 0,
+							"b": 0,
+							"a": 0
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"depthStencilAttachment": {
+					"view": {
+						"__gpu": "GPUTextureView",
+						"label": ""
+					},
+					"depthLoadOp": "clear",
+					"depthStoreOp": "store",
+					"depthClearValue": 1,
+					"depthReadOnly": false,
+					"stencilClearValue": 0,
+					"stencilReadOnly": false
+				},
+				"maxDrawCount": 50000000
+			},
+			"ops": [
+				[
+					"setPipeline",
+					"pipeline:renderPipeline_RenderPipeline_19"
+				],
+				[
+					"draw",
+					3,
+					1,
+					0,
+					0
+				]
+			]
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": "colorAttachment_0"
+						},
+						"clearValue": {
+							"r": 0.7454042095350284,
+							"g": 0.7454042095350284,
+							"b": 0.7454042095350284,
+							"a": 1
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"depthStencilAttachment": {
+					"view": {
+						"__gpu": "GPUTextureView",
+						"label": ""
+					},
+					"depthLoadOp": "clear",
+					"depthStoreOp": "store",
+					"depthClearValue": 1,
+					"depthReadOnly": false,
+					"stencilClearValue": 0,
+					"stencilReadOnly": false
+				},
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": "colorAttachment_0"
+						},
+						"clearValue": {
+							"r": 0,
+							"g": 0,
+							"b": 0,
+							"a": 0
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"depthStencilAttachment": {
+					"view": {
+						"__gpu": "GPUTextureView",
+						"label": ""
+					},
+					"depthLoadOp": "clear",
+					"depthStoreOp": "store",
+					"depthClearValue": 1,
+					"depthReadOnly": false,
+					"stencilClearValue": 0,
+					"stencilReadOnly": false
+				},
+				"maxDrawCount": 50000000
+			},
+			"ops": [
+				[
+					"setPipeline",
+					"pipeline:renderPipeline_MeshBasicMaterial_17"
+				],
+				[
+					"drawIndexed",
+					36,
+					1,
+					0,
+					0,
+					0
+				]
+			]
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": "colorAttachment_0"
+						},
+						"clearValue": {
+							"r": 0,
+							"g": 0,
+							"b": 0,
+							"a": 0
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"depthStencilAttachment": {
+					"view": {
+						"__gpu": "GPUTextureView",
+						"label": ""
+					},
+					"depthLoadOp": "clear",
+					"depthStoreOp": "store",
+					"depthClearValue": 1,
+					"depthReadOnly": false,
+					"stencilClearValue": 0,
+					"stencilReadOnly": false
+				},
+				"maxDrawCount": 50000000
+			},
+			"ops": [
+				[
+					"setPipeline",
+					"pipeline:renderPipeline_MeshBasicMaterial_17"
+				],
+				[
+					"drawIndexed",
+					3072,
+					1,
+					0,
+					0,
+					0
+				]
+			]
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		},
+		{
+			"descriptor": {
+				"label": "",
+				"colorAttachments": [
+					{
+						"view": {
+							"__gpu": "GPUTextureView",
+							"label": ""
+						},
+						"loadOp": "clear",
+						"storeOp": "store"
+					}
+				],
+				"maxDrawCount": 50000000
+			},
+			"ops": []
+		}
+	]
+}
