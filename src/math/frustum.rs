@@ -1,7 +1,7 @@
 //! Port of `three.js/src/math/Frustum.js`.
 
 use super::{Box3, CoordinateSystem, Matrix4, Plane, Sphere, Vector3};
-use crate::objects::Mesh;
+use crate::core::Node;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Frustum {
@@ -115,13 +115,14 @@ impl Frustum {
     /// `position` attribute has no bounding sphere at all here, where three.js
     /// would leave `geometry.boundingSphere` `null` and throw. This returns
     /// `false` (nothing to intersect) instead.
-    pub fn intersects_object(&self, object: &Mesh) -> bool {
-        let Some(bounding_sphere) = object.geometry.compute_bounding_sphere() else {
+    pub fn intersects_object(&self, object: &Node) -> bool {
+        let object = object.borrow();
+        let Some(mesh) = object.mesh() else {
             return false;
         };
-
-        let mut sphere = Sphere::new(bounding_sphere.center, bounding_sphere.radius);
-        sphere.apply_matrix4(&object.object.matrix_world);
+        let Some(sphere) = mesh.bounding_sphere_in(&object.matrix_world) else {
+            return false;
+        };
 
         self.intersects_sphere(&sphere)
     }

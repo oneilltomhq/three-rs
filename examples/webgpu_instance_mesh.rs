@@ -14,7 +14,7 @@ use std::rc::Rc;
 use three_rs::materials::instanced_range;
 use three_rs::nodes::tsl::{float, mix, normal_world, osc_sine, time};
 use three_rs::{
-    BufferGeometryLoader, Child, Color, InstancedMesh, MeshBasicNodeMaterial, Object3D,
+    BufferGeometryLoader, Color, InstancedMesh, MeshBasicNodeMaterial, Object3D,
     PerspectiveCamera, Renderer, RendererParameters, Scene, Vector3,
 };
 
@@ -78,7 +78,7 @@ pub fn init() -> App {
 
     let mesh = InstancedMesh::new(Rc::new(geometry), material, count);
 
-    scene.add(mesh);
+    scene.add(&mesh);
 
     //
 
@@ -104,16 +104,15 @@ pub fn animate_cpu_only(app: &mut App) {
     // `const time = Date.now() * 0.001;` — the harness pins `Date.now()` to 0.
     let time = 0.0f64;
 
-    for child in &mut app.scene.children {
-        let Child::InstancedMesh(mesh) = child else {
+    for child in app.scene.children() {
+        if !child.borrow().is_instanced_mesh() {
             continue;
-        };
+        }
 
-        mesh.mesh.object.set_rotation(
-            (time / 4.0).sin(),
-            (time / 2.0).sin(),
-            mesh.mesh.object.rotation.z,
-        );
+        let mut mesh = child.borrow_mut();
+
+        let rotation_z = mesh.rotation.z;
+        mesh.set_rotation((time / 4.0).sin(), (time / 2.0).sin(), rotation_z);
 
         let mut dummy = Object3D::default();
 

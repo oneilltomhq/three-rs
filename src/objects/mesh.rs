@@ -2,23 +2,42 @@
 
 use std::rc::Rc;
 
-use crate::core::{BufferGeometry, Object3D};
+use crate::core::{BufferGeometry, Node, Object3D};
 use crate::materials::MeshBasicNodeMaterial;
+use crate::math::Matrix4;
+use crate::objects::Payload;
 
+/// The state `Mesh` adds to `Object3D`. It lives in a node's
+/// [`Payload`](crate::objects::Payload) rather than wrapping an `Object3D`,
+/// because the renderer finds meshes by walking the tree — see
+/// `docs/scene-graph.md`.
+#[derive(Clone)]
 pub struct Mesh {
-    pub object: Object3D,
     pub geometry: Rc<BufferGeometry>,
     pub material: Option<MeshBasicNodeMaterial>,
 }
 
 impl Mesh {
-    /// `new Mesh( geometry )` — the example relies on `scene.overrideMaterial`,
-    /// so the material is optional here just as it defaults in three.js.
-    pub fn new(geometry: Rc<BufferGeometry>) -> Self {
-        Self {
-            object: Object3D::default(),
+    /// `new Mesh( geometry )`, as a scene-graph [`Node`] — the example relies on
+    /// `scene.overrideMaterial`, so the material is optional here just as it
+    /// defaults in three.js.
+    pub fn new(geometry: Rc<BufferGeometry>) -> Node {
+        let mut object = Object3D::default();
+        object.object_type = "Mesh";
+        object.payload = Payload::Mesh(Self {
             geometry,
             material: None,
-        }
+        });
+        object.into_node()
+    }
+
+    /// `Mesh.intersectsFrustum( frustum )` needs the world matrix, which lives on
+    /// the node; this is the geometry half, i.e. the bounding sphere three.js
+    /// lazily computes in `_projectObject`.
+    pub fn bounding_sphere_in(&self, matrix_world: &Matrix4) -> Option<crate::math::Sphere> {
+        let bounding_sphere = self.geometry.compute_bounding_sphere()?;
+        let mut sphere = crate::math::Sphere::new(bounding_sphere.center, bounding_sphere.radius);
+        sphere.apply_matrix4(matrix_world);
+        Some(sphere)
     }
 }

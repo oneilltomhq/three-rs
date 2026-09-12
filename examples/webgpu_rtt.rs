@@ -63,9 +63,9 @@ pub fn init() -> App {
 
     //
 
-    let mut boxed = Mesh::new(geometry_box);
-    boxed.material = Some(material_box);
-    scene.add(boxed);
+    let boxed = Mesh::new(geometry_box);
+    boxed.borrow_mut().mesh_mut().unwrap().material = Some(material_box);
+    scene.add(&boxed);
 
     //
 
@@ -104,9 +104,10 @@ pub fn init() -> App {
 /// The page's `animate()`. `setAnimationLoop` runs it once under the harness,
 /// so the box has been rotated exactly one step by the time the frame is read.
 pub fn animate(app: &mut App) {
-    let rotation = app.scene.children[0].object().rotation;
-    app.scene.children[0]
-        .object_mut()
+    let boxed = app.scene.children()[0].clone();
+    let rotation = boxed.borrow().rotation;
+    boxed
+        .borrow_mut()
         .set_rotation(rotation.x + 0.01, rotation.y + 0.02, rotation.z);
 
     app.renderer
