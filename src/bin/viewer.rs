@@ -20,7 +20,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use three_rs::nodes::tsl;
-use three_rs::{Child, DepthTexture, MeshBasicNodeMaterial, Object3D,
+use three_rs::{DepthTexture, MeshBasicNodeMaterial, Object3D,
     PerspectiveCamera, QuadMesh, RenderTarget, Renderer, RendererParameters, TextureType,
     Vector3};
 
@@ -167,16 +167,15 @@ impl Scene {
                 // `const amount = … || 10;`
                 const AMOUNT: usize = 10;
 
-                for child in &mut app.scene.children {
-                    let Child::InstancedMesh(mesh) = child else {
+                for child in app.scene.children() {
+                    if !child.borrow().is_instanced_mesh() {
                         continue;
-                    };
+                    }
 
-                    mesh.mesh.object.set_rotation(
-                        (time / 4.0).sin(),
-                        (time / 2.0).sin(),
-                        mesh.mesh.object.rotation.z,
-                    );
+                    let mut mesh = child.borrow_mut();
+
+                    let rotation_z = mesh.rotation.z;
+                    mesh.set_rotation((time / 4.0).sin(), (time / 2.0).sin(), rotation_z);
 
                     let mut dummy = Object3D::default();
                     let mut i = 0usize;
@@ -211,12 +210,10 @@ impl Scene {
                 // `const timer = 0.0001 * Date.now();`
                 let timer = 0.1 * time;
 
-                for (i, child) in app.scene.children.iter_mut().enumerate() {
-                    let Child::Mesh(sphere) = child else {
-                        continue;
-                    };
-                    sphere.object.position.x = 5.0 * (timer + i as f64).cos();
-                    sphere.object.position.y = 5.0 * (timer + i as f64 * 1.1).sin();
+                for (i, sphere) in app.scene.children().iter().enumerate() {
+                    let mut sphere = sphere.borrow_mut();
+                    sphere.position.x = 5.0 * (timer + i as f64).cos();
+                    sphere.position.y = 5.0 * (timer + i as f64 * 1.1).sin();
                 }
 
                 app.renderer.render(&mut app.scene, &mut app.camera);

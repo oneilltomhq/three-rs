@@ -52,13 +52,15 @@ pub fn init() -> App {
         let z = (random.next() * 2.0) - 1.0;
         let z_scale = (1.0 - z * z).sqrt() * scale;
 
-        let mut mesh = Mesh::new(geometry.clone());
-        mesh.object
-            .position
-            .set(r.cos() * z_scale, r.sin() * z_scale, z * scale);
-        mesh.object
-            .set_rotation(random.next(), random.next(), random.next());
-        scene.add(mesh);
+        let mesh = Mesh::new(geometry.clone());
+        {
+            let mut object = mesh.borrow_mut();
+            object
+                .position
+                .set(r.cos() * z_scale, r.sin() * z_scale, z * scale);
+            object.set_rotation(random.next(), random.next(), random.next());
+        }
+        scene.add(&mesh);
     }
 
     //

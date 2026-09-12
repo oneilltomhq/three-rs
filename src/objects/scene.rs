@@ -1,9 +1,8 @@
 //! Port of `three.js/src/scenes/Scene.js` (rung 2 subset).
 
-use crate::core::Object3D;
+use crate::core::{Node, Object3D, Object3DNode};
 use crate::materials::MeshBasicNodeMaterial;
 use crate::math::{Color, Matrix4};
-use crate::objects::{InstancedBufferAttribute, InstancedMesh, Mesh};
 use crate::textures::CubeTexture;
 
 /// `Scene.background`. three.js accepts a `Color`, a `Texture` or a
@@ -27,71 +26,17 @@ impl From<CubeTexture> for Background {
     }
 }
 
-/// One entry of `Object3D.children`. `InstancedMesh` extends `Mesh` in
-/// three.js; the renderer walks children through the accessors below and only
-/// looks at `instance_matrix()` to decide whether to draw instanced.
-pub enum Child {
-    Mesh(Mesh),
-    InstancedMesh(InstancedMesh),
-}
-
-impl From<Mesh> for Child {
-    fn from(mesh: Mesh) -> Self {
-        Child::Mesh(mesh)
-    }
-}
-
-impl From<InstancedMesh> for Child {
-    fn from(mesh: InstancedMesh) -> Self {
-        Child::InstancedMesh(mesh)
-    }
-}
-
-impl Child {
-    pub fn mesh(&self) -> &Mesh {
-        match self {
-            Child::Mesh(mesh) => mesh,
-            Child::InstancedMesh(instanced) => &instanced.mesh,
-        }
-    }
-
-    pub fn mesh_mut(&mut self) -> &mut Mesh {
-        match self {
-            Child::Mesh(mesh) => mesh,
-            Child::InstancedMesh(instanced) => &mut instanced.mesh,
-        }
-    }
-
-    pub fn object(&self) -> &Object3D {
-        &self.mesh().object
-    }
-
-    pub fn object_mut(&mut self) -> &mut Object3D {
-        &mut self.mesh_mut().object
-    }
-
-    /// The number of instances to draw: `InstancedMesh.count`, else 1.
-    pub fn count(&self) -> u32 {
-        match self {
-            Child::Mesh(_) => 1,
-            Child::InstancedMesh(instanced) => instanced.count as u32,
-        }
-    }
-
-    pub fn instance_matrix(&self) -> Option<&InstancedBufferAttribute> {
-        match self {
-            Child::Mesh(_) => None,
-            Child::InstancedMesh(instanced) => Some(&instanced.instance_matrix),
-        }
-    }
-}
-
-/// `Scene extends Object3D`. The children list is still flat (`Child`) rather
-/// than the `Object3DNode` tree, because `src/renderer` walks it directly — see
-/// `docs/scene-graph.md`.
+/// `Scene extends Object3D`.
+///
+/// The `Object3D` half is a real scene-graph [`Node`], so the tree under a scene
+/// is the tree the renderer walks: `Group`s, lights and their children all
+/// nest, and `Renderer::render` collects drawables with
+/// [`crate::renderer::project_object`]. The fields below are what `Scene` adds
+/// to `Object3D`; they are not a `Payload` variant because nothing in the
+/// renderer's traversal branches on them.
 pub struct Scene {
-    pub object: Object3D,
-    pub children: Vec<Child>,
+    /// The scene root. `node.borrow().is_scene` is true.
+    pub node: Node,
     pub background: Option<Background>,
     pub override_material: Option<MeshBasicNodeMaterial>,
 }
@@ -103,8 +48,7 @@ impl Default for Scene {
         object.is_scene = true;
 
         Self {
-            object,
-            children: Vec::new(),
+            node: object.into_node(),
             background: None,
             override_material: None,
         }
@@ -118,7 +62,7 @@ impl Scene {
 
     /// `Scene.matrixWorld`.
     pub fn matrix_world(&self) -> Matrix4 {
-        self.object.matrix_world
+        self.node.borrow().matrix_world
     }
 
     /// `scene.background = value`.
@@ -126,22 +70,27 @@ impl Scene {
         self.background = Some(background.into());
     }
 
-    pub fn add(&mut self, child: impl Into<Child>) {
-        self.children.push(child.into());
+    /// `scene.add( object )`.
+    pub fn add(&self, object: &Node) -> &Self {
+        self.node.add(object);
+        self
     }
 
-    /// `Object3D.updateMatrixWorld()` on the scene root: the scene's own world
-    /// matrix stays the identity and each child is composed then multiplied by it.
-    pub fn update_matrix_world(&mut self) {
-        // three.js' `Object3D.updateMatrixWorld( force )`: a scene whose own
-        // world matrix changed forces every child's to be recomputed.
-        let force = self.object.update_matrix_world_forced(None, false);
+    /// `scene.remove( object )`.
+    pub fn remove(&self, object: &Node) -> &Self {
+        self.node.remove(object);
+        self
+    }
 
-        let parent = self.object.matrix_world;
-        for child in &mut self.children {
-            child
-                .object_mut()
-                .update_matrix_world_forced(Some(&parent), force);
-        }
+    /// `scene.children`, cloned — the direct children only. The renderer does
+    /// not use this; it walks the whole tree.
+    pub fn children(&self) -> Vec<Node> {
+        self.node.children()
+    }
+
+    /// `Object3D.updateMatrixWorld()` on the scene root, which is what
+    /// `Renderer.render()` calls before projecting the scene.
+    pub fn update_matrix_world(&self) {
+        self.node.update_matrix_world(false);
     }
 }

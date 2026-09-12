@@ -1,15 +1,16 @@
 //! Port of `three.js/src/objects/InstancedMesh.js` +
 //! `src/core/InstancedBufferAttribute.js` (rung 2 subset).
 //!
-//! `InstancedMesh` extends `Mesh` in three.js; here it wraps one, and
-//! `Scene`'s child enum keeps the two apart for the renderer.
+//! `InstancedMesh` extends `Mesh` in three.js; here it holds the `Mesh` payload
+//! it extends, and the node's [`Payload`] variant keeps the two apart for the
+//! renderer.
 
 use std::rc::Rc;
 
-use crate::core::BufferGeometry;
+use crate::core::{BufferGeometry, Node, Object3D};
 use crate::materials::MeshBasicNodeMaterial;
 use crate::math::Matrix4;
-use crate::objects::Mesh;
+use crate::objects::{Mesh, Payload};
 
 /// `new InstancedBufferAttribute( new Float32Array( count * 16 ), 16 )`.
 #[derive(Clone, Debug)]
@@ -28,6 +29,7 @@ impl InstancedBufferAttribute {
     }
 }
 
+#[derive(Clone)]
 pub struct InstancedMesh {
     pub mesh: Mesh,
     /// `InstancedMesh.count` — the number of instances the renderer draws.
@@ -38,17 +40,24 @@ pub struct InstancedMesh {
 }
 
 impl InstancedMesh {
-    /// `new InstancedMesh( geometry, material, count )`.
-    pub fn new(geometry: Rc<BufferGeometry>, material: MeshBasicNodeMaterial, count: usize) -> Self {
-        let mut mesh = Mesh::new(geometry);
-        mesh.material = Some(material);
-
-        Self {
-            mesh,
+    /// `new InstancedMesh( geometry, material, count )`, as a scene-graph [`Node`].
+    pub fn new(
+        geometry: Rc<BufferGeometry>,
+        material: MeshBasicNodeMaterial,
+        count: usize,
+    ) -> Node {
+        let mut object = Object3D::default();
+        object.object_type = "InstancedMesh";
+        object.payload = Payload::InstancedMesh(Self {
+            mesh: Mesh {
+                geometry,
+                material: Some(material),
+            },
             count,
             instance_matrix: InstancedBufferAttribute::new(vec![0.0; count * 16], 16),
             instance_color: None,
-        }
+        });
+        object.into_node()
     }
 
     /// `InstancedMesh.setMatrixAt( index, matrix )` —

@@ -73,9 +73,11 @@ too because it exercises two skins and a split mesh.
 1. **Hand the renderer the skinning inputs**: `Skeleton::update()` then
    `bone_matrices` into a `DataTexture` (`Skeleton.computeBoneTexture`);
    `bone_texture_size()` is the hook. The renderer also needs the
-   `SkinnedMesh` in its draw list — `Scene::Child` is still the flat enum from
-   rung 1, so the rung worker has to add a skinned variant (or fold `Child` into
-   the tree, which `handoff/RUNGS.md` lists as pending anyway).
+   `SkinnedMesh` in its draw list. `Child` is gone: the renderer now walks the
+   real tree and draws whatever node carries a `Payload::Mesh` /
+   `Payload::InstancedMesh`, so the rung worker adds a `Payload::SkinnedMesh`
+   variant and moves `SkinnedMesh`'s geometry/skeleton into it (see
+   `docs/scene-graph.md`).
 2. **CUBICSPLINE**: currently reduced to LINEAR by dropping the in/out tangents
    (keeping only the middle value of each triple). Correct only for one-keyframe
    tracks; neither test asset uses it. Needs `GLTFCubicSplineInterpolant`.
