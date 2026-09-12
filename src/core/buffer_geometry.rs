@@ -293,8 +293,11 @@ impl BufferGeometry {
                 }
             };
 
+            // three.js writes `i < index.count()`, which in JS reads past the
+            // end of the typed array for a trailing partial triangle and stores
+            // NaN; in Rust that panics, so incomplete triangles are skipped.
             let mut i = 0;
-            while i < index.count() {
+            while i + 2 < index.count() {
                 let (v_a, v_b, v_c) = (get(i), get(i + 1), get(i + 2));
 
                 let p_a = position.get_vector3(v_a);
@@ -320,8 +323,10 @@ impl BufferGeometry {
                 i += 3;
             }
         } else {
+            // As above: a position count that is not a multiple of three
+            // leaves the trailing vertices' normals at zero rather than NaN.
             let mut i = 0;
-            while i < position.count() {
+            while i + 2 < position.count() {
                 let p_a = position.get_vector3(i);
                 let p_b = position.get_vector3(i + 1);
                 let p_c = position.get_vector3(i + 2);
