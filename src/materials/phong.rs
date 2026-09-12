@@ -30,13 +30,28 @@ pub struct PointLightUniforms {
     pub decay: NodeRef,
 }
 
-/// `getDistanceAttenuation( lightDistance, cutoffDistance, decayExponent )`.
-///
-/// three.js emits this as an `if ( cutoffDistance > 0.0 ) { … } else { … }` over
-/// a shared temp, because `cutoffDistance` is a uniform. This port has no `If`
-/// node yet (see `docs/rung5-progress.md`), so the caller passes the branch it
-/// wants until one exists; `with_cutoff` is the branch every light in
-/// `webgpu_lights_phong` takes (`distance = 100`).
+/// `getDistanceAttenuation( lightDistance, cutoffDistance, decayExponent )` —
+/// the whole thing, including the `if ( cutoffDistance > 0.0 ) { … } else { … }`
+/// over a shared temp that the dump shows. `cutoffDistance` is a uniform, so the
+/// branch stays in the shader; `Node::Select` already lowers to exactly that
+/// shape (`builder.rs`' `Node::Select` arm), so no new node variant is needed.
+pub fn distance_attenuation(
+    light_distance: NodeRef,
+    cutoff_distance: NodeRef,
+    decay: NodeRef,
+) -> NodeRef {
+    cutoff_distance.greater_than(0.0).select(
+        distance_attenuation_with_cutoff(
+            light_distance.clone(),
+            cutoff_distance.clone(),
+            decay.clone(),
+        ),
+        distance_attenuation_no_cutoff(light_distance, decay),
+    )
+}
+
+/// The `cutoffDistance > 0` branch: inverse-square falloff times the smooth
+/// window `clamp( 1 - ( d / cutoff )^4, 0, 1 )^2`.
 pub fn distance_attenuation_with_cutoff(
     light_distance: NodeRef,
     cutoff_distance: NodeRef,
@@ -99,7 +114,7 @@ pub fn brdf_blinn_phong(light_direction: NodeRef) -> NodeRef {
 pub fn direct_point_light(light: &PointLightUniforms, out: &mut Vec<NodeRef>) {
     let l_vector = light.view_position.clone().sub(position_view());
     let light_direction = l_vector.clone().normalize();
-    let attenuation = distance_attenuation_with_cutoff(
+    let attenuation = distance_attenuation(
         length(l_vector),
         light.cutoff_distance.clone(),
         light.decay.clone(),

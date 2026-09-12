@@ -373,6 +373,9 @@ impl NodeRef {
     pub fn less_than_equal(&self, other: impl Into<NodeRef>) -> NodeRef {
         binary("<=", self.clone(), other.into())
     }
+    pub fn greater_than(&self, other: impl Into<NodeRef>) -> NodeRef {
+        binary(">", self.clone(), other.into())
+    }
 
     /// `oneMinus()` — `1.0 - x`, emitted in that order.
     pub fn one_minus(&self) -> NodeRef {
