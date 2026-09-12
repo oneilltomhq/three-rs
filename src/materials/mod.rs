@@ -1,43 +1,47 @@
-//! Ports of `three.js/src/materials` (node materials only — under
-//! `WebGPURenderer` every material is a `NodeMaterial`).
+//! Ports of `three.js/src/materials/nodes` — under `WebGPURenderer` every
+//! material is a `NodeMaterial`, so this is the only material path.
+
+mod node_material;
+
+pub use node_material::{
+    background_color_node, background_vertex_node, instanced_range, output_fragment_node,
+    quad_vertex_node, setup, SetupContext,
+};
 
 use crate::math::Color;
-use crate::textures::{CubeTexture, DepthTexture};
+use crate::nodes::NodeRef;
+use crate::textures::CubeTexture;
 
-/// The `colorNode` of a material — one variant per node graph the ladder has
-/// reached so far.
-///
-/// This enum is scaffolding: rung 4 ports the TSL node graph and this becomes a
-/// real node reference.
-#[derive(Clone, Debug)]
-pub enum ColorNode {
-    /// `texture( depthTexture )`.
-    DepthTexture(DepthTexture),
-    /// `mix( normalWorld, range( min, max ), oscSine( time.mul( 0.1 ) ) )`.
-    ///
-    /// `range()` resolves, per instance, to a `vec4` of
-    /// `MathUtils.lerp( min[ c ], max[ c ], Math.random() )` per component —
-    /// see `RangeNode.setup()`.
-    NormalWorldRangeMix { min: Color, max: Color },
+/// `three.js/src/constants.js` sides.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Side {
+    Front,
+    Back,
 }
 
-/// Port of `three.js/src/materials/nodes/MeshBasicNodeMaterial.js` (rung 3
-/// subset). Defaults mirror `Material.js` + `MeshBasicMaterial.js`: white,
-/// opaque, `FrontSide`, depth test on with `LessEqualDepth`, depth write on,
-/// `reflectivity = 1`, `combine = MultiplyOperation`.
+/// Port of `MeshBasicNodeMaterial.js` + the `NodeMaterial.js` / `Material.js`
+/// fields the ladder uses. Defaults mirror three.js: white, opaque,
+/// `FrontSide`, depth test on with `LessEqualDepth`, depth write on,
+/// `reflectivity = 1`.
 #[derive(Clone, Debug)]
 pub struct MeshBasicNodeMaterial {
-    /// `MeshBasicMaterial.color`, in the working (linear-sRGB) colour space —
-    /// the `materialColor` uniform the generated WGSL calls `diffuse`.
     pub color: Color,
-    /// `Material.opacity`.
     pub opacity: f64,
-    /// `MeshBasicMaterial.reflectivity`.
     pub reflectivity: f64,
-    /// `MeshBasicMaterial.envMap` — `MeshBasicNodeMaterial.setupEnvironment()`
-    /// turns it into `BasicEnvironmentNode( cubeTexture( envMap ) )`.
+    /// `MeshBasicMaterial.envMap` — `setupEnvironment()` turns it into
+    /// `BasicEnvironmentNode( cubeTexture( envMap ) )`.
     pub env_map: Option<CubeTexture>,
-    pub color_node: Option<ColorNode>,
+    pub color_node: Option<NodeRef>,
+    /// `NodeMaterial.vertexNode` — replaces the whole clip-position flow.
+    pub vertex_node: Option<NodeRef>,
+    /// `NodeMaterial.fragmentNode` — replaces the whole fragment flow.
+    pub fragment_node: Option<NodeRef>,
+    pub side: Side,
+    pub depth_test: bool,
+    pub depth_write: bool,
+    /// `Background`'s material samples the cube map through the background
+    /// uniforms rather than an env map.
+    pub name: &'static str,
 }
 
 impl Default for MeshBasicNodeMaterial {
@@ -48,6 +52,12 @@ impl Default for MeshBasicNodeMaterial {
             reflectivity: 1.0,
             env_map: None,
             color_node: None,
+            vertex_node: None,
+            fragment_node: None,
+            side: Side::Front,
+            depth_test: true,
+            depth_write: true,
+            name: "",
         }
     }
 }
@@ -56,35 +66,4 @@ impl MeshBasicNodeMaterial {
     pub fn new() -> Self {
         Self::default()
     }
-
-    /// The pipeline/shader variant this material needs.
-    pub fn shader_key(&self) -> ShaderKey {
-        match &self.color_node {
-            None if self.env_map.is_some() => ShaderKey::BasicEnvMap,
-            None => ShaderKey::Basic,
-            Some(ColorNode::DepthTexture(_)) => ShaderKey::DepthTextureQuad,
-            Some(ColorNode::NormalWorldRangeMix { .. }) => ShaderKey::NormalWorldRangeMix,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum ShaderKey {
-    /// `MeshBasicNodeMaterial` with no `colorNode`: flat material colour.
-    Basic,
-    /// `MeshBasicNodeMaterial` with an `envMap`: the `BasicEnvironmentNode` /
-    /// `CubeMapNode` reflection path.
-    BasicEnvMap,
-    /// `MeshBasicNodeMaterial` with `colorNode = texture( depthTexture )`,
-    /// drawn as a `QuadMesh`.
-    DepthTextureQuad,
-    /// `MeshBasicNodeMaterial` with
-    /// `colorNode = mix( normalWorld, range( … ), oscSine( time.mul( 0.1 ) ) )`.
-    NormalWorldRangeMix,
-    /// The `NodeMaterial` `Renderer._renderOutput()` builds for its output
-    /// `QuadMesh`: `fragmentNode = nodes.getOutputNode( frameBufferTexture )`.
-    OutputColorTransform,
-    /// The `NodeMaterial` `Background.update()` builds for a `CubeTexture`
-    /// `scene.background`, drawn on a `SphereGeometry( 1, 32, 32 )` skybox.
-    BackgroundCube,
 }
