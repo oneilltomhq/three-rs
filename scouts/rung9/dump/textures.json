@@ -1,0 +1,128 @@
+[
+	{
+		"id": 0,
+		"label": "depthBuffer",
+		"size": {
+			"width": 800,
+			"height": 500,
+			"depthOrArrayLayers": 1
+		},
+		"format": "depth24plus",
+		"sampleCount": 1,
+		"mipLevelCount": 1,
+		"usage": 23,
+		"dimension": "2d"
+	},
+	{
+		"id": 1,
+		"label": "output",
+		"size": {
+			"width": 800,
+			"height": 500,
+			"depthOrArrayLayers": 1
+		},
+		"format": "rgba16float",
+		"sampleCount": 1,
+		"mipLevelCount": 1,
+		"usage": 23,
+		"dimension": "2d"
+	},
+	{
+		"id": 2,
+		"label": "depth",
+		"size": {
+			"width": 800,
+			"height": 500,
+			"depthOrArrayLayers": 1
+		},
+		"format": "depth24plus",
+		"sampleCount": 1,
+		"mipLevelCount": 1,
+		"usage": 23,
+		"dimension": "2d"
+	},
+	{
+		"id": 3,
+		"label": "output",
+		"size": {
+			"width": 800,
+			"height": 500,
+			"depthOrArrayLayers": 1
+		},
+		"format": "rgba16float",
+		"sampleCount": 1,
+		"mipLevelCount": 1,
+		"usage": 23,
+		"dimension": "2d"
+	},
+	{
+		"id": 4,
+		"label": "depth",
+		"size": {
+			"width": 800,
+			"height": 500,
+			"depthOrArrayLayers": 1
+		},
+		"format": "depth24plus",
+		"sampleCount": 1,
+		"mipLevelCount": 1,
+		"usage": 23,
+		"dimension": "2d"
+	},
+	{
+		"id": 5,
+		"label": "output",
+		"size": {
+			"width": 800,
+			"height": 500,
+			"depthOrArrayLayers": 1
+		},
+		"format": "rgba16float",
+		"sampleCount": 1,
+		"mipLevelCount": 1,
+		"usage": 23,
+		"dimension": "2d"
+	},
+	{
+		"id": 6,
+		"label": "depth",
+		"size": {
+			"width": 800,
+			"height": 500,
+			"depthOrArrayLayers": 1
+		},
+		"format": "depth24plus",
+		"sampleCount": 1,
+		"mipLevelCount": 1,
+		"usage": 23,
+		"dimension": "2d"
+	},
+	{
+		"id": 7,
+		"label": "",
+		"size": {
+			"width": 758,
+			"height": 600,
+			"depthOrArrayLayers": 1
+		},
+		"format": "rgba8unorm-srgb",
+		"sampleCount": 1,
+		"mipLevelCount": 1,
+		"usage": 23,
+		"dimension": "2d"
+	},
+	{
+		"id": 8,
+		"label": "",
+		"size": {
+			"width": 4096,
+			"height": 2048,
+			"depthOrArrayLayers": 1
+		},
+		"format": "rgba8unorm-srgb",
+		"sampleCount": 1,
+		"mipLevelCount": 13,
+		"usage": 23,
+		"dimension": "2d"
+	}
+]

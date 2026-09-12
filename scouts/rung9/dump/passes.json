@@ -1,0 +1,861 @@
+[
+	{
+		"seq": 0,
+		"label": "",
+		"color": [
+			{
+				"view": {
+					"tex": {
+						"label": "(CANVAS)",
+						"format": "rgba8unorm",
+						"size": [
+							800,
+							500
+						],
+						"sampleCount": 1,
+						"mipLevelCount": 1,
+						"canvas": true
+					},
+					"view": {}
+				},
+				"resolveTarget": null,
+				"loadOp": "clear",
+				"storeOp": "store",
+				"clearValue": {
+					"r": 0,
+					"g": 0,
+					"b": 0,
+					"a": 0
+				}
+			}
+		],
+		"depth": {
+			"view": {
+				"tex": {
+					"id": 0,
+					"label": "depthBuffer",
+					"size": {
+						"width": 800,
+						"height": 500,
+						"depthOrArrayLayers": 1
+					},
+					"format": "depth24plus",
+					"sampleCount": 1,
+					"mipLevelCount": 1,
+					"usage": 23,
+					"dimension": "2d"
+				},
+				"view": {}
+			},
+			"depthLoadOp": "clear",
+			"depthStoreOp": "store",
+			"depthClearValue": 1
+		},
+		"draws": [
+			{
+				"pipeline": "renderPipeline_RenderPipeline_19",
+				"draw": [
+					3,
+					1,
+					0,
+					0
+				]
+			}
+		],
+		"viewport": null,
+		"scissor": null
+	},
+	{
+		"seq": 1,
+		"label": "",
+		"color": [
+			{
+				"view": {
+					"tex": {
+						"id": 1,
+						"label": "output",
+						"size": {
+							"width": 800,
+							"height": 500,
+							"depthOrArrayLayers": 1
+						},
+						"format": "rgba16float",
+						"sampleCount": 1,
+						"mipLevelCount": 1,
+						"usage": 23,
+						"dimension": "2d"
+					},
+					"view": {
+						"label": "colorAttachment_0",
+						"format": null,
+						"dimension": "2d",
+						"usage": 0,
+						"aspect": "all",
+						"baseMipLevel": 0,
+						"mipLevelCount": 1,
+						"baseArrayLayer": 0,
+						"arrayLayerCount": 1,
+						"swizzle": "rgba"
+					}
+				},
+				"resolveTarget": null,
+				"loadOp": "clear",
+				"storeOp": "store",
+				"clearValue": {
+					"r": 0.7454042095350284,
+					"g": 0.7454042095350284,
+					"b": 0.7454042095350284,
+					"a": 1
+				}
+			}
+		],
+		"depth": {
+			"view": {
+				"tex": {
+					"id": 2,
+					"label": "depth",
+					"size": {
+						"width": 800,
+						"height": 500,
+						"depthOrArrayLayers": 1
+					},
+					"format": "depth24plus",
+					"sampleCount": 1,
+					"mipLevelCount": 1,
+					"usage": 23,
+					"dimension": "2d"
+				},
+				"view": {
+					"label": "",
+					"format": null,
+					"dimension": null,
+					"usage": 0,
+					"aspect": "all",
+					"baseMipLevel": 0,
+					"mipLevelCount": null,
+					"baseArrayLayer": 0,
+					"arrayLayerCount": null,
+					"swizzle": "rgba"
+				}
+			},
+			"depthLoadOp": "clear",
+			"depthStoreOp": "store",
+			"depthClearValue": 1
+		},
+		"draws": [],
+		"viewport": null,
+		"scissor": null
+	},
+	{
+		"seq": 2,
+		"label": "",
+		"color": [
+			{
+				"view": {
+					"tex": {
+						"id": 3,
+						"label": "output",
+						"size": {
+							"width": 800,
+							"height": 500,
+							"depthOrArrayLayers": 1
+						},
+						"format": "rgba16float",
+						"sampleCount": 1,
+						"mipLevelCount": 1,
+						"usage": 23,
+						"dimension": "2d"
+					},
+					"view": {
+						"label": "colorAttachment_0",
+						"format": null,
+						"dimension": "2d",
+						"usage": 0,
+						"aspect": "all",
+						"baseMipLevel": 0,
+						"mipLevelCount": 1,
+						"baseArrayLayer": 0,
+						"arrayLayerCount": 1,
+						"swizzle": "rgba"
+					}
+				},
+				"resolveTarget": null,
+				"loadOp": "clear",
+				"storeOp": "store",
+				"clearValue": {
+					"r": 0,
+					"g": 0,
+					"b": 0,
+					"a": 0
+				}
+			}
+		],
+		"depth": {
+			"view": {
+				"tex": {
+					"id": 4,
+					"label": "depth",
+					"size": {
+						"width": 800,
+						"height": 500,
+						"depthOrArrayLayers": 1
+					},
+					"format": "depth24plus",
+					"sampleCount": 1,
+					"mipLevelCount": 1,
+					"usage": 23,
+					"dimension": "2d"
+				},
+				"view": {
+					"label": "",
+					"format": null,
+					"dimension": null,
+					"usage": 0,
+					"aspect": "all",
+					"baseMipLevel": 0,
+					"mipLevelCount": null,
+					"baseArrayLayer": 0,
+					"arrayLayerCount": null,
+					"swizzle": "rgba"
+				}
+			},
+			"depthLoadOp": "clear",
+			"depthStoreOp": "store",
+			"depthClearValue": 1
+		},
+		"draws": [
+			{
+				"pipeline": "renderPipeline_MeshBasicMaterial_17",
+				"drawIndexed": [
+					36,
+					1,
+					0,
+					0,
+					0
+				]
+			}
+		],
+		"viewport": null,
+		"scissor": null
+	},
+	{
+		"seq": 3,
+		"label": "",
+		"color": [
+			{
+				"view": {
+					"tex": {
+						"id": 5,
+						"label": "output",
+						"size": {
+							"width": 800,
+							"height": 500,
+							"depthOrArrayLayers": 1
+						},
+						"format": "rgba16float",
+						"sampleCount": 1,
+						"mipLevelCount": 1,
+						"usage": 23,
+						"dimension": "2d"
+					},
+					"view": {
+						"label": "colorAttachment_0",
+						"format": null,
+						"dimension": "2d",
+						"usage": 0,
+						"aspect": "all",
+						"baseMipLevel": 0,
+						"mipLevelCount": 1,
+						"baseArrayLayer": 0,
+						"arrayLayerCount": 1,
+						"swizzle": "rgba"
+					}
+				},
+				"resolveTarget": null,
+				"loadOp": "clear",
+				"storeOp": "store",
+				"clearValue": {
+					"r": 0,
+					"g": 0,
+					"b": 0,
+					"a": 0
+				}
+			}
+		],
+		"depth": {
+			"view": {
+				"tex": {
+					"id": 6,
+					"label": "depth",
+					"size": {
+						"width": 800,
+						"height": 500,
+						"depthOrArrayLayers": 1
+					},
+					"format": "depth24plus",
+					"sampleCount": 1,
+					"mipLevelCount": 1,
+					"usage": 23,
+					"dimension": "2d"
+				},
+				"view": {
+					"label": "",
+					"format": null,
+					"dimension": null,
+					"usage": 0,
+					"aspect": "all",
+					"baseMipLevel": 0,
+					"mipLevelCount": null,
+					"baseArrayLayer": 0,
+					"arrayLayerCount": null,
+					"swizzle": "rgba"
+				}
+			},
+			"depthLoadOp": "clear",
+			"depthStoreOp": "store",
+			"depthClearValue": 1
+		},
+		"draws": [
+			{
+				"pipeline": "renderPipeline_MeshBasicMaterial_17",
+				"drawIndexed": [
+					3072,
+					1,
+					0,
+					0,
+					0
+				]
+			}
+		],
+		"viewport": null,
+		"scissor": null
+	},
+	{
+		"seq": 4,
+		"label": "",
+		"color": [
+			{
+				"view": {
+					"tex": {
+						"id": 8,
+						"label": "",
+						"size": {
+							"width": 4096,
+							"height": 2048,
+							"depthOrArrayLayers": 1
+						},
+						"format": "rgba8unorm-srgb",
+						"sampleCount": 1,
+						"mipLevelCount": 13,
+						"usage": 23,
+						"dimension": "2d"
+					},
+					"view": {
+						"label": "",
+						"format": null,
+						"dimension": "2d",
+						"usage": 0,
+						"aspect": "all",
+						"baseMipLevel": 1,
+						"mipLevelCount": 1,
+						"baseArrayLayer": 0,
+						"arrayLayerCount": 1,
+						"swizzle": "rgba"
+					}
+				},
+				"resolveTarget": null,
+				"loadOp": "clear",
+				"storeOp": "store",
+				"clearValue": null
+			}
+		],
+		"depth": null,
+		"draws": [],
+		"viewport": null,
+		"scissor": null
+	},
+	{
+		"seq": 5,
+		"label": "",
+		"color": [
+			{
+				"view": {
+					"tex": {
+						"id": 8,
+						"label": "",
+						"size": {
+							"width": 4096,
+							"height": 2048,
+							"depthOrArrayLayers": 1
+						},
+						"format": "rgba8unorm-srgb",
+						"sampleCount": 1,
+						"mipLevelCount": 13,
+						"usage": 23,
+						"dimension": "2d"
+					},
+					"view": {
+						"label": "",
+						"format": null,
+						"dimension": "2d",
+						"usage": 0,
+						"aspect": "all",
+						"baseMipLevel": 2,
+						"mipLevelCount": 1,
+						"baseArrayLayer": 0,
+						"arrayLayerCount": 1,
+						"swizzle": "rgba"
+					}
+				},
+				"resolveTarget": null,
+				"loadOp": "clear",
+				"storeOp": "store",
+				"clearValue": null
+			}
+		],
+		"depth": null,
+		"draws": [],
+		"viewport": null,
+		"scissor": null
+	},
+	{
+		"seq": 6,
+		"label": "",
+		"color": [
+			{
+				"view": {
+					"tex": {
+						"id": 8,
+						"label": "",
+						"size": {
+							"width": 4096,
+							"height": 2048,
+							"depthOrArrayLayers": 1
+						},
+						"format": "rgba8unorm-srgb",
+						"sampleCount": 1,
+						"mipLevelCount": 13,
+						"usage": 23,
+						"dimension": "2d"
+					},
+					"view": {
+						"label": "",
+						"format": null,
+						"dimension": "2d",
+						"usage": 0,
+						"aspect": "all",
+						"baseMipLevel": 3,
+						"mipLevelCount": 1,
+						"baseArrayLayer": 0,
+						"arrayLayerCount": 1,
+						"swizzle": "rgba"
+					}
+				},
+				"resolveTarget": null,
+				"loadOp": "clear",
+				"storeOp": "store",
+				"clearValue": null
+			}
+		],
+		"depth": null,
+		"draws": [],
+		"viewport": null,
+		"scissor": null
+	},
+	{
+		"seq": 7,
+		"label": "",
+		"color": [
+			{
+				"view": {
+					"tex": {
+						"id": 8,
+						"label": "",
+						"size": {
+							"width": 4096,
+							"height": 2048,
+							"depthOrArrayLayers": 1
+						},
+						"format": "rgba8unorm-srgb",
+						"sampleCount": 1,
+						"mipLevelCount": 13,
+						"usage": 23,
+						"dimension": "2d"
+					},
+					"view": {
+						"label": "",
+						"format": null,
+						"dimension": "2d",
+						"usage": 0,
+						"aspect": "all",
+						"baseMipLevel": 4,
+						"mipLevelCount": 1,
+						"baseArrayLayer": 0,
+						"arrayLayerCount": 1,
+						"swizzle": "rgba"
+					}
+				},
+				"resolveTarget": null,
+				"loadOp": "clear",
+				"storeOp": "store",
+				"clearValue": null
+			}
+		],
+		"depth": null,
+		"draws": [],
+		"viewport": null,
+		"scissor": null
+	},
+	{
+		"seq": 8,
+		"label": "",
+		"color": [
+			{
+				"view": {
+					"tex": {
+						"id": 8,
+						"label": "",
+						"size": {
+							"width": 4096,
+							"height": 2048,
+							"depthOrArrayLayers": 1
+						},
+						"format": "rgba8unorm-srgb",
+						"sampleCount": 1,
+						"mipLevelCount": 13,
+						"usage": 23,
+						"dimension": "2d"
+					},
+					"view": {
+						"label": "",
+						"format": null,
+						"dimension": "2d",
+						"usage": 0,
+						"aspect": "all",
+						"baseMipLevel": 5,
+						"mipLevelCount": 1,
+						"baseArrayLayer": 0,
+						"arrayLayerCount": 1,
+						"swizzle": "rgba"
+					}
+				},
+				"resolveTarget": null,
+				"loadOp": "clear",
+				"storeOp": "store",
+				"clearValue": null
+			}
+		],
+		"depth": null,
+		"draws": [],
+		"viewport": null,
+		"scissor": null
+	},
+	{
+		"seq": 9,
+		"label": "",
+		"color": [
+			{
+				"view": {
+					"tex": {
+						"id": 8,
+						"label": "",
+						"size": {
+							"width": 4096,
+							"height": 2048,
+							"depthOrArrayLayers": 1
+						},
+						"format": "rgba8unorm-srgb",
+						"sampleCount": 1,
+						"mipLevelCount": 13,
+						"usage": 23,
+						"dimension": "2d"
+					},
+					"view": {
+						"label": "",
+						"format": null,
+						"dimension": "2d",
+						"usage": 0,
+						"aspect": "all",
+						"baseMipLevel": 6,
+						"mipLevelCount": 1,
+						"baseArrayLayer": 0,
+						"arrayLayerCount": 1,
+						"swizzle": "rgba"
+					}
+				},
+				"resolveTarget": null,
+				"loadOp": "clear",
+				"storeOp": "store",
+				"clearValue": null
+			}
+		],
+		"depth": null,
+		"draws": [],
+		"viewport": null,
+		"scissor": null
+	},
+	{
+		"seq": 10,
+		"label": "",
+		"color": [
+			{
+				"view": {
+					"tex": {
+						"id": 8,
+						"label": "",
+						"size": {
+							"width": 4096,
+							"height": 2048,
+							"depthOrArrayLayers": 1
+						},
+						"format": "rgba8unorm-srgb",
+						"sampleCount": 1,
+						"mipLevelCount": 13,
+						"usage": 23,
+						"dimension": "2d"
+					},
+					"view": {
+						"label": "",
+						"format": null,
+						"dimension": "2d",
+						"usage": 0,
+						"aspect": "all",
+						"baseMipLevel": 7,
+						"mipLevelCount": 1,
+						"baseArrayLayer": 0,
+						"arrayLayerCount": 1,
+						"swizzle": "rgba"
+					}
+				},
+				"resolveTarget": null,
+				"loadOp": "clear",
+				"storeOp": "store",
+				"clearValue": null
+			}
+		],
+		"depth": null,
+		"draws": [],
+		"viewport": null,
+		"scissor": null
+	},
+	{
+		"seq": 11,
+		"label": "",
+		"color": [
+			{
+				"view": {
+					"tex": {
+						"id": 8,
+						"label": "",
+						"size": {
+							"width": 4096,
+							"height": 2048,
+							"depthOrArrayLayers": 1
+						},
+						"format": "rgba8unorm-srgb",
+						"sampleCount": 1,
+						"mipLevelCount": 13,
+						"usage": 23,
+						"dimension": "2d"
+					},
+					"view": {
+						"label": "",
+						"format": null,
+						"dimension": "2d",
+						"usage": 0,
+						"aspect": "all",
+						"baseMipLevel": 8,
+						"mipLevelCount": 1,
+						"baseArrayLayer": 0,
+						"arrayLayerCount": 1,
+						"swizzle": "rgba"
+					}
+				},
+				"resolveTarget": null,
+				"loadOp": "clear",
+				"storeOp": "store",
+				"clearValue": null
+			}
+		],
+		"depth": null,
+		"draws": [],
+		"viewport": null,
+		"scissor": null
+	},
+	{
+		"seq": 12,
+		"label": "",
+		"color": [
+			{
+				"view": {
+					"tex": {
+						"id": 8,
+						"label": "",
+						"size": {
+							"width": 4096,
+							"height": 2048,
+							"depthOrArrayLayers": 1
+						},
+						"format": "rgba8unorm-srgb",
+						"sampleCount": 1,
+						"mipLevelCount": 13,
+						"usage": 23,
+						"dimension": "2d"
+					},
+					"view": {
+						"label": "",
+						"format": null,
+						"dimension": "2d",
+						"usage": 0,
+						"aspect": "all",
+						"baseMipLevel": 9,
+						"mipLevelCount": 1,
+						"baseArrayLayer": 0,
+						"arrayLayerCount": 1,
+						"swizzle": "rgba"
+					}
+				},
+				"resolveTarget": null,
+				"loadOp": "clear",
+				"storeOp": "store",
+				"clearValue": null
+			}
+		],
+		"depth": null,
+		"draws": [],
+		"viewport": null,
+		"scissor": null
+	},
+	{
+		"seq": 13,
+		"label": "",
+		"color": [
+			{
+				"view": {
+					"tex": {
+						"id": 8,
+						"label": "",
+						"size": {
+							"width": 4096,
+							"height": 2048,
+							"depthOrArrayLayers": 1
+						},
+						"format": "rgba8unorm-srgb",
+						"sampleCount": 1,
+						"mipLevelCount": 13,
+						"usage": 23,
+						"dimension": "2d"
+					},
+					"view": {
+						"label": "",
+						"format": null,
+						"dimension": "2d",
+						"usage": 0,
+						"aspect": "all",
+						"baseMipLevel": 10,
+						"mipLevelCount": 1,
+						"baseArrayLayer": 0,
+						"arrayLayerCount": 1,
+						"swizzle": "rgba"
+					}
+				},
+				"resolveTarget": null,
+				"loadOp": "clear",
+				"storeOp": "store",
+				"clearValue": null
+			}
+		],
+		"depth": null,
+		"draws": [],
+		"viewport": null,
+		"scissor": null
+	},
+	{
+		"seq": 14,
+		"label": "",
+		"color": [
+			{
+				"view": {
+					"tex": {
+						"id": 8,
+						"label": "",
+						"size": {
+							"width": 4096,
+							"height": 2048,
+							"depthOrArrayLayers": 1
+						},
+						"format": "rgba8unorm-srgb",
+						"sampleCount": 1,
+						"mipLevelCount": 13,
+						"usage": 23,
+						"dimension": "2d"
+					},
+					"view": {
+						"label": "",
+						"format": null,
+						"dimension": "2d",
+						"usage": 0,
+						"aspect": "all",
+						"baseMipLevel": 11,
+						"mipLevelCount": 1,
+						"baseArrayLayer": 0,
+						"arrayLayerCount": 1,
+						"swizzle": "rgba"
+					}
+				},
+				"resolveTarget": null,
+				"loadOp": "clear",
+				"storeOp": "store",
+				"clearValue": null
+			}
+		],
+		"depth": null,
+		"draws": [],
+		"viewport": null,
+		"scissor": null
+	},
+	{
+		"seq": 15,
+		"label": "",
+		"color": [
+			{
+				"view": {
+					"tex": {
+						"id": 8,
+						"label": "",
+						"size": {
+							"width": 4096,
+							"height": 2048,
+							"depthOrArrayLayers": 1
+						},
+						"format": "rgba8unorm-srgb",
+						"sampleCount": 1,
+						"mipLevelCount": 13,
+						"usage": 23,
+						"dimension": "2d"
+					},
+					"view": {
+						"label": "",
+						"format": null,
+						"dimension": "2d",
+						"usage": 0,
+						"aspect": "all",
+						"baseMipLevel": 12,
+						"mipLevelCount": 1,
+						"baseArrayLayer": 0,
+						"arrayLayerCount": 1,
+						"swizzle": "rgba"
+					}
+				},
+				"resolveTarget": null,
+				"loadOp": "clear",
+				"storeOp": "store",
+				"clearValue": null
+			}
+		],
+		"depth": null,
+		"draws": [],
+		"viewport": null,
+		"scissor": null
+	}
+]

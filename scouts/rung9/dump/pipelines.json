@@ -1,0 +1,206 @@
+[
+	{
+		"label": "renderPipeline_MeshBasicMaterial_17",
+		"vertex": {
+			"module": "vertex",
+			"moduleIndex": 0,
+			"entryPoint": "main",
+			"buffers": [
+				{
+					"arrayStride": 12,
+					"attributes": [
+						{
+							"shaderLocation": 0,
+							"offset": 0,
+							"format": "float32x3"
+						}
+					],
+					"stepMode": "vertex"
+				}
+			]
+		},
+		"fragment": {
+			"module": "fragment",
+			"moduleIndex": 1,
+			"entryPoint": "main",
+			"targets": [
+				{
+					"format": "rgba16float",
+					"writeMask": 15
+				}
+			]
+		},
+		"compute": null,
+		"primitive": {
+			"topology": "triangle-list",
+			"frontFace": "ccw",
+			"cullMode": "back"
+		},
+		"depthStencil": {
+			"format": "depth24plus",
+			"depthWriteEnabled": true,
+			"depthCompare": "less-equal"
+		},
+		"multisample": {
+			"count": 1,
+			"mask": 4294967295,
+			"alphaToCoverageEnabled": false
+		},
+		"layout": [
+			{
+				"entries": [
+					{
+						"binding": 0,
+						"visibility": 7,
+						"buffer": {}
+					}
+				]
+			},
+			{
+				"entries": [
+					{
+						"binding": 0,
+						"visibility": 7,
+						"buffer": {}
+					}
+				]
+			}
+		]
+	},
+	{
+		"label": "mipmap-rgba8unorm-srgb-2d-array",
+		"vertex": {
+			"module": "mipmap",
+			"moduleIndex": 2,
+			"buffers": []
+		},
+		"fragment": {
+			"module": "mipmap",
+			"moduleIndex": 2,
+			"entryPoint": "main_2d_array",
+			"targets": [
+				{
+					"format": "rgba8unorm-srgb"
+				}
+			]
+		},
+		"compute": null,
+		"primitive": {},
+		"depthStencil": {},
+		"multisample": {
+			"count": 1,
+			"mask": 4294967295,
+			"alphaToCoverageEnabled": false
+		},
+		"layout": "auto"
+	},
+	{
+		"label": "renderPipeline_RenderPipeline_19",
+		"vertex": {
+			"module": "vertex_RenderPipeline",
+			"moduleIndex": 3,
+			"entryPoint": "main",
+			"buffers": [
+				{
+					"arrayStride": 8,
+					"attributes": [
+						{
+							"shaderLocation": 0,
+							"offset": 0,
+							"format": "float32x2"
+						}
+					],
+					"stepMode": "vertex"
+				}
+			]
+		},
+		"fragment": {
+			"module": "fragment_RenderPipeline",
+			"moduleIndex": 4,
+			"entryPoint": "main",
+			"targets": [
+				{
+					"format": "rgba8unorm",
+					"writeMask": 15
+				}
+			]
+		},
+		"compute": null,
+		"primitive": {
+			"topology": "triangle-list",
+			"frontFace": "ccw",
+			"cullMode": "back"
+		},
+		"depthStencil": {
+			"format": "depth24plus",
+			"depthWriteEnabled": true,
+			"depthCompare": "less-equal"
+		},
+		"multisample": {
+			"count": 1,
+			"mask": 4294967295,
+			"alphaToCoverageEnabled": false
+		},
+		"layout": [
+			{
+				"entries": [
+					{
+						"binding": 0,
+						"visibility": 2,
+						"sampler": {}
+					},
+					{
+						"binding": 1,
+						"visibility": 2,
+						"texture": {}
+					},
+					{
+						"binding": 2,
+						"visibility": 2,
+						"sampler": {}
+					},
+					{
+						"binding": 3,
+						"visibility": 2,
+						"texture": {}
+					},
+					{
+						"binding": 4,
+						"visibility": 7,
+						"buffer": {}
+					},
+					{
+						"binding": 5,
+						"visibility": 2,
+						"sampler": {}
+					},
+					{
+						"binding": 6,
+						"visibility": 2,
+						"texture": {}
+					},
+					{
+						"binding": 7,
+						"visibility": 2,
+						"sampler": {}
+					},
+					{
+						"binding": 8,
+						"visibility": 2,
+						"texture": {}
+					},
+					{
+						"binding": 9,
+						"visibility": 2,
+						"sampler": {}
+					},
+					{
+						"binding": 10,
+						"visibility": 2,
+						"texture": {}
+					}
+				]
+			}
+		]
+	}
+]
