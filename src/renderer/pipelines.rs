@@ -19,8 +19,12 @@ pub struct PipelineKey {
 
 pub struct Shaders {
     pub basic: wgpu::ShaderModule,
+    pub basic_envmap: wgpu::ShaderModule,
+    pub background_cube: wgpu::ShaderModule,
     pub quad: wgpu::ShaderModule,
     pub output_color_transform: wgpu::ShaderModule,
+    /// `WebGPUTexturePassUtils`' `mipmap` module.
+    pub mipmap: wgpu::ShaderModule,
     /// Keyed by instance count, because the count is baked into the source.
     normal_world_range_mix: HashMap<u32, wgpu::ShaderModule>,
 }
@@ -29,6 +33,11 @@ impl Shaders {
     pub fn new(device: &wgpu::Device) -> Self {
         Self {
             basic: device.create_shader_module(wgpu::include_wgsl!("shaders/basic.wgsl")),
+            basic_envmap: device
+                .create_shader_module(wgpu::include_wgsl!("shaders/basic_envmap.wgsl")),
+            background_cube: device
+                .create_shader_module(wgpu::include_wgsl!("shaders/background_cube.wgsl")),
+            mipmap: device.create_shader_module(wgpu::include_wgsl!("shaders/mipmap.wgsl")),
             quad: device.create_shader_module(wgpu::include_wgsl!("shaders/quad.wgsl")),
             output_color_transform: device
                 .create_shader_module(wgpu::include_wgsl!("shaders/output_color_transform.wgsl")),
@@ -68,6 +77,12 @@ pub struct Layouts {
     /// `normal_world_range_mix.wgsl`: camera + per-object (dynamic) + the frame
     /// uniforms + the instance matrix buffer + the `range()` buffer.
     pub normal_world_range_mix: wgpu::BindGroupLayout,
+    /// `basic_envmap.wgsl` / `background_cube.wgsl`: the render uniforms, the
+    /// per-object uniforms (dynamic) and a cube texture with its sampler.
+    pub env_map: wgpu::BindGroupLayout,
+    /// `mipmap.wgsl`: the mipmap sampler, the source 2d-array view and the
+    /// `flipY` uniform.
+    pub mipmap: wgpu::BindGroupLayout,
 }
 
 impl Layouts {
@@ -173,11 +188,60 @@ impl Layouts {
                 ],
             });
 
+        let env_map = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("three-rs env map bindings"),
+            entries: &[
+                uniform(0, both, false),
+                uniform(1, both, true),
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::Cube,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
+
+        let mipmap = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("three-rs mipmap bindings"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                uniform(2, wgpu::ShaderStages::VERTEX, false),
+            ],
+        });
+
         Self {
             basic,
             quad,
             output_color_transform,
             normal_world_range_mix,
+            env_map,
+            mipmap,
         }
     }
 }
@@ -219,6 +283,19 @@ pub fn create_pipeline(
         }),
     ];
 
+    let position_normal_buffers = [
+        Some(wgpu::VertexBufferLayout {
+            array_stride: 12,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &POSITION_ATTRIBUTE,
+        }),
+        Some(wgpu::VertexBufferLayout {
+            array_stride: 12,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &NORMAL_ATTRIBUTE,
+        }),
+    ];
+
     let (module, bind_group_layout, vertex_buffers): (_, _, &[Option<wgpu::VertexBufferLayout>]) = match key.shader {
         ShaderKey::Basic => (
             &shaders.basic,
@@ -232,6 +309,16 @@ pub fn create_pipeline(
                     shader_location: 0,
                 }],
             })],
+        ),
+        ShaderKey::BasicEnvMap => (
+            &shaders.basic_envmap,
+            &layouts.env_map,
+            &position_normal_buffers,
+        ),
+        ShaderKey::BackgroundCube => (
+            &shaders.background_cube,
+            &layouts.env_map,
+            &position_normal_buffers,
         ),
         ShaderKey::DepthTextureQuad => (&shaders.quad, &layouts.quad, &[]),
         ShaderKey::OutputColorTransform => (
@@ -276,8 +363,12 @@ pub fn create_pipeline(
         primitive: wgpu::PrimitiveState {
             topology: wgpu::PrimitiveTopology::TriangleList,
             strip_index_format: None,
-            // `WebGPUPipelineUtils`: `FrontSide` → CCW front faces, cull back.
-            front_face: wgpu::FrontFace::Ccw,
+            // `WebGPUPipelineUtils._getPrimitiveState()`: `FrontSide` → CCW
+            // front faces, `BackSide` → CW, both culling the back face.
+            front_face: match key.shader {
+                ShaderKey::BackgroundCube => wgpu::FrontFace::Cw,
+                _ => wgpu::FrontFace::Ccw,
+            },
             cull_mode: Some(wgpu::Face::Back),
             unclipped_depth: false,
             polygon_mode: wgpu::PolygonMode::Fill,
@@ -285,9 +376,15 @@ pub fn create_pipeline(
         },
         depth_stencil: key.depth_format.map(|format| wgpu::DepthStencilState {
             format,
-            depth_write_enabled: Some(true),
+            // The background skybox has `depthWrite = false` and `depthTest =
+            // false`, which `WebGPUPipelineUtils` turns into `depthCompare:
+            // 'always'`.
+            depth_write_enabled: Some(key.shader != ShaderKey::BackgroundCube),
             // `Material.depthFunc` defaults to `LessEqualDepth`.
-            depth_compare: Some(wgpu::CompareFunction::LessEqual),
+            depth_compare: Some(match key.shader {
+                ShaderKey::BackgroundCube => wgpu::CompareFunction::Always,
+                _ => wgpu::CompareFunction::LessEqual,
+            }),
             stencil: wgpu::StencilState::default(),
             bias: wgpu::DepthBiasState::default(),
         }),
@@ -296,6 +393,48 @@ pub fn create_pipeline(
             mask: !0,
             alpha_to_coverage_enabled: false,
         },
+        multiview_mask: None,
+        cache: None,
+    })
+}
+
+/// `WebGPUTexturePassUtils.getTransferPipeline( format, '2d-array' )`.
+pub fn create_mipmap_pipeline(
+    device: &wgpu::Device,
+    shaders: &Shaders,
+    layouts: &Layouts,
+    format: wgpu::TextureFormat,
+) -> wgpu::RenderPipeline {
+    let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("three-rs mipmap pipeline layout"),
+        bind_group_layouts: &[Some(&layouts.mipmap)],
+        immediate_size: 0,
+    });
+
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("three-rs mipmap pipeline"),
+        layout: Some(&layout),
+        vertex: wgpu::VertexState {
+            module: &shaders.mipmap,
+            entry_point: Some("mainVS"),
+            compilation_options: Default::default(),
+            buffers: &[],
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &shaders.mipmap,
+            entry_point: Some("main_2d_array"),
+            compilation_options: Default::default(),
+            targets: &[Some(wgpu::ColorTargetState {
+                format,
+                blend: None,
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+        }),
+        // `_renderPipelineDescriptor.primitive` is left at its defaults:
+        // triangle-list, CCW front faces, no culling.
+        primitive: wgpu::PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
         multiview_mask: None,
         cache: None,
     })

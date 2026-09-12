@@ -18,10 +18,10 @@ pub mod textures;
 
 pub use cameras::PerspectiveCamera;
 pub use core::{BufferGeometry, Object3D};
-pub use geometries::torus_knot_geometry;
-pub use loaders::BufferGeometryLoader;
+pub use geometries::{sphere_geometry, torus_knot_geometry};
+pub use loaders::{BufferGeometryLoader, CubeTextureLoader};
 pub use materials::{ColorNode, MeshBasicNodeMaterial};
 pub use math::{Color, Euler, Matrix3, Matrix4, Quaternion, Vector3};
-pub use objects::{Child, InstancedMesh, Mesh, QuadMesh, Scene};
+pub use objects::{Background, Child, InstancedMesh, Mesh, QuadMesh, Scene};
 pub use renderer::{RenderTarget, Renderer, RendererParameters};
-pub use textures::{DepthTexture, TextureType};
+pub use textures::{ColorSpace, CubeTexture, DepthTexture, Mapping, TextureType};

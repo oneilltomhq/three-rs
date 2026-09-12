@@ -8,4 +8,4 @@ mod scene;
 pub use instanced_mesh::{InstancedBufferAttribute, InstancedMesh};
 pub use mesh::Mesh;
 pub use quad_mesh::QuadMesh;
-pub use scene::{Child, Scene};
+pub use scene::{Background, Child, Scene};

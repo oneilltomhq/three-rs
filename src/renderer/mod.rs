@@ -8,21 +8,33 @@ mod render_target;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use pipelines::{create_pipeline, Layouts, PipelineKey, Shaders};
+use pipelines::{create_mipmap_pipeline, create_pipeline, Layouts, PipelineKey, Shaders};
 pub use render_target::{RenderTarget, RenderTargetInner, RenderTargetOptions};
 
 use crate::cameras::PerspectiveCamera;
 use crate::core::{BufferGeometry, Index};
 use crate::materials::{ColorNode, MeshBasicNodeMaterial, ShaderKey};
-use crate::math::{Color, Matrix3};
-use crate::objects::{QuadMesh, Scene};
+use crate::geometries::sphere_geometry;
+use crate::math::{Color, Matrix3, Matrix4};
+use crate::objects::{Background, QuadMesh, Scene};
 use crate::testing::DeterministicRandom;
-use crate::textures::{DepthTexture, TextureFilter, TextureType};
+use crate::textures::{CubeTexture, DepthTexture, Mapping, TextureFilter, TextureType};
 
 /// Uniform buffer stride for the per-object block. The WebGPU minimum dynamic
 /// offset alignment is 256 bytes.
 const OBJECT_STRIDE: u64 = 256;
 const MAX_OBJECTS: u64 = 1024;
+
+/// The used size of one `objectStruct` block: `modelWorldMatrix` (64),
+/// `modelNormalMatrix` as a padded `mat3x3` (48), `diffuse` (12), `opacity` (4),
+/// `reflectivity` (4), padding to a 16-byte boundary (12), `envRotation` (64).
+const OBJECT_SIZE: u64 = 208;
+
+/// The used size of the `renderStruct` block: `cameraProjectionMatrix` (64),
+/// `cameraViewMatrix` (64), `viewportSize` (8 + 8 padding),
+/// `cameraWorldMatrix` (64), `backgroundRotation` (64),
+/// `backgroundBlurriness` (4), `backgroundIntensity` (4), padding (8).
+const RENDER_SIZE: u64 = 288;
 
 struct GeometryGpu {
     position: wgpu::Buffer,
@@ -76,6 +88,15 @@ pub struct Renderer {
     layouts: Layouts,
     pipelines: HashMap<PipelineKey, wgpu::RenderPipeline>,
     geometries: HashMap<usize, GeometryGpu>,
+    /// `Textures`' GPU side for cube textures, keyed by `CubeTexture` identity.
+    cube_textures: HashMap<usize, wgpu::Texture>,
+    /// `WebGPUTexturePassUtils.transferPipelines`, keyed by texture format.
+    mipmap_pipelines: HashMap<wgpu::TextureFormat, wgpu::RenderPipeline>,
+    /// One bind group per cube texture: the per-object block is reached through
+    /// a dynamic offset, so every mesh sharing the texture shares the group.
+    env_bind_groups: HashMap<usize, wgpu::BindGroup>,
+    /// `Background`'s `SphereGeometry( 1, 32, 32 )` skybox mesh geometry.
+    background_geometry: Option<Rc<BufferGeometry>>,
 
     camera_buffer: wgpu::Buffer,
     object_buffer: wgpu::Buffer,
@@ -124,9 +145,7 @@ impl Renderer {
 
         let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("three-rs camera uniforms"),
-            // `renderStruct`: cameraProjectionMatrix, cameraViewMatrix, then the
-            // viewport size the output pass divides `fragCoord` by.
-            size: 144,
+            size: RENDER_SIZE,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -181,6 +200,10 @@ impl Renderer {
             layouts,
             pipelines: HashMap::new(),
             geometries: HashMap::new(),
+            cube_textures: HashMap::new(),
+            mipmap_pipelines: HashMap::new(),
+            env_bind_groups: HashMap::new(),
+            background_geometry: None,
             camera_buffer,
             object_buffer,
             frame_buffer,
@@ -226,21 +249,45 @@ impl Renderer {
         self.write_camera_uniforms(camera);
         self.write_frame_uniforms();
 
-        // Per-object uniforms: one 256-byte slot each, holding
-        // `modelWorldMatrix` then `modelNormalMatrix`.
-        let mut object_data = vec![0u8; (OBJECT_STRIDE as usize) * scene.children.len().max(1)];
-        for (i, child) in scene.children.iter().enumerate() {
-            let matrix_world = child.object().matrix_world;
-            let world = matrix_world.to_f32_array();
+        // `Renderer._renderScene()` → `_projectObject()` fills the render list,
+        // then `renderList.finish()` sorts the opaque items; `_background.update()`
+        // runs after the sort and unshifts the skybox, so it draws first.
+        let order = render_list_order(scene, camera);
 
-            let mut normal_matrix = Matrix3::identity();
-            normal_matrix.get_normal_matrix(&matrix_world);
+        // Per-object uniforms: one 256-byte slot per render-list entry, in draw
+        // order, with the background mesh in the slot after them.
+        let background_slot = order.len();
+        let mut object_data = vec![0u8; (OBJECT_STRIDE as usize) * (background_slot + 1)];
 
-            let offset = i * OBJECT_STRIDE as usize;
-            object_data[offset..offset + 64].copy_from_slice(bytemuck::cast_slice(&world));
-            object_data[offset + 64..offset + 112]
-                .copy_from_slice(bytemuck::cast_slice(&normal_matrix.to_padded_f32_array()));
+        for (slot, &index) in order.iter().enumerate() {
+            let child = &scene.children[index];
+            let material: &MeshBasicNodeMaterial = scene
+                .override_material
+                .as_ref()
+                .or(child.mesh().material.as_ref())
+                .expect("three-rs: a mesh needs a material");
+
+            write_object_slot(
+                &mut object_data,
+                slot * OBJECT_STRIDE as usize,
+                &child.object().matrix_world,
+                material.color,
+                material.opacity,
+                material.reflectivity,
+            );
         }
+
+        // `Background.mesh` is never added to the scene, so its `matrixWorld`
+        // stays the identity; the `NodeMaterial` keeps `Material`'s defaults.
+        write_object_slot(
+            &mut object_data,
+            background_slot * OBJECT_STRIDE as usize,
+            &Matrix4::identity(),
+            Color::new(1.0, 1.0, 1.0),
+            1.0,
+            1.0,
+        );
+
         self.queue.write_buffer(&self.object_buffer, 0, &object_data);
 
         // `Renderer.render()`: with `needsFrameBufferTarget` the scene is drawn
@@ -286,11 +333,12 @@ impl Renderer {
                 }
             };
 
-        // Background: a `Color` background becomes the clear colour and forces a
-        // clear; otherwise the renderer's own clear colour is used.
-        let clear = match scene.background {
-            Some(Color { r, g, b }) => [r, g, b, 1.0],
-            None => self.clear_color,
+        // `Background.update()`: a `Color` background becomes the clear colour
+        // and forces a clear; any other background leaves the renderer's own
+        // clear colour in place (and `autoClear` still clears with it).
+        let clear = match &scene.background {
+            Some(Background::Color(Color { r, g, b })) => [*r, *g, *b, 1.0],
+            _ => self.clear_color,
         };
 
         // Resolve every draw before the pass borrows `self` immutably: the
@@ -303,11 +351,38 @@ impl Renderer {
             /// `None` means the shared `basic` bind group.
             bind_group: Option<wgpu::BindGroup>,
             instance_count: u32,
+            /// The dynamic offset into the per-object uniform buffer.
+            slot: usize,
         }
 
-        let mut draws = Vec::with_capacity(scene.children.len());
+        let mut draws = Vec::with_capacity(order.len() + 1);
 
-        for child in scene.children.iter() {
+        // The skybox first, exactly where `renderList.unshift()` puts it.
+        if let Some(Background::CubeTexture(background)) = scene.background.clone() {
+            let geometry = self.background_geometry();
+            let geometry_id = Rc::as_ptr(&geometry) as usize;
+            self.ensure_geometry(geometry_id, &geometry);
+
+            let key = PipelineKey {
+                shader: ShaderKey::BackgroundCube,
+                color_format,
+                depth_format,
+                sample_count,
+                instance_count: 1,
+            };
+            self.ensure_pipeline(key);
+
+            draws.push(Draw {
+                geometry_id,
+                key,
+                bind_group: Some(self.env_map_bind_group(&background)),
+                instance_count: 1,
+                slot: background_slot,
+            });
+        }
+
+        for (slot, &index) in order.iter().enumerate() {
+            let child = &scene.children[index];
             let material: &MeshBasicNodeMaterial = scene
                 .override_material
                 .as_ref()
@@ -328,14 +403,19 @@ impl Renderer {
             };
             self.ensure_pipeline(key);
 
-            let bind_group = match &material.color_node {
-                None => None,
+            let env_map = material.env_map.clone();
+            let color_node = material.color_node.clone();
+
+            let bind_group = match &color_node {
+                None => env_map.map(|texture| self.env_map_bind_group(&texture)),
                 Some(ColorNode::NormalWorldRangeMix { min, max }) => {
                     let instance_matrix = child
                         .instance_matrix()
-                        .expect("three-rs: range() needs an InstancedMesh");
+                        .expect("three-rs: range() needs an InstancedMesh")
+                        .array
+                        .clone();
                     Some(self.normal_world_range_mix_bind_group(
-                        &instance_matrix.array,
+                        &instance_matrix,
                         instance_count,
                         *min,
                         *max,
@@ -349,6 +429,7 @@ impl Renderer {
                 key,
                 bind_group,
                 instance_count,
+                slot,
             });
         }
 
@@ -391,23 +472,38 @@ impl Renderer {
                 multiview_mask: None,
             });
 
-            for (i, draw) in draws.iter().enumerate() {
+            for draw in draws.iter() {
                 let geometry = &self.geometries[&draw.geometry_id];
 
                 pass.set_pipeline(self.pipelines.get(&draw.key).unwrap());
                 pass.set_bind_group(
                     0,
                     draw.bind_group.as_ref().unwrap_or(&self.basic_bind_group),
-                    &[(i as u64 * OBJECT_STRIDE) as u32],
+                    &[(draw.slot as u64 * OBJECT_STRIDE) as u32],
                 );
-                pass.set_vertex_buffer(0, geometry.position.slice(..));
-                if draw.key.shader == ShaderKey::NormalWorldRangeMix {
-                    let normal = geometry
+
+                let normal = || {
+                    geometry
                         .normal
                         .as_ref()
-                        .expect("three-rs: this material needs a normal attribute");
-                    pass.set_vertex_buffer(1, normal.slice(..));
+                        .expect("three-rs: this material needs a normal attribute")
+                };
+
+                match draw.key.shader {
+                    // `Background.material`'s vertex node reads `normalLocal`
+                    // before `positionLocal`, so the node builder assigns
+                    // location 0 to `normal` and location 1 to `position`.
+                    ShaderKey::BackgroundCube => {
+                        pass.set_vertex_buffer(0, normal().slice(..));
+                        pass.set_vertex_buffer(1, geometry.position.slice(..));
+                    }
+                    ShaderKey::BasicEnvMap | ShaderKey::NormalWorldRangeMix => {
+                        pass.set_vertex_buffer(0, geometry.position.slice(..));
+                        pass.set_vertex_buffer(1, normal().slice(..));
+                    }
+                    _ => pass.set_vertex_buffer(0, geometry.position.slice(..)),
                 }
+
                 pass.set_index_buffer(geometry.index.slice(..), geometry.index_format);
                 pass.draw_indexed(0..geometry.index_count, 0, 0..draw.instance_count);
             }
@@ -581,10 +677,20 @@ impl Renderer {
 
     //
 
+    /// The `renderStruct` block. `cameraWorldMatrix` is what the reflection
+    /// path uses to take the view-space reflection vector back to world space;
+    /// `backgroundRotation` / `backgroundBlurriness` / `backgroundIntensity` are
+    /// `Scene`'s, and the port has no API to change them from their defaults
+    /// (an identity `Euler`, 0 and 1), which is what this example leaves them at.
     fn write_camera_uniforms(&self, camera: &PerspectiveCamera) {
-        let mut data = [0f32; 32];
+        let mut data = [0f32; (RENDER_SIZE / 4) as usize];
         data[0..16].copy_from_slice(&camera.projection_matrix.to_f32_array());
         data[16..32].copy_from_slice(&camera.matrix_world_inverse.to_f32_array());
+        // 32..34 is `viewportSize`, written by the output pass.
+        data[36..52].copy_from_slice(&camera.object.matrix_world.to_f32_array());
+        data[52..68].copy_from_slice(&Matrix4::identity().to_f32_array());
+        data[68] = 0.0;
+        data[69] = 1.0;
         self.queue
             .write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&data));
     }
@@ -672,6 +778,271 @@ impl Renderer {
                 },
             ],
         })
+    }
+
+    /// `Background`'s skybox geometry, built once per renderer just as
+    /// `Background.update()` caches it per scene.
+    fn background_geometry(&mut self) -> Rc<BufferGeometry> {
+        self.background_geometry
+            .get_or_insert_with(|| Rc::new(sphere_geometry(1.0, 32, 32)))
+            .clone()
+    }
+
+    /// `Textures.updateTexture()` for a `CubeTexture`: one 2D texture with six
+    /// array layers, `textureBindingViewDimension: 'cube'`, a full mip chain,
+    /// and one `copyExternalImageToTexture` per face with `flipY: false`.
+    fn ensure_cube_texture(&mut self, texture: &CubeTexture) -> wgpu::Texture {
+        let id = texture.id();
+        if let Some(gpu) = self.cube_textures.get(&id) {
+            return gpu.clone();
+        }
+
+        let (width, height) = texture.size();
+        let format = texture.gpu_format();
+        let mip_level_count = texture.mip_level_count();
+
+        let gpu = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("three-rs cube texture"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 6,
+            },
+            mip_level_count,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format,
+            usage: wgpu::TextureUsages::COPY_DST
+                | wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+
+        {
+            let inner = texture.inner().borrow();
+            assert!(!inner.flip_y, "three-rs: CubeTexture.flipY is false");
+            for (layer, image) in inner.images.iter().enumerate() {
+                self.queue.write_texture(
+                    wgpu::TexelCopyTextureInfo {
+                        texture: &gpu,
+                        mip_level: 0,
+                        origin: wgpu::Origin3d {
+                            x: 0,
+                            y: 0,
+                            z: layer as u32,
+                        },
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    &image.data,
+                    wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(image.width * 4),
+                        rows_per_image: Some(image.height),
+                    },
+                    wgpu::Extent3d {
+                        width: image.width,
+                        height: image.height,
+                        depth_or_array_layers: 1,
+                    },
+                );
+            }
+        }
+
+        if mip_level_count > 1 {
+            self.generate_mipmaps(&gpu, format, mip_level_count, 6);
+        }
+
+        texture.inner().borrow_mut().gpu = Some(gpu.clone());
+        self.cube_textures.insert(id, gpu.clone());
+        gpu
+    }
+
+    /// `WebGPUTexturePassUtils.generateMipmaps()`: one render pass per
+    /// (mip level, array layer), each drawing a single oversized triangle that
+    /// samples the level above through a `minFilter: 'linear'` sampler — a 2×
+    /// box downsample of each cube face on its own, with no cross-face
+    /// filtering, because `getTransferPipeline()` falls back to the
+    /// `'2d-array'` entry point when the GPU texture reports no
+    /// `textureBindingViewDimension`.
+    fn generate_mipmaps(
+        &mut self,
+        texture: &wgpu::Texture,
+        format: wgpu::TextureFormat,
+        mip_level_count: u32,
+        layers: u32,
+    ) {
+        if !self.mipmap_pipelines.contains_key(&format) {
+            let pipeline =
+                create_mipmap_pipeline(&self.device, &self.shaders, &self.layouts, format);
+            self.mipmap_pipelines.insert(format, pipeline);
+        }
+        let pipeline = &self.mipmap_pipelines[&format];
+
+        // `this.mipmapSampler = device.createSampler( { minFilter: Linear } )` —
+        // every other field stays at the WebGPU default, so magnification is
+        // nearest and the mipmap filter is nearest.
+        let sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("three-rs mipmap sampler"),
+            min_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
+        });
+
+        // `this.noFlipUniformBuffer` — zero-initialised and never written.
+        let flip = self.create_buffer_init(
+            "three-rs mipmap noFlip",
+            bytemuck::cast_slice(&[0u32]),
+            wgpu::BufferUsages::UNIFORM,
+        );
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("three-rs mipmapEncoder"),
+            });
+
+        for base_mip_level in 1..mip_level_count {
+            for base_array_layer in 0..layers {
+                let source = texture.create_view(&wgpu::TextureViewDescriptor {
+                    label: None,
+                    format: None,
+                    dimension: Some(wgpu::TextureViewDimension::D2Array),
+                    usage: None,
+                    aspect: wgpu::TextureAspect::All,
+                    base_mip_level: base_mip_level - 1,
+                    mip_level_count: Some(1),
+                    base_array_layer: 0,
+                    array_layer_count: None,
+                });
+
+                let destination = texture.create_view(&wgpu::TextureViewDescriptor {
+                    label: None,
+                    format: None,
+                    dimension: Some(wgpu::TextureViewDimension::D2),
+                    usage: None,
+                    aspect: wgpu::TextureAspect::All,
+                    base_mip_level,
+                    mip_level_count: Some(1),
+                    base_array_layer,
+                    array_layer_count: Some(1),
+                });
+
+                let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: None,
+                    layout: &self.layouts.mipmap,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: wgpu::BindingResource::Sampler(&sampler),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::TextureView(&source),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: flip.as_entire_binding(),
+                        },
+                    ],
+                });
+
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: None,
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &destination,
+                        depth_slice: None,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    occlusion_query_set: None,
+                    timestamp_writes: None,
+                    multiview_mask: None,
+                });
+
+                pass.set_pipeline(pipeline);
+                pass.set_bind_group(0, &bind_group, &[]);
+                // `passEncoder.draw( 3, 1, 0, baseArrayLayer )`: the layer to
+                // read arrives as `@builtin( instance_index )`.
+                pass.draw(0..3, base_array_layer..base_array_layer + 1);
+            }
+        }
+
+        self.queue.submit(Some(encoder.finish()));
+    }
+
+    /// The bind group the env-map and skybox shaders share: the render block,
+    /// the per-object block behind a dynamic offset, the cube texture view and
+    /// the sampler `WebGPUTextureUtils.updateSampler()` builds for it.
+    fn env_map_bind_group(&mut self, texture: &CubeTexture) -> wgpu::BindGroup {
+        // `CubeTextureNode.getDefaultUV()` picks `reflectVector` for
+        // `CubeReflectionMapping` and `refractVector` for
+        // `CubeRefractionMapping`; only the reflection branch is ported.
+        assert_eq!(
+            texture.mapping(),
+            Mapping::CubeReflection,
+            "three-rs: only CubeReflectionMapping is implemented"
+        );
+
+        let gpu = self.ensure_cube_texture(texture);
+        let id = texture.id();
+
+        if let Some(bind_group) = self.env_bind_groups.get(&id) {
+            return bind_group.clone();
+        }
+
+        let view = gpu.create_view(&wgpu::TextureViewDescriptor {
+            dimension: Some(wgpu::TextureViewDimension::Cube),
+            ..Default::default()
+        });
+
+        let anisotropy = texture.inner().borrow().anisotropy;
+
+        let sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("three-rs cube sampler"),
+            // `CubeTexture`'s wrapping is `ClampToEdgeWrapping` on all three axes.
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            // `LinearFilter` / `LinearMipmapLinearFilter`.
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Linear,
+            anisotropy_clamp: anisotropy,
+            ..Default::default()
+        });
+
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("three-rs env map bind group"),
+            layout: &self.layouts.env_map,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: self.camera_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                        buffer: &self.object_buffer,
+                        offset: 0,
+                        size: std::num::NonZeroU64::new(OBJECT_SIZE),
+                    }),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::Sampler(&sampler),
+                },
+            ],
+        });
+
+        self.env_bind_groups.insert(id, bind_group.clone());
+        bind_group
     }
 
     fn ensure_pipeline(&mut self, key: PipelineKey) {
@@ -1187,6 +1558,81 @@ impl Renderer {
             }
         }
     }
+}
+
+/// Fills one `objectStruct` block. The generated WGSL declares, in the order
+/// the node builder emits them, `modelWorldMatrix`, `modelNormalMatrix`,
+/// `materialColor` (named `diffuse` in the shader), `materialOpacity`,
+/// `materialReflectivity` and `materialEnvRotation`.
+fn write_object_slot(
+    data: &mut [u8],
+    offset: usize,
+    matrix_world: &Matrix4,
+    diffuse: Color,
+    opacity: f64,
+    reflectivity: f64,
+) {
+    let world = matrix_world.to_f32_array();
+
+    let mut normal_matrix = Matrix3::identity();
+    normal_matrix.get_normal_matrix(matrix_world);
+
+    data[offset..offset + 64].copy_from_slice(bytemuck::cast_slice(&world));
+    data[offset + 64..offset + 112]
+        .copy_from_slice(bytemuck::cast_slice(&normal_matrix.to_padded_f32_array()));
+    data[offset + 112..offset + 124].copy_from_slice(bytemuck::cast_slice(&[
+        diffuse.r as f32,
+        diffuse.g as f32,
+        diffuse.b as f32,
+    ]));
+    data[offset + 124..offset + 128].copy_from_slice(bytemuck::cast_slice(&[opacity as f32]));
+    data[offset + 128..offset + 132].copy_from_slice(bytemuck::cast_slice(&[reflectivity as f32]));
+    // `materialEnvRotation` is the transpose of the material's `envMapRotation`
+    // Euler, which defaults to no rotation.
+    data[offset + 144..offset + 208]
+        .copy_from_slice(bytemuck::cast_slice(&Matrix4::identity().to_f32_array()));
+}
+
+/// `RenderList.finish()`'s `painterSortStable` over the opaque items, which is
+/// the only list this rung fills.
+///
+/// `Renderer._projectObject()` computes each item's `z` as the geometry's
+/// bounding-sphere centre pushed through `matrixWorld` and then through
+/// `projectionMatrix * matrixWorldInverse`, keeping the unnormalised clip-space
+/// `z`. `groupOrder` and `renderOrder` are 0 everywhere here, and the `id`
+/// tie-break matches creation order, so a stable sort on `z` reproduces it.
+fn render_list_order(scene: &Scene, camera: &PerspectiveCamera) -> Vec<usize> {
+    let mut proj_screen_matrix = Matrix4::identity();
+    proj_screen_matrix.multiply_matrices(&camera.projection_matrix, &camera.matrix_world_inverse);
+
+    let mut items: Vec<(usize, f64)> = scene
+        .children
+        .iter()
+        .enumerate()
+        .map(|(index, child)| {
+            let center = child.mesh().geometry.bounding_sphere_center();
+            let v = apply_matrix4_vector4(
+                &child.object().matrix_world,
+                [center.x, center.y, center.z, 1.0],
+            );
+            let v = apply_matrix4_vector4(&proj_screen_matrix, v);
+            (index, v[2])
+        })
+        .collect();
+
+    items.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+    items.into_iter().map(|(index, _)| index).collect()
+}
+
+/// `Vector4.applyMatrix4()` — no perspective divide, unlike `Vector3`'s.
+fn apply_matrix4_vector4(m: &Matrix4, v: [f64; 4]) -> [f64; 4] {
+    let e = &m.elements;
+    [
+        e[0] * v[0] + e[4] * v[1] + e[8] * v[2] + e[12] * v[3],
+        e[1] * v[0] + e[5] * v[1] + e[9] * v[2] + e[13] * v[3],
+        e[2] * v[0] + e[6] * v[1] + e[10] * v[2] + e[14] * v[3],
+        e[3] * v[0] + e[7] * v[1] + e[11] * v[2] + e[15] * v[3],
+    ]
 }
 
 /// The canvas colour format. Chrome's preferred WebGPU canvas format on this

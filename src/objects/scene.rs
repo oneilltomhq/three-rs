@@ -4,6 +4,28 @@ use crate::core::Object3D;
 use crate::materials::MeshBasicNodeMaterial;
 use crate::math::{Color, Matrix4};
 use crate::objects::{InstancedBufferAttribute, InstancedMesh, Mesh};
+use crate::textures::CubeTexture;
+
+/// `Scene.background`. three.js accepts a `Color`, a `Texture` or a
+/// `CubeTexture`; `Background.update()` branches on which one it is — a colour
+/// becomes the clear value, anything else becomes the skybox mesh.
+#[derive(Clone, Debug)]
+pub enum Background {
+    Color(Color),
+    CubeTexture(CubeTexture),
+}
+
+impl From<Color> for Background {
+    fn from(color: Color) -> Self {
+        Background::Color(color)
+    }
+}
+
+impl From<CubeTexture> for Background {
+    fn from(texture: CubeTexture) -> Self {
+        Background::CubeTexture(texture)
+    }
+}
 
 /// One entry of `Object3D.children`. `InstancedMesh` extends `Mesh` in
 /// three.js; the renderer walks children through the accessors below and only
@@ -67,7 +89,7 @@ impl Child {
 #[derive(Default)]
 pub struct Scene {
     pub children: Vec<Child>,
-    pub background: Option<Color>,
+    pub background: Option<Background>,
     pub override_material: Option<MeshBasicNodeMaterial>,
     pub matrix_world: Matrix4,
 }
@@ -75,6 +97,11 @@ pub struct Scene {
 impl Scene {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// `scene.background = value`.
+    pub fn set_background(&mut self, background: impl Into<Background>) {
+        self.background = Some(background.into());
     }
 
     pub fn add(&mut self, child: impl Into<Child>) {
