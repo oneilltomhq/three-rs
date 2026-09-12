@@ -1103,9 +1103,9 @@ impl Renderer {
             )
         };
 
-        let position = geometry.position.as_ref().map(vertex_buffer);
-        let normal = geometry.normal.as_ref().map(vertex_buffer);
-        let uv = geometry.uv.as_ref().map(vertex_buffer);
+        let position = geometry.position().map(vertex_buffer);
+        let normal = geometry.normal().map(vertex_buffer);
+        let uv = geometry.uv().map(vertex_buffer);
 
         let index = geometry.index.as_ref().map(|index| {
             let (bytes, format): (Vec<u8>, wgpu::IndexFormat) = match index {
@@ -1118,8 +1118,7 @@ impl Renderer {
         });
 
         let vertex_count = geometry
-            .position
-            .as_ref()
+            .position()
             .map(|p| p.count() as u32)
             .unwrap_or(0);
 

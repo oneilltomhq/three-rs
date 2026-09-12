@@ -39,8 +39,13 @@ pub struct PerspectiveCamera {
 
 impl PerspectiveCamera {
     pub fn new(fov: f64, aspect: f64, near: f64, far: f64) -> Self {
+        let mut object = Object3D::default();
+        object.object_type = "PerspectiveCamera";
+        // `Camera.isCamera` — `Object3D.lookAt()` branches on it.
+        object.is_camera = true;
+
         let mut camera = Self {
-            object: Object3D::default(),
+            object,
             fov,
             aspect,
             near,

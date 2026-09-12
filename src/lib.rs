@@ -18,11 +18,11 @@ pub mod testing;
 pub mod textures;
 
 pub use cameras::{OrthographicCamera, PerspectiveCamera};
-pub use core::{BufferGeometry, Object3D};
+pub use core::{BufferGeometry, Node, Object3D, Object3DNode};
 pub use geometries::{box_geometry, quad_geometry, sphere_geometry, torus_knot_geometry};
 pub use loaders::{BufferGeometryLoader, CubeTextureLoader, TextureLoader};
 pub use materials::MeshBasicNodeMaterial;
 pub use math::{Color, Euler, Matrix3, Matrix4, Quaternion, Vector2, Vector3};
-pub use objects::{Background, Child, InstancedMesh, Mesh, QuadMesh, Scene};
+pub use objects::{Background, Child, Group, InstancedMesh, Mesh, QuadMesh, Scene};
 pub use renderer::{RenderTarget, Renderer, RendererParameters};
 pub use textures::{ColorSpace, CubeTexture, DepthTexture, Mapping, Texture, TextureType};

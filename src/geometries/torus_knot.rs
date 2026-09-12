@@ -83,9 +83,9 @@ pub fn torus_knot_geometry(
 
     let mut geometry = BufferGeometry::new();
     geometry.set_index(&indices);
-    geometry.position = Some(BufferAttribute::new(vertices, 3));
-    geometry.normal = Some(BufferAttribute::new(normals, 3));
-    geometry.uv = Some(BufferAttribute::new(uvs, 2));
+    geometry.set_attribute("position", BufferAttribute::new(vertices, 3));
+    geometry.set_attribute("normal", BufferAttribute::new(normals, 3));
+    geometry.set_attribute("uv", BufferAttribute::new(uvs, 2));
     geometry
 }
 
