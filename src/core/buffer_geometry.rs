@@ -113,6 +113,35 @@ impl BufferGeometry {
         self.index = Some(index);
     }
 
+    /// The centre of `BufferGeometry.computeBoundingSphere()`'s sphere, which is
+    /// `Box3.setFromBufferAttribute( position ).getCenter()` — the only part of
+    /// the bounding sphere the render-list sort reads.
+    pub fn bounding_sphere_center(&self) -> Vector3 {
+        let Some(position) = &self.position else {
+            return Vector3::ZERO;
+        };
+
+        let mut min = Vector3::new(f64::INFINITY, f64::INFINITY, f64::INFINITY);
+        let mut max = Vector3::new(f64::NEG_INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
+
+        for i in 0..position.count() {
+            let v = position.get_vector3(i);
+            min.x = min.x.min(v.x);
+            min.y = min.y.min(v.y);
+            min.z = min.z.min(v.z);
+            max.x = max.x.max(v.x);
+            max.y = max.y.max(v.y);
+            max.z = max.z.max(v.z);
+        }
+
+        // `Box3.getCenter()`
+        Vector3::new(
+            (min.x + max.x) * 0.5,
+            (min.y + max.y) * 0.5,
+            (min.z + max.z) * 0.5,
+        )
+    }
+
     /// `BufferGeometry.computeVertexNormals()`.
     ///
     /// The accumulation runs through the `normal` attribute itself, so every
