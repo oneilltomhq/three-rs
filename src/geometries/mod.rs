@@ -8,9 +8,11 @@ mod cylinder;
 mod group;
 mod lathe;
 mod math_extras;
+mod non_indexed;
 mod plane;
 mod polyhedron;
 mod ring;
+mod rounded_box;
 mod sphere;
 mod teapot;
 mod torus;
@@ -24,12 +26,14 @@ pub use cylinder::{cylinder_geometry, cylinder_geometry_full};
 pub use group::Group;
 pub use lathe::{lathe_default_points, lathe_geometry, lathe_geometry_full};
 pub use math_extras::{matrix4_set, matrix4_transpose, vector3_lerp, Vector4};
+pub use non_indexed::to_non_indexed;
 pub use plane::plane_geometry;
 pub use polyhedron::{
     dodecahedron_geometry, icosahedron_geometry, octahedron_geometry, polyhedron_geometry,
     tetrahedron_geometry,
 };
 pub use ring::{ring_geometry, ring_geometry_full};
+pub use rounded_box::{rounded_box_geometry, rounded_box_geometry_with_groups};
 pub use sphere::{sphere_geometry, sphere_geometry_full};
 pub use teapot::{teapot_geometry, teapot_geometry_full};
 pub use torus::{torus_geometry, torus_geometry_full};

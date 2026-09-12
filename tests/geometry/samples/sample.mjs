@@ -2,7 +2,8 @@
 // usage: node sample.mjs '<name>' '<js expression returning a geometry>'
 const THREE = await import( '/home/tom/src/vendor/three.js/src/Three.js' );
 const { TeapotGeometry } = await import( '/home/tom/src/vendor/three.js/examples/jsm/geometries/TeapotGeometry.js' );
-Object.assign( globalThis, THREE, { TeapotGeometry } );
+const { RoundedBoxGeometry } = await import( '/home/tom/src/vendor/three.js/examples/jsm/geometries/RoundedBoxGeometry.js' );
+Object.assign( globalThis, THREE, { TeapotGeometry, RoundedBoxGeometry } );
 
 const name = process.argv[ 2 ];
 const expr = process.argv[ 3 ];
