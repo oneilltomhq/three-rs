@@ -133,11 +133,15 @@ impl Scene {
     /// `Object3D.updateMatrixWorld()` on the scene root: the scene's own world
     /// matrix stays the identity and each child is composed then multiplied by it.
     pub fn update_matrix_world(&mut self) {
-        self.object.update_matrix_world(None);
+        // three.js' `Object3D.updateMatrixWorld( force )`: a scene whose own
+        // world matrix changed forces every child's to be recomputed.
+        let force = self.object.update_matrix_world_forced(None, false);
 
         let parent = self.object.matrix_world;
         for child in &mut self.children {
-            child.object_mut().update_matrix_world(Some(&parent));
+            child
+                .object_mut()
+                .update_matrix_world_forced(Some(&parent), force);
         }
     }
 }

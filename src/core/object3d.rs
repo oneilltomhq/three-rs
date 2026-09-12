@@ -149,7 +149,9 @@ impl Object3D {
 
     /// `Object3D.applyMatrix4()`.
     pub fn apply_matrix4(&mut self, m: &Matrix4) {
-        self.update_matrix();
+        if self.matrix_auto_update {
+            self.update_matrix();
+        }
 
         self.matrix.premultiply(m);
 
@@ -339,14 +341,39 @@ impl Object3D {
     /// `Object3D.updateMatrixWorld()` for an object whose parent's world matrix
     /// is `parent_matrix_world` (`None` for a root).
     pub fn update_matrix_world(&mut self, parent_matrix_world: Option<&Matrix4>) {
-        self.update_matrix();
+        self.update_matrix_world_forced(parent_matrix_world, false);
+    }
 
-        match parent_matrix_world {
-            None => self.matrix_world = self.matrix,
-            Some(parent) => {
-                let matrix = self.matrix;
-                self.matrix_world.multiply_matrices(parent, &matrix);
-            }
+    /// `Object3D.updateMatrixWorld( force )` for one object, returning the
+    /// `force` its children should be updated with (three.js recurses here; an
+    /// `Object3D` held by value has no children to recurse into, so the caller
+    /// — `Scene::update_matrix_world`, or `Object3DNode` for a real tree — does
+    /// that part).
+    pub fn update_matrix_world_forced(
+        &mut self,
+        parent_matrix_world: Option<&Matrix4>,
+        force: bool,
+    ) -> bool {
+        if self.matrix_auto_update {
+            self.update_matrix();
         }
+
+        if self.matrix_world_needs_update || force {
+            if self.matrix_world_auto_update {
+                match parent_matrix_world {
+                    None => self.matrix_world = self.matrix,
+                    Some(parent) => {
+                        let matrix = self.matrix;
+                        self.matrix_world.multiply_matrices(parent, &matrix);
+                    }
+                }
+            }
+
+            self.matrix_world_needs_update = false;
+
+            return true;
+        }
+
+        force
     }
 }
