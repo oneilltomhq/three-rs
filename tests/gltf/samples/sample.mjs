@@ -21,3 +21,22 @@ for (const file of ['Soldier.glb', 'Michelle.glb']) {
     res();
   }, rej));
 }
+
+// t = 0 bone world matrices, for the AnimationMixer test.
+import { AnimationMixer } from '/home/tom/src/vendor/three.js/build/three.module.js';
+{
+  const buf = fs.readFileSync('/home/tom/src/vendor/three.js/examples/models/gltf/Michelle.glb');
+  await new Promise((res, rej) => loader.parse(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength), '', (gltf) => {
+    const mixer = new AnimationMixer(gltf.scene);
+    mixer.clipAction(gltf.animations[0]).play();
+    mixer.update(0);
+    gltf.scene.updateMatrixWorld(true);
+    console.log('### mixer t=0');
+    for (const name of ['mixamorigHips', 'mixamorigSpine', 'mixamorigLeftHand', 'mixamorigRightToeBase']) {
+      const bone = gltf.scene.getObjectByName(name);
+      console.log(name, JSON.stringify(Array.from(bone.matrixWorld.elements)));
+      console.log(name + '.pos', JSON.stringify(bone.position.toArray()), JSON.stringify(bone.quaternion.toArray()));
+    }
+    res();
+  }, rej));
+}

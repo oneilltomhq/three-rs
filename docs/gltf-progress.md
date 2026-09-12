@@ -29,28 +29,38 @@ too because it exercises two skins and a split mesh.
   as `Bone` nodes), animations into `AnimationClip` via the existing
   `KeyframeTrack` types and `PATH_PROPERTIES`, materials/textures/images as data
   records (`GltfMaterial` keeps the PBR fields; `GltfImage` keeps the bytes).
-- `tests/gltf_loader.rs` — 5 tests, all checked to 1e-6 against three.js'
+- `src/animation/object3d_target.rs` — `PropertyBinding`'s getter/setter half
+  for the `Object3D` tree: `SceneResolver` is a `TargetResolver` (`findNode`
+  included, skeleton branch and all), `NodeTarget` the `BindingTarget` for
+  `.position` / `.quaternion` / `.scale` / `.morphTargetInfluences`, each a
+  `HasFromToArray`-or-`EntireArray` setter with
+  `Versioning.MatrixWorldNeedsUpdate`. `objectName`, `propertyIndex` and every
+  other property are explicit TODOs returning `None` (three's "it wasn't
+  found"). `morphTargetInfluences` lives in an `Rc<RefCell<Vec<f64>>>` on
+  `SkinnedMesh`/`GltfPrimitive` and is registered with the resolver by node id,
+  because `Object3D` has no such field.
+- `tests/gltf_loader.rs` — 6 tests, all checked to 1e-6 against three.js'
   own `GLTFLoader` run under node: `tests/gltf/samples/sample.mjs` (note the
   `loader.register` texture stub — `loadImageSource` touches `self.URL`, which
   node has not got). Michelle: 68 nodes and their names, 1 skin / 65 bones,
   16340 positions / 84318 indices, first three vertices, skinIndex exactness,
   boneInverses[0], 2 clips with durations and 195 tracks each, track 0 values.
   Soldier: 69 nodes, 2 skins (49 + 2 bones), 4 clips × 156 tracks, counts.
+  Plus `michelle_mixer_at_zero`: `clipAction( SambaDance ).play()`,
+  `update( 0 )`, `updateMatrixWorld( true )`, and two bone `matrixWorld`s
+  (`mixamorigHips`, `mixamorigLeftHand`) against three's, to 1e-6.
 
 ## Next, in order
 
-1. **TargetResolver for the Object3D tree** (task item 3): implement
-   `findNode` + the getter/setter half of `PropertyBinding` for `.position`,
-   `.quaternion`, `.scale`, `.morphTargetInfluences` against
-   `src/animation/binding_target.rs`'s `BindingTarget` / `TargetResolver`. Only
-   after that can `mixer.clipAction( clip, root ).play(); mixer.update( 0 )`
-   write into the tree. The `morphTargetInfluences` case needs the influences to
-   live somewhere reachable from a `Node` — they are currently on
-   `SkinnedMesh`/`GltfPrimitive`, not on `Object3D`, so that resolver arm has to
-   take the primitive list alongside the root.
-2. **The t=0 bone-world-matrix test**: play `SambaDance` at t=0 and compare a few
-   `bone.matrixWorld` against three's. `sample.mjs` already has the harness; add
-   an `AnimationMixer` + `mixer.update( 0 )` to it.
+1. **A convenience on `Gltf`** that builds the `SceneResolver` (clone the scene,
+   register every primitive's influences) — four lines the rung worker should not
+   have to write; see `michelle_mixer_at_zero` for the shape.
+2. **Hand the renderer the skinning inputs**: `Skeleton::update()` then
+   `bone_matrices` into a `DataTexture` (`Skeleton.computeBoneTexture`);
+   `bone_texture_size()` is the hook. The renderer also needs the
+   `SkinnedMesh` in its draw list — `Scene::Child` is still the flat enum from
+   rung 1, so the rung worker has to add a skinned variant (or fold `Child` into
+   the tree, which `handoff/RUNGS.md` lists as pending anyway).
 3. **CUBICSPLINE**: currently reduced to LINEAR by dropping the in/out tangents
    (keeping only the middle value of each triple). Correct only for one-keyframe
    tracks; neither test asset uses it. Needs `GLTFCubicSplineInterpolant`.

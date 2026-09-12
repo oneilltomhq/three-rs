@@ -132,3 +132,84 @@ fn soldier_tree() {
     assert_eq!(geometry.position().unwrap().count(), 7325);
     assert_eq!(geometry.index.as_ref().unwrap().count(), 33558);
 }
+
+/// `mixer.clipAction( clip, root ).play(); mixer.update( 0 )` writes into the
+/// tree: the expected bone world matrices are three's, at t = 0 of
+/// `SambaDance` (the clip `webgpu_skinning` plays).
+#[test]
+fn michelle_mixer_at_zero() {
+    use three_rs::animation::{AnimationMixer, SceneResolver};
+
+    let gltf = GLTFLoader::load(format!("{MODELS}/Michelle.glb")).unwrap();
+
+    let mut resolver = SceneResolver::new(gltf.scene.clone());
+    for primitive in &gltf.primitives {
+        resolver
+            .add_morph_target_influences(&primitive.node, primitive.morph_target_influences.clone());
+    }
+
+    let mut mixer = AnimationMixer::new(Box::new(resolver));
+    let action = mixer.clip_action(&gltf.animations[0], None, None);
+    mixer.play(action);
+    mixer.update(0.0);
+
+    gltf.scene.update_matrix_world(true);
+
+    let expected: [(&str, [f64; 16]); 2] = [
+        (
+            "mixamorigHips",
+            [
+                0.008_227_340_933_105_275,
+                -0.000_188_572_412_805_589_21,
+                -0.005_681_135_218_087_022,
+                0.0,
+                -0.000_241_645_235_677_088_98,
+                0.009_973_857_810_013_35,
+                -0.000_681_007_571_672_808_8,
+                0.0,
+                0.005_679_125_523_620_743,
+                0.000_697_570_208_985_178_2,
+                0.008_201_276_404_566_728,
+                0.0,
+                -0.001_179_286_215_172_270_5,
+                0.988_607_274_750_171_1,
+                -0.001_199_965_725_546_089_7,
+                1.0,
+            ],
+        ),
+        (
+            "mixamorigLeftHand",
+            [
+                0.007_003_632_312_766_139,
+                -0.005_556_839_674_743_623,
+                -0.004_480_017_859_296_49,
+                0.0,
+                0.003_197_087_286_270_483,
+                -0.003_169_483_333_125_039_6,
+                0.008_929_329_623_035_23,
+                0.0,
+                -0.006_381_821_969_988_196,
+                -0.007_686_080_423_159_218,
+                -0.000_443_217_103_400_579_4,
+                0.0,
+                0.169_366_461_316_386_25,
+                0.882_823_517_387_601_1,
+                -0.060_322_049_899_743_96,
+                1.0,
+            ],
+        ),
+    ];
+
+    for (name, expected) in expected {
+        let bone = gltf.scene.get_object_by_name(name).unwrap();
+        let got = bone.borrow().matrix_world.elements;
+
+        for (i, expected) in expected.iter().enumerate() {
+            assert!(
+                (got[i] - expected).abs() < 1e-6,
+                "{name}.matrixWorld[{i}]: {} != {expected}",
+                got[i]
+            );
+        }
+    }
+}

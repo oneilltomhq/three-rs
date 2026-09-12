@@ -202,7 +202,8 @@ pub struct GltfPrimitive {
     /// Index into [`Gltf::skins`], set when the glTF node has a `skin`.
     pub skin: Option<usize>,
     /// `mesh.morphTargetInfluences`, from `meshDef.weights` / `primitive.targets`.
-    pub morph_target_influences: Vec<f64>,
+    /// Shared with the `SceneResolver` that binds the morph tracks.
+    pub morph_target_influences: Rc<RefCell<Vec<f64>>>,
     /// `mesh.morphTargetDictionary`, from `meshDef.extras.targetNames`.
     pub morph_target_dictionary: Vec<(String, usize)>,
 }
@@ -833,7 +834,7 @@ impl GLTFLoader {
                 geometry: Rc::new(geometry),
                 material: json_usize(primitive, "material"),
                 skin,
-                morph_target_influences,
+                morph_target_influences: Rc::new(RefCell::new(morph_target_influences)),
                 morph_target_dictionary: target_names
                     .iter()
                     .cloned()

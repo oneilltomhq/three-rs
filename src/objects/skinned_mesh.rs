@@ -41,7 +41,9 @@ pub struct SkinnedMesh {
     /// `Mesh.boundingSphere` (`SkinnedMesh.computeBoundingSphere`).
     pub bounding_sphere: Option<Sphere>,
     /// `Mesh.morphTargetInfluences`, which glTF morph animation writes into.
-    pub morph_target_influences: Vec<f64>,
+    /// Shared, because `SceneResolver` binds a `.morphTargetInfluences` track to
+    /// it while the mesh is owned elsewhere.
+    pub morph_target_influences: Rc<RefCell<Vec<f64>>>,
     /// `Mesh.morphTargetDictionary`.
     pub morph_target_dictionary: Vec<(String, usize)>,
 }
@@ -61,7 +63,7 @@ impl SkinnedMesh {
             bind_matrix_inverse: Matrix4::identity(),
             bounding_box: None,
             bounding_sphere: None,
-            morph_target_influences: Vec::new(),
+            morph_target_influences: Rc::new(RefCell::new(Vec::new())),
             morph_target_dictionary: Vec::new(),
         }
     }

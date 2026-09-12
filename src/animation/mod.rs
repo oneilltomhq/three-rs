@@ -7,6 +7,7 @@ pub mod animation_object_group;
 pub mod animation_utils;
 pub mod binding_target;
 pub mod keyframe_track;
+pub mod object3d_target;
 pub mod property_binding;
 pub mod property_mixer;
 
@@ -15,5 +16,6 @@ pub use animation_clip::AnimationClip;
 pub use animation_mixer::{ActionHandle, AnimationMixer, RootId};
 pub use animation_object_group::AnimationObjectGroup;
 pub use binding_target::{BindingTarget, BufferTarget, TargetResolver};
+pub use object3d_target::{NodeProperty, NodeTarget, SceneResolver};
 pub use keyframe_track::{InterpolationMode, KeyframeTrack, TrackInterpolant, TrackValueType};
 pub use property_mixer::PropertyMixer;
