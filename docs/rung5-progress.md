@@ -1,8 +1,44 @@
 # rung 5 — `webgpu_lights_phong`, in progress
 
-Status at handoff (session ended at its hard stop, ~40 min): **Three's WGSL is
-dumped and read; no three-rs code written yet.** e2e is unchanged — rungs 1–4
-still 0 / 45 / 0 / 1, no fifth test registered. Nothing in the tree is red.
+Status at handoff (session ended at its 40-minute hard stop): **Three's WGSL is
+dumped and read, and the leaf pieces are in; the builder does not yet generate a
+Phong shader.** e2e unchanged throughout — rungs 1–4 at 0 / 45 / 0 / 1 after
+every commit, no fifth test registered yet, every commit compiles.
+
+### Done (5 commits on `rung5`)
+
+| commit | what |
+|---|---|
+| `bef60b4` | this note: the dumps, read |
+| `92c3e23` | `src/lights/{light,point_light}.rs` — `Light`, `PointLight` (colour, intensity, distance, decay, `power` ⇄ `intensity * 4π`, own children) |
+| `239c9d3` | `Scene.lights` + `Scene::drawables()` (scene children then each light's children, world matrices composed through the light); the renderer's two walks index `drawables()` instead of `scene.children` — the nested-children fold `docs/scene-graph.md` deferred |
+| `aa17b2f` | TSL: `floor`, `sign`, `exp2`, `length`, `smoothstep`, `dpdx`, `dpdy`, `tsl_mod_float` (a `Code` helper, as the dump shows), `checker()`, `fog()` / `range_fog_factor()` as a `FogNode` pair on `Scene.fog_node` |
+| `b98ac83` | `MaterialKind` (`Basic` \| `Phong`) on the one `NodeMaterial` struct, the four Phong uniforms (`specular` 0x111111, `shininess` 30, `emissive`, `emissive_intensity`), `lights`, `lights_node`, `specular_node`, `normal_node`, and `NodeMaterial::phong( color )` |
+| `c9f259d` | `src/materials/phong.rs` — `BRDF_Lambert`, `F_Schlick`, `D_BlinnPhong`, `BRDF_BlinnPhong`, `getDistanceAttenuation`, `PhongLightingModel::direct()` for a point light, as node graphs shaped to emit the dumped WGSL; `Shininess` / `SpecularColor` / `EmissiveColor` / `irradiance` properties |
+
+### Next, in order
+
+1. **An `If` node.** `getDistanceAttenuation` is an `if ( cutoffDistance > 0.0 )`
+   over a shared temp in the dump, and the port has no `Node::If` (docs/nodes.md
+   §1 lists one, but rung 4 never needed it). `phong::distance_attenuation_*`
+   currently hands the caller the two branches separately. This is the one new
+   *node-system* primitive rung 5 still needs.
+2. **`LightsNode`**: the per-light uniforms in the render group with §2's member
+   order (triples first, positions appended), new `UniformSource` variants
+   (`LightColorIntensity(i)`, `LightCutoffDistance(i)`, `LightDecay(i)`,
+   `LightViewPosition(i)`) written by `Renderer::render()` at `Render` update
+   rate, the lights list reaching `NodeBuilder` through `SetupContext`, and the
+   selective `lights([...])` subset from `material.lights_node`.
+3. **`setup_lighting` / `setup_lighting_model` in `node_material.rs`**: the
+   Phong prologue (§4), the per-light `direct()` calls, the fixed tail, and the
+   `lights = false` path (§1).
+4. **Fog in `setup_output`** (§5) — `SetupContext` has to carry
+   `Scene.fog_node`, which makes it non-`Copy`.
+5. **`normalMap`** (§7) — the derivative TBN, needing `dpdx`/`dpdy` (in) plus
+   `tangentView`/`bitangentView`/`TBNViewMatrix` properties and `normalView`
+   becoming assignable.
+6. **Repeat wrapping** on both textures (rung 4 shipped ClampToEdge only).
+7. `examples/webgpu_lights_phong.rs` + the fifth `tests/e2e/main.rs` entry.
 
 ## Where the dumps are and how to get them again
 
