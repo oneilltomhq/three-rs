@@ -42,16 +42,58 @@ rung 1; diffing it against `scene_basic.{vert,frag}-r186.wgsl` shows only
 the §7 divergences (banner, uniform numbering, `VERTEX_` sub-build names,
 declaration order).
 
-## Still to do
+## Steps 2-7 (DONE) — rung 9 passes
 
-2. RenderTarget multiplicity: three simultaneous `rgba16float` targets, each
-   with its own `depth24plus` depth texture.
-3. `PassNode` / `pass(scene, camera)` with the nested render in `updateBefore`.
-4. `RenderPipeline` with `outputNode`; `needs_frame_buffer_target` must become
-   state-driven so the quad draws straight to the `rgba8unorm` canvas.
-5. Per-target clear: `0xe0e0e0` → linear 0.7454042095350284 (a = 1) for the
-   base scene, `(0,0,0,0)` for the two mask scenes (`background === null`).
-6. The two JPEGs with their exact settings (flipY false, generateMipmaps false
-   + LinearFilter on texture1, SRGBColorSpace on both → `rgba8unorm-srgb`,
-   13 mip levels on texture2).
-7. `examples/webgpu_postprocessing_masking.rs` + the e2e entry.
+`cargo test -p three-rs --test e2e -- --test-threads=1` →
+**webgpu_postprocessing_masking: 18 of 100000 pixels differ (0.018%), limit
+0.1%.** Rungs 1, 3, 4 unchanged at 0 / 0 / 1; rung 2 moved 45 → 60, see below.
+
+What landed:
+
+* `src/renderer/pass.rs` — `PassNode`, `src/renderer/render_pipeline.rs` —
+  `RenderPipeline`, both described in `docs/postprocessing.md`.
+* `Renderer::needs_frame_buffer_target()` is no longer hardcoded `true`: it is
+  `!neutral_output`, and `Renderer::with_neutral_output` is
+  `RenderPipeline.render()`'s save/set/restore of tone mapping and output colour
+  space. With both neutral the quad draws straight into the `rgba8unorm` canvas.
+* `Renderer::_clearColor` alpha is now 0, as `WebGPURenderer`'s `alpha: true`
+  default makes it. A mask scene has no background, so its target clears to
+  `(0,0,0,0)` — that zero alpha *is* the mask.
+* A material-less `Mesh` gets the default white `MeshBasicNodeMaterial` instead
+  of a panic.
+* `Texture` setters for `colorSpace` (→ `rgba8unorm-srgb`), `flipY`,
+  `generateMipmaps`, `minFilter`, `magFilter`.
+* `RenderTarget::set_samples`, and `set_size` now also drops an attached
+  `DepthTexture`'s GPU object so a 1×1 pass target can grow to the drawing
+  buffer.
+* `examples/webgpu_postprocessing_masking.rs` and its `tests/e2e/main.rs` entry.
+
+## Pass structure vs `dump-r186.json`
+
+Traced with a temporary `eprintln!` in `Renderer::draw` / `generate_mipmaps`:
+
+| # | port | dump |
+|---|---|---|
+| base | rgba16float + depth24plus, 800×500, samples 1, clear `[0.7454042095350284 ×3, 1]`, 0 draws | identical |
+| mask1 | rgba16float + depth24plus, clear `[0,0,0,0]`, 1 draw (box, 36 indices) | identical |
+| mask2 | rgba16float + depth24plus, clear `[0,0,0,0]`, 1 draw (torus, 3072 indices) | identical |
+| canvas | rgba8unorm + depth24plus, clear `[0,0,0,0]`, 1 draw (`draw(3,1,0,0)`) | identical |
+| mipmaps | 12 blits, rgba8unorm-srgb, 1 layer | identical |
+
+Texture facts also confirmed: `758px-Canestra…jpg` 758×600 with 1 mip level
+(`generateMipmaps = false`), `2294472375_24a3b8ef46_o.jpg` 4096×2048 with 13.
+
+## The one behaviour change to an earlier rung
+
+`webgpu_instance_mesh` went 45 → 60 differing pixels when the clear alpha was
+corrected from 1 to 0. That example has `scene.background === null`, so
+three.js clears its framebuffer target to `(0,0,0,0)`; 60 is exactly the score
+three.js itself gets against that reference JPEG (`handoff/RUNGS.md`, rung 2),
+so the port now agrees with three.js instead of with the old accident. Still
+well inside the 0.1% limit.
+
+## Residue
+
+The remaining 18 pixels are the usual zune-jpeg vs libjpeg-turbo decode
+difference on the two JPEGs (`docs/nodes.md` §7) plus JPEG ringing on the mask
+silhouettes in the reference screenshot.

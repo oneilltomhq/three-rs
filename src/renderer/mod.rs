@@ -6,17 +6,21 @@
 mod mipmap;
 /// Additive seam for the interactive viewer; see `present.rs`.
 mod present;
+mod pass;
 mod programs;
 mod render_list;
+mod render_pipeline;
 mod render_target;
 
 use std::collections::HashMap;
 use std::rc::Rc;
 
 use mipmap::{create_mipmap_pipeline, MipmapShader};
+pub use pass::PassNode;
 pub use programs::{RenderState, UniformContext};
 use programs::{PipelineKey, Program};
 pub use render_list::{project_object, ProjectCamera, RenderItem, RenderList};
+pub use render_pipeline::RenderPipeline;
 pub use render_target::{RenderTarget, RenderTargetInner, RenderTargetOptions};
 
 use crate::cameras::{OrthographicCamera, PerspectiveCamera};
@@ -104,7 +108,10 @@ pub struct Renderer {
     width: f64,
     height: f64,
 
-    /// `Renderer._clearColor`: black, alpha 1.
+    /// `Renderer._clearColor`: black, and `alpha` defaults to `true` so the
+    /// clear alpha is 0. That zero alpha is the whole effect at rung 9 — a mask
+    /// scene has `background === null`, so its render target clears to
+    /// `(0, 0, 0, 0)` and the untouched texels are transparent.
     clear_color: [f64; 4],
 
     /// `Renderer.sortObjects`. With it off, `_projectObject()` leaves each render
@@ -141,6 +148,11 @@ pub struct Renderer {
     quad_geometry: Option<Rc<BufferGeometry>>,
     /// `QuadMesh`'s shared `new OrthographicCamera( -1, 1, 1, -1, 0, 1 )`.
     quad_camera: OrthographicCamera,
+
+    /// True while `RenderPipeline.render()` has neutralised `toneMapping` and
+    /// `outputColorSpace`, which is what makes `needsFrameBufferTarget` false
+    /// so the full-screen quad draws straight into the canvas.
+    neutral_output: bool,
 
     /// `NodeFrame.time`. `performance.now()` is pinned to 0 by the harness, so
     /// every frame's delta is 0 and this stays 0.
@@ -201,7 +213,7 @@ impl Renderer {
             pixel_ratio: 1.0,
             width: 300.0,
             height: 150.0,
-            clear_color: [0.0, 0.0, 0.0, 1.0],
+            clear_color: [0.0, 0.0, 0.0, 0.0],
             sort_objects: true,
             canvas: None,
             render_target: None,
@@ -218,6 +230,7 @@ impl Renderer {
             background_geometry: None,
             quad_geometry: None,
             quad_camera: OrthographicCamera::new(-1.0, 1.0, 1.0, -1.0, 0.0, 1.0),
+            neutral_output: false,
             time: 0.0,
             present: None,
             random: DeterministicRandom::new(),
@@ -297,11 +310,15 @@ impl Renderer {
 
             // `_renderObjects()`: `scene.overrideMaterial` replaces the object's
             // own material for every object in the list.
+            // `new Mesh( geometry )` with no material gets
+            // `new MeshBasicMaterial()`, which under `WebGPURenderer` is a
+            // `MeshBasicNodeMaterial`: white, opaque, front side, depth on.
+            let default_material = MeshBasicNodeMaterial::new();
             let material: &MeshBasicNodeMaterial = scene
                 .override_material
                 .as_ref()
                 .or(mesh.material.as_ref())
-                .expect("three-rs: a mesh needs a material");
+                .unwrap_or(&default_material);
 
             let instance_count = object.instance_count();
             let instance_matrix = object.instance_matrix().cloned();
@@ -1216,7 +1233,28 @@ impl Renderer {
     /// and the port has no tone mapping yet, so this is the colour-space half:
     /// always true for a canvas render.
     fn needs_frame_buffer_target(&self) -> bool {
-        true
+        !self.neutral_output
+    }
+
+    /// `RenderPipeline.render()`'s save/set/restore of `renderer.toneMapping`
+    /// and `renderer.outputColorSpace`: with both neutral,
+    /// `needsFrameBufferTarget` is false, so the quad renders into the canvas
+    /// and the colour transform comes from the quad's own `fragmentNode`.
+    pub fn with_neutral_output<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
+        let previous = std::mem::replace(&mut self.neutral_output, true);
+        let result = f(self);
+        self.neutral_output = previous;
+        result
+    }
+
+    /// `renderer.samples`.
+    pub fn samples(&self) -> u32 {
+        self.samples
+    }
+
+    /// `renderer.getRenderTarget()`.
+    pub fn render_target(&self) -> Option<RenderTarget> {
+        self.render_target.clone()
     }
 
     /// `Renderer.currentSamples`: a custom render target's own sample count,

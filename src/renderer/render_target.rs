@@ -100,6 +100,9 @@ impl RenderTarget {
             inner.texture.clear_gpu();
             inner.msaa = None;
             inner.depth = None;
+            if let Some(depth_texture) = &inner.depth_texture {
+                depth_texture.inner().borrow_mut().gpu = None;
+            }
         }
     }
 
@@ -110,6 +113,12 @@ impl RenderTarget {
 
     pub fn samples(&self) -> u32 {
         self.0.borrow().samples
+    }
+
+    /// `renderTarget.samples = renderer.samples`, which is what
+    /// `PassNode.setup()` does before the first nested render.
+    pub fn set_samples(&self, samples: u32) {
+        self.0.borrow_mut().samples = samples;
     }
 
     pub fn color_format(&self) -> wgpu::TextureFormat {

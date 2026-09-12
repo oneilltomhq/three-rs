@@ -110,6 +110,42 @@ impl Texture {
         Rc::as_ptr(&self.0) as *const u8 as usize
     }
 
+    /// `texture.colorSpace = SRGBColorSpace`. As with `CubeTexture`, the
+    /// transfer function is applied by the GPU on sample — the format becomes
+    /// `rgba8unorm-srgb` and `WGSLNodeBuilder.needsToWorkingColorSpace()` stays
+    /// false, so no colour-space node appears in the generated WGSL.
+    pub fn set_color_space(&self, color_space: ColorSpace) {
+        let mut inner = self.0.borrow_mut();
+        inner.color_space = color_space;
+        inner.format = match color_space {
+            ColorSpace::SRGB => wgpu::TextureFormat::Rgba8UnormSrgb,
+            ColorSpace::NoColorSpace => wgpu::TextureFormat::Rgba8Unorm,
+        };
+    }
+
+    pub fn color_space(&self) -> ColorSpace {
+        self.0.borrow().color_space
+    }
+
+    /// `texture.flipY` — an upload-time concern only. `Texture.updateMatrix()`
+    /// goes through `Matrix3.setUvTransform( offset, repeat, rotation, center )`,
+    /// which has no `flipY` term, so the texture matrix is unaffected.
+    pub fn set_flip_y(&self, flip_y: bool) {
+        self.0.borrow_mut().flip_y = flip_y;
+    }
+
+    pub fn set_generate_mipmaps(&self, generate_mipmaps: bool) {
+        self.0.borrow_mut().generate_mipmaps = generate_mipmaps;
+    }
+
+    pub fn set_min_filter(&self, min_filter: MinFilter) {
+        self.0.borrow_mut().min_filter = min_filter;
+    }
+
+    pub fn set_mag_filter(&self, mag_filter: TextureFilter) {
+        self.0.borrow_mut().mag_filter = mag_filter;
+    }
+
     pub fn borrow(&self) -> Ref<'_, TextureInner> {
         self.0.borrow()
     }

@@ -247,7 +247,7 @@ new material, is wrong.
 | shadow maps (rung 7) | a `ShadowNode` inside the lighting model, plus a depth-only render pass the renderer already has the machinery for (`RenderTarget` + depth texture). |
 | morph targets (rung 6), skinning (rung 10), batching (rung 11) | `setup_position`, which already has the `instanced_mesh()` hook in exactly the place Three calls `morphReference()` / `skinning()` / `batch()`. |
 | tone mapping (rung 7) | `RenderOutputNode` already branches on tone mapping; rung 4 passes `NoToneMapping`. |
-| post-processing `pass()` (rung 9) | `PassNode` is a `Texture` whose source is a `RenderTarget` the renderer renders first; `TextureSource` already has that variant shape. |
+| post-processing `pass()` (rung 9, done — see `docs/postprocessing.md`) | `PassNode` is a `Texture` whose source is a `RenderTarget` the renderer renders first; `TextureSource` already has that variant shape. |
 | compute (rung 12) | `Stage::Compute` is in the stage enum and unreachable; it needs storage buffers (`BufferSource` with `var<storage>`) and a `@compute` entry point. |
 | `SpriteNodeMaterial` (rung 13) | `setup_position_view`, which `NodeMaterial` already routes through `builder.context`. |
 | MRT, clipping planes, vertex colours, fog, alpha test | all are single branches in `NodeMaterial`'s setup flow, omitted because no rung 1–4 material sets them. |
@@ -268,11 +268,11 @@ differences, each verified to be pixel-neutral.
   `builder.isOpaque()` is true) — unexplained. This port emits it uniformly. It
   is pixel-neutral here because `materialOpacity` is 1 in every rung-1–4
   material, so the preceding `w = w * opacity` already leaves 1.
-* **Output-pass depth attachment.** Three gives the full-screen quad passes a
-  `depth24plus` attachment; this port omits it (the quad is a single triangle at
-  z = 0 covering the target, so the depth test can never reject it, and nothing
-  else draws into that pass). The pipeline's `depthStencil` state is omitted to
-  match.
+* ~~**Output-pass depth attachment.**~~ Withdrawn at rung 9: the port's canvas
+  passes do carry the `depth24plus` attachment three.js gives them
+  (`canvas_pass( true )`), and the pipeline declares `less-equal` /
+  `depthWriteEnabled: true` to match `renderPipeline_RenderPipeline_19` in the
+  rung-9 dump.
 * **Canvas format.** `rgba8unorm` instead of Chrome's preferred `bgra8unorm`,
   so readback is already in comparator order. Same 8-bit unorm precision.
 * **Declaration order.** `var<private>` declarations and `fn` definitions are
