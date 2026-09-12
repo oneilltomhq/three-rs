@@ -5,7 +5,7 @@
 //! descriptors the node builder produced — there is nothing per-material here.
 
 use crate::materials::Side;
-use crate::math::{Color, Matrix3, Matrix4, Vector2};
+use crate::math::{Color, Matrix3, Matrix4, Vector2, Vector3};
 use crate::nodes::wgsl::TextureKind;
 use crate::nodes::{BindingDesc, NodeProgram, Type, UniformMember, UniformSource};
 
@@ -234,8 +234,22 @@ fn vertex_format(ty: Type) -> wgpu::VertexFormat {
 /// defaults are three.js': an identity model matrix, a white opaque material,
 /// `Scene`'s background rotation/blurriness/intensity and `Texture`'s identity
 /// uv transform.
+/// One light as the uniform writer sees it: three.js' `LightsNode` resolves a
+/// `PointLight` to exactly these four values per render.
 #[derive(Clone, Copy, Debug)]
-pub struct UniformContext {
+pub struct LightState {
+    /// `light.color * light.intensity`, in the working colour space.
+    pub color: Color,
+    /// The light's world position through the camera's view matrix.
+    pub view_position: Vector3,
+    /// `light.distance` — the shader's `cutoffDistance`.
+    pub distance: f64,
+    /// `light.decay`.
+    pub decay: f64,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct UniformContext<'a> {
     pub camera_projection: Matrix4,
     pub camera_view: Matrix4,
     pub camera_world: Matrix4,
@@ -250,9 +264,12 @@ pub struct UniformContext {
     pub texture_matrix: Matrix3,
     pub viewport: Vector2,
     pub time: f64,
+    /// The lights of the pass, in `Scene.lights` order. Borrowed so the context
+    /// stays `Copy` and can be spread with `..camera_uniforms` per draw.
+    pub lights: &'a [LightState],
 }
 
-impl Default for UniformContext {
+impl Default for UniformContext<'_> {
     fn default() -> Self {
         Self {
             camera_projection: Matrix4::identity(),
@@ -269,11 +286,12 @@ impl Default for UniformContext {
             texture_matrix: Matrix3::identity(),
             viewport: Vector2::new(0.0, 0.0),
             time: 0.0,
+            lights: &[],
         }
     }
 }
 
-impl UniformContext {
+impl UniformContext<'_> {
     /// `Bindings.updateBinding()`: the bytes of one generated uniform struct,
     /// each member written at the offset the builder gave it.
     pub fn bytes(&self, members: &[UniformMember], size: u32) -> Vec<u8> {
@@ -309,6 +327,20 @@ impl UniformContext {
                 UniformSource::Time => vec![self.time as f32],
                 UniformSource::ViewportSize => {
                     vec![self.viewport.x as f32, self.viewport.y as f32]
+                }
+                UniformSource::LightColorIntensity(i) => {
+                    let light = &self.lights[*i];
+                    vec![
+                        light.color.r as f32,
+                        light.color.g as f32,
+                        light.color.b as f32,
+                    ]
+                }
+                UniformSource::LightCutoffDistance(i) => vec![self.lights[*i].distance as f32],
+                UniformSource::LightDecay(i) => vec![self.lights[*i].decay as f32],
+                UniformSource::LightViewPosition(i) => {
+                    let p = self.lights[*i].view_position;
+                    vec![p.x as f32, p.y as f32, p.z as f32]
                 }
                 UniformSource::Value(values) => values.iter().map(|&v| v as f32).collect(),
             };

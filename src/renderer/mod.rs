@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use mipmap::{create_mipmap_pipeline, MipmapShader};
-pub use programs::{RenderState, UniformContext};
+pub use programs::{LightState, RenderState, UniformContext};
 use programs::{PipelineKey, Program};
 pub use render_target::{RenderTarget, RenderTargetInner, RenderTargetOptions};
 
@@ -297,6 +297,7 @@ impl Renderer {
                 setup: SetupContext {
                     instance_count: instance_matrix.as_ref().map(|_| instance_count as usize),
                     instanced: instance_matrix.is_some(),
+                    light_count: scene.lights.len(),
                 },
                 model_world: child.object().matrix_world,
                 instance_matrix,
@@ -312,11 +313,32 @@ impl Renderer {
             _ => self.clear_color,
         };
 
+        // `LightsNode.setupLights()`: each light resolves to its colour scaled
+        // by intensity plus its position in view space. The list order is
+        // `Scene.lights` order, which is what `UniformSource::Light*( i )` indexes.
+        let lights: Vec<LightState> = scene
+            .lights
+            .iter()
+            .map(|light| {
+                let mut view_position = light.world_position();
+                view_position.apply_matrix4(&camera.matrix_world_inverse);
+                let c = light.light.color;
+                let intensity = light.light.intensity;
+                LightState {
+                    color: Color::new(c.r * intensity, c.g * intensity, c.b * intensity),
+                    view_position,
+                    distance: light.distance,
+                    decay: light.decay,
+                }
+            })
+            .collect();
+
         let camera_uniforms = UniformContext {
             camera_projection: camera.projection_matrix,
             camera_view: camera.matrix_world_inverse,
             camera_world: camera.object.matrix_world,
             time: self.time,
+            lights: &lights,
             ..Default::default()
         };
 
@@ -344,7 +366,7 @@ impl Renderer {
         self.render_list(&items, camera_uniforms, Some(clear));
     }
 
-    fn quad_camera_uniforms(&self) -> UniformContext {
+    fn quad_camera_uniforms(&self) -> UniformContext<'static> {
         UniformContext {
             camera_projection: self.quad_camera.projection_matrix,
             camera_view: self.quad_camera.matrix_world_inverse,

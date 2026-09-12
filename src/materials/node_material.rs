@@ -17,6 +17,11 @@ pub struct SetupContext {
     /// `InstancedMesh.instanceColor` is present, so `range()` resolves against
     /// the instance index.
     pub instanced: bool,
+    /// How many lights the pass has (`Scene.lights.len()`), i.e. the default
+    /// `LightsNode` list when the material sets no `lights_node`. Kept as a
+    /// count rather than a list so `SetupContext` stays `Copy`: a material's
+    /// selective `lights([ … ])` subset lives on the material itself.
+    pub light_count: usize,
 }
 
 /// `vec4( node )` the way `setupDiffuseColor` builds it: a scalar splats, a

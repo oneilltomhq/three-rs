@@ -125,6 +125,14 @@ pub enum UniformSource {
     Time,
     /// `viewportSize` — the render target's pixel dimensions.
     ViewportSize,
+    /// `LightsNode`'s per-light members, by index into the renderer's light
+    /// list for the pass. The dumps put all four in the **render** group:
+    /// `light.color * light.intensity` (linear), the cutoff distance, the decay
+    /// exponent, and the light's position through the camera view matrix.
+    LightColorIntensity(usize),
+    LightCutoffDistance(usize),
+    LightDecay(usize),
+    LightViewPosition(usize),
     /// A plain `uniform( value )` the example supplies.
     Value(Vec<f64>),
 }

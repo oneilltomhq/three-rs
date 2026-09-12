@@ -108,6 +108,20 @@ pub fn brdf_blinn_phong(light_direction: NodeRef) -> NodeRef {
     f.mul(0.25).mul(d_blinn_phong(shininess(), dot_nh))
 }
 
+impl PointLightUniforms {
+    /// The light at `index` of the renderer's light list — the uniforms are
+    /// created in the dumps' member order (the triple, then the position is
+    /// reached later in the flow).
+    pub fn at(index: usize) -> Self {
+        Self {
+            color: light_color_intensity(index),
+            cutoff_distance: light_cutoff_distance(index),
+            decay: light_decay(index),
+            view_position: light_view_position(index),
+        }
+    }
+}
+
 /// One `PointLight`'s contribution: `LightNode.setup()`'s `lightDirection` /
 /// `lightColor` pair fed through `PhongLightingModel.direct()`. The statements
 /// are pushed in the order the dump prints them.

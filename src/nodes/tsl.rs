@@ -318,6 +318,45 @@ pub struct FogNode {
     pub factor: NodeRef,
 }
 
+/// `LightsNode`'s four render-group uniforms for the point light at `index` of
+/// the renderer's light list. Creating them here rather than inside
+/// `phong.rs` keeps every `UniformSource` in one module.
+pub fn light_color_intensity(index: usize) -> NodeRef {
+    uniform(
+        UniformSource::LightColorIntensity(index),
+        Type::Vec3,
+        UniformGroup::Render,
+        None,
+    )
+}
+
+pub fn light_cutoff_distance(index: usize) -> NodeRef {
+    uniform(
+        UniformSource::LightCutoffDistance(index),
+        Type::F32,
+        UniformGroup::Render,
+        None,
+    )
+}
+
+pub fn light_decay(index: usize) -> NodeRef {
+    uniform(
+        UniformSource::LightDecay(index),
+        Type::F32,
+        UniformGroup::Render,
+        None,
+    )
+}
+
+pub fn light_view_position(index: usize) -> NodeRef {
+    uniform(
+        UniformSource::LightViewPosition(index),
+        Type::Vec3,
+        UniformGroup::Render,
+        None,
+    )
+}
+
 /// `max( a, b )`.
 pub fn max(a: impl Into<NodeRef>, b: impl Into<NodeRef>) -> NodeRef {
     let a = a.into();
