@@ -357,6 +357,59 @@ pub fn light_view_position(index: usize) -> NodeRef {
     )
 }
 
+/// `inverseSqrt( x )`.
+pub fn inverse_sqrt(x: impl Into<NodeRef>) -> NodeRef {
+    math("inverseSqrt", vec![x.into()], Type::F32)
+}
+
+/// Port of `AccessorsUtils.js`' `TBNViewMatrix` / `getShIrradianceAt`-style
+/// derivative frame: the tangent and bitangent of the current uv, built from
+/// screen-space derivatives rather than a tangent attribute. The dump of
+/// `webgpu_lights_phong`'s centre teapot (06_fragment.wgsl lines 194-216) is
+/// this, statement for statement.
+pub fn tbn_view_matrix() -> NodeRef {
+    let n = normal_view_geometry();
+    let q0 = cross(dpdy(position_view()).negate(), n.clone());
+    let q1 = cross(n.clone(), dpdx(position_view()));
+    let st0 = dpdx(uv());
+    let st1 = dpdy(uv()).negate();
+
+    let t = q0
+        .clone()
+        .mul(st0.clone().x())
+        .add(q1.clone().mul(st1.clone().x()));
+    let b = q0.mul(st0.y()).add(q1.mul(st1.y()));
+    let det = max(t.clone().dot(t.clone()), b.clone().dot(b.clone()));
+    // `det == 0 ? 0 : inverseSqrt( det )`, which three.js writes as an if/else
+    // over a shared temp — `Node::Select`'s exact shape.
+    let scale = det
+        .clone()
+        .equal(float(0.0))
+        .select(float(0.0), inverse_sqrt(det));
+
+    join(
+        Type::Mat3,
+        vec![
+            to_var(Some("tangentView"), t.mul(scale.clone())),
+            to_var(Some("bitangentView"), b.mul(scale)),
+            n,
+        ],
+    )
+}
+
+/// Port of `NormalMapNode` for `TangentSpaceNormalMap` with no scale and no
+/// packing: `normalize( TBNViewMatrix * ( texel * 2 - 1 ).xyz )`.
+///
+/// The material still has to make this the *value* of `normalView`, which the
+/// `normal_view()` singleton currently hard-codes to `normalViewGeometry`; that
+/// override (three.js does it through the builder context) is the next step.
+pub fn normal_map(node: impl Into<NodeRef>) -> NodeRef {
+    let texel = node.into();
+    tbn_view_matrix()
+        .mul(texel.mul(2.0).sub(1.0).xyz())
+        .normalize()
+}
+
 /// `max( a, b )`.
 pub fn max(a: impl Into<NodeRef>, b: impl Into<NodeRef>) -> NodeRef {
     let a = a.into();
