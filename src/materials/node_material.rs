@@ -159,7 +159,8 @@ fn setup_inner(
                 ),
                 output_property().w(),
             ]);
-            fragment.push(output_property().assign(mixed.clone()));
+            // The builder's own `emit_output_property` writes the second
+            // `Output = …`, so pushing it here too would double the line.
             mixed
         }
         None => output,

@@ -169,6 +169,19 @@ pub fn to_var(name: Option<&'static str>, value: NodeRef) -> NodeRef {
     })))
 }
 
+/// `toVar( name )` for a var that keeps its name inside a sub-build layer.
+/// Three prefixes only the nodes a layer is *tagged on* — the accessors that
+/// declare the layer and their ancestors — so a var built inside one of those
+/// accessors, like `tangentViewFrame`, stays unprefixed.
+fn to_var_untagged(name: &'static str, value: NodeRef) -> NodeRef {
+    let ty = value.ty();
+    NodeRef::new(Node::Var(Rc::new(VarDef {
+        name: Some(name.to_string()),
+        value,
+        ty,
+    })))
+}
+
 /// `node.toVarying( name )`.
 pub fn to_varying(name: Option<&'static str>, value: NodeRef) -> NodeRef {
     let ty = value.ty();
@@ -1007,11 +1020,11 @@ fn tangent_frame() -> (NodeRef, NodeRef) {
     let pair = (
         to_var(
             Some("tangentView"),
-            to_var(Some("tangentViewFrame"), t.mul(scale.clone())),
+            to_var_untagged("tangentViewFrame", t.mul(scale.clone())),
         ),
         to_var(
             Some("bitangentView"),
-            to_var(Some("bitangentViewFrame"), b.mul(scale)),
+            to_var_untagged("bitangentViewFrame", b.mul(scale)),
         ),
     );
     TANGENT_VIEW.with(|m| m.borrow_mut().insert(layer, pair.clone()));

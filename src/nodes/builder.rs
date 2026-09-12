@@ -619,7 +619,13 @@ impl NodeBuilder {
             Node::Varying(v) => {
                 let v = v.clone();
                 if let Some(name) = self.varying_slots.get(&node.key()).cloned() {
-                    return name;
+                    // A varying is read through the `varyings` struct in the
+                    // vertex stage and as a `main` parameter in the fragment
+                    // stage — `NodeBuilder.getPropertyName()`'s two cases.
+                    return match self.stage {
+                        Stage::Vertex => format!("varyings.{name}"),
+                        Stage::Fragment => name,
+                    };
                 }
                 match self.stage {
                     Stage::Vertex => {
@@ -825,6 +831,10 @@ impl NodeBuilder {
                 self.emit(String::new());
                 self.emit("}".to_string());
                 self.emit(String::new());
+                // `ConditionalNode.generate()` remembers its result property in
+                // `nodeData`, so a second reference reuses the branch rather
+                // than emitting the whole if/else again.
+                self.cache_put(node.key(), result.clone());
                 result
             }
         }
