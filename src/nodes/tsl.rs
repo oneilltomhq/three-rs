@@ -10,6 +10,8 @@
 //! hue(saturation(tex.rgb(), mouse.x().one_minus()), mouse.y())
 //! ```
 
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use super::node::{
@@ -20,6 +22,55 @@ use crate::math::Color;
 use crate::textures::{CubeTexture, DepthTexture, Texture};
 
 pub use super::node::TextureSource;
+
+
+// ---------------------------------------------------------------------------
+// sub-builds and the build context (`docs/nodes.md` §7)
+// ---------------------------------------------------------------------------
+
+thread_local! {
+    /// `NodeBuilder.subBuildLayers`. One layer at a time is all the ladder
+    /// needs; `NORMAL` is the only name so far.
+    static SUB_BUILD: RefCell<Option<&'static str>> = const { RefCell::new(None) };
+    /// `builder.context.setupNormal()` — `NodeMaterial.setupNormal()`'s result,
+    /// i.e. the material's `normalNode`. `normal_view()` takes it as its value
+    /// outside the `NORMAL` layer and `normalViewGeometry` inside it.
+    static NORMAL_VALUE: RefCell<Option<NodeRef>> = const { RefCell::new(None) };
+    /// `normalView`'s node per (layer, normal value) — the stand-in for
+    /// three.js' per-build `nodeData` plus its `subBuildsCache`.
+    static NORMAL_VIEW: RefCell<HashMap<(Option<&'static str>, Option<usize>), NodeRef>> =
+        RefCell::new(HashMap::new());
+    /// `tangentView` / `bitangentView`, keyed by layer the same way.
+    static TANGENT_VIEW: RefCell<HashMap<Option<&'static str>, (NodeRef, NodeRef)>> =
+        RefCell::new(HashMap::new());
+}
+
+/// `NodeBuilder.getSubBuildProperty( name )`: inside a layer a var's name is
+/// prefixed with the layer's, which is where `NORMAL_normalView` comes from.
+fn sub_build_name(name: &str) -> String {
+    match SUB_BUILD.with(|s| *s.borrow()) {
+        Some(layer) => format!("{layer}_{name}"),
+        None => name.to_string(),
+    }
+}
+
+/// `subBuild( node, name )` — build `f`'s nodes inside the named layer.
+fn in_sub_build<R>(layer: &'static str, f: impl FnOnce() -> R) -> R {
+    let previous = SUB_BUILD.with(|s| s.replace(Some(layer)));
+    let out = f();
+    SUB_BUILD.with(|s| *s.borrow_mut() = previous);
+    out
+}
+
+/// Install the material's `normalNode` as `builder.context.setupNormal` for the
+/// duration of `f` — `NodeMaterial.setup()` does exactly this before flowing
+/// either stage. Returns what `f` returns.
+pub fn with_material_normal<R>(normal: Option<NodeRef>, f: impl FnOnce() -> R) -> R {
+    let previous = NORMAL_VALUE.with(|v| v.replace(normal));
+    let out = f();
+    NORMAL_VALUE.with(|v| *v.borrow_mut() = previous);
+    out
+}
 
 // ---------------------------------------------------------------------------
 // constructors
@@ -107,10 +158,15 @@ pub fn uniform(
     })))
 }
 
-/// `node.toVar( name )`.
+/// `node.toVar( name )`. The name passes through `sub_build_name()`, so a var
+/// declared while a sub-build layer is open takes the layer's prefix.
 pub fn to_var(name: Option<&'static str>, value: NodeRef) -> NodeRef {
     let ty = value.ty();
-    NodeRef::new(Node::Var(Rc::new(VarDef { name, value, ty })))
+    NodeRef::new(Node::Var(Rc::new(VarDef {
+        name: name.map(sub_build_name),
+        value,
+        ty,
+    })))
 }
 
 /// `node.toVarying( name )`.
@@ -278,11 +334,13 @@ pub fn dpdx(x: impl Into<NodeRef>) -> NodeRef {
     math("dpdx", vec![x], ty)
 }
 
-/// `dFdy( x )` — WGSL `dpdy`.
+/// `dFdy( x )`. `WGSLNodeBuilder`'s method table maps `dFdy` to the string
+/// `'- dpdy'`, so the emitted call carries the sign flip that takes WGSL's
+/// framebuffer-down derivative back to GLSL's up convention.
 pub fn dpdy(x: impl Into<NodeRef>) -> NodeRef {
     let x = x.into();
     let ty = x.ty();
-    math("dpdy", vec![x], ty)
+    math("- dpdy", vec![x], ty)
 }
 
 /// Port of `three.js/src/nodes/procedural/Checker.js`. An `Fn()` with no
@@ -362,52 +420,41 @@ pub fn inverse_sqrt(x: impl Into<NodeRef>) -> NodeRef {
     math("inverseSqrt", vec![x.into()], Type::F32)
 }
 
-/// Port of `AccessorsUtils.js`' `TBNViewMatrix` / `getShIrradianceAt`-style
-/// derivative frame: the tangent and bitangent of the current uv, built from
-/// screen-space derivatives rather than a tangent attribute. The dump of
-/// `webgpu_lights_phong`'s centre teapot (06_fragment.wgsl lines 194-216) is
-/// this, statement for statement.
+/// `AccessorsUtils.js`' `TBNViewMatrix` — `mat3( tangentView, bitangentView,
+/// normalView ).toVar( 'TBNViewMatrix' )`. Three tags it with whichever
+/// sub-build layers its descendants declare, which is why the centre teapot's
+/// dump calls it `NORMAL_TBNViewMatrix`; here the layer is simply still open.
 pub fn tbn_view_matrix() -> NodeRef {
-    let n = normal_view_geometry();
-    let q0 = cross(dpdy(position_view()).negate(), n.clone());
-    let q1 = cross(n.clone(), dpdx(position_view()));
-    let st0 = dpdx(uv());
-    let st1 = dpdy(uv()).negate();
-
-    let t = q0
-        .clone()
-        .mul(st0.clone().x())
-        .add(q1.clone().mul(st1.clone().x()));
-    let b = q0.mul(st0.y()).add(q1.mul(st1.y()));
-    let det = max(t.clone().dot(t.clone()), b.clone().dot(b.clone()));
-    // `det == 0 ? 0 : inverseSqrt( det )`, which three.js writes as an if/else
-    // over a shared temp — `Node::Select`'s exact shape.
-    let scale = det
-        .clone()
-        .equal(float(0.0))
-        .select(float(0.0), inverse_sqrt(det));
-
-    join(
-        Type::Mat3,
-        vec![
-            to_var(Some("tangentView"), t.mul(scale.clone())),
-            to_var(Some("bitangentView"), b.mul(scale)),
-            n,
-        ],
-    )
+    thread_local! {
+        static CELL: Lazy<NodeRef> = Lazy::new();
+    }
+    CELL.with(|c| {
+        c.get(|| {
+            to_var(
+                Some("TBNViewMatrix"),
+                join(
+                    Type::Mat3,
+                    vec![tangent_view(), bitangent_view(), normal_view()],
+                ),
+            )
+        })
+    })
 }
 
-/// Port of `NormalMapNode` for `TangentSpaceNormalMap` with no scale and no
-/// packing: `normalize( TBNViewMatrix * ( texel * 2 - 1 ).xyz )`.
+/// Port of `NormalMapNode` for `TangentSpaceNormalMap` with no scale:
+/// `normalize( TBNViewMatrix * ( texel * 2 - 1 ).xyz )`.
 ///
-/// The material still has to make this the *value* of `normalView`, which the
-/// `normal_view()` singleton currently hard-codes to `normalViewGeometry`; that
-/// override (three.js does it through the builder context) is the next step.
+/// The whole expression is built inside the `NORMAL` sub-build layer, the way
+/// `NodeMaterial.setup()` wraps `setupNormal()` in `subBuild( …, 'NORMAL' )`:
+/// that is what stops `normalView` inside the TBN frame from recursing into
+/// this node, and what prefixes the four vars the layer names.
 pub fn normal_map(node: impl Into<NodeRef>) -> NodeRef {
     let texel = node.into();
-    tbn_view_matrix()
-        .mul(texel.mul(2.0).sub(1.0).xyz())
-        .normalize()
+    in_sub_build("NORMAL", || {
+        tbn_view_matrix()
+            .mul(texel.mul(2.0).sub(1.0).xyz())
+            .normalize()
+    })
 }
 
 /// `max( a, b )`.
@@ -900,11 +947,86 @@ accessor!(
         .normalize()
     )
 );
-accessor!(
-    /// `normalView`.
-    normal_view,
-    to_var(Some("normalView"), normal_view_geometry())
-);
+/// `normalView` — `Normal.js`' `Fn( … ).once( [ 'NORMAL', 'VERTEX' ] )`.
+///
+/// Inside the `NORMAL` sub-build layer it is the geometric normal, under the
+/// layer-prefixed name `NORMAL_normalView`; outside it, it is the material's
+/// `normalNode` (reached through the build context) or, with no normal node,
+/// the geometric normal again. Keyed by (layer, normal value) so that two
+/// materials in the same process get their own node, which is what three.js'
+/// per-build `nodeData` gives it for free.
+pub fn normal_view() -> NodeRef {
+    let layer = SUB_BUILD.with(|s| *s.borrow());
+    let value = if layer.is_some() {
+        None
+    } else {
+        NORMAL_VALUE.with(|v| v.borrow().clone())
+    };
+    let key = (layer, value.as_ref().map(|v| v.key()));
+    if let Some(node) = NORMAL_VIEW.with(|m| m.borrow().get(&key).cloned()) {
+        return node;
+    }
+    let node = to_var(
+        Some("normalView"),
+        value.unwrap_or_else(normal_view_geometry),
+    );
+    NORMAL_VIEW.with(|m| m.borrow_mut().insert(key, node.clone()));
+    node
+}
+
+/// `tangentView` / `bitangentView` for a geometry with no `tangent` attribute:
+/// the derivative frame of `TangentUtils.js`, both `.once( [ 'NORMAL',
+/// 'VERTEX' ] )` so they take the layer prefix. They are returned as a pair
+/// because `tangentViewFrame` and `bitangentViewFrame` share the `scale` temp.
+fn tangent_frame() -> (NodeRef, NodeRef) {
+    let layer = SUB_BUILD.with(|s| *s.borrow());
+    if let Some(pair) = TANGENT_VIEW.with(|m| m.borrow().get(&layer).cloned()) {
+        return pair;
+    }
+    // `q1perp = dFdy( positionView ).cross( N )`, `q0perp = N.cross( dFdx(
+    // positionView ) )`, with `dFdy` carrying the `- dpdy` sign flip.
+    let n = normal_view();
+    let q1perp = cross(dpdy(position_view()), n.clone());
+    let q0perp = cross(n, dpdx(position_view()));
+    let st0 = dpdx(uv());
+    let st1 = dpdy(uv());
+
+    let t = q1perp
+        .clone()
+        .mul(st0.clone().x())
+        .add(q0perp.clone().mul(st1.clone().x()));
+    let b = q1perp.mul(st0.y()).add(q0perp.mul(st1.y()));
+    let det = max(t.clone().dot(t.clone()), b.clone().dot(b.clone()));
+    // `det.equal( 0 ).select( 0, det.inverseSqrt() )`, which three.js lowers to
+    // an if/else over a shared temp — `Node::Select`'s exact shape.
+    let scale = det
+        .clone()
+        .equal(float(0.0))
+        .select(float(0.0), inverse_sqrt(det));
+
+    let pair = (
+        to_var(
+            Some("tangentView"),
+            to_var(Some("tangentViewFrame"), t.mul(scale.clone())),
+        ),
+        to_var(
+            Some("bitangentView"),
+            to_var(Some("bitangentViewFrame"), b.mul(scale)),
+        ),
+    );
+    TANGENT_VIEW.with(|m| m.borrow_mut().insert(layer, pair.clone()));
+    pair
+}
+
+/// `tangentView`.
+pub fn tangent_view() -> NodeRef {
+    tangent_frame().0
+}
+
+/// `bitangentView`.
+pub fn bitangent_view() -> NodeRef {
+    tangent_frame().1
+}
 accessor!(
     /// `normalWorld` — `normalView` rotated out of view space.
     normal_world,

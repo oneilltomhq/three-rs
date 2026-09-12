@@ -42,6 +42,20 @@ pub fn setup(
     ctx: &SetupContext,
     fog: Option<&FogNode>,
 ) -> MaterialFlow {
+    // `builder.context.setupNormal = () => subBuild( this.setupNormal( builder
+    // ), 'NORMAL' )` — installed for the whole of the material's setup, so that
+    // every `normalView` the lighting flow reaches resolves to this material's
+    // normal map. See `docs/nodes.md` §7.
+    with_material_normal(material.normal_node.clone(), || {
+        setup_inner(material, ctx, fog)
+    })
+}
+
+fn setup_inner(
+    material: &MeshBasicNodeMaterial,
+    ctx: &SetupContext,
+    fog: Option<&FogNode>,
+) -> MaterialFlow {
     let mut pre_vertex = Vec::new();
     let mut fragment = Vec::new();
 

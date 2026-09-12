@@ -814,6 +814,7 @@ impl Renderer {
         };
         let address = |w: Wrapping| match w {
             Wrapping::ClampToEdge => wgpu::AddressMode::ClampToEdge,
+            Wrapping::Repeat => wgpu::AddressMode::Repeat,
         };
 
         match source {

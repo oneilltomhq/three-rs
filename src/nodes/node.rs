@@ -241,8 +241,10 @@ impl Builtin {
 /// `VarNode` — a `var<private>` that caches its value's first use.
 #[derive(Debug)]
 pub struct VarDef {
-    /// `toVar( 'name' )`; `None` numbers it `nodeVarN`.
-    pub name: Option<&'static str>,
+    /// `toVar( 'name' )`; `None` numbers it `nodeVarN`. A `String` because a
+    /// sub-build layer prefixes the name with its own (`NORMAL_normalView`) —
+    /// see `docs/nodes.md` §7.
+    pub name: Option<String>,
     pub value: NodeRef,
     pub ty: Type,
 }

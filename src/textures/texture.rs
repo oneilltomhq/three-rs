@@ -10,10 +10,13 @@ use std::rc::Rc;
 
 use super::{ColorSpace, TextureFilter};
 
-/// `three.js/src/constants.js` wrapping modes (only the default so far).
+/// `three.js/src/constants.js` wrapping modes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Wrapping {
+    /// `ClampToEdgeWrapping` — the `Texture` default.
     ClampToEdge,
+    /// `RepeatWrapping`.
+    Repeat,
 }
 
 /// `Texture.minFilter` — the mip-aware half of the filter pair.
@@ -112,6 +115,13 @@ impl Texture {
 
     pub fn borrow(&self) -> Ref<'_, TextureInner> {
         self.0.borrow()
+    }
+
+    /// `texture.wrapS = texture.wrapT = wrapping`.
+    pub fn set_wrapping(&self, wrap_s: Wrapping, wrap_t: Wrapping) {
+        let mut inner = self.0.borrow_mut();
+        inner.wrap_s = wrap_s;
+        inner.wrap_t = wrap_t;
     }
 
     pub fn size(&self) -> (u32, u32) {

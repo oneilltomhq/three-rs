@@ -610,7 +610,7 @@ impl NodeBuilder {
             Node::Var(v) => {
                 let v = v.clone();
                 let snippet = self.generate(&v.value);
-                let name = self.declare_var(v.name, v.ty);
+                let name = self.declare_var(v.name.as_deref(), v.ty);
                 self.emit(format!("{name} = {snippet};"));
                 self.cache_put(node.key(), name.clone());
                 name
@@ -706,7 +706,9 @@ impl NodeBuilder {
                     .map(|(i, a)| match name {
                         "mix" if i == 2 => self.generate(a),
                         "dot" | "cross" | "reflect" | "normalize" | "transpose"
-                        | "tsl_inverse_mat3" | "length" | "dpdx" | "dpdy" => self.generate(a),
+                        | "tsl_inverse_mat3" | "length" | "dpdx" | "- dpdy" | "inverseSqrt" => {
+                            self.generate(a)
+                        }
                         // `smoothstep( near, far, x )` keeps each operand's own
                         // type: the dumps show three f32 arguments, never a
                         // widened vector.
@@ -801,8 +803,11 @@ impl NodeBuilder {
 
             Node::Select { cond, a, b, ty } => {
                 let (cond, a, b, ty) = (cond.clone(), a.clone(), b.clone(), *ty);
-                let scond = self.generate(&cond);
+                // `ConditionalNode.generate()` builds its result property
+                // *before* the condition, so the result takes the lower
+                // `nodeVarN` number when the condition itself needs vars.
                 let result = self.declare_var(None, ty);
+                let scond = self.generate(&cond);
                 self.emit(String::new());
                 self.emit(format!("if ( {scond} ) {{"));
                 self.emit(String::new());
