@@ -9,6 +9,8 @@ mod euler;
 mod frustum;
 mod line3;
 mod matrix2;
+pub mod interpolant;
+pub mod interpolants;
 mod matrix3;
 mod matrix4;
 pub mod math_utils;
@@ -31,6 +33,11 @@ pub use cylindrical::Cylindrical;
 pub use euler::{Euler, EulerOrder};
 pub use frustum::Frustum;
 pub use line3::Line3;
+pub use interpolant::{Ending, Interpolant, InterpolantData, InterpolantSettings, Interpolation};
+pub use interpolants::{
+    cubic_interpolant, discrete_interpolant, linear_interpolant, quaternion_linear_interpolant,
+    CubicInterpolant, DiscreteInterpolant, LinearInterpolant, QuaternionLinearInterpolant,
+};
 pub use math_utils::{DEG2RAD, RAD2DEG};
 pub use matrix2::Matrix2;
 pub use matrix3::Matrix3;

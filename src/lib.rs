@@ -5,6 +5,7 @@
 //! comments name it. Nothing is added that the current rung's example does not
 //! use.
 
+pub mod animation;
 pub mod cameras;
 pub mod core;
 pub mod geometries;
