@@ -24,6 +24,7 @@ fn box_geometry_std_tests() {
         ),
     ] {
         run_std_geometry_tests(label, &g);
+        check_index_is_narrowest(label, &g);
     }
 
     let (g, groups) = box_geometry_with_groups(10.0, 20.0, 30.0, 2, 3, 4);
@@ -88,6 +89,7 @@ fn cylinder_geometry_std_tests() {
         let label = format!("CylinderGeometry #{i}");
         let (g, groups) = cylinder_geometry_full(p.0, p.1, p.2, p.3, p.4, p.5, p.6, p.7);
         run_std_geometry_tests(&label, &g);
+        check_index_is_narrowest(&label, &g);
         check_groups_cover_index(&label, &g, &groups);
         // capped cylinders get torso + two caps, open-ended ones only the torso
         assert_eq!(groups.len(), if p.5 { 1 } else { 3 }, "{label}: group count");

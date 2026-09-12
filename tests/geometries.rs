@@ -8,3 +8,6 @@ mod support;
 
 #[path = "geometry/batch1.rs"]
 mod batch1;
+
+#[path = "geometry/teapot.rs"]
+mod teapot;

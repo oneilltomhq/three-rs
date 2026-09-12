@@ -258,10 +258,8 @@ pub fn run_std_geometry_tests(label: &str, geometry: &BufferGeometry) {
             "{label}: index {max} out of range for {} vertices",
             position.count()
         );
-        // `setIndex` must have picked the narrowest array that fits.
-        match index {
-            Index::U16(_) => assert!(max <= 65535, "{label}: Uint16 index overflowed"),
-            Index::U32(_) => assert!(max > 65535, "{label}: Uint32 index where Uint16 fits"),
+        if let Index::U16(_) = index {
+            assert!(max <= 65535, "{label}: Uint16 index overflowed");
         }
     }
 
@@ -272,6 +270,18 @@ pub fn run_std_geometry_tests(label: &str, geometry: &BufferGeometry) {
     }
     let (_, radius) = bounding_sphere(geometry);
     assert!(radius.is_finite() && radius > 0.0, "{label}: boundingSphere.radius");
+}
+
+/// `BufferGeometry.setIndex( array )` picks the narrowest typed array that
+/// fits; generators that hand `setIndex` a ready-made `Uint32Array` (the
+/// `TeapotGeometry` addon) are exempt, hence the separate check.
+pub fn check_index_is_narrowest(label: &str, geometry: &BufferGeometry) {
+    let index = geometry.index.as_ref().expect("index");
+    let max = index_values(index).into_iter().max().unwrap_or(0);
+    match index {
+        Index::U16(_) => assert!(max <= 65535, "{label}: Uint16 index overflowed"),
+        Index::U32(_) => assert!(max > 65535, "{label}: Uint32 index where Uint16 fits"),
+    }
 }
 
 /// Groups must tile the index buffer exactly, the way three.js' generators build
