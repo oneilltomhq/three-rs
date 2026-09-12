@@ -24,7 +24,7 @@ pub use core::{BufferGeometry, Node, Object3D, Object3DNode};
 pub use geometries::{box_geometry, quad_geometry, sphere_geometry, torus_knot_geometry};
 pub use lights::{Light, PointLight};
 pub use loaders::{BufferGeometryLoader, CubeTextureLoader, TextureLoader};
-pub use materials::MeshBasicNodeMaterial;
+pub use materials::{MaterialKind, MeshBasicNodeMaterial, MeshPhongNodeMaterial};
 pub use math::{Color, Euler, Matrix3, Matrix4, Quaternion, Vector2, Vector3};
 pub use objects::{Background, Child, Group, InstancedMesh, Mesh, QuadMesh, Scene};
 pub use renderer::{RenderTarget, Renderer, RendererParameters};
