@@ -13,10 +13,17 @@
 
 pub mod edt;
 pub mod raster;
+pub mod text;
+pub mod text_builder;
 pub mod vector_font;
 pub mod vector_font_atlas;
 
 pub use edt::{compute_sdf, compute_sdf_default, edt_1d, edt_2d};
+pub use text::{OpacitySink, Text};
+pub use text_builder::{
+    empty_render_info, layout_text, layout_text_vector, Anchor, LaidOutGlyph, LayoutParams,
+    LineHeight, TextAlign, TextRenderInfo,
+};
 pub use vector_font::{BBox, PathCommand, VectorFont};
 pub use vector_font_atlas::{GlyphMetrics, VectorFontAtlas};
 

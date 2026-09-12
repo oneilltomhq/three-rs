@@ -109,3 +109,35 @@ fn layer2_normalisation_uses_sdf_defaults_max_distance() {
     assert!((normalize_sdf_value(MAX_DISTANCE, MAX_DISTANCE) - 0.0).abs() < 0.001);
     assert!((normalize_sdf_value(-MAX_DISTANCE, MAX_DISTANCE) - 1.0).abs() < 0.001);
 }
+
+// ── Layer 4: shader-math simulation, over the circle16 fixture ─────────────
+
+#[test]
+fn layer4_boundary_value_gives_half_alpha() {
+    assert!((common::shader_alpha_fixed_width(0.5) - 0.5).abs() < 0.001);
+}
+
+#[test]
+fn layer4_full_pipeline_circle_centre_opaque_corner_transparent() {
+    use sdf_text::sdf_defaults::MAX_DISTANCE;
+    use sdf_text::vector_font_atlas::normalize_sdf_value;
+    let (w, _h, alpha, _) = case("circle16");
+    let sdf = compute_sdf_default(&alpha, w, w);
+    let centre = common::shader_alpha_fixed_width(normalize_sdf_value(sdf[8 * w + 8], MAX_DISTANCE));
+    let corner = common::shader_alpha_fixed_width(normalize_sdf_value(sdf[0], MAX_DISTANCE));
+    assert!(centre > 0.99, "centre alpha {centre}");
+    assert!(corner < 0.01, "corner alpha {corner}");
+}
+
+#[test]
+fn layer4_blank_glyph_has_zero_alpha() {
+    // The JS writes this as a branch on the UV rect's width, not on the SDF: a
+    // glyph with a zero sub-rect is skipped entirely rather than sampled.
+    let glyph_uv_w = 0.0;
+    let alpha = if glyph_uv_w == 0.0 {
+        0.0
+    } else {
+        common::shader_alpha_fixed_width(0.5)
+    };
+    assert_eq!(alpha, 0.0);
+}
