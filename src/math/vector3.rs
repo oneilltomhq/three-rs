@@ -216,6 +216,18 @@ impl Vector3 {
         self
     }
 
+    /// `Vector3.project()`: world space to normalised device coordinates.
+    pub fn project(&mut self, camera: &crate::cameras::PerspectiveCamera) -> &mut Self {
+        self.apply_matrix4(&camera.matrix_world_inverse)
+            .apply_matrix4(&camera.projection_matrix)
+    }
+
+    /// `Vector3.unproject()`: normalised device coordinates back to world space.
+    pub fn unproject(&mut self, camera: &crate::cameras::PerspectiveCamera) -> &mut Self {
+        self.apply_matrix4(&camera.projection_matrix_inverse)
+            .apply_matrix4(&camera.object.matrix_world)
+    }
+
     /// `Vector3.transformDirection()`.
     pub fn transform_direction(&mut self, m: &Matrix4) -> &mut Self {
         let (x, y, z) = (self.x, self.y, self.z);
