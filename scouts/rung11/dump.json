@@ -1,0 +1,4327 @@
+{
+	"adapter": {
+		"features": [
+			"bgra8unorm-storage",
+			"chromium-experimental-multi-draw-indirect",
+			"chromium-experimental-sampling-resource-table",
+			"chromium-experimental-timestamp-query-inside-passes",
+			"clip-distances",
+			"core-features-and-limits",
+			"depth-clip-control",
+			"depth32float-stencil8",
+			"dual-source-blending",
+			"float32-blendable",
+			"float32-filterable",
+			"indirect-first-instance",
+			"primitive-index",
+			"rg11b10ufloat-renderable",
+			"shader-f16",
+			"subgroup-size-control",
+			"subgroups",
+			"texture-component-swizzle",
+			"texture-compression-astc",
+			"texture-compression-astc-sliced-3d",
+			"texture-compression-bc",
+			"texture-compression-bc-sliced-3d",
+			"texture-compression-etc2",
+			"texture-compression-unaligned",
+			"texture-formats-tier1",
+			"texture-formats-tier2",
+			"timestamp-query"
+		],
+		"limits": {
+			"maxTextureDimension1D": 16384,
+			"maxTextureDimension2D": 16384,
+			"maxTextureDimension3D": 2048,
+			"maxTextureArrayLayers": 2048,
+			"maxBindGroups": 4,
+			"maxBindGroupsPlusVertexBuffers": 24,
+			"maxBindingsPerBindGroup": 1000,
+			"maxDynamicUniformBuffersPerPipelineLayout": 8,
+			"maxDynamicStorageBuffersPerPipelineLayout": 4,
+			"maxSampledTexturesPerShaderStage": 16,
+			"maxSamplersPerShaderStage": 16,
+			"maxStorageBuffersPerShaderStage": 16,
+			"maxStorageTexturesPerShaderStage": 4,
+			"maxUniformBuffersPerShaderStage": 12,
+			"maxUniformBufferBindingSize": 65536,
+			"maxStorageBufferBindingSize": 4294967292,
+			"minUniformBufferOffsetAlignment": 256,
+			"minStorageBufferOffsetAlignment": 256,
+			"maxVertexBuffers": 8,
+			"maxBufferSize": 4294967292,
+			"maxVertexAttributes": 16,
+			"maxVertexBufferArrayStride": 2048,
+			"maxInterStageShaderVariables": 16,
+			"maxColorAttachments": 8,
+			"maxColorAttachmentBytesPerSample": 128,
+			"maxComputeWorkgroupStorageSize": 65536,
+			"maxComputeInvocationsPerWorkgroup": 1024,
+			"maxComputeWorkgroupSizeX": 1024,
+			"maxComputeWorkgroupSizeY": 1024,
+			"maxComputeWorkgroupSizeZ": 64,
+			"maxComputeWorkgroupsPerDimension": 65535,
+			"maxImmediateSize": 64,
+			"maxStorageBuffersInFragmentStage": 16,
+			"maxStorageTexturesInFragmentStage": 4,
+			"maxStorageBuffersInVertexStage": 16,
+			"maxStorageTexturesInVertexStage": 4
+		},
+		"info": {
+			"vendor": "intel",
+			"architecture": "gen-12lp",
+			"device": "",
+			"description": ""
+		}
+	},
+	"modules": [
+		{
+			"id": "module#16",
+			"label": "vertex",
+			"code": "// Three.js r186 - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n@binding( 1 ) @group( 1 ) var nodeUniform0 : texture_2d<u32>;\n@binding( 2 ) @group( 1 ) var nodeUniform1 : texture_2d<f32>;\n@binding( 3 ) @group( 1 ) var nodeUniform2 : texture_2d<f32>;\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform3 : vec3<f32>,\n\tnodeUniform4 : f32,\n\tnodeUniform6 : mat3x3<f32>,\n\tnodeUniform8 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) v_normalViewGeometry : vec3<f32>,\n\t@location( 1 ) @interpolate(flat, either) vBatchIndirectId : u32,\n\t@location( 2 ) vBatchColor : vec4<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> nodeVar0 : u32;\nvar<private> nodeVar1 : vec4<f32>;\nvar<private> nodeVar2 : vec4<f32>;\nvar<private> nodeVar3 : vec4<f32>;\nvar<private> nodeVar4 : vec4<f32>;\nvar<private> nodeVar5 : vec4<f32>;\nvar<private> nodeVar6 : mat4x4<f32>;\nvar<private> normalLocal : vec3<f32>;\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar7 : vec4<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> v_positionView : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @builtin( instance_index ) instanceIndex : u32,\n\t@location( 0 ) position : vec3<f32>,\n\t@location( 1 ) normal : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tlet nodeConst0 = i32( textureDimensions( nodeUniform0, 0 ).x );\n\tlet nodeConst1 = ( i32( instanceIndex ) % nodeConst0 );\n\tlet nodeConst2 = ( i32( instanceIndex ) / nodeConst0 );\n\tnodeVar0 = textureLoad( nodeUniform0, vec2<i32>( nodeConst1, nodeConst2 ), u32( 0u ) ).x;\n\tvaryings.vBatchIndirectId = nodeVar0;\n\tlet nodeConst3 = i32( textureDimensions( nodeUniform1, 0 ).x );\n\tlet nodeConst4 = i32( ( f32( nodeVar0 ) * 4.0 ) );\n\tlet nodeConst5 = ( nodeConst4 % nodeConst3 );\n\tlet nodeConst6 = ( nodeConst4 / nodeConst3 );\n\tlet nodeConst7 = i32( textureDimensions( nodeUniform2, 0 ).x );\n\tlet nodeConst8 = ( i32( nodeVar0 ) % nodeConst7 );\n\tlet nodeConst9 = ( i32( nodeVar0 ) / nodeConst7 );\n\tnodeVar1 = textureLoad( nodeUniform2, vec2<i32>( nodeConst8, nodeConst9 ), u32( 0u ) );\n\tvaryings.vBatchColor = nodeVar1;\n\tpositionLocal = position;\n\tnodeVar2 = textureLoad( nodeUniform1, vec2<i32>( nodeConst5, nodeConst6 ), u32( 0u ) );\n\tnodeVar3 = textureLoad( nodeUniform1, vec2<i32>( ( nodeConst5 + 1 ), nodeConst6 ), u32( 0u ) );\n\tnodeVar4 = textureLoad( nodeUniform1, vec2<i32>( ( nodeConst5 + 2 ), nodeConst6 ), u32( 0u ) );\n\tnodeVar5 = textureLoad( nodeUniform1, vec2<i32>( ( nodeConst5 + 3 ), nodeConst6 ), u32( 0u ) );\n\tnodeVar6 = mat4x4<f32>( nodeVar2, nodeVar3, nodeVar4, nodeVar5 );\n\tpositionLocal = ( nodeVar6 * vec4<f32>( positionLocal, 1.0 ) ).xyz;\n\tnormalLocal = normal;\n\tnormalLocal = ( mat3x3<f32>( nodeVar6[ 0 ].xyz, nodeVar6[ 1 ].xyz, nodeVar6[ 2 ].xyz ) * ( normalLocal / vec3<f32>( dot( mat3x3<f32>( nodeVar6[ 0 ].xyz, nodeVar6[ 1 ].xyz, nodeVar6[ 2 ].xyz )[ 0u ], mat3x3<f32>( nodeVar6[ 0 ].xyz, nodeVar6[ 1 ].xyz, nodeVar6[ 2 ].xyz )[ 0u ] ), dot( mat3x3<f32>( nodeVar6[ 0 ].xyz, nodeVar6[ 1 ].xyz, nodeVar6[ 2 ].xyz )[ 1u ], mat3x3<f32>( nodeVar6[ 0 ].xyz, nodeVar6[ 1 ].xyz, nodeVar6[ 2 ].xyz )[ 1u ] ), dot( mat3x3<f32>( nodeVar6[ 0 ].xyz, nodeVar6[ 1 ].xyz, nodeVar6[ 2 ].xyz )[ 2u ], mat3x3<f32>( nodeVar6[ 0 ].xyz, nodeVar6[ 1 ].xyz, nodeVar6[ 2 ].xyz )[ 2u ] ) ) ) );\n\tvaryings.v_normalViewGeometry = normalize( ( render.cameraViewMatrix * vec4<f32>( ( object.nodeUniform6 * normalLocal ), 0.0 ) ).xyz );\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform8 );\n\tv_positionView = ( modelViewMatrix * vec4<f32>( positionLocal, 1.0 ) ).xyz;\n\tVERTEX_nodeVar7 = ( render.cameraProjectionMatrix * vec4<f32>( v_positionView, 1.0 ) );\n\tVERTEX_v_modelViewProjection = VERTEX_nodeVar7;\n\n\t// result\n\n\tvaryings.builtinClipSpace = VERTEX_v_modelViewProjection;\n\n\treturn varyings;\n\n}\n",
+			"file": "vertex-r186.wgsl"
+		},
+		{
+			"id": "module#17",
+			"label": "fragment",
+			"code": "// Three.js r186 - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n\nstruct objectStruct {\n\tnodeUniform3 : vec3<f32>,\n\tnodeUniform4 : f32,\n\tnodeUniform6 : mat3x3<f32>,\n\tnodeUniform8 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// vars\nvar<private> DiffuseColor : vec4<f32>;\nvar<private> Output : vec4<f32>;\nvar<private> normalViewGeometry : vec3<f32>;\nvar<private> normalView : vec3<f32>;\n\n// codes\n\n\n@fragment\nfn main( @location( 0 ) v_normalViewGeometry : vec3<f32>,\n\t@location( 1 ) @interpolate(flat, either) vBatchIndirectId : u32,\n\t@location( 2 ) vBatchColor : vec4<f32> ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\tDiffuseColor = ( vBatchColor * vec4<f32>( object.nodeUniform3, 1.0 ) );\n\tDiffuseColor.w = ( DiffuseColor.w * object.nodeUniform4 );\n\tDiffuseColor.w = 1.0;\n\tOutput = max( vec4<f32>( DiffuseColor.xyz, DiffuseColor.w ), vec4<f32>( 0.0 ) );\n\tnormalViewGeometry = normalize( v_normalViewGeometry );\n\tnormalView = normalViewGeometry;\n\n\t// result\n\n\toutput.color = vec4<f32>( ( DiffuseColor * vec4<f32>( ( ( ( normalView * vec3<f32>( 0.5 ) ) + vec3<f32>( 0.5 ) ).y + 0.5 ) ) ).xyz, DiffuseColor.w );\n\n\treturn output;\n\n}\n",
+			"file": "fragment-r186.wgsl"
+		},
+		{
+			"id": "module#29",
+			"label": "vertex_outputColorTransform",
+			"code": "// Three.js r186 - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform1 : vec2<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform4 : mat4x4<f32>\n};\n@binding( 2 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar2 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> v_positionView : vec3<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) position : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform4 );\n\tpositionLocal = position;\n\tv_positionView = ( modelViewMatrix * vec4<f32>( positionLocal, 1.0 ) ).xyz;\n\tVERTEX_nodeVar2 = ( render.cameraProjectionMatrix * vec4<f32>( v_positionView, 1.0 ) );\n\tVERTEX_v_modelViewProjection = VERTEX_nodeVar2;\n\n\t// result\n\n\tvaryings.builtinClipSpace = VERTEX_v_modelViewProjection;\n\n\treturn varyings;\n\n}\n",
+			"file": "vertex_outputColorTransform-r186.wgsl"
+		},
+		{
+			"id": "module#30",
+			"label": "fragment_outputColorTransform",
+			"code": "// Three.js r186 - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 0 ) @group( 1 ) var nodeUniform0_sampler : sampler;\n@binding( 1 ) @group( 1 ) var nodeUniform0 : texture_2d<f32>;\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform1 : vec2<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\n// vars\nvar<private> nodeVar0 : vec4<f32>;\nvar<private> nodeVar1 : vec4<f32>;\n\n// codes\nfn fn1 ( color : vec4<f32> ) -> vec4<f32> {\n\n\tvar nodeVar0 : vec4<f32>;\n\n\n\tif ( ( color.w == 0.0 ) ) {\n\n\t\tnodeVar0 = vec4<f32>( 0.0, 0.0, 0.0, 0.0 );\n\n\t} else {\n\n\t\tnodeVar0 = vec4<f32>( ( color.xyz / vec3<f32>( color.w ) ), color.w );\n\n\t}\n\n\n\treturn nodeVar0;\n\n}\n\n\nfn sRGBTransferOETF ( color : vec3<f32> ) -> vec3<f32> {\n\n\t\n\n\n\treturn mix( ( ( pow( color, vec3<f32>( 0.41666 ) ) * vec3<f32>( 1.055 ) ) - vec3<f32>( 0.055 ) ), ( color * vec3<f32>( 12.92 ) ), vec3<f32>( ( color <= vec3<f32>( 0.0031308 ) ) ) );\n\n}\n\n\nfn fn0 ( color : vec4<f32> ) -> vec4<f32> {\n\n\t\n\n\n\treturn vec4<f32>( ( color.xyz * vec3<f32>( color.w ) ), color.w );\n\n}\n\n\n\n\n@fragment\nfn main( @builtin( position ) fragCoord : vec4<f32> ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\tnodeVar0 = textureSample( nodeUniform0, nodeUniform0_sampler, ( fragCoord.xy / render.nodeUniform1 ) );\n\tnodeVar1 = fn1( vec4<f32>( nodeVar0.xyz, clamp( nodeVar0.w, 0.0, 1.0 ) ) );\n\n\t// result\n\n\toutput.color = fn0( vec4<f32>( sRGBTransferOETF( nodeVar1.xyz ), nodeVar1.w ) );\n\n\treturn output;\n\n}\n",
+			"file": "fragment_outputColorTransform-r186.wgsl"
+		}
+	],
+	"pipelines": [
+		{
+			"id": "pipeline#19",
+			"async": false,
+			"label": "renderPipeline_MeshBasicNodeMaterial_17",
+			"layout": "pipelineLayout#18",
+			"vertex": {
+				"module": "module#16",
+				"entryPoint": "main",
+				"buffers": [
+					{
+						"arrayStride": 12,
+						"attributes": [
+							{
+								"shaderLocation": 0,
+								"offset": 0,
+								"format": "float32x3"
+							}
+						],
+						"stepMode": "vertex"
+					},
+					{
+						"arrayStride": 12,
+						"attributes": [
+							{
+								"shaderLocation": 1,
+								"offset": 0,
+								"format": "float32x3"
+							}
+						],
+						"stepMode": "vertex"
+					}
+				]
+			},
+			"fragment": {
+				"module": "module#17",
+				"entryPoint": "main",
+				"targets": [
+					{
+						"format": "rgba16float",
+						"writeMask": 15
+					}
+				]
+			},
+			"primitive": {
+				"topology": "triangle-list",
+				"frontFace": "ccw",
+				"cullMode": "back"
+			},
+			"depthStencil": {
+				"format": "depth24plus",
+				"depthWriteEnabled": true,
+				"depthCompare": "less-equal"
+			},
+			"multisample": {
+				"count": 4,
+				"alphaToCoverageEnabled": false
+			}
+		},
+		{
+			"id": "pipeline#32",
+			"async": false,
+			"label": "renderPipeline_outputColorTransform_18",
+			"layout": "pipelineLayout#31",
+			"vertex": {
+				"module": "module#29",
+				"entryPoint": "main",
+				"buffers": [
+					{
+						"arrayStride": 12,
+						"attributes": [
+							{
+								"shaderLocation": 0,
+								"offset": 0,
+								"format": "float32x3"
+							}
+						],
+						"stepMode": "vertex"
+					}
+				]
+			},
+			"fragment": {
+				"module": "module#30",
+				"entryPoint": "main",
+				"targets": [
+					{
+						"format": "rgba8unorm",
+						"writeMask": 15
+					}
+				]
+			},
+			"primitive": {
+				"topology": "triangle-list",
+				"frontFace": "ccw",
+				"cullMode": "back"
+			},
+			"depthStencil": {
+				"format": "depth24plus",
+				"depthWriteEnabled": true,
+				"depthCompare": "less-equal"
+			},
+			"multisample": {
+				"count": 1,
+				"alphaToCoverageEnabled": false
+			}
+		}
+	],
+	"bindGroupLayouts": [
+		{
+			"id": "bgl#7",
+			"label": null,
+			"entries": [
+				{
+					"binding": 0,
+					"visibility": 7,
+					"buffer": {}
+				}
+			]
+		},
+		{
+			"id": "bgl#13",
+			"label": null,
+			"entries": [
+				{
+					"binding": 0,
+					"visibility": 7,
+					"buffer": {}
+				},
+				{
+					"binding": 1,
+					"visibility": 1,
+					"texture": {
+						"sampleType": "uint"
+					}
+				},
+				{
+					"binding": 2,
+					"visibility": 1,
+					"texture": {
+						"sampleType": "float"
+					}
+				},
+				{
+					"binding": 3,
+					"visibility": 1,
+					"texture": {
+						"sampleType": "float"
+					}
+				}
+			]
+		},
+		{
+			"id": "bgl#26",
+			"label": null,
+			"entries": [
+				{
+					"binding": 0,
+					"visibility": 2,
+					"sampler": {}
+				},
+				{
+					"binding": 1,
+					"visibility": 2,
+					"texture": {}
+				},
+				{
+					"binding": 2,
+					"visibility": 7,
+					"buffer": {}
+				}
+			]
+		}
+	],
+	"pipelineLayouts": [
+		{
+			"id": "pipelineLayout#18",
+			"label": null,
+			"bindGroupLayouts": [
+				"bgl#7",
+				"bgl#13"
+			]
+		},
+		{
+			"id": "pipelineLayout#31",
+			"label": null,
+			"bindGroupLayouts": [
+				"bgl#7",
+				"bgl#26"
+			]
+		}
+	],
+	"buffers": [
+		{
+			"id": "buffer#3",
+			"label": null,
+			"size": 18432,
+			"usage": "COPY_SRC|COPY_DST|VERTEX",
+			"usageBits": 44
+		},
+		{
+			"id": "buffer#4",
+			"label": null,
+			"size": 18432,
+			"usage": "COPY_SRC|COPY_DST|VERTEX",
+			"usageBits": 44
+		},
+		{
+			"id": "buffer#5",
+			"label": null,
+			"size": 12288,
+			"usage": "COPY_SRC|COPY_DST|INDEX",
+			"usageBits": 28
+		},
+		{
+			"id": "buffer#6",
+			"label": "bindingBuffer1_render_(vertex,fragment,compute)",
+			"size": 128,
+			"usage": "COPY_DST|UNIFORM",
+			"usageBits": 72
+		},
+		{
+			"id": "buffer#9",
+			"label": "bindingBuffer0_object_(vertex,fragment,compute)",
+			"size": 128,
+			"usage": "COPY_DST|UNIFORM",
+			"usageBits": 72
+		},
+		{
+			"id": "buffer#21",
+			"label": null,
+			"size": 36,
+			"usage": "COPY_SRC|COPY_DST|VERTEX",
+			"usageBits": 44
+		},
+		{
+			"id": "buffer#22",
+			"label": "bindingBuffer3_render_(vertex,fragment,compute)",
+			"size": 144,
+			"usage": "COPY_DST|UNIFORM",
+			"usageBits": 72
+		},
+		{
+			"id": "buffer#25",
+			"label": "bindingBuffer4_object_(vertex,fragment,compute)",
+			"size": 64,
+			"usage": "COPY_DST|UNIFORM",
+			"usageBits": 72
+		}
+	],
+	"textures": [
+		{
+			"id": "texture#0",
+			"label": null,
+			"size": {
+				"width": 800,
+				"height": 500,
+				"depthOrArrayLayers": 1
+			},
+			"format": "rgba16float",
+			"dimension": "2d",
+			"mipLevelCount": 1,
+			"sampleCount": 1,
+			"usage": "COPY_SRC|COPY_DST|TEXTURE_BINDING|RENDER_ATTACHMENT",
+			"usageBits": 23
+		},
+		{
+			"id": "texture#1",
+			"label": "-msaa",
+			"size": {
+				"width": 800,
+				"height": 500,
+				"depthOrArrayLayers": 1
+			},
+			"format": "rgba16float",
+			"dimension": "2d",
+			"mipLevelCount": 1,
+			"sampleCount": 4,
+			"usage": "COPY_SRC|COPY_DST|TEXTURE_BINDING|RENDER_ATTACHMENT",
+			"usageBits": 23
+		},
+		{
+			"id": "texture#2",
+			"label": null,
+			"size": {
+				"width": 800,
+				"height": 500,
+				"depthOrArrayLayers": 1
+			},
+			"format": "depth24plus",
+			"dimension": "2d",
+			"mipLevelCount": 1,
+			"sampleCount": 4,
+			"usage": "COPY_SRC|COPY_DST|TEXTURE_BINDING|RENDER_ATTACHMENT",
+			"usageBits": 23
+		},
+		{
+			"id": "texture#10",
+			"label": null,
+			"size": {
+				"width": 23,
+				"height": 23,
+				"depthOrArrayLayers": 1
+			},
+			"format": "r32uint",
+			"dimension": "2d",
+			"mipLevelCount": 1,
+			"sampleCount": 1,
+			"usage": "COPY_SRC|COPY_DST|TEXTURE_BINDING|RENDER_ATTACHMENT",
+			"usageBits": 23
+		},
+		{
+			"id": "texture#11",
+			"label": null,
+			"size": {
+				"width": 48,
+				"height": 48,
+				"depthOrArrayLayers": 1
+			},
+			"format": "rgba32float",
+			"dimension": "2d",
+			"mipLevelCount": 1,
+			"sampleCount": 1,
+			"usage": "COPY_SRC|COPY_DST|TEXTURE_BINDING|RENDER_ATTACHMENT",
+			"usageBits": 23
+		},
+		{
+			"id": "texture#12",
+			"label": null,
+			"size": {
+				"width": 23,
+				"height": 23,
+				"depthOrArrayLayers": 1
+			},
+			"format": "rgba32float",
+			"dimension": "2d",
+			"mipLevelCount": 1,
+			"sampleCount": 1,
+			"usage": "COPY_SRC|COPY_DST|TEXTURE_BINDING|RENDER_ATTACHMENT",
+			"usageBits": 23
+		},
+		{
+			"id": "texture#20",
+			"label": "depthBuffer",
+			"size": {
+				"width": 800,
+				"height": 500,
+				"depthOrArrayLayers": 1
+			},
+			"format": "depth24plus",
+			"dimension": "2d",
+			"mipLevelCount": 1,
+			"sampleCount": 1,
+			"usage": "COPY_SRC|COPY_DST|TEXTURE_BINDING|RENDER_ATTACHMENT",
+			"usageBits": 23
+		}
+	],
+	"samplers": [
+		{
+			"id": "sampler#24",
+			"label": null,
+			"desc": "?"
+		}
+	],
+	"passes": [
+		{
+			"label": null,
+			"colorAttachments": [
+				{
+					"view": "?",
+					"resolveTarget": "?",
+					"loadOp": "clear",
+					"storeOp": "store",
+					"clearValue": {
+						"r": 0.5332764040016892,
+						"g": 0.5332764040016892,
+						"b": 1,
+						"a": 1
+					}
+				}
+			],
+			"depthStencilAttachment": {
+				"view": "?",
+				"depthLoadOp": "clear",
+				"depthStoreOp": "store",
+				"depthClearValue": 1
+			},
+			"cmds": [
+				{
+					"op": "setPipeline",
+					"pipeline": "pipeline#19"
+				},
+				{
+					"op": "setBindGroup",
+					"index": 0,
+					"group": "bindGroup#8",
+					"layout": "bgl#7",
+					"entries": [
+						{
+							"binding": 0,
+							"resource": "buffer#6+0:rest"
+						}
+					]
+				},
+				{
+					"op": "setBindGroup",
+					"index": 1,
+					"group": "bindGroup#15",
+					"layout": "bgl#13",
+					"entries": [
+						{
+							"binding": 0,
+							"resource": "buffer#9+0:rest"
+						},
+						{
+							"binding": 1,
+							"resource": "?"
+						},
+						{
+							"binding": 2,
+							"resource": "?"
+						},
+						{
+							"binding": 3,
+							"resource": "?"
+						}
+					]
+				},
+				{
+					"op": "setIndexBuffer",
+					"buffer": "buffer#5",
+					"format": "uint32",
+					"offset": 0
+				},
+				{
+					"op": "setVertexBuffer",
+					"slot": 0,
+					"buffer": "buffer#3",
+					"offset": 0
+				},
+				{
+					"op": "setVertexBuffer",
+					"slot": 1,
+					"buffer": "buffer#4",
+					"offset": 0
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 0
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 1
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 2
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 3
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 4
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 5
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 6
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 7
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 8
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 9
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 10
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 11
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 12
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 13
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 14
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 15
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 16
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 17
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 18
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 19
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 20
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 21
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 22
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 23
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 24
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 25
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 26
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 27
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 28
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 29
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 30
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 31
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 32
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 33
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 34
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 35
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 36
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 37
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 38
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 39
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 40
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 41
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 42
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 43
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 44
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 45
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 46
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 47
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 48
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 49
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 50
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 51
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 52
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 53
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 54
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 55
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 56
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 57
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 58
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 59
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 60
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 61
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 62
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 63
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 64
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 65
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 66
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 67
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 68
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 69
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 70
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 71
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 72
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 73
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 74
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 75
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 76
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 77
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 78
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 79
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 80
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 81
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 82
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 83
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 84
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 85
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 86
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 87
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 88
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 89
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 90
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 91
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 92
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 93
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 94
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 95
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 96
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 97
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 98
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 99
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 100
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 101
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 102
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 103
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 104
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 105
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 106
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 107
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 108
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 109
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 110
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 111
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 112
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 113
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 114
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 115
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 116
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 117
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 118
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 119
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 120
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 121
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 122
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 123
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 124
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 125
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 126
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 127
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 128
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 129
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 130
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 131
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 132
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 133
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 134
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 135
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 136
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 137
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 138
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 139
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 140
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 141
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 142
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 143
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 144
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 145
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 146
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 147
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 148
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 149
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 150
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 151
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 152
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 153
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 154
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 155
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 156
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 157
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 158
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 159
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 160
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 161
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 162
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 163
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 164
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 165
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 166
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 167
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 168
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 169
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 170
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 171
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 172
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 173
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 174
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 175
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 176
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 177
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 178
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 179
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 180
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 181
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 182
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 183
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 184
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 185
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 186
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 187
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 188
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 189
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 190
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 191
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 192
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 193
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 194
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 195
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 196
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 197
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 198
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 199
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 200
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 201
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 202
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 203
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 204
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 205
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 206
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 207
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 208
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 209
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 210
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 211
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 212
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 213
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 214
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 215
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 216
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 217
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 218
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 219
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 220
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 221
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 222
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 223
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 224
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 225
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 226
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 227
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 228
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 229
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 230
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 231
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 232
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 233
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 234
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 235
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 236
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 237
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 238
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 239
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 240
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 241
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 242
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 243
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 244
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 245
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 246
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 247
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 248
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 249
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 250
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 251
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 252
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 253
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 254
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 255
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 256
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 257
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 258
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 259
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 260
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 261
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 262
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 263
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 264
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 265
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 266
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 267
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 268
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 269
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 270
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 271
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 272
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 273
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 274
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 275
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 276
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 277
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 278
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 279
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 280
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 281
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 282
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 283
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 284
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 285
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 286
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 287
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 288
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 289
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 290
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 291
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 292
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 293
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 294
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 295
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 296
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 297
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 298
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 299
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 300
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 301
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 302
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 303
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 304
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 305
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 306
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 307
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 308
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 309
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 310
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 311
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 312
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 313
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 314
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 315
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 316
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 317
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 318
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 319
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 320
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 321
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 322
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 323
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 324
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 325
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 326
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 327
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 328
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 329
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 330
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 331
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 332
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 333
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 334
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 335
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 336
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 337
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 338
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 339
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 340
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 341
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 342
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 343
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 344
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 345
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 346
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 347
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 348
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 349
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 350
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 351
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 352
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 353
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 354
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 355
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 356
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 357
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 358
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 359
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 360
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 361
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 362
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 363
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 364
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 365
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 366
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 367
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 368
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 369
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 370
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 371
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 372
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 373
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 374
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 375
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 376
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 377
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 378
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 379
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 380
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 381
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 382
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 383
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 384
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 385
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 386
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 387
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 388
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 389
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 390
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 391
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 392
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 393
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 394
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 395
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 396
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 397
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 398
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 399
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 400
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 401
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 402
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 403
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 404
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 405
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 406
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 407
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 408
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 409
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 410
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 411
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 412
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 413
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 414
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 415
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 416
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 417
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 418
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 419
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 420
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 421
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 422
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 423
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 424
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 425
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 426
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 427
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 428
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 429
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 430
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 431
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 432
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 433
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 434
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 435
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 436
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 437
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 438
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 439
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 440
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 441
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 442
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 443
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 444
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 445
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 446
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 447
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 192,
+					"instanceCount": 1,
+					"firstIndex": 0,
+					"baseVertex": 0,
+					"firstInstance": 448
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 449
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 672,
+					"instanceCount": 1,
+					"firstIndex": 228,
+					"baseVertex": 0,
+					"firstInstance": 450
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 451
+				},
+				{
+					"op": "drawIndexed",
+					"indexCount": 36,
+					"instanceCount": 1,
+					"firstIndex": 192,
+					"baseVertex": 0,
+					"firstInstance": 452
+				},
+				{
+					"op": "end"
+				}
+			]
+		},
+		{
+			"label": null,
+			"colorAttachments": [
+				{
+					"view": "?",
+					"resolveTarget": null,
+					"loadOp": "load",
+					"storeOp": "store",
+					"clearValue": null
+				}
+			],
+			"depthStencilAttachment": {
+				"view": "?",
+				"depthLoadOp": "load",
+				"depthStoreOp": "store"
+			},
+			"cmds": [
+				{
+					"op": "setPipeline",
+					"pipeline": "pipeline#32"
+				},
+				{
+					"op": "setBindGroup",
+					"index": 0,
+					"group": "bindGroup#23",
+					"layout": "bgl#7",
+					"entries": [
+						{
+							"binding": 0,
+							"resource": "buffer#22+0:rest"
+						}
+					]
+				},
+				{
+					"op": "setBindGroup",
+					"index": 1,
+					"group": "bindGroup#28",
+					"layout": "bgl#26",
+					"entries": [
+						{
+							"binding": 0,
+							"resource": "sampler#24"
+						},
+						{
+							"binding": 1,
+							"resource": "?"
+						},
+						{
+							"binding": 2,
+							"resource": "buffer#25+0:rest"
+						}
+					]
+				},
+				{
+					"op": "setVertexBuffer",
+					"slot": 0,
+					"buffer": "buffer#21",
+					"offset": 0
+				},
+				{
+					"op": "draw",
+					"vertexCount": 3,
+					"instanceCount": 1,
+					"firstVertex": 0,
+					"firstInstance": 0
+				},
+				{
+					"op": "end"
+				}
+			]
+		}
+	],
+	"writeTexture": [
+		{
+			"texture": "texture#10",
+			"mipLevel": 0,
+			"origin": {
+				"x": 0,
+				"y": 0,
+				"z": 0
+			},
+			"size": {
+				"width": 23,
+				"height": 23,
+				"depthOrArrayLayers": 1
+			},
+			"bytesPerRow": 92,
+			"byteLength": 2116,
+			"ctor": "Uint32Array",
+			"bytesBase64": "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"
+		},
+		{
+			"texture": "texture#11",
+			"mipLevel": 0,
+			"origin": {
+				"x": 0,
+				"y": 0,
+				"z": 0
+			},
+			"size": {
+				"width": 48,
+				"height": 48,
+				"depthOrArrayLayers": 1
+			},
+			"bytesPerRow": 768,
+			"byteLength": 36864,
+			"ctor": "Float32Array",
+			"bytesBase64": "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AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+		},
+		{
+			"texture": "texture#12",
+			"mipLevel": 0,
+			"origin": {
+				"x": 0,
+				"y": 0,
+				"z": 0
+			},
+			"size": {
+				"width": 23,
+				"height": 23,
+				"depthOrArrayLayers": 1
+			},
+			"bytesPerRow": 368,
+			"byteLength": 8464,
+			"ctor": "Float32Array",
+			"bytesBase64": "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HVg1PxaiUj+v0ko+AACAPy0h8jy/GuE+H4M5PgAAgD+u9XY/rFTOPIw5Iz8AAIA/4NvHPQj11T4wfMg+AACAP3BJHD/f+JA+az4pPAAAgD+2cp4+n/wkP5AYoz4AAIA/zDIXP9/3XD+8sUI/AACAP7YzeT+iDgg+DrTuOgAAgD+7Ti09PPshPZShMT8AAIA/iLtWP8bhgztblew+AACAP9yFkDz9h5w7ENDfPAAAgD8I9dU+ocYiPlOnED4AAIA/vkUfPGs+KTzUPOU9AACAPzz7IT3flWQ+QAEePwAAgD/9h5w7UY4WPmiEWD0AAIA/UY7vPQxGAj/f91w/AACAP5DQ9D0rFTk9cbr1OwAAgD8zHHw+Aqa1PKHGIj4AAIA/TCecPrZzAzwzHHw+AACAP45RWzswqx8+IcOgPgAAgD8KBzM70E4sPu+VSD8AAIA/75VIP967Hz/eux8/AACAP82ECD8PkbU9tqCsPgAAgD80/bg+UNwTP33TrTwAAIA/tCIfO+Uj+j0WolI/AACAP+4u2z2+RR88yuxrPwAAgD8Hc6U+kBijPikAUj4AAIA/SUE+PCsVOT0KBzM7AACAPw+RtT2JCl0+PPshPQAAgD/VwGk/iQpdPmp7Mz8AAIA/OubFPDMcfD7eux8/AACAP6yYHD534wo+BacVPAAAgD9JnEY//YecOxR6tj4AAIA/K70AP9aDqD07y44+AACAPykAUj7VwGk/BacVPAAAgD+4RYY+SjXGOx9HbD4AAIA/CPXVPjM0pjxgykM+AACAPxZn+z7JONM+ahgpPgAAgD+I0qc+ev86P66Ccj8AAIA/MKsfPuanDD0WN6o+AACAP26lwD5jSd4+5SP6PQAAgD+runQ/H0dsPm/NrD0AAIA/gaKMPsXWMj60l8w9AACAPwoHMzvvLmE/MoOxPgAAgD+ZtAs/og4IPkRNSTwAAIA/By5wPragrD5p8eM+AACAP16I/z39h5w7B3OlPgAAgD84C7o9FjeqPnrLYD4AAIA/rvV2P5zKLz92LeA9AACAP39CBT7DX4g+6XFlPwAAgD8iLXk8ZBkXPQTxBj8AAIA/ZQuBPbhy8j4Abv4+AACAP2PFbD1RjhY+iNKnPgAAgD92hbs+Fmf7PvZilT4AAIA/QYsoPwdzpT4Hc6U+AACAPzwlLD/K7Gs/YevGOgAAgD9yK5M+tJfMPe5OYz8AAIA/LnOIPeDbxz3QTiw+AACAPzMcfD5xuvU7zOBaPwAAgD+runQ/gSMzPfeRMzwAAIA/anszP2XN5j62M3k/AACAPxhd6j1RjhY+j/FwOwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPwAAgD8AAIA/AACAPw=="
+		}
+	],
+	"writeBuffer": [
+		{
+			"buffer": "buffer#6",
+			"offset": 0,
+			"byteLength": 128
+		},
+		{
+			"buffer": "buffer#9",
+			"offset": 0,
+			"byteLength": 128
+		},
+		{
+			"buffer": "buffer#22",
+			"offset": 0,
+			"byteLength": 144
+		},
+		{
+			"buffer": "buffer#25",
+			"offset": 0,
+			"byteLength": 64
+		}
+	]
+}

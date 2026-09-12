@@ -1,0 +1,24 @@
+
+> three@0.186.0 test-e2e-webgpu
+> node test/e2e/puppeteer.js --webgpu --twice webgpu_compute_points
+
+Warning! Unrecognised example name: --twice
+[32mDiff 0.0% in file: webgpu_compute_points (3.7s)[39m
+[32mTEST PASSED! 1 screenshots rendered correctly.[39m
+Closing...
+=== run 2 ===
+
+> three@0.186.0 test-e2e-webgpu
+> node test/e2e/puppeteer.js --webgpu webgpu_compute_points
+
+[32mDiff 0.0% in file: webgpu_compute_points (3.5s)[39m
+[32mTEST PASSED! 1 screenshots rendered correctly.[39m
+Closing...
+=== run 3 ===
+
+> three@0.186.0 test-e2e-webgpu
+> node test/e2e/puppeteer.js --webgpu webgpu_compute_points
+
+[32mDiff 0.0% in file: webgpu_compute_points (3.6s)[39m
+[32mTEST PASSED! 1 screenshots rendered correctly.[39m
+Closing...

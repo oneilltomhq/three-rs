@@ -1,0 +1,8 @@
+
+> three@0.186.0 test-e2e-webgpu
+> node test/e2e/puppeteer.js --webgpu webgpu_mesh_batch webgpu_shadowmap_array
+
+[32mDiff 0.0% in file: webgpu_mesh_batch (3.7s)[39m
+[32mDiff 0.0% in file: webgpu_shadowmap_array (3.7s)[39m
+[32mTEST PASSED! 2 screenshots rendered correctly.[39m
+Closing...
