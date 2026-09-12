@@ -9,6 +9,12 @@ bytemuck = { version = "1", features = ["derive"] }
 pollster = "0.4"
 png = "0.17"
 serde_json = "1"
+# The viewer binary only; the e2e path does not touch it.
+winit = "0.30.8"
+
+[[bin]]
+name = "viewer"
+path = "src/bin/viewer.rs"
 
 [[example]]
 name = "webgpu_depth_texture"

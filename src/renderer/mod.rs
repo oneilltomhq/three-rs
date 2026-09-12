@@ -3,6 +3,8 @@
 //! pipeline, draw into a render target or into the "canvas" texture, read back.
 
 mod pipelines;
+/// Additive seam for the interactive viewer; see `present.rs`.
+mod present;
 mod render_target;
 
 use std::collections::HashMap;
@@ -107,6 +109,10 @@ pub struct Renderer {
     /// every frame's delta is 0 and this stays 0.
     time: f64,
 
+    /// The viewer's canvas → surface blit; see `present.rs`. Never touched by
+    /// the e2e path.
+    present: Option<present::Present>,
+
     /// The page's `Math.random`, as the harness replaces it. `RangeNode.setup()`
     /// draws from it while the material is being built — the only consumer in
     /// `three.webgpu.js` (`MathUtils.generateUUID` uses the pattern the
@@ -127,6 +133,13 @@ impl Renderer {
             ..wgpu::InstanceDescriptor::new_without_display_handle()
         });
 
+        Self::with_instance(parameters, instance)
+    }
+
+    /// `new()` against an instance the caller already created. The viewer needs
+    /// this because a Wayland/X11 surface only works on an instance built with
+    /// the windowing system's display handle.
+    pub fn with_instance(parameters: RendererParameters, instance: wgpu::Instance) -> Self {
         let adapter = pick_adapter(&instance);
         let adapter_info = adapter.get_info();
 
@@ -209,6 +222,7 @@ impl Renderer {
             frame_buffer,
             basic_bind_group,
             time: 0.0,
+            present: None,
             random: DeterministicRandom::new(),
         }
     }
