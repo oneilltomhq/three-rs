@@ -1,0 +1,11 @@
+
+> three@0.186.0 test-e2e-webgpu
+> node test/e2e/puppeteer.js --webgpu webgpu_skinning webgpu_skinning_instancing webgpu_skinning_instancing_individual webgpu_skinning_points
+
+[32mDiff 0.0% in file: webgpu_skinning (4.0s)[39m
+[32mDiff 0.0% in file: webgpu_skinning_instancing (3.8s)[39m
+[32mDiff 0.0% in file: webgpu_skinning_instancing_individual (4.9s)[39m
+[32mDiff 0.0% in file: webgpu_skinning_points (3.7s)[39m
+[32mTEST PASSED! 4 screenshots rendered correctly.[39m
+Closing...
+EXIT=0

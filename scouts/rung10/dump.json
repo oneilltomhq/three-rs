@@ -1,0 +1,4568 @@
+{
+ "modules": [
+  {
+   "index": 0,
+   "label": "vertex_Background.material",
+   "code": "// Three.js r186 - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tnodeUniform1 : f32,\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform0 : vec2<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform2 : f32,\n\tnodeUniform5 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> nodeVar1 : vec3<f32>;\nvar<private> nodeVar2 : vec4<f32>;\nvar<private> nodeVar3 : vec4<f32>;\nvar<private> positionLocal : vec3<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) position : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform5 );\n\n\tif ( ( render.cameraProjectionMatrix[ 3u ][ 3u ] == 1.0 ) ) {\n\n\t\tpositionLocal = position;\n\t\tnodeVar1 = ( positionLocal * vec3<f32>( ( ( 1.0 / render.cameraProjectionMatrix[ 1u ][ 1u ] ) * 3.0 ) ) );\n\n\t} else {\n\n\t\tpositionLocal = position;\n\t\tnodeVar1 = positionLocal;\n\n\t}\n\n\tnodeVar2 = ( render.cameraProjectionMatrix * vec4<f32>( ( modelViewMatrix * vec4<f32>( nodeVar1, 0.0 ) ).xyz, 1.0 ) );\n\tnodeVar3 = vec4<f32>( nodeVar2.x, nodeVar2.y, nodeVar2.w, nodeVar2.w );\n\n\t// result\n\n\tvaryings.builtinClipSpace = nodeVar3;\n\n\treturn varyings;\n\n}\n"
+  },
+  {
+   "index": 1,
+   "label": "fragment_Background.material",
+   "code": "// Three.js r186 - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n\nstruct renderStruct {\n\tnodeUniform1 : f32,\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform0 : vec2<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform2 : f32,\n\tnodeUniform5 : mat4x4<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// vars\nvar<private> DiffuseColor : vec4<f32>;\nvar<private> Output : vec4<f32>;\nvar<private> nodeVar0 : vec4<f32>;\n\n// codes\n\n\n@fragment\nfn main( @builtin( position ) fragCoord : vec4<f32> ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\tDiffuseColor = ( vec4<f32>( mix( vec3<f32>( 0.13286832154414627, 0.4969329950515914, 1.0 ), vec3<f32>( 0.057805430183792694, 0.13286832154414627, 1.0 ), ( fragCoord.xy / render.nodeUniform0 ).y ), 1.0 ) * vec4<f32>( render.nodeUniform1 ) );\n\tDiffuseColor.w = ( DiffuseColor.w * object.nodeUniform2 );\n\tDiffuseColor.w = 1.0;\n\tnodeVar0 = max( vec4<f32>( DiffuseColor.xyz, DiffuseColor.w ), vec4<f32>( 0.0 ) );\n\tOutput = nodeVar0;\n\n\t// result\n\n\toutput.color = nodeVar0;\n\n\treturn output;\n\n}\n"
+  },
+  {
+   "index": 2,
+   "label": "mipmap",
+   "code": "\nstruct VarysStruct {\n\t@builtin( position ) Position: vec4f,\n\t@location( 0 ) vTex : vec2f,\n\t@location( 1 ) @interpolate(flat, either) vBaseArrayLayer: u32,\n};\n\n@group( 0 ) @binding ( 2 )\nvar<uniform> flipY: u32;\n\n@vertex\nfn mainVS(\n\t\t@builtin( vertex_index ) vertexIndex : u32,\n\t\t@builtin( instance_index ) instanceIndex : u32 ) -> VarysStruct {\n\n\tvar Varys : VarysStruct;\n\n\tvar pos = array(\n\t\tvec2f( -1, -1 ),\n\t\tvec2f( -1,  3 ),\n\t\tvec2f(  3, -1 ),\n\t);\n\n\tlet p = pos[ vertexIndex ];\n\tlet mult = select( vec2f( 0.5, -0.5 ), vec2f( 0.5, 0.5 ), flipY != 0 );\n\tVarys.vTex = p * mult + vec2f( 0.5 );\n\tVarys.Position = vec4f( p, 0, 1 );\n\tVarys.vBaseArrayLayer = instanceIndex;\n\n\treturn Varys;\n\n}\n\n@group( 0 ) @binding( 0 )\nvar imgSampler : sampler;\n\n@group( 0 ) @binding( 1 )\nvar img2d : texture_2d<f32>;\n\n@fragment\nfn main_2d( Varys: VarysStruct ) -> @location( 0 ) vec4<f32> {\n\n\treturn textureSample( img2d, imgSampler, Varys.vTex );\n\n}\n\n@group( 0 ) @binding( 1 )\nvar img2dArray : texture_2d_array<f32>;\n\n@fragment\nfn main_2d_array( Varys: VarysStruct ) -> @location( 0 ) vec4<f32> {\n\n\treturn textureSample( img2dArray, imgSampler, Varys.vTex, Varys.vBaseArrayLayer );\n\n}\n\nconst faceMat = array(\n  mat3x3f(  0,  0,  -2,  0, -2,   0,  1,  1,   1 ),   // pos-x\n  mat3x3f(  0,  0,   2,  0, -2,   0, -1,  1,  -1 ),   // neg-x\n  mat3x3f(  2,  0,   0,  0,  0,   2, -1,  1,  -1 ),   // pos-y\n  mat3x3f(  2,  0,   0,  0,  0,  -2, -1, -1,   1 ),   // neg-y\n  mat3x3f(  2,  0,   0,  0, -2,   0, -1,  1,   1 ),   // pos-z\n  mat3x3f( -2,  0,   0,  0, -2,   0,  1,  1,  -1 ),   // neg-z\n);\n\n@group( 0 ) @binding( 1 )\nvar imgCube : texture_cube<f32>;\n\n@fragment\nfn main_cube( Varys: VarysStruct ) -> @location( 0 ) vec4<f32> {\n\n\treturn textureSample( imgCube, imgSampler, faceMat[ Varys.vBaseArrayLayer ] * vec3f( fract( Varys.vTex ), 1 ) );\n\n}\n"
+  },
+  {
+   "index": 3,
+   "label": "vertex_Ch03_Body",
+   "code": "// Three.js r186 - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct NodeBuffer_1225Struct {\n\tvalue : array< mat4x4<f32>, 65 >\n};\n@binding( 11 ) @group( 1 )\nvar<uniform> NodeBuffer_1225 : NodeBuffer_1225Struct;\n\nstruct objectStruct {\n\tnodeUniform0 : mat4x4<f32>,\n\tnodeUniform2 : mat4x4<f32>,\n\tnodeUniform3 : vec3<f32>,\n\tnodeUniform5 : mat3x3<f32>,\n\tnodeUniform6 : f32,\n\tnodeUniform7 : f32,\n\tnodeUniform9 : mat3x3<f32>,\n\tnodeUniform10 : f32,\n\tnodeUniform11 : mat3x3<f32>,\n\tnodeUniform13 : mat3x3<f32>,\n\tnodeUniform14 : f32,\n\tnodeUniform15 : vec3<f32>,\n\tnodeUniform17 : mat3x3<f32>,\n\tnodeUniform18 : f32,\n\tnodeUniform19 : vec3<f32>,\n\tnodeUniform20 : f32,\n\tnodeUniform22 : mat4x4<f32>,\n\tnodeUniform24 : mat3x3<f32>,\n\tnodeUniform25 : vec2<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform27 : vec3<f32>,\n\tnodeUniform28 : f32,\n\tnodeUniform29 : f32,\n\tnodeUniform30 : vec3<f32>,\n\tnodeUniform26 : vec3<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@location( 0 ) v_positionView : vec3<f32>,\n\t@location( 1 ) v_normalViewGeometry : vec3<f32>,\n\t@location( 2 ) v_positionViewDirection : vec3<f32>,\n\t@location( 3 ) nodeVarying6 : vec2<f32>,\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> nodeVar0 : vec4<f32>;\nvar<private> normalLocal : vec3<f32>;\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar153 : vec4<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) position : vec3<f32>,\n\t@location( 1 ) skinIndex : vec4<u32>,\n\t@location( 2 ) skinWeight : vec4<f32>,\n\t@location( 3 ) normal : vec3<f32>,\n\t@location( 4 ) uv : vec2<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tpositionLocal = position;\n\tnodeVar0 = ( object.nodeUniform2 * vec4<f32>( positionLocal, 1.0 ) );\n\tpositionLocal = ( object.nodeUniform0 * ( ( ( ( ( skinWeight.x * NodeBuffer_1225.value[ skinIndex.x ] ) * nodeVar0 ) + ( ( skinWeight.y * NodeBuffer_1225.value[ skinIndex.y ] ) * nodeVar0 ) ) + ( ( skinWeight.z * NodeBuffer_1225.value[ skinIndex.z ] ) * nodeVar0 ) ) + ( ( skinWeight.w * NodeBuffer_1225.value[ skinIndex.w ] ) * nodeVar0 ) ) ).xyz;\n\tnormalLocal = normal;\n\tnormalLocal = ( mat3x3<f32>( ( ( object.nodeUniform0 * ( ( ( skinWeight.x * NodeBuffer_1225.value[ skinIndex.x ] + skinWeight.y * NodeBuffer_1225.value[ skinIndex.y ] ) + skinWeight.z * NodeBuffer_1225.value[ skinIndex.z ] ) + skinWeight.w * NodeBuffer_1225.value[ skinIndex.w ] ) ) * object.nodeUniform2 )[ 0 ].xyz, ( ( object.nodeUniform0 * ( ( ( skinWeight.x * NodeBuffer_1225.value[ skinIndex.x ] + skinWeight.y * NodeBuffer_1225.value[ skinIndex.y ] ) + skinWeight.z * NodeBuffer_1225.value[ skinIndex.z ] ) + skinWeight.w * NodeBuffer_1225.value[ skinIndex.w ] ) ) * object.nodeUniform2 )[ 1 ].xyz, ( ( object.nodeUniform0 * ( ( ( skinWeight.x * NodeBuffer_1225.value[ skinIndex.x ] + skinWeight.y * NodeBuffer_1225.value[ skinIndex.y ] ) + skinWeight.z * NodeBuffer_1225.value[ skinIndex.z ] ) + skinWeight.w * NodeBuffer_1225.value[ skinIndex.w ] ) ) * object.nodeUniform2 )[ 2 ].xyz ) * normalLocal );\n\tvaryings.nodeVarying6 = uv;\n\tvaryings.v_normalViewGeometry = normalize( ( render.cameraViewMatrix * vec4<f32>( ( object.nodeUniform13 * normalLocal ), 0.0 ) ).xyz );\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform22 );\n\tvaryings.v_positionView = ( modelViewMatrix * vec4<f32>( positionLocal, 1.0 ) ).xyz;\n\tvaryings.v_positionViewDirection = ( - varyings.v_positionView );\n\tVERTEX_nodeVar153 = ( render.cameraProjectionMatrix * vec4<f32>( varyings.v_positionView, 1.0 ) );\n\tVERTEX_v_modelViewProjection = VERTEX_nodeVar153;\n\n\t// result\n\n\tvaryings.builtinClipSpace = VERTEX_v_modelViewProjection;\n\n\treturn varyings;\n\n}\n"
+  },
+  {
+   "index": 4,
+   "label": "fragment_Ch03_Body",
+   "code": "// Three.js r186 - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 1 ) @group( 1 ) var nodeUniform4_sampler : sampler;\n@binding( 2 ) @group( 1 ) var nodeUniform4 : texture_2d<f32>;\n@binding( 3 ) @group( 1 ) var nodeUniform8_sampler : sampler;\n@binding( 4 ) @group( 1 ) var nodeUniform8 : texture_2d<f32>;\n@binding( 5 ) @group( 1 ) var nodeUniform16_sampler : sampler;\n@binding( 6 ) @group( 1 ) var nodeUniform16 : texture_2d<f32>;\n@binding( 7 ) @group( 1 ) var nodeUniform21_sampler : sampler;\n@binding( 8 ) @group( 1 ) var nodeUniform21 : texture_2d<f32>;\n@binding( 9 ) @group( 1 ) var nodeUniform23_sampler : sampler;\n@binding( 10 ) @group( 1 ) var nodeUniform23 : texture_2d<f32>;\n\nstruct objectStruct {\n\tnodeUniform0 : mat4x4<f32>,\n\tnodeUniform2 : mat4x4<f32>,\n\tnodeUniform3 : vec3<f32>,\n\tnodeUniform5 : mat3x3<f32>,\n\tnodeUniform6 : f32,\n\tnodeUniform7 : f32,\n\tnodeUniform9 : mat3x3<f32>,\n\tnodeUniform10 : f32,\n\tnodeUniform11 : mat3x3<f32>,\n\tnodeUniform13 : mat3x3<f32>,\n\tnodeUniform14 : f32,\n\tnodeUniform15 : vec3<f32>,\n\tnodeUniform17 : mat3x3<f32>,\n\tnodeUniform18 : f32,\n\tnodeUniform19 : vec3<f32>,\n\tnodeUniform20 : f32,\n\tnodeUniform22 : mat4x4<f32>,\n\tnodeUniform24 : mat3x3<f32>,\n\tnodeUniform25 : vec2<f32>\n};\n@binding( 0 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform27 : vec3<f32>,\n\tnodeUniform28 : f32,\n\tnodeUniform29 : f32,\n\tnodeUniform30 : vec3<f32>,\n\tnodeUniform26 : vec3<f32>\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\n// vars\nvar<private> DiffuseColor : vec4<f32>;\nvar<private> nodeVar1 : vec4<f32>;\nvar<private> Metalness : f32;\nvar<private> nodeVar2 : vec4<f32>;\nvar<private> Roughness : f32;\nvar<private> nodeVar3 : vec4<f32>;\nvar<private> normalViewGeometry : vec3<f32>;\nvar<private> nodeVar4 : vec3<f32>;\nvar<private> IOR : f32;\nvar<private> SpecularColor : vec3<f32>;\nvar<private> nodeVar5 : f32;\nvar<private> nodeVar6 : vec4<f32>;\nvar<private> SpecularColorBlended : vec3<f32>;\nvar<private> SpecularF90 : f32;\nvar<private> DiffuseContribution : vec3<f32>;\nvar<private> EmissiveColor : vec3<f32>;\nvar<private> Output : vec4<f32>;\nvar<private> nodeVar7 : f32;\nvar<private> NORMAL_normalView : vec3<f32>;\nvar<private> nodeVar8 : vec3<f32>;\nvar<private> nodeVar9 : vec2<f32>;\nvar<private> nodeVar10 : vec3<f32>;\nvar<private> nodeVar11 : vec2<f32>;\nvar<private> nodeVar12 : vec3<f32>;\nvar<private> nodeVar13 : f32;\nvar<private> nodeVar14 : vec3<f32>;\nvar<private> nodeVar15 : f32;\nvar<private> tangentViewFrame : vec3<f32>;\nvar<private> NORMAL_tangentView : vec3<f32>;\nvar<private> bitangentViewFrame : vec3<f32>;\nvar<private> NORMAL_bitangentView : vec3<f32>;\nvar<private> NORMAL_TBNViewMatrix : mat3x3<f32>;\nvar<private> nodeVar16 : vec4<f32>;\nvar<private> nodeVar17 : vec4<f32>;\nvar<private> normalView : vec3<f32>;\nvar<private> positionViewDirection : vec3<f32>;\nvar<private> nodeVar18 : f32;\nvar<private> nodeVar19 : vec2<f32>;\nvar<private> nodeVar20 : f32;\nvar<private> nodeVar21 : f32;\nvar<private> nodeVar22 : f32;\nvar<private> nodeVar23 : f32;\nvar<private> nodeVar24 : vec3<f32>;\nvar<private> nodeVar25 : vec3<f32>;\nvar<private> nodeVar26 : vec3<f32>;\nvar<private> nodeVar27 : vec3<f32>;\nvar<private> nodeVar28 : f32;\nvar<private> nodeVar29 : f32;\nvar<private> nodeVar30 : f32;\nvar<private> nodeVar31 : f32;\nvar<private> nodeVar32 : f32;\nvar<private> nodeVar33 : vec3<f32>;\nvar<private> nodeVar34 : vec3<f32>;\nvar<private> nodeVar35 : vec3<f32>;\nvar<private> directDiffuse : vec3<f32>;\nvar<private> nodeVar36 : vec3<f32>;\nvar<private> nodeVar37 : vec3<f32>;\nvar<private> nodeVar38 : vec3<f32>;\nvar<private> nodeVar39 : vec3<f32>;\nvar<private> nodeVar40 : f32;\nvar<private> nodeVar41 : f32;\nvar<private> nodeVar42 : f32;\nvar<private> nodeVar43 : vec3<f32>;\nvar<private> nodeVar44 : vec3<f32>;\nvar<private> nodeVar45 : vec3<f32>;\nvar<private> nodeVar46 : vec3<f32>;\nvar<private> nodeVar47 : vec3<f32>;\nvar<private> directSpecular : vec3<f32>;\nvar<private> nodeVar48 : vec3<f32>;\nvar<private> nodeVar49 : f32;\nvar<private> nodeVar50 : f32;\nvar<private> nodeVar51 : f32;\nvar<private> nodeVar52 : vec3<f32>;\nvar<private> nodeVar53 : vec3<f32>;\nvar<private> nodeVar54 : vec3<f32>;\nvar<private> nodeVar55 : vec3<f32>;\nvar<private> irradiance : vec3<f32>;\nvar<private> nodeVar56 : vec3<f32>;\nvar<private> nodeVar57 : vec3<f32>;\nvar<private> nodeVar58 : vec3<f32>;\nvar<private> nodeVar59 : vec3<f32>;\nvar<private> nodeVar60 : f32;\nvar<private> nodeVar61 : vec3<f32>;\nvar<private> nodeVar62 : vec3<f32>;\nvar<private> nodeVar63 : vec3<f32>;\nvar<private> nodeVar64 : vec3<f32>;\nvar<private> nodeVar65 : vec3<f32>;\nvar<private> nodeVar66 : vec3<f32>;\nvar<private> nodeVar67 : vec3<f32>;\nvar<private> nodeVar68 : f32;\nvar<private> nodeVar69 : f32;\nvar<private> nodeVar70 : f32;\nvar<private> nodeVar71 : vec3<f32>;\nvar<private> nodeVar72 : vec3<f32>;\nvar<private> nodeVar73 : vec3<f32>;\nvar<private> nodeVar74 : vec3<f32>;\nvar<private> nodeVar75 : vec3<f32>;\nvar<private> nodeVar76 : vec3<f32>;\nvar<private> nodeVar77 : vec3<f32>;\nvar<private> nodeVar78 : vec3<f32>;\nvar<private> nodeVar79 : vec3<f32>;\nvar<private> nodeVar80 : vec3<f32>;\nvar<private> nodeVar81 : vec3<f32>;\nvar<private> nodeVar82 : vec3<f32>;\nvar<private> nodeVar83 : vec3<f32>;\nvar<private> indirectDiffuse : vec3<f32>;\nvar<private> nodeVar84 : vec3<f32>;\nvar<private> singleScatteringDielectric : vec3<f32>;\nvar<private> multiScatteringDielectric : vec3<f32>;\nvar<private> singleScatteringMetallic : vec3<f32>;\nvar<private> multiScatteringMetallic : vec3<f32>;\nvar<private> nodeVar85 : vec3<f32>;\nvar<private> nodeVar86 : f32;\nvar<private> nodeVar87 : vec3<f32>;\nvar<private> nodeVar88 : vec3<f32>;\nvar<private> nodeVar89 : vec3<f32>;\nvar<private> nodeVar90 : vec3<f32>;\nvar<private> nodeVar91 : vec3<f32>;\nvar<private> nodeVar92 : vec3<f32>;\nvar<private> nodeVar93 : vec3<f32>;\nvar<private> nodeVar94 : f32;\nvar<private> nodeVar95 : f32;\nvar<private> nodeVar96 : f32;\nvar<private> nodeVar97 : vec3<f32>;\nvar<private> nodeVar98 : vec3<f32>;\nvar<private> nodeVar99 : vec3<f32>;\nvar<private> nodeVar100 : vec3<f32>;\nvar<private> nodeVar101 : vec3<f32>;\nvar<private> nodeVar102 : vec3<f32>;\nvar<private> nodeVar103 : vec3<f32>;\nvar<private> nodeVar104 : f32;\nvar<private> nodeVar105 : vec3<f32>;\nvar<private> nodeVar106 : vec3<f32>;\nvar<private> nodeVar107 : vec3<f32>;\nvar<private> nodeVar108 : vec3<f32>;\nvar<private> nodeVar109 : vec3<f32>;\nvar<private> nodeVar110 : vec3<f32>;\nvar<private> nodeVar111 : vec3<f32>;\nvar<private> nodeVar112 : f32;\nvar<private> nodeVar113 : f32;\nvar<private> nodeVar114 : f32;\nvar<private> nodeVar115 : vec3<f32>;\nvar<private> nodeVar116 : vec3<f32>;\nvar<private> nodeVar117 : vec3<f32>;\nvar<private> nodeVar118 : vec3<f32>;\nvar<private> nodeVar119 : vec3<f32>;\nvar<private> nodeVar120 : vec3<f32>;\nvar<private> radiance : vec3<f32>;\nvar<private> nodeVar121 : vec3<f32>;\nvar<private> nodeVar122 : vec3<f32>;\nvar<private> nodeVar123 : vec3<f32>;\nvar<private> iblIrradiance : vec3<f32>;\nvar<private> nodeVar124 : vec3<f32>;\nvar<private> nodeVar125 : vec3<f32>;\nvar<private> nodeVar126 : vec3<f32>;\nvar<private> nodeVar127 : vec3<f32>;\nvar<private> nodeVar128 : vec3<f32>;\nvar<private> nodeVar129 : vec3<f32>;\nvar<private> nodeVar130 : vec3<f32>;\nvar<private> nodeVar131 : vec3<f32>;\nvar<private> nodeVar132 : vec3<f32>;\nvar<private> nodeVar133 : vec3<f32>;\nvar<private> indirectSpecular : vec3<f32>;\nvar<private> nodeVar134 : vec3<f32>;\nvar<private> nodeVar135 : vec3<f32>;\nvar<private> ambientOcclusion : f32;\nvar<private> nodeVar136 : vec3<f32>;\nvar<private> nodeVar137 : f32;\nvar<private> nodeVar138 : f32;\nvar<private> nodeVar139 : f32;\nvar<private> nodeVar140 : f32;\nvar<private> nodeVar141 : f32;\nvar<private> nodeVar142 : f32;\nvar<private> nodeVar143 : f32;\nvar<private> nodeVar144 : f32;\nvar<private> nodeVar145 : f32;\nvar<private> nodeVar146 : f32;\nvar<private> nodeVar147 : f32;\nvar<private> nodeVar148 : vec3<f32>;\nvar<private> totalDiffuse : vec3<f32>;\nvar<private> nodeVar149 : vec3<f32>;\nvar<private> totalSpecular : vec3<f32>;\nvar<private> nodeVar150 : vec3<f32>;\nvar<private> outgoingLight : vec3<f32>;\nvar<private> nodeVar151 : vec3<f32>;\nvar<private> nodeVar152 : vec4<f32>;\n\n// codes\nfn V_GGX_SmithCorrelated ( alpha : f32, dotNL : f32, dotNV : f32 ) -> f32 {\n\n\tvar nodeVar0 : f32;\n\n\tnodeVar0 = ( alpha * alpha );\n\n\treturn ( 0.5 / max( ( ( dotNL * sqrt( ( nodeVar0 + ( ( 1.0 - nodeVar0 ) * ( dotNV * dotNV ) ) ) ) ) + ( dotNV * sqrt( ( nodeVar0 + ( ( 1.0 - nodeVar0 ) * ( dotNL * dotNL ) ) ) ) ) ), 0.000001 ) );\n\n}\n\n\nfn D_GGX ( alpha : f32, dotNH : f32 ) -> f32 {\n\n\tvar nodeVar0 : f32;\n\tvar nodeVar1 : f32;\n\n\tnodeVar0 = ( alpha * alpha );\n\tnodeVar1 = ( 1.0 - ( ( dotNH * dotNH ) * ( 1.0 - nodeVar0 ) ) );\n\n\treturn ( ( nodeVar0 / ( nodeVar1 * nodeVar1 ) ) * 0.3183098861837907 );\n\n}\n\n\n\n\n@fragment\nfn main( @location( 0 ) v_positionView : vec3<f32>,\n\t@location( 1 ) v_normalViewGeometry : vec3<f32>,\n\t@location( 2 ) v_positionViewDirection : vec3<f32>,\n\t@location( 3 ) nodeVarying6 : vec2<f32>,\n\t@builtin( front_facing ) isFront : bool ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\tnodeVar1 = textureSample( nodeUniform4, nodeUniform4_sampler, ( object.nodeUniform5 * vec3<f32>( nodeVarying6, 1.0 ) ).xy );\n\tDiffuseColor = ( vec4<f32>( object.nodeUniform3, 1.0 ) * nodeVar1 );\n\tDiffuseColor.w = ( DiffuseColor.w * object.nodeUniform6 );\n\tDiffuseColor.w = 1.0;\n\tnodeVar2 = textureSample( nodeUniform8, nodeUniform8_sampler, ( object.nodeUniform9 * vec3<f32>( nodeVarying6, 1.0 ) ).xy );\n\tMetalness = ( object.nodeUniform7 * nodeVar2.z );\n\tnodeVar3 = textureSample( nodeUniform8, nodeUniform8_sampler, ( object.nodeUniform11 * vec3<f32>( nodeVarying6, 1.0 ) ).xy );\n\tnormalViewGeometry = normalize( v_normalViewGeometry );\n\tnodeVar4 = max( abs( dpdx( normalViewGeometry ) ), abs( - dpdy( normalViewGeometry ) ) );\n\tRoughness = min( ( max( ( object.nodeUniform10 * nodeVar3.y ), 0.0525 ) + max( max( nodeVar4.x, nodeVar4.y ), nodeVar4.z ) ), 1.0 );\n\tIOR = object.nodeUniform14;\n\tnodeVar5 = ( ( IOR - 1.0 ) / ( IOR + 1.0 ) );\n\tnodeVar6 = textureSample( nodeUniform16, nodeUniform16_sampler, ( object.nodeUniform17 * vec3<f32>( nodeVarying6, 1.0 ) ).xy );\n\tSpecularColor = ( min( ( vec3<f32>( ( nodeVar5 * nodeVar5 ) ) * ( object.nodeUniform15 * nodeVar6.xyz ) ), vec3<f32>( 1.0, 1.0, 1.0 ) ) * vec3<f32>( object.nodeUniform18 ) );\n\tSpecularColorBlended = mix( SpecularColor, DiffuseColor.xyz, Metalness );\n\tSpecularF90 = mix( object.nodeUniform18, 1.0, Metalness );\n\tDiffuseContribution = ( DiffuseColor.xyz * vec3<f32>( ( 1.0 - ( object.nodeUniform7 * nodeVar2.z ) ) ) );\n\tEmissiveColor = ( object.nodeUniform19 * vec3<f32>( object.nodeUniform20 ) );\n\tnodeVar7 = ( ( f32( isFront ) * 2.0 ) - 1.0 );\n\tNORMAL_normalView = ( normalViewGeometry * vec3<f32>( nodeVar7 ) );\n\tnodeVar8 = cross( - dpdy( v_positionView ), NORMAL_normalView );\n\tnodeVar9 = dpdx( nodeVarying6 );\n\tnodeVar10 = cross( NORMAL_normalView, dpdx( v_positionView ) );\n\tnodeVar11 = - dpdy( nodeVarying6 );\n\tnodeVar12 = ( ( nodeVar8 * vec3<f32>( nodeVar9.x ) ) + ( nodeVar10 * vec3<f32>( nodeVar11.x ) ) );\n\tnodeVar14 = ( ( nodeVar8 * vec3<f32>( nodeVar9.y ) ) + ( nodeVar10 * vec3<f32>( nodeVar11.y ) ) );\n\tnodeVar15 = max( dot( nodeVar12, nodeVar12 ), dot( nodeVar14, nodeVar14 ) );\n\n\tif ( ( nodeVar15 == 0.0 ) ) {\n\n\t\tnodeVar13 = 0.0;\n\n\t} else {\n\n\t\tnodeVar13 = inverseSqrt( nodeVar15 );\n\n\t}\n\n\ttangentViewFrame = ( nodeVar12 * vec3<f32>( nodeVar13 ) );\n\tNORMAL_tangentView = ( tangentViewFrame * vec3<f32>( nodeVar7 ) );\n\tbitangentViewFrame = ( nodeVar14 * nodeVar13 );\n\tNORMAL_bitangentView = ( bitangentViewFrame * vec3<f32>( nodeVar7 ) );\n\tNORMAL_TBNViewMatrix = mat3x3<f32>( NORMAL_tangentView, NORMAL_bitangentView, NORMAL_normalView );\n\tnodeVar16 = textureSample( nodeUniform23, nodeUniform23_sampler, ( object.nodeUniform24 * vec3<f32>( nodeVarying6, 1.0 ) ).xy );\n\tnodeVar17 = ( ( nodeVar16 * vec4<f32>( 2.0 ) ) - vec4<f32>( 1.0 ) );\n\tnormalView = normalize( ( NORMAL_TBNViewMatrix * vec3<f32>( ( nodeVar17.xy * object.nodeUniform25 ), nodeVar17.z ) ) );\n\tpositionViewDirection = normalize( v_positionViewDirection );\n\tnodeVar18 = dot( normalView, positionViewDirection );\n\tnodeVar19 = textureSample( nodeUniform21, nodeUniform21_sampler, vec2<f32>( Roughness, clamp( nodeVar18, 0.0, 1.0 ) ) ).xy;\n\tlet dfg = nodeVar19;\n\tnodeVar20 = ( dfg.x + dfg.y );\n\tnodeVar21 = ( 1.0 / nodeVar20 );\n\tnodeVar22 = nodeVar21;\n\tnodeVar23 = ( nodeVar22 - 1.0 );\n\tnodeVar24 = ( SpecularColorBlended * vec3<f32>( nodeVar23 ) );\n\tnodeVar25 = ( nodeVar24 + vec3<f32>( 1.0 ) );\n\tlet multiScatteringCompensation = nodeVar25;\n\tnodeVar26 = ( render.nodeUniform26 - v_positionView );\n\tnodeVar27 = normalize( nodeVar26 );\n\tnodeVar28 = dot( normalView, nodeVar27 );\n\n\tif ( ( render.nodeUniform28 > 0.0 ) ) {\n\n\t\tnodeVar30 = length( nodeVar26 );\n\t\tnodeVar31 = ( nodeVar30 / render.nodeUniform28 );\n\t\tnodeVar32 = clamp( ( 1.0 - ( ( ( nodeVar31 * nodeVar31 ) * nodeVar31 ) * nodeVar31 ) ), 0.0, 1.0 );\n\t\tnodeVar29 = ( ( 1.0 / max( pow( nodeVar30, render.nodeUniform29 ), 0.01 ) ) * ( nodeVar32 * nodeVar32 ) );\n\n\t} else {\n\n\t\tnodeVar29 = ( 1.0 / max( pow( length( nodeVar26 ), render.nodeUniform29 ), 0.01 ) );\n\n\t}\n\n\tnodeVar33 = ( render.nodeUniform27 * vec3<f32>( nodeVar29 ) );\n\tnodeVar34 = ( vec3<f32>( clamp( nodeVar28, 0.0, 1.0 ) ) * nodeVar33 );\n\tnodeVar35 = nodeVar34;\n\tdirectDiffuse = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar36 = ( DiffuseContribution * vec3<f32>( 0.3183098861837907 ) );\n\tnodeVar37 = ( nodeVar35 * nodeVar36 );\n\tnodeVar38 = ( nodeVar27 + positionViewDirection );\n\tnodeVar39 = normalize( nodeVar38 );\n\tnodeVar40 = dot( positionViewDirection, nodeVar39 );\n\tnodeVar41 = clamp( nodeVar40, 0.0, 1.0 );\n\tnodeVar42 = exp2( ( ( ( nodeVar41 * -5.55473 ) - 6.98316 ) * nodeVar41 ) );\n\tnodeVar43 = ( ( SpecularColor * vec3<f32>( ( 1.0 - nodeVar42 ) ) ) + vec3<f32>( ( SpecularF90 * nodeVar42 ) ) );\n\tnodeVar44 = ( vec3<f32>( 1.0 ) - nodeVar43 );\n\tnodeVar45 = nodeVar44;\n\tnodeVar46 = ( nodeVar37 * nodeVar45 );\n\tnodeVar47 = ( directDiffuse + nodeVar46 );\n\tdirectDiffuse = nodeVar47;\n\tdirectSpecular = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar48 = normalize( ( nodeVar27 + positionViewDirection ) );\n\tnodeVar49 = clamp( dot( positionViewDirection, nodeVar48 ), 0.0, 1.0 );\n\tnodeVar50 = exp2( ( ( ( nodeVar49 * -5.55473 ) - 6.98316 ) * nodeVar49 ) );\n\tnodeVar51 = ( Roughness * Roughness );\n\tnodeVar52 = ( ( ( ( SpecularColorBlended * vec3<f32>( ( 1.0 - nodeVar50 ) ) ) + vec3<f32>( ( 1.0 * nodeVar50 ) ) ) * vec3<f32>( V_GGX_SmithCorrelated( nodeVar51, clamp( dot( normalView, nodeVar27 ), 0.0, 1.0 ), clamp( dot( normalView, positionViewDirection ), 0.0, 1.0 ) ) ) ) * vec3<f32>( D_GGX( nodeVar51, clamp( dot( normalView, nodeVar48 ), 0.0, 1.0 ) ) ) );\n\tnodeVar53 = ( nodeVar35 * nodeVar52 );\n\tnodeVar54 = ( nodeVar53 * multiScatteringCompensation );\n\tnodeVar55 = ( directSpecular + nodeVar54 );\n\tdirectSpecular = nodeVar55;\n\tirradiance = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar56 = ( irradiance + render.nodeUniform30 );\n\tirradiance = nodeVar56;\n\tnodeVar57 = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar58 = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar59 = ( SpecularColor * vec3<f32>( dfg.x ) );\n\tnodeVar60 = ( SpecularF90 * dfg.y );\n\tnodeVar61 = ( nodeVar59 + vec3<f32>( nodeVar60 ) );\n\tnodeVar62 = ( nodeVar57 + nodeVar61 );\n\tnodeVar57 = nodeVar62;\n\tnodeVar63 = ( vec3<f32>( 1.0 ) - SpecularColor );\n\tnodeVar64 = nodeVar63;\n\tnodeVar65 = ( nodeVar64 * vec3<f32>( 0.047619 ) );\n\tnodeVar66 = ( SpecularColor + nodeVar65 );\n\tnodeVar67 = ( nodeVar61 * nodeVar66 );\n\tnodeVar68 = ( dfg.x + dfg.y );\n\tnodeVar69 = ( 1.0 - nodeVar68 );\n\tnodeVar70 = nodeVar69;\n\tnodeVar71 = ( vec3<f32>( nodeVar70 ) * nodeVar66 );\n\tnodeVar72 = ( vec3<f32>( 1.0 ) - nodeVar71 );\n\tnodeVar73 = nodeVar72;\n\tnodeVar74 = ( nodeVar67 / nodeVar73 );\n\tnodeVar75 = ( nodeVar74 * vec3<f32>( nodeVar70 ) );\n\tnodeVar76 = ( nodeVar58 + nodeVar75 );\n\tnodeVar58 = nodeVar76;\n\tnodeVar77 = ( DiffuseContribution * vec3<f32>( 0.3183098861837907 ) );\n\tnodeVar78 = ( irradiance * nodeVar77 );\n\tnodeVar79 = ( nodeVar57 + nodeVar58 );\n\tnodeVar80 = ( vec3<f32>( 1.0 ) - nodeVar79 );\n\tnodeVar81 = nodeVar80;\n\tnodeVar82 = ( nodeVar78 * nodeVar81 );\n\tnodeVar83 = nodeVar82;\n\tindirectDiffuse = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar84 = ( indirectDiffuse + nodeVar83 );\n\tindirectDiffuse = nodeVar84;\n\tsingleScatteringDielectric = vec3<f32>( 0.0, 0.0, 0.0 );\n\tmultiScatteringDielectric = vec3<f32>( 0.0, 0.0, 0.0 );\n\tsingleScatteringMetallic = vec3<f32>( 0.0, 0.0, 0.0 );\n\tmultiScatteringMetallic = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar85 = ( SpecularColor * vec3<f32>( dfg.x ) );\n\tnodeVar86 = ( SpecularF90 * dfg.y );\n\tnodeVar87 = ( nodeVar85 + vec3<f32>( nodeVar86 ) );\n\tnodeVar88 = ( singleScatteringDielectric + nodeVar87 );\n\tsingleScatteringDielectric = nodeVar88;\n\tnodeVar89 = ( vec3<f32>( 1.0 ) - SpecularColor );\n\tnodeVar90 = nodeVar89;\n\tnodeVar91 = ( nodeVar90 * vec3<f32>( 0.047619 ) );\n\tnodeVar92 = ( SpecularColor + nodeVar91 );\n\tnodeVar93 = ( nodeVar87 * nodeVar92 );\n\tnodeVar94 = ( dfg.x + dfg.y );\n\tnodeVar95 = ( 1.0 - nodeVar94 );\n\tnodeVar96 = nodeVar95;\n\tnodeVar97 = ( vec3<f32>( nodeVar96 ) * nodeVar92 );\n\tnodeVar98 = ( vec3<f32>( 1.0 ) - nodeVar97 );\n\tnodeVar99 = nodeVar98;\n\tnodeVar100 = ( nodeVar93 / nodeVar99 );\n\tnodeVar101 = ( nodeVar100 * vec3<f32>( nodeVar96 ) );\n\tnodeVar102 = ( multiScatteringDielectric + nodeVar101 );\n\tmultiScatteringDielectric = nodeVar102;\n\tnodeVar103 = ( DiffuseColor.xyz * vec3<f32>( dfg.x ) );\n\tnodeVar104 = ( SpecularF90 * dfg.y );\n\tnodeVar105 = ( nodeVar103 + vec3<f32>( nodeVar104 ) );\n\tnodeVar106 = ( singleScatteringMetallic + nodeVar105 );\n\tsingleScatteringMetallic = nodeVar106;\n\tnodeVar107 = ( vec3<f32>( 1.0 ) - DiffuseColor.xyz );\n\tnodeVar108 = nodeVar107;\n\tnodeVar109 = ( nodeVar108 * vec3<f32>( 0.047619 ) );\n\tnodeVar110 = ( DiffuseColor.xyz + nodeVar109 );\n\tnodeVar111 = ( nodeVar105 * nodeVar110 );\n\tnodeVar112 = ( dfg.x + dfg.y );\n\tnodeVar113 = ( 1.0 - nodeVar112 );\n\tnodeVar114 = nodeVar113;\n\tnodeVar115 = ( vec3<f32>( nodeVar114 ) * nodeVar110 );\n\tnodeVar116 = ( vec3<f32>( 1.0 ) - nodeVar115 );\n\tnodeVar117 = nodeVar116;\n\tnodeVar118 = ( nodeVar111 / nodeVar117 );\n\tnodeVar119 = ( nodeVar118 * vec3<f32>( nodeVar114 ) );\n\tnodeVar120 = ( multiScatteringMetallic + nodeVar119 );\n\tmultiScatteringMetallic = nodeVar120;\n\tradiance = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar121 = mix( singleScatteringDielectric, singleScatteringMetallic, Metalness );\n\tnodeVar122 = ( radiance * nodeVar121 );\n\tnodeVar123 = mix( multiScatteringDielectric, multiScatteringMetallic, Metalness );\n\tiblIrradiance = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar124 = ( iblIrradiance * vec3<f32>( 0.3183098861837907 ) );\n\tnodeVar125 = ( nodeVar123 * nodeVar124 );\n\tnodeVar126 = ( nodeVar122 + nodeVar125 );\n\tnodeVar127 = nodeVar126;\n\tnodeVar128 = ( singleScatteringDielectric + multiScatteringDielectric );\n\tnodeVar129 = ( vec3<f32>( 1.0 ) - nodeVar128 );\n\tnodeVar130 = nodeVar129;\n\tnodeVar131 = ( DiffuseContribution * nodeVar130 );\n\tnodeVar132 = ( nodeVar131 * nodeVar124 );\n\tnodeVar133 = nodeVar132;\n\tindirectSpecular = vec3<f32>( 0.0, 0.0, 0.0 );\n\tnodeVar134 = ( indirectSpecular + nodeVar127 );\n\tindirectSpecular = nodeVar134;\n\tnodeVar135 = ( indirectDiffuse + nodeVar133 );\n\tindirectDiffuse = nodeVar135;\n\tambientOcclusion = 1.0;\n\tnodeVar136 = ( indirectDiffuse * vec3<f32>( ambientOcclusion ) );\n\tindirectDiffuse = nodeVar136;\n\tnodeVar137 = dot( normalView, positionViewDirection );\n\tnodeVar138 = ( clamp( nodeVar137, 0.0, 1.0 ) + ambientOcclusion );\n\tnodeVar139 = ( Roughness * -16.0 );\n\tnodeVar140 = ( 1.0 - nodeVar139 );\n\tnodeVar141 = nodeVar140;\n\tnodeVar142 = ( - nodeVar141 );\n\tnodeVar143 = exp2( nodeVar142 );\n\tnodeVar144 = pow( nodeVar138, nodeVar143 );\n\tnodeVar145 = ( 1.0 - nodeVar144 );\n\tnodeVar146 = nodeVar145;\n\tnodeVar147 = ( ambientOcclusion - nodeVar146 );\n\tnodeVar148 = ( indirectSpecular * vec3<f32>( clamp( nodeVar147, 0.0, 1.0 ) ) );\n\tindirectSpecular = nodeVar148;\n\tnodeVar149 = ( directDiffuse + indirectDiffuse );\n\ttotalDiffuse = nodeVar149;\n\tnodeVar150 = ( directSpecular + indirectSpecular );\n\ttotalSpecular = nodeVar150;\n\tnodeVar151 = ( totalDiffuse + totalSpecular );\n\toutgoingLight = nodeVar151;\n\tnodeVar152 = max( vec4<f32>( ( outgoingLight + EmissiveColor ), DiffuseColor.w ), vec4<f32>( 0.0 ) );\n\tOutput = nodeVar152;\n\n\t// result\n\n\toutput.color = nodeVar152;\n\n\treturn output;\n\n}\n"
+  },
+  {
+   "index": 5,
+   "label": "vertex_outputColorTransform",
+   "code": "// Three.js r186 - Node System\n\n// directives\n\n\n// structs\n\n\n// uniforms\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform1 : vec2<f32>,\n\tnodeUniform2 : f32\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\nstruct objectStruct {\n\tnodeUniform5 : mat4x4<f32>\n};\n@binding( 2 ) @group( 1 )\nvar<uniform> object : objectStruct;\n\n// varyings\n\nstruct VaryingsStruct {\n\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n// vars\nvar<private> modelViewMatrix : mat4x4<f32>;\nvar<private> VERTEX_nodeVar3 : vec4<f32>;\nvar<private> v_modelViewProjection : vec4<f32>;\nvar<private> v_positionView : vec3<f32>;\nvar<private> positionLocal : vec3<f32>;\nvar<private> VERTEX_v_modelViewProjection : vec4<f32>;\n\n// codes\n\n\n@vertex\nfn main( @location( 0 ) position : vec3<f32> ) -> VaryingsStruct {\n\n\t// flow\n\t// code\n\n\tmodelViewMatrix = ( render.cameraViewMatrix * object.nodeUniform5 );\n\tpositionLocal = position;\n\tv_positionView = ( modelViewMatrix * vec4<f32>( positionLocal, 1.0 ) ).xyz;\n\tVERTEX_nodeVar3 = ( render.cameraProjectionMatrix * vec4<f32>( v_positionView, 1.0 ) );\n\tVERTEX_v_modelViewProjection = VERTEX_nodeVar3;\n\n\t// result\n\n\tvaryings.builtinClipSpace = VERTEX_v_modelViewProjection;\n\n\treturn varyings;\n\n}\n"
+  },
+  {
+   "index": 6,
+   "label": "fragment_outputColorTransform",
+   "code": "// Three.js r186 - Node System\n\n// global\ndiagnostic( off, derivative_uniformity );\n\n\n// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n// uniforms\n@binding( 0 ) @group( 1 ) var nodeUniform0_sampler : sampler;\n@binding( 1 ) @group( 1 ) var nodeUniform0 : texture_2d<f32>;\n\nstruct renderStruct {\n\tcameraProjectionMatrix : mat4x4<f32>,\n\tcameraViewMatrix : mat4x4<f32>,\n\tnodeUniform1 : vec2<f32>,\n\tnodeUniform2 : f32\n};\n@binding( 0 ) @group( 0 )\nvar<uniform> render : renderStruct;\n\n// vars\nvar<private> nodeVar0 : vec4<f32>;\nvar<private> nodeVar1 : vec4<f32>;\nvar<private> nodeVar2 : vec4<f32>;\n\n// codes\nfn fn1 ( color : vec4<f32> ) -> vec4<f32> {\n\n\tvar nodeVar0 : vec4<f32>;\n\n\n\tif ( ( color.w == 0.0 ) ) {\n\n\t\tnodeVar0 = vec4<f32>( 0.0, 0.0, 0.0, 0.0 );\n\n\t} else {\n\n\t\tnodeVar0 = vec4<f32>( ( color.xyz / vec3<f32>( color.w ) ), color.w );\n\n\t}\n\n\n\treturn nodeVar0;\n\n}\n\n\nfn linearToneMapping ( color : vec3<f32>, exposure : f32 ) -> vec3<f32> {\n\n\t\n\n\n\treturn clamp( ( color * vec3<f32>( exposure ) ), vec3<f32>( 0.0 ), vec3<f32>( 1.0 ) );\n\n}\n\n\nfn sRGBTransferOETF ( color : vec3<f32> ) -> vec3<f32> {\n\n\t\n\n\n\treturn mix( ( ( pow( color, vec3<f32>( 0.41666 ) ) * vec3<f32>( 1.055 ) ) - vec3<f32>( 0.055 ) ), ( color * vec3<f32>( 12.92 ) ), vec3<f32>( ( color <= vec3<f32>( 0.0031308 ) ) ) );\n\n}\n\n\nfn fn0 ( color : vec4<f32> ) -> vec4<f32> {\n\n\t\n\n\n\treturn vec4<f32>( ( color.xyz * vec3<f32>( color.w ) ), color.w );\n\n}\n\n\n\n\n@fragment\nfn main( @builtin( position ) fragCoord : vec4<f32> ) -> OutputStruct {\n\n\t// flow\n\t// code\n\n\tnodeVar0 = textureSample( nodeUniform0, nodeUniform0_sampler, ( fragCoord.xy / render.nodeUniform1 ) );\n\tnodeVar1 = fn1( vec4<f32>( nodeVar0.xyz, clamp( nodeVar0.w, 0.0, 1.0 ) ) );\n\tnodeVar2 = vec4<f32>( linearToneMapping( nodeVar1.xyz, render.nodeUniform2 ), nodeVar1.w );\n\n\t// result\n\n\toutput.color = fn0( vec4<f32>( sRGBTransferOETF( nodeVar2.xyz ), nodeVar2.w ) );\n\n\treturn output;\n\n}\n"
+  }
+ ],
+ "pipelines": [
+  {
+   "id": "p0",
+   "label": "renderPipeline_Background.material_19",
+   "desc": {
+    "label": "renderPipeline_Background.material_19",
+    "layout": "pl0",
+    "vertex": {
+     "module": "m00",
+     "entryPoint": "main",
+     "buffers": [
+      {
+       "arrayStride": 12,
+       "attributes": [
+        {
+         "shaderLocation": 0,
+         "offset": 0,
+         "format": "float32x3"
+        }
+       ],
+       "stepMode": "vertex"
+      }
+     ]
+    },
+    "primitive": {
+     "topology": "triangle-list",
+     "frontFace": "cw",
+     "cullMode": "back"
+    },
+    "depthStencil": {
+     "format": "depth24plus",
+     "depthWriteEnabled": false,
+     "depthCompare": "always"
+    },
+    "multisample": {
+     "count": 4,
+     "mask": 4294967295,
+     "alphaToCoverageEnabled": false
+    },
+    "fragment": {
+     "module": "m01",
+     "entryPoint": "main",
+     "targets": [
+      {
+       "format": "rgba16float",
+       "writeMask": 15
+      }
+     ]
+    },
+    "layoutBGLs": [
+     "bgl0",
+     "bgl0"
+    ]
+   }
+  },
+  {
+   "id": "p1",
+   "label": "mipmap-rgba8unorm-srgb-2d-array",
+   "desc": {
+    "label": "mipmap-rgba8unorm-srgb-2d-array",
+    "layout": "auto",
+    "vertex": {
+     "module": "m02"
+    },
+    "primitive": {},
+    "multisample": {
+     "count": 1,
+     "mask": 4294967295,
+     "alphaToCoverageEnabled": false
+    },
+    "fragment": {
+     "module": "m02",
+     "entryPoint": "main_2d_array",
+     "targets": [
+      {
+       "format": "rgba8unorm-srgb"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "p2",
+   "label": "mipmap-rgba8unorm-2d-array",
+   "desc": {
+    "label": "mipmap-rgba8unorm-2d-array",
+    "layout": "auto",
+    "vertex": {
+     "module": "m02"
+    },
+    "primitive": {},
+    "multisample": {
+     "count": 1,
+     "mask": 4294967295,
+     "alphaToCoverageEnabled": false
+    },
+    "fragment": {
+     "module": "m02",
+     "entryPoint": "main_2d_array",
+     "targets": [
+      {
+       "format": "rgba8unorm"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "p3",
+   "label": "renderPipeline_Ch03_Body_18",
+   "desc": {
+    "label": "renderPipeline_Ch03_Body_18",
+    "layout": "pl3",
+    "vertex": {
+     "module": "m03",
+     "entryPoint": "main",
+     "buffers": [
+      {
+       "arrayStride": 12,
+       "attributes": [
+        {
+         "shaderLocation": 0,
+         "offset": 0,
+         "format": "float32x3"
+        }
+       ],
+       "stepMode": "vertex"
+      },
+      {
+       "arrayStride": 16,
+       "attributes": [
+        {
+         "shaderLocation": 1,
+         "offset": 0,
+         "format": "uint32x4"
+        }
+       ],
+       "stepMode": "vertex"
+      },
+      {
+       "arrayStride": 16,
+       "attributes": [
+        {
+         "shaderLocation": 2,
+         "offset": 0,
+         "format": "float32x4"
+        }
+       ],
+       "stepMode": "vertex"
+      },
+      {
+       "arrayStride": 12,
+       "attributes": [
+        {
+         "shaderLocation": 3,
+         "offset": 0,
+         "format": "float32x3"
+        }
+       ],
+       "stepMode": "vertex"
+      },
+      {
+       "arrayStride": 8,
+       "attributes": [
+        {
+         "shaderLocation": 4,
+         "offset": 0,
+         "format": "float32x2"
+        }
+       ],
+       "stepMode": "vertex"
+      }
+     ]
+    },
+    "primitive": {
+     "topology": "triangle-list",
+     "frontFace": "ccw",
+     "cullMode": "none"
+    },
+    "depthStencil": {
+     "format": "depth24plus",
+     "depthWriteEnabled": true,
+     "depthCompare": "less-equal"
+    },
+    "multisample": {
+     "count": 4,
+     "mask": 4294967295,
+     "alphaToCoverageEnabled": false
+    },
+    "fragment": {
+     "module": "m04",
+     "entryPoint": "main",
+     "targets": [
+      {
+       "format": "rgba16float",
+       "writeMask": 15
+      }
+     ]
+    },
+    "layoutBGLs": [
+     "bgl0",
+     "bgl1"
+    ]
+   }
+  },
+  {
+   "id": "p4",
+   "label": "renderPipeline_outputColorTransform_21",
+   "desc": {
+    "label": "renderPipeline_outputColorTransform_21",
+    "layout": "pl4",
+    "vertex": {
+     "module": "m05",
+     "entryPoint": "main",
+     "buffers": [
+      {
+       "arrayStride": 12,
+       "attributes": [
+        {
+         "shaderLocation": 0,
+         "offset": 0,
+         "format": "float32x3"
+        }
+       ],
+       "stepMode": "vertex"
+      }
+     ]
+    },
+    "primitive": {
+     "topology": "triangle-list",
+     "frontFace": "ccw",
+     "cullMode": "back"
+    },
+    "depthStencil": {
+     "format": "depth24plus",
+     "depthWriteEnabled": true,
+     "depthCompare": "less-equal"
+    },
+    "multisample": {
+     "count": 1,
+     "mask": 4294967295,
+     "alphaToCoverageEnabled": false
+    },
+    "fragment": {
+     "module": "m06",
+     "entryPoint": "main",
+     "targets": [
+      {
+       "format": "rgba8unorm",
+       "writeMask": 15
+      }
+     ]
+    },
+    "layoutBGLs": [
+     "bgl0",
+     "bgl2"
+    ]
+   }
+  }
+ ],
+ "bgls": [
+  {
+   "id": "bgl0",
+   "entries": [
+    {
+     "binding": 0,
+     "visibility": 7,
+     "buffer": {}
+    }
+   ]
+  },
+  {
+   "id": "bgl1",
+   "entries": [
+    {
+     "binding": 0,
+     "visibility": 7,
+     "buffer": {}
+    },
+    {
+     "binding": 1,
+     "visibility": 2,
+     "sampler": {}
+    },
+    {
+     "binding": 2,
+     "visibility": 2,
+     "texture": {}
+    },
+    {
+     "binding": 3,
+     "visibility": 2,
+     "sampler": {}
+    },
+    {
+     "binding": 4,
+     "visibility": 2,
+     "texture": {}
+    },
+    {
+     "binding": 5,
+     "visibility": 2,
+     "sampler": {}
+    },
+    {
+     "binding": 6,
+     "visibility": 2,
+     "texture": {}
+    },
+    {
+     "binding": 7,
+     "visibility": 2,
+     "sampler": {}
+    },
+    {
+     "binding": 8,
+     "visibility": 2,
+     "texture": {}
+    },
+    {
+     "binding": 9,
+     "visibility": 2,
+     "sampler": {}
+    },
+    {
+     "binding": 10,
+     "visibility": 2,
+     "texture": {}
+    },
+    {
+     "binding": 11,
+     "visibility": 1,
+     "buffer": {}
+    }
+   ]
+  },
+  {
+   "id": "bgl2",
+   "entries": [
+    {
+     "binding": 0,
+     "visibility": 2,
+     "sampler": {}
+    },
+    {
+     "binding": 1,
+     "visibility": 2,
+     "texture": {}
+    },
+    {
+     "binding": 2,
+     "visibility": 7,
+     "buffer": {}
+    }
+   ]
+  }
+ ],
+ "textures": [
+  {
+   "id": "t0",
+   "label": "",
+   "desc": {
+    "label": "",
+    "size": {
+     "width": 800,
+     "height": 500,
+     "depthOrArrayLayers": 1
+    },
+    "mipLevelCount": 1,
+    "sampleCount": 1,
+    "dimension": "2d",
+    "format": "rgba16float",
+    "usage": 23,
+    "viewFormats": []
+   }
+  },
+  {
+   "id": "t1",
+   "label": "-msaa",
+   "desc": {
+    "label": "-msaa",
+    "size": {
+     "width": 800,
+     "height": 500,
+     "depthOrArrayLayers": 1
+    },
+    "mipLevelCount": 1,
+    "sampleCount": 4,
+    "dimension": "2d",
+    "format": "rgba16float",
+    "usage": 23,
+    "viewFormats": []
+   }
+  },
+  {
+   "id": "t2",
+   "label": "",
+   "desc": {
+    "label": "",
+    "size": {
+     "width": 800,
+     "height": 500,
+     "depthOrArrayLayers": 1
+    },
+    "mipLevelCount": 1,
+    "sampleCount": 4,
+    "dimension": "2d",
+    "format": "depth24plus",
+    "usage": 23,
+    "viewFormats": []
+   }
+  },
+  {
+   "id": "t3",
+   "label": "Ch03_1001_Diffuse",
+   "desc": {
+    "label": "Ch03_1001_Diffuse",
+    "size": {
+     "width": 512,
+     "height": 512,
+     "depthOrArrayLayers": 1
+    },
+    "mipLevelCount": 10,
+    "sampleCount": 1,
+    "dimension": "2d",
+    "format": "rgba8unorm-srgb",
+    "usage": 23,
+    "viewFormats": []
+   }
+  },
+  {
+   "id": "t4",
+   "label": "Ch03_1001_Glossiness",
+   "desc": {
+    "label": "Ch03_1001_Glossiness",
+    "size": {
+     "width": 512,
+     "height": 512,
+     "depthOrArrayLayers": 1
+    },
+    "mipLevelCount": 10,
+    "sampleCount": 1,
+    "dimension": "2d",
+    "format": "rgba8unorm",
+    "usage": 23,
+    "viewFormats": []
+   }
+  },
+  {
+   "id": "t5",
+   "label": "Image",
+   "desc": {
+    "label": "Image",
+    "size": {
+     "width": 512,
+     "height": 512,
+     "depthOrArrayLayers": 1
+    },
+    "mipLevelCount": 10,
+    "sampleCount": 1,
+    "dimension": "2d",
+    "format": "rgba8unorm-srgb",
+    "usage": 23,
+    "viewFormats": []
+   }
+  },
+  {
+   "id": "t6",
+   "label": "DFG_LUT",
+   "desc": {
+    "label": "DFG_LUT",
+    "size": {
+     "width": 16,
+     "height": 16,
+     "depthOrArrayLayers": 1
+    },
+    "mipLevelCount": 1,
+    "sampleCount": 1,
+    "dimension": "2d",
+    "format": "rg16float",
+    "usage": 23,
+    "viewFormats": []
+   }
+  },
+  {
+   "id": "t7",
+   "label": "Ch03_1001_Normal",
+   "desc": {
+    "label": "Ch03_1001_Normal",
+    "size": {
+     "width": 512,
+     "height": 512,
+     "depthOrArrayLayers": 1
+    },
+    "mipLevelCount": 10,
+    "sampleCount": 1,
+    "dimension": "2d",
+    "format": "rgba8unorm",
+    "usage": 23,
+    "viewFormats": []
+   }
+  },
+  {
+   "id": "t8",
+   "label": "depthBuffer",
+   "desc": {
+    "label": "depthBuffer",
+    "size": {
+     "width": 800,
+     "height": 500,
+     "depthOrArrayLayers": 1
+    },
+    "mipLevelCount": 1,
+    "sampleCount": 1,
+    "dimension": "2d",
+    "format": "depth24plus",
+    "usage": 23,
+    "viewFormats": []
+   }
+  }
+ ],
+ "views": [
+  {
+   "id": "v0",
+   "texture": "t0",
+   "label": "",
+   "format": "rgba16float",
+   "width": 800,
+   "height": 500,
+   "sampleCount": 1,
+   "mipLevelCount": 1,
+   "desc": {
+    "label": "colorAttachment_0",
+    "dimension": "2d",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 0,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "arrayLayerCount": 1,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v1",
+   "texture": "t1",
+   "label": "-msaa",
+   "format": "rgba16float",
+   "width": 800,
+   "height": 500,
+   "sampleCount": 4,
+   "mipLevelCount": 1,
+   "desc": {}
+  },
+  {
+   "id": "v2",
+   "texture": "t2",
+   "label": "",
+   "format": "depth24plus",
+   "width": 800,
+   "height": 500,
+   "sampleCount": 4,
+   "mipLevelCount": 1,
+   "desc": {
+    "label": "",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 0,
+    "baseArrayLayer": 0,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v3",
+   "texture": "t3",
+   "label": "Ch03_1001_Diffuse",
+   "format": "rgba8unorm-srgb",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d-array",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 0,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v4",
+   "texture": "t3",
+   "label": "Ch03_1001_Diffuse",
+   "format": "rgba8unorm-srgb",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 1,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "arrayLayerCount": 1,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v5",
+   "texture": "t3",
+   "label": "Ch03_1001_Diffuse",
+   "format": "rgba8unorm-srgb",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d-array",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 1,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v6",
+   "texture": "t3",
+   "label": "Ch03_1001_Diffuse",
+   "format": "rgba8unorm-srgb",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 2,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "arrayLayerCount": 1,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v7",
+   "texture": "t3",
+   "label": "Ch03_1001_Diffuse",
+   "format": "rgba8unorm-srgb",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d-array",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 2,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v8",
+   "texture": "t3",
+   "label": "Ch03_1001_Diffuse",
+   "format": "rgba8unorm-srgb",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 3,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "arrayLayerCount": 1,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v9",
+   "texture": "t3",
+   "label": "Ch03_1001_Diffuse",
+   "format": "rgba8unorm-srgb",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d-array",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 3,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v10",
+   "texture": "t3",
+   "label": "Ch03_1001_Diffuse",
+   "format": "rgba8unorm-srgb",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 4,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "arrayLayerCount": 1,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v11",
+   "texture": "t3",
+   "label": "Ch03_1001_Diffuse",
+   "format": "rgba8unorm-srgb",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d-array",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 4,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v12",
+   "texture": "t3",
+   "label": "Ch03_1001_Diffuse",
+   "format": "rgba8unorm-srgb",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 5,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "arrayLayerCount": 1,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v13",
+   "texture": "t3",
+   "label": "Ch03_1001_Diffuse",
+   "format": "rgba8unorm-srgb",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d-array",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 5,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v14",
+   "texture": "t3",
+   "label": "Ch03_1001_Diffuse",
+   "format": "rgba8unorm-srgb",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 6,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "arrayLayerCount": 1,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v15",
+   "texture": "t3",
+   "label": "Ch03_1001_Diffuse",
+   "format": "rgba8unorm-srgb",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d-array",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 6,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v16",
+   "texture": "t3",
+   "label": "Ch03_1001_Diffuse",
+   "format": "rgba8unorm-srgb",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 7,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "arrayLayerCount": 1,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v17",
+   "texture": "t3",
+   "label": "Ch03_1001_Diffuse",
+   "format": "rgba8unorm-srgb",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d-array",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 7,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v18",
+   "texture": "t3",
+   "label": "Ch03_1001_Diffuse",
+   "format": "rgba8unorm-srgb",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 8,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "arrayLayerCount": 1,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v19",
+   "texture": "t3",
+   "label": "Ch03_1001_Diffuse",
+   "format": "rgba8unorm-srgb",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d-array",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 8,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v20",
+   "texture": "t3",
+   "label": "Ch03_1001_Diffuse",
+   "format": "rgba8unorm-srgb",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 9,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "arrayLayerCount": 1,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v21",
+   "texture": "t4",
+   "label": "Ch03_1001_Glossiness",
+   "format": "rgba8unorm",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d-array",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 0,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v22",
+   "texture": "t4",
+   "label": "Ch03_1001_Glossiness",
+   "format": "rgba8unorm",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 1,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "arrayLayerCount": 1,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v23",
+   "texture": "t4",
+   "label": "Ch03_1001_Glossiness",
+   "format": "rgba8unorm",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d-array",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 1,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v24",
+   "texture": "t4",
+   "label": "Ch03_1001_Glossiness",
+   "format": "rgba8unorm",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 2,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "arrayLayerCount": 1,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v25",
+   "texture": "t4",
+   "label": "Ch03_1001_Glossiness",
+   "format": "rgba8unorm",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d-array",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 2,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v26",
+   "texture": "t4",
+   "label": "Ch03_1001_Glossiness",
+   "format": "rgba8unorm",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 3,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "arrayLayerCount": 1,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v27",
+   "texture": "t4",
+   "label": "Ch03_1001_Glossiness",
+   "format": "rgba8unorm",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d-array",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 3,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v28",
+   "texture": "t4",
+   "label": "Ch03_1001_Glossiness",
+   "format": "rgba8unorm",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 4,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "arrayLayerCount": 1,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v29",
+   "texture": "t4",
+   "label": "Ch03_1001_Glossiness",
+   "format": "rgba8unorm",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d-array",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 4,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v30",
+   "texture": "t4",
+   "label": "Ch03_1001_Glossiness",
+   "format": "rgba8unorm",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 5,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "arrayLayerCount": 1,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v31",
+   "texture": "t4",
+   "label": "Ch03_1001_Glossiness",
+   "format": "rgba8unorm",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d-array",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 5,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v32",
+   "texture": "t4",
+   "label": "Ch03_1001_Glossiness",
+   "format": "rgba8unorm",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 6,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "arrayLayerCount": 1,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v33",
+   "texture": "t4",
+   "label": "Ch03_1001_Glossiness",
+   "format": "rgba8unorm",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d-array",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 6,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v34",
+   "texture": "t4",
+   "label": "Ch03_1001_Glossiness",
+   "format": "rgba8unorm",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 7,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "arrayLayerCount": 1,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v35",
+   "texture": "t4",
+   "label": "Ch03_1001_Glossiness",
+   "format": "rgba8unorm",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d-array",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 7,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v36",
+   "texture": "t4",
+   "label": "Ch03_1001_Glossiness",
+   "format": "rgba8unorm",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 8,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "arrayLayerCount": 1,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v37",
+   "texture": "t4",
+   "label": "Ch03_1001_Glossiness",
+   "format": "rgba8unorm",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d-array",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 8,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v38",
+   "texture": "t4",
+   "label": "Ch03_1001_Glossiness",
+   "format": "rgba8unorm",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 9,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "arrayLayerCount": 1,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v39",
+   "texture": "t5",
+   "label": "Image",
+   "format": "rgba8unorm-srgb",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d-array",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 0,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v40",
+   "texture": "t5",
+   "label": "Image",
+   "format": "rgba8unorm-srgb",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 1,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "arrayLayerCount": 1,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v41",
+   "texture": "t5",
+   "label": "Image",
+   "format": "rgba8unorm-srgb",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d-array",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 1,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v42",
+   "texture": "t5",
+   "label": "Image",
+   "format": "rgba8unorm-srgb",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 2,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "arrayLayerCount": 1,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v43",
+   "texture": "t5",
+   "label": "Image",
+   "format": "rgba8unorm-srgb",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d-array",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 2,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v44",
+   "texture": "t5",
+   "label": "Image",
+   "format": "rgba8unorm-srgb",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 3,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "arrayLayerCount": 1,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v45",
+   "texture": "t5",
+   "label": "Image",
+   "format": "rgba8unorm-srgb",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d-array",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 3,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v46",
+   "texture": "t5",
+   "label": "Image",
+   "format": "rgba8unorm-srgb",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 4,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "arrayLayerCount": 1,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v47",
+   "texture": "t5",
+   "label": "Image",
+   "format": "rgba8unorm-srgb",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d-array",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 4,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v48",
+   "texture": "t5",
+   "label": "Image",
+   "format": "rgba8unorm-srgb",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 5,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "arrayLayerCount": 1,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v49",
+   "texture": "t5",
+   "label": "Image",
+   "format": "rgba8unorm-srgb",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d-array",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 5,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v50",
+   "texture": "t5",
+   "label": "Image",
+   "format": "rgba8unorm-srgb",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 6,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "arrayLayerCount": 1,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v51",
+   "texture": "t5",
+   "label": "Image",
+   "format": "rgba8unorm-srgb",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d-array",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 6,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v52",
+   "texture": "t5",
+   "label": "Image",
+   "format": "rgba8unorm-srgb",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 7,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "arrayLayerCount": 1,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v53",
+   "texture": "t5",
+   "label": "Image",
+   "format": "rgba8unorm-srgb",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d-array",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 7,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v54",
+   "texture": "t5",
+   "label": "Image",
+   "format": "rgba8unorm-srgb",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 8,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "arrayLayerCount": 1,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v55",
+   "texture": "t5",
+   "label": "Image",
+   "format": "rgba8unorm-srgb",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d-array",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 8,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v56",
+   "texture": "t5",
+   "label": "Image",
+   "format": "rgba8unorm-srgb",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 9,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "arrayLayerCount": 1,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v57",
+   "texture": "t7",
+   "label": "Ch03_1001_Normal",
+   "format": "rgba8unorm",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d-array",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 0,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v58",
+   "texture": "t7",
+   "label": "Ch03_1001_Normal",
+   "format": "rgba8unorm",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 1,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "arrayLayerCount": 1,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v59",
+   "texture": "t7",
+   "label": "Ch03_1001_Normal",
+   "format": "rgba8unorm",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d-array",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 1,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v60",
+   "texture": "t7",
+   "label": "Ch03_1001_Normal",
+   "format": "rgba8unorm",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 2,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "arrayLayerCount": 1,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v61",
+   "texture": "t7",
+   "label": "Ch03_1001_Normal",
+   "format": "rgba8unorm",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d-array",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 2,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v62",
+   "texture": "t7",
+   "label": "Ch03_1001_Normal",
+   "format": "rgba8unorm",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 3,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "arrayLayerCount": 1,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v63",
+   "texture": "t7",
+   "label": "Ch03_1001_Normal",
+   "format": "rgba8unorm",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d-array",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 3,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v64",
+   "texture": "t7",
+   "label": "Ch03_1001_Normal",
+   "format": "rgba8unorm",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 4,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "arrayLayerCount": 1,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v65",
+   "texture": "t7",
+   "label": "Ch03_1001_Normal",
+   "format": "rgba8unorm",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d-array",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 4,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v66",
+   "texture": "t7",
+   "label": "Ch03_1001_Normal",
+   "format": "rgba8unorm",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 5,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "arrayLayerCount": 1,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v67",
+   "texture": "t7",
+   "label": "Ch03_1001_Normal",
+   "format": "rgba8unorm",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d-array",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 5,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v68",
+   "texture": "t7",
+   "label": "Ch03_1001_Normal",
+   "format": "rgba8unorm",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 6,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "arrayLayerCount": 1,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v69",
+   "texture": "t7",
+   "label": "Ch03_1001_Normal",
+   "format": "rgba8unorm",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d-array",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 6,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v70",
+   "texture": "t7",
+   "label": "Ch03_1001_Normal",
+   "format": "rgba8unorm",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 7,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "arrayLayerCount": 1,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v71",
+   "texture": "t7",
+   "label": "Ch03_1001_Normal",
+   "format": "rgba8unorm",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d-array",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 7,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v72",
+   "texture": "t7",
+   "label": "Ch03_1001_Normal",
+   "format": "rgba8unorm",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 8,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "arrayLayerCount": 1,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v73",
+   "texture": "t7",
+   "label": "Ch03_1001_Normal",
+   "format": "rgba8unorm",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d-array",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 8,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v74",
+   "texture": "t7",
+   "label": "Ch03_1001_Normal",
+   "format": "rgba8unorm",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 9,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "arrayLayerCount": 1,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v75",
+   "texture": "t3",
+   "label": "Ch03_1001_Diffuse",
+   "format": "rgba8unorm-srgb",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 0,
+    "mipLevelCount": 10,
+    "baseArrayLayer": 0,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v76",
+   "texture": "t4",
+   "label": "Ch03_1001_Glossiness",
+   "format": "rgba8unorm",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 0,
+    "mipLevelCount": 10,
+    "baseArrayLayer": 0,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v77",
+   "texture": "t5",
+   "label": "Image",
+   "format": "rgba8unorm-srgb",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 0,
+    "mipLevelCount": 10,
+    "baseArrayLayer": 0,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v78",
+   "texture": "t6",
+   "label": "DFG_LUT",
+   "format": "rg16float",
+   "width": 16,
+   "height": 16,
+   "sampleCount": 1,
+   "mipLevelCount": 1,
+   "desc": {
+    "label": "",
+    "dimension": "2d",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 0,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v79",
+   "texture": "t7",
+   "label": "Ch03_1001_Normal",
+   "format": "rgba8unorm",
+   "width": 512,
+   "height": 512,
+   "sampleCount": 1,
+   "mipLevelCount": 10,
+   "desc": {
+    "label": "",
+    "dimension": "2d",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 0,
+    "mipLevelCount": 10,
+    "baseArrayLayer": 0,
+    "swizzle": "rgba"
+   }
+  },
+  {
+   "id": "v80",
+   "texture": "t8",
+   "label": "depthBuffer",
+   "format": "depth24plus",
+   "width": 800,
+   "height": 500,
+   "sampleCount": 1,
+   "mipLevelCount": 1,
+   "desc": {}
+  },
+  {
+   "id": "v81",
+   "label": "",
+   "format": "rgba8unorm",
+   "width": 800,
+   "height": 500,
+   "sampleCount": 1,
+   "mipLevelCount": 1,
+   "desc": {}
+  },
+  {
+   "id": "v82",
+   "texture": "t0",
+   "label": "",
+   "format": "rgba16float",
+   "width": 800,
+   "height": 500,
+   "sampleCount": 1,
+   "mipLevelCount": 1,
+   "desc": {
+    "label": "",
+    "dimension": "2d",
+    "usage": 0,
+    "aspect": "all",
+    "baseMipLevel": 0,
+    "mipLevelCount": 1,
+    "baseArrayLayer": 0,
+    "swizzle": "rgba"
+   }
+  }
+ ],
+ "samplers": [
+  {
+   "id": "s0",
+   "desc": {
+    "label": "",
+    "addressModeU": "repeat",
+    "addressModeV": "repeat",
+    "addressModeW": "clamp-to-edge",
+    "magFilter": "linear",
+    "minFilter": "linear",
+    "mipmapFilter": "linear",
+    "lodMinClamp": 0,
+    "lodMaxClamp": 32,
+    "maxAnisotropy": 1
+   }
+  },
+  {
+   "id": "s1",
+   "desc": {
+    "minFilter": "linear"
+   }
+  },
+  {
+   "id": "s2",
+   "desc": {
+    "minFilter": "nearest"
+   }
+  },
+  {
+   "id": "s3",
+   "desc": {
+    "label": "",
+    "addressModeU": "clamp-to-edge",
+    "addressModeV": "clamp-to-edge",
+    "addressModeW": "clamp-to-edge",
+    "magFilter": "linear",
+    "minFilter": "linear",
+    "mipmapFilter": "nearest",
+    "lodMinClamp": 0,
+    "lodMaxClamp": 32,
+    "maxAnisotropy": 1
+   }
+  }
+ ],
+ "passes": [
+  {
+   "id": "pass0",
+   "encoder": "e0_2fvt",
+   "label": "",
+   "color": [
+    {
+     "view": {
+      "view": "v1",
+      "texture": "t1",
+      "label": "-msaa",
+      "format": "rgba16float",
+      "size": "800x500",
+      "sampleCount": 4
+     },
+     "resolveTarget": {
+      "view": "v0",
+      "texture": "t0",
+      "label": "",
+      "format": "rgba16float",
+      "size": "800x500",
+      "sampleCount": 1
+     },
+     "loadOp": "clear",
+     "storeOp": "store",
+     "clearValue": {
+      "r": 0,
+      "g": 0,
+      "b": 0,
+      "a": 0
+     }
+    }
+   ],
+   "depth": {
+    "view": {
+     "view": "v2",
+     "texture": "t2",
+     "label": "",
+     "format": "depth24plus",
+     "size": "800x500",
+     "sampleCount": 4
+    },
+    "depthLoadOp": "clear",
+    "depthStoreOp": "store",
+    "depthClearValue": 1
+   },
+   "cmds": [
+    {
+     "setPipeline": "p0",
+     "label": "renderPipeline_Background.material_19"
+    },
+    {
+     "setBindGroup": 0,
+     "group": "bg0"
+    },
+    {
+     "setBindGroup": 1,
+     "group": "bg1"
+    },
+    {
+     "setIndexBuffer": "uint32"
+    },
+    {
+     "setVertexBuffer": 0
+    },
+    {
+     "drawIndexed": 5952,
+     "instances": 1,
+     "firstIndex": 0
+    },
+    {
+     "setPipeline": "p3",
+     "label": "renderPipeline_Ch03_Body_18"
+    },
+    {
+     "setBindGroup": 0,
+     "group": "bg2"
+    },
+    {
+     "setBindGroup": 1,
+     "group": "bg40"
+    },
+    {
+     "setIndexBuffer": "uint32"
+    },
+    {
+     "setVertexBuffer": 0
+    },
+    {
+     "setVertexBuffer": 1
+    },
+    {
+     "setVertexBuffer": 2
+    },
+    {
+     "setVertexBuffer": 3
+    },
+    {
+     "setVertexBuffer": 4
+    },
+    {
+     "drawIndexed": 84318,
+     "instances": 1,
+     "firstIndex": 0
+    }
+   ]
+  },
+  {
+   "id": "pass1",
+   "encoder": "e1_m1za",
+   "label": "",
+   "color": [
+    {
+     "view": {
+      "view": "v4",
+      "texture": "t3",
+      "label": "Ch03_1001_Diffuse",
+      "format": "rgba8unorm-srgb",
+      "size": "512x512",
+      "sampleCount": 1
+     },
+     "resolveTarget": null,
+     "loadOp": "clear",
+     "storeOp": "store"
+    }
+   ],
+   "depth": null,
+   "cmds": []
+  },
+  {
+   "id": "pass2",
+   "encoder": "e1_m1za",
+   "label": "",
+   "color": [
+    {
+     "view": {
+      "view": "v6",
+      "texture": "t3",
+      "label": "Ch03_1001_Diffuse",
+      "format": "rgba8unorm-srgb",
+      "size": "512x512",
+      "sampleCount": 1
+     },
+     "resolveTarget": null,
+     "loadOp": "clear",
+     "storeOp": "store"
+    }
+   ],
+   "depth": null,
+   "cmds": []
+  },
+  {
+   "id": "pass3",
+   "encoder": "e1_m1za",
+   "label": "",
+   "color": [
+    {
+     "view": {
+      "view": "v8",
+      "texture": "t3",
+      "label": "Ch03_1001_Diffuse",
+      "format": "rgba8unorm-srgb",
+      "size": "512x512",
+      "sampleCount": 1
+     },
+     "resolveTarget": null,
+     "loadOp": "clear",
+     "storeOp": "store"
+    }
+   ],
+   "depth": null,
+   "cmds": []
+  },
+  {
+   "id": "pass4",
+   "encoder": "e1_m1za",
+   "label": "",
+   "color": [
+    {
+     "view": {
+      "view": "v10",
+      "texture": "t3",
+      "label": "Ch03_1001_Diffuse",
+      "format": "rgba8unorm-srgb",
+      "size": "512x512",
+      "sampleCount": 1
+     },
+     "resolveTarget": null,
+     "loadOp": "clear",
+     "storeOp": "store"
+    }
+   ],
+   "depth": null,
+   "cmds": []
+  },
+  {
+   "id": "pass5",
+   "encoder": "e1_m1za",
+   "label": "",
+   "color": [
+    {
+     "view": {
+      "view": "v12",
+      "texture": "t3",
+      "label": "Ch03_1001_Diffuse",
+      "format": "rgba8unorm-srgb",
+      "size": "512x512",
+      "sampleCount": 1
+     },
+     "resolveTarget": null,
+     "loadOp": "clear",
+     "storeOp": "store"
+    }
+   ],
+   "depth": null,
+   "cmds": []
+  },
+  {
+   "id": "pass6",
+   "encoder": "e1_m1za",
+   "label": "",
+   "color": [
+    {
+     "view": {
+      "view": "v14",
+      "texture": "t3",
+      "label": "Ch03_1001_Diffuse",
+      "format": "rgba8unorm-srgb",
+      "size": "512x512",
+      "sampleCount": 1
+     },
+     "resolveTarget": null,
+     "loadOp": "clear",
+     "storeOp": "store"
+    }
+   ],
+   "depth": null,
+   "cmds": []
+  },
+  {
+   "id": "pass7",
+   "encoder": "e1_m1za",
+   "label": "",
+   "color": [
+    {
+     "view": {
+      "view": "v16",
+      "texture": "t3",
+      "label": "Ch03_1001_Diffuse",
+      "format": "rgba8unorm-srgb",
+      "size": "512x512",
+      "sampleCount": 1
+     },
+     "resolveTarget": null,
+     "loadOp": "clear",
+     "storeOp": "store"
+    }
+   ],
+   "depth": null,
+   "cmds": []
+  },
+  {
+   "id": "pass8",
+   "encoder": "e1_m1za",
+   "label": "",
+   "color": [
+    {
+     "view": {
+      "view": "v18",
+      "texture": "t3",
+      "label": "Ch03_1001_Diffuse",
+      "format": "rgba8unorm-srgb",
+      "size": "512x512",
+      "sampleCount": 1
+     },
+     "resolveTarget": null,
+     "loadOp": "clear",
+     "storeOp": "store"
+    }
+   ],
+   "depth": null,
+   "cmds": []
+  },
+  {
+   "id": "pass9",
+   "encoder": "e1_m1za",
+   "label": "",
+   "color": [
+    {
+     "view": {
+      "view": "v20",
+      "texture": "t3",
+      "label": "Ch03_1001_Diffuse",
+      "format": "rgba8unorm-srgb",
+      "size": "512x512",
+      "sampleCount": 1
+     },
+     "resolveTarget": null,
+     "loadOp": "clear",
+     "storeOp": "store"
+    }
+   ],
+   "depth": null,
+   "cmds": []
+  },
+  {
+   "id": "pass10",
+   "encoder": "e10_3n8m",
+   "label": "",
+   "color": [
+    {
+     "view": {
+      "view": "v22",
+      "texture": "t4",
+      "label": "Ch03_1001_Glossiness",
+      "format": "rgba8unorm",
+      "size": "512x512",
+      "sampleCount": 1
+     },
+     "resolveTarget": null,
+     "loadOp": "clear",
+     "storeOp": "store"
+    }
+   ],
+   "depth": null,
+   "cmds": []
+  },
+  {
+   "id": "pass11",
+   "encoder": "e10_3n8m",
+   "label": "",
+   "color": [
+    {
+     "view": {
+      "view": "v24",
+      "texture": "t4",
+      "label": "Ch03_1001_Glossiness",
+      "format": "rgba8unorm",
+      "size": "512x512",
+      "sampleCount": 1
+     },
+     "resolveTarget": null,
+     "loadOp": "clear",
+     "storeOp": "store"
+    }
+   ],
+   "depth": null,
+   "cmds": []
+  },
+  {
+   "id": "pass12",
+   "encoder": "e10_3n8m",
+   "label": "",
+   "color": [
+    {
+     "view": {
+      "view": "v26",
+      "texture": "t4",
+      "label": "Ch03_1001_Glossiness",
+      "format": "rgba8unorm",
+      "size": "512x512",
+      "sampleCount": 1
+     },
+     "resolveTarget": null,
+     "loadOp": "clear",
+     "storeOp": "store"
+    }
+   ],
+   "depth": null,
+   "cmds": []
+  },
+  {
+   "id": "pass13",
+   "encoder": "e10_3n8m",
+   "label": "",
+   "color": [
+    {
+     "view": {
+      "view": "v28",
+      "texture": "t4",
+      "label": "Ch03_1001_Glossiness",
+      "format": "rgba8unorm",
+      "size": "512x512",
+      "sampleCount": 1
+     },
+     "resolveTarget": null,
+     "loadOp": "clear",
+     "storeOp": "store"
+    }
+   ],
+   "depth": null,
+   "cmds": []
+  },
+  {
+   "id": "pass14",
+   "encoder": "e10_3n8m",
+   "label": "",
+   "color": [
+    {
+     "view": {
+      "view": "v30",
+      "texture": "t4",
+      "label": "Ch03_1001_Glossiness",
+      "format": "rgba8unorm",
+      "size": "512x512",
+      "sampleCount": 1
+     },
+     "resolveTarget": null,
+     "loadOp": "clear",
+     "storeOp": "store"
+    }
+   ],
+   "depth": null,
+   "cmds": []
+  },
+  {
+   "id": "pass15",
+   "encoder": "e10_3n8m",
+   "label": "",
+   "color": [
+    {
+     "view": {
+      "view": "v32",
+      "texture": "t4",
+      "label": "Ch03_1001_Glossiness",
+      "format": "rgba8unorm",
+      "size": "512x512",
+      "sampleCount": 1
+     },
+     "resolveTarget": null,
+     "loadOp": "clear",
+     "storeOp": "store"
+    }
+   ],
+   "depth": null,
+   "cmds": []
+  },
+  {
+   "id": "pass16",
+   "encoder": "e10_3n8m",
+   "label": "",
+   "color": [
+    {
+     "view": {
+      "view": "v34",
+      "texture": "t4",
+      "label": "Ch03_1001_Glossiness",
+      "format": "rgba8unorm",
+      "size": "512x512",
+      "sampleCount": 1
+     },
+     "resolveTarget": null,
+     "loadOp": "clear",
+     "storeOp": "store"
+    }
+   ],
+   "depth": null,
+   "cmds": []
+  },
+  {
+   "id": "pass17",
+   "encoder": "e10_3n8m",
+   "label": "",
+   "color": [
+    {
+     "view": {
+      "view": "v36",
+      "texture": "t4",
+      "label": "Ch03_1001_Glossiness",
+      "format": "rgba8unorm",
+      "size": "512x512",
+      "sampleCount": 1
+     },
+     "resolveTarget": null,
+     "loadOp": "clear",
+     "storeOp": "store"
+    }
+   ],
+   "depth": null,
+   "cmds": []
+  },
+  {
+   "id": "pass18",
+   "encoder": "e10_3n8m",
+   "label": "",
+   "color": [
+    {
+     "view": {
+      "view": "v38",
+      "texture": "t4",
+      "label": "Ch03_1001_Glossiness",
+      "format": "rgba8unorm",
+      "size": "512x512",
+      "sampleCount": 1
+     },
+     "resolveTarget": null,
+     "loadOp": "clear",
+     "storeOp": "store"
+    }
+   ],
+   "depth": null,
+   "cmds": []
+  },
+  {
+   "id": "pass19",
+   "encoder": "e19_kcbw",
+   "label": "",
+   "color": [
+    {
+     "view": {
+      "view": "v40",
+      "texture": "t5",
+      "label": "Image",
+      "format": "rgba8unorm-srgb",
+      "size": "512x512",
+      "sampleCount": 1
+     },
+     "resolveTarget": null,
+     "loadOp": "clear",
+     "storeOp": "store"
+    }
+   ],
+   "depth": null,
+   "cmds": []
+  },
+  {
+   "id": "pass20",
+   "encoder": "e19_kcbw",
+   "label": "",
+   "color": [
+    {
+     "view": {
+      "view": "v42",
+      "texture": "t5",
+      "label": "Image",
+      "format": "rgba8unorm-srgb",
+      "size": "512x512",
+      "sampleCount": 1
+     },
+     "resolveTarget": null,
+     "loadOp": "clear",
+     "storeOp": "store"
+    }
+   ],
+   "depth": null,
+   "cmds": []
+  },
+  {
+   "id": "pass21",
+   "encoder": "e19_kcbw",
+   "label": "",
+   "color": [
+    {
+     "view": {
+      "view": "v44",
+      "texture": "t5",
+      "label": "Image",
+      "format": "rgba8unorm-srgb",
+      "size": "512x512",
+      "sampleCount": 1
+     },
+     "resolveTarget": null,
+     "loadOp": "clear",
+     "storeOp": "store"
+    }
+   ],
+   "depth": null,
+   "cmds": []
+  },
+  {
+   "id": "pass22",
+   "encoder": "e19_kcbw",
+   "label": "",
+   "color": [
+    {
+     "view": {
+      "view": "v46",
+      "texture": "t5",
+      "label": "Image",
+      "format": "rgba8unorm-srgb",
+      "size": "512x512",
+      "sampleCount": 1
+     },
+     "resolveTarget": null,
+     "loadOp": "clear",
+     "storeOp": "store"
+    }
+   ],
+   "depth": null,
+   "cmds": []
+  },
+  {
+   "id": "pass23",
+   "encoder": "e19_kcbw",
+   "label": "",
+   "color": [
+    {
+     "view": {
+      "view": "v48",
+      "texture": "t5",
+      "label": "Image",
+      "format": "rgba8unorm-srgb",
+      "size": "512x512",
+      "sampleCount": 1
+     },
+     "resolveTarget": null,
+     "loadOp": "clear",
+     "storeOp": "store"
+    }
+   ],
+   "depth": null,
+   "cmds": []
+  },
+  {
+   "id": "pass24",
+   "encoder": "e19_kcbw",
+   "label": "",
+   "color": [
+    {
+     "view": {
+      "view": "v50",
+      "texture": "t5",
+      "label": "Image",
+      "format": "rgba8unorm-srgb",
+      "size": "512x512",
+      "sampleCount": 1
+     },
+     "resolveTarget": null,
+     "loadOp": "clear",
+     "storeOp": "store"
+    }
+   ],
+   "depth": null,
+   "cmds": []
+  },
+  {
+   "id": "pass25",
+   "encoder": "e19_kcbw",
+   "label": "",
+   "color": [
+    {
+     "view": {
+      "view": "v52",
+      "texture": "t5",
+      "label": "Image",
+      "format": "rgba8unorm-srgb",
+      "size": "512x512",
+      "sampleCount": 1
+     },
+     "resolveTarget": null,
+     "loadOp": "clear",
+     "storeOp": "store"
+    }
+   ],
+   "depth": null,
+   "cmds": []
+  },
+  {
+   "id": "pass26",
+   "encoder": "e19_kcbw",
+   "label": "",
+   "color": [
+    {
+     "view": {
+      "view": "v54",
+      "texture": "t5",
+      "label": "Image",
+      "format": "rgba8unorm-srgb",
+      "size": "512x512",
+      "sampleCount": 1
+     },
+     "resolveTarget": null,
+     "loadOp": "clear",
+     "storeOp": "store"
+    }
+   ],
+   "depth": null,
+   "cmds": []
+  },
+  {
+   "id": "pass27",
+   "encoder": "e19_kcbw",
+   "label": "",
+   "color": [
+    {
+     "view": {
+      "view": "v56",
+      "texture": "t5",
+      "label": "Image",
+      "format": "rgba8unorm-srgb",
+      "size": "512x512",
+      "sampleCount": 1
+     },
+     "resolveTarget": null,
+     "loadOp": "clear",
+     "storeOp": "store"
+    }
+   ],
+   "depth": null,
+   "cmds": []
+  },
+  {
+   "id": "pass28",
+   "encoder": "e28_n19n",
+   "label": "",
+   "color": [
+    {
+     "view": {
+      "view": "v58",
+      "texture": "t7",
+      "label": "Ch03_1001_Normal",
+      "format": "rgba8unorm",
+      "size": "512x512",
+      "sampleCount": 1
+     },
+     "resolveTarget": null,
+     "loadOp": "clear",
+     "storeOp": "store"
+    }
+   ],
+   "depth": null,
+   "cmds": []
+  },
+  {
+   "id": "pass29",
+   "encoder": "e28_n19n",
+   "label": "",
+   "color": [
+    {
+     "view": {
+      "view": "v60",
+      "texture": "t7",
+      "label": "Ch03_1001_Normal",
+      "format": "rgba8unorm",
+      "size": "512x512",
+      "sampleCount": 1
+     },
+     "resolveTarget": null,
+     "loadOp": "clear",
+     "storeOp": "store"
+    }
+   ],
+   "depth": null,
+   "cmds": []
+  },
+  {
+   "id": "pass30",
+   "encoder": "e28_n19n",
+   "label": "",
+   "color": [
+    {
+     "view": {
+      "view": "v62",
+      "texture": "t7",
+      "label": "Ch03_1001_Normal",
+      "format": "rgba8unorm",
+      "size": "512x512",
+      "sampleCount": 1
+     },
+     "resolveTarget": null,
+     "loadOp": "clear",
+     "storeOp": "store"
+    }
+   ],
+   "depth": null,
+   "cmds": []
+  },
+  {
+   "id": "pass31",
+   "encoder": "e28_n19n",
+   "label": "",
+   "color": [
+    {
+     "view": {
+      "view": "v64",
+      "texture": "t7",
+      "label": "Ch03_1001_Normal",
+      "format": "rgba8unorm",
+      "size": "512x512",
+      "sampleCount": 1
+     },
+     "resolveTarget": null,
+     "loadOp": "clear",
+     "storeOp": "store"
+    }
+   ],
+   "depth": null,
+   "cmds": []
+  },
+  {
+   "id": "pass32",
+   "encoder": "e28_n19n",
+   "label": "",
+   "color": [
+    {
+     "view": {
+      "view": "v66",
+      "texture": "t7",
+      "label": "Ch03_1001_Normal",
+      "format": "rgba8unorm",
+      "size": "512x512",
+      "sampleCount": 1
+     },
+     "resolveTarget": null,
+     "loadOp": "clear",
+     "storeOp": "store"
+    }
+   ],
+   "depth": null,
+   "cmds": []
+  },
+  {
+   "id": "pass33",
+   "encoder": "e28_n19n",
+   "label": "",
+   "color": [
+    {
+     "view": {
+      "view": "v68",
+      "texture": "t7",
+      "label": "Ch03_1001_Normal",
+      "format": "rgba8unorm",
+      "size": "512x512",
+      "sampleCount": 1
+     },
+     "resolveTarget": null,
+     "loadOp": "clear",
+     "storeOp": "store"
+    }
+   ],
+   "depth": null,
+   "cmds": []
+  },
+  {
+   "id": "pass34",
+   "encoder": "e28_n19n",
+   "label": "",
+   "color": [
+    {
+     "view": {
+      "view": "v70",
+      "texture": "t7",
+      "label": "Ch03_1001_Normal",
+      "format": "rgba8unorm",
+      "size": "512x512",
+      "sampleCount": 1
+     },
+     "resolveTarget": null,
+     "loadOp": "clear",
+     "storeOp": "store"
+    }
+   ],
+   "depth": null,
+   "cmds": []
+  },
+  {
+   "id": "pass35",
+   "encoder": "e28_n19n",
+   "label": "",
+   "color": [
+    {
+     "view": {
+      "view": "v72",
+      "texture": "t7",
+      "label": "Ch03_1001_Normal",
+      "format": "rgba8unorm",
+      "size": "512x512",
+      "sampleCount": 1
+     },
+     "resolveTarget": null,
+     "loadOp": "clear",
+     "storeOp": "store"
+    }
+   ],
+   "depth": null,
+   "cmds": []
+  },
+  {
+   "id": "pass36",
+   "encoder": "e28_n19n",
+   "label": "",
+   "color": [
+    {
+     "view": {
+      "view": "v74",
+      "texture": "t7",
+      "label": "Ch03_1001_Normal",
+      "format": "rgba8unorm",
+      "size": "512x512",
+      "sampleCount": 1
+     },
+     "resolveTarget": null,
+     "loadOp": "clear",
+     "storeOp": "store"
+    }
+   ],
+   "depth": null,
+   "cmds": []
+  },
+  {
+   "id": "pass37",
+   "encoder": "e37_6c2c",
+   "label": "",
+   "color": [
+    {
+     "view": {
+      "view": "v81",
+      "label": "",
+      "format": "rgba8unorm",
+      "size": "800x500",
+      "sampleCount": 1
+     },
+     "resolveTarget": null,
+     "loadOp": "load",
+     "storeOp": "store"
+    }
+   ],
+   "depth": {
+    "view": {
+     "view": "v80",
+     "texture": "t8",
+     "label": "depthBuffer",
+     "format": "depth24plus",
+     "size": "800x500",
+     "sampleCount": 1
+    },
+    "depthLoadOp": "load",
+    "depthStoreOp": "store"
+   },
+   "cmds": [
+    {
+     "setPipeline": "p4",
+     "label": "renderPipeline_outputColorTransform_21"
+    },
+    {
+     "setBindGroup": 0,
+     "group": "bg41"
+    },
+    {
+     "setBindGroup": 1,
+     "group": "bg43"
+    },
+    {
+     "setVertexBuffer": 0
+    },
+    {
+     "draw": 3,
+     "instances": 1
+    }
+   ]
+  }
+ ],
+ "submits": [
+  [
+   {
+    "encoder": "e1_m1za",
+    "label": "mipmapEncoder",
+    "passes": [
+     "pass1",
+     "pass2",
+     "pass3",
+     "pass4",
+     "pass5",
+     "pass6",
+     "pass7",
+     "pass8",
+     "pass9"
+    ]
+   }
+  ],
+  [
+   {
+    "encoder": "e10_3n8m",
+    "label": "mipmapEncoder",
+    "passes": [
+     "pass10",
+     "pass11",
+     "pass12",
+     "pass13",
+     "pass14",
+     "pass15",
+     "pass16",
+     "pass17",
+     "pass18"
+    ]
+   }
+  ],
+  [
+   {
+    "encoder": "e19_kcbw",
+    "label": "mipmapEncoder",
+    "passes": [
+     "pass19",
+     "pass20",
+     "pass21",
+     "pass22",
+     "pass23",
+     "pass24",
+     "pass25",
+     "pass26",
+     "pass27"
+    ]
+   }
+  ],
+  [
+   {
+    "encoder": "e28_n19n",
+    "label": "mipmapEncoder",
+    "passes": [
+     "pass28",
+     "pass29",
+     "pass30",
+     "pass31",
+     "pass32",
+     "pass33",
+     "pass34",
+     "pass35",
+     "pass36"
+    ]
+   }
+  ],
+  [
+   {
+    "encoder": "e0_2fvt",
+    "label": "renderContext_0",
+    "passes": [
+     "pass0"
+    ]
+   }
+  ],
+  [
+   {
+    "encoder": "e37_6c2c",
+    "label": "renderContext_1",
+    "passes": [
+     "pass37"
+    ]
+   }
+  ]
+ ],
+ "writeBuffers": [
+  {
+   "label": "bindingBuffer0_render_(vertex,fragment,compute)",
+   "bufferSize": 160,
+   "offset": 0,
+   "byteLength": 160,
+   "dataOffset": 0,
+   "size": 1
+  },
+  {
+   "label": "bindingBuffer0_render_(vertex,fragment,compute)",
+   "bufferSize": 160,
+   "offset": 16,
+   "byteLength": 160,
+   "dataOffset": 4,
+   "size": 34
+  },
+  {
+   "label": "bindingBuffer1_object_(vertex,fragment,compute)",
+   "bufferSize": 80,
+   "offset": 0,
+   "byteLength": 80,
+   "dataOffset": 0,
+   "size": 1
+  },
+  {
+   "label": "bindingBuffer1_object_(vertex,fragment,compute)",
+   "bufferSize": 80,
+   "offset": 16,
+   "byteLength": 80,
+   "dataOffset": 4,
+   "size": 16
+  },
+  {
+   "label": "",
+   "bufferSize": 4,
+   "offset": 0,
+   "byteLength": 4
+  },
+  {
+   "label": "bindingBuffer4_render_(vertex,fragment,compute)",
+   "bufferSize": 192,
+   "offset": 0,
+   "byteLength": 192,
+   "dataOffset": 0,
+   "size": 37
+  },
+  {
+   "label": "bindingBuffer4_render_(vertex,fragment,compute)",
+   "bufferSize": 192,
+   "offset": 160,
+   "byteLength": 192,
+   "dataOffset": 40,
+   "size": 3
+  },
+  {
+   "label": "bindingBuffer4_render_(vertex,fragment,compute)",
+   "bufferSize": 192,
+   "offset": 176,
+   "byteLength": 192,
+   "dataOffset": 44,
+   "size": 3
+  },
+  {
+   "label": "bindingBuffer3_object_(vertex,fragment,compute)",
+   "bufferSize": 608,
+   "offset": 0,
+   "byteLength": 608,
+   "dataOffset": 0,
+   "size": 35
+  },
+  {
+   "label": "bindingBuffer3_object_(vertex,fragment,compute)",
+   "bufferSize": 608,
+   "offset": 144,
+   "byteLength": 608,
+   "dataOffset": 36,
+   "size": 14
+  },
+  {
+   "label": "bindingBuffer3_object_(vertex,fragment,compute)",
+   "bufferSize": 608,
+   "offset": 208,
+   "byteLength": 608,
+   "dataOffset": 52,
+   "size": 13
+  },
+  {
+   "label": "bindingBuffer3_object_(vertex,fragment,compute)",
+   "bufferSize": 608,
+   "offset": 272,
+   "byteLength": 608,
+   "dataOffset": 68,
+   "size": 25
+  },
+  {
+   "label": "bindingBuffer3_object_(vertex,fragment,compute)",
+   "bufferSize": 608,
+   "offset": 384,
+   "byteLength": 608,
+   "dataOffset": 96,
+   "size": 3
+  },
+  {
+   "label": "bindingBuffer3_object_(vertex,fragment,compute)",
+   "bufferSize": 608,
+   "offset": 400,
+   "byteLength": 608,
+   "dataOffset": 100,
+   "size": 13
+  },
+  {
+   "label": "bindingBuffer3_object_(vertex,fragment,compute)",
+   "bufferSize": 608,
+   "offset": 476,
+   "byteLength": 608,
+   "dataOffset": 119,
+   "size": 31
+  },
+  {
+   "label": "bindingBufferundefined_UniformBuffer_0_(vertex)",
+   "bufferSize": 4160,
+   "offset": 0,
+   "byteLength": 4160,
+   "dataOffset": 0
+  },
+  {
+   "label": "bindingBuffer6_render_(vertex,fragment,compute)",
+   "bufferSize": 144,
+   "offset": 0,
+   "byteLength": 144,
+   "dataOffset": 0,
+   "size": 35
+  },
+  {
+   "label": "bindingBuffer7_object_(vertex,fragment,compute)",
+   "bufferSize": 64,
+   "offset": 0,
+   "byteLength": 64,
+   "dataOffset": 0,
+   "size": 16
+  }
+ ],
+ "writeTextures": [
+  {
+   "texture": "t6",
+   "label": "DFG_LUT",
+   "mip": 0,
+   "origin": {
+    "x": 0,
+    "y": 0,
+    "z": 0
+   },
+   "layout": {
+    "offset": 0,
+    "bytesPerRow": 64
+   },
+   "size": {
+    "width": 16,
+    "height": 16,
+    "depthOrArrayLayers": 1
+   },
+   "byteLength": 1024
+  }
+ ],
+ "limits": {
+  "maxTextureDimension1D": 8192,
+  "maxTextureDimension2D": 8192,
+  "maxTextureDimension3D": 2048,
+  "maxTextureArrayLayers": 256,
+  "maxBindGroups": 4,
+  "maxBindGroupsPlusVertexBuffers": 24,
+  "maxBindingsPerBindGroup": 1000,
+  "maxDynamicUniformBuffersPerPipelineLayout": 8,
+  "maxDynamicStorageBuffersPerPipelineLayout": 4,
+  "maxSampledTexturesPerShaderStage": 16,
+  "maxSamplersPerShaderStage": 16,
+  "maxStorageBuffersPerShaderStage": 8,
+  "maxStorageTexturesPerShaderStage": 4,
+  "maxUniformBuffersPerShaderStage": 12,
+  "maxUniformBufferBindingSize": 65536,
+  "maxStorageBufferBindingSize": 134217728,
+  "minUniformBufferOffsetAlignment": 256,
+  "minStorageBufferOffsetAlignment": 256,
+  "maxVertexBuffers": 8,
+  "maxBufferSize": 268435456,
+  "maxVertexAttributes": 16,
+  "maxVertexBufferArrayStride": 2048,
+  "maxInterStageShaderVariables": 16,
+  "maxColorAttachments": 8,
+  "maxColorAttachmentBytesPerSample": 32,
+  "maxComputeWorkgroupStorageSize": 16384,
+  "maxComputeInvocationsPerWorkgroup": 256,
+  "maxComputeWorkgroupSizeX": 256,
+  "maxComputeWorkgroupSizeY": 256,
+  "maxComputeWorkgroupSizeZ": 64,
+  "maxComputeWorkgroupsPerDimension": 65535,
+  "maxImmediateSize": 64,
+  "maxStorageBuffersInFragmentStage": 8,
+  "maxStorageTexturesInFragmentStage": 4,
+  "maxStorageBuffersInVertexStage": 8,
+  "maxStorageTexturesInVertexStage": 4
+ },
+ "bindGroups": [
+  {
+   "id": "bg0",
+   "label": "bindGroup_render",
+   "layout": "bgl0",
+   "entries": [
+    {
+     "binding": 0,
+     "resource": {
+      "buffer": "buffer"
+     }
+    }
+   ]
+  },
+  {
+   "id": "bg1",
+   "label": "bindGroup_object",
+   "layout": "bgl0",
+   "entries": [
+    {
+     "binding": 0,
+     "resource": {
+      "buffer": "buffer"
+     }
+    }
+   ]
+  },
+  {
+   "id": "bg2",
+   "label": "bindGroup_render",
+   "layout": "bgl0",
+   "entries": [
+    {
+     "binding": 0,
+     "resource": {
+      "buffer": "buffer"
+     }
+    }
+   ]
+  },
+  {
+   "id": "bg3",
+   "label": "",
+   "layout": {
+    "label": ""
+   },
+   "entries": [
+    {
+     "binding": 0,
+     "resource": "s1"
+    },
+    {
+     "binding": 1,
+     "resource": "v3"
+    },
+    {
+     "binding": 2,
+     "resource": {
+      "buffer": "buffer"
+     }
+    }
+   ]
+  },
+  {
+   "id": "bg4",
+   "label": "",
+   "layout": {
+    "label": ""
+   },
+   "entries": [
+    {
+     "binding": 0,
+     "resource": "s1"
+    },
+    {
+     "binding": 1,
+     "resource": "v5"
+    },
+    {
+     "binding": 2,
+     "resource": {
+      "buffer": "buffer"
+     }
+    }
+   ]
+  },
+  {
+   "id": "bg5",
+   "label": "",
+   "layout": {
+    "label": ""
+   },
+   "entries": [
+    {
+     "binding": 0,
+     "resource": "s1"
+    },
+    {
+     "binding": 1,
+     "resource": "v7"
+    },
+    {
+     "binding": 2,
+     "resource": {
+      "buffer": "buffer"
+     }
+    }
+   ]
+  },
+  {
+   "id": "bg6",
+   "label": "",
+   "layout": {
+    "label": ""
+   },
+   "entries": [
+    {
+     "binding": 0,
+     "resource": "s1"
+    },
+    {
+     "binding": 1,
+     "resource": "v9"
+    },
+    {
+     "binding": 2,
+     "resource": {
+      "buffer": "buffer"
+     }
+    }
+   ]
+  },
+  {
+   "id": "bg7",
+   "label": "",
+   "layout": {
+    "label": ""
+   },
+   "entries": [
+    {
+     "binding": 0,
+     "resource": "s1"
+    },
+    {
+     "binding": 1,
+     "resource": "v11"
+    },
+    {
+     "binding": 2,
+     "resource": {
+      "buffer": "buffer"
+     }
+    }
+   ]
+  },
+  {
+   "id": "bg8",
+   "label": "",
+   "layout": {
+    "label": ""
+   },
+   "entries": [
+    {
+     "binding": 0,
+     "resource": "s1"
+    },
+    {
+     "binding": 1,
+     "resource": "v13"
+    },
+    {
+     "binding": 2,
+     "resource": {
+      "buffer": "buffer"
+     }
+    }
+   ]
+  },
+  {
+   "id": "bg9",
+   "label": "",
+   "layout": {
+    "label": ""
+   },
+   "entries": [
+    {
+     "binding": 0,
+     "resource": "s1"
+    },
+    {
+     "binding": 1,
+     "resource": "v15"
+    },
+    {
+     "binding": 2,
+     "resource": {
+      "buffer": "buffer"
+     }
+    }
+   ]
+  },
+  {
+   "id": "bg10",
+   "label": "",
+   "layout": {
+    "label": ""
+   },
+   "entries": [
+    {
+     "binding": 0,
+     "resource": "s1"
+    },
+    {
+     "binding": 1,
+     "resource": "v17"
+    },
+    {
+     "binding": 2,
+     "resource": {
+      "buffer": "buffer"
+     }
+    }
+   ]
+  },
+  {
+   "id": "bg11",
+   "label": "",
+   "layout": {
+    "label": ""
+   },
+   "entries": [
+    {
+     "binding": 0,
+     "resource": "s1"
+    },
+    {
+     "binding": 1,
+     "resource": "v19"
+    },
+    {
+     "binding": 2,
+     "resource": {
+      "buffer": "buffer"
+     }
+    }
+   ]
+  },
+  {
+   "id": "bg12",
+   "label": "",
+   "layout": {
+    "label": ""
+   },
+   "entries": [
+    {
+     "binding": 0,
+     "resource": "s1"
+    },
+    {
+     "binding": 1,
+     "resource": "v21"
+    },
+    {
+     "binding": 2,
+     "resource": {
+      "buffer": "buffer"
+     }
+    }
+   ]
+  },
+  {
+   "id": "bg13",
+   "label": "",
+   "layout": {
+    "label": ""
+   },
+   "entries": [
+    {
+     "binding": 0,
+     "resource": "s1"
+    },
+    {
+     "binding": 1,
+     "resource": "v23"
+    },
+    {
+     "binding": 2,
+     "resource": {
+      "buffer": "buffer"
+     }
+    }
+   ]
+  },
+  {
+   "id": "bg14",
+   "label": "",
+   "layout": {
+    "label": ""
+   },
+   "entries": [
+    {
+     "binding": 0,
+     "resource": "s1"
+    },
+    {
+     "binding": 1,
+     "resource": "v25"
+    },
+    {
+     "binding": 2,
+     "resource": {
+      "buffer": "buffer"
+     }
+    }
+   ]
+  },
+  {
+   "id": "bg15",
+   "label": "",
+   "layout": {
+    "label": ""
+   },
+   "entries": [
+    {
+     "binding": 0,
+     "resource": "s1"
+    },
+    {
+     "binding": 1,
+     "resource": "v27"
+    },
+    {
+     "binding": 2,
+     "resource": {
+      "buffer": "buffer"
+     }
+    }
+   ]
+  },
+  {
+   "id": "bg16",
+   "label": "",
+   "layout": {
+    "label": ""
+   },
+   "entries": [
+    {
+     "binding": 0,
+     "resource": "s1"
+    },
+    {
+     "binding": 1,
+     "resource": "v29"
+    },
+    {
+     "binding": 2,
+     "resource": {
+      "buffer": "buffer"
+     }
+    }
+   ]
+  },
+  {
+   "id": "bg17",
+   "label": "",
+   "layout": {
+    "label": ""
+   },
+   "entries": [
+    {
+     "binding": 0,
+     "resource": "s1"
+    },
+    {
+     "binding": 1,
+     "resource": "v31"
+    },
+    {
+     "binding": 2,
+     "resource": {
+      "buffer": "buffer"
+     }
+    }
+   ]
+  },
+  {
+   "id": "bg18",
+   "label": "",
+   "layout": {
+    "label": ""
+   },
+   "entries": [
+    {
+     "binding": 0,
+     "resource": "s1"
+    },
+    {
+     "binding": 1,
+     "resource": "v33"
+    },
+    {
+     "binding": 2,
+     "resource": {
+      "buffer": "buffer"
+     }
+    }
+   ]
+  },
+  {
+   "id": "bg19",
+   "label": "",
+   "layout": {
+    "label": ""
+   },
+   "entries": [
+    {
+     "binding": 0,
+     "resource": "s1"
+    },
+    {
+     "binding": 1,
+     "resource": "v35"
+    },
+    {
+     "binding": 2,
+     "resource": {
+      "buffer": "buffer"
+     }
+    }
+   ]
+  },
+  {
+   "id": "bg20",
+   "label": "",
+   "layout": {
+    "label": ""
+   },
+   "entries": [
+    {
+     "binding": 0,
+     "resource": "s1"
+    },
+    {
+     "binding": 1,
+     "resource": "v37"
+    },
+    {
+     "binding": 2,
+     "resource": {
+      "buffer": "buffer"
+     }
+    }
+   ]
+  },
+  {
+   "id": "bg21",
+   "label": "",
+   "layout": {
+    "label": ""
+   },
+   "entries": [
+    {
+     "binding": 0,
+     "resource": "s1"
+    },
+    {
+     "binding": 1,
+     "resource": "v39"
+    },
+    {
+     "binding": 2,
+     "resource": {
+      "buffer": "buffer"
+     }
+    }
+   ]
+  },
+  {
+   "id": "bg22",
+   "label": "",
+   "layout": {
+    "label": ""
+   },
+   "entries": [
+    {
+     "binding": 0,
+     "resource": "s1"
+    },
+    {
+     "binding": 1,
+     "resource": "v41"
+    },
+    {
+     "binding": 2,
+     "resource": {
+      "buffer": "buffer"
+     }
+    }
+   ]
+  },
+  {
+   "id": "bg23",
+   "label": "",
+   "layout": {
+    "label": ""
+   },
+   "entries": [
+    {
+     "binding": 0,
+     "resource": "s1"
+    },
+    {
+     "binding": 1,
+     "resource": "v43"
+    },
+    {
+     "binding": 2,
+     "resource": {
+      "buffer": "buffer"
+     }
+    }
+   ]
+  },
+  {
+   "id": "bg24",
+   "label": "",
+   "layout": {
+    "label": ""
+   },
+   "entries": [
+    {
+     "binding": 0,
+     "resource": "s1"
+    },
+    {
+     "binding": 1,
+     "resource": "v45"
+    },
+    {
+     "binding": 2,
+     "resource": {
+      "buffer": "buffer"
+     }
+    }
+   ]
+  },
+  {
+   "id": "bg25",
+   "label": "",
+   "layout": {
+    "label": ""
+   },
+   "entries": [
+    {
+     "binding": 0,
+     "resource": "s1"
+    },
+    {
+     "binding": 1,
+     "resource": "v47"
+    },
+    {
+     "binding": 2,
+     "resource": {
+      "buffer": "buffer"
+     }
+    }
+   ]
+  },
+  {
+   "id": "bg26",
+   "label": "",
+   "layout": {
+    "label": ""
+   },
+   "entries": [
+    {
+     "binding": 0,
+     "resource": "s1"
+    },
+    {
+     "binding": 1,
+     "resource": "v49"
+    },
+    {
+     "binding": 2,
+     "resource": {
+      "buffer": "buffer"
+     }
+    }
+   ]
+  },
+  {
+   "id": "bg27",
+   "label": "",
+   "layout": {
+    "label": ""
+   },
+   "entries": [
+    {
+     "binding": 0,
+     "resource": "s1"
+    },
+    {
+     "binding": 1,
+     "resource": "v51"
+    },
+    {
+     "binding": 2,
+     "resource": {
+      "buffer": "buffer"
+     }
+    }
+   ]
+  },
+  {
+   "id": "bg28",
+   "label": "",
+   "layout": {
+    "label": ""
+   },
+   "entries": [
+    {
+     "binding": 0,
+     "resource": "s1"
+    },
+    {
+     "binding": 1,
+     "resource": "v53"
+    },
+    {
+     "binding": 2,
+     "resource": {
+      "buffer": "buffer"
+     }
+    }
+   ]
+  },
+  {
+   "id": "bg29",
+   "label": "",
+   "layout": {
+    "label": ""
+   },
+   "entries": [
+    {
+     "binding": 0,
+     "resource": "s1"
+    },
+    {
+     "binding": 1,
+     "resource": "v55"
+    },
+    {
+     "binding": 2,
+     "resource": {
+      "buffer": "buffer"
+     }
+    }
+   ]
+  },
+  {
+   "id": "bg30",
+   "label": "",
+   "layout": {
+    "label": ""
+   },
+   "entries": [
+    {
+     "binding": 0,
+     "resource": "s1"
+    },
+    {
+     "binding": 1,
+     "resource": "v57"
+    },
+    {
+     "binding": 2,
+     "resource": {
+      "buffer": "buffer"
+     }
+    }
+   ]
+  },
+  {
+   "id": "bg31",
+   "label": "",
+   "layout": {
+    "label": ""
+   },
+   "entries": [
+    {
+     "binding": 0,
+     "resource": "s1"
+    },
+    {
+     "binding": 1,
+     "resource": "v59"
+    },
+    {
+     "binding": 2,
+     "resource": {
+      "buffer": "buffer"
+     }
+    }
+   ]
+  },
+  {
+   "id": "bg32",
+   "label": "",
+   "layout": {
+    "label": ""
+   },
+   "entries": [
+    {
+     "binding": 0,
+     "resource": "s1"
+    },
+    {
+     "binding": 1,
+     "resource": "v61"
+    },
+    {
+     "binding": 2,
+     "resource": {
+      "buffer": "buffer"
+     }
+    }
+   ]
+  },
+  {
+   "id": "bg33",
+   "label": "",
+   "layout": {
+    "label": ""
+   },
+   "entries": [
+    {
+     "binding": 0,
+     "resource": "s1"
+    },
+    {
+     "binding": 1,
+     "resource": "v63"
+    },
+    {
+     "binding": 2,
+     "resource": {
+      "buffer": "buffer"
+     }
+    }
+   ]
+  },
+  {
+   "id": "bg34",
+   "label": "",
+   "layout": {
+    "label": ""
+   },
+   "entries": [
+    {
+     "binding": 0,
+     "resource": "s1"
+    },
+    {
+     "binding": 1,
+     "resource": "v65"
+    },
+    {
+     "binding": 2,
+     "resource": {
+      "buffer": "buffer"
+     }
+    }
+   ]
+  },
+  {
+   "id": "bg35",
+   "label": "",
+   "layout": {
+    "label": ""
+   },
+   "entries": [
+    {
+     "binding": 0,
+     "resource": "s1"
+    },
+    {
+     "binding": 1,
+     "resource": "v67"
+    },
+    {
+     "binding": 2,
+     "resource": {
+      "buffer": "buffer"
+     }
+    }
+   ]
+  },
+  {
+   "id": "bg36",
+   "label": "",
+   "layout": {
+    "label": ""
+   },
+   "entries": [
+    {
+     "binding": 0,
+     "resource": "s1"
+    },
+    {
+     "binding": 1,
+     "resource": "v69"
+    },
+    {
+     "binding": 2,
+     "resource": {
+      "buffer": "buffer"
+     }
+    }
+   ]
+  },
+  {
+   "id": "bg37",
+   "label": "",
+   "layout": {
+    "label": ""
+   },
+   "entries": [
+    {
+     "binding": 0,
+     "resource": "s1"
+    },
+    {
+     "binding": 1,
+     "resource": "v71"
+    },
+    {
+     "binding": 2,
+     "resource": {
+      "buffer": "buffer"
+     }
+    }
+   ]
+  },
+  {
+   "id": "bg38",
+   "label": "",
+   "layout": {
+    "label": ""
+   },
+   "entries": [
+    {
+     "binding": 0,
+     "resource": "s1"
+    },
+    {
+     "binding": 1,
+     "resource": "v73"
+    },
+    {
+     "binding": 2,
+     "resource": {
+      "buffer": "buffer"
+     }
+    }
+   ]
+  },
+  {
+   "id": "bg39",
+   "label": "bindGroup_object",
+   "layout": "bgl1",
+   "entries": [
+    {
+     "binding": 0,
+     "resource": {
+      "buffer": "buffer"
+     }
+    },
+    {
+     "binding": 1,
+     "resource": "s0"
+    },
+    {
+     "binding": 2,
+     "resource": "v75"
+    },
+    {
+     "binding": 3,
+     "resource": "s0"
+    },
+    {
+     "binding": 4,
+     "resource": "v76"
+    },
+    {
+     "binding": 5,
+     "resource": "s0"
+    },
+    {
+     "binding": 6,
+     "resource": "v77"
+    },
+    {
+     "binding": 7,
+     "resource": "s3"
+    },
+    {
+     "binding": 8,
+     "resource": "v78"
+    },
+    {
+     "binding": 9,
+     "resource": "s0"
+    },
+    {
+     "binding": 10,
+     "resource": "v79"
+    },
+    {
+     "binding": 11,
+     "resource": {
+      "buffer": "buffer"
+     }
+    }
+   ]
+  },
+  {
+   "id": "bg40",
+   "label": "bindGroup_object",
+   "layout": "bgl1",
+   "entries": [
+    {
+     "binding": 0,
+     "resource": {
+      "buffer": "buffer"
+     }
+    },
+    {
+     "binding": 1,
+     "resource": "s0"
+    },
+    {
+     "binding": 2,
+     "resource": "v75"
+    },
+    {
+     "binding": 3,
+     "resource": "s0"
+    },
+    {
+     "binding": 4,
+     "resource": "v76"
+    },
+    {
+     "binding": 5,
+     "resource": "s0"
+    },
+    {
+     "binding": 6,
+     "resource": "v77"
+    },
+    {
+     "binding": 7,
+     "resource": "s3"
+    },
+    {
+     "binding": 8,
+     "resource": "v78"
+    },
+    {
+     "binding": 9,
+     "resource": "s0"
+    },
+    {
+     "binding": 10,
+     "resource": "v79"
+    },
+    {
+     "binding": 11,
+     "resource": {
+      "buffer": "buffer"
+     }
+    }
+   ]
+  },
+  {
+   "id": "bg41",
+   "label": "bindGroup_render",
+   "layout": "bgl0",
+   "entries": [
+    {
+     "binding": 0,
+     "resource": {
+      "buffer": "buffer"
+     }
+    }
+   ]
+  },
+  {
+   "id": "bg42",
+   "label": "bindGroup_object",
+   "layout": "bgl2",
+   "entries": [
+    {
+     "binding": 0,
+     "resource": "s3"
+    },
+    {
+     "binding": 1,
+     "resource": "v82"
+    },
+    {
+     "binding": 2,
+     "resource": {
+      "buffer": "buffer"
+     }
+    }
+   ]
+  },
+  {
+   "id": "bg43",
+   "label": "bindGroup_object",
+   "layout": "bgl2",
+   "entries": [
+    {
+     "binding": 0,
+     "resource": "s3"
+    },
+    {
+     "binding": 1,
+     "resource": "v82"
+    },
+    {
+     "binding": 2,
+     "resource": {
+      "buffer": "buffer"
+     }
+    }
+   ]
+  }
+ ],
+ "adapterInfo": {
+  "vendor": "intel",
+  "architecture": "gen-12lp",
+  "device": "",
+  "description": "",
+  "subgroupMinSize": 8,
+  "subgroupMaxSize": 32,
+  "isFallbackAdapter": false,
+  "subgroupMatrixConfigs": []
+ }
+}
