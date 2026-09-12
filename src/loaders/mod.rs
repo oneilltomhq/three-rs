@@ -2,8 +2,13 @@
 
 mod buffer_geometry_loader;
 mod cube_texture_loader;
+mod gltf_loader;
 mod texture_loader;
 
 pub use buffer_geometry_loader::BufferGeometryLoader;
 pub use cube_texture_loader::CubeTextureLoader;
+pub use gltf_loader::{
+    sanitize_node_name, ComponentType, Gltf, GltfImage, GltfMaterial, GltfPrimitive, GltfTexture,
+    GLTFLoader,
+};
 pub use texture_loader::TextureLoader;
