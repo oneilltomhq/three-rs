@@ -257,6 +257,10 @@ pub struct UniformContext<'a> {
     pub material_color: Color,
     pub material_opacity: f64,
     pub material_reflectivity: f64,
+    pub material_shininess: f64,
+    pub material_specular: Color,
+    pub material_emissive: Color,
+    pub material_emissive_intensity: f64,
     pub env_rotation: Matrix4,
     pub background_rotation: Matrix4,
     pub background_blurriness: f64,
@@ -279,6 +283,14 @@ impl Default for UniformContext<'_> {
             material_color: Color::new(1.0, 1.0, 1.0),
             material_opacity: 1.0,
             material_reflectivity: 1.0,
+            material_shininess: 30.0,
+            material_specular: Color::new(
+                0x11 as f64 / 255.0,
+                0x11 as f64 / 255.0,
+                0x11 as f64 / 255.0,
+            ),
+            material_emissive: Color::new(0.0, 0.0, 0.0),
+            material_emissive_intensity: 1.0,
             env_rotation: Matrix4::identity(),
             background_rotation: Matrix4::identity(),
             background_blurriness: 0.0,
@@ -317,6 +329,20 @@ impl UniformContext<'_> {
                 ],
                 UniformSource::MaterialOpacity => vec![self.material_opacity as f32],
                 UniformSource::MaterialReflectivity => vec![self.material_reflectivity as f32],
+                UniformSource::MaterialShininess => vec![self.material_shininess as f32],
+                UniformSource::MaterialSpecular => vec![
+                    self.material_specular.r as f32,
+                    self.material_specular.g as f32,
+                    self.material_specular.b as f32,
+                ],
+                UniformSource::MaterialEmissive => vec![
+                    self.material_emissive.r as f32,
+                    self.material_emissive.g as f32,
+                    self.material_emissive.b as f32,
+                ],
+                UniformSource::MaterialEmissiveIntensity => {
+                    vec![self.material_emissive_intensity as f32]
+                }
                 UniformSource::TextureMatrix => self.texture_matrix.to_padded_f32_array().to_vec(),
                 UniformSource::EnvRotationMatrix => self.env_rotation.to_f32_array().to_vec(),
                 UniformSource::BackgroundRotation => {

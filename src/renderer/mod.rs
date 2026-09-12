@@ -460,6 +460,10 @@ impl Renderer {
                 material_color: item.material.color,
                 material_opacity: item.material.opacity,
                 material_reflectivity: item.material.reflectivity,
+                material_shininess: item.material.shininess,
+                material_specular: item.material.specular,
+                material_emissive: item.material.emissive,
+                material_emissive_intensity: item.material.emissive_intensity,
                 viewport: Vector2::new(target.width as f64, target.height as f64),
                 ..camera_uniforms
             };

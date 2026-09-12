@@ -687,6 +687,46 @@ accessor!(
     )
 );
 accessor!(
+    /// `materialShininess`.
+    material_shininess,
+    uniform(
+        UniformSource::MaterialShininess,
+        Type::F32,
+        UniformGroup::Object,
+        None
+    )
+);
+accessor!(
+    /// `materialSpecular`.
+    material_specular,
+    uniform(
+        UniformSource::MaterialSpecular,
+        Type::Vec3,
+        UniformGroup::Object,
+        None
+    )
+);
+accessor!(
+    /// `materialEmissive`.
+    material_emissive,
+    uniform(
+        UniformSource::MaterialEmissive,
+        Type::Vec3,
+        UniformGroup::Object,
+        None
+    )
+);
+accessor!(
+    /// `materialEmissiveIntensity`.
+    material_emissive_intensity,
+    uniform(
+        UniformSource::MaterialEmissiveIntensity,
+        Type::F32,
+        UniformGroup::Object,
+        None
+    )
+);
+accessor!(
     /// `materialReflectivity`.
     material_reflectivity,
     uniform(
