@@ -2,7 +2,7 @@
 //!
 //! Column-major like `Matrix4`: `elements[0..3]` is the first column.
 
-use super::Matrix4;
+use super::{Matrix4, Vector3};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Matrix3 {
@@ -108,6 +108,155 @@ impl Matrix3 {
     /// `Matrix3.getNormalMatrix( matrix4 )`.
     pub fn get_normal_matrix(&mut self, m: &Matrix4) -> &mut Self {
         self.set_from_matrix4(m).invert().transpose()
+    }
+
+
+    /// `Matrix3.identity()`.
+    pub fn set_identity(&mut self) -> &mut Self {
+        self.set(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)
+    }
+
+    /// `Matrix3.copy()`.
+    pub fn copy(&mut self, m: &Self) -> &mut Self {
+        self.elements = m.elements;
+        self
+    }
+
+    /// `Matrix3.extractBasis()`.
+    pub fn extract_basis(&self, x_axis: &mut Vector3, y_axis: &mut Vector3, z_axis: &mut Vector3) {
+        x_axis.set_from_matrix3_column(self, 0);
+        y_axis.set_from_matrix3_column(self, 1);
+        z_axis.set_from_matrix3_column(self, 2);
+    }
+
+    /// `Matrix3.multiply()`.
+    pub fn multiply(&mut self, m: &Self) -> &mut Self {
+        let a = *self;
+        self.multiply_matrices(&a, m)
+    }
+
+    /// `Matrix3.premultiply()`.
+    pub fn premultiply(&mut self, m: &Self) -> &mut Self {
+        let b = *self;
+        self.multiply_matrices(m, &b)
+    }
+
+    /// `Matrix3.multiplyMatrices()`.
+    pub fn multiply_matrices(&mut self, a: &Self, b: &Self) -> &mut Self {
+        let ae = &a.elements;
+        let be = &b.elements;
+
+        let (a11, a12, a13) = (ae[0], ae[3], ae[6]);
+        let (a21, a22, a23) = (ae[1], ae[4], ae[7]);
+        let (a31, a32, a33) = (ae[2], ae[5], ae[8]);
+
+        let (b11, b12, b13) = (be[0], be[3], be[6]);
+        let (b21, b22, b23) = (be[1], be[4], be[7]);
+        let (b31, b32, b33) = (be[2], be[5], be[8]);
+
+        let te = &mut self.elements;
+
+        te[0] = a11 * b11 + a12 * b21 + a13 * b31;
+        te[3] = a11 * b12 + a12 * b22 + a13 * b32;
+        te[6] = a11 * b13 + a12 * b23 + a13 * b33;
+
+        te[1] = a21 * b11 + a22 * b21 + a23 * b31;
+        te[4] = a21 * b12 + a22 * b22 + a23 * b32;
+        te[7] = a21 * b13 + a22 * b23 + a23 * b33;
+
+        te[2] = a31 * b11 + a32 * b21 + a33 * b31;
+        te[5] = a31 * b12 + a32 * b22 + a33 * b32;
+        te[8] = a31 * b13 + a32 * b23 + a33 * b33;
+
+        self
+    }
+
+    /// `Matrix3.multiplyScalar()`.
+    pub fn multiply_scalar(&mut self, s: f64) -> &mut Self {
+        for e in self.elements.iter_mut() {
+            *e *= s;
+        }
+        self
+    }
+
+    /// `Matrix3.determinant()`.
+    pub fn determinant(&self) -> f64 {
+        let te = &self.elements;
+        let (a, b, c) = (te[0], te[1], te[2]);
+        let (d, e, f) = (te[3], te[4], te[5]);
+        let (g, h, i) = (te[6], te[7], te[8]);
+
+        a * e * i - a * f * h - b * d * i + b * f * g + c * d * h - c * e * g
+    }
+
+    /// `Matrix3.transposeIntoArray()`.
+    pub fn transpose_into_array(&self) -> [f64; 9] {
+        let m = &self.elements;
+        [m[0], m[3], m[6], m[1], m[4], m[7], m[2], m[5], m[8]]
+    }
+
+    /// `Matrix3.setUvTransform()`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn set_uv_transform(
+        &mut self,
+        tx: f64,
+        ty: f64,
+        sx: f64,
+        sy: f64,
+        rotation: f64,
+        cx: f64,
+        cy: f64,
+    ) -> &mut Self {
+        let c = rotation.cos();
+        let s = rotation.sin();
+
+        self.set(
+            sx * c,
+            sx * s,
+            -sx * (c * cx + s * cy) + cx + tx,
+            -sy * s,
+            sy * c,
+            -sy * (-s * cx + c * cy) + cy + ty,
+            0.0,
+            0.0,
+            1.0,
+        )
+    }
+
+    /// `Matrix3.makeTranslation()`.
+    pub fn make_translation(&mut self, x: f64, y: f64) -> &mut Self {
+        self.set(1.0, 0.0, x, 0.0, 1.0, y, 0.0, 0.0, 1.0)
+    }
+
+    /// `Matrix3.makeRotation()` — counter-clockwise.
+    pub fn make_rotation(&mut self, theta: f64) -> &mut Self {
+        let c = theta.cos();
+        let s = theta.sin();
+
+        self.set(c, -s, 0.0, s, c, 0.0, 0.0, 0.0, 1.0)
+    }
+
+    /// `Matrix3.makeScale()`.
+    pub fn make_scale(&mut self, x: f64, y: f64) -> &mut Self {
+        self.set(x, 0.0, 0.0, 0.0, y, 0.0, 0.0, 0.0, 1.0)
+    }
+
+    /// `Matrix3.equals()`.
+    pub fn equals(&self, m: &Self) -> bool {
+        self.elements == m.elements
+    }
+
+    /// `Matrix3.fromArray()`.
+    pub fn from_array(&mut self, array: &[f64], offset: usize) -> &mut Self {
+        for i in 0..9 {
+            self.elements[i] = array[i + offset];
+        }
+        self
+    }
+
+    /// `Matrix3.toArray()`.
+    pub fn to_array(&self) -> [f64; 9] {
+        self.elements
     }
 
     /// The nine elements narrowed to `f32`, laid out as three `vec4` columns —
