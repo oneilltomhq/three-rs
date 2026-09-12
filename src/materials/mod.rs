@@ -13,7 +13,7 @@ use crate::nodes::NodeRef;
 use crate::textures::CubeTexture;
 
 /// `three.js/src/constants.js` sides.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Side {
     Front,
     Back,

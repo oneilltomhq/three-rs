@@ -1,0 +1,323 @@
+//! The renderer's half of the node system: turning a built `NodeProgram` into
+//! wgpu shader modules, bind-group layouts, a pipeline and, per draw, the bind
+//! groups and uniform bytes. This is `WebGPUPipelineUtils` +
+//! `WebGPUBindingUtils` + `Bindings.updateBinding()`, generically driven by the
+//! descriptors the node builder produced — there is nothing per-material here.
+
+use crate::materials::Side;
+use crate::math::{Color, Matrix3, Matrix4, Vector2};
+use crate::nodes::wgsl::TextureKind;
+use crate::nodes::{BindingDesc, NodeProgram, Type, UniformMember, UniformSource};
+
+/// Everything about a pass that the pipeline has to bake in, beyond the shader.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct RenderState {
+    pub color_format: wgpu::TextureFormat,
+    pub depth_format: Option<wgpu::TextureFormat>,
+    pub sample_count: u32,
+    pub side: Side,
+    pub depth_test: bool,
+    pub depth_write: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct PipelineKey {
+    pub program: u64,
+    pub state: RenderState,
+}
+
+/// A compiled material: the two shader modules plus the layouts its bind groups
+/// are built against.
+pub struct Program {
+    pub node: NodeProgram,
+    vertex_module: wgpu::ShaderModule,
+    fragment_module: wgpu::ShaderModule,
+    pub layouts: Vec<wgpu::BindGroupLayout>,
+    pipeline_layout: wgpu::PipelineLayout,
+}
+
+impl Program {
+    pub fn new(device: &wgpu::Device, node: NodeProgram) -> Self {
+        let vertex_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("three-rs vertex"),
+            source: wgpu::ShaderSource::Wgsl(node.vertex_wgsl.clone().into()),
+        });
+        let fragment_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("three-rs fragment"),
+            source: wgpu::ShaderSource::Wgsl(node.fragment_wgsl.clone().into()),
+        });
+
+        let layouts: Vec<wgpu::BindGroupLayout> = node
+            .groups
+            .iter()
+            .map(|bindings| {
+                let entries: Vec<wgpu::BindGroupLayoutEntry> = bindings
+                    .iter()
+                    .enumerate()
+                    .map(|(binding, desc)| layout_entry(binding as u32, desc))
+                    .collect();
+                device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: Some("three-rs bindings"),
+                    entries: &entries,
+                })
+            })
+            .collect();
+
+        let refs: Vec<Option<&wgpu::BindGroupLayout>> = layouts.iter().map(Some).collect();
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("three-rs pipeline layout"),
+            bind_group_layouts: &refs,
+            immediate_size: 0,
+        });
+
+        Self {
+            node,
+            vertex_module,
+            fragment_module,
+            layouts,
+            pipeline_layout,
+        }
+    }
+
+    /// `WebGPUPipelineUtils.createRenderPipeline()`.
+    pub fn create_pipeline(
+        &self,
+        device: &wgpu::Device,
+        state: RenderState,
+    ) -> wgpu::RenderPipeline {
+        // One vertex buffer per attribute, in the order the node builder
+        // assigned `@location`s.
+        let attributes: Vec<[wgpu::VertexAttribute; 1]> = self
+            .node
+            .attributes
+            .iter()
+            .enumerate()
+            .map(|(location, (_, ty))| {
+                [wgpu::VertexAttribute {
+                    format: vertex_format(*ty),
+                    offset: 0,
+                    shader_location: location as u32,
+                }]
+            })
+            .collect();
+
+        let buffers: Vec<Option<wgpu::VertexBufferLayout>> = self
+            .node
+            .attributes
+            .iter()
+            .zip(attributes.iter())
+            .map(|((_, ty), attribute)| {
+                Some(wgpu::VertexBufferLayout {
+                    array_stride: (ty.components() * 4) as u64,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: attribute.as_slice(),
+                })
+            })
+            .collect();
+
+        device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("three-rs pipeline"),
+            layout: Some(&self.pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &self.vertex_module,
+                entry_point: Some("main"),
+                compilation_options: Default::default(),
+                buffers: &buffers,
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &self.fragment_module,
+                entry_point: Some("main"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: state.color_format,
+                    // Opaque material: three.js emits no blend state.
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                // `_getPrimitiveState()`: `FrontSide` → CCW front faces,
+                // `BackSide` → CW, both culling the back face.
+                front_face: match state.side {
+                    Side::Front => wgpu::FrontFace::Ccw,
+                    Side::Back => wgpu::FrontFace::Cw,
+                },
+                cull_mode: Some(wgpu::Face::Back),
+                unclipped_depth: false,
+                polygon_mode: wgpu::PolygonMode::Fill,
+                conservative: false,
+            },
+            depth_stencil: state.depth_format.map(|format| wgpu::DepthStencilState {
+                format,
+                depth_write_enabled: Some(state.depth_write),
+                // `Material.depthFunc` defaults to `LessEqualDepth`; with
+                // `depthTest` off `_getDepthCompare()` returns `'always'`.
+                depth_compare: Some(if state.depth_test {
+                    wgpu::CompareFunction::LessEqual
+                } else {
+                    wgpu::CompareFunction::Always
+                }),
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState {
+                count: state.sample_count,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview_mask: None,
+            cache: None,
+        })
+    }
+}
+
+fn layout_entry(binding: u32, desc: &BindingDesc) -> wgpu::BindGroupLayoutEntry {
+    match desc {
+        BindingDesc::Uniforms { visibility, .. } | BindingDesc::Buffer { visibility, .. } => {
+            wgpu::BindGroupLayoutEntry {
+                binding,
+                visibility: visibility.stages(),
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }
+        }
+        BindingDesc::Texture {
+            kind, visibility, ..
+        } => wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility: visibility.stages(),
+            ty: wgpu::BindingType::Texture {
+                sample_type: match kind {
+                    TextureKind::Depth2D => wgpu::TextureSampleType::Depth,
+                    _ => wgpu::TextureSampleType::Float { filterable: true },
+                },
+                view_dimension: match kind {
+                    TextureKind::Cube => wgpu::TextureViewDimension::Cube,
+                    _ => wgpu::TextureViewDimension::D2,
+                },
+                multisampled: false,
+            },
+            count: None,
+        },
+        BindingDesc::Sampler {
+            kind, visibility, ..
+        } => wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility: visibility.stages(),
+            ty: wgpu::BindingType::Sampler(match kind {
+                TextureKind::Depth2D => wgpu::SamplerBindingType::NonFiltering,
+                _ => wgpu::SamplerBindingType::Filtering,
+            }),
+            count: None,
+        },
+    }
+}
+
+fn vertex_format(ty: Type) -> wgpu::VertexFormat {
+    match ty {
+        Type::Vec2 => wgpu::VertexFormat::Float32x2,
+        Type::Vec3 => wgpu::VertexFormat::Float32x3,
+        Type::Vec4 => wgpu::VertexFormat::Float32x4,
+        Type::F32 => wgpu::VertexFormat::Float32,
+        other => panic!("three-rs: {other:?} is not a vertex attribute type"),
+    }
+}
+
+/// Everything a `UniformSource` can be resolved against: the camera of the pass,
+/// the object being drawn, its material, and the renderer's frame state. The
+/// defaults are three.js': an identity model matrix, a white opaque material,
+/// `Scene`'s background rotation/blurriness/intensity and `Texture`'s identity
+/// uv transform.
+#[derive(Clone, Copy, Debug)]
+pub struct UniformContext {
+    pub camera_projection: Matrix4,
+    pub camera_view: Matrix4,
+    pub camera_world: Matrix4,
+    pub model_world: Matrix4,
+    pub material_color: Color,
+    pub material_opacity: f64,
+    pub material_reflectivity: f64,
+    pub env_rotation: Matrix4,
+    pub background_rotation: Matrix4,
+    pub background_blurriness: f64,
+    pub background_intensity: f64,
+    pub texture_matrix: Matrix3,
+    pub viewport: Vector2,
+    pub time: f64,
+}
+
+impl Default for UniformContext {
+    fn default() -> Self {
+        Self {
+            camera_projection: Matrix4::identity(),
+            camera_view: Matrix4::identity(),
+            camera_world: Matrix4::identity(),
+            model_world: Matrix4::identity(),
+            material_color: Color::new(1.0, 1.0, 1.0),
+            material_opacity: 1.0,
+            material_reflectivity: 1.0,
+            env_rotation: Matrix4::identity(),
+            background_rotation: Matrix4::identity(),
+            background_blurriness: 0.0,
+            background_intensity: 1.0,
+            texture_matrix: Matrix3::identity(),
+            viewport: Vector2::new(0.0, 0.0),
+            time: 0.0,
+        }
+    }
+}
+
+impl UniformContext {
+    /// `Bindings.updateBinding()`: the bytes of one generated uniform struct,
+    /// each member written at the offset the builder gave it.
+    pub fn bytes(&self, members: &[UniformMember], size: u32) -> Vec<u8> {
+        let mut data = vec![0u8; size as usize];
+
+        for member in members {
+            let values: Vec<f32> = match &member.source {
+                UniformSource::CameraProjectionMatrix => {
+                    self.camera_projection.to_f32_array().to_vec()
+                }
+                UniformSource::CameraViewMatrix => self.camera_view.to_f32_array().to_vec(),
+                UniformSource::CameraWorldMatrix => self.camera_world.to_f32_array().to_vec(),
+                UniformSource::ModelWorldMatrix => self.model_world.to_f32_array().to_vec(),
+                UniformSource::ModelNormalMatrix => {
+                    let mut normal_matrix = Matrix3::identity();
+                    normal_matrix.get_normal_matrix(&self.model_world);
+                    normal_matrix.to_padded_f32_array().to_vec()
+                }
+                UniformSource::MaterialColor => vec![
+                    self.material_color.r as f32,
+                    self.material_color.g as f32,
+                    self.material_color.b as f32,
+                ],
+                UniformSource::MaterialOpacity => vec![self.material_opacity as f32],
+                UniformSource::MaterialReflectivity => vec![self.material_reflectivity as f32],
+                UniformSource::TextureMatrix => self.texture_matrix.to_padded_f32_array().to_vec(),
+                UniformSource::EnvRotationMatrix => self.env_rotation.to_f32_array().to_vec(),
+                UniformSource::BackgroundRotation => {
+                    self.background_rotation.to_f32_array().to_vec()
+                }
+                UniformSource::BackgroundBlurriness => vec![self.background_blurriness as f32],
+                UniformSource::BackgroundIntensity => vec![self.background_intensity as f32],
+                UniformSource::Time => vec![self.time as f32],
+                UniformSource::ViewportSize => {
+                    vec![self.viewport.x as f32, self.viewport.y as f32]
+                }
+                UniformSource::Value(values) => values.iter().map(|&v| v as f32).collect(),
+            };
+
+            let offset = member.offset as usize;
+            data[offset..offset + values.len() * 4]
+                .copy_from_slice(bytemuck::cast_slice(&values));
+        }
+
+        data
+    }
+}

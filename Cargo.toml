@@ -3,9 +3,6 @@ name = "three-rs"
 version = "0.1.0"
 edition = "2021"
 
-[features]
-nodes-only = []
-
 [dependencies]
 wgpu = { path = "/home/tom/src/vendor/wgpu/wgpu", default-features = false, features = ["std", "vulkan", "wgsl"] }
 bytemuck = { version = "1", features = ["derive"] }
@@ -32,4 +29,3 @@ path = "tests/e2e/main.rs"
 [[example]]
 name = "dump_wgsl"
 path = "examples/dump_wgsl.rs"
-required-features = ["nodes-only"]

@@ -11,8 +11,10 @@
 
 use std::rc::Rc;
 
+use three_rs::materials::instanced_range;
+use three_rs::nodes::tsl::{float, mix, normal_world, osc_sine, time};
 use three_rs::{
-    BufferGeometryLoader, Child, Color, ColorNode, InstancedMesh, MeshBasicNodeMaterial, Object3D,
+    BufferGeometryLoader, Child, Color, InstancedMesh, MeshBasicNodeMaterial, Object3D,
     PerspectiveCamera, Renderer, RendererParameters, Scene, Vector3,
 };
 
@@ -61,10 +63,12 @@ pub fn init() -> App {
     //                               new THREE.Color( 0xFFFFFF ) );
     //   material.colorNode = mix( normalWorld, randomColors,
     //                             oscSine( time.mul( .1 ) ) );
-    material.color_node = Some(ColorNode::NormalWorldRangeMix {
-        min: Color::from_hex(0x000000),
-        max: Color::from_hex(0xFFFFFF),
-    });
+    let random_colors = instanced_range(Color::from_hex(0x000000), Color::from_hex(0xFFFFFF), count);
+    material.color_node = Some(mix(
+        normal_world(),
+        random_colors.xyz(),
+        osc_sine(time().mul(float(0.1))),
+    ));
 
     let loader = BufferGeometryLoader::new();
     let mut geometry = loader.load(models_dir().join("models/json/suzanne_buffergeometry.json"));

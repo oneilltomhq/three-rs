@@ -3,7 +3,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::textures::{DepthTexture, TextureFilter, TextureType};
+use crate::textures::{DepthTexture, Texture, TextureFilter, TextureType};
 
 /// `new RenderTarget( width, height, options )` — the options the port reads.
 #[derive(Clone, Copy, Debug)]
@@ -41,7 +41,9 @@ pub struct RenderTargetInner {
     pub mag_filter: TextureFilter,
     /// A `DepthTexture` the application attached, which it can then sample.
     pub depth_texture: Option<DepthTexture>,
-    pub color: Option<wgpu::Texture>,
+    /// `renderTarget.texture` — a real `Texture` so `texture( rt.texture )`
+    /// works; the renderer owns its GPU object (`own_gpu` is false).
+    pub texture: Texture,
     /// The MSAA colour texture `samples > 1` asks for; the single-sample
     /// `color` texture is then its resolve target.
     pub msaa: Option<wgpu::Texture>,
@@ -69,7 +71,7 @@ impl RenderTarget {
             min_filter: options.min_filter,
             mag_filter: options.mag_filter,
             depth_texture: None,
-            color: None,
+            texture: Texture::render_target(width, height, options.texture_type.color_gpu_format()),
             msaa: None,
             depth: None,
         })))
@@ -94,10 +96,16 @@ impl RenderTarget {
         if inner.width != width || inner.height != height {
             inner.width = width;
             inner.height = height;
-            inner.color = None;
+            inner.texture.set_size(width, height);
+            inner.texture.clear_gpu();
             inner.msaa = None;
             inner.depth = None;
         }
+    }
+
+    /// `renderTarget.texture`.
+    pub fn texture(&self) -> Texture {
+        self.0.borrow().texture.clone()
     }
 
     pub fn samples(&self) -> u32 {

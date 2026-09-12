@@ -269,4 +269,47 @@ impl Matrix4 {
 
         self
     }
+
+    /// `Matrix4.makeOrthographic()` with `WebGPUCoordinateSystem` and
+    /// `reversedDepth` off.
+    pub fn make_orthographic(
+        &mut self,
+        left: f64,
+        right: f64,
+        top: f64,
+        bottom: f64,
+        near: f64,
+        far: f64,
+        coordinate_system: CoordinateSystem,
+    ) -> &mut Self {
+        let x = 2.0 / (right - left);
+        let y = 2.0 / (top - bottom);
+
+        let a = -(right + left) / (right - left);
+        let b = -(top + bottom) / (top - bottom);
+
+        let (c, d) = match coordinate_system {
+            CoordinateSystem::WebGPU => (-1.0 / (far - near), -near / (far - near)),
+        };
+
+        let te = &mut self.elements;
+        te[0] = x;
+        te[4] = 0.0;
+        te[8] = 0.0;
+        te[12] = a;
+        te[1] = 0.0;
+        te[5] = y;
+        te[9] = 0.0;
+        te[13] = b;
+        te[2] = 0.0;
+        te[6] = 0.0;
+        te[10] = c;
+        te[14] = d;
+        te[3] = 0.0;
+        te[7] = 0.0;
+        te[11] = 0.0;
+        te[15] = 1.0;
+
+        self
+    }
 }

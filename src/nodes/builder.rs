@@ -362,6 +362,7 @@ impl NodeBuilder {
 
     // -- slots -----------------------------------------------------------
 
+    #[allow(dead_code)]
     fn group(&mut self, group: UniformGroup) -> &mut GroupState {
         self.groups.entry(group).or_default()
     }
@@ -753,7 +754,7 @@ impl NodeBuilder {
                 ..
             } => {
                 let (texture, uv, mode) = (texture.clone(), uv.clone(), mode.clone());
-                let (name, kind) = self.texture_slots(&texture);
+                let (name, _kind) = self.texture_slots(&texture);
                 let suv = self.generate(&uv);
                 match mode {
                     SampleMode::Sample => {

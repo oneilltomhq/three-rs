@@ -1,47 +1,52 @@
-//! Port of `three.js/src/renderers/common/Renderer.js` + the WebGPU backend,
-//! cut down to what rung 1 needs: walk the scene, resolve a material to a
-//! pipeline, draw into a render target or into the "canvas" texture, read back.
+//! Port of `three.js/src/renderers/common/Renderer.js` + the WebGPU backend:
+//! walk the scene, build each material through the node system, resolve the
+//! bindings it declared, draw into a render target or into the "canvas"
+//! texture, read back.
 
-mod pipelines;
+mod mipmap;
+mod programs;
 mod render_target;
 
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use pipelines::{create_mipmap_pipeline, create_pipeline, Layouts, PipelineKey, Shaders};
+use mipmap::{create_mipmap_pipeline, MipmapShader};
+pub use programs::{RenderState, UniformContext};
+use programs::{PipelineKey, Program};
 pub use render_target::{RenderTarget, RenderTargetInner, RenderTargetOptions};
 
-use crate::cameras::PerspectiveCamera;
+use crate::cameras::{OrthographicCamera, PerspectiveCamera};
 use crate::core::{BufferGeometry, Index};
-use crate::materials::{ColorNode, MeshBasicNodeMaterial, ShaderKey};
-use crate::geometries::sphere_geometry;
-use crate::math::{Color, Matrix3, Matrix4};
-use crate::objects::{Background, QuadMesh, Scene};
+use crate::geometries::{quad_geometry, sphere_geometry};
+use crate::materials::{self, MeshBasicNodeMaterial, SetupContext, Side};
+use crate::math::{Color, Matrix4, Vector2};
+use crate::nodes::node::{BufferSource, TextureSource};
+use crate::nodes::wgsl::TextureKind;
+use crate::nodes::{BindingDesc, NodeBuilder};
+use crate::objects::{Background, InstancedBufferAttribute, QuadMesh, Scene};
 use crate::testing::DeterministicRandom;
-use crate::textures::{CubeTexture, DepthTexture, Mapping, TextureFilter, TextureType};
-
-/// Uniform buffer stride for the per-object block. The WebGPU minimum dynamic
-/// offset alignment is 256 bytes.
-const OBJECT_STRIDE: u64 = 256;
-const MAX_OBJECTS: u64 = 1024;
-
-/// The used size of one `objectStruct` block: `modelWorldMatrix` (64),
-/// `modelNormalMatrix` as a padded `mat3x3` (48), `diffuse` (12), `opacity` (4),
-/// `reflectivity` (4), padding to a 16-byte boundary (12), `envRotation` (64).
-const OBJECT_SIZE: u64 = 208;
-
-/// The used size of the `renderStruct` block: `cameraProjectionMatrix` (64),
-/// `cameraViewMatrix` (64), `viewportSize` (8 + 8 padding),
-/// `cameraWorldMatrix` (64), `backgroundRotation` (64),
-/// `backgroundBlurriness` (4), `backgroundIntensity` (4), padding (8).
-const RENDER_SIZE: u64 = 288;
+use crate::textures::{
+    CubeTexture, Texture, TextureFilter, TextureType, Wrapping,
+};
 
 struct GeometryGpu {
-    position: wgpu::Buffer,
+    position: Option<wgpu::Buffer>,
     normal: Option<wgpu::Buffer>,
-    index: wgpu::Buffer,
-    index_format: wgpu::IndexFormat,
-    index_count: u32,
+    uv: Option<wgpu::Buffer>,
+    index: Option<(wgpu::Buffer, wgpu::IndexFormat, u32)>,
+    vertex_count: u32,
+}
+
+impl GeometryGpu {
+    fn attribute(&self, name: &str) -> &wgpu::Buffer {
+        let buffer = match name {
+            "position" => self.position.as_ref(),
+            "normal" => self.normal.as_ref(),
+            "uv" => self.uv.as_ref(),
+            other => panic!("three-rs: no geometry attribute named {other}"),
+        };
+        buffer.unwrap_or_else(|| panic!("three-rs: the geometry has no {name} attribute"))
+    }
 }
 
 /// The stand-in for the renderer's canvas / default framebuffer: a colour
@@ -57,6 +62,28 @@ struct CanvasTarget {
     /// buffer; `WebGPUUtils.getCurrentDepthStencilFormat()` picks `depth24plus`
     /// when `stencil` and `reversedDepthBuffer` are both off.
     depth: Option<wgpu::Texture>,
+}
+
+/// One entry of the render list, already resolved to what the draw needs.
+struct Renderable {
+    geometry: Rc<BufferGeometry>,
+    material: MeshBasicNodeMaterial,
+    setup: SetupContext,
+    model_world: Matrix4,
+    instance_matrix: Option<InstancedBufferAttribute>,
+    instance_count: u32,
+}
+
+/// The attachments, formats and size of the pass about to run.
+struct PassTarget {
+    color: wgpu::TextureView,
+    resolve: Option<wgpu::TextureView>,
+    depth: Option<wgpu::TextureView>,
+    color_format: wgpu::TextureFormat,
+    depth_format: Option<wgpu::TextureFormat>,
+    sample_count: u32,
+    width: u32,
+    height: u32,
 }
 
 pub struct Renderer {
@@ -84,24 +111,25 @@ pub struct Renderer {
     /// `Renderer._outputBufferType`, `HalfFloatType` by default.
     output_buffer_type: TextureType,
 
-    shaders: Shaders,
-    layouts: Layouts,
+    mipmap_shader: MipmapShader,
+    /// Built materials, keyed by the node builder's cache key.
+    programs: HashMap<u64, Program>,
     pipelines: HashMap<PipelineKey, wgpu::RenderPipeline>,
     geometries: HashMap<usize, GeometryGpu>,
-    /// `Textures`' GPU side for cube textures, keyed by `CubeTexture` identity.
+    /// `Textures`' GPU side, keyed by texture identity.
+    textures_2d: HashMap<usize, wgpu::Texture>,
     cube_textures: HashMap<usize, wgpu::Texture>,
     /// `WebGPUTexturePassUtils.transferPipelines`, keyed by texture format.
     mipmap_pipelines: HashMap<wgpu::TextureFormat, wgpu::RenderPipeline>,
-    /// One bind group per cube texture: the per-object block is reached through
-    /// a dynamic offset, so every mesh sharing the texture shares the group.
-    env_bind_groups: HashMap<usize, wgpu::BindGroup>,
+    /// `BufferNode` storage, by source — a `range()` buffer must be filled only
+    /// once, since filling it draws from `Math.random`.
+    buffers: HashMap<String, wgpu::Buffer>,
     /// `Background`'s `SphereGeometry( 1, 32, 32 )` skybox mesh geometry.
     background_geometry: Option<Rc<BufferGeometry>>,
-
-    camera_buffer: wgpu::Buffer,
-    object_buffer: wgpu::Buffer,
-    frame_buffer: wgpu::Buffer,
-    basic_bind_group: wgpu::BindGroup,
+    /// `QuadMesh`'s shared `QuadGeometry`.
+    quad_geometry: Option<Rc<BufferGeometry>>,
+    /// `QuadMesh`'s shared `new OrthographicCamera( -1, 1, 1, -1, 0, 1 )`.
+    quad_camera: OrthographicCamera,
 
     /// `NodeFrame.time`. `performance.now()` is pinned to 0 by the harness, so
     /// every frame's delta is 0 and this stays 0.
@@ -140,48 +168,7 @@ impl Renderer {
         }))
         .expect("three-rs: failed to create device");
 
-        let shaders = Shaders::new(&device);
-        let layouts = Layouts::new(&device);
-
-        let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("three-rs camera uniforms"),
-            size: RENDER_SIZE,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        let object_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("three-rs object uniforms"),
-            size: OBJECT_STRIDE * MAX_OBJECTS,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        let frame_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("three-rs frame uniforms"),
-            size: 16,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        let basic_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("three-rs basic bind group"),
-            layout: &layouts.basic,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: camera_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                        buffer: &object_buffer,
-                        offset: 0,
-                        size: std::num::NonZeroU64::new(64),
-                    }),
-                },
-            ],
-        });
+        let mipmap_shader = MipmapShader::new(&device);
 
         Self {
             device,
@@ -196,18 +183,17 @@ impl Renderer {
             render_target: None,
             frame_buffer_target: None,
             output_buffer_type: TextureType::HalfFloat,
-            shaders,
-            layouts,
+            mipmap_shader,
+            programs: HashMap::new(),
             pipelines: HashMap::new(),
             geometries: HashMap::new(),
+            textures_2d: HashMap::new(),
             cube_textures: HashMap::new(),
             mipmap_pipelines: HashMap::new(),
-            env_bind_groups: HashMap::new(),
+            buffers: HashMap::new(),
             background_geometry: None,
-            camera_buffer,
-            object_buffer,
-            frame_buffer,
-            basic_bind_group,
+            quad_geometry: None,
+            quad_camera: OrthographicCamera::new(-1.0, 1.0, 1.0, -1.0, 0.0, 1.0),
             time: 0.0,
             random: DeterministicRandom::new(),
         }
@@ -246,20 +232,36 @@ impl Renderer {
         scene.update_matrix_world();
         camera.update_matrix_world();
 
-        self.write_camera_uniforms(camera);
-        self.write_frame_uniforms();
-
         // `Renderer._renderScene()` → `_projectObject()` fills the render list,
         // then `renderList.finish()` sorts the opaque items; `_background.update()`
         // runs after the sort and unshifts the skybox, so it draws first.
         let order = render_list_order(scene, camera);
 
-        // Per-object uniforms: one 256-byte slot per render-list entry, in draw
-        // order, with the background mesh in the slot after them.
-        let background_slot = order.len();
-        let mut object_data = vec![0u8; (OBJECT_STRIDE as usize) * (background_slot + 1)];
+        let mut items = Vec::with_capacity(order.len() + 1);
 
-        for (slot, &index) in order.iter().enumerate() {
+        // The skybox first, exactly where `renderList.unshift()` puts it.
+        if let Some(Background::CubeTexture(background)) = scene.background.clone() {
+            let mut material = MeshBasicNodeMaterial::new();
+            material.name = "Background.material";
+            material.color_node = Some(materials::background_color_node(&background));
+            material.vertex_node = Some(materials::background_vertex_node());
+            material.side = Side::Back;
+            material.depth_test = false;
+            material.depth_write = false;
+
+            items.push(Renderable {
+                geometry: self.background_geometry(),
+                material,
+                setup: SetupContext::default(),
+                // `Background.mesh` is never added to the scene, so its
+                // `matrixWorld` stays the identity.
+                model_world: Matrix4::identity(),
+                instance_matrix: None,
+                instance_count: 1,
+            });
+        }
+
+        for &index in order.iter() {
             let child = &scene.children[index];
             let material: &MeshBasicNodeMaterial = scene
                 .override_material
@@ -267,29 +269,81 @@ impl Renderer {
                 .or(child.mesh().material.as_ref())
                 .expect("three-rs: a mesh needs a material");
 
-            write_object_slot(
-                &mut object_data,
-                slot * OBJECT_STRIDE as usize,
-                &child.object().matrix_world,
-                material.color,
-                material.opacity,
-                material.reflectivity,
-            );
+            let instance_count = child.count();
+            let instance_matrix = child.instance_matrix().cloned();
+
+            items.push(Renderable {
+                geometry: child.mesh().geometry.clone(),
+                material: material.clone(),
+                setup: SetupContext {
+                    instance_count: instance_matrix.as_ref().map(|_| instance_count as usize),
+                    instanced: instance_matrix.is_some(),
+                },
+                model_world: child.object().matrix_world,
+                instance_matrix,
+                instance_count,
+            });
         }
 
-        // `Background.mesh` is never added to the scene, so its `matrixWorld`
-        // stays the identity; the `NodeMaterial` keeps `Material`'s defaults.
-        write_object_slot(
-            &mut object_data,
-            background_slot * OBJECT_STRIDE as usize,
-            &Matrix4::identity(),
-            Color::new(1.0, 1.0, 1.0),
-            1.0,
-            1.0,
-        );
+        // `Background.update()`: a `Color` background becomes the clear colour
+        // and forces a clear; any other background leaves the renderer's own
+        // clear colour in place (and `autoClear` still clears with it).
+        let clear = match &scene.background {
+            Some(Background::Color(Color { r, g, b })) => [*r, *g, *b, 1.0],
+            _ => self.clear_color,
+        };
 
-        self.queue.write_buffer(&self.object_buffer, 0, &object_data);
+        let camera_uniforms = UniformContext {
+            camera_projection: camera.projection_matrix,
+            camera_view: camera.matrix_world_inverse,
+            camera_world: camera.object.matrix_world,
+            time: self.time,
+            ..Default::default()
+        };
 
+        self.render_list(&items, camera_uniforms, Some(clear));
+    }
+
+    /// `QuadMesh.render( renderer )`: the material's `vertexNode` is swapped for
+    /// the full-screen-triangle one and the quad is rendered with the shared
+    /// orthographic camera.
+    pub fn render_quad(&mut self, quad: &QuadMesh) {
+        let mut material = quad.material.clone();
+        material.vertex_node = Some(materials::quad_vertex_node());
+
+        let items = [Renderable {
+            geometry: self.quad_geometry(),
+            material,
+            setup: SetupContext::default(),
+            model_world: Matrix4::identity(),
+            instance_matrix: None,
+            instance_count: 1,
+        }];
+
+        let camera_uniforms = self.quad_camera_uniforms();
+        let clear = self.clear_color;
+        self.render_list(&items, camera_uniforms, Some(clear));
+    }
+
+    fn quad_camera_uniforms(&self) -> UniformContext {
+        UniformContext {
+            camera_projection: self.quad_camera.projection_matrix,
+            camera_view: self.quad_camera.matrix_world_inverse,
+            camera_world: self.quad_camera.object.matrix_world,
+            time: self.time,
+            ..Default::default()
+        }
+    }
+
+    /// `Renderer._renderScene()`: pick the target, draw every renderable into
+    /// it, and run the output pass when the scene went through the internal
+    /// framebuffer target.
+    fn render_list(
+        &mut self,
+        items: &[Renderable],
+        camera_uniforms: UniformContext,
+        clear: Option<[f64; 4]>,
+    ) {
         // `Renderer.render()`: with `needsFrameBufferTarget` the scene is drawn
         // into the internal framebuffer target and `_renderOutput()` then blits
         // it to the canvas through the output colour transform.
@@ -302,166 +356,129 @@ impl Renderer {
             self.render_target.clone()
         };
 
-        let (color_view, depth_view, color_format, depth_format, sample_count, resolve) =
-            match &target {
-                Some(render_target) => self.render_target_views(render_target),
-                None => {
-                    // `renderer.depth === true`: the canvas pass carries a depth
-                    // buffer of its own.
-                    let samples = self.current_samples().max(1);
-                    self.prepare_canvas(true, samples);
-                    let canvas = self.canvas.as_ref().unwrap();
-                    let (view, resolve) = match &canvas.msaa {
-                        Some(msaa) => (
-                            msaa.create_view(&Default::default()),
-                            Some(canvas.color.create_view(&Default::default())),
-                        ),
-                        None => (canvas.color.create_view(&Default::default()), None),
-                    };
-                    let depth = canvas
-                        .depth
-                        .as_ref()
-                        .map(|d| d.create_view(&Default::default()));
-                    (
-                        view,
-                        depth,
-                        CANVAS_FORMAT,
-                        Some(CANVAS_DEPTH_FORMAT),
-                        canvas.sample_count,
-                        resolve,
-                    )
-                }
-            };
-
-        // `Background.update()`: a `Color` background becomes the clear colour
-        // and forces a clear; any other background leaves the renderer's own
-        // clear colour in place (and `autoClear` still clears with it).
-        let clear = match &scene.background {
-            Some(Background::Color(Color { r, g, b })) => [*r, *g, *b, 1.0],
-            _ => self.clear_color,
+        let pass_target = match &target {
+            Some(render_target) => self.render_target_pass(render_target),
+            None => self.canvas_pass(true),
         };
 
-        // Resolve every draw before the pass borrows `self` immutably: the
-        // material picks the shader, the geometry is uploaded, and an instanced
-        // child gets its instance-matrix buffer plus, for a `range()` colorNode,
-        // the per-instance random buffer that `RangeNode.setup()` builds.
+        self.draw(items, camera_uniforms, &pass_target, clear);
+
+        if use_frame_buffer_target {
+            self.render_output(target.as_ref().unwrap());
+        }
+    }
+
+    /// One render pass: every renderable is built, bound and drawn.
+    fn draw(
+        &mut self,
+        items: &[Renderable],
+        camera_uniforms: UniformContext,
+        target: &PassTarget,
+        clear: Option<[f64; 4]>,
+    ) {
         struct Draw {
             geometry_id: usize,
-            key: PipelineKey,
-            /// `None` means the shared `basic` bind group.
-            bind_group: Option<wgpu::BindGroup>,
+            attributes: Vec<&'static str>,
+            pipeline: PipelineKey,
+            bind_groups: Vec<wgpu::BindGroup>,
             instance_count: u32,
-            /// The dynamic offset into the per-object uniform buffer.
-            slot: usize,
         }
 
-        let mut draws = Vec::with_capacity(order.len() + 1);
+        let mut draws = Vec::with_capacity(items.len());
 
-        // The skybox first, exactly where `renderList.unshift()` puts it.
-        if let Some(Background::CubeTexture(background)) = scene.background.clone() {
-            let geometry = self.background_geometry();
-            let geometry_id = Rc::as_ptr(&geometry) as usize;
-            self.ensure_geometry(geometry_id, &geometry);
+        for item in items {
+            let geometry_id = Rc::as_ptr(&item.geometry) as usize;
+            self.ensure_geometry(geometry_id, &item.geometry);
 
-            let key = PipelineKey {
-                shader: ShaderKey::BackgroundCube,
-                color_format,
-                depth_format,
-                sample_count,
-                instance_count: 1,
+            // `NodeMaterial.setup()` → `NodeBuilder.build()`: the WGSL and the
+            // bindings the material declares.
+            let flow = materials::setup(&item.material, &item.setup);
+            let node = NodeBuilder::new().build(&flow);
+            let program_key = node.cache_key;
+            if !self.programs.contains_key(&program_key) {
+                let program = Program::new(&self.device, node);
+                self.programs.insert(program_key, program);
+            }
+
+            let state = RenderState {
+                color_format: target.color_format,
+                depth_format: target.depth_format,
+                sample_count: target.sample_count,
+                side: item.material.side,
+                depth_test: item.material.depth_test,
+                depth_write: item.material.depth_write,
             };
-            self.ensure_pipeline(key);
+            let pipeline = PipelineKey {
+                program: program_key,
+                state,
+            };
+            self.ensure_pipeline(pipeline);
+
+            let uniforms = UniformContext {
+                model_world: item.model_world,
+                material_color: item.material.color,
+                material_opacity: item.material.opacity,
+                material_reflectivity: item.material.reflectivity,
+                viewport: Vector2::new(target.width as f64, target.height as f64),
+                ..camera_uniforms
+            };
+
+            let bind_groups = self.bind_groups(program_key, &uniforms, &item.instance_matrix);
+
+            let attributes = self.programs[&program_key]
+                .node
+                .attributes
+                .iter()
+                .map(|(name, _)| *name)
+                .collect();
 
             draws.push(Draw {
                 geometry_id,
-                key,
-                bind_group: Some(self.env_map_bind_group(&background)),
-                instance_count: 1,
-                slot: background_slot,
-            });
-        }
-
-        for (slot, &index) in order.iter().enumerate() {
-            let child = &scene.children[index];
-            let material: &MeshBasicNodeMaterial = scene
-                .override_material
-                .as_ref()
-                .or(child.mesh().material.as_ref())
-                .expect("three-rs: a mesh needs a material");
-
-            let geometry_id = Rc::as_ptr(&child.mesh().geometry) as usize;
-            self.ensure_geometry(geometry_id, &child.mesh().geometry);
-
-            let instance_count = child.count();
-
-            let key = PipelineKey {
-                shader: material.shader_key(),
-                color_format,
-                depth_format,
-                sample_count,
-                instance_count,
-            };
-            self.ensure_pipeline(key);
-
-            let env_map = material.env_map.clone();
-            let color_node = material.color_node.clone();
-
-            let bind_group = match &color_node {
-                None => env_map.map(|texture| self.env_map_bind_group(&texture)),
-                Some(ColorNode::NormalWorldRangeMix { min, max }) => {
-                    let instance_matrix = child
-                        .instance_matrix()
-                        .expect("three-rs: range() needs an InstancedMesh")
-                        .array
-                        .clone();
-                    Some(self.normal_world_range_mix_bind_group(
-                        &instance_matrix,
-                        instance_count,
-                        *min,
-                        *max,
-                    ))
-                }
-                Some(other) => panic!("three-rs: {other:?} is not drawable as a mesh material"),
-            };
-
-            draws.push(Draw {
-                geometry_id,
-                key,
-                bind_group,
-                instance_count,
-                slot,
+                attributes,
+                pipeline,
+                bind_groups,
+                instance_count: item.instance_count,
             });
         }
 
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("three-rs scene pass"),
+                label: Some("three-rs pass"),
             });
 
         {
+            let load = match clear {
+                Some(clear) => wgpu::LoadOp::Clear(wgpu::Color {
+                    r: clear[0],
+                    g: clear[1],
+                    b: clear[2],
+                    a: clear[3],
+                }),
+                None => wgpu::LoadOp::Load,
+            };
+
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("three-rs scene pass"),
+                label: Some("three-rs pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &color_view,
+                    view: &target.color,
                     depth_slice: None,
-                    resolve_target: resolve.as_ref(),
+                    resolve_target: target.resolve.as_ref(),
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: clear[0],
-                            g: clear[1],
-                            b: clear[2],
-                            a: clear[3],
-                        }),
+                        load,
                         store: wgpu::StoreOp::Store,
                     },
                 })],
-                depth_stencil_attachment: depth_view.as_ref().map(|view| {
+                depth_stencil_attachment: target.depth.as_ref().map(|view| {
                     wgpu::RenderPassDepthStencilAttachment {
                         view,
                         depth_ops: Some(wgpu::Operations {
                             // `Renderer._clearDepth` is 1.
-                            load: wgpu::LoadOp::Clear(1.0),
+                            load: if clear.is_some() {
+                                wgpu::LoadOp::Clear(1.0)
+                            } else {
+                                wgpu::LoadOp::Load
+                            },
                             store: wgpu::StoreOp::Store,
                         }),
                         stencil_ops: None,
@@ -475,137 +492,50 @@ impl Renderer {
             for draw in draws.iter() {
                 let geometry = &self.geometries[&draw.geometry_id];
 
-                pass.set_pipeline(self.pipelines.get(&draw.key).unwrap());
-                pass.set_bind_group(
-                    0,
-                    draw.bind_group.as_ref().unwrap_or(&self.basic_bind_group),
-                    &[(draw.slot as u64 * OBJECT_STRIDE) as u32],
-                );
-
-                let normal = || {
-                    geometry
-                        .normal
-                        .as_ref()
-                        .expect("three-rs: this material needs a normal attribute")
-                };
-
-                match draw.key.shader {
-                    // `Background.material`'s vertex node reads `normalLocal`
-                    // before `positionLocal`, so the node builder assigns
-                    // location 0 to `normal` and location 1 to `position`.
-                    ShaderKey::BackgroundCube => {
-                        pass.set_vertex_buffer(0, normal().slice(..));
-                        pass.set_vertex_buffer(1, geometry.position.slice(..));
-                    }
-                    ShaderKey::BasicEnvMap | ShaderKey::NormalWorldRangeMix => {
-                        pass.set_vertex_buffer(0, geometry.position.slice(..));
-                        pass.set_vertex_buffer(1, normal().slice(..));
-                    }
-                    _ => pass.set_vertex_buffer(0, geometry.position.slice(..)),
+                pass.set_pipeline(self.pipelines.get(&draw.pipeline).unwrap());
+                for (index, group) in draw.bind_groups.iter().enumerate() {
+                    pass.set_bind_group(index as u32, group, &[]);
+                }
+                for (slot, name) in draw.attributes.iter().enumerate() {
+                    pass.set_vertex_buffer(slot as u32, geometry.attribute(name).slice(..));
                 }
 
-                pass.set_index_buffer(geometry.index.slice(..), geometry.index_format);
-                pass.draw_indexed(0..geometry.index_count, 0, 0..draw.instance_count);
+                match &geometry.index {
+                    Some((buffer, format, count)) => {
+                        pass.set_index_buffer(buffer.slice(..), *format);
+                        pass.draw_indexed(0..*count, 0, 0..draw.instance_count);
+                    }
+                    None => pass.draw(0..geometry.vertex_count, 0..draw.instance_count),
+                }
             }
         }
 
         self.queue.submit(Some(encoder.finish()));
-
-        if use_frame_buffer_target {
-            self.render_output(target.as_ref().unwrap());
-        }
     }
 
-    /// `QuadMesh.render( renderer )` — a single full-screen triangle into the
-    /// current target (rung 1 only ever uses it for the canvas).
-    pub fn render_quad(&mut self, quad: &QuadMesh) {
-        assert!(
-            self.render_target.is_none(),
-            "three-rs: rung 1 only renders the quad to the canvas"
-        );
+    /// `Renderer._renderOutput( renderTarget )`: a `QuadMesh` whose
+    /// `NodeMaterial.fragmentNode` is `nodes.getOutputNode( renderTarget.texture )`,
+    /// rendered to the canvas with `autoClear` off, so the canvas attachments
+    /// load rather than clear.
+    fn render_output(&mut self, render_target: &RenderTarget) {
+        let mut material = MeshBasicNodeMaterial::new();
+        material.name = "outputColorTransform";
+        material.fragment_node = Some(materials::output_fragment_node(
+            &render_target.texture(),
+        ));
 
-        let depth_texture = match &quad.material.color_node {
-            Some(ColorNode::DepthTexture(texture)) => texture.clone(),
-            _ => panic!("three-rs: the quad material needs a texture() colorNode"),
-        };
-
-        let bind_group = self.depth_bind_group(&depth_texture);
-
-        // Like any other render to the canvas, a `QuadMesh` goes through the
-        // internal framebuffer target and the output colour transform.
-        let use_frame_buffer_target = self.needs_frame_buffer_target();
-
-        let (target, view, color_format, sample_count, resolve) = if use_frame_buffer_target {
-            let target = self.frame_buffer_target();
-            let (view, _depth, color_format, _depth_format, sample_count, resolve) =
-                self.render_target_views(&target);
-            (Some(target), view, color_format, sample_count, resolve)
-        } else {
-            let samples = self.current_samples().max(1);
-            self.prepare_canvas(false, samples);
-            let canvas = self.canvas.as_ref().unwrap();
-            let (view, resolve) = match &canvas.msaa {
-                Some(msaa) => (
-                    msaa.create_view(&Default::default()),
-                    Some(canvas.color.create_view(&Default::default())),
-                ),
-                None => (canvas.color.create_view(&Default::default()), None),
-            };
-            (None, view, CANVAS_FORMAT, canvas.sample_count, resolve)
-        };
-
-        let key = PipelineKey {
-            shader: ShaderKey::DepthTextureQuad,
-            color_format,
-            // No depth attachment: the quad covers the whole target and sits at
-            // z = 0, so the depth test can never reject it.
-            depth_format: None,
-            sample_count,
+        let items = [Renderable {
+            geometry: self.quad_geometry(),
+            material,
+            setup: SetupContext::default(),
+            model_world: Matrix4::identity(),
+            instance_matrix: None,
             instance_count: 1,
-        };
-        self.ensure_pipeline(key);
+        }];
 
-        let clear = self.clear_color;
-
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("three-rs quad pass"),
-            });
-
-        {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("three-rs quad pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    depth_slice: None,
-                    resolve_target: resolve.as_ref(),
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: clear[0],
-                            g: clear[1],
-                            b: clear[2],
-                            a: clear[3],
-                        }),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                occlusion_query_set: None,
-                timestamp_writes: None,
-                multiview_mask: None,
-            });
-
-            pass.set_pipeline(self.pipelines.get(&key).unwrap());
-            pass.set_bind_group(0, &bind_group, &[]);
-            pass.draw(0..3, 0..1);
-        }
-
-        self.queue.submit(Some(encoder.finish()));
-
-        if let Some(target) = &target {
-            self.render_output(target);
-        }
+        let camera_uniforms = self.quad_camera_uniforms();
+        let pass_target = self.canvas_pass(true);
+        self.draw(&items, camera_uniforms, &pass_target, None);
     }
 
     /// Reads the canvas colour texture back as top-down RGBA8, which is what
@@ -675,110 +605,200 @@ impl Renderer {
         (width, height, data)
     }
 
-    //
+    // -- bindings --------------------------------------------------------
 
-    /// The `renderStruct` block. `cameraWorldMatrix` is what the reflection
-    /// path uses to take the view-space reflection vector back to world space;
-    /// `backgroundRotation` / `backgroundBlurriness` / `backgroundIntensity` are
-    /// `Scene`'s, and the port has no API to change them from their defaults
-    /// (an identity `Euler`, 0 and 1), which is what this example leaves them at.
-    fn write_camera_uniforms(&self, camera: &PerspectiveCamera) {
-        let mut data = [0f32; (RENDER_SIZE / 4) as usize];
-        data[0..16].copy_from_slice(&camera.projection_matrix.to_f32_array());
-        data[16..32].copy_from_slice(&camera.matrix_world_inverse.to_f32_array());
-        // 32..34 is `viewportSize`, written by the output pass.
-        data[36..52].copy_from_slice(&camera.object.matrix_world.to_f32_array());
-        data[52..68].copy_from_slice(&Matrix4::identity().to_f32_array());
-        data[68] = 0.0;
-        data[69] = 1.0;
-        self.queue
-            .write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&data));
-    }
-
-    /// `viewportSize` — the `screenSize`/viewport uniform the output pass
-    /// divides `fragCoord.xy` by, living in the same render uniform block.
-    fn write_viewport_uniforms(&self, width: u32, height: u32) {
-        let data = [width as f32, height as f32];
-        self.queue
-            .write_buffer(&self.camera_buffer, 128, bytemuck::cast_slice(&data));
-    }
-
-    /// `time` — a `renderGroup` uniform fed from `NodeFrame.time`.
-    fn write_frame_uniforms(&self) {
-        let data = [self.time as f32, 0.0, 0.0, 0.0];
-        self.queue
-            .write_buffer(&self.frame_buffer, 0, bytemuck::cast_slice(&data));
-    }
-
-    /// Builds the bind group for `normal_world_range_mix.wgsl`, including the
-    /// `range()` buffer that `RangeNode.setup()` fills with
-    /// `MathUtils.lerp( min[ c ], max[ c ], Math.random() )` — stride 4, so four
-    /// draws per instance, component index `i % 4`.
-    fn normal_world_range_mix_bind_group(
+    /// `Bindings.getForRender()`: one bind group per declared group, with every
+    /// binding resolved from the descriptor the node builder emitted.
+    fn bind_groups(
         &mut self,
-        instance_matrix: &[f32],
-        instance_count: u32,
-        min_color: Color,
-        max_color: Color,
-    ) -> wgpu::BindGroup {
-        // `min`/`max` are `Vector4`s: a Color fills xyz and leaves w at 1.
-        let min = [min_color.r, min_color.g, min_color.b, 1.0];
-        let max = [max_color.r, max_color.g, max_color.b, 1.0];
-
-        let stride = 4usize;
-        let length = stride * instance_count as usize;
-        let mut range = vec![0f32; length];
-
-        for (i, value) in range.iter_mut().enumerate() {
-            let index = i % stride;
-            let t = self.random.next();
-            // `MathUtils.lerp( x, y, t ) = ( 1 - t ) * x + t * y`
-            *value = ((1.0 - t) * min[index] + t * max[index]) as f32;
+        program_key: u64,
+        uniforms: &UniformContext,
+        instance_matrix: &Option<InstancedBufferAttribute>,
+    ) -> Vec<wgpu::BindGroup> {
+        enum Resource {
+            Buffer(wgpu::Buffer),
+            View(wgpu::TextureView),
+            Sampler(wgpu::Sampler),
         }
 
-        let instances_buffer = self.create_buffer_init(
-            "three-rs instance matrices",
-            bytemuck::cast_slice(instance_matrix),
-            wgpu::BufferUsages::UNIFORM,
-        );
+        let groups = self.programs[&program_key].node.groups.clone();
+        let mut out = Vec::with_capacity(groups.len());
 
-        let range_buffer = self.create_buffer_init(
-            "three-rs range()",
-            bytemuck::cast_slice(&range),
-            wgpu::BufferUsages::UNIFORM,
-        );
+        for (group_index, descs) in groups.iter().enumerate() {
+            let mut resources = Vec::with_capacity(descs.len());
 
-        self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("three-rs normal_world_range_mix bind group"),
-            layout: &self.layouts.normal_world_range_mix,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: self.camera_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                        buffer: &self.object_buffer,
-                        offset: 0,
-                        size: std::num::NonZeroU64::new(112),
-                    }),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: self.frame_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: instances_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
-                    resource: range_buffer.as_entire_binding(),
-                },
-            ],
-        })
+            for desc in descs {
+                resources.push(match desc {
+                    BindingDesc::Uniforms { members, size, .. } => {
+                        let bytes = uniforms.bytes(members, *size);
+                        Resource::Buffer(self.create_buffer_init(
+                            "three-rs uniforms",
+                            &bytes,
+                            wgpu::BufferUsages::UNIFORM,
+                        ))
+                    }
+                    BindingDesc::Buffer { source, count, .. } => {
+                        Resource::Buffer(self.node_buffer(source, *count, instance_matrix))
+                    }
+                    BindingDesc::Texture { source, kind, .. } => {
+                        Resource::View(self.texture_view(source, *kind))
+                    }
+                    BindingDesc::Sampler { source, .. } => {
+                        Resource::Sampler(self.texture_sampler(source))
+                    }
+                });
+            }
+
+            let entries: Vec<wgpu::BindGroupEntry> = resources
+                .iter()
+                .enumerate()
+                .map(|(binding, resource)| wgpu::BindGroupEntry {
+                    binding: binding as u32,
+                    resource: match resource {
+                        Resource::Buffer(buffer) => buffer.as_entire_binding(),
+                        Resource::View(view) => wgpu::BindingResource::TextureView(view),
+                        Resource::Sampler(sampler) => wgpu::BindingResource::Sampler(sampler),
+                    },
+                })
+                .collect();
+
+            out.push(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("three-rs bind group"),
+                layout: &self.programs[&program_key].layouts[group_index],
+                entries: &entries,
+            }));
+        }
+
+        out
     }
+
+    /// A `BufferNode`'s uniform buffer. `range()` is filled from the page's
+    /// `Math.random` exactly once, because `RangeNode.setup()` runs once.
+    fn node_buffer(
+        &mut self,
+        source: &BufferSource,
+        count: usize,
+        instance_matrix: &Option<InstancedBufferAttribute>,
+    ) -> wgpu::Buffer {
+        match source {
+            BufferSource::InstanceMatrix => {
+                let attribute = instance_matrix
+                    .as_ref()
+                    .expect("three-rs: instanceMatrix needs an InstancedMesh");
+                self.create_buffer_init(
+                    "three-rs instanceMatrix",
+                    bytemuck::cast_slice(&attribute.array),
+                    wgpu::BufferUsages::UNIFORM,
+                )
+            }
+            BufferSource::Range { min, max } => {
+                let key = format!("range:{min:?}:{max:?}:{count}");
+                if let Some(buffer) = self.buffers.get(&key) {
+                    return buffer.clone();
+                }
+
+                // `min`/`max` are `Vector4`s: a Color fills xyz and leaves w at 1.
+                let min = [min.r, min.g, min.b, 1.0];
+                let max = [max.r, max.g, max.b, 1.0];
+
+                let stride = 4usize;
+                let mut range = vec![0f32; stride * count];
+
+                for (i, value) in range.iter_mut().enumerate() {
+                    let index = i % stride;
+                    let t = self.random.next();
+                    // `MathUtils.lerp( x, y, t ) = ( 1 - t ) * x + t * y`
+                    *value = ((1.0 - t) * min[index] + t * max[index]) as f32;
+                }
+
+                let buffer = self.create_buffer_init(
+                    "three-rs range()",
+                    bytemuck::cast_slice(&range),
+                    wgpu::BufferUsages::UNIFORM,
+                );
+                self.buffers.insert(key, buffer.clone());
+                buffer
+            }
+        }
+    }
+
+    fn texture_view(&mut self, source: &TextureSource, kind: TextureKind) -> wgpu::TextureView {
+        match source {
+            TextureSource::Texture2D(texture) => {
+                let gpu = self.ensure_texture_2d(texture);
+                gpu.create_view(&Default::default())
+            }
+            TextureSource::Depth(depth) => {
+                let inner = depth.inner().borrow();
+                let gpu = inner
+                    .gpu
+                    .as_ref()
+                    .expect("three-rs: the depth texture has not been rendered into yet");
+                gpu.create_view(&Default::default())
+            }
+            TextureSource::Cube(cube) => {
+                assert_eq!(kind, TextureKind::Cube);
+                let gpu = self.ensure_cube_texture(cube);
+                gpu.create_view(&wgpu::TextureViewDescriptor {
+                    dimension: Some(wgpu::TextureViewDimension::Cube),
+                    ..Default::default()
+                })
+            }
+        }
+    }
+
+    /// `WebGPUTextureUtils.updateSampler()`.
+    fn texture_sampler(&mut self, source: &TextureSource) -> wgpu::Sampler {
+        let filter = |f: TextureFilter| match f {
+            TextureFilter::Nearest => wgpu::FilterMode::Nearest,
+            TextureFilter::Linear => wgpu::FilterMode::Linear,
+        };
+        let mipmap = |f: TextureFilter| match f {
+            TextureFilter::Nearest => wgpu::MipmapFilterMode::Nearest,
+            TextureFilter::Linear => wgpu::MipmapFilterMode::Linear,
+        };
+        let address = |w: Wrapping| match w {
+            Wrapping::ClampToEdge => wgpu::AddressMode::ClampToEdge,
+        };
+
+        match source {
+            TextureSource::Texture2D(texture) => {
+                let inner = texture.borrow();
+                self.device.create_sampler(&wgpu::SamplerDescriptor {
+                    label: Some("three-rs sampler"),
+                    address_mode_u: address(inner.wrap_s),
+                    address_mode_v: address(inner.wrap_t),
+                    address_mode_w: wgpu::AddressMode::ClampToEdge,
+                    mag_filter: filter(inner.mag_filter),
+                    min_filter: filter(inner.min_filter.min()),
+                    mipmap_filter: mipmap(inner.min_filter.mipmap()),
+                    anisotropy_clamp: inner.anisotropy,
+                    ..Default::default()
+                })
+            }
+            TextureSource::Cube(cube) => {
+                let anisotropy = cube.inner().borrow().anisotropy;
+                self.device.create_sampler(&wgpu::SamplerDescriptor {
+                    label: Some("three-rs cube sampler"),
+                    // `CubeTexture`'s wrapping is `ClampToEdgeWrapping` on all axes.
+                    address_mode_u: wgpu::AddressMode::ClampToEdge,
+                    address_mode_v: wgpu::AddressMode::ClampToEdge,
+                    address_mode_w: wgpu::AddressMode::ClampToEdge,
+                    // `LinearFilter` / `LinearMipmapLinearFilter`.
+                    mag_filter: wgpu::FilterMode::Linear,
+                    min_filter: wgpu::FilterMode::Linear,
+                    mipmap_filter: wgpu::MipmapFilterMode::Linear,
+                    anisotropy_clamp: anisotropy,
+                    ..Default::default()
+                })
+            }
+            TextureSource::Depth(_) => {
+                panic!("three-rs: a depth texture is read with textureLoad, not sampled")
+            }
+        }
+    }
+
+    // -- resources -------------------------------------------------------
 
     /// `Background`'s skybox geometry, built once per renderer just as
     /// `Background.update()` caches it per scene.
@@ -786,6 +806,98 @@ impl Renderer {
         self.background_geometry
             .get_or_insert_with(|| Rc::new(sphere_geometry(1.0, 32, 32)))
             .clone()
+    }
+
+    fn quad_geometry(&mut self) -> Rc<BufferGeometry> {
+        self.quad_geometry
+            .get_or_insert_with(|| Rc::new(quad_geometry()))
+            .clone()
+    }
+
+    /// `Textures.updateTexture()` for a 2D `Texture`: upload the image with
+    /// `flipY` applied, then generate the mip chain.
+    fn ensure_texture_2d(&mut self, texture: &Texture) -> wgpu::Texture {
+        // A render target's colour texture is owned by the renderer and was
+        // created by `prepare_render_target()`.
+        if !texture.borrow().own_gpu {
+            return texture.with_gpu(|gpu| gpu.clone());
+        }
+
+        let id = texture.id();
+        if let Some(gpu) = self.textures_2d.get(&id) {
+            return gpu.clone();
+        }
+
+        let (width, height) = texture.size();
+        let format = texture.format();
+        let mip_level_count = texture.mip_level_count();
+
+        let gpu = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("three-rs texture"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format,
+            usage: wgpu::TextureUsages::COPY_DST
+                | wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+
+        {
+            let inner = texture.borrow();
+            let data = inner
+                .data
+                .as_ref()
+                .expect("three-rs: the texture has no image data");
+
+            // `copyExternalImageToTexture( { flipY } )`: the source rows are
+            // uploaded bottom-up. (three.js' `_flipY()` pass is only for the
+            // `_copyBufferToTexture` path, and is the same flip.)
+            let rows: Vec<u8> = if inner.flip_y {
+                let stride = (width * 4) as usize;
+                let mut flipped = Vec::with_capacity(data.len());
+                for row in (0..height as usize).rev() {
+                    flipped.extend_from_slice(&data[row * stride..(row + 1) * stride]);
+                }
+                flipped
+            } else {
+                data.clone()
+            };
+
+            self.queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &gpu,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                &rows,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(width * 4),
+                    rows_per_image: Some(height),
+                },
+                wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
+
+        if mip_level_count > 1 {
+            self.generate_mipmaps(&gpu, format, mip_level_count, 1);
+        }
+
+        texture.set_gpu(gpu.clone());
+        self.textures_2d.insert(id, gpu.clone());
+        gpu
     }
 
     /// `Textures.updateTexture()` for a `CubeTexture`: one 2D texture with six
@@ -860,10 +972,9 @@ impl Renderer {
     /// `WebGPUTexturePassUtils.generateMipmaps()`: one render pass per
     /// (mip level, array layer), each drawing a single oversized triangle that
     /// samples the level above through a `minFilter: 'linear'` sampler — a 2×
-    /// box downsample of each cube face on its own, with no cross-face
-    /// filtering, because `getTransferPipeline()` falls back to the
-    /// `'2d-array'` entry point when the GPU texture reports no
-    /// `textureBindingViewDimension`.
+    /// box downsample of each layer on its own, because `getTransferPipeline()`
+    /// falls back to the `'2d-array'` entry point when the GPU texture reports
+    /// no `textureBindingViewDimension`.
     fn generate_mipmaps(
         &mut self,
         texture: &wgpu::Texture,
@@ -872,8 +983,7 @@ impl Renderer {
         layers: u32,
     ) {
         if !self.mipmap_pipelines.contains_key(&format) {
-            let pipeline =
-                create_mipmap_pipeline(&self.device, &self.shaders, &self.layouts, format);
+            let pipeline = create_mipmap_pipeline(&self.device, &self.mipmap_shader, format);
             self.mipmap_pipelines.insert(format, pipeline);
         }
         let pipeline = &self.mipmap_pipelines[&format];
@@ -928,7 +1038,7 @@ impl Renderer {
 
                 let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
                     label: None,
-                    layout: &self.layouts.mipmap,
+                    layout: &self.mipmap_shader.layout,
                     entries: &[
                         wgpu::BindGroupEntry {
                             binding: 0,
@@ -973,81 +1083,9 @@ impl Renderer {
         self.queue.submit(Some(encoder.finish()));
     }
 
-    /// The bind group the env-map and skybox shaders share: the render block,
-    /// the per-object block behind a dynamic offset, the cube texture view and
-    /// the sampler `WebGPUTextureUtils.updateSampler()` builds for it.
-    fn env_map_bind_group(&mut self, texture: &CubeTexture) -> wgpu::BindGroup {
-        // `CubeTextureNode.getDefaultUV()` picks `reflectVector` for
-        // `CubeReflectionMapping` and `refractVector` for
-        // `CubeRefractionMapping`; only the reflection branch is ported.
-        assert_eq!(
-            texture.mapping(),
-            Mapping::CubeReflection,
-            "three-rs: only CubeReflectionMapping is implemented"
-        );
-
-        let gpu = self.ensure_cube_texture(texture);
-        let id = texture.id();
-
-        if let Some(bind_group) = self.env_bind_groups.get(&id) {
-            return bind_group.clone();
-        }
-
-        let view = gpu.create_view(&wgpu::TextureViewDescriptor {
-            dimension: Some(wgpu::TextureViewDimension::Cube),
-            ..Default::default()
-        });
-
-        let anisotropy = texture.inner().borrow().anisotropy;
-
-        let sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("three-rs cube sampler"),
-            // `CubeTexture`'s wrapping is `ClampToEdgeWrapping` on all three axes.
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            // `LinearFilter` / `LinearMipmapLinearFilter`.
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::MipmapFilterMode::Linear,
-            anisotropy_clamp: anisotropy,
-            ..Default::default()
-        });
-
-        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("three-rs env map bind group"),
-            layout: &self.layouts.env_map,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: self.camera_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                        buffer: &self.object_buffer,
-                        offset: 0,
-                        size: std::num::NonZeroU64::new(OBJECT_SIZE),
-                    }),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: wgpu::BindingResource::Sampler(&sampler),
-                },
-            ],
-        });
-
-        self.env_bind_groups.insert(id, bind_group.clone());
-        bind_group
-    }
-
     fn ensure_pipeline(&mut self, key: PipelineKey) {
         if !self.pipelines.contains_key(&key) {
-            let pipeline = create_pipeline(&self.device, &mut self.shaders, &self.layouts, key);
+            let pipeline = self.programs[&key.program].create_pipeline(&self.device, key.state);
             self.pipelines.insert(key, pipeline);
         }
     }
@@ -1057,52 +1095,42 @@ impl Renderer {
             return;
         }
 
-        let position = geometry
-            .position
-            .as_ref()
-            .expect("three-rs: geometry without a position attribute");
-
-        let position_buffer = self.create_buffer_init(
-            "three-rs position",
-            bytemuck::cast_slice(&position.array),
-            wgpu::BufferUsages::VERTEX,
-        );
-
-        let normal_buffer = geometry.normal.as_ref().map(|normal| {
+        let vertex_buffer = |attribute: &crate::core::BufferAttribute| {
             self.create_buffer_init(
-                "three-rs normal",
-                bytemuck::cast_slice(&normal.array),
+                "three-rs attribute",
+                bytemuck::cast_slice(&attribute.array),
                 wgpu::BufferUsages::VERTEX,
             )
-        });
-
-        let index = geometry
-            .index
-            .as_ref()
-            .expect("three-rs: rung 1 only draws indexed geometry");
-
-        let (index_bytes, index_format): (Vec<u8>, wgpu::IndexFormat) = match index {
-            Index::U16(v) => (
-                bytemuck::cast_slice(v).to_vec(),
-                wgpu::IndexFormat::Uint16,
-            ),
-            Index::U32(v) => (
-                bytemuck::cast_slice(v).to_vec(),
-                wgpu::IndexFormat::Uint32,
-            ),
         };
 
-        let index_buffer =
-            self.create_buffer_init("three-rs index", &index_bytes, wgpu::BufferUsages::INDEX);
+        let position = geometry.position.as_ref().map(vertex_buffer);
+        let normal = geometry.normal.as_ref().map(vertex_buffer);
+        let uv = geometry.uv.as_ref().map(vertex_buffer);
+
+        let index = geometry.index.as_ref().map(|index| {
+            let (bytes, format): (Vec<u8>, wgpu::IndexFormat) = match index {
+                Index::U16(v) => (bytemuck::cast_slice(v).to_vec(), wgpu::IndexFormat::Uint16),
+                Index::U32(v) => (bytemuck::cast_slice(v).to_vec(), wgpu::IndexFormat::Uint32),
+            };
+            let buffer =
+                self.create_buffer_init("three-rs index", &bytes, wgpu::BufferUsages::INDEX);
+            (buffer, format, index.count() as u32)
+        });
+
+        let vertex_count = geometry
+            .position
+            .as_ref()
+            .map(|p| p.count() as u32)
+            .unwrap_or(0);
 
         self.geometries.insert(
             id,
             GeometryGpu {
-                position: position_buffer,
-                normal: normal_buffer,
-                index: index_buffer,
-                index_format,
-                index_count: index.count() as u32,
+                position,
+                normal,
+                uv,
+                index,
+                vertex_count,
             },
         );
     }
@@ -1129,47 +1157,7 @@ impl Renderer {
         buffer
     }
 
-    fn depth_bind_group(&self, depth_texture: &DepthTexture) -> wgpu::BindGroup {
-        let inner = depth_texture.inner().borrow();
-        let gpu = inner
-            .gpu
-            .as_ref()
-            .expect("three-rs: the depth texture has not been rendered into yet");
-
-        let view = gpu.create_view(&Default::default());
-
-        let filter = |f: TextureFilter| match f {
-            TextureFilter::Nearest => wgpu::FilterMode::Nearest,
-            TextureFilter::Linear => wgpu::FilterMode::Linear,
-        };
-
-        let sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("three-rs depth sampler"),
-            // `Texture`'s default wrapping is `ClampToEdgeWrapping`.
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: filter(inner.mag_filter),
-            min_filter: filter(inner.min_filter),
-            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
-            ..Default::default()
-        });
-
-        self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("three-rs quad bind group"),
-            layout: &self.layouts.quad,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&sampler),
-                },
-            ],
-        })
-    }
+    // -- targets ---------------------------------------------------------
 
     /// `Renderer.needsFrameBufferTarget` — true when the output needs tone
     /// mapping or a colour-space conversion. `outputColorSpace` is
@@ -1220,27 +1208,13 @@ impl Renderer {
         target.clone()
     }
 
-    /// The colour/depth views, formats and sample count of a render-target pass.
-    fn render_target_views(
-        &self,
-        render_target: &RenderTarget,
-    ) -> (
-        wgpu::TextureView,
-        Option<wgpu::TextureView>,
-        wgpu::TextureFormat,
-        Option<wgpu::TextureFormat>,
-        u32,
-        Option<wgpu::TextureView>,
-    ) {
+    /// The attachments of a render-target pass.
+    fn render_target_pass(&self, render_target: &RenderTarget) -> PassTarget {
         self.prepare_render_target(render_target);
 
         let inner = render_target.inner().borrow();
         let color_format = inner.texture_type.color_gpu_format();
-        let single = inner
-            .color
-            .as_ref()
-            .unwrap()
-            .create_view(&Default::default());
+        let single = inner.texture.with_gpu(|gpu| gpu.create_view(&Default::default()));
 
         let (color, resolve) = match &inner.msaa {
             Some(msaa) => (msaa.create_view(&Default::default()), Some(single)),
@@ -1267,135 +1241,46 @@ impl Renderer {
             (None, None) => (None, None),
         };
 
-        (
+        PassTarget {
             color,
+            resolve,
             depth,
             color_format,
             depth_format,
-            inner.samples.max(1),
-            resolve,
-        )
+            sample_count: inner.samples.max(1),
+            width: inner.width,
+            height: inner.height,
+        }
     }
 
-    /// `Renderer._renderOutput( renderTarget )`: a `QuadMesh` whose
-    /// `NodeMaterial.fragmentNode` is `nodes.getOutputNode( renderTarget.texture )`,
-    /// rendered to the output target — here the canvas — with `autoClear` off,
-    /// so the canvas attachments load rather than clear.
-    fn render_output(&mut self, render_target: &RenderTarget) {
+    /// The attachments of a canvas pass.
+    fn canvas_pass(&mut self, needs_depth: bool) -> PassTarget {
         let sample_count = self.current_samples().max(1);
-        // `renderContext.depth = this.depth` for a canvas pass.
-        self.prepare_canvas(true, sample_count);
-
-        let (width, height) = self.drawing_buffer_size();
-        self.write_viewport_uniforms(width, height);
-
-        let bind_group = self.output_color_transform_bind_group(render_target);
-
-        let key = PipelineKey {
-            shader: ShaderKey::OutputColorTransform,
-            color_format: CANVAS_FORMAT,
-            depth_format: Some(CANVAS_DEPTH_FORMAT),
-            sample_count,
-            instance_count: 1,
-        };
-        self.ensure_pipeline(key);
+        self.prepare_canvas(needs_depth, sample_count);
 
         let canvas = self.canvas.as_ref().unwrap();
-        let (view, resolve) = match &canvas.msaa {
+        let (color, resolve) = match &canvas.msaa {
             Some(msaa) => (
                 msaa.create_view(&Default::default()),
                 Some(canvas.color.create_view(&Default::default())),
             ),
             None => (canvas.color.create_view(&Default::default()), None),
         };
-        let depth_view = canvas
+        let depth = canvas
             .depth
             .as_ref()
             .map(|d| d.create_view(&Default::default()));
 
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("three-rs output pass"),
-            });
-
-        {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("three-rs output pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    depth_slice: None,
-                    resolve_target: resolve.as_ref(),
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: depth_view.as_ref().map(|view| {
-                    wgpu::RenderPassDepthStencilAttachment {
-                        view,
-                        depth_ops: Some(wgpu::Operations {
-                            load: wgpu::LoadOp::Load,
-                            store: wgpu::StoreOp::Store,
-                        }),
-                        stencil_ops: None,
-                    }
-                }),
-                occlusion_query_set: None,
-                timestamp_writes: None,
-                multiview_mask: None,
-            });
-
-            pass.set_pipeline(self.pipelines.get(&key).unwrap());
-            pass.set_bind_group(0, &bind_group, &[]);
-            pass.draw(0..3, 0..1);
+        PassTarget {
+            color,
+            resolve,
+            depth: depth.clone(),
+            color_format: CANVAS_FORMAT,
+            depth_format: depth.map(|_| CANVAS_DEPTH_FORMAT),
+            sample_count: canvas.sample_count,
+            width: canvas.width,
+            height: canvas.height,
         }
-
-        self.queue.submit(Some(encoder.finish()));
-    }
-
-    fn output_color_transform_bind_group(&self, render_target: &RenderTarget) -> wgpu::BindGroup {
-        let inner = render_target.inner().borrow();
-        let view = inner
-            .color
-            .as_ref()
-            .expect("three-rs: the framebuffer target has not been rendered into yet")
-            .create_view(&Default::default());
-
-        let filter = |f: TextureFilter| match f {
-            TextureFilter::Nearest => wgpu::FilterMode::Nearest,
-            TextureFilter::Linear => wgpu::FilterMode::Linear,
-        };
-
-        let sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("three-rs output sampler"),
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: filter(inner.mag_filter),
-            min_filter: filter(inner.min_filter),
-            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
-            ..Default::default()
-        });
-
-        self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("three-rs output bind group"),
-            layout: &self.layouts.output_color_transform,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: self.camera_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::Sampler(&sampler),
-                },
-            ],
-        })
     }
 
     /// `needs_depth` mirrors `renderer.depth` for the pass about to run and
@@ -1410,7 +1295,7 @@ impl Renderer {
                 && canvas.sample_count == sample_count
             {
                 if needs_depth && canvas.depth.is_none() {
-                    let depth = self.create_canvas_depth(width, height, sample_count);
+                    let depth = self.create_depth_buffer(width, height, sample_count);
                     self.canvas.as_mut().unwrap().depth = Some(depth);
                 }
                 return;
@@ -1449,7 +1334,7 @@ impl Renderer {
             })
         });
 
-        let depth = needs_depth.then(|| self.create_canvas_depth(width, height, sample_count));
+        let depth = needs_depth.then(|| self.create_depth_buffer(width, height, sample_count));
 
         self.canvas = Some(CanvasTarget {
             width,
@@ -1459,10 +1344,6 @@ impl Renderer {
             msaa,
             depth,
         });
-    }
-
-    fn create_canvas_depth(&self, width: u32, height: u32, sample_count: u32) -> wgpu::Texture {
-        self.create_depth_buffer(width, height, sample_count)
     }
 
     /// The auto-allocated depth buffer of a pass: `depth24plus`, the format
@@ -1492,8 +1373,8 @@ impl Renderer {
 
         let format = inner.texture_type.color_gpu_format();
 
-        if inner.color.is_none() {
-            inner.color = Some(self.device.create_texture(&wgpu::TextureDescriptor {
+        if !inner.texture.has_gpu() {
+            inner.texture.set_gpu(self.device.create_texture(&wgpu::TextureDescriptor {
                 label: Some("three-rs render target"),
                 size: wgpu::Extent3d {
                     width,
@@ -1560,41 +1441,8 @@ impl Renderer {
     }
 }
 
-/// Fills one `objectStruct` block. The generated WGSL declares, in the order
-/// the node builder emits them, `modelWorldMatrix`, `modelNormalMatrix`,
-/// `materialColor` (named `diffuse` in the shader), `materialOpacity`,
-/// `materialReflectivity` and `materialEnvRotation`.
-fn write_object_slot(
-    data: &mut [u8],
-    offset: usize,
-    matrix_world: &Matrix4,
-    diffuse: Color,
-    opacity: f64,
-    reflectivity: f64,
-) {
-    let world = matrix_world.to_f32_array();
-
-    let mut normal_matrix = Matrix3::identity();
-    normal_matrix.get_normal_matrix(matrix_world);
-
-    data[offset..offset + 64].copy_from_slice(bytemuck::cast_slice(&world));
-    data[offset + 64..offset + 112]
-        .copy_from_slice(bytemuck::cast_slice(&normal_matrix.to_padded_f32_array()));
-    data[offset + 112..offset + 124].copy_from_slice(bytemuck::cast_slice(&[
-        diffuse.r as f32,
-        diffuse.g as f32,
-        diffuse.b as f32,
-    ]));
-    data[offset + 124..offset + 128].copy_from_slice(bytemuck::cast_slice(&[opacity as f32]));
-    data[offset + 128..offset + 132].copy_from_slice(bytemuck::cast_slice(&[reflectivity as f32]));
-    // `materialEnvRotation` is the transpose of the material's `envMapRotation`
-    // Euler, which defaults to no rotation.
-    data[offset + 144..offset + 208]
-        .copy_from_slice(bytemuck::cast_slice(&Matrix4::identity().to_f32_array()));
-}
-
 /// `RenderList.finish()`'s `painterSortStable` over the opaque items, which is
-/// the only list this rung fills.
+/// the only list the ladder fills.
 ///
 /// `Renderer._projectObject()` computes each item's `z` as the geometry's
 /// bounding-sphere centre pushed through `matrixWorld` and then through

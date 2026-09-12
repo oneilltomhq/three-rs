@@ -8,11 +8,11 @@
 
 use std::rc::Rc;
 
+use three_rs::nodes::tsl;
 use three_rs::testing::DeterministicRandom;
 use three_rs::{
-    torus_knot_geometry, Color, ColorNode, DepthTexture, Mesh, MeshBasicNodeMaterial,
-    PerspectiveCamera, QuadMesh, RenderTarget, Renderer, RendererParameters, Scene, TextureType,
-    Vector3,
+    torus_knot_geometry, Color, DepthTexture, Mesh, MeshBasicNodeMaterial, PerspectiveCamera,
+    QuadMesh, RenderTarget, Renderer, RendererParameters, Scene, TextureType, Vector3,
 };
 
 pub const INNER_WIDTH: f64 = 800.0;
@@ -79,7 +79,8 @@ pub fn init() -> App {
     // FX
 
     let mut material_fx = MeshBasicNodeMaterial::new();
-    material_fx.color_node = Some(ColorNode::DepthTexture(depth_texture));
+    // `materialFX.colorNode = texture( depthTexture )`
+    material_fx.color_node = Some(tsl::depth_texture(&depth_texture));
 
     let quad = QuadMesh::new(material_fx);
 

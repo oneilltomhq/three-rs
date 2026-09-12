@@ -129,6 +129,10 @@ impl Texture {
         self.0.borrow_mut().gpu = Some(gpu);
     }
 
+    pub fn clear_gpu(&self) {
+        self.0.borrow_mut().gpu = None;
+    }
+
     pub fn has_gpu(&self) -> bool {
         self.0.borrow().gpu.is_some()
     }
