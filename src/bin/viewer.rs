@@ -612,6 +612,7 @@ fn screenshot(
     path: &str,
     orbit: (f64, f64),
     zoom: f64,
+    pan: (f64, f64),
 ) {
     let mut scene = Scene::build(which, None);
     println!(
@@ -625,6 +626,13 @@ fn screenshot(
     let mut controls = OrbitControls::new(scene.camera(), Vector3::ZERO);
     controls.rotate(orbit.0, orbit.1, size.1 as f64);
     controls.dolly(zoom);
+    if pan != (0.0, 0.0) {
+        // `pan()` reads the camera's world matrix, which `render()` normally
+        // leaves behind from the previous frame.
+        controls.apply(scene.camera());
+        scene.camera().update_matrix_world();
+        controls.pan(pan.0, pan.1, scene.camera(), size.1 as f64);
+    }
 
     // Frame n is drawn at t = n / 60 s, so the animation is exercised without
     // depending on how fast this machine renders.
@@ -717,6 +725,7 @@ fn main() {
     let mut shot: Option<String> = None;
     let mut orbit = (0.0f64, 0.0f64);
     let mut zoom = 0.0f64;
+    let mut pan = (0.0f64, 0.0f64);
 
     let mut i = 0;
     while i < args.len() {
@@ -730,6 +739,12 @@ fn main() {
                 orbit.0 = args[i].parse().expect("--orbit takes two numbers");
                 i += 1;
                 orbit.1 = args[i].parse().expect("--orbit takes two numbers");
+            }
+            "--pan" => {
+                i += 1;
+                pan.0 = args[i].parse().expect("--pan takes two numbers");
+                i += 1;
+                pan.1 = args[i].parse().expect("--pan takes two numbers");
             }
             "--zoom" => {
                 i += 1;
@@ -763,7 +778,7 @@ fn main() {
     }
 
     if let Some(path) = shot {
-        screenshot(which, size, frames, &path, orbit, zoom);
+        screenshot(which, size, frames, &path, orbit, zoom, pan);
         return;
     }
 
