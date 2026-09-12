@@ -62,7 +62,7 @@ the Intel adapter, and the ladder below is what survived it.
 | 5 | webgpu_lights_phong | PointLight, MeshPhongNodeMaterial, normalMap node, specularNode, TeapotGeometry addon |
 | 6 | webgpu_morphtargets | morph attributes, AmbientLight |
 | 7 | webgpu_shadowmap | spot + directional shadow maps, Fog, ACES tone mapping, custom Fn() on shadow/colour |
-| 8 | webgpu_lights_physical or webgpu_materials | MeshStandard/Physical PBR — director reads both and picks |
+| 8 | webgpu_lights_physical (picked after the rung-8 scout: webgpu_materials has no PBR at all, 16 MeshBasicNodeMaterial + 1 MeshNormalMaterial; it stays a later TSL-breadth candidate) | MeshStandardNodeMaterial, PhysicalLightingModel, DFG LUT, point/cube shadows, HemisphereLight, bumpMap, RepeatWrapping; the renderer must walk the real Object3D tree (bulb is a child of the light) |
 | 9 | webgpu_postprocessing_* (director picks; plain webgpu_postprocessing dropped at rung 0, sits on the 0.1% line) | RenderPipeline, pass(), display nodes |
 | 10 | webgpu_skinning | GLTFLoader addon, SkinnedMesh, AnimationMixer at t=0 |
 | 11 | webgpu_mesh_batch | BatchedMesh (what crush's BatchedText sits on) |
