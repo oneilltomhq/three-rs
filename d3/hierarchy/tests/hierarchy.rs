@@ -122,3 +122,63 @@ fn sum_sort_path_ancestors_descendants_leaves() {
     root.sort(|x, y| y.value.partial_cmp(&x.value).unwrap());
     assert_eq!(root.nodes[r].children(), &[b, a]);
 }
+
+// A differential check against the vendor JS on test/data/flare.json. The
+// expectations were produced by running d3 itself:
+//
+//   node --input-type=module -e 'import {hierarchy} from
+//   "/home/tom/src/vendor/d3-hierarchy/src/index.js"; ...
+//   hierarchy(flare).sum(d => d.value || 0).sort((a,b) => b.value - a.value)'
+#[test]
+fn flare_sum_sort_count_match_the_js() {
+    let data: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string("/home/tom/src/vendor/d3-hierarchy/test/data/flare.json").unwrap(),
+    )
+    .unwrap();
+    let mut root = hierarchy(&data);
+    root.sum(|d| d["value"].as_f64().unwrap_or(0.0));
+    root.sort(|a, b| b.value.partial_cmp(&a.value).unwrap());
+    let rows: Vec<(usize, usize, Option<f64>)> = root
+        .order_each(root.root)
+        .iter()
+        .map(|&i| (root.nodes[i].depth, root.nodes[i].height, root.nodes[i].value))
+        .collect();
+    assert_eq!(rows.len(), 252);
+    assert_eq!(root.root().height, 4);
+    assert_eq!(root.root().value, Some(956129.0));
+    assert_eq!(
+        &rows[..5],
+        &[
+            (0, 4, Some(956129.0)),
+            (1, 3, Some(432629.0)),
+            (1, 2, Some(165157.0)),
+            (1, 2, Some(100024.0)),
+            (1, 2, Some(89721.0))
+        ]
+    );
+    assert_eq!(
+        &rows[rows.len() - 3..],
+        &[(4, 0, Some(2247.0)), (4, 0, Some(698.0)), (4, 0, Some(353.0))]
+    );
+    let names: Vec<&str> = root.order_each(root.root)[..8]
+        .iter()
+        .map(|&i| root.nodes[i].data["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["flare", "vis", "util", "animate", "query", "analytics", "scale", "data"]);
+    assert_eq!(root.leaves(root.root).len(), 220);
+    let mut after = Vec::new();
+    root.each_after(root.root, |n, _| after.push(n.data["name"].as_str().unwrap().to_string()));
+    assert_eq!(
+        &after[..5],
+        &["NodeLinkTreeLayout", "RadialTreeLayout", "CirclePackingLayout", "CircleLayout", "TreeMapLayout"]
+    );
+
+    let mut c = hierarchy(&data);
+    c.count();
+    let vals: Vec<Option<f64>> = c.order_each(c.root)[..6].iter().map(|&i| c.nodes[i].value).collect();
+    assert_eq!(c.root().value, Some(220.0));
+    assert_eq!(
+        vals,
+        [Some(220.0), Some(10.0), Some(20.0), Some(11.0), Some(4.0), Some(1.0)]
+    );
+}
