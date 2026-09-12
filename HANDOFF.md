@@ -22,9 +22,10 @@ Facts the Rust harness must reproduce exactly:
 - `Math.random` is `x = sin(seed++) * 10000; x - floor(x)`, seed starts
   at `PI/4`. Replicate bit-for-bit (f64) wherever an example uses it.
 - `window.TESTING = true` (a few examples branch on it).
-- Pass = pixelmatch threshold 0.1 AND fewer than 0.1% of pixels differ.
-  Use `image.js`'s `compare()` unchanged; do not write a new comparator
-  and do not loosen the tolerance.
+- Pass = fewer than 0.1% of pixels differ, where a pixel differs when its
+  RGB Euclidean distance exceeds threshold 0.1 of the max (about 44/255).
+  That is `image.js`'s own `compare()`, not pixelmatch. Use it unchanged;
+  do not write a new comparator and do not loosen the tolerance.
 
 ## Rules that keep the green honest
 
