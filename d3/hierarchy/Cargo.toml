@@ -1,0 +1,8 @@
+[package]
+name = "d3-hierarchy"
+version = "0.1.0"
+edition = "2021"
+description = "Port of d3-hierarchy 3.1.2 to Rust (f64, same operation order as the JS)."
+
+[dependencies]
+serde_json = "1"
