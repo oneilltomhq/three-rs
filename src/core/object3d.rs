@@ -1,9 +1,54 @@
-//! Port of `three.js/src/core/Object3D.js` (rung 1 subset).
+//! Port of `three.js/src/core/Object3D.js`. The parent/children tree and the
+//! methods that need it live in [`crate::core::node`]; this file is the object
+//! itself and its transform methods.
 
+use std::cell::Cell;
+use std::cell::RefCell;
+use std::rc::Rc;
+
+use crate::core::node::{Node, WeakNode};
 use crate::math::{Euler, Matrix4, Quaternion, Vector3};
 
-#[derive(Clone, Debug)]
+/// three.js' module-level `let _object3DId = 0`.
+fn next_id() -> u32 {
+    thread_local! {
+        static OBJECT3D_ID: Cell<u32> = const { Cell::new(0) };
+    }
+
+    OBJECT3D_ID.with(|id| {
+        let value = id.get();
+        id.set(value + 1);
+        value
+    })
+}
+
+#[derive(Debug)]
 pub struct Object3D {
+    /// `Object3D.id` — a per-thread counter, three.js' `_object3DId ++`.
+    pub id: u32,
+    /// `Object3D.name`.
+    pub name: String,
+    /// `Object3D.type`. `'Object3D'` unless a subclass overrides it (`Group`
+    /// sets `'Group'`).
+    pub object_type: &'static str,
+    /// `Object3D.parent`, weak: see `docs/scene-graph.md`.
+    pub parent: Option<WeakNode>,
+    /// `Object3D.children`.
+    pub children: Vec<Node>,
+    /// `Object3D.visible`.
+    pub visible: bool,
+    /// `Object3D.matrixAutoUpdate` (`Object3D.DEFAULT_MATRIX_AUTO_UPDATE`).
+    pub matrix_auto_update: bool,
+    /// `Object3D.matrixWorldAutoUpdate` (`DEFAULT_MATRIX_WORLD_AUTO_UPDATE`).
+    pub matrix_world_auto_update: bool,
+    /// `Object3D.matrixWorldNeedsUpdate`.
+    pub matrix_world_needs_update: bool,
+    /// `Object3D.isCamera` — `lookAt()` points a camera the other way round.
+    pub is_camera: bool,
+    /// `Object3D.isLight` — as `is_camera`.
+    pub is_light: bool,
+    /// `Object3D.isGroup`.
+    pub is_group: bool,
     pub position: Vector3,
     /// Kept in sync with `quaternion` by [`Object3D::set_rotation`], the same way
     /// three.js' `Euler`/`Quaternion` `onChange` callbacks keep them in sync.
@@ -18,6 +63,18 @@ pub struct Object3D {
 impl Default for Object3D {
     fn default() -> Self {
         Self {
+            id: next_id(),
+            name: String::new(),
+            object_type: "Object3D",
+            parent: None,
+            children: Vec::new(),
+            visible: true,
+            matrix_auto_update: true,
+            matrix_world_auto_update: true,
+            matrix_world_needs_update: false,
+            is_camera: false,
+            is_light: false,
+            is_group: false,
             position: Vector3::ZERO,
             rotation: Euler::default(),
             quaternion: Quaternion::default(),
@@ -30,7 +87,46 @@ impl Default for Object3D {
     }
 }
 
+/// `Object3D.copy( source, recursive = false )`, minus the tree: a clone gets a
+/// fresh `id` and no parent or children, because a `Clone` that shared the
+/// `Rc`s would give two objects the same child list.
+impl Clone for Object3D {
+    fn clone(&self) -> Self {
+        Self {
+            id: next_id(),
+            name: self.name.clone(),
+            object_type: self.object_type,
+            parent: None,
+            children: Vec::new(),
+            visible: self.visible,
+            matrix_auto_update: self.matrix_auto_update,
+            matrix_world_auto_update: self.matrix_world_auto_update,
+            matrix_world_needs_update: self.matrix_world_needs_update,
+            is_camera: self.is_camera,
+            is_light: self.is_light,
+            is_group: self.is_group,
+            position: self.position,
+            rotation: self.rotation,
+            quaternion: self.quaternion,
+            scale: self.scale,
+            up: self.up,
+            matrix: self.matrix,
+            matrix_world: self.matrix_world,
+        }
+    }
+}
+
 impl Object3D {
+    /// A fresh `Object3D` as a scene-graph [`Node`].
+    pub fn new_node() -> Node {
+        Rc::new(RefCell::new(Self::default()))
+    }
+
+    /// This object, moved into a scene-graph [`Node`].
+    pub fn into_node(self) -> Node {
+        Rc::new(RefCell::new(self))
+    }
+
     /// `object.rotation.set( x, y, z )` — the Euler `onChange` callback then
     /// refreshes the quaternion, which is what `updateMatrix()` composes from.
     pub fn set_rotation(&mut self, x: f64, y: f64, z: f64) {
@@ -42,7 +138,7 @@ impl Object3D {
     /// `quaternion` (`rotation.setFromQuaternion( quaternion, rotation.order,
     /// false )`). Every method below that writes the quaternion calls this, the
     /// way three.js' property setters do.
-    fn sync_rotation_from_quaternion(&mut self) {
+    pub(crate) fn sync_rotation_from_quaternion(&mut self) {
         let (q, order) = (self.quaternion, self.rotation.order);
         self.rotation.set_from_quaternion(&q, order);
     }
@@ -232,6 +328,8 @@ impl Object3D {
     pub fn update_matrix(&mut self) {
         let (position, quaternion, scale) = (self.position, self.quaternion, self.scale);
         self.matrix.compose(&position, &quaternion, &scale);
+
+        self.matrix_world_needs_update = true;
     }
 
     /// `Object3D.updateMatrixWorld()` for an object whose parent's world matrix
