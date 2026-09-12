@@ -202,7 +202,7 @@ pub fn output_fragment_node(framebuffer: &crate::textures::Texture) -> NodeRef {
 }
 
 /// `RenderOutputNode.setup()` with `NoToneMapping` and an sRGB output space.
-fn render_output(color: NodeRef) -> NodeRef {
+pub fn render_output(color: NodeRef) -> NodeRef {
     let clamped = vec4_join(vec![color.rgb(), color.a().clamp(float(0.0), float(1.0))]);
     let unpremultiplied = unpremultiply_alpha(clamped);
     let encoded = vec4_join(vec![

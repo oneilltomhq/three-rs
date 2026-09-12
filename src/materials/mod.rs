@@ -5,7 +5,7 @@ mod node_material;
 
 pub use node_material::{
     background_color_node, background_vertex_node, instanced_range, output_fragment_node,
-    quad_vertex_node, setup, SetupContext,
+    quad_vertex_node, render_output, setup, SetupContext,
 };
 
 use crate::math::Color;

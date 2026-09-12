@@ -100,4 +100,19 @@ fn main() {
     ));
     fx.vertex_node = Some(three_rs::materials::quad_vertex_node());
     show("rtt_fx_quad", &fx, SetupContext::default());
+
+    // rung 9: the masking RenderPipeline quad.
+    let rt = |_n: &str| Texture::render_target(800, 500, wgpu::TextureFormat::Rgba16Float);
+    let base = to_var(None, texture_uv(&rt("base"), uv()));
+    let mask1 = to_var(None, texture_uv(&rt("mask1"), uv()));
+    let mask2 = to_var(None, texture_uv(&rt("mask2"), uv()));
+    let texture1 = Texture::new(758, 600, Some(vec![0; 4]));
+    let texture2 = Texture::new(4096, 2048, Some(vec![0; 4]));
+    let mut compose = base;
+    compose = mask1.a().mix(compose, texture(&texture1));
+    compose = mask2.a().mix(compose, texture(&texture2));
+    let mut masking = MeshBasicNodeMaterial::new();
+    masking.fragment_node = Some(three_rs::materials::render_output(compose));
+    masking.vertex_node = Some(three_rs::materials::quad_vertex_node());
+    show("masking_quad", &masking, SetupContext::default());
 }
