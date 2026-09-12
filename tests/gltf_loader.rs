@@ -138,17 +138,11 @@ fn soldier_tree() {
 /// `SambaDance` (the clip `webgpu_skinning` plays).
 #[test]
 fn michelle_mixer_at_zero() {
-    use three_rs::animation::{AnimationMixer, SceneResolver};
+    use three_rs::animation::AnimationMixer;
 
     let gltf = GLTFLoader::load(format!("{MODELS}/Michelle.glb")).unwrap();
 
-    let mut resolver = SceneResolver::new(gltf.scene.clone());
-    for primitive in &gltf.primitives {
-        resolver
-            .add_morph_target_influences(&primitive.node, primitive.morph_target_influences.clone());
-    }
-
-    let mut mixer = AnimationMixer::new(Box::new(resolver));
+    let mut mixer = AnimationMixer::new(Box::new(gltf.scene_resolver()));
     let action = mixer.clip_action(&gltf.animations[0], None, None);
     mixer.play(action);
     mixer.update(0.0);

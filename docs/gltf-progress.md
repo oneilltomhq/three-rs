@@ -19,6 +19,9 @@ too because it exercises two skins and a split mesh.
   are in the tree and both ends need `matrixWorld`.
   `Skeleton::bone_matrices` + `bone_texture_size()` are the renderer's hook; the
   `DataTexture` itself is not built here.
+- `Gltf::scene_resolver()` (the animation root, ready to hand the mixer) and
+  `Gltf::primitive( &node )` (node to geometry/material/skin, since `Object3D`
+  carries no geometry) are the two entry points the rung worker wants.
 - `src/loaders/gltf_loader.rs` — GLB container (header/JSON/BIN chunks), .gltf
   JSON, `data:` URIs (own base64 decoder), buffers/bufferViews/accessors (every
   component type, `normalized`, `byteStride` incl. interleaved, `sparse`),
@@ -52,25 +55,32 @@ too because it exercises two skins and a split mesh.
 
 ## Next, in order
 
-1. **A convenience on `Gltf`** that builds the `SceneResolver` (clone the scene,
-   register every primitive's influences) — four lines the rung worker should not
-   have to write; see `michelle_mixer_at_zero` for the shape.
-2. **Hand the renderer the skinning inputs**: `Skeleton::update()` then
+1. **Hand the renderer the skinning inputs**: `Skeleton::update()` then
    `bone_matrices` into a `DataTexture` (`Skeleton.computeBoneTexture`);
    `bone_texture_size()` is the hook. The renderer also needs the
    `SkinnedMesh` in its draw list — `Scene::Child` is still the flat enum from
    rung 1, so the rung worker has to add a skinned variant (or fold `Child` into
    the tree, which `handoff/RUNGS.md` lists as pending anyway).
-3. **CUBICSPLINE**: currently reduced to LINEAR by dropping the in/out tangents
+2. **CUBICSPLINE**: currently reduced to LINEAR by dropping the in/out tangents
    (keeping only the middle value of each triple). Correct only for one-keyframe
    tracks; neither test asset uses it. Needs `GLTFCubicSplineInterpolant`.
-4. **Images/textures**: decode PNG/JPEG through `TextureLoader` (its API takes a
+3. **Images/textures**: decode PNG/JPEG through `TextureLoader` (its API takes a
    path, not bytes — that needs a `from_bytes` entry point). Today only the bytes
    and the mimeType come out.
-5. **Primitive dedup + groups**: three.js' `createPrimitiveKey` shares a geometry
+4. **Primitive dedup + groups**: three.js' `createPrimitiveKey` shares a geometry
    between primitives and the task's "groups when a primitive is split" follows
    from that. Not ported; each primitive gets its own geometry and its own child
    node named `<mesh>_<i>`.
-6. Not ported at all: extensions (`KHR_*`, Draco, meshopt), cameras, lights,
+5. Not ported at all: extensions (`KHR_*`, Draco, meshopt), cameras, lights,
    `GLTFMeshStandardSGMaterial`, `Mesh`/`Points`/`Line` modes (everything is
    treated as `TRIANGLES`).
+
+## Running the tests
+
+`cargo test` runs the e2e tests in parallel with everything else, which on this
+one GPU produces a spurious e2e failure (`handoff/RUNGS.md` says the same about
+two worktrees at once). Use `cargo test --lib --tests --exclude-nothing` style
+runs for the unit work and
+`cargo test --test e2e -- --nocapture --test-threads=1` on its own for the
+images. Last full run on this branch: 645 unit/integration tests green, e2e
+0 / 45 / 0 / 1 pixels.

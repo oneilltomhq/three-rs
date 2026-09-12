@@ -24,7 +24,7 @@ use std::rc::Rc;
 
 use serde_json::Value;
 
-use crate::animation::{AnimationClip, InterpolationMode, KeyframeTrack};
+use crate::animation::{AnimationClip, InterpolationMode, KeyframeTrack, SceneResolver};
 use crate::core::{BufferAttribute, BufferGeometry, Index, Node, Object3D, Object3DNode};
 use crate::math::Matrix4;
 use crate::objects::{Bone, Skeleton, SkinnedMesh};
@@ -232,6 +232,33 @@ pub struct Gltf {
     pub asset: Value,
     /// The parsed JSON, for anything not yet ported.
     pub json: Value,
+}
+
+impl Gltf {
+    /// The [`SceneResolver`] for this glTF: the scene as the animation root,
+    /// with every primitive's `morphTargetInfluences` registered, so
+    /// `mixer.clipAction( &gltf.animations[ 0 ], None, None )` writes into the
+    /// tree.
+    pub fn scene_resolver(&self) -> SceneResolver {
+        let mut resolver = SceneResolver::new(self.scene.clone());
+
+        for primitive in &self.primitives {
+            resolver.add_morph_target_influences(
+                &primitive.node,
+                primitive.morph_target_influences.clone(),
+            );
+        }
+
+        resolver
+    }
+
+    /// The primitive hanging off a given scene-graph node, if any — the bridge
+    /// the renderer needs, because `Object3D` carries no geometry.
+    pub fn primitive(&self, node: &Node) -> Option<&GltfPrimitive> {
+        self.primitives
+            .iter()
+            .find(|primitive| Rc::ptr_eq(&primitive.node, node))
+    }
 }
 
 /// Port of `GLTFLoader` + `GLTFParser`.
