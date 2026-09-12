@@ -20,7 +20,7 @@ pub mod textures;
 pub use cameras::{OrthographicCamera, PerspectiveCamera};
 pub use core::{BufferGeometry, Object3D};
 pub use geometries::{box_geometry, quad_geometry, sphere_geometry, torus_knot_geometry};
-pub use loaders::{BufferGeometryLoader, CubeTextureLoader};
+pub use loaders::{BufferGeometryLoader, CubeTextureLoader, TextureLoader};
 pub use materials::MeshBasicNodeMaterial;
 pub use math::{Color, Euler, Matrix3, Matrix4, Quaternion, Vector2, Vector3};
 pub use objects::{Background, Child, InstancedMesh, Mesh, QuadMesh, Scene};
