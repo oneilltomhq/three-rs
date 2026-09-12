@@ -1,6 +1,7 @@
 //! Port of `three.js/src/scenes/Scene.js` (rung 2 subset).
 
 use crate::core::Object3D;
+use crate::lights::PointLight;
 use crate::materials::MeshBasicNodeMaterial;
 use crate::math::{Color, Matrix4};
 use crate::objects::{InstancedBufferAttribute, InstancedMesh, Mesh};
@@ -92,6 +93,11 @@ impl Child {
 pub struct Scene {
     pub object: Object3D,
     pub children: Vec<Child>,
+    /// `scene.add( light )`. Lights are kept apart from the drawable children
+    /// because the renderer needs them as a list (the `LightsNode` uniforms)
+    /// rather than as draw calls — but their own children *are* drawn, which is
+    /// why `drawables()` exists.
+    pub lights: Vec<PointLight>,
     pub background: Option<Background>,
     pub override_material: Option<MeshBasicNodeMaterial>,
 }
@@ -105,6 +111,7 @@ impl Default for Scene {
         Self {
             object,
             children: Vec::new(),
+            lights: Vec::new(),
             background: None,
             override_material: None,
         }
@@ -130,6 +137,23 @@ impl Scene {
         self.children.push(child.into());
     }
 
+    /// `scene.add( light )`.
+    pub fn add_light(&mut self, light: PointLight) {
+        self.lights.push(light);
+    }
+
+    /// Every mesh the renderer draws, in `scene.add()` order, with the lights'
+    /// own children after the scene's direct ones. `matrixWorld` is already
+    /// composed through the light by `update_matrix_world`, so the renderer
+    /// needs no parent pointer here.
+    pub fn drawables(&self) -> Vec<&Child> {
+        let mut out: Vec<&Child> = self.children.iter().collect();
+        for light in &self.lights {
+            out.extend(light.children.iter());
+        }
+        out
+    }
+
     /// `Object3D.updateMatrixWorld()` on the scene root: the scene's own world
     /// matrix stays the identity and each child is composed then multiplied by it.
     pub fn update_matrix_world(&mut self) {
@@ -142,6 +166,17 @@ impl Scene {
             child
                 .object_mut()
                 .update_matrix_world_forced(Some(&parent), force);
+        }
+        for light in &mut self.lights {
+            let light_force = light
+                .object_mut()
+                .update_matrix_world_forced(Some(&parent), force);
+            let light_world = light.object().matrix_world;
+            for child in &mut light.children {
+                child
+                    .object_mut()
+                    .update_matrix_world_forced(Some(&light_world), light_force);
+            }
         }
     }
 }

@@ -279,8 +279,9 @@ impl Renderer {
             });
         }
 
+        let drawables = scene.drawables();
         for &index in order.iter() {
-            let child = &scene.children[index];
+            let child = drawables[index];
             let material: &MeshBasicNodeMaterial = scene
                 .override_material
                 .as_ref()
@@ -1475,8 +1476,8 @@ fn render_list_order(scene: &Scene, camera: &PerspectiveCamera) -> Vec<usize> {
     proj_screen_matrix.multiply_matrices(&camera.projection_matrix, &camera.matrix_world_inverse);
 
     let mut items: Vec<(usize, f64)> = scene
-        .children
-        .iter()
+        .drawables()
+        .into_iter()
         .enumerate()
         .map(|(index, child)| {
             let center = child.mesh().geometry.bounding_sphere_center();
