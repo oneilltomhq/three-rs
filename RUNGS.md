@@ -13,4 +13,4 @@
 |---|---|---|
 | viewer | done, verified (window opens on Wayland, orbit/zoom/pan correct, present is byte-identical to canvas) | `cargo run --release --bin viewer -- <example>`; renderer seam is `src/renderer/present.rs` + 4 small hunks in mod.rs |
 | geometries | done, 29 tests, all bit-exact vs three.js samples | Box, Plane, Cylinder, Cone, Torus, Polyhedron family, Circle, Ring, Lathe, Capsule, Teapot addon, RoundedBox addon, to_non_indexed. `*_with_groups()` variants until BufferGeometry gets `groups`; math extras in src/geometries/math_extras.rs to fold into src/math |
-| unit-tests | running | Three's QUnit math/core tests |
+| unit-tests | done, verified: 293 unit tests + 3 e2e green (7c15ea5, 13 commits) | Three's QUnit math/core tests: Vector2/3/4, Matrix3/4, Quaternion, Euler, Color, MathUtils, Object3D transforms, BufferAttribute/Geometry, PerspectiveCamera view/film API. Two fixes: compute_vertex_normals panicked on a trailing partial triangle; Color::default() now white like Three. No graded image moved. Skipped: no-parent Object3D tree ops, named-attribute map ops, JSON/uuid/typed-array families. |
