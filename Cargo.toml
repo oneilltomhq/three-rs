@@ -18,6 +18,10 @@ path = "examples/webgpu_depth_texture.rs"
 name = "webgpu_instance_mesh"
 path = "examples/webgpu_instance_mesh.rs"
 
+[[example]]
+name = "webgpu_materials_basic"
+path = "examples/webgpu_materials_basic.rs"
+
 [[test]]
 name = "e2e"
 path = "tests/e2e/main.rs"

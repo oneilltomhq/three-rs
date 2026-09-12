@@ -33,7 +33,7 @@ pub fn init() -> App {
     camera.object.position.z = 4.0;
 
     let mut scene = Scene::new();
-    scene.background = Some(Color::from_hex(0x222222));
+    scene.set_background(Color::from_hex(0x222222));
     scene.override_material = Some(MeshBasicNodeMaterial::new());
 
     //
