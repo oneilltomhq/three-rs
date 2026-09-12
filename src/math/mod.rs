@@ -2,6 +2,8 @@
 
 mod color;
 mod euler;
+pub mod interpolant;
+pub mod interpolants;
 mod matrix3;
 mod matrix4;
 pub mod math_utils;
@@ -12,6 +14,11 @@ mod vector4;
 
 pub use color::{linear_to_srgb, srgb_to_linear, Color, ColorSpace, Hsl};
 pub use euler::{Euler, EulerOrder};
+pub use interpolant::{Ending, Interpolant, InterpolantData, InterpolantSettings, Interpolation};
+pub use interpolants::{
+    cubic_interpolant, discrete_interpolant, linear_interpolant, quaternion_linear_interpolant,
+    CubicInterpolant, DiscreteInterpolant, LinearInterpolant, QuaternionLinearInterpolant,
+};
 pub use math_utils::{DEG2RAD, RAD2DEG};
 pub use matrix3::Matrix3;
 pub use matrix4::{CoordinateSystem, Matrix4};
