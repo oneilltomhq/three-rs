@@ -54,6 +54,11 @@ impl Renderer {
         &self.device
     }
 
+    /// The adapter `pick_adapter()` chose, for surface capability queries.
+    pub fn adapter(&self) -> &wgpu::Adapter {
+        &self.adapter
+    }
+
     pub fn queue(&self) -> &wgpu::Queue {
         &self.queue
     }

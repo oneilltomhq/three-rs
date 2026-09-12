@@ -65,6 +65,9 @@ pub struct Renderer {
     device: wgpu::Device,
     queue: wgpu::Queue,
     adapter_info: wgpu::AdapterInfo,
+    /// Kept only so the viewer can query surface capabilities on the very
+    /// adapter this renderer picked; see `present.rs`.
+    adapter: wgpu::Adapter,
 
     /// `Renderer._samples`: `antialias === true` means 4.
     samples: u32,
@@ -200,6 +203,7 @@ impl Renderer {
             device,
             queue,
             adapter_info,
+            adapter,
             samples: if parameters.antialias { 4 } else { 0 },
             pixel_ratio: 1.0,
             width: 300.0,
@@ -1442,7 +1446,11 @@ impl Renderer {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: CANVAS_FORMAT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            // `TEXTURE_BINDING` is the viewer's: `Renderer::present()` samples
+            // the canvas to blit it into a surface texture.
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::COPY_SRC
+                | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         });
 
