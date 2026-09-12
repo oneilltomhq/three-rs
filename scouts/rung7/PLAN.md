@@ -272,3 +272,7 @@ Almost nothing, which is why this rung is reachable.
 * `Inspector` (`examples/jsm/inspector/Inspector.js`) — assigned to `renderer.inspector`. It is a debug overlay; `clean-page.js` hides `.three-inspector` and the grader's `buildInjection` force-disables `trackTimestamp` so it cannot even take timings. It contributes nothing to the framebuffer. Skip it entirely.
 * `THREE.Timer` (`src/misc/Timer.js`, core not addon) — skip, delta is 0.
 * `TeapotGeometry` is not needed here (that is rung 5).
+
+## Director addendum (23:30)
+
+Correction: the port does have `OrthographicCamera` (src/cameras/orthographic_camera.rs, added at rung 4 for the RTT quad). The LightShadow camera can use it as is.
