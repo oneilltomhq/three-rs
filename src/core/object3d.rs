@@ -49,6 +49,8 @@ pub struct Object3D {
     pub is_light: bool,
     /// `Object3D.isGroup`.
     pub is_group: bool,
+    /// `Object3D.isScene`.
+    pub is_scene: bool,
     pub position: Vector3,
     /// Kept in sync with `quaternion` by [`Object3D::set_rotation`], the same way
     /// three.js' `Euler`/`Quaternion` `onChange` callbacks keep them in sync.
@@ -75,6 +77,7 @@ impl Default for Object3D {
             is_camera: false,
             is_light: false,
             is_group: false,
+            is_scene: false,
             position: Vector3::ZERO,
             rotation: Euler::default(),
             quaternion: Quaternion::default(),
@@ -105,6 +108,7 @@ impl Clone for Object3D {
             is_camera: self.is_camera,
             is_light: self.is_light,
             is_group: self.is_group,
+            is_scene: self.is_scene,
             position: self.position,
             rotation: self.rotation,
             quaternion: self.quaternion,

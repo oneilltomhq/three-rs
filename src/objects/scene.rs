@@ -86,17 +86,39 @@ impl Child {
     }
 }
 
-#[derive(Default)]
+/// `Scene extends Object3D`. The children list is still flat (`Child`) rather
+/// than the `Object3DNode` tree, because `src/renderer` walks it directly — see
+/// `docs/scene-graph.md`.
 pub struct Scene {
+    pub object: Object3D,
     pub children: Vec<Child>,
     pub background: Option<Background>,
     pub override_material: Option<MeshBasicNodeMaterial>,
-    pub matrix_world: Matrix4,
+}
+
+impl Default for Scene {
+    fn default() -> Self {
+        let mut object = Object3D::default();
+        object.object_type = "Scene";
+        object.is_scene = true;
+
+        Self {
+            object,
+            children: Vec::new(),
+            background: None,
+            override_material: None,
+        }
+    }
 }
 
 impl Scene {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// `Scene.matrixWorld`.
+    pub fn matrix_world(&self) -> Matrix4 {
+        self.object.matrix_world
     }
 
     /// `scene.background = value`.
@@ -111,7 +133,9 @@ impl Scene {
     /// `Object3D.updateMatrixWorld()` on the scene root: the scene's own world
     /// matrix stays the identity and each child is composed then multiplied by it.
     pub fn update_matrix_world(&mut self) {
-        let parent = self.matrix_world;
+        self.object.update_matrix_world(None);
+
+        let parent = self.object.matrix_world;
         for child in &mut self.children {
             child.object_mut().update_matrix_world(Some(&parent));
         }

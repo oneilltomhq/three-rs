@@ -57,3 +57,25 @@ from atomics. If the renderer is ever parallelised, the swap is mechanical.
   pointer between them.
 - No `EventDispatcher`, so `add`/`remove`/`attach` dispatch no `added`,
   `removed`, `childadded` or `childremoved` events.
+
+## What is not wired up yet
+
+`Mesh`, `InstancedMesh`, `PerspectiveCamera` and `Scene` each *hold* an
+`Object3D` by value rather than being `Node`s, and `Scene.children` is still a
+flat `Vec<Child>` that the renderer iterates. So the tree above is complete and
+tested, but the render path does not walk it yet: a `Group` cannot be put into a
+`Scene`.
+
+Closing that gap is one change, and it belongs to whichever rung first needs
+nesting (a loaded GLTF hierarchy, rung 10) rather than to this one, because it
+rewrites the renderer's scene walk:
+
+```rust
+pub struct Object3D { /* … */ pub payload: Payload }
+pub enum Payload { None, Mesh(Mesh), InstancedMesh(InstancedMesh), Camera(..) }
+```
+
+i.e. fold `Child` into `Object3D` as a payload, make `Scene` a `Node`, and have
+the renderer's per-frame walk be `scene.traverse_visible(..)` pushing drawable
+payloads into the render list it already builds. Everything in `Object3DNode`
+stays as it is.

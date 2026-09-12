@@ -1,10 +1,10 @@
 //! Port of `three.js/test/unit/src/scenes/Scene.tests.js`.
 //!
-//! three.js' `Scene` extends `Object3D`; here it is still its own struct with a
-//! flat child list (`Child`), because `src/renderer` walks that list directly —
-//! see `docs/scene-graph.md`. So `Extending` and `isScene` do not port; what is
-//! left is the instancing test plus the constructor defaults three.js' `Scene`
-//! declares (`background`, `overrideMaterial`).
+//! `Scene` holds an `Object3D` (three.js' `extends Object3D`) but keeps a flat
+//! `Child` list rather than the `Object3DNode` tree, because `src/renderer`
+//! walks that list directly — see `docs/scene-graph.md`. So `Extending` ports as
+//! "the scene has its `Object3D`", and the `environment`/`fog`/`backgroundBlurriness`
+//! assertions have nothing to port yet.
 
 use three_rs::Scene;
 
@@ -12,6 +12,21 @@ use three_rs::Scene;
 fn instancing() {
     let object = Scene::new();
     assert_eq!(object.children.len(), 0, "Can instantiate a Scene.");
+}
+
+#[test]
+fn extending() {
+    let object = Scene::new();
+    assert_eq!(
+        object.object.object_type, "Scene",
+        "Scene extends from Object3D"
+    );
+}
+
+#[test]
+fn is_scene() {
+    let object = Scene::new();
+    assert!(object.object.is_scene, "Scene.isScene should be true");
 }
 
 #[test]
