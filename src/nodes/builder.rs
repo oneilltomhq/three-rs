@@ -694,6 +694,9 @@ impl NodeBuilder {
                 if name == "tsl_inverse_mat3" {
                     self.add_code("tsl_inverse_mat3", wgsl::INVERSE_MAT3_SNIPPET);
                 }
+                if name == "tsl_mod_float" {
+                    self.add_code("tsl_mod_float", wgsl::MOD_FLOAT_SNIPPET);
+                }
                 // `mix`'s interpolant and `dot`/`cross`/`reflect`'s operands
                 // keep their own types; everything else is widened to the
                 // result type, as `MathNode.generate()` does.
@@ -703,7 +706,11 @@ impl NodeBuilder {
                     .map(|(i, a)| match name {
                         "mix" if i == 2 => self.generate(a),
                         "dot" | "cross" | "reflect" | "normalize" | "transpose"
-                        | "tsl_inverse_mat3" => self.generate(a),
+                        | "tsl_inverse_mat3" | "length" | "dpdx" | "dpdy" => self.generate(a),
+                        // `smoothstep( near, far, x )` keeps each operand's own
+                        // type: the dumps show three f32 arguments, never a
+                        // widened vector.
+                        "smoothstep" => self.generate(a),
                         _ => self.format(a, ty),
                     })
                     .collect();

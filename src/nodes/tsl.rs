@@ -230,6 +230,94 @@ pub fn reflect(i: impl Into<NodeRef>, n: impl Into<NodeRef>) -> NodeRef {
     math("reflect", vec![i, n.into()], ty)
 }
 
+/// `floor( x )`.
+pub fn floor(x: impl Into<NodeRef>) -> NodeRef {
+    let x = x.into();
+    let ty = x.ty();
+    math("floor", vec![x], ty)
+}
+
+/// `sign( x )`.
+pub fn sign(x: impl Into<NodeRef>) -> NodeRef {
+    let x = x.into();
+    let ty = x.ty();
+    math("sign", vec![x], ty)
+}
+
+/// `exp2( x )`.
+pub fn exp2(x: impl Into<NodeRef>) -> NodeRef {
+    let x = x.into();
+    let ty = x.ty();
+    math("exp2", vec![x], ty)
+}
+
+/// `length( v )` — a scalar out of any vector.
+pub fn length(v: impl Into<NodeRef>) -> NodeRef {
+    math("length", vec![v.into()], Type::F32)
+}
+
+/// `x.mod( y )` on floats. WGSL has no `%` for floats the way three.js' node
+/// system means it, so `MathNode` emits a helper; see `wgsl::MOD_FLOAT_SNIPPET`.
+pub fn mod_float(x: impl Into<NodeRef>, y: impl Into<NodeRef>) -> NodeRef {
+    math("tsl_mod_float", vec![x.into(), y.into()], Type::F32)
+}
+
+/// `smoothstep( low, high, x )`.
+pub fn smoothstep(
+    low: impl Into<NodeRef>,
+    high: impl Into<NodeRef>,
+    x: impl Into<NodeRef>,
+) -> NodeRef {
+    math("smoothstep", vec![low.into(), high.into(), x.into()], Type::F32)
+}
+
+/// `dFdx( x )` — WGSL `dpdx`.
+pub fn dpdx(x: impl Into<NodeRef>) -> NodeRef {
+    let x = x.into();
+    let ty = x.ty();
+    math("dpdx", vec![x], ty)
+}
+
+/// `dFdy( x )` — WGSL `dpdy`.
+pub fn dpdy(x: impl Into<NodeRef>) -> NodeRef {
+    let x = x.into();
+    let ty = x.ty();
+    math("dpdy", vec![x], ty)
+}
+
+/// Port of `three.js/src/nodes/procedural/Checker.js`. An `Fn()` with no
+/// layout, so it inlines: `sign( mod( floor( uv.x * 2 ) + floor( uv.y * 2 ), 2 ) )`.
+pub fn checker(coord: impl Into<NodeRef>) -> NodeRef {
+    let uv = coord.into().mul(2.0);
+    let cx = floor(uv.x());
+    let cy = floor(uv.y());
+    sign(mod_float(cx.add(cy), 2.0))
+}
+
+/// Port of `three.js/src/nodes/fog/Fog.js`' `rangeFogFactor( near, far )`:
+/// `smoothstep( near, far, positionView.z.negate() )`.
+pub fn range_fog_factor(near: impl Into<NodeRef>, far: impl Into<NodeRef>) -> NodeRef {
+    smoothstep(near, far, position_view().z().negate())
+}
+
+/// Port of `three.js/src/nodes/fog/Fog.js`' `fog( color, factor )`. The node it
+/// mixes into is the material's output, supplied at setup time, so the pair is
+/// carried as a `FogNode` and unpacked by `NodeMaterial::setup_output()`:
+/// `vec4( mix( output.rgb, fogColor, factor ), output.a )`.
+pub fn fog(color: impl Into<NodeRef>, factor: impl Into<NodeRef>) -> FogNode {
+    FogNode {
+        color: color.into(),
+        factor: factor.into(),
+    }
+}
+
+/// `scene.fogNode = fog( color, factor )`.
+#[derive(Clone)]
+pub struct FogNode {
+    pub color: NodeRef,
+    pub factor: NodeRef,
+}
+
 /// `max( a, b )`.
 pub fn max(a: impl Into<NodeRef>, b: impl Into<NodeRef>) -> NodeRef {
     let a = a.into();

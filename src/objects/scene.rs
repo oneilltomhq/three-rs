@@ -2,6 +2,7 @@
 
 use crate::core::Object3D;
 use crate::lights::PointLight;
+use crate::nodes::tsl::FogNode;
 use crate::materials::MeshBasicNodeMaterial;
 use crate::math::{Color, Matrix4};
 use crate::objects::{InstancedBufferAttribute, InstancedMesh, Mesh};
@@ -99,6 +100,9 @@ pub struct Scene {
     /// why `drawables()` exists.
     pub lights: Vec<PointLight>,
     pub background: Option<Background>,
+    /// `scene.fogNode`. Read by `NodeMaterial`'s output flow on every material
+    /// in the scene; not yet consumed by the builder (rung 5, in progress).
+    pub fog_node: Option<FogNode>,
     pub override_material: Option<MeshBasicNodeMaterial>,
 }
 
@@ -113,6 +117,7 @@ impl Default for Scene {
             children: Vec::new(),
             lights: Vec::new(),
             background: None,
+            fog_node: None,
             override_material: None,
         }
     }

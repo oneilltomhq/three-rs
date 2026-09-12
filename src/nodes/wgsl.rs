@@ -85,6 +85,11 @@ impl TextureKind {
 pub const CLAMP_WRAP_SNIPPET: &str = "fn tsl_clampWrapping_float( coord: f32 ) -> f32 { return clamp( coord, 0.0, 1.0 ); }\nfn tsl_coord_clampS_clampT_2d( coord : vec2f ) -> vec2f {\n\n\treturn vec2f(\n\t\ttsl_clampWrapping_float( coord.x ),\n\t\ttsl_clampWrapping_float( coord.y )\n\t);\n\n}\n";
 
 /// `WGSLNodeBuilder`'s `inverse_mat3` polyfill.
+/// `MathNode`'s float `mod` lowers to a helper in WGSL, exactly as the dumps of
+/// `webgpu_lights_phong` show (`checker()` is the only rung-5 user).
+pub const MOD_FLOAT_SNIPPET: &str =
+    "fn tsl_mod_float( x : f32, y : f32 ) -> f32 { return x - y * floor( x / y ); }\n";
+
 pub const INVERSE_MAT3_SNIPPET: &str = "fn tsl_inverse_mat3( m : mat3x3<f32> ) -> mat3x3<f32> {\n\n\tlet a00 = m[ 0 ][ 0 ]; let a01 = m[ 0 ][ 1 ]; let a02 = m[ 0 ][ 2 ];\n\tlet a10 = m[ 1 ][ 0 ]; let a11 = m[ 1 ][ 1 ]; let a12 = m[ 1 ][ 2 ];\n\tlet a20 = m[ 2 ][ 0 ]; let a21 = m[ 2 ][ 1 ]; let a22 = m[ 2 ][ 2 ];\n\n\tlet b01 = a22 * a11 - a12 * a21;\n\tlet b11 = - a22 * a10 + a12 * a20;\n\tlet b21 = a21 * a10 - a11 * a20;\n\n\tlet det = a00 * b01 + a01 * b11 + a02 * b21;\n\n\treturn mat3x3<f32>(\n\t\tb01, ( - a22 * a01 + a02 * a21 ), ( a12 * a01 - a02 * a11 ),\n\t\tb11, ( a22 * a00 - a02 * a20 ), ( - a12 * a00 + a02 * a10 ),\n\t\tb21, ( - a21 * a00 + a01 * a20 ), ( a11 * a00 - a01 * a10 )\n\t) * ( 1.0 / det );\n\n}\n";
 
 /// `WGSLNodeBuilder.generateTextureLoad()` for the non-filterable path: the
