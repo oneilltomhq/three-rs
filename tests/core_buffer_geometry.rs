@@ -551,6 +551,78 @@ fn to_non_indexed_carries_groups_and_morphs() {
     assert!(non_indexed.index.is_none(), "the result is not indexed");
 }
 
+/// The real generated geometry, exercising the path `geometries::to_non_indexed()`
+/// used to own before it was folded into this method: a `BoxGeometry`'s index is
+/// expanded and every one of its attributes comes along.
+#[test]
+fn to_non_indexed_expands_a_generated_geometry() {
+    let indexed = three_rs::geometries::box_geometry(1.0, 1.0, 1.0, 1, 1, 1);
+    let flat = indexed.to_non_indexed();
+
+    let index_count = indexed.index.as_ref().unwrap().count();
+    assert!(flat.index.is_none());
+    for name in ["position", "normal", "uv"] {
+        assert_eq!(
+            flat.get_attribute(name).unwrap().count(),
+            index_count,
+            "{name} is expanded to one entry per index"
+        );
+    }
+
+    // every expanded vertex is the indexed one it came from
+    let src = indexed.get_attribute("position").unwrap();
+    let dst = flat.get_attribute("position").unwrap();
+    let index = match indexed.index.as_ref().unwrap() {
+        Index::U16(v) => v.iter().map(|&i| i as usize).collect::<Vec<_>>(),
+        Index::U32(v) => v.iter().map(|&i| i as usize).collect::<Vec<_>>(),
+    };
+    for (i, &src_i) in index.iter().enumerate() {
+        assert_eq!(dst.get_x(i), src.get_x(src_i));
+        assert_eq!(dst.get_y(i), src.get_y(src_i));
+        assert_eq!(dst.get_z(i), src.get_z(src_i));
+    }
+
+    // the box's six groups index the old index buffer and are copied verbatim,
+    // as in three.js
+    assert_eq!(flat.groups, indexed.groups);
+
+    // a geometry with no index comes back unchanged (three.js warns and returns
+    // `this`)
+    let again = flat.to_non_indexed();
+    assert_eq!(
+        again.get_attribute("position").unwrap().array,
+        dst.array
+    );
+}
+
+/// `toNonIndexed()` copies every named attribute, not just position/normal/uv —
+/// the old `geometries::to_non_indexed()` only knew those three.
+#[test]
+fn to_non_indexed_copies_every_attribute() {
+    let mut geometry = position_geometry(vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+    geometry.set_index(&[0, 1, 0]);
+    geometry.set_attribute("color", BufferAttribute::new(vec![1.0, 0.0, 0.0, 0.0, 0.0, 1.0], 3));
+    geometry.set_attribute("skinIndex", BufferAttribute::new(vec![7.0, 9.0], 1));
+    // three.js does not carry drawRange over, so neither does the port
+    geometry.set_draw_range(1, 2);
+
+    let non_indexed = geometry.to_non_indexed();
+
+    assert_eq!(
+        non_indexed.get_attribute("color").unwrap().array,
+        vec![1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0]
+    );
+    assert_eq!(
+        non_indexed.get_attribute("skinIndex").unwrap().array,
+        vec![7.0, 9.0, 7.0]
+    );
+    assert_eq!(
+        non_indexed.draw_range,
+        three_rs::core::DrawRange::default(),
+        "toNonIndexed() leaves drawRange at its default, as three.js does"
+    );
+}
+
 #[test]
 fn compute_bounding_box_morph() {
     // Not a three.js test: the morph branch of `computeBoundingBox()`.

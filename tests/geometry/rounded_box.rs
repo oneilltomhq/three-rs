@@ -1,40 +1,12 @@
-//! `RoundedBoxGeometry` (addon) and the `toNonIndexed()` it is built on.
-//! No three.js unit test exists, so the bit-exactness sample is the gate.
+//! `RoundedBoxGeometry` (addon). No three.js unit test exists, so the
+//! bit-exactness sample is the gate (the `toNonIndexed()` it is built on is
+//! tested in tests/core_buffer_geometry.rs).
 
 use super::support::*;
 use three_rs::core::Group;
-use three_rs::geometries::{box_geometry, rounded_box_geometry, to_non_indexed};
+use three_rs::geometries::rounded_box_geometry;
 
 include!("samples/rounded_box.rs");
-
-#[test]
-fn to_non_indexed_expands_the_index() {
-    let indexed = box_geometry(1.0, 1.0, 1.0, 1, 1, 1);
-    let flat = to_non_indexed(&indexed);
-
-    let index_count = indexed.index.as_ref().unwrap().count();
-    assert!(flat.index.is_none());
-    assert_eq!(flat.position().unwrap().count(), index_count);
-    assert_eq!(flat.normal().unwrap().count(), index_count);
-    assert_eq!(flat.uv().unwrap().count(), index_count);
-
-    // every expanded vertex is the indexed one it came from
-    let src = indexed.position().unwrap();
-    let dst = flat.position().unwrap();
-    let index = match indexed.index.as_ref().unwrap() {
-        three_rs::core::Index::U16(v) => v.iter().map(|&i| i as usize).collect::<Vec<_>>(),
-        three_rs::core::Index::U32(v) => v.iter().map(|&i| i as usize).collect::<Vec<_>>(),
-    };
-    for (i, &src_i) in index.iter().enumerate() {
-        assert_eq!(dst.get_x(i), src.get_x(src_i));
-        assert_eq!(dst.get_y(i), src.get_y(src_i));
-        assert_eq!(dst.get_z(i), src.get_z(src_i));
-    }
-
-    // a geometry with no index comes back unchanged
-    let none = to_non_indexed(&flat);
-    assert_eq!(none.position().unwrap().array, dst.array);
-}
 
 #[test]
 fn rounded_box_std_tests() {

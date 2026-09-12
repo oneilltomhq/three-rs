@@ -4,7 +4,7 @@
 //! (`new RoundedBoxGeometry( 0.9, 0.25, 0.8, 4, 0.06 )`).
 
 use crate::core::BufferGeometry;
-use crate::geometries::{box_geometry, to_non_indexed};
+use crate::geometries::box_geometry;
 use crate::math::Vector3;
 
 /// `Math.sign()` — `0`, `-0` and `NaN` come back unchanged, which `f64::signum`
@@ -119,7 +119,7 @@ pub fn rounded_box_geometry(
         return geometry;
     }
 
-    let geometry2 = to_non_indexed(&geometry);
+    let geometry2 = geometry.to_non_indexed();
 
     geometry.index = None;
     let mut positions_attr = geometry2.position().cloned().unwrap();
