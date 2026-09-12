@@ -10,6 +10,12 @@ pollster = "0.4"
 png = "0.17"
 serde_json = "1"
 zune-jpeg = { version = "0.5.15", default-features = false, features = ["std"] }
+# The viewer binary only; the e2e path does not touch it.
+winit = "0.30.8"
+
+[[bin]]
+name = "viewer"
+path = "src/bin/viewer.rs"
 
 [[example]]
 name = "webgpu_depth_texture"

@@ -4,6 +4,8 @@
 //! texture, read back.
 
 mod mipmap;
+/// Additive seam for the interactive viewer; see `present.rs`.
+mod present;
 mod programs;
 mod render_target;
 
@@ -90,6 +92,9 @@ pub struct Renderer {
     device: wgpu::Device,
     queue: wgpu::Queue,
     adapter_info: wgpu::AdapterInfo,
+    /// Kept only so the viewer can query surface capabilities on the very
+    /// adapter this renderer picked; see `present.rs`.
+    adapter: wgpu::Adapter,
 
     /// `Renderer._samples`: `antialias === true` means 4.
     samples: u32,
@@ -135,6 +140,10 @@ pub struct Renderer {
     /// every frame's delta is 0 and this stays 0.
     time: f64,
 
+    /// The viewer's canvas → surface blit; see `present.rs`. Never touched by
+    /// the e2e path.
+    present: Option<present::Present>,
+
     /// The page's `Math.random`, as the harness replaces it. `RangeNode.setup()`
     /// draws from it while the material is being built — the only consumer in
     /// `three.webgpu.js` (`MathUtils.generateUUID` uses the pattern the
@@ -155,6 +164,13 @@ impl Renderer {
             ..wgpu::InstanceDescriptor::new_without_display_handle()
         });
 
+        Self::with_instance(parameters, instance)
+    }
+
+    /// `new()` against an instance the caller already created. The viewer needs
+    /// this because a Wayland/X11 surface only works on an instance built with
+    /// the windowing system's display handle.
+    pub fn with_instance(parameters: RendererParameters, instance: wgpu::Instance) -> Self {
         let adapter = pick_adapter(&instance);
         let adapter_info = adapter.get_info();
 
@@ -174,6 +190,7 @@ impl Renderer {
             device,
             queue,
             adapter_info,
+            adapter,
             samples: if parameters.antialias { 4 } else { 0 },
             pixel_ratio: 1.0,
             width: 300.0,
@@ -195,6 +212,7 @@ impl Renderer {
             quad_geometry: None,
             quad_camera: OrthographicCamera::new(-1.0, 1.0, 1.0, -1.0, 0.0, 1.0),
             time: 0.0,
+            present: None,
             random: DeterministicRandom::new(),
         }
     }
@@ -1312,7 +1330,11 @@ impl Renderer {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: CANVAS_FORMAT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            // `TEXTURE_BINDING` is the viewer's: `Renderer::present()` samples
+            // the canvas to blit it into a surface texture.
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::COPY_SRC
+                | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         });
 
