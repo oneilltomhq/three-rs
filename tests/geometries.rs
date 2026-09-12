@@ -14,3 +14,6 @@ mod teapot;
 
 #[path = "geometry/batch2.rs"]
 mod batch2;
+
+#[path = "geometry/batch0.rs"]
+mod batch0;
