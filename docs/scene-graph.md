@@ -83,7 +83,7 @@ order:
 subclassing:
 
 ```rust
-pub enum Payload { None, Mesh(Mesh), InstancedMesh(InstancedMesh) }
+pub enum Payload { None, Mesh(Mesh), InstancedMesh(InstancedMesh), Light(PointLight) }
 ```
 
 `Payload::None` is a plain `Object3D`, a `Group` or a `Bone`: something the walk
@@ -98,10 +98,11 @@ scene.add( &mesh );
 ```
 
 `Scene` is not itself a `Node`; it owns one (`scene.node`, with `is_scene` true)
-plus the fields `Scene` adds to `Object3D` — `background` and `overrideMaterial`.
-`scene.add()`, `scene.children()` and `scene.update_matrix_world()` forward to the
-root, so anything can nest under anything: a `Group` holding meshes, a light
-holding its bulb mesh (rungs 6–8), a loaded glTF hierarchy (rung 10).
+plus the fields `Scene` adds to `Object3D` — `background`, `fogNode` and
+`overrideMaterial`. `scene.add()`, `scene.children()` and
+`scene.update_matrix_world()` forward to the root, so anything can nest under
+anything: a `Group` holding meshes, a light holding its bulb mesh
+(`webgpu_lights_phong`, rung 5), a loaded glTF hierarchy (rung 10).
 
 `PerspectiveCamera` and `OrthographicCamera` still hold an `Object3D` by value.
 They are never *in* the tree in any example on the ladder, and the renderer reads
@@ -121,8 +122,8 @@ deliberately asymmetric, as three.js' are:
 - a `Group` replaces the inherited `groupOrder` with its own `renderOrder` for
   everything below it.
 - a light (`is_light`) goes into `RenderList.lights` and is never drawn — but its
-  children still are, which is the whole reason rung 8's bulb mesh needs this
-  walk.
+  children still are, which is how rung 5's bulb spheres reach the draw list (see
+  "Lights in the tree" below).
 - a mesh is culled when `frustumCulled` is set and its geometry's bounding sphere,
   pushed through `matrixWorld`, misses the frustum; then skipped again if its
   material is not `visible`; otherwise pushed with `z` = the bounding-sphere
@@ -148,6 +149,36 @@ from a stable sort over a flat `Vec` in `scene.add()` order. That is why folding
 leaves each item's `z` at whatever `_vector4` last held; here it stays 0, so the
 lists keep traversal order.
 
+## Lights in the tree
+
+A light is an ordinary node: `PointLight::new( color, intensity, distance )`
+returns a `Node` whose payload is `Payload::Light( PointLight )` and whose
+`object.is_light` is true, and it goes in with plain `scene.add( &light )`. There
+is no `Scene.lights`, no `add_light()` and no `Scene::drawables()`; rung 5 had all
+three and the tree walk removed the need for them:
+
+```rust
+let light = PointLight::new( Color::from_hex( 0x0040ff ), 1.0, 100.0 );
+light.borrow_mut().light_mut().unwrap().set_power( 1700.0 );
+light.add( &bulb );        // an ordinary child — it draws through the walk
+scene.add( &light );
+```
+
+`is_light` is what `project_object()` branches on, exactly as three.js'
+`_projectObject()` reads `object.isLight`; the payload is what the renderer then
+*reads* (`object.light()` → colour, intensity, `distance`, `decay`) and
+`matrixWorld` on the node itself is the world position. The bulb inherits the
+light's world matrix for free, because it is a child.
+
+`RenderList.lights` is three.js' `lightsArray`: **scene-traversal order**, which
+is the order `LightsNode.setLights()` receives and therefore the order
+`UniformSource::Light*( i )` indexes. `material.lights_node = Some( vec![ 0 ] )`
+is `lights( [ light1 ] )` — an index into that list. In
+`webgpu_lights_phong.html` the four lights are `scene.add()`ed before the three
+teapots, so traversal order is add order and the uniform triples land in Three's
+slots; anything that nests lights under groups (rungs 6–8) has to match Three's
+*traversal*, not its construction order.
+
 ## What is not wired up yet
 
 - `SkinnedMesh` is still a sibling struct owning its own `Node` rather than a
@@ -156,5 +187,6 @@ lists keep traversal order.
 - No `LOD`, `Sprite`, `Line`, `Points`, `BatchedMesh` or `BundleGroup` arm in
   `project_object`, no multi-material `geometry.groups` arm, no clipping context
   and no `transparentDoublePass` (transmission).
-- `Lighting`/`LightsNode` do not exist yet, so `RenderList.lights` is collected
-  and then ignored. The lighting rungs consume it.
+- only `PointLight` exists. `AmbientLight`, `DirectionalLight`, `SpotLight` and
+  `HemisphereLight` are further lighting rungs; so are shadows (rung 7), which
+  need a camera that can live in the tree.

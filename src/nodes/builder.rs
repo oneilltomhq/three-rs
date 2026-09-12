@@ -610,7 +610,7 @@ impl NodeBuilder {
             Node::Var(v) => {
                 let v = v.clone();
                 let snippet = self.generate(&v.value);
-                let name = self.declare_var(v.name, v.ty);
+                let name = self.declare_var(v.name.as_deref(), v.ty);
                 self.emit(format!("{name} = {snippet};"));
                 self.cache_put(node.key(), name.clone());
                 name
@@ -619,7 +619,13 @@ impl NodeBuilder {
             Node::Varying(v) => {
                 let v = v.clone();
                 if let Some(name) = self.varying_slots.get(&node.key()).cloned() {
-                    return name;
+                    // A varying is read through the `varyings` struct in the
+                    // vertex stage and as a `main` parameter in the fragment
+                    // stage — `NodeBuilder.getPropertyName()`'s two cases.
+                    return match self.stage {
+                        Stage::Vertex => format!("varyings.{name}"),
+                        Stage::Fragment => name,
+                    };
                 }
                 match self.stage {
                     Stage::Vertex => {
@@ -694,6 +700,9 @@ impl NodeBuilder {
                 if name == "tsl_inverse_mat3" {
                     self.add_code("tsl_inverse_mat3", wgsl::INVERSE_MAT3_SNIPPET);
                 }
+                if name == "tsl_mod_float" {
+                    self.add_code("tsl_mod_float", wgsl::MOD_FLOAT_SNIPPET);
+                }
                 // `mix`'s interpolant and `dot`/`cross`/`reflect`'s operands
                 // keep their own types; everything else is widened to the
                 // result type, as `MathNode.generate()` does.
@@ -703,7 +712,13 @@ impl NodeBuilder {
                     .map(|(i, a)| match name {
                         "mix" if i == 2 => self.generate(a),
                         "dot" | "cross" | "reflect" | "normalize" | "transpose"
-                        | "tsl_inverse_mat3" => self.generate(a),
+                        | "tsl_inverse_mat3" | "length" | "dpdx" | "- dpdy" | "inverseSqrt" => {
+                            self.generate(a)
+                        }
+                        // `smoothstep( near, far, x )` keeps each operand's own
+                        // type: the dumps show three f32 arguments, never a
+                        // widened vector.
+                        "smoothstep" => self.generate(a),
                         _ => self.format(a, ty),
                     })
                     .collect();
@@ -794,8 +809,11 @@ impl NodeBuilder {
 
             Node::Select { cond, a, b, ty } => {
                 let (cond, a, b, ty) = (cond.clone(), a.clone(), b.clone(), *ty);
-                let scond = self.generate(&cond);
+                // `ConditionalNode.generate()` builds its result property
+                // *before* the condition, so the result takes the lower
+                // `nodeVarN` number when the condition itself needs vars.
                 let result = self.declare_var(None, ty);
+                let scond = self.generate(&cond);
                 self.emit(String::new());
                 self.emit(format!("if ( {scond} ) {{"));
                 self.emit(String::new());
@@ -813,6 +831,10 @@ impl NodeBuilder {
                 self.emit(String::new());
                 self.emit("}".to_string());
                 self.emit(String::new());
+                // `ConditionalNode.generate()` remembers its result property in
+                // `nodeData`, so a second reference reuses the branch rather
+                // than emitting the whole if/else again.
+                self.cache_put(node.key(), result.clone());
                 result
             }
         }

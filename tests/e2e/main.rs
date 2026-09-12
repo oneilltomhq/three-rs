@@ -26,6 +26,10 @@ mod webgpu_rtt;
 #[allow(dead_code)]
 mod webgpu_postprocessing_masking;
 
+#[path = "../../examples/webgpu_lights_phong.rs"]
+#[allow(dead_code)]
+mod webgpu_lights_phong;
+
 fn three_js_dir() -> PathBuf {
     match std::env::var("THREE_JS_DIR") {
         Ok(dir) => PathBuf::from(dir),
@@ -265,6 +269,44 @@ fn webgpu_postprocessing_masking() {
     println!("adapter: {:?}", app.renderer.adapter_info());
 
     webgpu_postprocessing_masking::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+}
+
+#[test]
+fn webgpu_lights_phong() {
+    let name = "webgpu_lights_phong";
+    let out = out_dir(name);
+
+    let mut app = webgpu_lights_phong::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_lights_phong::animate(&mut app);
 
     let (width, height, pixels) = app.renderer.read_canvas_pixels();
     assert_eq!((width, height), (800, 500));

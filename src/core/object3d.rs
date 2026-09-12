@@ -170,6 +170,16 @@ impl Object3D {
         self.payload.mesh_mut()
     }
 
+    /// The `PointLight` state when `is_light` is true — `Light.color`,
+    /// `Light.intensity`, `PointLight.distance`, `PointLight.decay`.
+    pub fn light(&self) -> Option<&crate::lights::PointLight> {
+        self.payload.light()
+    }
+
+    pub fn light_mut(&mut self) -> Option<&mut crate::lights::PointLight> {
+        self.payload.light_mut()
+    }
+
     /// `InstancedMesh.count`, else 1.
     pub fn instance_count(&self) -> u32 {
         self.payload.count()

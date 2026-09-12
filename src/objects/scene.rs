@@ -3,6 +3,7 @@
 use crate::core::{Node, Object3D, Object3DNode};
 use crate::materials::MeshBasicNodeMaterial;
 use crate::math::{Color, Matrix4};
+use crate::nodes::tsl::FogNode;
 use crate::textures::CubeTexture;
 
 /// `Scene.background`. three.js accepts a `Color`, a `Texture` or a
@@ -38,6 +39,9 @@ pub struct Scene {
     /// The scene root. `node.borrow().is_scene` is true.
     pub node: Node,
     pub background: Option<Background>,
+    /// `scene.fogNode`. Read by `NodeMaterial`'s output flow on every material
+    /// in the scene (rung 5).
+    pub fog_node: Option<FogNode>,
     pub override_material: Option<MeshBasicNodeMaterial>,
 }
 
@@ -50,6 +54,7 @@ impl Default for Scene {
         Self {
             node: object.into_node(),
             background: None,
+            fog_node: None,
             override_material: None,
         }
     }

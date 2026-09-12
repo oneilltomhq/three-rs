@@ -115,6 +115,12 @@ pub enum UniformSource {
     MaterialColor,
     MaterialOpacity,
     MaterialReflectivity,
+    /// `MeshPhongMaterial.shininess` / `.specular` / `.emissive` /
+    /// `.emissiveIntensity`.
+    MaterialShininess,
+    MaterialSpecular,
+    MaterialEmissive,
+    MaterialEmissiveIntensity,
     /// A `TextureNode`'s `texture.matrix` (offset/repeat/rotation/center).
     TextureMatrix,
     /// `materialEnvRotation` — the env map's rotation matrix.
@@ -125,6 +131,14 @@ pub enum UniformSource {
     Time,
     /// `viewportSize` — the render target's pixel dimensions.
     ViewportSize,
+    /// `LightsNode`'s per-light members, by index into the renderer's light
+    /// list for the pass. The dumps put all four in the **render** group:
+    /// `light.color * light.intensity` (linear), the cutoff distance, the decay
+    /// exponent, and the light's position through the camera view matrix.
+    LightColorIntensity(usize),
+    LightCutoffDistance(usize),
+    LightDecay(usize),
+    LightViewPosition(usize),
     /// A plain `uniform( value )` the example supplies.
     Value(Vec<f64>),
 }
@@ -137,6 +151,10 @@ impl UniformSource {
             | UniformSource::MaterialColor
             | UniformSource::MaterialOpacity
             | UniformSource::MaterialReflectivity
+            | UniformSource::MaterialShininess
+            | UniformSource::MaterialSpecular
+            | UniformSource::MaterialEmissive
+            | UniformSource::MaterialEmissiveIntensity
             | UniformSource::TextureMatrix
             | UniformSource::EnvRotationMatrix
             | UniformSource::Value(_) => UpdateType::Object,
@@ -223,8 +241,10 @@ impl Builtin {
 /// `VarNode` — a `var<private>` that caches its value's first use.
 #[derive(Debug)]
 pub struct VarDef {
-    /// `toVar( 'name' )`; `None` numbers it `nodeVarN`.
-    pub name: Option<&'static str>,
+    /// `toVar( 'name' )`; `None` numbers it `nodeVarN`. A `String` because a
+    /// sub-build layer prefixes the name with its own (`NORMAL_normalView`) —
+    /// see `docs/nodes.md` §7.
+    pub name: Option<String>,
     pub value: NodeRef,
     pub ty: Type,
 }

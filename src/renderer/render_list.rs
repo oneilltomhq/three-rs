@@ -284,10 +284,11 @@ mod tests {
 
     use super::*;
     use crate::cameras::PerspectiveCamera;
-    use crate::core::{BufferGeometry, Object3D};
+    use crate::core::BufferGeometry;
     use crate::geometries::box_geometry;
+    use crate::lights::PointLight;
     use crate::materials::MeshBasicNodeMaterial;
-    use crate::math::Vector3;
+    use crate::math::{Color, Vector3};
     use crate::objects::{Group, Mesh, Scene};
 
     /// A camera looking down -Z from z = 10, with everything in its frustum.
@@ -541,8 +542,7 @@ mod tests {
     fn lights_are_collected_and_not_drawn_but_their_children_are() {
         let scene = Scene::new();
 
-        let light = Object3D::new_node();
-        light.borrow_mut().is_light = true;
+        let light = PointLight::new(Color::new(1.0, 1.0, 1.0), 1.0, 100.0);
         let bulb = mesh_at(0.0);
 
         scene.add(&light);
@@ -551,8 +551,16 @@ mod tests {
         let list = project(&scene, &camera());
 
         assert_eq!(list.lights.len(), 1, "the light is pushed as a light");
+        assert_eq!(list.lights[0].borrow().id, light.borrow().id);
         assert_eq!(list.len(), 1, "and its bulb mesh is still drawn");
         assert_eq!(list.opaque[0].id, bulb.borrow().id);
+
+        // `PointLight.matrixWorld` is what the renderer reads the light's world
+        // position from, and the bulb is an ordinary child, so it composes.
+        light.borrow_mut().position.x = 2.0;
+        let list = project(&scene, &camera());
+        assert_eq!(world_x(&list.lights[0]), 2.0);
+        assert_eq!(world_x(&bulb), 2.0, "the bulb rides the light's matrix");
     }
 
     #[test]

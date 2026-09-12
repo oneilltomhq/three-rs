@@ -8,7 +8,16 @@ use three_rs::nodes::NodeBuilder;
 use three_rs::textures::{CubeTexture, DepthTexture, Image, Texture};
 
 fn show(label: &str, material: &MeshBasicNodeMaterial, ctx: SetupContext) {
-    let flow = setup(material, &ctx);
+    show_fog(label, material, ctx, None)
+}
+
+fn show_fog(
+    label: &str,
+    material: &MeshBasicNodeMaterial,
+    ctx: SetupContext,
+    fog: Option<&three_rs::nodes::tsl::FogNode>,
+) {
+    let flow = setup(material, &ctx, fog);
     let program = NodeBuilder::new().build(&flow);
     println!("########## {label} — vertex");
     println!("{}", program.vertex_wgsl);
@@ -55,6 +64,7 @@ fn main() {
         SetupContext {
             instance_count: Some(1000),
             instanced: true,
+            light_count: 0,
         },
     );
 
@@ -115,4 +125,42 @@ fn main() {
     masking.fragment_node = Some(three_rs::materials::render_output(compose));
     masking.vertex_node = Some(three_rs::materials::quad_vertex_node());
     show("masking_quad", &masking, SetupContext::default());
+
+    // rung 5: the three teapots and the light spheres, against
+    // `target/dumps/webgpu_lights_phong/`.
+    let fog = fog(Color::from_hex(0xFF00FF), range_fog_factor(12.0, 30.0));
+    let four = SetupContext {
+        light_count: 4,
+        ..SetupContext::default()
+    };
+
+    let normal_map_texture = Texture::new(512, 512, Some(vec![0; 4]));
+    let alpha_texture = Texture::new(512, 512, Some(vec![0; 4]));
+
+    let grey = Color::from_hex(0x555555);
+
+    let mut left = MeshBasicNodeMaterial::phong(grey);
+    left.lights_node = Some(vec![0]);
+    left.specular_node = Some(texture(&alpha_texture));
+    show_fog("phong_left", &left, four, Some(&fog));
+
+    let mut centre = MeshBasicNodeMaterial::phong(grey);
+    centre.normal_node = Some(normal_map(texture(&normal_map_texture)));
+    centre.shininess = 80.0;
+    show_fog("phong_centre", &centre, four, Some(&fog));
+
+    let mut right = MeshBasicNodeMaterial::phong(grey);
+    right.lights_node = Some(vec![1]);
+    right.specular_node = Some(mix(
+        Color::from_hex(0x0000FF),
+        Color::from_hex(0xFF0000),
+        checker(uv().mul(5.0)),
+    ));
+    right.shininess = 90.0;
+    show_fog("phong_right", &right, four, Some(&fog));
+
+    let mut sphere = MeshBasicNodeMaterial::phong(Color::new(1.0, 1.0, 1.0));
+    sphere.lights = false;
+    sphere.color_node = Some(Color::from_hex(0x0040ff).into());
+    show_fog("phong_light_sphere", &sphere, four, Some(&fog));
 }

@@ -10,6 +10,8 @@
 //! hue(saturation(tex.rgb(), mouse.x().one_minus()), mouse.y())
 //! ```
 
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use super::node::{
@@ -20,6 +22,55 @@ use crate::math::Color;
 use crate::textures::{CubeTexture, DepthTexture, Texture};
 
 pub use super::node::TextureSource;
+
+
+// ---------------------------------------------------------------------------
+// sub-builds and the build context (`docs/nodes.md` §7)
+// ---------------------------------------------------------------------------
+
+thread_local! {
+    /// `NodeBuilder.subBuildLayers`. One layer at a time is all the ladder
+    /// needs; `NORMAL` is the only name so far.
+    static SUB_BUILD: RefCell<Option<&'static str>> = const { RefCell::new(None) };
+    /// `builder.context.setupNormal()` — `NodeMaterial.setupNormal()`'s result,
+    /// i.e. the material's `normalNode`. `normal_view()` takes it as its value
+    /// outside the `NORMAL` layer and `normalViewGeometry` inside it.
+    static NORMAL_VALUE: RefCell<Option<NodeRef>> = const { RefCell::new(None) };
+    /// `normalView`'s node per (layer, normal value) — the stand-in for
+    /// three.js' per-build `nodeData` plus its `subBuildsCache`.
+    static NORMAL_VIEW: RefCell<HashMap<(Option<&'static str>, Option<usize>), NodeRef>> =
+        RefCell::new(HashMap::new());
+    /// `tangentView` / `bitangentView`, keyed by layer the same way.
+    static TANGENT_VIEW: RefCell<HashMap<Option<&'static str>, (NodeRef, NodeRef)>> =
+        RefCell::new(HashMap::new());
+}
+
+/// `NodeBuilder.getSubBuildProperty( name )`: inside a layer a var's name is
+/// prefixed with the layer's, which is where `NORMAL_normalView` comes from.
+fn sub_build_name(name: &str) -> String {
+    match SUB_BUILD.with(|s| *s.borrow()) {
+        Some(layer) => format!("{layer}_{name}"),
+        None => name.to_string(),
+    }
+}
+
+/// `subBuild( node, name )` — build `f`'s nodes inside the named layer.
+fn in_sub_build<R>(layer: &'static str, f: impl FnOnce() -> R) -> R {
+    let previous = SUB_BUILD.with(|s| s.replace(Some(layer)));
+    let out = f();
+    SUB_BUILD.with(|s| *s.borrow_mut() = previous);
+    out
+}
+
+/// Install the material's `normalNode` as `builder.context.setupNormal` for the
+/// duration of `f` — `NodeMaterial.setup()` does exactly this before flowing
+/// either stage. Returns what `f` returns.
+pub fn with_material_normal<R>(normal: Option<NodeRef>, f: impl FnOnce() -> R) -> R {
+    let previous = NORMAL_VALUE.with(|v| v.replace(normal));
+    let out = f();
+    NORMAL_VALUE.with(|v| *v.borrow_mut() = previous);
+    out
+}
 
 // ---------------------------------------------------------------------------
 // constructors
@@ -107,10 +158,28 @@ pub fn uniform(
     })))
 }
 
-/// `node.toVar( name )`.
+/// `node.toVar( name )`. The name passes through `sub_build_name()`, so a var
+/// declared while a sub-build layer is open takes the layer's prefix.
 pub fn to_var(name: Option<&'static str>, value: NodeRef) -> NodeRef {
     let ty = value.ty();
-    NodeRef::new(Node::Var(Rc::new(VarDef { name, value, ty })))
+    NodeRef::new(Node::Var(Rc::new(VarDef {
+        name: name.map(sub_build_name),
+        value,
+        ty,
+    })))
+}
+
+/// `toVar( name )` for a var that keeps its name inside a sub-build layer.
+/// Three prefixes only the nodes a layer is *tagged on* — the accessors that
+/// declare the layer and their ancestors — so a var built inside one of those
+/// accessors, like `tangentViewFrame`, stays unprefixed.
+fn to_var_untagged(name: &'static str, value: NodeRef) -> NodeRef {
+    let ty = value.ty();
+    NodeRef::new(Node::Var(Rc::new(VarDef {
+        name: Some(name.to_string()),
+        value,
+        ty,
+    })))
 }
 
 /// `node.toVarying( name )`.
@@ -230,6 +299,177 @@ pub fn reflect(i: impl Into<NodeRef>, n: impl Into<NodeRef>) -> NodeRef {
     math("reflect", vec![i, n.into()], ty)
 }
 
+/// `floor( x )`.
+pub fn floor(x: impl Into<NodeRef>) -> NodeRef {
+    let x = x.into();
+    let ty = x.ty();
+    math("floor", vec![x], ty)
+}
+
+/// `sign( x )`.
+pub fn sign(x: impl Into<NodeRef>) -> NodeRef {
+    let x = x.into();
+    let ty = x.ty();
+    math("sign", vec![x], ty)
+}
+
+/// `exp2( x )`.
+pub fn exp2(x: impl Into<NodeRef>) -> NodeRef {
+    let x = x.into();
+    let ty = x.ty();
+    math("exp2", vec![x], ty)
+}
+
+/// `length( v )` — a scalar out of any vector.
+pub fn length(v: impl Into<NodeRef>) -> NodeRef {
+    math("length", vec![v.into()], Type::F32)
+}
+
+/// `x.mod( y )` on floats. WGSL has no `%` for floats the way three.js' node
+/// system means it, so `MathNode` emits a helper; see `wgsl::MOD_FLOAT_SNIPPET`.
+pub fn mod_float(x: impl Into<NodeRef>, y: impl Into<NodeRef>) -> NodeRef {
+    math("tsl_mod_float", vec![x.into(), y.into()], Type::F32)
+}
+
+/// `smoothstep( low, high, x )`.
+pub fn smoothstep(
+    low: impl Into<NodeRef>,
+    high: impl Into<NodeRef>,
+    x: impl Into<NodeRef>,
+) -> NodeRef {
+    math("smoothstep", vec![low.into(), high.into(), x.into()], Type::F32)
+}
+
+/// `dFdx( x )` — WGSL `dpdx`.
+pub fn dpdx(x: impl Into<NodeRef>) -> NodeRef {
+    let x = x.into();
+    let ty = x.ty();
+    math("dpdx", vec![x], ty)
+}
+
+/// `dFdy( x )`. `WGSLNodeBuilder`'s method table maps `dFdy` to the string
+/// `'- dpdy'`, so the emitted call carries the sign flip that takes WGSL's
+/// framebuffer-down derivative back to GLSL's up convention.
+pub fn dpdy(x: impl Into<NodeRef>) -> NodeRef {
+    let x = x.into();
+    let ty = x.ty();
+    math("- dpdy", vec![x], ty)
+}
+
+/// Port of `three.js/src/nodes/procedural/Checker.js`. An `Fn()` with no
+/// layout, so it inlines: `sign( mod( floor( uv.x * 2 ) + floor( uv.y * 2 ), 2 ) )`.
+pub fn checker(coord: impl Into<NodeRef>) -> NodeRef {
+    let uv = coord.into().mul(2.0);
+    let cx = floor(uv.x());
+    let cy = floor(uv.y());
+    sign(mod_float(cx.add(cy), 2.0))
+}
+
+/// Port of `three.js/src/nodes/fog/Fog.js`' `rangeFogFactor( near, far )`:
+/// `smoothstep( near, far, positionView.z.negate() )`.
+pub fn range_fog_factor(near: impl Into<NodeRef>, far: impl Into<NodeRef>) -> NodeRef {
+    smoothstep(near, far, position_view().z().negate())
+}
+
+/// Port of `three.js/src/nodes/fog/Fog.js`' `fog( color, factor )`. The node it
+/// mixes into is the material's output, supplied at setup time, so the pair is
+/// carried as a `FogNode` and unpacked by `NodeMaterial::setup_output()`:
+/// `vec4( mix( output.rgb, fogColor, factor ), output.a )`.
+pub fn fog(color: impl Into<NodeRef>, factor: impl Into<NodeRef>) -> FogNode {
+    FogNode {
+        color: color.into(),
+        factor: factor.into(),
+    }
+}
+
+/// `scene.fogNode = fog( color, factor )`.
+#[derive(Clone)]
+pub struct FogNode {
+    pub color: NodeRef,
+    pub factor: NodeRef,
+}
+
+/// `LightsNode`'s four render-group uniforms for the point light at `index` of
+/// the renderer's light list. Creating them here rather than inside
+/// `phong.rs` keeps every `UniformSource` in one module.
+pub fn light_color_intensity(index: usize) -> NodeRef {
+    uniform(
+        UniformSource::LightColorIntensity(index),
+        Type::Vec3,
+        UniformGroup::Render,
+        None,
+    )
+}
+
+pub fn light_cutoff_distance(index: usize) -> NodeRef {
+    uniform(
+        UniformSource::LightCutoffDistance(index),
+        Type::F32,
+        UniformGroup::Render,
+        None,
+    )
+}
+
+pub fn light_decay(index: usize) -> NodeRef {
+    uniform(
+        UniformSource::LightDecay(index),
+        Type::F32,
+        UniformGroup::Render,
+        None,
+    )
+}
+
+pub fn light_view_position(index: usize) -> NodeRef {
+    uniform(
+        UniformSource::LightViewPosition(index),
+        Type::Vec3,
+        UniformGroup::Render,
+        None,
+    )
+}
+
+/// `inverseSqrt( x )`.
+pub fn inverse_sqrt(x: impl Into<NodeRef>) -> NodeRef {
+    math("inverseSqrt", vec![x.into()], Type::F32)
+}
+
+/// `AccessorsUtils.js`' `TBNViewMatrix` — `mat3( tangentView, bitangentView,
+/// normalView ).toVar( 'TBNViewMatrix' )`. Three tags it with whichever
+/// sub-build layers its descendants declare, which is why the centre teapot's
+/// dump calls it `NORMAL_TBNViewMatrix`; here the layer is simply still open.
+pub fn tbn_view_matrix() -> NodeRef {
+    thread_local! {
+        static CELL: Lazy<NodeRef> = Lazy::new();
+    }
+    CELL.with(|c| {
+        c.get(|| {
+            to_var(
+                Some("TBNViewMatrix"),
+                join(
+                    Type::Mat3,
+                    vec![tangent_view(), bitangent_view(), normal_view()],
+                ),
+            )
+        })
+    })
+}
+
+/// Port of `NormalMapNode` for `TangentSpaceNormalMap` with no scale:
+/// `normalize( TBNViewMatrix * ( texel * 2 - 1 ).xyz )`.
+///
+/// The whole expression is built inside the `NORMAL` sub-build layer, the way
+/// `NodeMaterial.setup()` wraps `setupNormal()` in `subBuild( …, 'NORMAL' )`:
+/// that is what stops `normalView` inside the TBN frame from recursing into
+/// this node, and what prefixes the four vars the layer names.
+pub fn normal_map(node: impl Into<NodeRef>) -> NodeRef {
+    let texel = node.into();
+    in_sub_build("NORMAL", || {
+        tbn_view_matrix()
+            .mul(texel.mul(2.0).sub(1.0).xyz())
+            .normalize()
+    })
+}
+
 /// `max( a, b )`.
 pub fn max(a: impl Into<NodeRef>, b: impl Into<NodeRef>) -> NodeRef {
     let a = a.into();
@@ -284,6 +524,9 @@ impl NodeRef {
     }
     pub fn less_than_equal(&self, other: impl Into<NodeRef>) -> NodeRef {
         binary("<=", self.clone(), other.into())
+    }
+    pub fn greater_than(&self, other: impl Into<NodeRef>) -> NodeRef {
+        binary(">", self.clone(), other.into())
     }
 
     /// `oneMinus()` — `1.0 - x`, emitted in that order.
@@ -557,6 +800,46 @@ accessor!(
     )
 );
 accessor!(
+    /// `materialShininess`.
+    material_shininess,
+    uniform(
+        UniformSource::MaterialShininess,
+        Type::F32,
+        UniformGroup::Object,
+        None
+    )
+);
+accessor!(
+    /// `materialSpecular`.
+    material_specular,
+    uniform(
+        UniformSource::MaterialSpecular,
+        Type::Vec3,
+        UniformGroup::Object,
+        None
+    )
+);
+accessor!(
+    /// `materialEmissive`.
+    material_emissive,
+    uniform(
+        UniformSource::MaterialEmissive,
+        Type::Vec3,
+        UniformGroup::Object,
+        None
+    )
+);
+accessor!(
+    /// `materialEmissiveIntensity`.
+    material_emissive_intensity,
+    uniform(
+        UniformSource::MaterialEmissiveIntensity,
+        Type::F32,
+        UniformGroup::Object,
+        None
+    )
+);
+accessor!(
     /// `materialReflectivity`.
     material_reflectivity,
     uniform(
@@ -677,11 +960,86 @@ accessor!(
         .normalize()
     )
 );
-accessor!(
-    /// `normalView`.
-    normal_view,
-    to_var(Some("normalView"), normal_view_geometry())
-);
+/// `normalView` — `Normal.js`' `Fn( … ).once( [ 'NORMAL', 'VERTEX' ] )`.
+///
+/// Inside the `NORMAL` sub-build layer it is the geometric normal, under the
+/// layer-prefixed name `NORMAL_normalView`; outside it, it is the material's
+/// `normalNode` (reached through the build context) or, with no normal node,
+/// the geometric normal again. Keyed by (layer, normal value) so that two
+/// materials in the same process get their own node, which is what three.js'
+/// per-build `nodeData` gives it for free.
+pub fn normal_view() -> NodeRef {
+    let layer = SUB_BUILD.with(|s| *s.borrow());
+    let value = if layer.is_some() {
+        None
+    } else {
+        NORMAL_VALUE.with(|v| v.borrow().clone())
+    };
+    let key = (layer, value.as_ref().map(|v| v.key()));
+    if let Some(node) = NORMAL_VIEW.with(|m| m.borrow().get(&key).cloned()) {
+        return node;
+    }
+    let node = to_var(
+        Some("normalView"),
+        value.unwrap_or_else(normal_view_geometry),
+    );
+    NORMAL_VIEW.with(|m| m.borrow_mut().insert(key, node.clone()));
+    node
+}
+
+/// `tangentView` / `bitangentView` for a geometry with no `tangent` attribute:
+/// the derivative frame of `TangentUtils.js`, both `.once( [ 'NORMAL',
+/// 'VERTEX' ] )` so they take the layer prefix. They are returned as a pair
+/// because `tangentViewFrame` and `bitangentViewFrame` share the `scale` temp.
+fn tangent_frame() -> (NodeRef, NodeRef) {
+    let layer = SUB_BUILD.with(|s| *s.borrow());
+    if let Some(pair) = TANGENT_VIEW.with(|m| m.borrow().get(&layer).cloned()) {
+        return pair;
+    }
+    // `q1perp = dFdy( positionView ).cross( N )`, `q0perp = N.cross( dFdx(
+    // positionView ) )`, with `dFdy` carrying the `- dpdy` sign flip.
+    let n = normal_view();
+    let q1perp = cross(dpdy(position_view()), n.clone());
+    let q0perp = cross(n, dpdx(position_view()));
+    let st0 = dpdx(uv());
+    let st1 = dpdy(uv());
+
+    let t = q1perp
+        .clone()
+        .mul(st0.clone().x())
+        .add(q0perp.clone().mul(st1.clone().x()));
+    let b = q1perp.mul(st0.y()).add(q0perp.mul(st1.y()));
+    let det = max(t.clone().dot(t.clone()), b.clone().dot(b.clone()));
+    // `det.equal( 0 ).select( 0, det.inverseSqrt() )`, which three.js lowers to
+    // an if/else over a shared temp — `Node::Select`'s exact shape.
+    let scale = det
+        .clone()
+        .equal(float(0.0))
+        .select(float(0.0), inverse_sqrt(det));
+
+    let pair = (
+        to_var(
+            Some("tangentView"),
+            to_var_untagged("tangentViewFrame", t.mul(scale.clone())),
+        ),
+        to_var(
+            Some("bitangentView"),
+            to_var_untagged("bitangentViewFrame", b.mul(scale)),
+        ),
+    );
+    TANGENT_VIEW.with(|m| m.borrow_mut().insert(layer, pair.clone()));
+    pair
+}
+
+/// `tangentView`.
+pub fn tangent_view() -> NodeRef {
+    tangent_frame().0
+}
+
+/// `bitangentView`.
+pub fn bitangent_view() -> NodeRef {
+    tangent_frame().1
+}
 accessor!(
     /// `normalWorld` — `normalView` rotated out of view space.
     normal_world,
@@ -755,6 +1113,10 @@ prop!(indirect_specular, "indirectSpecular", Type::Vec3);
 prop!(total_specular, "totalSpecular", Type::Vec3);
 prop!(outgoing_light, "outgoingLight", Type::Vec3);
 prop!(ambient_occlusion, "ambientOcclusion", Type::F32);
+prop!(shininess, "Shininess", Type::F32);
+prop!(specular_color, "SpecularColor", Type::Vec3);
+prop!(emissive_color, "EmissiveColor", Type::Vec3);
+prop!(irradiance, "irradiance", Type::Vec3);
 
 // ---------------------------------------------------------------------------
 // textures

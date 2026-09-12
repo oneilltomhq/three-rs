@@ -2,9 +2,11 @@
 //! `setupX()` methods it dispatches to. This is where a material turns into the
 //! statements the builder flows into the two shader stages.
 
-use super::MeshBasicNodeMaterial;
+use super::phong::{self, PointLightUniforms};
+use super::{MaterialKind, MeshBasicNodeMaterial};
 use crate::nodes::node::Type;
 use crate::nodes::tsl::*;
+use crate::nodes::tsl::FogNode;
 use crate::nodes::{MaterialFlow, NodeRef};
 
 /// The per-render-object facts three.js reads off `builder.object` and
@@ -17,6 +19,11 @@ pub struct SetupContext {
     /// `InstancedMesh.instanceColor` is present, so `range()` resolves against
     /// the instance index.
     pub instanced: bool,
+    /// How many lights the pass has (`Scene.lights.len()`), i.e. the default
+    /// `LightsNode` list when the material sets no `lights_node`. Kept as a
+    /// count rather than a list so `SetupContext` stays `Copy`: a material's
+    /// selective `lights([ … ])` subset lives on the material itself.
+    pub light_count: usize,
 }
 
 /// `vec4( node )` the way `setupDiffuseColor` builds it: a scalar splats, a
@@ -30,7 +37,25 @@ fn to_vec4(node: NodeRef) -> NodeRef {
 }
 
 /// `NodeMaterial.setup()`.
-pub fn setup(material: &MeshBasicNodeMaterial, ctx: &SetupContext) -> MaterialFlow {
+pub fn setup(
+    material: &MeshBasicNodeMaterial,
+    ctx: &SetupContext,
+    fog: Option<&FogNode>,
+) -> MaterialFlow {
+    // `builder.context.setupNormal = () => subBuild( this.setupNormal( builder
+    // ), 'NORMAL' )` — installed for the whole of the material's setup, so that
+    // every `normalView` the lighting flow reaches resolves to this material's
+    // normal map. See `docs/nodes.md` §7.
+    with_material_normal(material.normal_node.clone(), || {
+        setup_inner(material, ctx, fog)
+    })
+}
+
+fn setup_inner(
+    material: &MeshBasicNodeMaterial,
+    ctx: &SetupContext,
+    fog: Option<&FogNode>,
+) -> MaterialFlow {
     let mut pre_vertex = Vec::new();
     let mut fragment = Vec::new();
 
@@ -63,6 +88,8 @@ pub fn setup(material: &MeshBasicNodeMaterial, ctx: &SetupContext) -> MaterialFl
     // --- the fragment flow
     let output = if let Some(fragment_node) = &material.fragment_node {
         fragment_node.clone()
+    } else if material.kind == MaterialKind::Phong {
+        setup_phong(material, ctx, &mut fragment)
     } else {
         // setupDiffuseColor
         let color = match &material.color_node {
@@ -117,6 +144,26 @@ pub fn setup(material: &MeshBasicNodeMaterial, ctx: &SetupContext) -> MaterialFl
 
         // `basicOutput = vec4( outgoingLight, diffuseColor.a ).max( 0 )`.
         vec4_join(vec![outgoing, diffuse_color().w()]).max(float(0.0))
+    };
+
+    // `NodeMaterial.setupOutput()`: `scene.fogNode` mixes over the colour only,
+    // leaving the alpha — `vec4( mix( output.rgb, fogColor, factor ), output.a )`.
+    let output = match fog {
+        Some(fog) => {
+            fragment.push(output_property().assign(output));
+            let mixed = vec4_join(vec![
+                mix(
+                    output_property().xyz(),
+                    fog.color.clone(),
+                    fog.factor.clone(),
+                ),
+                output_property().w(),
+            ]);
+            // The builder's own `emit_output_property` writes the second
+            // `Output = …`, so pushing it here too would double the line.
+            mixed
+        }
+        None => output,
     };
 
     // --- the vertex flow
@@ -210,4 +257,79 @@ pub fn render_output(color: NodeRef) -> NodeRef {
         unpremultiplied.a(),
     ]);
     premultiply_alpha(encoded)
+}
+
+/// `MeshPhongNodeMaterial`'s fragment flow: `setupDiffuseColor`,
+/// `setupVariants` (shininess / specular / emissive), then either the
+/// `LightsNode` loop with `PhongLightingModel` or, when `lights === false`,
+/// nothing but the diffuse colour. Read off the dumps in
+/// `docs/rung5-progress.md` §4; the fog step (§5) is not wired yet.
+fn setup_phong(
+    material: &MeshBasicNodeMaterial,
+    ctx: &SetupContext,
+    fragment: &mut Vec<NodeRef>,
+) -> NodeRef {
+    // setupDiffuseColor
+    let color = match &material.color_node {
+        Some(node) => to_vec4(node.clone()),
+        None => vec4_join(vec![material_color(), float(1.0)]),
+    };
+    fragment.push(diffuse_color().assign(color));
+    fragment.push(
+        diffuse_color()
+            .w()
+            .assign(diffuse_color().w().mul(material_opacity())),
+    );
+    // `builder.isOpaque()`
+    fragment.push(diffuse_color().w().assign(float(1.0)));
+
+    // setupVariants: `PhongLightingModel` reads these three properties.
+    fragment.push(shininess().assign(max(material_shininess(), float(0.0001))));
+    let specular = match &material.specular_node {
+        Some(node) => node.clone().xyz(),
+        None => material_specular(),
+    };
+    fragment.push(specular_color().assign(specular));
+    fragment.push(
+        emissive_color().assign(material_emissive().mul(material_emissive_intensity())),
+    );
+
+    let outgoing = if material.lights {
+        // `LightsNode`: the scene's lights, or the selective subset the
+        // material's `lights( [ … ] )` node names.
+        let indices: Vec<usize> = match &material.lights_node {
+            Some(subset) => subset.clone(),
+            None => (0..ctx.light_count).collect(),
+        };
+
+        fragment.push(direct_diffuse().assign(vec3(0.0, 0.0, 0.0)));
+        fragment.push(direct_specular().assign(vec3(0.0, 0.0, 0.0)));
+        for index in indices {
+            phong::direct_point_light(&PointLightUniforms::at(index), fragment);
+        }
+
+        // The tail every lit material shares.
+        fragment.push(indirect_diffuse().assign(vec3(0.0, 0.0, 0.0)));
+        fragment.push(irradiance().assign(vec3(0.0, 0.0, 0.0)));
+        fragment.push(indirect_diffuse().assign(
+            vec4_join(vec![indirect_diffuse(), float(1.0)])
+                .add(vec4_join(vec![irradiance(), float(1.0)]).mul(
+                    diffuse_color().mul(phong::RECIPROCAL_PI),
+                ))
+                .xyz(),
+        ));
+        fragment.push(ambient_occlusion().assign(float(1.0)));
+        fragment.push(indirect_diffuse().assign(indirect_diffuse().mul(ambient_occlusion())));
+        fragment.push(total_diffuse().assign(direct_diffuse().add(indirect_diffuse())));
+        fragment.push(indirect_specular().assign(vec3(0.0, 0.0, 0.0)));
+        fragment.push(total_specular().assign(direct_specular().add(indirect_specular())));
+        fragment.push(outgoing_light().assign(total_diffuse().add(total_specular())));
+        outgoing_light()
+    } else {
+        // `lights = false` — the example's light spheres.
+        diffuse_color().xyz()
+    };
+
+    // `Output = max( vec4( outgoingLight + EmissiveColor, DiffuseColor.w ), 0 )`.
+    vec4_join(vec![outgoing.add(emissive_color()), diffuse_color().w()]).max(float(0.0))
 }

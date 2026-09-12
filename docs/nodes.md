@@ -1,4 +1,4 @@
-# The node system (rung 4)
+# The node system (rungs 4–5)
 
 Rungs 1–3 shipped hand-written WGSL whose headers documented, statement by
 statement, the three.js node flow each file stood in for. Rung 4 replaces those
@@ -7,7 +7,8 @@ contract later rungs extend.
 
 Ground truth for the shape of the output is a dump of what Chrome's
 `GPUDevice.createShaderModule` actually receives for `webgpu_depth_texture`,
-`webgpu_instance_mesh`, `webgpu_materials_basic` and `webgpu_rtt` (a temporary
+`webgpu_instance_mesh`, `webgpu_materials_basic`, `webgpu_rtt` and
+`webgpu_lights_phong` (a temporary
 puppeteer hook; dumps under `target/dumps/`, nothing committed). Every generated
 shader is read against its dump.
 
@@ -252,7 +253,80 @@ new material, is wrong.
 | `SpriteNodeMaterial` (rung 13) | `setup_position_view`, which `NodeMaterial` already routes through `builder.context`. |
 | MRT, clipping planes, vertex colours, fog, alpha test | all are single branches in `NodeMaterial`'s setup flow, omitted because no rung 1–4 material sets them. |
 
-## 7. Known divergences from the dumps
+## 7. Sub-builds, and `normalMap` as the value of `normalView`
+
+Rung 5's centre teapot sets `material.normalNode = normalMap( texture( … ) )`.
+`normalMap()` is `TBNViewMatrix * ( texel * 2 - 1 )`, and `TBNViewMatrix` is
+built from `normalView` — so `normalView` has to mean two different things in
+one shader: *the geometric normal* inside the normal map's own expression, and
+*the mapped normal* everywhere downstream (the lighting model). A single
+memoised accessor cannot do that.
+
+Three's answer is the **sub-build**. `NodeMaterial.setupNormal()` does not
+assign anything; it installs a thunk on the builder:
+
+```js
+// NodeMaterial.js:472
+builder.context.setupNormal = () => subBuild( this.setupNormal( builder ), 'NORMAL', 'vec3' );
+```
+
+`subBuild( node, name )` pushes `name` onto `builder.subBuildLayers` for the
+duration of that node's build. Two things follow from being inside a layer:
+
+1. `normalView` resolves **geometrically** (the layer is what tells the
+   accessor not to call back into `context.setupNormal`), so the recursion
+   terminates.
+2. Every var the layer is *tagged on* gets its layer as a name prefix, which is
+   where the dump's `NORMAL_normalView`, `NORMAL_tangentView`,
+   `NORMAL_bitangentView` and `NORMAL_TBNViewMatrix` come from.
+
+### What this port does
+
+`src/nodes/tsl.rs` holds the layer and the context in two thread-locals,
+because our TSL functions are free functions rather than methods on a builder
+that is threaded through every call:
+
+* `SUB_BUILD: Option<&'static str>` — the single active layer.
+  `in_sub_build( "NORMAL", || … )` is `subBuild()`; `sub_build_name( "x" )` is
+  the prefixer, and `to_var()` runs every name through it.
+* `NORMAL_VALUE: Option<NodeRef>` — `builder.context.setupNormal`'s *result*,
+  i.e. the material's `normalNode`. `NodeMaterial::setup()` installs it for the
+  whole of the material's setup with `with_material_normal( material.normal_node,
+  … )`, which is the direct equivalent of Three assigning the thunk to
+  `builder.context`: both make the material's choice visible to any accessor
+  reached from anywhere inside the setup, without passing it down by hand.
+
+`normal_view()` then reads both:
+
+```rust
+let layer = SUB_BUILD.with(|s| *s.borrow());
+let value = if layer.is_some() { None } else { NORMAL_VALUE.with(|v| v.borrow().clone()) };
+```
+
+Inside `NORMAL` it is the geometric normal; outside it, the material's
+`normalNode` if there is one. The memo is keyed on `(layer, value)` rather than
+being a singleton, so the two meanings coexist as two vars in one shader —
+which is exactly what the dump shows.
+
+### Tagging is on ancestors, not descendants
+
+Three tags the node a layer is *declared through*, and the tag propagates up
+`builder.chaining` to that node's **ancestors** — not down to what it is built
+from. So in the dump `NORMAL_TBNViewMatrix` is prefixed but the two vars it is
+assembled from, `tangentViewFrame` and `bitangentViewFrame`, are not, even
+though they are only ever reached from inside the layer. `to_var_untagged()` is
+the sibling of `to_var()` that skips the prefixer for exactly these.
+
+### Scope
+
+One layer at a time is all the ladder needs, and `NORMAL` is the only name so
+far. Three also runs the position chain as a `VERTEX` sub-build; this port does
+not (see §8, "`VERTEX_` sub-builds" — cosmetic, because nothing reads a second
+meaning of a vertex-stage node). If a later rung needs nested or concurrent
+layers, `SUB_BUILD` becomes a `Vec<&'static str>` and `sub_build_name()` joins
+it, which is what `getSubBuildProperty()` does.
+
+## 8. Known divergences from the dumps
 
 Textual identity is not a goal; these are the deliberate or unexplained
 differences, each verified to be pixel-neutral.

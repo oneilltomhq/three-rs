@@ -9,6 +9,7 @@ pub mod animation;
 pub mod cameras;
 pub mod core;
 pub mod geometries;
+pub mod lights;
 pub mod loaders;
 pub mod materials;
 pub mod math;
@@ -20,9 +21,12 @@ pub mod textures;
 
 pub use cameras::{OrthographicCamera, PerspectiveCamera};
 pub use core::{BufferGeometry, Node, Object3D, Object3DNode};
-pub use geometries::{box_geometry, quad_geometry, sphere_geometry, torus_knot_geometry};
+pub use geometries::{
+    box_geometry, quad_geometry, sphere_geometry, teapot_geometry, torus_knot_geometry,
+};
+pub use lights::{Light, PointLight};
 pub use loaders::{BufferGeometryLoader, CubeTextureLoader, TextureLoader};
-pub use materials::MeshBasicNodeMaterial;
+pub use materials::{MaterialKind, MeshBasicNodeMaterial, MeshPhongNodeMaterial};
 pub use math::{Color, Euler, Matrix3, Matrix4, Quaternion, Vector2, Vector3};
 pub use objects::{Background, Group, InstancedMesh, Mesh, Payload, QuadMesh, Scene};
 pub use renderer::{PassNode, RenderPipeline, RenderTarget, Renderer, RendererParameters};

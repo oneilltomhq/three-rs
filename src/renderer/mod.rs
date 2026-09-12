@@ -17,7 +17,7 @@ use std::rc::Rc;
 
 use mipmap::{create_mipmap_pipeline, MipmapShader};
 pub use pass::PassNode;
-pub use programs::{RenderState, UniformContext};
+pub use programs::{LightState, RenderState, UniformContext};
 use programs::{PipelineKey, Program};
 pub use render_list::{project_object, ProjectCamera, RenderItem, RenderList};
 pub use render_pipeline::RenderPipeline;
@@ -26,9 +26,11 @@ pub use render_target::{RenderTarget, RenderTargetInner, RenderTargetOptions};
 use crate::cameras::{OrthographicCamera, PerspectiveCamera};
 use crate::core::{BufferGeometry, Index};
 use crate::geometries::{quad_geometry, sphere_geometry};
+use crate::lights::PointLight;
 use crate::materials::{self, MeshBasicNodeMaterial, SetupContext, Side};
 use crate::math::{Color, Matrix4, Vector2};
 use crate::nodes::node::{BufferSource, TextureSource};
+use crate::nodes::tsl::FogNode;
 use crate::nodes::wgsl::TextureKind;
 use crate::nodes::{BindingDesc, NodeBuilder};
 use crate::objects::{Background, InstancedBufferAttribute, QuadMesh, Scene};
@@ -77,6 +79,11 @@ struct Renderable {
     geometry: Rc<BufferGeometry>,
     material: MeshBasicNodeMaterial,
     setup: SetupContext,
+    /// `scene.fogNode`, which `NodeMaterial.setupOutput()` applies to every
+    /// material in the scene. Carried per item rather than on `SetupContext` so
+    /// that stays `Copy`; the background and the quad passes get `None`, which
+    /// is what three.js' own `fog = false` on those materials amounts to.
+    fog: Option<FogNode>,
     model_world: Matrix4,
     instance_matrix: Option<InstancedBufferAttribute>,
     instance_count: u32,
@@ -294,6 +301,7 @@ impl Renderer {
                 geometry: self.background_geometry(),
                 material,
                 setup: SetupContext::default(),
+                fog: None,
                 // `Background.mesh` is never added to the scene, so its
                 // `matrixWorld` stays the identity.
                 model_world: Matrix4::identity(),
@@ -329,7 +337,9 @@ impl Renderer {
                 setup: SetupContext {
                     instance_count: instance_matrix.as_ref().map(|_| instance_count as usize),
                     instanced: instance_matrix.is_some(),
+                    light_count: render_list.lights.len(),
                 },
+                fog: scene.fog_node.clone(),
                 model_world: item.matrix_world,
                 instance_matrix,
                 instance_count,
@@ -344,11 +354,40 @@ impl Renderer {
             _ => self.clear_color,
         };
 
+        // `LightsNode.setupLights()`: each light resolves to its colour scaled
+        // by intensity plus its position in view space. The list is
+        // `RenderList.lightsArray` — scene-traversal order, which is the order
+        // `LightsNode.setLights()` receives and which `UniformSource::Light*( i )`
+        // indexes.
+        let lights: Vec<LightState> = render_list
+            .lights
+            .iter()
+            .map(|node| {
+                let object = node.borrow();
+                let light = object
+                    .light()
+                    .expect("three-rs: the light list only holds lights");
+
+                let mut view_position = PointLight::world_position(&object.matrix_world);
+                view_position.apply_matrix4(&camera.matrix_world_inverse);
+
+                let c = light.light.color;
+                let intensity = light.light.intensity;
+                LightState {
+                    color: Color::new(c.r * intensity, c.g * intensity, c.b * intensity),
+                    view_position,
+                    distance: light.distance,
+                    decay: light.decay,
+                }
+            })
+            .collect();
+
         let camera_uniforms = UniformContext {
             camera_projection: camera.projection_matrix,
             camera_view: camera.matrix_world_inverse,
             camera_world: camera.object.matrix_world,
             time: self.time,
+            lights: &lights,
             ..Default::default()
         };
 
@@ -381,6 +420,7 @@ impl Renderer {
         material.vertex_node = Some(materials::quad_vertex_node());
 
         let items = [Renderable {
+            fog: None,
             geometry: self.quad_geometry(),
             material,
             setup: SetupContext::default(),
@@ -394,7 +434,7 @@ impl Renderer {
         self.render_list(&items, camera_uniforms, Some(clear));
     }
 
-    fn quad_camera_uniforms(&self) -> UniformContext {
+    fn quad_camera_uniforms(&self) -> UniformContext<'static> {
         UniformContext {
             camera_projection: self.quad_camera.projection_matrix,
             camera_view: self.quad_camera.matrix_world_inverse,
@@ -461,7 +501,7 @@ impl Renderer {
 
             // `NodeMaterial.setup()` → `NodeBuilder.build()`: the WGSL and the
             // bindings the material declares.
-            let flow = materials::setup(&item.material, &item.setup);
+            let flow = materials::setup(&item.material, &item.setup, item.fog.as_ref());
             let node = NodeBuilder::new().build(&flow);
             let program_key = node.cache_key;
             if !self.programs.contains_key(&program_key) {
@@ -488,6 +528,10 @@ impl Renderer {
                 material_color: item.material.color,
                 material_opacity: item.material.opacity,
                 material_reflectivity: item.material.reflectivity,
+                material_shininess: item.material.shininess,
+                material_specular: item.material.specular,
+                material_emissive: item.material.emissive,
+                material_emissive_intensity: item.material.emissive_intensity,
                 viewport: Vector2::new(target.width as f64, target.height as f64),
                 ..camera_uniforms
             };
@@ -594,6 +638,7 @@ impl Renderer {
         ));
 
         let items = [Renderable {
+            fog: None,
             geometry: self.quad_geometry(),
             material,
             setup: SetupContext::default(),
@@ -828,6 +873,7 @@ impl Renderer {
         };
         let address = |w: Wrapping| match w {
             Wrapping::ClampToEdge => wgpu::AddressMode::ClampToEdge,
+            Wrapping::Repeat => wgpu::AddressMode::Repeat,
         };
 
         match source {
