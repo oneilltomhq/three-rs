@@ -1,85 +1,101 @@
 # three-rs — handoff
 
-Written 2026-09-12 from the throne session. Port Three.js core and
-WebGPURenderer to Rust on wgpu, verified by pixel-diffing Three's own
-examples. This is the plan that a claude.ai conversation of 2026-08-27
-("AI-powered drones in futuristic warfare games", which turned into a
-compositor design) called the single highest-leverage agent target, and
-that throne's requirements walk (item 16) names as the later, separate
-project throne is the playground for.
+Port enough of Three.js core + WebGPURenderer to Rust on wgpu that the
+examples in the ladder below render headless and pass Three's own e2e
+image comparison against Three's reference screenshots.
 
-## The claim being tested
+## Sources
 
-Three.js core is ~200k lines, dependency-free, with a clean object model,
-and it already has a WebGPU backend, so the mapping onto wgpu is near
-one-to-one. Validation needs no display: render Three's examples headless
-and diff against the reference PNGs. The axiom underneath: an agent loop
-can rewrite a codebase of this size in days if every step has a pixel
-check. The chat's own words: steps that validate headless are "exactly
-where agent loops shine".
+- `~/src/vendor/three.js` @ 3d010ef. Port from `src/`; `renderers/webgl*`
+  is out of scope. Addons (`examples/jsm/`) only as a rung needs them.
+- `~/src/vendor/wgpu` @ v30.0.0-223. Vulkan backend, Intel Iris Xe, Mesa.
 
-## Measured on this machine (2026-09-12)
+## The grader
 
-- `~/src/vendor/three.js` at 3d010ef (2026-08-31). `src/` is 752 files,
-  183,419 lines. Of that, `src/renderers/webgpu` + `src/renderers/common`
-  is 34,368 lines: the renderer half of the port. `src/renderers/webgl`
-  and `webgl-fallback` are out of scope.
-- 602 example pages in `examples/`. `test/e2e/` already has the harness:
-  puppeteer.js, deterministic-injection.js, image.js, and the reference
-  screenshots. That is the grader; reuse it rather than writing one.
-- `~/src/vendor/wgpu` at v30.0.0-223-gb82deac64 (2026-08-16), the same
-  vendored path 3os/glass builds against.
-- `~/src/vendor/smithay` at v0.7.0-428 (2026-07-30). Not needed for
-  three-rs itself; it is step 2 of the larger plan.
+`~/src/vendor/three.js/test/e2e/` — `puppeteer.js`, `image.js`,
+`deterministic-injection.js`, references in `examples/screenshots/*.jpg`.
+Facts the Rust harness must reproduce exactly:
 
-## Prior work to read, in order
+- Viewport 800×500 (400×250 at viewScale 2), screenshot downscaled ×½
+  with `image.js`'s `scale()` (box filter; port it or call it via node).
+- One frame. `performance.now`, `Date.now` return 0; RAF fires once.
+- `Math.random` is `x = sin(seed++) * 10000; x - floor(x)`, seed starts
+  at `PI/4`. Replicate bit-for-bit (f64) wherever an example uses it.
+- `window.TESTING = true` (a few examples branch on it).
+- Pass = pixelmatch threshold 0.1 AND fewer than 0.1% of pixels differ.
+  Use `image.js`'s `compare()` unchanged; do not write a new comparator
+  and do not loosen the tolerance.
 
-1. `~/src/projects/3os/glass/docs/FINDINGS.md` (2,128 lines). Measured
-   facts about three.js r182–r185 on wgpu→Vulkan, Intel Iris Xe, Mesa
-   25.3.6. Its headline: the dominant failure mode is silent wrong output,
-   not exceptions. Three separate spikes rendered correctly-looking wrong
-   results with zero errors thrown. Verify with identity assertions, not
-   counts. This applies directly to a pixel-diff harness.
-2. `~/src/projects/3os/glass/docs/BRIEF.md` and `DESIGN.md`. The vision
-   three-rs serves and the settled decisions (one wgpu Vulkan device,
-   zero GL in the process tree, `scripts/check-zero-gl.sh` as the gate).
-3. `~/src/projects/3os/glass/gpu` and `glass/renderer`: the existing Rust
-   crates that adopt wgpu textures into a Deno-hosted three.js. They are
-   the JS-side of the bridge this port removes.
-4. `~/src/projects/3os/PRIOR-ART.md`: who else has done which layer, and
-   the two gaps (process isolation, a typed verb surface) that shape what
-   the scene API has to look like from the outside.
-5. `~/src/projects/lib3` (TSL nodes, SDF text) and `~/src/projects/crush`
-   (Ghostty WASM terminal, ADR-001): the first real consumers. If their
-   materials and BatchedText cannot be expressed in three-rs, the port is
-   not done.
+## Rules that keep the green honest
 
-## The ordered plan from the 27 Aug chat
+- The example scene is ported from the example's JS, calling the three-rs
+  API. Only API the current rung needs gets added.
+- Nothing derived from the reference image may appear in the tree: no
+  reference bytes, no hard-coded pixels, no per-example colour fudges.
+- The renderer must go through the same route for every example: scene
+  graph → node materials → WGSL → wgpu. Hand-written WGSL is allowed as
+  scaffolding through rung 2 only; from rung 4 on, shaders come from the
+  ported node system. (Under WebGPURenderer every material, even
+  MeshBasicMaterial, is a NodeMaterial. There is no non-TSL path.)
+- Known trap on this stack: failures are silent wrong output, not
+  errors (`~/src/projects/3os/glass/docs/FINDINGS.md`). Trust the diff
+  image, not draw counts or "no panic".
+- A rung is done when the diff passes and the director has looked at
+  actual/expected/diff images.
 
-1. Port core + WebGPURenderer to wgpu; pixel-diff the examples. Headless.
-2. Wire Smithay dmabuf import: one textured quad per surface, with damage
-   and frame callbacks. "Where the humans earn their keep."
-3. Blitz + Stylo + Taffy + Parley + Vello rendering HTML/CSS to a wgpu
-   texture, for panels and HUD. Headless.
-4. Only then port GNOME Shell / Mutter behaviour, using them as the spec.
+## Rung 0 — calibrate the grader on this machine
 
-Only step 1 is this repo. Steps 2–4 belong to the compositor project that
-throne's walk deferred.
+Before any Rust: `cd ~/src/vendor/three.js && npm ci && npm run
+test-e2e-webgpu <ladder names>`. Any example that does not pass with
+Three itself on this GPU is dropped from the ladder. Keep the run log.
+(`node_modules` is not installed yet; expect a Chromium download.)
 
-## Things the chat left open, still open
+## The ladder
 
-- Godot as the scene layer versus Rust all the way. Both left live; this
-  repo is the Rust-all-the-way bet, and step 1 is cheap enough to settle it.
-- Servo or Chromium as a texture for real web pages: an escape hatch, not a
-  decision.
-- Interaction design. Not this repo's problem; that is throne.
+| # | example | forces into three-rs |
+|---|---|---|
+| 1 | webgpu_camera | scene graph, Perspective/OrthographicCamera, Group, Mesh, Points, LineSegments (CameraHelper), wireframe MeshBasicMaterial, viewport/scissor, clear colour |
+| 2 | webgpu_instance_mesh | InstancedMesh, per-instance matrix + colour, BufferGeometryLoader (JSON) |
+| 3 | webgpu_materials_basic | TextureLoader (PNG), CubeTexture, envMap reflection/refraction, scene.background |
+| 4 | webgpu_rtt | first real TSL: texture(), uniform(), colorNode; RenderTarget, QuadMesh |
+| 5 | webgpu_lights_phong | PointLight, MeshPhongNodeMaterial, normalMap node, specularNode, TeapotGeometry addon |
+| 6 | webgpu_morphtargets | morph attributes, AmbientLight |
+| 7 | webgpu_shadowmap | spot + directional shadow maps, Fog, ACES tone mapping, custom Fn() on shadow/colour |
+| 8 | webgpu_lights_physical or webgpu_materials | MeshStandard/Physical PBR — director reads both and picks |
+| 9 | webgpu_postprocessing | RenderPipeline, pass(), DotScreen/RGBShift display nodes |
+| 10 | webgpu_skinning | GLTFLoader addon, SkinnedMesh, AnimationMixer at t=0 |
+| 11 | webgpu_mesh_batch | BatchedMesh (what crush's BatchedText sits on) |
+| 12 | webgpu_compute_points | compute via TSL, storage buffers |
+| 13 | webgpu_tsl_galaxy | pure-TSL material, SpriteNodeMaterial (the lib3 shape) |
 
-## First moves
+None are in the e2e exception list. Rungs 1–7 need nothing outside `src/`
+except TeapotGeometry. Order is a default, not a contract: the director
+reorders when a rung's gap list says so.
 
-- Decide the unit of porting: per file, per subsystem (math, core, objects,
-  materials, nodes/TSL, renderer backend), or per example (make
-  `webgpu_cubes` pass, then the next). Per example gives a pixel check at
-  every step and is the shape the axiom needs.
-- Walk that decision and the crate layout with the approval-walk skill
-  before writing code. CLAUDE.md here is copied from throne's walked one
-  with the name changed; it has not been walked for this repo.
+## Orchestration
+
+- Director: the session model, holding this file, the ladder, and the
+  judgement calls (is the green real, what is the next rung, when to
+  reorder, when hand-written scaffolding has to be replaced).
+- Workers: Opus, one per rung. A worker gets: the example's HTML, the
+  current crate, the harness, and "make this rung pass". It reports:
+  pass/fail with the diff %, the API it added, and the gaps it found.
+- Rungs are sequential (one crate grows). Fan out only inside a rung
+  when a worker's gap list has independent items (e.g. PNG decode and
+  SphereGeometry): 2–3 Opus workers at once, never more than 6.
+- Three's unit tests (`test/unit`, QUnit) are a cheap side gate for
+  math/core; port them opportunistically, never instead of a rung.
+
+## Layout (suggested, walk it if it fights you)
+
+One crate `three-rs`. `examples/<name>.rs` is the ported example scene,
+one per rung. `tests/e2e/` renders each to PNG, downscales, and compares
+against `~/src/vendor/three.js/examples/screenshots/<name>.jpg`, writing
+actual/expected/diff on failure. Repo workflow: CLAUDE.md.
+
+## Out of scope here
+
+Smithay/compositor work, HTML panels, GNOME behaviour, Godot-vs-Rust,
+interaction design. Those live in throne and the deferred compositor
+project. The lib3/crush "can their materials be expressed" check is a
+later round, after rung 13.
