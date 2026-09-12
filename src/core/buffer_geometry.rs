@@ -32,6 +32,73 @@ impl BufferAttribute {
         self.array[index * self.item_size + 2] as f64
     }
 
+    pub fn get_w(&self, index: usize) -> f64 {
+        self.array[index * self.item_size + 3] as f64
+    }
+
+    /// `BufferAttribute.setX/setY/setZ/setW()`.
+    pub fn set_x(&mut self, index: usize, x: f64) -> &mut Self {
+        self.array[index * self.item_size] = x as f32;
+        self
+    }
+
+    pub fn set_y(&mut self, index: usize, y: f64) -> &mut Self {
+        self.array[index * self.item_size + 1] = y as f32;
+        self
+    }
+
+    pub fn set_z(&mut self, index: usize, z: f64) -> &mut Self {
+        self.array[index * self.item_size + 2] = z as f32;
+        self
+    }
+
+    pub fn set_w(&mut self, index: usize, w: f64) -> &mut Self {
+        self.array[index * self.item_size + 3] = w as f32;
+        self
+    }
+
+    /// `BufferAttribute.setXY()`.
+    pub fn set_xy(&mut self, index: usize, x: f64, y: f64) -> &mut Self {
+        let offset = index * self.item_size;
+        self.array[offset] = x as f32;
+        self.array[offset + 1] = y as f32;
+        self
+    }
+
+    /// `BufferAttribute.setXYZW()`.
+    pub fn set_xyzw(&mut self, index: usize, x: f64, y: f64, z: f64, w: f64) -> &mut Self {
+        let offset = index * self.item_size;
+        self.array[offset] = x as f32;
+        self.array[offset + 1] = y as f32;
+        self.array[offset + 2] = z as f32;
+        self.array[offset + 3] = w as f32;
+        self
+    }
+
+    /// `BufferAttribute.copyAt()` — copies one item from `attribute`.
+    pub fn copy_at(&mut self, index1: usize, attribute: &Self, index2: usize) -> &mut Self {
+        let index1 = index1 * self.item_size;
+        let index2 = index2 * attribute.item_size;
+
+        for i in 0..self.item_size {
+            self.array[index1 + i] = attribute.array[index2 + i];
+        }
+
+        self
+    }
+
+    /// `BufferAttribute.copyArray()`.
+    pub fn copy_array(&mut self, array: &[f32]) -> &mut Self {
+        self.array.copy_from_slice(array);
+        self
+    }
+
+    /// `BufferAttribute.set( value, offset )`.
+    pub fn set(&mut self, value: &[f32], offset: usize) -> &mut Self {
+        self.array[offset..offset + value.len()].copy_from_slice(value);
+        self
+    }
+
     /// `BufferAttribute.setXYZ()` — narrows to `f32` on the way in, which is
     /// where three.js loses precision too.
     pub fn set_xyz(&mut self, index: usize, x: f64, y: f64, z: f64) {
@@ -63,6 +130,31 @@ impl BufferAttribute {
             self.set_xyz(i, v.x, v.y, v.z);
         }
     }
+}
+
+/// `Box3`, as far as `BufferGeometry.computeBoundingBox()` needs it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BoundingBox {
+    pub min: Vector3,
+    pub max: Vector3,
+}
+
+impl BoundingBox {
+    /// `Box3.getCenter()`.
+    pub fn center(&self) -> Vector3 {
+        Vector3::new(
+            (self.min.x + self.max.x) * 0.5,
+            (self.min.y + self.max.y) * 0.5,
+            (self.min.z + self.max.z) * 0.5,
+        )
+    }
+}
+
+/// `Sphere`, as far as `BufferGeometry.computeBoundingSphere()` needs it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BoundingSphere {
+    pub center: Vector3,
+    pub radius: f64,
 }
 
 #[derive(Clone, Debug)]
@@ -117,9 +209,17 @@ impl BufferGeometry {
     /// `Box3.setFromBufferAttribute( position ).getCenter()` — the only part of
     /// the bounding sphere the render-list sort reads.
     pub fn bounding_sphere_center(&self) -> Vector3 {
-        let Some(position) = &self.position else {
-            return Vector3::ZERO;
-        };
+        match self.compute_bounding_box() {
+            Some(box3) => box3.center(),
+            None => Vector3::ZERO,
+        }
+    }
+
+    /// `BufferGeometry.computeBoundingBox()` — `Box3.setFromBufferAttribute(
+    /// position )`. `None` when there is no position attribute (three.js leaves
+    /// `boundingBox` alone in that case).
+    pub fn compute_bounding_box(&self) -> Option<BoundingBox> {
+        let position = self.position.as_ref()?;
 
         let mut min = Vector3::new(f64::INFINITY, f64::INFINITY, f64::INFINITY);
         let mut max = Vector3::new(f64::NEG_INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
@@ -134,12 +234,27 @@ impl BufferGeometry {
             max.z = max.z.max(v.z);
         }
 
-        // `Box3.getCenter()`
-        Vector3::new(
-            (min.x + max.x) * 0.5,
-            (min.y + max.y) * 0.5,
-            (min.z + max.z) * 0.5,
-        )
+        Some(BoundingBox { min, max })
+    }
+
+    /// `BufferGeometry.computeBoundingSphere()`: the bounding box's centre, then
+    /// the largest distance from it to any vertex (which beats the box's own
+    /// sphere by up to sqrt(3)).
+    pub fn compute_bounding_sphere(&self) -> Option<BoundingSphere> {
+        let position = self.position.as_ref()?;
+        let center = self.compute_bounding_box()?.center();
+
+        let mut max_radius_sq: f64 = 0.0;
+
+        for i in 0..position.count() {
+            let v = position.get_vector3(i);
+            max_radius_sq = max_radius_sq.max(center.distance_to_squared(&v));
+        }
+
+        Some(BoundingSphere {
+            center,
+            radius: max_radius_sq.sqrt(),
+        })
     }
 
     /// `BufferGeometry.computeVertexNormals()`.
@@ -178,8 +293,11 @@ impl BufferGeometry {
                 }
             };
 
+            // three.js writes `i < index.count()`, which in JS reads past the
+            // end of the typed array for a trailing partial triangle and stores
+            // NaN; in Rust that panics, so incomplete triangles are skipped.
             let mut i = 0;
-            while i < index.count() {
+            while i + 2 < index.count() {
                 let (v_a, v_b, v_c) = (get(i), get(i + 1), get(i + 2));
 
                 let p_a = position.get_vector3(v_a);
@@ -205,8 +323,10 @@ impl BufferGeometry {
                 i += 3;
             }
         } else {
+            // As above: a position count that is not a multiple of three
+            // leaves the trailing vertices' normals at zero rather than NaN.
             let mut i = 0;
-            while i < position.count() {
+            while i + 2 < position.count() {
                 let p_a = position.get_vector3(i);
                 let p_b = position.get_vector3(i + 1);
                 let p_c = position.get_vector3(i + 2);
