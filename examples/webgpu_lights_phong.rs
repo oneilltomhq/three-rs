@@ -132,7 +132,12 @@ pub fn init() -> App {
     right_object.object.position.x = 3.0;
 
     for object in [&mut left_object, &mut centre_object, &mut right_object] {
-        object.object.rotation.y = std::f64::consts::PI * -0.5;
+        // `object.rotation.y = …` in three.js runs `Euler.onChange`, which is
+        // `quaternion.setFromEuler( rotation, false )`; `set_rotation` is that
+        // pair, and the matrix is composed from the quaternion.
+        object
+            .object
+            .set_rotation(0.0, std::f64::consts::PI * -0.5, 0.0);
         object.object.position.y = -1.0;
     }
 

@@ -86,12 +86,12 @@ impl Default for MeshBasicNodeMaterial {
             color: Color::new(1.0, 1.0, 1.0),
             opacity: 1.0,
             // `MeshPhongMaterial`'s own defaults: specular 0x111111,
-            // shininess 30, emissive black, emissiveIntensity 1.
-            specular: Color::new(
-                0x11 as f64 / 255.0,
-                0x11 as f64 / 255.0,
-                0x11 as f64 / 255.0,
-            ),
+            // shininess 30, emissive black, emissiveIntensity 1. `new Color(
+            // 0x111111 )` is `setHex( hex, SRGBColorSpace )`, so the stored
+            // value is the *linear* 0.0056, not 17/255 — eleven times dimmer,
+            // and visible as a blown-out highlight on any Phong material that
+            // does not override `specularNode`.
+            specular: Color::from_hex(0x111111),
             shininess: 30.0,
             emissive: Color::new(0.0, 0.0, 0.0),
             emissive_intensity: 1.0,

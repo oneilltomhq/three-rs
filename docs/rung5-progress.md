@@ -1,44 +1,79 @@
-# rung 5 — `webgpu_lights_phong`, in progress
+# rung 5 — `webgpu_lights_phong`, done
 
-Status at handoff (session ended at its 40-minute hard stop): **Three's WGSL is
-dumped and read, and the leaf pieces are in; the builder does not yet generate a
-Phong shader.** e2e unchanged throughout — rungs 1–4 at 0 / 45 / 0 / 1 after
-every commit, no fifth test registered yet, every commit compiles.
+**Status: passing.** `webgpu_lights_phong` differs in 4 of 100000 pixels
+(0.004%, limit 0.1%); rungs 1–4 are unchanged at 0 / 45 / 0 / 1. The generated
+WGSL is structurally identical to the dumps — same bindings, same uniform
+layout, same expression order — modulo the cosmetic set listed in
+`docs/nodes.md` §8.
 
-### Done (10 commits on `rung5`)
+This note keeps the reading of Three's dumps (§§1–7 below) because the next
+lighting rungs (6, 7, 8) build on it. Two of its warnings turned out to be
+wrong; both are corrected in place.
 
-| commit | what |
+### What rung 5 added
+
+| area | what |
 |---|---|
-| `bef60b4` | this note: the dumps, read |
-| `92c3e23` | `src/lights/{light,point_light}.rs` — `Light`, `PointLight` (colour, intensity, distance, decay, `power` ⇄ `intensity * 4π`, own children) |
-| `239c9d3` | `Scene.lights` + `Scene::drawables()` (scene children then each light's children, world matrices composed through the light); the renderer's two walks index `drawables()` instead of `scene.children` — the nested-children fold `docs/scene-graph.md` deferred |
-| `aa17b2f` | TSL: `floor`, `sign`, `exp2`, `length`, `smoothstep`, `dpdx`, `dpdy`, `tsl_mod_float` (a `Code` helper, as the dump shows), `checker()`, `fog()` / `range_fog_factor()` as a `FogNode` pair on `Scene.fog_node` |
-| `b98ac83` | `MaterialKind` (`Basic` \| `Phong`) on the one `NodeMaterial` struct, the four Phong uniforms (`specular` 0x111111, `shininess` 30, `emissive`, `emissive_intensity`), `lights`, `lights_node`, `specular_node`, `normal_node`, and `NodeMaterial::phong( color )` |
-| `c9f259d` | `src/materials/phong.rs` — `BRDF_Lambert`, `F_Schlick`, `D_BlinnPhong`, `BRDF_BlinnPhong`, `getDistanceAttenuation`, `PhongLightingModel::direct()` for a point light, as node graphs shaped to emit the dumped WGSL; `Shininess` / `SpecularColor` / `EmissiveColor` / `irradiance` properties |
+| lights | `src/lights/{light,point_light}.rs`, `Scene.lights` + `Scene::drawables()` (a light's children are drawn, its world matrix composed through it) |
+| node system | `Node::If`/`Select` lowering for `getDistanceAttenuation`, `LightsNode` (render-group per-light uniforms, selective `lights([…])` from `material.lights_node`), sub-build layers (`docs/nodes.md` §7) |
+| materials | `MaterialKind::Phong` on the one `NodeMaterial` struct, `src/materials/phong.rs` (`BRDF_Lambert`, `F_Schlick`, `D_BlinnPhong`, `BRDF_BlinnPhong`, `PhongLightingModel`), `specularNode`, `normalNode`, `lights = false` |
+| TSL | `floor`, `sign`, `exp2`, `length`, `smoothstep`, `dpdx`, `dpdy`, `tsl_mod_float`, `checker()`, `fog()` / `range_fog_factor()`, `normal_map()`, `tangent_view()` / `bitangent_view()` / `tbn_view_matrix()` |
+| textures | `Wrapping::Repeat` → `wgpu::AddressMode::Repeat`, `Texture::set_wrapping()` |
+| geometry | `teapot_geometry` re-exported from the crate root |
+| example | `examples/webgpu_lights_phong.rs` + the fifth `tests/e2e/main.rs` entry |
 
-### Next, in order
+### The two bugs the pixels found
 
-1. **An `If` node.** `getDistanceAttenuation` is an `if ( cutoffDistance > 0.0 )`
-   over a shared temp in the dump, and the port has no `Node::If` (docs/nodes.md
-   §1 lists one, but rung 4 never needed it). `phong::distance_attenuation_*`
-   currently hands the caller the two branches separately. This is the one new
-   *node-system* primitive rung 5 still needs.
-2. **`LightsNode`**: the per-light uniforms in the render group with §2's member
-   order (triples first, positions appended), new `UniformSource` variants
-   (`LightColorIntensity(i)`, `LightCutoffDistance(i)`, `LightDecay(i)`,
-   `LightViewPosition(i)`) written by `Renderer::render()` at `Render` update
-   rate, the lights list reaching `NodeBuilder` through `SetupContext`, and the
-   selective `lights([...])` subset from `material.lights_node`.
-3. **`setup_lighting` / `setup_lighting_model` in `node_material.rs`**: the
-   Phong prologue (§4), the per-light `direct()` calls, the fixed tail, and the
-   `lights = false` path (§1).
-4. **Fog in `setup_output`** (§5) — `SetupContext` has to carry
-   `Scene.fog_node`, which makes it non-`Copy`.
-5. **`normalMap`** (§7) — the derivative TBN, needing `dpdx`/`dpdy` (in) plus
-   `tangentView`/`bitangentView`/`TBNViewMatrix` properties and `normalView`
-   becoming assignable.
-6. **Repeat wrapping** on both textures (rung 4 shipped ClampToEdge only).
-7. `examples/webgpu_lights_phong.rs` + the fifth `tests/e2e/main.rs` entry.
+Both were invisible to the WGSL diff, because neither is in the shader text.
+
+1. **`object.rotation.y = …` needs `set_rotation()`.** The first e2e run was
+   2.41% different: every teapot drew side-on with its spout and handle in
+   silhouette. Writing `Object3D.rotation` directly leaves `quaternion`
+   untouched, and the world matrix is composed from the quaternion — three.js
+   syncs them in `Euler.onChange`. `set_rotation( x, y, z )` is that pair.
+   Fixing it took the diff to 0.175%.
+
+2. **`MeshPhongMaterial.specular` default was not colour-space converted.**
+   The remaining 0.175% was 168 pixels in one place: the specular hotspot of
+   the *centre* teapot, the only one that does not override `specularNode`.
+   `Default for MeshBasicNodeMaterial` hard-coded `Color::new( 0x11 / 255, … )`
+   = 0.0667, but `new THREE.Color( 0x111111 )` is `setHex( hex, SRGBColorSpace
+   )`, i.e. the linear 0.0056 — **11.9× dimmer**. `Color::from_hex( 0x111111 )`
+   took the diff to 0.004%.
+
+   The shape of this failure is worth keeping: a specular term is `pow( dotNH,
+   80 )`, so an error confined to the specular colour shows up only where the
+   highlight is, as a small very-bright cluster, and everything else in the
+   frame stays under the comparator threshold. Per-region mean distance was
+   left 0.63 / centre 2.76 / right 0.37 — the region that is wrong is the
+   region whose mean moves, and the two teapots with a `specularNode` were
+   the control group that ruled out geometry, normals, UVs and the lighting
+   model in one step.
+
+### Ruled out along the way
+
+* **JPEG decode.** zune-jpeg vs libjpeg-turbo on `Water_1_M_Normal.jpg`: 3316
+  of 786432 channels differ, max 3, mean 0.005. Far too small to move a
+  highlight; the rung-4 note about the decode residue perturbing a *normal* map
+  is real but immaterial here.
+* **Mipmaps.** `src/renderer/shaders/mipmap.wgsl` is byte-for-byte the dumped
+  `00_mipmap.wgsl` shader, and the dump confirms Three takes the same
+  `2d-array` fallback path for a plain 2D texture.
+* **Colour space of the maps.** Neither texture sets `colorSpace`, so both stay
+  `NoColorSpace`; `TextureLoader` already matches.
+
+### Still open
+
+* The cosmetic WGSL deltas in `docs/nodes.md` §8 (temp hoisting, var/varying/
+  uniform numbering, the `VERTEX_` sub-build prefix, uniform member order).
+  Two of Three's choices there are still unexplained: why `dot( normalView,
+  lightDirection )` is given a var when its usage count looks like 1, and why
+  `bitangentViewFrame = ( a * b )` skips the `vec3<f32>()` widening that
+  `tangentViewFrame` gets.
+* `Scene.children` is still flat (`Child`), with lights' children spliced in by
+  `drawables()`. `docs/scene-graph.md`'s deferred fold into a real tree is
+  still deferred; rung 8 (bulb as a child of the light, plus nesting) is where
+  it will stop paying.
 
 ## Where the dumps are and how to get them again
 
@@ -78,16 +113,17 @@ Five programs (vertex+fragment pairs) plus the mipmap module:
 | 14/15 | `outputColorTransform` — unchanged from rung 4 |
 | 00 | `mipmap` — unchanged (raw WGSL in Three too) |
 
-### 1. Only ONE sphere program is created, and its colour is white
+### 1. Only ONE sphere program is created — ~~and its colour is white~~
 
-`DiffuseColor = vec4<f32>( vec3<f32>( 1.0, 1.0, 1.0 ), 1.0 );` — a baked
-constant, and the module is created once even though the four sphere materials
-have `colorNode = color( 0x0040ff / 0xffffff / 0x80ff80 / 0xffaa00 )`. So the
-program cache key does not separate `ConstNode`s by value and **all four light
-spheres draw white** in the graded frame. Verify against the reference
-screenshot before reproducing it — but reproduce it if it holds, it is Three's
-own behaviour at this commit, not a fudge. (Check `ConstNode`/`InputNode`
-`getCacheKey`/`getHash` in the vendor tree for the mechanism.)
+**Corrected.** The dump has one sphere module,
+`DiffuseColor = vec4<f32>( vec3<f32>( 1.0, 1.0, 1.0 ), 1.0 );`, which reads
+like a program-cache collision that would make all four light spheres draw
+white. It is not. At `lightTime = 0` only light2 — the white one — is inside
+the frustum: light1 projects to ndc y ≈ 2.14 and lights 3 and 4 (which
+coincide) to ndc y ≈ 1.225, all off-screen even allowing for the sphere's
+~0.03–0.05 ndc radius. Three creates one sphere program because it draws one
+sphere. Per-sphere colours stay correct, and the reference screenshot shows the
+single white dot above the right-hand teapot.
 
 ### 2. Light uniforms live in the **render** group (group 0)
 
@@ -221,39 +257,20 @@ normalView = normalize( NORMAL_TBNViewMatrix * ( texel * vec4(2.0) - vec4(1.0) )
 
 `normalMap()` with no explicit scale: no `mix`/scale term appears.
 
-## What remains (suggested order)
+## Traps that turned out to matter
 
-1. **Lights.** `src/lights/{light.rs, point_light.rs}` (Object3D + colour,
-   intensity, distance, decay, `power` getter/setter = `intensity * 4π`).
-   The renderer must collect lights while walking the scene (they are
-   `scene.add( light )` with the sphere mesh as a **child of the light** — the
-   first rung that needs the renderer to walk nested children, which
-   docs/scene-graph.md flags as deferred: fold `Child` into the tree here).
-2. **`LightsNode`** in the node builder: per-light uniforms in the render group
-   with the member order of §2, the `direct()` call per light, and the
-   `lights([...])` selective form (a material-level override of the scene list).
-3. **`MeshPhongNodeMaterial`** + `PhongLightingModel` (`direct`/`indirect` per
-   §4), `shininess`/`specular`/`emissive` uniforms, `specularNode`,
-   `normalNode`, and `lights = false` (§1's sphere program).
-4. **Fog** (§5) on `Scene` — `fog()` / `rangeFogFactor()` TSL, applied in
-   `setup_output` of every material.
-5. **TSL additions:** `checker`, `mix` on colours (exists), `smoothstep`,
-   `dpdx`/`dpdy`, `cross` (exists), `pow`, `exp2`, `clamp`, `length`,
-   `normal_map()`, `position_view()`, `position_view_direction()`,
-   `normal_view()`, `transformed_normal_view`.
-6. `examples/webgpu_lights_phong.rs` + register in `tests/e2e/main.rs`
-   (fifth entry, mirroring the HTML: camera 50° / 0.01 / 100, z = 7;
-   SphereGeometry(0.1, 16, 8); TeapotGeometry(0.8, 18); teapots at x = -3/0/3,
-   y = -1, `rotation.y = -π/2`; `antialias: true`).
-7. Textures: `textures/water/Water_1_M_Normal.jpg` and
-   `textures/roughness_map.jpg`, both `RepeatWrapping` — **repeat wrapping is
-   new** (rung 4 noted ClampToEdge only).
-
-## Traps noted
-
-- `antialias: true` here; check what sample count rungs 1–4 used and that the
-  internal rgba16float MSAA target path (rung 2's finding) is the same.
-- The JPEG-decode residue from rung 4 (≤3/channel vs libjpeg-turbo) now applies
-  to a *normal* map, where it perturbs shading rather than albedo. Watch it.
+- `antialias: true` here (4× MSAA), same internal path as rungs 1–4 — no change
+  needed.
+- The JPEG-decode residue from rung 4 now lands on a *normal* map. Measured on
+  `Water_1_M_Normal.jpg` it is 3 / 255 worst case and does not move the
+  highlight; see "Ruled out along the way" above.
 - Three's own run of this example scores `Diff 0.0%`, so the reference is a
-  faithful target on this machine.
+  faithful target on this machine — which is why a 2.4% diff was worth reading
+  as a bug rather than as tolerance.
+- The vendor tree moved from `3d010ef` to r186 (`148ef33`) during this rung.
+  `git diff 3d010ef..r186` touches `IndexNode`, `PassNode`, `BRDF_Sheen`, the
+  compute/subgroup/workgroup nodes, `EnvironmentNode`, `Packed4x8IntegerNode`,
+  `LoopNode`, `RTTNode`, `WebGPUBackend` and `WGSLNodeBuilder` (scoped-array
+  atomics, array/3D texture component prefix) — nothing this example uses, and
+  `examples/screenshots/webgpu_lights_phong.jpg` is unchanged. The dumps taken
+  at `3d010ef` are still valid.
