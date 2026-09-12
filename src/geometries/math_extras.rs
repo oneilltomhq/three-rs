@@ -67,3 +67,10 @@ impl Vector4 {
         self.x * v.x + self.y * v.y + self.z * v.z + self.w * v.w
     }
 }
+
+/// `Vector3.lerp()`.
+pub fn vector3_lerp(v: &mut crate::math::Vector3, target: &crate::math::Vector3, alpha: f64) {
+    v.x += (target.x - v.x) * alpha;
+    v.y += (target.y - v.y) * alpha;
+    v.z += (target.z - v.z) * alpha;
+}
