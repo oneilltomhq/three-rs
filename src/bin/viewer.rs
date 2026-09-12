@@ -145,11 +145,15 @@ impl Scene {
 
     /// The example's `animate()` with `Date.now()` running, and without the
     /// camera moves the page does (the orbit controls own the camera here).
-    fn animate(&mut self, time: f64) {
+    ///
+    /// `time` is the example's own clock (`Date.now() * 0.001`); `node_time` is
+    /// `NodeFrame.time`, which the window feeds from the same wall clock but
+    /// `--time` pins (see `PINNED_NODE_TIME`).
+    fn animate(&mut self, time: f64, node_time: f64) {
         match self {
             Scene::DepthTexture(app) => {
                 // Nothing in this scene moves; only the camera does.
-                app.renderer.set_time(time);
+                app.renderer.set_time(node_time);
                 app.renderer
                     .set_render_target(Some(app.render_target.clone()));
                 app.renderer.render(&mut app.scene, &mut app.camera);
@@ -158,7 +162,7 @@ impl Scene {
             }
             Scene::InstanceMesh(app) => {
                 // `const time = Date.now() * 0.001;`
-                app.renderer.set_time(time);
+                app.renderer.set_time(node_time);
                 // `const amount = … || 10;`
                 const AMOUNT: usize = 10;
 
@@ -202,7 +206,7 @@ impl Scene {
                 app.renderer.render(&mut app.scene, &mut app.camera);
             }
             Scene::MaterialsBasic(app) => {
-                app.renderer.set_time(time);
+                app.renderer.set_time(node_time);
                 // `const timer = 0.0001 * Date.now();`
                 let timer = 0.1 * time;
 
@@ -380,7 +384,8 @@ impl Viewer {
         }
 
         let t0 = Instant::now();
-        scene.animate(time);
+        // The window runs on the wall clock, so `NodeFrame.time` tracks it.
+        scene.animate(time, time);
         let t_animate = t0.elapsed();
         let t1 = Instant::now();
 
@@ -605,6 +610,37 @@ impl ApplicationHandler for Viewer {
 /// Renders `frames` frames headless and writes the canvas as a PNG, plus the
 /// result of `Renderer::present()` into an off-screen `bgra8unorm` texture so
 /// the blit the window uses is covered too.
+/// `NodeFrame.time` when the page's clock is pinned.
+///
+/// `NodeFrame.update()` (three.js/src/nodes/core/NodeFrame.js) does:
+///
+/// ```js
+/// if ( this.lastTime === undefined ) this.lastTime = performance.now();
+/// this.deltaTime = ( performance.now() - this.lastTime ) / 1000;
+/// this.lastTime = performance.now();
+/// this.time += this.deltaTime;
+/// ```
+///
+/// `time` starts at 0 and only ever accumulates deltas. On the first frame
+/// `lastTime` is set to `performance.now()` immediately before it is read, so
+/// `deltaTime` is 0 whatever `performance.now()` returns — and with the clock
+/// pinned every later frame has a 0 delta too. So a pinned `performance.now()`
+/// of `T * 1000` leaves `NodeFrame.time` at **0**, for any `T`, on every frame.
+/// This is also why the e2e harness' single frame sees `time === 0`.
+const PINNED_NODE_TIME: f64 = 0.0;
+
+/// Puts a brand-new `Renderer` under an already-built scene, which resets both
+/// `NodeFrame.time` and the deterministic `Math.random` the port draws from.
+fn fresh_renderer(scene: &mut Scene, which: Which, size: (u32, u32)) {
+    // The `RendererParameters` each example passes to `Renderer::new()`.
+    let antialias = match which {
+        Which::DepthTexture | Which::InstanceMesh => true,
+        Which::MaterialsBasic => false,
+    };
+    *scene.renderer() = Renderer::new(RendererParameters { antialias });
+    scene.set_size(size.0, size.1);
+}
+
 fn screenshot(
     which: Which,
     size: (u32, u32),
@@ -613,6 +649,9 @@ fn screenshot(
     orbit: (f64, f64),
     zoom: f64,
     pan: (f64, f64),
+    pinned: &[(String, f64)],
+    // `series` is `--times`: one file per time, named `<stem>_<t>.png`.
+    series: bool,
 ) {
     let mut scene = Scene::build(which, None);
     println!(
@@ -634,11 +673,46 @@ fn screenshot(
         controls.pan(pan.0, pan.1, scene.camera(), size.1 as f64);
     }
 
+    if !pinned.is_empty() {
+        // `--time` / `--times`: the page's clock stands still at T, which is
+        // `Date.now() === performance.now() === T * 1000`. The example's own
+        // `animate()` maths gets T; `NodeFrame.time` gets `PINNED_NODE_TIME`.
+        for (index, (label, time)) in pinned.iter().enumerate() {
+            if index > 0 {
+                // A fresh renderer per time: `range()`'s draws from the
+                // deterministic `Math.random` are consumed per render in this
+                // port, so a second render in the same renderer would see a
+                // different random sequence than three.js' first frame does.
+                fresh_renderer(&mut scene, which, size);
+            }
+
+            for _ in 0..frames.max(1) {
+                controls.apply(scene.camera());
+                scene.animate(*time, PINNED_NODE_TIME);
+            }
+
+            let (width, height, pixels) = scene.renderer().read_canvas_pixels();
+            let out = if !series {
+                path.to_string()
+            } else {
+                format!("{}_{label}.png", path.trim_end_matches(".png"))
+            };
+            three_rs::testing::write_png(&out, width, height, &pixels);
+            println!(
+                "wrote {out} ({width}x{height}) at pinned t={time}s (Date.now() = {}ms, NodeFrame.time = {PINNED_NODE_TIME})",
+                time * 1000.0
+            );
+        }
+
+        return;
+    }
+
     // Frame n is drawn at t = n / 60 s, so the animation is exercised without
     // depending on how fast this machine renders.
     for frame in 0..frames.max(1) {
+        let t = frame as f64 / 60.0;
         controls.apply(scene.camera());
-        scene.animate(frame as f64 / 60.0);
+        scene.animate(t, t);
     }
 
     let (width, height, pixels) = scene.renderer().read_canvas_pixels();
@@ -726,6 +800,9 @@ fn main() {
     let mut orbit = (0.0f64, 0.0f64);
     let mut zoom = 0.0f64;
     let mut pan = (0.0f64, 0.0f64);
+    // `--time` / `--times`: the label is kept as typed, for the file name.
+    let mut pinned: Vec<(String, f64)> = Vec::new();
+    let mut series = false;
 
     let mut i = 0;
     while i < args.len() {
@@ -739,6 +816,27 @@ fn main() {
                 orbit.0 = args[i].parse().expect("--orbit takes two numbers");
                 i += 1;
                 orbit.1 = args[i].parse().expect("--orbit takes two numbers");
+            }
+            "--time" => {
+                i += 1;
+                let label = args[i].clone();
+                let time = label.parse().expect("--time takes a number of seconds");
+                pinned = vec![(label, time)];
+                series = false;
+            }
+            "--times" => {
+                i += 1;
+                series = true;
+                pinned = args[i]
+                    .split(',')
+                    .map(|part| {
+                        let label = part.trim().to_string();
+                        let time = label
+                            .parse()
+                            .expect("--times takes a comma-separated list of seconds");
+                        (label, time)
+                    })
+                    .collect();
             }
             "--pan" => {
                 i += 1;
@@ -768,7 +866,8 @@ fn main() {
                     eprintln!(
                         "usage: viewer <webgpu_depth_texture|webgpu_instance_mesh|\
                          webgpu_materials_basic> [--screenshot out.png [--frames N]] \
-                         [--width W] [--height H] [--orbit DX DY] [--zoom STEPS]"
+                         [--width W] [--height H] [--orbit DX DY] [--zoom STEPS] \
+                         [--pan DX DY] [--time T | --times T1,T2,...]"
                     );
                     std::process::exit(2);
                 }
@@ -778,7 +877,7 @@ fn main() {
     }
 
     if let Some(path) = shot {
-        screenshot(which, size, frames, &path, orbit, zoom, pan);
+        screenshot(which, size, frames, &path, orbit, zoom, pan, &pinned, series);
         return;
     }
 
