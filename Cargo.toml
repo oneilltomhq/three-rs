@@ -1,0 +1,18 @@
+[package]
+name = "three-rs"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+wgpu = { path = "/home/tom/src/vendor/wgpu/wgpu", default-features = false, features = ["std", "vulkan", "wgsl"] }
+bytemuck = { version = "1", features = ["derive"] }
+pollster = "0.4"
+png = "0.17"
+
+[[example]]
+name = "webgpu_depth_texture"
+path = "examples/webgpu_depth_texture.rs"
+
+[[test]]
+name = "e2e"
+path = "tests/e2e/main.rs"
