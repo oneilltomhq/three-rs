@@ -2,6 +2,7 @@
 //! material is a `NodeMaterial`, so this is the only material path.
 
 mod node_material;
+pub mod phong;
 
 pub use node_material::{
     background_color_node, background_vertex_node, instanced_range, output_fragment_node,

@@ -843,6 +843,10 @@ prop!(indirect_specular, "indirectSpecular", Type::Vec3);
 prop!(total_specular, "totalSpecular", Type::Vec3);
 prop!(outgoing_light, "outgoingLight", Type::Vec3);
 prop!(ambient_occlusion, "ambientOcclusion", Type::F32);
+prop!(shininess, "Shininess", Type::F32);
+prop!(specular_color, "SpecularColor", Type::Vec3);
+prop!(emissive_color, "EmissiveColor", Type::Vec3);
+prop!(irradiance, "irradiance", Type::Vec3);
 
 // ---------------------------------------------------------------------------
 // textures
