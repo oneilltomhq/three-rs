@@ -7,8 +7,11 @@
 //! is modelled here as an **arena**:
 //!
 //! - The mixer owns `actions: Vec<Option<AnimationAction>>`. The slot index is a
-//!   stable [`ActionHandle`]; a removed action leaves a `None` hole behind, so
-//!   handles are never invalidated by unrelated removals.
+//!   stable [`ActionHandle`], valid for the life of the mixer. Uncaching an
+//!   action clears its `cache_index` (Three's `_cacheIndex = null`) but leaves
+//!   the action in its slot, exactly as Three leaves the JS object alive while
+//!   the caller still holds it — `play()` then rebinds it. The `Option` is there
+//!   so `update` can lift one action out while holding the pools `&mut`.
 //! - Three's `_actions` array — the `[ active | inactive ]` partition the
 //!   `_lendAction` / `_takeBackAction` swap maintains — is `action_order:
 //!   Vec<usize>` of handles plus `n_active_actions`. An action's
@@ -131,7 +134,10 @@ impl BindingPool {
             self.by_root_and_name.remove(&(root, track_name));
         }
 
-        self.slots[handle] = None;
+        // note: the `PropertyMixer` itself stays in its slot. Three drops its
+        // last *cache* reference here and lets the garbage collector decide; an
+        // action that still holds this binding keeps it alive, and
+        // `_bindAction` re-registers it (`if ( binding._cacheIndex === null )`).
     }
 
     /// `_lendBinding( binding )`.
