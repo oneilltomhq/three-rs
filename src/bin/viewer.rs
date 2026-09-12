@@ -321,6 +321,9 @@ struct Viewer {
 
     cursor: (f64, f64),
     dragging: Option<MouseButton>,
+
+    autoswitch: Option<f64>,
+    last_switch: Instant,
 }
 
 impl Viewer {
@@ -376,7 +379,10 @@ impl Viewer {
             controls.apply(scene.camera());
         }
 
+        let t0 = Instant::now();
         scene.animate(time);
+        let t_animate = t0.elapsed();
+        let t1 = Instant::now();
 
         if let Some(gpu) = &mut self.gpu {
             let surface_texture = match gpu.surface.get_current_texture() {
@@ -422,6 +428,15 @@ impl Viewer {
 
             gpu.window.pre_present_notify();
             scene.renderer().queue().present(surface_texture);
+        }
+
+        if std::env::var("VIEWER_TRACE").is_ok() {
+            eprintln!(
+                "frame {}: animate {:?} present {:?}",
+                self.frames,
+                t_animate,
+                t1.elapsed()
+            );
         }
 
         self.frames += 1;
@@ -562,6 +577,18 @@ impl ApplicationHandler for Viewer {
             }
 
             WindowEvent::RedrawRequested => {
+                // `VIEWER_AUTOSWITCH=<seconds>` cycles the examples on a timer,
+                // which is how the 1/2/3 path gets exercised from a script.
+                if let Some(period) = self.autoswitch {
+                    if self.last_switch.elapsed().as_secs_f64() >= period {
+                        self.last_switch = Instant::now();
+                        self.switch(match self.which {
+                            Which::DepthTexture => Which::InstanceMesh,
+                            Which::InstanceMesh => Which::MaterialsBasic,
+                            Which::MaterialsBasic => Which::DepthTexture,
+                        });
+                    }
+                }
                 self.redraw();
                 if let Some(gpu) = &self.gpu {
                     gpu.window.request_redraw();
@@ -578,7 +605,14 @@ impl ApplicationHandler for Viewer {
 /// Renders `frames` frames headless and writes the canvas as a PNG, plus the
 /// result of `Renderer::present()` into an off-screen `bgra8unorm` texture so
 /// the blit the window uses is covered too.
-fn screenshot(which: Which, size: (u32, u32), frames: u32, path: &str) {
+fn screenshot(
+    which: Which,
+    size: (u32, u32),
+    frames: u32,
+    path: &str,
+    orbit: (f64, f64),
+    zoom: f64,
+) {
     let mut scene = Scene::build(which, None);
     println!(
         "adapter: {:?}",
@@ -586,9 +620,16 @@ fn screenshot(which: Which, size: (u32, u32), frames: u32, path: &str) {
     );
     scene.set_size(size.0, size.1);
 
+    // The same controls the window drives, so `--orbit`/`--zoom` render exactly
+    // what a drag would put on screen.
+    let mut controls = OrbitControls::new(scene.camera(), Vector3::ZERO);
+    controls.rotate(orbit.0, orbit.1, size.1 as f64);
+    controls.dolly(zoom);
+
     // Frame n is drawn at t = n / 60 s, so the animation is exercised without
     // depending on how fast this machine renders.
     for frame in 0..frames.max(1) {
+        controls.apply(scene.camera());
         scene.animate(frame as f64 / 60.0);
     }
 
@@ -674,6 +715,8 @@ fn main() {
     let mut size = (800u32, 500u32);
     let mut frames = 1u32;
     let mut shot: Option<String> = None;
+    let mut orbit = (0.0f64, 0.0f64);
+    let mut zoom = 0.0f64;
 
     let mut i = 0;
     while i < args.len() {
@@ -681,6 +724,16 @@ fn main() {
             "--screenshot" => {
                 i += 1;
                 shot = Some(args[i].clone());
+            }
+            "--orbit" => {
+                i += 1;
+                orbit.0 = args[i].parse().expect("--orbit takes two numbers");
+                i += 1;
+                orbit.1 = args[i].parse().expect("--orbit takes two numbers");
+            }
+            "--zoom" => {
+                i += 1;
+                zoom = args[i].parse().expect("--zoom takes a number");
             }
             "--frames" => {
                 i += 1;
@@ -700,7 +753,7 @@ fn main() {
                     eprintln!(
                         "usage: viewer <webgpu_depth_texture|webgpu_instance_mesh|\
                          webgpu_materials_basic> [--screenshot out.png [--frames N]] \
-                         [--width W] [--height H]"
+                         [--width W] [--height H] [--orbit DX DY] [--zoom STEPS]"
                     );
                     std::process::exit(2);
                 }
@@ -710,7 +763,7 @@ fn main() {
     }
 
     if let Some(path) = shot {
-        screenshot(which, size, frames, &path);
+        screenshot(which, size, frames, &path, orbit, zoom);
         return;
     }
 
@@ -730,6 +783,10 @@ fn main() {
         last_report: now,
         cursor: (0.0, 0.0),
         dragging: None,
+        autoswitch: std::env::var("VIEWER_AUTOSWITCH")
+            .ok()
+            .and_then(|v| v.parse().ok()),
+        last_switch: now,
     };
 
     event_loop
