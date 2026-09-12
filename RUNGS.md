@@ -26,3 +26,7 @@ After the merges `port` is at the animation merge commit: 635 tests + 4 e2e (0 /
 ## Scout plans (handoff/scouts/rungN/PLAN.md, with Three's dumped WGSL and the reference image)
 
 Rungs 6, 7, 8, 9 scouted 2026-09-12 23:20–23:31. Picks made: rung 8 = webgpu_lights_physical, rung 9 = webgpu_postprocessing_masking (see HANDOFF ladder). Common thread: rungs 6, 7 and 8 all nest objects (camera→light, Group→light, light→bulb); rung 5's Scene::drawables() covers light children only, so the first of these to land should make the renderer walk the real Node tree.
+
+## Next session, before rung 6
+
+Re-pin the vendor three.js from 3d010ef to the r186 tag (fetched 2026-09-12 23:30, not yet checked out; the pull aborted on the grader patch, which is intended). Steps: checkout r186, `git apply handoff/rung0/grader-flags.patch`, re-run rung 0 calibration (references may have changed upstream), re-run rungs 1–5, re-dump the scout WGSL with the recipes in scouts/rungN/PLAN.md, and update the commit in HANDOFF.md. d33 pins the same commit and moves with it.
