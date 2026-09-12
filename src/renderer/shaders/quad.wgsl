@@ -9,10 +9,10 @@
 //
 // Fragment: sampling a depth texture yields one f32 (`TextureNode` uses the
 // snippet type `float` when `texture.isDepthTexture`), `vec4( colorNode )`
-// splats it, the opaque path forces alpha to 1, and because this pass targets
-// the canvas `DirectRenderPipeline` wraps the result in
-// `renderOutput( output, NoToneMapping, SRGBColorSpace )` — i.e. just the sRGB
-// transfer function, applied to rgb only.
+// splats it, and the opaque path forces alpha to 1. The result stays in the
+// working (linear) colour space: this pass renders into the renderer's internal
+// framebuffer target, and `output_color_transform.wgsl` does the sRGB
+// conversion afterwards.
 //
 // `builder.isFlipY()` is false for WGSL, so the flipY uniform that
 // `TextureNode.setupUV()` would otherwise insert for a depth texture never
@@ -40,15 +40,6 @@ fn main_vertex( @builtin(vertex_index) vertexIndex : u32 ) -> VertexOutput {
 
 }
 
-// `sRGBTransferOETF` from src/nodes/display/ColorSpaceFunctions.js, constants included.
-fn sRGBTransferOETF( color : vec3<f32> ) -> vec3<f32> {
-
-	let a = pow( color, vec3<f32>( 0.41666 ) ) * 1.055 - 0.055;
-	let b = color * 12.92;
-	return select( a, b, color <= vec3<f32>( 0.0031308 ) );
-
-}
-
 @fragment
 fn main_fragment( input : VertexOutput ) -> @location(0) vec4<f32> {
 
@@ -57,6 +48,6 @@ fn main_fragment( input : VertexOutput ) -> @location(0) vec4<f32> {
 	let diffuseColor = vec4<f32>( vec3<f32>( depth ), 1.0 );
 	let outputNode = max( diffuseColor, vec4<f32>( 0.0 ) );
 
-	return vec4<f32>( sRGBTransferOETF( outputNode.rgb ), outputNode.a );
+	return outputNode;
 
 }

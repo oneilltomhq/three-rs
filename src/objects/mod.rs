@@ -1,10 +1,11 @@
-//! Ports of `three.js/src/objects` (plus `Scene` and the renderer's `QuadMesh`,
-//! kept here because rung 1 has only these three object types).
+//! Ports of `three.js/src/objects` (plus `Scene` and the renderer's `QuadMesh`).
 
+mod instanced_mesh;
 mod mesh;
 mod quad_mesh;
 mod scene;
 
+pub use instanced_mesh::{InstancedBufferAttribute, InstancedMesh};
 pub use mesh::Mesh;
 pub use quad_mesh::QuadMesh;
-pub use scene::Scene;
+pub use scene::{Child, Scene};

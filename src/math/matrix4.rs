@@ -44,6 +44,17 @@ impl Matrix4 {
         out
     }
 
+    /// `Matrix4.makeScale()`.
+    pub fn make_scale(&mut self, x: f64, y: f64, z: f64) -> &mut Self {
+        self.elements = [
+            x, 0.0, 0.0, 0.0, //
+            0.0, y, 0.0, 0.0, //
+            0.0, 0.0, z, 0.0, //
+            0.0, 0.0, 0.0, 1.0,
+        ];
+        self
+    }
+
     /// `Matrix4.compose()`.
     pub fn compose(&mut self, position: &Vector3, quaternion: &Quaternion, scale: &Vector3) -> &mut Self {
         let te = &mut self.elements;

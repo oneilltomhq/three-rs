@@ -9,14 +9,15 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use pipelines::{create_pipeline, Layouts, PipelineKey, Shaders};
-pub use render_target::{RenderTarget, RenderTargetInner};
+pub use render_target::{RenderTarget, RenderTargetInner, RenderTargetOptions};
 
 use crate::cameras::PerspectiveCamera;
 use crate::core::{BufferGeometry, Index};
-use crate::materials::{ColorNode, ShaderKey};
-use crate::math::Color;
+use crate::materials::{ColorNode, MeshBasicNodeMaterial, ShaderKey};
+use crate::math::{Color, Matrix3};
 use crate::objects::{QuadMesh, Scene};
-use crate::textures::{DepthTexture, TextureFilter};
+use crate::testing::DeterministicRandom;
+use crate::textures::{DepthTexture, TextureFilter, TextureType};
 
 /// Uniform buffer stride for the per-object block. The WebGPU minimum dynamic
 /// offset alignment is 256 bytes.
@@ -25,6 +26,7 @@ const MAX_OBJECTS: u64 = 1024;
 
 struct GeometryGpu {
     position: wgpu::Buffer,
+    normal: Option<wgpu::Buffer>,
     index: wgpu::Buffer,
     index_format: wgpu::IndexFormat,
     index_count: u32,
@@ -39,6 +41,10 @@ struct CanvasTarget {
     sample_count: u32,
     color: wgpu::Texture,
     msaa: Option<wgpu::Texture>,
+    /// `Renderer.depth` is `true` by default, so a canvas pass gets a depth
+    /// buffer; `WebGPUUtils.getCurrentDepthStencilFormat()` picks `depth24plus`
+    /// when `stencil` and `reversedDepthBuffer` are both off.
+    depth: Option<wgpu::Texture>,
 }
 
 pub struct Renderer {
@@ -57,6 +63,14 @@ pub struct Renderer {
 
     canvas: Option<CanvasTarget>,
     render_target: Option<RenderTarget>,
+    /// `Renderer._frameBufferTargets`: the internal render target the scene is
+    /// drawn into whenever the output needs a colour-space conversion or tone
+    /// mapping, keyed in three.js by the canvas target — the port has exactly
+    /// one canvas, so one entry.
+    frame_buffer_target: Option<RenderTarget>,
+
+    /// `Renderer._outputBufferType`, `HalfFloatType` by default.
+    output_buffer_type: TextureType,
 
     shaders: Shaders,
     layouts: Layouts,
@@ -65,7 +79,18 @@ pub struct Renderer {
 
     camera_buffer: wgpu::Buffer,
     object_buffer: wgpu::Buffer,
+    frame_buffer: wgpu::Buffer,
     basic_bind_group: wgpu::BindGroup,
+
+    /// `NodeFrame.time`. `performance.now()` is pinned to 0 by the harness, so
+    /// every frame's delta is 0 and this stays 0.
+    time: f64,
+
+    /// The page's `Math.random`, as the harness replaces it. `RangeNode.setup()`
+    /// draws from it while the material is being built — the only consumer in
+    /// `three.webgpu.js` (`MathUtils.generateUUID` uses the pattern the
+    /// harness rewrites to the unseeded `Math._random`).
+    random: DeterministicRandom,
 }
 
 /// `new WebGPURenderer( parameters )`.
@@ -99,7 +124,9 @@ impl Renderer {
 
         let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("three-rs camera uniforms"),
-            size: 128,
+            // `renderStruct`: cameraProjectionMatrix, cameraViewMatrix, then the
+            // viewport size the output pass divides `fragCoord` by.
+            size: 144,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -107,6 +134,13 @@ impl Renderer {
         let object_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("three-rs object uniforms"),
             size: OBJECT_STRIDE * MAX_OBJECTS,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let frame_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("three-rs frame uniforms"),
+            size: 16,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -141,13 +175,18 @@ impl Renderer {
             clear_color: [0.0, 0.0, 0.0, 1.0],
             canvas: None,
             render_target: None,
+            frame_buffer_target: None,
+            output_buffer_type: TextureType::HalfFloat,
             shaders,
             layouts,
             pipelines: HashMap::new(),
             geometries: HashMap::new(),
             camera_buffer,
             object_buffer,
+            frame_buffer,
             basic_bind_group,
+            time: 0.0,
+            random: DeterministicRandom::new(),
         }
     }
 
@@ -185,47 +224,45 @@ impl Renderer {
         camera.update_matrix_world();
 
         self.write_camera_uniforms(camera);
+        self.write_frame_uniforms();
 
-        // Per-object uniforms: one 256-byte slot each.
+        // Per-object uniforms: one 256-byte slot each, holding
+        // `modelWorldMatrix` then `modelNormalMatrix`.
         let mut object_data = vec![0u8; (OBJECT_STRIDE as usize) * scene.children.len().max(1)];
         for (i, child) in scene.children.iter().enumerate() {
-            let world = child.object.matrix_world.to_f32_array();
+            let matrix_world = child.object().matrix_world;
+            let world = matrix_world.to_f32_array();
+
+            let mut normal_matrix = Matrix3::identity();
+            normal_matrix.get_normal_matrix(&matrix_world);
+
             let offset = i * OBJECT_STRIDE as usize;
             object_data[offset..offset + 64].copy_from_slice(bytemuck::cast_slice(&world));
+            object_data[offset + 64..offset + 112]
+                .copy_from_slice(bytemuck::cast_slice(&normal_matrix.to_padded_f32_array()));
         }
         self.queue.write_buffer(&self.object_buffer, 0, &object_data);
 
-        let target = self.render_target.clone();
+        // `Renderer.render()`: with `needsFrameBufferTarget` the scene is drawn
+        // into the internal framebuffer target and `_renderOutput()` then blits
+        // it to the canvas through the output colour transform.
+        let use_frame_buffer_target =
+            self.needs_frame_buffer_target() && self.render_target.is_none();
+
+        let target = if use_frame_buffer_target {
+            Some(self.frame_buffer_target())
+        } else {
+            self.render_target.clone()
+        };
+
         let (color_view, depth_view, color_format, depth_format, sample_count, resolve) =
             match &target {
-                Some(render_target) => {
-                    self.prepare_render_target(render_target);
-                    let inner = render_target.inner().borrow();
-                    let color = inner.color.as_ref().unwrap().create_view(&Default::default());
-                    let depth = inner
-                        .depth_texture
-                        .as_ref()
-                        .map(|d| {
-                            d.inner()
-                                .borrow()
-                                .gpu
-                                .as_ref()
-                                .unwrap()
-                                .create_view(&Default::default())
-                        })
-                        .expect("three-rs: rung 1 render targets always carry a depth texture");
-                    let samples = inner.samples.max(1);
-                    (
-                        color,
-                        Some(depth),
-                        RenderTarget::COLOR_FORMAT,
-                        inner.depth_texture.as_ref().map(|d| d.gpu_format()),
-                        samples,
-                        None,
-                    )
-                }
+                Some(render_target) => self.render_target_views(render_target),
                 None => {
-                    self.prepare_canvas();
+                    // `renderer.depth === true`: the canvas pass carries a depth
+                    // buffer of its own.
+                    let samples = self.current_samples().max(1);
+                    self.prepare_canvas(true, samples);
                     let canvas = self.canvas.as_ref().unwrap();
                     let (view, resolve) = match &canvas.msaa {
                         Some(msaa) => (
@@ -234,11 +271,15 @@ impl Renderer {
                         ),
                         None => (canvas.color.create_view(&Default::default()), None),
                     };
+                    let depth = canvas
+                        .depth
+                        .as_ref()
+                        .map(|d| d.create_view(&Default::default()));
                     (
                         view,
-                        None,
+                        depth,
                         CANVAS_FORMAT,
-                        None,
+                        Some(CANVAS_DEPTH_FORMAT),
                         canvas.sample_count,
                         resolve,
                     )
@@ -252,24 +293,64 @@ impl Renderer {
             None => self.clear_color,
         };
 
-        let pipeline_key = PipelineKey {
-            shader: ShaderKey::Basic,
-            color_format,
-            depth_format,
-            sample_count,
-        };
-        self.ensure_pipeline(pipeline_key);
+        // Resolve every draw before the pass borrows `self` immutably: the
+        // material picks the shader, the geometry is uploaded, and an instanced
+        // child gets its instance-matrix buffer plus, for a `range()` colorNode,
+        // the per-instance random buffer that `RangeNode.setup()` builds.
+        struct Draw {
+            geometry_id: usize,
+            key: PipelineKey,
+            /// `None` means the shared `basic` bind group.
+            bind_group: Option<wgpu::BindGroup>,
+            instance_count: u32,
+        }
 
-        // Upload every geometry before the pass borrows `self` immutably.
-        let geometry_ids: Vec<usize> = scene
-            .children
-            .iter()
-            .map(|child| {
-                let id = Rc::as_ptr(&child.geometry) as usize;
-                self.ensure_geometry(id, &child.geometry);
-                id
-            })
-            .collect();
+        let mut draws = Vec::with_capacity(scene.children.len());
+
+        for child in scene.children.iter() {
+            let material: &MeshBasicNodeMaterial = scene
+                .override_material
+                .as_ref()
+                .or(child.mesh().material.as_ref())
+                .expect("three-rs: a mesh needs a material");
+
+            let geometry_id = Rc::as_ptr(&child.mesh().geometry) as usize;
+            self.ensure_geometry(geometry_id, &child.mesh().geometry);
+
+            let instance_count = child.count();
+
+            let key = PipelineKey {
+                shader: material.shader_key(),
+                color_format,
+                depth_format,
+                sample_count,
+                instance_count,
+            };
+            self.ensure_pipeline(key);
+
+            let bind_group = match &material.color_node {
+                None => None,
+                Some(ColorNode::NormalWorldRangeMix { min, max }) => {
+                    let instance_matrix = child
+                        .instance_matrix()
+                        .expect("three-rs: range() needs an InstancedMesh");
+                    Some(self.normal_world_range_mix_bind_group(
+                        &instance_matrix.array,
+                        instance_count,
+                        *min,
+                        *max,
+                    ))
+                }
+                Some(other) => panic!("three-rs: {other:?} is not drawable as a mesh material"),
+            };
+
+            draws.push(Draw {
+                geometry_id,
+                key,
+                bind_group,
+                instance_count,
+            });
+        }
 
         let mut encoder = self
             .device
@@ -310,23 +391,33 @@ impl Renderer {
                 multiview_mask: None,
             });
 
-            let pipeline = self.pipelines.get(&pipeline_key).unwrap();
-            pass.set_pipeline(pipeline);
+            for (i, draw) in draws.iter().enumerate() {
+                let geometry = &self.geometries[&draw.geometry_id];
 
-            for (i, id) in geometry_ids.iter().enumerate() {
-                let geometry = &self.geometries[id];
+                pass.set_pipeline(self.pipelines.get(&draw.key).unwrap());
                 pass.set_bind_group(
                     0,
-                    &self.basic_bind_group,
+                    draw.bind_group.as_ref().unwrap_or(&self.basic_bind_group),
                     &[(i as u64 * OBJECT_STRIDE) as u32],
                 );
                 pass.set_vertex_buffer(0, geometry.position.slice(..));
+                if draw.key.shader == ShaderKey::NormalWorldRangeMix {
+                    let normal = geometry
+                        .normal
+                        .as_ref()
+                        .expect("three-rs: this material needs a normal attribute");
+                    pass.set_vertex_buffer(1, normal.slice(..));
+                }
                 pass.set_index_buffer(geometry.index.slice(..), geometry.index_format);
-                pass.draw_indexed(0..geometry.index_count, 0, 0..1);
+                pass.draw_indexed(0..geometry.index_count, 0, 0..draw.instance_count);
             }
         }
 
         self.queue.submit(Some(encoder.finish()));
+
+        if use_frame_buffer_target {
+            self.render_output(target.as_ref().unwrap());
+        }
     }
 
     /// `QuadMesh.render( renderer )` — a single full-screen triangle into the
@@ -337,32 +428,44 @@ impl Renderer {
             "three-rs: rung 1 only renders the quad to the canvas"
         );
 
-        self.prepare_canvas();
-
         let depth_texture = match &quad.material.color_node {
             Some(ColorNode::DepthTexture(texture)) => texture.clone(),
-            None => panic!("three-rs: the quad material needs a colorNode"),
+            _ => panic!("three-rs: the quad material needs a texture() colorNode"),
         };
 
         let bind_group = self.depth_bind_group(&depth_texture);
 
-        let canvas = self.canvas.as_ref().unwrap();
-        let sample_count = canvas.sample_count;
-        let (view, resolve) = match &canvas.msaa {
-            Some(msaa) => (
-                msaa.create_view(&Default::default()),
-                Some(canvas.color.create_view(&Default::default())),
-            ),
-            None => (canvas.color.create_view(&Default::default()), None),
+        // Like any other render to the canvas, a `QuadMesh` goes through the
+        // internal framebuffer target and the output colour transform.
+        let use_frame_buffer_target = self.needs_frame_buffer_target();
+
+        let (target, view, color_format, sample_count, resolve) = if use_frame_buffer_target {
+            let target = self.frame_buffer_target();
+            let (view, _depth, color_format, _depth_format, sample_count, resolve) =
+                self.render_target_views(&target);
+            (Some(target), view, color_format, sample_count, resolve)
+        } else {
+            let samples = self.current_samples().max(1);
+            self.prepare_canvas(false, samples);
+            let canvas = self.canvas.as_ref().unwrap();
+            let (view, resolve) = match &canvas.msaa {
+                Some(msaa) => (
+                    msaa.create_view(&Default::default()),
+                    Some(canvas.color.create_view(&Default::default())),
+                ),
+                None => (canvas.color.create_view(&Default::default()), None),
+            };
+            (None, view, CANVAS_FORMAT, canvas.sample_count, resolve)
         };
 
         let key = PipelineKey {
             shader: ShaderKey::DepthTextureQuad,
-            color_format: CANVAS_FORMAT,
-            // No depth attachment: the canvas depth buffer is cleared to 1 and
-            // the quad sits at z = 0, so the depth test can never reject it.
+            color_format,
+            // No depth attachment: the quad covers the whole target and sits at
+            // z = 0, so the depth test can never reject it.
             depth_format: None,
             sample_count,
+            instance_count: 1,
         };
         self.ensure_pipeline(key);
 
@@ -403,12 +506,16 @@ impl Renderer {
         }
 
         self.queue.submit(Some(encoder.finish()));
+
+        if let Some(target) = &target {
+            self.render_output(target);
+        }
     }
 
     /// Reads the canvas colour texture back as top-down RGBA8, which is what
     /// `page.screenshot()` hands the comparator.
     pub fn read_canvas_pixels(&mut self) -> (u32, u32, Vec<u8>) {
-        self.prepare_canvas();
+        self.prepare_canvas(false, 1);
         let canvas = self.canvas.as_ref().unwrap();
         let (width, height) = (canvas.width, canvas.height);
 
@@ -482,9 +589,94 @@ impl Renderer {
             .write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&data));
     }
 
+    /// `viewportSize` — the `screenSize`/viewport uniform the output pass
+    /// divides `fragCoord.xy` by, living in the same render uniform block.
+    fn write_viewport_uniforms(&self, width: u32, height: u32) {
+        let data = [width as f32, height as f32];
+        self.queue
+            .write_buffer(&self.camera_buffer, 128, bytemuck::cast_slice(&data));
+    }
+
+    /// `time` — a `renderGroup` uniform fed from `NodeFrame.time`.
+    fn write_frame_uniforms(&self) {
+        let data = [self.time as f32, 0.0, 0.0, 0.0];
+        self.queue
+            .write_buffer(&self.frame_buffer, 0, bytemuck::cast_slice(&data));
+    }
+
+    /// Builds the bind group for `normal_world_range_mix.wgsl`, including the
+    /// `range()` buffer that `RangeNode.setup()` fills with
+    /// `MathUtils.lerp( min[ c ], max[ c ], Math.random() )` — stride 4, so four
+    /// draws per instance, component index `i % 4`.
+    fn normal_world_range_mix_bind_group(
+        &mut self,
+        instance_matrix: &[f32],
+        instance_count: u32,
+        min_color: Color,
+        max_color: Color,
+    ) -> wgpu::BindGroup {
+        // `min`/`max` are `Vector4`s: a Color fills xyz and leaves w at 1.
+        let min = [min_color.r, min_color.g, min_color.b, 1.0];
+        let max = [max_color.r, max_color.g, max_color.b, 1.0];
+
+        let stride = 4usize;
+        let length = stride * instance_count as usize;
+        let mut range = vec![0f32; length];
+
+        for (i, value) in range.iter_mut().enumerate() {
+            let index = i % stride;
+            let t = self.random.next();
+            // `MathUtils.lerp( x, y, t ) = ( 1 - t ) * x + t * y`
+            *value = ((1.0 - t) * min[index] + t * max[index]) as f32;
+        }
+
+        let instances_buffer = self.create_buffer_init(
+            "three-rs instance matrices",
+            bytemuck::cast_slice(instance_matrix),
+            wgpu::BufferUsages::UNIFORM,
+        );
+
+        let range_buffer = self.create_buffer_init(
+            "three-rs range()",
+            bytemuck::cast_slice(&range),
+            wgpu::BufferUsages::UNIFORM,
+        );
+
+        self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("three-rs normal_world_range_mix bind group"),
+            layout: &self.layouts.normal_world_range_mix,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: self.camera_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                        buffer: &self.object_buffer,
+                        offset: 0,
+                        size: std::num::NonZeroU64::new(112),
+                    }),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: self.frame_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: instances_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: range_buffer.as_entire_binding(),
+                },
+            ],
+        })
+    }
+
     fn ensure_pipeline(&mut self, key: PipelineKey) {
         if !self.pipelines.contains_key(&key) {
-            let pipeline = create_pipeline(&self.device, &self.shaders, &self.layouts, key);
+            let pipeline = create_pipeline(&self.device, &mut self.shaders, &self.layouts, key);
             self.pipelines.insert(key, pipeline);
         }
     }
@@ -504,6 +696,14 @@ impl Renderer {
             bytemuck::cast_slice(&position.array),
             wgpu::BufferUsages::VERTEX,
         );
+
+        let normal_buffer = geometry.normal.as_ref().map(|normal| {
+            self.create_buffer_init(
+                "three-rs normal",
+                bytemuck::cast_slice(&normal.array),
+                wgpu::BufferUsages::VERTEX,
+            )
+        });
 
         let index = geometry
             .index
@@ -528,6 +728,7 @@ impl Renderer {
             id,
             GeometryGpu {
                 position: position_buffer,
+                normal: normal_buffer,
                 index: index_buffer,
                 index_format,
                 index_count: index.count() as u32,
@@ -599,15 +800,248 @@ impl Renderer {
         })
     }
 
-    fn prepare_canvas(&mut self) {
+    /// `Renderer.needsFrameBufferTarget` — true when the output needs tone
+    /// mapping or a colour-space conversion. `outputColorSpace` is
+    /// `SRGBColorSpace` and the working colour space is `LinearSRGBColorSpace`,
+    /// and the port has no tone mapping yet, so this is the colour-space half:
+    /// always true for a canvas render.
+    fn needs_frame_buffer_target(&self) -> bool {
+        true
+    }
+
+    /// `Renderer.currentSamples`: a custom render target's own sample count,
+    /// and 0 for the canvas whenever the framebuffer target or a fullscreen
+    /// pass is in play.
+    fn current_samples(&self) -> u32 {
+        match &self.render_target {
+            Some(render_target) => render_target.samples(),
+            None => {
+                if self.needs_frame_buffer_target() {
+                    0
+                } else {
+                    self.samples
+                }
+            }
+        }
+    }
+
+    /// `Renderer._getFrameBufferTarget()`.
+    fn frame_buffer_target(&mut self) -> RenderTarget {
         let (width, height) = self.drawing_buffer_size();
-        let sample_count = self.samples.max(1);
+
+        let target = self.frame_buffer_target.get_or_insert_with(|| {
+            RenderTarget::new_with_options(
+                width,
+                height,
+                RenderTargetOptions {
+                    texture_type: self.output_buffer_type,
+                    // `samples: this.samples` — the renderer's own count, not
+                    // `currentSamples`.
+                    samples: self.samples,
+                    depth_buffer: true,
+                    min_filter: TextureFilter::Linear,
+                    mag_filter: TextureFilter::Linear,
+                },
+            )
+        });
+
+        target.set_size(width, height);
+        target.clone()
+    }
+
+    /// The colour/depth views, formats and sample count of a render-target pass.
+    fn render_target_views(
+        &self,
+        render_target: &RenderTarget,
+    ) -> (
+        wgpu::TextureView,
+        Option<wgpu::TextureView>,
+        wgpu::TextureFormat,
+        Option<wgpu::TextureFormat>,
+        u32,
+        Option<wgpu::TextureView>,
+    ) {
+        self.prepare_render_target(render_target);
+
+        let inner = render_target.inner().borrow();
+        let color_format = inner.texture_type.color_gpu_format();
+        let single = inner
+            .color
+            .as_ref()
+            .unwrap()
+            .create_view(&Default::default());
+
+        let (color, resolve) = match &inner.msaa {
+            Some(msaa) => (msaa.create_view(&Default::default()), Some(single)),
+            None => (single, None),
+        };
+
+        let (depth, depth_format) = match (&inner.depth_texture, &inner.depth) {
+            (Some(depth_texture), _) => (
+                Some(
+                    depth_texture
+                        .inner()
+                        .borrow()
+                        .gpu
+                        .as_ref()
+                        .unwrap()
+                        .create_view(&Default::default()),
+                ),
+                Some(depth_texture.gpu_format()),
+            ),
+            (None, Some(depth)) => (
+                Some(depth.create_view(&Default::default())),
+                Some(CANVAS_DEPTH_FORMAT),
+            ),
+            (None, None) => (None, None),
+        };
+
+        (
+            color,
+            depth,
+            color_format,
+            depth_format,
+            inner.samples.max(1),
+            resolve,
+        )
+    }
+
+    /// `Renderer._renderOutput( renderTarget )`: a `QuadMesh` whose
+    /// `NodeMaterial.fragmentNode` is `nodes.getOutputNode( renderTarget.texture )`,
+    /// rendered to the output target — here the canvas — with `autoClear` off,
+    /// so the canvas attachments load rather than clear.
+    fn render_output(&mut self, render_target: &RenderTarget) {
+        let sample_count = self.current_samples().max(1);
+        // `renderContext.depth = this.depth` for a canvas pass.
+        self.prepare_canvas(true, sample_count);
+
+        let (width, height) = self.drawing_buffer_size();
+        self.write_viewport_uniforms(width, height);
+
+        let bind_group = self.output_color_transform_bind_group(render_target);
+
+        let key = PipelineKey {
+            shader: ShaderKey::OutputColorTransform,
+            color_format: CANVAS_FORMAT,
+            depth_format: Some(CANVAS_DEPTH_FORMAT),
+            sample_count,
+            instance_count: 1,
+        };
+        self.ensure_pipeline(key);
+
+        let canvas = self.canvas.as_ref().unwrap();
+        let (view, resolve) = match &canvas.msaa {
+            Some(msaa) => (
+                msaa.create_view(&Default::default()),
+                Some(canvas.color.create_view(&Default::default())),
+            ),
+            None => (canvas.color.create_view(&Default::default()), None),
+        };
+        let depth_view = canvas
+            .depth
+            .as_ref()
+            .map(|d| d.create_view(&Default::default()));
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("three-rs output pass"),
+            });
+
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("three-rs output pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    depth_slice: None,
+                    resolve_target: resolve.as_ref(),
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: depth_view.as_ref().map(|view| {
+                    wgpu::RenderPassDepthStencilAttachment {
+                        view,
+                        depth_ops: Some(wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        }),
+                        stencil_ops: None,
+                    }
+                }),
+                occlusion_query_set: None,
+                timestamp_writes: None,
+                multiview_mask: None,
+            });
+
+            pass.set_pipeline(self.pipelines.get(&key).unwrap());
+            pass.set_bind_group(0, &bind_group, &[]);
+            pass.draw(0..3, 0..1);
+        }
+
+        self.queue.submit(Some(encoder.finish()));
+    }
+
+    fn output_color_transform_bind_group(&self, render_target: &RenderTarget) -> wgpu::BindGroup {
+        let inner = render_target.inner().borrow();
+        let view = inner
+            .color
+            .as_ref()
+            .expect("three-rs: the framebuffer target has not been rendered into yet")
+            .create_view(&Default::default());
+
+        let filter = |f: TextureFilter| match f {
+            TextureFilter::Nearest => wgpu::FilterMode::Nearest,
+            TextureFilter::Linear => wgpu::FilterMode::Linear,
+        };
+
+        let sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("three-rs output sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: filter(inner.mag_filter),
+            min_filter: filter(inner.min_filter),
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+            ..Default::default()
+        });
+
+        self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("three-rs output bind group"),
+            layout: &self.layouts.output_color_transform,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: self.camera_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&sampler),
+                },
+            ],
+        })
+    }
+
+    /// `needs_depth` mirrors `renderer.depth` for the pass about to run and
+    /// `sample_count` is `Renderer.currentSamples` for it: both the canvas depth
+    /// buffer and the canvas MSAA texture are created on demand and then kept.
+    fn prepare_canvas(&mut self, needs_depth: bool, sample_count: u32) {
+        let (width, height) = self.drawing_buffer_size();
 
         if let Some(canvas) = &self.canvas {
             if canvas.width == width
                 && canvas.height == height
                 && canvas.sample_count == sample_count
             {
+                if needs_depth && canvas.depth.is_none() {
+                    let depth = self.create_canvas_depth(width, height, sample_count);
+                    self.canvas.as_mut().unwrap().depth = Some(depth);
+                }
                 return;
             }
         }
@@ -644,19 +1078,48 @@ impl Renderer {
             })
         });
 
+        let depth = needs_depth.then(|| self.create_canvas_depth(width, height, sample_count));
+
         self.canvas = Some(CanvasTarget {
             width,
             height,
             sample_count,
             color,
             msaa,
+            depth,
         });
+    }
+
+    fn create_canvas_depth(&self, width: u32, height: u32, sample_count: u32) -> wgpu::Texture {
+        self.create_depth_buffer(width, height, sample_count)
+    }
+
+    /// The auto-allocated depth buffer of a pass: `depth24plus`, the format
+    /// `WebGPUUtils.getCurrentDepthStencilFormat()` picks with `stencil` and
+    /// `reversedDepthBuffer` both off.
+    fn create_depth_buffer(&self, width: u32, height: u32, sample_count: u32) -> wgpu::Texture {
+        self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("three-rs depth buffer"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count,
+            dimension: wgpu::TextureDimension::D2,
+            format: CANVAS_DEPTH_FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        })
     }
 
     fn prepare_render_target(&self, render_target: &RenderTarget) {
         let mut inner = render_target.inner().borrow_mut();
         let (width, height) = (inner.width, inner.height);
         let sample_count = inner.samples.max(1);
+
+        let format = inner.texture_type.color_gpu_format();
 
         if inner.color.is_none() {
             inner.color = Some(self.device.create_texture(&wgpu::TextureDescriptor {
@@ -667,14 +1130,37 @@ impl Renderer {
                     depth_or_array_layers: 1,
                 },
                 mip_level_count: 1,
-                sample_count,
+                // The resolved, sampleable texture is always single-sample;
+                // `samples > 1` adds the MSAA texture below.
+                sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
-                format: RenderTarget::COLOR_FORMAT,
+                format,
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT
                     | wgpu::TextureUsages::TEXTURE_BINDING
                     | wgpu::TextureUsages::COPY_SRC,
                 view_formats: &[],
             }));
+        }
+
+        if sample_count > 1 && inner.msaa.is_none() {
+            inner.msaa = Some(self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("three-rs render target msaa"),
+                size: wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count,
+                dimension: wgpu::TextureDimension::D2,
+                format,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                view_formats: &[],
+            }));
+        }
+
+        if inner.depth_texture.is_none() && inner.depth_buffer && inner.depth.is_none() {
+            inner.depth = Some(self.create_depth_buffer(width, height, sample_count));
         }
 
         if let Some(depth_texture) = &inner.depth_texture {
@@ -707,6 +1193,10 @@ impl Renderer {
 /// platform is `bgra8unorm`; `rgba8unorm` is the same 8-bit-per-channel unorm
 /// target with the channels already in readback order.
 const CANVAS_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
+
+/// `WebGPUUtils.getCurrentDepthStencilFormat()` with `stencil` and
+/// `reversedDepthBuffer` both off.
+const CANVAS_DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth24Plus;
 
 fn pick_adapter(instance: &wgpu::Instance) -> wgpu::Adapter {
     let wanted = std::env::var("THREE_RS_ADAPTER_NAME").ok();

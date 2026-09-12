@@ -7,11 +7,25 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-/// `three.js/src/constants.js` texture types, as far as rung 1 needs them.
+/// `three.js/src/constants.js` texture types, as far as the port needs them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TextureType {
+    UnsignedByte,
+    HalfFloat,
     UnsignedInt,
     Float,
+}
+
+impl TextureType {
+    /// `WebGPUTextureUtils.getFormat()` for a colour texture with
+    /// `RGBAFormat` and `NoColorSpace`.
+    pub fn color_gpu_format(self) -> wgpu::TextureFormat {
+        match self {
+            TextureType::UnsignedByte => wgpu::TextureFormat::Rgba8Unorm,
+            TextureType::HalfFloat => wgpu::TextureFormat::Rgba16Float,
+            other => panic!("three-rs: {other:?} is not a colour texture type here"),
+        }
+    }
 }
 
 /// `three.js/src/constants.js` texture filters.
@@ -68,6 +82,7 @@ impl DepthTexture {
         match self.texture_type() {
             TextureType::UnsignedInt => wgpu::TextureFormat::Depth24Plus,
             TextureType::Float => wgpu::TextureFormat::Depth32Float,
+            other => panic!("three-rs: {other:?} is not a depth texture type"),
         }
     }
 

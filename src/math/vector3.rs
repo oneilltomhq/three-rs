@@ -78,6 +78,49 @@ impl Vector3 {
         self
     }
 
+    /// `Vector3.applyMatrix3()`.
+    pub fn apply_matrix3(&mut self, m: &crate::math::Matrix3) -> &mut Self {
+        let (x, y, z) = (self.x, self.y, self.z);
+        let e = &m.elements;
+
+        self.x = e[0] * x + e[3] * y + e[6] * z;
+        self.y = e[1] * x + e[4] * y + e[7] * z;
+        self.z = e[2] * x + e[5] * y + e[8] * z;
+
+        self
+    }
+
+    /// `Vector3.applyNormalMatrix()`.
+    pub fn apply_normal_matrix(&mut self, m: &crate::math::Matrix3) -> &mut Self {
+        self.apply_matrix3(m).normalize()
+    }
+
+    /// `Vector3.applyMatrix4()`.
+    pub fn apply_matrix4(&mut self, m: &crate::math::Matrix4) -> &mut Self {
+        let (x, y, z) = (self.x, self.y, self.z);
+        let e = &m.elements;
+
+        let w = 1.0 / (e[3] * x + e[7] * y + e[11] * z + e[15]);
+
+        self.x = (e[0] * x + e[4] * y + e[8] * z + e[12]) * w;
+        self.y = (e[1] * x + e[5] * y + e[9] * z + e[13]) * w;
+        self.z = (e[2] * x + e[6] * y + e[10] * z + e[14]) * w;
+
+        self
+    }
+
+    pub fn add(&mut self, v: &Self) -> &mut Self {
+        self.x += v.x;
+        self.y += v.y;
+        self.z += v.z;
+        self
+    }
+
+    pub fn cross(&mut self, v: &Self) -> &mut Self {
+        let a = *self;
+        self.cross_vectors(&a, v)
+    }
+
     pub fn dot(&self, v: &Self) -> f64 {
         self.x * v.x + self.y * v.y + self.z * v.z
     }

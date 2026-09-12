@@ -2,6 +2,8 @@
 //! `WebGPUPipelineUtils` + `NodeManager`. One pipeline per
 //! (shader variant, colour format, sample count, depth format).
 
+use std::collections::HashMap;
+
 use crate::materials::ShaderKey;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -10,11 +12,17 @@ pub struct PipelineKey {
     pub color_format: wgpu::TextureFormat,
     pub depth_format: Option<wgpu::TextureFormat>,
     pub sample_count: u32,
+    /// The instance count baked into the shader's `array<…, N>` declarations —
+    /// three.js bakes the same number into `buffer( array, type, count )`.
+    pub instance_count: u32,
 }
 
 pub struct Shaders {
     pub basic: wgpu::ShaderModule,
     pub quad: wgpu::ShaderModule,
+    pub output_color_transform: wgpu::ShaderModule,
+    /// Keyed by instance count, because the count is baked into the source.
+    normal_world_range_mix: HashMap<u32, wgpu::ShaderModule>,
 }
 
 impl Shaders {
@@ -22,7 +30,30 @@ impl Shaders {
         Self {
             basic: device.create_shader_module(wgpu::include_wgsl!("shaders/basic.wgsl")),
             quad: device.create_shader_module(wgpu::include_wgsl!("shaders/quad.wgsl")),
+            output_color_transform: device
+                .create_shader_module(wgpu::include_wgsl!("shaders/output_color_transform.wgsl")),
+            normal_world_range_mix: HashMap::new(),
         }
+    }
+
+    /// Builds (once per instance count) the `normal_world_range_mix` module,
+    /// substituting the array length the way three.js' node builder does.
+    pub fn ensure_normal_world_range_mix(&mut self, device: &wgpu::Device, instance_count: u32) {
+        self.normal_world_range_mix
+            .entry(instance_count)
+            .or_insert_with(|| {
+                let source = include_str!("shaders/normal_world_range_mix.wgsl")
+                    .replace("INSTANCE_COUNT", &instance_count.to_string());
+
+                device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                    label: Some("three-rs normal_world_range_mix"),
+                    source: wgpu::ShaderSource::Wgsl(source.into()),
+                })
+            });
+    }
+
+    pub fn normal_world_range_mix(&self, instance_count: u32) -> &wgpu::ShaderModule {
+        &self.normal_world_range_mix[&instance_count]
     }
 }
 
@@ -31,6 +62,12 @@ pub struct Layouts {
     pub basic: wgpu::BindGroupLayout,
     /// `quad.wgsl`: a depth texture + its sampler.
     pub quad: wgpu::BindGroupLayout,
+    /// `output_color_transform.wgsl`: the render uniforms (for `viewportSize`)
+    /// plus the framebuffer target's colour texture and its sampler.
+    pub output_color_transform: wgpu::BindGroupLayout,
+    /// `normal_world_range_mix.wgsl`: camera + per-object (dynamic) + the frame
+    /// uniforms + the instance matrix buffer + the `range()` buffer.
+    pub normal_world_range_mix: wgpu::BindGroupLayout,
 }
 
 impl Layouts {
@@ -83,16 +120,105 @@ impl Layouts {
             ],
         });
 
-        Self { basic, quad }
+        let uniform = |binding: u32,
+                       visibility: wgpu::ShaderStages,
+                       has_dynamic_offset: bool| {
+            wgpu::BindGroupLayoutEntry {
+                binding,
+                visibility,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset,
+                    min_binding_size: None,
+                },
+                count: None,
+            }
+        };
+
+        let both = wgpu::ShaderStages::VERTEX_FRAGMENT;
+
+        let normal_world_range_mix =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("three-rs normal_world_range_mix bindings"),
+                entries: &[
+                    uniform(0, both, false),
+                    uniform(1, wgpu::ShaderStages::VERTEX, true),
+                    uniform(2, wgpu::ShaderStages::FRAGMENT, false),
+                    uniform(3, wgpu::ShaderStages::VERTEX, false),
+                    uniform(4, wgpu::ShaderStages::FRAGMENT, false),
+                ],
+            });
+
+        let output_color_transform =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("three-rs output_color_transform bindings"),
+                entries: &[
+                    uniform(0, wgpu::ShaderStages::FRAGMENT, false),
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            });
+
+        Self {
+            basic,
+            quad,
+            output_color_transform,
+            normal_world_range_mix,
+        }
     }
 }
 
+pub const POSITION_ATTRIBUTE: [wgpu::VertexAttribute; 1] = [wgpu::VertexAttribute {
+    format: wgpu::VertexFormat::Float32x3,
+    offset: 0,
+    shader_location: 0,
+}];
+
+pub const NORMAL_ATTRIBUTE: [wgpu::VertexAttribute; 1] = [wgpu::VertexAttribute {
+    format: wgpu::VertexFormat::Float32x3,
+    offset: 0,
+    shader_location: 1,
+}];
+
 pub fn create_pipeline(
     device: &wgpu::Device,
-    shaders: &Shaders,
+    shaders: &mut Shaders,
     layouts: &Layouts,
     key: PipelineKey,
 ) -> wgpu::RenderPipeline {
+    if key.shader == ShaderKey::NormalWorldRangeMix {
+        shaders.ensure_normal_world_range_mix(device, key.instance_count);
+    }
+
+    let shaders = &*shaders;
+
+    let normal_world_range_mix_buffers = [
+        Some(wgpu::VertexBufferLayout {
+            array_stride: 12,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &POSITION_ATTRIBUTE,
+        }),
+        Some(wgpu::VertexBufferLayout {
+            array_stride: 12,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &NORMAL_ATTRIBUTE,
+        }),
+    ];
+
     let (module, bind_group_layout, vertex_buffers): (_, _, &[Option<wgpu::VertexBufferLayout>]) = match key.shader {
         ShaderKey::Basic => (
             &shaders.basic,
@@ -108,6 +234,16 @@ pub fn create_pipeline(
             })],
         ),
         ShaderKey::DepthTextureQuad => (&shaders.quad, &layouts.quad, &[]),
+        ShaderKey::OutputColorTransform => (
+            &shaders.output_color_transform,
+            &layouts.output_color_transform,
+            &[],
+        ),
+        ShaderKey::NormalWorldRangeMix => (
+            shaders.normal_world_range_mix(key.instance_count),
+            &layouts.normal_world_range_mix,
+            &normal_world_range_mix_buffers,
+        ),
     };
 
     let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {

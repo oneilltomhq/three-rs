@@ -1,5 +1,7 @@
-//! Port of `three.js/src/core/BufferGeometry.js` (rung 1 subset: interleaved-free
-//! `f32` attributes plus a `u16`/`u32` index).
+//! Port of `three.js/src/core/BufferGeometry.js` (interleaved-free `f32`
+//! attributes plus a `u16`/`u32` index).
+
+use crate::math::{Matrix3, Matrix4, Vector3};
 
 #[derive(Clone, Debug)]
 pub struct BufferAttribute {
@@ -14,6 +16,52 @@ impl BufferAttribute {
 
     pub fn count(&self) -> usize {
         self.array.len() / self.item_size
+    }
+
+    /// `BufferAttribute.getX/getY/getZ()` — the stored value is `f32`, widened
+    /// the way JavaScript widens a `Float32Array` read to a number.
+    pub fn get_x(&self, index: usize) -> f64 {
+        self.array[index * self.item_size] as f64
+    }
+
+    pub fn get_y(&self, index: usize) -> f64 {
+        self.array[index * self.item_size + 1] as f64
+    }
+
+    pub fn get_z(&self, index: usize) -> f64 {
+        self.array[index * self.item_size + 2] as f64
+    }
+
+    /// `BufferAttribute.setXYZ()` — narrows to `f32` on the way in, which is
+    /// where three.js loses precision too.
+    pub fn set_xyz(&mut self, index: usize, x: f64, y: f64, z: f64) {
+        let offset = index * self.item_size;
+        self.array[offset] = x as f32;
+        self.array[offset + 1] = y as f32;
+        self.array[offset + 2] = z as f32;
+    }
+
+    /// `Vector3.fromBufferAttribute( attribute, index )`.
+    pub fn get_vector3(&self, index: usize) -> Vector3 {
+        Vector3::new(self.get_x(index), self.get_y(index), self.get_z(index))
+    }
+
+    /// `BufferAttribute.applyMatrix4()`.
+    pub fn apply_matrix4(&mut self, m: &Matrix4) {
+        for i in 0..self.count() {
+            let mut v = self.get_vector3(i);
+            v.apply_matrix4(m);
+            self.set_xyz(i, v.x, v.y, v.z);
+        }
+    }
+
+    /// `BufferAttribute.applyNormalMatrix()`.
+    pub fn apply_normal_matrix(&mut self, m: &Matrix3) {
+        for i in 0..self.count() {
+            let mut v = self.get_vector3(i);
+            v.apply_normal_matrix(m);
+            self.set_xyz(i, v.x, v.y, v.z);
+        }
     }
 }
 
@@ -57,5 +105,132 @@ impl BufferGeometry {
         } else {
             Index::U16(indices.iter().map(|&i| i as u16).collect())
         });
+    }
+
+    /// `BufferGeometry.setIndex( bufferAttribute )` — keeps the array type the
+    /// source declared, which is what `BufferGeometryLoader.parse()` does.
+    pub fn set_index_attribute(&mut self, index: Index) {
+        self.index = Some(index);
+    }
+
+    /// `BufferGeometry.computeVertexNormals()`.
+    ///
+    /// The accumulation runs through the `normal` attribute itself, so every
+    /// partial sum is rounded to `f32` before the next triangle adds to it.
+    pub fn compute_vertex_normals(&mut self) {
+        let Some(position) = self.position.clone() else {
+            return;
+        };
+
+        let needs_new = match &self.normal {
+            Some(normal) => normal.count() != position.count(),
+            None => true,
+        };
+
+        let mut normal = if needs_new {
+            BufferAttribute::new(vec![0.0; position.count() * 3], 3)
+        } else {
+            let mut normal = self.normal.take().unwrap();
+            for i in 0..normal.count() {
+                normal.set_xyz(i, 0.0, 0.0, 0.0);
+            }
+            normal
+        };
+
+        let mut cb = Vector3::ZERO;
+        let mut ab = Vector3::ZERO;
+
+        // indexed elements
+        if let Some(index) = &self.index {
+            let get = |i: usize| -> usize {
+                match index {
+                    Index::U16(v) => v[i] as usize,
+                    Index::U32(v) => v[i] as usize,
+                }
+            };
+
+            let mut i = 0;
+            while i < index.count() {
+                let (v_a, v_b, v_c) = (get(i), get(i + 1), get(i + 2));
+
+                let p_a = position.get_vector3(v_a);
+                let p_b = position.get_vector3(v_b);
+                let p_c = position.get_vector3(v_c);
+
+                cb.sub_vectors(&p_c, &p_b);
+                ab.sub_vectors(&p_a, &p_b);
+                cb.cross(&ab);
+
+                let mut n_a = normal.get_vector3(v_a);
+                let mut n_b = normal.get_vector3(v_b);
+                let mut n_c = normal.get_vector3(v_c);
+
+                n_a.add(&cb);
+                n_b.add(&cb);
+                n_c.add(&cb);
+
+                normal.set_xyz(v_a, n_a.x, n_a.y, n_a.z);
+                normal.set_xyz(v_b, n_b.x, n_b.y, n_b.z);
+                normal.set_xyz(v_c, n_c.x, n_c.y, n_c.z);
+
+                i += 3;
+            }
+        } else {
+            let mut i = 0;
+            while i < position.count() {
+                let p_a = position.get_vector3(i);
+                let p_b = position.get_vector3(i + 1);
+                let p_c = position.get_vector3(i + 2);
+
+                cb.sub_vectors(&p_c, &p_b);
+                ab.sub_vectors(&p_a, &p_b);
+                cb.cross(&ab);
+
+                normal.set_xyz(i, cb.x, cb.y, cb.z);
+                normal.set_xyz(i + 1, cb.x, cb.y, cb.z);
+                normal.set_xyz(i + 2, cb.x, cb.y, cb.z);
+
+                i += 3;
+            }
+        }
+
+        self.normal = Some(normal);
+
+        self.normalize_normals();
+    }
+
+    /// `BufferGeometry.normalizeNormals()`.
+    pub fn normalize_normals(&mut self) {
+        let Some(normal) = self.normal.as_mut() else {
+            return;
+        };
+
+        for i in 0..normal.count() {
+            let mut v = normal.get_vector3(i);
+            v.normalize();
+            normal.set_xyz(i, v.x, v.y, v.z);
+        }
+    }
+
+    /// `BufferGeometry.applyMatrix4()`.
+    pub fn apply_matrix4(&mut self, matrix: &Matrix4) -> &mut Self {
+        if let Some(position) = self.position.as_mut() {
+            position.apply_matrix4(matrix);
+        }
+
+        if let Some(normal) = self.normal.as_mut() {
+            let mut normal_matrix = Matrix3::identity();
+            normal_matrix.get_normal_matrix(matrix);
+            normal.apply_normal_matrix(&normal_matrix);
+        }
+
+        self
+    }
+
+    /// `BufferGeometry.scale()`.
+    pub fn scale(&mut self, x: f64, y: f64, z: f64) -> &mut Self {
+        let mut m1 = Matrix4::identity();
+        m1.make_scale(x, y, z);
+        self.apply_matrix4(&m1)
     }
 }

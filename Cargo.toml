@@ -8,10 +8,15 @@ wgpu = { path = "/home/tom/src/vendor/wgpu/wgpu", default-features = false, feat
 bytemuck = { version = "1", features = ["derive"] }
 pollster = "0.4"
 png = "0.17"
+serde_json = "1"
 
 [[example]]
 name = "webgpu_depth_texture"
 path = "examples/webgpu_depth_texture.rs"
+
+[[example]]
+name = "webgpu_instance_mesh"
+path = "examples/webgpu_instance_mesh.rs"
 
 [[test]]
 name = "e2e"
