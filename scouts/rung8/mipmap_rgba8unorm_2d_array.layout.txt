@@ -1,0 +1,7 @@
+// pipeline mipmap-rgba8unorm-2d-array
+// primitive {}
+// depthStencil {"__serr":"SyntaxError: \"undefined\" is not valid JSON"}
+// multisample {"count":1,"mask":4294967295,"alphaToCoverageEnabled":false}
+// targets [{"format":"rgba8unorm"}]
+// vertex buffers {"__serr":"SyntaxError: \"undefined\" is not valid JSON"}
+// layout auto

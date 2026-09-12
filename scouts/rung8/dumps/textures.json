@@ -1,0 +1,171 @@
+[
+ {
+  "label": "",
+  "size": {
+   "width": 800,
+   "height": 500,
+   "depthOrArrayLayers": 1
+  },
+  "format": "rgba16float",
+  "mipLevelCount": 1,
+  "sampleCount": 1,
+  "dimension": "2d",
+  "usage": 23
+ },
+ {
+  "label": "",
+  "size": {
+   "width": 800,
+   "height": 500,
+   "depthOrArrayLayers": 1
+  },
+  "format": "depth24plus",
+  "mipLevelCount": 1,
+  "sampleCount": 1,
+  "dimension": "2d",
+  "usage": 23
+ },
+ {
+  "label": "DFG_LUT",
+  "size": {
+   "width": 16,
+   "height": 16,
+   "depthOrArrayLayers": 1
+  },
+  "format": "rg16float",
+  "mipLevelCount": 1,
+  "sampleCount": 1,
+  "dimension": "2d",
+  "usage": 23
+ },
+ {
+  "label": "",
+  "size": {
+   "width": 2048,
+   "height": 1024,
+   "depthOrArrayLayers": 1
+  },
+  "format": "rgba8unorm-srgb",
+  "mipLevelCount": 12,
+  "sampleCount": 1,
+  "dimension": "2d",
+  "usage": 23
+ },
+ {
+  "label": "",
+  "size": {
+   "width": 2048,
+   "height": 1024,
+   "depthOrArrayLayers": 1
+  },
+  "format": "rgba8unorm-srgb",
+  "mipLevelCount": 12,
+  "sampleCount": 1,
+  "dimension": "2d",
+  "usage": 23
+ },
+ {
+  "label": "PointShadowMap",
+  "size": {
+   "width": 512,
+   "height": 512,
+   "depthOrArrayLayers": 6
+  },
+  "format": "rgba8unorm",
+  "mipLevelCount": 1,
+  "sampleCount": 1,
+  "dimension": "2d",
+  "usage": 23
+ },
+ {
+  "label": "PointShadowDepthTexture",
+  "size": {
+   "width": 512,
+   "height": 512,
+   "depthOrArrayLayers": 6
+  },
+  "format": "depth24plus",
+  "mipLevelCount": 1,
+  "sampleCount": 1,
+  "dimension": "2d",
+  "usage": 23
+ },
+ {
+  "label": "",
+  "size": {
+   "width": 1024,
+   "height": 1024,
+   "depthOrArrayLayers": 1
+  },
+  "format": "rgba8unorm-srgb",
+  "mipLevelCount": 11,
+  "sampleCount": 1,
+  "dimension": "2d",
+  "usage": 23
+ },
+ {
+  "label": "",
+  "size": {
+   "width": 2048,
+   "height": 1024,
+   "depthOrArrayLayers": 1
+  },
+  "format": "rgba8unorm-srgb",
+  "mipLevelCount": 12,
+  "sampleCount": 1,
+  "dimension": "2d",
+  "usage": 23
+ },
+ {
+  "label": "",
+  "size": {
+   "width": 2048,
+   "height": 1024,
+   "depthOrArrayLayers": 1
+  },
+  "format": "rgba8unorm",
+  "mipLevelCount": 12,
+  "sampleCount": 1,
+  "dimension": "2d",
+  "usage": 23
+ },
+ {
+  "label": "",
+  "size": {
+   "width": 2048,
+   "height": 1024,
+   "depthOrArrayLayers": 1
+  },
+  "format": "rgba8unorm",
+  "mipLevelCount": 12,
+  "sampleCount": 1,
+  "dimension": "2d",
+  "usage": 23
+ },
+ {
+  "label": "",
+  "size": {
+   "width": 1024,
+   "height": 1024,
+   "depthOrArrayLayers": 1
+  },
+  "format": "rgba8unorm",
+  "mipLevelCount": 11,
+  "sampleCount": 1,
+  "dimension": "2d",
+  "usage": 23
+ },
+ {
+  "label": "depthBuffer",
+  "size": {
+   "width": 800,
+   "height": 500,
+   "depthOrArrayLayers": 1
+  },
+  "format": "depth24plus",
+  "mipLevelCount": 1,
+  "sampleCount": 1,
+  "dimension": "2d",
+  "usage": 23
+ }
+]

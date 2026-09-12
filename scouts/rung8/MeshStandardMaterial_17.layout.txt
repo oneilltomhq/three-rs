@@ -1,0 +1,31 @@
+// pipeline renderPipeline_MeshStandardMaterial_17
+// primitive {"topology":"triangle-list","frontFace":"ccw","cullMode":"back"}
+// depthStencil {"format":"depth24plus","depthWriteEnabled":true,"depthCompare":"less-equal"}
+// multisample {"count":1,"mask":4294967295,"alphaToCoverageEnabled":false}
+// targets [{"format":"rgba16float","writeMask":15}]
+// vertex buffers [{"arrayStride":12,"attributes":[{"shaderLocation":0,"offset":0,"format":"float32x3"}],"stepMode":"vertex"},{"arrayStride":12,"attributes":[{"shaderLocation":1,"offset":0,"format":"float32x3"}],"stepMode":"vertex"}]
+// pipelineLayout 
+// group(0) undefined: [
+ {
+  "binding": 0,
+  "visibility": 7,
+  "buffer": {}
+ }
+]
+// group(1) undefined: [
+ {
+  "binding": 0,
+  "visibility": 7,
+  "buffer": {}
+ },
+ {
+  "binding": 1,
+  "visibility": 2,
+  "sampler": {}
+ },
+ {
+  "binding": 2,
+  "visibility": 2,
+  "texture": {}
+ }
+]
