@@ -1,0 +1,23 @@
+[package]
+name = "sdf-text"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# `opentype-layout` is enabled per the port plan. The GPOS `kern` walk itself is
+# hand-rolled over the raw table bytes (see vector_font::kern) because
+# opentype.js's first-hit semantics need the lookup *type* filter, and
+# ttf-parser keeps `LookupSubtables::kind` private.
+#
+# tiny-skia was evaluated as the filler and dropped — see the evidence table in
+# `src/raster.rs`'s module doc. It is not a dependency, so the crate has no
+# rasterisation dependency at all.
+#
+# owned_ttf_parser is ttf-parser plus a self-referential owning wrapper, so
+# `VectorFont` can own its bytes without a lifetime parameter. The plan
+# (§2.2) blesses this: "no behavioural difference".
+owned_ttf_parser = { version = "0.25", default-features = false, features = ["std", "opentype-layout"] }
+bytemuck = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+serde_json = "1"
