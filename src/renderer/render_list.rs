@@ -315,6 +315,12 @@ mod tests {
         node
     }
 
+    fn world_x(node: &Node) -> f64 {
+        let mut position = Vector3::ZERO;
+        position.set_from_matrix_position(&node.borrow().matrix_world);
+        position.x
+    }
+
     fn project(scene: &Scene, camera: &PerspectiveCamera) -> RenderList {
         scene.update_matrix_world();
         let mut list = RenderList::new();
@@ -362,6 +368,46 @@ mod tests {
         let mut position = Vector3::ZERO;
         position.set_from_matrix_position(&world);
         assert_eq!(position.x, 4.0, "the group's translation is composed in");
+    }
+
+    /// `Scene::update_matrix_world` is `Object3D.updateMatrixWorld()` on the
+    /// root, so the flags three.js honours there hold for the render path too.
+    /// The per-object semantics are covered by `tests/core_object3d.rs`; this is
+    /// the scene → group → mesh chain the renderer actually walks.
+    #[test]
+    fn scene_update_matrix_world_honours_the_auto_update_flags() {
+        let scene = Scene::new();
+        let group = Group::new();
+        let mesh = mesh_at(0.0);
+
+        scene.add(&group);
+        group.add(&mesh);
+
+        group.borrow_mut().position.x = 1.0;
+        mesh.borrow_mut().position.x = 2.0;
+        scene.update_matrix_world();
+        assert_eq!(world_x(&mesh), 3.0, "composed through the group");
+
+        // `matrixAutoUpdate = false`: the local matrix is left alone, so nothing
+        // downstream moves either.
+        group.borrow_mut().matrix_auto_update = false;
+        group.borrow_mut().position.x = 10.0;
+        scene.update_matrix_world();
+        assert_eq!(world_x(&mesh), 3.0, "matrixAutoUpdate = false pins it");
+
+        // …until something raises `matrixWorldNeedsUpdate`, which is what
+        // `updateMatrix()` (and the animation setters) do.
+        group.borrow_mut().update_matrix();
+        scene.update_matrix_world();
+        assert_eq!(world_x(&mesh), 12.0, "matrixWorldNeedsUpdate forces the walk");
+
+        // `matrixWorldAutoUpdate = false` freezes this object's world matrix and,
+        // because its `force` return is unaffected, still lets children recompose
+        // against the stale value.
+        mesh.borrow_mut().matrix_world_auto_update = false;
+        mesh.borrow_mut().position.x = 5.0;
+        scene.update_matrix_world();
+        assert_eq!(world_x(&mesh), 12.0, "matrixWorldAutoUpdate = false freezes it");
     }
 
     #[test]
