@@ -8,7 +8,7 @@
 
 use std::cmp::Ordering;
 
-use crate::cameras::PerspectiveCamera;
+use crate::cameras::RenderCamera;
 use crate::core::{Layers, Node, Object3DNode};
 use crate::math::{Frustum, Matrix4};
 
@@ -137,18 +137,18 @@ impl ProjectCamera {
     ///
     /// `camera.matrixWorldInverse` must already be up to date — in three.js
     /// `Renderer.render()` calls `camera.updateMatrixWorld()` just above this.
-    pub fn new(camera: &PerspectiveCamera) -> Self {
+    pub fn new(camera: &dyn RenderCamera) -> Self {
         let mut proj_screen_matrix = Matrix4::identity();
         proj_screen_matrix
-            .multiply_matrices(&camera.projection_matrix, &camera.matrix_world_inverse);
+            .multiply_matrices(&camera.projection_matrix(), &camera.matrix_world_inverse());
 
         let mut frustum = Frustum::default();
         // `reversedDepth` is off: `Renderer.reversedDepth` defaults to false and
         // nothing in the ladder turns it on.
-        frustum.set_from_projection_matrix(&proj_screen_matrix, camera.coordinate_system, false);
+        frustum.set_from_projection_matrix(&proj_screen_matrix, camera.coordinate_system(), false);
 
         Self {
-            layers: camera.object.layers,
+            layers: camera.object().layers,
             proj_screen_matrix,
             frustum,
         }

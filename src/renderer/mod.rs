@@ -23,7 +23,7 @@ pub use render_list::{project_object, ProjectCamera, RenderItem, RenderList};
 pub use render_pipeline::RenderPipeline;
 pub use render_target::{RenderTarget, RenderTargetInner, RenderTargetOptions};
 
-use crate::cameras::{OrthographicCamera, PerspectiveCamera};
+use crate::cameras::{OrthographicCamera, RenderCamera};
 use crate::core::{BufferGeometry, Index};
 use crate::geometries::{quad_geometry, sphere_geometry};
 use crate::lights::PointLight;
@@ -306,7 +306,11 @@ impl Renderer {
     }
 
     /// `renderer.render( scene, camera )`.
-    pub fn render(&mut self, scene: &mut Scene, camera: &mut PerspectiveCamera) {
+    ///
+    /// `camera` is `&mut dyn RenderCamera` so an `OrthographicCamera` works too
+    /// — `&mut PerspectiveCamera` still coerces at the call site, so every
+    /// existing caller is unchanged.
+    pub fn render(&mut self, scene: &mut Scene, camera: &mut dyn RenderCamera) {
         // `Renderer.render()`: `scene.updateMatrixWorld()` then
         // `camera.updateMatrixWorld()`, both honouring `matrixAutoUpdate` /
         // `matrixWorldAutoUpdate`.
@@ -410,7 +414,7 @@ impl Renderer {
                     .expect("three-rs: the light list only holds lights");
 
                 let mut view_position = PointLight::world_position(&object.matrix_world);
-                view_position.apply_matrix4(&camera.matrix_world_inverse);
+                view_position.apply_matrix4(&camera.matrix_world_inverse());
 
                 let c = light.light.color;
                 let intensity = light.light.intensity;
@@ -424,9 +428,9 @@ impl Renderer {
             .collect();
 
         let camera_uniforms = UniformContext {
-            camera_projection: camera.projection_matrix,
-            camera_view: camera.matrix_world_inverse,
-            camera_world: camera.object.matrix_world,
+            camera_projection: camera.projection_matrix(),
+            camera_view: camera.matrix_world_inverse(),
+            camera_world: camera.object().matrix_world,
             time: self.time,
             lights: &lights,
             ..Default::default()
@@ -440,7 +444,7 @@ impl Renderer {
     ///
     /// Public so a caller can inspect what a frame would draw — the e2e harness
     /// and the lights work of later rungs both want the list without the draw.
-    pub fn project_scene(&self, scene: &Scene, camera: &PerspectiveCamera) -> RenderList {
+    pub fn project_scene(&self, scene: &Scene, camera: &dyn RenderCamera) -> RenderList {
         let mut render_list = RenderList::new();
         project_object(
             &scene.node,

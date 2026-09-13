@@ -47,5 +47,9 @@ name = "e2e"
 path = "tests/e2e/main.rs"
 
 [[example]]
+name = "sdf_text_block"
+path = "examples/sdf_text_block.rs"
+
+[[example]]
 name = "dump_wgsl"
 path = "examples/dump_wgsl.rs"
