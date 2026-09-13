@@ -32,6 +32,9 @@ fn show_fog(
     }
 }
 
+use three_rs::lights::LightKind;
+use three_rs::materials::phong::LightDesc;
+
 fn main() {
     // rung 1: the scene override material and the depth-texture quad.
     show(
@@ -64,7 +67,7 @@ fn main() {
         SetupContext {
             instance_count: Some(1000),
             instanced: true,
-            light_count: 0,
+            lights: Vec::new(),
         },
     );
 
@@ -92,7 +95,7 @@ fn main() {
     // the output pass.
     let framebuffer = Texture::render_target(800, 500, wgpu::TextureFormat::Rgba16Float);
     let mut out = MeshBasicNodeMaterial::new();
-    out.fragment_node = Some(three_rs::materials::output_fragment_node(&framebuffer));
+    out.fragment_node = Some(three_rs::materials::output_fragment_node(&framebuffer, three_rs::ToneMapping::None));
     show("output_color_transform", &out, SetupContext::default());
 
     // rung 4: the textured box and the hue/saturation quad.
@@ -122,7 +125,7 @@ fn main() {
     compose = mask1.a().mix(compose, texture(&texture1));
     compose = mask2.a().mix(compose, texture(&texture2));
     let mut masking = MeshBasicNodeMaterial::new();
-    masking.fragment_node = Some(three_rs::materials::render_output(compose));
+    masking.fragment_node = Some(three_rs::materials::render_output(compose, three_rs::ToneMapping::None));
     masking.vertex_node = Some(three_rs::materials::quad_vertex_node());
     show("masking_quad", &masking, SetupContext::default());
 
@@ -130,7 +133,7 @@ fn main() {
     // `target/dumps/webgpu_lights_phong/`.
     let fog = fog(Color::from_hex(0xFF00FF), range_fog_factor(12.0, 30.0));
     let four = SetupContext {
-        light_count: 4,
+        lights: (0..4).map(|index| LightDesc { index, kind: LightKind::Point, shadow_map: None }).collect(),
         ..SetupContext::default()
     };
 
@@ -142,12 +145,12 @@ fn main() {
     let mut left = MeshBasicNodeMaterial::phong(grey);
     left.lights_node = Some(vec![0]);
     left.specular_node = Some(texture(&alpha_texture));
-    show_fog("phong_left", &left, four, Some(&fog));
+    show_fog("phong_left", &left, four.clone(), Some(&fog));
 
     let mut centre = MeshBasicNodeMaterial::phong(grey);
     centre.normal_node = Some(normal_map(texture(&normal_map_texture)));
     centre.shininess = 80.0;
-    show_fog("phong_centre", &centre, four, Some(&fog));
+    show_fog("phong_centre", &centre, four.clone(), Some(&fog));
 
     let mut right = MeshBasicNodeMaterial::phong(grey);
     right.lights_node = Some(vec![1]);
@@ -157,10 +160,10 @@ fn main() {
         checker(uv().mul(5.0)),
     ));
     right.shininess = 90.0;
-    show_fog("phong_right", &right, four, Some(&fog));
+    show_fog("phong_right", &right, four.clone(), Some(&fog));
 
     let mut sphere = MeshBasicNodeMaterial::phong(Color::new(1.0, 1.0, 1.0));
     sphere.lights = false;
     sphere.color_node = Some(Color::from_hex(0x0040ff).into());
-    show_fog("phong_light_sphere", &sphere, four, Some(&fog));
+    show_fog("phong_light_sphere", &sphere, four.clone(), Some(&fog));
 }

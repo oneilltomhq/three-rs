@@ -41,6 +41,22 @@ impl ShadowCamera {
         }
     }
 
+    /// `shadow.camera.left / right / top / bottom` — only the directional
+    /// light's orthographic shadow camera has them.
+    pub fn set_bounds(&mut self, left: f64, right: f64, top: f64, bottom: f64) {
+        match self {
+            ShadowCamera::Perspective(_) => {
+                panic!("three-rs: a perspective shadow camera has no ortho bounds")
+            }
+            ShadowCamera::Orthographic(c) => {
+                c.left = left;
+                c.right = right;
+                c.top = top;
+                c.bottom = bottom;
+            }
+        }
+    }
+
     /// `shadow.camera.isOrthographicCamera` — `ShadowNode.setupShadowCoord()`
     /// branches on it (and so does `_updateMatrix`, through
     /// `coordinateSystem`).

@@ -29,7 +29,7 @@ pub use lights::{
     ShadowCamera, SpotLight,
 };
 pub use loaders::{BufferGeometryLoader, CubeTextureLoader, TextureLoader};
-pub use materials::{MaterialKind, MeshBasicNodeMaterial, MeshPhongNodeMaterial};
+pub use materials::{MaterialKind, MeshBasicNodeMaterial, MeshPhongNodeMaterial, ToneMapping};
 pub use math::{Color, Euler, Matrix3, Matrix4, Quaternion, Vector2, Vector3};
 pub use objects::{Background, Group, InstancedMesh, Mesh, Payload, QuadMesh, Scene};
 pub use renderer::{PassNode, RenderPipeline, RenderTarget, Renderer, RendererParameters};

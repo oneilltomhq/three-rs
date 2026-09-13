@@ -19,6 +19,7 @@ pub fn type_name(ty: Type) -> &'static str {
         Type::Vec3 => "vec3<f32>",
         Type::Vec4 => "vec4<f32>",
         Type::UVec2 => "vec2<u32>",
+        Type::UVec3 => "vec3<u32>",
         Type::BVec3 => "vec3<bool>",
         Type::Mat3 => "mat3x3<f32>",
         Type::Mat4 => "mat4x4<f32>",
@@ -132,7 +133,7 @@ pub fn size_of(ty: Type) -> u32 {
     match ty {
         Type::F32 | Type::I32 | Type::U32 | Type::Bool => 4,
         Type::Vec2 | Type::UVec2 => 8,
-        Type::Vec3 | Type::BVec3 => 12,
+        Type::Vec3 | Type::UVec3 | Type::BVec3 => 12,
         Type::Vec4 => 16,
         Type::Mat3 => 48,
         Type::Mat4 => 64,

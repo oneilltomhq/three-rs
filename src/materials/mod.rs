@@ -5,7 +5,7 @@ mod node_material;
 pub mod phong;
 
 pub use node_material::{
-    background_color_node, background_vertex_node, instanced_range, output_fragment_node,
+    background_color_node, background_node_color_node, background_vertex_node, instanced_range, output_fragment_node,
     quad_vertex_node, render_output, setup, SetupContext,
 };
 
@@ -18,6 +18,16 @@ use crate::textures::CubeTexture;
 pub enum Side {
     Front,
     Back,
+}
+
+/// `three.js/src/constants.js` tone-mapping modes — the ones the port needs.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum ToneMapping {
+    /// `NoToneMapping`.
+    #[default]
+    None,
+    /// `ACESFilmicToneMapping`.
+    AcesFilmic,
 }
 
 /// Which `NodeMaterial` subclass this is — i.e. which `setupLightingModel()`
@@ -63,6 +73,16 @@ pub struct MeshBasicNodeMaterial {
     /// scene here rather than shared through an `Rc`. `None` means "every light
     /// in the scene", which is what `LightsNode` defaults to.
     pub lights_node: Option<Vec<usize>>,
+    /// `material.maskNode` — `NodeMaterial.setupDiscard()` turns it into
+    /// `If( mask.not(), () => Discard() )` at the top of the fragment.
+    pub mask_node: Option<NodeRef>,
+    /// `material.receivedShadowPositionNode` —
+    /// `ShadowBaseNode.setupShadowPosition()` assigns it to
+    /// `shadowPositionWorld` instead of `positionWorld`.
+    pub received_shadow_position_node: Option<NodeRef>,
+    /// `Material.fog` — `false` on the shadow-pass material, which is why the
+    /// shadow programs carry no fog mix even though `scene.fog` is set.
+    pub fog: bool,
     /// `material.specularNode`.
     pub specular_node: Option<NodeRef>,
     /// `material.normalNode` — e.g. `normalMap( texture( map ) )`.
@@ -103,6 +123,9 @@ impl Default for MeshBasicNodeMaterial {
             emissive_intensity: 1.0,
             lights: false,
             lights_node: None,
+            mask_node: None,
+            received_shadow_position_node: None,
+            fog: true,
             specular_node: None,
             normal_node: None,
             reflectivity: 1.0,

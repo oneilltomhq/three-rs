@@ -2,8 +2,9 @@
 //! `setupX()` methods it dispatches to. This is where a material turns into the
 //! statements the builder flows into the two shader stages.
 
-use super::phong::{self, PointLightUniforms};
-use super::{MaterialKind, MeshBasicNodeMaterial};
+use super::phong::{self, LightDesc};
+use crate::lights::LightKind;
+use super::{MaterialKind, MeshBasicNodeMaterial, ToneMapping};
 use crate::nodes::node::Type;
 use crate::nodes::tsl::*;
 use crate::nodes::tsl::FogNode;
@@ -11,7 +12,7 @@ use crate::nodes::{MaterialFlow, NodeRef};
 
 /// The per-render-object facts three.js reads off `builder.object` and
 /// `builder.geometry` during setup.
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct SetupContext {
     /// `Some(count)` when the object is an `InstancedMesh`, which is what makes
     /// `NodeMaterial.setupPosition()` insert the `InstanceNode` transform.
@@ -19,11 +20,12 @@ pub struct SetupContext {
     /// `InstancedMesh.instanceColor` is present, so `range()` resolves against
     /// the instance index.
     pub instanced: bool,
-    /// How many lights the pass has (`Scene.lights.len()`), i.e. the default
-    /// `LightsNode` list when the material sets no `lights_node`. Kept as a
-    /// count rather than a list so `SetupContext` stays `Copy`: a material's
-    /// selective `lights([ … ])` subset lives on the material itself.
-    pub light_count: usize,
+    /// The pass' lights in `Scene.lights` order — the default `LightsNode` list
+    /// when the material sets no `lights_node`. Each entry carries the light's
+    /// kind and, when this object receives its shadow, the shadow map to sample;
+    /// both change the generated code, so they are part of the program's cache
+    /// key by construction.
+    pub lights: Vec<LightDesc>,
 }
 
 /// `vec4( node )` the way `setupDiffuseColor` builds it: a scalar splats, a
@@ -85,6 +87,12 @@ fn setup_inner(
         pre_vertex.push(normal_local().assign(inv_t.mul(normal_local()).normalize()));
     }
 
+    // --- setupDiscard: `If( maskNode.not(), () => Discard() )`, the first
+    // thing in the fragment flow, before `setupDiffuseColor`.
+    if let Some(mask) = &material.mask_node {
+        fragment.push(discard_if(mask.clone()));
+    }
+
     // --- the fragment flow
     let output = if let Some(fragment_node) = &material.fragment_node {
         fragment_node.clone()
@@ -102,9 +110,11 @@ fn setup_inner(
                 .w()
                 .assign(diffuse_color().w().mul(material_opacity())),
         );
-        // `builder.isOpaque()` — the material is not transparent, blending is
-        // NormalBlending and alphaToCoverage is off.
-        fragment.push(diffuse_color().w().assign(float(1.0)));
+        // `builder.isOpaque()` — not transparent, blending is NormalBlending
+        // and alphaToCoverage is off.
+        if !material.transparent {
+            fragment.push(diffuse_color().w().assign(float(1.0)));
+        }
 
         let outgoing = if let Some(env_map) = &material.env_map {
             // `BasicLightingModel` with an indirect environment contribution.
@@ -148,7 +158,7 @@ fn setup_inner(
 
     // `NodeMaterial.setupOutput()`: `scene.fogNode` mixes over the colour only,
     // leaving the alpha — `vec4( mix( output.rgb, fogColor, factor ), output.a )`.
-    let output = match fog {
+    let output = match fog.filter(|_| material.fog) {
         Some(fog) => {
             fragment.push(output_property().assign(output));
             let mixed = vec4_join(vec![
@@ -190,6 +200,12 @@ pub fn background_color_node(map: &crate::textures::CubeTexture) -> NodeRef {
         .mul(background_rotation().mul(vec4_join(vec![normal_world_geometry(), float(1.0)])));
     let sample = cube_texture_level(map, dir, background_blurriness());
     sample.mul(background_intensity())
+}
+
+/// `Background.update()`'s `isNode` branch with a plain `color()` node:
+/// `vec4( color ).mul( backgroundIntensity )`.
+pub fn background_node_color_node(color: crate::math::Color) -> NodeRef {
+    vec4_join(vec![color.into(), float(1.0)]).mul(background_intensity())
 }
 
 pub fn background_vertex_node() -> NodeRef {
@@ -242,20 +258,29 @@ pub fn instanced_range(min: crate::math::Color, max: crate::math::Color, count: 
 
 /// `Renderer._renderOutput()`'s material: the framebuffer texture sampled at
 /// the fragment coordinate, through `renderOutput()`.
-pub fn output_fragment_node(framebuffer: &crate::textures::Texture) -> NodeRef {
+pub fn output_fragment_node(
+    framebuffer: &crate::textures::Texture,
+    tone_mapping: ToneMapping,
+) -> NodeRef {
     let coord = frag_coord().xy().div(viewport_size());
     let color = texture_uv(framebuffer, coord);
-    render_output(color)
+    render_output(color, tone_mapping)
 }
 
-/// `RenderOutputNode.setup()` with `NoToneMapping` and an sRGB output space.
-pub fn render_output(color: NodeRef) -> NodeRef {
+/// `RenderOutputNode.setup()` with an sRGB output space: the alpha clamp and
+/// unpremultiply, then `toneMapping` — which `ToneMappingNode` applies to the
+/// colour only — then the sRGB OETF and the premultiply back.
+pub fn render_output(color: NodeRef, tone_mapping: ToneMapping) -> NodeRef {
     let clamped = vec4_join(vec![color.rgb(), color.a().clamp(float(0.0), float(1.0))]);
     let unpremultiplied = unpremultiply_alpha(clamped);
-    let encoded = vec4_join(vec![
-        srgb_transfer_oetf(unpremultiplied.rgb()),
-        unpremultiplied.a(),
-    ]);
+    let mapped = match tone_mapping {
+        ToneMapping::None => unpremultiplied,
+        ToneMapping::AcesFilmic => vec4_join(vec![
+            aces_filmic_tone_mapping(unpremultiplied.clone().rgb(), tone_mapping_exposure()),
+            unpremultiplied.a(),
+        ]),
+    };
+    let encoded = vec4_join(vec![srgb_transfer_oetf(mapped.clone().rgb()), mapped.a()]);
     premultiply_alpha(encoded)
 }
 
@@ -281,7 +306,9 @@ fn setup_phong(
             .assign(diffuse_color().w().mul(material_opacity())),
     );
     // `builder.isOpaque()`
-    fragment.push(diffuse_color().w().assign(float(1.0)));
+    if !material.transparent {
+        fragment.push(diffuse_color().w().assign(float(1.0)));
+    }
 
     // setupVariants: `PhongLightingModel` reads these three properties.
     fragment.push(shininess().assign(max(material_shininess(), float(0.0001))));
@@ -297,20 +324,46 @@ fn setup_phong(
     let outgoing = if material.lights {
         // `LightsNode`: the scene's lights, or the selective subset the
         // material's `lights( [ … ] )` node names.
-        let indices: Vec<usize> = match &material.lights_node {
-            Some(subset) => subset.clone(),
-            None => (0..ctx.light_count).collect(),
+        let lights: Vec<LightDesc> = match &material.lights_node {
+            Some(subset) => ctx
+                .lights
+                .iter()
+                .filter(|light| subset.contains(&light.index))
+                .cloned()
+                .collect(),
+            None => ctx.lights.clone(),
         };
+        let ambient: Vec<usize> = lights
+            .iter()
+            .filter(|light| light.kind == LightKind::Ambient)
+            .map(|light| light.index)
+            .collect();
+
+        // `AmbientLightNode` sorts first in `LightsNode`'s list, and its
+        // `irradiance.addAssign()` is what forces `irradiance = vec3( 0 )` up
+        // here rather than down in the indirect tail.
+        if !ambient.is_empty() {
+            phong::ambient_lights(&ambient, fragment);
+        }
 
         fragment.push(direct_diffuse().assign(vec3(0.0, 0.0, 0.0)));
         fragment.push(direct_specular().assign(vec3(0.0, 0.0, 0.0)));
-        for index in indices {
-            phong::direct_point_light(&PointLightUniforms::at(index), fragment);
+        for light in &lights {
+            if light.kind == LightKind::Ambient {
+                continue;
+            }
+            phong::direct_light(
+                light,
+                material.received_shadow_position_node.as_ref(),
+                fragment,
+            );
         }
 
         // The tail every lit material shares.
         fragment.push(indirect_diffuse().assign(vec3(0.0, 0.0, 0.0)));
-        fragment.push(irradiance().assign(vec3(0.0, 0.0, 0.0)));
+        if ambient.is_empty() {
+            fragment.push(irradiance().assign(vec3(0.0, 0.0, 0.0)));
+        }
         fragment.push(indirect_diffuse().assign(
             vec4_join(vec![indirect_diffuse(), float(1.0)])
                 .add(vec4_join(vec![irradiance(), float(1.0)]).mul(

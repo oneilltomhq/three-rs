@@ -26,8 +26,9 @@ pub use render_target::{RenderTarget, RenderTargetInner, RenderTargetOptions};
 use crate::cameras::{OrthographicCamera, PerspectiveCamera};
 use crate::core::{BufferGeometry, Index};
 use crate::geometries::{quad_geometry, sphere_geometry};
-use crate::lights::LightObject;
-use crate::materials::{self, MeshBasicNodeMaterial, SetupContext, Side};
+use crate::lights::{LightKind, LightObject};
+use crate::materials::phong::LightDesc;
+use crate::materials::{self, MeshBasicNodeMaterial, SetupContext, Side, ToneMapping};
 use crate::math::{Color, Matrix4, Vector2};
 use crate::nodes::node::{BufferSource, TextureSource};
 use crate::nodes::tsl::FogNode;
@@ -36,7 +37,7 @@ use crate::nodes::{BindingDesc, NodeBuilder};
 use crate::objects::{Background, InstancedBufferAttribute, QuadMesh, Scene};
 use crate::testing::DeterministicRandom;
 use crate::textures::{
-    CubeTexture, Texture, TextureFilter, TextureType, Wrapping,
+    CubeTexture, DepthTexture, Texture, TextureFilter, TextureType, Wrapping,
 };
 
 struct GeometryGpu {
@@ -174,6 +175,14 @@ pub struct Renderer {
     /// `three.webgpu.js` (`MathUtils.generateUUID` uses the pattern the
     /// harness rewrites to the unseeded `Math._random`).
     random: DeterministicRandom,
+    /// `renderer.toneMapping`.
+    pub tone_mapping: ToneMapping,
+    /// `renderer.shadowMap.enabled`.
+    pub shadow_map_enabled: bool,
+    /// The depth texture of each shadow-casting light's shadow map, keyed by the
+    /// light's index in the render list — `light.shadow.map` in three.js. Filled
+    /// by the shadow pass, before any material setup reads it.
+    shadow_maps: HashMap<usize, DepthTexture>,
 }
 
 /// `new WebGPURenderer( parameters )`.
@@ -241,6 +250,9 @@ impl Renderer {
             time: 0.0,
             present: None,
             random: DeterministicRandom::new(),
+            tone_mapping: ToneMapping::None,
+            shadow_map_enabled: false,
+            shadow_maps: HashMap::new(),
         }
     }
 
@@ -288,10 +300,17 @@ impl Renderer {
         let mut items = Vec::with_capacity(render_list.len() + 1);
 
         // The skybox first, exactly where `renderList.unshift()` puts it.
-        if let Some(Background::CubeTexture(background)) = scene.background.clone() {
+        let background_color_node = match scene.background.clone() {
+            Some(Background::CubeTexture(background)) => {
+                Some(materials::background_color_node(&background))
+            }
+            Some(Background::Node(color)) => Some(materials::background_node_color_node(color)),
+            _ => None,
+        };
+        if let Some(color_node) = background_color_node {
             let mut material = MeshBasicNodeMaterial::new();
             material.name = "Background.material";
-            material.color_node = Some(materials::background_color_node(&background));
+            material.color_node = Some(color_node);
             material.vertex_node = Some(materials::background_vertex_node());
             material.side = Side::Back;
             material.depth_test = false;
@@ -309,6 +328,22 @@ impl Renderer {
                 instance_count: 1,
             });
         }
+
+        // `LightsNode`'s list, as the materials see it: the kind decides which
+        // `AnalyticLightNode` subclass generates, and the shadow map (present
+        // only for a light that casts and an object that receives) decides
+        // whether a shadow factor multiplies the light colour.
+        let light_descs: Vec<(LightKind, bool)> = render_list
+            .lights
+            .iter()
+            .map(|node| {
+                let object = node.borrow();
+                let light = object
+                    .light()
+                    .expect("three-rs: the light list only holds lights");
+                (light.kind, object.cast_shadow && light.shadow.is_some())
+            })
+            .collect();
 
         for item in render_list.items() {
             let object = item.node.borrow();
@@ -337,7 +372,19 @@ impl Renderer {
                 setup: SetupContext {
                     instance_count: instance_matrix.as_ref().map(|_| instance_count as usize),
                     instanced: instance_matrix.is_some(),
-                    light_count: render_list.lights.len(),
+                    lights: light_descs
+                        .iter()
+                        .enumerate()
+                        .map(|(index, (kind, casts))| LightDesc {
+                            index,
+                            kind: *kind,
+                            shadow_map: (*casts
+                                && object.receive_shadow
+                                && self.shadow_map_enabled)
+                                .then(|| self.shadow_maps.get(&index).cloned())
+                                .flatten(),
+                        })
+                        .collect(),
                 },
                 fog: scene.fog_node.clone(),
                 model_world: item.matrix_world,
@@ -353,6 +400,7 @@ impl Renderer {
             Some(Background::Color(Color { r, g, b })) => [*r, *g, *b, 1.0],
             _ => self.clear_color,
         };
+
 
         // `LightsNode.setupLights()`: each light resolves to its colour scaled
         // by intensity plus its position in view space. The list is
@@ -371,14 +419,22 @@ impl Renderer {
                 let mut view_position = LightObject::world_position(&object.matrix_world);
                 view_position.apply_matrix4(&camera.matrix_world_inverse);
 
-                let c = light.light.color;
-                let intensity = light.light.intensity;
+                let shadow = light.shadow.as_deref();
                 LightState {
-                    color: Color::new(c.r * intensity, c.g * intensity, c.b * intensity),
+                    color: light.color_intensity(),
                     view_position,
                     distance: light.distance,
                     decay: light.decay,
-                    ..Default::default()
+                    world_position: LightObject::world_position(&object.matrix_world),
+                    target_position: light.target_world_position(),
+                    cone_cos: light.cone_cos(),
+                    penumbra_cos: light.penumbra_cos(),
+                    shadow_matrix: shadow.map_or_else(Matrix4::identity, |s| s.matrix),
+                    shadow_bias: shadow.map_or(0.0, |s| s.bias),
+                    shadow_normal_bias: shadow.map_or(0.0, |s| s.normal_bias),
+                    shadow_radius: shadow.map_or(1.0, |s| s.radius),
+                    shadow_map_size: shadow.map_or(Vector2::new(512.0, 512.0), |s| s.map_size),
+                    shadow_intensity: shadow.map_or(1.0, |s| s.intensity),
                 }
             })
             .collect();
@@ -636,6 +692,7 @@ impl Renderer {
         material.name = "outputColorTransform";
         material.fragment_node = Some(materials::output_fragment_node(
             &render_target.texture(),
+            self.tone_mapping,
         ));
 
         let items = [Renderable {
@@ -1293,10 +1350,11 @@ impl Renderer {
     // -- targets ---------------------------------------------------------
 
     /// `Renderer.needsFrameBufferTarget` — true when the output needs tone
-    /// mapping or a colour-space conversion. `outputColorSpace` is
-    /// `SRGBColorSpace` and the working colour space is `LinearSRGBColorSpace`,
-    /// and the port has no tone mapping yet, so this is the colour-space half:
-    /// always true for a canvas render.
+    /// mapping or a colour-space conversion: `isOutputTarget && ( toneMapping
+    /// !== NoToneMapping || outputColorSpace !== workingColorSpace )`.
+    /// `outputColorSpace` is `SRGBColorSpace` against a `LinearSRGBColorSpace`
+    /// working space, so the second term is always true for a canvas render and
+    /// `neutral_output` — which zeroes both terms — is the whole predicate.
     fn needs_frame_buffer_target(&self) -> bool {
         !self.neutral_output
     }

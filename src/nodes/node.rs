@@ -25,6 +25,9 @@ pub enum Type {
     Vec3,
     Vec4,
     UVec2,
+    /// `vec3<u32>` — MaterialX's `mx_hash_vec3` packs its three byte hashes
+    /// into one.
+    UVec3,
     BVec3,
     Mat3,
     Mat4,
@@ -37,7 +40,7 @@ impl Type {
             Type::Void => 0,
             Type::Bool | Type::F32 | Type::I32 | Type::U32 => 1,
             Type::Vec2 | Type::UVec2 => 2,
-            Type::Vec3 | Type::BVec3 => 3,
+            Type::Vec3 | Type::UVec3 | Type::BVec3 => 3,
             Type::Vec4 => 4,
             Type::Mat3 => 9,
             Type::Mat4 => 16,
@@ -47,7 +50,7 @@ impl Type {
     /// `NodeBuilder.getComponentType()`.
     pub fn component_type(self) -> Type {
         match self {
-            Type::UVec2 => Type::U32,
+            Type::UVec2 | Type::UVec3 => Type::U32,
             Type::BVec3 => Type::Bool,
             Type::Vec2 | Type::Vec3 | Type::Vec4 | Type::Mat3 | Type::Mat4 => Type::F32,
             other => other,
@@ -59,6 +62,7 @@ impl Type {
         match (component, n) {
             (_, 1) => component,
             (Type::U32, 2) => Type::UVec2,
+            (Type::U32, 3) => Type::UVec3,
             (Type::Bool, 3) => Type::BVec3,
             (Type::F32, 2) => Type::Vec2,
             (Type::F32, 3) => Type::Vec3,
