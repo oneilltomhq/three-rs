@@ -250,7 +250,7 @@ new material, is wrong.
 | tone mapping (rung 7) | `RenderOutputNode` already branches on tone mapping; rung 4 passes `NoToneMapping`. |
 | post-processing `pass()` (rung 9, done — see `docs/postprocessing.md`) | `PassNode` is a `Texture` whose source is a `RenderTarget` the renderer renders first; `TextureSource` already has that variant shape. |
 | compute (rung 12) | `Stage::Compute` is in the stage enum and unreachable; it needs storage buffers (`BufferSource` with `var<storage>`) and a `@compute` entry point. |
-| `SpriteNodeMaterial` (rung 13) | `setup_position_view`, which `NodeMaterial` already routes through `builder.context`. |
+| ~~`SpriteNodeMaterial` (rung 13)~~ | Done — see §10. `position_view()` is context-driven the way `normal_view()` is, and `MaterialKind::Sprite` supplies the billboarded `vec4`. |
 | MRT, clipping planes, vertex colours, fog, alpha test | all are single branches in `NodeMaterial`'s setup flow, omitted because no rung 1–4 material sets them. |
 
 ## 7. Sub-builds, and `normalMap` as the value of `normalView`
@@ -368,7 +368,9 @@ differences, each verified to be pixel-neutral.
 * **Attribute `@location` order.** On the instanced-attribute path (§9.2) this
   port assigns locations in flow order, so the four instance-matrix `vec4`s take
   0–3 and `position` / `normal` follow; Three's dump puts the geometry
-  attributes first. Same class as the binding-index swap: the vertex buffer
+  attributes first. Pixel-neutral, but note it is *not* free: the same flow order
+  decides which `range()` buffer is filled first, which is load-bearing (§9.2,
+  `tests/nodes_range_buffers.rs`). Same class as the binding-index swap: the vertex buffer
   layouts come from the same `AttributeSlot`s the shader's declarations do.
 * **Matrix column index literal.** `m[ 0u ]` where Three prints `m[ 0 ]`.
 * **JPEG decode.** `TextureLoader` decodes through `zune-jpeg`; Chromium uses
@@ -471,5 +473,95 @@ different buffers cannot alias.
 
 Coverage: `tests/nodes_instanced_attributes.rs` pins each branch on both sides of
 both limits and the two-`range()` rule; `tests/renderer_instanced.rs` draws 1000,
-2000 and 5000 instances headless and counts pixels, because no rung crosses a
-limit.
+2000 and 5000 instances headless and counts pixels; `tests/nodes_range_buffers.rs`
+pins rung 13's four buffers, fill order included.
+
+### 9.3 A `range()`'s `min` / `max` are `Vector4`s, and they disagree about `w`
+
+`RangeNode.setup()` widens each end to a `Vector4` by three different rules:
+
+| value | `Vector4` |
+|---|---|
+| a scalar — `range( 0, 1 )` | `setScalar( v )`, i.e. `( v, v, v, v )` |
+| a `Color` — `range( new Color( … ), … )` | `( r, g, b, 1 )` |
+| any other vector — `range( vec3( -1 ), vec3( 1 ) )` | `( x, y, z \|\| 0, w \|\| 0 )` |
+
+So a `vec3` range has `w` **0 at both ends**, not 1. The fourth draw per instance
+is still consumed — the loop is `stride * count` long regardless — it just lands
+on a constant. `BufferSource::Range` therefore carries `[f64; 4]` rather than a
+`Color`; the `Color` spelling the port shipped at rung 2 forced `w = 1` and would
+have shifted rung 13's whole random sequence had it survived.
+
+`RangeNode.getNodeType()` is the value's own type, and the buffer is a `vec4`, so
+the node ends in a `convert()` — which for a narrowing is `NodeBuilder.format()`,
+i.e. a swizzle: `range( 0, 1 )` reads `….x` and `range( vec3( … ), … )` reads
+`….xyz`. `tsl::instanced_range` returns the narrowed node, so callers do not
+swizzle again.
+
+## 10. `SpriteNodeMaterial` and the `setupPositionView` seam (rung 13)
+
+`NodeMaterial.setup()` installs three entries on `builder.context` before either
+stage is flowed:
+
+```js
+builder.context.setupNormal = () => subBuild( this.setupNormal( builder ), 'NORMAL', 'vec3' );
+builder.context.setupPositionView = () => this.setupPositionView( builder );
+builder.context.setupModelViewProjection = () => this.setupModelViewProjection( builder );
+```
+
+`positionView` and `modelViewProjection` are `Fn( … ).once()` accessors that read
+the last two. The port mirrors `NORMAL_VALUE` / `with_material_normal` exactly:
+`POSITION_VIEW_VALUE` holds the override for the duration of
+`materials::setup()`, and `position_view()` / `model_view_projection()` come out
+of one cache keyed on that value's `NodeRef::key()`, so two materials in one
+process cannot inherit each other's node.
+
+The base class' value is `modelViewMatrix.mul( positionLocal ).xyz` — a `vec3`.
+`SpriteNodeMaterial.setupPositionView()` returns a **`vec4`**, which is why
+`v_positionView` is declared `vec4<f32>` in this rung's shader and why
+`cameraProjectionMatrix.mul( positionView )` needs no padding. Nothing in the
+fragment stage reads it, so it is emitted as a `var<private>`, not a varying.
+
+The sprite vertex shader itself (`SpriteNodeMaterial.js:110`), in full:
+
+```js
+const mvPosition = modelViewMatrix.mul( vec3( positionNode || 0 ) );
+let scale = vec2( modelWorldMatrix[ 0 ].xyz.length(), modelWorldMatrix[ 1 ].xyz.length() );
+if ( scaleNode !== null ) scale = scale.mul( vec2( scaleNode ) );
+if ( camera.isPerspectiveCamera && sizeAttenuation === false ) scale = scale.mul( mvPosition.z.negate() );
+let alignedPosition = positionGeometry.xy;                 // object.center is a Sprite field
+alignedPosition = alignedPosition.mul( scale );
+const rotation = float( rotationNode || materialRotation );
+return vec4( mvPosition.xy.add( rotate( alignedPosition, rotation ) ), mvPosition.zw );
+```
+
+Three things fall out of it:
+
+* **`sizeAttenuation` defaults to `true`**, and `true` is the branch that *omits*
+  the `mvPosition.z.negate()` factor. The name reads backwards; the dump settles
+  it.
+* **`positionNode` is read twice** — once by `setupPosition()` as
+  `positionLocal.assign( positionNode )`, once here — so it is always a
+  `nodeVarN` temp, and the billboard is built around the *node's* value, not
+  around `positionLocal` (which instancing has already transformed).
+* **`materialRotation`** is a new object-group `f32` uniform
+  (`SpriteMaterial.rotation`), landing at offset 96 in this rung's
+  `objectStruct`, between `modelWorldMatrix` and the example's `size`.
+
+`rotate()` is `RotateNode`'s `vec2` branch: `mat2( cos, sin, sin.negate(), cos
+).mul( position )`, with `cos` and `sin` one node each used twice, so both become
+temps. The `vec3`/`vec4` branch (three chained `mat4` rotations) is not ported.
+
+`MaterialKind::Sprite` shares `Basic`'s fragment flow — `SpriteNodeMaterial`
+leaves `lights` false, so `setupOutgoingLight()` is `diffuseColor.rgb`. What it
+does change is `transparent`, which its constructor sets to `true`; that takes it
+out of `isOpaque()`, so the `DiffuseColor.w = 1.0` line is absent and the
+per-fragment alpha survives to `Output`.
+
+### Divergences specific to this rung
+
+Only the ones §8 already lists: generated name numbering, attribute `@location`
+order (the four instance-matrix `vec4`s take 0–3 here, pushing `position` /
+`normal` / `uv` to 4 / 5 / 9), `m[ 0u ]`, the absent `VERTEX_` temps, and
+`var<private>` declaration order. Statement for statement the vertex and fragment
+flows match `handoff/scouts/rung13/{vertex,fragment}-r186.wgsl`.
