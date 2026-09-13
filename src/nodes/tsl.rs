@@ -36,9 +36,17 @@ thread_local! {
     /// i.e. the material's `normalNode`. `normal_view()` takes it as its value
     /// outside the `NORMAL` layer and `normalViewGeometry` inside it.
     static NORMAL_VALUE: RefCell<Option<NodeRef>> = const { RefCell::new(None) };
+    /// `builder.isFlatShading()` — `material.flatShading && material.wireframe
+    /// === false`. `normalViewGeometry` reads it, so like `NORMAL_VALUE` it is
+    /// installed for the whole of one material's setup.
+    static FLAT_SHADING: RefCell<bool> = const { RefCell::new(false) };
+    /// `normalViewGeometry`'s node per flat-shading flag — the stand-in for
+    /// three.js' per-build `nodeData`, which gives the two forms of the
+    /// accessor's `Fn( … ).once()` separate cache entries.
+    static NORMAL_VIEW_GEOMETRY: RefCell<HashMap<bool, NodeRef>> = RefCell::new(HashMap::new());
     /// `normalView`'s node per (layer, normal value) — the stand-in for
     /// three.js' per-build `nodeData` plus its `subBuildsCache`.
-    static NORMAL_VIEW: RefCell<HashMap<(Option<&'static str>, Option<usize>), NodeRef>> =
+    static NORMAL_VIEW: RefCell<HashMap<(Option<&'static str>, Option<usize>, bool), NodeRef>> =
         RefCell::new(HashMap::new());
     /// `tangentView` / `bitangentView`, keyed by layer the same way.
     static TANGENT_VIEW: RefCell<HashMap<Option<&'static str>, (NodeRef, NodeRef)>> =
@@ -65,10 +73,12 @@ fn in_sub_build<R>(layer: &'static str, f: impl FnOnce() -> R) -> R {
 /// Install the material's `normalNode` as `builder.context.setupNormal` for the
 /// duration of `f` — `NodeMaterial.setup()` does exactly this before flowing
 /// either stage. Returns what `f` returns.
-pub fn with_material_normal<R>(normal: Option<NodeRef>, f: impl FnOnce() -> R) -> R {
+pub fn with_material_normal<R>(normal: Option<NodeRef>, flat_shading: bool, f: impl FnOnce() -> R) -> R {
     let previous = NORMAL_VALUE.with(|v| v.replace(normal));
+    let previous_flat = FLAT_SHADING.with(|v| v.replace(flat_shading));
     let out = f();
     NORMAL_VALUE.with(|v| *v.borrow_mut() = previous);
+    FLAT_SHADING.with(|v| *v.borrow_mut() = previous_flat);
     out
 }
 
@@ -942,24 +952,48 @@ accessor!(
         to_varying(Some("v_positionViewDirection"), position_view().negate()).normalize()
     )
 );
-accessor!(
-    /// `normalViewGeometry`.
-    normal_view_geometry,
-    to_var(
-        Some("normalViewGeometry"),
+/// `normalFlat` — `positionView.dFdx().cross( positionView.dFdy() ).normalize()
+/// .toVar( 'normalFlat' )`. `dpdy()` carries WGSL's sign flip, so this prints as
+/// `normalize( cross( dpdx( v_positionView ), - dpdy( v_positionView ) ) )`.
+pub fn normal_flat() -> NodeRef {
+    thread_local! { static CELL: Lazy<NodeRef> = Lazy::new(); }
+    CELL.with(|c| {
+        c.get(|| {
+            to_var(
+                Some("normalFlat"),
+                cross(dpdx(position_view()), dpdy(position_view())).normalize(),
+            )
+        })
+    })
+}
+
+/// `normalViewGeometry` — `Fn( builder => builder.isFlatShading() ? normalFlat :
+/// transformNormalToView( normalLocal ).toVarying( 'v_normalViewGeometry'
+/// ).normalize() ).once()().toVar( 'normalViewGeometry' )`.
+pub fn normal_view_geometry() -> NodeRef {
+    let flat = FLAT_SHADING.with(|f| *f.borrow());
+    if let Some(node) = NORMAL_VIEW_GEOMETRY.with(|m| m.borrow().get(&flat).cloned()) {
+        return node;
+    }
+    let value = if flat {
+        normal_flat()
+    } else {
         to_varying(
             Some("v_normalViewGeometry"),
             camera_view_matrix()
                 .mul(vec4_join(vec![
                     model_normal_matrix().mul(normal_local()),
-                    float(0.0)
+                    float(0.0),
                 ]))
                 .xyz()
-                .normalize()
+                .normalize(),
         )
         .normalize()
-    )
-);
+    };
+    let node = to_var(Some("normalViewGeometry"), value);
+    NORMAL_VIEW_GEOMETRY.with(|m| m.borrow_mut().insert(flat, node.clone()));
+    node
+}
 /// `normalView` — `Normal.js`' `Fn( … ).once( [ 'NORMAL', 'VERTEX' ] )`.
 ///
 /// Inside the `NORMAL` sub-build layer it is the geometric normal, under the
@@ -975,7 +1009,11 @@ pub fn normal_view() -> NodeRef {
     } else {
         NORMAL_VALUE.with(|v| v.borrow().clone())
     };
-    let key = (layer, value.as_ref().map(|v| v.key()));
+    let key = (
+        layer,
+        value.as_ref().map(|v| v.key()),
+        FLAT_SHADING.with(|f| *f.borrow()),
+    );
     if let Some(node) = NORMAL_VIEW.with(|m| m.borrow().get(&key).cloned()) {
         return node;
     }

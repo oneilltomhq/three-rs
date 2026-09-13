@@ -47,7 +47,7 @@ pub fn setup(
     // ), 'NORMAL' )` — installed for the whole of the material's setup, so that
     // every `normalView` the lighting flow reaches resolves to this material's
     // normal map. See `docs/nodes.md` §7.
-    with_material_normal(material.normal_node.clone(), || {
+    with_material_normal(material.normal_node.clone(), material.flat_shading, || {
         setup_inner(material, ctx, fog)
     })
 }

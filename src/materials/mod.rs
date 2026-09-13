@@ -55,6 +55,10 @@ pub struct MeshBasicNodeMaterial {
     pub shininess: f64,
     pub emissive: Color,
     pub emissive_intensity: f64,
+    /// `Material.flatShading` — `NodeMaterial.setupNormal()` picks `normalFlat`
+    /// (the screen-space derivative frame) over the interpolated vertex normal,
+    /// so there is no `normal` attribute and no normal varying at all.
+    pub flat_shading: bool,
     /// `NodeMaterial.lights`. `false` is the light spheres' material: no
     /// lighting flow at all, `outgoingLight = DiffuseColor.rgb`.
     pub lights: bool,
@@ -101,6 +105,7 @@ impl Default for MeshBasicNodeMaterial {
             shininess: 30.0,
             emissive: Color::new(0.0, 0.0, 0.0),
             emissive_intensity: 1.0,
+            flat_shading: false,
             lights: false,
             lights_node: None,
             specular_node: None,
