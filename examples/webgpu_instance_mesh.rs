@@ -46,7 +46,7 @@ pub fn init() -> App {
     let count = AMOUNT.pow(3);
 
     let mut camera = PerspectiveCamera::new(60.0, INNER_WIDTH / INNER_HEIGHT, 0.1, 100.0);
-    camera.object.position.set(
+    camera.node.borrow_mut().position.set(
         AMOUNT as f64 * 0.9,
         AMOUNT as f64 * 0.9,
         AMOUNT as f64 * 0.9,

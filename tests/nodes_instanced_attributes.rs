@@ -22,7 +22,7 @@ fn build(material: &MeshBasicNodeMaterial, count: usize) -> NodeProgram {
         &SetupContext {
             instance_count: Some(count),
             instanced: true,
-            light_count: 0,
+            ..SetupContext::default()
         },
         None,
     );
@@ -101,8 +101,11 @@ fn an_instance_matrix_over_the_limit_is_four_interleaved_vec4_attributes() {
     ));
     assert!(buffer_names(&program).is_empty());
 
-    // Four `vec4` instanced attributes, then the geometry's own attributes,
-    // each in a per-vertex buffer of its own.
+    // Attributes are numbered in flow order: `positionLocal = position` first,
+    // then the four `vec4` instanced attributes the instance transform reads,
+    // then `normal`. Each geometry attribute sits in a per-vertex buffer of its
+    // own. (Three's dump puts both geometry attributes first; cosmetic, see
+    // docs/nodes.md §9.)
     let slots: Vec<(&str, Type)> = program
         .attributes
         .iter()
@@ -111,11 +114,11 @@ fn an_instance_matrix_over_the_limit_is_four_interleaved_vec4_attributes() {
     assert_eq!(
         slots,
         vec![
+            ("position", Type::Vec3),
             ("nodeAttribute0", Type::Vec4),
             ("nodeAttribute1", Type::Vec4),
             ("nodeAttribute2", Type::Vec4),
             ("nodeAttribute3", Type::Vec4),
-            ("position", Type::Vec3),
             ("normal", Type::Vec3),
         ]
     );
@@ -124,7 +127,7 @@ fn an_instance_matrix_over_the_limit_is_four_interleaved_vec4_attributes() {
         .iter()
         .map(|desc| desc.instanced)
         .collect();
-    assert_eq!(instanced, vec![true, false, false]);
+    assert_eq!(instanced, vec![false, true, false]);
 }
 
 #[test]

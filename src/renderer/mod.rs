@@ -26,7 +26,7 @@ pub use render_target::{RenderTarget, RenderTargetInner, RenderTargetOptions};
 use crate::cameras::{OrthographicCamera, PerspectiveCamera};
 use crate::core::{BufferGeometry, Index};
 use crate::geometries::{quad_geometry, sphere_geometry};
-use crate::lights::PointLight;
+use crate::lights::{LightKind, PointLight};
 use crate::materials::{self, MeshBasicNodeMaterial, SetupContext, Side};
 use crate::math::{Color, Matrix4, Vector2};
 use crate::nodes::node::{BufferSource, TextureSource};
@@ -37,6 +37,7 @@ use crate::nodes::{BindingDesc, NodeBuilder, NodeProgram};
 use crate::objects::{Background, InstancedBufferAttribute, QuadMesh, Scene};
 use crate::testing::DeterministicRandom;
 use crate::textures::{
+    DataArrayTexture,
     CubeTexture, Texture, TextureFilter, TextureType, Wrapping,
 };
 
@@ -88,6 +89,10 @@ struct Renderable {
     model_world: Matrix4,
     instance_matrix: Option<InstancedBufferAttribute>,
     instance_count: u32,
+    /// `Mesh.morphTargetInfluences`, and `Morph.js`' `base` uniform, which is
+    /// `1 - Σ influences` for non-relative morph targets.
+    morph_influences: Vec<f64>,
+    morph_base: f64,
 }
 
 /// The attachments, formats and size of the pass about to run.
@@ -318,8 +323,50 @@ impl Renderer {
                 model_world: Matrix4::identity(),
                 instance_matrix: None,
                 instance_count: 1,
+            morph_influences: Vec::new(),
+            morph_base: 1.0,
             });
         }
+
+        // `LightsNode.setupLightsNode()` starts with `sortLights( lights )`,
+        // `lights.sort( ( a, b ) => a.id - b.id )` — so the order the lighting
+        // nodes are set up in, and therefore the order
+        // `UniformSource::Light*( i )` indexes, is creation order, not the
+        // `RenderList.lightsArray` traversal order this list arrives in.
+        let mut sorted_lights = render_list.lights.clone();
+        sorted_lights.sort_by_key(|node| node.borrow().id);
+
+        // `LightsNode.setupLights()`: each light resolves to its colour scaled
+        // by intensity, plus — for a punctual light — its position in view
+        // space, its cutoff distance and its decay.
+        let lights: Vec<LightState> = sorted_lights
+            .iter()
+            .map(|node| {
+                let object = node.borrow();
+                let light = object
+                    .light()
+                    .expect("three-rs: the light list only holds lights");
+
+                let mut view_position = PointLight::world_position(&object.matrix_world);
+                view_position.apply_matrix4(&camera.matrix_world_inverse);
+
+                let c = light.light().color;
+                let intensity = light.light().intensity;
+                LightState {
+                    color: Color::new(c.r * intensity, c.g * intensity, c.b * intensity),
+                    view_position,
+                    distance: light.point().map_or(0.0, |light| light.distance),
+                    decay: light.point().map_or(0.0, |light| light.decay),
+                }
+            })
+            .collect();
+
+        // `builder.lightsNode.getLightNodes()` — which lighting node each light
+        // resolves to, in the same sorted order.
+        let light_kinds: Vec<LightKind> = sorted_lights
+            .iter()
+            .map(|node| node.borrow().light().unwrap().kind())
+            .collect();
 
         for item in render_list.items() {
             let object = item.node.borrow();
@@ -339,6 +386,16 @@ impl Renderer {
                 .or(mesh.material.as_ref())
                 .unwrap_or(&default_material);
 
+            // `MorphNode.update()`: with `morphTargetsRelative === false` the
+            // base keeps the unmorphed position's share of the blend.
+            let morph = crate::nodes::morph::get_entry(&mesh.geometry);
+            let morph_influences = mesh.morph_target_influences.clone();
+            let morph_base = if morph.is_some() && !mesh.geometry.morph_targets_relative {
+                1.0 - morph_influences.iter().sum::<f64>()
+            } else {
+                1.0
+            };
+
             let instance_count = object.instance_count();
             let instance_matrix = object.instance_matrix().cloned();
 
@@ -348,12 +405,15 @@ impl Renderer {
                 setup: SetupContext {
                     instance_count: instance_matrix.as_ref().map(|_| instance_count as usize),
                     instanced: instance_matrix.is_some(),
-                    light_count: render_list.lights.len(),
+                    lights: light_kinds.clone(),
+                    morph: morph.clone(),
                 },
                 fog: scene.fog_node.clone(),
                 model_world: item.matrix_world,
                 instance_matrix,
                 instance_count,
+                morph_influences,
+                morph_base,
             });
         }
 
@@ -365,38 +425,10 @@ impl Renderer {
             _ => self.clear_color,
         };
 
-        // `LightsNode.setupLights()`: each light resolves to its colour scaled
-        // by intensity plus its position in view space. The list is
-        // `RenderList.lightsArray` — scene-traversal order, which is the order
-        // `LightsNode.setLights()` receives and which `UniformSource::Light*( i )`
-        // indexes.
-        let lights: Vec<LightState> = render_list
-            .lights
-            .iter()
-            .map(|node| {
-                let object = node.borrow();
-                let light = object
-                    .light()
-                    .expect("three-rs: the light list only holds lights");
-
-                let mut view_position = PointLight::world_position(&object.matrix_world);
-                view_position.apply_matrix4(&camera.matrix_world_inverse);
-
-                let c = light.light.color;
-                let intensity = light.light.intensity;
-                LightState {
-                    color: Color::new(c.r * intensity, c.g * intensity, c.b * intensity),
-                    view_position,
-                    distance: light.distance,
-                    decay: light.decay,
-                }
-            })
-            .collect();
-
         let camera_uniforms = UniformContext {
             camera_projection: camera.projection_matrix,
             camera_view: camera.matrix_world_inverse,
-            camera_world: camera.object.matrix_world,
+            camera_world: camera.node.borrow().matrix_world,
             time: self.time,
             lights: &lights,
             ..Default::default()
@@ -438,6 +470,8 @@ impl Renderer {
             model_world: Matrix4::identity(),
             instance_matrix: None,
             instance_count: 1,
+            morph_influences: Vec::new(),
+            morph_base: 1.0,
         }];
 
         let camera_uniforms = self.quad_camera_uniforms();
@@ -545,6 +579,8 @@ impl Renderer {
                 material_specular: item.material.specular,
                 material_emissive: item.material.emissive,
                 material_emissive_intensity: item.material.emissive_intensity,
+                morph_base: item.morph_base,
+                morph_influences: &item.morph_influences,
                 viewport: Vector2::new(target.width as f64, target.height as f64),
                 ..camera_uniforms
             };
@@ -671,6 +707,8 @@ impl Renderer {
             model_world: Matrix4::identity(),
             instance_matrix: None,
             instance_count: 1,
+            morph_influences: Vec::new(),
+            morph_base: 1.0,
         }];
 
         let camera_uniforms = self.quad_camera_uniforms();
@@ -785,6 +823,7 @@ impl Renderer {
                         source,
                         *count,
                         instance_matrix,
+                        uniforms.morph_influences,
                     )),
                     BindingDesc::Texture { source, kind, .. } => {
                         Resource::View(self.texture_view(source, *kind))
@@ -826,7 +865,22 @@ impl Renderer {
         source: &BufferSource,
         count: usize,
         instance_matrix: &Option<InstancedBufferAttribute>,
+        morph_influences: &[f64],
     ) -> wgpu::Buffer {
+        if let BufferSource::MorphInfluences = source {
+            // `uniformArray( influences, 'float' )`: one `vec4` per target with
+            // the influence in `.x`, so 16 bytes each — not 4. Re-uploaded per
+            // draw like the instance matrix: the influences change per frame.
+            let mut data = vec![0f32; count * 4];
+            for (i, influence) in morph_influences.iter().enumerate().take(count) {
+                data[i * 4] = *influence as f32;
+            }
+            return self.create_buffer_init(
+                "three-rs morphTargetInfluences",
+                bytemuck::cast_slice(&data),
+                wgpu::BufferUsages::UNIFORM,
+            );
+        }
         self.buffer_for(id, source, count, instance_matrix, wgpu::BufferUsages::UNIFORM)
     }
 
@@ -865,6 +919,9 @@ impl Renderer {
         usage: wgpu::BufferUsages,
     ) -> wgpu::Buffer {
         match source {
+            BufferSource::MorphInfluences => {
+                unreachable!("three-rs: morphTargetInfluences is uploaded by node_buffer")
+            }
             BufferSource::InstanceMatrix => {
                 let attribute = instance_matrix
                     .as_ref()
@@ -918,6 +975,14 @@ impl Renderer {
                     .as_ref()
                     .expect("three-rs: the depth texture has not been rendered into yet");
                 gpu.create_view(&Default::default())
+            }
+            TextureSource::DataArray(data) => {
+                assert_eq!(kind, TextureKind::Float2DArray);
+                let gpu = self.ensure_data_array_texture(data);
+                gpu.create_view(&wgpu::TextureViewDescriptor {
+                    dimension: Some(wgpu::TextureViewDimension::D2Array),
+                    ..Default::default()
+                })
             }
             TextureSource::Cube(cube) => {
                 assert_eq!(kind, TextureKind::Cube);
@@ -976,8 +1041,8 @@ impl Renderer {
                     ..Default::default()
                 })
             }
-            TextureSource::Depth(_) => {
-                panic!("three-rs: a depth texture is read with textureLoad, not sampled")
+            TextureSource::Depth(_) | TextureSource::DataArray(_) => {
+                panic!("three-rs: this texture is read with textureLoad, not sampled")
             }
         }
     }
@@ -1000,6 +1065,57 @@ impl Renderer {
 
     /// `Textures.updateTexture()` for a 2D `Texture`: upload the image with
     /// `flipY` applied, then generate the mip chain.
+    /// `WebGPUTextureUtils.createTexture()` for a `DataArrayTexture` with
+    /// `type = FloatType`: an `rgba32float` 2-D-array texture, one layer per
+    /// morph target, uploaded once and read with `textureLoad` only.
+    fn ensure_data_array_texture(&mut self, texture: &DataArrayTexture) -> wgpu::Texture {
+        if texture.has_gpu() {
+            return texture.with_gpu(|gpu| gpu.clone());
+        }
+
+        let (width, height, depth) = texture.size();
+        let gpu = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("three-rs data array texture"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: depth,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba32Float,
+            usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+
+        {
+            let inner = texture.borrow();
+            self.queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &gpu,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                bytemuck::cast_slice(&inner.data),
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(width * 16),
+                    rows_per_image: Some(height),
+                },
+                wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: depth,
+                },
+            );
+        }
+
+        texture.set_gpu(gpu.clone());
+        gpu
+    }
+
     fn ensure_texture_2d(&mut self, texture: &Texture) -> wgpu::Texture {
         // A render target's colour texture is owned by the renderer and was
         // created by `prepare_render_target()`.

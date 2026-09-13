@@ -10,7 +10,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::math::{Color, Matrix4, Vector2, Vector3};
-use crate::textures::{CubeTexture, DepthTexture, Texture};
+use crate::textures::{CubeTexture, DataArrayTexture, DepthTexture, Texture};
 
 /// A WGSL value type. Three carries these as strings (`'vec3'`); the closed set
 /// is the part of `NodeBuilder`'s type vocabulary the ladder has reached.
@@ -25,6 +25,7 @@ pub enum Type {
     Vec3,
     Vec4,
     UVec2,
+    IVec2,
     BVec3,
     /// `mat2` — `RotateNode`'s vec2 path emits `mat2x2<f32>( cos, sin, -sin, cos )`.
     Mat2,
@@ -38,7 +39,7 @@ impl Type {
         match self {
             Type::Void => 0,
             Type::Bool | Type::F32 | Type::I32 | Type::U32 => 1,
-            Type::Vec2 | Type::UVec2 => 2,
+            Type::Vec2 | Type::UVec2 | Type::IVec2 => 2,
             Type::Vec3 | Type::BVec3 => 3,
             Type::Vec4 => 4,
             Type::Mat2 => 4,
@@ -51,6 +52,7 @@ impl Type {
     pub fn component_type(self) -> Type {
         match self {
             Type::UVec2 => Type::U32,
+            Type::IVec2 => Type::I32,
             Type::BVec3 => Type::Bool,
             Type::Vec2 | Type::Vec3 | Type::Vec4 | Type::Mat2 | Type::Mat3 | Type::Mat4 => {
                 Type::F32
@@ -64,6 +66,7 @@ impl Type {
         match (component, n) {
             (_, 1) => component,
             (Type::U32, 2) => Type::UVec2,
+            (Type::I32, 2) => Type::IVec2,
             (Type::Bool, 3) => Type::BVec3,
             (Type::F32, 2) => Type::Vec2,
             (Type::F32, 3) => Type::Vec3,
@@ -144,6 +147,9 @@ pub enum UniformSource {
     LightCutoffDistance(usize),
     LightDecay(usize),
     LightViewPosition(usize),
+    /// `Morph.js`' `base = uniform( 1 )`, updated per object to
+    /// `1 - Σ morphTargetInfluences` (or 1 when the targets are relative).
+    MorphBase,
     /// A plain `uniform( value )` the example supplies.
     Value(Vec<f64>),
 }
@@ -162,6 +168,7 @@ impl UniformSource {
             | UniformSource::MaterialEmissiveIntensity
             | UniformSource::TextureMatrix
             | UniformSource::EnvRotationMatrix
+            | UniformSource::MorphBase
             | UniformSource::Value(_) => UpdateType::Object,
             _ => UpdateType::Render,
         }
@@ -187,6 +194,9 @@ pub enum BufferSource {
     /// `RangeNode` resolved per instance:
     /// `lerp( min[c], max[c], Math.random() )`.
     Range { min: Color, max: Color },
+    /// `Morph.js`' `uniformArray( mesh.morphTargetInfluences, 'float' )` — one
+    /// `vec4` per morph target with the influence in `.x`.
+    MorphInfluences,
 }
 
 /// The CPU-side buffer behind one or more *instanced vertex attributes* —
@@ -224,6 +234,8 @@ pub enum TextureSource {
     Texture2D(Texture),
     Depth(DepthTexture),
     Cube(CubeTexture),
+    /// `DataArrayTexture` — the morph-target data texture.
+    DataArray(DataArrayTexture),
 }
 
 /// How a `TextureNode` reads its texture — `WGSLNodeBuilder.generateTexture*`.
@@ -236,6 +248,9 @@ pub enum SampleMode {
     /// The non-filterable path: `textureLoad` against `textureDimensions`,
     /// with no sampler binding at all. What Three emits for a depth texture.
     Load,
+    /// `textureLoad( t, coord, layer, u32( 0u ) )` on a 2-D-array texture —
+    /// `textureLoad( … ).depth( layer )`, with no clamping and no sampler.
+    LoadLayer(NodeRef),
 }
 
 /// A WGSL builtin input.
@@ -375,6 +390,16 @@ pub enum Node {
         ty: Type,
     },
     Call { def: Rc<FnDef>, args: Vec<NodeRef> },
+    /// `LoopNode` over a count: `for ( var i : i32 = 0; i < count; i ++ ) { … }`.
+    /// A statement; `index` is the `Param` the body reads.
+    Loop {
+        index: NodeRef,
+        count: usize,
+        body: Vec<NodeRef>,
+    },
+    /// `If( cond, () => { … } )` as a statement — `ConditionalNode` with no
+    /// result value, which is what the morph guard is.
+    If { cond: NodeRef, body: Vec<NodeRef> },
     /// `cond.select( a, b )` — lowered to an `if`/`else` writing a result var,
     /// exactly as Three does.
     Select {
@@ -424,6 +449,8 @@ impl NodeRef {
             Node::Texture { ty, .. } => *ty,
             Node::Call { def, .. } => def.ret,
             Node::Select { ty, .. } => *ty,
+            // Statements have no value.
+            Node::Loop { .. } | Node::If { .. } => Type::Void,
         }
     }
 }

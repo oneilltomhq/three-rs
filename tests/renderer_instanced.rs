@@ -39,7 +39,7 @@ const SPAN_Y: f64 = 5.0;
 /// A grid of unlit quads, `count` of them, coloured either flat or by `range()`.
 fn render(count: usize, range_colors: bool) -> Vec<u8> {
     let mut camera = PerspectiveCamera::new(60.0, WIDTH / HEIGHT, 0.1, 100.0);
-    camera.object.position.set(0.0, 0.0, 10.0);
+    camera.node.borrow_mut().position.set(0.0, 0.0, 10.0);
     camera.look_at(&Vector3::ZERO);
 
     let mut scene = Scene::new();

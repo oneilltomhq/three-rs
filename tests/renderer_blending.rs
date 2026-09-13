@@ -26,7 +26,7 @@ const HEIGHT: f64 = 200.0;
 /// the caller.
 fn render(overlay: impl FnOnce(&mut MeshBasicNodeMaterial)) -> Vec<u8> {
     let mut camera = PerspectiveCamera::new(60.0, WIDTH / HEIGHT, 0.1, 100.0);
-    camera.object.position.set(0.0, 0.0, 10.0);
+    camera.node.borrow_mut().position.set(0.0, 0.0, 10.0);
     camera.look_at(&Vector3::ZERO);
 
     let mut scene = Scene::new();

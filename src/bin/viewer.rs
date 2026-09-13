@@ -243,7 +243,7 @@ struct OrbitControls {
 impl OrbitControls {
     fn new(camera: &PerspectiveCamera, target: Vector3) -> Self {
         let mut offset = Vector3::ZERO;
-        offset.sub_vectors(&camera.object.position, &target);
+        offset.sub_vectors(&camera.node.borrow().position, &target);
         let radius = offset.length().max(1e-6);
         // `Spherical.setFromVector3()`.
         let theta = offset.x.atan2(offset.z);
@@ -278,7 +278,8 @@ impl OrbitControls {
     fn pan(&mut self, dx: f64, dy: f64, camera: &PerspectiveCamera, height: f64) {
         let fov = camera.fov * std::f64::consts::PI / 180.0;
         let target_distance = self.radius * (fov / 2.0).tan();
-        let m = &camera.object.matrix_world;
+        let object = camera.node.borrow();
+        let m = &object.matrix_world;
         let e = m.elements;
         // `panLeft`: matrix column 0; `panUp`: column 1.
         let mut left = Vector3::new(e[0], e[1], e[2]);
@@ -291,7 +292,7 @@ impl OrbitControls {
 
     fn apply(&self, camera: &mut PerspectiveCamera) {
         let sin_phi = self.phi.sin();
-        camera.object.position.set(
+        camera.node.borrow_mut().position.set(
             self.target.x + self.radius * sin_phi * self.theta.sin(),
             self.target.y + self.radius * self.phi.cos(),
             self.target.z + self.radius * sin_phi * self.theta.cos(),

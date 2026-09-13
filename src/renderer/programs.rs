@@ -207,10 +207,19 @@ fn layout_entry(binding: u32, desc: &BindingDesc) -> wgpu::BindGroupLayoutEntry 
             ty: wgpu::BindingType::Texture {
                 sample_type: match kind {
                     TextureKind::Depth2D => wgpu::TextureSampleType::Depth,
+                    // The morph data texture is `rgba32float`, which wgpu only
+                    // lets a pipeline filter with the `FLOAT32_FILTERABLE`
+                    // feature. It is only ever `textureLoad`ed, so declaring it
+                    // non-filterable costs nothing and keeps the feature set to
+                    // the WebGPU baseline three.js targets.
+                    TextureKind::Float2DArray => {
+                        wgpu::TextureSampleType::Float { filterable: false }
+                    }
                     _ => wgpu::TextureSampleType::Float { filterable: true },
                 },
                 view_dimension: match kind {
                     TextureKind::Cube => wgpu::TextureViewDimension::Cube,
+                    TextureKind::Float2DArray => wgpu::TextureViewDimension::D2Array,
                     _ => wgpu::TextureViewDimension::D2,
                 },
                 multisampled: false,
@@ -283,6 +292,10 @@ pub struct UniformContext<'a> {
     /// The lights of the pass, in `Scene.lights` order. Borrowed so the context
     /// stays `Copy` and can be spread with `..camera_uniforms` per draw.
     pub lights: &'a [LightState],
+    /// `Morph.js`' `base` uniform: `1 - Σ morphTargetInfluences`.
+    pub morph_base: f64,
+    /// `mesh.morphTargetInfluences` — the `uniformArray` contents.
+    pub morph_influences: &'a [f64],
 }
 
 impl Default for UniformContext<'_> {
@@ -311,6 +324,8 @@ impl Default for UniformContext<'_> {
             viewport: Vector2::new(0.0, 0.0),
             time: 0.0,
             lights: &[],
+            morph_base: 1.0,
+            morph_influences: &[],
         }
     }
 }
@@ -380,6 +395,9 @@ impl UniformContext<'_> {
                     let p = self.lights[*i].view_position;
                     vec![p.x as f32, p.y as f32, p.z as f32]
                 }
+                // `Morph.js`' `OnObjectUpdate`: `base.value = 1 - Σ influences`
+                // (or 1 when `morphTargetsRelative`).
+                UniformSource::MorphBase => vec![self.morph_base as f32],
                 UniformSource::Value(values) => values.iter().map(|&v| v as f32).collect(),
             };
 

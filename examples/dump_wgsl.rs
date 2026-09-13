@@ -1,7 +1,12 @@
 //! Prints the WGSL the node system generates for every material in rungs 1–4,
 //! so it can be diffed against three.js' own dumped output.
 
+#[allow(dead_code)]
+#[path = "webgpu_morphtargets.rs"]
+mod morphtargets;
+
 use three_rs::materials::{setup, MeshBasicNodeMaterial, SetupContext, Side};
+use three_rs::lights::LightKind;
 use three_rs::math::Color;
 use three_rs::nodes::tsl::*;
 use three_rs::nodes::NodeBuilder;
@@ -107,7 +112,8 @@ fn main() {
         SetupContext {
             instance_count: Some(1000),
             instanced: true,
-            light_count: 0,
+            lights: Vec::new(),
+            morph: None,
         },
     );
 
@@ -173,7 +179,7 @@ fn main() {
     // `target/dumps/webgpu_lights_phong/`.
     let fog = fog(Color::from_hex(0xFF00FF), range_fog_factor(12.0, 30.0));
     let four = SetupContext {
-        light_count: 4,
+        lights: vec![LightKind::Point; 4],
         ..SetupContext::default()
     };
 
@@ -185,12 +191,12 @@ fn main() {
     let mut left = MeshBasicNodeMaterial::phong(grey);
     left.lights_node = Some(vec![0]);
     left.specular_node = Some(texture(&alpha_texture));
-    show_fog("phong_left", &left, four, Some(&fog));
+    show_fog("phong_left", &left, four.clone(), Some(&fog));
 
     let mut centre = MeshBasicNodeMaterial::phong(grey);
     centre.normal_node = Some(normal_map(texture(&normal_map_texture)));
     centre.shininess = 80.0;
-    show_fog("phong_centre", &centre, four, Some(&fog));
+    show_fog("phong_centre", &centre, four.clone(), Some(&fog));
 
     let mut right = MeshBasicNodeMaterial::phong(grey);
     right.lights_node = Some(vec![1]);
@@ -200,7 +206,7 @@ fn main() {
         checker(uv().mul(5.0)),
     ));
     right.shininess = 90.0;
-    show_fog("phong_right", &right, four, Some(&fog));
+    show_fog("phong_right", &right, four.clone(), Some(&fog));
 
     let mut sphere = MeshBasicNodeMaterial::phong(Color::new(1.0, 1.0, 1.0));
     sphere.lights = false;
@@ -231,7 +237,22 @@ fn main() {
         SetupContext {
             instance_count: Some(MANY),
             instanced: true,
-            light_count: 0,
+            ..SetupContext::default()
+        },
+    );
+
+    // rung 6: the morphing box, against
+    // `handoff/scouts/rung6/MeshPhongNodeMaterial.{vert,frag}-r186.wgsl`.
+    let geometry = std::rc::Rc::new(morphtargets::create_geometry());
+    let mut morph = MeshBasicNodeMaterial::phong(Color::from_hex(0xff0000));
+    morph.flat_shading = true;
+    show(
+        "morphtargets",
+        &morph,
+        SetupContext {
+            lights: vec![LightKind::Ambient, LightKind::Point],
+            morph: three_rs::nodes::morph::get_entry(&geometry),
+            ..SetupContext::default()
         },
     );
 }

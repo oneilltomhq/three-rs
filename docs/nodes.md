@@ -308,6 +308,13 @@ Inside `NORMAL` it is the geometric normal; outside it, the material's
 being a singleton, so the two meanings coexist as two vars in one shader —
 which is exactly what the dump shows.
 
+Rung 6 added a third input to that key: `builder.isFlatShading()`, which
+`normalViewGeometry` switches on (`normalFlat` — the screen-space derivative
+cross product — instead of the `v_normalViewGeometry` varying). The key stands
+in for Three's *per-build* `nodeData`, so every fact the accessor reads has to
+be in it; with the flag missing, a flat-shaded material built after a smooth one
+in the same process silently reused the smooth normal.
+
 ### Tagging is on ancestors, not descendants
 
 Three tags the node a layer is *declared through*, and the tag propagates up
@@ -366,11 +373,27 @@ differences, each verified to be pixel-neutral.
   material's object group are swapped relative to the dump; the layout is built
   from the same descriptors the shader is, so they cannot disagree.
 * **Attribute `@location` order.** On the instanced-attribute path (§9.2) this
-  port assigns locations in flow order, so the four instance-matrix `vec4`s take
-  0–3 and `position` / `normal` follow; Three's dump puts the geometry
-  attributes first. Same class as the binding-index swap: the vertex buffer
+  port assigns locations in flow order: since rung 6 `positionLocal = position`
+  is emitted first, so `position` takes 0, the four instance-matrix `vec4`s
+  1–4 and `normal` 5; Three's dump puts both geometry attributes first. Same class as the binding-index swap: the vertex buffer
   layouts come from the same `AttributeSlot`s the shader's declarations do.
 * **Matrix column index literal.** `m[ 0u ]` where Three prints `m[ 0 ]`.
+* **`NORMAL_normalView` with no normal map.** Three always runs its
+  `setupNormal` thunk, so even a material with no `normalNode` gets the
+  sub-build pair `NORMAL_normalView = normalViewGeometry; normalView =
+  NORMAL_normalView;`. This port's `normal_view()` short-circuits to
+  `normalViewGeometry` and emits one var. Same value.
+* **`ivec2` morph coordinate.** `getMorph()`'s `ivec2( x, y )` lands in a var of
+  its own in Three's dump even though it is read once: `TextureNode` builds its
+  uv snippet twice during the analyze stage, so `TempNode`'s usage count passes
+  1. This port counts one usage, so `morph_reference()` asks for the var
+  explicitly rather than leaving the join inlined — same shape, for a different
+  reason.
+* **Branch-local temps.** A node read from both arms of a `Select` is promoted
+  to a var by this port (usage 2) and emitted in each arm; Three caches the
+  property name per flow scope, so its `else` arm re-inlines the expression
+  (`nodeVar10 = ( 1.0 / max( pow( length( nodeVar7 ), … )` in the rung-6
+  fragment dump). Same value in both arms.
 * **JPEG decode.** `TextureLoader` decodes through `zune-jpeg`; Chromium uses
   libjpeg-turbo, so the inverse DCT rounds differently. Measured on
   `uv_grid_opengl.jpg` against the browser's own decode: 34030 of 4194304

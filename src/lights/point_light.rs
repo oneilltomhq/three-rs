@@ -1,7 +1,7 @@
 //! Port of `three.js/src/lights/PointLight.js` (no `PointLightShadow` — rung 7
 //! adds shadows).
 
-use super::Light;
+use super::{Light, LightPayload};
 use crate::core::{Node, Object3D};
 use crate::math::{Color, Vector3};
 use crate::objects::Payload;
@@ -27,11 +27,11 @@ impl PointLight {
         let mut object = Object3D::default();
         object.object_type = "PointLight";
         object.is_light = true;
-        object.payload = Payload::Light(Self {
+        object.payload = Payload::Light(LightPayload::Point(Self {
             light: Light::new(color, intensity),
             distance,
             decay: 2.0,
-        });
+        }));
         object.into_node()
     }
 

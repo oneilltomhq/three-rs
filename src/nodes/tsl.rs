@@ -20,7 +20,7 @@ use super::node::{
     UniformNode, UniformSource, VarDef, VaryingDef,
 };
 use crate::math::Color;
-use crate::textures::{CubeTexture, DepthTexture, Texture};
+use crate::textures::{CubeTexture, DataArrayTexture, DepthTexture, Texture};
 
 pub use super::node::TextureSource;
 
@@ -37,9 +37,17 @@ thread_local! {
     /// i.e. the material's `normalNode`. `normal_view()` takes it as its value
     /// outside the `NORMAL` layer and `normalViewGeometry` inside it.
     static NORMAL_VALUE: RefCell<Option<NodeRef>> = const { RefCell::new(None) };
+    /// `builder.isFlatShading()` — `material.flatShading && material.wireframe
+    /// === false`. `normalViewGeometry` reads it, so like `NORMAL_VALUE` it is
+    /// installed for the whole of one material's setup.
+    static FLAT_SHADING: RefCell<bool> = const { RefCell::new(false) };
+    /// `normalViewGeometry`'s node per flat-shading flag — the stand-in for
+    /// three.js' per-build `nodeData`, which gives the two forms of the
+    /// accessor's `Fn( … ).once()` separate cache entries.
+    static NORMAL_VIEW_GEOMETRY: RefCell<HashMap<bool, NodeRef>> = RefCell::new(HashMap::new());
     /// `normalView`'s node per (layer, normal value) — the stand-in for
     /// three.js' per-build `nodeData` plus its `subBuildsCache`.
-    static NORMAL_VIEW: RefCell<HashMap<(Option<&'static str>, Option<usize>), NodeRef>> =
+    static NORMAL_VIEW: RefCell<HashMap<(Option<&'static str>, Option<usize>, bool), NodeRef>> =
         RefCell::new(HashMap::new());
     /// `tangentView` / `bitangentView`, keyed by layer the same way.
     static TANGENT_VIEW: RefCell<HashMap<Option<&'static str>, (NodeRef, NodeRef)>> =
@@ -66,10 +74,12 @@ fn in_sub_build<R>(layer: &'static str, f: impl FnOnce() -> R) -> R {
 /// Install the material's `normalNode` as `builder.context.setupNormal` for the
 /// duration of `f` — `NodeMaterial.setup()` does exactly this before flowing
 /// either stage. Returns what `f` returns.
-pub fn with_material_normal<R>(normal: Option<NodeRef>, f: impl FnOnce() -> R) -> R {
+pub fn with_material_normal<R>(normal: Option<NodeRef>, flat_shading: bool, f: impl FnOnce() -> R) -> R {
     let previous = NORMAL_VALUE.with(|v| v.replace(normal));
+    let previous_flat = FLAT_SHADING.with(|v| v.replace(flat_shading));
     let out = f();
     NORMAL_VALUE.with(|v| *v.borrow_mut() = previous);
+    FLAT_SHADING.with(|v| *v.borrow_mut() = previous_flat);
     out
 }
 
@@ -84,6 +94,11 @@ fn constant(ty: Type, values: Vec<f64>) -> NodeRef {
 /// `float( x )`.
 pub fn float(v: impl Into<f64>) -> NodeRef {
     constant(Type::F32, vec![v.into()])
+}
+
+/// `int( x )`.
+pub fn int(v: i64) -> NodeRef {
+    constant(Type::I32, vec![v as f64])
 }
 
 /// `vec2( x, y )`.
@@ -531,6 +546,9 @@ impl NodeRef {
     pub fn equal(&self, other: impl Into<NodeRef>) -> NodeRef {
         binary("==", self.clone(), other.into())
     }
+    pub fn not_equal(&self, other: impl Into<NodeRef>) -> NodeRef {
+        binary("!=", self.clone(), other.into())
+    }
     pub fn less_than_equal(&self, other: impl Into<NodeRef>) -> NodeRef {
         binary("<=", self.clone(), other.into())
     }
@@ -682,6 +700,16 @@ impl NodeRef {
 
     pub fn to_varying(&self, name: &'static str) -> NodeRef {
         to_varying(Some(name), self.clone())
+    }
+
+    /// `target.addAssign( value )` — `target = ( target + value )`.
+    pub fn add_assign(&self, value: impl Into<NodeRef>) -> NodeRef {
+        self.assign(self.add(value))
+    }
+
+    /// `target.mulAssign( value )` — `target = ( target * value )`.
+    pub fn mul_assign(&self, value: impl Into<NodeRef>) -> NodeRef {
+        self.assign(self.mul(value))
     }
 
     /// `target.assign( value )` — a statement.
@@ -953,24 +981,48 @@ accessor!(
         to_varying(Some("v_positionViewDirection"), position_view().negate()).normalize()
     )
 );
-accessor!(
-    /// `normalViewGeometry`.
-    normal_view_geometry,
-    to_var(
-        Some("normalViewGeometry"),
+/// `normalFlat` — `positionView.dFdx().cross( positionView.dFdy() ).normalize()
+/// .toVar( 'normalFlat' )`. `dpdy()` carries WGSL's sign flip, so this prints as
+/// `normalize( cross( dpdx( v_positionView ), - dpdy( v_positionView ) ) )`.
+pub fn normal_flat() -> NodeRef {
+    thread_local! { static CELL: Lazy<NodeRef> = Lazy::new(); }
+    CELL.with(|c| {
+        c.get(|| {
+            to_var(
+                Some("normalFlat"),
+                cross(dpdx(position_view()), dpdy(position_view())).normalize(),
+            )
+        })
+    })
+}
+
+/// `normalViewGeometry` — `Fn( builder => builder.isFlatShading() ? normalFlat :
+/// transformNormalToView( normalLocal ).toVarying( 'v_normalViewGeometry'
+/// ).normalize() ).once()().toVar( 'normalViewGeometry' )`.
+pub fn normal_view_geometry() -> NodeRef {
+    let flat = FLAT_SHADING.with(|f| *f.borrow());
+    if let Some(node) = NORMAL_VIEW_GEOMETRY.with(|m| m.borrow().get(&flat).cloned()) {
+        return node;
+    }
+    let value = if flat {
+        normal_flat()
+    } else {
         to_varying(
             Some("v_normalViewGeometry"),
             camera_view_matrix()
                 .mul(vec4_join(vec![
                     model_normal_matrix().mul(normal_local()),
-                    float(0.0)
+                    float(0.0),
                 ]))
                 .xyz()
-                .normalize()
+                .normalize(),
         )
         .normalize()
-    )
-);
+    };
+    let node = to_var(Some("normalViewGeometry"), value);
+    NORMAL_VIEW_GEOMETRY.with(|m| m.borrow_mut().insert(flat, node.clone()));
+    node
+}
 /// `normalView` — `Normal.js`' `Fn( … ).once( [ 'NORMAL', 'VERTEX' ] )`.
 ///
 /// Inside the `NORMAL` sub-build layer it is the geometric normal, under the
@@ -986,7 +1038,11 @@ pub fn normal_view() -> NodeRef {
     } else {
         NORMAL_VALUE.with(|v| v.borrow().clone())
     };
-    let key = (layer, value.as_ref().map(|v| v.key()));
+    let key = (
+        layer,
+        value.as_ref().map(|v| v.key()),
+        FLAT_SHADING.with(|f| *f.borrow()),
+    );
     if let Some(node) = NORMAL_VIEW.with(|m| m.borrow().get(&key).cloned()) {
         return node;
     }
@@ -1116,18 +1172,34 @@ macro_rules! prop {
 }
 
 prop!(output_property, "Output", Type::Vec4);
-prop!(indirect_diffuse, "indirectDiffuse", Type::Vec3);
-prop!(direct_diffuse, "directDiffuse", Type::Vec3);
 prop!(total_diffuse, "totalDiffuse", Type::Vec3);
-prop!(direct_specular, "directSpecular", Type::Vec3);
-prop!(indirect_specular, "indirectSpecular", Type::Vec3);
 prop!(total_specular, "totalSpecular", Type::Vec3);
 prop!(outgoing_light, "outgoingLight", Type::Vec3);
-prop!(ambient_occlusion, "ambientOcclusion", Type::F32);
 prop!(shininess, "Shininess", Type::F32);
 prop!(specular_color, "SpecularColor", Type::Vec3);
 prop!(emissive_color, "EmissiveColor", Type::Vec3);
-prop!(irradiance, "irradiance", Type::Vec3);
+
+/// `LightingContextNode.getContext()`'s accumulators. These are **vars**, not
+/// properties: three.js builds them as `vec3().toVar( 'directDiffuse' )` /
+/// `float( 1 ).toVar( 'ambientOcclusion' )`, so each one's initialiser is
+/// emitted where the flow first reads it rather than up front — which is why the
+/// dumps interleave `directSpecular = vec3<f32>( 0.0, 0.0, 0.0 )` with the
+/// light's own statements.
+macro_rules! lighting_var {
+    ($name:ident, $wgsl:literal, $init:expr) => {
+        pub fn $name() -> NodeRef {
+            thread_local! { static CELL: Lazy<NodeRef> = Lazy::new(); }
+            CELL.with(|c| c.get(|| to_var_untagged($wgsl, $init)))
+        }
+    };
+}
+
+lighting_var!(direct_diffuse, "directDiffuse", vec3(0.0, 0.0, 0.0));
+lighting_var!(direct_specular, "directSpecular", vec3(0.0, 0.0, 0.0));
+lighting_var!(indirect_diffuse, "indirectDiffuse", vec3(0.0, 0.0, 0.0));
+lighting_var!(indirect_specular, "indirectSpecular", vec3(0.0, 0.0, 0.0));
+lighting_var!(irradiance, "irradiance", vec3(0.0, 0.0, 0.0));
+lighting_var!(ambient_occlusion, "ambientOcclusion", float(1.0));
 
 // ---------------------------------------------------------------------------
 // textures
@@ -1297,6 +1369,46 @@ pub fn instanced_range(min: Color, max: Color, count: usize) -> NodeRef {
         item_size: 4,
     });
     instanced_attribute(&buffer, 0, Type::Vec4)
+}
+
+/// `Loop( count, ( { i } ) => { … } )` — the statement and the index node the
+/// body reads, which is a plain `i` already in scope.
+pub fn loop_index() -> NodeRef {
+    NodeRef::new(Node::Param {
+        name: "i",
+        ty: Type::I32,
+    })
+}
+
+pub fn loop_statement(count: usize, index: NodeRef, body: Vec<NodeRef>) -> NodeRef {
+    NodeRef::new(Node::Loop { index, count, body })
+}
+
+/// `If( cond, () => { … } )` with no `Else` — a statement.
+pub fn if_statement(cond: NodeRef, body: Vec<NodeRef>) -> NodeRef {
+    NodeRef::new(Node::If { cond, body })
+}
+
+/// `textureLoad( dataArrayTexture, ivec2( x, y ) ).depth( layer )` — the
+/// sampler-less array read `Morph.js`' `getMorph()` performs.
+pub fn texture_load_array(map: &DataArrayTexture, coord: NodeRef, layer: NodeRef) -> NodeRef {
+    texture_node(
+        TextureSource::DataArray(map.clone()),
+        coord,
+        SampleMode::LoadLayer(layer),
+        Type::Vec4,
+    )
+}
+
+/// `uniformArray( mesh.morphTargetInfluences, 'float' ).element( i )` — one
+/// `vec4` per morph target, the influence in `.x`.
+pub fn morph_influences(count: usize, index: NodeRef) -> NodeRef {
+    buffer_element(BufferSource::MorphInfluences, Type::Vec4, count, index)
+}
+
+/// `Morph.js`' `base = uniform( 1 )`, in the object group.
+pub fn morph_base() -> NodeRef {
+    uniform(UniformSource::MorphBase, Type::F32, UniformGroup::Object, None)
 }
 
 // ---------------------------------------------------------------------------

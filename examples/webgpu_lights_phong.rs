@@ -53,8 +53,8 @@ fn examples_dir() -> std::path::PathBuf {
 }
 
 pub fn init() -> App {
-    let mut camera = PerspectiveCamera::new(50.0, INNER_WIDTH / INNER_HEIGHT, 0.01, 100.0);
-    camera.object.position.z = 7.0;
+    let camera = PerspectiveCamera::new(50.0, INNER_WIDTH / INNER_HEIGHT, 0.01, 100.0);
+    camera.node.borrow_mut().position.z = 7.0;
 
     let mut scene = Scene::new();
     scene.fog_node = Some(fog(
@@ -90,7 +90,12 @@ pub fn init() -> App {
         mesh.borrow_mut().mesh_mut().unwrap().material = Some(material);
 
         let light = PointLight::new(Color::from_hex(hex), 1.0, 100.0);
-        light.borrow_mut().light_mut().unwrap().set_power(1700.0);
+        light.borrow_mut()
+            .light_mut()
+            .unwrap()
+            .point_mut()
+            .unwrap()
+            .set_power(1700.0);
         light.add(&mesh);
 
         scene.add(&light);

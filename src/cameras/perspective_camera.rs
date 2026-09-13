@@ -1,7 +1,7 @@
 //! Port of `three.js/src/cameras/PerspectiveCamera.js` + `Camera.js`
 //! (rung 1 subset).
 
-use crate::core::Object3D;
+use crate::core::{Node, Object3D, Object3DNode};
 use crate::math::math_utils::{js_max, js_min};
 use crate::math::{CoordinateSystem, Matrix4, Vector2, Vector3, DEG2RAD, RAD2DEG};
 
@@ -19,7 +19,10 @@ pub struct CameraView {
 }
 
 pub struct PerspectiveCamera {
-    pub object: Object3D,
+    /// The camera's own scene-graph node. `Camera` is an `Object3D` in three.js
+    /// and examples nest it (`scene.add( camera )`, `camera.add( light )`), so it
+    /// owns a [`Node`] rather than a bare `Object3D`.
+    pub node: Node,
     pub fov: f64,
     pub aspect: f64,
     pub near: f64,
@@ -45,7 +48,7 @@ impl PerspectiveCamera {
         object.is_camera = true;
 
         let mut camera = Self {
-            object,
+            node: object.into_node(),
             fov,
             aspect,
             near,
@@ -196,15 +199,16 @@ impl PerspectiveCamera {
     /// `Object3D.lookAt()` for a camera: the matrix looks *from* the camera
     /// position *at* the target.
     pub fn look_at(&mut self, target: &Vector3) {
+        let mut object = self.node.borrow_mut();
         let mut m = Matrix4::identity();
-        m.look_at(&self.object.position, target, &self.object.up);
-        self.object.quaternion.set_from_rotation_matrix(&m);
+        m.look_at(&object.position, target, &object.up);
+        object.quaternion.set_from_rotation_matrix(&m);
     }
 
     /// `Camera.updateMatrixWorld()`.
     pub fn update_matrix_world(&mut self) {
-        self.object.update_matrix_world(None);
-        self.matrix_world_inverse = self.object.matrix_world;
+        self.node.update_matrix_world(false);
+        self.matrix_world_inverse = self.node.borrow().matrix_world;
         self.matrix_world_inverse.invert();
     }
 }

@@ -148,7 +148,7 @@ impl ProjectCamera {
         frustum.set_from_projection_matrix(&proj_screen_matrix, camera.coordinate_system, false);
 
         Self {
-            layers: camera.object.layers,
+            layers: camera.node.borrow().layers,
             proj_screen_matrix,
             frustum,
         }
@@ -294,7 +294,7 @@ mod tests {
     /// A camera looking down -Z from z = 10, with everything in its frustum.
     fn camera() -> PerspectiveCamera {
         let mut camera = PerspectiveCamera::new(70.0, 2.0, 0.1, 100.0);
-        camera.object.position.z = 10.0;
+        camera.node.borrow_mut().position.z = 10.0;
         camera.update_matrix_world();
         camera
     }

@@ -47,8 +47,8 @@ fn examples_dir() -> std::path::PathBuf {
 }
 
 pub fn init() -> App {
-    let mut camera = PerspectiveCamera::new(70.0, INNER_WIDTH / INNER_HEIGHT, 0.1, 10.0);
-    camera.object.position.z = 3.0;
+    let camera = PerspectiveCamera::new(70.0, INNER_WIDTH / INNER_HEIGHT, 0.1, 10.0);
+    camera.node.borrow_mut().position.z = 3.0;
 
     let mut scene = Scene::new();
     scene.set_background(Color::from_hex(0x0066FF));
