@@ -50,22 +50,31 @@ Linux is the only backend that has been run.
 
 ## Examples graded green
 
-| Three example | different pixels (of 100000) |
-|---|---|
-| webgpu_depth_texture | 0 |
-| webgpu_instance_mesh | 60 (Three itself scores 60 against the same JPEG) |
-| webgpu_materials_basic | 0 |
-| webgpu_rtt | 1 |
-| webgpu_lights_phong | 31 |
-| webgpu_morphtargets | 0 |
-| webgpu_shadowmap | 7 |
-| webgpu_lights_physical | 4 |
-| webgpu_postprocessing_masking | 18 |
-| webgpu_tsl_galaxy | 40 |
+| Three example | different pixels (of 100000) | steady frame (ms) |
+|---|---|---|
+| webgpu_depth_texture | 0 | 11.0 |
+| webgpu_instance_mesh | 60 (Three itself scores 60 against the same JPEG) | 9.3 |
+| webgpu_materials_basic | 0 | 16.1 |
+| webgpu_rtt | 1 | 2.3 |
+| webgpu_lights_phong | 31 | 4.3 |
+| webgpu_morphtargets | 0 | 2.8 |
+| webgpu_shadowmap | 7 | 7.7 |
+| webgpu_lights_physical | 4 | 4.2 |
+| webgpu_postprocessing_masking | 18 | 1.0 |
+| webgpu_tsl_galaxy | 40 | 5.3 |
 
 Measured on Intel Iris Xe, Mesa 25.3.6, Fedora 43, against three.js r186.
 Other GPUs and drivers will land somewhere else on the pass threshold; the
 threshold is Three's own (0.1% of pixels).
+
+The steady frame is the whole cost of a frame once the first has built and
+uploaded everything — the example's `animate()` through to the GPU finishing
+it, at 800x500, mean of 30 frames after a 10-frame warm-up in a release build
+(`viewer <example> --headless --frames 40`, below). The same machine caveat
+applies. The e2e grader renders three more frames after the graded one and
+fails a rung whose steady frame is over a ceiling set well above these
+(`STEADY_FRAME_CEILING` in `tests/e2e/main.rs`), so a per-frame cost the single
+graded frame cannot see fails the ladder.
 
 ## Building
 
@@ -85,11 +94,26 @@ serialise themselves on the one GPU; no `--test-threads` flag is needed.
 ### The viewer
 
 ```sh
+cargo run --release --bin viewer -- --list
 cargo run --release --bin viewer -- webgpu_lights_physical
+cargo run --release --bin viewer -- 8                        # the same, by key
+cargo run --release --bin viewer -- shadowmap --headless --frames 40
 ```
 
 Opens the named example in a window (winit, tested on Wayland) with orbit,
-zoom and pan.
+zoom and pan. All ten graded examples are there; `--list` prints them with
+their keys (`1`-`9`, `0`), which switch examples in the window and stand in
+for the name on the command line. The window prints one line a second with
+the frame rate and the steady-state render time (mean and max over the last
+60 frames, after a 10-frame warm-up):
+
+```text
+webgpu_lights_phong — 1000x625 — 59.9 fps — render mean 1.61 ms max 1.79 ms (last 60 frames, after 10 warm-up)
+```
+
+`--headless --frames N` renders N frames with no window and reports the same
+numbers for the whole frame, CPU and GPU, which is how the table above was
+measured; add `--screenshot out.png` to keep the last frame.
 
 ### Running the examples and the e2e grader
 

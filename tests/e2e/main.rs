@@ -2,10 +2,16 @@
 //! three.js' own `test/e2e/image.js` for the downscale and the comparison.
 //!
 //! Run with: `cargo test --test e2e -- --nocapture`
+//!
+//! Each rung grades its first frame, exactly as three.js' harness does, and
+//! then renders [`STEADY_FRAMES`] more of the same scene and times the last:
+//! the performance ladder beside the pixel one (issue #57), so that a
+//! per-frame cost the single graded frame cannot see fails here.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 /// The rungs share one GPU. Run concurrently on the default test threads the
 /// binary SIGSEGVs inside the Vulkan driver under device contention, so every
@@ -15,6 +21,76 @@ static GPU: Mutex<()> = Mutex::new(());
 
 fn gpu() -> std::sync::MutexGuard<'static, ()> {
     GPU.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Frames rendered after the graded one. The second frame is the first that
+/// reuses every program, pipeline and upload the first built; the third and
+/// fourth confirm that it stays that way. Only the last is held to the ceiling.
+const STEADY_FRAMES: u32 = 3;
+
+/// The ceiling on a steady frame, from the example's `animate()` to the GPU
+/// finishing it. One number per build profile, because a debug build of the
+/// examples and the renderer is five to seven times slower on the CPU and the
+/// grader is normally run in debug (a plain `cargo test`).
+///
+/// How it was chosen, on this machine (Intel Iris Xe, Mesa 25.3.6, Fedora 43),
+/// from the `--nocapture` output of this file:
+///
+/// - **debug**: the slowest rung is webgpu_materials_basic at ~111 ms (500
+///   draws), then webgpu_depth_texture at ~63 ms; the other eight are under
+///   35 ms. 600 ms is ~5x the slowest.
+/// - **release**: the slowest is webgpu_materials_basic at ~16 ms (max ~27 ms
+///   over 30 frames in `viewer --headless`); the other nine are under 11 ms.
+///   100 ms is ~6x the slowest mean.
+///
+/// Both are wide enough that a busy machine, a driver hiccup or a slower GPU
+/// does not fail the ladder, and both are low enough that the regression this
+/// ladder exists for — 250 ms a frame in release from formatting a texture's
+/// pixels into the program cache key, issue #55, several times that in debug —
+/// cannot pass on any rung. Re-measure with `cargo test --test e2e --
+/// --nocapture` (debug) or `cargo run --release --bin viewer -- <example>
+/// --headless --frames 40` (release).
+const STEADY_FRAME_CEILING: Duration = if cfg!(debug_assertions) {
+    Duration::from_millis(600)
+} else {
+    Duration::from_millis(100)
+};
+
+/// Renders `STEADY_FRAMES` more frames through the example's own `animate()`,
+/// waits for the GPU after each, prints their times, and asserts the last is
+/// under [`STEADY_FRAME_CEILING`]. Called after the pixel comparison, so the
+/// graded frame is untouched.
+fn steady_frame<A>(name: &str, app: &mut A, animate: fn(&mut A), device: fn(&A) -> &wgpu::Device) {
+    let mut times = Vec::with_capacity(STEADY_FRAMES as usize);
+    for _ in 0..STEADY_FRAMES {
+        let t0 = Instant::now();
+        animate(app);
+        device(app)
+            .poll(wgpu::PollType::wait_indefinitely())
+            .unwrap();
+        times.push(t0.elapsed());
+    }
+
+    let last = *times.last().unwrap();
+    let listed: Vec<String> = times
+        .iter()
+        .map(|t| format!("{:.2}", t.as_secs_f64() * 1e3))
+        .collect();
+    println!(
+        "{name}: steady frame {:.2} ms (frames 2..{}: {} ms; ceiling {} ms)",
+        last.as_secs_f64() * 1e3,
+        STEADY_FRAMES + 1,
+        listed.join(", "),
+        STEADY_FRAME_CEILING.as_millis()
+    );
+
+    assert!(
+        last <= STEADY_FRAME_CEILING,
+        "{name}: steady frame took {:.2} ms, over the {} ms ceiling — something is \
+         being rebuilt, re-uploaded or re-formatted every frame",
+        last.as_secs_f64() * 1e3,
+        STEADY_FRAME_CEILING.as_millis()
+    );
 }
 
 #[path = "../../examples/webgpu_depth_texture.rs"]
@@ -167,6 +243,7 @@ fn webgpu_depth_texture() {
         result.num_different_pixels,
         out.display()
     );
+    steady_frame(name, &mut app, webgpu_depth_texture::animate, |app| app.renderer.device());
 }
 
 #[test]
@@ -206,6 +283,7 @@ fn webgpu_instance_mesh() {
         result.num_different_pixels,
         out.display()
     );
+    steady_frame(name, &mut app, webgpu_instance_mesh::animate, |app| app.renderer.device());
 }
 
 #[test]
@@ -245,6 +323,7 @@ fn webgpu_materials_basic() {
         result.num_different_pixels,
         out.display()
     );
+    steady_frame(name, &mut app, webgpu_materials_basic::animate, |app| app.renderer.device());
 }
 
 #[test]
@@ -284,6 +363,7 @@ fn webgpu_rtt() {
         result.num_different_pixels,
         out.display()
     );
+    steady_frame(name, &mut app, webgpu_rtt::animate, |app| app.renderer.device());
 }
 
 #[test]
@@ -323,6 +403,7 @@ fn webgpu_postprocessing_masking() {
         result.num_different_pixels,
         out.display()
     );
+    steady_frame(name, &mut app, webgpu_postprocessing_masking::animate, |app| app.renderer.device());
 }
 
 #[test]
@@ -362,6 +443,7 @@ fn webgpu_lights_phong() {
         result.num_different_pixels,
         out.display()
     );
+    steady_frame(name, &mut app, webgpu_lights_phong::animate, |app| app.renderer.device());
 }
 
 #[test]
@@ -401,6 +483,7 @@ fn webgpu_morphtargets() {
         result.num_different_pixels,
         out.display()
     );
+    steady_frame(name, &mut app, webgpu_morphtargets::animate, |app| app.renderer.device());
 }
 
 #[test]
@@ -440,6 +523,7 @@ fn webgpu_tsl_galaxy() {
         result.num_different_pixels,
         out.display()
     );
+    steady_frame(name, &mut app, webgpu_tsl_galaxy::animate, |app| app.renderer.device());
 }
 
 #[test]
@@ -479,6 +563,7 @@ fn webgpu_shadowmap() {
         result.num_different_pixels,
         out.display()
     );
+    steady_frame(name, &mut app, webgpu_shadowmap::animate, |app| app.renderer.device());
 }
 
 #[test]
@@ -518,4 +603,5 @@ fn webgpu_lights_physical() {
         result.num_different_pixels,
         out.display()
     );
+    steady_frame(name, &mut app, webgpu_lights_physical::animate, |app| app.renderer.device());
 }
