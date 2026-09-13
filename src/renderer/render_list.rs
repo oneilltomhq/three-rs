@@ -204,17 +204,17 @@ pub fn project_object(
     let visible = object.borrow().layers.test(&camera.layers);
 
     if visible {
-        let (is_group, is_light, is_mesh) = {
+        let (is_group, is_light, is_drawable) = {
             let o = object.borrow();
-            (o.is_group, o.is_light, o.is_mesh())
+            (o.is_group, o.is_light, o.is_mesh() || o.is_line())
         };
 
         if is_group {
             group_order = object.borrow().render_order;
         } else if is_light {
             render_list.push_light(object.clone());
-        } else if is_mesh {
-            project_mesh(object, camera, group_order, render_list, sort_objects);
+        } else if is_drawable {
+            project_drawable(object, camera, group_order, render_list, sort_objects);
         }
     }
 
@@ -223,8 +223,15 @@ pub fn project_object(
     }
 }
 
-/// The `object.isMesh` arm of `_projectObject()`.
-fn project_mesh(
+/// The `object.isMesh || object.isLine || object.isPoints` arm of
+/// `_projectObject()` — one arm in three.js too, because everything it does
+/// reads `object.geometry` and `object.material` and neither the frustum test
+/// nor the sort `z` cares which primitive the object draws.
+///
+/// `object.isLineLoop` is *not* handled: three.js' own arm above this one calls
+/// `error( 'Renderer: Objects of type THREE.LineLoop are not supported…' )`, so
+/// the port has no `LineLoop` to reach here.
+fn project_drawable(
     object: &Node,
     camera: &ProjectCamera,
     group_order: f64,
@@ -232,16 +239,17 @@ fn project_mesh(
     sort_objects: bool,
 ) {
     let o = object.borrow();
-    let mesh = match o.mesh() {
-        Some(mesh) => mesh,
+    let geometry = match o.geometry() {
+        Some(geometry) => geometry.clone(),
         None => return,
     };
 
     // `if ( ! object.frustumCulled || object.intersectsFrustum( _frustum ) )` —
-    // `Mesh.intersectsFrustum` is `frustum.intersectsObject( this )`, the
-    // geometry's bounding sphere pushed through `matrixWorld`.
+    // `Mesh.intersectsFrustum` / `Line.intersectsFrustum` are both
+    // `frustum.intersectsObject( this )`, the geometry's bounding sphere pushed
+    // through `matrixWorld`.
     if o.frustum_culled {
-        let inside = match mesh.bounding_sphere_in(&o.matrix_world) {
+        let inside = match o.payload.bounding_sphere_in(&o.matrix_world) {
             Some(sphere) => camera.frustum.intersects_sphere(&sphere),
             // A geometry with no position attribute has no bounding sphere;
             // three.js would throw, we treat it as nothing to draw.
@@ -256,7 +264,7 @@ fn project_mesh(
     // `_vector4.copy( geometry.boundingSphere.center )
     //      .applyMatrix4( object.matrixWorld ).applyMatrix4( _projScreenMatrix )`
     let z = if sort_objects {
-        let center = mesh.geometry.bounding_sphere_center();
+        let center = geometry.bounding_sphere_center();
         let v = apply_matrix4_vector4(&o.matrix_world, [center.x, center.y, center.z, 1.0]);
         apply_matrix4_vector4(&camera.proj_screen_matrix, v)[2]
     } else {
@@ -267,7 +275,7 @@ fn project_mesh(
     // its own is drawn with `scene.overrideMaterial`, which three.js substitutes
     // later (in `_renderObjects`), after the list is built — so a missing
     // material is not a reason to skip the object here.
-    let (visible, transparent) = match &mesh.material {
+    let (visible, transparent) = match o.material() {
         Some(material) => (material.visible, material.transparent),
         None => (true, false),
     };

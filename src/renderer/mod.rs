@@ -77,6 +77,59 @@ struct CanvasTarget {
     depth: Option<wgpu::Texture>,
 }
 
+/// The two fields of `WebGPUPipelineUtils._getPrimitiveState()` that come from
+/// the *object* rather than the material. Culling and the front face still come
+/// from `material.side`, which is `RenderState.side`.
+#[derive(Clone, Copy)]
+struct Primitive {
+    /// `WebGPUUtils.getPrimitiveTopology( object, material )`.
+    topology: wgpu::PrimitiveTopology,
+    /// Set only for an indexed `Line` that is not a `LineSegments`.
+    strip_index_format: Option<wgpu::IndexFormat>,
+}
+
+impl Primitive {
+    /// Everything the renderer draws that is not a scene object: the background
+    /// sphere, the fullscreen quads, the shadow passes. `object.isMesh` in
+    /// three.js, so `triangle-list` with no strip format.
+    const TRIANGLES: Self = Self {
+        topology: wgpu::PrimitiveTopology::TriangleList,
+        strip_index_format: None,
+    };
+
+    /// `WebGPUUtils.getPrimitiveTopology( object, material )` plus the
+    /// `stripIndexFormat` branch of `_getPrimitiveState()`.
+    ///
+    /// three.js' order is `isPoints`, then `isLineSegments || ( isMesh &&
+    /// material.wireframe )`, then `isLine`, then `isMesh`. `Points` and
+    /// `wireframe` are not in this port, so the first arm is missing and the
+    /// second is `isLineSegments` alone.
+    fn of(object: &crate::core::Object3D, geometry: &BufferGeometry) -> Self {
+        let topology = if object.is_line_segments() {
+            wgpu::PrimitiveTopology::LineList
+        } else if object.is_line() {
+            wgpu::PrimitiveTopology::LineStrip
+        } else {
+            wgpu::PrimitiveTopology::TriangleList
+        };
+
+        // `if ( geometry.index !== null && object.isLine === true &&
+        //      object.isLineSegments !== true )`
+        let strip_index_format = match &geometry.index {
+            Some(index) if object.is_line() && !object.is_line_segments() => Some(match index {
+                crate::core::Index::U16(_) => wgpu::IndexFormat::Uint16,
+                crate::core::Index::U32(_) => wgpu::IndexFormat::Uint32,
+            }),
+            _ => None,
+        };
+
+        Self {
+            topology,
+            strip_index_format,
+        }
+    }
+}
+
 /// One entry of the render list, already resolved to what the draw needs.
 struct Renderable {
     geometry: Rc<BufferGeometry>,
@@ -94,6 +147,9 @@ struct Renderable {
     /// `1 - Σ influences` for non-relative morph targets.
     morph_influences: Vec<f64>,
     morph_base: f64,
+    /// `_getPrimitiveState()`'s object half — the topology this draw's pipeline
+    /// is built with.
+    primitive: Primitive,
 }
 
 /// The attachments, formats and size of the pass about to run.
@@ -396,6 +452,7 @@ impl Renderer {
                 instance_count: 1,
             morph_influences: Vec::new(),
             morph_base: 1.0,
+            primitive: Primitive::TRIANGLES,
             });
         }
 
@@ -430,9 +487,13 @@ impl Renderer {
 
         for item in render_list.items() {
             let object = item.node.borrow();
-            let mesh = object
-                .mesh()
-                .expect("three-rs: the render list only holds meshes");
+            // `renderItem.geometry` / `renderItem.material` — a `Mesh`, an
+            // `InstancedMesh` or a `Line`, all of which `_projectObject()`
+            // pushes through the same arm.
+            let geometry = object
+                .geometry()
+                .expect("three-rs: the render list only holds drawables")
+                .clone();
 
             // `_renderObjects()`: `scene.overrideMaterial` replaces the object's
             // own material for every object in the list.
@@ -443,14 +504,16 @@ impl Renderer {
             let material: &MeshBasicNodeMaterial = scene
                 .override_material
                 .as_ref()
-                .or(mesh.material.as_ref())
+                .or(object.material())
                 .unwrap_or(&default_material);
+
+            let primitive = Primitive::of(&object, &geometry);
 
             // `MorphNode.update()`: with `morphTargetsRelative === false` the
             // base keeps the unmorphed position's share of the blend.
-            let morph = crate::nodes::morph::get_entry(&mesh.geometry);
-            let morph_influences = mesh.morph_target_influences.clone();
-            let morph_base = if morph.is_some() && !mesh.geometry.morph_targets_relative {
+            let morph = crate::nodes::morph::get_entry(&geometry);
+            let morph_influences = object.payload.morph_target_influences().to_vec();
+            let morph_base = if morph.is_some() && !geometry.morph_targets_relative {
                 1.0 - morph_influences.iter().sum::<f64>()
             } else {
                 1.0
@@ -460,7 +523,7 @@ impl Renderer {
             let instance_matrix = object.instance_matrix().cloned();
 
             items.push(Renderable {
-                geometry: mesh.geometry.clone(),
+                geometry: geometry.clone(),
                 material: material.clone(),
                 setup: SetupContext {
                     // `InstanceNode.setup()` branches on
@@ -494,6 +557,7 @@ impl Renderer {
                 instance_count,
                 morph_influences,
                 morph_base,
+                primitive,
             });
         }
 
@@ -699,6 +763,7 @@ impl Renderer {
                     instance_count,
                     morph_influences: Vec::new(),
                     morph_base: 1.0,
+                    primitive: Primitive::TRIANGLES,
                 });
             }
 
@@ -862,6 +927,7 @@ impl Renderer {
                     instance_count,
                     morph_influences: Vec::new(),
                     morph_base: 1.0,
+                    primitive: Primitive::TRIANGLES,
                 });
             }
 
@@ -945,6 +1011,7 @@ impl Renderer {
             instance_count: 1,
             morph_influences: Vec::new(),
             morph_base: 1.0,
+            primitive: Primitive::TRIANGLES,
         }];
 
         let camera_uniforms = self.quad_camera_uniforms();
@@ -1036,6 +1103,8 @@ impl Renderer {
                 depth_test: item.material.depth_test,
                 depth_write: item.material.depth_write,
                 blend: item.material.blend_state(),
+                topology: item.primitive.topology,
+                strip_index_format: item.primitive.strip_index_format,
             };
             let pipeline = PipelineKey {
                 program: program_key,
@@ -1188,6 +1257,7 @@ impl Renderer {
             instance_count: 1,
             morph_influences: Vec::new(),
             morph_base: 1.0,
+            primitive: Primitive::TRIANGLES,
         }];
 
         let camera_uniforms = self.quad_camera_uniforms();

@@ -171,6 +171,35 @@ impl Object3D {
         self.payload.is_instanced_mesh()
     }
 
+    /// `object.isLine` — see [`Payload::is_line`].
+    pub fn is_line(&self) -> bool {
+        self.payload.is_line()
+    }
+
+    /// `object.isLineSegments`.
+    pub fn is_line_segments(&self) -> bool {
+        self.payload.is_line_segments()
+    }
+
+    /// `Line.geometry` / `Line.material` when this node is a line.
+    pub fn line(&self) -> Option<&crate::objects::Line> {
+        self.payload.line()
+    }
+
+    pub fn line_mut(&mut self) -> Option<&mut crate::objects::Line> {
+        self.payload.line_mut()
+    }
+
+    /// `object.geometry` for a mesh or a line.
+    pub fn geometry(&self) -> Option<&Rc<crate::core::BufferGeometry>> {
+        self.payload.geometry()
+    }
+
+    /// `object.material` for a mesh or a line.
+    pub fn material(&self) -> Option<&crate::materials::MeshBasicNodeMaterial> {
+        self.payload.material()
+    }
+
     /// `Mesh.geometry` / `Mesh.material` when this node is a mesh.
     pub fn mesh(&self) -> Option<&Mesh> {
         self.payload.mesh()

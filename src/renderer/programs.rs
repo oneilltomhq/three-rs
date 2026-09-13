@@ -22,6 +22,14 @@ pub struct RenderState {
     /// `MeshBasicNodeMaterial::blend_state()`. Part of the key because an
     /// additive and an opaque pipeline share one program.
     pub blend: Option<wgpu::BlendState>,
+    /// `WebGPUUtils.getPrimitiveTopology( object, material )`. It comes from
+    /// the *object*, not the material, so one `LineBasicNodeMaterial` shared by
+    /// a `Line` and a `LineSegments` needs two pipelines off one program —
+    /// which is exactly why this is part of the key.
+    pub topology: wgpu::PrimitiveTopology,
+    /// `_getPrimitiveState()`: set only for an indexed `Line` that is not a
+    /// `LineSegments`, from the index array's type.
+    pub strip_index_format: Option<wgpu::IndexFormat>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -148,8 +156,8 @@ impl Program {
                 })],
             }),
             primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
+                topology: state.topology,
+                strip_index_format: state.strip_index_format,
                 // `_getPrimitiveState()`: `FrontSide` → CCW front faces,
                 // `BackSide` → CW, both culling the back face.
                 front_face: match state.side {

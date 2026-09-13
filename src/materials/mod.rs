@@ -305,6 +305,31 @@ impl MeshBasicNodeMaterial {
         }
     }
 
+    /// `new LineBasicNodeMaterial( { color } )`.
+    ///
+    /// **No `MaterialKind` of its own, and that is a finding, not a shortcut.**
+    /// `LineBasicNodeMaterial` is a bare `NodeMaterial` that only calls
+    /// `setDefaultValues( new LineBasicMaterial() )`, and every default it
+    /// brings that this port models — `color` white, `opacity` 1, `fog` true,
+    /// `lights` false (`NodeMaterial`'s own default), `transparent` false — is
+    /// already `MeshBasicNodeMaterial`'s. `linewidth` / `linecap` / `linejoin`
+    /// are SVGRenderer-only ("WebGL and WebGPU ignore this setting and always
+    /// render line primitives with a width of one pixel"), and `vertexColors`
+    /// is not modelled anywhere in this port yet. Three's own dump of this
+    /// material from the d33 page (`docs/lines/LineBasicNodeMaterial_27.*`) is
+    /// the `Basic` program statement for statement, so a second kind would
+    /// generate identical WGSL.
+    ///
+    /// What makes a line a line is the *object*, not the material:
+    /// `WebGPUUtils.getPrimitiveTopology( object, material )` reads
+    /// `object.isLine` / `object.isLineSegments`.
+    pub fn line(color: Color) -> Self {
+        Self {
+            color,
+            ..Self::default()
+        }
+    }
+
     /// `new MeshPhongNodeMaterial( { color } )`. `NodeMaterial.lights` is true
     /// for every lit material, which is what puts the `LightsNode` flow in the
     /// fragment stage.
@@ -342,3 +367,7 @@ pub type SpriteNodeMaterial = MeshBasicNodeMaterial;
 /// Likewise for `Standard` / `Physical` — one struct, one renderer list.
 pub type MeshStandardNodeMaterial = MeshBasicNodeMaterial;
 pub type MeshPhysicalNodeMaterial = MeshBasicNodeMaterial;
+
+/// three.js' name for the `NodeMaterial` a `Line` / `LineSegments` draws with.
+/// It carries no state of its own — see [`MeshBasicNodeMaterial::line`].
+pub type LineBasicNodeMaterial = MeshBasicNodeMaterial;

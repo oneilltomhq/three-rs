@@ -95,6 +95,18 @@ fn main() {
         SetupContext::default(),
     );
 
+    // The `lines` branch: `new LineBasicNodeMaterial( { color: 0xffffff } )`,
+    // the d33 treemap's tile outlines. Three's own dump of it from that page is
+    // in `docs/lines/LineBasicNodeMaterial_27.{vert,frag}.wgsl`; it is the
+    // `basic` program above statement for statement, which is why there is no
+    // `MaterialKind::Line`. What makes it a line is the topology the *object*
+    // picks, and that is not in the WGSL at all.
+    show(
+        "line_basic",
+        &MeshBasicNodeMaterial::line(Color::from_hex(0xffffff)),
+        SetupContext::default(),
+    );
+
     let depth = DepthTexture::new();
     let mut quad = MeshBasicNodeMaterial::new();
     quad.color_node = Some(depth_texture(&depth));

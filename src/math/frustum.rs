@@ -117,10 +117,7 @@ impl Frustum {
     /// `false` (nothing to intersect) instead.
     pub fn intersects_object(&self, object: &Node) -> bool {
         let object = object.borrow();
-        let Some(mesh) = object.mesh() else {
-            return false;
-        };
-        let Some(sphere) = mesh.bounding_sphere_in(&object.matrix_world) else {
+        let Some(sphere) = object.payload.bounding_sphere_in(&object.matrix_world) else {
             return false;
         };
 

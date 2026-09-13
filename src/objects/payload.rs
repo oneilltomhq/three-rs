@@ -12,8 +12,13 @@
 
 use std::fmt;
 
+use std::rc::Rc;
+
+use crate::core::BufferGeometry;
 use crate::lights::LightObject;
-use crate::objects::{InstancedBufferAttribute, InstancedMesh, Mesh};
+use crate::materials::MeshBasicNodeMaterial;
+use crate::math::{Matrix4, Sphere};
+use crate::objects::{InstancedBufferAttribute, InstancedMesh, Line, Mesh};
 
 /// The subclass state of one [`crate::core::Object3D`].
 ///
@@ -27,6 +32,10 @@ pub enum Payload {
     Mesh(Mesh),
     /// `InstancedMesh extends Mesh`.
     InstancedMesh(InstancedMesh),
+    /// `Line extends Object3D` — and `LineSegments extends Line`, which is the
+    /// `is_line_segments` flag inside. Not a `Mesh`: the renderer reads the
+    /// object to pick `line-strip` / `line-list` over `triangle-list`.
+    Line(Line),
     /// `Light extends Object3D`, one variant per subclass. The renderer reaches
     /// it through `RenderList.lights`, which `_projectObject()` fills from
     /// `object.is_light` — set alongside this variant.
@@ -41,6 +50,13 @@ impl fmt::Debug for Payload {
             Payload::None => "None",
             Payload::Mesh(_) => "Mesh",
             Payload::InstancedMesh(_) => "InstancedMesh",
+            Payload::Line(line) => {
+                if line.is_line_segments {
+                    "LineSegments"
+                } else {
+                    "Line"
+                }
+            }
             Payload::Light(_) => "Light",
         };
         f.write_str(name)
@@ -57,6 +73,73 @@ impl Payload {
     /// `object.isInstancedMesh`.
     pub fn is_instanced_mesh(&self) -> bool {
         matches!(self, Payload::InstancedMesh(_))
+    }
+
+    /// `object.isLine` — true for a `LineSegments` too, exactly as in three.js
+    /// where `LineSegments extends Line`.
+    pub fn is_line(&self) -> bool {
+        matches!(self, Payload::Line(_))
+    }
+
+    /// `object.isLineSegments`.
+    pub fn is_line_segments(&self) -> bool {
+        matches!(self, Payload::Line(line) if line.is_line_segments)
+    }
+
+    /// The `Line` this node is, if it is one.
+    pub fn line(&self) -> Option<&Line> {
+        match self {
+            Payload::Line(line) => Some(line),
+            _ => None,
+        }
+    }
+
+    pub fn line_mut(&mut self) -> Option<&mut Line> {
+        match self {
+            Payload::Line(line) => Some(line),
+            _ => None,
+        }
+    }
+
+    /// `object.geometry` for anything `_projectObject()`'s
+    /// `isMesh || isLine || isPoints` arm draws.
+    pub fn geometry(&self) -> Option<&Rc<BufferGeometry>> {
+        match self {
+            Payload::Mesh(mesh) => Some(&mesh.geometry),
+            Payload::InstancedMesh(instanced) => Some(&instanced.mesh.geometry),
+            Payload::Line(line) => Some(&line.geometry),
+            _ => None,
+        }
+    }
+
+    /// `object.material` for the same set. `None` is three.js' "no material of
+    /// its own", which `scene.overrideMaterial` (or `MeshBasicNodeMaterial`'s
+    /// defaults) stands in for.
+    pub fn material(&self) -> Option<&MeshBasicNodeMaterial> {
+        match self {
+            Payload::Mesh(mesh) => mesh.material.as_ref(),
+            Payload::InstancedMesh(instanced) => instanced.mesh.material.as_ref(),
+            Payload::Line(line) => line.material.as_ref(),
+            _ => None,
+        }
+    }
+
+    /// `Frustum.intersectsObject( object )`' geometry half, for a mesh or a
+    /// line.
+    pub fn bounding_sphere_in(&self, matrix_world: &Matrix4) -> Option<Sphere> {
+        match self {
+            Payload::Line(line) => line.bounding_sphere_in(matrix_world),
+            _ => self.mesh()?.bounding_sphere_in(matrix_world),
+        }
+    }
+
+    /// `Mesh.morphTargetInfluences`. A `Line` has the field in three.js too, but
+    /// nothing on the ladder morphs one, so it is always empty here.
+    pub fn morph_target_influences(&self) -> &[f64] {
+        match self.mesh() {
+            Some(mesh) => &mesh.morph_target_influences,
+            None => &[],
+        }
     }
 
     /// The `Mesh` half of whichever mesh-ish payload this is.

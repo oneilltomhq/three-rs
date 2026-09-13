@@ -1,0 +1,43 @@
+pipeline: renderPipeline_LineBasicNodeMaterial_27
+
+primitive:    {"topology":"line-strip","frontFace":"ccw","cullMode":"back"}
+depthStencil: {"format":"depth24plus","depthWriteEnabled":true,"depthCompare":"less-equal"}
+multisample:  {"count":4,"mask":4294967295,"alphaToCoverageEnabled":false}
+targets:      [{"format":"rgba16float","blend":null,"writeMask":15}]
+
+vertex buffers:
+[
+  {
+    "arrayStride": 12,
+    "attributes": [
+      {
+        "shaderLocation": 0,
+        "offset": 0,
+        "format": "float32x3"
+      }
+    ],
+    "stepMode": "vertex"
+  }
+]
+
+pipeline layout: ""
+  @group(0) = bindGroupLayout 0
+{
+  "entries": [
+    {
+      "binding": 0,
+      "visibility": 7,
+      "buffer": {}
+    }
+  ]
+}
+  @group(1) = bindGroupLayout 0
+{
+  "entries": [
+    {
+      "binding": 0,
+      "visibility": 7,
+      "buffer": {}
+    }
+  ]
+}

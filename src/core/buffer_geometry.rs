@@ -354,6 +354,34 @@ impl BufferGeometry {
         self.draw_range.count = Some(count);
     }
 
+    /// `BufferGeometry.setFromPoints( points )`.
+    ///
+    /// three.js overwrites an existing `position` attribute in place when there
+    /// already is one, and only allocates a fresh `Float32BufferAttribute` when
+    /// there is not; the in-place branch keeps the attribute's own count, so
+    /// extra points are dropped and missing ones leave whatever was there.
+    pub fn set_from_points(&mut self, points: &[Vector3]) -> &mut Self {
+        match self.get_attribute_mut("position") {
+            Some(position) => {
+                let count = position.count().min(points.len());
+                for (i, point) in points.iter().take(count).enumerate() {
+                    position.set_xyz(i, point.x, point.y, point.z);
+                }
+            }
+            None => {
+                let mut array = Vec::with_capacity(points.len() * 3);
+                for point in points {
+                    array.push(point.x as f32);
+                    array.push(point.y as f32);
+                    array.push(point.z as f32);
+                }
+                self.set_attribute("position", BufferAttribute::new(array, 3));
+            }
+        }
+
+        self
+    }
+
     /// `BufferGeometry.setIndex( array )` — picks `Uint16` when it fits, the
     /// same rule three.js uses.
     pub fn set_index(&mut self, indices: &[u32]) {
