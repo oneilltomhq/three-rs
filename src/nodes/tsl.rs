@@ -19,7 +19,7 @@ use super::node::{
     UniformNode, UniformSource, VarDef, VaryingDef,
 };
 use crate::math::{Color, Matrix3};
-use crate::textures::{CubeTexture, DepthTexture, Texture};
+use crate::textures::{CubeDepthTexture, CubeTexture, DepthTexture, Texture};
 
 pub use super::node::TextureSource;
 
@@ -40,8 +40,13 @@ thread_local! {
     /// three.js' per-build `nodeData` plus its `subBuildsCache`.
     static NORMAL_VIEW: RefCell<HashMap<(Option<&'static str>, Option<usize>), NodeRef>> =
         RefCell::new(HashMap::new());
-    /// `tangentView` / `bitangentView`, keyed by layer the same way.
-    static TANGENT_VIEW: RefCell<HashMap<Option<&'static str>, (NodeRef, NodeRef)>> =
+    /// `tangentView` / `bitangentView`, keyed the same way.
+    static TANGENT_VIEW: RefCell<HashMap<(Option<&'static str>, Option<usize>), (NodeRef, NodeRef)>> =
+        RefCell::new(HashMap::new());
+    /// `normalWorld`, keyed the same way: it reads `normalView`, so a plain
+    /// singleton would bake in whichever material was built first and then
+    /// re-assign `normalView` from the geometric normal in every later one.
+    static NORMAL_WORLD: RefCell<HashMap<(Option<&'static str>, Option<usize>), NodeRef>> =
         RefCell::new(HashMap::new());
 }
 
@@ -83,6 +88,11 @@ fn constant(ty: Type, values: Vec<f64>) -> NodeRef {
 /// `float( x )`.
 pub fn float(v: impl Into<f64>) -> NodeRef {
     constant(Type::F32, vec![v.into()])
+}
+
+/// `int( x )`.
+pub fn int(v: i64) -> NodeRef {
+    constant(Type::I32, vec![v as f64])
 }
 
 /// `vec2( x, y )`.
@@ -306,6 +316,13 @@ pub fn floor(x: impl Into<NodeRef>) -> NodeRef {
     math("floor", vec![x], ty)
 }
 
+/// `fract( x )`.
+pub fn fract(x: impl Into<NodeRef>) -> NodeRef {
+    let x = x.into();
+    let ty = x.ty();
+    math("fract", vec![x], ty)
+}
+
 /// `sign( x )`.
 pub fn sign(x: impl Into<NodeRef>) -> NodeRef {
     let x = x.into();
@@ -444,6 +461,83 @@ pub fn light_world_position(index: usize) -> NodeRef {
     uniform(
         UniformSource::LightWorldPosition(index),
         Type::Vec3,
+        UniformGroup::Render,
+        None,
+    )
+}
+
+/// `ShadowNode`'s render-group uniforms for the shadow of the light at
+/// `index`: `lightShadowMatrix( light )`, the shadow camera's clipping planes
+/// (`uniform( 'float' ).onRenderUpdate( () => shadow.camera.near/far )`) and
+/// the `LightShadow` references `normalBias`, `bias`, `radius`, `mapSize` and
+/// `intensity`.
+pub fn light_shadow_matrix(index: usize) -> NodeRef {
+    uniform(
+        UniformSource::LightShadowMatrix(index),
+        Type::Mat4,
+        UniformGroup::Render,
+        None,
+    )
+}
+
+pub fn shadow_camera_near(index: usize) -> NodeRef {
+    uniform(
+        UniformSource::ShadowCameraNear(index),
+        Type::F32,
+        UniformGroup::Render,
+        None,
+    )
+}
+
+pub fn shadow_camera_far(index: usize) -> NodeRef {
+    uniform(
+        UniformSource::ShadowCameraFar(index),
+        Type::F32,
+        UniformGroup::Render,
+        None,
+    )
+}
+
+pub fn shadow_normal_bias(index: usize) -> NodeRef {
+    uniform(
+        UniformSource::ShadowNormalBias(index),
+        Type::F32,
+        UniformGroup::Render,
+        None,
+    )
+}
+
+pub fn shadow_bias(index: usize) -> NodeRef {
+    uniform(
+        UniformSource::ShadowBias(index),
+        Type::F32,
+        UniformGroup::Render,
+        None,
+    )
+}
+
+pub fn shadow_radius(index: usize) -> NodeRef {
+    uniform(
+        UniformSource::ShadowRadius(index),
+        Type::F32,
+        UniformGroup::Render,
+        None,
+    )
+}
+
+pub fn shadow_map_size(index: usize) -> NodeRef {
+    uniform(
+        UniformSource::ShadowMapSize(index),
+        Type::Vec2,
+        UniformGroup::Render,
+        None,
+    )
+}
+
+pub fn shadow_intensity(index: usize) -> NodeRef {
+    uniform(
+        UniformSource::ShadowIntensity(index),
+        Type::F32,
         UniformGroup::Render,
         None,
     )
@@ -591,6 +685,13 @@ impl NodeRef {
     }
     pub fn greater_than(&self, other: impl Into<NodeRef>) -> NodeRef {
         binary(">", self.clone(), other.into())
+    }
+    pub fn greater_than_equal(&self, other: impl Into<NodeRef>) -> NodeRef {
+        binary(">=", self.clone(), other.into())
+    }
+    /// `a.and( b )` — the short-circuit `&&`.
+    pub fn and(&self, other: impl Into<NodeRef>) -> NodeRef {
+        binary("&&", self.clone(), other.into())
     }
 
     /// `oneMinus()` — `1.0 - x`, emitted in that order.
@@ -1060,6 +1161,18 @@ accessor!(
 /// the geometric normal again. Keyed by (layer, normal value) so that two
 /// materials in the same process get their own node, which is what three.js'
 /// per-build `nodeData` gives it for free.
+/// The cache key every node that reads `normalView` shares: the open sub-build
+/// layer plus the material's own normal node.
+fn normal_key() -> (Option<&'static str>, Option<usize>) {
+    let layer = SUB_BUILD.with(|s| *s.borrow());
+    let value = if layer.is_some() {
+        None
+    } else {
+        NORMAL_VALUE.with(|v| v.borrow().clone())
+    };
+    (layer, value.as_ref().map(|v| v.key()))
+}
+
 pub fn normal_view() -> NodeRef {
     let layer = SUB_BUILD.with(|s| *s.borrow());
     let value = if layer.is_some() {
@@ -1084,8 +1197,8 @@ pub fn normal_view() -> NodeRef {
 /// 'VERTEX' ] )` so they take the layer prefix. They are returned as a pair
 /// because `tangentViewFrame` and `bitangentViewFrame` share the `scale` temp.
 fn tangent_frame() -> (NodeRef, NodeRef) {
-    let layer = SUB_BUILD.with(|s| *s.borrow());
-    if let Some(pair) = TANGENT_VIEW.with(|m| m.borrow().get(&layer).cloned()) {
+    let key = normal_key();
+    if let Some(pair) = TANGENT_VIEW.with(|m| m.borrow().get(&key).cloned()) {
         return pair;
     }
     // `q1perp = dFdy( positionView ).cross( N )`, `q0perp = N.cross( dFdx(
@@ -1119,7 +1232,7 @@ fn tangent_frame() -> (NodeRef, NodeRef) {
             to_var_untagged("bitangentViewFrame", b.mul(scale)),
         ),
     );
-    TANGENT_VIEW.with(|m| m.borrow_mut().insert(layer, pair.clone()));
+    TANGENT_VIEW.with(|m| m.borrow_mut().insert(key, pair.clone()));
     pair
 }
 
@@ -1133,16 +1246,31 @@ pub fn bitangent_view() -> NodeRef {
     tangent_frame().1
 }
 accessor!(
-    /// `normalWorld` — `normalView` rotated out of view space.
-    normal_world,
-    to_var(
+    /// `positionWorld` — `modelWorldMatrix * positionLocal`, interpolated.
+    position_world,
+    to_varying(
+        Some("v_positionWorld"),
+        model_world_matrix()
+            .mul(vec4_join(vec![position_local(), float(1.0)]))
+            .xyz()
+    )
+);
+/// `normalWorld` — `normalView` rotated out of view space.
+pub fn normal_world() -> NodeRef {
+    let key = normal_key();
+    if let Some(node) = NORMAL_WORLD.with(|m| m.borrow().get(&key).cloned()) {
+        return node;
+    }
+    let node = to_var(
         Some("normalWorld"),
         vec4_join(vec![normal_view(), float(0.0)])
             .mul(camera_view_matrix())
             .xyz()
-            .normalize()
-    )
-);
+            .normalize(),
+    );
+    NORMAL_WORLD.with(|m| m.borrow_mut().insert(key, node.clone()));
+    node
+}
 accessor!(
     /// `normalWorldGeometry`.
     normal_world_geometry,
@@ -1207,6 +1335,7 @@ prop!(outgoing_light, "outgoingLight", Type::Vec3);
 prop!(ambient_occlusion, "ambientOcclusion", Type::F32);
 prop!(shininess, "Shininess", Type::F32);
 prop!(specular_color, "SpecularColor", Type::Vec3);
+prop!(shadow_position_world, "shadowPositionWorld", Type::Vec3);
 prop!(emissive_color, "EmissiveColor", Type::Vec3);
 prop!(irradiance, "irradiance", Type::Vec3);
 prop!(metalness, "Metalness", Type::F32);
@@ -1368,6 +1497,20 @@ pub fn cube_texture(map: &CubeTexture, dir: NodeRef) -> NodeRef {
     )
 }
 
+/// `cubeTexture( shadowMap, dir ).compare( dp )` for a `CubeDepthTexture`.
+///
+/// `CubeTextureNode.setupUV()` takes the depth-texture branch: no environment
+/// rotation, and the WebGPU Y flip — `vec3( uv.x, uv.y.negate(), uv.z )`.
+pub fn cube_depth_texture_compare(map: &CubeDepthTexture, dir: NodeRef, dp: NodeRef) -> NodeRef {
+    let dir = vec3_join(vec![dir.x(), dir.y().negate(), dir.z()]);
+    texture_node(
+        TextureSource::CubeDepth(map.clone()),
+        dir,
+        SampleMode::Compare(dp),
+        Type::F32,
+    )
+}
+
 /// `cubeTexture( map ).sample( dir ).level( lod )`.
 pub fn cube_texture_level(map: &CubeTexture, dir: NodeRef, level: NodeRef) -> NodeRef {
     let dir = vec3_join(vec![dir.x().negate(), dir.yz()]);
@@ -1445,6 +1588,21 @@ pub fn shader_fn(
     })
 }
 
+/// `If( cond, () => { … } )` over a result var that was initialised first.
+///
+/// `pre` are the statements three.js emits ahead of the result var, `body` the
+/// statements inside the block (the last of which assigns the result). The
+/// node's value is the result var, so a second reference reuses it rather than
+/// re-emitting the block.
+pub fn if_node(pre: Vec<NodeRef>, result: NodeRef, cond: NodeRef, body: Vec<NodeRef>) -> NodeRef {
+    NodeRef::new(Node::If {
+        pre,
+        result,
+        cond,
+        body,
+    })
+}
+
 pub fn call(def: &Rc<FnDef>, args: Vec<NodeRef>) -> NodeRef {
     NodeRef::new(Node::Call {
         def: def.clone(),
@@ -1455,6 +1613,63 @@ pub fn call(def: &Rc<FnDef>, args: Vec<NodeRef>) -> NodeRef {
 // ---------------------------------------------------------------------------
 // display / math node functions the ladder uses
 // ---------------------------------------------------------------------------
+
+/// `interleavedGradientNoise( position )` — `PostProcessingUtils.js`, an
+/// `Fn` with a layout, so a real WGSL `fn`.
+pub fn interleaved_gradient_noise(position: NodeRef) -> NodeRef {
+    thread_local! { static CELL: Lazy<Rc<FnDef>> = Lazy::new(); }
+    let def = CELL.with(|c| {
+        c.get(|| {
+            shader_fn(
+                Some("interleavedGradientNoise"),
+                vec![("position", Type::Vec2)],
+                Type::F32,
+                |p| {
+                    fract(
+                        float(52.9829189)
+                            .mul(fract(dot(p[0].clone(), vec2(0.06711056, 0.00583715)))),
+                    )
+                },
+            )
+        })
+    });
+    call(&def, vec![position])
+}
+
+/// `vogelDiskSample( sampleIndex, samplesCount, phi )` — `PostProcessingUtils.js`.
+pub fn vogel_disk_sample(sample_index: i64, samples_count: i64, phi: NodeRef) -> NodeRef {
+    thread_local! { static CELL: Lazy<Rc<FnDef>> = Lazy::new(); }
+    let def = CELL.with(|c| {
+        c.get(|| {
+            shader_fn(
+                Some("vogelDiskSample"),
+                vec![
+                    ("sampleIndex", Type::I32),
+                    ("samplesCount", Type::I32),
+                    ("phi", Type::F32),
+                ],
+                Type::Vec2,
+                |p| {
+                    let theta = to_var(
+                        None,
+                        p[0]
+                            .to(Type::F32)
+                            .mul(2.399963229728653)
+                            .add(p[2].clone()),
+                    );
+                    let r = sqrt(
+                        p[0]
+                            .to(Type::F32)
+                            .add(0.5)
+                            .div(p[1].to(Type::F32)),
+                    );
+                    join(Type::Vec2, vec![theta.cos(), theta.sin()]).mul(r)
+                },
+            )
+        })
+    });
+    call(&def, vec![int(sample_index), int(samples_count), phi])
+}
 
 /// `luminance( color )`, with the working (linear-sRGB) coefficients.
 pub fn luminance(color: NodeRef) -> NodeRef {

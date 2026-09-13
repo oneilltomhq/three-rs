@@ -1,5 +1,4 @@
-//! Port of `three.js/src/lights/PointLight.js` (no `PointLightShadow` — rung 7
-//! adds shadows).
+//! Port of `three.js/src/lights/PointLight.js`.
 
 use super::Light;
 use crate::core::{Node, Object3D};
@@ -15,6 +14,9 @@ pub struct PointLight {
     pub distance: f64,
     /// `this.decay`, default 2.
     pub decay: f64,
+    /// `this.shadow` — a `PointLightShadow`. Present whether or not the light
+    /// casts; `Object3D.cast_shadow` is the switch.
+    pub shadow: super::PointLightShadow,
 }
 
 impl PointLight {
@@ -31,6 +33,7 @@ impl PointLight {
             light: Light::new(color, intensity),
             distance,
             decay: 2.0,
+            shadow: super::PointLightShadow::default(),
         }));
         object.into_node()
     }

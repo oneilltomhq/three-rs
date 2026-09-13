@@ -3,10 +3,12 @@
 mod hemisphere_light;
 mod light;
 mod point_light;
+mod point_shadow;
 
 pub use hemisphere_light::HemisphereLight;
 pub use light::Light;
 pub use point_light::PointLight;
+pub use point_shadow::{point_shadow, PointLightShadow, CUBE_DIRECTIONS, CUBE_UPS};
 
 /// Which `Light` subclass a light node is — the payload a
 /// [`Payload::Light`](crate::objects::Payload) carries.
