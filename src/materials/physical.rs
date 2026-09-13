@@ -345,7 +345,12 @@ pub fn brdf_lambert(diffuse: NodeRef) -> NodeRef {
 
 /// One `PointLight` through `PhysicalLightingModel.direct()`:
 /// `PointLightNode.setup()`'s direction/colour pair, then the BRDFs.
-pub fn direct_point_light(model: &Physical, light: &PointLightUniforms, out: &mut Vec<NodeRef>) {
+pub fn direct_point_light(
+    model: &Physical,
+    light: &PointLightUniforms,
+    shadow: Option<NodeRef>,
+    out: &mut Vec<NodeRef>,
+) {
     let l_vector = light.view_position.clone().sub(position_view());
     let light_direction = l_vector.clone().normalize();
     let attenuation = phong::distance_attenuation(
@@ -353,7 +358,14 @@ pub fn direct_point_light(model: &Physical, light: &PointLightUniforms, out: &mu
         light.cutoff_distance.clone(),
         light.decay.clone(),
     );
-    let light_color = light.color.clone().mul(attenuation);
+    // `AnalyticLightNode.setup()`: when the light casts and the object receives,
+    // `colorNode = colorNode.mul( shadowNode )` — before the point light's own
+    // distance attenuation.
+    let color = match shadow {
+        Some(shadow) => light.color.clone().mul(shadow),
+        None => light.color.clone(),
+    };
+    let light_color = color.mul(attenuation);
 
     model.direct(light_direction, light_color, out);
 }

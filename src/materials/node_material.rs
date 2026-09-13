@@ -8,7 +8,9 @@ use super::{MaterialKind, MeshBasicNodeMaterial};
 use crate::nodes::node::Type;
 use crate::nodes::tsl::*;
 use crate::nodes::tsl::FogNode;
+use crate::lights::point_shadow;
 use crate::nodes::{MaterialFlow, NodeRef};
+use crate::textures::CubeDepthTexture;
 
 /// Which `Light` subclass one entry of the pass' light list is — what
 /// `LightsNode.setupLightsNode()` branches on to pick the light node.
@@ -40,6 +42,9 @@ pub struct SetupContext {
     pub light_count: usize,
     /// The kind of each of those lights, in the same order.
     pub light_kinds: [LightKind; MAX_LIGHTS],
+    /// `object.receiveShadow` — `AnalyticLightNode.setup()` only wires the
+    /// shadow node in when the object receives shadows.
+    pub receive_shadow: bool,
 }
 
 /// `vec4( node )` the way `setupDiffuseColor` builds it: a scalar splats, a
@@ -57,6 +62,7 @@ pub fn setup(
     material: &MeshBasicNodeMaterial,
     ctx: &SetupContext,
     fog: Option<&FogNode>,
+    shadows: &[Option<CubeDepthTexture>],
 ) -> MaterialFlow {
     // `builder.context.setupNormal = () => subBuild( this.setupNormal( builder
     // ), 'NORMAL' )` — installed for the whole of the material's setup, so that
@@ -69,13 +75,14 @@ pub fn setup(
         (None, Some(bump)) => Some(bump_map(bump, material_bump_scale())),
         (None, None) => None,
     };
-    with_material_normal(normal, || setup_inner(material, ctx, fog))
+    with_material_normal(normal, || setup_inner(material, ctx, fog, shadows))
 }
 
 fn setup_inner(
     material: &MeshBasicNodeMaterial,
     ctx: &SetupContext,
     fog: Option<&FogNode>,
+    shadows: &[Option<CubeDepthTexture>],
 ) -> MaterialFlow {
     let mut pre_vertex = Vec::new();
     let mut fragment = Vec::new();
@@ -112,7 +119,7 @@ fn setup_inner(
     } else if material.kind == MaterialKind::Phong {
         setup_phong(material, ctx, &mut fragment)
     } else if material.kind == MaterialKind::Standard {
-        setup_standard(material, ctx, &mut fragment)
+        setup_standard(material, ctx, shadows, &mut fragment)
     } else {
         // setupDiffuseColor
         let color = match &material.color_node {
@@ -383,6 +390,7 @@ fn setup_phong(
 fn setup_standard(
     material: &MeshBasicNodeMaterial,
     ctx: &SetupContext,
+    shadows: &[Option<CubeDepthTexture>],
     fragment: &mut Vec<NodeRef>,
 ) -> NodeRef {
     // --- setupDiffuseColor. `materialColor` is `vec4( color, 1 )` times the
@@ -457,7 +465,19 @@ fn setup_standard(
         for index in indices {
             match ctx.light_kinds[index] {
                 LightKind::Point => {
-                    physical::direct_point_light(&model, &PointLightUniforms::at(index), fragment)
+                    // `AnalyticLightNode.setup()`: `light.castShadow &&
+                    // builder.object.receiveShadow`.
+                    let shadow = shadows
+                        .get(index)
+                        .and_then(|t| t.as_ref())
+                        .filter(|_| ctx.receive_shadow)
+                        .map(|map| point_shadow(index, map));
+                    physical::direct_point_light(
+                        &model,
+                        &PointLightUniforms::at(index),
+                        shadow,
+                        fragment,
+                    )
                 }
                 LightKind::Hemisphere => physical::hemisphere_light(index, fragment),
             }

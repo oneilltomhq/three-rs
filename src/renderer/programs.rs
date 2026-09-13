@@ -194,11 +194,15 @@ fn layout_entry(binding: u32, desc: &BindingDesc) -> wgpu::BindGroupLayoutEntry 
             visibility: visibility.stages(),
             ty: wgpu::BindingType::Texture {
                 sample_type: match kind {
-                    TextureKind::Depth2D => wgpu::TextureSampleType::Depth,
+                    TextureKind::Depth2D | TextureKind::DepthCube => {
+                        wgpu::TextureSampleType::Depth
+                    }
                     _ => wgpu::TextureSampleType::Float { filterable: true },
                 },
                 view_dimension: match kind {
-                    TextureKind::Cube => wgpu::TextureViewDimension::Cube,
+                    TextureKind::Cube | TextureKind::DepthCube => {
+                        wgpu::TextureViewDimension::Cube
+                    }
                     _ => wgpu::TextureViewDimension::D2,
                 },
                 multisampled: false,
@@ -212,6 +216,7 @@ fn layout_entry(binding: u32, desc: &BindingDesc) -> wgpu::BindGroupLayoutEntry 
             visibility: visibility.stages(),
             ty: wgpu::BindingType::Sampler(match kind {
                 TextureKind::Depth2D => wgpu::SamplerBindingType::NonFiltering,
+                TextureKind::DepthCube => wgpu::SamplerBindingType::Comparison,
                 _ => wgpu::SamplerBindingType::Filtering,
             }),
             count: None,
@@ -251,6 +256,22 @@ pub struct LightState {
     /// The light's **world** position — `lightPosition( light )`, which the
     /// hemisphere light's direction is the normalisation of.
     pub world_position: Vector3,
+    /// The light's shadow, when it casts one and the renderer rendered its map.
+    pub shadow: Option<ShadowState>,
+}
+
+/// The `LightShadow` values `ShadowNode`'s render-group uniforms resolve to.
+#[derive(Clone, Copy, Debug)]
+pub struct ShadowState {
+    /// `shadow.matrix` — for a point light, `makeTranslation( -lightWorldPos )`.
+    pub matrix: Matrix4,
+    pub camera_near: f64,
+    pub camera_far: f64,
+    pub bias: f64,
+    pub normal_bias: f64,
+    pub radius: f64,
+    pub map_size: Vector2,
+    pub intensity: f64,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -316,6 +337,12 @@ impl Default for UniformContext<'_> {
 }
 
 impl UniformContext<'_> {
+    fn shadow(&self, index: usize) -> ShadowState {
+        self.lights[index]
+            .shadow
+            .expect("three-rs: a shadow uniform for a light with no shadow map")
+    }
+
     /// `Bindings.updateBinding()`: the bytes of one generated uniform struct,
     /// each member written at the offset the builder gave it.
     pub fn bytes(&self, members: &[UniformMember], size: u32) -> Vec<u8> {
@@ -395,6 +422,19 @@ impl UniformContext<'_> {
                     let p = self.lights[*i].view_position;
                     vec![p.x as f32, p.y as f32, p.z as f32]
                 }
+                UniformSource::LightShadowMatrix(i) => {
+                    self.shadow(*i).matrix.to_f32_array().to_vec()
+                }
+                UniformSource::ShadowCameraNear(i) => vec![self.shadow(*i).camera_near as f32],
+                UniformSource::ShadowCameraFar(i) => vec![self.shadow(*i).camera_far as f32],
+                UniformSource::ShadowNormalBias(i) => vec![self.shadow(*i).normal_bias as f32],
+                UniformSource::ShadowBias(i) => vec![self.shadow(*i).bias as f32],
+                UniformSource::ShadowRadius(i) => vec![self.shadow(*i).radius as f32],
+                UniformSource::ShadowMapSize(i) => {
+                    let s = self.shadow(*i).map_size;
+                    vec![s.x as f32, s.y as f32]
+                }
+                UniformSource::ShadowIntensity(i) => vec![self.shadow(*i).intensity as f32],
                 UniformSource::Value(values) => values.iter().map(|&v| v as f32).collect(),
             };
 

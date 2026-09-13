@@ -17,7 +17,7 @@ use std::rc::Rc;
 
 use mipmap::{create_mipmap_pipeline, MipmapShader};
 pub use pass::PassNode;
-pub use programs::{LightState, RenderState, UniformContext};
+pub use programs::{LightState, RenderState, ShadowState, UniformContext};
 use programs::{PipelineKey, Program};
 pub use render_list::{project_object, ProjectCamera, RenderItem, RenderList};
 pub use render_pipeline::RenderPipeline;
@@ -26,7 +26,7 @@ pub use render_target::{RenderTarget, RenderTargetInner, RenderTargetOptions};
 use crate::cameras::{OrthographicCamera, PerspectiveCamera};
 use crate::core::{BufferGeometry, Index};
 use crate::geometries::{quad_geometry, sphere_geometry};
-use crate::lights::PointLight;
+use crate::lights::{PointLight, CUBE_DIRECTIONS, CUBE_UPS};
 use crate::materials::{self, MeshBasicNodeMaterial, SetupContext, Side};
 use crate::math::{Color, Matrix4, Vector2};
 use crate::nodes::node::{BufferSource, TextureSource};
@@ -36,7 +36,7 @@ use crate::nodes::{BindingDesc, NodeBuilder};
 use crate::objects::{Background, InstancedBufferAttribute, QuadMesh, Scene};
 use crate::testing::DeterministicRandom;
 use crate::textures::{
-    CubeTexture, Texture, TextureFilter, TextureType, Wrapping,
+    CubeDepthTexture, CubeTexture, Texture, TextureFilter, TextureType, Wrapping,
 };
 
 struct GeometryGpu {
@@ -144,6 +144,13 @@ pub struct Renderer {
     /// `Textures`' GPU side, keyed by texture identity.
     textures_2d: HashMap<usize, wgpu::Texture>,
     cube_textures: HashMap<usize, wgpu::Texture>,
+    /// The cube depth textures point-light shadow maps render into, one per
+    /// casting light (keyed by the light node's address), plus the colour
+    /// attachment the pass needs and nothing samples.
+    shadow_maps: HashMap<usize, (CubeDepthTexture, wgpu::Texture)>,
+    /// The shadow map of each light of the pass being drawn, in light order —
+    /// what `AnalyticLightNode.setup()` reaches through the light.
+    pass_shadows: Vec<Option<CubeDepthTexture>>,
     /// `WebGPUTexturePassUtils.transferPipelines`, keyed by texture format.
     mipmap_pipelines: HashMap<wgpu::TextureFormat, wgpu::RenderPipeline>,
     /// `BufferNode` storage, by source — a `range()` buffer must be filled only
@@ -239,6 +246,8 @@ impl Renderer {
             geometries: HashMap::new(),
             textures_2d: HashMap::new(),
             cube_textures: HashMap::new(),
+            shadow_maps: HashMap::new(),
+            pass_shadows: Vec::new(),
             mipmap_pipelines: HashMap::new(),
             buffers: HashMap::new(),
             background_geometry: None,
@@ -361,6 +370,7 @@ impl Renderer {
                     instanced: instance_matrix.is_some(),
                     light_count: render_list.lights.len(),
                     light_kinds,
+                    receive_shadow: object.receive_shadow,
                 },
                 fog: scene.fog_node.clone(),
                 model_world: item.matrix_world,
@@ -382,10 +392,18 @@ impl Renderer {
         // `RenderList.lightsArray` — scene-traversal order, which is the order
         // `LightsNode.setLights()` receives and which `UniformSource::Light*( i )`
         // indexes.
+        // `ShadowNode.updateShadow()`: every casting light renders its map
+        // before the scene pass. The maps stay on the renderer so the shader
+        // can sample them, and the `LightShadow` values the shader's uniforms
+        // read come back alongside.
+        let (shadow_maps, shadow_states) = self.render_shadows(scene, &render_list);
+        self.pass_shadows = shadow_maps;
+
         let lights: Vec<LightState> = render_list
             .lights
             .iter()
-            .map(|node| {
+            .enumerate()
+            .map(|(index, node)| {
                 let object = node.borrow();
                 let light = object
                     .light()
@@ -411,6 +429,7 @@ impl Renderer {
                         .hemisphere()
                         .map(|l| scale(l.ground_color))
                         .unwrap_or(Color::new(0.0, 0.0, 0.0)),
+                    shadow: shadow_states[index],
                 }
             })
             .collect();
@@ -425,6 +444,206 @@ impl Renderer {
         };
 
         self.render_list(&items, camera_uniforms, Some(clear));
+    }
+
+    /// `ShadowNode.updateShadow()` + `PointShadowNode.renderShadow()`: every
+    /// casting point light of the list renders its six cube faces into a
+    /// `CubeDepthTexture` before the scene pass.
+    ///
+    /// Returns, per light, its shadow map (for the sampler the material binds)
+    /// and the `LightShadow` values the shader's uniforms read.
+    #[allow(clippy::type_complexity)]
+    fn render_shadows(
+        &mut self,
+        scene: &Scene,
+        render_list: &RenderList,
+    ) -> (Vec<Option<CubeDepthTexture>>, Vec<Option<ShadowState>>) {
+        let count = render_list.lights.len();
+        let mut maps = vec![None; count];
+        let mut states = vec![None; count];
+
+        if !self.shadow_map_enabled {
+            return (maps, states);
+        }
+
+        for (index, node) in render_list.lights.iter().enumerate() {
+            let (key, shadow, light_world_position) = {
+                let object = node.borrow();
+                let Some(light) = object.light().and_then(|l| l.point().cloned()) else {
+                    continue;
+                };
+                if !object.cast_shadow {
+                    continue;
+                }
+                (
+                    Rc::as_ptr(node) as usize,
+                    light.shadow.clone(),
+                    PointLight::world_position(&object.matrix_world),
+                )
+            };
+
+            // `PointShadowNode.setupRenderTarget()`: a cube render target whose
+            // depth attachment is the `CubeDepthTexture` the shader samples.
+            let size = shadow.map_size;
+            let (depth_texture, color) = self
+                .shadow_maps
+                .get(&key)
+                .cloned()
+                .unwrap_or_else(|| {
+                    let depth_texture = CubeDepthTexture::new(size);
+                    let gpu = self.device.create_texture(&wgpu::TextureDescriptor {
+                        label: Some("three-rs point shadow depth"),
+                        size: wgpu::Extent3d {
+                            width: size,
+                            height: size,
+                            depth_or_array_layers: 6,
+                        },
+                        mip_level_count: 1,
+                        sample_count: 1,
+                        dimension: wgpu::TextureDimension::D2,
+                        format: depth_texture.gpu_format(),
+                        usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                            | wgpu::TextureUsages::TEXTURE_BINDING,
+                        view_formats: &[],
+                    });
+                    depth_texture.inner().borrow_mut().gpu = Some(gpu);
+                    // The colour attachment of the cube render target. Nothing
+                    // ever samples it — the shadow material writes black — but
+                    // the pass needs a target.
+                    let color = self.device.create_texture(&wgpu::TextureDescriptor {
+                        label: Some("three-rs point shadow map"),
+                        size: wgpu::Extent3d {
+                            width: size,
+                            height: size,
+                            depth_or_array_layers: 6,
+                        },
+                        mip_level_count: 1,
+                        sample_count: 1,
+                        dimension: wgpu::TextureDimension::D2,
+                        format: wgpu::TextureFormat::Rgba8Unorm,
+                        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                        view_formats: &[],
+                    });
+                    let entry = (depth_texture, color);
+                    self.shadow_maps.insert(key, entry.clone());
+                    entry
+                });
+
+            // `const far = light.distance || camera.far`.
+            let distance = {
+                let object = node.borrow();
+                object
+                    .light()
+                    .and_then(|l| l.point().map(|p| p.distance))
+                    .unwrap_or(0.0)
+            };
+            let far = if distance != 0.0 {
+                distance
+            } else {
+                shadow.camera_far
+            };
+
+            for face in 0..6 {
+                let mut camera = PerspectiveCamera::new(90.0, 1.0, shadow.camera_near, far);
+                camera.object.position = light_world_position;
+                camera.object.up = CUBE_UPS[face];
+                let mut target = light_world_position;
+                target.add(&CUBE_DIRECTIONS[face]);
+                camera.look_at(&target);
+                camera.update_matrix_world();
+
+                // `renderer.render( scene, camera )` per face: the projection is
+                // redone from this camera, so three's own per-face frustum
+                // culling falls out of `project_scene()`.
+                let face_list = self.project_scene(scene, &camera);
+
+                let mut items = Vec::new();
+                for item in face_list.items() {
+                    let object = item.node.borrow();
+                    if !object.cast_shadow {
+                        continue;
+                    }
+                    let mesh = object
+                        .mesh()
+                        .expect("three-rs: the render list only holds meshes");
+                    let source = mesh.material.clone().unwrap_or_else(MeshBasicNodeMaterial::new);
+                    items.push(Renderable {
+                        geometry: mesh.geometry.clone(),
+                        material: shadow_material(&source),
+                        setup: SetupContext::default(),
+                        fog: None,
+                        model_world: item.matrix_world,
+                        instance_matrix: object.instance_matrix().cloned(),
+                        instance_count: object.instance_count(),
+                    });
+                }
+
+                let color_view = color.create_view(&wgpu::TextureViewDescriptor {
+                    dimension: Some(wgpu::TextureViewDimension::D2),
+                    base_array_layer: face as u32,
+                    array_layer_count: Some(1),
+                    ..Default::default()
+                });
+                let depth_view = {
+                    let inner = depth_texture.inner().borrow();
+                    inner.gpu.as_ref().unwrap().create_view(
+                        &wgpu::TextureViewDescriptor {
+                            dimension: Some(wgpu::TextureViewDimension::D2),
+                            base_array_layer: face as u32,
+                            array_layer_count: Some(1),
+                            ..Default::default()
+                        },
+                    )
+                };
+
+                let pass_target = PassTarget {
+                    color: color_view,
+                    resolve: None,
+                    depth: Some(depth_view),
+                    color_format: wgpu::TextureFormat::Rgba8Unorm,
+                    depth_format: Some(depth_texture.gpu_format()),
+                    sample_count: 1,
+                    width: size,
+                    height: size,
+                };
+
+                let uniforms = UniformContext {
+                    camera_projection: camera.projection_matrix,
+                    camera_view: camera.matrix_world_inverse,
+                    camera_world: camera.object.matrix_world,
+                    time: self.time,
+                    ..Default::default()
+                };
+
+                // The shadow pass binds no shadow map of its own.
+                let saved = std::mem::take(&mut self.pass_shadows);
+                self.draw(&items, uniforms, &pass_target, Some([1.0, 1.0, 1.0, 1.0]));
+                self.pass_shadows = saved;
+            }
+
+            // `shadowMatrix.makeTranslation( - lightPositionWorld )` — the
+            // shadow coordinate is the light-to-fragment vector.
+            let mut matrix = Matrix4::identity();
+            matrix.make_translation(
+                -light_world_position.x,
+                -light_world_position.y,
+                -light_world_position.z,
+            );
+
+            maps[index] = Some(depth_texture);
+            states[index] = Some(ShadowState {
+                matrix,
+                camera_near: shadow.camera_near,
+                camera_far: far,
+                bias: shadow.bias,
+                normal_bias: shadow.normal_bias,
+                radius: shadow.radius,
+                map_size: Vector2::new(size as f64, size as f64),
+                intensity: shadow.intensity,
+            });
+        }
+
+        (maps, states)
     }
 
     /// `Renderer._renderScene()`'s render-list half: `renderList.begin()`,
@@ -534,7 +753,8 @@ impl Renderer {
 
             // `NodeMaterial.setup()` → `NodeBuilder.build()`: the WGSL and the
             // bindings the material declares.
-            let flow = materials::setup(&item.material, &item.setup, item.fog.as_ref());
+            let shadows = self.pass_shadows.clone();
+            let flow = materials::setup(&item.material, &item.setup, item.fog.as_ref(), &shadows);
             let node = NodeBuilder::new().build(&flow);
             let program_key = node.cache_key;
             if !self.programs.contains_key(&program_key) {
@@ -896,6 +1116,17 @@ impl Renderer {
                     ..Default::default()
                 })
             }
+            TextureSource::CubeDepth(cube) => {
+                let inner = cube.inner().borrow();
+                let gpu = inner
+                    .gpu
+                    .as_ref()
+                    .expect("three-rs: the shadow map has not been rendered into yet");
+                gpu.create_view(&wgpu::TextureViewDescriptor {
+                    dimension: Some(wgpu::TextureViewDimension::Cube),
+                    ..Default::default()
+                })
+            }
         }
     }
 
@@ -942,6 +1173,20 @@ impl Renderer {
                     min_filter: wgpu::FilterMode::Linear,
                     mipmap_filter: wgpu::MipmapFilterMode::Linear,
                     anisotropy_clamp: anisotropy,
+                    ..Default::default()
+                })
+            }
+            TextureSource::CubeDepth(_) => {
+                // `compareFunction = LessEqualCompare` makes this a comparison
+                // sampler; `CubeDepthTexture`'s filters are `LinearFilter`.
+                self.device.create_sampler(&wgpu::SamplerDescriptor {
+                    label: Some("three-rs shadow sampler"),
+                    address_mode_u: wgpu::AddressMode::ClampToEdge,
+                    address_mode_v: wgpu::AddressMode::ClampToEdge,
+                    address_mode_w: wgpu::AddressMode::ClampToEdge,
+                    mag_filter: wgpu::FilterMode::Linear,
+                    min_filter: wgpu::FilterMode::Linear,
+                    compare: Some(wgpu::CompareFunction::LessEqual),
                     ..Default::default()
                 })
             }
@@ -1661,4 +1906,23 @@ fn pick_adapter(instance: &wgpu::Instance) -> wgpu::Adapter {
         .into_iter()
         .next()
         .expect("three-rs: no Vulkan adapter found")
+}
+
+/// `ShadowBaseNode._getShadowMaterial()` plus the per-source-material part of
+/// `Renderer._getShadowNodes()`: black with the source map's alpha, no
+/// blending, no fog, and the side flipped by `_shadowSide`.
+fn shadow_material(source: &MeshBasicNodeMaterial) -> MeshBasicNodeMaterial {
+    use crate::nodes::tsl::{float, texture, vec3, vec4_join};
+
+    let mut material = MeshBasicNodeMaterial::new();
+    material.name = "ShadowMaterial";
+    material.color_node = Some(match &source.map {
+        Some(map) => vec4_join(vec![vec3(0.0, 0.0, 0.0), float(1.0).mul(texture(map).a())]),
+        None => vec4_join(vec![vec3(0.0, 0.0, 0.0), float(1.0)]),
+    });
+    material.side = match source.side {
+        Side::Front => Side::Back,
+        Side::Back => Side::Front,
+    };
+    material
 }
