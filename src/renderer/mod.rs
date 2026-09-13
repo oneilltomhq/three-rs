@@ -183,6 +183,9 @@ pub struct Renderer {
     /// light's index in the render list — `light.shadow.map` in three.js. Filled
     /// by the shadow pass, before any material setup reads it.
     shadow_maps: HashMap<usize, DepthTexture>,
+    /// `light.shadow.map` — the `RenderTarget` each shadow pass draws into,
+    /// kept across frames because `ShadowNode` allocates it once.
+    shadow_targets: HashMap<usize, RenderTarget>,
 }
 
 /// `new WebGPURenderer( parameters )`.
@@ -253,6 +256,7 @@ impl Renderer {
             tone_mapping: ToneMapping::None,
             shadow_map_enabled: false,
             shadow_maps: HashMap::new(),
+            shadow_targets: HashMap::new(),
         }
     }
 
@@ -328,6 +332,12 @@ impl Renderer {
                 instance_count: 1,
             });
         }
+
+        // `ShadowNode.updateBefore()` — every shadow-casting light renders the
+        // scene from its own camera before the main pass builds any material,
+        // because `LightDesc.shadow_map` is what decides whether a Phong
+        // program carries the filter at all.
+        self.render_shadows(scene, &render_list, camera);
 
         // `LightsNode`'s list, as the materials see it: the kind decides which
         // `AnalyticLightNode` subclass generates, and the shadow map (present
@@ -449,6 +459,153 @@ impl Renderer {
         };
 
         self.render_list(&items, camera_uniforms, Some(clear));
+    }
+
+    /// `ShadowNode.updateShadow()` for every shadow-casting light in the list:
+    /// `resetRendererAndSceneState`, `scene.overrideMaterial`, clear colour
+    /// `( 0, 0, 0, 0 )`, `setRenderTarget( shadowMap )`, then
+    /// `renderer.render( scene, shadow.camera )`.
+    ///
+    /// The port does not have to save and restore renderer state: the shadow
+    /// pass is a self-contained `draw()` into its own target, with no
+    /// background item, no fog (`ShadowMaterial.fog = false`), no output pass
+    /// and its own uniform context, so none of the state three.js has to put
+    /// back is ever read.
+    fn render_shadows(
+        &mut self,
+        scene: &Scene,
+        render_list: &RenderList,
+        camera: &PerspectiveCamera,
+    ) {
+        if !self.shadow_map_enabled {
+            return;
+        }
+
+        for (index, node) in render_list.lights.iter().enumerate() {
+            // `shadow.camera.updateProjectionMatrix()` (`ShadowNode.setup()`)
+            // and `shadow.updateMatrices( light )` (`ShadowNode.renderShadow()`).
+            let prepared = {
+                let mut object = node.borrow_mut();
+                if !object.cast_shadow {
+                    None
+                } else {
+                    let light_position = LightObject::world_position(&object.matrix_world);
+                    let light = object
+                        .light_mut()
+                        .expect("three-rs: the light list only holds lights");
+                    let (kind, angle, distance) = (light.kind, light.angle, light.distance);
+                    let target_position = light.target_world_position();
+                    light.shadow.as_mut().map(|shadow| {
+                        if kind == LightKind::Spot {
+                            shadow.update_spot_projection(angle, distance);
+                        }
+                        shadow.camera.update_projection_matrix();
+                        shadow.update_matrices(light_position, target_position);
+                        (
+                            shadow.map_size,
+                            shadow.camera.projection_matrix(),
+                            shadow.camera.matrix_world_inverse(),
+                            shadow.camera.matrix_world(),
+                        )
+                    })
+                }
+            };
+            let Some((map_size, projection, view, world)) = prepared else {
+                continue;
+            };
+
+            // `ShadowNode.setupRenderTarget()`: an `rgba8unorm` colour target
+            // that is written and never sampled, plus the `depth24plus`
+            // `ShadowDepthTexture` every `textureSampleCompare` reads.
+            let (width, height) = (map_size.x as u32, map_size.y as u32);
+            let target = self
+                .shadow_targets
+                .entry(index)
+                .or_insert_with(|| {
+                    let target = RenderTarget::new_with_options(
+                        width,
+                        height,
+                        RenderTargetOptions {
+                            texture_type: TextureType::UnsignedByte,
+                            samples: 0,
+                            depth_buffer: true,
+                            min_filter: TextureFilter::Linear,
+                            mag_filter: TextureFilter::Linear,
+                        },
+                    );
+                    let depth = DepthTexture::new();
+                    depth.set_filters(TextureFilter::Linear, TextureFilter::Linear);
+                    target.set_depth_texture(depth);
+                    target
+                })
+                .clone();
+            target.set_size(width, height);
+
+            // `renderer.render( scene, shadow.camera )` — a full
+            // `_projectObject` walk against the shadow camera's own frustum,
+            // then `getShadowRenderObjectFunction`'s `object.castShadow` filter.
+            let mut shadow_list = RenderList::new();
+            project_object(
+                &scene.node,
+                &ProjectCamera::from_parts(
+                    camera.object.layers,
+                    &projection,
+                    &view,
+                    camera.coordinate_system,
+                ),
+                0.0,
+                &mut shadow_list,
+                self.sort_objects,
+            );
+            shadow_list.sort();
+
+            let default_material = MeshBasicNodeMaterial::new();
+            let mut items = Vec::with_capacity(shadow_list.len());
+            for item in shadow_list.items() {
+                let object = item.node.borrow();
+                if !object.cast_shadow {
+                    continue;
+                }
+                let mesh = object
+                    .mesh()
+                    .expect("three-rs: the render list only holds meshes");
+                let source = mesh.material.as_ref().unwrap_or(&default_material);
+                let instance_matrix = object.instance_matrix().cloned();
+                let instance_count = object.instance_count();
+
+                items.push(Renderable {
+                    geometry: mesh.geometry.clone(),
+                    material: materials::shadow_material(source),
+                    setup: SetupContext {
+                        instance_count: instance_matrix.as_ref().map(|_| instance_count as usize),
+                        instanced: instance_matrix.is_some(),
+                        lights: Vec::new(),
+                    },
+                    fog: None,
+                    model_world: item.matrix_world,
+                    instance_matrix,
+                    instance_count,
+                });
+            }
+
+            let uniforms = UniformContext {
+                camera_projection: projection,
+                camera_view: view,
+                camera_world: world,
+                time: self.time,
+                ..Default::default()
+            };
+
+            let pass_target = self.render_target_pass(&target);
+            self.draw(&items, uniforms, &pass_target, Some([0.0, 0.0, 0.0, 0.0]));
+
+            self.shadow_maps.insert(
+                index,
+                target
+                    .depth_texture()
+                    .expect("three-rs: the shadow target has a depth texture"),
+            );
+        }
     }
 
     /// `Renderer._renderScene()`'s render-list half: `renderList.begin()`,
@@ -573,6 +730,8 @@ impl Renderer {
                 side: item.material.side,
                 depth_test: item.material.depth_test,
                 depth_write: item.material.depth_write,
+                blend: item.material.transparent
+                    && item.material.blending == materials::Blending::Normal,
             };
             let pipeline = PipelineKey {
                 program: program_key,

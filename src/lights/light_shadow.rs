@@ -191,14 +191,9 @@ impl LightShadow {
         }
     }
 
-    /// `LightShadow.updateMatrices( light )`.
-    pub fn update_matrices(&mut self, light_matrix_world: &Matrix4, target_matrix_world: &Matrix4) {
-        let mut light_position_world = Vector3::default();
-        light_position_world.set_from_matrix_position(light_matrix_world);
-
-        let mut look_target = Vector3::default();
-        look_target.set_from_matrix_position(target_matrix_world);
-
+    /// `LightShadow.updateMatrices( light )` — `light.matrixWorld`'s position
+    /// and `light.target.matrixWorld`'s position, already extracted.
+    pub fn update_matrices(&mut self, light_position_world: Vector3, look_target: Vector3) {
         self.camera.place(light_position_world, &look_target);
         self.update_matrix();
     }
