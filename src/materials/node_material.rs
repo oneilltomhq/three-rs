@@ -237,11 +237,11 @@ fn math_call(name: &'static str, m: NodeRef) -> NodeRef {
     })
 }
 
-/// `RangeNode` on an instanced mesh: one `vec4` per instance indexed by a flat
-/// `instanceIndex` varying.
+/// `RangeNode` on an instanced mesh: one `vec4` per instance, from a uniform
+/// buffer indexed by a flat `instanceIndex` varying or, past the uniform buffer
+/// limit, from an instanced vertex attribute.
 pub fn instanced_range(min: crate::math::Color, max: crate::math::Color, count: usize) -> NodeRef {
-    let index = to_varying(None, instance_index());
-    range(min, max, count, index)
+    crate::nodes::tsl::instanced_range(min, max, count)
 }
 
 /// `Renderer._renderOutput()`'s material: the framebuffer texture sampled at

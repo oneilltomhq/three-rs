@@ -15,7 +15,8 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use super::node::{
-    Builtin, BufferNode, BufferSource, FnDef, Lazy, Node, NodeRef, SampleMode, Type, UniformGroup,
+    Builtin, BufferNode, BufferSource, FnDef, InstanceBuffer, Lazy, Node, NodeRef, SampleMode,
+    Type, UniformGroup,
     UniformNode, UniformSource, VarDef, VaryingDef,
 };
 use crate::math::Color;
@@ -1223,13 +1224,47 @@ fn buffer_element(source: BufferSource, element_ty: Type, count: usize, index: N
     })
 }
 
-/// `InstanceNode`'s `instanceMatrix` buffer, indexed by `instanceIndex`.
+/// `instancedBufferAttribute( buffer, type, stride, offset )`.
+fn instanced_attribute(buffer: &Rc<InstanceBuffer>, offset: usize, ty: Type) -> NodeRef {
+    NodeRef::new(Node::InstancedAttribute {
+        buffer: buffer.clone(),
+        offset,
+        ty,
+    })
+}
+
+/// `createInstanceMatrixNode( builder, instanceMatrix )`
+/// (`src/nodes/accessors/Instance.js:27`).
+///
+/// Under the uniform buffer limit the matrices are a `buffer( array, 'mat4',
+/// count ).element( instanceIndex )`; over it they are an
+/// `InstancedInterleavedBuffer( array, 16, 1 )` read as four
+/// `instancedBufferAttribute( interleaved, 'vec4', 16, offset )` views joined
+/// back into a `mat4`. The second branch is what lets an `InstancedMesh` go
+/// past `maxUniformBufferBindingSize / 64` ≈ 1024 instances.
 pub fn instance_matrix(count: usize) -> NodeRef {
-    buffer_element(
-        BufferSource::InstanceMatrix,
+    let matrix_count = count.max(1);
+    let uniform_buffer_size = matrix_count * 16 * 4;
+
+    if uniform_buffer_size <= crate::nodes::builder::uniform_buffer_limit() {
+        return buffer_element(
+            BufferSource::InstanceMatrix,
+            Type::Mat4,
+            count,
+            instance_index(),
+        );
+    }
+
+    let interleaved = Rc::new(InstanceBuffer {
+        source: BufferSource::InstanceMatrix,
+        count: matrix_count,
+        item_size: 16,
+    });
+    join(
         Type::Mat4,
-        count,
-        instance_index(),
+        (0..4)
+            .map(|i| instanced_attribute(&interleaved, i * 4, Type::Vec4))
+            .collect(),
     )
 }
 
@@ -1237,6 +1272,31 @@ pub fn instance_matrix(count: usize) -> NodeRef {
 /// `vec4` per instance, `lerp( min[c], max[c], Math.random() )` per component.
 pub fn range(min: Color, max: Color, count: usize, index: NodeRef) -> NodeRef {
     buffer_element(BufferSource::Range { min, max }, Type::Vec4, count, index)
+}
+
+/// `RangeNode.setup()` on an object with `count > 1`
+/// (`src/nodes/geometry/RangeNode.js:122`): the same uniform-or-attribute
+/// branch as [`instance_matrix`], on `count * 4 * 4` bytes.
+///
+/// Each call builds its own buffer node, so two `range( 0, 1 )` calls are two
+/// buffers with two different random fills — Three's behaviour, and the thing a
+/// value-keyed cache would silently collapse.
+pub fn instanced_range(min: Color, max: Color, count: usize) -> NodeRef {
+    let uniform_buffer_size = count * 4 * 4;
+
+    if uniform_buffer_size <= crate::nodes::builder::uniform_buffer_limit() {
+        // `buffer( array, 'vec4', count ).element( instanceIndex )`. The index
+        // goes through a varying because the port reads the buffer in the
+        // fragment stage; see `docs/nodes.md` §9.
+        return range(min, max, count, to_varying(None, instance_index()));
+    }
+
+    let buffer = Rc::new(InstanceBuffer {
+        source: BufferSource::Range { min, max },
+        count,
+        item_size: 4,
+    });
+    instanced_attribute(&buffer, 0, Type::Vec4)
 }
 
 // ---------------------------------------------------------------------------

@@ -32,7 +32,8 @@ use crate::math::{Color, Matrix4, Vector2};
 use crate::nodes::node::{BufferSource, TextureSource};
 use crate::nodes::tsl::FogNode;
 use crate::nodes::wgsl::TextureKind;
-use crate::nodes::{BindingDesc, NodeBuilder};
+use crate::nodes::builder::VertexBufferSource;
+use crate::nodes::{BindingDesc, NodeBuilder, NodeProgram};
 use crate::objects::{Background, InstancedBufferAttribute, QuadMesh, Scene};
 use crate::testing::DeterministicRandom;
 use crate::textures::{
@@ -146,9 +147,10 @@ pub struct Renderer {
     cube_textures: HashMap<usize, wgpu::Texture>,
     /// `WebGPUTexturePassUtils.transferPipelines`, keyed by texture format.
     mipmap_pipelines: HashMap<wgpu::TextureFormat, wgpu::RenderPipeline>,
-    /// `BufferNode` storage, by source — a `range()` buffer must be filled only
-    /// once, since filling it draws from `Math.random`.
-    buffers: HashMap<String, wgpu::Buffer>,
+    /// `BufferNode` / `InstanceBuffer` storage, keyed by the node's own
+    /// identity — a `range()` buffer must be filled only once, since filling it
+    /// draws from `Math.random`.
+    buffers: HashMap<usize, wgpu::Buffer>,
     /// `Background`'s `SphereGeometry( 1, 32, 32 )` skybox mesh geometry.
     background_geometry: Option<Rc<BufferGeometry>>,
     /// `QuadMesh`'s shared `QuadGeometry`.
@@ -208,6 +210,15 @@ impl Renderer {
             trace: wgpu::Trace::Off,
         }))
         .expect("three-rs: failed to create device");
+
+        // `WebGPUCapabilities.getUniformBufferLimit()`. `Limits::default()`
+        // asks for WebGPU's guaranteed minimum, 64 KiB, which is also what
+        // Chrome reports on the grader's adapter — so `RangeNode` and
+        // `InstanceNode` branch exactly where three.js' dumps show them
+        // branching.
+        crate::nodes::builder::set_uniform_buffer_limit(
+            device.limits().max_uniform_buffer_binding_size as usize,
+        );
 
         let mipmap_shader = MipmapShader::new(&device);
 
@@ -487,7 +498,8 @@ impl Renderer {
     ) {
         struct Draw {
             geometry_id: usize,
-            attributes: Vec<&'static str>,
+            /// One buffer per `VertexBufferDesc`, in slot order.
+            vertex_buffers: Vec<wgpu::Buffer>,
             pipeline: PipelineKey,
             bind_groups: Vec<wgpu::BindGroup>,
             instance_count: u32,
@@ -505,7 +517,7 @@ impl Renderer {
             let node = NodeBuilder::new().build(&flow);
             let program_key = node.cache_key;
             if !self.programs.contains_key(&program_key) {
-                let program = Program::new(&self.device, node);
+                let program = Program::new(&self.device, node.clone());
                 self.programs.insert(program_key, program);
             }
 
@@ -537,18 +549,31 @@ impl Renderer {
                 ..camera_uniforms
             };
 
-            let bind_groups = self.bind_groups(program_key, &uniforms, &item.instance_matrix);
+            // The bindings and the vertex buffers are resolved from *this*
+            // draw's freshly built program, not from the cached one: the cache
+            // key is the shader text plus the vertex layout shape, so two
+            // materials that differ only in which texture or which `range()`
+            // buffer they name share one `Program` — and must still draw with
+            // their own resources.
+            let bind_groups =
+                self.bind_groups(program_key, &node, &uniforms, &item.instance_matrix);
 
-            let attributes = self.programs[&program_key]
-                .node
-                .attributes
+            let vertex_buffers = node
+                .vertex_buffers()
                 .iter()
-                .map(|(name, _)| *name)
+                .map(|desc| match &desc.source {
+                    VertexBufferSource::Geometry(name) => {
+                        self.geometries[&geometry_id].attribute(name).clone()
+                    }
+                    VertexBufferSource::Instance(buffer) => {
+                        self.instance_buffer(buffer, &item.instance_matrix)
+                    }
+                })
                 .collect();
 
             draws.push(Draw {
                 geometry_id,
-                attributes,
+                vertex_buffers,
                 pipeline,
                 bind_groups,
                 instance_count: item.instance_count,
@@ -610,8 +635,8 @@ impl Renderer {
                 for (index, group) in draw.bind_groups.iter().enumerate() {
                     pass.set_bind_group(index as u32, group, &[]);
                 }
-                for (slot, name) in draw.attributes.iter().enumerate() {
-                    pass.set_vertex_buffer(slot as u32, geometry.attribute(name).slice(..));
+                for (slot, buffer) in draw.vertex_buffers.iter().enumerate() {
+                    pass.set_vertex_buffer(slot as u32, buffer.slice(..));
                 }
 
                 match &geometry.index {
@@ -727,6 +752,7 @@ impl Renderer {
     fn bind_groups(
         &mut self,
         program_key: u64,
+        node: &NodeProgram,
         uniforms: &UniformContext,
         instance_matrix: &Option<InstancedBufferAttribute>,
     ) -> Vec<wgpu::BindGroup> {
@@ -736,7 +762,7 @@ impl Renderer {
             Sampler(wgpu::Sampler),
         }
 
-        let groups = self.programs[&program_key].node.groups.clone();
+        let groups = node.groups.clone();
         let mut out = Vec::with_capacity(groups.len());
 
         for (group_index, descs) in groups.iter().enumerate() {
@@ -752,9 +778,14 @@ impl Renderer {
                             wgpu::BufferUsages::UNIFORM,
                         ))
                     }
-                    BindingDesc::Buffer { source, count, .. } => {
-                        Resource::Buffer(self.node_buffer(source, *count, instance_matrix))
-                    }
+                    BindingDesc::Buffer {
+                        id, source, count, ..
+                    } => Resource::Buffer(self.node_buffer(
+                        *id,
+                        source,
+                        *count,
+                        instance_matrix,
+                    )),
                     BindingDesc::Texture { source, kind, .. } => {
                         Resource::View(self.texture_view(source, *kind))
                     }
@@ -791,9 +822,47 @@ impl Renderer {
     /// `Math.random` exactly once, because `RangeNode.setup()` runs once.
     fn node_buffer(
         &mut self,
+        id: usize,
         source: &BufferSource,
         count: usize,
         instance_matrix: &Option<InstancedBufferAttribute>,
+    ) -> wgpu::Buffer {
+        self.buffer_for(id, source, count, instance_matrix, wgpu::BufferUsages::UNIFORM)
+    }
+
+    /// The vertex buffer behind an `InstancedBufferAttribute`. Same contents as
+    /// the uniform path, different usage — `RangeNode` and
+    /// `createInstanceMatrixNode()` pick between the two on
+    /// `maxUniformBufferBindingSize`, and the fill must not depend on which
+    /// branch was taken.
+    fn instance_buffer(
+        &mut self,
+        buffer: &Rc<crate::nodes::node::InstanceBuffer>,
+        instance_matrix: &Option<InstancedBufferAttribute>,
+    ) -> wgpu::Buffer {
+        let id = Rc::as_ptr(buffer) as *const u8 as usize;
+        self.buffer_for(
+            id,
+            &buffer.source,
+            buffer.count,
+            instance_matrix,
+            wgpu::BufferUsages::VERTEX,
+        )
+    }
+
+    /// `range()` is filled from the page's `Math.random` exactly once, because
+    /// `RangeNode.setup()` runs once — so the buffer is cached on the node's own
+    /// identity, never on its min/max/count, which two `range( 0, 1 )` calls
+    /// share. The instance matrix is re-uploaded per draw instead: its contents
+    /// change with the scene, and three.js re-uploads on
+    /// `instanceMatrix.version`.
+    fn buffer_for(
+        &mut self,
+        id: usize,
+        source: &BufferSource,
+        count: usize,
+        instance_matrix: &Option<InstancedBufferAttribute>,
+        usage: wgpu::BufferUsages,
     ) -> wgpu::Buffer {
         match source {
             BufferSource::InstanceMatrix => {
@@ -803,12 +872,11 @@ impl Renderer {
                 self.create_buffer_init(
                     "three-rs instanceMatrix",
                     bytemuck::cast_slice(&attribute.array),
-                    wgpu::BufferUsages::UNIFORM,
+                    usage,
                 )
             }
             BufferSource::Range { min, max } => {
-                let key = format!("range:{min:?}:{max:?}:{count}");
-                if let Some(buffer) = self.buffers.get(&key) {
+                if let Some(buffer) = self.buffers.get(&id) {
                     return buffer.clone();
                 }
 
@@ -829,9 +897,9 @@ impl Renderer {
                 let buffer = self.create_buffer_init(
                     "three-rs range()",
                     bytemuck::cast_slice(&range),
-                    wgpu::BufferUsages::UNIFORM,
+                    usage,
                 );
-                self.buffers.insert(key, buffer.clone());
+                self.buffers.insert(id, buffer.clone());
                 buffer
             }
         }
