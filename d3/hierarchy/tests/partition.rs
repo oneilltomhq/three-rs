@@ -3,20 +3,20 @@
 //! vendor JS itself, e.g.:
 //!
 //! ```text
-//! node --input-type=module -e 'import {hierarchy, partition} from "/home/tom/src/vendor/d3-hierarchy/src/index.js"; import fs from "fs"; const root = hierarchy(JSON.parse(fs.readFileSync("/home/tom/src/vendor/d3-hierarchy/test/data/simple.json"))).sum(d => d.value); partition().size([100,200]).padding(1).round(true)(root); console.log(JSON.stringify(root.descendants().map(d => [d.depth,d.height,d.value,d.x0,d.y0,d.x1,d.y1])));'
+//! node --input-type=module -e 'import {hierarchy, partition} from "/home/tom/src/vendor/d3-hierarchy/src/index.js"; import fs from "fs"; const root = hierarchy(JSON.parse(fs.readFileSync(common::data("simple.json")))).sum(d => d.value); partition().size([100,200]).padding(1).round(true)(root); console.log(JSON.stringify(root.descendants().map(d => [d.depth,d.height,d.value,d.x0,d.y0,d.x1,d.y1])));'
 //! ```
 //!
 //! Each row is `[depth, height, value, x0, y0, x1, y1]` in `descendants()`
 //! (breadth-first) order, and is compared for exact f64 equality.
 
+mod common;
 use d3_hierarchy::hierarchy;
 use d3_hierarchy::partition::partition;
 use serde_json::json;
 
-const DATA: &str = "/home/tom/src/vendor/d3-hierarchy/test/data";
 
 fn data(name: &str) -> serde_json::Value {
-    serde_json::from_str(&std::fs::read_to_string(format!("{DATA}/{name}")).unwrap()).unwrap()
+    serde_json::from_str(&std::fs::read_to_string(common::data(name)).unwrap()).unwrap()
 }
 
 fn value(d: &serde_json::Value) -> f64 {

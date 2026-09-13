@@ -781,6 +781,7 @@ dependencies = [
 [[package]]
 name = "naga"
 version = "30.0.0"
+source = "git+https://github.com/gfx-rs/wgpu?rev=b6db26411cd7f34da35cef9b794c59f91ef7e343#b6db26411cd7f34da35cef9b794c59f91ef7e343"
 dependencies = [
  "arrayvec",
  "bit-set",
@@ -805,6 +806,7 @@ dependencies = [
 [[package]]
 name = "naga-types"
 version = "30.0.0"
+source = "git+https://github.com/gfx-rs/wgpu?rev=b6db26411cd7f34da35cef9b794c59f91ef7e343#b6db26411cd7f34da35cef9b794c59f91ef7e343"
 dependencies = [
  "hashbrown 0.17.1",
  "indexmap",
@@ -2016,6 +2018,7 @@ dependencies = [
 [[package]]
 name = "wgpu"
 version = "30.0.0"
+source = "git+https://github.com/gfx-rs/wgpu?rev=b6db26411cd7f34da35cef9b794c59f91ef7e343#b6db26411cd7f34da35cef9b794c59f91ef7e343"
 dependencies = [
  "arrayvec",
  "bitflags 2.13.2",
@@ -2043,6 +2046,7 @@ dependencies = [
 [[package]]
 name = "wgpu-core"
 version = "30.0.0"
+source = "git+https://github.com/gfx-rs/wgpu?rev=b6db26411cd7f34da35cef9b794c59f91ef7e343#b6db26411cd7f34da35cef9b794c59f91ef7e343"
 dependencies = [
  "arrayvec",
  "bit-set",
@@ -2075,6 +2079,7 @@ dependencies = [
 [[package]]
 name = "wgpu-core-deps-linux-android-bsd"
 version = "30.0.0"
+source = "git+https://github.com/gfx-rs/wgpu?rev=b6db26411cd7f34da35cef9b794c59f91ef7e343#b6db26411cd7f34da35cef9b794c59f91ef7e343"
 dependencies = [
  "wgpu-hal",
 ]
@@ -2082,6 +2087,7 @@ dependencies = [
 [[package]]
 name = "wgpu-core-deps-windows"
 version = "30.0.0"
+source = "git+https://github.com/gfx-rs/wgpu?rev=b6db26411cd7f34da35cef9b794c59f91ef7e343#b6db26411cd7f34da35cef9b794c59f91ef7e343"
 dependencies = [
  "wgpu-hal",
 ]
@@ -2089,6 +2095,7 @@ dependencies = [
 [[package]]
 name = "wgpu-hal"
 version = "30.0.0"
+source = "git+https://github.com/gfx-rs/wgpu?rev=b6db26411cd7f34da35cef9b794c59f91ef7e343#b6db26411cd7f34da35cef9b794c59f91ef7e343"
 dependencies = [
  "android_system_properties",
  "arrayvec",
@@ -2124,6 +2131,7 @@ dependencies = [
 [[package]]
 name = "wgpu-naga-bridge"
 version = "30.0.0"
+source = "git+https://github.com/gfx-rs/wgpu?rev=b6db26411cd7f34da35cef9b794c59f91ef7e343#b6db26411cd7f34da35cef9b794c59f91ef7e343"
 dependencies = [
  "naga",
  "wgpu-types",
@@ -2132,6 +2140,7 @@ dependencies = [
 [[package]]
 name = "wgpu-sync"
 version = "30.0.0"
+source = "git+https://github.com/gfx-rs/wgpu?rev=b6db26411cd7f34da35cef9b794c59f91ef7e343#b6db26411cd7f34da35cef9b794c59f91ef7e343"
 dependencies = [
  "cfg-if",
  "lock_api",
@@ -2141,6 +2150,7 @@ dependencies = [
 [[package]]
 name = "wgpu-types"
 version = "30.0.0"
+source = "git+https://github.com/gfx-rs/wgpu?rev=b6db26411cd7f34da35cef9b794c59f91ef7e343#b6db26411cd7f34da35cef9b794c59f91ef7e343"
 dependencies = [
  "bitflags 2.13.2",
  "bytemuck",

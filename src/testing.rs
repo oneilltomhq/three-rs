@@ -62,3 +62,22 @@ pub fn write_png(path: &str, width: u32, height: u32, pixels: &[u8]) {
         .write_image_data(pixels)
         .expect("three-rs: PNG data");
 }
+
+/// A vendored upstream checkout the examples and tests read from: `env_var` if
+/// set, else `$HOME/src/vendor/<name>`. Nothing under `src/` reads these; only
+/// the examples (their textures and models come from Three's own `examples/`)
+/// and the tests (Three's e2e reference screenshots) do.
+pub fn vendor_dir(env_var: &str, name: &str) -> std::path::PathBuf {
+    match std::env::var(env_var) {
+        Ok(dir) => std::path::PathBuf::from(dir),
+        Err(_) => std::path::PathBuf::from(std::env::var("HOME").expect("HOME"))
+            .join("src/vendor")
+            .join(name),
+    }
+}
+
+/// The three.js checkout (`THREE_JS_DIR`), expected at tag r186 with
+/// `handoff/rung0/grader-flags.patch` applied for the e2e tests.
+pub fn three_js_dir() -> std::path::PathBuf {
+    vendor_dir("THREE_JS_DIR", "three.js")
+}

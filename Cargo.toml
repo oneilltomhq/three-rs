@@ -7,7 +7,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-wgpu = { path = "/home/tom/src/vendor/wgpu/wgpu", default-features = false, features = ["std", "vulkan", "wgsl"] }
+# Pinned to the gfx-rs/wgpu trunk commit the ladder was graded against (2026-07-31,
+# between v30.0.0 and the next release). To build against a local checkout, use a
+# `[patch]` section in .cargo/config.toml rather than editing this line.
+wgpu = { git = "https://github.com/gfx-rs/wgpu", rev = "b6db26411cd7f34da35cef9b794c59f91ef7e343", default-features = false, features = ["std", "vulkan", "wgsl"] }
 bytemuck = { version = "1", features = ["derive"] }
 pollster = "0.4"
 png = "0.17"

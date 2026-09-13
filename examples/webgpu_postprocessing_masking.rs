@@ -45,12 +45,7 @@ pub struct App {
 }
 
 fn examples_dir() -> std::path::PathBuf {
-    let three = match std::env::var("THREE_JS_DIR") {
-        Ok(dir) => std::path::PathBuf::from(dir),
-        Err(_) => {
-            std::path::PathBuf::from(std::env::var("HOME").unwrap()).join("src/vendor/three.js")
-        }
-    };
+    let three = three_rs::testing::three_js_dir();
     three.join("examples")
 }
 

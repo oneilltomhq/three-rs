@@ -4,7 +4,7 @@
 //! vendor JS itself with:
 //!
 //! ```sh
-//! node --input-type=module -e 'import {hierarchy, tree} from "/home/tom/src/vendor/d3-hierarchy/src/index.js"; import fs from "fs"; const data = JSON.parse(fs.readFileSync("/home/tom/src/vendor/d3-hierarchy/test/data/simple.json")); const root = hierarchy(data).sum(d => d.value); tree()(root); console.log(JSON.stringify(root.descendants().map(d => [d.depth, d.height, d.value, d.x, d.y])));'
+//! node --input-type=module -e 'import {hierarchy, tree} from "/home/tom/src/vendor/d3-hierarchy/src/index.js"; import fs from "fs"; const data = JSON.parse(fs.readFileSync(common::data("simple.json"))); const root = hierarchy(data).sum(d => d.value); tree()(root); console.log(JSON.stringify(root.descendants().map(d => [d.depth, d.height, d.value, d.x, d.y])));'
 //! ```
 //!
 //! (the same one-liner with `tree().size([100,200])`, `.nodeSize([10,20])`, a
@@ -12,12 +12,13 @@
 //! `lopsided()` below, and `test/data/flare.json`; values printed with
 //! `toPrecision(17)` so the literals are the exact f64s).
 
+mod common;
 use d3_hierarchy::tree::{tree, Tidy};
 use d3_hierarchy::{hierarchy, Tree};
 use serde_json::json;
 
 fn simple() -> serde_json::Value {
-    let s = std::fs::read_to_string("/home/tom/src/vendor/d3-hierarchy/test/data/simple.json").unwrap();
+    let s = std::fs::read_to_string(common::data("simple.json")).unwrap();
     serde_json::from_str(&s).unwrap()
 }
 
@@ -223,7 +224,7 @@ fn tree_lopsided_tree_with_a_custom_separation() {
 
 #[test]
 fn tree_flare() {
-    let s = std::fs::read_to_string("/home/tom/src/vendor/d3-hierarchy/test/data/flare.json").unwrap();
+    let s = std::fs::read_to_string(common::data("flare.json")).unwrap();
     let data: serde_json::Value = serde_json::from_str(&s).unwrap();
     let mut root = hierarchy(&data);
     tree().size([1.0, 1.0]).tree(&mut root);

@@ -1,5 +1,6 @@
 //! Ports of d3-hierarchy/test/hierarchy/{each,find,links,index,copy}-test.js.
 
+mod common;
 use d3_hierarchy::{hierarchy, Tree};
 use serde_json::json;
 
@@ -132,7 +133,7 @@ fn sum_sort_path_ancestors_descendants_leaves() {
 #[test]
 fn flare_sum_sort_count_match_the_js() {
     let data: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string("/home/tom/src/vendor/d3-hierarchy/test/data/flare.json").unwrap(),
+        &std::fs::read_to_string(common::data("flare.json")).unwrap(),
     )
     .unwrap();
     let mut root = hierarchy(&data);

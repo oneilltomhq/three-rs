@@ -7,7 +7,10 @@
 use three_rs::core::Object3DNode;
 use three_rs::loaders::GLTFLoader;
 
-const MODELS: &str = "/home/tom/src/vendor/three.js/examples/models/gltf";
+/// Three's own sample models, from the `THREE_JS_DIR` checkout.
+fn models() -> std::path::PathBuf {
+    three_rs::testing::three_js_dir().join("examples/models/gltf")
+}
 
 fn names(gltf: &three_rs::loaders::Gltf) -> Vec<String> {
     let mut out = Vec::new();
@@ -18,7 +21,7 @@ fn names(gltf: &three_rs::loaders::Gltf) -> Vec<String> {
 
 #[test]
 fn michelle_tree() {
-    let gltf = GLTFLoader::load(format!("{MODELS}/Michelle.glb")).unwrap();
+    let gltf = GLTFLoader::load(models().join("Michelle.glb")).unwrap();
     let names = names(&gltf);
 
     assert_eq!(names.len(), 68);
@@ -35,7 +38,7 @@ fn michelle_tree() {
 
 #[test]
 fn michelle_geometry() {
-    let gltf = GLTFLoader::load(format!("{MODELS}/Michelle.glb")).unwrap();
+    let gltf = GLTFLoader::load(models().join("Michelle.glb")).unwrap();
     let geometry = &gltf.skinned_meshes[0].geometry;
 
     assert_eq!(geometry.position().unwrap().count(), 16340);
@@ -64,7 +67,7 @@ fn michelle_geometry() {
 
 #[test]
 fn michelle_bone_inverses() {
-    let gltf = GLTFLoader::load(format!("{MODELS}/Michelle.glb")).unwrap();
+    let gltf = GLTFLoader::load(models().join("Michelle.glb")).unwrap();
     let skeleton = gltf.skins[0].borrow();
 
     let expected = [
@@ -80,7 +83,7 @@ fn michelle_bone_inverses() {
 
 #[test]
 fn michelle_animations() {
-    let gltf = GLTFLoader::load(format!("{MODELS}/Michelle.glb")).unwrap();
+    let gltf = GLTFLoader::load(models().join("Michelle.glb")).unwrap();
 
     assert_eq!(gltf.animations.len(), 2);
     assert_eq!(gltf.animations[0].name, "SambaDance");
@@ -105,7 +108,7 @@ fn michelle_animations() {
 
 #[test]
 fn soldier_tree() {
-    let gltf = GLTFLoader::load(format!("{MODELS}/Soldier.glb")).unwrap();
+    let gltf = GLTFLoader::load(models().join("Soldier.glb")).unwrap();
     let names = names(&gltf);
 
     assert_eq!(names.len(), 69);
@@ -140,7 +143,7 @@ fn soldier_tree() {
 fn michelle_mixer_at_zero() {
     use three_rs::animation::AnimationMixer;
 
-    let gltf = GLTFLoader::load(format!("{MODELS}/Michelle.glb")).unwrap();
+    let gltf = GLTFLoader::load(models().join("Michelle.glb")).unwrap();
 
     let mut mixer = AnimationMixer::new(Box::new(gltf.scene_resolver()));
     let action = mixer.clip_action(&gltf.animations[0], None, None);
@@ -216,7 +219,7 @@ fn michelle_skinning_at_zero() {
     use three_rs::animation::AnimationMixer;
     use three_rs::math::Vector3;
 
-    let mut gltf = GLTFLoader::load(format!("{MODELS}/Michelle.glb")).unwrap();
+    let mut gltf = GLTFLoader::load(models().join("Michelle.glb")).unwrap();
 
     let mut mixer = AnimationMixer::new(Box::new(gltf.scene_resolver()));
     let action = mixer.clip_action(&gltf.animations[0], None, None);

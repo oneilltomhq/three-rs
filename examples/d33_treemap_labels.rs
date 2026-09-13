@@ -134,11 +134,7 @@ pub struct App {
 }
 
 fn flare_json() -> std::path::PathBuf {
-    let gallery = match std::env::var("D3_GALLERY_DIR") {
-        Ok(dir) => std::path::PathBuf::from(dir),
-        Err(_) => std::path::PathBuf::from(std::env::var("HOME").unwrap())
-            .join("src/vendor/d3-gallery"),
-    };
+    let gallery = three_rs::testing::vendor_dir("D3_GALLERY_DIR", "d3-gallery");
     gallery.join("notebooks/hierarchies/treemap.v2/files/flare.json")
 }
 

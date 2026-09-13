@@ -18,20 +18,6 @@ use crate::textures::{CubeDepthTexture, DepthTexture};
 /// `0.3183098861837907` in the dumps.
 pub const RECIPROCAL_PI: f64 = std::f64::consts::FRAC_1_PI;
 
-/// The uniforms one `PointLight` contributes, in the order `LightsNode` lays
-/// them into the **render** group: colour × intensity, cutoff distance, decay,
-/// then (appended after every light's triple) the view-space position.
-pub struct PointLightUniforms {
-    /// `light.color * light.intensity`, linear.
-    pub color: NodeRef,
-    /// The light's world position through the camera view matrix.
-    pub view_position: NodeRef,
-    /// `light.distance`.
-    pub cutoff_distance: NodeRef,
-    /// `light.decay`.
-    pub decay: NodeRef,
-}
-
 /// `getDistanceAttenuation( lightDistance, cutoffDistance, decayExponent )` —
 /// the whole thing, including the `if ( cutoffDistance > 0.0 ) { … } else { … }`
 /// over a shared temp that the dump shows. `cutoffDistance` is a uniform, so the
@@ -305,48 +291,6 @@ pub fn direct_light(
     else {
         return;
     };
-
-    // `irradiance = dotNL * lightColor`, clamped — `getLightingIrradiance`.
-    let dot_nl = normal_view().dot(light_direction.clone()).clamp(0.0, 1.0);
-    let irr = dot_nl.mul(light_color);
-
-    // `PhongLightingModel.direct()`.
-    out.push(direct_diffuse().assign(
-        direct_diffuse().add(irr.clone().mul(brdf_lambert(diffuse_color().xyz()))),
-    ));
-    out.push(
-        direct_specular().assign(
-            direct_specular().add(irr.mul(brdf_blinn_phong(light_direction)).mul(1.0)),
-        ),
-    );
-}
-
-impl PointLightUniforms {
-    /// The light at `index` of the renderer's light list — the uniforms are
-    /// created in the dumps' member order (the triple, then the position is
-    /// reached later in the flow).
-    pub fn at(index: usize) -> Self {
-        Self {
-            color: light_color_intensity(index),
-            cutoff_distance: light_cutoff_distance(index),
-            decay: light_decay(index),
-            view_position: light_view_position(index),
-        }
-    }
-}
-
-/// One `PointLight`'s contribution: `LightNode.setup()`'s `lightDirection` /
-/// `lightColor` pair fed through `PhongLightingModel.direct()`. The statements
-/// are pushed in the order the dump prints them.
-pub fn direct_point_light(light: &PointLightUniforms, out: &mut Vec<NodeRef>) {
-    let l_vector = light.view_position.clone().sub(position_view());
-    let light_direction = l_vector.clone().normalize();
-    let attenuation = distance_attenuation(
-        length(l_vector),
-        light.cutoff_distance.clone(),
-        light.decay.clone(),
-    );
-    let light_color = light.color.clone().mul(attenuation);
 
     // `irradiance = dotNL * lightColor`, clamped — `getLightingIrradiance`.
     let dot_nl = normal_view().dot(light_direction.clone()).clamp(0.0, 1.0);

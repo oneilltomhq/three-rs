@@ -202,17 +202,14 @@ fn out_dir() -> PathBuf {
 }
 
 fn three_js_dir() -> PathBuf {
-    match std::env::var("THREE_JS_DIR") {
-        Ok(dir) => PathBuf::from(dir),
-        Err(_) => PathBuf::from(std::env::var("HOME").unwrap()).join("src/vendor/three.js"),
-    }
+    three_rs::testing::three_js_dir()
 }
 
 /// The d33 harness' reference frame for this page, 400 × 250.
 fn d33_screenshot() -> PathBuf {
     match std::env::var("D33_DIR") {
         Ok(dir) => PathBuf::from(dir),
-        Err(_) => PathBuf::from(std::env::var("HOME").unwrap()).join("src/projects/d33/rung0"),
+        Err(_) => PathBuf::from(std::env::var("HOME").expect("HOME")).join("src/projects/d33/rung0"),
     }
     .join("examples/screenshots/d3_treemap.jpg")
 }

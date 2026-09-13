@@ -9,6 +9,7 @@
 //!
 //! Skipped, with reasons, are listed at the bottom of this file.
 
+mod common;
 use d3_hierarchy::node::{Node, Tree};
 use d3_hierarchy::treemap::{
     binary, dice, js_round, phi, resquarify, slice, slice_dice, squarify, squarify_ratio, treemap,
@@ -16,10 +17,9 @@ use d3_hierarchy::treemap::{
 use d3_hierarchy::{hierarchy, Datum};
 use serde_json::json;
 
-const DATA: &str = "/home/tom/src/vendor/d3-hierarchy/test/data";
 
 fn data(name: &str) -> Datum {
-    serde_json::from_str(&std::fs::read_to_string(format!("{DATA}/{name}")).unwrap()).unwrap()
+    serde_json::from_str(&std::fs::read_to_string(common::data(name)).unwrap()).unwrap()
 }
 
 fn simple2() -> Datum {

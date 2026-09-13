@@ -4,7 +4,7 @@
 //! the vendor JS itself, from /home/tom/src/vendor/d3-hierarchy, with:
 //!
 //! ```sh
-//! node --input-type=module -e 'import {hierarchy, cluster} from "/home/tom/src/vendor/d3-hierarchy/src/index.js"; import fs from "fs"; const data = JSON.parse(fs.readFileSync("/home/tom/src/vendor/d3-hierarchy/test/data/simple.json")); const root = hierarchy(data).sum(d => d.value); cluster()(root); console.log(JSON.stringify(root.descendants().map(d => [d.depth, d.height, d.value, d.x, d.y])));'
+//! node --input-type=module -e 'import {hierarchy, cluster} from "/home/tom/src/vendor/d3-hierarchy/src/index.js"; import fs from "fs"; const data = JSON.parse(fs.readFileSync(common::data("simple.json"))); const root = hierarchy(data).sum(d => d.value); cluster()(root); console.log(JSON.stringify(root.descendants().map(d => [d.depth, d.height, d.value, d.x, d.y])));'
 //! ```
 //!
 //! and the same one-liner with `cluster().size([100, 200])`,
@@ -14,6 +14,7 @@
 //! test/data/flare.json. The numbers are the JSON.stringify output verbatim,
 //! which round-trips doubles exactly, so `assert_eq!` on f64 is bit equality.
 
+mod common;
 use d3_hierarchy::cluster::Cluster;
 use d3_hierarchy::{hierarchy, Tree};
 use serde_json::json;
@@ -160,7 +161,7 @@ fn cluster_single_node_node_size() {
 
 #[test]
 fn cluster_flare() {
-    let path = "/home/tom/src/vendor/d3-hierarchy/test/data/flare.json";
+    let path = common::data("flare.json");
     let text = match std::fs::read_to_string(path) {
         Ok(t) => t,
         // The vendor tree is not part of this crate; skip rather than fail if

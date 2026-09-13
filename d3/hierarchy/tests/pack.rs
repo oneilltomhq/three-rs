@@ -3,6 +3,7 @@
 //! Skipped, as noted in the crate README: bench-enclose.js (a benchmark),
 //! find-bugs.js, find-enclose-bugs.js, find-place-bugs.js (random fuzzers).
 
+mod common;
 use d3_hierarchy::pack::{enclose, siblings, Circle, Pack};
 use d3_hierarchy::{hierarchy, Datum, Tree};
 use serde_json::json;
@@ -263,14 +264,18 @@ fn pack_is_deterministic() {
 
 // ------------------------------------------------------------- flare-test.js
 
-const FLARE_CSV: &str = "/home/tom/src/vendor/d3-hierarchy/test/data/flare.csv";
-const FLARE_PACK_JSON: &str = "/home/tom/src/vendor/d3-hierarchy/test/data/flare-pack.json";
+fn flare_csv() -> std::path::PathBuf {
+    common::data("flare.csv")
+}
+fn flare_pack_json() -> std::path::PathBuf {
+    common::data("flare-pack.json")
+}
 
 /// `stratify().parentId(…)` over flare.csv: the parent id is the id up to the
 /// last ".". Built directly, since `src/stratify.rs` is not ported yet; the
 /// children of each node stay in csv row order, as stratify leaves them.
 fn flare() -> Datum {
-    let text = std::fs::read_to_string(FLARE_CSV).unwrap();
+    let text = std::fs::read_to_string(flare_csv()).unwrap();
     let mut lines = text.lines();
     lines.next(); // header: id,value
     let mut ids: Vec<String> = Vec::new();
@@ -324,7 +329,7 @@ fn round(x: f64) -> f64 {
 fn pack_flare_produces_the_expected_result() {
     let data = flare();
     let expected: Datum =
-        serde_json::from_str(&std::fs::read_to_string(FLARE_PACK_JSON).unwrap()).unwrap();
+        serde_json::from_str(&std::fs::read_to_string(flare_pack_json()).unwrap()).unwrap();
 
     let mut root = hierarchy(&data);
     // .sum(d => d.value): the csv values are strings, coerced with `+v || 0`.

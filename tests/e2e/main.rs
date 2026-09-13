@@ -45,10 +45,7 @@ mod webgpu_shadowmap;
 mod webgpu_lights_physical;
 
 fn three_js_dir() -> PathBuf {
-    match std::env::var("THREE_JS_DIR") {
-        Ok(dir) => PathBuf::from(dir),
-        Err(_) => PathBuf::from(std::env::var("HOME").unwrap()).join("src/vendor/three.js"),
-    }
+    three_rs::testing::three_js_dir()
 }
 
 fn out_dir(name: &str) -> PathBuf {
