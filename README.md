@@ -6,6 +6,13 @@ Three's own end-to-end pixel comparison: each ported example renders headless
 and is diffed against the reference screenshot Three ships for that example,
 using Three's unmodified `test/e2e/image.js` comparator.
 
+Two things distinguish it from other three.js-shaped Rust crates (including
+the similarly named `threers`): the shaders are not hand-written but generated
+from Three's node graph (TSL) by a port of Three's `NodeBuilder`, the way
+`WebGPURenderer` does it, so Three's own WGSL dumps are the reference; and
+correctness is judged by Three's own examples and reference screenshots, not
+by scenes written for the port.
+
 **Status: early, working, incomplete.** Ten of Three's `webgpu_*` examples
 pass the grader; the vast majority of Three's 600-odd examples have not been
 attempted. The API follows Three's object model but is not stable. Vulkan on
