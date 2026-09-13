@@ -83,13 +83,14 @@ order:
 subclassing:
 
 ```rust
-pub enum Payload { None, Mesh(Mesh), InstancedMesh(InstancedMesh), Light(PointLight) }
+pub enum Payload { None, Mesh(Mesh), InstancedMesh(InstancedMesh), Line(Line), Light(PointLight) }
 ```
 
 `Payload::None` is a plain `Object3D`, a `Group` or a `Bone`: something the walk
 passes through without drawing. `object.is_mesh()` is a match on the payload, and
-`Mesh::new( geometry )` / `InstancedMesh::new( geometry, material, count )` return
-a `Node` with the payload already set, so example code reads like the JS:
+`Mesh::new( geometry )` / `InstancedMesh::new( geometry, material, count )` /
+`Line::new( geometry, material )` / `LineSegments::new( geometry, material )`
+return a `Node` with the payload already set, so example code reads like the JS:
 
 ```rust
 let mesh = Mesh::new( geometry.clone() );
@@ -126,10 +127,16 @@ deliberately asymmetric, as three.js' are:
 - a light (`is_light`) goes into `RenderList.lights` and is never drawn — but its
   children still are, which is how rung 5's bulb spheres reach the draw list (see
   "Lights in the tree" below).
-- a mesh is culled when `frustumCulled` is set and its geometry's bounding sphere,
-  pushed through `matrixWorld`, misses the frustum; then skipped again if its
-  material is not `visible`; otherwise pushed with `z` = the bounding-sphere
-  centre in clip space (a `Vector4`, no perspective divide).
+- a mesh **or a line** is culled when `frustumCulled` is set and its geometry's
+  bounding sphere, pushed through `matrixWorld`, misses the frustum; then
+  skipped again if its material is not `visible`; otherwise pushed with `z` =
+  the bounding-sphere centre in clip space (a `Vector4`, no perspective divide).
+  three.js has one arm for all three of `isMesh || isLine || isPoints`, and so
+  does `project_drawable()`: nothing it does depends on the primitive. What the
+  object *is* matters one step later, in the pipeline — see "Lines" below.
+- a `LineLoop` is an error. `_projectObject()` calls `error( 'Renderer: Objects
+  of type THREE.LineLoop are not supported. Please use THREE.Line or
+  THREE.LineSegments.' )`, so the port has no `LineLoop` type at all.
 
 ### Ordering
 
@@ -170,6 +177,39 @@ also what the pipeline's vertex layouts are built from, so a bound buffer and it
 layout cannot disagree. Per-node GPU buffers are cached by node identity and
 uploaded once; the instance matrix is the exception, re-uploaded each frame
 because its contents change.
+
+## Lines
+
+`Line` and `LineSegments` are `Payload::Line( Line )`, one variant with an
+`is_line_segments` flag, because that is all `LineSegments extends Line` adds.
+They share the render list, the sort and the frustum cull with meshes, and they
+share `MeshBasicNodeMaterial`: `LineBasicNodeMaterial` is a bare `NodeMaterial`
+with `LineBasicMaterial`'s defaults, every one of which `MeshBasicNodeMaterial`
+already has, so it is the constructor `MeshBasicNodeMaterial::line( color )` and
+not a `MaterialKind` (Three's own dump of it is in `docs/lines/`).
+
+What separates a line from a mesh is the **pipeline**, and the input is the
+object, not the material:
+
+```
+WebGPUUtils.getPrimitiveTopology( object, material )
+  isPoints                                  -> point-list   (not ported)
+  isLineSegments || ( isMesh && wireframe ) -> line-list     (wireframe not ported)
+  isLine                                    -> line-strip
+  isMesh                                    -> triangle-list
+```
+
+`renderer::Primitive::of()` is that function plus `_getPrimitiveState()`'s
+`stripIndexFormat`, which is set only for an *indexed* `Line` that is not a
+`LineSegments`. Both travel on the `Renderable` into `RenderState`, so they are
+part of the pipeline cache key: one white `LineBasicNodeMaterial` shared by a
+`Line` and a `LineSegments` is one program and two pipelines. Culling and the
+front face still come from `material.side`, as they do in three.js.
+
+Lines go through the shadow pass unchanged — in three.js the shadow pass is an
+ordinary `renderer.render()` with an override material, so a line casts a
+hairline shadow — but `computeLineDistances()` is not ported, since only
+`LineDashedMaterial` reads it, and `Line.morphTargetInfluences` is always empty.
 
 ## Lights in the tree
 
@@ -212,7 +252,7 @@ light's `irradiance` statements ahead of it, as the dump has them.
 - `SkinnedMesh` is still a sibling struct owning its own `Node` rather than a
   `Payload` variant, so the walk does not draw it. Rung 10 adds
   `Payload::SkinnedMesh` and moves `geometry`/`skeleton` into it.
-- No `LOD`, `Sprite`, `Line`, `Points`, `BatchedMesh` or `BundleGroup` arm in
+- No `LOD`, `Sprite`, `Points`, `BatchedMesh` or `BundleGroup` arm in
   `project_object`, no multi-material `geometry.groups` arm, no clipping context
   and no `transparentDoublePass` (transmission).
 - `PointLight` and `AmbientLight` exist (rungs 5 and 6). `DirectionalLight`,

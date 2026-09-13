@@ -473,6 +473,25 @@ differences, each verified to be pixel-neutral.
   channels differ by 1, 4428 by 2, 16 by 3; worst per-texel RGB distance 3.46,
   against a comparator threshold of 44.
 
+### `LineBasicNodeMaterial` adds no divergence class
+
+Three's own `LineBasicNodeMaterial` program, dumped off
+`~/src/projects/d33/rung0/examples/d3_treemap.html`, is in
+`docs/lines/LineBasicNodeMaterial_27.{vert,frag}.wgsl` and `.layout.txt`.
+Diffed against this port's `line_basic` section of `examples/dump_wgsl.rs`
+(`MeshBasicNodeMaterial::line( 0xffffff )`), the only differences are the
+banner, the `nodeUniformN` / `nodeVarN` counters, `var<private>` declaration
+order and Three's `VERTEX_` sub-build temps — the "Generated names",
+"Declaration order" and "`VERTEX_` sub-builds" entries above. Nothing about the
+material is line-specific: `LineBasicNodeMaterial` is a bare `NodeMaterial`
+with `setDefaultValues( new LineBasicMaterial() )`, and every default it sets
+that reaches WGSL (`color`, `opacity`, `fog`, `transparent`) is one
+`MeshBasicNodeMaterial` already has. `linewidth` / `linecap` / `linejoin` are
+SVGRenderer-only — WebGPU always draws a one-pixel line. Hence no
+`MaterialKind::Line`; see `src/materials/mod.rs`'s `line()`. What is
+line-specific is the *pipeline*, and it comes from the object
+(`getPrimitiveTopology( object, material )`), not the material.
+
 ## 9. Blending, and the instanced-attribute path
 
 Two pieces of shared renderer work that no rung 1–9 material exercises, built
