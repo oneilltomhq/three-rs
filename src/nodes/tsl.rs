@@ -450,6 +450,21 @@ pub fn rotate(position: impl Into<NodeRef>, rotation: impl Into<NodeRef>) -> Nod
     .mul(position)
 }
 
+/// `abs( x )`.
+pub fn abs(x: impl Into<NodeRef>) -> NodeRef {
+    let x = x.into();
+    let ty = x.ty();
+    math("abs", vec![x], ty)
+}
+
+/// `fwidth( x )`. `WGSLNodeBuilder`'s method table maps `dFdx`/`dFdy` but not
+/// `fwidth`, so `MathNode.FWIDTH` reaches WGSL as the builtin of the same name.
+pub fn fwidth(x: impl Into<NodeRef>) -> NodeRef {
+    let x = x.into();
+    let ty = x.ty();
+    math("fwidth", vec![x], ty)
+}
+
 /// `x.mod( y )` on floats. WGSL has no `%` for floats the way three.js' node
 /// system means it, so `MathNode` emits a helper; see `wgsl::MOD_FLOAT_SNIPPET`.
 pub fn mod_float(x: impl Into<NodeRef>, y: impl Into<NodeRef>) -> NodeRef {
@@ -1796,6 +1811,38 @@ pub fn morph_influences(count: usize, index: NodeRef) -> NodeRef {
 /// `Morph.js`' `base = uniform( 1 )`, in the object group.
 pub fn morph_base() -> NodeRef {
     uniform(UniformSource::MorphBase, Type::F32, UniformGroup::Object, None)
+}
+
+/// `geometry.setAttribute( name, new InstancedBufferAttribute( array, items ) )`
+/// read back as `attribute( name, type )`.
+///
+/// three.js resolves the name through the geometry; here the data travels with
+/// the node, because the node graph is built from the material and the renderer
+/// has no attribute-name table. `item_size` is the stride in floats (the items
+/// of one instance) and `offset` the component offset inside it, so several
+/// views of one interleaved buffer share a single `stepMode: 'instance'` vertex
+/// buffer — the same grouping `instance_matrix` uses above.
+pub fn instanced_data_attribute(
+    data: &Rc<Vec<f32>>,
+    item_size: usize,
+    offset: usize,
+    ty: Type,
+) -> NodeRef {
+    assert!(
+        offset + ty.components() <= item_size,
+        "three-rs: instanced attribute reads past the instance stride"
+    );
+    let count = if item_size == 0 {
+        0
+    } else {
+        data.len() / item_size
+    };
+    let buffer = Rc::new(InstanceBuffer {
+        source: BufferSource::Attribute(data.clone()),
+        count,
+        item_size,
+    });
+    instanced_attribute(&buffer, offset, ty)
 }
 
 // ---------------------------------------------------------------------------

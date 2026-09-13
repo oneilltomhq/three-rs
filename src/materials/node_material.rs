@@ -50,6 +50,8 @@ pub fn shadow_material(source: &MeshBasicNodeMaterial) -> MeshBasicNodeMaterial 
     material.side = match source.side {
         Side::Front => Side::Back,
         Side::Back => Side::Front,
+        // `_shadowSide = { [ DoubleSide ]: DoubleSide }`.
+        Side::Double => Side::Double,
     };
 
     // `shadowRGB = vec3( 0 )`, `shadowAlpha = float( 1 )`, and the source
@@ -122,6 +124,17 @@ fn setup_inner(
         pre_vertex.extend(crate::nodes::morph::morph_reference(entry));
     }
 
+    //
+    // `material.positionNode` is applied *before* the instance transform. three
+    // r186 does the reverse (`NodeMaterial.js:798` instancing, then `:804`
+    // `positionLocal.assign( positionNode )`), which throws the instance matrix
+    // away; lib3's `BatchedText` was written against the order here. On the unit
+    // `PlaneGeometry( 1, 1 )` the two formulations agree vertex for vertex, so
+    // this also reproduces d33's baked-matrix workaround exactly. Recorded as a
+    // deviation in `docs/nodes.md` §10 and plan §5.2.
+    if let Some(node) = &material.position_node {
+        pre_vertex.push(position_local().assign(to_vec3(node.clone())));
+    }
     if let Some(count) = ctx.instance_count {
         let matrix = instance_matrix(count);
         pre_vertex.push(
@@ -143,11 +156,6 @@ fn setup_inner(
         );
         let inv_t = transpose(inverse_mat3(m3));
         pre_vertex.push(normal_local().assign(inv_t.mul(normal_local()).normalize()));
-    }
-
-    // `setupPosition()`'s last step: `positionLocal.assign( positionNode )`.
-    if let Some(position_node) = &material.position_node {
-        pre_vertex.push(position_local().assign(to_vec3(position_node.clone())));
     }
 
     // --- setupDiscard: `If( maskNode.not(), () => Discard() )`, the first

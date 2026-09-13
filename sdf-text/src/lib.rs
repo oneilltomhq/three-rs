@@ -7,10 +7,13 @@
 //! deviation and skip registers.
 //!
 //! Ladder position: steps 1–3 of the plan (font metrics and outlines, the
-//! raster + EDT + atlas, and layout) are implemented here. Steps 4–6 are
-//! renderer work and `BatchedText`, which need the GPU and are not in this
-//! crate yet — `text::Text` carries the layout surface they will plug into.
+//! raster + EDT + atlas, and layout) need no GPU and are graded against golden
+//! data. [`batched_text::BatchedText`] is steps 4–5: it depends on `three-rs`
+//! for the scene graph, the node material and the `R32Float` atlas texture, so
+//! `cargo test -p sdf-text` covers it only where the packing can be checked on
+//! the CPU; the pixel gates live in `three-rs`' own `tests/`.
 
+pub mod batched_text;
 pub mod edt;
 pub mod raster;
 pub mod text;
@@ -18,6 +21,7 @@ pub mod text_builder;
 pub mod vector_font;
 pub mod vector_font_atlas;
 
+pub use batched_text::{BatchedText, BatchedTextOptions, GLYPH_QUAD_PAD};
 pub use edt::{compute_sdf, compute_sdf_default, edt_1d, edt_2d};
 pub use text::{OpacitySink, Text};
 pub use text_builder::{

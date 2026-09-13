@@ -241,6 +241,13 @@ impl Text {
         self.needs_sync
     }
 
+    /// `text._needsSync = true` — the owning `BatchedText` sets this directly in
+    /// `addText` and `resetAtlas`. Not a JS *method*: in JS `_needsSync` is just
+    /// a field the batch reaches into, and Rust privacy needs a door for it.
+    pub fn mark_needs_sync(&mut self) {
+        self.needs_sync = true;
+    }
+
     /// How many layouts have actually run. Not in the JS — see the field doc.
     pub fn layouts_performed(&self) -> u64 {
         self.layouts_performed

@@ -23,7 +23,7 @@ pub use render_list::{project_object, ProjectCamera, RenderItem, RenderList};
 pub use render_pipeline::RenderPipeline;
 pub use render_target::{RenderTarget, RenderTargetInner, RenderTargetOptions};
 
-use crate::cameras::{OrthographicCamera, PerspectiveCamera};
+use crate::cameras::{OrthographicCamera, RenderCamera};
 use crate::core::{BufferGeometry, Index};
 use crate::geometries::{quad_geometry, sphere_geometry};
 use crate::lights::{LightKind, LightObject};
@@ -193,6 +193,9 @@ pub struct Renderer {
     /// `light.shadow.map` — the `RenderTarget` each shadow pass draws into,
     /// kept across frames because `ShadowNode` allocates it once.
     shadow_targets: HashMap<usize, RenderTarget>,
+
+    /// Whether the device enabled `FLOAT32_FILTERABLE`; see `new()`.
+    float32_filterable: bool,
 }
 
 /// `new WebGPURenderer( parameters )`.
@@ -218,9 +221,27 @@ impl Renderer {
         let adapter = pick_adapter(&instance);
         let adapter_info = adapter.get_info();
 
+        // `FLOAT32_FILTERABLE` is what lets an `r32float` texture be sampled
+        // through a filtering sampler — the SDF atlas is
+        // `DataTexture( Float32Array, RedFormat, FloatType )` with
+        // `LinearFilter`, and the bilinear interpolation of the distance field
+        // is the whole reason a 64 px tile stays sharp at 5 px text. WebGPU
+        // gives it to every browser by default; wgpu makes it opt-in. It is
+        // requested when the adapter has it and asserted at the point of use
+        // (`ensure_texture_2d`), because a silently non-filterable float
+        // texture is exactly the "silent wrong output" failure the handoff
+        // warns about.
+        let float32_filterable = adapter
+            .features()
+            .contains(wgpu::Features::FLOAT32_FILTERABLE);
+
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
             label: Some("three-rs device"),
-            required_features: wgpu::Features::empty(),
+            required_features: if float32_filterable {
+                wgpu::Features::FLOAT32_FILTERABLE
+            } else {
+                wgpu::Features::empty()
+            },
             required_limits: wgpu::Limits::default(),
             experimental_features: wgpu::ExperimentalFeatures::disabled(),
             memory_hints: wgpu::MemoryHints::MemoryUsage,
@@ -273,6 +294,7 @@ impl Renderer {
             shadow_map_enabled: false,
             shadow_maps: HashMap::new(),
             shadow_targets: HashMap::new(),
+            float32_filterable,
         }
     }
 
@@ -317,7 +339,11 @@ impl Renderer {
     }
 
     /// `renderer.render( scene, camera )`.
-    pub fn render(&mut self, scene: &mut Scene, camera: &mut PerspectiveCamera) {
+    ///
+    /// `camera` is `&mut dyn RenderCamera` so an `OrthographicCamera` works too
+    /// — `&mut PerspectiveCamera` still coerces at the call site, so every
+    /// existing caller is unchanged.
+    pub fn render(&mut self, scene: &mut Scene, camera: &mut dyn RenderCamera) {
         // `Renderer.render()`: `scene.updateMatrixWorld()` then
         // `camera.updateMatrixWorld()`, both honouring `matrixAutoUpdate` /
         // `matrixWorldAutoUpdate`.
@@ -427,7 +453,15 @@ impl Renderer {
                 geometry: mesh.geometry.clone(),
                 material: material.clone(),
                 setup: SetupContext {
-                    instance_count: instance_matrix.as_ref().map(|_| instance_count as usize),
+                    // `InstanceNode.setup()` branches on
+                    // `instanceMatrix.count * 16 * 4` against
+                    // `maxUniformBufferBindingSize`, i.e. on the *array*
+                    // length, not on `InstancedMesh.count`. They are equal for
+                    // rung 2; `BatchedText` keeps a full `maxGlyphCount`
+                    // instanceMatrix and draws a prefix of it, where using the
+                    // draw count would pick the uniform path and then bind a
+                    // buffer past the 64 KiB cap.
+                    instance_count: instance_matrix.as_ref().map(|a| a.count()),
                     instanced: instance_matrix.is_some(),
                     lights: light_descs
                         .iter()
@@ -477,7 +511,7 @@ impl Renderer {
                     .expect("three-rs: the light list only holds lights");
 
                 let mut view_position = LightObject::world_position(&object.matrix_world);
-                view_position.apply_matrix4(&camera.matrix_world_inverse);
+                view_position.apply_matrix4(&camera.matrix_world_inverse());
 
                 let shadow = light.shadow.as_deref();
                 LightState {
@@ -500,9 +534,9 @@ impl Renderer {
             .collect();
 
         let camera_uniforms = UniformContext {
-            camera_projection: camera.projection_matrix,
-            camera_view: camera.matrix_world_inverse,
-            camera_world: camera.node.borrow().matrix_world,
+            camera_projection: camera.projection_matrix(),
+            camera_view: camera.matrix_world_inverse(),
+            camera_world: camera.matrix_world(),
             time: self.time,
             lights: &lights,
             ..Default::default()
@@ -525,7 +559,7 @@ impl Renderer {
         &mut self,
         scene: &Scene,
         render_list: &RenderList,
-        camera: &PerspectiveCamera,
+        camera: &dyn RenderCamera,
     ) {
         if !self.shadow_map_enabled {
             return;
@@ -598,10 +632,10 @@ impl Renderer {
             project_object(
                 &scene.node,
                 &ProjectCamera::from_parts(
-                    camera.node.borrow().layers,
+                    camera.layers(),
                     &projection,
                     &view,
-                    camera.coordinate_system,
+                    camera.coordinate_system(),
                 ),
                 0.0,
                 &mut shadow_list,
@@ -668,7 +702,7 @@ impl Renderer {
     ///
     /// Public so a caller can inspect what a frame would draw — the e2e harness
     /// and the lights work of later rungs both want the list without the draw.
-    pub fn project_scene(&self, scene: &Scene, camera: &PerspectiveCamera) -> RenderList {
+    pub fn project_scene(&self, scene: &Scene, camera: &dyn RenderCamera) -> RenderList {
         let mut render_list = RenderList::new();
         project_object(
             &scene.node,
@@ -1160,6 +1194,16 @@ impl Renderer {
                     usage,
                 )
             }
+            BufferSource::Attribute(data) => {
+                // `DynamicDrawUsage`: the caller owns the array and rewrites it
+                // on `sync()`, so this is re-uploaded per draw rather than
+                // cached like `range()`.
+                self.create_buffer_init(
+                    "three-rs instanced attribute",
+                    bytemuck::cast_slice(data.as_slice()),
+                    usage,
+                )
+            }
             BufferSource::Range { min, max } => {
                 if let Some(buffer) = self.buffers.get(&id) {
                     return buffer.clone();
@@ -1370,6 +1414,23 @@ impl Renderer {
         let format = texture.format();
         let mip_level_count = texture.mip_level_count();
 
+        // A 32-bit float texture is sampled through a `Filtering` sampler like
+        // every other colour texture (`programs::layout_entry`), which wgpu
+        // rejects unless the device enabled `FLOAT32_FILTERABLE`. Fail here
+        // rather than let the validation error arrive as a black frame.
+        if matches!(
+            format,
+            wgpu::TextureFormat::R32Float
+                | wgpu::TextureFormat::Rg32Float
+                | wgpu::TextureFormat::Rgba32Float
+        ) {
+            assert!(
+                self.float32_filterable,
+                "three-rs: {format:?} needs wgpu::Features::FLOAT32_FILTERABLE, \
+                 which this adapter does not expose"
+            );
+        }
+
         let gpu = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("three-rs texture"),
             size: wgpu::Extent3d {
@@ -1394,11 +1455,18 @@ impl Renderer {
                 .as_ref()
                 .expect("three-rs: the texture has no image data");
 
+            // The row stride comes from the format, not from a hardcoded
+            // RGBA8: `r32float` is also 4 bytes per texel but for a different
+            // reason, and the next wider float format would shear the upload.
+            let bytes_per_texel = format
+                .block_copy_size(None)
+                .expect("three-rs: the texture format has no single block size");
+
             // `copyExternalImageToTexture( { flipY } )`: the source rows are
             // uploaded bottom-up. (three.js' `_flipY()` pass is only for the
             // `_copyBufferToTexture` path, and is the same flip.)
             let rows: Vec<u8> = if inner.flip_y {
-                let stride = (width * 4) as usize;
+                let stride = (width * bytes_per_texel) as usize;
                 let mut flipped = Vec::with_capacity(data.len());
                 for row in (0..height as usize).rev() {
                     flipped.extend_from_slice(&data[row * stride..(row + 1) * stride]);
@@ -1418,7 +1486,7 @@ impl Renderer {
                 &rows,
                 wgpu::TexelCopyBufferLayout {
                     offset: 0,
-                    bytes_per_row: Some(width * 4),
+                    bytes_per_row: Some(width * bytes_per_texel),
                     rows_per_image: Some(height),
                 },
                 wgpu::Extent3d {

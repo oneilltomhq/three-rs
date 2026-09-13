@@ -224,6 +224,11 @@ pub enum BufferSource {
     /// `Morph.js`' `uniformArray( mesh.morphTargetInfluences, 'float' )` — one
     /// `vec4` per morph target with the influence in `.x`.
     MorphInfluences,
+    /// A per-instance attribute the caller fills itself — three.js'
+    /// `new InstancedBufferAttribute( array, itemSize )` on the geometry, e.g.
+    /// `BatchedText`'s `aGlyphUV` / `aGlyphBounds` / `aColor` / `aOpacity`.
+    /// Only ever a vertex buffer: the uniform path has no equivalent.
+    Attribute(Rc<Vec<f32>>),
 }
 
 /// The CPU-side buffer behind one or more *instanced vertex attributes* —

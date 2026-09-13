@@ -109,6 +109,34 @@ impl Texture {
         texture
     }
 
+    /// `new DataTexture( new Float32Array( data ), width, height, RedFormat,
+    /// FloatType )` — the SDF atlas texture lib3's `VectorFontAtlas` hands to
+    /// `texture()`.
+    ///
+    /// `DataTexture`'s constructor differs from `Texture`'s in three places
+    /// (`DataTexture.js`): `flipY = false`, `generateMipmaps = false` and
+    /// `minFilter = magFilter = NearestFilter`; lib3 then sets both filters back
+    /// to `LinearFilter`, which is what this builds. The colour space stays
+    /// `NoColorSpace` — the field is distance, not colour, and tagging it sRGB
+    /// would put a transfer function on the SDF (plan §5.3).
+    pub fn data_r32float(width: u32, height: u32, data: &[f32]) -> Self {
+        assert_eq!(
+            data.len() as u32,
+            width * height,
+            "three-rs: a RedFormat DataTexture holds one float per texel"
+        );
+        let texture = Self::new(width, height, Some(bytemuck::cast_slice(data).to_vec()));
+        {
+            let mut inner = texture.0.borrow_mut();
+            inner.flip_y = false;
+            inner.generate_mipmaps = false;
+            inner.mag_filter = TextureFilter::Linear;
+            inner.min_filter = MinFilter::Linear;
+            inner.format = wgpu::TextureFormat::R32Float;
+        }
+        texture
+    }
+
     pub fn id(&self) -> usize {
         Rc::as_ptr(&self.0) as *const u8 as usize
     }

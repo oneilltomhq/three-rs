@@ -23,6 +23,9 @@ use crate::textures::CubeTexture;
 pub enum Side {
     Front,
     Back,
+    /// `DoubleSide` — `_getPrimitiveState()` leaves `cullMode` at `'none'`, so
+    /// the front-face winding no longer matters. `BatchedText`'s material.
+    Double,
 }
 
 /// `three.js/src/constants.js` tone-mapping modes — the ones the port needs.
@@ -99,9 +102,13 @@ pub struct MeshBasicNodeMaterial {
     pub specular_node: Option<NodeRef>,
     /// `material.normalNode` — e.g. `normalMap( texture( map ) )`.
     pub normal_node: Option<NodeRef>,
-    /// `NodeMaterial.positionNode` — `setupPosition()` ends with
-    /// `positionLocal.assign( positionNode )`, and `SpriteNodeMaterial` reads it
-    /// a second time in `setupPositionView()`.
+    /// `NodeMaterial.positionNode` — replaces `positionLocal`.
+    ///
+    /// **Deviation from r186, deliberate** (plan §5.2, `docs/nodes.md` §10):
+    /// three's `setupPosition()` assigns the instance transform *first* and
+    /// `positionNode` *after*, so `positionNode` discards the instance matrix.
+    /// The port assigns `positionNode` first and then the instance transform.
+    /// `SpriteNodeMaterial` reads it a second time in `setupPositionView()`.
     pub position_node: Option<NodeRef>,
     /// `SpriteNodeMaterial.scaleNode` / `.rotationNode`.
     pub scale_node: Option<NodeRef>,
@@ -171,10 +178,10 @@ impl Default for MeshBasicNodeMaterial {
             fog: true,
             specular_node: None,
             normal_node: None,
+            position_node: None,
             reflectivity: 1.0,
             env_map: None,
             color_node: None,
-            position_node: None,
             scale_node: None,
             rotation_node: None,
             rotation: 0.0,
