@@ -5,6 +5,17 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Mutex;
+
+/// The rungs share one GPU. Run concurrently on the default test threads the
+/// binary SIGSEGVs inside the Vulkan driver under device contention, so every
+/// rung holds this for its whole render-and-compare. `--test-threads=1` is
+/// then no longer required, only equivalent.
+static GPU: Mutex<()> = Mutex::new(());
+
+fn gpu() -> std::sync::MutexGuard<'static, ()> {
+    GPU.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
 
 #[path = "../../examples/webgpu_depth_texture.rs"]
 #[allow(dead_code)] // the example's own `main()` is unused here
@@ -123,6 +134,7 @@ fn compare(name: &str, actual: &Path, out: &Path) -> Comparison {
 fn webgpu_depth_texture() {
     let name = "webgpu_depth_texture";
     let out = out_dir(name);
+    let _gpu = gpu();
 
     let mut app = webgpu_depth_texture::init();
     println!("adapter: {:?}", app.renderer.adapter_info());
@@ -161,6 +173,7 @@ fn webgpu_depth_texture() {
 fn webgpu_instance_mesh() {
     let name = "webgpu_instance_mesh";
     let out = out_dir(name);
+    let _gpu = gpu();
 
     let mut app = webgpu_instance_mesh::init();
     println!("adapter: {:?}", app.renderer.adapter_info());
@@ -199,6 +212,7 @@ fn webgpu_instance_mesh() {
 fn webgpu_materials_basic() {
     let name = "webgpu_materials_basic";
     let out = out_dir(name);
+    let _gpu = gpu();
 
     let mut app = webgpu_materials_basic::init();
     println!("adapter: {:?}", app.renderer.adapter_info());
@@ -237,6 +251,7 @@ fn webgpu_materials_basic() {
 fn webgpu_rtt() {
     let name = "webgpu_rtt";
     let out = out_dir(name);
+    let _gpu = gpu();
 
     let mut app = webgpu_rtt::init();
     println!("adapter: {:?}", app.renderer.adapter_info());
@@ -275,6 +290,7 @@ fn webgpu_rtt() {
 fn webgpu_postprocessing_masking() {
     let name = "webgpu_postprocessing_masking";
     let out = out_dir(name);
+    let _gpu = gpu();
 
     let mut app = webgpu_postprocessing_masking::init();
     println!("adapter: {:?}", app.renderer.adapter_info());
@@ -313,6 +329,7 @@ fn webgpu_postprocessing_masking() {
 fn webgpu_lights_phong() {
     let name = "webgpu_lights_phong";
     let out = out_dir(name);
+    let _gpu = gpu();
 
     let mut app = webgpu_lights_phong::init();
     println!("adapter: {:?}", app.renderer.adapter_info());
@@ -351,6 +368,7 @@ fn webgpu_lights_phong() {
 fn webgpu_morphtargets() {
     let name = "webgpu_morphtargets";
     let out = out_dir(name);
+    let _gpu = gpu();
 
     let mut app = webgpu_morphtargets::init();
     println!("adapter: {:?}", app.renderer.adapter_info());
@@ -389,6 +407,7 @@ fn webgpu_morphtargets() {
 fn webgpu_tsl_galaxy() {
     let name = "webgpu_tsl_galaxy";
     let out = out_dir(name);
+    let _gpu = gpu();
 
     let mut app = webgpu_tsl_galaxy::init();
     println!("adapter: {:?}", app.renderer.adapter_info());
@@ -427,6 +446,7 @@ fn webgpu_tsl_galaxy() {
 fn webgpu_shadowmap() {
     let name = "webgpu_shadowmap";
     let out = out_dir(name);
+    let _gpu = gpu();
 
     let mut app = webgpu_shadowmap::init();
     println!("adapter: {:?}", app.renderer.adapter_info());
@@ -465,6 +485,7 @@ fn webgpu_shadowmap() {
 fn webgpu_lights_physical() {
     let name = "webgpu_lights_physical";
     let out = out_dir(name);
+    let _gpu = gpu();
 
     let mut app = webgpu_lights_physical::init();
     println!("adapter: {:?}", app.renderer.adapter_info());

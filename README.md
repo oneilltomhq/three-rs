@@ -67,8 +67,13 @@ gfx-rs/wgpu commit by git revision in `Cargo.toml`; nothing else is unusual.
 
 ```sh
 cargo build --release
-cargo test --workspace          # unit tests; no GPU or vendor checkouts needed
+cargo test --workspace --exclude three-rs   # the sdf-text and d3-hierarchy crates; no GPU
+cargo test -p three-rs --lib                # three-rs unit tests; no GPU
 ```
+
+The rest of `cargo test --workspace` needs a GPU (the renderer tests) and,
+for the e2e grader, the three.js checkout described next. The e2e tests
+serialise themselves on the one GPU; no `--test-threads` flag is needed.
 
 ### The viewer
 
@@ -89,7 +94,7 @@ comparator under node. So they need a three.js checkout:
 git clone --branch r186 --depth 1 https://github.com/mrdoob/three.js ~/src/vendor/three.js
 (cd ~/src/vendor/three.js && npm ci)
 export THREE_JS_DIR=~/src/vendor/three.js     # this is the default location
-cargo test --test e2e -- --nocapture --test-threads=1
+cargo test --test e2e -- --nocapture
 ```
 
 Each e2e test writes `actual.png`, the reference, and a diff strip under
