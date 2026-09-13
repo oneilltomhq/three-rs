@@ -56,7 +56,7 @@ Linux is the only backend that has been run.
 | webgpu_instance_mesh | 60 (Three itself scores 60 against the same JPEG) |
 | webgpu_materials_basic | 0 |
 | webgpu_rtt | 1 |
-| webgpu_lights_phong | 4 |
+| webgpu_lights_phong | 31 |
 | webgpu_morphtargets | 0 |
 | webgpu_shadowmap | 7 |
 | webgpu_lights_physical | 4 |
