@@ -4,7 +4,6 @@
 use std::cell::{Ref, RefCell};
 use std::rc::Rc;
 
-#[derive(Debug)]
 pub struct DataArrayTextureInner {
     /// `new Float32Array( width * height * 4 * depth )` — one RGBA texel per
     /// vertex datum, layer-major.
@@ -62,5 +61,20 @@ impl DataArrayTexture {
             .gpu
             .as_ref()
             .expect("three-rs: data array texture not uploaded"))
+    }
+}
+
+
+/// As `TextureInner`: the morph data is one `f32` per vertex datum and has no
+/// place in a debug dump.
+impl std::fmt::Debug for DataArrayTextureInner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DataArrayTextureInner")
+            .field("data", &super::texture::DataLen(self.data.len()))
+            .field("width", &self.width)
+            .field("height", &self.height)
+            .field("depth", &self.depth)
+            .field("gpu", &self.gpu)
+            .finish()
     }
 }

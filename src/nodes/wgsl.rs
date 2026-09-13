@@ -58,7 +58,7 @@ pub fn constant(ty: Type, values: &[f64]) -> String {
 }
 
 /// The WGSL sample-type of a texture binding, as the bind-group layout needs it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum TextureKind {
     Float2D,
     /// `texture_2d_array<f32>` — the morph data texture, read with

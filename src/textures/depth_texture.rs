@@ -29,7 +29,7 @@ impl TextureType {
 }
 
 /// `three.js/src/constants.js` texture filters.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum TextureFilter {
     Nearest,
     Linear,

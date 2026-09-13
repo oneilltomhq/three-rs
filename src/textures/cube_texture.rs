@@ -9,7 +9,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 /// `three.js/src/constants.js` colour spaces, as far as the port needs them.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ColorSpace {
     NoColorSpace,
     SRGB,
@@ -24,7 +24,7 @@ pub enum Mapping {
 
 /// One decoded image of `CubeTexture.images`, RGBA8 top-down — what
 /// `ImageLoader` hands the backend after the browser has decoded the PNG.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Image {
     pub width: u32,
     pub height: u32,
@@ -110,5 +110,17 @@ impl CubeTexture {
 
     pub(crate) fn inner(&self) -> &RefCell<CubeTextureInner> {
         &self.0
+    }
+}
+
+
+/// As `TextureInner`: six decoded faces are six megabyte buffers.
+impl std::fmt::Debug for Image {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Image")
+            .field("width", &self.width)
+            .field("height", &self.height)
+            .field("data", &super::texture::DataLen(self.data.len()))
+            .finish()
     }
 }

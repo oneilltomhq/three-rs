@@ -12,7 +12,7 @@ use super::{ColorSpace, TextureFilter};
 use crate::math::{Matrix3, Vector2};
 
 /// `three.js/src/constants.js` wrapping modes.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Wrapping {
     /// `ClampToEdgeWrapping` — the `Texture` default.
     ClampToEdge,
@@ -21,7 +21,7 @@ pub enum Wrapping {
 }
 
 /// `Texture.minFilter` — the mip-aware half of the filter pair.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum MinFilter {
     Nearest,
     Linear,
@@ -47,7 +47,6 @@ impl MinFilter {
     }
 }
 
-#[derive(Debug)]
 pub struct TextureInner {
     pub width: u32,
     pub height: u32,
@@ -291,5 +290,44 @@ impl Texture {
         }
         let max = inner.width.max(inner.height) as f64;
         (max.log2().floor() as u32) + 1
+    }
+}
+
+
+/// The derived `Debug` printed every byte of `data` — megabytes for an SDF
+/// atlas, and the program cache key used to be a `format!( "{:?}" )` of a
+/// binding description that reaches here. The length stands in for the pixels.
+impl std::fmt::Debug for TextureInner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TextureInner")
+            .field("width", &self.width)
+            .field("height", &self.height)
+            .field("data", &self.data.as_ref().map(|data| DataLen(data.len())))
+            .field("color_space", &self.color_space)
+            .field("flip_y", &self.flip_y)
+            .field("generate_mipmaps", &self.generate_mipmaps)
+            .field("wrap_s", &self.wrap_s)
+            .field("wrap_t", &self.wrap_t)
+            .field("mag_filter", &self.mag_filter)
+            .field("min_filter", &self.min_filter)
+            .field("anisotropy", &self.anisotropy)
+            .field("offset", &self.offset)
+            .field("repeat", &self.repeat)
+            .field("center", &self.center)
+            .field("rotation", &self.rotation)
+            .field("matrix", &self.matrix)
+            .field("own_gpu", &self.own_gpu)
+            .field("gpu", &self.gpu)
+            .field("format", &self.format)
+            .finish()
+    }
+}
+
+/// `data: 1048576 bytes` in place of a million numbers.
+pub(crate) struct DataLen(pub usize);
+
+impl std::fmt::Debug for DataLen {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} bytes", self.0)
     }
 }

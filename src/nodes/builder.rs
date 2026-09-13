@@ -60,7 +60,7 @@ impl Stage {
 }
 
 /// Which shader stages a binding has to be visible in.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Visibility {
     pub vertex: bool,
     pub fragment: bool,
@@ -87,7 +87,7 @@ impl Visibility {
 }
 
 /// One member of a generated uniform struct.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash)]
 pub struct UniformMember {
     pub name: String,
     pub source: UniformSource,
@@ -96,7 +96,12 @@ pub struct UniformMember {
 }
 
 /// One entry of a generated bind-group layout.
-#[derive(Clone, Debug)]
+///
+/// `Hash` is what the program cache key is built from, so it has to cover
+/// every field the generated program depends on — and, through the hand-written
+/// impls on [`TextureSource`] and [`BufferSource`], none of the bulk data a
+/// binding merely points at.
+#[derive(Clone, Debug, Hash)]
 pub enum BindingDesc {
     Uniforms {
         group: UniformGroup,
@@ -1344,8 +1349,11 @@ impl NodeBuilder {
         // Two materials can generate identical WGSL and still need different
         // bindings — two copies of the same shader with different baked uniform
         // values (a texture's uv matrix, say). The binding descriptions are part
-        // of the program, so they are part of its key.
-        format!("{:?}", groups).hash(&mut hasher);
+        // of the program, so they are part of its key. `BindingDesc`'s `Hash`
+        // walks the description itself: a texture goes in by identity and by the
+        // fields its binding and sampler are built from, never by its pixels,
+        // and never by whether it has been uploaded yet.
+        groups.hash(&mut hasher);
         let cache_key = hasher.finish();
 
         NodeProgram {

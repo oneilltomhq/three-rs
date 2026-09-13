@@ -7,6 +7,7 @@
 //! lives in the builder keyed by that identity. See `docs/nodes.md` §1.
 
 use std::cell::RefCell;
+use std::hash::Hash;
 use std::rc::Rc;
 
 use crate::math::{Color, Matrix4, Vector2, Vector3};
@@ -219,7 +220,7 @@ pub struct UniformNode {
 }
 
 /// Where an array-typed uniform buffer's contents come from — `BufferNode`.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub enum BufferSource {
     /// `InstancedMesh.instanceMatrix`.
     InstanceMatrix,
@@ -625,5 +626,113 @@ impl<T: Clone + 'static> Lazy<T> {
             *slot = Some(init());
         }
         slot.as_ref().unwrap().clone()
+    }
+}
+
+// The program cache key hashes the binding descriptions, which bottom out in
+// these three types. Their `Hash` impls are written by hand rather than derived
+// so that they reach every field the *generated program* depends on and no
+// field that is only a value: a texture's pixels, an instanced attribute's
+// array. Three.js draws the same line in `Node.getCacheKey()`, where a texture
+// contributes its uuid and never its image.
+
+impl std::hash::Hash for UniformSource {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::mem::discriminant(self).hash(state);
+        match self {
+            UniformSource::LightColorIntensity(i)
+            | UniformSource::LightCutoffDistance(i)
+            | UniformSource::LightDecay(i)
+            | UniformSource::LightViewPosition(i)
+            | UniformSource::LightWorldPosition(i)
+            | UniformSource::LightTargetPosition(i)
+            | UniformSource::LightGroundColor(i)
+            | UniformSource::LightConeCos(i)
+            | UniformSource::LightPenumbraCos(i)
+            | UniformSource::ShadowMatrix(i)
+            | UniformSource::ShadowCameraNear(i)
+            | UniformSource::ShadowCameraFar(i)
+            | UniformSource::ShadowBias(i)
+            | UniformSource::ShadowNormalBias(i)
+            | UniformSource::ShadowRadius(i)
+            | UniformSource::ShadowMapSize(i)
+            | UniformSource::ShadowIntensity(i) => i.hash(state),
+            // A baked `uniform( value )`: two materials can generate identical
+            // WGSL and differ only here (a texture's uv matrix, say), so the
+            // bits are part of the key.
+            UniformSource::Value(values) => {
+                values.len().hash(state);
+                for value in values {
+                    value.to_bits().hash(state);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+impl std::hash::Hash for BufferSource {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::mem::discriminant(self).hash(state);
+        match self {
+            BufferSource::Range { min, max } => {
+                for value in min.iter().chain(max.iter()) {
+                    value.to_bits().hash(state);
+                }
+            }
+            // Identity, never contents — the array behind an instanced
+            // attribute is megabytes and is resolved per draw anyway.
+            BufferSource::Attribute(data) => (Rc::as_ptr(data) as *const u8 as usize).hash(state),
+            BufferSource::InstanceMatrix | BufferSource::MorphInfluences => {}
+        }
+    }
+}
+
+impl std::hash::Hash for TextureSource {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::mem::discriminant(self).hash(state);
+        match self {
+            TextureSource::Texture2D(texture) => {
+                texture.id().hash(state);
+                // Everything the binding and its sampler are built from. The
+                // image data and the `gpu` handle are deliberately absent: the
+                // key must not move when the texture is uploaded.
+                let inner = texture.borrow();
+                inner.format.hash(state);
+                inner.color_space.hash(state);
+                inner.mag_filter.hash(state);
+                inner.min_filter.hash(state);
+                inner.wrap_s.hash(state);
+                inner.wrap_t.hash(state);
+                inner.anisotropy.hash(state);
+            }
+            TextureSource::Depth(texture) | TextureSource::ShadowMap(texture) => {
+                texture.id().hash(state)
+            }
+            TextureSource::Cube(texture) => texture.id().hash(state),
+            TextureSource::DataArray(texture) => texture.id().hash(state),
+            TextureSource::CubeDepth(texture) => texture.id().hash(state),
+        }
+    }
+}
+
+
+/// Derived but for `Attribute`, whose `Rc<Vec<f32>>` is the caller's whole
+/// per-instance array — `BatchedText` hands it four floats per glyph.
+impl std::fmt::Debug for BufferSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BufferSource::InstanceMatrix => f.write_str("InstanceMatrix"),
+            BufferSource::Range { min, max } => f
+                .debug_struct("Range")
+                .field("min", min)
+                .field("max", max)
+                .finish(),
+            BufferSource::MorphInfluences => f.write_str("MorphInfluences"),
+            BufferSource::Attribute(data) => f
+                .debug_tuple("Attribute")
+                .field(&format_args!("{} floats", data.len()))
+                .finish(),
+        }
     }
 }

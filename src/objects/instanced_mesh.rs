@@ -13,7 +13,7 @@ use crate::math::Matrix4;
 use crate::objects::{Mesh, Payload};
 
 /// `new InstancedBufferAttribute( new Float32Array( count * 16 ), 16 )`.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct InstancedBufferAttribute {
     pub array: Vec<f32>,
     pub item_size: usize,
@@ -75,5 +75,17 @@ impl InstancedMesh {
         let offset = index * 16;
         let elements = matrix.to_f32_array();
         self.instance_matrix.array[offset..offset + 16].copy_from_slice(&elements);
+    }
+}
+
+
+/// The array is `count * item_size` floats — sixteen per instance for the
+/// instance matrix. Debug prints its length, as the textures do.
+impl std::fmt::Debug for InstancedBufferAttribute {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("InstancedBufferAttribute")
+            .field("array", &format_args!("{} floats", self.array.len()))
+            .field("item_size", &self.item_size)
+            .finish()
     }
 }
