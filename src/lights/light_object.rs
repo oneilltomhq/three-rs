@@ -13,7 +13,7 @@ use crate::objects::Payload;
 
 /// Which `Light` subclass this is. `LightsNode` sorts and sets up lights by
 /// type, and the node graph differs per type.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum LightKind {
     Ambient,
     Point,

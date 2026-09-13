@@ -541,6 +541,16 @@ pub struct FogNode {
     pub factor: NodeRef,
 }
 
+/// By node identity — `fogNode.getCacheKey()`'s share of the render object's
+/// dynamic cache key. A new `fog( … )` is a new program, as in three.js; a
+/// uniform inside the same one is not.
+impl std::hash::Hash for FogNode {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.color.key().hash(state);
+        self.factor.key().hash(state);
+    }
+}
+
 /// `LightsNode`'s four render-group uniforms for the point light at `index` of
 /// the renderer's light list. Creating them here rather than inside
 /// `phong.rs` keeps every `UniformSource` in one module.

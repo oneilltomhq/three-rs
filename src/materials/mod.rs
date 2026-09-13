@@ -16,9 +16,54 @@ pub use blending::{
     blend_factor, blend_operation, BlendEquation, BlendFactor, BlendMode, Blending,
 };
 
+use std::cell::Cell;
+
 use crate::math::Color;
 use crate::nodes::NodeRef;
 use crate::textures::{CubeTexture, Texture};
+
+/// `Material.id` — three.js' module-level `let _materialId = 0` counter, handed
+/// out in construction order. It is what the renderer's program cache keys a
+/// material on (`RenderObjects.get()` chains on the material object itself),
+/// so it has to behave like an object identity even though the material is a
+/// value here:
+///
+/// - every `MeshBasicNodeMaterial::new()` / `default()` gets a fresh id;
+/// - **`clone()` gets a fresh id too**, as `Material.clone()` does — `new
+///   this.constructor().copy( this )` is a new object with a new `id`. A clone
+///   that later diverges (a different `map`, say) therefore can never be
+///   served the original's program.
+///
+/// The renderer snapshots a material into its render list by cloning it, and
+/// takes the key from the source before it does, so that per-frame copy is not
+/// a new material as far as the cache is concerned.
+#[derive(Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct MaterialId(usize);
+
+impl MaterialId {
+    fn next() -> Self {
+        thread_local! {
+            static MATERIAL_ID: Cell<usize> = const { Cell::new(0) };
+        }
+        MATERIAL_ID.with(|id| {
+            let next = id.get();
+            id.set(next + 1);
+            MaterialId(next)
+        })
+    }
+
+    /// The number itself, for keying on.
+    pub fn get(&self) -> usize {
+        self.0
+    }
+}
+
+/// A fresh id, never a copy — see the type's docs.
+impl Clone for MaterialId {
+    fn clone(&self) -> Self {
+        Self::next()
+    }
+}
 
 /// `three.js/src/constants.js` sides.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -65,8 +110,33 @@ pub enum MaterialKind {
 /// fields the ladder uses. Defaults mirror three.js: white, opaque,
 /// `FrontSide`, depth test on with `LessEqualDepth`, depth write on,
 /// `reflectivity = 1`.
+///
+/// # Changing a material after its first frame
+///
+/// The renderer builds a material's shader program once and looks it up by
+/// `id` and `version` from then on (`docs/scene-graph.md`, "Program cache"),
+/// exactly as `WebGPURenderer` does. So the rule is three.js':
+///
+/// - a field the *program* depends on — any node (`color_node`,
+///   `position_node`, `fragment_node`, …), any map or `env_map`, `kind`,
+///   `lights`, `lights_node`, `flat_shading`, `fog`, `transparent`,
+///   `blending`, `alpha_to_coverage`, `size_attenuation`, `mask_node` — needs
+///   [`set_needs_update`](Self::set_needs_update) after it changes, which is
+///   `material.needsUpdate = true`. Without it the old program keeps drawing.
+/// - a field the program reads as a **uniform** — `color`, `opacity`,
+///   `specular`, `shininess`, `emissive`, `emissive_intensity`, `metalness`,
+///   `roughness`, `bump_scale`, `rotation`, `reflectivity` — is uploaded every
+///   frame and needs nothing, as in three.js.
+/// - `side`, `depth_test`, `depth_write` and the blend factors are pipeline
+///   state, keyed per draw, and need nothing either.
 #[derive(Clone, Debug)]
 pub struct MeshBasicNodeMaterial {
+    /// `Material.id`. Read-only in spirit; see [`MaterialId`] for why a clone
+    /// gets a new one.
+    pub id: MaterialId,
+    /// `Material.version` — "starts at 0 and counts how many times
+    /// `needsUpdate` is set to true". Part of the program cache key.
+    pub version: u32,
     pub kind: MaterialKind,
     pub color: Color,
     pub opacity: f64,
@@ -188,6 +258,8 @@ pub struct MeshBasicNodeMaterial {
 impl Default for MeshBasicNodeMaterial {
     fn default() -> Self {
         Self {
+            id: MaterialId::next(),
+            version: 0,
             kind: MaterialKind::Basic,
             color: Color::new(1.0, 1.0, 1.0),
             opacity: 1.0,
@@ -257,6 +329,14 @@ impl Default for MeshBasicNodeMaterial {
 impl MeshBasicNodeMaterial {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// `material.needsUpdate = true`: `Material.js`' setter, which bumps
+    /// `version` so the next frame builds the program afresh. Call it after
+    /// changing anything the program depends on — the struct docs list what
+    /// does and does not.
+    pub fn set_needs_update(&mut self) {
+        self.version += 1;
     }
 
     /// The blending fields `WebGPUPipelineUtils._getBlending()` reads, gathered

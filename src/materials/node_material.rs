@@ -13,7 +13,13 @@ use crate::nodes::{MaterialFlow, NodeRef};
 
 /// The per-render-object facts three.js reads off `builder.object` and
 /// `builder.geometry` during setup.
-#[derive(Clone, Debug, Default)]
+///
+/// `Hash` is the scene-dependent half of the render object's cache key —
+/// `RenderObject.getDynamicCacheKey()`: the lights (with their shadow maps),
+/// the instancing branch and the morph entry. Everything `setup()` reads that
+/// is not on the material is here, so the derived hash is complete by
+/// construction: a field added to this struct is in the key.
+#[derive(Clone, Debug, Default, Hash)]
 pub struct SetupContext {
     /// `Some(count)` when the object is an `InstancedMesh`, which is what makes
     /// `NodeMaterial.setupPosition()` insert the `InstanceNode` transform.

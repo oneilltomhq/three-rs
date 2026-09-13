@@ -104,8 +104,23 @@ pub enum ShadowMap {
     Cube(CubeDepthTexture),
 }
 
+/// By identity, as a texture contributes its `uuid` to `Node.getCacheKey()`:
+/// the map's kind and which map it is are what the program depends on.
+impl std::hash::Hash for ShadowMap {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::mem::discriminant(self).hash(state);
+        match self {
+            ShadowMap::Planar(texture) => texture.id().hash(state),
+            ShadowMap::Cube(texture) => texture.id().hash(state),
+        }
+    }
+}
+
 /// One entry of `LightsNode`'s light list, as the material setup sees it.
-#[derive(Clone, Debug)]
+///
+/// `Hash` is the light's share of the render object's dynamic cache key
+/// (`RenderObject.getDynamicCacheKey()` → `lightsNode.getCacheKey()`).
+#[derive(Clone, Debug, Hash)]
 pub struct LightDesc {
     /// The light's index in the renderer's light list, which is what every
     /// `UniformSource::Light*` / `Shadow*` variant keys on.

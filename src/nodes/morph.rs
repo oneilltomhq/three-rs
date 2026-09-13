@@ -17,6 +17,9 @@ use crate::textures::DataArrayTexture;
 const MAX_TEXTURE_SIZE: usize = 4096;
 
 /// The `_morphTextures` entry: `{ count, texture, stride, size }`.
+///
+/// `Hash` — the texture by identity, the rest by value — is the entry's share
+/// of the render object's cache key; `morphReference()` reads all four.
 #[derive(Clone, Debug)]
 pub struct MorphEntry {
     pub texture: DataArrayTexture,
@@ -25,6 +28,16 @@ pub struct MorphEntry {
     pub width: usize,
     pub height: usize,
     pub count: usize,
+}
+
+impl std::hash::Hash for MorphEntry {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.texture.id().hash(state);
+        self.stride.hash(state);
+        self.width.hash(state);
+        self.height.hash(state);
+        self.count.hash(state);
+    }
 }
 
 thread_local! {

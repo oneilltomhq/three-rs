@@ -134,6 +134,10 @@ impl Primitive {
 struct Renderable {
     geometry: Rc<BufferGeometry>,
     material: MeshBasicNodeMaterial,
+    /// `material.id` / `material.version` of the material this item was
+    /// snapshotted from — the `material` field is a clone and a clone has a
+    /// new id (see `MaterialId`).
+    key: MaterialKey,
     setup: SetupContext,
     /// `scene.fogNode`, which `NodeMaterial.setupOutput()` applies to every
     /// material in the scene. Carried per item rather than on `SetupContext` so
@@ -150,6 +154,56 @@ struct Renderable {
     /// `_getPrimitiveState()`'s object half — the topology this draw's pipeline
     /// is built with.
     primitive: Primitive,
+}
+
+/// The material's half of `RenderObject.getCacheKey()`: `material.id` and
+/// `material.version`, which is what `RenderObjects.get()` compares before it
+/// trusts a cached render object.
+///
+/// `variant` names the materials the renderer *derives* from a source material
+/// by value — the shadow-pass material, the quad's, the background's, the
+/// output pass's — where three.js has a distinct material object for each. A
+/// derived material has no identity of its own, so the derivation is in the
+/// key instead: the shadow material built from material 7 is `(7, version,
+/// SHADOW)`, and a change to material 7 that `set_needs_update()` records
+/// invalidates both.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+struct MaterialKey {
+    id: usize,
+    version: u32,
+    variant: u64,
+}
+
+impl MaterialKey {
+    fn of(material: &MeshBasicNodeMaterial) -> Self {
+        Self {
+            id: material.id.get(),
+            version: material.version,
+            variant: 0,
+        }
+    }
+
+    fn variant(self, variant: u64) -> Self {
+        Self { variant, ..self }
+    }
+}
+
+/// `MaterialKey::variant` for `materials::shadow_material( source )`.
+const VARIANT_SHADOW: u64 = 1;
+/// `MaterialKey::variant` for `QuadMesh.render()`'s copy with the full-screen
+/// `vertexNode`.
+const VARIANT_QUAD: u64 = 2;
+
+/// One material's built programs — `NodeManager.nodeBuilderCache`'s entries
+/// for one `material.id`, at one `material.version`. The per-draw resolution
+/// of bind groups and vertex buffers reads the binding descriptions off these,
+/// so they are the material's own, never another material's that happens to
+/// share the compiled `Program`.
+struct MaterialStates {
+    version: u32,
+    /// Keyed by the dynamic half of the cache key — the hash of the item's
+    /// `SetupContext`, fog and `MaterialKey::variant`.
+    by_dynamic_key: HashMap<u64, Rc<NodeProgram>>,
 }
 
 /// The attachments, formats and size of the pass about to run.
@@ -200,8 +254,26 @@ pub struct Renderer {
     output_buffer_type: TextureType,
 
     mipmap_shader: MipmapShader,
-    /// Built materials, keyed by the node builder's cache key.
+    /// Compiled programs, keyed by the node builder's cache key — one per
+    /// distinct generated WGSL + binding shape, shared across materials.
     programs: HashMap<u64, Program>,
+    /// `NodeManager.nodeBuilderCache`: a material's built `NodeProgram`s, by
+    /// `material.id`. A steady frame is served from here without touching the
+    /// node builder; see `node_builder_state()`.
+    node_builder_states: HashMap<usize, MaterialStates>,
+    /// How many times `NodeBuilder::build` has run — the number a steady frame
+    /// must leave unchanged. See `program_builds()`.
+    program_builds: u64,
+    /// `new Mesh( geometry )`'s implicit `MeshBasicMaterial`, and the shadow
+    /// pass's source for a mesh with no material of its own. One instance so
+    /// it has one `material.id` for the program cache.
+    default_material: MeshBasicNodeMaterial,
+    /// `Background.mesh.material`, minus the `colorNode` the scene's background
+    /// supplies per frame; `Background` keeps one material too.
+    background_material: MeshBasicNodeMaterial,
+    /// `Renderer._renderOutput()`'s `outputColorTransform` quad material,
+    /// minus the `fragmentNode` the frame's target and tone mapping supply.
+    output_material: MeshBasicNodeMaterial,
     pipelines: HashMap<PipelineKey, wgpu::RenderPipeline>,
     geometries: HashMap<usize, GeometryGpu>,
     /// `Textures`' GPU side, keyed by texture identity.
@@ -341,6 +413,23 @@ impl Renderer {
             output_buffer_type: TextureType::HalfFloat,
             mipmap_shader,
             programs: HashMap::new(),
+            node_builder_states: HashMap::new(),
+            program_builds: 0,
+            default_material: MeshBasicNodeMaterial::new(),
+            background_material: {
+                let mut material = MeshBasicNodeMaterial::new();
+                material.name = "Background.material";
+                material.vertex_node = Some(materials::background_vertex_node());
+                material.side = Side::Back;
+                material.depth_test = false;
+                material.depth_write = false;
+                material
+            },
+            output_material: {
+                let mut material = MeshBasicNodeMaterial::new();
+                material.name = "outputColorTransform";
+                material
+            },
             pipelines: HashMap::new(),
             geometries: HashMap::new(),
             textures_2d: HashMap::new(),
@@ -424,25 +513,29 @@ impl Renderer {
         let mut items = Vec::with_capacity(render_list.len() + 1);
 
         // The skybox first, exactly where `renderList.unshift()` puts it.
-        let background_color_node = match scene.background.clone() {
-            Some(Background::CubeTexture(background)) => {
-                Some(materials::background_color_node(&background))
-            }
-            Some(Background::Node(color)) => Some(materials::background_node_color_node(color)),
+        // What `Background.update()` builds the material's `colorNode` from is
+        // the material's variant in the program cache: the cube map by
+        // identity, a colour node by its value (it is baked as a constant).
+        let background = match scene.background.clone() {
+            Some(Background::CubeTexture(background)) => Some((
+                materials::background_color_node(&background),
+                hash_of(&("cube", background.id())),
+            )),
+            Some(Background::Node(color)) => Some((
+                materials::background_node_color_node(color),
+                hash_of(&("color", color.r.to_bits(), color.g.to_bits(), color.b.to_bits())),
+            )),
             _ => None,
         };
-        if let Some(color_node) = background_color_node {
-            let mut material = MeshBasicNodeMaterial::new();
-            material.name = "Background.material";
+        if let Some((color_node, variant)) = background {
+            let key = MaterialKey::of(&self.background_material).variant(variant);
+            let mut material = self.background_material.clone();
             material.color_node = Some(color_node);
-            material.vertex_node = Some(materials::background_vertex_node());
-            material.side = Side::Back;
-            material.depth_test = false;
-            material.depth_write = false;
 
             items.push(Renderable {
                 geometry: self.background_geometry(),
                 material,
+                key,
                 setup: SetupContext::default(),
                 fog: None,
                 // `Background.mesh` is never added to the scene, so its
@@ -500,12 +593,11 @@ impl Renderer {
             // `new Mesh( geometry )` with no material gets
             // `new MeshBasicMaterial()`, which under `WebGPURenderer` is a
             // `MeshBasicNodeMaterial`: white, opaque, front side, depth on.
-            let default_material = MeshBasicNodeMaterial::new();
             let material: &MeshBasicNodeMaterial = scene
                 .override_material
                 .as_ref()
                 .or(object.material())
-                .unwrap_or(&default_material);
+                .unwrap_or(&self.default_material);
 
             let primitive = Primitive::of(&object, &geometry);
 
@@ -525,6 +617,7 @@ impl Renderer {
             items.push(Renderable {
                 geometry: geometry.clone(),
                 material: material.clone(),
+                key: MaterialKey::of(material),
                 setup: SetupContext {
                     // `InstanceNode.setup()` branches on
                     // `instanceMatrix.count * 16 * 4` against
@@ -732,7 +825,6 @@ impl Renderer {
             );
             shadow_list.sort();
 
-            let default_material = MeshBasicNodeMaterial::new();
             let mut items = Vec::with_capacity(shadow_list.len());
             for item in shadow_list.items() {
                 let object = item.node.borrow();
@@ -746,7 +838,7 @@ impl Renderer {
                     .geometry()
                     .expect("three-rs: the render list only holds drawables")
                     .clone();
-                let source = object.material().unwrap_or(&default_material);
+                let source = object.material().unwrap_or(&self.default_material);
                 let primitive = Primitive::of(&object, &geometry);
                 let instance_matrix = object.instance_matrix().cloned();
                 let instance_count = object.instance_count();
@@ -754,6 +846,7 @@ impl Renderer {
                 items.push(Renderable {
                     geometry: geometry.clone(),
                     material: materials::shadow_material(source),
+                    key: MaterialKey::of(source).variant(VARIANT_SHADOW),
                     setup: SetupContext {
                         instance_count: instance_matrix.as_ref().map(|_| instance_count as usize),
                         instanced: instance_matrix.is_some(),
@@ -904,7 +997,6 @@ impl Renderer {
             );
             face_list.sort();
 
-            let default_material = MeshBasicNodeMaterial::new();
             let mut items = Vec::with_capacity(face_list.len());
             for item in face_list.items() {
                 let object = item.node.borrow();
@@ -917,13 +1009,14 @@ impl Renderer {
                     .geometry()
                     .expect("three-rs: the render list only holds drawables")
                     .clone();
-                let source = object.material().unwrap_or(&default_material);
+                let source = object.material().unwrap_or(&self.default_material);
                 let primitive = Primitive::of(&object, &geometry);
                 let instance_matrix = object.instance_matrix().cloned();
                 let instance_count = object.instance_count();
                 items.push(Renderable {
                     geometry: geometry.clone(),
                     material: materials::shadow_material(source),
+                    key: MaterialKey::of(source).variant(VARIANT_SHADOW),
                     setup: SetupContext {
                         instance_count: instance_matrix.as_ref().map(|_| instance_count as usize),
                         instanced: instance_matrix.is_some(),
@@ -1007,6 +1100,7 @@ impl Renderer {
     /// the full-screen-triangle one and the quad is rendered with the shared
     /// orthographic camera.
     pub fn render_quad(&mut self, quad: &QuadMesh) {
+        let key = MaterialKey::of(&quad.material).variant(VARIANT_QUAD);
         let mut material = quad.material.clone();
         material.vertex_node = Some(materials::quad_vertex_node());
 
@@ -1014,6 +1108,7 @@ impl Renderer {
             fog: None,
             geometry: self.quad_geometry(),
             material,
+            key,
             setup: SetupContext::default(),
             model_world: Matrix4::identity(),
             instance_matrix: None,
@@ -1094,15 +1189,11 @@ impl Renderer {
             let geometry_id = Rc::as_ptr(&item.geometry) as usize;
             self.ensure_geometry(geometry_id, &item.geometry);
 
-            // `NodeMaterial.setup()` → `NodeBuilder.build()`: the WGSL and the
-            // bindings the material declares.
-            let flow = materials::setup(&item.material, &item.setup, item.fog.as_ref());
-            let node = NodeBuilder::new().build(&flow);
+            // `NodeManager.getForRender( renderObject )`: the material's built
+            // program, from the cache on a steady frame and from
+            // `NodeMaterial.setup()` → `NodeBuilder.build()` on a miss.
+            let node = self.node_builder_state(item);
             let program_key = node.cache_key;
-            if !self.programs.contains_key(&program_key) {
-                let program = Program::new(&self.device, node.clone());
-                self.programs.insert(program_key, program);
-            }
 
             let state = RenderState {
                 color_format: target.color_format,
@@ -1142,11 +1233,11 @@ impl Renderer {
             };
 
             // The bindings and the vertex buffers are resolved from *this*
-            // draw's freshly built program, not from the cached one: the cache
-            // key is the shader text plus the vertex layout shape, so two
-            // materials that differ only in which texture or which `range()`
-            // buffer they name share one `Program` — and must still draw with
-            // their own resources.
+            // material's `NodeProgram`, never from the compiled `Program`: the
+            // program key is the shader text plus the vertex layout shape, so
+            // two materials that differ only in which texture or which
+            // `range()` buffer they name share one `Program` — and must still
+            // draw with their own resources. `Program` holds none.
             let bind_groups =
                 self.bind_groups(program_key, &node, &uniforms, &item.instance_matrix);
 
@@ -1249,10 +1340,13 @@ impl Renderer {
     /// rendered to the canvas with `autoClear` off, so the canvas attachments
     /// load rather than clear.
     fn render_output(&mut self, render_target: &RenderTarget) {
-        let mut material = MeshBasicNodeMaterial::new();
-        material.name = "outputColorTransform";
+        let texture = render_target.texture();
+        // The variant is what `getOutputNode( texture )` was built from.
+        let key = MaterialKey::of(&self.output_material)
+            .variant(hash_of(&(texture.id(), self.tone_mapping)));
+        let mut material = self.output_material.clone();
         material.fragment_node = Some(materials::output_fragment_node(
-            &render_target.texture(),
+            &texture,
             self.tone_mapping,
         ));
 
@@ -1260,6 +1354,7 @@ impl Renderer {
             fog: None,
             geometry: self.quad_geometry(),
             material,
+            key,
             setup: SetupContext::default(),
             model_world: Matrix4::identity(),
             instance_matrix: None,
@@ -1345,6 +1440,51 @@ impl Renderer {
 
     /// `Bindings.getForRender()`: one bind group per declared group, with every
     /// binding resolved from the descriptor the node builder emitted.
+    /// `NodeManager.getForRender( renderObject )` over
+    /// `RenderObjects.get()`'s version check: the built `NodeProgram` for this
+    /// item, by `material.id`, then `material.version`, then the dynamic half
+    /// of `RenderObject.getCacheKey()` — the item's `SetupContext` (lights and
+    /// their shadow maps, instancing, morphing), its fog node and the derived-
+    /// material variant. Only a miss runs `setup()` and `NodeBuilder::build`;
+    /// a material whose version moved drops every state it had, as
+    /// `renderObject.dispose()` does.
+    fn node_builder_state(&mut self, item: &Renderable) -> Rc<NodeProgram> {
+        let dynamic_key = hash_of(&(item.key.variant, &item.setup, &item.fog));
+
+        let states = self
+            .node_builder_states
+            .entry(item.key.id)
+            .or_insert_with(|| MaterialStates {
+                version: item.key.version,
+                by_dynamic_key: HashMap::new(),
+            });
+        if states.version != item.key.version {
+            states.by_dynamic_key.clear();
+            states.version = item.key.version;
+        }
+        if let Some(node) = states.by_dynamic_key.get(&dynamic_key) {
+            return node.clone();
+        }
+
+        // `NodeMaterial.setup()` → `NodeBuilder.build()`: the WGSL and the
+        // bindings the material declares.
+        let flow = materials::setup(&item.material, &item.setup, item.fog.as_ref());
+        let node = Rc::new(NodeBuilder::new().build(&flow));
+        self.program_builds += 1;
+        self.programs
+            .entry(node.cache_key)
+            .or_insert_with(|| Program::new(&self.device, &node));
+        states.by_dynamic_key.insert(dynamic_key, node.clone());
+        node
+    }
+
+    /// How many times the node builder has generated a program since the
+    /// renderer was created — `renderer.info`'s nearest equivalent. A frame of
+    /// an unchanged scene leaves it where it was; the e2e harness asserts so.
+    pub fn program_builds(&self) -> u64 {
+        self.program_builds
+    }
+
     fn bind_groups(
         &mut self,
         program_key: u64,
@@ -2467,4 +2607,14 @@ pub fn fill_range(
         *value = ((1.0 - t) * min[index] + t * max[index]) as f32;
     }
     range
+}
+
+/// `hash( … )` from `NodeUtils.js`, for the pieces of a cache key that are not
+/// a struct with `Hash` of their own. Deterministic: `DefaultHasher::new()`
+/// is SipHash with fixed keys.
+fn hash_of(value: &impl std::hash::Hash) -> u64 {
+    use std::hash::Hasher;
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    value.hash(&mut hasher);
+    hasher.finish()
 }

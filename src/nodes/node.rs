@@ -692,20 +692,14 @@ impl std::hash::Hash for TextureSource {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         std::mem::discriminant(self).hash(state);
         match self {
-            TextureSource::Texture2D(texture) => {
-                texture.id().hash(state);
-                // Everything the binding and its sampler are built from. The
-                // image data and the `gpu` handle are deliberately absent: the
-                // key must not move when the texture is uploaded.
-                let inner = texture.borrow();
-                inner.format.hash(state);
-                inner.color_space.hash(state);
-                inner.mag_filter.hash(state);
-                inner.min_filter.hash(state);
-                inner.wrap_s.hash(state);
-                inner.wrap_t.hash(state);
-                inner.anisotropy.hash(state);
-            }
+            // Identity only, as `Node.getCacheKey()` takes a texture's uuid.
+            // The format, colour space, filters, wrapping and anisotropy are
+            // *not* here: the compiled program's layout reads only the
+            // binding's `kind` and `visibility` (`programs::layout_entry`),
+            // and the view and sampler built from those fields are resolved
+            // per draw. Neither the image data nor the `gpu` handle either —
+            // the key must not move when the texture is uploaded.
+            TextureSource::Texture2D(texture) => texture.id().hash(state),
             TextureSource::Depth(texture) | TextureSource::ShadowMap(texture) => {
                 texture.id().hash(state)
             }

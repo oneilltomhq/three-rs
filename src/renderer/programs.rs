@@ -39,17 +39,35 @@ pub struct PipelineKey {
 }
 
 /// A compiled material: the two shader modules plus the layouts its bind groups
-/// are built against.
+/// are built against — `NodeBuilderState`'s compiled half, shared by every
+/// render object whose `cache_key` matches.
+///
+/// Deliberately *not* the `NodeProgram` it was compiled from. A binding
+/// description names a texture and an instanced attribute's array; holding the
+/// first-seen draw's copy here would keep those alive for the life of the
+/// renderer (#56) and, worse, would be the wrong copy for the second material
+/// that hashes to this program. The descriptions the per-draw resolution needs
+/// live with the material that owns them, in `Renderer::node_builder_states`.
 pub struct Program {
-    pub node: NodeProgram,
     vertex_module: wgpu::ShaderModule,
     fragment_module: wgpu::ShaderModule,
     pub layouts: Vec<wgpu::BindGroupLayout>,
     pipeline_layout: wgpu::PipelineLayout,
+    /// `WebGPUAttributeUtils.createShaderVertexBuffers()`'s result, shape only:
+    /// stride, step mode and attributes per buffer, with the buffer itself —
+    /// the `Rc<InstanceBuffer>` a `VertexBufferDesc` carries — left behind.
+    vertex_layouts: Vec<VertexLayout>,
+}
+
+/// One `GPUVertexBufferLayout` as the pipeline bakes it in.
+struct VertexLayout {
+    array_stride: u64,
+    step_mode: wgpu::VertexStepMode,
+    attributes: Vec<wgpu::VertexAttribute>,
 }
 
 impl Program {
-    pub fn new(device: &wgpu::Device, node: NodeProgram) -> Self {
+    pub fn new(device: &wgpu::Device, node: &NodeProgram) -> Self {
         let vertex_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("three-rs vertex"),
             source: wgpu::ShaderSource::Wgsl(node.vertex_wgsl.clone().into()),
@@ -82,12 +100,39 @@ impl Program {
             immediate_size: 0,
         });
 
+        // `WebGPUAttributeUtils.createShaderVertexBuffers()`: the attributes
+        // grouped into buffers — one per geometry attribute, one per instanced
+        // buffer, in first-use order. The layouts are computed from the same
+        // `AttributeSlot`s the renderer binds from, so a slot and its buffer
+        // cannot disagree.
+        let vertex_layouts = node
+            .vertex_buffers()
+            .iter()
+            .map(|desc| VertexLayout {
+                array_stride: desc.array_stride,
+                step_mode: if desc.instanced {
+                    wgpu::VertexStepMode::Instance
+                } else {
+                    wgpu::VertexStepMode::Vertex
+                },
+                attributes: desc
+                    .attributes
+                    .iter()
+                    .map(|(location, ty, offset)| wgpu::VertexAttribute {
+                        format: vertex_format(*ty),
+                        offset: *offset,
+                        shader_location: *location,
+                    })
+                    .collect(),
+            })
+            .collect();
+
         Self {
-            node,
             vertex_module,
             fragment_module,
             layouts,
             pipeline_layout,
+            vertex_layouts,
         }
     }
 
@@ -97,39 +142,14 @@ impl Program {
         device: &wgpu::Device,
         state: RenderState,
     ) -> wgpu::RenderPipeline {
-        // `WebGPUAttributeUtils.createShaderVertexBuffers()`: the attributes
-        // grouped into buffers — one per geometry attribute, one per instanced
-        // buffer, in first-use order. The layouts are computed from the same
-        // `AttributeSlot`s the renderer binds from, so a slot and its buffer
-        // cannot disagree.
-        let descs = self.node.vertex_buffers();
-
-        let attributes: Vec<Vec<wgpu::VertexAttribute>> = descs
+        let buffers: Vec<Option<wgpu::VertexBufferLayout>> = self
+            .vertex_layouts
             .iter()
-            .map(|desc| {
-                desc.attributes
-                    .iter()
-                    .map(|(location, ty, offset)| wgpu::VertexAttribute {
-                        format: vertex_format(*ty),
-                        offset: *offset,
-                        shader_location: *location,
-                    })
-                    .collect()
-            })
-            .collect();
-
-        let buffers: Vec<Option<wgpu::VertexBufferLayout>> = descs
-            .iter()
-            .zip(attributes.iter())
-            .map(|(desc, attributes)| {
+            .map(|layout| {
                 Some(wgpu::VertexBufferLayout {
-                    array_stride: desc.array_stride,
-                    step_mode: if desc.instanced {
-                        wgpu::VertexStepMode::Instance
-                    } else {
-                        wgpu::VertexStepMode::Vertex
-                    },
-                    attributes: attributes.as_slice(),
+                    array_stride: layout.array_stride,
+                    step_mode: layout.step_mode,
+                    attributes: layout.attributes.as_slice(),
                 })
             })
             .collect();

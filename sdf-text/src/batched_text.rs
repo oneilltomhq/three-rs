@@ -24,7 +24,9 @@
 //!    map only, and `InstanceBuffer` is the port's existing mechanism for
 //!    anything that steps per instance. The consequence is that the four
 //!    `needsUpdate = true` flags become one `build_material()` call, which
-//!    rebuilds the nodes around fresh copies of the arrays.
+//!    rebuilds the nodes around fresh copies of the arrays and ends with the
+//!    material's own `set_needs_update()`, so the renderer builds the program
+//!    once per `sync()` that changed something rather than every frame.
 //! 3. **`positionNode` is kept**, unlike d33's `LabelBatch` workaround, because
 //!    three-rs applies `position_node` *before* the instance matrix (plan §5.2,
 //!    `docs/nodes.md` §10) — the order lib3 was written against. On a unit
@@ -116,6 +118,26 @@ pub struct BatchedText {
     /// whenever the atlas gains a glyph: the renderer caches GPU textures by
     /// identity, so `needsUpdate` on the old handle would upload nothing.
     texture: Texture,
+
+    /// What the material's nodes were last built around, so a `sync()` that
+    /// changed nothing — the second of the page's two rounds — leaves the
+    /// material, and therefore its program, alone.
+    built: Option<BuiltInputs>,
+}
+
+/// The inputs `build_material()` closes over: the four attribute arrays (the
+/// very `Rc`s the nodes hold), the two outline settings baked as uniforms, and
+/// the atlas texture. In lib3 the arrays are `needsUpdate = true` attributes
+/// that re-upload without touching the program; here they travel in the node
+/// graph, so "unchanged" has to be checked before rebuilding it.
+struct BuiltInputs {
+    glyph_uv: Rc<Vec<f32>>,
+    glyph_bounds: Rc<Vec<f32>>,
+    colors: Rc<Vec<f32>>,
+    opacities: Rc<Vec<f32>>,
+    outline_width: f64,
+    outline_color: Option<Color>,
+    texture_id: usize,
 }
 
 impl BatchedText {
@@ -158,6 +180,7 @@ impl BatchedText {
             colors: vec![0.0; max_glyph_count * 3],
             opacities: vec![1.0; max_glyph_count],
             texture,
+            built: None,
         };
 
         batch.build_material();
@@ -543,10 +566,32 @@ impl BatchedText {
 
     /// `buildMaterial( material )`.
     fn build_material(&mut self) {
+        if let Some(built) = &self.built {
+            if *built.glyph_uv == self.glyph_uv
+                && *built.glyph_bounds == self.glyph_bounds
+                && *built.colors == self.colors
+                && *built.opacities == self.opacities
+                && built.outline_width == self.outline_width
+                && built.outline_color == self.outline_color
+                && built.texture_id == self.texture.id()
+            {
+                return;
+            }
+        }
+
         let uv_data = Rc::new(self.glyph_uv.clone());
         let bounds_data = Rc::new(self.glyph_bounds.clone());
         let color_data = Rc::new(self.colors.clone());
         let opacity_data = Rc::new(self.opacities.clone());
+        self.built = Some(BuiltInputs {
+            glyph_uv: uv_data.clone(),
+            glyph_bounds: bounds_data.clone(),
+            colors: color_data.clone(),
+            opacities: opacity_data.clone(),
+            outline_width: self.outline_width,
+            outline_color: self.outline_color,
+            texture_id: self.texture.id(),
+        });
 
         // `attribute( 'aGlyphUV', 'vec4' )` and friends.
         let a_glyph_uv = tsl::instanced_data_attribute(&uv_data, 4, 0, Type::Vec4);
@@ -625,6 +670,11 @@ impl BatchedText {
             .expect("sdf-text: BatchedText always has a material");
         material.position_node = Some(position_node);
         material.color_node = Some(color_node);
+        // `material.needsUpdate = true`: the nodes above close over fresh
+        // copies of the arrays, and the renderer keys the built program on the
+        // material's version — without the bump it would keep drawing the
+        // previous `sync()`'s glyphs.
+        material.set_needs_update();
     }
 }
 

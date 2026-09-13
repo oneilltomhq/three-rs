@@ -605,3 +605,56 @@ fn webgpu_lights_physical() {
     );
     steady_frame(name, &mut app, webgpu_lights_physical::animate, |app| app.renderer.device());
 }
+
+/// Issue #56's "done when": a steady frame performs zero `NodeBuilder::build`
+/// calls. Every graded rung is rendered three times; the first frame builds
+/// its programs, and by the third nothing in the scene is new to the renderer
+/// — the same steady-frame behaviour `WebGPURenderer` has, where
+/// `RenderObjects.get()` finds every render object's cache key unchanged and
+/// `NodeManager.getForRender()` never reaches the builder.
+///
+/// The count is `Renderer::program_builds()`, a cumulative counter that only a
+/// cache miss touches. The second frame is printed but not asserted: it is
+/// where a rung whose first frame renders into a target the second reads
+/// (rtt, the pass nodes) would show a legitimate late build, and none does.
+#[test]
+fn steady_frame_builds_nothing() {
+    let _gpu = gpu();
+
+    macro_rules! rung {
+        ($module:ident) => {{
+            let mut app = $module::init();
+            let builds: Vec<u64> = (0..3)
+                .map(|_| {
+                    let before = app.renderer.program_builds();
+                    $module::animate(&mut app);
+                    app.renderer.program_builds() - before
+                })
+                .collect();
+            println!("{}: programs built per frame {:?}", stringify!($module), builds);
+            assert!(
+                builds[0] > 0,
+                "{}: the first frame built nothing, so the counter is not wired",
+                stringify!($module)
+            );
+            assert_eq!(
+                builds[2],
+                0,
+                "{}: the third frame built {} programs; a steady frame must build none",
+                stringify!($module),
+                builds[2]
+            );
+        }};
+    }
+
+    rung!(webgpu_depth_texture);
+    rung!(webgpu_instance_mesh);
+    rung!(webgpu_materials_basic);
+    rung!(webgpu_rtt);
+    rung!(webgpu_postprocessing_masking);
+    rung!(webgpu_lights_phong);
+    rung!(webgpu_morphtargets);
+    rung!(webgpu_tsl_galaxy);
+    rung!(webgpu_shadowmap);
+    rung!(webgpu_lights_physical);
+}

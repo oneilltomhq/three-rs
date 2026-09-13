@@ -21,6 +21,13 @@ pub struct RenderPipeline {
     /// `renderPipeline.outputColorTransform`, default true.
     pub output_color_transform: bool,
     quad_mesh: QuadMesh,
+    /// What the quad material's `fragmentNode` was last built from: the
+    /// `outputNode`'s identity and `outputColorTransform`. `_updateContext()`
+    /// assigns the node every render; here the assignment — a fresh
+    /// `renderOutput( … )` graph — happens only when either changed, with
+    /// `needsUpdate` set alongside, so a steady frame's program is a cache
+    /// hit rather than a rebuild.
+    built_for: Option<(usize, bool)>,
 }
 
 impl Default for RenderPipeline {
@@ -37,6 +44,7 @@ impl RenderPipeline {
             output_node: None,
             output_color_transform: true,
             quad_mesh: QuadMesh::new(material),
+            built_for: None,
         }
     }
 
@@ -48,14 +56,20 @@ impl RenderPipeline {
             .clone()
             .expect("three-rs: RenderPipeline.outputNode is not set");
 
-        self.quad_mesh.material.fragment_node = Some(if self.output_color_transform {
-            // `renderer.toneMapping` is already `NoToneMapping` by the time
-            // `RenderOutputNode.setup()` reads it: `PostProcessing.render()`
-            // neutralises it around the whole quad render, compile included.
-            render_output(output_node, ToneMapping::None)
-        } else {
-            output_node
-        });
+        let built_for = (output_node.key(), self.output_color_transform);
+        if self.built_for != Some(built_for) {
+            self.quad_mesh.material.fragment_node = Some(if self.output_color_transform {
+                // `renderer.toneMapping` is already `NoToneMapping` by the
+                // time `RenderOutputNode.setup()` reads it:
+                // `PostProcessing.render()` neutralises it around the whole
+                // quad render, compile included.
+                render_output(output_node, ToneMapping::None)
+            } else {
+                output_node
+            });
+            self.quad_mesh.material.set_needs_update();
+            self.built_for = Some(built_for);
+        }
 
         // `renderer.toneMapping = NoToneMapping; renderer.outputColorSpace =
         // workingColorSpace;` — restored after the draw.

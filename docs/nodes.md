@@ -575,14 +575,16 @@ fills, exactly as two `RangeNode`s are in three.js — a cache keyed on the
 first node's numbers, with no error anywhere.
 
 Buffer identity is deliberately **not** in `cache_key`: the instance matrix's
-identity changes every frame and the generated WGSL does not depend on it.
+node is made afresh by every `setup()` and the generated WGSL does not depend
+on which one it was.
 
 `NodeProgram::vertex_buffers()` is `WebGPUAttributeUtils.createShaderVertexBuffers()`:
 the `@location`-ordered attributes grouped into layouts in first-use order, one
 buffer per geometry attribute and one per `InstanceBuffer`. The renderer resolves
-*both* bind groups and vertex buffers from the per-draw `NodeProgram`, never from
-the WGSL-keyed program cache, so two materials with identical shaders and
-different buffers cannot alias.
+*both* bind groups and vertex buffers from the material's own `NodeProgram`
+(memoised per material, `docs/scene-graph.md` "Program cache"), never from the
+WGSL-keyed program cache, so two materials with identical shaders and different
+buffers cannot alias.
 
 Coverage: `tests/nodes_instanced_attributes.rs` pins each branch on both sides of
 both limits and the two-`range()` rule; `tests/renderer_instanced.rs` draws 1000,

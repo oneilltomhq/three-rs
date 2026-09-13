@@ -168,15 +168,65 @@ what lets one generated program serve an opaque and a blended draw.
 ### Per-draw resources
 
 Everything a draw binds — bind groups, and now vertex buffers — is resolved from
-the `NodeProgram` built for *that* draw, never from the program cache. The cache
-is keyed on the generated WGSL, so two materials with identical shaders and
-different textures or `range()` buffers hash to one entry; reading resources off
-the cached entry would quietly hand the second draw the first's data. Vertex
-buffers come from `NodeProgram::vertex_buffers()` (`docs/nodes.md` §9.2), which is
-also what the pipeline's vertex layouts are built from, so a bound buffer and its
-layout cannot disagree. Per-node GPU buffers are cached by node identity and
-uploaded once; the instance matrix is the exception, re-uploaded each frame
-because its contents change.
+the `NodeProgram` built for *that material*, never from the compiled `Program`.
+The program cache is keyed on the generated WGSL, so two materials with
+identical shaders and different textures or `range()` buffers hash to one
+entry; reading resources off the cached entry would quietly hand the second
+draw the first's data, which is why `Program` holds the shader modules, the
+bind-group layouts and the vertex layout *shape* and not a single binding
+description. Vertex buffers come from `NodeProgram::vertex_buffers()`
+(`docs/nodes.md` §9.2), which is also what the pipeline's vertex layouts were
+built from, so a bound buffer and its layout cannot disagree. Per-node GPU
+buffers are cached by node identity and uploaded once; the instance matrix is
+the exception, re-uploaded each frame because its contents change.
+
+### Program cache
+
+`Renderer::draw` does not run the node builder on a steady frame. It is the
+structure of `RenderObjects.get()` + `NodeManager.getForRender()`, ported:
+
+| three.js | here |
+|---|---|
+| `Material.id`, `Material.version`; `needsUpdate = true` bumps `version` | `MeshBasicNodeMaterial.id`, `.version`; `set_needs_update()` |
+| `RenderObject.getMaterialCacheKey()` | `(material.id, material.version)` |
+| `RenderObject.getDynamicCacheKey()` — `lightsNode.getCacheKey()`, fog, environment, `receiveShadow`, shadow-map enabled | the hash of the item's `SetupContext` (lights with their shadow maps, the instancing branch, the morph entry) and its `FogNode`, by node identity |
+| `RenderObjects.get()`: `renderObject.version !== material.version` → `dispose()` | a material seen at a new version drops every state it had |
+| `NodeManager.nodeBuilderCache`: `cacheKey → NodeBuilderState` | `Renderer::node_builder_states`: `material.id → { version, dynamic key → Rc<NodeProgram> }` |
+| `NodeBuilderState` shared by cache key | `Program` shared by the WGSL-and-bindings hash the built `NodeProgram` carries |
+
+So the key is **material identity × material version × the scene-dependent
+part**. A miss runs `materials::setup()` and `NodeBuilder::build`; a hit hands
+back the material's own `NodeProgram`, whose binding descriptions the draw
+resolves its resources from. `Renderer::program_builds()` counts the misses,
+and the e2e harness (`steady_frame_builds_nothing`) renders every graded rung
+three times and asserts the third frame adds none.
+
+Materials are values, so identity is a counter the way `_materialId` is — and
+**`clone()` allocates a new id**, as `Material.clone()` gives a new object.
+The renderer's own per-frame snapshot of a material takes the key from the
+source before cloning; the materials the renderer derives by value (the
+shadow-pass material, the quad's, the background's, the output pass's) carry
+the source's id and a `variant` naming the derivation, where three.js has a
+separate material object for each.
+
+**The `needsUpdate` rule is three.js'.** After changing a material field the
+*program* depends on — a node (`color_node`, `position_node`,
+`fragment_node`, …), a map, `kind`, `lights`, `flat_shading`, `fog`,
+`transparent`, `blending` — call `material.set_needs_update()`, as the examples
+do with `material.needsUpdate = true`; otherwise the previous program keeps
+drawing. Fields the program reads as uniforms (`color`, `opacity`, `shininess`,
+`metalness`, …) are uploaded every frame and need nothing, and pipeline state
+(`side`, depth flags, the blend factors) is keyed per draw. The struct docs on
+`MeshBasicNodeMaterial` carry the list. `BatchedText` is the in-tree case: its
+attribute arrays travel in the node graph, so a `sync()` that changed them
+rebuilds the nodes and bumps the version, and one that changed nothing does
+neither.
+
+What is not evicted: a material's states live for the life of the renderer
+until its version moves (three.js keeps a `NodeBuilderState` until its last
+render object is disposed), so a program that creates materials every frame
+grows the cache by one entry per material — the same thing it costs in
+three.js, and the reason to keep materials and change their fields instead.
 
 ## Lines
 
