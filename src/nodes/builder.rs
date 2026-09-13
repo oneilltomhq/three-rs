@@ -402,6 +402,18 @@ impl NodeBuilder {
                 v.extend(body.iter().cloned());
                 v
             }
+            Node::IfVar {
+                pre,
+                result,
+                cond,
+                body,
+            } => {
+                let mut v = pre.clone();
+                v.push(result.clone());
+                v.push(cond.clone());
+                v.extend(body.iter().cloned());
+                v
+            }
             Node::Discard => vec![],
             Node::Not { node } => vec![node.clone()],
         }
@@ -584,6 +596,7 @@ impl NodeBuilder {
             TextureSource::ShadowMap(t) => (t.id(), TextureKind::DepthCompare2D),
             TextureSource::Cube(t) => (t.id(), TextureKind::Cube),
             TextureSource::DataArray(t) => (t.id(), TextureKind::Float2DArray),
+            TextureSource::CubeDepth(t) => (t.id(), TextureKind::DepthCube),
         };
 
         if let Some((name, kind, slots)) = self.texture_names.get(&key).cloned() {
@@ -1029,6 +1042,38 @@ impl NodeBuilder {
                 format!("{name}( {} )", parts.join(", "))
             }
 
+            Node::IfVar {
+                pre,
+                result,
+                cond,
+                body,
+            } => {
+                let (pre, result, cond, body) =
+                    (pre.clone(), result.clone(), cond.clone(), body.clone());
+                // `If()` is a statement list, not an expression: three.js emits
+                // everything ahead of the result var first, then the var's own
+                // initialiser, then the condition, then the block.
+                for stmt in &pre {
+                    self.generate(stmt);
+                }
+                let name = self.generate(&result);
+                let scond = self.generate(&cond);
+                self.emit(String::new());
+                self.emit(format!("if ( {scond} ) {{"));
+                self.emit(String::new());
+                self.push_scope();
+                for stmt in &body {
+                    self.generate(stmt);
+                }
+                self.emit(String::new());
+                self.pop_scope();
+                self.emit(String::new());
+                self.emit("}".to_string());
+                self.emit(String::new());
+                self.cache_put(node.key(), name.clone());
+                name
+            }
+
             Node::Select { cond, a, b, ty } => {
                 let (cond, a, b, ty) = (cond.clone(), a.clone(), b.clone(), *ty);
                 // `ConditionalNode.generate()` builds its result property
@@ -1296,6 +1341,11 @@ impl NodeBuilder {
                 }
             }
         }
+        // Two materials can generate identical WGSL and still need different
+        // bindings — two copies of the same shader with different baked uniform
+        // values (a texture's uv matrix, say). The binding descriptions are part
+        // of the program, so they are part of its key.
+        format!("{:?}", groups).hash(&mut hasher);
         let cache_key = hasher.finish();
 
         NodeProgram {
@@ -1348,6 +1398,8 @@ impl NodeBuilder {
                             continue;
                         }
                         let name = self.texture_name(source);
+                        // A shadow map is read with `textureSampleCompare`, so
+                        // its sampler is declared `sampler_comparison`.
                         out.push_str(&format!(
                             "@binding( {binding} ) @group( {gi} ) var {name}_sampler : {};\n",
                             kind.sampler_wgsl()
@@ -1435,6 +1487,7 @@ impl NodeBuilder {
             TextureSource::ShadowMap(t) => t.id(),
             TextureSource::Cube(t) => t.id(),
             TextureSource::DataArray(t) => t.id(),
+            TextureSource::CubeDepth(t) => t.id(),
         };
         self.texture_names[&key].0.clone()
     }
@@ -1489,6 +1542,7 @@ impl NodeBuilder {
                 Builtin::VertexIndex => "vertex_index",
                 Builtin::InstanceIndex => "instance_index",
                 Builtin::FragCoord => "position",
+                Builtin::FrontFacing => "front_facing",
             };
             params.push(format!(
                 "@builtin( {builtin} ) {} : {}",

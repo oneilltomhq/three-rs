@@ -9,10 +9,10 @@
 
 #![allow(dead_code)] // wired into `setup()` by the next step of rung 5
 
-use crate::lights::LightKind;
+use crate::lights::{point_shadow, LightKind};
 use crate::nodes::tsl::*;
 use crate::nodes::NodeRef;
-use crate::textures::DepthTexture;
+use crate::textures::{CubeDepthTexture, DepthTexture};
 
 /// `1 / π` — three.js' `RECIPROCAL_PI`, which prints as
 /// `0.3183098861837907` in the dumps.
@@ -110,6 +110,14 @@ pub fn brdf_blinn_phong(light_direction: NodeRef) -> NodeRef {
     f.mul(0.25).mul(d_blinn_phong(shininess(), dot_nh))
 }
 
+/// One light's rendered shadow map: `ShadowNode`'s 2-D depth texture for a
+/// spot or directional light, `PointShadowNode`'s cube for a point light.
+#[derive(Clone, Debug)]
+pub enum ShadowMap {
+    Planar(DepthTexture),
+    Cube(CubeDepthTexture),
+}
+
 /// One entry of `LightsNode`'s light list, as the material setup sees it.
 #[derive(Clone, Debug)]
 pub struct LightDesc {
@@ -118,8 +126,105 @@ pub struct LightDesc {
     pub index: usize,
     pub kind: LightKind,
     /// `light.castShadow && object.receiveShadow && renderer.shadowMap.enabled`
-    /// — the shadow map's depth texture, read with `textureSampleCompare`.
-    pub shadow_map: Option<DepthTexture>,
+    /// — the shadow map, read with `textureSampleCompare`.
+    pub shadow_map: Option<ShadowMap>,
+}
+
+/// `ShadowBaseNode.setupShadowPosition()` (a statement, pushed here) followed
+/// by the shadow node itself — `ShadowNode` or `PointShadowNode` by map.
+pub fn shadow_node(
+    index: usize,
+    map: &ShadowMap,
+    received_shadow_position: Option<&NodeRef>,
+    out: &mut Vec<NodeRef>,
+) -> NodeRef {
+    let position = match received_shadow_position {
+        Some(node) => node.clone(),
+        None => position_world(),
+    };
+    out.push(shadow_position_world().assign(position));
+    match map {
+        ShadowMap::Planar(map) => shadow_factor(index, map),
+        ShadowMap::Cube(map) => point_shadow(index, map),
+    }
+}
+
+/// `LightsNode.setupLightsNode()`'s per-light half that every lighting model
+/// shares: an ambient or hemisphere light adds straight to `irradiance` and
+/// yields nothing; an analytic light yields `LightNode.setup()`'s
+/// `( lightDirection, lightColor )` pair — shadow factor included — for the
+/// model's `direct()`.
+pub fn setup_light(
+    light: &LightDesc,
+    received_shadow_position: Option<&NodeRef>,
+    out: &mut Vec<NodeRef>,
+) -> Option<(NodeRef, NodeRef)> {
+    let index = light.index;
+
+    match light.kind {
+        // `AmbientLightNode.setup()` — `irradiance += lightColor`.
+        LightKind::Ambient => {
+            out.push(irradiance().assign(irradiance().add(light_color_intensity(index))));
+            return None;
+        }
+        // `HemisphereLightNode.setup()`: a sky/ground mix by the world
+        // normal's hemisphere weight.
+        LightKind::Hemisphere => {
+            let light_direction = light_world_position(index).normalize();
+            let dot_nl = normal_world().dot(light_direction);
+            let hemi_diffuse_weight = dot_nl.mul(0.5).add(0.5);
+            let value = mix(
+                light_ground_color(index),
+                light_color_intensity(index),
+                hemi_diffuse_weight,
+            );
+            out.push(irradiance().assign(irradiance().add(value)));
+            return None;
+        }
+        _ => {}
+    }
+
+    // `AnalyticLightNode.setupShadow()`'s `colorNode = colorNode.mul( shadow )`
+    // — before the light's own attenuation.
+    let mut color = light_color_intensity(index);
+    if let Some(map) = &light.shadow_map {
+        color = color.mul(shadow_node(index, map, received_shadow_position, out));
+    }
+
+    Some(match light.kind {
+        LightKind::Ambient | LightKind::Hemisphere => unreachable!(),
+        LightKind::Point => {
+            let l_vector = light_view_position(index).sub(position_view());
+            let attenuation = distance_attenuation(
+                length(l_vector.clone()),
+                light_cutoff_distance(index),
+                light_decay(index),
+            );
+            (l_vector.normalize(), color.mul(attenuation))
+        }
+        LightKind::Spot => {
+            let l_vector = light_view_position(index).sub(position_view());
+            let light_direction = l_vector.clone().normalize();
+            let angle_cos = light_direction
+                .clone()
+                .dot(light_target_direction(index));
+            let spot_attenuation = smoothstep(
+                light_cone_cos(index),
+                light_penumbra_cos(index),
+                angle_cos,
+            );
+            let attenuation = distance_attenuation(
+                length(l_vector),
+                light_cutoff_distance(index),
+                light_decay(index),
+            );
+            (
+                light_direction,
+                color.mul(spot_attenuation).mul(attenuation),
+            )
+        }
+        LightKind::Directional => (light_target_direction(index), color),
+    })
 }
 
 /// `ShadowNode.setupShadowCoord()` + `setupShadowFilter()` + the
@@ -196,53 +301,9 @@ pub fn direct_light(
     received_shadow_position: Option<&NodeRef>,
     out: &mut Vec<NodeRef>,
 ) {
-    let index = light.index;
-
-    // `ShadowBaseNode.setupShadowPosition()`, then
-    // `AnalyticLightNode.setupShadow()`'s `colorNode = colorNode.mul( shadow )`.
-    let mut color = light_color_intensity(index);
-    if let Some(map) = &light.shadow_map {
-        let position = match received_shadow_position {
-            Some(node) => node.clone(),
-            None => position_world(),
-        };
-        out.push(shadow_position_world().assign(position));
-        color = color.mul(shadow_factor(index, map));
-    }
-
-    let (light_direction, light_color) = match light.kind {
-        LightKind::Ambient => return,
-        LightKind::Point => {
-            let l_vector = light_view_position(index).sub(position_view());
-            let attenuation = distance_attenuation(
-                length(l_vector.clone()),
-                light_cutoff_distance(index),
-                light_decay(index),
-            );
-            (l_vector.normalize(), color.mul(attenuation))
-        }
-        LightKind::Spot => {
-            let l_vector = light_view_position(index).sub(position_view());
-            let light_direction = l_vector.clone().normalize();
-            let angle_cos = light_direction
-                .clone()
-                .dot(light_target_direction(index));
-            let spot_attenuation = smoothstep(
-                light_cone_cos(index),
-                light_penumbra_cos(index),
-                angle_cos,
-            );
-            let attenuation = distance_attenuation(
-                length(l_vector),
-                light_cutoff_distance(index),
-                light_decay(index),
-            );
-            (
-                light_direction,
-                color.mul(spot_attenuation).mul(attenuation),
-            )
-        }
-        LightKind::Directional => (light_target_direction(index), color),
+    let Some((light_direction, light_color)) = setup_light(light, received_shadow_position, out)
+    else {
+        return;
     };
 
     // `irradiance = dotNL * lightColor`, clamped — `getLightingIrradiance`.

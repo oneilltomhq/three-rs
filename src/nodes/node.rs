@@ -10,7 +10,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::math::{Color, Matrix4, Vector2, Vector3};
-use crate::textures::{CubeTexture, DataArrayTexture, DepthTexture, Texture};
+use crate::textures::{CubeDepthTexture, CubeTexture, DataArrayTexture, DepthTexture, Texture};
 
 /// A WGSL value type. Three carries these as strings (`'vec3'`); the closed set
 /// is the part of `NodeBuilder`'s type vocabulary the ladder has reached.
@@ -135,8 +135,6 @@ pub enum UniformSource {
     MaterialSpecular,
     MaterialEmissive,
     MaterialEmissiveIntensity,
-    /// A `TextureNode`'s `texture.matrix` (offset/repeat/rotation/center).
-    TextureMatrix,
     /// `materialEnvRotation` — the env map's rotation matrix.
     EnvRotationMatrix,
     BackgroundRotation,
@@ -160,17 +158,26 @@ pub enum UniformSource {
     /// positions `lightTargetDirection` differences.
     LightWorldPosition(usize),
     LightTargetPosition(usize),
+    /// `HemisphereLightNode`: `light.groundColor * light.intensity` (linear).
+    LightGroundColor(usize),
     /// `SpotLightNode`'s `coneCosNode` / `penumbraCosNode`.
     LightConeCos(usize),
     LightPenumbraCos(usize),
-    /// `ShadowNode`'s per-shadow references: `lightShadowMatrix( light )` and
+    /// `ShadowNode`'s per-shadow references: `lightShadowMatrix( light )`, the
+    /// shadow camera's near and far planes (`PointShadowNode`) and
     /// `reference( …, shadow )` for the five scalars.
     ShadowMatrix(usize),
+    ShadowCameraNear(usize),
+    ShadowCameraFar(usize),
     ShadowBias(usize),
     ShadowNormalBias(usize),
     ShadowRadius(usize),
     ShadowMapSize(usize),
     ShadowIntensity(usize),
+    /// `materialMetalness` / `materialRoughness` / `materialBumpScale`.
+    MaterialMetalness,
+    MaterialRoughness,
+    MaterialBumpScale,
     /// `toneMappingExposure` — `renderer.toneMappingExposure`.
     ToneMappingExposure,
     /// A plain `uniform( value )` the example supplies.
@@ -189,7 +196,9 @@ impl UniformSource {
             | UniformSource::MaterialSpecular
             | UniformSource::MaterialEmissive
             | UniformSource::MaterialEmissiveIntensity
-            | UniformSource::TextureMatrix
+            | UniformSource::MaterialMetalness
+            | UniformSource::MaterialRoughness
+            | UniformSource::MaterialBumpScale
             | UniformSource::EnvRotationMatrix
             | UniformSource::MorphBase
             | UniformSource::Value(_) => UpdateType::Object,
@@ -272,6 +281,8 @@ pub enum TextureSource {
     Cube(CubeTexture),
     /// `DataArrayTexture` — the morph-target data texture.
     DataArray(DataArrayTexture),
+    /// A point light's shadow map — `cubeTexture( CubeDepthTexture )`.
+    CubeDepth(CubeDepthTexture),
 }
 
 /// How a `TextureNode` reads its texture — `WGSLNodeBuilder.generateTexture*`.
@@ -299,6 +310,8 @@ pub enum Builtin {
     InstanceIndex,
     /// `@builtin( position )` in the fragment stage.
     FragCoord,
+    /// `@builtin( front_facing )` — `FrontFacingNode`.
+    FrontFacing,
 }
 
 impl Builtin {
@@ -307,6 +320,7 @@ impl Builtin {
             Builtin::VertexIndex => "vertexIndex",
             Builtin::InstanceIndex => "instanceIndex",
             Builtin::FragCoord => "fragCoord",
+            Builtin::FrontFacing => "isFront",
         }
     }
 
@@ -314,6 +328,7 @@ impl Builtin {
         match self {
             Builtin::VertexIndex | Builtin::InstanceIndex => Type::U32,
             Builtin::FragCoord => Type::Vec4,
+            Builtin::FrontFacing => Type::Bool,
         }
     }
 }
@@ -444,8 +459,19 @@ pub enum Node {
         index: NodeRef,
         body: Vec<NodeRef>,
     },
-    /// `If( cond, () => { … } )`.
+    /// `If( cond, () => { … } )` as a bare statement (`setupDiscard`).
     If { cond: NodeRef, body: Vec<NodeRef> },
+    /// `If( cond, () => { … } )` — a one-armed conditional over a result var
+    /// that was initialised before it. `pre` holds the statements three.js
+    /// emits ahead of the result var (its `toConst` lines), `result` is the var
+    /// itself and `body` the statements inside the block, the last of which
+    /// assigns `result`. The node's value is the result var.
+    IfVar {
+        pre: Vec<NodeRef>,
+        result: NodeRef,
+        cond: NodeRef,
+        body: Vec<NodeRef>,
+    },
     /// `Discard()` — a bare `discard;`.
     Discard,
     /// `x.not()` — `( ! x )`.
@@ -498,6 +524,7 @@ impl NodeRef {
             Node::Element { ty, .. } => *ty,
             Node::Texture { ty, .. } => *ty,
             Node::Call { def, .. } => def.ret,
+            Node::IfVar { result, .. } => result.ty(),
             Node::Select { ty, .. } => *ty,
             Node::Block { result, .. } => result.ty(),
             Node::Loop { .. } | Node::If { .. } | Node::Discard => Type::Void,

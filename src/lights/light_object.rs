@@ -1,7 +1,8 @@
 //! The `Payload::Light` half of every light: what `AmbientLight`,
-//! `PointLight`, `SpotLight` and `DirectionalLight` add to `Object3D`.
+//! `PointLight`, `SpotLight`, `DirectionalLight` and `HemisphereLight` add to
+//! `Object3D`.
 //!
-//! One struct covers all four because the renderer's light list is uniform —
+//! One struct covers all five because the renderer's light list is uniform —
 //! `LightsNode.setupLights()` switches on the light's type, which `kind`
 //! records.
 
@@ -18,6 +19,7 @@ pub enum LightKind {
     Point,
     Spot,
     Directional,
+    Hemisphere,
 }
 
 /// `class <X>Light extends Light extends Object3D`, minus the `Object3D` half
@@ -34,6 +36,8 @@ pub struct LightObject {
     pub angle: f64,
     /// `SpotLight.penumbra`.
     pub penumbra: f64,
+    /// `HemisphereLight.groundColor`.
+    pub ground_color: Color,
     /// `SpotLight.target` / `DirectionalLight.target` — an `Object3D` at the
     /// origin by default, never added to the scene, so its `matrixWorld` is
     /// just its local matrix.
@@ -58,6 +62,7 @@ impl Clone for LightObject {
             decay: self.decay,
             angle: self.angle,
             penumbra: self.penumbra,
+            ground_color: self.ground_color,
             target: self
                 .target
                 .as_ref()
@@ -77,6 +82,7 @@ impl LightObject {
             decay: 2.0,
             angle: std::f64::consts::FRAC_PI_3,
             penumbra: 0.0,
+            ground_color: Color::new(0.0, 0.0, 0.0),
             target: None,
             cast_shadow: false,
             shadow: None,
@@ -108,6 +114,14 @@ impl LightObject {
         let mut v = Vector3::default();
         v.set_from_matrix_position(matrix_world);
         v
+    }
+
+    /// `HemisphereLightNode.update()`: the ground colour carries the intensity
+    /// just as the sky colour does.
+    pub fn ground_color_intensity(&self) -> Color {
+        let c = self.ground_color;
+        let i = self.light.intensity;
+        Color::new(c.r * i, c.g * i, c.b * i)
     }
 
     /// `set power( power )` — `PointLight` only.
@@ -163,12 +177,34 @@ impl PointLight {
     /// `RenderList.lights` and never drawn — while anything added under it (the
     /// bulb sphere of `webgpu_lights_phong`) is an ordinary child and draws
     /// through the walk.
+    ///
+    /// `this.shadow = new PointLightShadow()` — present whether or not the
+    /// light casts; `Object3D.castShadow` is the switch.
     pub fn new(color: Color, intensity: f64, distance: f64) -> Node {
         let mut light = LightObject::base(LightKind::Point, color, intensity);
         light.distance = distance;
+        light.shadow = Some(Box::new(LightShadow::point()));
         into_node("PointLight", light)
     }
+}
 
+/// `class HemisphereLight extends Light`.
+pub struct HemisphereLight;
+
+impl HemisphereLight {
+    /// `new HemisphereLight( skyColor, groundColor, intensity = 1 )`.
+    ///
+    /// The constructor does one thing beyond `Light`'s: `this.position.copy(
+    /// Object3D.DEFAULT_UP )`. That matters, because `HemisphereLightNode` takes
+    /// its direction from `lightPosition( light ).normalize()` — at the origin
+    /// the normalize would be undefined.
+    pub fn new(sky_color: Color, ground_color: Color, intensity: f64) -> Node {
+        let mut light = LightObject::base(LightKind::Hemisphere, sky_color, intensity);
+        light.ground_color = ground_color;
+        let node = into_node("HemisphereLight", light);
+        node.borrow_mut().position.set(0.0, 1.0, 0.0);
+        node
+    }
 }
 
 /// `class SpotLight extends Light`.

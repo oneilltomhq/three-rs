@@ -218,13 +218,15 @@ fn layout_entry(binding: u32, desc: &BindingDesc) -> wgpu::BindGroupLayoutEntry 
                     TextureKind::Float2DArray => {
                         wgpu::TextureSampleType::Float { filterable: false }
                     }
-                    TextureKind::Depth2D | TextureKind::DepthCompare2D => {
+                    TextureKind::Depth2D | TextureKind::DepthCompare2D | TextureKind::DepthCube => {
                         wgpu::TextureSampleType::Depth
                     }
                     _ => wgpu::TextureSampleType::Float { filterable: true },
                 },
                 view_dimension: match kind {
-                    TextureKind::Cube => wgpu::TextureViewDimension::Cube,
+                    TextureKind::Cube | TextureKind::DepthCube => {
+                        wgpu::TextureViewDimension::Cube
+                    }
                     TextureKind::Float2DArray => wgpu::TextureViewDimension::D2Array,
                     _ => wgpu::TextureViewDimension::D2,
                 },
@@ -239,7 +241,9 @@ fn layout_entry(binding: u32, desc: &BindingDesc) -> wgpu::BindGroupLayoutEntry 
             visibility: visibility.stages(),
             ty: wgpu::BindingType::Sampler(match kind {
                 TextureKind::Depth2D => wgpu::SamplerBindingType::NonFiltering,
-                TextureKind::DepthCompare2D => wgpu::SamplerBindingType::Comparison,
+                TextureKind::DepthCompare2D | TextureKind::DepthCube => {
+                    wgpu::SamplerBindingType::Comparison
+                }
                 _ => wgpu::SamplerBindingType::Filtering,
             }),
             count: None,
@@ -278,13 +282,19 @@ pub struct LightState {
     pub world_position: Vector3,
     /// `light.target.matrixWorld`'s translation — `lightTargetPosition()`.
     pub target_position: Vector3,
+    /// `HemisphereLight.groundColor * intensity`, in the working colour space.
+    pub ground_color: Color,
     /// `cos( light.angle )` — `SpotLightNode.update()`.
     pub cone_cos: f64,
     /// `cos( light.angle * ( 1 - light.penumbra ) )`.
     pub penumbra_cos: f64,
     /// `light.shadow.matrix` — bias ∘ projection ∘ the shadow camera's
-    /// `matrixWorldInverse`.
+    /// `matrixWorldInverse`, or `makeTranslation( -lightWorldPos )` for a
+    /// point light.
     pub shadow_matrix: Matrix4,
+    /// `light.shadow.camera.near` / `.far` — `PointShadowNode`'s depth test.
+    pub shadow_camera_near: f64,
+    pub shadow_camera_far: f64,
     /// `light.shadow.bias`.
     pub shadow_bias: f64,
     /// `light.shadow.normalBias`.
@@ -306,9 +316,12 @@ impl Default for LightState {
             decay: 2.0,
             world_position: Vector3::new(0.0, 0.0, 0.0),
             target_position: Vector3::new(0.0, 0.0, 0.0),
+            ground_color: Color::new(0.0, 0.0, 0.0),
             cone_cos: 0.0,
             penumbra_cos: 0.0,
             shadow_matrix: Matrix4::identity(),
+            shadow_camera_near: 0.5,
+            shadow_camera_far: 500.0,
             shadow_bias: 0.0,
             shadow_normal_bias: 0.0,
             shadow_radius: 1.0,
@@ -332,11 +345,13 @@ pub struct UniformContext<'a> {
     pub material_specular: Color,
     pub material_emissive: Color,
     pub material_emissive_intensity: f64,
+    pub material_metalness: f64,
+    pub material_roughness: f64,
+    pub material_bump_scale: f64,
     pub env_rotation: Matrix4,
     pub background_rotation: Matrix4,
     pub background_blurriness: f64,
     pub background_intensity: f64,
-    pub texture_matrix: Matrix3,
     pub viewport: Vector2,
     pub time: f64,
     /// `renderer.toneMappingExposure`.
@@ -369,11 +384,14 @@ impl Default for UniformContext<'_> {
             ),
             material_emissive: Color::new(0.0, 0.0, 0.0),
             material_emissive_intensity: 1.0,
+            // `MeshStandardMaterial` defaults.
+            material_metalness: 0.0,
+            material_roughness: 1.0,
+            material_bump_scale: 1.0,
             env_rotation: Matrix4::identity(),
             background_rotation: Matrix4::identity(),
             background_blurriness: 0.0,
             background_intensity: 1.0,
-            texture_matrix: Matrix3::identity(),
             viewport: Vector2::new(0.0, 0.0),
             time: 0.0,
             tone_mapping_exposure: 1.0,
@@ -425,7 +443,9 @@ impl UniformContext<'_> {
                 UniformSource::MaterialEmissiveIntensity => {
                     vec![self.material_emissive_intensity as f32]
                 }
-                UniformSource::TextureMatrix => self.texture_matrix.to_padded_f32_array().to_vec(),
+                UniformSource::MaterialMetalness => vec![self.material_metalness as f32],
+                UniformSource::MaterialRoughness => vec![self.material_roughness as f32],
+                UniformSource::MaterialBumpScale => vec![self.material_bump_scale as f32],
                 UniformSource::EnvRotationMatrix => self.env_rotation.to_f32_array().to_vec(),
                 UniformSource::BackgroundRotation => {
                     self.background_rotation.to_f32_array().to_vec()
@@ -444,6 +464,10 @@ impl UniformContext<'_> {
                         light.color.b as f32,
                     ]
                 }
+                UniformSource::LightWorldPosition(i) => {
+                    let p = self.lights[*i].world_position;
+                    vec![p.x as f32, p.y as f32, p.z as f32]
+                }
                 UniformSource::LightCutoffDistance(i) => vec![self.lights[*i].distance as f32],
                 UniformSource::LightDecay(i) => vec![self.lights[*i].decay as f32],
                 UniformSource::LightViewPosition(i) => {
@@ -453,19 +477,23 @@ impl UniformContext<'_> {
                 // `Morph.js`' `OnObjectUpdate`: `base.value = 1 - Σ influences`
                 // (or 1 when `morphTargetsRelative`).
                 UniformSource::MorphBase => vec![self.morph_base as f32],
-                UniformSource::LightWorldPosition(i) => {
-                    let p = self.lights[*i].world_position;
-                    vec![p.x as f32, p.y as f32, p.z as f32]
-                }
                 UniformSource::LightTargetPosition(i) => {
                     let p = self.lights[*i].target_position;
                     vec![p.x as f32, p.y as f32, p.z as f32]
+                }
+                UniformSource::LightGroundColor(i) => {
+                    let c = self.lights[*i].ground_color;
+                    vec![c.r as f32, c.g as f32, c.b as f32]
                 }
                 UniformSource::LightConeCos(i) => vec![self.lights[*i].cone_cos as f32],
                 UniformSource::LightPenumbraCos(i) => vec![self.lights[*i].penumbra_cos as f32],
                 UniformSource::ShadowMatrix(i) => {
                     self.lights[*i].shadow_matrix.to_f32_array().to_vec()
                 }
+                UniformSource::ShadowCameraNear(i) => {
+                    vec![self.lights[*i].shadow_camera_near as f32]
+                }
+                UniformSource::ShadowCameraFar(i) => vec![self.lights[*i].shadow_camera_far as f32],
                 UniformSource::ShadowBias(i) => vec![self.lights[*i].shadow_bias as f32],
                 UniformSource::ShadowNormalBias(i) => {
                     vec![self.lights[*i].shadow_normal_bias as f32]

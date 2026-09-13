@@ -69,6 +69,7 @@ pub enum TextureKind {
     /// `texture_depth_2d`, but with a `sampler_comparison` beside it.
     DepthCompare2D,
     Cube,
+    DepthCube,
 }
 
 impl TextureKind {
@@ -79,13 +80,14 @@ impl TextureKind {
             TextureKind::Float2DArray => "texture_2d_array<f32>",
             TextureKind::Depth2D | TextureKind::DepthCompare2D => "texture_depth_2d",
             TextureKind::Cube => "texture_cube<f32>",
+            TextureKind::DepthCube => "texture_depth_cube",
         }
     }
 
     /// The declared WGSL type of the sampler beside the texture.
     pub fn sampler_wgsl(self) -> &'static str {
         match self {
-            TextureKind::DepthCompare2D => "sampler_comparison",
+            TextureKind::DepthCompare2D | TextureKind::DepthCube => "sampler_comparison",
             _ => "sampler",
         }
     }
@@ -94,6 +96,11 @@ impl TextureKind {
     /// and reads it with `textureLoad`.
     pub fn has_sampler(self) -> bool {
         !matches!(self, TextureKind::Depth2D | TextureKind::Float2DArray)
+    }
+
+    /// A shadow map is read through a comparison sampler.
+    pub fn is_comparison(self) -> bool {
+        matches!(self, TextureKind::DepthCompare2D | TextureKind::DepthCube)
     }
 }
 

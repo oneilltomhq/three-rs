@@ -23,11 +23,11 @@ pub use render_list::{project_object, ProjectCamera, RenderItem, RenderList};
 pub use render_pipeline::RenderPipeline;
 pub use render_target::{RenderTarget, RenderTargetInner, RenderTargetOptions};
 
-use crate::cameras::{OrthographicCamera, RenderCamera};
-use crate::core::{BufferGeometry, Index};
+use crate::cameras::{OrthographicCamera, PerspectiveCamera, RenderCamera};
+use crate::core::{BufferGeometry, Index, Node};
 use crate::geometries::{quad_geometry, sphere_geometry};
-use crate::lights::{LightKind, LightObject};
-use crate::materials::phong::LightDesc;
+use crate::lights::{LightKind, LightObject, CUBE_DIRECTIONS, CUBE_UPS};
+use crate::materials::phong::{LightDesc, ShadowMap};
 use crate::materials::{self, MeshBasicNodeMaterial, SetupContext, Side, ToneMapping};
 use crate::math::{Color, Matrix4, Vector2};
 use crate::nodes::node::{BufferSource, TextureSource};
@@ -38,8 +38,8 @@ use crate::nodes::{BindingDesc, NodeBuilder, NodeProgram};
 use crate::objects::{Background, InstancedBufferAttribute, QuadMesh, Scene};
 use crate::testing::DeterministicRandom;
 use crate::textures::{
-    DataArrayTexture,
-    CubeTexture, DepthTexture, Texture, TextureFilter, TextureType, Wrapping,
+    CubeDepthTexture, CubeTexture, DataArrayTexture, DepthTexture, Texture, TextureFilter,
+    TextureType, Wrapping,
 };
 
 struct GeometryGpu {
@@ -169,6 +169,9 @@ pub struct Renderer {
     /// so the full-screen quad draws straight into the canvas.
     neutral_output: bool,
 
+    /// `renderer.toneMappingExposure`.
+    pub tone_mapping_exposure: f64,
+
     /// `NodeFrame.time`. `performance.now()` is pinned to 0 by the harness, so
     /// every frame's delta is 0 and this stays 0.
     time: f64,
@@ -189,10 +192,15 @@ pub struct Renderer {
     /// The depth texture of each shadow-casting light's shadow map, keyed by the
     /// light's index in the render list — `light.shadow.map` in three.js. Filled
     /// by the shadow pass, before any material setup reads it.
-    shadow_maps: HashMap<usize, DepthTexture>,
-    /// `light.shadow.map` — the `RenderTarget` each shadow pass draws into,
-    /// kept across frames because `ShadowNode` allocates it once.
+    shadow_maps: HashMap<usize, ShadowMap>,
+    /// `light.shadow.map` — the `RenderTarget` each spot/directional shadow
+    /// pass draws into, kept across frames because `ShadowNode` allocates it
+    /// once.
     shadow_targets: HashMap<usize, RenderTarget>,
+    /// `PointShadowNode.setupRenderTarget()`'s cube render target: the
+    /// `CubeDepthTexture` the shader samples plus the colour attachment the
+    /// pass needs and nothing samples.
+    cube_shadow_targets: HashMap<usize, (CubeDepthTexture, wgpu::Texture)>,
 
     /// Whether the device enabled `FLOAT32_FILTERABLE`; see `new()`.
     float32_filterable: bool,
@@ -287,6 +295,7 @@ impl Renderer {
             quad_geometry: None,
             quad_camera: OrthographicCamera::new(-1.0, 1.0, 1.0, -1.0, 0.0, 1.0),
             neutral_output: false,
+            tone_mapping_exposure: 1.0,
             time: 0.0,
             present: None,
             random: DeterministicRandom::new(),
@@ -294,6 +303,7 @@ impl Renderer {
             shadow_map_enabled: false,
             shadow_maps: HashMap::new(),
             shadow_targets: HashMap::new(),
+            cube_shadow_targets: HashMap::new(),
             float32_filterable,
         }
     }
@@ -504,7 +514,8 @@ impl Renderer {
         let lights: Vec<LightState> = render_list
             .lights
             .iter()
-            .map(|node| {
+            .enumerate()
+            .map(|(_index, node)| {
                 let object = node.borrow();
                 let light = object
                     .light()
@@ -521,9 +532,12 @@ impl Renderer {
                     decay: light.decay,
                     world_position: LightObject::world_position(&object.matrix_world),
                     target_position: light.target_world_position(),
+                    ground_color: light.ground_color_intensity(),
                     cone_cos: light.cone_cos(),
                     penumbra_cos: light.penumbra_cos(),
                     shadow_matrix: shadow.map_or_else(Matrix4::identity, |s| s.matrix),
+                    shadow_camera_near: shadow.map_or(0.5, |s| s.camera.near()),
+                    shadow_camera_far: shadow.map_or(500.0, |s| s.camera.far()),
                     shadow_bias: shadow.map_or(0.0, |s| s.bias),
                     shadow_normal_bias: shadow.map_or(0.0, |s| s.normal_bias),
                     shadow_radius: shadow.map_or(1.0, |s| s.radius),
@@ -566,6 +580,17 @@ impl Renderer {
         }
 
         for (index, node) in render_list.lights.iter().enumerate() {
+            // `PointShadowNode.renderShadow()` — six faces into a cube map.
+            let is_point = {
+                let object = node.borrow();
+                object.cast_shadow
+                    && object.light().is_some_and(|l| l.kind == LightKind::Point && l.shadow.is_some())
+            };
+            if is_point {
+                self.render_point_shadow(index, node, scene, camera);
+                continue;
+            }
+
             // `shadow.camera.updateProjectionMatrix()` (`ShadowNode.setup()`)
             // and `shadow.updateMatrices( light )` (`ShadowNode.renderShadow()`).
             let prepared = {
@@ -690,11 +715,199 @@ impl Renderer {
 
             self.shadow_maps.insert(
                 index,
-                target
-                    .depth_texture()
-                    .expect("three-rs: the shadow target has a depth texture"),
+                ShadowMap::Planar(
+                    target
+                        .depth_texture()
+                        .expect("three-rs: the shadow target has a depth texture"),
+                ),
             );
         }
+    }
+
+    /// `PointShadowNode.renderShadow()` + `PointLightShadow.updateMatrices()`:
+    /// the casting point light at `index` renders its six cube faces into a
+    /// `CubeDepthTexture` before the scene pass, each face through a
+    /// `PerspectiveCamera( 90, 1, near, far )` looking down `CUBE_DIRECTIONS`.
+    fn render_point_shadow(
+        &mut self,
+        index: usize,
+        node: &Node,
+        scene: &Scene,
+        camera: &dyn RenderCamera,
+    ) {
+        // `PointLightShadow.updateMatrices( light )`: `far = light.distance ||
+        // camera.far`, `shadowMatrix.makeTranslation( - lightPositionWorld )`.
+        let (light_world_position, near, far, size) = {
+            let mut object = node.borrow_mut();
+            let light_world_position = LightObject::world_position(&object.matrix_world);
+            let light = object
+                .light_mut()
+                .expect("three-rs: the light list only holds lights");
+            let distance = light.distance;
+            let shadow = light
+                .shadow
+                .as_mut()
+                .expect("three-rs: a point light carries a PointLightShadow");
+            shadow.update_point_matrices(light_world_position, distance);
+            (
+                light_world_position,
+                shadow.camera.near(),
+                shadow.camera.far(),
+                shadow.map_size.x as u32,
+            )
+        };
+
+        // `PointShadowNode.setupRenderTarget()`: a cube render target whose
+        // depth attachment is the `CubeDepthTexture` the shader samples.
+        let (depth_texture, color) = self
+            .cube_shadow_targets
+            .get(&index)
+            .cloned()
+            .unwrap_or_else(|| {
+                let depth_texture = CubeDepthTexture::new(size);
+                let gpu = self.device.create_texture(&wgpu::TextureDescriptor {
+                    label: Some("three-rs point shadow depth"),
+                    size: wgpu::Extent3d {
+                        width: size,
+                        height: size,
+                        depth_or_array_layers: 6,
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: depth_texture.gpu_format(),
+                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                        | wgpu::TextureUsages::TEXTURE_BINDING,
+                    view_formats: &[],
+                });
+                depth_texture.inner().borrow_mut().gpu = Some(gpu);
+                // The colour attachment of the cube render target. Nothing
+                // ever samples it — the shadow material writes black — but
+                // the pass needs a target.
+                let color = self.device.create_texture(&wgpu::TextureDescriptor {
+                    label: Some("three-rs point shadow map"),
+                    size: wgpu::Extent3d {
+                        width: size,
+                        height: size,
+                        depth_or_array_layers: 6,
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: wgpu::TextureFormat::Rgba8Unorm,
+                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                    view_formats: &[],
+                });
+                let entry = (depth_texture, color);
+                self.cube_shadow_targets.insert(index, entry.clone());
+                entry
+            });
+
+        for face in 0..6 {
+            let mut face_camera = PerspectiveCamera::new(90.0, 1.0, near, far);
+            {
+                let mut object = face_camera.node.borrow_mut();
+                object.position = light_world_position;
+                object.up = CUBE_UPS[face];
+            }
+            let mut target = light_world_position;
+            target.add(&CUBE_DIRECTIONS[face]);
+            face_camera.look_at(&target);
+            face_camera.update_matrix_world();
+
+            // `renderer.render( scene, camera )` per face: a full
+            // `_projectObject` walk against the face camera's own frustum,
+            // then `getShadowRenderObjectFunction`'s `object.castShadow`
+            // filter.
+            let mut face_list = RenderList::new();
+            project_object(
+                &scene.node,
+                &ProjectCamera::from_parts(
+                    camera.layers(),
+                    &face_camera.projection_matrix,
+                    &face_camera.matrix_world_inverse,
+                    camera.coordinate_system(),
+                ),
+                0.0,
+                &mut face_list,
+                self.sort_objects,
+            );
+            face_list.sort();
+
+            let default_material = MeshBasicNodeMaterial::new();
+            let mut items = Vec::with_capacity(face_list.len());
+            for item in face_list.items() {
+                let object = item.node.borrow();
+                if !object.cast_shadow {
+                    continue;
+                }
+                let mesh = object
+                    .mesh()
+                    .expect("three-rs: the render list only holds meshes");
+                let source = mesh.material.as_ref().unwrap_or(&default_material);
+                let instance_matrix = object.instance_matrix().cloned();
+                let instance_count = object.instance_count();
+                items.push(Renderable {
+                    geometry: mesh.geometry.clone(),
+                    material: materials::shadow_material(source),
+                    setup: SetupContext {
+                        instance_count: instance_matrix.as_ref().map(|_| instance_count as usize),
+                        instanced: instance_matrix.is_some(),
+                        lights: Vec::new(),
+                        morph: None,
+                    },
+                    fog: None,
+                    model_world: item.matrix_world,
+                    instance_matrix,
+                    instance_count,
+                    morph_influences: Vec::new(),
+                    morph_base: 1.0,
+                });
+            }
+
+            let color_view = color.create_view(&wgpu::TextureViewDescriptor {
+                dimension: Some(wgpu::TextureViewDimension::D2),
+                base_array_layer: face as u32,
+                array_layer_count: Some(1),
+                ..Default::default()
+            });
+            let depth_view = {
+                let inner = depth_texture.inner().borrow();
+                inner
+                    .gpu
+                    .as_ref()
+                    .unwrap()
+                    .create_view(&wgpu::TextureViewDescriptor {
+                        dimension: Some(wgpu::TextureViewDimension::D2),
+                        base_array_layer: face as u32,
+                        array_layer_count: Some(1),
+                        ..Default::default()
+                    })
+            };
+
+            let pass_target = PassTarget {
+                color: color_view,
+                resolve: None,
+                depth: Some(depth_view),
+                color_format: wgpu::TextureFormat::Rgba8Unorm,
+                depth_format: Some(depth_texture.gpu_format()),
+                sample_count: 1,
+                width: size,
+                height: size,
+            };
+
+            let uniforms = UniformContext {
+                camera_projection: face_camera.projection_matrix,
+                camera_view: face_camera.matrix_world_inverse,
+                camera_world: face_camera.node.borrow().matrix_world,
+                time: self.time,
+                ..Default::default()
+            };
+
+            self.draw(&items, uniforms, &pass_target, Some([1.0, 1.0, 1.0, 1.0]));
+        }
+
+        self.shadow_maps.insert(index, ShadowMap::Cube(depth_texture));
     }
 
     /// `Renderer._renderScene()`'s render-list half: `renderList.begin()`,
@@ -842,6 +1055,10 @@ impl Renderer {
                 material_emissive_intensity: item.material.emissive_intensity,
                 morph_base: item.morph_base,
                 morph_influences: &item.morph_influences,
+                material_metalness: item.material.metalness,
+                material_roughness: item.material.roughness,
+                material_bump_scale: item.material.bump_scale,
+                tone_mapping_exposure: self.tone_mapping_exposure,
                 viewport: Vector2::new(target.width as f64, target.height as f64),
                 ..camera_uniforms
             };
@@ -1256,6 +1473,17 @@ impl Renderer {
                     ..Default::default()
                 })
             }
+            TextureSource::CubeDepth(cube) => {
+                let inner = cube.inner().borrow();
+                let gpu = inner
+                    .gpu
+                    .as_ref()
+                    .expect("three-rs: the shadow map has not been rendered into yet");
+                gpu.create_view(&wgpu::TextureViewDescriptor {
+                    dimension: Some(wgpu::TextureViewDimension::Cube),
+                    ..Default::default()
+                })
+            }
         }
     }
 
@@ -1318,6 +1546,21 @@ impl Renderer {
                     address_mode_w: wgpu::AddressMode::ClampToEdge,
                     mag_filter: filter(inner.mag_filter),
                     min_filter: filter(inner.min_filter),
+                    mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+                    compare: Some(wgpu::CompareFunction::LessEqual),
+                    ..Default::default()
+                })
+            }
+            TextureSource::CubeDepth(_) => {
+                // `compareFunction = LessEqualCompare` makes this a comparison
+                // sampler; `CubeDepthTexture`'s filters are `LinearFilter`.
+                self.device.create_sampler(&wgpu::SamplerDescriptor {
+                    label: Some("three-rs shadow sampler"),
+                    address_mode_u: wgpu::AddressMode::ClampToEdge,
+                    address_mode_v: wgpu::AddressMode::ClampToEdge,
+                    address_mode_w: wgpu::AddressMode::ClampToEdge,
+                    mag_filter: wgpu::FilterMode::Linear,
+                    min_filter: wgpu::FilterMode::Linear,
                     mipmap_filter: wgpu::MipmapFilterMode::Nearest,
                     compare: Some(wgpu::CompareFunction::LessEqual),
                     ..Default::default()

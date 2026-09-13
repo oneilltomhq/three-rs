@@ -5,6 +5,7 @@
 #[path = "webgpu_morphtargets.rs"]
 mod morphtargets;
 
+use three_rs::materials::phong::{LightDesc, ShadowMap};
 use three_rs::materials::{setup, MeshBasicNodeMaterial, SetupContext, Side};
 use three_rs::lights::LightKind;
 use three_rs::math::Color;
@@ -84,7 +85,6 @@ fn strip_ids(line: &str) -> String {
     out
 }
 
-use three_rs::materials::phong::LightDesc;
 use three_rs::nodes::materialx::{mx_fractal_noise_float, mx_fractal_noise_vec3};
 
 fn main() {
@@ -151,6 +151,18 @@ fn main() {
     out.fragment_node = Some(three_rs::materials::output_fragment_node(&framebuffer, three_rs::ToneMapping::None));
     show("output_color_transform", &out, SetupContext::default());
 
+    // rung 8: the same pass with Reinhard tone mapping and exposure.
+    let mut out_reinhard = MeshBasicNodeMaterial::new();
+    out_reinhard.fragment_node = Some(three_rs::materials::output_fragment_node(
+        &framebuffer,
+        three_rs::materials::ToneMapping::Reinhard,
+    ));
+    show(
+        "output_color_transform_reinhard",
+        &out_reinhard,
+        SetupContext::default(),
+    );
+
     // rung 4: the textured box and the hue/saturation quad.
     let uv_texture = Texture::new(1024, 1024, Some(vec![0; 4]));
     let mut box_material = MeshBasicNodeMaterial::new();
@@ -214,6 +226,62 @@ fn main() {
     ));
     right.shininess = 90.0;
     show_fog("phong_right", &right, four.clone(), Some(&fog));
+
+    // rung 8: the four physical materials, against
+    // `handoff/scouts/rung8/MeshStandardMaterial_*`.
+    let bulb_lights = |shadow: Option<ShadowMap>| SetupContext {
+        lights: vec![
+            LightDesc { index: 0, kind: LightKind::Point, shadow_map: shadow },
+            LightDesc { index: 1, kind: LightKind::Hemisphere, shadow_map: None },
+        ],
+        ..SetupContext::default()
+    };
+    let two_lights = bulb_lights(None);
+
+    let mut bulb = MeshBasicNodeMaterial::standard(Color::from_hex(0x000000), 1.0, 0.0);
+    bulb.emissive = Color::from_hex(0xffffee);
+    bulb.emissive_intensity = 1.0;
+    show("standard_bulb", &bulb, two_lights.clone());
+
+    let brick_for_shadow = Texture::new(512, 512, Some(vec![0; 4]));
+    let hardwood = Texture::new(1024, 1024, Some(vec![0; 4]));
+    let hardwood_bump = Texture::new(1024, 1024, Some(vec![0; 4]));
+    let hardwood_roughness = Texture::new(1024, 1024, Some(vec![0; 4]));
+    let mut floor = MeshBasicNodeMaterial::standard(Color::new(1.0, 1.0, 1.0), 0.8, 0.2);
+    floor.map = Some(hardwood.clone());
+    floor.bump_map = Some(hardwood_bump.clone());
+    floor.roughness_map = Some(hardwood_roughness.clone());
+    show("standard_floor", &floor, two_lights.clone());
+    // The same floor material with the bulb's shadow wired in: the one
+    // `receiveShadow` mesh of the scene. Target: `MeshStandardMaterial_18`.
+    show(
+        "standard_floor_shadow",
+        &floor,
+        bulb_lights(Some(ShadowMap::Cube(three_rs::textures::CubeDepthTexture::new(512)))),
+    );
+    // `ShadowBaseNode._getShadowMaterial()` for a casting material with a map.
+    // Target: `ShadowMaterial_24`.
+    let mut shadow = MeshBasicNodeMaterial::new();
+    shadow.color_node = Some(vec4_join(vec![
+        vec3(0.0, 0.0, 0.0),
+        float(1.0).mul(texture(&brick_for_shadow).a()),
+    ]));
+    shadow.side = Side::Back;
+    show("shadow_material", &shadow, SetupContext::default());
+
+    let brick = Texture::new(512, 512, Some(vec![0; 4]));
+    let brick_bump = Texture::new(512, 512, Some(vec![0; 4]));
+    let mut cube_material = MeshBasicNodeMaterial::standard(Color::new(1.0, 1.0, 1.0), 0.7, 0.2);
+    cube_material.map = Some(brick.clone());
+    cube_material.bump_map = Some(brick_bump.clone());
+    show("standard_cube", &cube_material, two_lights.clone());
+
+    let earth = Texture::new(2048, 1024, Some(vec![0; 4]));
+    let earth_specular = Texture::new(2048, 1024, Some(vec![0; 4]));
+    let mut ball = MeshBasicNodeMaterial::standard(Color::new(1.0, 1.0, 1.0), 0.5, 1.0);
+    ball.map = Some(earth.clone());
+    ball.metalness_map = Some(earth_specular.clone());
+    show("standard_ball", &ball, two_lights);
 
     let mut sphere = MeshBasicNodeMaterial::phong(Color::new(1.0, 1.0, 1.0));
     sphere.lights = false;
@@ -302,12 +370,12 @@ fn main() {
             LightDesc {
                 index: 1,
                 kind: LightKind::Spot,
-                shadow_map: shadows.then(|| spot_map.clone()),
+                shadow_map: shadows.then(|| ShadowMap::Planar(spot_map.clone())),
             },
             LightDesc {
                 index: 2,
                 kind: LightKind::Directional,
-                shadow_map: shadows.then(|| dir_map.clone()),
+                shadow_map: shadows.then(|| ShadowMap::Planar(dir_map.clone())),
             },
         ],
         ..SetupContext::default()

@@ -19,8 +19,8 @@ use super::node::{
     Type, UniformGroup,
     UniformNode, UniformSource, VarDef, VaryingDef,
 };
-use crate::math::Color;
-use crate::textures::{CubeTexture, DataArrayTexture, DepthTexture, Texture};
+use crate::math::{Color, Matrix3};
+use crate::textures::{CubeDepthTexture, CubeTexture, DataArrayTexture, DepthTexture, Texture};
 
 pub use super::node::TextureSource;
 
@@ -49,8 +49,13 @@ thread_local! {
     /// three.js' per-build `nodeData` plus its `subBuildsCache`.
     static NORMAL_VIEW: RefCell<HashMap<(Option<&'static str>, Option<usize>, bool), NodeRef>> =
         RefCell::new(HashMap::new());
-    /// `tangentView` / `bitangentView`, keyed by layer the same way.
-    static TANGENT_VIEW: RefCell<HashMap<Option<&'static str>, (NodeRef, NodeRef)>> =
+    /// `tangentView` / `bitangentView`, keyed the same way.
+    static TANGENT_VIEW: RefCell<HashMap<(Option<&'static str>, Option<usize>), (NodeRef, NodeRef)>> =
+        RefCell::new(HashMap::new());
+    /// `normalWorld`, keyed the same way: it reads `normalView`, so a plain
+    /// singleton would bake in whichever material was built first and then
+    /// re-assign `normalView` from the geometric normal in every later one.
+    static NORMAL_WORLD: RefCell<HashMap<(Option<&'static str>, Option<usize>), NodeRef>> =
         RefCell::new(HashMap::new());
     /// `builder.context.setupPositionView()` — `NodeMaterial.setup()` installs
     /// it before either stage is flowed, and `SpriteNodeMaterial` overrides it
@@ -395,6 +400,13 @@ pub fn floor(x: impl Into<NodeRef>) -> NodeRef {
     math("floor", vec![x], ty)
 }
 
+/// `fract( x )`.
+pub fn fract(x: impl Into<NodeRef>) -> NodeRef {
+    let x = x.into();
+    let ty = x.ty();
+    math("fract", vec![x], ty)
+}
+
 /// `sign( x )`.
 pub fn sign(x: impl Into<NodeRef>) -> NodeRef {
     let x = x.into();
@@ -568,6 +580,18 @@ pub fn light_view_position(index: usize) -> NodeRef {
     )
 }
 
+/// `HemisphereLightNode`'s two extra render-group uniforms: the ground colour
+/// (already multiplied by the light's intensity) and the light's **world**
+/// position, which `lightPosition( light )` resolves to.
+pub fn light_ground_color(index: usize) -> NodeRef {
+    uniform(
+        UniformSource::LightGroundColor(index),
+        Type::Vec3,
+        UniformGroup::Render,
+        None,
+    )
+}
+
 /// `lightPosition( light )` — `light.matrixWorld`'s translation.
 pub fn light_world_position(index: usize) -> NodeRef {
     uniform(
@@ -613,6 +637,26 @@ pub fn shadow_matrix(index: usize) -> NodeRef {
     uniform(
         UniformSource::ShadowMatrix(index),
         Type::Mat4,
+        UniformGroup::Render,
+        None,
+    )
+}
+
+/// `PointShadowNode`'s shadow camera clipping planes —
+/// `uniform( 'float' ).onRenderUpdate( () => shadow.camera.near / far )`.
+pub fn shadow_camera_near(index: usize) -> NodeRef {
+    uniform(
+        UniformSource::ShadowCameraNear(index),
+        Type::F32,
+        UniformGroup::Render,
+        None,
+    )
+}
+
+pub fn shadow_camera_far(index: usize) -> NodeRef {
+    uniform(
+        UniformSource::ShadowCameraFar(index),
+        Type::F32,
         UniformGroup::Render,
         None,
     )
@@ -668,6 +712,35 @@ pub fn shadow_intensity(index: usize) -> NodeRef {
     )
 }
 
+/// `materialMetalness` / `materialRoughness`.
+pub fn material_metalness() -> NodeRef {
+    uniform(
+        UniformSource::MaterialMetalness,
+        Type::F32,
+        UniformGroup::Object,
+        None,
+    )
+}
+
+pub fn material_roughness() -> NodeRef {
+    uniform(
+        UniformSource::MaterialRoughness,
+        Type::F32,
+        UniformGroup::Object,
+        None,
+    )
+}
+
+/// `materialBumpScale`.
+pub fn material_bump_scale() -> NodeRef {
+    uniform(
+        UniformSource::MaterialBumpScale,
+        Type::F32,
+        UniformGroup::Object,
+        None,
+    )
+}
+
 /// `toneMappingExposure` — `RenderOutputNode`'s render-group `f32`.
 pub fn tone_mapping_exposure() -> NodeRef {
     uniform(
@@ -718,6 +791,13 @@ pub fn normal_map(node: impl Into<NodeRef>) -> NodeRef {
             .mul(texel.mul(2.0).sub(1.0).xyz())
             .normalize()
     })
+}
+
+/// `sqrt( x )`.
+pub fn sqrt(x: impl Into<NodeRef>) -> NodeRef {
+    let x = x.into();
+    let ty = x.ty();
+    math("sqrt", vec![x], ty)
 }
 
 /// `max( a, b )`.
@@ -871,6 +951,15 @@ impl NodeRef {
     /// `x * x * x`, not a `pow()` call.
     pub fn pow3(&self) -> NodeRef {
         self.mul(self.clone()).mul(self.clone())
+    }
+
+    /// `node.reciprocal()` — `1.0 / node`, which is how `OperatorNode` prints it.
+    pub fn reciprocal(&self) -> NodeRef {
+        float(1.0).div(self.clone())
+    }
+
+    pub fn exp2(&self) -> NodeRef {
+        exp2(self.clone())
     }
     pub fn max(&self, other: impl Into<NodeRef>) -> NodeRef {
         math("max", vec![self.clone(), other.into()], self.ty())
@@ -1058,6 +1147,17 @@ accessor!(
     /// `instanceIndex`.
     instance_index,
     NodeRef::new(Node::Builtin(Builtin::InstanceIndex))
+);
+accessor!(
+    /// `frontFacing` — `@builtin( front_facing )`, fragment stage only.
+    front_facing,
+    NodeRef::new(Node::Builtin(Builtin::FrontFacing))
+);
+accessor!(
+    /// `faceDirection` — `float( frontFacing ).mul( 2 ).sub( 1 )`: `1` on a
+    /// front face, `-1` on a back face.
+    face_direction,
+    front_facing().to(Type::F32).mul(2.0).sub(1.0)
 );
 accessor!(
     /// `screenCoordinate`'s raw source: `@builtin( position )`.
@@ -1349,6 +1449,18 @@ pub fn normal_view_geometry() -> NodeRef {
 /// the geometric normal again. Keyed by (layer, normal value) so that two
 /// materials in the same process get their own node, which is what three.js'
 /// per-build `nodeData` gives it for free.
+/// The cache key every node that reads `normalView` shares: the open sub-build
+/// layer plus the material's own normal node.
+fn normal_key() -> (Option<&'static str>, Option<usize>) {
+    let layer = SUB_BUILD.with(|s| *s.borrow());
+    let value = if layer.is_some() {
+        None
+    } else {
+        NORMAL_VALUE.with(|v| v.borrow().clone())
+    };
+    (layer, value.as_ref().map(|v| v.key()))
+}
+
 pub fn normal_view() -> NodeRef {
     let layer = SUB_BUILD.with(|s| *s.borrow());
     let value = if layer.is_some() {
@@ -1377,8 +1489,8 @@ pub fn normal_view() -> NodeRef {
 /// 'VERTEX' ] )` so they take the layer prefix. They are returned as a pair
 /// because `tangentViewFrame` and `bitangentViewFrame` share the `scale` temp.
 fn tangent_frame() -> (NodeRef, NodeRef) {
-    let layer = SUB_BUILD.with(|s| *s.borrow());
-    if let Some(pair) = TANGENT_VIEW.with(|m| m.borrow().get(&layer).cloned()) {
+    let key = normal_key();
+    if let Some(pair) = TANGENT_VIEW.with(|m| m.borrow().get(&key).cloned()) {
         return pair;
     }
     // `q1perp = dFdy( positionView ).cross( N )`, `q0perp = N.cross( dFdx(
@@ -1412,7 +1524,7 @@ fn tangent_frame() -> (NodeRef, NodeRef) {
             to_var_untagged("bitangentViewFrame", b.mul(scale)),
         ),
     );
-    TANGENT_VIEW.with(|m| m.borrow_mut().insert(layer, pair.clone()));
+    TANGENT_VIEW.with(|m| m.borrow_mut().insert(key, pair.clone()));
     pair
 }
 
@@ -1425,17 +1537,22 @@ pub fn tangent_view() -> NodeRef {
 pub fn bitangent_view() -> NodeRef {
     tangent_frame().1
 }
-accessor!(
-    /// `normalWorld` — `normalView` rotated out of view space.
-    normal_world,
-    to_var(
+/// `normalWorld` — `normalView` rotated out of view space.
+pub fn normal_world() -> NodeRef {
+    let key = normal_key();
+    if let Some(node) = NORMAL_WORLD.with(|m| m.borrow().get(&key).cloned()) {
+        return node;
+    }
+    let node = to_var(
         Some("normalWorld"),
         vec4_join(vec![normal_view(), float(0.0)])
             .mul(camera_view_matrix())
             .xyz()
-            .normalize()
-    )
-);
+            .normalize(),
+    );
+    NORMAL_WORLD.with(|m| m.borrow_mut().insert(key, node.clone()));
+    node
+}
 accessor!(
     /// `normalWorldGeometry`.
     normal_world_geometry,
@@ -1515,6 +1632,39 @@ lighting_var!(indirect_diffuse, "indirectDiffuse", vec3(0.0, 0.0, 0.0));
 lighting_var!(indirect_specular, "indirectSpecular", vec3(0.0, 0.0, 0.0));
 lighting_var!(irradiance, "irradiance", vec3(0.0, 0.0, 0.0));
 lighting_var!(ambient_occlusion, "ambientOcclusion", float(1.0));
+// `radiance` / `iblIrradiance` are `vec3().toVar()` on the lighting context
+// too; nothing adds to them without an environment node.
+lighting_var!(radiance, "radiance", vec3(0.0, 0.0, 0.0));
+lighting_var!(ibl_irradiance, "iblIrradiance", vec3(0.0, 0.0, 0.0));
+
+// `PhysicalLightingModel`'s properties.
+prop!(metalness, "Metalness", Type::F32);
+prop!(single_scattering, "singleScattering", Type::Vec3);
+prop!(multi_scattering, "multiScattering", Type::Vec3);
+prop!(roughness, "Roughness", Type::F32);
+prop!(specular_color_blended, "SpecularColorBlended", Type::Vec3);
+prop!(specular_f90, "SpecularF90", Type::F32);
+prop!(diffuse_contribution, "DiffuseContribution", Type::Vec3);
+prop!(
+    single_scattering_dielectric,
+    "singleScatteringDielectric",
+    Type::Vec3
+);
+prop!(
+    multi_scattering_dielectric,
+    "multiScatteringDielectric",
+    Type::Vec3
+);
+prop!(
+    single_scattering_metallic,
+    "singleScatteringMetallic",
+    Type::Vec3
+);
+prop!(
+    multi_scattering_metallic,
+    "multiScatteringMetallic",
+    Type::Vec3
+);
 
 // ---------------------------------------------------------------------------
 // textures
@@ -1530,26 +1680,86 @@ fn texture_node(source: TextureSource, uv: NodeRef, mode: SampleMode, ty: Type) 
 }
 
 /// The `texture.matrix * vec3( uv, 1.0 )` transform `TextureNode.setupUV()`
-/// applies before sampling.
-fn transformed_uv(uv: NodeRef) -> NodeRef {
-    uniform(
-        UniformSource::TextureMatrix,
-        Type::Mat3,
-        UniformGroup::Object,
-        None,
-    )
-    .mul(vec3_join(vec![uv, float(1.0)]))
-    .xy()
+/// applies before sampling. `key` identifies the texture the matrix belongs to
+/// (`(kind tag, texture id)`), so that two samples of the same map share one
+/// uniform member the way three.js' per-texture `uniform( texture.matrix )`
+/// does — `BumpMapNode` samples its map three times.
+fn transformed_uv(uv: NodeRef, key: (u8, usize), matrix: Matrix3) -> NodeRef {
+    thread_local! {
+        static CACHE: RefCell<HashMap<(u8, usize), NodeRef>> = RefCell::new(HashMap::new());
+    }
+    let matrix_uniform = CACHE.with(|c| {
+        c.borrow_mut()
+            .entry(key)
+            .or_insert_with(|| {
+                uniform(
+                    UniformSource::Value(
+                        matrix
+                            .to_padded_f32_array()
+                            .iter()
+                            .map(|&v| v as f64)
+                            .collect(),
+                    ),
+                    Type::Mat3,
+                    UniformGroup::Object,
+                    None,
+                )
+            })
+            .clone()
+    });
+    matrix_uniform.mul(vec3_join(vec![uv, float(1.0)])).xy()
 }
 
 /// `texture( map )`.
 pub fn texture(map: &Texture) -> NodeRef {
     texture_node(
         TextureSource::Texture2D(map.clone()),
-        transformed_uv(uv()),
+        transformed_uv(uv(), (0, map.id()), map.matrix()),
         SampleMode::Sample,
         Type::Vec4,
     )
+}
+
+/// Port of `BumpMapNode` — `bumpMap( texture( bumpMap ).r, materialBumpScale )`.
+///
+/// `dHdxy_fwd` takes three taps of the height map (at `uv`, `uv + dFdx( uv )`
+/// and `uv + dFdy( uv )`, each through the map's own uv matrix) and
+/// `perturbNormalArb` rebuilds the normal from them in the screen-space frame
+/// of `positionView`, flipping with `faceDirection` on a back face.
+///
+/// Built inside the `NORMAL` sub-build layer, the way `NodeMaterial.setup()`
+/// wraps `setupNormal()`: that is what makes the normal it reads the geometric
+/// one (`NORMAL_normalView`) instead of recursing into this node.
+pub fn bump_map(map: &Texture, scale: NodeRef) -> NodeRef {
+    in_sub_build("NORMAL", || {
+        let tap = |coord: NodeRef| {
+            texture_uv(map, transformed_uv(coord, (0, map.id()), map.matrix())).x()
+        };
+        let hll = tap(uv());
+        let dhdxy = join(
+            Type::Vec2,
+            vec![
+                tap(uv().add(dpdx(uv()))).sub(hll.clone()),
+                tap(uv().add(dpdy(uv()))).sub(hll),
+            ],
+        )
+        .mul(scale);
+
+        let surf_norm = normal_view();
+        let v_sigma_x = dpdx(position_view()).normalize();
+        let v_sigma_y = dpdy(position_view()).normalize();
+        let r1 = cross(v_sigma_y, surf_norm.clone());
+        let r2 = cross(surf_norm.clone(), v_sigma_x.clone());
+        let f_det = v_sigma_x.dot(r1.clone()).mul(face_direction());
+        let v_grad = sign(f_det.clone()).mul(
+            dhdxy
+                .clone()
+                .x()
+                .mul(r1)
+                .add(dhdxy.y().mul(r2)),
+        );
+        abs(f_det).mul(surf_norm).sub(v_grad).normalize()
+    })
 }
 
 /// `texture( map, uv )` without the default UV.
@@ -1567,7 +1777,7 @@ pub fn texture_uv(map: &Texture, coord: NodeRef) -> NodeRef {
 pub fn depth_texture(map: &DepthTexture) -> NodeRef {
     texture_node(
         TextureSource::Depth(map.clone()),
-        transformed_uv(uv()),
+        transformed_uv(uv(), (1, map.id()), Matrix3::identity()),
         SampleMode::Load,
         Type::F32,
     )
@@ -1582,6 +1792,20 @@ pub fn cube_texture(map: &CubeTexture, dir: NodeRef) -> NodeRef {
         dir,
         SampleMode::Sample,
         Type::Vec4,
+    )
+}
+
+/// `cubeTexture( shadowMap, dir ).compare( dp )` for a `CubeDepthTexture`.
+///
+/// `CubeTextureNode.setupUV()` takes the depth-texture branch: no environment
+/// rotation, and the WebGPU Y flip — `vec3( uv.x, uv.y.negate(), uv.z )`.
+pub fn cube_depth_texture_compare(map: &CubeDepthTexture, dir: NodeRef, dp: NodeRef) -> NodeRef {
+    let dir = vec3_join(vec![dir.x(), dir.y().negate(), dir.z()]);
+    texture_node(
+        TextureSource::CubeDepth(map.clone()),
+        dir,
+        SampleMode::Compare(dp),
+        Type::F32,
     )
 }
 
@@ -1880,6 +2104,21 @@ pub fn shader_fn(
     })
 }
 
+/// `If( cond, () => { … } )` over a result var that was initialised first.
+///
+/// `pre` are the statements three.js emits ahead of the result var, `body` the
+/// statements inside the block (the last of which assigns the result). The
+/// node's value is the result var, so a second reference reuses it rather than
+/// re-emitting the block.
+pub fn if_node(pre: Vec<NodeRef>, result: NodeRef, cond: NodeRef, body: Vec<NodeRef>) -> NodeRef {
+    NodeRef::new(Node::IfVar {
+        pre,
+        result,
+        cond,
+        body,
+    })
+}
+
 pub fn call(def: &Rc<FnDef>, args: Vec<NodeRef>) -> NodeRef {
     NodeRef::new(Node::Call {
         def: def.clone(),
@@ -1970,6 +2209,31 @@ pub fn srgb_transfer_oetf(color: NodeRef) -> NodeRef {
         })
     });
     call(&def, vec![color])
+}
+
+
+/// `reinhardToneMapping` — `ToneMappingFunctions.js`, emitted as a real `fn`.
+pub fn reinhard_tone_mapping(color: NodeRef, exposure: NodeRef) -> NodeRef {
+    thread_local! { static CELL: Lazy<Rc<FnDef>> = Lazy::new(); }
+    let def = CELL.with(|c| {
+        c.get(|| {
+            shader_fn(
+                Some("reinhardToneMapping"),
+                vec![("color", Type::Vec3), ("exposure", Type::F32)],
+                Type::Vec3,
+                |args| {
+                    // `color = color.mul( exposure )`, a var because it is
+                    // read twice.
+                    let color = args[0].clone().mul(args[1].clone());
+                    color
+                        .clone()
+                        .div(color.add(float(1.0)))
+                        .clamp(float(0.0), float(1.0))
+                },
+            )
+        })
+    });
+    call(&def, vec![color, exposure])
 }
 
 /// `premultiplyAlpha` — `PremultiplyAlphaFunctions.js`.

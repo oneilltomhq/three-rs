@@ -1,5 +1,6 @@
-//! Ports of `three.js/src/lights/LightShadow.js`, `SpotLightShadow.js` and
-//! `DirectionalLightShadow.js`.
+//! Ports of `three.js/src/lights/LightShadow.js`, `SpotLightShadow.js`,
+//! `DirectionalLightShadow.js` and `PointLightShadow.js`' defaults (its
+//! six-face `updateMatrices` lives in the renderer's shadow pass).
 
 use crate::cameras::{OrthographicCamera, PerspectiveCamera};
 use crate::math::{Matrix4, Vector2, Vector3, RAD2DEG};
@@ -147,6 +148,13 @@ impl LightShadow {
         )))
     }
 
+    /// `new PointLightShadow()` — `new PerspectiveCamera( 90, 1, 0.5, 500 )`.
+    pub fn point() -> Self {
+        Self::new(ShadowCamera::Perspective(PerspectiveCamera::new(
+            90.0, 1.0, 0.5, 500.0,
+        )))
+    }
+
     /// `new DirectionalLightShadow()` —
     /// `new OrthographicCamera( -5, 5, 5, -5, 0.5, 500 )`.
     pub fn directional() -> Self {
@@ -189,6 +197,29 @@ impl LightShadow {
                 camera.update_projection_matrix();
             }
         }
+    }
+
+    /// `PointLightShadow.updateMatrices( light )`'s matrix half:
+    /// `shadowMatrix.makeTranslation( - lightPositionWorld )` — the shadow
+    /// coordinate is the light-to-fragment vector, and `far = light.distance ||
+    /// camera.far` (the camera far plane the `viewZ` test reads).
+    pub fn update_point_matrices(&mut self, light_position_world: Vector3, distance: f64) {
+        let far = if distance != 0.0 {
+            distance
+        } else {
+            self.camera.far()
+        };
+        if far != self.camera.far() {
+            self.camera.set_far(far);
+            self.camera.update_projection_matrix();
+        }
+        let mut matrix = Matrix4::identity();
+        matrix.make_translation(
+            -light_position_world.x,
+            -light_position_world.y,
+            -light_position_world.z,
+        );
+        self.matrix = matrix;
     }
 
     /// `LightShadow.updateMatrices( light )` — `light.matrixWorld`'s position

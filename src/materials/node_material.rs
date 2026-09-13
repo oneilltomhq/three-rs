@@ -3,6 +3,7 @@
 //! statements the builder flows into the two shader stages.
 
 use super::phong::{self, LightDesc};
+use super::physical::{self, Physical};
 use crate::lights::LightKind;
 use super::{Blending, MaterialKind, MeshBasicNodeMaterial, Side, ToneMapping};
 use crate::nodes::node::Type;
@@ -56,15 +57,17 @@ pub fn shadow_material(source: &MeshBasicNodeMaterial) -> MeshBasicNodeMaterial 
 
     // `shadowRGB = vec3( 0 )`, `shadowAlpha = float( 1 )`, and the source
     // material's own colour only contributes its alpha.
-    material.color_node = Some(match (&source.color_node, &source.mask_node) {
+    material.color_node = Some(match (&source.color_node, &source.map, &source.mask_node) {
         // `hasMap || hasColorNode || hasCastShadowNode || hasMaskNode` is
         // false: the override material keeps its own `vec4( 0, 0, 0, 1 )`,
         // which is a flat four-component constant rather than a join.
-        (None, None) => vec4(0.0, 0.0, 0.0, 1.0),
-        (color, _) => {
-            let alpha = match color {
-                Some(color) => float(1.0).mul(to_vec4(color.clone()).w()),
-                None => float(1.0),
+        (None, None, None) => vec4(0.0, 0.0, 0.0, 1.0),
+        (color, map, _) => {
+            // The colour node's alpha when there is one, else the map's.
+            let alpha = match (color, map) {
+                (Some(color), _) => float(1.0).mul(to_vec4(color.clone()).w()),
+                (None, Some(map)) => float(1.0).mul(texture(map).a()),
+                (None, None) => float(1.0),
             };
             vec4_join(vec![vec3(0.0, 0.0, 0.0), alpha])
         }
@@ -94,6 +97,13 @@ pub fn setup(
     // ), 'NORMAL' )` — installed for the whole of the material's setup, so that
     // every `normalView` the lighting flow reaches resolves to this material's
     // normal map. See `docs/nodes.md` §7.
+    // `MaterialNode.NORMAL`: with no `normalNode` of its own, a material with a
+    // `bumpMap` normal-maps through `BumpMapNode`.
+    let normal = match (&material.normal_node, &material.bump_map) {
+        (Some(node), _) => Some(node.clone()),
+        (None, Some(bump)) => Some(bump_map(bump, material_bump_scale())),
+        (None, None) => None,
+    };
     // `builder.context.setupPositionView = () => this.setupPositionView(
     // builder )` — the seam `SpriteNodeMaterial` overrides. Built here, before
     // either stage is flowed, exactly as `NodeMaterial.setup()` installs it.
@@ -101,7 +111,7 @@ pub fn setup(
         MaterialKind::Sprite => Some(setup_position_view_sprite(material)),
         _ => None,
     };
-    with_material_normal(material.normal_node.clone(), material.flat_shading, || {
+    with_material_normal(normal, material.flat_shading, || {
         with_material_position_view(position_view, || setup_inner(material, ctx, fog))
     })
 }
@@ -169,6 +179,8 @@ fn setup_inner(
         fragment_node.clone()
     } else if material.kind == MaterialKind::Phong {
         setup_phong(material, ctx, &mut fragment)
+    } else if material.kind == MaterialKind::Standard {
+        setup_standard(material, ctx, &mut fragment)
     } else {
         // setupDiffuseColor
         let color = match &material.color_node {
@@ -421,6 +433,12 @@ pub fn render_output(color: NodeRef, tone_mapping: ToneMapping) -> NodeRef {
     let unpremultiplied = unpremultiply_alpha(clamped);
     let mapped = match tone_mapping {
         ToneMapping::None => unpremultiplied,
+        // `outputNode.toneMapping( toneMapping )` — `ToneMappingNode` keeps the
+        // alpha and tone maps the colour with `toneMappingExposure`.
+        ToneMapping::Reinhard => vec4_join(vec![
+            reinhard_tone_mapping(unpremultiplied.clone().rgb(), tone_mapping_exposure()),
+            unpremultiplied.a(),
+        ]),
         ToneMapping::AcesFilmic => vec4_join(vec![
             aces_filmic_tone_mapping(unpremultiplied.clone().rgb(), tone_mapping_exposure()),
             unpremultiplied.a(),
@@ -470,15 +488,7 @@ fn setup_phong(
     let outgoing = if material.lights {
         // `LightsNode`: the scene's lights, or the selective subset the
         // material's `lights( [ … ] )` node names.
-        let lights: Vec<LightDesc> = match &material.lights_node {
-            Some(subset) => ctx
-                .lights
-                .iter()
-                .filter(|light| subset.contains(&light.index))
-                .cloned()
-                .collect(),
-            None => ctx.lights.clone(),
-        };
+        let lights = material_lights(material, ctx);
         let ambient: Vec<usize> = lights
             .iter()
             .filter(|light| light.kind == LightKind::Ambient)
@@ -528,5 +538,119 @@ fn setup_phong(
     };
 
     // `Output = max( vec4( outgoingLight + EmissiveColor, DiffuseColor.w ), 0 )`.
+    vec4_join(vec![outgoing.add(emissive_color()), diffuse_color().w()]).max(float(0.0))
+}
+
+/// `LightsNode`'s list as one material sees it: the scene's lights, or the
+/// selective subset the material's `lights( [ … ] )` node names.
+fn material_lights(material: &MeshBasicNodeMaterial, ctx: &SetupContext) -> Vec<LightDesc> {
+    match &material.lights_node {
+        Some(subset) => ctx
+            .lights
+            .iter()
+            .filter(|light| subset.contains(&light.index))
+            .cloned()
+            .collect(),
+        None => ctx.lights.clone(),
+    }
+}
+
+/// `MeshStandardNodeMaterial`'s fragment flow: `setupDiffuseColor`,
+/// `setupVariants` (metalness / roughness / specular / diffuse contribution),
+/// then the `LightsNode` loop with `PhysicalLightingModel`. Read off
+/// `handoff/scouts/rung8/MeshStandardMaterial_1{7,8,9}.frag-r186.wgsl`.
+fn setup_standard(
+    material: &MeshBasicNodeMaterial,
+    ctx: &SetupContext,
+    fragment: &mut Vec<NodeRef>,
+) -> NodeRef {
+    // --- setupDiffuseColor. `materialColor` is `vec4( color, 1 )` times the
+    // map's texel when the material has a map, which is why `DiffuseColor` is
+    // assigned a `vec4` product rather than a `vec3` promoted to one.
+    let base = vec4_join(vec![material_color(), float(1.0)]);
+    let color = match &material.color_node {
+        Some(node) => to_vec4(node.clone()),
+        None => match &material.map {
+            Some(map) => base.mul(texture(map)),
+            None => base,
+        },
+    };
+    fragment.push(diffuse_color().assign(color));
+    fragment.push(
+        diffuse_color()
+            .w()
+            .assign(diffuse_color().w().mul(material_opacity())),
+    );
+    // `builder.isOpaque()`
+    if material.is_opaque() {
+        fragment.push(diffuse_color().w().assign(float(1.0)));
+    }
+
+    // --- setupVariants. `metalnessNode` is reached twice — once for the
+    // `Metalness` property and once for `DiffuseContribution` — so the node is
+    // shared, exactly as three.js shares the `materialMetalness` node.
+    let metalness_node = match &material.metalness_map {
+        // glTF packing: metalness in blue, roughness in green.
+        Some(map) => material_metalness().mul(texture(map).z()),
+        None => material_metalness(),
+    };
+    fragment.push(metalness().assign(metalness_node.clone()));
+
+    let roughness_node = match &material.roughness_map {
+        Some(map) => material_roughness().mul(texture(map).y()),
+        None => material_roughness(),
+    };
+    fragment.push(roughness().assign(physical::get_roughness(roughness_node)));
+
+    // `setupSpecular()`: a dielectric F0 of 0.04, blended towards the albedo by
+    // metalness, and an F90 of 1.
+    fragment.push(specular_color().assign(vec3(0.04, 0.04, 0.04)));
+    fragment.push(specular_color_blended().assign(mix(
+        vec3(0.04, 0.04, 0.04),
+        diffuse_color().rgb(),
+        metalness(),
+    )));
+    fragment.push(specular_f90().assign(float(1.0)));
+    fragment.push(
+        diffuse_contribution().assign(diffuse_color().rgb().mul(metalness_node.one_minus())),
+    );
+
+    fragment.push(emissive_color().assign(material_emissive().mul(material_emissive_intensity())));
+
+    let outgoing = if material.lights {
+        let model = Physical::start();
+        let lights = material_lights(material, ctx);
+
+        // `LightingContextNode`'s five accumulators. three.js declares each at
+        // the point of its first use; hoisting the zeros here is the one
+        // reordering in this flow (see `docs/nodes.md` §8) and reads nothing
+        // before it is written either way.
+        fragment.push(direct_diffuse().assign(vec3(0.0, 0.0, 0.0)));
+        fragment.push(direct_specular().assign(vec3(0.0, 0.0, 0.0)));
+        fragment.push(irradiance().assign(vec3(0.0, 0.0, 0.0)));
+        fragment.push(indirect_diffuse().assign(vec3(0.0, 0.0, 0.0)));
+        fragment.push(indirect_specular().assign(vec3(0.0, 0.0, 0.0)));
+
+        for light in &lights {
+            physical::direct_light(
+                &model,
+                light,
+                material.received_shadow_position_node.as_ref(),
+                fragment,
+            );
+        }
+
+        model.indirect_diffuse(fragment);
+        model.indirect_specular(fragment);
+        model.ambient_occlusion(fragment);
+
+        fragment.push(total_diffuse().assign(direct_diffuse().add(indirect_diffuse())));
+        fragment.push(total_specular().assign(direct_specular().add(indirect_specular())));
+        fragment.push(outgoing_light().assign(total_diffuse().add(total_specular())));
+        outgoing_light()
+    } else {
+        diffuse_color().xyz()
+    };
+
     vec4_join(vec![outgoing.add(emissive_color()), diffuse_color().w()]).max(float(0.0))
 }
