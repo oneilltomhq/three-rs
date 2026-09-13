@@ -237,8 +237,9 @@ impl NodeBuilder {
             Node::Element { node, index, .. } => vec![node.clone(), index.clone()],
             Node::Texture { uv, mode, .. } => {
                 let mut v = vec![uv.clone()];
-                if let SampleMode::Level(l) = mode {
-                    v.push(l.clone());
+                match mode {
+                    SampleMode::Level(l) | SampleMode::LoadLayer(l) => v.push(l.clone()),
+                    _ => {}
                 }
                 v
             }
@@ -256,6 +257,15 @@ impl NodeBuilder {
                 }
             }
             Node::Select { cond, a, b, .. } => vec![cond.clone(), a.clone(), b.clone()],
+            // A loop's body is analysed like any other statement list: the
+            // statements are the children, and the loop index is a name already
+            // in scope.
+            Node::Loop { body, .. } => body.clone(),
+            Node::If { cond, body } => {
+                let mut v = vec![cond.clone()];
+                v.extend(body.iter().cloned());
+                v
+            }
         }
     }
 
@@ -434,6 +444,7 @@ impl NodeBuilder {
             TextureSource::Texture2D(t) => (t.id(), TextureKind::Float2D),
             TextureSource::Depth(t) => (t.id(), TextureKind::Depth2D),
             TextureSource::Cube(t) => (t.id(), TextureKind::Cube),
+            TextureSource::DataArray(t) => (t.id(), TextureKind::Float2DArray),
         };
 
         if let Some((name, kind, slots)) = self.texture_names.get(&key).cloned() {
@@ -783,6 +794,10 @@ impl NodeBuilder {
                         let slevel = self.generate(&level);
                         format!("textureSampleLevel( {name}, {name}_sampler, {suv}, {slevel} )")
                     }
+                    SampleMode::LoadLayer(layer) => {
+                        let slayer = self.generate(&layer);
+                        wgsl::texture_load_layer(&name, &suv, &slayer)
+                    }
                     SampleMode::Load => {
                         self.add_code("tsl_coord_clampS_clampT_2d", wgsl::CLAMP_WRAP_SNIPPET);
                         let dims = self.declare_var(None, Type::UVec2);
@@ -840,6 +855,46 @@ impl NodeBuilder {
                 // than emitting the whole if/else again.
                 self.cache_put(node.key(), result.clone());
                 result
+            }
+
+            // `LoopNode.generate()`: a C-style `for` over an `i32` index, with
+            // the body in its own scope so its temps do not leak out.
+            Node::Loop { index, count, body } => {
+                let (index, count, body) = (index.clone(), *count, body.clone());
+                let i = self.generate(&index);
+                self.emit(String::new());
+                self.emit(format!(
+                    "for ( var {i} : i32 = 0; {i} < {count}; {i} ++ ) {{"
+                ));
+                self.emit(String::new());
+                self.push_scope();
+                for statement in &body {
+                    self.generate(statement);
+                }
+                self.pop_scope();
+                self.emit(String::new());
+                self.emit("}".to_string());
+                self.emit(String::new());
+                String::new()
+            }
+
+            // `If( cond, … )` as a statement: no result property, unlike
+            // `Node::Select`.
+            Node::If { cond, body } => {
+                let (cond, body) = (cond.clone(), body.clone());
+                let scond = self.generate(&cond);
+                self.emit(String::new());
+                self.emit(format!("if ( {scond} ) {{"));
+                self.emit(String::new());
+                self.push_scope();
+                for statement in &body {
+                    self.generate(statement);
+                }
+                self.pop_scope();
+                self.emit(String::new());
+                self.emit("}".to_string());
+                self.emit(String::new());
+                String::new()
             }
         }
     }
@@ -1135,6 +1190,7 @@ impl NodeBuilder {
             TextureSource::Texture2D(t) => t.id(),
             TextureSource::Depth(t) => t.id(),
             TextureSource::Cube(t) => t.id(),
+            TextureSource::DataArray(t) => t.id(),
         };
         self.texture_names[&key].0.clone()
     }

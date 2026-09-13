@@ -15,6 +15,9 @@ use crate::objects::Payload;
 pub struct Mesh {
     pub geometry: Rc<BufferGeometry>,
     pub material: Option<MeshBasicNodeMaterial>,
+    /// `Mesh.morphTargetInfluences` — one weight per `morphAttributes.position`
+    /// entry, filled in by `updateMorphTargets()` from the constructor.
+    pub morph_target_influences: Vec<f64>,
 }
 
 impl Mesh {
@@ -24,9 +27,17 @@ impl Mesh {
     pub fn new(geometry: Rc<BufferGeometry>) -> Node {
         let mut object = Object3D::default();
         object.object_type = "Mesh";
+        // `this.updateMorphTargets()`: `morphTargetInfluences` gets one 0 per
+        // morph attribute of the first key in `geometry.morphAttributes`.
+        let morph_target_influences = match geometry.morph_attributes().next() {
+            Some((_, attributes)) => vec![0.0; attributes.len()],
+            None => Vec::new(),
+        };
+
         object.payload = Payload::Mesh(Self {
             geometry,
             material: None,
+            morph_target_influences,
         });
         object.into_node()
     }

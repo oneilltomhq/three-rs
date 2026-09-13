@@ -19,6 +19,7 @@ pub fn type_name(ty: Type) -> &'static str {
         Type::Vec3 => "vec3<f32>",
         Type::Vec4 => "vec4<f32>",
         Type::UVec2 => "vec2<u32>",
+        Type::IVec2 => "vec2<i32>",
         Type::BVec3 => "vec3<bool>",
         Type::Mat3 => "mat3x3<f32>",
         Type::Mat4 => "mat4x4<f32>",
@@ -58,6 +59,9 @@ pub fn constant(ty: Type, values: &[f64]) -> String {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TextureKind {
     Float2D,
+    /// `texture_2d_array<f32>` — the morph data texture, read with
+    /// `textureLoad` only, so it needs no sampler.
+    Float2DArray,
     Depth2D,
     Cube,
 }
@@ -67,6 +71,7 @@ impl TextureKind {
     pub fn wgsl(self) -> &'static str {
         match self {
             TextureKind::Float2D => "texture_2d<f32>",
+            TextureKind::Float2DArray => "texture_2d_array<f32>",
             TextureKind::Depth2D => "texture_depth_2d",
             TextureKind::Cube => "texture_cube<f32>",
         }
@@ -75,7 +80,7 @@ impl TextureKind {
     /// A depth texture is not filterable, so three.js emits no sampler for it
     /// and reads it with `textureLoad`.
     pub fn has_sampler(self) -> bool {
-        self != TextureKind::Depth2D
+        !matches!(self, TextureKind::Depth2D | TextureKind::Float2DArray)
     }
 }
 
@@ -102,6 +107,13 @@ pub fn texture_load(texture: &str, uv: &str, dims: &str) -> String {
     )
 }
 
+/// `WGSLNodeBuilder.generateTextureLoad()` with a `depthSnippet`: the array
+/// layer is a separate argument and the level defaults to the string `'0u'`,
+/// which the template then wraps in `u32( … )`.
+pub fn texture_load_layer(texture: &str, coord: &str, layer: &str) -> String {
+    format!("textureLoad( {texture}, {coord}, {layer}, u32( 0u ) )")
+}
+
 pub fn texture_dimensions(texture: &str) -> String {
     format!("textureDimensions( {texture}, u32( 0 ) )")
 }
@@ -110,7 +122,7 @@ pub fn texture_dimensions(texture: &str) -> String {
 pub fn align_of(ty: Type) -> u32 {
     match ty {
         Type::F32 | Type::I32 | Type::U32 | Type::Bool => 4,
-        Type::Vec2 | Type::UVec2 => 8,
+        Type::Vec2 | Type::UVec2 | Type::IVec2 => 8,
         _ => 16,
     }
 }
@@ -120,7 +132,7 @@ pub fn align_of(ty: Type) -> u32 {
 pub fn size_of(ty: Type) -> u32 {
     match ty {
         Type::F32 | Type::I32 | Type::U32 | Type::Bool => 4,
-        Type::Vec2 | Type::UVec2 => 8,
+        Type::Vec2 | Type::UVec2 | Type::IVec2 => 8,
         Type::Vec3 | Type::BVec3 => 12,
         Type::Vec4 => 16,
         Type::Mat3 => 48,

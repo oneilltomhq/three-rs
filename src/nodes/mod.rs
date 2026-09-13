@@ -2,6 +2,7 @@
 //! every material through. See `docs/nodes.md`.
 
 pub mod builder;
+pub mod morph;
 pub mod node;
 pub mod tsl;
 pub mod wgsl;

@@ -19,7 +19,7 @@ use super::node::{
     UniformNode, UniformSource, VarDef, VaryingDef,
 };
 use crate::math::Color;
-use crate::textures::{CubeTexture, DepthTexture, Texture};
+use crate::textures::{CubeTexture, DataArrayTexture, DepthTexture, Texture};
 
 pub use super::node::TextureSource;
 
@@ -93,6 +93,11 @@ fn constant(ty: Type, values: Vec<f64>) -> NodeRef {
 /// `float( x )`.
 pub fn float(v: impl Into<f64>) -> NodeRef {
     constant(Type::F32, vec![v.into()])
+}
+
+/// `int( x )`.
+pub fn int(v: i64) -> NodeRef {
+    constant(Type::I32, vec![v as f64])
 }
 
 /// `vec2( x, y )`.
@@ -532,6 +537,9 @@ impl NodeRef {
     pub fn equal(&self, other: impl Into<NodeRef>) -> NodeRef {
         binary("==", self.clone(), other.into())
     }
+    pub fn not_equal(&self, other: impl Into<NodeRef>) -> NodeRef {
+        binary("!=", self.clone(), other.into())
+    }
     pub fn less_than_equal(&self, other: impl Into<NodeRef>) -> NodeRef {
         binary("<=", self.clone(), other.into())
     }
@@ -681,6 +689,16 @@ impl NodeRef {
 
     pub fn to_varying(&self, name: &'static str) -> NodeRef {
         to_varying(Some(name), self.clone())
+    }
+
+    /// `target.addAssign( value )` — `target = ( target + value )`.
+    pub fn add_assign(&self, value: impl Into<NodeRef>) -> NodeRef {
+        self.assign(self.add(value))
+    }
+
+    /// `target.mulAssign( value )` — `target = ( target * value )`.
+    pub fn mul_assign(&self, value: impl Into<NodeRef>) -> NodeRef {
+        self.assign(self.mul(value))
     }
 
     /// `target.assign( value )` — a statement.
@@ -1281,6 +1299,46 @@ pub fn instance_matrix(count: usize) -> NodeRef {
 /// `vec4` per instance, `lerp( min[c], max[c], Math.random() )` per component.
 pub fn range(min: Color, max: Color, count: usize, index: NodeRef) -> NodeRef {
     buffer_element(BufferSource::Range { min, max }, Type::Vec4, count, index)
+}
+
+/// `Loop( count, ( { i } ) => { … } )` — the statement and the index node the
+/// body reads, which is a plain `i` already in scope.
+pub fn loop_index() -> NodeRef {
+    NodeRef::new(Node::Param {
+        name: "i",
+        ty: Type::I32,
+    })
+}
+
+pub fn loop_statement(count: usize, index: NodeRef, body: Vec<NodeRef>) -> NodeRef {
+    NodeRef::new(Node::Loop { index, count, body })
+}
+
+/// `If( cond, () => { … } )` with no `Else` — a statement.
+pub fn if_statement(cond: NodeRef, body: Vec<NodeRef>) -> NodeRef {
+    NodeRef::new(Node::If { cond, body })
+}
+
+/// `textureLoad( dataArrayTexture, ivec2( x, y ) ).depth( layer )` — the
+/// sampler-less array read `Morph.js`' `getMorph()` performs.
+pub fn texture_load_array(map: &DataArrayTexture, coord: NodeRef, layer: NodeRef) -> NodeRef {
+    texture_node(
+        TextureSource::DataArray(map.clone()),
+        coord,
+        SampleMode::LoadLayer(layer),
+        Type::Vec4,
+    )
+}
+
+/// `uniformArray( mesh.morphTargetInfluences, 'float' ).element( i )` — one
+/// `vec4` per morph target, the influence in `.x`.
+pub fn morph_influences(count: usize, index: NodeRef) -> NodeRef {
+    buffer_element(BufferSource::MorphInfluences, Type::Vec4, count, index)
+}
+
+/// `Morph.js`' `base = uniform( 1 )`, in the object group.
+pub fn morph_base() -> NodeRef {
+    uniform(UniformSource::MorphBase, Type::F32, UniformGroup::Object, None)
 }
 
 // ---------------------------------------------------------------------------

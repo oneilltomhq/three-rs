@@ -25,6 +25,9 @@ pub struct SetupContext {
     /// default `LightsNode` list when the material sets no `lights_node`; a
     /// material's selective `lights( [ … ] )` subset indexes into it.
     pub lights: Vec<crate::lights::LightKind>,
+    /// `getEntry( geometry )` when the geometry has morph attributes: what
+    /// `NodeMaterial.setupPosition()` needs to emit `morphReference()`.
+    pub morph: Option<crate::nodes::morph::MorphEntry>,
 }
 
 /// `vec4( node )` the way `setupDiffuseColor` builds it: a scalar splats, a
@@ -63,6 +66,13 @@ fn setup_inner(
     // --- setupPosition: the `context.position` stack, flowed into the vertex
     // stage before either stage's own flow. Morphing, skinning and batching
     // plug in here too.
+    // `if ( object.morphTargetInfluences ) morphReference( object ).append()` —
+    // first in `setupPosition`, before skinning, displacement, batching and
+    // instancing.
+    if let Some(entry) = &ctx.morph {
+        pre_vertex.extend(crate::nodes::morph::morph_reference(entry));
+    }
+
     if let Some(count) = ctx.instance_count {
         let matrix = instance_matrix(count);
         pre_vertex.push(

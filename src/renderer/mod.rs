@@ -36,6 +36,7 @@ use crate::nodes::{BindingDesc, NodeBuilder};
 use crate::objects::{Background, InstancedBufferAttribute, QuadMesh, Scene};
 use crate::testing::DeterministicRandom;
 use crate::textures::{
+    DataArrayTexture,
     CubeTexture, Texture, TextureFilter, TextureType, Wrapping,
 };
 
@@ -87,6 +88,10 @@ struct Renderable {
     model_world: Matrix4,
     instance_matrix: Option<InstancedBufferAttribute>,
     instance_count: u32,
+    /// `Mesh.morphTargetInfluences`, and `Morph.js`' `base` uniform, which is
+    /// `1 - Σ influences` for non-relative morph targets.
+    morph_influences: Vec<f64>,
+    morph_base: f64,
 }
 
 /// The attachments, formats and size of the pass about to run.
@@ -307,6 +312,8 @@ impl Renderer {
                 model_world: Matrix4::identity(),
                 instance_matrix: None,
                 instance_count: 1,
+            morph_influences: Vec::new(),
+            morph_base: 1.0,
             });
         }
 
@@ -368,6 +375,16 @@ impl Renderer {
                 .or(mesh.material.as_ref())
                 .unwrap_or(&default_material);
 
+            // `MorphNode.update()`: with `morphTargetsRelative === false` the
+            // base keeps the unmorphed position's share of the blend.
+            let morph = crate::nodes::morph::get_entry(&mesh.geometry);
+            let morph_influences = mesh.morph_target_influences.clone();
+            let morph_base = if morph.is_some() && !mesh.geometry.morph_targets_relative {
+                1.0 - morph_influences.iter().sum::<f64>()
+            } else {
+                1.0
+            };
+
             let instance_count = object.instance_count();
             let instance_matrix = object.instance_matrix().cloned();
 
@@ -378,11 +395,14 @@ impl Renderer {
                     instance_count: instance_matrix.as_ref().map(|_| instance_count as usize),
                     instanced: instance_matrix.is_some(),
                     lights: light_kinds.clone(),
+                    morph: morph.clone(),
                 },
                 fog: scene.fog_node.clone(),
                 model_world: item.matrix_world,
                 instance_matrix,
                 instance_count,
+                morph_influences,
+                morph_base,
             });
         }
 
@@ -439,6 +459,8 @@ impl Renderer {
             model_world: Matrix4::identity(),
             instance_matrix: None,
             instance_count: 1,
+            morph_influences: Vec::new(),
+            morph_base: 1.0,
         }];
 
         let camera_uniforms = self.quad_camera_uniforms();
@@ -544,6 +566,8 @@ impl Renderer {
                 material_specular: item.material.specular,
                 material_emissive: item.material.emissive,
                 material_emissive_intensity: item.material.emissive_intensity,
+                morph_base: item.morph_base,
+                morph_influences: &item.morph_influences,
                 viewport: Vector2::new(target.width as f64, target.height as f64),
                 ..camera_uniforms
             };
@@ -657,6 +681,8 @@ impl Renderer {
             model_world: Matrix4::identity(),
             instance_matrix: None,
             instance_count: 1,
+            morph_influences: Vec::new(),
+            morph_base: 1.0,
         }];
 
         let camera_uniforms = self.quad_camera_uniforms();
@@ -764,7 +790,12 @@ impl Renderer {
                         ))
                     }
                     BindingDesc::Buffer { source, count, .. } => {
-                        Resource::Buffer(self.node_buffer(source, *count, instance_matrix))
+                        Resource::Buffer(self.node_buffer(
+                            source,
+                            *count,
+                            instance_matrix,
+                            uniforms.morph_influences,
+                        ))
                     }
                     BindingDesc::Texture { source, kind, .. } => {
                         Resource::View(self.texture_view(source, *kind))
@@ -805,8 +836,22 @@ impl Renderer {
         source: &BufferSource,
         count: usize,
         instance_matrix: &Option<InstancedBufferAttribute>,
+        morph_influences: &[f64],
     ) -> wgpu::Buffer {
         match source {
+            // `uniformArray( influences, 'float' )`: one `vec4` per target with
+            // the influence in `.x`, so 16 bytes each — not 4.
+            BufferSource::MorphInfluences => {
+                let mut data = vec![0f32; count * 4];
+                for (i, influence) in morph_influences.iter().enumerate().take(count) {
+                    data[i * 4] = *influence as f32;
+                }
+                self.create_buffer_init(
+                    "three-rs morphTargetInfluences",
+                    bytemuck::cast_slice(&data),
+                    wgpu::BufferUsages::UNIFORM,
+                )
+            }
             BufferSource::InstanceMatrix => {
                 let attribute = instance_matrix
                     .as_ref()
@@ -861,6 +906,14 @@ impl Renderer {
                     .as_ref()
                     .expect("three-rs: the depth texture has not been rendered into yet");
                 gpu.create_view(&Default::default())
+            }
+            TextureSource::DataArray(data) => {
+                assert_eq!(kind, TextureKind::Float2DArray);
+                let gpu = self.ensure_data_array_texture(data);
+                gpu.create_view(&wgpu::TextureViewDescriptor {
+                    dimension: Some(wgpu::TextureViewDimension::D2Array),
+                    ..Default::default()
+                })
             }
             TextureSource::Cube(cube) => {
                 assert_eq!(kind, TextureKind::Cube);
@@ -919,8 +972,8 @@ impl Renderer {
                     ..Default::default()
                 })
             }
-            TextureSource::Depth(_) => {
-                panic!("three-rs: a depth texture is read with textureLoad, not sampled")
+            TextureSource::Depth(_) | TextureSource::DataArray(_) => {
+                panic!("three-rs: this texture is read with textureLoad, not sampled")
             }
         }
     }
@@ -943,6 +996,57 @@ impl Renderer {
 
     /// `Textures.updateTexture()` for a 2D `Texture`: upload the image with
     /// `flipY` applied, then generate the mip chain.
+    /// `WebGPUTextureUtils.createTexture()` for a `DataArrayTexture` with
+    /// `type = FloatType`: an `rgba32float` 2-D-array texture, one layer per
+    /// morph target, uploaded once and read with `textureLoad` only.
+    fn ensure_data_array_texture(&mut self, texture: &DataArrayTexture) -> wgpu::Texture {
+        if texture.has_gpu() {
+            return texture.with_gpu(|gpu| gpu.clone());
+        }
+
+        let (width, height, depth) = texture.size();
+        let gpu = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("three-rs data array texture"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: depth,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba32Float,
+            usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+
+        {
+            let inner = texture.borrow();
+            self.queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &gpu,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                bytemuck::cast_slice(&inner.data),
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(width * 16),
+                    rows_per_image: Some(height),
+                },
+                wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: depth,
+                },
+            );
+        }
+
+        texture.set_gpu(gpu.clone());
+        gpu
+    }
+
     fn ensure_texture_2d(&mut self, texture: &Texture) -> wgpu::Texture {
         // A render target's colour texture is owned by the renderer and was
         // created by `prepare_render_target()`.
