@@ -26,6 +26,8 @@ pub enum Type {
     Vec4,
     UVec2,
     BVec3,
+    /// `mat2` — `RotateNode`'s vec2 path emits `mat2x2<f32>( cos, sin, -sin, cos )`.
+    Mat2,
     Mat3,
     Mat4,
 }
@@ -39,6 +41,7 @@ impl Type {
             Type::Vec2 | Type::UVec2 => 2,
             Type::Vec3 | Type::BVec3 => 3,
             Type::Vec4 => 4,
+            Type::Mat2 => 4,
             Type::Mat3 => 9,
             Type::Mat4 => 16,
         }
@@ -49,7 +52,9 @@ impl Type {
         match self {
             Type::UVec2 => Type::U32,
             Type::BVec3 => Type::Bool,
-            Type::Vec2 | Type::Vec3 | Type::Vec4 | Type::Mat3 | Type::Mat4 => Type::F32,
+            Type::Vec2 | Type::Vec3 | Type::Vec4 | Type::Mat2 | Type::Mat3 | Type::Mat4 => {
+                Type::F32
+            }
             other => other,
         }
     }
@@ -68,7 +73,7 @@ impl Type {
     }
 
     pub fn is_matrix(self) -> bool {
-        matches!(self, Type::Mat3 | Type::Mat4)
+        matches!(self, Type::Mat2 | Type::Mat3 | Type::Mat4)
     }
 }
 

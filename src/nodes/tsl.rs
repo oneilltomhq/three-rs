@@ -223,7 +223,11 @@ fn binary(op: &'static str, a: NodeRef, b: NodeRef) -> NodeRef {
     // matrix * vector: the result is a vector as wide as the matrix, and a
     // too-short vector is padded with 1.0 (`NodeBuilder.format`).
     if ta.is_matrix() && !tb.is_matrix() && tb.components() > 1 {
-        let want = if ta == Type::Mat4 { 4 } else { 3 };
+        let want = match ta {
+            Type::Mat4 => 4,
+            Type::Mat2 => 2,
+            _ => 3,
+        };
         let ty = Type::vector_of(Type::F32, want);
         let b = pad(b, want);
         return NodeRef::new(Node::Op { op, a, b, ty });
@@ -232,7 +236,11 @@ fn binary(op: &'static str, a: NodeRef, b: NodeRef) -> NodeRef {
     // vector * matrix: the row-vector form three.js uses for inverse-transpose
     // transforms (`vec4( n, 0.0 ) * cameraViewMatrix`).
     if tb.is_matrix() && !ta.is_matrix() {
-        let want = if tb == Type::Mat4 { 4 } else { 3 };
+        let want = match tb {
+            Type::Mat4 => 4,
+            Type::Mat2 => 2,
+            _ => 3,
+        };
         let ty = Type::vector_of(Type::F32, want);
         let a = pad(a, want);
         return NodeRef::new(Node::Op { op, a, b, ty });
@@ -630,6 +638,7 @@ impl NodeRef {
         let ty = match self.ty() {
             Type::Mat4 => Type::Vec4,
             Type::Mat3 => Type::Vec3,
+            Type::Mat2 => Type::Vec2,
             other => other.component_type(),
         };
         NodeRef::new(Node::Element {
@@ -644,6 +653,7 @@ impl NodeRef {
         let ty = match self.ty() {
             Type::Mat4 => Type::Vec4,
             Type::Mat3 => Type::Vec3,
+            Type::Mat2 => Type::Vec2,
             other => other,
         };
         NodeRef::new(Node::Element {

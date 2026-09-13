@@ -20,6 +20,7 @@ pub fn type_name(ty: Type) -> &'static str {
         Type::Vec4 => "vec4<f32>",
         Type::UVec2 => "vec2<u32>",
         Type::BVec3 => "vec3<bool>",
+        Type::Mat2 => "mat2x2<f32>",
         Type::Mat3 => "mat3x3<f32>",
         Type::Mat4 => "mat4x4<f32>",
     }
@@ -110,7 +111,7 @@ pub fn texture_dimensions(texture: &str) -> String {
 pub fn align_of(ty: Type) -> u32 {
     match ty {
         Type::F32 | Type::I32 | Type::U32 | Type::Bool => 4,
-        Type::Vec2 | Type::UVec2 => 8,
+        Type::Vec2 | Type::UVec2 | Type::Mat2 => 8,
         _ => 16,
     }
 }
@@ -123,6 +124,8 @@ pub fn size_of(ty: Type) -> u32 {
         Type::Vec2 | Type::UVec2 => 8,
         Type::Vec3 | Type::BVec3 => 12,
         Type::Vec4 => 16,
+        // Two 8-byte columns; `align_of` is 8 for a `mat2x2<f32>`, like `vec2`.
+        Type::Mat2 => 16,
         Type::Mat3 => 48,
         Type::Mat4 => 64,
         Type::Void => 0,
