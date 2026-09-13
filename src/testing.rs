@@ -30,6 +30,14 @@ impl DeterministicRandom {
         }
     }
 
+    /// Consume `n` draws without using them — what any `Math.random()` call the
+    /// page makes *before* the graded frame does to the shared sequence.
+    pub fn skip(&mut self, n: usize) {
+        for _ in 0..n {
+            self.next();
+        }
+    }
+
     #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> f64 {
         let x = self.seed.sin() * 10000.0;

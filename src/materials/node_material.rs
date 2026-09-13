@@ -50,8 +50,15 @@ pub fn setup(
     // ), 'NORMAL' )` — installed for the whole of the material's setup, so that
     // every `normalView` the lighting flow reaches resolves to this material's
     // normal map. See `docs/nodes.md` §7.
+    // `builder.context.setupPositionView = () => this.setupPositionView(
+    // builder )` — the seam `SpriteNodeMaterial` overrides. Built here, before
+    // either stage is flowed, exactly as `NodeMaterial.setup()` installs it.
+    let position_view = match material.kind {
+        MaterialKind::Sprite => Some(setup_position_view_sprite(material)),
+        _ => None,
+    };
     with_material_normal(material.normal_node.clone(), material.flat_shading, || {
-        setup_inner(material, ctx, fog)
+        with_material_position_view(position_view, || setup_inner(material, ctx, fog))
     })
 }
 
@@ -94,6 +101,11 @@ fn setup_inner(
         );
         let inv_t = transpose(inverse_mat3(m3));
         pre_vertex.push(normal_local().assign(inv_t.mul(normal_local()).normalize()));
+    }
+
+    // `setupPosition()`'s last step: `positionLocal.assign( positionNode )`.
+    if let Some(position_node) = &material.position_node {
+        pre_vertex.push(position_local().assign(to_vec3(position_node.clone())));
     }
 
     // --- the fragment flow
@@ -192,6 +204,80 @@ fn setup_inner(
     }
 }
 
+/// `vec3( node )`: a scalar splats, a wider vector narrows, a `vec3` passes
+/// through — `NodeBuilder.format()`'s two cases.
+fn to_vec3(node: NodeRef) -> NodeRef {
+    match node.ty() {
+        Type::Vec3 => node,
+        Type::Vec4 => node.xyz(),
+        _ => node.to(Type::Vec3),
+    }
+}
+
+/// `vec2( node )`.
+fn to_vec2(node: NodeRef) -> NodeRef {
+    match node.ty() {
+        Type::Vec2 => node,
+        Type::Vec3 | Type::Vec4 => node.xy(),
+        _ => node.to(Type::Vec2),
+    }
+}
+
+/// `SpriteNodeMaterial.setupPositionView()`
+/// (`src/materials/nodes/SpriteNodeMaterial.js:110`) — the sprite vertex
+/// shader, in view space:
+///
+/// ```ignore
+/// const mvPosition = modelViewMatrix.mul( vec3( positionNode || 0 ) );
+/// let scale = vec2( modelWorldMatrix[ 0 ].xyz.length(),
+///                   modelWorldMatrix[ 1 ].xyz.length() );
+/// if ( scaleNode !== null ) scale = scale.mul( vec2( scaleNode ) );
+/// if ( camera.isPerspectiveCamera && sizeAttenuation === false )
+///     scale = scale.mul( mvPosition.z.negate() );
+/// let alignedPosition = positionGeometry.xy;       // object.center is unset
+/// alignedPosition = alignedPosition.mul( scale );
+/// const rotation = float( rotationNode || materialRotation );
+/// return vec4( mvPosition.xy.add( rotate( alignedPosition, rotation ) ),
+///              mvPosition.zw );
+/// ```
+///
+/// `object.center` is an `InstancedMesh`-less `Sprite` field, so the
+/// `alignedPosition.sub( center.sub( 0.5 ) )` step never fires here.
+fn setup_position_view_sprite(material: &MeshBasicNodeMaterial) -> NodeRef {
+    let position = match &material.position_node {
+        Some(node) => to_vec3(node.clone()),
+        None => vec3(0.0, 0.0, 0.0),
+    };
+    let mv_position = model_view_matrix().mul(position);
+
+    let mut scale = join(
+        Type::Vec2,
+        vec![
+            length(model_world_matrix().element(0).xyz()),
+            length(model_world_matrix().element(1).xyz()),
+        ],
+    );
+    if let Some(scale_node) = &material.scale_node {
+        scale = scale.mul(to_vec2(scale_node.clone()));
+    }
+    if !material.size_attenuation {
+        // The perspective-camera branch; the ladder's only sprite material
+        // leaves `sizeAttenuation` at its default `true`, which omits it.
+        scale = scale.mul(mv_position.z().negate());
+    }
+
+    let aligned = position_geometry().xy().mul(scale);
+    let rotation = match &material.rotation_node {
+        Some(node) => node.clone(),
+        None => material_rotation(),
+    };
+
+    join(
+        Type::Vec4,
+        vec![mv_position.xy().add(rotate(aligned, rotation)), mv_position.zw()],
+    )
+}
+
 /// `Background.update()`'s skybox material: the cube map sampled along
 /// `normalWorldGeometry` with the background rotation and LOD, on a sphere
 /// pinned to the far plane.
@@ -246,7 +332,11 @@ fn math_call(name: &'static str, m: NodeRef) -> NodeRef {
 /// `RangeNode` on an instanced mesh: one `vec4` per instance, from a uniform
 /// buffer indexed by a flat `instanceIndex` varying or, past the uniform buffer
 /// limit, from an instanced vertex attribute.
-pub fn instanced_range(min: crate::math::Color, max: crate::math::Color, count: usize) -> NodeRef {
+pub fn instanced_range(
+    min: impl Into<crate::nodes::tsl::RangeValue>,
+    max: impl Into<crate::nodes::tsl::RangeValue>,
+    count: usize,
+) -> NodeRef {
     crate::nodes::tsl::instanced_range(min, max, count)
 }
 

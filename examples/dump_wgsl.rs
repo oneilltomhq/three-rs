@@ -12,6 +12,10 @@ use three_rs::nodes::tsl::*;
 use three_rs::nodes::NodeBuilder;
 use three_rs::textures::{CubeTexture, DepthTexture, Image, Texture};
 
+#[path = "webgpu_tsl_galaxy.rs"]
+#[allow(dead_code)] // the example's own `main()` is unused here
+mod webgpu_tsl_galaxy;
+
 fn show(label: &str, material: &MeshBasicNodeMaterial, ctx: SetupContext) {
     show_fog(label, material, ctx, None)
 }
@@ -252,6 +256,18 @@ fn main() {
         SetupContext {
             lights: vec![LightKind::Ambient, LightKind::Point],
             morph: three_rs::nodes::morph::get_entry(&geometry),
+            ..SetupContext::default()
+        },
+    );
+
+    // rung 13: the galaxy's `SpriteNodeMaterial`, against
+    // `handoff/scouts/rung13/{vertex,fragment}-r186.wgsl`.
+    show(
+        "tsl_galaxy_sprite",
+        &webgpu_tsl_galaxy::galaxy_material(),
+        SetupContext {
+            instance_count: Some(webgpu_tsl_galaxy::COUNT),
+            instanced: true,
             ..SetupContext::default()
         },
     );

@@ -277,6 +277,7 @@ pub struct UniformContext<'a> {
     pub model_world: Matrix4,
     pub material_color: Color,
     pub material_opacity: f64,
+    pub material_rotation: f64,
     pub material_reflectivity: f64,
     pub material_shininess: f64,
     pub material_specular: Color,
@@ -307,6 +308,7 @@ impl Default for UniformContext<'_> {
             model_world: Matrix4::identity(),
             material_color: Color::new(1.0, 1.0, 1.0),
             material_opacity: 1.0,
+            material_rotation: 0.0,
             material_reflectivity: 1.0,
             material_shininess: 30.0,
             material_specular: Color::new(
@@ -355,6 +357,7 @@ impl UniformContext<'_> {
                     self.material_color.b as f32,
                 ],
                 UniformSource::MaterialOpacity => vec![self.material_opacity as f32],
+                UniformSource::MaterialRotation => vec![self.material_rotation as f32],
                 UniformSource::MaterialReflectivity => vec![self.material_reflectivity as f32],
                 UniformSource::MaterialShininess => vec![self.material_shininess as f32],
                 UniformSource::MaterialSpecular => vec![

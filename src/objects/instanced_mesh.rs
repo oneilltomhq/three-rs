@@ -48,7 +48,7 @@ impl InstancedMesh {
     ) -> Node {
         let mut object = Object3D::default();
         object.object_type = "InstancedMesh";
-        object.payload = Payload::InstancedMesh(Self {
+        let mut instanced = Self {
             mesh: Mesh {
                 geometry,
                 material: Some(material),
@@ -57,7 +57,15 @@ impl InstancedMesh {
             count,
             instance_matrix: InstancedBufferAttribute::new(vec![0.0; count * 16], 16),
             instance_color: None,
-        });
+        };
+        // `for ( let i = 0; i < count; i ++ ) this.setMatrixAt( i, _identity );`
+        // — the constructor's last step. A mesh whose instances are never placed
+        // still draws at the origin, not collapsed to a zero matrix.
+        let identity = Matrix4::identity();
+        for i in 0..count {
+            instanced.set_matrix_at(i, &identity);
+        }
+        object.payload = Payload::InstancedMesh(instanced);
         object.into_node()
     }
 

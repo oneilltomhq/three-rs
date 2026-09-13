@@ -34,6 +34,10 @@ mod webgpu_lights_phong;
 #[allow(dead_code)]
 mod webgpu_morphtargets;
 
+#[path = "../../examples/webgpu_tsl_galaxy.rs"]
+#[allow(dead_code)]
+mod webgpu_tsl_galaxy;
+
 fn three_js_dir() -> PathBuf {
     match std::env::var("THREE_JS_DIR") {
         Ok(dir) => PathBuf::from(dir),
@@ -349,6 +353,44 @@ fn webgpu_morphtargets() {
     println!("adapter: {:?}", app.renderer.adapter_info());
 
     webgpu_morphtargets::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+}
+
+#[test]
+fn webgpu_tsl_galaxy() {
+    let name = "webgpu_tsl_galaxy";
+    let out = out_dir(name);
+
+    let mut app = webgpu_tsl_galaxy::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_tsl_galaxy::animate(&mut app);
 
     let (width, height, pixels) = app.renderer.read_canvas_pixels();
     assert_eq!((width, height), (800, 500));

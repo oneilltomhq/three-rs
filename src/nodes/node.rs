@@ -123,6 +123,8 @@ pub enum UniformSource {
     MaterialColor,
     MaterialOpacity,
     MaterialReflectivity,
+    /// `materialRotation` — `SpriteMaterial.rotation`.
+    MaterialRotation,
     /// `MeshPhongMaterial.shininess` / `.specular` / `.emissive` /
     /// `.emissiveIntensity`.
     MaterialShininess,
@@ -192,8 +194,12 @@ pub enum BufferSource {
     /// `InstancedMesh.instanceMatrix`.
     InstanceMatrix,
     /// `RangeNode` resolved per instance:
-    /// `lerp( min[c], max[c], Math.random() )`.
-    Range { min: Color, max: Color },
+    /// `lerp( min[c], max[c], Math.random() )`. `min`/`max` are the `Vector4`s
+    /// `RangeNode.setup()` builds out of the min/max values: a scalar splats
+    /// into all four components, a `Color` fills `xyz` and leaves `w` at 1, and
+    /// any other vector takes `x`, `y`, `z || 0`, `w || 0` — so a `vec3` range
+    /// has `w` **0** at both ends, not 1.
+    Range { min: [f64; 4], max: [f64; 4] },
     /// `Morph.js`' `uniformArray( mesh.morphTargetInfluences, 'float' )` — one
     /// `vec4` per morph target with the influence in `.x`.
     MorphInfluences,
