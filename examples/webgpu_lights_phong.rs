@@ -90,7 +90,12 @@ pub fn init() -> App {
         mesh.borrow_mut().mesh_mut().unwrap().material = Some(material);
 
         let light = PointLight::new(Color::from_hex(hex), 1.0, 100.0);
-        light.borrow_mut().light_mut().unwrap().set_power(1700.0);
+        light.borrow_mut()
+            .light_mut()
+            .unwrap()
+            .point_mut()
+            .unwrap()
+            .set_power(1700.0);
         light.add(&mesh);
 
         scene.add(&light);

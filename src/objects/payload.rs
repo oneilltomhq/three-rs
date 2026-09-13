@@ -12,7 +12,7 @@
 
 use std::fmt;
 
-use crate::lights::PointLight;
+use crate::lights::LightPayload;
 use crate::objects::{InstancedBufferAttribute, InstancedMesh, Mesh};
 
 /// The subclass state of one [`crate::core::Object3D`].
@@ -30,7 +30,7 @@ pub enum Payload {
     /// `PointLight extends Light extends Object3D`. The renderer reaches it
     /// through `RenderList.lights`, which `_projectObject()` fills from
     /// `object.is_light` — set alongside this variant.
-    Light(PointLight),
+    Light(LightPayload),
 }
 
 impl fmt::Debug for Payload {
@@ -76,15 +76,15 @@ impl Payload {
         }
     }
 
-    /// The `PointLight` this node is, if it is one.
-    pub fn light(&self) -> Option<&PointLight> {
+    /// The light this node is, if it is one.
+    pub fn light(&self) -> Option<&LightPayload> {
         match self {
             Payload::Light(light) => Some(light),
             _ => None,
         }
     }
 
-    pub fn light_mut(&mut self) -> Option<&mut PointLight> {
+    pub fn light_mut(&mut self) -> Option<&mut LightPayload> {
         match self {
             Payload::Light(light) => Some(light),
             _ => None,

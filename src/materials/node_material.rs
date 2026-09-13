@@ -3,11 +3,25 @@
 //! statements the builder flows into the two shader stages.
 
 use super::phong::{self, PointLightUniforms};
+use super::physical::{self, Physical};
 use super::{MaterialKind, MeshBasicNodeMaterial};
 use crate::nodes::node::Type;
 use crate::nodes::tsl::*;
 use crate::nodes::tsl::FogNode;
 use crate::nodes::{MaterialFlow, NodeRef};
+
+/// Which `Light` subclass one entry of the pass' light list is — what
+/// `LightsNode.setupLightsNode()` branches on to pick the light node.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum LightKind {
+    #[default]
+    Point,
+    Hemisphere,
+}
+
+/// The most lights one pass can carry. three.js has no limit; the array is here
+/// only so `SetupContext` stays `Copy`, and the ladder's scenes are far under it.
+pub const MAX_LIGHTS: usize = 16;
 
 /// The per-render-object facts three.js reads off `builder.object` and
 /// `builder.geometry` during setup.
@@ -24,6 +38,8 @@ pub struct SetupContext {
     /// count rather than a list so `SetupContext` stays `Copy`: a material's
     /// selective `lights([ … ])` subset lives on the material itself.
     pub light_count: usize,
+    /// The kind of each of those lights, in the same order.
+    pub light_kinds: [LightKind; MAX_LIGHTS],
 }
 
 /// `vec4( node )` the way `setupDiffuseColor` builds it: a scalar splats, a
@@ -90,6 +106,8 @@ fn setup_inner(
         fragment_node.clone()
     } else if material.kind == MaterialKind::Phong {
         setup_phong(material, ctx, &mut fragment)
+    } else if material.kind == MaterialKind::Standard {
+        setup_standard(material, ctx, &mut fragment)
     } else {
         // setupDiffuseColor
         let color = match &material.color_node {
@@ -331,5 +349,107 @@ fn setup_phong(
     };
 
     // `Output = max( vec4( outgoingLight + EmissiveColor, DiffuseColor.w ), 0 )`.
+    vec4_join(vec![outgoing.add(emissive_color()), diffuse_color().w()]).max(float(0.0))
+}
+
+/// `MeshStandardNodeMaterial`'s fragment flow: `setupDiffuseColor`,
+/// `setupVariants` (metalness / roughness / specular / diffuse contribution),
+/// then the `LightsNode` loop with `PhysicalLightingModel`. Read off
+/// `handoff/scouts/rung8/MeshStandardMaterial_1{7,8,9}.frag-r186.wgsl`.
+fn setup_standard(
+    material: &MeshBasicNodeMaterial,
+    ctx: &SetupContext,
+    fragment: &mut Vec<NodeRef>,
+) -> NodeRef {
+    // --- setupDiffuseColor. `materialColor` is `vec4( color, 1 )` times the
+    // map's texel when the material has a map, which is why `DiffuseColor` is
+    // assigned a `vec4` product rather than a `vec3` promoted to one.
+    let base = vec4_join(vec![material_color(), float(1.0)]);
+    let color = match &material.color_node {
+        Some(node) => to_vec4(node.clone()),
+        None => match &material.map {
+            Some(map) => base.mul(texture(map)),
+            None => base,
+        },
+    };
+    fragment.push(diffuse_color().assign(color));
+    fragment.push(
+        diffuse_color()
+            .w()
+            .assign(diffuse_color().w().mul(material_opacity())),
+    );
+    // `builder.isOpaque()`
+    fragment.push(diffuse_color().w().assign(float(1.0)));
+
+    // --- setupVariants. `metalnessNode` is reached twice — once for the
+    // `Metalness` property and once for `DiffuseContribution` — so the node is
+    // shared, exactly as three.js shares the `materialMetalness` node.
+    let metalness_node = match &material.metalness_map {
+        // glTF packing: metalness in blue, roughness in green.
+        Some(map) => material_metalness().mul(texture(map).z()),
+        None => material_metalness(),
+    };
+    fragment.push(metalness().assign(metalness_node.clone()));
+
+    let roughness_node = match &material.roughness_map {
+        Some(map) => material_roughness().mul(texture(map).y()),
+        None => material_roughness(),
+    };
+    fragment.push(roughness().assign(physical::get_roughness(roughness_node)));
+
+    // `setupSpecular()`: a dielectric F0 of 0.04, blended towards the albedo by
+    // metalness, and an F90 of 1.
+    fragment.push(specular_color().assign(vec3(0.04, 0.04, 0.04)));
+    fragment.push(specular_color_blended().assign(mix(
+        vec3(0.04, 0.04, 0.04),
+        diffuse_color().rgb(),
+        metalness(),
+    )));
+    fragment.push(specular_f90().assign(float(1.0)));
+    fragment.push(
+        diffuse_contribution().assign(diffuse_color().rgb().mul(metalness_node.one_minus())),
+    );
+
+    fragment.push(emissive_color().assign(material_emissive().mul(material_emissive_intensity())));
+
+    let outgoing = if material.lights {
+        let model = Physical::start();
+
+        let indices: Vec<usize> = match &material.lights_node {
+            Some(subset) => subset.clone(),
+            None => (0..ctx.light_count).collect(),
+        };
+
+        // `LightingContextNode`'s five accumulators. three.js declares each at
+        // the point of its first use; hoisting the zeros here is the one
+        // reordering in this flow (see `docs/nodes.md` §8) and reads nothing
+        // before it is written either way.
+        fragment.push(direct_diffuse().assign(vec3(0.0, 0.0, 0.0)));
+        fragment.push(direct_specular().assign(vec3(0.0, 0.0, 0.0)));
+        fragment.push(irradiance().assign(vec3(0.0, 0.0, 0.0)));
+        fragment.push(indirect_diffuse().assign(vec3(0.0, 0.0, 0.0)));
+        fragment.push(indirect_specular().assign(vec3(0.0, 0.0, 0.0)));
+
+        for index in indices {
+            match ctx.light_kinds[index] {
+                LightKind::Point => {
+                    physical::direct_point_light(&model, &PointLightUniforms::at(index), fragment)
+                }
+                LightKind::Hemisphere => physical::hemisphere_light(index, fragment),
+            }
+        }
+
+        model.indirect_diffuse(fragment);
+        model.indirect_specular(fragment);
+        model.ambient_occlusion(fragment);
+
+        fragment.push(total_diffuse().assign(direct_diffuse().add(indirect_diffuse())));
+        fragment.push(total_specular().assign(direct_specular().add(indirect_specular())));
+        fragment.push(outgoing_light().assign(total_diffuse().add(total_specular())));
+        outgoing_light()
+    } else {
+        diffuse_color().xyz()
+    };
+
     vec4_join(vec![outgoing.add(emissive_color()), diffuse_color().w()]).max(float(0.0))
 }

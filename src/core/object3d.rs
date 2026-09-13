@@ -172,11 +172,11 @@ impl Object3D {
 
     /// The `PointLight` state when `is_light` is true — `Light.color`,
     /// `Light.intensity`, `PointLight.distance`, `PointLight.decay`.
-    pub fn light(&self) -> Option<&crate::lights::PointLight> {
+    pub fn light(&self) -> Option<&crate::lights::LightPayload> {
         self.payload.light()
     }
 
-    pub fn light_mut(&mut self) -> Option<&mut crate::lights::PointLight> {
+    pub fn light_mut(&mut self) -> Option<&mut crate::lights::LightPayload> {
         self.payload.light_mut()
     }
 

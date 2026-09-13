@@ -137,6 +137,13 @@ pub enum UniformSource {
     LightCutoffDistance(usize),
     LightDecay(usize),
     LightViewPosition(usize),
+    /// `HemisphereLightNode`: `light.groundColor * light.intensity` (linear) and
+    /// the light's world position, which is what `lightPosition( light )` is.
+    LightGroundColor(usize),
+    LightWorldPosition(usize),
+    /// `materialMetalness` / `materialRoughness`.
+    MaterialMetalness,
+    MaterialRoughness,
     /// A plain `uniform( value )` the example supplies.
     Value(Vec<f64>),
 }
@@ -153,6 +160,8 @@ impl UniformSource {
             | UniformSource::MaterialSpecular
             | UniformSource::MaterialEmissive
             | UniformSource::MaterialEmissiveIntensity
+            | UniformSource::MaterialMetalness
+            | UniformSource::MaterialRoughness
             | UniformSource::EnvRotationMatrix
             | UniformSource::Value(_) => UpdateType::Object,
             _ => UpdateType::Render,

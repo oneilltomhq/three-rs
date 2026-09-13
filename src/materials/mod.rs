@@ -1,17 +1,19 @@
 //! Ports of `three.js/src/materials/nodes` — under `WebGPURenderer` every
 //! material is a `NodeMaterial`, so this is the only material path.
 
+mod dfg_lut;
 mod node_material;
 pub mod phong;
+pub mod physical;
 
 pub use node_material::{
     background_color_node, background_vertex_node, instanced_range, output_fragment_node,
-    quad_vertex_node, render_output, setup, SetupContext,
+    quad_vertex_node, render_output, setup, LightKind, SetupContext, MAX_LIGHTS,
 };
 
 use crate::math::Color;
 use crate::nodes::NodeRef;
-use crate::textures::CubeTexture;
+use crate::textures::{CubeTexture, Texture};
 
 /// `three.js/src/constants.js` sides.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -31,6 +33,9 @@ pub enum MaterialKind {
     Basic,
     /// `MeshPhongNodeMaterial` — `PhongLightingModel`.
     Phong,
+    /// `MeshStandardNodeMaterial` / `MeshPhysicalNodeMaterial` —
+    /// `PhysicalLightingModel`.
+    Standard,
 }
 
 /// Port of `MeshBasicNodeMaterial.js` + the `NodeMaterial.js` / `Material.js`
@@ -63,6 +68,30 @@ pub struct MeshBasicNodeMaterial {
     /// scene here rather than shared through an `Rc`. `None` means "every light
     /// in the scene", which is what `LightsNode` defaults to.
     pub lights_node: Option<Vec<usize>>,
+    /// `MeshStandardMaterial.metalness` / `.roughness` and the three maps the
+    /// example uses. `map` multiplies the diffuse colour; `roughnessMap` takes
+    /// its green channel and `metalnessMap` its blue, which is the glTF
+    /// packing three.js follows.
+    pub metalness: f64,
+    pub roughness: f64,
+    pub map: Option<Texture>,
+    pub roughness_map: Option<Texture>,
+    pub metalness_map: Option<Texture>,
+    /// `MeshStandardMaterial.bumpMap` / `.bumpScale` — `BumpMapNode`.
+    pub bump_map: Option<Texture>,
+    pub bump_scale: f64,
+    /// `MeshPhysicalMaterial`'s own fields. Nothing on this rung sets them, but
+    /// rung 10's glTF materials will: `KHR_materials_specular` is
+    /// `specularIntensity` + `specularColor`, and `ior` drives the dielectric
+    /// F0. They are carried here so the material API does not have to change
+    /// shape when `MaterialKind::Physical` arrives.
+    pub clearcoat: f64,
+    pub clearcoat_roughness: f64,
+    pub sheen: Color,
+    pub sheen_roughness: f64,
+    pub ior: f64,
+    pub specular_intensity: f64,
+    pub specular_color: Color,
     /// `material.specularNode`.
     pub specular_node: Option<NodeRef>,
     /// `material.normalNode` — e.g. `normalMap( texture( map ) )`.
@@ -103,6 +132,22 @@ impl Default for MeshBasicNodeMaterial {
             emissive_intensity: 1.0,
             lights: false,
             lights_node: None,
+            // `MeshStandardMaterial` defaults.
+            metalness: 0.0,
+            roughness: 1.0,
+            map: None,
+            roughness_map: None,
+            metalness_map: None,
+            bump_map: None,
+            bump_scale: 1.0,
+            // `MeshPhysicalMaterial` defaults.
+            clearcoat: 0.0,
+            clearcoat_roughness: 0.0,
+            sheen: Color::new(0.0, 0.0, 0.0),
+            sheen_roughness: 1.0,
+            ior: 1.5,
+            specular_intensity: 1.0,
+            specular_color: Color::new(1.0, 1.0, 1.0),
             specular_node: None,
             normal_node: None,
             reflectivity: 1.0,
@@ -138,7 +183,25 @@ impl MeshBasicNodeMaterial {
     }
 }
 
+impl MeshBasicNodeMaterial {
+    /// `new MeshStandardNodeMaterial( { color, roughness, metalness } )`.
+    pub fn standard(color: Color, roughness: f64, metalness: f64) -> Self {
+        Self {
+            kind: MaterialKind::Standard,
+            color,
+            roughness,
+            metalness,
+            lights: true,
+            ..Self::default()
+        }
+    }
+}
+
 /// three.js' name for a `NodeMaterial` whose kind is `Phong`. The struct is
 /// shared because `WebGPURenderer` treats every material as a `NodeMaterial`
 /// and the renderer must hold them in one list.
 pub type MeshPhongNodeMaterial = MeshBasicNodeMaterial;
+
+/// Likewise for `Standard` / `Physical` — one struct, one renderer list.
+pub type MeshStandardNodeMaterial = MeshBasicNodeMaterial;
+pub type MeshPhysicalNodeMaterial = MeshBasicNodeMaterial;

@@ -27,11 +27,11 @@ impl PointLight {
         let mut object = Object3D::default();
         object.object_type = "PointLight";
         object.is_light = true;
-        object.payload = Payload::Light(Self {
+        object.payload = Payload::Light(super::LightPayload::Point(Self {
             light: Light::new(color, intensity),
             distance,
             decay: 2.0,
-        });
+        }));
         object.into_node()
     }
 

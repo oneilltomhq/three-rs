@@ -246,6 +246,11 @@ pub struct LightState {
     pub distance: f64,
     /// `light.decay`.
     pub decay: f64,
+    /// `HemisphereLight.groundColor * intensity`, in the working colour space.
+    pub ground_color: Color,
+    /// The light's **world** position — `lightPosition( light )`, which the
+    /// hemisphere light's direction is the normalisation of.
+    pub world_position: Vector3,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -261,6 +266,8 @@ pub struct UniformContext<'a> {
     pub material_specular: Color,
     pub material_emissive: Color,
     pub material_emissive_intensity: f64,
+    pub material_metalness: f64,
+    pub material_roughness: f64,
     pub env_rotation: Matrix4,
     pub background_rotation: Matrix4,
     pub background_blurriness: f64,
@@ -290,6 +297,9 @@ impl Default for UniformContext<'_> {
             ),
             material_emissive: Color::new(0.0, 0.0, 0.0),
             material_emissive_intensity: 1.0,
+            // `MeshStandardMaterial` defaults.
+            material_metalness: 0.0,
+            material_roughness: 1.0,
             env_rotation: Matrix4::identity(),
             background_rotation: Matrix4::identity(),
             background_blurriness: 0.0,
@@ -341,6 +351,8 @@ impl UniformContext<'_> {
                 UniformSource::MaterialEmissiveIntensity => {
                     vec![self.material_emissive_intensity as f32]
                 }
+                UniformSource::MaterialMetalness => vec![self.material_metalness as f32],
+                UniformSource::MaterialRoughness => vec![self.material_roughness as f32],
                 UniformSource::EnvRotationMatrix => self.env_rotation.to_f32_array().to_vec(),
                 UniformSource::BackgroundRotation => {
                     self.background_rotation.to_f32_array().to_vec()
@@ -358,6 +370,18 @@ impl UniformContext<'_> {
                         light.color.g as f32,
                         light.color.b as f32,
                     ]
+                }
+                UniformSource::LightGroundColor(i) => {
+                    let light = &self.lights[*i];
+                    vec![
+                        light.ground_color.r as f32,
+                        light.ground_color.g as f32,
+                        light.ground_color.b as f32,
+                    ]
+                }
+                UniformSource::LightWorldPosition(i) => {
+                    let p = self.lights[*i].world_position;
+                    vec![p.x as f32, p.y as f32, p.z as f32]
                 }
                 UniformSource::LightCutoffDistance(i) => vec![self.lights[*i].distance as f32],
                 UniformSource::LightDecay(i) => vec![self.lights[*i].decay as f32],

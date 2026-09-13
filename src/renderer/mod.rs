@@ -310,6 +310,18 @@ impl Renderer {
             });
         }
 
+        // `LightsNode` keys its per-light node on the light's type, so the
+        // material setup needs the kinds before it can build the lighting flow.
+        let mut light_kinds = [materials::LightKind::Point; materials::MAX_LIGHTS];
+        for (index, node) in render_list.lights.iter().enumerate().take(materials::MAX_LIGHTS) {
+            light_kinds[index] = match node.borrow().light() {
+                Some(crate::lights::LightPayload::Hemisphere(_)) => {
+                    materials::LightKind::Hemisphere
+                }
+                _ => materials::LightKind::Point,
+            };
+        }
+
         for item in render_list.items() {
             let object = item.node.borrow();
             let mesh = object
@@ -338,6 +350,7 @@ impl Renderer {
                     instance_count: instance_matrix.as_ref().map(|_| instance_count as usize),
                     instanced: instance_matrix.is_some(),
                     light_count: render_list.lights.len(),
+                    light_kinds,
                 },
                 fog: scene.fog_node.clone(),
                 model_world: item.matrix_world,
@@ -368,16 +381,26 @@ impl Renderer {
                     .light()
                     .expect("three-rs: the light list only holds lights");
 
-                let mut view_position = PointLight::world_position(&object.matrix_world);
+                let world_position = PointLight::world_position(&object.matrix_world);
+                let mut view_position = world_position;
                 view_position.apply_matrix4(&camera.matrix_world_inverse);
 
-                let c = light.light.color;
-                let intensity = light.light.intensity;
+                let c = light.light().color;
+                let intensity = light.light().intensity;
+                let scale = |c: Color| Color::new(c.r * intensity, c.g * intensity, c.b * intensity);
+
                 LightState {
-                    color: Color::new(c.r * intensity, c.g * intensity, c.b * intensity),
+                    color: scale(c),
                     view_position,
-                    distance: light.distance,
-                    decay: light.decay,
+                    world_position,
+                    distance: light.point().map(|l| l.distance).unwrap_or(0.0),
+                    decay: light.point().map(|l| l.decay).unwrap_or(2.0),
+                    // `HemisphereLightNode.update()`: the ground colour carries
+                    // the intensity just as the sky colour does.
+                    ground_color: light
+                        .hemisphere()
+                        .map(|l| scale(l.ground_color))
+                        .unwrap_or(Color::new(0.0, 0.0, 0.0)),
                 }
             })
             .collect();
@@ -532,6 +555,8 @@ impl Renderer {
                 material_specular: item.material.specular,
                 material_emissive: item.material.emissive,
                 material_emissive_intensity: item.material.emissive_intensity,
+                material_metalness: item.material.metalness,
+                material_roughness: item.material.roughness,
                 viewport: Vector2::new(target.width as f64, target.height as f64),
                 ..camera_uniforms
             };

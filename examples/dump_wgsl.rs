@@ -1,7 +1,7 @@
 //! Prints the WGSL the node system generates for every material in rungs 1–4,
 //! so it can be diffed against three.js' own dumped output.
 
-use three_rs::materials::{setup, MeshBasicNodeMaterial, SetupContext, Side};
+use three_rs::materials::{setup, LightKind, MeshBasicNodeMaterial, SetupContext, Side};
 use three_rs::math::Color;
 use three_rs::nodes::tsl::*;
 use three_rs::nodes::NodeBuilder;
@@ -65,6 +65,7 @@ fn main() {
             instance_count: Some(1000),
             instanced: true,
             light_count: 0,
+            ..SetupContext::default()
         },
     );
 
@@ -158,6 +159,46 @@ fn main() {
     ));
     right.shininess = 90.0;
     show_fog("phong_right", &right, four, Some(&fog));
+
+    // rung 8: the four physical materials, against
+    // `handoff/scouts/rung8/MeshStandardMaterial_*`.
+    let two_lights = SetupContext {
+        light_count: 2,
+        light_kinds: {
+            let mut kinds = [LightKind::Point; three_rs::materials::MAX_LIGHTS];
+            kinds[1] = LightKind::Hemisphere;
+            kinds
+        },
+        ..SetupContext::default()
+    };
+
+    let mut bulb = MeshBasicNodeMaterial::standard(Color::from_hex(0x000000), 1.0, 0.0);
+    bulb.emissive = Color::from_hex(0xffffee);
+    bulb.emissive_intensity = 1.0;
+    show("standard_bulb", &bulb, two_lights);
+
+    let hardwood = Texture::new(1024, 1024, Some(vec![0; 4]));
+    let hardwood_bump = Texture::new(1024, 1024, Some(vec![0; 4]));
+    let hardwood_roughness = Texture::new(1024, 1024, Some(vec![0; 4]));
+    let mut floor = MeshBasicNodeMaterial::standard(Color::new(1.0, 1.0, 1.0), 0.8, 0.2);
+    floor.map = Some(hardwood.clone());
+    floor.bump_map = Some(hardwood_bump.clone());
+    floor.roughness_map = Some(hardwood_roughness.clone());
+    show("standard_floor", &floor, two_lights);
+
+    let brick = Texture::new(512, 512, Some(vec![0; 4]));
+    let brick_bump = Texture::new(512, 512, Some(vec![0; 4]));
+    let mut cube_material = MeshBasicNodeMaterial::standard(Color::new(1.0, 1.0, 1.0), 0.7, 0.2);
+    cube_material.map = Some(brick.clone());
+    cube_material.bump_map = Some(brick_bump.clone());
+    show("standard_cube", &cube_material, two_lights);
+
+    let earth = Texture::new(2048, 1024, Some(vec![0; 4]));
+    let earth_specular = Texture::new(2048, 1024, Some(vec![0; 4]));
+    let mut ball = MeshBasicNodeMaterial::standard(Color::new(1.0, 1.0, 1.0), 0.5, 1.0);
+    ball.map = Some(earth.clone());
+    ball.metalness_map = Some(earth_specular.clone());
+    show("standard_ball", &ball, two_lights);
 
     let mut sphere = MeshBasicNodeMaterial::phong(Color::new(1.0, 1.0, 1.0));
     sphere.lights = false;

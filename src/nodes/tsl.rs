@@ -428,6 +428,46 @@ pub fn light_view_position(index: usize) -> NodeRef {
     )
 }
 
+/// `HemisphereLightNode`'s two extra render-group uniforms: the ground colour
+/// (already multiplied by the light's intensity) and the light's **world**
+/// position, which `lightPosition( light )` resolves to.
+pub fn light_ground_color(index: usize) -> NodeRef {
+    uniform(
+        UniformSource::LightGroundColor(index),
+        Type::Vec3,
+        UniformGroup::Render,
+        None,
+    )
+}
+
+pub fn light_world_position(index: usize) -> NodeRef {
+    uniform(
+        UniformSource::LightWorldPosition(index),
+        Type::Vec3,
+        UniformGroup::Render,
+        None,
+    )
+}
+
+/// `materialMetalness` / `materialRoughness`.
+pub fn material_metalness() -> NodeRef {
+    uniform(
+        UniformSource::MaterialMetalness,
+        Type::F32,
+        UniformGroup::Object,
+        None,
+    )
+}
+
+pub fn material_roughness() -> NodeRef {
+    uniform(
+        UniformSource::MaterialRoughness,
+        Type::F32,
+        UniformGroup::Object,
+        None,
+    )
+}
+
 /// `inverseSqrt( x )`.
 pub fn inverse_sqrt(x: impl Into<NodeRef>) -> NodeRef {
     math("inverseSqrt", vec![x.into()], Type::F32)
@@ -468,6 +508,20 @@ pub fn normal_map(node: impl Into<NodeRef>) -> NodeRef {
             .mul(texel.mul(2.0).sub(1.0).xyz())
             .normalize()
     })
+}
+
+/// `abs( x )`.
+pub fn abs(x: impl Into<NodeRef>) -> NodeRef {
+    let x = x.into();
+    let ty = x.ty();
+    math("abs", vec![x], ty)
+}
+
+/// `sqrt( x )`.
+pub fn sqrt(x: impl Into<NodeRef>) -> NodeRef {
+    let x = x.into();
+    let ty = x.ty();
+    math("sqrt", vec![x], ty)
 }
 
 /// `max( a, b )`.
@@ -557,6 +611,23 @@ impl NodeRef {
     pub fn pow(&self, other: impl Into<NodeRef>) -> NodeRef {
         math("pow", vec![self.clone(), other.into()], self.ty())
     }
+    pub fn abs(&self) -> NodeRef {
+        abs(self.clone())
+    }
+
+    pub fn sqrt(&self) -> NodeRef {
+        sqrt(self.clone())
+    }
+
+    /// `node.reciprocal()` — `1.0 / node`, which is how `OperatorNode` prints it.
+    pub fn reciprocal(&self) -> NodeRef {
+        float(1.0).div(self.clone())
+    }
+
+    pub fn exp2(&self) -> NodeRef {
+        exp2(self.clone())
+    }
+
     pub fn max(&self, other: impl Into<NodeRef>) -> NodeRef {
         math("max", vec![self.clone(), other.into()], self.ty())
     }
@@ -1117,6 +1188,35 @@ prop!(shininess, "Shininess", Type::F32);
 prop!(specular_color, "SpecularColor", Type::Vec3);
 prop!(emissive_color, "EmissiveColor", Type::Vec3);
 prop!(irradiance, "irradiance", Type::Vec3);
+prop!(metalness, "Metalness", Type::F32);
+prop!(single_scattering, "singleScattering", Type::Vec3);
+prop!(multi_scattering, "multiScattering", Type::Vec3);
+prop!(roughness, "Roughness", Type::F32);
+prop!(specular_color_blended, "SpecularColorBlended", Type::Vec3);
+prop!(specular_f90, "SpecularF90", Type::F32);
+prop!(diffuse_contribution, "DiffuseContribution", Type::Vec3);
+prop!(radiance, "radiance", Type::Vec3);
+prop!(ibl_irradiance, "iblIrradiance", Type::Vec3);
+prop!(
+    single_scattering_dielectric,
+    "singleScatteringDielectric",
+    Type::Vec3
+);
+prop!(
+    multi_scattering_dielectric,
+    "multiScatteringDielectric",
+    Type::Vec3
+);
+prop!(
+    single_scattering_metallic,
+    "singleScatteringMetallic",
+    Type::Vec3
+);
+prop!(
+    multi_scattering_metallic,
+    "multiScatteringMetallic",
+    Type::Vec3
+);
 
 // ---------------------------------------------------------------------------
 // textures
