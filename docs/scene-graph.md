@@ -104,11 +104,13 @@ plus the fields `Scene` adds to `Object3D` — `background`, `fogNode` and
 anything: a `Group` holding meshes, a light holding its bulb mesh
 (`webgpu_lights_phong`, rung 5), a loaded glTF hierarchy (rung 10).
 
-`PerspectiveCamera` and `OrthographicCamera` still hold an `Object3D` by value.
-They are never *in* the tree in any example on the ladder, and the renderer reads
-them directly, so there is nothing to gain yet; a camera that has to be a child
-of a node (or a node's parent, as in rung 7's shadow cameras) is the trigger to
-give them a `Node` too.
+`PerspectiveCamera` owns a `Node` (`camera.node`) as of rung 6:
+`webgpu_morphtargets` does `scene.add( camera )` and parents its point light to
+the camera, so the camera is both *in* the tree and a parent within it, which a
+bare `Object3D` cannot express. `camera.update_matrix_world()` walks the node and
+takes the inverse of its world matrix. `OrthographicCamera` still holds an
+`Object3D` by value — nothing on the ladder nests one yet, and rung 7's shadow
+cameras are the trigger to give it a `Node` too.
 
 ### projectObject
 
@@ -170,14 +172,20 @@ scene.add( &light );
 `matrixWorld` on the node itself is the world position. The bulb inherits the
 light's world matrix for free, because it is a child.
 
-`RenderList.lights` is three.js' `lightsArray`: **scene-traversal order**, which
-is the order `LightsNode.setLights()` receives and therefore the order
-`UniformSource::Light*( i )` indexes. `material.lights_node = Some( vec![ 0 ] )`
+`RenderList.lights` is three.js' `lightsArray`: **scene-traversal order**. But
+that is not the order the shader sees: `LightsNode.setupLightsNode()` runs
+`sortLights( lights )`, which is `lights.sort( ( a, b ) => a.id - b.id )` —
+**creation** order. The renderer sorts `render_list.lights` by `Object3D.id`
+before building `LightState`, so `UniformSource::Light*( i )` and
+`material.lights_node = Some( vec![ 0 ] )` (that is `lights( [ light1 ] )`) both
+index the sorted list. `material.lights_node = Some( vec![ 0 ] )`
 is `lights( [ light1 ] )` — an index into that list. In
-`webgpu_lights_phong.html` the four lights are `scene.add()`ed before the three
-teapots, so traversal order is add order and the uniform triples land in Three's
-slots; anything that nests lights under groups (rungs 6–8) has to match Three's
-*traversal*, not its construction order.
+In `webgpu_lights_phong.html` the two orders agree — the four lights are created
+and `scene.add()`ed in the same order, before the three teapots. In
+`webgpu_morphtargets.html` they do not: the `AmbientLight` is created first but
+the `PointLight` is a child of the camera, which is added to the scene first, so
+the walk reaches the point light first and only `sortLights()` puts the ambient
+light's `irradiance` statements ahead of it, as the dump has them.
 
 ## What is not wired up yet
 
@@ -187,6 +195,6 @@ slots; anything that nests lights under groups (rungs 6–8) has to match Three'
 - No `LOD`, `Sprite`, `Line`, `Points`, `BatchedMesh` or `BundleGroup` arm in
   `project_object`, no multi-material `geometry.groups` arm, no clipping context
   and no `transparentDoublePass` (transmission).
-- only `PointLight` exists. `AmbientLight`, `DirectionalLight`, `SpotLight` and
-  `HemisphereLight` are further lighting rungs; so are shadows (rung 7), which
-  need a camera that can live in the tree.
+- `PointLight` and `AmbientLight` exist (rungs 5 and 6). `DirectionalLight`,
+  `SpotLight` and `HemisphereLight` are further lighting rungs; so are shadows
+  (rung 7).

@@ -1,6 +1,10 @@
 //! Prints the WGSL the node system generates for every material in rungs 1–4,
 //! so it can be diffed against three.js' own dumped output.
 
+#[allow(dead_code)]
+#[path = "webgpu_morphtargets.rs"]
+mod morphtargets;
+
 use three_rs::materials::{setup, MeshBasicNodeMaterial, SetupContext, Side};
 use three_rs::lights::LightKind;
 use three_rs::math::Color;
@@ -66,6 +70,7 @@ fn main() {
             instance_count: Some(1000),
             instanced: true,
             lights: Vec::new(),
+            morph: None,
         },
     );
 
@@ -164,4 +169,19 @@ fn main() {
     sphere.lights = false;
     sphere.color_node = Some(Color::from_hex(0x0040ff).into());
     show_fog("phong_light_sphere", &sphere, four, Some(&fog));
+
+    // rung 6: the morphing box, against
+    // `handoff/scouts/rung6/MeshPhongNodeMaterial.{vert,frag}-r186.wgsl`.
+    let geometry = std::rc::Rc::new(morphtargets::create_geometry());
+    let mut morph = MeshBasicNodeMaterial::phong(Color::from_hex(0xff0000));
+    morph.flat_shading = true;
+    show(
+        "morphtargets",
+        &morph,
+        SetupContext {
+            lights: vec![LightKind::Ambient, LightKind::Point],
+            morph: three_rs::nodes::morph::get_entry(&geometry),
+            ..SetupContext::default()
+        },
+    );
 }
