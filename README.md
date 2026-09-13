@@ -62,8 +62,8 @@ threshold is Three's own (0.1% of pixels).
 
 ## Building
 
-Requires a Rust toolchain and a Vulkan driver. `wgpu` is pinned to a
-gfx-rs/wgpu commit by git revision in `Cargo.toml`; nothing else is unusual.
+Requires a Rust toolchain (1.87 or newer) and a Vulkan driver. `wgpu` comes
+from crates.io, pinned to `30.0.1` in `Cargo.toml`; nothing else is unusual.
 
 ```sh
 cargo build --release

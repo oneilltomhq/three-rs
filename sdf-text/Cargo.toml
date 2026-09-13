@@ -1,7 +1,23 @@
 [package]
 name = "sdf-text"
 version = "0.1.0"
-edition = "2021"
+description = "Signed-distance-field text from real font outlines: raster, EDT, atlas and layout, for the three-rs renderer."
+documentation = "https://docs.rs/sdf-text"
+readme = "README.md"
+keywords = ["sdf", "text", "font", "glyph", "atlas"]
+categories = ["rendering", "text-processing"]
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+exclude = [
+    # Roboto ships under its own licence and the atlas/font goldens are large;
+    # the tests that read them run from a repository checkout.
+    "tests/assets/**",
+    "tests/golden/**",
+    "target/**",
+]
 
 [dependencies]
 # `opentype-layout` is enabled per the port plan. The GPOS `kern` walk itself is
@@ -18,7 +34,7 @@ edition = "2021"
 # (§2.2) blesses this: "no behavioural difference".
 owned_ttf_parser = { version = "0.25", default-features = false, features = ["std", "opentype-layout"] }
 bytemuck = { version = "1", features = ["derive"] }
-three-rs = { path = ".." }
+three-rs = { path = "..", version = "0.1.0" }
 
 [dev-dependencies]
 serde_json = "1"

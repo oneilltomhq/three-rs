@@ -1,4 +1,0 @@
-# The wgpu dependency is a git pin. libgit2's fetch of gfx-rs/wgpu has been seen
-# to fail with a bare EOF where the git CLI succeeds; use the CLI.
-[net]
-git-fetch-with-cli = true

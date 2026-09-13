@@ -1,16 +1,37 @@
 [workspace]
 members = [".", "d3/hierarchy", "sdf-text"]
 
+[workspace.package]
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/oneilltomhq/three-rs"
+authors = ["Tom O'Neill"]
+rust-version = "1.87"
+
 [package]
 name = "three-rs"
 version = "0.1.0"
-edition = "2021"
+description = "A port of three.js core and its WebGPURenderer to Rust on wgpu, graded against three.js's own end-to-end pixel comparison."
+documentation = "https://docs.rs/three-rs"
+readme = "README.md"
+keywords = ["graphics", "3d", "wgpu", "webgpu", "threejs"]
+categories = ["rendering::engine", "graphics", "game-development"]
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+exclude = [
+    # Grader calibration logs and probe scripts; only of interest in the repo.
+    "rung0/**",
+    # Per-rung progress notes and the WGSL dumps they refer to.
+    "docs/*-progress.md",
+    "docs/lines/*.wgsl",
+    "target/**",
+]
 
 [dependencies]
-# Pinned to the gfx-rs/wgpu trunk commit the ladder was graded against (2026-07-31,
-# between v30.0.0 and the next release). To build against a local checkout, use a
-# `[patch]` section in .cargo/config.toml rather than editing this line.
-wgpu = { git = "https://github.com/gfx-rs/wgpu", rev = "b6db26411cd7f34da35cef9b794c59f91ef7e343", default-features = false, features = ["std", "vulkan", "wgsl"] }
+wgpu = { version = "30.0.1", default-features = false, features = ["std", "vulkan", "wgsl"] }
 bytemuck = { version = "1", features = ["derive"] }
 pollster = "0.4"
 png = "0.17"
@@ -23,10 +44,14 @@ winit = "0.30.8"
 # The sdf-text member crate depends on three-rs; this is the dev-only half of
 # that pair, so the SDF text examples and their e2e tests can live here with
 # every other ported example. Cargo allows a dev-dependency cycle.
+# No `version` here on purpose: a dev-dependency that carries only a path is
+# stripped from the manifest when the crate is packaged, which is what breaks
+# the three-rs <-> sdf-text/d3-hierarchy publish cycle. Adding a version would
+# keep the dep in the published manifest and make three-rs unpublishable.
 sdf-text = { path = "sdf-text" }
 # Same reason, for the d33 treemap example: the layout is the d3-hierarchy port's
 # and only the example and its gate need it.
-d3-hierarchy = { path = "d3/hierarchy" }
+d3-hierarchy = { path = "d3/hierarchy" }   # path-only, same reason
 
 [[bin]]
 name = "viewer"
