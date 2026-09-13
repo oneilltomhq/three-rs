@@ -62,6 +62,17 @@ fn setup_inner(
     // --- setupPosition: the `context.position` stack, flowed into the vertex
     // stage before either stage's own flow. Morphing, skinning and batching
     // plug in here too.
+    //
+    // `material.positionNode` is applied *before* the instance transform. three
+    // r186 does the reverse (`NodeMaterial.js:798` instancing, then `:804`
+    // `positionLocal.assign( positionNode )`), which throws the instance matrix
+    // away; lib3's `BatchedText` was written against the order here. On the unit
+    // `PlaneGeometry( 1, 1 )` the two formulations agree vertex for vertex, so
+    // this also reproduces d33's baked-matrix workaround exactly. Recorded as a
+    // deviation in `docs/nodes.md` §10 and plan §5.2.
+    if let Some(node) = &material.position_node {
+        pre_vertex.push(position_local().assign(node.clone()));
+    }
     if let Some(count) = ctx.instance_count {
         let matrix = instance_matrix(count);
         pre_vertex.push(

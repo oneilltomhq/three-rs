@@ -23,6 +23,9 @@ use crate::textures::CubeTexture;
 pub enum Side {
     Front,
     Back,
+    /// `DoubleSide` — `_getPrimitiveState()` leaves `cullMode` at `'none'`, so
+    /// the front-face winding no longer matters. `BatchedText`'s material.
+    Double,
 }
 
 /// Which `NodeMaterial` subclass this is — i.e. which `setupLightingModel()`
@@ -72,6 +75,13 @@ pub struct MeshBasicNodeMaterial {
     pub specular_node: Option<NodeRef>,
     /// `material.normalNode` — e.g. `normalMap( texture( map ) )`.
     pub normal_node: Option<NodeRef>,
+    /// `NodeMaterial.positionNode` — replaces `positionLocal`.
+    ///
+    /// **Deviation from r186, deliberate** (plan §5.2, `docs/nodes.md` §10):
+    /// three's `setupPosition()` assigns the instance transform *first* and
+    /// `positionNode` *after*, so `positionNode` discards the instance matrix.
+    /// The port assigns `positionNode` first and then the instance transform.
+    pub position_node: Option<NodeRef>,
     /// `NodeMaterial.vertexNode` — replaces the whole clip-position flow.
     pub vertex_node: Option<NodeRef>,
     /// `NodeMaterial.fragmentNode` — replaces the whole fragment flow.
@@ -128,6 +138,7 @@ impl Default for MeshBasicNodeMaterial {
             lights_node: None,
             specular_node: None,
             normal_node: None,
+            position_node: None,
             reflectivity: 1.0,
             env_map: None,
             color_node: None,

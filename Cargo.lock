@@ -1486,6 +1486,7 @@ dependencies = [
  "bytemuck",
  "owned_ttf_parser",
  "serde_json",
+ "three-rs",
 ]
 
 [[package]]
@@ -1700,6 +1701,7 @@ dependencies = [
  "bytemuck",
  "png",
  "pollster",
+ "sdf-text",
  "serde_json",
  "wgpu",
  "winit",

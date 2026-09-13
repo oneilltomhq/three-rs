@@ -16,6 +16,12 @@ zune-jpeg = { version = "0.5.15", default-features = false, features = ["std"] }
 # The viewer binary only; the e2e path does not touch it.
 winit = "0.30.8"
 
+[dev-dependencies]
+# The sdf-text member crate depends on three-rs; this is the dev-only half of
+# that pair, so the SDF text examples and their e2e tests can live here with
+# every other ported example. Cargo allows a dev-dependency cycle.
+sdf-text = { path = "sdf-text" }
+
 [[bin]]
 name = "viewer"
 path = "src/bin/viewer.rs"

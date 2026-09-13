@@ -18,6 +18,7 @@ edition = "2021"
 # (§2.2) blesses this: "no behavioural difference".
 owned_ttf_parser = { version = "0.25", default-features = false, features = ["std", "opentype-layout"] }
 bytemuck = { version = "1", features = ["derive"] }
+three-rs = { path = ".." }
 
 [dev-dependencies]
 serde_json = "1"

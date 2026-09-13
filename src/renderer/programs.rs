@@ -153,10 +153,14 @@ impl Program {
                 // `_getPrimitiveState()`: `FrontSide` → CCW front faces,
                 // `BackSide` → CW, both culling the back face.
                 front_face: match state.side {
-                    Side::Front => wgpu::FrontFace::Ccw,
+                    Side::Front | Side::Double => wgpu::FrontFace::Ccw,
                     Side::Back => wgpu::FrontFace::Cw,
                 },
-                cull_mode: Some(wgpu::Face::Back),
+                // `DoubleSide` → `cullMode: 'none'`.
+                cull_mode: match state.side {
+                    Side::Double => None,
+                    _ => Some(wgpu::Face::Back),
+                },
                 unclipped_depth: false,
                 polygon_mode: wgpu::PolygonMode::Fill,
                 conservative: false,

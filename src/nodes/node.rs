@@ -187,6 +187,11 @@ pub enum BufferSource {
     /// `RangeNode` resolved per instance:
     /// `lerp( min[c], max[c], Math.random() )`.
     Range { min: Color, max: Color },
+    /// A per-instance attribute the caller fills itself — three.js'
+    /// `new InstancedBufferAttribute( array, itemSize )` on the geometry, e.g.
+    /// `BatchedText`'s `aGlyphUV` / `aGlyphBounds` / `aColor` / `aOpacity`.
+    /// Only ever a vertex buffer: the uniform path has no equivalent.
+    Attribute(Rc<Vec<f32>>),
 }
 
 /// The CPU-side buffer behind one or more *instanced vertex attributes* —
