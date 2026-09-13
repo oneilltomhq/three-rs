@@ -22,11 +22,15 @@ pub mod textures;
 pub use cameras::{OrthographicCamera, PerspectiveCamera};
 pub use core::{BufferGeometry, Node, Object3D, Object3DNode};
 pub use geometries::{
-    box_geometry, quad_geometry, sphere_geometry, teapot_geometry, torus_knot_geometry,
+    box_geometry, plane_geometry, quad_geometry, sphere_geometry, teapot_geometry,
+    torus_knot_geometry,
 };
 pub use lights::{HemisphereLight, Light, LightPayload, PointLight};
 pub use loaders::{BufferGeometryLoader, CubeTextureLoader, TextureLoader};
-pub use materials::{MaterialKind, MeshBasicNodeMaterial, MeshPhongNodeMaterial};
+pub use materials::{
+    MaterialKind, MeshBasicNodeMaterial, MeshPhongNodeMaterial, MeshPhysicalNodeMaterial,
+    MeshStandardNodeMaterial, ToneMapping,
+};
 pub use math::{Color, Euler, Matrix3, Matrix4, Quaternion, Vector2, Vector3};
 pub use objects::{Background, Group, InstancedMesh, Mesh, Payload, QuadMesh, Scene};
 pub use renderer::{PassNode, RenderPipeline, RenderTarget, Renderer, RendererParameters};

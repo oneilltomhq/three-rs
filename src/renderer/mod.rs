@@ -161,6 +161,9 @@ pub struct Renderer {
     /// so the full-screen quad draws straight into the canvas.
     neutral_output: bool,
 
+    /// `renderer.shadowMap.enabled`.
+    pub shadow_map_enabled: bool,
+
     /// `renderer.toneMapping` / `renderer.toneMappingExposure`.
     pub tone_mapping: crate::materials::ToneMapping,
     pub tone_mapping_exposure: f64,
@@ -242,6 +245,7 @@ impl Renderer {
             quad_geometry: None,
             quad_camera: OrthographicCamera::new(-1.0, 1.0, 1.0, -1.0, 0.0, 1.0),
             neutral_output: false,
+            shadow_map_enabled: false,
             tone_mapping: crate::materials::ToneMapping::None,
             tone_mapping_exposure: 1.0,
             time: 0.0,

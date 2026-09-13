@@ -46,6 +46,9 @@ pub struct Object3D {
     pub render_order: f64,
     /// `Object3D.frustumCulled`.
     pub frustum_culled: bool,
+    /// `Object3D.castShadow` / `Object3D.receiveShadow`.
+    pub cast_shadow: bool,
+    pub receive_shadow: bool,
     /// `Object3D.matrixAutoUpdate` (`Object3D.DEFAULT_MATRIX_AUTO_UPDATE`).
     pub matrix_auto_update: bool,
     /// `Object3D.matrixWorldAutoUpdate` (`DEFAULT_MATRIX_WORLD_AUTO_UPDATE`).
@@ -86,6 +89,8 @@ impl Default for Object3D {
             layers: Layers::default(),
             render_order: 0.0,
             frustum_culled: true,
+            cast_shadow: false,
+            receive_shadow: false,
             matrix_auto_update: true,
             matrix_world_auto_update: true,
             matrix_world_needs_update: false,
@@ -121,6 +126,8 @@ impl Clone for Object3D {
             layers: self.layers,
             render_order: self.render_order,
             frustum_culled: self.frustum_culled,
+            cast_shadow: self.cast_shadow,
+            receive_shadow: self.receive_shadow,
             matrix_auto_update: self.matrix_auto_update,
             matrix_world_auto_update: self.matrix_world_auto_update,
             matrix_world_needs_update: self.matrix_world_needs_update,
