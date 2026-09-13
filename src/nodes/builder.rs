@@ -997,6 +997,11 @@ impl NodeBuilder {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         vertex_wgsl.hash(&mut hasher);
         fragment_wgsl.hash(&mut hasher);
+        // Two materials can generate identical WGSL and still need different
+        // bindings — two copies of the same shader with different baked uniform
+        // values (a texture's uv matrix, say). The binding descriptions are part
+        // of the program, so they are part of its key.
+        format!("{:?}", groups).hash(&mut hasher);
         let cache_key = hasher.finish();
 
         NodeProgram {

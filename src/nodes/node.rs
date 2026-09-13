@@ -121,8 +121,6 @@ pub enum UniformSource {
     MaterialSpecular,
     MaterialEmissive,
     MaterialEmissiveIntensity,
-    /// A `TextureNode`'s `texture.matrix` (offset/repeat/rotation/center).
-    TextureMatrix,
     /// `materialEnvRotation` — the env map's rotation matrix.
     EnvRotationMatrix,
     BackgroundRotation,
@@ -155,7 +153,6 @@ impl UniformSource {
             | UniformSource::MaterialSpecular
             | UniformSource::MaterialEmissive
             | UniformSource::MaterialEmissiveIntensity
-            | UniformSource::TextureMatrix
             | UniformSource::EnvRotationMatrix
             | UniformSource::Value(_) => UpdateType::Object,
             _ => UpdateType::Render,

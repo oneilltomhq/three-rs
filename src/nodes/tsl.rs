@@ -18,7 +18,7 @@ use super::node::{
     Builtin, BufferNode, BufferSource, FnDef, Lazy, Node, NodeRef, SampleMode, Type, UniformGroup,
     UniformNode, UniformSource, VarDef, VaryingDef,
 };
-use crate::math::Color;
+use crate::math::{Color, Matrix3};
 use crate::textures::{CubeTexture, DepthTexture, Texture};
 
 pub use super::node::TextureSource;
@@ -1133,9 +1133,9 @@ fn texture_node(source: TextureSource, uv: NodeRef, mode: SampleMode, ty: Type) 
 
 /// The `texture.matrix * vec3( uv, 1.0 )` transform `TextureNode.setupUV()`
 /// applies before sampling.
-fn transformed_uv(uv: NodeRef) -> NodeRef {
+fn transformed_uv(uv: NodeRef, matrix: Matrix3) -> NodeRef {
     uniform(
-        UniformSource::TextureMatrix,
+        UniformSource::Value(matrix.to_padded_f32_array().iter().map(|&v| v as f64).collect()),
         Type::Mat3,
         UniformGroup::Object,
         None,
@@ -1148,7 +1148,7 @@ fn transformed_uv(uv: NodeRef) -> NodeRef {
 pub fn texture(map: &Texture) -> NodeRef {
     texture_node(
         TextureSource::Texture2D(map.clone()),
-        transformed_uv(uv()),
+        transformed_uv(uv(), map.matrix()),
         SampleMode::Sample,
         Type::Vec4,
     )
@@ -1169,7 +1169,7 @@ pub fn texture_uv(map: &Texture, coord: NodeRef) -> NodeRef {
 pub fn depth_texture(map: &DepthTexture) -> NodeRef {
     texture_node(
         TextureSource::Depth(map.clone()),
-        transformed_uv(uv()),
+        transformed_uv(uv(), Matrix3::identity()),
         SampleMode::Load,
         Type::F32,
     )

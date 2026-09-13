@@ -9,6 +9,7 @@ use std::cell::{Ref, RefCell};
 use std::rc::Rc;
 
 use super::{ColorSpace, TextureFilter};
+use crate::math::{Matrix3, Vector2};
 
 /// `three.js/src/constants.js` wrapping modes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -60,6 +61,14 @@ pub struct TextureInner {
     pub mag_filter: TextureFilter,
     pub min_filter: MinFilter,
     pub anisotropy: u16,
+    /// `Texture.offset` / `.repeat` / `.center` / `.rotation` —
+    /// `updateMatrix()`'s inputs.
+    pub offset: Vector2,
+    pub repeat: Vector2,
+    pub center: Vector2,
+    pub rotation: f64,
+    /// `Texture.matrix`, kept in step with the four above.
+    pub matrix: Matrix3,
     /// `false` for `renderTarget.texture` — the renderer owns the GPU texture.
     pub own_gpu: bool,
     pub gpu: Option<wgpu::Texture>,
@@ -88,6 +97,11 @@ impl Texture {
             mag_filter: TextureFilter::Linear,
             min_filter: MinFilter::LinearMipmapLinear,
             anisotropy: 1,
+            offset: Vector2::new(0.0, 0.0),
+            repeat: Vector2::new(1.0, 1.0),
+            center: Vector2::new(0.0, 0.0),
+            rotation: 0.0,
+            matrix: Matrix3::identity(),
             own_gpu: true,
             gpu: None,
             format: wgpu::TextureFormat::Rgba8Unorm,
@@ -158,6 +172,51 @@ impl Texture {
         let mut inner = self.0.borrow_mut();
         inner.wrap_s = wrap_s;
         inner.wrap_t = wrap_t;
+    }
+
+    /// `texture.anisotropy = n`.
+    pub fn set_anisotropy(&self, anisotropy: u16) {
+        self.0.borrow_mut().anisotropy = anisotropy;
+    }
+
+    /// `texture.repeat.set( x, y )` — and `updateMatrix()`, which three.js runs
+    /// for us every frame because `matrixAutoUpdate` is on by default.
+    pub fn set_repeat(&self, x: f64, y: f64) {
+        self.0.borrow_mut().repeat = Vector2::new(x, y);
+        self.update_matrix();
+    }
+
+    /// `texture.offset.set( x, y )`.
+    pub fn set_offset(&self, x: f64, y: f64) {
+        self.0.borrow_mut().offset = Vector2::new(x, y);
+        self.update_matrix();
+    }
+
+    /// `texture.center.set( x, y )`.
+    pub fn set_center(&self, x: f64, y: f64) {
+        self.0.borrow_mut().center = Vector2::new(x, y);
+        self.update_matrix();
+    }
+
+    /// `texture.rotation = theta`.
+    pub fn set_rotation(&self, rotation: f64) {
+        self.0.borrow_mut().rotation = rotation;
+        self.update_matrix();
+    }
+
+    /// `Texture.updateMatrix()`.
+    pub fn update_matrix(&self) {
+        let mut inner = self.0.borrow_mut();
+        let (offset, repeat, center, rotation) =
+            (inner.offset, inner.repeat, inner.center, inner.rotation);
+        inner.matrix.set_uv_transform(
+            offset.x, offset.y, repeat.x, repeat.y, rotation, center.x, center.y,
+        );
+    }
+
+    /// `Texture.matrix` — what `TextureNode.setupUV()` multiplies the UV by.
+    pub fn matrix(&self) -> Matrix3 {
+        self.0.borrow().matrix
     }
 
     pub fn size(&self) -> (u32, u32) {

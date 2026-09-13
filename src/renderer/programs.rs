@@ -265,7 +265,6 @@ pub struct UniformContext<'a> {
     pub background_rotation: Matrix4,
     pub background_blurriness: f64,
     pub background_intensity: f64,
-    pub texture_matrix: Matrix3,
     pub viewport: Vector2,
     pub time: f64,
     /// The lights of the pass, in `Scene.lights` order. Borrowed so the context
@@ -295,7 +294,6 @@ impl Default for UniformContext<'_> {
             background_rotation: Matrix4::identity(),
             background_blurriness: 0.0,
             background_intensity: 1.0,
-            texture_matrix: Matrix3::identity(),
             viewport: Vector2::new(0.0, 0.0),
             time: 0.0,
             lights: &[],
@@ -343,7 +341,6 @@ impl UniformContext<'_> {
                 UniformSource::MaterialEmissiveIntensity => {
                     vec![self.material_emissive_intensity as f32]
                 }
-                UniformSource::TextureMatrix => self.texture_matrix.to_padded_f32_array().to_vec(),
                 UniformSource::EnvRotationMatrix => self.env_rotation.to_f32_array().to_vec(),
                 UniformSource::BackgroundRotation => {
                     self.background_rotation.to_f32_array().to_vec()
