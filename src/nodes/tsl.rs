@@ -179,6 +179,11 @@ pub fn join(ty: Type, args: Vec<NodeRef>) -> NodeRef {
     NodeRef::new(Node::Join { args, ty })
 }
 
+/// `vec2( a, b )` — `JoinNode` into a `vec2`.
+pub fn vec2_join(args: Vec<NodeRef>) -> NodeRef {
+    join(Type::Vec2, args)
+}
+
 /// `vec3( a, b )` where the components add up: `vec3<f32>( x, yz )`.
 pub fn vec3_join(args: Vec<NodeRef>) -> NodeRef {
     join(Type::Vec3, args)
@@ -267,11 +272,24 @@ pub fn property(name: &'static str, ty: Type) -> NodeRef {
 
 const COMPARISONS: [&str; 6] = ["==", "!=", "<", "<=", ">", ">="];
 
+/// `&&` / `||` — `OperatorNode` gives them a `bool` result without padding
+/// either operand.
+const LOGICAL: [&str; 2] = ["&&", "||"];
+
 /// `OperatorNode.getNodeType()` plus the operand padding
 /// `NodeBuilder.format()` performs: `mat4 * vec3` becomes
 /// `mat4 * vec4( v, 1.0 )`.
 fn binary(op: &'static str, a: NodeRef, b: NodeRef) -> NodeRef {
     let (ta, tb) = (a.ty(), b.ty());
+
+    if LOGICAL.contains(&op) {
+        return NodeRef::new(Node::Op {
+            op,
+            a,
+            b,
+            ty: Type::Bool,
+        });
+    }
 
     if COMPARISONS.contains(&op) {
         let n = ta.components().max(tb.components());
@@ -535,6 +553,116 @@ pub fn light_view_position(index: usize) -> NodeRef {
     )
 }
 
+/// `lightPosition( light )` — `light.matrixWorld`'s translation.
+pub fn light_world_position(index: usize) -> NodeRef {
+    uniform(
+        UniformSource::LightWorldPosition(index),
+        Type::Vec3,
+        UniformGroup::Render,
+        None,
+    )
+}
+
+/// `lightTargetPosition( light )` — `light.target.matrixWorld`'s translation.
+pub fn light_target_position(index: usize) -> NodeRef {
+    uniform(
+        UniformSource::LightTargetPosition(index),
+        Type::Vec3,
+        UniformGroup::Render,
+        None,
+    )
+}
+
+/// `SpotLightNode.coneCosNode`.
+pub fn light_cone_cos(index: usize) -> NodeRef {
+    uniform(
+        UniformSource::LightConeCos(index),
+        Type::F32,
+        UniformGroup::Render,
+        None,
+    )
+}
+
+/// `SpotLightNode.penumbraCosNode`.
+pub fn light_penumbra_cos(index: usize) -> NodeRef {
+    uniform(
+        UniformSource::LightPenumbraCos(index),
+        Type::F32,
+        UniformGroup::Render,
+        None,
+    )
+}
+
+/// `lightShadowMatrix( light )`.
+pub fn shadow_matrix(index: usize) -> NodeRef {
+    uniform(
+        UniformSource::ShadowMatrix(index),
+        Type::Mat4,
+        UniformGroup::Render,
+        None,
+    )
+}
+
+/// `reference( 'bias', 'float', shadow )`.
+pub fn shadow_bias(index: usize) -> NodeRef {
+    uniform(
+        UniformSource::ShadowBias(index),
+        Type::F32,
+        UniformGroup::Render,
+        None,
+    )
+}
+
+/// `reference( 'normalBias', 'float', shadow )`.
+pub fn shadow_normal_bias(index: usize) -> NodeRef {
+    uniform(
+        UniformSource::ShadowNormalBias(index),
+        Type::F32,
+        UniformGroup::Render,
+        None,
+    )
+}
+
+/// `reference( 'radius', 'float', shadow )`.
+pub fn shadow_radius(index: usize) -> NodeRef {
+    uniform(
+        UniformSource::ShadowRadius(index),
+        Type::F32,
+        UniformGroup::Render,
+        None,
+    )
+}
+
+/// `reference( 'mapSize', 'vec2', shadow )`.
+pub fn shadow_map_size(index: usize) -> NodeRef {
+    uniform(
+        UniformSource::ShadowMapSize(index),
+        Type::Vec2,
+        UniformGroup::Render,
+        None,
+    )
+}
+
+/// `reference( 'intensity', 'float', shadow )`.
+pub fn shadow_intensity(index: usize) -> NodeRef {
+    uniform(
+        UniformSource::ShadowIntensity(index),
+        Type::F32,
+        UniformGroup::Render,
+        None,
+    )
+}
+
+/// `toneMappingExposure` — `RenderOutputNode`'s render-group `f32`.
+pub fn tone_mapping_exposure() -> NodeRef {
+    uniform(
+        UniformSource::ToneMappingExposure,
+        Type::F32,
+        UniformGroup::Render,
+        None,
+    )
+}
+
 /// `inverseSqrt( x )`.
 pub fn inverse_sqrt(x: impl Into<NodeRef>) -> NodeRef {
     math("inverseSqrt", vec![x.into()], Type::F32)
@@ -638,6 +766,38 @@ impl NodeRef {
     pub fn greater_than(&self, other: impl Into<NodeRef>) -> NodeRef {
         binary(">", self.clone(), other.into())
     }
+    pub fn greater_than_equal(&self, other: impl Into<NodeRef>) -> NodeRef {
+        binary(">=", self.clone(), other.into())
+    }
+    pub fn less_than(&self, other: impl Into<NodeRef>) -> NodeRef {
+        binary("<", self.clone(), other.into())
+    }
+    pub fn and(&self, other: impl Into<NodeRef>) -> NodeRef {
+        binary("&&", self.clone(), other.into())
+    }
+    pub fn or(&self, other: impl Into<NodeRef>) -> NodeRef {
+        binary("||", self.clone(), other.into())
+    }
+    /// `x.not()` — `( ! x )`.
+    pub fn not(&self) -> NodeRef {
+        NodeRef::new(Node::Not { node: self.clone() })
+    }
+    // --- bitwise (the MaterialX integer hashes) ---
+    pub fn shift_left(&self, other: impl Into<NodeRef>) -> NodeRef {
+        binary("<<", self.clone(), other.into())
+    }
+    pub fn shift_right(&self, other: impl Into<NodeRef>) -> NodeRef {
+        binary(">>", self.clone(), other.into())
+    }
+    pub fn bit_and(&self, other: impl Into<NodeRef>) -> NodeRef {
+        binary("&", self.clone(), other.into())
+    }
+    pub fn bit_or(&self, other: impl Into<NodeRef>) -> NodeRef {
+        binary("|", self.clone(), other.into())
+    }
+    pub fn bit_xor(&self, other: impl Into<NodeRef>) -> NodeRef {
+        binary("^", self.clone(), other.into())
+    }
 
     /// `oneMinus()` — `1.0 - x`, emitted in that order.
     pub fn one_minus(&self) -> NodeRef {
@@ -663,6 +823,31 @@ impl NodeRef {
     }
     pub fn floor(&self) -> NodeRef {
         math("floor", vec![self.clone()], self.ty())
+    }
+    pub fn fract(&self) -> NodeRef {
+        math("fract", vec![self.clone()], self.ty())
+    }
+    pub fn sqrt(&self) -> NodeRef {
+        math("sqrt", vec![self.clone()], self.ty())
+    }
+    pub fn abs(&self) -> NodeRef {
+        math("abs", vec![self.clone()], self.ty())
+    }
+    /// `saturate()` — `clamp( x, 0, 1 )`, which three.js emits with vector
+    /// bounds when `x` is a vector.
+    pub fn saturate(&self) -> NodeRef {
+        let ty = self.ty();
+        let lo = if ty.components() > 1 {
+            constant(ty, vec![0.0; ty.components()])
+        } else {
+            float(0.0)
+        };
+        let hi = if ty.components() > 1 {
+            constant(ty, vec![1.0; ty.components()])
+        } else {
+            float(1.0)
+        };
+        math("clamp", vec![self.clone(), lo, hi], ty)
     }
     pub fn pow(&self, other: impl Into<NodeRef>) -> NodeRef {
         math("pow", vec![self.clone(), other.into()], self.ty())
@@ -716,6 +901,12 @@ impl NodeRef {
     }
     pub fn xyz(&self) -> NodeRef {
         swizzle(self.clone(), "xyz")
+    }
+    pub fn xz(&self) -> NodeRef {
+        swizzle(self.clone(), "xz")
+    }
+    pub fn zzz(&self) -> NodeRef {
+        swizzle(self.clone(), "zzz")
     }
     pub fn rgb(&self) -> NodeRef {
         swizzle(self.clone(), "xyz")
@@ -1048,10 +1239,13 @@ accessor!(
 );
 
 accessor!(
-    /// `positionLocal` — the geometry position, as a var so that instancing,
-    /// morphing and skinning can reassign it.
+    /// `positionLocal` — `positionGeometry.toVarying( 'positionLocal' )`, so
+    /// that instancing, morphing and skinning can reassign it and so that a
+    /// fragment-stage read (the torus knot's `maskNode`) carries it across as a
+    /// varying. A varying nothing in the fragment stage asks for stays a plain
+    /// `var<private>` in the vertex shader, which is every other material.
     position_local,
-    to_var(Some("positionLocal"), position_geometry())
+    to_varying(Some("positionLocal"), position_geometry())
 );
 accessor!(
     /// `normalLocal`.
@@ -1071,6 +1265,17 @@ accessor!(
 pub fn position_view() -> NodeRef {
     position_view_pair().0
 }
+accessor!(
+    /// `positionWorld` — `modelWorldMatrix * vec4( positionLocal, 1 )`, carried
+    /// to the fragment stage as `v_positionWorld`.
+    position_world,
+    to_varying(
+        Some("v_positionWorld"),
+        model_world_matrix()
+            .mul(vec4_join(vec![position_local(), float(1.0)]))
+            .xyz()
+    )
+);
 accessor!(
     /// `positionViewDirection`.
     position_view_direction,
@@ -1257,7 +1462,8 @@ pub fn diffuse_color() -> NodeRef {
 }
 
 macro_rules! prop {
-    ($name:ident, $wgsl:literal, $ty:expr) => {
+    ($(#[$meta:meta])* $name:ident, $wgsl:literal, $ty:expr) => {
+        $(#[$meta])*
         pub fn $name() -> NodeRef {
             thread_local! { static CELL: Lazy<NodeRef> = Lazy::new(); }
             CELL.with(|c| c.get(|| property($wgsl, $ty)))
@@ -1561,6 +1767,7 @@ pub fn loop_index() -> NodeRef {
 }
 
 pub fn loop_statement(count: usize, index: NodeRef, body: Vec<NodeRef>) -> NodeRef {
+    let count = int(count as i64);
     NodeRef::new(Node::Loop { index, count, body })
 }
 
@@ -1747,4 +1954,203 @@ pub fn unpremultiply_alpha(color: NodeRef) -> NodeRef {
         })
     });
     call(&def, vec![color])
+}
+
+
+// ---------------------------------------------------------------------------
+// statements (`Fn()` bodies, `Loop()`, `If()`, `Discard()`)
+// ---------------------------------------------------------------------------
+
+/// A sequence of statements followed by the value they produce — what an
+/// inlined `Fn()` whose body uses `toVar()` / `assign()` amounts to.
+pub fn block(statements: Vec<NodeRef>, result: NodeRef) -> NodeRef {
+    NodeRef::new(Node::Block { statements, result })
+}
+
+/// `Loop( count, ( { i } ) => { … } )`. `body` is called with the loop index.
+pub fn loop_n(
+    name: &'static str,
+    count: NodeRef,
+    body: impl FnOnce(&NodeRef) -> Vec<NodeRef>,
+) -> NodeRef {
+    let index = NodeRef::new(Node::Param { name, ty: Type::I32 });
+    let body = body(&index);
+    NodeRef::new(Node::Loop { count, index, body })
+}
+
+/// `If( cond, () => { … } )`.
+pub fn if_then(cond: NodeRef, body: Vec<NodeRef>) -> NodeRef {
+    NodeRef::new(Node::If { cond, body })
+}
+
+/// `Discard()`.
+pub fn discard() -> NodeRef {
+    NodeRef::new(Node::Discard)
+}
+
+/// `Discard( condition )` — `NodeMaterial.setupDiscard()`'s
+/// `If( cond.not(), () => Discard() )`.
+pub fn discard_if(cond: NodeRef) -> NodeRef {
+    if_then(cond.not(), vec![discard()])
+}
+
+/// WGSL's `select( falseValue, trueValue, condition )` builtin, which is what
+/// MaterialX's `mx_select` / `mx_negate_if` emit.
+pub fn wgsl_select(f: NodeRef, t: NodeRef, cond: NodeRef) -> NodeRef {
+    let ty = t.ty();
+    math("select", vec![f, t, cond], ty)
+}
+
+/// `step( edge, x )`.
+pub fn step(edge: impl Into<NodeRef>, x: impl Into<NodeRef>) -> NodeRef {
+    let x = x.into();
+    let ty = x.ty();
+    math("step", vec![edge.into(), x], ty)
+}
+
+/// `uint( x )`.
+pub fn uint(v: u32) -> NodeRef {
+    constant(Type::U32, vec![v as f64])
+}
+
+// ---------------------------------------------------------------------------
+// shadows (`ShadowBaseNode`, `ShadowNode`, `ShadowFilterNode`)
+// ---------------------------------------------------------------------------
+
+prop!(
+    /// `shadowPositionWorld` — `property( 'vec3', 'shadowPositionWorld' )`,
+    /// assigned by `ShadowBaseNode.setupShadowPosition()` once per shadow.
+    shadow_position_world,
+    "shadowPositionWorld",
+    Type::Vec3
+);
+/// `cameraViewMatrix.transformDirection( dir )` —
+/// `MathNode.TRANSFORM_DIRECTION`: `normalize( ( m * vec4( dir, 0 ) ).xyz )`.
+/// Spelt out because the port's `mul` pads a `mat4 * vec3` with `1.0`.
+pub fn transform_direction(matrix: NodeRef, dir: NodeRef) -> NodeRef {
+    matrix
+        .mul(vec4_join(vec![dir, float(0.0)]))
+        .xyz()
+        .normalize()
+}
+
+/// `lightTargetDirection( light )` — `Lights.js`.
+pub fn light_target_direction(index: usize) -> NodeRef {
+    transform_direction(
+        camera_view_matrix(),
+        light_world_position(index).sub(light_target_position(index)),
+    )
+}
+
+/// `texture( depthTexture, uv ).compare( z )` — `ShadowFilterNode`'s
+/// `depthCompare`, which lowers to `textureSampleCompare`.
+pub fn shadow_map_compare(map: &DepthTexture, coord: NodeRef, z: NodeRef) -> NodeRef {
+    texture_node(
+        TextureSource::ShadowMap(map.clone()),
+        coord,
+        SampleMode::Compare(z),
+        Type::F32,
+    )
+}
+
+/// `interleavedGradientNoise( position )` — `PostProcessingUtils.js`.
+pub fn interleaved_gradient_noise(position: NodeRef) -> NodeRef {
+    thread_local! { static CELL: Lazy<Rc<FnDef>> = Lazy::new(); }
+    let def = CELL.with(|c| {
+        c.get(|| {
+            shader_fn(
+                Some("interleavedGradientNoise"),
+                vec![("position", Type::Vec2)],
+                Type::F32,
+                |args| {
+                    float(52.9829189)
+                        .mul(dot(args[0].clone(), vec2(0.06711056, 0.00583715)).fract())
+                        .fract()
+                },
+            )
+        })
+    });
+    call(&def, vec![position])
+}
+
+/// `vogelDiskSample( sampleIndex, samplesCount, phi )` —
+/// `PostProcessingUtils.js`.
+pub fn vogel_disk_sample(sample_index: NodeRef, samples_count: NodeRef, phi: NodeRef) -> NodeRef {
+    thread_local! { static CELL: Lazy<Rc<FnDef>> = Lazy::new(); }
+    let def = CELL.with(|c| {
+        c.get(|| {
+            shader_fn(
+                Some("vogelDiskSample"),
+                vec![
+                    ("sampleIndex", Type::I32),
+                    ("samplesCount", Type::I32),
+                    ("phi", Type::F32),
+                ],
+                Type::Vec2,
+                |args| {
+                    let (index, count, phi) = (args[0].clone(), args[1].clone(), args[2].clone());
+                    // `goldenAngle = 2π * ( 2 - φ )`.
+                    let theta = index
+                        .clone()
+                        .to(Type::F32)
+                        .mul(float(2.399963229728653))
+                        .add(phi);
+                    let r = index
+                        .to(Type::F32)
+                        .add(float(0.5))
+                        .div(count.to(Type::F32))
+                        .sqrt();
+                    vec2_join(vec![theta.cos(), theta.sin()]).mul(r)
+                },
+            )
+        })
+    });
+    call(&def, vec![sample_index, samples_count, phi])
+}
+
+/// `acesFilmicToneMapping( color, exposure )` —
+/// `ToneMappingFunctions.js`, emitted as a real `fn`.
+pub fn aces_filmic_tone_mapping(color: NodeRef, exposure: NodeRef) -> NodeRef {
+    thread_local! { static CELL: Lazy<Rc<FnDef>> = Lazy::new(); }
+    let def = CELL.with(|c| {
+        c.get(|| {
+            shader_fn(
+                Some("acesFilmicToneMapping"),
+                vec![("color", Type::Vec3), ("exposure", Type::F32)],
+                Type::Vec3,
+                |args| {
+                    let (color, exposure) = (args[0].clone(), args[1].clone());
+                    // sRGB → ACEScg, with three.js' `/ 0.6` pre-exposure.
+                    let input = constant(
+                        Type::Mat3,
+                        vec![
+                            0.59719, 0.076, 0.0284, //
+                            0.35458, 0.90834, 0.13383, //
+                            0.04823, 0.01566, 0.83777,
+                        ],
+                    );
+                    let output = constant(
+                        Type::Mat3,
+                        vec![
+                            1.60475, -0.10208, -0.00327, //
+                            -0.53108, 1.10813, -0.07276, //
+                            -0.07367, -0.00605, 1.07602,
+                        ],
+                    );
+                    let c = input.mul(color.mul(exposure).div(float(0.6)));
+                    // `RRTAndODTFit( v )`.
+                    let a = c
+                        .clone()
+                        .mul(c.clone().add(float(0.0245786)))
+                        .sub(float(0.000090537));
+                    let b = c
+                        .clone()
+                        .mul(c.add(float(0.432951)).mul(float(0.983729)))
+                        .add(float(0.238081));
+                    output.mul(a.div(b)).saturate()
+                },
+            )
+        })
+    });
+    call(&def, vec![color, exposure])
 }

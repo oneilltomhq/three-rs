@@ -26,8 +26,9 @@ pub use render_target::{RenderTarget, RenderTargetInner, RenderTargetOptions};
 use crate::cameras::{OrthographicCamera, PerspectiveCamera};
 use crate::core::{BufferGeometry, Index};
 use crate::geometries::{quad_geometry, sphere_geometry};
-use crate::lights::{LightKind, PointLight};
-use crate::materials::{self, MeshBasicNodeMaterial, SetupContext, Side};
+use crate::lights::{LightKind, LightObject};
+use crate::materials::phong::LightDesc;
+use crate::materials::{self, MeshBasicNodeMaterial, SetupContext, Side, ToneMapping};
 use crate::math::{Color, Matrix4, Vector2};
 use crate::nodes::node::{BufferSource, TextureSource};
 use crate::nodes::tsl::FogNode;
@@ -38,7 +39,7 @@ use crate::objects::{Background, InstancedBufferAttribute, QuadMesh, Scene};
 use crate::testing::DeterministicRandom;
 use crate::textures::{
     DataArrayTexture,
-    CubeTexture, Texture, TextureFilter, TextureType, Wrapping,
+    CubeTexture, DepthTexture, Texture, TextureFilter, TextureType, Wrapping,
 };
 
 struct GeometryGpu {
@@ -181,6 +182,17 @@ pub struct Renderer {
     /// `three.webgpu.js` (`MathUtils.generateUUID` uses the pattern the
     /// harness rewrites to the unseeded `Math._random`).
     random: DeterministicRandom,
+    /// `renderer.toneMapping`.
+    pub tone_mapping: ToneMapping,
+    /// `renderer.shadowMap.enabled`.
+    pub shadow_map_enabled: bool,
+    /// The depth texture of each shadow-casting light's shadow map, keyed by the
+    /// light's index in the render list — `light.shadow.map` in three.js. Filled
+    /// by the shadow pass, before any material setup reads it.
+    shadow_maps: HashMap<usize, DepthTexture>,
+    /// `light.shadow.map` — the `RenderTarget` each shadow pass draws into,
+    /// kept across frames because `ShadowNode` allocates it once.
+    shadow_targets: HashMap<usize, RenderTarget>,
 }
 
 /// `new WebGPURenderer( parameters )`.
@@ -257,6 +269,10 @@ impl Renderer {
             time: 0.0,
             present: None,
             random: DeterministicRandom::new(),
+            tone_mapping: ToneMapping::None,
+            shadow_map_enabled: false,
+            shadow_maps: HashMap::new(),
+            shadow_targets: HashMap::new(),
         }
     }
 
@@ -311,15 +327,22 @@ impl Renderer {
         // `Renderer._renderScene()`: `_projectObject()` walks the real scene
         // graph into the render list, `finish()`/`sort()` order it, and
         // `_background.update()` then unshifts the skybox, so it draws first.
-        let render_list = self.project_scene(scene, camera);
+        let mut render_list = self.project_scene(scene, camera);
 
         let mut items = Vec::with_capacity(render_list.len() + 1);
 
         // The skybox first, exactly where `renderList.unshift()` puts it.
-        if let Some(Background::CubeTexture(background)) = scene.background.clone() {
+        let background_color_node = match scene.background.clone() {
+            Some(Background::CubeTexture(background)) => {
+                Some(materials::background_color_node(&background))
+            }
+            Some(Background::Node(color)) => Some(materials::background_node_color_node(color)),
+            _ => None,
+        };
+        if let Some(color_node) = background_color_node {
             let mut material = MeshBasicNodeMaterial::new();
             material.name = "Background.material";
-            material.color_node = Some(materials::background_color_node(&background));
+            material.color_node = Some(color_node);
             material.vertex_node = Some(materials::background_vertex_node());
             material.side = Side::Back;
             material.depth_test = false;
@@ -343,41 +366,30 @@ impl Renderer {
         // `LightsNode.setupLightsNode()` starts with `sortLights( lights )`,
         // `lights.sort( ( a, b ) => a.id - b.id )` — so the order the lighting
         // nodes are set up in, and therefore the order
-        // `UniformSource::Light*( i )` indexes, is creation order, not the
-        // `RenderList.lightsArray` traversal order this list arrives in.
-        let mut sorted_lights = render_list.lights.clone();
-        sorted_lights.sort_by_key(|node| node.borrow().id);
+        // `UniformSource::Light*( i )` and the shadow maps index, is creation
+        // order, not the `RenderList.lightsArray` traversal order.
+        render_list.lights.sort_by_key(|node| node.borrow().id);
 
-        // `LightsNode.setupLights()`: each light resolves to its colour scaled
-        // by intensity, plus — for a punctual light — its position in view
-        // space, its cutoff distance and its decay.
-        let lights: Vec<LightState> = sorted_lights
+        // `ShadowNode.updateBefore()` — every shadow-casting light renders the
+        // scene from its own camera before the main pass builds any material,
+        // because `LightDesc.shadow_map` is what decides whether a Phong
+        // program carries the filter at all.
+        self.render_shadows(scene, &render_list, camera);
+
+        // `LightsNode`'s list, as the materials see it: the kind decides which
+        // `AnalyticLightNode` subclass generates, and the shadow map (present
+        // only for a light that casts and an object that receives) decides
+        // whether a shadow factor multiplies the light colour.
+        let light_descs: Vec<(LightKind, bool)> = render_list
+            .lights
             .iter()
             .map(|node| {
                 let object = node.borrow();
                 let light = object
                     .light()
                     .expect("three-rs: the light list only holds lights");
-
-                let mut view_position = PointLight::world_position(&object.matrix_world);
-                view_position.apply_matrix4(&camera.matrix_world_inverse);
-
-                let c = light.light().color;
-                let intensity = light.light().intensity;
-                LightState {
-                    color: Color::new(c.r * intensity, c.g * intensity, c.b * intensity),
-                    view_position,
-                    distance: light.point().map_or(0.0, |light| light.distance),
-                    decay: light.point().map_or(0.0, |light| light.decay),
-                }
+                (light.kind, object.cast_shadow && light.shadow.is_some())
             })
-            .collect();
-
-        // `builder.lightsNode.getLightNodes()` — which lighting node each light
-        // resolves to, in the same sorted order.
-        let light_kinds: Vec<LightKind> = sorted_lights
-            .iter()
-            .map(|node| node.borrow().light().unwrap().kind())
             .collect();
 
         for item in render_list.items() {
@@ -417,7 +429,19 @@ impl Renderer {
                 setup: SetupContext {
                     instance_count: instance_matrix.as_ref().map(|_| instance_count as usize),
                     instanced: instance_matrix.is_some(),
-                    lights: light_kinds.clone(),
+                    lights: light_descs
+                        .iter()
+                        .enumerate()
+                        .map(|(index, (kind, casts))| LightDesc {
+                            index,
+                            kind: *kind,
+                            shadow_map: (*casts
+                                && object.receive_shadow
+                                && self.shadow_map_enabled)
+                                .then(|| self.shadow_maps.get(&index).cloned())
+                                .flatten(),
+                        })
+                        .collect(),
                     morph: morph.clone(),
                 },
                 fog: scene.fog_node.clone(),
@@ -437,6 +461,44 @@ impl Renderer {
             _ => self.clear_color,
         };
 
+
+        // `LightsNode.setupLights()`: each light resolves to its colour scaled
+        // by intensity plus its position in view space. The list is
+        // `RenderList.lightsArray` — scene-traversal order, which is the order
+        // `LightsNode.setLights()` receives and which `UniformSource::Light*( i )`
+        // indexes.
+        let lights: Vec<LightState> = render_list
+            .lights
+            .iter()
+            .map(|node| {
+                let object = node.borrow();
+                let light = object
+                    .light()
+                    .expect("three-rs: the light list only holds lights");
+
+                let mut view_position = LightObject::world_position(&object.matrix_world);
+                view_position.apply_matrix4(&camera.matrix_world_inverse);
+
+                let shadow = light.shadow.as_deref();
+                LightState {
+                    color: light.color_intensity(),
+                    view_position,
+                    distance: light.distance,
+                    decay: light.decay,
+                    world_position: LightObject::world_position(&object.matrix_world),
+                    target_position: light.target_world_position(),
+                    cone_cos: light.cone_cos(),
+                    penumbra_cos: light.penumbra_cos(),
+                    shadow_matrix: shadow.map_or_else(Matrix4::identity, |s| s.matrix),
+                    shadow_bias: shadow.map_or(0.0, |s| s.bias),
+                    shadow_normal_bias: shadow.map_or(0.0, |s| s.normal_bias),
+                    shadow_radius: shadow.map_or(1.0, |s| s.radius),
+                    shadow_map_size: shadow.map_or(Vector2::new(512.0, 512.0), |s| s.map_size),
+                    shadow_intensity: shadow.map_or(1.0, |s| s.intensity),
+                }
+            })
+            .collect();
+
         let camera_uniforms = UniformContext {
             camera_projection: camera.projection_matrix,
             camera_view: camera.matrix_world_inverse,
@@ -447,6 +509,158 @@ impl Renderer {
         };
 
         self.render_list(&items, camera_uniforms, Some(clear));
+    }
+
+    /// `ShadowNode.updateShadow()` for every shadow-casting light in the list:
+    /// `resetRendererAndSceneState`, `scene.overrideMaterial`, clear colour
+    /// `( 0, 0, 0, 0 )`, `setRenderTarget( shadowMap )`, then
+    /// `renderer.render( scene, shadow.camera )`.
+    ///
+    /// The port does not have to save and restore renderer state: the shadow
+    /// pass is a self-contained `draw()` into its own target, with no
+    /// background item, no fog (`ShadowMaterial.fog = false`), no output pass
+    /// and its own uniform context, so none of the state three.js has to put
+    /// back is ever read.
+    fn render_shadows(
+        &mut self,
+        scene: &Scene,
+        render_list: &RenderList,
+        camera: &PerspectiveCamera,
+    ) {
+        if !self.shadow_map_enabled {
+            return;
+        }
+
+        for (index, node) in render_list.lights.iter().enumerate() {
+            // `shadow.camera.updateProjectionMatrix()` (`ShadowNode.setup()`)
+            // and `shadow.updateMatrices( light )` (`ShadowNode.renderShadow()`).
+            let prepared = {
+                let mut object = node.borrow_mut();
+                if !object.cast_shadow {
+                    None
+                } else {
+                    let light_position = LightObject::world_position(&object.matrix_world);
+                    let light = object
+                        .light_mut()
+                        .expect("three-rs: the light list only holds lights");
+                    let (kind, angle, distance) = (light.kind, light.angle, light.distance);
+                    let target_position = light.target_world_position();
+                    light.shadow.as_mut().map(|shadow| {
+                        if kind == LightKind::Spot {
+                            shadow.update_spot_projection(angle, distance);
+                        }
+                        shadow.camera.update_projection_matrix();
+                        shadow.update_matrices(light_position, target_position);
+                        (
+                            shadow.map_size,
+                            shadow.camera.projection_matrix(),
+                            shadow.camera.matrix_world_inverse(),
+                            shadow.camera.matrix_world(),
+                        )
+                    })
+                }
+            };
+            let Some((map_size, projection, view, world)) = prepared else {
+                continue;
+            };
+
+            // `ShadowNode.setupRenderTarget()`: an `rgba8unorm` colour target
+            // that is written and never sampled, plus the `depth24plus`
+            // `ShadowDepthTexture` every `textureSampleCompare` reads.
+            let (width, height) = (map_size.x as u32, map_size.y as u32);
+            let target = self
+                .shadow_targets
+                .entry(index)
+                .or_insert_with(|| {
+                    let target = RenderTarget::new_with_options(
+                        width,
+                        height,
+                        RenderTargetOptions {
+                            texture_type: TextureType::UnsignedByte,
+                            samples: 0,
+                            depth_buffer: true,
+                            min_filter: TextureFilter::Linear,
+                            mag_filter: TextureFilter::Linear,
+                        },
+                    );
+                    let depth = DepthTexture::new();
+                    depth.set_filters(TextureFilter::Linear, TextureFilter::Linear);
+                    target.set_depth_texture(depth);
+                    target
+                })
+                .clone();
+            target.set_size(width, height);
+
+            // `renderer.render( scene, shadow.camera )` — a full
+            // `_projectObject` walk against the shadow camera's own frustum,
+            // then `getShadowRenderObjectFunction`'s `object.castShadow` filter.
+            let mut shadow_list = RenderList::new();
+            project_object(
+                &scene.node,
+                &ProjectCamera::from_parts(
+                    camera.node.borrow().layers,
+                    &projection,
+                    &view,
+                    camera.coordinate_system,
+                ),
+                0.0,
+                &mut shadow_list,
+                self.sort_objects,
+            );
+            shadow_list.sort();
+
+            let default_material = MeshBasicNodeMaterial::new();
+            let mut items = Vec::with_capacity(shadow_list.len());
+            for item in shadow_list.items() {
+                let object = item.node.borrow();
+                if !object.cast_shadow {
+                    continue;
+                }
+                let mesh = object
+                    .mesh()
+                    .expect("three-rs: the render list only holds meshes");
+                let source = mesh.material.as_ref().unwrap_or(&default_material);
+                let instance_matrix = object.instance_matrix().cloned();
+                let instance_count = object.instance_count();
+
+                items.push(Renderable {
+                    geometry: mesh.geometry.clone(),
+                    material: materials::shadow_material(source),
+                    setup: SetupContext {
+                        instance_count: instance_matrix.as_ref().map(|_| instance_count as usize),
+                        instanced: instance_matrix.is_some(),
+                        lights: Vec::new(),
+                        // The shadow pass does not carry morph targets yet:
+                        // nothing in the ladder both morphs and casts a shadow.
+                        morph: None,
+                    },
+                    fog: None,
+                    model_world: item.matrix_world,
+                    instance_matrix,
+                    instance_count,
+                    morph_influences: Vec::new(),
+                    morph_base: 1.0,
+                });
+            }
+
+            let uniforms = UniformContext {
+                camera_projection: projection,
+                camera_view: view,
+                camera_world: world,
+                time: self.time,
+                ..Default::default()
+            };
+
+            let pass_target = self.render_target_pass(&target);
+            self.draw(&items, uniforms, &pass_target, Some([0.0, 0.0, 0.0, 0.0]));
+
+            self.shadow_maps.insert(
+                index,
+                target
+                    .depth_texture()
+                    .expect("three-rs: the shadow target has a depth texture"),
+            );
+        }
     }
 
     /// `Renderer._renderScene()`'s render-list half: `renderList.begin()`,
@@ -710,6 +924,7 @@ impl Renderer {
         material.name = "outputColorTransform";
         material.fragment_node = Some(materials::output_fragment_node(
             &render_target.texture(),
+            self.tone_mapping,
         ));
 
         let items = [Renderable {
@@ -973,7 +1188,7 @@ impl Renderer {
                 let gpu = self.ensure_texture_2d(texture);
                 gpu.create_view(&Default::default())
             }
-            TextureSource::Depth(depth) => {
+            TextureSource::Depth(depth) | TextureSource::ShadowMap(depth) => {
                 let inner = depth.inner().borrow();
                 let gpu = inner
                     .gpu
@@ -1043,6 +1258,24 @@ impl Renderer {
                     min_filter: wgpu::FilterMode::Linear,
                     mipmap_filter: wgpu::MipmapFilterMode::Linear,
                     anisotropy_clamp: anisotropy,
+                    ..Default::default()
+                })
+            }
+            // `ShadowNode.setupShadow()`: `LinearFilter` on both when the
+            // shadow type is `PCFShadowMap`, and `compareFunction =
+            // LessEqualCompare`, which `WebGPUTextureUtils.updateSampler()`
+            // turns into a comparison sampler.
+            TextureSource::ShadowMap(depth) => {
+                let inner = depth.inner().borrow();
+                self.device.create_sampler(&wgpu::SamplerDescriptor {
+                    label: Some("three-rs shadow map sampler"),
+                    address_mode_u: wgpu::AddressMode::ClampToEdge,
+                    address_mode_v: wgpu::AddressMode::ClampToEdge,
+                    address_mode_w: wgpu::AddressMode::ClampToEdge,
+                    mag_filter: filter(inner.mag_filter),
+                    min_filter: filter(inner.min_filter),
+                    mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+                    compare: Some(wgpu::CompareFunction::LessEqual),
                     ..Default::default()
                 })
             }
@@ -1464,10 +1697,11 @@ impl Renderer {
     // -- targets ---------------------------------------------------------
 
     /// `Renderer.needsFrameBufferTarget` — true when the output needs tone
-    /// mapping or a colour-space conversion. `outputColorSpace` is
-    /// `SRGBColorSpace` and the working colour space is `LinearSRGBColorSpace`,
-    /// and the port has no tone mapping yet, so this is the colour-space half:
-    /// always true for a canvas render.
+    /// mapping or a colour-space conversion: `isOutputTarget && ( toneMapping
+    /// !== NoToneMapping || outputColorSpace !== workingColorSpace )`.
+    /// `outputColorSpace` is `SRGBColorSpace` against a `LinearSRGBColorSpace`
+    /// working space, so the second term is always true for a canvas render and
+    /// `neutral_output` — which zeroes both terms — is the whole predicate.
     fn needs_frame_buffer_target(&self) -> bool {
         !self.neutral_output
     }

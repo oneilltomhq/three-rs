@@ -10,7 +10,7 @@ use std::cmp::Ordering;
 
 use crate::cameras::PerspectiveCamera;
 use crate::core::{Layers, Node, Object3DNode};
-use crate::math::{Frustum, Matrix4};
+use crate::math::{CoordinateSystem, Frustum, Matrix4};
 
 /// One entry of `RenderList.opaque` / `RenderList.transparent`.
 ///
@@ -137,6 +137,28 @@ impl ProjectCamera {
     ///
     /// `camera.matrixWorldInverse` must already be up to date — in three.js
     /// `Renderer.render()` calls `camera.updateMatrixWorld()` just above this.
+    /// The same thing for a camera the port models without an `Object3D`
+    /// wrapper — the shadow cameras, whose projection and world-inverse
+    /// matrices `LightShadow.updateMatrices()` has just refreshed.
+    pub fn from_parts(
+        layers: Layers,
+        projection_matrix: &Matrix4,
+        matrix_world_inverse: &Matrix4,
+        coordinate_system: CoordinateSystem,
+    ) -> Self {
+        let mut proj_screen_matrix = Matrix4::identity();
+        proj_screen_matrix.multiply_matrices(projection_matrix, matrix_world_inverse);
+
+        let mut frustum = Frustum::default();
+        frustum.set_from_projection_matrix(&proj_screen_matrix, coordinate_system, false);
+
+        Self {
+            layers,
+            proj_screen_matrix,
+            frustum,
+        }
+    }
+
     pub fn new(camera: &PerspectiveCamera) -> Self {
         let mut proj_screen_matrix = Matrix4::identity();
         proj_screen_matrix

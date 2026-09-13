@@ -20,6 +20,7 @@ pub fn type_name(ty: Type) -> &'static str {
         Type::Vec4 => "vec4<f32>",
         Type::UVec2 => "vec2<u32>",
         Type::IVec2 => "vec2<i32>",
+        Type::UVec3 => "vec3<u32>",
         Type::BVec3 => "vec3<bool>",
         Type::Mat2 => "mat2x2<f32>",
         Type::Mat3 => "mat3x3<f32>",
@@ -64,6 +65,9 @@ pub enum TextureKind {
     /// `textureLoad` only, so it needs no sampler.
     Float2DArray,
     Depth2D,
+    /// A depth texture bound for `textureSampleCompare`: the same
+    /// `texture_depth_2d`, but with a `sampler_comparison` beside it.
+    DepthCompare2D,
     Cube,
 }
 
@@ -73,8 +77,16 @@ impl TextureKind {
         match self {
             TextureKind::Float2D => "texture_2d<f32>",
             TextureKind::Float2DArray => "texture_2d_array<f32>",
-            TextureKind::Depth2D => "texture_depth_2d",
+            TextureKind::Depth2D | TextureKind::DepthCompare2D => "texture_depth_2d",
             TextureKind::Cube => "texture_cube<f32>",
+        }
+    }
+
+    /// The declared WGSL type of the sampler beside the texture.
+    pub fn sampler_wgsl(self) -> &'static str {
+        match self {
+            TextureKind::DepthCompare2D => "sampler_comparison",
+            _ => "sampler",
         }
     }
 
@@ -134,7 +146,7 @@ pub fn size_of(ty: Type) -> u32 {
     match ty {
         Type::F32 | Type::I32 | Type::U32 | Type::Bool => 4,
         Type::Vec2 | Type::UVec2 | Type::IVec2 => 8,
-        Type::Vec3 | Type::BVec3 => 12,
+        Type::Vec3 | Type::UVec3 | Type::BVec3 => 12,
         Type::Vec4 => 16,
         // Two 8-byte columns; `align_of` is 8 for a `mat2x2<f32>`, like `vec2`.
         Type::Mat2 => 16,

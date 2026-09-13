@@ -26,6 +26,9 @@ pub enum Type {
     Vec4,
     UVec2,
     IVec2,
+    /// `vec3<u32>` — MaterialX's `mx_hash_vec3` packs its three byte hashes
+    /// into one.
+    UVec3,
     BVec3,
     /// `mat2` — `RotateNode`'s vec2 path emits `mat2x2<f32>( cos, sin, -sin, cos )`.
     Mat2,
@@ -40,7 +43,7 @@ impl Type {
             Type::Void => 0,
             Type::Bool | Type::F32 | Type::I32 | Type::U32 => 1,
             Type::Vec2 | Type::UVec2 | Type::IVec2 => 2,
-            Type::Vec3 | Type::BVec3 => 3,
+            Type::Vec3 | Type::UVec3 | Type::BVec3 => 3,
             Type::Vec4 => 4,
             Type::Mat2 => 4,
             Type::Mat3 => 9,
@@ -51,7 +54,7 @@ impl Type {
     /// `NodeBuilder.getComponentType()`.
     pub fn component_type(self) -> Type {
         match self {
-            Type::UVec2 => Type::U32,
+            Type::UVec2 | Type::UVec3 => Type::U32,
             Type::IVec2 => Type::I32,
             Type::BVec3 => Type::Bool,
             Type::Vec2 | Type::Vec3 | Type::Vec4 | Type::Mat2 | Type::Mat3 | Type::Mat4 => {
@@ -67,6 +70,7 @@ impl Type {
             (_, 1) => component,
             (Type::U32, 2) => Type::UVec2,
             (Type::I32, 2) => Type::IVec2,
+            (Type::U32, 3) => Type::UVec3,
             (Type::Bool, 3) => Type::BVec3,
             (Type::F32, 2) => Type::Vec2,
             (Type::F32, 3) => Type::Vec3,
@@ -152,6 +156,23 @@ pub enum UniformSource {
     /// `Morph.js`' `base = uniform( 1 )`, updated per object to
     /// `1 - Σ morphTargetInfluences` (or 1 when the targets are relative).
     MorphBase,
+    /// `lightPosition( light )` / `lightTargetPosition( light )` — the world
+    /// positions `lightTargetDirection` differences.
+    LightWorldPosition(usize),
+    LightTargetPosition(usize),
+    /// `SpotLightNode`'s `coneCosNode` / `penumbraCosNode`.
+    LightConeCos(usize),
+    LightPenumbraCos(usize),
+    /// `ShadowNode`'s per-shadow references: `lightShadowMatrix( light )` and
+    /// `reference( …, shadow )` for the five scalars.
+    ShadowMatrix(usize),
+    ShadowBias(usize),
+    ShadowNormalBias(usize),
+    ShadowRadius(usize),
+    ShadowMapSize(usize),
+    ShadowIntensity(usize),
+    /// `toneMappingExposure` — `renderer.toneMappingExposure`.
+    ToneMappingExposure,
     /// A plain `uniform( value )` the example supplies.
     Value(Vec<f64>),
 }
@@ -239,6 +260,10 @@ pub struct BufferNode {
 pub enum TextureSource {
     Texture2D(Texture),
     Depth(DepthTexture),
+    /// A `DepthTexture` with `compareFunction` set, bound as
+    /// `texture_depth_2d` + `sampler_comparison` and read with
+    /// `textureSampleCompare` — `ShadowNode`'s shadow map.
+    ShadowMap(DepthTexture),
     Cube(CubeTexture),
     /// `DataArrayTexture` — the morph-target data texture.
     DataArray(DataArrayTexture),
@@ -257,6 +282,9 @@ pub enum SampleMode {
     /// `textureLoad( t, coord, layer, u32( 0u ) )` on a 2-D-array texture —
     /// `textureLoad( … ).depth( layer )`, with no clamping and no sampler.
     LoadLayer(NodeRef),
+    /// `textureSampleCompare( t, t_sampler, uv, depth )` — the depth-compare
+    /// read `ShadowFilterNode`'s `depthCompare` lowers to.
+    Compare(NodeRef),
 }
 
 /// A WGSL builtin input.
@@ -396,16 +424,27 @@ pub enum Node {
         ty: Type,
     },
     Call { def: Rc<FnDef>, args: Vec<NodeRef> },
-    /// `LoopNode` over a count: `for ( var i : i32 = 0; i < count; i ++ ) { … }`.
-    /// A statement; `index` is the `Param` the body reads.
+    /// A sequence of statements followed by the value they produce — the shape
+    /// an inlined `Fn()` body with `toVar()` statements has. Three has no node
+    /// for it: its `ShaderNode` call simply flows its body's statements into the
+    /// current stage and returns the last expression, which is what this does.
+    Block {
+        statements: Vec<NodeRef>,
+        result: NodeRef,
+    },
+    /// `Loop( count, ( { i } ) => { … } )` — `for ( var i : i32 = 0; i < n; i ++ )`.
     Loop {
+        count: NodeRef,
+        /// The loop index, as it appears inside `body` (`Node::Param`).
         index: NodeRef,
-        count: usize,
         body: Vec<NodeRef>,
     },
-    /// `If( cond, () => { … } )` as a statement — `ConditionalNode` with no
-    /// result value, which is what the morph guard is.
+    /// `If( cond, () => { … } )`.
     If { cond: NodeRef, body: Vec<NodeRef> },
+    /// `Discard()` — a bare `discard;`.
+    Discard,
+    /// `x.not()` — `( ! x )`.
+    Not { node: NodeRef },
     /// `cond.select( a, b )` — lowered to an `if`/`else` writing a result var,
     /// exactly as Three does.
     Select {
@@ -455,8 +494,9 @@ impl NodeRef {
             Node::Texture { ty, .. } => *ty,
             Node::Call { def, .. } => def.ret,
             Node::Select { ty, .. } => *ty,
-            // Statements have no value.
-            Node::Loop { .. } | Node::If { .. } => Type::Void,
+            Node::Block { result, .. } => result.ty(),
+            Node::Loop { .. } | Node::If { .. } | Node::Discard => Type::Void,
+            Node::Not { .. } => Type::Bool,
         }
     }
 }

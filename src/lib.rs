@@ -25,9 +25,12 @@ pub use geometries::{
     box_geometry, plane_geometry, quad_geometry, sphere_geometry, teapot_geometry,
     torus_knot_geometry,
 };
-pub use lights::{AmbientLight, Light, LightKind, PointLight};
+pub use lights::{
+    AmbientLight, DirectionalLight, Light, LightKind, LightObject, LightShadow, PointLight,
+    ShadowCamera, SpotLight,
+};
 pub use loaders::{BufferGeometryLoader, CubeTextureLoader, TextureLoader};
-pub use materials::{MaterialKind, MeshBasicNodeMaterial, MeshPhongNodeMaterial};
+pub use materials::{MaterialKind, MeshBasicNodeMaterial, MeshPhongNodeMaterial, ToneMapping};
 pub use math::{Color, Euler, Matrix3, Matrix4, Quaternion, Vector2, Vector3};
 pub use objects::{Background, Group, InstancedMesh, Mesh, Payload, QuadMesh, Scene};
 pub use renderer::{PassNode, RenderPipeline, RenderTarget, Renderer, RendererParameters};

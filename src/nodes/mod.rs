@@ -3,6 +3,7 @@
 
 pub mod builder;
 pub mod morph;
+pub mod materialx;
 pub mod node;
 pub mod tsl;
 pub mod wgsl;

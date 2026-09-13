@@ -13,6 +13,12 @@ use crate::textures::CubeTexture;
 pub enum Background {
     Color(Color),
     CubeTexture(CubeTexture),
+    /// `scene.backgroundNode = color( … )` — `Background.update()`'s
+    /// `background.isNode` branch, which draws the skybox sphere with
+    /// `vec4( color ).mul( backgroundIntensity )` instead of clearing. Held in
+    /// the same slot because `nodes.getBackgroundNode( scene ) ||
+    /// scene.background` makes the node win over a plain background.
+    Node(Color),
 }
 
 impl From<Color> for Background {

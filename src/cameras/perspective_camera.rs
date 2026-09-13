@@ -18,6 +18,7 @@ pub struct CameraView {
     pub height: f64,
 }
 
+#[derive(Clone)]
 pub struct PerspectiveCamera {
     /// The camera's own scene-graph node. `Camera` is an `Object3D` in three.js
     /// and examples nest it (`scene.add( camera )`, `camera.add( light )`), so it

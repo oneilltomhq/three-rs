@@ -56,6 +56,12 @@ pub struct Object3D {
     pub is_camera: bool,
     /// `Object3D.isLight` — as `is_camera`.
     pub is_light: bool,
+    /// `Object3D.castShadow` — whether the shadow pass draws this object.
+    pub cast_shadow: bool,
+    /// `Object3D.receiveShadow` — whether the object's material samples the
+    /// shadow maps, which makes it a different program from the same material
+    /// on a non-receiving object.
+    pub receive_shadow: bool,
     /// `Object3D.isGroup`.
     pub is_group: bool,
     /// `Object3D.isScene`.
@@ -91,6 +97,8 @@ impl Default for Object3D {
             matrix_world_needs_update: false,
             is_camera: false,
             is_light: false,
+            cast_shadow: false,
+            receive_shadow: false,
             is_group: false,
             is_scene: false,
             position: Vector3::ZERO,
@@ -126,6 +134,8 @@ impl Clone for Object3D {
             matrix_world_needs_update: self.matrix_world_needs_update,
             is_camera: self.is_camera,
             is_light: self.is_light,
+            cast_shadow: self.cast_shadow,
+            receive_shadow: self.receive_shadow,
             is_group: self.is_group,
             is_scene: self.is_scene,
             position: self.position,
@@ -170,13 +180,13 @@ impl Object3D {
         self.payload.mesh_mut()
     }
 
-    /// The `Light` state when `is_light` is true — `Light.color`,
-    /// `Light.intensity` and, for a `PointLight`, `distance` and `decay`.
-    pub fn light(&self) -> Option<&crate::lights::LightPayload> {
+    /// The light state when `is_light` is true — `Light.color`,
+    /// `Light.intensity`, `PointLight.distance`, `PointLight.decay`.
+    pub fn light(&self) -> Option<&crate::lights::LightObject> {
         self.payload.light()
     }
 
-    pub fn light_mut(&mut self) -> Option<&mut crate::lights::LightPayload> {
+    pub fn light_mut(&mut self) -> Option<&mut crate::lights::LightObject> {
         self.payload.light_mut()
     }
 

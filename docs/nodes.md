@@ -44,6 +44,14 @@ module-level singletons in TSL, and that sharing is load-bearing: two uses of
 `camera_view_matrix()` returns the same `Rc` every time, and pointer identity
 does the deduplication that Three gets from object identity.
 
+*`positionLocal` is a varying.* In r186 `Position.js` reads
+`positionLocal = positionGeometry.toVarying( 'positionLocal' )`, not
+`.toVar()`. It matters as soon as a fragment-stage node is built on it — rung
+7's `maskNode` is — because the attribute itself may only be read in the vertex
+stage. The port's `Node::Varying` arm already degrades a varying that no
+fragment-stage node requests into a plain `var<private>`, so making the
+accessor faithful changed no earlier rung's WGSL by a byte.
+
 *`setup()` returning a replacement.* Three's `Node.build()` calls `setup()`,
 caches the returned node, then generates from it. Here `setup` is a method on
 the builder (`NodeBuilder::setup(&NodeRef) -> NodeRef`) with the result cached
@@ -397,6 +405,24 @@ differences, each verified to be pixel-neutral.
   property name per flow scope, so its `else` arm re-inlines the expression
   (`nodeVar10 = ( 1.0 / max( pow( length( nodeVar7 ), … )` in the rung-6
   fragment dump). Same value in both arms.
+* **MaterialX `fn` declaration order.** Three emits the `mx_*` helpers in
+  dependency order (`mx_select`, `mx_negate_if`, `mx_gradient_float_1`,
+  `mx_gradient_vec3_1`, `mx_trilerp_1`, …); this port's `Node::Call` arm emits
+  the function before it generates the call's arguments, so a caller lands
+  before its callees. WGSL has no forward-declaration rule for functions
+  defined in the same module, so naga accepts both orders and the bodies are
+  identical.
+* **Splatted vector constants.** `clamp( x, vec3<f32>( 0.0, 0.0, 0.0 ),
+  vec3<f32>( 1.0, 1.0, 1.0 ) )` where Three prints `vec3<f32>( 0.0 )` /
+  `vec3<f32>( 1.0 )`. Same value.
+* **Shared sub-expressions across chains.** Where a single node feeds both the
+  position chain and the colour chain of one material — the ground's
+  `mx_fractal_noise_vec3` in `webgpu_shadowmap` — Three's cache emits it once
+  and reuses the temp; this port re-evaluates it in each chain. The function is
+  pure, so the values agree; only the instruction count differs.
+* **Fog parameters as constants.** `fogColor` / `fogNear` / `fogFar` are folded
+  into the WGSL as literals rather than carried as `renderStruct` members,
+  because nothing in the port animates them. Same numbers.
 * **JPEG decode.** `TextureLoader` decodes through `zune-jpeg`; Chromium uses
   libjpeg-turbo, so the inverse DCT rounds differently. Measured on
   `uv_grid_opengl.jpg` against the browser's own decode: 34030 of 4194304

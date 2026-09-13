@@ -69,6 +69,15 @@ impl DepthTexture {
         })))
     }
 
+    /// `depthTexture.minFilter = depthTexture.magFilter = LinearFilter` —
+    /// what `ShadowNode.setupRenderTarget()` sets for PCF, so that the
+    /// comparison sampler gives four bilinear-weighted comparisons per tap.
+    pub fn set_filters(&self, min_filter: TextureFilter, mag_filter: TextureFilter) {
+        let mut inner = self.0.borrow_mut();
+        inner.min_filter = min_filter;
+        inner.mag_filter = mag_filter;
+    }
+
     pub fn set_type(&self, texture_type: TextureType) {
         self.0.borrow_mut().texture_type = texture_type;
     }

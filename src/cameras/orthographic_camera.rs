@@ -4,6 +4,7 @@
 use crate::core::Object3D;
 use crate::math::{CoordinateSystem, Matrix4};
 
+#[derive(Clone)]
 pub struct OrthographicCamera {
     pub object: Object3D,
     pub left: f64,
