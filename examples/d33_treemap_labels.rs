@@ -11,34 +11,40 @@
 //! per-leaf fit test measured from the TTF, the `flat` basis quaternion, and
 //! `anchorY: 'top'` with `lineHeight: 0.9`.
 //!
+//! The white tile outlines are the page's too, as of the `lines` branch: one
+//! `Group` named `outlines`, one `Line` per leaf over the five points
+//! `[ a, b, c, e, a ]` at `THICK + LIFT`, all sharing one white
+//! `LineBasicNodeMaterial`.
+//!
 //! ## What is *not* the page, and why
 //!
 //! 1. **The tiles are `MeshBasicNodeMaterial`, not `MeshStandardNodeMaterial`,
-//!    and there are no lights.** PBR is rung 8 of the three.js ladder and
-//!    `HemisphereLight` / `DirectionalLight` are not in this branch's port at
-//!    all. The tile colour is the page's own `color(pkg).lerp(white, 0.4)` — the
-//!    notebook's fill at `fill-opacity: 0.6` on white — so the hue of every tile
-//!    is right and only the shading is missing.
-//! 2. **No white tile outlines.** The page draws one closed `THREE.Line` per
-//!    leaf with `LineBasicNodeMaterial`; line topology does not exist in this
-//!    port (no `Line`, no `LineBasicNodeMaterial`, and the renderer only ever
-//!    builds triangle-list pipelines).
-//! 3. **No mirror check and no per-frame flip.** `labels.js` runs a two-axis
+//!    and there are no lights.** The tile colour is the page's own
+//!    `color(pkg).lerp(white, 0.4)` — the notebook's fill at
+//!    `fill-opacity: 0.6` on white — so the hue of every tile is right and only
+//!    the shading is missing. This is the whole of the image gap that is left:
+//!    all 156 of the 100000 pixels that still differ from d33's own render are
+//!    on the slab's near silhouette, where the page's `HemisphereLight` +
+//!    `DirectionalLight` darken the tiles' side walls. `MeshStandardNodeMaterial`
+//!    and both light types *do* exist in the port now (rung 8); switching the
+//!    tiles over is a small change to this file, not a missing capability.
+//! 2. **No mirror check and no per-frame flip.** `labels.js` runs a two-axis
 //!    projection test per label. Under this page's fixed camera both axes come
 //!    out positive — local `+x` is world `+X`, which projects right, and local
 //!    `+y` is world `−Z`, which projects up — so every label is in pose 0 with
 //!    `anchorX: 'left'`, which is what is built here directly. The arithmetic
 //!    that would be exercised is `Vector3::project`, already graded.
-//! 4. **`positionNode` is kept.** d33's `LabelBatch` nulls it and bakes each
+//! 3. **`positionNode` is kept.** d33's `LabelBatch` nulls it and bakes each
 //!    glyph quad into its instance matrix, purely to dodge r186's
 //!    `setupPosition` ordering bug. This port applies `position_node` *before*
 //!    the instance matrix (plan §5.2), so the bug is not there and lib3's own
 //!    `BatchedText` path is the one used.
 //!
-//! Together 1 and 2 put the `< 0.1 %` image gate against
-//! `d33/rung0/examples/screenshots/d3_treemap.jpg` out of reach on this branch;
+//! Deviation 1 is what still keeps the `< 0.1 %` image gate against
+//! `d33/rung0/examples/screenshots/d3_treemap.jpg` out of reach — 0.156 %.
 //! `tests/d33_treemap_labels.rs` grades the layout against a JSON golden dumped
-//! from the page's own JS instead, and still prints the image number.
+//! from the page's own JS, and asserts the image number under a 250-pixel
+//! ceiling.
 
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -48,10 +54,10 @@ use d3_hierarchy::treemap::{binary, treemap};
 use d3_hierarchy::{hierarchy, Datum};
 use sdf_text::text_builder::LineHeight;
 use sdf_text::{Anchor, BatchedText, BatchedTextOptions, Text, VectorFont};
-use three_rs::core::Object3DNode;
+use three_rs::core::{BufferGeometry, Object3DNode};
 use three_rs::{
-    box_geometry, Color, Matrix4, Mesh, MeshBasicNodeMaterial, PerspectiveCamera, Quaternion,
-    Renderer, RendererParameters, Scene, Vector3,
+    box_geometry, Color, Group, Line, Matrix4, Mesh, MeshBasicNodeMaterial, PerspectiveCamera,
+    Quaternion, Renderer, RendererParameters, Scene, Vector3,
 };
 
 pub const INNER_WIDTH: f64 = 800.0;
@@ -444,6 +450,42 @@ pub fn init() -> App {
             object.name = leaf.name.clone();
         }
         scene.add(&mesh);
+    }
+
+    // ---------------- outlines: one closed Line per leaf ----------------
+    //
+    // ```js
+    // const outlines = new THREE.Group(); outlines.name = 'outlines';
+    // const outlineMaterial = new THREE.LineBasicNodeMaterial( { color: 0xffffff } );
+    // const LIFT = 0.012;
+    // ```
+    //
+    // The notebook's 1 px gaps are 0.017 world units here — sub-pixel — so each
+    // tile's top rect is outlined in white, the gap's own colour. `LIFT` puts
+    // the loop above the tile's top face so nothing z-fights. Five points
+    // `[ a, b, c, e, a ]`: a `line-strip` of four segments that happens to
+    // close, not a `LineLoop` (which `Renderer._projectObject()` refuses).
+    let outlines = Group::new();
+    outlines.borrow_mut().name = "outlines".to_string();
+    scene.add(&outlines);
+
+    let outline_material = MeshBasicNodeMaterial::line(Color::from_hex(0xffffff));
+
+    for leaf in &leaves {
+        let mut a = to_world(leaf.x0, leaf.y0);
+        let mut b = to_world(leaf.x1, leaf.y0);
+        let mut c = to_world(leaf.x1, leaf.y1);
+        let mut e = to_world(leaf.x0, leaf.y1);
+        for p in [&mut a, &mut b, &mut c, &mut e] {
+            p.y = THICK + LIFT;
+        }
+
+        let mut geometry = BufferGeometry::new();
+        geometry.set_from_points(&[a, b, c, e, a]);
+
+        let loop_line = Line::new(Rc::new(geometry), outline_material.clone());
+        loop_line.borrow_mut().name = format!("outline {}", leaf.name);
+        outlines.add(&loop_line);
     }
 
     // ---------------- camera ----------------

@@ -4,15 +4,23 @@
 //! `tests/golden/README.md`).
 //!
 //! The plan's gate for this step is the `< 0.1 %` image comparison against
-//! `d33/rung0/examples/screenshots/d3_treemap.jpg`. That is unreachable on this
-//! branch — the page's tiles are PBR under two light types this port does not
-//! have, and every tile is outlined with line primitives this port cannot draw
-//! at all (the example's module doc lists all four deviations). So the gate is
-//! moved to where the *new* code actually is: the d3 layout, the notebook →
-//! world mapping, `frameCamera`, the `pxPerUnit` → `fontSize` derivation, the
-//! per-leaf fit test and the label anchors are each compared with the JS, leaf
-//! by leaf and label by label. The image comparison is still run and printed,
-//! so the remaining gap is measured rather than assumed.
+//! `d33/rung0/examples/screenshots/d3_treemap.jpg`. One deviation still stands
+//! between this branch and it — the page's tiles are PBR under a
+//! `HemisphereLight` and a `DirectionalLight`, and this example draws them with
+//! `MeshBasicNodeMaterial` (the example's module doc lists the remaining
+//! deviations) — so the primary gate is still where the *new* code is: the d3
+//! layout, the notebook → world mapping, `frameCamera`, the `pxPerUnit` →
+//! `fontSize` derivation, the per-leaf fit test and the label anchors are each
+//! compared with the JS, leaf by leaf and label by label.
+//!
+//! The image comparison is run, printed **and** asserted under a ceiling, which
+//! the `lines` branch is what makes possible: with the tile outlines in, the
+//! number went 2551 → 156 of 100000, and all 156 survivors sit on the near
+//! silhouette of the slab (rows 157–229, the tiles' side walls, which the
+//! page's two lights shade and a flat basic material does not). Not one is on
+//! an outline — the horizontal and vertical hairlines of an axis-aligned
+//! treemap under this camera land on the page's own pixels. See
+//! `docs/lines-progress.md`.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -209,10 +217,21 @@ fn d33_screenshot() -> PathBuf {
     .join("examples/screenshots/d3_treemap.jpg")
 }
 
+/// The ceiling the image comparison is held under, in pixels of 100000.
+///
+/// Measured on this machine: 156, every one of them on the slab's near
+/// silhouette, which is the `MeshStandardNodeMaterial` + two-light deviation
+/// that is still open (`IMAGE_CEILING` comes down when that closes). 250 leaves
+/// room for JPEG and driver jitter on that unlit band without leaving room for
+/// anything structural: dropping the outlines alone puts the number at 2551,
+/// and a topology regression that filled them in as triangles would be worse
+/// still.
+const IMAGE_CEILING: u64 = 250;
+
 /// d33's `--twice` in the shape this side can run it: two full rounds through
 /// `sync()` + render must produce the same frame, bit for bit. Then the image
-/// comparison the plan asks for, measured and printed but **not** asserted —
-/// see this file's header and `tests/golden/README.md`.
+/// comparison the plan asks for, measured, printed and asserted under
+/// [`IMAGE_CEILING`] — see this file's header and `tests/golden/README.md`.
 #[test]
 fn the_frame_is_stable_and_the_image_gap_is_measured() {
     let mut app = d33_treemap_labels::init();
@@ -264,14 +283,23 @@ fn the_frame_is_stable_and_the_image_gap_is_measured() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    println!(
-        "compare vs {}: {}",
-        expected.display(),
-        String::from_utf8_lossy(&output.stdout).trim()
-    );
+    let report = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    println!("compare vs {}: {}", expected.display(), report);
     println!("images: {}", out.display());
-    println!(
-        "NOT asserted: the page's PBR tiles, its two lights and its per-tile \
-         LineBasicNodeMaterial outlines are all absent from this port."
+
+    let different: u64 = serde_json::from_str::<Value>(&report)
+        .expect("the comparator's JSON")
+        .get("numDifferentPixels")
+        .and_then(Value::as_u64)
+        .expect("numDifferentPixels");
+
+    assert!(
+        different <= IMAGE_CEILING,
+        "{different} of 100000 pixels differ from d33's own render, over the \
+         {IMAGE_CEILING} ceiling. Look at {}: the only difference this branch \
+         still expects is the unlit near silhouette of the slab (the tiles are \
+         MeshBasicNodeMaterial, the page's are MeshStandardNodeMaterial under a \
+         HemisphereLight and a DirectionalLight).",
+        out.display()
     );
 }

@@ -52,11 +52,11 @@ exactly.
 
 The `< 0.1 %` comparison the ladder plan asks for is against
 `d33/rung0/examples/screenshots/d3_treemap.jpg` (400 × 250, the d33 harness'
-own reference). It is **not reachable on this branch** and the test does not
-assert it — see the header of `examples/d33_treemap_labels.rs` for the list:
-the page's tiles are `MeshStandardNodeMaterial` under a `HemisphereLight` and a
-`DirectionalLight` (PBR is rung 8; neither light exists in this port), and every
-tile is outlined with a `THREE.Line` + `LineBasicNodeMaterial` (no line topology
-in this port at all). The test still renders the frame, runs the same
-`tests/e2e/compare.mjs` over it and prints the number, so the gap is measured
-rather than assumed.
+own reference). It is **not reached yet** — 156 of 100000 pixels, 0.156 % — but
+it is now asserted under a ceiling rather than only printed, and the remaining
+gap is one deviation, not two: the page's tiles are `MeshStandardNodeMaterial`
+under a `HemisphereLight` and a `DirectionalLight` where this example still uses
+`MeshBasicNodeMaterial`, and every one of the 156 surviving pixels is on the
+slab's near silhouette, where those lights shade the tiles' side walls. The
+per-tile `THREE.Line` + `LineBasicNodeMaterial` outlines *are* drawn since the
+`lines` branch (2551 → 156, `docs/lines-progress.md`).
