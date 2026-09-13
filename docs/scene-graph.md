@@ -222,11 +222,70 @@ attribute arrays travel in the node graph, so a `sync()` that changed them
 rebuilds the nodes and bumps the version, and one that changed nothing does
 neither.
 
-What is not evicted: a material's states live for the life of the renderer
-until its version moves (three.js keeps a `NodeBuilderState` until its last
-render object is disposed), so a program that creates materials every frame
-grows the cache by one entry per material — the same thing it costs in
-three.js, and the reason to keep materials and change their fields instead.
+### Identity and eviction
+
+Every per-draw cache the renderer keeps — uploaded geometry, a material's built
+programs, a `range()` buffer's one-and-only fill, a geometry's morph texture,
+an uploaded texture — is keyed on an **id from a never-reused counter**:
+`BufferGeometry.id`, `Material.id`, `BufferId`, `TextureId`, each three.js'
+`_id ++` on the matching class. None is keyed on an address.
+
+That is not a detail. The address of an `Rc` is only unique among *live*
+objects: drop a geometry and the next one can be allocated at the same address,
+and a cache keyed that way hands the new object the dead one's GPU buffers —
+a panic when their attribute sets differ (`the geometry has no uv attribute`),
+the wrong shape drawn silently when they do not. Issue #58; it took 17
+allocations to hit in the reported repro. A counter cannot collide, so a
+lookup can only ever find what the object itself put there.
+
+Eviction is then purely about not growing forever, and takes the cheapest
+correct form for each kind of key. It happens once, at the top of `render()`:
+
+| cache | key | how an entry dies |
+|---|---|---|
+| `geometries` | `BufferGeometry.id` | a `Weak` beside the entry: strong count zero means the consumer dropped it |
+| morph textures | `BufferGeometry.id` | the same `Weak`, swept on the next `get_entry()` |
+| `node_builder_states` | `material.id` | unused for `CACHE_GRACE_RENDERS` (4) renders |
+| `buffers` (`range()`) | `BufferId` | unused for `CACHE_GRACE_RENDERS` renders |
+
+A geometry is an `Rc`, so its strong count *is* three.js' `dispose` event —
+exact and immediate, and it costs one `Weak` per entry. A material is a value
+here (the renderer only ever sees per-frame clones) and a `BufferNode` lives
+inside a material's node graph, so neither has a count to read; those age out
+instead. The window is four renders rather than one so that a consumer
+alternating two scenes, or interleaving passes, does not evict one on the
+other's frame and rebuild it every time. A steady frame touches every entry, so
+a steady frame evicts nothing and still builds nothing — which
+`steady_frame_builds_nothing` keeps honest, and
+`churning_geometry_and_materials_does_not_grow_the_caches` checks from the
+other side.
+
+Two caches deliberately have no eviction: `programs` and `pipelines` are keyed
+by the *content* hash of the generated WGSL and the pipeline state, so distinct
+entries are distinct shaders, and their number is bounded by the material
+shapes the program uses, not by how many objects it creates. Uploaded textures
+are keyed by `TextureId` — correct, never stale — but are still not swept; a
+consumer that churns textures holds their GPU memory for the life of the
+renderer. That is the remaining leak, and a follow-up.
+
+## Changing geometry
+
+**A geometry is uploaded once per id, and the upload is never refreshed.** The
+renderer sees `BufferGeometry.id`, finds its buffers, and draws them; it does
+not look at the attribute arrays again. So mutating a geometry's vertex data
+after it has been drawn — `get_attribute_mut("position")`, `translate()`,
+`scale()`, writing into `array` — changes nothing on screen.
+
+To change vertex data, **make a new `BufferGeometry`** and hand it to the mesh.
+That is a fresh id, so the new data is uploaded, and dropping the old geometry
+drops its buffers at the next `render()`. A `clone()` counts as a new geometry:
+`GeometryId::clone` mints a fresh id exactly as `MaterialId::clone` does, so a
+geometry cloned, mutated and drawn shows its mutation.
+
+Three.js offers the other route as well — `attribute.needsUpdate = true`, which
+re-uploads that one attribute in place. The port does not have it yet;
+`BufferAttribute.id` exists to key it on when it arrives. Until then the rule
+above is the whole of it.
 
 ## Lines
 

@@ -10,6 +10,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use super::TextureFilter;
+use super::TextureId;
 
 #[derive(Debug)]
 pub struct CubeDepthTextureInner {
@@ -24,18 +25,30 @@ pub struct CubeDepthTextureInner {
     pub gpu: Option<wgpu::Texture>,
 }
 
-#[derive(Clone, Debug)]
-pub struct CubeDepthTexture(Rc<RefCell<CubeDepthTextureInner>>);
+#[derive(Clone)]
+pub struct CubeDepthTexture(Rc<RefCell<CubeDepthTextureInner>>, TextureId);
+
+/// The id is identity, not content: leaving it out keeps the `Debug` of a
+/// binding description — what `examples/dump_wgsl.rs` prints beside the WGSL —
+/// a function of the texture itself.
+impl std::fmt::Debug for CubeDepthTexture {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("CubeDepthTexture").field(&self.0).finish()
+    }
+}
 
 impl CubeDepthTexture {
     /// `new CubeDepthTexture( size )`.
     pub fn new(size: u32) -> Self {
-        Self(Rc::new(RefCell::new(CubeDepthTextureInner {
-            size,
-            mag_filter: TextureFilter::Linear,
-            min_filter: TextureFilter::Linear,
-            gpu: None,
-        })))
+        Self(
+            Rc::new(RefCell::new(CubeDepthTextureInner {
+                size,
+                mag_filter: TextureFilter::Linear,
+                min_filter: TextureFilter::Linear,
+                gpu: None,
+            })),
+            TextureId::next(),
+        )
     }
 
     pub fn size(&self) -> u32 {
@@ -49,7 +62,7 @@ impl CubeDepthTexture {
     }
 
     pub fn id(&self) -> usize {
-        Rc::as_ptr(&self.0) as usize
+        self.1.get()
     }
 
     pub(crate) fn inner(&self) -> &RefCell<CubeDepthTextureInner> {

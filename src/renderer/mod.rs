@@ -13,7 +13,7 @@ mod render_pipeline;
 mod render_target;
 
 use std::collections::HashMap;
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 
 use mipmap::{create_mipmap_pipeline, MipmapShader};
 pub use pass::PassNode;
@@ -41,6 +41,36 @@ use crate::textures::{
     CubeDepthTexture, CubeTexture, DataArrayTexture, DepthTexture, Texture, TextureFilter,
     TextureType, Wrapping,
 };
+
+/// How many `render()` calls a cache entry survives without being used, for
+/// the caches whose key has no liveness signal behind it (`node_builder_states`
+/// and `buffers`, both keyed on ids of values the renderer does not own).
+///
+/// Zero would be wrong: a consumer that renders two scenes, or the same scene
+/// from two cameras, in alternating `render()` calls would evict each one's
+/// materials on the other's frame and rebuild them every time. Four tolerates
+/// a handful of interleaved passes while still bounding the maps at a few
+/// frames' worth of churn — a steady frame touches every entry, so a steady
+/// frame evicts nothing and still builds nothing.
+const CACHE_GRACE_RENDERS: u64 = 4;
+
+/// A cached GPU buffer that is filled exactly once — `range()`'s random draw —
+/// with the same `render()`-clock stamp the material states carry.
+struct BufferEntry {
+    buffer: wgpu::Buffer,
+    last_used: u64,
+}
+
+/// One geometry's uploaded buffers, plus the liveness signal the cache sweep
+/// reads. `owner` is a `Weak` on the very `Rc<BufferGeometry>` the render list
+/// held: when the consumer drops the geometry the strong count falls to zero
+/// and the entry — the GPU buffers with it — goes at the start of the next
+/// `render()`. three.js relies on an explicit `geometry.dispose()`; with `Rc`
+/// the strong count is the same information for free (issue #58).
+struct GeometryEntry {
+    gpu: GeometryGpu,
+    owner: Weak<BufferGeometry>,
+}
 
 struct GeometryGpu {
     position: Option<wgpu::Buffer>,
@@ -201,6 +231,9 @@ const VARIANT_QUAD: u64 = 2;
 /// share the compiled `Program`.
 struct MaterialStates {
     version: u32,
+    /// `Renderer::renders` when this material was last drawn; see
+    /// [`CACHE_GRACE_RENDERS`].
+    last_used: u64,
     /// Keyed by the dynamic half of the cache key — the hash of the item's
     /// `SetupContext`, fog and `MaterialKey::variant`.
     by_dynamic_key: HashMap<u64, Rc<NodeProgram>>,
@@ -261,6 +294,11 @@ pub struct Renderer {
     /// `material.id`. A steady frame is served from here without touching the
     /// node builder; see `node_builder_state()`.
     node_builder_states: HashMap<usize, MaterialStates>,
+    /// `render()` calls so far — the clock the by-use caches
+    /// (`node_builder_states`, `buffers`) age their entries against, since a
+    /// material is a value here and has no liveness signal of its own. See
+    /// [`CACHE_GRACE_RENDERS`].
+    renders: u64,
     /// How many times `NodeBuilder::build` has run — the number a steady frame
     /// must leave unchanged. See `program_builds()`.
     program_builds: u64,
@@ -275,16 +313,22 @@ pub struct Renderer {
     /// minus the `fragmentNode` the frame's target and tone mapping supply.
     output_material: MeshBasicNodeMaterial,
     pipelines: HashMap<PipelineKey, wgpu::RenderPipeline>,
-    geometries: HashMap<usize, GeometryGpu>,
+    /// `Geometries`' GPU side, keyed by `BufferGeometry.id` — never by the
+    /// geometry's address, which a later geometry inherits the moment this one
+    /// is dropped. Swept by liveness at the start of every `render()`; see
+    /// [`GeometryEntry`].
+    geometries: HashMap<usize, GeometryEntry>,
     /// `Textures`' GPU side, keyed by texture identity.
     textures_2d: HashMap<usize, wgpu::Texture>,
     cube_textures: HashMap<usize, wgpu::Texture>,
     /// `WebGPUTexturePassUtils.transferPipelines`, keyed by texture format.
     mipmap_pipelines: HashMap<wgpu::TextureFormat, wgpu::RenderPipeline>,
     /// `BufferNode` / `InstanceBuffer` storage, keyed by the node's own
-    /// identity — a `range()` buffer must be filled only once, since filling it
-    /// draws from `Math.random`.
-    buffers: HashMap<usize, wgpu::Buffer>,
+    /// identity (`BufferId`, a never-reused counter) — a `range()` buffer must
+    /// be filled only once, since filling it draws from `Math.random`. Aged out
+    /// by [`CACHE_GRACE_RENDERS`]; the node itself is a material's, not the
+    /// renderer's, so there is no strong count to read.
+    buffers: HashMap<usize, BufferEntry>,
     /// `Background`'s `SphereGeometry( 1, 32, 32 )` skybox mesh geometry.
     background_geometry: Option<Rc<BufferGeometry>>,
     /// `QuadMesh`'s shared `QuadGeometry`.
@@ -414,6 +458,7 @@ impl Renderer {
             mipmap_shader,
             programs: HashMap::new(),
             node_builder_states: HashMap::new(),
+            renders: 0,
             program_builds: 0,
             default_material: MeshBasicNodeMaterial::new(),
             background_material: {
@@ -499,6 +544,11 @@ impl Renderer {
     /// — `&mut PerspectiveCamera` still coerces at the call site, so every
     /// existing caller is unchanged.
     pub fn render(&mut self, scene: &mut Scene, camera: &mut dyn RenderCamera) {
+        // Before anything of this frame is looked up: return what the last
+        // frame's scene no longer uses. See `sweep_caches`.
+        self.renders += 1;
+        self.sweep_caches();
+
         // `Renderer.render()`: `scene.updateMatrixWorld()` then
         // `camera.updateMatrixWorld()`, both honouring `matrixAutoUpdate` /
         // `matrixWorldAutoUpdate`.
@@ -1186,8 +1236,8 @@ impl Renderer {
         let mut draws = Vec::with_capacity(items.len());
 
         for item in items {
-            let geometry_id = Rc::as_ptr(&item.geometry) as usize;
-            self.ensure_geometry(geometry_id, &item.geometry);
+            let geometry_id = item.geometry.id();
+            self.ensure_geometry(&item.geometry);
 
             // `NodeManager.getForRender( renderObject )`: the material's built
             // program, from the cache on a steady frame and from
@@ -1246,7 +1296,7 @@ impl Renderer {
                 .iter()
                 .map(|desc| match &desc.source {
                     VertexBufferSource::Geometry(name) => {
-                        self.geometries[&geometry_id].attribute(name).clone()
+                        self.geometries[&geometry_id].gpu.attribute(name).clone()
                     }
                     VertexBufferSource::Instance(buffer) => {
                         self.instance_buffer(buffer, &item.instance_matrix)
@@ -1312,7 +1362,7 @@ impl Renderer {
             });
 
             for draw in draws.iter() {
-                let geometry = &self.geometries[&draw.geometry_id];
+                let geometry = &self.geometries[&draw.geometry_id].gpu;
 
                 pass.set_pipeline(self.pipelines.get(&draw.pipeline).unwrap());
                 for (index, group) in draw.bind_groups.iter().enumerate() {
@@ -1451,13 +1501,16 @@ impl Renderer {
     fn node_builder_state(&mut self, item: &Renderable) -> Rc<NodeProgram> {
         let dynamic_key = hash_of(&(item.key.variant, &item.setup, &item.fog));
 
+        let renders = self.renders;
         let states = self
             .node_builder_states
             .entry(item.key.id)
             .or_insert_with(|| MaterialStates {
                 version: item.key.version,
+                last_used: renders,
                 by_dynamic_key: HashMap::new(),
             });
+        states.last_used = renders;
         if states.version != item.key.version {
             states.by_dynamic_key.clear();
             states.version = item.key.version;
@@ -1592,7 +1645,7 @@ impl Renderer {
         buffer: &Rc<crate::nodes::node::InstanceBuffer>,
         instance_matrix: &Option<InstancedBufferAttribute>,
     ) -> wgpu::Buffer {
-        let id = Rc::as_ptr(buffer) as *const u8 as usize;
+        let id = buffer.id.get();
         self.buffer_for(
             id,
             &buffer.source,
@@ -1641,8 +1694,10 @@ impl Renderer {
                 )
             }
             BufferSource::Range { min, max } => {
-                if let Some(buffer) = self.buffers.get(&id) {
-                    return buffer.clone();
+                let renders = self.renders;
+                if let Some(entry) = self.buffers.get_mut(&id) {
+                    entry.last_used = renders;
+                    return entry.buffer.clone();
                 }
 
                 // `min`/`max` are the `Vector4`s `RangeNode.setup()` built;
@@ -1656,7 +1711,13 @@ impl Renderer {
                     bytemuck::cast_slice(&range),
                     usage,
                 );
-                self.buffers.insert(id, buffer.clone());
+                self.buffers.insert(
+                    id,
+                    BufferEntry {
+                        buffer: buffer.clone(),
+                        last_used: renders,
+                    },
+                );
                 buffer
             }
         }
@@ -2158,10 +2219,16 @@ impl Renderer {
         }
     }
 
-    fn ensure_geometry(&mut self, id: usize, geometry: &BufferGeometry) {
+    /// `Geometries.get( renderObject )`: the geometry's buffers, uploaded on
+    /// first sight of its [`id`](BufferGeometry::id) and then reused for the
+    /// life of the geometry. A `Weak` on the caller's `Rc` rides along so
+    /// [`Renderer::sweep_caches`] can drop the entry once the geometry is gone.
+    fn ensure_geometry(&mut self, geometry: &Rc<BufferGeometry>) {
+        let id = geometry.id();
         if self.geometries.contains_key(&id) {
             return;
         }
+        let owner = Rc::downgrade(geometry);
 
         let vertex_buffer = |attribute: &crate::core::BufferAttribute| {
             self.create_buffer_init(
@@ -2192,14 +2259,62 @@ impl Renderer {
 
         self.geometries.insert(
             id,
-            GeometryGpu {
-                position,
-                normal,
-                uv,
-                index,
-                vertex_count,
+            GeometryEntry {
+                gpu: GeometryGpu {
+                    position,
+                    normal,
+                    uv,
+                    index,
+                    vertex_count,
+                },
+                owner,
             },
         );
+    }
+
+    /// Dropped at the start of every `render()`: everything the renderer is
+    /// holding on behalf of something the consumer no longer has.
+    ///
+    /// three.js does this from an explicit `geometry.dispose()` /
+    /// `material.dispose()`, whose `dispose` event `Geometries` and
+    /// `NodeManager` listen for. The port has no dispose event, and two kinds
+    /// of key:
+    ///
+    /// - a geometry is an `Rc`, so its strong count *is* the dispose event —
+    ///   exact, immediate, and it costs one `Weak` per entry;
+    /// - a material is a value (the renderer only ever sees per-frame clones)
+    ///   and a `BufferNode` lives inside a material's node graph, so neither
+    ///   has a count to read. Those age out instead: an entry unused for
+    ///   [`CACHE_GRACE_RENDERS`] renders goes.
+    ///
+    /// Correctness never rests on this sweep — ids are never reused, so a
+    /// stale entry can only ever be found by the object that put it there
+    /// (issue #58). It is here so a consumer that rebuilds geometry or
+    /// materials every frame does not grow the maps without bound.
+    fn sweep_caches(&mut self) {
+        self.geometries
+            .retain(|_, entry| entry.owner.strong_count() > 0);
+
+        let cutoff = self.renders.saturating_sub(CACHE_GRACE_RENDERS);
+        self.node_builder_states
+            .retain(|_, states| states.last_used >= cutoff);
+        self.buffers.retain(|_, entry| entry.last_used >= cutoff);
+    }
+
+    /// Entries in the uploaded-geometry cache. A consumer that churns geometry
+    /// should see this hold steady, not climb; the e2e suite asserts so.
+    pub fn geometry_cache_len(&self) -> usize {
+        self.geometries.len()
+    }
+
+    /// Entries in `NodeManager.nodeBuilderCache` — one per live `material.id`.
+    pub fn material_cache_len(&self) -> usize {
+        self.node_builder_states.len()
+    }
+
+    /// Entries in the `range()` / instance-buffer cache.
+    pub fn buffer_cache_len(&self) -> usize {
+        self.buffers.len()
     }
 
     fn create_buffer_init(

@@ -6,7 +6,7 @@
 //! hung off the node (usage count, property name, varying slot, uniform slot)
 //! lives in the builder keyed by that identity. See `docs/nodes.md` §1.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::hash::Hash;
 use std::rc::Rc;
 
@@ -241,6 +241,36 @@ pub enum BufferSource {
     Attribute(Rc<Vec<f32>>),
 }
 
+/// The identity of one `BufferNode` / `InstanceBuffer`, from a never-reused
+/// counter — the same shape as `BufferGeometry.id` and `Material.id`.
+///
+/// The renderer caches a `range()` buffer's one-and-only random fill under
+/// this. It used to be `Rc::as_ptr( &buffer )`, which a *later* buffer
+/// inherits the moment this one's material is dropped, and which would then be
+/// served the dead buffer's fill: the same freed-address bug as issue #58's
+/// geometry cache, silent rather than loud because the contents are random
+/// either way.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct BufferId(usize);
+
+impl BufferId {
+    pub fn next() -> Self {
+        thread_local! {
+            static BUFFER_ID: Cell<usize> = const { Cell::new(0) };
+        }
+        BUFFER_ID.with(|id| {
+            let next = id.get();
+            id.set(next + 1);
+            BufferId(next)
+        })
+    }
+
+    /// The number itself, for keying on.
+    pub fn get(&self) -> usize {
+        self.0
+    }
+}
+
 /// The CPU-side buffer behind one or more *instanced vertex attributes* —
 /// three.js' `InstancedBufferAttribute` / `InstancedInterleavedBuffer`.
 ///
@@ -253,6 +283,8 @@ pub enum BufferSource {
 /// exactly as two `RangeNode`s are in three.js.
 #[derive(Debug)]
 pub struct InstanceBuffer {
+    /// This buffer's identity — see [`BufferId`].
+    pub id: BufferId,
     pub source: BufferSource,
     /// The instance count — `InstancedBufferAttribute.count`.
     pub count: usize,
@@ -265,6 +297,8 @@ pub struct InstanceBuffer {
 /// `BufferNode` — `buffer( array, type, count )`.
 #[derive(Debug)]
 pub struct BufferNode {
+    /// This buffer's identity — see [`BufferId`].
+    pub id: BufferId,
     pub source: BufferSource,
     pub element_ty: Type,
     pub count: usize,

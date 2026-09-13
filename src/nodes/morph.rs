@@ -5,7 +5,7 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 
 use crate::core::BufferGeometry;
 use crate::nodes::node::Type;
@@ -43,7 +43,14 @@ impl std::hash::Hash for MorphEntry {
 thread_local! {
     /// `const _morphTextures = new WeakMap()` — keyed on the geometry, so the
     /// same geometry rendered twice reuses one texture.
-    static MORPH_TEXTURES: RefCell<HashMap<usize, MorphEntry>> =
+    ///
+    /// The key is `BufferGeometry.id`, not the geometry's address: an address
+    /// is reused as soon as the geometry is dropped, and the next geometry at
+    /// it would be handed this one's morph texture (issue #58). Three's
+    /// `WeakMap` also *releases* the entry when the geometry goes, which the
+    /// `Weak` beside each entry reproduces — swept on the next `get_entry()`,
+    /// since a thread-local has no frame to hang a sweep off.
+    static MORPH_TEXTURES: RefCell<HashMap<usize, (Weak<BufferGeometry>, MorphEntry)>> =
         RefCell::new(HashMap::new());
 }
 
@@ -55,11 +62,13 @@ pub fn get_entry(geometry: &Rc<BufferGeometry>) -> Option<MorphEntry> {
         return None;
     }
 
-    let key = Rc::as_ptr(geometry) as *const u8 as usize;
+    let key = geometry.id();
     if let Some(entry) = MORPH_TEXTURES.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        cache.retain(|_, (owner, _)| owner.strong_count() > 0);
         cache
-            .borrow()
             .get(&key)
+            .map(|(_, entry)| entry)
             .filter(|entry| entry.count == morph_targets_count)
             .cloned()
     }) {
@@ -109,7 +118,11 @@ pub fn get_entry(geometry: &Rc<BufferGeometry>) -> Option<MorphEntry> {
         count: morph_targets_count,
     };
 
-    MORPH_TEXTURES.with(|cache| cache.borrow_mut().insert(key, entry.clone()));
+    MORPH_TEXTURES.with(|cache| {
+        cache
+            .borrow_mut()
+            .insert(key, (Rc::downgrade(geometry), entry.clone()))
+    });
 
     Some(entry)
 }

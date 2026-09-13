@@ -10,6 +10,7 @@ use std::rc::Rc;
 
 use super::{ColorSpace, TextureFilter};
 use crate::math::{Matrix3, Vector2};
+use super::TextureId;
 
 /// `three.js/src/constants.js` wrapping modes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -76,35 +77,47 @@ pub struct TextureInner {
 }
 
 /// Cloning is a handle copy, as in JS.
-#[derive(Clone, Debug)]
-pub struct Texture(Rc<RefCell<TextureInner>>);
+#[derive(Clone)]
+pub struct Texture(Rc<RefCell<TextureInner>>, TextureId);
+
+/// The id is identity, not content: leaving it out keeps the `Debug` of a
+/// binding description — what `examples/dump_wgsl.rs` prints beside the WGSL —
+/// a function of the texture itself.
+impl std::fmt::Debug for Texture {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("Texture").field(&self.0).finish()
+    }
+}
 
 impl Texture {
     /// `new Texture()` defaults: `ClampToEdgeWrapping`, `LinearFilter`,
     /// `LinearMipmapLinearFilter`, `RGBAFormat`, `UnsignedByteType`,
     /// `NoColorSpace`, `flipY = true`, `generateMipmaps = true`, anisotropy 1.
     pub fn new(width: u32, height: u32, data: Option<Vec<u8>>) -> Self {
-        Self(Rc::new(RefCell::new(TextureInner {
-            width,
-            height,
-            data,
-            color_space: ColorSpace::NoColorSpace,
-            flip_y: true,
-            generate_mipmaps: true,
-            wrap_s: Wrapping::ClampToEdge,
-            wrap_t: Wrapping::ClampToEdge,
-            mag_filter: TextureFilter::Linear,
-            min_filter: MinFilter::LinearMipmapLinear,
-            anisotropy: 1,
-            offset: Vector2::new(0.0, 0.0),
-            repeat: Vector2::new(1.0, 1.0),
-            center: Vector2::new(0.0, 0.0),
-            rotation: 0.0,
-            matrix: Matrix3::identity(),
-            own_gpu: true,
-            gpu: None,
-            format: wgpu::TextureFormat::Rgba8Unorm,
-        })))
+        Self(
+            Rc::new(RefCell::new(TextureInner {
+                width,
+                height,
+                data,
+                color_space: ColorSpace::NoColorSpace,
+                flip_y: true,
+                generate_mipmaps: true,
+                wrap_s: Wrapping::ClampToEdge,
+                wrap_t: Wrapping::ClampToEdge,
+                mag_filter: TextureFilter::Linear,
+                min_filter: MinFilter::LinearMipmapLinear,
+                anisotropy: 1,
+                offset: Vector2::new(0.0, 0.0),
+                repeat: Vector2::new(1.0, 1.0),
+                center: Vector2::new(0.0, 0.0),
+                rotation: 0.0,
+                matrix: Matrix3::identity(),
+                own_gpu: true,
+                gpu: None,
+                format: wgpu::TextureFormat::Rgba8Unorm,
+            })),
+            TextureId::next(),
+        )
     }
 
     /// The texture behind a render target's colour attachment: no image data,
@@ -151,7 +164,7 @@ impl Texture {
     }
 
     pub fn id(&self) -> usize {
-        Rc::as_ptr(&self.0) as *const u8 as usize
+        self.1.get()
     }
 
     /// `texture.colorSpace = SRGBColorSpace`. As with `CubeTexture`, the

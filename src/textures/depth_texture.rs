@@ -6,6 +6,7 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use super::TextureId;
 
 /// `three.js/src/constants.js` texture types, as far as the port needs them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -47,8 +48,17 @@ pub struct DepthTextureInner {
     pub gpu: Option<wgpu::Texture>,
 }
 
-#[derive(Clone, Debug)]
-pub struct DepthTexture(Rc<RefCell<DepthTextureInner>>);
+#[derive(Clone)]
+pub struct DepthTexture(Rc<RefCell<DepthTextureInner>>, TextureId);
+
+/// The id is identity, not content: leaving it out keeps the `Debug` of a
+/// binding description — what `examples/dump_wgsl.rs` prints beside the WGSL —
+/// a function of the texture itself.
+impl std::fmt::Debug for DepthTexture {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("DepthTexture").field(&self.0).finish()
+    }
+}
 
 impl Default for DepthTexture {
     fn default() -> Self {
@@ -59,14 +69,17 @@ impl Default for DepthTexture {
 impl DepthTexture {
     /// `new DepthTexture()`: `UnsignedIntType`, `NearestFilter`, no size yet.
     pub fn new() -> Self {
-        Self(Rc::new(RefCell::new(DepthTextureInner {
-            texture_type: TextureType::UnsignedInt,
-            mag_filter: TextureFilter::Nearest,
-            min_filter: TextureFilter::Nearest,
-            width: 0,
-            height: 0,
-            gpu: None,
-        })))
+        Self(
+            Rc::new(RefCell::new(DepthTextureInner {
+                texture_type: TextureType::UnsignedInt,
+                mag_filter: TextureFilter::Nearest,
+                min_filter: TextureFilter::Nearest,
+                width: 0,
+                height: 0,
+                gpu: None,
+            })),
+            TextureId::next(),
+        )
     }
 
     /// `depthTexture.minFilter = depthTexture.magFilter = LinearFilter` —
@@ -96,7 +109,7 @@ impl DepthTexture {
     }
 
     pub fn id(&self) -> usize {
-        Rc::as_ptr(&self.0) as usize
+        self.1.get()
     }
 
     pub(crate) fn inner(&self) -> &RefCell<DepthTextureInner> {

@@ -7,6 +7,7 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use super::TextureId;
 
 /// `three.js/src/constants.js` colour spaces, as far as the port needs them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -47,23 +48,35 @@ pub struct CubeTextureInner {
 }
 
 /// Cloning is a handle copy.
-#[derive(Clone, Debug)]
-pub struct CubeTexture(Rc<RefCell<CubeTextureInner>>);
+#[derive(Clone)]
+pub struct CubeTexture(Rc<RefCell<CubeTextureInner>>, TextureId);
+
+/// The id is identity, not content: leaving it out keeps the `Debug` of a
+/// binding description — what `examples/dump_wgsl.rs` prints beside the WGSL —
+/// a function of the texture itself.
+impl std::fmt::Debug for CubeTexture {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("CubeTexture").field(&self.0).finish()
+    }
+}
 
 impl CubeTexture {
     /// `new CubeTexture()`: `CubeReflectionMapping`, `ClampToEdgeWrapping`,
     /// `LinearFilter` / `LinearMipmapLinearFilter`, `RGBAFormat`,
     /// `UnsignedByteType`, `NoColorSpace`, `flipY = false`.
     pub fn new(images: Vec<Image>) -> Self {
-        Self(Rc::new(RefCell::new(CubeTextureInner {
-            images,
-            mapping: Mapping::CubeReflection,
-            color_space: ColorSpace::NoColorSpace,
-            flip_y: false,
-            generate_mipmaps: true,
-            anisotropy: 1,
-            gpu: None,
-        })))
+        Self(
+            Rc::new(RefCell::new(CubeTextureInner {
+                images,
+                mapping: Mapping::CubeReflection,
+                color_space: ColorSpace::NoColorSpace,
+                flip_y: false,
+                generate_mipmaps: true,
+                anisotropy: 1,
+                gpu: None,
+            })),
+            TextureId::next(),
+        )
     }
 
     pub fn set_color_space(&self, color_space: ColorSpace) {
@@ -105,7 +118,7 @@ impl CubeTexture {
     }
 
     pub fn id(&self) -> usize {
-        Rc::as_ptr(&self.0) as usize
+        self.1.get()
     }
 
     pub(crate) fn inner(&self) -> &RefCell<CubeTextureInner> {

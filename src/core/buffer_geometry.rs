@@ -1,17 +1,116 @@
 //! Port of `three.js/src/core/BufferGeometry.js` (interleaved-free `f32`
 //! attributes plus a `u16`/`u32` index).
 
+use std::cell::Cell;
+
 use crate::math::{Matrix3, Matrix4, Quaternion, Vector3};
+
+/// `BufferGeometry.id` — three.js' module-level `let _id = 0` counter, handed
+/// out in construction order, exactly as [`MaterialId`](crate::materials::MaterialId)
+/// is for materials.
+///
+/// The renderer keys its uploaded GPU buffers on this. It has to be an
+/// *identity*, and a never-reused one: the previous key was
+/// `Rc::as_ptr( &geometry )`, and an address is reused the moment the geometry
+/// behind it is dropped, so a new geometry allocated at a dead one's address
+/// inherited its vertex buffers — a panic when the attribute sets differed and
+/// the wrong shape, silently, when they did not (issue #58).
+///
+/// As with `MaterialId`, **`clone()` mints a fresh id**: a cloned geometry is a
+/// new object in three.js (`new BufferGeometry().copy( this )`), and one that
+/// may be mutated away from its source before it is ever drawn, so it must not
+/// be served the source's upload.
+#[derive(Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct GeometryId(usize);
+
+impl GeometryId {
+    fn next() -> Self {
+        thread_local! {
+            static GEOMETRY_ID: Cell<usize> = const { Cell::new(0) };
+        }
+        GEOMETRY_ID.with(|id| {
+            let next = id.get();
+            id.set(next + 1);
+            GeometryId(next)
+        })
+    }
+
+    /// The number itself, for keying on.
+    pub fn get(&self) -> usize {
+        self.0
+    }
+}
+
+/// A fresh id, never a copy — see the type's docs.
+impl Clone for GeometryId {
+    fn clone(&self) -> Self {
+        Self::next()
+    }
+}
+
+impl Default for GeometryId {
+    fn default() -> Self {
+        Self::next()
+    }
+}
+
+/// `BufferAttribute.id` — three.js' `_id ++` on the attribute class. The same
+/// never-reused counter shape as [`GeometryId`], for the same reason.
+///
+/// Nothing keys a GPU resource on it yet: the renderer uploads and caches a
+/// whole geometry at a time, so [`GeometryId`] is the cache unit. It is here
+/// because three.js has it, and because a per-attribute upload path (the
+/// `needs_update` follow-up in `docs/scene-graph.md`) would need exactly this
+/// identity to key on.
+#[derive(Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct AttributeId(usize);
+
+impl AttributeId {
+    fn next() -> Self {
+        thread_local! {
+            static ATTRIBUTE_ID: Cell<usize> = const { Cell::new(0) };
+        }
+        ATTRIBUTE_ID.with(|id| {
+            let next = id.get();
+            id.set(next + 1);
+            AttributeId(next)
+        })
+    }
+
+    /// The number itself, for keying on.
+    pub fn get(&self) -> usize {
+        self.0
+    }
+}
+
+/// A fresh id, never a copy — see [`GeometryId`].
+impl Clone for AttributeId {
+    fn clone(&self) -> Self {
+        Self::next()
+    }
+}
+
+impl Default for AttributeId {
+    fn default() -> Self {
+        Self::next()
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct BufferAttribute {
+    /// `BufferAttribute.id`. Read-only in spirit; see [`AttributeId`].
+    pub id: AttributeId,
     pub array: Vec<f32>,
     pub item_size: usize,
 }
 
 impl BufferAttribute {
     pub fn new(array: Vec<f32>, item_size: usize) -> Self {
-        Self { array, item_size }
+        Self {
+            id: AttributeId::next(),
+            array,
+            item_size,
+        }
     }
 
     pub fn count(&self) -> usize {
@@ -231,6 +330,9 @@ impl Default for DrawRange {
 /// iterate it in insertion order.
 #[derive(Clone, Debug, Default)]
 pub struct BufferGeometry {
+    /// `BufferGeometry.id`. Read-only in spirit; see [`GeometryId`] for why a
+    /// clone gets a new one, and why the renderer keys on it.
+    pub id: GeometryId,
     attributes: Vec<(String, BufferAttribute)>,
     pub index: Option<Index>,
     /// `BufferGeometry.morphAttributes` — per name, one attribute per morph
@@ -247,6 +349,12 @@ pub struct BufferGeometry {
 impl BufferGeometry {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// `BufferGeometry.id` — the renderer's cache key for this geometry's
+    /// uploaded buffers.
+    pub fn id(&self) -> usize {
+        self.id.get()
     }
 
     /// `BufferGeometry.getAttribute( name )`.

@@ -6,7 +6,8 @@ pub mod node;
 mod object3d;
 
 pub use buffer_geometry::{
-    BoundingBox, BoundingSphere, BufferAttribute, BufferGeometry, DrawRange, Group, Index,
+    AttributeId, BoundingBox, BoundingSphere, BufferAttribute, BufferGeometry, DrawRange,
+    GeometryId, Group, Index,
 };
 pub use layers::Layers;
 pub use node::{Node, Object3DNode, WeakNode};

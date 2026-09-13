@@ -122,10 +122,12 @@ pub enum BindingDesc {
     },
     Buffer {
         name: String,
-        /// The `BufferNode`'s own identity (`Rc::as_ptr`), which is what the
-        /// renderer keys its GPU buffer on. Two `range( 0, 1 )` nodes have
-        /// equal `source`s but must stay two buffers with two random fills, so
-        /// dedup is by identity and never by value.
+        /// The `BufferNode`'s own identity ([`BufferId`], a never-reused
+        /// counter), which is what the renderer keys its GPU buffer on. Two
+        /// `range( 0, 1 )` nodes have equal `source`s but must stay two
+        /// buffers with two random fills, so dedup is by identity and never by
+        /// value — and the identity outlives the node, so the renderer's cache
+        /// cannot hand a new buffer a dead one's fill.
         id: usize,
         source: BufferSource,
         element_ty: Type,
@@ -643,7 +645,7 @@ impl NodeBuilder {
 
     fn buffer_snippet(&mut self, buffer: &Rc<BufferNode>) -> String {
         let stage = self.stage;
-        let buffer_id = Rc::as_ptr(buffer) as *const u8 as usize;
+        let buffer_id = buffer.id.get();
         let g = self.groups.entry(UniformGroup::Object).or_default();
         for b in g.bindings.iter_mut() {
             if let BindingDesc::Buffer {

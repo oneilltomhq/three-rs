@@ -3,6 +3,7 @@
 
 use std::cell::{Ref, RefCell};
 use std::rc::Rc;
+use super::TextureId;
 
 pub struct DataArrayTextureInner {
     /// `new Float32Array( width * height * 4 * depth )` — one RGBA texel per
@@ -16,8 +17,17 @@ pub struct DataArrayTextureInner {
 }
 
 /// Cloning is a handle copy, as in JS.
-#[derive(Clone, Debug)]
-pub struct DataArrayTexture(Rc<RefCell<DataArrayTextureInner>>);
+#[derive(Clone)]
+pub struct DataArrayTexture(Rc<RefCell<DataArrayTextureInner>>, TextureId);
+
+/// The id is identity, not content: leaving it out keeps the `Debug` of a
+/// binding description — what `examples/dump_wgsl.rs` prints beside the WGSL —
+/// a function of the texture itself.
+impl std::fmt::Debug for DataArrayTexture {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("DataArrayTexture").field(&self.0).finish()
+    }
+}
 
 impl DataArrayTexture {
     /// `new DataArrayTexture( data, width, height, depth )` with
@@ -25,17 +35,20 @@ impl DataArrayTexture {
     /// and no mipmaps, and the shader only ever `textureLoad`s it, so there is
     /// no sampler binding at all.
     pub fn new(data: Vec<f32>, width: u32, height: u32, depth: u32) -> Self {
-        Self(Rc::new(RefCell::new(DataArrayTextureInner {
-            data,
-            width,
-            height,
-            depth,
-            gpu: None,
-        })))
+        Self(
+            Rc::new(RefCell::new(DataArrayTextureInner {
+                data,
+                width,
+                height,
+                depth,
+                gpu: None,
+            })),
+            TextureId::next(),
+        )
     }
 
     pub fn id(&self) -> usize {
-        Rc::as_ptr(&self.0) as *const u8 as usize
+        self.1.get()
     }
 
     pub fn borrow(&self) -> Ref<'_, DataArrayTextureInner> {

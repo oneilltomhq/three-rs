@@ -1837,6 +1837,7 @@ pub fn cube_texture_level(map: &CubeTexture, dir: NodeRef, level: NodeRef) -> No
 fn buffer_element(source: BufferSource, element_ty: Type, count: usize, index: NodeRef) -> NodeRef {
     NodeRef::new(Node::BufferElement {
         buffer: Rc::new(BufferNode {
+            id: crate::nodes::node::BufferId::next(),
             source,
             element_ty,
             count,
@@ -1877,6 +1878,7 @@ pub fn instance_matrix(count: usize) -> NodeRef {
     }
 
     let interleaved = Rc::new(InstanceBuffer {
+        id: crate::nodes::node::BufferId::next(),
         source: BufferSource::InstanceMatrix,
         count: matrix_count,
         item_size: 16,
@@ -1987,6 +1989,7 @@ pub fn instanced_range(
         )
     } else {
         let buffer = Rc::new(InstanceBuffer {
+            id: crate::nodes::node::BufferId::next(),
             source: BufferSource::Range {
                 min: min.vector4(),
                 max: max.vector4(),
@@ -2072,6 +2075,7 @@ pub fn instanced_data_attribute(
         data.len() / item_size
     };
     let buffer = Rc::new(InstanceBuffer {
+        id: crate::nodes::node::BufferId::next(),
         source: BufferSource::Attribute(data.clone()),
         count,
         item_size,
