@@ -59,6 +59,9 @@ pub fn constant(ty: Type, values: &[f64]) -> String {
 pub enum TextureKind {
     Float2D,
     Depth2D,
+    /// A depth texture bound for `textureSampleCompare`: the same
+    /// `texture_depth_2d`, but with a `sampler_comparison` beside it.
+    DepthCompare2D,
     Cube,
 }
 
@@ -67,8 +70,16 @@ impl TextureKind {
     pub fn wgsl(self) -> &'static str {
         match self {
             TextureKind::Float2D => "texture_2d<f32>",
-            TextureKind::Depth2D => "texture_depth_2d",
+            TextureKind::Depth2D | TextureKind::DepthCompare2D => "texture_depth_2d",
             TextureKind::Cube => "texture_cube<f32>",
+        }
+    }
+
+    /// The declared WGSL type of the sampler beside the texture.
+    pub fn sampler_wgsl(self) -> &'static str {
+        match self {
+            TextureKind::DepthCompare2D => "sampler_comparison",
+            _ => "sampler",
         }
     }
 

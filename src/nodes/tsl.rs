@@ -204,11 +204,24 @@ pub fn property(name: &'static str, ty: Type) -> NodeRef {
 
 const COMPARISONS: [&str; 6] = ["==", "!=", "<", "<=", ">", ">="];
 
+/// `&&` / `||` — `OperatorNode` gives them a `bool` result without padding
+/// either operand.
+const LOGICAL: [&str; 2] = ["&&", "||"];
+
 /// `OperatorNode.getNodeType()` plus the operand padding
 /// `NodeBuilder.format()` performs: `mat4 * vec3` becomes
 /// `mat4 * vec4( v, 1.0 )`.
 fn binary(op: &'static str, a: NodeRef, b: NodeRef) -> NodeRef {
     let (ta, tb) = (a.ty(), b.ty());
+
+    if LOGICAL.contains(&op) {
+        return NodeRef::new(Node::Op {
+            op,
+            a,
+            b,
+            ty: Type::Bool,
+        });
+    }
 
     if COMPARISONS.contains(&op) {
         let n = ta.components().max(tb.components());
@@ -528,6 +541,41 @@ impl NodeRef {
     pub fn greater_than(&self, other: impl Into<NodeRef>) -> NodeRef {
         binary(">", self.clone(), other.into())
     }
+    pub fn greater_than_equal(&self, other: impl Into<NodeRef>) -> NodeRef {
+        binary(">=", self.clone(), other.into())
+    }
+    pub fn less_than(&self, other: impl Into<NodeRef>) -> NodeRef {
+        binary("<", self.clone(), other.into())
+    }
+    pub fn not_equal(&self, other: impl Into<NodeRef>) -> NodeRef {
+        binary("!=", self.clone(), other.into())
+    }
+    pub fn and(&self, other: impl Into<NodeRef>) -> NodeRef {
+        binary("&&", self.clone(), other.into())
+    }
+    pub fn or(&self, other: impl Into<NodeRef>) -> NodeRef {
+        binary("||", self.clone(), other.into())
+    }
+    /// `x.not()` — `( ! x )`.
+    pub fn not(&self) -> NodeRef {
+        NodeRef::new(Node::Not { node: self.clone() })
+    }
+    // --- bitwise (the MaterialX integer hashes) ---
+    pub fn shift_left(&self, other: impl Into<NodeRef>) -> NodeRef {
+        binary("<<", self.clone(), other.into())
+    }
+    pub fn shift_right(&self, other: impl Into<NodeRef>) -> NodeRef {
+        binary(">>", self.clone(), other.into())
+    }
+    pub fn bit_and(&self, other: impl Into<NodeRef>) -> NodeRef {
+        binary("&", self.clone(), other.into())
+    }
+    pub fn bit_or(&self, other: impl Into<NodeRef>) -> NodeRef {
+        binary("|", self.clone(), other.into())
+    }
+    pub fn bit_xor(&self, other: impl Into<NodeRef>) -> NodeRef {
+        binary("^", self.clone(), other.into())
+    }
 
     /// `oneMinus()` — `1.0 - x`, emitted in that order.
     pub fn one_minus(&self) -> NodeRef {
@@ -553,6 +601,31 @@ impl NodeRef {
     }
     pub fn floor(&self) -> NodeRef {
         math("floor", vec![self.clone()], self.ty())
+    }
+    pub fn fract(&self) -> NodeRef {
+        math("fract", vec![self.clone()], self.ty())
+    }
+    pub fn sqrt(&self) -> NodeRef {
+        math("sqrt", vec![self.clone()], self.ty())
+    }
+    pub fn abs(&self) -> NodeRef {
+        math("abs", vec![self.clone()], self.ty())
+    }
+    /// `saturate()` — `clamp( x, 0, 1 )`, which three.js emits with vector
+    /// bounds when `x` is a vector.
+    pub fn saturate(&self) -> NodeRef {
+        let ty = self.ty();
+        let lo = if ty.components() > 1 {
+            constant(ty, vec![0.0; ty.components()])
+        } else {
+            float(0.0)
+        };
+        let hi = if ty.components() > 1 {
+            constant(ty, vec![1.0; ty.components()])
+        } else {
+            float(1.0)
+        };
+        math("clamp", vec![self.clone(), lo, hi], ty)
     }
     pub fn pow(&self, other: impl Into<NodeRef>) -> NodeRef {
         math("pow", vec![self.clone(), other.into()], self.ty())
@@ -598,6 +671,12 @@ impl NodeRef {
     }
     pub fn xyz(&self) -> NodeRef {
         swizzle(self.clone(), "xyz")
+    }
+    pub fn xz(&self) -> NodeRef {
+        swizzle(self.clone(), "xz")
+    }
+    pub fn zzz(&self) -> NodeRef {
+        swizzle(self.clone(), "zzz")
     }
     pub fn rgb(&self) -> NodeRef {
         swizzle(self.clone(), "xyz")
@@ -1385,4 +1464,66 @@ pub fn unpremultiply_alpha(color: NodeRef) -> NodeRef {
         })
     });
     call(&def, vec![color])
+}
+
+
+// ---------------------------------------------------------------------------
+// statements (`Fn()` bodies, `Loop()`, `If()`, `Discard()`)
+// ---------------------------------------------------------------------------
+
+/// A sequence of statements followed by the value they produce — what an
+/// inlined `Fn()` whose body uses `toVar()` / `assign()` amounts to.
+pub fn block(statements: Vec<NodeRef>, result: NodeRef) -> NodeRef {
+    NodeRef::new(Node::Block { statements, result })
+}
+
+/// `Loop( count, ( { i } ) => { … } )`. `body` is called with the loop index.
+pub fn loop_n(
+    name: &'static str,
+    count: NodeRef,
+    body: impl FnOnce(&NodeRef) -> Vec<NodeRef>,
+) -> NodeRef {
+    let index = NodeRef::new(Node::Param { name, ty: Type::I32 });
+    let body = body(&index);
+    NodeRef::new(Node::Loop { count, index, body })
+}
+
+/// `If( cond, () => { … } )`.
+pub fn if_then(cond: NodeRef, body: Vec<NodeRef>) -> NodeRef {
+    NodeRef::new(Node::If { cond, body })
+}
+
+/// `Discard()`.
+pub fn discard() -> NodeRef {
+    NodeRef::new(Node::Discard)
+}
+
+/// `Discard( condition )` — `NodeMaterial.setupDiscard()`'s
+/// `If( cond.not(), () => Discard() )`.
+pub fn discard_if(cond: NodeRef) -> NodeRef {
+    if_then(cond.not(), vec![discard()])
+}
+
+/// WGSL's `select( falseValue, trueValue, condition )` builtin, which is what
+/// MaterialX's `mx_select` / `mx_negate_if` emit.
+pub fn wgsl_select(f: NodeRef, t: NodeRef, cond: NodeRef) -> NodeRef {
+    let ty = t.ty();
+    math("select", vec![f, t, cond], ty)
+}
+
+/// `step( edge, x )`.
+pub fn step(edge: impl Into<NodeRef>, x: impl Into<NodeRef>) -> NodeRef {
+    let x = x.into();
+    let ty = x.ty();
+    math("step", vec![edge.into(), x], ty)
+}
+
+/// `int( x )` as a literal, printed without the `u` suffix a `u32` takes.
+pub fn int(v: i32) -> NodeRef {
+    constant(Type::I32, vec![v as f64])
+}
+
+/// `uint( x )`.
+pub fn uint(v: u32) -> NodeRef {
+    constant(Type::U32, vec![v as f64])
 }

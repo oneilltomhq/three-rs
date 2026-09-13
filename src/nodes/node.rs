@@ -139,6 +139,23 @@ pub enum UniformSource {
     LightCutoffDistance(usize),
     LightDecay(usize),
     LightViewPosition(usize),
+    /// `lightPosition( light )` / `lightTargetPosition( light )` — the world
+    /// positions `lightTargetDirection` differences.
+    LightWorldPosition(usize),
+    LightTargetPosition(usize),
+    /// `SpotLightNode`'s `coneCosNode` / `penumbraCosNode`.
+    LightConeCos(usize),
+    LightPenumbraCos(usize),
+    /// `ShadowNode`'s per-shadow references: `lightShadowMatrix( light )` and
+    /// `reference( …, shadow )` for the five scalars.
+    ShadowMatrix(usize),
+    ShadowBias(usize),
+    ShadowNormalBias(usize),
+    ShadowRadius(usize),
+    ShadowMapSize(usize),
+    ShadowIntensity(usize),
+    /// `toneMappingExposure` — `renderer.toneMappingExposure`.
+    ToneMappingExposure,
     /// A plain `uniform( value )` the example supplies.
     Value(Vec<f64>),
 }
@@ -197,6 +214,10 @@ pub struct BufferNode {
 pub enum TextureSource {
     Texture2D(Texture),
     Depth(DepthTexture),
+    /// A `DepthTexture` with `compareFunction` set, bound as
+    /// `texture_depth_2d` + `sampler_comparison` and read with
+    /// `textureSampleCompare` — `ShadowNode`'s shadow map.
+    ShadowMap(DepthTexture),
     Cube(CubeTexture),
 }
 
@@ -210,6 +231,9 @@ pub enum SampleMode {
     /// The non-filterable path: `textureLoad` against `textureDimensions`,
     /// with no sampler binding at all. What Three emits for a depth texture.
     Load,
+    /// `textureSampleCompare( t, t_sampler, uv, depth )` — the depth-compare
+    /// read `ShadowFilterNode`'s `depthCompare` lowers to.
+    Compare(NodeRef),
 }
 
 /// A WGSL builtin input.
@@ -340,6 +364,27 @@ pub enum Node {
         ty: Type,
     },
     Call { def: Rc<FnDef>, args: Vec<NodeRef> },
+    /// A sequence of statements followed by the value they produce — the shape
+    /// an inlined `Fn()` body with `toVar()` statements has. Three has no node
+    /// for it: its `ShaderNode` call simply flows its body's statements into the
+    /// current stage and returns the last expression, which is what this does.
+    Block {
+        statements: Vec<NodeRef>,
+        result: NodeRef,
+    },
+    /// `Loop( count, ( { i } ) => { … } )` — `for ( var i : i32 = 0; i < n; i ++ )`.
+    Loop {
+        count: NodeRef,
+        /// The loop index, as it appears inside `body` (`Node::Param`).
+        index: NodeRef,
+        body: Vec<NodeRef>,
+    },
+    /// `If( cond, () => { … } )`.
+    If { cond: NodeRef, body: Vec<NodeRef> },
+    /// `Discard()` — a bare `discard;`.
+    Discard,
+    /// `x.not()` — `( ! x )`.
+    Not { node: NodeRef },
     /// `cond.select( a, b )` — lowered to an `if`/`else` writing a result var,
     /// exactly as Three does.
     Select {
@@ -388,6 +433,9 @@ impl NodeRef {
             Node::Texture { ty, .. } => *ty,
             Node::Call { def, .. } => def.ret,
             Node::Select { ty, .. } => *ty,
+            Node::Block { result, .. } => result.ty(),
+            Node::Loop { .. } | Node::If { .. } | Node::Discard => Type::Void,
+            Node::Not { .. } => Type::Bool,
         }
     }
 }

@@ -194,7 +194,9 @@ fn layout_entry(binding: u32, desc: &BindingDesc) -> wgpu::BindGroupLayoutEntry 
             visibility: visibility.stages(),
             ty: wgpu::BindingType::Texture {
                 sample_type: match kind {
-                    TextureKind::Depth2D => wgpu::TextureSampleType::Depth,
+                    TextureKind::Depth2D | TextureKind::DepthCompare2D => {
+                        wgpu::TextureSampleType::Depth
+                    }
                     _ => wgpu::TextureSampleType::Float { filterable: true },
                 },
                 view_dimension: match kind {
@@ -212,6 +214,7 @@ fn layout_entry(binding: u32, desc: &BindingDesc) -> wgpu::BindGroupLayoutEntry 
             visibility: visibility.stages(),
             ty: wgpu::BindingType::Sampler(match kind {
                 TextureKind::Depth2D => wgpu::SamplerBindingType::NonFiltering,
+                TextureKind::DepthCompare2D => wgpu::SamplerBindingType::Comparison,
                 _ => wgpu::SamplerBindingType::Filtering,
             }),
             count: None,
@@ -246,6 +249,48 @@ pub struct LightState {
     pub distance: f64,
     /// `light.decay`.
     pub decay: f64,
+    /// `light.matrixWorld`'s translation — `lightPosition()`.
+    pub world_position: Vector3,
+    /// `light.target.matrixWorld`'s translation — `lightTargetPosition()`.
+    pub target_position: Vector3,
+    /// `cos( light.angle )` — `SpotLightNode.update()`.
+    pub cone_cos: f64,
+    /// `cos( light.angle * ( 1 - light.penumbra ) )`.
+    pub penumbra_cos: f64,
+    /// `light.shadow.matrix` — bias ∘ projection ∘ the shadow camera's
+    /// `matrixWorldInverse`.
+    pub shadow_matrix: Matrix4,
+    /// `light.shadow.bias`.
+    pub shadow_bias: f64,
+    /// `light.shadow.normalBias`.
+    pub shadow_normal_bias: f64,
+    /// `light.shadow.radius`.
+    pub shadow_radius: f64,
+    /// `light.shadow.mapSize`.
+    pub shadow_map_size: Vector2,
+    /// `light.shadow.intensity`.
+    pub shadow_intensity: f64,
+}
+
+impl Default for LightState {
+    fn default() -> Self {
+        Self {
+            color: Color::new(0.0, 0.0, 0.0),
+            view_position: Vector3::new(0.0, 0.0, 0.0),
+            distance: 0.0,
+            decay: 2.0,
+            world_position: Vector3::new(0.0, 0.0, 0.0),
+            target_position: Vector3::new(0.0, 0.0, 0.0),
+            cone_cos: 0.0,
+            penumbra_cos: 0.0,
+            shadow_matrix: Matrix4::identity(),
+            shadow_bias: 0.0,
+            shadow_normal_bias: 0.0,
+            shadow_radius: 1.0,
+            shadow_map_size: Vector2::new(512.0, 512.0),
+            shadow_intensity: 1.0,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -268,6 +313,8 @@ pub struct UniformContext<'a> {
     pub texture_matrix: Matrix3,
     pub viewport: Vector2,
     pub time: f64,
+    /// `renderer.toneMappingExposure`.
+    pub tone_mapping_exposure: f64,
     /// The lights of the pass, in `Scene.lights` order. Borrowed so the context
     /// stays `Copy` and can be spread with `..camera_uniforms` per draw.
     pub lights: &'a [LightState],
@@ -298,6 +345,7 @@ impl Default for UniformContext<'_> {
             texture_matrix: Matrix3::identity(),
             viewport: Vector2::new(0.0, 0.0),
             time: 0.0,
+            tone_mapping_exposure: 1.0,
             lights: &[],
         }
     }
@@ -368,6 +416,30 @@ impl UniformContext<'_> {
                     let p = self.lights[*i].view_position;
                     vec![p.x as f32, p.y as f32, p.z as f32]
                 }
+                UniformSource::LightWorldPosition(i) => {
+                    let p = self.lights[*i].world_position;
+                    vec![p.x as f32, p.y as f32, p.z as f32]
+                }
+                UniformSource::LightTargetPosition(i) => {
+                    let p = self.lights[*i].target_position;
+                    vec![p.x as f32, p.y as f32, p.z as f32]
+                }
+                UniformSource::LightConeCos(i) => vec![self.lights[*i].cone_cos as f32],
+                UniformSource::LightPenumbraCos(i) => vec![self.lights[*i].penumbra_cos as f32],
+                UniformSource::ShadowMatrix(i) => {
+                    self.lights[*i].shadow_matrix.to_f32_array().to_vec()
+                }
+                UniformSource::ShadowBias(i) => vec![self.lights[*i].shadow_bias as f32],
+                UniformSource::ShadowNormalBias(i) => {
+                    vec![self.lights[*i].shadow_normal_bias as f32]
+                }
+                UniformSource::ShadowRadius(i) => vec![self.lights[*i].shadow_radius as f32],
+                UniformSource::ShadowMapSize(i) => {
+                    let s = self.lights[*i].shadow_map_size;
+                    vec![s.x as f32, s.y as f32]
+                }
+                UniformSource::ShadowIntensity(i) => vec![self.lights[*i].shadow_intensity as f32],
+                UniformSource::ToneMappingExposure => vec![self.tone_mapping_exposure as f32],
                 UniformSource::Value(values) => values.iter().map(|&v| v as f32).collect(),
             };
 

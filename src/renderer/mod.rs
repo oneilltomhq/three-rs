@@ -26,7 +26,7 @@ pub use render_target::{RenderTarget, RenderTargetInner, RenderTargetOptions};
 use crate::cameras::{OrthographicCamera, PerspectiveCamera};
 use crate::core::{BufferGeometry, Index};
 use crate::geometries::{quad_geometry, sphere_geometry};
-use crate::lights::PointLight;
+use crate::lights::LightObject;
 use crate::materials::{self, MeshBasicNodeMaterial, SetupContext, Side};
 use crate::math::{Color, Matrix4, Vector2};
 use crate::nodes::node::{BufferSource, TextureSource};
@@ -368,7 +368,7 @@ impl Renderer {
                     .light()
                     .expect("three-rs: the light list only holds lights");
 
-                let mut view_position = PointLight::world_position(&object.matrix_world);
+                let mut view_position = LightObject::world_position(&object.matrix_world);
                 view_position.apply_matrix4(&camera.matrix_world_inverse);
 
                 let c = light.light.color;
@@ -378,6 +378,7 @@ impl Renderer {
                     view_position,
                     distance: light.distance,
                     decay: light.decay,
+                    ..Default::default()
                 }
             })
             .collect();
@@ -842,7 +843,7 @@ impl Renderer {
                 let gpu = self.ensure_texture_2d(texture);
                 gpu.create_view(&Default::default())
             }
-            TextureSource::Depth(depth) => {
+            TextureSource::Depth(depth) | TextureSource::ShadowMap(depth) => {
                 let inner = depth.inner().borrow();
                 let gpu = inner
                     .gpu
@@ -904,6 +905,24 @@ impl Renderer {
                     min_filter: wgpu::FilterMode::Linear,
                     mipmap_filter: wgpu::MipmapFilterMode::Linear,
                     anisotropy_clamp: anisotropy,
+                    ..Default::default()
+                })
+            }
+            // `ShadowNode.setupShadow()`: `LinearFilter` on both when the
+            // shadow type is `PCFShadowMap`, and `compareFunction =
+            // LessEqualCompare`, which `WebGPUTextureUtils.updateSampler()`
+            // turns into a comparison sampler.
+            TextureSource::ShadowMap(depth) => {
+                let inner = depth.inner().borrow();
+                self.device.create_sampler(&wgpu::SamplerDescriptor {
+                    label: Some("three-rs shadow map sampler"),
+                    address_mode_u: wgpu::AddressMode::ClampToEdge,
+                    address_mode_v: wgpu::AddressMode::ClampToEdge,
+                    address_mode_w: wgpu::AddressMode::ClampToEdge,
+                    mag_filter: filter(inner.mag_filter),
+                    min_filter: filter(inner.min_filter),
+                    mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+                    compare: Some(wgpu::CompareFunction::LessEqual),
                     ..Default::default()
                 })
             }

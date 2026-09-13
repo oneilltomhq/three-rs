@@ -237,8 +237,9 @@ impl NodeBuilder {
             Node::Element { node, index, .. } => vec![node.clone(), index.clone()],
             Node::Texture { uv, mode, .. } => {
                 let mut v = vec![uv.clone()];
-                if let SampleMode::Level(l) = mode {
-                    v.push(l.clone());
+                match mode {
+                    SampleMode::Level(l) | SampleMode::Compare(l) => v.push(l.clone()),
+                    _ => {}
                 }
                 v
             }
@@ -256,6 +257,23 @@ impl NodeBuilder {
                 }
             }
             Node::Select { cond, a, b, .. } => vec![cond.clone(), a.clone(), b.clone()],
+            Node::Block { statements, result } => {
+                let mut v = statements.clone();
+                v.push(result.clone());
+                v
+            }
+            Node::Loop { count, body, .. } => {
+                let mut v = vec![count.clone()];
+                v.extend(body.iter().cloned());
+                v
+            }
+            Node::If { cond, body } => {
+                let mut v = vec![cond.clone()];
+                v.extend(body.iter().cloned());
+                v
+            }
+            Node::Discard => vec![],
+            Node::Not { node } => vec![node.clone()],
         }
     }
 
@@ -433,6 +451,7 @@ impl NodeBuilder {
         let (key, kind) = match &**source {
             TextureSource::Texture2D(t) => (t.id(), TextureKind::Float2D),
             TextureSource::Depth(t) => (t.id(), TextureKind::Depth2D),
+            TextureSource::ShadowMap(t) => (t.id(), TextureKind::DepthCompare2D),
             TextureSource::Cube(t) => (t.id(), TextureKind::Cube),
         };
 
@@ -715,6 +734,12 @@ impl NodeBuilder {
                         | "tsl_inverse_mat3" | "length" | "dpdx" | "- dpdy" | "inverseSqrt" => {
                             self.generate(a)
                         }
+                        // `select( f, t, cond )`'s condition is a bool, and the
+                        // MaterialX helpers pass their own already-typed
+                        // operands; nothing here is widened.
+                        "select" | "step" | "fract" | "sqrt" | "abs" => {
+                            self.generate(a)
+                        }
                         // `smoothstep( near, far, x )` keeps each operand's own
                         // type: the dumps show three f32 arguments, never a
                         // widened vector.
@@ -779,6 +804,12 @@ impl NodeBuilder {
                         let slevel = self.generate(&level);
                         format!("textureSampleLevel( {name}, {name}_sampler, {suv}, {slevel} )")
                     }
+                    SampleMode::Compare(depth) => {
+                        let sdepth = self.generate(&depth);
+                        format!(
+                            "textureSampleCompare( {name}, {name}_sampler, {suv}, {sdepth} )"
+                        )
+                    }
                     SampleMode::Load => {
                         self.add_code("tsl_coord_clampS_clampT_2d", wgsl::CLAMP_WRAP_SNIPPET);
                         let dims = self.declare_var(None, Type::UVec2);
@@ -836,6 +867,65 @@ impl NodeBuilder {
                 // than emitting the whole if/else again.
                 self.cache_put(node.key(), result.clone());
                 result
+            }
+
+            Node::Block { statements, result } => {
+                let (statements, result) = (statements.clone(), result.clone());
+                for stmt in &statements {
+                    self.generate(stmt);
+                }
+                self.generate(&result)
+            }
+
+            Node::Loop { count, index, body } => {
+                let (count, index, body) = (count.clone(), index.clone(), body.clone());
+                let scount = self.generate(&count);
+                let name = match &*index.0 {
+                    Node::Param { name, .. } => *name,
+                    _ => "i",
+                };
+                self.emit(String::new());
+                self.emit(format!(
+                    "for ( var {name} : i32 = 0; {name} < {scount}; {name} ++ ) {{"
+                ));
+                self.emit(String::new());
+                self.push_scope();
+                for stmt in &body {
+                    self.generate(stmt);
+                }
+                self.pop_scope();
+                self.emit(String::new());
+                self.emit("}".to_string());
+                self.emit(String::new());
+                String::new()
+            }
+
+            Node::If { cond, body } => {
+                let (cond, body) = (cond.clone(), body.clone());
+                let scond = self.generate(&cond);
+                self.emit(String::new());
+                self.emit(format!("if ( {scond} ) {{"));
+                self.emit(String::new());
+                self.push_scope();
+                for stmt in &body {
+                    self.generate(stmt);
+                }
+                self.pop_scope();
+                self.emit(String::new());
+                self.emit("}".to_string());
+                self.emit(String::new());
+                String::new()
+            }
+
+            Node::Discard => {
+                self.emit("discard;".to_string());
+                String::new()
+            }
+
+            Node::Not { node: inner } => {
+                let inner = inner.clone();
+                let snippet = self.generate(&inner);
+                format!("( ! {snippet} )")
             }
         }
     }
@@ -1041,14 +1131,17 @@ impl NodeBuilder {
             for (binding, desc) in g.bindings.iter().enumerate() {
                 match desc {
                     BindingDesc::Sampler {
-                        source, visibility, ..
+                        source,
+                        kind,
+                        visibility,
                     } => {
                         if !Self::visible(*visibility, stage) {
                             continue;
                         }
                         let name = self.texture_name(source);
                         out.push_str(&format!(
-                            "@binding( {binding} ) @group( {gi} ) var {name}_sampler : sampler;\n"
+                            "@binding( {binding} ) @group( {gi} ) var {name}_sampler : {};\n",
+                            kind.sampler_wgsl()
                         ));
                     }
                     BindingDesc::Texture {
@@ -1130,6 +1223,7 @@ impl NodeBuilder {
         let key = match source {
             TextureSource::Texture2D(t) => t.id(),
             TextureSource::Depth(t) => t.id(),
+            TextureSource::ShadowMap(t) => t.id(),
             TextureSource::Cube(t) => t.id(),
         };
         self.texture_names[&key].0.clone()

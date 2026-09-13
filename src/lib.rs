@@ -24,7 +24,10 @@ pub use core::{BufferGeometry, Node, Object3D, Object3DNode};
 pub use geometries::{
     box_geometry, quad_geometry, sphere_geometry, teapot_geometry, torus_knot_geometry,
 };
-pub use lights::{Light, PointLight};
+pub use lights::{
+    AmbientLight, DirectionalLight, Light, LightKind, LightObject, LightShadow, PointLight,
+    ShadowCamera, SpotLight,
+};
 pub use loaders::{BufferGeometryLoader, CubeTextureLoader, TextureLoader};
 pub use materials::{MaterialKind, MeshBasicNodeMaterial, MeshPhongNodeMaterial};
 pub use math::{Color, Euler, Matrix3, Matrix4, Quaternion, Vector2, Vector3};

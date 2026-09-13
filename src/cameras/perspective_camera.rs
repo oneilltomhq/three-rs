@@ -18,6 +18,7 @@ pub struct CameraView {
     pub height: f64,
 }
 
+#[derive(Clone)]
 pub struct PerspectiveCamera {
     pub object: Object3D,
     pub fov: f64,
