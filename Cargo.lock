@@ -1678,7 +1678,7 @@ dependencies = [
 
 [[package]]
 name = "three-rs"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bytemuck",
  "d3-hierarchy",

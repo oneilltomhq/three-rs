@@ -10,7 +10,7 @@ rust-version = "1.87"
 
 [package]
 name = "three-rs"
-version = "0.1.0"
+version = "0.1.1"
 description = "A port of three.js core and its WebGPURenderer to Rust on wgpu, graded against three.js's own end-to-end pixel comparison."
 documentation = "https://docs.rs/three-rs"
 readme = "README.md"
