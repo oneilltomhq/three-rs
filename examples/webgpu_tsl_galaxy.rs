@@ -47,7 +47,7 @@ const BRANCHES: f64 = 3.0;
 /// does not count — the harness rewrites it to the unseeded `Math._random`.
 /// The count is pinned by `tests/nodes_range_buffers.rs` against the four range
 /// buffers three.js actually uploads for this page.
-const INSPECTOR_RANDOM_DRAWS: usize = 5;
+pub const INSPECTOR_RANDOM_DRAWS: usize = 5;
 
 pub struct App {
     pub renderer: Renderer,

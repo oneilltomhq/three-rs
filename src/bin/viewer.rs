@@ -2,22 +2,49 @@
 //! surface on the renderer's own adapter, orbit controls and real time.
 //!
 //! ```text
-//! cargo run --release --bin viewer -- webgpu_depth_texture
-//! cargo run --release --bin viewer -- webgpu_instance_mesh
-//! cargo run --release --bin viewer -- webgpu_materials_basic
+//! cargo run --release --bin viewer -- --list
+//! cargo run --release --bin viewer -- webgpu_lights_physical
+//! cargo run --release --bin viewer -- lights_phong --headless --frames 60
 //! ```
 //!
-//! Left-drag orbits, right-drag (or middle-drag) pans, the wheel zooms, 1/2/3
-//! switch examples and Esc quits.
+//! Every example the e2e grader runs is here, in the README's order, and each
+//! has a number key: `1` depth_texture, `2` instance_mesh, `3` materials_basic,
+//! `4` rtt, `5` lights_phong, `6` morphtargets, `7` shadowmap,
+//! `8` lights_physical, `9` postprocessing_masking, `0` tsl_galaxy. The same
+//! digit is accepted on the command line in place of the name, and `--list`
+//! prints the table. Left-drag orbits, right-drag (or middle-drag) pans, the
+//! wheel zooms and Esc quits.
 //!
 //! The scenes themselves are *not* reimplemented here: the graded examples are
 //! included as modules (exactly as `tests/e2e/main.rs` does) and their `init()`
 //! builds the scene. Only the per-frame `animate()` math is restated, because
-//! the graded copies pin `Date.now()` to 0 — here it runs on the wall clock.
-//! Nothing in this file is reachable from the e2e harness.
+//! the graded copies pin `Date.now()` / `performance.now()` to 0 — here it runs
+//! on the wall clock. Nothing in this file is reachable from the e2e harness.
+//!
+//! # Frame time
+//!
+//! The window prints one line a second to stdout:
+//!
+//! ```text
+//! webgpu_lights_phong — 1000x625 — 59.9 fps — render mean 1.61 ms max 1.79 ms (last 60 frames, after 10 warm-up)
+//! ```
+//!
+//! `render` is the CPU side of a frame — the example's `animate()` from its
+//! first line to the command buffer being submitted — which is where a
+//! per-frame regression on the CPU (the 250 ms cache-key bug, issue #55) shows
+//! up. Under vsync the presented frame time is pinned to the display, so it is
+//! not what is reported. `--headless --frames N` renders N frames with no
+//! window and no vsync, waits for the GPU after each, and reports the same
+//! mean/max over the *whole* frame, CPU and GPU; that is what the e2e
+//! harness's steady-frame ceiling is compared against, and what the README's
+//! steady-frame column is measured with.
+//!
+//! The mean and max are over the last [`FrameTimer::WINDOW`] frames once
+//! [`FrameTimer::WARMUP`] frames have gone by, so the first frame's program
+//! builds and uploads never count.
 
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use three_rs::nodes::tsl;
 use three_rs::{DepthTexture, MeshBasicNodeMaterial, Object3D,
@@ -42,24 +69,78 @@ mod webgpu_instance_mesh;
 #[allow(dead_code)]
 mod webgpu_materials_basic;
 
+#[path = "../../examples/webgpu_rtt.rs"]
+#[allow(dead_code)]
+mod webgpu_rtt;
+
+#[path = "../../examples/webgpu_lights_phong.rs"]
+#[allow(dead_code)]
+mod webgpu_lights_phong;
+
+#[path = "../../examples/webgpu_morphtargets.rs"]
+#[allow(dead_code)]
+mod webgpu_morphtargets;
+
+#[path = "../../examples/webgpu_shadowmap.rs"]
+#[allow(dead_code)]
+mod webgpu_shadowmap;
+
+#[path = "../../examples/webgpu_lights_physical.rs"]
+#[allow(dead_code)]
+mod webgpu_lights_physical;
+
+#[path = "../../examples/webgpu_postprocessing_masking.rs"]
+#[allow(dead_code)]
+mod webgpu_postprocessing_masking;
+
+#[path = "../../examples/webgpu_tsl_galaxy.rs"]
+#[allow(dead_code)]
+mod webgpu_tsl_galaxy;
+
+// `examples/sdf_text_block.rs` and `examples/d33_treemap_labels.rs` are not
+// here: they need the `sdf-text` and `d3-hierarchy` crates, which are
+// dev-dependencies (a regular dependency would close the publish cycle
+// `Cargo.toml` explains), and a `[[bin]]` does not see dev-dependencies.
+
 // ---------------------------------------------------------------- the scenes
 
-/// Which ported example is on screen.
+/// Which ported example is on screen — the README's table, in its order.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Which {
     DepthTexture,
     InstanceMesh,
     MaterialsBasic,
+    Rtt,
+    LightsPhong,
+    Morphtargets,
+    Shadowmap,
+    LightsPhysical,
+    PostprocessingMasking,
+    TslGalaxy,
 }
 
 impl Which {
+    /// Every graded example, in README order; the index is the key (`1`..`9`,
+    /// then `0` for the tenth).
+    const ALL: [Which; 10] = [
+        Self::DepthTexture,
+        Self::InstanceMesh,
+        Self::MaterialsBasic,
+        Self::Rtt,
+        Self::LightsPhong,
+        Self::Morphtargets,
+        Self::Shadowmap,
+        Self::LightsPhysical,
+        Self::PostprocessingMasking,
+        Self::TslGalaxy,
+    ];
+
+    /// The name with or without its `webgpu_` prefix, or the key digit.
     fn parse(name: &str) -> Option<Self> {
-        match name.trim_start_matches("webgpu_") {
-            "depth_texture" | "depth" | "1" => Some(Self::DepthTexture),
-            "instance_mesh" | "instance" | "2" => Some(Self::InstanceMesh),
-            "materials_basic" | "materials" | "3" => Some(Self::MaterialsBasic),
-            _ => None,
-        }
+        let name = name.trim_start_matches("webgpu_");
+        Self::ALL
+            .into_iter()
+            .find(|which| which.short_name() == name || which.key() == name)
     }
 
     fn name(self) -> &'static str {
@@ -67,7 +148,55 @@ impl Which {
             Self::DepthTexture => "webgpu_depth_texture",
             Self::InstanceMesh => "webgpu_instance_mesh",
             Self::MaterialsBasic => "webgpu_materials_basic",
+            Self::Rtt => "webgpu_rtt",
+            Self::LightsPhong => "webgpu_lights_phong",
+            Self::Morphtargets => "webgpu_morphtargets",
+            Self::Shadowmap => "webgpu_shadowmap",
+            Self::LightsPhysical => "webgpu_lights_physical",
+            Self::PostprocessingMasking => "webgpu_postprocessing_masking",
+            Self::TslGalaxy => "webgpu_tsl_galaxy",
         }
+    }
+
+    fn short_name(self) -> &'static str {
+        self.name().trim_start_matches("webgpu_")
+    }
+
+    /// The keyboard key (and the command-line shorthand) for this example.
+    fn key(self) -> &'static str {
+        const KEYS: [&str; 10] = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"];
+        KEYS[Self::ALL.iter().position(|w| *w == self).unwrap()]
+    }
+
+    /// The example after this one, for `VIEWER_AUTOSWITCH`.
+    fn next(self) -> Self {
+        let i = Self::ALL.iter().position(|w| *w == self).unwrap();
+        Self::ALL[(i + 1) % Self::ALL.len()]
+    }
+
+    /// The `RendererParameters` each example passes to `Renderer::new()`.
+    fn antialias(self) -> bool {
+        match self {
+            Self::MaterialsBasic | Self::LightsPhysical | Self::PostprocessingMasking => false,
+            _ => true,
+        }
+    }
+
+    /// Where the page's `OrbitControls` (or its `lookAt`) points the camera.
+    fn orbit_target(self) -> Vector3 {
+        match self {
+            // `controls.target.set( 0, 2, 0 )`.
+            Self::Shadowmap => Vector3::new(0.0, 2.0, 0.0),
+            _ => Vector3::ZERO,
+        }
+    }
+
+    fn list() -> String {
+        Self::ALL
+            .iter()
+            .map(|which| format!("  {}  {}", which.key(), which.name()))
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 }
 
@@ -75,6 +204,17 @@ enum Scene {
     DepthTexture(webgpu_depth_texture::App),
     InstanceMesh(webgpu_instance_mesh::App),
     MaterialsBasic(webgpu_materials_basic::App),
+    Rtt(webgpu_rtt::App),
+    LightsPhong(webgpu_lights_phong::App),
+    Morphtargets(webgpu_morphtargets::App),
+    /// `last_time` is the page's `Timer`: `animate()` integrates a delta.
+    Shadowmap {
+        app: webgpu_shadowmap::App,
+        last_time: Option<f64>,
+    },
+    LightsPhysical(webgpu_lights_physical::App),
+    PostprocessingMasking(webgpu_postprocessing_masking::App),
+    TslGalaxy(webgpu_tsl_galaxy::App),
 }
 
 impl Scene {
@@ -85,6 +225,18 @@ impl Scene {
             Which::DepthTexture => Scene::DepthTexture(webgpu_depth_texture::init()),
             Which::InstanceMesh => Scene::InstanceMesh(webgpu_instance_mesh::init()),
             Which::MaterialsBasic => Scene::MaterialsBasic(webgpu_materials_basic::init()),
+            Which::Rtt => Scene::Rtt(webgpu_rtt::init()),
+            Which::LightsPhong => Scene::LightsPhong(webgpu_lights_phong::init()),
+            Which::Morphtargets => Scene::Morphtargets(webgpu_morphtargets::init()),
+            Which::Shadowmap => Scene::Shadowmap {
+                app: webgpu_shadowmap::init(),
+                last_time: None,
+            },
+            Which::LightsPhysical => Scene::LightsPhysical(webgpu_lights_physical::init()),
+            Which::PostprocessingMasking => {
+                Scene::PostprocessingMasking(webgpu_postprocessing_masking::init())
+            }
+            Which::TslGalaxy => Scene::TslGalaxy(webgpu_tsl_galaxy::init()),
         };
 
         // `init()` is the graded example's code verbatim, so its `Renderer` is
@@ -93,15 +245,26 @@ impl Scene {
         // no GPU state yet (every buffer and texture is uploaded lazily on the
         // first render, and `set_size()` below rebuilds the FX render target).
         if let Some(instance) = instance {
-            // The `RendererParameters` each example passes to `Renderer::new()`.
-            let antialias = match which {
-                Which::DepthTexture | Which::InstanceMesh => true,
-                Which::MaterialsBasic => false,
+            let (shadow_map_enabled, tone_mapping, exposure) = {
+                let old = scene.renderer();
+                (old.shadow_map_enabled, old.tone_mapping, old.tone_mapping_exposure)
             };
-            *scene.renderer() = Renderer::with_instance(
-                RendererParameters { antialias },
+            let mut renderer = Renderer::with_instance(
+                RendererParameters {
+                    antialias: which.antialias(),
+                },
                 instance,
             );
+            // What `init()` set on the renderer after `new()`.
+            renderer.shadow_map_enabled = shadow_map_enabled;
+            renderer.tone_mapping = tone_mapping;
+            renderer.tone_mapping_exposure = exposure;
+            if which == Which::TslGalaxy {
+                // `renderer.inspector = new Inspector()`'s `Math.random` draws;
+                // see the example.
+                renderer.skip_random_draws(webgpu_tsl_galaxy::INSPECTOR_RANDOM_DRAWS);
+            }
+            *scene.renderer() = renderer;
         }
 
         scene
@@ -112,6 +275,13 @@ impl Scene {
             Scene::DepthTexture(app) => &mut app.renderer,
             Scene::InstanceMesh(app) => &mut app.renderer,
             Scene::MaterialsBasic(app) => &mut app.renderer,
+            Scene::Rtt(app) => &mut app.renderer,
+            Scene::LightsPhong(app) => &mut app.renderer,
+            Scene::Morphtargets(app) => &mut app.renderer,
+            Scene::Shadowmap { app, .. } => &mut app.renderer,
+            Scene::LightsPhysical(app) => &mut app.renderer,
+            Scene::PostprocessingMasking(app) => &mut app.renderer,
+            Scene::TslGalaxy(app) => &mut app.renderer,
         }
     }
 
@@ -120,6 +290,13 @@ impl Scene {
             Scene::DepthTexture(app) => &mut app.camera,
             Scene::InstanceMesh(app) => &mut app.camera,
             Scene::MaterialsBasic(app) => &mut app.camera,
+            Scene::Rtt(app) => &mut app.camera,
+            Scene::LightsPhong(app) => &mut app.camera,
+            Scene::Morphtargets(app) => &mut app.camera,
+            Scene::Shadowmap { app, .. } => &mut app.camera,
+            Scene::LightsPhysical(app) => &mut app.camera,
+            Scene::PostprocessingMasking(app) => &mut app.camera,
+            Scene::TslGalaxy(app) => &mut app.camera,
         }
     }
 
@@ -129,41 +306,48 @@ impl Scene {
         self.camera().update_projection_matrix();
         self.renderer().set_size(w, h);
 
-        if let Scene::DepthTexture(app) = self {
-            // `RenderTarget::set_size()` drops the colour texture but cannot
-            // resize an attached `DepthTexture`, so the FX chain is rebuilt the
-            // way `init()` built it.
-            let depth_texture = DepthTexture::new();
-            depth_texture.set_type(TextureType::Float);
-            let render_target = RenderTarget::new(width.max(1), height.max(1));
-            render_target.set_depth_texture(depth_texture.clone());
-            let mut material_fx = MeshBasicNodeMaterial::new();
-            material_fx.color_node = Some(tsl::depth_texture(&depth_texture));
-            app.render_target = render_target;
-            app.quad = QuadMesh::new(material_fx);
+        match self {
+            Scene::DepthTexture(app) => {
+                // `RenderTarget::set_size()` drops the colour texture but cannot
+                // resize an attached `DepthTexture`, so the FX chain is rebuilt the
+                // way `init()` built it.
+                let depth_texture = DepthTexture::new();
+                depth_texture.set_type(TextureType::Float);
+                let render_target = RenderTarget::new(width.max(1), height.max(1));
+                render_target.set_depth_texture(depth_texture.clone());
+                let mut material_fx = MeshBasicNodeMaterial::new();
+                material_fx.color_node = Some(tsl::depth_texture(&depth_texture));
+                app.render_target = render_target;
+                app.quad = QuadMesh::new(material_fx);
+            }
+            Scene::Rtt(app) => {
+                // The page's `resize` listener: `renderTarget.setSize( … )`. The
+                // quad's `texture( renderTarget.texture )` follows, since the
+                // `Texture` object is the same one resized.
+                app.render_target.set_size(width.max(1), height.max(1));
+            }
+            // `PassNode::render()` sizes its own target to the drawing buffer.
+            _ => {}
         }
     }
 
-    /// The example's `animate()` with `Date.now()` running, and without the
+    /// The example's `animate()` with the page's clock running, and without the
     /// camera moves the page does (the orbit controls own the camera here).
     ///
-    /// `time` is the example's own clock (`Date.now() * 0.001`); `node_time` is
-    /// `NodeFrame.time`, which the window feeds from the same wall clock but
-    /// `--time` pins (see `PINNED_NODE_TIME`).
+    /// `time` is the page's wall clock in seconds (`Date.now() * 0.001`,
+    /// `performance.now() * 0.001`); `node_time` is `NodeFrame.time`, which the
+    /// window feeds from the same wall clock but `--time` pins (see
+    /// `PINNED_NODE_TIME`).
     fn animate(&mut self, time: f64, node_time: f64) {
+        self.renderer().set_time(node_time);
+
         match self {
             Scene::DepthTexture(app) => {
                 // Nothing in this scene moves; only the camera does.
-                app.renderer.set_time(node_time);
-                app.renderer
-                    .set_render_target(Some(app.render_target.clone()));
-                app.renderer.render(&mut app.scene, &mut app.camera);
-                app.renderer.set_render_target(None);
-                app.renderer.render_quad(&app.quad);
+                webgpu_depth_texture::animate(app);
             }
             Scene::InstanceMesh(app) => {
                 // `const time = Date.now() * 0.001;`
-                app.renderer.set_time(node_time);
                 // `const amount = … || 10;`
                 const AMOUNT: usize = 10;
 
@@ -206,7 +390,6 @@ impl Scene {
                 app.renderer.render(&mut app.scene, &mut app.camera);
             }
             Scene::MaterialsBasic(app) => {
-                app.renderer.set_time(node_time);
                 // `const timer = 0.0001 * Date.now();`
                 let timer = 0.1 * time;
 
@@ -218,6 +401,182 @@ impl Scene {
 
                 app.renderer.render(&mut app.scene, &mut app.camera);
             }
+            Scene::Rtt(app) => {
+                // `box.rotation.x += 0.01; box.rotation.y += 0.02;` — per frame,
+                // not per second, so the graded `animate()` is already right.
+                webgpu_rtt::animate(app);
+            }
+            Scene::LightsPhong(app) => {
+                // `const time = performance.now() / 1000; const lightTime = time * 0.5;`
+                let light_time = time * 0.5;
+                let positions = [
+                    ((light_time * 0.7).sin() * 3.0, (light_time * 0.5).cos() * 4.0, (light_time * 0.3).cos() * 3.0),
+                    ((light_time * 0.3).cos() * 3.0, (light_time * 0.5).sin() * 4.0, (light_time * 0.7).sin() * 3.0),
+                    ((light_time * 0.7).sin() * 3.0, (light_time * 0.3).cos() * 4.0, (light_time * 0.5).sin() * 3.0),
+                    ((light_time * 0.3).sin() * 3.0, (light_time * 0.7).cos() * 4.0, (light_time * 0.5).sin() * 3.0),
+                ];
+                for (light, (x, y, z)) in app.lights.iter().zip(positions) {
+                    light.borrow_mut().position.set(x, y, z);
+                }
+
+                app.renderer.render(&mut app.scene, &mut app.camera);
+            }
+            Scene::Morphtargets(app) => {
+                // `renderer.render( scene, camera )` and nothing else.
+                webgpu_morphtargets::animate(app);
+            }
+            Scene::Shadowmap { app, last_time } => {
+                // `timer.update(); const delta = timer.getDelta();` — the first
+                // delta is 0, as under the harness.
+                let delta = last_time.map_or(0.0, |last| time - last);
+                *last_time = Some(time);
+
+                {
+                    let mut object = app.torus_knot.borrow_mut();
+                    let r = object.rotation;
+                    object.set_rotation(r.x + 0.25 * delta, r.y + 0.5 * delta, r.z + 1.0 * delta);
+                }
+                {
+                    let mut object = app.dir_group.borrow_mut();
+                    let r = object.rotation;
+                    object.set_rotation(r.x, r.y + 0.7 * delta, r.z);
+                }
+                // `dirLight.position.z = 17 + Math.sin( time * 0.001 ) * 5` with
+                // `time` the RAF timestamp in milliseconds.
+                app.dir_light.borrow_mut().position.z = 17.0 + time.sin() * 5.0;
+
+                app.renderer.render(&mut app.scene, &mut app.camera);
+            }
+            Scene::LightsPhysical(app) => {
+                // The page's `animate()` re-applies the GUI's parameters every
+                // frame before it renders, so the graded copy's block is
+                // restated here (it renders with `Date.now()` at 0). Only the
+                // bulb's bob is time-driven: `const time = Date.now() * 0.0005;
+                // bulbLight.position.y = Math.cos( time ) * 0.75 + 1.25;`.
+                app.renderer.tone_mapping_exposure = 0.68f64.powf(5.0);
+                app.renderer.shadow_map_enabled = true;
+                app.bulb_light.borrow_mut().cast_shadow = true;
+                app.bulb_light
+                    .borrow_mut()
+                    .light_mut()
+                    .unwrap()
+                    .set_power(400.0);
+                let intensity = app.bulb_light.borrow().light().unwrap().light.intensity;
+                app.bulb_mesh
+                    .borrow_mut()
+                    .mesh_mut()
+                    .unwrap()
+                    .material
+                    .as_mut()
+                    .unwrap()
+                    .emissive_intensity = intensity / 0.02f64.powf(2.0);
+                app.hemi_light
+                    .borrow_mut()
+                    .light_mut()
+                    .unwrap()
+                    .light
+                    .intensity = 0.0001;
+
+                let bulb_time = time * 0.5;
+                app.bulb_light.borrow_mut().position.y = bulb_time.cos() * 0.75 + 1.25;
+
+                app.renderer.render(&mut app.scene, &mut app.camera);
+            }
+            Scene::PostprocessingMasking(app) => {
+                // `const time = performance.now() * 0.001 + 6000;`
+                let time = time + 6000.0;
+
+                {
+                    let mut boxed = app.boxed.borrow_mut();
+                    boxed.position.x = (time / 1.5).cos() * 2.0;
+                    boxed.position.y = time.sin() * 2.0;
+                    boxed.set_rotation(time, time / 2.0, 0.0);
+                }
+                {
+                    let mut torus = app.torus.borrow_mut();
+                    torus.position.x = time.cos() * 2.0;
+                    torus.position.y = (time / 1.5).sin() * 2.0;
+                    torus.set_rotation(time, time / 2.0, 0.0);
+                }
+
+                // `PassNode.updateBefore()` ×3, then the output quad.
+                app.base
+                    .render(&mut app.renderer, &mut app.base_scene, &mut app.camera);
+                app.mask1
+                    .render(&mut app.renderer, &mut app.mask_scene1, &mut app.camera);
+                app.mask2
+                    .render(&mut app.renderer, &mut app.mask_scene2, &mut app.camera);
+                app.render_pipeline.render(&mut app.renderer);
+            }
+            Scene::TslGalaxy(app) => {
+                // The galaxy turns on the `time` node alone.
+                webgpu_tsl_galaxy::animate(app);
+            }
+        }
+    }
+}
+
+// ------------------------------------------------------------ frame timer
+
+/// Steady-state frame time: the mean and max of the last [`Self::WINDOW`]
+/// samples, reported only once [`Self::WARMUP`] frames have gone by, so the
+/// first frames' program builds and texture uploads never count.
+struct FrameTimer {
+    /// Every sample so far, capped at `WINDOW` in a ring.
+    samples: Vec<Duration>,
+    next: usize,
+    /// How many frames have been recorded in total.
+    frames: u64,
+}
+
+impl FrameTimer {
+    /// Frames ignored before any number is reported.
+    const WARMUP: u64 = 10;
+    /// Frames the mean and max are over.
+    const WINDOW: usize = 60;
+
+    fn new() -> Self {
+        Self {
+            samples: Vec::with_capacity(Self::WINDOW),
+            next: 0,
+            frames: 0,
+        }
+    }
+
+    fn record(&mut self, sample: Duration) {
+        self.frames += 1;
+        if self.frames <= Self::WARMUP {
+            return;
+        }
+        if self.samples.len() < Self::WINDOW {
+            self.samples.push(sample);
+        } else {
+            self.samples[self.next] = sample;
+        }
+        self.next = (self.next + 1) % Self::WINDOW;
+    }
+
+    /// `(mean, max, count)` over the window, or `None` during the warm-up.
+    fn steady(&self) -> Option<(Duration, Duration, usize)> {
+        if self.samples.is_empty() {
+            return None;
+        }
+        let total: Duration = self.samples.iter().sum();
+        let max = *self.samples.iter().max().unwrap();
+        Some((total / self.samples.len() as u32, max, self.samples.len()))
+    }
+
+    /// The report line's tail: `mean 1.83 ms max 2.41 ms (last 60 frames, after
+    /// 10 warm-up)`, or a note that the warm-up is still running.
+    fn report(&self) -> String {
+        match self.steady() {
+            Some((mean, max, count)) => format!(
+                "mean {:.2} ms max {:.2} ms (last {count} frames, after {} warm-up)",
+                mean.as_secs_f64() * 1e3,
+                max.as_secs_f64() * 1e3,
+                Self::WARMUP
+            ),
+            None => format!("warming up ({} of {} frames)", self.frames, Self::WARMUP),
         }
     }
 }
@@ -321,6 +680,8 @@ struct Viewer {
     start: Instant,
     frames: u32,
     last_report: Instant,
+    /// The CPU side of each frame (`Scene::animate()`), for the report line.
+    timer: FrameTimer,
 
     cursor: (f64, f64),
     dragging: Option<MouseButton>,
@@ -360,8 +721,9 @@ impl Viewer {
         let mut scene = Scene::build(which, instance);
         let size = self.gpu.as_ref().map(|g| g.size).unwrap_or(self.requested_size);
         scene.set_size(size.0, size.1);
-        self.controls = Some(OrbitControls::new(scene.camera(), Vector3::ZERO));
+        self.controls = Some(OrbitControls::new(scene.camera(), which.orbit_target()));
         self.scene = Some(scene);
+        self.timer = FrameTimer::new();
         self.configure_surface();
         println!("{}", self.adapter_line());
     }
@@ -386,6 +748,7 @@ impl Viewer {
         // The window runs on the wall clock, so `NodeFrame.time` tracks it.
         scene.animate(time, time);
         let t_animate = t0.elapsed();
+        self.timer.record(t_animate);
         let t1 = Instant::now();
 
         if let Some(gpu) = &mut self.gpu {
@@ -447,7 +810,11 @@ impl Viewer {
         if self.last_report.elapsed().as_secs_f64() >= 1.0 {
             let fps = self.frames as f64 / self.last_report.elapsed().as_secs_f64();
             let (w, h) = self.gpu.as_ref().map(|g| g.size).unwrap_or((0, 0));
-            println!("{} — {w}x{h} — {fps:.1} fps", self.which.name());
+            println!(
+                "{} — {w}x{h} — {fps:.1} fps — render {}",
+                self.which.name(),
+                self.timer.report()
+            );
             self.frames = 0;
             self.last_report = Instant::now();
         }
@@ -503,7 +870,7 @@ impl ApplicationHandler for Viewer {
         let size = window.inner_size();
         let size = (size.width.max(1), size.height.max(1));
         scene.set_size(size.0, size.1);
-        self.controls = Some(OrbitControls::new(scene.camera(), Vector3::ZERO));
+        self.controls = Some(OrbitControls::new(scene.camera(), self.which.orbit_target()));
 
         self.instance = Some(instance);
         self.scene = Some(scene);
@@ -517,7 +884,8 @@ impl ApplicationHandler for Viewer {
         self.configure_surface();
 
         println!("{}", self.adapter_line());
-        println!("controls: left-drag orbit, right-drag pan, wheel zoom, 1/2/3 switch, Esc quit");
+        println!("controls: left-drag orbit, right-drag pan, wheel zoom, 1-9/0 switch, Esc quit");
+        println!("{}", Which::list());
 
         window.request_redraw();
     }
@@ -529,9 +897,11 @@ impl ApplicationHandler for Viewer {
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
                 match event.logical_key.as_ref() {
                     Key::Named(NamedKey::Escape) => event_loop.exit(),
-                    Key::Character("1") => self.switch(Which::DepthTexture),
-                    Key::Character("2") => self.switch(Which::InstanceMesh),
-                    Key::Character("3") => self.switch(Which::MaterialsBasic),
+                    Key::Character(digit) => {
+                        if let Some(which) = Which::ALL.into_iter().find(|w| w.key() == digit) {
+                            self.switch(which);
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -582,15 +952,12 @@ impl ApplicationHandler for Viewer {
 
             WindowEvent::RedrawRequested => {
                 // `VIEWER_AUTOSWITCH=<seconds>` cycles the examples on a timer,
-                // which is how the 1/2/3 path gets exercised from a script.
+                // which is how the key-switching path gets exercised from a
+                // script.
                 if let Some(period) = self.autoswitch {
                     if self.last_switch.elapsed().as_secs_f64() >= period {
                         self.last_switch = Instant::now();
-                        self.switch(match self.which {
-                            Which::DepthTexture => Which::InstanceMesh,
-                            Which::InstanceMesh => Which::MaterialsBasic,
-                            Which::MaterialsBasic => Which::DepthTexture,
-                        });
+                        self.switch(self.which.next());
                     }
                 }
                 self.redraw();
@@ -631,20 +998,32 @@ const PINNED_NODE_TIME: f64 = 0.0;
 /// Puts a brand-new `Renderer` under an already-built scene, which resets both
 /// `NodeFrame.time` and the deterministic `Math.random` the port draws from.
 fn fresh_renderer(scene: &mut Scene, which: Which, size: (u32, u32)) {
-    // The `RendererParameters` each example passes to `Renderer::new()`.
-    let antialias = match which {
-        Which::DepthTexture | Which::InstanceMesh => true,
-        Which::MaterialsBasic => false,
+    let (shadow_map_enabled, tone_mapping, exposure) = {
+        let old = scene.renderer();
+        (old.shadow_map_enabled, old.tone_mapping, old.tone_mapping_exposure)
     };
-    *scene.renderer() = Renderer::new(RendererParameters { antialias });
+    let mut renderer = Renderer::new(RendererParameters {
+        antialias: which.antialias(),
+    });
+    renderer.shadow_map_enabled = shadow_map_enabled;
+    renderer.tone_mapping = tone_mapping;
+    renderer.tone_mapping_exposure = exposure;
+    if which == Which::TslGalaxy {
+        renderer.skip_random_draws(webgpu_tsl_galaxy::INSPECTOR_RANDOM_DRAWS);
+    }
+    *scene.renderer() = renderer;
     scene.set_size(size.0, size.1);
 }
 
+/// Renders `frames` frames headless, reporting the steady-state frame time
+/// (`--headless`), and with `path` also writes the canvas as a PNG plus the
+/// result of `Renderer::present()` into an off-screen `bgra8unorm` texture, so
+/// the blit the window uses is covered too (`--screenshot`).
 fn screenshot(
     which: Which,
     size: (u32, u32),
     frames: u32,
-    path: &str,
+    path: Option<&str>,
     orbit: (f64, f64),
     zoom: f64,
     pan: (f64, f64),
@@ -690,6 +1069,7 @@ fn screenshot(
                 scene.animate(*time, PINNED_NODE_TIME);
             }
 
+            let Some(path) = path else { continue };
             let (width, height, pixels) = scene.renderer().read_canvas_pixels();
             let out = if !series {
                 path.to_string()
@@ -707,12 +1087,36 @@ fn screenshot(
     }
 
     // Frame n is drawn at t = n / 60 s, so the animation is exercised without
-    // depending on how fast this machine renders.
+    // depending on how fast this machine renders. Each frame is timed from the
+    // example's `animate()` to the GPU finishing it — there is no vsync here,
+    // so this is the whole cost of a frame, the number the e2e harness's
+    // steady-frame ceiling is compared against.
+    let mut timer = FrameTimer::new();
     for frame in 0..frames.max(1) {
         let t = frame as f64 / 60.0;
         controls.apply(scene.camera());
+        let t0 = Instant::now();
         scene.animate(t, t);
+        scene
+            .renderer()
+            .device()
+            .poll(wgpu::PollType::wait_indefinitely())
+            .unwrap();
+        let elapsed = t0.elapsed();
+        timer.record(elapsed);
+        if std::env::var("VIEWER_TRACE").is_ok() {
+            eprintln!("frame {frame}: {:.2} ms", elapsed.as_secs_f64() * 1e3);
+        }
     }
+    println!(
+        "{} — {}x{} — {frames} frame(s) headless — frame {}",
+        which.name(),
+        size.0,
+        size.1,
+        timer.report()
+    );
+
+    let Some(path) = path else { return };
 
     let (width, height, pixels) = scene.renderer().read_canvas_pixels();
     three_rs::testing::write_png(path, width, height, &pixels);
@@ -796,6 +1200,7 @@ fn main() {
     let mut size = (800u32, 500u32);
     let mut frames = 1u32;
     let mut shot: Option<String> = None;
+    let mut headless = false;
     let mut orbit = (0.0f64, 0.0f64);
     let mut zoom = 0.0f64;
     let mut pan = (0.0f64, 0.0f64);
@@ -806,6 +1211,11 @@ fn main() {
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
+            "--list" => {
+                println!("{}", Which::list());
+                return;
+            }
+            "--headless" => headless = true,
             "--screenshot" => {
                 i += 1;
                 shot = Some(args[i].clone());
@@ -863,10 +1273,11 @@ fn main() {
                 Some(w) => which = w,
                 None => {
                     eprintln!(
-                        "usage: viewer <webgpu_depth_texture|webgpu_instance_mesh|\
-                         webgpu_materials_basic> [--screenshot out.png [--frames N]] \
-                         [--width W] [--height H] [--orbit DX DY] [--zoom STEPS] \
-                         [--pan DX DY] [--time T | --times T1,T2,...]"
+                        "usage: viewer <example | key> [--headless] [--screenshot out.png] \
+                         [--frames N] [--width W] [--height H] [--orbit DX DY] \
+                         [--zoom STEPS] [--pan DX DY] [--time T | --times T1,T2,...]\n\
+                         \x20      viewer --list\n\nexamples:\n{}",
+                        Which::list()
                     );
                     std::process::exit(2);
                 }
@@ -875,8 +1286,8 @@ fn main() {
         i += 1;
     }
 
-    if let Some(path) = shot {
-        screenshot(which, size, frames, &path, orbit, zoom, pan, &pinned, series);
+    if headless || shot.is_some() {
+        screenshot(which, size, frames, shot.as_deref(), orbit, zoom, pan, &pinned, series);
         return;
     }
 
@@ -894,6 +1305,7 @@ fn main() {
         start: now,
         frames: 0,
         last_report: now,
+        timer: FrameTimer::new(),
         cursor: (0.0, 0.0),
         dragging: None,
         autoswitch: std::env::var("VIEWER_AUTOSWITCH")
