@@ -237,8 +237,9 @@ impl NodeBuilder {
             Node::Element { node, index, .. } => vec![node.clone(), index.clone()],
             Node::Texture { uv, mode, .. } => {
                 let mut v = vec![uv.clone()];
-                if let SampleMode::Level(l) = mode {
-                    v.push(l.clone());
+                match mode {
+                    SampleMode::Level(l) | SampleMode::Compare(l) => v.push(l.clone()),
+                    _ => {}
                 }
                 v
             }
@@ -256,6 +257,18 @@ impl NodeBuilder {
                 }
             }
             Node::Select { cond, a, b, .. } => vec![cond.clone(), a.clone(), b.clone()],
+            Node::If {
+                pre,
+                result,
+                cond,
+                body,
+            } => {
+                let mut v = pre.clone();
+                v.push(result.clone());
+                v.push(cond.clone());
+                v.extend(body.iter().cloned());
+                v
+            }
         }
     }
 
@@ -434,6 +447,7 @@ impl NodeBuilder {
             TextureSource::Texture2D(t) => (t.id(), TextureKind::Float2D),
             TextureSource::Depth(t) => (t.id(), TextureKind::Depth2D),
             TextureSource::Cube(t) => (t.id(), TextureKind::Cube),
+            TextureSource::CubeDepth(t) => (t.id(), TextureKind::DepthCube),
         };
 
         if let Some((name, kind, slots)) = self.texture_names.get(&key).cloned() {
@@ -779,6 +793,12 @@ impl NodeBuilder {
                         let slevel = self.generate(&level);
                         format!("textureSampleLevel( {name}, {name}_sampler, {suv}, {slevel} )")
                     }
+                    SampleMode::Compare(dp) => {
+                        let sdp = self.generate(&dp);
+                        format!(
+                            "textureSampleCompare( {name}, {name}_sampler, {suv}, {sdp} )"
+                        )
+                    }
                     SampleMode::Load => {
                         self.add_code("tsl_coord_clampS_clampT_2d", wgsl::CLAMP_WRAP_SNIPPET);
                         let dims = self.declare_var(None, Type::UVec2);
@@ -805,6 +825,38 @@ impl NodeBuilder {
                     })
                     .collect();
                 format!("{name}( {} )", parts.join(", "))
+            }
+
+            Node::If {
+                pre,
+                result,
+                cond,
+                body,
+            } => {
+                let (pre, result, cond, body) =
+                    (pre.clone(), result.clone(), cond.clone(), body.clone());
+                // `If()` is a statement list, not an expression: three.js emits
+                // everything ahead of the result var first, then the var's own
+                // initialiser, then the condition, then the block.
+                for stmt in &pre {
+                    self.generate(stmt);
+                }
+                let name = self.generate(&result);
+                let scond = self.generate(&cond);
+                self.emit(String::new());
+                self.emit(format!("if ( {scond} ) {{"));
+                self.emit(String::new());
+                self.push_scope();
+                for stmt in &body {
+                    self.generate(stmt);
+                }
+                self.emit(String::new());
+                self.pop_scope();
+                self.emit(String::new());
+                self.emit("}".to_string());
+                self.emit(String::new());
+                self.cache_put(node.key(), name.clone());
+                name
             }
 
             Node::Select { cond, a, b, ty } => {
@@ -1046,14 +1098,23 @@ impl NodeBuilder {
             for (binding, desc) in g.bindings.iter().enumerate() {
                 match desc {
                     BindingDesc::Sampler {
-                        source, visibility, ..
+                        source,
+                        kind,
+                        visibility,
                     } => {
                         if !Self::visible(*visibility, stage) {
                             continue;
                         }
                         let name = self.texture_name(source);
+                        // A shadow map is read with `textureSampleCompare`, so
+                        // its sampler is declared `sampler_comparison`.
+                        let ty = if kind.is_comparison() {
+                            "sampler_comparison"
+                        } else {
+                            "sampler"
+                        };
                         out.push_str(&format!(
-                            "@binding( {binding} ) @group( {gi} ) var {name}_sampler : sampler;\n"
+                            "@binding( {binding} ) @group( {gi} ) var {name}_sampler : {ty};\n"
                         ));
                     }
                     BindingDesc::Texture {
@@ -1136,6 +1197,7 @@ impl NodeBuilder {
             TextureSource::Texture2D(t) => t.id(),
             TextureSource::Depth(t) => t.id(),
             TextureSource::Cube(t) => t.id(),
+            TextureSource::CubeDepth(t) => t.id(),
         };
         self.texture_names[&key].0.clone()
     }

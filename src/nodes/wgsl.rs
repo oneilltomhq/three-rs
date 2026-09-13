@@ -60,6 +60,7 @@ pub enum TextureKind {
     Float2D,
     Depth2D,
     Cube,
+    DepthCube,
 }
 
 impl TextureKind {
@@ -69,6 +70,7 @@ impl TextureKind {
             TextureKind::Float2D => "texture_2d<f32>",
             TextureKind::Depth2D => "texture_depth_2d",
             TextureKind::Cube => "texture_cube<f32>",
+            TextureKind::DepthCube => "texture_depth_cube",
         }
     }
 
@@ -76,6 +78,11 @@ impl TextureKind {
     /// and reads it with `textureLoad`.
     pub fn has_sampler(self) -> bool {
         self != TextureKind::Depth2D
+    }
+
+    /// A shadow map is read through a comparison sampler.
+    pub fn is_comparison(self) -> bool {
+        self == TextureKind::DepthCube
     }
 }
 

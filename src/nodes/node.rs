@@ -10,7 +10,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::math::{Color, Matrix4, Vector2, Vector3};
-use crate::textures::{CubeTexture, DepthTexture, Texture};
+use crate::textures::{CubeDepthTexture, CubeTexture, DepthTexture, Texture};
 
 /// A WGSL value type. Three carries these as strings (`'vec3'`); the closed set
 /// is the part of `NodeBuilder`'s type vocabulary the ladder has reached.
@@ -147,6 +147,18 @@ pub enum UniformSource {
     MaterialBumpScale,
     /// `toneMappingExposure`.
     ToneMappingExposure,
+    /// `ShadowNode`'s render-group uniforms for the light at `index`:
+    /// `lightShadowMatrix( light )`, the shadow camera's near and far planes,
+    /// and the `LightShadow` references `normalBias`, `bias`, `radius`,
+    /// `mapSize` and `intensity`.
+    LightShadowMatrix(usize),
+    ShadowCameraNear(usize),
+    ShadowCameraFar(usize),
+    ShadowNormalBias(usize),
+    ShadowBias(usize),
+    ShadowRadius(usize),
+    ShadowMapSize(usize),
+    ShadowIntensity(usize),
     /// A plain `uniform( value )` the example supplies.
     Value(Vec<f64>),
 }
@@ -208,6 +220,8 @@ pub enum TextureSource {
     Texture2D(Texture),
     Depth(DepthTexture),
     Cube(CubeTexture),
+    /// A point light's shadow map — `cubeTexture( CubeDepthTexture )`.
+    CubeDepth(CubeDepthTexture),
 }
 
 /// How a `TextureNode` reads its texture — `WGSLNodeBuilder.generateTexture*`.
@@ -220,6 +234,9 @@ pub enum SampleMode {
     /// The non-filterable path: `textureLoad` against `textureDimensions`,
     /// with no sampler binding at all. What Three emits for a depth texture.
     Load,
+    /// `textureSampleCompare( t, t_sampler, uv, dp )` — a depth texture with a
+    /// `compareFunction`, read through a comparison sampler.
+    Compare(NodeRef),
 }
 
 /// A WGSL builtin input.
@@ -354,6 +371,17 @@ pub enum Node {
         ty: Type,
     },
     Call { def: Rc<FnDef>, args: Vec<NodeRef> },
+    /// `If( cond, () => { … } )` — a one-armed conditional over a result var
+    /// that was initialised before it. `pre` holds the statements three.js
+    /// emits ahead of the result var (its `toConst` lines), `result` is the var
+    /// itself and `body` the statements inside the block, the last of which
+    /// assigns `result`. The node's value is the result var.
+    If {
+        pre: Vec<NodeRef>,
+        result: NodeRef,
+        cond: NodeRef,
+        body: Vec<NodeRef>,
+    },
     /// `cond.select( a, b )` — lowered to an `if`/`else` writing a result var,
     /// exactly as Three does.
     Select {
@@ -401,6 +429,7 @@ impl NodeRef {
             Node::Element { ty, .. } => *ty,
             Node::Texture { ty, .. } => *ty,
             Node::Call { def, .. } => def.ret,
+            Node::If { result, .. } => result.ty(),
             Node::Select { ty, .. } => *ty,
         }
     }
