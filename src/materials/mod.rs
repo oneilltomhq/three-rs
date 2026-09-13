@@ -5,8 +5,8 @@ mod node_material;
 pub mod phong;
 
 pub use node_material::{
-    background_color_node, background_node_color_node, background_vertex_node, instanced_range, output_fragment_node,
-    quad_vertex_node, render_output, setup, SetupContext,
+    background_color_node, background_node_color_node, background_vertex_node, instanced_range,
+    output_fragment_node, quad_vertex_node, render_output, setup, shadow_material, SetupContext,
 };
 
 use crate::math::Color;
@@ -18,6 +18,16 @@ use crate::textures::CubeTexture;
 pub enum Side {
     Front,
     Back,
+}
+
+/// `three.js/src/constants.js` blending modes — the two the port needs.
+/// `builder.isOpaque()` is false for anything but `NormalBlending`, which is
+/// why the shadow material's fragment has no `DiffuseColor.w = 1.0`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Blending {
+    #[default]
+    Normal,
+    None,
 }
 
 /// `three.js/src/constants.js` tone-mapping modes — the ones the port needs.
@@ -98,6 +108,8 @@ pub struct MeshBasicNodeMaterial {
     /// `Material.transparent` — which of the render list's two arrays the object
     /// goes into, and so whether it is sorted front-to-back or back-to-front.
     pub transparent: bool,
+    /// `Material.blending` — `NoBlending` on the shadow material.
+    pub blending: Blending,
     pub depth_test: bool,
     pub depth_write: bool,
     /// `Background`'s material samples the cube map through the background
@@ -136,6 +148,7 @@ impl Default for MeshBasicNodeMaterial {
             side: Side::Front,
             visible: true,
             transparent: false,
+            blending: Blending::Normal,
             depth_test: true,
             depth_write: true,
             name: "",

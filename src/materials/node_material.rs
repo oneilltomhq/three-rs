@@ -4,7 +4,7 @@
 
 use super::phong::{self, LightDesc};
 use crate::lights::LightKind;
-use super::{MaterialKind, MeshBasicNodeMaterial, ToneMapping};
+use super::{Blending, MaterialKind, MeshBasicNodeMaterial, Side, ToneMapping};
 use crate::nodes::node::Type;
 use crate::nodes::tsl::*;
 use crate::nodes::tsl::FogNode;
@@ -26,6 +26,53 @@ pub struct SetupContext {
     /// both change the generated code, so they are part of the program's cache
     /// key by construction.
     pub lights: Vec<LightDesc>,
+}
+
+/// `NodeBuilder.isOpaque()` — `!transparent && blending === NormalBlending`
+/// (`alphaToCoverage` is off everywhere in the ladder).
+fn is_opaque(material: &MeshBasicNodeMaterial) -> bool {
+    !material.transparent && material.blending == Blending::Normal
+}
+
+/// `Renderer._getShadowNodes( material )` composed with
+/// `ShadowBaseNode._getShadowMaterial()`: the per-object shadow-pass material.
+///
+/// three.js mutates one shared `ShadowMaterial` per light in place; the port
+/// builds a fresh material per object instead, which is the same thing because
+/// the program is keyed on the generated WGSL.
+pub fn shadow_material(source: &MeshBasicNodeMaterial) -> MeshBasicNodeMaterial {
+    let mut material = MeshBasicNodeMaterial::new();
+    material.name = "ShadowMaterial";
+    material.blending = Blending::None;
+    material.fog = false;
+    // `overrideMaterial.transparent = material.transparent`, and
+    // `_shadowSide[ material.side ]` — the shadow pass draws the *back* faces
+    // of a front-sided material, which is where the shadow pipelines'
+    // `frontFace: cw` comes from.
+    material.transparent = source.transparent;
+    material.side = match source.side {
+        Side::Front => Side::Back,
+        Side::Back => Side::Front,
+    };
+
+    // `shadowRGB = vec3( 0 )`, `shadowAlpha = float( 1 )`, and the source
+    // material's own colour only contributes its alpha.
+    material.color_node = Some(match (&source.color_node, &source.mask_node) {
+        // `hasMap || hasColorNode || hasCastShadowNode || hasMaskNode` is
+        // false: the override material keeps its own `vec4( 0, 0, 0, 1 )`,
+        // which is a flat four-component constant rather than a join.
+        (None, None) => vec4(0.0, 0.0, 0.0, 1.0),
+        (color, _) => {
+            let alpha = match color {
+                Some(color) => float(1.0).mul(to_vec4(color.clone()).w()),
+                None => float(1.0),
+            };
+            vec4_join(vec![vec3(0.0, 0.0, 0.0), alpha])
+        }
+    });
+    // `Fn( ( [ color ] ) => { maskNode.not().discard(); return color; } )`.
+    material.mask_node = source.mask_node.clone();
+    material
 }
 
 /// `vec4( node )` the way `setupDiffuseColor` builds it: a scalar splats, a
@@ -112,7 +159,7 @@ fn setup_inner(
         );
         // `builder.isOpaque()` — not transparent, blending is NormalBlending
         // and alphaToCoverage is off.
-        if !material.transparent {
+        if is_opaque(material) {
             fragment.push(diffuse_color().w().assign(float(1.0)));
         }
 
@@ -306,7 +353,7 @@ fn setup_phong(
             .assign(diffuse_color().w().mul(material_opacity())),
     );
     // `builder.isOpaque()`
-    if !material.transparent {
+    if is_opaque(material) {
         fragment.push(diffuse_color().w().assign(float(1.0)));
     }
 

@@ -18,6 +18,9 @@ pub struct RenderState {
     pub side: Side,
     pub depth_test: bool,
     pub depth_write: bool,
+    /// `material.transparent` with `NormalBlending` — `_getBlendState()`'s
+    /// only non-`undefined` case in the ladder.
+    pub blend: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -130,8 +133,21 @@ impl Program {
                 compilation_options: Default::default(),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: state.color_format,
-                    // Opaque material: three.js emits no blend state.
-                    blend: None,
+                    // `_getBlendState()`: an opaque material gets no blend
+                    // state at all; a transparent one with `NormalBlending`
+                    // and `premultipliedAlpha` off gets the classic pair.
+                    blend: state.blend.then_some(wgpu::BlendState {
+                        color: wgpu::BlendComponent {
+                            src_factor: wgpu::BlendFactor::SrcAlpha,
+                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                            operation: wgpu::BlendOperation::Add,
+                        },
+                        alpha: wgpu::BlendComponent {
+                            src_factor: wgpu::BlendFactor::One,
+                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                            operation: wgpu::BlendOperation::Add,
+                        },
+                    }),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
             }),
