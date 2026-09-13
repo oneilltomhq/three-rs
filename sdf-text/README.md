@@ -3,15 +3,27 @@
 A Rust port of lib3's `src/sdf-text/` module — signed-distance-field text
 rasterised from real font outlines — plus the `src/sdf/edt.js` it depends on.
 
-This crate covers **steps 1–3 of the port ladder**: font metrics and outlines,
-the raster → EDT → atlas pipeline, and layout. Steps 4–6 (the `R32Float` atlas
-texture, `BatchedText`'s instanced draw, and the material's outline/halo shader)
-are renderer work, need a GPU, and are not here; `text::Text` is the surface they
-will plug into.
+This crate covers **steps 1–6 of the port ladder**. Steps 1–3 — font metrics and
+outlines, the raster → EDT → atlas pipeline, and layout — are pure arithmetic and
+need neither a GPU nor a network:
 
 ```
 cargo test -p sdf-text      # 52 tests, no GPU, no network
 ```
+
+Steps 4–6 are the renderer half, and live in the `three-rs` package that owns the
+GPU: `batched_text::BatchedText` here (the instanced draw, the `R32Float` atlas
+texture, the `positionNode`, the outline/halo material), with the examples and
+their gates next to every other ported example —
+
+| step | example | gate |
+|---|---|---|
+| 4 | — | `tests/sdf_text_glyph.rs`: one glyph quad, checked against the atlas tile's own SDF resampled on the CPU (not against an image) |
+| 5 | `examples/sdf_text_block.rs`, lib3's `examples/sdf-text-vector` page | `tests/sdf_text_block.rs`: the attribute packing leaf by leaf, two-run frame identity, and the whole 800 × 500 frame against the atlas SDF |
+| 6 | `examples/d33_treemap_labels.rs`, d33's `examples/d3_treemap.html` | `tests/d33_treemap_labels.rs` against `tests/golden/d3_treemap_labels.json`, dumped from that page's own JS |
+
+Those three need a GPU, and must be run single-threaded
+(`cargo test --workspace -- --test-threads=1`).
 
 ## What is ported
 
@@ -24,6 +36,7 @@ cargo test -p sdf-text      # 52 tests, no GPU, no network
 | `text_builder` | `TextBuilder.js` | `layoutTextVector` fully; `layoutText` in its no-canvas branch |
 | `text` | `Text.js` | the layout property surface, the dirty flag, `sync`, opacity write-through |
 | `sdf_defaults` | `../sdf/index.js` | the constant set lib3's *test* uses (64/32/4/8/128) |
+| `batched_text` | `BatchedText.js` | the instanced glyph draw: attribute packing, `GLYPH_QUAD_PAD`, blank-glyph instances, insertion-order atlas slots, `setMatrixAt` / `setColorAt` / `setOpacityAt`, the outline/halo TSL chain |
 
 ## The grader
 
@@ -120,7 +133,22 @@ Y-flip) all produce errors in the thousands and cannot pass.
     loaded yet" state (`Option::None`) be a parameter instead of a mutable field.
     The JS behaviour — glyphs requested before the font arrives are blank, and
     `setFont` resets the atlas so they are regenerated — is preserved and tested.
-12. **`glyph_path` (Y-up) emits `Close`; `glyph_path_y_down` does not.**
+12. **`BatchedText` owns its members.** In the JS `addText` stores the batch on
+    `text._batchedText` so `Text.opacity`'s setter can write through. An `Rc`
+    cycle between the batch and its members is exactly what Rust is built to
+    refuse, so the batch holds each member — its `Text` and its `Object3D` — and
+    hands out `member_node` / `text_at_mut` instead. The write-through sink
+    (deviation 7) is `None` for a member, and `set_opacity_at` does the writing.
+13. **Per-instance data travels with the node graph, not with four dirty
+    flags.** The JS keeps `_needsUpdate` booleans on four
+    `InstancedBufferAttribute`s and uploads whichever changed. Here the four
+    arrays hang off the material's node graph as
+    `tsl::instanced_data_attribute` buffers, so a `build_material()` is the one
+    thing that has to happen after `sync()`. The bytes on the GPU are the same.
+14. **The `Fn( … )()` wrappers around `positionNode` and `colorNode` are
+    dropped.** They take no parameters, so three inlines them; the emitted WGSL
+    is the same.
+15. **`glyph_path` (Y-up) emits `Close`; `glyph_path_y_down` does not.**
     opentype's `getPath` emits no `Z` at all (it only closes a path when it is
     stroked), so the Y-down form that feeds the rasteriser and the golden matches
     it exactly. The Y-up form keeps `Close` because it is the form a consumer
@@ -150,15 +178,22 @@ Not ported, and why:
 - **`FontAtlas.js`** — the older canvas-rasterised atlas (128/64/8/16 constants).
   Superseded by `VectorFontAtlas` for every lib3 and d33 use; its constants are
   not even the ones lib3's own test uses.
-- **`BatchedText.js`** — steps 4–6: the instanced geometry, the `R32Float`
-  `DataTexture`, `positionNode`, the outline/halo material, `setMatrixAt`,
-  `setOpacityAt`. All of it needs the renderer. Note for whoever takes it:
-  `BatchedText.sync` excludes spaces from `ensureGlyphs` but still emits an
-  instance for them with a zero UV rect, and `count` includes them — instance
-  counts must match exactly or the painter order shifts (plan §5.4).
-- **`VectorFontAtlas`'s `DataTexture`.** `atlas_data()` / `atlas_bytes()` hand out
-  the buffer in exactly the layout a
-  `DataTexture(Float32Array, n, n, RedFormat, FloatType)` expects; building the
-  texture is step 4, and it must not be tagged sRGB (plan §5.3).
+- **What `BatchedText` inherits from `THREE.InstancedMesh`** beyond the draw
+  itself — `raycast`, `dispose`, `computeBoundingSphere`. This port's
+  `InstancedMesh` has none of them, nothing in lib3's or d33's pages picks a
+  glyph, and d33 turns frustum culling off for the batch anyway.
+- **`BatchedText`'s `_baseMaterial` constructor argument.** It is dead in the JS
+  too — the constructor names it and never reads it, and both call sites pass
+  `undefined`.
+- **`options.font` and the `ready` promise.** The JS constructor takes a font
+  URL and `await`s `VectorFont.load`; `VectorFont::load` is already in this
+  register, so `set_font(Rc<VectorFont>)` takes the parsed font and there is
+  nothing to await. `_vectorMode` is therefore always on: the canvas-raster
+  branch needs `FontAtlas.js`, also in this register.
+- **`removeText(text)`'s `indexOf` lookup.** Deviation 12: the batch owns its
+  members, so there is no external `Text` handle to search for and
+  `remove_text(member_id)` takes the id the JS would have found. The slot
+  handling — clear it, and shrink `_memberCount` only when the *last* member
+  went — is the JS's.
 - **`index.js`'s re-export shape.** Rust modules and `pub use` in `lib.rs` cover
   it.

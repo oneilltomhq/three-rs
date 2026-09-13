@@ -1699,6 +1699,7 @@ name = "three-rs"
 version = "0.1.0"
 dependencies = [
  "bytemuck",
+ "d3-hierarchy",
  "png",
  "pollster",
  "sdf-text",

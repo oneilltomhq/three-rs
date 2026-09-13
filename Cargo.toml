@@ -21,6 +21,9 @@ winit = "0.30.8"
 # that pair, so the SDF text examples and their e2e tests can live here with
 # every other ported example. Cargo allows a dev-dependency cycle.
 sdf-text = { path = "sdf-text" }
+# Same reason, for the d33 treemap example: the layout is the d3-hierarchy port's
+# and only the example and its gate need it.
+d3-hierarchy = { path = "d3/hierarchy" }
 
 [[bin]]
 name = "viewer"
@@ -53,3 +56,7 @@ path = "examples/sdf_text_block.rs"
 [[example]]
 name = "dump_wgsl"
 path = "examples/dump_wgsl.rs"
+
+[[example]]
+name = "d33_treemap_labels"
+path = "examples/d33_treemap_labels.rs"
