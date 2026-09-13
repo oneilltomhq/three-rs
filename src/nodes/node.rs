@@ -145,6 +145,8 @@ pub enum UniformSource {
     MaterialMetalness,
     MaterialRoughness,
     MaterialBumpScale,
+    /// `toneMappingExposure`.
+    ToneMappingExposure,
     /// A plain `uniform( value )` the example supplies.
     Value(Vec<f64>),
 }

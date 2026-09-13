@@ -9,7 +9,7 @@
 //! the canvas — the colour transform lives in the quad's own shader instead of
 //! in a second output pass.
 
-use crate::materials::{render_output, MeshBasicNodeMaterial};
+use crate::materials::{render_output, MeshBasicNodeMaterial, ToneMapping};
 use crate::nodes::NodeRef;
 use crate::objects::QuadMesh;
 
@@ -49,7 +49,7 @@ impl RenderPipeline {
             .expect("three-rs: RenderPipeline.outputNode is not set");
 
         self.quad_mesh.material.fragment_node = Some(if self.output_color_transform {
-            render_output(output_node)
+            render_output(output_node, ToneMapping::None)
         } else {
             output_node
         });

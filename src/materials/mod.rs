@@ -8,7 +8,7 @@ pub mod physical;
 
 pub use node_material::{
     background_color_node, background_vertex_node, instanced_range, output_fragment_node,
-    quad_vertex_node, render_output, setup, LightKind, SetupContext, MAX_LIGHTS,
+    quad_vertex_node, render_output, setup, LightKind, SetupContext, ToneMapping, MAX_LIGHTS,
 };
 
 use crate::math::Color;

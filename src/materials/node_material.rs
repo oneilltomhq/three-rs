@@ -263,22 +263,41 @@ pub fn instanced_range(min: crate::math::Color, max: crate::math::Color, count: 
     range(min, max, count, index)
 }
 
-/// `Renderer._renderOutput()`'s material: the framebuffer texture sampled at
-/// the fragment coordinate, through `renderOutput()`.
-pub fn output_fragment_node(framebuffer: &crate::textures::Texture) -> NodeRef {
-    let coord = frag_coord().xy().div(viewport_size());
-    let color = texture_uv(framebuffer, coord);
-    render_output(color)
+/// `three.js/src/constants.js` tone mapping modes, as far as the ladder needs
+/// them.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ToneMapping {
+    #[default]
+    None,
+    Reinhard,
 }
 
-/// `RenderOutputNode.setup()` with `NoToneMapping` and an sRGB output space.
-pub fn render_output(color: NodeRef) -> NodeRef {
+/// `Renderer._renderOutput()`'s material: the framebuffer texture sampled at
+/// the fragment coordinate, through `renderOutput()`.
+pub fn output_fragment_node(
+    framebuffer: &crate::textures::Texture,
+    tone_mapping: ToneMapping,
+) -> NodeRef {
+    let coord = frag_coord().xy().div(viewport_size());
+    let color = texture_uv(framebuffer, coord);
+    render_output(color, tone_mapping)
+}
+
+/// `RenderOutputNode.setup()` with an sRGB output space: unpremultiply, tone
+/// map the colour (alpha untouched), encode, premultiply again.
+pub fn render_output(color: NodeRef, tone_mapping: ToneMapping) -> NodeRef {
     let clamped = vec4_join(vec![color.rgb(), color.a().clamp(float(0.0), float(1.0))]);
     let unpremultiplied = unpremultiply_alpha(clamped);
-    let encoded = vec4_join(vec![
-        srgb_transfer_oetf(unpremultiplied.rgb()),
-        unpremultiplied.a(),
-    ]);
+    let mapped = match tone_mapping {
+        ToneMapping::None => unpremultiplied,
+        // `outputNode.toneMapping( toneMapping )` — `ToneMappingNode` keeps the
+        // alpha and tone maps the colour with `toneMappingExposure`.
+        ToneMapping::Reinhard => vec4_join(vec![
+            reinhard_tone_mapping(unpremultiplied.clone().rgb(), tone_mapping_exposure()),
+            unpremultiplied.a(),
+        ]),
+    };
+    let encoded = vec4_join(vec![srgb_transfer_oetf(mapped.clone().rgb()), mapped.a()]);
     premultiply_alpha(encoded)
 }
 

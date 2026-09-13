@@ -1537,6 +1537,40 @@ pub fn srgb_transfer_oetf(color: NodeRef) -> NodeRef {
     call(&def, vec![color])
 }
 
+/// `toneMappingExposure` — `renderer.toneMappingExposure`.
+pub fn tone_mapping_exposure() -> NodeRef {
+    uniform(
+        UniformSource::ToneMappingExposure,
+        Type::F32,
+        UniformGroup::Render,
+        None,
+    )
+}
+
+/// `reinhardToneMapping` — `ToneMappingFunctions.js`, emitted as a real `fn`.
+pub fn reinhard_tone_mapping(color: NodeRef, exposure: NodeRef) -> NodeRef {
+    thread_local! { static CELL: Lazy<Rc<FnDef>> = Lazy::new(); }
+    let def = CELL.with(|c| {
+        c.get(|| {
+            shader_fn(
+                Some("reinhardToneMapping"),
+                vec![("color", Type::Vec3), ("exposure", Type::F32)],
+                Type::Vec3,
+                |args| {
+                    // `color = color.mul( exposure )`, a var because it is
+                    // read twice.
+                    let color = args[0].clone().mul(args[1].clone());
+                    color
+                        .clone()
+                        .div(color.add(float(1.0)))
+                        .clamp(float(0.0), float(1.0))
+                },
+            )
+        })
+    });
+    call(&def, vec![color, exposure])
+}
+
 /// `premultiplyAlpha` — `PremultiplyAlphaFunctions.js`.
 pub fn premultiply_alpha(color: NodeRef) -> NodeRef {
     thread_local! { static CELL: Lazy<Rc<FnDef>> = Lazy::new(); }

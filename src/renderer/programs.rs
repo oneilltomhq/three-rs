@@ -269,6 +269,7 @@ pub struct UniformContext<'a> {
     pub material_metalness: f64,
     pub material_roughness: f64,
     pub material_bump_scale: f64,
+    pub tone_mapping_exposure: f64,
     pub env_rotation: Matrix4,
     pub background_rotation: Matrix4,
     pub background_blurriness: f64,
@@ -302,6 +303,7 @@ impl Default for UniformContext<'_> {
             material_metalness: 0.0,
             material_roughness: 1.0,
             material_bump_scale: 1.0,
+            tone_mapping_exposure: 1.0,
             env_rotation: Matrix4::identity(),
             background_rotation: Matrix4::identity(),
             background_blurriness: 0.0,
@@ -356,6 +358,7 @@ impl UniformContext<'_> {
                 UniformSource::MaterialMetalness => vec![self.material_metalness as f32],
                 UniformSource::MaterialRoughness => vec![self.material_roughness as f32],
                 UniformSource::MaterialBumpScale => vec![self.material_bump_scale as f32],
+                UniformSource::ToneMappingExposure => vec![self.tone_mapping_exposure as f32],
                 UniformSource::EnvRotationMatrix => self.env_rotation.to_f32_array().to_vec(),
                 UniformSource::BackgroundRotation => {
                     self.background_rotation.to_f32_array().to_vec()

@@ -161,6 +161,10 @@ pub struct Renderer {
     /// so the full-screen quad draws straight into the canvas.
     neutral_output: bool,
 
+    /// `renderer.toneMapping` / `renderer.toneMappingExposure`.
+    pub tone_mapping: crate::materials::ToneMapping,
+    pub tone_mapping_exposure: f64,
+
     /// `NodeFrame.time`. `performance.now()` is pinned to 0 by the harness, so
     /// every frame's delta is 0 and this stays 0.
     time: f64,
@@ -238,6 +242,8 @@ impl Renderer {
             quad_geometry: None,
             quad_camera: OrthographicCamera::new(-1.0, 1.0, 1.0, -1.0, 0.0, 1.0),
             neutral_output: false,
+            tone_mapping: crate::materials::ToneMapping::None,
+            tone_mapping_exposure: 1.0,
             time: 0.0,
             present: None,
             random: DeterministicRandom::new(),
@@ -558,6 +564,7 @@ impl Renderer {
                 material_metalness: item.material.metalness,
                 material_roughness: item.material.roughness,
                 material_bump_scale: item.material.bump_scale,
+                tone_mapping_exposure: self.tone_mapping_exposure,
                 viewport: Vector2::new(target.width as f64, target.height as f64),
                 ..camera_uniforms
             };
@@ -661,6 +668,7 @@ impl Renderer {
         material.name = "outputColorTransform";
         material.fragment_node = Some(materials::output_fragment_node(
             &render_target.texture(),
+            self.tone_mapping,
         ));
 
         let items = [Renderable {

@@ -93,8 +93,20 @@ fn main() {
     // the output pass.
     let framebuffer = Texture::render_target(800, 500, wgpu::TextureFormat::Rgba16Float);
     let mut out = MeshBasicNodeMaterial::new();
-    out.fragment_node = Some(three_rs::materials::output_fragment_node(&framebuffer));
+    out.fragment_node = Some(three_rs::materials::output_fragment_node(&framebuffer, three_rs::materials::ToneMapping::None));
     show("output_color_transform", &out, SetupContext::default());
+
+    // rung 8: the same pass with Reinhard tone mapping and exposure.
+    let mut out_reinhard = MeshBasicNodeMaterial::new();
+    out_reinhard.fragment_node = Some(three_rs::materials::output_fragment_node(
+        &framebuffer,
+        three_rs::materials::ToneMapping::Reinhard,
+    ));
+    show(
+        "output_color_transform_reinhard",
+        &out_reinhard,
+        SetupContext::default(),
+    );
 
     // rung 4: the textured box and the hue/saturation quad.
     let uv_texture = Texture::new(1024, 1024, Some(vec![0; 4]));
@@ -123,7 +135,7 @@ fn main() {
     compose = mask1.a().mix(compose, texture(&texture1));
     compose = mask2.a().mix(compose, texture(&texture2));
     let mut masking = MeshBasicNodeMaterial::new();
-    masking.fragment_node = Some(three_rs::materials::render_output(compose));
+    masking.fragment_node = Some(three_rs::materials::render_output(compose, three_rs::materials::ToneMapping::None));
     masking.vertex_node = Some(three_rs::materials::quad_vertex_node());
     show("masking_quad", &masking, SetupContext::default());
 
