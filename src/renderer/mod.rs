@@ -557,6 +557,7 @@ impl Renderer {
                 material_emissive_intensity: item.material.emissive_intensity,
                 material_metalness: item.material.metalness,
                 material_roughness: item.material.roughness,
+                material_bump_scale: item.material.bump_scale,
                 viewport: Vector2::new(target.width as f64, target.height as f64),
                 ..camera_uniforms
             };

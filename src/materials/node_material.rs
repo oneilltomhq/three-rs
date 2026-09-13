@@ -62,9 +62,14 @@ pub fn setup(
     // ), 'NORMAL' )` — installed for the whole of the material's setup, so that
     // every `normalView` the lighting flow reaches resolves to this material's
     // normal map. See `docs/nodes.md` §7.
-    with_material_normal(material.normal_node.clone(), || {
-        setup_inner(material, ctx, fog)
-    })
+    // `MaterialNode.NORMAL`: with no `normalNode` of its own, a material with a
+    // `bumpMap` normal-maps through `BumpMapNode`.
+    let normal = match (&material.normal_node, &material.bump_map) {
+        (Some(node), _) => Some(node.clone()),
+        (None, Some(bump)) => Some(bump_map(bump, material_bump_scale())),
+        (None, None) => None,
+    };
+    with_material_normal(normal, || setup_inner(material, ctx, fog))
 }
 
 fn setup_inner(

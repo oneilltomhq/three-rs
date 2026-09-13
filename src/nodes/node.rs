@@ -141,9 +141,10 @@ pub enum UniformSource {
     /// the light's world position, which is what `lightPosition( light )` is.
     LightGroundColor(usize),
     LightWorldPosition(usize),
-    /// `materialMetalness` / `materialRoughness`.
+    /// `materialMetalness` / `materialRoughness` / `materialBumpScale`.
     MaterialMetalness,
     MaterialRoughness,
+    MaterialBumpScale,
     /// A plain `uniform( value )` the example supplies.
     Value(Vec<f64>),
 }
@@ -162,6 +163,7 @@ impl UniformSource {
             | UniformSource::MaterialEmissiveIntensity
             | UniformSource::MaterialMetalness
             | UniformSource::MaterialRoughness
+            | UniformSource::MaterialBumpScale
             | UniformSource::EnvRotationMatrix
             | UniformSource::Value(_) => UpdateType::Object,
             _ => UpdateType::Render,
@@ -225,6 +227,8 @@ pub enum Builtin {
     InstanceIndex,
     /// `@builtin( position )` in the fragment stage.
     FragCoord,
+    /// `@builtin( front_facing )` — `FrontFacingNode`.
+    FrontFacing,
 }
 
 impl Builtin {
@@ -233,6 +237,7 @@ impl Builtin {
             Builtin::VertexIndex => "vertexIndex",
             Builtin::InstanceIndex => "instanceIndex",
             Builtin::FragCoord => "fragCoord",
+            Builtin::FrontFacing => "isFront",
         }
     }
 
@@ -240,6 +245,7 @@ impl Builtin {
         match self {
             Builtin::VertexIndex | Builtin::InstanceIndex => Type::U32,
             Builtin::FragCoord => Type::Vec4,
+            Builtin::FrontFacing => Type::Bool,
         }
     }
 }

@@ -1190,6 +1190,7 @@ impl NodeBuilder {
                 Builtin::VertexIndex => "vertex_index",
                 Builtin::InstanceIndex => "instance_index",
                 Builtin::FragCoord => "position",
+                Builtin::FrontFacing => "front_facing",
             };
             params.push(format!(
                 "@builtin( {builtin} ) {} : {}",

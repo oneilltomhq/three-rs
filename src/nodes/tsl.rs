@@ -468,6 +468,16 @@ pub fn material_roughness() -> NodeRef {
     )
 }
 
+/// `materialBumpScale`.
+pub fn material_bump_scale() -> NodeRef {
+    uniform(
+        UniformSource::MaterialBumpScale,
+        Type::F32,
+        UniformGroup::Object,
+        None,
+    )
+}
+
 /// `inverseSqrt( x )`.
 pub fn inverse_sqrt(x: impl Into<NodeRef>) -> NodeRef {
     math("inverseSqrt", vec![x.into()], Type::F32)
@@ -793,6 +803,17 @@ accessor!(
     /// `instanceIndex`.
     instance_index,
     NodeRef::new(Node::Builtin(Builtin::InstanceIndex))
+);
+accessor!(
+    /// `frontFacing` — `@builtin( front_facing )`, fragment stage only.
+    front_facing,
+    NodeRef::new(Node::Builtin(Builtin::FrontFacing))
+);
+accessor!(
+    /// `faceDirection` — `float( frontFacing ).mul( 2 ).sub( 1 )`: `1` on a
+    /// front face, `-1` on a back face.
+    face_direction,
+    front_facing().to(Type::F32).mul(2.0).sub(1.0)
 );
 accessor!(
     /// `screenCoordinate`'s raw source: `@builtin( position )`.
@@ -1232,26 +1253,86 @@ fn texture_node(source: TextureSource, uv: NodeRef, mode: SampleMode, ty: Type) 
 }
 
 /// The `texture.matrix * vec3( uv, 1.0 )` transform `TextureNode.setupUV()`
-/// applies before sampling.
-fn transformed_uv(uv: NodeRef, matrix: Matrix3) -> NodeRef {
-    uniform(
-        UniformSource::Value(matrix.to_padded_f32_array().iter().map(|&v| v as f64).collect()),
-        Type::Mat3,
-        UniformGroup::Object,
-        None,
-    )
-    .mul(vec3_join(vec![uv, float(1.0)]))
-    .xy()
+/// applies before sampling. `key` identifies the texture the matrix belongs to
+/// (`(kind tag, texture id)`), so that two samples of the same map share one
+/// uniform member the way three.js' per-texture `uniform( texture.matrix )`
+/// does — `BumpMapNode` samples its map three times.
+fn transformed_uv(uv: NodeRef, key: (u8, usize), matrix: Matrix3) -> NodeRef {
+    thread_local! {
+        static CACHE: RefCell<HashMap<(u8, usize), NodeRef>> = RefCell::new(HashMap::new());
+    }
+    let matrix_uniform = CACHE.with(|c| {
+        c.borrow_mut()
+            .entry(key)
+            .or_insert_with(|| {
+                uniform(
+                    UniformSource::Value(
+                        matrix
+                            .to_padded_f32_array()
+                            .iter()
+                            .map(|&v| v as f64)
+                            .collect(),
+                    ),
+                    Type::Mat3,
+                    UniformGroup::Object,
+                    None,
+                )
+            })
+            .clone()
+    });
+    matrix_uniform.mul(vec3_join(vec![uv, float(1.0)])).xy()
 }
 
 /// `texture( map )`.
 pub fn texture(map: &Texture) -> NodeRef {
     texture_node(
         TextureSource::Texture2D(map.clone()),
-        transformed_uv(uv(), map.matrix()),
+        transformed_uv(uv(), (0, map.id()), map.matrix()),
         SampleMode::Sample,
         Type::Vec4,
     )
+}
+
+/// Port of `BumpMapNode` — `bumpMap( texture( bumpMap ).r, materialBumpScale )`.
+///
+/// `dHdxy_fwd` takes three taps of the height map (at `uv`, `uv + dFdx( uv )`
+/// and `uv + dFdy( uv )`, each through the map's own uv matrix) and
+/// `perturbNormalArb` rebuilds the normal from them in the screen-space frame
+/// of `positionView`, flipping with `faceDirection` on a back face.
+///
+/// Built inside the `NORMAL` sub-build layer, the way `NodeMaterial.setup()`
+/// wraps `setupNormal()`: that is what makes the normal it reads the geometric
+/// one (`NORMAL_normalView`) instead of recursing into this node.
+pub fn bump_map(map: &Texture, scale: NodeRef) -> NodeRef {
+    in_sub_build("NORMAL", || {
+        let tap = |coord: NodeRef| {
+            texture_uv(map, transformed_uv(coord, (0, map.id()), map.matrix())).x()
+        };
+        let hll = tap(uv());
+        let dhdxy = join(
+            Type::Vec2,
+            vec![
+                tap(uv().add(dpdx(uv()))).sub(hll.clone()),
+                tap(uv().add(dpdy(uv()))).sub(hll),
+            ],
+        )
+        .mul(scale);
+
+        let surf_norm = normal_view();
+        let v_sigma_x = dpdx(position_view()).normalize();
+        let v_sigma_y = dpdy(position_view()).normalize();
+        let r1 = cross(v_sigma_y, surf_norm.clone());
+        let r2 = cross(surf_norm.clone(), v_sigma_x.clone());
+        let f_det = v_sigma_x.dot(r1.clone()).mul(face_direction());
+        let v_grad = sign(f_det.clone()).mul(
+            dhdxy
+                .clone()
+                .x()
+                .mul(r1)
+                .add(dhdxy.y().mul(r2)),
+        );
+        abs(f_det).mul(surf_norm).sub(v_grad).normalize()
+    })
 }
 
 /// `texture( map, uv )` without the default UV.
@@ -1269,7 +1350,7 @@ pub fn texture_uv(map: &Texture, coord: NodeRef) -> NodeRef {
 pub fn depth_texture(map: &DepthTexture) -> NodeRef {
     texture_node(
         TextureSource::Depth(map.clone()),
-        transformed_uv(uv(), Matrix3::identity()),
+        transformed_uv(uv(), (1, map.id()), Matrix3::identity()),
         SampleMode::Load,
         Type::F32,
     )
