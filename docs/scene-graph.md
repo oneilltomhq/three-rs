@@ -149,6 +149,26 @@ from a stable sort over a flat `Vec` in `scene.add()` order. That is why folding
 leaves each item's `z` at whatever `_vector4` last held; here it stays 0, so the
 lists keep traversal order.
 
+A transparent material therefore draws after every opaque one, back to front, and
+its per-fragment alpha survives: `DiffuseColor.w = 1.0` is emitted only under
+`builder.isOpaque()`, and the blend state the pipeline gets comes from
+`material.blend_state()` — `docs/nodes.md` §9.1 has the table and the gate. Blend
+state is part of `RenderState` and so part of the pipeline cache key, which is
+what lets one generated program serve an opaque and a blended draw.
+
+### Per-draw resources
+
+Everything a draw binds — bind groups, and now vertex buffers — is resolved from
+the `NodeProgram` built for *that* draw, never from the program cache. The cache
+is keyed on the generated WGSL, so two materials with identical shaders and
+different textures or `range()` buffers hash to one entry; reading resources off
+the cached entry would quietly hand the second draw the first's data. Vertex
+buffers come from `NodeProgram::vertex_buffers()` (`docs/nodes.md` §9.2), which is
+also what the pipeline's vertex layouts are built from, so a bound buffer and its
+layout cannot disagree. Per-node GPU buffers are cached by node identity and
+uploaded once; the instance matrix is the exception, re-uploaded each frame
+because its contents change.
+
 ## Lights in the tree
 
 A light is an ordinary node: `PointLight::new( color, intensity, distance )`
