@@ -739,15 +739,20 @@ impl Renderer {
                 if !object.cast_shadow {
                     continue;
                 }
-                let mesh = object
-                    .mesh()
-                    .expect("three-rs: the render list only holds meshes");
-                let source = mesh.material.as_ref().unwrap_or(&default_material);
+                // A `Line` casts a shadow in three.js too — the shadow pass is
+                // an ordinary `renderer.render()` with `overrideMaterial` — so
+                // it goes through the same plumbing, topology and all.
+                let geometry = object
+                    .geometry()
+                    .expect("three-rs: the render list only holds drawables")
+                    .clone();
+                let source = object.material().unwrap_or(&default_material);
+                let primitive = Primitive::of(&object, &geometry);
                 let instance_matrix = object.instance_matrix().cloned();
                 let instance_count = object.instance_count();
 
                 items.push(Renderable {
-                    geometry: mesh.geometry.clone(),
+                    geometry: geometry.clone(),
                     material: materials::shadow_material(source),
                     setup: SetupContext {
                         instance_count: instance_matrix.as_ref().map(|_| instance_count as usize),
@@ -763,7 +768,7 @@ impl Renderer {
                     instance_count,
                     morph_influences: Vec::new(),
                     morph_base: 1.0,
-                    primitive: Primitive::TRIANGLES,
+                    primitive,
                 });
             }
 
@@ -906,14 +911,18 @@ impl Renderer {
                 if !object.cast_shadow {
                     continue;
                 }
-                let mesh = object
-                    .mesh()
-                    .expect("three-rs: the render list only holds meshes");
-                let source = mesh.material.as_ref().unwrap_or(&default_material);
+                // As in the planar pass: a `Line` casts a shadow the same way,
+                // through the same shadow material and its own topology.
+                let geometry = object
+                    .geometry()
+                    .expect("three-rs: the render list only holds drawables")
+                    .clone();
+                let source = object.material().unwrap_or(&default_material);
+                let primitive = Primitive::of(&object, &geometry);
                 let instance_matrix = object.instance_matrix().cloned();
                 let instance_count = object.instance_count();
                 items.push(Renderable {
-                    geometry: mesh.geometry.clone(),
+                    geometry: geometry.clone(),
                     material: materials::shadow_material(source),
                     setup: SetupContext {
                         instance_count: instance_matrix.as_ref().map(|_| instance_count as usize),
@@ -927,7 +936,7 @@ impl Renderer {
                     instance_count,
                     morph_influences: Vec::new(),
                     morph_base: 1.0,
-                    primitive: Primitive::TRIANGLES,
+                    primitive,
                 });
             }
 
