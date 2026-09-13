@@ -36,6 +36,9 @@ pub enum MaterialKind {
     Basic,
     /// `MeshPhongNodeMaterial` — `PhongLightingModel`.
     Phong,
+    /// `SpriteNodeMaterial` — `BasicLightingModel` like `Basic`, but it
+    /// overrides `setupPositionView()` with the billboarded quad.
+    Sprite,
 }
 
 /// Port of `MeshBasicNodeMaterial.js` + the `NodeMaterial.js` / `Material.js`
@@ -72,6 +75,18 @@ pub struct MeshBasicNodeMaterial {
     pub specular_node: Option<NodeRef>,
     /// `material.normalNode` — e.g. `normalMap( texture( map ) )`.
     pub normal_node: Option<NodeRef>,
+    /// `NodeMaterial.positionNode` — `setupPosition()` ends with
+    /// `positionLocal.assign( positionNode )`, and `SpriteNodeMaterial` reads it
+    /// a second time in `setupPositionView()`.
+    pub position_node: Option<NodeRef>,
+    /// `SpriteNodeMaterial.scaleNode` / `.rotationNode`.
+    pub scale_node: Option<NodeRef>,
+    pub rotation_node: Option<NodeRef>,
+    /// `SpriteMaterial.rotation` — the `materialRotation` uniform.
+    pub rotation: f64,
+    /// `SpriteNodeMaterial.sizeAttenuation`. `true` (the default) is the branch
+    /// that *omits* the `mvPosition.z.negate()` scale factor.
+    pub size_attenuation: bool,
     /// `NodeMaterial.vertexNode` — replaces the whole clip-position flow.
     pub vertex_node: Option<NodeRef>,
     /// `NodeMaterial.fragmentNode` — replaces the whole fragment flow.
@@ -131,6 +146,11 @@ impl Default for MeshBasicNodeMaterial {
             reflectivity: 1.0,
             env_map: None,
             color_node: None,
+            position_node: None,
+            scale_node: None,
+            rotation_node: None,
+            rotation: 0.0,
+            size_attenuation: true,
             vertex_node: None,
             fragment_node: None,
             side: Side::Front,
@@ -191,6 +211,18 @@ impl MeshBasicNodeMaterial {
         !self.transparent && self.blending == Blending::Normal && !self.alpha_to_coverage
     }
 
+    /// `new SpriteNodeMaterial()`. `SpriteNodeMaterial`'s constructor sets
+    /// `transparent = true` explicitly — "In Sprites, the transparent property
+    /// is enabled by default" — which also takes it out of `isOpaque()`, so the
+    /// fragment flow keeps its per-fragment alpha.
+    pub fn sprite() -> Self {
+        Self {
+            kind: MaterialKind::Sprite,
+            transparent: true,
+            ..Self::default()
+        }
+    }
+
     /// `new MeshPhongNodeMaterial( { color } )`. `NodeMaterial.lights` is true
     /// for every lit material, which is what puts the `LightsNode` flow in the
     /// fragment stage.
@@ -208,3 +240,6 @@ impl MeshBasicNodeMaterial {
 /// shared because `WebGPURenderer` treats every material as a `NodeMaterial`
 /// and the renderer must hold them in one list.
 pub type MeshPhongNodeMaterial = MeshBasicNodeMaterial;
+
+/// three.js' name for a `NodeMaterial` whose kind is `Sprite`.
+pub type SpriteNodeMaterial = MeshBasicNodeMaterial;

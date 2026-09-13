@@ -278,6 +278,18 @@ impl Renderer {
         )
     }
 
+    /// Advance the page's `Math.random` by `n` draws before anything the
+    /// renderer itself fills from it.
+    ///
+    /// The harness replaces `Math.random` for the whole page, so every draw the
+    /// example makes during `init()` shifts the sequence `RangeNode.setup()`
+    /// later reads. `webgpu_tsl_galaxy` makes five: `new Inspector()` builds
+    /// five `List`s and each one's constructor calls `Math.random()`
+    /// (`examples/jsm/inspector/ui/List.js:11`).
+    pub fn skip_random_draws(&mut self, n: usize) {
+        self.random.skip(n);
+    }
+
     /// `renderer.setRenderTarget( target )`.
     pub fn set_render_target(&mut self, render_target: Option<RenderTarget>) {
         self.render_target = render_target;
@@ -540,6 +552,7 @@ impl Renderer {
                 model_world: item.model_world,
                 material_color: item.material.color,
                 material_opacity: item.material.opacity,
+                material_rotation: item.material.rotation,
                 material_reflectivity: item.material.reflectivity,
                 material_shininess: item.material.shininess,
                 material_specular: item.material.specular,
@@ -880,19 +893,11 @@ impl Renderer {
                     return buffer.clone();
                 }
 
-                // `min`/`max` are `Vector4`s: a Color fills xyz and leaves w at 1.
-                let min = [min.r, min.g, min.b, 1.0];
-                let max = [max.r, max.g, max.b, 1.0];
+                // `min`/`max` are the `Vector4`s `RangeNode.setup()` built;
+                // see `BufferSource::Range`.
+                let (min, max) = (*min, *max);
 
-                let stride = 4usize;
-                let mut range = vec![0f32; stride * count];
-
-                for (i, value) in range.iter_mut().enumerate() {
-                    let index = i % stride;
-                    let t = self.random.next();
-                    // `MathUtils.lerp( x, y, t ) = ( 1 - t ) * x + t * y`
-                    *value = ((1.0 - t) * min[index] + t * max[index]) as f32;
-                }
+                let range = fill_range(&mut self.random, min, max, count);
 
                 let buffer = self.create_buffer_init(
                     "three-rs range()",
@@ -1692,4 +1697,34 @@ fn pick_adapter(instance: &wgpu::Instance) -> wgpu::Adapter {
         .into_iter()
         .next()
         .expect("three-rs: no Vulkan adapter found")
+}
+
+/// `RangeNode.setup()`'s fill loop (`src/nodes/geometry/RangeNode.js:155`):
+///
+/// ```js
+/// for ( let i = 0; i < stride * count; i ++ ) {
+///     const index = i % stride;
+///     array[ i ] = MathUtils.lerp( min.getComponent( index ),
+///                                  max.getComponent( index ), Math.random() );
+/// }
+/// ```
+///
+/// One draw per component per instance — four per instance even when the range
+/// is a `vec3`, whose fourth component is a constant. A free function so a test
+/// can drive it in the order the program's vertex buffers report without a GPU.
+pub fn fill_range(
+    random: &mut DeterministicRandom,
+    min: [f64; 4],
+    max: [f64; 4],
+    count: usize,
+) -> Vec<f32> {
+    let stride = 4usize;
+    let mut range = vec![0f32; stride * count];
+    for (i, value) in range.iter_mut().enumerate() {
+        let index = i % stride;
+        let t = random.next();
+        // `MathUtils.lerp( x, y, t ) = ( 1 - t ) * x + t * y`
+        *value = ((1.0 - t) * min[index] + t * max[index]) as f32;
+    }
+    range
 }

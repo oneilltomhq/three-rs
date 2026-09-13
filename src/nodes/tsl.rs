@@ -44,6 +44,16 @@ thread_local! {
     /// `tangentView` / `bitangentView`, keyed by layer the same way.
     static TANGENT_VIEW: RefCell<HashMap<Option<&'static str>, (NodeRef, NodeRef)>> =
         RefCell::new(HashMap::new());
+    /// `builder.context.setupPositionView()` — `NodeMaterial.setup()` installs
+    /// it before either stage is flowed, and `SpriteNodeMaterial` overrides it
+    /// with the billboarded view position. `None` is the base class'
+    /// `modelViewMatrix.mul( positionLocal ).xyz`.
+    static POSITION_VIEW_VALUE: RefCell<Option<NodeRef>> = const { RefCell::new(None) };
+    /// `positionView` / `modelViewProjection` per context value — three.js' own
+    /// `Fn( … ).once()` cache is per build, so a second material in the same
+    /// process must not inherit the first one's node.
+    static POSITION_VIEW: RefCell<HashMap<Option<usize>, (NodeRef, NodeRef)>> =
+        RefCell::new(HashMap::new());
 }
 
 /// `NodeBuilder.getSubBuildProperty( name )`: inside a layer a var's name is
@@ -71,6 +81,43 @@ pub fn with_material_normal<R>(normal: Option<NodeRef>, f: impl FnOnce() -> R) -
     let out = f();
     NORMAL_VALUE.with(|v| *v.borrow_mut() = previous);
     out
+}
+
+/// `builder.context.setupPositionView = () => this.setupPositionView( builder )`
+/// (`NodeMaterial.js:472`), installed for the whole of the material's setup.
+/// `SpriteNodeMaterial` is the only override the ladder needs, and it returns a
+/// **`vec4`** rather than the base class' `vec3`, which is why `v_positionView`
+/// is `vec4<f32>` in the galaxy dump.
+pub fn with_material_position_view<R>(value: Option<NodeRef>, f: impl FnOnce() -> R) -> R {
+    let previous = POSITION_VIEW_VALUE.with(|v| v.replace(value));
+    let out = f();
+    POSITION_VIEW_VALUE.with(|v| *v.borrow_mut() = previous);
+    out
+}
+
+/// `positionView` and `modelViewProjection`, built together because both hang
+/// off the same `builder.context` entry.
+fn position_view_pair() -> (NodeRef, NodeRef) {
+    let value = POSITION_VIEW_VALUE.with(|v| v.borrow().clone());
+    let key = value.as_ref().map(|v| v.key());
+    if let Some(pair) = POSITION_VIEW.with(|m| m.borrow().get(&key).cloned()) {
+        return pair;
+    }
+    // `NodeMaterial.setupPositionView()`: `modelViewMatrix.mul( positionLocal ).xyz`.
+    let view = value.unwrap_or_else(|| {
+        model_view_matrix()
+            .mul(vec4_join(vec![position_local(), float(1.0)]))
+            .xyz()
+    });
+    let view = to_varying(Some("v_positionView"), view);
+    // `NodeMaterial.setupModelViewProjection()`.
+    let mvp = to_varying(
+        Some("v_modelViewProjection"),
+        camera_projection_matrix().mul(view.clone()),
+    );
+    let pair = (view, mvp);
+    POSITION_VIEW.with(|m| m.borrow_mut().insert(key, pair.clone()));
+    pair
 }
 
 // ---------------------------------------------------------------------------
@@ -334,6 +381,42 @@ pub fn length(v: impl Into<NodeRef>) -> NodeRef {
     math("length", vec![v.into()], Type::F32)
 }
 
+/// `TWO_PI` — `three.js/src/nodes/math/MathUtils.js`. A `float` const node, so
+/// `TWO_PI.div( 3 )` is emitted as the division, never folded.
+pub fn two_pi() -> NodeRef {
+    float(std::f64::consts::TAU)
+}
+
+/// `rotate( position, rotation )` — `RotateNode`'s `vec2` branch
+/// (`src/nodes/utils/RotateNode.js:106`):
+///
+/// ```ignore
+/// mat2( cos, sin, sin.negate(), cos ).mul( position )
+/// ```
+///
+/// `cos`/`sin` are one node each, used twice, so both become `nodeVarN` temps.
+/// The `vec3`/`vec4` branch (three chained `mat4` rotations) is not ported.
+pub fn rotate(position: impl Into<NodeRef>, rotation: impl Into<NodeRef>) -> NodeRef {
+    let (position, rotation) = (position.into(), rotation.into());
+    assert_eq!(
+        position.ty(),
+        Type::Vec2,
+        "three-rs: rotate() only ports RotateNode's vec2 branch"
+    );
+    let cos_angle = rotation.cos();
+    let sin_angle = rotation.sin();
+    join(
+        Type::Mat2,
+        vec![
+            cos_angle.clone(),
+            sin_angle.clone(),
+            sin_angle.negate(),
+            cos_angle,
+        ],
+    )
+    .mul(position)
+}
+
 /// `x.mod( y )` on floats. WGSL has no `%` for floats the way three.js' node
 /// system means it, so `MathNode` emits a helper; see `wgsl::MOD_FLOAT_SNIPPET`.
 pub fn mod_float(x: impl Into<NodeRef>, y: impl Into<NodeRef>) -> NodeRef {
@@ -566,6 +649,11 @@ impl NodeRef {
     pub fn pow(&self, other: impl Into<NodeRef>) -> NodeRef {
         math("pow", vec![self.clone(), other.into()], self.ty())
     }
+    /// `pow3( x )` — `MathNode`'s `POW3` is the multiplication chain
+    /// `x * x * x`, not a `pow()` call.
+    pub fn pow3(&self) -> NodeRef {
+        self.mul(self.clone()).mul(self.clone())
+    }
     pub fn max(&self, other: impl Into<NodeRef>) -> NodeRef {
         math("max", vec![self.clone(), other.into()], self.ty())
     }
@@ -604,6 +692,9 @@ impl NodeRef {
     }
     pub fn yz(&self) -> NodeRef {
         swizzle(self.clone(), "yz")
+    }
+    pub fn zw(&self) -> NodeRef {
+        swizzle(self.clone(), "zw")
     }
     pub fn xyz(&self) -> NodeRef {
         swizzle(self.clone(), "xyz")
@@ -811,6 +902,18 @@ accessor!(
     )
 );
 accessor!(
+    /// `materialRotation` — `SpriteMaterial.rotation`, the angle
+    /// `SpriteNodeMaterial.setupPositionView()` rotates the quad by when the
+    /// material sets no `rotationNode`.
+    material_rotation,
+    uniform(
+        UniformSource::MaterialRotation,
+        Type::F32,
+        UniformGroup::Object,
+        None
+    )
+);
+accessor!(
     /// `materialShininess`.
     material_shininess,
     uniform(
@@ -935,16 +1038,11 @@ accessor!(
         camera_view_matrix().mul(model_world_matrix())
     )
 );
-accessor!(
-    /// `positionView` — `NodeMaterial.setupPositionView()`.
-    position_view,
-    to_varying(
-        Some("v_positionView"),
-        model_view_matrix()
-            .mul(vec4_join(vec![position_local(), float(1.0)]))
-            .xyz()
-    )
-);
+/// `positionView` — `Position.js`' `Fn( builder =>
+/// builder.context.setupPositionView() ).once( [ 'POSITION', 'VERTEX' ] )`.
+pub fn position_view() -> NodeRef {
+    position_view_pair().0
+}
 accessor!(
     /// `positionViewDirection`.
     position_view_direction,
@@ -1077,14 +1175,10 @@ accessor!(
         .normalize()
     )
 );
-accessor!(
-    /// `modelViewProjection`.
-    model_view_projection,
-    to_varying(
-        Some("v_modelViewProjection"),
-        camera_projection_matrix().mul(position_view())
-    )
-);
+/// `modelViewProjection` — `builder.context.setupModelViewProjection()`.
+pub fn model_view_projection() -> NodeRef {
+    position_view_pair().1
+}
 accessor!(
     /// `reflectVector` — `ReflectVectorNode`.
     reflect_vector,
@@ -1268,35 +1362,121 @@ pub fn instance_matrix(count: usize) -> NodeRef {
     )
 }
 
+/// One end of a `range( min, max )`, i.e. the value `RangeNode` reads the
+/// `Vector4` and the node type out of.
+///
+/// `RangeNode.setup()` (`src/nodes/geometry/RangeNode.js:122`) widens both ends
+/// to a `Vector4` by three different rules, and they do not agree on `w`:
+///
+/// * a scalar splats into all four components,
+/// * a `Color` becomes `( r, g, b, 1 )`,
+/// * any other vector becomes `( x, y, z || 0, w || 0 )`.
+///
+/// So `range( vec3( -1 ), vec3( 1 ) )` has `w = 0` at *both* ends — the fourth
+/// random draw per instance is still consumed, but it lands on a constant 0.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum RangeValue {
+    /// `range( 0, 1 )` — `min.setScalar( value )`.
+    Scalar(f64),
+    /// `range( new Color( … ), … )` — `min.set( r, g, b, 1 )`.
+    Color(Color),
+    /// `range( vec3( -1 ), vec3( 1 ) )` — `min.set( x, y, z, 0 )`.
+    Vec3([f64; 3]),
+}
+
+impl From<f64> for RangeValue {
+    fn from(v: f64) -> Self {
+        RangeValue::Scalar(v)
+    }
+}
+
+impl From<Color> for RangeValue {
+    fn from(v: Color) -> Self {
+        RangeValue::Color(v)
+    }
+}
+
+impl From<crate::math::Vector3> for RangeValue {
+    fn from(v: crate::math::Vector3) -> Self {
+        RangeValue::Vec3([v.x, v.y, v.z])
+    }
+}
+
+impl RangeValue {
+    /// The `Vector4` `RangeNode.setup()` lerps between.
+    fn vector4(self) -> [f64; 4] {
+        match self {
+            RangeValue::Scalar(v) => [v, v, v, v],
+            RangeValue::Color(c) => [c.r, c.g, c.b, 1.0],
+            RangeValue::Vec3([x, y, z]) => [x, y, z, 0.0],
+        }
+    }
+
+    /// `RangeNode.getNodeType()` — the value's own type, which is what the
+    /// `vec4` the buffer holds is `convert()`ed down to.
+    fn ty(self) -> Type {
+        match self {
+            RangeValue::Scalar(_) => Type::F32,
+            RangeValue::Color(_) | RangeValue::Vec3(_) => Type::Vec3,
+        }
+    }
+}
+
 /// `range( min, max )` — `RangeNode` on an `InstancedMesh` resolves to one
 /// `vec4` per instance, `lerp( min[c], max[c], Math.random() )` per component.
-pub fn range(min: Color, max: Color, count: usize, index: NodeRef) -> NodeRef {
+/// The returned node is the raw `vec4`; [`instanced_range`] narrows it.
+pub fn range(min: [f64; 4], max: [f64; 4], count: usize, index: NodeRef) -> NodeRef {
     buffer_element(BufferSource::Range { min, max }, Type::Vec4, count, index)
 }
 
 /// `RangeNode.setup()` on an object with `count > 1`
 /// (`src/nodes/geometry/RangeNode.js:122`): the same uniform-or-attribute
-/// branch as [`instance_matrix`], on `count * 4 * 4` bytes.
+/// branch as [`instance_matrix`], on `count * 4 * 4` bytes, then
+/// `.convert( nodeType )` — which for a `vec4` source is a swizzle, so a
+/// `range( 0, 1 )` reads `…​.x` and a `range( vec3( -1 ), vec3( 1 ) )` reads
+/// `….xyz`.
 ///
 /// Each call builds its own buffer node, so two `range( 0, 1 )` calls are two
 /// buffers with two different random fills — Three's behaviour, and the thing a
 /// value-keyed cache would silently collapse.
-pub fn instanced_range(min: Color, max: Color, count: usize) -> NodeRef {
+pub fn instanced_range(
+    min: impl Into<RangeValue>,
+    max: impl Into<RangeValue>,
+    count: usize,
+) -> NodeRef {
+    let (min, max) = (min.into(), max.into());
+    let ty = min.ty();
     let uniform_buffer_size = count * 4 * 4;
 
-    if uniform_buffer_size <= crate::nodes::builder::uniform_buffer_limit() {
+    let vec4 = if uniform_buffer_size <= crate::nodes::builder::uniform_buffer_limit() {
         // `buffer( array, 'vec4', count ).element( instanceIndex )`. The index
         // goes through a varying because the port reads the buffer in the
         // fragment stage; see `docs/nodes.md` §9.
-        return range(min, max, count, to_varying(None, instance_index()));
-    }
+        range(
+            min.vector4(),
+            max.vector4(),
+            count,
+            to_varying(None, instance_index()),
+        )
+    } else {
+        let buffer = Rc::new(InstanceBuffer {
+            source: BufferSource::Range {
+                min: min.vector4(),
+                max: max.vector4(),
+            },
+            count,
+            item_size: 4,
+        });
+        instanced_attribute(&buffer, 0, Type::Vec4)
+    };
 
-    let buffer = Rc::new(InstanceBuffer {
-        source: BufferSource::Range { min, max },
-        count,
-        item_size: 4,
-    });
-    instanced_attribute(&buffer, 0, Type::Vec4)
+    // `ConvertNode` — `NodeBuilder.format( snippet, 'vec4', nodeType )`.
+    match ty {
+        Type::F32 => vec4.x(),
+        Type::Vec2 => vec4.xy(),
+        Type::Vec3 => vec4.xyz(),
+        _ => vec4,
+    }
 }
 
 // ---------------------------------------------------------------------------
