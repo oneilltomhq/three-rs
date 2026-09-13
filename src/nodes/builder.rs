@@ -664,8 +664,12 @@ impl NodeBuilder {
             Node::Assign { target, value } => {
                 let (target, value) = (target.clone(), value.clone());
                 let want = target.ty();
-                let snippet = self.format(&value, want);
+                // `AssignNode.generate()` generates the target first: a var's
+                // lazy initialiser therefore lands above the statement that
+                // first assigns to it, and the temps the value needs are
+                // numbered after it.
                 let lhs = self.generate(&target);
+                let snippet = self.format(&value, want);
                 self.emit(format!("{lhs} = {snippet};"));
                 lhs
             }

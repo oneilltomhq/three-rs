@@ -1105,18 +1105,34 @@ macro_rules! prop {
 }
 
 prop!(output_property, "Output", Type::Vec4);
-prop!(indirect_diffuse, "indirectDiffuse", Type::Vec3);
-prop!(direct_diffuse, "directDiffuse", Type::Vec3);
 prop!(total_diffuse, "totalDiffuse", Type::Vec3);
-prop!(direct_specular, "directSpecular", Type::Vec3);
-prop!(indirect_specular, "indirectSpecular", Type::Vec3);
 prop!(total_specular, "totalSpecular", Type::Vec3);
 prop!(outgoing_light, "outgoingLight", Type::Vec3);
-prop!(ambient_occlusion, "ambientOcclusion", Type::F32);
 prop!(shininess, "Shininess", Type::F32);
 prop!(specular_color, "SpecularColor", Type::Vec3);
 prop!(emissive_color, "EmissiveColor", Type::Vec3);
-prop!(irradiance, "irradiance", Type::Vec3);
+
+/// `LightingContextNode.getContext()`'s accumulators. These are **vars**, not
+/// properties: three.js builds them as `vec3().toVar( 'directDiffuse' )` /
+/// `float( 1 ).toVar( 'ambientOcclusion' )`, so each one's initialiser is
+/// emitted where the flow first reads it rather than up front — which is why the
+/// dumps interleave `directSpecular = vec3<f32>( 0.0, 0.0, 0.0 )` with the
+/// light's own statements.
+macro_rules! lighting_var {
+    ($name:ident, $wgsl:literal, $init:expr) => {
+        pub fn $name() -> NodeRef {
+            thread_local! { static CELL: Lazy<NodeRef> = Lazy::new(); }
+            CELL.with(|c| c.get(|| to_var_untagged($wgsl, $init)))
+        }
+    };
+}
+
+lighting_var!(direct_diffuse, "directDiffuse", vec3(0.0, 0.0, 0.0));
+lighting_var!(direct_specular, "directSpecular", vec3(0.0, 0.0, 0.0));
+lighting_var!(indirect_diffuse, "indirectDiffuse", vec3(0.0, 0.0, 0.0));
+lighting_var!(indirect_specular, "indirectSpecular", vec3(0.0, 0.0, 0.0));
+lighting_var!(irradiance, "irradiance", vec3(0.0, 0.0, 0.0));
+lighting_var!(ambient_occlusion, "ambientOcclusion", float(1.0));
 
 // ---------------------------------------------------------------------------
 // textures

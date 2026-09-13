@@ -26,7 +26,7 @@ pub use render_target::{RenderTarget, RenderTargetInner, RenderTargetOptions};
 use crate::cameras::{OrthographicCamera, PerspectiveCamera};
 use crate::core::{BufferGeometry, Index};
 use crate::geometries::{quad_geometry, sphere_geometry};
-use crate::lights::PointLight;
+use crate::lights::{LightKind, PointLight};
 use crate::materials::{self, MeshBasicNodeMaterial, SetupContext, Side};
 use crate::math::{Color, Matrix4, Vector2};
 use crate::nodes::node::{BufferSource, TextureSource};
@@ -310,6 +310,46 @@ impl Renderer {
             });
         }
 
+        // `LightsNode.setupLightsNode()` starts with `sortLights( lights )`,
+        // `lights.sort( ( a, b ) => a.id - b.id )` — so the order the lighting
+        // nodes are set up in, and therefore the order
+        // `UniformSource::Light*( i )` indexes, is creation order, not the
+        // `RenderList.lightsArray` traversal order this list arrives in.
+        let mut sorted_lights = render_list.lights.clone();
+        sorted_lights.sort_by_key(|node| node.borrow().id);
+
+        // `LightsNode.setupLights()`: each light resolves to its colour scaled
+        // by intensity, plus — for a punctual light — its position in view
+        // space, its cutoff distance and its decay.
+        let lights: Vec<LightState> = sorted_lights
+            .iter()
+            .map(|node| {
+                let object = node.borrow();
+                let light = object
+                    .light()
+                    .expect("three-rs: the light list only holds lights");
+
+                let mut view_position = PointLight::world_position(&object.matrix_world);
+                view_position.apply_matrix4(&camera.matrix_world_inverse);
+
+                let c = light.light().color;
+                let intensity = light.light().intensity;
+                LightState {
+                    color: Color::new(c.r * intensity, c.g * intensity, c.b * intensity),
+                    view_position,
+                    distance: light.point().map_or(0.0, |light| light.distance),
+                    decay: light.point().map_or(0.0, |light| light.decay),
+                }
+            })
+            .collect();
+
+        // `builder.lightsNode.getLightNodes()` — which lighting node each light
+        // resolves to, in the same sorted order.
+        let light_kinds: Vec<LightKind> = sorted_lights
+            .iter()
+            .map(|node| node.borrow().light().unwrap().kind())
+            .collect();
+
         for item in render_list.items() {
             let object = item.node.borrow();
             let mesh = object
@@ -337,7 +377,7 @@ impl Renderer {
                 setup: SetupContext {
                     instance_count: instance_matrix.as_ref().map(|_| instance_count as usize),
                     instanced: instance_matrix.is_some(),
-                    light_count: render_list.lights.len(),
+                    lights: light_kinds.clone(),
                 },
                 fog: scene.fog_node.clone(),
                 model_world: item.matrix_world,
@@ -353,34 +393,6 @@ impl Renderer {
             Some(Background::Color(Color { r, g, b })) => [*r, *g, *b, 1.0],
             _ => self.clear_color,
         };
-
-        // `LightsNode.setupLights()`: each light resolves to its colour scaled
-        // by intensity plus its position in view space. The list is
-        // `RenderList.lightsArray` — scene-traversal order, which is the order
-        // `LightsNode.setLights()` receives and which `UniformSource::Light*( i )`
-        // indexes.
-        let lights: Vec<LightState> = render_list
-            .lights
-            .iter()
-            .map(|node| {
-                let object = node.borrow();
-                let light = object
-                    .light()
-                    .expect("three-rs: the light list only holds lights");
-
-                let mut view_position = PointLight::world_position(&object.matrix_world);
-                view_position.apply_matrix4(&camera.matrix_world_inverse);
-
-                let c = light.light.color;
-                let intensity = light.light.intensity;
-                LightState {
-                    color: Color::new(c.r * intensity, c.g * intensity, c.b * intensity),
-                    view_position,
-                    distance: light.distance,
-                    decay: light.decay,
-                }
-            })
-            .collect();
 
         let camera_uniforms = UniformContext {
             camera_projection: camera.projection_matrix,

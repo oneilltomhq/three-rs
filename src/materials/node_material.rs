@@ -4,6 +4,7 @@
 
 use super::phong::{self, PointLightUniforms};
 use super::{MaterialKind, MeshBasicNodeMaterial};
+use crate::lights::LightKind;
 use crate::nodes::node::Type;
 use crate::nodes::tsl::*;
 use crate::nodes::tsl::FogNode;
@@ -11,7 +12,7 @@ use crate::nodes::{MaterialFlow, NodeRef};
 
 /// The per-render-object facts three.js reads off `builder.object` and
 /// `builder.geometry` during setup.
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct SetupContext {
     /// `Some(count)` when the object is an `InstancedMesh`, which is what makes
     /// `NodeMaterial.setupPosition()` insert the `InstanceNode` transform.
@@ -19,11 +20,11 @@ pub struct SetupContext {
     /// `InstancedMesh.instanceColor` is present, so `range()` resolves against
     /// the instance index.
     pub instanced: bool,
-    /// How many lights the pass has (`Scene.lights.len()`), i.e. the default
-    /// `LightsNode` list when the material sets no `lights_node`. Kept as a
-    /// count rather than a list so `SetupContext` stays `Copy`: a material's
-    /// selective `lights([ … ])` subset lives on the material itself.
-    pub light_count: usize,
+    /// The pass' lights, in `sortLights()` order: what each of them is, which
+    /// is what `LightsNode` switches on to pick the lighting node. This is the
+    /// default `LightsNode` list when the material sets no `lights_node`; a
+    /// material's selective `lights( [ … ] )` subset indexes into it.
+    pub lights: Vec<crate::lights::LightKind>,
 }
 
 /// `vec4( node )` the way `setupDiffuseColor` builds it: a scalar splats, a
@@ -108,21 +109,16 @@ fn setup_inner(
 
         let outgoing = if let Some(env_map) = &material.env_map {
             // `BasicLightingModel` with an indirect environment contribution.
-            fragment.push(indirect_diffuse().assign(vec3(0.0, 0.0, 0.0)));
             fragment.push(indirect_diffuse().assign(
                 vec4_join(vec![indirect_diffuse(), float(1.0)])
                     .add(vec4(1.0, 1.0, 1.0, 0.0))
                     .xyz(),
             ));
-            fragment.push(ambient_occlusion().assign(float(1.0)));
             fragment
                 .push(indirect_diffuse().assign(indirect_diffuse().mul(ambient_occlusion())));
             fragment
                 .push(indirect_diffuse().assign(indirect_diffuse().mul(diffuse_color().xyz())));
-            fragment.push(direct_diffuse().assign(vec3(0.0, 0.0, 0.0)));
             fragment.push(total_diffuse().assign(direct_diffuse().add(indirect_diffuse())));
-            fragment.push(direct_specular().assign(vec3(0.0, 0.0, 0.0)));
-            fragment.push(indirect_specular().assign(vec3(0.0, 0.0, 0.0)));
             fragment.push(total_specular().assign(direct_specular().add(indirect_specular())));
             fragment.push(outgoing_light().assign(total_diffuse().add(total_specular())));
 
@@ -296,21 +292,31 @@ fn setup_phong(
 
     let outgoing = if material.lights {
         // `LightsNode`: the scene's lights, or the selective subset the
-        // material's `lights( [ … ] )` node names.
+        // material's `lights( [ … ] )` node names. Either way the list is in
+        // `sortLights()` order, so this is also the order the lighting nodes'
+        // statements land in.
         let indices: Vec<usize> = match &material.lights_node {
             Some(subset) => subset.clone(),
-            None => (0..ctx.light_count).collect(),
+            None => (0..ctx.lights.len()).collect(),
         };
 
-        fragment.push(direct_diffuse().assign(vec3(0.0, 0.0, 0.0)));
-        fragment.push(direct_specular().assign(vec3(0.0, 0.0, 0.0)));
+        // `LightingModel.start()`: `lightsNode.setupLights()` — every light's
+        // own `setup()`, in order — then `indirect()`. The accumulators are
+        // `toVar()`s, so their zero initialisers are emitted where each is
+        // first read, not up front.
         for index in indices {
-            phong::direct_point_light(&PointLightUniforms::at(index), fragment);
+            match ctx.lights.get(index).copied() {
+                // `AmbientLightNode.setup()`:
+                // `context.irradiance.addAssign( this.colorNode )`.
+                Some(LightKind::Ambient) => fragment
+                    .push(irradiance().assign(irradiance().add(light_color_intensity(index)))),
+                // `PointLightNode.setup()` → `PhongLightingModel.direct()`.
+                _ => phong::direct_point_light(&PointLightUniforms::at(index), fragment),
+            }
         }
 
-        // The tail every lit material shares.
-        fragment.push(indirect_diffuse().assign(vec3(0.0, 0.0, 0.0)));
-        fragment.push(irradiance().assign(vec3(0.0, 0.0, 0.0)));
+        // `PhongLightingModel.indirect()` and the `finish` tail every lit
+        // material shares.
         fragment.push(indirect_diffuse().assign(
             vec4_join(vec![indirect_diffuse(), float(1.0)])
                 .add(vec4_join(vec![irradiance(), float(1.0)]).mul(
@@ -318,10 +324,8 @@ fn setup_phong(
                 ))
                 .xyz(),
         ));
-        fragment.push(ambient_occlusion().assign(float(1.0)));
         fragment.push(indirect_diffuse().assign(indirect_diffuse().mul(ambient_occlusion())));
         fragment.push(total_diffuse().assign(direct_diffuse().add(indirect_diffuse())));
-        fragment.push(indirect_specular().assign(vec3(0.0, 0.0, 0.0)));
         fragment.push(total_specular().assign(direct_specular().add(indirect_specular())));
         fragment.push(outgoing_light().assign(total_diffuse().add(total_specular())));
         outgoing_light()
