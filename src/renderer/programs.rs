@@ -18,6 +18,10 @@ pub struct RenderState {
     pub side: Side,
     pub depth_test: bool,
     pub depth_write: bool,
+    /// `WebGPUPipelineUtils.createRenderPipeline()`'s `materialBlending`, i.e.
+    /// `MeshBasicNodeMaterial::blend_state()`. Part of the key because an
+    /// additive and an opaque pipeline share one program.
+    pub blend: Option<wgpu::BlendState>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -85,32 +89,39 @@ impl Program {
         device: &wgpu::Device,
         state: RenderState,
     ) -> wgpu::RenderPipeline {
-        // One vertex buffer per attribute, in the order the node builder
-        // assigned `@location`s.
-        let attributes: Vec<[wgpu::VertexAttribute; 1]> = self
-            .node
-            .attributes
+        // `WebGPUAttributeUtils.createShaderVertexBuffers()`: the attributes
+        // grouped into buffers — one per geometry attribute, one per instanced
+        // buffer, in first-use order. The layouts are computed from the same
+        // `AttributeSlot`s the renderer binds from, so a slot and its buffer
+        // cannot disagree.
+        let descs = self.node.vertex_buffers();
+
+        let attributes: Vec<Vec<wgpu::VertexAttribute>> = descs
             .iter()
-            .enumerate()
-            .map(|(location, (_, ty))| {
-                [wgpu::VertexAttribute {
-                    format: vertex_format(*ty),
-                    offset: 0,
-                    shader_location: location as u32,
-                }]
+            .map(|desc| {
+                desc.attributes
+                    .iter()
+                    .map(|(location, ty, offset)| wgpu::VertexAttribute {
+                        format: vertex_format(*ty),
+                        offset: *offset,
+                        shader_location: *location,
+                    })
+                    .collect()
             })
             .collect();
 
-        let buffers: Vec<Option<wgpu::VertexBufferLayout>> = self
-            .node
-            .attributes
+        let buffers: Vec<Option<wgpu::VertexBufferLayout>> = descs
             .iter()
             .zip(attributes.iter())
-            .map(|((_, ty), attribute)| {
+            .map(|(desc, attributes)| {
                 Some(wgpu::VertexBufferLayout {
-                    array_stride: (ty.components() * 4) as u64,
-                    step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: attribute.as_slice(),
+                    array_stride: desc.array_stride,
+                    step_mode: if desc.instanced {
+                        wgpu::VertexStepMode::Instance
+                    } else {
+                        wgpu::VertexStepMode::Vertex
+                    },
+                    attributes: attributes.as_slice(),
                 })
             })
             .collect();
@@ -130,8 +141,9 @@ impl Program {
                 compilation_options: Default::default(),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: state.color_format,
-                    // Opaque material: three.js emits no blend state.
-                    blend: None,
+                    // `undefined` for an opaque `NormalBlending` material, which
+                    // is every rung up to 9; see `materials::blending`.
+                    blend: state.blend,
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
             }),

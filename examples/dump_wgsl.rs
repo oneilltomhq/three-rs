@@ -23,13 +23,56 @@ fn show_fog(
     println!("{}", program.vertex_wgsl);
     println!("########## {label} — fragment");
     println!("{}", program.fragment_wgsl);
-    println!("########## {label} — attributes {:?}", program.attributes);
+    // Names and types only: an `AttributeSlot`'s source carries an `Rc`, and a
+    // `BindingDesc::Buffer`'s `id` is a heap address, so printing either
+    // verbatim would make two runs of this tool differ.
+    let attributes: Vec<(&str, three_rs::nodes::Type)> = program
+        .attributes
+        .iter()
+        .map(|slot| (slot.name.as_str(), slot.ty))
+        .collect();
+    println!("########## {label} — attributes {attributes:?}");
     for (i, g) in program.groups.iter().enumerate() {
         println!("  group {i}:");
         for (b, d) in g.iter().enumerate() {
-            println!("    {b}: {d:?}");
+            println!("    {b}: {}", strip_ids(&format!("{d:?}")));
         }
     }
+    // The grouped vertex buffer layouts, printed only when something is
+    // instanced — for a plain geometry material they are one buffer per
+    // attribute and the attribute list above already says it.
+    let buffers = program.vertex_buffers();
+    if buffers.iter().any(|desc| desc.instanced) {
+        println!("  vertex buffers:");
+        for (slot, desc) in buffers.iter().enumerate() {
+            let kind = match &desc.source {
+                three_rs::nodes::builder::VertexBufferSource::Geometry(name) => name.to_string(),
+                three_rs::nodes::builder::VertexBufferSource::Instance(buffer) => {
+                    format!("{:?} x{}", buffer.source, buffer.count)
+                }
+            };
+            println!(
+                "    slot {slot}: stride {} step {} {kind} attributes {:?}",
+                desc.array_stride,
+                if desc.instanced { "instance" } else { "vertex" },
+                desc.attributes
+            );
+        }
+    }
+}
+
+/// `id: 94139…, ` out of a `BindingDesc` debug line.
+fn strip_ids(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut rest = line;
+    while let Some(at) = rest.find("id: ") {
+        out.push_str(&rest[..at]);
+        let after = &rest[at + 4..];
+        let end = after.find(", ").map(|i| i + 2).unwrap_or(after.len());
+        rest = &after[end..];
+    }
+    out.push_str(rest);
+    out
 }
 
 fn main() {
@@ -163,4 +206,32 @@ fn main() {
     sphere.lights = false;
     sphere.color_node = Some(Color::from_hex(0x0040ff).into());
     show_fog("phong_light_sphere", &sphere, four, Some(&fog));
+
+    // The instanced-attribute path: the same material as rung 2's, with an
+    // instance count whose matrices (2000 * 64 = 128000 bytes) and whose
+    // `range()` (2000 * 16 = 32000 bytes) straddle the 64 KiB uniform buffer
+    // limit, so the matrix becomes four instanced `vec4` attributes and the
+    // range stays a uniform buffer. Nothing in the ladder reaches this yet;
+    // rung 13 (20000 sprites) and sdf-text's glyph quads do.
+    const MANY: usize = 2000;
+    let mut many = MeshBasicNodeMaterial::new();
+    many.color_node = Some(mix(
+        normal_world(),
+        three_rs::materials::instanced_range(
+            Color::new(0.0, 1.0, 0.0),
+            Color::new(0.0, 0.0, 1.0),
+            MANY,
+        )
+        .xyz(),
+        osc_sine(time().mul(float(0.1))),
+    ));
+    show(
+        "instance_mesh_2000",
+        &many,
+        SetupContext {
+            instance_count: Some(MANY),
+            instanced: true,
+            light_count: 0,
+        },
+    );
 }

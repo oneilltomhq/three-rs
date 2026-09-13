@@ -336,12 +336,14 @@ differences, each verified to be pixel-neutral.
   dumps even where the structure matches. Semantic names (`DiffuseColor`,
   `positionLocal`, `modelViewMatrix`, `v_normalViewGeometry`,
   `cameraProjectionMatrix`) do match.
-* **`DiffuseColor.w = 1.0`.** Three emits it for three of the four examples but
-  not for `webgpu_depth_texture`'s scene material, despite identical material
-  settings (`transparent: false`, `blending: NormalBlending`, so
-  `builder.isOpaque()` is true) — unexplained. This port emits it uniformly. It
-  is pixel-neutral here because `materialOpacity` is 1 in every rung-1–4
-  material, so the preceding `w = w * opacity` already leaves 1.
+* **`DiffuseColor.w = 1.0`.** Emitted under `builder.isOpaque()`, as
+  `setupDiffuseColor()` does (see §9.1). Three emits it for three of the four
+  examples but not for `webgpu_depth_texture`'s scene material, despite
+  identical material settings (`transparent: false`, `blending:
+  NormalBlending`, so `isOpaque()` is true there too) — unexplained; this port
+  emits it for all four. It is pixel-neutral here because `materialOpacity` is 1
+  in every rung-1–4 material, so the preceding `w = w * opacity` already
+  leaves 1.
 * ~~**Output-pass depth attachment.**~~ Withdrawn at rung 9: the port's canvas
   passes do carry the `depth24plus` attachment three.js gives them
   (`canvas_pass( true )`), and the pipeline declares `less-equal` /
@@ -363,9 +365,111 @@ differences, each verified to be pixel-neutral.
 * **Instance buffer binding indices.** The two bindings of the instanced
   material's object group are swapped relative to the dump; the layout is built
   from the same descriptors the shader is, so they cannot disagree.
+* **Attribute `@location` order.** On the instanced-attribute path (§9.2) this
+  port assigns locations in flow order, so the four instance-matrix `vec4`s take
+  0–3 and `position` / `normal` follow; Three's dump puts the geometry
+  attributes first. Same class as the binding-index swap: the vertex buffer
+  layouts come from the same `AttributeSlot`s the shader's declarations do.
 * **Matrix column index literal.** `m[ 0u ]` where Three prints `m[ 0 ]`.
 * **JPEG decode.** `TextureLoader` decodes through `zune-jpeg`; Chromium uses
   libjpeg-turbo, so the inverse DCT rounds differently. Measured on
   `uv_grid_opengl.jpg` against the browser's own decode: 34030 of 4194304
   channels differ by 1, 4428 by 2, 16 by 3; worst per-texel RGB distance 3.46,
   against a comparator threshold of 44.
+
+## 9. Blending, and the instanced-attribute path
+
+Two pieces of shared renderer work that no rung 1–9 material exercises, built
+for rung 13 (`webgpu_tsl_galaxy`), sdf-text, and any scene past ~1024 instances.
+
+### 9.1 Blend state
+
+`src/materials/blending.rs` is `WebGPUPipelineUtils`' `_getBlending()` /
+`_getBlendFactor()` / `_getBlendOperation()`, with `constants.js`' blending
+enums. The material carries Three's fields — `blending` (default
+`NormalBlending`), `transparent`, `premultiplied_alpha`, `alpha_to_coverage`,
+and the six `blendSrc` / `blendDst` / `blendEquation` (+`Alpha`) slots for
+`CustomBlending`.
+
+The gate is Three's, in `_getBlending()`:
+
+```
+blending !== NoBlending && ( blending !== NormalBlending || transparent )
+```
+
+so an opaque `NormalBlending` material gets no blend state at all — which is why
+the rungs' generated pipelines are unchanged. `RenderState` carries
+`Option<wgpu::BlendState>` and it is part of the pipeline cache key, so one
+program can serve an opaque and a transparent draw.
+
+The table, with `premultipliedAlpha: false` on the left (Three's default) and
+`true` on the right, as `( colorSrc, colorDst, colorOp ) / ( alphaSrc, alphaDst,
+alphaOp )`:
+
+| blending | non-premultiplied | premultiplied |
+|---|---|---|
+| `No` | no blend state | no blend state |
+| `Normal` | `(SrcAlpha, OneMinusSrcAlpha, Add)` / `(One, OneMinusSrcAlpha, Add)` | `(One, OneMinusSrcAlpha, Add)` / `(One, OneMinusSrcAlpha, Add)` |
+| `Additive` | `(SrcAlpha, One, Add)` / `(One, One, Add)` | `(One, One, Add)` / `(One, One, Add)` |
+| `Subtractive` | unsupported — Three logs an error and leaves the blend undefined | `(Zero, OneMinusSrc, Add)` / `(Zero, One, Add)` |
+| `Multiply` | unsupported — same | `(Zero, Src, Add)` / `(Zero, SrcAlpha, Add)` |
+| `Custom` | the material's own factors and equations, `blendSrcAlpha ?? blendSrc` etc. | same |
+
+`blending.rs`' unit tests assert every row and every factor / equation mapping
+against that source, so a future edit cannot drift from it silently.
+
+`material.is_opaque()` is `NodeBuilder.isOpaque()`: `transparent === false &&
+blending === NormalBlending && alphaToCoverage === false`. At r186 `alphaHash`
+is **not** part of it (it is a separate discard). `setupDiffuseColor()` emits
+`DiffuseColor.w = 1.0` only when that is true, so a transparent material's
+per-fragment alpha now reaches the output and the transparent render list (drawn
+after opaque, back to front — `reverse_painter_sort_stable`) shows it.
+
+### 9.2 `range()` and `instanceMatrix` as instanced vertex attributes
+
+`RangeNode.setup()` and `createInstanceMatrixNode()` both branch on
+`uniformBufferSize <= builder.getUniformBufferLimit()`, the limit being
+`device.limits.maxUniformBufferBindingSize` — 65536 in Chrome and under wgpu's
+`Limits::default()`, so the port branches exactly where Three's dumps do:
+
+| node | uniform-buffer size | branches at |
+|---|---|---|
+| `instanceMatrix` | `max( count, 1 ) * 16 * 4` | 1024 instances |
+| `range( min, max )` | `count * 4 * 4` | 4096 instances |
+
+Under the limit: a uniform buffer read as `buffer( array, type, count ).element(
+instanceIndex )`, which is what rung 2 draws (1000 instances). Over it:
+
+* the matrices become `new InstancedInterleavedBuffer( array, 16, 1 )`, read as
+  four `instancedBufferAttribute( interleaved, 'vec4', 16, offset )` views at
+  float offsets 0/4/8/12 and joined back with `mat4( … )` — one vertex buffer,
+  `array_stride` 64, attribute offsets 0/16/32/48, `VertexStepMode::Instance`;
+* a `range()` becomes one instanced `vec4` attribute, `array_stride` 16. Because
+  the port reads it in the fragment stage, `AttributeNode.generate()`'s rule
+  applies — an attribute read outside the vertex stage becomes `varying( this )`
+  — so the whole `vec4` crosses through a generated varying rather than a
+  flat `instanceIndex` lookup.
+
+`Node::InstancedAttribute { buffer: Rc<InstanceBuffer>, offset, ty }` is the node.
+**`Rc` identity is the buffer's identity everywhere**: the builder names
+attributes by `( Rc::as_ptr( buffer ), offset )`, `BindingDesc::Buffer` carries
+the source node's `id`, and the renderer caches one GPU buffer per id, uploaded
+once. So two `range( 0, 1 )` calls are two buffers with two different random
+fills, exactly as two `RangeNode`s are in three.js — a cache keyed on the
+*values* (`min`, `max`, `count`) would collapse them and hand every instance the
+first node's numbers, with no error anywhere.
+
+Buffer identity is deliberately **not** in `cache_key`: the instance matrix's
+identity changes every frame and the generated WGSL does not depend on it.
+
+`NodeProgram::vertex_buffers()` is `WebGPUAttributeUtils.createShaderVertexBuffers()`:
+the `@location`-ordered attributes grouped into layouts in first-use order, one
+buffer per geometry attribute and one per `InstanceBuffer`. The renderer resolves
+*both* bind groups and vertex buffers from the per-draw `NodeProgram`, never from
+the WGSL-keyed program cache, so two materials with identical shaders and
+different buffers cannot alias.
+
+Coverage: `tests/nodes_instanced_attributes.rs` pins each branch on both sides of
+both limits and the two-`range()` rule; `tests/renderer_instanced.rs` draws 1000,
+2000 and 5000 instances headless and counts pixels, because no rung crosses a
+limit.

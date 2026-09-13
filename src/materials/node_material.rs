@@ -103,8 +103,12 @@ fn setup_inner(
                 .assign(diffuse_color().w().mul(material_opacity())),
         );
         // `builder.isOpaque()` — the material is not transparent, blending is
-        // NormalBlending and alphaToCoverage is off.
-        fragment.push(diffuse_color().w().assign(float(1.0)));
+        // NormalBlending and alphaToCoverage is off. A transparent or blended
+        // material keeps its per-fragment alpha instead, all the way to
+        // `Output`.
+        if material.is_opaque() {
+            fragment.push(diffuse_color().w().assign(float(1.0)));
+        }
 
         let outgoing = if let Some(env_map) = &material.env_map {
             // `BasicLightingModel` with an indirect environment contribution.
@@ -233,11 +237,11 @@ fn math_call(name: &'static str, m: NodeRef) -> NodeRef {
     })
 }
 
-/// `RangeNode` on an instanced mesh: one `vec4` per instance indexed by a flat
-/// `instanceIndex` varying.
+/// `RangeNode` on an instanced mesh: one `vec4` per instance, from a uniform
+/// buffer indexed by a flat `instanceIndex` varying or, past the uniform buffer
+/// limit, from an instanced vertex attribute.
 pub fn instanced_range(min: crate::math::Color, max: crate::math::Color, count: usize) -> NodeRef {
-    let index = to_varying(None, instance_index());
-    range(min, max, count, index)
+    crate::nodes::tsl::instanced_range(min, max, count)
 }
 
 /// `Renderer._renderOutput()`'s material: the framebuffer texture sampled at
@@ -281,7 +285,9 @@ fn setup_phong(
             .assign(diffuse_color().w().mul(material_opacity())),
     );
     // `builder.isOpaque()`
-    fragment.push(diffuse_color().w().assign(float(1.0)));
+    if material.is_opaque() {
+        fragment.push(diffuse_color().w().assign(float(1.0)));
+    }
 
     // setupVariants: `PhongLightingModel` reads these three properties.
     fragment.push(shininess().assign(max(material_shininess(), float(0.0001))));
