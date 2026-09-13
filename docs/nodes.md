@@ -308,6 +308,16 @@ Inside `NORMAL` it is the geometric normal; outside it, the material's
 being a singleton, so the two meanings coexist as two vars in one shader —
 which is exactly what the dump shows.
 
+**Everything that reads `normalView` has to share that key.** `normalWorld` and
+the `tangentView` / `bitangentView` pair both do, through `normal_key()`. They
+were plain `accessor!` singletons until rung 8, which made them bake in whatever
+`normalView` the *first* material built in the process happened to resolve to;
+every later material then re-emitted `normalView = normalViewGeometry;` after
+its bump-mapped assignment, silently replacing the perturbed normal with the
+geometric one for the rest of the shader. Only `webgpu_lights_physical`
+exercised it — it is the first ladder example with both a `bumpMap` and a
+`HemisphereLight` (the one `normalWorld` reader) on the same material.
+
 ### Tagging is on ancestors, not descendants
 
 Three tags the node a layer is *declared through*, and the tag propagates up
@@ -364,6 +374,41 @@ differences, each verified to be pixel-neutral.
   material's object group are swapped relative to the dump; the layout is built
   from the same descriptors the shader is, so they cannot disagree.
 * **Matrix column index literal.** `m[ 0u ]` where Three prints `m[ 0 ]`.
+* **`toConst`.** Three's `toConst()` emits a `let nodeConstN = …` where this
+  port emits `nodeVarN = …` into a `var<private>`. The port has no const form,
+  so `pointShadowFilter`'s `shadowPosition` and `shadowPositionAbs` are
+  `to_var()`s instead. Same single evaluation, same value. Two of them are not
+  optional: `Node::Swizzle` and `Node::Neg` are not kinds the builder promotes
+  on usage count, so `shadowCoord.xyz` and `viewZ.negate()` are wrapped by hand
+  or the expression would be emitted twice.
+* **Named lighting temps.** Three names `singleScatteringDielectric`,
+  `multiScatteringDielectric`, `singleScatteringMetallic`,
+  `multiScatteringMetallic`, `dfg` and `multiScatteringCompensation`; this port
+  leaves them as numbered vars or inlines them where they are read once.
+* **Hoisted accumulator zeros.** `LightingContextNode`'s five accumulators
+  (`directDiffuse`, `directSpecular`, `irradiance`, `indirectDiffuse`,
+  `indirectSpecular`) are zeroed together before the light loop rather than each
+  at its first use. Nothing reads one before it is written either way.
+* **Inlined `faceDirection` and the extra `length()` temp.** Three keeps
+  `faceDirection` and the point light's `length( lVector )` as their own vars;
+  this port inlines the first and re-emits the second inside each arm of the
+  distance-attenuation `if`/`else`, exactly as the dump does in the `else` arm.
+* **Render-struct member order.** `nodeUniformN` numbers are assigned at
+  *generation* time, but three.js orders the `renderStruct` / `objectStruct`
+  members by the order the uniform *objects* were created — `uniform()` eagerly,
+  `reference()` lazily — so dump 18's members run `18, 29, 30, 32, 33, 31, 17,
+  19, 23, 22, 21, 24, 26, 27, 28`. This port appends members in generation
+  order, and numbers without the gaps three leaves for uniforms it consumes but
+  never emits (20, and object-group 8 in dump 18). The layout is built from the
+  same member list the shader is, so they cannot disagree.
+* **Builtins before varyings.** `@builtin( front_facing )` / `@builtin(
+  position )` are emitted ahead of the `@location` parameters of `main`, and the
+  `@location` numbering follows this port's varying order.
+* **`NoBlending` on the shadow override material.** Three's shadow material sets
+  `blending = NoBlending`, which makes `builder.isOpaque()` false and drops the
+  `DiffuseColor.w = 1.0` line (dump 24). This port has no `blending` field and
+  emits the line. The shadow pass's colour attachment is never sampled — only
+  its depth is — so it is unobservable.
 * **JPEG decode.** `TextureLoader` decodes through `zune-jpeg`; Chromium uses
   libjpeg-turbo, so the inverse DCT rounds differently. Measured on
   `uv_grid_opengl.jpg` against the browser's own decode: 34030 of 4194304

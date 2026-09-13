@@ -17,7 +17,17 @@ fn show_fog(
     ctx: SetupContext,
     fog: Option<&three_rs::nodes::tsl::FogNode>,
 ) {
-    let flow = setup(material, &ctx, fog);
+    show_all(label, material, ctx, fog, &[])
+}
+
+fn show_all(
+    label: &str,
+    material: &MeshBasicNodeMaterial,
+    ctx: SetupContext,
+    fog: Option<&three_rs::nodes::tsl::FogNode>,
+    shadows: &[Option<three_rs::textures::CubeDepthTexture>],
+) {
+    let flow = setup(material, &ctx, fog, shadows);
     let program = NodeBuilder::new().build(&flow);
     println!("########## {label} — vertex");
     println!("{}", program.vertex_wgsl);
@@ -189,6 +199,7 @@ fn main() {
     bulb.emissive_intensity = 1.0;
     show("standard_bulb", &bulb, two_lights);
 
+    let brick_for_shadow = Texture::new(512, 512, Some(vec![0; 4]));
     let hardwood = Texture::new(1024, 1024, Some(vec![0; 4]));
     let hardwood_bump = Texture::new(1024, 1024, Some(vec![0; 4]));
     let hardwood_roughness = Texture::new(1024, 1024, Some(vec![0; 4]));
@@ -197,6 +208,30 @@ fn main() {
     floor.bump_map = Some(hardwood_bump.clone());
     floor.roughness_map = Some(hardwood_roughness.clone());
     show("standard_floor", &floor, two_lights);
+    // The same floor material with the bulb's shadow wired in: the one
+    // `receiveShadow` mesh of the scene. Target: `MeshStandardMaterial_18`.
+    show_all(
+        "standard_floor_shadow",
+        &floor,
+        SetupContext {
+            receive_shadow: true,
+            ..two_lights
+        },
+        None,
+        &[
+            Some(three_rs::textures::CubeDepthTexture::new(512)),
+            None,
+        ],
+    );
+    // `ShadowBaseNode._getShadowMaterial()` for a casting material with a map.
+    // Target: `ShadowMaterial_24`.
+    let mut shadow = MeshBasicNodeMaterial::new();
+    shadow.color_node = Some(vec4_join(vec![
+        vec3(0.0, 0.0, 0.0),
+        float(1.0).mul(texture(&brick_for_shadow).a()),
+    ]));
+    shadow.side = Side::Back;
+    show("shadow_material", &shadow, SetupContext::default());
 
     let brick = Texture::new(512, 512, Some(vec![0; 4]));
     let brick_bump = Texture::new(512, 512, Some(vec![0; 4]));
