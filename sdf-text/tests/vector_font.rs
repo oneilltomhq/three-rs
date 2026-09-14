@@ -186,3 +186,56 @@ fn metric_fallthrough_treats_zero_as_absent() {
     assert_eq!(font.cap_height, 1456.0);
     assert_eq!(font.x_height, 1082.0);
 }
+
+/// `VectorFont::measure` against the width `Text::sync()` actually laid out
+/// with (#43).
+///
+/// The layout's own line width is not in `TextRenderInfo` — `block_bounds` is
+/// the *ink* box, side bearings excluded — so it is read out of the layout
+/// instead: with `textAlign: right` and a `maxWidth` too wide to wrap, every
+/// glyph is pushed right by exactly `maxWidth - lineWidth`. The shift between a
+/// left-aligned and a right-aligned run of the same string is therefore the
+/// width the layout measured, and `measure` has to return it.
+#[test]
+fn measure_matches_what_text_lays_out_with() {
+    use sdf_text::{Text, TextAlign};
+
+    let font = std::rc::Rc::new(roboto());
+    const SIZE: f64 = 1.7;
+    // `AV`, `To`, `Wa`, `LT` are the kerned pairs; a space and a comma keep the
+    // blank and punctuation paths in.
+    const STRINGS: [&str; 5] = ["AVToWa", "Kerning, AV To Wa LT", "Roboto", "i", " "];
+
+    for s in STRINGS {
+        let laid_out = |align: TextAlign, max_width: f64| -> f64 {
+            let mut text = Text::new();
+            text.set_vector_mode(true);
+            text.set_vector_font(Some(font.clone()));
+            text.set_text(s);
+            text.set_font_size(SIZE);
+            text.set_text_align(align);
+            text.set_max_width(max_width);
+            // `glyphs` carries the pre-anchor pen-space boxes, which is where
+            // the alignment offset shows up.
+            text.sync().glyphs[0].bounds[0]
+        };
+
+        // Ten times the widest this string can be, so nothing wraps.
+        let max_width = SIZE * s.chars().count() as f64 * 10.0;
+        let shift = laid_out(TextAlign::Right, max_width) - laid_out(TextAlign::Left, max_width);
+        let laid_out_width = max_width - shift;
+
+        let measured = font.measure(s, SIZE);
+        assert!(
+            (measured - laid_out_width).abs() < 1e-9,
+            "measure({s:?}, {SIZE}) = {measured}, but the layout used {laid_out_width}"
+        );
+    }
+
+    // The properties a caller relies on: kerning is applied (Roboto tucks `V`
+    // under `A`, so the pair is narrower than the two glyphs apart), and the
+    // width is linear in the font size.
+    assert!(font.measure("AV", SIZE) < font.measure("A", SIZE) + font.measure("V", SIZE));
+    assert!((font.measure("Roboto", 2.0) - 2.0 * font.measure("Roboto", 1.0)).abs() < 1e-12);
+    assert_eq!(font.measure("", SIZE), 0.0);
+}
