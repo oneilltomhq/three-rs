@@ -278,8 +278,8 @@ fn multiply_scalar() {
     let mut b = counting();
     let before = b.elements;
     b.multiply_scalar(2.0);
-    for i in 0..16 {
-        assert_eq!(b.elements[i], before[i] * 2.0);
+    for (elem, before_elem) in b.elements.iter().zip(before.iter()) {
+        assert_eq!(*elem, before_elem * 2.0);
     }
 }
 
