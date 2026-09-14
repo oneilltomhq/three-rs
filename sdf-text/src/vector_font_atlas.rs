@@ -206,13 +206,7 @@ impl VectorFontAtlas {
 
                 // 0.5 at the edge, >0.5 inside (dist is negative inside).
                 let normalized = 0.5 - dist / (2.0 * MAX_DISTANCE);
-                let clamped = if normalized < 0.0 {
-                    0.0
-                } else if normalized > 1.0 {
-                    1.0
-                } else {
-                    normalized
-                };
+                let clamped = normalized.clamp(0.0, 1.0);
 
                 let atlas_x = col * TILE + sx;
                 let atlas_y = row * TILE + sy;

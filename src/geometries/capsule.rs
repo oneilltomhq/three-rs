@@ -72,6 +72,10 @@ pub fn capsule_geometry(
                 )
             };
 
+        // `Math.min( 1, Math.max( 0, v ) )` — kept as chained min/max rather than
+        // `.clamp()`, which panics on NaN input instead of matching JS's
+        // fall-through behaviour.
+        #[allow(clippy::manual_clamp)]
         let v = (current_arc_length / total_arc_length).min(1.0).max(0.0);
 
         // special case for the poles
