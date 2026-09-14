@@ -217,15 +217,15 @@ impl Vector3 {
     }
 
     /// `Vector3.project()`: world space to normalised device coordinates.
-    pub fn project(&mut self, camera: &crate::cameras::PerspectiveCamera) -> &mut Self {
-        self.apply_matrix4(&camera.matrix_world_inverse)
-            .apply_matrix4(&camera.projection_matrix)
+    pub fn project(&mut self, camera: &impl crate::cameras::RenderCamera) -> &mut Self {
+        self.apply_matrix4(&camera.matrix_world_inverse())
+            .apply_matrix4(&camera.projection_matrix())
     }
 
     /// `Vector3.unproject()`: normalised device coordinates back to world space.
-    pub fn unproject(&mut self, camera: &crate::cameras::PerspectiveCamera) -> &mut Self {
-        self.apply_matrix4(&camera.projection_matrix_inverse)
-            .apply_matrix4(&camera.node.borrow().matrix_world)
+    pub fn unproject(&mut self, camera: &impl crate::cameras::RenderCamera) -> &mut Self {
+        self.apply_matrix4(&camera.projection_matrix_inverse())
+            .apply_matrix4(&camera.matrix_world())
     }
 
     /// `Vector3.transformDirection()`.
@@ -349,12 +349,16 @@ impl Vector3 {
         self.x.abs() + self.y.abs() + self.z.abs()
     }
 
-    /// `Vector3.normalize()`: divides by the length, or by 1 when the length is 0.
+    /// `Vector3.normalize()`: divides by the length, or by 1 when the length is
+    /// 0. See [`Vector3::normalized`] for the form that returns the result
+    /// instead.
     pub fn normalize(&mut self) -> &mut Self {
         let l = self.length();
         self.divide_scalar(if l == 0.0 { 1.0 } else { l })
     }
 
+    /// `self` scaled to unit length, as a value, for expressions.
+    /// [`Vector3::normalize`] is the same scaling written in place.
     pub fn normalized(mut self) -> Self {
         self.normalize();
         self
@@ -381,9 +385,19 @@ impl Vector3 {
         self
     }
 
+    /// `Vector3.cross()`, in place. See [`Vector3::crossed`] for the form that
+    /// returns the result instead.
     pub fn cross(&mut self, v: &Self) -> &mut Self {
         let a = *self;
         self.cross_vectors(&a, v)
+    }
+
+    /// `self × v` as a value, for expressions. [`Vector3::cross`] is the same
+    /// product written in place.
+    pub fn crossed(&self, v: &Self) -> Self {
+        let mut out = *self;
+        out.cross(v);
+        out
     }
 
     pub fn cross_vectors(&mut self, a: &Self, b: &Self) -> &mut Self {

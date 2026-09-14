@@ -6,7 +6,7 @@
 mod support;
 
 use support::{close, EPS, W, X, Y, Z};
-use three_rs::cameras::PerspectiveCamera;
+use three_rs::cameras::{OrthographicCamera, PerspectiveCamera};
 use three_rs::math::{CoordinateSystem, Euler, Matrix3, Matrix4, Quaternion, Vector3, Vector4};
 
 #[test]
@@ -294,6 +294,22 @@ fn cross() {
     close(a.x, crossed.x, EPS, "Check x");
     close(a.y, crossed.y, EPS, "Check y");
     close(a.z, crossed.z, EPS, "Check z");
+}
+
+// Not a three.js port: `crossed()` is this crate's expression form of
+// `cross()`, so the test is that it agrees with it and leaves the receiver
+// alone.
+#[test]
+fn crossed() {
+    let a = Vector3::new(2.0, 3.0, -1.0);
+    let b = Vector3::new(-1.0, 0.5, 4.0);
+
+    let mut expected = a;
+    expected.cross(&b);
+
+    let c = a.crossed(&b);
+    assert_eq!((c.x, c.y, c.z), (expected.x, expected.y, expected.z));
+    assert_eq!((a.x, a.y, a.z), (2.0, 3.0, -1.0));
 }
 
 #[test]
@@ -705,6 +721,54 @@ fn project_unproject() {
     close(a.x, X, EPS, "unproject: check x");
     close(a.y, Y, EPS, "unproject: check y");
     close(a.z, Z, EPS, "unproject: check z");
+}
+
+// Not a three.js port: `project()`/`unproject()` take any `RenderCamera` here,
+// so this is the round trip on both cameras, which three.js only spells out for
+// `PerspectiveCamera` (above).
+#[test]
+fn project_unproject_any_camera() {
+    let points = [
+        Vector3::new(0.0, 0.0, -5.0),
+        Vector3::new(1.5, -2.25, -3.0),
+        Vector3::new(-0.5, 0.75, -9.5),
+    ];
+
+    let mut ortho = OrthographicCamera::new(-2.0, 2.0, 1.5, -1.5, 0.1, 100.0);
+    ortho.update_projection_matrix();
+    ortho.update_matrix_world();
+
+    for p in &points {
+        let mut v = *p;
+        v.project(&ortho).unproject(&ortho);
+        close(v.x, p.x, EPS, "ortho round trip: check x");
+        close(v.y, p.y, EPS, "ortho round trip: check y");
+        close(v.z, p.z, EPS, "ortho round trip: check z");
+    }
+
+    // The camera sits at the origin looking down -z, and the frustum is
+    // centred, so a point on the axis lands on the NDC centre.
+    let mut centre = Vector3::new(0.0, 0.0, -5.0);
+    centre.project(&ortho);
+    close(centre.x, 0.0, EPS, "ortho centre: check x");
+    close(centre.y, 0.0, EPS, "ortho centre: check y");
+
+    let mut perspective = PerspectiveCamera::new(75.0, 16.0 / 9.0, 0.1, 300.0);
+    perspective.update_projection_matrix();
+    perspective.update_matrix_world();
+
+    for p in &points {
+        let mut v = *p;
+        v.project(&perspective).unproject(&perspective);
+        close(v.x, p.x, EPS, "perspective round trip: check x");
+        close(v.y, p.y, EPS, "perspective round trip: check y");
+        close(v.z, p.z, EPS, "perspective round trip: check z");
+    }
+
+    let mut centre = Vector3::new(0.0, 0.0, -5.0);
+    centre.project(&perspective);
+    close(centre.x, 0.0, EPS, "perspective centre: check x");
+    close(centre.y, 0.0, EPS, "perspective centre: check y");
 }
 
 #[test]
