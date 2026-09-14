@@ -9,7 +9,6 @@
 //! per-frame cost the single graded frame cannot see fails here.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -143,67 +142,17 @@ fn out_dir(name: &str) -> PathBuf {
     dir
 }
 
-struct Comparison {
-    width: u32,
-    height: u32,
-    num_different_pixels: u64,
-    different_pixels: f64,
-    max_different_pixels: f64,
-    pass: bool,
-}
+use three_rs::testing::Comparison;
 
-/// Shells out to node so that `image.js`'s `scale()` and `compare()` run
-/// unchanged — no second implementation of the comparator exists in this tree.
+/// Three's reference screenshot for `name`, through the comparator in
+/// `three_rs::testing`.
 fn compare(name: &str, actual: &Path, out: &Path) -> Comparison {
-    let three = three_js_dir();
-    let expected = three
+    let expected = three_js_dir()
         .join("examples/screenshots")
         .join(format!("{name}.jpg"));
-
-    assert!(
-        expected.exists(),
-        "reference screenshot missing: {}",
-        expected.display()
-    );
-
-    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/e2e/compare.mjs");
-
-    let output = Command::new("node")
-        .arg(&script)
-        .arg(&three)
-        .arg(actual)
-        .arg(&expected)
-        .arg(out)
-        .output()
-        .expect("failed to run node");
-
-    assert!(
-        output.status.success(),
-        "comparator failed:\n{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let json = stdout.trim();
-    println!("compare: {json}");
-
-    // The payload is a flat JSON object of numbers and one bool.
-    let get = |key: &str| -> f64 {
-        let needle = format!("\"{key}\":");
-        let start = json.find(&needle).unwrap() + needle.len();
-        let rest = &json[start..];
-        let end = rest.find([',', '}']).unwrap();
-        rest[..end].trim().parse().unwrap()
-    };
-
-    Comparison {
-        width: get("width") as u32,
-        height: get("height") as u32,
-        num_different_pixels: get("numDifferentPixels") as u64,
-        different_pixels: get("differentPixels"),
-        max_different_pixels: get("maxDifferentPixels"),
-        pass: json.contains("\"pass\":true"),
-    }
+    let result = three_rs::testing::compare(actual, &expected, out);
+    println!("compare: {result:?}");
+    result
 }
 
 #[test]

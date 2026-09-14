@@ -1,6 +1,11 @@
 //! The determinism the e2e harness injects into the page
 //! (`three.js/test/e2e/deterministic-injection.js`), so the ported example can
-//! reproduce the reference screenshot.
+//! reproduce the reference screenshot, and the harness's image comparison
+//! itself ([`compare()`](crate::testing::compare)), so a gate outside this crate grades
+//! the same way.
+
+use std::path::Path;
+use std::process::Command;
 
 /// `Math.random` as the grader replaces it:
 ///
@@ -81,3 +86,70 @@ pub fn vendor_dir(env_var: &str, name: &str) -> std::path::PathBuf {
 pub fn three_js_dir() -> std::path::PathBuf {
     vendor_dir("THREE_JS_DIR", "three.js")
 }
+
+/// What `test/e2e/puppeteer.js`'s `checkFile()` computes for one frame.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Comparison {
+    pub width: u32,
+    pub height: u32,
+    pub num_different_pixels: u64,
+    /// `num_different_pixels` as a percentage of the frame.
+    pub different_pixels: f64,
+    /// The grader's ceiling on `different_pixels`, 0.1.
+    pub max_different_pixels: f64,
+    pub pass: bool,
+}
+
+/// Runs three.js' own comparator over a rendered frame, unchanged: `actual`
+/// is a PNG at the harness's `viewScale` of 2 (what [`write_png`] writes from
+/// an 800 × 500 canvas), `expected` a reference JPEG at 1×, and `out` is where
+/// `actual.jpg`, `expected.jpg` and `diff.jpg` land for a look. `image.js`'s
+/// `scale()` and `compare()` come from [`three_js_dir`] by shelling out to
+/// `node`, so no second implementation of the comparator exists on this side.
+pub fn compare(actual: &Path, expected: &Path, out: &Path) -> Comparison {
+    assert!(
+        expected.exists(),
+        "reference screenshot missing: {}",
+        expected.display()
+    );
+    std::fs::create_dir_all(out).expect("three-rs: cannot create the comparison directory");
+
+    let script = out.join("compare.mjs");
+    std::fs::write(&script, COMPARE_MJS).expect("three-rs: cannot write compare.mjs");
+
+    let output = Command::new("node")
+        .arg(&script)
+        .arg(three_js_dir())
+        .arg(actual)
+        .arg(expected)
+        .arg(out)
+        .output()
+        .expect("three-rs: failed to run node");
+
+    assert!(
+        output.status.success(),
+        "comparator failed:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json: serde_json::Value =
+        serde_json::from_str(stdout.trim()).expect("three-rs: the comparator's JSON");
+    let get = |key: &str| {
+        json.get(key)
+            .and_then(serde_json::Value::as_f64)
+            .unwrap_or_else(|| panic!("three-rs: the comparator's JSON has no numeric `{key}`"))
+    };
+
+    Comparison {
+        width: get("width") as u32,
+        height: get("height") as u32,
+        num_different_pixels: get("numDifferentPixels") as u64,
+        different_pixels: get("differentPixels"),
+        max_different_pixels: get("maxDifferentPixels"),
+        pass: json.get("pass").and_then(serde_json::Value::as_bool) == Some(true),
+    }
+}
+
+/// The script [`compare`] runs; written next to the images it produces.
+const COMPARE_MJS: &str = include_str!("testing/compare.mjs");

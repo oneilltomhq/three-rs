@@ -140,7 +140,7 @@ fn flare_json() -> std::path::PathBuf {
 
 fn font_path() -> std::path::PathBuf {
     std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("sdf-text/tests/assets/Roboto-Regular.ttf")
+        .join("tests/assets/Roboto-Regular.ttf")
 }
 
 /// `d3.format( ',d' )` for the integer values `flare.json` carries: round, then

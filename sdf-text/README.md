@@ -11,10 +11,9 @@ need neither a GPU nor a network:
 cargo test -p sdf-text      # 52 tests, no GPU, no network
 ```
 
-Steps 4–6 are the renderer half, and live in the `three-rs` package that owns the
-GPU: `batched_text::BatchedText` here (the instanced draw, the `R32Float` atlas
-texture, the `positionNode`, the outline/halo material), with the examples and
-their gates next to every other ported example —
+Steps 4–6 are the renderer half: `batched_text::BatchedText` (the instanced
+draw, the `R32Float` atlas texture, the `positionNode`, the outline/halo
+material), with the examples in `examples/` and their gates in `tests/` —
 
 | step | example | gate |
 |---|---|---|
@@ -23,7 +22,11 @@ their gates next to every other ported example —
 | 6 | `examples/d33_treemap_labels.rs`, d33's `examples/d3_treemap.html` | `tests/d33_treemap_labels.rs` against `tests/golden/d3_treemap_labels.json`, dumped from that page's own JS |
 
 Those three need a GPU, and must be run single-threaded
-(`cargo test --workspace -- --test-threads=1`).
+(`cargo test -p sdf-text -- --test-threads=1`). Step 6's image comparison is
+three-rs's own e2e comparator (`three_rs::testing::compare`), run over d33's
+reference frame; its treemap layout comes from the
+[d3-hierarchy](https://github.com/oneilltomhq/d3-hierarchy) crate, a
+dev-dependency.
 
 ## What is ported
 

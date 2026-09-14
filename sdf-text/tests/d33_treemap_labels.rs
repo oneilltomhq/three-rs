@@ -23,7 +23,6 @@
 //! `docs/lines-progress.md`.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use serde_json::Value;
 
@@ -196,13 +195,9 @@ fn the_name_split_and_the_value_format_are_the_js() {
 }
 
 fn out_dir() -> PathBuf {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/e2e/d33_treemap_labels");
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("d33_treemap_labels");
     std::fs::create_dir_all(&dir).unwrap();
     dir
-}
-
-fn three_js_dir() -> PathBuf {
-    three_rs::testing::three_js_dir()
 }
 
 /// The d33 harness' reference frame for this page, 400 × 250.
@@ -264,31 +259,12 @@ fn the_frame_is_stable_and_the_image_gap_is_measured() {
         return;
     }
 
-    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/e2e/compare.mjs");
-    let output = Command::new("node")
-        .arg(&script)
-        .arg(three_js_dir())
-        .arg(&actual)
-        .arg(&expected)
-        .arg(&out)
-        .output()
-        .expect("failed to run node");
-
-    assert!(
-        output.status.success(),
-        "comparator failed:\n{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-
-    let report = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    println!("compare vs {}: {}", expected.display(), report);
+    // three-rs's e2e comparator, over d33's reference instead of Three's.
+    let result = three_rs::testing::compare(&actual, &expected, &out);
+    println!("compare vs {}: {result:?}", expected.display());
     println!("images: {}", out.display());
 
-    let different: u64 = serde_json::from_str::<Value>(&report)
-        .expect("the comparator's JSON")
-        .get("numDifferentPixels")
-        .and_then(Value::as_u64)
-        .expect("numDifferentPixels");
+    let different = result.num_different_pixels;
 
     assert!(
         different <= IMAGE_CEILING,

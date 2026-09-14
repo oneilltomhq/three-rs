@@ -16,6 +16,11 @@ pub mod math;
 pub mod nodes;
 pub mod objects;
 pub mod renderer;
+/// Hidden from the rendered docs on purpose (#40). It stays `pub` because the
+/// examples, the viewer, the e2e tests, the `sdf-text` crate's gates and
+/// consumers' own graders use it; it is not part of the renderer's API and
+/// carries no compatibility promise.
+#[doc(hidden)]
 pub mod testing;
 pub mod textures;
 

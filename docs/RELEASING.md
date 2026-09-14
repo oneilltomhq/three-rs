@@ -1,9 +1,9 @@
 # Releasing
 
-The checklist for a crates.io release. Three crates live in this workspace
-and version independently: `three-rs`, `sdf-text` (depends on `three-rs`),
-and `d3-hierarchy` (depends on neither). A release ships whichever of them
-changed.
+The checklist for a crates.io release. Two crates live in this workspace
+and version independently: `three-rs` and `sdf-text` (depends on
+`three-rs`). A release ships whichever of them changed. (`d3-hierarchy`
+has its own repository and releases since #63.)
 
 Everything here is done by hand except the last step: pushing the annotated
 tag is what creates the GitHub Release, through
@@ -13,7 +13,7 @@ write it as one.
 ## 1. Decide what ships
 
 - Which crates changed since their last tag. `git log v0.1.2.. -- sdf-text`
-  and the same for `d3/hierarchy` answer it.
+  answers it for the member crate.
 - Which bump each one is. At 0.x a minor bump is the breaking one and a
   patch bump promises compatibility. Run `cargo semver-checks` on each
   crate that changed (#27; `cargo install cargo-semver-checks`) and take
@@ -29,9 +29,10 @@ On a branch, from a clean tree, on a machine with a Vulkan device:
 
 ```sh
 cargo fmt --all --check
-cargo test --workspace --exclude three-rs
+cargo test -p sdf-text --lib
 cargo test -p three-rs --lib
 cargo test --workspace                       # the GPU renderer tests and the e2e grader
+cargo test -p sdf-text -- --test-threads=1   # the SDF text gates, on the GPU
 cargo doc --workspace --no-deps
 cargo publish --dry-run -p <crate>           # for each crate that ships, in the order in step 4
 ```
@@ -41,8 +42,7 @@ graded number in the README's table moved, the README is updated in the
 release PR with the new number and the reason.
 
 `cargo publish --dry-run` builds the packaged crate as crates.io will see
-it. The two examples in #16 are known not to build from the `.crate`; any
-other failure is new.
+it. Any failure is new.
 
 ## 3. The release commit
 
@@ -66,7 +66,6 @@ From the merge commit on `main`, in dependency order, only the crates that
 ship:
 
 ```sh
-cargo publish -p d3-hierarchy
 cargo publish -p three-rs
 cargo publish -p sdf-text        # after three-rs is visible on crates.io
 ```

@@ -26,7 +26,5 @@ This is a port. Substantial portions are translations of:
 
   three.js            Copyright 2010-2026 three.js authors, MIT License
                       https://github.com/mrdoob/three.js
-  d3-hierarchy 3.1.2  Copyright 2010-2021 Mike Bostock, ISC License
-                      https://github.com/d3/d3-hierarchy
 
-Their notices apply to the corresponding parts of this tree.
+Its notice applies to the corresponding parts of this tree.
