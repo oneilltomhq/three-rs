@@ -196,7 +196,7 @@ pub fn subclip(
     // shift all tracks such that clip begins at t=0
 
     for track in clip.tracks.iter_mut() {
-        track.shift(-1.0 * min_start_time);
+        track.shift(-min_start_time);
     }
 
     clip.reset_duration();
