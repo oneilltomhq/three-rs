@@ -218,8 +218,8 @@ fn intersects_box() {
     let b = Sphere::new(Vector3::new(-5.0, -5.0, -5.0), 1.0);
     let box_ = Box3::new(ZERO3, ONE3);
 
-    assert_eq!(a.intersects_box(&box_), true, "Check unit sphere");
-    assert_eq!(b.intersects_box(&box_), false, "Check shifted sphere");
+    assert!(a.intersects_box(&box_), "Check unit sphere");
+    assert!(!b.intersects_box(&box_), "Check shifted sphere");
 }
 
 #[test]
@@ -333,10 +333,10 @@ fn equals() {
     let b = Sphere::new(Vector3::new(1.0, 0.0, 0.0), -1.0);
     let c = Sphere::new(Vector3::new(1.0, 0.0, 0.0), 1.0);
 
-    assert_eq!(a.equals(&b), false, "a does not equal b");
-    assert_eq!(a.equals(&c), false, "a does not equal c");
-    assert_eq!(b.equals(&c), false, "b does not equal c");
+    assert!(!a.equals(&b), "a does not equal b");
+    assert!(!a.equals(&c), "a does not equal c");
+    assert!(!b.equals(&c), "b does not equal c");
 
     a.copy(&b);
-    assert_eq!(a.equals(&b), true, "a equals b after copy()");
+    assert!(a.equals(&b), "a equals b after copy()");
 }
