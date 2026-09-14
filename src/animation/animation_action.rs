@@ -510,6 +510,8 @@ impl AnimationAction {
             }
 
             // `handle_stop:` labelled block.
+            #[allow(clippy::never_loop)]
+            // deliberately mirrors three.js's `handle_stop:` labelled block, used only to `break` out early
             loop {
                 if time >= duration {
                     time = duration;
