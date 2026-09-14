@@ -52,9 +52,12 @@ requirement: a normal clone and a feature branch are fine for a PR.
 
 ## Before you open the PR
 
-Run what applies. The tree is not yet clippy-clean or fmt-clean as a whole
-(#8, #12 track that), so the rule is about the code you add, not the file
-you touched:
+Run what applies. CI (`.github/workflows/ci.yml`) now enforces `cargo fmt
+--all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, the
+build and the no-GPU tests on every push to `main` and every PR, so these are
+no longer just courtesy checks; the e2e grader remains the manual pre-merge
+gate described below, since it needs a real Vulkan adapter and Three's
+screenshots that no runner here has yet:
 
 - `cargo fmt` on your new code. Do not reformat lines you did not otherwise
   change; it buries the diff.
