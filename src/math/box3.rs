@@ -1,6 +1,6 @@
 //! Port of `three.js/src/math/Box3.js`.
 
-use crate::core::BufferAttribute;
+use crate::core::{BufferAttribute, Node};
 
 use super::math_utils::{js_max, js_min};
 use super::{Matrix4, Plane, Sphere, Triangle, Vector3};
@@ -84,6 +84,81 @@ impl Box3 {
 
         self.min.copy(center).sub(&half_size);
         self.max.copy(center).add(&half_size);
+
+        self
+    }
+
+    /// `Box3.setFromObject( object, precise )`: the world-axis-aligned box of a
+    /// scene-graph subtree.
+    ///
+    /// `precise` puts every vertex of every geometry through its node's
+    /// `matrix_world`; the default walks each geometry's own bounding box
+    /// through the same matrix, which is cheaper and can be larger than
+    /// strictly necessary.
+    pub fn set_from_object(&mut self, object: &Node, precise: bool) -> &mut Self {
+        self.make_empty();
+
+        self.expand_by_object(object, precise)
+    }
+
+    /// `Box3.expandByObject( object, precise )`.
+    ///
+    /// Two divergences from three.js, both because the port has no
+    /// `Object3D.getVertexPosition()` yet: the precise path reads the position
+    /// attribute directly, so it does not apply morph targets or skinning (the
+    /// non-precise path does get morphs, through
+    /// `BufferGeometry::compute_bounding_box()`), and there is no object-level
+    /// `boundingBox` to prefer over the geometry's, since only `SkinnedMesh`
+    /// has one here and it is not a [`Payload`](crate::objects::Payload)
+    /// variant. An `InstancedMesh` takes the conservative path in three.js too.
+    pub fn expand_by_object(&mut self, object: &Node, precise: bool) -> &mut Self {
+        // Computes the world-axis-aligned bounding box of an object (including
+        // its children), accounting for both the object's, and children's,
+        // world transforms.
+        object.update_world_matrix(false, false);
+
+        // Cloned out of the borrow: the `Rc` is cheap, and the recursion below
+        // must not hold a borrow on the node.
+        let geometry = {
+            let object = object.borrow();
+            object.payload.geometry().cloned()
+        };
+
+        if let Some(geometry) = geometry {
+            let (matrix_world, is_instanced_mesh) = {
+                let object = object.borrow();
+                (object.matrix_world, object.payload.is_instanced_mesh())
+            };
+
+            // precise AABB computation based on vertex data requires at least a
+            // position attribute. instancing isn't supported so far and uses the
+            // normal (conservative) code path.
+            let position = geometry.get_attribute("position");
+
+            match position {
+                Some(position) if precise && !is_instanced_mesh => {
+                    for i in 0..position.count() {
+                        let mut vector = position.get_vector3(i);
+                        vector.apply_matrix4(&matrix_world);
+                        self.expand_by_point(&vector);
+                    }
+                }
+                _ => {
+                    // geometry-level bounding box, computed on demand: the port's
+                    // geometries do not cache one.
+                    if let Some(bounding_box) = geometry.compute_bounding_box() {
+                        let mut box_ = Self::new(bounding_box.min, bounding_box.max);
+                        box_.apply_matrix4(&matrix_world);
+
+                        self.union(&box_);
+                    }
+                }
+            }
+        }
+
+        for child in object.children() {
+            self.expand_by_object(&child, precise);
+        }
 
         self
     }
