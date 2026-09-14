@@ -137,8 +137,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       # Kept in step with `rust-version` in Cargo.toml's `[workspace.package]`
-      # (currently 1.87, i.e. 1.87.0); bump both together.
-      - uses: dtolnay/rust-toolchain@1.87.0
+      # (currently 1.90, i.e. 1.90.0); bump both together.
+      - uses: dtolnay/rust-toolchain@1.90.0
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --workspace --all-targets
 
