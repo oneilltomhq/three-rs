@@ -13,6 +13,14 @@
 //! `cargo test -p sdf-text` covers it only where the packing can be checked on
 //! the CPU; the pixel gates live in `three-rs`' own `tests/`.
 //!
+//! # Member transforms
+//!
+//! A member's whole `matrix_world` reaches the GPU as its glyphs' instance
+//! matrix, so rotation and scale work as well as position — a label laid flat
+//! on a floor with `set_rotation( -PI / 2, 0, 0 )` on
+//! [`BatchedText::member_node`] renders flat. Members are not billboarded and
+//! are not position-only.
+//!
 //! # Frustum culling
 //!
 //! [`BatchedText::sync`] computes the batch's own bounding sphere over every

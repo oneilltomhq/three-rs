@@ -293,6 +293,11 @@ impl BatchedText {
 
     /// The member's own `Object3D` — `text.position` / `text.quaternion` in the
     /// JS, where `Text extends Object3D`. `sync()` composes its `matrixWorld`.
+    ///
+    /// Every glyph of the member is drawn with that whole `matrix_world` as its
+    /// instance matrix, so rotation and scale are honoured along with position:
+    /// `member_node( id ).borrow_mut().set_rotation( -PI / 2.0, 0.0, 0.0 )` lays
+    /// the label flat on the floor. Members are not billboarded.
     pub fn member_node(&self, member_id: usize) -> Option<&Node> {
         self.members.get(member_id)?.as_ref().map(|m| &m.node)
     }
