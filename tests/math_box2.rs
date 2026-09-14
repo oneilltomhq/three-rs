@@ -105,6 +105,10 @@ fn clone() {
 }
 
 #[test]
+// Mirrors three.js's "ensure it is a true copy" idiom: `a` is mutated after
+// the copy purely to prove it and `b` don't alias; the final writes are
+// never read back.
+#[allow(unused_assignments)]
 fn copy() {
     let mut a = Box2::new(ZERO2, ONE2);
     let mut b = Box2::default();
