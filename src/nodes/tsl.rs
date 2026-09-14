@@ -2071,11 +2071,7 @@ pub fn instanced_data_attribute(
         offset + ty.components() <= item_size,
         "three-rs: instanced attribute reads past the instance stride"
     );
-    let count = if item_size == 0 {
-        0
-    } else {
-        data.len() / item_size
-    };
+    let count = data.len().checked_div(item_size).unwrap_or(0);
     let buffer = Rc::new(InstanceBuffer {
         id: crate::nodes::node::BufferId::next(),
         source: BufferSource::Attribute(data.clone()),
