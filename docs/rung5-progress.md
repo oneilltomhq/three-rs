@@ -81,7 +81,7 @@ Both were invisible to the WGSL diff, because neither is in the shader text.
 
 ## Merging onto the tree walk (2026-09-13)
 
-`git merge port` (cdf834a) into rung5 (0e197ec): two conflicted files,
+`git merge port` (a8942b8) into rung5 (0e197ec): two conflicted files,
 `src/objects/scene.rs` and `src/renderer/mod.rs`. What the resolution did:
 
 * **Deleted** `Scene.lights`, `Scene::add_light()`, `Scene::drawables()` and

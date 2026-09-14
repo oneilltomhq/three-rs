@@ -24,11 +24,11 @@ packing.
 
 ## What was built
 
-- **`PerspectiveCamera` owns a scene-graph `Node`** (commit `3f771ad`). The page
+- **`PerspectiveCamera` owns a scene-graph `Node`** (commit `14860a5`). The page
   does `scene.add( camera )` and parents the point light to the camera, which
   the old bare-`Object3D` camera could not express. `docs/scene-graph.md`
   predicted this; `OrthographicCamera` is untouched.
-- **`AmbientLight`, `sortLights()` and lazy lighting-context vars** (`68b0a5f`).
+- **`AmbientLight`, `sortLights()` and lazy lighting-context vars** (`8c48acf`).
   `LightsNode.setupLightsNode()` sorts by `light.id`, so the ambient light —
   created first but reached second by the tree walk, since the point light hangs
   off the camera — emits first, as the dump shows. `AmbientLightNode` is
@@ -37,11 +37,11 @@ packing.
   Three's do. Both changes are textually neutral for rungs 3 and 5 apart from
   `directSpecular` moving to its first use (which is what Three does) and
   pixel-neutral for every existing rung.
-- **flatShading** (`3364599`). `normalViewGeometry` becomes `normalFlat` —
+- **flatShading** (`7af16f5`). `normalViewGeometry` becomes `normalFlat` —
   `normalize( cross( dpdx( positionView ), - dpdy( positionView ) ) )` — so the
   vertex stage drops the `normal` attribute, the normal matrix uniform and the
   `v_normalViewGeometry` varying.
-- **Morph targets** (`0f95b1c`). `getEntry()` packs `morphAttributes.position`
+- **Morph targets** (`3f24661`). `getEntry()` packs `morphAttributes.position`
   into one `rgba32float` `DataArrayTexture` (here 4096 × 2, 2 layers, from 6534
   positions); `morphReference()` emits `positionLocal *= base` and the
   `Loop( 2 )`. New node plumbing: `Loop` / `If` statements, an `i32` loop index,

@@ -119,7 +119,7 @@ colours @0/@16, `materialOpacity` @**28** in the second colour's padding,
 
 * `cargo build --workspace --all-targets` — clean, no new warnings.
 * `cargo test --workspace -- --test-threads=1` — 838 passed, 0 failed (835 at
-  `c1933b9`, + 2 in `tests/nodes_range_buffers.rs`, + 1 e2e).
+  `4fadfc1`, + 2 in `tests/nodes_range_buffers.rs`, + 1 e2e).
 * e2e, serial: depth_texture 0, instance_mesh 60, lights_phong 31,
   materials_basic 0, postprocessing_masking 18, rtt 1, **tsl_galaxy 40** — all
   of 100000, limit 100.
