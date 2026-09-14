@@ -199,8 +199,8 @@ impl Strip {
         let height = tallest + GUTTER;
 
         let mut canvas = vec![0u8; (width * height * 4) as usize];
-        for pixel in canvas.chunks_exact_mut(4) {
-            pixel.copy_from_slice(&BACKGROUND);
+        for pixel in canvas.as_chunks_mut::<4>().0.iter_mut() {
+            *pixel = BACKGROUND;
         }
 
         let mut x = 0;
