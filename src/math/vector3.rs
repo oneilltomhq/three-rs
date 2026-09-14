@@ -349,12 +349,16 @@ impl Vector3 {
         self.x.abs() + self.y.abs() + self.z.abs()
     }
 
-    /// `Vector3.normalize()`: divides by the length, or by 1 when the length is 0.
+    /// `Vector3.normalize()`: divides by the length, or by 1 when the length is
+    /// 0. See [`Vector3::normalized`] for the form that returns the result
+    /// instead.
     pub fn normalize(&mut self) -> &mut Self {
         let l = self.length();
         self.divide_scalar(if l == 0.0 { 1.0 } else { l })
     }
 
+    /// `self` scaled to unit length, as a value, for expressions.
+    /// [`Vector3::normalize`] is the same scaling written in place.
     pub fn normalized(mut self) -> Self {
         self.normalize();
         self
@@ -381,9 +385,19 @@ impl Vector3 {
         self
     }
 
+    /// `Vector3.cross()`, in place. See [`Vector3::crossed`] for the form that
+    /// returns the result instead.
     pub fn cross(&mut self, v: &Self) -> &mut Self {
         let a = *self;
         self.cross_vectors(&a, v)
+    }
+
+    /// `self × v` as a value, for expressions. [`Vector3::cross`] is the same
+    /// product written in place.
+    pub fn crossed(&self, v: &Self) -> Self {
+        let mut out = *self;
+        out.cross(v);
+        out
     }
 
     pub fn cross_vectors(&mut self, a: &Self, b: &Self) -> &mut Self {

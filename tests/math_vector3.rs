@@ -296,6 +296,22 @@ fn cross() {
     close(a.z, crossed.z, EPS, "Check z");
 }
 
+// Not a three.js port: `crossed()` is this crate's expression form of
+// `cross()`, so the test is that it agrees with it and leaves the receiver
+// alone.
+#[test]
+fn crossed() {
+    let a = Vector3::new(2.0, 3.0, -1.0);
+    let b = Vector3::new(-1.0, 0.5, 4.0);
+
+    let mut expected = a;
+    expected.cross(&b);
+
+    let c = a.crossed(&b);
+    assert_eq!((c.x, c.y, c.z), (expected.x, expected.y, expected.z));
+    assert_eq!((a.x, a.y, a.z), (2.0, 3.0, -1.0));
+}
+
 #[test]
 fn cross_vectors() {
     let a = Vector3::new(X, Y, Z);
