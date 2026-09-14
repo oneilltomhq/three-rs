@@ -578,48 +578,68 @@ fn webgpu_lights_physical() {
     });
 }
 
-/// Issue #56's "done when": a steady frame performs zero `NodeBuilder::build`
-/// calls. Every graded rung is rendered three times; the first frame builds
-/// its programs, and by the third nothing in the scene is new to the renderer
-/// — the same steady-frame behaviour `WebGPURenderer` has, where
-/// `RenderObjects.get()` finds every render object's cache key unchanged and
+/// Issue #56's "done when", as issue #67's counts: a steady frame builds and
+/// uploads *nothing*. Every graded rung is rendered three times; the first
+/// frame builds its programs and uploads its geometries and textures, and by
+/// the second nothing in the scene is new to the renderer — the same
+/// steady-frame behaviour `WebGPURenderer` has, where `RenderObjects.get()`
+/// finds every render object's cache key unchanged and
 /// `NodeManager.getForRender()` never reaches the builder.
 ///
-/// The count is `Renderer::program_builds()`, a cumulative counter that only a
-/// cache miss touches. The second frame is printed but not asserted: it is
-/// where a rung whose first frame renders into a target the second reads
-/// (rtt, the pass nodes) would show a legitimate late build, and none does.
+/// Frames two and three are held to `BuildCounts::default()` — every field at
+/// exactly zero, an equality rather than a ceiling, which is the whole reason
+/// the count ladder exists beside the time one: the counts are deterministic
+/// where a time is not, and a re-upload of a live geometry that a generous
+/// time ceiling would never notice is one number here.
+///
+/// A rung's frame is not always one `render()`: rtt and the depth texture
+/// render into a target and then draw a full-screen quad, and postprocessing
+/// masking is three `PassNode`s and a `RenderPipeline`. So `info.auto_reset`
+/// goes off and the test resets once per *frame*, the way three.js'
+/// postprocessing does, and the counts below are the whole frame's.
 #[test]
 fn steady_frame_builds_nothing() {
+    use three_rs::{BuildCounts, Info};
+
     let _gpu = gpu();
 
     macro_rules! rung {
         ($module:ident) => {{
             let mut app = $module::init();
-            let builds: Vec<u64> = (0..3)
+            app.renderer.info_mut().auto_reset = false;
+
+            let frames: Vec<Info> = (0..3)
                 .map(|_| {
-                    let before = app.renderer.program_builds();
+                    app.renderer.info_mut().reset();
                     $module::animate(&mut app);
-                    app.renderer.program_builds() - before
+                    app.renderer.info().clone()
                 })
                 .collect();
-            println!(
-                "{}: programs built per frame {:?}",
-                stringify!($module),
-                builds
-            );
+
+            for (index, info) in frames.iter().enumerate() {
+                println!("{}: frame {} — {info}", stringify!($module), index + 1);
+            }
+
             assert!(
-                builds[0] > 0,
-                "{}: the first frame built nothing, so the counter is not wired",
+                frames[0].build.total() > 0,
+                "{}: the first frame built nothing, so the counters are not wired",
                 stringify!($module)
             );
-            assert_eq!(
-                builds[2],
-                0,
-                "{}: the third frame built {} programs; a steady frame must build none",
-                stringify!($module),
-                builds[2]
+            assert!(
+                frames[2].render.calls > 0,
+                "{}: the third frame drew nothing, so it is not a frame",
+                stringify!($module)
             );
+            for (index, info) in frames.iter().enumerate().skip(1) {
+                assert_eq!(
+                    info.build,
+                    BuildCounts::default(),
+                    "{}: frame {} built {:?}; a steady frame must build nothing",
+                    stringify!($module),
+                    index + 1,
+                    info.build
+                );
+            }
         }};
     }
 
@@ -638,6 +658,95 @@ fn steady_frame_builds_nothing() {
 // ---------------------------------------------------------------------------
 // issue #58: cache identity and eviction
 // ---------------------------------------------------------------------------
+
+/// Issue #58 as counts (issue #67): what a scene mutation costs, and what it
+/// gives back.
+///
+/// The cache tests below reach into the renderer's cache lengths, which is the
+/// only way to see an entry that was never evicted. `info` says the same thing
+/// in the vocabulary a consumer has: swapping one mesh's geometry uploads
+/// **exactly one** geometry and builds nothing else, and dropping the mesh
+/// takes the resident count back down. A renderer that re-uploaded a live
+/// geometry every frame, or that never freed a dead one, moves one of these
+/// numbers; neither shows up in a frame time.
+#[test]
+fn a_scene_mutation_uploads_exactly_what_changed() {
+    use std::rc::Rc;
+    use three_rs::materials::MeshBasicNodeMaterial;
+    use three_rs::{
+        box_geometry, BuildCounts, Mesh, PerspectiveCamera, Renderer, RendererParameters, Scene,
+    };
+
+    let _gpu = gpu();
+
+    let mut renderer = Renderer::new(RendererParameters { antialias: false }).unwrap();
+    renderer.set_pixel_ratio(1.0);
+    renderer.set_size(64.0, 64.0);
+    let mut camera = PerspectiveCamera::new(60.0, 1.0, 0.1, 100.0);
+    camera.node.borrow_mut().position.z = 5.0;
+
+    let mesh = Mesh::new(
+        Rc::new(box_geometry(1.0, 1.0, 1.0, 1, 1, 1)),
+        MeshBasicNodeMaterial::new(),
+    );
+    let mut scene = Scene::new();
+    scene.add(&mesh);
+
+    // Frame 1 builds and uploads; frame 2 is the steady one it is measured
+    // against, and its resident counts are the baseline.
+    renderer.render(&mut scene, &mut camera);
+    println!("mutation: frame 1 — {}", renderer.info());
+    renderer.render(&mut scene, &mut camera);
+    println!("mutation: frame 2 — {}", renderer.info());
+    assert_eq!(
+        renderer.info().build,
+        BuildCounts::default(),
+        "an unchanged scene must build nothing"
+    );
+    let resident = renderer.info().memory.geometries;
+
+    // Replace the one geometry, keeping the mesh and its material: one upload,
+    // nothing else, and the resident count holds because the geometry it
+    // replaced was swept in the same render.
+    mesh.borrow_mut()
+        .mesh_mut()
+        .expect("three-rs: the mesh is a mesh")
+        .geometry = Rc::new(box_geometry(2.0, 2.0, 2.0, 1, 1, 1));
+    renderer.render(&mut scene, &mut camera);
+    println!("mutation: replace geometry — {}", renderer.info());
+    assert_eq!(
+        renderer.info().build.geometries_uploaded,
+        1,
+        "replacing one geometry should upload exactly one"
+    );
+    assert_eq!(
+        renderer.info().build.programs_compiled,
+        0,
+        "the material did not change, so nothing should have been built"
+    );
+    assert_eq!(
+        renderer.info().memory.geometries,
+        resident,
+        "the replaced geometry should have been swept as the new one arrived"
+    );
+
+    // Drop it: the resident count goes back down by one. This is the #58
+    // regression — nothing was ever removed from the cache — as a number.
+    scene.remove(&mesh);
+    drop(mesh);
+    renderer.render(&mut scene, &mut camera);
+    println!("mutation: drop geometry — {}", renderer.info());
+    assert_eq!(
+        renderer.info().memory.geometries,
+        resident - 1,
+        "the dropped geometry should have left the cache"
+    );
+    assert_eq!(
+        renderer.info().build,
+        BuildCounts::default(),
+        "dropping an object builds nothing"
+    );
+}
 
 /// Issue #58's repro, and the two properties that between them make it
 /// impossible rather than unlikely.
