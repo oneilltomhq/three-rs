@@ -43,10 +43,11 @@ Linux is the only backend that has been run.
   and ior), textures (PNG, JPEG), cube textures.
 - **Animation.** Interpolants, keyframe tracks, clips, `PropertyMixer`,
   `AnimationAction` and `AnimationMixer`.
-- **Workspace crates.** `sdf-text`: signed-distance-field text rendering with
-  a `BatchedText` object (ttf-parser outlines, analytic rasteriser). `d3/hierarchy`:
-  a port of d3-hierarchy 3.1.2 (cluster, tree, partition, pack, treemap,
-  stratify).
+- **Workspace crate.** `sdf-text`: signed-distance-field text rendering with
+  a `BatchedText` object (ttf-parser outlines, analytic rasteriser), and the
+  SDF text examples with their gates. Its `d33_treemap_labels` example lays
+  its treemap out with [d3-hierarchy](https://github.com/oneilltomhq/d3-hierarchy),
+  a port of d3-hierarchy 3.1.2 that began in this repository.
 
 ## Examples graded green
 
@@ -86,13 +87,15 @@ from crates.io, pinned to `30.0.1` in `Cargo.toml`; nothing else is unusual.
 
 ```sh
 cargo build --release
-cargo test --workspace --exclude three-rs   # the sdf-text and d3-hierarchy crates; no GPU
+cargo test -p sdf-text --lib                # sdf-text unit tests; no GPU
 cargo test -p three-rs --lib                # three-rs unit tests; no GPU
 ```
 
-The rest of `cargo test --workspace` needs a GPU (the renderer tests) and,
-for the e2e grader, the three.js checkout described next. The e2e tests
-serialise themselves on the one GPU; no `--test-threads` flag is needed.
+The rest of `cargo test --workspace` needs a GPU (the renderer tests and the
+SDF text gates) and, for the e2e grader, the three.js checkout described
+next. The e2e tests serialise themselves on the one GPU; no `--test-threads`
+flag is needed for them, but `sdf-text`'s three GPU gates still want
+`-- --test-threads=1`.
 
 ### The viewer
 
@@ -137,12 +140,11 @@ is only needed to run Three's *own* Chrome-based e2e suite on Linux with a
 real Vulkan adapter, which is how the reference numbers were calibrated
 (`rung0/RUNG0.md`).
 
-Two more checkouts are optional:
+One more checkout is optional:
 
 | env var | default | needed by |
 |---|---|---|
-| `D3_HIERARCHY_DIR` | `~/src/vendor/d3-hierarchy` | the d3-hierarchy crate's tests (its `test/data` fixtures) |
-| `D3_GALLERY_DIR` | `~/src/vendor/d3-gallery` | the `d33_treemap_labels` example (its `flare.json`) |
+| `D3_GALLERY_DIR` | `~/src/vendor/d3-gallery` | `sdf-text`'s `d33_treemap_labels` example (its `flare.json`) |
 
 Tests that need a checkout that is missing fail on the open with the path
 they looked for.
@@ -157,8 +159,7 @@ src/            the three-rs crate, mirroring three.js's src/ tree
   bin/viewer.rs
 examples/       one file per ported Three example, also compiled into tests/e2e
 tests/          Three's QUnit tests ported per module, plus the e2e harness
-sdf-text/       workspace crate: SDF text and BatchedText
-d3/hierarchy/   workspace crate: d3-hierarchy port
+sdf-text/       workspace crate: SDF text and BatchedText, with its examples and gates
 docs/           design notes per subsystem and per-example progress logs
 rung0/          how the grader was calibrated
 ```
@@ -179,5 +180,5 @@ where it deliberately was not.
 
 ## License
 
-MIT. See `LICENSE`, which also carries the three.js (MIT) and d3-hierarchy
-(ISC) notices this port derives from.
+MIT. See `LICENSE`, which also carries the three.js (MIT) notice this port
+derives from.

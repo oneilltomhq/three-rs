@@ -38,3 +38,6 @@ three-rs = { path = "..", version = "0.1.0" }
 
 [dev-dependencies]
 serde_json = "1"
+# The `d33_treemap_labels` example: the treemap layout is the d3-hierarchy
+# port's, from crates.io (https://github.com/oneilltomhq/d3-hierarchy).
+d3-hierarchy = "0.1"

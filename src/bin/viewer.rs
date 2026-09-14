@@ -97,10 +97,9 @@ mod webgpu_postprocessing_masking;
 #[allow(dead_code)]
 mod webgpu_tsl_galaxy;
 
-// `examples/sdf_text_block.rs` and `examples/d33_treemap_labels.rs` are not
-// here: they need the `sdf-text` and `d3-hierarchy` crates, which are
-// dev-dependencies (a regular dependency would close the publish cycle
-// `Cargo.toml` explains), and a `[[bin]]` does not see dev-dependencies.
+// The SDF text examples are not here: they live in `sdf-text/examples/`,
+// because that crate depends on three-rs and three-rs cannot depend back on
+// it (`Cargo.toml` explains the publish cycle).
 
 // ---------------------------------------------------------------- the scenes
 

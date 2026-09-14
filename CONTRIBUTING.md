@@ -35,13 +35,13 @@ run, so a PR for another one has to bring its own evidence.
 ## Setting up
 
 The README's *Building* section covers the toolchain, the three.js checkout
-the examples and grader read from, and the two optional d3 checkouts. The
+the examples and grader read from, and the optional d3-gallery checkout. The
 short version:
 
 ```sh
 git clone --branch r186 --depth 1 https://github.com/mrdoob/three.js ~/src/vendor/three.js
 (cd ~/src/vendor/three.js && npm ci)
-cargo test --workspace --exclude three-rs   # sdf-text and d3-hierarchy; no GPU
+cargo test -p sdf-text --lib                # sdf-text unit tests; no GPU
 cargo test -p three-rs --lib                # three-rs unit tests; no GPU
 cargo test --test e2e -- --nocapture        # the grader; needs a Vulkan device
 ```

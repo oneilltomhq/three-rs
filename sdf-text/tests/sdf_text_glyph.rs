@@ -44,9 +44,9 @@ const ATLAS_SIZE: u32 = 256;
 
 fn roboto() -> VectorFont {
     let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("sdf-text/tests/assets/Roboto-Regular.ttf");
+        .join("tests/assets/Roboto-Regular.ttf");
     let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
-    VectorFont::parse(bytes, "sdf-text/tests/assets/Roboto-Regular.ttf").unwrap()
+    VectorFont::parse(bytes, "tests/assets/Roboto-Regular.ttf").unwrap()
 }
 
 /// A bilinear sample of the atlas, in the same convention

@@ -332,6 +332,8 @@ checksum = "f27ae1dd37df86211c42e150270f82743308803d90a6f6e6651cd730d5e1732f"
 [[package]]
 name = "d3-hierarchy"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c6226b12c7dc58c0c11e00d659efe766520c21df38b24e3018011a185999bdf8"
 dependencies = [
  "serde_json",
 ]
@@ -1466,6 +1468,7 @@ name = "sdf-text"
 version = "0.1.0"
 dependencies = [
  "bytemuck",
+ "d3-hierarchy",
  "owned_ttf_parser",
  "serde_json",
  "three-rs",
@@ -1681,10 +1684,8 @@ name = "three-rs"
 version = "0.1.2"
 dependencies = [
  "bytemuck",
- "d3-hierarchy",
  "png",
  "pollster",
- "sdf-text",
  "serde_json",
  "wgpu",
  "winit",
