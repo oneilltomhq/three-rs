@@ -280,6 +280,18 @@ struct MaterialStates {
     by_dynamic_key: HashMap<u64, Rc<NodeProgram>>,
 }
 
+/// One uploaded 2D texture, with the `Texture.version` its pixels came from.
+///
+/// The version is the texture's half of what `MaterialKey` is for a program:
+/// `set_data` / `set_needs_update` bump it, and a bumped version makes the next
+/// frame write the new bytes into this same `wgpu::Texture` rather than return
+/// stale pixels. Without it a changed image would either never reach the GPU or
+/// force a fresh allocation every frame.
+struct Texture2DEntry {
+    gpu: wgpu::Texture,
+    version: u32,
+}
+
 /// The attachments, formats and size of the pass about to run.
 struct PassTarget {
     color: wgpu::TextureView,
@@ -359,8 +371,9 @@ pub struct Renderer {
     /// is dropped. Swept by liveness at the start of every `render()`; see
     /// [`GeometryEntry`].
     geometries: HashMap<usize, GeometryEntry>,
-    /// `Textures`' GPU side, keyed by texture identity.
-    textures_2d: HashMap<usize, wgpu::Texture>,
+    /// `Textures`' GPU side, keyed by texture identity. The entry carries the
+    /// `Texture.version` it was uploaded at; see [`Texture2DEntry`].
+    textures_2d: HashMap<usize, Texture2DEntry>,
     cube_textures: HashMap<usize, wgpu::Texture>,
     /// `WebGPUTexturePassUtils.transferPipelines`, keyed by texture format.
     mipmap_pipelines: HashMap<wgpu::TextureFormat, wgpu::RenderPipeline>,
@@ -2129,13 +2142,40 @@ impl Renderer {
         }
 
         let id = texture.id();
-        if let Some(gpu) = self.textures_2d.get(&id) {
-            return gpu.clone();
+        let version = texture.version();
+        let format = texture.format();
+        let mip_level_count = texture.mip_level_count();
+
+        // `Textures.updateTexture()`'s `needsUpdate` branch: the texture is
+        // already on the GPU and only its pixels changed (`set_data`, or
+        // `set_needs_update` on bytes written another way), so write them into
+        // the texture that is there rather than allocate a new one. The
+        // allocation, its view and every bind group built from it survive,
+        // which is what makes a per-frame texture — a screencast frame, an shm
+        // client buffer — cost one upload instead of a rebuild.
+        if let Some(cached) = self.textures_2d.get(&id) {
+            if cached.version == version {
+                return cached.gpu.clone();
+            }
+            let gpu = cached.gpu.clone();
+            self.upload_texture_2d(&gpu, texture);
+            if mip_level_count > 1 {
+                self.generate_mipmaps(&gpu, format, mip_level_count, 1);
+            }
+            self.textures_2d.insert(
+                id,
+                Texture2DEntry {
+                    gpu: gpu.clone(),
+                    version,
+                },
+            );
+            // One upload, the way a rewritten attribute is one buffer write;
+            // the resident count is unchanged because nothing was allocated.
+            self.info.build.textures_uploaded += 1;
+            return gpu;
         }
 
         let (width, height) = texture.size();
-        let format = texture.format();
-        let mip_level_count = texture.mip_level_count();
 
         // A 32-bit float texture is sampled through a `Filtering` sampler like
         // every other colour texture (`programs::layout_entry`), which wgpu
@@ -2171,64 +2211,79 @@ impl Renderer {
             view_formats: &[],
         });
 
-        {
-            let inner = texture.borrow();
-            let data = inner
-                .data
-                .as_ref()
-                .expect("three-rs: the texture has no image data");
-
-            // The row stride comes from the format, not from a hardcoded
-            // RGBA8: `r32float` is also 4 bytes per texel but for a different
-            // reason, and the next wider float format would shear the upload.
-            let bytes_per_texel = format
-                .block_copy_size(None)
-                .expect("three-rs: the texture format has no single block size");
-
-            // `copyExternalImageToTexture( { flipY } )`: the source rows are
-            // uploaded bottom-up. (three.js' `_flipY()` pass is only for the
-            // `_copyBufferToTexture` path, and is the same flip.)
-            let rows: Vec<u8> = if inner.flip_y {
-                let stride = (width * bytes_per_texel) as usize;
-                let mut flipped = Vec::with_capacity(data.len());
-                for row in (0..height as usize).rev() {
-                    flipped.extend_from_slice(&data[row * stride..(row + 1) * stride]);
-                }
-                flipped
-            } else {
-                data.clone()
-            };
-
-            self.queue.write_texture(
-                wgpu::TexelCopyTextureInfo {
-                    texture: &gpu,
-                    mip_level: 0,
-                    origin: wgpu::Origin3d::ZERO,
-                    aspect: wgpu::TextureAspect::All,
-                },
-                &rows,
-                wgpu::TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: Some(width * bytes_per_texel),
-                    rows_per_image: Some(height),
-                },
-                wgpu::Extent3d {
-                    width,
-                    height,
-                    depth_or_array_layers: 1,
-                },
-            );
-        }
+        self.upload_texture_2d(&gpu, texture);
 
         if mip_level_count > 1 {
             self.generate_mipmaps(&gpu, format, mip_level_count, 1);
         }
 
         texture.set_gpu(gpu.clone());
-        self.textures_2d.insert(id, gpu.clone());
+        self.textures_2d.insert(
+            id,
+            Texture2DEntry {
+                gpu: gpu.clone(),
+                version,
+            },
+        );
         self.info.build.textures_uploaded += 1;
         self.info.memory.textures = self.textures_2d.len() + self.cube_textures.len();
         gpu
+    }
+
+    /// The `copyExternalImageToTexture` half of `Textures.updateTexture()`:
+    /// mip 0 of `texture`'s image into `gpu`, with `flipY` applied. Shared by
+    /// the first upload and every later `needsUpdate` one, so the two cannot
+    /// disagree about the row order or the stride.
+    fn upload_texture_2d(&self, gpu: &wgpu::Texture, texture: &Texture) {
+        let (width, height) = texture.size();
+        let format = texture.format();
+
+        let inner = texture.borrow();
+        let data = inner
+            .data
+            .as_ref()
+            .expect("three-rs: the texture has no image data");
+
+        // The row stride comes from the format, not from a hardcoded
+        // RGBA8: `r32float` is also 4 bytes per texel but for a different
+        // reason, and the next wider float format would shear the upload.
+        let bytes_per_texel = format
+            .block_copy_size(None)
+            .expect("three-rs: the texture format has no single block size");
+
+        // `copyExternalImageToTexture( { flipY } )`: the source rows are
+        // uploaded bottom-up. (three.js' `_flipY()` pass is only for the
+        // `_copyBufferToTexture` path, and is the same flip.)
+        let rows: Vec<u8> = if inner.flip_y {
+            let stride = (width * bytes_per_texel) as usize;
+            let mut flipped = Vec::with_capacity(data.len());
+            for row in (0..height as usize).rev() {
+                flipped.extend_from_slice(&data[row * stride..(row + 1) * stride]);
+            }
+            flipped
+        } else {
+            data.clone()
+        };
+
+        self.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: gpu,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &rows,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(width * bytes_per_texel),
+                rows_per_image: Some(height),
+            },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
     }
 
     /// `Textures.updateTexture()` for a `CubeTexture`: one 2D texture with six
