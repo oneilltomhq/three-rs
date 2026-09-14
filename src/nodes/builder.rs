@@ -574,7 +574,7 @@ impl NodeBuilder {
         } = &mut g.bindings[slot]
         {
             let align = wgsl::align_of(u.ty);
-            let offset = (*size + align - 1) / align * align;
+            let offset = size.div_ceil(align) * align;
             members.push(UniformMember {
                 name: name.clone(),
                 source: u.source.clone(),
@@ -1318,7 +1318,7 @@ impl NodeBuilder {
         for bindings in groups.iter_mut() {
             for desc in bindings.iter_mut() {
                 if let BindingDesc::Uniforms { size, .. } = desc {
-                    *size = (*size + 15) / 16 * 16;
+                    *size = size.div_ceil(16) * 16;
                 }
             }
         }
