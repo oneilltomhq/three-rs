@@ -307,14 +307,16 @@ So there are two routes, three.js' two:
   since a `wgpu::Buffer` is a fixed size. Either way it is one
   `info.build.buffers_written` and no `geometries_uploaded`, which
   `a_mutated_attribute_rewrites_one_buffer` in `tests/e2e` asserts. Only
-  `position`, `normal` and `uv` are versioned, because they are the only
-  attributes the renderer uploads; and the index is not, because
-  `BufferGeometry.index` is an `Index`, not a `BufferAttribute`, so it has no
-  `needsUpdate` to read.
+  `position`, `normal` and `uv` are versioned; every other attribute (`color`
+  for a `vertex_colors` material, whatever a node graph's `attribute( name )`
+  names) is uploaded once and not refreshed, and the index is not versioned
+  either, because `BufferGeometry.index` is an `Index`, not a
+  `BufferAttribute`, so it has no `needsUpdate` to read.
 - **Make a new `BufferGeometry`** and hand it to the mesh. That is a fresh id,
   so the whole geometry is uploaded, and dropping the old one drops its buffers
   at the next `render()`. This is the route for a changed index, a new
-  attribute, or a different attribute set. A `clone()` counts as a new
+  attribute, a changed `color` or other extra attribute, or a different
+  attribute set. A `clone()` counts as a new
   geometry: `GeometryId::clone` mints a fresh id exactly as `MaterialId::clone`
   does, so a geometry cloned, mutated and drawn shows its mutation.
 
