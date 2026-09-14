@@ -1507,7 +1507,55 @@ impl Renderer {
             .canvas
             .as_ref()
             .expect("three-rs: prepare_canvas() has just created the canvas");
-        let (width, height) = (canvas.width, canvas.height);
+        let (texture, width, height) = (canvas.color.clone(), canvas.width, canvas.height);
+
+        self.read_texture_pixels(&texture, width, height)
+    }
+
+    /// The same readback off a [`RenderTarget`] rather than the canvas
+    /// (issue #50).
+    ///
+    /// `read_canvas_pixels()` is fine as the only readback for as long as
+    /// `present()` is a blit of the canvas, so that the shot and the window
+    /// match. This is the fallback for when it is not, and the way to grade a
+    /// pass that never reaches the canvas at all: it reads the target's
+    /// resolved, sampleable colour texture, which is the one
+    /// `texture( target.texture )` samples, so an MSAA target reads back
+    /// resolved.
+    ///
+    /// The target's textures are created if the renderer has not drawn to it
+    /// yet, in which case the pixels are whatever the GPU left there.
+    pub fn read_target_pixels(
+        &mut self,
+        render_target: &RenderTarget,
+    ) -> Result<(u32, u32, Vec<u8>), Error> {
+        self.prepare_render_target(render_target);
+
+        let inner = render_target.inner().borrow();
+        let (width, height) = (inner.width, inner.height);
+        let texture = inner.texture.with_gpu(|gpu| gpu.clone());
+        drop(inner);
+
+        self.read_texture_pixels(&texture, width, height)
+    }
+
+    /// The one copy-to-buffer-and-map path both readbacks above go through:
+    /// mip 0 of `texture` as top-down, tightly packed RGBA8.
+    fn read_texture_pixels(
+        &self,
+        texture: &wgpu::Texture,
+        width: u32,
+        height: u32,
+    ) -> Result<(u32, u32, Vec<u8>), Error> {
+        // The row stripping below, and the four bytes a pixel the callers are
+        // promised, assume an 8-bit-per-channel colour format. A float target
+        // would read back as garbage rather than fail, so say so instead.
+        let format = texture.format();
+        if format.block_copy_size(None) != Some(4) {
+            return Err(Error::Readback {
+                reason: format!("{format:?} is not a four-byte-per-pixel format"),
+            });
+        }
 
         // `copy_texture_to_buffer` needs 256-byte aligned rows; the padding is
         // stripped again below (FINDINGS #19: not stripping it shears the image).
@@ -1529,7 +1577,7 @@ impl Renderer {
 
         encoder.copy_texture_to_buffer(
             wgpu::TexelCopyTextureInfo {
-                texture: &canvas.color,
+                texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,

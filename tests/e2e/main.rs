@@ -789,6 +789,77 @@ fn a_scene_mutation_uploads_exactly_what_changed() {
     );
 }
 
+/// Issue #50: the readback off a `RenderTarget` is the readback off the canvas.
+///
+/// `read_canvas_pixels()` was the only readback, and it reads the canvas, which
+/// is right only for as long as `present()` is a blit of that canvas. Both now
+/// go through one copy-to-buffer-and-map path, so the way to check the new one
+/// is to render the same scene twice — once to a target, once to the canvas —
+/// and read each back its own way. Same pixels, or the shared path is not
+/// shared.
+#[test]
+fn a_render_target_reads_back_the_same_pixels_as_the_canvas() {
+    use std::rc::Rc;
+    use three_rs::materials::MeshBasicNodeMaterial;
+    use three_rs::{
+        box_geometry, Mesh, PerspectiveCamera, RenderTarget, Renderer, RendererParameters, Scene,
+    };
+
+    let _gpu = gpu();
+
+    // `antialias: false` so the canvas is single-sample, as a default
+    // `RenderTarget` is; an MSAA canvas against a single-sample target would be
+    // comparing the resolve, not the readback.
+    let mut renderer = Renderer::new(RendererParameters { antialias: false }).unwrap();
+    renderer.set_pixel_ratio(1.0);
+    renderer.set_size(64.0, 64.0);
+
+    let mut camera = PerspectiveCamera::new(60.0, 1.0, 0.1, 100.0);
+    camera.node.borrow_mut().position.z = 5.0;
+
+    let mesh = Mesh::new(
+        Rc::new(box_geometry(1.0, 1.0, 1.0, 1, 1, 1)),
+        MeshBasicNodeMaterial::new(),
+    );
+    let mut scene = Scene::new();
+    scene.add(&mesh);
+
+    renderer.render(&mut scene, &mut camera);
+    let (canvas_width, canvas_height, canvas) = renderer.read_canvas_pixels().unwrap();
+
+    let target = RenderTarget::new(canvas_width, canvas_height);
+    renderer.set_render_target(Some(target.clone()));
+    renderer.render(&mut scene, &mut camera);
+    renderer.set_render_target(None);
+
+    let (width, height, pixels) = renderer.read_target_pixels(&target).unwrap();
+
+    assert_eq!(
+        (width, height),
+        (canvas_width, canvas_height),
+        "the target is the canvas' size"
+    );
+    assert_eq!(
+        pixels.len(),
+        (width * height * 4) as usize,
+        "tightly packed RGBA8, the row padding stripped"
+    );
+    assert!(
+        pixels.iter().any(|byte| *byte != 0),
+        "the target was drawn to, so it cannot read back as all zeroes"
+    );
+
+    let differing = canvas
+        .iter()
+        .zip(pixels.iter())
+        .filter(|(a, b)| a != b)
+        .count();
+    assert_eq!(
+        differing, 0,
+        "the same scene read off the target and off the canvas: {differing} bytes differ"
+    );
+}
+
 /// Issue #47: a vertex moved in place, and the one buffer write it costs.
 ///
 /// `attribute.array_mut()` then `set_needs_update()` is three.js'
