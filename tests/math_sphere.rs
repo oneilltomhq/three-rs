@@ -36,7 +36,13 @@ fn instancing() {
 // PUBLIC
 #[test]
 fn is_sphere() {
-    assert!(Sphere::IS_SPHERE);
+    // Mirrors three.js's `assert.ok( a.isSphere )`: this pins the public
+    // `IS_SPHERE` constant's value, which happens to be `true` today but is
+    // not statically guaranteed to stay that way.
+    #[allow(clippy::assertions_on_constants)]
+    {
+        assert!(Sphere::IS_SPHERE);
+    }
 
     // `Box3` carries no `IS_SPHERE` flag at all, which is the Rust equivalent
     // of `! b.isSphere`.

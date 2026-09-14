@@ -46,7 +46,13 @@ fn instancing() {
 // PUBLIC STUFF
 #[test]
 fn is_plane() {
-    assert!(Plane::IS_PLANE);
+    // Mirrors three.js's `assert.ok( a.isPlane )`: this pins the public
+    // `IS_PLANE` constant's value, which happens to be `true` today but is
+    // not statically guaranteed to stay that way.
+    #[allow(clippy::assertions_on_constants)]
+    {
+        assert!(Plane::IS_PLANE);
+    }
 }
 
 #[test]
