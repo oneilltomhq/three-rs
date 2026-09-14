@@ -15,6 +15,7 @@
 
 pub mod batched_text;
 pub mod edt;
+pub mod error;
 pub mod raster;
 pub mod text;
 pub mod text_builder;
@@ -23,6 +24,7 @@ pub mod vector_font_atlas;
 
 pub use batched_text::{BatchedText, BatchedTextOptions, GLYPH_QUAD_PAD};
 pub use edt::{compute_sdf, compute_sdf_default, edt_1d, edt_2d};
+pub use error::Error;
 pub use text::{OpacitySink, Text};
 pub use text_builder::{
     empty_render_info, layout_text, layout_text_vector, Anchor, LaidOutGlyph, LayoutParams,
