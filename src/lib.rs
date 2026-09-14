@@ -8,6 +8,7 @@
 pub mod animation;
 pub mod cameras;
 pub mod core;
+pub mod error;
 pub mod geometries;
 pub mod lights;
 pub mod loaders;
@@ -26,6 +27,7 @@ pub mod textures;
 
 pub use cameras::{OrthographicCamera, PerspectiveCamera, RenderCamera};
 pub use core::{BufferGeometry, Node, Object3D};
+pub use error::{Error, GltfError};
 pub use geometries::{
     box_geometry, plane_geometry, quad_geometry, sphere_geometry, teapot_geometry,
     torus_knot_geometry,
