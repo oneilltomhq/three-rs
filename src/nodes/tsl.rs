@@ -338,9 +338,7 @@ fn binary(op: &'static str, a: NodeRef, b: NodeRef) -> NodeRef {
 
     let ty = if ta.is_matrix() {
         ta
-    } else if tb.is_matrix() {
-        tb
-    } else if tb.components() > ta.components() {
+    } else if tb.is_matrix() || tb.components() > ta.components() {
         tb
     } else {
         ta
