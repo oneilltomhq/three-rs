@@ -20,7 +20,7 @@
 
 use std::rc::Rc;
 
-use three_rs::core::{Node, Object3DNode};
+use three_rs::core::Node;
 use three_rs::nodes::tsl::{checker, fog, mix, normal_map, range_fog_factor, texture, uv};
 use three_rs::textures::Wrapping;
 use three_rs::{
@@ -78,8 +78,7 @@ pub fn init() -> App {
         material.color_node = Some(Color::from_hex(hex).into());
         material.lights = false;
 
-        let mesh = Mesh::new(sphere_geometry.clone());
-        mesh.borrow_mut().mesh_mut().unwrap().material = Some(material);
+        let mesh = Mesh::new(sphere_geometry.clone(), material);
 
         let light = PointLight::new(Color::from_hex(hex), 1.0, 100.0);
         light.borrow_mut().light_mut().unwrap().set_power(1700.0);
@@ -111,15 +110,13 @@ pub fn init() -> App {
     let mut left_material = MeshPhongNodeMaterial::phong(Color::from_hex(0x555555));
     left_material.lights_node = Some(blue_lights_node);
     left_material.specular_node = Some(texture(&alpha_texture));
-    let left_object = Mesh::new(geometry_teapot.clone());
-    left_object.borrow_mut().mesh_mut().unwrap().material = Some(left_material);
+    let left_object = Mesh::new(geometry_teapot.clone(), left_material);
     left_object.borrow_mut().position.x = -3.0;
 
     let mut centre_material = MeshPhongNodeMaterial::phong(Color::from_hex(0x555555));
     centre_material.normal_node = Some(normal_map(texture(&normal_map_texture)));
     centre_material.shininess = 80.0;
-    let centre_object = Mesh::new(geometry_teapot.clone());
-    centre_object.borrow_mut().mesh_mut().unwrap().material = Some(centre_material);
+    let centre_object = Mesh::new(geometry_teapot.clone(), centre_material);
 
     let mut right_material = MeshPhongNodeMaterial::phong(Color::from_hex(0x555555));
     right_material.lights_node = Some(white_lights_node);
@@ -129,8 +126,7 @@ pub fn init() -> App {
         checker(uv().mul(5.0)),
     ));
     right_material.shininess = 90.0;
-    let right_object = Mesh::new(geometry_teapot);
-    right_object.borrow_mut().mesh_mut().unwrap().material = Some(right_material);
+    let right_object = Mesh::new(geometry_teapot, right_material);
     right_object.borrow_mut().position.x = 3.0;
 
     for object in [&left_object, &centre_object, &right_object] {

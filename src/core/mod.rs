@@ -10,5 +10,5 @@ pub use buffer_geometry::{
     GeometryId, Group, Index,
 };
 pub use layers::Layers;
-pub use node::{Node, Object3DNode, WeakNode};
+pub use node::{Node, WeakNode};
 pub use object3d::Object3D;

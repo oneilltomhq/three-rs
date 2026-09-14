@@ -4,7 +4,6 @@
 //! Expected numbers come from three.js' own `GLTFLoader` in the vendor tree,
 //! run under node (see `handoff`/docs/gltf-progress.md for the script).
 
-use three_rs::core::Object3DNode;
 use three_rs::loaders::GLTFLoader;
 
 /// Three's own sample models, from the `THREE_JS_DIR` checkout.

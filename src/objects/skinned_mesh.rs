@@ -3,7 +3,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::core::{BufferGeometry, Node, Object3D, Object3DNode};
+use crate::core::{BufferGeometry, Node, Object3D};
 use crate::math::{Box3, Matrix4, Sphere, Vector3, Vector4};
 use crate::objects::Skeleton;
 

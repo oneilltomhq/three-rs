@@ -21,7 +21,7 @@
 
 use std::rc::Rc;
 
-use three_rs::core::{BufferAttribute, Object3DNode};
+use three_rs::core::BufferAttribute;
 use three_rs::{
     box_geometry, AmbientLight, BufferGeometry, Color, Mesh, MeshPhongNodeMaterial,
     PerspectiveCamera, PointLight, Renderer, RendererParameters, Scene, Vector3,
@@ -110,8 +110,7 @@ pub fn init() -> App {
     let mut material = MeshPhongNodeMaterial::phong(Color::from_hex(0xff0000));
     material.flat_shading = true;
 
-    let mesh = Mesh::new(geometry);
-    mesh.borrow_mut().mesh_mut().unwrap().material = Some(material);
+    let mesh = Mesh::new(geometry, material);
     scene.add(&mesh);
 
     let mut renderer = Renderer::new(RendererParameters { antialias: true });

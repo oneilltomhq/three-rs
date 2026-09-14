@@ -3,18 +3,34 @@
 `Object3D` is the node payload; the tree is
 
 ```rust
-pub type Node = Rc<RefCell<Object3D>>;   // Object3D.children entries
-pub type WeakNode = Weak<RefCell<Object3D>>; // Object3D.parent
+pub struct Node(Rc<RefCell<Object3D>>);      // Object3D.children entries
+pub struct WeakNode(Weak<RefCell<Object3D>>); // Object3D.parent
 ```
+
+Both are newtypes, as of 0.2.0 (#38); they were type aliases in 0.1.0.
+`Node` derefs to `RefCell<Object3D>`, so `node.borrow()` and
+`node.borrow_mut()` reach the object exactly as they did through the alias and
+every call site is the same text. What the newtype buys is the rest of the
+surface: rustdoc prints `Node` in every signature instead of the plumbing, and
+the tree methods are **inherent**, so `light.add(&mesh)` compiles with no
+import. `WeakNode` has no `Deref` — the only thing to do with a weak handle is
+`upgrade()`, which hands back an `Option<Node>`.
+
+Beside the ported methods, `Node` carries the `Rc` associated functions a
+consumer would otherwise reach for: `Node::ptr_eq(a, b)` for `a === b`,
+`downgrade()`, `as_ptr()` for anyone keying a cache on the address (but read
+"Identity and eviction" below first — the renderer keys on `object.id`, and
+deliberately), and `Node::new(object)` / `Object3D::into_node()` to wrap one.
 
 A parent holds its children strongly, a child holds its parent weakly. All the
 methods that reach outside a single object — `add`, `remove`, `attach`,
 `traverse*`, `getObjectBy*`, `updateMatrixWorld`, `updateWorldMatrix`, and the
-parent-aware `lookAt`/`localToWorld`/`worldToLocal`/`getWorld*` — are on the
-`Object3DNode` trait, implemented for `Node`. The transform-only methods
-(`rotateX`, `translateOnAxis`, `applyMatrix4`, `updateMatrix`, …) stay inherent
-methods on `Object3D`, so they stay available on a plain `&mut Object3D` — which
-is what `PerspectiveCamera` and the `Object3D` the examples use as a transform
+parent-aware `lookAt`/`localToWorld`/`worldToLocal`/`getWorld*` — are inherent
+on `Node`, because each of them has to reach outside the object it is called on
+and a `&mut Object3D` cannot. The transform-only methods (`rotateX`,
+`translateOnAxis`, `applyMatrix4`, `updateMatrix`, …) stay inherent methods on
+`Object3D`, so they stay available on a plain `&mut Object3D` — which is what
+`PerspectiveCamera` and the `Object3D` the examples use as a transform
 scratchpad still hold.
 
 ## Why not an arena
@@ -48,7 +64,8 @@ from atomics. If the renderer is ever parallelised, the swap is mechanical.
 ## Divergences from three.js
 
 - `Object3D.parent` is weak, so `object.parent()` returns `Option<Node>` by
-  upgrading. In JS the parent link is strong and the cycle is the GC's problem.
+  upgrading, and the field itself is a `WeakNode`. In JS the parent link is
+  strong and the cycle is the GC's problem.
 - `getObjectByProperty( name, value )` has no Rust equivalent of dynamic
   property lookup; it takes a predicate (`&dyn Fn(&Object3D) -> bool`), and
   `getObjectById`/`getObjectByName` are built on it exactly as in three.js.
@@ -65,7 +82,7 @@ from atomics. If the renderer is ever parallelised, the swap is mechanical.
 order:
 
 1. `scene.update_matrix_world()` — `Object3D.updateMatrixWorld()` on the scene
-   root, recursing through `Object3DNode`. It honours `matrixAutoUpdate`
+   root, recursing through `Node`'s children. It honours `matrixAutoUpdate`
    (whether the local matrix is recomposed), `matrixWorldAutoUpdate` (whether
    this object's world matrix is written) and `matrixWorldNeedsUpdate`, and
    threads three.js' `force` down the tree: an object that did recompute forces
@@ -88,12 +105,13 @@ pub enum Payload { None, Mesh(Mesh), InstancedMesh(InstancedMesh), Line(Line), L
 
 `Payload::None` is a plain `Object3D`, a `Group` or a `Bone`: something the walk
 passes through without drawing. `object.is_mesh()` is a match on the payload, and
-`Mesh::new( geometry )` / `InstancedMesh::new( geometry, material, count )` /
-`Line::new( geometry, material )` / `LineSegments::new( geometry, material )`
-return a `Node` with the payload already set, so example code reads like the JS:
+`Mesh::new( geometry, material )` / `InstancedMesh::new( geometry, material,
+count )` / `Line::new( geometry, material )` /
+`LineSegments::new( geometry, material )` return a `Node` with the payload
+already set, so example code reads like the JS:
 
 ```rust
-let mesh = Mesh::new( geometry.clone() );
+let mesh = Mesh::new( geometry.clone(), material );
 mesh.borrow_mut().position.set( x, y, z );
 scene.add( &mesh );
 ```

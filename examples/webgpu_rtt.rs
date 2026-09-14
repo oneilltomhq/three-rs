@@ -59,8 +59,7 @@ pub fn init() -> App {
 
     //
 
-    let boxed = Mesh::new(geometry_box);
-    boxed.borrow_mut().mesh_mut().unwrap().material = Some(material_box);
+    let boxed = Mesh::new(geometry_box, material_box);
     scene.add(&boxed);
 
     //

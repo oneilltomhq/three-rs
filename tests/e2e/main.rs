@@ -763,8 +763,7 @@ fn a_dropped_geometry_does_not_lend_its_buffers_to_the_next_one() {
     let tex = Texture::new(2, 2, Some(vec![255u8; 16]));
     let mut material = MeshBasicNodeMaterial::new();
     material.color_node = Some(texture(&tex));
-    let mesh = Mesh::new(Rc::new(plane_geometry(1.0, 1.0, 1, 1)));
-    mesh.borrow_mut().mesh_mut().unwrap().material = Some(material);
+    let mesh = Mesh::new(Rc::new(plane_geometry(1.0, 1.0, 1, 1)), material);
     let mut scene = Scene::new();
     scene.add(&mesh);
     renderer.render(&mut scene, &mut camera);

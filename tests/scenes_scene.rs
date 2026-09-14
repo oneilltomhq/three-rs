@@ -5,7 +5,7 @@
 //! The `environment`/`fog`/`backgroundBlurriness` assertions have nothing to
 //! port yet.
 
-use three_rs::core::{Object3D, Object3DNode};
+use three_rs::core::Object3D;
 use three_rs::Scene;
 
 #[test]

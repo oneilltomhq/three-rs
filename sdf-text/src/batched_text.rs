@@ -40,7 +40,7 @@
 
 use std::rc::Rc;
 
-use three_rs::core::{Object3D, Object3DNode};
+use three_rs::core::Object3D;
 use three_rs::geometries::plane_geometry;
 use three_rs::materials::Side;
 use three_rs::math::{Color, Matrix4};

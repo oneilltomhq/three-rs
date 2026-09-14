@@ -25,7 +25,7 @@ pub mod testing;
 pub mod textures;
 
 pub use cameras::{OrthographicCamera, PerspectiveCamera, RenderCamera};
-pub use core::{BufferGeometry, Node, Object3D, Object3DNode};
+pub use core::{BufferGeometry, Node, Object3D};
 pub use geometries::{
     box_geometry, plane_geometry, quad_geometry, sphere_geometry, teapot_geometry,
     torus_knot_geometry,

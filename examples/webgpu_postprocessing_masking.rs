@@ -58,11 +58,11 @@ pub fn init() -> App {
     let mask_scene1 = Scene::new();
     // `new Mesh( geometry )` — no material, so the renderer uses the default
     // white `MeshBasicMaterial`.
-    let boxed = Mesh::new(Rc::new(box_geometry(4.0, 4.0, 4.0, 1, 1, 1)));
+    let boxed = Mesh::new(Rc::new(box_geometry(4.0, 4.0, 4.0, 1, 1, 1)), None);
     mask_scene1.add(&boxed);
 
     let mask_scene2 = Scene::new();
-    let torus = Mesh::new(Rc::new(torus_geometry(3.0, 1.0, 16, 32)));
+    let torus = Mesh::new(Rc::new(torus_geometry(3.0, 1.0, 16, 32)), None);
     mask_scene2.add(&torus);
 
     let camera = PerspectiveCamera::new(50.0, INNER_WIDTH / INNER_HEIGHT, 1.0, 1000.0);

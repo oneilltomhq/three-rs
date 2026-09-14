@@ -52,7 +52,7 @@ pub fn init() -> App {
         let z = (random.next() * 2.0) - 1.0;
         let z_scale = (1.0 - z * z).sqrt() * scale;
 
-        let mesh = Mesh::new(geometry.clone());
+        let mesh = Mesh::new(geometry.clone(), None);
         {
             let mut object = mesh.borrow_mut();
             object

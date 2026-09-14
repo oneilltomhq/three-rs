@@ -9,7 +9,7 @@
 use std::cmp::Ordering;
 
 use crate::cameras::RenderCamera;
-use crate::core::{Layers, Node, Object3DNode};
+use crate::core::{Layers, Node};
 use crate::math::{CoordinateSystem, Frustum, Matrix4};
 
 /// One entry of `RenderList.opaque` / `RenderList.transparent`.
@@ -334,8 +334,7 @@ mod tests {
     }
 
     fn mesh_at(z: f64) -> Node {
-        let node = Mesh::new(unit_box());
-        node.borrow_mut().mesh_mut().unwrap().material = Some(MeshBasicNodeMaterial::new());
+        let node = Mesh::new(unit_box(), MeshBasicNodeMaterial::new());
         node.borrow_mut().position.z = z;
         node
     }

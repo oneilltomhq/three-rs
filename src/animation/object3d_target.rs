@@ -19,7 +19,7 @@ use std::rc::Rc;
 
 use crate::animation::binding_target::{BindingTarget, TargetResolver};
 use crate::animation::property_binding::ParsedTrackName;
-use crate::core::{Node, Object3DNode};
+use crate::core::Node;
 use crate::objects::Skeleton;
 
 /// Which `Object3D` property a [`NodeTarget`] is bound to. Three picks one of
