@@ -279,11 +279,11 @@ fn the_frame_is_stable_and_the_image_gap_is_measured() {
     println!("adapter: {:?}", app.renderer.adapter_info());
 
     d33_treemap_labels::animate(&mut app);
-    let (width, height, first) = app.renderer.read_canvas_pixels();
+    let (width, height, first) = app.renderer.read_canvas_pixels().unwrap();
     assert_eq!((width, height), (800, 500));
 
     d33_treemap_labels::animate(&mut app);
-    let (_, _, second) = app.renderer.read_canvas_pixels();
+    let (_, _, second) = app.renderer.read_canvas_pixels().unwrap();
 
     let differing = first
         .chunks_exact(4)

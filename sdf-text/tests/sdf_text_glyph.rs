@@ -123,11 +123,11 @@ fn one_glyph_quad_matches_the_atlas_sdf() {
     scene.add(batch.node());
     batch.node().update_matrix_world(true);
 
-    let mut renderer = Renderer::new(RendererParameters { antialias: false });
+    let mut renderer = Renderer::new(RendererParameters { antialias: false }).unwrap();
     renderer.set_pixel_ratio(1.0);
     renderer.set_size(WIDTH as f64, HEIGHT as f64);
     renderer.render(&mut scene, &mut camera);
-    let (w, h, pixels) = renderer.read_canvas_pixels();
+    let (w, h, pixels) = renderer.read_canvas_pixels().unwrap();
     assert_eq!((w as usize, h as usize), (WIDTH, HEIGHT));
 
     // --- predict ----------------------------------------------------------
@@ -320,11 +320,11 @@ fn the_outline_band_is_the_halo_colour() {
     scene.add(batch.node());
     batch.node().update_matrix_world(true);
 
-    let mut renderer = Renderer::new(RendererParameters { antialias: false });
+    let mut renderer = Renderer::new(RendererParameters { antialias: false }).unwrap();
     renderer.set_pixel_ratio(1.0);
     renderer.set_size(WIDTH as f64, HEIGHT as f64);
     renderer.render(&mut scene, &mut camera);
-    let (_, _, pixels) = renderer.read_canvas_pixels();
+    let (_, _, pixels) = renderer.read_canvas_pixels().unwrap();
 
     let aspect = WIDTH as f64 / HEIGHT as f64;
     let t = (FOV * std::f64::consts::PI / 360.0).tan();
@@ -420,11 +420,11 @@ fn the_atlas_v_flip_and_u_direction_are_right() {
     scene.add(batch.node());
     batch.node().update_matrix_world(true);
 
-    let mut renderer = Renderer::new(RendererParameters { antialias: false });
+    let mut renderer = Renderer::new(RendererParameters { antialias: false }).unwrap();
     renderer.set_pixel_ratio(1.0);
     renderer.set_size(WIDTH as f64, HEIGHT as f64);
     renderer.render(&mut scene, &mut camera);
-    let (_, _, pixels) = renderer.read_canvas_pixels();
+    let (_, _, pixels) = renderer.read_canvas_pixels().unwrap();
 
     let aspect = WIDTH as f64 / HEIGHT as f64;
     let t = (FOV * std::f64::consts::PI / 360.0).tan();

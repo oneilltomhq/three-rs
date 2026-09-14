@@ -50,8 +50,9 @@ pub fn init() -> App {
 
     // textured mesh
 
-    let uv_texture =
-        three_rs::TextureLoader::new().load(examples_dir().join("textures/uv_grid_opengl.jpg"));
+    let uv_texture = three_rs::TextureLoader::new()
+        .load(examples_dir().join("textures/uv_grid_opengl.jpg"))
+        .unwrap();
 
     let geometry_box = Rc::new(box_geometry(1.0, 1.0, 1.0, 1, 1, 1));
     let mut material_box = MeshBasicNodeMaterial::new();
@@ -64,7 +65,7 @@ pub fn init() -> App {
 
     //
 
-    let mut renderer = Renderer::new(RendererParameters { antialias: true });
+    let mut renderer = Renderer::new(RendererParameters { antialias: true }).unwrap();
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
 
@@ -118,7 +119,7 @@ fn main() {
     println!("adapter: {:?}", app.renderer.adapter_info());
     animate(&mut app);
 
-    let (width, height, pixels) = app.renderer.read_canvas_pixels();
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
     let path = std::env::args()
         .nth(1)
         .unwrap_or_else(|| "target/webgpu_rtt.png".to_string());

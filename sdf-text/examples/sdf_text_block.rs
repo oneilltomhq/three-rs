@@ -98,7 +98,7 @@ pub fn init() -> App {
     make_text(&mut batched, BIG_STR, 1.2, 0.0, -0.2, 0x7dd3fc);
     make_text(&mut batched, "Roboto", 0.6, 0.0, -2.6, 0xf472b6);
 
-    let mut renderer = Renderer::new(RendererParameters { antialias: true });
+    let mut renderer = Renderer::new(RendererParameters { antialias: true }).unwrap();
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
 
@@ -171,7 +171,7 @@ fn main() {
         app.batched.count()
     );
 
-    let (width, height, pixels) = app.renderer.read_canvas_pixels();
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
     let path = std::env::args()
         .nth(1)
         .unwrap_or_else(|| "target/sdf_text_block.png".to_string());

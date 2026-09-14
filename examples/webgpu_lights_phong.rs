@@ -60,11 +60,14 @@ pub fn init() -> App {
 
     let texture_loader = three_rs::TextureLoader::new();
 
-    let normal_map_texture =
-        texture_loader.load(examples_dir().join("textures/water/Water_1_M_Normal.jpg"));
+    let normal_map_texture = texture_loader
+        .load(examples_dir().join("textures/water/Water_1_M_Normal.jpg"))
+        .unwrap();
     normal_map_texture.set_wrapping(Wrapping::Repeat, Wrapping::Repeat);
 
-    let alpha_texture = texture_loader.load(examples_dir().join("textures/roughness_map.jpg"));
+    let alpha_texture = texture_loader
+        .load(examples_dir().join("textures/roughness_map.jpg"))
+        .unwrap();
     alpha_texture.set_wrapping(Wrapping::Repeat, Wrapping::Repeat);
 
     // lights
@@ -144,7 +147,7 @@ pub fn init() -> App {
 
     // renderer
 
-    let mut renderer = Renderer::new(RendererParameters { antialias: true });
+    let mut renderer = Renderer::new(RendererParameters { antialias: true }).unwrap();
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
 
@@ -194,7 +197,7 @@ fn main() {
     println!("adapter: {:?}", app.renderer.adapter_info());
     animate(&mut app);
 
-    let (width, height, pixels) = app.renderer.read_canvas_pixels();
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
     let path = std::env::args()
         .nth(1)
         .unwrap_or_else(|| "target/webgpu_lights_phong.png".to_string());
