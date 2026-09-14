@@ -1,7 +1,7 @@
 //! Port of `three.js/src/core/BufferGeometry.js` (interleaved-free `f32`
 //! attributes plus a `u16`/`u32` index).
 
-use std::cell::Cell;
+use std::cell::{Cell, Ref, RefCell, RefMut};
 
 use crate::math::{Matrix3, Matrix4, Quaternion, Vector3};
 
@@ -100,77 +100,117 @@ impl Default for AttributeId {
 pub struct BufferAttribute {
     /// `BufferAttribute.id`. Read-only in spirit; see [`AttributeId`].
     pub id: AttributeId,
-    pub array: Vec<f32>,
+    /// The `Float32Array`. Behind a `RefCell` because a geometry is shared as
+    /// `Rc<BufferGeometry>` and three.js mutates attribute data in place: with
+    /// a plain `Vec` the only route to a changed vertex is a whole new
+    /// geometry (issue #47).
+    array: RefCell<Vec<f32>>,
     pub item_size: usize,
+    /// `BufferAttribute.version` — bumped by
+    /// [`set_needs_update`](Self::set_needs_update), which is three.js'
+    /// `attribute.needsUpdate = true`. The renderer records the version it
+    /// uploaded and re-writes the buffer when this has moved past it; see
+    /// *Changing geometry* in `docs/scene-graph.md`.
+    version: Cell<u32>,
 }
 
 impl BufferAttribute {
     pub fn new(array: Vec<f32>, item_size: usize) -> Self {
         Self {
             id: AttributeId::next(),
-            array,
+            array: RefCell::new(array),
             item_size,
+            version: Cell::new(0),
         }
     }
 
+    /// `attribute.array`, for reading. A `Ref`, so the borrow has to be held
+    /// for as long as the slice is used.
+    pub fn array(&self) -> Ref<'_, Vec<f32>> {
+        self.array.borrow()
+    }
+
+    /// `attribute.array`, for writing — through a shared `&self`, so it works
+    /// on an attribute of a geometry already handed to a mesh as an `Rc`.
+    ///
+    /// Writing alone changes nothing on screen: follow it with
+    /// [`set_needs_update`](Self::set_needs_update), exactly as three.js needs
+    /// `attribute.needsUpdate = true`.
+    pub fn array_mut(&self) -> RefMut<'_, Vec<f32>> {
+        self.array.borrow_mut()
+    }
+
+    /// `BufferAttribute.version`.
+    pub fn version(&self) -> u32 {
+        self.version.get()
+    }
+
+    /// `attribute.needsUpdate = true` — `version ++`. The next render that
+    /// sees this geometry re-writes this attribute's GPU buffer, and only it.
+    pub fn set_needs_update(&self) {
+        self.version.set(self.version.get() + 1);
+    }
+
     pub fn count(&self) -> usize {
-        self.array.len() / self.item_size
+        self.array.borrow().len() / self.item_size
     }
 
     /// `BufferAttribute.getX/getY/getZ()` — the stored value is `f32`, widened
     /// the way JavaScript widens a `Float32Array` read to a number.
     pub fn get_x(&self, index: usize) -> f64 {
-        self.array[index * self.item_size] as f64
+        self.array.borrow()[index * self.item_size] as f64
     }
 
     pub fn get_y(&self, index: usize) -> f64 {
-        self.array[index * self.item_size + 1] as f64
+        self.array.borrow()[index * self.item_size + 1] as f64
     }
 
     pub fn get_z(&self, index: usize) -> f64 {
-        self.array[index * self.item_size + 2] as f64
+        self.array.borrow()[index * self.item_size + 2] as f64
     }
 
     pub fn get_w(&self, index: usize) -> f64 {
-        self.array[index * self.item_size + 3] as f64
+        self.array.borrow()[index * self.item_size + 3] as f64
     }
 
     /// `BufferAttribute.setX/setY/setZ/setW()`.
     pub fn set_x(&mut self, index: usize, x: f64) -> &mut Self {
-        self.array[index * self.item_size] = x as f32;
+        self.array.get_mut()[index * self.item_size] = x as f32;
         self
     }
 
     pub fn set_y(&mut self, index: usize, y: f64) -> &mut Self {
-        self.array[index * self.item_size + 1] = y as f32;
+        self.array.get_mut()[index * self.item_size + 1] = y as f32;
         self
     }
 
     pub fn set_z(&mut self, index: usize, z: f64) -> &mut Self {
-        self.array[index * self.item_size + 2] = z as f32;
+        self.array.get_mut()[index * self.item_size + 2] = z as f32;
         self
     }
 
     pub fn set_w(&mut self, index: usize, w: f64) -> &mut Self {
-        self.array[index * self.item_size + 3] = w as f32;
+        self.array.get_mut()[index * self.item_size + 3] = w as f32;
         self
     }
 
     /// `BufferAttribute.setXY()`.
     pub fn set_xy(&mut self, index: usize, x: f64, y: f64) -> &mut Self {
         let offset = index * self.item_size;
-        self.array[offset] = x as f32;
-        self.array[offset + 1] = y as f32;
+        let array = self.array.get_mut();
+        array[offset] = x as f32;
+        array[offset + 1] = y as f32;
         self
     }
 
     /// `BufferAttribute.setXYZW()`.
     pub fn set_xyzw(&mut self, index: usize, x: f64, y: f64, z: f64, w: f64) -> &mut Self {
         let offset = index * self.item_size;
-        self.array[offset] = x as f32;
-        self.array[offset + 1] = y as f32;
-        self.array[offset + 2] = z as f32;
-        self.array[offset + 3] = w as f32;
+        let array = self.array.get_mut();
+        array[offset] = x as f32;
+        array[offset + 1] = y as f32;
+        array[offset + 2] = z as f32;
+        array[offset + 3] = w as f32;
         self
     }
 
@@ -179,8 +219,10 @@ impl BufferAttribute {
         let index1 = index1 * self.item_size;
         let index2 = index2 * attribute.item_size;
 
+        let source = attribute.array.borrow();
+        let array = self.array.get_mut();
         for i in 0..self.item_size {
-            self.array[index1 + i] = attribute.array[index2 + i];
+            array[index1 + i] = source[index2 + i];
         }
 
         self
@@ -188,13 +230,13 @@ impl BufferAttribute {
 
     /// `BufferAttribute.copyArray()`.
     pub fn copy_array(&mut self, array: &[f32]) -> &mut Self {
-        self.array.copy_from_slice(array);
+        self.array.get_mut().copy_from_slice(array);
         self
     }
 
     /// `BufferAttribute.set( value, offset )`.
     pub fn set(&mut self, value: &[f32], offset: usize) -> &mut Self {
-        self.array[offset..offset + value.len()].copy_from_slice(value);
+        self.array.get_mut()[offset..offset + value.len()].copy_from_slice(value);
         self
     }
 
@@ -202,9 +244,10 @@ impl BufferAttribute {
     /// where three.js loses precision too.
     pub fn set_xyz(&mut self, index: usize, x: f64, y: f64, z: f64) {
         let offset = index * self.item_size;
-        self.array[offset] = x as f32;
-        self.array[offset + 1] = y as f32;
-        self.array[offset + 2] = z as f32;
+        let array = self.array.get_mut();
+        array[offset] = x as f32;
+        array[offset + 1] = y as f32;
+        array[offset + 2] = z as f32;
     }
 
     /// `Vector3.fromBufferAttribute( attribute, index )`.
@@ -789,7 +832,7 @@ impl BufferGeometry {
 
             for &i in &indices {
                 let index = i * item_size;
-                array2.extend_from_slice(&attribute.array[index..index + item_size]);
+                array2.extend_from_slice(&attribute.array()[index..index + item_size]);
             }
 
             BufferAttribute::new(array2, item_size)

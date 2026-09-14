@@ -789,6 +789,165 @@ fn a_scene_mutation_uploads_exactly_what_changed() {
     );
 }
 
+/// Issue #50: the readback off a `RenderTarget` is the readback off the canvas.
+///
+/// `read_canvas_pixels()` was the only readback, and it reads the canvas, which
+/// is right only for as long as `present()` is a blit of that canvas. Both now
+/// go through one copy-to-buffer-and-map path, so the way to check the new one
+/// is to render the same scene twice — once to a target, once to the canvas —
+/// and read each back its own way. Same pixels, or the shared path is not
+/// shared.
+#[test]
+fn a_render_target_reads_back_the_same_pixels_as_the_canvas() {
+    use std::rc::Rc;
+    use three_rs::materials::MeshBasicNodeMaterial;
+    use three_rs::{
+        box_geometry, Mesh, PerspectiveCamera, RenderTarget, Renderer, RendererParameters, Scene,
+    };
+
+    let _gpu = gpu();
+
+    // `antialias: false` so the canvas is single-sample, as a default
+    // `RenderTarget` is; an MSAA canvas against a single-sample target would be
+    // comparing the resolve, not the readback.
+    let mut renderer = Renderer::new(RendererParameters { antialias: false }).unwrap();
+    renderer.set_pixel_ratio(1.0);
+    renderer.set_size(64.0, 64.0);
+
+    let mut camera = PerspectiveCamera::new(60.0, 1.0, 0.1, 100.0);
+    camera.node.borrow_mut().position.z = 5.0;
+
+    let mesh = Mesh::new(
+        Rc::new(box_geometry(1.0, 1.0, 1.0, 1, 1, 1)),
+        MeshBasicNodeMaterial::new(),
+    );
+    let mut scene = Scene::new();
+    scene.add(&mesh);
+
+    renderer.render(&mut scene, &mut camera);
+    let (canvas_width, canvas_height, canvas) = renderer.read_canvas_pixels().unwrap();
+
+    let target = RenderTarget::new(canvas_width, canvas_height);
+    renderer.set_render_target(Some(target.clone()));
+    renderer.render(&mut scene, &mut camera);
+    renderer.set_render_target(None);
+
+    let (width, height, pixels) = renderer.read_target_pixels(&target).unwrap();
+
+    assert_eq!(
+        (width, height),
+        (canvas_width, canvas_height),
+        "the target is the canvas' size"
+    );
+    assert_eq!(
+        pixels.len(),
+        (width * height * 4) as usize,
+        "tightly packed RGBA8, the row padding stripped"
+    );
+    assert!(
+        pixels.iter().any(|byte| *byte != 0),
+        "the target was drawn to, so it cannot read back as all zeroes"
+    );
+
+    let differing = canvas
+        .iter()
+        .zip(pixels.iter())
+        .filter(|(a, b)| a != b)
+        .count();
+    assert_eq!(
+        differing, 0,
+        "the same scene read off the target and off the canvas: {differing} bytes differ"
+    );
+}
+
+/// Issue #47: a vertex moved in place, and the one buffer write it costs.
+///
+/// `attribute.array_mut()` then `set_needs_update()` is three.js'
+/// `attribute.needsUpdate = true`, and the renderer's answer to it has to be
+/// exactly one `queue.write_buffer` — not a new geometry, not a re-upload of
+/// the attributes that did not change. The sibling test above is the same
+/// scene with the geometry *replaced*; this is what the cheaper route costs.
+#[test]
+fn a_mutated_attribute_rewrites_one_buffer() {
+    use std::rc::Rc;
+    use three_rs::materials::MeshBasicNodeMaterial;
+    use three_rs::{box_geometry, Mesh, PerspectiveCamera, Renderer, RendererParameters, Scene};
+
+    let _gpu = gpu();
+
+    let mut renderer = Renderer::new(RendererParameters { antialias: false }).unwrap();
+    renderer.set_pixel_ratio(1.0);
+    renderer.set_size(64.0, 64.0);
+    let mut camera = PerspectiveCamera::new(60.0, 1.0, 0.1, 100.0);
+    camera.node.borrow_mut().position.z = 5.0;
+
+    let geometry = Rc::new(box_geometry(1.0, 1.0, 1.0, 1, 1, 1));
+    let mesh = Mesh::new(geometry.clone(), MeshBasicNodeMaterial::new());
+    let mut scene = Scene::new();
+    scene.add(&mesh);
+
+    renderer.render(&mut scene, &mut camera);
+    let (width, height, before) = renderer.read_canvas_pixels().unwrap();
+
+    // Slide every vertex a long way to the left, through the `Rc` the mesh is
+    // holding — no new geometry, no new mesh, nothing removed from the scene.
+    let position = geometry
+        .get_attribute("position")
+        .expect("three-rs: the box has a position attribute");
+    let uploaded = position.version();
+    {
+        let mut array = position.array_mut();
+        for x in array.iter_mut().step_by(3) {
+            *x -= 1.5;
+        }
+    }
+    position.set_needs_update();
+    assert_eq!(
+        position.version(),
+        uploaded + 1,
+        "set_needs_update() bumps the attribute's version once"
+    );
+
+    renderer.render(&mut scene, &mut camera);
+    let info = renderer.info().clone();
+    println!("mutated attribute: {info}");
+
+    assert_eq!(
+        info.build.buffers_written, 1,
+        "one moved attribute is one buffer write"
+    );
+    assert_eq!(
+        info.build.geometries_uploaded, 0,
+        "the geometry kept its id, so nothing was uploaded"
+    );
+    assert_eq!(
+        info.build.programs_compiled, 0,
+        "moving a vertex does not touch the material"
+    );
+
+    let (after_width, after_height, after) = renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (after_width, after_height));
+
+    let moved = before
+        .iter()
+        .zip(after.iter())
+        .filter(|(a, b)| a != b)
+        .count();
+    assert!(
+        moved > 0,
+        "the box moved, so the frame must have changed; {moved} bytes differ"
+    );
+
+    // A third render changes nothing: the version now matches what was
+    // uploaded, so the steady frame is a steady frame again.
+    renderer.render(&mut scene, &mut camera);
+    assert_eq!(
+        renderer.info().build,
+        three_rs::BuildCounts::default(),
+        "a frame after the re-upload builds nothing"
+    );
+}
+
 /// Issue #58's repro, and the two properties that between them make it
 /// impossible rather than unlikely.
 ///

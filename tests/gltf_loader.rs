@@ -55,14 +55,14 @@ fn michelle_geometry() {
         0.070_081_681_013_107_3,
     ];
     for (i, expected) in expected.iter().enumerate() {
-        let got = geometry.position().unwrap().array[i] as f64;
+        let got = geometry.position().unwrap().array()[i] as f64;
         assert!((got - expected).abs() < 1e-6, "position[{i}]: {got}");
     }
 
     // `skinIndex` is unnormalized `Uint8`/`Uint16`, so it must come out exact
     let skin_index = geometry.get_attribute("skinIndex").unwrap();
     assert_eq!(
-        skin_index.array[0..8],
+        skin_index.array()[0..8],
         [5.0, 0.0, 0.0, 0.0, 5.0, 0.0, 0.0, 0.0]
     );
 }

@@ -194,8 +194,8 @@ fn cylinder_geometry_samples() {
     // the convenience wrapper must agree with the full form, groups included
     let wrapper = cylinder_geometry(0.75, 0.75, 7.0, 32);
     assert_eq!(
-        wrapper.position().unwrap().array,
-        g.position().unwrap().array
+        *wrapper.position().unwrap().array(),
+        *g.position().unwrap().array()
     );
     assert_eq!(wrapper.groups, g.groups);
 }
@@ -220,8 +220,8 @@ fn cone_geometry_samples() {
     check_sample(&CONE_BATCH, &g);
     let wrapper = cone_geometry(1.0, 2.0, 32, 1);
     assert_eq!(
-        wrapper.position().unwrap().array,
-        g.position().unwrap().array
+        *wrapper.position().unwrap().array(),
+        *g.position().unwrap().array()
     );
     assert_eq!(wrapper.groups, g.groups);
 }

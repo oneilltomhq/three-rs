@@ -86,18 +86,47 @@ struct GeometryGpu {
     other: Vec<(String, wgpu::Buffer)>,
     index: Option<(wgpu::Buffer, wgpu::IndexFormat, u32)>,
     vertex_count: u32,
+    /// The `BufferAttribute.version` each of [`UPLOADED_ATTRIBUTES`] had when
+    /// its buffer was written — three.js' `attribute.version` against
+    /// `bufferAttribute.version` in `WebGPUAttributeUtils.updateAttribute()`.
+    /// A geometry seen with a version past the one recorded here has that one
+    /// buffer re-written; see [`Renderer::refresh_geometry`].
+    versions: [u32; 3],
 }
 
+/// The geometry attributes the renderer uploads, in the order [`GeometryGpu`]
+/// stores their buffers and versions.
+const UPLOADED_ATTRIBUTES: [&str; 3] = ["position", "normal", "uv"];
+
 impl GeometryGpu {
+    fn slot(&self, index: usize) -> Option<&wgpu::Buffer> {
+        match index {
+            0 => self.position.as_ref(),
+            1 => self.normal.as_ref(),
+            2 => self.uv.as_ref(),
+            other => panic!("three-rs: no uploaded attribute slot {other}"),
+        }
+    }
+
+    fn set_slot(&mut self, index: usize, buffer: wgpu::Buffer) {
+        match index {
+            0 => self.position = Some(buffer),
+            1 => self.normal = Some(buffer),
+            2 => self.uv = Some(buffer),
+            other => panic!("three-rs: no uploaded attribute slot {other}"),
+        }
+    }
+
     fn attribute(&self, name: &str) -> &wgpu::Buffer {
-        let buffer = match name {
-            "position" => self.position.as_ref(),
-            "normal" => self.normal.as_ref(),
-            "uv" => self.uv.as_ref(),
-            other => self
+        let buffer = match UPLOADED_ATTRIBUTES
+            .iter()
+            .position(|candidate| *candidate == name)
+        {
+            Some(index) => self.slot(index),
+            None => self
                 .other
                 .iter()
-                .find(|(key, _)| key == other)
+                .find(|(key, _)| key == name)
                 .map(|(_, buffer)| buffer),
         };
         buffer.unwrap_or_else(|| panic!("three-rs: the geometry has no {name} attribute"))
@@ -1478,7 +1507,55 @@ impl Renderer {
             .canvas
             .as_ref()
             .expect("three-rs: prepare_canvas() has just created the canvas");
-        let (width, height) = (canvas.width, canvas.height);
+        let (texture, width, height) = (canvas.color.clone(), canvas.width, canvas.height);
+
+        self.read_texture_pixels(&texture, width, height)
+    }
+
+    /// The same readback off a [`RenderTarget`] rather than the canvas
+    /// (issue #50).
+    ///
+    /// `read_canvas_pixels()` is fine as the only readback for as long as
+    /// `present()` is a blit of the canvas, so that the shot and the window
+    /// match. This is the fallback for when it is not, and the way to grade a
+    /// pass that never reaches the canvas at all: it reads the target's
+    /// resolved, sampleable colour texture, which is the one
+    /// `texture( target.texture )` samples, so an MSAA target reads back
+    /// resolved.
+    ///
+    /// The target's textures are created if the renderer has not drawn to it
+    /// yet, in which case the pixels are whatever the GPU left there.
+    pub fn read_target_pixels(
+        &mut self,
+        render_target: &RenderTarget,
+    ) -> Result<(u32, u32, Vec<u8>), Error> {
+        self.prepare_render_target(render_target);
+
+        let inner = render_target.inner().borrow();
+        let (width, height) = (inner.width, inner.height);
+        let texture = inner.texture.with_gpu(|gpu| gpu.clone());
+        drop(inner);
+
+        self.read_texture_pixels(&texture, width, height)
+    }
+
+    /// The one copy-to-buffer-and-map path both readbacks above go through:
+    /// mip 0 of `texture` as top-down, tightly packed RGBA8.
+    fn read_texture_pixels(
+        &self,
+        texture: &wgpu::Texture,
+        width: u32,
+        height: u32,
+    ) -> Result<(u32, u32, Vec<u8>), Error> {
+        // The row stripping below, and the four bytes a pixel the callers are
+        // promised, assume an 8-bit-per-channel colour format. A float target
+        // would read back as garbage rather than fail, so say so instead.
+        let format = texture.format();
+        if format.block_copy_size(None) != Some(4) {
+            return Err(Error::Readback {
+                reason: format!("{format:?} is not a four-byte-per-pixel format"),
+            });
+        }
 
         // `copy_texture_to_buffer` needs 256-byte aligned rows; the padding is
         // stripped again below (FINDINGS #19: not stripping it shears the image).
@@ -1500,7 +1577,7 @@ impl Renderer {
 
         encoder.copy_texture_to_buffer(
             wgpu::TexelCopyTextureInfo {
-                texture: &canvas.color,
+                texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
@@ -2314,6 +2391,7 @@ impl Renderer {
     fn ensure_geometry(&mut self, geometry: &Rc<BufferGeometry>) {
         let id = geometry.id();
         if self.geometries.contains_key(&id) {
+            self.refresh_geometry(geometry);
             return;
         }
         let owner = Rc::downgrade(geometry);
@@ -2321,7 +2399,7 @@ impl Renderer {
         let vertex_buffer = |attribute: &crate::core::BufferAttribute| {
             self.create_buffer_init(
                 "three-rs attribute",
-                bytemuck::cast_slice(&attribute.array),
+                bytemuck::cast_slice(&attribute.array()),
                 wgpu::BufferUsages::VERTEX,
             )
         };
@@ -2346,6 +2424,13 @@ impl Renderer {
         });
 
         let vertex_count = geometry.position().map(|p| p.count() as u32).unwrap_or(0);
+
+        let versions = UPLOADED_ATTRIBUTES.map(|name| {
+            geometry
+                .get_attribute(name)
+                .map(|attribute| attribute.version())
+                .unwrap_or(0)
+        });
 
         // One upload, and one `buffers_written` per attribute or index buffer
         // it wrote — the count a regression that re-uploads a live geometry
@@ -2372,11 +2457,81 @@ impl Renderer {
                     other,
                     index,
                     vertex_count,
+                    versions,
                 },
                 owner,
             },
         );
         self.info.memory.geometries = self.geometries.len();
+    }
+
+    /// `WebGPUBackend.updateAttribute()`: an already-uploaded geometry whose
+    /// attribute has been written and marked
+    /// [`set_needs_update`](crate::core::BufferAttribute::set_needs_update)
+    /// since, re-written in place (issue #47).
+    ///
+    /// Only the attributes whose version moved are touched, so a moved vertex
+    /// costs one `buffers_written` and no `geometries_uploaded`; the geometry
+    /// keeps its id, its entry and every buffer that did not change. A write
+    /// the same length reuses the buffer (`queue.write_buffer`); one that
+    /// changed length has to reallocate, since a `wgpu::Buffer` is fixed size.
+    ///
+    /// The index is not versioned: `BufferGeometry.index` is an [`Index`], not
+    /// a [`BufferAttribute`](crate::core::BufferAttribute), so there is no
+    /// `needsUpdate` to read. Changing the index is still a new geometry.
+    fn refresh_geometry(&mut self, geometry: &Rc<BufferGeometry>) {
+        let id = geometry.id();
+
+        for (slot, name) in UPLOADED_ATTRIBUTES.iter().enumerate() {
+            let Some(attribute) = geometry.get_attribute(name) else {
+                continue;
+            };
+            let version = attribute.version();
+
+            let entry = &self.geometries[&id];
+            if entry.gpu.versions[slot] == version {
+                continue;
+            }
+            // An attribute the first upload did not write (it arrived after the
+            // geometry was uploaded) has no buffer to refresh; the geometry's
+            // vertex layout was fixed at upload, so a new attribute needs a new
+            // geometry.
+            let Some(buffer) = entry.gpu.slot(slot).cloned() else {
+                continue;
+            };
+
+            let array = attribute.array();
+            let bytes: &[u8] = bytemuck::cast_slice(array.as_slice());
+
+            if buffer.size() == bytes.len() as u64 {
+                self.queue.write_buffer(&buffer, 0, bytes);
+            } else {
+                let buffer = self.create_buffer_init(
+                    "three-rs attribute",
+                    bytes,
+                    wgpu::BufferUsages::VERTEX,
+                );
+                let gpu = &mut self
+                    .geometries
+                    .get_mut(&id)
+                    .expect("three-rs: the entry was found above")
+                    .gpu;
+                gpu.set_slot(slot, buffer);
+            }
+            drop(array);
+
+            let gpu = &mut self
+                .geometries
+                .get_mut(&id)
+                .expect("three-rs: the entry was found above")
+                .gpu;
+            gpu.versions[slot] = version;
+            if *name == "position" {
+                gpu.vertex_count = attribute.count() as u32;
+            }
+
+            self.info.build.buffers_written += 1;
+        }
     }
 
     /// Dropped at the start of every `render()`: everything the renderer is

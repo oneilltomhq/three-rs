@@ -133,7 +133,7 @@ impl fmt::Display for Error {
             }
             Self::NoAdapter { wanted: None } => write!(f, "no Vulkan adapter found"),
             Self::Device(source) => write!(f, "cannot create the device: {source}"),
-            Self::Readback { reason } => write!(f, "cannot read the canvas back: {reason}"),
+            Self::Readback { reason } => write!(f, "cannot read pixels back: {reason}"),
         }
     }
 }

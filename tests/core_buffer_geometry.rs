@@ -31,7 +31,8 @@ fn normals_for_vertices(vertices: Vec<f32>) -> Vec<f32> {
     let mut geometry = geometry_with(vertices);
     geometry.compute_vertex_normals();
     let normal = geometry.normal().expect("normal attribute was created");
-    normal.array.clone()
+    let array = normal.array().to_vec();
+    array
 }
 
 #[track_caller]
@@ -40,12 +41,12 @@ fn attribute_equals(a: &BufferAttribute, b: &BufferAttribute) {
     assert_eq!(a.count(), b.count(), "count");
     assert_eq!(a.item_size, b.item_size, "itemSize");
     for i in 0..a.count() * a.item_size {
-        let delta = (a.array[i] - b.array[i]).abs();
+        let delta = (a.array()[i] - b.array()[i]).abs();
         assert!(
             delta <= tolerance,
             "element {i}: {} vs {}",
-            a.array[i],
-            b.array[i]
+            a.array()[i],
+            b.array()[i]
         );
     }
 }
@@ -82,7 +83,7 @@ fn apply_matrix4() {
     );
     geometry.apply_matrix4(&matrix);
 
-    let position = &geometry.position().unwrap().array;
+    let position = geometry.position().unwrap().array();
     let m = matrix.elements;
     assert!(
         position[0] as f64 == m[12] && position[1] as f64 == m[13] && position[2] as f64 == m[14],
@@ -100,7 +101,7 @@ fn scale() {
 
     geometry.scale(1.0, 2.0, 3.0);
 
-    let pos = &geometry.position().unwrap().array;
+    let pos = geometry.position().unwrap().array();
     assert!(
         pos[0] == -1.0
             && pos[1] == -2.0
@@ -285,7 +286,8 @@ fn position_geometry(vertices: Vec<f32>) -> BufferGeometry {
 
 /// `geometry.attributes.position.array`.
 fn pos(geometry: &BufferGeometry) -> Vec<f32> {
-    geometry.position().unwrap().array.clone()
+    let array = geometry.position().unwrap().array().to_vec();
+    array
 }
 
 #[test]
@@ -522,7 +524,7 @@ fn to_non_indexed() {
     let non_indexed = geometry.to_non_indexed();
 
     assert_eq!(
-        non_indexed.get_attribute("position").unwrap().array,
+        *non_indexed.get_attribute("position").unwrap().array(),
         expected,
         "Expected vertices"
     );
@@ -542,7 +544,7 @@ fn to_non_indexed_carries_groups_and_morphs() {
     let non_indexed = geometry.to_non_indexed();
 
     assert_eq!(
-        non_indexed.get_morph_attribute("position").unwrap()[0].array,
+        *non_indexed.get_morph_attribute("position").unwrap()[0].array(),
         vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0],
         "morph attributes are expanded too"
     );
@@ -595,7 +597,10 @@ fn to_non_indexed_expands_a_generated_geometry() {
     // a geometry with no index comes back unchanged (three.js warns and returns
     // `this`)
     let again = flat.to_non_indexed();
-    assert_eq!(again.get_attribute("position").unwrap().array, dst.array);
+    assert_eq!(
+        *again.get_attribute("position").unwrap().array(),
+        *dst.array()
+    );
 }
 
 /// `toNonIndexed()` copies every named attribute, not just position/normal/uv —
@@ -615,11 +620,11 @@ fn to_non_indexed_copies_every_attribute() {
     let non_indexed = geometry.to_non_indexed();
 
     assert_eq!(
-        non_indexed.get_attribute("color").unwrap().array,
+        *non_indexed.get_attribute("color").unwrap().array(),
         vec![1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0]
     );
     assert_eq!(
-        non_indexed.get_attribute("skinIndex").unwrap().array,
+        *non_indexed.get_attribute("skinIndex").unwrap().array(),
         vec![7.0, 9.0, 7.0]
     );
     assert_eq!(

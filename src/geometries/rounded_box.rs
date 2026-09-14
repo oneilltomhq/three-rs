@@ -128,15 +128,15 @@ pub fn rounded_box_geometry(
     let geometry2 = geometry.to_non_indexed();
 
     geometry.index = None;
-    let mut positions_attr = geometry2
+    let positions_attr = geometry2
         .position()
         .cloned()
         .expect("three-rs: the box geometry has a position attribute");
-    let mut normals = geometry2
+    let normals = geometry2
         .normal()
         .cloned()
         .expect("three-rs: the box geometry has a normal attribute");
-    let mut uvs = geometry2
+    let uvs = geometry2
         .uv()
         .cloned()
         .expect("three-rs: the box geometry has a uv attribute");
@@ -152,7 +152,9 @@ pub fn rounded_box_geometry(
     box_v.y -= radius;
     box_v.z -= radius;
 
-    let positions = &mut positions_attr.array;
+    let mut positions = positions_attr.array_mut();
+    let mut normals_array = normals.array_mut();
+    let mut uvs_array = uvs.array_mut();
 
     let face_tris = positions.len() / 6;
     let mut face_dir_vector = Vector3::ZERO;
@@ -180,9 +182,9 @@ pub fn rounded_box_geometry(
         positions[i + 1] = (box_v.y * js_sign(position.y) + normal.y * radius) as f32;
         positions[i + 2] = (box_v.z * js_sign(position.z) + normal.z * radius) as f32;
 
-        normals.array[i] = normal.x as f32;
-        normals.array[i + 1] = normal.y as f32;
-        normals.array[i + 2] = normal.z as f32;
+        normals_array[i] = normal.x as f32;
+        normals_array[i + 1] = normal.y as f32;
+        normals_array[i + 2] = normal.z as f32;
 
         let side = i / face_tris;
 
@@ -190,57 +192,57 @@ pub fn rounded_box_geometry(
             0 => {
                 // right — generate UVs along Z then Y
                 face_dir_vector.set(1.0, 0.0, 0.0);
-                uvs.array[j] =
+                uvs_array[j] =
                     get_uv(&face_dir_vector, &normal, Axis::Z, Axis::Y, radius, depth) as f32;
-                uvs.array[j + 1] = (1.0
+                uvs_array[j + 1] = (1.0
                     - get_uv(&face_dir_vector, &normal, Axis::Y, Axis::Z, radius, height))
                     as f32;
             }
             1 => {
                 // left — generate UVs along Z then Y
                 face_dir_vector.set(-1.0, 0.0, 0.0);
-                uvs.array[j] = (1.0
+                uvs_array[j] = (1.0
                     - get_uv(&face_dir_vector, &normal, Axis::Z, Axis::Y, radius, depth))
                     as f32;
-                uvs.array[j + 1] = (1.0
+                uvs_array[j + 1] = (1.0
                     - get_uv(&face_dir_vector, &normal, Axis::Y, Axis::Z, radius, height))
                     as f32;
             }
             2 => {
                 // top — generate UVs along X then Z
                 face_dir_vector.set(0.0, 1.0, 0.0);
-                uvs.array[j] = (1.0
+                uvs_array[j] = (1.0
                     - get_uv(&face_dir_vector, &normal, Axis::X, Axis::Z, radius, width))
                     as f32;
-                uvs.array[j + 1] =
+                uvs_array[j + 1] =
                     get_uv(&face_dir_vector, &normal, Axis::Z, Axis::X, radius, depth) as f32;
             }
             3 => {
                 // bottom — generate UVs along X then Z
                 face_dir_vector.set(0.0, -1.0, 0.0);
-                uvs.array[j] = (1.0
+                uvs_array[j] = (1.0
                     - get_uv(&face_dir_vector, &normal, Axis::X, Axis::Z, radius, width))
                     as f32;
-                uvs.array[j + 1] = (1.0
+                uvs_array[j + 1] = (1.0
                     - get_uv(&face_dir_vector, &normal, Axis::Z, Axis::X, radius, depth))
                     as f32;
             }
             4 => {
                 // front — generate UVs along X then Y
                 face_dir_vector.set(0.0, 0.0, 1.0);
-                uvs.array[j] = (1.0
+                uvs_array[j] = (1.0
                     - get_uv(&face_dir_vector, &normal, Axis::X, Axis::Y, radius, width))
                     as f32;
-                uvs.array[j + 1] = (1.0
+                uvs_array[j + 1] = (1.0
                     - get_uv(&face_dir_vector, &normal, Axis::Y, Axis::X, radius, height))
                     as f32;
             }
             5 => {
                 // back — generate UVs along X then Y
                 face_dir_vector.set(0.0, 0.0, -1.0);
-                uvs.array[j] =
+                uvs_array[j] =
                     get_uv(&face_dir_vector, &normal, Axis::X, Axis::Y, radius, width) as f32;
-                uvs.array[j + 1] = (1.0
+                uvs_array[j + 1] = (1.0
                     - get_uv(&face_dir_vector, &normal, Axis::Y, Axis::X, radius, height))
                     as f32;
             }
@@ -250,6 +252,10 @@ pub fn rounded_box_geometry(
         i += 3;
         j += 2;
     }
+
+    drop(positions);
+    drop(normals_array);
+    drop(uvs_array);
 
     geometry.set_attribute("position", positions_attr);
     geometry.set_attribute("normal", normals);
