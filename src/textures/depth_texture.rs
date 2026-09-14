@@ -5,6 +5,7 @@
 //! material's colour node — maps across directly.
 
 use super::TextureId;
+use crate::error::Error;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -18,13 +19,30 @@ pub enum TextureType {
 }
 
 impl TextureType {
+    /// Whether this type can back a render target's colour attachment.
+    pub fn is_color(self) -> bool {
+        matches!(self, TextureType::UnsignedByte | TextureType::HalfFloat)
+    }
+
+    /// Whether this type can back a depth attachment.
+    pub fn is_depth(self) -> bool {
+        matches!(self, TextureType::UnsignedInt | TextureType::Float)
+    }
+
     /// `WebGPUTextureUtils.getFormat()` for a colour texture with
     /// `RGBAFormat` and `NoColorSpace`.
-    pub fn color_gpu_format(self) -> wgpu::TextureFormat {
+    ///
+    /// `pub(crate)`: the type is checked where the caller supplies it
+    /// (`RenderTarget::new_with_options`), which is what turns the mismatch
+    /// into an [`Error`] rather than the panic below.
+    pub(crate) fn color_gpu_format(self) -> wgpu::TextureFormat {
         match self {
             TextureType::UnsignedByte => wgpu::TextureFormat::Rgba8Unorm,
             TextureType::HalfFloat => wgpu::TextureFormat::Rgba16Float,
-            other => panic!("three-rs: {other:?} is not a colour texture type here"),
+            other => panic!(
+                "three-rs: the render target's texture type is a colour type \
+                 (RenderTarget::new_with_options checks it), got {other:?}"
+            ),
         }
     }
 }
@@ -91,8 +109,20 @@ impl DepthTexture {
         inner.mag_filter = mag_filter;
     }
 
-    pub fn set_type(&self, texture_type: TextureType) {
+    /// `depthTexture.type = type`. Errors rather than deferring the failure to
+    /// the pass that would have used the texture: only `UnsignedIntType` and
+    /// `FloatType` have a depth format.
+    pub fn set_type(&self, texture_type: TextureType) -> Result<(), Error> {
+        if !texture_type.is_depth() {
+            return Err(Error::UnsupportedTextureType {
+                what: "depth",
+                texture_type,
+            });
+        }
+
         self.0.borrow_mut().texture_type = texture_type;
+
+        Ok(())
     }
 
     pub fn texture_type(&self) -> TextureType {
@@ -100,11 +130,17 @@ impl DepthTexture {
     }
 
     /// `WebGPUTextureUtils.getFormat()` for `DepthFormat`.
-    pub fn gpu_format(&self) -> wgpu::TextureFormat {
+    ///
+    /// `pub(crate)`: [`Self::set_type`] is the only way in and it rejects a
+    /// non-depth type, so the panic below is an invariant.
+    pub(crate) fn gpu_format(&self) -> wgpu::TextureFormat {
         match self.texture_type() {
             TextureType::UnsignedInt => wgpu::TextureFormat::Depth24Plus,
             TextureType::Float => wgpu::TextureFormat::Depth32Float,
-            other => panic!("three-rs: {other:?} is not a depth texture type"),
+            other => panic!(
+                "three-rs: the depth texture's type is a depth type \
+                 (DepthTexture::set_type checks it), got {other:?}"
+            ),
         }
     }
 

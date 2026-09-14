@@ -3,6 +3,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use crate::error::Error;
 use crate::textures::{DepthTexture, Texture, TextureFilter, TextureType};
 
 /// `new RenderTarget( width, height, options )` — the options the port reads.
@@ -57,12 +58,28 @@ pub struct RenderTargetInner {
 pub struct RenderTarget(Rc<RefCell<RenderTargetInner>>);
 
 impl RenderTarget {
+    /// `new RenderTarget( width, height )` — the default options' texture type
+    /// is `UnsignedByteType`, so this one cannot fail.
     pub fn new(width: u32, height: u32) -> Self {
         Self::new_with_options(width, height, RenderTargetOptions::default())
+            .expect("three-rs: the default render target options are a colour type")
     }
 
-    pub fn new_with_options(width: u32, height: u32, options: RenderTargetOptions) -> Self {
-        Self(Rc::new(RefCell::new(RenderTargetInner {
+    /// Errors when `options.texture_type` has no colour format — three.js
+    /// would have produced a target that fails at the first pass instead.
+    pub fn new_with_options(
+        width: u32,
+        height: u32,
+        options: RenderTargetOptions,
+    ) -> Result<Self, Error> {
+        if !options.texture_type.is_color() {
+            return Err(Error::UnsupportedTextureType {
+                what: "colour",
+                texture_type: options.texture_type,
+            });
+        }
+
+        Ok(Self(Rc::new(RefCell::new(RenderTargetInner {
             width,
             height,
             samples: options.samples,
@@ -74,7 +91,7 @@ impl RenderTarget {
             texture: Texture::render_target(width, height, options.texture_type.color_gpu_format()),
             msaa: None,
             depth: None,
-        })))
+        }))))
     }
 
     pub fn set_depth_texture(&self, depth_texture: DepthTexture) {

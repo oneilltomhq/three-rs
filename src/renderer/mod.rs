@@ -853,7 +853,8 @@ impl Renderer {
                             min_filter: TextureFilter::Linear,
                             mag_filter: TextureFilter::Linear,
                         },
-                    );
+                    )
+                    .expect("three-rs: the shadow target is an UnsignedByte colour type");
                     let depth = DepthTexture::new();
                     depth.set_filters(TextureFilter::Linear, TextureFilter::Linear);
                     target.set_depth_texture(depth);
@@ -2412,6 +2413,7 @@ impl Renderer {
                     mag_filter: TextureFilter::Linear,
                 },
             )
+            .expect("three-rs: the output buffer type is a colour type")
         });
 
         target.set_size(width, height);
