@@ -4,8 +4,12 @@
 //! itself ([`compare()`](crate::testing::compare)), so a gate outside this crate grades
 //! the same way.
 
+mod strip;
+
 use std::path::Path;
 use std::process::Command;
+
+pub use strip::{strip, Step, Strip, StripFrame};
 
 /// `Math.random` as the grader replaces it:
 ///
