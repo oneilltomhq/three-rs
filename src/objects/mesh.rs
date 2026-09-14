@@ -21,11 +21,19 @@ pub struct Mesh {
 }
 
 impl Mesh {
-    /// `new Mesh( geometry )`, as a scene-graph [`Node`] — the example relies on
-    /// `scene.overrideMaterial`, so the material is optional here just as it
-    /// defaults in three.js.
+    /// `new Mesh( geometry, material )`, as a scene-graph [`Node`].
+    ///
+    /// The material is `impl Into<Option<MeshBasicNodeMaterial>>`, so a call
+    /// passes the material by value as `Line::new` and `InstancedMesh::new` do,
+    /// or `None` where three.js leaves `material` undefined and the renderer
+    /// falls back to a default white `MeshBasicMaterial` — which is what
+    /// `webgpu_postprocessing_masking` and `webgpu_depth_texture` rely on,
+    /// together with `scene.overrideMaterial`.
     #[allow(clippy::new_ret_no_self)] // `new` mirrors three.js's constructor and returns a scene-graph `Node`, not `Self`; public API, not changing.
-    pub fn new(geometry: Rc<BufferGeometry>) -> Node {
+    pub fn new(
+        geometry: Rc<BufferGeometry>,
+        material: impl Into<Option<MeshBasicNodeMaterial>>,
+    ) -> Node {
         let mut object = Object3D {
             object_type: "Mesh",
             ..Default::default()
@@ -39,7 +47,7 @@ impl Mesh {
 
         object.payload = Payload::Mesh(Self {
             geometry,
-            material: None,
+            material: material.into(),
             morph_target_influences,
         });
         object.into_node()

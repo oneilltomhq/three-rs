@@ -105,12 +105,13 @@ pub enum Payload { None, Mesh(Mesh), InstancedMesh(InstancedMesh), Line(Line), L
 
 `Payload::None` is a plain `Object3D`, a `Group` or a `Bone`: something the walk
 passes through without drawing. `object.is_mesh()` is a match on the payload, and
-`Mesh::new( geometry )` / `InstancedMesh::new( geometry, material, count )` /
-`Line::new( geometry, material )` / `LineSegments::new( geometry, material )`
-return a `Node` with the payload already set, so example code reads like the JS:
+`Mesh::new( geometry, material )` / `InstancedMesh::new( geometry, material,
+count )` / `Line::new( geometry, material )` /
+`LineSegments::new( geometry, material )` return a `Node` with the payload
+already set, so example code reads like the JS:
 
 ```rust
-let mesh = Mesh::new( geometry.clone() );
+let mesh = Mesh::new( geometry.clone(), material );
 mesh.borrow_mut().position.set( x, y, z );
 scene.add( &mesh );
 ```
