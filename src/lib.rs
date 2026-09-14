@@ -45,7 +45,10 @@ pub use math::{Color, Euler, Matrix3, Matrix4, Quaternion, Vector2, Vector3};
 pub use objects::{
     Background, Group, InstancedMesh, Line, LineSegments, Mesh, Payload, QuadMesh, Scene,
 };
-pub use renderer::{PassNode, RenderPipeline, RenderTarget, Renderer, RendererParameters};
+pub use renderer::{
+    BuildCounts, Info, MemoryCounts, PassNode, RenderCounts, RenderPipeline, RenderTarget,
+    Renderer, RendererParameters,
+};
 pub use textures::{
     ColorSpace, CubeTexture, DepthTexture, Mapping, MinFilter, Texture, TextureFilter, TextureType,
 };

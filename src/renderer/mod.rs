@@ -3,6 +3,7 @@
 //! bindings it declared, draw into a render target or into the "canvas"
 //! texture, read back.
 
+mod info;
 mod mipmap;
 mod pass;
 /// Additive seam for the interactive viewer; see `present.rs`.
@@ -15,6 +16,7 @@ mod render_target;
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 
+pub use info::{BuildCounts, Info, MemoryCounts, RenderCounts};
 use mipmap::{create_mipmap_pipeline, MipmapShader};
 pub use pass::PassNode;
 pub use programs::{LightState, RenderState, UniformContext};
@@ -377,6 +379,10 @@ pub struct Renderer {
 
     /// Whether the device enabled `FLOAT32_FILTERABLE`; see `new()`.
     float32_filterable: bool,
+
+    /// `renderer.info`: the frame's draw and build counts and the resident
+    /// ones. Wired at the site of each piece of work; see [`Info`].
+    info: Info,
 }
 
 /// `new WebGPURenderer( parameters )`.
@@ -502,6 +508,7 @@ impl Renderer {
             shadow_targets: HashMap::new(),
             cube_shadow_targets: HashMap::new(),
             float32_filterable,
+            info: Info::new(),
         })
     }
 
@@ -551,6 +558,13 @@ impl Renderer {
     /// — `&mut PerspectiveCamera` still coerces at the call site, so every
     /// existing caller is unchanged.
     pub fn render(&mut self, scene: &mut Scene, camera: &mut dyn RenderCamera) {
+        // `Renderer.render()`: `if ( this.info.autoReset === true )
+        // this.info.reset()`. A frame that is several renders turns
+        // `auto_reset` off and resets once itself; see [`Info::auto_reset`].
+        if self.info.auto_reset {
+            self.info.reset();
+        }
+
         // Before anything of this frame is looked up: return what the last
         // frame's scene no longer uses. See `sweep_caches`.
         self.renders += 1;
@@ -1320,6 +1334,17 @@ impl Renderer {
                 })
                 .collect();
 
+            // `info.render`: one call, and the primitives it draws — the
+            // indices when the geometry is indexed, the vertices when it is
+            // not, exactly what the `draw_indexed` / `draw` below are given.
+            let gpu = &self.geometries[&geometry_id].gpu;
+            let elements = match &gpu.index {
+                Some((_, _, count)) => *count,
+                None => gpu.vertex_count,
+            };
+            self.info
+                .record_draw(item.primitive.topology, elements, item.instance_count);
+
             draws.push(Draw {
                 geometry_id,
                 vertex_buffers,
@@ -1551,9 +1576,11 @@ impl Renderer {
         let flow = materials::setup(&item.material, &item.setup, item.fog.as_ref());
         let node = Rc::new(NodeBuilder::new().build(&flow));
         self.program_builds += 1;
+        self.info.build.programs_compiled += 1;
         self.programs
             .entry(node.cache_key)
             .or_insert_with(|| Program::new(&self.device, &node));
+        self.info.memory.programs = self.programs.len();
         states.by_dynamic_key.insert(dynamic_key, node.clone());
         node
     }
@@ -1563,6 +1590,19 @@ impl Renderer {
     /// an unchanged scene leaves it where it was; the e2e harness asserts so.
     pub fn program_builds(&self) -> u64 {
         self.program_builds
+    }
+
+    /// `renderer.info`: what the last frame drew and built, and what the
+    /// renderer is still holding. See [`Info`].
+    pub fn info(&self) -> &Info {
+        &self.info
+    }
+
+    /// `renderer.info` for the two fields a caller writes:
+    /// [`auto_reset`](Info::auto_reset) and [`reset()`](Info::reset), for a
+    /// frame that is several `render()` calls.
+    pub fn info_mut(&mut self) -> &mut Info {
+        &mut self.info
     }
 
     fn bind_groups(
@@ -1951,6 +1991,7 @@ impl Renderer {
         }
 
         texture.set_gpu(gpu.clone());
+        self.info.build.textures_uploaded += 1;
         gpu
     }
 
@@ -2059,6 +2100,8 @@ impl Renderer {
 
         texture.set_gpu(gpu.clone());
         self.textures_2d.insert(id, gpu.clone());
+        self.info.build.textures_uploaded += 1;
+        self.info.memory.textures = self.textures_2d.len() + self.cube_textures.len();
         gpu
     }
 
@@ -2128,6 +2171,8 @@ impl Renderer {
 
         texture.inner().borrow_mut().gpu = Some(gpu.clone());
         self.cube_textures.insert(id, gpu.clone());
+        self.info.build.textures_uploaded += 1;
+        self.info.memory.textures = self.textures_2d.len() + self.cube_textures.len();
         gpu
     }
 
@@ -2249,6 +2294,7 @@ impl Renderer {
         if !self.pipelines.contains_key(&key) {
             let pipeline = self.programs[&key.program].create_pipeline(&self.device, key.state);
             self.pipelines.insert(key, pipeline);
+            self.info.build.pipelines_built += 1;
         }
     }
 
@@ -2287,6 +2333,20 @@ impl Renderer {
 
         let vertex_count = geometry.position().map(|p| p.count() as u32).unwrap_or(0);
 
+        // One upload, and one `buffers_written` per attribute or index buffer
+        // it wrote — the count a regression that re-uploads a live geometry
+        // every frame moves off zero (issue #67).
+        self.info.build.geometries_uploaded += 1;
+        self.info.build.buffers_written += [
+            position.is_some(),
+            normal.is_some(),
+            uv.is_some(),
+            index.is_some(),
+        ]
+        .iter()
+        .filter(|written| **written)
+        .count() as u64;
+
         self.geometries.insert(
             id,
             GeometryEntry {
@@ -2300,6 +2360,7 @@ impl Renderer {
                 owner,
             },
         );
+        self.info.memory.geometries = self.geometries.len();
     }
 
     /// Dropped at the start of every `render()`: everything the renderer is
@@ -2324,6 +2385,7 @@ impl Renderer {
     fn sweep_caches(&mut self) {
         self.geometries
             .retain(|_, entry| entry.owner.strong_count() > 0);
+        self.info.memory.geometries = self.geometries.len();
 
         let cutoff = self.renders.saturating_sub(CACHE_GRACE_RENDERS);
         self.node_builder_states
