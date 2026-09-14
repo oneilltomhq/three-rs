@@ -39,7 +39,13 @@ fn instancing() {
 // PUBLIC STUFF
 #[test]
 fn is_box2() {
-    assert!(Box2::IS_BOX2);
+    // Mirrors three.js's `assert.ok( a.isBox2 )`: this pins the public `IS_BOX2`
+    // constant's value, which happens to be `true` today but is not statically
+    // guaranteed to stay that way.
+    #[allow(clippy::assertions_on_constants)]
+    {
+        assert!(Box2::IS_BOX2);
+    }
 }
 
 #[test]
