@@ -40,7 +40,11 @@ fn small_geometry_stays_one_row() {
     assert_eq!(entry.texture.size(), (24, 1, 2));
 
     let inner = entry.texture.borrow();
-    assert_eq!(inner.data.len(), 24 * 1 * 4 * 2);
+    // `24 * 1 * 4 * 2` spells out width * height * channels * layers.
+    #[allow(clippy::identity_op)]
+    {
+        assert_eq!(inner.data.len(), 24 * 1 * 4 * 2);
+    }
     // The first texel of each layer is that target's first vertex, xyz then 0.
     assert_eq!(&inner.data[0..4], &[0.0, 1.0, 2.0, 0.0]);
     assert_eq!(

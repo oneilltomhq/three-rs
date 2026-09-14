@@ -77,7 +77,11 @@ fn layer1_filled_square_is_negative_inside_positive_outside() {
     let sdf = compute_sdf_default(&alpha, w, h);
     assert!(sdf[5 * w + 5] < 0.0, "centre should be negative");
     assert!(sdf[0] > 0.0, "corner should be positive");
-    assert!((sdf[1 * w + 2] - 1.0).abs() < 0.001);
+    // `1 * w + 2` spells out "row 1, col 2" to match the `5 * w + 5` above it.
+    #[allow(clippy::identity_op)]
+    {
+        assert!((sdf[1 * w + 2] - 1.0).abs() < 0.001);
+    }
     assert_eq!(h, 10);
 }
 
