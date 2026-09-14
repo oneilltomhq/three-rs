@@ -25,6 +25,7 @@ pub use render_target::{RenderTarget, RenderTargetInner, RenderTargetOptions};
 
 use crate::cameras::{OrthographicCamera, PerspectiveCamera, RenderCamera};
 use crate::core::{BufferGeometry, Index, Node};
+use crate::error::Error;
 use crate::geometries::{quad_geometry, sphere_geometry};
 use crate::lights::{LightKind, LightObject, CUBE_DIRECTIONS, CUBE_UPS};
 use crate::materials::phong::{LightDesc, ShadowMap};
@@ -385,7 +386,10 @@ pub struct RendererParameters {
 }
 
 impl Renderer {
-    pub fn new(parameters: RendererParameters) -> Self {
+    /// `new WebGPURenderer( parameters )`, plus the `init()` three.js does
+    /// lazily: picking an adapter and creating a device, either of which the
+    /// machine can refuse.
+    pub fn new(parameters: RendererParameters) -> Result<Self, Error> {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::VULKAN,
             ..wgpu::InstanceDescriptor::new_without_display_handle()
@@ -397,8 +401,11 @@ impl Renderer {
     /// `new()` against an instance the caller already created. The viewer needs
     /// this because a Wayland/X11 surface only works on an instance built with
     /// the windowing system's display handle.
-    pub fn with_instance(parameters: RendererParameters, instance: wgpu::Instance) -> Self {
-        let adapter = pick_adapter(&instance);
+    pub fn with_instance(
+        parameters: RendererParameters,
+        instance: wgpu::Instance,
+    ) -> Result<Self, Error> {
+        let adapter = pick_adapter(&instance)?;
         let adapter_info = adapter.get_info();
 
         // `FLOAT32_FILTERABLE` is what lets an `r32float` texture be sampled
@@ -415,19 +422,19 @@ impl Renderer {
             .features()
             .contains(wgpu::Features::FLOAT32_FILTERABLE);
 
-        let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-            label: Some("three-rs device"),
-            required_features: if float32_filterable {
-                wgpu::Features::FLOAT32_FILTERABLE
-            } else {
-                wgpu::Features::empty()
-            },
-            required_limits: wgpu::Limits::default(),
-            experimental_features: wgpu::ExperimentalFeatures::disabled(),
-            memory_hints: wgpu::MemoryHints::MemoryUsage,
-            trace: wgpu::Trace::Off,
-        }))
-        .expect("three-rs: failed to create device");
+        let (device, queue) =
+            pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+                label: Some("three-rs device"),
+                required_features: if float32_filterable {
+                    wgpu::Features::FLOAT32_FILTERABLE
+                } else {
+                    wgpu::Features::empty()
+                },
+                required_limits: wgpu::Limits::default(),
+                experimental_features: wgpu::ExperimentalFeatures::disabled(),
+                memory_hints: wgpu::MemoryHints::MemoryUsage,
+                trace: wgpu::Trace::Off,
+            }))?;
 
         // `WebGPUCapabilities.getUniformBufferLimit()`. `Limits::default()`
         // asks for WebGPU's guaranteed minimum, 64 KiB, which is also what
@@ -440,7 +447,7 @@ impl Renderer {
 
         let mipmap_shader = MipmapShader::new(&device);
 
-        Self {
+        Ok(Self {
             device,
             queue,
             adapter_info,
@@ -495,7 +502,7 @@ impl Renderer {
             shadow_targets: HashMap::new(),
             cube_shadow_targets: HashMap::new(),
             float32_filterable,
-        }
+        })
     }
 
     pub fn adapter_info(&self) -> &wgpu::AdapterInfo {
@@ -1425,9 +1432,12 @@ impl Renderer {
 
     /// Reads the canvas colour texture back as top-down RGBA8, which is what
     /// `page.screenshot()` hands the comparator.
-    pub fn read_canvas_pixels(&mut self) -> (u32, u32, Vec<u8>) {
+    pub fn read_canvas_pixels(&mut self) -> Result<(u32, u32, Vec<u8>), Error> {
         self.prepare_canvas(false, 1);
-        let canvas = self.canvas.as_ref().unwrap();
+        let canvas = self
+            .canvas
+            .as_ref()
+            .expect("three-rs: prepare_canvas() has just created the canvas");
         let (width, height) = (canvas.width, canvas.height);
 
         // `copy_texture_to_buffer` needs 256-byte aligned rows; the padding is
@@ -1476,9 +1486,16 @@ impl Renderer {
         slice.map_async(wgpu::MapMode::Read, |_| {});
         self.device
             .poll(wgpu::PollType::wait_indefinitely())
-            .unwrap();
+            .map_err(|e| Error::Readback {
+                reason: e.to_string(),
+            })?;
 
-        let padded = slice.get_mapped_range().unwrap().to_vec();
+        let padded = slice
+            .get_mapped_range()
+            .map_err(|e| Error::Readback {
+                reason: e.to_string(),
+            })?
+            .to_vec();
         buffer.unmap();
 
         let mut data = Vec::with_capacity((unpadded_bytes_per_row * height) as usize);
@@ -1487,7 +1504,7 @@ impl Renderer {
             data.extend_from_slice(&padded[start..start + unpadded_bytes_per_row as usize]);
         }
 
-        (width, height, data)
+        Ok((width, height, data))
     }
 
     // -- bindings --------------------------------------------------------
@@ -2670,7 +2687,7 @@ const CANVAS_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 /// `reversedDepthBuffer` both off.
 const CANVAS_DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth24Plus;
 
-fn pick_adapter(instance: &wgpu::Instance) -> wgpu::Adapter {
+fn pick_adapter(instance: &wgpu::Instance) -> Result<wgpu::Adapter, Error> {
     let wanted = std::env::var("THREE_RS_ADAPTER_NAME").ok();
     let adapters = pollster::block_on(instance.enumerate_adapters(wgpu::Backends::VULKAN));
 
@@ -2679,9 +2696,11 @@ fn pick_adapter(instance: &wgpu::Instance) -> wgpu::Adapter {
             .iter()
             .find(|a| a.get_info().name.contains(wanted.as_str()))
         {
-            return adapter.clone();
+            return Ok(adapter.clone());
         }
-        panic!("three-rs: no Vulkan adapter matching THREE_RS_ADAPTER_NAME={wanted}");
+        return Err(Error::NoAdapter {
+            wanted: Some(wanted.clone()),
+        });
     }
 
     // Prefer the real Intel GPU: the grader was calibrated on it, and a
@@ -2690,20 +2709,20 @@ fn pick_adapter(instance: &wgpu::Instance) -> wgpu::Adapter {
         .iter()
         .find(|a| a.get_info().device_type == wgpu::DeviceType::IntegratedGpu)
     {
-        return adapter.clone();
+        return Ok(adapter.clone());
     }
 
     if let Some(adapter) = adapters
         .iter()
         .find(|a| a.get_info().device_type == wgpu::DeviceType::DiscreteGpu)
     {
-        return adapter.clone();
+        return Ok(adapter.clone());
     }
 
     adapters
         .into_iter()
         .next()
-        .expect("three-rs: no Vulkan adapter found")
+        .ok_or(Error::NoAdapter { wanted: None })
 }
 
 /// `RangeNode.setup()`'s fill loop (`src/nodes/geometry/RangeNode.js:155`):
