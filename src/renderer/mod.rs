@@ -725,8 +725,7 @@ impl Renderer {
         let lights: Vec<LightState> = render_list
             .lights
             .iter()
-            .enumerate()
-            .map(|(_index, node)| {
+            .map(|node| {
                 let object = node.borrow();
                 let light = object
                     .light()
