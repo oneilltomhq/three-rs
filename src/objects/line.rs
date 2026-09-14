@@ -37,6 +37,7 @@ impl Line {
     /// three.js defaults the material to `new LineBasicMaterial()`, which under
     /// `WebGPURenderer` is a `LineBasicNodeMaterial`; the port takes it by value
     /// because every call site on the ladder passes one.
+    #[allow(clippy::new_ret_no_self)] // `new` mirrors three.js's constructor and returns a scene-graph `Node`, not `Self`; public API, not changing.
     pub fn new(geometry: Rc<BufferGeometry>, material: MeshBasicNodeMaterial) -> Node {
         Self::node(geometry, material, false)
     }
@@ -80,6 +81,7 @@ pub struct LineSegments;
 
 impl LineSegments {
     /// `new LineSegments( geometry, material )`.
+    #[allow(clippy::new_ret_no_self)] // `new` mirrors three.js's constructor and returns a scene-graph `Node`, not `Self`; public API, not changing.
     pub fn new(geometry: Rc<BufferGeometry>, material: MeshBasicNodeMaterial) -> Node {
         Line::node(geometry, material, true)
     }

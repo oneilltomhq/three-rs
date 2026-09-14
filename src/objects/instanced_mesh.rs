@@ -41,6 +41,7 @@ pub struct InstancedMesh {
 
 impl InstancedMesh {
     /// `new InstancedMesh( geometry, material, count )`, as a scene-graph [`Node`].
+    #[allow(clippy::new_ret_no_self)] // `new` mirrors three.js's constructor and returns a scene-graph `Node`, not `Self`; public API, not changing.
     pub fn new(
         geometry: Rc<BufferGeometry>,
         material: MeshBasicNodeMaterial,

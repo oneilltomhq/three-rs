@@ -24,6 +24,7 @@ impl Mesh {
     /// `new Mesh( geometry )`, as a scene-graph [`Node`] — the example relies on
     /// `scene.overrideMaterial`, so the material is optional here just as it
     /// defaults in three.js.
+    #[allow(clippy::new_ret_no_self)] // `new` mirrors three.js's constructor and returns a scene-graph `Node`, not `Self`; public API, not changing.
     pub fn new(geometry: Rc<BufferGeometry>) -> Node {
         let mut object = Object3D::default();
         object.object_type = "Mesh";
