@@ -3,7 +3,6 @@
 //! itself and its transform methods.
 
 use std::cell::Cell;
-use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::core::node::{Node, WeakNode};
@@ -153,12 +152,12 @@ impl Clone for Object3D {
 impl Object3D {
     /// A fresh `Object3D` as a scene-graph [`Node`].
     pub fn new_node() -> Node {
-        Rc::new(RefCell::new(Self::default()))
+        Node::new(Self::default())
     }
 
     /// This object, moved into a scene-graph [`Node`].
     pub fn into_node(self) -> Node {
-        Rc::new(RefCell::new(self))
+        Node::new(self)
     }
 
     /// `object.isMesh` — see [`Payload::is_mesh`].
@@ -455,7 +454,7 @@ impl Object3D {
     /// `Object3D.updateMatrixWorld( force )` for one object, returning the
     /// `force` its children should be updated with (three.js recurses here; an
     /// `Object3D` held by value has no children to recurse into, so the caller
-    /// — `Scene::update_matrix_world`, or `Object3DNode` for a real tree — does
+    /// — `Scene::update_matrix_world`, or `Node`'s tree methods — does
     /// that part).
     pub fn update_matrix_world_forced(
         &mut self,

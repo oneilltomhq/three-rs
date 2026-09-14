@@ -25,7 +25,7 @@ use std::rc::Rc;
 use serde_json::Value;
 
 use crate::animation::{AnimationClip, InterpolationMode, KeyframeTrack, SceneResolver};
-use crate::core::{BufferAttribute, BufferGeometry, Index, Node, Object3D, Object3DNode};
+use crate::core::{BufferAttribute, BufferGeometry, Index, Node, Object3D};
 use crate::math::Matrix4;
 use crate::objects::{Bone, Skeleton, SkinnedMesh};
 
@@ -265,7 +265,7 @@ impl Gltf {
     pub fn primitive(&self, node: &Node) -> Option<&GltfPrimitive> {
         self.primitives
             .iter()
-            .find(|primitive| Rc::ptr_eq(&primitive.node, node))
+            .find(|primitive| Node::ptr_eq(&primitive.node, node))
     }
 }
 

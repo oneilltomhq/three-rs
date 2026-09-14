@@ -5,7 +5,7 @@
 //! [`Skeleton::bone_matrices`] hook plus [`Skeleton::bone_texture_size`]; the
 //! renderer fills it in at rung 10.
 
-use crate::core::{Node, Object3DNode};
+use crate::core::Node;
 use crate::math::Matrix4;
 
 /// `class Skeleton`.

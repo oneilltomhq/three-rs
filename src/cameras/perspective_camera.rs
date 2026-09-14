@@ -1,7 +1,7 @@
 //! Port of `three.js/src/cameras/PerspectiveCamera.js` + `Camera.js`
 //! (rung 1 subset).
 
-use crate::core::{Node, Object3D, Object3DNode};
+use crate::core::{Node, Object3D};
 use crate::math::math_utils::{js_max, js_min};
 use crate::math::{CoordinateSystem, Matrix4, Vector2, Vector3, DEG2RAD, RAD2DEG};
 

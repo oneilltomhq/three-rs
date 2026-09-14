@@ -1,6 +1,6 @@
 //! Port of `three.js/src/scenes/Scene.js` (rung 2 subset).
 
-use crate::core::{Node, Object3D, Object3DNode};
+use crate::core::{Node, Object3D};
 use crate::materials::MeshBasicNodeMaterial;
 use crate::math::{Color, Matrix4};
 use crate::nodes::tsl::FogNode;
