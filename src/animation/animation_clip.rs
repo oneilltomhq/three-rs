@@ -14,6 +14,7 @@ use serde_json::{json, Map, Value};
 
 use super::animation_utils;
 use super::keyframe_track::KeyframeTrack;
+use crate::error::Error;
 
 /// `NormalAnimationBlendMode` / `AdditiveAnimationBlendMode` from
 /// `three.js/src/constants.js`, as an enum because these two are the only
@@ -153,7 +154,7 @@ impl AnimationClip {
     ///
     /// Three throws from `parseKeyframeTrack()` for an unknown or missing track
     /// type; that propagates as `Err` here.
-    pub fn parse(json: &Value) -> Result<Self, String> {
+    pub fn parse(json: &Value) -> Result<Self, Error> {
         let mut tracks = Vec::new();
         let json_tracks = json
             .get("tracks")
@@ -229,7 +230,7 @@ impl AnimationClip {
         morph_target_sequence: &[&str],
         fps: f64,
         no_loop: bool,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, Error> {
         let num_morph_targets = morph_target_sequence.len();
         let mut tracks = Vec::new();
 
@@ -297,7 +298,7 @@ impl AnimationClip {
         morph_targets: &[&str],
         fps: f64,
         no_loop: bool,
-    ) -> Result<Vec<Self>, String> {
+    ) -> Result<Vec<Self>, Error> {
         let mut animation_to_morph_targets: Vec<(String, Vec<&str>)> = Vec::new();
 
         for morph_target in morph_targets {

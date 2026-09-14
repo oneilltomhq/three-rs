@@ -12,6 +12,7 @@
 use serde_json::{json, Map, Value};
 
 use crate::animation::animation_utils;
+use crate::error::Error;
 use crate::math::interpolant::{Interpolant, InterpolantData};
 use crate::math::interpolants::{
     cubic_interpolant, discrete_interpolant, linear_interpolant, quaternion_linear_interpolant,
@@ -198,11 +199,11 @@ impl KeyframeTrack {
         times: Vec<f64>,
         values: Vec<f64>,
         interpolation: Option<InterpolationMode>,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, Error> {
         if times.is_empty() {
-            return Err(format!(
-                "THREE.KeyframeTrack: no keyframes in track named {name}"
-            ));
+            return Err(Error::NoKeyframes {
+                track: name.to_string(),
+            });
         }
 
         let mut track = Self {
@@ -222,7 +223,7 @@ impl KeyframeTrack {
     }
 
     /// `new BooleanKeyframeTrack( name, times, values )`.
-    pub fn boolean(name: &str, times: Vec<f64>, values: &[bool]) -> Result<Self, String> {
+    pub fn boolean(name: &str, times: Vec<f64>, values: &[bool]) -> Result<Self, Error> {
         let values = values.iter().map(|&v| if v { 1.0 } else { 0.0 }).collect();
         Self::new(TrackValueType::Bool, name, times, values, None)
     }
@@ -233,7 +234,7 @@ impl KeyframeTrack {
         times: Vec<f64>,
         values: Vec<f64>,
         interpolation: Option<InterpolationMode>,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, Error> {
         Self::new(TrackValueType::Color, name, times, values, interpolation)
     }
 
@@ -243,7 +244,7 @@ impl KeyframeTrack {
         times: Vec<f64>,
         values: Vec<f64>,
         interpolation: Option<InterpolationMode>,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, Error> {
         Self::new(TrackValueType::Number, name, times, values, interpolation)
     }
 
@@ -253,7 +254,7 @@ impl KeyframeTrack {
         times: Vec<f64>,
         values: Vec<f64>,
         interpolation: Option<InterpolationMode>,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, Error> {
         Self::new(
             TrackValueType::Quaternion,
             name,
@@ -264,7 +265,7 @@ impl KeyframeTrack {
     }
 
     /// `new StringKeyframeTrack( name, times, values )`.
-    pub fn string(name: &str, times: Vec<f64>, values: Vec<String>) -> Result<Self, String> {
+    pub fn string(name: &str, times: Vec<f64>, values: Vec<String>) -> Result<Self, Error> {
         let mut track = Self::new(TrackValueType::String, name, times, Vec::new(), None)?;
         track.strings = values;
         Ok(track)
@@ -276,7 +277,7 @@ impl KeyframeTrack {
         times: Vec<f64>,
         values: Vec<f64>,
         interpolation: Option<InterpolationMode>,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, Error> {
         Self::new(TrackValueType::Vector, name, times, values, interpolation)
     }
 
@@ -290,20 +291,19 @@ impl KeyframeTrack {
     /// Three falls back to `DefaultInterpolation` when the subclass suppresses
     /// the requested factory method, and throws only if the default itself is
     /// unsupported.
-    pub fn set_interpolation(&mut self, interpolation: InterpolationMode) -> Result<(), String> {
+    pub fn set_interpolation(&mut self, interpolation: InterpolationMode) -> Result<(), Error> {
         if !self.value_type.supports(interpolation) {
-            let message = format!(
-                "unsupported interpolation for {} keyframe track named {}",
-                self.value_type.value_type_name(),
-                self.name
-            );
+            let error = Error::UnsupportedInterpolation {
+                value_type: self.value_type.value_type_name(),
+                track: self.name.clone(),
+            };
 
             // fall back to default, unless the default itself is messed up
             let default = self.value_type.default_interpolation();
             if interpolation != default {
                 self.set_interpolation(default)?;
             } else {
-                return Err(message); // fatal, in this case
+                return Err(error); // fatal, in this case
             }
 
             return Ok(());
@@ -604,14 +604,18 @@ impl KeyframeTrack {
     /// `AnimationClip.parseKeyframeTrack( json )` — the inverse of
     /// [`Self::to_json`], kept next to it. `flattenJSON` handles the `keys`
     /// form that older clip JSON uses.
-    pub fn parse(json: &Value) -> Result<Self, String> {
-        let type_name = json
-            .get("type")
-            .and_then(Value::as_str)
-            .ok_or_else(|| "THREE.KeyframeTrack: Unsupported trackType: undefined".to_string())?;
+    pub fn parse(json: &Value) -> Result<Self, Error> {
+        let type_name = json.get("type").and_then(Value::as_str).ok_or_else(|| {
+            Error::UnsupportedTrackType {
+                name: "undefined".to_string(),
+            }
+        })?;
 
-        let value_type = TrackValueType::from_value_type_name(type_name)
-            .ok_or_else(|| format!("THREE.KeyframeTrack: Unsupported trackType: {type_name}"))?;
+        let value_type = TrackValueType::from_value_type_name(type_name).ok_or_else(|| {
+            Error::UnsupportedTrackType {
+                name: type_name.to_string(),
+            }
+        })?;
 
         let name = json
             .get("name")
@@ -624,9 +628,12 @@ impl KeyframeTrack {
 
         if json.get("times").is_none() || json.get("values").is_none() {
             // `AnimationClip.parseKeyframeTrack`: the `keys` form
-            let keys = json.get("keys").and_then(Value::as_array).ok_or_else(|| {
-                format!("THREE.KeyframeTrack: no keyframes in track named {name}")
-            })?;
+            let keys =
+                json.get("keys")
+                    .and_then(Value::as_array)
+                    .ok_or_else(|| Error::NoKeyframes {
+                        track: name.clone(),
+                    })?;
 
             animation_utils::flatten_json(keys, &mut times, &mut values, "value");
         } else {
