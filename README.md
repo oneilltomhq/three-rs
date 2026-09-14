@@ -84,7 +84,7 @@ graded frame cannot see fails the ladder.
 (For how to contribute, what is in scope, and the gates a change has to pass,
 see `CONTRIBUTING.md`.)
 
-Requires a Rust toolchain (1.87 or newer) and a Vulkan driver. `wgpu` comes
+Requires a Rust toolchain (1.90 or newer) and a Vulkan driver. `wgpu` comes
 from crates.io, pinned to `30.0.1` in `Cargo.toml`; nothing else is unusual.
 
 ```sh

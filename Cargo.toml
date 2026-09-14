@@ -6,7 +6,7 @@ edition = "2021"
 license = "MIT"
 repository = "https://github.com/oneilltomhq/three-rs"
 authors = ["Tom O'Neill"]
-rust-version = "1.87"
+rust-version = "1.90"
 
 [package]
 name = "three-rs"
