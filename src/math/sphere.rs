@@ -142,7 +142,7 @@ impl Sphere {
     /// `Sphere.applyMatrix4()`.
     pub fn apply_matrix4(&mut self, matrix: &Matrix4) -> &mut Self {
         self.center.apply_matrix4(matrix);
-        self.radius = self.radius * matrix.get_max_scale_on_axis();
+        self.radius *= matrix.get_max_scale_on_axis();
 
         self
     }
