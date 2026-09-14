@@ -51,8 +51,10 @@ pub struct SkinnedMesh {
 impl SkinnedMesh {
     /// `new SkinnedMesh( geometry, material )`.
     pub fn new(geometry: Rc<BufferGeometry>) -> Self {
-        let mut object = Object3D::default();
-        object.object_type = "SkinnedMesh";
+        let object = Object3D {
+            object_type: "SkinnedMesh",
+            ..Default::default()
+        };
 
         Self {
             node: object.into_node(),

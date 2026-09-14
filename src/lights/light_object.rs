@@ -145,10 +145,12 @@ impl LightObject {
 }
 
 fn into_node(object_type: &'static str, light: LightObject) -> Node {
-    let mut object = Object3D::default();
-    object.object_type = object_type;
-    object.is_light = true;
-    object.payload = Payload::Light(light);
+    let object = Object3D {
+        object_type,
+        is_light: true,
+        payload: Payload::Light(light),
+        ..Default::default()
+    };
     object.into_node()
 }
 

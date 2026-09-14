@@ -12,9 +12,11 @@ impl Group {
     /// `new Group()`.
     #[allow(clippy::new_ret_no_self)] // `new` mirrors three.js's constructor and returns a scene-graph `Node`, not `Self`; public API, not changing.
     pub fn new() -> Node {
-        let mut object = Object3D::default();
-        object.object_type = "Group";
-        object.is_group = true;
+        let object = Object3D {
+            object_type: "Group",
+            is_group: true,
+            ..Default::default()
+        };
         object.into_node()
     }
 }

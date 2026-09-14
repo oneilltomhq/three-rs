@@ -47,8 +47,10 @@ impl InstancedMesh {
         material: MeshBasicNodeMaterial,
         count: usize,
     ) -> Node {
-        let mut object = Object3D::default();
-        object.object_type = "InstancedMesh";
+        let mut object = Object3D {
+            object_type: "InstancedMesh",
+            ..Default::default()
+        };
         let mut instanced = Self {
             mesh: Mesh {
                 geometry,

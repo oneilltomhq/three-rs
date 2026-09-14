@@ -58,11 +58,13 @@ impl Line {
         material: MeshBasicNodeMaterial,
         is_line_segments: bool,
     ) -> Node {
-        let mut object = Object3D::default();
-        object.object_type = if is_line_segments {
-            "LineSegments"
-        } else {
-            "Line"
+        let mut object = Object3D {
+            object_type: if is_line_segments {
+                "LineSegments"
+            } else {
+                "Line"
+            },
+            ..Default::default()
         };
         object.payload = Payload::Line(Self {
             geometry,

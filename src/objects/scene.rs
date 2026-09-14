@@ -53,9 +53,11 @@ pub struct Scene {
 
 impl Default for Scene {
     fn default() -> Self {
-        let mut object = Object3D::default();
-        object.object_type = "Scene";
-        object.is_scene = true;
+        let object = Object3D {
+            object_type: "Scene",
+            is_scene: true,
+            ..Default::default()
+        };
 
         Self {
             node: object.into_node(),
