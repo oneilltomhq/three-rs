@@ -224,7 +224,7 @@ pub fn teapot_geometry_full(
     for surf in min_patches..max_patches {
         // lid is in the middle of the data, patches 20-27,
         // so ignore it for this part of the loop if the lid is not desired
-        if !(lid || (surf < 20 || surf >= 28)) {
+        if !(lid || !(20..28).contains(&surf)) {
             continue;
         }
 
@@ -238,7 +238,7 @@ pub fn teapot_geometry_full(
 
                     // is the lid to be made larger, and is this a point on the lid
                     // that is X or Y?
-                    if fit_lid && (surf >= 20 && surf < 28) && (i != 2) {
+                    if fit_lid && (20..28).contains(&surf) && (i != 2) {
                         // increase XY size by 7.7%, found empirically. I don't
                         // increase Z so that the teapot will continue to fit in the
                         // space -1 to 1 for Y (Y is up for the final model).
