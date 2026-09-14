@@ -13,6 +13,10 @@ use crate::math::{CoordinateSystem, Matrix4};
 /// actually read: `updateMatrixWorld()`, `projectionMatrix`,
 /// `matrixWorldInverse`, `matrixWorld`, `layers` and `coordinateSystem`.
 ///
+/// `Vector3::project()`/`unproject()` read the same four matrix accessors, and
+/// `Raycaster.setFromCamera()` will read them too when it is ported; nothing
+/// here is renderer-only.
+///
 /// three.js has a real `Camera extends Object3D` base class that both cameras
 /// extend; the port grew `PerspectiveCamera` first and kept them as separate
 /// structs, so this trait is the base class's render-facing surface rather than
@@ -24,6 +28,9 @@ pub trait RenderCamera {
     fn update_matrix_world(&mut self);
     /// `camera.projectionMatrix`.
     fn projection_matrix(&self) -> Matrix4;
+    /// `camera.projectionMatrixInverse`, kept current by
+    /// `update_projection_matrix()` on both cameras.
+    fn projection_matrix_inverse(&self) -> Matrix4;
     /// `camera.matrixWorldInverse` — the view matrix.
     fn matrix_world_inverse(&self) -> Matrix4;
     /// `camera.coordinateSystem`.
@@ -40,6 +47,9 @@ impl RenderCamera for PerspectiveCamera {
     }
     fn projection_matrix(&self) -> Matrix4 {
         self.projection_matrix
+    }
+    fn projection_matrix_inverse(&self) -> Matrix4 {
+        self.projection_matrix_inverse
     }
     fn matrix_world_inverse(&self) -> Matrix4 {
         self.matrix_world_inverse
@@ -61,6 +71,9 @@ impl RenderCamera for OrthographicCamera {
     }
     fn projection_matrix(&self) -> Matrix4 {
         self.projection_matrix
+    }
+    fn projection_matrix_inverse(&self) -> Matrix4 {
+        self.projection_matrix_inverse
     }
     fn matrix_world_inverse(&self) -> Matrix4 {
         self.matrix_world_inverse

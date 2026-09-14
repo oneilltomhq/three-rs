@@ -16,6 +16,7 @@ pub struct OrthographicCamera {
     pub zoom: f64,
     pub coordinate_system: CoordinateSystem,
     pub projection_matrix: Matrix4,
+    pub projection_matrix_inverse: Matrix4,
     pub matrix_world_inverse: Matrix4,
 }
 
@@ -32,6 +33,7 @@ impl OrthographicCamera {
             zoom: 1.0,
             coordinate_system: CoordinateSystem::WebGPU,
             projection_matrix: Matrix4::identity(),
+            projection_matrix_inverse: Matrix4::identity(),
             matrix_world_inverse: Matrix4::identity(),
         };
         camera.update_projection_matrix();
@@ -55,6 +57,9 @@ impl OrthographicCamera {
             self.far,
             self.coordinate_system,
         );
+
+        self.projection_matrix_inverse = self.projection_matrix;
+        self.projection_matrix_inverse.invert();
     }
 
     pub fn update_matrix_world(&mut self) {
