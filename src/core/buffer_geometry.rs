@@ -307,19 +307,10 @@ pub struct Group {
 
 /// `BufferGeometry.drawRange`. `count: None` is three.js' `Infinity` ("draw
 /// everything"), which has no `usize` spelling.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct DrawRange {
     pub start: usize,
     pub count: Option<usize>,
-}
-
-impl Default for DrawRange {
-    fn default() -> Self {
-        Self {
-            start: 0,
-            count: None,
-        }
-    }
 }
 
 /// Port of `BufferGeometry`'s state: the named attribute map, the index, morph
