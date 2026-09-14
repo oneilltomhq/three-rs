@@ -114,6 +114,15 @@ fn setup_diffuse_color(material: &MeshBasicNodeMaterial, fragment: &mut Vec<Node
         }
     };
 
+    // `if ( this.vertexColors === true && geometry.hasAttribute( 'color' ) )
+    // colorNode = colorNode.mul( vertexColor() )` — the same step for every
+    // lighting model, which is what lets one `LineSegments` carry a hue per
+    // vertex. See `vertex_color()` for the `hasAttribute` half.
+    let color = match material.vertex_colors {
+        true => color.mul(vertex_color()),
+        false => color,
+    };
+
     fragment.push(diffuse_color().assign(color));
     fragment.push(
         diffuse_color()

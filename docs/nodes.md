@@ -492,6 +492,25 @@ SVGRenderer-only — WebGPU always draws a one-pixel line. Hence no
 line-specific is the *pipeline*, and it comes from the object
 (`getPrimitiveTopology( object, material )`), not the material.
 
+### `vertexColor()` has no "no attribute" fallback
+
+Three's `VertexColorNode.generate()` asks `builder.hasGeometryAttribute(
+'color' )` and, when the geometry has none, emits a white `vec4` constant
+instead of the attribute; `setupDiffuseColor()` guards the multiply with the
+same question. The port has no geometry in hand at setup time —
+`SetupContext` is the whole of what `setup()` reads off the object, and it
+carries no attribute list — so `material.vertex_colors` alone decides, and a
+material that sets it must be drawn with a geometry that has a `color`
+attribute or the renderer panics naming it. Adding the flag to `SetupContext`
+would make it part of the program cache key for every material, to model a
+case (`vertexColors` on a geometry without colours) that is a consumer bug
+either way.
+
+Three's `vertexAlphas` branch — a four-component `color` attribute whose alpha
+reaches `DiffuseColor.a` — is not ported. `vertexColor()` is declared `vec4`
+as in three, and the three-component attribute is widened with an alpha of 1
+by the same rule as `NodeBuilder.format()`.
+
 ## 9. Blending, and the instanced-attribute path
 
 Two pieces of shared renderer work that no rung 1–9 material exercises, built

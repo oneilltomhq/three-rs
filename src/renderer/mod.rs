@@ -79,6 +79,11 @@ struct GeometryGpu {
     position: Option<wgpu::Buffer>,
     normal: Option<wgpu::Buffer>,
     uv: Option<wgpu::Buffer>,
+    /// Every other `geometry.attributes` entry, in insertion order — `color`
+    /// for a `vertexColors` material, and whatever a node graph's
+    /// `attribute( name )` names next. The three above are kept apart only
+    /// because the rest of the renderer reaches for them by name.
+    other: Vec<(String, wgpu::Buffer)>,
     index: Option<(wgpu::Buffer, wgpu::IndexFormat, u32)>,
     vertex_count: u32,
 }
@@ -89,7 +94,11 @@ impl GeometryGpu {
             "position" => self.position.as_ref(),
             "normal" => self.normal.as_ref(),
             "uv" => self.uv.as_ref(),
-            other => panic!("three-rs: no geometry attribute named {other}"),
+            other => self
+                .other
+                .iter()
+                .find(|(key, _)| key == other)
+                .map(|(_, buffer)| buffer),
         };
         buffer.unwrap_or_else(|| panic!("three-rs: the geometry has no {name} attribute"))
     }
@@ -2320,6 +2329,11 @@ impl Renderer {
         let position = geometry.position().map(vertex_buffer);
         let normal = geometry.normal().map(vertex_buffer);
         let uv = geometry.uv().map(vertex_buffer);
+        let other: Vec<(String, wgpu::Buffer)> = geometry
+            .attributes()
+            .filter(|(name, _)| !matches!(*name, "position" | "normal" | "uv"))
+            .map(|(name, attribute)| (name.to_string(), vertex_buffer(attribute)))
+            .collect();
 
         let index = geometry.index.as_ref().map(|index| {
             let (bytes, format): (Vec<u8>, wgpu::IndexFormat) = match index {
@@ -2354,6 +2368,7 @@ impl Renderer {
                     position,
                     normal,
                     uv,
+                    other,
                     index,
                     vertex_count,
                 },

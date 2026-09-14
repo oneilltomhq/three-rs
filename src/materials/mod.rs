@@ -182,6 +182,13 @@ pub struct MeshBasicNodeMaterial {
     pub metalness: f64,
     pub roughness: f64,
     pub map: Option<Texture>,
+    /// `Material.vertexColors` — `setupDiffuseColor()` multiplies the diffuse
+    /// colour by `vertexColor()`, so one `LineSegments` (or one mesh) can carry
+    /// a colour per vertex instead of one per draw call. The geometry needs a
+    /// three-component `color` attribute; see
+    /// [`vertex_color`](crate::nodes::tsl::vertex_color) for the one divergence
+    /// from three's node.
+    pub vertex_colors: bool,
     pub roughness_map: Option<Texture>,
     pub metalness_map: Option<Texture>,
     /// `MeshStandardMaterial.bumpMap` / `.bumpScale` — `BumpMapNode`.
@@ -283,6 +290,7 @@ impl Default for MeshBasicNodeMaterial {
             metalness: 0.0,
             roughness: 1.0,
             map: None,
+            vertex_colors: false,
             roughness_map: None,
             metalness_map: None,
             bump_map: None,
@@ -394,8 +402,9 @@ impl MeshBasicNodeMaterial {
     /// `lights` false (`NodeMaterial`'s own default), `transparent` false — is
     /// already `MeshBasicNodeMaterial`'s. `linewidth` / `linecap` / `linejoin`
     /// are SVGRenderer-only ("WebGL and WebGPU ignore this setting and always
-    /// render line primitives with a width of one pixel"), and `vertexColors`
-    /// is not modelled anywhere in this port yet. Three's own dump of this
+    /// render line primitives with a width of one pixel"). `vertexColors` is on
+    /// the shared material, since `setupDiffuseColor()` is where three reads
+    /// it — see [`MeshBasicNodeMaterial::vertex_colors`]. Three's own dump of this
     /// material from the d33 page (`docs/lines/LineBasicNodeMaterial_27.*`) is
     /// the `Basic` program statement for statement, so a second kind would
     /// generate identical WGSL.
