@@ -685,6 +685,12 @@ pub struct Lazy<T: 'static> {
     cell: RefCell<Option<T>>,
 }
 
+impl<T: Clone + 'static> Default for Lazy<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T: Clone + 'static> Lazy<T> {
     pub const fn new() -> Self {
         Lazy {
