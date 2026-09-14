@@ -2359,7 +2359,8 @@ impl Renderer {
         ]
         .iter()
         .filter(|written| **written)
-        .count() as u64;
+        .count() as u64
+            + other.len() as u64;
 
         self.geometries.insert(
             id,
