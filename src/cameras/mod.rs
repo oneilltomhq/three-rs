@@ -7,7 +7,7 @@ pub use orthographic_camera::OrthographicCamera;
 pub use perspective_camera::{CameraView, PerspectiveCamera};
 
 use crate::core::Layers;
-use crate::math::{CoordinateSystem, Matrix4};
+use crate::math::{Box3, CoordinateSystem, Matrix4, Vector3};
 
 /// The slice of `Camera` that `Renderer.render()` and `_projectObject()`
 /// actually read: `updateMatrixWorld()`, `projectionMatrix`,
@@ -87,4 +87,45 @@ impl RenderCamera for OrthographicCamera {
     fn layers(&self) -> Layers {
         self.object.layers
     }
+}
+
+/// The camera's world basis, for [`PerspectiveCamera::fit`] and
+/// [`OrthographicCamera::fit`]: the x and y columns of `matrix_world`, and
+/// *minus* its z column, which is the direction a camera looks along. All three
+/// are normalised, so a scaled camera node still gives a unit basis.
+fn view_basis(matrix_world: &Matrix4) -> (Vector3, Vector3, Vector3) {
+    let mut right = Vector3::ZERO;
+    let mut up = Vector3::ZERO;
+    let mut forward = Vector3::ZERO;
+    matrix_world.extract_basis(&mut right, &mut up, &mut forward);
+
+    right.normalize();
+    up.normalize();
+    forward.normalize().negate();
+
+    (right, up, forward)
+}
+
+/// The box's eight corners as offsets from its centre, resolved in a camera
+/// basis: `x` is the offset along `right`, `y` along `up`, `z` along `forward`
+/// — that is, how much deeper than the centre the corner lies.
+fn corner_offsets(box_: &Box3, right: &Vector3, up: &Vector3, forward: &Vector3) -> [Vector3; 8] {
+    let center = box_.get_center();
+    let mut offsets = [Vector3::ZERO; 8];
+
+    for (i, offset) in offsets.iter_mut().enumerate() {
+        // The same binary pattern `Box3::apply_matrix4()` uses.
+        let corner = Vector3::new(
+            if i & 4 == 0 { box_.min.x } else { box_.max.x },
+            if i & 2 == 0 { box_.min.y } else { box_.max.y },
+            if i & 1 == 0 { box_.min.z } else { box_.max.z },
+        );
+
+        let mut d = Vector3::ZERO;
+        d.sub_vectors(&corner, &center);
+
+        offset.set(d.dot(right), d.dot(up), d.dot(forward));
+    }
+
+    offsets
 }
