@@ -64,13 +64,13 @@ fn set_get_xyzw() {
     let mut a = BufferAttribute::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], 4);
     let expected = [1.0, 2.0, -3.0, -4.0, -5.0, -6.0, 7.0, 8.0];
 
-    let v = a.get_x(1) * -1.0;
+    let v = -a.get_x(1);
     a.set_x(1, v);
-    let v = a.get_y(1) * -1.0;
+    let v = -a.get_y(1);
     a.set_y(1, v);
-    let v = a.get_z(0) * -1.0;
+    let v = -a.get_z(0);
     a.set_z(0, v);
-    let v = a.get_w(0) * -1.0;
+    let v = -a.get_w(0);
     a.set_w(0, v);
 
     assert_eq!(
