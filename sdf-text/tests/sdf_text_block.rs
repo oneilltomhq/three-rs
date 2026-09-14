@@ -371,10 +371,13 @@ fn the_frame_matches_the_atlas_sdf() {
         srgb_byte(background.b),
     ];
 
+    /// One mismatch: `(x, y, signed_distance, got_rgb, want_rgb)`.
+    type Mismatch = (usize, usize, f64, [u8; 3], [f64; 3]);
+
     let mut opaque = 0usize;
     let mut clear = 0usize;
     let mut skipped = 0usize;
-    let mut wrong: Vec<(usize, usize, f64, [u8; 3], [f64; 3])> = Vec::new();
+    let mut wrong: Vec<Mismatch> = Vec::new();
 
     for j in 0..height {
         for i in 0..width {

@@ -44,9 +44,12 @@ impl BindingTarget for StubTarget {
     }
 }
 
+/// One track name's shared value buffer.
+type SlotValues = Rc<RefCell<Vec<f64>>>;
+
 #[derive(Clone, Default)]
 struct StubRoot {
-    slots: Rc<RefCell<HashMap<String, Rc<RefCell<Vec<f64>>>>>>,
+    slots: Rc<RefCell<HashMap<String, SlotValues>>>,
 }
 
 impl StubRoot {
