@@ -52,9 +52,12 @@ impl BindingTarget for StubTarget {
 /// of the right size the first time it is asked (`1` for an indexed property
 /// such as `.rotation[x]`, `3` otherwise — enough for the tracks this suite
 /// uses).
+/// One track name's shared value buffer.
+type SlotValues = Rc<RefCell<Vec<f64>>>;
+
 #[derive(Clone, Default)]
 struct StubRoot {
-    slots: Rc<RefCell<HashMap<String, Rc<RefCell<Vec<f64>>>>>>,
+    slots: Rc<RefCell<HashMap<String, SlotValues>>>,
 }
 
 fn key_of(parsed: &ParsedTrackName) -> String {
