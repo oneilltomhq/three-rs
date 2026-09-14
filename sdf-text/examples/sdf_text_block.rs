@@ -50,9 +50,18 @@ fn font_path() -> std::path::PathBuf {
     std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/assets/Roboto-Regular.ttf")
 }
 
+/// The font ships inside the published crate (`tests/assets/Roboto-Regular.ttf`,
+/// Apache-2.0, see `LICENSE-Roboto`), so a copy of this example built from
+/// crates.io finds it where a checkout does — that is the point of #44.
 pub fn load_font() -> VectorFont {
     let path = font_path();
-    let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let bytes = std::fs::read(&path).unwrap_or_else(|e| {
+        panic!(
+            "read {}: {e}\nsdf-text bundles Roboto-Regular.ttf at that path; \
+             any .ttf works, point `font_path()` at one.",
+            path.display()
+        )
+    });
     VectorFont::parse(bytes, "Roboto-Regular.ttf").expect("parse Roboto-Regular.ttf")
 }
 

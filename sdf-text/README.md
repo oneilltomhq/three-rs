@@ -200,3 +200,13 @@ Not ported, and why:
   went — is the JS's.
 - **`index.js`'s re-export shape.** Rust modules and `pub use` in `lib.rs` cover
   it.
+
+## The bundled font
+
+`tests/assets/Roboto-Regular.ttf` (Roboto Regular 2.001047, Copyright 2015
+Google Inc., Apache-2.0) ships inside the published crate, so the examples and
+the doc snippets run as written from a `cargo add sdf-text` checkout as well as
+from this repository. The notice and the licence text are in `LICENSE-Roboto`;
+the crate's own code stays MIT (`LICENSE`). The golden data under
+`tests/golden/` is *not* packaged — those tests only run from a repository
+checkout.
