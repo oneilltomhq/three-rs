@@ -27,6 +27,13 @@ pub use super::node::TextureSource;
 // sub-builds and the build context (`docs/nodes.md` §7)
 // ---------------------------------------------------------------------------
 
+/// Cache key shared by the per-(sub-build layer, normal value) caches below:
+/// `(sub_build_layer, normal_value_id)`.
+type SubBuildKey = (Option<&'static str>, Option<usize>);
+
+/// [`SubBuildKey`] plus the flat-shading flag, for `normalView`'s cache.
+type NormalViewKey = (Option<&'static str>, Option<usize>, bool);
+
 thread_local! {
     /// `NodeBuilder.subBuildLayers`. One layer at a time is all the ladder
     /// needs; `NORMAL` is the only name so far.
@@ -45,15 +52,15 @@ thread_local! {
     static NORMAL_VIEW_GEOMETRY: RefCell<HashMap<bool, NodeRef>> = RefCell::new(HashMap::new());
     /// `normalView`'s node per (layer, normal value) — the stand-in for
     /// three.js' per-build `nodeData` plus its `subBuildsCache`.
-    static NORMAL_VIEW: RefCell<HashMap<(Option<&'static str>, Option<usize>, bool), NodeRef>> =
+    static NORMAL_VIEW: RefCell<HashMap<NormalViewKey, NodeRef>> =
         RefCell::new(HashMap::new());
     /// `tangentView` / `bitangentView`, keyed the same way.
-    static TANGENT_VIEW: RefCell<HashMap<(Option<&'static str>, Option<usize>), (NodeRef, NodeRef)>> =
+    static TANGENT_VIEW: RefCell<HashMap<SubBuildKey, (NodeRef, NodeRef)>> =
         RefCell::new(HashMap::new());
     /// `normalWorld`, keyed the same way: it reads `normalView`, so a plain
     /// singleton would bake in whichever material was built first and then
     /// re-assign `normalView` from the geometric normal in every later one.
-    static NORMAL_WORLD: RefCell<HashMap<(Option<&'static str>, Option<usize>), NodeRef>> =
+    static NORMAL_WORLD: RefCell<HashMap<SubBuildKey, NodeRef>> =
         RefCell::new(HashMap::new());
     /// `builder.context.setupPositionView()` — `NodeMaterial.setup()` installs
     /// it before either stage is flowed, and `SpriteNodeMaterial` overrides it

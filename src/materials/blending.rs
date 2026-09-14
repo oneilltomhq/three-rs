@@ -204,9 +204,12 @@ mod tests {
     use wgpu::BlendFactor as F;
     use wgpu::BlendOperation as Op;
 
+    /// `( srcFactor, dstFactor, operation )` of one blend component.
+    type BlendRow = (F, F, Op);
+
     /// `( srcFactor, dstFactor, operation )` of both components, in the shape
     /// the dumped `GPURenderPipelineDescriptor.blend` prints.
-    fn rows(mode: &BlendMode) -> Option<((F, F, Op), (F, F, Op))> {
+    fn rows(mode: &BlendMode) -> Option<(BlendRow, BlendRow)> {
         blending(mode).map(|b| {
             (
                 (b.color.src_factor, b.color.dst_factor, b.color.operation),
