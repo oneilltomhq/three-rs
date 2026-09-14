@@ -251,6 +251,10 @@ impl Vector4 {
 
             let (x, y, z);
 
+            // These `0.707106781` literals mirror three.js's `Quaternion.js` verbatim
+            // (an approximation of `FRAC_1_SQRT_2`, not the exact constant); keeping the
+            // same literal keeps this pixel-identical to three.js's output.
+            #[allow(clippy::approx_constant)]
             if xx > yy && xx > zz {
                 if xx < epsilon {
                     x = 0.0;

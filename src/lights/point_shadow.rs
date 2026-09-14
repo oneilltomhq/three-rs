@@ -104,6 +104,10 @@ fn point_shadow_filter(
     .normalize();
     let bitangent = cross(bd3d.clone(), tangent.clone());
 
+    // `6.283_185_307_18` mirrors three.js's `PCFShadowFilter` literal (an approximation
+    // of `TAU`, not the exact constant); keeping the same literal keeps this
+    // pixel-identical to three.js's output.
+    #[allow(clippy::approx_constant)]
     let phi = interleaved_gradient_noise(frag_coord().xy()).mul(6.283_185_307_18);
 
     let mut sum: Option<NodeRef> = None;

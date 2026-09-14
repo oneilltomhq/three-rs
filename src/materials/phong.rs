@@ -265,6 +265,10 @@ pub fn shadow_factor(index: usize, map: &DepthTexture) -> NodeRef {
 fn pcf_shadow(index: usize, map: &DepthTexture, coord: NodeRef) -> NodeRef {
     let texel_size = vec2(1.0, 1.0).div(shadow_map_size(index));
     let radius_scaled = shadow_radius(index).mul(texel_size.x());
+    // `6.28318530718` mirrors three.js's `PCFShadowFilter` literal (an approximation
+    // of `TAU`, not the exact constant); keeping the same literal keeps this
+    // pixel-identical to three.js's output.
+    #[allow(clippy::approx_constant)]
     let phi = interleaved_gradient_noise(frag_coord().xy()).mul(float(6.28318530718));
 
     let mut sum: Option<NodeRef> = None;
