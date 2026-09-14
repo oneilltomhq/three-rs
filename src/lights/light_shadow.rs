@@ -8,6 +8,7 @@ use crate::math::{Matrix4, Vector2, Vector3, RAD2DEG};
 /// `LightShadow.camera` — a `PerspectiveCamera` for `SpotLightShadow`, an
 /// `OrthographicCamera` for `DirectionalLightShadow`.
 #[derive(Clone)]
+#[allow(clippy::large_enum_variant)] // public API; boxing a variant would change every construction site (batched separately, see #9/#38/#39)
 pub enum ShadowCamera {
     Perspective(PerspectiveCamera),
     Orthographic(OrthographicCamera),

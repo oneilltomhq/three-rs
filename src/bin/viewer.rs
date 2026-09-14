@@ -200,6 +200,7 @@ impl Which {
     }
 }
 
+#[allow(clippy::large_enum_variant)] // internal to the viewer binary; not worth an indirection for a debug tool
 enum Scene {
     DepthTexture(webgpu_depth_texture::App),
     InstanceMesh(webgpu_instance_mesh::App),
