@@ -66,8 +66,7 @@ fn scene_with(map: Texture) -> Scene {
     let mut material = MeshBasicNodeMaterial::new();
     material.color_node = Some(texture(&map));
 
-    let quad = Mesh::new(Rc::new(plane_geometry(W as f64, H as f64, 1, 1)));
-    quad.borrow_mut().mesh_mut().unwrap().material = Some(material);
+    let quad = Mesh::new(Rc::new(plane_geometry(W as f64, H as f64, 1, 1)), material);
     quad.borrow_mut()
         .position
         .set(W as f64 / 2.0, H as f64 / 2.0, 0.0);
@@ -191,7 +190,7 @@ fn adopted_device_external_texture_and_in_place_update() {
     let mut scene = scene_with(external.clone());
     let mut camera = pixel_camera();
     renderer.render(&mut scene, &mut camera);
-    let (width, height, pixels) = renderer.read_canvas_pixels();
+    let (width, height, pixels) = renderer.read_canvas_pixels().unwrap();
     assert_eq!((width, height), (W, H));
 
     // Texture row 0 is at `v = 0`, which the camera puts at the bottom of the
@@ -208,7 +207,7 @@ fn adopted_device_external_texture_and_in_place_update() {
     let map = Texture::new(4, 4, Some(solid(4, 4, RED)));
     let mut scene = scene_with(map.clone());
     renderer.render(&mut scene, &mut camera);
-    let (_, _, pixels) = renderer.read_canvas_pixels();
+    let (_, _, pixels) = renderer.read_canvas_pixels().unwrap();
     assert_rgb(&pixels, W / 2, H / 2, RED, "first frame");
 
     let before = map.with_gpu(|gpu| gpu.clone());
@@ -218,7 +217,7 @@ fn adopted_device_external_texture_and_in_place_update() {
     assert_eq!(map.version(), 1, "set_data is the needsUpdate too");
 
     renderer.render(&mut scene, &mut camera);
-    let (_, _, pixels) = renderer.read_canvas_pixels();
+    let (_, _, pixels) = renderer.read_canvas_pixels().unwrap();
     assert_rgb(&pixels, W / 2, H / 2, BLUE, "after set_data");
 
     // The same allocation, written into — not a new texture. A re-created one
@@ -232,6 +231,6 @@ fn adopted_device_external_texture_and_in_place_update() {
     // A frame with no version change must not re-upload anything, and must not
     // go stale either.
     renderer.render(&mut scene, &mut camera);
-    let (_, _, pixels) = renderer.read_canvas_pixels();
+    let (_, _, pixels) = renderer.read_canvas_pixels().unwrap();
     assert_rgb(&pixels, W / 2, H / 2, BLUE, "unchanged third frame");
 }

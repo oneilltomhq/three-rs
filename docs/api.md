@@ -133,7 +133,7 @@ Decision 4's rule needed a shape to land in; issue #9 gave it one.
   in this crate reports a rendering difference as an error; the grader does
   that. `Error` is for what did not happen at all.
 
-## 5. The renderer can be embedded in a host that owns the GPU
+## 6. The renderer can be embedded in a host that owns the GPU
 
 Settled 2026-09-14, after the second outside consumer: a Smithay/wgpu Wayland
 compositor that imports client dmabufs as `wgpu::Texture`s, draws its scene
@@ -187,7 +187,7 @@ textures.
 
 ## Where each decision came from
 
-Decision 5 came out of the compositor consumer and issue #62; the gaps it
+Decision 6 came out of the compositor consumer and issue #62; the gaps it
 closes were found by trying to build the compositor's scene against 0.1.2.
 
 Decisions 1 and 2 came out of the plane-dendro consumer test and a

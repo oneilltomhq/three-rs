@@ -486,7 +486,11 @@ mod tests {
     use super::*;
 
     fn rgba(width: u32, height: u32) -> Texture {
-        Texture::new(width, height, Some(vec![0u8; (width * height * 4) as usize]))
+        Texture::new(
+            width,
+            height,
+            Some(vec![0u8; (width * height * 4) as usize]),
+        )
     }
 
     #[test]
