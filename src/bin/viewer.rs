@@ -1052,6 +1052,49 @@ fn fresh_renderer(scene: &mut Scene, which: Which, size: (u32, u32)) {
     scene.set_size(size.0, size.1);
 }
 
+/// The count half of the performance ladder: three more frames of the example,
+/// tiled into `target/e2e/<example>/strip.png` with each frame's draw calls and
+/// build counts in the gutter under it (issue #68).
+///
+/// It goes beside the time the caller has just printed, and for the same
+/// reason: the time says a frame is cheap, the counts say why — a frame that
+/// re-uploads a live geometry or rebuilds a program shows an orange line here
+/// while staying well inside the time ceiling.
+fn write_strip(which: Which, scene: &mut Scene, after: u32) {
+    // The clock carries on from where the timing loop left it, so the strip is
+    // three more frames of the same animation rather than a jump back to t=0.
+    let mut time = after.max(1) as f64 / 60.0;
+
+    let strip = three_rs::testing::strip(
+        scene,
+        |scene| scene.renderer(),
+        &mut |scene: &mut Scene| {
+            let at = time;
+            time += 1.0 / 60.0;
+            scene.animate(at, at);
+        },
+        &mut [("", &mut |_: &mut Scene| {}), ("", &mut |_: &mut Scene| {})],
+    )
+    .expect("three-rs viewer: the strip could not be read back");
+
+    for (index, frame) in strip.frames.iter().enumerate() {
+        println!(
+            "{}: strip frame {} — {}",
+            which.name(),
+            index + 1,
+            frame.info
+        );
+    }
+
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("target/e2e")
+        .join(which.name());
+    std::fs::create_dir_all(&dir).expect("three-rs viewer: cannot create the strip directory");
+    let path = dir.join("strip.png");
+    strip.write_png(path.to_str().expect("three-rs viewer: the path is UTF-8"));
+    println!("{}: wrote {}", which.name(), path.display());
+}
+
 /// Renders `frames` frames headless, reporting the steady-state frame time
 /// (`--headless`), and with `path` also writes the canvas as a PNG plus the
 /// result of `Renderer::present()` into an off-screen `bgra8unorm` texture, so
@@ -1153,6 +1196,8 @@ fn screenshot(
         size.1,
         timer.report()
     );
+
+    write_strip(which, &mut scene, frames);
 
     let Some(path) = path else { return };
 
