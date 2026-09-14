@@ -133,7 +133,62 @@ Decision 4's rule needed a shape to land in; issue #9 gave it one.
   in this crate reports a rendering difference as an error; the grader does
   that. `Error` is for what did not happen at all.
 
+## 5. The renderer can be embedded in a host that owns the GPU
+
+Settled 2026-09-14, after the second outside consumer: a Smithay/wgpu Wayland
+compositor that imports client dmabufs as `wgpu::Texture`s, draws its scene
+with three-rs and scans out to DRM. Three additions, all at the boundary
+between the renderer and a host that already has a device and already has
+textures.
+
+- **`Renderer::with_device( parameters, adapter, device, queue )`.** The host's
+  device, adopted. `Renderer::new` and `with_instance` now end in it, so there
+  is one construction path. A `wgpu::Texture` belongs to the device it was
+  created on, so a renderer that always made its own device could never sample
+  an imported buffer — the alternative, handing the renderer an `Instance` and
+  letting it pick, is `with_instance`, and it does not solve this. `Device` and
+  `Queue` are refcounted handles, so the host keeps its own clones and goes on
+  using them.
+
+  The one capability question this raises is `FLOAT32_FILTERABLE`, which
+  sdf-text's `r32float` atlas needs. With an adopted device the adapter's
+  feature set says nothing about what was actually enabled, so the renderer
+  reads `device.features()` and asserts at the point of use; the doc comment
+  tells a host that wants sdf-text to request it.
+
+- **`Texture::external( gpu, color_space )`** — three.js's `ExternalTexture`.
+  Size and format come off the `wgpu::Texture` so they cannot drift from it;
+  `own_gpu = false`, so the renderer samples the handle and never re-uploads,
+  re-creates or destroys it. The machinery already existed for render targets
+  (`Texture::render_target` + `set_gpu`, and `ensure_texture_2d`'s `own_gpu`
+  short-circuit); what was missing was a constructor that ties the four facts
+  together, since `set_gpu` alone leaves size, format and colour space to be
+  set by hand and silently wrong if they are not. The colour space must agree
+  with the format's transfer function and that is asserted, because the GPU
+  applies the transfer on sample and a mismatch is a wrong-looking frame rather
+  than an error.
+
+- **`Texture::set_data( data )` / `set_needs_update()` / `version()`** —
+  `texture.needsUpdate = true`. A texture whose pixels change every frame at
+  the same size and format (a screencast frame, an shm client buffer) had no
+  path but clearing the GPU handle, which threw away the allocation, the mip
+  chain and every bind group built from it. The renderer's texture cache is now
+  keyed on `( id, version )`, exactly as the program cache is keyed on
+  `( material.id, material.version )`, and a bumped version writes the new
+  bytes into the texture that is already there.
+
+  `set_data` bumps the version itself rather than waiting for a separate
+  `set_needs_update()`. three.js needs the flag because its data array is
+  mutated in place behind the texture's back; here the setter *is* the
+  mutation, so requiring a second call would only add a silent-stale-frame
+  footgun. `set_needs_update()` stays for forcing a re-upload, and the name
+  keeps the three.js correspondence. `set_data` panics on the wrong byte count
+  and on a texture the renderer does not own.
+
 ## Where each decision came from
+
+Decision 5 came out of the compositor consumer and issue #62; the gaps it
+closes were found by trying to build the compositor's scene against 0.1.2.
 
 Decisions 1 and 2 came out of the plane-dendro consumer test and a
 conversation about which renderers are multi-threaded and how. Decision 3 is
