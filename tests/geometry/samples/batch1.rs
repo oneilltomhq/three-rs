@@ -45,6 +45,7 @@ const BOX_MORPH: GeometrySample = GeometrySample {
     bounding_sphere: (&[0.0, 0.0, 0.0], 1.7320508075688772),
 };
 
+#[allow(clippy::approx_constant)] // generated golden value from three.js (sample.mjs); not hand-written, do not "fix" to the exact constant
 const PLANE_DEFAULT: GeometrySample = GeometrySample {
     expr: "new PlaneGeometry()",
     position: Some(AttrSample { count: 4, head: &[-0.5, 0.5, 0.0, 0.5, 0.5, 0.0, -0.5, -0.5, 0.0, 0.5, -0.5, 0.0], tail: &[-0.5, 0.5, 0.0, 0.5, 0.5, 0.0, -0.5, -0.5, 0.0, 0.5, -0.5, 0.0] }),
@@ -78,6 +79,7 @@ const PLANE_200: GeometrySample = GeometrySample {
     bounding_sphere: (&[0.0, 0.0, 0.0], 141.421_356_237_309_5),
 };
 
+#[allow(clippy::approx_constant)] // generated golden value from three.js (sample.mjs); not hand-written, do not "fix" to the exact constant
 const PLANE_1_1_16_64: GeometrySample = GeometrySample {
     expr: "new PlaneGeometry( 1, 1, 16, 64 )",
     position: Some(AttrSample { count: 1105, head: &[-0.5, 0.5, 0.0, -0.437_5, 0.5, 0.0, -0.375, 0.5, 0.0, -0.312_5, 0.5, 0.0], tail: &[0.312_5, -0.5, 0.0, 0.375, -0.5, 0.0, 0.437_5, -0.5, 0.0, 0.5, -0.5, 0.0] }),
@@ -133,6 +135,7 @@ const CONE_DEFAULT: GeometrySample = GeometrySample {
     bounding_sphere: (&[0.0, 0.0, 0.0], 1.118_033_988_749_895),
 };
 
+#[allow(clippy::approx_constant)] // generated golden value from three.js (sample.mjs); not hand-written, do not "fix" to the exact constant
 const CONE_BATCH: GeometrySample = GeometrySample {
     expr: "new ConeGeometry( 1.0, 2.0 )",
     position: Some(AttrSample { count: 131, head: &[0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0], tail: &[-0.555_570_244_789_123_5, -1.0, 0.831_469_595_432_281_5, -0.382_683_426_141_738_9, -1.0, 0.923_879_504_203_796_4, -0.19509032368659973, -1.0, 0.980_785_250_663_757_3, -2.4492937051703357e-16, -1.0, 1.0] }),

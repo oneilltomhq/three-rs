@@ -423,7 +423,12 @@ fn make_clip_additive_interpolates_an_interior_reference_frame() {
 fn make_clip_additive_multiplies_the_conjugate_for_quaternions() {
     // Reference quaternion == the only target value, so target * conj(ref) is
     // the identity.
-    let values = vec![0.0, 0.0, 0.707_106_781_186_547_6, 0.707_106_781_186_547_6];
+    let values = vec![
+        0.0,
+        0.0,
+        std::f64::consts::FRAC_1_SQRT_2,
+        std::f64::consts::FRAC_1_SQRT_2,
+    ];
     let mut clip = AnimationClip::new(
         "clip",
         1.0,
