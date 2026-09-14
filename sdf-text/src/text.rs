@@ -319,7 +319,10 @@ impl Text {
         // borrow checker then rejects; the is_some()+unwrap() form does not.
         #[allow(clippy::unnecessary_unwrap)]
         if !self.needs_sync && self.text_render_info.is_some() {
-            return self.text_render_info.as_ref().unwrap();
+            return self
+                .text_render_info
+                .as_ref()
+                .expect("sdf-text: text_render_info.is_some() was just checked");
         }
 
         let params = self.params.clone();
@@ -330,7 +333,10 @@ impl Text {
                     // Font still loading — stay dirty so we re-layout once it
                     // arrives.
                     self.text_render_info = Some(empty_render_info(params));
-                    return self.text_render_info.as_ref().unwrap();
+                    return self
+                        .text_render_info
+                        .as_ref()
+                        .expect("sdf-text: text_render_info was set on the line above");
                 }
                 Some(font) => {
                     self.text_render_info = Some(layout_text_vector(params, Some(&font)));
@@ -342,6 +348,8 @@ impl Text {
 
         self.layouts_performed += 1;
         self.needs_sync = false;
-        self.text_render_info.as_ref().unwrap()
+        self.text_render_info
+            .as_ref()
+            .expect("sdf-text: text_render_info was set by the branch above")
     }
 }

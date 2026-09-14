@@ -1107,7 +1107,7 @@ impl Renderer {
                 inner
                     .gpu
                     .as_ref()
-                    .unwrap()
+                    .expect("three-rs: the cube shadow target's depth texture is created before the pass runs")
                     .create_view(&wgpu::TextureViewDescriptor {
                         dimension: Some(wgpu::TextureViewDimension::D2),
                         base_array_layer: face as u32,
@@ -1226,7 +1226,9 @@ impl Renderer {
         self.draw(items, camera_uniforms, &pass_target, clear);
 
         if use_frame_buffer_target {
-            self.render_output(target.as_ref().unwrap());
+            self.render_output(target.as_ref().expect(
+                "three-rs: use_frame_buffer_target means the frame buffer target is there",
+            ));
         }
     }
 
@@ -1378,7 +1380,11 @@ impl Renderer {
             for draw in draws.iter() {
                 let geometry = &self.geometries[&draw.geometry_id].gpu;
 
-                pass.set_pipeline(self.pipelines.get(&draw.pipeline).unwrap());
+                pass.set_pipeline(
+                    self.pipelines
+                        .get(&draw.pipeline)
+                        .expect("three-rs: the draw's pipeline was built into the cache above"),
+                );
                 for (index, group) in draw.bind_groups.iter().enumerate() {
                     pass.set_bind_group(index as u32, group, &[]);
                 }
@@ -2460,7 +2466,7 @@ impl Renderer {
                         .borrow()
                         .gpu
                         .as_ref()
-                        .unwrap()
+                        .expect("three-rs: prepare_render_target() created the depth texture")
                         .create_view(&Default::default()),
                 ),
                 Some(depth_texture.gpu_format()),
@@ -2489,7 +2495,10 @@ impl Renderer {
         let sample_count = self.current_samples().max(1);
         self.prepare_canvas(needs_depth, sample_count);
 
-        let canvas = self.canvas.as_ref().unwrap();
+        let canvas = self
+            .canvas
+            .as_ref()
+            .expect("three-rs: prepare_canvas() has just created the canvas");
         let (color, resolve) = match &canvas.msaa {
             Some(msaa) => (
                 msaa.create_view(&Default::default()),
@@ -2527,7 +2536,10 @@ impl Renderer {
             {
                 if needs_depth && canvas.depth.is_none() {
                     let depth = self.create_depth_buffer(width, height, sample_count);
-                    self.canvas.as_mut().unwrap().depth = Some(depth);
+                    self.canvas
+                        .as_mut()
+                        .expect("three-rs: the canvas is Some in this branch")
+                        .depth = Some(depth);
                 }
                 return;
             }

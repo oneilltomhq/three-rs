@@ -124,8 +124,10 @@ impl Interpolation for CubicInterpolation {
         let half_dt = (t1 - t0) * 0.5;
         let stride = data.value_size;
 
-        self.weight_prev = half_dt / (t0 - t_prev.unwrap());
-        self.weight_next = half_dt / (t_next.unwrap() - t1);
+        self.weight_prev =
+            half_dt / (t0 - t_prev.expect("three-rs: every branch above sets t_prev"));
+        self.weight_next =
+            half_dt / (t_next.expect("three-rs: every branch above sets t_next") - t1);
         self.offset_prev = i_prev as usize * stride;
         self.offset_next = i_next as usize * stride;
     }

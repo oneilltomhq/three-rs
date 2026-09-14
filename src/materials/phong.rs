@@ -191,7 +191,9 @@ pub fn setup_light(
     }
 
     Some(match light.kind {
-        LightKind::Ambient | LightKind::Hemisphere => unreachable!(),
+        LightKind::Ambient | LightKind::Hemisphere => {
+            unreachable!("three-rs: the ambient and hemisphere lights are summed elsewhere")
+        }
         LightKind::Point => {
             let l_vector = light_view_position(index).sub(position_view());
             let attenuation = distance_attenuation(
@@ -280,7 +282,8 @@ fn pcf_shadow(index: usize, map: &DepthTexture, coord: NodeRef) -> NodeRef {
             None => tap,
         });
     }
-    sum.unwrap().mul(float(1.0 / 5.0))
+    sum.expect("three-rs: the five-tap loop always sets sum")
+        .mul(float(1.0 / 5.0))
 }
 
 /// `AmbientLightNode.setup()` — `irradiance += lightColor`, no attenuation.

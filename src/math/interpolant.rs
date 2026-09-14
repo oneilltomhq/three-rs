@@ -313,12 +313,18 @@ impl<I: Interpolation> Interpolant<I> {
 
             self.cached_index = i1 as usize;
 
-            let (t0, t1) = (t0.unwrap(), t1.unwrap());
+            let (t0, t1) = (
+                t0.expect("three-rs: the interval search leaves t0 set"),
+                t1.expect("three-rs: the interval search leaves t1 set"),
+            );
             self.interpolation
                 .interval_changed(&self.data, i1 as usize, t0, t1);
         } // validate_interval
 
-        let (t0, t1) = (t0.unwrap(), t1.unwrap());
+        let (t0, t1) = (
+            t0.expect("three-rs: the interval search leaves t0 set"),
+            t1.expect("three-rs: the interval search leaves t1 set"),
+        );
         self.interpolation
             .interpolate(&mut self.data, i1 as usize, t0, t, t1);
 

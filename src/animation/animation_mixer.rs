@@ -124,7 +124,10 @@ impl BindingPool {
             return;
         };
 
-        let last = *self.order.last().expect("non-empty binding order");
+        let last = *self
+            .order
+            .last()
+            .expect("three-rs: non-empty binding order");
         self.cache_index[last] = Some(cache_index);
         self.order[cache_index] = last;
         self.order.pop();
@@ -142,7 +145,7 @@ impl BindingPool {
 
     /// `_lendBinding( binding )`.
     fn lend_binding(&mut self, handle: usize) {
-        let prev_index = self.cache_index[handle].expect("lending a cached binding");
+        let prev_index = self.cache_index[handle].expect("three-rs: lending a cached binding");
 
         let last_active_index = self.n_active;
         self.n_active += 1;
@@ -158,7 +161,7 @@ impl BindingPool {
 
     /// `_takeBackBinding( binding )`.
     fn take_back_binding(&mut self, handle: usize) {
-        let prev_index = self.cache_index[handle].expect("taking back a cached binding");
+        let prev_index = self.cache_index[handle].expect("three-rs: taking back a cached binding");
 
         self.n_active -= 1;
         let first_inactive_index = self.n_active;
@@ -340,7 +343,7 @@ impl AnimationMixer {
     pub fn action(&self, handle: ActionHandle) -> &AnimationAction {
         self.actions[handle.0]
             .as_ref()
-            .expect("handle of a live action")
+            .expect("three-rs: handle of a live action")
     }
 
     /// An action by handle, mutably — Three's public action fields (`weight`,
@@ -348,7 +351,7 @@ impl AnimationMixer {
     pub fn action_mut(&mut self, handle: ActionHandle) -> &mut AnimationAction {
         self.actions[handle.0]
             .as_mut()
-            .expect("handle of a live action")
+            .expect("three-rs: handle of a live action")
     }
 
     /// The root an action is bound to: `_localRoot || mixer._root`.
@@ -414,7 +417,10 @@ impl AnimationMixer {
             self.bindings.cache_index.push(None);
             self.bindings.key.push(None);
 
-            self.bindings.get_mut(slot).unwrap().reference_count += 1;
+            self.bindings
+                .get_mut(slot)
+                .expect("three-rs: the binding was just pushed at this slot")
+                .reference_count += 1;
             self.bindings.add_inactive_binding(slot, root, &track_name);
 
             self.action_mut(handle).property_bindings[i] = Some(slot);
@@ -459,7 +465,7 @@ impl AnimationMixer {
                 self.bindings.lend_binding(binding_handle);
                 self.bindings
                     .get_mut(binding_handle)
-                    .unwrap()
+                    .expect("three-rs: the binding resolved on the line above")
                     .save_original_state();
             }
         }
@@ -488,7 +494,7 @@ impl AnimationMixer {
             if use_count == 0 {
                 self.bindings
                     .get_mut(binding_handle)
-                    .unwrap()
+                    .expect("three-rs: the binding resolved on the line above")
                     .restore_original_state();
                 self.bindings.take_back_binding(binding_handle);
             }
@@ -532,8 +538,14 @@ impl AnimationMixer {
             return;
         };
 
-        let last = *self.action_order.last().expect("non-empty action order");
-        self.actions[last].as_mut().unwrap().cache_index = Some(cache_index);
+        let last = *self
+            .action_order
+            .last()
+            .expect("three-rs: non-empty action order");
+        self.actions[last]
+            .as_mut()
+            .expect("three-rs: the action order only holds live actions")
+            .cache_index = Some(cache_index);
         self.action_order[cache_index] = last;
         self.action_order.pop();
         self.action_mut(handle).cache_index = None;
@@ -549,14 +561,14 @@ impl AnimationMixer {
             by_clip_cache_index,
         ) {
             let known = &mut actions_for_clip.known_actions;
-            let last_known = *known.last().expect("non-empty knownActions");
+            let last_known = *known.last().expect("three-rs: non-empty knownActions");
             known[by_clip_cache_index] = last_known;
             known.pop();
 
             if last_known != handle {
                 self.actions[last_known.0]
                     .as_mut()
-                    .unwrap()
+                    .expect("three-rs: knownActions only holds live actions")
                     .by_clip_cache_index = Some(by_clip_cache_index);
             }
 
@@ -594,7 +606,10 @@ impl AnimationMixer {
 
     /// `_lendAction( action )`.
     fn lend_action(&mut self, handle: ActionHandle) {
-        let prev_index = self.action(handle).cache_index.expect("cached action");
+        let prev_index = self
+            .action(handle)
+            .cache_index
+            .expect("three-rs: cached action");
 
         let last_active_index = self.n_active_actions;
         self.n_active_actions += 1;
@@ -604,13 +619,19 @@ impl AnimationMixer {
         self.action_mut(handle).cache_index = Some(last_active_index);
         self.action_order[last_active_index] = handle.0;
 
-        self.actions[first_inactive].as_mut().unwrap().cache_index = Some(prev_index);
+        self.actions[first_inactive]
+            .as_mut()
+            .expect("three-rs: the action order only holds live actions")
+            .cache_index = Some(prev_index);
         self.action_order[prev_index] = first_inactive;
     }
 
     /// `_takeBackAction( action )`.
     fn take_back_action(&mut self, handle: ActionHandle) {
-        let prev_index = self.action(handle).cache_index.expect("cached action");
+        let prev_index = self
+            .action(handle)
+            .cache_index
+            .expect("three-rs: cached action");
 
         self.n_active_actions -= 1;
         let first_inactive_index = self.n_active_actions;
@@ -620,7 +641,10 @@ impl AnimationMixer {
         self.action_mut(handle).cache_index = Some(first_inactive_index);
         self.action_order[first_inactive_index] = handle.0;
 
-        self.actions[last_active].as_mut().unwrap().cache_index = Some(prev_index);
+        self.actions[last_active]
+            .as_mut()
+            .expect("three-rs: the action order only holds live actions")
+            .cache_index = Some(prev_index);
         self.action_order[prev_index] = last_active;
     }
 
@@ -724,7 +748,7 @@ impl AnimationMixer {
             // The action is lifted out of its slot for the call so that it can
             // be `&mut` at the same time as the two pools; `_update` never
             // touches the action arena.
-            let mut action = self.actions[slot].take().expect("live action");
+            let mut action = self.actions[slot].take().expect("three-rs: live action");
             action.update_(
                 time,
                 delta_time,
@@ -772,13 +796,19 @@ impl AnimationMixer {
             let Some(cache_index) = self.action(handle).cache_index else {
                 continue;
             };
-            let last = *self.action_order.last().expect("non-empty action order");
+            let last = *self
+                .action_order
+                .last()
+                .expect("three-rs: non-empty action order");
 
             self.action_mut(handle).cache_index = None;
             self.action_mut(handle).by_clip_cache_index = None;
 
             if last != handle.0 {
-                self.actions[last].as_mut().unwrap().cache_index = Some(cache_index);
+                self.actions[last]
+                    .as_mut()
+                    .expect("three-rs: the action order only holds live actions")
+                    .cache_index = Some(cache_index);
             }
             self.action_order[cache_index] = last;
             self.action_order.pop();
@@ -846,7 +876,7 @@ impl AnimationMixer {
         let control = &mut self.control;
         self.actions[handle.0]
             .as_mut()
-            .expect("live action")
+            .expect("three-rs: live action")
             .reset_(control);
         handle
     }
@@ -883,7 +913,7 @@ impl AnimationMixer {
         let control = &mut self.control;
         self.actions[handle.0]
             .as_mut()
-            .expect("live action")
+            .expect("three-rs: live action")
             .set_effective_weight_(weight, control);
         handle
     }
@@ -902,7 +932,7 @@ impl AnimationMixer {
         let control = &mut self.control;
         self.actions[handle.0]
             .as_mut()
-            .expect("live action")
+            .expect("three-rs: live action")
             .set_effective_time_scale_(time_scale, control);
         handle
     }
@@ -917,7 +947,7 @@ impl AnimationMixer {
         let control = &mut self.control;
         self.actions[handle.0]
             .as_mut()
-            .expect("live action")
+            .expect("three-rs: live action")
             .set_duration_(duration, control);
         handle
     }
@@ -930,7 +960,7 @@ impl AnimationMixer {
         let control = &mut self.control;
         self.actions[handle.0]
             .as_mut()
-            .expect("live action")
+            .expect("three-rs: live action")
             .sync_with_(other_time, other_time_scale, control);
         handle
     }
@@ -941,7 +971,7 @@ impl AnimationMixer {
         let control = &mut self.control;
         self.actions[handle.0]
             .as_mut()
-            .expect("live action")
+            .expect("three-rs: live action")
             .halt_(duration, now, control);
         handle
     }
@@ -956,13 +986,10 @@ impl AnimationMixer {
     ) -> ActionHandle {
         let now = self.time;
         let control = &mut self.control;
-        self.actions[handle.0].as_mut().expect("live action").warp_(
-            start_time_scale,
-            end_time_scale,
-            duration,
-            now,
-            control,
-        );
+        self.actions[handle.0]
+            .as_mut()
+            .expect("three-rs: live action")
+            .warp_(start_time_scale, end_time_scale, duration, now, control);
         handle
     }
 
@@ -971,7 +998,7 @@ impl AnimationMixer {
         let control = &mut self.control;
         self.actions[handle.0]
             .as_mut()
-            .expect("live action")
+            .expect("three-rs: live action")
             .stop_warping_(control);
         handle
     }
@@ -981,7 +1008,7 @@ impl AnimationMixer {
         let control = &mut self.control;
         self.actions[handle.0]
             .as_mut()
-            .expect("live action")
+            .expect("three-rs: live action")
             .stop_fading_(control);
         handle
     }
@@ -992,7 +1019,7 @@ impl AnimationMixer {
         let control = &mut self.control;
         self.actions[handle.0]
             .as_mut()
-            .expect("live action")
+            .expect("three-rs: live action")
             .fade_in_(duration, now, control);
         handle
     }
@@ -1003,7 +1030,7 @@ impl AnimationMixer {
         let control = &mut self.control;
         self.actions[handle.0]
             .as_mut()
-            .expect("live action")
+            .expect("three-rs: live action")
             .fade_out_(duration, now, control);
         handle
     }

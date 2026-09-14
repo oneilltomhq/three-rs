@@ -600,7 +600,10 @@ impl BufferGeometry {
         let mut normal = if needs_new {
             BufferAttribute::new(vec![0.0; position.count() * 3], 3)
         } else {
-            let mut normal = self.normal().cloned().unwrap();
+            let mut normal = self
+                .normal()
+                .cloned()
+                .expect("three-rs: !needs_new means the normal attribute is there");
             for i in 0..normal.count() {
                 normal.set_xyz(i, 0.0, 0.0, 0.0);
             }
