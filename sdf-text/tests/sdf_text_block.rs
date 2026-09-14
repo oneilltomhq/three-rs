@@ -267,8 +267,8 @@ fn the_frame_matches_the_atlas_sdf() {
         let (start, n) = app.batched.member_glyphs(m).unwrap();
         let node = app.batched.member_node(m).unwrap().borrow();
         let p = node.matrix_world.elements;
-        for gi in start..start + n {
-            offsets[gi] = (p[12], p[13]);
+        for offset in offsets.iter_mut().skip(start).take(n) {
+            *offset = (p[12], p[13]);
         }
     }
 

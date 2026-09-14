@@ -467,14 +467,14 @@ impl BatchedText {
             };
             self.write_glyph_matrices(&world, glyph_start, glyph_count);
 
-            for g in 0..glyph_count {
+            for (g, &glyph) in glyphs.iter().enumerate().take(glyph_count) {
                 let gi = glyph_start + g;
                 let bi = g * 4;
                 let (bx0, by0, bx1, by1) =
                     (bounds[bi], bounds[bi + 1], bounds[bi + 2], bounds[bi + 3]);
 
-                if glyphs[g] != ' ' {
-                    let metrics = self.atlas.get_glyph(font.as_deref(), glyphs[g]);
+                if glyph != ' ' {
+                    let metrics = self.atlas.get_glyph(font.as_deref(), glyph);
 
                     // `uvRect.viewBox ?? [ 0, 0, 1, 1 ]`, with a degenerate box
                     // falling back to the whole tile.

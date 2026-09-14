@@ -157,11 +157,11 @@ pub fn check_sample(sample: &GeometrySample, geometry: &BufferGeometry) {
     }
 
     let (center, radius) = bounding_sphere(geometry);
-    for i in 0..3 {
+    for (i, c) in center.iter().enumerate() {
         assert!(
-            (center[i] - sample.bounding_sphere.0[i]).abs() <= EPS,
+            (c - sample.bounding_sphere.0[i]).abs() <= EPS,
             "{expr}: boundingSphere.center[{i}] = {} want {}",
-            center[i],
+            c,
             sample.bounding_sphere.0[i]
         );
     }

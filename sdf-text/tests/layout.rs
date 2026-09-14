@@ -67,13 +67,13 @@ fn check_case(case: &serde_json::Value, got: &TextRenderInfo, label: &str) {
         .iter()
         .map(|v| v.as_f64().unwrap())
         .collect();
-    for i in 0..4 {
+    for (i, want) in want_block.iter().enumerate().take(4) {
         assert_eq!(
             got.block_bounds[i].to_bits(),
-            want_block[i].to_bits(),
+            want.to_bits(),
             "{label}: blockBounds[{i}]: got {} want {}",
             got.block_bounds[i],
-            want_block[i]
+            want
         );
         // The JS assigns the same four numbers to both.
         assert_eq!(got.visible_bounds[i], got.block_bounds[i]);

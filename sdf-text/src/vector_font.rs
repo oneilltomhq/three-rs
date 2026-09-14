@@ -688,11 +688,11 @@ fn parse_simple_glyph(data: &[u8], ncont: usize, out: &mut Vec<GlyfPoint>) {
     flags.truncate(n);
 
     let base = out.len();
-    for i in 0..n {
+    for (i, flag) in flags.iter().enumerate().take(n) {
         out.push(GlyfPoint {
             x: 0.0,
             y: 0.0,
-            on_curve: flags[i] & 1 != 0,
+            on_curve: flag & 1 != 0,
             last_of_contour: end_pts.contains(&i),
         });
     }
