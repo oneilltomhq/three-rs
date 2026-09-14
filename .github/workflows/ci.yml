@@ -1,0 +1,157 @@
+# fmt, clippy, build and the non-GPU tests on every push to main and every
+# PR. The e2e grader (tests/e2e) and anything that creates a `Renderer` need
+# a Vulkan device and stay a manual pre-merge gate (see CONTRIBUTING.md);
+# there is no self-hosted GPU runner yet.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  # The default `src/testing.rs::vendor_dir` location, so tests that read it
+  # need no env var of their own.
+  THREE_JS_DIR: ${{ github.workspace }}/vendor/three.js
+
+jobs:
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all --check
+
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --workspace --all-targets
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      # Only tests/gltf_loader.rs reads this (Three's sample glTF models
+      # under examples/models/gltf); everything else here is self-contained.
+      - name: Checkout three.js r186 (for gltf_loader)
+        run: |
+          git clone --branch r186 --depth 1 https://github.com/mrdoob/three.js "$THREE_JS_DIR"
+
+      - name: Unit tests (no GPU)
+        run: |
+          cargo test -p three-rs --lib
+          cargo test -p sdf-text --lib
+
+      # Every other `tests/*.rs` file that does not create a `Renderer`.
+      # Excluded on purpose:
+      #   - renderer_blending, renderer_instanced, renderer_lines: build a
+      #     `Renderer`, which needs a Vulkan adapter.
+      #   - nodes_mx_noise: compares against WGSL dumps under
+      #     `../handoff/scouts/rung7/`, a scratch directory outside this
+      #     repository that only exists on the author's machine; it cannot
+      #     pass in a fresh checkout, GPU or not. Tracked separately from
+      #     #12 (not this issue's scope).
+      - name: three-rs integration tests (no GPU)
+        run: |
+          tests=(
+            animation_animation_action
+            animation_animation_clip
+            animation_animation_mixer
+            animation_animation_object_group
+            animation_animation_utils
+            animation_keyframe_track
+            animation_property_binding
+            animation_property_mixer
+            cameras_perspective_camera
+            core_buffer_attribute
+            core_buffer_geometry
+            core_layers
+            core_object3d
+            geometries
+            gltf_loader
+            math_box2
+            math_box3
+            math_color
+            math_color_management
+            math_cylindrical
+            math_euler
+            math_frustum
+            math_interpolant
+            math_interpolants
+            math_line3
+            math_math_utils
+            math_matrix2
+            math_matrix3
+            math_matrix4
+            math_plane
+            math_quaternion
+            math_ray
+            math_sphere
+            math_spherical
+            math_spherical_harmonics3
+            math_triangle
+            math_vector2
+            math_vector3
+            math_vector4
+            nodes_instanced_attributes
+            nodes_morph
+            nodes_range_buffers
+            objects_group
+            scenes_scene
+          )
+          for t in "${tests[@]}"; do
+            cargo test -p three-rs --test "$t"
+          done
+
+      # sdf-text's own GPU gates (sdf_text_glyph, sdf_text_block,
+      # d33_treemap_labels) each build a `Renderer` too, so only these five
+      # `tests/*.rs` run here.
+      - name: sdf-text integration tests (no GPU)
+        run: |
+          tests=(atlas edt layout text vector_font)
+          for t in "${tests[@]}"; do
+            cargo test -p sdf-text --test "$t"
+          done
+
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Kept in step with `rust-version` in Cargo.toml's `[workspace.package]`
+      # (currently 1.87, i.e. 1.87.0); bump both together.
+      - uses: dtolnay/rust-toolchain@1.87.0
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --workspace --all-targets
+
+  # `cargo doc` is not yet warning-clean (#10: broken intra-doc links in
+  # src/animation/*). continue-on-error so the job is visible without
+  # blocking merges until #10 lands; flip this to blocking then.
+  docs:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo doc --workspace --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
