@@ -170,8 +170,14 @@ impl Renderer {
             });
         }
 
-        let present = self.present.as_ref().unwrap();
-        let canvas = self.canvas.as_ref().unwrap();
+        let present = self
+            .present
+            .as_ref()
+            .expect("three-rs: the present pipeline was just built for this format");
+        let canvas = self
+            .canvas
+            .as_ref()
+            .expect("three-rs: present() returns early when there is no canvas");
         let canvas_view = canvas.color.create_view(&wgpu::TextureViewDescriptor {
             format: Some(CANVAS_FORMAT),
             ..Default::default()

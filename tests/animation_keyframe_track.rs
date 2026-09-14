@@ -281,8 +281,10 @@ fn vector_keyframe_track() {
 // Three throws for an empty `times` array.
 #[test]
 fn no_keyframes_is_an_error() {
+    let error = KeyframeTrack::number(".material.opacity", Vec::new(), Vec::new(), None)
+        .expect_err("an empty times array is an error");
     assert_eq!(
-        KeyframeTrack::number(".material.opacity", Vec::new(), Vec::new(), None),
-        Err("THREE.KeyframeTrack: no keyframes in track named .material.opacity".to_string())
+        error.to_string(),
+        "no keyframes in track named .material.opacity"
     );
 }

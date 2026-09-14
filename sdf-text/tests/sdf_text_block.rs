@@ -201,11 +201,11 @@ fn two_renders_are_identical() {
 
     app.batched.sync();
     sdf_text_block::render_once(&mut app);
-    let (w, h, first) = app.renderer.read_canvas_pixels();
+    let (w, h, first) = app.renderer.read_canvas_pixels().unwrap();
 
     app.batched.sync();
     sdf_text_block::render_once(&mut app);
-    let (w2, h2, second) = app.renderer.read_canvas_pixels();
+    let (w2, h2, second) = app.renderer.read_canvas_pixels().unwrap();
 
     assert_eq!((w, h), (w2, h2));
     assert_eq!(
@@ -250,7 +250,7 @@ fn the_frame_matches_the_atlas_sdf() {
     let mut app = sdf_text_block::init();
     app.batched.sync();
     sdf_text_block::render_once(&mut app);
-    let (_, _, pixels) = app.renderer.read_canvas_pixels();
+    let (_, _, pixels) = app.renderer.read_canvas_pixels().unwrap();
 
     let count = app.batched.count();
     let bounds = app.batched.glyph_bounds_array().to_vec();

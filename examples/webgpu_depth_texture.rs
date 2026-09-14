@@ -65,12 +65,12 @@ pub fn init() -> App {
 
     //
 
-    let mut renderer = Renderer::new(RendererParameters { antialias: true });
+    let mut renderer = Renderer::new(RendererParameters { antialias: true }).unwrap();
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
 
     let depth_texture = DepthTexture::new();
-    depth_texture.set_type(TextureType::Float);
+    depth_texture.set_type(TextureType::Float).unwrap();
 
     let render_target = RenderTarget::new((INNER_WIDTH * DPR) as u32, (INNER_HEIGHT * DPR) as u32);
     render_target.set_depth_texture(depth_texture.clone());
@@ -116,7 +116,7 @@ fn main() {
     println!("adapter: {:?}", app.renderer.adapter_info());
     animate(&mut app);
 
-    let (width, height, pixels) = app.renderer.read_canvas_pixels();
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
     let path = std::env::args()
         .nth(1)
         .unwrap_or_else(|| "target/webgpu_depth_texture.png".to_string());

@@ -384,7 +384,9 @@ impl BatchedText {
             return;
         }
 
-        let member = self.members[member_id].as_ref().unwrap();
+        let member = self.members[member_id]
+            .as_ref()
+            .expect("sdf-text: is_member means member_id names a registered member");
         member.node.borrow_mut().matrix_world = *matrix;
 
         let (start, count) = (member.glyph_start, member.glyph_count);
@@ -454,13 +456,19 @@ impl BatchedText {
             let opacity = member.text.opacity();
 
             {
-                let member = self.members[m].as_mut().unwrap();
+                let member = self.members[m]
+                    .as_mut()
+                    .expect("sdf-text: the loop only walks registered members");
                 member.glyph_start = glyph_start;
                 member.glyph_count = glyph_count;
             }
             // `t.updateMatrixWorld()`
             let world = {
-                let node = self.members[m].as_ref().unwrap().node.clone();
+                let node = self.members[m]
+                    .as_ref()
+                    .expect("sdf-text: the loop only walks registered members")
+                    .node
+                    .clone();
                 node.update_matrix_world(false);
                 let world = node.borrow().matrix_world;
                 world

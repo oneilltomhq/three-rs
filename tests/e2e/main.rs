@@ -166,7 +166,7 @@ fn webgpu_depth_texture() {
 
     webgpu_depth_texture::animate(&mut app);
 
-    let (width, height, pixels) = app.renderer.read_canvas_pixels();
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
     assert_eq!((width, height), (800, 500));
 
     let actual = out.join("actual.png");
@@ -208,7 +208,7 @@ fn webgpu_instance_mesh() {
 
     webgpu_instance_mesh::animate(&mut app);
 
-    let (width, height, pixels) = app.renderer.read_canvas_pixels();
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
     assert_eq!((width, height), (800, 500));
 
     let actual = out.join("actual.png");
@@ -250,7 +250,7 @@ fn webgpu_materials_basic() {
 
     webgpu_materials_basic::animate(&mut app);
 
-    let (width, height, pixels) = app.renderer.read_canvas_pixels();
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
     assert_eq!((width, height), (800, 500));
 
     let actual = out.join("actual.png");
@@ -292,7 +292,7 @@ fn webgpu_rtt() {
 
     webgpu_rtt::animate(&mut app);
 
-    let (width, height, pixels) = app.renderer.read_canvas_pixels();
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
     assert_eq!((width, height), (800, 500));
 
     let actual = out.join("actual.png");
@@ -334,7 +334,7 @@ fn webgpu_postprocessing_masking() {
 
     webgpu_postprocessing_masking::animate(&mut app);
 
-    let (width, height, pixels) = app.renderer.read_canvas_pixels();
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
     assert_eq!((width, height), (800, 500));
 
     let actual = out.join("actual.png");
@@ -379,7 +379,7 @@ fn webgpu_lights_phong() {
 
     webgpu_lights_phong::animate(&mut app);
 
-    let (width, height, pixels) = app.renderer.read_canvas_pixels();
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
     assert_eq!((width, height), (800, 500));
 
     let actual = out.join("actual.png");
@@ -421,7 +421,7 @@ fn webgpu_morphtargets() {
 
     webgpu_morphtargets::animate(&mut app);
 
-    let (width, height, pixels) = app.renderer.read_canvas_pixels();
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
     assert_eq!((width, height), (800, 500));
 
     let actual = out.join("actual.png");
@@ -463,7 +463,7 @@ fn webgpu_tsl_galaxy() {
 
     webgpu_tsl_galaxy::animate(&mut app);
 
-    let (width, height, pixels) = app.renderer.read_canvas_pixels();
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
     assert_eq!((width, height), (800, 500));
 
     let actual = out.join("actual.png");
@@ -505,7 +505,7 @@ fn webgpu_shadowmap() {
 
     webgpu_shadowmap::animate(&mut app);
 
-    let (width, height, pixels) = app.renderer.read_canvas_pixels();
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
     assert_eq!((width, height), (800, 500));
 
     let actual = out.join("actual.png");
@@ -547,7 +547,7 @@ fn webgpu_lights_physical() {
 
     webgpu_lights_physical::animate(&mut app);
 
-    let (width, height, pixels) = app.renderer.read_canvas_pixels();
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
     assert_eq!((width, height), (800, 500));
 
     let actual = out.join("actual.png");
@@ -704,7 +704,7 @@ fn a_dropped_geometry_does_not_lend_its_buffers_to_the_next_one() {
     }
     drop(again);
 
-    let mut renderer = Renderer::new(RendererParameters { antialias: false });
+    let mut renderer = Renderer::new(RendererParameters { antialias: false }).unwrap();
     renderer.set_pixel_ratio(1.0);
     renderer.set_size(64.0, 64.0);
     let mut camera = PerspectiveCamera::new(60.0, 1.0, 0.1, 100.0);
@@ -769,7 +769,7 @@ fn a_dropped_geometry_does_not_lend_its_buffers_to_the_next_one() {
     renderer.render(&mut scene, &mut camera);
 
     // and it drew: the plane is white against a cleared canvas.
-    let (w, h, pixels) = renderer.read_canvas_pixels();
+    let (w, h, pixels) = renderer.read_canvas_pixels().unwrap();
     let centre = ((h as usize / 2) * w as usize + w as usize / 2) * 4;
     assert_eq!(
         &pixels[centre..centre + 4],
@@ -802,7 +802,7 @@ fn churning_geometry_and_materials_does_not_grow_the_caches() {
 
     let _gpu = gpu();
 
-    let mut renderer = Renderer::new(RendererParameters { antialias: false });
+    let mut renderer = Renderer::new(RendererParameters { antialias: false }).unwrap();
     renderer.set_pixel_ratio(1.0);
     renderer.set_size(64.0, 64.0);
     let mut camera = PerspectiveCamera::new(60.0, 1.0, 0.1, 100.0);

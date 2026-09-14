@@ -60,7 +60,8 @@ impl PassNode {
                 min_filter: TextureFilter::Linear,
                 mag_filter: TextureFilter::Linear,
             },
-        );
+        )
+        .expect("three-rs: PassNode's render target is a HalfFloat colour type");
         render_target.set_depth_texture(DepthTexture::new());
 
         let node = to_var(None, texture_uv(&render_target.texture(), uv()));

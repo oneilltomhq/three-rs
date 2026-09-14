@@ -124,7 +124,8 @@ fn point_shadow_filter(
             Some(acc) => acc.add(tap),
         });
     }
-    sum.unwrap().mul(1.0 / 5.0)
+    sum.expect("three-rs: the five-tap loop always sets sum")
+        .mul(1.0 / 5.0)
 }
 
 /// `pointShadowFilter` — the whole `PointShadowNode` shader side: the shadow

@@ -185,7 +185,9 @@ pub fn blending(mode: &BlendMode) -> Option<wgpu::BlendState> {
             Blending::Additive => set_blend(One, One, One, One),
             Blending::Subtractive => set_blend(Zero, OneMinusSrcColor, Zero, One),
             Blending::Multiply => set_blend(DstColor, OneMinusSrcAlpha, Zero, One),
-            Blending::No | Blending::Custom => unreachable!(),
+            Blending::No | Blending::Custom => {
+                unreachable!("three-rs: NoBlending and CustomBlending are handled above")
+            }
         },
         _ => match mode.blending {
             Blending::Normal => set_blend(SrcAlpha, OneMinusSrcAlpha, One, OneMinusSrcAlpha),
@@ -193,7 +195,9 @@ pub fn blending(mode: &BlendMode) -> Option<wgpu::BlendState> {
             // `error( 'WebGPURenderer: "SubtractiveBlending" requires
             // "material.premultipliedAlpha = true".' )` — no blend state.
             Blending::Subtractive | Blending::Multiply => None,
-            Blending::No | Blending::Custom => unreachable!(),
+            Blending::No | Blending::Custom => {
+                unreachable!("three-rs: NoBlending and CustomBlending are handled above")
+            }
         },
     }
 }

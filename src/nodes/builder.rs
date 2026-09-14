@@ -490,7 +490,10 @@ impl NodeBuilder {
             Some(scope) => &mut scope.scopes,
             None => &mut self.stages[self.stage.index()].scopes,
         };
-        scopes.last_mut().unwrap().insert(key, name);
+        scopes
+            .last_mut()
+            .expect("three-rs: the scope stack is never empty")
+            .insert(key, name);
     }
 
     /// `NodeBuilder.getVarFromNode()` — declare a `var` and return its name.
@@ -565,7 +568,9 @@ impl NodeBuilder {
                 visibility: Visibility::default(),
             });
         }
-        let slot = g.uniform_slot.unwrap();
+        let slot = g
+            .uniform_slot
+            .expect("three-rs: the uniform slot was filled in just above");
         if let BindingDesc::Uniforms {
             members,
             size,
@@ -1205,7 +1210,10 @@ impl NodeBuilder {
             scopes: vec![HashMap::new()],
         });
         let result = self.format(&body, def.ret);
-        let scope = self.fn_scopes.pop().unwrap();
+        let scope = self
+            .fn_scopes
+            .pop()
+            .expect("three-rs: the fn scope pushed above is still on the stack");
         self.usage = saved_usage;
 
         let mut src = String::new();
@@ -1523,7 +1531,7 @@ impl NodeBuilder {
                     .varyings
                     .iter()
                     .position(|(n, _, _)| n == name)
-                    .unwrap();
+                    .expect("three-rs: the varying was read out of this same list");
                 out.push_str(&format!(
                     "\t@location( {loc} ) {interp}{name} : {},\n",
                     wgsl::type_name(*ty)

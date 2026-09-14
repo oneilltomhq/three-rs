@@ -5,7 +5,7 @@
 //! `deviceScaleFactor`, so `window.innerWidth` / `innerHeight` /
 //! `devicePixelRatio` are 800, 500 and 1; `Date.now()` is 0.
 //!
-//! The page's `loader.load()` is asynchronous, but the harness only fires its
+//! The page's `loader.load().unwrap()` is asynchronous, but the harness only fires its
 //! single RAF once the network is idle, so the geometry is always in place for
 //! the graded frame; here it is loaded synchronously during `init()`.
 
@@ -68,7 +68,9 @@ pub fn init() -> App {
     ));
 
     let loader = BufferGeometryLoader::new();
-    let mut geometry = loader.load(models_dir().join("models/json/suzanne_buffergeometry.json"));
+    let mut geometry = loader
+        .load(models_dir().join("models/json/suzanne_buffergeometry.json"))
+        .unwrap();
 
     geometry.compute_vertex_normals();
     geometry.scale(0.5, 0.5, 0.5);
@@ -79,7 +81,7 @@ pub fn init() -> App {
 
     //
 
-    let mut renderer = Renderer::new(RendererParameters { antialias: true });
+    let mut renderer = Renderer::new(RendererParameters { antialias: true }).unwrap();
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
 
@@ -146,7 +148,7 @@ fn main() {
     println!("adapter: {:?}", app.renderer.adapter_info());
     animate(&mut app);
 
-    let (width, height, pixels) = app.renderer.read_canvas_pixels();
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
     let path = std::env::args()
         .nth(1)
         .unwrap_or_else(|| "target/webgpu_instance_mesh.png".to_string());

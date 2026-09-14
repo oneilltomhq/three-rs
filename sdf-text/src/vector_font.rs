@@ -30,6 +30,8 @@ use std::collections::HashMap;
 
 use owned_ttf_parser::{AsFaceRef, Face, GlyphId, OwnedFace, Tag};
 
+use crate::error::Error;
+
 /// A path command in the opentype.js `Path.commands` vocabulary.
 ///
 /// `Close` exists because `Glyph.path` (the Y-up path the bbox is measured on)
@@ -112,29 +114,18 @@ pub struct VectorFont {
     kern_subtables: Option<Vec<usize>>,
 }
 
-#[derive(Debug)]
-pub enum FontError {
-    Parse,
-}
-
-impl std::fmt::Display for FontError {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            FontError::Parse => write!(f, "VectorFont: failed to parse font"),
-        }
-    }
-}
-
-impl std::error::Error for FontError {}
-
 impl VectorFont {
     /// Port of `new VectorFont(opentype.parse(buffer), src)`.
     ///
     /// `VectorFont.load` in the JS also accepts a URL and `fetch`es it; there
     /// is no fetch here, so callers read the bytes themselves (see the skip
     /// register in the crate README).
-    pub fn parse(data: Vec<u8>, src: impl Into<String>) -> Result<Self, FontError> {
-        let face = OwnedFace::from_vec(data, 0).map_err(|_| FontError::Parse)?;
+    pub fn parse(data: Vec<u8>, src: impl Into<String>) -> Result<Self, Error> {
+        let src = src.into();
+        let face = OwnedFace::from_vec(data, 0).map_err(|source| Error::Parse {
+            src: src.clone(),
+            source,
+        })?;
 
         let (upem, asc, desc, gap, cap, xh) = {
             let f = face.as_face_ref();
@@ -191,7 +182,7 @@ impl VectorFont {
 
         Ok(VectorFont {
             face,
-            src: src.into(),
+            src,
             units_per_em: upem,
             ascender: asc,
             descender: desc,

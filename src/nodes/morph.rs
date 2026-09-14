@@ -79,7 +79,11 @@ pub fn get_entry(geometry: &Rc<BufferGeometry>) -> Option<MorphEntry> {
     // 1 and every texel is one morph target's position delta.
     let vertex_data_count = 1;
 
-    let mut width = geometry.get_attribute("position").unwrap().count() * vertex_data_count;
+    let mut width = geometry
+        .get_attribute("position")
+        .expect("three-rs: a morphing geometry has a position attribute")
+        .count()
+        * vertex_data_count;
     let mut height = 1;
 
     if width > MAX_TEXTURE_SIZE {

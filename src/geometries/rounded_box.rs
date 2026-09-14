@@ -128,9 +128,18 @@ pub fn rounded_box_geometry(
     let geometry2 = geometry.to_non_indexed();
 
     geometry.index = None;
-    let mut positions_attr = geometry2.position().cloned().unwrap();
-    let mut normals = geometry2.normal().cloned().unwrap();
-    let mut uvs = geometry2.uv().cloned().unwrap();
+    let mut positions_attr = geometry2
+        .position()
+        .cloned()
+        .expect("three-rs: the box geometry has a position attribute");
+    let mut normals = geometry2
+        .normal()
+        .cloned()
+        .expect("three-rs: the box geometry has a normal attribute");
+    let mut uvs = geometry2
+        .uv()
+        .cloned()
+        .expect("three-rs: the box geometry has a uv attribute");
 
     //
 

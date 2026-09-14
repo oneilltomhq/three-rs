@@ -67,12 +67,12 @@ fn render(count: usize, range_colors: bool) -> Vec<u8> {
     }
     scene.add(&mesh);
 
-    let mut renderer = Renderer::new(RendererParameters { antialias: false });
+    let mut renderer = Renderer::new(RendererParameters { antialias: false }).unwrap();
     renderer.set_pixel_ratio(1.0);
     renderer.set_size(WIDTH, HEIGHT);
     renderer.render(&mut scene, &mut camera);
 
-    let (width, height, pixels) = renderer.read_canvas_pixels();
+    let (width, height, pixels) = renderer.read_canvas_pixels().unwrap();
     assert_eq!((width, height), (WIDTH as u32, HEIGHT as u32));
     pixels
 }

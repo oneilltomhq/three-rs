@@ -76,7 +76,7 @@ impl Type {
             (Type::F32, 2) => Type::Vec2,
             (Type::F32, 3) => Type::Vec3,
             (Type::F32, 4) => Type::Vec4,
-            other => panic!("no vector type for {:?}", other),
+            other => panic!("three-rs: the node builder only makes vectors of {other:?}"),
         }
     }
 
@@ -703,7 +703,9 @@ impl<T: Clone + 'static> Lazy<T> {
         if slot.is_none() {
             *slot = Some(init());
         }
-        slot.as_ref().unwrap().clone()
+        slot.as_ref()
+            .expect("three-rs: the lazy slot was filled in just above")
+            .clone()
     }
 }
 

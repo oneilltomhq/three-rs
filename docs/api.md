@@ -95,7 +95,43 @@ not held is freed.
 - Only things that touch the filesystem or the GPU return `Result`: the
   loaders, `Renderer::new`, `render()`. Constructors, geometry builders and
   the scene-graph methods stay infallible, as they are in three.js. Issue #9
-  does the work of replacing the remaining panics under this rule.
+  did the work of replacing the remaining panics under this rule; the shape
+  it settled on is decision 5.
+
+## 5. Errors: one enum per crate, panics only on invariants
+
+Decision 4's rule needed a shape to land in; issue #9 gave it one.
+
+- **One error enum per crate**, `three_rs::Error` and `sdf_text::Error`, both
+  `#[non_exhaustive]` and both implementing `std::error::Error`. A caller who
+  wants to know what failed matches on variants that name it (`NoAdapter`,
+  `UnsupportedTrackType`, `Image { path, reason }`); a caller who does not can
+  `?` the lot into `Box<dyn Error>` or `anyhow`. Rejected: a per-module error
+  type, which makes every loader call site declare a `From`, and a single
+  `Error(String)`, which is a panic with extra steps. glTF is the one nested
+  enum (`Error::Gltf(GltfError)`), because fifteen distinct failures inside
+  one file format would otherwise crowd out the rest of the crate.
+- **Fallible means reachable from a caller's mistake or from the machine.**
+  Anything that reads a file, decodes an image, parses JSON or a track name,
+  asks for an adapter or a device, or takes a texture type that may have no
+  format, returns `Result`. That is the loaders, `Renderer::new` /
+  `with_instance` / `read_canvas_pixels`, `RenderTarget::new_with_options`,
+  `DepthTexture::set_type`, `AnimationClip` and `KeyframeTrack` parsing, and
+  `VectorFont::parse`.
+- **Panics are invariants, and say which one.** Every remaining panic in
+  library code is a statement about the crate's own state — "the light list
+  only holds lights", "prepare_canvas() has just created the canvas" — and its
+  message starts `three-rs:` (or `sdf-text:`) and names it. If one of these
+  fires it is a bug in the crate, never in the call. A caller can therefore
+  read the rule as: handle the `Result`s, and do not write a `catch_unwind`.
+- **Infallible stays infallible.** Constructors, geometry builders and the
+  scene-graph methods do not return `Result`, as decision 3 says; where a
+  value must be checked, the check is on the setter that takes it
+  (`DepthTexture::set_type`) rather than on the accessor that would have
+  panicked later, so the failure surfaces at the call that caused it.
+- **`Error` is not the renderer's return channel for wrong pixels.** Nothing
+  in this crate reports a rendering difference as an error; the grader does
+  that. `Error` is for what did not happen at all.
 
 ## Where each decision came from
 

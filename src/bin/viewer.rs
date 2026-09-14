@@ -259,7 +259,8 @@ impl Scene {
                     antialias: which.antialias(),
                 },
                 instance,
-            );
+            )
+            .expect("three-rs: cannot create the renderer");
             // What `init()` set on the renderer after `new()`.
             renderer.shadow_map_enabled = shadow_map_enabled;
             renderer.tone_mapping = tone_mapping;
@@ -317,7 +318,7 @@ impl Scene {
                 // resize an attached `DepthTexture`, so the FX chain is rebuilt the
                 // way `init()` built it.
                 let depth_texture = DepthTexture::new();
-                depth_texture.set_type(TextureType::Float);
+                depth_texture.set_type(TextureType::Float).unwrap();
                 let render_target = RenderTarget::new(width.max(1), height.max(1));
                 render_target.set_depth_texture(depth_texture.clone());
                 let mut material_fx = MeshBasicNodeMaterial::new();
@@ -1039,7 +1040,8 @@ fn fresh_renderer(scene: &mut Scene, which: Which, size: (u32, u32)) {
     };
     let mut renderer = Renderer::new(RendererParameters {
         antialias: which.antialias(),
-    });
+    })
+    .unwrap();
     renderer.shadow_map_enabled = shadow_map_enabled;
     renderer.tone_mapping = tone_mapping;
     renderer.tone_mapping_exposure = exposure;
@@ -1106,7 +1108,7 @@ fn screenshot(
             }
 
             let Some(path) = path else { continue };
-            let (width, height, pixels) = scene.renderer().read_canvas_pixels();
+            let (width, height, pixels) = scene.renderer().read_canvas_pixels().unwrap();
             let out = if !series {
                 path.to_string()
             } else {
@@ -1154,7 +1156,7 @@ fn screenshot(
 
     let Some(path) = path else { return };
 
-    let (width, height, pixels) = scene.renderer().read_canvas_pixels();
+    let (width, height, pixels) = scene.renderer().read_canvas_pixels().unwrap();
     three_rs::testing::write_png(path, width, height, &pixels);
     println!("wrote {path} ({width}x{height}) after {frames} frame(s)");
 

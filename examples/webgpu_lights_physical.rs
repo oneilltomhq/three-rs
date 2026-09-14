@@ -86,21 +86,26 @@ pub fn init() -> App {
 
     let texture_loader = three_rs::TextureLoader::new();
 
-    let floor_map = texture_loader.load(examples_dir().join("textures/hardwood2_diffuse.jpg"));
+    let floor_map = texture_loader
+        .load(examples_dir().join("textures/hardwood2_diffuse.jpg"))
+        .unwrap();
     floor_map.set_wrapping(Wrapping::Repeat, Wrapping::Repeat);
     floor_map.set_anisotropy(4);
     floor_map.set_repeat(10.0, 24.0);
     floor_map.set_color_space(ColorSpace::SRGB);
     floor_mat.map = Some(floor_map);
 
-    let floor_bump = texture_loader.load(examples_dir().join("textures/hardwood2_bump.jpg"));
+    let floor_bump = texture_loader
+        .load(examples_dir().join("textures/hardwood2_bump.jpg"))
+        .unwrap();
     floor_bump.set_wrapping(Wrapping::Repeat, Wrapping::Repeat);
     floor_bump.set_anisotropy(4);
     floor_bump.set_repeat(10.0, 24.0);
     floor_mat.bump_map = Some(floor_bump);
 
-    let floor_roughness =
-        texture_loader.load(examples_dir().join("textures/hardwood2_roughness.jpg"));
+    let floor_roughness = texture_loader
+        .load(examples_dir().join("textures/hardwood2_roughness.jpg"))
+        .unwrap();
     floor_roughness.set_wrapping(Wrapping::Repeat, Wrapping::Repeat);
     floor_roughness.set_anisotropy(4);
     floor_roughness.set_repeat(10.0, 24.0);
@@ -110,14 +115,18 @@ pub fn init() -> App {
     let mut cube_mat = MeshStandardNodeMaterial::standard(Color::from_hex(0xffffff), 0.7, 0.2);
     cube_mat.bump_scale = 1.0;
 
-    let brick_map = texture_loader.load(examples_dir().join("textures/brick_diffuse.jpg"));
+    let brick_map = texture_loader
+        .load(examples_dir().join("textures/brick_diffuse.jpg"))
+        .unwrap();
     brick_map.set_wrapping(Wrapping::Repeat, Wrapping::Repeat);
     brick_map.set_anisotropy(4);
     brick_map.set_repeat(1.0, 1.0);
     brick_map.set_color_space(ColorSpace::SRGB);
     cube_mat.map = Some(brick_map);
 
-    let brick_bump = texture_loader.load(examples_dir().join("textures/brick_bump.jpg"));
+    let brick_bump = texture_loader
+        .load(examples_dir().join("textures/brick_bump.jpg"))
+        .unwrap();
     brick_bump.set_wrapping(Wrapping::Repeat, Wrapping::Repeat);
     brick_bump.set_anisotropy(4);
     brick_bump.set_repeat(1.0, 1.0);
@@ -126,15 +135,17 @@ pub fn init() -> App {
     // ballMat
     let mut ball_mat = MeshStandardNodeMaterial::standard(Color::from_hex(0xffffff), 0.5, 1.0);
 
-    let earth_map =
-        texture_loader.load(examples_dir().join("textures/planets/earth_atmos_2048.jpg"));
+    let earth_map = texture_loader
+        .load(examples_dir().join("textures/planets/earth_atmos_2048.jpg"))
+        .unwrap();
     earth_map.set_anisotropy(4);
     earth_map.set_color_space(ColorSpace::SRGB);
     ball_mat.map = Some(earth_map);
 
     // The page marks the metalness map sRGB too. Faithful port: reproduce it.
-    let earth_specular =
-        texture_loader.load(examples_dir().join("textures/planets/earth_specular_2048.jpg"));
+    let earth_specular = texture_loader
+        .load(examples_dir().join("textures/planets/earth_specular_2048.jpg"))
+        .unwrap();
     earth_specular.set_anisotropy(4);
     earth_specular.set_color_space(ColorSpace::SRGB);
     ball_mat.metalness_map = Some(earth_specular);
@@ -168,7 +179,7 @@ pub fn init() -> App {
         scene.add(&box_mesh);
     }
 
-    let mut renderer = Renderer::new(RendererParameters { antialias: false });
+    let mut renderer = Renderer::new(RendererParameters { antialias: false }).unwrap();
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
     renderer.shadow_map_enabled = true;
@@ -230,7 +241,7 @@ fn main() {
     println!("adapter: {:?}", app.renderer.adapter_info());
     animate(&mut app);
 
-    let (width, height, pixels) = app.renderer.read_canvas_pixels();
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
     let path = std::env::args()
         .nth(1)
         .unwrap_or_else(|| "target/webgpu_lights_physical.png".to_string());

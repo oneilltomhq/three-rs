@@ -72,20 +72,23 @@ pub fn init() -> App {
 
     let loader = three_rs::TextureLoader::new();
 
-    let texture1 =
-        loader.load(examples_dir().join("textures/758px-Canestra_di_frutta_(Caravaggio).jpg"));
+    let texture1 = loader
+        .load(examples_dir().join("textures/758px-Canestra_di_frutta_(Caravaggio).jpg"))
+        .unwrap();
     texture1.set_color_space(ColorSpace::SRGB);
     texture1.set_min_filter(MinFilter::Linear);
     texture1.set_generate_mipmaps(false);
     texture1.set_flip_y(false);
 
-    let texture2 = loader.load(examples_dir().join("textures/2294472375_24a3b8ef46_o.jpg"));
+    let texture2 = loader
+        .load(examples_dir().join("textures/2294472375_24a3b8ef46_o.jpg"))
+        .unwrap();
     texture2.set_color_space(ColorSpace::SRGB);
     texture2.set_flip_y(false);
 
     // renderer
 
-    let mut renderer = Renderer::new(RendererParameters { antialias: false });
+    let mut renderer = Renderer::new(RendererParameters { antialias: false }).unwrap();
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
 
@@ -155,7 +158,7 @@ fn main() {
     println!("adapter: {:?}", app.renderer.adapter_info());
     animate(&mut app);
 
-    let (width, height, pixels) = app.renderer.read_canvas_pixels();
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
     let path = std::env::args()
         .nth(1)
         .unwrap_or_else(|| "target/webgpu_postprocessing_masking.png".to_string());

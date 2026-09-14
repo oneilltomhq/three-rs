@@ -179,21 +179,30 @@ impl<M: GroupMember> MemberBinding<M> {
     /// `getValue( buffer, offset )`; a no-op if the path does not resolve.
     pub fn get_value(&mut self, buffer: &mut [f64], offset: usize) {
         if self.bind() {
-            self.target.as_ref().unwrap().get_value(buffer, offset);
+            self.target
+                .as_ref()
+                .expect("three-rs: bind() returned true, so the target resolved")
+                .get_value(buffer, offset);
         }
     }
 
     /// `setValue( buffer, offset )`; a no-op if the path does not resolve.
     pub fn set_value(&mut self, buffer: &[f64], offset: usize) {
         if self.bind() {
-            self.target.as_mut().unwrap().set_value(buffer, offset);
+            self.target
+                .as_mut()
+                .expect("three-rs: bind() returned true, so the target resolved")
+                .set_value(buffer, offset);
         }
     }
 
     /// `valueSize`, or 0 while unresolved.
     pub fn value_size(&mut self) -> usize {
         if self.bind() {
-            self.target.as_ref().unwrap().value_size()
+            self.target
+                .as_ref()
+                .expect("three-rs: bind() returned true, so the target resolved")
+                .value_size()
         } else {
             0
         }
@@ -684,9 +693,12 @@ impl<M: GroupMember> AnimationObjectGroup<M> {
         self.bindings_indices_by_path
             .insert(last_bindings_path, index);
 
-        let last_bindings = self.bindings.pop().expect("non-empty bindings");
-        let last_parsed = self.parsed_paths.pop().expect("non-empty parsedPaths");
-        let last_path = self.paths.pop().expect("non-empty paths");
+        let last_bindings = self.bindings.pop().expect("three-rs: non-empty bindings");
+        let last_parsed = self
+            .parsed_paths
+            .pop()
+            .expect("three-rs: non-empty parsedPaths");
+        let last_path = self.paths.pop().expect("three-rs: non-empty paths");
 
         if index != last_bindings_index {
             self.bindings[index] = last_bindings;

@@ -51,7 +51,7 @@ pub fn init() -> App {
         path.join(format!("nz.{format}")),
     ];
 
-    let texture_cube = CubeTextureLoader::new().load(urls);
+    let texture_cube = CubeTextureLoader::new().load(urls).unwrap();
 
     let mut scene = Scene::new();
     scene.set_background(texture_cube.clone());
@@ -82,7 +82,7 @@ pub fn init() -> App {
 
     //
 
-    let mut renderer = Renderer::new(RendererParameters { antialias: false });
+    let mut renderer = Renderer::new(RendererParameters { antialias: false }).unwrap();
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
 
@@ -125,7 +125,7 @@ fn main() {
     println!("adapter: {:?}", app.renderer.adapter_info());
     animate(&mut app);
 
-    let (width, height, pixels) = app.renderer.read_canvas_pixels();
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
     let path = std::env::args()
         .nth(1)
         .unwrap_or_else(|| "target/webgpu_materials_basic.png".to_string());

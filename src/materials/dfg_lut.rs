@@ -57,6 +57,8 @@ pub fn dfg_lut() -> Texture {
             texture.set_mag_filter(TextureFilter::Linear);
             *slot = Some(texture);
         }
-        slot.as_ref().unwrap().clone()
+        slot.as_ref()
+            .expect("three-rs: the LUT slot was filled in just above")
+            .clone()
     })
 }
