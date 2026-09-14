@@ -44,6 +44,7 @@ pub const D65: [f64; 2] = [0.3127, 0.3290];
 /// The transfer functions `constants.js` names, i.e. `LinearTransfer` and
 /// `SRGBTransfer`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[allow(clippy::upper_case_acronyms)] // mirrors three.js's `SRGBTransfer`; public API, not renaming
 pub enum Transfer {
     /// `LinearTransfer`.
     Linear,
