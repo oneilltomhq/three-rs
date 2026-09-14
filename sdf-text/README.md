@@ -182,9 +182,13 @@ Not ported, and why:
   Superseded by `VectorFontAtlas` for every lib3 and d33 use; its constants are
   not even the ones lib3's own test uses.
 - **What `BatchedText` inherits from `THREE.InstancedMesh`** beyond the draw
-  itself — `raycast`, `dispose`, `computeBoundingSphere`. This port's
-  `InstancedMesh` has none of them, nothing in lib3's or d33's pages picks a
-  glyph, and d33 turns frustum culling off for the batch anyway.
+  itself — `raycast`, `dispose`. This port's `InstancedMesh` has neither, and
+  nothing in lib3's or d33's pages picks a glyph. `computeBoundingSphere` *is*
+  ported (three-rs `InstancedMesh::compute_bounding_sphere`), and `sync()`
+  computes the batch's own sphere over the members' glyph quads: without it the
+  batch node is culled as a point at its own origin, which is a black frame and
+  no warning (#42). d33's page turns frustum culling off for its batch; it no
+  longer has to.
 - **`BatchedText`'s `_baseMaterial` constructor argument.** It is dead in the JS
   too — the constructor names it and never reads it, and both call sites pass
   `undefined`.
@@ -200,3 +204,13 @@ Not ported, and why:
   went — is the JS's.
 - **`index.js`'s re-export shape.** Rust modules and `pub use` in `lib.rs` cover
   it.
+
+## The bundled font
+
+`tests/assets/Roboto-Regular.ttf` (Roboto Regular 2.001047, Copyright 2015
+Google Inc., Apache-2.0) ships inside the published crate, so the examples and
+the doc snippets run as written from a `cargo add sdf-text` checkout as well as
+from this repository. The notice and the licence text are in `LICENSE-Roboto`;
+the crate's own code stays MIT (`LICENSE`). The golden data under
+`tests/golden/` is *not* packaged — those tests only run from a repository
+checkout.

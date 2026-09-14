@@ -34,6 +34,12 @@
 //!    `mix( bounds.x, bounds.z, uv.x )` place every vertex identically, so this
 //!    matches d33's pixels as well as lib3's.
 //!
+//! `sync()` also computes the batch's own bounding sphere over the members'
+//! glyph quads and stores it on the node, which is `BatchedMesh`'s
+//! `computeBoundingSphere` in three.js and is what keeps the frustum cull from
+//! dropping a batch whose node sits at the origin while its members do not
+//! (#42). See [`BatchedText::bounding_sphere`].
+//!
 //! `Fn( … )()` around `positionNode` and `colorNode` is dropped: it takes no
 //! parameters, so `FunctionNode` inlines its body and the emitted WGSL is the
 //! same expression either way.
@@ -43,7 +49,7 @@ use std::rc::Rc;
 use three_rs::core::Object3D;
 use three_rs::geometries::plane_geometry;
 use three_rs::materials::Side;
-use three_rs::math::{Color, Matrix4};
+use three_rs::math::{Color, Matrix4, Sphere, Vector3};
 use three_rs::nodes::tsl;
 use three_rs::nodes::{NodeRef, Type};
 use three_rs::objects::InstancedMesh;
@@ -287,6 +293,11 @@ impl BatchedText {
 
     /// The member's own `Object3D` — `text.position` / `text.quaternion` in the
     /// JS, where `Text extends Object3D`. `sync()` composes its `matrixWorld`.
+    ///
+    /// Every glyph of the member is drawn with that whole `matrix_world` as its
+    /// instance matrix, so rotation and scale are honoured along with position:
+    /// `member_node( id ).borrow_mut().set_rotation( -PI / 2.0, 0.0, 0.0 )` lays
+    /// the label flat on the floor. Members are not billboarded.
     pub fn member_node(&self, member_id: usize) -> Option<&Node> {
         self.members.get(member_id)?.as_ref().map(|m| &m.node)
     }
@@ -394,6 +405,8 @@ impl BatchedText {
             return;
         }
         self.write_glyph_matrices(matrix, start, count);
+        // The member moved, so the batch's own bounding sphere moved with it.
+        self.update_bounding_sphere();
     }
 
     /// `_writeGlyphMatrices( text, info, glyphStart, glyphCount )` — every glyph
@@ -555,9 +568,72 @@ impl BatchedText {
             self.texture = atlas_texture(&self.atlas);
         }
 
+        // `BatchedMesh.computeBoundingSphere()`: without it the batch node is
+        // culled as a point at its own origin and a batch whose members sit far
+        // from it renders nothing at all (#42).
+        self.update_bounding_sphere();
+
         // The four `needsUpdate = true` flags: the nodes holding the arrays are
         // rebuilt around fresh copies.
         self.build_material();
+    }
+
+    /// The batch's own bounding sphere, over every glyph quad of every member
+    /// in the batch node's space — three.js' `BatchedMesh.computeBoundingSphere`
+    /// / `InstancedMesh.computeBoundingSphere`, which the frustum cull prefers
+    /// to the geometry's.
+    ///
+    /// `InstancedMesh::compute_bounding_sphere` would spread the *geometry's*
+    /// sphere through the instance matrices; that is the unit
+    /// `PlaneGeometry( 1, 1 )` here, and the quad a glyph actually covers comes
+    /// from `positionNode` over `aGlyphBounds`. So the corners are taken from
+    /// the packed bounds and pushed through the member's `matrixWorld`, which is
+    /// what the instance matrix holds.
+    fn update_bounding_sphere(&mut self) {
+        let mut points: Vec<Vector3> = Vec::new();
+        for member in self.members.iter().flatten() {
+            let (start, count) = (member.glyph_start, member.glyph_count);
+            // A member past the `maxGlyphCount` truncation point has stale slice
+            // bounds; its glyphs are not drawn, so they are not bounded either.
+            if count == 0 || start + count > self.glyph_count {
+                continue;
+            }
+            let world = member.node.borrow().matrix_world;
+            for g in start..start + count {
+                let b = &self.glyph_bounds[g * 4..g * 4 + 4];
+                for (x, y) in [(b[0], b[1]), (b[2], b[1]), (b[0], b[3]), (b[2], b[3])] {
+                    let mut corner = Vector3::new(x as f64, y as f64, 0.0);
+                    corner.apply_matrix4(&world);
+                    points.push(corner);
+                }
+            }
+        }
+
+        let sphere = if points.is_empty() {
+            // Nothing packed: `boundingSphere` stays `null` and the geometry's
+            // sphere stands in, as it did before the first `sync()`.
+            None
+        } else {
+            let mut sphere = Sphere::default();
+            sphere.set_from_points(&points, None);
+            Some(sphere)
+        };
+
+        let mut object = self.node.borrow_mut();
+        if let Some(instanced) = object.payload.instanced_mesh_mut() {
+            instanced.bounding_sphere = sphere;
+        }
+    }
+
+    /// The batch's bounding sphere as [`BatchedText::sync`] last computed it, in
+    /// the batch node's own space. `None` before the first `sync()` that packs a
+    /// glyph.
+    pub fn bounding_sphere(&self) -> Option<Sphere> {
+        self.node
+            .borrow()
+            .payload
+            .instanced_mesh()
+            .and_then(|instanced| instanced.bounding_sphere)
     }
 
     /// `this.count = n`.

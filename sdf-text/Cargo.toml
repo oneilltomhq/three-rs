@@ -12,9 +12,11 @@ repository.workspace = true
 authors.workspace = true
 rust-version.workspace = true
 exclude = [
-    # Roboto ships under its own licence and the atlas/font goldens are large;
-    # the tests that read them run from a repository checkout.
-    "tests/assets/**",
+    # The atlas/font goldens are large and the tests that read them run from a
+    # repository checkout. `tests/assets/Roboto-Regular.ttf` is *not* excluded:
+    # the examples read it, so a published crate without it has no runnable
+    # example (#44). Roboto is Apache-2.0 and redistributable with the notice
+    # in `LICENSE-Roboto`.
     "tests/golden/**",
     "target/**",
 ]

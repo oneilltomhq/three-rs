@@ -12,6 +12,26 @@
 //! for the scene graph, the node material and the `R32Float` atlas texture, so
 //! `cargo test -p sdf-text` covers it only where the packing can be checked on
 //! the CPU; the pixel gates live in `three-rs`' own `tests/`.
+//!
+//! # Member transforms
+//!
+//! A member's whole `matrix_world` reaches the GPU as its glyphs' instance
+//! matrix, so rotation and scale work as well as position — a label laid flat
+//! on a floor with `set_rotation( -PI / 2, 0, 0 )` on
+//! [`BatchedText::member_node`] renders flat. Members are not billboarded and
+//! are not position-only.
+//!
+//! # Frustum culling
+//!
+//! [`BatchedText::sync`] computes the batch's own bounding sphere over every
+//! glyph quad of every member, in the batch node's space, and stores it on the
+//! node — the way `BatchedMesh.computeBoundingSphere` does in three.js. The
+//! frustum cull reads that sphere in preference to the geometry's, so a batch
+//! node left at the origin with its members placed far away is culled on where
+//! its glyphs actually are, not on where its node is. Members added or moved
+//! after a `sync()` are only bounded by the next `sync()` (or by
+//! [`BatchedText::set_matrix_at`], which updates the sphere as it goes), which
+//! is the same contract as the attribute packing.
 
 pub mod batched_text;
 pub mod edt;

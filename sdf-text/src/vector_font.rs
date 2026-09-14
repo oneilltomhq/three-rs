@@ -278,6 +278,42 @@ impl VectorFont {
             .collect()
     }
 
+    /// The width of one run of text at `font_size`, in the units
+    /// [`Text`](crate::Text) lays out in — the sum of the glyph advances with
+    /// the kerning between each adjacent pair applied, scaled by
+    /// `font_size / units_per_em`.
+    ///
+    /// This is the measurement layout code needs *before* there is anything to
+    /// lay out: a d3 `separation` callback, a fit, a column width. It is the
+    /// same arithmetic `layout_text_vector` uses for its own line widths (it is
+    /// the same function), so the number agrees with the `TextRenderInfo` a
+    /// `Text` of that string and size reports — see the check in
+    /// `tests/vector_font.rs`.
+    ///
+    /// Three things it deliberately does not do, all of them layout rather than
+    /// measurement:
+    ///
+    /// - **`letterSpacing` is zero.** With a non-zero letter spacing the width
+    ///   is `measure( s, size ) + letter_spacing * ( s.chars().count() - 1 )`,
+    ///   spacing being applied between glyphs only.
+    /// - **No line breaking**, so `max_width` plays no part; this is the width
+    ///   the text *wants*.
+    /// - **Newlines are not special**: `'\n'` is measured as the glyph the font
+    ///   maps it to (zero-advance `.notdef` in Roboto). Measure each line
+    ///   separately and take the widest.
+    ///
+    /// The width is the advance sum, not the ink extent: it includes the first
+    /// and last glyphs' side bearings, which is what a layout wants and what
+    /// `TextRenderInfo::block_bounds` (an ink box) is not.
+    ///
+    /// There is no `measure_info` companion: the full-`TextRenderInfo`
+    /// measurement with no scene object already exists as
+    /// [`layout_text_vector( params, Some( font ) )`](crate::layout_text_vector),
+    /// which is what `Text::sync` itself calls.
+    pub fn measure(&self, text: &str, font_size: f64) -> f64 {
+        crate::text_builder::vec_measure_run(self, text, 0.0, font_size / self.units_per_em)
+    }
+
     /// Kerning adjustment in font units. See the module doc for the semantics.
     pub fn kerning(&self, left: char, right: char) -> f64 {
         let l = self.glyph_for_char(left);
