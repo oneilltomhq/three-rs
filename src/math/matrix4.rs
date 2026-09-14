@@ -239,6 +239,7 @@ impl Matrix4 {
     }
 
     /// `Matrix4.makePerspective()`, `reversedDepth = false`.
+    #[allow(clippy::too_many_arguments)] // mirrors three.js's `makePerspective(left, right, top, bottom, near, far, coordinateSystem)`; public API, batched separately (#9/#38/#39)
     pub fn make_perspective(
         &mut self,
         left: f64,

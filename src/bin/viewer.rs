@@ -1054,6 +1054,7 @@ fn fresh_renderer(scene: &mut Scene, which: Which, size: (u32, u32)) {
 /// (`--headless`), and with `path` also writes the canvas as a PNG plus the
 /// result of `Renderer::present()` into an off-screen `bgra8unorm` texture, so
 /// the blit the window uses is covered too (`--screenshot`).
+#[allow(clippy::too_many_arguments)] // internal to the viewer binary
 fn screenshot(
     which: Which,
     size: (u32, u32),
