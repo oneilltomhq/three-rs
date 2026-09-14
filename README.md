@@ -1,5 +1,7 @@
 # three-rs
 
+[![CI](https://github.com/oneilltomhq/three-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/oneilltomhq/three-rs/actions/workflows/ci.yml)
+
 A port of [three.js](https://github.com/mrdoob/three.js) core and its
 `WebGPURenderer` to Rust on [wgpu](https://github.com/gfx-rs/wgpu), graded by
 Three's own end-to-end pixel comparison: each ported example renders headless
