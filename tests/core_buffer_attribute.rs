@@ -17,8 +17,8 @@ fn copy_at() {
     attr2.copy_at(0, &attr, 1);
     attr2.copy_at(2, &attr, 0);
 
-    let i = &attr.array;
-    let i2 = &attr2.array; // should be [4, 5, 6, 7, 8, 9, 1, 2, 3]
+    let i = attr.array();
+    let i2 = attr2.array(); // should be [4, 5, 6, 7, 8, 9, 1, 2, 3]
 
     assert!(
         i2[0] == i[3] && i2[1] == i[4] && i2[2] == i[5],
@@ -41,7 +41,7 @@ fn copy_array() {
 
     a.copy_array(&f32a);
 
-    assert_eq!(a.array.as_slice(), &f32a, "Check array has new values");
+    assert_eq!(a.array().as_slice(), &f32a, "Check array has new values");
 }
 
 #[test]
@@ -53,7 +53,7 @@ fn set() {
     a.set(&[8.0], 2);
 
     assert_eq!(
-        a.array.as_slice(),
+        a.array().as_slice(),
         &expected,
         "Check array has expected values"
     );
@@ -74,7 +74,7 @@ fn set_get_xyzw() {
     a.set_w(0, v);
 
     assert_eq!(
-        a.array.as_slice(),
+        a.array().as_slice(),
         &expected,
         "Check all set* calls set the correct values"
     );
@@ -88,7 +88,7 @@ fn set_xy() {
     a.set_xy(0, -1.0, -2.0);
 
     assert_eq!(
-        a.array.as_slice(),
+        a.array().as_slice(),
         &expected,
         "Check for the correct values"
     );
@@ -102,7 +102,7 @@ fn set_xyz() {
     a.set_xyz(1, -4.0, -5.0, -6.0);
 
     assert_eq!(
-        a.array.as_slice(),
+        a.array().as_slice(),
         &expected,
         "Check for the correct values"
     );
@@ -116,7 +116,7 @@ fn set_xyzw() {
     a.set_xyzw(0, -1.0, -2.0, -3.0, -4.0);
 
     assert_eq!(
-        a.array.as_slice(),
+        a.array().as_slice(),
         &expected,
         "Check for the correct values"
     );
@@ -128,4 +128,28 @@ fn count() {
         BufferAttribute::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], 3).count() == 2,
         "count is equal to the number of chunks"
     );
+}
+
+/// `attribute.version` / `attribute.needsUpdate = true` (issue #47). three.js
+/// starts at 0 and `needsUpdate`'s setter is `this.version ++`, so a write
+/// without it leaves the version alone — which is what lets the renderer tell
+/// a changed attribute from an unchanged one.
+#[test]
+fn needs_update_bumps_the_version() {
+    let attribute = BufferAttribute::new(vec![1.0, 2.0, 3.0], 3);
+    assert_eq!(attribute.version(), 0, "a new attribute is version 0");
+
+    // interior mutability: no `&mut`, so this works through an `Rc`
+    attribute.array_mut()[0] = 9.0;
+    assert_eq!(attribute.array()[0], 9.0);
+    assert_eq!(
+        attribute.version(),
+        0,
+        "writing the array does not bump the version on its own"
+    );
+
+    attribute.set_needs_update();
+    assert_eq!(attribute.version(), 1);
+    attribute.set_needs_update();
+    assert_eq!(attribute.version(), 2);
 }

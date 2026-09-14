@@ -117,8 +117,8 @@ fn circle_std_tests() {
 
     // `segments` is clamped to at least 3
     assert_eq!(
-        circle_geometry(1.0, 0).position().unwrap().array,
-        circle_geometry(1.0, 3).position().unwrap().array
+        *circle_geometry(1.0, 0).position().unwrap().array(),
+        *circle_geometry(1.0, 3).position().unwrap().array()
     );
 }
 
@@ -174,13 +174,13 @@ fn lathe_std_tests() {
         lathe_geometry_full(&lathe_default_points(), 12, 0.0, 100.0)
             .position()
             .unwrap()
-            .array
-            .clone(),
+            .array()
+            .to_vec(),
         lathe_geometry_full(&lathe_default_points(), 12, 0.0, PI * 2.0)
             .position()
             .unwrap()
-            .array
-            .clone()
+            .array()
+            .to_vec()
     );
 }
 

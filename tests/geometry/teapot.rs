@@ -25,8 +25,8 @@ fn teapot_std_tests() {
 
     // `segments` is clamped to at least 2
     assert_eq!(
-        teapot_geometry(1.0, 0).position().unwrap().array,
-        teapot_geometry(1.0, 2).position().unwrap().array
+        *teapot_geometry(1.0, 0).position().unwrap().array(),
+        *teapot_geometry(1.0, 2).position().unwrap().array()
     );
 }
 

@@ -65,7 +65,7 @@ fn check_attr(
     let got = got.unwrap_or_else(|| panic!("{expr}: {name} attribute missing"));
     assert_eq!(got.count(), want.count, "{expr}: {name}.count");
 
-    let array: Vec<f64> = got.array.iter().map(|&v| v as f64).collect();
+    let array: Vec<f64> = got.array().iter().map(|&v| v as f64).collect();
 
     for (i, &w) in want.head.iter().enumerate() {
         assert!(
@@ -224,14 +224,14 @@ pub fn run_std_geometry_tests(label: &str, geometry: &BufferGeometry) {
     assert_eq!(position.item_size, 3, "{label}: position.itemSize");
     assert!(position.count() > 0, "{label}: empty position");
 
-    for (i, v) in position.array.iter().enumerate() {
+    for (i, v) in position.array().iter().enumerate() {
         assert!(v.is_finite(), "{label}: position[{i}] is not finite");
     }
 
     if let Some(normal) = geometry.normal() {
         assert_eq!(normal.item_size, 3, "{label}: normal.itemSize");
         assert_eq!(normal.count(), position.count(), "{label}: normal.count");
-        for (i, v) in normal.array.iter().enumerate() {
+        for (i, v) in normal.array().iter().enumerate() {
             assert!(v.is_finite(), "{label}: normal[{i}] is not finite");
         }
     }
@@ -239,7 +239,7 @@ pub fn run_std_geometry_tests(label: &str, geometry: &BufferGeometry) {
     if let Some(uv) = geometry.uv() {
         assert_eq!(uv.item_size, 2, "{label}: uv.itemSize");
         assert_eq!(uv.count(), position.count(), "{label}: uv.count");
-        for (i, v) in uv.array.iter().enumerate() {
+        for (i, v) in uv.array().iter().enumerate() {
             assert!(v.is_finite(), "{label}: uv[{i}] is not finite");
         }
     }

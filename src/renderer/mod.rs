@@ -86,18 +86,47 @@ struct GeometryGpu {
     other: Vec<(String, wgpu::Buffer)>,
     index: Option<(wgpu::Buffer, wgpu::IndexFormat, u32)>,
     vertex_count: u32,
+    /// The `BufferAttribute.version` each of [`UPLOADED_ATTRIBUTES`] had when
+    /// its buffer was written — three.js' `attribute.version` against
+    /// `bufferAttribute.version` in `WebGPUAttributeUtils.updateAttribute()`.
+    /// A geometry seen with a version past the one recorded here has that one
+    /// buffer re-written; see [`Renderer::refresh_geometry`].
+    versions: [u32; 3],
 }
 
+/// The geometry attributes the renderer uploads, in the order [`GeometryGpu`]
+/// stores their buffers and versions.
+const UPLOADED_ATTRIBUTES: [&str; 3] = ["position", "normal", "uv"];
+
 impl GeometryGpu {
+    fn slot(&self, index: usize) -> Option<&wgpu::Buffer> {
+        match index {
+            0 => self.position.as_ref(),
+            1 => self.normal.as_ref(),
+            2 => self.uv.as_ref(),
+            other => panic!("three-rs: no uploaded attribute slot {other}"),
+        }
+    }
+
+    fn set_slot(&mut self, index: usize, buffer: wgpu::Buffer) {
+        match index {
+            0 => self.position = Some(buffer),
+            1 => self.normal = Some(buffer),
+            2 => self.uv = Some(buffer),
+            other => panic!("three-rs: no uploaded attribute slot {other}"),
+        }
+    }
+
     fn attribute(&self, name: &str) -> &wgpu::Buffer {
-        let buffer = match name {
-            "position" => self.position.as_ref(),
-            "normal" => self.normal.as_ref(),
-            "uv" => self.uv.as_ref(),
-            other => self
+        let buffer = match UPLOADED_ATTRIBUTES
+            .iter()
+            .position(|candidate| *candidate == name)
+        {
+            Some(index) => self.slot(index),
+            None => self
                 .other
                 .iter()
-                .find(|(key, _)| key == other)
+                .find(|(key, _)| key == name)
                 .map(|(_, buffer)| buffer),
         };
         buffer.unwrap_or_else(|| panic!("three-rs: the geometry has no {name} attribute"))
@@ -2314,6 +2343,7 @@ impl Renderer {
     fn ensure_geometry(&mut self, geometry: &Rc<BufferGeometry>) {
         let id = geometry.id();
         if self.geometries.contains_key(&id) {
+            self.refresh_geometry(geometry);
             return;
         }
         let owner = Rc::downgrade(geometry);
@@ -2321,7 +2351,7 @@ impl Renderer {
         let vertex_buffer = |attribute: &crate::core::BufferAttribute| {
             self.create_buffer_init(
                 "three-rs attribute",
-                bytemuck::cast_slice(&attribute.array),
+                bytemuck::cast_slice(&attribute.array()),
                 wgpu::BufferUsages::VERTEX,
             )
         };
@@ -2346,6 +2376,13 @@ impl Renderer {
         });
 
         let vertex_count = geometry.position().map(|p| p.count() as u32).unwrap_or(0);
+
+        let versions = UPLOADED_ATTRIBUTES.map(|name| {
+            geometry
+                .get_attribute(name)
+                .map(|attribute| attribute.version())
+                .unwrap_or(0)
+        });
 
         // One upload, and one `buffers_written` per attribute or index buffer
         // it wrote — the count a regression that re-uploads a live geometry
@@ -2372,11 +2409,81 @@ impl Renderer {
                     other,
                     index,
                     vertex_count,
+                    versions,
                 },
                 owner,
             },
         );
         self.info.memory.geometries = self.geometries.len();
+    }
+
+    /// `WebGPUBackend.updateAttribute()`: an already-uploaded geometry whose
+    /// attribute has been written and marked
+    /// [`set_needs_update`](crate::core::BufferAttribute::set_needs_update)
+    /// since, re-written in place (issue #47).
+    ///
+    /// Only the attributes whose version moved are touched, so a moved vertex
+    /// costs one `buffers_written` and no `geometries_uploaded`; the geometry
+    /// keeps its id, its entry and every buffer that did not change. A write
+    /// the same length reuses the buffer (`queue.write_buffer`); one that
+    /// changed length has to reallocate, since a `wgpu::Buffer` is fixed size.
+    ///
+    /// The index is not versioned: `BufferGeometry.index` is an [`Index`], not
+    /// a [`BufferAttribute`](crate::core::BufferAttribute), so there is no
+    /// `needsUpdate` to read. Changing the index is still a new geometry.
+    fn refresh_geometry(&mut self, geometry: &Rc<BufferGeometry>) {
+        let id = geometry.id();
+
+        for (slot, name) in UPLOADED_ATTRIBUTES.iter().enumerate() {
+            let Some(attribute) = geometry.get_attribute(name) else {
+                continue;
+            };
+            let version = attribute.version();
+
+            let entry = &self.geometries[&id];
+            if entry.gpu.versions[slot] == version {
+                continue;
+            }
+            // An attribute the first upload did not write (it arrived after the
+            // geometry was uploaded) has no buffer to refresh; the geometry's
+            // vertex layout was fixed at upload, so a new attribute needs a new
+            // geometry.
+            let Some(buffer) = entry.gpu.slot(slot).cloned() else {
+                continue;
+            };
+
+            let array = attribute.array();
+            let bytes: &[u8] = bytemuck::cast_slice(array.as_slice());
+
+            if buffer.size() == bytes.len() as u64 {
+                self.queue.write_buffer(&buffer, 0, bytes);
+            } else {
+                let buffer = self.create_buffer_init(
+                    "three-rs attribute",
+                    bytes,
+                    wgpu::BufferUsages::VERTEX,
+                );
+                let gpu = &mut self
+                    .geometries
+                    .get_mut(&id)
+                    .expect("three-rs: the entry was found above")
+                    .gpu;
+                gpu.set_slot(slot, buffer);
+            }
+            drop(array);
+
+            let gpu = &mut self
+                .geometries
+                .get_mut(&id)
+                .expect("three-rs: the entry was found above")
+                .gpu;
+            gpu.versions[slot] = version;
+            if *name == "position" {
+                gpu.vertex_count = attribute.count() as u32;
+            }
+
+            self.info.build.buffers_written += 1;
+        }
     }
 
     /// Dropped at the start of every `render()`: everything the renderer is

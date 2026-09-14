@@ -53,6 +53,30 @@ impl Line {
         Some(sphere)
     }
 
+    /// Rewrite the line's `position` attribute and mark it for re-upload —
+    /// `positions` is the flat `[ x, y, z, x, y, z, ... ]` the attribute holds.
+    ///
+    /// The convenience form of `attribute.array_mut()` then
+    /// [`set_needs_update`](crate::core::BufferAttribute::set_needs_update),
+    /// which is what a consumer moving one wall of a diagram wants instead of
+    /// rebuilding the scene (issue #47). The next render re-writes that one
+    /// buffer; the geometry keeps its id and its other buffers.
+    ///
+    /// Panics if the geometry has no `position` attribute.
+    pub fn set_positions(&self, positions: &[f32]) {
+        let attribute = self
+            .geometry
+            .get_attribute("position")
+            .expect("three-rs: the line geometry has a position attribute");
+
+        let mut array = attribute.array_mut();
+        array.clear();
+        array.extend_from_slice(positions);
+        drop(array);
+
+        attribute.set_needs_update();
+    }
+
     fn node(
         geometry: Rc<BufferGeometry>,
         material: MeshBasicNodeMaterial,

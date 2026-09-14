@@ -288,22 +288,39 @@ renderer. That is the remaining leak, and a follow-up.
 
 ## Changing geometry
 
-**A geometry is uploaded once per id, and the upload is never refreshed.** The
-renderer sees `BufferGeometry.id`, finds its buffers, and draws them; it does
-not look at the attribute arrays again. So mutating a geometry's vertex data
-after it has been drawn — `get_attribute_mut("position")`, `translate()`,
-`scale()`, writing into `array` — changes nothing on screen.
+**A geometry is uploaded once per id, and the upload is refreshed only where
+an attribute says so.** The renderer sees `BufferGeometry.id` and finds its
+buffers; what it then re-reads is one number per attribute,
+`BufferAttribute.version`, against the version it recorded when it wrote that
+buffer. Writing into the array alone still changes nothing on screen — it is
+the version that the renderer looks at.
 
-To change vertex data, **make a new `BufferGeometry`** and hand it to the mesh.
-That is a fresh id, so the new data is uploaded, and dropping the old geometry
-drops its buffers at the next `render()`. A `clone()` counts as a new geometry:
-`GeometryId::clone` mints a fresh id exactly as `MaterialId::clone` does, so a
-geometry cloned, mutated and drawn shows its mutation.
+So there are two routes, three.js' two:
 
-Three.js offers the other route as well — `attribute.needsUpdate = true`, which
-re-uploads that one attribute in place. The port does not have it yet;
-`BufferAttribute.id` exists to key it on when it arrives. Until then the rule
-above is the whole of it.
+- **`attribute.array_mut()`, then `attribute.set_needs_update()`** —
+  three.js' `attribute.needsUpdate = true` (issue #47). The array is behind a
+  `RefCell` and the version behind a `Cell`, so both work through the `Rc` a
+  mesh is holding: the geometry keeps its id, its entry and every buffer that
+  did not change, and the next `render()` re-writes exactly the one that did.
+  A write of the same byte length is a `queue.write_buffer` into the buffer
+  that is already there; one that changed length has to allocate a new buffer,
+  since a `wgpu::Buffer` is a fixed size. Either way it is one
+  `info.build.buffers_written` and no `geometries_uploaded`, which
+  `a_mutated_attribute_rewrites_one_buffer` in `tests/e2e` asserts. Only
+  `position`, `normal` and `uv` are versioned, because they are the only
+  attributes the renderer uploads; and the index is not, because
+  `BufferGeometry.index` is an `Index`, not a `BufferAttribute`, so it has no
+  `needsUpdate` to read.
+- **Make a new `BufferGeometry`** and hand it to the mesh. That is a fresh id,
+  so the whole geometry is uploaded, and dropping the old one drops its buffers
+  at the next `render()`. This is the route for a changed index, a new
+  attribute, or a different attribute set. A `clone()` counts as a new
+  geometry: `GeometryId::clone` mints a fresh id exactly as `MaterialId::clone`
+  does, so a geometry cloned, mutated and drawn shows its mutation.
+
+`Line::set_positions()` is the first route spelled once for the common case —
+rewrite the `position` array and mark it — since a consumer moving one line of
+a diagram is what issue #47 was reported from.
 
 ## Lines
 
