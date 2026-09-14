@@ -130,8 +130,8 @@ impl Frustum {
         let center = &sphere.center;
         let neg_radius = -sphere.radius;
 
-        for i in 0..6 {
-            let distance = planes[i].distance_to_point(center);
+        for plane in planes {
+            let distance = plane.distance_to_point(center);
 
             if distance < neg_radius {
                 return false;
@@ -147,9 +147,7 @@ impl Frustum {
 
         let mut vector = Vector3::ZERO;
 
-        for i in 0..6 {
-            let plane = &planes[i];
-
+        for plane in planes {
             // corner at max distance
 
             vector.x = if plane.normal.x > 0.0 {
@@ -180,8 +178,8 @@ impl Frustum {
     pub fn contains_point(&self, point: &Vector3) -> bool {
         let planes = &self.planes;
 
-        for i in 0..6 {
-            if planes[i].distance_to_point(point) < 0.0 {
+        for plane in planes {
+            if plane.distance_to_point(point) < 0.0 {
                 return false;
             }
         }

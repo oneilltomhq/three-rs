@@ -52,10 +52,7 @@ pub fn init() -> App {
     camera.node.borrow_mut().position.z = 7.0;
 
     let mut scene = Scene::new();
-    scene.fog_node = Some(fog(
-        Color::from_hex(0xFF00FF),
-        range_fog_factor(12.0, 30.0),
-    ));
+    scene.fog_node = Some(fog(Color::from_hex(0xFF00FF), range_fog_factor(12.0, 30.0)));
 
     let sphere_geometry = Rc::new(sphere_geometry(0.1, 16, 8));
 

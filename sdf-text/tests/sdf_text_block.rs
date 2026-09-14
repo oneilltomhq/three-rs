@@ -218,7 +218,10 @@ fn two_renders_are_identical() {
         .zip(second.chunks_exact(4))
         .filter(|(a, b)| a != b)
         .count();
-    assert_eq!(differing, 0, "{differing} pixels differ between the two rounds");
+    assert_eq!(
+        differing, 0,
+        "{differing} pixels differ between the two rounds"
+    );
 
     // Not a black frame: the four members have to be visible.
     let background = Color::from_hex(0x0b0d12);
@@ -264,8 +267,8 @@ fn the_frame_matches_the_atlas_sdf() {
         let (start, n) = app.batched.member_glyphs(m).unwrap();
         let node = app.batched.member_node(m).unwrap().borrow();
         let p = node.matrix_world.elements;
-        for gi in start..start + n {
-            offsets[gi] = (p[12], p[13]);
+        for offset in offsets.iter_mut().skip(start).take(n) {
+            *offset = (p[12], p[13]);
         }
     }
 
@@ -368,10 +371,13 @@ fn the_frame_matches_the_atlas_sdf() {
         srgb_byte(background.b),
     ];
 
+    /// One mismatch: `(x, y, signed_distance, got_rgb, want_rgb)`.
+    type Mismatch = (usize, usize, f64, [u8; 3], [f64; 3]);
+
     let mut opaque = 0usize;
     let mut clear = 0usize;
     let mut skipped = 0usize;
-    let mut wrong: Vec<(usize, usize, f64, [u8; 3], [f64; 3])> = Vec::new();
+    let mut wrong: Vec<Mismatch> = Vec::new();
 
     for j in 0..height {
         for i in 0..width {
@@ -454,8 +460,7 @@ fn the_frame_matches_the_atlas_sdf() {
                 colors[gi * 3 + 1] as f64,
                 colors[gi * 3 + 2] as f64,
             ];
-            let is_opaque =
-                s > 0.5 + guard || (s > 0.5 - OUTLINE + guard && s < 0.5 - guard);
+            let is_opaque = s > 0.5 + guard || (s > 0.5 - OUTLINE + guard && s < 0.5 - guard);
             let is_clear = s < 0.5 - OUTLINE - guard;
 
             if is_opaque {

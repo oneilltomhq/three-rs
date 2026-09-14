@@ -39,38 +39,43 @@ pub fn capsule_geometry(
     // generate vertices, normals, and uvs
 
     for iy in 0..=num_vertical_segments {
-        let current_arc_length;
-        let profile_y;
-        let profile_radius;
-        let normal_y_component;
+        let (profile_y, profile_radius, normal_y_component, current_arc_length) =
+            if iy <= cap_segments {
+                // bottom cap
+                let segment_progress = iy as f64 / cap_segments as f64;
+                let angle = (segment_progress * std::f64::consts::PI) / 2.0;
+                (
+                    -half_height - radius * angle.cos(),
+                    radius * angle.sin(),
+                    -radius * angle.cos(),
+                    segment_progress * cap_arc_length,
+                )
+            } else if iy <= cap_segments + height_segments {
+                // middle section
+                let segment_progress = (iy - cap_segments) as f64 / height_segments as f64;
+                (
+                    -half_height + segment_progress * height,
+                    radius,
+                    0.0,
+                    cap_arc_length + segment_progress * cylinder_part_length,
+                )
+            } else {
+                // top cap
+                let segment_progress =
+                    (iy - cap_segments - height_segments) as f64 / cap_segments as f64;
+                let angle = (segment_progress * std::f64::consts::PI) / 2.0;
+                (
+                    half_height + radius * angle.sin(),
+                    radius * angle.cos(),
+                    radius * angle.sin(),
+                    cap_arc_length + cylinder_part_length + segment_progress * cap_arc_length,
+                )
+            };
 
-        if iy <= cap_segments {
-            // bottom cap
-            let segment_progress = iy as f64 / cap_segments as f64;
-            let angle = (segment_progress * std::f64::consts::PI) / 2.0;
-            profile_y = -half_height - radius * angle.cos();
-            profile_radius = radius * angle.sin();
-            normal_y_component = -radius * angle.cos();
-            current_arc_length = segment_progress * cap_arc_length;
-        } else if iy <= cap_segments + height_segments {
-            // middle section
-            let segment_progress = (iy - cap_segments) as f64 / height_segments as f64;
-            profile_y = -half_height + segment_progress * height;
-            profile_radius = radius;
-            normal_y_component = 0.0;
-            current_arc_length = cap_arc_length + segment_progress * cylinder_part_length;
-        } else {
-            // top cap
-            let segment_progress =
-                (iy - cap_segments - height_segments) as f64 / cap_segments as f64;
-            let angle = (segment_progress * std::f64::consts::PI) / 2.0;
-            profile_y = half_height + radius * angle.sin();
-            profile_radius = radius * angle.cos();
-            normal_y_component = radius * angle.sin();
-            current_arc_length =
-                cap_arc_length + cylinder_part_length + segment_progress * cap_arc_length;
-        }
-
+        // `Math.min( 1, Math.max( 0, v ) )` — kept as chained min/max rather than
+        // `.clamp()`, which panics on NaN input instead of matching JS's
+        // fall-through behaviour.
+        #[allow(clippy::manual_clamp)]
         let v = (current_arc_length / total_arc_length).min(1.0).max(0.0);
 
         // special case for the poles

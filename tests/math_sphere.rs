@@ -36,7 +36,13 @@ fn instancing() {
 // PUBLIC
 #[test]
 fn is_sphere() {
-    assert!(Sphere::IS_SPHERE);
+    // Mirrors three.js's `assert.ok( a.isSphere )`: this pins the public
+    // `IS_SPHERE` constant's value, which happens to be `true` today but is
+    // not statically guaranteed to stay that way.
+    #[allow(clippy::assertions_on_constants)]
+    {
+        assert!(Sphere::IS_SPHERE);
+    }
 
     // `Box3` carries no `IS_SPHERE` flag at all, which is the Rust equivalent
     // of `! b.isSphere`.
@@ -101,7 +107,12 @@ fn set_from_points() {
         EPS,
         "Default center: check center.z",
     );
-    support::close(a.radius, expected_radius, EPS, "Default center: check radius");
+    support::close(
+        a.radius,
+        expected_radius,
+        EPS,
+        "Default center: check radius",
+    );
 
     expected_radius = 2.5946195770400102;
     a.set_from_points(&points, Some(&optional_center));
@@ -213,8 +224,8 @@ fn intersects_box() {
     let b = Sphere::new(Vector3::new(-5.0, -5.0, -5.0), 1.0);
     let box_ = Box3::new(ZERO3, ONE3);
 
-    assert_eq!(a.intersects_box(&box_), true, "Check unit sphere");
-    assert_eq!(b.intersects_box(&box_), false, "Check shifted sphere");
+    assert!(a.intersects_box(&box_), "Check unit sphere");
+    assert!(!b.intersects_box(&box_), "Check shifted sphere");
 }
 
 #[test]
@@ -328,10 +339,10 @@ fn equals() {
     let b = Sphere::new(Vector3::new(1.0, 0.0, 0.0), -1.0);
     let c = Sphere::new(Vector3::new(1.0, 0.0, 0.0), 1.0);
 
-    assert_eq!(a.equals(&b), false, "a does not equal b");
-    assert_eq!(a.equals(&c), false, "a does not equal c");
-    assert_eq!(b.equals(&c), false, "b does not equal c");
+    assert!(!a.equals(&b), "a does not equal b");
+    assert!(!a.equals(&c), "a does not equal c");
+    assert!(!b.equals(&c), "b does not equal c");
 
     a.copy(&b);
-    assert_eq!(a.equals(&b), true, "a equals b after copy()");
+    assert!(a.equals(&b), "a equals b after copy()");
 }

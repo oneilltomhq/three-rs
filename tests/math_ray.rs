@@ -300,17 +300,26 @@ fn intersect_plane() {
 
     // parallel plane behind
     let mut b = Plane::default();
-    b.set_from_normal_and_coplanar_point(&Vector3::new(0.0, 0.0, 1.0), &Vector3::new(1.0, 1.0, -1.0));
+    b.set_from_normal_and_coplanar_point(
+        &Vector3::new(0.0, 0.0, 1.0),
+        &Vector3::new(1.0, 1.0, -1.0),
+    );
     assert!(a.intersect_plane(&b).is_none());
 
     // parallel plane coincident with origin
     let mut c = Plane::default();
-    c.set_from_normal_and_coplanar_point(&Vector3::new(0.0, 0.0, 1.0), &Vector3::new(1.0, 1.0, 0.0));
+    c.set_from_normal_and_coplanar_point(
+        &Vector3::new(0.0, 0.0, 1.0),
+        &Vector3::new(1.0, 1.0, 0.0),
+    );
     assert!(a.intersect_plane(&c).is_none());
 
     // parallel plane in front
     let mut d = Plane::default();
-    d.set_from_normal_and_coplanar_point(&Vector3::new(0.0, 0.0, 1.0), &Vector3::new(1.0, 1.0, 1.0));
+    d.set_from_normal_and_coplanar_point(
+        &Vector3::new(0.0, 0.0, 1.0),
+        &Vector3::new(1.0, 1.0, 1.0),
+    );
     let point = a.intersect_plane(&d).unwrap();
     assert!(point.equals(&a.origin));
 
@@ -515,11 +524,7 @@ fn intersect_triangle_watertight_at_shared_edges() {
         "Ray hitting the shared edge is not dropped"
     );
 
-    let hit = if hit1.is_some() {
-        hit1.unwrap()
-    } else {
-        hit2.unwrap()
-    };
+    let hit = if let Some(h) = hit1 { h } else { hit2.unwrap() };
     assert!(
         hit.distance_to(&seam) <= EPS,
         "Intersection lies on the shared edge"

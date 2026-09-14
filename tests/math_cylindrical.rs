@@ -78,7 +78,12 @@ fn set_from_vector3() {
     assert_eq!(a.y, 0.0, "Zero-length vector: check y");
 
     a.set_from_vector3(&c);
-    close(a.radius, expected.radius, EPS, "Normal vector: check radius");
+    close(
+        a.radius,
+        expected.radius,
+        EPS,
+        "Normal vector: check radius",
+    );
     close(a.theta, expected.theta, EPS, "Normal vector: check theta");
     close(a.y, expected.y, EPS, "Normal vector: check y");
 }

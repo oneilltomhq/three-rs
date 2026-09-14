@@ -43,10 +43,12 @@ pub struct PerspectiveCamera {
 
 impl PerspectiveCamera {
     pub fn new(fov: f64, aspect: f64, near: f64, far: f64) -> Self {
-        let mut object = Object3D::default();
-        object.object_type = "PerspectiveCamera";
         // `Camera.isCamera` — `Object3D.lookAt()` branches on it.
-        object.is_camera = true;
+        let object = Object3D {
+            object_type: "PerspectiveCamera",
+            is_camera: true,
+            ..Default::default()
+        };
 
         let mut camera = Self {
             node: object.into_node(),
@@ -103,7 +105,12 @@ impl PerspectiveCamera {
     }
 
     /// `PerspectiveCamera.getViewBounds()`.
-    pub fn get_view_bounds(&self, distance: f64, min_target: &mut Vector2, max_target: &mut Vector2) {
+    pub fn get_view_bounds(
+        &self,
+        distance: f64,
+        min_target: &mut Vector2,
+        max_target: &mut Vector2,
+    ) {
         let mut v3 = Vector3::new(-1.0, -1.0, 0.5);
         v3.apply_matrix4(&self.projection_matrix_inverse);
         min_target.set(v3.x, v3.y).multiply_scalar(-distance / v3.z);

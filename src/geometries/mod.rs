@@ -8,9 +8,9 @@ mod cylinder;
 mod lathe;
 mod plane;
 mod polyhedron;
+mod quad;
 mod ring;
 mod rounded_box;
-mod quad;
 mod sphere;
 mod teapot;
 mod torus;
@@ -27,9 +27,9 @@ pub use polyhedron::{
     dodecahedron_geometry, icosahedron_geometry, octahedron_geometry, polyhedron_geometry,
     tetrahedron_geometry,
 };
+pub use quad::quad_geometry;
 pub use ring::{ring_geometry, ring_geometry_full};
 pub use rounded_box::rounded_box_geometry;
-pub use quad::quad_geometry;
 pub use sphere::{sphere_geometry, sphere_geometry_full};
 pub use teapot::{teapot_geometry, teapot_geometry_full};
 pub use torus::{torus_geometry, torus_geometry_full};

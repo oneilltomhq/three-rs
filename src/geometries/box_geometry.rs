@@ -197,17 +197,89 @@ pub fn box_geometry(
     // build each side of the box geometry
 
     // px
-    plane!(Axis::Z, Axis::Y, Axis::X, -1.0, -1.0, depth, height, width, depth_segments, height_segments, 0);
+    plane!(
+        Axis::Z,
+        Axis::Y,
+        Axis::X,
+        -1.0,
+        -1.0,
+        depth,
+        height,
+        width,
+        depth_segments,
+        height_segments,
+        0
+    );
     // nx
-    plane!(Axis::Z, Axis::Y, Axis::X, 1.0, -1.0, depth, height, -width, depth_segments, height_segments, 1);
+    plane!(
+        Axis::Z,
+        Axis::Y,
+        Axis::X,
+        1.0,
+        -1.0,
+        depth,
+        height,
+        -width,
+        depth_segments,
+        height_segments,
+        1
+    );
     // py
-    plane!(Axis::X, Axis::Z, Axis::Y, 1.0, 1.0, width, depth, height, width_segments, depth_segments, 2);
+    plane!(
+        Axis::X,
+        Axis::Z,
+        Axis::Y,
+        1.0,
+        1.0,
+        width,
+        depth,
+        height,
+        width_segments,
+        depth_segments,
+        2
+    );
     // ny
-    plane!(Axis::X, Axis::Z, Axis::Y, 1.0, -1.0, width, depth, -height, width_segments, depth_segments, 3);
+    plane!(
+        Axis::X,
+        Axis::Z,
+        Axis::Y,
+        1.0,
+        -1.0,
+        width,
+        depth,
+        -height,
+        width_segments,
+        depth_segments,
+        3
+    );
     // pz
-    plane!(Axis::X, Axis::Y, Axis::Z, 1.0, -1.0, width, height, depth, width_segments, height_segments, 4);
+    plane!(
+        Axis::X,
+        Axis::Y,
+        Axis::Z,
+        1.0,
+        -1.0,
+        width,
+        height,
+        depth,
+        width_segments,
+        height_segments,
+        4
+    );
     // nz
-    plane!(Axis::X, Axis::Y, Axis::Z, -1.0, -1.0, width, height, -depth, width_segments, height_segments, 5);
+    plane!(
+        Axis::X,
+        Axis::Y,
+        Axis::Z,
+        -1.0,
+        -1.0,
+        width,
+        height,
+        -depth,
+        width_segments,
+        height_segments,
+        5
+    );
 
     // build geometry
 

@@ -313,6 +313,11 @@ impl Text {
     /// the font arrives re-lays out. It also does not touch
     /// `layouts_performed`, because no layout happened.
     pub fn sync(&mut self) -> &TextRenderInfo {
+        // The `if let` form clippy suggests here ties the returned borrow's
+        // lifetime to a region that (per NLL) also covers the later
+        // `self.text_render_info = Some(...)` assignment below, which the
+        // borrow checker then rejects; the is_some()+unwrap() form does not.
+        #[allow(clippy::unnecessary_unwrap)]
         if !self.needs_sync && self.text_render_info.is_some() {
             return self.text_render_info.as_ref().unwrap();
         }

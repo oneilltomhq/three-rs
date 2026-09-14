@@ -11,9 +11,12 @@ pub struct Bone;
 
 impl Bone {
     /// `new Bone()`, as a scene-graph [`Node`].
+    #[allow(clippy::new_ret_no_self)] // `new` mirrors three.js's constructor and returns a scene-graph `Node`, not `Self`; public API, not changing.
     pub fn new() -> Node {
-        let mut object = Object3D::default();
-        object.object_type = "Bone";
+        let object = Object3D {
+            object_type: "Bone",
+            ..Default::default()
+        };
         object.into_node()
     }
 

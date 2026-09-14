@@ -15,7 +15,7 @@ use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
 use super::node::{
-    Builtin, BufferNode, BufferSource, FnDef, InstanceBuffer, Node, NodeRef, SampleMode,
+    BufferNode, BufferSource, Builtin, FnDef, InstanceBuffer, Node, NodeRef, SampleMode,
     TextureSource, Type, UniformGroup, UniformNode, UniformSource, UpdateType, VaryingDef,
 };
 use super::wgsl::{self, TextureKind};
@@ -375,7 +375,9 @@ impl NodeBuilder {
             Node::Texture { uv, mode, .. } => {
                 let mut v = vec![uv.clone()];
                 match mode {
-                    SampleMode::Level(l) | SampleMode::LoadLayer(l) | SampleMode::Compare(l) => v.push(l.clone()),
+                    SampleMode::Level(l) | SampleMode::LoadLayer(l) | SampleMode::Compare(l) => {
+                        v.push(l.clone())
+                    }
                     _ => {}
                 }
                 v
@@ -572,7 +574,7 @@ impl NodeBuilder {
         } = &mut g.bindings[slot]
         {
             let align = wgsl::align_of(u.ty);
-            let offset = (*size + align - 1) / align * align;
+            let offset = size.div_ceil(align) * align;
             members.push(UniformMember {
                 name: name.clone(),
                 source: u.source.clone(),
@@ -692,8 +694,7 @@ impl NodeBuilder {
                     ty: node.ty(),
                     flat: matches!(node.ty(), Type::U32 | Type::I32),
                 })));
-                self.attribute_varyings
-                    .insert(node.key(), varying.clone());
+                self.attribute_varyings.insert(node.key(), varying.clone());
                 varying
             }
         };
@@ -944,9 +945,7 @@ impl NodeBuilder {
                         // `select( f, t, cond )`'s condition is a bool, and the
                         // MaterialX helpers pass their own already-typed
                         // operands; nothing here is widened.
-                        "select" | "step" | "fract" | "sqrt" | "abs" => {
-                            self.generate(a)
-                        }
+                        "select" | "step" | "fract" | "sqrt" | "abs" => self.generate(a),
                         // `smoothstep( near, far, x )` keeps each operand's own
                         // type: the dumps show three f32 arguments, never a
                         // widened vector.
@@ -995,10 +994,7 @@ impl NodeBuilder {
             }
 
             Node::Texture {
-                texture,
-                uv,
-                mode,
-                ..
+                texture, uv, mode, ..
             } => {
                 let (texture, uv, mode) = (texture.clone(), uv.clone(), mode.clone());
                 let (name, _kind) = self.texture_slots(&texture);
@@ -1017,9 +1013,7 @@ impl NodeBuilder {
                     }
                     SampleMode::Compare(depth) => {
                         let sdepth = self.generate(&depth);
-                        format!(
-                            "textureSampleCompare( {name}, {name}_sampler, {suv}, {sdepth} )"
-                        )
+                        format!("textureSampleCompare( {name}, {name}_sampler, {suv}, {sdepth} )")
                     }
                     SampleMode::Load => {
                         self.add_code("tsl_coord_clampS_clampT_2d", wgsl::CLAMP_WRAP_SNIPPET);
@@ -1324,7 +1318,7 @@ impl NodeBuilder {
         for bindings in groups.iter_mut() {
             for desc in bindings.iter_mut() {
                 if let BindingDesc::Uniforms { size, .. } = desc {
-                    *size = (*size + 15) / 16 * 16;
+                    *size = size.div_ceil(16) * 16;
                 }
             }
         }
@@ -1520,8 +1514,16 @@ impl NodeBuilder {
         if stage == Stage::Vertex {
             out.push_str("// varyings\n\nstruct VaryingsStruct {\n");
             for (name, ty, flat) in &self.varyings {
-                let interp = if *flat { "@interpolate(flat, either) " } else { "" };
-                let loc = self.varyings.iter().position(|(n, _, _)| n == name).unwrap();
+                let interp = if *flat {
+                    "@interpolate(flat, either) "
+                } else {
+                    ""
+                };
+                let loc = self
+                    .varyings
+                    .iter()
+                    .position(|(n, _, _)| n == name)
+                    .unwrap();
                 out.push_str(&format!(
                     "\t@location( {loc} ) {interp}{name} : {},\n",
                     wgsl::type_name(*ty)
@@ -1570,7 +1572,11 @@ impl NodeBuilder {
             }
         } else {
             for (i, (name, ty, flat)) in self.varyings.iter().enumerate() {
-                let interp = if *flat { "@interpolate(flat, either) " } else { "" };
+                let interp = if *flat {
+                    "@interpolate(flat, either) "
+                } else {
+                    ""
+                };
                 params.push(format!(
                     "@location( {i} ) {interp}{name} : {}",
                     wgsl::type_name(*ty)
@@ -1593,7 +1599,9 @@ impl NodeBuilder {
         out.push_str("\n\t// result\n\n");
         match stage {
             Stage::Vertex => {
-                out.push_str(&format!("\tvaryings.builtinClipSpace = {result};\n\n\treturn varyings;\n\n}}\n"));
+                out.push_str(&format!(
+                    "\tvaryings.builtinClipSpace = {result};\n\n\treturn varyings;\n\n}}\n"
+                ));
             }
             Stage::Fragment => {
                 out.push_str(&format!(

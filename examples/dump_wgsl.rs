@@ -5,9 +5,9 @@
 #[path = "webgpu_morphtargets.rs"]
 mod morphtargets;
 
+use three_rs::lights::LightKind;
 use three_rs::materials::phong::{LightDesc, ShadowMap};
 use three_rs::materials::{setup, MeshBasicNodeMaterial, SetupContext, Side};
-use three_rs::lights::LightKind;
 use three_rs::math::Color;
 use three_rs::nodes::tsl::*;
 use three_rs::nodes::NodeBuilder;
@@ -160,7 +160,10 @@ fn main() {
     // the output pass.
     let framebuffer = Texture::render_target(800, 500, wgpu::TextureFormat::Rgba16Float);
     let mut out = MeshBasicNodeMaterial::new();
-    out.fragment_node = Some(three_rs::materials::output_fragment_node(&framebuffer, three_rs::ToneMapping::None));
+    out.fragment_node = Some(three_rs::materials::output_fragment_node(
+        &framebuffer,
+        three_rs::ToneMapping::None,
+    ));
     show("output_color_transform", &out, SetupContext::default());
 
     // rung 8: the same pass with Reinhard tone mapping and exposure.
@@ -202,7 +205,10 @@ fn main() {
     compose = mask1.a().mix(compose, texture(&texture1));
     compose = mask2.a().mix(compose, texture(&texture2));
     let mut masking = MeshBasicNodeMaterial::new();
-    masking.fragment_node = Some(three_rs::materials::render_output(compose, three_rs::ToneMapping::None));
+    masking.fragment_node = Some(three_rs::materials::render_output(
+        compose,
+        three_rs::ToneMapping::None,
+    ));
     masking.vertex_node = Some(three_rs::materials::quad_vertex_node());
     show("masking_quad", &masking, SetupContext::default());
 
@@ -210,7 +216,13 @@ fn main() {
     // `target/dumps/webgpu_lights_phong/`.
     let fog = fog(Color::from_hex(0xFF00FF), range_fog_factor(12.0, 30.0));
     let four = SetupContext {
-        lights: (0..4).map(|index| LightDesc { index, kind: LightKind::Point, shadow_map: None }).collect(),
+        lights: (0..4)
+            .map(|index| LightDesc {
+                index,
+                kind: LightKind::Point,
+                shadow_map: None,
+            })
+            .collect(),
         ..SetupContext::default()
     };
 
@@ -243,8 +255,16 @@ fn main() {
     // `handoff/scouts/rung8/MeshStandardMaterial_*`.
     let bulb_lights = |shadow: Option<ShadowMap>| SetupContext {
         lights: vec![
-            LightDesc { index: 0, kind: LightKind::Point, shadow_map: shadow },
-            LightDesc { index: 1, kind: LightKind::Hemisphere, shadow_map: None },
+            LightDesc {
+                index: 0,
+                kind: LightKind::Point,
+                shadow_map: shadow,
+            },
+            LightDesc {
+                index: 1,
+                kind: LightKind::Hemisphere,
+                shadow_map: None,
+            },
         ],
         ..SetupContext::default()
     };
@@ -269,7 +289,9 @@ fn main() {
     show(
         "standard_floor_shadow",
         &floor,
-        bulb_lights(Some(ShadowMap::Cube(three_rs::textures::CubeDepthTexture::new(512)))),
+        bulb_lights(Some(ShadowMap::Cube(
+            three_rs::textures::CubeDepthTexture::new(512),
+        ))),
     );
     // `ShadowBaseNode._getShadowMaterial()` for a casting material with a map.
     // Target: `ShadowMaterial_24`.
@@ -338,8 +360,16 @@ fn main() {
         &morph,
         SetupContext {
             lights: vec![
-                LightDesc { index: 0, kind: LightKind::Ambient, shadow_map: None },
-                LightDesc { index: 1, kind: LightKind::Point, shadow_map: None },
+                LightDesc {
+                    index: 0,
+                    kind: LightKind::Ambient,
+                    shadow_map: None,
+                },
+                LightDesc {
+                    index: 1,
+                    kind: LightKind::Point,
+                    shadow_map: None,
+                },
             ],
             morph: three_rs::nodes::morph::get_entry(&geometry),
             ..SetupContext::default()
@@ -361,7 +391,8 @@ fn main() {
     // rung 7: `webgpu_shadowmap`, against
     // `handoff/scouts/rung7/m0*-r186.wgsl`. Light order is the scene order:
     // ambient, spot, directional.
-    let shadow_fog = three_rs::nodes::tsl::fog(Color::from_hex(0x222244), range_fog_factor(50.0, 100.0));
+    let shadow_fog =
+        three_rs::nodes::tsl::fog(Color::from_hex(0x222244), range_fog_factor(50.0, 100.0));
 
     let mut background = MeshBasicNodeMaterial::new();
     background.color_node = Some(three_rs::materials::background_node_color_node(
@@ -378,7 +409,11 @@ fn main() {
     let dir_map = DepthTexture::new();
     let lit = |shadows: bool| SetupContext {
         lights: vec![
-            LightDesc { index: 0, kind: LightKind::Ambient, shadow_map: None },
+            LightDesc {
+                index: 0,
+                kind: LightKind::Ambient,
+                shadow_map: None,
+            },
             LightDesc {
                 index: 1,
                 kind: LightKind::Spot,
@@ -398,7 +433,12 @@ fn main() {
     let mut pillars = MeshBasicNodeMaterial::phong(Color::from_hex(0x999999));
     pillars.shininess = 0.0;
     pillars.specular = Color::from_hex(0x222222);
-    show_fog("shadowmap_phong_pillars", &pillars, lit(false), Some(&shadow_fog));
+    show_fog(
+        "shadowmap_phong_pillars",
+        &pillars,
+        lit(false),
+        Some(&shadow_fog),
+    );
 
     let mut knot = pillars.clone();
     knot.transparent = true;
@@ -440,7 +480,12 @@ fn main() {
             .mul(0.2)
             .add(0.5),
     ));
-    show_fog("shadowmap_phong_ground", &ground, lit(true), Some(&shadow_fog));
+    show_fog(
+        "shadowmap_phong_ground",
+        &ground,
+        lit(true),
+        Some(&shadow_fog),
+    );
 
     // The three `ShadowMaterial` programs, one per source material.
     show(
@@ -465,5 +510,9 @@ fn main() {
         &framebuffer,
         three_rs::ToneMapping::AcesFilmic,
     ));
-    show("shadowmap_output_color_transform", &aces, SetupContext::default());
+    show(
+        "shadowmap_output_color_transform",
+        &aces,
+        SetupContext::default(),
+    );
 }

@@ -78,11 +78,8 @@ pub fn init() -> App {
     bulb_light.borrow_mut().cast_shadow = true;
     scene.add(&bulb_light);
 
-    let hemi_light = HemisphereLight::new(
-        Color::from_hex(0xddeeff),
-        Color::from_hex(0x0f0e0d),
-        0.02,
-    );
+    let hemi_light =
+        HemisphereLight::new(Color::from_hex(0xddeeff), Color::from_hex(0x0f0e0d), 0.02);
     scene.add(&hemi_light);
 
     // floorMat

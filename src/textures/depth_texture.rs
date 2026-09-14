@@ -4,9 +4,9 @@
 //! `DepthTexture` referenced both by the render target and by the quad
 //! material's colour node — maps across directly.
 
+use super::TextureId;
 use std::cell::RefCell;
 use std::rc::Rc;
-use super::TextureId;
 
 /// `three.js/src/constants.js` texture types, as far as the port needs them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -4,9 +4,9 @@
 //! texture, read back.
 
 mod mipmap;
+mod pass;
 /// Additive seam for the interactive viewer; see `present.rs`.
 mod present;
-mod pass;
 mod programs;
 mod render_list;
 mod render_pipeline;
@@ -30,10 +30,10 @@ use crate::lights::{LightKind, LightObject, CUBE_DIRECTIONS, CUBE_UPS};
 use crate::materials::phong::{LightDesc, ShadowMap};
 use crate::materials::{self, MeshBasicNodeMaterial, SetupContext, Side, ToneMapping};
 use crate::math::{Color, Matrix4, Vector2};
+use crate::nodes::builder::VertexBufferSource;
 use crate::nodes::node::{BufferSource, TextureSource};
 use crate::nodes::tsl::FogNode;
 use crate::nodes::wgsl::TextureKind;
-use crate::nodes::builder::VertexBufferSource;
 use crate::nodes::{BindingDesc, NodeBuilder, NodeProgram};
 use crate::objects::{Background, InstancedBufferAttribute, QuadMesh, Scene};
 use crate::testing::DeterministicRandom;
@@ -573,7 +573,12 @@ impl Renderer {
             )),
             Some(Background::Node(color)) => Some((
                 materials::background_node_color_node(color),
-                hash_of(&("color", color.r.to_bits(), color.g.to_bits(), color.b.to_bits())),
+                hash_of(&(
+                    "color",
+                    color.r.to_bits(),
+                    color.g.to_bits(),
+                    color.b.to_bits(),
+                )),
             )),
             _ => None,
         };
@@ -593,9 +598,9 @@ impl Renderer {
                 model_world: Matrix4::identity(),
                 instance_matrix: None,
                 instance_count: 1,
-            morph_influences: Vec::new(),
-            morph_base: 1.0,
-            primitive: Primitive::TRIANGLES,
+                morph_influences: Vec::new(),
+                morph_base: 1.0,
+                primitive: Primitive::TRIANGLES,
             });
         }
 
@@ -712,7 +717,6 @@ impl Renderer {
             _ => self.clear_color,
         };
 
-
         // `LightsNode.setupLights()`: each light resolves to its colour scaled
         // by intensity plus its position in view space. The list is
         // `RenderList.lightsArray` — scene-traversal order, which is the order
@@ -721,8 +725,7 @@ impl Renderer {
         let lights: Vec<LightState> = render_list
             .lights
             .iter()
-            .enumerate()
-            .map(|(_index, node)| {
+            .map(|node| {
                 let object = node.borrow();
                 let light = object
                     .light()
@@ -791,7 +794,9 @@ impl Renderer {
             let is_point = {
                 let object = node.borrow();
                 object.cast_shadow
-                    && object.light().is_some_and(|l| l.kind == LightKind::Point && l.shadow.is_some())
+                    && object
+                        .light()
+                        .is_some_and(|l| l.kind == LightKind::Point && l.shadow.is_some())
             };
             if is_point {
                 self.render_point_shadow(index, node, scene, camera);
@@ -1125,7 +1130,8 @@ impl Renderer {
             self.draw(&items, uniforms, &pass_target, Some([1.0, 1.0, 1.0, 1.0]));
         }
 
-        self.shadow_maps.insert(index, ShadowMap::Cube(depth_texture));
+        self.shadow_maps
+            .insert(index, ShadowMap::Cube(depth_texture));
     }
 
     /// `Renderer._renderScene()`'s render-list half: `renderList.begin()`,
@@ -1395,10 +1401,7 @@ impl Renderer {
         let key = MaterialKey::of(&self.output_material)
             .variant(hash_of(&(texture.id(), self.tone_mapping)));
         let mut material = self.output_material.clone();
-        material.fragment_node = Some(materials::output_fragment_node(
-            &texture,
-            self.tone_mapping,
-        ));
+        material.fragment_node = Some(materials::output_fragment_node(&texture, self.tone_mapping));
 
         let items = [Renderable {
             fog: None,
@@ -1632,7 +1635,13 @@ impl Renderer {
                 wgpu::BufferUsages::UNIFORM,
             );
         }
-        self.buffer_for(id, source, count, instance_matrix, wgpu::BufferUsages::UNIFORM)
+        self.buffer_for(
+            id,
+            source,
+            count,
+            instance_matrix,
+            wgpu::BufferUsages::UNIFORM,
+        )
     }
 
     /// The vertex buffer behind an `InstancedBufferAttribute`. Same contents as
@@ -2252,10 +2261,7 @@ impl Renderer {
             (buffer, format, index.count() as u32)
         });
 
-        let vertex_count = geometry
-            .position()
-            .map(|p| p.count() as u32)
-            .unwrap_or(0);
+        let vertex_count = geometry.position().map(|p| p.count() as u32).unwrap_or(0);
 
         self.geometries.insert(
             id,
@@ -2325,7 +2331,7 @@ impl Renderer {
     ) -> wgpu::Buffer {
         // Pad to 4 bytes, as `write_buffer` requires.
         let mut padded = contents.to_vec();
-        while padded.len() % 4 != 0 {
+        while !padded.len().is_multiple_of(4) {
             padded.push(0);
         }
 
@@ -2418,7 +2424,9 @@ impl Renderer {
 
         let inner = render_target.inner().borrow();
         let color_format = inner.texture_type.color_gpu_format();
-        let single = inner.texture.with_gpu(|gpu| gpu.create_view(&Default::default()));
+        let single = inner
+            .texture
+            .with_gpu(|gpu| gpu.create_view(&Default::default()));
 
         let (color, resolve) = match &inner.msaa {
             Some(msaa) => (msaa.create_view(&Default::default()), Some(single)),
@@ -2582,24 +2590,26 @@ impl Renderer {
         let format = inner.texture_type.color_gpu_format();
 
         if !inner.texture.has_gpu() {
-            inner.texture.set_gpu(self.device.create_texture(&wgpu::TextureDescriptor {
-                label: Some("three-rs render target"),
-                size: wgpu::Extent3d {
-                    width,
-                    height,
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                // The resolved, sampleable texture is always single-sample;
-                // `samples > 1` adds the MSAA texture below.
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                    | wgpu::TextureUsages::TEXTURE_BINDING
-                    | wgpu::TextureUsages::COPY_SRC,
-                view_formats: &[],
-            }));
+            inner
+                .texture
+                .set_gpu(self.device.create_texture(&wgpu::TextureDescriptor {
+                    label: Some("three-rs render target"),
+                    size: wgpu::Extent3d {
+                        width,
+                        height,
+                        depth_or_array_layers: 1,
+                    },
+                    mip_level_count: 1,
+                    // The resolved, sampleable texture is always single-sample;
+                    // `samples > 1` adds the MSAA texture below.
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format,
+                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                        | wgpu::TextureUsages::TEXTURE_BINDING
+                        | wgpu::TextureUsages::COPY_SRC,
+                    view_formats: &[],
+                }));
         }
 
         if sample_count > 1 && inner.msaa.is_none() {

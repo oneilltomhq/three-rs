@@ -157,10 +157,7 @@ pub fn morph_reference(entry: &MorphEntry) -> Vec<NodeRef> {
     let influence = to_var(None, float(0.0));
 
     let body = vec![
-        influence.assign(to_var(
-            None,
-            morph_influences(entry.count, i.clone()).x(),
-        )),
+        influence.assign(to_var(None, morph_influences(entry.count, i.clone()).x())),
         if_statement(
             influence.not_equal(float(0.0)),
             vec![position_local().add_assign(get_morph(entry, influence.clone(), i.clone()))],

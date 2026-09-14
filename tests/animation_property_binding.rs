@@ -4,7 +4,7 @@
 //! `parseTrackName`. See the `// SKIPPED:` notes below for the rest.
 
 use three_rs::animation::property_binding as pb;
-use three_rs::animation::property_binding::{ParsedTrackName, ParseTrackNameError};
+use three_rs::animation::property_binding::{ParseTrackNameError, ParsedTrackName};
 
 // SKIPPED: `Instancing` — needs a real scene graph (`BoxGeometry` /
 // `MeshBasicMaterial` / `Mesh`) and the `PropertyBinding` constructor, which is
@@ -69,7 +69,10 @@ fn parse_track_name() {
             "nodeName.property",
             parsed(Some("nodeName"), None, None, "property", None),
         ),
-        ("a.property", parsed(Some("a"), None, None, "property", None)),
+        (
+            "a.property",
+            parsed(Some("a"), None, None, "property", None),
+        ),
         (
             "no.de.Name.property",
             parsed(Some("no.de.Name"), None, None, "property", None),
@@ -94,13 +97,7 @@ fn parse_track_name() {
         ),
         (
             "no.de.Name.material.property",
-            parsed(
-                Some("no.de.Name"),
-                Some("material"),
-                None,
-                "property",
-                None,
-            ),
+            parsed(Some("no.de.Name"), Some("material"), None, "property", None),
         ),
         (
             "no.de.Name.material[materialIndex].property",
@@ -153,13 +150,7 @@ fn parse_track_name() {
         ),
         (
             "scene:helium_balloon_model:helium_balloon_model.position",
-            parsed(
-                Some("helium_balloon_model"),
-                None,
-                None,
-                "position",
-                None,
-            ),
+            parsed(Some("helium_balloon_model"), None, None, "position", None),
         ),
         (
             "急須.材料[零]",

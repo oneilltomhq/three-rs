@@ -8,9 +8,9 @@
 use std::cell::{Ref, RefCell};
 use std::rc::Rc;
 
+use super::TextureId;
 use super::{ColorSpace, TextureFilter};
 use crate::math::{Matrix3, Vector2};
-use super::TextureId;
 
 /// `three.js/src/constants.js` wrapping modes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -305,7 +305,6 @@ impl Texture {
         (max.log2().floor() as u32) + 1
     }
 }
-
 
 /// The derived `Debug` printed every byte of `data` — megabytes for an SDF
 /// atlas, and the program cache key used to be a `format!( "{:?}" )` of a

@@ -37,7 +37,10 @@ fn extending() {
 #[test]
 fn is_scene() {
     let object = Scene::new();
-    assert!(object.node.borrow().is_scene, "Scene.isScene should be true");
+    assert!(
+        object.node.borrow().is_scene,
+        "Scene.isScene should be true"
+    );
 }
 
 #[test]

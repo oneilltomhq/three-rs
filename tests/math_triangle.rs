@@ -55,10 +55,7 @@ fn set_from_points_and_indices() {
 #[test]
 fn set_from_attribute_and_indices() {
     let mut a = Triangle::default();
-    let attribute = BufferAttribute::new(
-        vec![1.0, 1.0, 1.0, -1.0, -1.0, -1.0, 2.0, 2.0, 2.0],
-        3,
-    );
+    let attribute = BufferAttribute::new(vec![1.0, 1.0, 1.0, -1.0, -1.0, -1.0, 2.0, 2.0, 2.0], 3);
 
     a.set_from_attribute_and_indices(&attribute, 1, 0, 2);
     assert!(a.a.equals(&NEG_ONE3));

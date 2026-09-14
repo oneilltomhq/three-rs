@@ -293,9 +293,7 @@ fn update_matrix() {
 
     assert_eq!(
         a.matrix.elements,
-        [
-            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0
-        ],
+        [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0],
         "Updating position, quaternion or scale has no effect until update_matrix()"
     );
 
@@ -304,8 +302,8 @@ fn update_matrix() {
     assert_eq!(
         a.matrix.elements,
         [
-            -1521.0, 1548.0, -234.0, 0.0, -520.0, -1470.0, 1640.0, 0.0, 1826.0, 44.0, -1331.0,
-            0.0, 2.0, 3.0, 4.0, 1.0
+            -1521.0, 1548.0, -234.0, 0.0, -520.0, -1470.0, 1640.0, 0.0, 1826.0, 44.0, -1331.0, 0.0,
+            2.0, 3.0, 4.0, 1.0
         ],
         "matrix is calculated from position, quaternion and scale"
     );
@@ -343,7 +341,12 @@ fn same(a: &Node, b: &Node, what: &str) {
 #[track_caller]
 fn matrix_equals4(a: &Matrix4, b: &Matrix4, what: &str) {
     for i in 0..16 {
-        close(a.elements[i], b.elements[i], 0.0001, &format!("{what}[{i}]"));
+        close(
+            a.elements[i],
+            b.elements[i],
+            0.0001,
+            &format!("{what}[{i}]"),
+        );
     }
 }
 
@@ -454,7 +457,9 @@ fn attach() {
     // Attach to a parent
 
     object.borrow_mut().position.set(1.0, 2.0, 3.0);
-    object.borrow_mut().set_rotation(PI / 2.0, PI / 3.0, PI / 4.0);
+    object
+        .borrow_mut()
+        .set_rotation(PI / 2.0, PI / 3.0, PI / 4.0);
     object.borrow_mut().scale.set(2.0, 3.0, 4.0);
     new_parent.borrow_mut().position.set(4.0, 5.0, 6.0);
     new_parent
@@ -488,7 +493,9 @@ fn attach() {
     // Attach to a new parent from an old parent
 
     object.borrow_mut().position.set(1.0, 2.0, 3.0);
-    object.borrow_mut().set_rotation(PI / 2.0, PI / 3.0, PI / 4.0);
+    object
+        .borrow_mut()
+        .set_rotation(PI / 2.0, PI / 3.0, PI / 4.0);
     object.borrow_mut().scale.set(2.0, 3.0, 4.0);
     old_parent.borrow_mut().position.set(4.0, 5.0, 6.0);
     old_parent

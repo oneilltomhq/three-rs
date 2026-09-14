@@ -16,10 +16,16 @@ fn instancing() {
 // PUBLIC
 #[test]
 fn is_spherical_harmonics3() {
-    assert!(
-        SphericalHarmonics3::IS_SPHERICAL_HARMONICS3,
-        "SphericalHarmonics3.isSphericalHarmonics3 should be true"
-    );
+    // Mirrors three.js's `assert.ok( a.isSphericalHarmonics3 )`: this pins the
+    // public `IS_SPHERICAL_HARMONICS3` constant's value, which happens to be
+    // `true` today but is not statically guaranteed to stay that way.
+    #[allow(clippy::assertions_on_constants)]
+    {
+        assert!(
+            SphericalHarmonics3::IS_SPHERICAL_HARMONICS3,
+            "SphericalHarmonics3.isSphericalHarmonics3 should be true"
+        );
+    }
 }
 
 // PUBLIC - STATIC

@@ -72,7 +72,11 @@ fn dump(name: &str) -> HashMap<String, String> {
     functions(&src)
 }
 
-fn compare(generated: &HashMap<String, String>, expected: &HashMap<String, String>, names: &[&str]) {
+fn compare(
+    generated: &HashMap<String, String>,
+    expected: &HashMap<String, String>,
+    names: &[&str],
+) {
     for name in names {
         let got = generated
             .get(*name)

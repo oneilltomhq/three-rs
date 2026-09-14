@@ -4,11 +4,11 @@
 
 use super::phong::{self, LightDesc};
 use super::physical::{self, Physical};
-use crate::lights::LightKind;
 use super::{Blending, MaterialKind, MeshBasicNodeMaterial, Side, ToneMapping};
+use crate::lights::LightKind;
 use crate::nodes::node::Type;
-use crate::nodes::tsl::*;
 use crate::nodes::tsl::FogNode;
+use crate::nodes::tsl::*;
 use crate::nodes::{MaterialFlow, NodeRef};
 
 /// The per-render-object facts three.js reads off `builder.object` and
@@ -209,15 +209,15 @@ fn setup_inner(
 
         let outgoing = if let Some(env_map) = &material.env_map {
             // `BasicLightingModel` with an indirect environment contribution.
-            fragment.push(indirect_diffuse().assign(
-                vec4_join(vec![indirect_diffuse(), float(1.0)])
-                    .add(vec4(1.0, 1.0, 1.0, 0.0))
-                    .xyz(),
-            ));
-            fragment
-                .push(indirect_diffuse().assign(indirect_diffuse().mul(ambient_occlusion())));
-            fragment
-                .push(indirect_diffuse().assign(indirect_diffuse().mul(diffuse_color().xyz())));
+            fragment.push(
+                indirect_diffuse().assign(
+                    vec4_join(vec![indirect_diffuse(), float(1.0)])
+                        .add(vec4(1.0, 1.0, 1.0, 0.0))
+                        .xyz(),
+                ),
+            );
+            fragment.push(indirect_diffuse().assign(indirect_diffuse().mul(ambient_occlusion())));
+            fragment.push(indirect_diffuse().assign(indirect_diffuse().mul(diffuse_color().xyz())));
             fragment.push(total_diffuse().assign(direct_diffuse().add(indirect_diffuse())));
             fragment.push(total_specular().assign(direct_specular().add(indirect_specular())));
             fragment.push(outgoing_light().assign(total_diffuse().add(total_specular())));
@@ -348,7 +348,10 @@ fn setup_position_view_sprite(material: &MeshBasicNodeMaterial) -> NodeRef {
 
     join(
         Type::Vec4,
-        vec![mv_position.xy().add(rotate(aligned, rotation)), mv_position.zw()],
+        vec![
+            mv_position.xy().add(rotate(aligned, rotation)),
+            mv_position.zw(),
+        ],
     )
 }
 
@@ -378,7 +381,8 @@ pub fn background_vertex_node() -> NodeRef {
         .mul(float(3.0));
     let modified = is_ortho.select(position_local().mul(ortho_scale), position_local());
     let view_position = model_view_matrix().mul(vec4_join(vec![modified, float(0.0)]));
-    let view_proj = camera_projection_matrix().mul(vec4_join(vec![view_position.xyz(), float(1.0)]));
+    let view_proj =
+        camera_projection_matrix().mul(vec4_join(vec![view_position.xyz(), float(1.0)]));
     view_proj.set_z(view_proj.w())
 }
 
@@ -487,9 +491,7 @@ fn setup_phong(
         None => material_specular(),
     };
     fragment.push(specular_color().assign(specular));
-    fragment.push(
-        emissive_color().assign(material_emissive().mul(material_emissive_intensity())),
-    );
+    fragment.push(emissive_color().assign(material_emissive().mul(material_emissive_intensity())));
 
     let outgoing = if material.lights {
         // `LightsNode`: the scene's lights, or the selective subset the
@@ -526,13 +528,16 @@ fn setup_phong(
         if ambient.is_empty() {
             fragment.push(irradiance().assign(vec3(0.0, 0.0, 0.0)));
         }
-        fragment.push(indirect_diffuse().assign(
-            vec4_join(vec![indirect_diffuse(), float(1.0)])
-                .add(vec4_join(vec![irradiance(), float(1.0)]).mul(
-                    diffuse_color().mul(phong::RECIPROCAL_PI),
-                ))
-                .xyz(),
-        ));
+        fragment.push(
+            indirect_diffuse().assign(
+                vec4_join(vec![indirect_diffuse(), float(1.0)])
+                    .add(
+                        vec4_join(vec![irradiance(), float(1.0)])
+                            .mul(diffuse_color().mul(phong::RECIPROCAL_PI)),
+                    )
+                    .xyz(),
+            ),
+        );
         fragment.push(indirect_diffuse().assign(indirect_diffuse().mul(ambient_occlusion())));
         fragment.push(total_diffuse().assign(direct_diffuse().add(indirect_diffuse())));
         fragment.push(total_specular().assign(direct_specular().add(indirect_specular())));
@@ -617,9 +622,8 @@ fn setup_standard(
         metalness(),
     )));
     fragment.push(specular_f90().assign(float(1.0)));
-    fragment.push(
-        diffuse_contribution().assign(diffuse_color().rgb().mul(metalness_node.one_minus())),
-    );
+    fragment
+        .push(diffuse_contribution().assign(diffuse_color().rgb().mul(metalness_node.one_minus())));
 
     fragment.push(emissive_color().assign(material_emissive().mul(material_emissive_intensity())));
 

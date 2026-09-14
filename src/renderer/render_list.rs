@@ -349,7 +349,13 @@ mod tests {
     fn project(scene: &Scene, camera: &PerspectiveCamera) -> RenderList {
         scene.update_matrix_world();
         let mut list = RenderList::new();
-        project_object(&scene.node, &ProjectCamera::new(camera), 0.0, &mut list, true);
+        project_object(
+            &scene.node,
+            &ProjectCamera::new(camera),
+            0.0,
+            &mut list,
+            true,
+        );
         list.sort();
         list
     }
@@ -424,7 +430,11 @@ mod tests {
         // `updateMatrix()` (and the animation setters) do.
         group.borrow_mut().update_matrix();
         scene.update_matrix_world();
-        assert_eq!(world_x(&mesh), 12.0, "matrixWorldNeedsUpdate forces the walk");
+        assert_eq!(
+            world_x(&mesh),
+            12.0,
+            "matrixWorldNeedsUpdate forces the walk"
+        );
 
         // `matrixWorldAutoUpdate = false` freezes this object's world matrix and,
         // because its `force` return is unaffected, still lets children recompose
@@ -432,7 +442,11 @@ mod tests {
         mesh.borrow_mut().matrix_world_auto_update = false;
         mesh.borrow_mut().position.x = 5.0;
         scene.update_matrix_world();
-        assert_eq!(world_x(&mesh), 12.0, "matrixWorldAutoUpdate = false freezes it");
+        assert_eq!(
+            world_x(&mesh),
+            12.0,
+            "matrixWorldAutoUpdate = false freezes it"
+        );
     }
 
     #[test]

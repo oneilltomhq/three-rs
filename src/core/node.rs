@@ -90,7 +90,10 @@ fn update_own_matrix_world(node: &Node, force: bool) -> bool {
 
     let (needs_update, world_auto_update) = {
         let object = node.borrow();
-        (object.matrix_world_needs_update, object.matrix_world_auto_update)
+        (
+            object.matrix_world_needs_update,
+            object.matrix_world_auto_update,
+        )
     };
 
     if needs_update || force {

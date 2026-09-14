@@ -40,7 +40,9 @@ impl Ray {
     /// `Ray.at()`.
     pub fn at(&self, t: f64) -> Vector3 {
         let mut target = Vector3::default();
-        target.copy(&self.origin).add_scaled_vector(&self.direction, t);
+        target
+            .copy(&self.origin)
+            .add_scaled_vector(&self.direction, t);
         target
     }
 
@@ -152,9 +154,8 @@ impl Ray {
                         let inv_det = 1.0 / det;
                         s0 *= inv_det;
                         s1 *= inv_det;
-                        sqr_dist = s0 * (s0 + a01 * s1 + 2.0 * b0)
-                            + s1 * (a01 * s0 + s1 + 2.0 * b1)
-                            + c;
+                        sqr_dist =
+                            s0 * (s0 + a01 * s1 + 2.0 * b0) + s1 * (a01 * s0 + s1 + 2.0 * b1) + c;
                     } else {
                         // region 1
 
@@ -326,10 +327,6 @@ impl Ray {
     pub fn intersect_box(&self, box3: &Box3) -> Option<Vector3> {
         let mut tmin;
         let mut tmax;
-        let tymin;
-        let tymax;
-        let tzmin;
-        let tzmax;
 
         let invdirx = 1.0 / self.direction.x;
         let invdiry = 1.0 / self.direction.y;
@@ -345,13 +342,17 @@ impl Ray {
             tmax = (box3.min.x - origin.x) * invdirx;
         }
 
-        if invdiry >= 0.0 {
-            tymin = (box3.min.y - origin.y) * invdiry;
-            tymax = (box3.max.y - origin.y) * invdiry;
+        let (tymin, tymax) = if invdiry >= 0.0 {
+            (
+                (box3.min.y - origin.y) * invdiry,
+                (box3.max.y - origin.y) * invdiry,
+            )
         } else {
-            tymin = (box3.max.y - origin.y) * invdiry;
-            tymax = (box3.min.y - origin.y) * invdiry;
-        }
+            (
+                (box3.max.y - origin.y) * invdiry,
+                (box3.min.y - origin.y) * invdiry,
+            )
+        };
 
         if (tmin > tymax) || (tymin > tmax) {
             return None;
@@ -365,13 +366,17 @@ impl Ray {
             tmax = tymax;
         }
 
-        if invdirz >= 0.0 {
-            tzmin = (box3.min.z - origin.z) * invdirz;
-            tzmax = (box3.max.z - origin.z) * invdirz;
+        let (tzmin, tzmax) = if invdirz >= 0.0 {
+            (
+                (box3.min.z - origin.z) * invdirz,
+                (box3.max.z - origin.z) * invdirz,
+            )
         } else {
-            tzmin = (box3.max.z - origin.z) * invdirz;
-            tzmax = (box3.min.z - origin.z) * invdirz;
-        }
+            (
+                (box3.max.z - origin.z) * invdirz,
+                (box3.min.z - origin.z) * invdirz,
+            )
+        };
 
         if (tmin > tzmax) || (tzmin > tmax) {
             return None;
@@ -568,7 +573,11 @@ impl Ray {
 
         let t_scaled = sz * (u * akz + v * bkz + w * ckz);
 
-        if if det > 0.0 { t_scaled < 0.0 } else { t_scaled > 0.0 } {
+        if if det > 0.0 {
+            t_scaled < 0.0
+        } else {
+            t_scaled > 0.0
+        } {
             return None;
         }
 

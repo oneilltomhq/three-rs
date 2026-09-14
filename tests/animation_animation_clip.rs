@@ -169,8 +169,9 @@ fn parse_accepts_the_aos_keys_form() {
 
 #[test]
 fn create_from_morph_target_sequence() {
-    let clip = AnimationClip::create_from_morph_target_sequence("walk", &["a", "b", "c"], 2.0, false)
-        .unwrap();
+    let clip =
+        AnimationClip::create_from_morph_target_sequence("walk", &["a", "b", "c"], 2.0, false)
+            .unwrap();
 
     assert_eq!(clip.name, "walk");
     assert_eq!(clip.tracks.len(), 3);
@@ -422,7 +423,12 @@ fn make_clip_additive_interpolates_an_interior_reference_frame() {
 fn make_clip_additive_multiplies_the_conjugate_for_quaternions() {
     // Reference quaternion == the only target value, so target * conj(ref) is
     // the identity.
-    let values = vec![0.0, 0.0, 0.70710678118654752, 0.70710678118654752];
+    let values = vec![
+        0.0,
+        0.0,
+        std::f64::consts::FRAC_1_SQRT_2,
+        std::f64::consts::FRAC_1_SQRT_2,
+    ];
     let mut clip = AnimationClip::new(
         "clip",
         1.0,

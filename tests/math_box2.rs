@@ -39,7 +39,13 @@ fn instancing() {
 // PUBLIC STUFF
 #[test]
 fn is_box2() {
-    assert!(Box2::IS_BOX2);
+    // Mirrors three.js's `assert.ok( a.isBox2 )`: this pins the public `IS_BOX2`
+    // constant's value, which happens to be `true` today but is not statically
+    // guaranteed to stay that way.
+    #[allow(clippy::assertions_on_constants)]
+    {
+        assert!(Box2::IS_BOX2);
+    }
 }
 
 #[test]
@@ -99,6 +105,10 @@ fn clone() {
 }
 
 #[test]
+// Mirrors three.js's "ensure it is a true copy" idiom: `a` is mutated after
+// the copy purely to prove it and `b` don't alias; the final writes are
+// never read back.
+#[allow(unused_assignments)]
 fn copy() {
     let mut a = Box2::new(ZERO2, ONE2);
     let mut b = Box2::default();
@@ -347,12 +357,11 @@ fn translate() {
     let c = Box2::new(*ONE2.clone().negate(), ZERO2);
 
     assert!(a.clone().translate(&ONE2).equals(&Box2::new(ONE2, ONE2)));
-    assert!(
-        a.clone()
-            .translate(&ONE2)
-            .translate(ONE2.clone().negate())
-            .equals(&a)
-    );
+    assert!(a
+        .clone()
+        .translate(&ONE2)
+        .translate(ONE2.clone().negate())
+        .equals(&a));
     assert!(c.clone().translate(&ONE2).equals(&b));
     assert!(b.clone().translate(ONE2.clone().negate()).equals(&c));
 }

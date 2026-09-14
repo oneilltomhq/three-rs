@@ -9,8 +9,8 @@ use std::f64::consts::PI;
 use three_rs::geometries::{
     capsule_geometry, circle_geometry, circle_geometry_full, dodecahedron_geometry,
     icosahedron_geometry, lathe_default_points, lathe_geometry, lathe_geometry_full,
-    octahedron_geometry, polyhedron_geometry, ring_geometry, ring_geometry_full, tetrahedron_geometry,
-    torus_geometry, torus_geometry_full,
+    octahedron_geometry, polyhedron_geometry, ring_geometry, ring_geometry_full,
+    tetrahedron_geometry, torus_geometry, torus_geometry_full,
 };
 
 include!("samples/batch2.rs");
@@ -152,7 +152,10 @@ fn ring_std_tests() {
 #[test]
 fn ring_samples() {
     check_sample(&RING_DEFAULT, &ring_geometry(0.5, 1.0, 32, 1));
-    check_sample(&RING_FULL, &ring_geometry_full(10.0, 60.0, 12, 14, 0.1, 2.0));
+    check_sample(
+        &RING_FULL,
+        &ring_geometry_full(10.0, 60.0, 12, 14, 0.1, 2.0),
+    );
 }
 
 #[test]
@@ -186,10 +189,7 @@ fn lathe_samples() {
     check_sample(&LATHE_DEFAULT, &lathe_geometry(&lathe_default_points(), 12));
     check_sample(
         &LATHE_PROFILE,
-        &lathe_geometry(
-            &[(0.1, -1.0), (0.5, -0.5), (0.4, 0.2), (0.2, 1.0)],
-            24,
-        ),
+        &lathe_geometry(&[(0.1, -1.0), (0.5, -0.5), (0.4, 0.2), (0.2, 1.0)], 24),
     );
 }
 

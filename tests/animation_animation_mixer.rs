@@ -44,9 +44,12 @@ impl BindingTarget for StubTarget {
     }
 }
 
+/// One track name's shared value buffer.
+type SlotValues = Rc<RefCell<Vec<f64>>>;
+
 #[derive(Clone, Default)]
 struct StubRoot {
-    slots: Rc<RefCell<HashMap<String, Rc<RefCell<Vec<f64>>>>>>,
+    slots: Rc<RefCell<HashMap<String, SlotValues>>>,
 }
 
 impl StubRoot {
@@ -72,7 +75,11 @@ impl TargetResolver for StubRoot {
             Some(index) => format!("{}[{}]", parsed.property_name, index),
             None => parsed.property_name.clone(),
         };
-        let size = if parsed.property_index.is_some() { 1 } else { 3 };
+        let size = if parsed.property_index.is_some() {
+            1
+        } else {
+            3
+        };
 
         let slot = self
             .slots
@@ -215,7 +222,10 @@ fn clip_action_caches_by_clip_and_root() {
 
     let first = mixer.clip_action(&clips[0], None, None);
     let again = mixer.clip_action(&clips[0], None, None);
-    assert_eq!(first, again, "clipAction returns the same action for a clip");
+    assert_eq!(
+        first, again,
+        "clipAction returns the same action for a clip"
+    );
 
     let other = mixer.clip_action(&clips[1], None, None);
     assert_ne!(first, other, "a different clip gets a different action");
@@ -281,9 +291,18 @@ fn update_interpolates_and_uncache_action_releases_bindings() {
     mixer.update(0.5);
 
     let position = obj.values("position");
-    assert!((position[0] - X / 2.0).abs() <= EPS, "position.x is halfway");
-    assert!((position[1] - Y / 2.0).abs() <= EPS, "position.y is halfway");
-    assert!((position[2] - Z / 2.0).abs() <= EPS, "position.z is halfway");
+    assert!(
+        (position[0] - X / 2.0).abs() <= EPS,
+        "position.x is halfway"
+    );
+    assert!(
+        (position[1] - Y / 2.0).abs() <= EPS,
+        "position.y is halfway"
+    );
+    assert!(
+        (position[2] - Z / 2.0).abs() <= EPS,
+        "position.z is halfway"
+    );
 
     mixer.stop(action);
     mixer.uncache_action(&clips[1], None);

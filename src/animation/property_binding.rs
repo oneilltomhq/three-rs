@@ -45,13 +45,14 @@ fn is_js_space(c: char) -> bool {
             | '\u{0020}'
             | '\u{00A0}'
             | '\u{1680}'
-            | '\u{2000}'..='\u{200A}'
-            | '\u{2028}'
-            | '\u{2029}'
-            | '\u{202F}'
-            | '\u{205F}'
-            | '\u{3000}'
-            | '\u{FEFF}'
+            | '\u{2000}'
+            ..='\u{200A}'
+                | '\u{2028}'
+                | '\u{2029}'
+                | '\u{202F}'
+                | '\u{205F}'
+                | '\u{3000}'
+                | '\u{FEFF}'
     )
 }
 
@@ -147,7 +148,8 @@ fn segment_candidates(s: &[char], pos: usize) -> Vec<Segment> {
         if after_name < s.len() && s[after_name] == '[' {
             let index_begin = after_name + 1;
             let mut max_index_len = 0;
-            while index_begin + max_index_len < s.len() && is_dot_any(s[index_begin + max_index_len])
+            while index_begin + max_index_len < s.len()
+                && is_dot_any(s[index_begin + max_index_len])
             {
                 max_index_len += 1;
             }

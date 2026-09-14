@@ -188,7 +188,14 @@ fn smoke_test() {
     // remove
 
     group_a.remove(&[Rc::clone(&object_a), Rc::clone(&object_c)]);
-    expect(4, &group_a, &bindings_aa, PATH_A, 1, &[Rc::clone(&object_b)]);
+    expect(
+        4,
+        &group_a,
+        &bindings_aa,
+        PATH_A,
+        1,
+        &[Rc::clone(&object_b)],
+    );
 
     group_b.remove(&[
         Rc::clone(&object_a),
@@ -292,7 +299,10 @@ fn stats() {
     group.remove(&[Rc::clone(&object_a)]);
     let stats = group.stats();
     assert_eq!(stats.objects.total, 2, "total is unchanged by remove");
-    assert_eq!(stats.objects.in_use, 1, "inUse drops with the cached region");
+    assert_eq!(
+        stats.objects.in_use, 1,
+        "inUse drops with the cached region"
+    );
 
     group.uncache(&[Rc::clone(&object_a)]);
     assert_eq!(group.stats().objects.total, 1, "uncache shrinks total");
@@ -313,7 +323,11 @@ fn composite_fans_out_over_active_members() {
     composite.set_value(&[1.0, 2.0, 3.0], 0);
     let mut out = [0.0; 3];
     composite.get_value(&mut out, 0);
-    assert_eq!(out, [1.0, 2.0, 3.0], "getValue reads the first active member");
+    assert_eq!(
+        out,
+        [1.0, 2.0, 3.0],
+        "getValue reads the first active member"
+    );
 
     // Removing a member moves it into the cached region, so the fan-out skips it;
     // the remaining active member is still written.

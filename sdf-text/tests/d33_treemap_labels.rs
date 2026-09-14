@@ -39,8 +39,8 @@ const EPS: f64 = 1e-9;
 
 fn golden() -> Value {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden/d3_treemap_labels.json");
-    let text = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let text =
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
     serde_json::from_str(&text).expect("parse the golden")
 }
 
@@ -87,7 +87,11 @@ fn the_layout_matches_the_d33_page() {
     for (i, (leaf, want)) in layout.leaves.iter().zip(leaves).enumerate() {
         let name = want["name"].as_str().unwrap();
         assert_eq!(leaf.name, name, "leaf {i} name (order is load-bearing)");
-        assert_eq!(leaf.depth as u64, want["depth"].as_u64().unwrap(), "{name} depth");
+        assert_eq!(
+            leaf.depth as u64,
+            want["depth"].as_u64().unwrap(),
+            "{name} depth"
+        );
         assert_eq!(leaf.pkg, want["pkg"].as_str().unwrap(), "{name} package");
         // `.round( true )` makes every rect an exact integer, and `sum` adds
         // integers, so these are equalities, not tolerances.
@@ -107,15 +111,43 @@ fn the_layout_matches_the_d33_page() {
     close("camera.far", app.camera.far, f(camera, "far"));
 
     let position = camera["position"].as_array().unwrap();
-    close("camera.position.x", app.camera.node.borrow().position.x, position[0].as_f64().unwrap());
-    close("camera.position.y", app.camera.node.borrow().position.y, position[1].as_f64().unwrap());
-    close("camera.position.z", app.camera.node.borrow().position.z, position[2].as_f64().unwrap());
+    close(
+        "camera.position.x",
+        app.camera.node.borrow().position.x,
+        position[0].as_f64().unwrap(),
+    );
+    close(
+        "camera.position.y",
+        app.camera.node.borrow().position.y,
+        position[1].as_f64().unwrap(),
+    );
+    close(
+        "camera.position.z",
+        app.camera.node.borrow().position.z,
+        position[2].as_f64().unwrap(),
+    );
 
     let quaternion = camera["quaternion"].as_array().unwrap();
-    close("camera.quaternion.x", app.camera.node.borrow().quaternion.x, quaternion[0].as_f64().unwrap());
-    close("camera.quaternion.y", app.camera.node.borrow().quaternion.y, quaternion[1].as_f64().unwrap());
-    close("camera.quaternion.z", app.camera.node.borrow().quaternion.z, quaternion[2].as_f64().unwrap());
-    close("camera.quaternion.w", app.camera.node.borrow().quaternion.w, quaternion[3].as_f64().unwrap());
+    close(
+        "camera.quaternion.x",
+        app.camera.node.borrow().quaternion.x,
+        quaternion[0].as_f64().unwrap(),
+    );
+    close(
+        "camera.quaternion.y",
+        app.camera.node.borrow().quaternion.y,
+        quaternion[1].as_f64().unwrap(),
+    );
+    close(
+        "camera.quaternion.z",
+        app.camera.node.borrow().quaternion.z,
+        quaternion[2].as_f64().unwrap(),
+    );
+    close(
+        "camera.quaternion.w",
+        app.camera.node.borrow().quaternion.w,
+        quaternion[3].as_f64().unwrap(),
+    );
 
     let target = camera["target"].as_array().unwrap();
     close("target.x", layout.target.x, target[0].as_f64().unwrap());
@@ -156,9 +188,21 @@ fn the_layout_matches_the_d33_page() {
         close(&format!("{name} widest"), label.widest, f(want, "widest"));
 
         let anchor = want["anchor"].as_array().unwrap();
-        close(&format!("{name} anchor.x"), label.anchor.x, anchor[0].as_f64().unwrap());
-        close(&format!("{name} anchor.y"), label.anchor.y, anchor[1].as_f64().unwrap());
-        close(&format!("{name} anchor.z"), label.anchor.z, anchor[2].as_f64().unwrap());
+        close(
+            &format!("{name} anchor.x"),
+            label.anchor.x,
+            anchor[0].as_f64().unwrap(),
+        );
+        close(
+            &format!("{name} anchor.y"),
+            label.anchor.y,
+            anchor[1].as_f64().unwrap(),
+        );
+        close(
+            &format!("{name} anchor.z"),
+            label.anchor.z,
+            anchor[2].as_f64().unwrap(),
+        );
     }
 
     println!(
@@ -178,7 +222,10 @@ fn the_layout_matches_the_d33_page() {
 fn the_name_split_and_the_value_format_are_the_js() {
     use d33_treemap_labels::{format_d, split_name};
 
-    assert_eq!(split_name("NodeLinkTreeLayout"), ["Node", "Link", "Tree", "Layout"]);
+    assert_eq!(
+        split_name("NodeLinkTreeLayout"),
+        ["Node", "Link", "Tree", "Layout"]
+    );
     assert_eq!(split_name("Labeler"), ["Labeler"]);
     // the break is before a capital that starts a *lower-case* run, so "IO"
     // survives but "Exception" splits off
@@ -204,7 +251,9 @@ fn out_dir() -> PathBuf {
 fn d33_screenshot() -> PathBuf {
     match std::env::var("D33_DIR") {
         Ok(dir) => PathBuf::from(dir),
-        Err(_) => PathBuf::from(std::env::var("HOME").expect("HOME")).join("src/projects/d33/rung0"),
+        Err(_) => {
+            PathBuf::from(std::env::var("HOME").expect("HOME")).join("src/projects/d33/rung0")
+        }
     }
     .join("examples/screenshots/d3_treemap.jpg")
 }
@@ -247,7 +296,10 @@ fn the_frame_is_stable_and_the_image_gap_is_measured() {
         .chunks_exact(4)
         .filter(|p| p[0] != 255 || p[1] != 255 || p[2] != 255)
         .count();
-    println!("{lit} of {} pixels are not the white background", width * height);
+    println!(
+        "{lit} of {} pixels are not the white background",
+        width * height
+    );
 
     let out = out_dir();
     let actual = out.join("actual.png");
@@ -255,7 +307,10 @@ fn the_frame_is_stable_and_the_image_gap_is_measured() {
 
     let expected = d33_screenshot();
     if !expected.exists() {
-        println!("no d33 reference at {}; skipping the image measurement", expected.display());
+        println!(
+            "no d33 reference at {}; skipping the image measurement",
+            expected.display()
+        );
         return;
     }
 

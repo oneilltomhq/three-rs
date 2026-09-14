@@ -372,7 +372,10 @@ impl AnimationMixer {
         for (i, track) in tracks.iter().enumerate() {
             let track_name = track.name.clone();
 
-            if let Some(&existing) = self.bindings.by_root_and_name.get(&(root, track_name.clone()))
+            if let Some(&existing) = self
+                .bindings
+                .by_root_and_name
+                .get(&(root, track_name.clone()))
             {
                 if let Some(binding) = self.bindings.get_mut(existing) {
                     binding.reference_count += 1;
@@ -404,8 +407,7 @@ impl AnimationMixer {
                 continue;
             };
 
-            let binding =
-                PropertyMixer::new(target, track.value_type(), track.get_value_size());
+            let binding = PropertyMixer::new(target, track.value_type(), track.get_value_size());
 
             let slot = self.bindings.slots.len();
             self.bindings.slots.push(Some(binding));
@@ -542,17 +544,20 @@ impl AnimationMixer {
 
         let mut clip_now_empty = false;
 
-        if let (Some(actions_for_clip), Some(by_clip_cache_index)) =
-            (self.actions_by_clip.get_mut(&clip_uuid), by_clip_cache_index)
-        {
+        if let (Some(actions_for_clip), Some(by_clip_cache_index)) = (
+            self.actions_by_clip.get_mut(&clip_uuid),
+            by_clip_cache_index,
+        ) {
             let known = &mut actions_for_clip.known_actions;
             let last_known = *known.last().expect("non-empty knownActions");
             known[by_clip_cache_index] = last_known;
             known.pop();
 
             if last_known != handle {
-                self.actions[last_known.0].as_mut().unwrap().by_clip_cache_index =
-                    Some(by_clip_cache_index);
+                self.actions[last_known.0]
+                    .as_mut()
+                    .unwrap()
+                    .by_clip_cache_index = Some(by_clip_cache_index);
             }
 
             actions_for_clip.action_by_root.remove(&root);
@@ -951,10 +956,13 @@ impl AnimationMixer {
     ) -> ActionHandle {
         let now = self.time;
         let control = &mut self.control;
-        self.actions[handle.0]
-            .as_mut()
-            .expect("live action")
-            .warp_(start_time_scale, end_time_scale, duration, now, control);
+        self.actions[handle.0].as_mut().expect("live action").warp_(
+            start_time_scale,
+            end_time_scale,
+            duration,
+            now,
+            control,
+        );
         handle
     }
 

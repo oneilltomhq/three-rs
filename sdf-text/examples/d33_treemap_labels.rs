@@ -139,8 +139,7 @@ fn flare_json() -> std::path::PathBuf {
 }
 
 fn font_path() -> std::path::PathBuf {
-    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/assets/Roboto-Regular.ttf")
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/assets/Roboto-Regular.ttf")
 }
 
 /// `d3.format( ',d' )` for the integer values `flare.json` carries: round, then
@@ -150,7 +149,7 @@ pub fn format_d(value: f64) -> String {
     let digits = rounded.to_string();
     let mut out = String::new();
     for (i, c) in digits.chars().enumerate() {
-        if i > 0 && (digits.len() - i) % 3 == 0 {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
             out.push(',');
         }
         out.push(c);
@@ -293,7 +292,8 @@ fn frame_camera(
         }
 
         let next = distance * extent / fill;
-        let settled = (next - distance).abs() < distance * 1e-4 && cx.abs() < 1e-4 && cy.abs() < 1e-4;
+        let settled =
+            (next - distance).abs() < distance * 1e-4 && cx.abs() < 1e-4 && cy.abs() < 1e-4;
 
         distance = next;
         if settled {
@@ -342,8 +342,8 @@ pub fn init() -> App {
     // ---------------- data + d3 layout (the notebook's chart cell) ----------------
 
     let path = flare_json();
-    let text = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let text =
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
     let data: Datum = serde_json::from_str(&text).expect("parse flare.json");
 
     // `d3.scaleOrdinal( data.children.map( d => d.name ), d3.schemeTableau10 )`:

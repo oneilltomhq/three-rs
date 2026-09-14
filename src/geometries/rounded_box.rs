@@ -110,8 +110,14 @@ pub fn rounded_box_geometry(
     let radius = (width / 2.0).min(height / 2.0).min(depth / 2.0).min(radius);
 
     // start with a unit box geometry, its vertices will be modified to form the rounded box
-    let mut geometry =
-        box_geometry(1.0, 1.0, 1.0, total_segments, total_segments, total_segments);
+    let mut geometry = box_geometry(
+        1.0,
+        1.0,
+        1.0,
+        total_segments,
+        total_segments,
+        total_segments,
+    );
 
     // if totalSegments is 1, no rounding is needed - return regular box
     // (the addon returns the *unit* box here, width/height/depth unused)

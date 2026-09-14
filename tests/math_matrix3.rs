@@ -121,7 +121,10 @@ fn multiply_premultiply() {
 
     a.set(2.0, 3.0, 5.0, 7.0, 11.0, 13.0, 17.0, 19.0, 23.0);
     a.premultiply(&b);
-    assert_eq!(a.elements, expected_premultiply, "premultiply: check result");
+    assert_eq!(
+        a.elements, expected_premultiply,
+        "premultiply: check result"
+    );
 }
 
 #[test]

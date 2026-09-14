@@ -252,9 +252,7 @@ fn layout_entry(binding: u32, desc: &BindingDesc) -> wgpu::BindGroupLayoutEntry 
                     _ => wgpu::TextureSampleType::Float { filterable: true },
                 },
                 view_dimension: match kind {
-                    TextureKind::Cube | TextureKind::DepthCube => {
-                        wgpu::TextureViewDimension::Cube
-                    }
+                    TextureKind::Cube | TextureKind::DepthCube => wgpu::TextureViewDimension::Cube,
                     TextureKind::Float2DArray => wgpu::TextureViewDimension::D2Array,
                     _ => wgpu::TextureViewDimension::D2,
                 },
@@ -537,8 +535,7 @@ impl UniformContext<'_> {
             };
 
             let offset = member.offset as usize;
-            data[offset..offset + values.len() * 4]
-                .copy_from_slice(bytemuck::cast_slice(&values));
+            data[offset..offset + values.len() * 4].copy_from_slice(bytemuck::cast_slice(&values));
         }
 
         data

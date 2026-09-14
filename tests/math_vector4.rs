@@ -75,6 +75,10 @@ fn get_component_out_of_range_panics() {
 }
 
 #[test]
+// Mirrors three.js's "ensure it is a true copy" idiom: `a` is mutated after
+// the copy purely to prove it and `b` don't alias; the final writes are
+// never read back.
+#[allow(unused_assignments)]
 fn copy() {
     let mut a = Vector4::new(X, Y, Z, W);
     let mut b = Vector4::new(0.0, 0.0, 0.0, 0.0);
@@ -308,10 +312,7 @@ fn manhattan_length() {
     assert_eq!(e.manhattan_length(), 0.0);
 
     a.set(X, Y, Z, W);
-    assert_eq!(
-        a.manhattan_length(),
-        X.abs() + Y.abs() + Z.abs() + W.abs()
-    );
+    assert_eq!(a.manhattan_length(), X.abs() + Y.abs() + Z.abs() + W.abs());
 }
 
 #[test]

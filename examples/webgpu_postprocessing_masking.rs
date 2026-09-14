@@ -17,13 +17,13 @@
 
 use std::rc::Rc;
 
+use three_rs::geometries::torus_geometry;
+use three_rs::math::Color;
 use three_rs::nodes::tsl::texture;
 use three_rs::{
     box_geometry, ColorSpace, Mesh, MinFilter, PassNode, PerspectiveCamera, RenderPipeline,
     Renderer, RendererParameters, Scene,
 };
-use three_rs::geometries::torus_geometry;
-use three_rs::math::Color;
 
 pub const INNER_WIDTH: f64 = 800.0;
 pub const INNER_HEIGHT: f64 = 500.0;
@@ -72,7 +72,8 @@ pub fn init() -> App {
 
     let loader = three_rs::TextureLoader::new();
 
-    let texture1 = loader.load(examples_dir().join("textures/758px-Canestra_di_frutta_(Caravaggio).jpg"));
+    let texture1 =
+        loader.load(examples_dir().join("textures/758px-Canestra_di_frutta_(Caravaggio).jpg"));
     texture1.set_color_space(ColorSpace::SRGB);
     texture1.set_min_filter(MinFilter::Linear);
     texture1.set_generate_mipmaps(false);

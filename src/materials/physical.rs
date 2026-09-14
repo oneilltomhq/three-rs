@@ -50,7 +50,7 @@ pub fn get_roughness(roughness: NodeRef) -> NodeRef {
 /// `V_GGX_SmithCorrelated( { alpha, dotNL, dotNV } )`, emitted as a real WGSL
 /// `fn` because three.js gives it a layout.
 fn v_ggx_smith_correlated() -> Rc<FnDef> {
-    thread_local! { static CELL: crate::nodes::node::Lazy<Rc<FnDef>> = crate::nodes::node::Lazy::new(); }
+    thread_local! { static CELL: crate::nodes::node::Lazy<Rc<FnDef>> = const { crate::nodes::node::Lazy::new() }; }
     CELL.with(|c| {
         c.get(|| {
             shader_fn(
@@ -67,7 +67,11 @@ fn v_ggx_smith_correlated() -> Rc<FnDef> {
                     let a2 = alpha.clone().mul(alpha);
                     let gv = dot_nl.clone().mul(
                         a2.clone()
-                            .add(float(1.0).sub(a2.clone()).mul(dot_nv.clone().mul(dot_nv.clone())))
+                            .add(
+                                float(1.0)
+                                    .sub(a2.clone())
+                                    .mul(dot_nv.clone().mul(dot_nv.clone())),
+                            )
                             .sqrt(),
                     );
                     let gl = dot_nv.mul(
@@ -85,7 +89,7 @@ fn v_ggx_smith_correlated() -> Rc<FnDef> {
 
 /// `D_GGX( { alpha, dotNH } )`.
 fn d_ggx() -> Rc<FnDef> {
-    thread_local! { static CELL: crate::nodes::node::Lazy<Rc<FnDef>> = crate::nodes::node::Lazy::new(); }
+    thread_local! { static CELL: crate::nodes::node::Lazy<Rc<FnDef>> = const { crate::nodes::node::Lazy::new() }; }
     CELL.with(|c| {
         c.get(|| {
             shader_fn(
@@ -95,12 +99,8 @@ fn d_ggx() -> Rc<FnDef> {
                 |args| {
                     let (alpha, dot_nh) = (args[0].clone(), args[1].clone());
                     let a2 = alpha.clone().mul(alpha);
-                    let denom = float(1.0).sub(
-                        dot_nh
-                            .clone()
-                            .mul(dot_nh)
-                            .mul(float(1.0).sub(a2.clone())),
-                    );
+                    let denom =
+                        float(1.0).sub(dot_nh.clone().mul(dot_nh).mul(float(1.0).sub(a2.clone())));
                     a2.div(denom.clone().mul(denom)).mul(RECIPROCAL_PI)
                 },
             )
@@ -120,9 +120,7 @@ pub fn brdf_ggx(light_direction: NodeRef, f0: NodeRef, f90: NodeRef) -> NodeRef 
         .normalize();
 
     let dot_nl = normal_view().dot(light_direction).clamp(0.0, 1.0);
-    let dot_nv = normal_view()
-        .dot(position_view_direction())
-        .clamp(0.0, 1.0);
+    let dot_nv = normal_view().dot(position_view_direction()).clamp(0.0, 1.0);
     let dot_nh = normal_view().dot(half_dir.clone()).clamp(0.0, 1.0);
     let dot_vh = position_view_direction().dot(half_dir).clamp(0.0, 1.0);
 
@@ -162,9 +160,7 @@ impl Physical {
     /// multi-scattering compensation. Emits no statement of its own — both are
     /// `toConst`, so they materialise where they are first used.
     pub fn start() -> Self {
-        let dot_nv = normal_view()
-            .dot(position_view_direction())
-            .clamp(0.0, 1.0);
+        let dot_nv = normal_view().dot(position_view_direction()).clamp(0.0, 1.0);
         let dfg = dfg_sample(roughness(), dot_nv);
 
         // `Ess` — the energy of the single-scattering lobe in a white furnace.
@@ -191,10 +187,7 @@ impl Physical {
     ) {
         let fab = self.dfg.clone();
 
-        let fss_ess = f0
-            .clone()
-            .mul(fab.x())
-            .add(specular_f90().mul(fab.y()));
+        let fss_ess = f0.clone().mul(fab.x()).add(specular_f90().mul(fab.y()));
 
         let ess = fab.x().add(fab.y());
         let ems = ess.one_minus();
@@ -230,17 +223,25 @@ impl Physical {
 
         let specular_brdf = brdf_ggx(light_direction, specular_color_blended(), float(1.0));
 
-        out.push(direct_diffuse().assign(direct_diffuse().add(
-            irradiance
-                .clone()
-                .mul(brdf_lambert(diffuse_contribution()))
-                .mul(f.one_minus()),
-        )));
-        out.push(direct_specular().assign(direct_specular().add(
-            irradiance
-                .mul(specular_brdf)
-                .mul(self.multi_scattering_compensation.clone()),
-        )));
+        out.push(
+            direct_diffuse().assign(
+                direct_diffuse().add(
+                    irradiance
+                        .clone()
+                        .mul(brdf_lambert(diffuse_contribution()))
+                        .mul(f.one_minus()),
+                ),
+            ),
+        );
+        out.push(
+            direct_specular().assign(
+                direct_specular().add(
+                    irradiance
+                        .mul(specular_brdf)
+                        .mul(self.multi_scattering_compensation.clone()),
+                ),
+            ),
+        );
     }
 
     /// `PhysicalLightingModel.indirectDiffuse()` — the irradiance that reaches
@@ -325,9 +326,7 @@ impl Physical {
 
         out.push(indirect_diffuse().assign(indirect_diffuse().mul(ambient_occlusion())));
 
-        let dot_nv = normal_view()
-            .dot(position_view_direction())
-            .clamp(0.0, 1.0);
+        let dot_nv = normal_view().dot(position_view_direction()).clamp(0.0, 1.0);
         let ao_nv = dot_nv.add(ambient_occlusion());
         let ao_exp = roughness().mul(-16.0).one_minus().negate().exp2();
         let ao_node = ambient_occlusion()

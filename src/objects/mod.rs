@@ -7,9 +7,9 @@ mod line;
 mod mesh;
 mod payload;
 mod quad_mesh;
+mod scene;
 mod skeleton;
 mod skinned_mesh;
-mod scene;
 
 pub use bone::{is_bone, Bone};
 pub use group::Group;
@@ -18,6 +18,6 @@ pub use line::{Line, LineSegments};
 pub use mesh::Mesh;
 pub use payload::Payload;
 pub use quad_mesh::QuadMesh;
+pub use scene::{Background, Scene};
 pub use skeleton::Skeleton;
 pub use skinned_mesh::{BindMode, SkinnedMesh};
-pub use scene::{Background, Scene};

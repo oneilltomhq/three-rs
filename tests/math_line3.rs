@@ -72,7 +72,10 @@ fn clone_equal() {
     assert!(!a.equals(&c), "Check a and c aren't equal after clone()");
 
     a.set(&ZERO3, &ZERO3);
-    assert!(!a.equals(&b), "Check a and b are not equal after modification");
+    assert!(
+        !a.equals(&b),
+        "Check a and b are not equal after modification"
+    );
 }
 
 #[test]
@@ -92,10 +95,7 @@ fn distance_sq() {
     let a = Line3::new(ZERO3, ZERO3);
     let b = Line3::new(ZERO3, ONE3);
     let c = Line3::new(*ONE3.clone().negate(), ONE3);
-    let d = Line3::new(
-        *TWO3.clone().multiply_scalar(-2.0),
-        *TWO3.clone().negate(),
-    );
+    let d = Line3::new(*TWO3.clone().multiply_scalar(-2.0), *TWO3.clone().negate());
 
     close(
         a.distance_sq(),
@@ -128,12 +128,14 @@ fn distance() {
     let a = Line3::new(ZERO3, ZERO3);
     let b = Line3::new(ZERO3, ONE3);
     let c = Line3::new(*ONE3.clone().negate(), ONE3);
-    let d = Line3::new(
-        *TWO3.clone().multiply_scalar(-2.0),
-        *TWO3.clone().negate(),
-    );
+    let d = Line3::new(*TWO3.clone().multiply_scalar(-2.0), *TWO3.clone().negate());
 
-    close(a.distance(), 0.0, NUM_EQ, "Check distance for zero-length line");
+    close(
+        a.distance(),
+        0.0,
+        NUM_EQ,
+        "Check distance for zero-length line",
+    );
     close(
         b.distance(),
         3.0_f64.sqrt(),

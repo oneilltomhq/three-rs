@@ -4,7 +4,7 @@
 //! is a subclass with no state of its own, so here it is a constructor that
 //! returns a `Node` with `type = 'Group'`.
 
-use three_rs::core::{Object3DNode, Object3D};
+use three_rs::core::{Object3D, Object3DNode};
 use three_rs::objects::Group;
 
 #[test]

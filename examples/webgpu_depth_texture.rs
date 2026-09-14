@@ -72,10 +72,7 @@ pub fn init() -> App {
     let depth_texture = DepthTexture::new();
     depth_texture.set_type(TextureType::Float);
 
-    let render_target = RenderTarget::new(
-        (INNER_WIDTH * DPR) as u32,
-        (INNER_HEIGHT * DPR) as u32,
-    );
+    let render_target = RenderTarget::new((INNER_WIDTH * DPR) as u32, (INNER_HEIGHT * DPR) as u32);
     render_target.set_depth_texture(depth_texture.clone());
 
     // FX
@@ -106,7 +103,8 @@ pub fn init() -> App {
 
 /// The page's `animate()`.
 pub fn animate(app: &mut App) {
-    app.renderer.set_render_target(Some(app.render_target.clone()));
+    app.renderer
+        .set_render_target(Some(app.render_target.clone()));
     app.renderer.render(&mut app.scene, &mut app.camera);
 
     app.renderer.set_render_target(None);

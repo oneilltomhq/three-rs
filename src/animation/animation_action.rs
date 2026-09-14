@@ -30,7 +30,7 @@
 //!   and the notification does not.
 
 use crate::animation::animation_clip::{AnimationBlendMode, AnimationClip};
-use crate::animation::animation_mixer::{BindingPool, ControlPool, ControlHandle, RootId};
+use crate::animation::animation_mixer::{BindingPool, ControlHandle, ControlPool, RootId};
 use crate::animation::keyframe_track::TrackInterpolant;
 use crate::math::interpolant::{Ending, InterpolantSettings};
 
@@ -510,6 +510,8 @@ impl AnimationAction {
             }
 
             // `handle_stop:` labelled block.
+            #[allow(clippy::never_loop)]
+            // deliberately mirrors three.js's `handle_stop:` labelled block, used only to `break` out early
             loop {
                 if time >= duration {
                     time = duration;

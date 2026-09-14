@@ -107,12 +107,7 @@ fn one_glyph_quad_matches_the_atlas_sdf() {
     let b = &batch.glyph_bounds_array()[0..4];
     let uvr = &batch.glyph_uv_array()[0..4];
     let (bx0, by0, bx1, by1) = (b[0] as f64, b[1] as f64, b[2] as f64, b[3] as f64);
-    let (ru, rv, rw, rh) = (
-        uvr[0] as f64,
-        uvr[1] as f64,
-        uvr[2] as f64,
-        uvr[3] as f64,
-    );
+    let (ru, rv, rw, rh) = (uvr[0] as f64, uvr[1] as f64, uvr[2] as f64, uvr[3] as f64);
     assert!(bx1 > bx0 && by1 > by0, "degenerate quad: {b:?}");
     assert!(rw > 0.0 && rh > 0.0, "blank uv rect for a non-space glyph");
 
@@ -249,11 +244,17 @@ fn one_glyph_quad_matches_the_atlas_sdf() {
     println!(
         "glyph 'l': quad [{bx0:.4} {by0:.4} {bx1:.4} {by1:.4}] uv [{ru:.5} {rv:.5} {rw:.5} {rh:.5}]"
     );
-    println!("fill {fill}, background {background}, transition band {skipped}, wrong {}", wrong.len());
+    println!(
+        "fill {fill}, background {background}, transition band {skipped}, wrong {}",
+        wrong.len()
+    );
 
     // Not vacuous: the glyph has to actually cover pixels, and the transition
     // band has to be a thin rim rather than the whole quad.
-    assert!(fill > 400, "only {fill} fully-covered pixels — is the glyph drawn at all?");
+    assert!(
+        fill > 400,
+        "only {fill} fully-covered pixels — is the glyph drawn at all?"
+    );
     assert!(
         background > WIDTH * HEIGHT / 2,
         "only {background} background pixels"
@@ -307,12 +308,7 @@ fn the_outline_band_is_the_halo_colour() {
     let b = &batch.glyph_bounds_array()[0..4];
     let uvr = &batch.glyph_uv_array()[0..4];
     let (bx0, by0, bx1, by1) = (b[0] as f64, b[1] as f64, b[2] as f64, b[3] as f64);
-    let (ru, rv, rw, rh) = (
-        uvr[0] as f64,
-        uvr[1] as f64,
-        uvr[2] as f64,
-        uvr[3] as f64,
-    );
+    let (ru, rv, rw, rh) = (uvr[0] as f64, uvr[1] as f64, uvr[2] as f64, uvr[3] as f64);
     let size = batch.atlas.atlas_size() as usize;
     let atlas: Vec<f32> = batch.atlas.atlas_data().to_vec();
 
@@ -372,8 +368,14 @@ fn the_outline_band_is_the_halo_colour() {
         }
     }
 
-    println!("outline band: {halo} halo pixels, {core} fill pixels, {} wrong", wrong.len());
-    assert!(halo > 100, "only {halo} halo pixels — the outline band is missing");
+    println!(
+        "outline band: {halo} halo pixels, {core} fill pixels, {} wrong",
+        wrong.len()
+    );
+    assert!(
+        halo > 100,
+        "only {halo} halo pixels — the outline band is missing"
+    );
     assert!(core > 400, "only {core} fill pixels");
     if !wrong.is_empty() {
         for (i, j, s, r, g, which) in wrong.iter().take(20) {
@@ -452,13 +454,22 @@ fn the_atlas_v_flip_and_u_direction_are_right() {
             weight += v;
         }
     }
-    assert!(weight > 100.0, "almost no ink ({weight:.1}) — the glyph is missing");
+    assert!(
+        weight > 100.0,
+        "almost no ink ({weight:.1}) — the glyph is missing"
+    );
     let (cs, ct) = (sum_s / weight, sum_t / weight);
     println!("'L' ink centroid in quad space: s {cs:.4}, t {ct:.4}");
 
     // Roboto's 'L': a full-height stem on the left plus a bar across the bottom.
     // Ink therefore sits left of centre and below it. A wrong `1 - uv.y` mirrors
     // `t` about 0.5; a wrong U direction mirrors `s`.
-    assert!(ct < 0.45, "ink centroid is not in the lower half (t = {ct:.4}) — the V flip is wrong");
-    assert!(cs < 0.45, "ink centroid is not in the left half (s = {cs:.4}) — the U direction is wrong");
+    assert!(
+        ct < 0.45,
+        "ink centroid is not in the lower half (t = {ct:.4}) — the V flip is wrong"
+    );
+    assert!(
+        cs < 0.45,
+        "ink centroid is not in the left half (s = {cs:.4}) — the U direction is wrong"
+    );
 }

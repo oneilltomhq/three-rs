@@ -87,9 +87,7 @@ pub fn d_blinn_phong(shininess_value: NodeRef, dot_nh: NodeRef) -> NodeRef {
 pub fn brdf_blinn_phong(light_direction: NodeRef) -> NodeRef {
     let half_dir = light_direction.add(position_view_direction()).normalize();
     let dot_nh = normal_view().dot(half_dir.clone()).clamp(0.0, 1.0);
-    let dot_vh = position_view_direction()
-        .dot(half_dir)
-        .clamp(0.0, 1.0);
+    let dot_vh = position_view_direction().dot(half_dir).clamp(0.0, 1.0);
 
     let f = f_schlick(specular_color(), float(1.0), dot_vh);
     // `G_BlinnPhong_Implicit()` is the constant 0.25.
@@ -206,14 +204,9 @@ pub fn setup_light(
         LightKind::Spot => {
             let l_vector = light_view_position(index).sub(position_view());
             let light_direction = l_vector.clone().normalize();
-            let angle_cos = light_direction
-                .clone()
-                .dot(light_target_direction(index));
-            let spot_attenuation = smoothstep(
-                light_cone_cos(index),
-                light_penumbra_cos(index),
-                angle_cos,
-            );
+            let angle_cos = light_direction.clone().dot(light_target_direction(index));
+            let spot_attenuation =
+                smoothstep(light_cone_cos(index), light_penumbra_cos(index), angle_cos);
             let attenuation = distance_attenuation(
                 length(l_vector),
                 light_cutoff_distance(index),
@@ -272,6 +265,10 @@ pub fn shadow_factor(index: usize, map: &DepthTexture) -> NodeRef {
 fn pcf_shadow(index: usize, map: &DepthTexture, coord: NodeRef) -> NodeRef {
     let texel_size = vec2(1.0, 1.0).div(shadow_map_size(index));
     let radius_scaled = shadow_radius(index).mul(texel_size.x());
+    // `6.28318530718` mirrors three.js's `PCFShadowFilter` literal (an approximation
+    // of `TAU`, not the exact constant); keeping the same literal keeps this
+    // pixel-identical to three.js's output.
+    #[allow(clippy::approx_constant)]
     let phi = interleaved_gradient_noise(frag_coord().xy()).mul(float(6.28318530718));
 
     let mut sum: Option<NodeRef> = None;
@@ -312,12 +309,12 @@ pub fn direct_light(
     let irr = dot_nl.mul(light_color);
 
     // `PhongLightingModel.direct()`.
-    out.push(direct_diffuse().assign(
-        direct_diffuse().add(irr.clone().mul(brdf_lambert(diffuse_color().xyz()))),
-    ));
     out.push(
-        direct_specular().assign(
-            direct_specular().add(irr.mul(brdf_blinn_phong(light_direction)).mul(1.0)),
-        ),
+        direct_diffuse()
+            .assign(direct_diffuse().add(irr.clone().mul(brdf_lambert(diffuse_color().xyz())))),
+    );
+    out.push(
+        direct_specular()
+            .assign(direct_specular().add(irr.mul(brdf_blinn_phong(light_direction)).mul(1.0))),
     );
 }

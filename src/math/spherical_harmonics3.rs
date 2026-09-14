@@ -24,9 +24,8 @@ impl SphericalHarmonics3 {
 
     /// `SphericalHarmonics3.set()`.
     pub fn set(&mut self, coefficients: &[Vector3; 9]) -> &mut Self {
-        for i in 0..9 {
-            let c = coefficients[i];
-            self.coefficients[i].copy(&c);
+        for (dst, c) in self.coefficients.iter_mut().zip(coefficients.iter()) {
+            dst.copy(c);
         }
 
         self
@@ -157,8 +156,8 @@ impl SphericalHarmonics3 {
     pub fn from_array(&mut self, array: &[f64], offset: usize) -> &mut Self {
         let coefficients = &mut self.coefficients;
 
-        for i in 0..9 {
-            coefficients[i].from_array(array, offset + (i * 3));
+        for (i, c) in coefficients.iter_mut().enumerate() {
+            c.from_array(array, offset + (i * 3));
         }
 
         self
@@ -175,8 +174,8 @@ impl SphericalHarmonics3 {
     pub fn to_array_into(&self, array: &mut [f64], offset: usize) {
         let coefficients = &self.coefficients;
 
-        for i in 0..9 {
-            let c = coefficients[i].to_array();
+        for (i, coefficient) in coefficients.iter().enumerate() {
+            let c = coefficient.to_array();
             let o = offset + (i * 3);
             array[o] = c[0];
             array[o + 1] = c[1];

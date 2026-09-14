@@ -77,7 +77,11 @@ fn layer1_filled_square_is_negative_inside_positive_outside() {
     let sdf = compute_sdf_default(&alpha, w, h);
     assert!(sdf[5 * w + 5] < 0.0, "centre should be negative");
     assert!(sdf[0] > 0.0, "corner should be positive");
-    assert!((sdf[1 * w + 2] - 1.0).abs() < 0.001);
+    // `1 * w + 2` spells out "row 1, col 2" to match the `5 * w + 5` above it.
+    #[allow(clippy::identity_op)]
+    {
+        assert!((sdf[1 * w + 2] - 1.0).abs() < 0.001);
+    }
     assert_eq!(h, 10);
 }
 
@@ -123,7 +127,8 @@ fn layer4_full_pipeline_circle_centre_opaque_corner_transparent() {
     use sdf_text::vector_font_atlas::normalize_sdf_value;
     let (w, _h, alpha, _) = case("circle16");
     let sdf = compute_sdf_default(&alpha, w, w);
-    let centre = common::shader_alpha_fixed_width(normalize_sdf_value(sdf[8 * w + 8], MAX_DISTANCE));
+    let centre =
+        common::shader_alpha_fixed_width(normalize_sdf_value(sdf[8 * w + 8], MAX_DISTANCE));
     let corner = common::shader_alpha_fixed_width(normalize_sdf_value(sdf[0], MAX_DISTANCE));
     assert!(centre > 0.99, "centre alpha {centre}");
     assert!(corner < 0.01, "corner alpha {corner}");

@@ -5,7 +5,11 @@ use crate::math::Vector3;
 
 /// `new SphereGeometry( radius, widthSegments, heightSegments )` with the
 /// default `phiStart`/`phiLength`/`thetaStart`/`thetaLength`.
-pub fn sphere_geometry(radius: f64, width_segments: usize, height_segments: usize) -> BufferGeometry {
+pub fn sphere_geometry(
+    radius: f64,
+    width_segments: usize,
+    height_segments: usize,
+) -> BufferGeometry {
     sphere_geometry_full(
         radius,
         width_segments,

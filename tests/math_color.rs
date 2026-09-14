@@ -175,9 +175,21 @@ fn get_rgb() {
     assert_eq!(format!("{:.3}", t.b), "0.723", "b (srgb-linear)");
 
     let t = c.get_rgb(ColorSpace::SRGB);
-    assert_eq!(format!("{:.3}", t.r), format!("{:.3}", 221.0 / 255.0), "r (srgb)");
-    assert_eq!(format!("{:.3}", t.g), format!("{:.3}", 160.0 / 255.0), "g (srgb)");
-    assert_eq!(format!("{:.3}", t.b), format!("{:.3}", 221.0 / 255.0), "b (srgb)");
+    assert_eq!(
+        format!("{:.3}", t.r),
+        format!("{:.3}", 221.0 / 255.0),
+        "r (srgb)"
+    );
+    assert_eq!(
+        format!("{:.3}", t.g),
+        format!("{:.3}", 160.0 / 255.0),
+        "g (srgb)"
+    );
+    assert_eq!(
+        format!("{:.3}", t.b),
+        format!("{:.3}", 221.0 / 255.0),
+        "b (srgb)"
+    );
 }
 
 #[test]

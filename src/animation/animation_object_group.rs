@@ -429,14 +429,13 @@ impl<M: GroupMember> AnimationObjectGroup<M> {
                             // JS aliases the same slot for `lastCached` and
                             // `binding`; the net effect is that the slot keeps
                             // its binding, or gets a fresh one if it was a hole.
-                            let binding =
-                                bindings_for_path[index].take().unwrap_or_else(|| {
-                                    MemberBinding::new(
-                                        Rc::clone(member),
-                                        &self.paths[j],
-                                        &self.parsed_paths[j],
-                                    )
-                                });
+                            let binding = bindings_for_path[index].take().unwrap_or_else(|| {
+                                MemberBinding::new(
+                                    Rc::clone(member),
+                                    &self.paths[j],
+                                    &self.parsed_paths[j],
+                                )
+                            });
                             bindings_for_path[index] = Some(binding);
                             continue;
                         }
@@ -650,7 +649,8 @@ impl<M: GroupMember> AnimationObjectGroup<M> {
         ));
 
         let index = self.bindings.len();
-        self.bindings_indices_by_path.insert(path.to_string(), index);
+        self.bindings_indices_by_path
+            .insert(path.to_string(), index);
 
         self.paths.push(path.to_string());
         self.parsed_paths.push(parsed_path.clone());

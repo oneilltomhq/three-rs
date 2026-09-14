@@ -37,8 +37,7 @@ fn examples_dir() -> std::path::PathBuf {
 }
 
 pub fn init() -> App {
-    let camera =
-        PerspectiveCamera::new(60.0, INNER_WIDTH / INNER_HEIGHT, 0.01, 100.0);
+    let camera = PerspectiveCamera::new(60.0, INNER_WIDTH / INNER_HEIGHT, 0.01, 100.0);
     camera.node.borrow_mut().position.z = 3.0;
 
     let path = examples_dir().join("textures/cube/pisa");

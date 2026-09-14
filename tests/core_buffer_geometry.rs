@@ -30,9 +30,7 @@ fn geometry_with(vertices: Vec<f32>) -> BufferGeometry {
 fn normals_for_vertices(vertices: Vec<f32>) -> Vec<f32> {
     let mut geometry = geometry_with(vertices);
     geometry.compute_vertex_normals();
-    let normal = geometry
-        .normal()
-        .expect("normal attribute was created");
+    let normal = geometry.normal().expect("normal attribute was created");
     normal.array.clone()
 }
 
@@ -116,9 +114,11 @@ fn scale() {
 
 #[test]
 fn compute_bounding_box() {
-    let bb = geometry_with(vec![-1.0, -2.0, -3.0, 13.0, -2.0, -3.5, -1.0, -20.0, 0.0, -4.0, 5.0, 6.0])
-        .compute_bounding_box()
-        .unwrap();
+    let bb = geometry_with(vec![
+        -1.0, -2.0, -3.0, 13.0, -2.0, -3.5, -1.0, -20.0, 0.0, -4.0, 5.0, 6.0,
+    ])
+    .compute_bounding_box()
+    .unwrap();
 
     assert!(
         bb.min.x == -4.0 && bb.min.y == -20.0 && bb.min.z == -3.5,
@@ -300,7 +300,10 @@ fn set_delete_attribute() {
 
     geometry.set_attribute(attribute_name, BufferAttribute::new(vec![1.0, 2.0, 3.0], 1));
 
-    assert!(geometry.has_attribute(attribute_name), "attribute is defined");
+    assert!(
+        geometry.has_attribute(attribute_name),
+        "attribute is defined"
+    );
     assert!(
         geometry.get_attribute(attribute_name).is_some(),
         "attribute is defined"
@@ -547,7 +550,10 @@ fn to_non_indexed_carries_groups_and_morphs() {
         non_indexed.morph_targets_relative,
         "morphTargetsRelative is carried over"
     );
-    assert_eq!(non_indexed.groups, geometry.groups, "groups are carried over");
+    assert_eq!(
+        non_indexed.groups, geometry.groups,
+        "groups are carried over"
+    );
     assert!(non_indexed.index.is_none(), "the result is not indexed");
 }
 
@@ -589,10 +595,7 @@ fn to_non_indexed_expands_a_generated_geometry() {
     // a geometry with no index comes back unchanged (three.js warns and returns
     // `this`)
     let again = flat.to_non_indexed();
-    assert_eq!(
-        again.get_attribute("position").unwrap().array,
-        dst.array
-    );
+    assert_eq!(again.get_attribute("position").unwrap().array, dst.array);
 }
 
 /// `toNonIndexed()` copies every named attribute, not just position/normal/uv —
@@ -601,7 +604,10 @@ fn to_non_indexed_expands_a_generated_geometry() {
 fn to_non_indexed_copies_every_attribute() {
     let mut geometry = position_geometry(vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
     geometry.set_index(&[0, 1, 0]);
-    geometry.set_attribute("color", BufferAttribute::new(vec![1.0, 0.0, 0.0, 0.0, 0.0, 1.0], 3));
+    geometry.set_attribute(
+        "color",
+        BufferAttribute::new(vec![1.0, 0.0, 0.0, 0.0, 0.0, 1.0], 3),
+    );
     geometry.set_attribute("skinIndex", BufferAttribute::new(vec![7.0, 9.0], 1));
     // three.js does not carry drawRange over, so neither does the port
     geometry.set_draw_range(1, 2);
@@ -629,10 +635,7 @@ fn compute_bounding_box_morph() {
     let mut geometry = position_geometry(vec![-1.0, -1.0, -1.0, 1.0, 1.0, 1.0]);
     geometry.set_morph_attribute(
         "position",
-        vec![BufferAttribute::new(
-            vec![-3.0, 0.0, 0.0, 0.0, 2.0, 0.0],
-            3,
-        )],
+        vec![BufferAttribute::new(vec![-3.0, 0.0, 0.0, 0.0, 2.0, 0.0], 3)],
     );
 
     // morphTargetsRelative = false: the morph box is unioned in as it stands.
@@ -660,6 +663,10 @@ fn compute_bounding_sphere_morph() {
     );
 
     let bs = geometry.compute_bounding_sphere().unwrap();
-    assert_eq!(bs.center, Vector3::new(0.0, 0.0, 0.0), "centre is the origin");
+    assert_eq!(
+        bs.center,
+        Vector3::new(0.0, 0.0, 0.0),
+        "centre is the origin"
+    );
     assert_eq!(bs.radius, 20.0, "the morph target sets the radius");
 }

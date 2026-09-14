@@ -43,8 +43,8 @@ impl Matrix4 {
     /// The 16 elements narrowed to `f32`, ready for a uniform buffer.
     pub fn to_f32_array(&self) -> [f32; 16] {
         let mut out = [0.0f32; 16];
-        for i in 0..16 {
-            out[i] = self.elements[i] as f32;
+        for (o, e) in out.iter_mut().zip(self.elements.iter()) {
+            *o = *e as f32;
         }
         out
     }
@@ -61,7 +61,12 @@ impl Matrix4 {
     }
 
     /// `Matrix4.compose()`.
-    pub fn compose(&mut self, position: &Vector3, quaternion: &Quaternion, scale: &Vector3) -> &mut Self {
+    pub fn compose(
+        &mut self,
+        position: &Vector3,
+        quaternion: &Quaternion,
+        scale: &Vector3,
+    ) -> &mut Self {
         let te = &mut self.elements;
 
         let (x, y, z, w) = (quaternion.x, quaternion.y, quaternion.z, quaternion.w);
@@ -234,6 +239,7 @@ impl Matrix4 {
     }
 
     /// `Matrix4.makePerspective()`, `reversedDepth = false`.
+    #[allow(clippy::too_many_arguments)] // mirrors three.js's `makePerspective(left, right, top, bottom, near, far, coordinateSystem)`; public API, batched separately (#9/#38/#39)
     pub fn make_perspective(
         &mut self,
         left: f64,
@@ -284,10 +290,22 @@ impl Matrix4 {
     #[allow(clippy::too_many_arguments)]
     pub fn set(
         &mut self,
-        n11: f64, n12: f64, n13: f64, n14: f64,
-        n21: f64, n22: f64, n23: f64, n24: f64,
-        n31: f64, n32: f64, n33: f64, n34: f64,
-        n41: f64, n42: f64, n43: f64, n44: f64,
+        n11: f64,
+        n12: f64,
+        n13: f64,
+        n14: f64,
+        n21: f64,
+        n22: f64,
+        n23: f64,
+        n24: f64,
+        n31: f64,
+        n32: f64,
+        n33: f64,
+        n34: f64,
+        n41: f64,
+        n42: f64,
+        n43: f64,
+        n44: f64,
     ) -> &mut Self {
         self.elements = [
             n11, n21, n31, n41, //
@@ -301,10 +319,22 @@ impl Matrix4 {
     /// `new Matrix4( n11, ... )`.
     #[allow(clippy::too_many_arguments)]
     pub fn from_rows(
-        n11: f64, n12: f64, n13: f64, n14: f64,
-        n21: f64, n22: f64, n23: f64, n24: f64,
-        n31: f64, n32: f64, n33: f64, n34: f64,
-        n41: f64, n42: f64, n43: f64, n44: f64,
+        n11: f64,
+        n12: f64,
+        n13: f64,
+        n14: f64,
+        n21: f64,
+        n22: f64,
+        n23: f64,
+        n24: f64,
+        n31: f64,
+        n32: f64,
+        n33: f64,
+        n34: f64,
+        n41: f64,
+        n42: f64,
+        n43: f64,
+        n44: f64,
     ) -> Self {
         let mut m = Self::identity();
         m.set(
@@ -360,7 +390,12 @@ impl Matrix4 {
     }
 
     /// `Matrix4.makeBasis()`.
-    pub fn make_basis(&mut self, x_axis: &Vector3, y_axis: &Vector3, z_axis: &Vector3) -> &mut Self {
+    pub fn make_basis(
+        &mut self,
+        x_axis: &Vector3,
+        y_axis: &Vector3,
+        z_axis: &Vector3,
+    ) -> &mut Self {
         self.set(
             x_axis.x, y_axis.x, z_axis.x, 0.0, //
             x_axis.y, y_axis.y, z_axis.y, 0.0, //
@@ -567,8 +602,7 @@ impl Matrix4 {
         let t22 = n21 * n33 - n23 * n31;
         let t23 = n21 * n32 - n22 * n31;
 
-        n11 * (n42 * t11 - n43 * t12 + n44 * t13)
-            - n12 * (n41 * t11 - n43 * t21 + n44 * t22)
+        n11 * (n42 * t11 - n43 * t12 + n44 * t13) - n12 * (n41 * t11 - n43 * t21 + n44 * t22)
             + n13 * (n41 * t12 - n42 * t21 + n44 * t23)
             - n14 * (n41 * t13 - n42 * t22 + n43 * t23)
     }
@@ -698,15 +732,35 @@ impl Matrix4 {
         let (tx, ty) = (t * x, t * y);
 
         self.set(
-            tx * x + c, tx * y - s * z, tx * z + s * y, 0.0, //
-            tx * y + s * z, ty * y + c, ty * z - s * x, 0.0, //
-            tx * z - s * y, ty * z + s * x, t * z * z + c, 0.0, //
-            0.0, 0.0, 0.0, 1.0,
+            tx * x + c,
+            tx * y - s * z,
+            tx * z + s * y,
+            0.0, //
+            tx * y + s * z,
+            ty * y + c,
+            ty * z - s * x,
+            0.0, //
+            tx * z - s * y,
+            ty * z + s * x,
+            t * z * z + c,
+            0.0, //
+            0.0,
+            0.0,
+            0.0,
+            1.0,
         )
     }
 
     /// `Matrix4.makeShear()`.
-    pub fn make_shear(&mut self, xy: f64, xz: f64, yx: f64, yz: f64, zx: f64, zy: f64) -> &mut Self {
+    pub fn make_shear(
+        &mut self,
+        xy: f64,
+        xz: f64,
+        yx: f64,
+        yz: f64,
+        zx: f64,
+        zy: f64,
+    ) -> &mut Self {
         self.set(
             1.0, yx, zx, 0.0, //
             xy, 1.0, zy, 0.0, //
@@ -824,9 +878,7 @@ impl Matrix4 {
 
     /// `Matrix4.fromArray()`.
     pub fn from_array(&mut self, array: &[f64], offset: usize) -> &mut Self {
-        for i in 0..16 {
-            self.elements[i] = array[i + offset];
-        }
+        self.elements.copy_from_slice(&array[offset..offset + 16]);
         self
     }
 

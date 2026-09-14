@@ -47,12 +47,12 @@ pub fn edt_1d(f: &[f64], d: &mut [f64], v: &mut [usize], z: &mut [f64], n: usize
     }
 
     let mut k: usize = 0;
-    for q in 0..n {
+    for (q, dq) in d.iter_mut().enumerate().take(n) {
         while z[k + 1] < q as f64 {
             k += 1;
         }
         let dx = q as f64 - v[k] as f64;
-        d[q] = dx * dx + f[v[k]];
+        *dq = dx * dx + f[v[k]];
     }
 }
 

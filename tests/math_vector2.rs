@@ -39,6 +39,10 @@ fn set() {
 }
 
 #[test]
+// Mirrors three.js's "ensure it is a true copy" idiom: `a` is mutated after
+// the copy purely to prove it and `b` don't alias; the final writes are
+// never read back.
+#[allow(unused_assignments)]
 fn copy() {
     let mut a = Vector2::new(X, Y);
     let mut b = Vector2::default();

@@ -208,9 +208,7 @@ impl TargetResolver for SceneResolver {
             "quaternion" => NodeProperty::Quaternion,
             "scale" => NodeProperty::Scale,
             "morphTargetInfluences" => NodeProperty::MorphTargetInfluences(
-                self.morph_target_influences
-                    .get(&node.borrow().id)?
-                    .clone(),
+                self.morph_target_influences.get(&node.borrow().id)?.clone(),
             ),
             // `THREE.PropertyBinding: Trying to update property for track: …
             // but it wasn't found.` — TODO: `visible`, `material.*`, and the

@@ -39,7 +39,11 @@ impl Interpolation for Mock {
     }
 }
 
-fn mock(parameter_positions: Vec<f64>, sample_values: Vec<f64>, sample_size: usize) -> Interpolant<Mock> {
+fn mock(
+    parameter_positions: Vec<f64>,
+    sample_values: Vec<f64>,
+    sample_size: usize,
+) -> Interpolant<Mock> {
     Interpolant::new(
         parameter_positions,
         sample_values,
@@ -64,9 +68,21 @@ fn instancing() {
 fn copy_sample_value() {
     let mut interpolant = mock(Vec::new(), vec![1.0, 11.0, 2.0, 22.0, 3.0, 33.0], 2);
 
-    assert_eq!(interpolant.copy_sample_value(0), [1.0, 11.0], "sample fetch (0)");
-    assert_eq!(interpolant.copy_sample_value(1), [2.0, 22.0], "sample fetch (1)");
-    assert_eq!(interpolant.copy_sample_value(2), [3.0, 33.0], "first sample (2)");
+    assert_eq!(
+        interpolant.copy_sample_value(0),
+        [1.0, 11.0],
+        "sample fetch (0)"
+    );
+    assert_eq!(
+        interpolant.copy_sample_value(1),
+        [2.0, 22.0],
+        "sample fetch (1)"
+    );
+    assert_eq!(
+        interpolant.copy_sample_value(2),
+        [3.0, 33.0],
+        "first sample (2)"
+    );
 }
 
 #[test]

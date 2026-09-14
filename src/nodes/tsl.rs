@@ -15,19 +15,24 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use super::node::{
-    Builtin, BufferNode, BufferSource, FnDef, InstanceBuffer, Lazy, Node, NodeRef, SampleMode,
-    Type, UniformGroup,
-    UniformNode, UniformSource, VarDef, VaryingDef,
+    BufferNode, BufferSource, Builtin, FnDef, InstanceBuffer, Lazy, Node, NodeRef, SampleMode,
+    Type, UniformGroup, UniformNode, UniformSource, VarDef, VaryingDef,
 };
 use crate::math::{Color, Matrix3};
 use crate::textures::{CubeDepthTexture, CubeTexture, DataArrayTexture, DepthTexture, Texture};
 
 pub use super::node::TextureSource;
 
-
 // ---------------------------------------------------------------------------
 // sub-builds and the build context (`docs/nodes.md` §7)
 // ---------------------------------------------------------------------------
+
+/// Cache key shared by the per-(sub-build layer, normal value) caches below:
+/// `(sub_build_layer, normal_value_id)`.
+type SubBuildKey = (Option<&'static str>, Option<usize>);
+
+/// [`SubBuildKey`] plus the flat-shading flag, for `normalView`'s cache.
+type NormalViewKey = (Option<&'static str>, Option<usize>, bool);
 
 thread_local! {
     /// `NodeBuilder.subBuildLayers`. One layer at a time is all the ladder
@@ -47,15 +52,15 @@ thread_local! {
     static NORMAL_VIEW_GEOMETRY: RefCell<HashMap<bool, NodeRef>> = RefCell::new(HashMap::new());
     /// `normalView`'s node per (layer, normal value) — the stand-in for
     /// three.js' per-build `nodeData` plus its `subBuildsCache`.
-    static NORMAL_VIEW: RefCell<HashMap<(Option<&'static str>, Option<usize>, bool), NodeRef>> =
+    static NORMAL_VIEW: RefCell<HashMap<NormalViewKey, NodeRef>> =
         RefCell::new(HashMap::new());
     /// `tangentView` / `bitangentView`, keyed the same way.
-    static TANGENT_VIEW: RefCell<HashMap<(Option<&'static str>, Option<usize>), (NodeRef, NodeRef)>> =
+    static TANGENT_VIEW: RefCell<HashMap<SubBuildKey, (NodeRef, NodeRef)>> =
         RefCell::new(HashMap::new());
     /// `normalWorld`, keyed the same way: it reads `normalView`, so a plain
     /// singleton would bake in whichever material was built first and then
     /// re-assign `normalView` from the geometric normal in every later one.
-    static NORMAL_WORLD: RefCell<HashMap<(Option<&'static str>, Option<usize>), NodeRef>> =
+    static NORMAL_WORLD: RefCell<HashMap<SubBuildKey, NodeRef>> =
         RefCell::new(HashMap::new());
     /// `builder.context.setupPositionView()` — `NodeMaterial.setup()` installs
     /// it before either stage is flowed, and `SpriteNodeMaterial` overrides it
@@ -89,7 +94,11 @@ fn in_sub_build<R>(layer: &'static str, f: impl FnOnce() -> R) -> R {
 /// Install the material's `normalNode` as `builder.context.setupNormal` for the
 /// duration of `f` — `NodeMaterial.setup()` does exactly this before flowing
 /// either stage. Returns what `f` returns.
-pub fn with_material_normal<R>(normal: Option<NodeRef>, flat_shading: bool, f: impl FnOnce() -> R) -> R {
+pub fn with_material_normal<R>(
+    normal: Option<NodeRef>,
+    flat_shading: bool,
+    f: impl FnOnce() -> R,
+) -> R {
     let previous = NORMAL_VALUE.with(|v| v.replace(normal));
     let previous_flat = FLAT_SHADING.with(|v| v.replace(flat_shading));
     let out = f();
@@ -170,12 +179,7 @@ pub fn vec3s(x: impl Into<f64>) -> NodeRef {
 }
 
 /// `vec4( x, y, z, w )`.
-pub fn vec4(
-    x: impl Into<f64>,
-    y: impl Into<f64>,
-    z: impl Into<f64>,
-    w: impl Into<f64>,
-) -> NodeRef {
+pub fn vec4(x: impl Into<f64>, y: impl Into<f64>, z: impl Into<f64>, w: impl Into<f64>) -> NodeRef {
     constant(Type::Vec4, vec![x.into(), y.into(), z.into(), w.into()])
 }
 
@@ -334,9 +338,7 @@ fn binary(op: &'static str, a: NodeRef, b: NodeRef) -> NodeRef {
 
     let ty = if ta.is_matrix() {
         ta
-    } else if tb.is_matrix() {
-        tb
-    } else if tb.components() > ta.components() {
+    } else if tb.is_matrix() || tb.components() > ta.components() {
         tb
     } else {
         ta
@@ -489,7 +491,11 @@ pub fn smoothstep(
     high: impl Into<NodeRef>,
     x: impl Into<NodeRef>,
 ) -> NodeRef {
-    math("smoothstep", vec![low.into(), high.into(), x.into()], Type::F32)
+    math(
+        "smoothstep",
+        vec![low.into(), high.into(), x.into()],
+        Type::F32,
+    )
 }
 
 /// `dFdx( x )` — WGSL `dpdx`.
@@ -772,7 +778,7 @@ pub fn inverse_sqrt(x: impl Into<NodeRef>) -> NodeRef {
 /// dump calls it `NORMAL_TBNViewMatrix`; here the layer is simply still open.
 pub fn tbn_view_matrix() -> NodeRef {
     thread_local! {
-        static CELL: Lazy<NodeRef> = Lazy::new();
+        static CELL: Lazy<NodeRef> = const { Lazy::new() };
     }
     CELL.with(|c| {
         c.get(|| {
@@ -1031,10 +1037,7 @@ impl NodeRef {
 
     /// `vec4( node.x, node.y, z, node.w )` — `SetNode` for `.setZ()`.
     pub fn set_z(&self, z: impl Into<NodeRef>) -> NodeRef {
-        join(
-            Type::Vec4,
-            vec![self.x(), self.y(), z.into(), self.w()],
-        )
+        join(Type::Vec4, vec![self.x(), self.y(), z.into(), self.w()])
     }
 
     // --- conversion ---
@@ -1126,7 +1129,7 @@ macro_rules! accessor {
         $(#[$m])*
         pub fn $name() -> NodeRef {
             thread_local! {
-                static CELL: Lazy<NodeRef> = Lazy::new();
+                static CELL: Lazy<NodeRef> = const { Lazy::new() };
             }
             CELL.with(|c| c.get(|| $body))
         }
@@ -1413,7 +1416,7 @@ accessor!(
 /// .toVar( 'normalFlat' )`. `dpdy()` carries WGSL's sign flip, so this prints as
 /// `normalize( cross( dpdx( v_positionView ), - dpdy( v_positionView ) ) )`.
 pub fn normal_flat() -> NodeRef {
-    thread_local! { static CELL: Lazy<NodeRef> = Lazy::new(); }
+    thread_local! { static CELL: Lazy<NodeRef> = const { Lazy::new() }; }
     CELL.with(|c| {
         c.get(|| {
             to_var(
@@ -1599,7 +1602,7 @@ accessor!(
 
 // Properties the material setup assigns to explicitly.
 pub fn diffuse_color() -> NodeRef {
-    thread_local! { static CELL: Lazy<NodeRef> = Lazy::new(); }
+    thread_local! { static CELL: Lazy<NodeRef> = const { Lazy::new() }; }
     CELL.with(|c| c.get(|| property("DiffuseColor", Type::Vec4)))
 }
 
@@ -1607,7 +1610,7 @@ macro_rules! prop {
     ($(#[$meta:meta])* $name:ident, $wgsl:literal, $ty:expr) => {
         $(#[$meta])*
         pub fn $name() -> NodeRef {
-            thread_local! { static CELL: Lazy<NodeRef> = Lazy::new(); }
+            thread_local! { static CELL: Lazy<NodeRef> = const { Lazy::new() }; }
             CELL.with(|c| c.get(|| property($wgsl, $ty)))
         }
     };
@@ -1630,7 +1633,7 @@ prop!(emissive_color, "EmissiveColor", Type::Vec3);
 macro_rules! lighting_var {
     ($name:ident, $wgsl:literal, $init:expr) => {
         pub fn $name() -> NodeRef {
-            thread_local! { static CELL: Lazy<NodeRef> = Lazy::new(); }
+            thread_local! { static CELL: Lazy<NodeRef> = const { Lazy::new() }; }
             CELL.with(|c| c.get(|| to_var_untagged($wgsl, $init)))
         }
     };
@@ -1761,13 +1764,7 @@ pub fn bump_map(map: &Texture, scale: NodeRef) -> NodeRef {
         let r1 = cross(v_sigma_y, surf_norm.clone());
         let r2 = cross(surf_norm.clone(), v_sigma_x.clone());
         let f_det = v_sigma_x.dot(r1.clone()).mul(face_direction());
-        let v_grad = sign(f_det.clone()).mul(
-            dhdxy
-                .clone()
-                .x()
-                .mul(r1)
-                .add(dhdxy.y().mul(r2)),
-        );
+        let v_grad = sign(f_det.clone()).mul(dhdxy.clone().x().mul(r1).add(dhdxy.y().mul(r2)));
         abs(f_det).mul(surf_norm).sub(v_grad).normalize()
     })
 }
@@ -2047,7 +2044,12 @@ pub fn morph_influences(count: usize, index: NodeRef) -> NodeRef {
 
 /// `Morph.js`' `base = uniform( 1 )`, in the object group.
 pub fn morph_base() -> NodeRef {
-    uniform(UniformSource::MorphBase, Type::F32, UniformGroup::Object, None)
+    uniform(
+        UniformSource::MorphBase,
+        Type::F32,
+        UniformGroup::Object,
+        None,
+    )
 }
 
 /// `geometry.setAttribute( name, new InstancedBufferAttribute( array, items ) )`
@@ -2069,11 +2071,7 @@ pub fn instanced_data_attribute(
         offset + ty.components() <= item_size,
         "three-rs: instanced attribute reads past the instance stride"
     );
-    let count = if item_size == 0 {
-        0
-    } else {
-        data.len() / item_size
-    };
+    let count = data.len().checked_div(item_size).unwrap_or(0);
     let buffer = Rc::new(InstanceBuffer {
         id: crate::nodes::node::BufferId::next(),
         source: BufferSource::Attribute(data.clone()),
@@ -2152,7 +2150,7 @@ pub fn luminance(color: NodeRef) -> NodeRef {
 /// `saturation( color, adjustment )` — ported verbatim from
 /// `ColorAdjustment.js`: `adjustment.mix( luminance( color.rgb ), color.rgb ).max( 0.0 )`.
 pub fn saturation(color: NodeRef, adjustment: NodeRef) -> NodeRef {
-    thread_local! { static CELL: Lazy<Rc<FnDef>> = Lazy::new(); }
+    thread_local! { static CELL: Lazy<Rc<FnDef>> = const { Lazy::new() }; }
     let def = CELL.with(|c| {
         c.get(|| {
             inline_fn(2, Type::Vec3, |args| {
@@ -2168,7 +2166,7 @@ pub fn saturation(color: NodeRef, adjustment: NodeRef) -> NodeRef {
 
 /// `hue( color, adjustment )` — ported verbatim from `ColorAdjustment.js`.
 pub fn hue(color: NodeRef, adjustment: NodeRef) -> NodeRef {
-    thread_local! { static CELL: Lazy<Rc<FnDef>> = Lazy::new(); }
+    thread_local! { static CELL: Lazy<Rc<FnDef>> = const { Lazy::new() }; }
     let def = CELL.with(|c| {
         c.get(|| {
             inline_fn(2, Type::Vec3, |args| {
@@ -2179,9 +2177,9 @@ pub fn hue(color: NodeRef, adjustment: NodeRef) -> NodeRef {
                     .rgb()
                     .mul(cos_angle.clone())
                     .add(
-                        k.cross(color.rgb()).mul(adjustment.sin()).add(
-                            k.mul(dot(k.clone(), color.rgb()).mul(cos_angle.one_minus())),
-                        ),
+                        k.cross(color.rgb())
+                            .mul(adjustment.sin())
+                            .add(k.mul(dot(k.clone(), color.rgb()).mul(cos_angle.one_minus()))),
                     )
                     .max(float(0.0))
             })
@@ -2201,7 +2199,7 @@ pub fn osc_sine(t: NodeRef) -> NodeRef {
 
 /// `sRGBTransferOETF` — `ColorSpaceFunctions.js`, emitted as a real `fn`.
 pub fn srgb_transfer_oetf(color: NodeRef) -> NodeRef {
-    thread_local! { static CELL: Lazy<Rc<FnDef>> = Lazy::new(); }
+    thread_local! { static CELL: Lazy<Rc<FnDef>> = const { Lazy::new() }; }
     let def = CELL.with(|c| {
         c.get(|| {
             shader_fn(
@@ -2225,10 +2223,9 @@ pub fn srgb_transfer_oetf(color: NodeRef) -> NodeRef {
     call(&def, vec![color])
 }
 
-
 /// `reinhardToneMapping` — `ToneMappingFunctions.js`, emitted as a real `fn`.
 pub fn reinhard_tone_mapping(color: NodeRef, exposure: NodeRef) -> NodeRef {
-    thread_local! { static CELL: Lazy<Rc<FnDef>> = Lazy::new(); }
+    thread_local! { static CELL: Lazy<Rc<FnDef>> = const { Lazy::new() }; }
     let def = CELL.with(|c| {
         c.get(|| {
             shader_fn(
@@ -2252,7 +2249,7 @@ pub fn reinhard_tone_mapping(color: NodeRef, exposure: NodeRef) -> NodeRef {
 
 /// `premultiplyAlpha` — `PremultiplyAlphaFunctions.js`.
 pub fn premultiply_alpha(color: NodeRef) -> NodeRef {
-    thread_local! { static CELL: Lazy<Rc<FnDef>> = Lazy::new(); }
+    thread_local! { static CELL: Lazy<Rc<FnDef>> = const { Lazy::new() }; }
     let def = CELL.with(|c| {
         c.get(|| {
             shader_fn(None, vec![("color", Type::Vec4)], Type::Vec4, |args| {
@@ -2266,7 +2263,7 @@ pub fn premultiply_alpha(color: NodeRef) -> NodeRef {
 
 /// `unpremultiplyAlpha` — `PremultiplyAlphaFunctions.js`.
 pub fn unpremultiply_alpha(color: NodeRef) -> NodeRef {
-    thread_local! { static CELL: Lazy<Rc<FnDef>> = Lazy::new(); }
+    thread_local! { static CELL: Lazy<Rc<FnDef>> = const { Lazy::new() }; }
     let def = CELL.with(|c| {
         c.get(|| {
             shader_fn(None, vec![("color", Type::Vec4)], Type::Vec4, |args| {
@@ -2280,7 +2277,6 @@ pub fn unpremultiply_alpha(color: NodeRef) -> NodeRef {
     });
     call(&def, vec![color])
 }
-
 
 // ---------------------------------------------------------------------------
 // statements (`Fn()` bodies, `Loop()`, `If()`, `Discard()`)
@@ -2298,7 +2294,10 @@ pub fn loop_n(
     count: NodeRef,
     body: impl FnOnce(&NodeRef) -> Vec<NodeRef>,
 ) -> NodeRef {
-    let index = NodeRef::new(Node::Param { name, ty: Type::I32 });
+    let index = NodeRef::new(Node::Param {
+        name,
+        ty: Type::I32,
+    });
     let body = body(&index);
     NodeRef::new(Node::Loop { count, index, body })
 }
@@ -2380,7 +2379,7 @@ pub fn shadow_map_compare(map: &DepthTexture, coord: NodeRef, z: NodeRef) -> Nod
 
 /// `interleavedGradientNoise( position )` — `PostProcessingUtils.js`.
 pub fn interleaved_gradient_noise(position: NodeRef) -> NodeRef {
-    thread_local! { static CELL: Lazy<Rc<FnDef>> = Lazy::new(); }
+    thread_local! { static CELL: Lazy<Rc<FnDef>> = const { Lazy::new() }; }
     let def = CELL.with(|c| {
         c.get(|| {
             shader_fn(
@@ -2401,7 +2400,7 @@ pub fn interleaved_gradient_noise(position: NodeRef) -> NodeRef {
 /// `vogelDiskSample( sampleIndex, samplesCount, phi )` —
 /// `PostProcessingUtils.js`.
 pub fn vogel_disk_sample(sample_index: NodeRef, samples_count: NodeRef, phi: NodeRef) -> NodeRef {
-    thread_local! { static CELL: Lazy<Rc<FnDef>> = Lazy::new(); }
+    thread_local! { static CELL: Lazy<Rc<FnDef>> = const { Lazy::new() }; }
     let def = CELL.with(|c| {
         c.get(|| {
             shader_fn(
@@ -2436,7 +2435,7 @@ pub fn vogel_disk_sample(sample_index: NodeRef, samples_count: NodeRef, phi: Nod
 /// `acesFilmicToneMapping( color, exposure )` —
 /// `ToneMappingFunctions.js`, emitted as a real `fn`.
 pub fn aces_filmic_tone_mapping(color: NodeRef, exposure: NodeRef) -> NodeRef {
-    thread_local! { static CELL: Lazy<Rc<FnDef>> = Lazy::new(); }
+    thread_local! { static CELL: Lazy<Rc<FnDef>> = const { Lazy::new() }; }
     let def = CELL.with(|c| {
         c.get(|| {
             shader_fn(

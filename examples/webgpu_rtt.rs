@@ -50,7 +50,8 @@ pub fn init() -> App {
 
     // textured mesh
 
-    let uv_texture = three_rs::TextureLoader::new().load(examples_dir().join("textures/uv_grid_opengl.jpg"));
+    let uv_texture =
+        three_rs::TextureLoader::new().load(examples_dir().join("textures/uv_grid_opengl.jpg"));
 
     let geometry_box = Rc::new(box_geometry(1.0, 1.0, 1.0, 1, 1, 1));
     let mut material_box = MeshBasicNodeMaterial::new();

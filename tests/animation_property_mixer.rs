@@ -132,7 +132,12 @@ fn accumulate_into_accu1() {
     mixer.accumulate(1, 1.0);
 
     close_all(&mixer.buffer[6..9], &[5.0, 6.0, 7.0], EPS, "accu1");
-    close_all(&mixer.buffer[3..6], &[0.0, 0.0, 0.0], EPS, "accu0 untouched");
+    close_all(
+        &mixer.buffer[3..6],
+        &[0.0, 0.0, 0.0],
+        EPS,
+        "accu0 untouched",
+    );
 
     mixer.apply(1);
     close_all(&read_target(&mixer), &[5.0, 6.0, 7.0], EPS, "value");
@@ -160,7 +165,12 @@ fn quaternion_mixer_slerps_rather_than_lerps() {
     mixer.save_original_state();
 
     // `_setAdditiveIdentityQuaternion`: zeros plus w = 1.
-    close_all(&mixer.buffer[16..20], &[0.0, 0.0, 0.0, 1.0], EPS, "add identity");
+    close_all(
+        &mixer.buffer[16..20],
+        &[0.0, 0.0, 0.0, 1.0],
+        EPS,
+        "add identity",
+    );
 
     set_incoming(&mut mixer, &[0.0, 0.0, half, half]);
     mixer.accumulate(0, 0.5);
@@ -236,8 +246,11 @@ fn bool_mixer_selects() {
     //
     // weight 0.3 -> apply mixes with t = 1 - 0.3 = 0.7 >= 0.5, so the original
     // wins and the incoming `true` is discarded.
-    let mut mixer =
-        PropertyMixer::new(Box::new(BufferTarget::new(vec![0.0])), TrackValueType::Bool, 1);
+    let mut mixer = PropertyMixer::new(
+        Box::new(BufferTarget::new(vec![0.0])),
+        TrackValueType::Bool,
+        1,
+    );
     mixer.save_original_state();
     // `_setAdditiveIdentityOther` copies `orig` into `add`.
     close(mixer.buffer[4], 0.0, EPS, "add identity");
@@ -248,8 +261,11 @@ fn bool_mixer_selects() {
     close_all(&read_target(&mixer), &[0.0], EPS, "original wins");
 
     // weight 0.6 -> t = 0.4 < 0.5, the incoming value survives.
-    let mut mixer =
-        PropertyMixer::new(Box::new(BufferTarget::new(vec![0.0])), TrackValueType::Bool, 1);
+    let mut mixer = PropertyMixer::new(
+        Box::new(BufferTarget::new(vec![0.0])),
+        TrackValueType::Bool,
+        1,
+    );
     mixer.save_original_state();
     set_incoming(&mut mixer, &[1.0]);
     mixer.accumulate(0, 0.6);

@@ -16,6 +16,6 @@ pub use animation_clip::AnimationClip;
 pub use animation_mixer::{ActionHandle, AnimationMixer, RootId};
 pub use animation_object_group::AnimationObjectGroup;
 pub use binding_target::{BindingTarget, BufferTarget, TargetResolver};
-pub use object3d_target::{NodeProperty, NodeTarget, SceneResolver};
 pub use keyframe_track::{InterpolationMode, KeyframeTrack, TrackInterpolant, TrackValueType};
+pub use object3d_target::{NodeProperty, NodeTarget, SceneResolver};
 pub use property_mixer::PropertyMixer;

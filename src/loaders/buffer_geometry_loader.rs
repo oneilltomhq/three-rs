@@ -66,9 +66,15 @@ impl BufferGeometryLoader {
                 let buffer_attribute = BufferAttribute::new(array, item_size);
 
                 match key.as_str() {
-                    "position" => { geometry.set_attribute("position", buffer_attribute); }
-                    "normal" => { geometry.set_attribute("normal", buffer_attribute); }
-                    "uv" => { geometry.set_attribute("uv", buffer_attribute); }
+                    "position" => {
+                        geometry.set_attribute("position", buffer_attribute);
+                    }
+                    "normal" => {
+                        geometry.set_attribute("normal", buffer_attribute);
+                    }
+                    "uv" => {
+                        geometry.set_attribute("uv", buffer_attribute);
+                    }
                     other => panic!("three-rs: unsupported attribute {other:?}"),
                 }
             }
