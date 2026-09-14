@@ -70,8 +70,7 @@ pub fn init() -> App {
     bulb_mat.emissive = Color::from_hex(0xffffee);
     bulb_mat.emissive_intensity = 1.0;
 
-    let bulb_mesh = Mesh::new(bulb_geometry);
-    bulb_mesh.borrow_mut().mesh_mut().unwrap().material = Some(bulb_mat);
+    let bulb_mesh = Mesh::new(bulb_geometry, bulb_mat);
     bulb_light.add(&bulb_mesh);
     bulb_light.borrow_mut().position.set(0.0, 2.0, 0.0);
     bulb_light.borrow_mut().cast_shadow = true;
@@ -141,8 +140,7 @@ pub fn init() -> App {
     ball_mat.metalness_map = Some(earth_specular);
 
     let floor_geometry = Rc::new(plane_geometry(20.0, 20.0, 1, 1));
-    let floor_mesh = Mesh::new(floor_geometry);
-    floor_mesh.borrow_mut().mesh_mut().unwrap().material = Some(floor_mat);
+    let floor_mesh = Mesh::new(floor_geometry, floor_mat);
     floor_mesh.borrow_mut().receive_shadow = true;
     floor_mesh
         .borrow_mut()
@@ -150,8 +148,7 @@ pub fn init() -> App {
     scene.add(&floor_mesh);
 
     let ball_geometry = Rc::new(sphere_geometry(0.25, 32, 32));
-    let ball_mesh = Mesh::new(ball_geometry);
-    ball_mesh.borrow_mut().mesh_mut().unwrap().material = Some(ball_mat);
+    let ball_mesh = Mesh::new(ball_geometry, ball_mat);
     ball_mesh.borrow_mut().position.set(1.0, 0.25, 1.0);
     ball_mesh
         .borrow_mut()
@@ -165,8 +162,7 @@ pub fn init() -> App {
         Vector3::new(0.0, 0.25, -5.0),
         Vector3::new(7.0, 0.25, 0.0),
     ] {
-        let box_mesh = Mesh::new(box_geom.clone());
-        box_mesh.borrow_mut().mesh_mut().unwrap().material = Some(cube_mat.clone());
+        let box_mesh = Mesh::new(box_geom.clone(), cube_mat.clone());
         box_mesh.borrow_mut().position = position;
         box_mesh.borrow_mut().cast_shadow = true;
         scene.add(&box_mesh);

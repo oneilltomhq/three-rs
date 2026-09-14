@@ -433,10 +433,9 @@ pub fn init() -> App {
             })
             .clone();
 
-        let mesh = Mesh::new(unit_box.clone());
+        let mesh = Mesh::new(unit_box.clone(), material);
         {
             let mut object = mesh.borrow_mut();
-            object.mesh_mut().unwrap().material = Some(material);
             object
                 .scale
                 .set((leaf.x1 - leaf.x0) * S, THICK, (leaf.y1 - leaf.y0) * S);

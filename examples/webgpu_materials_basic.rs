@@ -67,11 +67,9 @@ pub fn init() -> App {
     let mut random = DeterministicRandom::new();
 
     for _ in 0..500 {
-        let mesh = Mesh::new(geometry.clone());
+        let mesh = Mesh::new(geometry.clone(), material.clone());
         {
             let mut object = mesh.borrow_mut();
-            object.mesh_mut().unwrap().material = Some(material.clone());
-
             object.position.x = random.next() * 10.0 - 5.0;
             object.position.y = random.next() * 10.0 - 5.0;
             object.position.z = random.next() * 10.0 - 5.0;

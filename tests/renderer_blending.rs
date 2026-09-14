@@ -36,15 +36,13 @@ fn render(overlay: impl FnOnce(&mut MeshBasicNodeMaterial)) -> Vec<u8> {
 
     let mut base = MeshBasicNodeMaterial::new();
     base.color = Color::new(1.0, 0.0, 0.0);
-    let red = Mesh::new(geometry.clone());
-    red.borrow_mut().mesh_mut().unwrap().material = Some(base);
+    let red = Mesh::new(geometry.clone(), base);
     scene.add(&red);
 
     let mut material = MeshBasicNodeMaterial::new();
     material.color = Color::new(0.0, 1.0, 0.0);
     overlay(&mut material);
-    let green = Mesh::new(geometry);
-    green.borrow_mut().mesh_mut().unwrap().material = Some(material);
+    let green = Mesh::new(geometry, material);
     green.borrow_mut().position.set(2.0, 0.0, 0.01);
     scene.add(&green);
 

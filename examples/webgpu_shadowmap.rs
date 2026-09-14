@@ -139,10 +139,9 @@ pub fn init() -> App {
             .greater_than(0.0),
     );
 
-    let torus_knot = Mesh::new(geometry);
+    let torus_knot = Mesh::new(geometry, material_custom_shadow);
     {
         let mut object = torus_knot.borrow_mut();
-        object.mesh_mut().unwrap().material = Some(material_custom_shadow);
         object.scale.multiply_scalar(1.0 / 18.0);
         object.position.y = 3.0;
         object.cast_shadow = true;
@@ -155,10 +154,9 @@ pub fn init() -> App {
     // `pillar1.clone()` shares the geometry and the material; only the position
     // differs, so four plain meshes are the same thing.
     for (x, z) in [(8.0, 8.0), (8.0, -8.0), (-8.0, 8.0), (-8.0, -8.0)] {
-        let pillar = Mesh::new(cylinder_geometry.clone());
+        let pillar = Mesh::new(cylinder_geometry.clone(), material.clone());
         {
             let mut object = pillar.borrow_mut();
-            object.mesh_mut().unwrap().material = Some(material.clone());
             object.position.set(x, 3.5, z);
             object.cast_shadow = true;
         }
@@ -184,10 +182,9 @@ pub fn init() -> App {
             .add(0.5),
     ));
 
-    let ground = Mesh::new(plane_geometry);
+    let ground = Mesh::new(plane_geometry, plane_material);
     {
         let mut object = ground.borrow_mut();
-        object.mesh_mut().unwrap().material = Some(plane_material);
         object.set_rotation(-PI / 2.0, 0.0, 0.0);
         object.scale.multiply_scalar(3.0);
         object.cast_shadow = true;
