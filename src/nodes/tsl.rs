@@ -773,7 +773,7 @@ pub fn inverse_sqrt(x: impl Into<NodeRef>) -> NodeRef {
 /// dump calls it `NORMAL_TBNViewMatrix`; here the layer is simply still open.
 pub fn tbn_view_matrix() -> NodeRef {
     thread_local! {
-        static CELL: Lazy<NodeRef> = Lazy::new();
+        static CELL: Lazy<NodeRef> = const { Lazy::new() };
     }
     CELL.with(|c| {
         c.get(|| {
@@ -1124,7 +1124,7 @@ macro_rules! accessor {
         $(#[$m])*
         pub fn $name() -> NodeRef {
             thread_local! {
-                static CELL: Lazy<NodeRef> = Lazy::new();
+                static CELL: Lazy<NodeRef> = const { Lazy::new() };
             }
             CELL.with(|c| c.get(|| $body))
         }
@@ -1411,7 +1411,7 @@ accessor!(
 /// .toVar( 'normalFlat' )`. `dpdy()` carries WGSL's sign flip, so this prints as
 /// `normalize( cross( dpdx( v_positionView ), - dpdy( v_positionView ) ) )`.
 pub fn normal_flat() -> NodeRef {
-    thread_local! { static CELL: Lazy<NodeRef> = Lazy::new(); }
+    thread_local! { static CELL: Lazy<NodeRef> = const { Lazy::new() }; }
     CELL.with(|c| {
         c.get(|| {
             to_var(
@@ -1597,7 +1597,7 @@ accessor!(
 
 // Properties the material setup assigns to explicitly.
 pub fn diffuse_color() -> NodeRef {
-    thread_local! { static CELL: Lazy<NodeRef> = Lazy::new(); }
+    thread_local! { static CELL: Lazy<NodeRef> = const { Lazy::new() }; }
     CELL.with(|c| c.get(|| property("DiffuseColor", Type::Vec4)))
 }
 
@@ -1605,7 +1605,7 @@ macro_rules! prop {
     ($(#[$meta:meta])* $name:ident, $wgsl:literal, $ty:expr) => {
         $(#[$meta])*
         pub fn $name() -> NodeRef {
-            thread_local! { static CELL: Lazy<NodeRef> = Lazy::new(); }
+            thread_local! { static CELL: Lazy<NodeRef> = const { Lazy::new() }; }
             CELL.with(|c| c.get(|| property($wgsl, $ty)))
         }
     };
@@ -1628,7 +1628,7 @@ prop!(emissive_color, "EmissiveColor", Type::Vec3);
 macro_rules! lighting_var {
     ($name:ident, $wgsl:literal, $init:expr) => {
         pub fn $name() -> NodeRef {
-            thread_local! { static CELL: Lazy<NodeRef> = Lazy::new(); }
+            thread_local! { static CELL: Lazy<NodeRef> = const { Lazy::new() }; }
             CELL.with(|c| c.get(|| to_var_untagged($wgsl, $init)))
         }
     };
@@ -2149,7 +2149,7 @@ pub fn luminance(color: NodeRef) -> NodeRef {
 /// `saturation( color, adjustment )` — ported verbatim from
 /// `ColorAdjustment.js`: `adjustment.mix( luminance( color.rgb ), color.rgb ).max( 0.0 )`.
 pub fn saturation(color: NodeRef, adjustment: NodeRef) -> NodeRef {
-    thread_local! { static CELL: Lazy<Rc<FnDef>> = Lazy::new(); }
+    thread_local! { static CELL: Lazy<Rc<FnDef>> = const { Lazy::new() }; }
     let def = CELL.with(|c| {
         c.get(|| {
             inline_fn(2, Type::Vec3, |args| {
@@ -2165,7 +2165,7 @@ pub fn saturation(color: NodeRef, adjustment: NodeRef) -> NodeRef {
 
 /// `hue( color, adjustment )` — ported verbatim from `ColorAdjustment.js`.
 pub fn hue(color: NodeRef, adjustment: NodeRef) -> NodeRef {
-    thread_local! { static CELL: Lazy<Rc<FnDef>> = Lazy::new(); }
+    thread_local! { static CELL: Lazy<Rc<FnDef>> = const { Lazy::new() }; }
     let def = CELL.with(|c| {
         c.get(|| {
             inline_fn(2, Type::Vec3, |args| {
@@ -2198,7 +2198,7 @@ pub fn osc_sine(t: NodeRef) -> NodeRef {
 
 /// `sRGBTransferOETF` — `ColorSpaceFunctions.js`, emitted as a real `fn`.
 pub fn srgb_transfer_oetf(color: NodeRef) -> NodeRef {
-    thread_local! { static CELL: Lazy<Rc<FnDef>> = Lazy::new(); }
+    thread_local! { static CELL: Lazy<Rc<FnDef>> = const { Lazy::new() }; }
     let def = CELL.with(|c| {
         c.get(|| {
             shader_fn(
@@ -2224,7 +2224,7 @@ pub fn srgb_transfer_oetf(color: NodeRef) -> NodeRef {
 
 /// `reinhardToneMapping` — `ToneMappingFunctions.js`, emitted as a real `fn`.
 pub fn reinhard_tone_mapping(color: NodeRef, exposure: NodeRef) -> NodeRef {
-    thread_local! { static CELL: Lazy<Rc<FnDef>> = Lazy::new(); }
+    thread_local! { static CELL: Lazy<Rc<FnDef>> = const { Lazy::new() }; }
     let def = CELL.with(|c| {
         c.get(|| {
             shader_fn(
@@ -2248,7 +2248,7 @@ pub fn reinhard_tone_mapping(color: NodeRef, exposure: NodeRef) -> NodeRef {
 
 /// `premultiplyAlpha` — `PremultiplyAlphaFunctions.js`.
 pub fn premultiply_alpha(color: NodeRef) -> NodeRef {
-    thread_local! { static CELL: Lazy<Rc<FnDef>> = Lazy::new(); }
+    thread_local! { static CELL: Lazy<Rc<FnDef>> = const { Lazy::new() }; }
     let def = CELL.with(|c| {
         c.get(|| {
             shader_fn(None, vec![("color", Type::Vec4)], Type::Vec4, |args| {
@@ -2262,7 +2262,7 @@ pub fn premultiply_alpha(color: NodeRef) -> NodeRef {
 
 /// `unpremultiplyAlpha` — `PremultiplyAlphaFunctions.js`.
 pub fn unpremultiply_alpha(color: NodeRef) -> NodeRef {
-    thread_local! { static CELL: Lazy<Rc<FnDef>> = Lazy::new(); }
+    thread_local! { static CELL: Lazy<Rc<FnDef>> = const { Lazy::new() }; }
     let def = CELL.with(|c| {
         c.get(|| {
             shader_fn(None, vec![("color", Type::Vec4)], Type::Vec4, |args| {
@@ -2378,7 +2378,7 @@ pub fn shadow_map_compare(map: &DepthTexture, coord: NodeRef, z: NodeRef) -> Nod
 
 /// `interleavedGradientNoise( position )` — `PostProcessingUtils.js`.
 pub fn interleaved_gradient_noise(position: NodeRef) -> NodeRef {
-    thread_local! { static CELL: Lazy<Rc<FnDef>> = Lazy::new(); }
+    thread_local! { static CELL: Lazy<Rc<FnDef>> = const { Lazy::new() }; }
     let def = CELL.with(|c| {
         c.get(|| {
             shader_fn(
@@ -2399,7 +2399,7 @@ pub fn interleaved_gradient_noise(position: NodeRef) -> NodeRef {
 /// `vogelDiskSample( sampleIndex, samplesCount, phi )` —
 /// `PostProcessingUtils.js`.
 pub fn vogel_disk_sample(sample_index: NodeRef, samples_count: NodeRef, phi: NodeRef) -> NodeRef {
-    thread_local! { static CELL: Lazy<Rc<FnDef>> = Lazy::new(); }
+    thread_local! { static CELL: Lazy<Rc<FnDef>> = const { Lazy::new() }; }
     let def = CELL.with(|c| {
         c.get(|| {
             shader_fn(
@@ -2434,7 +2434,7 @@ pub fn vogel_disk_sample(sample_index: NodeRef, samples_count: NodeRef, phi: Nod
 /// `acesFilmicToneMapping( color, exposure )` —
 /// `ToneMappingFunctions.js`, emitted as a real `fn`.
 pub fn aces_filmic_tone_mapping(color: NodeRef, exposure: NodeRef) -> NodeRef {
-    thread_local! { static CELL: Lazy<Rc<FnDef>> = Lazy::new(); }
+    thread_local! { static CELL: Lazy<Rc<FnDef>> = const { Lazy::new() }; }
     let def = CELL.with(|c| {
         c.get(|| {
             shader_fn(

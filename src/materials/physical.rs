@@ -50,7 +50,7 @@ pub fn get_roughness(roughness: NodeRef) -> NodeRef {
 /// `V_GGX_SmithCorrelated( { alpha, dotNL, dotNV } )`, emitted as a real WGSL
 /// `fn` because three.js gives it a layout.
 fn v_ggx_smith_correlated() -> Rc<FnDef> {
-    thread_local! { static CELL: crate::nodes::node::Lazy<Rc<FnDef>> = crate::nodes::node::Lazy::new(); }
+    thread_local! { static CELL: crate::nodes::node::Lazy<Rc<FnDef>> = const { crate::nodes::node::Lazy::new() }; }
     CELL.with(|c| {
         c.get(|| {
             shader_fn(
@@ -89,7 +89,7 @@ fn v_ggx_smith_correlated() -> Rc<FnDef> {
 
 /// `D_GGX( { alpha, dotNH } )`.
 fn d_ggx() -> Rc<FnDef> {
-    thread_local! { static CELL: crate::nodes::node::Lazy<Rc<FnDef>> = crate::nodes::node::Lazy::new(); }
+    thread_local! { static CELL: crate::nodes::node::Lazy<Rc<FnDef>> = const { crate::nodes::node::Lazy::new() }; }
     CELL.with(|c| {
         c.get(|| {
             shader_fn(
