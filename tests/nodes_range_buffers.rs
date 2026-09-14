@@ -111,7 +111,12 @@ fn galaxy_range_buffers() {
 #[test]
 fn vec3_range_has_zero_w() {
     let mut random = DeterministicRandom::new();
-    let data = fill_range(&mut random, [-1.0, -1.0, -1.0, 0.0], [1.0, 1.0, 1.0, 0.0], 2);
+    let data = fill_range(
+        &mut random,
+        [-1.0, -1.0, -1.0, 0.0],
+        [1.0, 1.0, 1.0, 0.0],
+        2,
+    );
     assert_eq!(data[3], 0.0);
     assert_eq!(data[7], 0.0);
     // Eight draws for two instances, even though two of them landed on a

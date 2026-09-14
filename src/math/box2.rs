@@ -85,7 +85,9 @@ impl Box2 {
         if self.is_empty() {
             *target.set(0.0, 0.0)
         } else {
-            *target.add_vectors(&self.min, &self.max).multiply_scalar(0.5)
+            *target
+                .add_vectors(&self.min, &self.max)
+                .multiply_scalar(0.5)
         }
     }
 

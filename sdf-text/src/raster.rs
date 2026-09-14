@@ -146,7 +146,14 @@ fn flatten(commands: &[PathCommand], a: &Affine) -> Vec<Contour> {
                 flatten_quad(pos, c, p, 0, &mut cur);
                 pos = p;
             }
-            PathCommand::CurveTo { x1, y1, x2, y2, x, y } => {
+            PathCommand::CurveTo {
+                x1,
+                y1,
+                x2,
+                y2,
+                x,
+                y,
+            } => {
                 let c1 = (a.mx(x1), a.my(y1));
                 let c2 = (a.mx(x2), a.my(y2));
                 let p = (a.mx(x), a.my(y));
@@ -419,11 +426,7 @@ fn add_band(
             };
             let pys = cys + (pxs - cxs) * dydx;
             let pye = cys + (pxe - cxs) * dydx;
-            put(
-                col as usize,
-                pye - pys,
-                ((pxs - cl) + (pxe - cl)) * 0.5,
-            );
+            put(col as usize, pye - pys, ((pxs - cl) + (pxe - cl)) * 0.5);
         }
         if right {
             if col >= last {

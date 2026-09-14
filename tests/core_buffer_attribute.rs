@@ -87,7 +87,11 @@ fn set_xy() {
 
     a.set_xy(0, -1.0, -2.0);
 
-    assert_eq!(a.array.as_slice(), &expected, "Check for the correct values");
+    assert_eq!(
+        a.array.as_slice(),
+        &expected,
+        "Check for the correct values"
+    );
 }
 
 #[test]
@@ -97,7 +101,11 @@ fn set_xyz() {
 
     a.set_xyz(1, -4.0, -5.0, -6.0);
 
-    assert_eq!(a.array.as_slice(), &expected, "Check for the correct values");
+    assert_eq!(
+        a.array.as_slice(),
+        &expected,
+        "Check for the correct values"
+    );
 }
 
 #[test]
@@ -107,7 +115,11 @@ fn set_xyzw() {
 
     a.set_xyzw(0, -1.0, -2.0, -3.0, -4.0);
 
-    assert_eq!(a.array.as_slice(), &expected, "Check for the correct values");
+    assert_eq!(
+        a.array.as_slice(),
+        &expected,
+        "Check for the correct values"
+    );
 }
 
 #[test]

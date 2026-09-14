@@ -214,7 +214,9 @@ impl KeyframeTrack {
             interpolation: value_type.default_interpolation(),
         };
 
-        track.set_interpolation(interpolation.unwrap_or_else(|| value_type.default_interpolation()))?;
+        track.set_interpolation(
+            interpolation.unwrap_or_else(|| value_type.default_interpolation()),
+        )?;
 
         Ok(track)
     }
@@ -252,7 +254,13 @@ impl KeyframeTrack {
         values: Vec<f64>,
         interpolation: Option<InterpolationMode>,
     ) -> Result<Self, String> {
-        Self::new(TrackValueType::Quaternion, name, times, values, interpolation)
+        Self::new(
+            TrackValueType::Quaternion,
+            name,
+            times,
+            values,
+            interpolation,
+        )
     }
 
     /// `new StringKeyframeTrack( name, times, values )`.
@@ -616,10 +624,9 @@ impl KeyframeTrack {
 
         if json.get("times").is_none() || json.get("values").is_none() {
             // `AnimationClip.parseKeyframeTrack`: the `keys` form
-            let keys = json
-                .get("keys")
-                .and_then(Value::as_array)
-                .ok_or_else(|| format!("THREE.KeyframeTrack: no keyframes in track named {name}"))?;
+            let keys = json.get("keys").and_then(Value::as_array).ok_or_else(|| {
+                format!("THREE.KeyframeTrack: no keyframes in track named {name}")
+            })?;
 
             animation_utils::flatten_json(keys, &mut times, &mut values, "value");
         } else {

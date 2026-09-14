@@ -121,9 +121,7 @@ pub fn galaxy_material() -> MeshBasicNodeMaterial {
     );
 
     //   const alpha = float( 0.1 ).div( uv().sub( 0.5 ).length() ).sub( 0.2 );
-    let alpha = float(0.1)
-        .div(length(uv().sub(float(0.5))))
-        .sub(float(0.2));
+    let alpha = float(0.1).div(length(uv().sub(float(0.5)))).sub(float(0.2));
 
     //   material.colorNode = vec4( colorFinal, alpha );
     material.color_node = Some(vec4_join(vec![color_final, alpha]));

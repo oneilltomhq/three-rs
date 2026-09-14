@@ -137,7 +137,8 @@ impl SkinnedMesh {
 
         match self.bind_mode {
             BindMode::Attached => {
-                self.bind_matrix_inverse.copy(&self.node.borrow().matrix_world);
+                self.bind_matrix_inverse
+                    .copy(&self.node.borrow().matrix_world);
                 self.bind_matrix_inverse.invert();
             }
             BindMode::Detached => {

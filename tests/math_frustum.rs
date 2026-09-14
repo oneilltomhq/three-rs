@@ -165,7 +165,10 @@ fn set_from_projection_matrix_make_orthographic_contains_point() {
         !a.contains_point(&Vector3::new(1.1, 1.1, -1.001)),
         "Passed!"
     );
-    assert!(a.contains_point(&Vector3::new(0.0, 0.0, -99.999)), "Passed!");
+    assert!(
+        a.contains_point(&Vector3::new(0.0, 0.0, -99.999)),
+        "Passed!"
+    );
     assert!(
         a.contains_point(&Vector3::new(-0.999, -0.999, -99.999)),
         "Passed!"
@@ -182,7 +185,10 @@ fn set_from_projection_matrix_make_orthographic_contains_point() {
         !a.contains_point(&Vector3::new(1.1, 1.1, -100.1)),
         "Passed!"
     );
-    assert!(!a.contains_point(&Vector3::new(0.0, 0.0, -101.0)), "Passed!");
+    assert!(
+        !a.contains_point(&Vector3::new(0.0, 0.0, -101.0)),
+        "Passed!"
+    );
 }
 
 #[test]
@@ -206,7 +212,10 @@ fn set_from_projection_matrix_make_perspective_contains_point() {
         !a.contains_point(&Vector3::new(1.1, 1.1, -1.001)),
         "Passed!"
     );
-    assert!(a.contains_point(&Vector3::new(0.0, 0.0, -99.999)), "Passed!");
+    assert!(
+        a.contains_point(&Vector3::new(0.0, 0.0, -99.999)),
+        "Passed!"
+    );
     assert!(
         a.contains_point(&Vector3::new(-99.999, -99.999, -99.999)),
         "Passed!"
@@ -223,7 +232,10 @@ fn set_from_projection_matrix_make_perspective_contains_point() {
         !a.contains_point(&Vector3::new(100.1, 100.1, -100.1)),
         "Passed!"
     );
-    assert!(!a.contains_point(&Vector3::new(0.0, 0.0, -101.0)), "Passed!");
+    assert!(
+        !a.contains_point(&Vector3::new(0.0, 0.0, -101.0)),
+        "Passed!"
+    );
 }
 
 #[test]

@@ -48,8 +48,7 @@ pub struct App {
 }
 
 fn font_path() -> std::path::PathBuf {
-    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/assets/Roboto-Regular.ttf")
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/assets/Roboto-Regular.ttf")
 }
 
 pub fn load_font() -> VectorFont {

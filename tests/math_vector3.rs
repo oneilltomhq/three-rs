@@ -312,16 +312,28 @@ fn project_on_vector() {
     let mut b = Vector3::default();
     let normal = Vector3::new(10.0, 0.0, 0.0);
 
-    assert!(b.copy(&a).project_on_vector(&normal).equals(&Vector3::new(1.0, 0.0, 0.0)));
+    assert!(b
+        .copy(&a)
+        .project_on_vector(&normal)
+        .equals(&Vector3::new(1.0, 0.0, 0.0)));
 
     a.set(0.0, 1.0, 0.0);
-    assert!(b.copy(&a).project_on_vector(&normal).equals(&Vector3::new(0.0, 0.0, 0.0)));
+    assert!(b
+        .copy(&a)
+        .project_on_vector(&normal)
+        .equals(&Vector3::new(0.0, 0.0, 0.0)));
 
     a.set(0.0, 0.0, -1.0);
-    assert!(b.copy(&a).project_on_vector(&normal).equals(&Vector3::new(0.0, 0.0, 0.0)));
+    assert!(b
+        .copy(&a)
+        .project_on_vector(&normal)
+        .equals(&Vector3::new(0.0, 0.0, 0.0)));
 
     a.set(-1.0, 0.0, 0.0);
-    assert!(b.copy(&a).project_on_vector(&normal).equals(&Vector3::new(-1.0, 0.0, 0.0)));
+    assert!(b
+        .copy(&a)
+        .project_on_vector(&normal)
+        .equals(&Vector3::new(-1.0, 0.0, 0.0)));
 }
 
 #[test]
@@ -330,16 +342,28 @@ fn project_on_plane() {
     let mut b = Vector3::default();
     let normal = Vector3::new(1.0, 0.0, 0.0);
 
-    assert!(b.copy(&a).project_on_plane(&normal).equals(&Vector3::new(0.0, 0.0, 0.0)));
+    assert!(b
+        .copy(&a)
+        .project_on_plane(&normal)
+        .equals(&Vector3::new(0.0, 0.0, 0.0)));
 
     a.set(0.0, 1.0, 0.0);
-    assert!(b.copy(&a).project_on_plane(&normal).equals(&Vector3::new(0.0, 1.0, 0.0)));
+    assert!(b
+        .copy(&a)
+        .project_on_plane(&normal)
+        .equals(&Vector3::new(0.0, 1.0, 0.0)));
 
     a.set(0.0, 0.0, -1.0);
-    assert!(b.copy(&a).project_on_plane(&normal).equals(&Vector3::new(0.0, 0.0, -1.0)));
+    assert!(b
+        .copy(&a)
+        .project_on_plane(&normal)
+        .equals(&Vector3::new(0.0, 0.0, -1.0)));
 
     a.set(-1.0, 0.0, 0.0);
-    assert!(b.copy(&a).project_on_plane(&normal).equals(&Vector3::new(0.0, 0.0, 0.0)));
+    assert!(b
+        .copy(&a)
+        .project_on_plane(&normal)
+        .equals(&Vector3::new(0.0, 0.0, 0.0)));
 }
 
 #[test]
@@ -349,14 +373,23 @@ fn reflect() {
     let mut b = Vector3::default();
 
     a.set(0.0, -1.0, 0.0);
-    assert!(b.copy(&a).reflect(&normal).equals(&Vector3::new(0.0, 1.0, 0.0)));
+    assert!(b
+        .copy(&a)
+        .reflect(&normal)
+        .equals(&Vector3::new(0.0, 1.0, 0.0)));
 
     a.set(1.0, -1.0, 0.0);
-    assert!(b.copy(&a).reflect(&normal).equals(&Vector3::new(1.0, 1.0, 0.0)));
+    assert!(b
+        .copy(&a)
+        .reflect(&normal)
+        .equals(&Vector3::new(1.0, 1.0, 0.0)));
 
     a.set(1.0, -1.0, 0.0);
     normal.set(0.0, -1.0, 0.0);
-    assert!(b.copy(&a).reflect(&normal).equals(&Vector3::new(1.0, 1.0, 0.0)));
+    assert!(b
+        .copy(&a)
+        .reflect(&normal)
+        .equals(&Vector3::new(1.0, 1.0, 0.0)));
 }
 
 #[test]

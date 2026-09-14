@@ -226,7 +226,10 @@ fn intersect_line() {
     );
 
     let result = a.intersect_line(&l2, Some(false));
-    assert!(result.is_some(), "clampToLine=false returns the target vector");
+    assert!(
+        result.is_some(),
+        "clampToLine=false returns the target vector"
+    );
     let point = result.unwrap();
     assert!(
         point.equals(&Vector3::new(20.0, 0.0, 0.0)),

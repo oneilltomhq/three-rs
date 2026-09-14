@@ -121,7 +121,9 @@ impl Box3 {
         if self.is_empty() {
             *target.set(0.0, 0.0, 0.0)
         } else {
-            *target.add_vectors(&self.min, &self.max).multiply_scalar(0.5)
+            *target
+                .add_vectors(&self.min, &self.max)
+                .multiply_scalar(0.5)
         }
     }
 
@@ -357,14 +359,30 @@ impl Box3 {
         let mut points = [Vector3::default(); 8];
 
         // NOTE: I am using a binary pattern to specify all 2^3 combinations below
-        points[0].set(self.min.x, self.min.y, self.min.z).apply_matrix4(matrix); // 000
-        points[1].set(self.min.x, self.min.y, self.max.z).apply_matrix4(matrix); // 001
-        points[2].set(self.min.x, self.max.y, self.min.z).apply_matrix4(matrix); // 010
-        points[3].set(self.min.x, self.max.y, self.max.z).apply_matrix4(matrix); // 011
-        points[4].set(self.max.x, self.min.y, self.min.z).apply_matrix4(matrix); // 100
-        points[5].set(self.max.x, self.min.y, self.max.z).apply_matrix4(matrix); // 101
-        points[6].set(self.max.x, self.max.y, self.min.z).apply_matrix4(matrix); // 110
-        points[7].set(self.max.x, self.max.y, self.max.z).apply_matrix4(matrix); // 111
+        points[0]
+            .set(self.min.x, self.min.y, self.min.z)
+            .apply_matrix4(matrix); // 000
+        points[1]
+            .set(self.min.x, self.min.y, self.max.z)
+            .apply_matrix4(matrix); // 001
+        points[2]
+            .set(self.min.x, self.max.y, self.min.z)
+            .apply_matrix4(matrix); // 010
+        points[3]
+            .set(self.min.x, self.max.y, self.max.z)
+            .apply_matrix4(matrix); // 011
+        points[4]
+            .set(self.max.x, self.min.y, self.min.z)
+            .apply_matrix4(matrix); // 100
+        points[5]
+            .set(self.max.x, self.min.y, self.max.z)
+            .apply_matrix4(matrix); // 101
+        points[6]
+            .set(self.max.x, self.max.y, self.min.z)
+            .apply_matrix4(matrix); // 110
+        points[7]
+            .set(self.max.x, self.max.y, self.max.z)
+            .apply_matrix4(matrix); // 111
 
         self.set_from_points(&points);
 

@@ -604,7 +604,11 @@ impl BatchedText {
         let outline_color_uniform = tsl::uniform_value(Type::Vec3, vec![halo.r, halo.g, halo.b]);
         let outline_color_mix = tsl::uniform_value(
             Type::F32,
-            vec![if self.outline_color.is_some() { 1.0 } else { 0.0 }],
+            vec![if self.outline_color.is_some() {
+                1.0
+            } else {
+                0.0
+            }],
         );
 
         let quad_uv = tsl::uv();

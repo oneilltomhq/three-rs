@@ -78,7 +78,6 @@ impl InstancedMesh {
     }
 }
 
-
 /// The array is `count * item_size` floats — sixteen per instance for the
 /// instance matrix. Debug prints its length, as the textures do.
 impl std::fmt::Debug for InstancedBufferAttribute {

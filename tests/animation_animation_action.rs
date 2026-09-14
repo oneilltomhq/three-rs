@@ -89,7 +89,11 @@ impl StubRoot {
 impl TargetResolver for StubRoot {
     fn resolve(&mut self, parsed: &ParsedTrackName) -> Option<Box<dyn BindingTarget>> {
         let key = key_of(parsed);
-        let size = if parsed.property_index.is_some() { 1 } else { 3 };
+        let size = if parsed.property_index.is_some() {
+            1
+        } else {
+            3
+        };
 
         let slot = self
             .slots
@@ -116,12 +120,7 @@ fn create_animation() -> Animation {
     let mut mixer = AnimationMixer::new(Box::new(root.clone()));
     let track =
         KeyframeTrack::number(".rotation[x]", vec![0.0, 1000.0], vec![0.0, 360.0], None).unwrap();
-    let clip = AnimationClip::new(
-        "clip1",
-        1000.0,
-        vec![track],
-        AnimationBlendMode::Normal,
-    );
+    let clip = AnimationClip::new("clip1", 1000.0, vec![track], AnimationBlendMode::Normal);
 
     let animation_action = mixer.clip_action(&clip, None, None);
 
@@ -144,7 +143,12 @@ fn create_two_animations() -> TwoAnimations {
     let mut mixer = AnimationMixer::new(Box::new(root));
     let track =
         KeyframeTrack::number(".rotation[x]", vec![0.0, 1000.0], vec![0.0, 360.0], None).unwrap();
-    let clip = AnimationClip::new("clip1", 1000.0, vec![track.clone()], AnimationBlendMode::Normal);
+    let clip = AnimationClip::new(
+        "clip1",
+        1000.0,
+        vec![track.clone()],
+        AnimationBlendMode::Normal,
+    );
     let animation_action = mixer.clip_action(&clip, None, None);
 
     // note: Three's fixture builds `track2` but (apparently by accident) puts
@@ -853,10 +857,7 @@ fn get_clip() {
     } = create_animation();
 
     let clip2 = mixer.get_clip(animation_action);
-    assert_eq!(
-        clip.uuid, clip2.uuid,
-        "clip should be returned by getClip."
-    );
+    assert_eq!(clip.uuid, clip2.uuid, "clip should be returned by getClip.");
 }
 
 #[test]

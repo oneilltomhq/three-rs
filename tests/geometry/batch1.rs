@@ -18,7 +18,10 @@ fn box_geometry_std_tests() {
     // the three.js unit test's parameter set
     for (label, g) in [
         ("BoxGeometry()", box_geometry_default()),
-        ("BoxGeometry(10,20,30)", box_geometry(10.0, 20.0, 30.0, 1, 1, 1)),
+        (
+            "BoxGeometry(10,20,30)",
+            box_geometry(10.0, 20.0, 30.0, 1, 1, 1),
+        ),
         (
             "BoxGeometry(10,20,30,2,3,4)",
             box_geometry(10.0, 20.0, 30.0, 2, 3, 4),
@@ -70,14 +73,86 @@ fn plane_geometry_samples() {
 #[test]
 fn cylinder_geometry_std_tests() {
     let full = [
-        (1.0, 1.0, 1.0, 32usize, 1usize, false, 0.0, std::f64::consts::PI * 2.0),
-        (10.0, 1.0, 1.0, 32, 1, false, 0.0, std::f64::consts::PI * 2.0),
-        (10.0, 20.0, 1.0, 32, 1, false, 0.0, std::f64::consts::PI * 2.0),
-        (10.0, 20.0, 30.0, 32, 1, false, 0.0, std::f64::consts::PI * 2.0),
-        (10.0, 20.0, 30.0, 20, 1, false, 0.0, std::f64::consts::PI * 2.0),
-        (10.0, 20.0, 30.0, 20, 30, false, 0.0, std::f64::consts::PI * 2.0),
-        (10.0, 20.0, 30.0, 20, 30, true, 0.0, std::f64::consts::PI * 2.0),
-        (10.0, 20.0, 30.0, 20, 30, true, 0.1, std::f64::consts::PI * 2.0),
+        (
+            1.0,
+            1.0,
+            1.0,
+            32usize,
+            1usize,
+            false,
+            0.0,
+            std::f64::consts::PI * 2.0,
+        ),
+        (
+            10.0,
+            1.0,
+            1.0,
+            32,
+            1,
+            false,
+            0.0,
+            std::f64::consts::PI * 2.0,
+        ),
+        (
+            10.0,
+            20.0,
+            1.0,
+            32,
+            1,
+            false,
+            0.0,
+            std::f64::consts::PI * 2.0,
+        ),
+        (
+            10.0,
+            20.0,
+            30.0,
+            32,
+            1,
+            false,
+            0.0,
+            std::f64::consts::PI * 2.0,
+        ),
+        (
+            10.0,
+            20.0,
+            30.0,
+            20,
+            1,
+            false,
+            0.0,
+            std::f64::consts::PI * 2.0,
+        ),
+        (
+            10.0,
+            20.0,
+            30.0,
+            20,
+            30,
+            false,
+            0.0,
+            std::f64::consts::PI * 2.0,
+        ),
+        (
+            10.0,
+            20.0,
+            30.0,
+            20,
+            30,
+            true,
+            0.0,
+            std::f64::consts::PI * 2.0,
+        ),
+        (
+            10.0,
+            20.0,
+            30.0,
+            20,
+            30,
+            true,
+            0.1,
+            std::f64::consts::PI * 2.0,
+        ),
         (10.0, 20.0, 30.0, 20, 30, true, 0.1, 2.0),
     ];
 
@@ -88,22 +163,17 @@ fn cylinder_geometry_std_tests() {
         check_index_is_narrowest(&label, &g);
         check_groups_cover_index(&label, &g);
         // capped cylinders get torso + two caps, open-ended ones only the torso
-        assert_eq!(g.groups.len(), if p.5 { 1 } else { 3 }, "{label}: group count");
+        assert_eq!(
+            g.groups.len(),
+            if p.5 { 1 } else { 3 },
+            "{label}: group count"
+        );
     }
 }
 
 #[test]
 fn cylinder_geometry_samples() {
-    let g = cylinder_geometry_full(
-        1.0,
-        1.0,
-        1.0,
-        32,
-        1,
-        false,
-        0.0,
-        std::f64::consts::PI * 2.0,
-    );
+    let g = cylinder_geometry_full(1.0, 1.0, 1.0, 32, 1, false, 0.0, std::f64::consts::PI * 2.0);
     check_sample(&CYLINDER_DEFAULT, &g);
 
     let g = cylinder_geometry_full(10.0, 20.0, 30.0, 20, 30, true, 0.1, 2.0);
@@ -184,9 +254,11 @@ fn only_box_and_cylinder_set_groups() {
         ("SphereGeometry", sphere_geometry(1.0, 32, 16)),
         ("TeapotGeometry", teapot_geometry(1.0, 4)),
         ("TorusGeometry", torus_geometry(1.0, 0.4, 12, 48)),
-        ("TorusKnotGeometry", torus_knot_geometry(1.0, 0.4, 64, 8, 2.0, 3.0)),
+        (
+            "TorusKnotGeometry",
+            torus_knot_geometry(1.0, 0.4, 64, 8, 2.0, 3.0),
+        ),
     ] {
         assert!(g.groups.is_empty(), "{label}: three.js sets no groups");
     }
-
 }

@@ -426,8 +426,16 @@ impl BufferGeometry {
     }
 
     /// `geometry.morphAttributes[ name ] = attributes`.
-    pub fn set_morph_attribute(&mut self, name: &str, attributes: Vec<BufferAttribute>) -> &mut Self {
-        match self.morph_attributes.iter_mut().find(|(key, _)| key == name) {
+    pub fn set_morph_attribute(
+        &mut self,
+        name: &str,
+        attributes: Vec<BufferAttribute>,
+    ) -> &mut Self {
+        match self
+            .morph_attributes
+            .iter_mut()
+            .find(|(key, _)| key == name)
+        {
             Some(slot) => slot.1 = attributes,
             None => self.morph_attributes.push((name.to_string(), attributes)),
         }

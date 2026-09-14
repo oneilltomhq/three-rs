@@ -120,7 +120,14 @@ fn path_commands_match_opentype() {
                     assert_eq!(x, f(&want["x"]), "{ch:?} cmd {i} x");
                     assert_eq!(y, f(&want["y"]), "{ch:?} cmd {i} y");
                 }
-                PathCommand::CurveTo { x1, y1, x2, y2, x, y } => {
+                PathCommand::CurveTo {
+                    x1,
+                    y1,
+                    x2,
+                    y2,
+                    x,
+                    y,
+                } => {
                     assert_eq!(x1, f(&want["x1"]), "{ch:?} cmd {i} x1");
                     assert_eq!(y1, f(&want["y1"]), "{ch:?} cmd {i} y1");
                     assert_eq!(x2, f(&want["x2"]), "{ch:?} cmd {i} x2");

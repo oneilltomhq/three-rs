@@ -55,7 +55,11 @@ impl ComponentType {
             5123 => Self::UnsignedShort,
             5125 => Self::UnsignedInt,
             5126 => Self::Float,
-            other => return Err(format!("THREE.GLTFLoader: unsupported componentType {other}")),
+            other => {
+                return Err(format!(
+                    "THREE.GLTFLoader: unsupported componentType {other}"
+                ))
+            }
         })
     }
 
@@ -104,7 +108,11 @@ fn type_size(name: &str) -> Result<usize, String> {
         "MAT2" => 4,
         "MAT3" => 9,
         "MAT4" => 16,
-        other => return Err(format!("THREE.GLTFLoader: unsupported accessor type {other}")),
+        other => {
+            return Err(format!(
+                "THREE.GLTFLoader: unsupported accessor type {other}"
+            ))
+        }
     })
 }
 
@@ -337,10 +345,9 @@ impl GLTFLoader {
             match buffer.get("uri").and_then(Value::as_str) {
                 None => {
                     // the GLB BIN chunk
-                    let bin = self
-                        .glb_buffer
-                        .clone()
-                        .ok_or_else(|| "THREE.GLTFLoader: glTF-Binary without BIN chunk.".to_string())?;
+                    let bin = self.glb_buffer.clone().ok_or_else(|| {
+                        "THREE.GLTFLoader: glTF-Binary without BIN chunk.".to_string()
+                    })?;
                     self.buffers.push(bin);
                 }
                 Some(uri) if uri.starts_with("data:") => {
@@ -429,8 +436,7 @@ impl GLTFLoader {
             for i in 0..count {
                 for c in 0..item_size {
                     let at = offset + i * stride + c * element_size;
-                    values[i * item_size + c] =
-                        component_type.read(&bytes[at..at + element_size]);
+                    values[i * item_size + c] = component_type.read(&bytes[at..at + element_size]);
                 }
             }
         }
@@ -471,8 +477,7 @@ impl GLTFLoader {
 
             for i in 0..sparse_count {
                 let at = indices_offset + i * index_size;
-                let target =
-                    indices_type.read(&index_bytes[at..at + index_size]) as usize;
+                let target = indices_type.read(&index_bytes[at..at + index_size]) as usize;
 
                 for c in 0..item_size {
                     let at = values_offset + (i * item_size + c) * value_size;
@@ -608,7 +613,9 @@ impl GLTFLoader {
                     continue;
                 };
                 // `console.warn( 'THREE.GLTFLoader: Joint "%s" could not be found.' )`
-                let Some(node) = nodes.get(joint) else { continue };
+                let Some(node) = nodes.get(joint) else {
+                    continue;
+                };
 
                 bones.push(node.clone());
 
@@ -784,7 +791,9 @@ impl GLTFLoader {
                 .cloned()
                 .unwrap_or_default()
             {
-                let Some(accessor) = accessor.as_u64() else { continue };
+                let Some(accessor) = accessor.as_u64() else {
+                    continue;
+                };
                 let attribute = self.attribute(accessor as usize)?;
                 geometry.set_attribute(&attribute_name(&semantic), attribute);
             }
@@ -804,10 +813,7 @@ impl GLTFLoader {
                 geometry.morph_targets_relative = true;
 
                 for semantic in ["POSITION", "NORMAL", "TANGENT"] {
-                    if !targets
-                        .iter()
-                        .any(|target| target.get(semantic).is_some())
-                    {
+                    if !targets.iter().any(|target| target.get(semantic).is_some()) {
                         continue;
                     }
 
@@ -1121,12 +1127,9 @@ impl GLTFLoader {
                 let track_name = format!("{}.{}", node.borrow().name, property);
 
                 let track = match property {
-                    "quaternion" => KeyframeTrack::quaternion(
-                        &track_name,
-                        times,
-                        values,
-                        Some(interpolation),
-                    ),
+                    "quaternion" => {
+                        KeyframeTrack::quaternion(&track_name, times, values, Some(interpolation))
+                    }
                     "morphTargetInfluences" => {
                         KeyframeTrack::number(&track_name, times, values, Some(interpolation))
                     }
@@ -1140,7 +1143,10 @@ impl GLTFLoader {
                 }
             }
 
-            clips.push(AnimationClip::from_tracks(&sanitize_node_name(&name), tracks));
+            clips.push(AnimationClip::from_tracks(
+                &sanitize_node_name(&name),
+                tracks,
+            ));
         }
 
         Ok(clips)
@@ -1190,8 +1196,8 @@ fn parse_glb(data: &[u8]) -> Result<(Value, Option<Vec<u8>>), String> {
     let mut at = 12;
 
     while at + 8 <= data.len() {
-        let length = u32::from_le_bytes([data[at], data[at + 1], data[at + 2], data[at + 3]])
-            as usize;
+        let length =
+            u32::from_le_bytes([data[at], data[at + 1], data[at + 2], data[at + 3]]) as usize;
         let chunk_type =
             u32::from_le_bytes([data[at + 4], data[at + 5], data[at + 6], data[at + 7]]);
         at += 8;
@@ -1205,10 +1211,8 @@ fn parse_glb(data: &[u8]) -> Result<(Value, Option<Vec<u8>>), String> {
             0x4E4F_534A => {
                 let text = std::str::from_utf8(chunk)
                     .map_err(|e| format!("THREE.GLTFLoader: JSON chunk: {e}"))?;
-                json = Some(
-                    serde_json::from_str(text)
-                        .map_err(|e| format!("THREE.GLTFLoader: {e}"))?,
-                );
+                json =
+                    Some(serde_json::from_str(text).map_err(|e| format!("THREE.GLTFLoader: {e}"))?);
             }
             // `BINARY_EXTENSION_CHUNK_TYPES.BIN`
             0x004E_4942 => bin = Some(chunk.to_vec()),
@@ -1238,8 +1242,7 @@ fn decode_data_uri(uri: &str) -> Result<Vec<u8>, String> {
 
 /// `atob`, for the `data:` URIs glTF embeds buffers in.
 fn decode_base64(input: &str) -> Result<Vec<u8>, String> {
-    const TABLE: &[u8; 64] =
-        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
     let mut out = Vec::with_capacity(input.len() / 4 * 3);
     let mut accumulator: u32 = 0;

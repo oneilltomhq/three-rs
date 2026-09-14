@@ -170,7 +170,8 @@ fn parse_float(s: &str) -> Option<f64> {
     }
     // Back off a trailing exponent marker with no digits after it.
     let mut slice = &t[..end];
-    while !slice.is_empty() && matches!(slice.as_bytes()[slice.len() - 1], b'e' | b'E' | b'+' | b'-')
+    while !slice.is_empty()
+        && matches!(slice.as_bytes()[slice.len() - 1], b'e' | b'E' | b'+' | b'-')
     {
         slice = &slice[..slice.len() - 1];
     }
@@ -299,20 +300,14 @@ fn split_words_keeping_gaps(paragraph: &str) -> Vec<String> {
 fn is_js_whitespace(ch: char) -> bool {
     matches!(
         ch,
-        '\t' | '\n'
-            | '\u{0b}'
-            | '\u{0c}'
-            | '\r'
-            | ' '
-            | '\u{a0}'
-            | '\u{1680}'
-            | '\u{2000}'..='\u{200a}'
-            | '\u{2028}'
-            | '\u{2029}'
-            | '\u{202f}'
-            | '\u{205f}'
-            | '\u{3000}'
-            | '\u{feff}'
+        '\t' | '\n' | '\u{0b}' | '\u{0c}' | '\r' | ' ' | '\u{a0}' | '\u{1680}' | '\u{2000}'
+            ..='\u{200a}'
+                | '\u{2028}'
+                | '\u{2029}'
+                | '\u{202f}'
+                | '\u{205f}'
+                | '\u{3000}'
+                | '\u{feff}'
     )
 }
 
@@ -436,7 +431,12 @@ pub fn layout_text(params: LayoutParams) -> TextRenderInfo {
     });
 
     let mut glyphs: Vec<LaidOutGlyph> = Vec::new();
-    let mut block = [f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY];
+    let mut block = [
+        f64::INFINITY,
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+        f64::NEG_INFINITY,
+    ];
     let mut baseline_y = 0.0f64;
 
     for line in &lines {
@@ -536,7 +536,12 @@ pub fn layout_text_vector(params: LayoutParams, font: Option<&VectorFont>) -> Te
     });
 
     let mut glyphs: Vec<LaidOutGlyph> = Vec::new();
-    let mut block = [f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY];
+    let mut block = [
+        f64::INFINITY,
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+        f64::NEG_INFINITY,
+    ];
     let mut baseline_y = 0.0f64;
 
     for line in &lines {
@@ -562,7 +567,11 @@ pub fn layout_text_vector(params: LayoutParams, font: Option<&VectorFont>) -> Te
             let advance = font.advance_width(ch) * scale;
             // A space is forced to the no-ink branch even if the font gives it a
             // box, which Roboto does not.
-            let bbox = if ch == ' ' { None } else { font.bounding_box(ch) };
+            let bbox = if ch == ' ' {
+                None
+            } else {
+                font.bounding_box(ch)
+            };
 
             let (min_x, min_y, max_x, max_y) = match bbox {
                 Some(b) => (

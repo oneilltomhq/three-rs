@@ -110,10 +110,7 @@ mx_fn!(
 fn mx_floorfrac(x: NodeRef, i: &NodeRef) -> NodeRef {
     let x = to_var(None, x);
     block(
-        vec![
-            x.clone(),
-            i.assign(call(&mx_floor_def(), vec![x.clone()])),
-        ],
+        vec![x.clone(), i.assign(call(&mx_floor_def(), vec![x.clone()]))],
         x.sub(i.to(Type::F32)),
     )
 }
@@ -128,10 +125,9 @@ mx_fn!(
         let t = v[0].clone();
         block(
             stmts,
-            t.mul(&t).mul(&t).mul(
-                t.mul(t.mul(float(6.0)).sub(float(15.0)))
-                    .add(float(10.0)),
-            ),
+            t.mul(&t)
+                .mul(&t)
+                .mul(t.mul(t.mul(float(6.0)).sub(float(15.0))).add(float(10.0))),
         )
     }
 );
@@ -200,9 +196,7 @@ mx_fn!(
         stmts.extend([len.clone(), a.clone(), b.clone(), c.clone()]);
 
         // `0xdeadbeef + ( len << 2 ) + 13`, seeded into all three words.
-        let seed = uint(0xdead_beef)
-            .add(len.shift_left(uint(2)))
-            .add(uint(13));
+        let seed = uint(0xdead_beef).add(len.shift_left(uint(2))).add(uint(13));
         stmts.push(a.assign(b.assign(c.assign(seed))));
         stmts.push(a.assign(a.add(v[0].to(Type::U32))));
         stmts.push(b.assign(b.add(v[1].to(Type::U32))));
@@ -266,10 +260,7 @@ mx_fn!(
         let h = to_var(None, hash.bit_and(uint(15)));
         let u = to_var(
             None,
-            call(
-                &select,
-                vec![h.less_than(uint(8)), x.clone(), y.clone()],
-            ),
+            call(&select, vec![h.less_than(uint(8)), x.clone(), y.clone()]),
         );
         let w = to_var(
             None,
@@ -294,14 +285,8 @@ mx_fn!(
         let negate_if = mx_negate_if_def();
         block(
             stmts,
-            call(
-                &negate_if,
-                vec![u, h.bit_and(uint(1)).to(Type::Bool)],
-            )
-            .add(call(
-                &negate_if,
-                vec![w, h.bit_and(uint(2)).to(Type::Bool)],
-            )),
+            call(&negate_if, vec![u, h.bit_and(uint(1)).to(Type::Bool)])
+                .add(call(&negate_if, vec![w, h.bit_and(uint(2)).to(Type::Bool)])),
         )
     }
 );
@@ -464,10 +449,7 @@ fn perlin_body(
         call(
             gradient,
             vec![
-                call(
-                    hash,
-                    vec![cell(dx, &xi), cell(dy, &yi), cell(dz, &zi)],
-                ),
+                call(hash, vec![cell(dx, &xi), cell(dy, &yi), cell(dz, &zi)]),
                 frac(dx, &fx),
                 frac(dy, &fy),
                 frac(dz, &fz),
@@ -586,11 +568,7 @@ mx_fn!(
     "mx_fractal_noise_vec3",
     fractal_params(),
     Type::Vec3,
-    |params| fractal_body(
-        params,
-        vec3(0.0, 0.0, 0.0),
-        &mx_perlin_noise_vec3_1_def()
-    )
+    |params| fractal_body(params, vec3(0.0, 0.0, 0.0), &mx_perlin_noise_vec3_1_def())
 );
 
 // ---------------------------------------------------------------------------

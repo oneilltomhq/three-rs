@@ -218,7 +218,10 @@ fn two_renders_are_identical() {
         .zip(second.chunks_exact(4))
         .filter(|(a, b)| a != b)
         .count();
-    assert_eq!(differing, 0, "{differing} pixels differ between the two rounds");
+    assert_eq!(
+        differing, 0,
+        "{differing} pixels differ between the two rounds"
+    );
 
     // Not a black frame: the four members have to be visible.
     let background = Color::from_hex(0x0b0d12);
@@ -454,8 +457,7 @@ fn the_frame_matches_the_atlas_sdf() {
                 colors[gi * 3 + 1] as f64,
                 colors[gi * 3 + 2] as f64,
             ];
-            let is_opaque =
-                s > 0.5 + guard || (s > 0.5 - OUTLINE + guard && s < 0.5 - guard);
+            let is_opaque = s > 0.5 + guard || (s > 0.5 - OUTLINE + guard && s < 0.5 - guard);
             let is_clear = s < 0.5 - OUTLINE - guard;
 
             if is_opaque {

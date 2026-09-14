@@ -20,13 +20,13 @@ use std::f64::consts::PI;
 use std::rc::Rc;
 
 use three_rs::core::{Node, Object3DNode};
+use three_rs::geometries::{cylinder_geometry, plane_geometry, torus_knot_geometry};
 use three_rs::nodes::materialx::{mx_fractal_noise_float, mx_fractal_noise_vec3};
 use three_rs::nodes::tsl::{
     block, fog, int, position_local, position_world, range_fog_factor, to_var,
 };
 use three_rs::nodes::NodeRef;
 use three_rs::objects::Background;
-use three_rs::geometries::{cylinder_geometry, plane_geometry, torus_knot_geometry};
 use three_rs::{
     AmbientLight, Color, DirectionalLight, Group, Mesh, MeshPhongNodeMaterial, PerspectiveCamera,
     Renderer, RendererParameters, Scene, SpotLight, ToneMapping, Vector3,
@@ -225,11 +225,7 @@ pub fn animate(app: &mut App) {
     {
         let mut object = app.torus_knot.borrow_mut();
         let r = object.rotation;
-        object.set_rotation(
-            r.x + 0.25 * delta,
-            r.y + 0.5 * delta,
-            r.z + 1.0 * delta,
-        );
+        object.set_rotation(r.x + 0.25 * delta, r.y + 0.5 * delta, r.z + 1.0 * delta);
     }
     {
         let mut object = app.dir_group.borrow_mut();

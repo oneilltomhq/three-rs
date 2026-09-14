@@ -63,10 +63,7 @@ impl Clone for LightObject {
             angle: self.angle,
             penumbra: self.penumbra,
             ground_color: self.ground_color,
-            target: self
-                .target
-                .as_ref()
-                .map(|t| t.borrow().clone().into_node()),
+            target: self.target.as_ref().map(|t| t.borrow().clone().into_node()),
             cast_shadow: self.cast_shadow,
             shadow: self.shadow.clone(),
         }

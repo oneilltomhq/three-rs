@@ -86,7 +86,10 @@ fn make_safe() {
 
     a.set(1.0, just_right, 0.0);
     a.make_safe();
-    assert_eq!(a.phi, just_right, "Check that valid values don't get changed");
+    assert_eq!(
+        a.phi, just_right,
+        "Check that valid values don't get changed"
+    );
 }
 
 #[test]
@@ -102,7 +105,12 @@ fn set_from_vector3() {
     assert_eq!(a.theta, 0.0, "Zero-length vector: check theta");
 
     a.set_from_vector3(&c);
-    close(a.radius, expected.radius, EPS, "Normal vector: check radius");
+    close(
+        a.radius,
+        expected.radius,
+        EPS,
+        "Normal vector: check radius",
+    );
     close(a.phi, expected.phi, EPS, "Normal vector: check phi");
     close(a.theta, expected.theta, EPS, "Normal vector: check theta");
 }
@@ -118,7 +126,12 @@ fn set_from_cartesian_coords() {
     assert_eq!(a.theta, 0.0, "Zero-length vector: check theta");
 
     a.set_from_cartesian_coords(std::f64::consts::PI, 1.0, -std::f64::consts::PI);
-    close(a.radius, expected.radius, EPS, "Normal vector: check radius");
+    close(
+        a.radius,
+        expected.radius,
+        EPS,
+        "Normal vector: check radius",
+    );
     close(a.phi, expected.phi, EPS, "Normal vector: check phi");
     close(a.theta, expected.theta, EPS, "Normal vector: check theta");
 }

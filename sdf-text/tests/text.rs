@@ -154,7 +154,10 @@ fn every_layout_setter_dirties_and_an_unchanged_write_does_not() {
     macro_rules! check {
         ($set:ident, $value:expr) => {{
             t.$set($value);
-            assert!(!t.needs_sync(), concat!(stringify!($set), ": unchanged write must not dirty"));
+            assert!(
+                !t.needs_sync(),
+                concat!(stringify!($set), ": unchanged write must not dirty")
+            );
         }};
         ($set:ident, $same:expr, $different:expr) => {{
             t.$set($same);
@@ -163,7 +166,10 @@ fn every_layout_setter_dirties_and_an_unchanged_write_does_not() {
                 concat!(stringify!($set), ": unchanged write must not dirty")
             );
             t.$set($different);
-            assert!(t.needs_sync(), concat!(stringify!($set), ": changed write must dirty"));
+            assert!(
+                t.needs_sync(),
+                concat!(stringify!($set), ": changed write must dirty")
+            );
             t.sync();
         }};
     }

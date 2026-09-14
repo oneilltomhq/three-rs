@@ -76,7 +76,9 @@ fn set_from_array() {
 fn set_from_buffer_attribute() {
     let mut a = Box3::new(ZERO3, ONE3);
     let bigger = BufferAttribute::new(
-        vec![-2.0, -2.0, -2.0, 2.0, 2.0, 2.0, 1.5, 1.5, 1.5, 0.0, 0.0, 0.0],
+        vec![
+            -2.0, -2.0, -2.0, 2.0, 2.0, 2.0, 1.5, 1.5, 1.5, 0.0, 0.0, 0.0,
+        ],
         3,
     );
     let smaller = BufferAttribute::new(vec![-0.5, -0.5, -0.5, 0.5, 0.5, 0.5, 0.0, 0.0, 0.0], 3);
@@ -133,10 +135,7 @@ fn set_from_center_and_size() {
         "Move center: correct new center"
     );
     assert!(size_a.equals(&size_b), "Move center: no change in size");
-    assert!(
-        !a.equals(&b),
-        "Move center: no longer equal to old values"
-    );
+    assert!(!a.equals(&b), "Move center: no longer equal to old values");
 
     a.set_from_center_and_size(&center_a, &new_size);
     let center_a = a.get_center();
@@ -454,9 +453,10 @@ fn get_bounding_sphere() {
 
     assert!(a.get_bounding_sphere().equals(&Sphere::new(ZERO3, 0.0)));
     let mut half = ONE3;
-    assert!(b
-        .get_bounding_sphere()
-        .equals(&Sphere::new(*half.multiply_scalar(0.5), 3.0_f64.sqrt() * 0.5)));
+    assert!(b.get_bounding_sphere().equals(&Sphere::new(
+        *half.multiply_scalar(0.5),
+        3.0_f64.sqrt() * 0.5
+    )));
     assert!(c
         .get_bounding_sphere()
         .equals(&Sphere::new(ZERO3, 12.0_f64.sqrt() * 0.5)));
@@ -535,10 +535,7 @@ fn translate() {
     let c = Box3::new(negated(ONE3), ZERO3);
 
     assert!({ a }.translate(&ONE3).equals(&Box3::new(ONE3, ONE3)));
-    assert!({ a }
-        .translate(&ONE3)
-        .translate(&negated(ONE3))
-        .equals(&a));
+    assert!({ a }.translate(&ONE3).translate(&negated(ONE3)).equals(&a));
     assert!({ c }.translate(&ONE3).equals(&b));
     assert!({ b }.translate(&negated(ONE3)).equals(&c));
 }

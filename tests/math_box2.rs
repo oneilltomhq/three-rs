@@ -347,12 +347,11 @@ fn translate() {
     let c = Box2::new(*ONE2.clone().negate(), ZERO2);
 
     assert!(a.clone().translate(&ONE2).equals(&Box2::new(ONE2, ONE2)));
-    assert!(
-        a.clone()
-            .translate(&ONE2)
-            .translate(ONE2.clone().negate())
-            .equals(&a)
-    );
+    assert!(a
+        .clone()
+        .translate(&ONE2)
+        .translate(ONE2.clone().negate())
+        .equals(&a));
     assert!(c.clone().translate(&ONE2).equals(&b));
     assert!(b.clone().translate(ONE2.clone().negate()).equals(&c));
 }

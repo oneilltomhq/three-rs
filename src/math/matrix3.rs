@@ -110,7 +110,6 @@ impl Matrix3 {
         self.set_from_matrix4(m).invert().transpose()
     }
 
-
     /// `Matrix3.identity()`.
     pub fn set_identity(&mut self) -> &mut Self {
         self.set(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)
@@ -264,9 +263,18 @@ impl Matrix3 {
     pub fn to_padded_f32_array(&self) -> [f32; 12] {
         let e = &self.elements;
         [
-            e[0] as f32, e[1] as f32, e[2] as f32, 0.0, //
-            e[3] as f32, e[4] as f32, e[5] as f32, 0.0, //
-            e[6] as f32, e[7] as f32, e[8] as f32, 0.0,
+            e[0] as f32,
+            e[1] as f32,
+            e[2] as f32,
+            0.0, //
+            e[3] as f32,
+            e[4] as f32,
+            e[5] as f32,
+            0.0, //
+            e[6] as f32,
+            e[7] as f32,
+            e[8] as f32,
+            0.0,
         ]
     }
 }

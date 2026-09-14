@@ -30,7 +30,7 @@
 //!   and the notification does not.
 
 use crate::animation::animation_clip::{AnimationBlendMode, AnimationClip};
-use crate::animation::animation_mixer::{BindingPool, ControlPool, ControlHandle, RootId};
+use crate::animation::animation_mixer::{BindingPool, ControlHandle, ControlPool, RootId};
 use crate::animation::keyframe_track::TrackInterpolant;
 use crate::math::interpolant::{Ending, InterpolantSettings};
 

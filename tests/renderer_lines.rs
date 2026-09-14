@@ -153,7 +153,12 @@ fn a_five_point_line_strip_draws_a_closed_rectangle() {
     }
 
     // And nothing outside the rectangle.
-    assert_background(&pixels, left - 1, bottom, "outside, left of the bottom edge");
+    assert_background(
+        &pixels,
+        left - 1,
+        bottom,
+        "outside, left of the bottom edge",
+    );
     assert_background(&pixels, right + 1, top, "outside, right of the top edge");
     assert_background(&pixels, left, bottom + 1, "outside, below the left edge");
     assert_background(&pixels, right, top - 1, "outside, above the right edge");
@@ -239,6 +244,9 @@ fn the_same_four_vertices_as_a_line_strip_do_join() {
     // assertion is "the row is not empty", not "this exact pixel".
     for row in (top + 1)..bottom {
         let lit = (0..W).any(|column| rgb(&pixels, column, row) != [0, 0, 0]);
-        assert!(lit, "line-strip: row {row} of the joining diagonal is empty");
+        assert!(
+            lit,
+            "line-strip: row {row} of the joining diagonal is empty"
+        );
     }
 }

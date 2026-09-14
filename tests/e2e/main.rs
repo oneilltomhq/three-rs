@@ -120,15 +120,15 @@ mod webgpu_lights_phong;
 #[allow(dead_code)]
 mod webgpu_morphtargets;
 
-#[path = "../../examples/webgpu_tsl_galaxy.rs"]
-#[allow(dead_code)]
-mod webgpu_tsl_galaxy;
-#[path = "../../examples/webgpu_shadowmap.rs"]
-#[allow(dead_code)]
-mod webgpu_shadowmap;
 #[path = "../../examples/webgpu_lights_physical.rs"]
 #[allow(dead_code)]
 mod webgpu_lights_physical;
+#[path = "../../examples/webgpu_shadowmap.rs"]
+#[allow(dead_code)]
+mod webgpu_shadowmap;
+#[path = "../../examples/webgpu_tsl_galaxy.rs"]
+#[allow(dead_code)]
+mod webgpu_tsl_galaxy;
 
 fn three_js_dir() -> PathBuf {
     three_rs::testing::three_js_dir()
@@ -192,7 +192,9 @@ fn webgpu_depth_texture() {
         result.num_different_pixels,
         out.display()
     );
-    steady_frame(name, &mut app, webgpu_depth_texture::animate, |app| app.renderer.device());
+    steady_frame(name, &mut app, webgpu_depth_texture::animate, |app| {
+        app.renderer.device()
+    });
 }
 
 #[test]
@@ -232,7 +234,9 @@ fn webgpu_instance_mesh() {
         result.num_different_pixels,
         out.display()
     );
-    steady_frame(name, &mut app, webgpu_instance_mesh::animate, |app| app.renderer.device());
+    steady_frame(name, &mut app, webgpu_instance_mesh::animate, |app| {
+        app.renderer.device()
+    });
 }
 
 #[test]
@@ -272,7 +276,9 @@ fn webgpu_materials_basic() {
         result.num_different_pixels,
         out.display()
     );
-    steady_frame(name, &mut app, webgpu_materials_basic::animate, |app| app.renderer.device());
+    steady_frame(name, &mut app, webgpu_materials_basic::animate, |app| {
+        app.renderer.device()
+    });
 }
 
 #[test]
@@ -312,7 +318,9 @@ fn webgpu_rtt() {
         result.num_different_pixels,
         out.display()
     );
-    steady_frame(name, &mut app, webgpu_rtt::animate, |app| app.renderer.device());
+    steady_frame(name, &mut app, webgpu_rtt::animate, |app| {
+        app.renderer.device()
+    });
 }
 
 #[test]
@@ -352,7 +360,12 @@ fn webgpu_postprocessing_masking() {
         result.num_different_pixels,
         out.display()
     );
-    steady_frame(name, &mut app, webgpu_postprocessing_masking::animate, |app| app.renderer.device());
+    steady_frame(
+        name,
+        &mut app,
+        webgpu_postprocessing_masking::animate,
+        |app| app.renderer.device(),
+    );
 }
 
 #[test]
@@ -392,7 +405,9 @@ fn webgpu_lights_phong() {
         result.num_different_pixels,
         out.display()
     );
-    steady_frame(name, &mut app, webgpu_lights_phong::animate, |app| app.renderer.device());
+    steady_frame(name, &mut app, webgpu_lights_phong::animate, |app| {
+        app.renderer.device()
+    });
 }
 
 #[test]
@@ -432,7 +447,9 @@ fn webgpu_morphtargets() {
         result.num_different_pixels,
         out.display()
     );
-    steady_frame(name, &mut app, webgpu_morphtargets::animate, |app| app.renderer.device());
+    steady_frame(name, &mut app, webgpu_morphtargets::animate, |app| {
+        app.renderer.device()
+    });
 }
 
 #[test]
@@ -472,7 +489,9 @@ fn webgpu_tsl_galaxy() {
         result.num_different_pixels,
         out.display()
     );
-    steady_frame(name, &mut app, webgpu_tsl_galaxy::animate, |app| app.renderer.device());
+    steady_frame(name, &mut app, webgpu_tsl_galaxy::animate, |app| {
+        app.renderer.device()
+    });
 }
 
 #[test]
@@ -512,7 +531,9 @@ fn webgpu_shadowmap() {
         result.num_different_pixels,
         out.display()
     );
-    steady_frame(name, &mut app, webgpu_shadowmap::animate, |app| app.renderer.device());
+    steady_frame(name, &mut app, webgpu_shadowmap::animate, |app| {
+        app.renderer.device()
+    });
 }
 
 #[test]
@@ -552,7 +573,9 @@ fn webgpu_lights_physical() {
         result.num_different_pixels,
         out.display()
     );
-    steady_frame(name, &mut app, webgpu_lights_physical::animate, |app| app.renderer.device());
+    steady_frame(name, &mut app, webgpu_lights_physical::animate, |app| {
+        app.renderer.device()
+    });
 }
 
 /// Issue #56's "done when": a steady frame performs zero `NodeBuilder::build`
@@ -580,7 +603,11 @@ fn steady_frame_builds_nothing() {
                     app.renderer.program_builds() - before
                 })
                 .collect();
-            println!("{}: programs built per frame {:?}", stringify!($module), builds);
+            println!(
+                "{}: programs built per frame {:?}",
+                stringify!($module),
+                builds
+            );
             assert!(
                 builds[0] > 0,
                 "{}: the first frame built nothing, so the counter is not wired",
@@ -642,8 +669,8 @@ fn a_dropped_geometry_does_not_lend_its_buffers_to_the_next_one() {
     use three_rs::materials::MeshBasicNodeMaterial;
     use three_rs::nodes::tsl::texture;
     use three_rs::{
-        Color, LineSegments, Mesh, PerspectiveCamera, Renderer, RendererParameters, Scene, Texture,
-        Vector3, plane_geometry,
+        plane_geometry, Color, LineSegments, Mesh, PerspectiveCamera, Renderer, RendererParameters,
+        Scene, Texture, Vector3,
     };
 
     /// Allocations the test is willing to make hunting for the freed address.
@@ -763,9 +790,9 @@ fn a_dropped_geometry_does_not_lend_its_buffers_to_the_next_one() {
 #[test]
 fn churning_geometry_and_materials_does_not_grow_the_caches() {
     use std::rc::Rc;
-    use three_rs::materials::{MeshBasicNodeMaterial, instanced_range};
+    use three_rs::materials::{instanced_range, MeshBasicNodeMaterial};
     use three_rs::{
-        Color, InstancedMesh, PerspectiveCamera, Renderer, RendererParameters, Scene, box_geometry,
+        box_geometry, Color, InstancedMesh, PerspectiveCamera, Renderer, RendererParameters, Scene,
     };
 
     const FRAMES: usize = 50;
@@ -790,9 +817,8 @@ fn churning_geometry_and_materials_does_not_grow_the_caches() {
         let size = 1.0 + frame as f64 * 0.01;
         let geometry = Rc::new(box_geometry(size, size, size, 1, 1, 1));
         let mut material = MeshBasicNodeMaterial::new();
-        material.color_node = Some(
-            instanced_range(Color::from_hex(0x000000), Color::from_hex(0xffffff), 8).xyz(),
-        );
+        material.color_node =
+            Some(instanced_range(Color::from_hex(0x000000), Color::from_hex(0xffffff), 8).xyz());
         let mesh = InstancedMesh::new(geometry, material, 8);
         let mut scene = Scene::new();
         scene.add(&mesh);

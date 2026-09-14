@@ -22,7 +22,10 @@ fn linear_instancing() {
         2,
         Some(Vec::new()),
     );
-    assert_eq!(object.data.value_size, 2, "Can instantiate a LinearInterpolant.");
+    assert_eq!(
+        object.data.value_size, 2,
+        "Can instantiate a LinearInterpolant."
+    );
 }
 
 #[test]
@@ -89,7 +92,10 @@ fn cubic_instancing() {
         2,
         Some(Vec::new()),
     );
-    assert_eq!(object.data.value_size, 2, "Can instantiate a CubicInterpolant.");
+    assert_eq!(
+        object.data.value_size, 2,
+        "Can instantiate a CubicInterpolant."
+    );
 }
 
 #[test]
@@ -244,14 +250,34 @@ fn custom_evaluate() {
         CubicSplineInterpolation,
     );
 
-    assert_eq!(interpolant.evaluate(0.0), [0.0], "evaluate at first keyframe");
-    assert_eq!(interpolant.evaluate(1.0), [1.0], "evaluate at last keyframe");
+    assert_eq!(
+        interpolant.evaluate(0.0),
+        [0.0],
+        "evaluate at first keyframe"
+    );
+    assert_eq!(
+        interpolant.evaluate(1.0),
+        [1.0],
+        "evaluate at last keyframe"
+    );
 
     // At t = 0.5 with td = 1, p = 0.5 → s0 = 0.5, s1 = 0.125, s2 = 0.5, s3 = -0.125
     // result = 0.5 * 0 + 0.125 * 1 + 0.5 * 1 + ( -0.125 ) * ( -1 ) = 0.75
-    assert_eq!(interpolant.evaluate(0.5), [0.75], "evaluate inside interval");
+    assert_eq!(
+        interpolant.evaluate(0.5),
+        [0.75],
+        "evaluate inside interval"
+    );
 
     // Out-of-range queries clamp to the boundary spline vertex.
-    assert_eq!(interpolant.evaluate(-1.0), [0.0], "evaluate before first keyframe");
-    assert_eq!(interpolant.evaluate(2.0), [1.0], "evaluate after last keyframe");
+    assert_eq!(
+        interpolant.evaluate(-1.0),
+        [0.0],
+        "evaluate before first keyframe"
+    );
+    assert_eq!(
+        interpolant.evaluate(2.0),
+        [1.0],
+        "evaluate after last keyframe"
+    );
 }

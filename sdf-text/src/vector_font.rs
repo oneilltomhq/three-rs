@@ -37,12 +37,30 @@ use owned_ttf_parser::{AsFaceRef, Face, GlyphId, OwnedFace, Tag};
 /// when the path is stroked), so the rasteriser never sees one.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum PathCommand {
-    MoveTo { x: f64, y: f64 },
-    LineTo { x: f64, y: f64 },
+    MoveTo {
+        x: f64,
+        y: f64,
+    },
+    LineTo {
+        x: f64,
+        y: f64,
+    },
     /// Quadratic: one control point.
-    QuadTo { x1: f64, y1: f64, x: f64, y: f64 },
+    QuadTo {
+        x1: f64,
+        y1: f64,
+        x: f64,
+        y: f64,
+    },
     /// Cubic: two control points. TrueType never produces these; CFF does.
-    CurveTo { x1: f64, y1: f64, x2: f64, y2: f64, x: f64, y: f64 },
+    CurveTo {
+        x1: f64,
+        y1: f64,
+        x2: f64,
+        y2: f64,
+        x: f64,
+        y: f64,
+    },
     Close,
 }
 
@@ -157,7 +175,10 @@ impl VectorFont {
                 .and_then(|t| t.capital_height())
                 .map(|v| v as f64)
                 .unwrap_or(0.0);
-            let xh = os2.and_then(|t| t.x_height()).map(|v| v as f64).unwrap_or(0.0);
+            let xh = os2
+                .and_then(|t| t.x_height())
+                .map(|v| v as f64)
+                .unwrap_or(0.0);
             (f.units_per_em() as f64, asc, desc, gap, cap, xh)
         };
 
@@ -246,7 +267,14 @@ impl VectorFont {
                     x,
                     y: -y,
                 }),
-                PathCommand::CurveTo { x1, y1, x2, y2, x, y } => Some(PathCommand::CurveTo {
+                PathCommand::CurveTo {
+                    x1,
+                    y1,
+                    x2,
+                    y2,
+                    x,
+                    y,
+                } => Some(PathCommand::CurveTo {
                     x1,
                     y1: -y1,
                     x2,
@@ -309,7 +337,9 @@ impl VectorFont {
         let long = read_i16(head, 50) != 0;
         // An empty loca range means an empty glyph; opentype never calls
         // parseGlyph for it, so it has no points at all.
-        let Some(range) = loca_range(loca, gid.0, long) else { return };
+        let Some(range) = loca_range(loca, gid.0, long) else {
+            return;
+        };
         let Some(data) = glyf.get(range) else { return };
         if data.len() < 10 {
             return;
@@ -391,9 +421,15 @@ fn emit_contour(contour: &[GlyfPoint], out: &mut Vec<PathCommand>) {
     let mut curr = contour[contour.len() - 1];
     let mut next = contour[0];
     if curr.on_curve {
-        out.push(PathCommand::MoveTo { x: curr.x, y: curr.y });
+        out.push(PathCommand::MoveTo {
+            x: curr.x,
+            y: curr.y,
+        });
     } else if next.on_curve {
-        out.push(PathCommand::MoveTo { x: next.x, y: next.y });
+        out.push(PathCommand::MoveTo {
+            x: next.x,
+            y: next.y,
+        });
     } else {
         out.push(PathCommand::MoveTo {
             x: (curr.x + next.x) * 0.5,
@@ -404,7 +440,10 @@ fn emit_contour(contour: &[GlyfPoint], out: &mut Vec<PathCommand>) {
         curr = next;
         next = contour[(i + 1) % contour.len()];
         if curr.on_curve {
-            out.push(PathCommand::LineTo { x: curr.x, y: curr.y });
+            out.push(PathCommand::LineTo {
+                x: curr.x,
+                y: curr.y,
+            });
         } else {
             let (nx, ny) = if next.on_curve {
                 (next.x, next.y)
@@ -449,7 +488,14 @@ pub fn path_bounding_box(commands: &[PathCommand]) -> BBox {
                 prev_x = x;
                 prev_y = y;
             }
-            PathCommand::CurveTo { x1, y1, x2, y2, x, y } => {
+            PathCommand::CurveTo {
+                x1,
+                y1,
+                x2,
+                y2,
+                x,
+                y,
+            } => {
                 b.add_bezier(prev_x, prev_y, x1, y1, x2, y2, x, y);
                 prev_x = x;
                 prev_y = y;
@@ -481,7 +527,13 @@ struct Builder {
 
 impl Builder {
     fn new() -> Self {
-        Builder { empty: true, x1: 0.0, y1: 0.0, x2: 0.0, y2: 0.0 }
+        Builder {
+            empty: true,
+            x1: 0.0,
+            y1: 0.0,
+            x2: 0.0,
+            y2: 0.0,
+        }
     }
 
     /// `BoundingBox.addPoint`, where a `null` argument skips that axis. The JS
@@ -533,17 +585,7 @@ impl Builder {
     /// `BoundingBox.addBezier` — solve the derivative quadratic per axis and add
     /// the curve point at every root strictly inside (0, 1).
     #[allow(clippy::too_many_arguments)]
-    fn add_bezier(
-        &mut self,
-        x0: f64,
-        y0: f64,
-        x1: f64,
-        y1: f64,
-        x2: f64,
-        y2: f64,
-        x: f64,
-        y: f64,
-    ) {
+    fn add_bezier(&mut self, x0: f64, y0: f64, x1: f64, y1: f64, x2: f64, y2: f64, x: f64, y: f64) {
         let p0 = [x0, y0];
         let p1 = [x1, y1];
         let p2 = [x2, y2];
@@ -773,7 +815,9 @@ fn collect_kern_subtables(gpos: &[u8]) -> Vec<usize> {
     let lookup_list_off = read_u16(gpos, 8) as usize;
 
     // Script list → the default script's Script table.
-    let Some(sl) = gpos.get(script_list_off..) else { return out };
+    let Some(sl) = gpos.get(script_list_off..) else {
+        return out;
+    };
     if sl.len() < 2 {
         return out;
     }
@@ -784,17 +828,24 @@ fn collect_kern_subtables(gpos: &[u8]) -> Vec<usize> {
         if at + 6 > sl.len() {
             return out;
         }
-        tags.push(([sl[at], sl[at + 1], sl[at + 2], sl[at + 3]], read_u16(sl, at + 4) as usize));
+        tags.push((
+            [sl[at], sl[at + 1], sl[at + 2], sl[at + 3]],
+            read_u16(sl, at + 4) as usize,
+        ));
     }
     let pick = tags
         .iter()
         .find(|(t, _)| t == b"DFLT")
         .or_else(|| tags.iter().find(|(t, _)| t == b"latn"));
-    let Some(&(_, script_off)) = pick else { return out };
+    let Some(&(_, script_off)) = pick else {
+        return out;
+    };
 
     // Script table → defaultLangSys (opentype uses it whenever `language` is
     // unset, which `getKerningTables` leaves so).
-    let Some(st) = sl.get(script_off..) else { return out };
+    let Some(st) = sl.get(script_off..) else {
+        return out;
+    };
     if st.len() < 2 {
         return out;
     }
@@ -802,7 +853,9 @@ fn collect_kern_subtables(gpos: &[u8]) -> Vec<usize> {
     if default_lang_sys_off == 0 {
         return out;
     }
-    let Some(ls) = st.get(default_lang_sys_off..) else { return out };
+    let Some(ls) = st.get(default_lang_sys_off..) else {
+        return out;
+    };
     if ls.len() < 6 {
         return out;
     }
@@ -818,7 +871,9 @@ fn collect_kern_subtables(gpos: &[u8]) -> Vec<usize> {
 
     // Feature list → the *first* listed feature tagged `kern` (opentype's
     // `getFeatureTable` returns on the first match).
-    let Some(fl) = gpos.get(feature_list_off..) else { return out };
+    let Some(fl) = gpos.get(feature_list_off..) else {
+        return out;
+    };
     if fl.len() < 2 {
         return out;
     }
@@ -837,8 +892,12 @@ fn collect_kern_subtables(gpos: &[u8]) -> Vec<usize> {
             break;
         }
     }
-    let Some(feature_off) = feature_off else { return out };
-    let Some(ft) = fl.get(feature_off..) else { return out };
+    let Some(feature_off) = feature_off else {
+        return out;
+    };
+    let Some(ft) = fl.get(feature_off..) else {
+        return out;
+    };
     if ft.len() < 4 {
         return out;
     }
@@ -855,7 +914,9 @@ fn collect_kern_subtables(gpos: &[u8]) -> Vec<usize> {
     // Lookup list → keep lookupType == 2 (PairPos) only, as
     // `getLookupTables(script, language, 'kern', 2)` does. A type-9 extension
     // lookup wrapping a PairPos is therefore *skipped*, exactly as in the JS.
-    let Some(ll) = gpos.get(lookup_list_off..) else { return out };
+    let Some(ll) = gpos.get(lookup_list_off..) else {
+        return out;
+    };
     if ll.len() < 2 {
         return out;
     }
@@ -1100,6 +1161,9 @@ impl GlyphCache {
     }
 
     pub fn bounding_box(&mut self, font: &VectorFont, ch: char) -> Option<BBox> {
-        *self.bboxes.entry(ch).or_insert_with(|| font.bounding_box(ch))
+        *self
+            .bboxes
+            .entry(ch)
+            .or_insert_with(|| font.bounding_box(ch))
     }
 }

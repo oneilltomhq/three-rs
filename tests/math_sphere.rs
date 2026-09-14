@@ -101,7 +101,12 @@ fn set_from_points() {
         EPS,
         "Default center: check center.z",
     );
-    support::close(a.radius, expected_radius, EPS, "Default center: check radius");
+    support::close(
+        a.radius,
+        expected_radius,
+        EPS,
+        "Default center: check radius",
+    );
 
     expected_radius = 2.5946195770400102;
     a.set_from_points(&points, Some(&optional_center));

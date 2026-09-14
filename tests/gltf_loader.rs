@@ -62,7 +62,10 @@ fn michelle_geometry() {
 
     // `skinIndex` is unnormalized `Uint8`/`Uint16`, so it must come out exact
     let skin_index = geometry.get_attribute("skinIndex").unwrap();
-    assert_eq!(skin_index.array[0..8], [5.0, 0.0, 0.0, 0.0, 5.0, 0.0, 0.0, 0.0]);
+    assert_eq!(
+        skin_index.array[0..8],
+        [5.0, 0.0, 0.0, 0.0, 5.0, 0.0, 0.0, 0.0]
+    );
 }
 
 #[test]
@@ -71,9 +74,22 @@ fn michelle_bone_inverses() {
     let skeleton = gltf.skins[0].borrow();
 
     let expected = [
-        100.0, 0.0, 0.0, 0.0, 0.0, 100.0, -0.000_016_292_065_993_184_224, 0.0, 0.0,
-        0.000_016_292_065_993_184_224, 100.0, 0.0, 0.0, -102.625_259_399_414_06,
-        0.521_240_949_630_737_3, 1.0,
+        100.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        100.0,
+        -0.000_016_292_065_993_184_224,
+        0.0,
+        0.0,
+        0.000_016_292_065_993_184_224,
+        100.0,
+        0.0,
+        0.0,
+        -102.625_259_399_414_06,
+        0.521_240_949_630_737_3,
+        1.0,
     ];
     for (i, expected) in expected.iter().enumerate() {
         let got = skeleton.bone_inverses[0].elements[i];
@@ -283,9 +299,16 @@ fn michelle_skinning_at_zero() {
     let mut vertex = Vector3::new(position.get_x(0), position.get_y(0), position.get_z(0));
     mesh.apply_bone_transform(0, &mut vertex);
 
-    let expected = [8.248_729_752_697_153, 2.609_101_503_364_952_7, -143.658_634_049_021_8];
+    let expected = [
+        8.248_729_752_697_153,
+        2.609_101_503_364_952_7,
+        -143.658_634_049_021_8,
+    ];
     for (i, expected) in expected.iter().enumerate() {
         let got = vertex.get_component(i);
-        assert!((got - expected).abs() < 1e-5, "applyBoneTransform[{i}]: {got}");
+        assert!(
+            (got - expected).abs() < 1e-5,
+            "applyBoneTransform[{i}]: {got}"
+        );
     }
 }

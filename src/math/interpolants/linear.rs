@@ -36,8 +36,8 @@ impl Interpolation for LinearInterpolation {
         let weight0 = 1.0 - weight1;
 
         for i in 0..stride {
-            data.result_buffer[i] =
-                data.sample_values[offset0 + i] * weight0 + data.sample_values[offset1 + i] * weight1;
+            data.result_buffer[i] = data.sample_values[offset0 + i] * weight0
+                + data.sample_values[offset1 + i] * weight1;
         }
     }
 }

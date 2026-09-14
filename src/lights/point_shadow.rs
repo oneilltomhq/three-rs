@@ -16,21 +16,69 @@ use crate::textures::CubeDepthTexture;
 /// coordinate system (the ±Y directions are swapped to match the sampling
 /// convention). Face order: +X, −X, +Y, −Y, +Z, −Z.
 pub const CUBE_DIRECTIONS: [Vector3; 6] = [
-    Vector3 { x: 1.0, y: 0.0, z: 0.0 },
-    Vector3 { x: -1.0, y: 0.0, z: 0.0 },
-    Vector3 { x: 0.0, y: -1.0, z: 0.0 },
-    Vector3 { x: 0.0, y: 1.0, z: 0.0 },
-    Vector3 { x: 0.0, y: 0.0, z: 1.0 },
-    Vector3 { x: 0.0, y: 0.0, z: -1.0 },
+    Vector3 {
+        x: 1.0,
+        y: 0.0,
+        z: 0.0,
+    },
+    Vector3 {
+        x: -1.0,
+        y: 0.0,
+        z: 0.0,
+    },
+    Vector3 {
+        x: 0.0,
+        y: -1.0,
+        z: 0.0,
+    },
+    Vector3 {
+        x: 0.0,
+        y: 1.0,
+        z: 0.0,
+    },
+    Vector3 {
+        x: 0.0,
+        y: 0.0,
+        z: 1.0,
+    },
+    Vector3 {
+        x: 0.0,
+        y: 0.0,
+        z: -1.0,
+    },
 ];
 
 pub const CUBE_UPS: [Vector3; 6] = [
-    Vector3 { x: 0.0, y: -1.0, z: 0.0 },
-    Vector3 { x: 0.0, y: -1.0, z: 0.0 },
-    Vector3 { x: 0.0, y: 0.0, z: -1.0 },
-    Vector3 { x: 0.0, y: 0.0, z: 1.0 },
-    Vector3 { x: 0.0, y: -1.0, z: 0.0 },
-    Vector3 { x: 0.0, y: -1.0, z: 0.0 },
+    Vector3 {
+        x: 0.0,
+        y: -1.0,
+        z: 0.0,
+    },
+    Vector3 {
+        x: 0.0,
+        y: -1.0,
+        z: 0.0,
+    },
+    Vector3 {
+        x: 0.0,
+        y: 0.0,
+        z: -1.0,
+    },
+    Vector3 {
+        x: 0.0,
+        y: 0.0,
+        z: 1.0,
+    },
+    Vector3 {
+        x: 0.0,
+        y: -1.0,
+        z: 0.0,
+    },
+    Vector3 {
+        x: 0.0,
+        y: -1.0,
+        z: 0.0,
+    },
 ];
 
 /// `PointShadowFilter` — percentage-closer filtering with five Vogel-disk taps

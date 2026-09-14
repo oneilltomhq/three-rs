@@ -40,7 +40,9 @@ impl Ray {
     /// `Ray.at()`.
     pub fn at(&self, t: f64) -> Vector3 {
         let mut target = Vector3::default();
-        target.copy(&self.origin).add_scaled_vector(&self.direction, t);
+        target
+            .copy(&self.origin)
+            .add_scaled_vector(&self.direction, t);
         target
     }
 
@@ -152,9 +154,8 @@ impl Ray {
                         let inv_det = 1.0 / det;
                         s0 *= inv_det;
                         s1 *= inv_det;
-                        sqr_dist = s0 * (s0 + a01 * s1 + 2.0 * b0)
-                            + s1 * (a01 * s0 + s1 + 2.0 * b1)
-                            + c;
+                        sqr_dist =
+                            s0 * (s0 + a01 * s1 + 2.0 * b0) + s1 * (a01 * s0 + s1 + 2.0 * b1) + c;
                     } else {
                         // region 1
 
@@ -568,7 +569,11 @@ impl Ray {
 
         let t_scaled = sz * (u * akz + v * bkz + w * ckz);
 
-        if if det > 0.0 { t_scaled < 0.0 } else { t_scaled > 0.0 } {
+        if if det > 0.0 {
+            t_scaled < 0.0
+        } else {
+            t_scaled > 0.0
+        } {
             return None;
         }
 

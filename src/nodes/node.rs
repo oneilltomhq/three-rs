@@ -414,14 +414,26 @@ impl std::fmt::Debug for FnDef {
 #[derive(Debug)]
 pub enum Node {
     /// A literal. `values` holds one entry per component.
-    Const { ty: Type, values: Vec<f64> },
+    Const {
+        ty: Type,
+        values: Vec<f64>,
+    },
     /// `array< f32, N >( … )` — `QuadMesh`'s `vertexNode`.
-    ConstArray { element_ty: Type, values: Vec<f64> },
+    ConstArray {
+        element_ty: Type,
+        values: Vec<f64>,
+    },
     Uniform(Rc<UniformNode>),
     /// `BufferNode` element access: `NodeBuffer_N.value[ index ]`.
-    BufferElement { buffer: Rc<BufferNode>, index: NodeRef },
+    BufferElement {
+        buffer: Rc<BufferNode>,
+        index: NodeRef,
+    },
     /// A geometry attribute.
-    Attribute { name: &'static str, ty: Type },
+    Attribute {
+        name: &'static str,
+        ty: Type,
+    },
     /// `instancedBufferAttribute( buffer, type, stride, offset )`: a vertex
     /// attribute whose buffer steps once per instance. `offset` is in floats
     /// from the start of the instance; the stride is the buffer's `item_size`,
@@ -436,11 +448,20 @@ pub enum Node {
     Varying(Rc<VaryingDef>),
     /// A `var<private>` with a fixed name that the setup code assigns
     /// explicitly — `PropertyNode` (`DiffuseColor`, `Output`, …).
-    Property { name: &'static str, ty: Type },
+    Property {
+        name: &'static str,
+        ty: Type,
+    },
     /// A parameter of an emitted `fn` — a name that is already in scope.
-    Param { name: &'static str, ty: Type },
+    Param {
+        name: &'static str,
+        ty: Type,
+    },
     /// A statement: `target = value`.
-    Assign { target: NodeRef, value: NodeRef },
+    Assign {
+        target: NodeRef,
+        value: NodeRef,
+    },
     /// `OperatorNode`.
     Op {
         op: &'static str,
@@ -461,11 +482,20 @@ pub enum Node {
         ty: Type,
     },
     /// `ConvertNode` / a single-argument constructor: `vec4<f32>( x )`.
-    Cast { node: NodeRef, ty: Type },
+    Cast {
+        node: NodeRef,
+        ty: Type,
+    },
     /// `OperatorNode` with one operand: `( - x )`.
-    Neg { node: NodeRef, ty: Type },
+    Neg {
+        node: NodeRef,
+        ty: Type,
+    },
     /// `JoinNode` — `vec4<f32>( a, b, c, d )`.
-    Join { args: Vec<NodeRef>, ty: Type },
+    Join {
+        args: Vec<NodeRef>,
+        ty: Type,
+    },
     /// `ArrayElementNode`: `m[ 3u ]`, `array< f32, 3 >( … )[ vertexIndex ]`.
     Element {
         node: NodeRef,
@@ -478,7 +508,10 @@ pub enum Node {
         mode: SampleMode,
         ty: Type,
     },
-    Call { def: Rc<FnDef>, args: Vec<NodeRef> },
+    Call {
+        def: Rc<FnDef>,
+        args: Vec<NodeRef>,
+    },
     /// A sequence of statements followed by the value they produce — the shape
     /// an inlined `Fn()` body with `toVar()` statements has. Three has no node
     /// for it: its `ShaderNode` call simply flows its body's statements into the
@@ -495,7 +528,10 @@ pub enum Node {
         body: Vec<NodeRef>,
     },
     /// `If( cond, () => { … } )` as a bare statement (`setupDiscard`).
-    If { cond: NodeRef, body: Vec<NodeRef> },
+    If {
+        cond: NodeRef,
+        body: Vec<NodeRef>,
+    },
     /// `If( cond, () => { … } )` — a one-armed conditional over a result var
     /// that was initialised before it. `pre` holds the statements three.js
     /// emits ahead of the result var (its `toConst` lines), `result` is the var
@@ -510,7 +546,9 @@ pub enum Node {
     /// `Discard()` — a bare `discard;`.
     Discard,
     /// `x.not()` — `( ! x )`.
-    Not { node: NodeRef },
+    Not {
+        node: NodeRef,
+    },
     /// `cond.select( a, b )` — lowered to an `if`/`else` writing a result var,
     /// exactly as Three does.
     Select {
@@ -743,7 +781,6 @@ impl std::hash::Hash for TextureSource {
         }
     }
 }
-
 
 /// Derived but for `Attribute`, whose `Rc<Vec<f32>>` is the caller's whole
 /// per-instance array — `BatchedText` hands it four floats per glyph.

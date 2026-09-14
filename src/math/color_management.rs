@@ -107,24 +107,40 @@ impl ColorManagement {
     }
 
     /// `ColorManagement.workingToColorSpace()`.
-    pub fn working_to_color_space(&self, color: &mut Color, target_color_space: Option<ColorSpace>) {
+    pub fn working_to_color_space(
+        &self,
+        color: &mut Color,
+        target_color_space: Option<ColorSpace>,
+    ) {
         self.convert(color, Some(self.working_color_space), target_color_space);
     }
 
     /// `ColorManagement.colorSpaceToWorking()`.
-    pub fn color_space_to_working(&self, color: &mut Color, source_color_space: Option<ColorSpace>) {
+    pub fn color_space_to_working(
+        &self,
+        color: &mut Color,
+        source_color_space: Option<ColorSpace>,
+    ) {
         self.convert(color, source_color_space, Some(self.working_color_space));
     }
 
     /// `ColorManagement.fromWorkingColorSpace()` — deprecated in r177, renamed
     /// to `workingToColorSpace()`.
-    pub fn from_working_color_space(&self, color: &mut Color, target_color_space: Option<ColorSpace>) {
+    pub fn from_working_color_space(
+        &self,
+        color: &mut Color,
+        target_color_space: Option<ColorSpace>,
+    ) {
         self.working_to_color_space(color, target_color_space);
     }
 
     /// `ColorManagement.toWorkingColorSpace()` — deprecated in r177, renamed
     /// to `colorSpaceToWorking()`.
-    pub fn to_working_color_space(&self, color: &mut Color, source_color_space: Option<ColorSpace>) {
+    pub fn to_working_color_space(
+        &self,
+        color: &mut Color,
+        source_color_space: Option<ColorSpace>,
+    ) {
         self.color_space_to_working(color, source_color_space);
     }
 

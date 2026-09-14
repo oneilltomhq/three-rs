@@ -56,7 +56,12 @@ pub struct GeometrySample {
     pub bounding_sphere: (&'static [f64], f64),
 }
 
-fn check_attr(expr: &str, name: &str, got: Option<&three_rs::core::BufferAttribute>, want: &AttrSample) {
+fn check_attr(
+    expr: &str,
+    name: &str,
+    got: Option<&three_rs::core::BufferAttribute>,
+    want: &AttrSample,
+) {
     let got = got.unwrap_or_else(|| panic!("{expr}: {name} attribute missing"));
     assert_eq!(got.count(), want.count, "{expr}: {name}.count");
 
@@ -240,7 +245,11 @@ pub fn run_std_geometry_tests(label: &str, geometry: &BufferGeometry) {
     }
 
     if let Some(index) = &geometry.index {
-        assert_eq!(index.count() % 3, 0, "{label}: index is not whole triangles");
+        assert_eq!(
+            index.count() % 3,
+            0,
+            "{label}: index is not whole triangles"
+        );
         let values = index_values(index);
         let max = values.iter().copied().max().unwrap_or(0);
         assert!(
@@ -255,11 +264,17 @@ pub fn run_std_geometry_tests(label: &str, geometry: &BufferGeometry) {
 
     let (min, max) = bounding_box(geometry);
     for c in 0..3 {
-        assert!(min[c].is_finite() && max[c].is_finite(), "{label}: boundingBox");
+        assert!(
+            min[c].is_finite() && max[c].is_finite(),
+            "{label}: boundingBox"
+        );
         assert!(min[c] <= max[c], "{label}: boundingBox inverted");
     }
     let (_, radius) = bounding_sphere(geometry);
-    assert!(radius.is_finite() && radius > 0.0, "{label}: boundingSphere.radius");
+    assert!(
+        radius.is_finite() && radius > 0.0,
+        "{label}: boundingSphere.radius"
+    );
 }
 
 /// `BufferGeometry.setIndex( array )` picks the narrowest typed array that
@@ -283,5 +298,8 @@ pub fn check_groups_cover_index(label: &str, geometry: &BufferGeometry) {
         expected_start += g.count;
     }
     let index_count = geometry.index.as_ref().map(|i| i.count()).unwrap_or(0);
-    assert_eq!(expected_start, index_count, "{label}: groups do not cover the index");
+    assert_eq!(
+        expected_start, index_count,
+        "{label}: groups do not cover the index"
+    );
 }

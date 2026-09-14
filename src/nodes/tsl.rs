@@ -15,15 +15,13 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use super::node::{
-    Builtin, BufferNode, BufferSource, FnDef, InstanceBuffer, Lazy, Node, NodeRef, SampleMode,
-    Type, UniformGroup,
-    UniformNode, UniformSource, VarDef, VaryingDef,
+    BufferNode, BufferSource, Builtin, FnDef, InstanceBuffer, Lazy, Node, NodeRef, SampleMode,
+    Type, UniformGroup, UniformNode, UniformSource, VarDef, VaryingDef,
 };
 use crate::math::{Color, Matrix3};
 use crate::textures::{CubeDepthTexture, CubeTexture, DataArrayTexture, DepthTexture, Texture};
 
 pub use super::node::TextureSource;
-
 
 // ---------------------------------------------------------------------------
 // sub-builds and the build context (`docs/nodes.md` §7)
@@ -89,7 +87,11 @@ fn in_sub_build<R>(layer: &'static str, f: impl FnOnce() -> R) -> R {
 /// Install the material's `normalNode` as `builder.context.setupNormal` for the
 /// duration of `f` — `NodeMaterial.setup()` does exactly this before flowing
 /// either stage. Returns what `f` returns.
-pub fn with_material_normal<R>(normal: Option<NodeRef>, flat_shading: bool, f: impl FnOnce() -> R) -> R {
+pub fn with_material_normal<R>(
+    normal: Option<NodeRef>,
+    flat_shading: bool,
+    f: impl FnOnce() -> R,
+) -> R {
     let previous = NORMAL_VALUE.with(|v| v.replace(normal));
     let previous_flat = FLAT_SHADING.with(|v| v.replace(flat_shading));
     let out = f();
@@ -170,12 +172,7 @@ pub fn vec3s(x: impl Into<f64>) -> NodeRef {
 }
 
 /// `vec4( x, y, z, w )`.
-pub fn vec4(
-    x: impl Into<f64>,
-    y: impl Into<f64>,
-    z: impl Into<f64>,
-    w: impl Into<f64>,
-) -> NodeRef {
+pub fn vec4(x: impl Into<f64>, y: impl Into<f64>, z: impl Into<f64>, w: impl Into<f64>) -> NodeRef {
     constant(Type::Vec4, vec![x.into(), y.into(), z.into(), w.into()])
 }
 
@@ -489,7 +486,11 @@ pub fn smoothstep(
     high: impl Into<NodeRef>,
     x: impl Into<NodeRef>,
 ) -> NodeRef {
-    math("smoothstep", vec![low.into(), high.into(), x.into()], Type::F32)
+    math(
+        "smoothstep",
+        vec![low.into(), high.into(), x.into()],
+        Type::F32,
+    )
 }
 
 /// `dFdx( x )` — WGSL `dpdx`.
@@ -1031,10 +1032,7 @@ impl NodeRef {
 
     /// `vec4( node.x, node.y, z, node.w )` — `SetNode` for `.setZ()`.
     pub fn set_z(&self, z: impl Into<NodeRef>) -> NodeRef {
-        join(
-            Type::Vec4,
-            vec![self.x(), self.y(), z.into(), self.w()],
-        )
+        join(Type::Vec4, vec![self.x(), self.y(), z.into(), self.w()])
     }
 
     // --- conversion ---
@@ -1761,13 +1759,7 @@ pub fn bump_map(map: &Texture, scale: NodeRef) -> NodeRef {
         let r1 = cross(v_sigma_y, surf_norm.clone());
         let r2 = cross(surf_norm.clone(), v_sigma_x.clone());
         let f_det = v_sigma_x.dot(r1.clone()).mul(face_direction());
-        let v_grad = sign(f_det.clone()).mul(
-            dhdxy
-                .clone()
-                .x()
-                .mul(r1)
-                .add(dhdxy.y().mul(r2)),
-        );
+        let v_grad = sign(f_det.clone()).mul(dhdxy.clone().x().mul(r1).add(dhdxy.y().mul(r2)));
         abs(f_det).mul(surf_norm).sub(v_grad).normalize()
     })
 }
@@ -2047,7 +2039,12 @@ pub fn morph_influences(count: usize, index: NodeRef) -> NodeRef {
 
 /// `Morph.js`' `base = uniform( 1 )`, in the object group.
 pub fn morph_base() -> NodeRef {
-    uniform(UniformSource::MorphBase, Type::F32, UniformGroup::Object, None)
+    uniform(
+        UniformSource::MorphBase,
+        Type::F32,
+        UniformGroup::Object,
+        None,
+    )
 }
 
 /// `geometry.setAttribute( name, new InstancedBufferAttribute( array, items ) )`
@@ -2179,9 +2176,9 @@ pub fn hue(color: NodeRef, adjustment: NodeRef) -> NodeRef {
                     .rgb()
                     .mul(cos_angle.clone())
                     .add(
-                        k.cross(color.rgb()).mul(adjustment.sin()).add(
-                            k.mul(dot(k.clone(), color.rgb()).mul(cos_angle.one_minus())),
-                        ),
+                        k.cross(color.rgb())
+                            .mul(adjustment.sin())
+                            .add(k.mul(dot(k.clone(), color.rgb()).mul(cos_angle.one_minus()))),
                     )
                     .max(float(0.0))
             })
@@ -2224,7 +2221,6 @@ pub fn srgb_transfer_oetf(color: NodeRef) -> NodeRef {
     });
     call(&def, vec![color])
 }
-
 
 /// `reinhardToneMapping` — `ToneMappingFunctions.js`, emitted as a real `fn`.
 pub fn reinhard_tone_mapping(color: NodeRef, exposure: NodeRef) -> NodeRef {
@@ -2281,7 +2277,6 @@ pub fn unpremultiply_alpha(color: NodeRef) -> NodeRef {
     call(&def, vec![color])
 }
 
-
 // ---------------------------------------------------------------------------
 // statements (`Fn()` bodies, `Loop()`, `If()`, `Discard()`)
 // ---------------------------------------------------------------------------
@@ -2298,7 +2293,10 @@ pub fn loop_n(
     count: NodeRef,
     body: impl FnOnce(&NodeRef) -> Vec<NodeRef>,
 ) -> NodeRef {
-    let index = NodeRef::new(Node::Param { name, ty: Type::I32 });
+    let index = NodeRef::new(Node::Param {
+        name,
+        ty: Type::I32,
+    });
     let body = body(&index);
     NodeRef::new(Node::Loop { count, index, body })
 }

@@ -13,9 +13,7 @@ mod support;
 
 use support::EPS;
 use three_rs::math::math_utils::deg_to_rad;
-use three_rs::math::{
-    CoordinateSystem, Euler, EulerOrder, Matrix3, Matrix4, Quaternion, Vector3,
-};
+use three_rs::math::{CoordinateSystem, Euler, EulerOrder, Matrix3, Matrix4, Quaternion, Vector3};
 
 fn matrix_equals4(a: &Matrix4, b: &Matrix4, tolerance: f64) -> bool {
     a.elements
@@ -51,9 +49,7 @@ fn instancing() {
     let b = counting();
     assert_eq!(
         b.elements,
-        [
-            0.0, 4.0, 8.0, 12.0, 1.0, 5.0, 9.0, 13.0, 2.0, 6.0, 10.0, 14.0, 3.0, 7.0, 11.0, 15.0
-        ],
+        [0.0, 4.0, 8.0, 12.0, 1.0, 5.0, 9.0, 13.0, 2.0, 6.0, 10.0, 14.0, 3.0, 7.0, 11.0, 15.0],
         "row-major set(), column-major storage"
     );
 
@@ -114,10 +110,7 @@ fn copy_position() {
         1.0, 2.0, 3.0, 0.0, 5.0, 6.0, 7.0, 0.0, 9.0, 10.0, 11.0, 0.0, 13.0, 14.0, 15.0, 16.0,
     ]);
 
-    assert!(
-        !matrix_equals4(&a, &b, EPS),
-        "a and b initially not equal"
-    );
+    assert!(!matrix_equals4(&a, &b, EPS), "a and b initially not equal");
 
     b.copy_position(&a);
     assert!(
@@ -186,7 +179,10 @@ fn make_rotation_from_euler_extract_rotation() {
         let mut m2 = Matrix4::identity();
         m2.make_rotation_from_euler(&v2);
 
-        assert!(matrix_equals4(&m, &m2, EPS), "make_rotation_from_euler #{i}");
+        assert!(
+            matrix_equals4(&m, &m2, EPS),
+            "make_rotation_from_euler #{i}"
+        );
         assert!(euler_equals(v, &v2, EPS), "make_rotation_from_euler #{i}");
 
         let mut m3 = Matrix4::identity();
@@ -343,15 +339,7 @@ fn determinant_affine_projective() {
     // For non-affine (projective) matrices the bottom row is not [ 0, 0, 0, 1 ],
     // so the 3x3 result generally differs from the full 4x4 determinant.
     let mut a = Matrix4::identity();
-    a.make_perspective(
-        -1.0,
-        1.0,
-        1.0,
-        -1.0,
-        1.0,
-        100.0,
-        CoordinateSystem::WebGL,
-    );
+    a.make_perspective(-1.0, 1.0, 1.0, -1.0, 1.0, 100.0, CoordinateSystem::WebGL);
     assert!((a.determinant_affine() - a.determinant()).abs() > EPS);
 }
 
@@ -461,7 +449,10 @@ fn get_max_scale_on_axis() {
     ]);
     let expected = (3.0 * 3.0 + 7.0 * 7.0 + 11.0 * 11.0_f64).sqrt();
 
-    assert!((a.get_max_scale_on_axis() - expected).abs() <= EPS, "Check result");
+    assert!(
+        (a.get_max_scale_on_axis() - expected).abs() <= EPS,
+        "Check result"
+    );
 }
 
 #[test]
@@ -615,10 +606,7 @@ fn compose_decompose() {
                 let mut m2 = Matrix4::identity();
                 m2.compose(&t2, &r2, &s2);
 
-                assert!(
-                    matrix_equals4(&m, &m2, EPS),
-                    "t {t:?} s {s:?} r {r:?}"
-                );
+                assert!(matrix_equals4(&m, &m2, EPS), "t {t:?} s {s:?} r {r:?}");
             }
         }
     }
@@ -627,15 +615,7 @@ fn compose_decompose() {
 #[test]
 fn make_perspective() {
     let mut a = Matrix4::identity();
-    a.make_perspective(
-        -1.0,
-        1.0,
-        -1.0,
-        1.0,
-        1.0,
-        100.0,
-        CoordinateSystem::WebGL,
-    );
+    a.make_perspective(-1.0, 1.0, -1.0, 1.0, 1.0, 100.0, CoordinateSystem::WebGL);
     let expected = m4([
         1.0,
         0.0,
@@ -660,15 +640,7 @@ fn make_perspective() {
 #[test]
 fn make_orthographic() {
     let mut a = Matrix4::identity();
-    a.make_orthographic(
-        -1.0,
-        1.0,
-        -1.0,
-        1.0,
-        1.0,
-        100.0,
-        CoordinateSystem::WebGL,
-    );
+    a.make_orthographic(-1.0, 1.0, -1.0, 1.0, 1.0, 100.0, CoordinateSystem::WebGL);
     let expected = m4([
         1.0,
         0.0,

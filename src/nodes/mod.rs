@@ -2,13 +2,15 @@
 //! every material through. See `docs/nodes.md`.
 
 pub mod builder;
-pub mod morph;
 pub mod materialx;
+pub mod morph;
 pub mod node;
 pub mod tsl;
 pub mod wgsl;
 
-pub use builder::{BindingDesc, MaterialFlow, NodeBuilder, NodeProgram, Stage, UniformMember, Visibility};
+pub use builder::{
+    BindingDesc, MaterialFlow, NodeBuilder, NodeProgram, Stage, UniformMember, Visibility,
+};
 pub use node::{
     BufferSource, Node, NodeRef, TextureSource, Type, UniformGroup, UniformSource, UpdateType,
 };

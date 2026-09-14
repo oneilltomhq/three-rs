@@ -123,7 +123,8 @@ fn layer4_full_pipeline_circle_centre_opaque_corner_transparent() {
     use sdf_text::vector_font_atlas::normalize_sdf_value;
     let (w, _h, alpha, _) = case("circle16");
     let sdf = compute_sdf_default(&alpha, w, w);
-    let centre = common::shader_alpha_fixed_width(normalize_sdf_value(sdf[8 * w + 8], MAX_DISTANCE));
+    let centre =
+        common::shader_alpha_fixed_width(normalize_sdf_value(sdf[8 * w + 8], MAX_DISTANCE));
     let corner = common::shader_alpha_fixed_width(normalize_sdf_value(sdf[0], MAX_DISTANCE));
     assert!(centre > 0.99, "centre alpha {centre}");
     assert!(corner < 0.01, "corner alpha {corner}");

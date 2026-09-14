@@ -30,8 +30,7 @@ fn matrix_equals4(a: &Matrix4, b: &Matrix4, tolerance: f64) -> bool {
 }
 
 fn quat_equals(a: &Quaternion, b: &Quaternion, tolerance: f64) -> bool {
-    let diff =
-        (a.x - b.x).abs() + (a.y - b.y).abs() + (a.z - b.z).abs() + (a.w - b.w).abs();
+    let diff = (a.x - b.x).abs() + (a.y - b.y).abs() + (a.z - b.z).abs() + (a.w - b.w).abs();
     diff < tolerance
 }
 

@@ -169,8 +169,9 @@ fn parse_accepts_the_aos_keys_form() {
 
 #[test]
 fn create_from_morph_target_sequence() {
-    let clip = AnimationClip::create_from_morph_target_sequence("walk", &["a", "b", "c"], 2.0, false)
-        .unwrap();
+    let clip =
+        AnimationClip::create_from_morph_target_sequence("walk", &["a", "b", "c"], 2.0, false)
+            .unwrap();
 
     assert_eq!(clip.name, "walk");
     assert_eq!(clip.tracks.len(), 3);

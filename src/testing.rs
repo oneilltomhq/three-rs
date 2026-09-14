@@ -63,9 +63,7 @@ pub fn write_png(path: &str, width: u32, height: u32, pixels: &[u8]) {
     encoder.set_color(png::ColorType::Rgba);
     encoder.set_depth(png::BitDepth::Eight);
     let mut writer = encoder.write_header().expect("three-rs: PNG header");
-    writer
-        .write_image_data(pixels)
-        .expect("three-rs: PNG data");
+    writer.write_image_data(pixels).expect("three-rs: PNG data");
 }
 
 /// A vendored upstream checkout the examples and tests read from: `env_var` if

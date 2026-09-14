@@ -213,7 +213,8 @@ impl PropertyMixer {
         let stride = self.value_size;
         let original_value_offset = stride * self.orig_index;
 
-        self.binding.get_value(&mut self.buffer, original_value_offset);
+        self.binding
+            .get_value(&mut self.buffer, original_value_offset);
 
         // accu[0..1] := orig -- initially detect changes against the original
         for i in stride..original_value_offset {

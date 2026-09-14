@@ -47,9 +47,10 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use three_rs::nodes::tsl;
-use three_rs::{DepthTexture, MeshBasicNodeMaterial, Object3D,
-    PerspectiveCamera, QuadMesh, RenderTarget, Renderer, RendererParameters, TextureType,
-    Vector3};
+use three_rs::{
+    DepthTexture, MeshBasicNodeMaterial, Object3D, PerspectiveCamera, QuadMesh, RenderTarget,
+    Renderer, RendererParameters, TextureType, Vector3,
+};
 
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
@@ -246,7 +247,11 @@ impl Scene {
         if let Some(instance) = instance {
             let (shadow_map_enabled, tone_mapping, exposure) = {
                 let old = scene.renderer();
-                (old.shadow_map_enabled, old.tone_mapping, old.tone_mapping_exposure)
+                (
+                    old.shadow_map_enabled,
+                    old.tone_mapping,
+                    old.tone_mapping_exposure,
+                )
             };
             let mut renderer = Renderer::with_instance(
                 RendererParameters {
@@ -409,10 +414,26 @@ impl Scene {
                 // `const time = performance.now() / 1000; const lightTime = time * 0.5;`
                 let light_time = time * 0.5;
                 let positions = [
-                    ((light_time * 0.7).sin() * 3.0, (light_time * 0.5).cos() * 4.0, (light_time * 0.3).cos() * 3.0),
-                    ((light_time * 0.3).cos() * 3.0, (light_time * 0.5).sin() * 4.0, (light_time * 0.7).sin() * 3.0),
-                    ((light_time * 0.7).sin() * 3.0, (light_time * 0.3).cos() * 4.0, (light_time * 0.5).sin() * 3.0),
-                    ((light_time * 0.3).sin() * 3.0, (light_time * 0.7).cos() * 4.0, (light_time * 0.5).sin() * 3.0),
+                    (
+                        (light_time * 0.7).sin() * 3.0,
+                        (light_time * 0.5).cos() * 4.0,
+                        (light_time * 0.3).cos() * 3.0,
+                    ),
+                    (
+                        (light_time * 0.3).cos() * 3.0,
+                        (light_time * 0.5).sin() * 4.0,
+                        (light_time * 0.7).sin() * 3.0,
+                    ),
+                    (
+                        (light_time * 0.7).sin() * 3.0,
+                        (light_time * 0.3).cos() * 4.0,
+                        (light_time * 0.5).sin() * 3.0,
+                    ),
+                    (
+                        (light_time * 0.3).sin() * 3.0,
+                        (light_time * 0.7).cos() * 4.0,
+                        (light_time * 0.5).sin() * 3.0,
+                    ),
                 ];
                 for (light, (x, y, z)) in app.lights.iter().zip(positions) {
                     light.borrow_mut().position.set(x, y, z);
@@ -718,7 +739,11 @@ impl Viewer {
         self.controls = None;
         let instance = self.instance.clone();
         let mut scene = Scene::build(which, instance);
-        let size = self.gpu.as_ref().map(|g| g.size).unwrap_or(self.requested_size);
+        let size = self
+            .gpu
+            .as_ref()
+            .map(|g| g.size)
+            .unwrap_or(self.requested_size);
         scene.set_size(size.0, size.1);
         self.controls = Some(OrbitControls::new(scene.camera(), which.orbit_target()));
         self.scene = Some(scene);
@@ -736,7 +761,9 @@ impl Viewer {
     }
 
     fn redraw(&mut self) {
-        let Some(scene) = self.scene.as_mut() else { return };
+        let Some(scene) = self.scene.as_mut() else {
+            return;
+        };
         let time = self.start.elapsed().as_secs_f64();
 
         if let Some(controls) = &self.controls {
@@ -869,7 +896,10 @@ impl ApplicationHandler for Viewer {
         let size = window.inner_size();
         let size = (size.width.max(1), size.height.max(1));
         scene.set_size(size.0, size.1);
-        self.controls = Some(OrbitControls::new(scene.camera(), self.which.orbit_target()));
+        self.controls = Some(OrbitControls::new(
+            scene.camera(),
+            self.which.orbit_target(),
+        ));
 
         self.instance = Some(instance);
         self.scene = Some(scene);
@@ -926,7 +956,8 @@ impl ApplicationHandler for Viewer {
                 let (dx, dy) = (self.cursor.0 - last.0, self.cursor.1 - last.1);
                 let height = self.gpu.as_ref().map(|g| g.size.1).unwrap_or(1).max(1) as f64;
 
-                let (Some(controls), Some(scene)) = (&mut self.controls, self.scene.as_mut()) else {
+                let (Some(controls), Some(scene)) = (&mut self.controls, self.scene.as_mut())
+                else {
                     return;
                 };
 
@@ -999,7 +1030,11 @@ const PINNED_NODE_TIME: f64 = 0.0;
 fn fresh_renderer(scene: &mut Scene, which: Which, size: (u32, u32)) {
     let (shadow_map_enabled, tone_mapping, exposure) = {
         let old = scene.renderer();
-        (old.shadow_map_enabled, old.tone_mapping, old.tone_mapping_exposure)
+        (
+            old.shadow_map_enabled,
+            old.tone_mapping,
+            old.tone_mapping_exposure,
+        )
     };
     let mut renderer = Renderer::new(RendererParameters {
         antialias: which.antialias(),
@@ -1286,7 +1321,17 @@ fn main() {
     }
 
     if headless || shot.is_some() {
-        screenshot(which, size, frames, shot.as_deref(), orbit, zoom, pan, &pinned, series);
+        screenshot(
+            which,
+            size,
+            frames,
+            shot.as_deref(),
+            orbit,
+            zoom,
+            pan,
+            &pinned,
+            series,
+        );
         return;
     }
 

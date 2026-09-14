@@ -61,10 +61,7 @@ fn torus_knot_std_tests() {
 #[test]
 fn torus_knot_samples() {
     check_sample(&TK_DEFAULT, &torus_knot_geometry(1.0, 0.4, 64, 8, 2.0, 3.0));
-    check_sample(
-        &TK_FULL,
-        &torus_knot_geometry(10.0, 20.0, 30, 10, 3.0, 2.0),
-    );
+    check_sample(&TK_FULL, &torus_knot_geometry(10.0, 20.0, 30, 10, 3.0, 2.0));
     // webgpu_depth_texture (rung 1)
     check_sample(&TK_DEPTH, &torus_knot_geometry(1.0, 0.3, 128, 64, 2.0, 3.0));
     // webgpu_shadowmap

@@ -1,9 +1,9 @@
 //! Port of `three.js/src/textures/DataArrayTexture.js` — the morph-target data
 //! texture (`Morph.js`' `getEntry()`), the one 2-D-array texture on the ladder.
 
+use super::TextureId;
 use std::cell::{Ref, RefCell};
 use std::rc::Rc;
-use super::TextureId;
 
 pub struct DataArrayTextureInner {
     /// `new Float32Array( width * height * 4 * depth )` — one RGBA texel per
@@ -76,7 +76,6 @@ impl DataArrayTexture {
             .expect("three-rs: data array texture not uploaded"))
     }
 }
-
 
 /// As `TextureInner`: the morph data is one `f32` per vertex datum and has no
 /// place in a debug dump.

@@ -80,11 +80,23 @@ fn check_case(case: &serde_json::Value, got: &TextRenderInfo, label: &str) {
     }
 
     for (name, g, w) in [
-        ("lineHeight", got.line_height, case["lineHeight"].as_f64().unwrap()),
+        (
+            "lineHeight",
+            got.line_height,
+            case["lineHeight"].as_f64().unwrap(),
+        ),
         ("ascender", got.ascender, case["ascender"].as_f64().unwrap()),
-        ("descender", got.descender, case["descender"].as_f64().unwrap()),
+        (
+            "descender",
+            got.descender,
+            case["descender"].as_f64().unwrap(),
+        ),
     ] {
-        assert_eq!(g.to_bits(), w.to_bits(), "{label}: {name}: got {g} want {w}");
+        assert_eq!(
+            g.to_bits(),
+            w.to_bits(),
+            "{label}: {name}: got {g} want {w}"
+        );
     }
 }
 

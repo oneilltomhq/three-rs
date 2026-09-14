@@ -94,7 +94,11 @@ impl Color {
             self.g = l;
             self.b = l;
         } else {
-            let p = if l <= 0.5 { l * (1.0 + s) } else { l + s - (l * s) };
+            let p = if l <= 0.5 {
+                l * (1.0 + s)
+            } else {
+                l + s - (l * s)
+            };
             let q = (2.0 * l) - p;
 
             self.r = hue2rgb(q, p, h + 1.0 / 3.0);
@@ -191,7 +195,11 @@ impl Color {
             hue = h / 6.0;
         }
 
-        Hsl { h: hue, s: saturation, l: lightness }
+        Hsl {
+            h: hue,
+            s: saturation,
+            l: lightness,
+        }
     }
 
     /// `Color.getRGB()`.

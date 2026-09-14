@@ -40,7 +40,9 @@ impl Line3 {
     /// `Line3.getCenter()`.
     pub fn get_center(&self) -> Vector3 {
         let mut target = Vector3::default();
-        target.add_vectors(&self.start, &self.end).multiply_scalar(0.5);
+        target
+            .add_vectors(&self.start, &self.end)
+            .multiply_scalar(0.5);
         target
     }
 

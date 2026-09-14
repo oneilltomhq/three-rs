@@ -43,7 +43,10 @@ fn small_geometry_stays_one_row() {
     assert_eq!(inner.data.len(), 24 * 1 * 4 * 2);
     // The first texel of each layer is that target's first vertex, xyz then 0.
     assert_eq!(&inner.data[0..4], &[0.0, 1.0, 2.0, 0.0]);
-    assert_eq!(&inner.data[24 * 4..24 * 4 + 4], &[1000.0, 1001.0, 1002.0, 0.0]);
+    assert_eq!(
+        &inner.data[24 * 4..24 * 4 + 4],
+        &[1000.0, 1001.0, 1002.0, 0.0]
+    );
 }
 
 #[test]

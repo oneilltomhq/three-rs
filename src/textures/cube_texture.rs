@@ -5,9 +5,9 @@
 //! `CubeTexture` to `scene.background` and to `material.envMap`, and the
 //! renderer must upload it once.
 
+use super::TextureId;
 use std::cell::RefCell;
 use std::rc::Rc;
-use super::TextureId;
 
 /// `three.js/src/constants.js` colour spaces, as far as the port needs them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -125,7 +125,6 @@ impl CubeTexture {
         &self.0
     }
 }
-
 
 /// As `TextureInner`: six decoded faces are six megabyte buffers.
 impl std::fmt::Debug for Image {

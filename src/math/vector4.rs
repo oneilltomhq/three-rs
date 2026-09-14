@@ -286,10 +286,9 @@ impl Vector4 {
         }
 
         // as we have reached here there are no singularities so we can handle normally
-        let mut s = ((m32 - m23) * (m32 - m23)
-            + (m13 - m31) * (m13 - m31)
-            + (m21 - m12) * (m21 - m12))
-            .sqrt(); // used to normalize
+        let mut s =
+            ((m32 - m23) * (m32 - m23) + (m13 - m31) * (m13 - m31) + (m21 - m12) * (m21 - m12))
+                .sqrt(); // used to normalize
 
         if s.abs() < 0.001 {
             s = 1.0;

@@ -124,13 +124,8 @@ fn shift_scale_trim() {
 
 #[test]
 fn create_interpolant_evaluates_the_track() {
-    let track = KeyframeTrack::number(
-        ".material.opacity",
-        vec![0.0, 1.0],
-        vec![0.0, 0.5],
-        None,
-    )
-    .unwrap();
+    let track =
+        KeyframeTrack::number(".material.opacity", vec![0.0, 1.0], vec![0.0, 0.5], None).unwrap();
 
     let mut interpolant = track.create_interpolant(None).unwrap();
     assert_eq!(interpolant.evaluate(0.5), [0.25]);
@@ -152,7 +147,8 @@ fn create_interpolant_evaluates_the_track() {
 #[test]
 fn set_interpolation_falls_back() {
     let mut track =
-        KeyframeTrack::quaternion(".quaternion", vec![0.0], vec![0.5, 0.5, 0.5, 1.0], None).unwrap();
+        KeyframeTrack::quaternion(".quaternion", vec![0.0], vec![0.5, 0.5, 0.5, 1.0], None)
+            .unwrap();
 
     assert_eq!(track.get_interpolation(), InterpolationMode::Linear);
     track.set_interpolation(InterpolationMode::Smooth).unwrap();
@@ -259,12 +255,15 @@ fn quaternion_keyframe_track() {
 // StringKeyframeTrack — name: '.name', times: [ 0 ], values: [ 'foo' ]
 #[test]
 fn string_keyframe_track() {
-    let object = KeyframeTrack::string(".name", vec![0.0, 1.0], vec!["foo".into(), "bar".into()])
-        .unwrap();
+    let object =
+        KeyframeTrack::string(".name", vec![0.0, 1.0], vec!["foo".into(), "bar".into()]).unwrap();
     assert_eq!(object.value_type(), TrackValueType::String);
     assert_eq!(object.get_interpolation(), InterpolationMode::Discrete);
     assert_eq!(object.get_value_size(), 1);
-    assert_eq!(object.to_json()["values"], serde_json::json!(["foo", "bar"]));
+    assert_eq!(
+        object.to_json()["values"],
+        serde_json::json!(["foo", "bar"])
+    );
     assert_eq!(
         KeyframeTrack::parse(&object.to_json()).unwrap().strings,
         ["foo", "bar"]

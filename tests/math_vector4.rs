@@ -308,10 +308,7 @@ fn manhattan_length() {
     assert_eq!(e.manhattan_length(), 0.0);
 
     a.set(X, Y, Z, W);
-    assert_eq!(
-        a.manhattan_length(),
-        X.abs() + Y.abs() + Z.abs() + W.abs()
-    );
+    assert_eq!(a.manhattan_length(), X.abs() + Y.abs() + Z.abs() + W.abs());
 }
 
 #[test]

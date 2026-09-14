@@ -32,7 +32,12 @@ pub struct Euler {
 impl Euler {
     /// `new Euler( x, y, z )` — order defaults to `Euler.DEFAULT_ORDER`.
     pub fn new(x: f64, y: f64, z: f64) -> Self {
-        Self { x, y, z, order: EulerOrder::XYZ }
+        Self {
+            x,
+            y,
+            z,
+            order: EulerOrder::XYZ,
+        }
     }
 
     /// `new Euler( x, y, z, order )`.

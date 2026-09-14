@@ -96,9 +96,9 @@ fn an_instance_matrix_over_the_limit_is_four_interleaved_vec4_attributes() {
 
     // The four views are joined back into the `mat4` the instance transform
     // needs, and no uniform buffer is declared for it.
-    assert!(program.vertex_wgsl.contains(
-        "mat4x4<f32>( nodeAttribute0, nodeAttribute1, nodeAttribute2, nodeAttribute3 )"
-    ));
+    assert!(program
+        .vertex_wgsl
+        .contains("mat4x4<f32>( nodeAttribute0, nodeAttribute1, nodeAttribute2, nodeAttribute3 )"));
     assert!(buffer_names(&program).is_empty());
 
     // Attributes are numbered in flow order: `positionLocal = position` first,

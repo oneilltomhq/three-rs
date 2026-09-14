@@ -87,9 +87,7 @@ pub fn d_blinn_phong(shininess_value: NodeRef, dot_nh: NodeRef) -> NodeRef {
 pub fn brdf_blinn_phong(light_direction: NodeRef) -> NodeRef {
     let half_dir = light_direction.add(position_view_direction()).normalize();
     let dot_nh = normal_view().dot(half_dir.clone()).clamp(0.0, 1.0);
-    let dot_vh = position_view_direction()
-        .dot(half_dir)
-        .clamp(0.0, 1.0);
+    let dot_vh = position_view_direction().dot(half_dir).clamp(0.0, 1.0);
 
     let f = f_schlick(specular_color(), float(1.0), dot_vh);
     // `G_BlinnPhong_Implicit()` is the constant 0.25.
@@ -206,14 +204,9 @@ pub fn setup_light(
         LightKind::Spot => {
             let l_vector = light_view_position(index).sub(position_view());
             let light_direction = l_vector.clone().normalize();
-            let angle_cos = light_direction
-                .clone()
-                .dot(light_target_direction(index));
-            let spot_attenuation = smoothstep(
-                light_cone_cos(index),
-                light_penumbra_cos(index),
-                angle_cos,
-            );
+            let angle_cos = light_direction.clone().dot(light_target_direction(index));
+            let spot_attenuation =
+                smoothstep(light_cone_cos(index), light_penumbra_cos(index), angle_cos);
             let attenuation = distance_attenuation(
                 length(l_vector),
                 light_cutoff_distance(index),
@@ -312,12 +305,12 @@ pub fn direct_light(
     let irr = dot_nl.mul(light_color);
 
     // `PhongLightingModel.direct()`.
-    out.push(direct_diffuse().assign(
-        direct_diffuse().add(irr.clone().mul(brdf_lambert(diffuse_color().xyz()))),
-    ));
     out.push(
-        direct_specular().assign(
-            direct_specular().add(irr.mul(brdf_blinn_phong(light_direction)).mul(1.0)),
-        ),
+        direct_diffuse()
+            .assign(direct_diffuse().add(irr.clone().mul(brdf_lambert(diffuse_color().xyz())))),
+    );
+    out.push(
+        direct_specular()
+            .assign(direct_specular().add(irr.mul(brdf_blinn_phong(light_direction)).mul(1.0))),
     );
 }

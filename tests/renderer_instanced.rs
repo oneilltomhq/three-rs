@@ -50,12 +50,7 @@ fn render(count: usize, range_colors: bool) -> Vec<u8> {
         // Read in the fragment stage, so over the limit this goes through the
         // generated varying rather than an instance-index lookup.
         material.color_node = Some(
-            instanced_range(
-                Color::new(0.2, 0.2, 0.2),
-                Color::new(1.0, 1.0, 1.0),
-                count,
-            )
-            .xyz(),
+            instanced_range(Color::new(0.2, 0.2, 0.2), Color::new(1.0, 1.0, 1.0), count).xyz(),
         );
     } else {
         material.color = Color::new(1.0, 1.0, 1.0);
