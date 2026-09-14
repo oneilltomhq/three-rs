@@ -30,7 +30,8 @@ pub struct Node(Rc<RefCell<Object3D>>);
 /// `Object3D.parent`, stored weakly so a child holding its parent does not keep
 /// the parent alive (three.js' `parent` is a strong reference, but JS has a GC
 /// and we do not).
-pub type WeakNode = Weak<RefCell<Object3D>>;
+#[derive(Clone, Default)]
+pub struct WeakNode(Weak<RefCell<Object3D>>);
 
 impl Deref for Node {
     type Target = RefCell<Object3D>;
@@ -43,6 +44,24 @@ impl Deref for Node {
 impl std::fmt::Debug for Node {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
+    }
+}
+
+impl std::fmt::Debug for WeakNode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl WeakNode {
+    /// `Weak::new()` — a `WeakNode` that never upgrades.
+    pub fn new() -> Self {
+        Self(Weak::new())
+    }
+
+    /// The node, if it is still alive.
+    pub fn upgrade(&self) -> Option<Node> {
+        self.0.upgrade().map(Node)
     }
 }
 
@@ -59,7 +78,7 @@ impl Node {
 
     /// The weak handle `Object3D.parent` holds.
     pub fn downgrade(&self) -> WeakNode {
-        Rc::downgrade(&self.0)
+        WeakNode(Rc::downgrade(&self.0))
     }
 
     /// The address of the object, for a consumer keying a cache on identity.
@@ -72,11 +91,7 @@ impl Node {
 
     /// `Object3D.parent`, upgraded.
     pub fn parent(&self) -> Option<Node> {
-        self.borrow()
-            .parent
-            .as_ref()
-            .and_then(Weak::upgrade)
-            .map(Node)
+        self.borrow().parent.as_ref().and_then(WeakNode::upgrade)
     }
 
     /// `Object3D.children`, cloned (cheap: a `Vec` of `Rc`s). Cloning is what
