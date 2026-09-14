@@ -126,9 +126,23 @@ impl Payload {
 
     /// `Frustum.intersectsObject( object )`' geometry half, for a mesh or a
     /// line.
+    ///
+    /// three.js' `intersectsObject` reads `object.boundingSphere` when the
+    /// object has one and falls back to `geometry.boundingSphere` otherwise;
+    /// [`InstancedMesh::bounding_sphere`] is that field, and it is the only way
+    /// an instanced draw whose instances are spread out is not culled as a
+    /// point at its own origin.
     pub fn bounding_sphere_in(&self, matrix_world: &Matrix4) -> Option<Sphere> {
         match self {
             Payload::Line(line) => line.bounding_sphere_in(matrix_world),
+            Payload::InstancedMesh(instanced) => match instanced.bounding_sphere {
+                Some(bounding_sphere) => {
+                    let mut sphere = bounding_sphere;
+                    sphere.apply_matrix4(matrix_world);
+                    Some(sphere)
+                }
+                None => instanced.mesh.bounding_sphere_in(matrix_world),
+            },
             _ => self.mesh()?.bounding_sphere_in(matrix_world),
         }
     }
