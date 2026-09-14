@@ -96,9 +96,11 @@ The area is the directory or crate (`renderer`, `nodes`, `lines`,
 `sdf-text`, `e2e`, `docs`, `README`) or the rung. The body says why, and
 names the issue.
 
-Branches are merged with a merge commit, and history inside a branch is
-kept as it was reviewed, not squashed. Rebase your branch onto `main` if
-it has drifted; do not merge `main` into it. One PR does one thing; a
+Branches are merged with `git merge --no-ff`, so every branch is a merge
+commit with two parents and shows as a branch in the graph; history inside
+the branch is kept as it was reviewed, not squashed. Rebase your branch
+onto `main` if it has drifted; do not merge `main` into it, which braids
+the graph instead of leaving one lobe. One PR does one thing; a
 rung PR is the exception, and its commits should still read as steps.
 
 ## Reporting a bug
