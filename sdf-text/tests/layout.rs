@@ -274,7 +274,7 @@ fn kerning_moves_the_current_glyph_not_the_previous_advance() {
         },
         Some(&font),
     );
-    let scale = 1.0 / font.units_per_em as f64;
+    let scale = 1.0 / font.units_per_em;
     let a_adv = font.advance_width('A') * scale;
     let v_box = font.bounding_box('V').unwrap();
 
@@ -351,7 +351,7 @@ fn space_takes_the_no_ink_branch_in_the_vector_path() {
         },
         Some(&font),
     );
-    let scale = 1.0 / font.units_per_em as f64;
+    let scale = 1.0 / font.units_per_em;
     assert_eq!(got.glyph_count, 1, "a space still gets a glyph entry");
     // Box is advance-wide and descender..ascender tall, not the (absent) ink box.
     let b = got.glyphs[0].bounds;

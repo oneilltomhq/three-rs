@@ -489,7 +489,7 @@ pub fn layout_text(params: LayoutParams) -> TextRenderInfo {
 /// `vecLineAdvance` — the natural height is the font's own
 /// `ascender - descender + lineGap`, not a flat `1.2 em`.
 fn vec_line_advance(line_height: LineHeight, font: &VectorFont, font_size: f64) -> f64 {
-    let scale = font_size / font.units_per_em as f64;
+    let scale = font_size / font.units_per_em;
     let natural = (font.ascender - font.descender + font.line_gap) * scale;
     match line_height {
         LineHeight::Normal => natural,
@@ -526,7 +526,7 @@ pub fn layout_text_vector(params: LayoutParams, font: Option<&VectorFont>) -> Te
     };
 
     let font_size = params.font_size;
-    let scale = font_size / font.units_per_em as f64;
+    let scale = font_size / font.units_per_em;
     let ascender = font.ascender * scale;
     let descender = font.descender * scale;
     let line_advance = vec_line_advance(params.line_height, font, font_size);
