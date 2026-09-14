@@ -247,9 +247,7 @@ impl Matrix3 {
 
     /// `Matrix3.fromArray()`.
     pub fn from_array(&mut self, array: &[f64], offset: usize) -> &mut Self {
-        for i in 0..9 {
-            self.elements[i] = array[i + offset];
-        }
+        self.elements.copy_from_slice(&array[offset..offset + 9]);
         self
     }
 

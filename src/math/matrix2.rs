@@ -44,9 +44,7 @@ impl Matrix2 {
 
     /// `Matrix2.fromArray()` — the array holds the elements in column-major order.
     pub fn from_array(&mut self, array: &[f64], offset: usize) -> &mut Self {
-        for i in 0..4 {
-            self.elements[i] = array[i + offset];
-        }
+        self.elements.copy_from_slice(&array[offset..offset + 4]);
 
         self
     }

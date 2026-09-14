@@ -877,9 +877,7 @@ impl Matrix4 {
 
     /// `Matrix4.fromArray()`.
     pub fn from_array(&mut self, array: &[f64], offset: usize) -> &mut Self {
-        for i in 0..16 {
-            self.elements[i] = array[i + offset];
-        }
+        self.elements.copy_from_slice(&array[offset..offset + 16]);
         self
     }
 
