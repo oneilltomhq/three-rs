@@ -93,6 +93,50 @@ fn to_vec4(node: NodeRef) -> NodeRef {
     }
 }
 
+/// `NodeMaterial.setupDiffuseColor()` — the step every lighting model shares.
+///
+/// `materialColor` is `MaterialNode.COLOR`, which is the material's colour
+/// *times the map's texel* when the material has one (`MaterialNode.js:126`):
+/// that is why `DiffuseColor` is assigned a `vec4` product rather than a `vec3`
+/// promoted to one, and why an unlit `MeshBasicNodeMaterial { map }` is
+/// textured on exactly the same terms as a Standard one. A `colorNode`
+/// replaces the pair outright, map included —
+/// `this.colorNode ? vec4( this.colorNode ) : materialColor`.
+fn setup_diffuse_color(material: &MeshBasicNodeMaterial, fragment: &mut Vec<NodeRef>) {
+    let color = match &material.color_node {
+        Some(node) => to_vec4(node.clone()),
+        None => {
+            let base = vec4_join(vec![material_color(), float(1.0)]);
+            match &material.map {
+                Some(map) => base.mul(texture(map)),
+                None => base,
+            }
+        }
+    };
+
+    // `if ( this.vertexColors === true && geometry.hasAttribute( 'color' ) )
+    // colorNode = colorNode.mul( vertexColor() )` — the same step for every
+    // lighting model, which is what lets one `LineSegments` carry a hue per
+    // vertex. See `vertex_color()` for the `hasAttribute` half.
+    let color = match material.vertex_colors {
+        true => color.mul(vertex_color()),
+        false => color,
+    };
+
+    fragment.push(diffuse_color().assign(color));
+    fragment.push(
+        diffuse_color()
+            .w()
+            .assign(diffuse_color().w().mul(material_opacity())),
+    );
+    // `builder.isOpaque()` — the material is not transparent, blending is
+    // NormalBlending and alphaToCoverage is off. A transparent or blended
+    // material keeps its per-fragment alpha instead, all the way to `Output`.
+    if material.is_opaque() {
+        fragment.push(diffuse_color().w().assign(float(1.0)));
+    }
+}
+
 /// `NodeMaterial.setup()`.
 pub fn setup(
     material: &MeshBasicNodeMaterial,
@@ -188,24 +232,7 @@ fn setup_inner(
     } else if material.kind == MaterialKind::Standard {
         setup_standard(material, ctx, &mut fragment)
     } else {
-        // setupDiffuseColor
-        let color = match &material.color_node {
-            Some(node) => to_vec4(node.clone()),
-            None => vec4_join(vec![material_color(), float(1.0)]),
-        };
-        fragment.push(diffuse_color().assign(color));
-        fragment.push(
-            diffuse_color()
-                .w()
-                .assign(diffuse_color().w().mul(material_opacity())),
-        );
-        // `builder.isOpaque()` — the material is not transparent, blending is
-        // NormalBlending and alphaToCoverage is off. A transparent or blended
-        // material keeps its per-fragment alpha instead, all the way to
-        // `Output`.
-        if material.is_opaque() {
-            fragment.push(diffuse_color().w().assign(float(1.0)));
-        }
+        setup_diffuse_color(material, &mut fragment);
 
         let outgoing = if let Some(env_map) = &material.env_map {
             // `BasicLightingModel` with an indirect environment contribution.
@@ -468,21 +495,7 @@ fn setup_phong(
     ctx: &SetupContext,
     fragment: &mut Vec<NodeRef>,
 ) -> NodeRef {
-    // setupDiffuseColor
-    let color = match &material.color_node {
-        Some(node) => to_vec4(node.clone()),
-        None => vec4_join(vec![material_color(), float(1.0)]),
-    };
-    fragment.push(diffuse_color().assign(color));
-    fragment.push(
-        diffuse_color()
-            .w()
-            .assign(diffuse_color().w().mul(material_opacity())),
-    );
-    // `builder.isOpaque()`
-    if material.is_opaque() {
-        fragment.push(diffuse_color().w().assign(float(1.0)));
-    }
+    setup_diffuse_color(material, fragment);
 
     // setupVariants: `PhongLightingModel` reads these three properties.
     fragment.push(shininess().assign(max(material_shininess(), float(0.0001))));
@@ -575,27 +588,8 @@ fn setup_standard(
     ctx: &SetupContext,
     fragment: &mut Vec<NodeRef>,
 ) -> NodeRef {
-    // --- setupDiffuseColor. `materialColor` is `vec4( color, 1 )` times the
-    // map's texel when the material has a map, which is why `DiffuseColor` is
-    // assigned a `vec4` product rather than a `vec3` promoted to one.
-    let base = vec4_join(vec![material_color(), float(1.0)]);
-    let color = match &material.color_node {
-        Some(node) => to_vec4(node.clone()),
-        None => match &material.map {
-            Some(map) => base.mul(texture(map)),
-            None => base,
-        },
-    };
-    fragment.push(diffuse_color().assign(color));
-    fragment.push(
-        diffuse_color()
-            .w()
-            .assign(diffuse_color().w().mul(material_opacity())),
-    );
-    // `builder.isOpaque()`
-    if material.is_opaque() {
-        fragment.push(diffuse_color().w().assign(float(1.0)));
-    }
+    // --- setupDiffuseColor
+    setup_diffuse_color(material, fragment);
 
     // --- setupVariants. `metalnessNode` is reached twice — once for the
     // `Metalness` property and once for `DiffuseContribution` — so the node is

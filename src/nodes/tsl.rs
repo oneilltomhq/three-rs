@@ -1152,6 +1152,24 @@ accessor!(
     to_varying(None, attribute("uv", Type::Vec2))
 );
 accessor!(
+    /// `vertexColor()` — `VertexColorNode`, the `color` attribute interpolated
+    /// and widened to a `vec4`.
+    ///
+    /// three.js declares the node as `vec4` and lets `NodeBuilder.format()`
+    /// widen a three-component `color` attribute with an alpha of 1, which is
+    /// the only shape the port's geometries carry; a four-component `color`
+    /// (three's `vertexAlphas`) is not modelled.
+    ///
+    /// **Divergence, deliberate** (`docs/nodes.md` §10): three's
+    /// `VertexColorNode.generate()` falls back to a white constant when the
+    /// geometry has no `color` attribute. The port has no geometry in hand at
+    /// setup time — `SetupContext` is the whole of what `setup()` reads off the
+    /// object — so `material.vertex_colors` alone decides, and the attribute
+    /// has to be there.
+    vertex_color,
+    vec4_join(vec![to_varying(None, attribute("color", Type::Vec3)), float(1.0)])
+);
+accessor!(
     /// `vertexIndex`.
     vertex_index,
     NodeRef::new(Node::Builtin(Builtin::VertexIndex))
