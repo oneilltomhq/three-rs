@@ -53,18 +53,18 @@ Linux is the only backend that has been run.
 
 ## Examples graded green
 
-| Three example | different pixels (of 100000) | steady frame (ms) |
-|---|---|---|
-| webgpu_depth_texture | 0 | 11.0 |
-| webgpu_instance_mesh | 60 (Three itself scores 60 against the same JPEG) | 9.3 |
-| webgpu_materials_basic | 0 | 16.1 |
-| webgpu_rtt | 1 | 2.3 |
-| webgpu_lights_phong | 31 | 4.3 |
-| webgpu_morphtargets | 0 | 2.8 |
-| webgpu_shadowmap | 7 | 7.7 |
-| webgpu_lights_physical | 4 | 4.2 |
-| webgpu_postprocessing_masking | 18 | 1.0 |
-| webgpu_tsl_galaxy | 40 | 5.3 |
+| Three example | different pixels (of 100000) | steady frame (ms) | draw calls | triangles |
+|---|---|---|---|---|
+| webgpu_depth_texture | 0 | 11.0 | 43 | 671746 |
+| webgpu_instance_mesh | 60 (Three itself scores 60 against the same JPEG) | 9.3 | 2 | 967001 |
+| webgpu_materials_basic | 0 | 16.1 | 118 | 113345 |
+| webgpu_rtt | 1 | 2.3 | 3 | 14 |
+| webgpu_lights_phong | 31 | 4.3 | 5 | 62001 |
+| webgpu_morphtargets | 0 | 2.8 | 2 | 12289 |
+| webgpu_shadowmap | 7 | 7.7 | 19 | 39399 |
+| webgpu_lights_physical | 4 | 4.2 | 11 | 4267 |
+| webgpu_postprocessing_masking | 18 | 1.0 | 3 | 1037 |
+| webgpu_tsl_galaxy | 40 | 5.3 | 2 | 40001 |
 
 Measured on Intel Iris Xe, Mesa 25.3.6, Fedora 43, against three.js r186.
 Other GPUs and drivers will land somewhere else on the pass threshold; the
@@ -78,6 +78,16 @@ applies. The e2e grader renders three more frames after the graded one and
 fails a rung whose steady frame is over a ceiling set well above these
 (`STEADY_FRAME_CEILING` in `tests/e2e/main.rs`), so a per-frame cost the single
 graded frame cannot see fails the ladder.
+
+The last two columns are `renderer.info()` for the whole graded frame — draw
+calls and the triangles they drew, instancing multiplied in (`webgpu_rtt`'s 14
+is a cube and two full-screen quads; `webgpu_instance_mesh`'s million is one
+instanced draw). Unlike the time, these are exact: the same grader asserts
+that frames two and three of every rung compile, build and upload *nothing*,
+as an equality, which is what catches a regression that re-uploads a live
+geometry every frame while staying well under a time ceiling. `Info` has the
+rest of the counts (pipelines, geometries, attribute buffers, textures, and
+the resident totals).
 
 ## Building
 
