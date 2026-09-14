@@ -286,14 +286,18 @@ fn the_frame_is_stable_and_the_image_gap_is_measured() {
     let (_, _, second) = app.renderer.read_canvas_pixels().unwrap();
 
     let differing = first
-        .chunks_exact(4)
-        .zip(second.chunks_exact(4))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .zip(second.as_chunks::<4>().0.iter())
         .filter(|(a, b)| a != b)
         .count();
     assert_eq!(differing, 0, "the two rounds differ in {differing} pixels");
 
     let lit = first
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .filter(|p| p[0] != 255 || p[1] != 255 || p[2] != 255)
         .count();
     println!(

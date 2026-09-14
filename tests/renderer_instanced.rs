@@ -89,13 +89,18 @@ fn cell_center(i: usize) -> (f64, f64) {
 
 /// Pixels brighter than the black background.
 fn covered(pixels: &[u8]) -> usize {
-    pixels.chunks_exact(4).filter(|px| px[0] > 16).count()
+    pixels
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .filter(|px| px[0] > 16)
+        .count()
 }
 
 /// Distinct quantised colours among the covered pixels.
 fn distinct_colors(pixels: &[u8]) -> usize {
     let mut seen = std::collections::HashSet::new();
-    for px in pixels.chunks_exact(4) {
+    for px in pixels.as_chunks::<4>().0.iter() {
         if px[0] > 16 || px[1] > 16 || px[2] > 16 {
             seen.insert((px[0] / 8, px[1] / 8, px[2] / 8));
         }

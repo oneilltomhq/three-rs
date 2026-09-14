@@ -214,8 +214,10 @@ fn two_renders_are_identical() {
         "the example renders at the ladder's 800x500"
     );
     let differing = first
-        .chunks_exact(4)
-        .zip(second.chunks_exact(4))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .zip(second.as_chunks::<4>().0.iter())
         .filter(|(a, b)| a != b)
         .count();
     assert_eq!(
@@ -231,7 +233,9 @@ fn two_renders_are_identical() {
         srgb_byte(background.b).round() as i32,
     );
     let lit = first
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .filter(|p| {
             (p[0] as i32 - bg.0).abs() > 8
                 || (p[1] as i32 - bg.1).abs() > 8
