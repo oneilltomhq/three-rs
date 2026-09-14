@@ -7,6 +7,7 @@
 
 use std::path::Path;
 
+use crate::error::Error;
 use crate::textures::{ColorSpace, CubeTexture, Image};
 
 pub struct CubeTextureLoader;
@@ -24,30 +25,37 @@ impl CubeTextureLoader {
 
     /// `new CubeTextureLoader().load( urls )` — the loader sets
     /// `texture.colorSpace = SRGBColorSpace`.
-    pub fn load<P: AsRef<Path>>(&self, urls: [P; 6]) -> CubeTexture {
-        let images = urls.iter().map(|url| decode_png(url.as_ref())).collect();
+    pub fn load<P: AsRef<Path>>(&self, urls: [P; 6]) -> Result<CubeTexture, Error> {
+        let images = urls
+            .iter()
+            .map(|url| decode_png(url.as_ref()))
+            .collect::<Result<Vec<Image>, Error>>()?;
 
         let texture = CubeTexture::new(images);
         texture.set_color_space(ColorSpace::SRGB);
-        texture
+        Ok(texture)
     }
 }
 
 /// What the browser hands `copyExternalImageToTexture`: 8-bit RGBA, top-down,
 /// opaque where the source has no alpha channel.
-fn decode_png(path: &Path) -> Image {
-    let file = std::fs::File::open(path)
-        .unwrap_or_else(|e| panic!("three-rs: cannot open {}: {e}", path.display()));
+fn decode_png(path: &Path) -> Result<Image, Error> {
+    let file = std::fs::File::open(path).map_err(|e| Error::io(path, e))?;
     let decoder = png::Decoder::new(std::io::BufReader::new(file));
-    let mut reader = decoder.read_info().expect("three-rs: PNG header");
+    let mut reader = decoder
+        .read_info()
+        .map_err(|e| Error::image(path, e.to_string()))?;
     let mut buffer = vec![0u8; reader.output_buffer_size()];
-    let info = reader.next_frame(&mut buffer).expect("three-rs: PNG data");
+    let info = reader
+        .next_frame(&mut buffer)
+        .map_err(|e| Error::image(path, e.to_string()))?;
 
-    assert_eq!(
-        info.bit_depth,
-        png::BitDepth::Eight,
-        "three-rs: only 8-bit PNGs are decoded"
-    );
+    if info.bit_depth != png::BitDepth::Eight {
+        return Err(Error::UnsupportedFormat {
+            what: "PNG bit depth",
+            value: format!("{:?}", info.bit_depth),
+        });
+    }
 
     let data = match info.color_type {
         png::ColorType::Rgba => buffer[..info.buffer_size()].to_vec(),
@@ -55,12 +63,17 @@ fn decode_png(path: &Path) -> Image {
             .chunks_exact(3)
             .flat_map(|p| [p[0], p[1], p[2], 255])
             .collect(),
-        other => panic!("three-rs: unsupported PNG colour type {other:?}"),
+        other => {
+            return Err(Error::UnsupportedFormat {
+                what: "PNG colour type",
+                value: format!("{other:?}"),
+            })
+        }
     };
 
-    Image {
+    Ok(Image {
         width: info.width,
         height: info.height,
         data,
-    }
+    })
 }

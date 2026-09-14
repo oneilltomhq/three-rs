@@ -26,6 +26,7 @@ use serde_json::Value;
 
 use crate::animation::{AnimationClip, InterpolationMode, KeyframeTrack, SceneResolver};
 use crate::core::{BufferAttribute, BufferGeometry, Index, Node, Object3D};
+use crate::error::{Error, GltfError};
 use crate::math::Matrix4;
 use crate::objects::{Bone, Skeleton, SkinnedMesh};
 
@@ -47,7 +48,7 @@ pub enum ComponentType {
 }
 
 impl ComponentType {
-    fn from_gl(value: i64) -> Result<Self, String> {
+    fn from_gl(value: i64) -> Result<Self, Error> {
         Ok(match value {
             5120 => Self::Byte,
             5121 => Self::UnsignedByte,
@@ -55,11 +56,7 @@ impl ComponentType {
             5123 => Self::UnsignedShort,
             5125 => Self::UnsignedInt,
             5126 => Self::Float,
-            other => {
-                return Err(format!(
-                    "THREE.GLTFLoader: unsupported componentType {other}"
-                ))
-            }
+            other => return Err(GltfError::UnsupportedComponentType(other).into()),
         })
     }
 
@@ -99,7 +96,7 @@ impl ComponentType {
 }
 
 /// `WEBGL_TYPE_SIZES`.
-fn type_size(name: &str) -> Result<usize, String> {
+fn type_size(name: &str) -> Result<usize, Error> {
     Ok(match name {
         "SCALAR" => 1,
         "VEC2" => 2,
@@ -108,11 +105,7 @@ fn type_size(name: &str) -> Result<usize, String> {
         "MAT2" => 4,
         "MAT3" => 9,
         "MAT4" => 16,
-        other => {
-            return Err(format!(
-                "THREE.GLTFLoader: unsupported accessor type {other}"
-            ))
-        }
+        other => return Err(GltfError::UnsupportedAccessorType(other.to_string()).into()),
     })
 }
 
@@ -284,24 +277,23 @@ pub struct GLTFLoader {
 
 impl GLTFLoader {
     /// `loader.load( url )`, synchronously: read the file and parse it.
-    pub fn load(path: impl AsRef<Path>) -> Result<Gltf, String> {
+    pub fn load(path: impl AsRef<Path>) -> Result<Gltf, Error> {
         let path = path.as_ref();
-        let data = std::fs::read(path).map_err(|e| format!("THREE.GLTFLoader: {path:?}: {e}"))?;
+        let data = std::fs::read(path).map_err(|e| Error::io(path, e))?;
         let base = path.parent().unwrap_or(Path::new(".")).to_path_buf();
         Self::parse(&data, base)
     }
 
     /// `loader.parse( data, path )`. Sniffs the GLB magic the way
     /// `GLTFLoader.parse` does.
-    pub fn parse(data: &[u8], base: PathBuf) -> Result<Gltf, String> {
+    pub fn parse(data: &[u8], base: PathBuf) -> Result<Gltf, Error> {
         let (json, glb_buffer) = if data.len() >= 4 && &data[0..4] == b"glTF" {
             let (json, bin) = parse_glb(data)?;
             (json, bin)
         } else {
-            let text = std::str::from_utf8(data)
-                .map_err(|e| format!("THREE.GLTFLoader: not UTF-8 JSON: {e}"))?;
+            let text = std::str::from_utf8(data).map_err(|_| GltfError::NotUtf8)?;
             let json: Value =
-                serde_json::from_str(text).map_err(|e| format!("THREE.GLTFLoader: {e}"))?;
+                serde_json::from_str(text).map_err(|source| Error::Json { path: None, source })?;
             (json, None)
         };
 
@@ -311,10 +303,7 @@ impl GLTFLoader {
             .and_then(|v| v.split('.').next().map(str::to_string))
         {
             if version != "2" {
-                return Err(
-                    "THREE.GLTFLoader: Unsupported asset. glTF versions >=2.0 are supported."
-                        .into(),
-                );
+                return Err(GltfError::UnsupportedVersion(version).into());
             }
         }
 
@@ -333,7 +322,7 @@ impl GLTFLoader {
     // --- buffers, buffer views, accessors ---------------------------------
 
     /// `GLTFParser.loadBuffer`.
-    fn load_buffers(&mut self) -> Result<(), String> {
+    fn load_buffers(&mut self) -> Result<(), Error> {
         let buffers = self
             .json
             .get("buffers")
@@ -345,9 +334,7 @@ impl GLTFLoader {
             match buffer.get("uri").and_then(Value::as_str) {
                 None => {
                     // the GLB BIN chunk
-                    let bin = self.glb_buffer.clone().ok_or_else(|| {
-                        "THREE.GLTFLoader: glTF-Binary without BIN chunk.".to_string()
-                    })?;
+                    let bin = self.glb_buffer.clone().ok_or(GltfError::NoBinChunk)?;
                     self.buffers.push(bin);
                 }
                 Some(uri) if uri.starts_with("data:") => {
@@ -355,10 +342,8 @@ impl GLTFLoader {
                 }
                 Some(uri) => {
                     let path = self.base.join(uri);
-                    self.buffers.push(
-                        std::fs::read(&path)
-                            .map_err(|e| format!("THREE.GLTFLoader: {path:?}: {e}"))?,
-                    );
+                    self.buffers
+                        .push(std::fs::read(&path).map_err(|e| Error::io(&path, e))?);
                 }
             }
         }
@@ -367,20 +352,23 @@ impl GLTFLoader {
     }
 
     /// `GLTFParser.loadBufferView`.
-    fn buffer_view(&self, index: usize) -> Result<&[u8], String> {
-        let view = self
-            .json
-            .pointer(&format!("/bufferViews/{index}"))
-            .ok_or_else(|| format!("THREE.GLTFLoader: no bufferView {index}"))?;
+    fn buffer_view(&self, index: usize) -> Result<&[u8], Error> {
+        let view =
+            self.json
+                .pointer(&format!("/bufferViews/{index}"))
+                .ok_or(GltfError::MissingIndex {
+                    kind: "bufferView",
+                    index,
+                })?;
 
         let buffer = json_usize(view, "buffer").unwrap_or(0);
         let offset = json_usize(view, "byteOffset").unwrap_or(0);
         let length = json_usize(view, "byteLength").unwrap_or(0);
 
-        let buffer = self
-            .buffers
-            .get(buffer)
-            .ok_or_else(|| format!("THREE.GLTFLoader: no buffer {buffer}"))?;
+        let buffer = self.buffers.get(buffer).ok_or(GltfError::MissingIndex {
+            kind: "buffer",
+            index: buffer,
+        })?;
 
         Ok(&buffer[offset..offset + length])
     }
@@ -394,24 +382,28 @@ impl GLTFLoader {
 
     /// `GLTFParser.loadAccessor`, as f64s: `itemSize`, `normalized`,
     /// `byteStride` (interleaved views included) and `sparse` all applied.
-    pub fn accessor(&self, index: usize) -> Result<(Vec<f64>, usize), String> {
+    pub fn accessor(&self, index: usize) -> Result<(Vec<f64>, usize), Error> {
         let accessor = self
             .json
             .pointer(&format!("/accessors/{index}"))
-            .ok_or_else(|| format!("THREE.GLTFLoader: no accessor {index}"))?
+            .ok_or(GltfError::MissingIndex {
+                kind: "accessor",
+                index,
+            })?
             .clone();
 
-        let item_size = type_size(
-            accessor
-                .get("type")
-                .and_then(Value::as_str)
-                .ok_or("THREE.GLTFLoader: accessor without type")?,
-        )?;
+        let item_size = type_size(accessor.get("type").and_then(Value::as_str).ok_or(
+            GltfError::MissingField {
+                what: "accessor type",
+            },
+        )?)?;
         let component_type = ComponentType::from_gl(
             accessor
                 .get("componentType")
                 .and_then(Value::as_i64)
-                .ok_or("THREE.GLTFLoader: accessor without componentType")?,
+                .ok_or(GltfError::MissingField {
+                    what: "accessor componentType",
+                })?,
         )?;
         let count = json_usize(&accessor, "count").unwrap_or(0);
         let normalized = accessor
@@ -449,13 +441,16 @@ impl GLTFLoader {
                 sparse
                     .pointer("/indices/componentType")
                     .and_then(Value::as_i64)
-                    .ok_or("THREE.GLTFLoader: sparse indices without componentType")?,
+                    .ok_or(GltfError::MissingField {
+                        what: "sparse indices componentType",
+                    })?,
             )?;
             let indices_view = sparse
                 .pointer("/indices/bufferView")
                 .and_then(Value::as_u64)
-                .ok_or("THREE.GLTFLoader: sparse indices without bufferView")?
-                as usize;
+                .ok_or(GltfError::MissingField {
+                    what: "sparse indices bufferView",
+                })? as usize;
             let indices_offset = sparse
                 .pointer("/indices/byteOffset")
                 .and_then(Value::as_u64)
@@ -463,8 +458,9 @@ impl GLTFLoader {
             let values_view = sparse
                 .pointer("/values/bufferView")
                 .and_then(Value::as_u64)
-                .ok_or("THREE.GLTFLoader: sparse values without bufferView")?
-                as usize;
+                .ok_or(GltfError::MissingField {
+                    what: "sparse values bufferView",
+                })? as usize;
             let values_offset = sparse
                 .pointer("/values/byteOffset")
                 .and_then(Value::as_u64)
@@ -498,7 +494,7 @@ impl GLTFLoader {
     }
 
     /// An accessor as a [`BufferAttribute`].
-    pub fn attribute(&self, index: usize) -> Result<BufferAttribute, String> {
+    pub fn attribute(&self, index: usize) -> Result<BufferAttribute, Error> {
         let (values, item_size) = self.accessor(index)?;
         Ok(BufferAttribute::new(
             values.iter().map(|&v| v as f32).collect(),
@@ -507,7 +503,7 @@ impl GLTFLoader {
     }
 
     /// An accessor as a `BufferGeometry` index, `Uint16` when it fits.
-    fn index_attribute(&self, index: usize) -> Result<Index, String> {
+    fn index_attribute(&self, index: usize) -> Result<Index, Error> {
         let (values, _) = self.accessor(index)?;
         let max = values.iter().cloned().fold(0.0_f64, f64::max);
 
@@ -520,7 +516,7 @@ impl GLTFLoader {
 
     // --- the build ---------------------------------------------------------
 
-    fn build(&mut self) -> Result<Gltf, String> {
+    fn build(&mut self) -> Result<Gltf, Error> {
         let materials = self.load_materials();
         let textures = self.load_textures();
         let images = self.load_images()?;
@@ -674,7 +670,7 @@ impl GLTFLoader {
         let scene = scenes
             .get(scene_index)
             .cloned()
-            .ok_or("THREE.GLTFLoader: no scenes")?;
+            .ok_or(GltfError::MissingField { what: "scenes" })?;
 
         Ok(Gltf {
             scene,
@@ -748,11 +744,14 @@ impl GLTFLoader {
         index: usize,
         node: &Node,
         skin: Option<usize>,
-    ) -> Result<Vec<GltfPrimitive>, String> {
+    ) -> Result<Vec<GltfPrimitive>, Error> {
         let mesh_def = self
             .json
             .pointer(&format!("/meshes/{index}"))
-            .ok_or_else(|| format!("THREE.GLTFLoader: no mesh {index}"))?
+            .ok_or(GltfError::MissingIndex {
+                kind: "mesh",
+                index,
+            })?
             .clone();
 
         let primitive_defs = mesh_def
@@ -1000,7 +999,7 @@ impl GLTFLoader {
     }
 
     /// `GLTFParser.loadImageSource`: the bytes, not the decoded texture.
-    fn load_images(&self) -> Result<Vec<GltfImage>, String> {
+    fn load_images(&self) -> Result<Vec<GltfImage>, Error> {
         let mut images = Vec::new();
 
         for image_def in self
@@ -1041,7 +1040,7 @@ impl GLTFLoader {
     }
 
     /// `GLTFParser.loadAnimation`.
-    fn load_animations(&self, nodes: &[Node]) -> Result<Vec<AnimationClip>, String> {
+    fn load_animations(&self, nodes: &[Node]) -> Result<Vec<AnimationClip>, Error> {
         let mut clips = Vec::new();
 
         for (index, animation_def) in self
@@ -1093,10 +1092,12 @@ impl GLTFLoader {
                     continue;
                 };
 
-                let input = json_usize(sampler, "input")
-                    .ok_or("THREE.GLTFLoader: sampler without input")?;
-                let output = json_usize(sampler, "output")
-                    .ok_or("THREE.GLTFLoader: sampler without output")?;
+                let input = json_usize(sampler, "input").ok_or(GltfError::MissingField {
+                    what: "sampler input",
+                })?;
+                let output = json_usize(sampler, "output").ok_or(GltfError::MissingField {
+                    what: "sampler output",
+                })?;
 
                 let (times, _) = self.accessor(input)?;
                 let (mut values, _) = self.accessor(output)?;
@@ -1181,14 +1182,14 @@ fn apply_node_transform(object: &mut Object3D, node_def: &Value) {
 }
 
 /// `GLTFBinaryExtension` — the GLB container.
-fn parse_glb(data: &[u8]) -> Result<(Value, Option<Vec<u8>>), String> {
+fn parse_glb(data: &[u8]) -> Result<(Value, Option<Vec<u8>>), Error> {
     if data.len() < 12 {
-        return Err("THREE.GLTFLoader: Unsupported glTF-Binary header.".into());
+        return Err(GltfError::BadHeader.into());
     }
 
     let version = u32::from_le_bytes([data[4], data[5], data[6], data[7]]);
     if version < 2 {
-        return Err("THREE.GLTFLoader: Legacy binary file detected.".into());
+        return Err(GltfError::LegacyBinary.into());
     }
 
     let mut json = None;
@@ -1202,17 +1203,16 @@ fn parse_glb(data: &[u8]) -> Result<(Value, Option<Vec<u8>>), String> {
             u32::from_le_bytes([data[at + 4], data[at + 5], data[at + 6], data[at + 7]]);
         at += 8;
 
-        let chunk = data
-            .get(at..at + length)
-            .ok_or("THREE.GLTFLoader: truncated glTF-Binary chunk.")?;
+        let chunk = data.get(at..at + length).ok_or(GltfError::TruncatedChunk)?;
 
         match chunk_type {
             // `BINARY_EXTENSION_CHUNK_TYPES.JSON`
             0x4E4F_534A => {
-                let text = std::str::from_utf8(chunk)
-                    .map_err(|e| format!("THREE.GLTFLoader: JSON chunk: {e}"))?;
-                json =
-                    Some(serde_json::from_str(text).map_err(|e| format!("THREE.GLTFLoader: {e}"))?);
+                let text = std::str::from_utf8(chunk).map_err(|_| GltfError::NotUtf8)?;
+                json = Some(
+                    serde_json::from_str(text)
+                        .map_err(|source| Error::Json { path: None, source })?,
+                );
             }
             // `BINARY_EXTENSION_CHUNK_TYPES.BIN`
             0x004E_4942 => bin = Some(chunk.to_vec()),
@@ -1223,15 +1223,15 @@ fn parse_glb(data: &[u8]) -> Result<(Value, Option<Vec<u8>>), String> {
         at += length;
     }
 
-    let json = json.ok_or("THREE.GLTFLoader: glTF-Binary without JSON content.")?;
+    let json = json.ok_or(GltfError::NoJsonChunk)?;
     Ok((json, bin))
 }
 
 /// A `data:` URI, base64 or percent-encoded.
-fn decode_data_uri(uri: &str) -> Result<Vec<u8>, String> {
+fn decode_data_uri(uri: &str) -> Result<Vec<u8>, Error> {
     let (header, payload) = uri
         .split_once(',')
-        .ok_or_else(|| format!("THREE.GLTFLoader: bad data URI {uri}"))?;
+        .ok_or_else(|| GltfError::BadDataUri(uri.to_string()))?;
 
     if header.ends_with(";base64") {
         decode_base64(payload)
@@ -1241,7 +1241,7 @@ fn decode_data_uri(uri: &str) -> Result<Vec<u8>, String> {
 }
 
 /// `atob`, for the `data:` URIs glTF embeds buffers in.
-fn decode_base64(input: &str) -> Result<Vec<u8>, String> {
+fn decode_base64(input: &str) -> Result<Vec<u8>, Error> {
     const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
     let mut out = Vec::with_capacity(input.len() / 4 * 3);
@@ -1256,8 +1256,7 @@ fn decode_base64(input: &str) -> Result<Vec<u8>, String> {
         let value = TABLE
             .iter()
             .position(|&t| t == c)
-            .ok_or_else(|| format!("THREE.GLTFLoader: bad base64 character {c:?}"))?
-            as u32;
+            .ok_or(GltfError::BadBase64(c as char))? as u32;
 
         accumulator = (accumulator << 6) | value;
         bits += 6;

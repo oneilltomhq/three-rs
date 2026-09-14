@@ -78,6 +78,15 @@ pub enum GltfError {
     BadHeader,
     /// A GLB written against the draft container format.
     LegacyBinary,
+    /// A GLB chunk that runs past the end of the file.
+    TruncatedChunk,
+    /// A GLB with no JSON chunk.
+    NoJsonChunk,
+    /// A buffer with no `uri` in a GLB that has no BIN chunk.
+    NoBinChunk,
+    /// A field a definition cannot be read without (`accessor.type`,
+    /// `sampler.input`, …). `what` names it.
+    MissingField { what: &'static str },
     /// An index into one of the asset's arrays that is not there. `kind` is the
     /// array (`accessor`, `bufferView`, `buffer`, `mesh`).
     MissingIndex { kind: &'static str, index: usize },
@@ -138,6 +147,10 @@ impl fmt::Display for GltfError {
             }
             Self::BadHeader => write!(f, "unsupported glTF-Binary header"),
             Self::LegacyBinary => write!(f, "legacy binary file detected"),
+            Self::TruncatedChunk => write!(f, "truncated glTF-Binary chunk"),
+            Self::NoJsonChunk => write!(f, "glTF-Binary without JSON content"),
+            Self::NoBinChunk => write!(f, "glTF-Binary without BIN chunk"),
+            Self::MissingField { what } => write!(f, "no {what}"),
             Self::MissingIndex { kind, index } => write!(f, "no {kind} {index}"),
             Self::UnsupportedComponentType(value) => {
                 write!(f, "unsupported componentType {value}")
