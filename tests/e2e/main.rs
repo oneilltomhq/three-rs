@@ -594,52 +594,56 @@ fn webgpu_lights_physical() {
 ///
 /// A rung's frame is not always one `render()`: rtt and the depth texture
 /// render into a target and then draw a full-screen quad, and postprocessing
-/// masking is three `PassNode`s and a `RenderPipeline`. So `info.auto_reset`
-/// goes off and the test resets once per *frame*, the way three.js'
-/// postprocessing does, and the counts below are the whole frame's.
+/// masking is three `PassNode`s and a `RenderPipeline`. `testing::strip` turns
+/// `info.auto_reset` off and resets once per *frame*, the way three.js'
+/// postprocessing does, so the counts below are the whole frame's — and it
+/// keeps each frame's pixels too, so `target/e2e/<rung>/steady-strip.png` is
+/// the three frames side by side with their counts under them (issue #68).
 #[test]
 fn steady_frame_builds_nothing() {
-    use three_rs::{BuildCounts, Info};
-
     let _gpu = gpu();
 
     macro_rules! rung {
         ($module:ident) => {{
             let mut app = $module::init();
-            app.renderer.info_mut().auto_reset = false;
 
-            let frames: Vec<Info> = (0..3)
-                .map(|_| {
-                    app.renderer.info_mut().reset();
-                    $module::animate(&mut app);
-                    app.renderer.info().clone()
-                })
-                .collect();
+            // `[ "", "" ]`: nothing is done to the scene between the three
+            // frames, which is what makes frames two and three steady.
+            let strip = three_rs::testing::strip(
+                &mut app,
+                |app| &mut app.renderer,
+                &mut |app: &mut $module::App| $module::animate(app),
+                &mut [
+                    ("", &mut |_: &mut $module::App| {}),
+                    ("", &mut |_: &mut $module::App| {}),
+                ],
+            )
+            .unwrap();
 
-            for (index, info) in frames.iter().enumerate() {
-                println!("{}: frame {} — {info}", stringify!($module), index + 1);
+            for (index, frame) in strip.frames.iter().enumerate() {
+                println!(
+                    "{}: frame {} — {}",
+                    stringify!($module),
+                    index + 1,
+                    frame.info
+                );
             }
 
             assert!(
-                frames[0].build.total() > 0,
+                strip.frames[0].info.build.total() > 0,
                 "{}: the first frame built nothing, so the counters are not wired",
                 stringify!($module)
             );
             assert!(
-                frames[2].render.calls > 0,
+                strip.frames[2].info.render.calls > 0,
                 "{}: the third frame drew nothing, so it is not a frame",
                 stringify!($module)
             );
-            for (index, info) in frames.iter().enumerate().skip(1) {
-                assert_eq!(
-                    info.build,
-                    BuildCounts::default(),
-                    "{}: frame {} built {:?}; a steady frame must build nothing",
-                    stringify!($module),
-                    index + 1,
-                    info.build
-                );
-            }
+            strip.assert_steady(1..);
+
+            let png = out_dir(stringify!($module)).join("steady-strip.png");
+            strip.write_png(png.to_str().expect("three-rs: the strip path is UTF-8"));
+            println!("{}: strip {}", stringify!($module), png.display());
         }};
     }
 
@@ -669,80 +673,117 @@ fn steady_frame_builds_nothing() {
 /// takes the resident count back down. A renderer that re-uploaded a live
 /// geometry every frame, or that never freed a dead one, moves one of these
 /// numbers; neither shows up in a frame time.
+///
+/// The two steps are issue #68's `[ "replace geometry", "drop geometry" ]`, so
+/// the record is a strip: three frames of the cube, each with its counts under
+/// it, in `target/e2e/geometry_mutation/strip.png`.
 #[test]
 fn a_scene_mutation_uploads_exactly_what_changed() {
     use std::rc::Rc;
     use three_rs::materials::MeshBasicNodeMaterial;
     use three_rs::{
-        box_geometry, BuildCounts, Mesh, PerspectiveCamera, Renderer, RendererParameters, Scene,
+        box_geometry, BuildCounts, Mesh, Node, PerspectiveCamera, Renderer, RendererParameters,
+        Scene,
     };
+
+    /// The smallest thing `testing::strip` renders: a renderer, a scene, a
+    /// camera, and the handle the steps mutate.
+    struct App {
+        renderer: Renderer,
+        scene: Scene,
+        camera: PerspectiveCamera,
+        mesh: Option<Node>,
+    }
 
     let _gpu = gpu();
 
     let mut renderer = Renderer::new(RendererParameters { antialias: false }).unwrap();
     renderer.set_pixel_ratio(1.0);
     renderer.set_size(64.0, 64.0);
-    let mut camera = PerspectiveCamera::new(60.0, 1.0, 0.1, 100.0);
+    let camera = PerspectiveCamera::new(60.0, 1.0, 0.1, 100.0);
     camera.node.borrow_mut().position.z = 5.0;
 
     let mesh = Mesh::new(
         Rc::new(box_geometry(1.0, 1.0, 1.0, 1, 1, 1)),
         MeshBasicNodeMaterial::new(),
     );
-    let mut scene = Scene::new();
+    let scene = Scene::new();
     scene.add(&mesh);
 
-    // Frame 1 builds and uploads; frame 2 is the steady one it is measured
-    // against, and its resident counts are the baseline.
-    renderer.render(&mut scene, &mut camera);
-    println!("mutation: frame 1 — {}", renderer.info());
-    renderer.render(&mut scene, &mut camera);
-    println!("mutation: frame 2 — {}", renderer.info());
-    assert_eq!(
-        renderer.info().build,
-        BuildCounts::default(),
-        "an unchanged scene must build nothing"
-    );
-    let resident = renderer.info().memory.geometries;
+    let mut app = App {
+        renderer,
+        scene,
+        camera,
+        mesh: Some(mesh),
+    };
 
-    // Replace the one geometry, keeping the mesh and its material: one upload,
-    // nothing else, and the resident count holds because the geometry it
-    // replaced was swept in the same render.
-    mesh.borrow_mut()
-        .mesh_mut()
-        .expect("three-rs: the mesh is a mesh")
-        .geometry = Rc::new(box_geometry(2.0, 2.0, 2.0, 1, 1, 1));
-    renderer.render(&mut scene, &mut camera);
-    println!("mutation: replace geometry — {}", renderer.info());
+    let strip = three_rs::testing::strip(
+        &mut app,
+        |app| &mut app.renderer,
+        &mut |app: &mut App| app.renderer.render(&mut app.scene, &mut app.camera),
+        &mut [
+            // Replace the one geometry, keeping the mesh and its material.
+            ("replace geometry", &mut |app: &mut App| {
+                app.mesh
+                    .as_ref()
+                    .expect("three-rs: the mesh is still here")
+                    .borrow_mut()
+                    .mesh_mut()
+                    .expect("three-rs: the mesh is a mesh")
+                    .geometry = Rc::new(box_geometry(2.0, 2.0, 2.0, 1, 1, 1));
+            }),
+            // And drop it, which is the only signal the renderer gets.
+            ("drop geometry", &mut |app: &mut App| {
+                let mesh = app.mesh.take().expect("three-rs: the mesh is still here");
+                app.scene.remove(&mesh);
+            }),
+        ],
+    )
+    .unwrap();
+
+    for (index, frame) in strip.frames.iter().enumerate() {
+        println!(
+            "mutation: frame {} ({}) — {}",
+            index + 1,
+            frame.label,
+            frame.info
+        );
+    }
+
+    let png = out_dir("geometry_mutation").join("strip.png");
+    strip.write_png(png.to_str().expect("three-rs: the strip path is UTF-8"));
+    println!("mutation: strip {}", png.display());
+
+    let [first, replaced, dropped] = match strip.frames.as_slice() {
+        [first, replaced, dropped] => [&first.info, &replaced.info, &dropped.info],
+        frames => panic!("three-rs: expected three frames, got {}", frames.len()),
+    };
+
+    // One upload, and nothing else: the resident count holds because the
+    // geometry that was replaced is swept in the same render that uploads its
+    // replacement.
     assert_eq!(
-        renderer.info().build.geometries_uploaded,
-        1,
+        replaced.build.geometries_uploaded, 1,
         "replacing one geometry should upload exactly one"
     );
     assert_eq!(
-        renderer.info().build.programs_compiled,
-        0,
+        replaced.build.programs_compiled, 0,
         "the material did not change, so nothing should have been built"
     );
     assert_eq!(
-        renderer.info().memory.geometries,
-        resident,
+        replaced.memory.geometries, first.memory.geometries,
         "the replaced geometry should have been swept as the new one arrived"
     );
 
-    // Drop it: the resident count goes back down by one. This is the #58
-    // regression — nothing was ever removed from the cache — as a number.
-    scene.remove(&mesh);
-    drop(mesh);
-    renderer.render(&mut scene, &mut camera);
-    println!("mutation: drop geometry — {}", renderer.info());
+    // And the resident count goes back down by one. This is the #58 regression
+    // — nothing was ever removed from the cache — as a number.
     assert_eq!(
-        renderer.info().memory.geometries,
-        resident - 1,
+        dropped.memory.geometries,
+        first.memory.geometries - 1,
         "the dropped geometry should have left the cache"
     );
     assert_eq!(
-        renderer.info().build,
+        dropped.build,
         BuildCounts::default(),
         "dropping an object builds nothing"
     );

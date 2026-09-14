@@ -131,7 +131,11 @@ webgpu_lights_phong — 1000x625 — 59.9 fps — render mean 1.61 ms max 1.79 m
 
 `--headless --frames N` renders N frames with no window and reports the same
 numbers for the whole frame, CPU and GPU, which is how the table above was
-measured; add `--screenshot out.png` to keep the last frame.
+measured; add `--screenshot out.png` to keep the last frame. It also writes
+`target/e2e/<example>/strip.png`: three more frames tiled left to right at
+1:1, each with its draw calls and its build counts in the gutter under it, so
+the count ladder sits beside the time one. The e2e harness writes the same
+strip per rung (`steady-strip.png`) and one for the geometry-mutation case.
 
 ### Running the examples and the e2e grader
 
