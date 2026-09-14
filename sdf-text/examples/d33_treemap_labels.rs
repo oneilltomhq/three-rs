@@ -54,7 +54,7 @@ use d3_hierarchy::treemap::{binary, treemap};
 use d3_hierarchy::{hierarchy, Datum};
 use sdf_text::text_builder::LineHeight;
 use sdf_text::{Anchor, BatchedText, BatchedTextOptions, Text, VectorFont};
-use three_rs::core::{BufferGeometry, Object3DNode};
+use three_rs::core::BufferGeometry;
 use three_rs::{
     box_geometry, Color, Group, Line, Matrix4, Mesh, MeshBasicNodeMaterial, PerspectiveCamera,
     Quaternion, Renderer, RendererParameters, Scene, Vector3,

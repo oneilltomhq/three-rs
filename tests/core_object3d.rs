@@ -315,11 +315,10 @@ fn update_matrix() {
 }
 
 // ---------------------------------------------------------------------------
-// The scene-graph half: `Object3DNode` on `Node = Rc<RefCell<Object3D>>`.
+// The scene-graph half: the inherent tree methods on `Node`.
 // ---------------------------------------------------------------------------
 
-use std::rc::Rc;
-use three_rs::core::{Node, Object3DNode};
+use three_rs::core::Node;
 
 /// `new Object3D()` as a scene-graph node.
 fn node() -> Node {
@@ -334,7 +333,7 @@ fn named(name: &str) -> Node {
 
 #[track_caller]
 fn same(a: &Node, b: &Node, what: &str) {
-    assert!(Rc::ptr_eq(a, b), "{what}");
+    assert!(Node::ptr_eq(a, b), "{what}");
 }
 
 /// `matrixEquals4` from `test/unit/utils/math-constants.js`'s sibling helpers.
@@ -476,11 +475,11 @@ fn attach() {
     assert!(
         object
             .parent()
-            .is_some_and(|parent| Rc::ptr_eq(&parent, &new_parent))
+            .is_some_and(|parent| Node::ptr_eq(&parent, &new_parent))
             && !old_parent
                 .children()
                 .iter()
-                .any(|child| Rc::ptr_eq(child, &object)),
+                .any(|child| Node::ptr_eq(child, &object)),
         "object is a child of a new parent"
     );
 
@@ -518,15 +517,15 @@ fn attach() {
     assert!(
         object
             .parent()
-            .is_some_and(|parent| Rc::ptr_eq(&parent, &new_parent))
+            .is_some_and(|parent| Node::ptr_eq(&parent, &new_parent))
             && new_parent
                 .children()
                 .iter()
-                .any(|child| Rc::ptr_eq(child, &object))
+                .any(|child| Node::ptr_eq(child, &object))
             && !old_parent
                 .children()
                 .iter()
-                .any(|child| Rc::ptr_eq(child, &object)),
+                .any(|child| Node::ptr_eq(child, &object)),
         "object is no longer a child of an old parent and is a child of a new parent now"
     );
 

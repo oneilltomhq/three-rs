@@ -19,7 +19,7 @@
 use std::f64::consts::PI;
 use std::rc::Rc;
 
-use three_rs::core::{Node, Object3DNode};
+use three_rs::core::Node;
 use three_rs::geometries::{cylinder_geometry, plane_geometry, torus_knot_geometry};
 use three_rs::nodes::materialx::{mx_fractal_noise_float, mx_fractal_noise_vec3};
 use three_rs::nodes::tsl::{

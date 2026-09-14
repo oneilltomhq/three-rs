@@ -23,7 +23,6 @@
 
 use std::rc::Rc;
 
-use three_rs::core::Object3DNode;
 use three_rs::textures::Wrapping;
 use three_rs::{
     box_geometry, plane_geometry, sphere_geometry, Color, ColorSpace, HemisphereLight, Mesh,

@@ -20,7 +20,7 @@
 
 use std::rc::Rc;
 
-use three_rs::core::{Node, Object3DNode};
+use three_rs::core::Node;
 use three_rs::nodes::tsl::{checker, fog, mix, normal_map, range_fog_factor, texture, uv};
 use three_rs::textures::Wrapping;
 use three_rs::{

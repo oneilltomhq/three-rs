@@ -23,7 +23,6 @@
 use std::rc::Rc;
 
 use sdf_text::{Anchor, BatchedText, BatchedTextOptions, Text, VectorFont};
-use three_rs::core::Object3DNode;
 use three_rs::{Color, OrthographicCamera, Renderer, RendererParameters, Scene};
 
 pub const INNER_WIDTH: f64 = 800.0;

@@ -32,7 +32,6 @@
 use std::rc::Rc;
 
 use sdf_text::{BatchedText, BatchedTextOptions, Text, VectorFont};
-use three_rs::core::Object3DNode;
 use three_rs::{Color, PerspectiveCamera, Renderer, RendererParameters, Scene, Vector3};
 
 const WIDTH: usize = 256;

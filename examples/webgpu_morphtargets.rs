@@ -21,7 +21,7 @@
 
 use std::rc::Rc;
 
-use three_rs::core::{BufferAttribute, Object3DNode};
+use three_rs::core::BufferAttribute;
 use three_rs::{
     box_geometry, AmbientLight, BufferGeometry, Color, Mesh, MeshPhongNodeMaterial,
     PerspectiveCamera, PointLight, Renderer, RendererParameters, Scene, Vector3,
