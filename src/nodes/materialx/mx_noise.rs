@@ -384,7 +384,7 @@ mx_fn!(
     "mx_trilerp_0",
     trilerp_params(Type::F32),
     Type::F32,
-    |params| trilerp_body(params)
+    trilerp_body
 );
 
 mx_fn!(
@@ -392,7 +392,7 @@ mx_fn!(
     "mx_trilerp_1",
     trilerp_params(Type::Vec3),
     Type::Vec3,
-    |params| trilerp_body(params)
+    trilerp_body
 );
 
 // ---------------------------------------------------------------------------
