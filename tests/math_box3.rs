@@ -3,8 +3,11 @@
 //! Expectations and epsilons are three.js' own; nothing here was recomputed
 //! from the Rust implementation.
 
-use three_rs::core::BufferAttribute;
+use std::rc::Rc;
+
+use three_rs::core::{BufferAttribute, BufferGeometry, Node};
 use three_rs::math::{Box3, Matrix4, Plane, Sphere, Triangle, Vector3};
+use three_rs::objects::{Group, Mesh};
 
 /// `math-constants.js` `negInf3`.
 const NEG_INF3: Vector3 = Vector3::new(f64::NEG_INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
@@ -572,4 +575,123 @@ fn equals() {
     let b = Box3::new(ONE3, ONE3);
     assert!(!b.equals(&a));
     assert!(!a.equals(&b));
+}
+
+// `setFromObject` / `expandByObject`. three's own cases for these build a
+// `SkinnedMesh` and a `Mesh` from `BoxGeometry`, neither of which the port has
+// as a test fixture, so the scenes below are the same shapes written out by
+// hand: a box of unit half-extent for the translation cases, and a triangle for
+// the case that tells `precise` apart from the conservative path.
+
+/// A geometry whose position attribute is the 8 corners of `[-1, 1]^3`, so its
+/// bounding box is exactly that cube.
+fn unit_cube_geometry() -> Rc<BufferGeometry> {
+    let mut positions = Vec::new();
+    for &x in &[-1.0_f32, 1.0] {
+        for &y in &[-1.0_f32, 1.0] {
+            for &z in &[-1.0_f32, 1.0] {
+                positions.extend_from_slice(&[x, y, z]);
+            }
+        }
+    }
+
+    let mut geometry = BufferGeometry::new();
+    geometry.set_attribute("position", BufferAttribute::new(positions, 3));
+    Rc::new(geometry)
+}
+
+/// A parent holding two unit cubes translated to `(-2, 0, 0)` and `(3, 1, 0)`.
+fn two_cubes() -> Node {
+    let parent = Group::new();
+
+    let geometry = unit_cube_geometry();
+
+    let left = Mesh::new(geometry.clone(), None);
+    left.borrow_mut().position.set(-2.0, 0.0, 0.0);
+
+    let right = Mesh::new(geometry, None);
+    right.borrow_mut().position.set(3.0, 1.0, 0.0);
+
+    parent.add(&left);
+    parent.add(&right);
+    parent
+}
+
+#[test]
+fn set_from_object() {
+    let parent = two_cubes();
+
+    // The union of [-3,-1]x[-1,1]x[-1,1] and [2,4]x[0,2]x[-1,1].
+    let expected = Box3::new(Vector3::new(-3.0, -1.0, -1.0), Vector3::new(4.0, 2.0, 1.0));
+
+    let mut a = Box3::default();
+    a.set_from_object(&parent, false);
+    assert!(compare_box(&a, &expected, None), "conservative: {a:?}");
+
+    let mut b = Box3::default();
+    b.set_from_object(&parent, true);
+    assert!(compare_box(&b, &expected, None), "precise: {b:?}");
+
+    // The parent's own transform is part of it.
+    parent.borrow_mut().position.set(0.0, 0.0, 5.0);
+    let mut c = Box3::default();
+    c.set_from_object(&parent, false);
+    let mut expected = expected;
+    expected.translate(&Vector3::new(0.0, 0.0, 5.0));
+    assert!(compare_box(&c, &expected, None), "translated parent: {c:?}");
+}
+
+#[test]
+fn set_from_object_empty() {
+    let mut a = Box3::new(ONE3, TWO3);
+    a.set_from_object(&Group::new(), false);
+    assert!(a.is_empty(), "a group with no geometry leaves an empty box");
+
+    let mut b = Box3::new(ONE3, TWO3);
+    b.set_from_object(&Group::new(), true);
+    assert!(b.is_empty(), "and the precise path agrees");
+}
+
+#[test]
+fn set_from_object_precise_is_tighter() {
+    // A triangle in the x/y plane, whose own bounding box is much bigger than
+    // the triangle: rotated 45 degrees about z, the corners of that box sweep
+    // wider than the vertices do, so the two paths disagree.
+    let mut geometry = BufferGeometry::new();
+    geometry.set_attribute(
+        "position",
+        BufferAttribute::new(vec![-1.0, -1.0, 0.0, 1.0, -1.0, 0.0, 0.0, 1.0, 0.0], 3),
+    );
+
+    let mesh = Mesh::new(Rc::new(geometry), None);
+    mesh.borrow_mut().rotate_z(std::f64::consts::FRAC_PI_4);
+
+    let mut conservative = Box3::default();
+    conservative.set_from_object(&mesh, false);
+
+    let mut precise = Box3::default();
+    precise.set_from_object(&mesh, true);
+
+    // The rotated vertices, by hand: (0, -sqrt(2)), (sqrt(2), 0),
+    // (-sqrt(2)/2, sqrt(2)/2).
+    let root2 = std::f64::consts::SQRT_2;
+    let expected = Box3::new(
+        Vector3::new(-root2 / 2.0, -root2, 0.0),
+        Vector3::new(root2, root2 / 2.0, 0.0),
+    );
+    assert!(
+        compare_box(&precise, &expected, None),
+        "precise: {precise:?}"
+    );
+
+    // The conservative path rotates the axis-aligned box [-1,1]x[-1,1] instead,
+    // whose corners reach sqrt(2) on both axes.
+    let expected = Box3::new(
+        Vector3::new(-root2, -root2, 0.0),
+        Vector3::new(root2, root2, 0.0),
+    );
+    assert!(
+        compare_box(&conservative, &expected, None),
+        "conservative: {conservative:?}"
+    );
 }
