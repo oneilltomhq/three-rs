@@ -524,11 +524,7 @@ fn intersect_triangle_watertight_at_shared_edges() {
         "Ray hitting the shared edge is not dropped"
     );
 
-    let hit = if hit1.is_some() {
-        hit1.unwrap()
-    } else {
-        hit2.unwrap()
-    };
+    let hit = if let Some(h) = hit1 { h } else { hit2.unwrap() };
     assert!(
         hit.distance_to(&seam) <= EPS,
         "Intersection lies on the shared edge"
