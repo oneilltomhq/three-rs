@@ -450,7 +450,6 @@ impl Renderer {
         instance: wgpu::Instance,
     ) -> Result<Self, Error> {
         let adapter = pick_adapter(&instance)?;
-        let adapter_info = adapter.get_info();
 
         // `FLOAT32_FILTERABLE` is what lets an `r32float` texture be sampled
         // through a filtering sampler — the SDF atlas is
@@ -480,6 +479,47 @@ impl Renderer {
                 trace: wgpu::Trace::Off,
             }))?;
 
+        Ok(Self::with_device(parameters, adapter, device, queue))
+    }
+
+    /// `new()` against a device the caller already owns — the host adopts the
+    /// renderer rather than the other way round.
+    ///
+    /// A Wayland compositor imports client dmabufs as `wgpu::Texture`s on its
+    /// own device and scans the result out to DRM; a texture belongs to the
+    /// device it was created on, so the renderer has to draw on that same
+    /// device rather than make a second one. Pair this with
+    /// [`Texture::external`](crate::textures::Texture::external), which wraps
+    /// one of those imported textures as a `three_rs::Texture`.
+    ///
+    /// The renderer takes ownership of the `Device` and `Queue` handles, which
+    /// are `Clone`-able refcounts in wgpu: the caller keeps its own clones and
+    /// goes on using them for its own passes. Everything the renderer
+    /// allocates — pipelines, bind groups, its canvas texture — lives on this
+    /// device, so it must outlive the renderer, which the refcount guarantees.
+    ///
+    /// # Features
+    ///
+    /// sdf-text's atlas is an `r32float` texture sampled through a filtering
+    /// sampler, which wgpu allows only on a device that enabled
+    /// [`wgpu::Features::FLOAT32_FILTERABLE`]. The renderer reads
+    /// `device.features()` — not the adapter's, because with an adopted device
+    /// what the adapter *could* have done says nothing about what was actually
+    /// requested — and asserts at the point of use rather than drawing a black
+    /// frame. So a host that renders sdf-text must pass that feature in its own
+    /// `DeviceDescriptor::required_features`; a host that does not can leave it
+    /// out and everything else works.
+    pub fn with_device(
+        parameters: RendererParameters,
+        adapter: wgpu::Adapter,
+        device: wgpu::Device,
+        queue: wgpu::Queue,
+    ) -> Self {
+        let adapter_info = adapter.get_info();
+        let float32_filterable = device
+            .features()
+            .contains(wgpu::Features::FLOAT32_FILTERABLE);
+
         // `WebGPUCapabilities.getUniformBufferLimit()`. `Limits::default()`
         // asks for WebGPU's guaranteed minimum, 64 KiB, which is also what
         // Chrome reports on the grader's adapter — so `RangeNode` and
@@ -491,7 +531,7 @@ impl Renderer {
 
         let mipmap_shader = MipmapShader::new(&device);
 
-        Ok(Self {
+        Self {
             device,
             queue,
             adapter_info,
@@ -547,7 +587,7 @@ impl Renderer {
             cube_shadow_targets: HashMap::new(),
             float32_filterable,
             info: Info::new(),
-        })
+        }
     }
 
     pub fn adapter_info(&self) -> &wgpu::AdapterInfo {
