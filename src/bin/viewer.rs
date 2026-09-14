@@ -176,10 +176,10 @@ impl Which {
 
     /// The `RendererParameters` each example passes to `Renderer::new()`.
     fn antialias(self) -> bool {
-        match self {
-            Self::MaterialsBasic | Self::LightsPhysical | Self::PostprocessingMasking => false,
-            _ => true,
-        }
+        !matches!(
+            self,
+            Self::MaterialsBasic | Self::LightsPhysical | Self::PostprocessingMasking
+        )
     }
 
     /// Where the page's `OrbitControls` (or its `lookAt`) points the camera.
