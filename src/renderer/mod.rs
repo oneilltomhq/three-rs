@@ -2331,7 +2331,7 @@ impl Renderer {
     ) -> wgpu::Buffer {
         // Pad to 4 bytes, as `write_buffer` requires.
         let mut padded = contents.to_vec();
-        while padded.len() % 4 != 0 {
+        while !padded.len().is_multiple_of(4) {
             padded.push(0);
         }
 
