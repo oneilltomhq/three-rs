@@ -233,7 +233,7 @@ impl AnimationClip {
         let num_morph_targets = morph_target_sequence.len();
         let mut tracks = Vec::new();
 
-        for i in 0..num_morph_targets {
+        for (i, morph_target_name) in morph_target_sequence.iter().enumerate() {
             let mut times: Vec<f64> = Vec::new();
             let mut values: Vec<f64> = Vec::new();
 
@@ -259,7 +259,7 @@ impl AnimationClip {
             }
 
             let mut track = KeyframeTrack::number(
-                &format!(".morphTargetInfluences[{}]", morph_target_sequence[i]),
+                &format!(".morphTargetInfluences[{}]", morph_target_name),
                 times,
                 values,
                 None,

@@ -331,8 +331,11 @@ pub fn make_clip_additive(
                 let value_end = target_value_size - target_offset * 2;
 
                 // Subtract each value for all other numeric track types
-                for k in 0..value_end {
-                    target_track.values[value_start + k] -= reference_value[k];
+                for (t, r) in target_track.values[value_start..value_start + value_end]
+                    .iter_mut()
+                    .zip(reference_value.iter())
+                {
+                    *t -= *r;
                 }
             }
         }

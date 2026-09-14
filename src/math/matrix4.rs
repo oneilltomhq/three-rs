@@ -43,8 +43,8 @@ impl Matrix4 {
     /// The 16 elements narrowed to `f32`, ready for a uniform buffer.
     pub fn to_f32_array(&self) -> [f32; 16] {
         let mut out = [0.0f32; 16];
-        for i in 0..16 {
-            out[i] = self.elements[i] as f32;
+        for (o, e) in out.iter_mut().zip(self.elements.iter()) {
+            *o = *e as f32;
         }
         out
     }
