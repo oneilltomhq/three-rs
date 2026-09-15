@@ -105,9 +105,7 @@ impl ShadowCamera {
             }
             ShadowCamera::Orthographic(c) => {
                 c.object.position = position;
-                let mut m = Matrix4::identity();
-                m.look_at(&c.object.position, target, &c.object.up);
-                c.object.quaternion.set_from_rotation_matrix(&m);
+                c.look_at(target);
                 c.update_matrix_world();
             }
         }

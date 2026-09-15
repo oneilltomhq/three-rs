@@ -17,7 +17,7 @@ mod support;
 use support::close;
 
 use three_rs::cameras::{OrthographicCamera, PerspectiveCamera};
-use three_rs::math::{Box3, Matrix4, Vector3};
+use three_rs::math::{Box3, Vector3};
 
 /// An off-centre box with three different side lengths.
 fn scene_box() -> Box3 {
@@ -185,14 +185,6 @@ fn a_bounding_sphere_fit_would_fail_these_tests() {
     );
 }
 
-/// The orthographic camera has no `look_at` of its own yet; this is
-/// `PerspectiveCamera::look_at`'s body.
-fn aim(camera: &mut OrthographicCamera, target: &Vector3) {
-    let mut m = Matrix4::identity();
-    m.look_at(&camera.object.position, target, &camera.object.up);
-    camera.object.quaternion.set_from_rotation_matrix(&m);
-}
-
 #[test]
 fn orthographic_fit() {
     let box_ = scene_box();
@@ -210,7 +202,7 @@ fn orthographic_fit() {
                 );
                 camera.zoom = zoom;
                 camera.object.position = EYE;
-                aim(&mut camera, &box_.get_center());
+                camera.look_at(&box_.get_center());
 
                 camera.fit(&box_, margin);
 

@@ -151,6 +151,16 @@ impl OrthographicCamera {
         self.update_matrix_world();
     }
 
+    /// `Object3D.lookAt()` for a camera: the matrix looks *from* the camera
+    /// position *at* the target (`PerspectiveCamera::look_at` is the same on
+    /// its node).
+    pub fn look_at(&mut self, target: &Vector3) {
+        let mut m = Matrix4::identity();
+        m.look_at(&self.object.position, target, &self.object.up);
+        self.object.quaternion.set_from_rotation_matrix(&m);
+        self.object.sync_rotation_from_quaternion();
+    }
+
     pub fn update_matrix_world(&mut self) {
         self.object.update_matrix_world(None);
         self.matrix_world_inverse = self.object.matrix_world;
