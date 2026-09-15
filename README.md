@@ -137,6 +137,24 @@ measured; add `--screenshot out.png` to keep the last frame. It also writes
 the count ladder sits beside the time one. The e2e harness writes the same
 strip per rung (`steady-strip.png`) and one for the geometry-mutation case.
 
+### Controls
+
+`three_rs::controls::Helicopter` flies a camera over a `Ground`: a sphere whose
+north pole is the world origin, so `R = 1e7` is a plane and a small R a planet,
+with no separate case for either. The camera never rolls — `up` is the ground
+normal — and every field is damped with `math_utils::smooth_damp`, a port of
+camera-controls' `smoothDamp`.
+
+`cargo run --release --bin heli` is the demo: **W A S D** fly, **Q** / **E** and
+the wheel climb, either mouse button drags the view round, **[** and **]** curl
+the ground up and flatten it, **P** snaps it flat, **Home** resets the pose,
+**Tab** is the overview (click a pane there to drop onto it) and **Esc** quits.
+
+```sh
+cargo run --release --bin heli -- --headless shots/heli-sphere-high.png \
+    --radius 300 --pose 0,-120,600,0,-60 [--overview] [--size 1600x1000]
+```
+
 ### Running the examples and the e2e grader
 
 The examples load their textures and models from Three's own `examples/`
@@ -170,13 +188,15 @@ they looked for.
 ```
 src/            the three-rs crate, mirroring three.js's src/ tree
   math core cameras geometries lights loaders materials objects textures animation
+  controls/     the helicopter camera and its ground (not a three.js port)
   nodes/        TSL nodes and the WGSL NodeBuilder
   renderer/     the wgpu backend: pipelines, bindings, passes, shadows, present
-  bin/viewer.rs
+  bin/viewer.rs bin/heli.rs
 examples/       one file per ported Three example, also compiled into tests/e2e
 tests/          Three's QUnit tests ported per module, plus the e2e harness
 sdf-text/       workspace crate: SDF text and BatchedText, with its examples and gates
 docs/           design notes per subsystem and per-example progress logs
+shots/          headless frames from bin/heli.rs, one per ground and pose
 rung0/          how the grader was calibrated
 ```
 
