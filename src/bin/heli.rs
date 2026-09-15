@@ -1,5 +1,5 @@
-//! The demo for [`three_rs::controls`]: fly a helicopter over a ground that
-//! can be flat or a small planet, with a wall of panes standing on it.
+//! The demo for [`three_rs::controls`]: a map camera over a ground that can be
+//! flat or a small planet, with a wall of panes standing on it.
 //!
 //! ```text
 //! cargo run --release --bin heli
@@ -7,22 +7,21 @@
 //! cargo run --release --bin heli -- --headless shots/x.png --radius 300 --overview
 //! ```
 //!
-//! `W` `A` `S` `D` fly, `Q` / `E` and the wheel climb and descend, either mouse
-//! button drags the view round, `[` and `]` curl the ground up and flatten it
-//! again, `P` snaps it flat, `Home` returns to the start pose, `Tab` is the
-//! overview and `Esc` quits. In the overview a click picks a pane and drops
-//! onto it.
+//! Left-drag grabs the ground and pulls it under the cursor, right-drag (or
+//! ctrl and left-drag) orbits, the wheel zooms toward the pointer, the arrow
+//! keys pan, `[` and `]` curl the ground up and flatten it again, `P` snaps it
+//! flat, `Home` returns to the start pose, `Tab` is the overview and `Esc`
+//! quits. In the overview a click picks a pane and drops onto it.
 //!
 //! The window, the surface, the event loop and the headless path are lifted
 //! from `src/bin/viewer.rs`; the scene and the controls are this file's own.
 //! Nothing here is reachable from the e2e harness.
 
-use std::collections::HashSet;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Instant;
 
-use three_rs::controls::{Ground, Helicopter, Mode, Pane, Pose};
+use three_rs::controls::{Ground, MapControls, Mode, Pane, Pose};
 use three_rs::core::{BufferAttribute, BufferGeometry};
 use three_rs::materials::Side;
 use three_rs::math::math_utils::{DEG2RAD, RAD2DEG};
@@ -32,7 +31,7 @@ use three_rs::{
 };
 
 use winit::application::ApplicationHandler;
-use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
+use winit::event::{ElementState, Modifiers, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{Key, NamedKey};
 use winit::window::{Window, WindowId};
@@ -62,10 +61,10 @@ const PANE_COLOURS: [u32; 8] = [
 fn start_pose() -> Pose {
     Pose {
         u: 0.0,
-        v: -120.0,
-        altitude: 40.0,
-        yaw: 0.0,
-        pitch: -15.0 * DEG2RAD,
+        v: 0.0,
+        distance: 160.0,
+        azimuth: 0.0,
+        polar: 45.0 * DEG2RAD,
     }
 }
 
@@ -114,7 +113,7 @@ struct App {
     renderer: Renderer,
     scene: Scene,
     camera: PerspectiveCamera,
-    heli: Helicopter,
+    controls: MapControls,
     panes: Vec<Pane>,
     grid: Node,
     pane_nodes: Vec<Node>,
@@ -129,7 +128,7 @@ impl App {
     /// path.
     fn build(instance: Option<wgpu::Instance>, size: (u32, u32)) -> Self {
         let ground = Ground::new(1e7);
-        let heli = Helicopter::new(ground, start_pose());
+        let controls = MapControls::new(ground, start_pose());
         let panes = demo_panes();
 
         let mut scene = Scene::new();
@@ -178,7 +177,7 @@ impl App {
             renderer,
             scene,
             camera,
-            heli,
+            controls,
             panes,
             grid,
             pane_nodes,
@@ -205,9 +204,9 @@ impl App {
     /// the grid's vertices if the ground curled since the last frame, then
     /// every pane's transform, then the camera.
     fn sync(&mut self) {
-        let radius = self.heli.ground().radius();
+        let radius = self.controls.ground().radius();
         if (radius - self.grid_radius).abs() > 1e-6 * self.grid_radius {
-            let positions = grid_positions(self.heli.ground());
+            let positions = grid_positions(self.controls.ground());
             self.grid
                 .borrow()
                 .line()
@@ -217,7 +216,7 @@ impl App {
         }
 
         for (pane, node) in self.panes.iter().zip(&self.pane_nodes) {
-            let frame = self.heli.ground().frame(pane.u, pane.v);
+            let frame = self.controls.ground().frame(pane.u, pane.v);
             let mut position = frame.origin;
             position.add_scaled_vector(&frame.normal, pane.height * 0.5);
 
@@ -234,7 +233,7 @@ impl App {
             object.set_rotation_from_matrix(&basis);
         }
 
-        self.heli.apply(&mut self.camera);
+        self.controls.apply(&mut self.camera);
     }
 
     fn render(&mut self) {
@@ -244,21 +243,31 @@ impl App {
 
     /// The window title, which is also what documents a screenshot.
     fn title(&self) -> String {
-        let pose = self.heli.current();
+        let pose = self.controls.current();
         format!(
-            "heli — {} — R {:.0} — u {:.0} v {:.0} alt {:.0} — yaw {:.0}° pitch {:.0}°{}",
-            match self.heli.mode() {
+            "heli — {} — R {:.0} — u {:.0} v {:.0} d {:.0} — az {:.0}° polar {:.0}°{}",
+            match self.controls.mode() {
                 Mode::Free => "free",
                 Mode::Overview => "overview",
             },
-            self.heli.ground().radius(),
+            self.controls.ground().radius(),
             pose.u,
             pose.v,
-            pose.altitude,
-            pose.yaw * RAD2DEG,
-            pose.pitch * RAD2DEG,
-            if self.heli.rested() { " — rest" } else { "" },
+            pose.distance,
+            pose.azimuth * RAD2DEG,
+            pose.polar * RAD2DEG,
+            if self.controls.rested() {
+                " — rest"
+            } else {
+                ""
+            },
         )
+    }
+
+    /// Pixel coordinates in the window to normalised device coordinates.
+    fn ndc(&self, at: (f64, f64)) -> (f64, f64) {
+        let (width, height) = (self.size.0 as f64, self.size.1.max(1) as f64);
+        (at.0 / width * 2.0 - 1.0, 1.0 - at.1 / height * 2.0)
     }
 }
 
@@ -270,11 +279,23 @@ struct Gpu {
     format: wgpu::TextureFormat,
 }
 
-/// A press, so a release can tell a click from a drag.
+/// A press, so a release can tell a click from a drag, and a move can tell a
+/// grab from an orbit.
 struct Press {
     button: MouseButton,
+    /// `true` when the press orbits: the right button, or the left with ctrl.
+    rotating: bool,
     at: (f64, f64),
     moved: f64,
+}
+
+/// The arrow keys currently down.
+#[derive(Default)]
+struct Held {
+    up: bool,
+    down: bool,
+    left: bool,
+    right: bool,
 }
 
 struct Heli {
@@ -283,7 +304,8 @@ struct Heli {
     gpu: Option<Gpu>,
     requested_size: (u32, u32),
 
-    held: HashSet<char>,
+    held: Held,
+    modifiers: Modifiers,
     cursor: (f64, f64),
     press: Option<Press>,
     last_frame: Instant,
@@ -299,7 +321,8 @@ impl Heli {
             app: None,
             gpu: None,
             requested_size: size,
-            held: HashSet::new(),
+            held: Held::default(),
+            modifiers: Modifiers::default(),
             cursor: (0.0, 0.0),
             press: None,
             last_frame: Instant::now(),
@@ -377,17 +400,15 @@ impl Heli {
     /// The click that lands on a pane in the overview.
     fn click(&mut self, at: (f64, f64)) {
         let Some(app) = self.app.as_mut() else { return };
-        if app.heli.mode() != Mode::Overview {
+        if app.controls.mode() != Mode::Overview {
             return;
         }
 
-        let (width, height) = (app.size.0 as f64, app.size.1 as f64);
-        let ndc_x = at.0 / width * 2.0 - 1.0;
-        let ndc_y = 1.0 - at.1 / height * 2.0;
+        let (ndc_x, ndc_y) = app.ndc(at);
 
-        if let Some(index) = app.heli.pick(&app.panes, ndc_x, ndc_y, &app.camera) {
+        if let Some(index) = app.controls.pick(&app.panes, ndc_x, ndc_y, &app.camera) {
             let pane = app.panes[index];
-            app.heli.focus_pane(&pane);
+            app.controls.focus_pane(&pane);
         }
     }
 }
@@ -449,8 +470,9 @@ impl ApplicationHandler for Heli {
         self.last_frame = Instant::now();
 
         println!(
-            "heli — W A S D fly, Q/E and the wheel climb, drag to look, \
-             [ ] curl the ground, P flattens it, Home resets, Tab is the overview, Esc quits"
+            "heli — drag the ground, right-drag (or ctrl-drag) to orbit, \
+             the wheel zooms to the pointer, the arrows pan, [ ] curl the ground, \
+             P flattens it, Home resets, Tab is the overview, Esc quits"
         );
 
         window.request_redraw();
@@ -469,22 +491,19 @@ impl ApplicationHandler for Heli {
                     Key::Named(NamedKey::Tab) if pressed && !event.repeat => {
                         let aspect = app.aspect();
                         let panes = app.panes.clone();
-                        app.heli.toggle_overview(&panes, FOV, aspect);
+                        app.controls.toggle_overview(&panes, FOV, aspect);
                     }
-                    Key::Named(NamedKey::Home) if pressed => app.heli.reset(),
+                    Key::Named(NamedKey::Home) if pressed => app.controls.reset(),
+                    Key::Named(NamedKey::ArrowUp) => self.held.up = pressed,
+                    Key::Named(NamedKey::ArrowDown) => self.held.down = pressed,
+                    Key::Named(NamedKey::ArrowLeft) => self.held.left = pressed,
+                    Key::Named(NamedKey::ArrowRight) => self.held.right = pressed,
                     Key::Character(text) => {
                         for character in text.chars().flat_map(char::to_lowercase) {
                             match character {
-                                'w' | 'a' | 's' | 'd' | 'q' | 'e' => {
-                                    if pressed {
-                                        self.held.insert(character);
-                                    } else {
-                                        self.held.remove(&character);
-                                    }
-                                }
-                                '[' if pressed => app.heli.scale_radius(1.25),
-                                ']' if pressed => app.heli.scale_radius(1.0 / 1.25),
-                                'p' if pressed => app.heli.set_radius(1e7),
+                                '[' if pressed => app.controls.scale_radius(1.25),
+                                ']' if pressed => app.controls.scale_radius(1.0 / 1.25),
+                                'p' if pressed => app.controls.set_radius(1e7),
                                 _ => {}
                             }
                         }
@@ -492,6 +511,8 @@ impl ApplicationHandler for Heli {
                     _ => {}
                 }
             }
+
+            WindowEvent::ModifiersChanged(modifiers) => self.modifiers = modifiers,
 
             WindowEvent::Resized(size) => {
                 let size = (size.width.max(1), size.height.max(1));
@@ -504,18 +525,27 @@ impl ApplicationHandler for Heli {
 
             WindowEvent::MouseInput { state, button, .. } => match state {
                 ElementState::Pressed => {
+                    let rotating = button == MouseButton::Right
+                        || (button == MouseButton::Left && self.modifiers.state().control_key());
                     self.press = Some(Press {
                         button,
+                        rotating,
                         at: self.cursor,
                         moved: 0.0,
                     });
+                    let cursor = self.cursor;
                     if let Some(app) = self.app.as_mut() {
-                        app.heli.set_dragging(true);
+                        app.controls.set_dragging(true);
+                        if !rotating && button == MouseButton::Left {
+                            let (x, y) = app.ndc(cursor);
+                            app.controls.grab_begin(x, y, &app.camera);
+                        }
                     }
                 }
                 ElementState::Released => {
                     if let Some(app) = self.app.as_mut() {
-                        app.heli.set_dragging(false);
+                        app.controls.set_dragging(false);
+                        app.controls.grab_end();
                     }
                     if let Some(press) = self.press.take() {
                         if press.button == MouseButton::Left && press.moved < 4.0 {
@@ -535,14 +565,21 @@ impl ApplicationHandler for Heli {
                     press.moved += dx.hypot(dy);
                 }
 
-                let dragging = matches!(
-                    self.press.as_ref().map(|press| press.button),
-                    Some(MouseButton::Left) | Some(MouseButton::Right)
-                );
-                if dragging {
-                    if let Some(app) = self.app.as_mut() {
-                        app.heli.look(dx, dy, height);
-                    }
+                let Some((button, rotating)) = self
+                    .press
+                    .as_ref()
+                    .map(|press| (press.button, press.rotating))
+                else {
+                    return;
+                };
+                let cursor = self.cursor;
+                let Some(app) = self.app.as_mut() else { return };
+
+                if rotating {
+                    app.controls.rotate(dx, dy, height);
+                } else if button == MouseButton::Left {
+                    let (x, y) = app.ndc(cursor);
+                    app.controls.grab_move(x, y, &app.camera);
                 }
             }
 
@@ -551,8 +588,10 @@ impl ApplicationHandler for Heli {
                     MouseScrollDelta::LineDelta(_, y) => y as f64,
                     MouseScrollDelta::PixelDelta(p) => p.y / 100.0,
                 };
+                let cursor = self.cursor;
                 if let Some(app) = self.app.as_mut() {
-                    app.heli.climb(steps);
+                    let (x, y) = app.ndc(cursor);
+                    app.controls.dolly(steps, x, y, &app.camera);
                 }
             }
 
@@ -562,8 +601,8 @@ impl ApplicationHandler for Heli {
         }
     }
 
-    /// The held keys are applied here, with the real elapsed time, so flying is
-    /// frame-rate independent; and the frame is only drawn when the controller
+    /// The held arrow keys are applied here, with the real elapsed time, so
+    /// panning is frame-rate independent; and the frame is only drawn when the controller
     /// says something moved.
     fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
         let dt = self.last_frame.elapsed().as_secs_f64().min(0.1);
@@ -571,20 +610,12 @@ impl ApplicationHandler for Heli {
 
         let Some(app) = self.app.as_mut() else { return };
 
-        let axis = |positive: char, negative: char| {
-            f64::from(self.held.contains(&positive)) - f64::from(self.held.contains(&negative))
-        };
-        let forward = axis('w', 's');
-        let right = axis('d', 'a');
-        let climb = axis('e', 'q');
+        let axis = |positive: bool, negative: bool| f64::from(positive) - f64::from(negative);
+        let forward = axis(self.held.up, self.held.down);
+        let right = axis(self.held.right, self.held.left);
+        app.controls.pan(forward, right, dt);
 
-        app.heli.move_ground(forward, right, dt);
-        if climb != 0.0 {
-            // One notch a second while the key is down.
-            app.heli.climb(climb * dt * 8.0);
-        }
-
-        let moved = app.heli.update(dt);
+        let moved = app.controls.update(dt);
         if moved || self.dirty {
             self.dirty = false;
             if let Some(gpu) = &self.gpu {
@@ -602,18 +633,18 @@ fn headless(path: &str, size: (u32, u32), pose: Option<Pose>, radius: Option<f64
     let mut app = App::build(None, size);
 
     if let Some(radius) = radius {
-        app.heli.set_radius(radius);
+        app.controls.set_radius(radius);
     }
     if let Some(pose) = pose {
-        app.heli = Helicopter::new(Ground::new(app.heli.target_radius()), pose);
+        app.controls = MapControls::new(Ground::new(app.controls.target_radius()), pose);
     }
-    app.heli.settle();
+    app.controls.settle();
 
     if overview {
         let aspect = app.aspect();
         let panes = app.panes.clone();
-        app.heli.toggle_overview(&panes, FOV, aspect);
-        app.heli.settle();
+        app.controls.toggle_overview(&panes, FOV, aspect);
+        app.controls.settle();
     }
 
     app.render();
@@ -627,7 +658,8 @@ fn headless(path: &str, size: (u32, u32), pose: Option<Pose>, radius: Option<f64
     println!("wrote {path} ({width}x{height}) — {}", app.title());
 }
 
-const USAGE: &str = "usage: heli [--headless out.png] [--pose u,v,h,yaw_deg,pitch_deg] \
+const USAGE: &str = "usage: heli [--headless out.png] \
+                     [--pose u,v,distance,azimuth_deg,polar_deg] \
                      [--radius R] [--overview] [--size WxH]";
 
 fn main() {
@@ -658,9 +690,9 @@ fn main() {
                 pose = Some(Pose {
                     u: numbers[0],
                     v: numbers[1],
-                    altitude: numbers[2],
-                    yaw: numbers[3] * DEG2RAD,
-                    pitch: numbers[4] * DEG2RAD,
+                    distance: numbers[2],
+                    azimuth: numbers[3] * DEG2RAD,
+                    polar: numbers[4] * DEG2RAD,
                 });
             }
             "--radius" => {
