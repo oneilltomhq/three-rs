@@ -1,4 +1,4 @@
-//! The surface a [`Helicopter`](crate::controls::Helicopter) flies over: a
+//! The surface a [`MapControls`](crate::controls::MapControls) moves over: a
 //! sphere with a distinguished point at the world origin.
 //!
 //! Nothing here is a port of three.js — three.js has no ground — but the frame

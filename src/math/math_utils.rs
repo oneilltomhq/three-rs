@@ -131,7 +131,7 @@ pub(crate) fn js_max(a: f64, b: f64) -> f64 {
 /// Programming Gems 4 chapter 1.10.
 ///
 /// Not a `MathUtils.js` function — three.js has no critically damped spring —
-/// but [`crate::controls::Helicopter`] damps every one of its fields with it,
+/// but [`crate::controls::MapControls`] damps every one of its fields with it,
 /// and the point of the port is the *feel* of camera-controls, which is this
 /// polynomial approximation of `exp( -omega * dt )` and nothing else.
 ///
