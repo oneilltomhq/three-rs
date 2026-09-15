@@ -49,6 +49,10 @@ winit = "0.30.8"
 name = "viewer"
 path = "src/bin/viewer.rs"
 
+[[bin]]
+name = "heli"
+path = "src/bin/heli.rs"
+
 [[example]]
 name = "webgpu_depth_texture"
 path = "examples/webgpu_depth_texture.rs"
