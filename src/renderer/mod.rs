@@ -57,11 +57,18 @@ use crate::textures::{
 /// frame evicts nothing and still builds nothing.
 const CACHE_GRACE_RENDERS: u64 = 4;
 
-/// A cached GPU buffer that is filled exactly once — `range()`'s random draw —
-/// with the same `render()`-clock stamp the material states carry.
+/// A cached GPU buffer that is filled exactly once — `range()`'s random draw,
+/// or one upload of an `InstancedBufferAttribute`'s array — with the same
+/// `render()`-clock stamp the material states carry.
 struct BufferEntry {
     buffer: wgpu::Buffer,
     last_used: u64,
+    /// For a `BufferSource::Attribute`: the very array the buffer holds. The
+    /// buffer is reused while the node still points at this `Rc`, and rebuilt
+    /// the moment it points at another — a caller that rewrites its geometry
+    /// (`BatchedText::sync`) does so by making new arrays. Holding the `Rc`
+    /// also keeps its address from being reused under the cache (issue #58).
+    data: Option<Rc<Vec<f32>>>,
 }
 
 /// One geometry's uploaded buffers, plus the liveness signal the cache sweep
@@ -1896,14 +1903,32 @@ impl Renderer {
                 )
             }
             BufferSource::Attribute(data) => {
-                // `DynamicDrawUsage`: the caller owns the array and rewrites it
-                // on `sync()`, so this is re-uploaded per draw rather than
-                // cached like `range()`.
-                self.create_buffer_init(
+                // Uploaded once per array, not once per draw: the caller
+                // rewrites its geometry by handing the node a new `Rc`
+                // (`BatchedText::sync`), so the same `Rc` means the same
+                // bytes. Re-creating this per draw, sized to the batch's
+                // capacity, was most of a frame (issue #89).
+                let renders = self.renders;
+                if let Some(entry) = self.buffers.get_mut(&id) {
+                    if entry.data.as_ref().is_some_and(|d| Rc::ptr_eq(d, data)) {
+                        entry.last_used = renders;
+                        return entry.buffer.clone();
+                    }
+                }
+                let buffer = self.create_buffer_init(
                     "three-rs instanced attribute",
                     bytemuck::cast_slice(data.as_slice()),
                     usage,
-                )
+                );
+                self.buffers.insert(
+                    id,
+                    BufferEntry {
+                        buffer: buffer.clone(),
+                        last_used: renders,
+                        data: Some(data.clone()),
+                    },
+                );
+                buffer
             }
             BufferSource::Range { min, max } => {
                 let renders = self.renders;
@@ -1928,6 +1953,7 @@ impl Renderer {
                     BufferEntry {
                         buffer: buffer.clone(),
                         last_used: renders,
+                        data: None,
                     },
                 );
                 buffer
