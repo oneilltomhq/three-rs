@@ -1,7 +1,7 @@
 //! Port of `three.js/src/animation/AnimationClip.js`.
 //!
 //! The six `KeyframeTrack` subclasses collapsed into one
-//! [`KeyframeTrack`] + [`TrackValueType`] in this port, so
+//! [`KeyframeTrack`] + [`TrackValueType`](crate::animation::TrackValueType) in this port, so
 //! `getTrackTypeForValueTypeName()` / `parseKeyframeTrack()` live there as
 //! [`KeyframeTrack::parse`]; this module calls into it.
 //!

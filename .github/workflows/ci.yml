@@ -143,12 +143,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --workspace --all-targets
 
-  # `cargo doc` is not yet warning-clean (#10: broken intra-doc links in
-  # src/animation/*). continue-on-error so the job is visible without
-  # blocking merges until #10 lands; flip this to blocking then.
   docs:
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

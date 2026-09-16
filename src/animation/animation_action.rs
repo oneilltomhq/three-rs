@@ -5,9 +5,9 @@
 //! mixer owns the actions in an arena (see
 //! [`crate::animation::animation_mixer`]) and the action never names its mixer.
 //! The two mixer-owned pools an action mutates —
-//! [`BindingPool`](crate::animation::animation_mixer::BindingPool) (Three's
+//! [`BindingPool`] (Three's
 //! `_bindings`, holding the `PropertyMixer`s) and
-//! [`ControlPool`](crate::animation::animation_mixer::ControlPool) (Three's
+//! [`ControlPool`] (Three's
 //! `_controlInterpolants`) — are passed in as arguments to the methods that
 //! need them. Those methods carry a trailing underscore (`reset_`, `warp_`, …);
 //! the un-suffixed names live on `AnimationMixer`, which takes an
