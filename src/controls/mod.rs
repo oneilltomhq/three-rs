@@ -17,7 +17,7 @@
 //!         v: 0.0,
 //!         distance: 160.0,
 //!         azimuth: 0.0,
-//!         polar: std::f64::consts::FRAC_PI_4,
+//!         polar: 0.0,
 //!     },
 //! );
 //!
@@ -32,5 +32,5 @@ mod map_controls;
 pub use ground::{Frame, Ground, MAX_RADIUS, MIN_RADIUS};
 pub use map_controls::{
     MapControls, Mode, Pane, Pose, DRAGGING_SMOOTH_TIME, MAX_DISTANCE, MAX_POLAR, MIN_DISTANCE,
-    MIN_POLAR, REST_THRESHOLD, SMOOTH_TIME,
+    MIN_POLAR, PANE_LIFT, REST_THRESHOLD, SMOOTH_TIME,
 };

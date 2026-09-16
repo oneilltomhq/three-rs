@@ -52,10 +52,9 @@ const PAN_SPEED: f64 = 0.4;
 
 /// The polar angle the overview looks down at.
 const OVERVIEW_POLAR: f64 = MIN_POLAR;
-/// How far a [`MapControls::focus_pane`] sits from the pane's ground point.
-const FOCUS_DISTANCE: f64 = 30.0;
-/// And at what tilt.
-const FOCUS_POLAR: f64 = 60.0 * DEG2RAD;
+/// How far a pane floats above the ground, so that it is not z-fighting the
+/// surface it lies on.
+pub const PANE_LIFT: f64 = 0.05;
 
 /// The overview fit leaves this much of the NDC square as margin —
 /// `fitToBox`'s padding, expressed the way a projection test wants it.
@@ -109,12 +108,12 @@ pub enum Mode {
     Overview,
 }
 
-/// One upright rectangle standing on the ground, for the overview to fit and
-/// the pointer to pick.
+/// One rectangle lying flat on the ground, face up, for the overview to fit
+/// and the pointer to pick.
 ///
-/// Its centre is `height / 2` along the ground normal above
-/// [`Ground::point`]`( u, v )`, its width runs along the frame's `east` and it
-/// faces `-north`.
+/// Its centre is [`PANE_LIFT`] along the ground normal above
+/// [`Ground::point`]`( u, v )`, its width runs along the frame's `east`, its
+/// height along `north`, so its top edge is the northern one.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Pane {
     pub u: f64,
@@ -489,7 +488,7 @@ impl MapControls {
 
             panes.iter().all(|pane| {
                 let frame = self.ground.frame(pane.u, pane.v);
-                let centre = lifted(&frame, pane.height * 0.5);
+                let centre = lifted(&frame, PANE_LIFT);
                 let mut to_eye = Vector3::ZERO;
                 to_eye.sub_vectors(&eye, &centre);
                 if to_eye.dot(&frame.normal) <= 0.0 {
@@ -567,16 +566,19 @@ impl MapControls {
     }
 
     /// Drops onto one pane: the orbit target moves to the pane's ground point,
-    /// `30` units out and tilted `60°` off the normal, facing north. The pose
-    /// becomes the one a later [`MapControls::toggle_overview`] would return
-    /// to, and the controller flies to it exactly as leaving the overview does.
-    pub fn focus_pane(&mut self, pane: &Pane) {
+    /// straight down with north up, at the distance that fills the view with
+    /// the pane — [`MapControls::fit_distance`] of that one pane, against
+    /// `camera_fov` and `aspect`. The pose becomes the one a later
+    /// [`MapControls::toggle_overview`] would return to, and the controller
+    /// flies to it exactly as leaving the overview does.
+    pub fn focus_pane(&mut self, pane: &Pane, camera_fov: f64, aspect: f64) {
+        let distance = self.fit_distance(&[*pane], pane.u, pane.v, 0.0, camera_fov, aspect);
         let pose = Pose {
             u: pane.u,
             v: pane.v,
-            distance: FOCUS_DISTANCE,
+            distance,
             azimuth: 0.0,
-            polar: FOCUS_POLAR,
+            polar: OVERVIEW_POLAR,
         }
         .clamped();
 
@@ -593,7 +595,7 @@ impl MapControls {
 
     /// The world-space centre of a pane.
     pub fn pane_centre(&self, pane: &Pane) -> Vector3 {
-        lifted(&self.ground.frame(pane.u, pane.v), pane.height * 0.5)
+        lifted(&self.ground.frame(pane.u, pane.v), PANE_LIFT)
     }
 
     // ------------------------------------------------------------ the picking
@@ -779,15 +781,16 @@ fn lifted(frame: &Frame, distance: f64) -> Vector3 {
     point
 }
 
-/// A pane's four corners, anticlockwise as seen from its front.
+/// A pane's four corners in polygon order: south-west, south-east,
+/// north-east, north-west.
 fn corners(frame: &Frame, pane: &Pane) -> [Vector3; 4] {
-    let centre = lifted(frame, pane.height * 0.5);
+    let centre = lifted(frame, PANE_LIFT);
     let (half_width, half_height) = (pane.width * 0.5, pane.height * 0.5);
 
     let corner = |along: f64, up: f64| {
         let mut point = centre;
         point.add_scaled_vector(&frame.east, along * half_width);
-        point.add_scaled_vector(&frame.normal, up * half_height);
+        point.add_scaled_vector(&frame.north, up * half_height);
         point
     };
 
@@ -930,7 +933,7 @@ mod tests {
             v: 0.0,
             distance: 160.0,
             azimuth: 0.0,
-            polar: 45.0 * DEG2RAD,
+            polar: 0.0,
         }
     }
 
@@ -1025,7 +1028,12 @@ mod tests {
     #[test]
     fn a_rightward_drag_orbits_clockwise_from_above() {
         let ground = Ground::new(1e7);
-        let mut controls = MapControls::new(ground, start());
+        // Tilted, so that the orbit has a sense and the tip has room to go.
+        let tilted = Pose {
+            polar: 45.0 * DEG2RAD,
+            ..start()
+        };
+        let mut controls = MapControls::new(ground, tilted);
         controls.settle();
 
         let mut camera = camera();
@@ -1339,9 +1347,7 @@ mod tests {
     /// half field of view — then divided by the `0.9` NDC margin.
     ///
     /// The extents are the pane centres' span plus a whole pane: `6 * 50 + 16`
-    /// across, `6 * 50 + 9` along — the second because a pane standing `9` tall
-    /// is `9` closer to the camera at its top, which costs exactly as much
-    /// frame as `9` more ground would.
+    /// across, `6 * 50 + 9` along, since the panes lie flat.
     #[test]
     fn the_flat_fit_matches_the_closed_form() {
         let panes = demo_panes();
@@ -1394,7 +1400,7 @@ mod tests {
         // Focused on the middle pane, which is index 24 of the 7×7.
         let middle = panes[24];
         let mut controls = MapControls::new(ground, start());
-        controls.focus_pane(&middle);
+        controls.focus_pane(&middle, FOV, ASPECT);
         controls.settle();
 
         let mut camera = camera();
@@ -1408,29 +1414,52 @@ mod tests {
     }
 
     #[test]
-    fn focus_pane_puts_the_pane_on_the_optical_axis() {
+    fn focus_pane_fills_the_view_with_the_pane() {
         let panes = demo_panes();
         let pane = panes[10];
         let mut controls = MapControls::new(Ground::new(1e7), start());
-        controls.focus_pane(&pane);
+        controls.focus_pane(&pane, FOV, ASPECT);
         controls.settle();
 
         assert_eq!(controls.target().u, pane.u);
         assert_eq!(controls.target().v, pane.v);
-        assert_eq!(controls.target().distance, FOCUS_DISTANCE);
+        assert_eq!(controls.target().polar, OVERVIEW_POLAR);
+        assert_eq!(controls.target().azimuth, 0.0);
 
         let mut camera = camera();
         controls.apply(&mut camera);
 
-        // The camera looks at the orbit target, which *is* the pane's foot.
-        let foot = controls.ground().point(pane.u, pane.v);
-        let (x, y, _) = project(&mut camera, foot).expect("the pane is in front");
-        assert!(x.abs() < 1e-9 && y.abs() < 1e-9, "off axis at ( {x}, {y} )");
+        // The camera looks straight down at the pane's centre — to within the
+        // `MIN_POLAR` tilt that keeps `lookAt` out of its degeneracy.
+        let centre = controls.pane_centre(&pane);
+        let (x, y, _) = project(&mut camera, centre).expect("the pane is in front");
+        assert!(x.abs() < 1e-4 && y.abs() < 1e-4, "off axis at ( {x}, {y} )");
 
-        // And the whole pane is comfortably in shot.
+        // Every corner is inside the fit margin, and the widest one is on it:
+        // the pane fills the view.
+        let mut widest = 0.0_f64;
         for corner in controls.pane_corners(&pane) {
             let (x, y, _) = project(&mut camera, corner).expect("in front");
-            assert!(x.abs() < 0.9 && y.abs() < 0.9, "corner at ( {x}, {y} )");
+            assert!(
+                x.abs() <= FIT_MARGIN + 1e-6 && y.abs() <= FIT_MARGIN + 1e-6,
+                "corner at ( {x}, {y} )"
+            );
+            widest = widest.max(x.abs()).max(y.abs());
+        }
+        assert!(
+            (widest - FIT_MARGIN).abs() < 1e-3,
+            "the pane stops at {widest}, not at the margin {FIT_MARGIN}"
+        );
+
+        // And north is up: the northern corners are the top ones. (Which side
+        // east lands on is the frame's handedness, and is not asserted here.)
+        let [_, _, north_east, north_west] = controls.pane_corners(&pane);
+        for corner in [north_east, north_west] {
+            let (x, y, _) = project(&mut camera, corner).expect("in front");
+            assert!(
+                y > 0.0,
+                "a northern corner at ( {x}, {y} ) is not at the top"
+            );
         }
     }
 

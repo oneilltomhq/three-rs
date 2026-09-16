@@ -1,5 +1,5 @@
 //! The demo for [`three_rs::controls`]: a map camera over a ground that can be
-//! flat or a small planet, with a wall of panes standing on it.
+//! flat or a small planet, with a grid of panes lying on it.
 //!
 //! ```text
 //! cargo run --release --bin heli
@@ -64,7 +64,7 @@ fn start_pose() -> Pose {
         v: 0.0,
         distance: 160.0,
         azimuth: 0.0,
-        polar: 45.0 * DEG2RAD,
+        polar: 0.0,
     }
 }
 
@@ -216,17 +216,16 @@ impl App {
         }
 
         for (pane, node) in self.panes.iter().zip(&self.pane_nodes) {
-            let frame = self.controls.ground().frame(pane.u, pane.v);
-            let mut position = frame.origin;
-            position.add_scaled_vector(&frame.normal, pane.height * 0.5);
+            let position = self.controls.pane_centre(pane);
 
-            // Local `+Y` is the ground normal and the front faces `-north`, so
-            // local `+Z` is `-north` and local `+X` is `normal × -north`.
-            let mut back = frame.north;
-            back.negate();
-            let side = frame.normal.crossed(&back);
+            // The plane geometry lies in local `XY` and faces `+Z`. Flat on the
+            // ground, face up, top edge north: local `+Z` is the normal, local
+            // `+Y` is `north`, and local `+X` is `north × normal` so that the
+            // basis stays right-handed and the face is not mirrored.
+            let frame = self.controls.ground().frame(pane.u, pane.v);
+            let side = frame.north.crossed(&frame.normal);
             let mut basis = Matrix4::identity();
-            basis.make_basis(&side, &frame.normal, &back);
+            basis.make_basis(&side, &frame.north, &frame.normal);
 
             let mut object = node.borrow_mut();
             object.position = position;
@@ -408,7 +407,8 @@ impl Heli {
 
         if let Some(index) = app.controls.pick(&app.panes, ndc_x, ndc_y, &app.camera) {
             let pane = app.panes[index];
-            app.controls.focus_pane(&pane);
+            let (fov, aspect) = (app.camera.fov, app.aspect());
+            app.controls.focus_pane(&pane, fov, aspect);
         }
     }
 }
