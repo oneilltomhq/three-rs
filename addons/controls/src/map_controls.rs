@@ -689,7 +689,7 @@ impl MapControls {
         ndc_y: f64,
         camera: &PerspectiveCamera,
     ) -> Option<(f64, f64)> {
-        let mut scratch = camera.clone();
+        let mut scratch = scratch(camera);
         place(&self.ground, pose, &mut scratch);
 
         let (origin, direction) = cursor_ray(&scratch, ndc_x, ndc_y);
@@ -746,6 +746,25 @@ impl MapControls {
 }
 
 // ------------------------------------------------------------------ helpers
+
+/// A camera with `camera`'s projection and its own node. `PerspectiveCamera`
+/// is `Clone`, but its `Node` is an `Rc`, so a clone *shares* the scene-graph
+/// node — and `place` on such a clone moved the real camera to the pose
+/// being tried. Every wheel notch and drag step then rendered one frame at
+/// the target instead of the damped current, until the next `update` put it
+/// back: a stutter only while the input was flowing, in everything but what
+/// hangs off the camera itself.
+fn scratch(camera: &PerspectiveCamera) -> PerspectiveCamera {
+    let mut scratch = PerspectiveCamera::new(camera.fov, camera.aspect, camera.near, camera.far);
+    scratch.zoom = camera.zoom;
+    scratch.focus = camera.focus;
+    scratch.view = camera.view;
+    scratch.film_gauge = camera.film_gauge;
+    scratch.film_offset = camera.film_offset;
+    scratch.coordinate_system = camera.coordinate_system;
+    scratch.update_projection_matrix();
+    scratch
+}
 
 /// `MapControls::apply` for an arbitrary pose, so the overview's fit and the
 /// cursor picking can try one on a scratch camera without disturbing the
@@ -1102,6 +1121,26 @@ mod tests {
     /// positive rotation about `+Y` *appears* anticlockwise from the tip of the
     /// axis, so clockwise is the negative sense and
     /// `cross( before, after ) · normal` must come out below zero.
+    /// A wheel notch solves the target on a scratch camera. The real camera
+    /// must not move until `apply`: it used to, because a cloned
+    /// `PerspectiveCamera` shares its node.
+    #[test]
+    fn solving_the_target_leaves_the_camera_where_apply_put_it() {
+        let mut controls = MapControls::new(Ground::new(1e7), start());
+        controls.settle();
+        let mut camera = camera();
+        controls.apply(&mut camera);
+        let before = camera.node.borrow().matrix_world.elements;
+
+        controls.dolly(1.0, 0.4, 0.3, &camera);
+        controls.grab_begin(0.2, 0.1, &camera);
+        controls.grab_move(-0.2, 0.1, &camera);
+        let _ = controls.pick(&demo_panes(), 0.0, 0.0, &camera);
+
+        assert_eq!(camera.node.borrow().matrix_world.elements, before);
+        assert_ne!(controls.target().distance, controls.current().distance);
+    }
+
     #[test]
     fn a_rightward_drag_orbits_clockwise_from_above() {
         let ground = Ground::new(1e7);
