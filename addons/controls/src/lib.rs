@@ -36,8 +36,8 @@ mod map_controls;
 mod smooth_damp;
 
 pub use ground::{Frame, Ground, MAX_RADIUS, MIN_RADIUS};
-pub use smooth_damp::smooth_damp;
 pub use map_controls::{
     Damping, MapControls, Mode, Pane, Pose, DRAGGING_SMOOTH_TIME, MAX_DISTANCE, MAX_POLAR,
     MIN_DISTANCE, MIN_POLAR, PANE_LIFT, REST_THRESHOLD, SMOOTH_TIME, WHEEL_SMOOTH_TIME,
 };
+pub use smooth_damp::smooth_damp;

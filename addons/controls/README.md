@@ -8,7 +8,8 @@ three.js' `src/`. `MapControls` is in the spirit of three.js' addon of that
 name — left-drag pans, right-drag orbits, the wheel zooms to the pointer — but
 it is this crate's own design, and its `smooth_damp` is
 [camera-controls](https://github.com/yomotsu/camera-controls)' rather than
-three.js'.
+three.js'. Its constants are not camera-controls' defaults, which read as hefty;
+`map_controls.rs` records what was tried and why.
 
 - **`Ground`** — one sphere formula. `R = 1e7` reads as a plane; a small `R` is a
   planet. Ground coordinate `( 0, 0 )` is the world origin at every radius, so

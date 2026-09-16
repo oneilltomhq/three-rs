@@ -8,10 +8,20 @@
 //! ground coordinates; and the ground is a sphere, so when its radius comes
 //! down the same controls are Google Earth rather than Google Maps.
 //!
-//! The damping is yomotsu's `camera-controls`
-//! ([`smooth_damp`](crate::math::math_utils::smooth_damp), `smoothTime = 0.25`,
-//! `draggingSmoothTime = 0.125`, `restThreshold = 0.01`), applied field by
-//! field exactly as `CameraControls.update()` does.
+//! The damping is yomotsu's `camera-controls` ([`smooth_damp`](crate::smooth_damp),
+//! a critically damped spring), applied field by field exactly as
+//! `CameraControls.update()` does. The constants are not camera-controls'
+//! defaults. Those were tried first and read as hefty: a spring tracking a
+//! moving target lags it by about `velocity × smoothTime`, so
+//! `draggingSmoothTime = 0.125` puts the ground an eighth of a second behind
+//! the pointer, and a wheel notch eased over `smoothTime = 0.25` at `0.95` a
+//! notch is both slow and small. The alternative — `OrbitControls.enableDamping`,
+//! a 5%-per-frame decay of the pending delta — is heavier still (a ~0.33 s
+//! time constant at 60 Hz, and frame-rate dependent), so the spring stays and
+//! the numbers change. They were chosen by hand in `heli` with its preset
+//! keys against the defaults. The release glide was left at stock: with a
+//! short drag smooth time there is little velocity left at release for it to
+//! act on, and it mostly shows on Home, Tab and the arrows.
 
 use three_rs::cameras::PerspectiveCamera;
 use three_rs::math::math_utils::{euclidean_modulo, DEG2RAD};
@@ -22,20 +32,19 @@ use crate::smooth_damp::smooth_damp;
 
 use std::f64::consts::{PI, TAU};
 
-/// `CameraControls.smoothTime`.
+/// `CameraControls.smoothTime`, at its default.
 pub const SMOOTH_TIME: f64 = 0.25;
-/// `CameraControls.draggingSmoothTime`.
-pub const DRAGGING_SMOOTH_TIME: f64 = 0.125;
+/// `CameraControls.draggingSmoothTime`, whose default is `0.125`. See the
+/// module docs for why it is a third of that.
+pub const DRAGGING_SMOOTH_TIME: f64 = 0.04;
 /// `CameraControls.restThreshold`.
 pub const REST_THRESHOLD: f64 = 0.01;
 /// The smooth time a wheel notch is damped with. `camera-controls` has no such
-/// thing — a notch eases over `smoothTime` — and `SMOOTH_TIME` keeps that; it
-/// is a separate knob so a zoom can be made to snap without the release glide
-/// going with it.
-pub const WHEEL_SMOOTH_TIME: f64 = SMOOTH_TIME;
+/// thing — a notch eases over `smoothTime` — but a zoom wants to snap where a
+/// release glide wants to ease, so it is its own knob.
+pub const WHEEL_SMOOTH_TIME: f64 = 0.1;
 
-/// The three smooth times, so a demo can A/B the feel. Every one is
-/// `CameraControls`' default until told otherwise.
+/// The feel: three smooth times and the wheel's step, so a demo can A/B them.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Damping {
     /// While nothing is held: the release glide, and the arrows.
@@ -45,7 +54,7 @@ pub struct Damping {
     /// For a while after a wheel notch, when nothing is held.
     pub wheel_smooth_time: f64,
     /// One wheel notch, as a factor on the distance: the sensitivity, as
-    /// distinct from the ease. `0.95` is `OrbitControls`' `zoomSpeed = 1`.
+    /// distinct from the ease.
     pub dolly_step: f64,
 }
 
@@ -83,8 +92,9 @@ pub const MIN_POLAR: f64 = 1e-3;
 pub const MAX_POLAR: f64 = 85.0 * DEG2RAD;
 
 /// One notch of the wheel, as a factor on the distance. `OrbitControls`'
-/// `zoomSpeed = 1` works out at `0.95` per notch.
-pub const DOLLY_STEP: f64 = 0.95;
+/// `zoomSpeed = 1` works out at `0.95` per notch, which with a snappier ease
+/// reads as too little; this is about five of those.
+pub const DOLLY_STEP: f64 = 0.75;
 /// Arrow-key pan, in ground units per second per unit of distance.
 const PAN_SPEED: f64 = 0.4;
 

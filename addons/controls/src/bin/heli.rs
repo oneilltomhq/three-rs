@@ -21,7 +21,6 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Instant;
 
-use three_rs_controls::{Damping, Ground, MapControls, Mode, Pane, Pose};
 use three_rs::core::{BufferAttribute, BufferGeometry};
 use three_rs::materials::Side;
 use three_rs::math::math_utils::{DEG2RAD, RAD2DEG};
@@ -29,6 +28,7 @@ use three_rs::{
     plane_geometry, Color, LineSegments, Matrix4, Mesh, MeshBasicNodeMaterial, Node,
     PerspectiveCamera, Renderer, RendererParameters, Scene, Vector3,
 };
+use three_rs_controls::{Damping, Ground, MapControls, Mode, Pane, Pose};
 
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, Modifiers, MouseButton, MouseScrollDelta, WindowEvent};
@@ -644,9 +644,9 @@ impl ApplicationHandler for Heli {
 
 // ---------------------------------------------------------------- the feel
 
-const PRESETS: &str = "presets, stock first — \
-    drag smooth: 1 0.125  2 0.06  3 0.02 | release glide: a 0.25  s 0.15  d 0.08 | \
-    wheel smooth: 8 0.25  9 0.12  0 0.05 | wheel step: h 0.95  j 0.85  k 0.75";
+const PRESETS: &str = "presets, camera-controls' stock first, ours marked * — \
+    drag smooth: 1 0.125  2 0.04*  3 0.02 | release glide: a 0.25*  s 0.15  d 0.08 | \
+    wheel smooth: 8 0.25  9 0.1*  0 0.05 | wheel step: h 0.95  j 0.85  k 0.75*";
 
 /// The command line that reproduces `damping`, for pasting back.
 fn feel(damping: &Damping, frame_latency: u32) -> String {
@@ -666,7 +666,7 @@ fn preset(key: char, mut damping: Damping) -> Option<(&'static str, Damping)> {
         '1' | '2' | '3' => {
             damping.dragging_smooth_time = match key {
                 '1' => 0.125,
-                '2' => 0.06,
+                '2' => 0.04,
                 _ => 0.02,
             };
             "drag smooth"
@@ -682,7 +682,7 @@ fn preset(key: char, mut damping: Damping) -> Option<(&'static str, Damping)> {
         '8' | '9' | '0' => {
             damping.wheel_smooth_time = match key {
                 '8' => 0.25,
-                '9' => 0.12,
+                '9' => 0.1,
                 _ => 0.05,
             };
             "wheel smooth"
@@ -738,8 +738,8 @@ const USAGE: &str = "usage: heli [--headless out.png] \
                      [--radius R] [--overview] [--size WxH] \
                      [--smooth S] [--drag-smooth S] [--wheel-smooth S] \
                      [--dolly-step F] [--frame-latency N]\n\
-       the feel: smooth times in seconds (camera-controls' 0.25 / 0.125 / 0.25), \
-                     the distance factor per wheel notch (0.95, smaller is more sensitive) \
+       the feel: smooth times in seconds (0.25 / 0.04 / 0.1), \
+                     the distance factor per wheel notch (0.75, smaller is more sensitive) \
                      and the swapchain's frame latency (2)";
 
 fn main() {
