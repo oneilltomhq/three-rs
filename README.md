@@ -137,21 +137,29 @@ measured; add `--screenshot out.png` to keep the last frame. It also writes
 the count ladder sits beside the time one. The e2e harness writes the same
 strip per rung (`steady-strip.png`) and one for the geometry-mutation case.
 
-### Controls
+### Addons
 
-`three_rs::controls::MapControls` is three.js' `MapControls` over a `Ground`: a
-sphere whose north pole is the world origin, so `R = 1e7` is a plane and a small
-R a planet, with no separate case. The orbit target is a point *on* the ground,
-the camera never rolls — `up` is the ground normal — and every field is damped
-with `math_utils::smooth_damp`, a port of camera-controls' `smoothDamp`.
+three.js keeps its controls, loaders and helpers out of core, in
+`examples/jsm/` — exported as `three/addons/*`, importing from `three` like any
+user, and without core's stability promise. `addons/` is the same tier here:
+workspace crates that depend on `three-rs` and are not ports of anything in
+three.js' `src/`.
 
-`cargo run --release --bin heli` is the demo: **left-drag** grabs the ground,
+`addons/controls/` is `three-rs-controls`: a `MapControls` in the spirit of
+three.js' addon of that name, over a `Ground` — a sphere whose north pole is the
+world origin, so `R = 1e7` is a plane and a small R a planet, with no separate
+case. The orbit target is a point *on* the ground, the camera never rolls —
+`up` is the ground normal — and every field is damped with `smooth_damp`, a port
+of camera-controls' `smoothDamp`.
+
+`cargo run --release -p three-rs-controls --bin heli` is the demo: **left-drag** grabs the ground,
 **right-drag** (or **ctrl**-drag) orbits, the **wheel** zooms to the pointer,
 the **arrows** pan, **[** **]** curl the ground and **P** flattens it, **Home**
 resets, **Tab** is the overview (click a pane to drop onto it), **Esc** quits.
 
 ```sh
-cargo run --release --bin heli -- --headless shots/heli-sphere-high.png \
+cargo run --release -p three-rs-controls --bin heli -- \
+    --headless addons/controls/shots/heli-sphere-high.png \
     --radius 300 --pose 0,0,800,0,20 [--overview] [--size 1600x1000]
 ```
 
@@ -188,15 +196,15 @@ they looked for.
 ```
 src/            the three-rs crate, mirroring three.js's src/ tree
   math core cameras geometries lights loaders materials objects textures animation
-  controls/     the map camera and its ground (not a three.js port)
   nodes/        TSL nodes and the WGSL NodeBuilder
   renderer/     the wgpu backend: pipelines, bindings, passes, shadows, present
-  bin/viewer.rs bin/heli.rs
+  bin/viewer.rs
 examples/       one file per ported Three example, also compiled into tests/e2e
 tests/          Three's QUnit tests ported per module, plus the e2e harness
 sdf-text/       workspace crate: SDF text and BatchedText, with its examples and gates
+addons/         workspace crates in the role of three.js' examples/jsm: not ports
+  controls/     three-rs-controls — the map camera, its ground, and the heli demo
 docs/           design notes per subsystem and per-example progress logs
-shots/          headless frames from bin/heli.rs, one per ground and pose
 rung0/          how the grader was calibrated
 ```
 

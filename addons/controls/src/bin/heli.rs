@@ -1,10 +1,10 @@
-//! The demo for [`three_rs::controls`]: a map camera over a ground that can be
+//! The demo for [`three_rs_controls`]: a map camera over a ground that can be
 //! flat or a small planet, with a grid of panes lying on it.
 //!
 //! ```text
-//! cargo run --release --bin heli
-//! cargo run --release --bin heli -- --headless shots/heli-plane-low.png
-//! cargo run --release --bin heli -- --headless shots/x.png --radius 300 --overview
+//! cargo run --release -p three-rs-controls --bin heli
+//! cargo run --release -p three-rs-controls --bin heli -- --headless shots/heli-plane-low.png
+//! cargo run --release -p three-rs-controls --bin heli -- --headless shots/x.png --radius 300 --overview
 //! ```
 //!
 //! Left-drag grabs the ground and pulls it under the cursor, right-drag (or
@@ -21,7 +21,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Instant;
 
-use three_rs::controls::{Damping, Ground, MapControls, Mode, Pane, Pose};
+use three_rs_controls::{Damping, Ground, MapControls, Mode, Pane, Pose};
 use three_rs::core::{BufferAttribute, BufferGeometry};
 use three_rs::materials::Side;
 use three_rs::math::math_utils::{DEG2RAD, RAD2DEG};

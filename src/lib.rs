@@ -7,7 +7,6 @@
 
 pub mod animation;
 pub mod cameras;
-pub mod controls;
 pub mod core;
 pub mod error;
 pub mod geometries;

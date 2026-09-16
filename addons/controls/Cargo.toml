@@ -1,0 +1,30 @@
+[package]
+name = "three-rs-controls"
+version = "0.1.0"
+description = "A map camera over a ground with curvature, for three-rs: MapControls in the spirit of three.js' addon, damped the way camera-controls damps."
+documentation = "https://docs.rs/three-rs-controls"
+readme = "README.md"
+keywords = ["graphics", "3d", "camera", "controls", "threejs"]
+categories = ["rendering", "graphics", "game-development"]
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+exclude = [
+    # The headless frames the README shows; large, and only of interest in the repo.
+    "shots/**",
+    "target/**",
+]
+
+# An addon in the sense of three.js' `examples/jsm/`: this crate depends on
+# `three-rs` the way any user would, and nothing in `three-rs` depends on it.
+[dependencies]
+three-rs = { path = "../..", version = "0.1.2" }
+# The heli demo only.
+wgpu = { version = "30.0.1", default-features = false, features = ["std", "vulkan", "wgsl"] }
+winit = "0.30.8"
+
+[[bin]]
+name = "heli"
+path = "src/bin/heli.rs"

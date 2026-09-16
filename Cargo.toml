@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "sdf-text"]
+members = [".", "sdf-text", "addons/controls"]
 
 [workspace.package]
 edition = "2021"
@@ -48,10 +48,6 @@ winit = "0.30.8"
 [[bin]]
 name = "viewer"
 path = "src/bin/viewer.rs"
-
-[[bin]]
-name = "heli"
-path = "src/bin/heli.rs"
 
 [[example]]
 name = "webgpu_depth_texture"

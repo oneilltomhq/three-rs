@@ -1,4 +1,9 @@
-//! A camera over a ground, and the ground.
+//! `three-rs-controls` — a camera over a ground, and the ground.
+//!
+//! An addon in the sense of three.js' `examples/jsm/controls/`: it depends on
+//! `three-rs` the way any user would and is not a port of anything in
+//! three.js' `src/`. [`Ground`] and [`MapControls`] are this crate's own
+//! design; [`smooth_damp`] is camera-controls', not three.js'.
 //!
 //! [`Ground`] is a sphere with a distinguished point at the world origin and
 //! arc-length coordinates around it; at its largest radius it is a plane to the
@@ -8,7 +13,7 @@
 //!
 //! ```no_run
 //! use three_rs::cameras::PerspectiveCamera;
-//! use three_rs::controls::{Ground, MapControls, Pose};
+//! use three_rs_controls::{Ground, MapControls, Pose};
 //!
 //! let mut controls = MapControls::new(
 //!     Ground::new(1e7),
@@ -28,8 +33,10 @@
 
 mod ground;
 mod map_controls;
+mod smooth_damp;
 
 pub use ground::{Frame, Ground, MAX_RADIUS, MIN_RADIUS};
+pub use smooth_damp::smooth_damp;
 pub use map_controls::{
     Damping, MapControls, Mode, Pane, Pose, DRAGGING_SMOOTH_TIME, MAX_DISTANCE, MAX_POLAR,
     MIN_DISTANCE, MIN_POLAR, PANE_LIFT, REST_THRESHOLD, SMOOTH_TIME, WHEEL_SMOOTH_TIME,

@@ -1,11 +1,11 @@
-//! The surface a [`MapControls`](crate::controls::MapControls) moves over: a
+//! The surface a [`MapControls`](crate::MapControls) moves over: a
 //! sphere with a distinguished point at the world origin.
 //!
 //! Nothing here is a port of three.js — three.js has no ground — but the frame
 //! it hands out is exactly what `Object3D.up` and `Camera.lookAt()` want, so a
 //! camera driven from it never rolls.
 
-use crate::math::Vector3;
+use three_rs::math::Vector3;
 
 /// The smallest ground radius. Below this the curvature is so tight that a
 /// camera at the altitude ceiling is further from the surface than the surface

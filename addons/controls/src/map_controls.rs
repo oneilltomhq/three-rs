@@ -13,10 +13,12 @@
 //! `draggingSmoothTime = 0.125`, `restThreshold = 0.01`), applied field by
 //! field exactly as `CameraControls.update()` does.
 
-use crate::cameras::PerspectiveCamera;
-use crate::controls::ground::{Frame, Ground};
-use crate::math::math_utils::{euclidean_modulo, smooth_damp, DEG2RAD};
-use crate::math::Vector3;
+use three_rs::cameras::PerspectiveCamera;
+use three_rs::math::math_utils::{euclidean_modulo, DEG2RAD};
+use three_rs::math::Vector3;
+
+use crate::ground::{Frame, Ground};
+use crate::smooth_damp::smooth_damp;
 
 use std::f64::consts::{PI, TAU};
 
@@ -972,7 +974,7 @@ fn damp_angle(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::math::RAD2DEG;
+    use three_rs::math::RAD2DEG;
 
     const FOV: f64 = 60.0;
     const WIDTH: f64 = 1600.0;

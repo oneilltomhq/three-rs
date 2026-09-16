@@ -60,6 +60,7 @@ jobs:
         run: |
           cargo test -p three-rs --lib
           cargo test -p sdf-text --lib
+          cargo test -p three-rs-controls --lib
 
       # Every other `tests/*.rs` file that does not create a `Renderer`.
       # Excluded on purpose:
