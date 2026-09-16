@@ -22,7 +22,7 @@ three.js'. Its constants are not camera-controls' defaults, which read as hefty;
   ctrl-drag tilts and orbits, the wheel zooms to the cursor, the arrows pan, and
   `Tab` is an overview fitted to a set of `Pane`s, from which a click drops onto
   one. Every field is damped with `smooth_damp`; `Damping` holds the smooth
-  times so a demo can A/B the feel.
+  times, for an app that wants a different feel.
 
 ```
 cargo test -p three-rs-controls --lib             # no GPU

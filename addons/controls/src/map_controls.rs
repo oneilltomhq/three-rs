@@ -18,8 +18,8 @@
 //! notch is both slow and small. The alternative — `OrbitControls.enableDamping`,
 //! a 5%-per-frame decay of the pending delta — is heavier still (a ~0.33 s
 //! time constant at 60 Hz, and frame-rate dependent), so the spring stays and
-//! the numbers change. They were chosen by hand in `heli` with its preset
-//! keys against the defaults. The release glide was left at stock: with a
+//! the numbers change. They were chosen by hand in `heli` against the
+//! defaults (commit 88c8c26 has the A/B harness). The release glide was left at stock: with a
 //! short drag smooth time there is little velocity left at release for it to
 //! act on, and it mostly shows on Home, Tab and the arrows.
 
@@ -44,7 +44,21 @@ pub const REST_THRESHOLD: f64 = 0.01;
 /// release glide wants to ease, so it is its own knob.
 pub const WHEEL_SMOOTH_TIME: f64 = 0.1;
 
-/// The feel: three smooth times and the wheel's step, so a demo can A/B them.
+/// The feel: three smooth times and the wheel's step. `camera-controls`
+/// exposes `smoothTime` and `draggingSmoothTime` as properties for the same
+/// reason — an app tunes the feel for itself:
+///
+/// ```
+/// use three_rs_controls::{Damping, Ground, MapControls, Pose};
+///
+/// let mut controls = MapControls::new(Ground::default(), Pose {
+///     u: 0.0, v: 0.0, distance: 160.0, azimuth: 0.0, polar: 0.0,
+/// });
+/// controls.set_damping(Damping {
+///     dragging_smooth_time: 0.125, // camera-controls' stock
+///     ..Damping::default()
+/// });
+/// ```
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Damping {
     /// While nothing is held: the release glide, and the arrows.
