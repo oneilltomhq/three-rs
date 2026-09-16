@@ -329,12 +329,12 @@ impl MapControls {
     ///
     /// Dragging right swings the camera clockwise as seen from above the
     /// target, and dragging down tips it overhead: `_rotateLeft` subtracts
-    /// from `theta` and `_rotateUp` subtracts from `phi`, and with the ground
-    /// frame's `azimuth` measured toward east those two come out as `+dx` and
-    /// `-dy` here. See `a_rightward_drag_orbits_clockwise_from_above`.
+    /// from `theta` and `_rotateUp` subtracts from `phi`, and so do these,
+    /// since `azimuth` is `theta` in the ground's right-handed frame. See
+    /// `a_rightward_drag_orbits_clockwise_from_above`.
     pub fn rotate(&mut self, dx: f64, dy: f64, height: f64) {
         let height = height.max(1.0);
-        self.target.azimuth = wrap_pi(self.target.azimuth + TAU * dx / height);
+        self.target.azimuth = wrap_pi(self.target.azimuth - TAU * dx / height);
         self.target.polar = (self.target.polar - TAU * dy / height).clamp(MIN_POLAR, MAX_POLAR);
     }
 
@@ -361,12 +361,9 @@ impl MapControls {
     /// camera over the ground at `0.4 * distance` units a second, so the ground
     /// goes by at the same *apparent* speed however far out the camera is.
     ///
-    /// **Direction.** The brief says "along azimuth-rotated north and east".
-    /// North it is; east is not, because `east = +X`, `north = +Z`,
-    /// `normal = +Y` is a *left*-handed triple, so a camera looking north has
-    /// its screen-right along `forward × up = +Z × +Y = -X`, i.e. along
-    /// *minus* east. Arrow keys that pan the view the way the arrow points win
-    /// over the transcription, as they did in the flight model. See the PR.
+    /// Along azimuth-rotated north and east: the frame is right-handed, so a
+    /// camera looking north has east on its right, and the arrows pan the view
+    /// the way they point.
     pub fn pan(&mut self, forward: f64, right: f64, dt: f64) {
         if forward == 0.0 && right == 0.0 {
             return;
@@ -376,9 +373,9 @@ impl MapControls {
         let (sin, cos) = self.target.azimuth.sin_cos();
 
         // Screen-forward in ground coordinates is `( -sin, cos )` and
-        // screen-right is `( -cos, -sin )`.
-        self.target.u += speed * (forward * -sin + right * -cos);
-        self.target.v += speed * (forward * cos + right * -sin);
+        // screen-right is `( cos, sin )`.
+        self.target.u += speed * (forward * -sin + right * cos);
+        self.target.v += speed * (forward * cos + right * sin);
     }
 
     /// The radius the ground is damped toward, clamped to the ground's range.
@@ -850,7 +847,7 @@ fn ground_coordinates(hit: Vector3, centre: Vector3, radius: f64) -> (f64, f64) 
     }
 
     let d = radius * horizontal.atan2(q.y);
-    (d * q.x / horizontal, d * q.z / horizontal)
+    (d * q.x / horizontal, -d * q.z / horizontal)
 }
 
 /// The ground point at a frame, lifted `distance` along its normal.
@@ -1094,16 +1091,17 @@ mod tests {
         let position = Vector3::new(elements[12], elements[13], elements[14]);
         let forward = Vector3::new(-elements[8], -elements[9], -elements[10]);
 
-        assert!(position.z < 0.0, "the camera is not south of the target");
+        // North is `-Z`, so south of the target is `+Z`.
+        assert!(position.z > 0.0, "the camera is not south of the target");
         assert!(position.x.abs() < 1e-9);
-        assert!(forward.z > 0.0, "the camera is not looking north");
+        assert!(forward.z < 0.0, "the camera is not looking north");
     }
 
     /// `OrbitControls`' rotate sense. A rightward drag turns the camera
     /// clockwise about the target's ground normal as seen from above it —
-    /// positive rotation about `+Y` carries `+Z` to `+X` and *appears*
-    /// anticlockwise from the tip of the axis, so clockwise is the negative
-    /// sense and `cross( before, after ) · normal` must come out below zero.
+    /// positive rotation about `+Y` *appears* anticlockwise from the tip of the
+    /// axis, so clockwise is the negative sense and
+    /// `cross( before, after ) · normal` must come out below zero.
     #[test]
     fn a_rightward_drag_orbits_clockwise_from_above() {
         let ground = Ground::new(1e7);
@@ -1360,11 +1358,10 @@ mod tests {
         assert!((controls.target().v - PAN_SPEED * 160.0).abs() < 1e-12);
         assert!(controls.target().u.abs() < 1e-12);
 
-        // Facing north (`+Z`), screen-right is `-X`, i.e. `-u`: the frame is
-        // left-handed, and the arrow is read as "pan the view right".
+        // Facing north, screen-right is east, `+u`.
         let mut controls = MapControls::new(Ground::new(1e7), start());
         controls.pan(0.0, 1.0, 1.0);
-        assert!((controls.target().u - -PAN_SPEED * 160.0).abs() < 1e-12);
+        assert!((controls.target().u - PAN_SPEED * 160.0).abs() < 1e-12);
     }
 
     #[test]
@@ -1530,16 +1527,10 @@ mod tests {
             "the pane stops at {widest}, not at the margin {FIT_MARGIN}"
         );
 
-        // And north is up: the northern corners are the top ones. (Which side
-        // east lands on is the frame's handedness, and is not asserted here.)
-        let [_, _, north_east, north_west] = controls.pane_corners(&pane);
-        for corner in [north_east, north_west] {
-            let (x, y, _) = project(&mut camera, corner).expect("in front");
-            assert!(
-                y > 0.0,
-                "a northern corner at ( {x}, {y} ) is not at the top"
-            );
-        }
+        // North is up and east is right: the north-east corner is top-right.
+        let [_, _, north_east, _] = controls.pane_corners(&pane);
+        let (x, y, _) = project(&mut camera, north_east).expect("in front");
+        assert!(x > 0.0 && y > 0.0, "north-east corner at ( {x}, {y} )");
     }
 
     /// A ray that misses the ground leaves the target where it is.

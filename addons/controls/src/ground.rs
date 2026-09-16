@@ -23,8 +23,11 @@ const EPSILON: f64 = 1e-3;
 /// An orthonormal frame on the ground: where a point is and which way is
 /// along-the-surface east, along-the-surface north, and up.
 ///
-/// `east`, `north` and `normal` are unit vectors and mutually perpendicular.
-/// At the ground origin they are `+X`, `+Z` and `+Y`, whatever the radius.
+/// `east`, `north` and `normal` are unit vectors, mutually perpendicular and
+/// right-handed: `east × north = normal`, as `x × y = z` on a map with east
+/// along `x` and north along `y`. At the ground origin they are `+X`, `-Z` and
+/// `+Y`, whatever the radius — three.js' own convention, where a camera at
+/// `+Z` looking down `-Z` with `up = +Y` has `+X` on its right.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Frame {
     /// The point on the surface, in world space.
@@ -43,7 +46,7 @@ pub struct Frame {
 ///
 /// Ground coordinates `( u, v )` are arc lengths from that origin: the
 /// exponential map of the sphere at the origin. `u` runs east, `v` runs north,
-/// and as the radius grows `point( u, v )` tends to `( u, 0, v )`.
+/// and as the radius grows `point( u, v )` tends to `( u, 0, -v )`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Ground {
     radius: f64,
@@ -87,7 +90,7 @@ impl Ground {
     /// ```text
     /// d   = sqrt( u² + v² )
     /// dir = ( u, v ) / d
-    /// p   = centre + R * ( sin( d / R ) * ( dir.u, 0, dir.v )
+    /// p   = centre + R * ( sin( d / R ) * ( dir.u, 0, -dir.v )
     ///                    + cos( d / R ) * ( 0, 1, 0 ) )
     /// ```
     ///
@@ -109,7 +112,7 @@ impl Ground {
         Vector3::new(
             horizontal * (u / d),
             -2.0 * r * half * half,
-            horizontal * (v / d),
+            -horizontal * (v / d),
         )
     }
 
@@ -125,15 +128,15 @@ impl Ground {
         let a = d / self.radius;
         let (sin, cos) = (a.sin(), a.cos());
 
-        Vector3::new(sin * (u / d), cos, sin * (v / d))
+        Vector3::new(sin * (u / d), cos, -sin * (v / d))
     }
 
     /// The orthonormal [`Frame`] at ground coordinate `( u, v )`.
     ///
     /// `east` is the central difference of [`Ground::point`] in `u`, made
     /// perpendicular to the exact normal by Gram-Schmidt; `north` is
-    /// `east × normal`, which is the order that comes out `+Z` at the origin
-    /// (`+X × +Y = +Z`).
+    /// `normal × east`, which completes the right-handed triple
+    /// (`+Y × +X = -Z` at the origin).
     pub fn frame(&self, u: f64, v: f64) -> Frame {
         let origin = self.point(u, v);
         let normal = self.normal(u, v);
@@ -148,7 +151,7 @@ impl Ground {
         east.add_scaled_vector(&normal, -along);
         east.normalize();
 
-        let north = east.crossed(&normal);
+        let north = normal.crossed(&east);
 
         Frame {
             origin,
@@ -196,7 +199,7 @@ mod tests {
             let frame = Ground::new(radius).frame(0.0, 0.0);
             close_vector(frame.origin, Vector3::ZERO, 1e-12, "origin");
             close_vector(frame.east, Vector3::new(1.0, 0.0, 0.0), 1e-9, "east");
-            close_vector(frame.north, Vector3::new(0.0, 0.0, 1.0), 1e-9, "north");
+            close_vector(frame.north, Vector3::new(0.0, 0.0, -1.0), 1e-9, "north");
             close_vector(frame.normal, Vector3::new(0.0, 1.0, 0.0), 1e-12, "normal");
         }
     }
@@ -224,7 +227,7 @@ mod tests {
             let mut v = -500.0;
             while v <= 500.0 {
                 let p = ground.point(u, v);
-                close_vector(p, Vector3::new(u, 0.0, v), 0.1, &format!("( {u}, {v} )"));
+                close_vector(p, Vector3::new(u, 0.0, -v), 0.1, &format!("( {u}, {v} )"));
                 v += 25.0;
             }
             u += 25.0;
@@ -248,8 +251,8 @@ mod tests {
                 close(f.east.dot(&f.north), 0.0, 1e-9, "east · north");
                 close(f.east.dot(&f.normal), 0.0, 1e-9, "east · normal");
                 close(f.north.dot(&f.normal), 0.0, 1e-9, "north · normal");
-                // And right-handed in the order that made `north` come out `+Z`.
-                close_vector(f.east.crossed(&f.normal), f.north, 1e-9, "east × normal");
+                // And right-handed: `east × north = normal`.
+                close_vector(f.east.crossed(&f.north), f.normal, 1e-9, "east × north");
             }
         }
     }
