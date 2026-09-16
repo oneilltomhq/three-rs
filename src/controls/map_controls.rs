@@ -26,6 +26,42 @@ pub const SMOOTH_TIME: f64 = 0.25;
 pub const DRAGGING_SMOOTH_TIME: f64 = 0.125;
 /// `CameraControls.restThreshold`.
 pub const REST_THRESHOLD: f64 = 0.01;
+/// The smooth time a wheel notch is damped with. `camera-controls` has no such
+/// thing — a notch eases over `smoothTime` — and `SMOOTH_TIME` keeps that; it
+/// is a separate knob so a zoom can be made to snap without the release glide
+/// going with it.
+pub const WHEEL_SMOOTH_TIME: f64 = SMOOTH_TIME;
+
+/// The three smooth times, so a demo can A/B the feel. Every one is
+/// `CameraControls`' default until told otherwise.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Damping {
+    /// While nothing is held: the release glide, and the arrows.
+    pub smooth_time: f64,
+    /// While a mouse button is held.
+    pub dragging_smooth_time: f64,
+    /// For a while after a wheel notch, when nothing is held.
+    pub wheel_smooth_time: f64,
+    /// One wheel notch, as a factor on the distance: the sensitivity, as
+    /// distinct from the ease. `0.95` is `OrbitControls`' `zoomSpeed = 1`.
+    pub dolly_step: f64,
+}
+
+impl Default for Damping {
+    fn default() -> Self {
+        Self {
+            smooth_time: SMOOTH_TIME,
+            dragging_smooth_time: DRAGGING_SMOOTH_TIME,
+            wheel_smooth_time: WHEEL_SMOOTH_TIME,
+            dolly_step: DOLLY_STEP,
+        }
+    }
+}
+
+/// How long after a wheel notch `wheel_smooth_time` stays selected, as a
+/// multiple of it: long enough for the notch to settle, so a zoom that starts
+/// crisp does not finish soft.
+const WHEEL_WINDOW: f64 = 3.0;
 
 /// Below this difference a field is put on its target and its velocity zeroed,
 /// so a settled controller is bit-stable and [`MapControls::update`] can report
@@ -46,7 +82,7 @@ pub const MAX_POLAR: f64 = 85.0 * DEG2RAD;
 
 /// One notch of the wheel, as a factor on the distance. `OrbitControls`'
 /// `zoomSpeed = 1` works out at `0.95` per notch.
-const DOLLY_STEP: f64 = 0.95;
+pub const DOLLY_STEP: f64 = 0.95;
 /// Arrow-key pan, in ground units per second per unit of distance.
 const PAN_SPEED: f64 = 0.4;
 
@@ -151,6 +187,9 @@ pub struct MapControls {
     return_pose: Option<Pose>,
     start: Pose,
     dragging: bool,
+    damping: Damping,
+    /// Seconds left in which a wheel notch selects `wheel_smooth_time`.
+    wheel_window: f64,
     /// The ground coordinates of the point that was under the cursor when the
     /// left button went down.
     grabbed: Option<(f64, f64)>,
@@ -170,8 +209,18 @@ impl MapControls {
             return_pose: None,
             start,
             dragging: false,
+            damping: Damping::default(),
+            wheel_window: 0.0,
             grabbed: None,
         }
+    }
+
+    pub fn damping(&self) -> Damping {
+        self.damping
+    }
+
+    pub fn set_damping(&mut self, damping: Damping) {
+        self.damping = damping;
     }
 
     /// The ground as it is *now*, with the radius the damping has reached.
@@ -269,9 +318,10 @@ impl MapControls {
     /// the distance alone.
     pub fn dolly(&mut self, steps: f64, ndc_x: f64, ndc_y: f64, camera: &PerspectiveCamera) {
         let before = self.ground_under(&self.target, ndc_x, ndc_y, camera);
+        self.wheel_window = WHEEL_WINDOW * self.damping.wheel_smooth_time;
 
-        self.target.distance =
-            (self.target.distance * DOLLY_STEP.powf(steps)).clamp(MIN_DISTANCE, MAX_DISTANCE);
+        self.target.distance = (self.target.distance * self.damping.dolly_step.powf(steps))
+            .clamp(MIN_DISTANCE, MAX_DISTANCE);
 
         if let Some(anchor) = before {
             if let Some((u, v)) = self.solve_target(self.target, anchor, ndc_x, ndc_y, camera) {
@@ -334,10 +384,13 @@ impl MapControls {
         }
 
         let smooth_time = if self.dragging {
-            DRAGGING_SMOOTH_TIME
+            self.damping.dragging_smooth_time
+        } else if self.wheel_window > 0.0 {
+            self.damping.wheel_smooth_time
         } else {
-            SMOOTH_TIME
+            self.damping.smooth_time
         };
+        self.wheel_window = (self.wheel_window - dt).max(0.0);
 
         let mut moved = false;
 

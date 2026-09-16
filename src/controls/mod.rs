@@ -31,6 +31,6 @@ mod map_controls;
 
 pub use ground::{Frame, Ground, MAX_RADIUS, MIN_RADIUS};
 pub use map_controls::{
-    MapControls, Mode, Pane, Pose, DRAGGING_SMOOTH_TIME, MAX_DISTANCE, MAX_POLAR, MIN_DISTANCE,
-    MIN_POLAR, PANE_LIFT, REST_THRESHOLD, SMOOTH_TIME,
+    Damping, MapControls, Mode, Pane, Pose, DRAGGING_SMOOTH_TIME, MAX_DISTANCE, MAX_POLAR,
+    MIN_DISTANCE, MIN_POLAR, PANE_LIFT, REST_THRESHOLD, SMOOTH_TIME, WHEEL_SMOOTH_TIME,
 };

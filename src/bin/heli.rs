@@ -21,7 +21,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Instant;
 
-use three_rs::controls::{Ground, MapControls, Mode, Pane, Pose};
+use three_rs::controls::{Damping, Ground, MapControls, Mode, Pane, Pose};
 use three_rs::core::{BufferAttribute, BufferGeometry};
 use three_rs::materials::Side;
 use three_rs::math::math_utils::{DEG2RAD, RAD2DEG};
@@ -302,6 +302,10 @@ struct Heli {
     app: Option<App>,
     gpu: Option<Gpu>,
     requested_size: (u32, u32),
+    /// The feel, from the command line: three smooth times and the swapchain's
+    /// frame latency, so the numbers can be A/B'd without a rebuild.
+    damping: Damping,
+    frame_latency: u32,
 
     held: Held,
     modifiers: Modifiers,
@@ -314,12 +318,14 @@ struct Heli {
 }
 
 impl Heli {
-    fn new(size: (u32, u32)) -> Self {
+    fn new(size: (u32, u32), damping: Damping, frame_latency: u32) -> Self {
         Self {
             instance: None,
             app: None,
             gpu: None,
             requested_size: size,
+            damping,
+            frame_latency,
             held: Held::default(),
             modifiers: Modifiers::default(),
             cursor: (0.0, 0.0),
@@ -341,7 +347,7 @@ impl Heli {
             alpha_mode: wgpu::CompositeAlphaMode::Auto,
             width: app.size.0.max(1),
             height: app.size.1.max(1),
-            desired_maximum_frame_latency: 2,
+            desired_maximum_frame_latency: self.frame_latency,
             present_mode: wgpu::PresentMode::AutoVsync,
         };
         gpu.surface.configure(app.renderer.device(), &config);
@@ -445,7 +451,8 @@ impl ApplicationHandler for Heli {
 
         let size = window.inner_size();
         let size = (size.width.max(1), size.height.max(1));
-        let app = App::build(Some(instance.clone()), size);
+        let mut app = App::build(Some(instance.clone()), size);
+        app.controls.set_damping(self.damping);
 
         let caps = surface.get_capabilities(app.renderer.adapter());
         let preferred = caps.formats[0];
@@ -469,11 +476,13 @@ impl ApplicationHandler for Heli {
         self.configure_surface();
         self.last_frame = Instant::now();
 
+        println!("feel: {}", feel(&self.damping, self.frame_latency));
         println!(
             "heli — drag the ground, right-drag (or ctrl-drag) to orbit, \
              the wheel zooms to the pointer, the arrows pan, [ ] curl the ground, \
              P flattens it, Home resets, Tab is the overview, Esc quits"
         );
+        println!("{PRESETS}");
 
         window.request_redraw();
     }
@@ -504,6 +513,14 @@ impl ApplicationHandler for Heli {
                                 '[' if pressed => app.controls.scale_radius(1.25),
                                 ']' if pressed => app.controls.scale_radius(1.0 / 1.25),
                                 'p' if pressed => app.controls.set_radius(1e7),
+                                c if pressed && !event.repeat => {
+                                    if let Some((what, damping)) = preset(c, app.controls.damping())
+                                    {
+                                        app.controls.set_damping(damping);
+                                        self.damping = damping;
+                                        println!("{what}: {}", feel(&damping, self.frame_latency));
+                                    }
+                                }
                                 _ => {}
                             }
                         }
@@ -625,6 +642,64 @@ impl ApplicationHandler for Heli {
     }
 }
 
+// ---------------------------------------------------------------- the feel
+
+const PRESETS: &str = "presets, stock first — \
+    drag smooth: 1 0.125  2 0.06  3 0.02 | release glide: a 0.25  s 0.15  d 0.08 | \
+    wheel smooth: 8 0.25  9 0.12  0 0.05 | wheel step: h 0.95  j 0.85  k 0.75";
+
+/// The command line that reproduces `damping`, for pasting back.
+fn feel(damping: &Damping, frame_latency: u32) -> String {
+    format!(
+        "--smooth {} --drag-smooth {} --wheel-smooth {} --dolly-step {} --frame-latency {}",
+        damping.smooth_time,
+        damping.dragging_smooth_time,
+        damping.wheel_smooth_time,
+        damping.dolly_step,
+        frame_latency
+    )
+}
+
+/// One preset key applied to `damping`: what it changed, and the result.
+fn preset(key: char, mut damping: Damping) -> Option<(&'static str, Damping)> {
+    let what = match key {
+        '1' | '2' | '3' => {
+            damping.dragging_smooth_time = match key {
+                '1' => 0.125,
+                '2' => 0.06,
+                _ => 0.02,
+            };
+            "drag smooth"
+        }
+        'a' | 's' | 'd' => {
+            damping.smooth_time = match key {
+                'a' => 0.25,
+                's' => 0.15,
+                _ => 0.08,
+            };
+            "release glide"
+        }
+        '8' | '9' | '0' => {
+            damping.wheel_smooth_time = match key {
+                '8' => 0.25,
+                '9' => 0.12,
+                _ => 0.05,
+            };
+            "wheel smooth"
+        }
+        'h' | 'j' | 'k' => {
+            damping.dolly_step = match key {
+                'h' => 0.95,
+                'j' => 0.85,
+                _ => 0.75,
+            };
+            "wheel step"
+        }
+        _ => return None,
+    };
+    Some((what, damping))
+}
+
 // ---------------------------------------------------------------- headless
 
 /// One settled frame, written as a PNG. Nothing is damped: the controller is
@@ -660,7 +735,12 @@ fn headless(path: &str, size: (u32, u32), pose: Option<Pose>, radius: Option<f64
 
 const USAGE: &str = "usage: heli [--headless out.png] \
                      [--pose u,v,distance,azimuth_deg,polar_deg] \
-                     [--radius R] [--overview] [--size WxH]";
+                     [--radius R] [--overview] [--size WxH] \
+                     [--smooth S] [--drag-smooth S] [--wheel-smooth S] \
+                     [--dolly-step F] [--frame-latency N]\n\
+       the feel: smooth times in seconds (camera-controls' 0.25 / 0.125 / 0.25), \
+                     the distance factor per wheel notch (0.95, smaller is more sensitive) \
+                     and the swapchain's frame latency (2)";
 
 fn main() {
     let mut args = std::env::args().skip(1);
@@ -669,9 +749,21 @@ fn main() {
     let mut radius: Option<f64> = None;
     let mut overview = false;
     let mut size = (1600u32, 1000u32);
+    let mut damping = Damping::default();
+    let mut frame_latency = 2u32;
 
     while let Some(arg) = args.next() {
+        let mut number = |what: &str| -> f64 {
+            args.next()
+                .and_then(|text| text.parse().ok())
+                .unwrap_or_else(|| panic!("three-rs heli: {what} takes a number\n{USAGE}"))
+        };
         match arg.as_str() {
+            "--smooth" => damping.smooth_time = number("--smooth"),
+            "--drag-smooth" => damping.dragging_smooth_time = number("--drag-smooth"),
+            "--wheel-smooth" => damping.wheel_smooth_time = number("--wheel-smooth"),
+            "--dolly-step" => damping.dolly_step = number("--dolly-step"),
+            "--frame-latency" => frame_latency = number("--frame-latency") as u32,
             "--headless" => {
                 out = Some(args.next().unwrap_or_else(|| panic!("{USAGE}")));
             }
@@ -727,6 +819,6 @@ fn main() {
     let event_loop = EventLoop::new().expect("three-rs heli: cannot create an event loop");
     event_loop.set_control_flow(ControlFlow::Poll);
     event_loop
-        .run_app(&mut Heli::new(size))
+        .run_app(&mut Heli::new(size, damping, frame_latency))
         .expect("three-rs heli: the event loop failed");
 }
