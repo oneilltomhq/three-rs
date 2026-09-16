@@ -122,7 +122,7 @@ pub enum BindingDesc {
     },
     Buffer {
         name: String,
-        /// The `BufferNode`'s own identity ([`BufferId`], a never-reused
+        /// The `BufferNode`'s own identity ([`BufferId`](crate::nodes::node::BufferId), a never-reused
         /// counter), which is what the renderer keys its GPU buffer on. Two
         /// `range( 0, 1 )` nodes have equal `source`s but must stay two
         /// buffers with two random fills, so dedup is by identity and never by
