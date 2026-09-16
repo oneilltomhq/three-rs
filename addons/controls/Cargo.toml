@@ -21,6 +21,9 @@ exclude = [
 # `three-rs` the way any user would, and nothing in `three-rs` depends on it.
 [dependencies]
 three-rs = { path = "../..", version = "0.1.2" }
+# The heli demo's on-screen legend. Depends on three-rs itself, so this is an
+# addon using another addon, never the other way round.
+sdf-text = { path = "../../sdf-text", version = "0.1.0" }
 # The heli demo only.
 wgpu = { version = "30.0.1", default-features = false, features = ["std", "vulkan", "wgsl"] }
 winit = "0.30.8"

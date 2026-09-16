@@ -152,7 +152,8 @@ case. The orbit target is a point *on* the ground, the camera never rolls —
 `up` is the ground normal — and every field is damped with `smooth_damp`, a port
 of camera-controls' `smoothDamp`.
 
-`cargo run --release -p three-rs-controls --bin heli` is the demo: **left-drag** grabs the ground,
+`cargo run --release -p three-rs-controls --bin heli` is the demo, with its key
+map on screen: **left-drag** grabs the ground,
 **right-drag** (or **ctrl**-drag) orbits, the **wheel** zooms to the pointer,
 the **arrows** pan, **[** **]** curl the ground and **P** flattens it, **Home**
 resets, **Tab** is the overview (click a pane to drop onto it), **Esc** quits.
@@ -160,7 +161,7 @@ resets, **Tab** is the overview (click a pane to drop onto it), **Esc** quits.
 ```sh
 cargo run --release -p three-rs-controls --bin heli -- \
     --headless addons/controls/shots/heli-sphere-high.png \
-    --radius 300 --pose 0,0,800,0,20 [--overview] [--size 1600x1000]
+    --radius 300 --pose 0,0,800,0,20 [--overview] [--size 1600x1000] [--no-legend]
 ```
 
 ### Running the examples and the e2e grader

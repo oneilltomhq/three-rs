@@ -29,16 +29,19 @@ cargo test -p three-rs-controls --lib             # no GPU
 cargo run --release -p three-rs-controls --bin heli
 ```
 
-`heli` is the demo. **left-drag** grabs the ground, **right-drag** (or
-**ctrl**-drag) orbits, the **wheel** zooms to the pointer, the **arrows** pan,
-**[** **]** curl the ground and **P** flattens it, **Home** resets, **Tab** is
-the overview (click a pane to drop onto it), **Esc** quits. `--headless out.png`
-renders one frame:
+`heli` is the demo, and its key map is on screen. It opens on a planet of
+`R = 500`: tilt with a right-drag and the horizon is in shot; left-drag and what
+was under the cursor stays there as the ball turns under you. **left-drag**
+grabs the ground, **right-drag** (or **ctrl**-drag) orbits, the **wheel** zooms
+to the pointer, the **arrows** pan, **[** **]** curl the ground and **P**
+flattens it, **Home** resets, **Tab** is the overview (click a pane to drop onto
+it), **Esc** quits. `--headless out.png` renders one frame, `--no-legend` without
+the key map:
 
 ```sh
 cargo run --release -p three-rs-controls --bin heli -- \
     --headless shots/heli-sphere-high.png \
-    --radius 300 --pose 0,0,800,0,20 [--overview] [--size 1600x1000]
+    --radius 300 --pose 0,0,800,0,20 [--overview] [--size 1600x1000] [--no-legend]
 ```
 
 `shots/` holds six such frames: two grounds by three poses.

@@ -21,6 +21,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Instant;
 
+use sdf_text::{Anchor, BatchedText, BatchedTextOptions, LineHeight, Text, VectorFont};
 use three_rs::core::{BufferAttribute, BufferGeometry};
 use three_rs::materials::Side;
 use three_rs::math::math_utils::{DEG2RAD, RAD2DEG};
@@ -57,6 +58,20 @@ const PANE_ROWS: i32 = 7;
 const PANE_SPACING: f64 = 50.0;
 const PANE_WIDTH: f64 = 16.0;
 const PANE_HEIGHT: f64 = 9.0;
+
+/// The legend sits this far in front of the lens — just past the near plane,
+/// so that the ground at `MIN_DISTANCE` still passes under it.
+const LEGEND_DISTANCE: f64 = 2.0;
+/// The legend's type size and margin, in pixels of the window.
+const LEGEND_PX: f64 = 15.0;
+const LEGEND_MARGIN_PX: f64 = 18.0;
+/// The keys column is this wide.
+const LEGEND_KEYS_PX: f64 = 96.0;
+
+const LEGEND_KEYS: &str = "left-drag\nright-drag\nwheel\narrows\n[  ]\nP\nTab\nHome\nEsc";
+const LEGEND_ACTIONS: &str = "grab the ground\norbit  (or ctrl-drag)\nzoom to the pointer\npan\n\
+                              curl the ground  /  flatten it\nflat\n\
+                              overview  —  click a pane to drop onto it\nreset\nquit";
 
 /// Eight colours, cycling by pane index.
 const PANE_COLOURS: [u32; 8] = [
@@ -114,6 +129,104 @@ fn grid_positions(ground: &Ground) -> Vec<f32> {
     positions
 }
 
+/// The key map and a status line, as `sdf-text` riding on the camera: three
+/// members of one `BatchedText` parented to the camera's node, so they sit at
+/// a fixed offset in front of the lens whatever the pose. three.js' examples
+/// do this with a `<div id="info">` over the canvas; there is no DOM here.
+struct Legend {
+    batched: BatchedText,
+    keys: usize,
+    actions: usize,
+    status: usize,
+}
+
+impl Legend {
+    /// `sdf-text` bundles Roboto; from a workspace checkout it is two
+    /// directories over. Without it there is no legend, and the demo says so.
+    fn font() -> Option<VectorFont> {
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../sdf-text/tests/assets/Roboto-Regular.ttf");
+        let bytes = match std::fs::read(&path) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                println!("heli: no legend — {}: {e}", path.display());
+                return None;
+            }
+        };
+        VectorFont::parse(bytes, "Roboto-Regular.ttf").ok()
+    }
+
+    fn new() -> Option<Self> {
+        let font = Self::font()?;
+        let mut batched = BatchedText::new(3, 1024, BatchedTextOptions::default());
+        batched.set_font(Rc::new(font));
+        // Over the ground, not in it: the legend is a HUD.
+        {
+            let mut node = batched.node().borrow_mut();
+            node.render_order = 1.0;
+            if let Some(mesh) = node.mesh_mut() {
+                if let Some(material) = mesh.material.as_mut() {
+                    material.depth_test = false;
+                }
+            }
+        }
+
+        let mut member = |text: &str, anchor_y: &str, colour: u32| {
+            let mut t = Text::new();
+            t.set_text(text);
+            t.set_anchor_x(Anchor::named("left"));
+            t.set_anchor_y(Anchor::named(anchor_y));
+            t.set_line_height(LineHeight::Factor(1.35));
+            let id = batched.add_text(t) as usize;
+            batched.set_color_at(id, Color::from_hex(colour));
+            id
+        };
+        let keys = member(LEGEND_KEYS, "top", 0xabb2bf);
+        let actions = member(LEGEND_ACTIONS, "top", 0xe6e6e6);
+        let status = member("", "bottom", 0x7f848e);
+
+        Some(Self {
+            batched,
+            keys,
+            actions,
+            status,
+        })
+    }
+
+    /// Places the three members for this view: the visible half-height at
+    /// `LEGEND_DISTANCE` is `d tan( fov / 2 )`, and everything in pixels is
+    /// scaled through it.
+    fn layout(&mut self, fov: f64, size: (u32, u32)) {
+        let half_height = LEGEND_DISTANCE * (fov * DEG2RAD * 0.5).tan();
+        let half_width = half_height * size.0 as f64 / size.1.max(1) as f64;
+        let per_px = 2.0 * half_height / size.1.max(1) as f64;
+        let (font_size, margin) = (LEGEND_PX * per_px, LEGEND_MARGIN_PX * per_px);
+
+        let mut place = |id: usize, x: f64, y: f64| {
+            if let Some(text) = self.batched.text_at_mut(id) {
+                text.set_font_size(font_size);
+            }
+            if let Some(node) = self.batched.member_node(id) {
+                node.borrow_mut().position.set(x, y, -LEGEND_DISTANCE);
+            }
+        };
+        let (left, top, bottom) = (
+            -half_width + margin,
+            half_height - margin,
+            -half_height + margin,
+        );
+        place(self.keys, left, top);
+        place(self.actions, left + LEGEND_KEYS_PX * per_px, top);
+        place(self.status, left, bottom);
+    }
+
+    fn set_status(&mut self, status: &str) {
+        if let Some(text) = self.batched.text_at_mut(self.status) {
+            text.set_text(status);
+        }
+    }
+}
+
 struct App {
     renderer: Renderer,
     scene: Scene,
@@ -122,6 +235,7 @@ struct App {
     panes: Vec<Pane>,
     grid: Node,
     pane_nodes: Vec<Node>,
+    legend: Option<Legend>,
     /// The radius the grid's vertices were last built for.
     grid_radius: f64,
     size: (u32, u32),
@@ -131,7 +245,7 @@ impl App {
     /// Builds the scene on `instance` — the window's, so the surface and the
     /// renderer share an adapter — or on the renderer's own for the headless
     /// path.
-    fn build(instance: Option<wgpu::Instance>, size: (u32, u32)) -> Self {
+    fn build(instance: Option<wgpu::Instance>, size: (u32, u32), with_legend: bool) -> Self {
         let ground = Ground::new(START_RADIUS);
         let controls = MapControls::new(ground, start_pose());
         let panes = demo_panes();
@@ -170,6 +284,13 @@ impl App {
         let camera =
             PerspectiveCamera::new(FOV, size.0 as f64 / size.1.max(1) as f64, 1.0, 50_000.0);
 
+        // The camera joins the scene so that the legend can hang off it.
+        scene.add(&camera.node);
+        let legend = if with_legend { Legend::new() } else { None };
+        if let Some(legend) = &legend {
+            camera.node.add(legend.batched.node());
+        }
+
         let renderer = match instance {
             Some(instance) => {
                 Renderer::with_instance(RendererParameters { antialias: true }, instance)
@@ -186,6 +307,7 @@ impl App {
             panes,
             grid,
             pane_nodes,
+            legend,
             grid_radius: ground.radius(),
             size,
         };
@@ -198,6 +320,9 @@ impl App {
         self.size = (width, height);
         self.camera.aspect = width as f64 / height as f64;
         self.camera.update_projection_matrix();
+        if let Some(legend) = &mut self.legend {
+            legend.layout(FOV, (width, height));
+        }
         self.renderer.set_size(width as f64, height as f64);
     }
 
@@ -238,18 +363,19 @@ impl App {
         }
 
         self.controls.apply(&mut self.camera);
+
+        let status = self.status();
+        if let Some(legend) = &mut self.legend {
+            legend.set_status(&status);
+            legend.batched.sync();
+        }
     }
 
-    fn render(&mut self) {
-        self.sync();
-        self.renderer.render(&mut self.scene, &mut self.camera);
-    }
-
-    /// The window title, which is also what documents a screenshot.
-    fn title(&self) -> String {
+    /// The status line: mode, ground radius and pose.
+    fn status(&self) -> String {
         let pose = self.controls.current();
         format!(
-            "heli — {} — R {:.0} — u {:.0} v {:.0} d {:.0} — az {:.0}° polar {:.0}°{}",
+            "{} — R {:.0} — u {:.0} v {:.0} d {:.0} — az {:.0}° polar {:.0}°{}",
             match self.controls.mode() {
                 Mode::Free => "free",
                 Mode::Overview => "overview",
@@ -264,8 +390,18 @@ impl App {
                 " — rest"
             } else {
                 ""
-            },
+            }
         )
+    }
+
+    fn render(&mut self) {
+        self.sync();
+        self.renderer.render(&mut self.scene, &mut self.camera);
+    }
+
+    /// The window title, which is also what documents a screenshot.
+    fn title(&self) -> String {
+        format!("heli — {}", self.status())
     }
 
     /// Pixel coordinates in the window to normalised device coordinates.
@@ -307,6 +443,7 @@ struct Heli {
     app: Option<App>,
     gpu: Option<Gpu>,
     requested_size: (u32, u32),
+    legend: bool,
 
     held: Held,
     modifiers: Modifiers,
@@ -319,12 +456,13 @@ struct Heli {
 }
 
 impl Heli {
-    fn new(size: (u32, u32)) -> Self {
+    fn new(size: (u32, u32), legend: bool) -> Self {
         Self {
             instance: None,
             app: None,
             gpu: None,
             requested_size: size,
+            legend,
             held: Held::default(),
             modifiers: Modifiers::default(),
             cursor: (0.0, 0.0),
@@ -450,7 +588,7 @@ impl ApplicationHandler for Heli {
 
         let size = window.inner_size();
         let size = (size.width.max(1), size.height.max(1));
-        let app = App::build(Some(instance.clone()), size);
+        let app = App::build(Some(instance.clone()), size, self.legend);
 
         let caps = surface.get_capabilities(app.renderer.adapter());
         let preferred = caps.formats[0];
@@ -634,8 +772,15 @@ impl ApplicationHandler for Heli {
 
 /// One settled frame, written as a PNG. Nothing is damped: the controller is
 /// put on its target pose and rendered once.
-fn headless(path: &str, size: (u32, u32), pose: Option<Pose>, radius: Option<f64>, overview: bool) {
-    let mut app = App::build(None, size);
+fn headless(
+    path: &str,
+    size: (u32, u32),
+    pose: Option<Pose>,
+    radius: Option<f64>,
+    overview: bool,
+    legend: bool,
+) {
+    let mut app = App::build(None, size, legend);
 
     if let Some(radius) = radius {
         app.controls.set_radius(radius);
@@ -665,7 +810,7 @@ fn headless(path: &str, size: (u32, u32), pose: Option<Pose>, radius: Option<f64
 
 const USAGE: &str = "usage: heli [--headless out.png] \
                      [--pose u,v,distance,azimuth_deg,polar_deg] \
-                     [--radius R] [--overview] [--size WxH]";
+                     [--radius R] [--overview] [--size WxH] [--no-legend]";
 
 fn main() {
     let mut args = std::env::args().skip(1);
@@ -674,6 +819,7 @@ fn main() {
     let mut radius: Option<f64> = None;
     let mut overview = false;
     let mut size = (1600u32, 1000u32);
+    let mut legend = true;
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -708,6 +854,7 @@ fn main() {
                 );
             }
             "--overview" => overview = true,
+            "--no-legend" => legend = false,
             "--size" => {
                 let text = args.next().unwrap_or_else(|| panic!("{USAGE}"));
                 let (width, height) = text.split_once('x').unwrap_or_else(|| panic!("{USAGE}"));
@@ -725,13 +872,13 @@ fn main() {
     }
 
     if let Some(out) = out {
-        headless(&out, size, pose, radius, overview);
+        headless(&out, size, pose, radius, overview, legend);
         return;
     }
 
     let event_loop = EventLoop::new().expect("three-rs heli: cannot create an event loop");
     event_loop.set_control_flow(ControlFlow::Poll);
     event_loop
-        .run_app(&mut Heli::new(size))
+        .run_app(&mut Heli::new(size, legend))
         .expect("three-rs heli: the event loop failed");
 }
