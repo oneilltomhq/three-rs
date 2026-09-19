@@ -35,12 +35,15 @@ pub use super::node::TextureSource;
 /// material_side)`. The flat-shading flag belongs in it because
 /// `normalViewGeometry` reads it and `negateOnBackSide()` is skipped when it
 /// is set, so two materials that differ only there must not share a cached
-/// node; the side is there for the same reason.
+/// node; the side is there for the same reason. The fifth flag is
+/// `builder.geometry.hasAttribute( 'tangent' )`, which picks the attribute
+/// tangent frame over the derivative one.
 type NormalViewKey = (
     Option<&'static str>,
     Option<usize>,
     bool,
     Side,
+    bool,
     Option<usize>,
 );
 
@@ -105,6 +108,11 @@ thread_local! {
     /// `builder.material.side` — what `negateOnBackSide()` branches on, and so
     /// part of every cache key that reaches `normalView` or the tangent frame.
     static MATERIAL_SIDE: RefCell<Side> = const { RefCell::new(Side::Front) };
+    /// `builder.geometry.hasAttribute( 'tangent' )` — what `Tangent.js` and
+    /// `Bitangent.js` branch on. With the attribute the frame comes from the
+    /// `tangent` vec4 through `modelViewMatrix`; without it, from the screen
+    /// derivatives of `TangentUtils.js`.
+    static HAS_TANGENT: RefCell<bool> = const { RefCell::new(false) };
     /// `normalViewGeometry`'s node per flat-shading flag — the stand-in for
     /// three.js' per-build `nodeData`, which gives the two forms of the
     /// accessor's `Fn( … ).once()` separate cache entries.
@@ -166,6 +174,17 @@ pub fn with_material_normal<R>(
     NORMAL_VALUE.with(|v| *v.borrow_mut() = previous);
     FLAT_SHADING.with(|v| *v.borrow_mut() = previous_flat);
     MATERIAL_SIDE.with(|v| *v.borrow_mut() = previous_side);
+    out
+}
+
+/// `builder.geometry.hasAttribute( 'tangent' )` for the whole of one
+/// material's setup — installed at the top of `NodeMaterial.setup()`, because
+/// the material's own normal node is built before the flow starts and already
+/// reads the TBN frame.
+pub fn with_tangent_attribute<R>(has_tangent: bool, f: impl FnOnce() -> R) -> R {
+    let previous = HAS_TANGENT.with(|v| v.replace(has_tangent));
+    let out = f();
+    HAS_TANGENT.with(|v| *v.borrow_mut() = previous);
     out
 }
 
@@ -538,6 +557,20 @@ pub fn cross(a: impl Into<NodeRef>, b: impl Into<NodeRef>) -> NodeRef {
     let a = a.into();
     let ty = a.ty();
     math("cross", vec![a, b.into()], ty)
+}
+
+/// `refract( i, n, eta )`.
+pub fn refract(i: impl Into<NodeRef>, n: impl Into<NodeRef>, eta: impl Into<NodeRef>) -> NodeRef {
+    let i = i.into();
+    let ty = i.ty();
+    math("refract", vec![i, n.into(), eta.into()], ty)
+}
+
+/// `ceil( x )`.
+pub fn ceil(x: impl Into<NodeRef>) -> NodeRef {
+    let x = x.into();
+    let ty = x.ty();
+    math("ceil", vec![x], ty)
 }
 
 /// `reflect( i, n )`.
@@ -1020,6 +1053,88 @@ pub fn material_sheen_roughness() -> NodeRef {
 }
 
 /// `materialNormalScale` — a `vec2`.
+/// `materialAnisotropyVector` — `vec2( anisotropy * cos( anisotropyRotation ),
+/// anisotropy * sin( anisotropyRotation ) )`, which three keeps as one uniform
+/// (`MaterialProperties.js` updates it from the two material fields).
+pub fn material_anisotropy_vector() -> NodeRef {
+    uniform(
+        UniformSource::MaterialAnisotropyVector,
+        Type::Vec2,
+        UniformGroup::Object,
+        None,
+    )
+}
+
+/// `materialClearcoat`.
+pub fn material_clearcoat() -> NodeRef {
+    uniform(
+        UniformSource::MaterialClearcoat,
+        Type::F32,
+        UniformGroup::Object,
+        None,
+    )
+}
+
+/// `materialClearcoatRoughness`.
+pub fn material_clearcoat_roughness() -> NodeRef {
+    uniform(
+        UniformSource::MaterialClearcoatRoughness,
+        Type::F32,
+        UniformGroup::Object,
+        None,
+    )
+}
+
+/// `materialTransmission`.
+pub fn material_transmission() -> NodeRef {
+    uniform(
+        UniformSource::MaterialTransmission,
+        Type::F32,
+        UniformGroup::Object,
+        None,
+    )
+}
+
+/// `materialThickness`.
+pub fn material_thickness() -> NodeRef {
+    uniform(
+        UniformSource::MaterialThickness,
+        Type::F32,
+        UniformGroup::Object,
+        None,
+    )
+}
+
+/// `materialAttenuationDistance`.
+pub fn material_attenuation_distance() -> NodeRef {
+    uniform(
+        UniformSource::MaterialAttenuationDistance,
+        Type::F32,
+        UniformGroup::Object,
+        None,
+    )
+}
+
+/// `materialAttenuationColor`.
+pub fn material_attenuation_color() -> NodeRef {
+    uniform(
+        UniformSource::MaterialAttenuationColor,
+        Type::Vec3,
+        UniformGroup::Object,
+        None,
+    )
+}
+
+/// `materialClearcoatNormalScale`.
+pub fn material_clearcoat_normal_scale() -> NodeRef {
+    uniform(
+        UniformSource::MaterialClearcoatNormalScale,
+        Type::Vec2,
+        UniformGroup::Object,
+        None,
+    )
+}
+
 pub fn material_normal_scale() -> NodeRef {
     uniform(
         UniformSource::MaterialNormalScale,
@@ -1636,6 +1751,18 @@ accessor!(
     )
 );
 accessor!(
+    /// `cameraPosition` — the camera's world position, a `vec3` of its own
+    /// rather than a column of `cameraWorldMatrix`, because that is the
+    /// uniform three declares and names.
+    camera_position,
+    uniform(
+        UniformSource::CameraPosition,
+        Type::Vec3,
+        UniformGroup::Render,
+        Some("cameraPosition")
+    )
+);
+accessor!(
     /// `modelWorldMatrix`.
     model_world_matrix,
     uniform(
@@ -2015,6 +2142,7 @@ fn normal_key() -> NormalViewKey {
         value.as_ref().map(|v| v.key()),
         FLAT_SHADING.with(|f| *f.borrow()),
         MATERIAL_SIDE.with(|s| *s.borrow()),
+        HAS_TANGENT.with(|t| *t.borrow()),
         // An `overrideNodes( [ [ normalView, … ] ] )` material reads a wholly
         // different `normalView`, so everything cached off it — `normalWorld`,
         // the tangent frame, the TBN matrix — has to be cached separately too.
@@ -2069,6 +2197,11 @@ fn tangent_frame() -> (NodeRef, NodeRef) {
     if let Some(pair) = TANGENT_VIEW.with(|m| m.borrow().get(&key).cloned()) {
         return pair;
     }
+    if HAS_TANGENT.with(|t| *t.borrow()) {
+        let pair = tangent_attribute_frame();
+        TANGENT_VIEW.with(|m| m.borrow_mut().insert(key, pair.clone()));
+        return pair;
+    }
     // `q1perp = dFdy( positionView ).cross( N )`, `q0perp = N.cross( dFdx(
     // positionView ) )`, with `dFdy` carrying the `- dpdy` sign flip.
     let n = normal_view();
@@ -2119,6 +2252,69 @@ fn tangent_frame() -> (NodeRef, NodeRef) {
     );
     TANGENT_VIEW.with(|m| m.borrow_mut().insert(key, pair.clone()));
     pair
+}
+
+/// `tangentView` / `bitangentView` for a geometry that *has* a `tangent`
+/// attribute — `Tangent.js` and `Bitangent.js`' first branch:
+///
+/// ```text
+/// tangentView   = normalize( varying( modelViewMatrix * vec4( tangentLocal, 0 ) ).xyz )
+/// bitangentView = normalize( cross( normalView, tangentView ) * tangentGeometry.w )
+/// ```
+///
+/// The bitangent's cross product is hoisted into a varying — and so computed
+/// per vertex — only inside the `NORMAL` sub-build, which is
+/// `getBitangent()`'s `builder.subBuildFn === 'NORMAL'` test. That is why the
+/// dump has one `v_tangentView` shared by both layers but a separate
+/// `NORMAL_v_bitangentView`: in the main layer the cross is a fragment
+/// expression over the *mapped* normal, in the `NORMAL` layer it is a vertex
+/// expression over the geometric one.
+fn tangent_attribute_frame() -> (NodeRef, NodeRef) {
+    let tangent_geometry = attribute("tangent", Type::Vec4);
+    let tangent_local = to_var(Some("tangentLocal"), tangent_geometry.clone().xyz());
+
+    let flat = FLAT_SHADING.with(|f| *f.borrow());
+    let front_side = |value: NodeRef| {
+        if flat {
+            value
+        } else {
+            negate_on_back_side(value)
+        }
+    };
+
+    // One varying for both layers: three creates it in the shared `VERTEX`
+    // sub-build, so the `NORMAL` layer reads the same `v_tangentView` rather
+    // than declaring a prefixed one of its own.
+    thread_local! { static TANGENT_VARYING: Lazy<NodeRef> = const { Lazy::new() }; }
+    let tangent = TANGENT_VARYING
+        .with(|c| {
+            c.get(|| {
+                to_varying(
+                    Some("v_tangentView"),
+                    model_view_matrix()
+                        .mul(vec4_join(vec![tangent_local, float(0.0)]))
+                        .xyz(),
+                )
+            })
+        })
+        .normalize();
+    let tangent_view = to_var(Some("tangentView"), front_side(tangent));
+
+    // `getBitangent( normalView.cross( tangentView ), 'v_bitangentView' )`.
+    let cross_normal_tangent = cross(normal_view(), tangent_view.clone()).mul(tangent_geometry.w());
+    let in_normal_layer = SUB_BUILD.with(|s| *s.borrow()) == Some("NORMAL");
+    let bitangent = if in_normal_layer && !flat {
+        // The varying's name goes through `getSubBuildProperty()` here because
+        // the node carries the layer; `v_tangentView` above does not, because
+        // it is created in the shared `VERTEX` layer first.
+        to_varying(Some("NORMAL_v_bitangentView"), cross_normal_tangent)
+    } else {
+        cross_normal_tangent
+    }
+    .normalize();
+    let bitangent_view = to_var(Some("bitangentView"), front_side(bitangent));
+
+    (tangent_view, bitangent_view)
 }
 
 /// `tangentView`.
@@ -2278,6 +2474,90 @@ prop!(
     "multiScatteringMetallic",
     Type::Vec3
 );
+
+// `MeshPhysicalNodeMaterial.setupVariants()`' anisotropy and clearcoat
+// properties.
+prop!(anisotropy, "Anisotropy", Type::F32);
+prop!(alpha_t, "AlphaT", Type::F32);
+prop!(anisotropy_t, "AnisotropyT", Type::Vec3);
+prop!(anisotropy_b, "AnisotropyB", Type::Vec3);
+prop!(clearcoat, "Clearcoat", Type::F32);
+prop!(clearcoat_roughness, "ClearcoatRoughness", Type::F32);
+
+// ... and its transmission ones.
+prop!(transmission, "Transmission", Type::F32);
+prop!(thickness, "Thickness", Type::F32);
+prop!(attenuation_distance, "AttenuationDistance", Type::F32);
+prop!(attenuation_color, "AttenuationColor", Type::Vec3);
+
+// `PhysicalLightingModel.start()`'s clearcoat accumulators — vars, like the
+// lighting context's, so their zeros land at the first read.
+lighting_var!(clearcoat_radiance, "clearcoatRadiance", vec3(0.0, 0.0, 0.0));
+lighting_var!(
+    clearcoat_specular_direct,
+    "clearcoatSpecularDirect",
+    vec3(0.0, 0.0, 0.0)
+);
+lighting_var!(
+    clearcoat_specular_indirect,
+    "clearcoatSpecularIndirect",
+    vec3(0.0, 0.0, 0.0)
+);
+
+thread_local! {
+    /// `builder.context.setupClearcoatNormal()` — the clearcoat lobe's normal
+    /// for the material being set up, the clearcoat twin of `NORMAL_VALUE`.
+    static CLEARCOAT_NORMAL_VALUE: RefCell<Option<NodeRef>> = const { RefCell::new(None) };
+    static CLEARCOAT_NORMAL_VIEW: RefCell<HashMap<Option<usize>, NodeRef>> =
+        RefCell::new(HashMap::new());
+}
+
+/// Install the material's clearcoat normal node for the duration of `f` —
+/// `MeshPhysicalNodeMaterial.setup()`'s `builder.context.setupClearcoatNormal`.
+pub fn with_clearcoat_normal<R>(normal: Option<NodeRef>, f: impl FnOnce() -> R) -> R {
+    let previous = CLEARCOAT_NORMAL_VALUE.with(|v| v.replace(normal));
+    let out = f();
+    CLEARCOAT_NORMAL_VALUE.with(|v| *v.borrow_mut() = previous);
+    out
+}
+
+/// `clearcoatNormalView` — `Normal.js`' var, whose value is the material's
+/// clearcoat normal map through the `NORMAL` sub-build, or `normalView` when
+/// the material has none.
+pub fn clearcoat_normal_view() -> NodeRef {
+    let value = CLEARCOAT_NORMAL_VALUE.with(|v| v.borrow().clone());
+    let key = value.as_ref().map(|v| v.key());
+    if let Some(node) = CLEARCOAT_NORMAL_VIEW.with(|m| m.borrow().get(&key).cloned()) {
+        return node;
+    }
+    let node = to_var(
+        Some("clearcoatNormalView"),
+        value.unwrap_or_else(normal_view),
+    );
+    CLEARCOAT_NORMAL_VIEW.with(|m| m.borrow_mut().insert(key, node.clone()));
+    node
+}
+
+/// `AccessorsUtils.js`' `bentNormalView` — Filament's anisotropic bent normal,
+/// the reflection normal an anisotropic surface uses for IBL radiance:
+///
+/// ```text
+/// bentNormal = normalize( cross( cross( anisotropyB, V ), anisotropyB ) )
+/// bentNormal = normalize( mix( bentNormal, normalView,
+///                              pow4( 1 - anisotropy * ( 1 - roughness ) ) ) )
+/// ```
+pub fn bent_normal_view() -> NodeRef {
+    let bent = cross(
+        cross(anisotropy_b(), position_view_direction()),
+        anisotropy_b(),
+    )
+    .normalize();
+    // `anisotropy.mul( roughness.oneMinus() ).oneMinus().pow2().pow2()` — two
+    // squarings, so the base is a var read twice and the square again.
+    let base = to_var(None, anisotropy().mul(roughness().one_minus()).one_minus());
+    let squared = to_var(None, base.clone().mul(base));
+    mix(bent, normal_view(), squared.clone().mul(squared)).normalize()
+}
 
 // ---------------------------------------------------------------------------
 // textures

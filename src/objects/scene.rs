@@ -59,6 +59,11 @@ pub struct Scene {
     /// The scene root. `node.borrow().is_scene` is true.
     pub node: Node,
     pub background: Option<Background>,
+    /// `scene.backgroundBlurriness` — the roughness the background's PMREM is
+    /// read at, in `[ 0, 1 ]`. Three reads it through `backgroundBlurriness`,
+    /// the render-group uniform `BackgroundNode` puts on `getTextureLevel`, so
+    /// changing it is a uniform write and not a new program.
+    pub background_blurriness: f64,
     /// `scene.environment` — the default environment map for every material in
     /// the scene that does not carry one of its own.
     ///
@@ -94,6 +99,7 @@ impl Default for Scene {
         Self {
             node: object.into_node(),
             background: None,
+            background_blurriness: 0.0,
             environment: None,
             fog_node: None,
             override_material: None,

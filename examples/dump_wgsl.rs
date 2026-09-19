@@ -169,6 +169,7 @@ fn main() {
         SetupContext {
             environment: None,
             lighting_disabled: false,
+            viewport_opaque_mip: None,
             instance_count: Some(1000),
             instanced: true,
             instance_color: None,
@@ -181,6 +182,7 @@ fn main() {
             output: None,
             vertex_color_size: 0,
             geometry_missing_normal: false,
+            has_tangent_attribute: false,
         },
     );
 
@@ -686,6 +688,7 @@ fn main() {
             // `COLOR_0` is a `VEC4` on every one of the file's primitives, so
             // the attribute is read whole rather than widened from a `vec3`.
             vertex_color_size: 4,
+            has_tangent_attribute: false,
             ..SetupContext::default()
         };
 
@@ -1702,6 +1705,73 @@ fn main() {
     show(
         "loader_gltf_helmet",
         &gltf_helmet,
+        SetupContext {
+            environment: Some(environment.handle()),
+            ..SetupContext::default()
+        },
+    );
+
+    // rung `webgpu_loader_gltf_anisotropy`: AnisotropyBarnLamp's three
+    // materials, against `dump-aniso/m08` (filament), `m10` (metal) and `m12`
+    // (glass). The metal is the interesting one — a `TANGENT` attribute, an
+    // anisotropy map, a clearcoat with its own normal map, and a PMREM
+    // environment whose radiance rides the bent normal.
+    let mut lamp_metal = MeshBasicNodeMaterial::physical(Color::new(1.0, 1.0, 1.0), 1.0, 1.0);
+    lamp_metal.name = "lamp metal";
+    lamp_metal.map = Some(map());
+    let metal_roughness = map();
+    lamp_metal.metalness_map = Some(metal_roughness.clone());
+    lamp_metal.roughness_map = Some(metal_roughness.clone());
+    lamp_metal.ao_map = Some(metal_roughness);
+    let normal = map();
+    lamp_metal.normal_map = Some(normal.clone());
+    lamp_metal.clearcoat_normal_map = Some(normal);
+    lamp_metal.anisotropy = 0.75;
+    lamp_metal.anisotropy_map = Some(map());
+    lamp_metal.clearcoat = 0.25;
+    lamp_metal.clearcoat_roughness = 0.15;
+    show(
+        "loader_gltf_anisotropy_metal",
+        &lamp_metal,
+        SetupContext {
+            environment: Some(environment.handle()),
+            has_tangent_attribute: true,
+            ..SetupContext::default()
+        },
+    );
+
+    // The glass: no maps at all, but `KHR_materials_transmission` /
+    // `_volume`, so the whole of `getIBLVolumeRefraction` inlines into `main`
+    // over the renderer's mipped copy of the opaque frame.
+    let mut lamp_glass = MeshBasicNodeMaterial::physical(Color::new(1.0, 1.0, 1.0), 0.0, 0.1);
+    lamp_glass.name = "lamp glass";
+    lamp_glass.ior = 1.5;
+    lamp_glass.transmission = 1.0;
+    lamp_glass.thickness = 0.02;
+    lamp_glass.attenuation_distance = 1.0;
+    lamp_glass.attenuation_color = Color::new(0.9, 0.9, 0.9);
+    lamp_glass.emissive = Color::new(1.0, 1.0, 1.0);
+    show(
+        "loader_gltf_anisotropy_glass",
+        &lamp_glass,
+        SetupContext {
+            environment: Some(environment.handle()),
+            viewport_opaque_mip: Some(three_rs::materials::transmission::OpaqueFrame {
+                // `viewportOpaqueMipTexture()` — the renderer owns the real
+                // one; only its identity reaches the shader.
+                texture: Texture::render_target(800, 500, wgpu::TextureFormat::Rgba16Float),
+            }),
+            ..SetupContext::default()
+        },
+    );
+
+    let mut lamp_filament = MeshBasicNodeMaterial::standard(Color::new(0.09, 0.09, 0.09), 0.7, 0.0);
+    lamp_filament.name = "lamp filament";
+    lamp_filament.emissive = Color::new(1.0, 0.5, 0.25);
+    lamp_filament.emissive_intensity = 25.0;
+    show(
+        "loader_gltf_anisotropy_filament",
+        &lamp_filament,
         SetupContext {
             environment: Some(environment.handle()),
             ..SetupContext::default()

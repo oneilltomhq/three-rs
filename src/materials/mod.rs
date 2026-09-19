@@ -8,6 +8,7 @@ pub mod line2;
 mod node_material;
 pub mod phong;
 pub mod physical;
+pub mod transmission;
 
 pub use node_material::{
     background_color_node, background_node_color_node, background_pmrem_color_node,
@@ -299,6 +300,27 @@ pub struct MeshBasicNodeMaterial {
     pub normal_scale: crate::math::Vector2,
     /// `MeshPhysicalMaterial.specularColorMap` — multiplies `specularColor`.
     pub specular_color_map: Option<Texture>,
+    /// `MeshPhysicalMaterial.anisotropy` / `.anisotropyRotation` /
+    /// `.anisotropyMap` — `KHR_materials_anisotropy`. The pair reaches the
+    /// shader as one `materialAnisotropyVector` uniform,
+    /// `vec2( anisotropy * cos( rotation ), anisotropy * sin( rotation ) )`,
+    /// exactly as three's `MeshPhysicalNodeMaterial` builds it.
+    pub anisotropy: f64,
+    pub anisotropy_rotation: f64,
+    pub anisotropy_map: Option<Texture>,
+    /// `MeshPhysicalMaterial.clearcoatNormalMap` / `.clearcoatNormalScale`.
+    /// The clearcoat lobe's own normal, through the same TBN sub-build the
+    /// base normal map uses.
+    pub clearcoat_normal_map: Option<Texture>,
+    pub clearcoat_normal_scale: crate::math::Vector2,
+    /// `MeshPhysicalMaterial.transmission` / `.thickness` /
+    /// `.attenuationDistance` / `.attenuationColor` —
+    /// `KHR_materials_transmission` and `KHR_materials_volume`. A non-zero
+    /// `transmission` moves the object into the renderer's transmission pass.
+    pub transmission: f64,
+    pub thickness: f64,
+    pub attenuation_distance: f64,
+    pub attenuation_color: Color,
     /// `material.normalNode` — e.g. `normalMap( texture( map ) )`.
     pub normal_node: Option<NodeRef>,
     /// `NodeMaterial.positionNode` — replaces `positionLocal`.
@@ -438,6 +460,16 @@ impl Default for MeshBasicNodeMaterial {
             normal_map: None,
             normal_scale: crate::math::Vector2::new(1.0, 1.0),
             specular_color_map: None,
+            anisotropy: 0.0,
+            anisotropy_rotation: 0.0,
+            anisotropy_map: None,
+            clearcoat_normal_map: None,
+            clearcoat_normal_scale: crate::math::Vector2::new(1.0, 1.0),
+            transmission: 0.0,
+            // three's `MeshPhysicalMaterial` defaults: no volume at all.
+            thickness: 0.0,
+            attenuation_distance: f64::INFINITY,
+            attenuation_color: Color::new(1.0, 1.0, 1.0),
             normal_node: None,
             position_node: None,
             reflectivity: 1.0,

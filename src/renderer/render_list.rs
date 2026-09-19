@@ -303,8 +303,15 @@ fn project_drawable(
     // its own is drawn with `scene.overrideMaterial`, which three.js substitutes
     // later (in `_renderObjects`), after the list is built — so a missing
     // material is not a reason to skip the object here.
+    // `material.transparent === true || material.transmission > 0`: a
+    // transmissive material goes in the transparent list whatever its
+    // `transparent` flag says, because it has to be drawn after the frame it
+    // reads. The barn lamp's glass is one — the glTF sets no `alphaMode`.
     let (visible, transparent) = match o.material() {
-        Some(material) => (material.visible, material.transparent),
+        Some(material) => (
+            material.visible,
+            material.transparent || material.transmission > 0.0,
+        ),
         None => (true, false),
     };
 
