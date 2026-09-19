@@ -15,8 +15,8 @@ from Three's node graph (TSL) by a port of Three's `NodeBuilder`, the way
 correctness is judged by Three's own examples and reference screenshots, not
 by scenes written for the port.
 
-**Status: early, working, incomplete.** Ten of Three's `webgpu_*` examples
-pass the grader; the vast majority of Three's 600-odd examples have not been
+**Status: early, working, incomplete.** The `webgpu_*` examples in the gallery
+below pass the grader; the vast majority of Three's 600-odd examples have not been
 attempted. The API follows Three's object model but is not stable. Vulkan on
 Linux is the only backend that has been run.
 
