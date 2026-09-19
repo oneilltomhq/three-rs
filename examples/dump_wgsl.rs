@@ -1765,6 +1765,32 @@ fn main() {
         },
     );
 
+    // rung `webgpu_materials_transmission`, against `dump-transmission/m12`
+    // (the front-side half of the `DoubleSide` split; `m10` is the back-side
+    // one and differs from it in exactly one line, the normal flip). The same
+    // transmission flow as the lamp glass, but with no volume — `thickness`
+    // stays 0 on the graded frame — and with an `alphaMap` folded into
+    // `materialOpacity`.
+    let mut transmission_sphere =
+        MeshBasicNodeMaterial::physical(Color::new(1.0, 1.0, 1.0), 0.0, 0.0);
+    transmission_sphere.name = "transmission sphere";
+    transmission_sphere.ior = 1.5;
+    transmission_sphere.transmission = 1.0;
+    transmission_sphere.alpha_map = Some(map());
+    transmission_sphere.side = Side::Double;
+    transmission_sphere.transparent = true;
+    show(
+        "materials_transmission",
+        &transmission_sphere,
+        SetupContext {
+            environment: Some(environment.handle()),
+            viewport_opaque_mip: Some(three_rs::materials::transmission::OpaqueFrame {
+                texture: Texture::render_target(800, 500, wgpu::TextureFormat::Rgba16Float),
+            }),
+            ..SetupContext::default()
+        },
+    );
+
     let mut lamp_filament = MeshBasicNodeMaterial::standard(Color::new(0.09, 0.09, 0.09), 0.7, 0.0);
     lamp_filament.name = "lamp filament";
     lamp_filament.emissive = Color::new(1.0, 0.5, 0.25);

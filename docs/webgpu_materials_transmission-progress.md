@@ -39,6 +39,7 @@ Two notes on the page, because the rung brief described a different one:
 | `src/materials/node_material.rs` | `material_opacity_with_map()` — `MaterialNode.OPACITY`'s `materialOpacity.mul( texture( alphaMap ) )`, narrowed to `float` |
 | `examples/` | `webgpu_materials_transmission.rs` |
 | `tests/e2e/main.rs` | the (ignored) pixel test and the `steady_frame_builds_nothing` rung |
+| `examples/dump_wgsl.rs` | the `materials_transmission` section, diffed against three's `m12` |
 
 Everything else the page needs was already in the tree: the transmission pass
 and `materials::transmission` (§26), the UltraHDR loader and the PMREM (§21),
@@ -71,6 +72,55 @@ not the band phase, not the tone mapping and not the transmission pass being
 absent — those all fail loudly and everywhere. It is a small sampling
 difference amplified by the one high-contrast region in the image.
 
+## The WGSL diff
+
+`node tools/dump-webgpu.mjs webgpu_materials_transmission` (15 modules, 9 render
+pipelines; the dump is uncommitted, per the rules) and a new
+`examples/dump_wgsl.rs` section, `materials_transmission`. Three's sphere is
+`m12` (front-side) and `m10` (back-side); **the two differ from each other in
+exactly one line**, the normal flip, which answers §29.3's first question: both
+halves of the `DoubleSide` split compile the same transmission flow.
+
+The port's fragment matches `m12` statement for statement through the whole of
+`getIBLVolumeRefraction`: the ray, the NDC projection, the `1 - y` viewport
+flip, `log2( cameraViewport.z ) * applyIorToRoughness( Roughness, IOR )`, both
+`textureDimensions` levels, all eight bicubic taps, the `ceil`/`floor` pair and
+the final `mix( …, fract( lod ) )`. The remaining differences are the ones §8
+already lists: temporary folding, the order of the zero-initialised
+accumulators, `.xy` taken at the DFG sample rather than at its use, and
+`normalView`'s flip — three resolves it per pass (`* vec3( -1.0 )` in `m10`,
+nothing in `m12`) because the split sets `material.side`, where the port emits
+the dynamic `( f32( isFront ) * 2 - 1 )` factor and draws the one program twice.
+
+So the crescent is not the shader.
+
+Sizes match too: the equirect is 2048×1024, three's cube from it is 1024² (id 6
+in `dump.json`) and the port's is `source.size().1` = 1024; the PMREM atlas is
+1536×2048 on both; the opaque-frame copy is 800×500 `rgba16float` with 10 mip
+levels on both, and the port generates them with the same hand-written mipmap
+shader three does.
+
+**Measured against three's own 800×500 frame** (`actual_full.png` from the
+dump), rather than the graded 400×250 JPEG:
+
+| | |
+| --- | --- |
+| pixels off by more than 24/255 | 1243, all with 288 ≤ x ≤ 500 and 179 ≤ y ≤ 361 — inside the sphere |
+| background, outside the silhouette | mean abs difference 0.63/255, nothing over 24 |
+| best whole-image shift | (0, 0) — it is not a half-pixel offset |
+| mean gradient inside the sphere | ours 3.67, three's 3.83 — **the port's transmitted image is ~4% softer** |
+| mean signed difference inside the sphere | −1.3/255 — and slightly darker |
+
+Softer and darker, in place, is a mip level: the transmission LOD is
+`log2( 800 ) * applyIorToRoughness( Roughness, ior )` ≈ `9.64 * Roughness`, and
+`Roughness` is never 0 — `setupVariants()` clamps it to 0.0525 and *adds the
+geometric roughness* `max( abs( dpdx( normalViewGeometry ) ), abs( dpdy( … ) ) )`.
+So the sphere samples level 0.5 at its centre and climbs steeply towards the
+limb, where the normals turn fastest — which is exactly where the crescent is,
+and exactly where the background behind it is the bright rainbow wall. Both
+shaders compute that LOD identically, so the difference is in the mip chain
+being sampled, not in the level being asked for.
+
 ## What was ruled out
 
 * **The transmission pass ordering.** The background is drawn into the opaque
@@ -83,14 +133,14 @@ difference amplified by the one high-contrast region in the image.
 
 ## What was left out
 
-* **A WGSL diff against three's own dump.** `tools/dump-webgpu.mjs` was not run
-  for this page and `examples/dump_wgsl.rs` gained no section — that is the
-  next step, and the most likely place to find the crescent: the back-side half
-  of the `DoubleSide` split samples a *different* texture upstream
-  (`viewportMipTexture()` rather than `viewportOpaqueMipTexture()`, chosen by
-  `material.side === BackSide` inside `getTransmissionSample`), and the port
-  binds the opaque copy to both halves. The two have the same content here, but
-  not necessarily the same mip chain.
+* **The last 98 pixels.** The evidence above says the opaque-frame *mip chain*
+  is slightly softer than three's, not that the shader or the LOD is wrong.
+  Three allocates two 800×500 ten-level textures (ids 212 and 265 in
+  `dump.json`) — `viewportMipTexture()` and `viewportOpaqueMipTexture()` — and
+  the port allocates one; the contents agree here, but each is mipped by its
+  own chain of passes, and the port's mip pass is the next thing to compare
+  level by level (dump a level-3 read of both). The other candidate is the MSAA
+  resolve the copy is taken from.
 * **A README "Examples graded green" row and a gallery entry**, since the
   example is not green.
 * **Dispersion**, still — `KHR_materials_dispersion` is dead code for this page

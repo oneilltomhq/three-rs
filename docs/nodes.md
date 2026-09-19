@@ -2834,13 +2834,31 @@ is drawn. They matter apart under the transparent `DoubleSide` split, where the
 back-face draw runs with `material.side = BackSide` and so compiles the other
 branch.
 
-**Divergence, undecided rather than deliberate** (§8): the port binds the
-opaque-frame copy to both halves of the split. On this page the two copies have
-the same content — nothing transparent has been drawn when the back faces go
-down — so the difference can only be in the mip chain, and the frame is 198 px
-off its threshold with the crescent in exactly the region a slightly wrong
-transmission mip would move. It has not been measured. The progress doc says so
-in "What was left out".
+**Divergence, deliberate but incompletely verified** (§8): the port binds the
+opaque-frame copy to both halves of the split. Three's dump of this page settles
+the shader half of the question — its back-side module (`m10`) and its
+front-side one (`m12`) differ in exactly one line, the normal flip, so both
+halves compile the same transmission flow over the same binding — but three
+still allocates *two* 800×500 ten-level textures for them. On this page nothing
+transparent has been drawn when the back faces go down, so the two copies hold
+the same pixels; whether they hold the same *mips* is the open question, and
+the measurement in the progress doc (the port's transmitted image is ~4% softer
+than three's, in place, with the background clean) says that is where the
+remaining 98 pixels are.
+
+The port also emits the flip dynamically, as `normalViewGeometry * ( f32(
+isFront ) * 2 - 1 )`, where three resolves it per pass because the split
+rewrites `material.side` before each draw. One program instead of two, and the
+same value per fragment as long as the two draws cull the way the split says —
+which is what `Renderer::draw` does.
+
+The LOD is worth stating plainly, because "transmission with `roughness: 0`"
+sounds like a level-0 read and is not one:
+`log2( cameraViewport.z ) * applyIorToRoughness( Roughness, ior )` is
+`9.64 * Roughness` here, and `Roughness` is `max( roughness, 0.0525 )` plus the
+geometric roughness from `dpdx( normalViewGeometry )`. The sphere samples mip
+0.5 at its centre and climbs steeply towards the limb. Every transmissive
+pixel on this page is a mipped read.
 
 ### 29.4 What this page does *not* test
 
