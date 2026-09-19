@@ -2775,3 +2775,75 @@ None new beyond the classes §8 already lists, and one fix that was a real bug:
 [`tsl::with_tangent_attribute`]: ../src/nodes/tsl.rs
 [`tsl::bent_normal_view`]: ../src/nodes/tsl.rs
 [`Scene::background_blurriness`]: ../src/objects/scene.rs
+
+## 29. `webgpu_materials_transmission` — an alpha map, and transmission over the background
+
+The transmission sphere page (`examples/webgpu_materials_transmission.rs`,
+`docs/webgpu_materials_transmission-progress.md`). It reuses §26's transmission
+whole and adds one node: the alpha map.
+
+### 29.1 `alphaMap` is `materialOpacity`'s second operand, and it is read red
+
+`MaterialNode.js`' `OPACITY` scope is
+
+```js
+const opacityNode = this.getFloat( scope );
+if ( material.alphaMap && material.alphaMap.isTexture === true ) {
+    node = opacityNode.mul( this.getTexture( 'alpha' ) );
+}
+```
+
+`opacityNode` is a `float` and `getTexture()` is a `vec4`, so the product is a
+`vec4` — but the scope's node type is `float`, so the builder converts it back
+on the way out, and a narrowing conversion in three takes the **first**
+component. An `alphaMap` on the WebGPU path is therefore read through its *red*
+channel, where `WebGLRenderer` reads green (`MeshStandardMaterial`'s GLSL
+chunk is `diffuseColor.a *= texture2D( alphaMap, vAlphaMapUv ).g`). The port
+reproduces the node path deliberately —
+`node_material::material_opacity_with_map()`. On this page the map is white or
+fully transparent, so the two agree; on a coloured one they would not.
+
+The multiply lands in `setupDiffuseColor()`'s existing
+`DiffuseColor.w = DiffuseColor.w * <opacity>` line rather than beside it, which
+is what keeps the alpha test and the `builder.isOpaque()` clamp in three's
+order.
+
+### 29.2 The page's canvas texture
+
+`generateTexture()` is a 2×2 2-D canvas: cleared (so `rgba( 0, 0, 0, 0 )`) and
+then `fillRect( 0, 1, 2, 1 )` in white, i.e. the *bottom* row opaque. As a
+`CanvasTexture` it carries `flipY = true`, `NoColorSpace`, mipmaps, and the
+page sets `magFilter = NearestFilter`, `wrapS = wrapT = RepeatWrapping` and
+`repeat.set( 1, 3.5 )`. The port writes the same four RGBA texels into a
+`Texture` in canvas (top-first) row order and lets the uploader's `flipY` do
+what the canvas upload does. The 3.5 repeats over a sphere's `v` are the seven
+bands.
+
+### 29.3 Two transmission textures, one binding
+
+`getTransmissionSample()` picks its source from the material's side:
+
+```js
+const vTexture = material.side === BackSide ? viewportBackSideTexture : viewportFrontSideTexture;
+```
+
+`viewportFrontSideTexture` is `viewportOpaqueMipTexture()` — the renderer's copy
+of the opaque frame, which is what §26 ported. `viewportBackSideTexture` is
+`viewportMipTexture()`, a copy of the framebuffer as it stands when the object
+is drawn. They matter apart under the transparent `DoubleSide` split, where the
+back-face draw runs with `material.side = BackSide` and so compiles the other
+branch.
+
+**Divergence, undecided rather than deliberate** (§8): the port binds the
+opaque-frame copy to both halves of the split. On this page the two copies have
+the same content — nothing transparent has been drawn when the back faces go
+down — so the difference can only be in the mip chain, and the frame is 198 px
+off its threshold with the crescent in exactly the region a slightly wrong
+transmission mip would move. It has not been measured. The progress doc says so
+in "What was left out".
+
+### 29.4 What this page does *not* test
+
+It is still a scene with no lights: `PhysicalLightingModel.direct()` is never
+called on a transmissive material by any graded example. `transmission` under
+a `PointLight` remains untested, as does dispersion.
