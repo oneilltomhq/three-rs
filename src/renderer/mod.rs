@@ -507,11 +507,11 @@ pub struct Renderer {
     /// `Renderer.autoClearDepth`.
     pub auto_clear_depth: bool,
 
-    /// `Renderer.opaque` — `if ( this.opaque === true && opaqueObjects.length
-    /// > 0 ) this._renderObjects( … )`. `webgpu_deferred`'s transparent pass
-    /// turns it off, which also drops the skybox: `Background.update()`
-    /// unshifts the background into `renderList.opaque`, so it is one of the
-    /// opaque objects this gate skips.
+    /// `Renderer.opaque` — the gate on `_renderObjects( opaqueObjects, … )`.
+    /// `webgpu_deferred`'s transparent pass turns it off, which also drops the
+    /// skybox: `Background.update()` unshifts the background into
+    /// `renderList.opaque`, so it is one of the opaque objects this gate
+    /// skips.
     pub opaque: bool,
     /// `Renderer.transparent` — the matching gate on `_renderTransparents()`.
     /// `webgpu_deferred`'s opaque pass turns it off so that the G-buffer holds
@@ -1347,19 +1347,21 @@ impl Renderer {
             // `material.side = BackSide` / `= FrontSide` around each of the
             // two `_handleObjectFunction()` calls, restored to `DoubleSide`
             // after. The port clones instead of mutating, so the two halves
-            // need their own cache keys.
-            let mut material = material.clone();
+            // need their own cache keys — but the key is taken from the
+            // *original* material, because `MaterialId::clone()` mints a fresh
+            // id (that is what makes two `MeshBasicNodeMaterial`s built from
+            // the same one two materials) and a key minted per frame would
+            // rebuild every program every frame.
             let side_variant = match side {
-                Some(Side::Back) => {
-                    material.side = Side::Back;
-                    VARIANT_BACK_SIDE
-                }
-                Some(Side::Front) => {
-                    material.side = Side::Front;
-                    VARIANT_FRONT_SIDE
-                }
+                Some(Side::Back) => VARIANT_BACK_SIDE,
+                Some(Side::Front) => VARIANT_FRONT_SIDE,
                 _ => 0,
             };
+            let key = MaterialKey::of(material).variant(side_variant);
+            let mut material = material.clone();
+            if let Some(side) = side {
+                material.side = side;
+            }
 
             items.push(Renderable {
                 object: Some(item.node.clone()),
@@ -1370,7 +1372,7 @@ impl Renderer {
                 // material drawn both with and without one — the same
                 // `MeshStandardNodeMaterial` in an environment scene and in the
                 // real scene — already gets two programs.
-                key: MaterialKey::of(&material).variant(side_variant),
+                key,
                 setup: SetupContext {
                     environment: scene_environment,
                     // `builder.renderer.lighting.enabled`: a pass with lighting
@@ -1449,7 +1451,7 @@ impl Renderer {
         // forceClear === true ) { renderContext.clearColor =
         // renderer.autoClearColor; renderContext.clearDepth =
         // renderer.autoClearDepth; … } else { … = false }`.
-        let clear = if self.auto_clear || force_clear {
+        let mut clear = if self.auto_clear || force_clear {
             ClearOps {
                 color: self.auto_clear_color.then_some(clear_color),
                 depth: self.auto_clear_depth,
@@ -1457,6 +1459,27 @@ impl Renderer {
         } else {
             ClearOps::default()
         };
+
+        // `Renderer._renderScene()`'s "make sure a new render target has
+        // correct default depth values": the *first* render into a target with
+        // a depth buffer clears the depth anyway when the auto-clear would not
+        // have, because an uninitialised depth attachment is undefined.
+        //
+        // It is per render *target*, not per texture, so `webgpu_deferred`'s
+        // transparent pass — a second target over the opaque pass's depth
+        // attachment — takes the manual clear on its first frame and throws
+        // away exactly the depth it was given the texture for. Three does this
+        // and the reference image shows it: on the graded frame the six planes
+        // are not occluded by the teapot. It is reproduced on purpose; see
+        // `docs/nodes.md` §27.
+        if let Some(target) = &self.render_target {
+            if target.depth_buffer() && !target.depth_initialized() {
+                if !self.auto_clear || !self.auto_clear_depth {
+                    clear.depth = true;
+                }
+                target.set_depth_initialized(true);
+            }
+        }
 
         // `LightsNode.setupLights()`: each light resolves to its colour scaled
         // by intensity plus its position in view space. The list is

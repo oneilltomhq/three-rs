@@ -152,7 +152,7 @@ impl PassNode {
             },
         )
         .expect("three-rs: PassNode's render target is a HalfFloat colour type");
-        render_target.set_depth_texture(options.depth_texture.clone().unwrap_or_else(DepthTexture::new));
+        render_target.set_depth_texture(options.depth_texture.clone().unwrap_or_default());
 
         // `getTextureNode()`'s node — the `PassTextureNode` — and the
         // `PassNode` that wraps it. Both are `TempNode`s, which is why a pass
@@ -281,6 +281,17 @@ impl PassNode {
     pub fn texture_node(&self, name: &str) -> NodeRef {
         if let Some(node) = self.texture_nodes.borrow().get(name) {
             return node.clone();
+        }
+        // `PassNode`'s constructor seeds `_textures.depth` with the depth
+        // attachment, so `getTextureNode( 'depth' )` is a tap on *that* and
+        // not a new colour attachment. `webgpu_deferred`'s resolve material
+        // reads it for both its `discard` and its `depthNode`.
+        if name == DEPTH_ATTACHMENT {
+            let node = pass_depth_texture(&self.depth_texture());
+            self.texture_nodes
+                .borrow_mut()
+                .insert(name.to_string(), node.clone());
+            return node;
         }
         let texture = if name == crate::renderer::OUTPUT_ATTACHMENT {
             self.render_target.texture()

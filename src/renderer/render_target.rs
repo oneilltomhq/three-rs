@@ -106,6 +106,10 @@ pub struct RenderTargetInner {
     pub scissor: Vector4,
     /// `renderTarget.scissorTest`.
     pub scissor_test: bool,
+    /// `_textures.get( renderTarget ).depthInitialized` — whether anything has
+    /// yet rendered into this target's depth attachment. See
+    /// `Renderer::render`'s manual first clear.
+    pub depth_initialized: bool,
 }
 
 /// Cloning is a handle copy, matching JS object identity.
@@ -158,6 +162,7 @@ impl RenderTarget {
             viewport: Vector4::new(0.0, 0.0, width as f64, height as f64),
             scissor: Vector4::new(0.0, 0.0, width as f64, height as f64),
             scissor_test: false,
+            depth_initialized: false,
         }))))
     }
 
@@ -343,6 +348,20 @@ impl RenderTarget {
                 texture.clear_gpu();
             }
         }
+    }
+
+    /// `_textures.get( renderTarget ).depthInitialized`.
+    pub fn depth_initialized(&self) -> bool {
+        self.0.borrow().depth_initialized
+    }
+
+    pub fn set_depth_initialized(&self, initialized: bool) {
+        self.0.borrow_mut().depth_initialized = initialized;
+    }
+
+    /// `renderTarget.depthBuffer`.
+    pub fn depth_buffer(&self) -> bool {
+        self.0.borrow().depth_buffer
     }
 
     /// `renderTarget.texture`.
