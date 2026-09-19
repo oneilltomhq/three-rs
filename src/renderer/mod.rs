@@ -596,6 +596,12 @@ pub struct Renderer {
     /// `QuadMesh`'s shared `new OrthographicCamera( -1, 1, 1, -1, 0, 1 )`.
     quad_camera: OrthographicCamera,
 
+    /// `renderer.outputColorSpace`. `SRGBColorSpace` like three's, which is
+    /// what puts a colour-transform pass between the scene and the canvas;
+    /// a page that sets `LinearSRGBColorSpace` — the working space — asks for
+    /// the scene to be drawn straight into the canvas instead.
+    output_color_space: crate::math::ColorSpace,
+
     /// True while `RenderPipeline.render()` has neutralised `toneMapping` and
     /// `outputColorSpace`, which is what makes `needsFrameBufferTarget` false
     /// so the full-screen quad draws straight into the canvas.
@@ -814,6 +820,7 @@ impl Renderer {
             background_geometry: None,
             quad_geometry: None,
             quad_camera: OrthographicCamera::new(-1.0, 1.0, 1.0, -1.0, 0.0, 1.0),
+            output_color_space: crate::math::ColorSpace::SRGB,
             neutral_output: false,
             tone_mapping_exposure: 1.0,
             fullscreen_pass: false,
@@ -2536,7 +2543,15 @@ impl Renderer {
     }
 
     pub fn read_canvas_pixels(&mut self) -> Result<(u32, u32, Vec<u8>), Error> {
-        self.prepare_canvas(false, 1);
+        // Only when there is nothing to read yet. `prepare_canvas()` rebuilds
+        // the canvas whenever the sample count it is asked for differs from
+        // the one the canvas has, so asking for a single-sample canvas here
+        // would *discard* the frame a multisampled pass had just drawn — which
+        // is every frame of a page whose last pass is the scene itself rather
+        // than the single-sampled output quad (`webgpu_tsl_interoperability`).
+        if self.canvas.is_none() {
+            self.prepare_canvas(false, 1);
+        }
         let canvas = self
             .canvas
             .as_ref()
@@ -3992,11 +4007,19 @@ impl Renderer {
     /// `Renderer.needsFrameBufferTarget` — true when the output needs tone
     /// mapping or a colour-space conversion: `isOutputTarget && ( toneMapping
     /// !== NoToneMapping || outputColorSpace !== workingColorSpace )`.
-    /// `outputColorSpace` is `SRGBColorSpace` against a `LinearSRGBColorSpace`
-    /// working space, so the second term is always true for a canvas render and
-    /// `neutral_output` — which zeroes both terms — is the whole predicate.
+    /// The port has no `toneMapping` on the renderer, so the first term is
+    /// always false and the predicate is the second: the output space differs
+    /// from the working space, and `neutral_output` has not zeroed both.
     fn needs_frame_buffer_target(&self) -> bool {
-        !self.neutral_output
+        !self.neutral_output && self.output_color_space != crate::math::ColorSpace::LinearSRGB
+    }
+
+    /// `renderer.outputColorSpace = …`. Setting it to the working space,
+    /// `LinearSRGBColorSpace`, is what `webgpu_tsl_interoperability` does:
+    /// `needsFrameBufferTarget` then answers false and the scene is drawn into
+    /// the canvas with no colour-transform pass behind it.
+    pub fn set_output_color_space(&mut self, color_space: crate::math::ColorSpace) {
+        self.output_color_space = color_space;
     }
 
     /// `RenderPipeline.render()`'s save/set/restore of `renderer.toneMapping`
