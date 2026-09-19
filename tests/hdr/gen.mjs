@@ -75,6 +75,37 @@ for ( const name of faces ) {
 	out.px_float_first = Array.from( data.data.slice( 0, 16 ) );
 }
 
+// `spot1Lux.hdr`, the equirect environment `webgpu_pmrem_test` loads: a
+// 1024x512 black image with a single bright texel. Every non-black texel is
+// recorded with its ( x, y ), which is the oracle for the `flipY` gate — a
+// missing flip, an off-by-one flip or a row-stride bug each move it somewhere
+// provably wrong.
+{
+	const buffer = fs.readFileSync( path.join( THREE, 'examples/textures/equirectangular/spot1Lux.hdr' ) );
+	const data = new HDRLoader().parse( buffer.buffer.slice( buffer.byteOffset, buffer.byteOffset + buffer.byteLength ) );
+	const u16 = data.data;
+	const bright = [];
+	for ( let i = 0; i < u16.length / 4; i ++ ) {
+		if ( u16[ i * 4 ] !== 0 || u16[ i * 4 + 1 ] !== 0 || u16[ i * 4 + 2 ] !== 0 ) {
+			bright.push( {
+				x: i % data.width,
+				y: Math.floor( i / data.width ),
+				rgba: [ u16[ i * 4 ], u16[ i * 4 + 1 ], u16[ i * 4 + 2 ], u16[ i * 4 + 3 ] ],
+				rgb_f32: [ 0, 1, 2 ].map( c => Math.fround( DataUtils.fromHalfFloat( u16[ i * 4 + c ] ) ) ),
+			} );
+		}
+	}
+	out.spot1lux = {
+		file: 'spot1Lux.hdr',
+		width: data.width,
+		height: data.height,
+		flipY: data.flipY === true,
+		texels: u16.length / 4,
+		fnv1a64: fnv1a64( u16 ),
+		bright,
+	};
+}
+
 // DataUtils.toHalfFloat, bit for bit.
 const vals = [ 0, -0, 1, -1, 0.5, 2, 65504, -65504, 65505, 1e-8, 6.0975552e-5, 6.103515625e-5,
 	5.960464477539063e-8, 3.0517578125e-5, 0.1, 1/3, 1023.5, 1e30, -1e30, 1.0000000000000002,
@@ -86,5 +117,6 @@ out.half_back_extra = [ 0x0001, 0x03ff, 0x0400, 0x7bff, 0x8001, 0xfbff, 0x3555 ]
 fs.writeFileSync( new URL( 'oracle.json', import.meta.url ), JSON.stringify( out, null, '\t' ) + '\n' );
 console.log( JSON.stringify( out.faces[ 0 ], null, 1 ).slice( 0, 800 ) );
 console.log( 'halfs', out.half.length );
+console.log( 'spot1Lux', JSON.stringify( out.spot1lux.bright ) );
 
 fs.rmSync( tmp, { recursive: true, force: true } );

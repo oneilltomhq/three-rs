@@ -231,3 +231,73 @@ fn layer_zero_is_positive_x() {
     assert_eq!(oracle["faces"][0]["file"], "px.hdr");
     assert_eq!(first, u16s(&oracle["faces"][0]["first"]));
 }
+
+/// `spot1Lux.hdr` — the equirect environment `webgpu_pmrem_test` loads —
+/// decodes bit for bit, and `HdrLoader::load()` applies the four properties
+/// `DataTextureLoader.load()` copies off `texData`.
+///
+/// The decisive one is **`flipY = true`**. It is the only property of this
+/// texture whose absence renders a perfectly plausible wrong image: the
+/// environment mirrored top-to-bottom, every sphere still a reasonable shiny
+/// sphere. The row it actually lands on is asserted on the GPU in
+/// `tests/pmrem_equirect.rs`; here the flag itself is pinned, together with
+/// the single bright texel's position *before* the flip, so a failure says
+/// which of the two halves moved.
+#[test]
+fn spot1lux_decodes_and_the_data_texture_carries_flip_y() {
+    let oracle = oracle();
+    let spot = &oracle["spot1lux"];
+    let path = three_js_dir().join("examples/textures/equirectangular/spot1Lux.hdr");
+
+    let loader = HdrLoader::new();
+    let bytes = std::fs::read(&path).unwrap();
+    let parsed = loader.parse(&bytes).unwrap();
+    let HdrData::HalfFloat(data) = &parsed.data else {
+        unreachable!("HalfFloatType is the default")
+    };
+
+    assert_eq!(parsed.width as u64, spot["width"].as_u64().unwrap());
+    assert_eq!(parsed.height as u64, spot["height"].as_u64().unwrap());
+    assert_eq!(fnv1a64(data), spot["fnv1a64"].as_str().unwrap());
+
+    // Exactly one non-black texel, at ( 597, 213 ) of the decoded rows.
+    let bright: Vec<(u32, u32, [u16; 4])> = data
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .enumerate()
+        .filter(|(_, t): &(usize, &[u16; 4])| t[0] != 0 || t[1] != 0 || t[2] != 0)
+        .map(|(i, t)| {
+            (
+                i as u32 % parsed.width,
+                i as u32 / parsed.width,
+                [t[0], t[1], t[2], t[3]],
+            )
+        })
+        .collect();
+    let expected: Vec<(u32, u32, [u16; 4])> = spot["bright"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|b| {
+            let rgba = u16s(&b["rgba"]);
+            (
+                b["x"].as_u64().unwrap() as u32,
+                b["y"].as_u64().unwrap() as u32,
+                [rgba[0], rgba[1], rgba[2], rgba[3]],
+            )
+        })
+        .collect();
+    assert_eq!(bright, expected);
+
+    // `DataTextureLoader.load()`'s property copy.
+    assert!(spot["flipY"].as_bool().unwrap(), "three's texData.flipY");
+    let texture = loader.load(&path).unwrap();
+    let inner = texture.borrow();
+    assert!(inner.flip_y, "HDRLoader sets texData.flipY = true");
+    assert!(!inner.generate_mipmaps);
+    assert_eq!(inner.min_filter, three_rs::textures::MinFilter::Linear);
+    assert_eq!(inner.mag_filter, three_rs::TextureFilter::Linear);
+    assert_eq!(texture.format(), wgpu::TextureFormat::Rgba16Float);
+    assert_eq!(texture.size(), (1024, 512));
+}
