@@ -1295,6 +1295,26 @@ fn main() {
         SetupContext::default(),
     );
 
+    // `webgpu_furnace_test`: `fromScene`'s background box. Three's dump of it
+    // is `m00`/`m01` in the scout's `dump-furnace_test/` — a plain
+    // `MeshBasicNodeMaterial` with `BackSide` and depth off, whose colour is
+    // the env scene's `0xcccccc`. The colour is a uniform, so the WGSL does
+    // not depend on it; it is passed anyway so the section reads as the
+    // generator builds it.
+    show(
+        "furnace_background",
+        &three_rs::renderer::pmrem::background_material(Color::from_hex(0xcccccc)),
+        SetupContext::default(),
+    );
+
+    // And `webgpu_furnace_test`'s grid material: `MeshPhysicalMaterial` with
+    // `envMap` and **no lights at all** — three's `m04`/`m05`. Roughness and
+    // metalness are uniforms, so one cell of the 11x11 grid is every cell.
+    let mut furnace = MeshBasicNodeMaterial::physical(Color::from_hex(0xffffff), 0.0, 0.0);
+    furnace.ior = 1.5;
+    furnace.pmrem_env = Some(environment.handle());
+    show("furnace_physical", &furnace, SetupContext::default());
+
     // And the lit material with a light in the graph: the example's
     // intensity-zero `DirectionalLight` is why `m08` carries a directional
     // block at all. The colour is the row-0 white metal.

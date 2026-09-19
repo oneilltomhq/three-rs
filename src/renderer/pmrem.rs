@@ -14,16 +14,22 @@
 //! into the top 768×512 of it, then ten GGX steps of two passes each prefilter
 //! the pyramid, which is the dump's 21 PMREM render passes.
 //!
-//! `fromCubemap` and `fromEquirectangular` are ported; they differ only in
-//! `_setSizeFromTexture` and in which of the two one-tap materials fills level
-//! 0, which is three's own shape. `fromScene` (and with it `_blur` /
-//! `sphericalGaussianBlur`) has no caller yet.
+//! `fromCubemap`, `fromEquirectangular` and `fromScene` are ported. The first
+//! two differ only in `_setSizeFromTexture` and in which of the two one-tap
+//! materials fills level 0, which is three's own shape. `fromScene` fills
+//! level 0 differently again: it renders a *scene* six times, through the
+//! renderer's ordinary render path, into 256² viewport slices of the atlas
+//! with `autoClear` off. `_blur` / `sphericalGaussianBlur` — the `sigma > 0`
+//! arm of `fromScene` — still has no caller.
 
 use std::rc::Rc;
 
+use crate::cameras::PerspectiveCamera;
 use crate::core::{BufferAttribute, BufferGeometry};
 use crate::error::Error;
-use crate::materials::{Blending, MeshBasicNodeMaterial};
+use crate::geometries::box_geometry_default;
+use crate::materials::{Blending, MeshBasicNodeMaterial, Side};
+use crate::math::{Color, Vector3};
 use crate::nodes::node::{SettableValue, Type};
 use crate::nodes::pmrem_utils::{self, CubeUvSize};
 use crate::nodes::tsl::{
@@ -31,6 +37,7 @@ use crate::nodes::tsl::{
     uniform_settable, vec4_join,
 };
 use crate::nodes::NodeRef;
+use crate::objects::{Background, Mesh, Scene};
 use crate::textures::{CubeTexture, Texture, TextureFilter, TextureType};
 
 use super::render_target::{RenderTarget, RenderTargetOptions};
@@ -45,6 +52,27 @@ pub const EXTRA_LODS: usize = 6;
 
 /// `GGX_SAMPLES` — VNDF samples per prefilter pass.
 pub const GGX_SAMPLES: usize = 256;
+
+/// `fromScene( scene, sigma = 0, near = 0.1, far = 100, { size = 256 } )` —
+/// three's defaults, which is all any ported example asks for.
+pub const SCENE_SIZE: usize = 256;
+/// `fromScene`'s default `near`.
+pub const SCENE_NEAR: f64 = 0.1;
+/// `fromScene`'s default `far`.
+pub const SCENE_FAR: f64 = 100.0;
+
+/// `_sceneToCubeUV`'s `upSign` — px, py, pz, nx, ny, nz.
+///
+/// From `src/renderers/common/extras/PMREMGenerator.js`, the **WebGPU**
+/// generator. r186 carries a second, older copy at `src/extras/` for the WebGL
+/// renderer whose tables are `[ 1, -1, 1, 1, 1, 1 ]` / `[ 1, 1, 1, -1, -1, -1 ]`
+/// and which draws the background box inside the face loop; that is not the
+/// file `three.webgpu.js` is built from, and following it would put five of the
+/// six faces somewhere three does not. See
+/// `docs/webgpu_furnace_test-progress.md`.
+const UP_SIGN: [f64; 6] = [1.0, 1.0, 1.0, 1.0, -1.0, 1.0];
+/// `_sceneToCubeUV`'s `forwardSign`.
+const FORWARD_SIGN: [f64; 6] = [1.0, -1.0, 1.0, -1.0, 1.0, -1.0];
 
 /// `_faceLib` — the WebGPU face order, which is the order the six quads of a
 /// lod plane are written into the vertex arrays.
@@ -185,6 +213,135 @@ impl PmremGenerator {
         Ok(())
     }
 
+    /// `fromScene( scene )` — the PMREM of a rendered scene, with three's
+    /// defaults (`sigma = 0`, `near = 0.1`, `far = 100`, `size = 256`, the
+    /// cube camera at the origin).
+    ///
+    /// This is the entry point that does not start from a texture at all:
+    /// `_sceneToCubeUV` renders the scene six times, with a 90° cube camera,
+    /// into the six 256² tiles of level 0 of the atlas. `sigma > 0` — the
+    /// `_blur` / `sphericalGaussianBlur` arm — is not ported; no example on the
+    /// ladder asks for it, and it is listed in `docs/nodes.md` §13.
+    ///
+    /// `scene` is `&mut` because three's `_sceneToCubeUV` assigns
+    /// `scene.background = null` for the duration of a solid-colour background
+    /// and puts it back afterwards; the port does the same to the same field.
+    pub fn from_scene(
+        &mut self,
+        renderer: &mut super::Renderer,
+        scene: &mut Scene,
+        render_target: Option<RenderTarget>,
+    ) -> Result<RenderTarget, Error> {
+        self.set_size(SCENE_SIZE);
+
+        let old_target = renderer.render_target();
+
+        let target = match render_target {
+            Some(target) => target,
+            // `_allocateTarget( true )` — a depth buffer, because what fills
+            // level 0 here is a scene and not a screen-space blit.
+            None => self.allocate_target(true)?,
+        };
+        self.init(&target)?;
+        self.scene_to_cube_uv(renderer, scene, SCENE_NEAR, SCENE_FAR, &target);
+        self.apply_pmrem(renderer, &target);
+        self.cleanup(renderer, old_target, &target);
+
+        Ok(target)
+    }
+
+    /// `_sceneToCubeUV( scene, near, far, cubeUVRenderTarget, position )`.
+    ///
+    /// The renderer capability this needs — and the only one the rung adds —
+    /// is *render a scene into a viewport slice of a render target without
+    /// clearing it*. Both halves already existed:
+    /// [`RenderTarget::set_viewport`] / [`RenderTarget::set_scissor`], which
+    /// `_setViewport` writes and which `Renderer::render()` reads through the
+    /// target's pass, and [`Renderer::auto_clear`], which decides whether that
+    /// pass loads or clears. So this is `PMREMGenerator.js:448-545` and
+    /// nothing else.
+    ///
+    /// [`RenderTarget::set_viewport`]: super::render_target::RenderTarget::set_viewport
+    /// [`RenderTarget::set_scissor`]: super::render_target::RenderTarget::set_scissor
+    /// [`Renderer::auto_clear`]: super::Renderer::auto_clear
+    fn scene_to_cube_uv(
+        &mut self,
+        renderer: &mut super::Renderer,
+        scene: &mut Scene,
+        near: f64,
+        far: f64,
+        target: &RenderTarget,
+    ) {
+        let position = Vector3::ZERO;
+        let mut cube_camera = PerspectiveCamera::new(90.0, 1.0, near, far);
+
+        let original_auto_clear = renderer.auto_clear;
+        let clear_color = renderer.clear_color();
+        renderer.auto_clear = false;
+
+        // `if ( background ) { if ( background.isColor ) { … } } else { … }`:
+        // a colour background becomes the box's colour and is lifted off the
+        // scene for the duration; anything else stays on it and is drawn by
+        // the cube camera like any other skybox; no background at all falls
+        // back to the renderer's clear colour.
+        let background = scene.background.clone();
+        let (use_solid_color, color) = match &background {
+            Some(Background::Color(color)) => {
+                scene.background = None;
+                (true, *color)
+            }
+            Some(_) => (false, clear_color),
+            None => (true, clear_color),
+        };
+
+        renderer.set_render_target(Some(target.clone()));
+        // `renderer.clear()` — colour and depth of the whole atlas, ignoring
+        // the `autoClear` switches that were just turned off.
+        renderer.clear(true, true);
+
+        if use_solid_color {
+            // `renderer.render( backgroundBox, cubeCamera )`, once, *before*
+            // the face loop and so at the target's full viewport: three's dump
+            // of `webgpu_furnace_test` draws the 36-index box over the whole
+            // 768×1024 atlas. A unit cube seen from its own centre through a
+            // 90° frustum fills any viewport, which is why one draw is enough
+            // and why the six face renders that follow have nothing to add.
+            let mut box_scene = background_box(color);
+            renderer.render(&mut box_scene, &mut cube_camera);
+        }
+
+        for i in 0..6 {
+            let (up, look_at) = face_camera(i, position);
+            {
+                let mut object = cube_camera.node.borrow_mut();
+                object.position.set(position.x, position.y, position.z);
+                object.up = up;
+            }
+            cube_camera.look_at(&look_at);
+
+            let (x, y, width, height) = face_tile(self.cube_size, i);
+            set_viewport(target, x, y, width, height);
+
+            renderer.render(scene, &mut cube_camera);
+        }
+
+        renderer.auto_clear = original_auto_clear;
+        scene.background = background;
+    }
+
+    /// `_cleanup( outputTarget )`.
+    fn cleanup(
+        &self,
+        renderer: &mut super::Renderer,
+        old_target: Option<RenderTarget>,
+        target: &RenderTarget,
+    ) {
+        renderer.set_render_target(old_target);
+        target.set_scissor_test(false);
+        let (width, height) = target.size();
+        set_viewport(target, 0, 0, width as usize, height as usize);
+    }
+
     /// `fromCubemap( cubemap )` — the PMREM of a cube texture. The returned
     /// target's `texture()` is what a `pmrem_texture()` node samples.
     pub fn from_cubemap(
@@ -233,11 +390,7 @@ impl PmremGenerator {
         self.texture_to_cube_uv(renderer, source, &target);
         self.apply_pmrem(renderer, &target);
 
-        // `_cleanup( outputTarget )`.
-        renderer.set_render_target(old_target);
-        target.set_scissor_test(false);
-        let (width, height) = target.size();
-        set_viewport(&target, 0, 0, width as usize, height as usize);
+        self.cleanup(renderer, old_target, &target);
 
         Ok(target)
     }
@@ -398,6 +551,39 @@ pub fn tile_rect(
     )
 }
 
+/// `_sceneToCubeUV`'s per-face camera basis: the `up` vector and the point the
+/// cube camera looks at, for face `i` of the WebGPU face order.
+///
+/// Split out with [`face_tile`] because the pair is pure and is the numeric
+/// gate on the six faces — `tests/pmrem_scene.rs` checks both against three's
+/// own `upSign` / `forwardSign` tables. A permuted face, a flipped `up` or a
+/// column/row swap is invisible in a solid-colour furnace and wrong in every
+/// environment that has structure in it.
+pub fn face_camera(face: usize, position: Vector3) -> (Vector3, Vector3) {
+    let column = face % 3;
+    let up = match column {
+        1 => Vector3::new(0.0, 0.0, UP_SIGN[face]),
+        _ => Vector3::new(0.0, UP_SIGN[face], 0.0),
+    };
+    let look_at = match column {
+        0 => Vector3::new(position.x + FORWARD_SIGN[face], position.y, position.z),
+        1 => Vector3::new(position.x, position.y + FORWARD_SIGN[face], position.z),
+        _ => Vector3::new(position.x, position.y, position.z + FORWARD_SIGN[face]),
+    };
+    (up, look_at)
+}
+
+/// `_setViewport( cubeUVRenderTarget, col * size, i > 2 ? size : 0, size, size )`
+/// — face `i`'s tile of level 0 of the atlas, top-left origin.
+pub fn face_tile(cube_size: usize, face: usize) -> (usize, usize, usize, usize) {
+    (
+        (face % 3) * cube_size,
+        if face > 2 { cube_size } else { 0 },
+        cube_size,
+        cube_size,
+    )
+}
+
 /// The `wgpu::Texture` behind a render target's colour attachment.
 fn gpu_texture_of(target: &RenderTarget) -> wgpu::Texture {
     target.texture().with_gpu(|gpu| gpu.clone())
@@ -448,6 +634,39 @@ fn pmrem_material(name: &'static str) -> MeshBasicNodeMaterial {
 /// `varyings.nodeVarying4 = outputDirection;` / `normalize( nodeVarying4 )`.
 pub fn output_direction() -> NodeRef {
     attribute("outputDirection", Type::Vec3).normalize()
+}
+
+/// `this._backgroundBox` — `new Mesh( new BoxGeometry(), new
+/// MeshBasicMaterial( { name: 'PMREM.Background', side: BackSide, depthWrite:
+/// false, depthTest: false } ) )`, with the colour copied from the scene's
+/// background (or the renderer's clear colour).
+///
+/// Three caches the mesh on the generator and disposes it in `dispose()`; the
+/// port builds it per `fromScene`, because a generator generates once and the
+/// only thing the cache saves is a `BoxGeometry` and a material. Nothing
+/// observable depends on it — the WGSL is `MeshBasicNodeMaterial`'s, which
+/// `webgpu_materials_basic` already gates.
+///
+/// Three renders it as a bare `Mesh`; `Renderer.render()` then substitutes its
+/// own empty `_scene` for the scene-level state, so a background-less `Scene`
+/// with the box in it is the same thing here.
+fn background_box(color: Color) -> Scene {
+    let mesh = Mesh::new(Rc::new(box_geometry_default()), background_material(color));
+    let scene = Scene::new();
+    scene.add(&mesh);
+    scene
+}
+
+/// The background box's material on its own, so `examples/dump_wgsl.rs` can
+/// diff it against three's `PMREM.Background` modules.
+pub fn background_material(color: Color) -> MeshBasicNodeMaterial {
+    let mut material = MeshBasicNodeMaterial::new();
+    material.name = "PMREM.Background";
+    material.color = color;
+    material.side = Side::Back;
+    material.depth_write = false;
+    material.depth_test = false;
+    material
 }
 
 /// `_getCubemapMaterial( envTexture )` — `cubeTexture( envTexture,
