@@ -532,3 +532,55 @@ wrong space and a transmissive material sampling the framebuffer reads the
 wrong values. `outputColorTransform = false` (hand tone mapping down instead
 of baking it), the XR direct target and the `onBeforePipeline` /
 `onAfterPipeline` callbacks are not ported; nothing on the ladder uses them.
+## `rtt()`: a node that is its own render target (`webgpu_postprocessing_anamorphic`)
+
+`src/nodes/display/rtt.rs` is `src/nodes/utils/RTTNode.js`. `rtt( node )`
+hands back a texture node whose texture is a render target it owns: the node
+becomes a full-screen quad's `fragmentNode`, the quad is drawn into the target
+once a frame, and everything downstream samples the result rather than
+re-evaluating the graph.
+
+`webgpu_postprocessing_anamorphic` is the rung that needs it and shows why.
+Its high pass reads the bright pass **eighty times** along x. Without the
+`rtt()` those eighty taps would each inline the whole
+`mix( vec4( 0 ), scenePass, smoothstep( … ) )`, including eighty samples of
+the scene texture; with it they are eighty samples of one 800x500 half-float
+texture, and the bright pass is computed once.
+
+Three things about the target are not `BloomNode`'s:
+
+* **It keeps a depth buffer.** `new RenderTarget( w, h, { type: HalfFloatType,
+  ...options } )` — an `rtt()` caller passes no `depthBuffer`, so it defaults
+  to `true`. Three's dump has the matching `depth24plus` beside the
+  `rgba16float`, and the port allocates it for the same reason: to match, not
+  because the quad reads it.
+* **It carries its own sampler wrapping.** `rtt( node, null, null, { wrapS,
+  wrapT } )`, and the anamorphic page passes `MirroredRepeatWrapping` on both
+  axes. See `docs/webgpu_postprocessing_anamorphic-progress.md` for why the
+  dump makes that look untrue and why it is.
+* **It is a `TextureNode`, not a pass.** `super( renderTarget.texture, uv() )`
+  gives the base class a non-null uv node, so `setUpdateMatrix( uvNode === null )`
+  leaves the uv matrix off. An `rtt()` tap therefore carries no `mat3x3`
+  uniform, which is why `RttNode::sample` is built on `texture_uv` rather than
+  `texture_sample`.
+
+### Who fires it
+
+The same ownership divergence as `PassNode`, `SsaaPassNode` and `BloomNode`,
+recorded above: three.js fires `RTTNode.updateBefore()` from inside the render
+that samples the texture, so its pass is *recorded* after the pass that reads
+it and *submitted* before it. The port has the application call
+`RttNode::render( renderer )` explicitly, ahead of the reader, which gives the
+GPU the same submission order — the anamorphic example's `animate()` is
+`scene_pass`, `bright_pass`, `bloom_pass`, `render_pipeline`, which is three's
+submit order exactly.
+
+### `fullscreenPass` and `currentSamples`
+
+`webgpu_postprocessing_anamorphic` is the first example on the ladder that
+asks for `antialias: true` *and* draws a quad straight to the canvas. Three's
+`Renderer.currentSamples` returns 0 when `renderContext.fullscreenPass` is
+set, so the final `RenderPipeline` quad is never multisampled even though the
+scene pass behind it is; the port now has the same branch
+(`Renderer::fullscreen_pass`, set around `render_quad`). Without it the canvas
+would get an MSAA resolve texture three's dump does not have.
