@@ -1,0 +1,21 @@
+# Three's own grader, this machine, under flock /run/user/1000/three-rs-gpu.lock
+# cd ~/src/vendor/three.js && npm run test-e2e-webgpu -- webgpu_pmrem_scene webgpu_furnace_test \
+#     webgpu_instance_path webgpu_materials_envmaps webgpu_materials_cubemap_mipmaps webgpu_pmrem_test
+
+--- run 1 (2026-09-19)
+Diff 0.0% in file: webgpu_furnace_test (3.2s)
+Diff 0.0% in file: webgpu_instance_path (3.1s)
+Diff 0.0% in file: webgpu_materials_cubemap_mipmaps (3.1s)
+Diff 0.0% in file: webgpu_materials_envmaps (3.4s)
+Diff 0.0% in file: webgpu_pmrem_scene (3.1s)
+Diff 0.0% in file: webgpu_pmrem_test (3.1s)
+TEST PASSED! 6 screenshots rendered correctly.
+
+--- run 2 (2026-09-19)
+Diff 0.0% in file: webgpu_furnace_test (3.2s)
+Diff 0.0% in file: webgpu_instance_path (3.1s)
+Diff 0.0% in file: webgpu_materials_cubemap_mipmaps (3.1s)
+Diff 0.0% in file: webgpu_materials_envmaps (3.1s)
+Diff 0.0% in file: webgpu_pmrem_scene (3.1s)
+Diff 0.0% in file: webgpu_pmrem_test (3.2s)
+TEST PASSED! 6 screenshots rendered correctly.

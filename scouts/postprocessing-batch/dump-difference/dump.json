@@ -1,0 +1,2252 @@
+{
+  "modules": [
+    {
+      "id": 21,
+      "label": "mipmap",
+      "stage": "vertex_fragment",
+      "file": "m00_vertex_fragment_mipmap.wgsl"
+    },
+    {
+      "id": 51,
+      "label": "vertex",
+      "stage": "vertex",
+      "file": "m01_vertex_vertex.wgsl"
+    },
+    {
+      "id": 52,
+      "label": "fragment",
+      "stage": "fragment",
+      "file": "m02_fragment_fragment.wgsl"
+    },
+    {
+      "id": 65,
+      "label": "vertex_RenderPipeline",
+      "stage": "vertex",
+      "file": "m03_vertex_vertex_RenderPipeline.wgsl"
+    },
+    {
+      "id": 66,
+      "label": "fragment_RenderPipeline",
+      "stage": "fragment",
+      "file": "m04_fragment_fragment_RenderPipeline.wgsl"
+    }
+  ],
+  "bindGroupLayouts": [
+    {
+      "id": 12,
+      "label": null,
+      "entries": [
+        {
+          "binding": 0,
+          "visibility": 7,
+          "visibilityFlags": [
+            "VERTEX",
+            "FRAGMENT",
+            "COMPUTE"
+          ],
+          "buffer": {}
+        }
+      ]
+    },
+    {
+      "id": 47,
+      "label": null,
+      "entries": [
+        {
+          "binding": 0,
+          "visibility": 7,
+          "visibilityFlags": [
+            "VERTEX",
+            "FRAGMENT",
+            "COMPUTE"
+          ],
+          "buffer": {}
+        },
+        {
+          "binding": 1,
+          "visibility": 2,
+          "visibilityFlags": [
+            "FRAGMENT"
+          ],
+          "sampler": {}
+        },
+        {
+          "binding": 2,
+          "visibility": 2,
+          "visibilityFlags": [
+            "FRAGMENT"
+          ],
+          "texture": {}
+        }
+      ]
+    },
+    {
+      "id": 60,
+      "label": null,
+      "entries": [
+        {
+          "binding": 0,
+          "visibility": 2,
+          "visibilityFlags": [
+            "FRAGMENT"
+          ],
+          "sampler": {}
+        },
+        {
+          "binding": 1,
+          "visibility": 2,
+          "visibilityFlags": [
+            "FRAGMENT"
+          ],
+          "texture": {}
+        },
+        {
+          "binding": 2,
+          "visibility": 2,
+          "visibilityFlags": [
+            "FRAGMENT"
+          ],
+          "sampler": {}
+        },
+        {
+          "binding": 3,
+          "visibility": 2,
+          "visibilityFlags": [
+            "FRAGMENT"
+          ],
+          "texture": {}
+        }
+      ]
+    }
+  ],
+  "pipelineLayouts": [
+    {
+      "id": 53,
+      "label": "",
+      "bindGroupLayouts": [
+        12,
+        47
+      ]
+    },
+    {
+      "id": 67,
+      "label": "",
+      "bindGroupLayouts": [
+        12,
+        60
+      ]
+    }
+  ],
+  "renderPipelines": [
+    {
+      "id": 22,
+      "label": "mipmap-rgba8unorm-srgb-2d-array",
+      "async": false,
+      "desc": {
+        "label": "mipmap-rgba8unorm-srgb-2d-array",
+        "layout": "auto",
+        "vertex": {
+          "module": "mipmap"
+        },
+        "primitive": {},
+        "multisample": {
+          "count": 1,
+          "mask": 4294967295,
+          "alphaToCoverageEnabled": false
+        },
+        "fragment": {
+          "entryPoint": "main_2d_array",
+          "targets": [
+            {
+              "format": "rgba8unorm-srgb"
+            }
+          ],
+          "module": "mipmap"
+        }
+      }
+    },
+    {
+      "id": 54,
+      "label": "renderPipeline_MeshBasicMaterial_17",
+      "async": false,
+      "desc": {
+        "label": "renderPipeline_MeshBasicMaterial_17",
+        "layout": 53,
+        "vertex": {
+          "entryPoint": "main",
+          "buffers": [
+            {
+              "arrayStride": 8,
+              "attributes": [
+                {
+                  "shaderLocation": 0,
+                  "offset": 0,
+                  "format": "float32x2"
+                }
+              ],
+              "stepMode": "vertex"
+            },
+            {
+              "arrayStride": 12,
+              "attributes": [
+                {
+                  "shaderLocation": 1,
+                  "offset": 0,
+                  "format": "float32x3"
+                }
+              ],
+              "stepMode": "vertex"
+            }
+          ],
+          "module": "vertex"
+        },
+        "primitive": {
+          "topology": "triangle-list",
+          "frontFace": "ccw",
+          "cullMode": "back"
+        },
+        "depthStencil": {
+          "format": "depth24plus",
+          "depthWriteEnabled": true,
+          "depthCompare": "less-equal"
+        },
+        "multisample": {
+          "count": 1,
+          "mask": 4294967295,
+          "alphaToCoverageEnabled": false
+        },
+        "fragment": {
+          "entryPoint": "main",
+          "targets": [
+            {
+              "format": "rgba16float",
+              "writeMask": 15
+            }
+          ],
+          "module": "fragment"
+        }
+      }
+    },
+    {
+      "id": 68,
+      "label": "renderPipeline_RenderPipeline_18",
+      "async": false,
+      "desc": {
+        "label": "renderPipeline_RenderPipeline_18",
+        "layout": 67,
+        "vertex": {
+          "entryPoint": "main",
+          "buffers": [
+            {
+              "arrayStride": 8,
+              "attributes": [
+                {
+                  "shaderLocation": 0,
+                  "offset": 0,
+                  "format": "float32x2"
+                }
+              ],
+              "stepMode": "vertex"
+            }
+          ],
+          "module": "vertex_RenderPipeline"
+        },
+        "primitive": {
+          "topology": "triangle-list",
+          "frontFace": "ccw",
+          "cullMode": "back"
+        },
+        "depthStencil": {
+          "format": "depth24plus",
+          "depthWriteEnabled": true,
+          "depthCompare": "less-equal"
+        },
+        "multisample": {
+          "count": 1,
+          "mask": 4294967295,
+          "alphaToCoverageEnabled": false
+        },
+        "fragment": {
+          "entryPoint": "main",
+          "targets": [
+            {
+              "format": "rgba8unorm",
+              "writeMask": 15
+            }
+          ],
+          "module": "fragment_RenderPipeline"
+        }
+      }
+    }
+  ],
+  "computePipelines": [],
+  "buffers": [
+    {
+      "id": 8,
+      "label": "",
+      "size": 192,
+      "usage": 44,
+      "usageFlags": [
+        "COPY_SRC",
+        "COPY_DST",
+        "VERTEX"
+      ],
+      "mappedAtCreation": true
+    },
+    {
+      "id": 9,
+      "label": "",
+      "size": 288,
+      "usage": 44,
+      "usageFlags": [
+        "COPY_SRC",
+        "COPY_DST",
+        "VERTEX"
+      ],
+      "mappedAtCreation": true
+    },
+    {
+      "id": 10,
+      "label": "",
+      "size": 144,
+      "usage": 28,
+      "usageFlags": [
+        "COPY_SRC",
+        "COPY_DST",
+        "INDEX"
+      ],
+      "mappedAtCreation": true
+    },
+    {
+      "id": 11,
+      "label": "bindingBuffer2_render_(vertex,fragment,compute)",
+      "size": 160,
+      "usage": 72,
+      "usageFlags": [
+        "COPY_DST",
+        "UNIFORM"
+      ],
+      "mappedAtCreation": false
+    },
+    {
+      "id": 14,
+      "label": "bindingBuffer1_object_(vertex,fragment,compute)",
+      "size": 144,
+      "usage": 72,
+      "usageFlags": [
+        "COPY_DST",
+        "UNIFORM"
+      ],
+      "mappedAtCreation": false
+    },
+    {
+      "id": 19,
+      "label": "",
+      "size": 4,
+      "usage": 72,
+      "usageFlags": [
+        "COPY_DST",
+        "UNIFORM"
+      ],
+      "mappedAtCreation": false
+    },
+    {
+      "id": 20,
+      "label": "",
+      "size": 4,
+      "usage": 64,
+      "usageFlags": [
+        "UNIFORM"
+      ],
+      "mappedAtCreation": false
+    },
+    {
+      "id": 55,
+      "label": "",
+      "size": 24,
+      "usage": 44,
+      "usageFlags": [
+        "COPY_SRC",
+        "COPY_DST",
+        "VERTEX"
+      ],
+      "mappedAtCreation": true
+    },
+    {
+      "id": 56,
+      "label": "bindingBuffer0_render_(vertex,fragment,compute)",
+      "size": 16,
+      "usage": 72,
+      "usageFlags": [
+        "COPY_DST",
+        "UNIFORM"
+      ],
+      "mappedAtCreation": false
+    }
+  ],
+  "textures": [
+    {
+      "id": 0,
+      "label": "depthBuffer",
+      "desc": {
+        "size": {
+          "width": 800,
+          "height": 500,
+          "depthOrArrayLayers": 1
+        },
+        "mipLevelCount": 1,
+        "sampleCount": 1,
+        "dimension": "2d",
+        "format": "depth24plus",
+        "usage": 23,
+        "usageFlags": [
+          "COPY_SRC",
+          "COPY_DST",
+          "TEXTURE_BINDING",
+          "RENDER_ATTACHMENT"
+        ],
+        "viewFormats": []
+      }
+    },
+    {
+      "id": 4,
+      "label": "output",
+      "desc": {
+        "size": {
+          "width": 800,
+          "height": 500,
+          "depthOrArrayLayers": 1
+        },
+        "mipLevelCount": 1,
+        "sampleCount": 1,
+        "dimension": "2d",
+        "format": "rgba16float",
+        "usage": 23,
+        "usageFlags": [
+          "COPY_SRC",
+          "COPY_DST",
+          "TEXTURE_BINDING",
+          "RENDER_ATTACHMENT"
+        ],
+        "viewFormats": []
+      }
+    },
+    {
+      "id": 5,
+      "label": "depth",
+      "desc": {
+        "size": {
+          "width": 800,
+          "height": 500,
+          "depthOrArrayLayers": 1
+        },
+        "mipLevelCount": 1,
+        "sampleCount": 1,
+        "dimension": "2d",
+        "format": "depth24plus",
+        "usage": 23,
+        "usageFlags": [
+          "COPY_SRC",
+          "COPY_DST",
+          "TEXTURE_BINDING",
+          "RENDER_ATTACHMENT"
+        ],
+        "viewFormats": []
+      }
+    },
+    {
+      "id": 16,
+      "label": "",
+      "desc": {
+        "size": {
+          "width": 256,
+          "height": 256,
+          "depthOrArrayLayers": 1
+        },
+        "mipLevelCount": 9,
+        "sampleCount": 1,
+        "dimension": "2d",
+        "format": "rgba8unorm-srgb",
+        "usage": 23,
+        "usageFlags": [
+          "COPY_SRC",
+          "COPY_DST",
+          "TEXTURE_BINDING",
+          "RENDER_ATTACHMENT"
+        ],
+        "viewFormats": []
+      }
+    },
+    {
+      "id": 59,
+      "label": "output",
+      "desc": {
+        "size": {
+          "width": 800,
+          "height": 500,
+          "depthOrArrayLayers": 1
+        },
+        "mipLevelCount": 1,
+        "sampleCount": 1,
+        "dimension": "2d",
+        "format": "rgba16float",
+        "usage": 23,
+        "usageFlags": [
+          "COPY_SRC",
+          "COPY_DST",
+          "TEXTURE_BINDING",
+          "RENDER_ATTACHMENT"
+        ],
+        "viewFormats": []
+      }
+    }
+  ],
+  "textureViews": [
+    {
+      "id": 1,
+      "label": null,
+      "texture": 0,
+      "desc": {}
+    },
+    {
+      "id": 3,
+      "label": null,
+      "texture": 2,
+      "desc": {}
+    },
+    {
+      "id": 6,
+      "label": "colorAttachment_0",
+      "texture": 4,
+      "desc": {
+        "label": "",
+        "usage": 0,
+        "aspect": "all",
+        "baseMipLevel": 0,
+        "baseArrayLayer": 0,
+        "swizzle": "rgba"
+      }
+    },
+    {
+      "id": 7,
+      "label": "",
+      "texture": 5,
+      "desc": {
+        "label": "",
+        "usage": 0,
+        "aspect": "all",
+        "baseMipLevel": 0,
+        "baseArrayLayer": 0,
+        "swizzle": "rgba"
+      }
+    },
+    {
+      "id": 23,
+      "label": "",
+      "texture": 16,
+      "desc": {
+        "label": "",
+        "usage": 0,
+        "aspect": "all",
+        "baseMipLevel": 0,
+        "baseArrayLayer": 0,
+        "swizzle": "rgba"
+      }
+    },
+    {
+      "id": 25,
+      "label": "",
+      "texture": 16,
+      "desc": {
+        "label": "",
+        "usage": 0,
+        "aspect": "all",
+        "baseMipLevel": 0,
+        "baseArrayLayer": 0,
+        "swizzle": "rgba"
+      }
+    },
+    {
+      "id": 26,
+      "label": "",
+      "texture": 16,
+      "desc": {
+        "label": "",
+        "usage": 0,
+        "aspect": "all",
+        "baseMipLevel": 0,
+        "baseArrayLayer": 0,
+        "swizzle": "rgba"
+      }
+    },
+    {
+      "id": 28,
+      "label": "",
+      "texture": 16,
+      "desc": {
+        "label": "",
+        "usage": 0,
+        "aspect": "all",
+        "baseMipLevel": 0,
+        "baseArrayLayer": 0,
+        "swizzle": "rgba"
+      }
+    },
+    {
+      "id": 29,
+      "label": "",
+      "texture": 16,
+      "desc": {
+        "label": "",
+        "usage": 0,
+        "aspect": "all",
+        "baseMipLevel": 0,
+        "baseArrayLayer": 0,
+        "swizzle": "rgba"
+      }
+    },
+    {
+      "id": 31,
+      "label": "",
+      "texture": 16,
+      "desc": {
+        "label": "",
+        "usage": 0,
+        "aspect": "all",
+        "baseMipLevel": 0,
+        "baseArrayLayer": 0,
+        "swizzle": "rgba"
+      }
+    },
+    {
+      "id": 32,
+      "label": "",
+      "texture": 16,
+      "desc": {
+        "label": "",
+        "usage": 0,
+        "aspect": "all",
+        "baseMipLevel": 0,
+        "baseArrayLayer": 0,
+        "swizzle": "rgba"
+      }
+    },
+    {
+      "id": 34,
+      "label": "",
+      "texture": 16,
+      "desc": {
+        "label": "",
+        "usage": 0,
+        "aspect": "all",
+        "baseMipLevel": 0,
+        "baseArrayLayer": 0,
+        "swizzle": "rgba"
+      }
+    },
+    {
+      "id": 35,
+      "label": "",
+      "texture": 16,
+      "desc": {
+        "label": "",
+        "usage": 0,
+        "aspect": "all",
+        "baseMipLevel": 0,
+        "baseArrayLayer": 0,
+        "swizzle": "rgba"
+      }
+    },
+    {
+      "id": 37,
+      "label": "",
+      "texture": 16,
+      "desc": {
+        "label": "",
+        "usage": 0,
+        "aspect": "all",
+        "baseMipLevel": 0,
+        "baseArrayLayer": 0,
+        "swizzle": "rgba"
+      }
+    },
+    {
+      "id": 38,
+      "label": "",
+      "texture": 16,
+      "desc": {
+        "label": "",
+        "usage": 0,
+        "aspect": "all",
+        "baseMipLevel": 0,
+        "baseArrayLayer": 0,
+        "swizzle": "rgba"
+      }
+    },
+    {
+      "id": 40,
+      "label": "",
+      "texture": 16,
+      "desc": {
+        "label": "",
+        "usage": 0,
+        "aspect": "all",
+        "baseMipLevel": 0,
+        "baseArrayLayer": 0,
+        "swizzle": "rgba"
+      }
+    },
+    {
+      "id": 41,
+      "label": "",
+      "texture": 16,
+      "desc": {
+        "label": "",
+        "usage": 0,
+        "aspect": "all",
+        "baseMipLevel": 0,
+        "baseArrayLayer": 0,
+        "swizzle": "rgba"
+      }
+    },
+    {
+      "id": 43,
+      "label": "",
+      "texture": 16,
+      "desc": {
+        "label": "",
+        "usage": 0,
+        "aspect": "all",
+        "baseMipLevel": 0,
+        "baseArrayLayer": 0,
+        "swizzle": "rgba"
+      }
+    },
+    {
+      "id": 44,
+      "label": "",
+      "texture": 16,
+      "desc": {
+        "label": "",
+        "usage": 0,
+        "aspect": "all",
+        "baseMipLevel": 0,
+        "baseArrayLayer": 0,
+        "swizzle": "rgba"
+      }
+    },
+    {
+      "id": 46,
+      "label": "",
+      "texture": 16,
+      "desc": {
+        "label": "",
+        "usage": 0,
+        "aspect": "all",
+        "baseMipLevel": 0,
+        "baseArrayLayer": 0,
+        "swizzle": "rgba"
+      }
+    },
+    {
+      "id": 48,
+      "label": "",
+      "texture": 16,
+      "desc": {
+        "label": "",
+        "usage": 0,
+        "aspect": "all",
+        "baseMipLevel": 0,
+        "baseArrayLayer": 0,
+        "swizzle": "rgba"
+      }
+    },
+    {
+      "id": 61,
+      "label": "",
+      "texture": 59,
+      "desc": {
+        "label": "",
+        "usage": 0,
+        "aspect": "all",
+        "baseMipLevel": 0,
+        "baseArrayLayer": 0,
+        "swizzle": "rgba"
+      }
+    },
+    {
+      "id": 62,
+      "label": "",
+      "texture": 4,
+      "desc": {
+        "label": "",
+        "usage": 0,
+        "aspect": "all",
+        "baseMipLevel": 0,
+        "baseArrayLayer": 0,
+        "swizzle": "rgba"
+      }
+    }
+  ],
+  "samplers": [
+    {
+      "id": 15,
+      "label": "",
+      "desc": {
+        "label": "",
+        "addressModeU": "clamp-to-edge",
+        "addressModeV": "clamp-to-edge",
+        "addressModeW": "clamp-to-edge",
+        "magFilter": "nearest",
+        "minFilter": "nearest",
+        "mipmapFilter": "nearest",
+        "lodMinClamp": 0,
+        "lodMaxClamp": 32,
+        "maxAnisotropy": 1
+      }
+    },
+    {
+      "id": 17,
+      "label": null,
+      "desc": {
+        "minFilter": "linear"
+      }
+    },
+    {
+      "id": 18,
+      "label": null,
+      "desc": {
+        "minFilter": "nearest"
+      }
+    },
+    {
+      "id": 58,
+      "label": "",
+      "desc": {
+        "label": "",
+        "addressModeU": "clamp-to-edge",
+        "addressModeV": "clamp-to-edge",
+        "addressModeW": "clamp-to-edge",
+        "magFilter": "nearest",
+        "minFilter": "nearest",
+        "mipmapFilter": "nearest",
+        "lodMinClamp": 0,
+        "lodMaxClamp": 32,
+        "maxAnisotropy": 1
+      }
+    }
+  ],
+  "bindGroups": [
+    {
+      "id": 13,
+      "label": "bindGroup_render",
+      "layout": 12,
+      "entries": [
+        {
+          "binding": 0,
+          "resource": {
+            "buffer": 11,
+            "bufferLabel": "bindingBuffer2_render_(vertex,fragment,compute)",
+            "offset": 0,
+            "size": null
+          }
+        }
+      ]
+    },
+    {
+      "id": 24,
+      "label": "",
+      "layout": {
+        "unknown": true,
+        "label": ""
+      },
+      "entries": [
+        {
+          "binding": 0,
+          "resource": {
+            "sampler": 17,
+            "label": ""
+          }
+        },
+        {
+          "binding": 1,
+          "resource": {
+            "textureView": 23,
+            "texture": 16,
+            "label": ""
+          }
+        },
+        {
+          "binding": 2,
+          "resource": {
+            "buffer": 20,
+            "bufferLabel": "",
+            "offset": 0,
+            "size": null
+          }
+        }
+      ]
+    },
+    {
+      "id": 27,
+      "label": "",
+      "layout": {
+        "unknown": true,
+        "label": ""
+      },
+      "entries": [
+        {
+          "binding": 0,
+          "resource": {
+            "sampler": 17,
+            "label": ""
+          }
+        },
+        {
+          "binding": 1,
+          "resource": {
+            "textureView": 26,
+            "texture": 16,
+            "label": ""
+          }
+        },
+        {
+          "binding": 2,
+          "resource": {
+            "buffer": 20,
+            "bufferLabel": "",
+            "offset": 0,
+            "size": null
+          }
+        }
+      ]
+    },
+    {
+      "id": 30,
+      "label": "",
+      "layout": {
+        "unknown": true,
+        "label": ""
+      },
+      "entries": [
+        {
+          "binding": 0,
+          "resource": {
+            "sampler": 17,
+            "label": ""
+          }
+        },
+        {
+          "binding": 1,
+          "resource": {
+            "textureView": 29,
+            "texture": 16,
+            "label": ""
+          }
+        },
+        {
+          "binding": 2,
+          "resource": {
+            "buffer": 20,
+            "bufferLabel": "",
+            "offset": 0,
+            "size": null
+          }
+        }
+      ]
+    },
+    {
+      "id": 33,
+      "label": "",
+      "layout": {
+        "unknown": true,
+        "label": ""
+      },
+      "entries": [
+        {
+          "binding": 0,
+          "resource": {
+            "sampler": 17,
+            "label": ""
+          }
+        },
+        {
+          "binding": 1,
+          "resource": {
+            "textureView": 32,
+            "texture": 16,
+            "label": ""
+          }
+        },
+        {
+          "binding": 2,
+          "resource": {
+            "buffer": 20,
+            "bufferLabel": "",
+            "offset": 0,
+            "size": null
+          }
+        }
+      ]
+    },
+    {
+      "id": 36,
+      "label": "",
+      "layout": {
+        "unknown": true,
+        "label": ""
+      },
+      "entries": [
+        {
+          "binding": 0,
+          "resource": {
+            "sampler": 17,
+            "label": ""
+          }
+        },
+        {
+          "binding": 1,
+          "resource": {
+            "textureView": 35,
+            "texture": 16,
+            "label": ""
+          }
+        },
+        {
+          "binding": 2,
+          "resource": {
+            "buffer": 20,
+            "bufferLabel": "",
+            "offset": 0,
+            "size": null
+          }
+        }
+      ]
+    },
+    {
+      "id": 39,
+      "label": "",
+      "layout": {
+        "unknown": true,
+        "label": ""
+      },
+      "entries": [
+        {
+          "binding": 0,
+          "resource": {
+            "sampler": 17,
+            "label": ""
+          }
+        },
+        {
+          "binding": 1,
+          "resource": {
+            "textureView": 38,
+            "texture": 16,
+            "label": ""
+          }
+        },
+        {
+          "binding": 2,
+          "resource": {
+            "buffer": 20,
+            "bufferLabel": "",
+            "offset": 0,
+            "size": null
+          }
+        }
+      ]
+    },
+    {
+      "id": 42,
+      "label": "",
+      "layout": {
+        "unknown": true,
+        "label": ""
+      },
+      "entries": [
+        {
+          "binding": 0,
+          "resource": {
+            "sampler": 17,
+            "label": ""
+          }
+        },
+        {
+          "binding": 1,
+          "resource": {
+            "textureView": 41,
+            "texture": 16,
+            "label": ""
+          }
+        },
+        {
+          "binding": 2,
+          "resource": {
+            "buffer": 20,
+            "bufferLabel": "",
+            "offset": 0,
+            "size": null
+          }
+        }
+      ]
+    },
+    {
+      "id": 45,
+      "label": "",
+      "layout": {
+        "unknown": true,
+        "label": ""
+      },
+      "entries": [
+        {
+          "binding": 0,
+          "resource": {
+            "sampler": 17,
+            "label": ""
+          }
+        },
+        {
+          "binding": 1,
+          "resource": {
+            "textureView": 44,
+            "texture": 16,
+            "label": ""
+          }
+        },
+        {
+          "binding": 2,
+          "resource": {
+            "buffer": 20,
+            "bufferLabel": "",
+            "offset": 0,
+            "size": null
+          }
+        }
+      ]
+    },
+    {
+      "id": 49,
+      "label": "bindGroup_object",
+      "layout": 47,
+      "entries": [
+        {
+          "binding": 0,
+          "resource": {
+            "buffer": 14,
+            "bufferLabel": "bindingBuffer1_object_(vertex,fragment,compute)",
+            "offset": 0,
+            "size": null
+          }
+        },
+        {
+          "binding": 1,
+          "resource": {
+            "sampler": 15,
+            "label": ""
+          }
+        },
+        {
+          "binding": 2,
+          "resource": {
+            "textureView": 48,
+            "texture": 16,
+            "label": ""
+          }
+        }
+      ]
+    },
+    {
+      "id": 50,
+      "label": "bindGroup_object",
+      "layout": 47,
+      "entries": [
+        {
+          "binding": 0,
+          "resource": {
+            "buffer": 14,
+            "bufferLabel": "bindingBuffer1_object_(vertex,fragment,compute)",
+            "offset": 0,
+            "size": null
+          }
+        },
+        {
+          "binding": 1,
+          "resource": {
+            "sampler": 15,
+            "label": ""
+          }
+        },
+        {
+          "binding": 2,
+          "resource": {
+            "textureView": 48,
+            "texture": 16,
+            "label": ""
+          }
+        }
+      ]
+    },
+    {
+      "id": 57,
+      "label": "bindGroup_render",
+      "layout": 12,
+      "entries": [
+        {
+          "binding": 0,
+          "resource": {
+            "buffer": 56,
+            "bufferLabel": "bindingBuffer0_render_(vertex,fragment,compute)",
+            "offset": 0,
+            "size": null
+          }
+        }
+      ]
+    },
+    {
+      "id": 63,
+      "label": "bindGroup_object",
+      "layout": 60,
+      "entries": [
+        {
+          "binding": 0,
+          "resource": {
+            "sampler": 58,
+            "label": ""
+          }
+        },
+        {
+          "binding": 1,
+          "resource": {
+            "textureView": 61,
+            "texture": 59,
+            "label": ""
+          }
+        },
+        {
+          "binding": 2,
+          "resource": {
+            "sampler": 58,
+            "label": ""
+          }
+        },
+        {
+          "binding": 3,
+          "resource": {
+            "textureView": 62,
+            "texture": 4,
+            "label": ""
+          }
+        }
+      ]
+    },
+    {
+      "id": 64,
+      "label": "bindGroup_object",
+      "layout": 60,
+      "entries": [
+        {
+          "binding": 0,
+          "resource": {
+            "sampler": 58,
+            "label": ""
+          }
+        },
+        {
+          "binding": 1,
+          "resource": {
+            "textureView": 62,
+            "texture": 4,
+            "label": ""
+          }
+        },
+        {
+          "binding": 2,
+          "resource": {
+            "sampler": 58,
+            "label": ""
+          }
+        },
+        {
+          "binding": 3,
+          "resource": {
+            "textureView": 61,
+            "texture": 59,
+            "label": ""
+          }
+        }
+      ]
+    }
+  ],
+  "passes": [
+    {
+      "id": 0,
+      "kind": "render",
+      "encoderLabel": "renderContext_0",
+      "desc": {
+        "label": "",
+        "colorAttachments": [
+          {
+            "view": {
+              "textureView": 3,
+              "texture": 2,
+              "label": ""
+            },
+            "clearValue": {
+              "r": 0,
+              "g": 0,
+              "b": 0,
+              "a": 0
+            },
+            "loadOp": "clear",
+            "storeOp": "store"
+          }
+        ],
+        "depthStencilAttachment": {
+          "view": {
+            "textureView": 1,
+            "texture": 0,
+            "label": ""
+          },
+          "depthLoadOp": "clear",
+          "depthStoreOp": "store",
+          "depthClearValue": 1,
+          "depthReadOnly": false,
+          "stencilClearValue": 0,
+          "stencilReadOnly": false
+        }
+      },
+      "cmds": [
+        {
+          "op": "setPipeline",
+          "pipeline": 68,
+          "label": "renderPipeline_RenderPipeline_18"
+        },
+        {
+          "op": "setBindGroup",
+          "index": 0,
+          "bindGroup": 57,
+          "label": "bindGroup_render"
+        },
+        {
+          "op": "setBindGroup",
+          "index": 1,
+          "bindGroup": 64,
+          "label": "bindGroup_object"
+        },
+        {
+          "op": "setVertexBuffer",
+          "slot": 0,
+          "buffer": 55,
+          "label": ""
+        },
+        {
+          "op": "draw",
+          "vertexCount": 3,
+          "instanceCount": 1,
+          "firstVertex": 0,
+          "firstInstance": 0
+        },
+        {
+          "op": "end"
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "kind": "render",
+      "encoderLabel": "renderContext_1",
+      "desc": {
+        "label": "",
+        "colorAttachments": [
+          {
+            "view": {
+              "textureView": 6,
+              "texture": 4,
+              "label": "colorAttachment_0"
+            },
+            "clearValue": {
+              "r": 0.001214107934117647,
+              "g": 0.24228112245478564,
+              "b": 0.76052450467022,
+              "a": 1
+            },
+            "loadOp": "clear",
+            "storeOp": "store"
+          }
+        ],
+        "depthStencilAttachment": {
+          "view": {
+            "textureView": 7,
+            "texture": 5,
+            "label": ""
+          },
+          "depthLoadOp": "clear",
+          "depthStoreOp": "store",
+          "depthClearValue": 1,
+          "depthReadOnly": false,
+          "stencilClearValue": 0,
+          "stencilReadOnly": false
+        }
+      },
+      "cmds": [
+        {
+          "op": "setPipeline",
+          "pipeline": 54,
+          "label": "renderPipeline_MeshBasicMaterial_17"
+        },
+        {
+          "op": "setBindGroup",
+          "index": 0,
+          "bindGroup": 13,
+          "label": "bindGroup_render"
+        },
+        {
+          "op": "setBindGroup",
+          "index": 1,
+          "bindGroup": 50,
+          "label": "bindGroup_object"
+        },
+        {
+          "op": "setIndexBuffer",
+          "buffer": 10,
+          "label": "",
+          "format": "uint32"
+        },
+        {
+          "op": "setVertexBuffer",
+          "slot": 0,
+          "buffer": 8,
+          "label": ""
+        },
+        {
+          "op": "setVertexBuffer",
+          "slot": 1,
+          "buffer": 9,
+          "label": ""
+        },
+        {
+          "op": "drawIndexed",
+          "indexCount": 36,
+          "instanceCount": 1,
+          "firstIndex": 0,
+          "baseVertex": 0,
+          "firstInstance": 0
+        },
+        {
+          "op": "end"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "kind": "render",
+      "encoderLabel": "mipmapEncoder",
+      "desc": {
+        "label": "",
+        "colorAttachments": [
+          {
+            "view": {
+              "textureView": 25,
+              "texture": 16,
+              "label": ""
+            },
+            "loadOp": "clear",
+            "storeOp": "store"
+          }
+        ],
+        "depthStencilAttachment": null
+      },
+      "cmds": [
+        {
+          "op": "end"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "kind": "render",
+      "encoderLabel": "mipmapEncoder",
+      "desc": {
+        "label": "",
+        "colorAttachments": [
+          {
+            "view": {
+              "textureView": 28,
+              "texture": 16,
+              "label": ""
+            },
+            "loadOp": "clear",
+            "storeOp": "store"
+          }
+        ],
+        "depthStencilAttachment": null
+      },
+      "cmds": [
+        {
+          "op": "end"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "kind": "render",
+      "encoderLabel": "mipmapEncoder",
+      "desc": {
+        "label": "",
+        "colorAttachments": [
+          {
+            "view": {
+              "textureView": 31,
+              "texture": 16,
+              "label": ""
+            },
+            "loadOp": "clear",
+            "storeOp": "store"
+          }
+        ],
+        "depthStencilAttachment": null
+      },
+      "cmds": [
+        {
+          "op": "end"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "kind": "render",
+      "encoderLabel": "mipmapEncoder",
+      "desc": {
+        "label": "",
+        "colorAttachments": [
+          {
+            "view": {
+              "textureView": 34,
+              "texture": 16,
+              "label": ""
+            },
+            "loadOp": "clear",
+            "storeOp": "store"
+          }
+        ],
+        "depthStencilAttachment": null
+      },
+      "cmds": [
+        {
+          "op": "end"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "kind": "render",
+      "encoderLabel": "mipmapEncoder",
+      "desc": {
+        "label": "",
+        "colorAttachments": [
+          {
+            "view": {
+              "textureView": 37,
+              "texture": 16,
+              "label": ""
+            },
+            "loadOp": "clear",
+            "storeOp": "store"
+          }
+        ],
+        "depthStencilAttachment": null
+      },
+      "cmds": [
+        {
+          "op": "end"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "kind": "render",
+      "encoderLabel": "mipmapEncoder",
+      "desc": {
+        "label": "",
+        "colorAttachments": [
+          {
+            "view": {
+              "textureView": 40,
+              "texture": 16,
+              "label": ""
+            },
+            "loadOp": "clear",
+            "storeOp": "store"
+          }
+        ],
+        "depthStencilAttachment": null
+      },
+      "cmds": [
+        {
+          "op": "end"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "kind": "render",
+      "encoderLabel": "mipmapEncoder",
+      "desc": {
+        "label": "",
+        "colorAttachments": [
+          {
+            "view": {
+              "textureView": 43,
+              "texture": 16,
+              "label": ""
+            },
+            "loadOp": "clear",
+            "storeOp": "store"
+          }
+        ],
+        "depthStencilAttachment": null
+      },
+      "cmds": [
+        {
+          "op": "end"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "kind": "render",
+      "encoderLabel": "mipmapEncoder",
+      "desc": {
+        "label": "",
+        "colorAttachments": [
+          {
+            "view": {
+              "textureView": 46,
+              "texture": 16,
+              "label": ""
+            },
+            "loadOp": "clear",
+            "storeOp": "store"
+          }
+        ],
+        "depthStencilAttachment": null
+      },
+      "cmds": [
+        {
+          "op": "end"
+        }
+      ]
+    }
+  ],
+  "order": [
+    {
+      "n": 0,
+      "op": "createTexture",
+      "id": 0,
+      "label": "depthBuffer",
+      "format": "depth24plus"
+    },
+    {
+      "n": 1,
+      "op": "beginRenderPass",
+      "pass": 0,
+      "label": ""
+    },
+    {
+      "n": 2,
+      "op": "createTexture",
+      "id": 4,
+      "label": "output",
+      "format": "rgba16float"
+    },
+    {
+      "n": 3,
+      "op": "createTexture",
+      "id": 5,
+      "label": "depth",
+      "format": "depth24plus"
+    },
+    {
+      "n": 4,
+      "op": "beginRenderPass",
+      "pass": 1,
+      "label": ""
+    },
+    {
+      "n": 5,
+      "op": "createBuffer",
+      "id": 8,
+      "label": "",
+      "size": 192
+    },
+    {
+      "n": 6,
+      "op": "createBuffer",
+      "id": 9,
+      "label": "",
+      "size": 288
+    },
+    {
+      "n": 7,
+      "op": "createBuffer",
+      "id": 10,
+      "label": "",
+      "size": 144
+    },
+    {
+      "n": 8,
+      "op": "createBuffer",
+      "id": 11,
+      "label": "bindingBuffer2_render_(vertex,fragment,compute)",
+      "size": 160
+    },
+    {
+      "n": 9,
+      "op": "createBindGroupLayout",
+      "id": 12,
+      "label": null
+    },
+    {
+      "n": 10,
+      "op": "createBindGroup",
+      "id": 13,
+      "label": "bindGroup_render"
+    },
+    {
+      "n": 11,
+      "op": "createBuffer",
+      "id": 14,
+      "label": "bindingBuffer1_object_(vertex,fragment,compute)",
+      "size": 144
+    },
+    {
+      "n": 12,
+      "op": "createSampler",
+      "id": 15,
+      "label": ""
+    },
+    {
+      "n": 13,
+      "op": "createTexture",
+      "id": 16,
+      "label": "",
+      "format": "rgba8unorm-srgb"
+    },
+    {
+      "n": 14,
+      "op": "createSampler",
+      "id": 17,
+      "label": null
+    },
+    {
+      "n": 15,
+      "op": "createSampler",
+      "id": 18,
+      "label": null
+    },
+    {
+      "n": 16,
+      "op": "createBuffer",
+      "id": 19,
+      "label": "",
+      "size": 4
+    },
+    {
+      "n": 17,
+      "op": "queue.writeBuffer",
+      "buffer": 19,
+      "label": "",
+      "bufferOffset": 0,
+      "byteLength": 4
+    },
+    {
+      "n": 18,
+      "op": "createBuffer",
+      "id": 20,
+      "label": "",
+      "size": 4
+    },
+    {
+      "n": 19,
+      "op": "createShaderModule",
+      "id": 21,
+      "label": "mipmap"
+    },
+    {
+      "n": 20,
+      "op": "createRenderPipeline",
+      "id": 22,
+      "label": "mipmap-rgba8unorm-srgb-2d-array"
+    },
+    {
+      "n": 21,
+      "op": "createBindGroup",
+      "id": 24,
+      "label": ""
+    },
+    {
+      "n": 22,
+      "op": "createBindGroup",
+      "id": 27,
+      "label": ""
+    },
+    {
+      "n": 23,
+      "op": "createBindGroup",
+      "id": 30,
+      "label": ""
+    },
+    {
+      "n": 24,
+      "op": "createBindGroup",
+      "id": 33,
+      "label": ""
+    },
+    {
+      "n": 25,
+      "op": "createBindGroup",
+      "id": 36,
+      "label": ""
+    },
+    {
+      "n": 26,
+      "op": "createBindGroup",
+      "id": 39,
+      "label": ""
+    },
+    {
+      "n": 27,
+      "op": "createBindGroup",
+      "id": 42,
+      "label": ""
+    },
+    {
+      "n": 28,
+      "op": "createBindGroup",
+      "id": 45,
+      "label": ""
+    },
+    {
+      "n": 29,
+      "op": "beginRenderPass",
+      "pass": 2,
+      "label": ""
+    },
+    {
+      "n": 30,
+      "op": "end",
+      "pass": 2
+    },
+    {
+      "n": 31,
+      "op": "beginRenderPass",
+      "pass": 3,
+      "label": ""
+    },
+    {
+      "n": 32,
+      "op": "end",
+      "pass": 3
+    },
+    {
+      "n": 33,
+      "op": "beginRenderPass",
+      "pass": 4,
+      "label": ""
+    },
+    {
+      "n": 34,
+      "op": "end",
+      "pass": 4
+    },
+    {
+      "n": 35,
+      "op": "beginRenderPass",
+      "pass": 5,
+      "label": ""
+    },
+    {
+      "n": 36,
+      "op": "end",
+      "pass": 5
+    },
+    {
+      "n": 37,
+      "op": "beginRenderPass",
+      "pass": 6,
+      "label": ""
+    },
+    {
+      "n": 38,
+      "op": "end",
+      "pass": 6
+    },
+    {
+      "n": 39,
+      "op": "beginRenderPass",
+      "pass": 7,
+      "label": ""
+    },
+    {
+      "n": 40,
+      "op": "end",
+      "pass": 7
+    },
+    {
+      "n": 41,
+      "op": "beginRenderPass",
+      "pass": 8,
+      "label": ""
+    },
+    {
+      "n": 42,
+      "op": "end",
+      "pass": 8
+    },
+    {
+      "n": 43,
+      "op": "beginRenderPass",
+      "pass": 9,
+      "label": ""
+    },
+    {
+      "n": 44,
+      "op": "end",
+      "pass": 9
+    },
+    {
+      "n": 45,
+      "op": "commandEncoder.finish",
+      "encoderLabel": "mipmapEncoder"
+    },
+    {
+      "n": 46,
+      "op": "queue.submit",
+      "count": 1
+    },
+    {
+      "n": 47,
+      "op": "createBindGroupLayout",
+      "id": 47,
+      "label": null
+    },
+    {
+      "n": 48,
+      "op": "createBindGroup",
+      "id": 49,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 49,
+      "op": "queue.writeBuffer",
+      "buffer": 11,
+      "label": "bindingBuffer2_render_(vertex,fragment,compute)",
+      "bufferOffset": 0,
+      "byteLength": 160
+    },
+    {
+      "n": 50,
+      "op": "queue.writeBuffer",
+      "buffer": 14,
+      "label": "bindingBuffer1_object_(vertex,fragment,compute)",
+      "bufferOffset": 0,
+      "byteLength": 144
+    },
+    {
+      "n": 51,
+      "op": "queue.writeBuffer",
+      "buffer": 14,
+      "label": "bindingBuffer1_object_(vertex,fragment,compute)",
+      "bufferOffset": 16,
+      "byteLength": 144
+    },
+    {
+      "n": 52,
+      "op": "queue.writeBuffer",
+      "buffer": 14,
+      "label": "bindingBuffer1_object_(vertex,fragment,compute)",
+      "bufferOffset": 80,
+      "byteLength": 144
+    },
+    {
+      "n": 53,
+      "op": "createBindGroup",
+      "id": 50,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 54,
+      "op": "createShaderModule",
+      "id": 51,
+      "label": "vertex"
+    },
+    {
+      "n": 55,
+      "op": "createShaderModule",
+      "id": 52,
+      "label": "fragment"
+    },
+    {
+      "n": 56,
+      "op": "createPipelineLayout",
+      "id": 53,
+      "label": ""
+    },
+    {
+      "n": 57,
+      "op": "createRenderPipeline",
+      "id": 54,
+      "label": "renderPipeline_MeshBasicMaterial_17"
+    },
+    {
+      "n": 58,
+      "op": "setPipeline",
+      "pass": 1,
+      "pipeline": 54,
+      "label": "renderPipeline_MeshBasicMaterial_17"
+    },
+    {
+      "n": 59,
+      "op": "setBindGroup",
+      "pass": 1,
+      "index": 0,
+      "bindGroup": 13,
+      "label": "bindGroup_render"
+    },
+    {
+      "n": 60,
+      "op": "setBindGroup",
+      "pass": 1,
+      "index": 1,
+      "bindGroup": 50,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 61,
+      "op": "setIndexBuffer",
+      "pass": 1,
+      "buffer": 10,
+      "label": "",
+      "format": "uint32"
+    },
+    {
+      "n": 62,
+      "op": "setVertexBuffer",
+      "pass": 1,
+      "slot": 0,
+      "buffer": 8,
+      "label": ""
+    },
+    {
+      "n": 63,
+      "op": "setVertexBuffer",
+      "pass": 1,
+      "slot": 1,
+      "buffer": 9,
+      "label": ""
+    },
+    {
+      "n": 64,
+      "op": "drawIndexed",
+      "pass": 1,
+      "indexCount": 36,
+      "instanceCount": 1,
+      "firstIndex": 0,
+      "baseVertex": 0,
+      "firstInstance": 0
+    },
+    {
+      "n": 65,
+      "op": "end",
+      "pass": 1
+    },
+    {
+      "n": 66,
+      "op": "commandEncoder.finish",
+      "encoderLabel": "renderContext_1"
+    },
+    {
+      "n": 67,
+      "op": "queue.submit",
+      "count": 1
+    },
+    {
+      "n": 68,
+      "op": "createBuffer",
+      "id": 55,
+      "label": "",
+      "size": 24
+    },
+    {
+      "n": 69,
+      "op": "createBuffer",
+      "id": 56,
+      "label": "bindingBuffer0_render_(vertex,fragment,compute)",
+      "size": 16
+    },
+    {
+      "n": 70,
+      "op": "createBindGroup",
+      "id": 57,
+      "label": "bindGroup_render"
+    },
+    {
+      "n": 71,
+      "op": "createSampler",
+      "id": 58,
+      "label": ""
+    },
+    {
+      "n": 72,
+      "op": "createTexture",
+      "id": 59,
+      "label": "output",
+      "format": "rgba16float"
+    },
+    {
+      "n": 73,
+      "op": "createBindGroupLayout",
+      "id": 60,
+      "label": null
+    },
+    {
+      "n": 74,
+      "op": "createBindGroup",
+      "id": 63,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 75,
+      "op": "queue.writeBuffer",
+      "buffer": 56,
+      "label": "bindingBuffer0_render_(vertex,fragment,compute)",
+      "bufferOffset": 0,
+      "byteLength": 16
+    },
+    {
+      "n": 76,
+      "op": "createBindGroup",
+      "id": 64,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 77,
+      "op": "createShaderModule",
+      "id": 65,
+      "label": "vertex_RenderPipeline"
+    },
+    {
+      "n": 78,
+      "op": "createShaderModule",
+      "id": 66,
+      "label": "fragment_RenderPipeline"
+    },
+    {
+      "n": 79,
+      "op": "createPipelineLayout",
+      "id": 67,
+      "label": ""
+    },
+    {
+      "n": 80,
+      "op": "createRenderPipeline",
+      "id": 68,
+      "label": "renderPipeline_RenderPipeline_18"
+    },
+    {
+      "n": 81,
+      "op": "setPipeline",
+      "pass": 0,
+      "pipeline": 68,
+      "label": "renderPipeline_RenderPipeline_18"
+    },
+    {
+      "n": 82,
+      "op": "setBindGroup",
+      "pass": 0,
+      "index": 0,
+      "bindGroup": 57,
+      "label": "bindGroup_render"
+    },
+    {
+      "n": 83,
+      "op": "setBindGroup",
+      "pass": 0,
+      "index": 1,
+      "bindGroup": 64,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 84,
+      "op": "setVertexBuffer",
+      "pass": 0,
+      "slot": 0,
+      "buffer": 55,
+      "label": ""
+    },
+    {
+      "n": 85,
+      "op": "draw",
+      "pass": 0,
+      "vertexCount": 3,
+      "instanceCount": 1,
+      "firstVertex": 0,
+      "firstInstance": 0
+    },
+    {
+      "n": 86,
+      "op": "end",
+      "pass": 0
+    },
+    {
+      "n": 87,
+      "op": "commandEncoder.finish",
+      "encoderLabel": "renderContext_0"
+    },
+    {
+      "n": 88,
+      "op": "queue.submit",
+      "count": 1
+    }
+  ],
+  "requestedLimits": {},
+  "grantedLimits": {
+    "maxTextureDimension1D": 8192,
+    "maxTextureDimension2D": 8192,
+    "maxTextureDimension3D": 2048,
+    "maxTextureArrayLayers": 256,
+    "maxBindGroups": 4,
+    "maxBindGroupsPlusVertexBuffers": 24,
+    "maxBindingsPerBindGroup": 1000,
+    "maxDynamicUniformBuffersPerPipelineLayout": 8,
+    "maxDynamicStorageBuffersPerPipelineLayout": 4,
+    "maxSampledTexturesPerShaderStage": 16,
+    "maxSamplersPerShaderStage": 16,
+    "maxStorageBuffersPerShaderStage": 8,
+    "maxStorageTexturesPerShaderStage": 4,
+    "maxUniformBuffersPerShaderStage": 12,
+    "maxUniformBufferBindingSize": 65536,
+    "maxStorageBufferBindingSize": 134217728,
+    "minUniformBufferOffsetAlignment": 256,
+    "minStorageBufferOffsetAlignment": 256,
+    "maxVertexBuffers": 8,
+    "maxBufferSize": 268435456,
+    "maxVertexAttributes": 16,
+    "maxVertexBufferArrayStride": 2048,
+    "maxInterStageShaderVariables": 16,
+    "maxColorAttachments": 8,
+    "maxColorAttachmentBytesPerSample": 32,
+    "maxComputeWorkgroupStorageSize": 16384,
+    "maxComputeInvocationsPerWorkgroup": 256,
+    "maxComputeWorkgroupSizeX": 256,
+    "maxComputeWorkgroupSizeY": 256,
+    "maxComputeWorkgroupSizeZ": 64,
+    "maxComputeWorkgroupsPerDimension": 65535,
+    "maxImmediateSize": 64,
+    "maxStorageBuffersInFragmentStage": 8,
+    "maxStorageTexturesInFragmentStage": 4,
+    "maxStorageBuffersInVertexStage": 8,
+    "maxStorageTexturesInVertexStage": 4
+  }
+}

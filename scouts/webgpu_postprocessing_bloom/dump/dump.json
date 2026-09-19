@@ -1,0 +1,6946 @@
+{
+  "modules": [
+    {
+      "id": 24,
+      "label": "vertex_constant1",
+      "stage": "vertex",
+      "file": "m00_vertex_vertex_constant1.wgsl"
+    },
+    {
+      "id": 25,
+      "label": "fragment_constant1",
+      "stage": "fragment",
+      "file": "m01_fragment_fragment_constant1.wgsl"
+    },
+    {
+      "id": 58,
+      "label": "fragment_HoloFillDark",
+      "stage": "fragment",
+      "file": "m02_fragment_fragment_HoloFillDark.wgsl"
+    },
+    {
+      "id": 76,
+      "label": "vertex_Bloom_highPass",
+      "stage": "vertex",
+      "file": "m03_vertex_vertex_Bloom_highPass.wgsl"
+    },
+    {
+      "id": 77,
+      "label": "fragment_Bloom_highPass",
+      "stage": "fragment",
+      "file": "m04_fragment_fragment_Bloom_highPass.wgsl"
+    },
+    {
+      "id": 86,
+      "label": "vertex_Bloom_separable",
+      "stage": "vertex",
+      "file": "m05_vertex_vertex_Bloom_separable.wgsl"
+    },
+    {
+      "id": 87,
+      "label": "fragment_Bloom_separable",
+      "stage": "fragment",
+      "file": "m06_fragment_fragment_Bloom_separable.wgsl"
+    },
+    {
+      "id": 100,
+      "label": "fragment_Bloom_separable",
+      "stage": "fragment",
+      "file": "m07_fragment_fragment_Bloom_separable.wgsl"
+    },
+    {
+      "id": 113,
+      "label": "fragment_Bloom_separable",
+      "stage": "fragment",
+      "file": "m08_fragment_fragment_Bloom_separable.wgsl"
+    },
+    {
+      "id": 126,
+      "label": "fragment_Bloom_separable",
+      "stage": "fragment",
+      "file": "m09_fragment_fragment_Bloom_separable.wgsl"
+    },
+    {
+      "id": 139,
+      "label": "fragment_Bloom_separable",
+      "stage": "fragment",
+      "file": "m10_fragment_fragment_Bloom_separable.wgsl"
+    },
+    {
+      "id": 152,
+      "label": "vertex_Bloom_comp",
+      "stage": "vertex",
+      "file": "m11_vertex_vertex_Bloom_comp.wgsl"
+    },
+    {
+      "id": 153,
+      "label": "fragment_Bloom_comp",
+      "stage": "fragment",
+      "file": "m12_fragment_fragment_Bloom_comp.wgsl"
+    },
+    {
+      "id": 161,
+      "label": "fragment_RenderPipeline",
+      "stage": "fragment",
+      "file": "m13_fragment_fragment_RenderPipeline.wgsl"
+    }
+  ],
+  "bindGroupLayouts": [
+    {
+      "id": 15,
+      "label": null,
+      "entries": [
+        {
+          "binding": 0,
+          "visibility": 7,
+          "visibilityFlags": [
+            "VERTEX",
+            "FRAGMENT",
+            "COMPUTE"
+          ],
+          "buffer": {}
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "label": null,
+      "entries": [
+        {
+          "binding": 0,
+          "visibility": 7,
+          "visibilityFlags": [
+            "VERTEX",
+            "FRAGMENT",
+            "COMPUTE"
+          ],
+          "buffer": {}
+        },
+        {
+          "binding": 1,
+          "visibility": 2,
+          "visibilityFlags": [
+            "FRAGMENT"
+          ],
+          "sampler": {}
+        },
+        {
+          "binding": 2,
+          "visibility": 2,
+          "visibilityFlags": [
+            "FRAGMENT"
+          ],
+          "texture": {}
+        }
+      ]
+    },
+    {
+      "id": 72,
+      "label": null,
+      "entries": [
+        {
+          "binding": 0,
+          "visibility": 2,
+          "visibilityFlags": [
+            "FRAGMENT"
+          ],
+          "sampler": {}
+        },
+        {
+          "binding": 1,
+          "visibility": 2,
+          "visibilityFlags": [
+            "FRAGMENT"
+          ],
+          "texture": {}
+        },
+        {
+          "binding": 2,
+          "visibility": 7,
+          "visibilityFlags": [
+            "VERTEX",
+            "FRAGMENT",
+            "COMPUTE"
+          ],
+          "buffer": {}
+        }
+      ]
+    },
+    {
+      "id": 148,
+      "label": null,
+      "entries": [
+        {
+          "binding": 0,
+          "visibility": 7,
+          "visibilityFlags": [
+            "VERTEX",
+            "FRAGMENT",
+            "COMPUTE"
+          ],
+          "buffer": {}
+        },
+        {
+          "binding": 1,
+          "visibility": 2,
+          "visibilityFlags": [
+            "FRAGMENT"
+          ],
+          "buffer": {}
+        },
+        {
+          "binding": 2,
+          "visibility": 2,
+          "visibilityFlags": [
+            "FRAGMENT"
+          ],
+          "sampler": {}
+        },
+        {
+          "binding": 3,
+          "visibility": 2,
+          "visibilityFlags": [
+            "FRAGMENT"
+          ],
+          "texture": {}
+        },
+        {
+          "binding": 4,
+          "visibility": 2,
+          "visibilityFlags": [
+            "FRAGMENT"
+          ],
+          "sampler": {}
+        },
+        {
+          "binding": 5,
+          "visibility": 2,
+          "visibilityFlags": [
+            "FRAGMENT"
+          ],
+          "texture": {}
+        },
+        {
+          "binding": 6,
+          "visibility": 2,
+          "visibilityFlags": [
+            "FRAGMENT"
+          ],
+          "sampler": {}
+        },
+        {
+          "binding": 7,
+          "visibility": 2,
+          "visibilityFlags": [
+            "FRAGMENT"
+          ],
+          "texture": {}
+        },
+        {
+          "binding": 8,
+          "visibility": 2,
+          "visibilityFlags": [
+            "FRAGMENT"
+          ],
+          "sampler": {}
+        },
+        {
+          "binding": 9,
+          "visibility": 2,
+          "visibilityFlags": [
+            "FRAGMENT"
+          ],
+          "texture": {}
+        },
+        {
+          "binding": 10,
+          "visibility": 2,
+          "visibilityFlags": [
+            "FRAGMENT"
+          ],
+          "sampler": {}
+        },
+        {
+          "binding": 11,
+          "visibility": 2,
+          "visibilityFlags": [
+            "FRAGMENT"
+          ],
+          "texture": {}
+        }
+      ]
+    },
+    {
+      "id": 158,
+      "label": null,
+      "entries": [
+        {
+          "binding": 0,
+          "visibility": 2,
+          "visibilityFlags": [
+            "FRAGMENT"
+          ],
+          "sampler": {}
+        },
+        {
+          "binding": 1,
+          "visibility": 2,
+          "visibilityFlags": [
+            "FRAGMENT"
+          ],
+          "texture": {}
+        },
+        {
+          "binding": 2,
+          "visibility": 2,
+          "visibilityFlags": [
+            "FRAGMENT"
+          ],
+          "sampler": {}
+        },
+        {
+          "binding": 3,
+          "visibility": 2,
+          "visibilityFlags": [
+            "FRAGMENT"
+          ],
+          "texture": {}
+        }
+      ]
+    }
+  ],
+  "pipelineLayouts": [
+    {
+      "id": 26,
+      "label": "",
+      "bindGroupLayouts": [
+        15,
+        20
+      ]
+    },
+    {
+      "id": 49,
+      "label": "",
+      "bindGroupLayouts": [
+        15,
+        20
+      ]
+    },
+    {
+      "id": 59,
+      "label": "",
+      "bindGroupLayouts": [
+        15,
+        20
+      ]
+    },
+    {
+      "id": 78,
+      "label": "",
+      "bindGroupLayouts": [
+        72
+      ]
+    },
+    {
+      "id": 88,
+      "label": "",
+      "bindGroupLayouts": [
+        72
+      ]
+    },
+    {
+      "id": 101,
+      "label": "",
+      "bindGroupLayouts": [
+        72
+      ]
+    },
+    {
+      "id": 114,
+      "label": "",
+      "bindGroupLayouts": [
+        72
+      ]
+    },
+    {
+      "id": 127,
+      "label": "",
+      "bindGroupLayouts": [
+        72
+      ]
+    },
+    {
+      "id": 140,
+      "label": "",
+      "bindGroupLayouts": [
+        72
+      ]
+    },
+    {
+      "id": 154,
+      "label": "",
+      "bindGroupLayouts": [
+        148
+      ]
+    },
+    {
+      "id": 162,
+      "label": "",
+      "bindGroupLayouts": [
+        15,
+        158
+      ]
+    }
+  ],
+  "renderPipelines": [
+    {
+      "id": 27,
+      "label": "renderPipeline_constant1_21",
+      "async": false,
+      "desc": {
+        "label": "renderPipeline_constant1_21",
+        "layout": 26,
+        "vertex": {
+          "entryPoint": "main",
+          "buffers": [
+            {
+              "arrayStride": 16,
+              "attributes": [
+                {
+                  "shaderLocation": 0,
+                  "offset": 0,
+                  "format": "float32x4"
+                }
+              ],
+              "stepMode": "vertex"
+            },
+            {
+              "arrayStride": 12,
+              "attributes": [
+                {
+                  "shaderLocation": 1,
+                  "offset": 0,
+                  "format": "float32x3"
+                }
+              ],
+              "stepMode": "vertex"
+            },
+            {
+              "arrayStride": 12,
+              "attributes": [
+                {
+                  "shaderLocation": 2,
+                  "offset": 0,
+                  "format": "float32x3"
+                }
+              ],
+              "stepMode": "vertex"
+            }
+          ],
+          "module": "vertex_constant1"
+        },
+        "primitive": {
+          "topology": "triangle-list",
+          "frontFace": "ccw",
+          "cullMode": "none"
+        },
+        "depthStencil": {
+          "format": "depth24plus",
+          "depthWriteEnabled": true,
+          "depthCompare": "less-equal"
+        },
+        "multisample": {
+          "count": 4,
+          "mask": 4294967295,
+          "alphaToCoverageEnabled": false
+        },
+        "fragment": {
+          "entryPoint": "main",
+          "targets": [
+            {
+              "format": "rgba16float",
+              "writeMask": 15
+            }
+          ],
+          "module": "fragment_constant1"
+        }
+      }
+    },
+    {
+      "id": 50,
+      "label": "renderPipeline_constant2_24",
+      "async": false,
+      "desc": {
+        "label": "renderPipeline_constant2_24",
+        "layout": 49,
+        "vertex": {
+          "entryPoint": "main",
+          "buffers": [
+            {
+              "arrayStride": 16,
+              "attributes": [
+                {
+                  "shaderLocation": 0,
+                  "offset": 0,
+                  "format": "float32x4"
+                }
+              ],
+              "stepMode": "vertex"
+            },
+            {
+              "arrayStride": 12,
+              "attributes": [
+                {
+                  "shaderLocation": 1,
+                  "offset": 0,
+                  "format": "float32x3"
+                }
+              ],
+              "stepMode": "vertex"
+            },
+            {
+              "arrayStride": 12,
+              "attributes": [
+                {
+                  "shaderLocation": 2,
+                  "offset": 0,
+                  "format": "float32x3"
+                }
+              ],
+              "stepMode": "vertex"
+            }
+          ],
+          "module": "vertex_constant1"
+        },
+        "primitive": {
+          "topology": "triangle-list",
+          "frontFace": "ccw",
+          "cullMode": "none"
+        },
+        "depthStencil": {
+          "format": "depth24plus",
+          "depthWriteEnabled": true,
+          "depthCompare": "less-equal"
+        },
+        "multisample": {
+          "count": 4,
+          "mask": 4294967295,
+          "alphaToCoverageEnabled": false
+        },
+        "fragment": {
+          "entryPoint": "main",
+          "targets": [
+            {
+              "format": "rgba16float",
+              "writeMask": 15
+            }
+          ],
+          "module": "fragment_constant1"
+        }
+      }
+    },
+    {
+      "id": 60,
+      "label": "renderPipeline_HoloFillDark_22",
+      "async": false,
+      "desc": {
+        "label": "renderPipeline_HoloFillDark_22",
+        "layout": 59,
+        "vertex": {
+          "entryPoint": "main",
+          "buffers": [
+            {
+              "arrayStride": 16,
+              "attributes": [
+                {
+                  "shaderLocation": 0,
+                  "offset": 0,
+                  "format": "float32x4"
+                }
+              ],
+              "stepMode": "vertex"
+            },
+            {
+              "arrayStride": 12,
+              "attributes": [
+                {
+                  "shaderLocation": 1,
+                  "offset": 0,
+                  "format": "float32x3"
+                }
+              ],
+              "stepMode": "vertex"
+            },
+            {
+              "arrayStride": 12,
+              "attributes": [
+                {
+                  "shaderLocation": 2,
+                  "offset": 0,
+                  "format": "float32x3"
+                }
+              ],
+              "stepMode": "vertex"
+            }
+          ],
+          "module": "vertex_constant1"
+        },
+        "primitive": {
+          "topology": "triangle-list",
+          "frontFace": "ccw",
+          "cullMode": "back"
+        },
+        "depthStencil": {
+          "format": "depth24plus",
+          "depthWriteEnabled": false,
+          "depthCompare": "less-equal"
+        },
+        "multisample": {
+          "count": 4,
+          "mask": 4294967295,
+          "alphaToCoverageEnabled": false
+        },
+        "fragment": {
+          "entryPoint": "main",
+          "targets": [
+            {
+              "format": "rgba16float",
+              "blend": {
+                "color": {
+                  "srcFactor": "src-alpha",
+                  "dstFactor": "one-minus-src-alpha",
+                  "operation": "add"
+                },
+                "alpha": {
+                  "srcFactor": "one",
+                  "dstFactor": "one-minus-src-alpha",
+                  "operation": "add"
+                }
+              },
+              "writeMask": 15
+            }
+          ],
+          "module": "fragment_HoloFillDark"
+        }
+      }
+    },
+    {
+      "id": 79,
+      "label": "renderPipeline_Bloom_highPass_26",
+      "async": false,
+      "desc": {
+        "label": "renderPipeline_Bloom_highPass_26",
+        "layout": 78,
+        "vertex": {
+          "entryPoint": "main",
+          "buffers": [
+            {
+              "arrayStride": 8,
+              "attributes": [
+                {
+                  "shaderLocation": 0,
+                  "offset": 0,
+                  "format": "float32x2"
+                }
+              ],
+              "stepMode": "vertex"
+            }
+          ],
+          "module": "vertex_Bloom_highPass"
+        },
+        "primitive": {
+          "topology": "triangle-list",
+          "frontFace": "ccw",
+          "cullMode": "back"
+        },
+        "multisample": {
+          "count": 1,
+          "mask": 4294967295,
+          "alphaToCoverageEnabled": false
+        },
+        "fragment": {
+          "entryPoint": "main",
+          "targets": [
+            {
+              "format": "rgba16float",
+              "writeMask": 15
+            }
+          ],
+          "module": "fragment_Bloom_highPass"
+        }
+      }
+    },
+    {
+      "id": 89,
+      "label": "renderPipeline_Bloom_separable_27",
+      "async": false,
+      "desc": {
+        "label": "renderPipeline_Bloom_separable_27",
+        "layout": 88,
+        "vertex": {
+          "entryPoint": "main",
+          "buffers": [
+            {
+              "arrayStride": 8,
+              "attributes": [
+                {
+                  "shaderLocation": 0,
+                  "offset": 0,
+                  "format": "float32x2"
+                }
+              ],
+              "stepMode": "vertex"
+            }
+          ],
+          "module": "vertex_Bloom_separable"
+        },
+        "primitive": {
+          "topology": "triangle-list",
+          "frontFace": "ccw",
+          "cullMode": "back"
+        },
+        "multisample": {
+          "count": 1,
+          "mask": 4294967295,
+          "alphaToCoverageEnabled": false
+        },
+        "fragment": {
+          "entryPoint": "main",
+          "targets": [
+            {
+              "format": "rgba16float",
+              "writeMask": 15
+            }
+          ],
+          "module": "fragment_Bloom_separable"
+        }
+      }
+    },
+    {
+      "id": 102,
+      "label": "renderPipeline_Bloom_separable_28",
+      "async": false,
+      "desc": {
+        "label": "renderPipeline_Bloom_separable_28",
+        "layout": 101,
+        "vertex": {
+          "entryPoint": "main",
+          "buffers": [
+            {
+              "arrayStride": 8,
+              "attributes": [
+                {
+                  "shaderLocation": 0,
+                  "offset": 0,
+                  "format": "float32x2"
+                }
+              ],
+              "stepMode": "vertex"
+            }
+          ],
+          "module": "vertex_Bloom_separable"
+        },
+        "primitive": {
+          "topology": "triangle-list",
+          "frontFace": "ccw",
+          "cullMode": "back"
+        },
+        "multisample": {
+          "count": 1,
+          "mask": 4294967295,
+          "alphaToCoverageEnabled": false
+        },
+        "fragment": {
+          "entryPoint": "main",
+          "targets": [
+            {
+              "format": "rgba16float",
+              "writeMask": 15
+            }
+          ],
+          "module": "fragment_Bloom_separable"
+        }
+      }
+    },
+    {
+      "id": 115,
+      "label": "renderPipeline_Bloom_separable_29",
+      "async": false,
+      "desc": {
+        "label": "renderPipeline_Bloom_separable_29",
+        "layout": 114,
+        "vertex": {
+          "entryPoint": "main",
+          "buffers": [
+            {
+              "arrayStride": 8,
+              "attributes": [
+                {
+                  "shaderLocation": 0,
+                  "offset": 0,
+                  "format": "float32x2"
+                }
+              ],
+              "stepMode": "vertex"
+            }
+          ],
+          "module": "vertex_Bloom_separable"
+        },
+        "primitive": {
+          "topology": "triangle-list",
+          "frontFace": "ccw",
+          "cullMode": "back"
+        },
+        "multisample": {
+          "count": 1,
+          "mask": 4294967295,
+          "alphaToCoverageEnabled": false
+        },
+        "fragment": {
+          "entryPoint": "main",
+          "targets": [
+            {
+              "format": "rgba16float",
+              "writeMask": 15
+            }
+          ],
+          "module": "fragment_Bloom_separable"
+        }
+      }
+    },
+    {
+      "id": 128,
+      "label": "renderPipeline_Bloom_separable_30",
+      "async": false,
+      "desc": {
+        "label": "renderPipeline_Bloom_separable_30",
+        "layout": 127,
+        "vertex": {
+          "entryPoint": "main",
+          "buffers": [
+            {
+              "arrayStride": 8,
+              "attributes": [
+                {
+                  "shaderLocation": 0,
+                  "offset": 0,
+                  "format": "float32x2"
+                }
+              ],
+              "stepMode": "vertex"
+            }
+          ],
+          "module": "vertex_Bloom_separable"
+        },
+        "primitive": {
+          "topology": "triangle-list",
+          "frontFace": "ccw",
+          "cullMode": "back"
+        },
+        "multisample": {
+          "count": 1,
+          "mask": 4294967295,
+          "alphaToCoverageEnabled": false
+        },
+        "fragment": {
+          "entryPoint": "main",
+          "targets": [
+            {
+              "format": "rgba16float",
+              "writeMask": 15
+            }
+          ],
+          "module": "fragment_Bloom_separable"
+        }
+      }
+    },
+    {
+      "id": 141,
+      "label": "renderPipeline_Bloom_separable_31",
+      "async": false,
+      "desc": {
+        "label": "renderPipeline_Bloom_separable_31",
+        "layout": 140,
+        "vertex": {
+          "entryPoint": "main",
+          "buffers": [
+            {
+              "arrayStride": 8,
+              "attributes": [
+                {
+                  "shaderLocation": 0,
+                  "offset": 0,
+                  "format": "float32x2"
+                }
+              ],
+              "stepMode": "vertex"
+            }
+          ],
+          "module": "vertex_Bloom_separable"
+        },
+        "primitive": {
+          "topology": "triangle-list",
+          "frontFace": "ccw",
+          "cullMode": "back"
+        },
+        "multisample": {
+          "count": 1,
+          "mask": 4294967295,
+          "alphaToCoverageEnabled": false
+        },
+        "fragment": {
+          "entryPoint": "main",
+          "targets": [
+            {
+              "format": "rgba16float",
+              "writeMask": 15
+            }
+          ],
+          "module": "fragment_Bloom_separable"
+        }
+      }
+    },
+    {
+      "id": 155,
+      "label": "renderPipeline_Bloom_comp_32",
+      "async": false,
+      "desc": {
+        "label": "renderPipeline_Bloom_comp_32",
+        "layout": 154,
+        "vertex": {
+          "entryPoint": "main",
+          "buffers": [
+            {
+              "arrayStride": 8,
+              "attributes": [
+                {
+                  "shaderLocation": 0,
+                  "offset": 0,
+                  "format": "float32x2"
+                }
+              ],
+              "stepMode": "vertex"
+            }
+          ],
+          "module": "vertex_Bloom_comp"
+        },
+        "primitive": {
+          "topology": "triangle-list",
+          "frontFace": "ccw",
+          "cullMode": "back"
+        },
+        "multisample": {
+          "count": 1,
+          "mask": 4294967295,
+          "alphaToCoverageEnabled": false
+        },
+        "fragment": {
+          "entryPoint": "main",
+          "targets": [
+            {
+              "format": "rgba16float",
+              "writeMask": 15
+            }
+          ],
+          "module": "fragment_Bloom_comp"
+        }
+      }
+    },
+    {
+      "id": 163,
+      "label": "renderPipeline_RenderPipeline_25",
+      "async": false,
+      "desc": {
+        "label": "renderPipeline_RenderPipeline_25",
+        "layout": 162,
+        "vertex": {
+          "entryPoint": "main",
+          "buffers": [
+            {
+              "arrayStride": 8,
+              "attributes": [
+                {
+                  "shaderLocation": 0,
+                  "offset": 0,
+                  "format": "float32x2"
+                }
+              ],
+              "stepMode": "vertex"
+            }
+          ],
+          "module": "vertex_Bloom_comp"
+        },
+        "primitive": {
+          "topology": "triangle-list",
+          "frontFace": "ccw",
+          "cullMode": "back"
+        },
+        "depthStencil": {
+          "format": "depth24plus",
+          "depthWriteEnabled": true,
+          "depthCompare": "less-equal"
+        },
+        "multisample": {
+          "count": 1,
+          "mask": 4294967295,
+          "alphaToCoverageEnabled": false
+        },
+        "fragment": {
+          "entryPoint": "main",
+          "targets": [
+            {
+              "format": "rgba8unorm",
+              "writeMask": 15
+            }
+          ],
+          "module": "fragment_RenderPipeline"
+        }
+      }
+    }
+  ],
+  "computePipelines": [],
+  "buffers": [
+    {
+      "id": 10,
+      "label": "",
+      "size": 720352,
+      "usage": 44,
+      "usageFlags": [
+        "COPY_SRC",
+        "COPY_DST",
+        "VERTEX"
+      ],
+      "mappedAtCreation": true
+    },
+    {
+      "id": 11,
+      "label": "",
+      "size": 540264,
+      "usage": 44,
+      "usageFlags": [
+        "COPY_SRC",
+        "COPY_DST",
+        "VERTEX"
+      ],
+      "mappedAtCreation": true
+    },
+    {
+      "id": 12,
+      "label": "",
+      "size": 540264,
+      "usage": 44,
+      "usageFlags": [
+        "COPY_SRC",
+        "COPY_DST",
+        "VERTEX"
+      ],
+      "mappedAtCreation": true
+    },
+    {
+      "id": 13,
+      "label": "",
+      "size": 302088,
+      "usage": 28,
+      "usageFlags": [
+        "COPY_SRC",
+        "COPY_DST",
+        "INDEX"
+      ],
+      "mappedAtCreation": true
+    },
+    {
+      "id": 14,
+      "label": "bindingBuffer2_render_(vertex,fragment,compute)",
+      "size": 192,
+      "usage": 72,
+      "usageFlags": [
+        "COPY_DST",
+        "UNIFORM"
+      ],
+      "mappedAtCreation": false
+    },
+    {
+      "id": 17,
+      "label": "bindingBuffer1_object_(vertex,fragment,compute)",
+      "size": 160,
+      "usage": 72,
+      "usageFlags": [
+        "COPY_DST",
+        "UNIFORM"
+      ],
+      "mappedAtCreation": false
+    },
+    {
+      "id": 28,
+      "label": "",
+      "size": 529280,
+      "usage": 44,
+      "usageFlags": [
+        "COPY_SRC",
+        "COPY_DST",
+        "VERTEX"
+      ],
+      "mappedAtCreation": true
+    },
+    {
+      "id": 29,
+      "label": "",
+      "size": 396960,
+      "usage": 44,
+      "usageFlags": [
+        "COPY_SRC",
+        "COPY_DST",
+        "VERTEX"
+      ],
+      "mappedAtCreation": true
+    },
+    {
+      "id": 30,
+      "label": "",
+      "size": 396960,
+      "usage": 44,
+      "usageFlags": [
+        "COPY_SRC",
+        "COPY_DST",
+        "VERTEX"
+      ],
+      "mappedAtCreation": true
+    },
+    {
+      "id": 31,
+      "label": "",
+      "size": 230400,
+      "usage": 28,
+      "usageFlags": [
+        "COPY_SRC",
+        "COPY_DST",
+        "INDEX"
+      ],
+      "mappedAtCreation": true
+    },
+    {
+      "id": 32,
+      "label": "bindingBuffer1_object_(vertex,fragment,compute)",
+      "size": 160,
+      "usage": 72,
+      "usageFlags": [
+        "COPY_DST",
+        "UNIFORM"
+      ],
+      "mappedAtCreation": false
+    },
+    {
+      "id": 35,
+      "label": "",
+      "size": 110080,
+      "usage": 44,
+      "usageFlags": [
+        "COPY_SRC",
+        "COPY_DST",
+        "VERTEX"
+      ],
+      "mappedAtCreation": true
+    },
+    {
+      "id": 36,
+      "label": "",
+      "size": 82560,
+      "usage": 44,
+      "usageFlags": [
+        "COPY_SRC",
+        "COPY_DST",
+        "VERTEX"
+      ],
+      "mappedAtCreation": true
+    },
+    {
+      "id": 37,
+      "label": "",
+      "size": 82560,
+      "usage": 44,
+      "usageFlags": [
+        "COPY_SRC",
+        "COPY_DST",
+        "VERTEX"
+      ],
+      "mappedAtCreation": true
+    },
+    {
+      "id": 38,
+      "label": "",
+      "size": 41280,
+      "usage": 28,
+      "usageFlags": [
+        "COPY_SRC",
+        "COPY_DST",
+        "INDEX"
+      ],
+      "mappedAtCreation": true
+    },
+    {
+      "id": 39,
+      "label": "bindingBuffer1_object_(vertex,fragment,compute)",
+      "size": 160,
+      "usage": 72,
+      "usageFlags": [
+        "COPY_DST",
+        "UNIFORM"
+      ],
+      "mappedAtCreation": false
+    },
+    {
+      "id": 42,
+      "label": "",
+      "size": 22528,
+      "usage": 44,
+      "usageFlags": [
+        "COPY_SRC",
+        "COPY_DST",
+        "VERTEX"
+      ],
+      "mappedAtCreation": true
+    },
+    {
+      "id": 43,
+      "label": "",
+      "size": 16896,
+      "usage": 44,
+      "usageFlags": [
+        "COPY_SRC",
+        "COPY_DST",
+        "VERTEX"
+      ],
+      "mappedAtCreation": true
+    },
+    {
+      "id": 44,
+      "label": "",
+      "size": 16896,
+      "usage": 44,
+      "usageFlags": [
+        "COPY_SRC",
+        "COPY_DST",
+        "VERTEX"
+      ],
+      "mappedAtCreation": true
+    },
+    {
+      "id": 45,
+      "label": "",
+      "size": 10176,
+      "usage": 28,
+      "usageFlags": [
+        "COPY_SRC",
+        "COPY_DST",
+        "INDEX"
+      ],
+      "mappedAtCreation": true
+    },
+    {
+      "id": 46,
+      "label": "bindingBuffer6_object_(vertex,fragment,compute)",
+      "size": 160,
+      "usage": 72,
+      "usageFlags": [
+        "COPY_DST",
+        "UNIFORM"
+      ],
+      "mappedAtCreation": false
+    },
+    {
+      "id": 51,
+      "label": "",
+      "size": 35328,
+      "usage": 44,
+      "usageFlags": [
+        "COPY_SRC",
+        "COPY_DST",
+        "VERTEX"
+      ],
+      "mappedAtCreation": true
+    },
+    {
+      "id": 52,
+      "label": "",
+      "size": 26496,
+      "usage": 44,
+      "usageFlags": [
+        "COPY_SRC",
+        "COPY_DST",
+        "VERTEX"
+      ],
+      "mappedAtCreation": true
+    },
+    {
+      "id": 53,
+      "label": "",
+      "size": 26496,
+      "usage": 44,
+      "usageFlags": [
+        "COPY_SRC",
+        "COPY_DST",
+        "VERTEX"
+      ],
+      "mappedAtCreation": true
+    },
+    {
+      "id": 54,
+      "label": "",
+      "size": 21720,
+      "usage": 28,
+      "usageFlags": [
+        "COPY_SRC",
+        "COPY_DST",
+        "INDEX"
+      ],
+      "mappedAtCreation": true
+    },
+    {
+      "id": 55,
+      "label": "bindingBuffer9_object_(vertex,fragment,compute)",
+      "size": 160,
+      "usage": 72,
+      "usageFlags": [
+        "COPY_DST",
+        "UNIFORM"
+      ],
+      "mappedAtCreation": false
+    },
+    {
+      "id": 61,
+      "label": "",
+      "size": 51200,
+      "usage": 44,
+      "usageFlags": [
+        "COPY_SRC",
+        "COPY_DST",
+        "VERTEX"
+      ],
+      "mappedAtCreation": true
+    },
+    {
+      "id": 62,
+      "label": "",
+      "size": 38400,
+      "usage": 44,
+      "usageFlags": [
+        "COPY_SRC",
+        "COPY_DST",
+        "VERTEX"
+      ],
+      "mappedAtCreation": true
+    },
+    {
+      "id": 63,
+      "label": "",
+      "size": 38400,
+      "usage": 44,
+      "usageFlags": [
+        "COPY_SRC",
+        "COPY_DST",
+        "VERTEX"
+      ],
+      "mappedAtCreation": true
+    },
+    {
+      "id": 64,
+      "label": "",
+      "size": 19200,
+      "usage": 28,
+      "usageFlags": [
+        "COPY_SRC",
+        "COPY_DST",
+        "INDEX"
+      ],
+      "mappedAtCreation": true
+    },
+    {
+      "id": 65,
+      "label": "bindingBuffer9_object_(vertex,fragment,compute)",
+      "size": 160,
+      "usage": 72,
+      "usageFlags": [
+        "COPY_DST",
+        "UNIFORM"
+      ],
+      "mappedAtCreation": false
+    },
+    {
+      "id": 70,
+      "label": "",
+      "size": 24,
+      "usage": 44,
+      "usageFlags": [
+        "COPY_SRC",
+        "COPY_DST",
+        "VERTEX"
+      ],
+      "mappedAtCreation": true
+    },
+    {
+      "id": 71,
+      "label": "bindingBuffer13_object_(vertex,fragment,compute)",
+      "size": 16,
+      "usage": 72,
+      "usageFlags": [
+        "COPY_DST",
+        "UNIFORM"
+      ],
+      "mappedAtCreation": false
+    },
+    {
+      "id": 82,
+      "label": "bindingBuffer15_object_(vertex,fragment,compute)",
+      "size": 160,
+      "usage": 72,
+      "usageFlags": [
+        "COPY_DST",
+        "UNIFORM"
+      ],
+      "mappedAtCreation": false
+    },
+    {
+      "id": 96,
+      "label": "bindingBuffer17_object_(vertex,fragment,compute)",
+      "size": 160,
+      "usage": 72,
+      "usageFlags": [
+        "COPY_DST",
+        "UNIFORM"
+      ],
+      "mappedAtCreation": false
+    },
+    {
+      "id": 109,
+      "label": "bindingBuffer19_object_(vertex,fragment,compute)",
+      "size": 160,
+      "usage": 72,
+      "usageFlags": [
+        "COPY_DST",
+        "UNIFORM"
+      ],
+      "mappedAtCreation": false
+    },
+    {
+      "id": 122,
+      "label": "bindingBuffer21_object_(vertex,fragment,compute)",
+      "size": 160,
+      "usage": 72,
+      "usageFlags": [
+        "COPY_DST",
+        "UNIFORM"
+      ],
+      "mappedAtCreation": false
+    },
+    {
+      "id": 135,
+      "label": "bindingBuffer23_object_(vertex,fragment,compute)",
+      "size": 160,
+      "usage": 72,
+      "usageFlags": [
+        "COPY_DST",
+        "UNIFORM"
+      ],
+      "mappedAtCreation": false
+    },
+    {
+      "id": 146,
+      "label": "bindingBuffer25_object_(vertex,fragment,compute)",
+      "size": 272,
+      "usage": 72,
+      "usageFlags": [
+        "COPY_DST",
+        "UNIFORM"
+      ],
+      "mappedAtCreation": false
+    },
+    {
+      "id": 147,
+      "label": "bindingBufferundefined_UniformBuffer_0_(fragment)",
+      "size": 80,
+      "usage": 72,
+      "usageFlags": [
+        "COPY_DST",
+        "UNIFORM"
+      ],
+      "mappedAtCreation": false
+    },
+    {
+      "id": 156,
+      "label": "bindingBuffer0_render_(vertex,fragment,compute)",
+      "size": 16,
+      "usage": 72,
+      "usageFlags": [
+        "COPY_DST",
+        "UNIFORM"
+      ],
+      "mappedAtCreation": false
+    }
+  ],
+  "textures": [
+    {
+      "id": 0,
+      "label": "depthBuffer",
+      "desc": {
+        "size": {
+          "width": 800,
+          "height": 500,
+          "depthOrArrayLayers": 1
+        },
+        "mipLevelCount": 1,
+        "sampleCount": 1,
+        "dimension": "2d",
+        "format": "depth24plus",
+        "usage": 23,
+        "usageFlags": [
+          "COPY_SRC",
+          "COPY_DST",
+          "TEXTURE_BINDING",
+          "RENDER_ATTACHMENT"
+        ],
+        "viewFormats": []
+      }
+    },
+    {
+      "id": 4,
+      "label": "output",
+      "desc": {
+        "size": {
+          "width": 800,
+          "height": 500,
+          "depthOrArrayLayers": 1
+        },
+        "mipLevelCount": 1,
+        "sampleCount": 1,
+        "dimension": "2d",
+        "format": "rgba16float",
+        "usage": 23,
+        "usageFlags": [
+          "COPY_SRC",
+          "COPY_DST",
+          "TEXTURE_BINDING",
+          "RENDER_ATTACHMENT"
+        ],
+        "viewFormats": []
+      }
+    },
+    {
+      "id": 5,
+      "label": "output-msaa",
+      "desc": {
+        "size": {
+          "width": 800,
+          "height": 500,
+          "depthOrArrayLayers": 1
+        },
+        "mipLevelCount": 1,
+        "sampleCount": 4,
+        "dimension": "2d",
+        "format": "rgba16float",
+        "usage": 48,
+        "usageFlags": [
+          "RENDER_ATTACHMENT"
+        ],
+        "viewFormats": []
+      }
+    },
+    {
+      "id": 6,
+      "label": "depth",
+      "desc": {
+        "size": {
+          "width": 800,
+          "height": 500,
+          "depthOrArrayLayers": 1
+        },
+        "mipLevelCount": 1,
+        "sampleCount": 4,
+        "dimension": "2d",
+        "format": "depth24plus",
+        "usage": 48,
+        "usageFlags": [
+          "RENDER_ATTACHMENT"
+        ],
+        "viewFormats": []
+      }
+    },
+    {
+      "id": 19,
+      "label": "DFG_LUT",
+      "desc": {
+        "size": {
+          "width": 16,
+          "height": 16,
+          "depthOrArrayLayers": 1
+        },
+        "mipLevelCount": 1,
+        "sampleCount": 1,
+        "dimension": "2d",
+        "format": "rg16float",
+        "usage": 23,
+        "usageFlags": [
+          "COPY_SRC",
+          "COPY_DST",
+          "TEXTURE_BINDING",
+          "RENDER_ATTACHMENT"
+        ],
+        "viewFormats": []
+      }
+    },
+    {
+      "id": 68,
+      "label": "UnrealBloomPass.bright",
+      "desc": {
+        "size": {
+          "width": 400,
+          "height": 250,
+          "depthOrArrayLayers": 1
+        },
+        "mipLevelCount": 1,
+        "sampleCount": 1,
+        "dimension": "2d",
+        "format": "rgba16float",
+        "usage": 23,
+        "usageFlags": [
+          "COPY_SRC",
+          "COPY_DST",
+          "TEXTURE_BINDING",
+          "RENDER_ATTACHMENT"
+        ],
+        "viewFormats": []
+      }
+    },
+    {
+      "id": 80,
+      "label": "UnrealBloomPass.h0",
+      "desc": {
+        "size": {
+          "width": 400,
+          "height": 250,
+          "depthOrArrayLayers": 1
+        },
+        "mipLevelCount": 1,
+        "sampleCount": 1,
+        "dimension": "2d",
+        "format": "rgba16float",
+        "usage": 23,
+        "usageFlags": [
+          "COPY_SRC",
+          "COPY_DST",
+          "TEXTURE_BINDING",
+          "RENDER_ATTACHMENT"
+        ],
+        "viewFormats": []
+      }
+    },
+    {
+      "id": 90,
+      "label": "UnrealBloomPass.v0",
+      "desc": {
+        "size": {
+          "width": 400,
+          "height": 250,
+          "depthOrArrayLayers": 1
+        },
+        "mipLevelCount": 1,
+        "sampleCount": 1,
+        "dimension": "2d",
+        "format": "rgba16float",
+        "usage": 23,
+        "usageFlags": [
+          "COPY_SRC",
+          "COPY_DST",
+          "TEXTURE_BINDING",
+          "RENDER_ATTACHMENT"
+        ],
+        "viewFormats": []
+      }
+    },
+    {
+      "id": 94,
+      "label": "UnrealBloomPass.h1",
+      "desc": {
+        "size": {
+          "width": 200,
+          "height": 125,
+          "depthOrArrayLayers": 1
+        },
+        "mipLevelCount": 1,
+        "sampleCount": 1,
+        "dimension": "2d",
+        "format": "rgba16float",
+        "usage": 23,
+        "usageFlags": [
+          "COPY_SRC",
+          "COPY_DST",
+          "TEXTURE_BINDING",
+          "RENDER_ATTACHMENT"
+        ],
+        "viewFormats": []
+      }
+    },
+    {
+      "id": 103,
+      "label": "UnrealBloomPass.v1",
+      "desc": {
+        "size": {
+          "width": 200,
+          "height": 125,
+          "depthOrArrayLayers": 1
+        },
+        "mipLevelCount": 1,
+        "sampleCount": 1,
+        "dimension": "2d",
+        "format": "rgba16float",
+        "usage": 23,
+        "usageFlags": [
+          "COPY_SRC",
+          "COPY_DST",
+          "TEXTURE_BINDING",
+          "RENDER_ATTACHMENT"
+        ],
+        "viewFormats": []
+      }
+    },
+    {
+      "id": 107,
+      "label": "UnrealBloomPass.h2",
+      "desc": {
+        "size": {
+          "width": 100,
+          "height": 62,
+          "depthOrArrayLayers": 1
+        },
+        "mipLevelCount": 1,
+        "sampleCount": 1,
+        "dimension": "2d",
+        "format": "rgba16float",
+        "usage": 23,
+        "usageFlags": [
+          "COPY_SRC",
+          "COPY_DST",
+          "TEXTURE_BINDING",
+          "RENDER_ATTACHMENT"
+        ],
+        "viewFormats": []
+      }
+    },
+    {
+      "id": 116,
+      "label": "UnrealBloomPass.v2",
+      "desc": {
+        "size": {
+          "width": 100,
+          "height": 62,
+          "depthOrArrayLayers": 1
+        },
+        "mipLevelCount": 1,
+        "sampleCount": 1,
+        "dimension": "2d",
+        "format": "rgba16float",
+        "usage": 23,
+        "usageFlags": [
+          "COPY_SRC",
+          "COPY_DST",
+          "TEXTURE_BINDING",
+          "RENDER_ATTACHMENT"
+        ],
+        "viewFormats": []
+      }
+    },
+    {
+      "id": 120,
+      "label": "UnrealBloomPass.h3",
+      "desc": {
+        "size": {
+          "width": 50,
+          "height": 31,
+          "depthOrArrayLayers": 1
+        },
+        "mipLevelCount": 1,
+        "sampleCount": 1,
+        "dimension": "2d",
+        "format": "rgba16float",
+        "usage": 23,
+        "usageFlags": [
+          "COPY_SRC",
+          "COPY_DST",
+          "TEXTURE_BINDING",
+          "RENDER_ATTACHMENT"
+        ],
+        "viewFormats": []
+      }
+    },
+    {
+      "id": 129,
+      "label": "UnrealBloomPass.v3",
+      "desc": {
+        "size": {
+          "width": 50,
+          "height": 31,
+          "depthOrArrayLayers": 1
+        },
+        "mipLevelCount": 1,
+        "sampleCount": 1,
+        "dimension": "2d",
+        "format": "rgba16float",
+        "usage": 23,
+        "usageFlags": [
+          "COPY_SRC",
+          "COPY_DST",
+          "TEXTURE_BINDING",
+          "RENDER_ATTACHMENT"
+        ],
+        "viewFormats": []
+      }
+    },
+    {
+      "id": 133,
+      "label": "UnrealBloomPass.h4",
+      "desc": {
+        "size": {
+          "width": 25,
+          "height": 15,
+          "depthOrArrayLayers": 1
+        },
+        "mipLevelCount": 1,
+        "sampleCount": 1,
+        "dimension": "2d",
+        "format": "rgba16float",
+        "usage": 23,
+        "usageFlags": [
+          "COPY_SRC",
+          "COPY_DST",
+          "TEXTURE_BINDING",
+          "RENDER_ATTACHMENT"
+        ],
+        "viewFormats": []
+      }
+    },
+    {
+      "id": 142,
+      "label": "UnrealBloomPass.v4",
+      "desc": {
+        "size": {
+          "width": 25,
+          "height": 15,
+          "depthOrArrayLayers": 1
+        },
+        "mipLevelCount": 1,
+        "sampleCount": 1,
+        "dimension": "2d",
+        "format": "rgba16float",
+        "usage": 23,
+        "usageFlags": [
+          "COPY_SRC",
+          "COPY_DST",
+          "TEXTURE_BINDING",
+          "RENDER_ATTACHMENT"
+        ],
+        "viewFormats": []
+      }
+    }
+  ],
+  "textureViews": [
+    {
+      "id": 1,
+      "label": null,
+      "texture": 0,
+      "desc": {}
+    },
+    {
+      "id": 3,
+      "label": null,
+      "texture": 2,
+      "desc": {}
+    },
+    {
+      "id": 7,
+      "label": "colorAttachment_0",
+      "texture": 4,
+      "desc": {
+        "label": "",
+        "usage": 0,
+        "aspect": "all",
+        "baseMipLevel": 0,
+        "baseArrayLayer": 0,
+        "swizzle": "rgba"
+      }
+    },
+    {
+      "id": 8,
+      "label": null,
+      "texture": 5,
+      "desc": {}
+    },
+    {
+      "id": 9,
+      "label": "",
+      "texture": 6,
+      "desc": {
+        "label": "",
+        "usage": 0,
+        "aspect": "all",
+        "baseMipLevel": 0,
+        "baseArrayLayer": 0,
+        "swizzle": "rgba"
+      }
+    },
+    {
+      "id": 21,
+      "label": "",
+      "texture": 19,
+      "desc": {
+        "label": "",
+        "usage": 0,
+        "aspect": "all",
+        "baseMipLevel": 0,
+        "baseArrayLayer": 0,
+        "swizzle": "rgba"
+      }
+    },
+    {
+      "id": 69,
+      "label": "colorAttachment_0",
+      "texture": 68,
+      "desc": {
+        "label": "",
+        "usage": 0,
+        "aspect": "all",
+        "baseMipLevel": 0,
+        "baseArrayLayer": 0,
+        "swizzle": "rgba"
+      }
+    },
+    {
+      "id": 73,
+      "label": "",
+      "texture": 4,
+      "desc": {
+        "label": "",
+        "usage": 0,
+        "aspect": "all",
+        "baseMipLevel": 0,
+        "baseArrayLayer": 0,
+        "swizzle": "rgba"
+      }
+    },
+    {
+      "id": 81,
+      "label": "colorAttachment_0",
+      "texture": 80,
+      "desc": {
+        "label": "",
+        "usage": 0,
+        "aspect": "all",
+        "baseMipLevel": 0,
+        "baseArrayLayer": 0,
+        "swizzle": "rgba"
+      }
+    },
+    {
+      "id": 83,
+      "label": "",
+      "texture": 68,
+      "desc": {
+        "label": "",
+        "usage": 0,
+        "aspect": "all",
+        "baseMipLevel": 0,
+        "baseArrayLayer": 0,
+        "swizzle": "rgba"
+      }
+    },
+    {
+      "id": 91,
+      "label": "colorAttachment_0",
+      "texture": 90,
+      "desc": {
+        "label": "",
+        "usage": 0,
+        "aspect": "all",
+        "baseMipLevel": 0,
+        "baseArrayLayer": 0,
+        "swizzle": "rgba"
+      }
+    },
+    {
+      "id": 92,
+      "label": "",
+      "texture": 80,
+      "desc": {
+        "label": "",
+        "usage": 0,
+        "aspect": "all",
+        "baseMipLevel": 0,
+        "baseArrayLayer": 0,
+        "swizzle": "rgba"
+      }
+    },
+    {
+      "id": 95,
+      "label": "colorAttachment_0",
+      "texture": 94,
+      "desc": {
+        "label": "",
+        "usage": 0,
+        "aspect": "all",
+        "baseMipLevel": 0,
+        "baseArrayLayer": 0,
+        "swizzle": "rgba"
+      }
+    },
+    {
+      "id": 97,
+      "label": "",
+      "texture": 90,
+      "desc": {
+        "label": "",
+        "usage": 0,
+        "aspect": "all",
+        "baseMipLevel": 0,
+        "baseArrayLayer": 0,
+        "swizzle": "rgba"
+      }
+    },
+    {
+      "id": 104,
+      "label": "colorAttachment_0",
+      "texture": 103,
+      "desc": {
+        "label": "",
+        "usage": 0,
+        "aspect": "all",
+        "baseMipLevel": 0,
+        "baseArrayLayer": 0,
+        "swizzle": "rgba"
+      }
+    },
+    {
+      "id": 105,
+      "label": "",
+      "texture": 94,
+      "desc": {
+        "label": "",
+        "usage": 0,
+        "aspect": "all",
+        "baseMipLevel": 0,
+        "baseArrayLayer": 0,
+        "swizzle": "rgba"
+      }
+    },
+    {
+      "id": 108,
+      "label": "colorAttachment_0",
+      "texture": 107,
+      "desc": {
+        "label": "",
+        "usage": 0,
+        "aspect": "all",
+        "baseMipLevel": 0,
+        "baseArrayLayer": 0,
+        "swizzle": "rgba"
+      }
+    },
+    {
+      "id": 110,
+      "label": "",
+      "texture": 103,
+      "desc": {
+        "label": "",
+        "usage": 0,
+        "aspect": "all",
+        "baseMipLevel": 0,
+        "baseArrayLayer": 0,
+        "swizzle": "rgba"
+      }
+    },
+    {
+      "id": 117,
+      "label": "colorAttachment_0",
+      "texture": 116,
+      "desc": {
+        "label": "",
+        "usage": 0,
+        "aspect": "all",
+        "baseMipLevel": 0,
+        "baseArrayLayer": 0,
+        "swizzle": "rgba"
+      }
+    },
+    {
+      "id": 118,
+      "label": "",
+      "texture": 107,
+      "desc": {
+        "label": "",
+        "usage": 0,
+        "aspect": "all",
+        "baseMipLevel": 0,
+        "baseArrayLayer": 0,
+        "swizzle": "rgba"
+      }
+    },
+    {
+      "id": 121,
+      "label": "colorAttachment_0",
+      "texture": 120,
+      "desc": {
+        "label": "",
+        "usage": 0,
+        "aspect": "all",
+        "baseMipLevel": 0,
+        "baseArrayLayer": 0,
+        "swizzle": "rgba"
+      }
+    },
+    {
+      "id": 123,
+      "label": "",
+      "texture": 116,
+      "desc": {
+        "label": "",
+        "usage": 0,
+        "aspect": "all",
+        "baseMipLevel": 0,
+        "baseArrayLayer": 0,
+        "swizzle": "rgba"
+      }
+    },
+    {
+      "id": 130,
+      "label": "colorAttachment_0",
+      "texture": 129,
+      "desc": {
+        "label": "",
+        "usage": 0,
+        "aspect": "all",
+        "baseMipLevel": 0,
+        "baseArrayLayer": 0,
+        "swizzle": "rgba"
+      }
+    },
+    {
+      "id": 131,
+      "label": "",
+      "texture": 120,
+      "desc": {
+        "label": "",
+        "usage": 0,
+        "aspect": "all",
+        "baseMipLevel": 0,
+        "baseArrayLayer": 0,
+        "swizzle": "rgba"
+      }
+    },
+    {
+      "id": 134,
+      "label": "colorAttachment_0",
+      "texture": 133,
+      "desc": {
+        "label": "",
+        "usage": 0,
+        "aspect": "all",
+        "baseMipLevel": 0,
+        "baseArrayLayer": 0,
+        "swizzle": "rgba"
+      }
+    },
+    {
+      "id": 136,
+      "label": "",
+      "texture": 129,
+      "desc": {
+        "label": "",
+        "usage": 0,
+        "aspect": "all",
+        "baseMipLevel": 0,
+        "baseArrayLayer": 0,
+        "swizzle": "rgba"
+      }
+    },
+    {
+      "id": 143,
+      "label": "colorAttachment_0",
+      "texture": 142,
+      "desc": {
+        "label": "",
+        "usage": 0,
+        "aspect": "all",
+        "baseMipLevel": 0,
+        "baseArrayLayer": 0,
+        "swizzle": "rgba"
+      }
+    },
+    {
+      "id": 144,
+      "label": "",
+      "texture": 133,
+      "desc": {
+        "label": "",
+        "usage": 0,
+        "aspect": "all",
+        "baseMipLevel": 0,
+        "baseArrayLayer": 0,
+        "swizzle": "rgba"
+      }
+    },
+    {
+      "id": 149,
+      "label": "",
+      "texture": 142,
+      "desc": {
+        "label": "",
+        "usage": 0,
+        "aspect": "all",
+        "baseMipLevel": 0,
+        "baseArrayLayer": 0,
+        "swizzle": "rgba"
+      }
+    }
+  ],
+  "samplers": [
+    {
+      "id": 18,
+      "label": "",
+      "desc": {
+        "label": "",
+        "addressModeU": "clamp-to-edge",
+        "addressModeV": "clamp-to-edge",
+        "addressModeW": "clamp-to-edge",
+        "magFilter": "nearest",
+        "minFilter": "nearest",
+        "mipmapFilter": "nearest",
+        "lodMinClamp": 0,
+        "lodMaxClamp": 32,
+        "maxAnisotropy": 1
+      }
+    }
+  ],
+  "bindGroups": [
+    {
+      "id": 16,
+      "label": "bindGroup_render",
+      "layout": 15,
+      "entries": [
+        {
+          "binding": 0,
+          "resource": {
+            "buffer": 14,
+            "bufferLabel": "bindingBuffer2_render_(vertex,fragment,compute)",
+            "offset": 0,
+            "size": null
+          }
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "label": "bindGroup_object",
+      "layout": 20,
+      "entries": [
+        {
+          "binding": 0,
+          "resource": {
+            "buffer": 17,
+            "bufferLabel": "bindingBuffer1_object_(vertex,fragment,compute)",
+            "offset": 0,
+            "size": null
+          }
+        },
+        {
+          "binding": 1,
+          "resource": {
+            "sampler": 18,
+            "label": ""
+          }
+        },
+        {
+          "binding": 2,
+          "resource": {
+            "textureView": 21,
+            "texture": 19,
+            "label": ""
+          }
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "label": "bindGroup_object",
+      "layout": 20,
+      "entries": [
+        {
+          "binding": 0,
+          "resource": {
+            "buffer": 17,
+            "bufferLabel": "bindingBuffer1_object_(vertex,fragment,compute)",
+            "offset": 0,
+            "size": null
+          }
+        },
+        {
+          "binding": 1,
+          "resource": {
+            "sampler": 18,
+            "label": ""
+          }
+        },
+        {
+          "binding": 2,
+          "resource": {
+            "textureView": 21,
+            "texture": 19,
+            "label": ""
+          }
+        }
+      ]
+    },
+    {
+      "id": 33,
+      "label": "bindGroup_object",
+      "layout": 20,
+      "entries": [
+        {
+          "binding": 0,
+          "resource": {
+            "buffer": 32,
+            "bufferLabel": "bindingBuffer1_object_(vertex,fragment,compute)",
+            "offset": 0,
+            "size": null
+          }
+        },
+        {
+          "binding": 1,
+          "resource": {
+            "sampler": 18,
+            "label": ""
+          }
+        },
+        {
+          "binding": 2,
+          "resource": {
+            "textureView": 21,
+            "texture": 19,
+            "label": ""
+          }
+        }
+      ]
+    },
+    {
+      "id": 34,
+      "label": "bindGroup_object",
+      "layout": 20,
+      "entries": [
+        {
+          "binding": 0,
+          "resource": {
+            "buffer": 32,
+            "bufferLabel": "bindingBuffer1_object_(vertex,fragment,compute)",
+            "offset": 0,
+            "size": null
+          }
+        },
+        {
+          "binding": 1,
+          "resource": {
+            "sampler": 18,
+            "label": ""
+          }
+        },
+        {
+          "binding": 2,
+          "resource": {
+            "textureView": 21,
+            "texture": 19,
+            "label": ""
+          }
+        }
+      ]
+    },
+    {
+      "id": 40,
+      "label": "bindGroup_object",
+      "layout": 20,
+      "entries": [
+        {
+          "binding": 0,
+          "resource": {
+            "buffer": 39,
+            "bufferLabel": "bindingBuffer1_object_(vertex,fragment,compute)",
+            "offset": 0,
+            "size": null
+          }
+        },
+        {
+          "binding": 1,
+          "resource": {
+            "sampler": 18,
+            "label": ""
+          }
+        },
+        {
+          "binding": 2,
+          "resource": {
+            "textureView": 21,
+            "texture": 19,
+            "label": ""
+          }
+        }
+      ]
+    },
+    {
+      "id": 41,
+      "label": "bindGroup_object",
+      "layout": 20,
+      "entries": [
+        {
+          "binding": 0,
+          "resource": {
+            "buffer": 39,
+            "bufferLabel": "bindingBuffer1_object_(vertex,fragment,compute)",
+            "offset": 0,
+            "size": null
+          }
+        },
+        {
+          "binding": 1,
+          "resource": {
+            "sampler": 18,
+            "label": ""
+          }
+        },
+        {
+          "binding": 2,
+          "resource": {
+            "textureView": 21,
+            "texture": 19,
+            "label": ""
+          }
+        }
+      ]
+    },
+    {
+      "id": 47,
+      "label": "bindGroup_object",
+      "layout": 20,
+      "entries": [
+        {
+          "binding": 0,
+          "resource": {
+            "buffer": 46,
+            "bufferLabel": "bindingBuffer6_object_(vertex,fragment,compute)",
+            "offset": 0,
+            "size": null
+          }
+        },
+        {
+          "binding": 1,
+          "resource": {
+            "sampler": 18,
+            "label": ""
+          }
+        },
+        {
+          "binding": 2,
+          "resource": {
+            "textureView": 21,
+            "texture": 19,
+            "label": ""
+          }
+        }
+      ]
+    },
+    {
+      "id": 48,
+      "label": "bindGroup_object",
+      "layout": 20,
+      "entries": [
+        {
+          "binding": 0,
+          "resource": {
+            "buffer": 46,
+            "bufferLabel": "bindingBuffer6_object_(vertex,fragment,compute)",
+            "offset": 0,
+            "size": null
+          }
+        },
+        {
+          "binding": 1,
+          "resource": {
+            "sampler": 18,
+            "label": ""
+          }
+        },
+        {
+          "binding": 2,
+          "resource": {
+            "textureView": 21,
+            "texture": 19,
+            "label": ""
+          }
+        }
+      ]
+    },
+    {
+      "id": 56,
+      "label": "bindGroup_object",
+      "layout": 20,
+      "entries": [
+        {
+          "binding": 0,
+          "resource": {
+            "buffer": 55,
+            "bufferLabel": "bindingBuffer9_object_(vertex,fragment,compute)",
+            "offset": 0,
+            "size": null
+          }
+        },
+        {
+          "binding": 1,
+          "resource": {
+            "sampler": 18,
+            "label": ""
+          }
+        },
+        {
+          "binding": 2,
+          "resource": {
+            "textureView": 21,
+            "texture": 19,
+            "label": ""
+          }
+        }
+      ]
+    },
+    {
+      "id": 57,
+      "label": "bindGroup_object",
+      "layout": 20,
+      "entries": [
+        {
+          "binding": 0,
+          "resource": {
+            "buffer": 55,
+            "bufferLabel": "bindingBuffer9_object_(vertex,fragment,compute)",
+            "offset": 0,
+            "size": null
+          }
+        },
+        {
+          "binding": 1,
+          "resource": {
+            "sampler": 18,
+            "label": ""
+          }
+        },
+        {
+          "binding": 2,
+          "resource": {
+            "textureView": 21,
+            "texture": 19,
+            "label": ""
+          }
+        }
+      ]
+    },
+    {
+      "id": 66,
+      "label": "bindGroup_object",
+      "layout": 20,
+      "entries": [
+        {
+          "binding": 0,
+          "resource": {
+            "buffer": 65,
+            "bufferLabel": "bindingBuffer9_object_(vertex,fragment,compute)",
+            "offset": 0,
+            "size": null
+          }
+        },
+        {
+          "binding": 1,
+          "resource": {
+            "sampler": 18,
+            "label": ""
+          }
+        },
+        {
+          "binding": 2,
+          "resource": {
+            "textureView": 21,
+            "texture": 19,
+            "label": ""
+          }
+        }
+      ]
+    },
+    {
+      "id": 67,
+      "label": "bindGroup_object",
+      "layout": 20,
+      "entries": [
+        {
+          "binding": 0,
+          "resource": {
+            "buffer": 65,
+            "bufferLabel": "bindingBuffer9_object_(vertex,fragment,compute)",
+            "offset": 0,
+            "size": null
+          }
+        },
+        {
+          "binding": 1,
+          "resource": {
+            "sampler": 18,
+            "label": ""
+          }
+        },
+        {
+          "binding": 2,
+          "resource": {
+            "textureView": 21,
+            "texture": 19,
+            "label": ""
+          }
+        }
+      ]
+    },
+    {
+      "id": 74,
+      "label": "bindGroup_object",
+      "layout": 72,
+      "entries": [
+        {
+          "binding": 0,
+          "resource": {
+            "sampler": 18,
+            "label": ""
+          }
+        },
+        {
+          "binding": 1,
+          "resource": {
+            "textureView": 73,
+            "texture": 4,
+            "label": ""
+          }
+        },
+        {
+          "binding": 2,
+          "resource": {
+            "buffer": 71,
+            "bufferLabel": "bindingBuffer13_object_(vertex,fragment,compute)",
+            "offset": 0,
+            "size": null
+          }
+        }
+      ]
+    },
+    {
+      "id": 75,
+      "label": "bindGroup_object",
+      "layout": 72,
+      "entries": [
+        {
+          "binding": 0,
+          "resource": {
+            "sampler": 18,
+            "label": ""
+          }
+        },
+        {
+          "binding": 1,
+          "resource": {
+            "textureView": 73,
+            "texture": 4,
+            "label": ""
+          }
+        },
+        {
+          "binding": 2,
+          "resource": {
+            "buffer": 71,
+            "bufferLabel": "bindingBuffer13_object_(vertex,fragment,compute)",
+            "offset": 0,
+            "size": null
+          }
+        }
+      ]
+    },
+    {
+      "id": 84,
+      "label": "bindGroup_object",
+      "layout": 72,
+      "entries": [
+        {
+          "binding": 0,
+          "resource": {
+            "sampler": 18,
+            "label": ""
+          }
+        },
+        {
+          "binding": 1,
+          "resource": {
+            "textureView": 83,
+            "texture": 68,
+            "label": ""
+          }
+        },
+        {
+          "binding": 2,
+          "resource": {
+            "buffer": 82,
+            "bufferLabel": "bindingBuffer15_object_(vertex,fragment,compute)",
+            "offset": 0,
+            "size": null
+          }
+        }
+      ]
+    },
+    {
+      "id": 85,
+      "label": "bindGroup_object",
+      "layout": 72,
+      "entries": [
+        {
+          "binding": 0,
+          "resource": {
+            "sampler": 18,
+            "label": ""
+          }
+        },
+        {
+          "binding": 1,
+          "resource": {
+            "textureView": 83,
+            "texture": 68,
+            "label": ""
+          }
+        },
+        {
+          "binding": 2,
+          "resource": {
+            "buffer": 82,
+            "bufferLabel": "bindingBuffer15_object_(vertex,fragment,compute)",
+            "offset": 0,
+            "size": null
+          }
+        }
+      ]
+    },
+    {
+      "id": 93,
+      "label": "bindGroup_object",
+      "layout": 72,
+      "entries": [
+        {
+          "binding": 0,
+          "resource": {
+            "sampler": 18,
+            "label": ""
+          }
+        },
+        {
+          "binding": 1,
+          "resource": {
+            "textureView": 92,
+            "texture": 80,
+            "label": ""
+          }
+        },
+        {
+          "binding": 2,
+          "resource": {
+            "buffer": 82,
+            "bufferLabel": "bindingBuffer15_object_(vertex,fragment,compute)",
+            "offset": 0,
+            "size": null
+          }
+        }
+      ]
+    },
+    {
+      "id": 98,
+      "label": "bindGroup_object",
+      "layout": 72,
+      "entries": [
+        {
+          "binding": 0,
+          "resource": {
+            "sampler": 18,
+            "label": ""
+          }
+        },
+        {
+          "binding": 1,
+          "resource": {
+            "textureView": 97,
+            "texture": 90,
+            "label": ""
+          }
+        },
+        {
+          "binding": 2,
+          "resource": {
+            "buffer": 96,
+            "bufferLabel": "bindingBuffer17_object_(vertex,fragment,compute)",
+            "offset": 0,
+            "size": null
+          }
+        }
+      ]
+    },
+    {
+      "id": 99,
+      "label": "bindGroup_object",
+      "layout": 72,
+      "entries": [
+        {
+          "binding": 0,
+          "resource": {
+            "sampler": 18,
+            "label": ""
+          }
+        },
+        {
+          "binding": 1,
+          "resource": {
+            "textureView": 97,
+            "texture": 90,
+            "label": ""
+          }
+        },
+        {
+          "binding": 2,
+          "resource": {
+            "buffer": 96,
+            "bufferLabel": "bindingBuffer17_object_(vertex,fragment,compute)",
+            "offset": 0,
+            "size": null
+          }
+        }
+      ]
+    },
+    {
+      "id": 106,
+      "label": "bindGroup_object",
+      "layout": 72,
+      "entries": [
+        {
+          "binding": 0,
+          "resource": {
+            "sampler": 18,
+            "label": ""
+          }
+        },
+        {
+          "binding": 1,
+          "resource": {
+            "textureView": 105,
+            "texture": 94,
+            "label": ""
+          }
+        },
+        {
+          "binding": 2,
+          "resource": {
+            "buffer": 96,
+            "bufferLabel": "bindingBuffer17_object_(vertex,fragment,compute)",
+            "offset": 0,
+            "size": null
+          }
+        }
+      ]
+    },
+    {
+      "id": 111,
+      "label": "bindGroup_object",
+      "layout": 72,
+      "entries": [
+        {
+          "binding": 0,
+          "resource": {
+            "sampler": 18,
+            "label": ""
+          }
+        },
+        {
+          "binding": 1,
+          "resource": {
+            "textureView": 110,
+            "texture": 103,
+            "label": ""
+          }
+        },
+        {
+          "binding": 2,
+          "resource": {
+            "buffer": 109,
+            "bufferLabel": "bindingBuffer19_object_(vertex,fragment,compute)",
+            "offset": 0,
+            "size": null
+          }
+        }
+      ]
+    },
+    {
+      "id": 112,
+      "label": "bindGroup_object",
+      "layout": 72,
+      "entries": [
+        {
+          "binding": 0,
+          "resource": {
+            "sampler": 18,
+            "label": ""
+          }
+        },
+        {
+          "binding": 1,
+          "resource": {
+            "textureView": 110,
+            "texture": 103,
+            "label": ""
+          }
+        },
+        {
+          "binding": 2,
+          "resource": {
+            "buffer": 109,
+            "bufferLabel": "bindingBuffer19_object_(vertex,fragment,compute)",
+            "offset": 0,
+            "size": null
+          }
+        }
+      ]
+    },
+    {
+      "id": 119,
+      "label": "bindGroup_object",
+      "layout": 72,
+      "entries": [
+        {
+          "binding": 0,
+          "resource": {
+            "sampler": 18,
+            "label": ""
+          }
+        },
+        {
+          "binding": 1,
+          "resource": {
+            "textureView": 118,
+            "texture": 107,
+            "label": ""
+          }
+        },
+        {
+          "binding": 2,
+          "resource": {
+            "buffer": 109,
+            "bufferLabel": "bindingBuffer19_object_(vertex,fragment,compute)",
+            "offset": 0,
+            "size": null
+          }
+        }
+      ]
+    },
+    {
+      "id": 124,
+      "label": "bindGroup_object",
+      "layout": 72,
+      "entries": [
+        {
+          "binding": 0,
+          "resource": {
+            "sampler": 18,
+            "label": ""
+          }
+        },
+        {
+          "binding": 1,
+          "resource": {
+            "textureView": 123,
+            "texture": 116,
+            "label": ""
+          }
+        },
+        {
+          "binding": 2,
+          "resource": {
+            "buffer": 122,
+            "bufferLabel": "bindingBuffer21_object_(vertex,fragment,compute)",
+            "offset": 0,
+            "size": null
+          }
+        }
+      ]
+    },
+    {
+      "id": 125,
+      "label": "bindGroup_object",
+      "layout": 72,
+      "entries": [
+        {
+          "binding": 0,
+          "resource": {
+            "sampler": 18,
+            "label": ""
+          }
+        },
+        {
+          "binding": 1,
+          "resource": {
+            "textureView": 123,
+            "texture": 116,
+            "label": ""
+          }
+        },
+        {
+          "binding": 2,
+          "resource": {
+            "buffer": 122,
+            "bufferLabel": "bindingBuffer21_object_(vertex,fragment,compute)",
+            "offset": 0,
+            "size": null
+          }
+        }
+      ]
+    },
+    {
+      "id": 132,
+      "label": "bindGroup_object",
+      "layout": 72,
+      "entries": [
+        {
+          "binding": 0,
+          "resource": {
+            "sampler": 18,
+            "label": ""
+          }
+        },
+        {
+          "binding": 1,
+          "resource": {
+            "textureView": 131,
+            "texture": 120,
+            "label": ""
+          }
+        },
+        {
+          "binding": 2,
+          "resource": {
+            "buffer": 122,
+            "bufferLabel": "bindingBuffer21_object_(vertex,fragment,compute)",
+            "offset": 0,
+            "size": null
+          }
+        }
+      ]
+    },
+    {
+      "id": 137,
+      "label": "bindGroup_object",
+      "layout": 72,
+      "entries": [
+        {
+          "binding": 0,
+          "resource": {
+            "sampler": 18,
+            "label": ""
+          }
+        },
+        {
+          "binding": 1,
+          "resource": {
+            "textureView": 136,
+            "texture": 129,
+            "label": ""
+          }
+        },
+        {
+          "binding": 2,
+          "resource": {
+            "buffer": 135,
+            "bufferLabel": "bindingBuffer23_object_(vertex,fragment,compute)",
+            "offset": 0,
+            "size": null
+          }
+        }
+      ]
+    },
+    {
+      "id": 138,
+      "label": "bindGroup_object",
+      "layout": 72,
+      "entries": [
+        {
+          "binding": 0,
+          "resource": {
+            "sampler": 18,
+            "label": ""
+          }
+        },
+        {
+          "binding": 1,
+          "resource": {
+            "textureView": 136,
+            "texture": 129,
+            "label": ""
+          }
+        },
+        {
+          "binding": 2,
+          "resource": {
+            "buffer": 135,
+            "bufferLabel": "bindingBuffer23_object_(vertex,fragment,compute)",
+            "offset": 0,
+            "size": null
+          }
+        }
+      ]
+    },
+    {
+      "id": 145,
+      "label": "bindGroup_object",
+      "layout": 72,
+      "entries": [
+        {
+          "binding": 0,
+          "resource": {
+            "sampler": 18,
+            "label": ""
+          }
+        },
+        {
+          "binding": 1,
+          "resource": {
+            "textureView": 144,
+            "texture": 133,
+            "label": ""
+          }
+        },
+        {
+          "binding": 2,
+          "resource": {
+            "buffer": 135,
+            "bufferLabel": "bindingBuffer23_object_(vertex,fragment,compute)",
+            "offset": 0,
+            "size": null
+          }
+        }
+      ]
+    },
+    {
+      "id": 150,
+      "label": "bindGroup_object",
+      "layout": 148,
+      "entries": [
+        {
+          "binding": 0,
+          "resource": {
+            "buffer": 146,
+            "bufferLabel": "bindingBuffer25_object_(vertex,fragment,compute)",
+            "offset": 0,
+            "size": null
+          }
+        },
+        {
+          "binding": 1,
+          "resource": {
+            "buffer": 147,
+            "bufferLabel": "bindingBufferundefined_UniformBuffer_0_(fragment)",
+            "offset": 0,
+            "size": null
+          }
+        },
+        {
+          "binding": 2,
+          "resource": {
+            "sampler": 18,
+            "label": ""
+          }
+        },
+        {
+          "binding": 3,
+          "resource": {
+            "textureView": 97,
+            "texture": 90,
+            "label": ""
+          }
+        },
+        {
+          "binding": 4,
+          "resource": {
+            "sampler": 18,
+            "label": ""
+          }
+        },
+        {
+          "binding": 5,
+          "resource": {
+            "textureView": 110,
+            "texture": 103,
+            "label": ""
+          }
+        },
+        {
+          "binding": 6,
+          "resource": {
+            "sampler": 18,
+            "label": ""
+          }
+        },
+        {
+          "binding": 7,
+          "resource": {
+            "textureView": 123,
+            "texture": 116,
+            "label": ""
+          }
+        },
+        {
+          "binding": 8,
+          "resource": {
+            "sampler": 18,
+            "label": ""
+          }
+        },
+        {
+          "binding": 9,
+          "resource": {
+            "textureView": 136,
+            "texture": 129,
+            "label": ""
+          }
+        },
+        {
+          "binding": 10,
+          "resource": {
+            "sampler": 18,
+            "label": ""
+          }
+        },
+        {
+          "binding": 11,
+          "resource": {
+            "textureView": 149,
+            "texture": 142,
+            "label": ""
+          }
+        }
+      ]
+    },
+    {
+      "id": 151,
+      "label": "bindGroup_object",
+      "layout": 148,
+      "entries": [
+        {
+          "binding": 0,
+          "resource": {
+            "buffer": 146,
+            "bufferLabel": "bindingBuffer25_object_(vertex,fragment,compute)",
+            "offset": 0,
+            "size": null
+          }
+        },
+        {
+          "binding": 1,
+          "resource": {
+            "buffer": 147,
+            "bufferLabel": "bindingBufferundefined_UniformBuffer_0_(fragment)",
+            "offset": 0,
+            "size": null
+          }
+        },
+        {
+          "binding": 2,
+          "resource": {
+            "sampler": 18,
+            "label": ""
+          }
+        },
+        {
+          "binding": 3,
+          "resource": {
+            "textureView": 97,
+            "texture": 90,
+            "label": ""
+          }
+        },
+        {
+          "binding": 4,
+          "resource": {
+            "sampler": 18,
+            "label": ""
+          }
+        },
+        {
+          "binding": 5,
+          "resource": {
+            "textureView": 110,
+            "texture": 103,
+            "label": ""
+          }
+        },
+        {
+          "binding": 6,
+          "resource": {
+            "sampler": 18,
+            "label": ""
+          }
+        },
+        {
+          "binding": 7,
+          "resource": {
+            "textureView": 123,
+            "texture": 116,
+            "label": ""
+          }
+        },
+        {
+          "binding": 8,
+          "resource": {
+            "sampler": 18,
+            "label": ""
+          }
+        },
+        {
+          "binding": 9,
+          "resource": {
+            "textureView": 136,
+            "texture": 129,
+            "label": ""
+          }
+        },
+        {
+          "binding": 10,
+          "resource": {
+            "sampler": 18,
+            "label": ""
+          }
+        },
+        {
+          "binding": 11,
+          "resource": {
+            "textureView": 149,
+            "texture": 142,
+            "label": ""
+          }
+        }
+      ]
+    },
+    {
+      "id": 157,
+      "label": "bindGroup_render",
+      "layout": 15,
+      "entries": [
+        {
+          "binding": 0,
+          "resource": {
+            "buffer": 156,
+            "bufferLabel": "bindingBuffer0_render_(vertex,fragment,compute)",
+            "offset": 0,
+            "size": null
+          }
+        }
+      ]
+    },
+    {
+      "id": 159,
+      "label": "bindGroup_object",
+      "layout": 158,
+      "entries": [
+        {
+          "binding": 0,
+          "resource": {
+            "sampler": 18,
+            "label": ""
+          }
+        },
+        {
+          "binding": 1,
+          "resource": {
+            "textureView": 73,
+            "texture": 4,
+            "label": ""
+          }
+        },
+        {
+          "binding": 2,
+          "resource": {
+            "sampler": 18,
+            "label": ""
+          }
+        },
+        {
+          "binding": 3,
+          "resource": {
+            "textureView": 92,
+            "texture": 80,
+            "label": ""
+          }
+        }
+      ]
+    },
+    {
+      "id": 160,
+      "label": "bindGroup_object",
+      "layout": 158,
+      "entries": [
+        {
+          "binding": 0,
+          "resource": {
+            "sampler": 18,
+            "label": ""
+          }
+        },
+        {
+          "binding": 1,
+          "resource": {
+            "textureView": 73,
+            "texture": 4,
+            "label": ""
+          }
+        },
+        {
+          "binding": 2,
+          "resource": {
+            "sampler": 18,
+            "label": ""
+          }
+        },
+        {
+          "binding": 3,
+          "resource": {
+            "textureView": 92,
+            "texture": 80,
+            "label": ""
+          }
+        }
+      ]
+    }
+  ],
+  "passes": [
+    {
+      "id": 0,
+      "kind": "render",
+      "encoderLabel": "renderContext_0",
+      "desc": {
+        "label": "",
+        "colorAttachments": [
+          {
+            "view": {
+              "textureView": 3,
+              "texture": 2,
+              "label": ""
+            },
+            "clearValue": {
+              "r": 0,
+              "g": 0,
+              "b": 0,
+              "a": 0
+            },
+            "loadOp": "clear",
+            "storeOp": "store"
+          }
+        ],
+        "depthStencilAttachment": {
+          "view": {
+            "textureView": 1,
+            "texture": 0,
+            "label": ""
+          },
+          "depthLoadOp": "clear",
+          "depthStoreOp": "store",
+          "depthClearValue": 1,
+          "depthReadOnly": false,
+          "stencilClearValue": 0,
+          "stencilReadOnly": false
+        }
+      },
+      "cmds": [
+        {
+          "op": "setPipeline",
+          "pipeline": 163,
+          "label": "renderPipeline_RenderPipeline_25"
+        },
+        {
+          "op": "setBindGroup",
+          "index": 0,
+          "bindGroup": 157,
+          "label": "bindGroup_render"
+        },
+        {
+          "op": "setBindGroup",
+          "index": 1,
+          "bindGroup": 160,
+          "label": "bindGroup_object"
+        },
+        {
+          "op": "setVertexBuffer",
+          "slot": 0,
+          "buffer": 70,
+          "label": ""
+        },
+        {
+          "op": "draw",
+          "vertexCount": 3,
+          "instanceCount": 1,
+          "firstVertex": 0,
+          "firstInstance": 0
+        },
+        {
+          "op": "end"
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "kind": "render",
+      "encoderLabel": "renderContext_1",
+      "desc": {
+        "label": "",
+        "colorAttachments": [
+          {
+            "view": {
+              "textureView": 8,
+              "texture": 5,
+              "label": ""
+            },
+            "resolveTarget": {
+              "textureView": 7,
+              "texture": 4
+            },
+            "clearValue": {
+              "r": 0,
+              "g": 0,
+              "b": 0,
+              "a": 0
+            },
+            "loadOp": "clear",
+            "storeOp": "discard"
+          }
+        ],
+        "depthStencilAttachment": {
+          "view": {
+            "textureView": 9,
+            "texture": 6,
+            "label": ""
+          },
+          "depthLoadOp": "clear",
+          "depthStoreOp": "discard",
+          "depthClearValue": 1,
+          "depthReadOnly": false,
+          "stencilClearValue": 0,
+          "stencilReadOnly": false
+        }
+      },
+      "cmds": [
+        {
+          "op": "setPipeline",
+          "pipeline": 27,
+          "label": "renderPipeline_constant1_21"
+        },
+        {
+          "op": "setBindGroup",
+          "index": 0,
+          "bindGroup": 16,
+          "label": "bindGroup_render"
+        },
+        {
+          "op": "setBindGroup",
+          "index": 1,
+          "bindGroup": 23,
+          "label": "bindGroup_object"
+        },
+        {
+          "op": "setIndexBuffer",
+          "buffer": 13,
+          "label": "",
+          "format": "uint32"
+        },
+        {
+          "op": "setVertexBuffer",
+          "slot": 0,
+          "buffer": 10,
+          "label": ""
+        },
+        {
+          "op": "setVertexBuffer",
+          "slot": 1,
+          "buffer": 11,
+          "label": ""
+        },
+        {
+          "op": "setVertexBuffer",
+          "slot": 2,
+          "buffer": 12,
+          "label": ""
+        },
+        {
+          "op": "drawIndexed",
+          "indexCount": 75522,
+          "instanceCount": 1,
+          "firstIndex": 0,
+          "baseVertex": 0,
+          "firstInstance": 0
+        },
+        {
+          "op": "setBindGroup",
+          "index": 1,
+          "bindGroup": 34,
+          "label": "bindGroup_object"
+        },
+        {
+          "op": "setIndexBuffer",
+          "buffer": 31,
+          "label": "",
+          "format": "uint32"
+        },
+        {
+          "op": "setVertexBuffer",
+          "slot": 0,
+          "buffer": 28,
+          "label": ""
+        },
+        {
+          "op": "setVertexBuffer",
+          "slot": 1,
+          "buffer": 29,
+          "label": ""
+        },
+        {
+          "op": "setVertexBuffer",
+          "slot": 2,
+          "buffer": 30,
+          "label": ""
+        },
+        {
+          "op": "drawIndexed",
+          "indexCount": 57600,
+          "instanceCount": 1,
+          "firstIndex": 0,
+          "baseVertex": 0,
+          "firstInstance": 0
+        },
+        {
+          "op": "setBindGroup",
+          "index": 1,
+          "bindGroup": 41,
+          "label": "bindGroup_object"
+        },
+        {
+          "op": "setIndexBuffer",
+          "buffer": 38,
+          "label": "",
+          "format": "uint32"
+        },
+        {
+          "op": "setVertexBuffer",
+          "slot": 0,
+          "buffer": 35,
+          "label": ""
+        },
+        {
+          "op": "setVertexBuffer",
+          "slot": 1,
+          "buffer": 36,
+          "label": ""
+        },
+        {
+          "op": "setVertexBuffer",
+          "slot": 2,
+          "buffer": 37,
+          "label": ""
+        },
+        {
+          "op": "drawIndexed",
+          "indexCount": 10320,
+          "instanceCount": 1,
+          "firstIndex": 0,
+          "baseVertex": 0,
+          "firstInstance": 0
+        },
+        {
+          "op": "setPipeline",
+          "pipeline": 50,
+          "label": "renderPipeline_constant2_24"
+        },
+        {
+          "op": "setBindGroup",
+          "index": 1,
+          "bindGroup": 48,
+          "label": "bindGroup_object"
+        },
+        {
+          "op": "setIndexBuffer",
+          "buffer": 45,
+          "label": "",
+          "format": "uint32"
+        },
+        {
+          "op": "setVertexBuffer",
+          "slot": 0,
+          "buffer": 42,
+          "label": ""
+        },
+        {
+          "op": "setVertexBuffer",
+          "slot": 1,
+          "buffer": 43,
+          "label": ""
+        },
+        {
+          "op": "setVertexBuffer",
+          "slot": 2,
+          "buffer": 44,
+          "label": ""
+        },
+        {
+          "op": "drawIndexed",
+          "indexCount": 2544,
+          "instanceCount": 1,
+          "firstIndex": 0,
+          "baseVertex": 0,
+          "firstInstance": 0
+        },
+        {
+          "op": "setPipeline",
+          "pipeline": 60,
+          "label": "renderPipeline_HoloFillDark_22"
+        },
+        {
+          "op": "setBindGroup",
+          "index": 1,
+          "bindGroup": 57,
+          "label": "bindGroup_object"
+        },
+        {
+          "op": "setIndexBuffer",
+          "buffer": 54,
+          "label": "",
+          "format": "uint32"
+        },
+        {
+          "op": "setVertexBuffer",
+          "slot": 0,
+          "buffer": 51,
+          "label": ""
+        },
+        {
+          "op": "setVertexBuffer",
+          "slot": 1,
+          "buffer": 52,
+          "label": ""
+        },
+        {
+          "op": "setVertexBuffer",
+          "slot": 2,
+          "buffer": 53,
+          "label": ""
+        },
+        {
+          "op": "drawIndexed",
+          "indexCount": 5430,
+          "instanceCount": 1,
+          "firstIndex": 0,
+          "baseVertex": 0,
+          "firstInstance": 0
+        },
+        {
+          "op": "setBindGroup",
+          "index": 1,
+          "bindGroup": 67,
+          "label": "bindGroup_object"
+        },
+        {
+          "op": "setIndexBuffer",
+          "buffer": 64,
+          "label": "",
+          "format": "uint32"
+        },
+        {
+          "op": "setVertexBuffer",
+          "slot": 0,
+          "buffer": 61,
+          "label": ""
+        },
+        {
+          "op": "setVertexBuffer",
+          "slot": 1,
+          "buffer": 62,
+          "label": ""
+        },
+        {
+          "op": "setVertexBuffer",
+          "slot": 2,
+          "buffer": 63,
+          "label": ""
+        },
+        {
+          "op": "drawIndexed",
+          "indexCount": 4800,
+          "instanceCount": 1,
+          "firstIndex": 0,
+          "baseVertex": 0,
+          "firstInstance": 0
+        },
+        {
+          "op": "end"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "kind": "render",
+      "encoderLabel": "renderContext_2",
+      "desc": {
+        "label": "",
+        "colorAttachments": [
+          {
+            "view": {
+              "textureView": 69,
+              "texture": 68,
+              "label": "colorAttachment_0"
+            },
+            "clearValue": {
+              "r": 0,
+              "g": 0,
+              "b": 0,
+              "a": 1
+            },
+            "loadOp": "clear",
+            "storeOp": "store"
+          }
+        ],
+        "depthStencilAttachment": null
+      },
+      "cmds": [
+        {
+          "op": "setViewport",
+          "x": 0,
+          "y": 0,
+          "width": 400,
+          "height": 250,
+          "minDepth": 0,
+          "maxDepth": 1
+        },
+        {
+          "op": "setPipeline",
+          "pipeline": 79,
+          "label": "renderPipeline_Bloom_highPass_26"
+        },
+        {
+          "op": "setBindGroup",
+          "index": 0,
+          "bindGroup": 75,
+          "label": "bindGroup_object"
+        },
+        {
+          "op": "setVertexBuffer",
+          "slot": 0,
+          "buffer": 70,
+          "label": ""
+        },
+        {
+          "op": "draw",
+          "vertexCount": 3,
+          "instanceCount": 1,
+          "firstVertex": 0,
+          "firstInstance": 0
+        },
+        {
+          "op": "end"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "kind": "render",
+      "encoderLabel": "renderContext_2",
+      "desc": {
+        "label": "",
+        "colorAttachments": [
+          {
+            "view": {
+              "textureView": 81,
+              "texture": 80,
+              "label": "colorAttachment_0"
+            },
+            "clearValue": {
+              "r": 0,
+              "g": 0,
+              "b": 0,
+              "a": 1
+            },
+            "loadOp": "clear",
+            "storeOp": "store"
+          }
+        ],
+        "depthStencilAttachment": null
+      },
+      "cmds": [
+        {
+          "op": "setViewport",
+          "x": 0,
+          "y": 0,
+          "width": 400,
+          "height": 250,
+          "minDepth": 0,
+          "maxDepth": 1
+        },
+        {
+          "op": "setPipeline",
+          "pipeline": 89,
+          "label": "renderPipeline_Bloom_separable_27"
+        },
+        {
+          "op": "setBindGroup",
+          "index": 0,
+          "bindGroup": 85,
+          "label": "bindGroup_object"
+        },
+        {
+          "op": "setVertexBuffer",
+          "slot": 0,
+          "buffer": 70,
+          "label": ""
+        },
+        {
+          "op": "draw",
+          "vertexCount": 3,
+          "instanceCount": 1,
+          "firstVertex": 0,
+          "firstInstance": 0
+        },
+        {
+          "op": "end"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "kind": "render",
+      "encoderLabel": "renderContext_2",
+      "desc": {
+        "label": "",
+        "colorAttachments": [
+          {
+            "view": {
+              "textureView": 91,
+              "texture": 90,
+              "label": "colorAttachment_0"
+            },
+            "clearValue": {
+              "r": 0,
+              "g": 0,
+              "b": 0,
+              "a": 1
+            },
+            "loadOp": "clear",
+            "storeOp": "store"
+          }
+        ],
+        "depthStencilAttachment": null
+      },
+      "cmds": [
+        {
+          "op": "setViewport",
+          "x": 0,
+          "y": 0,
+          "width": 400,
+          "height": 250,
+          "minDepth": 0,
+          "maxDepth": 1
+        },
+        {
+          "op": "setPipeline",
+          "pipeline": 89,
+          "label": "renderPipeline_Bloom_separable_27"
+        },
+        {
+          "op": "setBindGroup",
+          "index": 0,
+          "bindGroup": 93,
+          "label": "bindGroup_object"
+        },
+        {
+          "op": "setVertexBuffer",
+          "slot": 0,
+          "buffer": 70,
+          "label": ""
+        },
+        {
+          "op": "draw",
+          "vertexCount": 3,
+          "instanceCount": 1,
+          "firstVertex": 0,
+          "firstInstance": 0
+        },
+        {
+          "op": "end"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "kind": "render",
+      "encoderLabel": "renderContext_2",
+      "desc": {
+        "label": "",
+        "colorAttachments": [
+          {
+            "view": {
+              "textureView": 95,
+              "texture": 94,
+              "label": "colorAttachment_0"
+            },
+            "clearValue": {
+              "r": 0,
+              "g": 0,
+              "b": 0,
+              "a": 1
+            },
+            "loadOp": "clear",
+            "storeOp": "store"
+          }
+        ],
+        "depthStencilAttachment": null
+      },
+      "cmds": [
+        {
+          "op": "setViewport",
+          "x": 0,
+          "y": 0,
+          "width": 200,
+          "height": 125,
+          "minDepth": 0,
+          "maxDepth": 1
+        },
+        {
+          "op": "setPipeline",
+          "pipeline": 102,
+          "label": "renderPipeline_Bloom_separable_28"
+        },
+        {
+          "op": "setBindGroup",
+          "index": 0,
+          "bindGroup": 99,
+          "label": "bindGroup_object"
+        },
+        {
+          "op": "setVertexBuffer",
+          "slot": 0,
+          "buffer": 70,
+          "label": ""
+        },
+        {
+          "op": "draw",
+          "vertexCount": 3,
+          "instanceCount": 1,
+          "firstVertex": 0,
+          "firstInstance": 0
+        },
+        {
+          "op": "end"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "kind": "render",
+      "encoderLabel": "renderContext_2",
+      "desc": {
+        "label": "",
+        "colorAttachments": [
+          {
+            "view": {
+              "textureView": 104,
+              "texture": 103,
+              "label": "colorAttachment_0"
+            },
+            "clearValue": {
+              "r": 0,
+              "g": 0,
+              "b": 0,
+              "a": 1
+            },
+            "loadOp": "clear",
+            "storeOp": "store"
+          }
+        ],
+        "depthStencilAttachment": null
+      },
+      "cmds": [
+        {
+          "op": "setViewport",
+          "x": 0,
+          "y": 0,
+          "width": 200,
+          "height": 125,
+          "minDepth": 0,
+          "maxDepth": 1
+        },
+        {
+          "op": "setPipeline",
+          "pipeline": 102,
+          "label": "renderPipeline_Bloom_separable_28"
+        },
+        {
+          "op": "setBindGroup",
+          "index": 0,
+          "bindGroup": 106,
+          "label": "bindGroup_object"
+        },
+        {
+          "op": "setVertexBuffer",
+          "slot": 0,
+          "buffer": 70,
+          "label": ""
+        },
+        {
+          "op": "draw",
+          "vertexCount": 3,
+          "instanceCount": 1,
+          "firstVertex": 0,
+          "firstInstance": 0
+        },
+        {
+          "op": "end"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "kind": "render",
+      "encoderLabel": "renderContext_2",
+      "desc": {
+        "label": "",
+        "colorAttachments": [
+          {
+            "view": {
+              "textureView": 108,
+              "texture": 107,
+              "label": "colorAttachment_0"
+            },
+            "clearValue": {
+              "r": 0,
+              "g": 0,
+              "b": 0,
+              "a": 1
+            },
+            "loadOp": "clear",
+            "storeOp": "store"
+          }
+        ],
+        "depthStencilAttachment": null
+      },
+      "cmds": [
+        {
+          "op": "setViewport",
+          "x": 0,
+          "y": 0,
+          "width": 100,
+          "height": 62,
+          "minDepth": 0,
+          "maxDepth": 1
+        },
+        {
+          "op": "setPipeline",
+          "pipeline": 115,
+          "label": "renderPipeline_Bloom_separable_29"
+        },
+        {
+          "op": "setBindGroup",
+          "index": 0,
+          "bindGroup": 112,
+          "label": "bindGroup_object"
+        },
+        {
+          "op": "setVertexBuffer",
+          "slot": 0,
+          "buffer": 70,
+          "label": ""
+        },
+        {
+          "op": "draw",
+          "vertexCount": 3,
+          "instanceCount": 1,
+          "firstVertex": 0,
+          "firstInstance": 0
+        },
+        {
+          "op": "end"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "kind": "render",
+      "encoderLabel": "renderContext_2",
+      "desc": {
+        "label": "",
+        "colorAttachments": [
+          {
+            "view": {
+              "textureView": 117,
+              "texture": 116,
+              "label": "colorAttachment_0"
+            },
+            "clearValue": {
+              "r": 0,
+              "g": 0,
+              "b": 0,
+              "a": 1
+            },
+            "loadOp": "clear",
+            "storeOp": "store"
+          }
+        ],
+        "depthStencilAttachment": null
+      },
+      "cmds": [
+        {
+          "op": "setViewport",
+          "x": 0,
+          "y": 0,
+          "width": 100,
+          "height": 62,
+          "minDepth": 0,
+          "maxDepth": 1
+        },
+        {
+          "op": "setPipeline",
+          "pipeline": 115,
+          "label": "renderPipeline_Bloom_separable_29"
+        },
+        {
+          "op": "setBindGroup",
+          "index": 0,
+          "bindGroup": 119,
+          "label": "bindGroup_object"
+        },
+        {
+          "op": "setVertexBuffer",
+          "slot": 0,
+          "buffer": 70,
+          "label": ""
+        },
+        {
+          "op": "draw",
+          "vertexCount": 3,
+          "instanceCount": 1,
+          "firstVertex": 0,
+          "firstInstance": 0
+        },
+        {
+          "op": "end"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "kind": "render",
+      "encoderLabel": "renderContext_2",
+      "desc": {
+        "label": "",
+        "colorAttachments": [
+          {
+            "view": {
+              "textureView": 121,
+              "texture": 120,
+              "label": "colorAttachment_0"
+            },
+            "clearValue": {
+              "r": 0,
+              "g": 0,
+              "b": 0,
+              "a": 1
+            },
+            "loadOp": "clear",
+            "storeOp": "store"
+          }
+        ],
+        "depthStencilAttachment": null
+      },
+      "cmds": [
+        {
+          "op": "setViewport",
+          "x": 0,
+          "y": 0,
+          "width": 50,
+          "height": 31,
+          "minDepth": 0,
+          "maxDepth": 1
+        },
+        {
+          "op": "setPipeline",
+          "pipeline": 128,
+          "label": "renderPipeline_Bloom_separable_30"
+        },
+        {
+          "op": "setBindGroup",
+          "index": 0,
+          "bindGroup": 125,
+          "label": "bindGroup_object"
+        },
+        {
+          "op": "setVertexBuffer",
+          "slot": 0,
+          "buffer": 70,
+          "label": ""
+        },
+        {
+          "op": "draw",
+          "vertexCount": 3,
+          "instanceCount": 1,
+          "firstVertex": 0,
+          "firstInstance": 0
+        },
+        {
+          "op": "end"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "kind": "render",
+      "encoderLabel": "renderContext_2",
+      "desc": {
+        "label": "",
+        "colorAttachments": [
+          {
+            "view": {
+              "textureView": 130,
+              "texture": 129,
+              "label": "colorAttachment_0"
+            },
+            "clearValue": {
+              "r": 0,
+              "g": 0,
+              "b": 0,
+              "a": 1
+            },
+            "loadOp": "clear",
+            "storeOp": "store"
+          }
+        ],
+        "depthStencilAttachment": null
+      },
+      "cmds": [
+        {
+          "op": "setViewport",
+          "x": 0,
+          "y": 0,
+          "width": 50,
+          "height": 31,
+          "minDepth": 0,
+          "maxDepth": 1
+        },
+        {
+          "op": "setPipeline",
+          "pipeline": 128,
+          "label": "renderPipeline_Bloom_separable_30"
+        },
+        {
+          "op": "setBindGroup",
+          "index": 0,
+          "bindGroup": 132,
+          "label": "bindGroup_object"
+        },
+        {
+          "op": "setVertexBuffer",
+          "slot": 0,
+          "buffer": 70,
+          "label": ""
+        },
+        {
+          "op": "draw",
+          "vertexCount": 3,
+          "instanceCount": 1,
+          "firstVertex": 0,
+          "firstInstance": 0
+        },
+        {
+          "op": "end"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "kind": "render",
+      "encoderLabel": "renderContext_2",
+      "desc": {
+        "label": "",
+        "colorAttachments": [
+          {
+            "view": {
+              "textureView": 134,
+              "texture": 133,
+              "label": "colorAttachment_0"
+            },
+            "clearValue": {
+              "r": 0,
+              "g": 0,
+              "b": 0,
+              "a": 1
+            },
+            "loadOp": "clear",
+            "storeOp": "store"
+          }
+        ],
+        "depthStencilAttachment": null
+      },
+      "cmds": [
+        {
+          "op": "setViewport",
+          "x": 0,
+          "y": 0,
+          "width": 25,
+          "height": 15,
+          "minDepth": 0,
+          "maxDepth": 1
+        },
+        {
+          "op": "setPipeline",
+          "pipeline": 141,
+          "label": "renderPipeline_Bloom_separable_31"
+        },
+        {
+          "op": "setBindGroup",
+          "index": 0,
+          "bindGroup": 138,
+          "label": "bindGroup_object"
+        },
+        {
+          "op": "setVertexBuffer",
+          "slot": 0,
+          "buffer": 70,
+          "label": ""
+        },
+        {
+          "op": "draw",
+          "vertexCount": 3,
+          "instanceCount": 1,
+          "firstVertex": 0,
+          "firstInstance": 0
+        },
+        {
+          "op": "end"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "kind": "render",
+      "encoderLabel": "renderContext_2",
+      "desc": {
+        "label": "",
+        "colorAttachments": [
+          {
+            "view": {
+              "textureView": 143,
+              "texture": 142,
+              "label": "colorAttachment_0"
+            },
+            "clearValue": {
+              "r": 0,
+              "g": 0,
+              "b": 0,
+              "a": 1
+            },
+            "loadOp": "clear",
+            "storeOp": "store"
+          }
+        ],
+        "depthStencilAttachment": null
+      },
+      "cmds": [
+        {
+          "op": "setViewport",
+          "x": 0,
+          "y": 0,
+          "width": 25,
+          "height": 15,
+          "minDepth": 0,
+          "maxDepth": 1
+        },
+        {
+          "op": "setPipeline",
+          "pipeline": 141,
+          "label": "renderPipeline_Bloom_separable_31"
+        },
+        {
+          "op": "setBindGroup",
+          "index": 0,
+          "bindGroup": 145,
+          "label": "bindGroup_object"
+        },
+        {
+          "op": "setVertexBuffer",
+          "slot": 0,
+          "buffer": 70,
+          "label": ""
+        },
+        {
+          "op": "draw",
+          "vertexCount": 3,
+          "instanceCount": 1,
+          "firstVertex": 0,
+          "firstInstance": 0
+        },
+        {
+          "op": "end"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "kind": "render",
+      "encoderLabel": "renderContext_2",
+      "desc": {
+        "label": "",
+        "colorAttachments": [
+          {
+            "view": {
+              "textureView": 81,
+              "texture": 80,
+              "label": "colorAttachment_0"
+            },
+            "clearValue": {
+              "r": 0,
+              "g": 0,
+              "b": 0,
+              "a": 1
+            },
+            "loadOp": "clear",
+            "storeOp": "store"
+          }
+        ],
+        "depthStencilAttachment": null
+      },
+      "cmds": [
+        {
+          "op": "setViewport",
+          "x": 0,
+          "y": 0,
+          "width": 400,
+          "height": 250,
+          "minDepth": 0,
+          "maxDepth": 1
+        },
+        {
+          "op": "setPipeline",
+          "pipeline": 155,
+          "label": "renderPipeline_Bloom_comp_32"
+        },
+        {
+          "op": "setBindGroup",
+          "index": 0,
+          "bindGroup": 151,
+          "label": "bindGroup_object"
+        },
+        {
+          "op": "setVertexBuffer",
+          "slot": 0,
+          "buffer": 70,
+          "label": ""
+        },
+        {
+          "op": "draw",
+          "vertexCount": 3,
+          "instanceCount": 1,
+          "firstVertex": 0,
+          "firstInstance": 0
+        },
+        {
+          "op": "end"
+        }
+      ]
+    }
+  ],
+  "order": [
+    {
+      "n": 0,
+      "op": "createTexture",
+      "id": 0,
+      "label": "depthBuffer",
+      "format": "depth24plus"
+    },
+    {
+      "n": 1,
+      "op": "beginRenderPass",
+      "pass": 0,
+      "label": ""
+    },
+    {
+      "n": 2,
+      "op": "createTexture",
+      "id": 4,
+      "label": "output",
+      "format": "rgba16float"
+    },
+    {
+      "n": 3,
+      "op": "createTexture",
+      "id": 5,
+      "label": "output-msaa",
+      "format": "rgba16float"
+    },
+    {
+      "n": 4,
+      "op": "createTexture",
+      "id": 6,
+      "label": "depth",
+      "format": "depth24plus"
+    },
+    {
+      "n": 5,
+      "op": "beginRenderPass",
+      "pass": 1,
+      "label": ""
+    },
+    {
+      "n": 6,
+      "op": "createBuffer",
+      "id": 10,
+      "label": "",
+      "size": 720352
+    },
+    {
+      "n": 7,
+      "op": "createBuffer",
+      "id": 11,
+      "label": "",
+      "size": 540264
+    },
+    {
+      "n": 8,
+      "op": "createBuffer",
+      "id": 12,
+      "label": "",
+      "size": 540264
+    },
+    {
+      "n": 9,
+      "op": "createBuffer",
+      "id": 13,
+      "label": "",
+      "size": 302088
+    },
+    {
+      "n": 10,
+      "op": "createBuffer",
+      "id": 14,
+      "label": "bindingBuffer2_render_(vertex,fragment,compute)",
+      "size": 192
+    },
+    {
+      "n": 11,
+      "op": "createBindGroupLayout",
+      "id": 15,
+      "label": null
+    },
+    {
+      "n": 12,
+      "op": "createBindGroup",
+      "id": 16,
+      "label": "bindGroup_render"
+    },
+    {
+      "n": 13,
+      "op": "createBuffer",
+      "id": 17,
+      "label": "bindingBuffer1_object_(vertex,fragment,compute)",
+      "size": 160
+    },
+    {
+      "n": 14,
+      "op": "createSampler",
+      "id": 18,
+      "label": ""
+    },
+    {
+      "n": 15,
+      "op": "createTexture",
+      "id": 19,
+      "label": "DFG_LUT",
+      "format": "rg16float"
+    },
+    {
+      "n": 16,
+      "op": "queue.writeTexture",
+      "texture": 19,
+      "label": "DFG_LUT",
+      "size": {
+        "width": 16,
+        "height": 16,
+        "depthOrArrayLayers": 1
+      }
+    },
+    {
+      "n": 17,
+      "op": "createBindGroupLayout",
+      "id": 20,
+      "label": null
+    },
+    {
+      "n": 18,
+      "op": "createBindGroup",
+      "id": 22,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 19,
+      "op": "queue.writeBuffer",
+      "buffer": 14,
+      "label": "bindingBuffer2_render_(vertex,fragment,compute)",
+      "bufferOffset": 0,
+      "byteLength": 192
+    },
+    {
+      "n": 20,
+      "op": "queue.writeBuffer",
+      "buffer": 14,
+      "label": "bindingBuffer2_render_(vertex,fragment,compute)",
+      "bufferOffset": 144,
+      "byteLength": 192
+    },
+    {
+      "n": 21,
+      "op": "queue.writeBuffer",
+      "buffer": 14,
+      "label": "bindingBuffer2_render_(vertex,fragment,compute)",
+      "bufferOffset": 160,
+      "byteLength": 192
+    },
+    {
+      "n": 22,
+      "op": "queue.writeBuffer",
+      "buffer": 14,
+      "label": "bindingBuffer2_render_(vertex,fragment,compute)",
+      "bufferOffset": 176,
+      "byteLength": 192
+    },
+    {
+      "n": 23,
+      "op": "queue.writeBuffer",
+      "buffer": 17,
+      "label": "bindingBuffer1_object_(vertex,fragment,compute)",
+      "bufferOffset": 0,
+      "byteLength": 160
+    },
+    {
+      "n": 24,
+      "op": "queue.writeBuffer",
+      "buffer": 17,
+      "label": "bindingBuffer1_object_(vertex,fragment,compute)",
+      "bufferOffset": 20,
+      "byteLength": 160
+    },
+    {
+      "n": 25,
+      "op": "queue.writeBuffer",
+      "buffer": 17,
+      "label": "bindingBuffer1_object_(vertex,fragment,compute)",
+      "bufferOffset": 32,
+      "byteLength": 160
+    },
+    {
+      "n": 26,
+      "op": "createBindGroup",
+      "id": 23,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 27,
+      "op": "createShaderModule",
+      "id": 24,
+      "label": "vertex_constant1"
+    },
+    {
+      "n": 28,
+      "op": "createShaderModule",
+      "id": 25,
+      "label": "fragment_constant1"
+    },
+    {
+      "n": 29,
+      "op": "createPipelineLayout",
+      "id": 26,
+      "label": ""
+    },
+    {
+      "n": 30,
+      "op": "createRenderPipeline",
+      "id": 27,
+      "label": "renderPipeline_constant1_21"
+    },
+    {
+      "n": 31,
+      "op": "setPipeline",
+      "pass": 1,
+      "pipeline": 27,
+      "label": "renderPipeline_constant1_21"
+    },
+    {
+      "n": 32,
+      "op": "setBindGroup",
+      "pass": 1,
+      "index": 0,
+      "bindGroup": 16,
+      "label": "bindGroup_render"
+    },
+    {
+      "n": 33,
+      "op": "setBindGroup",
+      "pass": 1,
+      "index": 1,
+      "bindGroup": 23,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 34,
+      "op": "setIndexBuffer",
+      "pass": 1,
+      "buffer": 13,
+      "label": "",
+      "format": "uint32"
+    },
+    {
+      "n": 35,
+      "op": "setVertexBuffer",
+      "pass": 1,
+      "slot": 0,
+      "buffer": 10,
+      "label": ""
+    },
+    {
+      "n": 36,
+      "op": "setVertexBuffer",
+      "pass": 1,
+      "slot": 1,
+      "buffer": 11,
+      "label": ""
+    },
+    {
+      "n": 37,
+      "op": "setVertexBuffer",
+      "pass": 1,
+      "slot": 2,
+      "buffer": 12,
+      "label": ""
+    },
+    {
+      "n": 38,
+      "op": "drawIndexed",
+      "pass": 1,
+      "indexCount": 75522,
+      "instanceCount": 1,
+      "firstIndex": 0,
+      "baseVertex": 0,
+      "firstInstance": 0
+    },
+    {
+      "n": 39,
+      "op": "createBuffer",
+      "id": 28,
+      "label": "",
+      "size": 529280
+    },
+    {
+      "n": 40,
+      "op": "createBuffer",
+      "id": 29,
+      "label": "",
+      "size": 396960
+    },
+    {
+      "n": 41,
+      "op": "createBuffer",
+      "id": 30,
+      "label": "",
+      "size": 396960
+    },
+    {
+      "n": 42,
+      "op": "createBuffer",
+      "id": 31,
+      "label": "",
+      "size": 230400
+    },
+    {
+      "n": 43,
+      "op": "createBuffer",
+      "id": 32,
+      "label": "bindingBuffer1_object_(vertex,fragment,compute)",
+      "size": 160
+    },
+    {
+      "n": 44,
+      "op": "createBindGroup",
+      "id": 33,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 45,
+      "op": "queue.writeBuffer",
+      "buffer": 32,
+      "label": "bindingBuffer1_object_(vertex,fragment,compute)",
+      "bufferOffset": 0,
+      "byteLength": 160
+    },
+    {
+      "n": 46,
+      "op": "queue.writeBuffer",
+      "buffer": 32,
+      "label": "bindingBuffer1_object_(vertex,fragment,compute)",
+      "bufferOffset": 20,
+      "byteLength": 160
+    },
+    {
+      "n": 47,
+      "op": "queue.writeBuffer",
+      "buffer": 32,
+      "label": "bindingBuffer1_object_(vertex,fragment,compute)",
+      "bufferOffset": 32,
+      "byteLength": 160
+    },
+    {
+      "n": 48,
+      "op": "createBindGroup",
+      "id": 34,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 49,
+      "op": "setBindGroup",
+      "pass": 1,
+      "index": 1,
+      "bindGroup": 34,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 50,
+      "op": "setIndexBuffer",
+      "pass": 1,
+      "buffer": 31,
+      "label": "",
+      "format": "uint32"
+    },
+    {
+      "n": 51,
+      "op": "setVertexBuffer",
+      "pass": 1,
+      "slot": 0,
+      "buffer": 28,
+      "label": ""
+    },
+    {
+      "n": 52,
+      "op": "setVertexBuffer",
+      "pass": 1,
+      "slot": 1,
+      "buffer": 29,
+      "label": ""
+    },
+    {
+      "n": 53,
+      "op": "setVertexBuffer",
+      "pass": 1,
+      "slot": 2,
+      "buffer": 30,
+      "label": ""
+    },
+    {
+      "n": 54,
+      "op": "drawIndexed",
+      "pass": 1,
+      "indexCount": 57600,
+      "instanceCount": 1,
+      "firstIndex": 0,
+      "baseVertex": 0,
+      "firstInstance": 0
+    },
+    {
+      "n": 55,
+      "op": "createBuffer",
+      "id": 35,
+      "label": "",
+      "size": 110080
+    },
+    {
+      "n": 56,
+      "op": "createBuffer",
+      "id": 36,
+      "label": "",
+      "size": 82560
+    },
+    {
+      "n": 57,
+      "op": "createBuffer",
+      "id": 37,
+      "label": "",
+      "size": 82560
+    },
+    {
+      "n": 58,
+      "op": "createBuffer",
+      "id": 38,
+      "label": "",
+      "size": 41280
+    },
+    {
+      "n": 59,
+      "op": "createBuffer",
+      "id": 39,
+      "label": "bindingBuffer1_object_(vertex,fragment,compute)",
+      "size": 160
+    },
+    {
+      "n": 60,
+      "op": "createBindGroup",
+      "id": 40,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 61,
+      "op": "queue.writeBuffer",
+      "buffer": 39,
+      "label": "bindingBuffer1_object_(vertex,fragment,compute)",
+      "bufferOffset": 0,
+      "byteLength": 160
+    },
+    {
+      "n": 62,
+      "op": "queue.writeBuffer",
+      "buffer": 39,
+      "label": "bindingBuffer1_object_(vertex,fragment,compute)",
+      "bufferOffset": 20,
+      "byteLength": 160
+    },
+    {
+      "n": 63,
+      "op": "queue.writeBuffer",
+      "buffer": 39,
+      "label": "bindingBuffer1_object_(vertex,fragment,compute)",
+      "bufferOffset": 32,
+      "byteLength": 160
+    },
+    {
+      "n": 64,
+      "op": "createBindGroup",
+      "id": 41,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 65,
+      "op": "setBindGroup",
+      "pass": 1,
+      "index": 1,
+      "bindGroup": 41,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 66,
+      "op": "setIndexBuffer",
+      "pass": 1,
+      "buffer": 38,
+      "label": "",
+      "format": "uint32"
+    },
+    {
+      "n": 67,
+      "op": "setVertexBuffer",
+      "pass": 1,
+      "slot": 0,
+      "buffer": 35,
+      "label": ""
+    },
+    {
+      "n": 68,
+      "op": "setVertexBuffer",
+      "pass": 1,
+      "slot": 1,
+      "buffer": 36,
+      "label": ""
+    },
+    {
+      "n": 69,
+      "op": "setVertexBuffer",
+      "pass": 1,
+      "slot": 2,
+      "buffer": 37,
+      "label": ""
+    },
+    {
+      "n": 70,
+      "op": "drawIndexed",
+      "pass": 1,
+      "indexCount": 10320,
+      "instanceCount": 1,
+      "firstIndex": 0,
+      "baseVertex": 0,
+      "firstInstance": 0
+    },
+    {
+      "n": 71,
+      "op": "createBuffer",
+      "id": 42,
+      "label": "",
+      "size": 22528
+    },
+    {
+      "n": 72,
+      "op": "createBuffer",
+      "id": 43,
+      "label": "",
+      "size": 16896
+    },
+    {
+      "n": 73,
+      "op": "createBuffer",
+      "id": 44,
+      "label": "",
+      "size": 16896
+    },
+    {
+      "n": 74,
+      "op": "createBuffer",
+      "id": 45,
+      "label": "",
+      "size": 10176
+    },
+    {
+      "n": 75,
+      "op": "createBuffer",
+      "id": 46,
+      "label": "bindingBuffer6_object_(vertex,fragment,compute)",
+      "size": 160
+    },
+    {
+      "n": 76,
+      "op": "createBindGroup",
+      "id": 47,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 77,
+      "op": "queue.writeBuffer",
+      "buffer": 46,
+      "label": "bindingBuffer6_object_(vertex,fragment,compute)",
+      "bufferOffset": 0,
+      "byteLength": 160
+    },
+    {
+      "n": 78,
+      "op": "queue.writeBuffer",
+      "buffer": 46,
+      "label": "bindingBuffer6_object_(vertex,fragment,compute)",
+      "bufferOffset": 20,
+      "byteLength": 160
+    },
+    {
+      "n": 79,
+      "op": "queue.writeBuffer",
+      "buffer": 46,
+      "label": "bindingBuffer6_object_(vertex,fragment,compute)",
+      "bufferOffset": 32,
+      "byteLength": 160
+    },
+    {
+      "n": 80,
+      "op": "createBindGroup",
+      "id": 48,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 81,
+      "op": "createPipelineLayout",
+      "id": 49,
+      "label": ""
+    },
+    {
+      "n": 82,
+      "op": "createRenderPipeline",
+      "id": 50,
+      "label": "renderPipeline_constant2_24"
+    },
+    {
+      "n": 83,
+      "op": "setPipeline",
+      "pass": 1,
+      "pipeline": 50,
+      "label": "renderPipeline_constant2_24"
+    },
+    {
+      "n": 84,
+      "op": "setBindGroup",
+      "pass": 1,
+      "index": 1,
+      "bindGroup": 48,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 85,
+      "op": "setIndexBuffer",
+      "pass": 1,
+      "buffer": 45,
+      "label": "",
+      "format": "uint32"
+    },
+    {
+      "n": 86,
+      "op": "setVertexBuffer",
+      "pass": 1,
+      "slot": 0,
+      "buffer": 42,
+      "label": ""
+    },
+    {
+      "n": 87,
+      "op": "setVertexBuffer",
+      "pass": 1,
+      "slot": 1,
+      "buffer": 43,
+      "label": ""
+    },
+    {
+      "n": 88,
+      "op": "setVertexBuffer",
+      "pass": 1,
+      "slot": 2,
+      "buffer": 44,
+      "label": ""
+    },
+    {
+      "n": 89,
+      "op": "drawIndexed",
+      "pass": 1,
+      "indexCount": 2544,
+      "instanceCount": 1,
+      "firstIndex": 0,
+      "baseVertex": 0,
+      "firstInstance": 0
+    },
+    {
+      "n": 90,
+      "op": "createBuffer",
+      "id": 51,
+      "label": "",
+      "size": 35328
+    },
+    {
+      "n": 91,
+      "op": "createBuffer",
+      "id": 52,
+      "label": "",
+      "size": 26496
+    },
+    {
+      "n": 92,
+      "op": "createBuffer",
+      "id": 53,
+      "label": "",
+      "size": 26496
+    },
+    {
+      "n": 93,
+      "op": "createBuffer",
+      "id": 54,
+      "label": "",
+      "size": 21720
+    },
+    {
+      "n": 94,
+      "op": "createBuffer",
+      "id": 55,
+      "label": "bindingBuffer9_object_(vertex,fragment,compute)",
+      "size": 160
+    },
+    {
+      "n": 95,
+      "op": "createBindGroup",
+      "id": 56,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 96,
+      "op": "queue.writeBuffer",
+      "buffer": 55,
+      "label": "bindingBuffer9_object_(vertex,fragment,compute)",
+      "bufferOffset": 12,
+      "byteLength": 160
+    },
+    {
+      "n": 97,
+      "op": "queue.writeBuffer",
+      "buffer": 55,
+      "label": "bindingBuffer9_object_(vertex,fragment,compute)",
+      "bufferOffset": 32,
+      "byteLength": 160
+    },
+    {
+      "n": 98,
+      "op": "queue.writeBuffer",
+      "buffer": 55,
+      "label": "bindingBuffer9_object_(vertex,fragment,compute)",
+      "bufferOffset": 92,
+      "byteLength": 160
+    },
+    {
+      "n": 99,
+      "op": "createBindGroup",
+      "id": 57,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 100,
+      "op": "createShaderModule",
+      "id": 58,
+      "label": "fragment_HoloFillDark"
+    },
+    {
+      "n": 101,
+      "op": "createPipelineLayout",
+      "id": 59,
+      "label": ""
+    },
+    {
+      "n": 102,
+      "op": "createRenderPipeline",
+      "id": 60,
+      "label": "renderPipeline_HoloFillDark_22"
+    },
+    {
+      "n": 103,
+      "op": "setPipeline",
+      "pass": 1,
+      "pipeline": 60,
+      "label": "renderPipeline_HoloFillDark_22"
+    },
+    {
+      "n": 104,
+      "op": "setBindGroup",
+      "pass": 1,
+      "index": 1,
+      "bindGroup": 57,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 105,
+      "op": "setIndexBuffer",
+      "pass": 1,
+      "buffer": 54,
+      "label": "",
+      "format": "uint32"
+    },
+    {
+      "n": 106,
+      "op": "setVertexBuffer",
+      "pass": 1,
+      "slot": 0,
+      "buffer": 51,
+      "label": ""
+    },
+    {
+      "n": 107,
+      "op": "setVertexBuffer",
+      "pass": 1,
+      "slot": 1,
+      "buffer": 52,
+      "label": ""
+    },
+    {
+      "n": 108,
+      "op": "setVertexBuffer",
+      "pass": 1,
+      "slot": 2,
+      "buffer": 53,
+      "label": ""
+    },
+    {
+      "n": 109,
+      "op": "drawIndexed",
+      "pass": 1,
+      "indexCount": 5430,
+      "instanceCount": 1,
+      "firstIndex": 0,
+      "baseVertex": 0,
+      "firstInstance": 0
+    },
+    {
+      "n": 110,
+      "op": "createBuffer",
+      "id": 61,
+      "label": "",
+      "size": 51200
+    },
+    {
+      "n": 111,
+      "op": "createBuffer",
+      "id": 62,
+      "label": "",
+      "size": 38400
+    },
+    {
+      "n": 112,
+      "op": "createBuffer",
+      "id": 63,
+      "label": "",
+      "size": 38400
+    },
+    {
+      "n": 113,
+      "op": "createBuffer",
+      "id": 64,
+      "label": "",
+      "size": 19200
+    },
+    {
+      "n": 114,
+      "op": "createBuffer",
+      "id": 65,
+      "label": "bindingBuffer9_object_(vertex,fragment,compute)",
+      "size": 160
+    },
+    {
+      "n": 115,
+      "op": "createBindGroup",
+      "id": 66,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 116,
+      "op": "queue.writeBuffer",
+      "buffer": 65,
+      "label": "bindingBuffer9_object_(vertex,fragment,compute)",
+      "bufferOffset": 12,
+      "byteLength": 160
+    },
+    {
+      "n": 117,
+      "op": "queue.writeBuffer",
+      "buffer": 65,
+      "label": "bindingBuffer9_object_(vertex,fragment,compute)",
+      "bufferOffset": 32,
+      "byteLength": 160
+    },
+    {
+      "n": 118,
+      "op": "queue.writeBuffer",
+      "buffer": 65,
+      "label": "bindingBuffer9_object_(vertex,fragment,compute)",
+      "bufferOffset": 92,
+      "byteLength": 160
+    },
+    {
+      "n": 119,
+      "op": "createBindGroup",
+      "id": 67,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 120,
+      "op": "setBindGroup",
+      "pass": 1,
+      "index": 1,
+      "bindGroup": 67,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 121,
+      "op": "setIndexBuffer",
+      "pass": 1,
+      "buffer": 64,
+      "label": "",
+      "format": "uint32"
+    },
+    {
+      "n": 122,
+      "op": "setVertexBuffer",
+      "pass": 1,
+      "slot": 0,
+      "buffer": 61,
+      "label": ""
+    },
+    {
+      "n": 123,
+      "op": "setVertexBuffer",
+      "pass": 1,
+      "slot": 1,
+      "buffer": 62,
+      "label": ""
+    },
+    {
+      "n": 124,
+      "op": "setVertexBuffer",
+      "pass": 1,
+      "slot": 2,
+      "buffer": 63,
+      "label": ""
+    },
+    {
+      "n": 125,
+      "op": "drawIndexed",
+      "pass": 1,
+      "indexCount": 4800,
+      "instanceCount": 1,
+      "firstIndex": 0,
+      "baseVertex": 0,
+      "firstInstance": 0
+    },
+    {
+      "n": 126,
+      "op": "end",
+      "pass": 1
+    },
+    {
+      "n": 127,
+      "op": "commandEncoder.finish",
+      "encoderLabel": "renderContext_1"
+    },
+    {
+      "n": 128,
+      "op": "queue.submit",
+      "count": 1
+    },
+    {
+      "n": 129,
+      "op": "createTexture",
+      "id": 68,
+      "label": "UnrealBloomPass.bright",
+      "format": "rgba16float"
+    },
+    {
+      "n": 130,
+      "op": "beginRenderPass",
+      "pass": 2,
+      "label": ""
+    },
+    {
+      "n": 131,
+      "op": "setViewport",
+      "pass": 2,
+      "x": 0,
+      "y": 0,
+      "width": 400,
+      "height": 250,
+      "minDepth": 0,
+      "maxDepth": 1
+    },
+    {
+      "n": 132,
+      "op": "createBuffer",
+      "id": 70,
+      "label": "",
+      "size": 24
+    },
+    {
+      "n": 133,
+      "op": "createBuffer",
+      "id": 71,
+      "label": "bindingBuffer13_object_(vertex,fragment,compute)",
+      "size": 16
+    },
+    {
+      "n": 134,
+      "op": "createBindGroupLayout",
+      "id": 72,
+      "label": null
+    },
+    {
+      "n": 135,
+      "op": "createBindGroup",
+      "id": 74,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 136,
+      "op": "queue.writeBuffer",
+      "buffer": 71,
+      "label": "bindingBuffer13_object_(vertex,fragment,compute)",
+      "bufferOffset": 4,
+      "byteLength": 16
+    },
+    {
+      "n": 137,
+      "op": "createBindGroup",
+      "id": 75,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 138,
+      "op": "createShaderModule",
+      "id": 76,
+      "label": "vertex_Bloom_highPass"
+    },
+    {
+      "n": 139,
+      "op": "createShaderModule",
+      "id": 77,
+      "label": "fragment_Bloom_highPass"
+    },
+    {
+      "n": 140,
+      "op": "createPipelineLayout",
+      "id": 78,
+      "label": ""
+    },
+    {
+      "n": 141,
+      "op": "createRenderPipeline",
+      "id": 79,
+      "label": "renderPipeline_Bloom_highPass_26"
+    },
+    {
+      "n": 142,
+      "op": "setPipeline",
+      "pass": 2,
+      "pipeline": 79,
+      "label": "renderPipeline_Bloom_highPass_26"
+    },
+    {
+      "n": 143,
+      "op": "setBindGroup",
+      "pass": 2,
+      "index": 0,
+      "bindGroup": 75,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 144,
+      "op": "setVertexBuffer",
+      "pass": 2,
+      "slot": 0,
+      "buffer": 70,
+      "label": ""
+    },
+    {
+      "n": 145,
+      "op": "draw",
+      "pass": 2,
+      "vertexCount": 3,
+      "instanceCount": 1,
+      "firstVertex": 0,
+      "firstInstance": 0
+    },
+    {
+      "n": 146,
+      "op": "end",
+      "pass": 2
+    },
+    {
+      "n": 147,
+      "op": "commandEncoder.finish",
+      "encoderLabel": "renderContext_2"
+    },
+    {
+      "n": 148,
+      "op": "queue.submit",
+      "count": 1
+    },
+    {
+      "n": 149,
+      "op": "createTexture",
+      "id": 80,
+      "label": "UnrealBloomPass.h0",
+      "format": "rgba16float"
+    },
+    {
+      "n": 150,
+      "op": "beginRenderPass",
+      "pass": 3,
+      "label": ""
+    },
+    {
+      "n": 151,
+      "op": "setViewport",
+      "pass": 3,
+      "x": 0,
+      "y": 0,
+      "width": 400,
+      "height": 250,
+      "minDepth": 0,
+      "maxDepth": 1
+    },
+    {
+      "n": 152,
+      "op": "createBuffer",
+      "id": 82,
+      "label": "bindingBuffer15_object_(vertex,fragment,compute)",
+      "size": 160
+    },
+    {
+      "n": 153,
+      "op": "createBindGroup",
+      "id": 84,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 154,
+      "op": "queue.writeBuffer",
+      "buffer": 82,
+      "label": "bindingBuffer15_object_(vertex,fragment,compute)",
+      "bufferOffset": 0,
+      "byteLength": 160
+    },
+    {
+      "n": 155,
+      "op": "createBindGroup",
+      "id": 85,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 156,
+      "op": "createShaderModule",
+      "id": 86,
+      "label": "vertex_Bloom_separable"
+    },
+    {
+      "n": 157,
+      "op": "createShaderModule",
+      "id": 87,
+      "label": "fragment_Bloom_separable"
+    },
+    {
+      "n": 158,
+      "op": "createPipelineLayout",
+      "id": 88,
+      "label": ""
+    },
+    {
+      "n": 159,
+      "op": "createRenderPipeline",
+      "id": 89,
+      "label": "renderPipeline_Bloom_separable_27"
+    },
+    {
+      "n": 160,
+      "op": "setPipeline",
+      "pass": 3,
+      "pipeline": 89,
+      "label": "renderPipeline_Bloom_separable_27"
+    },
+    {
+      "n": 161,
+      "op": "setBindGroup",
+      "pass": 3,
+      "index": 0,
+      "bindGroup": 85,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 162,
+      "op": "setVertexBuffer",
+      "pass": 3,
+      "slot": 0,
+      "buffer": 70,
+      "label": ""
+    },
+    {
+      "n": 163,
+      "op": "draw",
+      "pass": 3,
+      "vertexCount": 3,
+      "instanceCount": 1,
+      "firstVertex": 0,
+      "firstInstance": 0
+    },
+    {
+      "n": 164,
+      "op": "end",
+      "pass": 3
+    },
+    {
+      "n": 165,
+      "op": "commandEncoder.finish",
+      "encoderLabel": "renderContext_2"
+    },
+    {
+      "n": 166,
+      "op": "queue.submit",
+      "count": 1
+    },
+    {
+      "n": 167,
+      "op": "createTexture",
+      "id": 90,
+      "label": "UnrealBloomPass.v0",
+      "format": "rgba16float"
+    },
+    {
+      "n": 168,
+      "op": "beginRenderPass",
+      "pass": 4,
+      "label": ""
+    },
+    {
+      "n": 169,
+      "op": "setViewport",
+      "pass": 4,
+      "x": 0,
+      "y": 0,
+      "width": 400,
+      "height": 250,
+      "minDepth": 0,
+      "maxDepth": 1
+    },
+    {
+      "n": 170,
+      "op": "queue.writeBuffer",
+      "buffer": 82,
+      "label": "bindingBuffer15_object_(vertex,fragment,compute)",
+      "bufferOffset": 96,
+      "byteLength": 160
+    },
+    {
+      "n": 171,
+      "op": "createBindGroup",
+      "id": 93,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 172,
+      "op": "setPipeline",
+      "pass": 4,
+      "pipeline": 89,
+      "label": "renderPipeline_Bloom_separable_27"
+    },
+    {
+      "n": 173,
+      "op": "setBindGroup",
+      "pass": 4,
+      "index": 0,
+      "bindGroup": 93,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 174,
+      "op": "setVertexBuffer",
+      "pass": 4,
+      "slot": 0,
+      "buffer": 70,
+      "label": ""
+    },
+    {
+      "n": 175,
+      "op": "draw",
+      "pass": 4,
+      "vertexCount": 3,
+      "instanceCount": 1,
+      "firstVertex": 0,
+      "firstInstance": 0
+    },
+    {
+      "n": 176,
+      "op": "end",
+      "pass": 4
+    },
+    {
+      "n": 177,
+      "op": "commandEncoder.finish",
+      "encoderLabel": "renderContext_2"
+    },
+    {
+      "n": 178,
+      "op": "queue.submit",
+      "count": 1
+    },
+    {
+      "n": 179,
+      "op": "createTexture",
+      "id": 94,
+      "label": "UnrealBloomPass.h1",
+      "format": "rgba16float"
+    },
+    {
+      "n": 180,
+      "op": "beginRenderPass",
+      "pass": 5,
+      "label": ""
+    },
+    {
+      "n": 181,
+      "op": "setViewport",
+      "pass": 5,
+      "x": 0,
+      "y": 0,
+      "width": 200,
+      "height": 125,
+      "minDepth": 0,
+      "maxDepth": 1
+    },
+    {
+      "n": 182,
+      "op": "createBuffer",
+      "id": 96,
+      "label": "bindingBuffer17_object_(vertex,fragment,compute)",
+      "size": 160
+    },
+    {
+      "n": 183,
+      "op": "createBindGroup",
+      "id": 98,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 184,
+      "op": "queue.writeBuffer",
+      "buffer": 96,
+      "label": "bindingBuffer17_object_(vertex,fragment,compute)",
+      "bufferOffset": 0,
+      "byteLength": 160
+    },
+    {
+      "n": 185,
+      "op": "createBindGroup",
+      "id": 99,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 186,
+      "op": "createShaderModule",
+      "id": 100,
+      "label": "fragment_Bloom_separable"
+    },
+    {
+      "n": 187,
+      "op": "createPipelineLayout",
+      "id": 101,
+      "label": ""
+    },
+    {
+      "n": 188,
+      "op": "createRenderPipeline",
+      "id": 102,
+      "label": "renderPipeline_Bloom_separable_28"
+    },
+    {
+      "n": 189,
+      "op": "setPipeline",
+      "pass": 5,
+      "pipeline": 102,
+      "label": "renderPipeline_Bloom_separable_28"
+    },
+    {
+      "n": 190,
+      "op": "setBindGroup",
+      "pass": 5,
+      "index": 0,
+      "bindGroup": 99,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 191,
+      "op": "setVertexBuffer",
+      "pass": 5,
+      "slot": 0,
+      "buffer": 70,
+      "label": ""
+    },
+    {
+      "n": 192,
+      "op": "draw",
+      "pass": 5,
+      "vertexCount": 3,
+      "instanceCount": 1,
+      "firstVertex": 0,
+      "firstInstance": 0
+    },
+    {
+      "n": 193,
+      "op": "end",
+      "pass": 5
+    },
+    {
+      "n": 194,
+      "op": "commandEncoder.finish",
+      "encoderLabel": "renderContext_2"
+    },
+    {
+      "n": 195,
+      "op": "queue.submit",
+      "count": 1
+    },
+    {
+      "n": 196,
+      "op": "createTexture",
+      "id": 103,
+      "label": "UnrealBloomPass.v1",
+      "format": "rgba16float"
+    },
+    {
+      "n": 197,
+      "op": "beginRenderPass",
+      "pass": 6,
+      "label": ""
+    },
+    {
+      "n": 198,
+      "op": "setViewport",
+      "pass": 6,
+      "x": 0,
+      "y": 0,
+      "width": 200,
+      "height": 125,
+      "minDepth": 0,
+      "maxDepth": 1
+    },
+    {
+      "n": 199,
+      "op": "queue.writeBuffer",
+      "buffer": 96,
+      "label": "bindingBuffer17_object_(vertex,fragment,compute)",
+      "bufferOffset": 96,
+      "byteLength": 160
+    },
+    {
+      "n": 200,
+      "op": "createBindGroup",
+      "id": 106,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 201,
+      "op": "setPipeline",
+      "pass": 6,
+      "pipeline": 102,
+      "label": "renderPipeline_Bloom_separable_28"
+    },
+    {
+      "n": 202,
+      "op": "setBindGroup",
+      "pass": 6,
+      "index": 0,
+      "bindGroup": 106,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 203,
+      "op": "setVertexBuffer",
+      "pass": 6,
+      "slot": 0,
+      "buffer": 70,
+      "label": ""
+    },
+    {
+      "n": 204,
+      "op": "draw",
+      "pass": 6,
+      "vertexCount": 3,
+      "instanceCount": 1,
+      "firstVertex": 0,
+      "firstInstance": 0
+    },
+    {
+      "n": 205,
+      "op": "end",
+      "pass": 6
+    },
+    {
+      "n": 206,
+      "op": "commandEncoder.finish",
+      "encoderLabel": "renderContext_2"
+    },
+    {
+      "n": 207,
+      "op": "queue.submit",
+      "count": 1
+    },
+    {
+      "n": 208,
+      "op": "createTexture",
+      "id": 107,
+      "label": "UnrealBloomPass.h2",
+      "format": "rgba16float"
+    },
+    {
+      "n": 209,
+      "op": "beginRenderPass",
+      "pass": 7,
+      "label": ""
+    },
+    {
+      "n": 210,
+      "op": "setViewport",
+      "pass": 7,
+      "x": 0,
+      "y": 0,
+      "width": 100,
+      "height": 62,
+      "minDepth": 0,
+      "maxDepth": 1
+    },
+    {
+      "n": 211,
+      "op": "createBuffer",
+      "id": 109,
+      "label": "bindingBuffer19_object_(vertex,fragment,compute)",
+      "size": 160
+    },
+    {
+      "n": 212,
+      "op": "createBindGroup",
+      "id": 111,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 213,
+      "op": "queue.writeBuffer",
+      "buffer": 109,
+      "label": "bindingBuffer19_object_(vertex,fragment,compute)",
+      "bufferOffset": 0,
+      "byteLength": 160
+    },
+    {
+      "n": 214,
+      "op": "createBindGroup",
+      "id": 112,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 215,
+      "op": "createShaderModule",
+      "id": 113,
+      "label": "fragment_Bloom_separable"
+    },
+    {
+      "n": 216,
+      "op": "createPipelineLayout",
+      "id": 114,
+      "label": ""
+    },
+    {
+      "n": 217,
+      "op": "createRenderPipeline",
+      "id": 115,
+      "label": "renderPipeline_Bloom_separable_29"
+    },
+    {
+      "n": 218,
+      "op": "setPipeline",
+      "pass": 7,
+      "pipeline": 115,
+      "label": "renderPipeline_Bloom_separable_29"
+    },
+    {
+      "n": 219,
+      "op": "setBindGroup",
+      "pass": 7,
+      "index": 0,
+      "bindGroup": 112,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 220,
+      "op": "setVertexBuffer",
+      "pass": 7,
+      "slot": 0,
+      "buffer": 70,
+      "label": ""
+    },
+    {
+      "n": 221,
+      "op": "draw",
+      "pass": 7,
+      "vertexCount": 3,
+      "instanceCount": 1,
+      "firstVertex": 0,
+      "firstInstance": 0
+    },
+    {
+      "n": 222,
+      "op": "end",
+      "pass": 7
+    },
+    {
+      "n": 223,
+      "op": "commandEncoder.finish",
+      "encoderLabel": "renderContext_2"
+    },
+    {
+      "n": 224,
+      "op": "queue.submit",
+      "count": 1
+    },
+    {
+      "n": 225,
+      "op": "createTexture",
+      "id": 116,
+      "label": "UnrealBloomPass.v2",
+      "format": "rgba16float"
+    },
+    {
+      "n": 226,
+      "op": "beginRenderPass",
+      "pass": 8,
+      "label": ""
+    },
+    {
+      "n": 227,
+      "op": "setViewport",
+      "pass": 8,
+      "x": 0,
+      "y": 0,
+      "width": 100,
+      "height": 62,
+      "minDepth": 0,
+      "maxDepth": 1
+    },
+    {
+      "n": 228,
+      "op": "queue.writeBuffer",
+      "buffer": 109,
+      "label": "bindingBuffer19_object_(vertex,fragment,compute)",
+      "bufferOffset": 96,
+      "byteLength": 160
+    },
+    {
+      "n": 229,
+      "op": "createBindGroup",
+      "id": 119,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 230,
+      "op": "setPipeline",
+      "pass": 8,
+      "pipeline": 115,
+      "label": "renderPipeline_Bloom_separable_29"
+    },
+    {
+      "n": 231,
+      "op": "setBindGroup",
+      "pass": 8,
+      "index": 0,
+      "bindGroup": 119,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 232,
+      "op": "setVertexBuffer",
+      "pass": 8,
+      "slot": 0,
+      "buffer": 70,
+      "label": ""
+    },
+    {
+      "n": 233,
+      "op": "draw",
+      "pass": 8,
+      "vertexCount": 3,
+      "instanceCount": 1,
+      "firstVertex": 0,
+      "firstInstance": 0
+    },
+    {
+      "n": 234,
+      "op": "end",
+      "pass": 8
+    },
+    {
+      "n": 235,
+      "op": "commandEncoder.finish",
+      "encoderLabel": "renderContext_2"
+    },
+    {
+      "n": 236,
+      "op": "queue.submit",
+      "count": 1
+    },
+    {
+      "n": 237,
+      "op": "createTexture",
+      "id": 120,
+      "label": "UnrealBloomPass.h3",
+      "format": "rgba16float"
+    },
+    {
+      "n": 238,
+      "op": "beginRenderPass",
+      "pass": 9,
+      "label": ""
+    },
+    {
+      "n": 239,
+      "op": "setViewport",
+      "pass": 9,
+      "x": 0,
+      "y": 0,
+      "width": 50,
+      "height": 31,
+      "minDepth": 0,
+      "maxDepth": 1
+    },
+    {
+      "n": 240,
+      "op": "createBuffer",
+      "id": 122,
+      "label": "bindingBuffer21_object_(vertex,fragment,compute)",
+      "size": 160
+    },
+    {
+      "n": 241,
+      "op": "createBindGroup",
+      "id": 124,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 242,
+      "op": "queue.writeBuffer",
+      "buffer": 122,
+      "label": "bindingBuffer21_object_(vertex,fragment,compute)",
+      "bufferOffset": 0,
+      "byteLength": 160
+    },
+    {
+      "n": 243,
+      "op": "createBindGroup",
+      "id": 125,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 244,
+      "op": "createShaderModule",
+      "id": 126,
+      "label": "fragment_Bloom_separable"
+    },
+    {
+      "n": 245,
+      "op": "createPipelineLayout",
+      "id": 127,
+      "label": ""
+    },
+    {
+      "n": 246,
+      "op": "createRenderPipeline",
+      "id": 128,
+      "label": "renderPipeline_Bloom_separable_30"
+    },
+    {
+      "n": 247,
+      "op": "setPipeline",
+      "pass": 9,
+      "pipeline": 128,
+      "label": "renderPipeline_Bloom_separable_30"
+    },
+    {
+      "n": 248,
+      "op": "setBindGroup",
+      "pass": 9,
+      "index": 0,
+      "bindGroup": 125,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 249,
+      "op": "setVertexBuffer",
+      "pass": 9,
+      "slot": 0,
+      "buffer": 70,
+      "label": ""
+    },
+    {
+      "n": 250,
+      "op": "draw",
+      "pass": 9,
+      "vertexCount": 3,
+      "instanceCount": 1,
+      "firstVertex": 0,
+      "firstInstance": 0
+    },
+    {
+      "n": 251,
+      "op": "end",
+      "pass": 9
+    },
+    {
+      "n": 252,
+      "op": "commandEncoder.finish",
+      "encoderLabel": "renderContext_2"
+    },
+    {
+      "n": 253,
+      "op": "queue.submit",
+      "count": 1
+    },
+    {
+      "n": 254,
+      "op": "createTexture",
+      "id": 129,
+      "label": "UnrealBloomPass.v3",
+      "format": "rgba16float"
+    },
+    {
+      "n": 255,
+      "op": "beginRenderPass",
+      "pass": 10,
+      "label": ""
+    },
+    {
+      "n": 256,
+      "op": "setViewport",
+      "pass": 10,
+      "x": 0,
+      "y": 0,
+      "width": 50,
+      "height": 31,
+      "minDepth": 0,
+      "maxDepth": 1
+    },
+    {
+      "n": 257,
+      "op": "queue.writeBuffer",
+      "buffer": 122,
+      "label": "bindingBuffer21_object_(vertex,fragment,compute)",
+      "bufferOffset": 96,
+      "byteLength": 160
+    },
+    {
+      "n": 258,
+      "op": "createBindGroup",
+      "id": 132,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 259,
+      "op": "setPipeline",
+      "pass": 10,
+      "pipeline": 128,
+      "label": "renderPipeline_Bloom_separable_30"
+    },
+    {
+      "n": 260,
+      "op": "setBindGroup",
+      "pass": 10,
+      "index": 0,
+      "bindGroup": 132,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 261,
+      "op": "setVertexBuffer",
+      "pass": 10,
+      "slot": 0,
+      "buffer": 70,
+      "label": ""
+    },
+    {
+      "n": 262,
+      "op": "draw",
+      "pass": 10,
+      "vertexCount": 3,
+      "instanceCount": 1,
+      "firstVertex": 0,
+      "firstInstance": 0
+    },
+    {
+      "n": 263,
+      "op": "end",
+      "pass": 10
+    },
+    {
+      "n": 264,
+      "op": "commandEncoder.finish",
+      "encoderLabel": "renderContext_2"
+    },
+    {
+      "n": 265,
+      "op": "queue.submit",
+      "count": 1
+    },
+    {
+      "n": 266,
+      "op": "createTexture",
+      "id": 133,
+      "label": "UnrealBloomPass.h4",
+      "format": "rgba16float"
+    },
+    {
+      "n": 267,
+      "op": "beginRenderPass",
+      "pass": 11,
+      "label": ""
+    },
+    {
+      "n": 268,
+      "op": "setViewport",
+      "pass": 11,
+      "x": 0,
+      "y": 0,
+      "width": 25,
+      "height": 15,
+      "minDepth": 0,
+      "maxDepth": 1
+    },
+    {
+      "n": 269,
+      "op": "createBuffer",
+      "id": 135,
+      "label": "bindingBuffer23_object_(vertex,fragment,compute)",
+      "size": 160
+    },
+    {
+      "n": 270,
+      "op": "createBindGroup",
+      "id": 137,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 271,
+      "op": "queue.writeBuffer",
+      "buffer": 135,
+      "label": "bindingBuffer23_object_(vertex,fragment,compute)",
+      "bufferOffset": 0,
+      "byteLength": 160
+    },
+    {
+      "n": 272,
+      "op": "createBindGroup",
+      "id": 138,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 273,
+      "op": "createShaderModule",
+      "id": 139,
+      "label": "fragment_Bloom_separable"
+    },
+    {
+      "n": 274,
+      "op": "createPipelineLayout",
+      "id": 140,
+      "label": ""
+    },
+    {
+      "n": 275,
+      "op": "createRenderPipeline",
+      "id": 141,
+      "label": "renderPipeline_Bloom_separable_31"
+    },
+    {
+      "n": 276,
+      "op": "setPipeline",
+      "pass": 11,
+      "pipeline": 141,
+      "label": "renderPipeline_Bloom_separable_31"
+    },
+    {
+      "n": 277,
+      "op": "setBindGroup",
+      "pass": 11,
+      "index": 0,
+      "bindGroup": 138,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 278,
+      "op": "setVertexBuffer",
+      "pass": 11,
+      "slot": 0,
+      "buffer": 70,
+      "label": ""
+    },
+    {
+      "n": 279,
+      "op": "draw",
+      "pass": 11,
+      "vertexCount": 3,
+      "instanceCount": 1,
+      "firstVertex": 0,
+      "firstInstance": 0
+    },
+    {
+      "n": 280,
+      "op": "end",
+      "pass": 11
+    },
+    {
+      "n": 281,
+      "op": "commandEncoder.finish",
+      "encoderLabel": "renderContext_2"
+    },
+    {
+      "n": 282,
+      "op": "queue.submit",
+      "count": 1
+    },
+    {
+      "n": 283,
+      "op": "createTexture",
+      "id": 142,
+      "label": "UnrealBloomPass.v4",
+      "format": "rgba16float"
+    },
+    {
+      "n": 284,
+      "op": "beginRenderPass",
+      "pass": 12,
+      "label": ""
+    },
+    {
+      "n": 285,
+      "op": "setViewport",
+      "pass": 12,
+      "x": 0,
+      "y": 0,
+      "width": 25,
+      "height": 15,
+      "minDepth": 0,
+      "maxDepth": 1
+    },
+    {
+      "n": 286,
+      "op": "queue.writeBuffer",
+      "buffer": 135,
+      "label": "bindingBuffer23_object_(vertex,fragment,compute)",
+      "bufferOffset": 96,
+      "byteLength": 160
+    },
+    {
+      "n": 287,
+      "op": "createBindGroup",
+      "id": 145,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 288,
+      "op": "setPipeline",
+      "pass": 12,
+      "pipeline": 141,
+      "label": "renderPipeline_Bloom_separable_31"
+    },
+    {
+      "n": 289,
+      "op": "setBindGroup",
+      "pass": 12,
+      "index": 0,
+      "bindGroup": 145,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 290,
+      "op": "setVertexBuffer",
+      "pass": 12,
+      "slot": 0,
+      "buffer": 70,
+      "label": ""
+    },
+    {
+      "n": 291,
+      "op": "draw",
+      "pass": 12,
+      "vertexCount": 3,
+      "instanceCount": 1,
+      "firstVertex": 0,
+      "firstInstance": 0
+    },
+    {
+      "n": 292,
+      "op": "end",
+      "pass": 12
+    },
+    {
+      "n": 293,
+      "op": "commandEncoder.finish",
+      "encoderLabel": "renderContext_2"
+    },
+    {
+      "n": 294,
+      "op": "queue.submit",
+      "count": 1
+    },
+    {
+      "n": 295,
+      "op": "beginRenderPass",
+      "pass": 13,
+      "label": ""
+    },
+    {
+      "n": 296,
+      "op": "setViewport",
+      "pass": 13,
+      "x": 0,
+      "y": 0,
+      "width": 400,
+      "height": 250,
+      "minDepth": 0,
+      "maxDepth": 1
+    },
+    {
+      "n": 297,
+      "op": "createBuffer",
+      "id": 146,
+      "label": "bindingBuffer25_object_(vertex,fragment,compute)",
+      "size": 272
+    },
+    {
+      "n": 298,
+      "op": "createBuffer",
+      "id": 147,
+      "label": "bindingBufferundefined_UniformBuffer_0_(fragment)",
+      "size": 80
+    },
+    {
+      "n": 299,
+      "op": "createBindGroupLayout",
+      "id": 148,
+      "label": null
+    },
+    {
+      "n": 300,
+      "op": "createBindGroup",
+      "id": 150,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 301,
+      "op": "queue.writeBuffer",
+      "buffer": 146,
+      "label": "bindingBuffer25_object_(vertex,fragment,compute)",
+      "bufferOffset": 16,
+      "byteLength": 272
+    },
+    {
+      "n": 302,
+      "op": "queue.writeBuffer",
+      "buffer": 147,
+      "label": "bindingBufferundefined_UniformBuffer_0_(fragment)",
+      "bufferOffset": 0,
+      "byteLength": 80
+    },
+    {
+      "n": 303,
+      "op": "createBindGroup",
+      "id": 151,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 304,
+      "op": "createShaderModule",
+      "id": 152,
+      "label": "vertex_Bloom_comp"
+    },
+    {
+      "n": 305,
+      "op": "createShaderModule",
+      "id": 153,
+      "label": "fragment_Bloom_comp"
+    },
+    {
+      "n": 306,
+      "op": "createPipelineLayout",
+      "id": 154,
+      "label": ""
+    },
+    {
+      "n": 307,
+      "op": "createRenderPipeline",
+      "id": 155,
+      "label": "renderPipeline_Bloom_comp_32"
+    },
+    {
+      "n": 308,
+      "op": "setPipeline",
+      "pass": 13,
+      "pipeline": 155,
+      "label": "renderPipeline_Bloom_comp_32"
+    },
+    {
+      "n": 309,
+      "op": "setBindGroup",
+      "pass": 13,
+      "index": 0,
+      "bindGroup": 151,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 310,
+      "op": "setVertexBuffer",
+      "pass": 13,
+      "slot": 0,
+      "buffer": 70,
+      "label": ""
+    },
+    {
+      "n": 311,
+      "op": "draw",
+      "pass": 13,
+      "vertexCount": 3,
+      "instanceCount": 1,
+      "firstVertex": 0,
+      "firstInstance": 0
+    },
+    {
+      "n": 312,
+      "op": "end",
+      "pass": 13
+    },
+    {
+      "n": 313,
+      "op": "commandEncoder.finish",
+      "encoderLabel": "renderContext_2"
+    },
+    {
+      "n": 314,
+      "op": "queue.submit",
+      "count": 1
+    },
+    {
+      "n": 315,
+      "op": "createBuffer",
+      "id": 156,
+      "label": "bindingBuffer0_render_(vertex,fragment,compute)",
+      "size": 16
+    },
+    {
+      "n": 316,
+      "op": "createBindGroup",
+      "id": 157,
+      "label": "bindGroup_render"
+    },
+    {
+      "n": 317,
+      "op": "createBindGroupLayout",
+      "id": 158,
+      "label": null
+    },
+    {
+      "n": 318,
+      "op": "createBindGroup",
+      "id": 159,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 319,
+      "op": "queue.writeBuffer",
+      "buffer": 156,
+      "label": "bindingBuffer0_render_(vertex,fragment,compute)",
+      "bufferOffset": 0,
+      "byteLength": 16
+    },
+    {
+      "n": 320,
+      "op": "createBindGroup",
+      "id": 160,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 321,
+      "op": "createShaderModule",
+      "id": 161,
+      "label": "fragment_RenderPipeline"
+    },
+    {
+      "n": 322,
+      "op": "createPipelineLayout",
+      "id": 162,
+      "label": ""
+    },
+    {
+      "n": 323,
+      "op": "createRenderPipeline",
+      "id": 163,
+      "label": "renderPipeline_RenderPipeline_25"
+    },
+    {
+      "n": 324,
+      "op": "setPipeline",
+      "pass": 0,
+      "pipeline": 163,
+      "label": "renderPipeline_RenderPipeline_25"
+    },
+    {
+      "n": 325,
+      "op": "setBindGroup",
+      "pass": 0,
+      "index": 0,
+      "bindGroup": 157,
+      "label": "bindGroup_render"
+    },
+    {
+      "n": 326,
+      "op": "setBindGroup",
+      "pass": 0,
+      "index": 1,
+      "bindGroup": 160,
+      "label": "bindGroup_object"
+    },
+    {
+      "n": 327,
+      "op": "setVertexBuffer",
+      "pass": 0,
+      "slot": 0,
+      "buffer": 70,
+      "label": ""
+    },
+    {
+      "n": 328,
+      "op": "draw",
+      "pass": 0,
+      "vertexCount": 3,
+      "instanceCount": 1,
+      "firstVertex": 0,
+      "firstInstance": 0
+    },
+    {
+      "n": 329,
+      "op": "end",
+      "pass": 0
+    },
+    {
+      "n": 330,
+      "op": "commandEncoder.finish",
+      "encoderLabel": "renderContext_0"
+    },
+    {
+      "n": 331,
+      "op": "queue.submit",
+      "count": 1
+    }
+  ],
+  "requestedLimits": {},
+  "grantedLimits": {
+    "maxTextureDimension1D": 8192,
+    "maxTextureDimension2D": 8192,
+    "maxTextureDimension3D": 2048,
+    "maxTextureArrayLayers": 256,
+    "maxBindGroups": 4,
+    "maxBindGroupsPlusVertexBuffers": 24,
+    "maxBindingsPerBindGroup": 1000,
+    "maxDynamicUniformBuffersPerPipelineLayout": 8,
+    "maxDynamicStorageBuffersPerPipelineLayout": 4,
+    "maxSampledTexturesPerShaderStage": 16,
+    "maxSamplersPerShaderStage": 16,
+    "maxStorageBuffersPerShaderStage": 8,
+    "maxStorageTexturesPerShaderStage": 4,
+    "maxUniformBuffersPerShaderStage": 12,
+    "maxUniformBufferBindingSize": 65536,
+    "maxStorageBufferBindingSize": 134217728,
+    "minUniformBufferOffsetAlignment": 256,
+    "minStorageBufferOffsetAlignment": 256,
+    "maxVertexBuffers": 8,
+    "maxBufferSize": 268435456,
+    "maxVertexAttributes": 16,
+    "maxVertexBufferArrayStride": 2048,
+    "maxInterStageShaderVariables": 16,
+    "maxColorAttachments": 8,
+    "maxColorAttachmentBytesPerSample": 32,
+    "maxComputeWorkgroupStorageSize": 16384,
+    "maxComputeInvocationsPerWorkgroup": 256,
+    "maxComputeWorkgroupSizeX": 256,
+    "maxComputeWorkgroupSizeY": 256,
+    "maxComputeWorkgroupSizeZ": 64,
+    "maxComputeWorkgroupsPerDimension": 65535,
+    "maxImmediateSize": 64,
+    "maxStorageBuffersInFragmentStage": 8,
+    "maxStorageTexturesInFragmentStage": 4,
+    "maxStorageBuffersInVertexStage": 8,
+    "maxStorageTexturesInVertexStage": 4
+  }
+}
