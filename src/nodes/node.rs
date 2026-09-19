@@ -730,6 +730,11 @@ pub enum Node {
         def: Rc<FnDef>,
         args: Vec<NodeRef>,
     },
+    /// `CodeNode` itself — a `wgslFn()` as a node rather than as a call, which
+    /// is the shape another `wgslFn`'s `includes` list needs it in. Building
+    /// one emits its declaration into `// codes` and nothing else; it has no
+    /// value, so nothing but an `includes` list may hold one.
+    Code(Rc<crate::nodes::code::CodeDef>),
     /// `FunctionCallNode` over a `wgslFn()` — a call into hand-written WGSL
     /// the node system copies through verbatim. See [`crate::nodes::code`].
     CodeCall {
@@ -847,6 +852,7 @@ impl NodeRef {
             Node::Element { ty, .. } => *ty,
             Node::Texture { ty, .. } => *ty,
             Node::Call { def, .. } => def.ret,
+            Node::Code(_) => Type::Void,
             Node::CodeCall { def, .. } => def.ret,
             Node::IfVar { result, .. } => result.ty(),
             Node::Select { ty, .. } => *ty,

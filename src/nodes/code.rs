@@ -11,7 +11,7 @@
 
 use std::rc::Rc;
 
-use super::node::Type;
+use super::node::{NodeRef, Type};
 
 /// What one declared parameter of a `wgslFn` binds to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,9 +38,14 @@ pub struct CodeDef {
     pub params: Vec<(String, ParamKind)>,
     /// The return type. `void` is not modelled: nothing in the rung uses it.
     pub ret: Type,
-    /// `CodeNode.includes` — other `wgslFn`s this one calls. Three builds them
-    /// first, so they land in `// codes` before their caller.
-    pub includes: Vec<Rc<CodeDef>>,
+    /// `CodeNode.includes` — the nodes three builds *before* this one, so
+    /// whatever they declare is in scope for the hand-written body. Two kinds
+    /// reach it: another `wgslFn` this one calls, which lands in `// codes`
+    /// ahead of its caller, and a `varyingProperty()` the body assigns to,
+    /// which is how `webgpu_tsl_interoperability`'s `varyings.vUv = uv;` gets
+    /// `vUv` into `VaryingsStruct` without any node ever reading it in the
+    /// vertex stage. See `docs/nodes.md` §19.
+    pub includes: Vec<NodeRef>,
 }
 
 /// `wgslFn( source, includes )`.
@@ -51,7 +56,7 @@ pub struct CodeDef {
 /// a type the port does not model. Three throws on the first and silently
 /// produces `undefined` on the second; a panic at setup time is the port's
 /// equivalent of a thrown `Error`, and both happen long before any pixels.
-pub fn wgsl_fn(source: &str, includes: Vec<Rc<CodeDef>>) -> Rc<CodeDef> {
+pub fn wgsl_fn(source: &str, includes: Vec<NodeRef>) -> Rc<CodeDef> {
     let parsed = parse(source);
     let output = if parsed.output_type == "void" {
         String::new()

@@ -459,6 +459,9 @@ impl NodeBuilder {
             // values: three never builds them, so they are not part of this
             // graph and must not be counted — counting one would promote it to
             // a var and emit a `textureSample` nothing reads.
+            // A `CodeNode` in an `includes` list is a declaration, not a
+            // value: it has no inputs of its own to count.
+            Node::Code(_) => vec![],
             Node::CodeCall { def, args } => def
                 .params
                 .iter()
@@ -1254,7 +1257,24 @@ impl NodeBuilder {
 
             Node::Join { args, ty } => {
                 let (args, ty) = (args.clone(), *ty);
-                let parts: Vec<String> = args.iter().map(|a| self.generate(a)).collect();
+                // `JoinNode.generate()` converts a component whose *primitive*
+                // type is not the join's — and only then, which is why this is
+                // here rather than in `wgsl::convert`'s equal-length arm (see
+                // `docs/nodes.md` §8). `vec3( ind.equal( 0 ), … )` is the one
+                // the ladder needs: three bools into `vec3<f32>( f32( a ),
+                // f32( b ), f32( c ) )`.
+                let want = ty.component_type();
+                let parts: Vec<String> = args
+                    .iter()
+                    .map(|a| {
+                        let snippet = self.generate(a);
+                        if a.ty().component_type() == want {
+                            snippet
+                        } else {
+                            format!("{}( {snippet} )", wgsl::type_name(want))
+                        }
+                    })
+                    .collect();
                 format!("{}( {} )", wgsl::type_name(ty), parts.join(", "))
             }
 
@@ -1352,6 +1372,12 @@ impl NodeBuilder {
                     })
                     .collect();
                 format!("{name}( {} )", parts.join(", "))
+            }
+
+            Node::Code(def) => {
+                let def = def.clone();
+                self.emit_code_fn(&def);
+                String::new()
             }
 
             Node::CodeCall { def, args } => {
@@ -1610,8 +1636,11 @@ impl NodeBuilder {
     /// verbatim with one newline appended, the way `getCodeFromNode()` stores
     /// `code + '\n'`.
     fn emit_code_fn(&mut self, def: &Rc<crate::nodes::code::CodeDef>) {
-        for include in &def.includes {
-            self.emit_code_fn(&include.clone());
+        // `CodeNode.generate()` builds every include before its own code. A
+        // nested `wgslFn` lands in `// codes` that way; a `varyingProperty()`
+        // include declares its varying and generates nothing.
+        for include in def.includes.clone() {
+            self.generate(&include);
         }
         let (name, code) = (def.name.clone(), format!("{}\n", def.code));
         self.add_code(&name, &code);
@@ -1809,7 +1838,11 @@ impl NodeBuilder {
         let output_prop = flow
             .emit_output_property
             .then(|| self.declare_var(Some("Output"), Type::Vec4));
-        let mut color = self.generate(&flow.output);
+        // The entry point writes a `vec4`: three builds the output node with
+        // `vec4` as its output type, so a `fragmentNode` that returns a
+        // `vec3` — `webgpu_tsl_interoperability`'s `crtFragment` — is widened
+        // here rather than assigned as it is.
+        let mut color = self.format(&flow.output, Type::Vec4);
         if let Some(output_prop) = &output_prop {
             self.emit(format!("{output_prop} = {color};"));
         }
@@ -1821,7 +1854,8 @@ impl NodeBuilder {
             self.emit(format!("{output_prop} = {snippet};"));
         }
         if let Some(node) = &flow.output_node {
-            color = self.generate(node);
+            let node = node.clone();
+            color = self.format(&node, Type::Vec4);
         }
         // `OutputStructNode.generate()`: one `output.mN = <member>` line per
         // member, pushed onto the *flow* — the entry point's result section is

@@ -2828,6 +2828,13 @@ pub fn inline_fn(
 /// point lives in this module.
 pub use crate::nodes::code::wgsl_fn;
 
+/// A `wgslFn` as a *node*, which is the form another one's `includes` list
+/// wants it in: three's `includes` is an array of nodes, and a nested
+/// `wgslFn` is a `CodeNode` like any other.
+pub fn code(def: &Rc<crate::nodes::code::CodeDef>) -> NodeRef {
+    NodeRef::new(Node::Code(def.clone()))
+}
+
 /// Calling a `wgslFn` — `FunctionCallNode` with three's named-parameter form:
 /// `getWGSLTextureSample( { tex, tex_sampler, uv } )`. The names are the ones
 /// the WGSL declaration used, and the order they are given in does not matter.
