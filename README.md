@@ -128,6 +128,7 @@ Linux is the only backend that has been run.
 | webgpu_custom_fog_background | 57 | 2.0 | 2 | 15453 |
 | webgpu_loader_gltf_sheen | 3 | 3.1 | 6 | 41921 |
 | webgpu_deferred | 54 | 2.8 | 25 | 26378 |
+| webgpu_loader_gltf_anisotropy | 27 | 3.2 | 5 | 12188 |
 
 `webgpu_compute_points` is graded like the rest and its 4 pixels mean less
 than the rest: its frame is black apart from a 2x2 block at the centre, so
