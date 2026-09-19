@@ -436,3 +436,35 @@ with each `Vector3` padded to a `vec4` exactly as
 `array_var()` — a `var<private> nodeVar0 : array< f32, 5 >` written once
 and indexed five times, which is what three's `array( [ … ] )` const
 becomes when it is read more than once.
+
+## The previous frame (`webgpu_postprocessing_difference`)
+
+`passNode.getPreviousTextureNode( name )` is the frame *before* this one on
+that output. Three keeps two textures per name and swaps them in
+`toggleTexture( name )`, which `updateBefore()` runs for every such name
+**before** it renders — so the very first frame draws into one of the pair and
+the "previous" node points at the other, which nothing has ever rendered into.
+The zero-initialised texture is what the graded frame of
+`webgpu_postprocessing_difference` actually sees: its `| previous − current |`
+is `| 0 − current |`, i.e. the whole image saturated. Rendering the previous
+buffer, or toggling after the render rather than before, gives a different
+picture that still looks plausible.
+
+### Divergence: the swap is on the texture, not on the node
+
+three.js swaps the two `Texture` objects inside the render target and rebuilds
+whatever was keyed on them. A `NodeRef` here is immutable and
+`texture_uv( texture, uv() )` holds its handle for good, so the port swaps the
+**GPU textures behind the two handles** (`Texture::swap_gpu`) and leaves both
+identities — and every bind group, pipeline and cache key on them — alone.
+`bind_groups()` and `texture_view()` build a fresh view per draw per frame, so
+no cached view can go stale, and the rung's second and third frames build
+nothing. The previous texture is registered on the render target
+(`RenderTarget::add_previous_texture`) so that `prepare_render_target`
+allocates and resizes it with the attachments, but it is never itself a colour
+attachment.
+
+`getTextureNode( name )` is also *not* `pass( … )` used as a value: it is the
+inner `PassTextureNode` on its own, so it emits one var and no
+`nodeVarN = nodeVarM;` copy. `webgpu_postprocessing_masking` takes the first
+form and this rung the second; both dumps show the difference.

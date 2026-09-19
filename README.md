@@ -100,6 +100,7 @@ Linux is the only backend that has been run.
 | webgpu_compute_points | 4 (see below) | 10.7 | 2 | 1 + 300000 points |
 | webgpu_lines_fat | 0 | 3.8 | 6 | 11191 |
 | webgpu_pmrem_test | 27 | 6.1 | 35 | 67457 |
+| webgpu_postprocessing_difference | 13 | 1.5 | 2 | 13 |
 
 `webgpu_compute_points` is graded like the rest and its 4 pixels mean less
 than the rest: its frame is black apart from a 2x2 block at the centre, so
