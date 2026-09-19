@@ -397,7 +397,7 @@ fn main() {
 
     let mut background = MeshBasicNodeMaterial::new();
     background.color_node = Some(three_rs::materials::background_node_color_node(
-        Color::from_hex(0x222244),
+        Color::from_hex(0x222244).into(),
     ));
     background.vertex_node = Some(three_rs::materials::background_vertex_node());
     background.side = Side::Back;
@@ -516,6 +516,19 @@ fn main() {
         &aces,
         SetupContext::default(),
     );
+
+    // rung 10: the scene's `backgroundNode`, against
+    // `handoff/scouts/rung10/m0{0,1}_*_Background.material-r186.wgsl`.
+    let mut background = MeshBasicNodeMaterial::new();
+    background.name = "Background.material";
+    background.vertex_node = Some(three_rs::materials::background_vertex_node());
+    background.side = Side::Back;
+    background.color_node = Some(three_rs::materials::background_node_color_node(
+        screen_uv()
+            .y()
+            .mix(Color::from_hex(0x66bbff), Color::from_hex(0x4466ff)),
+    ));
+    show("skinning_background", &background, SetupContext::default());
 
     // rung 10: Michelle's skinned body, against
     // `handoff/scouts/rung10/m03_vertex_Ch03_Body-r186.wgsl`.
