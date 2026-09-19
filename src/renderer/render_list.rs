@@ -11,6 +11,7 @@ use std::cmp::Ordering;
 use crate::cameras::RenderCamera;
 use crate::core::{Layers, Node};
 use crate::math::{CoordinateSystem, Frustum, Matrix4};
+use crate::objects::Payload;
 
 /// One entry of `RenderList.opaque` / `RenderList.transparent`.
 ///
@@ -242,6 +243,29 @@ fn project_drawable(
     render_list: &mut RenderList,
     sort_objects: bool,
 ) {
+    // `Frustum.intersectsObject( object )` fills `object.boundingSphere` in the
+    // first time it is asked for it — `if ( object.boundingSphere === null )
+    // object.computeBoundingSphere()`. `InstancedMesh` is the one payload on
+    // the ladder that sets `boundingSphere = null` in its constructor, so
+    // without this an instanced draw is culled against the single geometry
+    // sphere at the object's origin rather than the spread of its instances,
+    // and a `RoomEnvironment` loses all six boxes from four of the six PMREM
+    // faces. Cached, as three.js caches it: later `setMatrixAt` calls do not
+    // invalidate it there either.
+    {
+        let needs_sphere = {
+            let o = object.borrow();
+            o.frustum_culled
+                && matches!(&o.payload, Payload::InstancedMesh(instanced)
+                    if instanced.bounding_sphere.is_none())
+        };
+        if needs_sphere {
+            if let Payload::InstancedMesh(instanced) = &mut object.borrow_mut().payload {
+                instanced.compute_bounding_sphere();
+            }
+        }
+    }
+
     let o = object.borrow();
     let geometry = match o.geometry() {
         Some(geometry) => geometry.clone(),

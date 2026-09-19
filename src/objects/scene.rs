@@ -59,6 +59,24 @@ pub struct Scene {
     /// The scene root. `node.borrow().is_scene` is true.
     pub node: Node,
     pub background: Option<Background>,
+    /// `scene.environment` — the default environment map for every material in
+    /// the scene that does not carry one of its own.
+    ///
+    /// Upstream this is a plain `Texture` and
+    /// `NodeManager.updateEnvironment( scene )` turns it into a
+    /// `scene.environmentNode`, which `NodeMaterial.setupEnvironment()` falls
+    /// back to when neither `builder.context.environment` nor the material's
+    /// own `envNode` is set. The port carries the generated PMREM's handle for
+    /// the reason [`Background::Pmrem`] does: the three cubeUV shape uniforms a
+    /// cubeUV read needs travel with the texture.
+    ///
+    /// Assigning it after a material has drawn once needs
+    /// [`MeshBasicNodeMaterial::set_needs_update`] on that material, exactly as
+    /// three.js needs `material.needsUpdate = true`: it changes the program,
+    /// not a uniform.
+    ///
+    /// [`MeshBasicNodeMaterial::set_needs_update`]: crate::materials::MeshBasicNodeMaterial::set_needs_update
+    pub environment: Option<crate::materials::environment::PmremHandle>,
     /// `scene.fogNode`. Read by `NodeMaterial`'s output flow on every material
     /// in the scene (rung 5).
     pub fog_node: Option<FogNode>,
@@ -76,6 +94,7 @@ impl Default for Scene {
         Self {
             node: object.into_node(),
             background: None,
+            environment: None,
             fog_node: None,
             override_material: None,
         }

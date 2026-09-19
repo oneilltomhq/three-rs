@@ -105,6 +105,11 @@ pub enum MaterialKind {
     Basic,
     /// `MeshPhongNodeMaterial` — `PhongLightingModel`.
     Phong,
+    /// `MeshLambertNodeMaterial` — `new PhongLightingModel( false )`, three's
+    /// own comment being "( specular ) -> force lambert". The same flow as
+    /// [`Phong`](MaterialKind::Phong) with the Blinn-Phong specular lobe and
+    /// the two material properties that feed it removed.
+    Lambert,
     /// `SpriteNodeMaterial` — `BasicLightingModel` like `Basic`, but it
     /// overrides `setupPositionView()` with the billboarded quad.
     Sprite,
@@ -589,6 +594,20 @@ impl MeshBasicNodeMaterial {
             ..Self::default()
         }
     }
+
+    /// `new MeshLambertNodeMaterial( { color } )`.
+    ///
+    /// `MeshLambertMaterial`'s own defaults over `Material`'s are all shared
+    /// with the Phong ones the struct already carries, so the constructor is
+    /// the Phong one under a different [`MaterialKind`].
+    pub fn lambert(color: Color) -> Self {
+        Self {
+            kind: MaterialKind::Lambert,
+            color,
+            lights: true,
+            ..Self::default()
+        }
+    }
 }
 
 impl MeshBasicNodeMaterial {
@@ -619,6 +638,10 @@ impl MeshBasicNodeMaterial {
 /// shared because `WebGPURenderer` treats every material as a `NodeMaterial`
 /// and the renderer must hold them in one list.
 pub type MeshPhongNodeMaterial = MeshBasicNodeMaterial;
+
+/// three.js' name for a `NodeMaterial` whose kind is `Lambert`. The struct is
+/// shared for the reason [`MeshPhongNodeMaterial`] is.
+pub type MeshLambertNodeMaterial = MeshBasicNodeMaterial;
 
 /// three.js' name for a `NodeMaterial` whose kind is `Sprite`.
 pub type SpriteNodeMaterial = MeshBasicNodeMaterial;

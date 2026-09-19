@@ -297,9 +297,16 @@ pub fn ambient_lights(indices: &[usize], out: &mut Vec<NodeRef>) {
 /// One direct light's contribution: its `lightDirection` / `lightColor` pair
 /// (including the shadow factor when it casts one) fed through
 /// `PhongLightingModel.direct()`.
+///
+/// `specular` is `PhongLightingModel`'s own constructor flag:
+/// `MeshLambertNodeMaterial.setupLightingModel()` returns
+/// `new PhongLightingModel( false )` — "( specular ) -> force lambert" — and
+/// the `if ( this.specular === true )` around the `directSpecular` accumulation
+/// is the whole difference between the two materials' direct term.
 pub fn direct_light(
     light: &LightDesc,
     received_shadow_position: Option<&NodeRef>,
+    specular: bool,
     out: &mut Vec<NodeRef>,
 ) {
     let Some((light_direction, light_color)) = setup_light(light, received_shadow_position, out)
@@ -316,8 +323,10 @@ pub fn direct_light(
         direct_diffuse()
             .assign(direct_diffuse().add(irr.clone().mul(brdf_lambert(diffuse_color().xyz())))),
     );
-    out.push(
-        direct_specular()
-            .assign(direct_specular().add(irr.mul(brdf_blinn_phong(light_direction)).mul(1.0))),
-    );
+    if specular {
+        out.push(
+            direct_specular()
+                .assign(direct_specular().add(irr.mul(brdf_blinn_phong(light_direction)).mul(1.0))),
+        );
+    }
 }

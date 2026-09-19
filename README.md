@@ -81,6 +81,8 @@ Linux is the only backend that has been run.
 | [`webgpu_pmrem_scene`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_pmrem_scene.rs) | [`webgpu_postprocessing_bloom`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_bloom.rs) | [`webgpu_materials_envmaps`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_materials_envmaps.rs) | [`webgpu_materials_cubemap_mipmaps`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_materials_cubemap_mipmaps.rs) |
 | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_postprocessing_bloom_emissive.jpg" alt="webgpu_postprocessing_bloom_emissive" width="200">](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_bloom_emissive-progress.md) | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_instance_uniform.jpg" alt="webgpu_instance_uniform" width="200">](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_instance_uniform-progress.md) | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_tsl_interoperability.jpg" alt="webgpu_tsl_interoperability" width="200">](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_tsl_interoperability-progress.md) | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_pmrem_equirectangular.jpg" alt="webgpu_pmrem_equirectangular" width="200">](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_pmrem_equirectangular-progress.md) |
 | [`webgpu_postprocessing_bloom_emissive`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_bloom_emissive.rs) | [`webgpu_instance_uniform`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_instance_uniform.rs) | [`webgpu_tsl_interoperability`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_tsl_interoperability.rs) | [`webgpu_pmrem_equirectangular`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_pmrem_equirectangular.rs) |
+| [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_postprocessing_ca.jpg" alt="webgpu_postprocessing_ca" width="200">](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_ca-progress.md) |  |  |  |
+| [`webgpu_postprocessing_ca`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_ca.rs) |  |  |  |
 
 <sub>Our own rendered frames, one per graded example. See [`docs/gallery.md`](https://github.com/oneilltomhq/three-rs/blob/main/docs/gallery.md).</sub>
 <!-- gallery:end -->
@@ -118,6 +120,7 @@ Linux is the only backend that has been run.
 | webgpu_instance_uniform | 13 | 6.0 | 14 | 247105 |
 | webgpu_tsl_interoperability | 0 | 2.2 | 2 | 4 |
 | webgpu_pmrem_equirectangular | 1 | 5.9 | 32 | 243905 |
+| webgpu_postprocessing_ca | 3 | 3.4 | 23 | 5658 (+ 42 lines) |
 
 `webgpu_compute_points` is graded like the rest and its 4 pixels mean less
 than the rest: its frame is black apart from a 2x2 block at the centre, so

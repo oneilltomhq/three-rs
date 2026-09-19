@@ -82,7 +82,7 @@ pub fn init() -> App {
     // `radianceMap = pmremGenerator.fromScene( envScene ).texture`, then
     // `pmremGenerator.dispose()` — which frees the generator's own scratch and
     // leaves the returned target alive. `PmremEnvironment` owns that target.
-    let environment = PmremEnvironment::from_scene(&mut renderer, &mut env_scene).unwrap();
+    let environment = PmremEnvironment::from_scene(&mut renderer, &mut env_scene, 0.0).unwrap();
 
     // `scene.background = envScene.background`. `_sceneToCubeUV` put it back
     // on `envScene` after borrowing it for the background box, so this is the

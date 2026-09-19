@@ -9,6 +9,7 @@ pub mod addons;
 pub mod animation;
 pub mod cameras;
 pub mod core;
+pub mod environments;
 pub mod error;
 pub mod extras;
 pub mod geometries;
@@ -31,6 +32,7 @@ pub mod utils;
 
 pub use cameras::{OrthographicCamera, PerspectiveCamera, RenderCamera};
 pub use core::{BufferGeometry, Node, Object3D};
+pub use environments::RoomEnvironment;
 pub use error::{Error, GltfError};
 pub use extras::{CatmullRomCurve3, Curve, CurveType, FrenetFrames};
 pub use geometries::{
@@ -47,8 +49,8 @@ pub use loaders::{
 };
 pub use materials::{
     Line2NodeMaterial, LineBasicNodeMaterial, MaterialKind, MeshBasicNodeMaterial,
-    MeshNormalNodeMaterial, MeshPhongNodeMaterial, MeshPhysicalNodeMaterial,
-    MeshStandardNodeMaterial, PointsNodeMaterial, ToneMapping,
+    MeshLambertNodeMaterial, MeshNormalNodeMaterial, MeshPhongNodeMaterial,
+    MeshPhysicalNodeMaterial, MeshStandardNodeMaterial, PointsNodeMaterial, ToneMapping,
 };
 pub use math::{Color, Euler, Matrix3, Matrix4, Quaternion, Vector2, Vector3};
 pub use objects::{

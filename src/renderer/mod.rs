@@ -1252,12 +1252,25 @@ impl Renderer {
                 None => (None, Vec::new()),
             };
 
+            // `NodeMaterial.setupEnvironment()`: the material's own `envNode`
+            // wins, and `scene.environmentNode` is the fallback.
+            let scene_environment = match material.pmrem_env {
+                Some(_) => None,
+                None => scene.environment.clone(),
+            };
+
             items.push(Renderable {
                 object: Some(item.node.clone()),
                 geometry: geometry.clone(),
                 material: material.clone(),
+                // No variant: `SetupContext` is the render object's *dynamic*
+                // cache key and the environment is one of its fields, so a
+                // material drawn both with and without one — the same
+                // `MeshStandardNodeMaterial` in an environment scene and in the
+                // real scene — already gets two programs.
                 key: MaterialKey::of(material),
                 setup: SetupContext {
+                    environment: scene_environment,
                     // `InstanceNode.setup()` branches on
                     // `instanceMatrix.count * 16 * 4` against
                     // `maxUniformBufferBindingSize`, i.e. on the *array*
@@ -1526,6 +1539,7 @@ impl Renderer {
                     material: materials::shadow_material(source),
                     key: MaterialKey::of(source).variant(VARIANT_SHADOW),
                     setup: SetupContext {
+                        environment: None,
                         instance_count: instance_matrix.as_ref().map(|_| instance_count as usize),
                         instanced: instance_matrix.is_some(),
                         instance_color: instance_color.as_ref().map(|a| a.count()),
@@ -1730,6 +1744,7 @@ impl Renderer {
                     material: materials::shadow_material(source),
                     key: MaterialKey::of(source).variant(VARIANT_SHADOW),
                     setup: SetupContext {
+                        environment: None,
                         instance_count: instance_matrix.as_ref().map(|_| instance_count as usize),
                         instanced: instance_matrix.is_some(),
                         instance_color: instance_color.as_ref().map(|a| a.count()),
