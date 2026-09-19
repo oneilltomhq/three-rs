@@ -63,7 +63,10 @@ struct Cells {
 /// `_maxMip`, `_generator`, `_pmrem`) with a name, because in Rust it has to
 /// outlive the nodes that read it.
 pub struct PmremEnvironment {
-    source: PmremSource,
+    /// The texture this environment is generated from, or `None` when it came
+    /// from a scene — `fromScene` has no source texture to re-read, and it is
+    /// generated eagerly, so [`update`](Self::update) has nothing left to do.
+    source: Option<PmremSource>,
     generator: PmremGenerator,
     /// The generated atlas, kept so a second `update` can render into it again
     /// rather than allocate — three's `cache.get( texture )` reuse.
@@ -89,7 +92,29 @@ impl PmremEnvironment {
         Self::from_source(PmremSource::Equirectangular(source.clone()))
     }
 
+    /// `radianceMap = pmremGenerator.fromScene( envScene ).texture` — the
+    /// PMREM of a rendered scene.
+    ///
+    /// Unlike the two texture entry points this one builds **now**, because
+    /// that is where three builds it: `fromScene` is called by the page, not
+    /// reached lazily through `NodeManager.updateEnvironment`. So there is no
+    /// `updateBefore` to move and [`update`](Self::update) is a no-op
+    /// afterwards.
+    pub fn from_scene(
+        renderer: &mut Renderer,
+        scene: &mut crate::objects::Scene,
+    ) -> Result<Self, crate::error::Error> {
+        let mut environment = Self::from_optional_source(None);
+        let target = environment.generator.from_scene(renderer, scene, None)?;
+        environment.adopt(target);
+        Ok(environment)
+    }
+
     fn from_source(source: PmremSource) -> Self {
+        Self::from_optional_source(Some(source))
+    }
+
+    fn from_optional_source(source: Option<PmremSource>) -> Self {
         let (texel_width, texel_width_cell) = uniform_settable(Type::F32, vec![0.0]);
         let (texel_height, texel_height_cell) = uniform_settable(Type::F32, vec![0.0]);
         let (max_mip, max_mip_cell) = uniform_settable(Type::F32, vec![0.0]);
@@ -124,12 +149,22 @@ impl PmremEnvironment {
         if self.target.is_some() {
             return Ok(());
         }
+        let Some(source) = self.source.clone() else {
+            // `fromScene` built this one eagerly; there is no source texture
+            // to regenerate from.
+            return Ok(());
+        };
 
         let target = self
             .generator
-            .from_texture(renderer, &self.source, self.target.take())?;
+            .from_texture(renderer, &source, self.target.take())?;
+        self.adopt(target);
+        Ok(())
+    }
 
-        // `updateFromTexture( pmrem )`.
+    /// `updateFromTexture( pmrem )` — point the borrowed handle at the atlas
+    /// and write the three cubeUV uniforms its height implies.
+    fn adopt(&mut self, target: RenderTarget) {
         let (_, height) = target.size();
         let (texel_width, texel_height, max_mip) = generate_cube_uv_size(height);
         self.texture
@@ -141,7 +176,6 @@ impl PmremEnvironment {
         drop(cells);
 
         self.target = Some(target);
-        Ok(())
     }
 
     /// What a material holds to read this environment:
