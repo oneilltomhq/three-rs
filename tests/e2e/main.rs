@@ -175,6 +175,10 @@ mod webgpu_pmrem_test;
 #[allow(dead_code)]
 mod webgpu_pmrem_scene;
 
+#[path = "../../examples/webgpu_pmrem_equirectangular.rs"]
+#[allow(dead_code)]
+mod webgpu_pmrem_equirectangular;
+
 #[path = "../../examples/webgpu_lights_phong.rs"]
 #[allow(dead_code)]
 mod webgpu_lights_phong;
@@ -1252,6 +1256,61 @@ fn webgpu_pmrem_test() {
     steady_frame(name, &mut app, webgpu_pmrem_test::animate, |app| {
         app.renderer.device()
     });
+}
+
+/// `webgpu_pmrem_equirectangular`: the same PMREM machinery as
+/// `webgpu_pmrem_test`, fed from an **UltraHDR** JPEG rather than a Radiance
+/// `.hdr`, with a `backgroundNode` sampling the atlas at a fixed roughness of
+/// 0.5.
+///
+/// The picture is entirely the loader's: the geometry is thirty spheres over
+/// roughness x metalness with no lights, so every visible value comes out of
+/// `UltraHdrLoader`'s gain-map reconstruction. `src/loaders/ultra_hdr_loader.rs`
+/// carries the unit tests for the metadata parsers and the recovery formula;
+/// this is the gate on the pixels they produce.
+#[test]
+fn webgpu_pmrem_equirectangular() {
+    let name = "webgpu_pmrem_equirectangular";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_pmrem_equirectangular::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_pmrem_equirectangular::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(
+        name,
+        &mut app,
+        webgpu_pmrem_equirectangular::animate,
+        |app| app.renderer.device(),
+    );
 }
 
 /// The white-furnace gate, which is the reason this example exists.
