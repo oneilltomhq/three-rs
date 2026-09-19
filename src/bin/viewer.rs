@@ -11,7 +11,7 @@
 //! has a number key: `1` depth_texture, `2` instance_mesh, `3` materials_basic,
 //! `4` rtt, `5` lights_phong, `6` morphtargets, `7` shadowmap,
 //! `8` lights_physical, `9` postprocessing_masking, `0` tsl_galaxy,
-//! `a` skinning, `b` mesh_batch. The same
+//! `a` skinning, `b` mesh_batch, `c` postprocessing_radial_blur. The same
 //! digit is accepted on the command line in place of the name, and `--list`
 //! prints the table. Left-drag orbits, right-drag (or middle-drag) pans, the
 //! wheel zooms and Esc quits.
@@ -107,6 +107,10 @@ mod webgpu_tsl_galaxy;
 #[allow(dead_code)]
 mod webgpu_skinning;
 
+#[path = "../../examples/webgpu_postprocessing_radial_blur.rs"]
+#[allow(dead_code)]
+mod webgpu_postprocessing_radial_blur;
+
 // The SDF text examples are not here: they live in `sdf-text/examples/`,
 // because that crate depends on three-rs and three-rs cannot depend back on
 // it (`Cargo.toml` explains the publish cycle).
@@ -128,12 +132,13 @@ enum Which {
     TslGalaxy,
     Skinning,
     MeshBatch,
+    PostprocessingRadialBlur,
 }
 
 impl Which {
     /// Every graded example, in README order; the index is the key (`1`..`9`,
     /// `0` for the tenth, then letters).
-    const ALL: [Which; 12] = [
+    const ALL: [Which; 13] = [
         Self::DepthTexture,
         Self::InstanceMesh,
         Self::MaterialsBasic,
@@ -146,6 +151,7 @@ impl Which {
         Self::TslGalaxy,
         Self::Skinning,
         Self::MeshBatch,
+        Self::PostprocessingRadialBlur,
     ];
 
     /// The name with or without its `webgpu_` prefix, or the key digit.
@@ -170,6 +176,7 @@ impl Which {
             Self::TslGalaxy => "webgpu_tsl_galaxy",
             Self::Skinning => "webgpu_skinning",
             Self::MeshBatch => "webgpu_mesh_batch",
+            Self::PostprocessingRadialBlur => "webgpu_postprocessing_radial_blur",
         }
     }
 
@@ -179,7 +186,9 @@ impl Which {
 
     /// The keyboard key (and the command-line shorthand) for this example.
     fn key(self) -> &'static str {
-        const KEYS: [&str; 12] = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "a", "b"];
+        const KEYS: [&str; 13] = [
+            "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "a", "b", "c",
+        ];
         KEYS[Self::ALL.iter().position(|w| *w == self).unwrap()]
     }
 
@@ -193,7 +202,10 @@ impl Which {
     fn antialias(self) -> bool {
         !matches!(
             self,
-            Self::MaterialsBasic | Self::LightsPhysical | Self::PostprocessingMasking
+            Self::MaterialsBasic
+                | Self::LightsPhysical
+                | Self::PostprocessingMasking
+                | Self::PostprocessingRadialBlur
         )
     }
 
@@ -239,6 +251,13 @@ enum Scene {
         last_time: Option<f64>,
     },
     MeshBatch(webgpu_mesh_batch::App),
+    /// `last_time` is the page's `Timer`: `animate()` turns the group by a
+    /// delta. The graded frame's delta is 0, so the example's own `animate()`
+    /// pins it; here the clock runs and the group turns.
+    PostprocessingRadialBlur {
+        app: webgpu_postprocessing_radial_blur::App,
+        last_time: Option<f64>,
+    },
 }
 
 impl Scene {
@@ -266,6 +285,10 @@ impl Scene {
                 last_time: None,
             },
             Which::MeshBatch => Scene::MeshBatch(webgpu_mesh_batch::init()),
+            Which::PostprocessingRadialBlur => Scene::PostprocessingRadialBlur {
+                app: webgpu_postprocessing_radial_blur::init(),
+                last_time: None,
+            },
         };
 
         // `init()` is the graded example's code verbatim, so its `Renderer` is
@@ -318,6 +341,7 @@ impl Scene {
             Scene::TslGalaxy(app) => &mut app.renderer,
             Scene::Skinning { app, .. } => &mut app.renderer,
             Scene::MeshBatch(app) => &mut app.renderer,
+            Scene::PostprocessingRadialBlur { app, .. } => &mut app.renderer,
         }
     }
 
@@ -335,6 +359,7 @@ impl Scene {
             Scene::TslGalaxy(app) => &mut app.camera,
             Scene::Skinning { app, .. } => &mut app.camera,
             Scene::MeshBatch(app) => &mut app.camera,
+            Scene::PostprocessingRadialBlur { app, .. } => &mut app.camera,
         }
     }
 
@@ -577,6 +602,21 @@ impl Scene {
             }
             Scene::MeshBatch(app) => {
                 webgpu_mesh_batch::animate(app);
+            }
+            Scene::PostprocessingRadialBlur { app, last_time } => {
+                // `timer.update(); group.rotation.y += timer.getDelta() * 0.1`.
+                let delta = last_time.map_or(0.0, |last| time - last);
+                *last_time = Some(time);
+                {
+                    let mut group = app.group.borrow_mut();
+                    let rotation = group.rotation;
+                    group.set_rotation(rotation.x, rotation.y + delta * 0.1, rotation.z);
+                }
+
+                // `PassNode.updateBefore()`, then the output quad.
+                app.scene_pass
+                    .render(&mut app.renderer, &mut app.scene, &mut app.camera);
+                app.render_pipeline.render(&mut app.renderer);
             }
         }
     }
