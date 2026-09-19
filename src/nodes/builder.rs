@@ -914,17 +914,35 @@ impl NodeBuilder {
                 } else {
                     ty
                 };
-                let sa = if a.ty().is_matrix() {
-                    self.generate(&a)
+                // `OperatorNode.generate()`'s two matrix-and-scalar arms
+                // (`OperatorNode.js:360`). A matrix times a float is emitted
+                // with the *float first* — `( skinWeight.x * boneMat )`, not
+                // `( boneMat * skinWeight.x )` — and a float times a matrix is
+                // emitted with no enclosing parens at all. Neither operand is
+                // widened to the result type in either case. Both quirks are
+                // visible in Three's skinning dump, which multiplies the same
+                // pair both ways round in the two statements it emits.
+                if a.ty().is_matrix() && b.ty() == Type::F32 {
+                    let sa = self.generate(&a);
+                    let sb = self.generate(&b);
+                    format!("( {sb} {op} {sa} )")
+                } else if a.ty() == Type::F32 && b.ty().is_matrix() {
+                    let sa = self.generate(&a);
+                    let sb = self.generate(&b);
+                    format!("{sa} {op} {sb}")
                 } else {
-                    self.format(&a, want)
-                };
-                let sb = if b.ty().is_matrix() {
-                    self.generate(&b)
-                } else {
-                    self.format(&b, want)
-                };
-                format!("( {sa} {op} {sb} )")
+                    let sa = if a.ty().is_matrix() {
+                        self.generate(&a)
+                    } else {
+                        self.format(&a, want)
+                    };
+                    let sb = if b.ty().is_matrix() {
+                        self.generate(&b)
+                    } else {
+                        self.format(&b, want)
+                    };
+                    format!("( {sa} {op} {sb} )")
+                }
             }
 
             Node::Math { name, args, ty } => {

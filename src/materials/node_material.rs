@@ -36,6 +36,9 @@ pub struct SetupContext {
     /// `getEntry( geometry )` when the geometry has morph attributes: what
     /// `NodeMaterial.setupPosition()` needs to emit `morphReference()`.
     pub morph: Option<crate::nodes::morph::MorphEntry>,
+    /// `Some` when the object is a `SkinnedMesh` with a skeleton, which is what
+    /// makes `NodeMaterial.setupPosition()` insert `skinning( object )`.
+    pub skin: Option<crate::nodes::skinning::SkinEntry>,
 }
 
 /// `Renderer._getShadowNodes( material )` composed with
@@ -182,6 +185,12 @@ fn setup_inner(
     // instancing.
     if let Some(entry) = &ctx.morph {
         pre_vertex.extend(crate::nodes::morph::morph_reference(entry));
+    }
+
+    // `if ( object.isSkinnedMesh === true ) skinning( object ).append()` —
+    // second, so the bind matrix sees the morphed position.
+    if let Some(entry) = &ctx.skin {
+        pre_vertex.extend(crate::nodes::skinning::skinning(entry));
     }
 
     //

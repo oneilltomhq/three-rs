@@ -229,6 +229,12 @@ struct Renderable {
     /// `1 - Σ influences` for non-relative morph targets.
     morph_influences: Vec<f64>,
     morph_base: f64,
+    /// `SkinnedMesh.bindMatrix` / `.bindMatrixInverse`, and the skeleton's
+    /// `boneMatrices` as `skeleton.update()` left them this frame. Empty for
+    /// anything that is not a skinned mesh.
+    bind_matrix: Matrix4,
+    bind_matrix_inverse: Matrix4,
+    bone_matrices: Vec<f32>,
     /// `_getPrimitiveState()`'s object half — the topology this draw's pipeline
     /// is built with.
     primitive: Primitive,
@@ -719,6 +725,9 @@ impl Renderer {
                 instance_count: 1,
                 morph_influences: Vec::new(),
                 morph_base: 1.0,
+                bind_matrix: Matrix4::identity(),
+                bind_matrix_inverse: Matrix4::identity(),
+                bone_matrices: Vec::new(),
                 primitive: Primitive::TRIANGLES,
             });
         }
@@ -751,6 +760,9 @@ impl Renderer {
                 (light.kind, object.cast_shadow && light.shadow.is_some())
             })
             .collect();
+
+        let mut skeletons_updated: std::collections::HashSet<usize> =
+            std::collections::HashSet::new();
 
         for item in render_list.items() {
             let object = item.node.borrow();
@@ -788,6 +800,26 @@ impl Renderer {
             let instance_count = object.instance_count();
             let instance_matrix = object.instance_matrix().cloned();
 
+            // `SkinningNode`'s `OnObjectUpdate`: `skeleton.update()` runs once
+            // per frame per *skeleton*, however many meshes share it, and it
+            // runs here — after `updateMatrixWorld()` has refreshed every
+            // bone's `matrixWorld` and the mesh's `bindMatrixInverse`.
+            let skin = object.payload.skinned_mesh().and_then(|mesh| {
+                let skeleton = mesh.skeleton.clone()?;
+                if skeletons_updated.insert(Rc::as_ptr(&skeleton) as *const u8 as usize) {
+                    skeleton.borrow_mut().update();
+                }
+                let skeleton = skeleton.borrow();
+                Some((
+                    crate::nodes::skinning::SkinEntry {
+                        bones: skeleton.bones.len(),
+                    },
+                    mesh.bind_matrix,
+                    mesh.bind_matrix_inverse,
+                    skeleton.bone_matrices.clone(),
+                ))
+            });
+
             items.push(Renderable {
                 geometry: geometry.clone(),
                 material: material.clone(),
@@ -817,6 +849,7 @@ impl Renderer {
                         })
                         .collect(),
                     morph: morph.clone(),
+                    skin: skin.as_ref().map(|s| s.0),
                 },
                 fog: scene.fog_node.clone(),
                 model_world: item.matrix_world,
@@ -824,6 +857,9 @@ impl Renderer {
                 instance_count,
                 morph_influences,
                 morph_base,
+                bind_matrix: skin.as_ref().map(|s| s.1).unwrap_or_else(Matrix4::identity),
+                bind_matrix_inverse: skin.as_ref().map(|s| s.2).unwrap_or_else(Matrix4::identity),
+                bone_matrices: skin.map(|s| s.3).unwrap_or_default(),
                 primitive,
             });
         }
@@ -1029,6 +1065,7 @@ impl Renderer {
                         // The shadow pass does not carry morph targets yet:
                         // nothing in the ladder both morphs and casts a shadow.
                         morph: None,
+                        skin: None,
                     },
                     fog: None,
                     model_world: item.matrix_world,
@@ -1036,6 +1073,9 @@ impl Renderer {
                     instance_count,
                     morph_influences: Vec::new(),
                     morph_base: 1.0,
+                    bind_matrix: Matrix4::identity(),
+                    bind_matrix_inverse: Matrix4::identity(),
+                    bone_matrices: Vec::new(),
                     primitive,
                 });
             }
@@ -1197,6 +1237,7 @@ impl Renderer {
                         instanced: instance_matrix.is_some(),
                         lights: Vec::new(),
                         morph: None,
+                        skin: None,
                     },
                     fog: None,
                     model_world: item.matrix_world,
@@ -1204,6 +1245,9 @@ impl Renderer {
                     instance_count,
                     morph_influences: Vec::new(),
                     morph_base: 1.0,
+                    bind_matrix: Matrix4::identity(),
+                    bind_matrix_inverse: Matrix4::identity(),
+                    bone_matrices: Vec::new(),
                     primitive,
                 });
             }
@@ -1291,6 +1335,9 @@ impl Renderer {
             instance_count: 1,
             morph_influences: Vec::new(),
             morph_base: 1.0,
+            bind_matrix: Matrix4::identity(),
+            bind_matrix_inverse: Matrix4::identity(),
+            bone_matrices: Vec::new(),
             primitive: Primitive::TRIANGLES,
         }];
 
@@ -1402,6 +1449,9 @@ impl Renderer {
                 material_emissive_intensity: item.material.emissive_intensity,
                 morph_base: item.morph_base,
                 morph_influences: &item.morph_influences,
+                bind_matrix: item.bind_matrix,
+                bind_matrix_inverse: item.bind_matrix_inverse,
+                bone_matrices: &item.bone_matrices,
                 material_metalness: item.material.metalness,
                 material_roughness: item.material.roughness,
                 material_bump_scale: item.material.bump_scale,
@@ -1551,6 +1601,9 @@ impl Renderer {
             instance_count: 1,
             morph_influences: Vec::new(),
             morph_base: 1.0,
+            bind_matrix: Matrix4::identity(),
+            bind_matrix_inverse: Matrix4::identity(),
+            bone_matrices: Vec::new(),
             primitive: Primitive::TRIANGLES,
         }];
 
@@ -1788,6 +1841,7 @@ impl Renderer {
                         *count,
                         instance_matrix,
                         uniforms.morph_influences,
+                        uniforms.bone_matrices,
                     )),
                     BindingDesc::Texture { source, kind, .. } => {
                         Resource::View(self.texture_view(source, *kind))
@@ -1830,7 +1884,21 @@ impl Renderer {
         count: usize,
         instance_matrix: &Option<InstancedBufferAttribute>,
         morph_influences: &[f64],
+        bone_matrices: &[f32],
     ) -> wgpu::Buffer {
+        // `skeleton.update()` rewrites `boneMatrices` every frame, so the bone
+        // buffer is re-uploaded per draw like the instance matrix, never cached
+        // on the node's identity.
+        if let BufferSource::BoneMatrices = source {
+            let mut data = vec![0f32; count * 16];
+            let n = data.len().min(bone_matrices.len());
+            data[..n].copy_from_slice(&bone_matrices[..n]);
+            return self.create_buffer_init(
+                "three-rs boneMatrices",
+                bytemuck::cast_slice(&data),
+                wgpu::BufferUsages::UNIFORM,
+            );
+        }
         if let BufferSource::MorphInfluences = source {
             // `uniformArray( influences, 'float' )`: one `vec4` per target with
             // the influence in `.x`, so 16 bytes each — not 4. Re-uploaded per
@@ -1889,8 +1957,8 @@ impl Renderer {
         usage: wgpu::BufferUsages,
     ) -> wgpu::Buffer {
         match source {
-            BufferSource::MorphInfluences => {
-                unreachable!("three-rs: morphTargetInfluences is uploaded by node_buffer")
+            BufferSource::MorphInfluences | BufferSource::BoneMatrices => {
+                unreachable!("three-rs: these arrays are uploaded by node_buffer")
             }
             BufferSource::InstanceMatrix => {
                 let attribute = instance_matrix
@@ -2520,7 +2588,7 @@ impl Renderer {
         let vertex_buffer = |attribute: &crate::core::BufferAttribute| {
             self.create_buffer_init(
                 "three-rs attribute",
-                bytemuck::cast_slice(&attribute.array()),
+                &attribute_bytes(attribute),
                 wgpu::BufferUsages::VERTEX,
             )
         };
@@ -2621,8 +2689,8 @@ impl Renderer {
                 continue;
             };
 
-            let array = attribute.array();
-            let bytes: &[u8] = bytemuck::cast_slice(array.as_slice());
+            let bytes = attribute_bytes(attribute);
+            let bytes: &[u8] = &bytes;
 
             if buffer.size() == bytes.len() as u64 {
                 self.queue.write_buffer(&buffer, 0, bytes);
@@ -2639,8 +2707,6 @@ impl Renderer {
                     .gpu;
                 gpu.set_slot(slot, buffer);
             }
-            drop(array);
-
             let gpu = &mut self
                 .geometries
                 .get_mut(&id)
@@ -3104,6 +3170,22 @@ fn pick_adapter(instance: &wgpu::Instance) -> Result<wgpu::Adapter, Error> {
 /// One draw per component per instance — four per instance even when the range
 /// is a `vec3`, whose fourth component is a constant. A free function so a test
 /// can drive it in the order the program's vertex buffers report without a GPU.
+/// The bytes one geometry attribute is uploaded as.
+///
+/// `WebGPUAttributeUtils.createAttribute()` takes the GPU format from the
+/// attribute's own typed array. The port stores every attribute as `f32`, so an
+/// integer attribute (`skinIndex`) is converted back here — the values are
+/// small bone indices, exact in an `f32` either way.
+fn attribute_bytes(attribute: &crate::core::BufferAttribute) -> Vec<u8> {
+    let array = attribute.array();
+    if attribute.integer() {
+        let indices: Vec<u32> = array.iter().map(|v| *v as u32).collect();
+        bytemuck::cast_slice(&indices).to_vec()
+    } else {
+        bytemuck::cast_slice(array.as_slice()).to_vec()
+    }
+}
+
 pub fn fill_range(
     random: &mut DeterministicRandom,
     min: [f64; 4],

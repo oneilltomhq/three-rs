@@ -325,7 +325,10 @@ fn binary(op: &'static str, a: NodeRef, b: NodeRef) -> NodeRef {
 
     // vector * matrix: the row-vector form three.js uses for inverse-transpose
     // transforms (`vec4( n, 0.0 ) * cameraViewMatrix`).
-    if tb.is_matrix() && !ta.is_matrix() {
+    // A *scalar* times a matrix is not this: `OperatorNode.generate()` keeps
+    // `typeA = 'float'` and scales the matrix (`skinWeight.x * boneMat`), so it
+    // must not be padded into a row vector.
+    if tb.is_matrix() && !ta.is_matrix() && ta.components() > 1 {
         let want = match tb {
             Type::Mat4 => 4,
             Type::Mat2 => 2,

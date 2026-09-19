@@ -805,8 +805,17 @@ impl GLTFLoader {
                 let Some(accessor) = accessor.as_u64() else {
                     continue;
                 };
-                let attribute = self.attribute(accessor as usize)?;
-                geometry.set_attribute(&attribute_name(&semantic), attribute);
+                let name = attribute_name(&semantic);
+                let mut attribute = self.attribute(accessor as usize)?;
+                // `JOINTS_0` is an unnormalized `Uint8`/`Uint16` accessor and
+                // stays one in three.js all the way to
+                // `WebGPUAttributeUtils.createAttribute()`; `skinning()` reads
+                // it as a `uvec4`.
+                if name == "skinIndex" {
+                    let values = attribute.array().clone();
+                    attribute = BufferAttribute::new_integer(values, attribute.item_size);
+                }
+                geometry.set_attribute(&name, attribute);
             }
 
             if let Some(accessor) = json_usize(primitive, "indices") {

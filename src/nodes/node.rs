@@ -30,6 +30,9 @@ pub enum Type {
     /// `vec3<u32>` — MaterialX's `mx_hash_vec3` packs its three byte hashes
     /// into one.
     UVec3,
+    /// `vec4<u32>` — the `skinIndex` attribute, which three.js declares
+    /// `attribute( 'skinIndex', 'uvec4' )` and uploads as a `Uint32Array`.
+    UVec4,
     BVec3,
     /// `mat2` — `RotateNode`'s vec2 path emits `mat2x2<f32>( cos, sin, -sin, cos )`.
     Mat2,
@@ -45,7 +48,7 @@ impl Type {
             Type::Bool | Type::F32 | Type::I32 | Type::U32 => 1,
             Type::Vec2 | Type::UVec2 | Type::IVec2 => 2,
             Type::Vec3 | Type::UVec3 | Type::BVec3 => 3,
-            Type::Vec4 => 4,
+            Type::Vec4 | Type::UVec4 => 4,
             Type::Mat2 => 4,
             Type::Mat3 => 9,
             Type::Mat4 => 16,
@@ -55,7 +58,7 @@ impl Type {
     /// `NodeBuilder.getComponentType()`.
     pub fn component_type(self) -> Type {
         match self {
-            Type::UVec2 | Type::UVec3 => Type::U32,
+            Type::UVec2 | Type::UVec3 | Type::UVec4 => Type::U32,
             Type::IVec2 => Type::I32,
             Type::BVec3 => Type::Bool,
             Type::Vec2 | Type::Vec3 | Type::Vec4 | Type::Mat2 | Type::Mat3 | Type::Mat4 => {
@@ -76,6 +79,7 @@ impl Type {
             (Type::F32, 2) => Type::Vec2,
             (Type::F32, 3) => Type::Vec3,
             (Type::F32, 4) => Type::Vec4,
+            (Type::U32, 4) => Type::UVec4,
             other => panic!("three-rs: the node builder only makes vectors of {other:?}"),
         }
     }
@@ -181,6 +185,10 @@ pub enum UniformSource {
     MaterialBumpScale,
     /// `toneMappingExposure` — `renderer.toneMappingExposure`.
     ToneMappingExposure,
+    /// `reference( 'bindMatrix', 'mat4' )` / `reference( 'bindMatrixInverse',
+    /// 'mat4' )` — `SkinnedMesh`'s two bind matrices, in the object group.
+    BindMatrix,
+    BindMatrixInverse,
     /// A plain `uniform( value )` the example supplies.
     Value(Vec<f64>),
 }
@@ -202,6 +210,8 @@ impl UniformSource {
             | UniformSource::MaterialBumpScale
             | UniformSource::EnvRotationMatrix
             | UniformSource::MorphBase
+            | UniformSource::BindMatrix
+            | UniformSource::BindMatrixInverse
             | UniformSource::Value(_) => UpdateType::Object,
             _ => UpdateType::Render,
         }
@@ -234,6 +244,11 @@ pub enum BufferSource {
     /// `Morph.js`' `uniformArray( mesh.morphTargetInfluences, 'float' )` — one
     /// `vec4` per morph target with the influence in `.x`.
     MorphInfluences,
+    /// `referenceBuffer( 'skeleton.boneMatrices', 'mat4', bones )` — the
+    /// skeleton's bone matrices as one `array< mat4x4<f32>, N >`. Three falls
+    /// back to a bone *texture* when `bones * 64` passes the uniform buffer
+    /// limit; the ladder's skeletons fit (Michelle is 65 bones, 4160 bytes).
+    BoneMatrices,
     /// A per-instance attribute the caller fills itself — three.js'
     /// `new InstancedBufferAttribute( array, itemSize )` on the geometry, e.g.
     /// `BatchedText`'s `aGlyphUV` / `aGlyphBounds` / `aColor` / `aOpacity`.
@@ -763,7 +778,9 @@ impl std::hash::Hash for BufferSource {
             // Identity, never contents — the array behind an instanced
             // attribute is megabytes and is resolved per draw anyway.
             BufferSource::Attribute(data) => (Rc::as_ptr(data) as *const u8 as usize).hash(state),
-            BufferSource::InstanceMatrix | BufferSource::MorphInfluences => {}
+            BufferSource::InstanceMatrix
+            | BufferSource::MorphInfluences
+            | BufferSource::BoneMatrices => {}
         }
     }
 }
@@ -802,6 +819,7 @@ impl std::fmt::Debug for BufferSource {
                 .field("max", max)
                 .finish(),
             BufferSource::MorphInfluences => f.write_str("MorphInfluences"),
+            BufferSource::BoneMatrices => f.write_str("BoneMatrices"),
             BufferSource::Attribute(data) => f
                 .debug_tuple("Attribute")
                 .field(&format_args!("{} floats", data.len()))

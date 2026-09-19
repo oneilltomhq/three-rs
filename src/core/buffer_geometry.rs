@@ -112,6 +112,14 @@ pub struct BufferAttribute {
     /// uploaded and re-writes the buffer when this has moved past it; see
     /// *Changing geometry* in `docs/scene-graph.md`.
     version: Cell<u32>,
+    /// The attribute's array is an integer `TypedArray` in three.js — a
+    /// `Uint16Array`/`Uint8Array` for `skinIndex`. The port stores every
+    /// attribute as `f32` (`BufferAttribute.getX()` widens the same way
+    /// JavaScript does), so this is what tells the renderer to upload the
+    /// values as `u32` rather than as floats, exactly as
+    /// `WebGPUAttributeUtils.createAttribute()` reads the format off the array
+    /// type.
+    integer: bool,
 }
 
 impl BufferAttribute {
@@ -121,7 +129,22 @@ impl BufferAttribute {
             array: RefCell::new(array),
             item_size,
             version: Cell::new(0),
+            integer: false,
         }
+    }
+
+    /// An attribute whose values are indices, not numbers: uploaded as `u32`
+    /// and read by the shader as a `vec4<u32>`. three.js' `skinIndex`.
+    pub fn new_integer(array: Vec<f32>, item_size: usize) -> Self {
+        Self {
+            integer: true,
+            ..Self::new(array, item_size)
+        }
+    }
+
+    /// Whether the values are indices; see [`new_integer`](Self::new_integer).
+    pub fn integer(&self) -> bool {
+        self.integer
     }
 
     /// `attribute.array`, for reading. A `Ref`, so the borrow has to be held

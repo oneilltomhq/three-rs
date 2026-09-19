@@ -133,6 +133,7 @@ fn main() {
             instanced: true,
             lights: Vec::new(),
             morph: None,
+            skin: None,
         },
     );
 
@@ -514,5 +515,30 @@ fn main() {
         "shadowmap_output_color_transform",
         &aces,
         SetupContext::default(),
+    );
+
+    // rung 10: Michelle's skinned body, against
+    // `handoff/scouts/rung10/m03_vertex_Ch03_Body-r186.wgsl`.
+    let mut body = MeshBasicNodeMaterial::standard(Color::new(1.0, 1.0, 1.0), 1.0, 0.0);
+    body.side = Side::Double;
+    show(
+        "skinning_body",
+        &body,
+        SetupContext {
+            skin: Some(three_rs::nodes::skinning::SkinEntry { bones: 65 }),
+            lights: vec![
+                LightDesc {
+                    index: 0,
+                    kind: LightKind::Point,
+                    shadow_map: None,
+                },
+                LightDesc {
+                    index: 1,
+                    kind: LightKind::Ambient,
+                    shadow_map: None,
+                },
+            ],
+            ..SetupContext::default()
+        },
     );
 }
