@@ -183,6 +183,10 @@ mod webgpu_pmrem_scene;
 #[allow(dead_code)]
 mod webgpu_pmrem_equirectangular;
 
+#[path = "../../examples/webgpu_loader_gltf.rs"]
+#[allow(dead_code)]
+mod webgpu_loader_gltf;
+
 #[path = "../../examples/webgpu_lights_phong.rs"]
 #[allow(dead_code)]
 mod webgpu_lights_phong;
@@ -1305,6 +1309,58 @@ fn webgpu_pmrem_test() {
 }
 
 /// `webgpu_pmrem_equirectangular`: the same PMREM machinery as
+/// One UltraHDR equirectangular map as both `scene.background` (a 512² cube)
+/// and `scene.environment` (a PMREM), with DamagedHelmet and its five maps in
+/// front of it.
+///
+/// This is the gate on [`Scene::environment`](three_rs::Scene::environment):
+/// the helmet's material carries no `envMap`, so every reflection in the frame
+/// comes from the scene-level fallback that `NodeMaterial.setupEnvironment()`
+/// reaches for. It is also the gate on `fitCameraToSelection` — the camera is
+/// derived from the loaded model's bounding box, so a wrong `Box3` moves every
+/// pixel.
+#[test]
+fn webgpu_loader_gltf() {
+    let name = "webgpu_loader_gltf";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_loader_gltf::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_loader_gltf::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_loader_gltf::animate, |app| {
+        app.renderer.device()
+    });
+}
+
 /// `webgpu_pmrem_test`, fed from an **UltraHDR** JPEG rather than a Radiance
 /// `.hdr`, with a `backgroundNode` sampling the atlas at a fixed roughness of
 /// 0.5.
@@ -2303,6 +2359,7 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_mesh_batch, 2);
     rung!(webgpu_compute_points);
     rung!(webgpu_lines_fat);
+    rung!(webgpu_loader_gltf);
 }
 
 // ---------------------------------------------------------------------------
