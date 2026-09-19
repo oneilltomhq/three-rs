@@ -83,6 +83,8 @@ Linux is the only backend that has been run.
 | [`webgpu_postprocessing_bloom_emissive`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_bloom_emissive.rs) | [`webgpu_instance_uniform`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_instance_uniform.rs) | [`webgpu_tsl_interoperability`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_tsl_interoperability.rs) | [`webgpu_pmrem_equirectangular`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_pmrem_equirectangular.rs) |
 | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_postprocessing_ca.jpg" alt="webgpu_postprocessing_ca" width="200">](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_ca-progress.md) |  |  |  |
 | [`webgpu_postprocessing_ca`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_ca.rs) |  |  |  |
+| [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_loader_gltf.jpg" alt="webgpu_loader_gltf" width="200">](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_loader_gltf.rs) | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_mrt.jpg" alt="webgpu_mrt" width="200">](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_mrt.rs) |  |  |
+| [`webgpu_loader_gltf`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_loader_gltf.rs) | [`webgpu_mrt`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_mrt.rs) |  |  |
 
 <sub>Our own rendered frames, one per graded example. See [`docs/gallery.md`](https://github.com/oneilltomhq/three-rs/blob/main/docs/gallery.md).</sub>
 <!-- gallery:end -->
@@ -121,6 +123,8 @@ Linux is the only backend that has been run.
 | webgpu_tsl_interoperability | 0 | 2.2 | 2 | 4 |
 | webgpu_pmrem_equirectangular | 1 | 5.9 | 32 | 243905 |
 | webgpu_postprocessing_ca | 3 | 3.4 | 23 | 5658 (+ 42 lines) |
+| webgpu_loader_gltf | 59 | 1.9 | 3 | 17437 |
+| webgpu_mrt | 87 | 2.8 | 3 | 17437 |
 
 `webgpu_compute_points` is graded like the rest and its 4 pixels mean less
 than the rest: its frame is black apart from a 2x2 block at the centre, so

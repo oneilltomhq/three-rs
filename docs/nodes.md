@@ -1905,3 +1905,168 @@ effect.
   with `setLayout( { name: 'ChromaticAberrationShader', … } )`, so `strength`,
   `center` and `scale` are WGSL parameters and the texture is the only thing
   the body closes over. The port does the same.
+
+## 23. `webgpu_loader_gltf` and `webgpu_mrt` — the scene environment, and MRT as a pass property
+
+Two examples, one scene: an UltraHDR equirectangular map as both
+`scene.background` (converted to a 512² cube, drawn as the skybox) and
+`scene.environment` (PMREM-filtered), with DamagedHelmet in front of it.
+`webgpu_loader_gltf` renders it to the canvas; `webgpu_mrt` renders it once into
+four colour attachments and composites the four side by side.
+
+### 23.1 `scene.environment` is a field on the scene, not on the material
+
+`NodeMaterial.setupEnvironment()` reads the material's `envNode` first and falls
+back to `builder.context.environment`, which the renderer fills from
+`scene.environmentNode`. Up to this rung every graded example put the PMREM
+handle on the material by hand
+(`MeshBasicNodeMaterial::pmrem_env`), because `webgpu_pmrem_*` and
+`webgpu_postprocessing_bloom_emissive` build their own materials. The helmet's
+`Material_MR` comes out of `GLTFLoader` and carries no `envMap`, so the fallback
+is the only path to it.
+
+[`Scene::environment`] is the field, and `SetupContext::environment` carries it
+into the build:
+
+```rust
+let env = material.pmrem_env.as_ref().or(ctx.environment.as_ref());
+```
+
+Because it sits in `SetupContext`, which is the render object's *dynamic* cache
+key, `PmremHandle` grew a `Hash` keyed on the atlas texture's id alone — the
+three cubeUV numbers beside it are uniforms and change no code.
+
+`dump_wgsl`'s `loader_gltf_helmet` section exists to prove the two paths are the
+same program: its fragment shader is byte-identical to
+`bloom_emissive_helmet`'s but for the MRT tail, although one got the handle from
+the material and the other from the scene.
+
+**Dedupe note for the integrator.** The `rung-room-environment` branch adds
+`Scene::environment` with the same shape and the same doc comment, and the same
+`impl Hash for PmremHandle`. They are meant to collapse to one; take either
+side.
+
+`scene.backgroundBlurriness` and `backgroundIntensity` stay at their GUI
+defaults of 0 and 1 in the graded frame, so the skybox is a sharp cube read and
+not a PMREM one. The port has no knob for either yet — see §23.5.
+
+### 23.2 An MRT output can depend on the material, so it cannot be an eager node
+
+`mrt( { normal: packNormalToRGB( normalView ) } )` is set on the *pass*, once,
+in the page's `init()`. Upstream that is harmless: `normalView` is a node
+object, and a node object's `setup( builder )` runs once per material, so the
+helmet's `normalView` is its normal map's and the skybox's is
+`normalViewGeometry * - 1` because `Background.material` is `BackSide`.
+
+This port's TSL is eager. `normal_view()` reads the thread-locals
+`with_material_normal()` installs — the material's normal node, its
+`flatShading` and its `side` — at the moment it is *called*, and an example's
+`init()` is outside any material setup, so it would freeze the defaults
+(no normal map, `FrontSide`) into every draw. The symptom was exact: the skybox
+filled the `normal` band with `1 - reference` everywhere, the missing
+`negateOnBackSide()`.
+
+[`MrtValue::Deferred`] is the shim. `MrtNode::set_deferred( name, closure )`
+stores a closure instead of a node, and `MRTNode.setup()`'s port
+(`MrtNode::members`) calls it — which happens inside
+`NodeMaterial.setup()`, where the material state is installed:
+
+```rust
+scene_mrt.set_deferred("normal", || pack_normal_to_rgb(normal_view()));
+```
+
+`MrtNode`'s `Hash` takes the closure's `Rc` address, not its result: resolving
+it to hash it would build nodes outside any material's setup, the very thing it
+exists to avoid.
+
+This is a **deliberate divergence in API shape, not in generated code**. The
+`mrt_background` and `mrt_helmet` sections of `dump_wgsl` match
+`dump-mrt/m04` and `dump-mrt/m10` statement for statement, including
+`normalView = ( normalViewGeometry * vec3<f32>( -1.0 ) )` in the skybox and the
+normal-mapped `normalView` in the helmet.
+
+Only `normal` needs it on this ladder; `output`, `diffuseColor` and
+`emissive` are property reads, resolved by name at codegen, and stay plain
+nodes.
+
+### 23.3 A `vec3` MRT member is written as `vec4( value, 1.0 )`
+
+`normal` and `emissive` are `vec3`s. `OutputStructNode` converts each member to
+the attachment's `vec4` by appending 1.0 — *not* the fragment's alpha:
+
+```
+output.m1 = vec4<f32>( ( ( normalView * vec3<f32>( 0.5 ) ) + vec3<f32>( 0.5 ) ), 1.0 );
+output.m3 = vec4<f32>( EmissiveColor, 1.0 );
+```
+
+`webgpu_postprocessing_bloom_emissive` looks like a counter-example and is not:
+its page writes `vec4( emissive, output.a )` out by hand, so the `vec4` is in
+the graph and the conversion has nothing to do.
+
+### 23.4 The skybox is an ordinary draw, so it writes every attachment
+
+`NodeMaterial.setup()`'s MRT branch runs for `Background.material` like any
+other material, because the MRT is a property of the pass. The renderer used to
+push the background `Renderable` with a default `SetupContext` — `mrt: None` —
+and `webgpu_postprocessing_bloom_emissive` never noticed, because its sky wrote
+`EmissiveColor` (zero) to attachment 1, which is the clear value. `webgpu_mrt`
+notices immediately: the environment is the whole picture of the `normal` and
+`diffuse` bands. The background now carries the pass's `mrt_context`, which is
+computed before the render list rather than after it.
+
+### 23.5 Divergences and gaps
+
+| item | status |
+| --- | --- |
+| `mrt( { normal: packNormalToRGB( normalView ) } )` | `set_deferred` with a closure; generated code identical (§23.2) |
+| `NORMAL_normalView` sub-build temp, inlined `nodeVarN` temps | pre-existing, §7 and §8 |
+| `scene.backgroundBlurriness` / `backgroundIntensity` | not ported; both are at their defaults in every graded frame |
+| `requiredLimits: { maxColorAttachments: 5 }` | a WebGPU device request; wgpu's default adapter limit is 8 |
+| `renderer.compileAsync()` | not ported; it only warms the pipeline cache and this port compiles on first draw |
+| `MRTNode.setBlendMode` per attachment | ported, but `NoBlending` and `NormalBlending` agree bit-for-bit on an opaque draw — `docs/postprocessing.md` |
+
+### 23.6 `isUnfilterable()`: `NearestFilter` on both sides removes the sampler
+
+`pass( scene, camera, { minFilter: NearestFilter, magFilter: NearestFilter } )`
+is the other half of `webgpu_mrt`, and it changes the *generated code* of the
+composite rather than any pixel of the scene.
+
+`WGSLNodeBuilder.isUnfilterable( texture )` is true when
+`minFilter === NearestFilter && magFilter === NearestFilter`. Such a texture is
+bound with a `non-filtering` sample type and **no sampler at all**, and every
+tap on it becomes a `textureLoad` against `textureDimensions` instead of a
+`textureSample`. Three's `dump-mrt/m12` has four bare `texture_2d<f32>`
+bindings and not one `_sampler`.
+
+The port's three pieces:
+
+* `Texture::is_unfilterable()` — the predicate.
+* `tsl::texture_uv()` picks `SampleMode::Load` over `SampleMode::Sample` for
+  one.
+* `NodeBuilder`'s texture slots bind it as `TextureKind::FloatData2D`, which is
+  the `non-filtering` sample type with no companion sampler.
+
+`PassNode::new_with_options( PassOptions { min_filter, mag_filter } )` is how the
+filters reach the pass's attachments; `PassNode::new()` delegates to it with
+`Linear` / `Linear`.
+
+### 23.7 MSAA and MRT meet for the first time
+
+Every colour attachment of a WebGPU render pass must share a sample count.
+`webgpu_mrt` is `antialias: true` *and* four attachments, which the renderer had
+never seen: the comment where the two paths crossed said outright that MSAA and
+MRT never meet on this ladder. wgpu says so as a validation error rather than
+wrong pixels —
+
+> Attachments have differing sample counts: the color attachment at index 0's
+> texture view has count 4 but is followed by the color attachment at index 1's
+> texture view which has count 1
+
+`RenderTargetInner` grew `msaa_extra: Vec<wgpu::Texture>`, one multisampled
+texture per extra attachment at that attachment's own format (the three LDR ones
+are `rgba8unorm` where attachment 0 is `rgba16float`), and `PassTarget::extra_colors`
+became `Vec<(TextureView, Option<TextureView>)>` — the view drawn into and the
+resolve target — so each extra attachment resolves like attachment 0 always has.
+
+[`Scene::environment`]: ../src/objects/scene.rs
+[`MrtValue::Deferred`]: ../src/nodes/mrt.rs
