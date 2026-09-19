@@ -194,14 +194,72 @@ all five come out as nearest/nearest/nearest, which the PMREM read disproves.)
   view restricted to `base_mip_level - 1` with `mip_level_count: 1`, and the
   destination the single next level. The chain is generated the way three
   generates it.
+### The opaque copy's mip chain is right, level by level
+
+Measured, not inspected: a temporary `read_opaque_frame_mip( level )` on the
+renderer (a `copy_texture_to_buffer` at `mip_level`, plus `COPY_SRC` on the
+texture — neither committed) dumped levels 0–3 of `viewportOpaqueMipTexture`
+after the graded frame, and each level was compared against a downsample of the
+one above it computed in numpy. Three's `WebGPUTexturePassUtils` mipmap pass
+samples the previous level with a `minFilter: Linear` sampler at the
+destination texel centre, so the reference is a **bilinear tap at the
+destination texel centre**, which equals a 2×2 box average only when the source
+dimension is even.
+
+| level | size | vs 2×2 box of the level above | vs bilinear at the destination texel centre |
+| --- | --- | --- | --- |
+| 1 | 400×250 | mean abs 0.00007, max 0.0068 | mean abs 0.000067, max 0.0068 |
+| 2 | 200×125 | mean abs 0.00007, max 0.0068 | mean abs 0.000069, max 0.0068 |
+| 3 | 100×62 | mean abs **0.0155**, max 1.04 | mean abs **0.000105**, max 0.0076 |
+
+The whole chain agrees with the bilinear reference to 1e-4 on a mean level of
+0.259 — float16 noise, and nothing else. Level 3 is the one level that is *not*
+a box average, and the reason is arithmetic rather than a bug: its source is
+200×**125**, an odd height, so 62 destination rows straddle 125 source rows and
+the linear tap lands off the half-texel grid. Three's pass, sampling the same
+way from the same odd-height level, reproduces it exactly. Compounding three
+box steps from level 0 instead gives the 0.0155 discrepancy in the first
+column, which is an artefact of the reference, not of the texture.
+
+The shift test rules the other failure modes out too: level 1 against the box
+average of level 0 scores 0.00007 at offset (0, 0) and 0.023 or worse at every
+neighbouring whole-texel offset, so there is no half-texel shift and no missing
+or skipped level. The MSAA suspect also falls by inspection —
+`PassTarget.color_texture` is `inner.texture`, the *resolve* target, and the
+first half of the split pass is submitted (and therefore resolved) before
+`copy_framebuffer_to_opaque_frame` runs.
+
+**So the opaque copy's mip chain is not the bug.** The port's transmitted term
+is ~4% softer than three's while reading a byte-correct chain at a
+byte-identical LOD, which leaves the *sampling* of that chain rather than its
+content:
+
+* **The bicubic filter's `textureDimensions` levels.** `textureBicubicLevel`
+  takes `textureDimensions( map, i32( lod ) )` at both the `floor` and the
+  `ceil` level and derives its eight taps from them. The dimensions of an
+  odd-sized level are exactly where a port and three can disagree without the
+  WGSL differing: `textureDimensions` returns the *allocated* size, and the
+  chain here goes 800×500, 400×250, 200×125, 100×62, 50×31, 25×15 — five odd
+  dimensions in ten levels. Worth checking the port's `lod` clamp against
+  `textureNumLevels`, and whether the `ceil` level is clamped at all.
+* **The sampler bound for the transmission read.** Three binds the opaque copy
+  with `LinearMipmapLinearFilter`, but `textureBicubicLevel` calls
+  `textureSampleLevel` at explicit levels, so the mipmap filter is bypassed and
+  only min/mag matter. If the port's binding resolves to a sampler whose
+  `mag_filter` is nearest, every one of the eight taps quantises, which reads
+  as exactly this: in place, slightly softer where the LOD is fractional, no
+  shift, and worst where the LOD climbs fastest — the limb.
+
+The second is the cheaper check and the better fit for "softer and darker, in
+place", so it is the next thing to measure.
+
 * **The last 98 pixels.** The evidence above says the opaque-frame *mip chain*
   is slightly softer than three's, not that the shader or the LOD is wrong.
   Three allocates two 800×500 ten-level textures (ids 212 and 265 in
   `dump.json`) — `viewportMipTexture()` and `viewportOpaqueMipTexture()` — and
   the port allocates one; the contents agree here, but each is mipped by its
-  own chain of passes, and the port's mip pass is the next thing to compare
-  level by level (dump a level-3 read of both). The other candidate is the MSAA
-  resolve the copy is taken from.
+  own chain of passes. Both of those are now measured and clean — see "The
+  opaque copy's mip chain is right, level by level" above.
 * **A README "Examples graded green" row and a gallery entry**, since the
   example is not green.
 * **Dispersion**, still — `KHR_materials_dispersion` is dead code for this page
