@@ -845,6 +845,24 @@ impl NodeBuilder {
         wgsl::convert(&snippet, node.ty(), want)
     }
 
+    /// `AssignNode.needsSplitAssign( builder )`: the root vector and the
+    /// components, when assigning to this target needs one statement per
+    /// component rather than a swizzle assign.
+    ///
+    /// three.js' test is `targetNode.isSplitNode && components.length > 1 &&
+    /// 'xyzw'.slice( 0, targetLength ) !== components`; the port's
+    /// [`swizzle`](crate::nodes::tsl) already collapses a whole-vector swizzle
+    /// into the node itself, so a surviving multi-component `Swizzle` *is* the
+    /// different-vector case.
+    fn split_assign_target(&self, target: &NodeRef) -> Option<(NodeRef, &'static str)> {
+        match &*target.0 {
+            Node::Swizzle {
+                node, components, ..
+            } if components.len() > 1 => Some((node.clone(), components)),
+            _ => None,
+        }
+    }
+
     fn generate_inner(&mut self, node: &NodeRef) -> String {
         match &*node.0 {
             Node::Const { ty, values } => wgsl::constant(*ty, values),
@@ -1022,6 +1040,23 @@ impl NodeBuilder {
                 // numbered after it.
                 let lhs = self.generate(&target);
                 let snippet = self.format(&value, want);
+                // `AssignNode.needsSplitAssign()`: WGSL has no swizzle assign
+                // (`builder.isAvailable( 'swizzleAssign' )` is false), so a
+                // multi-component swizzle target that is not the whole vector
+                // goes through a temp and one statement per component —
+                // `diffuseColor.rgb.mulAssign( … )` on a `vec4` is
+                // `nodeVarN = ( DiffuseColor.xyz * … ); DiffuseColor.x =
+                // nodeVarN[ 0 ]; …`. A target that *is* the whole vector
+                // (`positionLocal.xyz` on a `vec3`) keeps the plain form.
+                if let Some((root, components)) = self.split_assign_target(&target) {
+                    let temp = self.declare_var(None, want);
+                    self.emit(format!("{temp} = {snippet};"));
+                    let root = self.generate(&root);
+                    for (i, component) in components.chars().enumerate() {
+                        self.emit(format!("{root}.{component} = {temp}[ {i} ];"));
+                    }
+                    return lhs;
+                }
                 self.emit(format!("{lhs} = {snippet};"));
                 lhs
             }
