@@ -723,7 +723,17 @@ impl NodeBuilder {
     fn texture_slots(&mut self, source: &Rc<TextureSource>) -> (String, TextureKind) {
         let stage = self.stage;
         let (key, kind) = match &**source {
-            TextureSource::Texture2D(t) => (t.id(), TextureKind::Float2D),
+            TextureSource::Texture2D(t) => (
+                t.id(),
+                // `WGSLNodeBuilder.isUnfilterable()`: a `NearestFilter` /
+                // `NearestFilter` colour texture is bound `non-filtering`,
+                // with no sampler, and read with `textureLoad`.
+                if t.is_unfilterable() {
+                    TextureKind::FloatData2D
+                } else {
+                    TextureKind::Float2D
+                },
+            ),
             TextureSource::Depth(t) => (t.id(), TextureKind::Depth2D),
             TextureSource::ShadowMap(t) => (t.id(), TextureKind::DepthCompare2D),
             TextureSource::Cube(t) => (t.id(), TextureKind::Cube),

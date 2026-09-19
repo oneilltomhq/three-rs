@@ -2329,11 +2329,22 @@ pub fn texture_sample(map: &Texture, coord: NodeRef) -> NodeRef {
 }
 
 /// `texture( map, uv )` without the default UV.
+///
+/// A map that is `NearestFilter` on both sides is *unfilterable*
+/// ([`Texture::is_unfilterable`]): three binds it with no sampler and every
+/// tap becomes a `textureLoad`, which is why `webgpu_mrt`'s composite shader
+/// has four bare `texture_2d<f32>` bindings and no `_sampler` beside any of
+/// them.
 pub fn texture_uv(map: &Texture, coord: NodeRef) -> NodeRef {
+    let mode = if map.is_unfilterable() {
+        SampleMode::Load
+    } else {
+        SampleMode::Sample
+    };
     texture_node(
         TextureSource::Texture2D(map.clone()),
         coord,
-        SampleMode::Sample,
+        mode,
         Type::Vec4,
     )
 }
