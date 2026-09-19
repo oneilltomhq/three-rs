@@ -140,6 +140,10 @@ mod webgpu_postprocessing_bloom_selective;
 #[allow(dead_code)]
 mod webgpu_pmrem_cubemap;
 
+#[path = "../../examples/webgpu_furnace_test.rs"]
+#[allow(dead_code)]
+mod webgpu_furnace_test;
+
 #[path = "../../examples/webgpu_pmrem_test.rs"]
 #[allow(dead_code)]
 mod webgpu_pmrem_test;
@@ -898,6 +902,112 @@ fn webgpu_pmrem_test() {
     });
 }
 
+/// The white-furnace gate, which is the reason this example exists.
+///
+/// Under a **constant** environment an energy-conserving BSDF returns that
+/// constant: every one of the 121 roughness x metalness spheres has to come
+/// out the colour of the furnace, so the whole frame is one value and the
+/// spheres are invisible. The identity is exact in the WGSL — for metalness 0
+/// the diffuse term is `L * ( 1 - ( ssD + msD ) )` against a specular term of
+/// `L * ( ssD + msD )`, and for metalness 1 with a white base colour
+/// `Fss_ess = Ess` and `Fms * Ems = 1 - Ess` — so the only error is
+/// discretisation: the 256-sample GGX prefilter, the half-float atlas and the
+/// 16x16 DFG LUT.
+///
+/// The tolerance is therefore **one 8-bit sRGB step**, which at 0.8 sRGB is
+/// about 0.4% of the linear value and is the floor the output pass quantises
+/// to anyway; three's own frame is exactly uniform at `0xcccccc`, all 400 000
+/// pixels. The expected byte comes from the page's own `COLOR` constant, not
+/// from a reference image.
+///
+/// A wrong energy term does not fail this quietly: it shows up as a band
+/// across a row or a column of the grid, which is a large multiple of one
+/// step.
+fn assert_white_furnace(width: u32, height: u32, pixels: &[u8]) {
+    const TOLERANCE: i32 = 1;
+    let expected = ((webgpu_furnace_test::COLOR >> 16) & 0xff) as i32;
+
+    let mut lowest = 255i32;
+    let mut highest = 0i32;
+    let mut worst: Option<(u32, u32, [u8; 3])> = None;
+
+    for y in 0..height {
+        for x in 0..width {
+            let at = ((y * width + x) * 4) as usize;
+            let rgb = [pixels[at], pixels[at + 1], pixels[at + 2]];
+            for channel in rgb {
+                let value = channel as i32;
+                lowest = lowest.min(value);
+                highest = highest.max(value);
+                if (value - expected).abs() > TOLERANCE && worst.is_none() {
+                    worst = Some((x, y, rgb));
+                }
+            }
+        }
+    }
+
+    println!(
+        "webgpu_furnace_test: furnace channels {lowest}..={highest}, expected \
+         {expected} +/- {TOLERANCE}"
+    );
+
+    assert!(
+        worst.is_none(),
+        "white furnace broken: pixel {:?} is {:?}, expected every channel within \
+         {TOLERANCE} of {expected} (channels seen: {lowest}..={highest}). A \
+         roughness or metalness row that does not return the environment is an \
+         energy term, not a pixel difference",
+        worst.map(|(x, y, _)| (x, y)),
+        worst.map(|(_, _, rgb)| rgb),
+    );
+}
+
+#[test]
+fn webgpu_furnace_test() {
+    let name = "webgpu_furnace_test";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_furnace_test::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_furnace_test::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    // The numeric gate first: it says *what* is wrong, where the image diff
+    // only says that something is.
+    assert_white_furnace(width, height, &pixels);
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_furnace_test::animate, |app| {
+        app.renderer.device()
+    });
+}
+
 #[test]
 fn webgpu_lights_phong() {
     let name = "webgpu_lights_phong";
@@ -1350,6 +1460,9 @@ fn steady_frame_builds_nothing() {
     // so the steady frames neither render nor upload anything for it.
     rung!(webgpu_pmrem_cubemap);
     rung!(webgpu_pmrem_test);
+    // `fromScene` builds the PMREM in `init()`, so `update` is a no-op here
+    // too and the steady frames are the scene pass and the output blit.
+    rung!(webgpu_furnace_test);
     rung!(webgpu_skinning);
     // The batch rewrites its indirect texture every `onBeforeRender()` and its
     // matrices texture every `animateMeshes()`; three.js uploads the same two.
