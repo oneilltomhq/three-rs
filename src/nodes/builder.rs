@@ -461,9 +461,14 @@ impl NodeBuilder {
                 v.extend(body.iter().cloned());
                 v
             }
-            Node::If { cond, body } => {
+            Node::If {
+                cond,
+                body,
+                else_body,
+            } => {
                 let mut v = vec![cond.clone()];
                 v.extend(body.iter().cloned());
+                v.extend(else_body.iter().cloned());
                 v
             }
             Node::IfVar {
@@ -1343,8 +1348,12 @@ impl NodeBuilder {
 
             // `If( cond, … )` as a statement: no result property, unlike
             // `Node::Select`.
-            Node::If { cond, body } => {
-                let (cond, body) = (cond.clone(), body.clone());
+            Node::If {
+                cond,
+                body,
+                else_body,
+            } => {
+                let (cond, body, else_body) = (cond.clone(), body.clone(), else_body.clone());
                 let scond = self.generate(&cond);
                 self.emit(String::new());
                 self.emit(format!("if ( {scond} ) {{"));
@@ -1355,6 +1364,19 @@ impl NodeBuilder {
                 }
                 self.pop_scope();
                 self.emit(String::new());
+                // A one-armed `If` emits exactly what it always did; the
+                // `else` is additive, and takes `Node::Select`'s spacing,
+                // which is the same `StackNode` text.
+                if !else_body.is_empty() {
+                    self.emit("} else {".to_string());
+                    self.emit(String::new());
+                    self.push_scope();
+                    for statement in &else_body {
+                        self.generate(statement);
+                    }
+                    self.pop_scope();
+                    self.emit(String::new());
+                }
                 self.emit("}".to_string());
                 self.emit(String::new());
                 String::new()

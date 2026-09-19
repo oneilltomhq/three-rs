@@ -412,6 +412,19 @@ differences, each verified to be pixel-neutral.
 * **Property-assignment temps.** Where Three writes `nodeVarN = expr; prop =
   nodeVarN;` this port writes `prop = expr;`, and Three's no-op
   `indirectDiffuse = vec4<f32>( 0.0, 0.0, 0.0, 0.0 ).xyz;` is omitted.
+* **Uniform-struct member order.** Members are appended to a group's struct in
+  the order the traversal first reaches them, so a struct's *layout* can differ
+  from the dump's even when its membership and total size agree. The
+  `screen_uniforms` material of `dump_wgsl` is the worked example: its render
+  group holds the same six members as Three's `renderStruct` and comes to the
+  same 288 bytes, and its object group the same five as `objectStruct` at the
+  same 160, but `viewport` sits at byte 128 here and Three puts it elsewhere.
+  This is safe only because the struct, its `std140`-style padding and the
+  bytes the CPU writes all come from one description of the group (see
+  `UniformContext::bytes`) — nothing outside the port ever addresses a member
+  by offset. It is a divergence to *record*, not one to chase: matching Three's
+  order would mean reproducing its node-cache order, which the "Generated
+  names" bullet above already declines to do.
 * **Instance buffer binding indices.** The two bindings of the instanced
   material's object group are swapped relative to the dump; the layout is built
   from the same descriptors the shader is, so they cannot disagree.

@@ -114,6 +114,4 @@ the rung-9 canvas recording-order divergence. 17 draws, 2119689 triangles,
 * **The viewer.** `src/bin/viewer.rs` keys its examples `1`..`9`, `0` — a table
   of exactly ten — so this row's steady frame comes from the e2e harness's own
   measurement at 800x500, as the radial-blur row's does.
-* **`Renderer::clear()`'s output pass.** three.js runs the output pass when
-  clearing the canvas; the port's `clear()` does not. No call site here clears
-  the canvas.
+

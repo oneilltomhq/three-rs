@@ -913,4 +913,90 @@ fn main() {
         &webgpu_compute_points::material(),
         SetupContext::default(),
     );
+    // The screen and inverse-matrix uniforms, and the `If( … ).ElseIf( … )`
+    // arm, on their own. This is the slice of `Line2NodeMaterial.mvpLine()`
+    // that needs no geometry: the trimmed segment's `If`/`ElseIf`, the
+    // screen-space offset scaled by `materialLineWidth`, the divide by
+    // `viewport.w / screenDPR`, and the round trip back through
+    // `modelWorldMatrixInverse * cameraWorldMatrix *
+    // cameraProjectionMatrixInverse`. Three's own text for it is
+    // `scouts/scouts/webgpu_lines_fat/dump/m00_vertex_vertex.wgsl`.
+    //
+    // It is here so the five uniforms are visible in this dump — every one of
+    // them is a new `UniformSource`, and a uniform that reaches the wrong
+    // group, or the wrong `f32` count, is a silent wrong frame.
+    let mut screen = MeshBasicNodeMaterial::new();
+    let start = to_var(
+        Some("start"),
+        model_view_matrix().mul(vec4(0.0, 0.0, 0.0, 1.0)),
+    );
+    let end = to_var(
+        Some("end"),
+        model_view_matrix().mul(vec4(1.0, 0.0, 0.0, 1.0)),
+    );
+    let clip_start = to_var(None, camera_projection_matrix().mul(start.clone()));
+    let clip_end = to_var(None, camera_projection_matrix().mul(end.clone()));
+
+    let direction = to_var(
+        None,
+        clip_end
+            .xyz()
+            .div(clip_end.w())
+            .xy()
+            .sub(clip_start.xyz().div(clip_start.w()).xy()),
+    );
+    let aspect = to_var(None, viewport().z().div(viewport().w()));
+    let offset = to_var(None, vec2_join(vec![direction.y(), direction.x().negate()]));
+
+    // `If( position.y.lessThan( 0.0 ), … ).ElseIf( position.y.greaterThan( 1.0
+    // ), … )` — a nested `if`/`else`, exactly as `StackNode.ElseIf()` builds it.
+    let trim = if_else_if(
+        position_geometry().y().less_than(float(0.0)),
+        vec![offset.sub_assign(direction.clone())],
+        position_geometry().y().greater_than(float(1.0)),
+        vec![offset.add_assign(direction.clone())],
+    );
+
+    let scaled = offset
+        .mul(material_line_width())
+        .div(viewport().w().div(screen_dpr()));
+    let clip = to_var(
+        None,
+        position_geometry()
+            .y()
+            .less_than(float(0.5))
+            .select(clip_start.clone(), clip_end.clone()),
+    );
+    let shifted = clip.add(vec4_join(vec![
+        scaled.x().mul(clip.w()),
+        scaled.y().mul(clip.w()),
+        float(0.0),
+        float(0.0),
+    ]));
+    let back = to_var(
+        None,
+        model_world_matrix_inverse()
+            .mul(camera_world_matrix())
+            .mul(camera_projection_matrix_inverse())
+            .mul(shifted),
+    );
+
+    // The vars are emitted as statements ahead of the `If`, which is the order
+    // `Line2NodeMaterial` builds them in; leave them to be pulled in by their
+    // first *use* and each branch re-emits its own copy.
+    screen.position_node = Some(block(
+        vec![
+            start,
+            end,
+            clip_start,
+            clip_end,
+            direction,
+            aspect,
+            offset.clone(),
+            trim,
+            clip.clone(),
+        ],
+        back.xyz().div(back.w()),
+    ));
+    show("screen_uniforms", &screen, SetupContext::default());
 }

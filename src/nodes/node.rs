@@ -130,6 +130,13 @@ pub enum UniformSource {
     CameraWorldMatrix,
     ModelWorldMatrix,
     ModelNormalMatrix,
+    /// `cameraProjectionMatrixInverse` — `camera.projectionMatrixInverse`.
+    /// `Line2NodeMaterial.setupPosition()` needs it to push a clip-space
+    /// position back through the camera.
+    CameraProjectionMatrixInverse,
+    /// `modelWorldMatrixInverse` — `uniform( new Matrix4() ).onObjectUpdate( (
+    /// { object }, self ) => self.value.copy( object.matrixWorld ).invert() )`.
+    ModelWorldMatrixInverse,
     /// `materialColor` — `MeshBasicMaterial.color` in the working space.
     MaterialColor,
     MaterialOpacity,
@@ -150,6 +157,14 @@ pub enum UniformSource {
     Time,
     /// `viewportSize` — the render target's pixel dimensions.
     ViewportSize,
+    /// `viewport` — `ScreenNode.VIEWPORT`, the whole rectangle as
+    /// `( x, y, width, height )` in physical pixels. `ScreenNode.update()`
+    /// takes it from the bound render target, or from
+    /// `renderer.getViewport()` times the pixel ratio.
+    Viewport,
+    /// `screenDPR` — `uniform( 1 ).onRenderUpdate( ( { renderer } ) =>
+    /// renderer.getPixelRatio() )`.
+    ScreenDpr,
     /// `LightsNode`'s per-light members, by index into the renderer's light
     /// list for the pass. The dumps put all four in the **render** group:
     /// `light.color * light.intensity` (linear), the cutoff distance, the decay
@@ -181,6 +196,10 @@ pub enum UniformSource {
     ShadowRadius(usize),
     ShadowMapSize(usize),
     ShadowIntensity(usize),
+    /// `materialLineWidth` — `MaterialNode.LINE_WIDTH`, i.e.
+    /// `material.linewidth`. Only a fat-line material reads it; a hairline
+    /// `Line` ignores it, as WebGL and WebGPU both do.
+    MaterialLineWidth,
     /// `materialMetalness` / `materialRoughness` / `materialBumpScale`.
     MaterialMetalness,
     MaterialRoughness,
@@ -253,6 +272,8 @@ impl UniformSource {
             | UniformSource::MaterialSpecular
             | UniformSource::MaterialEmissive
             | UniformSource::MaterialEmissiveIntensity
+            | UniformSource::ModelWorldMatrixInverse
+            | UniformSource::MaterialLineWidth
             | UniformSource::MaterialMetalness
             | UniformSource::MaterialRoughness
             | UniformSource::MaterialBumpScale
@@ -642,10 +663,20 @@ pub enum Node {
         index: NodeRef,
         body: Vec<NodeRef>,
     },
-    /// `If( cond, () => { … } )` as a bare statement (`setupDiscard`).
+    /// `If( cond, () => { … } )` as a bare statement (`setupDiscard`),
+    /// optionally with the `.Else( … )` / `.ElseIf( … )` arm `StackNode` adds.
+    ///
+    /// `ElseIf` is not a shape of its own: `StackNode.ElseIf()` puts a whole
+    /// nested `If` inside the else block, so `If( a ).ElseIf( b )` is
+    /// `else_body: vec![ if_then( b, … ) ]` and generates as a nested
+    /// `if`/`else`, which is exactly what three emits.
     If {
         cond: NodeRef,
         body: Vec<NodeRef>,
+        /// Empty for a one-armed `If`, in which case no `else` is emitted and
+        /// the generated text is byte-identical to what it was before the arm
+        /// existed.
+        else_body: Vec<NodeRef>,
     },
     /// `If( cond, () => { … } )` — a one-armed conditional over a result var
     /// that was initialised before it. `pre` holds the statements three.js

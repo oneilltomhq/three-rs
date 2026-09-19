@@ -34,7 +34,7 @@ use crate::geometries::{quad_geometry, sphere_geometry};
 use crate::lights::{LightKind, LightObject, CUBE_DIRECTIONS, CUBE_UPS};
 use crate::materials::phong::{LightDesc, ShadowMap};
 use crate::materials::{self, MeshBasicNodeMaterial, SetupContext, Side, ToneMapping};
-use crate::math::{Color, Matrix4, Vector2};
+use crate::math::{Color, Matrix4, Vector2, Vector4};
 use crate::nodes::builder::VertexBufferSource;
 use crate::nodes::node::{BufferSource, TextureSource};
 use crate::nodes::tsl::FogNode;
@@ -333,13 +333,20 @@ struct PassTarget {
     sample_count: u32,
     width: u32,
     height: u32,
+    /// `RenderContext.viewportValue` — the rectangle of this target the pass is
+    /// confined to, already in the target's pixels and already floored.
+    viewport: Rect,
+    /// `RenderContext.scissorValue`, present only when the scissor test is on
+    /// (`RenderContext.scissor`).
+    scissor: Option<Rect>,
 }
 
 /// What a pass clears before its first draw — `RenderContext.clearColor` /
 /// `.clearDepth` plus the colour itself.
 ///
-/// `Background.update()` resolves both flags from `renderer.autoClear`, with a
-/// `Color` background forcing the clear on regardless (`forceClear`).
+/// `Background.update()` resolves both flags from `renderer.autoClear` and its
+/// per-buffer switches, with a `Color` background forcing the clear on
+/// regardless (`forceClear`).
 #[derive(Clone, Copy, Debug, Default)]
 struct ClearOps {
     color: Option<[f64; 4]>,
@@ -352,6 +359,71 @@ impl ClearOps {
         Self {
             color: Some(color),
             depth: true,
+        }
+    }
+}
+
+/// A viewport or scissor rectangle in a pass target's own pixels, with its
+/// origin at the **top-left**.
+///
+/// three.js' unified `Renderer` (r186) defines both with a top-left origin —
+/// `Renderer.setViewport`'s own documentation says "the coordinate for the
+/// upper left corner" — and it is the *WebGL* backend that converts to GL's
+/// bottom-left convention on the way out
+/// (`WebGLBackend.updateViewport()`: `state.viewport( x, renderContext.height -
+/// height - y, width, height )`). The WebGPU backend hands the rectangle
+/// straight to `GPURenderPassEncoder.setViewport`, whose origin is top-left.
+/// wgpu's is too, so the port applies **no flip** either; see
+/// `docs/webgpu_lines_fat-progress.md`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Rect {
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+}
+
+impl Rect {
+    /// `renderContext.viewportValue.copy( viewport ).multiplyScalar( pixelRatio
+    /// ).floor()`, then clamped into `width` x `height` the way
+    /// `Renderer._renderScene()` clamps the scissor — wgpu rejects a rectangle
+    /// that leaves the attachment, where WebGPU's own validation only warns.
+    fn of(rect: Vector4, pixel_ratio: f64, width: u32, height: u32) -> Self {
+        let x = (rect.x * pixel_ratio).floor().max(0.0) as u32;
+        let y = (rect.y * pixel_ratio).floor().max(0.0) as u32;
+        let w = (rect.z * pixel_ratio).floor().max(0.0) as u32;
+        let h = (rect.w * pixel_ratio).floor().max(0.0) as u32;
+
+        let x = x.min(width);
+        let y = y.min(height);
+
+        Self {
+            x,
+            y,
+            width: w.min(width - x),
+            height: h.min(height - y),
+        }
+    }
+
+    /// The rectangle as the `viewport` uniform's `vec4` — three.js' own
+    /// numbers, not a converted set, because they are the same numbers
+    /// (see [`Rect`]).
+    fn to_vector4(self) -> Vector4 {
+        Vector4::new(
+            self.x as f64,
+            self.y as f64,
+            self.width as f64,
+            self.height as f64,
+        )
+    }
+
+    /// The whole of a `width` x `height` target.
+    fn full(width: u32, height: u32) -> Self {
+        Self {
+            x: 0,
+            y: 0,
+            width,
+            height,
         }
     }
 }
@@ -376,12 +448,31 @@ pub struct Renderer {
     /// `(0, 0, 0, 0)` and the untouched texels are transparent.
     clear_color: [f64; 4],
 
-    /// `Renderer.autoClear`, default true: whether a render clears its target
-    /// before drawing. `SSAAPassNode` turns it off for the eight scene renders
-    /// and the eight accumulation quads it drives, so each of those passes
-    /// carries `loadOp: "load"` and only the explicit
-    /// [`clear()`](Renderer::clear) calls between them clear anything.
+    /// `CanvasTarget._viewport` — `new Vector4( 0, 0, width, height )` in
+    /// *logical* pixels; the pass rectangle is this times the pixel ratio. See
+    /// [`Renderer::set_viewport`] for the origin.
+    viewport: Vector4,
+    /// `CanvasTarget._scissor`, applied only when [`Renderer::scissor_test`] is
+    /// on.
+    scissor: Vector4,
+    /// `CanvasTarget._scissorTest`.
+    scissor_test: bool,
+
+    /// `Renderer.autoClear`, default true — whether `render()` clears the
+    /// target it draws into before the first object. A second `render()` into
+    /// the same frame turns it off so it composites over the first, and
+    /// `SSAAPassNode` turns it off for the eight scene renders and the eight
+    /// accumulation quads it drives, so each of those passes carries `loadOp:
+    /// "load"` and only the explicit [`clear()`](Renderer::clear) calls
+    /// between them clear anything.
+    ///
+    /// It gates the other two: with it off neither the colour nor the depth is
+    /// cleared, whatever `auto_clear_color` and `auto_clear_depth` say.
     pub auto_clear: bool,
+    /// `Renderer.autoClearColor`.
+    pub auto_clear_color: bool,
+    /// `Renderer.autoClearDepth`.
+    pub auto_clear_depth: bool,
 
     /// `Renderer.sortObjects`. With it off, `_projectObject()` leaves each render
     /// item's `z` alone and the lists keep traversal order.
@@ -635,6 +726,14 @@ impl Renderer {
             width: 300.0,
             height: 150.0,
             clear_color: [0.0, 0.0, 0.0, 0.0],
+            // `new CanvasTarget()`: the viewport and the scissor start as the
+            // whole canvas, which `setSize()` then keeps in step.
+            viewport: Vector4::new(0.0, 0.0, 300.0, 150.0),
+            scissor: Vector4::new(0.0, 0.0, 300.0, 150.0),
+            scissor_test: false,
+            auto_clear: true,
+            auto_clear_color: true,
+            auto_clear_depth: true,
             sort_objects: true,
             canvas: None,
             render_target: None,
@@ -672,7 +771,6 @@ impl Renderer {
             background_geometry: None,
             quad_geometry: None,
             quad_camera: OrthographicCamera::new(-1.0, 1.0, 1.0, -1.0, 0.0, 1.0),
-            auto_clear: true,
             neutral_output: false,
             tone_mapping_exposure: 1.0,
             time: 0.0,
@@ -700,7 +798,56 @@ impl Renderer {
     pub fn set_size(&mut self, width: f64, height: f64) {
         self.width = width;
         self.height = height;
+        // `CanvasTarget.setSize()` ends in `this.setViewport( 0, 0, width,
+        // height )` and `setScissor` with the same rectangle.
+        self.viewport = Vector4::new(0.0, 0.0, width, height);
+        self.scissor = Vector4::new(0.0, 0.0, width, height);
         self.canvas = None;
+    }
+
+    /// `renderer.setViewport( x, y, width, height )` — the rectangle of the
+    /// canvas that `render()` draws into, in **logical** pixels (the pixel
+    /// ratio is applied for you, exactly as three.js does).
+    ///
+    /// The origin is the **top-left** corner, which is three.js' own convention
+    /// for the unified `Renderer`: `WebGLBackend` flips it into GL's
+    /// bottom-left on the way out and `WebGPUBackend` does not, because WebGPU
+    /// — and wgpu — already measure from the top. An example ported from the
+    /// WebGL ones therefore keeps its `y = height - insetHeight - margin`
+    /// arithmetic verbatim and lands where three.js puts it.
+    ///
+    /// A render into a [`RenderTarget`] ignores this and uses the target's own
+    /// [`RenderTarget::set_viewport`] instead, so a target tiled into several
+    /// views needs no renderer state at all.
+    pub fn set_viewport(&mut self, x: f64, y: f64, width: f64, height: f64) {
+        self.viewport = Vector4::new(x, y, width, height);
+    }
+
+    /// `renderer.getViewport( target )`, in logical pixels.
+    pub fn viewport(&self) -> Vector4 {
+        self.viewport
+    }
+
+    /// `renderer.setScissor( x, y, width, height )`, in logical pixels and with
+    /// [`set_viewport`](Self::set_viewport)'s origin. Only applied while
+    /// [`set_scissor_test`](Self::set_scissor_test) is on.
+    pub fn set_scissor(&mut self, x: f64, y: f64, width: f64, height: f64) {
+        self.scissor = Vector4::new(x, y, width, height);
+    }
+
+    /// `renderer.getScissor( target )`.
+    pub fn scissor(&self) -> Vector4 {
+        self.scissor
+    }
+
+    /// `renderer.setScissorTest( boolean )`.
+    pub fn set_scissor_test(&mut self, scissor_test: bool) {
+        self.scissor_test = scissor_test;
+    }
+
+    /// `renderer.getScissorTest()`.
+    pub fn scissor_test(&self) -> bool {
+        self.scissor_test
     }
 
     /// `Renderer.getDrawingBufferSize()`.
@@ -750,31 +897,66 @@ impl Renderer {
         self.clear_color[3]
     }
 
-    /// `renderer.clear( color, depth )` — a manual clear of the current render
-    /// target, which ignores `autoClear`. three.js' third argument, `stencil`,
-    /// has nothing behind it here: the port allocates no stencil buffer, so
-    /// the parameter would be a no-op and is left out until one exists.
+    /// `renderer.clear( color, depth )` — a manual clear of the target that is
+    /// current *right now*, which ignores the `auto_clear` switches. three.js'
+    /// third argument, `stencil`, has nothing behind it here: the port
+    /// allocates no stencil buffer, so the parameter would be a no-op and is
+    /// left out until one exists.
     ///
     /// On the GPU it is a `beginRenderPass` with `loadOp: "clear"` and no
     /// draws, in its own command encoder and its own submit, exactly as
     /// `WebGPUBackend.clear()` records it: nine of the twenty-six passes of
     /// `webgpu_postprocessing_ssaa` are these.
     ///
-    /// Unlike three.js this does not run the output pass when the canvas is
-    /// cleared with a frame-buffer target in play (`if ( renderTarget !== null
-    /// && this._renderTarget === null ) this._renderOutput( renderTarget )`):
-    /// nothing in the port calls `clear()` on the canvas, and a clear that
-    /// blits is a surprise worth porting only when something needs it.
+    /// The clear is always over the whole target: three.js builds the clear a
+    /// render context of its own (`_renderContexts.get( renderTarget, null, -1
+    /// )`) and never copies a viewport or a scissor into it, so
+    /// `renderer.clearDepth()` between two views clears the depth of the *whole*
+    /// frame, not of the view that happens to be set.
+    ///
+    /// When the frame is going through the internal framebuffer target — the
+    /// normal case on the canvas, since tone mapping and the output colour
+    /// transform both ask for it — the clear lands there and is followed by the
+    /// output blit, exactly as `Renderer.clear()` ends in `this._renderOutput(
+    /// renderTarget )`. That is the redundant second blit three.js' own dump
+    /// shows. A clear with a render target bound — every one an
+    /// `SsaaPassNode` makes — takes neither branch and is the bare pass.
     pub fn clear(&mut self, color: bool, depth: bool) {
-        let pass_target = match &self.render_target {
-            Some(render_target) => self.render_target_pass(&render_target.clone()),
+        let use_frame_buffer_target =
+            self.needs_frame_buffer_target() && self.render_target.is_none();
+
+        let target = if use_frame_buffer_target {
+            Some(self.frame_buffer_target())
+        } else {
+            self.render_target.clone()
+        };
+
+        let mut pass_target = match &target {
+            Some(render_target) => self.render_target_pass(render_target),
             None => self.canvas_pass(true),
         };
+        pass_target.viewport = Rect::full(pass_target.width, pass_target.height);
+        pass_target.scissor = None;
+
         let clear = ClearOps {
             color: color.then_some(self.clear_color),
             depth,
         };
         self.draw(&[], UniformContext::default(), &pass_target, clear);
+
+        if use_frame_buffer_target {
+            self.render_output(
+                target
+                    .as_ref()
+                    .expect("three-rs: the frame buffer target is there in this branch"),
+            );
+        }
+    }
+
+    /// `renderer.clearDepth()` — `clear( false, true )`. The call a second view
+    /// makes so it is not depth-tested against the first.
+    pub fn clear_depth(&mut self) {
+        self.clear(false, true);
     }
 
     /// `renderer.render( scene, camera )`.
@@ -1025,10 +1207,22 @@ impl Renderer {
         // `Background.update()`'s `forceClear`: a `Color` background clears
         // even with `autoClear` off (`if ( renderer.autoClear === true ||
         // forceClear === true )`); anything else clears only when it is on.
-        let clear = match &scene.background {
-            Some(Background::Color(Color { r, g, b })) => ClearOps::all([*r, *g, *b, 1.0]),
-            _ if self.auto_clear => ClearOps::all(self.clear_color),
-            _ => ClearOps::default(),
+        let (clear_color, force_clear) = match &scene.background {
+            Some(Background::Color(Color { r, g, b })) => ([*r, *g, *b, 1.0], true),
+            _ => (self.clear_color, false),
+        };
+
+        // `Background.update()`'s tail: `if ( renderer.autoClear === true ||
+        // forceClear === true ) { renderContext.clearColor =
+        // renderer.autoClearColor; renderContext.clearDepth =
+        // renderer.autoClearDepth; … } else { … = false }`.
+        let clear = if self.auto_clear || force_clear {
+            ClearOps {
+                color: self.auto_clear_color.then_some(clear_color),
+                depth: self.auto_clear_depth,
+            }
+        } else {
+            ClearOps::default()
         };
 
         // `LightsNode.setupLights()`: each light resolves to its colour scaled
@@ -1073,6 +1267,7 @@ impl Renderer {
 
         let camera_uniforms = UniformContext {
             camera_projection: camera.projection_matrix(),
+            camera_projection_inverse: camera.projection_matrix_inverse(),
             camera_view: camera.matrix_world_inverse(),
             camera_world: camera.matrix_world(),
             time: self.time,
@@ -1246,6 +1441,11 @@ impl Renderer {
 
             let uniforms = UniformContext {
                 camera_projection: projection,
+                camera_projection_inverse: {
+                    let mut inverse = projection;
+                    inverse.invert();
+                    inverse
+                },
                 camera_view: view,
                 camera_world: world,
                 time: self.time,
@@ -1455,10 +1655,19 @@ impl Renderer {
                 sample_count: 1,
                 width: size,
                 height: size,
+                // One cube face is drawn whole; `PointShadowNode` sets no
+                // viewport of its own.
+                viewport: Rect::full(size, size),
+                scissor: None,
             };
 
             let uniforms = UniformContext {
                 camera_projection: face_camera.projection_matrix,
+                camera_projection_inverse: {
+                    let mut inverse = face_camera.projection_matrix;
+                    inverse.invert();
+                    inverse
+                },
                 camera_view: face_camera.matrix_world_inverse,
                 camera_world: face_camera.node.borrow().matrix_world,
                 time: self.time,
@@ -1529,10 +1738,14 @@ impl Renderer {
 
         let camera_uniforms = self.quad_camera_uniforms();
         // `QuadMesh.render()` is `renderer.render( _scene, _camera )`, so it
-        // reads `autoClear` like any other render: the eight accumulation
-        // quads of an `SsaaPassNode` run with it off and load their target.
+        // reads the `autoClear` switches like any other render: the eight
+        // accumulation quads of an `SsaaPassNode` run with them off and load
+        // their target.
         let clear = if self.auto_clear {
-            ClearOps::all(self.clear_color)
+            ClearOps {
+                color: self.auto_clear_color.then_some(self.clear_color),
+                depth: self.auto_clear_depth,
+            }
         } else {
             ClearOps::default()
         };
@@ -1542,6 +1755,7 @@ impl Renderer {
     fn quad_camera_uniforms(&self) -> UniformContext<'static> {
         UniformContext {
             camera_projection: self.quad_camera.projection_matrix,
+            camera_projection_inverse: self.quad_camera.projection_matrix_inverse,
             camera_view: self.quad_camera.matrix_world_inverse,
             camera_world: self.quad_camera.object.matrix_world,
             time: self.time,
@@ -1565,7 +1779,27 @@ impl Renderer {
             self.needs_frame_buffer_target() && self.render_target.is_none();
 
         let target = if use_frame_buffer_target {
-            Some(self.frame_buffer_target())
+            let target = self.frame_buffer_target();
+            // `Renderer._getFrameBufferTarget()`: the internal target inherits
+            // the canvas target's viewport and scissor, in physical pixels.
+            // Without this the scene would be drawn over the whole internal
+            // texture and only the *blit* would be clipped.
+            let (viewport, scissor) = (self.viewport, self.scissor);
+            let pixel_ratio = self.pixel_ratio;
+            target.set_viewport(
+                viewport.x * pixel_ratio,
+                viewport.y * pixel_ratio,
+                viewport.z * pixel_ratio,
+                viewport.w * pixel_ratio,
+            );
+            target.set_scissor(
+                scissor.x * pixel_ratio,
+                scissor.y * pixel_ratio,
+                scissor.z * pixel_ratio,
+                scissor.w * pixel_ratio,
+            );
+            target.set_scissor_test(self.scissor_test);
+            Some(target)
         } else {
             self.render_target.clone()
         };
@@ -1657,7 +1891,12 @@ impl Renderer {
                 material_specular_color: item.material.specular_color,
                 material_normal_scale: item.material.normal_scale,
                 tone_mapping_exposure: self.tone_mapping_exposure,
-                viewport: Vector2::new(target.width as f64, target.height as f64),
+                material_line_width: item.material.linewidth,
+                // `ScreenNode.update()`: `SIZE` is the bound target's
+                // dimensions, `VIEWPORT` the rectangle the pass is confined to.
+                viewport_size: Vector2::new(target.width as f64, target.height as f64),
+                viewport: target.viewport.to_vector4(),
+                screen_dpr: self.pixel_ratio,
                 ..camera_uniforms
             };
 
@@ -1780,6 +2019,23 @@ impl Renderer {
                 timestamp_writes: None,
                 multiview_mask: None,
             });
+
+            // `WebGPUBackend.beginRender()`: the viewport and the scissor are
+            // set once, on the fresh pass, before any draw. wgpu's defaults are
+            // the whole attachment, which is what the full-target rectangle
+            // resolves to, so every existing caller is bit-identical.
+            let vp = target.viewport;
+            pass.set_viewport(
+                vp.x as f32,
+                vp.y as f32,
+                vp.width as f32,
+                vp.height as f32,
+                0.0,
+                1.0,
+            );
+            if let Some(sc) = target.scissor {
+                pass.set_scissor_rect(sc.x, sc.y, sc.width, sc.height);
+            }
 
             for draw in draws.iter() {
                 let geometry = &self.geometries[&draw.geometry_id].gpu;
@@ -3485,6 +3741,13 @@ impl Renderer {
             sample_count: inner.samples.max(1),
             width: inner.width,
             height: inner.height,
+            // `Renderer._renderScene()`: with a render target bound the
+            // viewport and the scissor are the *target's*, and the pixel ratio
+            // is 1.
+            viewport: Rect::of(inner.viewport, 1.0, inner.width, inner.height),
+            scissor: inner
+                .scissor_test
+                .then(|| Rect::of(inner.scissor, 1.0, inner.width, inner.height)),
         }
     }
 
@@ -3493,6 +3756,12 @@ impl Renderer {
         let sample_count = self.current_samples().max(1);
         self.prepare_canvas(needs_depth, sample_count);
 
+        let (viewport, scissor, scissor_test, pixel_ratio) = (
+            self.viewport,
+            self.scissor,
+            self.scissor_test,
+            self.pixel_ratio,
+        );
         let canvas = self
             .canvas
             .as_ref()
@@ -3518,6 +3787,9 @@ impl Renderer {
             sample_count: canvas.sample_count,
             width: canvas.width,
             height: canvas.height,
+            viewport: Rect::of(viewport, pixel_ratio, canvas.width, canvas.height),
+            scissor: scissor_test
+                .then(|| Rect::of(scissor, pixel_ratio, canvas.width, canvas.height)),
         }
     }
 
