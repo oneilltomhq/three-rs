@@ -121,6 +121,31 @@ and exactly where the background behind it is the bright rainbow wall. Both
 shaders compute that LOD identically, so the difference is in the mip chain
 being sampled, not in the level being asked for.
 
+### Where the 1243 pixels sit, row by row
+
+Counting the pixels over 24/255 per row inside the sphere gives two blocks and
+nothing else: rows 179–222 and rows 277–321, with rows 223–276 and everything
+below 322 clean. That is the `alphaMap`'s band structure — the sphere is seven
+horizontal stripes of alpha 1 and 0, and **only the opaque stripes differ**.
+Where the material is fully transparent the port's pixels are three's, which is
+one more confirmation that the background, the cube conversion and the blend
+are right, and that the error is in the sphere's own shading.
+
+Within a stripe the error hugs the left limb. Two terms are large there and both
+are read from a mip chain at a roughness-driven level:
+
+* the **transmission** sample, at `9.64 * Roughness` of the opaque-frame copy;
+* the **PMREM radiance**, whose Fresnel weight goes to 1 at grazing angles —
+  which also means `( 1 - F )` takes the transmitted light to nearly nothing at
+  the very edge, so the outermost pixels of the crescent are mostly reflection,
+  not transmission.
+
+The port's PMREM is not exact either (`webgpu_pmrem_test` is 27 px, and there
+the environment is not magnified by a mirror sphere), so the two candidates
+cannot be separated from this frame alone. Rendering the same scene with
+`transmission` at 0 and at 1 and differencing is the experiment that separates
+them; it was not run.
+
 ## What was ruled out
 
 * **The transmission pass ordering.** The background is drawn into the opaque
@@ -133,6 +158,19 @@ being sampled, not in the level being asked for.
 
 ## What was left out
 
+* **The viewport uniform and the copy ordering** (both checked, both correct):
+  `ViewportSize` is `( target.width, target.height )` = 800×500 physical
+  pixels, so `log2( cameraViewport.z )` is three's 9.64 and not 8.64; and the
+  copy is taken between the two halves of the split pass, after the background
+  and every opaque draw — the background is visible through the sphere, which
+  it would not be otherwise.
+* **The mipmap pass itself**, by inspection against
+  `WebGPUTexturePassUtils`: the same hand-written shader, the same
+  `createSampler( { minFilter: Linear } )` (so nearest magnification and
+  nearest mipmap filter, both defaults), the same `noFlip` uniform, the source
+  view restricted to `base_mip_level - 1` with `mip_level_count: 1`, and the
+  destination the single next level. The chain is generated the way three
+  generates it.
 * **The last 98 pixels.** The evidence above says the opaque-frame *mip chain*
   is slightly softer than three's, not that the shader or the LOD is wrong.
   Three allocates two 800×500 ten-level textures (ids 212 and 265 in
