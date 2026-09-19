@@ -120,6 +120,9 @@ mod webgpu_lights_phong;
 #[allow(dead_code)]
 mod webgpu_morphtargets;
 
+#[path = "../../examples/webgpu_compute_points.rs"]
+#[allow(dead_code)]
+mod webgpu_compute_points;
 #[path = "../../examples/webgpu_lights_physical.rs"]
 #[allow(dead_code)]
 mod webgpu_lights_physical;
@@ -132,10 +135,6 @@ mod webgpu_shadowmap;
 #[path = "../../examples/webgpu_skinning.rs"]
 #[allow(dead_code)]
 mod webgpu_skinning;
-
-#[path = "../../examples/webgpu_compute_points.rs"]
-#[allow(dead_code)]
-mod webgpu_compute_points;
 #[path = "../../examples/webgpu_tsl_galaxy.rs"]
 #[allow(dead_code)]
 mod webgpu_tsl_galaxy;
