@@ -265,3 +265,56 @@ fn grid_helper_buffers() {
         "gridHelper positionSum: {sum}"
     );
 }
+
+/// The page's last material is a `Loop()` used as a `colorNode`, and three
+/// renders that teapot opaque black.
+///
+/// `LoopNode.generate()` writes the `for` into the flow and returns an *empty*
+/// snippet, so `vec4( colorNode )` in `setupDiffuseColor()` casts nothing:
+/// `DiffuseColor = vec4<f32>(  );`, two spaces, a zero vector, and the four
+/// texture taps the loop ran are thrown away. **The port reproduces this
+/// deliberately** — `docs/nodes.md` §8 — because the graded frame contains the
+/// black teapot and a port that "fixed" the bug would lose those pixels.
+///
+/// Pinned here rather than left to the image: the difference between the bug
+/// and the fix is one teapot out of seventeen, which the 0.1% threshold would
+/// very nearly absorb.
+#[test]
+fn a_loop_as_a_color_node_discards_its_result() {
+    use three_rs::materials::{setup, MeshBasicNodeMaterial, SetupContext};
+    use three_rs::nodes::tsl::{
+        float, loop_index, loop_statement, osc_sine, texture_uv, time, to_var, uv, vec2_join, vec4,
+    };
+    use three_rs::nodes::{NodeBuilder, NodeRef, Type};
+
+    let map = three_rs::Texture::new(4, 4, Some(vec![0; 4]));
+    let i = loop_index();
+    let output = to_var(None, vec4(0.0, 0.0, 0.0, 1.0));
+    let scale_i = osc_sine(time()).mul(0.09).mul(i.to(Type::F32));
+    let scale_i_neg = to_var(None, scale_i.clone().negate());
+    let tap = |offset: NodeRef| output.assign(output.add(texture_uv(&map, uv().add(offset))));
+
+    let mut material = MeshBasicNodeMaterial::new();
+    material.color_node = Some(loop_statement(
+        10,
+        i,
+        vec![
+            tap(vec2_join(vec![scale_i.clone(), float(0.0)])),
+            tap(vec2_join(vec![scale_i_neg.clone(), float(0.0)])),
+            tap(vec2_join(vec![float(0.0), scale_i])),
+            tap(vec2_join(vec![float(0.0), scale_i_neg])),
+        ],
+    ));
+
+    let flow = setup(&material, &SetupContext::default(), None);
+    let wgsl = NodeBuilder::new().build(&flow).fragment_wgsl;
+
+    assert!(
+        wgsl.contains("\tfor ( var i : i32 = 0; i < 10; i ++ ) {"),
+        "the loop still runs:\n{wgsl}"
+    );
+    assert!(
+        wgsl.contains("\tDiffuseColor = vec4<f32>(  );"),
+        "the loop's value is an empty snippet, cast to nothing:\n{wgsl}"
+    );
+}

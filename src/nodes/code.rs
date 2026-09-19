@@ -254,3 +254,66 @@ fn param_type(ty: &str) -> Option<Type> {
         _ => return None,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const DESATURATE: &str = "
+\t\t\t\t\tfn desaturate( color:vec3<f32> ) -> vec3<f32> {
+
+\t\t\t\t\t\treturn vec3<f32>( dot( lum, color ) );
+
+\t\t\t\t\t}
+\t\t\t\t";
+
+    /// `getCode()` rebuilds only the declaration line; everything from the `{`
+    /// on is the source's own text, tabs and trailing whitespace included.
+    /// Three's dump of this example keeps the page's six-tab indentation, so a
+    /// port that reformatted the body would diverge on every line of it.
+    #[test]
+    fn the_body_is_copied_through_verbatim() {
+        let def = wgsl_fn(DESATURATE, vec![]);
+        assert_eq!(def.name, "desaturate");
+        assert_eq!(def.ret, Type::Vec3);
+        assert_eq!(
+            def.params,
+            vec![("color".to_string(), ParamKind::Value(Type::Vec3))]
+        );
+        assert_eq!(
+            def.code,
+            "fn desaturate ( color:vec3<f32> ) -> vec3<f32> {\n\n\t\t\t\t\t\treturn vec3<f32>( dot( lum, color ) );\n\n\t\t\t\t\t}\n\t\t\t\t"
+        );
+    }
+
+    /// A `texture_2d<f32>` parameter and a `sampler` parameter are bindings,
+    /// not values; `wgslTypeLib` keys the first off the prefix.
+    #[test]
+    fn texture_and_sampler_parameters_are_bindings() {
+        let def = wgsl_fn(
+            "fn f( tex: texture_2d<f32>, tex_sampler: sampler, uv:vec2<f32> ) -> vec4<f32> { }",
+            vec![],
+        );
+        let kinds: Vec<ParamKind> = def.params.iter().map(|(_, k)| *k).collect();
+        assert_eq!(
+            kinds,
+            vec![
+                ParamKind::Texture,
+                ParamKind::Sampler,
+                ParamKind::Value(Type::Vec2)
+            ]
+        );
+    }
+
+    /// The leading-comment strip and `[fn]*` being a character class rather
+    /// than the word `fn`.
+    #[test]
+    fn leading_comments_are_stripped() {
+        let def = wgsl_fn(
+            "// a note\n/* and another */\nfn f( x:f32 ) -> f32 { return x; }",
+            vec![],
+        );
+        assert_eq!(def.name, "f");
+        assert_eq!(def.code, "fn f ( x:f32 ) -> f32 { return x; }");
+    }
+}
