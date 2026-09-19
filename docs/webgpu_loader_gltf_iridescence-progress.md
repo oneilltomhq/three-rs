@@ -102,16 +102,65 @@ all of them possible.
    `texture( texture, uvNode, 0 )`, an explicit level 0. The change was
    reverted rather than committed unverified against the full ladder.
 
+### The three descriptor checks, against `dump.json` rather than against reasoning
+
+6. **The sampler.** The conversion draw is pass 1 (viewport 512×512, into
+   texture 6's layer). It binds `bindGroup_object` 64, whose sampler is 15.
+   Three's dump prints sampler 15 as `magFilter/minFilter/mipmapFilter:
+   nearest`, `clamp-to-edge` on all three axes — but so are samplers 85, 207
+   and 371, which include the one bound for the lamp's 2048² base-colour PNG
+   with its 12 mip levels. Four identical all-nearest descriptors with
+   `lodMaxClamp: 32` and an empty label are read-back defaults, not what
+   `WebGPUTextureUtils.createSampler()` passed; the two samplers the dump
+   records faithfully are 17 and 18, which carry a lone `minFilter` and are
+   the mipmap generator's. So the dump cannot answer this one. What can:
+   `HDRLoader.js` lines 437–441 set `minFilter: LinearFilter, magFilter:
+   LinearFilter`, and `hdr_loader.rs` sets the same pair. The port's texture
+   is `rgba16float`, `is_unfilterable()` is false (it wants *both* filters
+   `Nearest`), and it is bound `SamplerBindingType::Filtering` — so neither
+   the `textureLoad` path nor the `Rgba32Float`/`FLOAT32_FILTERABLE` arm is
+   reached. Both sides sample linear. **Not the cause.**
+
+7. **The cube size.** Three's texture 6 is `512×512×6, rgba16float,
+   mipLevelCount 1`. `from_equirectangular_texture()` takes `source.size().1`
+   — 512 for a 1024×512 equirect — and `CubeTexture::render_target` gives it
+   one level. **Identical.**
+
+8. **`equirectUV`.** Three's m02 emits `atan2( d.z, d.x ) * 0.15915494309189535
+   + 0.5` and `asin( clamp( d.y, -1, 1 ) ) * 0.3183098861837907 + 0.5`, read
+   with `textureSampleLevel( …, 0.0 )` at the fragment's own
+   `positionWorldDirection`, no half-texel anywhere. `tsl::equirect_uv()` is
+   that expression constant-for-constant, and `cube_render_target` wraps it in
+   `texture_level( source, …, 0.0 )`. **Identical.** (Same expression again in
+   m06, the PMREM equirect pass.)
+
+   One incidental thing the dump shows: three's passes 4–11 *clear* the
+   equirect's mip levels 2–10 and draw nothing into them. Only level 1 is
+   ever generated. Since every read is an explicit level 0, it changes
+   nothing — but it is worth knowing before anyone tries to match that mip
+   chain.
+
+### What the rest of the ladder already proves about this path
+
+`webgpu_postprocessing_bloom_emissive` is green and is *this* configuration:
+`HdrLoader` on a 1k `.hdr`, a 512² cube for `scene.background`, a PMREM for
+`scene.environment`. `webgpu_loader_gltf_sheen` is green with the same code at
+1024² faces from a 2048×1024 UltraHDR. So the conversion is proven at 512
+faces and proven on detailed input — just never both at once: `moonless_golf`
+is a near-featureless night sky, which is exactly the input that would hide a
+high-frequency error, and every detailed page so far had twice the face
+resolution. `venice_sunset` at 512 is the first case that has both, which is
+why this is the first page to show it.
+
 The conclusion the next session should start from: the difference is
-sub-pixel, inside the equirect→cube conversion's *sampling*, and it is
-invisible on smooth input. The port's four other users of
-`cube_render_target::from_equirectangular_texture` all feed it a 2048×1024
-UltraHDR JPEG (a 1024² face); this page feeds it a 1024×512 `.hdr` (a 512²
-face), so every earlier page had twice the cube resolution to hide it in.
-Descriptor-level suspects that remain unchecked: the face camera's
-`near`/`far` and the frustum the negative FOV builds, `equirect_uv`'s
-half-texel convention against three's, and the sampler's address mode at the
-equirect's seam and poles.
+sub-pixel, inside the equirect→cube conversion, it needs both a small face
+and detailed input to show, and it is not in the sampler, the size or the UV.
+That leaves the rasterisation: the face camera's `near`/`far` and the frustum
+the negative FOV builds, and the per-face render-target-then-`copy_to_cube_layer`
+divergence this port makes where three renders straight into the layer. The
+next thing to measure is the cube's texels themselves — read back one face and
+compare it against three's texture 6, which localises it to the conversion or
+clears it entirely.
 
 ## What is missing
 
