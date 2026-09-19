@@ -424,6 +424,8 @@ impl NodeBuilder {
                 v
             }
             Node::Discard => vec![],
+            Node::TextureSize { level, .. } => vec![level.clone()],
+            Node::VaryingProperty { .. } => vec![],
             Node::Not { node } => vec![node.clone()],
         }
     }
@@ -610,6 +612,14 @@ impl NodeBuilder {
             TextureSource::ShadowMap(t) => (t.id(), TextureKind::DepthCompare2D),
             TextureSource::Cube(t) => (t.id(), TextureKind::Cube),
             TextureSource::DataArray(t) => (t.id(), TextureKind::Float2DArray),
+            TextureSource::Data(t) => (
+                t.id(),
+                if t.is_uint() {
+                    TextureKind::Uint2D
+                } else {
+                    TextureKind::FloatData2D
+                },
+            ),
             TextureSource::CubeDepth(t) => (t.id(), TextureKind::DepthCube),
         };
 
@@ -1038,6 +1048,18 @@ impl NodeBuilder {
                         let sdepth = self.generate(&depth);
                         format!("textureSampleCompare( {name}, {name}_sampler, {suv}, {sdepth} )")
                     }
+                    SampleMode::LoadTexel => {
+                        let snippet = wgsl::texture_load_texel(&name, &suv);
+                        // `textureLoad( t, coord ).x` on the `r32uint`
+                        // indirect table: Three splits the `uvec4` and caches
+                        // the scalar, so the swizzle rides along with the
+                        // fetch rather than becoming a second property.
+                        if node.ty().components() == 1 {
+                            format!("{snippet}.x")
+                        } else {
+                            snippet
+                        }
+                    }
                     SampleMode::Load => {
                         self.add_code("tsl_coord_clampS_clampT_2d", wgsl::CLAMP_WRAP_SNIPPET);
                         let dims = self.declare_var(None, Type::UVec2);
@@ -1045,6 +1067,27 @@ impl NodeBuilder {
                         self.emit(format!("{dims} = {dims_expr};"));
                         wgsl::texture_load(&name, &suv, &dims)
                     }
+                }
+            }
+
+            Node::TextureSize { texture, level } => {
+                let (texture, level) = (texture.clone(), level.clone());
+                let (name, _kind) = self.texture_slots(&texture);
+                let slevel = self.generate(&level);
+                wgsl::texture_size(&name, &slevel)
+            }
+
+            Node::VaryingProperty { name, ty, flat } => {
+                let (name, ty, flat) = (*name, *ty, *flat);
+                if !self.varyings.iter().any(|(n, _, _)| n == name) {
+                    self.varyings.push((name.to_string(), ty, flat));
+                }
+                // `NodeBuilder.getPropertyName()`: `varyings.x` while building
+                // the vertex stage, the bare `main` parameter in the fragment
+                // stage.
+                match self.stage {
+                    Stage::Vertex => format!("varyings.{name}"),
+                    Stage::Fragment => name.to_string(),
                 }
             }
 
@@ -1276,8 +1319,15 @@ pub struct MaterialFlow {
     /// Whether to emit the `Output = …` property assignment. A material with a
     /// `fragmentNode` writes `output.color` straight from the result.
     pub emit_output_property: bool,
-    /// The `vec4` the fragment stage writes to `output.color`.
+    /// The `vec4` the fragment stage writes to `output.color`, and — when
+    /// `emit_output_property` is set — to the `Output` property.
     pub output: NodeRef,
+    /// `material.outputNode`. `NodeMaterial.setup()` assigns the *basic*
+    /// output to the `Output` property and then hands `output.color` to this
+    /// node instead, so a custom output can read `Output` (or, as
+    /// `webgpu_mesh_batch` does, `DiffuseColor` and `normalView`) after the
+    /// standard flow has run.
+    pub output_node: Option<NodeRef>,
     /// Vertex-stage statements, run before the position node.
     pub vertex_statements: Vec<NodeRef>,
     /// The clip-space position the vertex stage writes.
@@ -1297,8 +1347,14 @@ impl NodeBuilder {
         // The output node is reached twice — once by the `Output` property and
         // once by `output.color` — which is what gives it its own var.
         self.analyze(&flow.output);
-        if flow.emit_output_property {
+        // The basic output is reached twice — once by the `Output` property and
+        // once by `output.color` — which is what gives it its own var. With a
+        // custom `outputNode` it is reached only by `Output`.
+        if flow.emit_output_property && flow.output_node.is_none() {
             self.analyze(&flow.output);
+        }
+        if let Some(node) = &flow.output_node {
+            self.analyze(node);
         }
         for stmt in &flow.vertex_statements {
             self.analyze(stmt);
@@ -1315,10 +1371,13 @@ impl NodeBuilder {
         for stmt in &flow.fragment_statements {
             self.generate(stmt);
         }
-        let color = self.generate(&flow.output);
+        let mut color = self.generate(&flow.output);
         if flow.emit_output_property {
             let output_prop = self.declare_var(Some("Output"), Type::Vec4);
             self.emit(format!("{output_prop} = {color};"));
+        }
+        if let Some(node) = &flow.output_node {
+            color = self.generate(node);
         }
 
         self.stage = Stage::Vertex;
@@ -1517,6 +1576,7 @@ impl NodeBuilder {
             TextureSource::ShadowMap(t) => t.id(),
             TextureSource::Cube(t) => t.id(),
             TextureSource::DataArray(t) => t.id(),
+            TextureSource::Data(t) => t.id(),
             TextureSource::CubeDepth(t) => t.id(),
         };
         self.texture_names[&key].0.clone()

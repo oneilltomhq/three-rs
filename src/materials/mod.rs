@@ -246,6 +246,11 @@ pub struct MeshBasicNodeMaterial {
     pub vertex_node: Option<NodeRef>,
     /// `NodeMaterial.fragmentNode` — replaces the whole fragment flow.
     pub fragment_node: Option<NodeRef>,
+    /// `NodeMaterial.outputNode` — replaces only what `output.color` is written
+    /// from. The standard flow still runs and still writes the `Output`
+    /// property, so the custom node can read `DiffuseColor`, `Output` and the
+    /// normal accessors.
+    pub output_node: Option<NodeRef>,
     pub side: Side,
     /// `Material.visible` — `_projectObject()` skips an object whose material is
     /// not visible.
@@ -334,6 +339,7 @@ impl Default for MeshBasicNodeMaterial {
             size_attenuation: true,
             vertex_node: None,
             fragment_node: None,
+            output_node: None,
             side: Side::Front,
             visible: true,
             transparent: false,
