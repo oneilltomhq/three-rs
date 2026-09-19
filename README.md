@@ -79,6 +79,7 @@ Linux is the only backend that has been run.
 | webgpu_tsl_galaxy | 40 | 5.3 | 2 | 40001 |
 | webgpu_skinning | 6 | 3.0 | 3 | 30091 |
 | webgpu_mesh_batch | 0 | 2.5 | 454 | 44341 |
+| webgpu_postprocessing_radial_blur | 7 | 3.9 | 2 | 401 |
 | webgpu_compute_points | 4 (see below) | 10.7 | 2 | 1 + 300000 points |
 
 `webgpu_compute_points` is graded like the rest and its 4 pixels mean less
@@ -141,9 +142,10 @@ cargo run --release --bin viewer -- shadowmap --headless --frames 40
 ```
 
 Opens the named example in a window (winit, tested on Wayland) with orbit,
-zoom and pan. All ten graded examples are there; `--list` prints them with
-their keys (`1`-`9`, `0`), which switch examples in the window and stand in
-for the name on the command line. The window prints one line a second with
+zoom and pan. All the graded examples but `webgpu_compute_points` are there;
+`--list` prints them with their keys (`1`-`9`, `0`, then letters), which
+switch examples in the window and stand in for the name on the command
+line. The window prints one line a second with
 the frame rate and the steady-state render time (mean and max over the last
 60 frames, after a 10-frame warm-up):
 

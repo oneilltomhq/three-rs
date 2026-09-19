@@ -104,3 +104,39 @@ three.js rather than with the old accident.
 `new Mesh( geometry )` with no material gets `new MeshBasicMaterial()`, which
 under `WebGPURenderer` is a `MeshBasicNodeMaterial`: white, opaque, front side,
 depth test and write on. The renderer supplies it rather than panicking.
+
+## Single-pass effect nodes (`webgpu_postprocessing_radial_blur`)
+
+An effect from `three.js/examples/jsm/tsl/display/` is a node graph, not a
+renderer feature: `radialBlur( textureNode, options )` is one `Fn()` that reads
+the pass texture several times and returns a colour. The port keeps those in
+`src/nodes/display/` **inside the main crate**, not in `addons/`, for that
+reason — they need nothing but the node system.
+
+`radial_blur( map, options )` mirrors the JS line for line: a `sampleUv` var, a
+`base` const, a `blur` var, an `offset` const, a weight var `w`, the
+interleaved-gradient-noise jitter, a node-bounded `Loop` and the final
+`mix( blur, base.mul( 2 ), 0.5 )`. Three facts it pins down:
+
+* **`Loop( { end: int( count ) } )` needs no new node kind.** `Node::Loop`'s
+  count was already a `NodeRef`, so a uniform bound emits
+  `for ( var i : i32 = 0; i < i32( object.nodeUniformN ); i ++ )`.
+* **`uniform( int( 32 ) )` is an `f32` uniform.** `UniformNode` takes its type
+  from the JavaScript value it is handed, which here is a *node*, so three.js
+  falls back to float and the dump carries four `f32` object uniforms. The
+  `i32` appears only at the loop bound.
+* **The whole effect is wrapped in one `to_var()`.** `Node::Block` is not a
+  kind the builder caches or promotes, so without the wrapper the statements
+  would be emitted once per read of the result. `docs/nodes.md` §8.
+
+### Tone mapping comes from the renderer, not from the quad
+
+`RenderPipeline` captures `renderer.toneMapping` in its constructor and
+re-checks it in `_update()`, *before* `render()` neutralises it for the draw.
+So `renderer.toneMapping = NeutralToneMapping` set by the page ends up baked
+into the quad's own `renderOutput( outputNode, toneMapping, outputColorSpace )`
+— the tone mapper runs inside the post-processing shader, and the canvas still
+needs no second output pass. `RenderPipeline::built_for` carries the tone
+mapping alongside the output node's identity, so a steady frame is still a
+cache hit and a change to `renderer.tone_mapping` rebuilds the quad's program
+once.
