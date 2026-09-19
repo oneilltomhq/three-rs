@@ -131,6 +131,19 @@ const SPY_SCRIPT = String.raw`
 		dump.order.push(Object.assign({ n: dump.order.length, op }, detail));
 	}
 
+	// GPUExtent3D can be either an array [width, height, depthOrArrayLayers]
+	// or a dict {width, height, depthOrArrayLayers}; height/depth default to 1.
+	function normalizeExtent(size) {
+		if (Array.isArray(size)) {
+			return { width: size[0] ?? 0, height: size[1] ?? 1, depthOrArrayLayers: size[2] ?? 1 };
+		}
+		return {
+			width: (size && size.width) ?? 0,
+			height: (size && size.height) ?? 1,
+			depthOrArrayLayers: (size && size.depthOrArrayLayers) ?? 1,
+		};
+	}
+
 	function decodeBufferUsage(usage) {
 		const flags = {
 			MAP_READ: 0x0001, MAP_WRITE: 0x0002, COPY_SRC: 0x0004, COPY_DST: 0x0008,
@@ -465,6 +478,34 @@ const SPY_SCRIPT = String.raw`
 				return orig(buffer, format, ...rest);
 			};
 		}
+		if (encoder.setViewport) {
+			const orig = encoder.setViewport.bind(encoder);
+			encoder.setViewport = function (x, y, width, height, minDepth, maxDepth) {
+				cmd('setViewport', { x, y, width, height, minDepth, maxDepth });
+				return orig(x, y, width, height, minDepth, maxDepth);
+			};
+		}
+		if (encoder.setScissorRect) {
+			const orig = encoder.setScissorRect.bind(encoder);
+			encoder.setScissorRect = function (x, y, width, height) {
+				cmd('setScissorRect', { x, y, width, height });
+				return orig(x, y, width, height);
+			};
+		}
+		if (encoder.setBlendConstant) {
+			const orig = encoder.setBlendConstant.bind(encoder);
+			encoder.setBlendConstant = function (color) {
+				cmd('setBlendConstant', { color });
+				return orig(color);
+			};
+		}
+		if (encoder.setStencilReference) {
+			const orig = encoder.setStencilReference.bind(encoder);
+			encoder.setStencilReference = function (reference) {
+				cmd('setStencilReference', { reference });
+				return orig(reference);
+			};
+		}
 		if (encoder.draw) {
 			const orig = encoder.draw.bind(encoder);
 			encoder.draw = function (vertexCount, instanceCount, firstVertex, firstInstance) {
@@ -547,7 +588,7 @@ const SPY_SCRIPT = String.raw`
 		const origWriteTexture = queue.writeTexture.bind(queue);
 		queue.writeTexture = function (destination, data, dataLayout, size) {
 			logOrder('queue.writeTexture', {
-				texture: refId(destination.texture), label: refLabel(destination.texture), size,
+				texture: refId(destination.texture), label: refLabel(destination.texture), size: normalizeExtent(size),
 			});
 			return origWriteTexture(destination, data, dataLayout, size);
 		};
