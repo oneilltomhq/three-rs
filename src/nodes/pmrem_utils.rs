@@ -275,6 +275,13 @@ fn bilinear_cube_uv(
     mip_int_immutable: NodeRef,
     size: &CubeUvSize,
 ) -> NodeRef {
+    // `const direction = vec3( direction_immutable );` — a `ConvertNode`, not a
+    // `TempNode`, so it is re-expanded at each of its two uses rather than
+    // varred. That is why three's dump repeats the whole
+    // `( materialEnvRotation * vec4( … ) ).xyz` for `getFace` and for `getUV`
+    // instead of naming it once, and the `.xyz` is the narrowing this cast
+    // performs on the `vec4` the rotation produces.
+    let direction = direction.to(Type::Vec3);
     let mip_int = to_var(None, mip_int_immutable);
     let face = to_var(None, get_face(direction.clone()));
     let filter_int = to_var(
@@ -337,16 +344,23 @@ pub fn texture_cube_uv(
     roughness: NodeRef,
     size: &CubeUvSize,
 ) -> NodeRef {
+    // `const sampleDir = vec3( sampleDir_immutable );` — one cast shared by both
+    // taps, so the rotation product underneath it is referenced once and stays
+    // un-varred.
+    let sample_dir = sample_dir.to(Type::Vec3);
     let mip = roughness_to_mip(roughness).clamp(float(CUBE_UV_M0), size.max_mip.clone());
     let mip_f = fract(mip.clone());
     let mip_int = floor(mip);
+    // `vec3( bilinearCubeUV( … ) )` on both taps: the atlas read is a `vec4`
+    // and the colour a `vec3`, so the cast is where `nodeVarN = nodeVarM.xyz;`
+    // comes from.
     let color0 = to_var(
         None,
-        bilinear_cube_uv(env_map, sample_dir.clone(), mip_int.clone(), size),
+        bilinear_cube_uv(env_map, sample_dir.clone(), mip_int.clone(), size).to(Type::Vec3),
     );
     let color1 = to_var(
         None,
-        bilinear_cube_uv(env_map, sample_dir, mip_int.add(float(1.0)), size),
+        bilinear_cube_uv(env_map, sample_dir, mip_int.add(float(1.0)), size).to(Type::Vec3),
     );
 
     block(

@@ -9,6 +9,7 @@ use three_rs::lights::LightKind;
 use three_rs::materials::phong::{LightDesc, ShadowMap};
 use three_rs::materials::{setup, MeshBasicNodeMaterial, SetupContext, Side};
 use three_rs::math::Color;
+use three_rs::nodes::pmrem_node::PmremEnvironment;
 use three_rs::nodes::tsl::*;
 use three_rs::nodes::NodeBuilder;
 use three_rs::textures::{CubeTexture, DepthTexture, Image, Texture};
@@ -1059,4 +1060,23 @@ fn main() {
     );
     let (ggx, _ggx_uniforms) = three_rs::renderer::pmrem::ggx_material(8, 768.0, 1024.0);
     show("pmrem_ggx", &ggx, SetupContext::default());
+
+    // `scene.backgroundNode = pmremTexture( map, normalWorldGeometry,
+    // uniform( 0.5 ) )` — three's `m05_fragment_fragment_Background.material`.
+    // The PMREM has not been generated here, so the three cubeUV uniforms are
+    // still zero; they are uniforms, so the WGSL does not depend on their
+    // values, which is the whole reason `PMREMNode` holds them as uniforms
+    // rather than baking them the way `_getGGXShader` does.
+    let environment = PmremEnvironment::new(&hdr_cube);
+    let (level, _level_cell) = uniform_settable(three_rs::nodes::Type::F32, vec![0.5]);
+    let mut background = MeshBasicNodeMaterial::new();
+    background.name = "Background.material";
+    background.vertex_node = Some(three_rs::materials::background_vertex_node());
+    background.side = Side::Back;
+    background.depth_test = false;
+    background.depth_write = false;
+    background.color_node = Some(three_rs::materials::background_node_color_node(
+        environment.sample(normal_world_geometry(), level),
+    ));
+    show("pmrem_background", &background, SetupContext::default());
 }
