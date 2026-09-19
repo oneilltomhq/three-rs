@@ -47,6 +47,12 @@ pub struct SetupContext {
     pub skin: Option<crate::nodes::skinning::SkinEntry>,
     /// `object.isBatchedMesh`: the three data textures `batch()` reads.
     pub batch: Option<crate::nodes::batch::BatchEntry>,
+    /// A `LineSegmentsGeometry`'s interleaved instanced attributes, which
+    /// `Line2NodeMaterial` reads as `instanceStart` / `instanceEnd` and
+    /// `instanceColorStart` / `instanceColorEnd`. See
+    /// [`crate::nodes::lines`] for why they travel here rather than on the
+    /// geometry.
+    pub line_segments: Option<crate::nodes::lines::LineSegmentsAttributes>,
 }
 
 /// `Renderer._getShadowNodes( material )` composed with
@@ -137,7 +143,12 @@ fn setup_diffuse_color(
     // colorNode = colorNode.mul( vertexColor() )` — the same step for every
     // lighting model, which is what lets one `LineSegments` carry a hue per
     // vertex. See `vertex_color()` for the `hasAttribute` half.
-    let color = match material.vertex_colors {
+    // `Line2NodeMaterial` is the exception: a `LineSegmentsGeometry` has no
+    // `color` attribute (it carries `instanceColorStart` / `instanceColorEnd`),
+    // so three's `geometry.hasAttribute( 'color' )` is false and the base
+    // multiply is skipped. Its own `setupDiffuseColor()` selects the colour per
+    // end instead — see [`crate::materials::line2::setup_diffuse_color`].
+    let color = match material.vertex_colors && material.kind != MaterialKind::Line2 {
         true => color.mul(vertex_color()),
         false => color,
     };
@@ -190,6 +201,21 @@ fn setup_diffuse_color(
     // material keeps its per-fragment alpha instead, all the way to `Output`.
     if material.is_opaque() {
         fragment.push(diffuse_color().w().assign(float(1.0)));
+    }
+
+    // `Line2NodeMaterial.setupDiffuseColor()` runs `super.setupDiffuseColor()`
+    // first and then adds the coverage multiply and the per-end colour. Its
+    // `blending = NoBlending` is why `is_opaque()` above is false and the
+    // `DiffuseColor.w = 1.0` line is absent from three's dump.
+    if material.kind == MaterialKind::Line2 {
+        if let Some(attributes) = &ctx.line_segments {
+            crate::materials::line2::setup_diffuse_color(
+                material.alpha_to_coverage,
+                material.vertex_colors,
+                attributes,
+                fragment,
+            );
+        }
     }
 }
 
@@ -249,6 +275,16 @@ fn setup_inner(
 ) -> MaterialFlow {
     let mut pre_vertex = Vec::new();
     let mut fragment = Vec::new();
+
+    // `Line2NodeMaterial.setupPosition()` overrides the whole thing and calls
+    // `super.setupPosition()` last, so its `positionLocal.assign()` is the
+    // first statement of the vertex flow — ahead of morphing and skinning,
+    // neither of which a fat line has.
+    if material.kind == MaterialKind::Line2 {
+        if let Some(attributes) = &ctx.line_segments {
+            pre_vertex.push(crate::materials::line2::setup_position(attributes));
+        }
+    }
 
     // --- setupPosition: the `context.position` stack, flowed into the vertex
     // stage before either stage's own flow. Morphing, skinning and batching

@@ -13,6 +13,8 @@
 use std::path::PathBuf;
 
 use serde_json::Value;
+use three_rs::addons::geometry_utils::hilbert_3d_default;
+use three_rs::addons::lines::LineGeometry;
 use three_rs::extras::{CatmullRomCurve3, Curve};
 use three_rs::math::{Color, ColorSpace, Vector3};
 
@@ -95,5 +97,87 @@ fn spline_oracle_positions_and_colors() {
         bits_eq(color.r, colors[i * 3], &format!("colors[{i}].r"));
         bits_eq(color.g, colors[i * 3 + 1], &format!("colors[{i}].g"));
         bits_eq(color.b, colors[i * 3 + 2], &format!("colors[{i}].b"));
+    }
+}
+
+/// `hilbert3D( ( 0, 0, 0 ), 20, 1 )` — the 64 control points the example feeds
+/// the spline, bit for bit.
+///
+/// The recursion decrements before it tests, so `iterations = 1` visits two
+/// levels and gives 8^2 points, not 8. Getting that wrong would still draw a
+/// plausible-looking curve, which is exactly the failure this oracle exists to
+/// catch.
+#[test]
+fn hilbert_3d_oracle_points() {
+    let Some(path) = oracle_path() else {
+        eprintln!("skipping: spline_oracle.json is not present");
+        return;
+    };
+    let json: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    let hilbert = f32s(&json, "hilbert");
+
+    let points = hilbert_3d_default(Vector3::new(0.0, 0.0, 0.0), 20.0, 1);
+
+    assert_eq!(
+        points.len(),
+        json["hilbertPointCount"].as_u64().unwrap() as usize
+    );
+    assert_eq!(points.len() * 3, hilbert.len(), "hilbert length");
+
+    for (i, point) in points.iter().enumerate() {
+        bits_eq(point.x, hilbert[i * 3], &format!("hilbert[{i}].x"));
+        bits_eq(point.y, hilbert[i * 3 + 1], &format!("hilbert[{i}].y"));
+        bits_eq(point.z, hilbert[i * 3 + 2], &format!("hilbert[{i}].z"));
+    }
+}
+
+/// `LineGeometry.setPositions()` — `n` points become `n - 1` segments, with
+/// every interior point written twice.
+///
+/// 768 samples make 767 instances of six floats, which is the one interleaved
+/// vertex buffer of stride 24 that the material reads as `instanceStart` /
+/// `instanceEnd`: 767 * 24 = 18408 bytes.
+#[test]
+fn line_geometry_duplicates_interior_points() {
+    let Some(path) = oracle_path() else {
+        eprintln!("skipping: spline_oracle.json is not present");
+        return;
+    };
+    let json: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    let positions = f32s(&json, "positions");
+    let instance_count = json["instanceCount"].as_u64().unwrap() as usize;
+
+    let mut geometry = LineGeometry::new();
+    geometry.set_positions(&positions);
+
+    let segments = geometry.as_segments();
+    assert_eq!(segments.instance_count(), instance_count, "instance count");
+
+    let attributes = segments.attributes();
+    assert_eq!(
+        attributes.positions.len(),
+        instance_count * 6,
+        "pair floats"
+    );
+    assert_eq!(
+        attributes.positions.len() * std::mem::size_of::<f32>(),
+        instance_count * 24,
+        "instanced buffer bytes"
+    );
+
+    // `[ a, b, c, d ] -> [ a, b, b, c, c, d ]`, over xyz triples.
+    for i in 0..instance_count {
+        for c in 0..3 {
+            assert_eq!(
+                attributes.positions[i * 6 + c],
+                positions[i * 3 + c],
+                "instance {i} start component {c}"
+            );
+            assert_eq!(
+                attributes.positions[i * 6 + 3 + c],
+                positions[(i + 1) * 3 + c],
+                "instance {i} end component {c}"
+            );
+        }
     }
 }

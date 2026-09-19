@@ -1185,6 +1185,7 @@ impl Renderer {
                     morph: morph.clone(),
                     skin: skin.as_ref().map(|s| s.0),
                     batch: batch.clone(),
+                    line_segments: object.payload.line_segments().cloned(),
                 },
                 fog: scene.fog_node.clone(),
                 model_world: item.matrix_world,
@@ -1423,6 +1424,10 @@ impl Renderer {
                         morph: None,
                         skin: None,
                         batch: None,
+                        // A fat line does not cast a shadow: three's shadow
+                        // material takes the plain MVP path, which the quad
+                        // geometry is not in.
+                        line_segments: None,
                     },
                     fog: None,
                     model_world: item.matrix_world,
@@ -1610,6 +1615,10 @@ impl Renderer {
                         morph: None,
                         skin: None,
                         batch: None,
+                        // A fat line does not cast a shadow: three's shadow
+                        // material takes the plain MVP path, which the quad
+                        // geometry is not in.
+                        line_segments: None,
                     },
                     fog: None,
                     model_world: item.matrix_world,
