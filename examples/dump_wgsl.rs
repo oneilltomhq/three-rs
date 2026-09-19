@@ -242,6 +242,23 @@ fn main() {
     masking.vertex_node = Some(three_rs::materials::quad_vertex_node());
     show("masking_quad", &masking, SetupContext::default());
 
+    // rung webgpu_postprocessing_radial_blur: the RenderPipeline quad.
+    let pass_rt = Texture::render_target(800, 500, wgpu::TextureFormat::Rgba16Float);
+    let options = three_rs::nodes::display::RadialBlurOptions {
+        weight: uniform_value(three_rs::nodes::Type::F32, vec![0.9]),
+        decay: uniform_value(three_rs::nodes::Type::F32, vec![0.95]),
+        exposure: uniform_value(three_rs::nodes::Type::F32, vec![5.0]),
+        count: uniform_value(three_rs::nodes::Type::F32, vec![32.0]),
+        ..Default::default()
+    };
+    let mut radial = MeshBasicNodeMaterial::new();
+    radial.fragment_node = Some(three_rs::materials::render_output(
+        three_rs::nodes::display::radial_blur(&pass_rt, &options),
+        three_rs::ToneMapping::Neutral,
+    ));
+    radial.vertex_node = Some(three_rs::materials::quad_vertex_node());
+    show("radial_blur_quad", &radial, SetupContext::default());
+
     // rung 5: the three teapots and the light spheres, against
     // `target/dumps/webgpu_lights_phong/`.
     let fog = fog(Color::from_hex(0xFF00FF), range_fog_factor(12.0, 30.0));
