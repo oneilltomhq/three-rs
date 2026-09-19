@@ -153,6 +153,22 @@ const SPY_SCRIPT = String.raw`
 		return Object.keys(flags).filter((k) => (usage & flags[k]) !== 0);
 	}
 
+	// A descriptor argument belongs to its caller, and callers are free to keep
+	// mutating it after the call returns: Three's WebGPUTextureUtils.createSampler
+	// resets and reuses ONE descriptor object for every sampler it creates, so a
+	// reference held until serialisation reads back the last reset state (every
+	// sampler nearest/nearest/nearest, lodMaxClamp 32, no label) rather than what
+	// the driver was actually asked for. Snapshot the values at call time.
+	function snapshotDescriptor(descriptor) {
+		if (descriptor == null || typeof descriptor !== 'object') return {};
+		const out = {};
+		for (const key of Object.keys(descriptor)) {
+			const value = descriptor[key];
+			out[key] = Array.isArray(value) ? value.slice() : value;
+		}
+		return out;
+	}
+
 	function decodeTextureUsage(usage) {
 		const flags = {
 			COPY_SRC: 0x01, COPY_DST: 0x02, TEXTURE_BINDING: 0x04,
@@ -413,9 +429,10 @@ const SPY_SCRIPT = String.raw`
 		const origCreateSampler = device.createSampler.bind(device);
 		device.createSampler = function (descriptor) {
 			const sampler = origCreateSampler(descriptor || {});
-			const id = assignId(sampler, (descriptor && descriptor.label) ?? null);
-			dump.samplers.push({ id, label: (descriptor && descriptor.label) ?? null, desc: descriptor || {} });
-			logOrder('createSampler', { id, label: (descriptor && descriptor.label) ?? null });
+			const desc = snapshotDescriptor(descriptor);
+			const id = assignId(sampler, desc.label ?? null);
+			dump.samplers.push({ id, label: desc.label ?? null, desc });
+			logOrder('createSampler', { id, label: desc.label ?? null });
 			return sampler;
 		};
 
