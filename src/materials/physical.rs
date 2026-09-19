@@ -269,10 +269,12 @@ fn dfg_sample(roughness_value: NodeRef, dot_nv: NodeRef) -> NodeRef {
 // PhysicalLightingModel
 // ---------------------------------------------------------------------------
 
-/// `new PhysicalLightingModel( clearcoat, sheen, … )` — the clearcoat /
-/// iridescence / transmission / anisotropy flags are all off for this ladder's
-/// materials; `sheen` is `MeshPhysicalNodeMaterial.useSheen`, which
-/// `webgpu_loader_gltf_sheen`'s fabric turns on.
+/// `new PhysicalLightingModel( clearcoat, sheen, iridescence, anisotropy,
+/// transmission, dispersion, retroreflection )`. Iridescence, dispersion and
+/// retroreflection are still off for every material the ladder builds;
+/// `sheen` is `MeshPhysicalNodeMaterial.useSheen`, which
+/// `webgpu_loader_gltf_sheen`'s fabric turns on, and clearcoat and anisotropy
+/// are the two the barn lamp turns on.
 pub struct Physical {
     /// `this.dfg` — `toConst( 'dfg' )`.
     pub dfg: NodeRef,
@@ -281,14 +283,18 @@ pub struct Physical {
     /// `this.sheen`. Every sheen branch below is gated on it, and with it
     /// false the emitted WGSL is what it was before sheen existed.
     pub sheen: bool,
+    /// `this.clearcoat` — the flag that gives the model its three clearcoat
+    /// accumulators and the extra lobe in `indirectSpecular()` / `finish()`.
+    pub clearcoat: bool,
 }
 
 impl Physical {
-    /// `PhysicalLightingModel.start()`: the DFG lookup and the direct-light
-    /// multi-scattering compensation, both `toConst` so they materialise where
-    /// they are first used — plus, with sheen, the two `vec3().toVar()`
-    /// accumulators, which three declares here and the dump shows here.
-    pub fn start(sheen: bool, out: &mut Vec<NodeRef>) -> Self {
+    /// `PhysicalLightingModel.start()`: the DFG lookup, the direct-light
+    /// multi-scattering compensation and — with sheen or clearcoat — the
+    /// lobes' accumulators. The first two are `toConst`, so they materialise
+    /// where they are first used; the accumulators are `toVar` and so land
+    /// here.
+    pub fn start(sheen: bool, clearcoat: bool, out: &mut Vec<NodeRef>) -> Self {
         if sheen {
             out.push(sheen_specular_direct().assign(vec3(0.0, 0.0, 0.0)));
             out.push(sheen_specular_indirect().assign(vec3(0.0, 0.0, 0.0)));
@@ -303,15 +309,24 @@ impl Physical {
             .mul(ess.reciprocal().sub(1.0))
             .add(1.0);
 
+        if clearcoat {
+            out.push(clearcoat_radiance().assign(vec3(0.0, 0.0, 0.0)));
+            out.push(clearcoat_specular_direct().assign(vec3(0.0, 0.0, 0.0)));
+            out.push(clearcoat_specular_indirect().assign(vec3(0.0, 0.0, 0.0)));
+        }
+
         Self {
             dfg,
             multi_scattering_compensation,
             sheen,
+            clearcoat,
         }
     }
 
     /// `PhysicalLightingModel.finish()` — the sheen lobe is added to the
-    /// outgoing light after `setupLighting()` has summed the four accumulators.
+    /// outgoing light after `setupLighting()` has summed the four
+    /// accumulators, and the clearcoat branch then attenuates that base lobe
+    /// by the coat's Fresnel and adds the coat's own specular on top.
     pub fn finish(&self, out: &mut Vec<NodeRef>) {
         if self.sheen {
             out.push(
@@ -322,6 +337,33 @@ impl Physical {
                 ),
             );
         }
+
+        if self.clearcoat {
+            let dot_nvcc = clearcoat_normal_view()
+                .dot(position_view_direction())
+                .clamp(0.0, 1.0);
+            let fcc = phong::f_schlick(vec3(0.04, 0.04, 0.04), float(1.0), dot_nvcc);
+            let value = outgoing_light().mul(clearcoat().mul(fcc).one_minus()).add(
+                clearcoat_specular_direct()
+                    .add(clearcoat_specular_indirect())
+                    .mul(clearcoat()),
+            );
+            out.push(outgoing_light().assign(value));
+        }
+    }
+
+    /// `EnvironmentBRDF( { dotNV, specularColor, specularF90, roughness } )` —
+    /// the split-sum approximation over the DFG table.
+    fn environment_brdf(
+        dot_nv: NodeRef,
+        specular_color_value: NodeRef,
+        specular_f90_value: NodeRef,
+        roughness_value: NodeRef,
+    ) -> NodeRef {
+        let fab = dfg_sample(roughness_value, dot_nv);
+        specular_color_value
+            .mul(fab.x())
+            .add(specular_f90_value.mul(fab.y()))
     }
 
     /// `computeMultiscattering( singleScatter, multiScatter, specularF90, f0 )`
@@ -489,6 +531,21 @@ impl Physical {
             );
         }
 
+        if self.clearcoat {
+            let dot_nvcc = clearcoat_normal_view()
+                .dot(position_view_direction())
+                .clamp(0.0, 1.0);
+            let clearcoat_env = Self::environment_brdf(
+                dot_nvcc,
+                vec3(0.04, 0.04, 0.04),
+                float(1.0),
+                clearcoat_roughness(),
+            );
+            out.push(clearcoat_specular_indirect().assign(
+                clearcoat_specular_indirect().add(clearcoat_radiance().mul(clearcoat_env)),
+            ));
+        }
+
         out.push(single_scattering_dielectric().assign(vec3(0.0, 0.0, 0.0)));
         out.push(multi_scattering_dielectric().assign(vec3(0.0, 0.0, 0.0)));
         out.push(single_scattering_metallic().assign(vec3(0.0, 0.0, 0.0)));
@@ -575,6 +632,13 @@ impl Physical {
             out.push(
                 sheen_specular_indirect()
                     .assign(sheen_specular_indirect().mul(ambient_occlusion())),
+            );
+        }
+
+        if self.clearcoat {
+            out.push(
+                clearcoat_specular_indirect()
+                    .assign(clearcoat_specular_indirect().mul(ambient_occlusion())),
             );
         }
 

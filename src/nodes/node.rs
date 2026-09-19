@@ -152,6 +152,14 @@ pub enum UniformSource {
     MaterialSpecular,
     MaterialEmissive,
     MaterialEmissiveIntensity,
+    /// `materialAnisotropyVector` — `MeshPhysicalMaterial.anisotropy` and
+    /// `.anisotropyRotation` as one `vec2( a * cos( r ), a * sin( r ) )`.
+    MaterialAnisotropyVector,
+    /// `MeshPhysicalMaterial.clearcoat` / `.clearcoatRoughness` /
+    /// `.clearcoatNormalScale`.
+    MaterialClearcoat,
+    MaterialClearcoatRoughness,
+    MaterialClearcoatNormalScale,
     /// `materialEnvRotation` — the env map's rotation matrix.
     EnvRotationMatrix,
     BackgroundRotation,

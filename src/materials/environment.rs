@@ -8,9 +8,9 @@
 
 use crate::nodes::pmrem_utils::{texture_cube_uv, CubeUvSize};
 use crate::nodes::tsl::{
-    camera_world_matrix, float, material_env_intensity, material_env_rotation, mix, normal_view,
-    normal_world, position_view_direction, reflect, roughness, transform_direction, vec3_join,
-    vec4_join,
+    bent_normal_view, camera_world_matrix, clearcoat_normal_view, clearcoat_roughness, float,
+    material_env_intensity, material_env_rotation, mix, normal_view, normal_world,
+    position_view_direction, reflect, roughness, transform_direction, vec3_join, vec4_join,
 };
 use crate::nodes::NodeRef;
 use crate::textures::Texture;
@@ -62,9 +62,15 @@ impl PmremHandle {
 /// "Mixing the reflection with the normal is more accurate and keeps rough
 /// objects from gathering light from behind their tangent plane" — three's
 /// comment for the `pow4( roughness )` mix.
-fn reflect_vector() -> NodeRef {
-    let reflect_vec = reflect(position_view_direction().negate(), normal_view());
-    let reflect_vec = mix(reflect_vec, normal_view(), pow4(roughness())).normalize();
+/// `createRadianceContext( roughness, normalView )`'s reflect vector over an
+/// arbitrary normal — the anisotropic bent normal, or the clearcoat one.
+fn reflect_vector_of(normal: NodeRef) -> NodeRef {
+    reflect_vector_of_roughness(normal, roughness())
+}
+
+fn reflect_vector_of_roughness(normal: NodeRef, roughness_value: NodeRef) -> NodeRef {
+    let reflect_vec = reflect(position_view_direction().negate(), normal.clone());
+    let reflect_vec = mix(reflect_vec, normal, pow4(roughness_value)).normalize();
     transform_direction(camera_world_matrix(), reflect_vec)
 }
 
@@ -81,13 +87,19 @@ fn pow4(x: NodeRef) -> NodeRef {
 /// declared at their first use, which is here and not in `indirectSpecular` —
 /// so this function owns them, and `PhysicalLightingModel::indirect_specular`
 /// only writes them when there is no environment.
-pub fn setup(env: &PmremHandle, out: &mut Vec<NodeRef>) {
+pub fn setup(env: &PmremHandle, anisotropy: bool, clearcoat: bool, out: &mut Vec<NodeRef>) {
     let radiance_prop = crate::nodes::tsl::radiance();
     let ibl_prop = crate::nodes::tsl::ibl_irradiance();
 
     out.push(radiance_prop.assign(crate::nodes::tsl::vec3(0.0, 0.0, 0.0)));
+    // `const radianceNormalView = useAnisotropy ? bentNormalView : normalView`.
+    let radiance_normal = if anisotropy {
+        bent_normal_view()
+    } else {
+        normal_view()
+    };
     let radiance = env
-        .sample(reflect_vector(), roughness())
+        .sample(reflect_vector_of(radiance_normal), roughness())
         .mul(material_env_intensity());
     out.push(radiance_prop.assign(radiance_prop.add(radiance)));
 
@@ -99,4 +111,18 @@ pub fn setup(env: &PmremHandle, out: &mut Vec<NodeRef>) {
         .mul(float(std::f64::consts::PI))
         .mul(material_env_intensity());
     out.push(ibl_prop.assign(ibl_prop.add(irradiance)));
+
+    // `EnvironmentNode`'s third `addAssign`, present only when the lighting
+    // model has a clearcoat lobe: the same radiance context over the coat's
+    // normal and roughness.
+    if clearcoat {
+        let clearcoat_prop = crate::nodes::tsl::clearcoat_radiance();
+        let radiance = env
+            .sample(
+                reflect_vector_of_roughness(clearcoat_normal_view(), clearcoat_roughness()),
+                clearcoat_roughness(),
+            )
+            .mul(material_env_intensity());
+        out.push(clearcoat_prop.assign(clearcoat_prop.add(radiance)));
+    }
 }

@@ -468,6 +468,13 @@ pub struct UniformContext<'a> {
     pub material_sheen_color: Color,
     pub material_sheen_roughness: f64,
     pub material_normal_scale: Vector2,
+    /// `MeshPhysicalMaterial.anisotropy` / `.anisotropyRotation` /
+    /// `.clearcoat` / `.clearcoatRoughness` / `.clearcoatNormalScale`.
+    pub material_anisotropy: f64,
+    pub material_anisotropy_rotation: f64,
+    pub material_clearcoat: f64,
+    pub material_clearcoat_roughness: f64,
+    pub material_clearcoat_normal_scale: Vector2,
     pub env_rotation: Matrix4,
     /// `material.envMapIntensity` — 1 on every material this rung builds.
     pub material_env_intensity: f64,
@@ -534,6 +541,11 @@ impl Default for UniformContext<'_> {
             material_sheen_color: Color::new(0.0, 0.0, 0.0),
             material_sheen_roughness: 1.0,
             material_normal_scale: Vector2::new(1.0, 1.0),
+            material_anisotropy: 0.0,
+            material_anisotropy_rotation: 0.0,
+            material_clearcoat: 0.0,
+            material_clearcoat_roughness: 0.0,
+            material_clearcoat_normal_scale: Vector2::new(1.0, 1.0),
             env_rotation: Matrix4::identity(),
             material_env_intensity: 1.0,
             material_ao_map_intensity: 1.0,
@@ -636,6 +648,20 @@ impl UniformContext<'_> {
                 UniformSource::MaterialNormalScale => vec![
                     self.material_normal_scale.x as f32,
                     self.material_normal_scale.y as f32,
+                ],
+                // `MaterialProperties.js`: `materialAnisotropyVector` is set
+                // from the pair, not carried as two uniforms.
+                UniformSource::MaterialAnisotropyVector => vec![
+                    (self.material_anisotropy * self.material_anisotropy_rotation.cos()) as f32,
+                    (self.material_anisotropy * self.material_anisotropy_rotation.sin()) as f32,
+                ],
+                UniformSource::MaterialClearcoat => vec![self.material_clearcoat as f32],
+                UniformSource::MaterialClearcoatRoughness => {
+                    vec![self.material_clearcoat_roughness as f32]
+                }
+                UniformSource::MaterialClearcoatNormalScale => vec![
+                    self.material_clearcoat_normal_scale.x as f32,
+                    self.material_clearcoat_normal_scale.y as f32,
                 ],
                 UniformSource::EnvRotationMatrix => self.env_rotation.to_f32_array().to_vec(),
                 UniformSource::BackgroundRotation => {

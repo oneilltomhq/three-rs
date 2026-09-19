@@ -1710,6 +1710,48 @@ fn main() {
         },
     );
 
+    // rung `webgpu_loader_gltf_anisotropy`: AnisotropyBarnLamp's three
+    // materials, against `dump-aniso/m08` (filament), `m10` (metal) and `m12`
+    // (glass). The metal is the interesting one — a `TANGENT` attribute, an
+    // anisotropy map, a clearcoat with its own normal map, and a PMREM
+    // environment whose radiance rides the bent normal.
+    let mut lamp_metal = MeshBasicNodeMaterial::physical(Color::new(1.0, 1.0, 1.0), 1.0, 1.0);
+    lamp_metal.name = "lamp metal";
+    lamp_metal.map = Some(map());
+    let metal_roughness = map();
+    lamp_metal.metalness_map = Some(metal_roughness.clone());
+    lamp_metal.roughness_map = Some(metal_roughness.clone());
+    lamp_metal.ao_map = Some(metal_roughness);
+    let normal = map();
+    lamp_metal.normal_map = Some(normal.clone());
+    lamp_metal.clearcoat_normal_map = Some(normal);
+    lamp_metal.anisotropy = 0.75;
+    lamp_metal.anisotropy_map = Some(map());
+    lamp_metal.clearcoat = 0.25;
+    lamp_metal.clearcoat_roughness = 0.15;
+    show(
+        "loader_gltf_anisotropy_metal",
+        &lamp_metal,
+        SetupContext {
+            environment: Some(environment.handle()),
+            has_tangent_attribute: true,
+            ..SetupContext::default()
+        },
+    );
+
+    let mut lamp_filament = MeshBasicNodeMaterial::standard(Color::new(0.09, 0.09, 0.09), 0.7, 0.0);
+    lamp_filament.name = "lamp filament";
+    lamp_filament.emissive = Color::new(1.0, 0.5, 0.25);
+    lamp_filament.emissive_intensity = 25.0;
+    show(
+        "loader_gltf_anisotropy_filament",
+        &lamp_filament,
+        SetupContext {
+            environment: Some(environment.handle()),
+            ..SetupContext::default()
+        },
+    );
+
     // `dump-gltf/m04`: the cube skybox with no MRT — `scene.background` at
     // `backgroundBlurriness` 0, so the sharp cube and not a PMREM read.
     let mut gltf_background = MeshBasicNodeMaterial::new();

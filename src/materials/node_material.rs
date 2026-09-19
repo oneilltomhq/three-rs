@@ -371,8 +371,21 @@ fn setup_overridden(
         MaterialKind::Points => Some(setup_position_view_points(material)),
         _ => None,
     };
+    // `MeshPhysicalNodeMaterial.setup()`'s
+    // `builder.context.setupClearcoatNormal = () => subBuild( …, 'NORMAL' )`.
+    // `MaterialNode.CLEARCOAT_NORMAL` is the clearcoat normal map through the
+    // same `NORMAL` sub-build the base normal map uses, which is why the two
+    // share one `NORMAL_TBNViewMatrix` in the dump.
+    let clearcoat_normal = with_material_side(material.side, || {
+        material
+            .clearcoat_normal_map
+            .as_ref()
+            .map(|map| normal_map_scaled(texture(map), material_clearcoat_normal_scale()))
+    });
     with_material_normal(normal, material.flat_shading, material.side, || {
-        with_material_position_view(position_view, || setup_inner(material, ctx, fog))
+        with_clearcoat_normal(clearcoat_normal, || {
+            with_material_position_view(position_view, || setup_inner(material, ctx, fog))
+        })
     })
 }
 
@@ -1114,7 +1127,20 @@ fn setup_standard(
     fragment
         .push(diffuse_contribution().assign(diffuse_color().rgb().mul(metalness_node.one_minus())));
 
-    // `MeshPhysicalNodeMaterial.setupVariants()`' SHEEN block, gated on
+    // `MeshPhysicalNodeMaterial.setupVariants()`, after
+    // `MeshStandardNodeMaterial`'s: clearcoat first, then anisotropy.
+    let use_clearcoat = material.kind == MaterialKind::Physical && material.clearcoat > 0.0;
+    let use_anisotropy = material.kind == MaterialKind::Physical && material.anisotropy > 0.0;
+
+    if use_clearcoat {
+        fragment.push(clearcoat().assign(material_clearcoat()));
+        fragment.push(clearcoat_roughness().assign(physical::get_roughness(
+            material_clearcoat_roughness(),
+            !ctx.geometry_missing_normal,
+        )));
+    }
+
+    // `setupVariants()`' SHEEN block, gated on
     // `useSheen` — `this.sheen > 0`. `MaterialNode.SHEEN` is `sheenColor.mul(
     // sheen )` with the multiply left in the shader, and
     // `MaterialNode.SHEEN_ROUGHNESS` clamps to `[ 0.0001, 1 ]` so `1 / alpha`
@@ -1123,6 +1149,66 @@ fn setup_standard(
     if use_sheen {
         fragment.push(sheen().assign(material_sheen_color().mul(material_sheen())));
         fragment.push(sheen_roughness().assign(material_sheen_roughness().clamp(0.0001, 1.0)));
+    }
+
+    if use_anisotropy {
+        // `materialAnisotropy` — `MaterialNode.ANISOTROPY`. With a map the
+        // vector is the map's polar direction rotated by the material's, scaled
+        // by the map's blue channel; without one it is the uniform itself.
+        let anisotropy_v = match &material.anisotropy_map {
+            Some(map) => {
+                let polar = texture(map);
+                let v = material_anisotropy_vector();
+                let rotation = join(
+                    Type::Mat2,
+                    vec![v.clone().x(), v.clone().y(), v.clone().y().negate(), v.x()],
+                );
+                rotation.mul(
+                    polar
+                        .clone()
+                        .xy()
+                        .mul(2.0)
+                        .sub(vec2(1.0, 1.0))
+                        .normalize()
+                        .mul(polar.z()),
+                )
+            }
+            None => material_anisotropy_vector(),
+        };
+        let anisotropy_v = to_var(None, anisotropy_v);
+
+        fragment.push(anisotropy().assign(length(anisotropy_v.clone())));
+        fragment.push(if_else(
+            anisotropy().equal(float(0.0)),
+            vec![anisotropy_v.assign(vec2(1.0, 0.0))],
+            vec![
+                anisotropy_v.assign(anisotropy_v.div(anisotropy())),
+                anisotropy().assign(anisotropy().clamp(0.0, 1.0)),
+            ],
+        ));
+        // Roughness along the anisotropy bitangent is the material roughness;
+        // along the tangent it grows with anisotropy.
+        fragment.push(alpha_t().assign(mix(
+            roughness().mul(roughness()),
+            float(1.0),
+            anisotropy().mul(anisotropy()),
+        )));
+        fragment.push(
+            anisotropy_t().assign(
+                tbn_view_matrix()
+                    .element(0)
+                    .mul(anisotropy_v.clone().x())
+                    .add(tbn_view_matrix().element(1).mul(anisotropy_v.clone().y())),
+            ),
+        );
+        fragment.push(
+            anisotropy_b().assign(
+                tbn_view_matrix()
+                    .element(1)
+                    .mul(anisotropy_v.clone().x())
+                    .sub(tbn_view_matrix().element(0).mul(anisotropy_v.y())),
+            ),
+        );
     }
 
     fragment.push(emissive_color().assign(material_emissive_value(material)));
@@ -1147,7 +1233,7 @@ fn setup_standard(
     };
 
     let outgoing = if scene_lighting && (environment.is_some() || !lights.is_empty()) {
-        let model = Physical::start(use_sheen, fragment);
+        let model = Physical::start(use_sheen, use_clearcoat, fragment);
 
         // `LightingContextNode`'s five accumulators. three.js declares each at
         // the point of its first use; hoisting the zeros here is the one
@@ -1173,7 +1259,7 @@ fn setup_standard(
         // between `indirectDiffuse()` and `indirectSpecular()` — and with them
         // the declarations of `radiance` and `iblIrradiance`.
         if let Some(environment) = environment {
-            environment::setup(environment, fragment);
+            environment::setup(environment, use_anisotropy, use_clearcoat, fragment);
         }
         // `AONode( context.ambientOcclusion )`, the last entry
         // `setupLightsNode()` pushes: `ambientOcclusion.mulAssign( aoNode )`,
@@ -1191,7 +1277,9 @@ fn setup_standard(
         fragment.push(total_diffuse().assign(direct_diffuse().add(indirect_diffuse())));
         fragment.push(total_specular().assign(direct_specular().add(indirect_specular())));
         fragment.push(outgoing_light().assign(total_diffuse().add(total_specular())));
-        // `LightingModel.finish()` — the sheen lobe, added last.
+        // `LightingModel.finish()`, which `NodeMaterial.setupLighting()` runs
+        // last: the sheen lobe and the clearcoat lobe's Fresnel blend over
+        // `outgoingLight`.
         model.finish(fragment);
         outgoing_light()
     } else {

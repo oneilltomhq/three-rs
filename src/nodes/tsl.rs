@@ -1039,6 +1039,48 @@ pub fn material_sheen_roughness() -> NodeRef {
 }
 
 /// `materialNormalScale` — a `vec2`.
+/// `materialAnisotropyVector` — `vec2( anisotropy * cos( anisotropyRotation ),
+/// anisotropy * sin( anisotropyRotation ) )`, which three keeps as one uniform
+/// (`MaterialProperties.js` updates it from the two material fields).
+pub fn material_anisotropy_vector() -> NodeRef {
+    uniform(
+        UniformSource::MaterialAnisotropyVector,
+        Type::Vec2,
+        UniformGroup::Object,
+        None,
+    )
+}
+
+/// `materialClearcoat`.
+pub fn material_clearcoat() -> NodeRef {
+    uniform(
+        UniformSource::MaterialClearcoat,
+        Type::F32,
+        UniformGroup::Object,
+        None,
+    )
+}
+
+/// `materialClearcoatRoughness`.
+pub fn material_clearcoat_roughness() -> NodeRef {
+    uniform(
+        UniformSource::MaterialClearcoatRoughness,
+        Type::F32,
+        UniformGroup::Object,
+        None,
+    )
+}
+
+/// `materialClearcoatNormalScale`.
+pub fn material_clearcoat_normal_scale() -> NodeRef {
+    uniform(
+        UniformSource::MaterialClearcoatNormalScale,
+        Type::Vec2,
+        UniformGroup::Object,
+        None,
+    )
+}
+
 pub fn material_normal_scale() -> NodeRef {
     uniform(
         UniformSource::MaterialNormalScale,
@@ -2174,13 +2216,22 @@ fn tangent_attribute_frame() -> (NodeRef, NodeRef) {
         }
     };
 
-    let tangent = to_varying(
-        Some("v_tangentView"),
-        model_view_matrix()
-            .mul(vec4_join(vec![tangent_local, float(0.0)]))
-            .xyz(),
-    )
-    .normalize();
+    // One varying for both layers: three creates it in the shared `VERTEX`
+    // sub-build, so the `NORMAL` layer reads the same `v_tangentView` rather
+    // than declaring a prefixed one of its own.
+    thread_local! { static TANGENT_VARYING: Lazy<NodeRef> = const { Lazy::new() }; }
+    let tangent = TANGENT_VARYING
+        .with(|c| {
+            c.get(|| {
+                to_varying(
+                    Some("v_tangentView"),
+                    model_view_matrix()
+                        .mul(vec4_join(vec![tangent_local, float(0.0)]))
+                        .xyz(),
+                )
+            })
+        })
+        .normalize();
     let tangent_view = to_var(Some("tangentView"), front_side(tangent));
 
     // `getBitangent( normalView.cross( tangentView ), 'v_bitangentView' )`.
@@ -2357,6 +2408,84 @@ prop!(
     "multiScatteringMetallic",
     Type::Vec3
 );
+
+// `MeshPhysicalNodeMaterial.setupVariants()`' anisotropy and clearcoat
+// properties.
+prop!(anisotropy, "Anisotropy", Type::F32);
+prop!(alpha_t, "AlphaT", Type::F32);
+prop!(anisotropy_t, "AnisotropyT", Type::Vec3);
+prop!(anisotropy_b, "AnisotropyB", Type::Vec3);
+prop!(clearcoat, "Clearcoat", Type::F32);
+prop!(clearcoat_roughness, "ClearcoatRoughness", Type::F32);
+
+// `PhysicalLightingModel.start()`'s clearcoat accumulators — vars, like the
+// lighting context's, so their zeros land at the first read.
+lighting_var!(clearcoat_radiance, "clearcoatRadiance", vec3(0.0, 0.0, 0.0));
+lighting_var!(
+    clearcoat_specular_direct,
+    "clearcoatSpecularDirect",
+    vec3(0.0, 0.0, 0.0)
+);
+lighting_var!(
+    clearcoat_specular_indirect,
+    "clearcoatSpecularIndirect",
+    vec3(0.0, 0.0, 0.0)
+);
+
+thread_local! {
+    /// `builder.context.setupClearcoatNormal()` — the clearcoat lobe's normal
+    /// for the material being set up, the clearcoat twin of `NORMAL_VALUE`.
+    static CLEARCOAT_NORMAL_VALUE: RefCell<Option<NodeRef>> = const { RefCell::new(None) };
+    static CLEARCOAT_NORMAL_VIEW: RefCell<HashMap<Option<usize>, NodeRef>> =
+        RefCell::new(HashMap::new());
+}
+
+/// Install the material's clearcoat normal node for the duration of `f` —
+/// `MeshPhysicalNodeMaterial.setup()`'s `builder.context.setupClearcoatNormal`.
+pub fn with_clearcoat_normal<R>(normal: Option<NodeRef>, f: impl FnOnce() -> R) -> R {
+    let previous = CLEARCOAT_NORMAL_VALUE.with(|v| v.replace(normal));
+    let out = f();
+    CLEARCOAT_NORMAL_VALUE.with(|v| *v.borrow_mut() = previous);
+    out
+}
+
+/// `clearcoatNormalView` — `Normal.js`' var, whose value is the material's
+/// clearcoat normal map through the `NORMAL` sub-build, or `normalView` when
+/// the material has none.
+pub fn clearcoat_normal_view() -> NodeRef {
+    let value = CLEARCOAT_NORMAL_VALUE.with(|v| v.borrow().clone());
+    let key = value.as_ref().map(|v| v.key());
+    if let Some(node) = CLEARCOAT_NORMAL_VIEW.with(|m| m.borrow().get(&key).cloned()) {
+        return node;
+    }
+    let node = to_var(
+        Some("clearcoatNormalView"),
+        value.unwrap_or_else(normal_view),
+    );
+    CLEARCOAT_NORMAL_VIEW.with(|m| m.borrow_mut().insert(key, node.clone()));
+    node
+}
+
+/// `AccessorsUtils.js`' `bentNormalView` — Filament's anisotropic bent normal,
+/// the reflection normal an anisotropic surface uses for IBL radiance:
+///
+/// ```text
+/// bentNormal = normalize( cross( cross( anisotropyB, V ), anisotropyB ) )
+/// bentNormal = normalize( mix( bentNormal, normalView,
+///                              pow4( 1 - anisotropy * ( 1 - roughness ) ) ) )
+/// ```
+pub fn bent_normal_view() -> NodeRef {
+    let bent = cross(
+        cross(anisotropy_b(), position_view_direction()),
+        anisotropy_b(),
+    )
+    .normalize();
+    // `anisotropy.mul( roughness.oneMinus() ).oneMinus().pow2().pow2()` — two
+    // squarings, so the base is a var read twice and the square again.
+    let base = to_var(None, anisotropy().mul(roughness().one_minus()).one_minus());
+    let squared = to_var(None, base.clone().mul(base));
+    mix(bent, normal_view(), squared.clone().mul(squared)).normalize()
+}
 
 // ---------------------------------------------------------------------------
 // textures
