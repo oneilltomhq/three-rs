@@ -245,6 +245,12 @@ pub struct MeshBasicNodeMaterial {
     pub metalness: f64,
     pub roughness: f64,
     pub map: Option<Texture>,
+    /// `Material.alphaMap` — `MaterialNode.OPACITY`'s
+    /// `materialOpacity.mul( texture( alphaMap ) )`. The product is a `vec4`
+    /// and the scope's node type is `float`, so three narrows it to the *red*
+    /// channel; the port does the same (`docs/nodes.md` §29). A program
+    /// dependency: set `needs_update` after changing it.
+    pub alpha_map: Option<Texture>,
     /// `Material.vertexColors` — `setupDiffuseColor()` multiplies the diffuse
     /// colour by `vertexColor()`, so one `LineSegments` (or one mesh) can carry
     /// a colour per vertex instead of one per draw call. The geometry needs a
@@ -439,6 +445,7 @@ impl Default for MeshBasicNodeMaterial {
             metalness: 0.0,
             roughness: 1.0,
             map: None,
+            alpha_map: None,
             vertex_colors: false,
             roughness_map: None,
             metalness_map: None,

@@ -207,6 +207,19 @@ fn to_vec4(node: NodeRef) -> NodeRef {
 /// textured on exactly the same terms as a Standard one. A `colorNode`
 /// replaces the pair outright, map included —
 /// `this.colorNode ? vec4( this.colorNode ) : materialColor`.
+/// `MaterialNode.OPACITY` — `materialOpacity`, times the alpha map's texel
+/// when the material has one (`MaterialNode.js:140`). The multiply is a
+/// `float * vec4`, so it is a `vec4`, and the scope's node type is `float`:
+/// three converts it back by taking the first component, which is why an
+/// `alphaMap` is read through its **red** channel on the WebGPU path (the
+/// WebGL renderer reads `.g`). Reproduced deliberately — `docs/nodes.md` §29.
+fn material_opacity_with_map(material: &MeshBasicNodeMaterial) -> NodeRef {
+    match &material.alpha_map {
+        Some(alpha_map) => to_float(material_opacity().mul(texture(alpha_map))),
+        None => material_opacity(),
+    }
+}
+
 fn setup_diffuse_color(
     material: &MeshBasicNodeMaterial,
     ctx: &SetupContext,
@@ -266,7 +279,7 @@ fn setup_diffuse_color(
     // so a material with an `opacityNode` never reads `material.opacity`.
     let opacity = match &material.opacity_node {
         Some(node) => to_float(node.clone()),
-        None => material_opacity(),
+        None => material_opacity_with_map(material),
     };
     fragment.push(diffuse_color().w().assign(diffuse_color().w().mul(opacity)));
 
