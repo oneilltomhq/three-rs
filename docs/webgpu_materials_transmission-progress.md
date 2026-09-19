@@ -141,10 +141,33 @@ are read from a mip chain at a roughness-driven level:
   not transmission.
 
 The port's PMREM is not exact either (`webgpu_pmrem_test` is 27 px, and there
-the environment is not magnified by a mirror sphere), so the two candidates
-cannot be separated from this frame alone. Rendering the same scene with
-`transmission` at 0 and at 1 and differencing is the experiment that separates
-them; it was not run.
+the environment is not magnified by a mirror sphere), so the two had to be
+separated by experiment: render the same scene with `transmission` at 0 (the
+one-line change, not committed) and difference both renders against three's
+frame over the striped region.
+
+| over the opaque stripes, x 288–500 | mean abs diff | px > 24/255 |
+| --- | --- | --- |
+| ours at `transmission` 1 vs three | 6.75 | 1241 |
+| ours at `transmission` 0 vs three | 72.14 | 18024 |
+| ours at 1 vs ours at 0 | 75.02 | 18077 |
+| *left limb only (x 288–360)*, ours at 1 vs ours at 0 | 78.81 | 5763 |
+
+**The transmitted term dominates the crescent**, by 78/255 against a residual of
+11/255 there — the Fresnel argument above is wrong, `( 1 - F )` does not kill
+the transmission at this incidence. So the error is in the transmitted term,
+not in the PMREM radiance.
+
+Inside that term, the level asked for is right: `applyIorToRoughness` is
+byte-identical to three's (`roughness * clamp( ior * 2 - 2, 0, 1 )`), and so is
+the whole `Roughness` line, `min( max( materialRoughness, 0.0525 ) + max(
+max( g.x, g.y ), g.z ), 1.0 )` over the same
+`max( abs( dpdx( normalViewGeometry ) ), abs( -dpdy( normalViewGeometry ) ) )`.
+The port asks for three's LOD and gets back something ~4% softer, so what
+differs is the **content of the opaque copy's mip levels**, not the shader, the
+level, or the reflection. (Three's sampler descriptors in `dump.json` cannot
+settle the sampler question: three reuses and resets one descriptor object, so
+all five come out as nearest/nearest/nearest, which the PMREM read disproves.)
 
 ## What was ruled out
 
