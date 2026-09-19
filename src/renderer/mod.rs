@@ -26,7 +26,7 @@ use programs::{ComputeProgramGpu, PipelineKey, Program};
 pub use programs::{LightState, RenderState, UniformContext};
 pub use render_list::{project_object, ProjectCamera, RenderItem, RenderList};
 pub use render_pipeline::RenderPipeline;
-pub use render_target::{RenderTarget, RenderTargetInner, RenderTargetOptions};
+pub use render_target::{RenderTarget, RenderTargetInner, RenderTargetOptions, OUTPUT_ATTACHMENT};
 pub use ssaa_pass::SsaaPassNode;
 
 use crate::cameras::{OrthographicCamera, PerspectiveCamera, RenderCamera};
@@ -35,7 +35,7 @@ use crate::error::Error;
 use crate::geometries::{quad_geometry, sphere_geometry};
 use crate::lights::{LightKind, LightObject, CUBE_DIRECTIONS, CUBE_UPS};
 use crate::materials::phong::{LightDesc, ShadowMap};
-use crate::materials::{self, MeshBasicNodeMaterial, SetupContext, Side, ToneMapping};
+use crate::materials::{self, MeshBasicNodeMaterial, MrtContext, SetupContext, Side, ToneMapping};
 use crate::math::{Color, Matrix4, Vector2, Vector4};
 use crate::nodes::builder::VertexBufferSource;
 use crate::nodes::node::{BufferSource, TextureSource};
@@ -330,6 +330,12 @@ struct Texture2DEntry {
 /// The attachments, formats and size of the pass about to run.
 struct PassTarget {
     color: wgpu::TextureView,
+    /// The MRT colour attachments past the first, in
+    /// `renderTarget.textures` order — so an attachment's position here is the
+    /// `@location` the fragment stage writes it from. Empty for every
+    /// single-attachment pass, which is every pass before
+    /// `webgpu_postprocessing_bloom_selective`.
+    extra_colors: Vec<wgpu::TextureView>,
     resolve: Option<wgpu::TextureView>,
     depth: Option<wgpu::TextureView>,
     color_format: wgpu::TextureFormat,
@@ -484,6 +490,11 @@ pub struct Renderer {
 
     canvas: Option<CanvasTarget>,
     render_target: Option<RenderTarget>,
+    /// `Renderer._mrt` — the MRT configuration the *pass* sets, which
+    /// `NodeMaterial.setup()` merges each material's own `mrtNode` over.
+    /// `PassNode::render` sets it from its own `set_mrt` and restores it after,
+    /// exactly as `PassNode.updateBefore()` does.
+    mrt: Option<crate::nodes::MrtNode>,
     /// `Renderer._frameBufferTargets`: the internal render target the scene is
     /// drawn into whenever the output needs a colour-space conversion or tone
     /// mapping, keyed in three.js by the canvas target — the port has exactly
@@ -741,6 +752,7 @@ impl Renderer {
             sort_objects: true,
             canvas: None,
             render_target: None,
+            mrt: None,
             frame_buffer_target: None,
             output_buffer_type: TextureType::HalfFloat,
             mipmap_shader,
@@ -877,6 +889,18 @@ impl Renderer {
     /// `renderer.setRenderTarget( target )`.
     pub fn set_render_target(&mut self, render_target: Option<RenderTarget>) {
         self.render_target = render_target;
+    }
+
+    /// `renderer.setMRT( mrt )`. Read by the next `render()` into a render
+    /// target, and ignored for a canvas render — three.js guards its whole MRT
+    /// branch on `renderTarget !== null`.
+    pub fn set_mrt(&mut self, mrt: Option<crate::nodes::MrtNode>) {
+        self.mrt = mrt;
+    }
+
+    /// `renderer.getMRT()`.
+    pub fn mrt(&self) -> Option<crate::nodes::MrtNode> {
+        self.mrt.clone()
     }
 
     /// `renderer.setClearColor( color, alpha )`. The colour is already in the
@@ -1092,6 +1116,18 @@ impl Renderer {
             }
         }
 
+        // `NodeMaterial.setup()`'s MRT branch runs only `if ( renderTarget !==
+        // null )`, so it is a property of the *pass*, not of the object:
+        // resolved once here, from the MRT the caller set and the attachment
+        // names of the target being rendered into.
+        let mrt_context = match (&self.render_target, &self.mrt) {
+            (Some(render_target), Some(node)) => Some(MrtContext {
+                node: node.clone(),
+                attachments: render_target.attachment_names(),
+            }),
+            _ => None,
+        };
+
         for item in render_list.items() {
             let object = item.node.borrow();
             // `renderItem.geometry` / `renderItem.material` — a `Mesh`, an
@@ -1190,6 +1226,7 @@ impl Renderer {
                     skin: skin.as_ref().map(|s| s.0),
                     batch: batch.clone(),
                     line_segments: object.payload.line_segments().cloned(),
+                    mrt: mrt_context.clone(),
                 },
                 fog: scene.fog_node.clone(),
                 model_world: item.matrix_world,
@@ -1432,6 +1469,10 @@ impl Renderer {
                         // material takes the plain MVP path, which the quad
                         // geometry is not in.
                         line_segments: None,
+                        // A shadow pass renders into a depth-only target; MRT
+                        // is a colour-attachment feature and three.js's
+                        // `renderer._mrt` is null for it either way.
+                        mrt: None,
                     },
                     fog: None,
                     model_world: item.matrix_world,
@@ -1623,6 +1664,10 @@ impl Renderer {
                         // material takes the plain MVP path, which the quad
                         // geometry is not in.
                         line_segments: None,
+                        // A shadow pass renders into a depth-only target; MRT
+                        // is a colour-attachment feature and three.js's
+                        // `renderer._mrt` is null for it either way.
+                        mrt: None,
                     },
                     fog: None,
                     model_world: item.matrix_world,
@@ -1661,6 +1706,7 @@ impl Renderer {
 
             let pass_target = PassTarget {
                 color: color_view,
+                extra_colors: Vec::new(),
                 resolve: None,
                 depth: Some(depth_view),
                 color_format: wgpu::TextureFormat::Rgba8Unorm,
@@ -1914,6 +1960,7 @@ impl Renderer {
 
             let state = RenderState {
                 color_format: target.color_format,
+                color_attachments: 1 + target.extra_colors.len() as u32,
                 depth_format: target.depth_format,
                 sample_count: target.sample_count,
                 side: item.material.side,
@@ -2050,17 +2097,33 @@ impl Renderer {
                 None => wgpu::LoadOp::Load,
             };
 
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("three-rs pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &target.color,
+            // One attachment per `renderTarget.textures` entry. They share the
+            // pass's clear op: `MRTNode.clearColors` is three's per-output
+            // override and nothing on this ladder sets one.
+            let mut color_attachments = vec![Some(wgpu::RenderPassColorAttachment {
+                view: &target.color,
+                depth_slice: None,
+                resolve_target: target.resolve.as_ref(),
+                ops: wgpu::Operations {
+                    load,
+                    store: wgpu::StoreOp::Store,
+                },
+            })];
+            for view in &target.extra_colors {
+                color_attachments.push(Some(wgpu::RenderPassColorAttachment {
+                    view,
                     depth_slice: None,
-                    resolve_target: target.resolve.as_ref(),
+                    resolve_target: None,
                     ops: wgpu::Operations {
                         load,
                         store: wgpu::StoreOp::Store,
                     },
-                })],
+                }));
+            }
+
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("three-rs pass"),
+                color_attachments: &color_attachments,
                 depth_stencil_attachment: target.depth.as_ref().map(|view| {
                     wgpu::RenderPassDepthStencilAttachment {
                         view,
@@ -3839,6 +3902,15 @@ impl Renderer {
             None => (single, None),
         };
 
+        // `renderTarget.textures` past the first. MSAA and MRT never meet on
+        // this ladder — a `PassNode` with an MRT is `samples: 0` — so the extra
+        // attachments have no resolve target of their own.
+        let extra_colors: Vec<wgpu::TextureView> = inner
+            .extra_textures
+            .iter()
+            .map(|(_, texture)| texture.with_gpu(|gpu| gpu.create_view(&Default::default())))
+            .collect();
+
         let (depth, depth_format) = match (&inner.depth_texture, &inner.depth) {
             (Some(depth_texture), _) => (
                 Some(
@@ -3861,6 +3933,7 @@ impl Renderer {
 
         PassTarget {
             color,
+            extra_colors,
             resolve,
             depth,
             color_format,
@@ -3907,6 +3980,7 @@ impl Renderer {
 
         PassTarget {
             color,
+            extra_colors: Vec::new(),
             resolve,
             depth: depth.clone(),
             color_format: CANVAS_FORMAT,
@@ -4038,6 +4112,30 @@ impl Renderer {
                         | wgpu::TextureUsages::COPY_SRC,
                     view_formats: &[],
                 }));
+        }
+
+        // `renderTarget.textures` past the first: the same descriptor, one GPU
+        // texture each.
+        for (name, texture) in &inner.extra_textures {
+            if !texture.has_gpu() {
+                texture.set_gpu(self.device.create_texture(&wgpu::TextureDescriptor {
+                    label: Some("three-rs render target attachment"),
+                    size: wgpu::Extent3d {
+                        width,
+                        height,
+                        depth_or_array_layers: 1,
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format,
+                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                        | wgpu::TextureUsages::TEXTURE_BINDING
+                        | wgpu::TextureUsages::COPY_SRC,
+                    view_formats: &[],
+                }));
+                let _ = name;
+            }
         }
 
         if sample_count > 1 && inner.msaa.is_none() {

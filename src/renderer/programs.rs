@@ -14,6 +14,12 @@ use crate::nodes::{BindingDesc, NodeProgram, Type, UniformMember, UniformSource}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct RenderState {
     pub color_format: wgpu::TextureFormat,
+    /// How many colour attachments the pass has — `renderTarget.textures.length`,
+    /// 1 for everything but an MRT pass. The fragment stage declares one
+    /// `@location` per attachment, so a pipeline with the wrong count is a
+    /// validation error rather than wrong pixels; it is part of the key for the
+    /// same reason the format is.
+    pub color_attachments: u32,
     pub depth_format: Option<wgpu::TextureFormat>,
     pub sample_count: u32,
     pub side: Side,
@@ -155,6 +161,18 @@ impl Program {
             })
             .collect();
 
+        let targets: Vec<Option<wgpu::ColorTargetState>> = (0..state.color_attachments)
+            .map(|_| {
+                Some(wgpu::ColorTargetState {
+                    format: state.color_format,
+                    // `undefined` for an opaque `NormalBlending` material, which
+                    // is every rung up to 9; see `materials::blending`.
+                    blend: state.blend,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })
+            })
+            .collect();
+
         device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("three-rs pipeline"),
             layout: Some(&self.pipeline_layout),
@@ -168,13 +186,12 @@ impl Program {
                 module: &self.fragment_module,
                 entry_point: Some("main"),
                 compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: state.color_format,
-                    // `undefined` for an opaque `NormalBlending` material, which
-                    // is every rung up to 9; see `materials::blending`.
-                    blend: state.blend,
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
+                // One target per colour attachment. `MRTNode.blendModes` gives
+                // three a per-output blend — `MaterialBlending` for `output`
+                // and `NoBlending` for the rest — but every MRT material on
+                // this ladder is opaque, where both resolve to no blend state
+                // at all, so the material's own is used for each.
+                targets: &targets,
             }),
             primitive: wgpu::PrimitiveState {
                 topology: state.topology,
