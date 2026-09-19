@@ -19,7 +19,7 @@ use crate::lights::LightObject;
 use crate::materials::MeshBasicNodeMaterial;
 use crate::math::{Matrix4, Sphere};
 use crate::objects::{
-    BatchedMesh, InstancedBufferAttribute, InstancedMesh, Line, Mesh, SkinnedMesh,
+    BatchedMesh, InstancedBufferAttribute, InstancedMesh, Line, Mesh, Points, SkinnedMesh,
 };
 
 /// The subclass state of one [`crate::core::Object3D`].
@@ -47,6 +47,9 @@ pub enum Payload {
     /// `is_line_segments` flag inside. Not a `Mesh`: the renderer reads the
     /// object to pick `line-strip` / `line-list` over `triangle-list`.
     Line(Line),
+    /// `Points extends Object3D` — like `Line`, not a `Mesh`: the renderer
+    /// reads the object to pick `point-list` over `triangle-list`.
+    Points(Points),
     /// `Light extends Object3D`, one variant per subclass. The renderer reaches
     /// it through `RenderList.lights`, which `_projectObject()` fills from
     /// `object.is_light` — set alongside this variant.
@@ -70,6 +73,7 @@ impl fmt::Debug for Payload {
                     "Line"
                 }
             }
+            Payload::Points(_) => "Points",
             Payload::Light(_) => "Light",
         };
         f.write_str(name)
@@ -125,6 +129,26 @@ impl Payload {
         matches!(self, Payload::Line(line) if line.is_line_segments)
     }
 
+    /// `object.isPoints`.
+    pub fn is_points(&self) -> bool {
+        matches!(self, Payload::Points(_))
+    }
+
+    /// The `Points` this node is, if it is one.
+    pub fn points(&self) -> Option<&Points> {
+        match self {
+            Payload::Points(points) => Some(points),
+            _ => None,
+        }
+    }
+
+    pub fn points_mut(&mut self) -> Option<&mut Points> {
+        match self {
+            Payload::Points(points) => Some(points),
+            _ => None,
+        }
+    }
+
     /// The `Line` this node is, if it is one.
     pub fn line(&self) -> Option<&Line> {
         match self {
@@ -149,6 +173,7 @@ impl Payload {
             Payload::SkinnedMesh(skin) => Some(&skin.mesh.geometry),
             Payload::BatchedMesh(batched) => Some(&batched.mesh.geometry),
             Payload::Line(line) => Some(&line.geometry),
+            Payload::Points(points) => Some(&points.geometry),
             _ => None,
         }
     }
@@ -163,6 +188,7 @@ impl Payload {
             Payload::SkinnedMesh(skin) => skin.mesh.material.as_ref(),
             Payload::BatchedMesh(batched) => batched.mesh.material.as_ref(),
             Payload::Line(line) => line.material.as_ref(),
+            Payload::Points(points) => points.material.as_ref(),
             _ => None,
         }
     }
@@ -178,6 +204,7 @@ impl Payload {
     pub fn bounding_sphere_in(&self, matrix_world: &Matrix4) -> Option<Sphere> {
         match self {
             Payload::Line(line) => line.bounding_sphere_in(matrix_world),
+            Payload::Points(points) => points.bounding_sphere_in(matrix_world),
             Payload::InstancedMesh(instanced) => match instanced.bounding_sphere {
                 Some(bounding_sphere) => {
                     let mut sphere = bounding_sphere;
@@ -285,10 +312,13 @@ impl Payload {
         }
     }
 
-    /// The number of instances the renderer draws: `InstancedMesh.count`, else 1.
+    /// `RenderObject.getInstanceCount()` (`RenderObject.js:617-631`): the
+    /// instanced geometry's count, else `object.count` when the object defines
+    /// one, else 1. `Points.count` is the second arm — see [`Points::count`].
     pub fn count(&self) -> u32 {
         match self {
             Payload::InstancedMesh(instanced) => instanced.count as u32,
+            Payload::Points(points) => points.count.unwrap_or(1) as u32,
             _ => 1,
         }
     }

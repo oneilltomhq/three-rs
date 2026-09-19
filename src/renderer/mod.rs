@@ -179,11 +179,12 @@ impl Primitive {
     /// `stripIndexFormat` branch of `_getPrimitiveState()`.
     ///
     /// three.js' order is `isPoints`, then `isLineSegments || ( isMesh &&
-    /// material.wireframe )`, then `isLine`, then `isMesh`. `Points` and
-    /// `wireframe` are not in this port, so the first arm is missing and the
-    /// second is `isLineSegments` alone.
+    /// material.wireframe )`, then `isLine`, then `isMesh`. `wireframe` is not
+    /// in this port, so the second arm is `isLineSegments` alone.
     fn of(object: &crate::core::Object3D, geometry: &BufferGeometry) -> Self {
-        let topology = if object.is_line_segments() {
+        let topology = if object.is_points() {
+            wgpu::PrimitiveTopology::PointList
+        } else if object.is_line_segments() {
             wgpu::PrimitiveTopology::LineList
         } else if object.is_line() {
             wgpu::PrimitiveTopology::LineStrip
@@ -1447,6 +1448,9 @@ impl Renderer {
             bind_groups: Vec<wgpu::BindGroup>,
             instance_count: u32,
             sub_draws: Vec<SubDraw>,
+            /// `drawRange.start` and the clamped element count.
+            first: u32,
+            elements: u32,
         }
 
         let mut draws = Vec::with_capacity(items.len());
@@ -1531,9 +1535,19 @@ impl Renderer {
             // indices when the geometry is indexed, the vertices when it is
             // not, exactly what the `draw_indexed` / `draw` below are given.
             let gpu = &self.geometries[&geometry_id].gpu;
-            let elements = match &gpu.index {
+            // `Renderer._getDrawParameters()`: `geometry.drawRange` clamps the
+            // vertex (or index) range the draw covers. The default
+            // `{ start: 0, count: Infinity }` is the whole buffer, so this is
+            // a no-op for every rung that does not set it —
+            // `webgpu_compute_points` sets `drawRange.count = 1`.
+            let available = match &gpu.index {
                 Some((_, _, count)) => *count,
                 None => gpu.vertex_count,
+            };
+            let first = (item.geometry.draw_range.start as u32).min(available);
+            let elements = match item.geometry.draw_range.count {
+                Some(count) => (count as u32).min(available - first),
+                None => available - first,
             };
             if item.sub_draws.is_empty() {
                 self.info
@@ -1557,6 +1571,8 @@ impl Renderer {
                 bind_groups,
                 instance_count: item.instance_count,
                 sub_draws: item.sub_draws.clone(),
+                first,
+                elements,
             });
         }
 
@@ -1645,11 +1661,18 @@ impl Renderer {
                 }
 
                 match &geometry.index {
-                    Some((buffer, format, count)) => {
+                    Some((buffer, format, _)) => {
                         pass.set_index_buffer(buffer.slice(..), *format);
-                        pass.draw_indexed(0..*count, 0, 0..draw.instance_count);
+                        pass.draw_indexed(
+                            draw.first..draw.first + draw.elements,
+                            0,
+                            0..draw.instance_count,
+                        );
                     }
-                    None => pass.draw(0..geometry.vertex_count, 0..draw.instance_count),
+                    None => pass.draw(
+                        draw.first..draw.first + draw.elements,
+                        0..draw.instance_count,
+                    ),
                 }
             }
         }

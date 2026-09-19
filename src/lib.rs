@@ -40,11 +40,11 @@ pub use lights::{
 pub use loaders::{BufferGeometryLoader, CubeTextureLoader, TextureLoader};
 pub use materials::{
     LineBasicNodeMaterial, MaterialKind, MeshBasicNodeMaterial, MeshPhongNodeMaterial,
-    MeshPhysicalNodeMaterial, MeshStandardNodeMaterial, ToneMapping,
+    MeshPhysicalNodeMaterial, MeshStandardNodeMaterial, PointsNodeMaterial, ToneMapping,
 };
 pub use math::{Color, Euler, Matrix3, Matrix4, Quaternion, Vector2, Vector3};
 pub use objects::{
-    Background, Group, InstancedMesh, Line, LineSegments, Mesh, Payload, QuadMesh, Scene,
+    Background, Group, InstancedMesh, Line, LineSegments, Mesh, Payload, Points, QuadMesh, Scene,
 };
 pub use renderer::{
     BuildCounts, Info, MemoryCounts, PassNode, RenderCounts, RenderPipeline, RenderTarget,

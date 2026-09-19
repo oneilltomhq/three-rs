@@ -185,6 +185,7 @@ pub fn setup(
     // either stage is flowed, exactly as `NodeMaterial.setup()` installs it.
     let position_view = match material.kind {
         MaterialKind::Sprite => Some(setup_position_view_sprite(material)),
+        MaterialKind::Points => Some(setup_position_view_points(material)),
         _ => None,
     };
     with_material_normal(normal, material.flat_shading, material.side, || {
@@ -419,6 +420,30 @@ fn setup_position_view_sprite(material: &MeshBasicNodeMaterial) -> NodeRef {
             mv_position.zw(),
         ],
     )
+}
+
+/// `PointsNodeMaterial.setupPositionView()`
+/// (`src/materials/nodes/PointsNodeMaterial.js:81-87`):
+///
+/// ```ignore
+/// return modelViewMatrix.mul( vec3( this.positionNode || positionLocal ) ).xyz;
+/// ```
+///
+/// It is `NodeMaterial`'s own formula with one difference that shows in the
+/// generated WGSL: the position node is read *again* here rather than through
+/// the `positionLocal` var `setupPosition()` just assigned it to, so the
+/// vertex shader indexes the storage buffer twice. `mul` on a `mat4` and a
+/// `vec3` is `NodeBuilder.format( snippet, 'vec3', 'vec4' )`, i.e.
+/// `vec4<f32>( v, 1.0 )` — spelt out here, as
+/// [`transform_direction`](crate::nodes::tsl::transform_direction) does.
+fn setup_position_view_points(material: &MeshBasicNodeMaterial) -> NodeRef {
+    let position = match &material.position_node {
+        Some(node) => to_vec3(node.clone()),
+        None => position_local(),
+    };
+    model_view_matrix()
+        .mul(vec4_join(vec![position, float(1.0)]))
+        .xyz()
 }
 
 /// `Background.update()`'s skybox material: the cube map sampled along
