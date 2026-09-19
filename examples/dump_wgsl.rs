@@ -633,6 +633,99 @@ fn main() {
         &anamorphic_output,
         SetupContext::default(),
     );
+    // rung webgpu_postprocessing_bloom: the scene's own two materials, against
+    // `scouts/webgpu_postprocessing_bloom/dump/m0{0,1}_*_constant1.wgsl` and
+    // `m02_fragment_fragment_HoloFillDark.wgsl`.
+    //
+    // These come out of `GLTFLoader` rather than being spelled out, so what is
+    // diffed is the material `assignFinalMaterial()` actually built — the
+    // `vertexColors` clone included. `constant1` is `DoubleSide`, opaque, with
+    // an emissive factor; `HoloFillDark` is the `alphaMode: 'BLEND'` one, so
+    // `m02` is the free check on the transparent, `FrontSide` path.
+    //
+    // The lights are the page's, in the order the scene graph hands them to
+    // `LightsNode`: the point light is a child of the camera, which is added
+    // to the scene before the ambient light.
+    {
+        let three = three_rs::testing::three_js_dir();
+        let gltf = three_rs::loaders::GLTFLoader::load(
+            three.join("examples/models/gltf/PrimaryIonDrive.glb"),
+        )
+        .expect("three-rs: PrimaryIonDrive.glb is in three.js' examples");
+
+        let lit = SetupContext {
+            lights: vec![
+                LightDesc {
+                    index: 0,
+                    kind: LightKind::Point,
+                    shadow_map: None,
+                },
+                LightDesc {
+                    index: 1,
+                    kind: LightKind::Ambient,
+                    shadow_map: None,
+                },
+            ],
+            // `COLOR_0` is a `VEC4` on every one of the file's primitives, so
+            // the attribute is read whole rather than widened from a `vec3`.
+            vertex_color_size: 4,
+            ..SetupContext::default()
+        };
+
+        // `Material.name` is a `&'static str` in the port, so a loaded
+        // material carries none and the two are picked out by the mesh they
+        // are on instead — `<mesh>_<material>_<primitive>` is three's own
+        // `createUniqueName` for a multi-primitive mesh, so the name says
+        // which material it is.
+        let mut seen: Vec<String> = Vec::new();
+        gltf.scene.traverse(&mut |node| {
+            let object = node.borrow();
+            let label = match object.name.as_str() {
+                "circle_constant1_0" => "bloom_scene_constant1",
+                "circle_HoloFillDark_0" => "bloom_scene_HoloFillDark",
+                _ => return,
+            };
+            let Some(mesh) = object.payload.mesh() else {
+                return;
+            };
+            let Some(material) = &mesh.material else {
+                return;
+            };
+            seen.push(label.to_string());
+            show(label, material, lit.clone());
+        });
+        assert_eq!(seen.len(), 2, "three-rs: both scene materials were dumped");
+
+        // `m03`/`m04` and `m13`: the same `BloomNode` as part B above but over
+        // a plain, single-texture pass — `bloom( scenePassColor )`, no MRT — and
+        // the page's `RenderPipeline` quad, which here keeps
+        // `outputColorTransform` on with `ReinhardToneMapping`. The five
+        // separable quads and the composite are byte-identical to part B's and
+        // are not dumped twice.
+        let scene_pass = three_rs::PassNode::new();
+        let bloom_node = three_rs::nodes::display::bloom(scene_pass.texture_node("output"));
+
+        let mut high_pass = bloom_node.quad_materials()[0].clone();
+        high_pass.vertex_node = Some(three_rs::materials::quad_vertex_node());
+        show(
+            "bloom_high_pass_single",
+            &high_pass,
+            SetupContext::default(),
+        );
+
+        let mut output = MeshBasicNodeMaterial::new();
+        output.name = "RenderPipeline";
+        output.fragment_node = Some(three_rs::materials::render_output(
+            scene_pass.texture_node("output").add(bloom_node.node()),
+            three_rs::ToneMapping::Reinhard,
+        ));
+        output.vertex_node = Some(three_rs::materials::quad_vertex_node());
+        show(
+            "bloom_render_pipeline_quad_reinhard",
+            &output,
+            SetupContext::default(),
+        );
+    }
 
     // rung 5: the three teapots and the light spheres, against
     // `target/dumps/webgpu_lights_phong/`.

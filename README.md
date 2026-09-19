@@ -109,6 +109,7 @@ Linux is the only backend that has been run.
 | webgpu_furnace_test | 0 | 7.1 | 122 | 116161 |
 | webgpu_postprocessing_anamorphic | 2 | 8.1 | 16 | 398798 |
 | webgpu_pmrem_scene | 0 | 3.8 | 9 | 58433 |
+| webgpu_postprocessing_bloom | 0 | 8.6 | 19 | 52085 |
 
 `webgpu_compute_points` is graded like the rest and its 4 pixels mean less
 than the rest: its frame is black apart from a 2x2 block at the centre, so

@@ -584,3 +584,42 @@ set, so the final `RenderPipeline` quad is never multisampled even though the
 scene pass behind it is; the port now has the same branch
 (`Renderer::fullscreen_pass`, set around `render_quad`). Without it the canvas
 would get an MSAA resolve texture three's dump does not have.
+
+## MSAA and the output quad (`webgpu_postprocessing_bloom`)
+
+`Renderer.currentSamples` has three branches, not two:
+
+```js
+let samples = this._samples;
+if ( this._renderTarget !== null ) samples = this._renderTarget.samples;
+else if ( this.needsFrameBufferTarget ||
+          this._currentRenderContext?.fullscreenPass === true ) samples = 0;
+```
+
+The port had the first two. The third is set by `_renderScene()` from
+`scene.isQuadMesh === true`, so **any** full-screen quad drawn to the canvas is
+single-sample, whatever `antialias` asked for. It has to be: the texture the
+quad samples was resolved when its own pass ended, so multisampling the quad
+would cost four shader invocations a pixel to average four identical samples,
+and the canvas colour attachment would need a resolve target it has no other
+use for.
+
+Until this rung the branch was unreachable. Every graded example's last draw is
+either three's own output blit or a `RenderPipeline` quad under tone mapping,
+and both of those go through the internal framebuffer target — so
+`needsFrameBufferTarget` had already returned 0 and no canvas pass had ever run
+multisampled. `webgpu_postprocessing_bloom` is the first page to combine
+`new WebGPURenderer( { antialias: true } )` with a `RenderPipeline`:
+`RenderPipeline::render` neutralises the tone mapping (the transform moves into
+the quad's own `fragmentNode`), `needsFrameBufferTarget` goes false, and the
+quad lands on the canvas with the renderer's `samples` still 4. On this adapter
+a 4x canvas attachment with a resolve target renders black, and the graded
+frame is black with it.
+
+`Renderer` carries `fullscreen_pass`, set and restored around `render_quad()`
+and around `render_output()`'s quad. The `PassNode`'s own scene render is
+unaffected: it binds a render target, so it takes the first branch and keeps
+`renderTarget.samples`, which `PassNode::render` has just set to
+`renderer.samples()`. That is where this page's antialiasing actually happens —
+the scene is drawn 4x into the pass target and resolved before bloom ever
+samples it.

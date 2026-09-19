@@ -135,6 +135,9 @@ mod webgpu_postprocessing_ssaa;
 #[path = "../../examples/webgpu_postprocessing_anamorphic.rs"]
 #[allow(dead_code)]
 mod webgpu_postprocessing_anamorphic;
+#[path = "../../examples/webgpu_postprocessing_bloom.rs"]
+#[allow(dead_code)]
+mod webgpu_postprocessing_bloom;
 
 #[path = "../../examples/webgpu_postprocessing_bloom_selective.rs"]
 #[allow(dead_code)]
@@ -825,6 +828,61 @@ fn webgpu_postprocessing_anamorphic() {
         name,
         &mut app,
         webgpu_postprocessing_anamorphic::animate,
+        |app| app.renderer.device(),
+    );
+}
+
+#[test]
+fn webgpu_postprocessing_bloom() {
+    let name = "webgpu_postprocessing_bloom";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_postprocessing_bloom::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    // Before the GPU is asked for anything: the scene the loader built. The
+    // numeric gate against three's own `GLTFLoader` parse is
+    // `tests/gltf_primary_ion_drive.rs`; this is the one fact the *example*
+    // owns, that the glTF scene is under the scene graph with its 20 nodes.
+    assert_eq!(
+        app.gltf_scene.borrow().children.len(),
+        1,
+        "the glTF scene's single child"
+    );
+
+    webgpu_postprocessing_bloom::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(
+        name,
+        &mut app,
+        webgpu_postprocessing_bloom::animate,
         |app| app.renderer.device(),
     );
 }
@@ -1809,6 +1867,7 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_postprocessing_ssaa);
     rung!(webgpu_postprocessing_bloom_selective);
     rung!(webgpu_postprocessing_anamorphic);
+    rung!(webgpu_postprocessing_bloom);
     rung!(webgpu_lights_phong);
     rung!(webgpu_morphtargets);
     rung!(webgpu_tsl_galaxy);
