@@ -11,7 +11,7 @@
 //! has a number key: `1` depth_texture, `2` instance_mesh, `3` materials_basic,
 //! `4` rtt, `5` lights_phong, `6` morphtargets, `7` shadowmap,
 //! `8` lights_physical, `9` postprocessing_masking, `0` tsl_galaxy,
-//! `a` skinning. The same
+//! `a` skinning, `b` mesh_batch. The same
 //! digit is accepted on the command line in place of the name, and `--list`
 //! prints the table. Left-drag orbits, right-drag (or middle-drag) pans, the
 //! wheel zooms and Esc quits.
@@ -95,6 +95,10 @@ mod webgpu_lights_physical;
 #[allow(dead_code)]
 mod webgpu_postprocessing_masking;
 
+#[path = "../../examples/webgpu_mesh_batch.rs"]
+#[allow(dead_code)]
+mod webgpu_mesh_batch;
+
 #[path = "../../examples/webgpu_tsl_galaxy.rs"]
 #[allow(dead_code)]
 mod webgpu_tsl_galaxy;
@@ -123,12 +127,13 @@ enum Which {
     PostprocessingMasking,
     TslGalaxy,
     Skinning,
+    MeshBatch,
 }
 
 impl Which {
     /// Every graded example, in README order; the index is the key (`1`..`9`,
     /// `0` for the tenth, then letters).
-    const ALL: [Which; 11] = [
+    const ALL: [Which; 12] = [
         Self::DepthTexture,
         Self::InstanceMesh,
         Self::MaterialsBasic,
@@ -140,6 +145,7 @@ impl Which {
         Self::PostprocessingMasking,
         Self::TslGalaxy,
         Self::Skinning,
+        Self::MeshBatch,
     ];
 
     /// The name with or without its `webgpu_` prefix, or the key digit.
@@ -163,6 +169,7 @@ impl Which {
             Self::PostprocessingMasking => "webgpu_postprocessing_masking",
             Self::TslGalaxy => "webgpu_tsl_galaxy",
             Self::Skinning => "webgpu_skinning",
+            Self::MeshBatch => "webgpu_mesh_batch",
         }
     }
 
@@ -172,7 +179,7 @@ impl Which {
 
     /// The keyboard key (and the command-line shorthand) for this example.
     fn key(self) -> &'static str {
-        const KEYS: [&str; 11] = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "a"];
+        const KEYS: [&str; 12] = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "a", "b"];
         KEYS[Self::ALL.iter().position(|w| *w == self).unwrap()]
     }
 
@@ -231,6 +238,7 @@ enum Scene {
         app: webgpu_skinning::App,
         last_time: Option<f64>,
     },
+    MeshBatch(webgpu_mesh_batch::App),
 }
 
 impl Scene {
@@ -257,6 +265,7 @@ impl Scene {
                 app: webgpu_skinning::init(),
                 last_time: None,
             },
+            Which::MeshBatch => Scene::MeshBatch(webgpu_mesh_batch::init()),
         };
 
         // `init()` is the graded example's code verbatim, so its `Renderer` is
@@ -308,6 +317,7 @@ impl Scene {
             Scene::PostprocessingMasking(app) => &mut app.renderer,
             Scene::TslGalaxy(app) => &mut app.renderer,
             Scene::Skinning { app, .. } => &mut app.renderer,
+            Scene::MeshBatch(app) => &mut app.renderer,
         }
     }
 
@@ -324,6 +334,7 @@ impl Scene {
             Scene::PostprocessingMasking(app) => &mut app.camera,
             Scene::TslGalaxy(app) => &mut app.camera,
             Scene::Skinning { app, .. } => &mut app.camera,
+            Scene::MeshBatch(app) => &mut app.camera,
         }
     }
 
@@ -563,6 +574,9 @@ impl Scene {
                 *last_time = Some(time);
                 app.mixer.update(delta);
                 app.renderer.render(&mut app.scene, &mut app.camera);
+            }
+            Scene::MeshBatch(app) => {
+                webgpu_mesh_batch::animate(app);
             }
         }
     }

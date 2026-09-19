@@ -38,11 +38,11 @@ use crate::nodes::node::{BufferSource, TextureSource};
 use crate::nodes::tsl::FogNode;
 use crate::nodes::wgsl::TextureKind;
 use crate::nodes::{BindingDesc, NodeBuilder, NodeProgram};
-use crate::objects::{Background, InstancedBufferAttribute, QuadMesh, Scene};
+use crate::objects::{Background, InstancedBufferAttribute, QuadMesh, Scene, SubDraw};
 use crate::testing::DeterministicRandom;
 use crate::textures::{
-    CubeDepthTexture, CubeTexture, DataArrayTexture, DepthTexture, Texture, TextureFilter,
-    TextureType, Wrapping,
+    CubeDepthTexture, CubeTexture, DataArrayTexture, DataTexture, DataTextureData, DepthTexture,
+    Texture, TextureFilter, TextureType, Wrapping,
 };
 
 /// How many `render()` calls a cache entry survives without being used, for
@@ -238,6 +238,10 @@ struct Renderable {
     /// `_getPrimitiveState()`'s object half — the topology this draw's pipeline
     /// is built with.
     primitive: Primitive,
+    /// `BatchedMesh`' sub-ranges. Empty for every other object, which draws the
+    /// whole index buffer once; non-empty replaces that single `drawIndexed`
+    /// with one call per range, exactly as `WebGPUBackend.draw()` does.
+    sub_draws: Vec<SubDraw>,
 }
 
 /// The material's half of `RenderObject.getCacheKey()`: `material.id` and
@@ -728,6 +732,7 @@ impl Renderer {
                 bind_matrix_inverse: Matrix4::identity(),
                 bone_matrices: Vec::new(),
                 primitive: Primitive::TRIANGLES,
+                sub_draws: Vec::new(),
             });
         }
 
@@ -762,6 +767,27 @@ impl Renderer {
 
         let mut skeletons_updated: std::collections::HashSet<usize> =
             std::collections::HashSet::new();
+
+        // `Renderer._renderObjects()` calls `object.onBeforeRender()` per
+        // render item, immediately before that item's draw. The port builds
+        // every `Renderable` first and records the pass afterwards, so the hook
+        // runs here instead: still after `updateMatrixWorld()` and the
+        // scene-level cull, and still before anything reads `_multiDrawCount`,
+        // the indirect texture or the bind group built from it.
+        let batch_camera = crate::objects::BatchCamera {
+            projection_matrix: camera.projection_matrix(),
+            matrix_world_inverse: camera.matrix_world_inverse(),
+            matrix_world: camera.matrix_world(),
+            coordinate_system: camera.coordinate_system(),
+            far: camera.far(),
+        };
+        for item in render_list.items() {
+            let matrix_world = item.matrix_world;
+            let mut object = item.node.borrow_mut();
+            if let Some(batched) = object.payload.batched_mesh_mut() {
+                batched.on_before_render(&matrix_world, &batch_camera);
+            }
+        }
 
         for item in render_list.items() {
             let object = item.node.borrow();
@@ -819,6 +845,14 @@ impl Renderer {
                 ))
             });
 
+            // `object.isBatchedMesh`: the three data textures the node system
+            // binds, and the sub-ranges `onBeforeRender()` (run just above)
+            // left in `_multiDrawStarts` / `_multiDrawCounts`.
+            let (batch, sub_draws) = match object.payload.batched_mesh() {
+                Some(batched) => (Some(batched.batch_entry()), batched.sub_draws()),
+                None => (None, Vec::new()),
+            };
+
             items.push(Renderable {
                 geometry: geometry.clone(),
                 material: material.clone(),
@@ -849,6 +883,7 @@ impl Renderer {
                         .collect(),
                     morph: morph.clone(),
                     skin: skin.as_ref().map(|s| s.0),
+                    batch: batch.clone(),
                 },
                 fog: scene.fog_node.clone(),
                 model_world: item.matrix_world,
@@ -860,6 +895,7 @@ impl Renderer {
                 bind_matrix_inverse: skin.as_ref().map(|s| s.2).unwrap_or_else(Matrix4::identity),
                 bone_matrices: skin.map(|s| s.3).unwrap_or_default(),
                 primitive,
+                sub_draws,
             });
         }
 
@@ -1065,6 +1101,7 @@ impl Renderer {
                         // nothing in the ladder both morphs and casts a shadow.
                         morph: None,
                         skin: None,
+                        batch: None,
                     },
                     fog: None,
                     model_world: item.matrix_world,
@@ -1076,6 +1113,7 @@ impl Renderer {
                     bind_matrix_inverse: Matrix4::identity(),
                     bone_matrices: Vec::new(),
                     primitive,
+                    sub_draws: Vec::new(),
                 });
             }
 
@@ -1237,6 +1275,7 @@ impl Renderer {
                         lights: Vec::new(),
                         morph: None,
                         skin: None,
+                        batch: None,
                     },
                     fog: None,
                     model_world: item.matrix_world,
@@ -1248,6 +1287,7 @@ impl Renderer {
                     bind_matrix_inverse: Matrix4::identity(),
                     bone_matrices: Vec::new(),
                     primitive,
+                    sub_draws: Vec::new(),
                 });
             }
 
@@ -1338,6 +1378,7 @@ impl Renderer {
             bind_matrix_inverse: Matrix4::identity(),
             bone_matrices: Vec::new(),
             primitive: Primitive::TRIANGLES,
+            sub_draws: Vec::new(),
         }];
 
         let camera_uniforms = self.quad_camera_uniforms();
@@ -1405,6 +1446,7 @@ impl Renderer {
             pipeline: PipelineKey,
             bind_groups: Vec<wgpu::BindGroup>,
             instance_count: u32,
+            sub_draws: Vec<SubDraw>,
         }
 
         let mut draws = Vec::with_capacity(items.len());
@@ -1493,8 +1535,20 @@ impl Renderer {
                 Some((_, _, count)) => *count,
                 None => gpu.vertex_count,
             };
-            self.info
-                .record_draw(item.primitive.topology, elements, item.instance_count);
+            if item.sub_draws.is_empty() {
+                self.info
+                    .record_draw(item.primitive.topology, elements, item.instance_count);
+            } else {
+                // One `drawIndexed()` per batched sub-range, which is what
+                // `renderer.info.render.drawCalls` counts under three.js too.
+                for sub in &item.sub_draws {
+                    self.info.record_draw(
+                        item.primitive.topology,
+                        sub.index_count,
+                        item.instance_count,
+                    );
+                }
+            }
 
             draws.push(Draw {
                 geometry_id,
@@ -1502,6 +1556,7 @@ impl Renderer {
                 pipeline,
                 bind_groups,
                 instance_count: item.instance_count,
+                sub_draws: item.sub_draws.clone(),
             });
         }
 
@@ -1568,6 +1623,27 @@ impl Renderer {
                     pass.set_vertex_buffer(slot as u32, buffer.slice(..));
                 }
 
+                if !draw.sub_draws.is_empty() {
+                    let (buffer, format, _) = geometry
+                        .index
+                        .as_ref()
+                        .expect("three-rs: a batched mesh is always indexed");
+                    pass.set_index_buffer(buffer.slice(..), *format);
+                    // `WebGPUBackend.draw()`'s `isBatchedMesh` arm:
+                    // `drawIndexed( counts[ i ], 1, starts[ i ] / bytesPerElement, 0, i )`.
+                    // `firstInstance` is the draw ordinal `i`, not the instance
+                    // id — `@builtin(instance_index)` reads it and
+                    // `_indirectTexture` maps it back.
+                    for sub in &draw.sub_draws {
+                        pass.draw_indexed(
+                            sub.first_index..sub.first_index + sub.index_count,
+                            0,
+                            sub.first_instance..sub.first_instance + 1,
+                        );
+                    }
+                    continue;
+                }
+
                 match &geometry.index {
                     Some((buffer, format, count)) => {
                         pass.set_index_buffer(buffer.slice(..), *format);
@@ -1608,6 +1684,7 @@ impl Renderer {
             bind_matrix_inverse: Matrix4::identity(),
             bone_matrices: Vec::new(),
             primitive: Primitive::TRIANGLES,
+            sub_draws: Vec::new(),
         }];
 
         let camera_uniforms = self.quad_camera_uniforms();
@@ -2054,6 +2131,14 @@ impl Renderer {
                     ..Default::default()
                 })
             }
+            TextureSource::Data(data) => {
+                assert!(matches!(
+                    kind,
+                    TextureKind::FloatData2D | TextureKind::Uint2D
+                ));
+                let gpu = self.ensure_data_texture(data);
+                gpu.create_view(&Default::default())
+            }
             TextureSource::Cube(cube) => {
                 assert_eq!(kind, TextureKind::Cube);
                 let gpu = self.ensure_cube_texture(cube);
@@ -2155,7 +2240,7 @@ impl Renderer {
                     ..Default::default()
                 })
             }
-            TextureSource::Depth(_) | TextureSource::DataArray(_) => {
+            TextureSource::Depth(_) | TextureSource::DataArray(_) | TextureSource::Data(_) => {
                 panic!("three-rs: this texture is read with textureLoad, not sampled")
             }
         }
@@ -2182,6 +2267,69 @@ impl Renderer {
     /// `WebGPUTextureUtils.createTexture()` for a `DataArrayTexture` with
     /// `type = FloatType`: an `rgba32float` 2-D-array texture, one layer per
     /// morph target, uploaded once and read with `textureLoad` only.
+    /// `WebGPUTextureUtils.updateTexture()` for a `DataTexture`: one mip, no
+    /// sampler, re-uploaded whenever `needsUpdate` has bumped the version —
+    /// `BatchedMesh` rewrites its indirect table every frame.
+    fn ensure_data_texture(&mut self, texture: &DataTexture) -> wgpu::Texture {
+        let (width, height) = texture.size();
+        let uint = texture.is_uint();
+        if !texture.has_gpu() {
+            let gpu = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("three-rs data texture"),
+                size: wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: if uint {
+                    wgpu::TextureFormat::R32Uint
+                } else {
+                    wgpu::TextureFormat::Rgba32Float
+                },
+                usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            });
+            texture.set_gpu(gpu);
+        }
+
+        if texture.needs_upload() {
+            let bytes_per_row = width * if uint { 4 } else { 16 };
+            let gpu = texture.with_gpu(|gpu| gpu.clone());
+            let inner = texture.borrow();
+            let bytes: &[u8] = match &inner.data {
+                DataTextureData::F32(v) => bytemuck::cast_slice(&v[..]),
+                DataTextureData::U32(v) => bytemuck::cast_slice(&v[..]),
+            };
+            self.queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &gpu,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                bytes,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(bytes_per_row),
+                    rows_per_image: Some(height),
+                },
+                wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+            );
+            drop(inner);
+            texture.mark_uploaded();
+            self.info.build.textures_uploaded += 1;
+        }
+
+        texture.with_gpu(|gpu| gpu.clone())
+    }
+
     fn ensure_data_array_texture(&mut self, texture: &DataArrayTexture) -> wgpu::Texture {
         if texture.has_gpu() {
             return texture.with_gpu(|gpu| gpu.clone());

@@ -18,7 +18,9 @@ use crate::core::BufferGeometry;
 use crate::lights::LightObject;
 use crate::materials::MeshBasicNodeMaterial;
 use crate::math::{Matrix4, Sphere};
-use crate::objects::{InstancedBufferAttribute, InstancedMesh, Line, Mesh, SkinnedMesh};
+use crate::objects::{
+    BatchedMesh, InstancedBufferAttribute, InstancedMesh, Line, Mesh, SkinnedMesh,
+};
 
 /// The subclass state of one [`crate::core::Object3D`].
 ///
@@ -38,6 +40,9 @@ pub enum Payload {
     /// make it half again the size of the next-largest variant, and every
     /// `Object3D` in the tree carries a `Payload`.
     SkinnedMesh(Box<SkinnedMesh>),
+    /// `BatchedMesh extends Mesh` — boxed because it is much the largest
+    /// variant (three data textures and two draw-list arrays).
+    BatchedMesh(Box<BatchedMesh>),
     /// `Line extends Object3D` — and `LineSegments extends Line`, which is the
     /// `is_line_segments` flag inside. Not a `Mesh`: the renderer reads the
     /// object to pick `line-strip` / `line-list` over `triangle-list`.
@@ -57,6 +62,7 @@ impl fmt::Debug for Payload {
             Payload::Mesh(_) => "Mesh",
             Payload::InstancedMesh(_) => "InstancedMesh",
             Payload::SkinnedMesh(_) => "SkinnedMesh",
+            Payload::BatchedMesh(_) => "BatchedMesh",
             Payload::Line(line) => {
                 if line.is_line_segments {
                     "LineSegments"
@@ -76,7 +82,10 @@ impl Payload {
     pub fn is_mesh(&self) -> bool {
         matches!(
             self,
-            Payload::Mesh(_) | Payload::InstancedMesh(_) | Payload::SkinnedMesh(_)
+            Payload::Mesh(_)
+                | Payload::InstancedMesh(_)
+                | Payload::SkinnedMesh(_)
+                | Payload::BatchedMesh(_)
         )
     }
 
@@ -138,6 +147,7 @@ impl Payload {
             Payload::Mesh(mesh) => Some(&mesh.geometry),
             Payload::InstancedMesh(instanced) => Some(&instanced.mesh.geometry),
             Payload::SkinnedMesh(skin) => Some(&skin.mesh.geometry),
+            Payload::BatchedMesh(batched) => Some(&batched.mesh.geometry),
             Payload::Line(line) => Some(&line.geometry),
             _ => None,
         }
@@ -151,6 +161,7 @@ impl Payload {
             Payload::Mesh(mesh) => mesh.material.as_ref(),
             Payload::InstancedMesh(instanced) => instanced.mesh.material.as_ref(),
             Payload::SkinnedMesh(skin) => skin.mesh.material.as_ref(),
+            Payload::BatchedMesh(batched) => batched.mesh.material.as_ref(),
             Payload::Line(line) => line.material.as_ref(),
             _ => None,
         }
@@ -211,6 +222,7 @@ impl Payload {
             Payload::Mesh(mesh) => Some(mesh),
             Payload::InstancedMesh(instanced) => Some(&instanced.mesh),
             Payload::SkinnedMesh(skin) => Some(&skin.mesh),
+            Payload::BatchedMesh(batched) => Some(&batched.mesh),
             _ => None,
         }
     }
@@ -220,6 +232,7 @@ impl Payload {
             Payload::Mesh(mesh) => Some(mesh),
             Payload::InstancedMesh(instanced) => Some(&mut instanced.mesh),
             Payload::SkinnedMesh(skin) => Some(&mut skin.mesh),
+            Payload::BatchedMesh(batched) => Some(&mut batched.mesh),
             _ => None,
         }
     }
@@ -235,6 +248,25 @@ impl Payload {
     pub fn light_mut(&mut self) -> Option<&mut LightObject> {
         match self {
             Payload::Light(light) => Some(light),
+            _ => None,
+        }
+    }
+
+    /// `object.isBatchedMesh`.
+    pub fn is_batched_mesh(&self) -> bool {
+        matches!(self, Payload::BatchedMesh(_))
+    }
+
+    pub fn batched_mesh(&self) -> Option<&BatchedMesh> {
+        match self {
+            Payload::BatchedMesh(batched) => Some(batched),
+            _ => None,
+        }
+    }
+
+    pub fn batched_mesh_mut(&mut self) -> Option<&mut BatchedMesh> {
+        match self {
+            Payload::BatchedMesh(batched) => Some(batched),
             _ => None,
         }
     }

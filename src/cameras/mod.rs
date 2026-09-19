@@ -39,9 +39,14 @@ pub trait RenderCamera {
     fn matrix_world(&self) -> Matrix4;
     /// `camera.layers`.
     fn layers(&self) -> Layers;
+    /// `camera.far` — the sort key scale `BatchedMesh`' custom sort uses.
+    fn far(&self) -> f64;
 }
 
 impl RenderCamera for PerspectiveCamera {
+    fn far(&self) -> f64 {
+        self.far
+    }
     fn update_matrix_world(&mut self) {
         self.update_matrix_world();
     }
@@ -66,6 +71,9 @@ impl RenderCamera for PerspectiveCamera {
 }
 
 impl RenderCamera for OrthographicCamera {
+    fn far(&self) -> f64 {
+        self.far
+    }
     fn update_matrix_world(&mut self) {
         self.update_matrix_world();
     }

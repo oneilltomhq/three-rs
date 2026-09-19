@@ -39,6 +39,8 @@ pub struct SetupContext {
     /// `Some` when the object is a `SkinnedMesh` with a skeleton, which is what
     /// makes `NodeMaterial.setupPosition()` insert `skinning( object )`.
     pub skin: Option<crate::nodes::skinning::SkinEntry>,
+    /// `object.isBatchedMesh`: the three data textures `batch()` reads.
+    pub batch: Option<crate::nodes::batch::BatchEntry>,
 }
 
 /// `Renderer._getShadowNodes( material )` composed with
@@ -105,7 +107,11 @@ fn to_vec4(node: NodeRef) -> NodeRef {
 /// textured on exactly the same terms as a Standard one. A `colorNode`
 /// replaces the pair outright, map included —
 /// `this.colorNode ? vec4( this.colorNode ) : materialColor`.
-fn setup_diffuse_color(material: &MeshBasicNodeMaterial, fragment: &mut Vec<NodeRef>) {
+fn setup_diffuse_color(
+    material: &MeshBasicNodeMaterial,
+    ctx: &SetupContext,
+    fragment: &mut Vec<NodeRef>,
+) {
     let color = match &material.color_node {
         Some(node) => to_vec4(node.clone()),
         None => {
@@ -124,6 +130,14 @@ fn setup_diffuse_color(material: &MeshBasicNodeMaterial, fragment: &mut Vec<Node
     let color = match material.vertex_colors {
         true => color.mul(vertex_color()),
         false => color,
+    };
+
+    // `if ( object.isBatchedMesh && object._colorsTexture )
+    // colorNode = batchColor.mul( colorNode )` — the varying is the *left*
+    // operand, which is what puts `vBatchColor` first in the generated line.
+    let color = match ctx.batch.as_ref().and_then(|b| b.colors.as_ref()) {
+        Some(_) => crate::nodes::batch::batch_color().mul(color),
+        None => color,
     };
 
     fragment.push(diffuse_color().assign(color));
@@ -213,6 +227,12 @@ fn setup_inner(
     if let Some(node) = &material.position_node {
         pre_vertex.push(position_local().assign(to_vec3(node.clone())));
     }
+    // `if ( object.isBatchedMesh ) batch( object )` — `NodeMaterial.js:792`,
+    // after morphing and displacement and before instancing.
+    if let Some(entry) = &ctx.batch {
+        pre_vertex.extend(crate::nodes::batch::batch(entry));
+    }
+
     if let Some(count) = ctx.instance_count {
         let matrix = instance_matrix(count);
         pre_vertex.push(
@@ -250,7 +270,7 @@ fn setup_inner(
     } else if material.kind == MaterialKind::Standard || material.kind == MaterialKind::Physical {
         setup_standard(material, ctx, &mut fragment)
     } else {
-        setup_diffuse_color(material, &mut fragment);
+        setup_diffuse_color(material, ctx, &mut fragment);
 
         let outgoing = if let Some(env_map) = &material.env_map {
             // `BasicLightingModel` with an indirect environment contribution.
@@ -317,6 +337,7 @@ fn setup_inner(
         pre_vertex_statements: pre_vertex,
         fragment_statements: fragment,
         output,
+        output_node: material.output_node.clone(),
         emit_output_property: material.fragment_node.is_none(),
         vertex_statements: Vec::new(),
         position,
@@ -517,7 +538,7 @@ fn setup_phong(
     ctx: &SetupContext,
     fragment: &mut Vec<NodeRef>,
 ) -> NodeRef {
-    setup_diffuse_color(material, fragment);
+    setup_diffuse_color(material, ctx, fragment);
 
     // setupVariants: `PhongLightingModel` reads these three properties.
     fragment.push(shininess().assign(max(material_shininess(), float(0.0001))));
@@ -611,7 +632,7 @@ fn setup_standard(
     fragment: &mut Vec<NodeRef>,
 ) -> NodeRef {
     // --- setupDiffuseColor
-    setup_diffuse_color(material, fragment);
+    setup_diffuse_color(material, ctx, fragment);
 
     // --- setupVariants. `metalnessNode` is reached twice — once for the
     // `Metalness` property and once for `DiffuseContribution` — so the node is

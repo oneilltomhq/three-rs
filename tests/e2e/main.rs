@@ -123,6 +123,9 @@ mod webgpu_morphtargets;
 #[path = "../../examples/webgpu_lights_physical.rs"]
 #[allow(dead_code)]
 mod webgpu_lights_physical;
+#[path = "../../examples/webgpu_mesh_batch.rs"]
+#[allow(dead_code)]
+mod webgpu_mesh_batch;
 #[path = "../../examples/webgpu_shadowmap.rs"]
 #[allow(dead_code)]
 mod webgpu_shadowmap;
@@ -498,6 +501,48 @@ fn webgpu_tsl_galaxy() {
 }
 
 #[test]
+fn webgpu_mesh_batch() {
+    let name = "webgpu_mesh_batch";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_mesh_batch::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_mesh_batch::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_mesh_batch::animate, |app| {
+        app.renderer.device()
+    });
+}
+
+#[test]
 fn webgpu_shadowmap() {
     let name = "webgpu_shadowmap";
     let out = out_dir(name);
@@ -649,7 +694,10 @@ fn steady_frame_builds_nothing() {
     let _gpu = gpu();
 
     macro_rules! rung {
-        ($module:ident) => {{
+        ($module:ident) => {
+            rung!($module, 0)
+        };
+        ($module:ident, $textures:expr) => {{
             let mut app = $module::init();
 
             // `[ "", "" ]`: nothing is done to the scene between the three
@@ -684,7 +732,7 @@ fn steady_frame_builds_nothing() {
                 "{}: the third frame drew nothing, so it is not a frame",
                 stringify!($module)
             );
-            strip.assert_steady(1..);
+            strip.assert_steady_uploading(1.., $textures);
 
             let png = out_dir(stringify!($module)).join("steady-strip.png");
             strip.write_png(png.to_str().expect("three-rs: the strip path is UTF-8"));
@@ -703,6 +751,9 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_shadowmap);
     rung!(webgpu_lights_physical);
     rung!(webgpu_skinning);
+    // The batch rewrites its indirect texture every `onBeforeRender()` and its
+    // matrices texture every `animateMeshes()`; three.js uploads the same two.
+    rung!(webgpu_mesh_batch, 2);
 }
 
 // ---------------------------------------------------------------------------

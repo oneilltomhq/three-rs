@@ -20,7 +20,9 @@ use super::node::{
 };
 use crate::materials::Side;
 use crate::math::{Color, Matrix3};
-use crate::textures::{CubeDepthTexture, CubeTexture, DataArrayTexture, DepthTexture, Texture};
+use crate::textures::{
+    CubeDepthTexture, CubeTexture, DataArrayTexture, DataTexture, DepthTexture, Texture,
+};
 
 pub use super::node::TextureSource;
 
@@ -962,6 +964,11 @@ impl NodeRef {
     }
     pub fn div(&self, other: impl Into<NodeRef>) -> NodeRef {
         binary("/", self.clone(), other.into())
+    }
+    /// `OperatorNode( '%' )` — integer remainder. (`MathNode`'s float `mod`
+    /// is [`mod_float`], which lowers to a helper instead.)
+    pub fn modulo(&self, other: impl Into<NodeRef>) -> NodeRef {
+        binary("%", self.clone(), other.into())
     }
     pub fn equal(&self, other: impl Into<NodeRef>) -> NodeRef {
         binary("==", self.clone(), other.into())
@@ -2180,6 +2187,39 @@ pub fn loop_statement(count: usize, index: NodeRef, body: Vec<NodeRef>) -> NodeR
 /// `If( cond, () => { … } )` with no `Else` — a statement.
 pub fn if_statement(cond: NodeRef, body: Vec<NodeRef>) -> NodeRef {
     NodeRef::new(Node::If { cond, body })
+}
+
+/// `ivec2( x, y )`.
+pub fn ivec2(x: impl Into<NodeRef>, y: impl Into<NodeRef>) -> NodeRef {
+    join(Type::IVec2, vec![x.into(), y.into()])
+}
+
+/// `textureSize( textureLoad( map ), level )` — `textureDimensions`, a
+/// `vec2<u32>`.
+pub fn texture_size(source: TextureSource, level: NodeRef) -> NodeRef {
+    NodeRef::new(Node::TextureSize {
+        texture: Rc::new(source),
+        level,
+    })
+}
+
+/// `textureLoad( dataTexture, ivec2( x, y ) )` — the unclamped, sampler-less
+/// texel fetch `Batch.js` reads its three data textures with. `ty` is the
+/// node's type: `vec4` for the `rgba32float` matrices and colours, and the
+/// scalar `uint` for the `r32uint` indirect table, whose `.x` Three folds into
+/// the same cached property.
+pub fn texture_load_texel(map: &DataTexture, coord: NodeRef, ty: Type) -> NodeRef {
+    texture_node(
+        TextureSource::Data(map.clone()),
+        coord,
+        SampleMode::LoadTexel,
+        ty,
+    )
+}
+
+/// `varyingProperty( type, name )` — a named varying written by assignment.
+pub fn varying_property(name: &'static str, ty: Type, flat: bool) -> NodeRef {
+    NodeRef::new(Node::VaryingProperty { name, ty, flat })
 }
 
 /// `textureLoad( dataArrayTexture, ivec2( x, y ) ).depth( layer )` — the

@@ -58,6 +58,7 @@ fn fragment_wgsl(noise: NodeRef) -> String {
         )],
         emit_output_property: true,
         output: vec4(0.0, 0.0, 0.0, 1.0),
+        output_node: None,
         vertex_statements: vec![],
         position: vec4(0.0, 0.0, 0.0, 1.0),
     };

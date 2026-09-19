@@ -489,6 +489,32 @@ differences, each verified to be pixel-neutral.
   `material.side`, because `negateOnBackSide` makes a `DoubleSide` material's
   frame a different expression from a `FrontSide` one and a process-wide cache
   would hand the first one out forever. Same expression per material.
+* **`batch()`'s `toConst` block becomes vars (rung 11).** Every value
+  `BatchNode` builds — the indirect texel coordinate pair, the matrix and
+  colour coordinates, the four matrix rows — is a `toConst()` in Three, so its
+  dump reads `let nodeConst0 = …` in construction order. This port has no
+  `let`; `batch()` pushes the same values onto the statement list as
+  `nodeVarN` vars, in Three's construction order, so the *sequence* of
+  statements matches one for one and only the keyword and the numbering
+  differ. Same class as the `toConst` entry above.
+* **`mat3( batchingMatrix )` is hoisted (rung 11).** Three inlines the whole
+  `mat3x3<f32>( m[0].xyz, m[1].xyz, m[2].xyz )` construction seven times in
+  the `normalLocal` line, because `MathNode`'s usage count is reset per
+  sub-build. This port sees seven usages of one node and hoists it to
+  `nodeVar17`. Identical arithmetic, one seventh of the text.
+* **`vBatchIndirectId` is declared and never read (rung 11).** Three's
+  `batchIndirectIndex` is a `varyingProperty`, so it is written in the vertex
+  stage and declared in the fragment stage even though nothing in this
+  material reads it. The port reproduces the declaration, but its
+  `@location` numbers differ from the dump's: the port builds the fragment
+  stage first, so the varyings are numbered in fragment-flow order
+  (`vBatchIndirectId` 0, `vBatchColor` 1, `v_normalViewGeometry` 2) where
+  Three has 0/1/2 the other way round. Same class as "Attribute `@location`
+  order".
+* **Data-texture binding indices (rung 11).** Three's object group puts the
+  uniform buffer at binding 0 and the three data textures at 1–3; the port
+  emits the textures first and the buffer last. Same class as "Instance buffer
+  binding indices": the layout and the shader come from the same descriptors.
 
 ### `LineBasicNodeMaterial` adds no divergence class
 

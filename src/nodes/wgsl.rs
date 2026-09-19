@@ -65,6 +65,12 @@ pub enum TextureKind {
     /// `texture_2d_array<f32>` — the morph data texture, read with
     /// `textureLoad` only, so it needs no sampler.
     Float2DArray,
+    /// `texture_2d<f32>` for a `DataTexture`: `rgba32float`, `NearestFilter`,
+    /// read with `textureLoad` only — no sampler, non-filterable.
+    FloatData2D,
+    /// `texture_2d<u32>` — a `RedIntegerFormat` / `UnsignedIntType`
+    /// `DataTexture`, `BatchedMesh._indirectTexture`.
+    Uint2D,
     Depth2D,
     /// A depth texture bound for `textureSampleCompare`: the same
     /// `texture_depth_2d`, but with a `sampler_comparison` beside it.
@@ -79,6 +85,8 @@ impl TextureKind {
         match self {
             TextureKind::Float2D => "texture_2d<f32>",
             TextureKind::Float2DArray => "texture_2d_array<f32>",
+            TextureKind::FloatData2D => "texture_2d<f32>",
+            TextureKind::Uint2D => "texture_2d<u32>",
             TextureKind::Depth2D | TextureKind::DepthCompare2D => "texture_depth_2d",
             TextureKind::Cube => "texture_cube<f32>",
             TextureKind::DepthCube => "texture_depth_cube",
@@ -96,7 +104,13 @@ impl TextureKind {
     /// A depth texture is not filterable, so three.js emits no sampler for it
     /// and reads it with `textureLoad`.
     pub fn has_sampler(self) -> bool {
-        !matches!(self, TextureKind::Depth2D | TextureKind::Float2DArray)
+        !matches!(
+            self,
+            TextureKind::Depth2D
+                | TextureKind::Float2DArray
+                | TextureKind::FloatData2D
+                | TextureKind::Uint2D
+        )
     }
 
     /// A shadow map is read through a comparison sampler.
@@ -137,6 +151,20 @@ pub fn texture_load_layer(texture: &str, coord: &str, layer: &str) -> String {
 
 pub fn texture_dimensions(texture: &str) -> String {
     format!("textureDimensions( {texture}, u32( 0 ) )")
+}
+
+/// `WGSLNodeBuilder.generateTextureLoad()` with an explicit texel coordinate
+/// and no array layer — `textureLoad( t, ivec2( x, y ) )` in `Batch.js`. The
+/// level argument goes through the same `u32( … )` template as the layered
+/// form, so it reads `u32( 0u )`.
+pub fn texture_load_texel(texture: &str, coord: &str) -> String {
+    format!("textureLoad( {texture}, {coord}, u32( 0u ) )")
+}
+
+/// `TextureSizeNode` — `textureDimensions( t, levelNode )` with the level a
+/// plain int literal, not the `u32( … )`-wrapped default `texture_load` uses.
+pub fn texture_size(texture: &str, level: &str) -> String {
+    format!("textureDimensions( {texture}, {level} )")
 }
 
 /// WGSL uniform-buffer layout rules: alignment of a member of this type.

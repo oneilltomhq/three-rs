@@ -11,7 +11,9 @@ use std::hash::Hash;
 use std::rc::Rc;
 
 use crate::math::{Color, Matrix4, Vector2, Vector3};
-use crate::textures::{CubeDepthTexture, CubeTexture, DataArrayTexture, DepthTexture, Texture};
+use crate::textures::{
+    CubeDepthTexture, CubeTexture, DataArrayTexture, DataTexture, DepthTexture, Texture,
+};
 
 /// A WGSL value type. Three carries these as strings (`'vec3'`); the closed set
 /// is the part of `NodeBuilder`'s type vocabulary the ladder has reached.
@@ -341,6 +343,8 @@ pub enum TextureSource {
     Cube(CubeTexture),
     /// `DataArrayTexture` — the morph-target data texture.
     DataArray(DataArrayTexture),
+    /// `DataTexture` — `BatchedMesh`' matrices / colours / indirect tables.
+    Data(DataTexture),
     /// A point light's shadow map — `cubeTexture( CubeDepthTexture )`.
     CubeDepth(CubeDepthTexture),
 }
@@ -361,6 +365,12 @@ pub enum SampleMode {
     /// `textureSampleCompare( t, t_sampler, uv, depth )` — the depth-compare
     /// read `ShadowFilterNode`'s `depthCompare` lowers to.
     Compare(NodeRef),
+    /// `textureLoad( t, coord, u32( 0u ) )` — an unclamped texel fetch at an
+    /// integer coordinate, what `Batch.js` reads its data textures with. When
+    /// the node's type is a scalar the snippet is swizzled (`.x`), which is
+    /// how Three's `textureLoad( … ).x` on the `r32uint` indirect table lands
+    /// in one `u32` property.
+    LoadTexel,
 }
 
 /// A WGSL builtin input.
@@ -533,6 +543,21 @@ pub enum Node {
         mode: SampleMode,
         ty: Type,
     },
+    /// `TextureSizeNode` — `textureDimensions( t, level )`, a `vec2<u32>`.
+    TextureSize {
+        texture: Rc<TextureSource>,
+        level: NodeRef,
+    },
+    /// `varyingProperty( type, name )` — a *named* varying assigned to by
+    /// statement rather than built from a value. Unlike [`Node::Varying`] it
+    /// is declared as soon as either stage mentions it, so a varying the
+    /// fragment stage never reads still appears in `VaryingsStruct`, exactly
+    /// as `vBatchIndirectId` does in Three's dump.
+    VaryingProperty {
+        name: &'static str,
+        ty: Type,
+        flat: bool,
+    },
     Call {
         def: Rc<FnDef>,
         args: Vec<NodeRef>,
@@ -610,6 +635,8 @@ impl NodeRef {
             Node::Builtin(b) => b.ty(),
             Node::Var(v) => v.ty,
             Node::Varying(v) => v.ty,
+            Node::TextureSize { .. } => Type::UVec2,
+            Node::VaryingProperty { ty, .. } => *ty,
             Node::Property { ty, .. } => *ty,
             Node::Param { ty, .. } => *ty,
             Node::Assign { target, .. } => target.ty(),
@@ -812,6 +839,7 @@ impl std::hash::Hash for TextureSource {
             }
             TextureSource::Cube(texture) => texture.id().hash(state),
             TextureSource::DataArray(texture) => texture.id().hash(state),
+            TextureSource::Data(texture) => texture.id().hash(state),
             TextureSource::CubeDepth(texture) => texture.id().hash(state),
         }
     }

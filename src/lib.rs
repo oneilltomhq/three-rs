@@ -24,6 +24,7 @@ pub mod renderer;
 #[doc(hidden)]
 pub mod testing;
 pub mod textures;
+pub mod utils;
 
 pub use cameras::{OrthographicCamera, PerspectiveCamera, RenderCamera};
 pub use core::{BufferGeometry, Node, Object3D};

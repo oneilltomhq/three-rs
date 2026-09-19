@@ -243,9 +243,11 @@ fn layout_entry(binding: u32, desc: &BindingDesc) -> wgpu::BindGroupLayoutEntry 
                     // feature. It is only ever `textureLoad`ed, so declaring it
                     // non-filterable costs nothing and keeps the feature set to
                     // the WebGPU baseline three.js targets.
-                    TextureKind::Float2DArray => {
+                    TextureKind::Float2DArray | TextureKind::FloatData2D => {
                         wgpu::TextureSampleType::Float { filterable: false }
                     }
+                    // `r32uint` — `BatchedMesh._indirectTexture`.
+                    TextureKind::Uint2D => wgpu::TextureSampleType::Uint,
                     TextureKind::Depth2D | TextureKind::DepthCompare2D | TextureKind::DepthCube => {
                         wgpu::TextureSampleType::Depth
                     }
