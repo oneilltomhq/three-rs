@@ -1681,6 +1681,89 @@ fn main() {
             ..SetupContext::default()
         },
     );
+    // rung `webgpu_loader_gltf`: the same helmet, but with no MRT and with the
+    // environment reaching it through `scene.environment` rather than the
+    // material's own `envMap` — against `dump-gltf/m12`. The two paths must
+    // generate the same code, which is the point of the section: the only
+    // difference from `bloom_emissive_helmet` above is where the handle came
+    // from, and the fragment shader may not be able to tell.
+    let mut gltf_helmet = MeshBasicNodeMaterial::standard(Color::new(1.0, 1.0, 1.0), 1.0, 1.0);
+    gltf_helmet.name = "Material_MR";
+    gltf_helmet.map = Some(map());
+    let metal_roughness = map();
+    gltf_helmet.metalness_map = Some(metal_roughness.clone());
+    gltf_helmet.roughness_map = Some(metal_roughness);
+    gltf_helmet.normal_map = Some(map());
+    gltf_helmet.emissive_map = Some(map());
+    gltf_helmet.ao_map = Some(map());
+    gltf_helmet.emissive = Color::new(1.0, 1.0, 1.0);
+    show(
+        "loader_gltf_helmet",
+        &gltf_helmet,
+        SetupContext {
+            environment: Some(environment.handle()),
+            ..SetupContext::default()
+        },
+    );
+
+    // `dump-gltf/m04`: the cube skybox with no MRT — `scene.background` at
+    // `backgroundBlurriness` 0, so the sharp cube and not a PMREM read.
+    let mut gltf_background = MeshBasicNodeMaterial::new();
+    gltf_background.name = "Background.material";
+    gltf_background.color_node = Some(three_rs::materials::background_color_node(&background_cube));
+    gltf_background.vertex_node = Some(three_rs::materials::background_vertex_node());
+    gltf_background.side = Side::Back;
+    gltf_background.depth_test = false;
+    gltf_background.depth_write = false;
+    show(
+        "loader_gltf_background",
+        &gltf_background,
+        SetupContext::default(),
+    );
+
+    // rung `webgpu_mrt`: the same two materials again, this time under the
+    // four-attachment MRT the page sets on the pass — against
+    // `dump-mrt/m04` (the skybox) and `dump-mrt/m10` (the helmet).
+    //
+    // The tail is the whole point of the section: `normal` is deferred, so the
+    // skybox's `normalView` is `normalViewGeometry * - 1` (`BackSide`) while
+    // the helmet's is its normal map's, and the two `vec3` members are written
+    // as `vec4( v, 1.0 )` rather than carrying `Output.w`.
+    let mrt_four = || three_rs::materials::MrtContext {
+        node: {
+            let mut node = three_rs::nodes::mrt(vec![("output", output_property())]);
+            node.set_deferred("normal", || {
+                three_rs::nodes::tsl::pack_normal_to_rgb(three_rs::nodes::tsl::normal_view())
+            });
+            node.set("diffuse", three_rs::nodes::tsl::diffuse_color());
+            node.set("emissive", three_rs::nodes::tsl::emissive_color());
+            node
+        },
+        attachments: vec![
+            "output".to_string(),
+            "normal".to_string(),
+            "diffuse".to_string(),
+            "emissive".to_string(),
+        ],
+    };
+    show(
+        "mrt_background",
+        &gltf_background,
+        SetupContext {
+            mrt: Some(mrt_four()),
+            ..SetupContext::default()
+        },
+    );
+    show(
+        "mrt_helmet",
+        &gltf_helmet,
+        SetupContext {
+            environment: Some(environment.handle()),
+            mrt: Some(mrt_four()),
+            ..SetupContext::default()
+        },
+    );
+
     // rung `webgpu_instance_uniform`: twelve teapots, one material, one
     // per-object `vec3` uniform — against `dump-instance_uniform/m0{1,2}`.
     // The grid's `LineBasicNodeMaterial` is `materials_grid` above (the same

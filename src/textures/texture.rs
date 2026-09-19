@@ -337,6 +337,26 @@ impl Texture {
         self.0.borrow_mut().mag_filter = mag_filter;
     }
 
+    /// `WGSLNodeBuilder.isUnfilterable( texture )`'s `minFilter ===
+    /// NearestFilter && magFilter === NearestFilter` clause — the one a plain
+    /// colour texture can hit.
+    ///
+    /// A texture that is read with no interpolation at all is bound with a
+    /// `non-filtering` sample type and no sampler beside it, and every tap on
+    /// it is a `textureLoad` against `textureDimensions` rather than a
+    /// `textureSample`. That is not an optimisation: it is what
+    /// `webgpu_mrt`'s `pass( scene, camera, { minFilter: NearestFilter,
+    /// magFilter: NearestFilter } )` buys, and the generated composite shader
+    /// looks different because of it.
+    ///
+    /// Three compares against `NearestFilter` exactly, so
+    /// `NearestMipmapNearest` and the rest stay filterable; `MinFilter::min()`
+    /// would collapse them, which is why this reads the variant.
+    pub fn is_unfilterable(&self) -> bool {
+        let inner = self.0.borrow();
+        inner.min_filter == MinFilter::Nearest && inner.mag_filter == TextureFilter::Nearest
+    }
+
     pub fn borrow(&self) -> Ref<'_, TextureInner> {
         self.0.borrow()
     }
