@@ -7,6 +7,11 @@ use crate::error::Error;
 use crate::math::Vector4;
 use crate::textures::{DepthTexture, Texture, TextureFilter, TextureType};
 
+/// The name three.js gives `renderTarget.textures[ 0 ]` through
+/// `PassNode`: `getTextureNode()`'s default argument, and the key the scene
+/// pass's own colour lands on in `mrt( { output, … } )`.
+pub const OUTPUT_ATTACHMENT: &str = "output";
+
 /// `new RenderTarget( width, height, options )` — the options the port reads.
 #[derive(Clone, Copy, Debug)]
 pub struct RenderTargetOptions {
@@ -44,8 +49,17 @@ pub struct RenderTargetInner {
     /// A `DepthTexture` the application attached, which it can then sample.
     pub depth_texture: Option<DepthTexture>,
     /// `renderTarget.texture` — a real `Texture` so `texture( rt.texture )`
-    /// works; the renderer owns its GPU object (`own_gpu` is false).
+    /// works; the renderer owns its GPU object (`own_gpu` is false). This is
+    /// `renderTarget.textures[ 0 ]`, whose `name` three.js leaves empty and
+    /// `PassNode` treats as [`OUTPUT_ATTACHMENT`].
     pub texture: Texture,
+    /// `renderTarget.textures` past the first: the extra MRT colour
+    /// attachments, in the order `PassNode.getTexture( name )` pushed them,
+    /// which is the order their `@location`s are assigned in.
+    ///
+    /// Three clones `renderTarget.texture` for each, so every attachment shares
+    /// the target's size, type and filters; only the name differs.
+    pub extra_textures: Vec<(String, Texture)>,
     /// The MSAA colour texture `samples > 1` asks for; the single-sample
     /// `color` texture is then its resolve target.
     pub msaa: Option<wgpu::Texture>,
@@ -100,6 +114,7 @@ impl RenderTarget {
             mag_filter: options.mag_filter,
             depth_texture: None,
             texture: Texture::render_target(width, height, options.texture_type.color_gpu_format()),
+            extra_textures: Vec::new(),
             msaa: None,
             depth: None,
             viewport: Vector4::new(0.0, 0.0, width as f64, height as f64),
@@ -136,7 +151,54 @@ impl RenderTarget {
         if inner.depth_texture.is_some() {
             clone.set_depth_texture(DepthTexture::new());
         }
+        for (name, _) in &inner.extra_textures {
+            clone.add_texture(name);
+        }
         clone
+    }
+
+    /// `PassNode.getTexture( name )`'s second half: `renderTarget.texture`
+    /// cloned, named, and pushed onto `renderTarget.textures`. Idempotent, as
+    /// three.js's own `_textures[ name ]` memo makes it.
+    ///
+    /// The clone is a *fresh* texture, not a handle copy: each attachment needs
+    /// its own GPU object, and its own identity so that `texture( … )` on it
+    /// binds the right one.
+    pub fn add_texture(&self, name: &str) -> Texture {
+        if name == OUTPUT_ATTACHMENT {
+            return self.texture();
+        }
+        let mut inner = self.0.borrow_mut();
+        if let Some((_, texture)) = inner.extra_textures.iter().find(|(n, _)| n == name) {
+            return texture.clone();
+        }
+        let texture = Texture::render_target(
+            inner.width,
+            inner.height,
+            inner.texture_type.color_gpu_format(),
+        );
+        inner
+            .extra_textures
+            .push((name.to_string(), texture.clone()));
+        texture
+    }
+
+    /// `renderTarget.textures.map( texture => texture.name )` — what
+    /// `MRTNode.setup()` resolves its output names against, so the position of
+    /// a name here is the `@location` its value is written to.
+    pub fn attachment_names(&self) -> Vec<String> {
+        let inner = self.0.borrow();
+        let mut names = vec![OUTPUT_ATTACHMENT.to_string()];
+        names.extend(inner.extra_textures.iter().map(|(n, _)| n.clone()));
+        names
+    }
+
+    /// `renderTarget.textures` — attachment 0 first.
+    pub fn textures(&self) -> Vec<Texture> {
+        let inner = self.0.borrow();
+        let mut textures = vec![inner.texture.clone()];
+        textures.extend(inner.extra_textures.iter().map(|(_, t)| t.clone()));
+        textures
     }
 
     pub fn set_depth_texture(&self, depth_texture: DepthTexture) {
@@ -168,6 +230,10 @@ impl RenderTarget {
             inner.depth = None;
             if let Some(depth_texture) = &inner.depth_texture {
                 depth_texture.inner().borrow_mut().gpu = None;
+            }
+            for (_, texture) in &inner.extra_textures {
+                texture.set_size(width, height);
+                texture.clear_gpu();
             }
         }
     }
