@@ -56,6 +56,24 @@ pub struct PassNode {
     texture_nodes: RefCell<HashMap<String, NodeRef>>,
 }
 
+/// `pass( scene, camera, options )`'s options object, as far as the ported
+/// pages use it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PassOptions {
+    pub min_filter: TextureFilter,
+    pub mag_filter: TextureFilter,
+}
+
+impl Default for PassOptions {
+    /// `RenderTarget`'s own defaults: `LinearFilter` on both sides.
+    fn default() -> Self {
+        Self {
+            min_filter: TextureFilter::Linear,
+            mag_filter: TextureFilter::Linear,
+        }
+    }
+}
+
 impl Default for PassNode {
     fn default() -> Self {
         Self::new()
@@ -67,6 +85,18 @@ impl PassNode {
     /// with `{ type: HalfFloatType }` plus a `DepthTexture` named `depth`,
     /// resized to the drawing buffer on the first frame.
     pub fn new() -> Self {
+        Self::new_with_options(PassOptions::default())
+    }
+
+    /// `pass( scene, camera, options )` — the third argument, which three
+    /// spreads over `renderTarget.texture` and so over every attachment
+    /// `getTexture( name )` clones from it.
+    ///
+    /// The filter pair is not cosmetic: `webgpu_mrt` passes `NearestFilter` on
+    /// both sides, which makes all four attachments unfilterable, and the
+    /// composite shader that samples them is generated with `textureLoad` and
+    /// no samplers at all (`docs/nodes.md` §23).
+    pub fn new_with_options(options: PassOptions) -> Self {
         let render_target = RenderTarget::new_with_options(
             1,
             1,
@@ -76,8 +106,8 @@ impl PassNode {
                 texture_type: TextureType::HalfFloat,
                 samples: 0,
                 depth_buffer: true,
-                min_filter: TextureFilter::Linear,
-                mag_filter: TextureFilter::Linear,
+                min_filter: options.min_filter,
+                mag_filter: options.mag_filter,
             },
         )
         .expect("three-rs: PassNode's render target is a HalfFloat colour type");

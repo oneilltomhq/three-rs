@@ -5,7 +5,28 @@ use std::rc::Rc;
 
 use crate::error::Error;
 use crate::math::Vector4;
-use crate::textures::{DepthTexture, Texture, TextureFilter, TextureType};
+use crate::textures::{DepthTexture, MinFilter, Texture, TextureFilter, TextureType};
+
+/// `renderTarget.texture` and each `getTexture( name )` clone of it: a colour
+/// attachment carrying the target's filter pair, which is what
+/// `pass( scene, camera, { minFilter, magFilter } )` sets and what decides
+/// whether the shader that samples it gets a sampler at all
+/// ([`Texture::is_unfilterable`]).
+fn color_attachment(
+    width: u32,
+    height: u32,
+    format: wgpu::TextureFormat,
+    min_filter: TextureFilter,
+    mag_filter: TextureFilter,
+) -> Texture {
+    let texture = Texture::render_target(width, height, format);
+    texture.set_min_filter(match min_filter {
+        TextureFilter::Nearest => MinFilter::Nearest,
+        TextureFilter::Linear => MinFilter::Linear,
+    });
+    texture.set_mag_filter(mag_filter);
+    texture
+}
 
 /// The name three.js gives `renderTarget.textures[ 0 ]` through
 /// `PassNode`: `getTextureNode()`'s default argument, and the key the scene
@@ -67,6 +88,11 @@ pub struct RenderTargetInner {
     /// The MSAA colour texture `samples > 1` asks for; the single-sample
     /// `color` texture is then its resolve target.
     pub msaa: Option<wgpu::Texture>,
+    /// The same, one per entry of `extra_textures`: a multisampled target
+    /// whose resolve is that attachment. `webgpu_mrt` is `antialias: true`
+    /// with four attachments, and WebGPU requires every colour attachment of a
+    /// pass to have the same sample count.
+    pub msaa_extra: Vec<wgpu::Texture>,
     /// The depth buffer auto-allocated when `depth_buffer` is set and no
     /// `DepthTexture` was attached.
     pub depth: Option<wgpu::Texture>,
@@ -117,10 +143,17 @@ impl RenderTarget {
             min_filter: options.min_filter,
             mag_filter: options.mag_filter,
             depth_texture: None,
-            texture: Texture::render_target(width, height, options.texture_type.color_gpu_format()),
+            texture: color_attachment(
+                width,
+                height,
+                options.texture_type.color_gpu_format(),
+                options.min_filter,
+                options.mag_filter,
+            ),
             extra_textures: Vec::new(),
             previous_textures: Vec::new(),
             msaa: None,
+            msaa_extra: Vec::new(),
             depth: None,
             viewport: Vector4::new(0.0, 0.0, width as f64, height as f64),
             scissor: Vector4::new(0.0, 0.0, width as f64, height as f64),
@@ -177,10 +210,12 @@ impl RenderTarget {
         if let Some((_, texture)) = inner.extra_textures.iter().find(|(n, _)| n == name) {
             return texture.clone();
         }
-        let texture = Texture::render_target(
+        let texture = color_attachment(
             inner.width,
             inner.height,
             inner.texture_type.color_gpu_format(),
+            inner.min_filter,
+            inner.mag_filter,
         );
         inner
             .extra_textures
@@ -211,10 +246,12 @@ impl RenderTarget {
         if let Some((_, texture)) = inner.previous_textures.iter().find(|(n, _)| n == name) {
             return texture.clone();
         }
-        let texture = Texture::render_target(
+        let texture = color_attachment(
             inner.width,
             inner.height,
             inner.texture_type.color_gpu_format(),
+            inner.min_filter,
+            inner.mag_filter,
         );
         inner
             .previous_textures
@@ -284,6 +321,7 @@ impl RenderTarget {
             inner.viewport = Vector4::new(0.0, 0.0, width as f64, height as f64);
             inner.scissor = Vector4::new(0.0, 0.0, width as f64, height as f64);
             inner.msaa = None;
+            inner.msaa_extra.clear();
             inner.depth = None;
             if let Some(depth_texture) = &inner.depth_texture {
                 depth_texture.inner().borrow_mut().gpu = None;

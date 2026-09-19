@@ -23,7 +23,7 @@ use std::rc::{Rc, Weak};
 pub use direct_render_pipeline::DirectRenderPipeline;
 pub use info::{BuildCounts, ComputeCounts, Info, MemoryCounts, RenderCounts};
 use mipmap::{create_mipmap_pipeline, MipmapShader};
-pub use pass::PassNode;
+pub use pass::{PassNode, PassOptions};
 pub use pmrem::PmremGenerator;
 use programs::{
     ComputeProgramGpu, ExtraColorTarget, PipelineKey, Program, MAX_EXTRA_COLOR_ATTACHMENTS,
@@ -344,7 +344,9 @@ struct PassTarget {
     /// `@location` the fragment stage writes it from. Empty for every
     /// single-attachment pass, which is every pass before
     /// `webgpu_postprocessing_bloom_selective`.
-    extra_colors: Vec<wgpu::TextureView>,
+    /// Each is `( the view drawn into, its resolve target )`: under MSAA the
+    /// first is multisampled and the second is the sampleable attachment.
+    extra_colors: Vec<(wgpu::TextureView, Option<wgpu::TextureView>)>,
     /// The extra attachments' own format and blend state, in the same order.
     /// `PassNode.getTexture( name ).type = UnsignedByteType` makes one
     /// attachment `rgba8unorm` beside an `rgba16float` colour, and
@@ -1063,6 +1065,18 @@ impl Renderer {
 
         let mut items = Vec::with_capacity(render_list.len() + 1);
 
+        // `NodeMaterial.setup()`'s MRT branch runs only `if ( renderTarget !==
+        // null )`, so it is a property of the *pass*, not of the object:
+        // resolved once here, from the MRT the caller set and the attachment
+        // names of the target being rendered into.
+        let mrt_context = match (&self.render_target, &self.mrt) {
+            (Some(render_target), Some(node)) => Some(MrtContext {
+                node: node.clone(),
+                attachments: render_target.attachment_names(),
+            }),
+            _ => None,
+        };
+
         // The skybox first, exactly where `renderList.unshift()` puts it.
         // What `Background.update()` builds the material's `colorNode` from is
         // the material's variant in the program cache: the cube map by
@@ -1103,6 +1117,12 @@ impl Renderer {
                 // takes the same inline output transform as everything else.
                 setup: SetupContext {
                     output: output_context.clone(),
+                    // The skybox is a draw like any other: three's
+                    // `NodeMaterial.setup()` reads `renderer._mrt` for it too,
+                    // so it writes every attachment. `webgpu_mrt`'s `diffuse`
+                    // and `normal` bands show the environment because of this;
+                    // with the MRT dropped they would show the clear colour.
+                    mrt: mrt_context.clone(),
                     ..SetupContext::default()
                 },
                 fog: None,
@@ -1174,18 +1194,6 @@ impl Renderer {
                 batched.on_before_render(&matrix_world, &batch_camera);
             }
         }
-
-        // `NodeMaterial.setup()`'s MRT branch runs only `if ( renderTarget !==
-        // null )`, so it is a property of the *pass*, not of the object:
-        // resolved once here, from the MRT the caller set and the attachment
-        // names of the target being rendered into.
-        let mrt_context = match (&self.render_target, &self.mrt) {
-            (Some(render_target), Some(node)) => Some(MrtContext {
-                node: node.clone(),
-                attachments: render_target.attachment_names(),
-            }),
-            _ => None,
-        };
 
         for item in render_list.items() {
             let object = item.node.borrow();
@@ -2230,11 +2238,11 @@ impl Renderer {
                     store: wgpu::StoreOp::Store,
                 },
             })];
-            for view in &target.extra_colors {
+            for (view, resolve) in &target.extra_colors {
                 color_attachments.push(Some(wgpu::RenderPassColorAttachment {
                     view,
                     depth_slice: None,
-                    resolve_target: None,
+                    resolve_target: resolve.as_ref(),
                     ops: wgpu::Operations {
                         load,
                         store: wgpu::StoreOp::Store,
@@ -4128,13 +4136,20 @@ impl Renderer {
             None => (single, None),
         };
 
-        // `renderTarget.textures` past the first. MSAA and MRT never meet on
-        // this ladder — a `PassNode` with an MRT is `samples: 0` — so the extra
-        // attachments have no resolve target of their own.
-        let extra_colors: Vec<wgpu::TextureView> = inner
+        // `renderTarget.textures` past the first. Under `antialias: true`
+        // each one is drawn into its own multisampled texture and resolved
+        // into the sampleable attachment, exactly as attachment 0 is.
+        let extra_colors: Vec<(wgpu::TextureView, Option<wgpu::TextureView>)> = inner
             .extra_textures
             .iter()
-            .map(|(_, texture)| texture.with_gpu(|gpu| gpu.create_view(&Default::default())))
+            .enumerate()
+            .map(|(index, (_, texture))| {
+                let single = texture.with_gpu(|gpu| gpu.create_view(&Default::default()));
+                match inner.msaa_extra.get(index) {
+                    Some(msaa) => (msaa.create_view(&Default::default()), Some(single)),
+                    None => (single, None),
+                }
+            })
             .collect();
         // `WebGPUPipelineUtils._getBlending()` reads the MRT's own blend mode
         // for the attachment and, unlike the material's, applies it whatever
@@ -4408,6 +4423,33 @@ impl Renderer {
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
                 view_formats: &[],
             }));
+        }
+
+        // One multisampled target per extra attachment: WebGPU requires every
+        // colour attachment of a pass to share a sample count, and each of
+        // these carries its own format (`webgpu_mrt` makes three of its four
+        // `rgba8unorm` where the first stays `rgba16float`).
+        if sample_count > 1 && inner.msaa_extra.len() != inner.extra_textures.len() {
+            inner.msaa_extra = inner
+                .extra_textures
+                .iter()
+                .map(|(_, texture)| {
+                    self.device.create_texture(&wgpu::TextureDescriptor {
+                        label: Some("three-rs render target attachment msaa"),
+                        size: wgpu::Extent3d {
+                            width,
+                            height,
+                            depth_or_array_layers: 1,
+                        },
+                        mip_level_count: 1,
+                        sample_count,
+                        dimension: wgpu::TextureDimension::D2,
+                        format: texture.format(),
+                        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                        view_formats: &[],
+                    })
+                })
+                .collect();
         }
 
         if inner.depth_texture.is_none() && inner.depth_buffer && inner.depth.is_none() {
