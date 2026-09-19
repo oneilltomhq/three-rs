@@ -1373,6 +1373,10 @@ impl Renderer {
                 key: MaterialKey::of(&material).variant(side_variant),
                 setup: SetupContext {
                     environment: scene_environment,
+                    // `builder.renderer.lighting.enabled`: a pass with lighting
+                    // disabled builds its materials with no lights *and* no
+                    // environment (see `SetupContext::lighting_disabled`).
+                    lighting_disabled: !self.lighting_enabled,
                     // `InstanceNode.setup()` branches on
                     // `instanceMatrix.count * 16 * 4` against
                     // `maxUniformBufferBindingSize`, i.e. on the *array*
@@ -1645,6 +1649,7 @@ impl Renderer {
                     key: MaterialKey::of(source).variant(VARIANT_SHADOW),
                     setup: SetupContext {
                         environment: None,
+                        lighting_disabled: false,
                         instance_count: instance_matrix.as_ref().map(|_| instance_count as usize),
                         instanced: instance_matrix.is_some(),
                         instance_color: instance_color.as_ref().map(|a| a.count()),
@@ -1853,6 +1858,7 @@ impl Renderer {
                     key: MaterialKey::of(source).variant(VARIANT_SHADOW),
                     setup: SetupContext {
                         environment: None,
+                        lighting_disabled: false,
                         instance_count: instance_matrix.as_ref().map(|_| instance_count as usize),
                         instanced: instance_matrix.is_some(),
                         instance_color: instance_color.as_ref().map(|a| a.count()),
