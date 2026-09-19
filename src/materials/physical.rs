@@ -355,9 +355,8 @@ impl Physical {
                 };
                 let dielectric = eval(specular_color());
                 let metallic = eval(diffuse_color().rgb());
-                let to_f0 = |f: NodeRef| {
-                    call(&schlick_to_f0(), vec![f, float(1.0), dot_nvi.clone()])
-                };
+                let to_f0 =
+                    |f: NodeRef| call(&schlick_to_f0(), vec![f, float(1.0), dot_nvi.clone()]);
                 (
                     Some(mix(dielectric.clone(), metallic.clone(), metalness())),
                     Some(to_f0(dielectric)),
@@ -908,8 +907,11 @@ fn eval_iridescence() -> Rc<FnDef> {
 
                     // Force the film's IOR back to the outside medium's as the
                     // thickness vanishes, so a zero-thickness film is a no-op.
-                    let iridescence_ior_value =
-                        mix(outside_ior.clone(), eta2, smoothstep(0.0, 0.03, thin_film_thickness.clone()));
+                    let iridescence_ior_value = mix(
+                        outside_ior.clone(),
+                        eta2,
+                        smoothstep(0.0, 0.03, thin_film_thickness.clone()),
+                    );
 
                     // Snell's law on the base layer.
                     let eta = outside_ior.clone().div(iridescence_ior_value.clone());
@@ -981,7 +983,7 @@ fn eval_iridescence() -> Rc<FnDef> {
                     let body = {
                         let (i, cm, opd, phi, r123_sqrt) =
                             (i.clone(), cm.clone(), opd, phi, r123_sqrt);
-                        loop_range("m", float(1.0), float(2.0), true, move |m| {
+                        loop_range("m", int(1), int(2), true, move |m| {
                             let m = m.to(Type::F32);
                             let sm = eval_sensitivity(
                                 m.clone().mul(opd.clone()),
@@ -1012,11 +1014,7 @@ fn schlick_to_f0() -> Rc<FnDef> {
         c.get(|| {
             shader_fn(
                 Some("Schlick_to_F0"),
-                vec![
-                    ("f", Type::Vec3),
-                    ("f90", Type::F32),
-                    ("dotVH", Type::F32),
-                ],
+                vec![("f", Type::Vec3), ("f90", Type::F32), ("dotVH", Type::F32)],
                 Type::Vec3,
                 |args| {
                     let (f, f90, dot_vh) = (args[0].clone(), args[1].clone(), args[2].clone());

@@ -206,6 +206,10 @@ mod webgpu_deferred;
 #[allow(dead_code)]
 mod webgpu_loader_gltf_anisotropy;
 
+#[allow(dead_code)]
+#[path = "../../examples/webgpu_loader_gltf_iridescence.rs"]
+mod webgpu_loader_gltf_iridescence;
+
 #[path = "../../examples/webgpu_lights_phong.rs"]
 #[allow(dead_code)]
 mod webgpu_lights_phong;
@@ -1494,6 +1498,67 @@ fn webgpu_loader_gltf_anisotropy() {
     );
 }
 
+/// The Iridescence Lamp: `KHR_materials_iridescence` on two of its three
+/// meshes, a Radiance `.hdr` equirect as both `scene.environment` and a sharp
+/// `scene.background`.
+///
+/// The scene has no lights, so every lit pixel comes from the PMREM and the
+/// only path iridescence takes to the frame is the iridescent F0 in
+/// `computeMultiscattering` — a missing `evalIridescence` leaves the lamp a
+/// plain grey-metal PBR lamp rather than erroring. The transmissive mesh is
+/// drawn in the second pass over the copied opaque frame.
+///
+/// **Ignored: not yet green.** 1534 of 100000 pixels differ (1.5%, limit
+/// 0.1%). The lamp itself lands; the residual is the sharp cube the `.hdr`
+/// equirect is converted into for `scene.background`, which speckles every
+/// high-frequency edge of the skyline, plus a thin rim on the shade.
+/// `docs/webgpu_loader_gltf_iridescence-progress.md` has the measurements.
+#[test]
+#[ignore = "1.5% of pixels differ; see docs/webgpu_loader_gltf_iridescence-progress.md"]
+fn webgpu_loader_gltf_iridescence() {
+    let name = "webgpu_loader_gltf_iridescence";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_loader_gltf_iridescence::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_loader_gltf_iridescence::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(
+        name,
+        &mut app,
+        webgpu_loader_gltf_iridescence::animate,
+        |app| app.renderer.device(),
+    );
+}
+
 /// The gate on `pass.getViewZNode()`: the depth attachment of a **4×MSAA**
 /// pass, read back with `textureLoad( …, 0 )` through a
 /// `texture_depth_multisampled_2d` binding and converted with
@@ -2692,6 +2757,8 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_custom_fog_background);
     rung!(webgpu_deferred);
     rung!(webgpu_loader_gltf_anisotropy);
+    // `webgpu_loader_gltf_iridescence` is not on the list yet: its own e2e is
+    // `#[ignore]`d until the background cube matches.
 }
 
 // ---------------------------------------------------------------------------

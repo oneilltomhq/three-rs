@@ -1283,11 +1283,14 @@ impl GLTFLoader {
                         ],
                     }),
                 iridescence_texture: GltfTextureRef::parse(
-                    material_def.pointer("/extensions/KHR_materials_iridescence/iridescenceTexture"),
+                    material_def
+                        .pointer("/extensions/KHR_materials_iridescence/iridescenceTexture"),
                 ),
-                iridescence_thickness_texture: GltfTextureRef::parse(material_def.pointer(
-                    "/extensions/KHR_materials_iridescence/iridescenceThicknessTexture",
-                )),
+                iridescence_thickness_texture: GltfTextureRef::parse(
+                    material_def.pointer(
+                        "/extensions/KHR_materials_iridescence/iridescenceThicknessTexture",
+                    ),
+                ),
                 // `GLTFMaterialsClearcoat.extendMaterialParams`
                 clearcoat_factor: material_def
                     .pointer("/extensions/KHR_materials_clearcoat")

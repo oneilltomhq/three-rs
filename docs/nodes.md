@@ -2775,3 +2775,117 @@ None new beyond the classes §8 already lists, and one fix that was a real bug:
 [`tsl::with_tangent_attribute`]: ../src/nodes/tsl.rs
 [`tsl::bent_normal_view`]: ../src/nodes/tsl.rs
 [`Scene::background_blurriness`]: ../src/objects/scene.rs
+
+## 30. `webgpu_loader_gltf_iridescence` — a thin film over the specular lobe
+
+`KHR_materials_iridescence` puts a thin dielectric film on top of the
+material's specular interface. Light that reaches the base has crossed the film
+twice, and the two interfaces' reflections interfere; the colour that comes
+back depends on the film's optical thickness, which is why the Khronos lamp
+shifts from magenta to green across its shade.
+
+Three's implementation is Belcour and Barla's, and it lives in four pieces of
+`PhysicalLightingModel.js`: `evalIridescence`, `evalSensitivity`,
+`Fresnel0ToIor` / `IorToFresnel0`, and the `useIridescence` branches of
+`start()` and `computeMultiscattering()`. `BRDF_GGX` has a fifth. All five are
+ported in `src/materials/physical.rs`.
+
+### 30.1 `evalIridescence` is a real `fn`, with a `return` and a loop in it
+
+Three gives `evalIridescence` a `setLayout()`, so it is emitted as a WGSL
+function rather than inlined — and it is the first function on this ladder
+whose *body* has control flow:
+
+* `If( cosTheta2Sq.lessThan( 0 ), () => { return vec3( 1.0 ); } )` — total
+  internal reflection, an early `return` out of the middle of the function.
+  The port builds it as `if_then( …, vec![ return_statement( … ) ] )` inside a
+  `block()`, and because the builder generates the statement before the result
+  expression, the three temps the condition needs land above the `if` exactly
+  as they do in the dump.
+* `Loop( { start: 1, end: 2, condition: '<=', name: 'm' }, … )` — the two
+  non-DC terms of the Airy summation. The port's `Node::Loop` only knew the
+  `<` form, so it gained an `inclusive` flag: rebasing the loop to `m < 3`
+  would have changed the emitted header for no reason, and the rule is that
+  the text matches unless there is a reason in §8.
+
+`phi12` and `phi23` are `.select()`s, which three lowers to an `if`/`else`
+over a result var — `Node::Select`'s exact shape — and they materialise
+*inside* the loop, because that is where their first read is.
+
+### 30.2 The two F0s, and why `iridescenceFresnel` never appears
+
+`start()` evaluates the film twice, once against the dielectric base
+(`specularColor`) and once against the metallic one (`diffuseColor.rgb`), and
+turns each into an F0 with `Schlick_to_F0` — the inverse of the Schlick
+Fresnel at the view angle. `computeMultiscattering()` then blends its `f0`
+towards that F0 by `Iridescence`:
+
+```
+const Fr = iridescenceF0 ? iridescence.mix( f0, iridescenceF0 ) : f0;
+```
+
+Nothing here is a `toVar` or a `toConst`, so nothing is emitted until it is
+read. On this page that read is `indirectDiffuse()` and `indirectSpecular()`,
+which call `computeMultiscattering` three times — twice with the dielectric F0
+and once with the metallic one. The dielectric `evalIridescence` call and its
+`Schlick_to_F0` are therefore shared nodes and land in one temp each, while
+the `mix` around them is rebuilt per call and appears twice. The dump shows
+exactly that pair of shapes, and the port reproduces it by holding the F0s on
+`Physical` and building the `mix` inside `compute_multiscattering`.
+
+`this.iridescenceFresnel` — the `mix( dielectric, metallic, metalness )` that
+`BRDF_GGX`'s `USE_IRIDESCENCE` branch blends the Schlick Fresnel towards — is
+built but never emitted: the page has no lights, `direct()` is never called,
+and three's own dump for it has no `BRDF_GGX` at all. It is written for the
+same reason `BRDF_Sheen` is (§25): the branch is not optional in three, and
+leaving it out would make the port's lighting model quietly different for the
+first iridescent page that does light its model.
+
+### 30.3 `IridescenceThickness` reads the *maximum* when there is no map
+
+`MaterialNode.IRIDESCENCE_THICKNESS` is the one asymmetric accessor in the
+material node set:
+
+```js
+const iridescenceThicknessMaximum = reference( '1', 'float', material.iridescenceThicknessRange );
+if ( material.iridescenceThicknessMap ) {
+    const iridescenceThicknessMinimum = reference( '0', 'float', material.iridescenceThicknessRange );
+    node = iridescenceThicknessMaximum.sub( iridescenceThicknessMinimum ).mul( this.getTexture( scope ).g ).add( iridescenceThicknessMinimum );
+} else {
+    node = iridescenceThicknessMaximum;
+}
+```
+
+With no map the *minimum* is not referenced at all — not averaged, not used as
+a floor. The port carries the range as two separate `f32` uniforms in the same
+order (`…ThicknessMax` declared first, because three builds that `reference`
+first even on the branch that needs both) rather than as one `vec2`, so the
+uniform block matches. The channel is **green**, not red.
+
+`MaterialNode.IRIDESCENCE` itself has no map branch in r186, so glTF's
+`iridescenceTexture` is parsed into `GltfMaterial::iridescence_texture` and
+then never read. That is upstream's behaviour, not an omission here.
+
+### 30.4 `useIridescence` is `iridescence > 0`
+
+As with `useSheen` and `useAnisotropy`, the flag is the scalar being non-zero,
+so a material that sets an IOR and a thickness range but leaves the factor at
+0 generates exactly the shader it did before this section existed. Every
+already-green example on the ladder is in that position.
+
+### 30.5 Divergences
+
+None in the emitted text for the iridescence block itself; it was written
+statement by statement off
+`target/dumps/irid/m12_fragment_fragment_IridescenceLampIridescence.wgsl`.
+
+### 30.6 What was left out
+
+The page is **not yet green** — 1534 of 100000 pixels, against a 0.1%
+threshold — and the residual is in the background, not in the lamp. See
+`docs/webgpu_loader_gltf_iridescence-progress.md`; the short form is that this
+is the first graded page to take a Radiance `.hdr` through
+`cube_render_target::from_equirectangular_texture`, and the cube that comes
+out does not match three's along high-contrast edges. Dispersion and
+retroreflection, the two remaining `PhysicalLightingModel` flags, are still
+off for every material the ladder builds.
