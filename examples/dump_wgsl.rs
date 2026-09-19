@@ -287,6 +287,67 @@ fn main() {
         },
     );
 
+    // rung webgpu_postprocessing_ssaa: the accumulation quad. `texture( rt )`
+    // — with its `mat3x3` uv matrix — times the sample weight, unpremultiplied,
+    // on a material whose `premultipliedAlpha` premultiplies it again.
+    let sample_rt = Texture::render_target(800, 500, wgpu::TextureFormat::Rgba16Float);
+    let (sample_weight, _cell) = uniform_settable(three_rs::nodes::Type::F32, vec![0.125]);
+    let mut ssaa = MeshBasicNodeMaterial::new();
+    ssaa.name = "SSAA";
+    ssaa.fragment_node = Some(unpremultiply_alpha(texture(&sample_rt).mul(sample_weight)));
+    ssaa.transparent = true;
+    ssaa.depth_test = false;
+    ssaa.depth_write = false;
+    ssaa.premultiplied_alpha = true;
+    ssaa.blending = three_rs::materials::Blending::Additive;
+    ssaa.vertex_node = Some(three_rs::materials::quad_vertex_node());
+    show("ssaa_quad", &ssaa, SetupContext::default());
+
+    // …its `RenderPipeline` quad, which is `renderOutput` over the pass
+    // texture with no tone mapping at all.
+    // Built from a real `PassNode`, so this is the port's own graph and not a
+    // hand-rolled stand-in: `renderOutput( passNode.getTextureNode() )`.
+    let accumulator = three_rs::PassNode::new();
+    let mut ssaa_output = MeshBasicNodeMaterial::new();
+    ssaa_output.name = "RenderPipeline";
+    ssaa_output.fragment_node = Some(three_rs::materials::render_output(
+        accumulator.node(),
+        three_rs::ToneMapping::None,
+    ));
+    ssaa_output.vertex_node = Some(three_rs::materials::quad_vertex_node());
+    show(
+        "ssaa_render_pipeline_quad",
+        &ssaa_output,
+        SetupContext::default(),
+    );
+
+    // …and its scene: one instanced `MeshStandardMaterial` with `setColorAt()`
+    // colours, under three point lights and an ambient one. Smooth-shaded,
+    // unlike radial_blur's.
+    let ssaa_scene = MeshBasicNodeMaterial::standard(Color::new(1.0, 1.0, 1.0), 1.0, 0.0);
+    show(
+        "ssaa_scene",
+        &ssaa_scene,
+        SetupContext {
+            instance_count: Some(120),
+            instanced: true,
+            instance_color: Some(120),
+            lights: (0..3)
+                .map(|index| LightDesc {
+                    index,
+                    kind: LightKind::Point,
+                    shadow_map: None,
+                })
+                .chain(std::iter::once(LightDesc {
+                    index: 3,
+                    kind: LightKind::Ambient,
+                    shadow_map: None,
+                }))
+                .collect(),
+            ..SetupContext::default()
+        },
+    );
+
     // rung 5: the three teapots and the light spheres, against
     // `target/dumps/webgpu_lights_phong/`.
     let fog = fog(Color::from_hex(0xFF00FF), range_fog_factor(12.0, 30.0));
