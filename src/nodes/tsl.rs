@@ -957,7 +957,7 @@ pub fn material_sheen_color() -> NodeRef {
 }
 
 /// `materialSheenRoughness` — the raw uniform. `MaterialNode.SHEEN_ROUGHNESS`
-/// clamps it to `[ 0.0001, 1 ]`; see [`crate::materials::node_material`].
+/// clamps it to `[ 0.0001, 1 ]`; see [`crate::materials::setup`].
 pub fn material_sheen_roughness() -> NodeRef {
     uniform(
         UniformSource::MaterialSheenRoughness,
