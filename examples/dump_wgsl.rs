@@ -181,6 +181,7 @@ fn main() {
             output: None,
             vertex_color_size: 0,
             geometry_missing_normal: false,
+            has_tangent_attribute: false,
         },
     );
 
@@ -686,6 +687,7 @@ fn main() {
             // `COLOR_0` is a `VEC4` on every one of the file's primitives, so
             // the attribute is read whole rather than widened from a `vec3`.
             vertex_color_size: 4,
+            has_tangent_attribute: false,
             ..SetupContext::default()
         };
 

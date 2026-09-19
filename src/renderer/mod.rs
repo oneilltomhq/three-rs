@@ -1420,6 +1420,7 @@ impl Renderer {
                     // `getGeometryRoughness()`'s
                     // `builder.geometry.attributes.normal === undefined`.
                     geometry_missing_normal: !geometry.has_attribute("normal"),
+                    has_tangent_attribute: geometry.has_attribute("tangent"),
                 },
                 fog: scene.fog_node.clone(),
                 model_world: item.matrix_world,
@@ -1699,6 +1700,7 @@ impl Renderer {
                         // A shadow material is `MeshBasicNodeMaterial`: it has
                         // no roughness, so the flag cannot reach any code.
                         geometry_missing_normal: false,
+                        has_tangent_attribute: false,
                     },
                     fog: None,
                     model_world: item.matrix_world,
@@ -1906,6 +1908,7 @@ impl Renderer {
                         // A shadow material is `MeshBasicNodeMaterial`: it has
                         // no roughness, so the flag cannot reach any code.
                         geometry_missing_normal: false,
+                        has_tangent_attribute: false,
                     },
                     fog: None,
                     model_world: item.matrix_world,

@@ -35,12 +35,15 @@ pub use super::node::TextureSource;
 /// material_side)`. The flat-shading flag belongs in it because
 /// `normalViewGeometry` reads it and `negateOnBackSide()` is skipped when it
 /// is set, so two materials that differ only there must not share a cached
-/// node; the side is there for the same reason.
+/// node; the side is there for the same reason. The fifth flag is
+/// `builder.geometry.hasAttribute( 'tangent' )`, which picks the attribute
+/// tangent frame over the derivative one.
 type NormalViewKey = (
     Option<&'static str>,
     Option<usize>,
     bool,
     Side,
+    bool,
     Option<usize>,
 );
 
@@ -105,6 +108,11 @@ thread_local! {
     /// `builder.material.side` — what `negateOnBackSide()` branches on, and so
     /// part of every cache key that reaches `normalView` or the tangent frame.
     static MATERIAL_SIDE: RefCell<Side> = const { RefCell::new(Side::Front) };
+    /// `builder.geometry.hasAttribute( 'tangent' )` — what `Tangent.js` and
+    /// `Bitangent.js` branch on. With the attribute the frame comes from the
+    /// `tangent` vec4 through `modelViewMatrix`; without it, from the screen
+    /// derivatives of `TangentUtils.js`.
+    static HAS_TANGENT: RefCell<bool> = const { RefCell::new(false) };
     /// `normalViewGeometry`'s node per flat-shading flag — the stand-in for
     /// three.js' per-build `nodeData`, which gives the two forms of the
     /// accessor's `Fn( … ).once()` separate cache entries.
@@ -166,6 +174,17 @@ pub fn with_material_normal<R>(
     NORMAL_VALUE.with(|v| *v.borrow_mut() = previous);
     FLAT_SHADING.with(|v| *v.borrow_mut() = previous_flat);
     MATERIAL_SIDE.with(|v| *v.borrow_mut() = previous_side);
+    out
+}
+
+/// `builder.geometry.hasAttribute( 'tangent' )` for the whole of one
+/// material's setup — installed at the top of `NodeMaterial.setup()`, because
+/// the material's own normal node is built before the flow starts and already
+/// reads the TBN frame.
+pub fn with_tangent_attribute<R>(has_tangent: bool, f: impl FnOnce() -> R) -> R {
+    let previous = HAS_TANGENT.with(|v| v.replace(has_tangent));
+    let out = f();
+    HAS_TANGENT.with(|v| *v.borrow_mut() = previous);
     out
 }
 
@@ -2015,6 +2034,7 @@ fn normal_key() -> NormalViewKey {
         value.as_ref().map(|v| v.key()),
         FLAT_SHADING.with(|f| *f.borrow()),
         MATERIAL_SIDE.with(|s| *s.borrow()),
+        HAS_TANGENT.with(|t| *t.borrow()),
         // An `overrideNodes( [ [ normalView, … ] ] )` material reads a wholly
         // different `normalView`, so everything cached off it — `normalWorld`,
         // the tangent frame, the TBN matrix — has to be cached separately too.
@@ -2069,6 +2089,11 @@ fn tangent_frame() -> (NodeRef, NodeRef) {
     if let Some(pair) = TANGENT_VIEW.with(|m| m.borrow().get(&key).cloned()) {
         return pair;
     }
+    if HAS_TANGENT.with(|t| *t.borrow()) {
+        let pair = tangent_attribute_frame();
+        TANGENT_VIEW.with(|m| m.borrow_mut().insert(key, pair.clone()));
+        return pair;
+    }
     // `q1perp = dFdy( positionView ).cross( N )`, `q0perp = N.cross( dFdx(
     // positionView ) )`, with `dFdy` carrying the `- dpdy` sign flip.
     let n = normal_view();
@@ -2119,6 +2144,60 @@ fn tangent_frame() -> (NodeRef, NodeRef) {
     );
     TANGENT_VIEW.with(|m| m.borrow_mut().insert(key, pair.clone()));
     pair
+}
+
+/// `tangentView` / `bitangentView` for a geometry that *has* a `tangent`
+/// attribute — `Tangent.js` and `Bitangent.js`' first branch:
+///
+/// ```text
+/// tangentView   = normalize( varying( modelViewMatrix * vec4( tangentLocal, 0 ) ).xyz )
+/// bitangentView = normalize( cross( normalView, tangentView ) * tangentGeometry.w )
+/// ```
+///
+/// The bitangent's cross product is hoisted into a varying — and so computed
+/// per vertex — only inside the `NORMAL` sub-build, which is
+/// `getBitangent()`'s `builder.subBuildFn === 'NORMAL'` test. That is why the
+/// dump has one `v_tangentView` shared by both layers but a separate
+/// `NORMAL_v_bitangentView`: in the main layer the cross is a fragment
+/// expression over the *mapped* normal, in the `NORMAL` layer it is a vertex
+/// expression over the geometric one.
+fn tangent_attribute_frame() -> (NodeRef, NodeRef) {
+    let tangent_geometry = attribute("tangent", Type::Vec4);
+    let tangent_local = to_var(Some("tangentLocal"), tangent_geometry.clone().xyz());
+
+    let flat = FLAT_SHADING.with(|f| *f.borrow());
+    let front_side = |value: NodeRef| {
+        if flat {
+            value
+        } else {
+            negate_on_back_side(value)
+        }
+    };
+
+    let tangent = to_varying(
+        Some("v_tangentView"),
+        model_view_matrix()
+            .mul(vec4_join(vec![tangent_local, float(0.0)]))
+            .xyz(),
+    )
+    .normalize();
+    let tangent_view = to_var(Some("tangentView"), front_side(tangent));
+
+    // `getBitangent( normalView.cross( tangentView ), 'v_bitangentView' )`.
+    let cross_normal_tangent = cross(normal_view(), tangent_view.clone()).mul(tangent_geometry.w());
+    let in_normal_layer = SUB_BUILD.with(|s| *s.borrow()) == Some("NORMAL");
+    let bitangent = if in_normal_layer && !flat {
+        // The varying's name goes through `getSubBuildProperty()` here because
+        // the node carries the layer; `v_tangentView` above does not, because
+        // it is created in the shared `VERTEX` layer first.
+        to_varying(Some("NORMAL_v_bitangentView"), cross_normal_tangent)
+    } else {
+        cross_normal_tangent
+    }
+    .normalize();
+    let bitangent_view = to_var(Some("bitangentView"), front_side(bitangent));
+
+    (tangent_view, bitangent_view)
 }
 
 /// `tangentView`.

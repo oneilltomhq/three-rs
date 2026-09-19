@@ -91,6 +91,11 @@ pub struct SetupContext {
     /// two-attribute quad geometry. It changes the generated WGSL, so it
     /// belongs in the dynamic cache key.
     pub geometry_missing_normal: bool,
+    /// `builder.geometry.hasAttribute( 'tangent' )`. A glTF primitive with a
+    /// `TANGENT` accessor gets three's attribute tangent frame; anything else
+    /// gets the screen-derivative one. It changes both stages' code, so it is
+    /// part of the program's cache key.
+    pub has_tangent_attribute: bool,
     /// `builder.context.getOutput` — the renderer's context node, which
     /// `DirectRenderPipeline` sets so that the output transform is applied
     /// **inside every material's fragment shader** instead of in a quad of its
@@ -308,6 +313,18 @@ fn to_float(node: NodeRef) -> NodeRef {
 
 /// `NodeMaterial.setup()`.
 pub fn setup(
+    material: &MeshBasicNodeMaterial,
+    ctx: &SetupContext,
+    fog: Option<&FogNode>,
+) -> MaterialFlow {
+    // `builder.geometry.hasAttribute( 'tangent' )` — installed first, because
+    // the material's normal node below already reads the TBN frame.
+    with_tangent_attribute(ctx.has_tangent_attribute, || {
+        setup_tangent(material, ctx, fog)
+    })
+}
+
+fn setup_tangent(
     material: &MeshBasicNodeMaterial,
     ctx: &SetupContext,
     fog: Option<&FogNode>,
