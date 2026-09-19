@@ -2203,9 +2203,24 @@ pub fn texture(map: &Texture) -> NodeRef {
     texture_node(
         TextureSource::Texture2D(map.clone()),
         transformed_uv(uv(), (0, map.id()), map.matrix()),
-        SampleMode::Sample,
+        sample_mode_for(map),
         Type::Vec4,
     )
+}
+
+/// `WGSLNodeBuilder.generateTextureSample`'s choice for a colour texture:
+/// an unfilterable map ([`Texture::is_unfilterable`]) is bound with no
+/// sampler and read with `textureLoad`; everything else is `textureSample`.
+/// Every 2D-map entry point goes through this, because the sampler binding
+/// the builder declares is decided by the same predicate and a
+/// `textureSample` against a sampler that was never declared is a shader
+/// compile error, not wrong pixels.
+fn sample_mode_for(map: &Texture) -> SampleMode {
+    if map.is_unfilterable() {
+        SampleMode::Load
+    } else {
+        SampleMode::Sample
+    }
 }
 
 /// `triplanarTexture( textureX, textureY, textureZ, scale )` —
@@ -2366,15 +2381,10 @@ pub fn texture_sample(map: &Texture, coord: NodeRef) -> NodeRef {
 /// has four bare `texture_2d<f32>` bindings and no `_sampler` beside any of
 /// them.
 pub fn texture_uv(map: &Texture, coord: NodeRef) -> NodeRef {
-    let mode = if map.is_unfilterable() {
-        SampleMode::Load
-    } else {
-        SampleMode::Sample
-    };
     texture_node(
         TextureSource::Texture2D(map.clone()),
         coord,
-        mode,
+        sample_mode_for(map),
         Type::Vec4,
     )
 }
