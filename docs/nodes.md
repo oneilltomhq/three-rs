@@ -1503,3 +1503,67 @@ so a texture with `generateMipmaps = false` and hand-supplied levels is still
 mipmapped — and generation is skipped only because
 `Textures.updateTexture()` guards it with `texture.mipmaps.length === 0`, not
 because `generateMipmaps` is false.
+
+## 18. `webgpu_postprocessing_bloom_emissive` — the emissive attachment
+
+The page draws the scene once into two attachments and blooms only the second,
+which makes it the smallest statement of what an MRT is for:
+
+```js
+const mrtNode = mrt( { output: output, emissive: vec4( emissive, output.a ) } );
+mrtNode.setBlendMode( 'emissive', new THREE.BlendMode( THREE.NormalBlending ) );
+scenePass.setMRT( mrtNode );
+scenePass.getTexture( 'emissive' ).type = THREE.UnsignedByteType;
+```
+
+**`emissive` is the `EmissiveColor` var, not a node of its own.** `m10`'s tail
+is `output.m0 = Output; output.m1 = vec4( EmissiveColor, Output.w )`, and the
+skybox material — `m04`, drawn into the same two attachments — *declares*
+`EmissiveColor` and never assigns it, so attachment 1 gets WGSL's
+zero-initialised `vec3` for every background pixel. Nothing special marks the
+background; the sky does not bloom because a `MeshBasicNodeMaterial` has no
+emissive term to write.
+
+**A colour target per attachment.** `emissiveTexture.type = UnsignedByteType`
+makes attachment 1 `rgba8unorm` beside attachment 0's `rgba16float`, and
+`setBlendMode` gives it a blend state where attachment 0 has none —
+`_getBlending()` reads an MRT attachment's blend mode whatever
+`material.transparent` says. `RenderState` grew
+`extra_color_targets: [Option<ExtraColorTarget>; 3]`, a format and a blend
+state each, and they are part of the pipeline cache key because they are part
+of the pipeline.
+
+**`materialAO`.** `MaterialNode.AO` is `tex.r.sub( 1 ).mul( aoMapIntensity )
+.add( 1 )` assigned to the `AmbientOcclusion` *property*, written by
+`setupAmbientOcclusion()` right after `DiffuseColor`; the `AONode` that
+`setupLightsNode()` appends then does `ambientOcclusion.mulAssign(
+AmbientOcclusion )`. The `ambientOcclusion` var's `float( 1 )` initialiser is
+emitted at its first read, which with an `aoMap` is that `mulAssign` — so
+`PhysicalLightingModel::ambient_occlusion()` takes a `has_ao_node` flag and
+skips its own declaration rather than emitting a second `= 1.0`.
+
+`aoMap` reads `uv` here where three reads `uv1`: the dumped vertex shader has a
+single uv varying and `DamagedHelmet.gltf` has only `TEXCOORD_0`, so the two
+are the same attribute. A `TEXCOORD_n, n > 0` asset would need the loader work
+the `GLTFLoader` scout note lists as item 6.
+
+### Divergences specific to this rung
+
+**The equirectangular → cube conversion is a copy, not a layered attachment.**
+`CubeRenderTarget.fromEquirectangularTexture` renders the `BoxGeometry( 5, 5,
+5 )` six times, once per array layer of the cube texture. This renderer has no
+layered colour attachment, so `src/renderer/cube_render_target.rs` draws each
+face into a plain 2-D render target of the same size and format and then
+`copy_texture_to_texture`s it into its layer. Same format, same extent, no
+sampling — the texels are three's — but the command buffer is a draw plus a
+copy where three's is a draw. `m02`, the conversion's fragment module, matches
+three's line for line.
+
+**`scene.environment` has no field yet.** The page's one line becomes a
+`PmremEnvironment` and a traversal that puts its handle on each loaded
+material. The generated WGSL is the same, because `EnvironmentNode` is reached
+through the material either way.
+
+**A loaded material still has no name** (§16): `Material_MR` in three's module
+names has no counterpart, which is why `examples/dump_wgsl.rs` builds the
+helmet material by hand to diff `m09`/`m10`.
