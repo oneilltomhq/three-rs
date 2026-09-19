@@ -51,7 +51,7 @@ pub use objects::{
 };
 pub use renderer::{
     BuildCounts, ComputeCounts, Info, MemoryCounts, PassNode, RenderCounts, RenderPipeline,
-    RenderTarget, Renderer, RendererParameters,
+    RenderTarget, Renderer, RendererParameters, SsaaPassNode,
 };
 pub use textures::{
     ColorSpace, CubeTexture, DepthTexture, Mapping, MinFilter, Texture, TextureFilter, TextureType,

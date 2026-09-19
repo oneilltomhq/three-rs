@@ -486,6 +486,17 @@ differences, each verified to be pixel-neutral.
   because `Node::Block` is not a kind `generate()` caches or `analyze()`
   promotes, so without it the whole block would be emitted once per read. Three
   gets the same result from `Fn()`'s own stack. Same statements, same order.
+* **`PassNode`'s outer var is always emitted.** `PassNode.setup()` returns a
+  `PassTextureNode`, and both are `TempNode`s, so the pair *can* emit two vars —
+  `nodeVar0 = textureSample( … ); nodeVar1 = nodeVar0;`. Three only promotes a
+  `TempNode` to a var when `analyze()` saw it read more than once, so in the
+  `RenderPipeline` quad of `webgpu_postprocessing_ssaa`, where the pass texture
+  is read exactly once, Three emits only `nodeVar0` (dump `m05`) while this port
+  emits the copy and shifts every later `nodeVarN` by one. The port builds the
+  pass as `to_var( None, texture_uv( … ) )` unconditionally — the same choice
+  the masking rung's dump *did* show, where the outer node is read twice.
+  The copy is a `var<private>` assignment of a value already in a register; the
+  colour is the same.
 * **Named lighting temps.** Three names `singleScatteringDielectric`,
   `multiScatteringDielectric`, `singleScatteringMetallic`,
   `multiScatteringMetallic`, `dfg` and `multiScatteringCompensation`; this port

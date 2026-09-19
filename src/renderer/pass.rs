@@ -87,6 +87,14 @@ impl PassNode {
         self.render_target.texture()
     }
 
+    /// `passNode.renderTarget` — the accumulator an `SSAAPassNode` clones and
+    /// then draws into. `pub(crate)` because a `RenderTarget` is a handle and
+    /// handing one out would let an application render into a pass's target
+    /// behind its back.
+    pub(crate) fn render_target(&self) -> &RenderTarget {
+        &self.render_target
+    }
+
     /// `PassNode.updateBefore( frame )`: size the target to the drawing buffer,
     /// then `renderer.setRenderTarget( this.renderTarget ); renderer.render(
     /// this.scene, this.camera )` with the previous target restored after.

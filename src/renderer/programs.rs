@@ -595,6 +595,9 @@ impl UniformContext<'_> {
                 UniformSource::ShadowIntensity(i) => vec![self.lights[*i].shadow_intensity as f32],
                 UniformSource::ToneMappingExposure => vec![self.tone_mapping_exposure as f32],
                 UniformSource::Value(values) => values.iter().map(|&v| v as f32).collect(),
+                // Read per draw, so `sampleWeight.value = …` between two
+                // `render_quad()` calls reaches the second one's buffer.
+                UniformSource::Settable(cell) => cell.get().iter().map(|&v| v as f32).collect(),
             };
 
             let offset = member.offset as usize;

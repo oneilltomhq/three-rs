@@ -12,6 +12,7 @@ mod programs;
 mod render_list;
 mod render_pipeline;
 mod render_target;
+mod ssaa_pass;
 
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
@@ -24,6 +25,7 @@ pub use programs::{LightState, RenderState, UniformContext};
 pub use render_list::{project_object, ProjectCamera, RenderItem, RenderList};
 pub use render_pipeline::RenderPipeline;
 pub use render_target::{RenderTarget, RenderTargetInner, RenderTargetOptions};
+pub use ssaa_pass::SsaaPassNode;
 
 use crate::cameras::{OrthographicCamera, PerspectiveCamera, RenderCamera};
 use crate::core::{BufferGeometry, Index, Node};
@@ -46,17 +48,23 @@ use crate::textures::{
     Texture, TextureFilter, TextureType, Wrapping,
 };
 
-/// How many `render()` calls a cache entry survives without being used, for
-/// the caches whose key has no liveness signal behind it (`node_builder_states`
+/// How many **frames** a cache entry survives without being used, for the
+/// caches whose key has no liveness signal behind it (`node_builder_states`
 /// and `buffers`, both keyed on ids of values the renderer does not own).
 ///
 /// Zero would be wrong: a consumer that renders two scenes, or the same scene
-/// from two cameras, in alternating `render()` calls would evict each one's
-/// materials on the other's frame and rebuild them every time. Four tolerates
-/// a handful of interleaved passes while still bounding the maps at a few
-/// frames' worth of churn — a steady frame touches every entry, so a steady
-/// frame evicts nothing and still builds nothing.
-const CACHE_GRACE_RENDERS: u64 = 4;
+/// from two cameras, in alternating frames would evict each one's materials on
+/// the other's frame and rebuild them every time. Four tolerates a handful of
+/// interleaved frames while still bounding the maps at a few frames' worth of
+/// churn — a steady frame touches every entry, so a steady frame evicts
+/// nothing and still builds nothing.
+///
+/// The clock is [`Renderer::frames`], not the number of `render()` calls: a
+/// post-processing frame is many renders, and
+/// `webgpu_postprocessing_ssaa` renders its scene eight times before the one
+/// draw that reads the `RenderPipeline` quad's material. Against a render
+/// clock that quad's program was evicted and rebuilt every frame.
+const CACHE_GRACE_FRAMES: u64 = 4;
 
 /// A cached GPU buffer that is filled exactly once — `range()`'s random draw,
 /// or one upload of an `InstancedBufferAttribute`'s array — with the same
@@ -295,8 +303,8 @@ const VARIANT_QUAD: u64 = 2;
 /// share the compiled `Program`.
 struct MaterialStates {
     version: u32,
-    /// `Renderer::renders` when this material was last drawn; see
-    /// [`CACHE_GRACE_RENDERS`].
+    /// `Renderer::frames` when this material was last drawn; see
+    /// [`CACHE_GRACE_FRAMES`].
     last_used: u64,
     /// Keyed by the dynamic half of the cache key — the hash of the item's
     /// `SetupContext`, fog and `MaterialKey::variant`.
@@ -327,6 +335,27 @@ struct PassTarget {
     height: u32,
 }
 
+/// What a pass clears before its first draw — `RenderContext.clearColor` /
+/// `.clearDepth` plus the colour itself.
+///
+/// `Background.update()` resolves both flags from `renderer.autoClear`, with a
+/// `Color` background forcing the clear on regardless (`forceClear`).
+#[derive(Clone, Copy, Debug, Default)]
+struct ClearOps {
+    color: Option<[f64; 4]>,
+    depth: bool,
+}
+
+impl ClearOps {
+    /// Everything cleared, the colour included — `autoClear` at its default.
+    fn all(color: [f64; 4]) -> Self {
+        Self {
+            color: Some(color),
+            depth: true,
+        }
+    }
+}
+
 pub struct Renderer {
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -346,6 +375,13 @@ pub struct Renderer {
     /// scene has `background === null`, so its render target clears to
     /// `(0, 0, 0, 0)` and the untouched texels are transparent.
     clear_color: [f64; 4],
+
+    /// `Renderer.autoClear`, default true: whether a render clears its target
+    /// before drawing. `SSAAPassNode` turns it off for the eight scene renders
+    /// and the eight accumulation quads it drives, so each of those passes
+    /// carries `loadOp: "load"` and only the explicit
+    /// [`clear()`](Renderer::clear) calls between them clear anything.
+    pub auto_clear: bool,
 
     /// `Renderer.sortObjects`. With it off, `_projectObject()` leaves each render
     /// item's `z` alone and the lists keep traversal order.
@@ -370,11 +406,16 @@ pub struct Renderer {
     /// `material.id`. A steady frame is served from here without touching the
     /// node builder; see `node_builder_state()`.
     node_builder_states: HashMap<usize, MaterialStates>,
-    /// `render()` calls so far — the clock the by-use caches
-    /// (`node_builder_states`, `buffers`) age their entries against, since a
-    /// material is a value here and has no liveness signal of its own. See
-    /// [`CACHE_GRACE_RENDERS`].
-    renders: u64,
+    /// Frames so far — the clock the by-use caches (`node_builder_states`,
+    /// `buffers`) age their entries against, since a material is a value here
+    /// and has no liveness signal of its own. See [`CACHE_GRACE_FRAMES`].
+    ///
+    /// A frame is a render whose destination is the screen: `render()` or
+    /// `render_quad()` with no render target set. Renders *into* a render
+    /// target — the nested scene renders of a `PassNode`, an `SsaaPassNode`'s
+    /// eight samples and its eight accumulation quads — belong to the frame
+    /// they precede and do not advance it.
+    frames: u64,
     /// How many times `NodeBuilder::build` has run — the number a steady frame
     /// must leave unchanged. See `program_builds()`.
     program_builds: u64,
@@ -403,7 +444,7 @@ pub struct Renderer {
     /// `BufferNode` / `InstanceBuffer` storage, keyed by the node's own
     /// identity (`BufferId`, a never-reused counter) — a `range()` buffer must
     /// be filled only once, since filling it draws from `Math.random`. Aged out
-    /// by [`CACHE_GRACE_RENDERS`]; the node itself is a material's, not the
+    /// by [`CACHE_GRACE_FRAMES`]; the node itself is a material's, not the
     /// renderer's, so there is no strong count to read.
     buffers: HashMap<usize, BufferEntry>,
     /// `instancedArray()` storage, keyed by `BufferId`. Unlike [`buffers`] this
@@ -602,7 +643,7 @@ impl Renderer {
             mipmap_shader,
             programs: HashMap::new(),
             node_builder_states: HashMap::new(),
-            renders: 0,
+            frames: 0,
             program_builds: 0,
             default_material: MeshBasicNodeMaterial::new(),
             background_material: {
@@ -631,6 +672,7 @@ impl Renderer {
             background_geometry: None,
             quad_geometry: None,
             quad_camera: OrthographicCamera::new(-1.0, 1.0, 1.0, -1.0, 0.0, 1.0),
+            auto_clear: true,
             neutral_output: false,
             tone_mapping_exposure: 1.0,
             time: 0.0,
@@ -686,6 +728,55 @@ impl Renderer {
         self.render_target = render_target;
     }
 
+    /// `renderer.setClearColor( color, alpha )`. The colour is already in the
+    /// working colour space — `Color.set( hex )` does the sRGB → linear
+    /// conversion on the CPU, so [`Color::from_hex`] is the whole of the
+    /// page's `setClearColor( 0x000000, 1.0 )`.
+    pub fn set_clear_color(&mut self, color: Color, alpha: f64) {
+        self.clear_color = [color.r, color.g, color.b, alpha];
+    }
+
+    /// `renderer.getClearColor()`.
+    pub fn clear_color(&self) -> Color {
+        Color::new(
+            self.clear_color[0],
+            self.clear_color[1],
+            self.clear_color[2],
+        )
+    }
+
+    /// `renderer.getClearAlpha()`.
+    pub fn clear_alpha(&self) -> f64 {
+        self.clear_color[3]
+    }
+
+    /// `renderer.clear( color, depth )` — a manual clear of the current render
+    /// target, which ignores `autoClear`. three.js' third argument, `stencil`,
+    /// has nothing behind it here: the port allocates no stencil buffer, so
+    /// the parameter would be a no-op and is left out until one exists.
+    ///
+    /// On the GPU it is a `beginRenderPass` with `loadOp: "clear"` and no
+    /// draws, in its own command encoder and its own submit, exactly as
+    /// `WebGPUBackend.clear()` records it: nine of the twenty-six passes of
+    /// `webgpu_postprocessing_ssaa` are these.
+    ///
+    /// Unlike three.js this does not run the output pass when the canvas is
+    /// cleared with a frame-buffer target in play (`if ( renderTarget !== null
+    /// && this._renderTarget === null ) this._renderOutput( renderTarget )`):
+    /// nothing in the port calls `clear()` on the canvas, and a clear that
+    /// blits is a surprise worth porting only when something needs it.
+    pub fn clear(&mut self, color: bool, depth: bool) {
+        let pass_target = match &self.render_target {
+            Some(render_target) => self.render_target_pass(&render_target.clone()),
+            None => self.canvas_pass(true),
+        };
+        let clear = ClearOps {
+            color: color.then_some(self.clear_color),
+            depth,
+        };
+        self.draw(&[], UniformContext::default(), &pass_target, clear);
+    }
+
     /// `renderer.render( scene, camera )`.
     ///
     /// `camera` is `&mut dyn RenderCamera` so an `OrthographicCamera` works too
@@ -701,8 +792,7 @@ impl Renderer {
 
         // Before anything of this frame is looked up: return what the last
         // frame's scene no longer uses. See `sweep_caches`.
-        self.renders += 1;
-        self.sweep_caches();
+        self.begin_frame();
 
         // `Renderer.render()`: `scene.updateMatrixWorld()` then
         // `camera.updateMatrixWorld()`, both honouring `matrixAutoUpdate` /
@@ -932,9 +1022,13 @@ impl Renderer {
         // `Background.update()`: a `Color` background becomes the clear colour
         // and forces a clear; any other background leaves the renderer's own
         // clear colour in place (and `autoClear` still clears with it).
+        // `Background.update()`'s `forceClear`: a `Color` background clears
+        // even with `autoClear` off (`if ( renderer.autoClear === true ||
+        // forceClear === true )`); anything else clears only when it is on.
         let clear = match &scene.background {
-            Some(Background::Color(Color { r, g, b })) => [*r, *g, *b, 1.0],
-            _ => self.clear_color,
+            Some(Background::Color(Color { r, g, b })) => ClearOps::all([*r, *g, *b, 1.0]),
+            _ if self.auto_clear => ClearOps::all(self.clear_color),
+            _ => ClearOps::default(),
         };
 
         // `LightsNode.setupLights()`: each light resolves to its colour scaled
@@ -986,7 +1080,7 @@ impl Renderer {
             ..Default::default()
         };
 
-        self.render_list(&items, camera_uniforms, Some(clear));
+        self.render_list(&items, camera_uniforms, clear);
     }
 
     /// `ShadowNode.updateShadow()` for every shadow-casting light in the list:
@@ -1159,7 +1253,12 @@ impl Renderer {
             };
 
             let pass_target = self.render_target_pass(&target);
-            self.draw(&items, uniforms, &pass_target, Some([0.0, 0.0, 0.0, 0.0]));
+            self.draw(
+                &items,
+                uniforms,
+                &pass_target,
+                ClearOps::all([0.0, 0.0, 0.0, 0.0]),
+            );
 
             self.shadow_maps.insert(
                 index,
@@ -1366,7 +1465,12 @@ impl Renderer {
                 ..Default::default()
             };
 
-            self.draw(&items, uniforms, &pass_target, Some([1.0, 1.0, 1.0, 1.0]));
+            self.draw(
+                &items,
+                uniforms,
+                &pass_target,
+                ClearOps::all([1.0, 1.0, 1.0, 1.0]),
+            );
         }
 
         self.shadow_maps
@@ -1395,6 +1499,11 @@ impl Renderer {
     /// the full-screen-triangle one and the quad is rendered with the shared
     /// orthographic camera.
     pub fn render_quad(&mut self, quad: &QuadMesh) {
+        // A `RenderPipeline`'s quad is the last draw of its frame and the only
+        // one that reads its material, so the frame clock has to count it —
+        // see [`Renderer::frames`].
+        self.begin_frame();
+
         let key = MaterialKey::of(&quad.material).variant(VARIANT_QUAD);
         let mut material = quad.material.clone();
         material.vertex_node = Some(materials::quad_vertex_node());
@@ -1419,8 +1528,15 @@ impl Renderer {
         }];
 
         let camera_uniforms = self.quad_camera_uniforms();
-        let clear = self.clear_color;
-        self.render_list(&items, camera_uniforms, Some(clear));
+        // `QuadMesh.render()` is `renderer.render( _scene, _camera )`, so it
+        // reads `autoClear` like any other render: the eight accumulation
+        // quads of an `SsaaPassNode` run with it off and load their target.
+        let clear = if self.auto_clear {
+            ClearOps::all(self.clear_color)
+        } else {
+            ClearOps::default()
+        };
+        self.render_list(&items, camera_uniforms, clear);
     }
 
     fn quad_camera_uniforms(&self) -> UniformContext<'static> {
@@ -1440,7 +1556,7 @@ impl Renderer {
         &mut self,
         items: &[Renderable],
         camera_uniforms: UniformContext,
-        clear: Option<[f64; 4]>,
+        clear: ClearOps,
     ) {
         // `Renderer.render()`: with `needsFrameBufferTarget` the scene is drawn
         // into the internal framebuffer target and `_renderOutput()` then blits
@@ -1474,7 +1590,7 @@ impl Renderer {
         items: &[Renderable],
         camera_uniforms: UniformContext,
         target: &PassTarget,
-        clear: Option<[f64; 4]>,
+        clear: ClearOps,
     ) {
         struct Draw {
             geometry_id: usize,
@@ -1624,12 +1740,12 @@ impl Renderer {
             });
 
         {
-            let load = match clear {
-                Some(clear) => wgpu::LoadOp::Clear(wgpu::Color {
-                    r: clear[0],
-                    g: clear[1],
-                    b: clear[2],
-                    a: clear[3],
+            let load = match clear.color {
+                Some(color) => wgpu::LoadOp::Clear(wgpu::Color {
+                    r: color[0],
+                    g: color[1],
+                    b: color[2],
+                    a: color[3],
                 }),
                 None => wgpu::LoadOp::Load,
             };
@@ -1650,7 +1766,7 @@ impl Renderer {
                         view,
                         depth_ops: Some(wgpu::Operations {
                             // `Renderer._clearDepth` is 1.
-                            load: if clear.is_some() {
+                            load: if clear.depth {
                                 wgpu::LoadOp::Clear(1.0)
                             } else {
                                 wgpu::LoadOp::Load
@@ -1754,7 +1870,7 @@ impl Renderer {
 
         let camera_uniforms = self.quad_camera_uniforms();
         let pass_target = self.canvas_pass(true);
-        self.draw(&items, camera_uniforms, &pass_target, None);
+        self.draw(&items, camera_uniforms, &pass_target, ClearOps::default());
     }
 
     /// Reads the canvas colour texture back as top-down RGBA8, which is what
@@ -2077,16 +2193,16 @@ impl Renderer {
     fn node_builder_state(&mut self, item: &Renderable) -> Rc<NodeProgram> {
         let dynamic_key = hash_of(&(item.key.variant, &item.setup, &item.fog));
 
-        let renders = self.renders;
+        let frames = self.frames;
         let states = self
             .node_builder_states
             .entry(item.key.id)
             .or_insert_with(|| MaterialStates {
                 version: item.key.version,
-                last_used: renders,
+                last_used: frames,
                 by_dynamic_key: HashMap::new(),
             });
-        states.last_used = renders;
+        states.last_used = frames;
         if states.version != item.key.version {
             states.by_dynamic_key.clear();
             states.version = item.key.version;
@@ -2356,10 +2472,10 @@ impl Renderer {
                 // (`BatchedText::sync`), so the same `Rc` means the same
                 // bytes. Re-creating this per draw, sized to the batch's
                 // capacity, was most of a frame (issue #89).
-                let renders = self.renders;
+                let frames = self.frames;
                 if let Some(entry) = self.buffers.get_mut(&id) {
                     if entry.data.as_ref().is_some_and(|d| Rc::ptr_eq(d, data)) {
-                        entry.last_used = renders;
+                        entry.last_used = frames;
                         return entry.buffer.clone();
                     }
                 }
@@ -2372,16 +2488,16 @@ impl Renderer {
                     id,
                     BufferEntry {
                         buffer: buffer.clone(),
-                        last_used: renders,
+                        last_used: frames,
                         data: Some(data.clone()),
                     },
                 );
                 buffer
             }
             BufferSource::Range { min, max } => {
-                let renders = self.renders;
+                let frames = self.frames;
                 if let Some(entry) = self.buffers.get_mut(&id) {
-                    entry.last_used = renders;
+                    entry.last_used = frames;
                     return entry.buffer.clone();
                 }
 
@@ -2400,7 +2516,7 @@ impl Renderer {
                     id,
                     BufferEntry {
                         buffer: buffer.clone(),
-                        last_used: renders,
+                        last_used: frames,
                         data: None,
                     },
                 );
@@ -3185,18 +3301,29 @@ impl Renderer {
     /// - a material is a value (the renderer only ever sees per-frame clones)
     ///   and a `BufferNode` lives inside a material's node graph, so neither
     ///   has a count to read. Those age out instead: an entry unused for
-    ///   [`CACHE_GRACE_RENDERS`] renders goes.
+    ///   [`CACHE_GRACE_FRAMES`] frames goes.
     ///
     /// Correctness never rests on this sweep — ids are never reused, so a
     /// stale entry can only ever be found by the object that put it there
     /// (issue #58). It is here so a consumer that rebuilds geometry or
     /// materials every frame does not grow the maps without bound.
+    /// Advance the frame clock if this render's destination is the screen,
+    /// then sweep. Every render sweeps — a geometry the scene dropped should
+    /// go on the render that notices — but only a render to the screen is a
+    /// new frame; see [`Renderer::frames`].
+    fn begin_frame(&mut self) {
+        if self.render_target.is_none() {
+            self.frames += 1;
+        }
+        self.sweep_caches();
+    }
+
     fn sweep_caches(&mut self) {
         self.geometries
             .retain(|_, entry| entry.owner.strong_count() > 0);
         self.info.memory.geometries = self.geometries.len();
 
-        let cutoff = self.renders.saturating_sub(CACHE_GRACE_RENDERS);
+        let cutoff = self.frames.saturating_sub(CACHE_GRACE_FRAMES);
         self.node_builder_states
             .retain(|_, states| states.last_used >= cutoff);
         self.buffers.retain(|_, entry| entry.last_used >= cutoff);
