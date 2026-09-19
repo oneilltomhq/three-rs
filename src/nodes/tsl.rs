@@ -30,11 +30,12 @@ pub use super::node::TextureSource;
 // sub-builds and the build context (`docs/nodes.md` §7)
 // ---------------------------------------------------------------------------
 
-/// Cache key shared by the per-(sub-build layer, normal value) caches below:
-/// `(sub_build_layer, normal_value_id)`.
-type SubBuildKey = (Option<&'static str>, Option<usize>, Side);
-
-/// [`SubBuildKey`] plus the flat-shading flag, for `normalView`'s cache.
+/// Cache key shared by every cache below that holds a node reading
+/// `normalView`: `(sub_build_layer, normal_value_id, flat_shading,
+/// material_side)`. The flat-shading flag belongs in it because
+/// `normalViewGeometry` reads it and `negateOnBackSide()` is skipped when it
+/// is set, so two materials that differ only there must not share a cached
+/// node; the side is there for the same reason.
 type NormalViewKey = (Option<&'static str>, Option<usize>, bool, Side);
 
 thread_local! {
@@ -61,12 +62,12 @@ thread_local! {
     static NORMAL_VIEW: RefCell<HashMap<NormalViewKey, NodeRef>> =
         RefCell::new(HashMap::new());
     /// `tangentView` / `bitangentView`, keyed the same way.
-    static TANGENT_VIEW: RefCell<HashMap<SubBuildKey, (NodeRef, NodeRef)>> =
+    static TANGENT_VIEW: RefCell<HashMap<NormalViewKey, (NodeRef, NodeRef)>> =
         RefCell::new(HashMap::new());
     /// `normalWorld`, keyed the same way: it reads `normalView`, so a plain
     /// singleton would bake in whichever material was built first and then
     /// re-assign `normalView` from the geometric normal in every later one.
-    static NORMAL_WORLD: RefCell<HashMap<SubBuildKey, NodeRef>> =
+    static NORMAL_WORLD: RefCell<HashMap<NormalViewKey, NodeRef>> =
         RefCell::new(HashMap::new());
     /// `builder.context.setupPositionView()` — `NodeMaterial.setup()` installs
     /// it before either stage is flowed, and `SpriteNodeMaterial` overrides it
@@ -870,7 +871,7 @@ pub fn tbn_view_matrix() -> NodeRef {
     // frame it joins depends on the material's side, so a singleton would bake
     // in whichever material was built first.
     thread_local! {
-        static CELL: RefCell<HashMap<SubBuildKey, NodeRef>> = RefCell::new(HashMap::new());
+        static CELL: RefCell<HashMap<NormalViewKey, NodeRef>> = RefCell::new(HashMap::new());
     }
     let key = normal_key();
     if let Some(node) = CELL.with(|m| m.borrow().get(&key).cloned()) {
@@ -1615,7 +1616,7 @@ pub fn normal_view_geometry() -> NodeRef {
 /// per-build `nodeData` gives it for free.
 /// The cache key every node that reads `normalView` shares: the open sub-build
 /// layer plus the material's own normal node.
-fn normal_key() -> SubBuildKey {
+fn normal_key() -> NormalViewKey {
     let layer = SUB_BUILD.with(|s| *s.borrow());
     let value = if layer.is_some() {
         None
@@ -1625,24 +1626,25 @@ fn normal_key() -> SubBuildKey {
     (
         layer,
         value.as_ref().map(|v| v.key()),
+        FLAT_SHADING.with(|f| *f.borrow()),
         MATERIAL_SIDE.with(|s| *s.borrow()),
     )
 }
 
-pub fn normal_view() -> NodeRef {
+/// The material's normal node for the current build, or `None` inside a
+/// sub-build layer, which runs on the geometric normal.
+fn normal_value() -> Option<NodeRef> {
     let layer = SUB_BUILD.with(|s| *s.borrow());
-    let value = if layer.is_some() {
+    if layer.is_some() {
         None
     } else {
         NORMAL_VALUE.with(|v| v.borrow().clone())
-    };
+    }
+}
+
+pub fn normal_view() -> NodeRef {
+    let key = normal_key();
     let flat = FLAT_SHADING.with(|f| *f.borrow());
-    let key = (
-        layer,
-        value.as_ref().map(|v| v.key()),
-        flat,
-        MATERIAL_SIDE.with(|s| *s.borrow()),
-    );
     if let Some(node) = NORMAL_VIEW.with(|m| m.borrow().get(&key).cloned()) {
         return node;
     }
@@ -1650,7 +1652,7 @@ pub fn normal_view() -> NodeRef {
     // `negateOnBackSide()` applies unless the material is flat shaded.
     let node = to_var(
         Some("normalView"),
-        match value {
+        match normal_value() {
             Some(value) => value,
             None if flat => normal_view_geometry(),
             None => negate_on_back_side(normal_view_geometry()),
@@ -2113,6 +2115,25 @@ pub fn instance_matrix(count: usize) -> NodeRef {
         (0..4)
             .map(|i| instanced_attribute(&interleaved, i * 4, Type::Vec4))
             .collect(),
+    )
+}
+
+/// `instanceColor` — `varyingProperty( 'vec3', 'vInstanceColor' )` fed by
+/// `instancedBufferAttribute( new InstancedBufferAttribute( colors.array, 3 ),
+/// 'vec3', 3, 0 )` (`src/nodes/accessors/Instance.js`).
+///
+/// Unlike the matrices there is no uniform-buffer branch: three.js always
+/// re-wraps the colours as an instanced vertex attribute.
+pub fn instance_color(count: usize) -> NodeRef {
+    let buffer = Rc::new(InstanceBuffer {
+        id: crate::nodes::node::BufferId::next(),
+        source: BufferSource::InstanceColor,
+        count: count.max(1),
+        item_size: 3,
+    });
+    to_varying(
+        Some("vInstanceColor"),
+        instanced_attribute(&buffer, 0, Type::Vec3),
     )
 }
 

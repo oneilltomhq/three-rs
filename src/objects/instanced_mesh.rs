@@ -9,7 +9,7 @@ use std::rc::Rc;
 
 use crate::core::{BufferGeometry, Node, Object3D};
 use crate::materials::MeshBasicNodeMaterial;
-use crate::math::{Matrix4, Sphere};
+use crate::math::{Color, Matrix4, Sphere};
 use crate::objects::{Mesh, Payload};
 
 /// `new InstancedBufferAttribute( new Float32Array( count * 16 ), 16 )`.
@@ -118,6 +118,24 @@ impl InstancedMesh {
         }
 
         self.bounding_sphere = Some(bounding_sphere);
+    }
+
+    /// `InstancedMesh.setColorAt( index, color )`.
+    ///
+    /// The array is allocated on the first call and **filled with 1**, not 0,
+    /// so an instance that is never given a colour keeps the material's own —
+    /// `new Float32Array( count * 3 ).fill( 1 )` in three.js.
+    ///
+    /// The colour is stored in the working (linear-sRGB) space the `Color`
+    /// already holds; three.js writes `color.toArray()`, which is the same.
+    pub fn set_color_at(&mut self, index: usize, color: &Color) {
+        let colors = self.instance_color.get_or_insert_with(|| {
+            InstancedBufferAttribute::new(vec![1.0; self.instance_matrix.count() * 3], 3)
+        });
+        let offset = index * 3;
+        colors.array[offset] = color.r as f32;
+        colors.array[offset + 1] = color.g as f32;
+        colors.array[offset + 2] = color.b as f32;
     }
 
     /// `InstancedMesh.setMatrixAt( index, matrix )` —

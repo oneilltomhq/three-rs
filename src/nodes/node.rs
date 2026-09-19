@@ -246,6 +246,11 @@ pub struct UniformNode {
 pub enum BufferSource {
     /// `InstancedMesh.instanceMatrix`.
     InstanceMatrix,
+    /// `InstancedMesh.instanceColor` — `setColorAt()`'s three floats per
+    /// instance, always a `stepMode: 'instance'` vertex buffer (three.js wraps
+    /// it in a fresh `InstancedBufferAttribute( colors.array, 3 )` and never
+    /// takes the uniform branch for it).
+    InstanceColor,
     /// `RangeNode` resolved per instance:
     /// `lerp( min[c], max[c], Math.random() )`. `min`/`max` are the `Vector4`s
     /// `RangeNode.setup()` builds out of the min/max values: a scalar splats
@@ -836,6 +841,7 @@ impl std::hash::Hash for BufferSource {
             // attribute is megabytes and is resolved per draw anyway.
             BufferSource::Attribute(data) => (Rc::as_ptr(data) as *const u8 as usize).hash(state),
             BufferSource::InstanceMatrix
+            | BufferSource::InstanceColor
             | BufferSource::MorphInfluences
             | BufferSource::BoneMatrices
             | BufferSource::Storage => {}
@@ -872,6 +878,7 @@ impl std::fmt::Debug for BufferSource {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             BufferSource::InstanceMatrix => f.write_str("InstanceMatrix"),
+            BufferSource::InstanceColor => f.write_str("InstanceColor"),
             BufferSource::Storage => f.write_str("Storage"),
             BufferSource::Range { min, max } => f
                 .debug_struct("Range")

@@ -27,6 +27,12 @@ pub struct SetupContext {
     /// `InstancedMesh.instanceColor` is present, so `range()` resolves against
     /// the instance index.
     pub instanced: bool,
+    /// `Some(count)` when the object is an `InstancedMesh` that has had
+    /// `setColorAt()` called on it — `NodeMaterial.setupDiffuseColor()`'s
+    /// `if ( object.instanceColor )` branch. The count sizes the instanced
+    /// vertex buffer; the colours themselves travel with the draw, not with
+    /// the node, so two meshes sharing a material cannot share a fill.
+    pub instance_color: Option<usize>,
     /// The pass' lights in `Scene.lights` order — the default `LightsNode` list
     /// when the material sets no `lights_node`. Each entry carries the light's
     /// kind and, when this object receives its shadow, the shadow map to sample;
@@ -114,8 +120,12 @@ fn setup_diffuse_color(
 ) {
     let color = match &material.color_node {
         Some(node) => to_vec4(node.clone()),
+        // `materialColor` is a vec3 (times `map` when there is one) and stays
+        // one until `diffuseColor.assign()` widens it, which is what puts the
+        // `vec4<f32>( … , 1.0 )` on the outside of the instance-colour product
+        // rather than around the uniform alone.
         None => {
-            let base = vec4_join(vec![material_color(), float(1.0)]);
+            let base = material_color();
             match &material.map {
                 Some(map) => base.mul(texture(map)),
                 None => base,
@@ -132,9 +142,19 @@ fn setup_diffuse_color(
         false => color,
     };
 
+    // `if ( object.instanceColor ) colorNode = instanceColor.mul( colorNode )`
+    // — the varying multiplies on the *left*, which is what puts
+    // `vInstanceColor` first in the dump's `DiffuseColor = vec4<f32>( (
+    // vInstanceColor * object.nodeUniform2 ), 1.0 )`.
+    let color = match ctx.instance_color {
+        Some(count) => instance_color(count).mul(color),
+        None => color,
+    };
+
     // `if ( object.isBatchedMesh && object._colorsTexture )
     // colorNode = batchColor.mul( colorNode )` — the varying is the *left*
     // operand, which is what puts `vBatchColor` first in the generated line.
+    // three.js runs this after the instanced-colour step, so the port does too.
     let color = match ctx.batch.as_ref().and_then(|b| b.colors.as_ref()) {
         Some(_) => crate::nodes::batch::batch_color().mul(color),
         None => color,
