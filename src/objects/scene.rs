@@ -13,12 +13,15 @@ use crate::textures::CubeTexture;
 pub enum Background {
     Color(Color),
     CubeTexture(CubeTexture),
-    /// `scene.backgroundNode = color( … )` — `Background.update()`'s
+    /// `scene.backgroundNode = …` — `Background.update()`'s
     /// `background.isNode` branch, which draws the skybox sphere with
-    /// `vec4( color ).mul( backgroundIntensity )` instead of clearing. Held in
+    /// `vec4( node ).mul( backgroundIntensity )` instead of clearing. Held in
     /// the same slot because `nodes.getBackgroundNode( scene ) ||
     /// scene.background` makes the node win over a plain background.
-    Node(Color),
+    ///
+    /// Any node, not just a `color()`: `webgpu_skinning` uses
+    /// `screenUV.y.mix( color( 0x66bbff ), color( 0x4466ff ) )`.
+    Node(crate::nodes::NodeRef),
 }
 
 impl From<Color> for Background {

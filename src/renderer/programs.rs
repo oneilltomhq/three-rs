@@ -283,6 +283,11 @@ fn vertex_format(ty: Type) -> wgpu::VertexFormat {
         Type::Vec3 => wgpu::VertexFormat::Float32x3,
         Type::Vec4 => wgpu::VertexFormat::Float32x4,
         Type::F32 => wgpu::VertexFormat::Float32,
+        // `WebGPUAttributeUtils.createAttribute()` reads the format off the
+        // attribute's own typed array: `skinIndex` is a `Uint32Array` by the
+        // time it reaches the GPU, so `uvec4` is `uint32x4`, not a float format
+        // the shader casts.
+        Type::UVec4 => wgpu::VertexFormat::Uint32x4,
         other => panic!("three-rs: {other:?} is not a vertex attribute type"),
     }
 }
@@ -374,6 +379,12 @@ pub struct UniformContext<'a> {
     pub material_metalness: f64,
     pub material_roughness: f64,
     pub material_bump_scale: f64,
+    /// `MeshPhysicalMaterial.ior` / `.specularIntensity` / `.specularColor`,
+    /// and `MeshStandardMaterial.normalScale`.
+    pub material_ior: f64,
+    pub material_specular_intensity: f64,
+    pub material_specular_color: Color,
+    pub material_normal_scale: Vector2,
     pub env_rotation: Matrix4,
     pub background_rotation: Matrix4,
     pub background_blurriness: f64,
@@ -389,6 +400,12 @@ pub struct UniformContext<'a> {
     pub morph_base: f64,
     /// `mesh.morphTargetInfluences` — the `uniformArray` contents.
     pub morph_influences: &'a [f64],
+    /// `SkinnedMesh.bindMatrix` / `.bindMatrixInverse`.
+    pub bind_matrix: Matrix4,
+    pub bind_matrix_inverse: Matrix4,
+    /// `skeleton.boneMatrices` — the flat `mat4` array the bone buffer holds,
+    /// already updated for this frame.
+    pub bone_matrices: &'a [f32],
 }
 
 impl Default for UniformContext<'_> {
@@ -414,6 +431,11 @@ impl Default for UniformContext<'_> {
             material_metalness: 0.0,
             material_roughness: 1.0,
             material_bump_scale: 1.0,
+            // `MeshPhysicalMaterial`'s defaults.
+            material_ior: 1.5,
+            material_specular_intensity: 1.0,
+            material_specular_color: Color::new(1.0, 1.0, 1.0),
+            material_normal_scale: Vector2::new(1.0, 1.0),
             env_rotation: Matrix4::identity(),
             background_rotation: Matrix4::identity(),
             background_blurriness: 0.0,
@@ -424,6 +446,9 @@ impl Default for UniformContext<'_> {
             lights: &[],
             morph_base: 1.0,
             morph_influences: &[],
+            bind_matrix: Matrix4::identity(),
+            bind_matrix_inverse: Matrix4::identity(),
+            bone_matrices: &[],
         }
     }
 }
@@ -472,6 +497,19 @@ impl UniformContext<'_> {
                 UniformSource::MaterialMetalness => vec![self.material_metalness as f32],
                 UniformSource::MaterialRoughness => vec![self.material_roughness as f32],
                 UniformSource::MaterialBumpScale => vec![self.material_bump_scale as f32],
+                UniformSource::MaterialIor => vec![self.material_ior as f32],
+                UniformSource::MaterialSpecularIntensity => {
+                    vec![self.material_specular_intensity as f32]
+                }
+                UniformSource::MaterialSpecularColor => vec![
+                    self.material_specular_color.r as f32,
+                    self.material_specular_color.g as f32,
+                    self.material_specular_color.b as f32,
+                ],
+                UniformSource::MaterialNormalScale => vec![
+                    self.material_normal_scale.x as f32,
+                    self.material_normal_scale.y as f32,
+                ],
                 UniformSource::EnvRotationMatrix => self.env_rotation.to_f32_array().to_vec(),
                 UniformSource::BackgroundRotation => {
                     self.background_rotation.to_f32_array().to_vec()
@@ -503,6 +541,10 @@ impl UniformContext<'_> {
                 // `Morph.js`' `OnObjectUpdate`: `base.value = 1 - Σ influences`
                 // (or 1 when `morphTargetsRelative`).
                 UniformSource::MorphBase => vec![self.morph_base as f32],
+                UniformSource::BindMatrix => self.bind_matrix.to_f32_array().to_vec(),
+                UniformSource::BindMatrixInverse => {
+                    self.bind_matrix_inverse.to_f32_array().to_vec()
+                }
                 UniformSource::LightTargetPosition(i) => {
                     let p = self.lights[*i].target_position;
                     vec![p.x as f32, p.y as f32, p.z as f32]

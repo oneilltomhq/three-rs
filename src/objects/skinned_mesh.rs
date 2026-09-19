@@ -4,8 +4,9 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::core::{BufferGeometry, Node, Object3D};
+use crate::materials::MeshBasicNodeMaterial;
 use crate::math::{Box3, Matrix4, Sphere, Vector3, Vector4};
-use crate::objects::Skeleton;
+use crate::objects::{Mesh, Payload, Skeleton};
 
 /// `AttachedBindMode` / `DetachedBindMode` from `src/constants.js`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -19,15 +20,15 @@ pub enum BindMode {
 
 /// `class SkinnedMesh extends Mesh`.
 ///
-/// The geometry/material half of `Mesh` is a sibling struct in this crate (the
-/// scene graph stores bare [`Object3D`]s), so a `SkinnedMesh` owns its [`Node`]
-/// rather than an `Object3D`: the bones are in the tree and `matrixWorld` has to
-/// be reachable from both ends.
+/// The `Mesh` half is held rather than inherited, exactly as
+/// [`InstancedMesh`](crate::objects::InstancedMesh) holds it, and the whole
+/// struct is one node's [`Payload`] — so the renderer's tree walk finds a
+/// skinned mesh wherever it hangs, and the bones (which are ordinary nodes in
+/// the same tree) reach it through their shared [`Skeleton`].
+#[derive(Clone)]
 pub struct SkinnedMesh {
-    /// The scene-graph node. `node.borrow().object_type == "SkinnedMesh"`.
-    pub node: Node,
-    /// `Mesh.geometry`.
-    pub geometry: Rc<BufferGeometry>,
+    /// The `Mesh` it extends: `geometry` and `material`.
+    pub mesh: Mesh,
     /// `SkinnedMesh.skeleton`.
     pub skeleton: Option<Rc<RefCell<Skeleton>>>,
     /// `SkinnedMesh.bindMode`.
@@ -35,6 +36,13 @@ pub struct SkinnedMesh {
     /// `SkinnedMesh.bindMatrix`.
     pub bind_matrix: Matrix4,
     /// `SkinnedMesh.bindMatrixInverse`.
+    ///
+    /// In the default [`BindMode::Attached`] this is `matrixWorld⁻¹`, recomputed
+    /// **every frame** by `Object3D.updateMatrixWorld()` — see
+    /// [`SkinnedMesh::update_bind_matrix_inverse`], which the tree walk calls
+    /// for this payload the way three.js' `SkinnedMesh.updateMatrixWorld()`
+    /// override does. A stale or identity value here scales the skin by the
+    /// node's own scale and is silent.
     pub bind_matrix_inverse: Matrix4,
     /// `Mesh.boundingBox` (`SkinnedMesh.computeBoundingBox`).
     pub bounding_box: Option<Box3>,
@@ -49,16 +57,29 @@ pub struct SkinnedMesh {
 }
 
 impl SkinnedMesh {
-    /// `new SkinnedMesh( geometry, material )`.
-    pub fn new(geometry: Rc<BufferGeometry>) -> Self {
-        let object = Object3D {
+    /// `new SkinnedMesh( geometry, material )`, as a scene-graph [`Node`].
+    #[allow(clippy::new_ret_no_self)] // `new` mirrors three.js's constructor and returns a scene-graph `Node`, not `Self`; public API, not changing.
+    pub fn new(
+        geometry: Rc<BufferGeometry>,
+        material: impl Into<Option<MeshBasicNodeMaterial>>,
+    ) -> Node {
+        let mut object = Object3D {
             object_type: "SkinnedMesh",
             ..Default::default()
         };
+        object.payload = Payload::SkinnedMesh(Box::new(Self::of(geometry, material.into())));
+        object.into_node()
+    }
 
+    /// The payload on its own, for a caller that already has the node —
+    /// `GLTFLoader`, which builds the node from the glTF node definition first.
+    pub fn of(geometry: Rc<BufferGeometry>, material: Option<MeshBasicNodeMaterial>) -> Self {
         Self {
-            node: object.into_node(),
-            geometry,
+            mesh: Mesh {
+                geometry,
+                material,
+                morph_target_influences: Vec::new(),
+            },
             skeleton: None,
             bind_mode: BindMode::Attached,
             bind_matrix: Matrix4::identity(),
@@ -70,22 +91,51 @@ impl SkinnedMesh {
         }
     }
 
-    /// `SkinnedMesh.bind( skeleton, bindMatrix )`. `None` is three.js'
-    /// `bindMatrix === undefined`: update the world matrix and take it.
-    pub fn bind(&mut self, skeleton: Rc<RefCell<Skeleton>>, bind_matrix: Option<Matrix4>) {
+    /// `SkinnedMesh.geometry`.
+    pub fn geometry(&self) -> &Rc<BufferGeometry> {
+        &self.mesh.geometry
+    }
+
+    /// `SkinnedMesh.bind( skeleton, bindMatrix )` for a mesh that is already a
+    /// node — the node is needed for three.js' `bindMatrix === undefined`
+    /// branch, which updates the world matrix and takes it.
+    pub fn bind(node: &Node, skeleton: Rc<RefCell<Skeleton>>, bind_matrix: Option<Matrix4>) {
         let bind_matrix = match bind_matrix {
             Some(matrix) => matrix,
             None => {
-                self.node.update_matrix_world(true);
+                node.update_matrix_world(true);
                 skeleton.borrow_mut().calculate_inverses();
-                self.node.borrow().matrix_world
+                node.borrow().matrix_world
             }
         };
 
-        self.skeleton = Some(skeleton);
-        self.bind_matrix.copy(&bind_matrix);
-        self.bind_matrix_inverse.copy(&bind_matrix);
-        self.bind_matrix_inverse.invert();
+        let mut object = node.borrow_mut();
+        let skin = object
+            .payload
+            .skinned_mesh_mut()
+            .expect("three-rs: SkinnedMesh::bind needs a SkinnedMesh node");
+        skin.skeleton = Some(skeleton);
+        skin.bind_matrix.copy(&bind_matrix);
+        skin.bind_matrix_inverse.copy(&bind_matrix);
+        skin.bind_matrix_inverse.invert();
+    }
+
+    /// The tail of `SkinnedMesh.updateMatrixWorld( force )`: everything after
+    /// `super.updateMatrixWorld( force )`. The tree walk
+    /// (`Object3D.updateMatrixWorld`) runs it for every `SkinnedMesh` payload it
+    /// passes, which is what keeps `bindMatrixInverse` in step with a moving or
+    /// scaled parent without the caller having to remember.
+    pub fn update_bind_matrix_inverse(&mut self, matrix_world: &Matrix4) {
+        match self.bind_mode {
+            BindMode::Attached => {
+                self.bind_matrix_inverse.copy(matrix_world);
+                self.bind_matrix_inverse.invert();
+            }
+            BindMode::Detached => {
+                self.bind_matrix_inverse.copy(&self.bind_matrix);
+                self.bind_matrix_inverse.invert();
+            }
+        }
     }
 
     /// `SkinnedMesh.pose()`.
@@ -99,7 +149,7 @@ impl SkinnedMesh {
     /// the geometry out of the `Rc` (three.js mutates in place; an `Rc` shared
     /// with the renderer cannot be).
     pub fn normalize_skin_weights(&mut self) {
-        let mut geometry = (*self.geometry).clone();
+        let mut geometry = (*self.mesh.geometry).clone();
 
         let Some(skin_weight) = geometry.get_attribute_mut("skinWeight") else {
             return;
@@ -130,24 +180,7 @@ impl SkinnedMesh {
             skin_weight.set_w(i, vector.w);
         }
 
-        self.geometry = Rc::new(geometry);
-    }
-
-    /// `SkinnedMesh.updateMatrixWorld( force )`.
-    pub fn update_matrix_world(&mut self, force: bool) {
-        self.node.update_matrix_world(force);
-
-        match self.bind_mode {
-            BindMode::Attached => {
-                self.bind_matrix_inverse
-                    .copy(&self.node.borrow().matrix_world);
-                self.bind_matrix_inverse.invert();
-            }
-            BindMode::Detached => {
-                self.bind_matrix_inverse.copy(&self.bind_matrix);
-                self.bind_matrix_inverse.invert();
-            }
-        }
+        self.mesh.geometry = Rc::new(geometry);
     }
 
     /// `SkinnedMesh.applyBoneTransform( index, vector )`.
@@ -158,8 +191,8 @@ impl SkinnedMesh {
         let skeleton = skeleton.borrow();
 
         let (Some(skin_index), Some(skin_weight)) = (
-            self.geometry.get_attribute("skinIndex"),
-            self.geometry.get_attribute("skinWeight"),
+            self.mesh.geometry.get_attribute("skinIndex"),
+            self.mesh.geometry.get_attribute("skinWeight"),
         ) else {
             return;
         };
@@ -204,7 +237,7 @@ impl SkinnedMesh {
 
     /// `SkinnedMesh.computeBoundingBox()`.
     pub fn compute_bounding_box(&mut self) {
-        let Some(position) = self.geometry.position() else {
+        let Some(position) = self.mesh.geometry.position() else {
             return;
         };
         let count = position.count();
@@ -223,7 +256,7 @@ impl SkinnedMesh {
 
     /// `SkinnedMesh.computeBoundingSphere()`.
     pub fn compute_bounding_sphere(&mut self) {
-        let Some(position) = self.geometry.position() else {
+        let Some(position) = self.mesh.geometry.position() else {
             return;
         };
         let count = position.count();

@@ -405,10 +405,37 @@ fn update_own_matrix_world(node: &Node, force: bool) -> bool {
 
         node.borrow_mut().matrix_world_needs_update = false;
 
+        update_bind_matrix_inverse(node);
+
         return true;
     }
 
+    // `SkinnedMesh.updateMatrixWorld()` calls `super.updateMatrixWorld()` and
+    // then always recomputes `bindMatrixInverse`, whether or not the world
+    // matrix was rebuilt.
+    update_bind_matrix_inverse(node);
+
     force
+}
+
+/// The tail of `SkinnedMesh.updateMatrixWorld()`, for whichever nodes carry a
+/// `SkinnedMesh` payload. In three.js this is an override on the subclass; here
+/// the subclass is a payload variant, so the one tree walk runs it.
+///
+/// It matters that it runs *every* frame: in the default `AttachedBindMode`
+/// `bindMatrixInverse` is `matrixWorld⁻¹`, and `GLTFLoader` binds with the
+/// identity bind matrix, so everything the skin's own node contributes — a
+/// glTF `Character` node's 0.01 scale and ±90° rotation, say — lives there and
+/// nowhere else.
+fn update_bind_matrix_inverse(node: &Node) {
+    let mut object = node.borrow_mut();
+    if !object.payload.is_skinned_mesh() {
+        return;
+    }
+    let matrix_world = object.matrix_world;
+    if let Some(skin) = object.payload.skinned_mesh_mut() {
+        skin.update_bind_matrix_inverse(&matrix_world);
+    }
 }
 
 /// `updateWorldMatrix( false, true, force )` — the recursive child half, which

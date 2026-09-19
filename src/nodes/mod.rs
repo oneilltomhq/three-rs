@@ -5,6 +5,7 @@ pub mod builder;
 pub mod materialx;
 pub mod morph;
 pub mod node;
+pub mod skinning;
 pub mod tsl;
 pub mod wgsl;
 

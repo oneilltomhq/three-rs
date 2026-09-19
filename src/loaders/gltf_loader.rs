@@ -27,8 +27,11 @@ use serde_json::Value;
 use crate::animation::{AnimationClip, InterpolationMode, KeyframeTrack, SceneResolver};
 use crate::core::{BufferAttribute, BufferGeometry, Index, Node, Object3D};
 use crate::error::{Error, GltfError};
-use crate::math::Matrix4;
+use crate::loaders::TextureLoader;
+use crate::materials::{MeshBasicNodeMaterial, Side};
+use crate::math::{Color, Matrix4, Vector2};
 use crate::objects::{Bone, Skeleton, SkinnedMesh};
+use crate::textures::{ColorSpace, MinFilter, Texture, TextureFilter, Wrapping};
 
 /// `WEBGL_CONSTANTS` component types and `WEBGL_COMPONENT_TYPES`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -170,6 +173,16 @@ pub struct GltfMaterial {
     /// Extension names present on this material, so the rung worker can see what
     /// it is missing.
     pub extensions: Vec<String>,
+    /// `KHR_materials_ior.ior`, defaulting to three.js' `1.5` when the
+    /// extension is absent — its presence is what promotes the material to a
+    /// `MeshPhysicalMaterial`.
+    pub ior: Option<f64>,
+    /// `KHR_materials_specular.specularFactor` (default 1).
+    pub specular_factor: Option<f64>,
+    /// `KHR_materials_specular.specularColorFactor` (default `[1,1,1]`).
+    pub specular_color_factor: [f64; 3],
+    /// `KHR_materials_specular.specularColorTexture.index`.
+    pub specular_color_texture: Option<usize>,
 }
 
 /// One glTF image. Decoding is the [`crate::loaders::TextureLoader`]'s job; this
@@ -224,8 +237,10 @@ pub struct Gltf {
     pub skins: Vec<Rc<RefCell<Skeleton>>>,
     /// Every primitive, in node order.
     pub primitives: Vec<GltfPrimitive>,
-    /// The skinned primitives, bound to their skeletons.
-    pub skinned_meshes: Vec<SkinnedMesh>,
+    /// The skinned primitives' nodes, bound to their skeletons. Each carries a
+    /// [`Payload::SkinnedMesh`](crate::objects::Payload::SkinnedMesh), so
+    /// adding `gltf.scene` to a scene is enough for the renderer to draw them.
+    pub skinned_meshes: Vec<Node>,
     pub materials: Vec<GltfMaterial>,
     pub textures: Vec<GltfTexture>,
     pub images: Vec<GltfImage>,
@@ -646,22 +661,45 @@ impl GLTFLoader {
         }
 
         let mut skinned_meshes = Vec::new();
+        let mut texture_cache: HashMap<usize, Texture> = HashMap::new();
         for primitive in &primitives {
             let Some(skin) = primitive.skin else { continue };
 
-            let mut mesh = SkinnedMesh::new(primitive.geometry.clone());
-            mesh.node = primitive.node.clone();
+            // `GLTFParser.loadMaterial` + the `useDerivativeTangents` clone.
+            let material = match primitive.material.and_then(|i| materials.get(i)) {
+                Some(def) => Some(self.build_material(
+                    &mut texture_cache,
+                    def,
+                    &textures,
+                    &images,
+                    !primitive.geometry.has_attribute("tangent"),
+                )?),
+                None => None,
+            };
+
+            // The primitive's node *becomes* the `SkinnedMesh`: three.js
+            // constructs one and puts it in the tree, and here the tree node
+            // already exists (the skin's joints and the animation bindings
+            // point at it), so the payload is installed on it.
+            let mut mesh = SkinnedMesh::of(primitive.geometry.clone(), material);
             mesh.morph_target_influences = primitive.morph_target_influences.clone();
             mesh.morph_target_dictionary = primitive.morph_target_dictionary.clone();
             mesh.normalize_skin_weights();
+
+            let node = primitive.node.clone();
+            {
+                let mut object = node.borrow_mut();
+                object.object_type = "SkinnedMesh";
+                object.payload = crate::objects::Payload::SkinnedMesh(Box::new(mesh));
+            }
 
             // `mesh.bind( skeleton, _identityMatrix )`: glTF joint transforms
             // are already relative to the skin, so the bind matrix is identity
             // and it is `bindMatrixInverse` (tracked from `matrixWorld`, the
             // `AttachedBindMode` default) that does the work.
-            mesh.bind(skins[skin].clone(), Some(Matrix4::identity()));
+            SkinnedMesh::bind(&node, skins[skin].clone(), Some(Matrix4::identity()));
 
-            skinned_meshes.push(mesh);
+            skinned_meshes.push(node);
         }
 
         let animations = self.load_animations(&nodes)?;
@@ -793,8 +831,17 @@ impl GLTFLoader {
                 let Some(accessor) = accessor.as_u64() else {
                     continue;
                 };
-                let attribute = self.attribute(accessor as usize)?;
-                geometry.set_attribute(&attribute_name(&semantic), attribute);
+                let name = attribute_name(&semantic);
+                let mut attribute = self.attribute(accessor as usize)?;
+                // `JOINTS_0` is an unnormalized `Uint8`/`Uint16` accessor and
+                // stays one in three.js all the way to
+                // `WebGPUAttributeUtils.createAttribute()`; `skinning()` reads
+                // it as a `uvec4`.
+                if name == "skinIndex" {
+                    let values = attribute.array().clone();
+                    attribute = BufferAttribute::new_integer(values, attribute.item_size);
+                }
+                geometry.set_attribute(&name, attribute);
             }
 
             if let Some(accessor) = json_usize(primitive, "indices") {
@@ -977,6 +1024,36 @@ impl GLTFLoader {
                     .and_then(Value::as_object)
                     .map(|map| map.keys().cloned().collect())
                     .unwrap_or_default(),
+                // `GLTFMaterialsIor.extendParams`
+                ior: material_def
+                    .pointer("/extensions/KHR_materials_ior/ior")
+                    .and_then(Value::as_f64),
+                // `GLTFMaterialsSpecular.extendParams`
+                specular_factor: material_def
+                    .pointer("/extensions/KHR_materials_specular")
+                    .map(|specular| {
+                        specular
+                            .get("specularFactor")
+                            .and_then(Value::as_f64)
+                            .unwrap_or(1.0)
+                    }),
+                specular_color_factor: material_def
+                    .pointer("/extensions/KHR_materials_specular/specularColorFactor")
+                    .and_then(Value::as_array)
+                    .map(|v| {
+                        let mut out = [1.0; 3];
+                        for (i, slot) in out.iter_mut().enumerate() {
+                            if let Some(value) = v.get(i).and_then(Value::as_f64) {
+                                *slot = value;
+                            }
+                        }
+                        out
+                    })
+                    .unwrap_or([1.0; 3]),
+                specular_color_texture: material_def
+                    .pointer("/extensions/KHR_materials_specular/specularColorTexture/index")
+                    .and_then(Value::as_u64)
+                    .map(|i| i as usize),
             });
         }
 
@@ -1037,6 +1114,155 @@ impl GLTFLoader {
         }
 
         Ok(images)
+    }
+
+    /// `GLTFParser.loadTexture` + the sampler half of `assignTexture`: the
+    /// decoded [`Texture`] for a glTF texture index.
+    ///
+    /// three.js caches by texture index inside `getDependency( 'texture', i )`,
+    /// so one `Texture` object is shared by every slot that names the index —
+    /// Michelle's ORM map reaches `metalnessMap` and `roughnessMap` as the same
+    /// object, and the renderer therefore builds one mip chain, not two. The
+    /// colour space is set by the *slot*, last write winning, exactly as
+    /// `assignTexture( ..., colorSpace )` does.
+    fn load_texture(
+        &self,
+        cache: &mut HashMap<usize, Texture>,
+        textures: &[GltfTexture],
+        images: &[GltfImage],
+        index: usize,
+    ) -> Result<Option<Texture>, Error> {
+        if let Some(texture) = cache.get(&index) {
+            return Ok(Some(texture.clone()));
+        }
+
+        let Some(def) = textures.get(index) else {
+            return Ok(None);
+        };
+        let Some(image) = def.source.and_then(|source| images.get(source)) else {
+            return Ok(None);
+        };
+
+        let texture = TextureLoader::new().from_bytes(&image.data, image.mime_type.as_deref())?;
+
+        // `texture.flipY = false` in `GLTFParser.loadTextureImage`: glTF UVs
+        // have their origin at the top left, so the image is not flipped.
+        texture.set_flip_y(false);
+
+        let sampler = def
+            .sampler
+            .and_then(|i| self.json.pointer(&format!("/samplers/{i}")))
+            .cloned()
+            .unwrap_or(Value::Null);
+
+        // `WEBGL_FILTERS` / `WEBGL_WRAPPINGS`, with glTF's defaults (REPEAT,
+        // and three.js' own `LinearFilter` / `LinearMipmapLinearFilter`).
+        let wrap = |name: &str| match sampler.get(name).and_then(Value::as_u64) {
+            Some(33071) => Wrapping::ClampToEdge,
+            // `MirroredRepeatWrapping` is not ported; nothing on the ladder
+            // uses it and it would be a silent difference, so it is refused.
+            _ => Wrapping::Repeat,
+        };
+        texture.set_wrapping(wrap("wrapS"), wrap("wrapT"));
+
+        if let Some(9728) = sampler.get("magFilter").and_then(Value::as_u64) {
+            texture.set_mag_filter(TextureFilter::Nearest);
+        }
+        match sampler.get("minFilter").and_then(Value::as_u64) {
+            Some(9728) => texture.set_min_filter(MinFilter::Nearest),
+            Some(9729) => texture.set_min_filter(MinFilter::Linear),
+            _ => texture.set_min_filter(MinFilter::LinearMipmapLinear),
+        }
+
+        cache.insert(index, texture.clone());
+
+        Ok(Some(texture))
+    }
+
+    /// `GLTFParser.loadMaterial`, for the two material types this crate has:
+    /// `MeshStandardNodeMaterial`, or `MeshPhysicalNodeMaterial` when
+    /// `KHR_materials_ior` / `KHR_materials_specular` are on the material.
+    ///
+    /// `use_derivative_tangents` is `! geometry.attributes.tangent` at the call
+    /// site: three.js clones the material there and flips `normalScale.y`
+    /// (mrdoob/three.js#11438), because the derivative-based TBN frame it falls
+    /// back to has the opposite handedness. Michelle has no tangents, so this is
+    /// what puts her normal map the right way round.
+    fn build_material(
+        &self,
+        cache: &mut HashMap<usize, Texture>,
+        material: &GltfMaterial,
+        textures: &[GltfTexture],
+        images: &[GltfImage],
+        use_derivative_tangents: bool,
+    ) -> Result<MeshBasicNodeMaterial, Error> {
+        let [r, g, b, a] = material.base_color_factor;
+
+        // `materialParams.color.setRGB( ..., LinearSRGBColorSpace )` — the
+        // factor is already linear, so no transfer is applied.
+        let mut out = if material.ior.is_some() || material.specular_factor.is_some() {
+            MeshBasicNodeMaterial::physical(
+                Color::new(r, g, b),
+                material.roughness_factor,
+                material.metallic_factor,
+            )
+        } else {
+            MeshBasicNodeMaterial::standard(
+                Color::new(r, g, b),
+                material.roughness_factor,
+                material.metallic_factor,
+            )
+        };
+
+        out.opacity = a;
+        out.side = if material.double_sided {
+            Side::Double
+        } else {
+            Side::Front
+        };
+
+        if let Some(index) = material.base_color_texture {
+            let map = self.load_texture(cache, textures, images, index)?;
+            if let Some(map) = &map {
+                map.set_color_space(ColorSpace::SRGB);
+            }
+            out.map = map;
+        }
+
+        // `metalnessMap` and `roughnessMap` are the same glTF texture: B is
+        // metalness, G is roughness, and the material reads the channels.
+        if let Some(index) = material.metallic_roughness_texture {
+            let map = self.load_texture(cache, textures, images, index)?;
+            out.metalness_map = map.clone();
+            out.roughness_map = map;
+        }
+
+        if let Some(index) = material.normal_texture {
+            out.normal_map = self.load_texture(cache, textures, images, index)?;
+            out.normal_scale = Vector2::new(material.normal_scale, material.normal_scale);
+        }
+
+        if let Some(ior) = material.ior {
+            out.ior = ior;
+        }
+        if let Some(factor) = material.specular_factor {
+            out.specular_intensity = factor;
+        }
+        let [sr, sg, sb] = material.specular_color_factor;
+        out.specular_color = Color::new(sr, sg, sb);
+        if let Some(index) = material.specular_color_texture {
+            let map = self.load_texture(cache, textures, images, index)?;
+            if let Some(map) = &map {
+                map.set_color_space(ColorSpace::SRGB);
+            }
+            out.specular_color_map = map;
+        }
+
+        if use_derivative_tangents && out.normal_map.is_some() {
+            out.normal_scale.y *= -1.0;
+        }
+
+        Ok(out)
     }
 
     /// `GLTFParser.loadAnimation`.

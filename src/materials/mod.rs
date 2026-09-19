@@ -85,6 +85,8 @@ pub enum ToneMapping {
     Reinhard,
     /// `ACESFilmicToneMapping`.
     AcesFilmic,
+    /// `LinearToneMapping` — `clamp( color * exposure, 0, 1 )`.
+    Linear,
 }
 
 /// Which `NodeMaterial` subclass this is — i.e. which `setupLightingModel()`
@@ -101,9 +103,15 @@ pub enum MaterialKind {
     /// `SpriteNodeMaterial` — `BasicLightingModel` like `Basic`, but it
     /// overrides `setupPositionView()` with the billboarded quad.
     Sprite,
-    /// `MeshStandardNodeMaterial` / `MeshPhysicalNodeMaterial` —
-    /// `PhysicalLightingModel`.
+    /// `MeshStandardNodeMaterial` — `PhysicalLightingModel` with a constant
+    /// dielectric F0 of 0.04 and an F90 of 1.
     Standard,
+    /// `MeshPhysicalNodeMaterial` — the same lighting model, but
+    /// `setupSpecular()` derives F0 from the `ior` and modulates it by
+    /// `specularColor` / `specularColorMap` / `specularIntensity`. That block
+    /// is the whole delta over `Standard`; `GLTFLoader` picks it whenever the
+    /// asset uses `KHR_materials_specular` or `KHR_materials_ior`.
+    Physical,
 }
 
 /// Port of `MeshBasicNodeMaterial.js` + the `NodeMaterial.js` / `Material.js`
@@ -208,6 +216,14 @@ pub struct MeshBasicNodeMaterial {
     pub specular_color: Color,
     /// `material.specularNode`.
     pub specular_node: Option<NodeRef>,
+    /// `MeshStandardMaterial.normalMap` and `.normalScale`. `GLTFLoader`
+    /// flips `normalScale.y` on a geometry that has a normal map but no
+    /// `tangent` attribute (`useDerivativeTangents`), which is where Michelle's
+    /// `( 1, -1 )` comes from — it is not in the asset.
+    pub normal_map: Option<Texture>,
+    pub normal_scale: crate::math::Vector2,
+    /// `MeshPhysicalMaterial.specularColorMap` — multiplies `specularColor`.
+    pub specular_color_map: Option<Texture>,
     /// `material.normalNode` — e.g. `normalMap( texture( map ) )`.
     pub normal_node: Option<NodeRef>,
     /// `NodeMaterial.positionNode` — replaces `positionLocal`.
@@ -304,6 +320,9 @@ impl Default for MeshBasicNodeMaterial {
             specular_intensity: 1.0,
             specular_color: Color::new(1.0, 1.0, 1.0),
             specular_node: None,
+            normal_map: None,
+            normal_scale: crate::math::Vector2::new(1.0, 1.0),
+            specular_color_map: None,
             normal_node: None,
             position_node: None,
             reflectivity: 1.0,
@@ -442,6 +461,16 @@ impl MeshBasicNodeMaterial {
             metalness,
             lights: true,
             ..Self::default()
+        }
+    }
+
+    /// `new MeshPhysicalNodeMaterial()` — a Standard material plus
+    /// `setupSpecular()`'s ior/specular block. `GLTFLoader` builds one whenever
+    /// the asset declares `KHR_materials_specular` or `KHR_materials_ior`.
+    pub fn physical(color: Color, roughness: f64, metalness: f64) -> Self {
+        Self {
+            kind: MaterialKind::Physical,
+            ..Self::standard(color, roughness, metalness)
         }
     }
 }

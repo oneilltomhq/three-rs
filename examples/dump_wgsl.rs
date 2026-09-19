@@ -133,6 +133,7 @@ fn main() {
             instanced: true,
             lights: Vec::new(),
             morph: None,
+            skin: None,
         },
     );
 
@@ -396,7 +397,7 @@ fn main() {
 
     let mut background = MeshBasicNodeMaterial::new();
     background.color_node = Some(three_rs::materials::background_node_color_node(
-        Color::from_hex(0x222244),
+        Color::from_hex(0x222244).into(),
     ));
     background.vertex_node = Some(three_rs::materials::background_vertex_node());
     background.side = Side::Back;
@@ -514,5 +515,54 @@ fn main() {
         "shadowmap_output_color_transform",
         &aces,
         SetupContext::default(),
+    );
+
+    // rung 10: the scene's `backgroundNode`, against
+    // `handoff/scouts/rung10/m0{0,1}_*_Background.material-r186.wgsl`.
+    let mut background = MeshBasicNodeMaterial::new();
+    background.name = "Background.material";
+    background.vertex_node = Some(three_rs::materials::background_vertex_node());
+    background.side = Side::Back;
+    background.color_node = Some(three_rs::materials::background_node_color_node(
+        screen_uv()
+            .y()
+            .mix(Color::from_hex(0x66bbff), Color::from_hex(0x4466ff)),
+    ));
+    show("skinning_background", &background, SetupContext::default());
+
+    // rung 10: Michelle's skinned body, against
+    // `handoff/scouts/rung10/m03_vertex_Ch03_Body-r186.wgsl`.
+    let diffuse = Texture::new(512, 512, Some(vec![0; 4]));
+    let glossiness = Texture::new(512, 512, Some(vec![0; 4]));
+    let specular_map = Texture::new(512, 512, Some(vec![0; 4]));
+    let normal_tex = Texture::new(512, 512, Some(vec![0; 4]));
+    let mut body = MeshBasicNodeMaterial::physical(Color::new(1.0, 1.0, 1.0), 1.0, 0.5);
+    body.side = Side::Double;
+    body.map = Some(diffuse);
+    body.metalness_map = Some(glossiness.clone());
+    body.roughness_map = Some(glossiness);
+    body.specular_color_map = Some(specular_map);
+    body.normal_map = Some(normal_tex);
+    body.normal_scale = three_rs::math::Vector2::new(1.0, -1.0);
+    body.ior = 1.45;
+    show(
+        "skinning_body",
+        &body,
+        SetupContext {
+            skin: Some(three_rs::nodes::skinning::SkinEntry { bones: 65 }),
+            lights: vec![
+                LightDesc {
+                    index: 0,
+                    kind: LightKind::Point,
+                    shadow_map: None,
+                },
+                LightDesc {
+                    index: 1,
+                    kind: LightKind::Ambient,
+                    shadow_map: None,
+                },
+            ],
+            ..SetupContext::default()
+        },
     );
 }

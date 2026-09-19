@@ -38,7 +38,8 @@ fn michelle_tree() {
 #[test]
 fn michelle_geometry() {
     let gltf = GLTFLoader::load(models().join("Michelle.glb")).unwrap();
-    let geometry = &gltf.skinned_meshes[0].geometry;
+    let node = gltf.skinned_meshes[0].borrow();
+    let geometry = node.skinned_mesh().unwrap().geometry();
 
     assert_eq!(geometry.position().unwrap().count(), 16340);
     assert_eq!(geometry.index.as_ref().unwrap().count(), 84318);
@@ -146,7 +147,8 @@ fn soldier_tree() {
     );
     assert!((gltf.animations[0].duration - 1.966_666_698_455_810_5).abs() < 1e-6);
 
-    let geometry = &gltf.skinned_meshes[0].geometry;
+    let node = gltf.skinned_meshes[0].borrow();
+    let geometry = node.skinned_mesh().unwrap().geometry();
     assert_eq!(geometry.position().unwrap().count(), 7325);
     assert_eq!(geometry.index.as_ref().unwrap().count(), 33558);
 }
@@ -234,7 +236,7 @@ fn michelle_skinning_at_zero() {
     use three_rs::animation::AnimationMixer;
     use three_rs::math::Vector3;
 
-    let mut gltf = GLTFLoader::load(models().join("Michelle.glb")).unwrap();
+    let gltf = GLTFLoader::load(models().join("Michelle.glb")).unwrap();
 
     let mut mixer = AnimationMixer::new(Box::new(gltf.scene_resolver()));
     let action = mixer.clip_action(&gltf.animations[0], None, None);
@@ -245,7 +247,6 @@ fn michelle_skinning_at_zero() {
     // `SkinnedMesh.updateMatrixWorld` is where `bindMatrixInverse` comes from
     // in `AttachedBindMode`; the renderer calls it every frame.
     gltf.skinned_meshes[0].update_matrix_world(true);
-    let mesh = &gltf.skinned_meshes[0];
     gltf.skins[0].borrow_mut().update();
 
     let expected: [f32; 32] = [
@@ -294,7 +295,9 @@ fn michelle_skinning_at_zero() {
     drop(skeleton);
 
     // `applyBoneTransform( 0, v.fromBufferAttribute( position, 0 ) )`
-    let position = mesh.geometry.position().unwrap();
+    let node = gltf.skinned_meshes[0].borrow();
+    let mesh = node.skinned_mesh().unwrap();
+    let position = mesh.geometry().position().unwrap();
     let mut vertex = Vector3::new(position.get_x(0), position.get_y(0), position.get_z(0));
     mesh.apply_bone_transform(0, &mut vertex);
 
@@ -310,4 +313,60 @@ fn michelle_skinning_at_zero() {
             "applyBoneTransform[{i}]: {got}"
         );
     }
+}
+
+/// `GLTFParser.loadMaterial` for `Ch03_Body`: `KHR_materials_specular` and
+/// `KHR_materials_ior` make it a `MeshPhysicalMaterial`, the four PNGs in the
+/// BIN chunk decode to 512² RGBA, the ORM map reaches `metalnessMap` and
+/// `roughnessMap` as *one* texture, and `normalScale.y` is negative because the
+/// geometry has no `tangent` attribute (`useDerivativeTangents`).
+#[test]
+fn michelle_material() {
+    use three_rs::materials::{MaterialKind, Side};
+    use three_rs::textures::{ColorSpace, Wrapping};
+
+    let gltf = GLTFLoader::load(models().join("Michelle.glb")).unwrap();
+
+    let node = gltf.skinned_meshes[0].borrow();
+    let mesh = node.skinned_mesh().unwrap();
+    let material = mesh
+        .mesh
+        .material
+        .as_ref()
+        .expect("the body has a material");
+
+    assert_eq!(material.kind, MaterialKind::Physical);
+    assert_eq!(material.side, Side::Double);
+    assert_eq!(material.metalness, 0.5);
+    assert_eq!(material.roughness, 1.0);
+    assert!((material.ior - 1.450_000_047_683_715_8).abs() < 1e-12);
+    assert_eq!(material.specular_intensity, 1.0);
+    assert_eq!(material.normal_scale.x, 1.0);
+    assert_eq!(material.normal_scale.y, -1.0);
+
+    let map = material.map.as_ref().expect("baseColorTexture");
+    assert_eq!(map.size(), (512, 512));
+    assert_eq!(map.data_len(), 512 * 512 * 4);
+    assert_eq!(map.color_space(), ColorSpace::SRGB);
+    assert!(!map.borrow().flip_y);
+    assert_eq!(map.borrow().wrap_s, Wrapping::Repeat);
+    assert_eq!(map.borrow().wrap_t, Wrapping::Repeat);
+    // 512 -> 10 levels, which is what `WebGPUTextureUtils` builds.
+    assert_eq!(map.mip_level_count(), 10);
+
+    // One `Texture` object for both channels of the ORM map.
+    let metalness = material.metalness_map.as_ref().expect("metalnessMap");
+    let roughness = material.roughness_map.as_ref().expect("roughnessMap");
+    assert_eq!(metalness.id(), roughness.id());
+    assert_eq!(metalness.color_space(), ColorSpace::NoColorSpace);
+
+    let normal = material.normal_map.as_ref().expect("normalMap");
+    assert_eq!(normal.color_space(), ColorSpace::NoColorSpace);
+    assert_eq!(normal.size(), (512, 512));
+
+    let specular = material
+        .specular_color_map
+        .as_ref()
+        .expect("specularColorTexture");
+    assert_eq!(specular.color_space(), ColorSpace::SRGB);
 }

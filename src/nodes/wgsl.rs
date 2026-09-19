@@ -21,6 +21,7 @@ pub fn type_name(ty: Type) -> &'static str {
         Type::UVec2 => "vec2<u32>",
         Type::IVec2 => "vec2<i32>",
         Type::UVec3 => "vec3<u32>",
+        Type::UVec4 => "vec4<u32>",
         Type::BVec3 => "vec3<bool>",
         Type::Mat2 => "mat2x2<f32>",
         Type::Mat3 => "mat3x3<f32>",
@@ -154,7 +155,7 @@ pub fn size_of(ty: Type) -> u32 {
         Type::F32 | Type::I32 | Type::U32 | Type::Bool => 4,
         Type::Vec2 | Type::UVec2 | Type::IVec2 => 8,
         Type::Vec3 | Type::UVec3 | Type::BVec3 => 12,
-        Type::Vec4 => 16,
+        Type::Vec4 | Type::UVec4 => 16,
         // Two 8-byte columns; `align_of` is 8 for a `mat2x2<f32>`, like `vec2`.
         Type::Mat2 => 16,
         Type::Mat3 => 48,

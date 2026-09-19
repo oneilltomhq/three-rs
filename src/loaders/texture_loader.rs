@@ -34,6 +34,89 @@ impl TextureLoader {
         let image = decode_jpeg(path)?;
         Ok(Texture::new(image.width, image.height, Some(image.data)))
     }
+
+    /// The bytes of an image the loader never sees as a file: a glTF image
+    /// stored in the BIN chunk or a data URI. `ImageBitmapLoader` /
+    /// `createImageBitmap` in the browser; here the decode is picked by the
+    /// glTF `mimeType` when there is one and by the file's magic otherwise,
+    /// because `images[ i ].mimeType` is only required for a `bufferView`
+    /// source.
+    ///
+    /// The `Texture` comes back with the same defaults `load()` gives one;
+    /// `GLTFLoader` is what sets `flipY`, the wrapping and the colour space.
+    pub fn from_bytes(&self, bytes: &[u8], mime_type: Option<&str>) -> Result<Texture, Error> {
+        let png = match mime_type {
+            Some("image/png") => true,
+            Some("image/jpeg") => false,
+            _ => bytes.starts_with(&[0x89, b'P', b'N', b'G']),
+        };
+
+        let image = if png {
+            decode_png(bytes)?
+        } else {
+            decode_jpeg_bytes(Path::new("<glTF image>"), bytes)?
+        };
+
+        Ok(Texture::new(image.width, image.height, Some(image.data)))
+    }
+}
+
+/// `createImageBitmap` on a PNG: 8-bit RGBA, top-down, with every source
+/// format expanded to it (palette and grey both reach the GPU as RGBA8 in the
+/// browser too). Unlike the JPEG path this is exact — PNG is lossless and the
+/// decoders agree byte for byte.
+fn decode_png(bytes: &[u8]) -> Result<crate::textures::Image, Error> {
+    let path = Path::new("<glTF image>");
+
+    let mut decoder = png::Decoder::new(std::io::Cursor::new(bytes));
+    // `EXPAND` takes palette, grey and `tRNS` up to 8-bit RGB/RGBA, so the only
+    // cases left below are the four 8-bit ones (and 16-bit, which is stripped).
+    decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
+
+    let mut reader = decoder
+        .read_info()
+        .map_err(|e| Error::image(path, e.to_string()))?;
+    let mut buffer = vec![0; reader.output_buffer_size()];
+    let info = reader
+        .next_frame(&mut buffer)
+        .map_err(|e| Error::image(path, e.to_string()))?;
+    buffer.truncate(info.buffer_size());
+
+    let pixels = (info.width as usize) * (info.height as usize);
+    let data = match info.color_type {
+        png::ColorType::Rgba => buffer,
+        png::ColorType::Rgb => {
+            let mut out = Vec::with_capacity(pixels * 4);
+            for pixel in buffer.as_chunks::<3>().0 {
+                out.extend_from_slice(pixel);
+                out.push(255);
+            }
+            out
+        }
+        png::ColorType::Grayscale => {
+            let mut out = Vec::with_capacity(pixels * 4);
+            for &value in &buffer {
+                out.extend_from_slice(&[value, value, value, 255]);
+            }
+            out
+        }
+        png::ColorType::GrayscaleAlpha => {
+            let mut out = Vec::with_capacity(pixels * 4);
+            for pixel in buffer.as_chunks::<2>().0 {
+                out.extend_from_slice(&[pixel[0], pixel[0], pixel[0], pixel[1]]);
+            }
+            out
+        }
+        png::ColorType::Indexed => {
+            return Err(Error::image(path, "the PNG palette was not expanded"));
+        }
+    };
+
+    Ok(crate::textures::Image {
+        width: info.width,
+        height: info.height,
+        data,
+    })
 }
 
 /// What the browser hands `copyExternalImageToTexture`: 8-bit RGBA, top-down,
@@ -45,12 +128,15 @@ impl TextureLoader {
 /// decode of this exact file and holds it to ±1 per channel.
 fn decode_jpeg(path: &Path) -> Result<crate::textures::Image, Error> {
     let bytes = std::fs::read(path).map_err(|e| Error::io(path, e))?;
+    decode_jpeg_bytes(path, &bytes)
+}
 
+fn decode_jpeg_bytes(path: &Path, bytes: &[u8]) -> Result<crate::textures::Image, Error> {
     let options = zune_jpeg::zune_core::options::DecoderOptions::default()
         .jpeg_set_out_colorspace(zune_jpeg::zune_core::colorspace::ColorSpace::RGBA);
 
     let mut decoder =
-        zune_jpeg::JpegDecoder::new_with_options(std::io::Cursor::new(&bytes[..]), options);
+        zune_jpeg::JpegDecoder::new_with_options(std::io::Cursor::new(bytes), options);
 
     let data = decoder
         .decode()

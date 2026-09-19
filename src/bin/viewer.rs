@@ -10,7 +10,8 @@
 //! Every example the e2e grader runs is here, in the README's order, and each
 //! has a number key: `1` depth_texture, `2` instance_mesh, `3` materials_basic,
 //! `4` rtt, `5` lights_phong, `6` morphtargets, `7` shadowmap,
-//! `8` lights_physical, `9` postprocessing_masking, `0` tsl_galaxy. The same
+//! `8` lights_physical, `9` postprocessing_masking, `0` tsl_galaxy,
+//! `a` skinning. The same
 //! digit is accepted on the command line in place of the name, and `--list`
 //! prints the table. Left-drag orbits, right-drag (or middle-drag) pans, the
 //! wheel zooms and Esc quits.
@@ -98,6 +99,10 @@ mod webgpu_postprocessing_masking;
 #[allow(dead_code)]
 mod webgpu_tsl_galaxy;
 
+#[path = "../../examples/webgpu_skinning.rs"]
+#[allow(dead_code)]
+mod webgpu_skinning;
+
 // The SDF text examples are not here: they live in `sdf-text/examples/`,
 // because that crate depends on three-rs and three-rs cannot depend back on
 // it (`Cargo.toml` explains the publish cycle).
@@ -117,12 +122,13 @@ enum Which {
     LightsPhysical,
     PostprocessingMasking,
     TslGalaxy,
+    Skinning,
 }
 
 impl Which {
     /// Every graded example, in README order; the index is the key (`1`..`9`,
-    /// then `0` for the tenth).
-    const ALL: [Which; 10] = [
+    /// `0` for the tenth, then letters).
+    const ALL: [Which; 11] = [
         Self::DepthTexture,
         Self::InstanceMesh,
         Self::MaterialsBasic,
@@ -133,6 +139,7 @@ impl Which {
         Self::LightsPhysical,
         Self::PostprocessingMasking,
         Self::TslGalaxy,
+        Self::Skinning,
     ];
 
     /// The name with or without its `webgpu_` prefix, or the key digit.
@@ -155,6 +162,7 @@ impl Which {
             Self::LightsPhysical => "webgpu_lights_physical",
             Self::PostprocessingMasking => "webgpu_postprocessing_masking",
             Self::TslGalaxy => "webgpu_tsl_galaxy",
+            Self::Skinning => "webgpu_skinning",
         }
     }
 
@@ -164,7 +172,7 @@ impl Which {
 
     /// The keyboard key (and the command-line shorthand) for this example.
     fn key(self) -> &'static str {
-        const KEYS: [&str; 10] = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"];
+        const KEYS: [&str; 11] = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "a"];
         KEYS[Self::ALL.iter().position(|w| *w == self).unwrap()]
     }
 
@@ -187,6 +195,8 @@ impl Which {
         match self {
             // `controls.target.set( 0, 2, 0 )`.
             Self::Shadowmap => Vector3::new(0.0, 2.0, 0.0),
+            // `camera.lookAt( 0, 1, 0 )`.
+            Self::Skinning => Vector3::new(0.0, 1.0, 0.0),
             _ => Vector3::ZERO,
         }
     }
@@ -216,6 +226,11 @@ enum Scene {
     LightsPhysical(webgpu_lights_physical::App),
     PostprocessingMasking(webgpu_postprocessing_masking::App),
     TslGalaxy(webgpu_tsl_galaxy::App),
+    /// `last_time` is the page's `Timer`: `animate()` feeds the mixer a delta.
+    Skinning {
+        app: webgpu_skinning::App,
+        last_time: Option<f64>,
+    },
 }
 
 impl Scene {
@@ -238,6 +253,10 @@ impl Scene {
                 Scene::PostprocessingMasking(webgpu_postprocessing_masking::init())
             }
             Which::TslGalaxy => Scene::TslGalaxy(webgpu_tsl_galaxy::init()),
+            Which::Skinning => Scene::Skinning {
+                app: webgpu_skinning::init(),
+                last_time: None,
+            },
         };
 
         // `init()` is the graded example's code verbatim, so its `Renderer` is
@@ -288,6 +307,7 @@ impl Scene {
             Scene::LightsPhysical(app) => &mut app.renderer,
             Scene::PostprocessingMasking(app) => &mut app.renderer,
             Scene::TslGalaxy(app) => &mut app.renderer,
+            Scene::Skinning { app, .. } => &mut app.renderer,
         }
     }
 
@@ -303,6 +323,7 @@ impl Scene {
             Scene::LightsPhysical(app) => &mut app.camera,
             Scene::PostprocessingMasking(app) => &mut app.camera,
             Scene::TslGalaxy(app) => &mut app.camera,
+            Scene::Skinning { app, .. } => &mut app.camera,
         }
     }
 
@@ -533,6 +554,15 @@ impl Scene {
             Scene::TslGalaxy(app) => {
                 // The galaxy turns on the `time` node alone.
                 webgpu_tsl_galaxy::animate(app);
+            }
+            Scene::Skinning { app, last_time } => {
+                // `timer.update(); mixer.update( timer.getDelta() )` — the
+                // first delta is 0, which is the graded pose; after that she
+                // dances.
+                let delta = last_time.map_or(0.0, |last| time - last);
+                *last_time = Some(time);
+                app.mixer.update(delta);
+                app.renderer.render(&mut app.scene, &mut app.camera);
             }
         }
     }
