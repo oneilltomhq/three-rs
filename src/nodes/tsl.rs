@@ -1282,7 +1282,10 @@ accessor!(
     /// three.js declares the node as `vec4` and lets `NodeBuilder.format()`
     /// widen a three-component `color` attribute with an alpha of 1, which is
     /// the only shape the port's geometries carry; a four-component `color`
-    /// (three's `vertexAlphas`) is not modelled.
+    /// (three's `vertexAlphas`) is not modelled. The widening happens *before*
+    /// the varying, so the interpolated value is a `vec4` and the fragment
+    /// stage reads it whole — `webgpu_materials`' grid helper is the first
+    /// example to put this on screen and three's m13/m14 pin the shape.
     ///
     /// **Divergence, deliberate** (`docs/nodes.md` §10): three's
     /// `VertexColorNode.generate()` falls back to a white constant when the
@@ -1291,7 +1294,10 @@ accessor!(
     /// object — so `material.vertex_colors` alone decides, and the attribute
     /// has to be there.
     vertex_color,
-    vec4_join(vec![to_varying(None, attribute("color", Type::Vec3)), float(1.0)])
+    to_varying(
+        None,
+        vec4_join(vec![attribute("color", Type::Vec3), float(1.0)])
+    )
 );
 accessor!(
     /// `vertexIndex`.

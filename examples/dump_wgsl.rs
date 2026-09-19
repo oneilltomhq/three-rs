@@ -581,10 +581,56 @@ fn main() {
 
     // rung `webgpu_materials`: the TSL breadth example, against
     // `scouts/scouts/webgpu_materials/dump/m*.wgsl`.
+    // The uv-grid texture every textured material in the page shares (one
+    // `TextureLoader.load`, so one `Texture` and one texture matrix uniform).
+    let uv_texture = Texture::new(1024, 1024, Some(vec![0; 4]));
+    let opacity_texture = Texture::new(512, 512, Some(vec![0; 4]));
+
+    let colour = |label: &str, node: three_rs::nodes::NodeRef| {
+        let mut m = MeshBasicNodeMaterial::new();
+        m.color_node = Some(node);
+        show(label, &m, SetupContext::default());
+    };
+
+    colour("materials_position_local", position_local());
+    colour("materials_position_world", position_world());
+    colour("materials_normal_local", normal_local());
+    colour("materials_normal_world", normal_world());
+    colour("materials_normal_view", normal_view());
+    colour("materials_texture", texture(&uv_texture));
+    colour(
+        "materials_camera_projection",
+        camera_projection_matrix().mul(position_local()),
+    );
+
+    let mut opacity = MeshBasicNodeMaterial::new();
+    opacity.color_node = Some(Color::from_hex(0x0099ff).into());
+    opacity.opacity_node = Some(texture(&uv_texture));
+    opacity.transparent = true;
+    show("materials_opacity", &opacity, SetupContext::default());
+
+    let mut alpha_test = MeshBasicNodeMaterial::new();
+    alpha_test.color_node = Some(texture(&uv_texture));
+    alpha_test.opacity_node = Some(texture(&opacity_texture));
+    alpha_test.alpha_test_node = Some(float(0.5));
+    show("materials_alpha_test", &alpha_test, SetupContext::default());
+
+    let (_grid_geometry, grid_material) = three_rs::helpers::GridHelper::parts(
+        1000.0,
+        40,
+        Color::from_hex(0x303030),
+        Color::from_hex(0x303030),
+    );
+    show("materials_grid", &grid_material, SetupContext::default());
+
     let mut normal = MeshBasicNodeMaterial::normal();
     normal.opacity = 0.5;
     normal.transparent = true;
-    show("materials_normal", &normal, SetupContext::default());
+    show(
+        "materials_normal_material",
+        &normal,
+        SetupContext::default(),
+    );
 
     // The output pass, this time with ACES filmic tone mapping.
     let mut aces = MeshBasicNodeMaterial::new();
