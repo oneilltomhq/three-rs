@@ -396,6 +396,17 @@ fn setup_inner(
         None => output,
     };
 
+    // `NodeMaterial.setupOutput()`'s second half: `if ( this.premultipliedAlpha
+    // === true ) outputNode = premultiplyAlpha( outputNode )`, after the fog
+    // and before the output assignment. The SSAA accumulation quad is the one
+    // caller — its dump is `output.color = fn0( fn1( … ) )` with `fn0` the
+    // premultiply and `fn1` `unpremultiplyAlpha` from its own fragment node.
+    let output = if material.premultiplied_alpha {
+        premultiply_alpha(output)
+    } else {
+        output
+    };
+
     // --- the vertex flow
     let position = match &material.vertex_node {
         Some(node) => node.clone(),
