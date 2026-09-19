@@ -77,6 +77,8 @@ Linux is the only backend that has been run.
 | [`webgpu_postprocessing_bloom_selective`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_bloom_selective.rs) | [`webgpu_compute_points`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_compute_points.rs) | [`webgpu_lines_fat`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_lines_fat.rs) | [`webgpu_pmrem_test`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_pmrem_test.rs) |
 | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_postprocessing_difference.jpg" alt="webgpu_postprocessing_difference" width="200">](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_difference-progress.md) | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_postprocessing_direct.jpg" alt="webgpu_postprocessing_direct" width="200">](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_direct-progress.md) | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_furnace_test.jpg" alt="webgpu_furnace_test" width="200">](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_furnace_test-progress.md) | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_postprocessing_anamorphic.jpg" alt="webgpu_postprocessing_anamorphic" width="200">](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_anamorphic-progress.md) |
 | [`webgpu_postprocessing_difference`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_difference.rs) | [`webgpu_postprocessing_direct`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_direct.rs) | [`webgpu_furnace_test`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_furnace_test.rs) | [`webgpu_postprocessing_anamorphic`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_anamorphic.rs) |
+| [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_pmrem_scene.jpg" alt="webgpu_pmrem_scene" width="200">](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_pmrem_scene-progress.md) |  |  |  |
+| [`webgpu_pmrem_scene`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_pmrem_scene.rs) |  |  |  |
 
 <sub>Our own rendered frames, one per graded example. See [`docs/gallery.md`](https://github.com/oneilltomhq/three-rs/blob/main/docs/gallery.md).</sub>
 <!-- gallery:end -->
@@ -106,6 +108,7 @@ Linux is the only backend that has been run.
 | webgpu_postprocessing_direct | 21 | 4.9 | 93 | 4192 |
 | webgpu_furnace_test | 0 | 7.1 | 122 | 116161 |
 | webgpu_postprocessing_anamorphic | 2 | 8.1 | 16 | 398798 |
+| webgpu_pmrem_scene | 0 | 3.8 | 9 | 58433 |
 
 `webgpu_compute_points` is graded like the rest and its 4 pixels mean less
 than the rest: its frame is black apart from a 2x2 block at the centre, so

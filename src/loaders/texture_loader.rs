@@ -35,13 +35,7 @@ impl TextureLoader {
         // `ImageLoader` gives the bytes to the browser, which picks the decoder
         // from the sniffed type and not from the extension. Three magic numbers
         // cover everything the ladder loads.
-        let image = if bytes.starts_with(b"GIF") {
-            super::gif::decode(path, &bytes)?
-        } else if bytes.starts_with(&[0x89, b'P', b'N', b'G']) {
-            decode_png(path, &bytes)?
-        } else {
-            decode_jpeg_bytes(path, &bytes)?
-        };
+        let image = decode_image(path, &bytes)?;
         Ok(Texture::new(image.width, image.height, Some(image.data)))
     }
 
@@ -68,6 +62,23 @@ impl TextureLoader {
         };
 
         Ok(Texture::new(image.width, image.height, Some(image.data)))
+    }
+}
+
+/// `ImageLoader` gives the bytes to the browser, which picks the decoder from
+/// the sniffed type and not from the extension. Three magic numbers cover
+/// everything the ladder loads. Shared with [`CubeTextureLoader`], whose six
+/// faces are PNG in `webgpu_materials_basic` and JPEG in
+/// `webgpu_pmrem_scene`.
+///
+/// [`CubeTextureLoader`]: super::CubeTextureLoader
+pub(crate) fn decode_image(path: &Path, bytes: &[u8]) -> Result<crate::textures::Image, Error> {
+    if bytes.starts_with(b"GIF") {
+        super::gif::decode(path, bytes)
+    } else if bytes.starts_with(&[0x89, b'P', b'N', b'G']) {
+        decode_png(path, bytes)
+    } else {
+        decode_jpeg_bytes(path, bytes)
     }
 }
 

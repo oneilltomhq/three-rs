@@ -152,6 +152,10 @@ mod webgpu_furnace_test;
 #[allow(dead_code)]
 mod webgpu_pmrem_test;
 
+#[path = "../../examples/webgpu_pmrem_scene.rs"]
+#[allow(dead_code)]
+mod webgpu_pmrem_scene;
+
 #[path = "../../examples/webgpu_lights_phong.rs"]
 #[allow(dead_code)]
 mod webgpu_lights_phong;
@@ -1057,6 +1061,310 @@ fn webgpu_furnace_test() {
     });
 }
 
+/// **The six face tiles, and the one example that can see them.**
+///
+/// `webgpu_furnace_test` reaches `_sceneToCubeUV` with a solid-colour
+/// environment, so its atlas is one value everywhere and a permuted face, a
+/// flipped `up` or a viewport in the wrong tile are all invisible in it
+/// (`docs/webgpu_furnace_test-progress.md`). This example is the first one
+/// whose environment scene has *content*: a cube-texture background and six
+/// coloured spheres. So the slicing is observable, and this is where it is
+/// held.
+///
+/// Two independent claims, neither of them from a reference image.
+///
+/// **1. Each tile is the cube face the camera was pointed at.** With
+/// `fov = 90`, `aspect = 1` and a 256² viewport, tile pixel `( px, py )` is
+/// the cube face at normalised `( ( px + .5 ) / 256, ( py + .5 ) / 256 )` —
+/// the *identity* map onto the image, with no flip and no transpose, sampled
+/// down from 1024² by a factor of four. Working that out from three's own
+/// arithmetic once, for face 0:
+///
+/// ```text
+/// face_camera( 0 ) = ( up ( 0, 1, 0 ), lookAt ( 1, 0, 0 ) )   ⇒ d = +x
+/// Object3D.lookAt:  z = -d = ( -1, 0, 0 )
+///                   x = normalize( cross( up, z ) ) = ( 0, 0, 1 )
+///                   y = cross( z, x ) = ( 0, 1, 0 )
+/// ray( a, b ) = a·x + b·y + d = ( 1, b, a )
+/// Background.material samples vec3( -dir.x, dir.yz ) (m02) ⇒ ( -1, b, a )
+/// |x| is the major axis and it is negative ⇒ the -X face, i.e. nx.jpg,
+/// with the GL table sc = +rz = a, tc = -ry = -b ⇒ s = ( a + 1 ) / 2,
+/// t = ( 1 - b ) / 2 — the identity map onto the image.
+/// ```
+///
+/// The same for the other five gives the permutation below. It is *not* the
+/// identity — `nx` and `px` trade places and so do `pz` and `nz`, which is the
+/// `-dir.x` of the cube convention, and tiles 1 and 4 trade because
+/// `forwardSign` points the "+y" tile's camera at **-y** (which is what the
+/// `normalWorld.y` negation in `PMREMNode.setup` undoes on the way out). A
+/// test that recomputed the port's own mapping would agree with itself; this
+/// one holds the six literals.
+///
+/// The comparison is over the 12 non-central blocks of a 4 × 4 grid of 64²
+/// block means, which skips the sphere (angular radius `asin 0.2` = 11.5°, so
+/// 26 px around the tile centre) and absorbs the few pixels of drift that
+/// come of the background being a *tessellated* 32 × 32 sphere rather than a
+/// full-screen blit. Every one of the 6 images × 8 dihedral orientations is
+/// scored, and the expected image in the identity orientation has to be the
+/// best by a wide margin — so this gate fails on a permuted face, on a flipped
+/// or rolled `up`, and on a tile written at the wrong offset.
+///
+/// **2. Each tile holds the right sphere.** The six `MeshBasicMaterial`
+/// spheres sit one per axis at distance 1, so the centre of tile *i* is the
+/// colour of the sphere face *i* looks at, and the six colours are distinct.
+/// That pins the direction table on its own, independently of the background.
+fn assert_face_tiles(app: &mut webgpu_pmrem_scene::App) {
+    /// `_setSize( 256 )`.
+    const FACE: usize = 256;
+    /// The Park3Med faces are 1024², four times the 256² tile.
+    const SIDE: usize = 1024;
+    /// `CubeTexture.images` is in three's order px, nx, py, ny, pz, nz.
+    const NAMES: [&str; 6] = ["px", "nx", "py", "ny", "pz", "nz"];
+    /// Tile *i* of the atlas ⇒ that index into `images`. Derived above.
+    const TILE_IMAGE: [usize; 6] = [1, 3, 4, 0, 2, 5];
+    /// The sphere each face looks at, as ( tile, hex ). `SPHERES` is in the
+    /// page's own order, so this is the page's own colours, not new constants.
+    const TILE_SPHERE: [usize; 6] = [2, 4, 1, 3, 5, 0];
+
+    let target = app
+        .environment
+        .target()
+        .expect("fromScene built the atlas in init()")
+        .clone();
+    let (atlas_width, atlas_height, atlas) =
+        app.renderer.read_target_pixels_rgba16f(&target).unwrap();
+    assert_eq!((atlas_width, atlas_height), (768, 1024));
+
+    // The sRGB EOTF the *hardware* applies to an `Rgba8UnormSrgb` cube face
+    // before it filters it — the IEC 61966-2-1 curve, not three's rational
+    // approximation of it, so this side of the comparison owes the port
+    // nothing.
+    fn to_linear(value: u8) -> f32 {
+        let value = value as f32 / 255.0;
+        if value <= 0.04045 {
+            value / 12.92
+        } else {
+            ((value + 0.055) / 1.055).powf(2.4)
+        }
+    }
+
+    // The 4 × 4 grid of block means, for the atlas tile and for each image.
+    let block_means = |read: &dyn Fn(usize, usize) -> [f32; 3], size: usize| {
+        let step = size / 4;
+        let mut means = [[[0.0f32; 3]; 4]; 4];
+        for (by, row) in means.iter_mut().enumerate() {
+            for (bx, mean) in row.iter_mut().enumerate() {
+                let mut sum = [0.0f64; 3];
+                for y in by * step..(by + 1) * step {
+                    for x in bx * step..(bx + 1) * step {
+                        let rgb = read(x, y);
+                        for c in 0..3 {
+                            sum[c] += rgb[c] as f64;
+                        }
+                    }
+                }
+                let n = (step * step) as f64;
+                *mean = [
+                    (sum[0] / n) as f32,
+                    (sum[1] / n) as f32,
+                    (sum[2] / n) as f32,
+                ];
+            }
+        }
+        means
+    };
+
+    /// One of the eight symmetries of the square, as a block-index map.
+    type Dihedral = (&'static str, fn(usize, usize) -> (usize, usize));
+
+    // The eight symmetries of the square, as block-index maps.
+    let dihedral: [Dihedral; 8] = [
+        ("identity", |x, y| (x, y)),
+        ("flipX", |x, y| (3 - x, y)),
+        ("flipY", |x, y| (x, 3 - y)),
+        ("rot180", |x, y| (3 - x, 3 - y)),
+        ("transpose", |x, y| (y, x)),
+        ("rot90", |x, y| (3 - y, x)),
+        ("rot270", |x, y| (y, 3 - x)),
+        ("antitranspose", |x, y| (3 - y, 3 - x)),
+    ];
+
+    let images: Vec<(usize, usize, Vec<u8>)> = {
+        let cube = app.cube.borrow();
+        cube.images
+            .iter()
+            .map(|image| {
+                (
+                    image.width as usize,
+                    image.height as usize,
+                    image.data.clone(),
+                )
+            })
+            .collect()
+    };
+    let image_means: Vec<[[[f32; 3]; 4]; 4]> = images
+        .iter()
+        .map(|(width, _, data)| {
+            assert_eq!(*width, SIDE, "the Park3Med faces are 1024²");
+            block_means(
+                &|x, y| {
+                    let at = (y * width + x) * 4;
+                    [
+                        to_linear(data[at]),
+                        to_linear(data[at + 1]),
+                        to_linear(data[at + 2]),
+                    ]
+                },
+                SIDE,
+            )
+        })
+        .collect();
+
+    for face in 0..6 {
+        let (tile_x, tile_y, tile_w, tile_h) = three_rs::renderer::pmrem::face_tile(FACE, face);
+        assert_eq!((tile_w, tile_h), (FACE, FACE));
+
+        let tile_means = block_means(
+            &|x, y| {
+                let at = (((tile_y + y) * atlas_width as usize) + tile_x + x) * 4;
+                [atlas[at], atlas[at + 1], atlas[at + 2]]
+            },
+            FACE,
+        );
+
+        // Score every image in every orientation over the 12 blocks the
+        // sphere does not touch.
+        let mut scores: Vec<(f32, usize, &str)> = Vec::new();
+        for (image, means) in image_means.iter().enumerate() {
+            for (name, map) in dihedral {
+                let mut error = 0.0f32;
+                for (by, row) in tile_means.iter().enumerate() {
+                    for (bx, mean) in row.iter().enumerate() {
+                        if (1..=2).contains(&bx) && (1..=2).contains(&by) {
+                            continue;
+                        }
+                        let (ix, iy) = map(bx, by);
+                        for c in 0..3 {
+                            error += (mean[c] - means[iy][ix][c]).abs();
+                        }
+                    }
+                }
+                scores.push((error / (12.0 * 3.0), image, name));
+            }
+        }
+        scores.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+
+        let (best, image, orientation) = scores[0];
+        let runner_up = scores[1];
+        println!(
+            "face {face} at ( {tile_x}, {tile_y} ): best {}.jpg {orientation} at {best:.4}, \
+             then {}.jpg {} at {:.4}",
+            NAMES[image], NAMES[runner_up.1], runner_up.2, runner_up.0
+        );
+        assert_eq!(
+            (image, orientation),
+            (TILE_IMAGE[face], "identity"),
+            "face {face}'s tile is {}.jpg {orientation}, not {}.jpg upright — a permuted \
+             face, a flipped `up` or a viewport in the wrong tile",
+            NAMES[image],
+            NAMES[TILE_IMAGE[face]]
+        );
+        assert!(
+            best < 0.002,
+            "face {face} matches {}.jpg upright but only to {best:.4} in linear light",
+            NAMES[image]
+        );
+        assert!(
+            runner_up.0 > best * 5.0,
+            "face {face}: {}.jpg upright ({best:.4}) is not clearly better than {}.jpg {} \
+             ({:.4}), so this gate is not discriminating",
+            NAMES[image],
+            NAMES[runner_up.1],
+            runner_up.2,
+            runner_up.0
+        );
+
+        // The sphere in the middle of the tile.
+        let (hex, _) = webgpu_pmrem_scene::SPHERES[TILE_SPHERE[face]];
+        let expected = three_rs::Color::from_hex(hex);
+        let expected = [expected.r as f32, expected.g as f32, expected.b as f32];
+        let mut centre = [0.0f64; 3];
+        for y in FACE / 2 - 4..FACE / 2 + 4 {
+            for x in FACE / 2 - 4..FACE / 2 + 4 {
+                let at = (((tile_y + y) * atlas_width as usize) + tile_x + x) * 4;
+                for c in 0..3 {
+                    centre[c] += atlas[at + c] as f64;
+                }
+            }
+        }
+        let centre = [
+            (centre[0] / 64.0) as f32,
+            (centre[1] / 64.0) as f32,
+            (centre[2] / 64.0) as f32,
+        ];
+        println!(
+            "face {face}: centre {centre:?}, sphere {:#08x} {expected:?}",
+            hex
+        );
+        for c in 0..3 {
+            assert!(
+                (centre[c] - expected[c]).abs() < 0.01,
+                "face {face} looks at the {:#08x} sphere, but the middle of its tile is \
+                 {centre:?}",
+                hex
+            );
+        }
+    }
+}
+
+#[test]
+fn webgpu_pmrem_scene() {
+    let name = "webgpu_pmrem_scene";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_pmrem_scene::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    // The generator gate first, before a pixel of the frame is looked at:
+    // this is the one example on the ladder whose environment scene is not a
+    // solid colour, so it is the one whose atlas can say whether the six face
+    // viewports really hold six different images in the right places.
+    assert_face_tiles(&mut app);
+
+    webgpu_pmrem_scene::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_pmrem_scene::animate, |app| {
+        app.renderer.device()
+    });
+}
+
 #[test]
 fn webgpu_lights_phong() {
     let name = "webgpu_lights_phong";
@@ -1513,6 +1821,7 @@ fn steady_frame_builds_nothing() {
     // `fromScene` builds the PMREM in `init()`, so `update` is a no-op here
     // too and the steady frames are the scene pass and the output blit.
     rung!(webgpu_furnace_test);
+    rung!(webgpu_pmrem_scene);
     rung!(webgpu_skinning);
     // The batch rewrites its indirect texture every `onBeforeRender()` and its
     // matrices texture every `animateMeshes()`; three.js uploads the same two.

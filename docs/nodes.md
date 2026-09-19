@@ -1153,16 +1153,20 @@ Statement for statement the two stages match
 `scouts/scouts/webgpu_lines_fat/dump/m00_vertex_vertex.wgsl` and
 `m01_fragment_fragment.wgsl`.
 
-## 13. PMREM (`webgpu_pmrem_cubemap`, `webgpu_pmrem_test`, `webgpu_furnace_test`)
+## 13. PMREM (`webgpu_pmrem_cubemap`, `webgpu_pmrem_test`, `webgpu_furnace_test`, `webgpu_pmrem_scene`)
 
 `PMREMGenerator` (`src/renderer/pmrem.rs`), the cube-UV read side
 (`src/nodes/pmrem_utils.rs`, `src/nodes/pmrem_node.rs`) and `EnvironmentNode`
 (`src/materials/environment.rs`). `fromCubemap` and `fromEquirectangular` are
 both ported and share everything but `_setSizeFromTexture` and the one-tap
 material that fills level 0 — that is three's own shape, `_fromTexture` with a
-`PmremSource` in place of the `texture.mapping` test. `fromScene` is ported too
-(`webgpu_furnace_test`): the `BackgroundBox` and the six 90° cube-camera
-renders into viewport tiles of the atlas with `auto_clear` off. The
+`PmremSource` in place of the `texture.mapping` test. `fromScene` is ported too, in both of
+its arms: `webgpu_furnace_test` is the `useSolidColor` one — the background is
+a `Color`, so it is lifted off the scene, becomes the `BackgroundBox`'s colour
+and is drawn *once* over the whole atlas — and `webgpu_pmrem_scene` is the
+other, where the scene keeps its cube-texture background and its meshes and the
+six 90° cube-camera renders into viewport tiles of the atlas, with `auto_clear`
+off, are what fill level 0. The
 golden-angle Gaussian blur shader and `BLUR_SAMPLES` are still deferred —
 `_applyPMREM` takes the `sigma == 0` GGX arm for every source the ladder has,
 scene included, so `_blur` / `sphericalGaussianBlur` has no caller.
@@ -1189,7 +1193,17 @@ its `m05`, and `PMREM_equirect` against `dump-pmrem_test/m02`. All four are in
 `webgpu_pmrem_test`'s own two and `furnace_background` / `furnace_physical`
 for `webgpu_furnace_test`'s, against `dump-furnace_test/m01` and `m05`.
 `fromScene` adds no shader of its own: `PMREM.Background` is a
-`MeshBasicNodeMaterial` with a colour and nothing else.
+`MeshBasicNodeMaterial` with a colour and nothing else, and its non-solid arm
+reuses the ordinary `Background.material` and the scene's own materials
+(`dump-pmrem_scene/m01`–`m04` are `background_cube` and a plain basic material,
+both of them already on the ladder). The one module `webgpu_pmrem_scene` adds
+is the read side with **no lighting model in front of it**: `dump_wgsl`'s
+`pmrem_scene_colornode` against its `m07`/`m08`, which is
+`new MeshBasicNodeMaterial( { colorNode: pmremTexture( sceneRT.texture,
+normalWorld, uniform( .5 ) ) } )` and therefore `textureCubeUV` as the entire
+fragment shader — `roughnessToMip`, `getFace`, `getUV`, the two
+`textureSampleGrad` taps and the `mix`, with nothing else in the file. It
+matches statement for statement.
 
 `PMREM_equirect` is the whole delta between the two examples: `texture(
 envTexture, equirectUV( _outputDirection ), 0 )`, four lines of WGSL. Note
@@ -1211,6 +1225,22 @@ bases and viewport tiles against three's tables, with no GPU, and the atlas of
 a constant environment staying that constant through all ten GGX steps to
 within 1% — the white-furnace identity one level below the one
 `webgpu_furnace_test`'s image tests.
+
+Those three gates all run on a *constant* environment, which is the one thing
+they cannot check: a permuted face, a rolled `up` or a tile written at the
+wrong offset produce the same uniform atlas. `assert_face_tiles` in
+`tests/e2e/main.rs` is where that is finally held, because
+`webgpu_pmrem_scene`'s environment scene has content. With `fov = 90`,
+`aspect = 1` and a 256² viewport each face tile is the *identity* map onto one
+of the six 1024² cube faces, and working the six out from
+`face_camera` + `Object3D.lookAt` + the `vec3( -dir.x, dir.yz )` of `m02` gives
+the permutation `nx, ny, pz, px, py, nz` — not the identity, because the cube
+convention swaps ±x and `forwardSign` points the "+y" tile's camera at −y
+(which `PMREMNode.setup`'s `normalWorld.y` negation undoes on the way out).
+The gate scores all 6 images × 8 dihedral orientations against 64² block means
+and requires the expected image, upright, to win; it does, by 22× to 43×. The
+centre of each tile is separately held against the colour of the one
+`MeshBasicMaterial` sphere that face looks at.
 
 ### Divergences specific to this rung
 

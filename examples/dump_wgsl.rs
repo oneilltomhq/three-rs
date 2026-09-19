@@ -1422,6 +1422,22 @@ fn main() {
     furnace.pmrem_env = Some(environment.handle());
     show("furnace_physical", &furnace, SetupContext::default());
 
+    // `webgpu_pmrem_scene`: the cube-UV read with **no PBR in front of it**.
+    // `new MeshBasicNodeMaterial( { colorNode: pmremTexture( sceneRT.texture,
+    // normalWorld, uniform( .5 ) ) } )` — three's `m07`/`m08` in the scout's
+    // `dump-pmrem_scene/`, and the only place on the ladder where
+    // `textureCubeUV` is the entire fragment shader rather than one term of a
+    // lighting model. The uv is `normalWorld`, not the `normalWorldGeometry`
+    // the two background sections above use.
+    let (scene_level, _scene_level_cell) = uniform_settable(three_rs::nodes::Type::F32, vec![0.5]);
+    let mut pmrem_colour = MeshBasicNodeMaterial::new();
+    pmrem_colour.color_node = Some(environment.sample(normal_world(), scene_level));
+    show(
+        "pmrem_scene_colornode",
+        &pmrem_colour,
+        SetupContext::default(),
+    );
+
     // And the lit material with a light in the graph: the example's
     // intensity-zero `DirectionalLight` is why `m08` carries a directional
     // block at all. The colour is the row-0 white metal.
