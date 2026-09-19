@@ -249,3 +249,109 @@ from a clean slate.
   note that this is the one example where the §8 "`DiffuseColor.w = 1.0`"
   divergence has teeth, so do not extend that bullet's "emit it for all four"
   habit to this material.
+
+---
+
+# `webgpu_lines_fat`, second half — progress
+
+Branch `rung-lines-fat-b`, cut from `f949c0e`. Scope: **steps 4 to 6** of
+`scouts/webgpu_lines_fat/PLAN.md` §6 — `addons/lines`, `Line2NodeMaterial`, the
+example and the image gate.
+
+**PASS: 0 different pixels of 100000, limit 0.1%.** The whole ladder is 23
+tests, 23 passed, and every rung below comes out on the number the first half
+left it: **4 / 0 / 60 / 31 / 4 / 44 / 0 / 0 / 0 / 18 / 7 / 0 / 1 / 7 / 6 / 40**.
+`webgpu_lines_fat` steady frame 3.83 ms, 6 draw calls, 11191 triangles, and
+frames 2 and 3 compile, build and upload nothing.
+
+## Status
+
+| Step | Plan §6 | State | Gate |
+| --- | --- | --- | --- |
+| 4 | `addons/lines` | done | `tests/extras_spline_oracle.rs` (hilbert points bit-exact, pair duplication), `tests/nodes_line2_layout.rs` |
+| 5 | `Line2NodeMaterial` | done | `examples/dump_wgsl.rs` sections `line2` and `line2_alpha_to_coverage`, diffed against the scout dump |
+| 6 | the example and the image | done | `tests/e2e/main.rs::webgpu_lines_fat`, 0 pixels |
+
+The WGSL story is in `docs/nodes.md` §12, which is the place to read for
+`setupPosition`'s round trip, the one-buffer-two-views layout, `ElseIf`
+nesting, split assignment, `alphaLine`'s `discard`, and what is not ported.
+What follows is only what that document does not cover: the choices, and the
+two ways the image failed before it passed.
+
+## Where the code went, and why it is not the plan's shape
+
+§9 of the plan wanted `LineSegmentsGeometry` / `LineGeometry` / `LineSegments2`
+/ `Line2` in a `three-rs-lines` workspace crate, and said the cost was that
+`cargo test --test e2e` in the root crate would not cover the example, so its
+image test would live in `addons/lines/tests/` and be run explicitly.
+
+That cost is too high for this rung. The ladder's value is that it is *one*
+command that regrades every rung; a seventeenth example that has to be
+remembered separately is a rung that rots quietly. So the `examples/jsm/lines/`
+tier is `src/addons/lines.rs` in the root crate, with `src/addons/mod.rs` and
+the README saying why, and `addons/controls` — which needs nothing from core —
+stays the example of the preferred shape.
+
+`Line2NodeMaterial` is `src/materials/line2.rs`, which *is* the plan's
+placement and three.js's: it ships in core `src/materials/nodes/`, and it needs
+a `MaterialKind`, a `setupPosition` seam and five uniform sources that no
+downstream crate can reach.
+
+## The two ways the image failed first
+
+Both are worth recording, because neither produced an error.
+
+**9160 pixels (9.16%): nothing drawn at all.** `project_drawable` rejected the
+object on the frustum test with every side-plane distance negative — the origin
+was *behind* the camera. Cause: the example called `Object3D::look_at` on
+`camera.node` rather than `PerspectiveCamera::look_at`. They are different
+functions on purpose, mirroring three.js: `Object3D.lookAt` points +Z at the
+target, a camera looks down -Z, so the plain-object form aims a camera exactly
+backwards. It is an easy call to make by accident from a `&Node`, and it fails
+by drawing a clean, plausible, empty frame.
+
+**1415 pixels (1.4%): a one-pixel outline along every line edge.** The page is
+`new THREE.WebGPURenderer( { antialias: true } )` — four samples — and the port
+had been given `antialias: false`. On a frame that is *nothing but* edges that
+is 14x the whole budget. The example now carries the number in a comment, since
+"antialias is cosmetic" is exactly the assumption this rung disproves.
+
+## The shared-path change, and its gate
+
+`src/nodes/builder.rs` gained `split_assign_target()` and the split-assign arm
+of `Node::Assign` (`docs/nodes.md` §12.3). That is the one change on this
+branch that every other material walks through, so it is gated the same way the
+first half gated `if_then`: `dump_wgsl` before and after, diffed, **0 removals**
+— every pre-existing material generates byte-identical WGSL, and the only added
+lines are the two new sections.
+
+## Answering the first half's open design question
+
+Option **(a)** — `SetupContext::line_segments`, an
+`Option<LineSegmentsAttributes>` of `Rc<Vec<f32>>` hashed by pointer, beside the
+existing `morph` — is what shipped, and it held up: nine lines in
+`src/renderer/mod.rs`, one field through the four mesh payloads, and no
+geometry type touched. Option (b), real interleaved instanced attributes on
+`BufferGeometry`, is still the right end state and is still a follow-up; this
+rung neither needs it nor blocks it.
+
+One thing the first half could not have known made (a) cheaper than expected:
+the only real work was splitting `instanced_data_attribute` into
+`instanced_data_buffer` + `instanced_buffer_attribute`, because
+`vertex_buffers()` groups by `Rc::as_ptr` and a single call would have minted a
+fresh buffer per view. That split is needed under (b) as well.
+
+## Gaps left open
+
+* **Dashed lines.** `_useDash`: the `instanceDistanceStart` / `End` attributes,
+  `lineDistance`, `dashSize` / `gapSize`, `dashOffset` and the `mod`-discard.
+  Needs a `varyingProperty` written in the vertex stage and read in the
+  fragment stage, which the port does not have.
+* **World units.** `_useWorldUnits`: `closestLineToLine` and the world-space
+  ribbon, plus the `worldStart` / `worldEnd` varyings it needs.
+* **`LineSegments2::computeLineDistances()` and `raycast()`.** The first is
+  only for the dashed branch; the second has no caller on the ladder.
+* **Interleaved instanced attributes on `BufferGeometry`** — option (b) above.
+* **`Line2NodeMaterial` is a type alias.** It is `MeshBasicNodeMaterial` with
+  `MaterialKind::Line2`, like the other node materials in this port; a real
+  per-material type is a repo-wide change, not this rung's.

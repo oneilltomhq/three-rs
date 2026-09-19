@@ -393,7 +393,11 @@ differences, each verified to be pixel-neutral.
   NormalBlending`, so `isOpaque()` is true there too) — unexplained; this port
   emits it for all four. It is pixel-neutral here because `materialOpacity` is 1
   in every rung-1–4 material, so the preceding `w = w * opacity` already
-  leaves 1.
+  leaves 1. **This habit stops at `Line2NodeMaterial`**, whose constructor sets
+  `blending = NoBlending`: `isOpaque()` is false there, Three does not emit the
+  line, and neither does the port. It is not pixel-neutral for a fat line —
+  `alphaLine()` writes the coverage into `DiffuseColor.w` and the output pass
+  reads it — so §12 treats it as a structural requirement, not a cosmetic one.
 * ~~**Output-pass depth attachment.**~~ Withdrawn at rung 9: the port's canvas
   passes do carry the `depth24plus` attachment three.js gives them
   (`canvas_pass( true )`), and the pipeline declares `less-equal` /
@@ -961,3 +965,134 @@ one-binding-not-two storage layout, all three in §8, plus the generated-name
 numbering §8 already lists. Statement for statement both kernels match
 `docs/rung12/precompute_velocity.compute.wgsl` and
 `docs/rung12/update_particles.compute.wgsl`.
+
+## 12. The fat line (`webgpu_lines_fat`)
+
+A fat line is not a line: `LineSegments2 extends Mesh`, and every segment is one
+instance of a fixed eight-vertex quad that the vertex shader expands into a
+screen-space ribbon. `WebGPUUtils.getPrimitiveTopology()` reads `object.isLine`,
+which a `LineSegments2` never sets, so it draws `triangle-list` like any other
+mesh. Two halves, in two places, exactly as three.js splits them:
+
+* `src/materials/line2.rs` — `Line2NodeMaterial`, which three.js ships in
+  **core** (`src/materials/nodes/`). `mvpLine`, `trimSegmentAlpha`, `alphaLine`.
+* `src/addons/lines.rs` — `LineSegmentsGeometry`, `LineGeometry`,
+  `LineSegments2`, `Line2`, which three.js ships in `examples/jsm/lines/`.
+
+### 12.1 `setupPosition` and the round trip that must not be simplified
+
+`Line2NodeMaterial` overrides `setupPosition()`, and what it puts back into
+`positionLocal` is the *clip-space* result pushed all the way back down:
+
+```js
+const localPosition = modelWorldMatrixInverse
+    .mul( cameraWorldMatrix ).mul( cameraProjectionMatrixInverse ).mul( mvpLine );
+positionLocal.assign( localPosition.xyz.div( localPosition.w ) );
+```
+
+The ordinary MVP tail then re-does the transform the material just undid. That
+is not an identity in `f32`, and it is what lets the fat line reuse
+`modelViewProjection`, `positionView` and everything downstream of them without
+a second seam. Three's dump still shows `v_positionView` and
+`v_modelViewProjection` computed after it, and so does the port's. Do not
+"optimise" the round trip away; the picture would move.
+
+Three new uniforms fall out of it, all ported in the first sitting:
+`cameraProjectionMatrixInverse`, `modelWorldMatrixInverse` and
+`materialLineWidth`, plus `viewport()` and `screenDPR()`, which `mvpLine` reads
+to turn a pixel width into clip space.
+
+`viewport` is the **pass'** rectangle, not the canvas'. The example's 125-high
+inset therefore draws the same 5-pixel line four times wider in clip space than
+the 500-high main frame does, and the inset looks like a zoom of the main view
+even though both cameras sit at the same place. Getting `viewport()` from the
+canvas instead would pass the main frame and quietly thin the inset.
+
+### 12.2 `instanceStart` / `instanceEnd`: one buffer, two views
+
+`LineSegmentsGeometry.setPositions()` wraps the array in
+`InstancedInterleavedBuffer( array, 6, 1 )` and takes two
+`InterleavedBufferAttribute` views at float offsets 0 and 3. That is **one**
+vertex buffer of stride 24 with two attributes at byte offsets 0 and 12 — not
+two buffers of stride 12 reading alternate halves. Both feed the shader the same
+numbers, so the image cannot tell them apart; `tests/nodes_line2_layout.rs`
+asserts the layout instead.
+
+The port carries the pairs on the object, not on the geometry:
+`SetupContext::line_segments` is an `Option<LineSegmentsAttributes>` holding
+`Rc<Vec<f32>>` arrays, hashed by `Rc` pointer, sitting next to the existing
+`morph: Option<MorphEntry>`. `crate::nodes::tsl` gained the split that makes the
+sharing work — `instanced_data_buffer( data, item_size )` mints the
+`Rc<InstanceBuffer>` and `instanced_buffer_attribute( buffer, offset, ty )` takes
+a view of it, because `vertex_buffers()` groups by `Rc::as_ptr`, and the old
+single call would have minted a fresh buffer per view.
+
+This is option (a) of the plan. Option (b) — real interleaved instanced
+attributes on `BufferGeometry`, which is the end state and lets the material
+carry no geometry knowledge at all — is a filed follow-up, deliberately not done
+on this rung; `docs/webgpu_lines_fat-progress.md` weighs the two.
+
+### 12.3 `if_else_if` nests, and split assignment
+
+Two shapes the dump forced:
+
+* **`ElseIf` is `Else( () => If( … ) )`.** `StackNode.ElseIf()` is sugar for a
+  nested `if`/`else`, so the generated WGSL is `if ( a ) { … } else { if ( b ) {
+  … } }`, not `else if`. `mvpLine` uses it twice (the near-plane trim and the
+  endcaps), and `if_else_if()` in `tsl.rs` generates the nested form.
+* **`needsSplitAssign`.** WGSL has no swizzle assignment, so
+  `DiffuseColor.rgb.mulAssign( instanceColor )` cannot be written as one
+  statement. `AssignNode.generate()` detects the case, emits a temp var for the
+  value and then one assignment per component. The port's
+  `split_assign_target()` in `src/nodes/builder.rs` does the same. It is a
+  shared-path change, so the gate is the usual one: `dump_wgsl` against `main`
+  has **0 removals** — every pre-existing material generates the same bytes.
+
+`AssignNode.generate()` also generates the **target** before the value, which is
+what puts `nodeVar0 = clipEnd` ahead of `nodeVar1 = clipStart` in the dump; the
+port matches it.
+
+### 12.4 `alphaLine`, and `discard` that is not `setupDiscard`
+
+The quad runs `uv.y` from -2 to 2 with the segment between -1 and 1, so
+`abs( uv.y ) > 1` is inside one of the two round caps, and the cap is cut to a
+circle:
+
+```js
+If( uv.y.abs().greaterThan( 1.0 ), () => { … len2.greaterThan( 1.0 ).discard(); } );
+```
+
+That is a plain `If( cond ) { Discard }`. The port's `discard_if()` is
+`setupDiscard`'s form, `If( cond.not(), … )`, and using it here would emit a
+stray `!` and keep exactly the fragments three throws away. `alpha_line()` uses
+`if_then( …, vec![ discard() ] )` instead.
+
+With `alphaToCoverage` the same circle is antialiased by `fwidth` rather than
+discarded. Three also requires `renderer.currentSamples > 0`; the port folds
+that into the material flag, because a material with `alphaToCoverage` on an
+unsampled target is not a case any example makes. `dump_wgsl`'s
+`line2_alpha_to_coverage` section keeps that branch honest even though the
+graded frame does not take it.
+
+### 12.5 Not ported
+
+`_useDash` (the `instanceDistance*` attributes, `lineDistance`, `dashSize` /
+`gapSize` and the `mod`-discard) and `_useWorldUnits` (`closestLineToLine` and
+the world-space ribbon). Both are off the graded frame — the example sets
+`dashed: false` and leaves world units at their default — and both want a node
+shape the port does not have yet (a `varyingProperty` assigned in the vertex
+stage before it is read). `LineSegments2.computeLineDistances()` and `raycast()`
+are not ported either.
+
+### Divergences specific to this rung
+
+All from §8: generated-name numbering (the port's `nodeAttribute0…3` against
+three's `instanceStart` / `instanceEnd` / `instanceColorStart` /
+`instanceColorEnd`, and `nodeVarying0…3` against three's `nodeVarying4…7`),
+uniform-struct member order (the same six render members at 288 bytes and the
+same five object members at 160, at different offsets), and the absent `VERTEX_`
+sub-build temps. Plus the one that is *not* cosmetic and is listed above: no
+`DiffuseColor.w = 1.0`, because `NoBlending` makes `isOpaque()` false.
+Statement for statement the two stages match
+`scouts/scouts/webgpu_lines_fat/dump/m00_vertex_vertex.wgsl` and
+`m01_fragment_fragment.wgsl`.
