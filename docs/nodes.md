@@ -727,6 +727,30 @@ the property back instead, so the count is one and no var appears. Three gets
 there by the same route — `getFragmentOutput` vs. `OutputStructNode` — and its
 dump has no var either.
 
+### `webgpu_postprocessing_anamorphic` adds one divergence
+
+Four of its five modules match three's dump statement for statement: the
+background (`m01`), the scene fragment (`m03`), the `rtt()` quad (`m05`) and
+the streak (`m07`) — including the loop header
+`for ( var i : i32 = i32( ( - nodeVar1 ) ); i < i32( nodeVar1 ); i ++ )`, which
+is what `Loop( { start, end } )` with **node** bounds generates and what
+`tsl::loop_range` was added for. The final `RenderPipeline` quad (`m17`) differs
+only in the two orderings already listed above (struct blocks and helper `fn`
+declaration order).
+
+The vertex stage is where the port and three genuinely disagree:
+
+* **`positionNode` runs before the instance matrix, not after.** Three's
+  `NodeMaterial.setupPosition()` applies instancing first and *then*
+  `positionLocal.assign( positionNode )`, so the page's bob is added to an
+  already-instanced position; this port applies `positionNode` first (see the
+  comment at `src/materials/node_material.rs`, `setup()`, which names the
+  downstream consumer written against it). The two agree whenever the
+  instance matrix is an affine map with no scale or rotation applied to the
+  offset — and `webgpu_postprocessing_anamorphic`'s instance matrices are pure
+  translations, so the graded frame is unaffected. A rung that instances with
+  rotation *and* a `positionNode` will have to pick three's order.
+
 ## 9. Blending, and the instanced-attribute path
 
 Two pieces of shared renderer work that no rung 1–9 material exercises, built

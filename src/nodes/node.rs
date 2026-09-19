@@ -685,6 +685,12 @@ pub enum Node {
     },
     /// `Loop( count, ( { i } ) => { … } )` — `for ( var i : i32 = 0; i < n; i ++ )`.
     Loop {
+        /// `Loop( { start, end }, … )`'s `start`. `None` is three.js'
+        /// `Loop( count, … )` shorthand, whose start is the literal `0`; a
+        /// node start is written out as it stands, so
+        /// `webgpu_postprocessing_anamorphic`'s negated half-sample count
+        /// reaches the loop header as `i32( ( - nodeVar1 ) )`.
+        start: Option<NodeRef>,
         count: NodeRef,
         /// The loop index, as it appears inside `body` (`Node::Param`).
         index: NodeRef,

@@ -588,6 +588,13 @@ pub struct Renderer {
     /// so the full-screen quad draws straight into the canvas.
     neutral_output: bool,
 
+    /// `RenderContext.fullscreenPass` — set for the duration of a
+    /// [`Renderer::render_quad`]. `Renderer.currentSamples` reads it: a quad
+    /// drawn straight to the canvas is never multisampled, however the
+    /// renderer's `antialias` option was set, because its one oversized
+    /// triangle has no edge inside the viewport to antialias.
+    fullscreen_pass: bool,
+
     /// `renderer.toneMappingExposure`.
     pub tone_mapping_exposure: f64,
 
@@ -796,6 +803,7 @@ impl Renderer {
             quad_camera: OrthographicCamera::new(-1.0, 1.0, 1.0, -1.0, 0.0, 1.0),
             neutral_output: false,
             tone_mapping_exposure: 1.0,
+            fullscreen_pass: false,
             time: 0.0,
             present: None,
             random: DeterministicRandom::new(),
@@ -1809,6 +1817,10 @@ impl Renderer {
         // see [`Renderer::frames`].
         self.begin_frame();
 
+        // `Renderer._renderScene()`: `renderContext.fullscreenPass =
+        // scene.isQuadMesh === true`.
+        let previous_fullscreen_pass = std::mem::replace(&mut self.fullscreen_pass, true);
+
         let key = MaterialKey::of(&quad.material).variant(VARIANT_QUAD);
         let mut material = quad.material.clone();
         material.vertex_node = Some(materials::quad_vertex_node());
@@ -1846,6 +1858,7 @@ impl Renderer {
             ClearOps::default()
         };
         self.render_list(&items, camera_uniforms, clear);
+        self.fullscreen_pass = previous_fullscreen_pass;
     }
 
     /// `PMREMGenerator`'s `renderer.render( lodMesh, _flatCamera )`.
@@ -3088,6 +3101,7 @@ impl Renderer {
         let address = |w: Wrapping| match w {
             Wrapping::ClampToEdge => wgpu::AddressMode::ClampToEdge,
             Wrapping::Repeat => wgpu::AddressMode::Repeat,
+            Wrapping::MirroredRepeat => wgpu::AddressMode::MirrorRepeat,
         };
 
         match source {
@@ -3929,7 +3943,7 @@ impl Renderer {
         match &self.render_target {
             Some(render_target) => render_target.samples(),
             None => {
-                if self.needs_frame_buffer_target() {
+                if self.needs_frame_buffer_target() || self.fullscreen_pass {
                     0
                 } else {
                     self.samples
