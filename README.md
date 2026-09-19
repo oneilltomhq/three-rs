@@ -15,8 +15,8 @@ from Three's node graph (TSL) by a port of Three's `NodeBuilder`, the way
 correctness is judged by Three's own examples and reference screenshots, not
 by scenes written for the port.
 
-**Status: early, working, incomplete.** Ten of Three's `webgpu_*` examples
-pass the grader; the vast majority of Three's 600-odd examples have not been
+**Status: early, working, incomplete.** The `webgpu_*` examples in the gallery
+below pass the grader; the vast majority of Three's 600-odd examples have not been
 attempted. The API follows Three's object model but is not stable. Vulkan on
 Linux is the only backend that has been run.
 
@@ -77,8 +77,8 @@ Linux is the only backend that has been run.
 | [`webgpu_postprocessing_bloom_selective`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_bloom_selective.rs) | [`webgpu_compute_points`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_compute_points.rs) | [`webgpu_lines_fat`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_lines_fat.rs) | [`webgpu_pmrem_test`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_pmrem_test.rs) |
 | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_postprocessing_difference.jpg" alt="webgpu_postprocessing_difference" width="200">](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_difference-progress.md) | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_postprocessing_direct.jpg" alt="webgpu_postprocessing_direct" width="200">](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_direct-progress.md) | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_furnace_test.jpg" alt="webgpu_furnace_test" width="200">](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_furnace_test-progress.md) | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_postprocessing_anamorphic.jpg" alt="webgpu_postprocessing_anamorphic" width="200">](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_anamorphic-progress.md) |
 | [`webgpu_postprocessing_difference`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_difference.rs) | [`webgpu_postprocessing_direct`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_direct.rs) | [`webgpu_furnace_test`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_furnace_test.rs) | [`webgpu_postprocessing_anamorphic`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_anamorphic.rs) |
-| [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_pmrem_scene.jpg" alt="webgpu_pmrem_scene" width="200">](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_pmrem_scene-progress.md) | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_postprocessing_bloom.jpg" alt="webgpu_postprocessing_bloom" width="200">](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_bloom-progress.md) |  |  |
-| [`webgpu_pmrem_scene`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_pmrem_scene.rs) | [`webgpu_postprocessing_bloom`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_bloom.rs) |  |  |
+| [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_pmrem_scene.jpg" alt="webgpu_pmrem_scene" width="200">](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_pmrem_scene-progress.md) | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_postprocessing_bloom.jpg" alt="webgpu_postprocessing_bloom" width="200">](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_bloom-progress.md) | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_materials_envmaps.jpg" alt="webgpu_materials_envmaps" width="200">](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_materials_envmaps-progress.md) | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_materials_cubemap_mipmaps.jpg" alt="webgpu_materials_cubemap_mipmaps" width="200">](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_materials_envmaps-progress.md) |
+| [`webgpu_pmrem_scene`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_pmrem_scene.rs) | [`webgpu_postprocessing_bloom`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_bloom.rs) | [`webgpu_materials_envmaps`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_materials_envmaps.rs) | [`webgpu_materials_cubemap_mipmaps`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_materials_cubemap_mipmaps.rs) |
 
 <sub>Our own rendered frames, one per graded example. See [`docs/gallery.md`](https://github.com/oneilltomhq/three-rs/blob/main/docs/gallery.md).</sub>
 <!-- gallery:end -->
@@ -110,6 +110,8 @@ Linux is the only backend that has been run.
 | webgpu_postprocessing_anamorphic | 2 | 8.1 | 16 | 398798 |
 | webgpu_pmrem_scene | 0 | 3.8 | 9 | 58433 |
 | webgpu_postprocessing_bloom | 0 | 8.6 | 19 | 52085 |
+| webgpu_materials_envmaps | 0 | 2.1 | 3 | 7105 |
+| webgpu_materials_cubemap_mipmaps | 1 | 2.6 | 3 | 65025 |
 
 `webgpu_compute_points` is graded like the rest and its 4 pixels mean less
 than the rest: its frame is black apart from a 2x2 block at the centre, so

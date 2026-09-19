@@ -3513,37 +3513,30 @@ impl Renderer {
             .block_copy_size(None)
             .expect("three-rs: the cube texture format has no single block size");
 
-        {
+        let has_mipmaps = {
             let inner = texture.inner().borrow();
             assert!(!inner.flip_y, "three-rs: CubeTexture.flipY is false");
+            // `_copyCubeMapToTexture()`: face by face, level 0 from `images`
+            // and then `mipmaps[ j ].images[ face ]` into `mipLevel = j + 1`.
             for (layer, image) in inner.images.iter().enumerate() {
-                self.queue.write_texture(
-                    wgpu::TexelCopyTextureInfo {
-                        texture: &gpu,
-                        mip_level: 0,
-                        origin: wgpu::Origin3d {
-                            x: 0,
-                            y: 0,
-                            z: layer as u32,
-                        },
-                        aspect: wgpu::TextureAspect::All,
-                    },
-                    &image.data,
-                    wgpu::TexelCopyBufferLayout {
-                        offset: 0,
-                        bytes_per_row: Some(image.width * bytes_per_texel),
-                        rows_per_image: Some(image.height),
-                    },
-                    wgpu::Extent3d {
-                        width: image.width,
-                        height: image.height,
-                        depth_or_array_layers: 1,
-                    },
-                );
+                write_face(&self.queue, &gpu, 0, layer as u32, image, bytes_per_texel);
+                for (j, level) in inner.mipmaps.iter().enumerate() {
+                    write_face(
+                        &self.queue,
+                        &gpu,
+                        j as u32 + 1,
+                        layer as u32,
+                        &level[layer],
+                        bytes_per_texel,
+                    );
+                }
             }
-        }
+            !inner.mipmaps.is_empty()
+        };
 
-        if mip_level_count > 1 {
+        // `Textures.updateTexture()` generates only when the texture supplied
+        // no levels of its own: `needsMipmaps && texture.mipmaps.length === 0`.
+        if mip_level_count > 1 && !has_mipmaps {
             self.generate_mipmaps(&gpu, format, mip_level_count, 6);
         }
 
@@ -4301,6 +4294,43 @@ const CANVAS_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 /// `WebGPUUtils.getCurrentDepthStencilFormat()` with `stencil` and
 /// `reversedDepthBuffer` both off.
 const CANVAS_DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth24Plus;
+
+/// One `copyExternalImageToTexture` of a cube face: the image is already the
+/// size of the level it goes to, so the extent comes from the image and not
+/// from the texture descriptor (`_copyImageToTexture()` does the same,
+/// `( mipLevel > 0 ) ? image.width : textureDescriptorGPU.size.width`).
+fn write_face(
+    queue: &wgpu::Queue,
+    gpu: &wgpu::Texture,
+    mip_level: u32,
+    layer: u32,
+    image: &crate::textures::Image,
+    bytes_per_texel: u32,
+) {
+    queue.write_texture(
+        wgpu::TexelCopyTextureInfo {
+            texture: gpu,
+            mip_level,
+            origin: wgpu::Origin3d {
+                x: 0,
+                y: 0,
+                z: layer,
+            },
+            aspect: wgpu::TextureAspect::All,
+        },
+        &image.data,
+        wgpu::TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(image.width * bytes_per_texel),
+            rows_per_image: Some(image.height),
+        },
+        wgpu::Extent3d {
+            width: image.width,
+            height: image.height,
+            depth_or_array_layers: 1,
+        },
+    );
+}
 
 fn pick_adapter(instance: &wgpu::Instance) -> Result<wgpu::Adapter, Error> {
     let wanted = std::env::var("THREE_RS_ADAPTER_NAME").ok();

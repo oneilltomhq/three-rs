@@ -86,7 +86,7 @@ pub(crate) fn decode_image(path: &Path, bytes: &[u8]) -> Result<crate::textures:
 /// format expanded to it (palette and grey both reach the GPU as RGBA8 in the
 /// browser too). Unlike the JPEG path this is exact — PNG is lossless and the
 /// decoders agree byte for byte.
-fn decode_png(path: &Path, bytes: &[u8]) -> Result<crate::textures::Image, Error> {
+pub(crate) fn decode_png(path: &Path, bytes: &[u8]) -> Result<crate::textures::Image, Error> {
     let mut decoder = png::Decoder::new(std::io::Cursor::new(bytes));
     // `EXPAND` takes palette, grey and `tRNS` up to 8-bit RGB/RGBA, so the only
     // cases left below are the four 8-bit ones (and 16-bit, which is stripped).
@@ -144,7 +144,10 @@ fn decode_png(path: &Path, bytes: &[u8]) -> Result<crate::textures::Image, Error
 /// Chromium decodes through libjpeg-turbo and this goes through `zune-jpeg`,
 /// so individual samples can differ by the rounding of the inverse DCT; the
 /// PNG and GIF paths beside it are exact.
-fn decode_jpeg_bytes(path: &Path, bytes: &[u8]) -> Result<crate::textures::Image, Error> {
+pub(crate) fn decode_jpeg_bytes(
+    path: &Path,
+    bytes: &[u8],
+) -> Result<crate::textures::Image, Error> {
     let options = zune_jpeg::zune_core::options::DecoderOptions::default()
         .jpeg_set_out_colorspace(zune_jpeg::zune_core::colorspace::ColorSpace::RGBA);
 

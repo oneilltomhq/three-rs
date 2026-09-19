@@ -83,6 +83,13 @@ pub struct CubeTextureInner {
     pub texture_type: TextureType,
     /// `CubeTexture` overwrites `Texture.flipY` with `false`.
     pub flip_y: bool,
+    /// `Texture.mipmaps`. For an *uncompressed* cube texture three.js uses
+    /// this array for the mips **only** — level 0 stays in `images` — so entry
+    /// `j` here is mip level `j + 1`, and each entry is six faces in the same
+    /// px, nx, py, ny, pz, nz order as `images`
+    /// (`WebGPUTextureUtils._copyCubeMapToTexture()`, which copies
+    /// `mipmaps[ j ].images[ i ]` to `mipLevel = j + 1`).
+    pub mipmaps: Vec<Vec<Image>>,
     /// `Texture.generateMipmaps`, `true` by default.
     pub generate_mipmaps: bool,
     /// `Texture.anisotropy`.
@@ -117,6 +124,7 @@ impl CubeTexture {
                 color_space: ColorSpace::NoColorSpace,
                 texture_type: TextureType::UnsignedByte,
                 flip_y: false,
+                mipmaps: Vec::new(),
                 generate_mipmaps: true,
                 anisotropy: 1,
                 mag_filter: TextureFilter::Linear,
@@ -160,6 +168,44 @@ impl CubeTexture {
         self.0.borrow_mut().generate_mipmaps = generate_mipmaps;
     }
 
+    /// `texture.mipmaps = [ … ]` — hand-authored mip levels, level 1 first.
+    ///
+    /// Each entry is the six faces of one level, in the `images` order; the
+    /// page that uses this (`webgpu_materials_cubemap_mipmaps`) loads each
+    /// level as its own `CubeTexture` and assigns `texture.mipmaps` the list
+    /// of them after `shift()`-ing level 0 into `images`.
+    pub fn set_mipmaps(&self, mipmaps: Vec<Vec<Image>>) {
+        assert!(
+            mipmaps.iter().all(|level| level.len() == 6),
+            "three-rs: a cube mip level has six faces"
+        );
+        self.0.borrow_mut().mipmaps = mipmaps;
+    }
+
+    /// `texture.clone()` — a **new** texture (new id, so its own GPU
+    /// resource) over the same decoded faces, carrying every flag across, as
+    /// `Texture.copy()` does. Distinct from `Clone`, which is three.js'
+    /// object identity: the same texture under another name.
+    pub fn clone_texture(&self) -> Self {
+        let inner = self.0.borrow();
+        Self(
+            Rc::new(RefCell::new(CubeTextureInner {
+                images: inner.images.clone(),
+                mapping: inner.mapping,
+                color_space: inner.color_space,
+                texture_type: inner.texture_type,
+                flip_y: inner.flip_y,
+                mipmaps: inner.mipmaps.clone(),
+                generate_mipmaps: inner.generate_mipmaps,
+                anisotropy: inner.anisotropy,
+                mag_filter: inner.mag_filter,
+                min_filter: inner.min_filter,
+                gpu: None,
+            })),
+            TextureId::next(),
+        )
+    }
+
     /// `texture.minFilter` / `texture.magFilter`.
     pub fn set_filters(&self, min_filter: MinFilter, mag_filter: TextureFilter) {
         let mut inner = self.0.borrow_mut();
@@ -184,9 +230,22 @@ impl CubeTexture {
         }
     }
 
-    /// `Textures.getMipLevels()`: `floor( log2( max( width, height ) ) ) + 1`.
+    /// `Textures.getMipLevels()`, plus the `isCubeTexture` correction beside
+    /// its call site in `Textures.updateTexture()`.
+    ///
+    /// `needsMipmaps()` is `generateMipmaps === true || mipmaps.length > 0`, so
+    /// a texture with hand-supplied levels is mipmapped even with
+    /// `generateMipmaps = false`. `getMipLevels()` then returns
+    /// `mipmaps.length`, which for an uncompressed cube counts the mips only —
+    /// hence `if ( texture.isCubeTexture && texture.mipmaps.length > 0 )
+    /// options.levels ++`, the `+ 1` for level 0. Nine levels for the
+    /// `angus` 256² cube with its eight hand-authored mips, which is what
+    /// three.js' own descriptor says.
     pub fn mip_level_count(&self) -> u32 {
         let inner = self.0.borrow();
+        if !inner.mipmaps.is_empty() {
+            return inner.mipmaps.len() as u32 + 1;
+        }
         if !inner.generate_mipmaps {
             return 1;
         }
