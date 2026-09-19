@@ -370,3 +370,20 @@ fn michelle_material() {
         .expect("specularColorTexture");
     assert_eq!(specular.color_space(), ColorSpace::SRGB);
 }
+
+/// `IridescentDishWithOlives.glb` (the `webgpu_loader_gltf_transmission` page)
+/// lists `KHR_draco_mesh_compression` in `extensionsRequired`. Nothing in the
+/// port decodes Draco, and its accessors carry no `bufferView`, so without the
+/// check the file loads "successfully" into four zero-sized meshes. See the
+/// message of the commit that added this check.
+#[test]
+fn draco_required_is_an_error() {
+    let Err(error) = GLTFLoader::load(models().join("IridescentDishWithOlives.glb")) else {
+        panic!("a Draco-required asset must not load");
+    };
+
+    assert_eq!(
+        error.to_string(),
+        "THREE.GLTFLoader: unknown required extension \"KHR_draco_mesh_compression\""
+    );
+}
