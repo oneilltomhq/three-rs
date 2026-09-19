@@ -30,6 +30,10 @@ mod webgpu_compute_points;
 #[allow(dead_code)]
 mod webgpu_postprocessing_anamorphic;
 
+#[path = "webgpu_tsl_interoperability.rs"]
+#[allow(dead_code)]
+mod webgpu_tsl_interoperability;
+
 fn show(label: &str, material: &MeshBasicNodeMaterial, ctx: SetupContext) {
     show_fog(label, material, ctx, None)
 }
@@ -1125,7 +1129,7 @@ fn main() {
 
 					}
 				",
-        vec![desaturate_wgsl],
+        vec![three_rs::nodes::tsl::code(&desaturate_wgsl)],
     );
     colour(
         "materials_wgsl_include",
@@ -1674,4 +1678,10 @@ fn main() {
         &instanced,
         SetupContext::default(),
     );
+
+    // rung `webgpu_tsl_interoperability`: the same CRT shader as two
+    // `wgslFn()` blocks and as TSL — against `dump-interoperability/m0{1..4}`.
+    let (wgsl_crt, tsl_crt) = webgpu_tsl_interoperability::materials();
+    show("interoperability_wgsl", &wgsl_crt, SetupContext::default());
+    show("interoperability_tsl", &tsl_crt, SetupContext::default());
 }
