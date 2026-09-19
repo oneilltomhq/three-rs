@@ -16,7 +16,7 @@ use std::rc::Rc;
 
 use super::node::{
     BufferNode, BufferSource, Builtin, FnDef, InstanceBuffer, Lazy, Node, NodeRef, SampleMode,
-    Type, UniformGroup, UniformNode, UniformSource, VarDef, VaryingDef,
+    SettableValue, Type, UniformGroup, UniformNode, UniformSource, VarDef, VaryingDef,
 };
 use crate::materials::Side;
 use crate::math::{Color, Matrix3};
@@ -255,6 +255,21 @@ pub fn attribute(name: &'static str, ty: Type) -> NodeRef {
 /// `uniform( value )` — a plain value uniform in the object group.
 pub fn uniform_value(ty: Type, values: Vec<f64>) -> NodeRef {
     uniform(UniformSource::Value(values), ty, UniformGroup::Object, None)
+}
+
+/// `uniform( value )` whose value can be written between draws:
+/// `SSAAPassNode`'s `this.sampleWeight.value = …`. The returned cell is the
+/// handle; the node is the graph's view of it and never changes identity, so
+/// the eight accumulation draws of a frame share one program.
+pub fn uniform_settable(ty: Type, values: Vec<f64>) -> (NodeRef, SettableValue) {
+    let cell = SettableValue::new(values);
+    let node = uniform(
+        UniformSource::Settable(cell.clone()),
+        ty,
+        UniformGroup::Object,
+        None,
+    );
+    (node, cell)
 }
 
 pub fn uniform(

@@ -199,6 +199,46 @@ pub enum UniformSource {
     BindMatrixInverse,
     /// A plain `uniform( value )` the example supplies.
     Value(Vec<f64>),
+    /// `uniform( value )` whose `.value` is written between draws — three.js'
+    /// `UniformNode` is always this; [`UniformSource::Value`] is the special
+    /// case of one that never moves. `SSAAPassNode.sampleWeight` is the port's
+    /// first: one node, one program, eight different values across the eight
+    /// accumulation draws of a frame.
+    Settable(SettableValue),
+}
+
+/// The cell behind [`UniformSource::Settable`]. Two cells with equal contents
+/// are still two uniforms, so this compares and hashes by identity — a value
+/// that changes must not be part of any cache key.
+#[derive(Clone, Debug)]
+pub struct SettableValue(Rc<RefCell<Vec<f64>>>);
+
+impl SettableValue {
+    pub fn new(values: Vec<f64>) -> Self {
+        Self(Rc::new(RefCell::new(values)))
+    }
+
+    /// `uniformNode.value = …`.
+    pub fn set(&self, values: Vec<f64>) {
+        *self.0.borrow_mut() = values;
+    }
+
+    /// `uniformNode.value`.
+    pub fn get(&self) -> Vec<f64> {
+        self.0.borrow().clone()
+    }
+}
+
+impl PartialEq for SettableValue {
+    fn eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl std::hash::Hash for SettableValue {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        (Rc::as_ptr(&self.0) as *const u8 as usize).hash(state);
+    }
 }
 
 impl UniformSource {
@@ -224,7 +264,8 @@ impl UniformSource {
             | UniformSource::MorphBase
             | UniformSource::BindMatrix
             | UniformSource::BindMatrixInverse
-            | UniformSource::Value(_) => UpdateType::Object,
+            | UniformSource::Value(_)
+            | UniformSource::Settable(_) => UpdateType::Object,
             _ => UpdateType::Render,
         }
     }
@@ -830,6 +871,9 @@ impl std::hash::Hash for UniformSource {
                     value.to_bits().hash(state);
                 }
             }
+            // Identity, never contents: the whole point is that the value
+            // moves between draws while the program stays one program.
+            UniformSource::Settable(cell) => cell.hash(state),
             _ => {}
         }
     }
