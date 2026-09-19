@@ -4147,8 +4147,12 @@ impl Renderer {
         }
 
         // `renderTarget.textures` past the first: the same descriptor, one GPU
-        // texture each.
-        for (name, texture) in &inner.extra_textures {
+        // texture each. The pass's `_previousTextures` share the descriptor
+        // too — they are sampled, never drawn into, and a previous texture
+        // that has not had a turn as the attachment yet reads back as WebGPU's
+        // zero-initialised contents, which is what the graded first frame of
+        // `webgpu_postprocessing_difference` sees.
+        for (name, texture) in inner.extra_textures.iter().chain(&inner.previous_textures) {
             if !texture.has_gpu() {
                 texture.set_gpu(self.device.create_texture(&wgpu::TextureDescriptor {
                     label: Some("three-rs render target attachment"),

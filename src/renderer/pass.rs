@@ -3,10 +3,15 @@
 //! `pass( scene, camera )` is a `TempNode` that owns a `RenderTarget`, renders
 //! the given scene into it once per frame from `updateBefore()`, and evaluates
 //! to the target's colour texture. Its `setup()` returns a `PassTextureNode`,
-//! which is itself a `TempNode`, so a pass contributes **two** vars to the
-//! generated shader — `nodeVarN = textureSample( … ); nodeVarN+1 = nodeVarN;` —
-//! and `.a` is taken on the outer one. `to_var( texture_uv( … ) )` reproduces
-//! that exactly.
+//! which is itself a `TempNode`, so a pass **used as a value** contributes two
+//! vars to the generated shader — `nodeVarN = textureSample( … ); nodeVarN+1 =
+//! nodeVarN;` — and `.a` is taken on the outer one. `to_var( texture_uv( … ) )`
+//! reproduces that exactly ([`PassNode::node`]).
+//!
+//! `passNode.getTextureNode()` is the *inner* node on its own, so it emits one
+//! var and no copy ([`PassNode::texture_node`]). `webgpu_postprocessing_masking`
+//! takes the first form and `webgpu_postprocessing_difference` the second; both
+//! dumps show the difference.
 //!
 //! `PassTextureNode` also calls `setUpdateMatrix( false )`, so a pass samples
 //! the raw `uv()` varying with no texture matrix — unlike `texture( map )`,
@@ -21,7 +26,7 @@ use crate::nodes::{MrtNode, NodeRef};
 use crate::objects::Scene;
 use crate::textures::{DepthTexture, TextureFilter, TextureType};
 
-use super::render_target::{RenderTarget, RenderTargetOptions};
+use super::render_target::{RenderTarget, RenderTargetOptions, OUTPUT_ATTACHMENT};
 use super::Renderer;
 
 /// `pass( scene, camera )`.
@@ -38,6 +43,10 @@ use super::Renderer;
 pub struct PassNode {
     render_target: RenderTarget,
     node: NodeRef,
+    /// `PassNode._previousTextureNodes` — the node for the *other* texture
+    /// behind an output name, memoised like `_textureNodes` so that two asks
+    /// compose one node.
+    previous_texture_nodes: RefCell<HashMap<String, NodeRef>>,
     /// `PassNode._mrt` — the MRT the renderer is given for the duration of this
     /// pass's own render.
     mrt: RefCell<Option<MrtNode>>,
@@ -74,13 +83,21 @@ impl PassNode {
         .expect("three-rs: PassNode's render target is a HalfFloat colour type");
         render_target.set_depth_texture(DepthTexture::new());
 
-        let node = to_var(None, texture_uv(&render_target.texture(), uv()));
+        // `getTextureNode()`'s node — the `PassTextureNode` — and the
+        // `PassNode` that wraps it. Both are `TempNode`s, which is why a pass
+        // *used as a value* contributes two vars and `getTextureNode()` one;
+        // sharing the inner node keeps them one texture to the builder.
+        let texture_node = texture_uv(&render_target.texture(), uv());
+        let node = to_var(None, texture_node.clone());
+
+        let texture_nodes = HashMap::from([(OUTPUT_ATTACHMENT.to_string(), texture_node)]);
 
         Self {
             render_target,
             node,
+            previous_texture_nodes: RefCell::new(HashMap::new()),
             mrt: RefCell::new(None),
-            texture_nodes: RefCell::new(HashMap::new()),
+            texture_nodes: RefCell::new(texture_nodes),
         }
     }
 
@@ -132,6 +149,32 @@ impl PassNode {
         node
     }
 
+    /// `passNode.getPreviousTextureNode( name )` — the node for the frame
+    /// *before* this one on that output.
+    ///
+    /// `PassNode.updateBefore()` calls `toggleTexture()` for every name that
+    /// has one **before** it renders, so on the very first frame the scene is
+    /// drawn into one of the pair and the node named "previous" points at the
+    /// other, which nothing has ever rendered into: a zero-initialised
+    /// texture. `webgpu_postprocessing_difference` grades exactly that frame,
+    /// so its `|previous − current|` is `|0 − current|` and the whole image is
+    /// a saturated version of the box. Rendering the previous buffer, or
+    /// swapping in the other order, is a different picture.
+    pub fn previous_texture_node(&self, name: &str) -> NodeRef {
+        if let Some(node) = self.previous_texture_nodes.borrow().get(name) {
+            return node.clone();
+        }
+        // `if ( this._textureNodes[ name ] === undefined ) this.getTextureNode(
+        // name );` — the attachment has to exist before its shadow does.
+        let _ = self.texture_node(name);
+        let texture = self.render_target.add_previous_texture(name);
+        let node = texture_uv(&texture, uv());
+        self.previous_texture_nodes
+            .borrow_mut()
+            .insert(name.to_string(), node.clone());
+        node
+    }
+
     /// `passNode.getTexture( name )`.
     pub fn texture_named(&self, name: &str) -> crate::textures::Texture {
         self.render_target.add_texture(name)
@@ -174,6 +217,12 @@ impl PassNode {
         // `PassNode.setup()`: `renderTarget.samples = renderer.samples`.
         self.render_target.set_samples(renderer.samples());
 
+        // `for ( const name in this._previousTextures ) this.toggleTexture(
+        // name );` — before the render, not after.
+        for name in self.previous_texture_nodes.borrow().keys() {
+            self.render_target.toggle_texture(name);
+        }
+
         let previous = renderer.render_target();
         let previous_mrt = renderer.mrt();
         renderer.set_render_target(Some(self.render_target.clone()));
@@ -181,5 +230,55 @@ impl PassNode {
         renderer.render(scene, camera);
         renderer.set_render_target(previous);
         renderer.set_mrt(previous_mrt);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `dump-difference/dump.json` has two quad bind groups: 63, built with
+    /// the previous node on texture 4, and 64 — the one pass 0 actually binds
+    /// — with the current node on texture 4 (the rendered target) and the
+    /// previous node on texture 59, which no pass ever writes. So the two
+    /// nodes name two different textures, and only one of them is an
+    /// attachment.
+    ///
+    /// No GPU: this is the target's own bookkeeping, before any render.
+    #[test]
+    fn the_previous_texture_is_never_a_colour_attachment() {
+        let pass = PassNode::new();
+        let current = pass.texture_node(OUTPUT_ATTACHMENT);
+        let previous = pass.previous_texture_node(OUTPUT_ATTACHMENT);
+
+        assert_ne!(current.key(), previous.key());
+
+        let attachments: Vec<usize> = pass
+            .render_target()
+            .textures()
+            .iter()
+            .map(|texture| texture.id())
+            .collect();
+        assert_eq!(attachments.len(), 1);
+        assert_eq!(attachments[0], pass.render_target().texture().id());
+
+        let shadow = pass.render_target().add_previous_texture(OUTPUT_ATTACHMENT);
+        assert!(!attachments.contains(&shadow.id()));
+    }
+
+    /// Both accessors are memoised, so a page that asks twice composes one
+    /// node and the builder sees one texture — `_textureNodes` /
+    /// `_previousTextureNodes`.
+    #[test]
+    fn the_texture_nodes_are_memoised() {
+        let pass = PassNode::new();
+        assert_eq!(
+            pass.texture_node(OUTPUT_ATTACHMENT).key(),
+            pass.texture_node(OUTPUT_ATTACHMENT).key()
+        );
+        assert_eq!(
+            pass.previous_texture_node(OUTPUT_ATTACHMENT).key(),
+            pass.previous_texture_node(OUTPUT_ATTACHMENT).key()
+        );
     }
 }

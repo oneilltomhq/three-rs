@@ -480,6 +480,18 @@ impl Texture {
         self.0.borrow().gpu.is_some()
     }
 
+    /// Exchange the GPU textures behind two handles, leaving both identities —
+    /// and everything keyed on them — where they are. This is the port's half
+    /// of `PassNode.toggleTexture()`; see
+    /// [`RenderTarget::toggle_texture`](crate::renderer::RenderTarget::toggle_texture)
+    /// for why the swap is on this end and not on the node's.
+    pub(crate) fn swap_gpu(&self, other: &Texture) {
+        if Rc::ptr_eq(&self.0, &other.0) {
+            return;
+        }
+        std::mem::swap(&mut self.0.borrow_mut().gpu, &mut other.0.borrow_mut().gpu);
+    }
+
     pub fn with_gpu<R>(&self, f: impl FnOnce(&wgpu::Texture) -> R) -> R {
         let inner = self.0.borrow();
         f(inner.gpu.as_ref().expect("three-rs: texture not uploaded"))
