@@ -286,6 +286,26 @@ pub fn uniform_settable(ty: Type, values: Vec<f64>) -> (NodeRef, SettableValue) 
     (node, cell)
 }
 
+/// A `uniform()` whose value is recomputed from the render object it is about
+/// to be drawn for — the whole of a `Node` with `updateType =
+/// NodeUpdateType.OBJECT` wrapping a `uniform()`, which is what
+/// `webgpu_instance_uniform`'s `InstanceUniformNode` is.
+///
+/// The callback is three's `update( frame )` with `frame.object`. It runs once
+/// per draw, just before the object group's bytes are written, so twelve meshes
+/// sharing one material still get twelve different values out of one program.
+pub fn uniform_object(
+    ty: Type,
+    update: impl Fn(&crate::core::Object3D) -> Vec<f64> + 'static,
+) -> NodeRef {
+    uniform(
+        UniformSource::ObjectUpdate(crate::nodes::node::ObjectUpdate::new(update)),
+        ty,
+        UniformGroup::Object,
+        None,
+    )
+}
+
 pub fn uniform(
     source: UniformSource,
     ty: Type,
@@ -2807,6 +2827,13 @@ pub fn inline_fn(
 /// [`crate::nodes::code`]. Re-exported here because every other TSL entry
 /// point lives in this module.
 pub use crate::nodes::code::wgsl_fn;
+
+/// A `wgslFn` as a *node*, which is the form another one's `includes` list
+/// wants it in: three's `includes` is an array of nodes, and a nested
+/// `wgslFn` is a `CodeNode` like any other.
+pub fn code(def: &Rc<crate::nodes::code::CodeDef>) -> NodeRef {
+    NodeRef::new(Node::Code(def.clone()))
+}
 
 /// Calling a `wgslFn` — `FunctionCallNode` with three's named-parameter form:
 /// `getWGSLTextureSample( { tex, tex_sampler, uv } )`. The names are the ones

@@ -431,6 +431,11 @@ impl Default for LightState {
 
 #[derive(Clone, Copy, Debug)]
 pub struct UniformContext<'a> {
+    /// `frame.object` — the render object this draw is for, for the one
+    /// uniform source that reads it, [`UniformSource::ObjectUpdate`]. `None`
+    /// for the passes three.js draws with its own internal `QuadMesh` or
+    /// background mesh, which no application node can be attached to.
+    pub object: Option<&'a crate::core::Object3D>,
     pub camera_projection: Matrix4,
     pub camera_view: Matrix4,
     pub camera_world: Matrix4,
@@ -538,6 +543,7 @@ impl Default for UniformContext<'_> {
             bind_matrix: Matrix4::identity(),
             bind_matrix_inverse: Matrix4::identity(),
             bone_matrices: &[],
+            object: None,
         }
     }
 }
@@ -688,6 +694,18 @@ impl UniformContext<'_> {
                 // Read per draw, so `sampleWeight.value = …` between two
                 // `render_quad()` calls reaches the second one's buffer.
                 UniformSource::Settable(cell) => cell.get().iter().map(|&v| v as f32).collect(),
+                // `Node.update( frame )` for a `NodeUpdateType.OBJECT` node,
+                // run here rather than in a separate pre-pass because here is
+                // where three runs it too: `Bindings.updateBindings()` calls
+                // `nodeFrame.updateBeforeNode`/`updateNode` for the render
+                // object whose buffer it is about to write.
+                UniformSource::ObjectUpdate(update) => update
+                    .value(self.object.expect(
+                        "three-rs: an object-update uniform is only reachable from a draw that has a render object",
+                    ))
+                    .iter()
+                    .map(|&v| v as f32)
+                    .collect(),
             };
 
             let offset = member.offset as usize;

@@ -67,6 +67,13 @@ name = "webgpu_instance_mesh"
 path = "examples/webgpu_instance_mesh.rs"
 
 [[example]]
+name = "webgpu_instance_uniform"
+path = "examples/webgpu_instance_uniform.rs"
+
+[[example]]
+name = "webgpu_tsl_interoperability"
+
+[[example]]
 name = "webgpu_materials"
 path = "examples/webgpu_materials.rs"
 

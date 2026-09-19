@@ -30,6 +30,10 @@ mod webgpu_compute_points;
 #[allow(dead_code)]
 mod webgpu_postprocessing_anamorphic;
 
+#[path = "webgpu_tsl_interoperability.rs"]
+#[allow(dead_code)]
+mod webgpu_tsl_interoperability;
+
 fn show(label: &str, material: &MeshBasicNodeMaterial, ctx: SetupContext) {
     show_fog(label, material, ctx, None)
 }
@@ -1125,7 +1129,7 @@ fn main() {
 
 					}
 				",
-        vec![desaturate_wgsl],
+        vec![three_rs::nodes::tsl::code(&desaturate_wgsl)],
     );
     colour(
         "materials_wgsl_include",
@@ -1648,4 +1652,36 @@ fn main() {
             ..SetupContext::default()
         },
     );
+    // rung `webgpu_instance_uniform`: twelve teapots, one material, one
+    // per-object `vec3` uniform — against `dump-instance_uniform/m0{1,2}`.
+    // The grid's `LineBasicNodeMaterial` is `materials_grid` above (the same
+    // `GridHelper( 1000, 40, 0x303030, 0x303030 )`), and three's `m03`/`m04`
+    // for this page are byte-identical to that example's `m13`/`m14`.
+    let castle = CubeTexture::new(vec![
+        Image {
+            width: 1,
+            height: 1,
+            data: vec![0; 4],
+        };
+        6
+    ]);
+    let instance_uniform = uniform_object(three_rs::nodes::Type::Vec3, |_| vec![0.0, 0.0, 0.0]);
+    let castle_node = cube_texture(
+        &castle,
+        material_env_rotation().mul(vec4_join(vec![reflect_vector(), float(1.0)])),
+    );
+    let mut instanced = MeshBasicNodeMaterial::new();
+    instanced.color_node = Some(instance_uniform.clone().add(castle_node.clone()));
+    instanced.emissive_node = Some(instance_uniform.mul(castle_node));
+    show(
+        "instance_uniform_teapot",
+        &instanced,
+        SetupContext::default(),
+    );
+
+    // rung `webgpu_tsl_interoperability`: the same CRT shader as two
+    // `wgslFn()` blocks and as TSL — against `dump-interoperability/m0{1..4}`.
+    let (wgsl_crt, tsl_crt) = webgpu_tsl_interoperability::materials();
+    show("interoperability_wgsl", &wgsl_crt, SetupContext::default());
+    show("interoperability_tsl", &tsl_crt, SetupContext::default());
 }

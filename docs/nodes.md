@@ -1567,3 +1567,205 @@ through the material either way.
 **A loaded material still has no name** (§16): `Material_MR` in three's module
 names has no counterpart, which is why `examples/dump_wgsl.rs` builds the
 helmet material by hand to diff `m09`/`m10`.
+
+## 19. A uniform that is read per object (`webgpu_instance_uniform`)
+
+Twelve teapots over a `GridHelper`, sharing **one** `MeshBasicNodeMaterial`
+whose `colorNode` and `emissiveNode` are built from the same custom node:
+
+```js
+class InstanceUniformNode extends THREE.Node {
+    constructor() {
+        super( 'vec3' );
+        this.updateType = THREE.NodeUpdateType.OBJECT;
+        this.uniformNode = uniform( new THREE.Color() );
+    }
+    update( frame ) { this.uniformNode.value.copy( frame.object.color ); }
+    setup() { return this.uniformNode; }
+}
+```
+
+The graph has exactly one uniform node. What makes the twelve teapots twelve
+colours is `updateType = OBJECT`: three's `Bindings.updateBindings()` calls
+`nodeFrame.updateNode()` for the render object whose object-group buffer it is
+about to fill, so `uniformNode.value` is rewritten between the draws and the
+program, the pipeline and the bind-group layout are shared.
+
+### What the port has
+
+The object group is already per render object (`UpdateType::Object`), and
+`UniformSource::Settable` is already read at the moment the bytes are written
+rather than at build time. The only missing piece was *who* gets to write the
+value, so `UniformSource::ObjectUpdate` carries the callback and
+`UniformContext` carries `frame.object`:
+
+| three.js | three-rs |
+|---|---|
+| `Node.updateType = NodeUpdateType.OBJECT` + `uniform()` | [`tsl::uniform_object( ty, \|object\| … )`](../src/nodes/tsl.rs) |
+| `update( frame ) { … frame.object … }` | the callback, run from `UniformContext::bytes()` |
+| `frame.object` | `UniformContext::object`, set from `Renderable::object` |
+
+The callback runs once per draw, inside the same window three runs `update()`
+in, and it is identity-compared and identity-hashed exactly as `SettableValue`
+is: a value that moves between draws must never reach a cache key, and two
+callbacks spelled alike are still two uniforms.
+
+### `mesh.color` has nowhere to live
+
+The page hangs an ad-hoc `.color` on each `Mesh`. `Object3D` is a struct here,
+so there is no such property and adding one for a single example would be API
+invented for a page rather than ported from three. Instead the callback
+receives the `Object3D` and the *application* decides what to answer from —
+`examples/webgpu_instance_uniform.rs` keys a `HashMap` on `Object3D.id`. That
+is the same graph, the same single uniform and the same twelve values; only the
+storage moved from the object to the closure.
+
+### One material, twelve materials
+
+Three's page passes one `Material` object to all twelve `Mesh`es, so
+`RenderObjects` builds two programs (the teapot material and the grid) plus the
+output pass. A `MeshBasicNodeMaterial` is a **value** here and `Material.clone()`
+gets a fresh `MaterialId` (`src/materials/mod.rs`), so each mesh owns its own
+material and the node builder runs fourteen times. All twelve teapot runs
+generate the same WGSL, so the program cache holds three entries and the
+pipeline cache three — the GPU sees what three's does. The divergence is
+twelve first-frame `NodeBuilder::build()` calls and nothing at all on a steady
+frame; `tests/e2e/main.rs::webgpu_instance_uniform` pins the numbers (14 built,
+3 resident, 3 pipelines) so that a future change to material identity shows up
+here rather than as a frame-time regression.
+
+### `emissiveNode` on an unlit material
+
+`NodeMaterial.setupLighting()`'s EMISSIVE tail runs for any material with an
+`emissiveNode`, lit or not — `MeshBasicMaterial` has no `emissive` colour, so
+the node is the only way in. `setup_diffuse_color()` is untouched; the addition
+is two statements at the end of the unlit branch of
+`materials::node_material::setup_inner()`:
+
+```wgsl
+EmissiveColor = ( vec4<f32>( object.nodeUniform0, 1.0 ) * nodeVar1 ).xyz;
+nodeVar2 = max( vec4<f32>( ( DiffuseColor.xyz + EmissiveColor ), DiffuseColor.w ), vec4<f32>( 0.0 ) );
+```
+
+### `cubeTexture( map )` with no uv
+
+`CubeTextureNode.getDefaultUV()` is `reflectVector` for a
+`CubeReflectionMapping`, and `setupUV()` then multiplies by `materialEnvRotation`
+(a `mat4`, the identity unless the material or the scene rotates its
+environment) and negates `x` for the WebGPU coordinate system. That is exactly
+what `MeshBasicNodeMaterial.envMap` already builds in
+`setup_inner()`, so the example composes the existing
+`material_env_rotation().mul( vec4( reflect_vector(), 1.0 ) )` and
+`tsl::cube_texture()` rather than adding a third spelling of it.
+
+### Divergences specific to this rung
+
+None new. The port's `m01`/`m02` differ from three's in the classes §8 already
+lists: generated uniform and var numbering, render-struct member order
+(`cameraWorldMatrix` first here, last there), and the absent `VERTEX_` sub-build
+temps. The grid's two modules are byte-identical to `webgpu_materials`' `m13` /
+`m14`, which §8 already covers.
+
+## 20. Hand-written WGSL beside TSL (`webgpu_tsl_interoperability`)
+
+The page draws the same CRT shader twice: once out of two `wgslFn()` blocks and
+once out of TSL nodes. The WGSL half is the interesting one, because the node
+system never looks inside it — `WGSLNodeFunction` parses far enough to learn the
+name, the parameters and the return type and copies the rest through verbatim.
+Everything the port had to add is about the shader *around* that body.
+
+| Three | Port | |
+|---|---|---|
+| `varyingProperty( 'vec2', 'vUv' )` | `tsl::varying_property( "vUv", Type::Vec2, false )` | already there, from `webgpu_mesh_batch` |
+| `wgslFn( source, [ vUv ] )` | `wgsl_fn( source, vec![ v_uv ] )` | `CodeDef.includes` is a node list now |
+| a nested `wgslFn` in `includes` | `tsl::code( &def )` — `Node::Code` | the same list, the other kind of member |
+| `sampler( map )` | the texture node in the `sampler` parameter | already there, from `webgpu_materials` |
+| `material.fragmentNode` returning a `vec3` | widened at the entry point | new |
+| `renderer.outputColorSpace = LinearSRGBColorSpace` | `Renderer::set_output_color_space` | new |
+
+### `includes` is a list of nodes, not of functions
+
+Three's `CodeNode.includes` holds nodes and `generate()` builds each of them
+before its own code. Until this rung the port had it as a list of other
+`wgslFn`s, which is what the one case on the ladder — `webgpu_materials`'
+`someFn` calling `desaturate` — needs, and the builder emitted them recursively.
+
+That is not what this page uses it for. `crtVertex` assigns to a varying:
+
+```wgsl
+fn crtVertex( position: vec3f, uv: vec2f ) -> vec3<f32> {
+	varyings.vUv = uv;
+	return position;
+}
+```
+
+Nothing in the graph reads `vUv` in the vertex stage — the assignment is inside
+a string — so without the include the varying is never declared and
+`VaryingsStruct` has no member for the body to write. Passing the
+`varyingProperty` node in `includes` is how the page says so, and building it is
+what declares it. `CodeDef.includes` is therefore `Vec<NodeRef>`, a nested
+`wgslFn` reaches it through `tsl::code()`, and `emit_code_fn()` *generates* each
+include rather than recursing on it. `tests/nodes_wgsl_varying.rs` pins both
+halves, including that dropping the include drops the declaration.
+
+### The entry point writes a `vec4`
+
+`fragmentNode` replaces the whole fragment flow: no `DiffuseColor`, no
+`Output` property, just `output.color = <the node>`. `crtFragment` returns a
+`vec3`, and three builds the output node with `vec4` as its output type, so its
+dump ends
+
+```wgsl
+output.color = vec4<f32>( crtFragment( vUv, nodeUniform0, … ), 1.0 );
+```
+
+The port was assigning the node's own snippet, which for any `fragmentNode`
+narrower than a `vec4` is WGSL that does not compile. It formats to `vec4` now,
+which is a no-op for every other material on the ladder.
+
+### A join converts its components
+
+`JoinNode.generate()` runs each input through `format()` when the input's
+*primitive* type is not the join's, which is how
+
+```js
+vec3( ind.equal( 0.0 ), ind.equal( 1.0 ), ind.equal( 2.0 ) )
+```
+
+becomes `vec3<f32>( f32( ( nodeVar7 == 0.0 ) ), … )`. The port's
+`wgsl::convert()` deliberately leaves the equal-length arm out (§8: reaching it
+from `Node::Op` would put an `f32()` around every comparison), so the conversion
+lives in the join's own generation, where three has it. It changes no other
+shader on the ladder — nothing else joins components of mixed primitive type.
+
+### `outputColorSpace` and the canvas
+
+`Renderer.needsFrameBufferTarget` is `isOutputTarget && ( toneMapping !==
+NoToneMapping || outputColorSpace !== workingColorSpace )`. The port had no
+`outputColorSpace`, so the second term was always true and the predicate was
+`neutral_output` alone. This page sets the output space *to* the working space,
+which makes it false: the scene is drawn straight into the canvas and there is
+no colour-transform pass behind it — three's dump for the page has three render
+pipelines, one of which is the mipmap chain, and no output quad.
+
+That uncovered a real bug in the port, and not in the node system:
+`Renderer::read_canvas_pixels()` opened with `prepare_canvas( false, 1 )`, and
+`prepare_canvas()` rebuilds the canvas whenever the sample count differs from
+the one it has. Every page until now ends its frame with the single-sampled
+output quad, so asking for a single-sampled canvas was a no-op. Here the last
+pass is the scene itself, multisampled, and the readback was *discarding* the
+frame it was about to read — a black PNG out of a render that had worked. It
+only prepares a canvas now when there is not one already.
+
+### Divergences specific to this rung
+
+* Three's `uv()` is `attribute( 'uv' )`; the port's is that attribute already
+  routed through a varying, which is the fragment stage's reading of it. The TSL
+  half assigns `vUv` in the *vertex* stage, so the example writes
+  `attribute( "uv", Type::Vec2 )` — three's own definition — rather than
+  `tsl::uv()`.
+* The usual §8 classes: generated uniform and var numbering (three's
+  `nodeUniform13`/`14` for the model matrix against the port's `11`/`12`) and the
+  absent `VERTEX_` sub-build temps. Everything else in all four modules is
+  statement for statement three's, including the whole of both copied bodies and
+  the eighteen-statement TSL fragment.

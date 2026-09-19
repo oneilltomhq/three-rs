@@ -22,7 +22,7 @@
 use std::rc::Rc;
 
 use three_rs::nodes::tsl::{
-    call_wgsl, camera_projection_matrix, float, inline_fn, loop_index, loop_statement,
+    call_wgsl, camera_projection_matrix, code, float, inline_fn, loop_index, loop_statement,
     normal_local, normal_world, osc_sine, position_local, position_world, screen_uv, texture,
     texture_uv, time, to_var, triplanar_texture, uv, vec2_join, vec3, vec4, wgsl_fn,
 };
@@ -159,7 +159,7 @@ pub fn init() -> App {
     let desaturate_wgsl_fn = wgsl_fn(DESATURATE_WGSL, vec![]);
 
     // include example
-    let some_wgsl_fn = wgsl_fn(SOME_WGSL, vec![desaturate_wgsl_fn]);
+    let some_wgsl_fn = wgsl_fn(SOME_WGSL, vec![code(&desaturate_wgsl_fn)]);
 
     materials.push(basic(call_wgsl(
         &some_wgsl_fn,

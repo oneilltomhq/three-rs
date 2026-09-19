@@ -195,6 +195,13 @@ pub struct MeshBasicNodeMaterial {
     /// because that is what `webgpu_materials` sets and a uniform nothing
     /// writes is a trap rather than an API.
     pub alpha_test_node: Option<NodeRef>,
+    /// `NodeMaterial.emissiveNode` — `setupLighting()`'s EMISSIVE tail:
+    /// `EmissiveColor = vec3( emissiveNode )` and `outgoingLight +=
+    /// EmissiveColor`. On a Phong or Standard material the `materialEmissive`
+    /// uniform already takes that path; on an unlit `MeshBasicNodeMaterial`
+    /// this node is the only way in, which is what `webgpu_instance_uniform`
+    /// uses it for.
+    pub emissive_node: Option<NodeRef>,
     /// `MeshPhongMaterial.specular` / `.shininess` / `.emissive` /
     /// `.emissiveIntensity`. The dumps show all four reaching the shader as
     /// object-group uniforms on every Phong material, even the ones the example
@@ -408,6 +415,7 @@ impl Default for MeshBasicNodeMaterial {
             color_node: None,
             opacity_node: None,
             alpha_test_node: None,
+            emissive_node: None,
             scale_node: None,
             rotation_node: None,
             rotation: 0.0,

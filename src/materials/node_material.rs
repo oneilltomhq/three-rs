@@ -463,6 +463,18 @@ fn setup_inner(
             diffuse_color().xyz()
         };
 
+        // `setupLighting()`'s EMISSIVE tail. `MeshBasicMaterial` has no
+        // `emissive` colour, so an unlit material reaches it only through
+        // `emissiveNode`: `EmissiveColor = vec3( emissiveNode )`, then
+        // `outgoingLight = outgoingLight + EmissiveColor`.
+        let outgoing = match &material.emissive_node {
+            Some(node) => {
+                fragment.push(emissive_color().assign(to_vec3(node.clone())));
+                outgoing.add(emissive_color())
+            }
+            None => outgoing,
+        };
+
         // `basicOutput = vec4( outgoingLight, diffuseColor.a ).max( 0 )`.
         vec4_join(vec![outgoing, diffuse_color().w()]).max(float(0.0))
     };
