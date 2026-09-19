@@ -535,6 +535,16 @@ differences, each verified to be pixel-neutral.
   `multiScatteringDielectric`, `singleScatteringMetallic`,
   `multiScatteringMetallic`, `dfg` and `multiScatteringCompensation`; this port
   leaves them as numbered vars or inlines them where they are read once.
+* **MRT member values are not promoted to a var.** Three's G-buffer fragment
+  for `webgpu_deferred` writes `nodeVar1 = vec4<f32>( v_positionView,
+  Metalness ); output.m1 = nodeVar1;` — the joined `vec4` is a `TempNode` that
+  `analyze()` saw twice, once through the MRT node and once through the output
+  struct member. This port's `MrtValue::Deferred` builds the value once and
+  writes it straight into the member: `output.m1 = vec4<f32>( v_positionView,
+  Metalness );`. Same value, one fewer `var<private>`, and every later
+  `nodeVarN` shifts down. (Named MRT members whose value is a property read —
+  `webgpu_postprocessing_bloom_selective`'s — get no var in either, which is
+  why this only shows up here.)
 * **Hoisted accumulator zeros.** `LightingContextNode`'s five accumulators
   (`directDiffuse`, `directSpecular`, `irradiance`, `indirectDiffuse`,
   `indirectSpecular`) are zeroed together before the light loop rather than each
@@ -2379,8 +2389,222 @@ statement — the `-1.9362 / 1.0678 / 0.4573 / 0.8469 / -0.6014 / 0.5538 / 0.467
 / 0.1255` fit, the `1 / π`, the `max( max( Sheen.x, Sheen.y ), Sheen.z )` — is
 term for term three's.
 
+## 27. `webgpu_deferred` — a G-buffer, a resolve quad and a shared depth buffer
+
+The page renders four times per frame:
+
+1. **the opaque pass** — the teapot into a three-attachment render target
+   (`output` = albedo, `position` = `vec4( positionView, metalness )`,
+   `normal` = `vec4( normalView, roughness )`), with the scene's lighting
+   switched off and the light layer excluded;
+2. **the resolve quad** — a full-screen `MeshStandardNodeMaterial` on layer 2
+   whose `positionView`, `positionViewDirection` and `normalView` are
+   *overridden* to read the G-buffer, so three's ordinary physical lighting
+   flow runs once per pixel against eight point lights and the environment;
+3. **the transparent pass** — the six `DoubleSide` planes and the light
+   spheres, sharing the opaque pass's depth attachment and not clearing it;
+4. **the composite** — `opaque.rgb * ( 1 - transparent.a ) + transparent.rgb`
+   through the `RenderPipeline`'s output transform.
+
+Everything new here is a *pass* property or a *material* property that three
+sets on the fly; no new node type was needed.
+
+### 27.1 `lighting: false` is not just "no lights"
+
+`PassNode`'s `lighting` option reaches `RenderList.finish()` as
+`lightsNode.setLights( this.lighting.enabled ? this.lightsArray : _emptyArray )`,
+so the obvious reading is "build the materials with an empty light list". That
+is not what three's G-buffer fragment (`m12`) shows: it has no lighting chain at
+all, and `outgoingLight` is `DiffuseColor.xyz`. The gate is in
+`NodeMaterial.setupLighting()`:
+
+```js
+const sceneLighting = this.lights === true && builder.renderer.lighting.enabled;
+const materialLightings = sceneLighting ? this.setupMaterialLightings( builder ) : [];
+const lightsNode = lights ? ( this.lightsNode || builder.lightsNode ) : null;
+if ( lightsNode && ( materialLightings.length > 0 || lightsNode.getScope().hasLights ) ) { … }
+```
+
+`setupMaterialLightings()` is where the **environment** lives (with the light
+map and the AO node), so a pass with lighting disabled drops `scene.environment`
+too — and with no lights and no environment the whole `lightingContext` is
+skipped and `setupOutgoingLight()` stands. The teapot's G-buffer program
+therefore computes albedo, metalness and roughness and nothing else, which is
+the point: a lit colour in the `output` attachment would be lit twice.
+
+The port carries this as [`SetupContext::lighting_disabled`] — inverted so that
+`Default` stays "lighting enabled" — set by the renderer from its own
+`lighting_enabled` flag, which [`PassNode::set_lighting_enabled`] saves, sets
+and restores around the pass's render the way three's `renderer.lighting` is a
+renderer-level object. `setup_standard()` reads it for both halves of the gate:
+no `materialLightings` (so no environment) and no chain.
+
+This was found by diffing the dump, not by the pixels: with the chain present
+the extra statements write to `Output`, which an MRT material never reads, so
+the frame was already correct. It is still a real fix — a deferred page that
+kept `scene.environment` on the G-buffer pass would bind the PMREM textures and
+the BRDF LUT to a program that cannot use them.
+
+### 27.2 `overrideNodes()` — three properties replaced for one sub-build
+
+```js
+const resolveMaterial = new THREE.MeshStandardNodeMaterial();
+resolveMaterial.overrideNodes( [
+  [ positionView, positionAttachment.xyz ],
+  [ positionViewDirection, positionAttachment.xyz.negate().normalize() ],
+  [ normalView, normalAttachment.xyz ],
+] );
+```
+
+`OverrideContextNode` swaps the three node singletons for the duration of the
+material's build and hands the replacement back **as-is** — no `toVar` — so
+every use inlines. Three's `m14` is the proof: `nodeVar3.xyz` appears eleven
+times, `normalize( ( - nodeVar3.xyz ) )` nine, and no var holds either.
+
+The port's TSL is eager, so there is no builder context to swap. The overrides
+travel on the material as [`MeshBasicNodeMaterial::context_overrides`] (an
+[`OverrideNodes`]), and `NodeMaterial::setup()` installs them in a thread-local
+for the duration of the build; `normal_view()`, `position_view()` and
+`position_view_direction()` return the replacement when one is installed. The
+memo key for `normal_view()` was widened so the same material built with and
+without an override cannot share a cached node.
+
+The resolve fragment matches three's `m14` statement for statement modulo the
+§8 classes — including the `nodeVar4.w` roughness read and the two
+`mix( singleScatteringDielectric, … , Metalness )` blends.
+
+### 27.3 `depthNode` — `@builtin( frag_depth )`, written first
+
+```js
+resolveMaterial.depthNode = depthAttachment;
+resolveMaterial.colorNode = Fn( () => { If( depth.greaterThanEqual( 1.0 ), () => { Discard(); } ); return outputAttachment; } )();
+```
+
+`NodeMaterial.setupDepth()` runs *before* `setupDiffuseColor()`, so the depth
+write is the first statement in the fragment flow, ahead of the discard that
+reads the same value. The port added `MaterialFlow::depth`, analysed with the
+fragment stage and generated first, and the fragment output struct gained the
+shape
+
+```wgsl
+struct OutputStruct {
+	@location( 0 ) color: vec4<f32>,
+	@builtin( frag_depth ) depth : f32
+};
+```
+
+which is what `assemble_with_mrt( …, depth: true )` emits. Copying the G-buffer
+depth into the resolve quad's fragment depth is what lets the *transparent*
+pass, which reuses that same depth attachment, occlude the planes against the
+teapot even though the teapot was never drawn into the transparent pass.
+
+### 27.4 One depth texture, two render targets — and `depthInitialized`
+
+```js
+const transparentPass = pass( scene, camera, { depthTexture: opaquePass.getTexture( 'depth' ), autoClearDepth: false } );
+```
+
+Two `PassNode`s, two render targets, one `DepthTexture`. The port's
+[`PassOptions::depth_texture`] hands the texture over and marks the borrower as
+not owning it, so `PassNode::render()` resizes through
+[`RenderTarget::set_size_keeping_depth`] and does not drop the shared depth
+allocation on a resize.
+
+`autoClearDepth: false` then runs into a quirk that is worth naming, because it
+is the difference between a plane hiding behind the teapot's spout and not:
+
+> `Renderer._renderScene()` keeps `renderTargetData.depthInitialized`, and the
+> **first** time it renders into a target that has a depth buffer with
+> `autoClear === false || autoClearDepth === false` it clears the depth anyway,
+> once. The flag lives on the *render target*, not on the depth texture — so
+> the transparent pass, a second target over the same texture, wipes the depth
+> the opaque pass just wrote, on frame one only.
+
+The port reproduces this bit-for-bit ([`RenderTarget::depth_initialized`], and
+the gate in `Renderer::render`). It is a three quirk, not a design: on frame two
+onwards the depth survives. The graded frame is frame one, and without it 557
+pixels differ.
+
+### 27.5 `opaque`, `transparent`, and the two-draw `DoubleSide` split
+
+`renderer.opaque` / `renderer.transparent` gate the two halves of the render
+list. Two details the page depends on:
+
+* **`opaque = false` also drops the background.** `_background.update()`
+  unshifts the skybox mesh into `renderList.opaque`, so the transparent pass,
+  which has `opaque: false`, does not draw a second copy of the environment
+  behind the planes. The port gates the background node on the same flag.
+* **a transparent `DoubleSide` object is drawn twice, back then front, per
+  object.** This is `Renderer._renderObjectDirect()` — `material.side =
+  BackSide`, draw, `material.side = FrontSide`, draw, restore — not
+  `RenderList.transparentDoublePass`, which batches all back sides before all
+  front sides and only applies when `transmission > 0`. The two halves
+  interleave per object, which is what makes six overlapping planes come out in
+  three's order.
+
+  The port clones the material for each half (`Side::Back` / `Side::Front`) and
+  keys the program on a [`MaterialKey`] *variant*. The key is taken from the
+  **original** material: `MaterialId::clone()` mints a fresh id by design, so
+  keying on the clone would have minted a new program key every frame — the
+  `steady_frame_builds_nothing` assertion catches exactly that.
+
+`PassNode::set_layers` is the third gate: `camera.layers.disable( 2 )` /
+`.set( 2 )` is how the page keeps the resolve quad out of the G-buffer pass and
+the eight lights' sphere meshes out of the resolve.
+
+### 27.6 Two small three behaviours the pixels found
+
+* **`getGeometryRoughness()` is `float( 0 )` with no normal attribute.** The
+  resolve quad's geometry has `position` and `uv` only, so three's
+  `builder.geometry.attributes.normal === undefined` branch returns a constant
+  instead of the `dFdx`/`dFdy` term, and the dump shows
+  `Roughness = min( ( max( nodeVar4.w, 0.0525 ) + 0.0 ), 1.0 )`. The port
+  carries it as [`SetupContext::geometry_missing_normal`].
+* **`Color.setHSL()` defaults to the *working* colour space.** The eight light
+  colours are `new THREE.Color().setHSL( i / 8, 1.0, 0.5 )`, and
+  `ColorManagement.workingColorSpace` is linear-sRGB, not sRGB. Treating them as
+  sRGB moved 167 pixels.
+
+### 27.7 Divergences
+
+Both of the rung's programs match three's dump modulo the §8 classes (varying
+order, uniform numbering and member order, `VERTEX_` / `NORMAL_` sub-build
+temps, inlined single-use temps). The one new class is listed in §8: **MRT
+member values are not promoted to a var**, so the G-buffer fragment ends
+
+```wgsl
+output.m1 = vec4<f32>( v_positionView, Metalness );
+normalView = normalViewGeometry;
+output.m2 = vec4<f32>( normalView, Roughness );
+```
+
+where three writes each through a `nodeVarN` first. The resolve quad's vertex
+stage (`m13`) is byte-identical apart from the var number.
+
+### 27.8 What was left out
+
+* **`OrbitControls`.** Emulated as `camera.lookAt( 0, 0, -0.2 )`, as on every
+  earlier rung.
+* **A general `overrideNodes()`.** The port takes the three overrides the page
+  uses as named fields rather than an arbitrary `[ node, node ]` list; an
+  arbitrary list would need node identity in the memo keys.
+* **`PassNode` options beyond `depthTexture` / `autoClearDepth` /
+  `setLayers` / `opaque` / `transparent` / `lighting`.** Nothing else on the
+  ladder sets one.
+* **`renderer.lighting` as an object.** It is a bool on the renderer and on the
+  pass; three's `Lighting` class also owns the lights node itself, which this
+  port builds per draw.
 
 [`Scene::environment`]: ../src/objects/scene.rs
+[`SetupContext::lighting_disabled`]: ../src/materials/node_material.rs
+[`SetupContext::geometry_missing_normal`]: ../src/materials/node_material.rs
+[`MeshBasicNodeMaterial::context_overrides`]: ../src/materials/mod.rs
+[`OverrideNodes`]: ../src/nodes/tsl.rs
+[`PassNode::set_lighting_enabled`]: ../src/renderer/pass.rs
+[`PassOptions::depth_texture`]: ../src/renderer/pass.rs
+[`RenderTarget::set_size_keeping_depth`]: ../src/renderer/render_target.rs
+[`RenderTarget::depth_initialized`]: ../src/renderer/render_target.rs
+[`MaterialKey`]: ../src/renderer/mod.rs
 [`MrtValue::Deferred`]: ../src/nodes/mrt.rs
 [`tsl::perspective_depth_to_view_z`]: ../src/nodes/tsl.rs
 [`tsl::range_fog_factor`]: ../src/nodes/tsl.rs
