@@ -173,6 +173,7 @@ fn main() {
             line_segments: None,
             mrt: None,
             output: None,
+            vertex_color_size: 0,
         },
     );
 

@@ -61,6 +61,14 @@ pub struct SetupContext {
     /// `None` is every draw into a single-attachment target, and leaves the
     /// fragment stage's `OutputStruct { color }` shape alone.
     pub mrt: Option<MrtContext>,
+    /// `geometry.getAttribute( 'color' ).itemSize` —
+    /// `VertexColorNode.generate()`'s
+    /// `builder.getTypeFromAttribute( geometryAttribute )`. 4 is glTF `COLOR_0`
+    /// as `VEC4` and is read whole; anything else — including 0, a geometry
+    /// with no `color` attribute — takes the three-component form, widened to a
+    /// `vec4` with an alpha of 1. It is part of the program's cache key,
+    /// because it changes the vertex attribute's WGSL type.
+    pub vertex_color_size: usize,
     /// `builder.context.getOutput` — the renderer's context node, which
     /// `DirectRenderPipeline` sets so that the output transform is applied
     /// **inside every material's fragment shader** instead of in a quad of its
@@ -196,7 +204,7 @@ fn setup_diffuse_color(
     // multiply is skipped. Its own `setupDiffuseColor()` selects the colour per
     // end instead — see [`crate::materials::line2::setup_diffuse_color`].
     let color = match material.vertex_colors && material.kind != MaterialKind::Line2 {
-        true => color.mul(vertex_color()),
+        true => color.mul(vertex_color(ctx.vertex_color_size)),
         false => color,
     };
 

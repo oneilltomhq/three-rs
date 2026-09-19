@@ -1266,6 +1266,14 @@ impl Renderer {
                     line_segments: object.payload.line_segments().cloned(),
                     mrt: mrt_context.clone(),
                     output: output_context.clone(),
+                    // `VertexColorNode.generate()`'s
+                    // `builder.geometry.getAttribute( 'color' )`: glTF
+                    // `COLOR_0` is a `VEC4` on this asset, and the attribute
+                    // reaches the shader as a `vec4` rather than being widened.
+                    vertex_color_size: geometry
+                        .get_attribute("color")
+                        .map(|attribute| attribute.item_size)
+                        .unwrap_or(0),
                 },
                 fog: scene.fog_node.clone(),
                 model_world: item.matrix_world,
@@ -1515,6 +1523,9 @@ impl Renderer {
                         // is a colour-attachment feature and three.js's
                         // `renderer._mrt` is null for it either way.
                         mrt: None,
+                        // `shadow_material()` leaves `vertexColors` false, so
+                        // the shadow program never reads the attribute.
+                        vertex_color_size: 0,
                     },
                     fog: None,
                     model_world: item.matrix_world,
@@ -1713,6 +1724,9 @@ impl Renderer {
                         // is a colour-attachment feature and three.js's
                         // `renderer._mrt` is null for it either way.
                         mrt: None,
+                        // `shadow_material()` leaves `vertexColors` false, so
+                        // the shadow program never reads the attribute.
+                        vertex_color_size: 0,
                     },
                     fog: None,
                     model_world: item.matrix_world,

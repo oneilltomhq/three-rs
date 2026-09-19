@@ -1399,29 +1399,43 @@ accessor!(
     to_varying(None, attribute("uv", Type::Vec2))
 );
 accessor!(
-    /// `vertexColor()` — `VertexColorNode`, the `color` attribute interpolated
-    /// and widened to a `vec4`.
-    ///
-    /// three.js declares the node as `vec4` and lets `NodeBuilder.format()`
-    /// widen a three-component `color` attribute with an alpha of 1, which is
-    /// the only shape the port's geometries carry; a four-component `color`
-    /// (three's `vertexAlphas`) is not modelled. The widening happens *before*
-    /// the varying, so the interpolated value is a `vec4` and the fragment
-    /// stage reads it whole — `webgpu_materials`' grid helper is the first
-    /// example to put this on screen and three's m13/m14 pin the shape.
-    ///
-    /// **Divergence, deliberate** (`docs/nodes.md` §10): three's
-    /// `VertexColorNode.generate()` falls back to a white constant when the
-    /// geometry has no `color` attribute. The port has no geometry in hand at
-    /// setup time — `SetupContext` is the whole of what `setup()` reads off the
-    /// object — so `material.vertex_colors` alone decides, and the attribute
-    /// has to be there.
-    vertex_color,
+    /// `vertexColor()` over a three-component `color` attribute, widened to a
+    /// `vec4` with an alpha of 1. See [`vertex_color`].
+    vertex_color_rgb,
     to_varying(
         None,
         vec4_join(vec![attribute("color", Type::Vec3), float(1.0)])
     )
 );
+accessor!(
+    /// `vertexColor()` over a four-component `color` attribute — three's
+    /// `vertexAlphas`. See [`vertex_color`].
+    vertex_color_rgba,
+    to_varying(None, attribute("color", Type::Vec4))
+);
+
+/// `vertexColor()` — `VertexColorNode`, the `color` attribute interpolated.
+///
+/// `VertexColorNode.generate()` declares the node as `vec4` and takes the
+/// attribute's own type from the geometry
+/// (`builder.getTypeFromAttribute( geometryAttribute )`), so a three-component
+/// attribute is widened with an alpha of 1 and a four-component one is read
+/// whole. glTF `COLOR_0` is either; `PrimaryIonDrive.glb`'s is `VEC4`, which is
+/// the `float32x4` at location 0 in three's dump of
+/// `webgpu_postprocessing_bloom`. The widening happens *before* the varying, so
+/// the interpolated value is a `vec4` both ways and the fragment stage reads it
+/// whole.
+///
+/// **Divergence, deliberate** (`docs/nodes.md` §10): three's
+/// `VertexColorNode.generate()` falls back to a white constant when the
+/// geometry has no `color` attribute at all. The port decides on
+/// `material.vertex_colors`, and the attribute has to be there.
+pub fn vertex_color(item_size: usize) -> NodeRef {
+    match item_size {
+        4 => vertex_color_rgba(),
+        _ => vertex_color_rgb(),
+    }
+}
 accessor!(
     /// `vertexIndex`.
     vertex_index,
