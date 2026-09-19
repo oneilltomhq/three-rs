@@ -265,6 +265,13 @@ pub struct MeshBasicNodeMaterial {
     pub rotation_node: Option<NodeRef>,
     /// `SpriteMaterial.rotation` — the `materialRotation` uniform.
     pub rotation: f64,
+    /// `LineBasicMaterial.linewidth` — the `materialLineWidth` uniform.
+    ///
+    /// A hairline `Line` ignores it, as three.js says: "WebGL and WebGPU ignore
+    /// this setting and always render line primitives with a width of one
+    /// pixel". It is read by the fat-line material, which turns each segment
+    /// into a screen-space quad and so can honour a width.
+    pub linewidth: f64,
     /// `SpriteNodeMaterial.sizeAttenuation`. `true` (the default) is the branch
     /// that *omits* the `mvPosition.z.negate()` scale factor.
     pub size_attenuation: bool,
@@ -364,6 +371,7 @@ impl Default for MeshBasicNodeMaterial {
             scale_node: None,
             rotation_node: None,
             rotation: 0.0,
+            linewidth: 1.0,
             size_attenuation: true,
             vertex_node: None,
             fragment_node: None,

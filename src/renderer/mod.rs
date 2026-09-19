@@ -405,6 +405,18 @@ impl Rect {
         }
     }
 
+    /// The rectangle as the `viewport` uniform's `vec4` — three.js' own
+    /// numbers, not a converted set, because they are the same numbers
+    /// (see [`Rect`]).
+    fn to_vector4(self) -> Vector4 {
+        Vector4::new(
+            self.x as f64,
+            self.y as f64,
+            self.width as f64,
+            self.height as f64,
+        )
+    }
+
     /// The whole of a `width` x `height` target.
     fn full(width: u32, height: u32) -> Self {
         Self {
@@ -1255,6 +1267,7 @@ impl Renderer {
 
         let camera_uniforms = UniformContext {
             camera_projection: camera.projection_matrix(),
+            camera_projection_inverse: camera.projection_matrix_inverse(),
             camera_view: camera.matrix_world_inverse(),
             camera_world: camera.matrix_world(),
             time: self.time,
@@ -1428,6 +1441,11 @@ impl Renderer {
 
             let uniforms = UniformContext {
                 camera_projection: projection,
+                camera_projection_inverse: {
+                    let mut inverse = projection;
+                    inverse.invert();
+                    inverse
+                },
                 camera_view: view,
                 camera_world: world,
                 time: self.time,
@@ -1645,6 +1663,11 @@ impl Renderer {
 
             let uniforms = UniformContext {
                 camera_projection: face_camera.projection_matrix,
+                camera_projection_inverse: {
+                    let mut inverse = face_camera.projection_matrix;
+                    inverse.invert();
+                    inverse
+                },
                 camera_view: face_camera.matrix_world_inverse,
                 camera_world: face_camera.node.borrow().matrix_world,
                 time: self.time,
@@ -1732,6 +1755,7 @@ impl Renderer {
     fn quad_camera_uniforms(&self) -> UniformContext<'static> {
         UniformContext {
             camera_projection: self.quad_camera.projection_matrix,
+            camera_projection_inverse: self.quad_camera.projection_matrix_inverse,
             camera_view: self.quad_camera.matrix_world_inverse,
             camera_world: self.quad_camera.object.matrix_world,
             time: self.time,
@@ -1867,7 +1891,12 @@ impl Renderer {
                 material_specular_color: item.material.specular_color,
                 material_normal_scale: item.material.normal_scale,
                 tone_mapping_exposure: self.tone_mapping_exposure,
-                viewport: Vector2::new(target.width as f64, target.height as f64),
+                material_line_width: item.material.linewidth,
+                // `ScreenNode.update()`: `SIZE` is the bound target's
+                // dimensions, `VIEWPORT` the rectangle the pass is confined to.
+                viewport_size: Vector2::new(target.width as f64, target.height as f64),
+                viewport: target.viewport.to_vector4(),
+                screen_dpr: self.pixel_ratio,
                 ..camera_uniforms
             };
 

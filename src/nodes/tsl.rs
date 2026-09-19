@@ -1276,6 +1276,11 @@ impl NodeRef {
         self.assign(self.add(value))
     }
 
+    /// `target.subAssign( value )` — `target = ( target - value )`.
+    pub fn sub_assign(&self, value: impl Into<NodeRef>) -> NodeRef {
+        self.assign(self.sub(value))
+    }
+
     /// `target.mulAssign( value )` — `target = ( target * value )`.
     pub fn mul_assign(&self, value: impl Into<NodeRef>) -> NodeRef {
         self.assign(self.mul(value))
@@ -1550,12 +1555,56 @@ accessor!(
     uniform(UniformSource::Time, Type::F32, UniformGroup::Render, None)
 );
 accessor!(
-    /// `viewportSize`.
+    /// `viewportSize` — `ScreenNode.SIZE`, the bound target's dimensions.
     viewport_size,
     uniform(
         UniformSource::ViewportSize,
         Type::Vec2,
         UniformGroup::Render,
+        None
+    )
+);
+accessor!(
+    /// `viewport` — `ScreenNode.VIEWPORT`, `( x, y, width, height )` in
+    /// physical pixels. `.zw` is the pair a screen-space line width divides by.
+    viewport,
+    uniform(UniformSource::Viewport, Type::Vec4, UniformGroup::Render, None)
+);
+accessor!(
+    /// `screenDPR` — `renderer.getPixelRatio()`.
+    screen_dpr,
+    uniform(UniformSource::ScreenDpr, Type::F32, UniformGroup::Render, None)
+);
+accessor!(
+    /// `cameraProjectionMatrixInverse`. Named, like the other camera matrices:
+    /// `uniform( camera.projectionMatrixInverse ).setName(
+    /// 'cameraProjectionMatrixInverse' )`.
+    camera_projection_matrix_inverse,
+    uniform(
+        UniformSource::CameraProjectionMatrixInverse,
+        Type::Mat4,
+        UniformGroup::Render,
+        Some("cameraProjectionMatrixInverse")
+    )
+);
+accessor!(
+    /// `modelWorldMatrixInverse` — `object.matrixWorld` inverted, per object.
+    /// Unnamed, so it takes a `nodeUniformN` slot.
+    model_world_matrix_inverse,
+    uniform(
+        UniformSource::ModelWorldMatrixInverse,
+        Type::Mat4,
+        UniformGroup::Object,
+        None
+    )
+);
+accessor!(
+    /// `materialLineWidth` — `material.linewidth`.
+    material_line_width,
+    uniform(
+        UniformSource::MaterialLineWidth,
+        Type::F32,
+        UniformGroup::Object,
         None
     )
 );
@@ -2364,7 +2413,11 @@ pub fn loop_statement(count: usize, index: NodeRef, body: Vec<NodeRef>) -> NodeR
 
 /// `If( cond, () => { … } )` with no `Else` — a statement.
 pub fn if_statement(cond: NodeRef, body: Vec<NodeRef>) -> NodeRef {
-    NodeRef::new(Node::If { cond, body })
+    NodeRef::new(Node::If {
+        cond,
+        body,
+        else_body: Vec::new(),
+    })
 }
 
 /// `ivec2( x, y )`.
@@ -2783,7 +2836,35 @@ pub fn loop_n(
 
 /// `If( cond, () => { … } )`.
 pub fn if_then(cond: NodeRef, body: Vec<NodeRef>) -> NodeRef {
-    NodeRef::new(Node::If { cond, body })
+    NodeRef::new(Node::If {
+        cond,
+        body,
+        else_body: Vec::new(),
+    })
+}
+
+/// `If( cond, () => { … } ).Else( () => { … } )`.
+pub fn if_else(cond: NodeRef, body: Vec<NodeRef>, else_body: Vec<NodeRef>) -> NodeRef {
+    NodeRef::new(Node::If {
+        cond,
+        body,
+        else_body,
+    })
+}
+
+/// `If( cond, … ).ElseIf( other, … )`.
+///
+/// `StackNode.ElseIf()` is `this.Else( () => If( other, … ) )`, so the second
+/// condition is a whole nested `If` inside the else block and the generated
+/// WGSL is a nested `if`/`else` rather than an `else if`. Reproducing that
+/// shape is the point — three's own dumps have the nesting.
+pub fn if_else_if(
+    cond: NodeRef,
+    body: Vec<NodeRef>,
+    other: NodeRef,
+    other_body: Vec<NodeRef>,
+) -> NodeRef {
+    if_else(cond, body, vec![if_then(other, other_body)])
 }
 
 /// `return value;` inside a `Fn()` body — the statement an early-out `If(

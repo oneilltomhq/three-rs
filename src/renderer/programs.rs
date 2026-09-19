@@ -5,7 +5,7 @@
 //! descriptors the node builder produced — there is nothing per-material here.
 
 use crate::materials::Side;
-use crate::math::{Color, Matrix3, Matrix4, Vector2, Vector3};
+use crate::math::{Color, Matrix3, Matrix4, Vector2, Vector3, Vector4};
 use crate::nodes::node::BufferSource;
 use crate::nodes::wgsl::TextureKind;
 use crate::nodes::{BindingDesc, NodeProgram, Type, UniformMember, UniformSource};
@@ -388,10 +388,16 @@ pub struct UniformContext<'a> {
     pub camera_projection: Matrix4,
     pub camera_view: Matrix4,
     pub camera_world: Matrix4,
+    /// `camera.projectionMatrixInverse`, kept beside the projection rather than
+    /// inverted here: a camera maintains it in `updateProjectionMatrix()` and
+    /// the two must not drift.
+    pub camera_projection_inverse: Matrix4,
     pub model_world: Matrix4,
     pub material_color: Color,
     pub material_opacity: f64,
     pub material_rotation: f64,
+    /// `material.linewidth`.
+    pub material_line_width: f64,
     pub material_reflectivity: f64,
     pub material_shininess: f64,
     pub material_specular: Color,
@@ -410,7 +416,13 @@ pub struct UniformContext<'a> {
     pub background_rotation: Matrix4,
     pub background_blurriness: f64,
     pub background_intensity: f64,
-    pub viewport: Vector2,
+    /// `viewportSize` — the bound target's dimensions.
+    pub viewport_size: Vector2,
+    /// `viewport` — `( x, y, width, height )` of the pass rectangle, in
+    /// physical pixels. The whole target when nothing set a viewport.
+    pub viewport: Vector4,
+    /// `screenDPR` — `renderer.getPixelRatio()`.
+    pub screen_dpr: f64,
     pub time: f64,
     /// `renderer.toneMappingExposure`.
     pub tone_mapping_exposure: f64,
@@ -435,10 +447,12 @@ impl Default for UniformContext<'_> {
             camera_projection: Matrix4::identity(),
             camera_view: Matrix4::identity(),
             camera_world: Matrix4::identity(),
+            camera_projection_inverse: Matrix4::identity(),
             model_world: Matrix4::identity(),
             material_color: Color::new(1.0, 1.0, 1.0),
             material_opacity: 1.0,
             material_rotation: 0.0,
+            material_line_width: 1.0,
             material_reflectivity: 1.0,
             material_shininess: 30.0,
             material_specular: Color::new(
@@ -461,7 +475,9 @@ impl Default for UniformContext<'_> {
             background_rotation: Matrix4::identity(),
             background_blurriness: 0.0,
             background_intensity: 1.0,
-            viewport: Vector2::new(0.0, 0.0),
+            viewport_size: Vector2::new(0.0, 0.0),
+            viewport: Vector4::new(0.0, 0.0, 0.0, 0.0),
+            screen_dpr: 1.0,
             time: 0.0,
             tone_mapping_exposure: 1.0,
             lights: &[],
@@ -487,6 +503,16 @@ impl UniformContext<'_> {
                 }
                 UniformSource::CameraViewMatrix => self.camera_view.to_f32_array().to_vec(),
                 UniformSource::CameraWorldMatrix => self.camera_world.to_f32_array().to_vec(),
+                UniformSource::CameraProjectionMatrixInverse => {
+                    self.camera_projection_inverse.to_f32_array().to_vec()
+                }
+                // `modelWorldMatrixInverse`: `self.value.copy(
+                // object.matrixWorld ).invert()`, per object.
+                UniformSource::ModelWorldMatrixInverse => {
+                    let mut inverse = self.model_world;
+                    inverse.invert();
+                    inverse.to_f32_array().to_vec()
+                }
                 UniformSource::ModelWorldMatrix => self.model_world.to_f32_array().to_vec(),
                 UniformSource::ModelNormalMatrix => {
                     let mut normal_matrix = Matrix3::identity();
@@ -515,6 +541,7 @@ impl UniformContext<'_> {
                 UniformSource::MaterialEmissiveIntensity => {
                     vec![self.material_emissive_intensity as f32]
                 }
+                UniformSource::MaterialLineWidth => vec![self.material_line_width as f32],
                 UniformSource::MaterialMetalness => vec![self.material_metalness as f32],
                 UniformSource::MaterialRoughness => vec![self.material_roughness as f32],
                 UniformSource::MaterialBumpScale => vec![self.material_bump_scale as f32],
@@ -539,8 +566,15 @@ impl UniformContext<'_> {
                 UniformSource::BackgroundIntensity => vec![self.background_intensity as f32],
                 UniformSource::Time => vec![self.time as f32],
                 UniformSource::ViewportSize => {
-                    vec![self.viewport.x as f32, self.viewport.y as f32]
+                    vec![self.viewport_size.x as f32, self.viewport_size.y as f32]
                 }
+                UniformSource::Viewport => vec![
+                    self.viewport.x as f32,
+                    self.viewport.y as f32,
+                    self.viewport.z as f32,
+                    self.viewport.w as f32,
+                ],
+                UniformSource::ScreenDpr => vec![self.screen_dpr as f32],
                 UniformSource::LightColorIntensity(i) => {
                     let light = &self.lights[*i];
                     vec![
