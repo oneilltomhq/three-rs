@@ -199,6 +199,10 @@ mod webgpu_loader_gltf_sheen;
 #[allow(dead_code)]
 mod webgpu_custom_fog_background;
 
+#[path = "../../examples/webgpu_deferred.rs"]
+#[allow(dead_code)]
+mod webgpu_deferred;
+
 #[path = "../../examples/webgpu_lights_phong.rs"]
 #[allow(dead_code)]
 mod webgpu_lights_phong;
@@ -1495,6 +1499,70 @@ fn webgpu_custom_fog_background() {
     );
 }
 
+/// The gate on a deferred frame: a three-attachment G-buffer, a resolve quad
+/// that runs the standard lighting flow over it through `overrideNodes()`, and
+/// a transparent pass that shares the opaque pass's depth attachment without
+/// clearing it.
+///
+/// Every switch this rung adds shows in the pixels rather than at an edge.
+/// `lighting.enabled = false` on the G-buffer pass is the difference between
+/// storing albedo and storing a lit colour; `opaque = false` on the transparent
+/// pass is the difference between six lit planes and six planes over a second
+/// copy of the skybox; the shared depth texture is the difference between
+/// planes that hide behind the teapot and planes that draw through it. See
+/// `docs/nodes.md` §27.
+#[test]
+fn webgpu_deferred() {
+    let name = "webgpu_deferred";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_deferred::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_deferred::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    // `pass( scene, camera, { depthTexture: opaquePass.getTexture( 'depth' ) } )`
+    // — one depth attachment, two passes. If the transparent pass ever grows
+    // its own, the planes stop occluding against the teapot and the diff is
+    // tiny but wrong.
+    assert_eq!(
+        app.transparent_pass.depth_texture().id(),
+        app.opaque_pass.depth_texture().id(),
+        "the transparent pass must share the opaque pass's depth attachment"
+    );
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_deferred::animate, |app| {
+        app.renderer.device()
+    });
+}
+
 /// The gate on multiple render targets as a *pass* property rather than a
 /// material one, and on `WGSLNodeBuilder.isUnfilterable()`.
 ///
@@ -2564,6 +2632,7 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_loader_gltf_sheen);
     rung!(webgpu_mrt);
     rung!(webgpu_custom_fog_background);
+    rung!(webgpu_deferred);
 }
 
 // ---------------------------------------------------------------------------
