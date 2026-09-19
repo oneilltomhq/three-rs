@@ -1713,4 +1713,84 @@ fn main() {
     let (wgsl_crt, tsl_crt) = webgpu_tsl_interoperability::materials();
     show("interoperability_wgsl", &wgsl_crt, SetupContext::default());
     show("interoperability_tsl", &tsl_crt, SetupContext::default());
+    // rung webgpu_postprocessing_ca.
+    dump_room_environment();
+    dump_chromatic_aberration();
+}
+
+/// `webgpu_postprocessing_ca`'s two quad programs: the `RTT` pass that
+/// `convertToTexture( renderOutput( scenePass ) )` inserts, and the
+/// `RenderPipeline` quad that samples it through `chromaticAberration()`.
+/// Diffed against `dump-postprocessing_ca/m17_fragment_fragment_RTT.wgsl` and
+/// `m19_fragment_fragment_RenderPipeline.wgsl`.
+///
+/// Both are built from the real nodes the example uses, not stand-ins, so the
+/// `RTTNode` here is the same `TextureNode`-over-a-`RenderTarget` the page
+/// draws into.
+fn dump_chromatic_aberration() {
+    // `convertToTexture( renderOutput( scenePass ) )`. The page sets no
+    // `toneMapping`, so the output transform is `NoToneMapping` over the
+    // renderer's output colour space.
+    let scene_pass = three_rs::PassNode::new();
+    let ca_input = three_rs::nodes::display::convert_to_texture(
+        three_rs::materials::render_output(scene_pass.node(), three_rs::ToneMapping::None),
+    );
+    let mut rtt = ca_input.quad_material().clone();
+    rtt.vertex_node = Some(three_rs::materials::quad_vertex_node());
+    show("ca_rtt_quad", &rtt, SetupContext::default());
+
+    // `chromaticAberration( outputPass, 1.5, vec2( 0.5 ), 1.2 )` straight onto
+    // the pipeline's output node: `renderPipeline.outputColorTransform = false`,
+    // so there is no second `renderOutput` around it.
+    let mut ca = MeshBasicNodeMaterial::new();
+    ca.name = "RenderPipeline";
+    ca.fragment_node = Some(three_rs::nodes::display::chromatic_aberration(
+        &ca_input.texture(),
+        uniform_value(three_rs::nodes::Type::F32, vec![1.5]),
+        uniform_value(three_rs::nodes::Type::Vec2, vec![0.5, 0.5]),
+        uniform_value(three_rs::nodes::Type::F32, vec![1.2]),
+    ));
+    ca.vertex_node = Some(three_rs::materials::quad_vertex_node());
+    show("ca_render_pipeline_quad", &ca, SetupContext::default());
+}
+
+/// `webgpu_postprocessing_ca`'s three `RoomEnvironment` programs, as three's
+/// `dump-postprocessing_ca/` numbers them: `m02`/`m03` the `BackSide` room box,
+/// `m04`/`m05` the six-instance `InstancedMesh`, `m06`/`m07` the emissive-only
+/// Lambert panels. All three are lit by the room's single `PointLight` and none
+/// of them has a `uv` attribute — `geometry.deleteAttribute( 'uv' )`.
+fn dump_room_environment() {
+    let point = SetupContext {
+        lights: vec![LightDesc {
+            index: 0,
+            kind: LightKind::Point,
+            shadow_map: None,
+        }],
+        ..SetupContext::default()
+    };
+
+    // `new MeshStandardMaterial( { side: BackSide } )`.
+    let mut room = MeshBasicNodeMaterial::standard(Color::from_hex(0xffffff), 1.0, 0.0);
+    room.side = Side::Back;
+    show("room_box", &room, point.clone());
+
+    // `new InstancedMesh( geometry, new MeshStandardMaterial(), 6 )`.
+    let boxes = MeshBasicNodeMaterial::standard(Color::from_hex(0xffffff), 1.0, 0.0);
+    show(
+        "room_boxes",
+        &boxes,
+        SetupContext {
+            instance_count: Some(6),
+            instanced: true,
+            ..point.clone()
+        },
+    );
+
+    // `createAreaLightMaterial( 50 )`.
+    let panel = MeshBasicNodeMaterial {
+        emissive: Color::from_hex(0xffffff),
+        emissive_intensity: 50.0,
+        ..MeshBasicNodeMaterial::lambert(Color::from_hex(0x000000))
+    };
+    show("room_panel", &panel, point);
 }
