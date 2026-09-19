@@ -10,9 +10,9 @@ pub mod phong;
 pub mod physical;
 
 pub use node_material::{
-    background_color_node, background_node_color_node, background_vertex_node, instanced_range,
-    output_fragment_node, quad_vertex_node, render_output, setup, shadow_material, MrtContext,
-    SetupContext,
+    background_color_node, background_node_color_node, background_pmrem_color_node,
+    background_vertex_node, instanced_range, output_fragment_node, quad_vertex_node, render_output,
+    setup, shadow_material, MrtContext, SetupContext,
 };
 
 pub use blending::{

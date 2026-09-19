@@ -33,7 +33,7 @@ pub struct PmremHandle {
 
 impl PmremHandle {
     /// `PMREMNode.setup()` — the rotated, Y-flipped sample.
-    fn sample(&self, uv: NodeRef, level: NodeRef) -> NodeRef {
+    pub fn sample(&self, uv: NodeRef, level: NodeRef) -> NodeRef {
         let uv = material_env_rotation().mul(vec4_join(vec![
             vec3_join(vec![uv.x(), uv.y().negate(), uv.z()]),
             float(1.0),
