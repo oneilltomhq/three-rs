@@ -183,6 +183,10 @@ mod webgpu_pmrem_scene;
 #[allow(dead_code)]
 mod webgpu_pmrem_equirectangular;
 
+#[path = "../../examples/webgpu_mrt.rs"]
+#[allow(dead_code)]
+mod webgpu_mrt;
+
 #[path = "../../examples/webgpu_loader_gltf.rs"]
 #[allow(dead_code)]
 mod webgpu_loader_gltf;
@@ -1361,6 +1365,73 @@ fn webgpu_loader_gltf() {
     });
 }
 
+/// The gate on multiple render targets as a *pass* property rather than a
+/// material one, and on `WGSLNodeBuilder.isUnfilterable()`.
+///
+/// One draw of `webgpu_loader_gltf`'s scene fills four attachments; the
+/// composite reads all four with `textureLoad` and no sampler, because
+/// `pass( …, { minFilter: NearestFilter, magFilter: NearestFilter } )` makes
+/// every one of them unfilterable. The skybox writes all four too — it is an
+/// ordinary draw under the same MRT — which is what puts the environment in
+/// the `normal` and `diffuse` bands. See `docs/nodes.md` §23.
+#[test]
+fn webgpu_mrt() {
+    let name = "webgpu_mrt";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_mrt::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_mrt::animate(&mut app);
+
+    // "optimize textures": attachment 0 stays HalfFloatType and the other
+    // three are `UnsignedByteType`, so the pipeline needs a colour target per
+    // attachment rather than one shared format.
+    assert_eq!(
+        app.scene_pass.texture().format(),
+        wgpu::TextureFormat::Rgba16Float,
+        "the colour attachment is HalfFloatType"
+    );
+    for extra in ["normal", "diffuse", "emissive"] {
+        assert_eq!(
+            app.scene_pass.texture_named(extra).format(),
+            wgpu::TextureFormat::Rgba8Unorm,
+            "the {extra} attachment is UnsignedByteType"
+        );
+    }
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_mrt::animate, |app| {
+        app.renderer.device()
+    });
+}
+
 /// `webgpu_pmrem_test`, fed from an **UltraHDR** JPEG rather than a Radiance
 /// `.hdr`, with a `backgroundNode` sampling the atlas at a fixed roughness of
 /// 0.5.
@@ -2360,6 +2431,7 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_compute_points);
     rung!(webgpu_lines_fat);
     rung!(webgpu_loader_gltf);
+    rung!(webgpu_mrt);
 }
 
 // ---------------------------------------------------------------------------

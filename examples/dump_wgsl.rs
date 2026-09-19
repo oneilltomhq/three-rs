@@ -1721,6 +1721,49 @@ fn main() {
         SetupContext::default(),
     );
 
+    // rung `webgpu_mrt`: the same two materials again, this time under the
+    // four-attachment MRT the page sets on the pass — against
+    // `dump-mrt/m04` (the skybox) and `dump-mrt/m10` (the helmet).
+    //
+    // The tail is the whole point of the section: `normal` is deferred, so the
+    // skybox's `normalView` is `normalViewGeometry * - 1` (`BackSide`) while
+    // the helmet's is its normal map's, and the two `vec3` members are written
+    // as `vec4( v, 1.0 )` rather than carrying `Output.w`.
+    let mrt_four = || three_rs::materials::MrtContext {
+        node: {
+            let mut node = three_rs::nodes::mrt(vec![("output", output_property())]);
+            node.set_deferred("normal", || {
+                three_rs::nodes::tsl::pack_normal_to_rgb(three_rs::nodes::tsl::normal_view())
+            });
+            node.set("diffuse", three_rs::nodes::tsl::diffuse_color());
+            node.set("emissive", three_rs::nodes::tsl::emissive_color());
+            node
+        },
+        attachments: vec![
+            "output".to_string(),
+            "normal".to_string(),
+            "diffuse".to_string(),
+            "emissive".to_string(),
+        ],
+    };
+    show(
+        "mrt_background",
+        &gltf_background,
+        SetupContext {
+            mrt: Some(mrt_four()),
+            ..SetupContext::default()
+        },
+    );
+    show(
+        "mrt_helmet",
+        &gltf_helmet,
+        SetupContext {
+            environment: Some(environment.handle()),
+            mrt: Some(mrt_four()),
+            ..SetupContext::default()
+        },
+    );
+
     // rung `webgpu_instance_uniform`: twelve teapots, one material, one
     // per-object `vec3` uniform — against `dump-instance_uniform/m0{1,2}`.
     // The grid's `LineBasicNodeMaterial` is `materials_grid` above (the same
