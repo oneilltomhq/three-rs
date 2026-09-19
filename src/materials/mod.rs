@@ -87,6 +87,8 @@ pub enum ToneMapping {
     AcesFilmic,
     /// `LinearToneMapping` — `clamp( color * exposure, 0, 1 )`.
     Linear,
+    /// `NeutralToneMapping` — the Khronos PBR Neutral tone mapper.
+    Neutral,
 }
 
 /// Which `NodeMaterial` subclass this is — i.e. which `setupLightingModel()`

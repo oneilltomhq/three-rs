@@ -548,6 +548,10 @@ pub fn render_output(color: NodeRef, tone_mapping: ToneMapping) -> NodeRef {
             aces_filmic_tone_mapping(unpremultiplied.clone().rgb(), tone_mapping_exposure()),
             unpremultiplied.a(),
         ]),
+        ToneMapping::Neutral => vec4_join(vec![
+            neutral_tone_mapping(unpremultiplied.clone().rgb(), tone_mapping_exposure()),
+            unpremultiplied.a(),
+        ]),
     };
     let encoded = vec4_join(vec![srgb_transfer_oetf(mapped.clone().rgb()), mapped.a()]);
     premultiply_alpha(encoded)

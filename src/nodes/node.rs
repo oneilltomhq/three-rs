@@ -489,6 +489,10 @@ pub enum Node {
     },
     Builtin(Builtin),
     Var(Rc<VarDef>),
+    /// `VarNode` with `readOnly` set — `node.toConst()`. A WGSL `let`, so it is
+    /// declared where it is assigned and, unlike a `var<private>`, cannot be
+    /// written again.
+    Let(Rc<VarDef>),
     Varying(Rc<VaryingDef>),
     /// A `var<private>` with a fixed name that the setup code assigns
     /// explicitly — `PropertyNode` (`DiffuseColor`, `Output`, …).
@@ -604,6 +608,12 @@ pub enum Node {
     },
     /// `Discard()` — a bare `discard;`.
     Discard,
+    /// `return value;` inside an emitted `fn` — what an `If( cond, () => {
+    /// return x; } )` in a `Fn()` body compiles to (`neutralToneMapping`'s
+    /// early out).
+    Return {
+        value: NodeRef,
+    },
     /// `x.not()` — `( ! x )`.
     Not {
         node: NodeRef,
@@ -643,6 +653,7 @@ impl NodeRef {
             Node::InstancedAttribute { ty, .. } => *ty,
             Node::Builtin(b) => b.ty(),
             Node::Var(v) => v.ty,
+            Node::Let(v) => v.ty,
             Node::Varying(v) => v.ty,
             Node::TextureSize { .. } => Type::UVec2,
             Node::VaryingProperty { ty, .. } => *ty,
@@ -661,7 +672,7 @@ impl NodeRef {
             Node::IfVar { result, .. } => result.ty(),
             Node::Select { ty, .. } => *ty,
             Node::Block { result, .. } => result.ty(),
-            Node::Loop { .. } | Node::If { .. } | Node::Discard => Type::Void,
+            Node::Loop { .. } | Node::If { .. } | Node::Discard | Node::Return { .. } => Type::Void,
             Node::Not { .. } => Type::Bool,
         }
     }

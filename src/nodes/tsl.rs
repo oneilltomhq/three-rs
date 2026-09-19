@@ -281,6 +281,18 @@ pub fn to_var(name: Option<&'static str>, value: NodeRef) -> NodeRef {
     })))
 }
 
+/// `node.toConst( name )` — a WGSL `let`. Same shape as [`to_var`], but the
+/// value is written once where it is declared, so it takes its own
+/// `nodeConstN` counter and no `var<private>` declaration.
+pub fn to_const(name: Option<&'static str>, value: NodeRef) -> NodeRef {
+    let ty = value.ty();
+    NodeRef::new(Node::Let(Rc::new(VarDef {
+        name: name.map(sub_build_name),
+        value,
+        ty,
+    })))
+}
+
 /// `toVar( name )` for a var that keeps its name inside a sub-build layer.
 /// Three prefixes only the nodes a layer is *tagged on* — the accessors that
 /// declare the layer and their ancestors — so a var built inside one of those
@@ -2578,6 +2590,12 @@ pub fn if_then(cond: NodeRef, body: Vec<NodeRef>) -> NodeRef {
     NodeRef::new(Node::If { cond, body })
 }
 
+/// `return value;` inside a `Fn()` body — the statement an early-out `If(
+/// cond, () => { return x; } )` compiles to.
+pub fn return_statement(value: NodeRef) -> NodeRef {
+    NodeRef::new(Node::Return { value })
+}
+
 /// `Discard()`.
 pub fn discard() -> NodeRef {
     NodeRef::new(Node::Discard)
@@ -2743,6 +2761,57 @@ pub fn aces_filmic_tone_mapping(color: NodeRef, exposure: NodeRef) -> NodeRef {
                         .mul(c.add(float(0.432951)).mul(float(0.983729)))
                         .add(float(0.238081));
                     output.mul(a.div(b)).saturate()
+                },
+            )
+        })
+    });
+    call(&def, vec![color, exposure])
+}
+
+/// `neutralToneMapping( color, exposure )` — `ToneMappingFunctions.js`'
+/// Khronos PBR Neutral, emitted as a real `fn`.
+///
+/// `StartCompression` is `0.8 - 0.04`; three.js prints the double as `0.76`,
+/// and `0.76f32` is the same float, so the literal is written out.
+pub fn neutral_tone_mapping(color: NodeRef, exposure: NodeRef) -> NodeRef {
+    thread_local! { static CELL: Lazy<Rc<FnDef>> = const { Lazy::new() }; }
+    let def = CELL.with(|c| {
+        c.get(|| {
+            shader_fn(
+                Some("neutralToneMapping"),
+                vec![("color", Type::Vec3), ("exposure", Type::F32)],
+                Type::Vec3,
+                |args| {
+                    let start_compression = || float(0.76);
+                    let desaturation = float(0.15);
+                    // `color = color.mul( exposure )` — reassigned twice
+                    // below, so it is a var, not a temp.
+                    let color = to_var(None, args[0].clone().mul(args[1].clone()));
+                    let x = color.x().min(color.y().min(color.z()));
+                    let offset = x
+                        .less_than(float(0.08))
+                        .select(x.sub(float(6.25).mul(x.mul(x.clone()))), float(0.04));
+                    let peak = color.x().max(color.y().max(color.z()));
+                    let d = float(1.0).sub(start_compression());
+                    let new_peak =
+                        float(1.0).sub(d.mul(d.clone()).div(peak.add(d.sub(start_compression()))));
+                    let g = float(1.0).sub(
+                        float(1.0)
+                            .div(desaturation.mul(peak.sub(new_peak.clone())).add(float(1.0))),
+                    );
+                    block(
+                        vec![
+                            color.assign(color.sub(offset)),
+                            // `If( peak.lessThan( StartCompression ), () => {
+                            // return color; } )`.
+                            if_statement(
+                                peak.less_than(start_compression()),
+                                vec![return_statement(color.clone())],
+                            ),
+                            color.assign(color.mul(new_peak.div(peak))),
+                        ],
+                        mix(color, new_peak.to(Type::Vec3), g),
+                    )
                 },
             )
         })
