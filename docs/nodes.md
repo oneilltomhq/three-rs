@@ -1567,3 +1567,101 @@ through the material either way.
 **A loaded material still has no name** (§16): `Material_MR` in three's module
 names has no counterpart, which is why `examples/dump_wgsl.rs` builds the
 helmet material by hand to diff `m09`/`m10`.
+
+## 19. A uniform that is read per object (`webgpu_instance_uniform`)
+
+Twelve teapots over a `GridHelper`, sharing **one** `MeshBasicNodeMaterial`
+whose `colorNode` and `emissiveNode` are built from the same custom node:
+
+```js
+class InstanceUniformNode extends THREE.Node {
+    constructor() {
+        super( 'vec3' );
+        this.updateType = THREE.NodeUpdateType.OBJECT;
+        this.uniformNode = uniform( new THREE.Color() );
+    }
+    update( frame ) { this.uniformNode.value.copy( frame.object.color ); }
+    setup() { return this.uniformNode; }
+}
+```
+
+The graph has exactly one uniform node. What makes the twelve teapots twelve
+colours is `updateType = OBJECT`: three's `Bindings.updateBindings()` calls
+`nodeFrame.updateNode()` for the render object whose object-group buffer it is
+about to fill, so `uniformNode.value` is rewritten between the draws and the
+program, the pipeline and the bind-group layout are shared.
+
+### What the port has
+
+The object group is already per render object (`UpdateType::Object`), and
+`UniformSource::Settable` is already read at the moment the bytes are written
+rather than at build time. The only missing piece was *who* gets to write the
+value, so `UniformSource::ObjectUpdate` carries the callback and
+`UniformContext` carries `frame.object`:
+
+| three.js | three-rs |
+|---|---|
+| `Node.updateType = NodeUpdateType.OBJECT` + `uniform()` | [`tsl::uniform_object( ty, \|object\| … )`](../src/nodes/tsl.rs) |
+| `update( frame ) { … frame.object … }` | the callback, run from `UniformContext::bytes()` |
+| `frame.object` | `UniformContext::object`, set from `Renderable::object` |
+
+The callback runs once per draw, inside the same window three runs `update()`
+in, and it is identity-compared and identity-hashed exactly as `SettableValue`
+is: a value that moves between draws must never reach a cache key, and two
+callbacks spelled alike are still two uniforms.
+
+### `mesh.color` has nowhere to live
+
+The page hangs an ad-hoc `.color` on each `Mesh`. `Object3D` is a struct here,
+so there is no such property and adding one for a single example would be API
+invented for a page rather than ported from three. Instead the callback
+receives the `Object3D` and the *application* decides what to answer from —
+`examples/webgpu_instance_uniform.rs` keys a `HashMap` on `Object3D.id`. That
+is the same graph, the same single uniform and the same twelve values; only the
+storage moved from the object to the closure.
+
+### One material, twelve materials
+
+Three's page passes one `Material` object to all twelve `Mesh`es, so
+`RenderObjects` builds two programs (the teapot material and the grid) plus the
+output pass. A `MeshBasicNodeMaterial` is a **value** here and `Material.clone()`
+gets a fresh `MaterialId` (`src/materials/mod.rs`), so each mesh owns its own
+material and the node builder runs fourteen times. All twelve teapot runs
+generate the same WGSL, so the program cache holds three entries and the
+pipeline cache three — the GPU sees what three's does. The divergence is
+twelve first-frame `NodeBuilder::build()` calls and nothing at all on a steady
+frame; `tests/e2e/main.rs::webgpu_instance_uniform` pins the numbers (14 built,
+3 resident, 3 pipelines) so that a future change to material identity shows up
+here rather than as a frame-time regression.
+
+### `emissiveNode` on an unlit material
+
+`NodeMaterial.setupLighting()`'s EMISSIVE tail runs for any material with an
+`emissiveNode`, lit or not — `MeshBasicMaterial` has no `emissive` colour, so
+the node is the only way in. `setup_diffuse_color()` is untouched; the addition
+is two statements at the end of the unlit branch of
+`materials::node_material::setup_inner()`:
+
+```wgsl
+EmissiveColor = ( vec4<f32>( object.nodeUniform0, 1.0 ) * nodeVar1 ).xyz;
+nodeVar2 = max( vec4<f32>( ( DiffuseColor.xyz + EmissiveColor ), DiffuseColor.w ), vec4<f32>( 0.0 ) );
+```
+
+### `cubeTexture( map )` with no uv
+
+`CubeTextureNode.getDefaultUV()` is `reflectVector` for a
+`CubeReflectionMapping`, and `setupUV()` then multiplies by `materialEnvRotation`
+(a `mat4`, the identity unless the material or the scene rotates its
+environment) and negates `x` for the WebGPU coordinate system. That is exactly
+what `MeshBasicNodeMaterial.envMap` already builds in
+`setup_inner()`, so the example composes the existing
+`material_env_rotation().mul( vec4( reflect_vector(), 1.0 ) )` and
+`tsl::cube_texture()` rather than adding a third spelling of it.
+
+### Divergences specific to this rung
+
+None new. The port's `m01`/`m02` differ from three's in the classes §8 already
+lists: generated uniform and var numbering, render-struct member order
+(`cameraWorldMatrix` first here, last there), and the absent `VERTEX_` sub-build
+temps. The grid's two modules are byte-identical to `webgpu_materials`' `m13` /
+`m14`, which §8 already covers.

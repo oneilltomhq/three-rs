@@ -1648,4 +1648,30 @@ fn main() {
             ..SetupContext::default()
         },
     );
+    // rung `webgpu_instance_uniform`: twelve teapots, one material, one
+    // per-object `vec3` uniform — against `dump-instance_uniform/m0{1,2}`.
+    // The grid's `LineBasicNodeMaterial` is `materials_grid` above (the same
+    // `GridHelper( 1000, 40, 0x303030, 0x303030 )`), and three's `m03`/`m04`
+    // for this page are byte-identical to that example's `m13`/`m14`.
+    let castle = CubeTexture::new(vec![
+        Image {
+            width: 1,
+            height: 1,
+            data: vec![0; 4],
+        };
+        6
+    ]);
+    let instance_uniform = uniform_object(three_rs::nodes::Type::Vec3, |_| vec![0.0, 0.0, 0.0]);
+    let castle_node = cube_texture(
+        &castle,
+        material_env_rotation().mul(vec4_join(vec![reflect_vector(), float(1.0)])),
+    );
+    let mut instanced = MeshBasicNodeMaterial::new();
+    instanced.color_node = Some(instance_uniform.clone().add(castle_node.clone()));
+    instanced.emissive_node = Some(instance_uniform.mul(castle_node));
+    show(
+        "instance_uniform_teapot",
+        &instanced,
+        SetupContext::default(),
+    );
 }

@@ -100,6 +100,10 @@ mod webgpu_depth_texture;
 #[allow(dead_code)]
 mod webgpu_instance_mesh;
 
+#[path = "../../examples/webgpu_instance_uniform.rs"]
+#[allow(dead_code)]
+mod webgpu_instance_uniform;
+
 #[path = "../../examples/webgpu_materials.rs"]
 #[allow(dead_code)]
 mod webgpu_materials;
@@ -306,6 +310,73 @@ fn webgpu_instance_mesh() {
         out.display()
     );
     steady_frame(name, &mut app, webgpu_instance_mesh::animate, |app| {
+        app.renderer.device()
+    });
+}
+
+#[test]
+fn webgpu_instance_uniform() {
+    let name = "webgpu_instance_uniform";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_instance_uniform::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_instance_uniform::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+
+    // The point of the page: twelve meshes drawing from one node graph, with
+    // the per-object `vec3` uniform the only difference between the draws.
+    // Three programs and three pipelines — the grid, the teapot material and
+    // the output pass — and twelve of the fourteen `NodeBuilder::build` runs
+    // produce WGSL the cache already has.
+    //
+    // Three's page hands the *same* `Material` object to all twelve meshes and
+    // so builds twice; a `MeshBasicNodeMaterial` is a value here and
+    // `Material.clone()` gets a fresh `MaterialId` (`src/materials/mod.rs`), so
+    // the port builds once per mesh and deduplicates on the generated WGSL. The
+    // GPU sees the same three modules and three pipelines either way; the
+    // difference is twelve first-frame builds, and nothing on a steady frame.
+    let info = app.renderer.info();
+    println!("{name}: info {info:?}");
+    assert_eq!(
+        (
+            info.build.programs_compiled,
+            info.build.pipelines_built,
+            info.memory.programs
+        ),
+        (14, 3, 3),
+        "twelve instance-uniform teapots must share one program and one pipeline"
+    );
+
+    steady_frame(name, &mut app, webgpu_instance_uniform::animate, |app| {
         app.renderer.device()
     });
 }
@@ -2024,6 +2095,7 @@ fn steady_frame_builds_nothing() {
 
     rung!(webgpu_depth_texture);
     rung!(webgpu_instance_mesh);
+    rung!(webgpu_instance_uniform);
     rung!(webgpu_materials);
     rung!(webgpu_materials_basic);
     rung!(webgpu_materials_envmaps);
