@@ -44,7 +44,7 @@ pub struct CodeDef {
     /// ahead of its caller, and a `varyingProperty()` the body assigns to,
     /// which is how `webgpu_tsl_interoperability`'s `varyings.vUv = uv;` gets
     /// `vUv` into `VaryingsStruct` without any node ever reading it in the
-    /// vertex stage. See `docs/nodes.md` §19.
+    /// vertex stage. See `docs/nodes.md` §20.
     pub includes: Vec<NodeRef>,
 }
 

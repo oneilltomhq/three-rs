@@ -1666,7 +1666,7 @@ lists: generated uniform and var numbering, render-struct member order
 temps. The grid's two modules are byte-identical to `webgpu_materials`' `m13` /
 `m14`, which §8 already covers.
 
-## 19. Hand-written WGSL beside TSL (`webgpu_tsl_interoperability`)
+## 20. Hand-written WGSL beside TSL (`webgpu_tsl_interoperability`)
 
 The page draws the same CRT shader twice: once out of two `wgslFn()` blocks and
 once out of TSL nodes. The WGSL half is the interesting one, because the node
