@@ -1041,4 +1041,22 @@ fn main() {
             ..SetupContext::default()
         },
     );
+
+    // `webgpu_pmrem_cubemap`: the two `PMREMGenerator` materials. Three's own
+    // dump of them is `m00`/`m01` (`PMREM_cubemap`) and `m02`/`m03`
+    // (`PMREM_ggx`) in the scout's `dump-pmrem_cubemap/`. The numbers baked
+    // into the GGX shader are the ones a 256² source cube produces: a 768×1024
+    // atlas and `lodMax = 8`.
+    let hdr_cube = CubeTexture::new(
+        (0..6)
+            .map(|_| Image::rgba16float(4, 4, &[0u16; 4 * 4 * 4]))
+            .collect(),
+    );
+    show(
+        "pmrem_cubemap",
+        &three_rs::renderer::pmrem::cubemap_material(&hdr_cube),
+        SetupContext::default(),
+    );
+    let (ggx, _ggx_uniforms) = three_rs::renderer::pmrem::ggx_material(8, 768.0, 1024.0);
+    show("pmrem_ggx", &ggx, SetupContext::default());
 }

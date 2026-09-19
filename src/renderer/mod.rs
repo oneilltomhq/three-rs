@@ -6,6 +6,7 @@
 mod info;
 mod mipmap;
 mod pass;
+pub mod pmrem;
 /// Additive seam for the interactive viewer; see `present.rs`.
 mod present;
 mod programs;
@@ -20,6 +21,7 @@ use std::rc::{Rc, Weak};
 pub use info::{BuildCounts, ComputeCounts, Info, MemoryCounts, RenderCounts};
 use mipmap::{create_mipmap_pipeline, MipmapShader};
 pub use pass::PassNode;
+pub use pmrem::PmremGenerator;
 use programs::{ComputeProgramGpu, PipelineKey, Program};
 pub use programs::{LightState, RenderState, UniformContext};
 pub use render_list::{project_object, ProjectCamera, RenderItem, RenderList};
@@ -295,6 +297,8 @@ const VARIANT_SHADOW: u64 = 1;
 /// `MaterialKey::variant` for `QuadMesh.render()`'s copy with the full-screen
 /// `vertexNode`.
 const VARIANT_QUAD: u64 = 2;
+/// `MaterialKey::variant` for a `PMREMGenerator` lod-plane draw.
+const VARIANT_PMREM: u64 = 3;
 
 /// One material's built programs — `NodeManager.nodeBuilderCache`'s entries
 /// for one `material.id`, at one `material.version`. The per-draw resolution
@@ -1751,6 +1755,54 @@ impl Renderer {
         // accumulation quads of an `SsaaPassNode` run with them off and load
         // their target.
         let clear = if self.auto_clear {
+            ClearOps {
+                color: self.auto_clear_color.then_some(self.clear_color),
+                depth: self.auto_clear_depth,
+            }
+        } else {
+            ClearOps::default()
+        };
+        self.render_list(&items, camera_uniforms, clear);
+    }
+
+    /// `PMREMGenerator`'s `renderer.render( lodMesh, _flatCamera )`.
+    ///
+    /// The lod planes are already in clip space, so the camera is
+    /// `OrthographicCamera( -1, 1, 1, -1, 0, 1 )` — the same one `QuadMesh`
+    /// uses, which is why this shares `quad_camera_uniforms()` rather than
+    /// building a second. `clear` carries `renderer.autoClear`: three leaves it
+    /// alone for `_textureToCubeUV` and turns it off for the whole of
+    /// `_applyPMREM`, so every prefilter pass loads the tile beside the one it
+    /// writes.
+    pub(crate) fn render_pmrem_mesh(
+        &mut self,
+        geometry: Rc<BufferGeometry>,
+        material: &MeshBasicNodeMaterial,
+        clear: bool,
+    ) {
+        self.begin_frame();
+
+        let items = [Renderable {
+            fog: None,
+            geometry,
+            material: material.clone(),
+            key: MaterialKey::of(material).variant(VARIANT_PMREM),
+            setup: SetupContext::default(),
+            model_world: Matrix4::identity(),
+            instance_matrix: None,
+            instance_color: None,
+            instance_count: 1,
+            morph_influences: Vec::new(),
+            morph_base: 1.0,
+            bind_matrix: Matrix4::identity(),
+            bind_matrix_inverse: Matrix4::identity(),
+            bone_matrices: Vec::new(),
+            primitive: Primitive::TRIANGLES,
+            sub_draws: Vec::new(),
+        }];
+
+        let camera_uniforms = self.quad_camera_uniforms();
+        let clear = if clear && self.auto_clear {
             ClearOps {
                 color: self.auto_clear_color.then_some(self.clear_color),
                 depth: self.auto_clear_depth,

@@ -2135,6 +2135,18 @@ pub fn bump_map(map: &Texture, scale: NodeRef) -> NodeRef {
     })
 }
 
+/// `texture( map ).sample( uv ).grad( vec2(), vec2() )` — a tap with the
+/// gradients pinned to zero, which is how `PMREMUtils.bilinearCubeUV` turns
+/// anisotropic filtering off on the cubeUV atlas.
+pub fn texture_grad(map: &Texture, coord: NodeRef) -> NodeRef {
+    texture_node(
+        TextureSource::Texture2D(map.clone()),
+        coord,
+        SampleMode::Grad,
+        Type::Vec4,
+    )
+}
+
 /// `texture( map, uv )` without the default UV.
 pub fn texture_uv(map: &Texture, coord: NodeRef) -> NodeRef {
     texture_node(

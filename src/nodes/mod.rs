@@ -9,6 +9,7 @@ pub mod lines;
 pub mod materialx;
 pub mod morph;
 pub mod node;
+pub mod pmrem_utils;
 pub mod skinning;
 pub mod tsl;
 pub mod wgsl;
