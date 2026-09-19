@@ -207,16 +207,18 @@ addons/         workspace crates in the role of three.js' examples/jsm: not port
   controls/     three-rs-controls — the map camera, its ground, and the heli demo
 docs/           design notes per subsystem and per-example progress logs
 rung0/          how the grader was calibrated
+tools/          dump-webgpu.mjs, the rung dump hook (see docs/dumping.md)
 ```
 
 `docs/nodes.md` and `docs/scene-graph.md` are the two to read first: how the
 node system maps onto Three's, and how the `Rc<RefCell<Object3D>>` scene graph
-replaces Three's prototype tree.
+replaces Three's prototype tree. `docs/dumping.md` says how a rung captures
+the WGSL and GPU descriptors it ports against.
 
 ## How it was built
 
 Example by example. Each "rung" takes one Three example, dumps the WGSL Three
-generates for it, ports whatever the example needs until the generated WGSL
+generates for it (`tools/dump-webgpu.mjs`; see `docs/dumping.md`), ports whatever the example needs until the generated WGSL
 matches and the grader passes, then merges. The port was directed and largely
 written by Claude agents with the pixel diff as the ground truth; the
 per-rung progress notes in `docs/` record what each rung found, including the
