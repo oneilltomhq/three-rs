@@ -326,8 +326,16 @@ impl Physical {
     }
 
     /// `PhysicalLightingModel.ambientOcclusion()`.
-    pub fn ambient_occlusion(&self, out: &mut Vec<NodeRef>) {
-        out.push(ambient_occlusion().assign(float(1.0)));
+    ///
+    /// `has_ao_node` says whether an `AONode` already ran as a lighting node
+    /// and so already declared the `ambientOcclusion` var — three builds it as
+    /// `float( 1 ).toVar( 'ambientOcclusion' )`, whose initialiser is emitted
+    /// at its *first* read, and with an `aoMap` that read is `AONode`'s
+    /// `mulAssign`, not this method.
+    pub fn ambient_occlusion(&self, has_ao_node: bool, out: &mut Vec<NodeRef>) {
+        if !has_ao_node {
+            out.push(ambient_occlusion().assign(float(1.0)));
+        }
 
         out.push(indirect_diffuse().assign(indirect_diffuse().mul(ambient_occlusion())));
 

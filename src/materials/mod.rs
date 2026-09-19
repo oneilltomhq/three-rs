@@ -241,6 +241,17 @@ pub struct MeshBasicNodeMaterial {
     pub vertex_colors: bool,
     pub roughness_map: Option<Texture>,
     pub metalness_map: Option<Texture>,
+    /// `MeshStandardMaterial.emissiveMap` — `MaterialNode.EMISSIVE`'s
+    /// `emissiveNode.mul( texture )`, where `emissiveNode` is already
+    /// `emissive * emissiveIntensity`. The multiply is a `vec4` one in three
+    /// (`vec4( emissive, 1 ) * tex`) and the `.xyz` is taken afterwards, which
+    /// is why the port builds it the same way rather than multiplying `vec3`s.
+    pub emissive_map: Option<Texture>,
+    /// `MeshStandardMaterial.aoMap` / `.aoMapIntensity` — `materialAO`,
+    /// `tex.r.sub( 1 ).mul( aoMapIntensity ).add( 1 )`, assigned to the
+    /// `AmbientOcclusion` property by `NodeMaterial.setupAmbientOcclusion()`.
+    pub ao_map: Option<Texture>,
+    pub ao_map_intensity: f64,
     /// `MeshStandardMaterial.bumpMap` / `.bumpScale` — `BumpMapNode`.
     pub bump_map: Option<Texture>,
     pub bump_scale: f64,
@@ -372,6 +383,9 @@ impl Default for MeshBasicNodeMaterial {
             vertex_colors: false,
             roughness_map: None,
             metalness_map: None,
+            emissive_map: None,
+            ao_map: None,
+            ao_map_intensity: 1.0,
             bump_map: None,
             bump_scale: 1.0,
             // `MeshPhysicalMaterial` defaults.

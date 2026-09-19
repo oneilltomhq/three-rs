@@ -135,6 +135,30 @@ impl CubeTexture {
         )
     }
 
+    /// `new CubeRenderTarget( size ).texture` — six faces of the right shape
+    /// and no pixels, to be rendered into rather than uploaded.
+    ///
+    /// `generateMipmaps` is false and both filters are `LinearFilter`, which is
+    /// what `fromEquirectangularTexture` copies off an `HDRLoader` texture, and
+    /// what three's own dump of `webgpu_postprocessing_bloom_emissive` shows:
+    /// the 512² cube it converts the 1024×512 HDR into has `mipLevelCount: 1`.
+    pub fn render_target(size: u32, texture_type: TextureType) -> Self {
+        let face = Image {
+            width: size,
+            height: size,
+            data: Vec::new(),
+        };
+        let texture = Self::new(vec![face; 6]);
+        {
+            let mut inner = texture.0.borrow_mut();
+            inner.texture_type = texture_type;
+            inner.generate_mipmaps = false;
+            inner.min_filter = MinFilter::Linear;
+            inner.mag_filter = TextureFilter::Linear;
+        }
+        texture
+    }
+
     pub fn set_color_space(&self, color_space: ColorSpace) {
         self.0.borrow_mut().color_space = color_space;
     }

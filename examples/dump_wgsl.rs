@@ -1559,4 +1559,93 @@ fn main() {
             ..SetupContext::default()
         },
     );
+
+    // rung webgpu_postprocessing_bloom_emissive. Three's dump of the page has
+    // the three modules this section covers: `m01`/`m02` the equirectangular →
+    // cube conversion, `m03`/`m04` the cube skybox under the page's MRT, and
+    // `m09`/`m10` the helmet.
+    let mrt_emissive = || three_rs::materials::MrtContext {
+        node: three_rs::nodes::mrt(vec![
+            ("output", output_property()),
+            (
+                "emissive",
+                three_rs::nodes::tsl::vec4_join(vec![
+                    three_rs::nodes::tsl::emissive_color(),
+                    output_property().w(),
+                ]),
+            ),
+        ]),
+        attachments: vec!["output".to_string(), "emissive".to_string()],
+    };
+
+    // `CubeRenderTarget.fromEquirectangularTexture`'s box material: an unnamed
+    // `NodeMaterial` whose colour is the equirect map at level 0 along
+    // `positionWorldDirection`. `m02` is the whole of it; the conversion runs
+    // with `renderer.setMRT( null )`, so it has one attachment.
+    let equirect_source = Texture::data_rgba16float(4, 2, &[0u16; 4 * 2 * 4]);
+    let mut equirect_box = MeshBasicNodeMaterial::new();
+    equirect_box.color_node = Some(three_rs::nodes::tsl::texture_level(
+        &equirect_source,
+        three_rs::nodes::tsl::equirect_uv(three_rs::nodes::tsl::position_world_direction()),
+        float(0.0),
+    ));
+    equirect_box.side = Side::Back;
+    equirect_box.blending = three_rs::materials::Blending::No;
+    show(
+        "bloom_emissive_equirect_to_cube",
+        &equirect_box,
+        SetupContext::default(),
+    );
+
+    // `m04`: the skybox, drawn into both attachments. `EmissiveColor` is
+    // declared and never assigned, so the sky writes WGSL's zero-initialised
+    // `vec3` to attachment 1 — which is why the environment does not bloom.
+    let background_cube = CubeTexture::new(vec![
+        Image {
+            width: 1,
+            height: 1,
+            data: vec![0; 4],
+        };
+        6
+    ]);
+    let mut emissive_background = MeshBasicNodeMaterial::new();
+    emissive_background.name = "Background.material";
+    emissive_background.color_node =
+        Some(three_rs::materials::background_color_node(&background_cube));
+    emissive_background.vertex_node = Some(three_rs::materials::background_vertex_node());
+    emissive_background.side = Side::Back;
+    emissive_background.depth_test = false;
+    emissive_background.depth_write = false;
+    show(
+        "bloom_emissive_background",
+        &emissive_background,
+        SetupContext {
+            mrt: Some(mrt_emissive()),
+            ..SetupContext::default()
+        },
+    );
+
+    // `m10`: `Material_MR`, the helmet — five maps, a PMREM environment, no
+    // lights, and the MRT tail that writes `vec4( EmissiveColor, Output.w )`
+    // to attachment 1.
+    let map = || Texture::new(4, 4, Some(vec![0; 4 * 4 * 4]));
+    let mut helmet = MeshBasicNodeMaterial::standard(Color::new(1.0, 1.0, 1.0), 1.0, 1.0);
+    helmet.name = "Material_MR";
+    helmet.map = Some(map());
+    let metal_roughness = map();
+    helmet.metalness_map = Some(metal_roughness.clone());
+    helmet.roughness_map = Some(metal_roughness);
+    helmet.normal_map = Some(map());
+    helmet.emissive_map = Some(map());
+    helmet.ao_map = Some(map());
+    helmet.emissive = Color::new(1.0, 1.0, 1.0);
+    helmet.pmrem_env = Some(environment.handle());
+    show(
+        "bloom_emissive_helmet",
+        &helmet,
+        SetupContext {
+            mrt: Some(mrt_emissive()),
+            ..SetupContext::default()
+        },
+    );
 }

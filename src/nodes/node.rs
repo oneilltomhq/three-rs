@@ -213,6 +213,9 @@ pub enum UniformSource {
     MaterialSpecularIntensity,
     MaterialSpecularColor,
     MaterialNormalScale,
+    /// `MeshStandardMaterial.aoMapIntensity` — the scale in `materialAO`'s
+    /// `tex.r.sub( 1 ).mul( aoMapIntensity ).add( 1 )`.
+    MaterialAoMapIntensity,
     /// `toneMappingExposure` — `renderer.toneMappingExposure`.
     ToneMappingExposure,
     /// `reference( 'bindMatrix', 'mat4' )` / `reference( 'bindMatrixInverse',
@@ -285,6 +288,7 @@ impl UniformSource {
             | UniformSource::MaterialSpecularIntensity
             | UniformSource::MaterialSpecularColor
             | UniformSource::MaterialNormalScale
+            | UniformSource::MaterialAoMapIntensity
             | UniformSource::EnvRotationMatrix
             | UniformSource::MorphBase
             | UniformSource::BindMatrix

@@ -874,6 +874,49 @@ fn material_lights(material: &MeshBasicNodeMaterial, ctx: &SetupContext) -> Vec<
     }
 }
 
+/// `NodeMaterial.setupAmbientOcclusion()` — `AmbientOcclusion.assign( aoNode )`
+/// when, and only when, the material has an `aoMap`.
+///
+/// `materialAO` is `texture( aoMap ).r.sub( 1 ).mul( aoMapIntensity ).add( 1 )`.
+/// Nothing is emitted without the map: three leaves `aoNode` null, so the
+/// property is never declared and the lighting model's own `ambientOcclusion`
+/// var stays a bare `1`.
+fn setup_ambient_occlusion(material: &MeshBasicNodeMaterial, fragment: &mut Vec<NodeRef>) {
+    let Some(map) = &material.ao_map else {
+        return;
+    };
+
+    fragment.push(
+        ambient_occlusion_property().assign(
+            texture(map)
+                .x()
+                .sub(float(1.0))
+                .mul(material_ao_map_intensity())
+                .add(float(1.0)),
+        ),
+    );
+}
+
+/// `MaterialNode.EMISSIVE` — `emissive * emissiveIntensity`, times the
+/// `emissiveMap` when there is one.
+///
+/// The map multiply is three's `emissiveNode.mul( this.getTexture( scope ) )`:
+/// a `vec3` times a `vec4`, which `MathNode`'s type resolution widens to
+/// `vec4( emissive, 1 ) * tex` before the assignment to the `vec3` property
+/// takes `.xyz`. That is what the dump's
+/// `( vec4<f32>( ( emissive * intensity ), 1.0 ) * tex ).xyz` is, and why the
+/// port builds the `vec4` explicitly rather than multiplying three components.
+fn material_emissive_value(material: &MeshBasicNodeMaterial) -> NodeRef {
+    let emissive = material_emissive().mul(material_emissive_intensity());
+
+    match &material.emissive_map {
+        Some(map) => vec4_join(vec![emissive, float(1.0)])
+            .mul(texture(map))
+            .xyz(),
+        None => emissive,
+    }
+}
+
 /// `MeshStandardNodeMaterial`'s fragment flow: `setupDiffuseColor`,
 /// `setupVariants` (metalness / roughness / specular / diffuse contribution),
 /// then the `LightsNode` loop with `PhysicalLightingModel`. Read off
@@ -885,6 +928,10 @@ fn setup_standard(
 ) -> NodeRef {
     // --- setupDiffuseColor
     setup_diffuse_color(material, ctx, fragment);
+
+    // --- setupAmbientOcclusion, between `setupDiffuseColor` and
+    // `setupVariants` exactly as `NodeMaterial.setup()` orders them.
+    setup_ambient_occlusion(material, fragment);
 
     // --- setupVariants. `metalnessNode` is reached twice — once for the
     // `Metalness` property and once for `DiffuseContribution` — so the node is
@@ -949,7 +996,7 @@ fn setup_standard(
     fragment
         .push(diffuse_contribution().assign(diffuse_color().rgb().mul(metalness_node.one_minus())));
 
-    fragment.push(emissive_color().assign(material_emissive().mul(material_emissive_intensity())));
+    fragment.push(emissive_color().assign(material_emissive_value(material)));
 
     let outgoing = if material.lights {
         let model = Physical::start();
@@ -981,8 +1028,18 @@ fn setup_standard(
         if let Some(environment) = &material.pmrem_env {
             environment::setup(environment, fragment);
         }
+        // `AONode( context.ambientOcclusion )`, the last entry
+        // `setupLightsNode()` pushes: `ambientOcclusion.mulAssign( aoNode )`,
+        // where `aoNode` is the `AmbientOcclusion` property
+        // `setup_ambient_occlusion` wrote above. The var's `float( 1 )`
+        // initialiser is emitted here, at its first read.
+        if material.ao_map.is_some() {
+            fragment.push(
+                ambient_occlusion().assign(ambient_occlusion().mul(ambient_occlusion_property())),
+            );
+        }
         model.indirect_specular(material.pmrem_env.is_some(), fragment);
-        model.ambient_occlusion(fragment);
+        model.ambient_occlusion(material.ao_map.is_some(), fragment);
 
         fragment.push(total_diffuse().assign(direct_diffuse().add(indirect_diffuse())));
         fragment.push(total_specular().assign(direct_specular().add(indirect_specular())));

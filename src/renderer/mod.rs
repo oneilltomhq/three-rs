@@ -3,6 +3,7 @@
 //! bindings it declared, draw into a render target or into the "canvas"
 //! texture, read back.
 
+pub mod cube_render_target;
 mod direct_render_pipeline;
 mod info;
 mod mipmap;
@@ -24,7 +25,9 @@ pub use info::{BuildCounts, ComputeCounts, Info, MemoryCounts, RenderCounts};
 use mipmap::{create_mipmap_pipeline, MipmapShader};
 pub use pass::PassNode;
 pub use pmrem::PmremGenerator;
-use programs::{ComputeProgramGpu, PipelineKey, Program};
+use programs::{
+    ComputeProgramGpu, ExtraColorTarget, PipelineKey, Program, MAX_EXTRA_COLOR_ATTACHMENTS,
+};
 pub use programs::{LightState, RenderState, UniformContext};
 pub use render_list::{project_object, ProjectCamera, RenderItem, RenderList};
 pub use render_pipeline::RenderPipeline;
@@ -338,6 +341,12 @@ struct PassTarget {
     /// single-attachment pass, which is every pass before
     /// `webgpu_postprocessing_bloom_selective`.
     extra_colors: Vec<wgpu::TextureView>,
+    /// The extra attachments' own format and blend state, in the same order.
+    /// `PassNode.getTexture( name ).type = UnsignedByteType` makes one
+    /// attachment `rgba8unorm` beside an `rgba16float` colour, and
+    /// `mrtNode.setBlendMode( name, ... )` gives it a blend state of its own;
+    /// the pipeline descriptor carries one `ColorTargetState` per attachment.
+    extra_color_targets: Vec<ExtraColorTarget>,
     resolve: Option<wgpu::TextureView>,
     depth: Option<wgpu::TextureView>,
     color_format: wgpu::TextureFormat,
@@ -1766,6 +1775,7 @@ impl Renderer {
             let pass_target = PassTarget {
                 color: color_view,
                 extra_colors: Vec::new(),
+                extra_color_targets: Vec::new(),
                 resolve: None,
                 depth: Some(depth_view),
                 color_format: wgpu::TextureFormat::Rgba8Unorm,
@@ -2022,9 +2032,17 @@ impl Renderer {
             let node = self.node_builder_state(item);
             let program_key = node.cache_key;
 
+            let mut extra_color_targets = [None; MAX_EXTRA_COLOR_ATTACHMENTS];
+            for (slot, extra) in extra_color_targets
+                .iter_mut()
+                .zip(&target.extra_color_targets)
+            {
+                *slot = Some(*extra);
+            }
             let state = RenderState {
                 color_format: target.color_format,
                 color_attachments: 1 + target.extra_colors.len() as u32,
+                extra_color_targets,
                 depth_format: target.depth_format,
                 sample_count: target.sample_count,
                 side: item.material.side,
@@ -2062,6 +2080,7 @@ impl Renderer {
                 material_specular_intensity: item.material.specular_intensity,
                 material_specular_color: item.material.specular_color,
                 material_normal_scale: item.material.normal_scale,
+                material_ao_map_intensity: item.material.ao_map_intensity,
                 tone_mapping_exposure: self.tone_mapping_exposure,
                 material_line_width: item.material.linewidth,
                 // `ScreenNode.update()`: `SIZE` is the bound target's
@@ -3476,6 +3495,54 @@ impl Renderer {
         );
     }
 
+    /// One face of a [`cube_render_target`] conversion: the 2-D target the face
+    /// was drawn into, copied into array layer `layer` of the cube's GPU
+    /// texture.
+    ///
+    /// Three renders into the layer directly; this port has no layered colour
+    /// attachment, and a same-format, same-extent `copyTextureToTexture` is the
+    /// exact move of the texels rather than a resample of them.
+    pub(crate) fn copy_to_cube_layer(
+        &mut self,
+        source: &RenderTarget,
+        cube: &CubeTexture,
+        layer: u32,
+    ) {
+        let destination = self.ensure_cube_texture(cube);
+        let (width, height) = source.size();
+        let source = source.texture().with_gpu(|gpu| gpu.clone());
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("three-rs cube face copy"),
+            });
+        encoder.copy_texture_to_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &source,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyTextureInfo {
+                texture: &destination,
+                mip_level: 0,
+                origin: wgpu::Origin3d {
+                    x: 0,
+                    y: 0,
+                    z: layer,
+                },
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+        self.queue.submit([encoder.finish()]);
+    }
+
     /// `Textures.updateTexture()` for a `CubeTexture`: one 2D texture with six
     /// array layers, `textureBindingViewDimension: 'cube'`, a full mip chain,
     /// and one `copyExternalImageToTexture` per face with `flipY: false`.
@@ -3519,6 +3586,13 @@ impl Renderer {
             // `_copyCubeMapToTexture()`: face by face, level 0 from `images`
             // and then `mipmaps[ j ].images[ face ]` into `mipLevel = j + 1`.
             for (layer, image) in inner.images.iter().enumerate() {
+                // A `CubeRenderTarget`'s faces are `{ width, height, depth }`
+                // descriptors with no pixels behind them: three allocates the
+                // GPU texture from their shape and renders into it, and there
+                // is nothing to upload.
+                if image.data.is_empty() {
+                    continue;
+                }
                 write_face(&self.queue, &gpu, 0, layer as u32, image, bytes_per_texel);
                 for (j, level) in inner.mipmaps.iter().enumerate() {
                     write_face(
@@ -4007,6 +4081,26 @@ impl Renderer {
             .iter()
             .map(|(_, texture)| texture.with_gpu(|gpu| gpu.create_view(&Default::default())))
             .collect();
+        // `WebGPUPipelineUtils._getBlending()` reads the MRT's own blend mode
+        // for the attachment and, unlike the material's, applies it whatever
+        // `material.transparent` is.
+        let extra_color_targets: Vec<ExtraColorTarget> = inner
+            .extra_textures
+            .iter()
+            .map(|(name, texture)| ExtraColorTarget {
+                format: texture.format(),
+                blend: self
+                    .mrt
+                    .as_ref()
+                    .and_then(|mrt| mrt.blend_mode(name))
+                    .and_then(|blending| {
+                        materials::blending::blending(&materials::BlendMode {
+                            blending,
+                            ..Default::default()
+                        })
+                    }),
+            })
+            .collect();
 
         let (depth, depth_format) = match (&inner.depth_texture, &inner.depth) {
             (Some(depth_texture), _) => (
@@ -4031,6 +4125,7 @@ impl Renderer {
         PassTarget {
             color,
             extra_colors,
+            extra_color_targets,
             resolve,
             depth,
             color_format,
@@ -4078,6 +4173,7 @@ impl Renderer {
         PassTarget {
             color,
             extra_colors: Vec::new(),
+            extra_color_targets: Vec::new(),
             resolve,
             depth: depth.clone(),
             color_format: CANVAS_FORMAT,
@@ -4229,7 +4325,10 @@ impl Renderer {
                     mip_level_count: 1,
                     sample_count: 1,
                     dimension: wgpu::TextureDimension::D2,
-                    format,
+                    // `renderTarget.textures[ i ].type`, which
+                    // `PassNode.getTexture( name )`'s caller may have changed
+                    // away from the target's own.
+                    format: texture.format(),
                     usage: wgpu::TextureUsages::RENDER_ATTACHMENT
                         | wgpu::TextureUsages::TEXTURE_BINDING
                         | wgpu::TextureUsages::COPY_SRC,

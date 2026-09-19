@@ -509,6 +509,18 @@ impl Texture {
         self.0.borrow_mut().format = format;
     }
 
+    /// `texture.type = UnsignedByteType` — three.js names a render target
+    /// attachment's storage by its data type, and
+    /// `WebGPUTextureUtils.getFormat()` turns that into the GPU format. Set it
+    /// on an attachment of a `PassNode`'s target before the first frame, the
+    /// way `webgpu_postprocessing_bloom_emissive` sets it on the `emissive`
+    /// output so the bloom chain reads an LDR texture.
+    ///
+    /// Panics for a depth type, as `color_gpu_format()` does.
+    pub fn set_texture_type(&self, texture_type: crate::textures::TextureType) {
+        self.set_format(texture_type.color_gpu_format());
+    }
+
     /// `Texture.mipmapCount` — `floor( log2( max( w, h ) ) ) + 1`.
     pub fn mip_level_count(&self) -> u32 {
         let inner = self.0.borrow();

@@ -27,6 +27,7 @@ use super::NodeRef;
 #[derive(Clone, Debug, Default)]
 pub struct MrtNode {
     outputs: Vec<(String, NodeRef)>,
+    blend_modes: Vec<(String, crate::materials::Blending)>,
 }
 
 /// `mrt( { name: node, … } )`.
@@ -50,6 +51,35 @@ impl MrtNode {
             Some(entry) => entry.1 = value,
             None => self.outputs.push((name, value)),
         }
+    }
+
+    /// `mrtNode.setBlendMode( name, blendMode )` — the blend state the
+    /// pipeline gives *that* attachment.
+    ///
+    /// Three defaults attachment `output` to the material's own blending and
+    /// every other attachment to `NoBlending`; `webgpu_postprocessing_bloom_emissive`
+    /// puts `NormalBlending` back on its `emissive` output. On an opaque draw
+    /// the two agree to the bit — `src-alpha` is 1 and `one-minus-src-alpha` 0
+    /// — which is why this is a pipeline-descriptor fidelity item rather than a
+    /// pixel one; `docs/postprocessing.md` says so.
+    pub fn set_blend_mode<N: Into<String>>(
+        &mut self,
+        name: N,
+        blending: crate::materials::Blending,
+    ) {
+        let name = name.into();
+        match self.blend_modes.iter_mut().find(|(n, _)| *n == name) {
+            Some(entry) => entry.1 = blending,
+            None => self.blend_modes.push((name, blending)),
+        }
+    }
+
+    /// `mrtNode.getBlendMode( name )`.
+    pub fn blend_mode(&self, name: &str) -> Option<crate::materials::Blending> {
+        self.blend_modes
+            .iter()
+            .find(|(n, _)| n == name)
+            .map(|(_, b)| *b)
     }
 
     /// `mrtNode.has( name )`.
@@ -78,6 +108,9 @@ impl MrtNode {
         let mut merged = self.clone();
         for (name, value) in &other.outputs {
             merged.set(name.clone(), value.clone());
+        }
+        for (name, blending) in &other.blend_modes {
+            merged.set_blend_mode(name.clone(), *blending);
         }
         merged
     }
