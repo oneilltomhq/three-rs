@@ -19,6 +19,10 @@ pub enum Wrapping {
     ClampToEdge,
     /// `RepeatWrapping`.
     Repeat,
+    /// `MirroredRepeatWrapping` — what `rtt()`'s options reach the sampler
+    /// with in `webgpu_postprocessing_anamorphic`, and the reason its
+    /// horizontal streak folds back instead of clamping at the screen edge.
+    MirroredRepeat,
 }
 
 /// `Texture.minFilter` — the mip-aware half of the filter pair.
