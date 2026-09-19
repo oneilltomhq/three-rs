@@ -319,6 +319,13 @@ impl Payload {
         match self {
             Payload::InstancedMesh(instanced) => instanced.count as u32,
             Payload::Points(points) => points.count.unwrap_or(1) as u32,
+            // `RenderObject.getInstanceCount()`: an instanced geometry's
+            // `instanceCount` wins over `object.count`. A `LineSegments2`'s
+            // geometry is one, and its count is the number of segments.
+            Payload::Mesh(mesh) => match &mesh.line_segments {
+                Some(attributes) => attributes.instance_count() as u32,
+                None => 1,
+            },
             _ => 1,
         }
     }
@@ -327,6 +334,14 @@ impl Payload {
     pub fn instance_matrix(&self) -> Option<&InstancedBufferAttribute> {
         match self {
             Payload::InstancedMesh(instanced) => Some(&instanced.instance_matrix),
+            _ => None,
+        }
+    }
+
+    /// A `LineSegments2`'s instanced attributes, `None` for anything else.
+    pub fn line_segments(&self) -> Option<&crate::nodes::lines::LineSegmentsAttributes> {
+        match self {
+            Payload::Mesh(mesh) => mesh.line_segments.as_ref(),
             _ => None,
         }
     }

@@ -5,6 +5,7 @@ pub mod batch;
 pub mod builder;
 pub mod code;
 pub mod display;
+pub mod lines;
 pub mod materialx;
 pub mod morph;
 pub mod node;

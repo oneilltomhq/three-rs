@@ -148,6 +148,7 @@ impl BatchedMesh {
                 geometry: Rc::new(BufferGeometry::new()),
                 material: Some(material),
                 morph_target_influences: Vec::new(),
+                line_segments: None,
             },
             per_object_frustum_culled: true,
             sort_objects: true,
