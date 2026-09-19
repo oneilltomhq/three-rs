@@ -13,6 +13,8 @@
 
 mod bloom;
 mod radial_blur;
+mod rtt;
 
 pub use bloom::{bloom, luminosity_high_pass, BloomNode, HighPassInput};
 pub use radial_blur::{radial_blur, RadialBlurOptions};
+pub use rtt::{convert_to_texture, rtt, RttNode};
