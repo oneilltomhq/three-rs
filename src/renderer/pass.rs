@@ -21,10 +21,16 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 
 use crate::cameras::PerspectiveCamera;
-use crate::nodes::tsl::{texture_uv, to_var, uv};
-use crate::nodes::{MrtNode, NodeRef};
+use crate::nodes::node::SettableValue;
+use crate::nodes::tsl::{
+    pass_depth_texture, perspective_depth_to_view_z, texture_uv, to_var, uniform_settable, uv,
+};
+use crate::nodes::{MrtNode, NodeRef, Type};
 use crate::objects::Scene;
 use crate::textures::{DepthTexture, TextureFilter, TextureType};
+
+/// `PassNode`'s depth output name.
+pub const DEPTH_ATTACHMENT: &str = "depth";
 
 use super::render_target::{RenderTarget, RenderTargetOptions, OUTPUT_ATTACHMENT};
 use super::Renderer;
@@ -54,6 +60,15 @@ pub struct PassNode {
     /// that two `getTextureNode( name )` calls compose the *same* node and the
     /// builder sees one texture, not two.
     texture_nodes: RefCell<HashMap<String, NodeRef>>,
+    /// `PassNode._viewZNodes` — memoised like the texture nodes, so two asks
+    /// compose one graph.
+    view_z_nodes: RefCell<HashMap<String, NodeRef>>,
+    /// `PassNode._cameraNear` / `_cameraFar`: `uniform( 0 )` a piece, written
+    /// from the pass's camera in `updateBefore()`. They are object-group
+    /// uniforms of whatever material samples the pass, which is why the fog
+    /// composite's shader reads `object.nodeUniform1` / `object.nodeUniform2`.
+    camera_near: (NodeRef, SettableValue),
+    camera_far: (NodeRef, SettableValue),
 }
 
 /// `pass( scene, camera, options )`'s options object, as far as the ported
@@ -122,13 +137,56 @@ impl PassNode {
 
         let texture_nodes = HashMap::from([(OUTPUT_ATTACHMENT.to_string(), texture_node)]);
 
+        let camera_near = uniform_settable(Type::F32, vec![0.0]);
+        let camera_far = uniform_settable(Type::F32, vec![0.0]);
+
         Self {
             render_target,
             node,
             previous_texture_nodes: RefCell::new(HashMap::new()),
             mrt: RefCell::new(None),
             texture_nodes: RefCell::new(texture_nodes),
+            view_z_nodes: RefCell::new(HashMap::new()),
+            camera_near,
+            camera_far,
         }
+    }
+
+    /// `passNode.getTexture( 'depth' )` — the pass's own depth attachment.
+    ///
+    /// Three seeds `_textures[ 'depth' ]` in the constructor when the target
+    /// has a depth buffer and throws from `getTexture()` for any other pass;
+    /// here the target always has one, so this is infallible.
+    pub fn depth_texture(&self) -> DepthTexture {
+        self.render_target
+            .depth_texture()
+            .expect("three-rs: a PassNode's render target always carries a DepthTexture")
+    }
+
+    /// `passNode.getViewZNode( name )` — the depth attachment read back as a
+    /// view-space z.
+    ///
+    /// `perspectiveDepthToViewZ( getTextureNode( name ), cameraNear,
+    /// cameraFar )`. Only `'depth'` exists as a name here: a custom depth
+    /// output would be an extra colour attachment, which no ported page asks
+    /// for.
+    pub fn view_z_node(&self, name: &str) -> NodeRef {
+        if let Some(node) = self.view_z_nodes.borrow().get(name) {
+            return node.clone();
+        }
+        assert_eq!(
+            name, DEPTH_ATTACHMENT,
+            "three-rs: PassNode::view_z_node only knows the 'depth' output"
+        );
+        let node = perspective_depth_to_view_z(
+            pass_depth_texture(&self.depth_texture()),
+            self.camera_near.0.clone(),
+            self.camera_far.0.clone(),
+        );
+        self.view_z_nodes
+            .borrow_mut()
+            .insert(name.to_string(), node.clone());
+        node
     }
 
     /// `passNode.setMRT( mrt )`.
@@ -252,6 +310,11 @@ impl PassNode {
         for name in self.previous_texture_nodes.borrow().keys() {
             self.render_target.toggle_texture(name);
         }
+
+        // `this._cameraNear.value = camera.near; this._cameraFar.value =
+        // camera.far;`
+        self.camera_near.1.set(vec![camera.near]);
+        self.camera_far.1.set(vec![camera.far]);
 
         let previous = renderer.render_target();
         let previous_mrt = renderer.mrt();

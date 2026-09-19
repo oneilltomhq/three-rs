@@ -23,7 +23,7 @@ use std::rc::{Rc, Weak};
 pub use direct_render_pipeline::DirectRenderPipeline;
 pub use info::{BuildCounts, ComputeCounts, Info, MemoryCounts, RenderCounts};
 use mipmap::{create_mipmap_pipeline, MipmapShader};
-pub use pass::{PassNode, PassOptions};
+pub use pass::{PassNode, PassOptions, DEPTH_ATTACHMENT};
 pub use pmrem::PmremGenerator;
 use programs::{
     ComputeProgramGpu, ExtraColorTarget, PipelineKey, Program, MAX_EXTRA_COLOR_ATTACHMENTS,

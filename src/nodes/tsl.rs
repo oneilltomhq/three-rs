@@ -660,10 +660,40 @@ pub fn checker(coord: impl Into<NodeRef>) -> NodeRef {
     sign(mod_float(cx.add(cy), 2.0))
 }
 
+/// Port of `three.js/src/nodes/display/ViewportDepthNode.js`'
+/// `perspectiveDepthToViewZ( depth, near, far )` with `reversedDepthBuffer`
+/// off: `near * far / ( ( far - near ) * depth - far )`.
+pub fn perspective_depth_to_view_z(
+    depth: impl Into<NodeRef>,
+    near: impl Into<NodeRef>,
+    far: impl Into<NodeRef>,
+) -> NodeRef {
+    let (depth, near, far) = (depth.into(), near.into(), far.into());
+    near.clone()
+        .mul(far.clone())
+        .div(far.clone().sub(near).mul(depth).sub(far))
+}
+
 /// Port of `three.js/src/nodes/fog/Fog.js`' `rangeFogFactor( near, far )`:
 /// `smoothstep( near, far, positionView.z.negate() )`.
 pub fn range_fog_factor(near: impl Into<NodeRef>, far: impl Into<NodeRef>) -> NodeRef {
-    smoothstep(near, far, position_view().z().negate())
+    range_fog_factor_with_view_z(near, far, position_view().z())
+}
+
+/// `rangeFogFactor( near, far ).context( { getViewZ: () => viewZ } )`.
+///
+/// `Fog.js`' `getViewZNode( builder )` reads `builder.context.getViewZ` and
+/// falls back to `positionView.z`, then negates whichever it got. Three
+/// supplies the override through the *builder* context because its `Fn()` body
+/// is evaluated while the material is built; this port's graph is built
+/// eagerly, so the same choice is made by which function the caller calls.
+/// `docs/nodes.md` §24 records the divergence.
+pub fn range_fog_factor_with_view_z(
+    near: impl Into<NodeRef>,
+    far: impl Into<NodeRef>,
+    view_z: impl Into<NodeRef>,
+) -> NodeRef {
+    smoothstep(near, far, view_z.into().negate())
 }
 
 /// Port of `three.js/src/nodes/fog/Fog.js`' `fog( color, factor )`. The node it
@@ -2355,6 +2385,19 @@ pub fn depth_texture(map: &DepthTexture) -> NodeRef {
     texture_node(
         TextureSource::Depth(map.clone()),
         transformed_uv(uv(), (1, map.id()), Matrix3::identity()),
+        SampleMode::Load,
+        Type::F32,
+    )
+}
+
+/// `passNode.getTextureNode( 'depth' )` — the same `textureLoad` as
+/// [`depth_texture`], but with the raw `uv()` varying and no texture matrix:
+/// a `PassTextureNode` calls `setUpdateMatrix( false )`, so the pass's depth
+/// attachment carries no `mat3x3` in the object uniform block.
+pub fn pass_depth_texture(map: &DepthTexture) -> NodeRef {
+    texture_node(
+        TextureSource::Depth(map.clone()),
+        uv(),
         SampleMode::Load,
         Type::F32,
     )
