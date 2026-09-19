@@ -113,7 +113,27 @@ pub fn convert(snippet: &str, from: Type, to: Type) -> String {
     }
 
     let (from_len, to_len) = (from.components(), to.components());
-    if to_len <= from_len || to_len == 0 {
+    if to_len == 0 {
+        return snippet.to_string();
+    }
+
+    // `NodeBuilder.format()`'s narrowing arm: a value wider than the slot it
+    // is being written into is *swizzled* down, not left alone. That is where
+    // `( materialEnvRotation * vec4( dir, 1.0 ) ).xyz` gets its `.xyz` from —
+    // the product is a `vec4` and `getFace( direction : vec3<f32> )` wants
+    // three components — and where `color.addAssign( bilinearCubeUV( … ) )`
+    // gets its, a `vec3` accumulator taking a `vec4` sample.
+    if to_len < from_len {
+        let swizzled = if to_len == 1 {
+            format!("{snippet}.x")
+        } else {
+            format!("{snippet}.{}", &"xyz"[..to_len])
+        };
+        let narrowed = Type::vector_of(from.component_type(), to_len);
+        return convert(&swizzled, narrowed, to);
+    }
+
+    if to_len == from_len {
         return snippet.to_string();
     }
 

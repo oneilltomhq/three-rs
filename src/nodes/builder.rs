@@ -1195,6 +1195,9 @@ impl NodeBuilder {
                     SampleMode::Sample => {
                         format!("textureSample( {name}, {name}_sampler, {suv} )")
                     }
+                    SampleMode::Grad => format!(
+                        "textureSampleGrad( {name}, {name}_sampler, {suv}, vec2<f32>( 0.0, 0.0 ), vec2<f32>( 0.0, 0.0 ) )"
+                    ),
                     SampleMode::Level(level) => {
                         let slevel = self.generate(&level);
                         format!("textureSampleLevel( {name}, {name}_sampler, {suv}, {slevel} )")

@@ -489,6 +489,34 @@ pub fn exp2(x: impl Into<NodeRef>) -> NodeRef {
     math("exp2", vec![x], ty)
 }
 
+/// `log2( x )` — `MathNode.LOG2`.
+pub fn log2(x: impl Into<NodeRef>) -> NodeRef {
+    let x = x.into();
+    let ty = x.ty();
+    math("log2", vec![x], ty)
+}
+
+/// `log( x )` — the natural logarithm, `MathNode.LOG`.
+pub fn log(x: impl Into<NodeRef>) -> NodeRef {
+    let x = x.into();
+    let ty = x.ty();
+    math("log", vec![x], ty)
+}
+
+/// `exp( x )` — `MathNode.EXP`.
+pub fn exp(x: impl Into<NodeRef>) -> NodeRef {
+    let x = x.into();
+    let ty = x.ty();
+    math("exp", vec![x], ty)
+}
+
+/// `min( a, b )` as a free function, to match [`max`].
+pub fn min_of(a: impl Into<NodeRef>, b: impl Into<NodeRef>) -> NodeRef {
+    let a = a.into();
+    let ty = a.ty();
+    math("min", vec![a, b.into()], ty)
+}
+
 /// `length( v )` — a scalar out of any vector.
 pub fn length(v: impl Into<NodeRef>) -> NodeRef {
     math("length", vec![v.into()], Type::F32)
@@ -1214,7 +1242,14 @@ impl NodeRef {
             Type::Mat4 => Type::Vec4,
             Type::Mat3 => Type::Vec3,
             Type::Mat2 => Type::Vec2,
-            other => other,
+            // An `array< T, N >`'s element is a whole `T`; indexing anything
+            // else is a *vector component*, so it is one scalar
+            // (`ArrayElementNode.getNodeType()` over `getElementType()`).
+            // Without the distinction a `vec2`'s `[ 0 ]` claims to be a
+            // `vec2`, which `NodeBuilder.format()` then swizzles down —
+            // `nodeVar1[ 0 ].x`, which three does not emit.
+            other if matches!(&*self.0, Node::ConstArray { .. }) => other,
+            other => other.component_type(),
         };
         NodeRef::new(Node::Element {
             node: self.clone(),
@@ -1284,6 +1319,11 @@ impl NodeRef {
     /// `target.mulAssign( value )` — `target = ( target * value )`.
     pub fn mul_assign(&self, value: impl Into<NodeRef>) -> NodeRef {
         self.assign(self.mul(value))
+    }
+
+    /// `target.divAssign( value )` — `target = ( target / value )`.
+    pub fn div_assign(&self, value: impl Into<NodeRef>) -> NodeRef {
+        self.assign(self.div(value))
     }
 
     /// `target.assign( value )` — a statement.

@@ -432,6 +432,12 @@ pub enum SampleMode {
     Sample,
     /// `textureSampleLevel( t, t_sampler, uv, level )`.
     Level(NodeRef),
+    /// `textureSampleGrad( t, t_sampler, uv, vec2( 0 ), vec2( 0 ) )` —
+    /// `textureNode.grad( vec2(), vec2() )`, which is how `PMREMUtils`'
+    /// `bilinearCubeUV` turns anisotropic filtering off on the cubeUV atlas.
+    /// The two gradients are always the zero constants three passes, so they
+    /// are baked rather than carried as nodes.
+    Grad,
     /// The non-filterable path: `textureLoad` against `textureDimensions`,
     /// with no sampler binding at all. What Three emits for a depth texture.
     Load,
