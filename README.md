@@ -81,6 +81,7 @@ Linux is the only backend that has been run.
 | webgpu_mesh_batch | 0 | 2.5 | 454 | 44341 |
 | webgpu_postprocessing_radial_blur | 7 | 3.9 | 2 | 401 |
 | webgpu_materials | 44 | 7.3 | 19 | 350065 |
+| webgpu_postprocessing_ssaa | 0 | 11.9 | 17 | 2119689 |
 | webgpu_compute_points | 4 (see below) | 10.7 | 2 | 1 + 300000 points |
 
 `webgpu_compute_points` is graded like the rest and its 4 pixels mean less

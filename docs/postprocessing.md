@@ -140,3 +140,114 @@ needs no second output pass. `RenderPipeline::built_for` carries the tone
 mapping alongside the output node's identity, so a steady frame is still a
 cache hit and a change to `renderer.tone_mapping` rebuilds the quad's program
 once.
+
+## Effect nodes that own render targets (`webgpu_postprocessing_ssaa`)
+
+`radialBlur` is a shader; `SSAAPassNode` is a *schedule*. It extends `PassNode`,
+keeps a second render target of its own, and renders the scene eight times with
+a sub-pixel jitter on the camera, accumulating the results additively into the
+pass target that the `RenderPipeline` quad then samples. The port is
+`src/renderer/ssaa_pass.rs`.
+
+```rust
+let mut ssaa_pass = SsaaPassNode::new();
+render_pipeline.output_node = Some(ssaa_pass.node());
+ssaa_pass.sample_level = 3;                       // 2^3 = 8 samples
+
+// each frame
+ssaa_pass.render(&mut renderer, &mut scene, &mut camera);
+render_pipeline.render(&mut renderer);
+```
+
+`SsaaPassNode` *composes* a `PassNode` rather than extending one — Rust has no
+inheritance, and `node()` / `texture()` forward to it — and, like `PassNode`, it
+is fired by the application instead of from inside the quad's render, for the
+ownership reason above.
+
+### The schedule
+
+Per sample `i` of `n`:
+
+1. `camera.setViewOffset( w, h, ox + jitter.x * 0.0625, oy + jitter.y * 0.0625,
+   w, h )` — the jitter is added to the offset the page already set, which is
+   why the restore is a `setViewOffset` and not a `clearViewOffset`.
+2. the weight uniform is set (below), the sample target is bound,
+   `clear( true, true )`, then `render( scene, camera )`;
+3. the accumulation target is bound; on `i == 0` only, it is cleared to
+   `(0, 0, 0, 0)`; then the quad is drawn with additive blending.
+
+That is 8 scene renders + 8 accumulation quads + 1 canvas quad = 17 draws
+across 26 passes (9 of them clear-only), 2119689 triangles, 3 programs.
+
+`_JitterVectors` is six tables of 1, 2, 4, 8, 16 and 32 offsets, all in
+sixteenths of a pixel; `sampleLevel` indexes them and levels above 5 clamp to
+the last. The weight of sample `i` is `1/n`, or, with `unbiased` (the default),
+
+```
+1/n + (1/32) * ( -0.5 + (i + 0.5)/n )
+```
+
+a spread around `1/n` that still sums to exactly 1 and hides the `rgba16float`
+rounding of a flat `1/n`. The scout plan's table of the eight values is
+arithmetically wrong (it steps by 3/512 and sums to 1.0547); the formula steps
+by 1/256, and `the_eight_unbiased_sample_weights` in `ssaa_pass.rs` pins the
+real values.
+
+### `autoClear` and `clear()`
+
+This is the first rung to need either. `Renderer.autoClear` decides whether a
+render clears its target before drawing; `SSAAPassNode` turns it off for the
+whole schedule, so all 17 draws carry `loadOp: "load"` and the only clears are
+the explicit `renderer.clear( true, true )` calls — which are, in the port as in
+three.js, a `beginRenderPass` with `loadOp: "clear"` and no draws at all.
+`setClearColor` and `clear( color, depth )` are the three.js API, minus its
+third `stencil` argument, which has no buffer behind it here; the port's
+`clear()` does not run the output pass when clearing the canvas, which three.js
+would.
+
+A scene with a `Color` background still clears, `autoClear` or not: three.js's
+`Background.update()` forces the clear itself. The eight scene renders here have
+no background, so `autoClear = false` is what keeps them from clearing.
+
+**The accumulator's clear is alpha 0, not alpha 1.** The dumped pass descriptor
+says `clearValue: (0, 0, 0, 1)`, but that is a serialization artifact of the
+`renderContext` object three.js reuses across passes — the JS is
+`setClearColor( 0x000000, 0.0 )`. The blend algebra decides it: the weights sum
+to 1 and the blend is `one/one/add` on alpha too, so with the eight samples each
+contributing `w * 1.0` the accumulator ends at alpha 1; starting from alpha 1
+would end at 2, and the `unpremultiplyAlpha` in the quad would halve the colour.
+The 0-pixel grade confirms it. (The scout plan says to reproduce the dumped
+descriptor rather than the JS reading. On this line the plan is wrong.)
+
+### `premultipliedAlpha` on the accumulation quad
+
+The quad's material is `transparent`, `blending: AdditiveBlending`,
+`premultipliedAlpha: true`, depth test and write off. `premultipliedAlpha`
+changes two things: the blend factors become `one/one/add` on **both** colour
+and alpha (rather than `srcAlpha/one`), and `NodeMaterial.setupOutput()` wraps
+the output in `premultiplyAlpha()`. Since the fragment node is already
+`unpremultiplyAlpha( texture( sample ) * weight )`, the pair cancels and the
+sum is over straight colour — which is what makes the weights linear.
+
+### The by-use cache clock counts frames, not renders
+
+The by-use caches (`node_builder_states`, `buffers`) evict what has not been
+used for `CACHE_GRACE_FRAMES` ticks. Ticking that clock once per *render* was
+fine while a frame was one render; with nine renders per frame it evicted a
+frame's own state mid-frame and rebuilt it, which
+`steady_frame_builds_nothing` catches. The clock now advances only on a render
+whose destination is the screen (`Renderer::begin_frame`) — nested target
+renders belong to the frame they precede. Every render still sweeps: a geometry
+the scene dropped should go on the render that notices. The grace window is
+unchanged at 4, and so are the numbers in
+`churning_geometry_and_materials_does_not_grow_the_caches`.
+
+### Left out: the depth copy
+
+three.js ends `updateBefore()` with
+`renderer.copyTextureToTexture( this._sampleRenderTarget.depthTexture,
+this.renderTarget.depthTexture )`, so that a later effect reading the pass's
+`getTextureNode( 'depth' )` gets the last sample's depth rather than an
+uninitialised texture. Nothing in this example reads it, the port has no
+`copyTextureToTexture`, and the pass target's depth texture is simply never
+written. An effect that chains depth off an SSAA pass needs that copy first.
