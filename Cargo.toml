@@ -27,6 +27,9 @@ exclude = [
     # Per-rung progress notes and the WGSL dumps they refer to.
     "docs/*-progress.md",
     "docs/lines/*.wgsl",
+    # The gallery thumbnails. The README's grid points at raw.githubusercontent
+    # URLs (so crates.io renders it), so the bytes need not ship in the crate.
+    "docs/gallery/**",
     "target/**",
 ]
 
@@ -39,6 +42,12 @@ serde_json = "1"
 zune-jpeg = { version = "0.5.15", default-features = false, features = ["std"] }
 # The viewer binary only; the e2e path does not touch it.
 winit = "0.30.8"
+
+[dev-dependencies]
+# The examples gallery generator (`examples/gallery.rs`) only. Pure Rust with
+# no transitive dependencies of its own, and out of the library's dependency
+# set: nothing three-rs itself builds or publishes pulls it in.
+jpeg-encoder = { version = "0.7", default-features = false, features = ["std"] }
 
 # No dev-dependency on the `sdf-text` member crate, on purpose: it depends on
 # three-rs, and a cycle here would either be stripped from the packaged
@@ -72,3 +81,10 @@ path = "tests/e2e/main.rs"
 [[example]]
 name = "dump_wgsl"
 path = "examples/dump_wgsl.rs"
+
+# The gallery generator; `test = true` so its README-parsing and
+# marker-replacement tests run under a plain `cargo test` with no GPU.
+[[example]]
+name = "gallery"
+path = "examples/gallery.rs"
+test = true
