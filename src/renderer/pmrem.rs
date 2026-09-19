@@ -53,6 +53,10 @@ pub const EXTRA_LODS: usize = 6;
 /// `GGX_SAMPLES` — VNDF samples per prefilter pass.
 pub const GGX_SAMPLES: usize = 256;
 
+/// `BLUR_SAMPLES` — spiral samples per `sphericalGaussianBlur` pass. Only
+/// `fromScene( scene, sigma > 0 )` reaches it.
+pub const BLUR_SAMPLES: usize = 20;
+
 /// `fromScene( scene, sigma = 0, near = 0.1, far = 100, { size = 256 } )` —
 /// three's defaults, which is all any ported example asks for.
 pub const SCENE_SIZE: usize = 256;
@@ -77,6 +81,19 @@ const FORWARD_SIGN: [f64; 6] = [1.0, -1.0, 1.0, -1.0, 1.0, -1.0];
 /// `_faceLib` — the WebGPU face order, which is the order the six quads of a
 /// lod plane are written into the vertex arrays.
 const FACE_LIB: [usize; 6] = [3, 1, 5, 0, 4, 2];
+
+/// The blur material's `_uniformsMap` entry: the cells `_blurPass` rewrites
+/// between its two halves.
+pub struct BlurUniforms {
+    /// `blurUniforms.envMap.value` — the borrowed handle, repointed between
+    /// the atlas and the ping-pong target. See [`GgxUniforms::env_map`].
+    pub env_map: Texture,
+    /// `blurUniforms.sigma` — the blur radius in radians, already divided by
+    /// √2 by [`PmremGenerator::blur`].
+    pub sigma: SettableValue,
+    /// `blurUniforms.mipInt` — the atlas level being read.
+    pub mip_int: SettableValue,
+}
 
 /// The GGX material's `_uniformsMap` entry: the cells `_applyGGXFilter`
 /// rewrites between passes.
@@ -153,6 +170,10 @@ pub struct PmremGenerator {
     ping_pong: Option<RenderTarget>,
     /// `this._ggxMaterial` plus its `_uniformsMap` entry.
     ggx: Option<(MeshBasicNodeMaterial, GgxUniforms)>,
+    /// `this._blurMaterial` plus its `_uniformsMap` entry. Built by `_init`
+    /// alongside the GGX one — three builds it unconditionally too — but only
+    /// ever bound when `fromScene` is called with a non-zero sigma.
+    blur: Option<(MeshBasicNodeMaterial, BlurUniforms)>,
     /// `this._cubemapMaterial`.
     cubemap_material: Option<MeshBasicNodeMaterial>,
     /// `this._equirectMaterial`.
@@ -173,6 +194,7 @@ impl PmremGenerator {
             lod_meshes: Vec::new(),
             ping_pong: None,
             ggx: None,
+            blur: None,
             cubemap_material: None,
             equirect_material: None,
         }
@@ -210,18 +232,22 @@ impl PmremGenerator {
         self.ping_pong = Some(create_render_target(width, height, false)?);
         self.lod_meshes = create_planes(self.lod_max);
         self.ggx = Some(ggx_material(self.lod_max, width as f64, height as f64));
+        self.blur = Some(blur_material(self.lod_max, width as f64, height as f64));
         Ok(())
     }
 
-    /// `fromScene( scene )` — the PMREM of a rendered scene, with three's
-    /// defaults (`sigma = 0`, `near = 0.1`, `far = 100`, `size = 256`, the
-    /// cube camera at the origin).
+    /// `fromScene( scene, sigma )` — the PMREM of a rendered scene, with
+    /// three's remaining defaults (`near = 0.1`, `far = 100`, `size = 256`,
+    /// the cube camera at the origin).
     ///
     /// This is the entry point that does not start from a texture at all:
     /// `_sceneToCubeUV` renders the scene six times, with a 90° cube camera,
-    /// into the six 256² tiles of level 0 of the atlas. `sigma > 0` — the
-    /// `_blur` / `sphericalGaussianBlur` arm — is not ported; no example on the
-    /// ladder asks for it, and it is listed in `docs/nodes.md` §13.
+    /// into the six 256² tiles of level 0 of the atlas.
+    ///
+    /// `sigma` is the blur radius **in radians**, applied to level 0 before the
+    /// GGX ladder runs. `webgpu_furnace_test` passes 0, which skips it;
+    /// `RoomEnvironment`'s six users all pass `0.04`, which is the whole
+    /// reason `_blur` exists.
     ///
     /// `scene` is `&mut` because three's `_sceneToCubeUV` assigns
     /// `scene.background = null` for the duration of a solid-colour background
@@ -230,6 +256,7 @@ impl PmremGenerator {
         &mut self,
         renderer: &mut super::Renderer,
         scene: &mut Scene,
+        sigma: f64,
         render_target: Option<RenderTarget>,
     ) -> Result<RenderTarget, Error> {
         self.set_size(SCENE_SIZE);
@@ -244,6 +271,11 @@ impl PmremGenerator {
         };
         self.init(&target)?;
         self.scene_to_cube_uv(renderer, scene, SCENE_NEAR, SCENE_FAR, &target);
+
+        if sigma > 0.0 {
+            self.blur(renderer, &target, 0, 0, sigma);
+        }
+
         self.apply_pmrem(renderer, &target);
         self.cleanup(renderer, old_target, &target);
 
@@ -428,6 +460,69 @@ impl PmremGenerator {
         renderer.render_pmrem_mesh(geometry, &material, true);
     }
 
+    /// `_blur( cubeUVRenderTarget, lodIn, lodOut, sigma )` — the two-pass
+    /// spherical Gaussian.
+    ///
+    /// "Two passes of sigma / sqrt( 2 ) compose to a blur of sigma while
+    /// squaring the effective sample count. Sigmas beyond PI are visually
+    /// indistinguishable from a uniform blur, so clamp to keep the shader
+    /// math finite."
+    fn blur(
+        &mut self,
+        renderer: &mut super::Renderer,
+        target: &RenderTarget,
+        lod_in: usize,
+        lod_out: usize,
+        sigma: f64,
+    ) {
+        let blur_sigma = sigma.min(std::f64::consts::PI) / std::f64::consts::SQRT_2;
+        let ping_pong = self
+            .ping_pong
+            .clone()
+            .expect("three-rs: _init() allocated the ping-pong target");
+
+        self.blur_pass(renderer, target, &ping_pong, lod_in, lod_out, blur_sigma);
+        self.blur_pass(renderer, &ping_pong, target, lod_out, lod_out, blur_sigma);
+    }
+
+    /// `_blurPass( targetIn, targetOut, lodIn, lodOut, sigmaRadians )`.
+    ///
+    /// Note the viewport arithmetic is **not** [`Self::tile`]'s: `_blurPass`
+    /// computes `y` as `4 * ( cubeSize - outputSize )` directly rather than
+    /// through `_sizeLods`, and with `lodIn == lodOut == 0` both halves land
+    /// on the level-0 rectangle. It is spelled out here because it is three's
+    /// own duplication and because a shared helper would hide that the two
+    /// expressions are only equal while `lodOut <= lodMax - LOD_MIN`.
+    fn blur_pass(
+        &mut self,
+        renderer: &mut super::Renderer,
+        target_in: &RenderTarget,
+        target_out: &RenderTarget,
+        lod_in: usize,
+        lod_out: usize,
+        sigma_radians: f64,
+    ) {
+        let output_size = self.lod_meshes[lod_out].size;
+        let (x, y) = blur_tile(self.lod_max, self.cube_size, output_size, lod_out);
+
+        let geometry = self.lod_meshes[lod_out].geometry.clone();
+        let (material, uniforms) = self
+            .blur
+            .as_ref()
+            .expect("three-rs: _init() built the blur material");
+        let material = material.clone();
+
+        uniforms.env_map.set_gpu(gpu_texture_of(target_in));
+        uniforms.sigma.set(vec![sigma_radians]);
+        uniforms
+            .mip_int
+            .set(vec![self.lod_max as f64 - lod_in as f64]);
+
+        set_viewport(target_out, x, y, 3 * output_size, 2 * output_size);
+        renderer.set_render_target(Some(target_out.clone()));
+        renderer.render_pmrem_mesh(geometry, &material, false);
+    }
+
     /// `_applyPMREM( cubeUVRenderTarget )` — one GGX step per level, with
     /// `autoClear` off so every pass loads the atlas it writes a tile of.
     fn apply_pmrem(&mut self, renderer: &mut super::Renderer, target: &RenderTarget) {
@@ -510,6 +605,31 @@ impl PmremGenerator {
     pub fn cube_size(&self) -> usize {
         self.cube_size
     }
+}
+
+/// `_blurPass`'s viewport origin: `x = 3 * outputSize * ( lodOut > lodMax -
+/// LOD_MIN ? lodOut - lodMax + LOD_MIN : 0 )`, `y = 4 * ( cubeSize -
+/// outputSize )`.
+///
+/// Pure, and gated in `tests/pmrem_scene.rs` against the numbers three's own
+/// `_blurPass` computes, because with `lodIn == lodOut == 0` — the only call
+/// on the ladder — a wrong rectangle still blurs *something* and still
+/// produces a plausible atlas.
+pub fn blur_tile(
+    lod_max: usize,
+    cube_size: usize,
+    output_size: usize,
+    lod_out: usize,
+) -> (usize, usize) {
+    // `lodOut - lodMax + LOD_MIN` under the ternary that already proved it
+    // positive; `saturating_sub` spells the guard rather than trusting it.
+    let column = (lod_out + LOD_MIN).saturating_sub(lod_max);
+    let x = if lod_out > lod_max.saturating_sub(LOD_MIN) {
+        3 * output_size * column
+    } else {
+        0
+    };
+    (x, 4 * (cube_size - output_size))
 }
 
 /// `_applyGGXFilter`'s arithmetic: the incremental roughness of a step and the
@@ -736,6 +856,50 @@ pub fn ggx_material(
         GgxUniforms {
             env_map,
             roughness: roughness_cell,
+            mip_int: mip_int_cell,
+        },
+    )
+}
+
+/// `_getBlurShader( lodMax, width, height )` — the `PMREM_blur` material.
+///
+/// The same shape as [`ggx_material`], with `sigma` in place of `roughness`
+/// and [`spherical_gaussian_blur`] in place of the VNDF convolution.
+///
+/// [`spherical_gaussian_blur`]: crate::nodes::pmrem_utils::spherical_gaussian_blur
+pub fn blur_material(
+    lod_max: usize,
+    width: f64,
+    height: f64,
+) -> (MeshBasicNodeMaterial, BlurUniforms) {
+    let (sigma, sigma_cell) = uniform_settable(Type::F32, vec![0.0]);
+    let (mip_int, mip_int_cell) = uniform_settable(Type::F32, vec![0.0]);
+    let env_map = Texture::render_target(
+        width as u32,
+        height as u32,
+        wgpu::TextureFormat::Rgba16Float,
+    );
+    let size = CubeUvSize {
+        texel_width: float(1.0 / width),
+        texel_height: float(1.0 / height),
+        max_mip: float(lod_max as f64),
+    };
+
+    let mut material = pmrem_material("PMREM_blur");
+    material.fragment_node = Some(pmrem_utils::spherical_gaussian_blur(
+        BLUR_SAMPLES,
+        sigma,
+        output_direction(),
+        mip_int,
+        &env_map,
+        &size,
+    ));
+
+    (
+        material,
+        BlurUniforms {
+            env_map,
+            sigma: sigma_cell,
             mip_int: mip_int_cell,
         },
     )

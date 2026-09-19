@@ -125,7 +125,7 @@ fn the_atlas_of_a_solid_colour_scene_is_that_colour() {
 
     let mut generator = PmremGenerator::new();
     let target = generator
-        .from_scene(&mut renderer, &mut scene, None)
+        .from_scene(&mut renderer, &mut scene, 0.0, None)
         .unwrap();
     assert_eq!(target.size(), (ATLAS_WIDTH, ATLAS_HEIGHT));
 
@@ -173,4 +173,57 @@ fn the_atlas_of_a_solid_colour_scene_is_that_colour() {
         worst = worst.max(lod_worst);
     }
     println!("atlas: worst {:.4}% off {expected}", worst * 100.0);
+}
+
+/// **`_blurPass`'s viewport, with no GPU.** `fromScene( scene, 0.04 )` — every
+/// `RoomEnvironment` page — runs two `sphericalGaussianBlur` passes over level
+/// 0 before the GGX ladder starts. Under a constant environment (the other
+/// test here) a blur of the wrong rectangle is invisible, and in a real scene
+/// it is a soft wrongness that reads as "the PMREM is a bit off" rather than
+/// as a failure, so the arithmetic is held by hand.
+///
+/// Three's own expression, for `lodMax = 8`, `cubeSize = 256`:
+///
+/// ```js
+/// const x = 3 * outputSize * ( lodOut > lodMax - LOD_MIN ? lodOut - lodMax + LOD_MIN : 0 );
+/// const y = 4 * ( cubeSize - outputSize );
+/// ```
+///
+/// Note this is *not* `tile_rect`'s arithmetic: `tile_rect` walks `_sizeLods`
+/// to find the row, `_blurPass` computes it from `cubeSize` directly. They
+/// agree for `lodOut <= lodMax - LOD_MIN` and diverge above it, which is why
+/// the table below runs past level 4.
+#[test]
+fn the_blur_viewport_is_threes() {
+    let sizes: Vec<usize> = three_rs::renderer::pmrem::create_planes(8)
+        .iter()
+        .map(|mesh| mesh.size)
+        .collect();
+    assert_eq!(
+        sizes,
+        vec![256, 128, 64, 32, 16, 16, 16, 16, 16, 16, 16],
+        "`_sizeLods` for lodMax 8: five halvings then six repeats of 16"
+    );
+
+    let expected = [
+        (0, 0),
+        (0, 512),
+        (0, 768),
+        (0, 896),
+        (0, 960),
+        (48, 960),
+        (96, 960),
+        (144, 960),
+        (192, 960),
+        (240, 960),
+        (288, 960),
+    ];
+
+    for (lod, &(x, y)) in expected.iter().enumerate() {
+        assert_eq!(
+            three_rs::renderer::pmrem::blur_tile(8, FACE as usize, sizes[lod], lod),
+            (x, y),
+            "`_blurPass` viewport origin for level {lod}"
+        );
+    }
 }

@@ -1452,6 +1452,14 @@ fn main() {
     let (ggx, _ggx_uniforms) = three_rs::renderer::pmrem::ggx_material(8, 768.0, 1024.0);
     show("pmrem_ggx", &ggx, SetupContext::default());
 
+    // `fromScene( scene, 0.04 )`'s extra pass: `_blur` /
+    // `sphericalGaussianBlur`, which only a non-zero sigma reaches. Three's
+    // dump of it is `m08`/`m09` (`PMREM_blur`) in the scout's
+    // `dump-postprocessing_ca/`. Same atlas geometry as the GGX pass, so the
+    // same 768x1024.
+    let (blur, _blur_uniforms) = three_rs::renderer::pmrem::blur_material(8, 768.0, 1024.0);
+    show("pmrem_blur", &blur, SetupContext::default());
+
     // `webgpu_pmrem_test`: the third `PMREMGenerator` material, the one that
     // is the whole delta between the two examples. Three's dump of it is
     // `m01`/`m02` in the scout's `dump-pmrem_test/`. The source is 1024×512,

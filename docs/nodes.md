@@ -497,6 +497,16 @@ differences, each verified to be pixel-neutral.
   kinds the builder promotes on usage count, so `shadowCoord.xyz` and
   `viewZ.negate()` are wrapped by hand or the expression would be emitted
   twice.
+* **`sphericalGaussianBlur` hoists its direction into a var.** Three inlines
+  `normalize( outputDirection )` into both the `getFace` and the `getUV` call
+  of the `mipInt == 0` arm, and inlines the whole spiral-sample direction
+  (`axis * cos( theta ) + ( ... ) * sin( theta )`) twice inside the sample
+  loop; the port emits each once as a `nodeVar` and reads it twice. Same
+  arithmetic, one fewer evaluation, and it shifts every `nodeVarN` number in
+  `m09` of `dump-postprocessing_ca/` by one or two. `color.divAssign(
+  weightSum )` is spelled `color.assign( color.div( weightSum ) )` and prints
+  identically.
+
 * **Helper `fn` declaration order and `fn0`/`fn1` numbering.** The `// codes`
   block is emitted in the order the builder first *generates* a call, which is
   not the order Three declares them in, and an anonymous `Fn()` takes its
@@ -1166,10 +1176,22 @@ a `Color`, so it is lifted off the scene, becomes the `BackgroundBox`'s colour
 and is drawn *once* over the whole atlas — and `webgpu_pmrem_scene` is the
 other, where the scene keeps its cube-texture background and its meshes and the
 six 90° cube-camera renders into viewport tiles of the atlas, with `auto_clear`
-off, are what fill level 0. The
-golden-angle Gaussian blur shader and `BLUR_SAMPLES` are still deferred —
-`_applyPMREM` takes the `sigma == 0` GGX arm for every source the ladder has,
-scene included, so `_blur` / `sphericalGaussianBlur` has no caller.
+off, are what fill level 0.
+
+`fromScene`'s second argument — the pre-blur radius — is ported too. Every
+`RoomEnvironment` page calls `fromScene( environment, 0.04 )`, and a non-zero
+sigma is the only thing that reaches `_blur`: two `sphericalGaussianBlur`
+passes of `min( sigma, PI ) / sqrt( 2 )` over level 0, ping-ponging atlas →
+ping-pong → atlas, *before* the GGX ladder starts. `BLUR_SAMPLES = 20`,
+`GOLDEN_ANGLE = 2.399963229728653`. `webgpu_furnace_test` and
+`webgpu_pmrem_scene` pass 0 and skip the whole arm, as three does.
+
+`_blurPass`'s viewport arithmetic is deliberately not shared with
+`tile_rect`'s: three computes the row as `4 * ( cubeSize - outputSize )` there
+and by walking `_sizeLods` here, and the two agree only up to
+`lodOut == lodMax - LOD_MIN`. `blur_tile` keeps three's expression and
+`tests/pmrem_scene.rs::the_blur_viewport_is_threes` holds all eleven levels of
+it by hand.
 
 **There are two `PMREMGenerator`s in r186 and they disagree.**
 `src/extras/PMREMGenerator.js` is the WebGL one;

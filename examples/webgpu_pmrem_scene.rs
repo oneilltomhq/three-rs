@@ -140,7 +140,7 @@ pub fn init() -> App {
     // `const sceneRT = new THREE.PMREMGenerator( renderer ).fromScene( scene )`
     // — over the scene as it stands: cube background, six spheres, and *not*
     // the sphere added below.
-    let environment = PmremEnvironment::from_scene(&mut renderer, &mut scene).unwrap();
+    let environment = PmremEnvironment::from_scene(&mut renderer, &mut scene, 0.0).unwrap();
 
     // `const pmremRoughness = uniform( .5 )`, `pmremTexture( sceneRT.texture,
     // normalWorld, pmremRoughness )`. The GUI slider that writes it is removed

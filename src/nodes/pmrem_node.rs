@@ -100,12 +100,19 @@ impl PmremEnvironment {
     /// reached lazily through `NodeManager.updateEnvironment`. So there is no
     /// `updateBefore` to move and [`update`](Self::update) is a no-op
     /// afterwards.
+    ///
+    /// `sigma` is `fromScene`'s second argument, the pre-blur radius in
+    /// radians: 0 for `webgpu_furnace_test`, `0.04` for every
+    /// `RoomEnvironment` page.
     pub fn from_scene(
         renderer: &mut Renderer,
         scene: &mut crate::objects::Scene,
+        sigma: f64,
     ) -> Result<Self, crate::error::Error> {
         let mut environment = Self::from_optional_source(None);
-        let target = environment.generator.from_scene(renderer, scene, None)?;
+        let target = environment
+            .generator
+            .from_scene(renderer, scene, sigma, None)?;
         environment.adopt(target);
         Ok(environment)
     }
