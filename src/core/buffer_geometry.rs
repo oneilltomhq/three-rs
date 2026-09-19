@@ -401,6 +401,18 @@ pub struct BufferGeometry {
     pub groups: Vec<Group>,
     /// `BufferGeometry.drawRange`.
     pub draw_range: DrawRange,
+    /// `BufferGeometry.boundingSphere` when it was computed from something
+    /// other than the `position` attribute, which
+    /// [`compute_bounding_sphere`](Self::compute_bounding_sphere) then returns
+    /// instead of recomputing.
+    ///
+    /// three.js has this for free: `computeBoundingSphere()` writes
+    /// `this.boundingSphere` and the renderer reads the *field*, so a subclass
+    /// that overrides the method (`LineSegmentsGeometry`, which must measure
+    /// `instanceStart` / `instanceEnd` rather than its fixed ±2 quad) is
+    /// automatically what culling sees. The port's method has no field behind
+    /// it, so the override lands here.
+    pub bounding_sphere: Option<BoundingSphere>,
 }
 
 impl BufferGeometry {
@@ -616,6 +628,9 @@ impl BufferGeometry {
     /// the largest distance from it to any vertex (which beats the box's own
     /// sphere by up to sqrt(3)).
     pub fn compute_bounding_sphere(&self) -> Option<BoundingSphere> {
+        if let Some(sphere) = self.bounding_sphere {
+            return Some(sphere);
+        }
         let position = self.position()?;
         // `_box` already has the morph targets expanded into it
         let center = self.compute_bounding_box()?.center();
