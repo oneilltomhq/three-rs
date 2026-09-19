@@ -12,7 +12,7 @@ pub mod physical;
 pub use node_material::{
     background_color_node, background_node_color_node, background_pmrem_color_node,
     background_vertex_node, instanced_range, output_fragment_node, quad_vertex_node, render_output,
-    setup, shadow_material, MrtContext, OutputContext, SetupContext,
+    setup, shadow_material, tone_mapping_node, MrtContext, OutputContext, SetupContext,
 };
 
 pub use blending::{

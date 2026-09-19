@@ -774,29 +774,41 @@ pub fn output_fragment_node(
 pub fn render_output(color: NodeRef, tone_mapping: ToneMapping) -> NodeRef {
     let clamped = vec4_join(vec![color.rgb(), color.a().clamp(float(0.0), float(1.0))]);
     let unpremultiplied = unpremultiply_alpha(clamped);
-    let mapped = match tone_mapping {
-        ToneMapping::None => unpremultiplied,
-        // `outputNode.toneMapping( toneMapping )` — `ToneMappingNode` keeps the
-        // alpha and tone maps the colour with `toneMappingExposure`.
-        ToneMapping::Linear => vec4_join(vec![
-            linear_tone_mapping(unpremultiplied.clone().rgb(), tone_mapping_exposure()),
-            unpremultiplied.a(),
-        ]),
-        ToneMapping::Reinhard => vec4_join(vec![
-            reinhard_tone_mapping(unpremultiplied.clone().rgb(), tone_mapping_exposure()),
-            unpremultiplied.a(),
-        ]),
-        ToneMapping::AcesFilmic => vec4_join(vec![
-            aces_filmic_tone_mapping(unpremultiplied.clone().rgb(), tone_mapping_exposure()),
-            unpremultiplied.a(),
-        ]),
-        ToneMapping::Neutral => vec4_join(vec![
-            neutral_tone_mapping(unpremultiplied.clone().rgb(), tone_mapping_exposure()),
-            unpremultiplied.a(),
-        ]),
-    };
+    // `outputNode.toneMapping( toneMapping )` with the renderer's
+    // `toneMappingExposure` uniform.
+    let mapped = tone_mapping_node(tone_mapping, tone_mapping_exposure(), unpremultiplied);
     let encoded = vec4_join(vec![srgb_transfer_oetf(mapped.clone().rgb()), mapped.a()]);
     premultiply_alpha(encoded)
+}
+
+/// `color.toneMapping( mode, exposure )` —
+/// `three.js/src/nodes/display/ToneMappingNode.js`.
+///
+/// `NoToneMapping` returns the colour untouched; every other mode is
+/// `vec4( toneMappingFn( color.rgb, exposure ), color.a )`. The exposure is a
+/// node, so `scenePass.toneMapping( ACESFilmicToneMapping, 1 )` bakes the
+/// literal `1.0` into the shader rather than reading the renderer's uniform
+/// (`webgpu_custom_fog_background`; `docs/nodes.md` §24).
+pub fn tone_mapping_node(mode: ToneMapping, exposure: NodeRef, color: NodeRef) -> NodeRef {
+    match mode {
+        ToneMapping::None => color,
+        ToneMapping::Linear => vec4_join(vec![
+            linear_tone_mapping(color.clone().rgb(), exposure),
+            color.a(),
+        ]),
+        ToneMapping::Reinhard => vec4_join(vec![
+            reinhard_tone_mapping(color.clone().rgb(), exposure),
+            color.a(),
+        ]),
+        ToneMapping::AcesFilmic => vec4_join(vec![
+            aces_filmic_tone_mapping(color.clone().rgb(), exposure),
+            color.a(),
+        ]),
+        ToneMapping::Neutral => vec4_join(vec![
+            neutral_tone_mapping(color.clone().rgb(), exposure),
+            color.a(),
+        ]),
+    }
 }
 
 /// `MeshPhongNodeMaterial`'s fragment flow: `setupDiffuseColor`,
