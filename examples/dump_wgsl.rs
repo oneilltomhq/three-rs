@@ -17,6 +17,10 @@ use three_rs::textures::{CubeTexture, DepthTexture, Image, Texture};
 #[allow(dead_code)] // the example's own `main()` is unused here
 mod webgpu_tsl_galaxy;
 
+#[path = "webgpu_mesh_batch.rs"]
+#[allow(dead_code)]
+mod webgpu_mesh_batch;
+
 fn show(label: &str, material: &MeshBasicNodeMaterial, ctx: SetupContext) {
     show_fog(label, material, ctx, None)
 }
@@ -134,6 +138,7 @@ fn main() {
             lights: Vec::new(),
             morph: None,
             skin: None,
+            batch: None,
         },
     );
 
@@ -562,6 +567,33 @@ fn main() {
                     shadow_map: None,
                 },
             ],
+            ..SetupContext::default()
+        },
+    );
+
+    // rung 11: `webgpu_mesh_batch`'s `MeshBasicNodeMaterial` on a
+    // `BatchedMesh`, against `handoff/scouts/rung11/{vertex,fragment}-r186.wgsl`.
+    // The three data textures only have to exist for `batch()` to bind them,
+    // so one geometry and one coloured instance is enough to build the graph.
+    let batched = three_rs::objects::BatchedMesh::new(
+        webgpu_mesh_batch::COUNT,
+        3 * 512,
+        3 * 1024,
+        webgpu_mesh_batch::batch_material(),
+    );
+    let batch_entry = {
+        let mut object = batched.borrow_mut();
+        let mesh = object.payload.batched_mesh_mut().unwrap();
+        let geometry_id = mesh.add_geometry(&three_rs::box_geometry(2.0, 2.0, 2.0, 1, 1, 1));
+        let instance_id = mesh.add_instance(geometry_id);
+        mesh.set_color_at(instance_id, &three_rs::Color::new(1.0, 1.0, 1.0));
+        mesh.batch_entry()
+    };
+    show(
+        "mesh_batch",
+        &webgpu_mesh_batch::batch_material(),
+        SetupContext {
+            batch: Some(batch_entry),
             ..SetupContext::default()
         },
     );

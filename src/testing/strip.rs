@@ -149,6 +149,20 @@ impl Strip {
     /// If any frame in the range built anything, or the range runs past the
     /// end of the strip.
     pub fn assert_steady(&self, range: impl RangeBounds<usize>) {
+        self.assert_steady_uploading(range, 0);
+    }
+
+    /// [`Self::assert_steady`] for a scene whose per-frame data *is* an
+    /// upload: a `BatchedMesh` rewrites its indirect texture on every
+    /// `onBeforeRender()` and its matrices texture whenever an instance moves,
+    /// exactly as three.js does, so `textures` of them per frame are steady.
+    /// Everything else must still build nothing.
+    ///
+    /// # Panics
+    ///
+    /// If any frame in the range built anything else, uploaded a different
+    /// number of textures, or the range runs past the end of the strip.
+    pub fn assert_steady_uploading(&self, range: impl RangeBounds<usize>, textures: u64) {
         let start = match range.start_bound() {
             Bound::Included(index) => *index,
             Bound::Excluded(index) => index + 1,
@@ -166,12 +180,16 @@ impl Strip {
         );
 
         for (index, frame) in self.frames.iter().enumerate().take(end).skip(start) {
+            let build = &frame.info.build;
             assert_eq!(
-                frame.info.build.total(),
-                0,
-                "frame {index} ({}) built {:?}; a steady frame must build nothing",
+                (
+                    build.total() - build.textures_uploaded,
+                    build.textures_uploaded
+                ),
+                (0, textures),
+                "frame {index} ({}) built {build:?}; a steady frame must build \
+                 nothing beyond {textures} texture upload(s)",
                 frame.label,
-                frame.info.build
             );
         }
     }
