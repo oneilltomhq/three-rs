@@ -16,11 +16,11 @@ mod render_target;
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 
-pub use info::{BuildCounts, Info, MemoryCounts, RenderCounts};
+pub use info::{BuildCounts, ComputeCounts, Info, MemoryCounts, RenderCounts};
 use mipmap::{create_mipmap_pipeline, MipmapShader};
 pub use pass::PassNode;
+use programs::{ComputeProgramGpu, PipelineKey, Program};
 pub use programs::{LightState, RenderState, UniformContext};
-use programs::{PipelineKey, Program};
 pub use render_list::{project_object, ProjectCamera, RenderItem, RenderList};
 pub use render_pipeline::RenderPipeline;
 pub use render_target::{RenderTarget, RenderTargetInner, RenderTargetOptions};
@@ -36,8 +36,9 @@ use crate::math::{Color, Matrix4, Vector2};
 use crate::nodes::builder::VertexBufferSource;
 use crate::nodes::node::{BufferSource, TextureSource};
 use crate::nodes::tsl::FogNode;
+use crate::nodes::tsl::StorageArray;
 use crate::nodes::wgsl::TextureKind;
-use crate::nodes::{BindingDesc, NodeBuilder, NodeProgram};
+use crate::nodes::{BindingDesc, ComputeFlow, NodeBuilder, NodeProgram, Type};
 use crate::objects::{Background, InstancedBufferAttribute, QuadMesh, Scene, SubDraw};
 use crate::testing::DeterministicRandom;
 use crate::textures::{
@@ -179,11 +180,12 @@ impl Primitive {
     /// `stripIndexFormat` branch of `_getPrimitiveState()`.
     ///
     /// three.js' order is `isPoints`, then `isLineSegments || ( isMesh &&
-    /// material.wireframe )`, then `isLine`, then `isMesh`. `Points` and
-    /// `wireframe` are not in this port, so the first arm is missing and the
-    /// second is `isLineSegments` alone.
+    /// material.wireframe )`, then `isLine`, then `isMesh`. `wireframe` is not
+    /// in this port, so the second arm is `isLineSegments` alone.
     fn of(object: &crate::core::Object3D, geometry: &BufferGeometry) -> Self {
-        let topology = if object.is_line_segments() {
+        let topology = if object.is_points() {
+            wgpu::PrimitiveTopology::PointList
+        } else if object.is_line_segments() {
             wgpu::PrimitiveTopology::LineList
         } else if object.is_line() {
             wgpu::PrimitiveTopology::LineStrip
@@ -400,6 +402,23 @@ pub struct Renderer {
     /// by [`CACHE_GRACE_RENDERS`]; the node itself is a material's, not the
     /// renderer's, so there is no strong count to read.
     buffers: HashMap<usize, BufferEntry>,
+    /// `instancedArray()` storage, keyed by `BufferId`. Unlike [`buffers`] this
+    /// is **never** aged out and never re-uploaded: the buffer *is* the state —
+    /// a compute pass writes it and the next frame reads what it wrote — so
+    /// dropping it would silently reset the simulation. It lives as long as the
+    /// renderer, which is three.js' own lifetime for a `StorageBufferNode`'s
+    /// backing buffer (`Backend.get( attribute ).buffer`, released only when the
+    /// attribute is disposed).
+    ///
+    /// [`buffers`]: Self::buffers
+    storage_buffers: HashMap<usize, wgpu::Buffer>,
+    /// Built `ComputeProgram`s, keyed by the structure of the `ComputeFlow`
+    /// they came from, so a per-frame `compute()` call builds nothing.
+    compute_programs: HashMap<u64, Rc<crate::nodes::ComputeProgram>>,
+    /// Compiled compute pipelines, keyed by `ComputeProgram::cache_key`. A
+    /// compute pipeline has no pass state, so this is both levels of the render
+    /// path's program/pipeline caches at once.
+    compute_pipelines: HashMap<u64, ComputeProgramGpu>,
     /// `Background`'s `SphereGeometry( 1, 32, 32 )` skybox mesh geometry.
     background_geometry: Option<Rc<BufferGeometry>>,
     /// `QuadMesh`'s shared `QuadGeometry`.
@@ -602,6 +621,9 @@ impl Renderer {
             cube_textures: HashMap::new(),
             mipmap_pipelines: HashMap::new(),
             buffers: HashMap::new(),
+            storage_buffers: HashMap::new(),
+            compute_programs: HashMap::new(),
+            compute_pipelines: HashMap::new(),
             background_geometry: None,
             quad_geometry: None,
             quad_camera: OrthographicCamera::new(-1.0, 1.0, 1.0, -1.0, 0.0, 1.0),
@@ -1447,6 +1469,9 @@ impl Renderer {
             bind_groups: Vec<wgpu::BindGroup>,
             instance_count: u32,
             sub_draws: Vec<SubDraw>,
+            /// `drawRange.start` and the clamped element count.
+            first: u32,
+            elements: u32,
         }
 
         let mut draws = Vec::with_capacity(items.len());
@@ -1531,9 +1556,19 @@ impl Renderer {
             // indices when the geometry is indexed, the vertices when it is
             // not, exactly what the `draw_indexed` / `draw` below are given.
             let gpu = &self.geometries[&geometry_id].gpu;
-            let elements = match &gpu.index {
+            // `Renderer._getDrawParameters()`: `geometry.drawRange` clamps the
+            // vertex (or index) range the draw covers. The default
+            // `{ start: 0, count: Infinity }` is the whole buffer, so this is
+            // a no-op for every rung that does not set it —
+            // `webgpu_compute_points` sets `drawRange.count = 1`.
+            let available = match &gpu.index {
                 Some((_, _, count)) => *count,
                 None => gpu.vertex_count,
+            };
+            let first = (item.geometry.draw_range.start as u32).min(available);
+            let elements = match item.geometry.draw_range.count {
+                Some(count) => (count as u32).min(available - first),
+                None => available - first,
             };
             if item.sub_draws.is_empty() {
                 self.info
@@ -1557,6 +1592,8 @@ impl Renderer {
                 bind_groups,
                 instance_count: item.instance_count,
                 sub_draws: item.sub_draws.clone(),
+                first,
+                elements,
             });
         }
 
@@ -1645,11 +1682,18 @@ impl Renderer {
                 }
 
                 match &geometry.index {
-                    Some((buffer, format, count)) => {
+                    Some((buffer, format, _)) => {
                         pass.set_index_buffer(buffer.slice(..), *format);
-                        pass.draw_indexed(0..*count, 0, 0..draw.instance_count);
+                        pass.draw_indexed(
+                            draw.first..draw.first + draw.elements,
+                            0,
+                            0..draw.instance_count,
+                        );
                     }
-                    None => pass.draw(0..geometry.vertex_count, 0..draw.instance_count),
+                    None => pass.draw(
+                        draw.first..draw.first + draw.elements,
+                        0..draw.instance_count,
+                    ),
                 }
             }
         }
@@ -1694,6 +1738,186 @@ impl Renderer {
 
     /// Reads the canvas colour texture back as top-down RGBA8, which is what
     /// `page.screenshot()` hands the comparator.
+    /// `renderer.compute( computeNode )`
+    /// (`src/renderers/common/Renderer.js:2860-2960`).
+    ///
+    /// **One command encoder and one `queue.submit` per call**, which is why
+    /// three's own capture of this page shows four submits a frame: the
+    /// `onInit` kernel, the update kernel, then the scene pass and the output
+    /// pass. `onInit` runs recursively through this same method, so its submit
+    /// lands *before* the caller's — the order the particle buffer's contents
+    /// depend on.
+    ///
+    /// `onInit` is run when the outer kernel's pipeline is created, i.e. once
+    /// for the life of the renderer, matching three's
+    /// `computeNode.onInitFunction = null` after the first call.
+    pub fn compute(&mut self, flow: &ComputeFlow) -> Result<(), Error> {
+        let key = compute_flow_key(flow);
+        let program = match self.compute_programs.get(&key) {
+            Some(program) => program.clone(),
+            None => {
+                self.info.build.programs_compiled += 1;
+                let program = Rc::new(NodeBuilder::new().build_compute(flow));
+                self.compute_programs.insert(key, program.clone());
+                program
+            }
+        };
+
+        let fresh = !self.compute_pipelines.contains_key(&program.cache_key);
+        if fresh {
+            self.info.build.pipelines_built += 1;
+            self.info.memory.programs += 1;
+            let gpu = ComputeProgramGpu::new(&self.device, &program);
+            self.compute_pipelines.insert(program.cache_key, gpu);
+        }
+
+        // `if ( computeNode.onInitFunction !== null )` — before this kernel's
+        // own dispatch, and in its own submit.
+        if fresh {
+            if let Some(on_init) = &flow.on_init {
+                self.compute(on_init)?;
+            }
+        }
+
+        let uniforms = UniformContext {
+            ..Default::default()
+        };
+        let bind_groups = self.compute_bind_groups(program.cache_key, &program, &uniforms);
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("three-rs compute"),
+            });
+        {
+            let gpu = &self.compute_pipelines[&program.cache_key];
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("three-rs compute pass"),
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(&gpu.pipeline);
+            for (index, group) in bind_groups.iter().enumerate() {
+                pass.set_bind_group(index as u32, group, &[]);
+            }
+            let [x, y, z] = program.dispatch;
+            pass.dispatch_workgroups(x, y, z);
+        }
+        self.queue.submit(Some(encoder.finish()));
+
+        self.info.compute.calls += 1;
+        Ok(())
+    }
+
+    /// The bind groups for one compute dispatch. The render path's
+    /// [`bind_groups`](Self::bind_groups) cannot be reused as is: it looks the
+    /// layouts up in `self.programs`, and a compute program has its own cache.
+    fn compute_bind_groups(
+        &mut self,
+        program_key: u64,
+        program: &crate::nodes::ComputeProgram,
+        uniforms: &UniformContext,
+    ) -> Vec<wgpu::BindGroup> {
+        enum Resource {
+            Buffer(wgpu::Buffer),
+        }
+
+        let mut out = Vec::with_capacity(program.groups.len());
+        for (group_index, descs) in program.groups.iter().enumerate() {
+            let mut resources = Vec::with_capacity(descs.len());
+            for desc in descs {
+                resources.push(match desc {
+                    BindingDesc::Uniforms { members, size, .. } => {
+                        let bytes = uniforms.bytes(members, *size);
+                        Resource::Buffer(self.create_buffer_init(
+                            "three-rs compute uniforms",
+                            &bytes,
+                            wgpu::BufferUsages::UNIFORM,
+                        ))
+                    }
+                    BindingDesc::Buffer {
+                        id,
+                        count,
+                        element_ty,
+                        ..
+                    } => Resource::Buffer(self.storage_buffer(*id, *count, *element_ty)),
+                    BindingDesc::Texture { .. } | BindingDesc::Sampler { .. } => {
+                        unreachable!("three-rs: a compute kernel binds no textures this rung")
+                    }
+                });
+            }
+
+            let entries: Vec<wgpu::BindGroupEntry> = resources
+                .iter()
+                .enumerate()
+                .map(|(binding, Resource::Buffer(buffer))| wgpu::BindGroupEntry {
+                    binding: binding as u32,
+                    resource: buffer.as_entire_binding(),
+                })
+                .collect();
+
+            out.push(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("three-rs compute bind group"),
+                layout: &self.compute_pipelines[&program_key].layouts[group_index],
+                entries: &entries,
+            }));
+        }
+        out
+    }
+
+    /// Read an `instancedArray()` back to the CPU.
+    ///
+    /// Not a three.js method — three has `getArrayBufferAsync( attribute )`,
+    /// which is the same copy-to-a-`MAP_READ`-buffer-and-map. It exists
+    /// because the graded image of `webgpu_compute_points` is a handful of
+    /// pixels and cannot tell a working compute stage from a black frame: this
+    /// is what `tests/renderer_compute_points.rs` checks the simulation with.
+    ///
+    /// Returns the buffer's raw f32 components, `element_ty.components()` per
+    /// element. A `vec3` array is **not** tightly packed — see
+    /// `storage_stride` — and is not read back this way.
+    pub fn read_storage_buffer(&mut self, array: &StorageArray) -> Result<Vec<f32>, Error> {
+        let components = array.element_ty().components();
+        assert_eq!(
+            storage_stride(array.element_ty()),
+            components * 4,
+            "three-rs: read_storage_buffer does not unpick a padded element stride"
+        );
+        let buffer = self.storage_buffer(array.id().get(), array.count(), array.element_ty());
+        let size = buffer.size();
+
+        let staging = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("three-rs storage readback"),
+            size,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("three-rs storage readback"),
+            });
+        encoder.copy_buffer_to_buffer(&buffer, 0, &staging, 0, size);
+        self.queue.submit(Some(encoder.finish()));
+
+        let slice = staging.slice(..);
+        slice.map_async(wgpu::MapMode::Read, |_| {});
+        self.device
+            .poll(wgpu::PollType::wait_indefinitely())
+            .map_err(|e| Error::Readback {
+                reason: e.to_string(),
+            })?;
+        let bytes = slice
+            .get_mapped_range()
+            .map_err(|e| Error::Readback {
+                reason: e.to_string(),
+            })?
+            .to_vec();
+        staging.unmap();
+
+        Ok(bytemuck::cast_slice(&bytes).to_vec())
+    }
+
     pub fn read_canvas_pixels(&mut self) -> Result<(u32, u32, Vec<u8>), Error> {
         self.prepare_canvas(false, 1);
         let canvas = self
@@ -1914,14 +2138,18 @@ impl Renderer {
                         ))
                     }
                     BindingDesc::Buffer {
-                        id, source, count, ..
+                        id,
+                        source,
+                        count,
+                        element_ty,
+                        ..
                     } => Resource::Buffer(self.node_buffer(
                         *id,
                         source,
                         *count,
+                        *element_ty,
                         instance_matrix,
-                        uniforms.morph_influences,
-                        uniforms.bone_matrices,
+                        uniforms,
                     )),
                     BindingDesc::Texture { source, kind, .. } => {
                         Resource::View(self.texture_view(source, *kind))
@@ -1962,17 +2190,17 @@ impl Renderer {
         id: usize,
         source: &BufferSource,
         count: usize,
+        element_ty: Type,
         instance_matrix: &Option<InstancedBufferAttribute>,
-        morph_influences: &[f64],
-        bone_matrices: &[f32],
+        uniforms: &UniformContext,
     ) -> wgpu::Buffer {
         // `skeleton.update()` rewrites `boneMatrices` every frame, so the bone
         // buffer is re-uploaded per draw like the instance matrix, never cached
         // on the node's identity.
         if let BufferSource::BoneMatrices = source {
             let mut data = vec![0f32; count * 16];
-            let n = data.len().min(bone_matrices.len());
-            data[..n].copy_from_slice(&bone_matrices[..n]);
+            let n = data.len().min(uniforms.bone_matrices.len());
+            data[..n].copy_from_slice(&uniforms.bone_matrices[..n]);
             return self.create_buffer_init(
                 "three-rs boneMatrices",
                 bytemuck::cast_slice(&data),
@@ -1984,7 +2212,7 @@ impl Renderer {
             // the influence in `.x`, so 16 bytes each — not 4. Re-uploaded per
             // draw like the instance matrix: the influences change per frame.
             let mut data = vec![0f32; count * 4];
-            for (i, influence) in morph_influences.iter().enumerate().take(count) {
+            for (i, influence) in uniforms.morph_influences.iter().enumerate().take(count) {
                 data[i * 4] = *influence as f32;
             }
             return self.create_buffer_init(
@@ -1993,6 +2221,9 @@ impl Renderer {
                 wgpu::BufferUsages::UNIFORM,
             );
         }
+        if let BufferSource::Storage = source {
+            return self.storage_buffer(id, count, element_ty);
+        }
         self.buffer_for(
             id,
             source,
@@ -2000,6 +2231,31 @@ impl Renderer {
             instance_matrix,
             wgpu::BufferUsages::UNIFORM,
         )
+    }
+
+    /// An `instancedArray()`'s GPU buffer: created zero-filled on first use and
+    /// then left alone. wgpu zero-initialises a buffer it allocates, which is
+    /// what `StorageInstancedBufferAttribute` with no array gets from
+    /// `device.createBuffer` too.
+    ///
+    /// `COPY_SRC` is only for [`read_storage_buffer`](Self::read_storage_buffer)
+    /// — the gate that can see whether a compute pass did anything, which the
+    /// graded image of `webgpu_compute_points` cannot.
+    fn storage_buffer(&mut self, id: usize, count: usize, element_ty: Type) -> wgpu::Buffer {
+        if let Some(buffer) = self.storage_buffers.get(&id) {
+            return buffer.clone();
+        }
+        let size = (count * storage_stride(element_ty)) as u64;
+        let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("three-rs storage buffer"),
+            size,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.storage_buffers.insert(id, buffer.clone());
+        buffer
     }
 
     /// The vertex buffer behind an `InstancedBufferAttribute`. Same contents as
@@ -2037,8 +2293,8 @@ impl Renderer {
         usage: wgpu::BufferUsages,
     ) -> wgpu::Buffer {
         match source {
-            BufferSource::MorphInfluences | BufferSource::BoneMatrices => {
-                unreachable!("three-rs: these arrays are uploaded by node_buffer")
+            BufferSource::MorphInfluences | BufferSource::BoneMatrices | BufferSource::Storage => {
+                unreachable!("three-rs: this buffer source is resolved by node_buffer")
             }
             BufferSource::InstanceMatrix => {
                 let attribute = instance_matrix
@@ -3361,5 +3617,32 @@ fn hash_of(value: &impl std::hash::Hash) -> u64 {
     use std::hash::Hasher;
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     value.hash(&mut hasher);
+    hasher.finish()
+}
+
+/// The stride WGSL gives one element of a runtime-sized `array< T >` in a
+/// storage buffer — `RoundUp( sizeof(T), AlignOf(T) )`, WGSL §Alignment and
+/// Size. Only `vec3` differs from the packed size: it is 12 bytes with an
+/// alignment of 16.
+fn storage_stride(element_ty: Type) -> usize {
+    match element_ty.components() {
+        3 => 16,
+        n => n * 4,
+    }
+}
+
+/// The cache key for one `ComputeFlow`: the identity of its statement nodes
+/// plus everything the generated shader and the dispatch depend on. Node
+/// identity is enough because a `ComputeFlow` is built once and then called
+/// every frame — the same shape as the material path keying on `MaterialKey`.
+fn compute_flow_key(flow: &ComputeFlow) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    for stmt in &flow.statements {
+        stmt.key().hash(&mut hasher);
+    }
+    flow.count.hash(&mut hasher);
+    flow.workgroup_size.hash(&mut hasher);
+    flow.name.hash(&mut hasher);
     hasher.finish()
 }

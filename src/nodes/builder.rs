@@ -48,6 +48,10 @@ pub fn set_uniform_buffer_limit(bytes: usize) {
 pub enum Stage {
     Fragment,
     Vertex,
+    /// `'compute'`. Not one of `defaultShaderStages`: a compute shader is built
+    /// on its own by `WGSLNodeBuilder` with `shaderStage = 'compute'`, so the
+    /// vertex and fragment slots of a compute build stay empty.
+    Compute,
 }
 
 impl Stage {
@@ -55,6 +59,7 @@ impl Stage {
         match self {
             Stage::Fragment => 0,
             Stage::Vertex => 1,
+            Stage::Compute => 2,
         }
     }
 }
@@ -64,6 +69,7 @@ impl Stage {
 pub struct Visibility {
     pub vertex: bool,
     pub fragment: bool,
+    pub compute: bool,
 }
 
 impl Visibility {
@@ -71,6 +77,7 @@ impl Visibility {
         match stage {
             Stage::Vertex => self.vertex = true,
             Stage::Fragment => self.fragment = true,
+            Stage::Compute => self.compute = true,
         }
     }
 
@@ -81,6 +88,9 @@ impl Visibility {
         }
         if self.fragment {
             s |= wgpu::ShaderStages::FRAGMENT;
+        }
+        if self.compute {
+            s |= wgpu::ShaderStages::COMPUTE;
         }
         s
     }
@@ -184,6 +194,35 @@ pub struct VertexBufferDesc {
 
 /// What the renderer needs in order to draw with a built material.
 #[derive(Clone)]
+/// One `ComputeNode` — `Fn( () => { … } )().compute( count, workgroupSize )`.
+pub struct ComputeFlow {
+    /// The kernel body's statements, in order.
+    pub statements: Vec<NodeRef>,
+    /// `.compute( count )` — the number of invocations the kernel is *for*, and
+    /// the bound the generated early-return checks `instanceIndex` against.
+    pub count: usize,
+    /// `ComputeNode`'s `workgroupSize`, padded to three components exactly as
+    /// `computeKernel( node, workgroupSize = [ 64 ] )` pads it.
+    pub workgroup_size: [u32; 3],
+    /// `computeNode.setName( … )`.
+    pub name: Option<String>,
+    /// `computeNode.onInit` — a second kernel the renderer runs **once**,
+    /// before the first dispatch of this one, in its own command encoder and
+    /// its own submit.
+    pub on_init: Option<Box<ComputeFlow>>,
+}
+
+/// The built compute shader and everything its pipeline and dispatch need.
+pub struct ComputeProgram {
+    pub wgsl: String,
+    /// Bind groups in `@group` order.
+    pub groups: Vec<Vec<BindingDesc>>,
+    pub workgroup_size: [u32; 3],
+    /// The `dispatchWorkgroups` arguments.
+    pub dispatch: [u32; 3],
+    pub cache_key: u64,
+}
+
 pub struct NodeProgram {
     pub vertex_wgsl: String,
     pub fragment_wgsl: String,
@@ -269,7 +308,7 @@ struct GroupState {
 
 pub struct NodeBuilder {
     stage: Stage,
-    stages: [StageState; 2],
+    stages: [StageState; 3],
     fn_scopes: Vec<FnScope>,
     groups: HashMap<UniformGroup, GroupState>,
     /// `nodeUniformN` / `nodeVarN` / `nodeVaryingN` / `NodeBuffer_N` counters.
@@ -442,6 +481,16 @@ impl NodeBuilder {
     // -- flow ------------------------------------------------------------
 
     fn emit(&mut self, line: String) {
+        // three.js' `addLineFlowCode()` indents nothing when there is nothing to
+        // indent, so a blank separator line in its output is empty, not a tab.
+        if line.is_empty() {
+            if let Some(scope) = self.fn_scopes.last_mut() {
+                scope.lines.push(String::new());
+            } else {
+                self.stages[self.stage.index()].lines.push(String::new());
+            }
+            return;
+        }
         if let Some(scope) = self.fn_scopes.last_mut() {
             let tab = "\t".repeat(scope.indent);
             scope.lines.push(format!("{tab}{line}"));
@@ -753,14 +802,7 @@ impl NodeBuilder {
 
     fn format(&mut self, node: &NodeRef, want: Type) -> String {
         let snippet = self.generate(node);
-        let have = node.ty();
-        if have == want || want == Type::Void {
-            return snippet;
-        }
-        if have.components() == 1 && want.components() > 1 {
-            return format!("{}( {snippet} )", wgsl::type_name(want));
-        }
-        snippet
+        wgsl::convert(&snippet, node.ty(), want)
     }
 
     fn generate_inner(&mut self, node: &NodeRef) -> String {
@@ -830,6 +872,24 @@ impl NodeBuilder {
             }
 
             Node::Builtin(b) => {
+                if self.stage == Stage::Compute {
+                    // `instanceIndex` is the module-scope `var<private>` the
+                    // entry point fills from `globalId`, not a parameter —
+                    // `WGSLNodeBuilder.getBuiltins( 'compute' )` never lists it.
+                    return b.name().to_string();
+                }
+                // `IndexNode.generate()`
+                // (`src/nodes/core/IndexNode.js:96-112`): the vertex and
+                // instance indices are the raw builtin in the vertex and
+                // compute stages and `varying( this )` anywhere else. WGSL has
+                // no `instance_index` in a fragment entry point at all, so this
+                // is not cosmetic — reading `instanceIndex` in a fragment flow
+                // without it does not compile.
+                if self.stage == Stage::Fragment
+                    && matches!(b, Builtin::InstanceIndex | Builtin::VertexIndex)
+                {
+                    return self.attribute_varying(node);
+                }
                 let s = &mut self.stages[self.stage.index()];
                 if !s.builtins.contains(b) {
                     s.builtins.push(*b);
@@ -863,9 +923,11 @@ impl NodeBuilder {
                     return match self.stage {
                         Stage::Vertex => format!("varyings.{name}"),
                         Stage::Fragment => name,
+                        Stage::Compute => unreachable!("three-rs: compute has no varyings"),
                     };
                 }
                 match self.stage {
+                    Stage::Compute => unreachable!("three-rs: compute has no varyings"),
                     Stage::Vertex => {
                         // Not requested by the fragment stage: a plain private
                         // var in the vertex shader, which is exactly what
@@ -999,10 +1061,20 @@ impl NodeBuilder {
                 format!("{snippet}.{components}")
             }
 
+            // `ConvertNode.generate()` is `builder.format( snippet, from, to )`.
+            // Widening goes through the shared ladder, so `vec3( vec2 )` is
+            // `vec3<f32>( v, 0.0 )` and not a splat; a same-width or narrowing
+            // cast keeps the explicit constructor the port has always emitted
+            // (see `wgsl::convert`).
             Node::Cast { node: inner, ty } => {
                 let (inner, ty) = (inner.clone(), *ty);
+                let from = inner.ty();
                 let snippet = self.generate(&inner);
-                format!("{}( {snippet} )", wgsl::type_name(ty))
+                if ty.components() > from.components() {
+                    wgsl::convert(&snippet, from, ty)
+                } else {
+                    format!("{}( {snippet} )", wgsl::type_name(ty))
+                }
             }
 
             Node::Neg { node: inner, .. } => {
@@ -1088,6 +1160,7 @@ impl NodeBuilder {
                 match self.stage {
                     Stage::Vertex => format!("varyings.{name}"),
                     Stage::Fragment => name.to_string(),
+                    Stage::Compute => unreachable!("three-rs: compute has no varyings"),
                 }
             }
 
@@ -1337,6 +1410,82 @@ pub struct MaterialFlow {
 impl NodeBuilder {
     /// `NodeBuilder.build()`: analyse both stages, generate fragment then
     /// vertex, and assemble the two shader strings.
+    /// `ComputeNode` — one `Fn( ... )().compute( count, workgroupSize )`.
+    pub fn build_compute(mut self, flow: &ComputeFlow) -> ComputeProgram {
+        self.stage = Stage::Compute;
+        for stmt in &flow.statements {
+            self.analyze(stmt);
+        }
+        for stmt in &flow.statements {
+            self.generate(stmt);
+        }
+
+        // `ComputeNode.setup()` builds its bounds check *after* the kernel body
+        // (`src/nodes/gpgpu/ComputeNode.js`), so the `uniform( count, 'uint' )`
+        // it needs takes the **last** `nodeUniformN` number — while the line it
+        // generates is the **first** in the flow. Both halves of that are
+        // visible in three's dump and both are reproduced here.
+        let guard = {
+            let count = super::tsl::uniform_value(Type::U32, vec![flow.count as f64]);
+            let cond = super::tsl::instance_index().greater_than_equal(count);
+            let snippet = self.generate(&cond);
+            format!("\tif {snippet} {{ return; }}")
+        };
+
+        let mut prefix = Vec::new();
+        if let Some(name) = &flow.name {
+            // `computeNode.setName()`, which three writes into the flow as a
+            // comment before the kernel's first line.
+            prefix.push(String::new());
+            prefix.push(format!("\t// flow -> {name}"));
+        }
+        prefix.push(guard);
+        prefix.push(String::new());
+        let state = &mut self.stages[Stage::Compute.index()];
+        prefix.append(&mut state.lines);
+        state.lines = prefix;
+
+        let wgsl = self.assemble_compute(flow.workgroup_size);
+
+        let mut groups: Vec<Vec<BindingDesc>> = Vec::new();
+        for group in [UniformGroup::Render, UniformGroup::Object] {
+            if let Some(g) = self.groups.get(&group) {
+                if !g.bindings.is_empty() {
+                    groups.push(g.bindings.clone());
+                }
+            }
+        }
+        for bindings in groups.iter_mut() {
+            for desc in bindings.iter_mut() {
+                if let BindingDesc::Uniforms { size, .. } = desc {
+                    *size = size.div_ceil(16) * 16;
+                }
+            }
+        }
+
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        wgsl.hash(&mut hasher);
+        groups.hash(&mut hasher);
+        let cache_key = hasher.finish();
+
+        // `WebGPUBackend.compute()`: one workgroup per `workgroupSize` elements,
+        // rounded up — the tail invocations are what the bounds check is for.
+        // Three's split across `y` once `x` would pass
+        // `maxComputeWorkgroupsPerDimension` is not ported; no dispatch this
+        // rung comes near 65 535.
+        let per_group =
+            (flow.workgroup_size[0] * flow.workgroup_size[1] * flow.workgroup_size[2]) as usize;
+        let dispatch = [flow.count.div_ceil(per_group) as u32, 1, 1];
+
+        ComputeProgram {
+            wgsl,
+            groups,
+            workgroup_size: flow.workgroup_size,
+            dispatch,
+            cache_key,
+        }
+    }
+
     pub fn build(mut self, flow: &MaterialFlow) -> NodeProgram {
         for stmt in &flow.pre_vertex_statements {
             self.analyze(stmt);
@@ -1371,9 +1520,14 @@ impl NodeBuilder {
         for stmt in &flow.fragment_statements {
             self.generate(stmt);
         }
+        // `NodeMaterial.setup()` registers the `Output` property *before* the
+        // output node's own flow runs, so `Output` is declared above the temps
+        // that flow needs — the order three's own dumps show.
+        let output_prop = flow
+            .emit_output_property
+            .then(|| self.declare_var(Some("Output"), Type::Vec4));
         let mut color = self.generate(&flow.output);
-        if flow.emit_output_property {
-            let output_prop = self.declare_var(Some("Output"), Type::Vec4);
+        if let Some(output_prop) = output_prop {
             self.emit(format!("{output_prop} = {color};"));
         }
         if let Some(node) = &flow.output_node {
@@ -1525,9 +1679,25 @@ impl NodeBuilder {
                         element_ty,
                         count,
                         visibility,
+                        source,
                         ..
                     } => {
                         if !Self::visible(*visibility, stage) {
+                            continue;
+                        }
+                        if let BufferSource::Storage = source {
+                            // `WGSLNodeBuilder.getStorageAccess()`: a runtime-
+                            // sized array, `read_write` in the compute stage
+                            // and forced to `read` everywhere else.
+                            let access = if visibility.compute {
+                                "read_write"
+                            } else {
+                                "read"
+                            };
+                            out.push_str(&format!(
+                                "\nstruct {name}Struct {{\n\tvalue : array< {} >\n}};\n@binding( {binding} ) @group( {gi} )\nvar<storage, {access}> {name} : {name}Struct;\n",
+                                wgsl::type_name(*element_ty)
+                            ));
                             continue;
                         }
                         out.push_str(&format!(
@@ -1566,6 +1736,7 @@ impl NodeBuilder {
         match stage {
             Stage::Vertex => v.vertex,
             Stage::Fragment => v.fragment,
+            Stage::Compute => v.compute,
         }
     }
 
@@ -1580,6 +1751,64 @@ impl NodeBuilder {
             TextureSource::CubeDepth(t) => t.id(),
         };
         self.texture_names[&key].0.clone()
+    }
+
+    /// `WGSLNodeBuilder`'s compute template
+    /// (`src/renderers/webgpu/nodes/WGSLNodeBuilder.js` `_getWGSLComputeCode`).
+    ///
+    /// Two deliberate omissions, both listed in `docs/nodes.md` §8: three emits
+    /// `enable subgroups;` under `// directives` and a
+    /// `@builtin( subgroup_size ) subgroupSize : u32` parameter, for the
+    /// subgroup TSL functions this port does not have. `enable subgroups;` is
+    /// not in the WGSL spec wgpu implements, so keeping it would refuse to
+    /// compile; the parameter goes with it.
+    fn assemble_compute(&self, workgroup_size: [u32; 3]) -> String {
+        let s = &self.stages[Stage::Compute.index()];
+        let mut out = String::from("// three-rs - Node System\n\n");
+        out.push_str("// directives\n\n");
+        out.push_str("// system\nvar<private> instanceIndex : u32;\n\n");
+        out.push_str("// locals\n\n\n// structs\n\n\n");
+
+        out.push_str("// uniforms\n");
+        out.push_str(&self.uniform_declarations(Stage::Compute));
+        out.push('\n');
+
+        out.push_str("// vars\n");
+        for (name, ty) in &s.decls {
+            out.push_str(&format!(
+                "var<private> {name} : {};\n",
+                wgsl::type_name(*ty)
+            ));
+        }
+        out.push('\n');
+
+        out.push_str("// codes\n");
+        for code in &s.codes {
+            out.push_str(code);
+            out.push('\n');
+        }
+        out.push_str("\n\n");
+
+        let [wx, wy, wz] = workgroup_size;
+        out.push_str(&format!(
+            "@compute @workgroup_size( {wx}, {wy}, {wz} )\n\
+             fn main( @builtin( global_invocation_id ) globalId : vec3<u32>,\n\
+             \t@builtin( workgroup_id ) workgroupId : vec3<u32>,\n\
+             \t@builtin( local_invocation_id ) localId : vec3<u32>,\n\
+             \t@builtin( num_workgroups ) numWorkgroups : vec3<u32> ) {{\n\n\
+             \t// local vars\n\t\n\n\
+             \t// system\n\
+             \tinstanceIndex = globalId.x\n\
+             \t\t+ globalId.y * ( {wx} * numWorkgroups.x )\n\
+             \t\t+ globalId.z * ( {wx} * numWorkgroups.x ) * ( {wy} * numWorkgroups.y );\n\n\
+             \t// flow\n\t// code\n\n"
+        ));
+        for line in &s.lines {
+            out.push_str(line);
+            out.push('\n');
+        }
+        out.push_str("\n\t\n\n}\n");
+        out
     }
 
     fn assemble(&self, stage: Stage, result: &str) -> String {
@@ -1632,7 +1861,9 @@ impl NodeBuilder {
             out.push_str(code);
             out.push('\n');
         }
-        out.push('\n');
+        // Three's template is `// codes\n${ codes }\n\n${ entry }`, so an empty
+        // `codes` section is followed by two blank lines, not one.
+        out.push_str("\n\n");
 
         let mut params: Vec<String> = Vec::new();
         for b in &s.builtins {
@@ -1673,6 +1904,7 @@ impl NodeBuilder {
         let (attr, ret) = match stage {
             Stage::Vertex => ("@vertex", "VaryingsStruct"),
             Stage::Fragment => ("@fragment", "OutputStruct"),
+            Stage::Compute => unreachable!("three-rs: assemble_compute writes the compute entry"),
         };
         out.push_str(&format!(
             "{attr}\nfn main( {} ) -> {ret} {{\n\n\t// flow\n\t// code\n\n",
@@ -1694,6 +1926,7 @@ impl NodeBuilder {
                     "\toutput.color = {result};\n\n\treturn output;\n\n}}\n"
                 ));
             }
+            Stage::Compute => unreachable!("three-rs: assemble_compute writes the compute entry"),
         }
         out
     }

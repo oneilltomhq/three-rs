@@ -6,6 +6,7 @@
 
 use crate::materials::Side;
 use crate::math::{Color, Matrix3, Matrix4, Vector2, Vector3};
+use crate::nodes::node::BufferSource;
 use crate::nodes::wgsl::TextureKind;
 use crate::nodes::{BindingDesc, NodeProgram, Type, UniformMember, UniformSource};
 
@@ -219,18 +220,36 @@ impl Program {
 
 fn layout_entry(binding: u32, desc: &BindingDesc) -> wgpu::BindGroupLayoutEntry {
     match desc {
-        BindingDesc::Uniforms { visibility, .. } | BindingDesc::Buffer { visibility, .. } => {
-            wgpu::BindGroupLayoutEntry {
-                binding,
-                visibility: visibility.stages(),
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
+        BindingDesc::Uniforms { visibility, .. } => wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility: visibility.stages(),
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        },
+        BindingDesc::Buffer {
+            visibility, source, ..
+        } => wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility: visibility.stages(),
+            ty: wgpu::BindingType::Buffer {
+                // The same rule as the WGSL declaration: `read_write` in
+                // compute, `read` in the vertex and fragment stages, which is
+                // why the page asks for `maxStorageBuffersInVertexStage: 1`.
+                ty: match source {
+                    BufferSource::Storage => wgpu::BufferBindingType::Storage {
+                        read_only: !visibility.compute,
+                    },
+                    _ => wgpu::BufferBindingType::Uniform,
                 },
-                count: None,
-            }
-        }
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        },
         BindingDesc::Texture {
             kind, visibility, ..
         } => wgpu::BindGroupLayoutEntry {
@@ -579,9 +598,73 @@ impl UniformContext<'_> {
             };
 
             let offset = member.offset as usize;
+            // The one member whose bits are not an f32's: `ComputeNode`'s
+            // element count, `uniform( count, 'uint' )`. It rides
+            // `UniformSource::Value` like every other baked value, so the type
+            // is what says how to write it. Exact for counts below 2^24, which
+            // is every count a `dispatchWorkgroups` limit of 65535 groups of 64
+            // can reach anyway.
+            if member.ty == Type::U32 {
+                let raw: Vec<u32> = values.iter().map(|&v| v as u32).collect();
+                data[offset..offset + raw.len() * 4].copy_from_slice(bytemuck::cast_slice(&raw));
+                continue;
+            }
             data[offset..offset + values.len() * 4].copy_from_slice(bytemuck::cast_slice(&values));
         }
 
         data
+    }
+}
+
+/// A compiled `ComputeNode` — `WebGPUPipelineUtils.createComputePipeline()`.
+///
+/// The same shape as [`Program`] with one module and no vertex or render state:
+/// a compute pipeline has nothing a pass can vary, so the program cache *is*
+/// the pipeline cache and there is no second `PipelineKey` level.
+pub struct ComputeProgramGpu {
+    pub layouts: Vec<wgpu::BindGroupLayout>,
+    pub pipeline: wgpu::ComputePipeline,
+}
+
+impl ComputeProgramGpu {
+    pub fn new(device: &wgpu::Device, program: &crate::nodes::ComputeProgram) -> Self {
+        let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("three-rs compute"),
+            source: wgpu::ShaderSource::Wgsl(program.wgsl.clone().into()),
+        });
+
+        let layouts: Vec<wgpu::BindGroupLayout> = program
+            .groups
+            .iter()
+            .map(|bindings| {
+                let entries: Vec<wgpu::BindGroupLayoutEntry> = bindings
+                    .iter()
+                    .enumerate()
+                    .map(|(binding, desc)| layout_entry(binding as u32, desc))
+                    .collect();
+                device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: Some("three-rs compute bindings"),
+                    entries: &entries,
+                })
+            })
+            .collect();
+
+        let refs: Vec<Option<&wgpu::BindGroupLayout>> = layouts.iter().map(Some).collect();
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("three-rs compute pipeline layout"),
+            bind_group_layouts: &refs,
+            immediate_size: 0,
+        });
+
+        let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("three-rs compute pipeline"),
+            layout: Some(&pipeline_layout),
+            module: &module,
+            entry_point: Some("main"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
+
+        ComputeProgramGpu { layouts, pipeline }
     }
 }

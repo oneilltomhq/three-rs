@@ -206,7 +206,11 @@ pub fn project_object(
     if visible {
         let (is_group, is_light, is_drawable) = {
             let o = object.borrow();
-            (o.is_group, o.is_light, o.is_mesh() || o.is_line())
+            (
+                o.is_group,
+                o.is_light,
+                o.is_mesh() || o.is_line() || o.is_points(),
+            )
         };
 
         if is_group {

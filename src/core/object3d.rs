@@ -189,6 +189,11 @@ impl Object3D {
         self.payload.is_line()
     }
 
+    /// `object.isPoints` — see [`Payload::is_points`].
+    pub fn is_points(&self) -> bool {
+        self.payload.is_points()
+    }
+
     /// `object.isLineSegments`.
     pub fn is_line_segments(&self) -> bool {
         self.payload.is_line_segments()

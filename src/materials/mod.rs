@@ -112,6 +112,11 @@ pub enum MaterialKind {
     /// is the whole delta over `Standard`; `GLTFLoader` picks it whenever the
     /// asset uses `KHR_materials_specular` or `KHR_materials_ior`.
     Physical,
+    /// `PointsNodeMaterial extends SpriteNodeMaterial`. `setupVertex()` returns
+    /// `super.setupVertex()` — the plain MVP path — when `object.isPoints`, so
+    /// the sprite quad expansion is *not* taken; the only thing it keeps from
+    /// `SpriteNodeMaterial` is `setupPositionView()` and `transparent = true`.
+    Points,
 }
 
 /// Port of `MeshBasicNodeMaterial.js` + the `NodeMaterial.js` / `Material.js`
@@ -418,6 +423,23 @@ impl MeshBasicNodeMaterial {
         }
     }
 
+    /// `new PointsNodeMaterial()`.
+    ///
+    /// `PointsNodeMaterial extends SpriteNodeMaterial`
+    /// (`src/materials/nodes/PointsNodeMaterial.js`), so it inherits
+    /// `transparent = true` — which puts a `Points` object in the *transparent*
+    /// render list, gives its pipeline a `NormalBlending` blend state, and
+    /// takes it out of [`is_opaque`](Self::is_opaque) so the fragment flow
+    /// keeps its per-fragment alpha. `alphaToCoverage` stays **off**: three.js'
+    /// own dump of this pipeline has `alphaToCoverageEnabled: false`.
+    pub fn points() -> Self {
+        Self {
+            kind: MaterialKind::Points,
+            transparent: true,
+            ..Self::default()
+        }
+    }
+
     /// `new LineBasicNodeMaterial( { color } )`.
     ///
     /// **No `MaterialKind` of its own, and that is a finding, not a shortcut.**
@@ -488,6 +510,8 @@ pub type MeshPhongNodeMaterial = MeshBasicNodeMaterial;
 
 /// three.js' name for a `NodeMaterial` whose kind is `Sprite`.
 pub type SpriteNodeMaterial = MeshBasicNodeMaterial;
+/// three.js' name for a `NodeMaterial` whose kind is `Points`.
+pub type PointsNodeMaterial = MeshBasicNodeMaterial;
 /// Likewise for `Standard` / `Physical` — one struct, one renderer list.
 pub type MeshStandardNodeMaterial = MeshBasicNodeMaterial;
 pub type MeshPhysicalNodeMaterial = MeshBasicNodeMaterial;

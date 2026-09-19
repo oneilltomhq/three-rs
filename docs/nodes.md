@@ -257,7 +257,7 @@ new material, is wrong.
 | morph targets (rung 6), skinning (rung 10), batching (rung 11) | `setup_position`, which already has the `instanced_mesh()` hook in exactly the place Three calls `morphReference()` / `skinning()` / `batch()`. |
 | tone mapping (rung 7) | `RenderOutputNode` already branches on tone mapping; rung 4 passes `NoToneMapping`. |
 | post-processing `pass()` (rung 9, done — see `docs/postprocessing.md`) | `PassNode` is a `Texture` whose source is a `RenderTarget` the renderer renders first; `TextureSource` already has that variant shape. |
-| compute (rung 12) | `Stage::Compute` is in the stage enum and unreachable; it needs storage buffers (`BufferSource` with `var<storage>`) and a `@compute` entry point. |
+| ~~compute (rung 12)~~ | Done — see §11. `Stage::Compute` is reachable, `BufferSource::Storage` declares `var<storage>` and `build_compute()` emits the `@compute` entry point. |
 | ~~`SpriteNodeMaterial` (rung 13)~~ | Done — see §10. `position_view()` is context-driven the way `normal_view()` is, and `MaterialKind::Sprite` supplies the billboarded `vec4`. |
 | MRT, clipping planes, vertex colours, fog, alpha test | all are single branches in `NodeMaterial`'s setup flow, omitted because no rung 1–4 material sets them. |
 
@@ -355,6 +355,32 @@ it, which is what `getSubBuildProperty()` does.
 Textual identity is not a goal; these are the deliberate or unexplained
 differences, each verified to be pixel-neutral.
 
+* **`enable subgroups;` and `@builtin( subgroup_size )`.** Three's compute
+  template emits the directive and threads a `subgroupSize : u32` parameter
+  into every `@compute` entry point, whether or not the kernel uses either;
+  `webgpu_compute_points` uses neither. This port emits neither, because
+  `enable subgroups;` is a WebGPU feature request that fails to compile on an
+  adapter without the feature, and an unused entry-point parameter is the only
+  thing it would buy. If a rung ever ports `subgroupAdd` and friends, the
+  directive comes back conditional on the flow reading them — which is what
+  three.js should be doing. `tests/nodes_compute_wgsl.rs::canonical()` strips
+  both before diffing.
+* **One storage binding, not two.** Three allocates a fresh `NodeStorageBuffer`
+  per stage (`sharedNodeData` is declared but never written for storage
+  buffers), so the *same* particle buffer appears twice in the points
+  material's group 1: binding 0 visible to `FRAGMENT` and binding 2 visible to
+  `VERTEX`. wgpu cannot give one resource two binding numbers in one group, and
+  would not gain anything by it. This port emits one binding with
+  `VERTEX | FRAGMENT`, which shifts the object group's later binding numbers by
+  one. Same class as the instance-buffer binding swap below: the layout and the
+  shader come from the same descriptors.
+* **Widening-only `format()`.** Three's `NodeBuilder.format()` will narrow
+  (`vec4` → `vec3` by swizzle) and re-wrap same-width casts; `wgsl::convert()`
+  ports only the widening half (`vec2` → `vec4( v, 0.0, 1.0 )` and friends) and
+  leaves same-width and narrowing casts to the explicit constructor the node
+  already carries. The full ladder was tried first and moved 73 lines of WGSL
+  across six green rungs, all of them Three re-wrapping a value it had just
+  built; the widening half is the part that is load-bearing.
 * **Generated names.** `nodeVarN` / `nodeUniformN` / `nodeVaryingN` counters are
   allocated by this port's own traversal order, so the numbers differ from the
   dumps even where the structure matches. Semantic names (`DiffuseColor`,
@@ -742,3 +768,85 @@ order (the four instance-matrix `vec4`s take 0–3 here, pushing `position` /
 `normal` / `uv` to 4 / 5 / 9), `m[ 0u ]`, the absent `VERTEX_` temps, and
 `var<private>` declaration order. Statement for statement the vertex and fragment
 flows match `handoff/scouts/rung13/{vertex,fragment}-r186.wgsl`.
+
+## 11. The compute stage (rung 12)
+
+`webgpu_compute_points` is the first example whose work does not happen in a
+render pass. Nothing about it is a new kind of node: `Fn().compute()` is the
+same flow machinery pointed at a different entry-point template, and the
+particle buffer is a `BufferSource` like any other. What is new is a third
+stage, a buffer the shader writes, and a frame made of four submits.
+
+### 11.1 `ComputeFlow` and `build_compute()`
+
+`ComputeFlow` is the port of three's `ComputeNode`: a list of statements, the
+number of invocations wanted, a workgroup size, an optional name, and an
+optional `on_init` — a second `ComputeFlow` the renderer runs exactly once,
+the first time it sees this one, which is three's `computeNode.onInit`.
+
+`NodeBuilder::build_compute()` mirrors `build()`: analyze, generate, assemble.
+Three things differ.
+
+* **The entry point.** `@compute @workgroup_size( x, y, z )` over
+  `@builtin( global_invocation_id ) globalId : vec3<u32>`, with
+  `instanceIndex = globalId.x` assigned in the prologue. `IndexNode.generate()`
+  picks the raw builtin in the vertex and compute stages, a flat varying in the
+  fragment stage, and an attribute otherwise; this port does the same, and the
+  fragment case matters — WGSL has no `instance_index` builtin in a fragment
+  entry point at all, so the points material's fragment stage reads
+  `nodeVarying0`, declared `@interpolate(flat, either)`.
+* **The guard, built last.** `4688` workgroups of 64 is 300 032 invocations for
+  300 000 particles, so the kernel opens with
+  `if instanceIndex >= object.nodeUniformN { return; }`. Three builds that
+  condition *after* the body, so its count uniform takes the last
+  `nodeUniformN` rather than the first; this port builds it in the same order
+  and prepends the line, so the numbering agrees with the dump.
+* **Access.** `WGSLNodeBuilder.getNodeAccess()` returns `read_write` only in
+  the compute stage. A `BufferSource::Storage` is therefore declared
+  `var<storage, read_write>` in the kernels and `var<storage, read>` in the
+  points material's vertex and fragment stages — from the same `StorageArray`,
+  which is what lets the material read what the kernel wrote. wgpu enforces
+  this at bind-group-layout creation, so a mistake here is a panic rather than
+  wrong pixels, for once.
+
+The array itself is runtime-sized — `value : array< vec2<f32> >`, with no
+element count, inside a one-field struct, exactly as three emits it. The
+element count lives in the dispatch and in the guard, not in the type.
+
+### 11.2 Four submits, in three's order
+
+`Renderer::compute()` creates **one** `GPUCommandEncoder`, opens one compute
+pass, dispatches, ends it, and submits — one encoder and one `queue.submit()`
+per call, which is what `Renderer.compute()` does in three. It is not batched
+into the render's encoder, and the `onInit` flow recurses through the same
+function, so it gets its own encoder and its own submit *before* the outer
+one. A frame of this example is therefore, in order:
+
+1. the `onInit` precompute submit (first frame only),
+2. the update submit,
+3. the scene render pass,
+4. the output pass.
+
+matching the four command encoders in the scout's `dump-r186.json`. The order
+is load-bearing and nothing in the image can see it:
+`tests/renderer_compute_points.rs::without_the_precompute_nothing_moves` is the
+test that can.
+
+### 11.3 What the image cannot grade
+
+The graded frame is 400x250 and black except for a 2x2 block of lit pixels, so
+Three's comparator passes it whether the simulation runs or the compute passes
+never dispatch at all. The rung's gates are `tests/nodes_compute_wgsl.rs`,
+which diffs both generated kernels against `docs/rung12/*.compute.wgsl`
+(three.js r186's own output) whole-file, and
+`tests/renderer_compute_points.rs`, which reads the storage buffers back and
+checks 300 000 particles against the same arithmetic on the CPU. See
+`docs/rung12-progress.md`.
+
+### Divergences specific to this rung
+
+`enable subgroups;`, the `@builtin( subgroup_size )` parameter and the
+one-binding-not-two storage layout, all three in §8, plus the generated-name
+numbering §8 already lists. Statement for statement both kernels match
+`docs/rung12/precompute_velocity.compute.wgsl` and
+`docs/rung12/update_particles.compute.wgsl`.

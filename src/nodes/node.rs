@@ -266,6 +266,15 @@ pub enum BufferSource {
     /// `BatchedText`'s `aGlyphUV` / `aGlyphBounds` / `aColor` / `aOpacity`.
     /// Only ever a vertex buffer: the uniform path has no equivalent.
     Attribute(Rc<Vec<f32>>),
+    /// `instancedArray( count, type )` — a GPU-only *storage* buffer
+    /// (`StorageBufferNode`, `StorageInstancedBufferAttribute` with no array
+    /// behind it). Zero-filled once by the renderer and never re-uploaded: the
+    /// only thing that ever writes it is a compute pass.
+    ///
+    /// Declared `array< T >` with **no** element count, because
+    /// `WGSLNodeBuilder.getStorageAccess()` emits a runtime-sized array; the
+    /// `count` on the [`BufferNode`] is only what the renderer allocates.
+    Storage,
 }
 
 /// The identity of one `BufferNode` / `InstanceBuffer`, from a never-reused
@@ -817,7 +826,8 @@ impl std::hash::Hash for BufferSource {
             BufferSource::Attribute(data) => (Rc::as_ptr(data) as *const u8 as usize).hash(state),
             BufferSource::InstanceMatrix
             | BufferSource::MorphInfluences
-            | BufferSource::BoneMatrices => {}
+            | BufferSource::BoneMatrices
+            | BufferSource::Storage => {}
         }
     }
 }
@@ -851,6 +861,7 @@ impl std::fmt::Debug for BufferSource {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             BufferSource::InstanceMatrix => f.write_str("InstanceMatrix"),
+            BufferSource::Storage => f.write_str("Storage"),
             BufferSource::Range { min, max } => f
                 .debug_struct("Range")
                 .field("min", min)
