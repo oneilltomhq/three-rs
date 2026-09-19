@@ -559,6 +559,20 @@ pub fn cross(a: impl Into<NodeRef>, b: impl Into<NodeRef>) -> NodeRef {
     math("cross", vec![a, b.into()], ty)
 }
 
+/// `refract( i, n, eta )`.
+pub fn refract(i: impl Into<NodeRef>, n: impl Into<NodeRef>, eta: impl Into<NodeRef>) -> NodeRef {
+    let i = i.into();
+    let ty = i.ty();
+    math("refract", vec![i, n.into(), eta.into()], ty)
+}
+
+/// `ceil( x )`.
+pub fn ceil(x: impl Into<NodeRef>) -> NodeRef {
+    let x = x.into();
+    let ty = x.ty();
+    math("ceil", vec![x], ty)
+}
+
 /// `reflect( i, n )`.
 pub fn reflect(i: impl Into<NodeRef>, n: impl Into<NodeRef>) -> NodeRef {
     let i = i.into();
@@ -1066,6 +1080,46 @@ pub fn material_clearcoat_roughness() -> NodeRef {
     uniform(
         UniformSource::MaterialClearcoatRoughness,
         Type::F32,
+        UniformGroup::Object,
+        None,
+    )
+}
+
+/// `materialTransmission`.
+pub fn material_transmission() -> NodeRef {
+    uniform(
+        UniformSource::MaterialTransmission,
+        Type::F32,
+        UniformGroup::Object,
+        None,
+    )
+}
+
+/// `materialThickness`.
+pub fn material_thickness() -> NodeRef {
+    uniform(
+        UniformSource::MaterialThickness,
+        Type::F32,
+        UniformGroup::Object,
+        None,
+    )
+}
+
+/// `materialAttenuationDistance`.
+pub fn material_attenuation_distance() -> NodeRef {
+    uniform(
+        UniformSource::MaterialAttenuationDistance,
+        Type::F32,
+        UniformGroup::Object,
+        None,
+    )
+}
+
+/// `materialAttenuationColor`.
+pub fn material_attenuation_color() -> NodeRef {
+    uniform(
+        UniformSource::MaterialAttenuationColor,
+        Type::Vec3,
         UniformGroup::Object,
         None,
     )
@@ -1694,6 +1748,18 @@ accessor!(
         Type::Mat4,
         UniformGroup::Render,
         Some("cameraWorldMatrix")
+    )
+);
+accessor!(
+    /// `cameraPosition` — the camera's world position, a `vec3` of its own
+    /// rather than a column of `cameraWorldMatrix`, because that is the
+    /// uniform three declares and names.
+    camera_position,
+    uniform(
+        UniformSource::CameraPosition,
+        Type::Vec3,
+        UniformGroup::Render,
+        Some("cameraPosition")
     )
 );
 accessor!(
@@ -2417,6 +2483,12 @@ prop!(anisotropy_t, "AnisotropyT", Type::Vec3);
 prop!(anisotropy_b, "AnisotropyB", Type::Vec3);
 prop!(clearcoat, "Clearcoat", Type::F32);
 prop!(clearcoat_roughness, "ClearcoatRoughness", Type::F32);
+
+// ... and its transmission ones.
+prop!(transmission, "Transmission", Type::F32);
+prop!(thickness, "Thickness", Type::F32);
+prop!(attenuation_distance, "AttenuationDistance", Type::F32);
+prop!(attenuation_color, "AttenuationColor", Type::Vec3);
 
 // `PhysicalLightingModel.start()`'s clearcoat accumulators — vars, like the
 // lighting context's, so their zeros land at the first read.

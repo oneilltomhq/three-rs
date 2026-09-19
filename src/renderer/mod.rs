@@ -343,6 +343,20 @@ struct Texture2DEntry {
 }
 
 /// The attachments, formats and size of the pass about to run.
+/// One `drawIndexed` / `draw`, with everything it needs already resolved.
+struct Draw {
+    geometry_id: usize,
+    /// One buffer per `VertexBufferDesc`, in slot order.
+    vertex_buffers: Vec<wgpu::Buffer>,
+    pipeline: PipelineKey,
+    bind_groups: Vec<wgpu::BindGroup>,
+    instance_count: u32,
+    sub_draws: Vec<SubDraw>,
+    /// `drawRange.start` and the clamped element count.
+    first: u32,
+    elements: u32,
+}
+
 struct PassTarget {
     color: wgpu::TextureView,
     /// The MRT colour attachments past the first, in
@@ -360,6 +374,10 @@ struct PassTarget {
     /// the pipeline descriptor carries one `ColorTargetState` per attachment.
     extra_color_targets: Vec<ExtraColorTarget>,
     resolve: Option<wgpu::TextureView>,
+    /// The single-sampled colour texture itself — the resolve target under
+    /// MSAA and the attachment otherwise. `copyFramebufferToTexture()` copies
+    /// out of it, which an MSAA texture cannot be.
+    color_texture: Option<wgpu::Texture>,
     depth: Option<wgpu::TextureView>,
     color_format: wgpu::TextureFormat,
     depth_format: Option<wgpu::TextureFormat>,
@@ -548,6 +566,10 @@ pub struct Renderer {
     /// mapping, keyed in three.js by the canvas target — the port has exactly
     /// one canvas, so one entry.
     frame_buffer_target: Option<RenderTarget>,
+    /// `viewportOpaqueMipTexture()` — the mipped copy of the colour attachment
+    /// as it stood after the last opaque draw. One per renderer, resized with
+    /// the drawing buffer, and only ever created when something transmits.
+    opaque_frame: Option<Texture>,
 
     /// `Renderer._outputBufferType`, `HalfFloatType` by default.
     output_buffer_type: TextureType,
@@ -823,6 +845,7 @@ impl Renderer {
             render_target: None,
             mrt: None,
             frame_buffer_target: None,
+            opaque_frame: None,
             output_buffer_type: TextureType::HalfFloat,
             mipmap_shader,
             programs: HashMap::new(),
@@ -1241,6 +1264,26 @@ impl Renderer {
             }
         }
 
+        // `viewportOpaqueMipTexture()` is one texture per renderer, made when
+        // the scene first holds something transmissive. Creating it here —
+        // ahead of the item walk, which borrows `self` for the default
+        // material — is what `ViewportTextureNode`'s constructor does; the
+        // *copy* into it happens mid-pass, in `draw()`.
+        let transmits = render_list.items().any(|item| {
+            let object = item.node.borrow();
+            scene
+                .override_material
+                .as_ref()
+                .or(object.material())
+                .is_some_and(|material| material.transmission > 0.0)
+        });
+        let opaque_frame = transmits.then(|| {
+            let (width, height) = self.drawing_buffer_size();
+            materials::transmission::OpaqueFrame {
+                texture: self.opaque_frame_texture(width, height),
+            }
+        });
+
         // `Renderer._renderScene()`'s two gated calls, plus
         // `_renderObjectDirect()`'s split of a transparent `DoubleSide`
         // material into a `BackSide` draw (pass id `'backSide'`) and a
@@ -1362,6 +1405,11 @@ impl Renderer {
             if let Some(side) = side {
                 material.side = side;
             }
+            // `viewportOpaqueMipTexture()` — one texture for the whole pass,
+            // handed to whichever materials transmit.
+            let item_opaque_frame = (material.transmission > 0.0)
+                .then(|| opaque_frame.clone())
+                .flatten();
 
             items.push(Renderable {
                 object: Some(item.node.clone()),
@@ -1379,6 +1427,7 @@ impl Renderer {
                     // disabled builds its materials with no lights *and* no
                     // environment (see `SetupContext::lighting_disabled`).
                     lighting_disabled: !self.lighting_enabled,
+                    viewport_opaque_mip: item_opaque_frame,
                     // `InstanceNode.setup()` branches on
                     // `instanceMatrix.count * 16 * 4` against
                     // `maxUniformBufferBindingSize`, i.e. on the *array*
@@ -1677,6 +1726,7 @@ impl Renderer {
                     setup: SetupContext {
                         environment: None,
                         lighting_disabled: false,
+                        viewport_opaque_mip: None,
                         instance_count: instance_matrix.as_ref().map(|_| instance_count as usize),
                         instanced: instance_matrix.is_some(),
                         instance_color: instance_color.as_ref().map(|a| a.count()),
@@ -1887,6 +1937,7 @@ impl Renderer {
                     setup: SetupContext {
                         environment: None,
                         lighting_disabled: false,
+                        viewport_opaque_mip: None,
                         instance_count: instance_matrix.as_ref().map(|_| instance_count as usize),
                         instanced: instance_matrix.is_some(),
                         instance_color: instance_color.as_ref().map(|a| a.count()),
@@ -1953,6 +2004,7 @@ impl Renderer {
                 extra_colors: Vec::new(),
                 extra_color_targets: Vec::new(),
                 resolve: None,
+                color_texture: None,
                 depth: Some(depth_view),
                 color_format: wgpu::TextureFormat::Rgba8Unorm,
                 depth_format: Some(depth_texture.gpu_format()),
@@ -2192,20 +2244,24 @@ impl Renderer {
         target: &PassTarget,
         clear: ClearOps,
     ) {
-        struct Draw {
-            geometry_id: usize,
-            /// One buffer per `VertexBufferDesc`, in slot order.
-            vertex_buffers: Vec<wgpu::Buffer>,
-            pipeline: PipelineKey,
-            bind_groups: Vec<wgpu::BindGroup>,
-            instance_count: u32,
-            sub_draws: Vec<SubDraw>,
-            /// `drawRange.start` and the clamped element count.
-            first: u32,
-            elements: u32,
-        }
-
         let mut draws = Vec::with_capacity(items.len());
+
+        // `RenderList.push()` routes `material.transmission > 0` into the
+        // transparent list, and the first such draw is where
+        // `ViewportTextureNode.updateBefore()` fires: the pass ends, the
+        // resolved colour attachment is copied into the mipped viewport
+        // texture, and a second pass loads the same attachments and draws the
+        // rest. `None` — every pass on the ladder before this one — is one
+        // pass, byte for byte what it was.
+        let transmission_split = target
+            .color_texture
+            .is_some()
+            .then(|| {
+                items
+                    .iter()
+                    .position(|item| item.material.transmission > 0.0)
+            })
+            .flatten();
 
         for item in items {
             let geometry_id = item.geometry.id();
@@ -2279,6 +2335,10 @@ impl Renderer {
                 material_clearcoat: item.material.clearcoat,
                 material_clearcoat_roughness: item.material.clearcoat_roughness,
                 material_clearcoat_normal_scale: item.material.clearcoat_normal_scale,
+                material_transmission: item.material.transmission,
+                material_thickness: item.material.thickness,
+                material_attenuation_distance: item.material.attenuation_distance,
+                material_attenuation_color: item.material.attenuation_color,
                 material_ao_map_intensity: item.material.ao_map_intensity,
                 tone_mapping_exposure: self.tone_mapping_exposure,
                 material_line_width: item.material.linewidth,
@@ -2362,141 +2422,180 @@ impl Renderer {
             });
         }
 
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("three-rs pass"),
-            });
+        // One pass, or two with the framebuffer copy between them.
+        match transmission_split {
+            None => {
+                let mut encoder =
+                    self.device
+                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                            label: Some("three-rs pass"),
+                        });
+                self.record_pass(&mut encoder, &draws, target, clear);
+                self.queue.submit(Some(encoder.finish()));
+            }
+            Some(split) => {
+                let mut encoder =
+                    self.device
+                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                            label: Some("three-rs pass"),
+                        });
+                self.record_pass(&mut encoder, &draws[..split], target, clear);
+                self.queue.submit(Some(encoder.finish()));
 
-        {
-            let load = match clear.color {
-                Some(color) => wgpu::LoadOp::Clear(wgpu::Color {
-                    r: color[0],
-                    g: color[1],
-                    b: color[2],
-                    a: color[3],
-                }),
-                None => wgpu::LoadOp::Load,
-            };
+                // `ViewportTextureNode.updateBefore()`.
+                let source = target
+                    .color_texture
+                    .clone()
+                    .expect("three-rs: a split pass only happens on a target with a copy source");
+                self.copy_framebuffer_to_opaque_frame(&source);
 
-            // One attachment per `renderTarget.textures` entry. They share the
-            // pass's clear op: `MRTNode.clearColors` is three's per-output
-            // override and nothing on this ladder sets one.
-            let mut color_attachments = vec![Some(wgpu::RenderPassColorAttachment {
-                view: &target.color,
+                // The second pass loads: the depth buffer and the colour the
+                // opaque draws left are exactly what the transmissive draws
+                // blend into.
+                let mut encoder =
+                    self.device
+                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                            label: Some("three-rs transmission pass"),
+                        });
+                self.record_pass(&mut encoder, &draws[split..], target, ClearOps::default());
+                self.queue.submit(Some(encoder.finish()));
+            }
+        }
+    }
+
+    /// One render pass over already-resolved draws.
+    fn record_pass(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        draws: &[Draw],
+        target: &PassTarget,
+        clear: ClearOps,
+    ) {
+        let load = match clear.color {
+            Some(color) => wgpu::LoadOp::Clear(wgpu::Color {
+                r: color[0],
+                g: color[1],
+                b: color[2],
+                a: color[3],
+            }),
+            None => wgpu::LoadOp::Load,
+        };
+
+        // One attachment per `renderTarget.textures` entry. They share the
+        // pass's clear op: `MRTNode.clearColors` is three's per-output
+        // override and nothing on this ladder sets one.
+        let mut color_attachments = vec![Some(wgpu::RenderPassColorAttachment {
+            view: &target.color,
+            depth_slice: None,
+            resolve_target: target.resolve.as_ref(),
+            ops: wgpu::Operations {
+                load,
+                store: wgpu::StoreOp::Store,
+            },
+        })];
+        for (view, resolve) in &target.extra_colors {
+            color_attachments.push(Some(wgpu::RenderPassColorAttachment {
+                view,
                 depth_slice: None,
-                resolve_target: target.resolve.as_ref(),
+                resolve_target: resolve.as_ref(),
                 ops: wgpu::Operations {
                     load,
                     store: wgpu::StoreOp::Store,
                 },
-            })];
-            for (view, resolve) in &target.extra_colors {
-                color_attachments.push(Some(wgpu::RenderPassColorAttachment {
-                    view,
-                    depth_slice: None,
-                    resolve_target: resolve.as_ref(),
-                    ops: wgpu::Operations {
-                        load,
-                        store: wgpu::StoreOp::Store,
-                    },
-                }));
-            }
-
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("three-rs pass"),
-                color_attachments: &color_attachments,
-                depth_stencil_attachment: target.depth.as_ref().map(|view| {
-                    wgpu::RenderPassDepthStencilAttachment {
-                        view,
-                        depth_ops: Some(wgpu::Operations {
-                            // `Renderer._clearDepth` is 1.
-                            load: if clear.depth {
-                                wgpu::LoadOp::Clear(1.0)
-                            } else {
-                                wgpu::LoadOp::Load
-                            },
-                            store: wgpu::StoreOp::Store,
-                        }),
-                        stencil_ops: None,
-                    }
-                }),
-                occlusion_query_set: None,
-                timestamp_writes: None,
-                multiview_mask: None,
-            });
-
-            // `WebGPUBackend.beginRender()`: the viewport and the scissor are
-            // set once, on the fresh pass, before any draw. wgpu's defaults are
-            // the whole attachment, which is what the full-target rectangle
-            // resolves to, so every existing caller is bit-identical.
-            let vp = target.viewport;
-            pass.set_viewport(
-                vp.x as f32,
-                vp.y as f32,
-                vp.width as f32,
-                vp.height as f32,
-                0.0,
-                1.0,
-            );
-            if let Some(sc) = target.scissor {
-                pass.set_scissor_rect(sc.x, sc.y, sc.width, sc.height);
-            }
-
-            for draw in draws.iter() {
-                let geometry = &self.geometries[&draw.geometry_id].gpu;
-
-                pass.set_pipeline(
-                    self.pipelines
-                        .get(&draw.pipeline)
-                        .expect("three-rs: the draw's pipeline was built into the cache above"),
-                );
-                for (index, group) in draw.bind_groups.iter().enumerate() {
-                    pass.set_bind_group(index as u32, group, &[]);
-                }
-                for (slot, buffer) in draw.vertex_buffers.iter().enumerate() {
-                    pass.set_vertex_buffer(slot as u32, buffer.slice(..));
-                }
-
-                if !draw.sub_draws.is_empty() {
-                    let (buffer, format, _) = geometry
-                        .index
-                        .as_ref()
-                        .expect("three-rs: a batched mesh is always indexed");
-                    pass.set_index_buffer(buffer.slice(..), *format);
-                    // `WebGPUBackend.draw()`'s `isBatchedMesh` arm:
-                    // `drawIndexed( counts[ i ], 1, starts[ i ] / bytesPerElement, 0, i )`.
-                    // `firstInstance` is the draw ordinal `i`, not the instance
-                    // id — `@builtin(instance_index)` reads it and
-                    // `_indirectTexture` maps it back.
-                    for sub in &draw.sub_draws {
-                        pass.draw_indexed(
-                            sub.first_index..sub.first_index + sub.index_count,
-                            0,
-                            sub.first_instance..sub.first_instance + 1,
-                        );
-                    }
-                    continue;
-                }
-
-                match &geometry.index {
-                    Some((buffer, format, _)) => {
-                        pass.set_index_buffer(buffer.slice(..), *format);
-                        pass.draw_indexed(
-                            draw.first..draw.first + draw.elements,
-                            0,
-                            0..draw.instance_count,
-                        );
-                    }
-                    None => pass.draw(
-                        draw.first..draw.first + draw.elements,
-                        0..draw.instance_count,
-                    ),
-                }
-            }
+            }));
         }
 
-        self.queue.submit(Some(encoder.finish()));
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("three-rs pass"),
+            color_attachments: &color_attachments,
+            depth_stencil_attachment: target.depth.as_ref().map(|view| {
+                wgpu::RenderPassDepthStencilAttachment {
+                    view,
+                    depth_ops: Some(wgpu::Operations {
+                        // `Renderer._clearDepth` is 1.
+                        load: if clear.depth {
+                            wgpu::LoadOp::Clear(1.0)
+                        } else {
+                            wgpu::LoadOp::Load
+                        },
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }
+            }),
+            occlusion_query_set: None,
+            timestamp_writes: None,
+            multiview_mask: None,
+        });
+
+        // `WebGPUBackend.beginRender()`: the viewport and the scissor are
+        // set once, on the fresh pass, before any draw. wgpu's defaults are
+        // the whole attachment, which is what the full-target rectangle
+        // resolves to, so every existing caller is bit-identical.
+        let vp = target.viewport;
+        pass.set_viewport(
+            vp.x as f32,
+            vp.y as f32,
+            vp.width as f32,
+            vp.height as f32,
+            0.0,
+            1.0,
+        );
+        if let Some(sc) = target.scissor {
+            pass.set_scissor_rect(sc.x, sc.y, sc.width, sc.height);
+        }
+
+        for draw in draws.iter() {
+            let geometry = &self.geometries[&draw.geometry_id].gpu;
+
+            pass.set_pipeline(
+                self.pipelines
+                    .get(&draw.pipeline)
+                    .expect("three-rs: the draw's pipeline was built into the cache above"),
+            );
+            for (index, group) in draw.bind_groups.iter().enumerate() {
+                pass.set_bind_group(index as u32, group, &[]);
+            }
+            for (slot, buffer) in draw.vertex_buffers.iter().enumerate() {
+                pass.set_vertex_buffer(slot as u32, buffer.slice(..));
+            }
+
+            if !draw.sub_draws.is_empty() {
+                let (buffer, format, _) = geometry
+                    .index
+                    .as_ref()
+                    .expect("three-rs: a batched mesh is always indexed");
+                pass.set_index_buffer(buffer.slice(..), *format);
+                // `WebGPUBackend.draw()`'s `isBatchedMesh` arm:
+                // `drawIndexed( counts[ i ], 1, starts[ i ] / bytesPerElement, 0, i )`.
+                // `firstInstance` is the draw ordinal `i`, not the instance
+                // id — `@builtin(instance_index)` reads it and
+                // `_indirectTexture` maps it back.
+                for sub in &draw.sub_draws {
+                    pass.draw_indexed(
+                        sub.first_index..sub.first_index + sub.index_count,
+                        0,
+                        sub.first_instance..sub.first_instance + 1,
+                    );
+                }
+                continue;
+            }
+
+            match &geometry.index {
+                Some((buffer, format, _)) => {
+                    pass.set_index_buffer(buffer.slice(..), *format);
+                    pass.draw_indexed(
+                        draw.first..draw.first + draw.elements,
+                        0,
+                        0..draw.instance_count,
+                    );
+                }
+                None => pass.draw(
+                    draw.first..draw.first + draw.elements,
+                    0..draw.instance_count,
+                ),
+            }
+        }
     }
 
     /// `Renderer._renderOutput( renderTarget )`: a `QuadMesh` whose
@@ -4249,6 +4348,85 @@ impl Renderer {
         }
     }
 
+    /// `viewportOpaqueMipTexture()`'s texture — a full mip chain over a
+    /// single-sampled copy of the colour attachment, in the framebuffer
+    /// target's own format so that the copy is a straight
+    /// `copyTextureToTexture`.
+    ///
+    /// `own_gpu` is false: the renderer allocates it, fills it from the
+    /// framebuffer and generates its mips, and `ensure_texture_2d()` passes it
+    /// straight through.
+    fn opaque_frame_texture(&mut self, width: u32, height: u32) -> Texture {
+        let format = self.output_buffer_type.color_gpu_format();
+        let existing = self
+            .opaque_frame
+            .as_ref()
+            .filter(|texture| texture.size() == (width, height) && texture.format() == format);
+        if let Some(texture) = existing {
+            return texture.clone();
+        }
+
+        // `Math.log2( Math.max( width, height ) ) + 1` — the same chain
+        // `GPUTexture` gets from three's `_getMipLevelCount()`.
+        let mip_level_count = (width.max(height) as f32).log2().floor() as u32 + 1;
+        let gpu = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("three-rs viewportOpaqueMipTexture"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format,
+            usage: wgpu::TextureUsages::COPY_DST
+                | wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+
+        // `defaultFramebuffer.minFilter = LinearMipmapLinearFilter` plus the
+        // `generateMipmaps: true` the mip variant of the node proxy sets.
+        let texture = Texture::render_target(width, height, format);
+        texture.set_generate_mipmaps(true);
+        texture.set_min_filter(crate::textures::MinFilter::LinearMipmapLinear);
+        texture.set_gpu(gpu);
+        self.opaque_frame = Some(texture.clone());
+        texture
+    }
+
+    /// `ViewportTextureNode.updateBefore()` —
+    /// `renderer.copyFramebufferToTexture( framebufferTexture )` plus the
+    /// `generateMipmaps` the mip variant asks for. The source is the resolved
+    /// attachment, because an MSAA texture cannot be copied from.
+    fn copy_framebuffer_to_opaque_frame(&mut self, source: &wgpu::Texture) {
+        let Some(texture) = self.opaque_frame.clone() else {
+            return;
+        };
+        let gpu = texture.with_gpu(|gpu| gpu.clone());
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("three-rs copyFramebufferToTexture"),
+            });
+        encoder.copy_texture_to_texture(
+            source.as_image_copy(),
+            gpu.as_image_copy(),
+            wgpu::Extent3d {
+                width: gpu.width().min(source.width()),
+                height: gpu.height().min(source.height()),
+                depth_or_array_layers: 1,
+            },
+        );
+        self.queue.submit(Some(encoder.finish()));
+        let format = gpu.format();
+        let mips = gpu.mip_level_count();
+        if mips > 1 {
+            self.generate_mipmaps(&gpu, format, mips, 1);
+        }
+    }
+
     /// `Renderer._getFrameBufferTarget()`.
     fn frame_buffer_target(&mut self) -> RenderTarget {
         let (width, height) = self.drawing_buffer_size();
@@ -4350,6 +4528,7 @@ impl Renderer {
             extra_colors,
             extra_color_targets,
             resolve,
+            color_texture: Some(inner.texture.with_gpu(|gpu| gpu.clone())),
             depth,
             color_format,
             depth_format,
@@ -4398,6 +4577,7 @@ impl Renderer {
             extra_colors: Vec::new(),
             extra_color_targets: Vec::new(),
             resolve,
+            color_texture: Some(canvas.color.clone()),
             depth: depth.clone(),
             color_format: CANVAS_FORMAT,
             depth_format: depth.map(|_| CANVAS_DEPTH_FORMAT),

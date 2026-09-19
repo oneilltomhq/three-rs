@@ -128,6 +128,9 @@ pub enum UniformSource {
     CameraProjectionMatrix,
     CameraViewMatrix,
     CameraWorldMatrix,
+    /// `cameraPosition` — `camera.matrixWorld`'s translation, which
+    /// `getIBLVolumeRefraction` takes the world-space view vector from.
+    CameraPosition,
     ModelWorldMatrix,
     ModelNormalMatrix,
     /// `cameraProjectionMatrixInverse` — `camera.projectionMatrixInverse`.
@@ -160,6 +163,13 @@ pub enum UniformSource {
     MaterialClearcoat,
     MaterialClearcoatRoughness,
     MaterialClearcoatNormalScale,
+    /// `MeshPhysicalMaterial.transmission` / `.thickness` /
+    /// `.attenuationDistance` / `.attenuationColor` — `KHR_materials_transmission`
+    /// and `KHR_materials_volume`.
+    MaterialTransmission,
+    MaterialThickness,
+    MaterialAttenuationDistance,
+    MaterialAttenuationColor,
     /// `materialEnvRotation` — the env map's rotation matrix.
     EnvRotationMatrix,
     BackgroundRotation,

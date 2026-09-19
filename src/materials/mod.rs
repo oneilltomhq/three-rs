@@ -8,6 +8,7 @@ pub mod line2;
 mod node_material;
 pub mod phong;
 pub mod physical;
+pub mod transmission;
 
 pub use node_material::{
     background_color_node, background_node_color_node, background_pmrem_color_node,

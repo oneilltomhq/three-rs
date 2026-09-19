@@ -5,6 +5,7 @@
 use super::environment;
 use super::phong::{self, LightDesc};
 use super::physical::{self, Physical};
+use super::transmission;
 use super::{Blending, MaterialKind, MeshBasicNodeMaterial, Side, ToneMapping};
 use crate::lights::LightKind;
 use crate::nodes::node::Type;
@@ -96,6 +97,11 @@ pub struct SetupContext {
     /// gets the screen-derivative one. It changes both stages' code, so it is
     /// part of the program's cache key.
     pub has_tangent_attribute: bool,
+    /// `viewportOpaqueMipTexture()` — the renderer's mipped copy of the frame
+    /// as it stood when the last opaque object had been drawn, which is what a
+    /// transmissive material reads through. `None` on every pass that makes no
+    /// copy, which takes the transmission branch out of the shader entirely.
+    pub viewport_opaque_mip: Option<transmission::OpaqueFrame>,
     /// `builder.context.getOutput` — the renderer's context node, which
     /// `DirectRenderPipeline` sets so that the output transform is applied
     /// **inside every material's fragment shader** instead of in a quad of its
@@ -1211,6 +1217,21 @@ fn setup_standard(
         );
     }
 
+    // TRANSMISSION. `useTransmission` is `transmission > 0`; the volume
+    // fields ride with it whether or not `KHR_materials_volume` set them,
+    // because three assigns all four unconditionally inside the branch.
+    let opaque_frame = if material.kind == MaterialKind::Physical && material.transmission > 0.0 {
+        ctx.viewport_opaque_mip.as_ref()
+    } else {
+        None
+    };
+    if opaque_frame.is_some() {
+        fragment.push(transmission().assign(material_transmission()));
+        fragment.push(thickness().assign(material_thickness()));
+        fragment.push(attenuation_distance().assign(material_attenuation_distance()));
+        fragment.push(attenuation_color().assign(material_attenuation_color()));
+    }
+
     fragment.push(emissive_color().assign(material_emissive_value(material)));
 
     // `NodeMaterial.setupLighting()`: `sceneLighting = this.lights === true &&
@@ -1233,7 +1254,7 @@ fn setup_standard(
     };
 
     let outgoing = if scene_lighting && (environment.is_some() || !lights.is_empty()) {
-        let model = Physical::start(use_sheen, use_clearcoat, fragment);
+        let model = Physical::start(use_sheen, use_clearcoat, opaque_frame, fragment);
 
         // `LightingContextNode`'s five accumulators. three.js declares each at
         // the point of its first use; hoisting the zeros here is the one
@@ -1274,7 +1295,9 @@ fn setup_standard(
         model.indirect_specular(environment.is_some(), fragment);
         model.ambient_occlusion(material.ao_map.is_some(), fragment);
 
-        fragment.push(total_diffuse().assign(direct_diffuse().add(indirect_diffuse())));
+        fragment.push(
+            total_diffuse().assign(model.total_diffuse(direct_diffuse().add(indirect_diffuse()))),
+        );
         fragment.push(total_specular().assign(direct_specular().add(indirect_specular())));
         fragment.push(outgoing_light().assign(total_diffuse().add(total_specular())));
         // `LightingModel.finish()`, which `NodeMaterial.setupLighting()` runs

@@ -169,6 +169,7 @@ fn main() {
         SetupContext {
             environment: None,
             lighting_disabled: false,
+            viewport_opaque_mip: None,
             instance_count: Some(1000),
             instanced: true,
             instance_color: None,
@@ -1735,6 +1736,31 @@ fn main() {
         SetupContext {
             environment: Some(environment.handle()),
             has_tangent_attribute: true,
+            ..SetupContext::default()
+        },
+    );
+
+    // The glass: no maps at all, but `KHR_materials_transmission` /
+    // `_volume`, so the whole of `getIBLVolumeRefraction` inlines into `main`
+    // over the renderer's mipped copy of the opaque frame.
+    let mut lamp_glass = MeshBasicNodeMaterial::physical(Color::new(1.0, 1.0, 1.0), 0.0, 0.1);
+    lamp_glass.name = "lamp glass";
+    lamp_glass.ior = 1.5;
+    lamp_glass.transmission = 1.0;
+    lamp_glass.thickness = 0.02;
+    lamp_glass.attenuation_distance = 1.0;
+    lamp_glass.attenuation_color = Color::new(0.9, 0.9, 0.9);
+    lamp_glass.emissive = Color::new(1.0, 1.0, 1.0);
+    show(
+        "loader_gltf_anisotropy_glass",
+        &lamp_glass,
+        SetupContext {
+            environment: Some(environment.handle()),
+            viewport_opaque_mip: Some(three_rs::materials::transmission::OpaqueFrame {
+                // `viewportOpaqueMipTexture()` — the renderer owns the real
+                // one; only its identity reaches the shader.
+                texture: Texture::render_target(800, 500, wgpu::TextureFormat::Rgba16Float),
+            }),
             ..SetupContext::default()
         },
     );

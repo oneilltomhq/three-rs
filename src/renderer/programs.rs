@@ -475,6 +475,12 @@ pub struct UniformContext<'a> {
     pub material_clearcoat: f64,
     pub material_clearcoat_roughness: f64,
     pub material_clearcoat_normal_scale: Vector2,
+    /// `MeshPhysicalMaterial.transmission` / `.thickness` /
+    /// `.attenuationDistance` / `.attenuationColor`.
+    pub material_transmission: f64,
+    pub material_thickness: f64,
+    pub material_attenuation_distance: f64,
+    pub material_attenuation_color: Color,
     pub env_rotation: Matrix4,
     /// `material.envMapIntensity` — 1 on every material this rung builds.
     pub material_env_intensity: f64,
@@ -545,6 +551,10 @@ impl Default for UniformContext<'_> {
             material_anisotropy_rotation: 0.0,
             material_clearcoat: 0.0,
             material_clearcoat_roughness: 0.0,
+            material_transmission: 0.0,
+            material_thickness: 0.0,
+            material_attenuation_distance: f64::INFINITY,
+            material_attenuation_color: Color::new(1.0, 1.0, 1.0),
             material_clearcoat_normal_scale: Vector2::new(1.0, 1.0),
             env_rotation: Matrix4::identity(),
             material_env_intensity: 1.0,
@@ -581,6 +591,10 @@ impl UniformContext<'_> {
                 }
                 UniformSource::CameraViewMatrix => self.camera_view.to_f32_array().to_vec(),
                 UniformSource::CameraWorldMatrix => self.camera_world.to_f32_array().to_vec(),
+                UniformSource::CameraPosition => {
+                    let m = self.camera_world.to_f32_array();
+                    vec![m[12], m[13], m[14]]
+                }
                 UniformSource::CameraProjectionMatrixInverse => {
                     self.camera_projection_inverse.to_f32_array().to_vec()
                 }
@@ -663,6 +677,19 @@ impl UniformContext<'_> {
                     self.material_clearcoat_normal_scale.x as f32,
                     self.material_clearcoat_normal_scale.y as f32,
                 ],
+                UniformSource::MaterialTransmission => vec![self.material_transmission as f32],
+                UniformSource::MaterialThickness => vec![self.material_thickness as f32],
+                // `attenuationDistance` defaults to `Infinity`, which reaches
+                // the shader as an `f32` infinity and makes `volumeAttenuation`
+                // take its `!= 0` branch with a zero coefficient — the same
+                // transmittance of 1 the `+inf` comment in three describes.
+                UniformSource::MaterialAttenuationDistance => {
+                    vec![self.material_attenuation_distance as f32]
+                }
+                UniformSource::MaterialAttenuationColor => {
+                    let c = self.material_attenuation_color;
+                    vec![c.r as f32, c.g as f32, c.b as f32]
+                }
                 UniformSource::EnvRotationMatrix => self.env_rotation.to_f32_array().to_vec(),
                 UniformSource::BackgroundRotation => {
                     self.background_rotation.to_f32_array().to_vec()

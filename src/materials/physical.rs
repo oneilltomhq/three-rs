@@ -12,6 +12,7 @@ use std::rc::Rc;
 
 use super::dfg_lut::dfg_lut;
 use super::phong::{self, LightDesc};
+use super::transmission;
 use crate::nodes::node::{FnDef, Type};
 use crate::nodes::tsl::*;
 use crate::nodes::NodeRef;
@@ -286,19 +287,54 @@ pub struct Physical {
     /// `this.clearcoat` — the flag that gives the model its three clearcoat
     /// accumulators and the extra lobe in `indirectSpecular()` / `finish()`.
     pub clearcoat: bool,
+    /// `builder.context.backdrop` — `getIBLVolumeRefraction()`'s `vec4`, set
+    /// by the transmission branch of `start()` and read once more where
+    /// `LightsNode` blends it into `totalDiffuse`.
+    pub backdrop: Option<NodeRef>,
 }
 
 impl Physical {
     /// `PhysicalLightingModel.start()`: the DFG lookup, the direct-light
     /// multi-scattering compensation and — with sheen or clearcoat — the
-    /// lobes' accumulators. The first two are `toConst`, so they materialise
-    /// where they are first used; the accumulators are `toVar` and so land
-    /// here.
-    pub fn start(sheen: bool, clearcoat: bool, out: &mut Vec<NodeRef>) -> Self {
+    /// lobes' accumulators, plus, with transmission, the screen-space
+    /// backdrop. The first two are `toConst`, so they materialise where they
+    /// are first used; the accumulators are `toVar` and so land here.
+    pub fn start(
+        sheen: bool,
+        clearcoat: bool,
+        opaque_frame: Option<&transmission::OpaqueFrame>,
+        out: &mut Vec<NodeRef>,
+    ) -> Self {
         if sheen {
             out.push(sheen_specular_direct().assign(vec3(0.0, 0.0, 0.0)));
             out.push(sheen_specular_indirect().assign(vec3(0.0, 0.0, 0.0)));
         }
+
+        // The transmission branch runs before the DFG lookup, and its
+        // `diffuseColor.a.mulAssign()` is what pulls the whole screen-space
+        // read into the flow here rather than at `totalDiffuse`.
+        let backdrop = opaque_frame.map(|frame| {
+            let v = transmission::world_view_vector();
+            // Three keeps the refraction result in a var (`nodeVar42`), which
+            // both the `DiffuseColor.w` write below and `total_diffuse()` read;
+            // without the var the whole bicubic expression is emitted twice.
+            let backdrop = to_var(
+                None,
+                transmission::ibl_volume_refraction(
+                    &frame.texture,
+                    normal_world(),
+                    v,
+                    position_world(),
+                    Self::environment_brdf,
+                ),
+            );
+            out.push(diffuse_color().w().assign(diffuse_color().w().mul(mix(
+                float(1.0),
+                backdrop.clone().w(),
+                transmission(),
+            ))));
+            backdrop
+        });
 
         let dot_nv = normal_view().dot(position_view_direction()).clamp(0.0, 1.0);
         let dfg = dfg_sample(roughness(), dot_nv);
@@ -320,6 +356,22 @@ impl Physical {
             multi_scattering_compensation,
             sheen,
             clearcoat,
+            backdrop,
+        }
+    }
+
+    /// `LightsNode.setup()`'s backdrop blend: with a backdrop the diffuse total
+    /// is `mix( vec4( totalDiffuse, 1 ), backdrop, backdropAlpha ).xyz`, where
+    /// the alpha is `Transmission`.
+    pub fn total_diffuse(&self, direct_plus_indirect: NodeRef) -> NodeRef {
+        match &self.backdrop {
+            Some(backdrop) => mix(
+                vec4_join(vec![direct_plus_indirect, float(1.0)]),
+                backdrop.clone(),
+                transmission(),
+            )
+            .xyz(),
+            None => direct_plus_indirect,
         }
     }
 
@@ -354,7 +406,7 @@ impl Physical {
 
     /// `EnvironmentBRDF( { dotNV, specularColor, specularF90, roughness } )` —
     /// the split-sum approximation over the DFG table.
-    fn environment_brdf(
+    pub(crate) fn environment_brdf(
         dot_nv: NodeRef,
         specular_color_value: NodeRef,
         specular_f90_value: NodeRef,
