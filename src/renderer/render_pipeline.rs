@@ -22,12 +22,14 @@ pub struct RenderPipeline {
     pub output_color_transform: bool,
     quad_mesh: QuadMesh,
     /// What the quad material's `fragmentNode` was last built from: the
-    /// `outputNode`'s identity and `outputColorTransform`. `_updateContext()`
+    /// `outputNode`'s identity, `outputColorTransform` and the renderer's
+    /// tone mapping (`_update()` compares `this._toneMapping !==
+    /// this.renderer.toneMapping` and sets `needsUpdate`). `_updateContext()`
     /// assigns the node every render; here the assignment — a fresh
     /// `renderOutput( … )` graph — happens only when either changed, with
     /// `needsUpdate` set alongside, so a steady frame's program is a cache
     /// hit rather than a rebuild.
-    built_for: Option<(usize, bool)>,
+    built_for: Option<(usize, bool, ToneMapping)>,
 }
 
 impl Default for RenderPipeline {
@@ -56,14 +58,15 @@ impl RenderPipeline {
             .clone()
             .expect("three-rs: RenderPipeline.outputNode is not set");
 
-        let built_for = (output_node.key(), self.output_color_transform);
+        // `_update()` reads the renderer's tone mapping *before*
+        // `render()` neutralises it, so the transform the quad bakes in is
+        // the one the application set — that is how the radial-blur example's
+        // `NeutralToneMapping` reaches the post-processing shader.
+        let tone_mapping = renderer.tone_mapping;
+        let built_for = (output_node.key(), self.output_color_transform, tone_mapping);
         if self.built_for != Some(built_for) {
             self.quad_mesh.material.fragment_node = Some(if self.output_color_transform {
-                // `renderer.toneMapping` is already `NoToneMapping` by the
-                // time `RenderOutputNode.setup()` reads it:
-                // `PostProcessing.render()` neutralises it around the whole
-                // quad render, compile included.
-                render_output(output_node, ToneMapping::None)
+                render_output(output_node, tone_mapping)
             } else {
                 output_node
             });
