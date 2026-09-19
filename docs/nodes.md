@@ -2775,3 +2775,115 @@ None new beyond the classes §8 already lists, and one fix that was a real bug:
 [`tsl::with_tangent_attribute`]: ../src/nodes/tsl.rs
 [`tsl::bent_normal_view`]: ../src/nodes/tsl.rs
 [`Scene::background_blurriness`]: ../src/objects/scene.rs
+
+## 28. `webgpu_loader_gltf_transmission` — the direct transmission test, blocked on Draco
+
+This rung is **not green**, and the blocker is not the lighting model: the
+asset the page loads cannot be read at all. What follows is what the page is,
+what the port already has for it, what stopped it, and what the next worker
+has to build. The example is committed as
+`examples/webgpu_loader_gltf_transmission.rs` and deliberately kept out of
+`tests/e2e/main.rs`; `docs/webgpu_loader_gltf_transmission-progress.md` has
+the same story at rung length.
+
+### 28.1 What the page is
+
+`IridescentDishWithOlives.glb` under the same `royal_esplanade_2k.hdr.jpg`
+PMREM as §26 (`scene.background` + `scene.environment`, `backgroundBlurriness
+= 0.35`), ACES at exposure 1, camera 45° at `( 0, 0.4, 0.7 )` looking at
+`( 0, 0.1, 0 )`, and one animation clip. Four materials:
+
+| material | extensions / flags | what it gates |
+| --- | --- | --- |
+| `glassDish` | `KHR_materials_transmission` (1), `_volume` (thickness 0.01), `_specular` (`specularColorFactor [ 2, 2, 2 ]` + texture), roughness 0.07, `COLOR_0` | the transmission pass |
+| `glassCover` | `KHR_materials_transmission` (1), `_ior` (1.5), `_volume` (thickness 0.1 + `thicknessTexture`), `_specular` (`[ 3, 3, 3 ]` + texture), normal map at `scale` 2 | the transmission pass, a second time |
+| `olives` | base colour / metallic-roughness / normal / occlusion maps, `COLOR_0` | the opaque half of the split |
+| `goldLeaf` | `alphaMode: MASK`, `alphaCutoff` 0.5 | the alpha-test path |
+
+Every one of those material extensions already parses (§25, §26); the
+port reads `KHR_materials_ior`, `_specular`, `_transmission` and `_volume`
+off this file correctly.
+
+Two things the rung name suggests and the asset does **not** have:
+
+* **No iridescence.** Despite "Iridescent Dish", `extensionsUsed` is
+  `[ KHR_materials_ior, KHR_materials_specular, KHR_materials_transmission,
+  KHR_materials_volume, KHR_draco_mesh_compression ]`. The iridescent look is
+  the dish's `specularColorTexture` with a `specularColorFactor` of 2. So
+  `KHR_materials_iridescence` is still ungraded by anything on this ladder.
+* **No `DoubleSide`.** Neither transmissive material sets `doubleSided`, so
+  `needsDoublePass()` is false here too and the double-pass gap §26.3 lists
+  stays open. What this page *would* have tested is the other half of that
+  gap: **two** transmissive meshes, stacked, one in front of the other from
+  the graded camera. Three still takes one split and one copy — the render
+  list is sorted, `transmission_split` is the index of the first transmissive
+  item, and both the dish and the cover read the *same* opaque copy, so
+  neither sees the other through itself. The port's `Renderer::draw` (§26.3)
+  does exactly that already; this page is what would have proved it.
+
+### 28.2 Why it is blocked: `KHR_draco_mesh_compression`
+
+The file lists Draco in **`extensionsRequired`**. A Draco primitive puts its
+geometry in `extensions.KHR_draco_mesh_compression` and leaves every one of
+its accessors without a `bufferView`; a `bufferView`-less accessor is a valid
+zero-filled accessor in glTF (it is how sparse accessors start), so the port's
+loader read the file happily and produced four meshes with the right counts
+and every value zero:
+
+```
+attrs=[ color 1090, normal 1090, position 1090, uv 1090 ] index=6144   glassDish
+attrs=[ color 10992, … ]                                  index=51840  olives
+attrs=[ normal 1858, position 1858, uv 1858 ]             index=10752  glassCover
+attrs=[ color 924, … ]                                    index=4608   goldLeaf
+first position: [ 0, 0, 0, 0, 0, 0, 0, 0, 0 ]
+```
+
+That is the failure mode this project's handoff warns about in its purest
+form: no panic, no warning, a frame that renders — of the background only,
+with four degenerate meshes collapsed on the origin. three.js does not hit it
+because its DRACOLoader is a separate plugin the page installs and
+`GLTFDracoMeshCompressionExtension` throws without one; three's own
+`extensionsRequired` path is a `console.warn`.
+
+So `GLTFLoader::parse` now checks `extensionsRequired` against
+`SUPPORTED_EXTENSIONS` — the list of names the loader really reads — and
+returns `GltfError::UnsupportedRequiredExtension` for anything else. A
+required extension the port cannot read is an error, not a warning. The test
+is `draco_required_is_an_error` in `tests/gltf_loader.rs`.
+
+### 28.3 What a Draco decoder costs
+
+Not a stub. The asset's primitives are Draco meshes with an edgebreaker
+connectivity stream and predicted, quantized attributes, so the decoder is:
+the rANS symbol decoder, the sequential *and* edgebreaker connectivity
+decoders, the attribute decoders with their prediction schemes
+(parallelogram, texcoord, normal octahedral) and the dequantization
+transform. It is a rung of its own — call it "the Draco decoder" — and it is
+pure data work with a hard oracle available: three's own `DRACOLoader` under
+node can dump positions/normals/uvs per primitive for a byte-for-byte
+comparison, the same way `docs/gltf-progress.md` got its expected numbers.
+Nothing about it touches the renderer or the node system.
+
+### 28.4 What else this page needs once the geometry loads
+
+* **`alphaMode: MASK`.** `goldLeaf` is the first `MASK` material on the
+  ladder. The loader deliberately does not wire it (see the comment in
+  `assign_material`): three sets `materialParams.alphaTest = alphaCutoff` and
+  builds `materialAlphaTest` as a *uniform*, where this crate has only
+  `alpha_test_node` emitting a literal. That is a small, real divergence to
+  close, not a guess to make.
+* **The animation.** `glassCover rotation` is one LINEAR quaternion track on
+  the `glassCover_animation` node. `AnimationMixer` and `clip_action` already
+  exist (`webgpu_skinning`), and as there the graded delta is the first one,
+  which is 0 — so `mixer.update( 0 )` is the graded pose.
+* **`thicknessTexture` and `specularColorTexture`.** Both parse; neither has
+  been graded, because the barn lamp carries neither.
+* **`COLOR_0`.** Three of the four meshes have vertex colours; the loader
+  renames the attribute, but no glTF on the ladder has exercised it.
+
+### 28.5 What the pixels found
+
+Nothing. The example has never rendered a frame with geometry in it, and
+there is no diff count to report — which is exactly why it is not in the e2e
+list. Grading it against Three's screenshot with an empty scene would only
+have measured the background.
