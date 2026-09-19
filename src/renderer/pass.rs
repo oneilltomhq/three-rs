@@ -12,9 +12,12 @@
 //! the raw `uv()` varying with no texture matrix — unlike `texture( map )`,
 //! which carries a `mat3x3` in the object uniform block.
 
+use std::cell::RefCell;
+use std::collections::HashMap;
+
 use crate::cameras::PerspectiveCamera;
 use crate::nodes::tsl::{texture_uv, to_var, uv};
-use crate::nodes::NodeRef;
+use crate::nodes::{MrtNode, NodeRef};
 use crate::objects::Scene;
 use crate::textures::{DepthTexture, TextureFilter, TextureType};
 
@@ -35,6 +38,13 @@ use super::Renderer;
 pub struct PassNode {
     render_target: RenderTarget,
     node: NodeRef,
+    /// `PassNode._mrt` — the MRT the renderer is given for the duration of this
+    /// pass's own render.
+    mrt: RefCell<Option<MrtNode>>,
+    /// `PassNode._textureNodes` — one node per named attachment, memoised so
+    /// that two `getTextureNode( name )` calls compose the *same* node and the
+    /// builder sees one texture, not two.
+    texture_nodes: RefCell<HashMap<String, NodeRef>>,
 }
 
 impl Default for PassNode {
@@ -69,7 +79,53 @@ impl PassNode {
         Self {
             render_target,
             node,
+            mrt: RefCell::new(None),
+            texture_nodes: RefCell::new(HashMap::new()),
         }
+    }
+
+    /// `passNode.setMRT( mrt )`.
+    ///
+    /// The names the MRT writes are *not* what creates the attachments —
+    /// `getTextureNode( name )` is, exactly as in three.js, where
+    /// `MRTNode.setup()` silently drops an output whose name is not among
+    /// `renderTarget.textures`. `webgpu_postprocessing_bloom_selective` asks
+    /// for `getTextureNode( 'bloomIntensity' )` and so gets the second
+    /// attachment; a page that set the MRT and never sampled the extra output
+    /// would render single-attachment, in three.js too.
+    pub fn set_mrt(&self, mrt: MrtNode) {
+        *self.mrt.borrow_mut() = Some(mrt);
+    }
+
+    /// `passNode.getMRT()`.
+    pub fn mrt(&self) -> Option<MrtNode> {
+        self.mrt.borrow().clone()
+    }
+
+    /// `passNode.getTextureNode( name )` — the node for one named colour
+    /// attachment, creating the attachment on first ask
+    /// (`PassNode.getTexture()`).
+    ///
+    /// `getTextureNode()` with no argument is [`PassNode::node`]: the same
+    /// `to_var( texture_uv( … ) )` pair, on `renderTarget.textures[ 0 ]`.
+    pub fn texture_node(&self, name: &str) -> NodeRef {
+        if name == crate::renderer::OUTPUT_ATTACHMENT {
+            return self.node();
+        }
+        if let Some(node) = self.texture_nodes.borrow().get(name) {
+            return node.clone();
+        }
+        let texture = self.render_target.add_texture(name);
+        let node = to_var(None, texture_uv(&texture, uv()));
+        self.texture_nodes
+            .borrow_mut()
+            .insert(name.to_string(), node.clone());
+        node
+    }
+
+    /// `passNode.getTexture( name )`.
+    pub fn texture_named(&self, name: &str) -> crate::textures::Texture {
+        self.render_target.add_texture(name)
     }
 
     /// `passNode.getTextureNode()` — the node to compose with.
@@ -110,8 +166,11 @@ impl PassNode {
         self.render_target.set_samples(renderer.samples());
 
         let previous = renderer.render_target();
+        let previous_mrt = renderer.mrt();
         renderer.set_render_target(Some(self.render_target.clone()));
+        renderer.set_mrt(self.mrt.borrow().clone());
         renderer.render(scene, camera);
         renderer.set_render_target(previous);
+        renderer.set_mrt(previous_mrt);
     }
 }

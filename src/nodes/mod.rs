@@ -8,6 +8,7 @@ pub mod display;
 pub mod lines;
 pub mod materialx;
 pub mod morph;
+pub mod mrt;
 pub mod node;
 pub mod pmrem_node;
 pub mod pmrem_utils;
@@ -19,6 +20,7 @@ pub use builder::{
     BindingDesc, ComputeFlow, ComputeProgram, MaterialFlow, NodeBuilder, NodeProgram, Stage,
     UniformMember, Visibility,
 };
+pub use mrt::{mrt, MrtNode};
 pub use node::{
     BufferSource, Node, NodeRef, TextureSource, Type, UniformGroup, UniformSource, UpdateType,
 };

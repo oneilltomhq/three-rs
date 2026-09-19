@@ -11,7 +11,8 @@ pub mod physical;
 
 pub use node_material::{
     background_color_node, background_node_color_node, background_vertex_node, instanced_range,
-    output_fragment_node, quad_vertex_node, render_output, setup, shadow_material, SetupContext,
+    output_fragment_node, quad_vertex_node, render_output, setup, shadow_material, MrtContext,
+    SetupContext,
 };
 
 pub use blending::{
@@ -299,6 +300,15 @@ pub struct MeshBasicNodeMaterial {
     /// property, so the custom node can read `DiffuseColor`, `Output` and the
     /// normal accessors.
     pub output_node: Option<NodeRef>,
+    /// `NodeMaterial.mrtNode` — the material's own MRT overrides, merged over
+    /// the renderer's (the pass's) by `NodeMaterial.setup()`. Read only when a
+    /// render target with more than one colour attachment is bound, which is
+    /// what makes it inert for every material that is not drawn into one.
+    ///
+    /// `webgpu_postprocessing_bloom_selective` gives each of its fifty spheres
+    /// a material whose `mrtNode` is `mrt( { bloomIntensity: uniform( 0 or 1 )
+    /// } )`, over the pass's `mrt( { output, bloomIntensity: float( 0 ) } )`.
+    pub mrt_node: Option<crate::nodes::MrtNode>,
     pub side: Side,
     /// `Material.visible` — `_projectObject()` skips an object whose material is
     /// not visible.
@@ -392,6 +402,7 @@ impl Default for MeshBasicNodeMaterial {
             vertex_node: None,
             fragment_node: None,
             output_node: None,
+            mrt_node: None,
             side: Side::Front,
             visible: true,
             transparent: false,
