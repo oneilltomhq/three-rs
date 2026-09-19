@@ -1564,6 +1564,17 @@ pub struct MaterialFlow {
     /// `webgpu_mesh_batch` does, `DiffuseColor` and `normalView`) after the
     /// standard flow has run.
     pub output_node: Option<NodeRef>,
+    /// `MRTNode.members` — the values written to the fragment stage's several
+    /// colour attachments, already laid out by attachment index (see
+    /// [`MrtNode::members`](crate::nodes::MrtNode::members)).
+    ///
+    /// `None` is the single-attachment shape every rung before
+    /// `webgpu_postprocessing_bloom_selective` has: `struct OutputStruct {
+    /// @location( 0 ) color }` and one `output.color = …`. `Some` switches the
+    /// fragment stage to `OutputStructNode`'s `struct OutputType { @location(
+    /// i ) mi }` and one `output.mi = …` per member, in the flow rather than in
+    /// the result section — which is what three.js's own dump shows.
+    pub mrt: Option<Vec<NodeRef>>,
     /// Vertex-stage statements, run before the position node.
     pub vertex_statements: Vec<NodeRef>,
     /// The clip-space position the vertex stage writes.
@@ -1662,11 +1673,18 @@ impl NodeBuilder {
         // The basic output is reached twice — once by the `Output` property and
         // once by `output.color` — which is what gives it its own var. With a
         // custom `outputNode` it is reached only by `Output`.
-        if flow.emit_output_property && flow.output_node.is_none() {
+        // With MRT the basic output is reached only by `Output`, exactly as
+        // with a custom `outputNode`: `NodeMaterial.setup()` assigns it to the
+        // property and then hands the *MRT node* to the result, and the MRT's
+        // `output` member reads the property back rather than the node.
+        if flow.emit_output_property && flow.output_node.is_none() && flow.mrt.is_none() {
             self.analyze(&flow.output);
         }
         if let Some(node) = &flow.output_node {
             self.analyze(node);
+        }
+        for member in flow.mrt.iter().flatten() {
+            self.analyze(member);
         }
         for stmt in &flow.vertex_statements {
             self.analyze(stmt);
@@ -1696,6 +1714,15 @@ impl NodeBuilder {
         if let Some(node) = &flow.output_node {
             color = self.generate(node);
         }
+        // `OutputStructNode.generate()`: one `output.mN = <member>` line per
+        // member, pushed onto the *flow* — the entry point's result section is
+        // then empty and only `return output;` is left.
+        if let Some(members) = &flow.mrt {
+            for (index, member) in members.iter().enumerate() {
+                let snippet = self.format(member, Type::Vec4);
+                self.emit(format!("output.m{index} = {snippet};"));
+            }
+        }
 
         self.stage = Stage::Vertex;
         for stmt in &flow.vertex_statements {
@@ -1703,7 +1730,11 @@ impl NodeBuilder {
         }
         let position = self.generate(&flow.position);
 
-        let fragment_wgsl = self.assemble(Stage::Fragment, &color);
+        let fragment_wgsl = self.assemble_with_mrt(
+            Stage::Fragment,
+            &color,
+            flow.mrt.as_ref().map(|members| members.len()),
+        );
         let vertex_wgsl = self.assemble(Stage::Vertex, &position);
 
         let attributes = self.stages[Stage::Vertex.index()].attributes.clone();
@@ -1975,12 +2006,30 @@ impl NodeBuilder {
     }
 
     fn assemble(&self, stage: Stage, result: &str) -> String {
+        self.assemble_with_mrt(stage, result, None)
+    }
+
+    /// `mrt_members` is `Some(n)` for a fragment stage with an
+    /// `OutputStructNode` result: the struct is `OutputType` with `n`
+    /// `@location( i ) mi : vec4<f32>` members, and the entry point's result
+    /// section is empty because `generate()` already wrote the assignments into
+    /// the flow.
+    fn assemble_with_mrt(&self, stage: Stage, result: &str, mrt_members: Option<usize>) -> String {
         let s = &self.stages[stage.index()];
         let mut out = String::from("// three-rs - Node System\n\n");
 
         if stage == Stage::Fragment {
             out.push_str("// global\ndiagnostic( off, derivative_uniformity );\n\n\n");
-            out.push_str("// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n");
+            match mrt_members {
+                Some(count) => {
+                    out.push_str("// structs\n\nstruct OutputType {\n");
+                    for index in 0..count {
+                        out.push_str(&format!("\t@location( {index} ) m{index} : vec4<f32>,\n"));
+                    }
+                    out.push_str("\t\n};\nvar<private> output : OutputType;\n\n");
+                }
+                None => out.push_str("// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n"),
+            }
         } else {
             out.push_str("// directives\n\n\n// structs\n\n\n");
         }
@@ -2066,7 +2115,13 @@ impl NodeBuilder {
 
         let (attr, ret) = match stage {
             Stage::Vertex => ("@vertex", "VaryingsStruct"),
-            Stage::Fragment => ("@fragment", "OutputStruct"),
+            Stage::Fragment => (
+                "@fragment",
+                match mrt_members {
+                    Some(_) => "OutputType",
+                    None => "OutputStruct",
+                },
+            ),
             Stage::Compute => unreachable!("three-rs: assemble_compute writes the compute entry"),
         };
         out.push_str(&format!(
@@ -2084,11 +2139,15 @@ impl NodeBuilder {
                     "\tvaryings.builtinClipSpace = {result};\n\n\treturn varyings;\n\n}}\n"
                 ));
             }
-            Stage::Fragment => {
-                out.push_str(&format!(
+            Stage::Fragment => match mrt_members {
+                // `OutputStructNode.generate()` returns the struct's property
+                // name and leaves the assignments in the flow, so there is
+                // nothing left to write here.
+                Some(_) => out.push_str("\treturn output;\n\n}\n"),
+                None => out.push_str(&format!(
                     "\toutput.color = {result};\n\n\treturn output;\n\n}}\n"
-                ));
-            }
+                )),
+            },
             Stage::Compute => unreachable!("three-rs: assemble_compute writes the compute entry"),
         }
         out

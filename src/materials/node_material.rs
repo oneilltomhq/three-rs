@@ -54,6 +54,22 @@ pub struct SetupContext {
     /// [`crate::nodes::lines`] for why they travel here rather than on the
     /// geometry.
     pub line_segments: Option<crate::nodes::lines::LineSegmentsAttributes>,
+    /// `renderer.getMRT()` and the names of the bound render target's colour
+    /// attachments — the pass-level half of `NodeMaterial.setup()`'s MRT
+    /// branch, which only runs `if ( renderTarget !== null )`.
+    ///
+    /// `None` is every draw into a single-attachment target, and leaves the
+    /// fragment stage's `OutputStruct { color }` shape alone.
+    pub mrt: Option<MrtContext>,
+}
+
+/// What a draw into an MRT render target knows about it: the pass's MRT node
+/// (`renderer.getMRT()`) and `renderTarget.textures.map( t => t.name )`, which
+/// is what `MRTNode.setup()` resolves its output names against.
+#[derive(Clone, Debug, Default, Hash)]
+pub struct MrtContext {
+    pub node: crate::nodes::MrtNode,
+    pub attachments: Vec<String>,
 }
 
 /// `Renderer._getShadowNodes( material )` composed with
@@ -444,6 +460,20 @@ fn setup_inner(
         output
     };
 
+    // `NodeMaterial.setup()`'s MRT branch, which runs only `if ( renderTarget
+    // !== null )`: the pass's MRT and the material's are merged with the
+    // material's winning, and the merged node — not the colour — becomes the
+    // fragment stage's result. The `Output` property assignment above has
+    // already happened, which is what lets the MRT's `output` member read it
+    // back (`output.m0 = Output;` in three's dump).
+    let mrt = ctx.mrt.as_ref().map(|context| {
+        let merged = match &material.mrt_node {
+            Some(material_mrt) => context.node.merge(material_mrt),
+            None => context.node.clone(),
+        };
+        merged.members(&context.attachments)
+    });
+
     // --- the vertex flow
     let position = match &material.vertex_node {
         Some(node) => node.clone(),
@@ -455,6 +485,7 @@ fn setup_inner(
         fragment_statements: fragment,
         output,
         output_node: material.output_node.clone(),
+        mrt,
         emit_output_property: material.fragment_node.is_none(),
         vertex_statements: Vec::new(),
         position,
