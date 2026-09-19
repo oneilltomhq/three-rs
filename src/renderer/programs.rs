@@ -20,6 +20,17 @@ pub struct RenderState {
     /// validation error rather than wrong pixels; it is part of the key for the
     /// same reason the format is.
     pub color_attachments: u32,
+    /// One entry per colour attachment **past the first**: its format and the
+    /// blend state `MRTNode.getBlendMode( texture.name )` gives it.
+    ///
+    /// Three sizes the `targets` array from `renderObject.context.textures` and
+    /// takes each entry's format from that texture, so an MRT whose attachments
+    /// have different types — `webgpu_postprocessing_bloom_emissive`'s
+    /// `rgba16float` colour beside an `rgba8unorm` emissive — is one pipeline
+    /// with two different target formats. A fixed array keeps `RenderState`
+    /// `Copy` and part of the pipeline key; `MAX_EXTRA_COLOR_ATTACHMENTS` is
+    /// the port's ceiling, not WebGPU's (which is 8).
+    pub extra_color_targets: [Option<ExtraColorTarget>; MAX_EXTRA_COLOR_ATTACHMENTS],
     pub depth_format: Option<wgpu::TextureFormat>,
     pub sample_count: u32,
     pub side: Side,
@@ -37,6 +48,17 @@ pub struct RenderState {
     /// `_getPrimitiveState()`: set only for an indexed `Line` that is not a
     /// `LineSegments`, from the index array's type.
     pub strip_index_format: Option<wgpu::IndexFormat>,
+}
+
+/// How many colour attachments past the first a pass may have here.
+pub const MAX_EXTRA_COLOR_ATTACHMENTS: usize = 3;
+
+/// One MRT colour attachment past the first, as the pipeline descriptor wants
+/// it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct ExtraColorTarget {
+    pub format: wgpu::TextureFormat,
+    pub blend: Option<wgpu::BlendState>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -162,12 +184,19 @@ impl Program {
             .collect();
 
         let targets: Vec<Option<wgpu::ColorTargetState>> = (0..state.color_attachments)
-            .map(|_| {
+            .map(|i| {
+                // Attachment 0 is the material's own format and blending;
+                // `MRTNode.blendModes.output` is `MaterialBlending`, which
+                // resolves to exactly that. Every attachment past it carries
+                // its own format and whatever `setBlendMode` gave it.
+                let extra = (i > 0)
+                    .then(|| state.extra_color_targets[i as usize - 1])
+                    .flatten();
                 Some(wgpu::ColorTargetState {
-                    format: state.color_format,
+                    format: extra.map_or(state.color_format, |extra| extra.format),
                     // `undefined` for an opaque `NormalBlending` material, which
                     // is every rung up to 9; see `materials::blending`.
-                    blend: state.blend,
+                    blend: extra.map_or(state.blend, |extra| extra.blend),
                     write_mask: wgpu::ColorWrites::ALL,
                 })
             })
@@ -432,6 +461,8 @@ pub struct UniformContext<'a> {
     pub env_rotation: Matrix4,
     /// `material.envMapIntensity` — 1 on every material this rung builds.
     pub material_env_intensity: f64,
+    /// `MeshStandardMaterial.aoMapIntensity`.
+    pub material_ao_map_intensity: f64,
     pub background_rotation: Matrix4,
     pub background_blurriness: f64,
     pub background_intensity: f64,
@@ -492,6 +523,7 @@ impl Default for UniformContext<'_> {
             material_normal_scale: Vector2::new(1.0, 1.0),
             env_rotation: Matrix4::identity(),
             material_env_intensity: 1.0,
+            material_ao_map_intensity: 1.0,
             background_rotation: Matrix4::identity(),
             background_blurriness: 0.0,
             background_intensity: 1.0,
@@ -548,6 +580,9 @@ impl UniformContext<'_> {
                 UniformSource::MaterialRotation => vec![self.material_rotation as f32],
                 UniformSource::MaterialReflectivity => vec![self.material_reflectivity as f32],
                 UniformSource::MaterialEnvIntensity => vec![self.material_env_intensity as f32],
+                UniformSource::MaterialAoMapIntensity => {
+                    vec![self.material_ao_map_intensity as f32]
+                }
                 UniformSource::MaterialShininess => vec![self.material_shininess as f32],
                 UniformSource::MaterialSpecular => vec![
                     self.material_specular.r as f32,

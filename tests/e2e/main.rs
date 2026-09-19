@@ -151,6 +151,10 @@ mod webgpu_postprocessing_bloom;
 #[allow(dead_code)]
 mod webgpu_postprocessing_bloom_selective;
 
+#[path = "../../examples/webgpu_postprocessing_bloom_emissive.rs"]
+#[allow(dead_code)]
+mod webgpu_postprocessing_bloom_emissive;
+
 #[path = "../../examples/webgpu_pmrem_cubemap.rs"]
 #[allow(dead_code)]
 mod webgpu_pmrem_cubemap;
@@ -987,6 +991,65 @@ fn webgpu_postprocessing_bloom() {
         name,
         &mut app,
         webgpu_postprocessing_bloom::animate,
+        |app| app.renderer.device(),
+    );
+}
+
+#[test]
+fn webgpu_postprocessing_bloom_emissive() {
+    let name = "webgpu_postprocessing_bloom_emissive";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_postprocessing_bloom_emissive::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_postprocessing_bloom_emissive::animate(&mut app);
+
+    // `emissiveTexture.type = UnsignedByteType`: attachment 1 is LDR where
+    // attachment 0 is `rgba16float`, which is the whole reason the pipeline
+    // carries a colour target per attachment.
+    assert_eq!(
+        app.scene_pass.texture_named("emissive").format(),
+        wgpu::TextureFormat::Rgba8Unorm,
+        "the emissive attachment is UnsignedByteType"
+    );
+    assert_eq!(
+        app.scene_pass.texture().format(),
+        wgpu::TextureFormat::Rgba16Float,
+        "the colour attachment is HalfFloatType"
+    );
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(
+        name,
+        &mut app,
+        webgpu_postprocessing_bloom_emissive::animate,
         |app| app.renderer.device(),
     );
 }
@@ -1974,6 +2037,10 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_postprocessing_bloom_selective);
     rung!(webgpu_postprocessing_anamorphic);
     rung!(webgpu_postprocessing_bloom);
+    // The cube background and the PMREM environment are both built in
+    // `init()`, before the first frame, so the steady frames build nothing for
+    // them either.
+    rung!(webgpu_postprocessing_bloom_emissive);
     rung!(webgpu_lights_phong);
     rung!(webgpu_morphtargets);
     rung!(webgpu_tsl_galaxy);

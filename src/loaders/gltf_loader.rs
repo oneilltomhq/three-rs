@@ -1372,6 +1372,28 @@ impl GLTFLoader {
             out.roughness_map = map;
         }
 
+        // `emissiveTexture` — an sRGB colour map, multiplied into
+        // `emissive * emissiveIntensity` by `MaterialNode.EMISSIVE`.
+        if let Some(index) = material.emissive_texture {
+            let map = self.load_texture(cache, textures, images, index)?;
+            if let Some(map) = &map {
+                map.set_color_space(ColorSpace::SRGB);
+            }
+            out.emissive_map = map;
+        }
+
+        // `occlusionTexture` → `aoMap`. `materialParams.aoMapIntensity =
+        // occlusionTexture.strength` is not wired: glTF's `strength` defaults
+        // to 1 and DamagedHelmet leaves it there; `aoMapIntensity` is a
+        // material field either way.
+        //
+        // `aoMap` reads `uv1` in three and `uv` here, because the loader has no
+        // `TEXCOORD_1` support yet (see the GLTFLOADER scout note, item 6).
+        // Every asset on this ladder has only `TEXCOORD_0`, so the two agree.
+        if let Some(index) = material.occlusion_texture {
+            out.ao_map = self.load_texture(cache, textures, images, index)?;
+        }
+
         if let Some(index) = material.normal_texture {
             out.normal_map = self.load_texture(cache, textures, images, index)?;
             out.normal_scale = Vector2::new(material.normal_scale, material.normal_scale);

@@ -1586,6 +1586,17 @@ accessor!(
     )
 );
 accessor!(
+    /// `materialAOMapIntensity` — the `getFloat( 'aoMapIntensity' )` inside
+    /// `MaterialNode.AO`.
+    material_ao_map_intensity,
+    uniform(
+        UniformSource::MaterialAoMapIntensity,
+        Type::F32,
+        UniformGroup::Object,
+        None
+    )
+);
+accessor!(
     /// `materialEnvIntensity` — `MeshStandardMaterial.envMapIntensity`.
     material_env_intensity,
     uniform(
@@ -1753,6 +1764,28 @@ accessor!(
         model_world_matrix()
             .mul(vec4_join(vec![position_local(), float(1.0)]))
             .xyz()
+    )
+);
+accessor!(
+    /// `positionWorldDirection` — `positionLocal.transformDirection(
+    /// modelWorldMatrix ).toVarying( 'v_positionWorldDirection' )
+    /// .normalize().toVar( 'positionWorldDirection' )`.
+    ///
+    /// `transformDirection( m )` is `normalize( ( m * vec4( v, 0 ) ).xyz )`, so
+    /// the direction is normalised twice: once in the vertex stage before it
+    /// becomes a varying and once after the interpolation, which is what
+    /// `CubeRenderTarget.fromEquirectangularTexture`'s box shader shows.
+    position_world_direction,
+    to_var(
+        Some("positionWorldDirection"),
+        to_varying(
+            Some("v_positionWorldDirection"),
+            model_world_matrix()
+                .mul(vec4_join(vec![position_local(), float(0.0)]))
+                .xyz()
+                .normalize()
+        )
+        .normalize()
     )
 );
 accessor!(
@@ -2004,6 +2037,15 @@ prop!(outgoing_light, "outgoingLight", Type::Vec3);
 prop!(shininess, "Shininess", Type::F32);
 prop!(specular_color, "SpecularColor", Type::Vec3);
 prop!(emissive_color, "EmissiveColor", Type::Vec3);
+/// `PropertyNode`'s `ambientOcclusion` — the **property** three names
+/// `AmbientOcclusion`, which `NodeMaterial.setupAmbientOcclusion()` writes from
+/// `materialAO` and the lighting model's own `ambientOcclusion` *var* then
+/// multiplies itself by. The two are different names in the WGSL and different
+/// things here; see [`ambient_occlusion`] for the var.
+pub fn ambient_occlusion_property() -> NodeRef {
+    thread_local! { static CELL: Lazy<NodeRef> = const { Lazy::new() }; }
+    CELL.with(|c| c.get(|| property("AmbientOcclusion", Type::F32)))
+}
 
 /// `LightingContextNode.getContext()`'s accumulators. These are **vars**, not
 /// properties: three.js builds them as `vec3().toVar( 'directDiffuse' )` /
