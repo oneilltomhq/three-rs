@@ -197,6 +197,14 @@ Three things the readback caught that nothing else would have:
 * **Subgroup operations**, workgroup shared memory, storage barriers,
   indirect dispatch, and compute over anything but a flat index. None is
   reachable from this example.
+* **The example in `src/bin/viewer.rs`.** Every other graded example is
+  browsable there; this one is not, because `Scene::camera()` returns a
+  `&mut PerspectiveCamera` and `set_size()` writes `aspect` on it, and this
+  example's camera is orthographic. Carrying it needs the viewer to hold a
+  `RenderCamera` — the trait already exists — rather than a concrete
+  `PerspectiveCamera`, which touches every arm of three matches and belongs in
+  its own change. The README's steady-frame number for this row therefore
+  comes from the release e2e run rather than `viewer --headless --frames 40`.
 * **Sweeping the storage-buffer cache.** `Renderer` holds storage buffers by
   `BufferId` and never drops them; a `StorageArray` is application-owned and
   lives as long as the app. Geometry and texture caches are swept (issue #58);

@@ -513,7 +513,12 @@ fn webgpu_compute_points() {
     // can honestly say. The compute stage put 300 000 particles somewhere;
     // if the frame is entirely black, nothing was drawn at all, and the
     // comparison above would still have passed.
-    let lit = pixels.chunks_exact(4).filter(|p| p[0] > 0).count();
+    let lit = pixels
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .filter(|p| p[0] > 0)
+        .count();
     assert!(lit > 0, "{name}: the frame is completely black");
     println!("{name}: {lit} lit pixels at {width}x{height}");
 

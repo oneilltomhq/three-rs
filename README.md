@@ -67,6 +67,14 @@ Linux is the only backend that has been run.
 | webgpu_tsl_galaxy | 40 | 5.3 | 2 | 40001 |
 | webgpu_skinning | 6 | 3.0 | 3 | 30091 |
 | webgpu_mesh_batch | 0 | 2.5 | 454 | 44341 |
+| webgpu_compute_points | 4 (see below) | 10.7 | 2 | 1 + 300000 points |
+
+`webgpu_compute_points` is graded like the rest and its 4 pixels mean less
+than the rest: its frame is black apart from a 2x2 block at the centre, so
+Three's comparator would pass it at 0.0% even if the compute passes never ran.
+That rung is gated on the WGSL its kernels compile to and on reading the
+storage buffers back — `docs/rung12-progress.md` says why and what the tests
+assert.
 
 Measured on Intel Iris Xe, Mesa 25.3.6, Fedora 43, against three.js r186.
 Other GPUs and drivers will land somewhere else on the pass threshold; the
