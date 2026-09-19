@@ -2527,6 +2527,45 @@ pub fn linear_tone_mapping(color: NodeRef, exposure: NodeRef) -> NodeRef {
     call(&def, vec![color, exposure])
 }
 
+/// `sRGBTransferEOTF` — `ColorSpaceFunctions.js`, emitted as a real `fn`. The
+/// inverse of [`srgb_transfer_oetf`]: sRGB in, working (linear-sRGB) out.
+pub fn srgb_transfer_eotf(color: NodeRef) -> NodeRef {
+    thread_local! { static CELL: Lazy<Rc<FnDef>> = const { Lazy::new() }; }
+    let def = CELL.with(|c| {
+        c.get(|| {
+            shader_fn(
+                Some("sRGBTransferEOTF"),
+                vec![("color", Type::Vec3)],
+                Type::Vec3,
+                |args| {
+                    let color = args[0].clone();
+                    mix(
+                        color
+                            .mul(float(0.9478672986))
+                            .add(float(0.0521327014))
+                            .pow(float(2.4)),
+                        color.mul(float(0.0773993808)),
+                        color.less_than_equal(float(0.04045)).to(Type::Vec3),
+                    )
+                },
+            )
+        })
+    });
+    call(&def, vec![color])
+}
+
+/// `colorSpaceToWorking( node, SRGBColorSpace )` — `ColorSpaceNode.setup()`'s
+/// `SRGBTransfer` branch: `vec4( sRGBTransferEOTF( node.rgb ), node.a )`.
+pub fn srgb_to_working(color: NodeRef) -> NodeRef {
+    vec4_join(vec![srgb_transfer_eotf(color.rgb()), color.a()])
+}
+
+/// `packNormalToRGB( node )` — `Packing.js`: `node * 0.5 + 0.5`, the
+/// convention that puts a unit direction in a colour.
+pub fn pack_normal_to_rgb(node: NodeRef) -> NodeRef {
+    node.mul(float(0.5)).add(float(0.5))
+}
+
 /// `reinhardToneMapping` — `ToneMappingFunctions.js`, emitted as a real `fn`.
 pub fn reinhard_tone_mapping(color: NodeRef, exposure: NodeRef) -> NodeRef {
     thread_local! { static CELL: Lazy<Rc<FnDef>> = const { Lazy::new() }; }

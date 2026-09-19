@@ -579,6 +579,13 @@ fn main() {
         SetupContext::default(),
     );
 
+    // rung `webgpu_materials`: the TSL breadth example, against
+    // `scouts/scouts/webgpu_materials/dump/m*.wgsl`.
+    let mut normal = MeshBasicNodeMaterial::normal();
+    normal.opacity = 0.5;
+    normal.transparent = true;
+    show("materials_normal", &normal, SetupContext::default());
+
     // The output pass, this time with ACES filmic tone mapping.
     let mut aces = MeshBasicNodeMaterial::new();
     aces.fragment_node = Some(three_rs::materials::output_fragment_node(

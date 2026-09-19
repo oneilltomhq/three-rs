@@ -119,6 +119,11 @@ pub enum MaterialKind {
     /// the sprite quad expansion is *not* taken; the only thing it keeps from
     /// `SpriteNodeMaterial` is `setupPositionView()` and `transparent = true`.
     Points,
+    /// `MeshNormalNodeMaterial` — no lighting model at all. It overrides
+    /// `setupDiffuseColor()` outright with the packed view-space normal, so it
+    /// takes neither the `colorNode` path nor the opacity / alpha-test /
+    /// opaque-clamp tail.
+    Normal,
 }
 
 /// Port of `MeshBasicNodeMaterial.js` + the `NodeMaterial.js` / `Material.js`
@@ -484,6 +489,20 @@ impl MeshBasicNodeMaterial {
         }
     }
 
+    /// `new MeshNormalNodeMaterial()` — `MeshNormalMaterial` under
+    /// `WebGPURenderer`.
+    ///
+    /// The whole subclass is one overridden `setupDiffuseColor()`:
+    /// `diffuseColor = colorSpaceToWorking( vec4( packNormalToRGB( normalView
+    /// ), opacity ), SRGBColorSpace )`. Nothing else about it differs from a
+    /// `MeshBasicNodeMaterial`, so it is a [`MaterialKind`] rather than a type.
+    pub fn normal() -> Self {
+        Self {
+            kind: MaterialKind::Normal,
+            ..Self::default()
+        }
+    }
+
     /// `new MeshPhongNodeMaterial( { color } )`. `NodeMaterial.lights` is true
     /// for every lit material, which is what puts the `LightsNode` flow in the
     /// fragment stage.
@@ -533,6 +552,10 @@ pub type PointsNodeMaterial = MeshBasicNodeMaterial;
 /// Likewise for `Standard` / `Physical` — one struct, one renderer list.
 pub type MeshStandardNodeMaterial = MeshBasicNodeMaterial;
 pub type MeshPhysicalNodeMaterial = MeshBasicNodeMaterial;
+
+/// three.js' name for a `NodeMaterial` whose kind is `Normal` — see
+/// [`MeshBasicNodeMaterial::normal`].
+pub type MeshNormalNodeMaterial = MeshBasicNodeMaterial;
 
 /// three.js' name for the `NodeMaterial` a `Line` / `LineSegments` draws with.
 /// It carries no state of its own — see [`MeshBasicNodeMaterial::line`].

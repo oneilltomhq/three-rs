@@ -41,8 +41,9 @@ pub use lights::{
 };
 pub use loaders::{BufferGeometryLoader, CubeTextureLoader, TextureLoader};
 pub use materials::{
-    LineBasicNodeMaterial, MaterialKind, MeshBasicNodeMaterial, MeshPhongNodeMaterial,
-    MeshPhysicalNodeMaterial, MeshStandardNodeMaterial, PointsNodeMaterial, ToneMapping,
+    LineBasicNodeMaterial, MaterialKind, MeshBasicNodeMaterial, MeshNormalNodeMaterial,
+    MeshPhongNodeMaterial, MeshPhysicalNodeMaterial, MeshStandardNodeMaterial, PointsNodeMaterial,
+    ToneMapping,
 };
 pub use math::{Color, Euler, Matrix3, Matrix4, Quaternion, Vector2, Vector3};
 pub use objects::{

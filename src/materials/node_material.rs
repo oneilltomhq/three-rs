@@ -319,6 +319,25 @@ fn setup_inner(
         setup_phong(material, ctx, &mut fragment)
     } else if material.kind == MaterialKind::Standard || material.kind == MaterialKind::Physical {
         setup_standard(material, ctx, &mut fragment)
+    } else if material.kind == MaterialKind::Normal {
+        // `MeshNormalNodeMaterial.setupDiffuseColor()` replaces the base
+        // implementation outright: no `colorNode`, no vertex colours, no alpha
+        // test, and no `builder.isOpaque()` clamp — the opacity node (or the
+        // `materialOpacity` uniform) lands directly in the `vec4`'s `w`.
+        //
+        // "By convention, a normal packed to RGB is in sRGB color space", so
+        // the packed value is decoded into the working space on the way in;
+        // that is where `sRGBTransferEOTF` comes from, and it is the only
+        // material on the ladder that emits the EOTF rather than the OETF.
+        let opacity = match &material.opacity_node {
+            Some(node) => to_float(node.clone()),
+            None => material_opacity(),
+        };
+        fragment.push(diffuse_color().assign(srgb_to_working(vec4_join(vec![
+            pack_normal_to_rgb(normal_view()),
+            opacity,
+        ]))));
+        vec4_join(vec![diffuse_color().xyz(), diffuse_color().w()]).max(float(0.0))
     } else {
         setup_diffuse_color(material, ctx, &mut fragment);
 
