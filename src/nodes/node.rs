@@ -212,6 +212,10 @@ pub enum UniformSource {
     MaterialIor,
     MaterialSpecularIntensity,
     MaterialSpecularColor,
+    /// `MeshPhysicalMaterial.sheen` / `.sheenColor` / `.sheenRoughness`.
+    MaterialSheen,
+    MaterialSheenColor,
+    MaterialSheenRoughness,
     MaterialNormalScale,
     /// `MeshStandardMaterial.aoMapIntensity` — the scale in `materialAO`'s
     /// `tex.r.sub( 1 ).mul( aoMapIntensity ).add( 1 )`.
@@ -343,6 +347,9 @@ impl UniformSource {
             | UniformSource::MaterialIor
             | UniformSource::MaterialSpecularIntensity
             | UniformSource::MaterialSpecularColor
+            | UniformSource::MaterialSheen
+            | UniformSource::MaterialSheenColor
+            | UniformSource::MaterialSheenRoughness
             | UniformSource::MaterialNormalScale
             | UniformSource::MaterialAoMapIntensity
             | UniformSource::EnvRotationMatrix

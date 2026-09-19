@@ -934,6 +934,39 @@ pub fn material_specular_color() -> NodeRef {
     )
 }
 
+/// `materialSheen` — `MaterialNode.SHEEN`'s two halves. Three multiplies them
+/// in the shader (`sheenColor.mul( sheen )`, with its own "Move this mul() to
+/// CPU" note beside it), and the dumps carry both uniforms, so the port does
+/// the same.
+pub fn material_sheen() -> NodeRef {
+    uniform(
+        UniformSource::MaterialSheen,
+        Type::F32,
+        UniformGroup::Object,
+        None,
+    )
+}
+
+pub fn material_sheen_color() -> NodeRef {
+    uniform(
+        UniformSource::MaterialSheenColor,
+        Type::Vec3,
+        UniformGroup::Object,
+        None,
+    )
+}
+
+/// `materialSheenRoughness` — the raw uniform. `MaterialNode.SHEEN_ROUGHNESS`
+/// clamps it to `[ 0.0001, 1 ]`; see [`crate::materials::node_material`].
+pub fn material_sheen_roughness() -> NodeRef {
+    uniform(
+        UniformSource::MaterialSheenRoughness,
+        Type::F32,
+        UniformGroup::Object,
+        None,
+    )
+}
+
 /// `materialNormalScale` — a `vec2`.
 pub fn material_normal_scale() -> NodeRef {
     uniform(
@@ -1447,6 +1480,13 @@ accessor!(
     /// `uv()` — the `uv` attribute, interpolated.
     uv,
     to_varying(None, attribute("uv", Type::Vec2))
+);
+accessor!(
+    /// `uv( 1 )` — the `uv1` attribute (glTF's `TEXCOORD_1`), interpolated.
+    /// `TextureNode.getDefaultUV()` picks between this and [`uv`] by the
+    /// texture's [`channel`](crate::textures::Texture::channel).
+    uv1,
+    to_varying(None, attribute("uv1", Type::Vec2))
 );
 accessor!(
     /// `vertexColor()` over a three-component `color` attribute, widened to a
@@ -2133,6 +2173,15 @@ prop!(specular_f90, "SpecularF90", Type::F32);
 // `MeshPhysicalNodeMaterial.setupSpecular()`'s `ior` property.
 prop!(ior, "IOR", Type::F32);
 prop!(diffuse_contribution, "DiffuseContribution", Type::Vec3);
+// `MeshPhysicalNodeMaterial.setupVariants()`' sheen properties, and the two
+// accumulators `PhysicalLightingModel.start()` declares for them. The
+// accumulators are `vec3().toVar( 'sheenSpecularDirect' )` in three; they are
+// written before anything reads them either way, so a property is the same
+// WGSL.
+prop!(sheen, "Sheen", Type::Vec3);
+prop!(sheen_roughness, "SheenRoughness", Type::F32);
+prop!(sheen_specular_direct, "sheenSpecularDirect", Type::Vec3);
+prop!(sheen_specular_indirect, "sheenSpecularIndirect", Type::Vec3);
 prop!(
     single_scattering_dielectric,
     "singleScatteringDielectric",
@@ -2198,11 +2247,19 @@ fn transformed_uv(uv: NodeRef, key: (u8, usize), matrix: Matrix3) -> NodeRef {
     matrix_uniform.mul(vec3_join(vec![uv, float(1.0)])).xy()
 }
 
+/// `TextureNode.getDefaultUV()` — `uv( texture.channel )`.
+fn default_uv(map: &Texture) -> NodeRef {
+    match map.channel() {
+        0 => uv(),
+        _ => uv1(),
+    }
+}
+
 /// `texture( map )`.
 pub fn texture(map: &Texture) -> NodeRef {
     texture_node(
         TextureSource::Texture2D(map.clone()),
-        transformed_uv(uv(), (0, map.id()), map.matrix()),
+        transformed_uv(default_uv(map), (0, map.id()), map.matrix()),
         sample_mode_for(map),
         Type::Vec4,
     )
