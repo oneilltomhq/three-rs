@@ -1862,3 +1862,46 @@ for each, because eight further examples (`webgpu_loader_gltf`, `_anisotropy`,
 `_sheen`, `webgpu_mrt`, `webgpu_materials_transmission`, `webgpu_deferred`,
 `webgpu_performance`, `webgpu_custom_fog_background`) load UltraHDR files and
 will exercise paths this one does not.
+
+## 22. The room, the RTT and the aberration (`webgpu_postprocessing_ca`)
+
+`webgpu_postprocessing_ca` is the cheapest example that exercises
+`RoomEnvironment` as a capability: the page's whole lighting is
+`scene.environment = pmremGenerator.fromScene( new RoomEnvironment(), 0.04 )`,
+so every reflective shape in the graded frame is a readout of the PMREM atlas.
+Three programs come from the room itself (`room_box`, `room_boxes`,
+`room_panel` in `dump_wgsl`), two from the post chain (`ca_rtt_quad`,
+`ca_render_pipeline_quad`).
+
+`chromaticAberration()` calls `convertToTexture()` on the `renderOutput( pass )`
+it is handed, which is an `RTTNode`: the effect samples its input at four
+different uvs, so the input must be a texture and not a graph evaluated four
+times. The page then sets `renderPipeline.outputColorTransform = false`,
+because the output transform is already inside the RTT pass.
+
+The green channel of the effect is sampled at `greenScale = 1.0` with zero
+offset, so the green channel of the graded image is exactly the scene render —
+a free way to separate "the aberration is wrong" from "what it samples is
+wrong". It was what said the residual lived in the environment, not in the
+effect.
+
+### Divergences specific to this rung
+
+* **The three room materials** (`m02`..`m07`) match three's statement for
+  statement; what differs is the `// varyings` order, `var` hoisting and the
+  duplicated zero-initialisations — all §8 entries already. None of the three
+  has a `uv` attribute: `geometry.deleteAttribute( 'uv' )`.
+* **`ca_rtt_quad`'s `main` is byte-identical to `m17`**; only the order the
+  three helper functions are emitted in differs (`fn0` / `sRGBTransferOETF` /
+  `fn1` here, `fn1` / `sRGBTransferOETF` / `fn0` in the dump) — the `// codes`
+  ordering entry of §8.
+* **`ChromaticAberrationShader` hoists two subexpressions three inlines.**
+  `( scale * 0.02 ) * strength` and `offset * aberration` each become a
+  `nodeVar` here and are repeated three times in the dump, and each
+  `textureSample` gets a second `nodeVar` for the `.toVar()` the addon puts on
+  its result where three folds the two together. Twelve vars against six; the
+  returned `vec4` is the same four swizzles of the same four samples.
+* **The body arrives as function parameters, not uniforms.** Three declares it
+  with `setLayout( { name: 'ChromaticAberrationShader', … } )`, so `strength`,
+  `center` and `scale` are WGSL parameters and the texture is the only thing
+  the body closes over. The port does the same.

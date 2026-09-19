@@ -89,7 +89,7 @@ pub struct BlurUniforms {
     /// the atlas and the ping-pong target. See [`GgxUniforms::env_map`].
     pub env_map: Texture,
     /// `blurUniforms.sigma` — the blur radius in radians, already divided by
-    /// √2 by [`PmremGenerator::blur`].
+    /// √2 by `PmremGenerator::blur`.
     pub sigma: SettableValue,
     /// `blurUniforms.mipInt` — the atlas level being read.
     pub mip_int: SettableValue,

@@ -9,7 +9,7 @@ use crate::textures::Texture;
 ///
 /// The addon takes a *texture node* and calls `convertToTexture()` on whatever
 /// it is given, which is why the page's `renderOutput( pass( … ) )` becomes an
-/// [`RttNode`](crate::renderer::RttNode) draw of its own. This port takes the
+/// [`RttNode`](super::RttNode) draw of its own. This port takes the
 /// texture that RTT produced, for the same reason
 /// [`radial_blur`](super::radial_blur) does: the only thing the node does with
 /// the texture node is `sample( uv )`, and an `RTTNode`'s `uvNode` is the raw

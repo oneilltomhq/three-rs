@@ -532,7 +532,7 @@ wrong space and a transmissive material sampling the framebuffer reads the
 wrong values. `outputColorTransform = false` (hand tone mapping down instead
 of baking it), the XR direct target and the `onBeforePipeline` /
 `onAfterPipeline` callbacks are not ported; nothing on the ladder uses them.
-## `rtt()`: a node that is its own render target (`webgpu_postprocessing_anamorphic`)
+## `rtt()`: a node that is its own render target (`webgpu_postprocessing_anamorphic`, `webgpu_postprocessing_ca`)
 
 `src/nodes/display/rtt.rs` is `src/nodes/utils/RTTNode.js`. `rtt( node )`
 hands back a texture node whose texture is a render target it owns: the node
@@ -546,6 +546,15 @@ Its high pass reads the bright pass **eighty times** along x. Without the
 `mix( vec4( 0 ), scenePass, smoothstep( … ) )`, including eighty samples of
 the scene texture; with it they are eighty samples of one 800x500 half-float
 texture, and the bright pass is computed once.
+
+`webgpu_postprocessing_ca` reaches the same node by the other door.
+`chromaticAberration( node, … )` does not sample its argument: it calls
+`convertToTexture( node )` first, which is `rtt( node )` whenever the node is
+not already a texture. The effect reads its input at four different uvs, so a
+graph passed straight in would be evaluated four times per pixel instead of
+once. The page also sets `renderPipeline.outputColorTransform = false`, because
+the `renderOutput()` is *inside* the RTT pass; leaving it on applies the output
+transform twice, which is a plausible-looking image and a failing one.
 
 Three things about the target are not `BloomNode`'s:
 
@@ -573,7 +582,8 @@ it and *submitted* before it. The port has the application call
 `RttNode::render( renderer )` explicitly, ahead of the reader, which gives the
 GPU the same submission order — the anamorphic example's `animate()` is
 `scene_pass`, `bright_pass`, `bloom_pass`, `render_pipeline`, which is three's
-submit order exactly.
+submit order exactly, and `webgpu_postprocessing_ca`'s is the same three-call
+shape: the scene pass, the RTT pass, the pipeline.
 
 ### `fullscreenPass` and `currentSamples`
 

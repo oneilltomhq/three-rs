@@ -10,7 +10,7 @@ use crate::objects::{InstancedMesh, Mesh, Payload, Scene};
 use std::rc::Rc;
 
 /// `new RoomEnvironment()` — a scene with a basic room setup, built to be the
-/// input of [`PMREMGenerator::from_scene`] and nothing else.
+/// input of [`PmremGenerator::from_scene`] and nothing else.
 ///
 /// Three's own class `extends Scene`; the port returns the [`Scene`], because
 /// [`Scene`] is not a trait and decision 3 of `docs/api.md` keeps three's
@@ -31,9 +31,9 @@ use std::rc::Rc;
 /// diffuse colour is black, so the Lambert lighting term is multiplied by zero
 /// and contributes nothing; the material is still a
 /// [`MeshLambertNodeMaterial`] and not a cheaper one, because the *generated
-/// WGSL* has to match three's — see `docs/room-environment.md`.
+/// WGSL* has to match three's — see `docs/nodes.md` §22.
 ///
-/// [`PMREMGenerator::from_scene`]: crate::renderer::pmrem::PMREMGenerator::from_scene
+/// [`PmremGenerator::from_scene`]: crate::renderer::pmrem::PmremGenerator::from_scene
 /// [`MeshLambertNodeMaterial`]: crate::materials::MeshLambertNodeMaterial
 pub struct RoomEnvironment;
 
