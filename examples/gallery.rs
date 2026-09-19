@@ -75,7 +75,8 @@ struct Row {
     diff_note: String,
     steady_ms: f64,
     draw_calls: u64,
-    triangles: u64,
+    /// The triangles cell verbatim; one row says "1 + 300000 points".
+    triangles: String,
 }
 
 /// Parse the README's "Examples graded green" table.
@@ -120,7 +121,7 @@ fn parse_graded_table(readme: &str) -> Vec<Row> {
                 diff_note,
                 steady_ms: cells[2].parse().ok()?,
                 draw_calls: cells[3].parse().ok()?,
-                triangles: cells[4].parse().ok()?,
+                triangles: cells[4].to_string(),
             })
         })();
 
@@ -661,7 +662,7 @@ Measured on Intel Iris Xe.
                 diff_note: String::new(),
                 steady_ms: 1.0,
                 draw_calls: 1,
-                triangles: 1,
+                triangles: "1".to_string(),
             },
             actual: PathBuf::from("/dev/null"),
             progress_doc: doc.map(str::to_string),
@@ -676,7 +677,7 @@ Measured on Intel Iris Xe.
         assert_eq!(rows[0].diff_pixels, 0);
         assert_eq!(rows[0].steady_ms, 11.0);
         assert_eq!(rows[0].draw_calls, 43);
-        assert_eq!(rows[0].triangles, 671746);
+        assert_eq!(rows[0].triangles, "671746");
         // The order is the table's order, which is the rung order.
         assert_eq!(rows[2].name, "webgpu_rtt");
     }
