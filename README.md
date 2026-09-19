@@ -65,6 +65,7 @@ Linux is the only backend that has been run.
 | webgpu_lights_physical | 4 | 4.2 | 11 | 4267 |
 | webgpu_postprocessing_masking | 18 | 1.0 | 3 | 1037 |
 | webgpu_tsl_galaxy | 40 | 5.3 | 2 | 40001 |
+| webgpu_skinning | 6 | 3.0 | 3 | 30091 |
 
 Measured on Intel Iris Xe, Mesa 25.3.6, Fedora 43, against three.js r186.
 Other GPUs and drivers will land somewhere else on the pass threshold; the

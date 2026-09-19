@@ -473,6 +473,23 @@ differences, each verified to be pixel-neutral.
   channels differ by 1, 4428 by 2, 16 by 3; worst per-texel RGB distance 3.46,
   against a comparator threshold of 44.
 
+* **The skin matrix is CSEd.** `getSkinnedNormalAndTangent()` builds
+  `bindMatrixInverse * skinMatrix * bindMatrix` once and reads three columns off
+  it; Three re-emits the whole 4x4 product inside each `mat3x3<f32>` argument
+  (three times in `m03_vertex_Ch03_Body`), because `OperatorNode` is a
+  `TempNode` whose usage count is taken per *generated* argument. This port
+  promotes it to one var and indexes that. Same matrix.
+* **No bone texture.** `getBoneMatricesNode()` picks a `DataTexture` over the
+  uniform array when the skeleton exceeds the device's uniform-buffer limit.
+  Only the uniform branch is ported (`src/nodes/skinning.rs`); Michelle is 65
+  bones = 4160 bytes, and a skeleton large enough to need the texture would
+  fail loudly on the binding, not silently in the pixels.
+* **`TBNViewMatrix` is keyed by sub-build *and side*.** Three caches the frame
+  on the builder; this port caches it in a map keyed by the sub-build layer and
+  `material.side`, because `negateOnBackSide` makes a `DoubleSide` material's
+  frame a different expression from a `FrontSide` one and a process-wide cache
+  would hand the first one out forever. Same expression per material.
+
 ### `LineBasicNodeMaterial` adds no divergence class
 
 Three's own `LineBasicNodeMaterial` program, dumped off
