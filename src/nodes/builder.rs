@@ -1635,6 +1635,12 @@ pub struct MaterialFlow {
     /// The `vec4` the fragment stage writes to `output.color`, and — when
     /// `emit_output_property` is set — to the `Output` property.
     pub output: NodeRef,
+    /// `context.getOutput`'s own `output.assign( materialOutputNode )` — a
+    /// second write to the `Output` property, emitted immediately after
+    /// `NodeMaterial.setup()`'s own and before the node the hook returned.
+    /// Only `DirectRenderPipeline` sets it; see
+    /// [`OutputContext`](crate::materials::OutputContext).
+    pub output_assign: Option<NodeRef>,
     /// `material.outputNode`. `NodeMaterial.setup()` assigns the *basic*
     /// output to the `Output` property and then hands `output.color` to this
     /// node instead, so a custom output can read `Output` (or, as
@@ -1757,6 +1763,9 @@ impl NodeBuilder {
         if flow.emit_output_property && flow.output_node.is_none() && flow.mrt.is_none() {
             self.analyze(&flow.output);
         }
+        if let Some(node) = &flow.output_assign {
+            self.analyze(node);
+        }
         if let Some(node) = &flow.output_node {
             self.analyze(node);
         }
@@ -1785,8 +1794,15 @@ impl NodeBuilder {
             .emit_output_property
             .then(|| self.declare_var(Some("Output"), Type::Vec4));
         let mut color = self.generate(&flow.output);
-        if let Some(output_prop) = output_prop {
+        if let Some(output_prop) = &output_prop {
             self.emit(format!("{output_prop} = {color};"));
+        }
+        // The hook's own assign, which is why a direct-pipeline fragment has
+        // `Output = nodeVarN;` twice.
+        if let (Some(output_prop), Some(node)) = (&output_prop, &flow.output_assign) {
+            let node = node.clone();
+            let snippet = self.generate(&node);
+            self.emit(format!("{output_prop} = {snippet};"));
         }
         if let Some(node) = &flow.output_node {
             color = self.generate(node);
