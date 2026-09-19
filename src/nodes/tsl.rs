@@ -1052,6 +1052,51 @@ pub fn material_sheen_roughness() -> NodeRef {
     )
 }
 
+/// `materialIridescence` — `MeshPhysicalMaterial.iridescence`.
+/// `MaterialNode.IRIDESCENCE` has no map branch in r186 (glTF's
+/// `iridescenceTexture` reaches `material.iridescenceMap` and is then never
+/// read), so this is the bare uniform.
+pub fn material_iridescence() -> NodeRef {
+    uniform(
+        UniformSource::MaterialIridescence,
+        Type::F32,
+        UniformGroup::Object,
+        None,
+    )
+}
+
+/// `materialIridescenceIOR`.
+pub fn material_iridescence_ior() -> NodeRef {
+    uniform(
+        UniformSource::MaterialIridescenceIor,
+        Type::F32,
+        UniformGroup::Object,
+        None,
+    )
+}
+
+/// `reference( '1', 'float', material.iridescenceThicknessRange )` — the
+/// maximum. Declared before the minimum because three builds it first even on
+/// the branch that needs both.
+pub fn material_iridescence_thickness_max() -> NodeRef {
+    uniform(
+        UniformSource::MaterialIridescenceThicknessMax,
+        Type::F32,
+        UniformGroup::Object,
+        None,
+    )
+}
+
+/// `reference( '0', 'float', material.iridescenceThicknessRange )`.
+pub fn material_iridescence_thickness_min() -> NodeRef {
+    uniform(
+        UniformSource::MaterialIridescenceThicknessMin,
+        Type::F32,
+        UniformGroup::Object,
+        None,
+    )
+}
+
 /// `materialNormalScale` — a `vec2`.
 /// `materialAnisotropyVector` — `vec2( anisotropy * cos( anisotropyRotation ),
 /// anisotropy * sin( anisotropyRotation ) )`, which three keeps as one uniform
@@ -2475,6 +2520,11 @@ prop!(
     Type::Vec3
 );
 
+// `MeshPhysicalNodeMaterial.setupVariants()`' iridescence properties.
+prop!(iridescence, "Iridescence", Type::F32);
+prop!(iridescence_ior, "IridescenceIOR", Type::F32);
+prop!(iridescence_thickness, "IridescenceThickness", Type::F32);
+
 // `MeshPhysicalNodeMaterial.setupVariants()`' anisotropy and clearcoat
 // properties.
 prop!(anisotropy, "Anisotropy", Type::F32);
@@ -3161,6 +3211,7 @@ pub fn loop_statement(count: usize, index: NodeRef, body: Vec<NodeRef>) -> NodeR
         start: None,
         index,
         count,
+        inclusive: false,
         body,
     })
 }
@@ -3613,6 +3664,7 @@ pub fn loop_n(
     NodeRef::new(Node::Loop {
         start: None,
         count,
+        inclusive: false,
         index,
         body,
     })
@@ -3625,10 +3677,12 @@ pub fn loop_n(
 /// `for ( var i : i32 = i32( ( - nodeVar1 ) ); i < i32( nodeVar1 ); i ++ )`
 /// and not a rebased `0`. Both bounds are the caller's to cast: the loop index
 /// is `i32` whatever the bounds' own type is.
+/// `inclusive` is `Loop( { …, condition: '<=' }, … )`.
 pub fn loop_range(
     name: &'static str,
     start: NodeRef,
     end: NodeRef,
+    inclusive: bool,
     body: impl FnOnce(&NodeRef) -> Vec<NodeRef>,
 ) -> NodeRef {
     let index = NodeRef::new(Node::Param {
@@ -3639,6 +3693,7 @@ pub fn loop_range(
     NodeRef::new(Node::Loop {
         start: Some(start),
         count: end,
+        inclusive,
         index,
         body,
     })

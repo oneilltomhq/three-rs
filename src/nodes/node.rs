@@ -234,6 +234,15 @@ pub enum UniformSource {
     MaterialSheen,
     MaterialSheenColor,
     MaterialSheenRoughness,
+    /// `MeshPhysicalMaterial.iridescence` / `.iridescenceIOR` and the two ends
+    /// of `.iridescenceThicknessRange` — `KHR_materials_iridescence`. Three
+    /// reaches the range through `reference( '1', 'float',
+    /// material.iridescenceThicknessRange )` and `reference( '0', … )`, i.e.
+    /// two separate float uniforms, the maximum declared first.
+    MaterialIridescence,
+    MaterialIridescenceIor,
+    MaterialIridescenceThicknessMax,
+    MaterialIridescenceThicknessMin,
     MaterialNormalScale,
     /// `MeshStandardMaterial.aoMapIntensity` — the scale in `materialAO`'s
     /// `tex.r.sub( 1 ).mul( aoMapIntensity ).add( 1 )`.
@@ -368,6 +377,10 @@ impl UniformSource {
             | UniformSource::MaterialSheen
             | UniformSource::MaterialSheenColor
             | UniformSource::MaterialSheenRoughness
+            | UniformSource::MaterialIridescence
+            | UniformSource::MaterialIridescenceIor
+            | UniformSource::MaterialIridescenceThicknessMax
+            | UniformSource::MaterialIridescenceThicknessMin
             | UniformSource::MaterialNormalScale
             | UniformSource::MaterialAoMapIntensity
             | UniformSource::EnvRotationMatrix
@@ -783,6 +796,10 @@ pub enum Node {
         /// reaches the loop header as `i32( ( - nodeVar1 ) )`.
         start: Option<NodeRef>,
         count: NodeRef,
+        /// `Loop( { …, condition: '<=' }, … )` — the inclusive end that
+        /// `evalIridescence`'s `m = 1 .. 2` pair of diracs uses. `false` is
+        /// three's default `'<'`.
+        inclusive: bool,
         /// The loop index, as it appears inside `body` (`Node::Param`).
         index: NodeRef,
         body: Vec<NodeRef>,

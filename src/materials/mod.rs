@@ -308,6 +308,20 @@ pub struct MeshBasicNodeMaterial {
     pub anisotropy: f64,
     pub anisotropy_rotation: f64,
     pub anisotropy_map: Option<Texture>,
+    /// `MeshPhysicalMaterial.iridescence` / `.iridescenceIOR` /
+    /// `.iridescenceThicknessRange` / `.iridescenceThicknessMap` —
+    /// `KHR_materials_iridescence`. The range is `[ minimum, maximum ]` in
+    /// nanometres and the map's **green** channel interpolates between them;
+    /// with no map only the maximum is read, which is three's own quirk and
+    /// not a typo.
+    ///
+    /// `iridescence > 0` is `MeshPhysicalNodeMaterial.useIridescence` — the
+    /// flag that turns on `evalIridescence` and the iridescent F0 in
+    /// `computeMultiscattering`. `docs/nodes.md` §30.
+    pub iridescence: f64,
+    pub iridescence_ior: f64,
+    pub iridescence_thickness_range: [f64; 2],
+    pub iridescence_thickness_map: Option<Texture>,
     /// `MeshPhysicalMaterial.clearcoatNormalMap` / `.clearcoatNormalScale`.
     /// The clearcoat lobe's own normal, through the same TBN sub-build the
     /// base normal map uses.
@@ -463,6 +477,10 @@ impl Default for MeshBasicNodeMaterial {
             anisotropy: 0.0,
             anisotropy_rotation: 0.0,
             anisotropy_map: None,
+            iridescence: 0.0,
+            iridescence_ior: 1.3,
+            iridescence_thickness_range: [100.0, 400.0],
+            iridescence_thickness_map: None,
             clearcoat_normal_map: None,
             clearcoat_normal_scale: crate::math::Vector2::new(1.0, 1.0),
             transmission: 0.0,

@@ -1493,11 +1493,17 @@ impl NodeBuilder {
             Node::Loop {
                 start,
                 count,
+                inclusive,
                 index,
                 body,
             } => {
-                let (start, count, index, body) =
-                    (start.clone(), count.clone(), index.clone(), body.clone());
+                let (start, count, inclusive, index, body) = (
+                    start.clone(),
+                    count.clone(),
+                    *inclusive,
+                    index.clone(),
+                    body.clone(),
+                );
                 // The start is generated before the end, which is the order
                 // three.js' `LoopNode` builds them in and so the order their
                 // vars and uniforms are numbered in.
@@ -1510,9 +1516,10 @@ impl NodeBuilder {
                     Node::Param { name, .. } => *name,
                     _ => "i",
                 };
+                let op = if inclusive { "<=" } else { "<" };
                 self.emit(String::new());
                 self.emit(format!(
-                    "for ( var {name} : i32 = {sstart}; {name} < {scount}; {name} ++ ) {{"
+                    "for ( var {name} : i32 = {sstart}; {name} {op} {scount}; {name} ++ ) {{"
                 ));
                 self.emit(String::new());
                 self.push_scope();

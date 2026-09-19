@@ -117,9 +117,21 @@ fn d_ggx() -> Rc<FnDef> {
     })
 }
 
-/// `BRDF_GGX( { lightDirection, f0, f90, roughness } )` — the isotropic,
-/// non-iridescent path, which is all this rung's materials ask for.
-pub fn brdf_ggx(light_direction: NodeRef, f0: NodeRef, f90: NodeRef) -> NodeRef {
+/// `BRDF_GGX( { lightDirection, f0, f90, roughness, f, USE_IRIDESCENCE } )` —
+/// the isotropic path. `iridescence_fresnel` is `f`, present only when the
+/// material is iridescent; three's `defined( USE_IRIDESCENCE )` branch then
+/// blends the Schlick Fresnel towards it by `Iridescence`.
+///
+/// No page on this ladder reaches the blend: `webgpu_loader_gltf_iridescence`
+/// has no light in the scene, so `direct()` never runs and the dump for it
+/// carries no call at all. It is written from `BRDF_GGX.js` for the same
+/// reason `BRDF_Sheen` is — `docs/nodes.md` §30.
+pub fn brdf_ggx(
+    light_direction: NodeRef,
+    f0: NodeRef,
+    f90: NodeRef,
+    iridescence_fresnel: Option<NodeRef>,
+) -> NodeRef {
     // `roughness.pow2()` — UE4's alpha.
     let alpha = roughness().mul(roughness());
 
@@ -134,6 +146,10 @@ pub fn brdf_ggx(light_direction: NodeRef, f0: NodeRef, f90: NodeRef) -> NodeRef 
     let dot_vh = position_view_direction().dot(half_dir).clamp(0.0, 1.0);
 
     let f = phong::f_schlick(f0, f90, dot_vh);
+    let f = match iridescence_fresnel {
+        Some(fresnel) => mix(f, fresnel, iridescence()),
+        None => f,
+    };
     let v = call(
         &v_ggx_smith_correlated(),
         vec![alpha.clone(), dot_nl, dot_nv],
@@ -287,6 +303,13 @@ pub struct Physical {
     /// `this.clearcoat` — the flag that gives the model its three clearcoat
     /// accumulators and the extra lobe in `indirectSpecular()` / `finish()`.
     pub clearcoat: bool,
+    /// `this.iridescenceFresnel` — `mix( dielectric, metallic, metalness )`,
+    /// read only by `direct()`; `None` when the material is not iridescent.
+    pub iridescence_fresnel: Option<NodeRef>,
+    /// `this.iridescenceF0Dielectric` / `.iridescenceF0Metallic` — the two F0s
+    /// `computeMultiscattering` blends towards by `Iridescence`.
+    pub iridescence_f0_dielectric: Option<NodeRef>,
+    pub iridescence_f0_metallic: Option<NodeRef>,
     /// `builder.context.backdrop` — `getIBLVolumeRefraction()`'s `vec4`, set
     /// by the transmission branch of `start()` and read once more where
     /// `LightsNode` blends it into `totalDiffuse`.
@@ -302,6 +325,7 @@ impl Physical {
     pub fn start(
         sheen: bool,
         clearcoat: bool,
+        iridescence: bool,
         opaque_frame: Option<&transmission::OpaqueFrame>,
         out: &mut Vec<NodeRef>,
     ) -> Self {
@@ -309,6 +333,39 @@ impl Physical {
             out.push(sheen_specular_direct().assign(vec3(0.0, 0.0, 0.0)));
             out.push(sheen_specular_indirect().assign(vec3(0.0, 0.0, 0.0)));
         }
+
+        // The iridescence block. Nothing here is a `toVar` or a `toConst`, so
+        // none of it is emitted until something reads it — with no light in
+        // the scene that is `computeMultiscattering`, and `iridescenceFresnel`
+        // is never emitted at all.
+        let (iridescence_fresnel, iridescence_f0_dielectric, iridescence_f0_metallic) =
+            if iridescence {
+                let dot_nvi = normal_view().dot(position_view_direction()).clamp(0.0, 1.0);
+                let eval = |base_f0: NodeRef| {
+                    call(
+                        &eval_iridescence(),
+                        vec![
+                            float(1.0),
+                            iridescence_ior(),
+                            dot_nvi.clone(),
+                            iridescence_thickness(),
+                            base_f0,
+                        ],
+                    )
+                };
+                let dielectric = eval(specular_color());
+                let metallic = eval(diffuse_color().rgb());
+                let to_f0 = |f: NodeRef| {
+                    call(&schlick_to_f0(), vec![f, float(1.0), dot_nvi.clone()])
+                };
+                (
+                    Some(mix(dielectric.clone(), metallic.clone(), metalness())),
+                    Some(to_f0(dielectric)),
+                    Some(to_f0(metallic)),
+                )
+            } else {
+                (None, None, None)
+            };
 
         // The transmission branch runs before the DFG lookup, and its
         // `diffuseColor.a.mulAssign()` is what pulls the whole screen-space
@@ -356,6 +413,9 @@ impl Physical {
             multi_scattering_compensation,
             sheen,
             clearcoat,
+            iridescence_fresnel,
+            iridescence_f0_dielectric,
+            iridescence_f0_metallic,
             backdrop,
         }
     }
@@ -426,9 +486,18 @@ impl Physical {
         single_scatter: NodeRef,
         multi_scatter: NodeRef,
         f0: NodeRef,
+        iridescence_f0: Option<NodeRef>,
         out: &mut Vec<NodeRef>,
     ) {
         let fab = self.dfg.clone();
+
+        // `const Fr = iridescenceF0 ? iridescence.mix( f0, iridescenceF0 ) : f0`
+        // — a fresh `mix` per call, so the dump shows it twice for the two
+        // dielectric uses rather than once in a shared temp.
+        let f0 = match iridescence_f0 {
+            Some(iridescence_f0) => mix(f0, iridescence_f0, iridescence()),
+            None => f0,
+        };
 
         let fss_ess = f0.clone().mul(fab.x()).add(specular_f90().mul(fab.y()));
 
@@ -494,7 +563,12 @@ impl Physical {
         let dot_vh = position_view_direction().dot(half_dir).clamp(0.0, 1.0);
         let f = phong::f_schlick(specular_color(), specular_f90(), dot_vh);
 
-        let specular_brdf = brdf_ggx(light_direction, specular_color_blended(), float(1.0));
+        let specular_brdf = brdf_ggx(
+            light_direction,
+            specular_color_blended(),
+            float(1.0),
+            self.iridescence_fresnel.clone(),
+        );
 
         out.push(
             direct_diffuse().assign(
@@ -527,6 +601,7 @@ impl Physical {
             single_scattering(),
             multi_scattering(),
             specular_color(),
+            self.iridescence_f0_dielectric.clone(),
             out,
         );
 
@@ -607,12 +682,14 @@ impl Physical {
             single_scattering_dielectric(),
             multi_scattering_dielectric(),
             specular_color(),
+            self.iridescence_f0_dielectric.clone(),
             out,
         );
         self.compute_multiscattering(
             single_scattering_metallic(),
             multi_scattering_metallic(),
             diffuse_color().rgb(),
+            self.iridescence_f0_metallic.clone(),
             out,
         );
 
@@ -726,4 +803,230 @@ pub fn direct_light(
     {
         model.direct(light_direction, light_color, out);
     }
+}
+
+// ---------------------------------------------------------------------------
+// iridescence — `PhysicalLightingModel.js`' thin-film block
+// ---------------------------------------------------------------------------
+
+/// `XYZ_TO_REC709`, three's `mat3( … )` written out in the column-major order
+/// WGSL's `mat3x3<f32>` constructor takes.
+fn xyz_to_rec709() -> NodeRef {
+    join(
+        Type::Mat3,
+        vec![
+            float(3.2404542),
+            float(-0.9692660),
+            float(0.0556434),
+            float(-1.5371385),
+            float(1.8760108),
+            float(-0.2040259),
+            float(-0.4985314),
+            float(0.0415560),
+            float(1.0572252),
+        ],
+    )
+}
+
+/// `Fresnel0ToIor( fresnel0 )` — `( 1 + sqrt( F0 ) ) / ( 1 - sqrt( F0 ) )`,
+/// the IOR a dielectric with that normal-incidence reflectance has. Three
+/// notes that the `fresnel0 == 1` case is not handled; the single caller
+/// clamps to 0.9999 first, which is why that clamp is not optional.
+fn fresnel0_to_ior(fresnel0: NodeRef) -> NodeRef {
+    let sqrt_f0 = sqrt(fresnel0);
+    vec3(1.0, 1.0, 1.0)
+        .add(sqrt_f0.clone())
+        .div(vec3(1.0, 1.0, 1.0).sub(sqrt_f0))
+}
+
+/// `IorToFresnel0( transmittedIor, incidentIor )` — the inverse, unsquared:
+/// the caller squares it, and three leaves the `pow2()` inside so the
+/// difference-over-sum lands in a temp of its own.
+fn ior_to_fresnel0(transmitted_ior: NodeRef, incident_ior: NodeRef) -> NodeRef {
+    let r = transmitted_ior
+        .clone()
+        .sub(incident_ior.clone())
+        .div(transmitted_ior.add(incident_ior));
+    r.clone().mul(r)
+}
+
+/// `evalSensitivity( OPD, shift )` — Belcour and Barla's Fourier-space fit of
+/// the XYZ colour matching functions, converted to linear sRGB. Three gives it
+/// no layout, so it is inlined at its one use inside the `m` loop.
+fn eval_sensitivity(opd: NodeRef, shift: NodeRef) -> NodeRef {
+    // `2 * PI * 1e-9` — the OPD is in nanometres and the fit wants metres.
+    let phase = opd.mul(2.0 * std::f64::consts::PI * 1.0e-9);
+    let val = vec3(5.4856e-13, 4.4201e-13, 5.2481e-13);
+    let pos = vec3(1.6810e+06, 1.7953e+06, 2.2084e+06);
+    let var = vec3(4.3278e+09, 9.3046e+09, 6.6121e+09);
+
+    // The fourth, wider Gaussian, which only the x channel carries. Its
+    // amplitude is folded on the CPU, exactly as three writes it.
+    let x = float(9.7470e-14 * (2.0 * std::f64::consts::PI * 4.5282e+09).sqrt())
+        .mul(phase.clone().mul(2.2399e+06).add(shift.clone().x()).cos())
+        .mul(exp(phase.clone().mul(phase.clone()).mul(-4.5282e+09)));
+
+    let xyz = val
+        .mul(sqrt(var.clone().mul(2.0 * std::f64::consts::PI)))
+        .mul(pos.mul(phase.clone()).add(shift).cos())
+        .mul(exp(phase.clone().mul(phase).negate().mul(var)));
+    let xyz = join(
+        Type::Vec3,
+        vec![xyz.clone().x().add(x), xyz.clone().y(), xyz.z()],
+    )
+    .div(1.0685e-7);
+
+    xyz_to_rec709().mul(xyz)
+}
+
+/// `evalIridescence( { outsideIOR, eta2, cosTheta1, thinFilmThickness, baseF0 } )`
+/// — the airy-summed reflectance of a thin film over a base with the given F0.
+/// Three gives it a layout, so it is a real WGSL `fn`, early `return` and `m`
+/// loop and all. `docs/nodes.md` §30.
+fn eval_iridescence() -> Rc<FnDef> {
+    thread_local! { static CELL: crate::nodes::node::Lazy<Rc<FnDef>> = const { crate::nodes::node::Lazy::new() }; }
+    CELL.with(|c| {
+        c.get(|| {
+            shader_fn(
+                Some("evalIridescence"),
+                vec![
+                    ("outsideIOR", Type::F32),
+                    ("eta2", Type::F32),
+                    ("cosTheta1", Type::F32),
+                    ("thinFilmThickness", Type::F32),
+                    ("baseF0", Type::Vec3),
+                ],
+                Type::Vec3,
+                |args| {
+                    let (outside_ior, eta2, cos_theta1, thin_film_thickness, base_f0) = (
+                        args[0].clone(),
+                        args[1].clone(),
+                        args[2].clone(),
+                        args[3].clone(),
+                        args[4].clone(),
+                    );
+
+                    // Force the film's IOR back to the outside medium's as the
+                    // thickness vanishes, so a zero-thickness film is a no-op.
+                    let iridescence_ior_value =
+                        mix(outside_ior.clone(), eta2, smoothstep(0.0, 0.03, thin_film_thickness.clone()));
+
+                    // Snell's law on the base layer.
+                    let eta = outside_ior.clone().div(iridescence_ior_value.clone());
+                    let sin_theta2_sq = eta
+                        .clone()
+                        .mul(eta)
+                        .mul(cos_theta1.clone().mul(cos_theta1.clone()).one_minus());
+                    let cos_theta2_sq = sin_theta2_sq.one_minus();
+
+                    // Total internal reflection: everything comes back.
+                    let tir = if_then(
+                        cos_theta2_sq.clone().less_than(float(0.0)),
+                        vec![return_statement(vec3(1.0, 1.0, 1.0))],
+                    );
+
+                    let cos_theta2 = sqrt(cos_theta2_sq);
+
+                    // First interface (outside ↔ film).
+                    let r0 = ior_to_fresnel0(iridescence_ior_value.clone(), outside_ior.clone());
+                    let r12 = phong::f_schlick(r0, float(1.0), cos_theta1);
+                    let t121 = r12.clone().one_minus();
+                    let phi12 = iridescence_ior_value
+                        .clone()
+                        .less_than(outside_ior)
+                        .select(float(std::f64::consts::PI), float(0.0));
+                    let phi21 = float(std::f64::consts::PI).sub(phi12);
+
+                    // Second interface (film ↔ base). The 0.9999 guard keeps
+                    // `Fresnel0ToIor`'s denominator off zero.
+                    let base_ior = fresnel0_to_ior(base_f0.clamp(0.0, 0.9999));
+                    let r1 = ior_to_fresnel0(
+                        base_ior.clone(),
+                        iridescence_ior_value.clone().to(Type::Vec3),
+                    );
+                    let r23 = phong::f_schlick(r1, float(1.0), cos_theta2.clone());
+                    let pi_or_zero = |c: NodeRef| {
+                        c.less_than(iridescence_ior_value.clone())
+                            .select(float(std::f64::consts::PI), float(0.0))
+                    };
+                    let phi23 = join(
+                        Type::Vec3,
+                        vec![
+                            pi_or_zero(base_ior.clone().x()),
+                            pi_or_zero(base_ior.clone().y()),
+                            pi_or_zero(base_ior.z()),
+                        ],
+                    );
+
+                    // Optical path difference and the total phase shift.
+                    let opd = iridescence_ior_value
+                        .mul(thin_film_thickness)
+                        .mul(cos_theta2)
+                        .mul(2.0);
+                    let phi = phi21.to(Type::Vec3).add(phi23);
+
+                    let r123 = r12.clone().mul(r23.clone()).clamp(1e-5, 0.9999);
+                    let r123_sqrt = sqrt(r123.clone());
+                    let rs = t121
+                        .clone()
+                        .mul(t121.clone())
+                        .mul(r23)
+                        .div(vec3(1.0, 1.0, 1.0).sub(r123));
+
+                    // m = 0, the DC term.
+                    let i = to_var(None, r12.add(rs.clone()));
+                    // m > 0, the pairs of diracs.
+                    let cm = to_var(None, rs.sub(t121));
+
+                    let body = {
+                        let (i, cm, opd, phi, r123_sqrt) =
+                            (i.clone(), cm.clone(), opd, phi, r123_sqrt);
+                        loop_range("m", float(1.0), float(2.0), true, move |m| {
+                            let m = m.to(Type::F32);
+                            let sm = eval_sensitivity(
+                                m.clone().mul(opd.clone()),
+                                m.to(Type::Vec3).mul(phi.clone()),
+                            )
+                            .mul(2.0);
+                            vec![
+                                cm.clone().assign(cm.clone().mul(r123_sqrt.clone())),
+                                i.clone().assign(i.clone().add(cm.clone().mul(sm))),
+                            ]
+                        })
+                    };
+
+                    // Out-of-gamut colours can come out negative; clamp them.
+                    block(vec![tir, body], max(i, vec3(0.0, 0.0, 0.0)))
+                },
+            )
+        })
+    })
+}
+
+/// `Schlick_to_F0( { f, f90, dotVH } )` — the F0 a Schlick Fresnel with this
+/// value at this angle would have come from. A real `fn`: three gives it a
+/// layout.
+fn schlick_to_f0() -> Rc<FnDef> {
+    thread_local! { static CELL: crate::nodes::node::Lazy<Rc<FnDef>> = const { crate::nodes::node::Lazy::new() }; }
+    CELL.with(|c| {
+        c.get(|| {
+            shader_fn(
+                Some("Schlick_to_F0"),
+                vec![
+                    ("f", Type::Vec3),
+                    ("f90", Type::F32),
+                    ("dotVH", Type::F32),
+                ],
+                Type::Vec3,
+                |args| {
+                    let (f, f90, dot_vh) = (args[0].clone(), args[1].clone(), args[2].clone());
+                    let x = dot_vh.one_minus().saturate();
+                    let x2 = x.clone().mul(x.clone());
+                    let x5 = x.mul(x2.clone()).mul(x2).clamp(0.0, 0.9999);
+                    f.sub(f90.to(Type::Vec3).mul(x5.clone().to(Type::Vec3)))
+                        .div(x5.one_minus().to(Type::Vec3))
+                },
+            )
+        })
+    })
 }

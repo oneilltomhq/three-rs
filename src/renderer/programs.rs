@@ -467,6 +467,11 @@ pub struct UniformContext<'a> {
     pub material_sheen: f64,
     pub material_sheen_color: Color,
     pub material_sheen_roughness: f64,
+    /// `MeshPhysicalMaterial.iridescence` / `.iridescenceIOR` /
+    /// `.iridescenceThicknessRange`.
+    pub material_iridescence: f64,
+    pub material_iridescence_ior: f64,
+    pub material_iridescence_thickness_range: [f64; 2],
     pub material_normal_scale: Vector2,
     /// `MeshPhysicalMaterial.anisotropy` / `.anisotropyRotation` /
     /// `.clearcoat` / `.clearcoatRoughness` / `.clearcoatNormalScale`.
@@ -546,6 +551,9 @@ impl Default for UniformContext<'_> {
             material_sheen: 0.0,
             material_sheen_color: Color::new(0.0, 0.0, 0.0),
             material_sheen_roughness: 1.0,
+            material_iridescence: 0.0,
+            material_iridescence_ior: 1.3,
+            material_iridescence_thickness_range: [100.0, 400.0],
             material_normal_scale: Vector2::new(1.0, 1.0),
             material_anisotropy: 0.0,
             material_anisotropy_rotation: 0.0,
@@ -658,6 +666,16 @@ impl UniformContext<'_> {
                 ],
                 UniformSource::MaterialSheenRoughness => {
                     vec![self.material_sheen_roughness as f32]
+                }
+                UniformSource::MaterialIridescence => vec![self.material_iridescence as f32],
+                UniformSource::MaterialIridescenceIor => {
+                    vec![self.material_iridescence_ior as f32]
+                }
+                UniformSource::MaterialIridescenceThicknessMax => {
+                    vec![self.material_iridescence_thickness_range[1] as f32]
+                }
+                UniformSource::MaterialIridescenceThicknessMin => {
+                    vec![self.material_iridescence_thickness_range[0] as f32]
                 }
                 UniformSource::MaterialNormalScale => vec![
                     self.material_normal_scale.x as f32,

@@ -97,6 +97,7 @@ pub fn anamorphic_high_pass(
         "i",
         half_samples.negate().to(Type::I32),
         half_samples.to(Type::I32),
+        false,
         |i| {
             // `float( i )` — the index is an `i32`, every use of it an `f32`.
             let index = i.to(Type::F32);

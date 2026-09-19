@@ -1157,6 +1157,28 @@ fn setup_standard(
         fragment.push(sheen_roughness().assign(material_sheen_roughness().clamp(0.0001, 1.0)));
     }
 
+    // `setupVariants()`' IRIDESCENCE block, gated on `useIridescence` —
+    // `this.iridescence > 0`. It sits between the sheen block and the
+    // anisotropy one, which is where the three properties land in the dump.
+    //
+    // `MaterialNode.IRIDESCENCE_THICKNESS` is the one odd one: with no
+    // thickness map it is the *maximum* of `iridescenceThicknessRange` alone
+    // (the minimum is not even referenced), and with a map it interpolates
+    // between the two by the map's green channel.
+    let use_iridescence = material.kind == MaterialKind::Physical && material.iridescence > 0.0;
+    if use_iridescence {
+        fragment.push(iridescence().assign(material_iridescence()));
+        fragment.push(iridescence_ior().assign(material_iridescence_ior()));
+        let thickness_value = match &material.iridescence_thickness_map {
+            Some(map) => material_iridescence_thickness_max()
+                .sub(material_iridescence_thickness_min())
+                .mul(texture(map).y())
+                .add(material_iridescence_thickness_min()),
+            None => material_iridescence_thickness_max(),
+        };
+        fragment.push(iridescence_thickness().assign(thickness_value));
+    }
+
     if use_anisotropy {
         // `materialAnisotropy` — `MaterialNode.ANISOTROPY`. With a map the
         // vector is the map's polar direction rotated by the material's, scaled
@@ -1254,7 +1276,13 @@ fn setup_standard(
     };
 
     let outgoing = if scene_lighting && (environment.is_some() || !lights.is_empty()) {
-        let model = Physical::start(use_sheen, use_clearcoat, opaque_frame, fragment);
+        let model = Physical::start(
+            use_sheen,
+            use_clearcoat,
+            use_iridescence,
+            opaque_frame,
+            fragment,
+        );
 
         // `LightingContextNode`'s five accumulators. three.js declares each at
         // the point of its first use; hoisting the zeros here is the one

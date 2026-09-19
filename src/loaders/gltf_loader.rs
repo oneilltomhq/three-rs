@@ -197,6 +197,16 @@ pub struct GltfMaterial {
     pub anisotropy_strength: Option<f64>,
     pub anisotropy_rotation: f64,
     pub anisotropy_texture: Option<usize>,
+
+    /// `KHR_materials_iridescence`: `iridescenceFactor` (default 0),
+    /// `iridescenceIor` (default 1.3), the two ends of
+    /// `iridescenceThicknessRange` (`[ 100, 400 ]` when the extension gives
+    /// neither) and `iridescenceThicknessTexture`. `iridescenceTexture` is
+    /// parsed too so the presence of a map is visible, but nothing reads it —
+    /// `MaterialNode.IRIDESCENCE` has no map branch in r186.
+    pub iridescence: Option<GltfIridescence>,
+    pub iridescence_texture: Option<GltfTextureRef>,
+    pub iridescence_thickness_texture: Option<GltfTextureRef>,
     /// `KHR_materials_clearcoat`: `clearcoatFactor` (default 0),
     /// `clearcoatRoughnessFactor` (default 0) and `clearcoatNormalTexture`
     /// with its `scale`.
@@ -212,6 +222,20 @@ pub struct GltfMaterial {
     pub thickness_factor: Option<f64>,
     pub attenuation_distance: f64,
     pub attenuation_color: [f64; 3],
+}
+
+/// `KHR_materials_iridescence`'s scalar factors, with the extension's own
+/// defaults — the same shape `GLTFMaterialsIridescenceExtension` fills in.
+#[derive(Clone, Copy, Debug)]
+pub struct GltfIridescence {
+    /// `iridescenceFactor`, default 0 — which is also
+    /// `MeshPhysicalMaterial.iridescence`'s default, so a `{}` extension
+    /// leaves the material non-iridescent.
+    pub factor: f64,
+    /// `iridescenceIor`, default 1.3.
+    pub ior: f64,
+    /// `iridescenceThicknessRange` — `[ minimum, maximum ]` in nanometres.
+    pub thickness_range: [f64; 2],
 }
 
 /// `KHR_materials_sheen`'s two factors, with the extension's own defaults
@@ -1235,6 +1259,35 @@ impl GLTFLoader {
                     .pointer("/extensions/KHR_materials_anisotropy/anisotropyTexture/index")
                     .and_then(Value::as_u64)
                     .map(|i| i as usize),
+                // `GLTFMaterialsIridescenceExtension.extendMaterialParams`.
+                // The thickness range starts at `[ 100, 400 ]` and each end is
+                // overwritten only when the extension names it.
+                iridescence: material_def
+                    .pointer("/extensions/KHR_materials_iridescence")
+                    .map(|ext| GltfIridescence {
+                        factor: ext
+                            .get("iridescenceFactor")
+                            .and_then(Value::as_f64)
+                            .unwrap_or(0.0),
+                        ior: ext
+                            .get("iridescenceIor")
+                            .and_then(Value::as_f64)
+                            .unwrap_or(1.3),
+                        thickness_range: [
+                            ext.get("iridescenceThicknessMinimum")
+                                .and_then(Value::as_f64)
+                                .unwrap_or(100.0),
+                            ext.get("iridescenceThicknessMaximum")
+                                .and_then(Value::as_f64)
+                                .unwrap_or(400.0),
+                        ],
+                    }),
+                iridescence_texture: GltfTextureRef::parse(
+                    material_def.pointer("/extensions/KHR_materials_iridescence/iridescenceTexture"),
+                ),
+                iridescence_thickness_texture: GltfTextureRef::parse(material_def.pointer(
+                    "/extensions/KHR_materials_iridescence/iridescenceThicknessTexture",
+                )),
                 // `GLTFMaterialsClearcoat.extendMaterialParams`
                 clearcoat_factor: material_def
                     .pointer("/extensions/KHR_materials_clearcoat")
@@ -1583,6 +1636,7 @@ impl GLTFLoader {
             || material.specular_factor.is_some()
             || material.sheen.is_some()
             || material.anisotropy_strength.is_some()
+            || material.iridescence.is_some()
             || material.clearcoat_factor.is_some()
             || material.transmission_factor.is_some()
             || material.thickness_factor.is_some();
@@ -1709,6 +1763,19 @@ impl GLTFLoader {
         }
         if let Some(index) = material.anisotropy_texture {
             out.anisotropy_map = self.load_texture(cache, textures, images, index)?;
+        }
+
+        // `GLTFMaterialsIridescenceExtension.extendMaterialParams`. The
+        // thickness map is a data map — its green channel is a thickness in
+        // nanometres — so it stays linear.
+        if let Some(iridescence) = material.iridescence {
+            out.iridescence = iridescence.factor;
+            out.iridescence_ior = iridescence.ior;
+            out.iridescence_thickness_range = iridescence.thickness_range;
+        }
+        if let Some(map_def) = &material.iridescence_thickness_texture {
+            out.iridescence_thickness_map =
+                self.assign_texture(cache, textures, images, map_def, ColorSpace::NoColorSpace)?;
         }
 
         // `GLTFMaterialsClearcoat.extendMaterialParams`.
