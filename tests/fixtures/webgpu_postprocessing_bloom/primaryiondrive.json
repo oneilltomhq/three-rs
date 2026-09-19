@@ -1,0 +1,2599 @@
+{
+ "file": "models/gltf/PrimaryIonDrive.glb",
+ "asset": {
+  "extras": {
+   "author": "indierocktopus (https://sketchfab.com/indierocktopus)",
+   "license": "CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)",
+   "source": "https://sketchfab.com/models/d3f50a66fee74c6588dd9bc92f7fe7b3",
+   "title": "Primary Ion Drive ///"
+  },
+  "generator": "Sketchfab-3.18.5",
+  "version": "2.0"
+ },
+ "sceneName": "OSG_Scene",
+ "sceneChildren": [
+  "RootNode_(gltf_orientation_matrix)"
+ ],
+ "nodeCount": 20,
+ "nodes": [
+  {
+   "name": "OSG_Scene",
+   "type": "Group",
+   "uuidOrder": 0,
+   "parent": null,
+   "visible": true,
+   "castShadow": false,
+   "receiveShadow": false,
+   "renderOrder": 0,
+   "position": [
+    0,
+    0,
+    0
+   ],
+   "quaternion": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "matrix": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1
+   ],
+   "matrixWorld": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1
+   ]
+  },
+  {
+   "name": "RootNode_(gltf_orientation_matrix)",
+   "type": "Object3D",
+   "uuidOrder": 1,
+   "parent": "OSG_Scene",
+   "visible": true,
+   "castShadow": false,
+   "receiveShadow": false,
+   "renderOrder": 0,
+   "position": [
+    0,
+    0,
+    0
+   ],
+   "quaternion": [
+    -0.707106781,
+    0,
+    0,
+    0.707106781
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "matrix": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    -1,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1
+   ],
+   "matrixWorld": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    -1,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1
+   ]
+  },
+  {
+   "name": "RootNode_(model_correction_matrix)",
+   "type": "Object3D",
+   "uuidOrder": 2,
+   "parent": "RootNode_(gltf_orientation_matrix)",
+   "visible": true,
+   "castShadow": false,
+   "receiveShadow": false,
+   "renderOrder": 0,
+   "position": [
+    0,
+    0,
+    0
+   ],
+   "quaternion": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "matrix": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1
+   ],
+   "matrixWorld": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    -1,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1
+   ]
+  },
+  {
+   "name": "f10517d4966d42c99c9bc47c460a132ffbx",
+   "type": "Object3D",
+   "uuidOrder": 3,
+   "parent": "RootNode_(model_correction_matrix)",
+   "visible": true,
+   "castShadow": false,
+   "receiveShadow": false,
+   "renderOrder": 0,
+   "position": [
+    0,
+    0,
+    0
+   ],
+   "quaternion": [
+    0.707106781,
+    0,
+    0,
+    0.707106781
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "matrix": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    -1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1
+   ],
+   "matrixWorld": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1
+   ]
+  },
+  {
+   "name": "",
+   "type": "Object3D",
+   "uuidOrder": 4,
+   "parent": "f10517d4966d42c99c9bc47c460a132ffbx",
+   "visible": true,
+   "castShadow": false,
+   "receiveShadow": false,
+   "renderOrder": 0,
+   "position": [
+    0,
+    0,
+    0
+   ],
+   "quaternion": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "matrix": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1
+   ],
+   "matrixWorld": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1
+   ]
+  },
+  {
+   "name": "RootNode",
+   "type": "Object3D",
+   "uuidOrder": 5,
+   "parent": "",
+   "visible": true,
+   "castShadow": false,
+   "receiveShadow": false,
+   "renderOrder": 0,
+   "position": [
+    0,
+    0,
+    0
+   ],
+   "quaternion": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "matrix": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1
+   ],
+   "matrixWorld": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1
+   ]
+  },
+  {
+   "name": "circle",
+   "type": "Object3D",
+   "uuidOrder": 6,
+   "parent": "RootNode",
+   "visible": true,
+   "castShadow": false,
+   "receiveShadow": false,
+   "renderOrder": 0,
+   "position": [
+    0,
+    0,
+    0
+   ],
+   "quaternion": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "matrix": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1
+   ],
+   "matrixWorld": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1
+   ]
+  },
+  {
+   "name": "circle_constant1_0",
+   "type": "Mesh",
+   "uuidOrder": 7,
+   "parent": "circle",
+   "visible": true,
+   "castShadow": false,
+   "receiveShadow": false,
+   "renderOrder": 0,
+   "position": [
+    0,
+    0,
+    0
+   ],
+   "quaternion": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "matrix": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1
+   ],
+   "matrixWorld": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1
+   ],
+   "geometry": {
+    "name": "",
+    "uuidShared": "0e7baab0-504a-4827-8b8d-737181ddfb97",
+    "groups": [],
+    "drawRange": {
+     "start": 0,
+     "count": null
+    },
+    "morphTargetsRelative": false,
+    "morphAttributes": {},
+    "attributes": {
+     "color": {
+      "itemSize": 4,
+      "count": 33080,
+      "normalized": false,
+      "array": "Float32Array",
+      "hash": 2446739525,
+      "first": [
+       0.899999976,
+       0,
+       0,
+       1,
+       0.899999976,
+       0,
+       0,
+       1
+      ]
+     },
+     "tangent": {
+      "itemSize": 4,
+      "count": 33080,
+      "normalized": false,
+      "array": "Float32Array",
+      "hash": 964992296,
+      "first": [
+       0.159002751,
+       -0.960409701,
+       -0.228760496,
+       -1,
+       0.665051758,
+       -0.690452218,
+       0.284573466,
+       -1
+      ]
+     },
+     "normal": {
+      "itemSize": 3,
+      "count": 33080,
+      "normalized": false,
+      "array": "Float32Array",
+      "hash": 2382164148,
+      "first": [
+       0.757952988,
+       0.267222822,
+       -0.595062435,
+       0.530840456,
+       0.169040933,
+       -0.830441833
+      ]
+     },
+     "position": {
+      "itemSize": 3,
+      "count": 33080,
+      "normalized": false,
+      "array": "Float32Array",
+      "hash": 1943017619,
+      "first": [
+       1.40963006,
+       0.003535532,
+       -1.100197673,
+       1.505059719,
+       0.003388975,
+       -1.004778504
+      ]
+     },
+     "index": {
+      "count": 57600,
+      "array": "Uint32Array",
+      "hash": 1259834157,
+      "first": [
+       0,
+       1,
+       2,
+       0,
+       2,
+       3
+      ]
+     }
+    }
+   },
+   "material": {
+    "name": "constant1",
+    "type": "MeshStandardMaterial",
+    "side": 2,
+    "transparent": false,
+    "opacity": 1,
+    "depthWrite": true,
+    "alphaTest": 0,
+    "blending": 1,
+    "vertexColors": true,
+    "flatShading": false,
+    "toneMapped": true,
+    "color": [
+     1,
+     1,
+     1
+    ],
+    "metalness": 0,
+    "roughness": 0.6,
+    "emissive": [
+     0.018924884,
+     0.018924884,
+     0.018924884
+    ],
+    "emissiveIntensity": 1,
+    "specularColor": null,
+    "normalScale": [
+     1,
+     1
+    ],
+    "map": null,
+    "normalMap": null,
+    "roughnessMap": null,
+    "metalnessMap": null,
+    "emissiveMap": null,
+    "aoMap": null,
+    "specularColorMap": null
+   },
+   "morphTargetDictionary": null,
+   "morphTargetInfluences": null
+  },
+  {
+   "name": "circle_HoloFillDark_0",
+   "type": "Mesh",
+   "uuidOrder": 8,
+   "parent": "circle",
+   "visible": true,
+   "castShadow": false,
+   "receiveShadow": false,
+   "renderOrder": 0,
+   "position": [
+    0,
+    0,
+    0
+   ],
+   "quaternion": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "matrix": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1
+   ],
+   "matrixWorld": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1
+   ],
+   "geometry": {
+    "name": "",
+    "uuidShared": "38d5317a-bfd3-4632-b509-7af39d619f0f",
+    "groups": [],
+    "drawRange": {
+     "start": 0,
+     "count": null
+    },
+    "morphTargetsRelative": false,
+    "morphAttributes": {},
+    "attributes": {
+     "color": {
+      "itemSize": 4,
+      "count": 3200,
+      "normalized": false,
+      "array": "Float32Array",
+      "hash": 3564557765,
+      "first": [
+       0.899999976,
+       0,
+       0,
+       1,
+       0.899999976,
+       0,
+       0,
+       1
+      ]
+     },
+     "tangent": {
+      "itemSize": 4,
+      "count": 3200,
+      "normalized": false,
+      "array": "Float32Array",
+      "hash": 561818148,
+      "first": [
+       0.706206799,
+       0.044419665,
+       0.706610918,
+       -1,
+       0.706408203,
+       0.088711359,
+       0.70222348,
+       -1
+      ]
+     },
+     "normal": {
+      "itemSize": 3,
+      "count": 3200,
+      "normalized": false,
+      "array": "Float32Array",
+      "hash": 1312255545,
+      "first": [
+       0.707716584,
+       -0.015770055,
+       -0.706320465,
+       0.707716763,
+       -0.104170874,
+       -0.698774278
+      ]
+     },
+     "position": {
+      "itemSize": 3,
+      "count": 3200,
+      "normalized": false,
+      "array": "Float32Array",
+      "hash": 2960150365,
+      "first": [
+       1.504634976,
+       0,
+       -1,
+       1.504634976,
+       -0.125333115,
+       -0.992114723
+      ]
+     },
+     "index": {
+      "count": 4800,
+      "array": "Uint32Array",
+      "hash": 2231140085,
+      "first": [
+       0,
+       1,
+       2,
+       0,
+       2,
+       3
+      ]
+     }
+    }
+   },
+   "material": {
+    "name": "HoloFillDark",
+    "type": "MeshStandardMaterial",
+    "side": 0,
+    "transparent": true,
+    "opacity": 0.8092606707,
+    "depthWrite": false,
+    "alphaTest": 0,
+    "blending": 1,
+    "vertexColors": true,
+    "flatShading": false,
+    "toneMapped": true,
+    "color": [
+     0,
+     0,
+     0
+    ],
+    "metalness": 0.9224466463,
+    "roughness": 0.7029344512,
+    "emissive": [
+     0,
+     0,
+     0
+    ],
+    "emissiveIntensity": 1,
+    "specularColor": null,
+    "normalScale": [
+     1,
+     1
+    ],
+    "map": null,
+    "normalMap": null,
+    "roughnessMap": null,
+    "metalnessMap": null,
+    "emissiveMap": null,
+    "aoMap": null,
+    "specularColorMap": null
+   },
+   "morphTargetDictionary": null,
+   "morphTargetInfluences": null
+  },
+  {
+   "name": "geo1",
+   "type": "Object3D",
+   "uuidOrder": 9,
+   "parent": "RootNode",
+   "visible": true,
+   "castShadow": false,
+   "receiveShadow": false,
+   "renderOrder": 0,
+   "position": [
+    0,
+    0,
+    0
+   ],
+   "quaternion": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "matrix": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1
+   ],
+   "matrixWorld": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1
+   ]
+  },
+  {
+   "name": "geo1_constant1_0",
+   "type": "Mesh",
+   "uuidOrder": 10,
+   "parent": "geo1",
+   "visible": true,
+   "castShadow": false,
+   "receiveShadow": false,
+   "renderOrder": 0,
+   "position": [
+    0,
+    0,
+    0
+   ],
+   "quaternion": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "matrix": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1
+   ],
+   "matrixWorld": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1
+   ],
+   "geometry": {
+    "name": "",
+    "uuidShared": "13ececf6-b10e-44a0-b7b5-d88a97ac1d61",
+    "groups": [],
+    "drawRange": {
+     "start": 0,
+     "count": null
+    },
+    "morphTargetsRelative": false,
+    "morphAttributes": {},
+    "attributes": {
+     "color": {
+      "itemSize": 4,
+      "count": 45022,
+      "normalized": false,
+      "array": "Float32Array",
+      "hash": 673842395,
+      "first": [
+       0,
+       0.449999988,
+       0.899999976,
+       1,
+       0,
+       0.449999988,
+       0.899999976,
+       1
+      ]
+     },
+     "tangent": {
+      "itemSize": 4,
+      "count": 45022,
+      "normalized": false,
+      "array": "Float32Array",
+      "hash": 1376669826,
+      "first": [
+       0.763768017,
+       -0.062755145,
+       -0.642433167,
+       -1,
+       0.763801932,
+       -0.072144136,
+       -0.641406059,
+       -1
+      ]
+     },
+     "normal": {
+      "itemSize": 3,
+      "count": 45022,
+      "normalized": false,
+      "array": "Float32Array",
+      "hash": 1480875148,
+      "first": [
+       0.000088346,
+       -0.995252669,
+       0.097324826,
+       -0.000005881,
+       -0.993734479,
+       0.111766346
+      ]
+     },
+     "position": {
+      "itemSize": 3,
+      "count": 45022,
+      "normalized": false,
+      "array": "Float32Array",
+      "hash": 2337026175,
+      "first": [
+       0.353364229,
+       0.483215123,
+       -0.791239321,
+       0.347836494,
+       0.483669311,
+       -0.786589742
+      ]
+     },
+     "index": {
+      "count": 75522,
+      "array": "Uint32Array",
+      "hash": 2390244624,
+      "first": [
+       0,
+       1,
+       2,
+       3,
+       4,
+       5
+      ]
+     }
+    }
+   },
+   "material": {
+    "name": "constant1",
+    "type": "MeshStandardMaterial",
+    "side": 2,
+    "transparent": false,
+    "opacity": 1,
+    "depthWrite": true,
+    "alphaTest": 0,
+    "blending": 1,
+    "vertexColors": true,
+    "flatShading": false,
+    "toneMapped": true,
+    "color": [
+     1,
+     1,
+     1
+    ],
+    "metalness": 0,
+    "roughness": 0.6,
+    "emissive": [
+     0.018924884,
+     0.018924884,
+     0.018924884
+    ],
+    "emissiveIntensity": 1,
+    "specularColor": null,
+    "normalScale": [
+     1,
+     1
+    ],
+    "map": null,
+    "normalMap": null,
+    "roughnessMap": null,
+    "metalnessMap": null,
+    "emissiveMap": null,
+    "aoMap": null,
+    "specularColorMap": null
+   },
+   "morphTargetDictionary": null,
+   "morphTargetInfluences": null
+  },
+  {
+   "name": "geo1_HoloFillDark_0",
+   "type": "Mesh",
+   "uuidOrder": 11,
+   "parent": "geo1",
+   "visible": true,
+   "castShadow": false,
+   "receiveShadow": false,
+   "renderOrder": 0,
+   "position": [
+    0,
+    0,
+    0
+   ],
+   "quaternion": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "matrix": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1
+   ],
+   "matrixWorld": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1
+   ],
+   "geometry": {
+    "name": "",
+    "uuidShared": "8f92f1a3-d1c7-4b2a-8964-2b8d0aad7e22",
+    "groups": [],
+    "drawRange": {
+     "start": 0,
+     "count": null
+    },
+    "morphTargetsRelative": false,
+    "morphAttributes": {},
+    "attributes": {
+     "color": {
+      "itemSize": 4,
+      "count": 2208,
+      "normalized": false,
+      "array": "Float32Array",
+      "hash": 1408410725,
+      "first": [
+       0.5,
+       0,
+       0,
+       1,
+       0.5,
+       0,
+       0,
+       1
+      ]
+     },
+     "tangent": {
+      "itemSize": 4,
+      "count": 2208,
+      "normalized": false,
+      "array": "Float32Array",
+      "hash": 2403287493,
+      "first": [
+       0,
+       0,
+       0,
+       1,
+       0,
+       0,
+       0,
+       1
+      ]
+     },
+     "normal": {
+      "itemSize": 3,
+      "count": 2208,
+      "normalized": false,
+      "array": "Float32Array",
+      "hash": 3699292368,
+      "first": [
+       0.850650787,
+       0.276393205,
+       -0.447213709,
+       0.850650847,
+       0.276393116,
+       -0.44721365
+      ]
+     },
+     "position": {
+      "itemSize": 3,
+      "count": 2208,
+      "normalized": false,
+      "array": "Float32Array",
+      "hash": 2050663837,
+      "first": [
+       0.218063667,
+       0.30013898,
+       -0.229285523,
+       0.31558466,
+       0.102539733,
+       -0.165912583
+      ]
+     },
+     "index": {
+      "count": 5430,
+      "array": "Uint32Array",
+      "hash": 4271645934,
+      "first": [
+       0,
+       1,
+       2,
+       0,
+       2,
+       3
+      ]
+     }
+    }
+   },
+   "material": {
+    "name": "HoloFillDark",
+    "type": "MeshStandardMaterial",
+    "side": 0,
+    "transparent": true,
+    "opacity": 0.8092606707,
+    "depthWrite": false,
+    "alphaTest": 0,
+    "blending": 1,
+    "vertexColors": true,
+    "flatShading": false,
+    "toneMapped": true,
+    "color": [
+     0,
+     0,
+     0
+    ],
+    "metalness": 0.9224466463,
+    "roughness": 0.7029344512,
+    "emissive": [
+     0,
+     0,
+     0
+    ],
+    "emissiveIntensity": 1,
+    "specularColor": null,
+    "normalScale": [
+     1,
+     1
+    ],
+    "map": null,
+    "normalMap": null,
+    "roughnessMap": null,
+    "metalnessMap": null,
+    "emissiveMap": null,
+    "aoMap": null,
+    "specularColorMap": null
+   },
+   "morphTargetDictionary": null,
+   "morphTargetInfluences": null
+  },
+  {
+   "name": "cam1",
+   "type": "Object3D",
+   "uuidOrder": 12,
+   "parent": "RootNode",
+   "visible": true,
+   "castShadow": false,
+   "receiveShadow": false,
+   "renderOrder": 0,
+   "position": [
+    0,
+    0,
+    8.800000191
+   ],
+   "quaternion": [
+    0,
+    0.707106829,
+    0,
+    0.707106829
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "matrix": [
+    -1.34e-7,
+    0,
+    -1.000000134,
+    0,
+    0,
+    1,
+    0,
+    0,
+    1.000000134,
+    0,
+    -1.34e-7,
+    0,
+    0,
+    0,
+    8.800000191,
+    1
+   ],
+   "matrixWorld": [
+    -1.34e-7,
+    0,
+    -1.000000134,
+    0,
+    0,
+    1,
+    0,
+    0,
+    1.000000134,
+    0,
+    -1.34e-7,
+    0,
+    0,
+    0,
+    8.800000191,
+    1
+   ]
+  },
+  {
+   "name": "",
+   "type": "Object3D",
+   "uuidOrder": 13,
+   "parent": "cam1",
+   "visible": true,
+   "castShadow": false,
+   "receiveShadow": false,
+   "renderOrder": 0,
+   "position": [
+    0,
+    0,
+    0
+   ],
+   "quaternion": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "matrix": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1
+   ],
+   "matrixWorld": [
+    -1.34e-7,
+    0,
+    -1.000000134,
+    0,
+    0,
+    1,
+    0,
+    0,
+    1.000000134,
+    0,
+    -1.34e-7,
+    0,
+    0,
+    0,
+    8.800000191,
+    1
+   ]
+  },
+  {
+   "name": "circle1",
+   "type": "Object3D",
+   "uuidOrder": 14,
+   "parent": "RootNode",
+   "visible": true,
+   "castShadow": false,
+   "receiveShadow": false,
+   "renderOrder": 0,
+   "position": [
+    0,
+    0,
+    0
+   ],
+   "quaternion": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "matrix": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1
+   ],
+   "matrixWorld": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1
+   ]
+  },
+  {
+   "name": "circle1_constant2_0",
+   "type": "Mesh",
+   "uuidOrder": 15,
+   "parent": "circle1",
+   "visible": true,
+   "castShadow": false,
+   "receiveShadow": false,
+   "renderOrder": 0,
+   "position": [
+    0,
+    0,
+    0
+   ],
+   "quaternion": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "matrix": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1
+   ],
+   "matrixWorld": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1
+   ],
+   "geometry": {
+    "name": "",
+    "uuidShared": "8d8b8a69-8383-468a-a8c2-2597d1ff6ef4",
+    "groups": [],
+    "drawRange": {
+     "start": 0,
+     "count": null
+    },
+    "morphTargetsRelative": false,
+    "morphAttributes": {},
+    "attributes": {
+     "color": {
+      "itemSize": 4,
+      "count": 6880,
+      "normalized": false,
+      "array": "Float32Array",
+      "hash": 30400965,
+      "first": [
+       0.899999976,
+       0.899999976,
+       0,
+       1,
+       0.899999976,
+       0.899999976,
+       0,
+       1
+      ]
+     },
+     "tangent": {
+      "itemSize": 4,
+      "count": 6880,
+      "normalized": false,
+      "array": "Float32Array",
+      "hash": 2722641736,
+      "first": [
+       0,
+       0,
+       0,
+       1,
+       0,
+       0,
+       0,
+       1
+      ]
+     },
+     "normal": {
+      "itemSize": 3,
+      "count": 6880,
+      "normalized": false,
+      "array": "Float32Array",
+      "hash": 3362287689,
+      "first": [
+       0,
+       -0.684546232,
+       -0.728969455,
+       0,
+       -0.684546232,
+       -0.728969455
+      ]
+     },
+     "position": {
+      "itemSize": 3,
+      "count": 6880,
+      "normalized": false,
+      "array": "Float32Array",
+      "hash": 1767568649,
+      "first": [
+       1.641233206,
+       0.727599382,
+       -0.697730839,
+       1.651233196,
+       0.720309675,
+       -0.690885365
+      ]
+     },
+     "index": {
+      "count": 10320,
+      "array": "Uint32Array",
+      "hash": 1184572999,
+      "first": [
+       0,
+       1,
+       2,
+       0,
+       2,
+       3
+      ]
+     }
+    }
+   },
+   "material": {
+    "name": "constant2",
+    "type": "MeshStandardMaterial",
+    "side": 2,
+    "transparent": false,
+    "opacity": 1,
+    "depthWrite": true,
+    "alphaTest": 0,
+    "blending": 1,
+    "vertexColors": true,
+    "flatShading": false,
+    "toneMapped": true,
+    "color": [
+     0.970067979,
+     0.321488876,
+     0
+    ],
+    "metalness": 0,
+    "roughness": 0.6,
+    "emissive": [
+     0.322027439,
+     0.290558949,
+     0
+    ],
+    "emissiveIntensity": 1,
+    "specularColor": null,
+    "normalScale": [
+     1,
+     1
+    ],
+    "map": null,
+    "normalMap": null,
+    "roughnessMap": null,
+    "metalnessMap": null,
+    "emissiveMap": null,
+    "aoMap": null,
+    "specularColorMap": null
+   },
+   "morphTargetDictionary": null,
+   "morphTargetInfluences": null
+  },
+  {
+   "name": "circle2",
+   "type": "Object3D",
+   "uuidOrder": 16,
+   "parent": "RootNode",
+   "visible": true,
+   "castShadow": false,
+   "receiveShadow": false,
+   "renderOrder": 0,
+   "position": [
+    0,
+    0,
+    0
+   ],
+   "quaternion": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "matrix": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1
+   ],
+   "matrixWorld": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1
+   ]
+  },
+  {
+   "name": "circle2_constant2_0",
+   "type": "Mesh",
+   "uuidOrder": 17,
+   "parent": "circle2",
+   "visible": true,
+   "castShadow": false,
+   "receiveShadow": false,
+   "renderOrder": 0,
+   "position": [
+    0,
+    0,
+    0
+   ],
+   "quaternion": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "matrix": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1
+   ],
+   "matrixWorld": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1
+   ],
+   "geometry": {
+    "name": "",
+    "uuidShared": "8330ac22-2e60-45c1-9a6f-a64ebdeaa2d0",
+    "groups": [],
+    "drawRange": {
+     "start": 0,
+     "count": null
+    },
+    "morphTargetsRelative": false,
+    "morphAttributes": {},
+    "attributes": {
+     "color": {
+      "itemSize": 4,
+      "count": 1408,
+      "normalized": false,
+      "array": "Float32Array",
+      "hash": 4247023045,
+      "first": [
+       0.899999976,
+       0.899999976,
+       0,
+       1,
+       0.899999976,
+       0.899999976,
+       0,
+       1
+      ]
+     },
+     "normal": {
+      "itemSize": 3,
+      "count": 1408,
+      "normalized": false,
+      "array": "Float32Array",
+      "hash": 3690274701,
+      "first": [
+       0.99999994,
+       0,
+       0,
+       1,
+       0,
+       0
+      ]
+     },
+     "position": {
+      "itemSize": 3,
+      "count": 1408,
+      "normalized": false,
+      "array": "Float32Array",
+      "hash": 3188545101,
+      "first": [
+       2.037605524,
+       0.146724716,
+       -0.031359602,
+       2.037605524,
+       0.149913892,
+       -0.006114427
+      ]
+     },
+     "index": {
+      "count": 2544,
+      "array": "Uint32Array",
+      "hash": 4106109314,
+      "first": [
+       0,
+       1,
+       2,
+       0,
+       2,
+       3
+      ]
+     }
+    }
+   },
+   "material": {
+    "name": "constant2",
+    "type": "MeshStandardMaterial",
+    "side": 2,
+    "transparent": false,
+    "opacity": 1,
+    "depthWrite": true,
+    "alphaTest": 0,
+    "blending": 1,
+    "vertexColors": true,
+    "flatShading": false,
+    "toneMapped": true,
+    "color": [
+     0.970067979,
+     0.321488876,
+     0
+    ],
+    "metalness": 0,
+    "roughness": 0.6,
+    "emissive": [
+     0.322027439,
+     0.290558949,
+     0
+    ],
+    "emissiveIntensity": 1,
+    "specularColor": null,
+    "normalScale": [
+     1,
+     -1
+    ],
+    "map": null,
+    "normalMap": null,
+    "roughnessMap": null,
+    "metalnessMap": null,
+    "emissiveMap": null,
+    "aoMap": null,
+    "specularColorMap": null
+   },
+   "morphTargetDictionary": null,
+   "morphTargetInfluences": null
+  },
+  {
+   "name": "cam2",
+   "type": "Object3D",
+   "uuidOrder": 18,
+   "parent": "RootNode",
+   "visible": true,
+   "castShadow": false,
+   "receiveShadow": false,
+   "renderOrder": 0,
+   "position": [
+    -4.129984856,
+    4.451593399,
+    5.820067406
+   ],
+   "quaternion": [
+    -0.132691398,
+    0.443039834,
+    -0.241262823,
+    0.85317111
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "matrix": [
+    0.49101591,
+    -0.529252092,
+    -0.691950572,
+    0,
+    0.294101791,
+    0.848370486,
+    -0.440195018,
+    0,
+    0.820004578,
+    0.012638852,
+    0.572217396,
+    0,
+    -4.129984856,
+    4.451593399,
+    5.820067406,
+    1
+   ],
+   "matrixWorld": [
+    0.49101591,
+    -0.529252092,
+    -0.691950572,
+    0,
+    0.294101791,
+    0.848370486,
+    -0.440195018,
+    0,
+    0.820004578,
+    0.012638852,
+    0.572217396,
+    0,
+    -4.129984856,
+    4.451593399,
+    5.820067406,
+    1
+   ]
+  },
+  {
+   "name": "",
+   "type": "Object3D",
+   "uuidOrder": 19,
+   "parent": "cam2",
+   "visible": true,
+   "castShadow": false,
+   "receiveShadow": false,
+   "renderOrder": 0,
+   "position": [
+    0,
+    0,
+    0
+   ],
+   "quaternion": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "scale": [
+    1,
+    1,
+    1
+   ],
+   "matrix": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1
+   ],
+   "matrixWorld": [
+    0.49101591,
+    -0.529252092,
+    -0.691950572,
+    0,
+    0.294101791,
+    0.848370486,
+    -0.440195018,
+    0,
+    0.820004578,
+    0.012638852,
+    0.572217396,
+    0,
+    -4.129984856,
+    4.451593399,
+    5.820067406,
+    1
+   ]
+  }
+ ],
+ "animations": [
+  {
+   "name": "Main",
+   "duration": 10,
+   "blendMode": 2500,
+   "tracks": [
+    {
+     "name": "circle.quaternion",
+     "type": "QuaternionKeyframeTrack",
+     "valueSize": 4,
+     "times": 300,
+     "interpolation": 2301,
+     "timesHash": 2786710353,
+     "valuesHash": 535368531,
+     "time0": 0.016666668,
+     "timeN": 10,
+     "values0": [
+      0,
+      0,
+      0,
+      1
+     ]
+    },
+    {
+     "name": "geo1.quaternion",
+     "type": "QuaternionKeyframeTrack",
+     "valueSize": 4,
+     "times": 300,
+     "interpolation": 2301,
+     "timesHash": 2786710353,
+     "valuesHash": 1388185409,
+     "time0": 0.016666668,
+     "timeN": 10,
+     "values0": [
+      0,
+      0,
+      0,
+      1
+     ]
+    },
+    {
+     "name": "circle1.quaternion",
+     "type": "QuaternionKeyframeTrack",
+     "valueSize": 4,
+     "times": 879,
+     "interpolation": 2301,
+     "timesHash": 155208072,
+     "valuesHash": 484042378,
+     "time0": 0.016666668,
+     "timeN": 10,
+     "values0": [
+      0,
+      0,
+      0,
+      1
+     ]
+    },
+    {
+     "name": "circle2.quaternion",
+     "type": "QuaternionKeyframeTrack",
+     "valueSize": 4,
+     "times": 879,
+     "interpolation": 2301,
+     "timesHash": 155208072,
+     "valuesHash": 166242900,
+     "time0": 0.016666668,
+     "timeN": 10,
+     "values0": [
+      0,
+      0,
+      0,
+      1
+     ]
+    }
+   ]
+  }
+ ],
+ "animationsOptimized": [
+  {
+   "name": "Main",
+   "duration": 10,
+   "blendMode": 2500,
+   "tracks": [
+    {
+     "name": "circle.quaternion",
+     "type": "QuaternionKeyframeTrack",
+     "valueSize": 4,
+     "times": 300,
+     "interpolation": 2301,
+     "timesHash": 2786710353,
+     "valuesHash": 535368531,
+     "time0": 0.016666668,
+     "timeN": 10,
+     "values0": [
+      0,
+      0,
+      0,
+      1
+     ]
+    },
+    {
+     "name": "geo1.quaternion",
+     "type": "QuaternionKeyframeTrack",
+     "valueSize": 4,
+     "times": 300,
+     "interpolation": 2301,
+     "timesHash": 2786710353,
+     "valuesHash": 1388185409,
+     "time0": 0.016666668,
+     "timeN": 10,
+     "values0": [
+      0,
+      0,
+      0,
+      1
+     ]
+    },
+    {
+     "name": "circle1.quaternion",
+     "type": "QuaternionKeyframeTrack",
+     "valueSize": 4,
+     "times": 690,
+     "interpolation": 2301,
+     "timesHash": 621269574,
+     "valuesHash": 938966752,
+     "time0": 0.016666668,
+     "timeN": 10,
+     "values0": [
+      0,
+      0,
+      0,
+      1
+     ]
+    },
+    {
+     "name": "circle2.quaternion",
+     "type": "QuaternionKeyframeTrack",
+     "valueSize": 4,
+     "times": 690,
+     "interpolation": 2301,
+     "timesHash": 621269574,
+     "valuesHash": 3289697752,
+     "time0": 0.016666668,
+     "timeN": 10,
+     "values0": [
+      0,
+      0,
+      0,
+      1
+     ]
+    }
+   ]
+  }
+ ],
+ "atT0": [
+  {
+   "name": "OSG_Scene",
+   "matrixWorld": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1
+   ]
+  },
+  {
+   "name": "RootNode_(gltf_orientation_matrix)",
+   "matrixWorld": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    -1,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1
+   ]
+  },
+  {
+   "name": "RootNode_(model_correction_matrix)",
+   "matrixWorld": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    -1,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1
+   ]
+  },
+  {
+   "name": "f10517d4966d42c99c9bc47c460a132ffbx",
+   "matrixWorld": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1
+   ]
+  },
+  {
+   "name": "",
+   "matrixWorld": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1
+   ]
+  },
+  {
+   "name": "RootNode",
+   "matrixWorld": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1
+   ]
+  },
+  {
+   "name": "circle",
+   "matrixWorld": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1
+   ]
+  },
+  {
+   "name": "circle_constant1_0",
+   "matrixWorld": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1
+   ]
+  },
+  {
+   "name": "circle_HoloFillDark_0",
+   "matrixWorld": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1
+   ]
+  },
+  {
+   "name": "geo1",
+   "matrixWorld": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1
+   ]
+  },
+  {
+   "name": "geo1_constant1_0",
+   "matrixWorld": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1
+   ]
+  },
+  {
+   "name": "geo1_HoloFillDark_0",
+   "matrixWorld": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1
+   ]
+  },
+  {
+   "name": "cam1",
+   "matrixWorld": [
+    -1.34e-7,
+    0,
+    -1.000000134,
+    0,
+    0,
+    1,
+    0,
+    0,
+    1.000000134,
+    0,
+    -1.34e-7,
+    0,
+    0,
+    0,
+    8.800000191,
+    1
+   ]
+  },
+  {
+   "name": "",
+   "matrixWorld": [
+    -1.34e-7,
+    0,
+    -1.000000134,
+    0,
+    0,
+    1,
+    0,
+    0,
+    1.000000134,
+    0,
+    -1.34e-7,
+    0,
+    0,
+    0,
+    8.800000191,
+    1
+   ]
+  },
+  {
+   "name": "circle1",
+   "matrixWorld": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1
+   ]
+  },
+  {
+   "name": "circle1_constant2_0",
+   "matrixWorld": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1
+   ]
+  },
+  {
+   "name": "circle2",
+   "matrixWorld": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1
+   ]
+  },
+  {
+   "name": "circle2_constant2_0",
+   "matrixWorld": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    1
+   ]
+  },
+  {
+   "name": "cam2",
+   "matrixWorld": [
+    0.49101591,
+    -0.529252092,
+    -0.691950572,
+    0,
+    0.294101791,
+    0.848370486,
+    -0.440195018,
+    0,
+    0.820004578,
+    0.012638852,
+    0.572217396,
+    0,
+    -4.129984856,
+    4.451593399,
+    5.820067406,
+    1
+   ]
+  },
+  {
+   "name": "",
+   "matrixWorld": [
+    0.49101591,
+    -0.529252092,
+    -0.691950572,
+    0,
+    0.294101791,
+    0.848370486,
+    -0.440195018,
+    0,
+    0.820004578,
+    0.012638852,
+    0.572217396,
+    0,
+    -4.129984856,
+    4.451593399,
+    5.820067406,
+    1
+   ]
+  }
+ ]
+}

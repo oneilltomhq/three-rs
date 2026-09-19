@@ -1412,3 +1412,43 @@ function every material in the crate goes through. The port's shape:
   differs is uniform order inside the two structs, the `// codes` order with
   `fn0` / `fn1` swapped, and the order of two `var<private>` declarations —
   all §8 entries already.
+
+## 16. `webgpu_postprocessing_bloom` — the glTF scene under the bloom
+
+This rung adds no node type. `BloomNode`, `mrt()` and the pass plumbing all
+landed with `webgpu_postprocessing_bloom_selective`; what is new is the
+*input*, a real glTF scene, and it turned up exactly one gap in the node
+system and one in the renderer.
+
+**`COLOR_0` at its declared item size.** `vertexColor()` built
+`vec4( attribute( 'color', 'vec3' ), 1.0 )` unconditionally. Every one of
+`PrimaryIonDrive.glb`'s six primitives carries a four-component `COLOR_0`, and
+three.js reads the attribute whole: `m00_vertex_vertex_constant1` declares
+`color : vec4<f32>` at `@location( 0 )` and assigns it straight to the varying.
+`vertex_color( item_size )` now picks between a widening and a whole-read
+accessor, and `SetupContext.vertex_color_size` carries the item size into the
+program cache key, because it changes the program's shape. The port's `m00`
+signature is three's, attribute for attribute and location for location.
+
+**A full-screen quad is never multisampled.** See `docs/postprocessing.md`;
+this is a renderer fact rather than a node one, but it is the whole of this
+rung's image.
+
+### Divergences specific to this rung
+
+None new. The two scene materials (`constant1`, `HoloFillDark`) are
+`MeshStandardMaterial`s, so their dumps differ from `m00`/`m01`/`m02` in
+exactly the classes §8 already lists for `webgpu_lights_physical` and
+`webgpu_skinning` — generated names, render-struct member order, builtins
+before varyings, named lighting temps, hoisted accumulator zeros, the inlined
+`faceDirection` and the `VERTEX_` sub-build. `m04` (the single-texture high
+pass) and `m13` (the `RenderPipeline` quad under `ReinhardToneMapping`) match
+the selective rung's `bloom_high_pass` and `bloom_render_pipeline_quad`
+line for line apart from declaration order.
+
+One thing is missing rather than divergent: **a loaded material has no name.**
+`Material.name` is a `&'static str` here, so `GLTFLoader` cannot copy
+`materialDef.name` onto it and three's `constant1` / `HoloFillDark` module
+names have no counterpart. Nothing generated reads the name — it is not in the
+WGSL, the cache key or the bindings — so the dump sections pick the materials
+out by the mesh they sit on instead.

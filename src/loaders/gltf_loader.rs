@@ -30,7 +30,7 @@ use crate::error::{Error, GltfError};
 use crate::loaders::TextureLoader;
 use crate::materials::{MeshBasicNodeMaterial, Side};
 use crate::math::{Color, Matrix4, Vector2};
-use crate::objects::{Bone, Skeleton, SkinnedMesh};
+use crate::objects::{Bone, Mesh, Skeleton, SkinnedMesh};
 use crate::textures::{ColorSpace, MinFilter, Texture, TextureFilter, Wrapping};
 
 /// `WEBGL_CONSTANTS` component types and `WEBGL_COMPONENT_TYPES`.
@@ -183,6 +183,18 @@ pub struct GltfMaterial {
     pub specular_color_factor: [f64; 3],
     /// `KHR_materials_specular.specularColorTexture.index`.
     pub specular_color_texture: Option<usize>,
+}
+
+/// `assignFinalMaterial`'s cache key —
+/// `'ClonedMaterial:' + uuid + ':derivative-tangents:vertex-colors:flat-shading:'`
+/// with the glTF material index standing in for the uuid, since the record is
+/// the only thing this loader has to clone from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+struct MaterialVariant {
+    material: usize,
+    use_derivative_tangents: bool,
+    use_vertex_colors: bool,
+    use_flat_shading: bool,
 }
 
 /// One glTF image. Decoding is the [`crate::loaders::TextureLoader`]'s job; this
@@ -517,15 +529,29 @@ impl GLTFLoader {
         ))
     }
 
-    /// An accessor as a `BufferGeometry` index, `Uint16` when it fits.
+    /// An accessor as a `BufferGeometry` index, in the width the accessor
+    /// declares.
+    ///
+    /// `loadAccessor` builds the typed array from `componentType` and nothing
+    /// else, so an `UNSIGNED_INT` index stays a `Uint32Array` however small its
+    /// values are — `PrimaryIonDrive.glb` has 45 022 vertices and still indexes
+    /// them with 32-bit indices. Narrowing "when it fits" would be invisible on
+    /// screen and wrong against three's own parse, which is what
+    /// `tests/gltf_primary_ion_drive.rs` reads.
     fn index_attribute(&self, index: usize) -> Result<Index, Error> {
         let (values, _) = self.accessor(index)?;
-        let max = values.iter().cloned().fold(0.0_f64, f64::max);
+        let component_type = self
+            .json
+            .pointer(&format!("/accessors/{index}/componentType"))
+            .and_then(Value::as_i64)
+            .map(ComponentType::from_gl)
+            .transpose()?;
 
-        Ok(if max < 65536.0 {
-            Index::U16(values.iter().map(|&v| v as u16).collect())
-        } else {
-            Index::U32(values.iter().map(|&v| v as u32).collect())
+        Ok(match component_type {
+            Some(ComponentType::UnsignedInt) => {
+                Index::U32(values.iter().map(|&v| v as u32).collect())
+            }
+            _ => Index::U16(values.iter().map(|&v| v as u16).collect()),
         })
     }
 
@@ -564,7 +590,14 @@ impl GLTFLoader {
 
         let mut nodes = Vec::with_capacity(node_defs.len());
         for (index, node_def) in node_defs.iter().enumerate() {
-            let name = self.create_unique_name(node_def.get("name").and_then(Value::as_str));
+            // `_loadNodeShallow`: `nodeDef.name ? createUniqueName( nodeDef.name
+            // ) : ''`. An unnamed node keeps `''` *and does not reserve a name*,
+            // so a file with several of them — this one has three — does not get
+            // `''`, `'_1'`, `'_2'`.
+            let name = match node_def.get("name").and_then(Value::as_str) {
+                Some(name) if !name.is_empty() => self.create_unique_name(Some(name)),
+                _ => String::new(),
+            };
 
             let node = if joints[index] {
                 Bone::new()
@@ -662,19 +695,37 @@ impl GLTFLoader {
 
         let mut skinned_meshes = Vec::new();
         let mut texture_cache: HashMap<usize, Texture> = HashMap::new();
-        for primitive in &primitives {
-            let Some(skin) = primitive.skin else { continue };
+        // `GLTFParser.cache`'s `'ClonedMaterial:<uuid>:<variant>'` entries, keyed
+        // on the same three flags `assignFinalMaterial` spells into that string.
+        let mut material_cache: HashMap<MaterialVariant, MeshBasicNodeMaterial> = HashMap::new();
 
-            // `GLTFParser.loadMaterial` + the `useDerivativeTangents` clone.
-            let material = match primitive.material.and_then(|i| materials.get(i)) {
-                Some(def) => Some(self.build_material(
-                    &mut texture_cache,
-                    def,
-                    &textures,
-                    &images,
-                    !primitive.geometry.has_attribute("tangent"),
-                )?),
-                None => None,
+        for primitive in &primitives {
+            // `GLTFParser.loadMaterial`, then `assignFinalMaterial`'s variant.
+            let material = self.final_material(
+                &mut texture_cache,
+                &mut material_cache,
+                primitive,
+                &materials,
+                &textures,
+                &images,
+            )?;
+
+            let node = primitive.node.clone();
+
+            let Some(skin) = primitive.skin else {
+                // `createNodeMesh` → `loadMesh`'s `new Mesh( geometry, material
+                // )`. three.js builds the mesh and `_loadNodeShallow` then
+                // *becomes* it (`objects.length === 1` → `node = objects[ 0 ]`,
+                // with `nodeDef.name` overriding the mesh's own name), so the
+                // payload goes on the node that already exists here, exactly as
+                // the skinned branch below does.
+                let mut mesh = Mesh::of(primitive.geometry.clone(), material);
+                mesh.morph_target_influences = primitive.morph_target_influences.borrow().clone();
+
+                let mut object = node.borrow_mut();
+                object.object_type = "Mesh";
+                object.payload = crate::objects::Payload::Mesh(mesh);
+                continue;
             };
 
             // The primitive's node *becomes* the `SkinnedMesh`: three.js
@@ -686,7 +737,6 @@ impl GLTFLoader {
             mesh.morph_target_dictionary = primitive.morph_target_dictionary.clone();
             mesh.normalize_skin_weights();
 
-            let node = primitive.node.clone();
             {
                 let mut object = node.borrow_mut();
                 object.object_type = "SkinnedMesh";
@@ -1179,22 +1229,82 @@ impl GLTFLoader {
         Ok(Some(texture))
     }
 
+    /// `GLTFParser.assignFinalMaterial`: the glTF material, then the variant
+    /// clone the geometry asks for, out of a cache keyed exactly as three's
+    /// `'ClonedMaterial:<uuid>:derivative-tangents:vertex-colors:flat-shading:'`
+    /// is.
+    ///
+    /// Two primitives that share a glTF material *and* want the same variant get
+    /// the same material here, which is what stops `PrimaryIonDrive.glb`'s six
+    /// primitives from building six materials for its three. The port's copy is
+    /// a clone rather than a shared handle, because a [`crate::objects::Mesh`]
+    /// owns its material by value; pipelines are still shared, because the
+    /// program cache is keyed on the generated WGSL, not on the material.
+    fn final_material(
+        &self,
+        texture_cache: &mut HashMap<usize, Texture>,
+        material_cache: &mut HashMap<MaterialVariant, MeshBasicNodeMaterial>,
+        primitive: &GltfPrimitive,
+        materials: &[GltfMaterial],
+        textures: &[GltfTexture],
+        images: &[GltfImage],
+    ) -> Result<Option<MeshBasicNodeMaterial>, Error> {
+        // `mesh.material` is undefined for a primitive with no material, and the
+        // renderer falls back to its own default — `Mesh::new`'s `None`.
+        let Some(index) = primitive.material else {
+            return Ok(None);
+        };
+        let Some(def) = materials.get(index) else {
+            return Ok(None);
+        };
+
+        let variant = MaterialVariant {
+            material: index,
+            // `geometry.attributes.tangent === undefined`, and the two beside it.
+            use_derivative_tangents: !primitive.geometry.has_attribute("tangent"),
+            use_vertex_colors: primitive.geometry.has_attribute("color"),
+            use_flat_shading: !primitive.geometry.has_attribute("normal"),
+        };
+
+        if let Some(cached) = material_cache.get(&variant) {
+            return Ok(Some(cached.clone()));
+        }
+
+        let mut material = self.build_material(texture_cache, def, textures, images)?;
+
+        if variant.use_vertex_colors {
+            material.vertex_colors = true;
+        }
+        if variant.use_flat_shading {
+            material.flat_shading = true;
+        }
+        if variant.use_derivative_tangents {
+            // mrdoob/three.js#11438: the derivative TBN frame `setupNormal()`
+            // falls back to has the opposite handedness. three flips the scale
+            // whenever the material *has* a `normalScale` — which every
+            // standard material does — not only when it has a normal map, so
+            // `circle2_constant2_0` comes out of three's own parse with
+            // `normalScale ( 1, -1 )` and no map to apply it to.
+            material.normal_scale.y *= -1.0;
+        }
+
+        material_cache.insert(variant, material.clone());
+
+        Ok(Some(material))
+    }
+
     /// `GLTFParser.loadMaterial`, for the two material types this crate has:
     /// `MeshStandardNodeMaterial`, or `MeshPhysicalNodeMaterial` when
     /// `KHR_materials_ior` / `KHR_materials_specular` are on the material.
     ///
-    /// `use_derivative_tangents` is `! geometry.attributes.tangent` at the call
-    /// site: three.js clones the material there and flips `normalScale.y`
-    /// (mrdoob/three.js#11438), because the derivative-based TBN frame it falls
-    /// back to has the opposite handedness. Michelle has no tangents, so this is
-    /// what puts her normal map the right way round.
+    /// The variant clone that follows it — `vertexColors`, `flatShading` and the
+    /// `normalScale.y` flip — is [`Self::final_material`]'s half.
     fn build_material(
         &self,
         cache: &mut HashMap<usize, Texture>,
         material: &GltfMaterial,
         textures: &[GltfTexture],
         images: &[GltfImage],
-        use_derivative_tangents: bool,
     ) -> Result<MeshBasicNodeMaterial, Error> {
         let [r, g, b, a] = material.base_color_factor;
 
@@ -1220,6 +1330,31 @@ impl GLTFLoader {
         } else {
             Side::Front
         };
+
+        // `alphaMode`. `BLEND` is the pair three.js writes together — a
+        // transparent material that does *not* write depth, which is what puts
+        // `HoloFillDark` in the render list's transparent half and lets the
+        // opaque geometry behind it through.
+        //
+        // `MASK` is deliberately not wired: it is `materialParams.alphaTest =
+        // alphaCutoff`, and this crate has only `alphaTestNode` (see
+        // `MeshBasicNodeMaterial::alpha_test_node`), whose WGSL is a literal
+        // where three's is the `materialAlphaTest` uniform. Nothing on the
+        // ladder is `MASK`; guessing the shader here would be a silent
+        // divergence rather than an API.
+        if material.alpha_mode == "BLEND" {
+            out.transparent = true;
+            out.depth_write = false;
+        } else {
+            out.transparent = false;
+        }
+
+        // `materialParams.emissive = new Color().setRGB( ..., LinearSRGBColorSpace )`
+        // — the factor is already linear, as `baseColorFactor` is.
+        // `emissiveIntensity` stays at three's default 1; glTF has no field for
+        // it (`KHR_materials_emissive_strength`, which does, is not ported).
+        let [er, eg, eb] = material.emissive_factor;
+        out.emissive = Color::new(er, eg, eb);
 
         if let Some(index) = material.base_color_texture {
             let map = self.load_texture(cache, textures, images, index)?;
@@ -1256,10 +1391,6 @@ impl GLTFLoader {
                 map.set_color_space(ColorSpace::SRGB);
             }
             out.specular_color_map = map;
-        }
-
-        if use_derivative_tangents && out.normal_map.is_some() {
-            out.normal_scale.y *= -1.0;
         }
 
         Ok(out)

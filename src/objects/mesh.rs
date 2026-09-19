@@ -66,6 +66,25 @@ impl Mesh {
         object.into_node()
     }
 
+    /// The `Mesh` state alone, for a caller that already has the [`Node`] to
+    /// install it on — `GLTFLoader`, whose tree node exists before the
+    /// primitive that turns it into a mesh, the way
+    /// [`SkinnedMesh::of`](crate::objects::SkinnedMesh::of) serves the skinned
+    /// half.
+    pub fn of(geometry: Rc<BufferGeometry>, material: Option<MeshBasicNodeMaterial>) -> Self {
+        let morph_target_influences = match geometry.morph_attributes().next() {
+            Some((_, attributes)) => vec![0.0; attributes.len()],
+            None => Vec::new(),
+        };
+
+        Self {
+            geometry,
+            material,
+            morph_target_influences,
+            line_segments: None,
+        }
+    }
+
     /// `Mesh.intersectsFrustum( frustum )` needs the world matrix, which lives on
     /// the node; this is the geometry half, i.e. the bounding sphere three.js
     /// lazily computes in `_projectObject`.
