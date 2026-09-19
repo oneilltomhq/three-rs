@@ -141,6 +141,9 @@ pub enum UniformSource {
     MaterialColor,
     MaterialOpacity,
     MaterialReflectivity,
+    /// `materialEnvIntensity` — `MeshStandardMaterial.envMapIntensity`, the
+    /// scale `EnvironmentNode` puts on both IBL terms.
+    MaterialEnvIntensity,
     /// `materialRotation` — `SpriteMaterial.rotation`.
     MaterialRotation,
     /// `MeshPhongMaterial.shininess` / `.specular` / `.emissive` /
@@ -268,6 +271,7 @@ impl UniformSource {
             | UniformSource::MaterialColor
             | UniformSource::MaterialOpacity
             | UniformSource::MaterialReflectivity
+            | UniformSource::MaterialEnvIntensity
             | UniformSource::MaterialShininess
             | UniformSource::MaterialSpecular
             | UniformSource::MaterialEmissive

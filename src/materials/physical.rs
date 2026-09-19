@@ -269,7 +269,7 @@ impl Physical {
     /// environment both `radiance` and `iblIrradiance` stay zero, so the whole
     /// block contributes nothing — three.js emits it regardless, and so do we,
     /// because the zero has to reach the pixel through the same arithmetic.
-    pub fn indirect_specular(&self, out: &mut Vec<NodeRef>) {
+    pub fn indirect_specular(&self, has_environment: bool, out: &mut Vec<NodeRef>) {
         out.push(single_scattering_dielectric().assign(vec3(0.0, 0.0, 0.0)));
         out.push(multi_scattering_dielectric().assign(vec3(0.0, 0.0, 0.0)));
         out.push(single_scattering_metallic().assign(vec3(0.0, 0.0, 0.0)));
@@ -289,9 +289,14 @@ impl Physical {
         );
 
         // `radiance` / `iblIrradiance` are `vec3().toVar()` on the lighting
-        // context; with no environment node nothing ever adds to them.
-        out.push(radiance().assign(vec3(0.0, 0.0, 0.0)));
-        out.push(ibl_irradiance().assign(vec3(0.0, 0.0, 0.0)));
+        // context, declared at their first use. With an environment that use
+        // is `EnvironmentNode.setup()`, which runs as a lighting node before
+        // `indirectSpecular` and so carries the zeros with it; with none,
+        // nothing ever adds to them and they are declared here.
+        if !has_environment {
+            out.push(radiance().assign(vec3(0.0, 0.0, 0.0)));
+            out.push(ibl_irradiance().assign(vec3(0.0, 0.0, 0.0)));
+        }
 
         let single_scattering_mixed = mix(
             single_scattering_dielectric(),

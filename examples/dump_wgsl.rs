@@ -1079,4 +1079,11 @@ fn main() {
         environment.sample(normal_world_geometry(), level),
     ));
     show("pmrem_background", &background, SetupContext::default());
+
+    // The read side on a lit material: `MeshPhysicalNodeMaterial` with
+    // `envMap`, which is `m06`/`m07`. The example has no lights, so the only
+    // lighting is `EnvironmentNode`'s two samples.
+    let mut sphere = MeshBasicNodeMaterial::physical(Color::new(1.0, 1.0, 1.0), 0.2, 0.6);
+    sphere.pmrem_env = Some(environment.handle());
+    show("pmrem_physical", &sphere, SetupContext::default());
 }

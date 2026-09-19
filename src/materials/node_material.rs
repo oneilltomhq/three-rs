@@ -2,6 +2,7 @@
 //! `setupX()` methods it dispatches to. This is where a material turns into the
 //! statements the builder flows into the two shader stages.
 
+use super::environment;
 use super::phong::{self, LightDesc};
 use super::physical::{self, Physical};
 use super::{Blending, MaterialKind, MeshBasicNodeMaterial, Side, ToneMapping};
@@ -867,7 +868,13 @@ fn setup_standard(
         }
 
         model.indirect_diffuse(fragment);
-        model.indirect_specular(fragment);
+        // `EnvironmentNode` is a lighting node, so its two `addAssign`s land
+        // between `indirectDiffuse()` and `indirectSpecular()` — and with them
+        // the declarations of `radiance` and `iblIrradiance`.
+        if let Some(environment) = &material.pmrem_env {
+            environment::setup(environment, fragment);
+        }
+        model.indirect_specular(material.pmrem_env.is_some(), fragment);
         model.ambient_occlusion(fragment);
 
         fragment.push(total_diffuse().assign(direct_diffuse().add(indirect_diffuse())));

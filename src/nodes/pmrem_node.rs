@@ -18,14 +18,16 @@
 //! in this port is an immutable `Rc` graph with no back-reference to the
 //! renderer, so a node cannot start a nested render of its own; and the
 //! renderer takes `&mut self`, so it cannot be handed to a node mid-build.
-//! [`crate::renderer::Renderer::render`] calls `update` for every environment
-//! registered on the scene, which is what keeps "the PMREM chain completes and
-//! submits before the scene pass" true without the example having to remember.
-//! Listed in `docs/nodes.md` §8.
+//!
+//! `update` is idempotent and cheap after the first call, so "call it before
+//! you render" is the whole rule, and it keeps three's guarantee that the
+//! PMREM chain completes and submits before the scene pass. Listed in
+//! `docs/nodes.md` §8.
 
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use crate::materials::environment::PmremHandle;
 use crate::nodes::node::{SettableValue, Type};
 use crate::nodes::pmrem_utils::{texture_cube_uv, CubeUvSize};
 use crate::nodes::tsl::{float, material_env_rotation, uniform_settable, vec3_join, vec4_join};
@@ -129,6 +131,16 @@ impl PmremEnvironment {
 
         self.target = Some(target);
         Ok(())
+    }
+
+    /// What a material holds to read this environment:
+    /// `EnvironmentNode( pmremTexture( material.envMap ) )`'s inner node, minus
+    /// the direction it will be sampled along.
+    pub fn handle(&self) -> PmremHandle {
+        PmremHandle {
+            texture: self.texture.clone(),
+            size: self.size.clone(),
+        }
     }
 
     /// Whether [`update`](Self::update) has run.

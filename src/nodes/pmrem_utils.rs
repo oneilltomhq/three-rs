@@ -253,7 +253,7 @@ pub fn roughness_to_mip(roughness: NodeRef) -> NodeRef {
 /// The cubeUV atlas' three shape numbers, as the shader reads them. In the
 /// generator's own materials they are baked constants (`float( 1 / width )`);
 /// in `PMREMNode` they are uniforms, so each is a node rather than a number.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct CubeUvSize {
     /// `CUBEUV_TEXEL_WIDTH` — `1 / atlasWidth`.
     pub texel_width: NodeRef,

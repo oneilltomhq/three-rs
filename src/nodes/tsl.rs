@@ -1540,6 +1540,16 @@ accessor!(
     )
 );
 accessor!(
+    /// `materialEnvIntensity` — `MeshStandardMaterial.envMapIntensity`.
+    material_env_intensity,
+    uniform(
+        UniformSource::MaterialEnvIntensity,
+        Type::F32,
+        UniformGroup::Object,
+        None,
+    )
+);
+accessor!(
     /// `materialReflectivity`.
     material_reflectivity,
     uniform(

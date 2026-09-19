@@ -264,7 +264,9 @@ impl PmremGenerator {
             .expect("three-rs: _init() built the GGX material");
         uniforms.env_map.set_gpu(gpu_texture_of(&ping_pong));
         uniforms.roughness.set(vec![0.0]);
-        uniforms.mip_int.set(vec![(self.lod_max - lod_out) as f64]);
+        uniforms
+            .mip_int
+            .set(vec![self.lod_max as f64 - lod_out as f64]);
         set_viewport(target, x, y, width, height);
         renderer.set_render_target(Some(target.clone()));
         renderer.render_pmrem_mesh(geometry, &material, false);
@@ -310,7 +312,9 @@ pub fn ggx_step(lod_max: usize, lod_count: usize, lod_in: usize, lod_out: usize)
     // "Apply blur strength mapping for better quality across the roughness
     // range" — not a normalisation, a deliberate extra 1.25× of blur.
     let blur_strength = target_roughness * 1.25;
-    (incremental * blur_strength, (lod_max - lod_in) as f64)
+    // `_lodMax - lodIn` in JS arithmetic: `lodIn` runs past `lodMax` for the
+    // extra LODs, so the two go negative (-1 and -2 for a 256² source).
+    (incremental * blur_strength, lod_max as f64 - lod_in as f64)
 }
 
 /// The `( x, y )` of level `lod_out`'s tile and the level's face size.
