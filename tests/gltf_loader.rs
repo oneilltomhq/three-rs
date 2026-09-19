@@ -38,7 +38,8 @@ fn michelle_tree() {
 #[test]
 fn michelle_geometry() {
     let gltf = GLTFLoader::load(models().join("Michelle.glb")).unwrap();
-    let geometry = &gltf.skinned_meshes[0].geometry;
+    let node = gltf.skinned_meshes[0].borrow();
+    let geometry = node.skinned_mesh().unwrap().geometry();
 
     assert_eq!(geometry.position().unwrap().count(), 16340);
     assert_eq!(geometry.index.as_ref().unwrap().count(), 84318);
@@ -146,7 +147,8 @@ fn soldier_tree() {
     );
     assert!((gltf.animations[0].duration - 1.966_666_698_455_810_5).abs() < 1e-6);
 
-    let geometry = &gltf.skinned_meshes[0].geometry;
+    let node = gltf.skinned_meshes[0].borrow();
+    let geometry = node.skinned_mesh().unwrap().geometry();
     assert_eq!(geometry.position().unwrap().count(), 7325);
     assert_eq!(geometry.index.as_ref().unwrap().count(), 33558);
 }
@@ -234,7 +236,7 @@ fn michelle_skinning_at_zero() {
     use three_rs::animation::AnimationMixer;
     use three_rs::math::Vector3;
 
-    let mut gltf = GLTFLoader::load(models().join("Michelle.glb")).unwrap();
+    let gltf = GLTFLoader::load(models().join("Michelle.glb")).unwrap();
 
     let mut mixer = AnimationMixer::new(Box::new(gltf.scene_resolver()));
     let action = mixer.clip_action(&gltf.animations[0], None, None);
@@ -245,7 +247,6 @@ fn michelle_skinning_at_zero() {
     // `SkinnedMesh.updateMatrixWorld` is where `bindMatrixInverse` comes from
     // in `AttachedBindMode`; the renderer calls it every frame.
     gltf.skinned_meshes[0].update_matrix_world(true);
-    let mesh = &gltf.skinned_meshes[0];
     gltf.skins[0].borrow_mut().update();
 
     let expected: [f32; 32] = [
@@ -294,7 +295,9 @@ fn michelle_skinning_at_zero() {
     drop(skeleton);
 
     // `applyBoneTransform( 0, v.fromBufferAttribute( position, 0 ) )`
-    let position = mesh.geometry.position().unwrap();
+    let node = gltf.skinned_meshes[0].borrow();
+    let mesh = node.skinned_mesh().unwrap();
+    let position = mesh.geometry().position().unwrap();
     let mut vertex = Vector3::new(position.get_x(0), position.get_y(0), position.get_z(0));
     mesh.apply_bone_transform(0, &mut vertex);
 

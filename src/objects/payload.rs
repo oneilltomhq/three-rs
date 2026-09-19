@@ -18,7 +18,7 @@ use crate::core::BufferGeometry;
 use crate::lights::LightObject;
 use crate::materials::MeshBasicNodeMaterial;
 use crate::math::{Matrix4, Sphere};
-use crate::objects::{InstancedBufferAttribute, InstancedMesh, Line, Mesh};
+use crate::objects::{InstancedBufferAttribute, InstancedMesh, Line, Mesh, SkinnedMesh};
 
 /// The subclass state of one [`crate::core::Object3D`].
 ///
@@ -32,6 +32,12 @@ pub enum Payload {
     Mesh(Mesh),
     /// `InstancedMesh extends Mesh`.
     InstancedMesh(InstancedMesh),
+    /// `SkinnedMesh extends Mesh` — the skeleton and the two bind matrices on
+    /// top of the `Mesh`. `is_mesh()` is true for it, as `isMesh` is in
+    /// three.js. Boxed because the two bind matrices and the bounding volumes
+    /// make it half again the size of the next-largest variant, and every
+    /// `Object3D` in the tree carries a `Payload`.
+    SkinnedMesh(Box<SkinnedMesh>),
     /// `Line extends Object3D` — and `LineSegments extends Line`, which is the
     /// `is_line_segments` flag inside. Not a `Mesh`: the renderer reads the
     /// object to pick `line-strip` / `line-list` over `triangle-list`.
@@ -50,6 +56,7 @@ impl fmt::Debug for Payload {
             Payload::None => "None",
             Payload::Mesh(_) => "Mesh",
             Payload::InstancedMesh(_) => "InstancedMesh",
+            Payload::SkinnedMesh(_) => "SkinnedMesh",
             Payload::Line(line) => {
                 if line.is_line_segments {
                     "LineSegments"
@@ -67,7 +74,30 @@ impl Payload {
     /// `object.isMesh` — true for `InstancedMesh` too, exactly as in three.js
     /// where `InstancedMesh extends Mesh`.
     pub fn is_mesh(&self) -> bool {
-        matches!(self, Payload::Mesh(_) | Payload::InstancedMesh(_))
+        matches!(
+            self,
+            Payload::Mesh(_) | Payload::InstancedMesh(_) | Payload::SkinnedMesh(_)
+        )
+    }
+
+    /// `object.isSkinnedMesh`.
+    pub fn is_skinned_mesh(&self) -> bool {
+        matches!(self, Payload::SkinnedMesh(_))
+    }
+
+    /// The `SkinnedMesh` this node is, if it is one.
+    pub fn skinned_mesh(&self) -> Option<&SkinnedMesh> {
+        match self {
+            Payload::SkinnedMesh(skin) => Some(skin),
+            _ => None,
+        }
+    }
+
+    pub fn skinned_mesh_mut(&mut self) -> Option<&mut SkinnedMesh> {
+        match self {
+            Payload::SkinnedMesh(skin) => Some(skin),
+            _ => None,
+        }
     }
 
     /// `object.isInstancedMesh`.
@@ -107,6 +137,7 @@ impl Payload {
         match self {
             Payload::Mesh(mesh) => Some(&mesh.geometry),
             Payload::InstancedMesh(instanced) => Some(&instanced.mesh.geometry),
+            Payload::SkinnedMesh(skin) => Some(&skin.mesh.geometry),
             Payload::Line(line) => Some(&line.geometry),
             _ => None,
         }
@@ -119,6 +150,7 @@ impl Payload {
         match self {
             Payload::Mesh(mesh) => mesh.material.as_ref(),
             Payload::InstancedMesh(instanced) => instanced.mesh.material.as_ref(),
+            Payload::SkinnedMesh(skin) => skin.mesh.material.as_ref(),
             Payload::Line(line) => line.material.as_ref(),
             _ => None,
         }
@@ -143,16 +175,33 @@ impl Payload {
                 }
                 None => instanced.mesh.bounding_sphere_in(matrix_world),
             },
+            // `Frustum.intersectsObject` prefers the object's own
+            // `boundingSphere` — `SkinnedMesh.computeBoundingSphere()` puts the
+            // posed skin there — and falls back to the geometry's.
+            Payload::SkinnedMesh(skin) => match skin.bounding_sphere {
+                Some(bounding_sphere) => {
+                    let mut sphere = bounding_sphere;
+                    sphere.apply_matrix4(matrix_world);
+                    Some(sphere)
+                }
+                None => skin.mesh.bounding_sphere_in(matrix_world),
+            },
             _ => self.mesh()?.bounding_sphere_in(matrix_world),
         }
     }
 
     /// `Mesh.morphTargetInfluences`. A `Line` has the field in three.js too, but
-    /// nothing on the ladder morphs one, so it is always empty here.
-    pub fn morph_target_influences(&self) -> &[f64] {
-        match self.mesh() {
-            Some(mesh) => &mesh.morph_target_influences,
-            None => &[],
+    /// nothing on the ladder morphs one, so it is always empty here. A
+    /// `SkinnedMesh` keeps its influences behind an `Rc<RefCell<…>>` — the
+    /// animation binding writes into them from outside — so this returns a
+    /// value rather than a borrow.
+    pub fn morph_target_influences(&self) -> Vec<f64> {
+        match self {
+            Payload::SkinnedMesh(skin) => skin.morph_target_influences.borrow().clone(),
+            _ => match self.mesh() {
+                Some(mesh) => mesh.morph_target_influences.clone(),
+                None => Vec::new(),
+            },
         }
     }
 
@@ -161,6 +210,7 @@ impl Payload {
         match self {
             Payload::Mesh(mesh) => Some(mesh),
             Payload::InstancedMesh(instanced) => Some(&instanced.mesh),
+            Payload::SkinnedMesh(skin) => Some(&skin.mesh),
             _ => None,
         }
     }
@@ -169,6 +219,7 @@ impl Payload {
         match self {
             Payload::Mesh(mesh) => Some(mesh),
             Payload::InstancedMesh(instanced) => Some(&mut instanced.mesh),
+            Payload::SkinnedMesh(skin) => Some(&mut skin.mesh),
             _ => None,
         }
     }

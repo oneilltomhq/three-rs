@@ -165,6 +165,20 @@ impl Object3D {
         self.payload.is_mesh()
     }
 
+    /// `object.isSkinnedMesh`.
+    pub fn is_skinned_mesh(&self) -> bool {
+        self.payload.is_skinned_mesh()
+    }
+
+    /// The `SkinnedMesh` this object is, if it is one.
+    pub fn skinned_mesh(&self) -> Option<&crate::objects::SkinnedMesh> {
+        self.payload.skinned_mesh()
+    }
+
+    pub fn skinned_mesh_mut(&mut self) -> Option<&mut crate::objects::SkinnedMesh> {
+        self.payload.skinned_mesh_mut()
+    }
+
     /// `object.isInstancedMesh`.
     pub fn is_instanced_mesh(&self) -> bool {
         self.payload.is_instanced_mesh()

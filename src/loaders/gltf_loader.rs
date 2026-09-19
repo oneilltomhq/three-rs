@@ -224,8 +224,10 @@ pub struct Gltf {
     pub skins: Vec<Rc<RefCell<Skeleton>>>,
     /// Every primitive, in node order.
     pub primitives: Vec<GltfPrimitive>,
-    /// The skinned primitives, bound to their skeletons.
-    pub skinned_meshes: Vec<SkinnedMesh>,
+    /// The skinned primitives' nodes, bound to their skeletons. Each carries a
+    /// [`Payload::SkinnedMesh`](crate::objects::Payload::SkinnedMesh), so
+    /// adding `gltf.scene` to a scene is enough for the renderer to draw them.
+    pub skinned_meshes: Vec<Node>,
     pub materials: Vec<GltfMaterial>,
     pub textures: Vec<GltfTexture>,
     pub images: Vec<GltfImage>,
@@ -649,19 +651,29 @@ impl GLTFLoader {
         for primitive in &primitives {
             let Some(skin) = primitive.skin else { continue };
 
-            let mut mesh = SkinnedMesh::new(primitive.geometry.clone());
-            mesh.node = primitive.node.clone();
+            // The primitive's node *becomes* the `SkinnedMesh`: three.js
+            // constructs one and puts it in the tree, and here the tree node
+            // already exists (the skin's joints and the animation bindings
+            // point at it), so the payload is installed on it.
+            let mut mesh = SkinnedMesh::of(primitive.geometry.clone(), None);
             mesh.morph_target_influences = primitive.morph_target_influences.clone();
             mesh.morph_target_dictionary = primitive.morph_target_dictionary.clone();
             mesh.normalize_skin_weights();
+
+            let node = primitive.node.clone();
+            {
+                let mut object = node.borrow_mut();
+                object.object_type = "SkinnedMesh";
+                object.payload = crate::objects::Payload::SkinnedMesh(Box::new(mesh));
+            }
 
             // `mesh.bind( skeleton, _identityMatrix )`: glTF joint transforms
             // are already relative to the skin, so the bind matrix is identity
             // and it is `bindMatrixInverse` (tracked from `matrixWorld`, the
             // `AttachedBindMode` default) that does the work.
-            mesh.bind(skins[skin].clone(), Some(Matrix4::identity()));
+            SkinnedMesh::bind(&node, skins[skin].clone(), Some(Matrix4::identity()));
 
-            skinned_meshes.push(mesh);
+            skinned_meshes.push(node);
         }
 
         let animations = self.load_animations(&nodes)?;
