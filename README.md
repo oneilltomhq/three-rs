@@ -93,6 +93,7 @@ Linux is the only backend that has been run.
 | webgpu_postprocessing_radial_blur | 7 | 3.9 | 2 | 401 |
 | webgpu_materials | 44 | 7.3 | 19 | 350065 |
 | webgpu_postprocessing_ssaa | 0 | 11.9 | 17 | 2119689 |
+| webgpu_pmrem_cubemap | 0 | 8.2 | 32 | 243905 |
 | webgpu_compute_points | 4 (see below) | 10.7 | 2 | 1 + 300000 points |
 | webgpu_lines_fat | 0 | 3.8 | 6 | 11191 |
 

@@ -1150,17 +1150,19 @@ impl NodeBuilder {
 
             // `ConvertNode.generate()` is `builder.format( snippet, from, to )`.
             // Widening goes through the shared ladder, so `vec3( vec2 )` is
-            // `vec3<f32>( v, 0.0 )` and not a splat; a same-width or narrowing
-            // cast keeps the explicit constructor the port has always emitted
-            // (see `wgsl::convert`).
+            // `vec3<f32>( v, 0.0 )` and not a splat; narrowing is the swizzle
+            // arm, which is where `vec3( materialEnvRotation.mul( … ) )` gets
+            // its `.xyz` in `PMREMUtils.bilinearCubeUV`. A same-width cast
+            // keeps the explicit constructor the port has always emitted (see
+            // `wgsl::convert`).
             Node::Cast { node: inner, ty } => {
                 let (inner, ty) = (inner.clone(), *ty);
                 let from = inner.ty();
                 let snippet = self.generate(&inner);
-                if ty.components() > from.components() {
-                    wgsl::convert(&snippet, from, ty)
-                } else {
+                if ty.components() == from.components() {
                     format!("{}( {snippet} )", wgsl::type_name(ty))
+                } else {
+                    wgsl::convert(&snippet, from, ty)
                 }
             }
 
@@ -1195,6 +1197,9 @@ impl NodeBuilder {
                     SampleMode::Sample => {
                         format!("textureSample( {name}, {name}_sampler, {suv} )")
                     }
+                    SampleMode::Grad => format!(
+                        "textureSampleGrad( {name}, {name}_sampler, {suv}, vec2<f32>( 0.0, 0.0 ), vec2<f32>( 0.0, 0.0 ) )"
+                    ),
                     SampleMode::Level(level) => {
                         let slevel = self.generate(&level);
                         format!("textureSampleLevel( {name}, {name}_sampler, {suv}, {slevel} )")

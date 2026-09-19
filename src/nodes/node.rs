@@ -141,6 +141,9 @@ pub enum UniformSource {
     MaterialColor,
     MaterialOpacity,
     MaterialReflectivity,
+    /// `materialEnvIntensity` — `MeshStandardMaterial.envMapIntensity`, the
+    /// scale `EnvironmentNode` puts on both IBL terms.
+    MaterialEnvIntensity,
     /// `materialRotation` — `SpriteMaterial.rotation`.
     MaterialRotation,
     /// `MeshPhongMaterial.shininess` / `.specular` / `.emissive` /
@@ -268,6 +271,7 @@ impl UniformSource {
             | UniformSource::MaterialColor
             | UniformSource::MaterialOpacity
             | UniformSource::MaterialReflectivity
+            | UniformSource::MaterialEnvIntensity
             | UniformSource::MaterialShininess
             | UniformSource::MaterialSpecular
             | UniformSource::MaterialEmissive
@@ -432,6 +436,12 @@ pub enum SampleMode {
     Sample,
     /// `textureSampleLevel( t, t_sampler, uv, level )`.
     Level(NodeRef),
+    /// `textureSampleGrad( t, t_sampler, uv, vec2( 0 ), vec2( 0 ) )` —
+    /// `textureNode.grad( vec2(), vec2() )`, which is how `PMREMUtils`'
+    /// `bilinearCubeUV` turns anisotropic filtering off on the cubeUV atlas.
+    /// The two gradients are always the zero constants three passes, so they
+    /// are baked rather than carried as nodes.
+    Grad,
     /// The non-filterable path: `textureLoad` against `textureDimensions`,
     /// with no sampler binding at all. What Three emits for a depth texture.
     Load,

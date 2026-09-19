@@ -9,6 +9,7 @@ use three_rs::lights::LightKind;
 use three_rs::materials::phong::{LightDesc, ShadowMap};
 use three_rs::materials::{setup, MeshBasicNodeMaterial, SetupContext, Side};
 use three_rs::math::Color;
+use three_rs::nodes::pmrem_node::PmremEnvironment;
 use three_rs::nodes::tsl::*;
 use three_rs::nodes::NodeBuilder;
 use three_rs::textures::{CubeTexture, DepthTexture, Image, Texture};
@@ -1041,4 +1042,48 @@ fn main() {
             ..SetupContext::default()
         },
     );
+
+    // `webgpu_pmrem_cubemap`: the two `PMREMGenerator` materials. Three's own
+    // dump of them is `m00`/`m01` (`PMREM_cubemap`) and `m02`/`m03`
+    // (`PMREM_ggx`) in the scout's `dump-pmrem_cubemap/`. The numbers baked
+    // into the GGX shader are the ones a 256² source cube produces: a 768×1024
+    // atlas and `lodMax = 8`.
+    let hdr_cube = CubeTexture::new(
+        (0..6)
+            .map(|_| Image::rgba16float(4, 4, &[0u16; 4 * 4 * 4]))
+            .collect(),
+    );
+    show(
+        "pmrem_cubemap",
+        &three_rs::renderer::pmrem::cubemap_material(&hdr_cube),
+        SetupContext::default(),
+    );
+    let (ggx, _ggx_uniforms) = three_rs::renderer::pmrem::ggx_material(8, 768.0, 1024.0);
+    show("pmrem_ggx", &ggx, SetupContext::default());
+
+    // `scene.backgroundNode = pmremTexture( map, normalWorldGeometry,
+    // uniform( 0.5 ) )` — three's `m05_fragment_fragment_Background.material`.
+    // The PMREM has not been generated here, so the three cubeUV uniforms are
+    // still zero; they are uniforms, so the WGSL does not depend on their
+    // values, which is the whole reason `PMREMNode` holds them as uniforms
+    // rather than baking them the way `_getGGXShader` does.
+    let environment = PmremEnvironment::new(&hdr_cube);
+    let (level, _level_cell) = uniform_settable(three_rs::nodes::Type::F32, vec![0.5]);
+    let mut background = MeshBasicNodeMaterial::new();
+    background.name = "Background.material";
+    background.vertex_node = Some(three_rs::materials::background_vertex_node());
+    background.side = Side::Back;
+    background.depth_test = false;
+    background.depth_write = false;
+    background.color_node = Some(three_rs::materials::background_node_color_node(
+        environment.sample(normal_world_geometry(), level),
+    ));
+    show("pmrem_background", &background, SetupContext::default());
+
+    // The read side on a lit material: `MeshPhysicalNodeMaterial` with
+    // `envMap`, which is `m06`/`m07`. The example has no lights, so the only
+    // lighting is `EnvironmentNode`'s two samples.
+    let mut sphere = MeshBasicNodeMaterial::physical(Color::new(1.0, 1.0, 1.0), 0.2, 0.6);
+    sphere.pmrem_env = Some(environment.handle());
+    show("pmrem_physical", &sphere, SetupContext::default());
 }

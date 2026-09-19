@@ -413,6 +413,8 @@ pub struct UniformContext<'a> {
     pub material_specular_color: Color,
     pub material_normal_scale: Vector2,
     pub env_rotation: Matrix4,
+    /// `material.envMapIntensity` — 1 on every material this rung builds.
+    pub material_env_intensity: f64,
     pub background_rotation: Matrix4,
     pub background_blurriness: f64,
     pub background_intensity: f64,
@@ -472,6 +474,7 @@ impl Default for UniformContext<'_> {
             material_specular_color: Color::new(1.0, 1.0, 1.0),
             material_normal_scale: Vector2::new(1.0, 1.0),
             env_rotation: Matrix4::identity(),
+            material_env_intensity: 1.0,
             background_rotation: Matrix4::identity(),
             background_blurriness: 0.0,
             background_intensity: 1.0,
@@ -527,6 +530,7 @@ impl UniformContext<'_> {
                 UniformSource::MaterialOpacity => vec![self.material_opacity as f32],
                 UniformSource::MaterialRotation => vec![self.material_rotation as f32],
                 UniformSource::MaterialReflectivity => vec![self.material_reflectivity as f32],
+                UniformSource::MaterialEnvIntensity => vec![self.material_env_intensity as f32],
                 UniformSource::MaterialShininess => vec![self.material_shininess as f32],
                 UniformSource::MaterialSpecular => vec![
                     self.material_specular.r as f32,

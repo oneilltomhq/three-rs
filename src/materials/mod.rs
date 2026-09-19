@@ -3,6 +3,7 @@
 
 pub mod blending;
 mod dfg_lut;
+pub mod environment;
 pub mod line2;
 mod node_material;
 pub mod phong;
@@ -170,6 +171,14 @@ pub struct MeshBasicNodeMaterial {
     /// `MeshBasicMaterial.envMap` — `setupEnvironment()` turns it into
     /// `BasicEnvironmentNode( cubeTexture( envMap ) )`.
     pub env_map: Option<CubeTexture>,
+    /// `MeshStandardMaterial.envMap` on a PBR material, which
+    /// `NodeMaterial.setupEnvironment()` turns into `EnvironmentNode(
+    /// pmremTexture( envMap ) )` rather than a plain cube read. The handle
+    /// comes from a
+    /// [`PmremEnvironment`](crate::nodes::pmrem_node::PmremEnvironment), which
+    /// owns the generated atlas; `scene.environment` reaches the same place by
+    /// being copied onto every material that has none of its own.
+    pub pmrem_env: Option<environment::PmremHandle>,
     pub color_node: Option<NodeRef>,
     /// `NodeMaterial.opacityNode` — replaces the `materialOpacity` uniform in
     /// `setupDiffuseColor()`, so `DiffuseColor.a` is multiplied by a node's
@@ -371,6 +380,7 @@ impl Default for MeshBasicNodeMaterial {
             position_node: None,
             reflectivity: 1.0,
             env_map: None,
+            pmrem_env: None,
             color_node: None,
             opacity_node: None,
             alpha_test_node: None,

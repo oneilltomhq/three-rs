@@ -177,3 +177,110 @@ equirect/cubemap seam pass, the cubeUV packing), `PMREMNode`,
 `EnvironmentNode`, the renderer pre-pass hook that runs the generator before
 the frame, and the background. The e2e entry and the image gate against
 `webgpu_pmrem_cubemap.jpg` belong to that sitting.
+
+---
+
+# webgpu_pmrem_cubemap — second sitting (steps 4–9), done
+
+**0 different pixels of 100000** against three's own `test/e2e/image.js` at
+three's own 0.1% threshold, and the sixteen rows that were already green are
+unchanged to the pixel.
+
+## What was added
+
+| file | what |
+|---|---|
+| `src/renderer/pmrem.rs` | `PMREMGenerator`'s `fromCubemap` path: `_setSize`, `_allocateTarget`, `_init`, `_createPlanes`, `_textureToCubeUV`, `_applyPMREM`, `_applyGGXFilter`, `_setViewport`, and the two node materials |
+| `src/nodes/pmrem_utils.rs` | `PMREMUtils.js`: `getFace`, `getUV`, `roughnessToMip`, `bilinearCubeUV`, `textureCubeUV`, the GGX VNDF importance sampler |
+| `src/nodes/pmrem_node.rs` | `PMREMNode.js`: `_generateCubeUVSize`, and `PmremEnvironment`, which owns the generated atlas and the three cubeUV uniform cells |
+| `src/materials/environment.rs` | `EnvironmentNode.js`: the reflection-vector radiance tap and the world-normal irradiance tap |
+| `examples/webgpu_pmrem_cubemap.rs` | the example |
+| `tests/pmrem.rs` | the numeric gates |
+| `src/renderer/mod.rs` | `render_pmrem_mesh`, the PMREM analogue of `render_quad` |
+
+## Twenty-one passes, and where they come from
+
+A 256² source cube gives `lodMax = 8`, `cubeSize = 256`, an atlas of
+**768 × 1024 rgba16float**, and `lodMeshes.length = lodMax - LOD_MIN + 1 +
+EXTRA_LODS = 11`. That is one `_textureToCubeUV` pass writing mip 0's six
+tiles, then ten GGX steps of two passes each — filter into the ping-pong
+target, copy the tile back — which is the 21 render passes three's dump
+records.
+
+`_applyGGXFilter`'s arithmetic is the part that is easy to get subtly wrong,
+so it is gated rather than eyeballed. `tests/pmrem.rs` carries the whole
+ladder — `adjustedRoughness`, both `mipInt`s, the tile rectangle and the LOD's
+plane size, for all ten steps — and compares bit-exactly. The numbers were not
+transcribed from three's source: they were **printed by running it**, a real
+`PMREMGenerator` driven through `_applyGGXFilter` with `_setViewport` and
+`renderer.render` replaced by recorders. The script lived in the scratchpad,
+never in the vendor tree, and is gone.
+
+That oracle earned its keep immediately: `mipInt` is `_lodMax - lodIn`, and
+`lodIn` runs to 9 against a `lodMax` of 8, so the last two steps sample at
+**−1** and **−2**. Both subtractions were `usize` and both would have
+underflowed. Nothing in the image would have told you — the extra LODs are the
+roughest ones, which the example's `uniform( 0.5 )` background never reaches.
+
+`_generateCubeUVSize` is gated the same way, at five atlas heights, which pins
+the `7 * 16` floor that makes 256, 128 and 64 share a `texelWidth`.
+
+## Three shaders, diffed against three's dump
+
+`examples/dump_wgsl.rs` grew `pmrem_cubemap`, `pmrem_ggx`, `pmrem_background`
+and `pmrem_physical`. The first three match `m01`, `m03` and `m05` line for
+line, up to the divergence classes `docs/nodes.md` §8 already lists.
+
+Getting there needed two node-system facts that were not written down:
+
+* **`ConvertNode` is not a `TempNode`**, so it is re-expanded at every use and
+  never varred. That is why three's `bilinearCubeUV` emits the rotated
+  direction twice — once for `getFace`, once for `getUV` — and why a
+  *narrowing* cast is the swizzle arm (`x.xyz`), since
+  `ConvertNode.generate()` is `builder.format( snippet, from, to )`. The port's
+  `Node::Cast` arm was inverted to match; the sixteen-example baseline stayed
+  byte-identical through the change.
+* **An inlined `Fn`'s result is varred by `flowShaderNode`** when it is used
+  more than once. The port applies its reuse rule to expression nodes but not
+  to a `Block`, which re-generates at every use, so `ggx_convolution` asks for
+  the var by hand. Without it the VNDF body is inlined once per component.
+
+## `m07` is r186's new lighting model, and that is a different rung
+
+The lit material's PMREM contribution — the 86-line `radiance` +
+`iblIrradiance` block `EnvironmentNode` adds — matches `m07` statement for
+statement under a `nodeVar`/`nodeUniform` renumbering. The rest of `m07` does
+not, and should not be expected to: it is r186's restructured
+`PhysicalLightingModel` (`multiScatteringCompensation`, `dfg`,
+`NORMAL_normalView`), while the port still carries the earlier one, which is
+what `webgpu_lights_physical` is gated against. The scout's `rung8` directory
+has both spellings side by side. Porting the restructure is its own rung; it
+would move row 4 of the ladder and has nothing to do with PMREM.
+
+The seam is `PhysicalLightingModel::indirect_specular( has_environment, … )`:
+with no environment it still declares `radiance` and `iblIrradiance` zero
+itself, which is why every existing row is byte-identical. With one, the
+declarations travel with `EnvironmentNode`, emitted between `indirectDiffuse()`
+and `indirectSpecular()` — three's lighting-node ordering.
+
+## `updateBefore` moved, on purpose
+
+Three's `PMREMNode` carries `NodeUpdateType.RENDER` and builds the PMREM from
+inside the node while the renderer is rendering. A node here is an immutable
+`Rc` graph with no back-reference to the renderer, and `Renderer` methods take
+`&mut self`, so the trigger moved out: the application calls
+`PmremEnvironment::update( &mut renderer )`. It is idempotent, so "call it
+before you render" is the whole rule, and the example calls it in both `init()`
+and `animate()`. The `rung!` steady-upload assertion holds: after the first
+frame it does nothing.
+
+The atlas reaches the shader the same way three's does — one borrowed `Texture`
+handle (`own_gpu == false`) repointed with `set_gpu()`, which is also how the
+GGX material's `envMap` ping-pongs between the two passes of a step. Bind
+groups are built per draw, so there is no cache to invalidate.
+
+## Deferred
+
+`fromScene` and `fromEquirectangular`, and with them the golden-angle Gaussian
+blur shader and `BLUR_SAMPLES`. Nothing on the ladder reaches them;
+`webgpu_pmrem_scene` and `webgpu_pmrem_equirectangular` would.
