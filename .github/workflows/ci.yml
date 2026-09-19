@@ -66,11 +66,6 @@ jobs:
       # Excluded on purpose:
       #   - renderer_blending, renderer_instanced, renderer_lines: build a
       #     `Renderer`, which needs a Vulkan adapter.
-      #   - nodes_mx_noise: compares against WGSL dumps under
-      #     `../handoff/scouts/rung7/`, a scratch directory outside this
-      #     repository that only exists on the author's machine; it cannot
-      #     pass in a fresh checkout, GPU or not. Tracked separately from
-      #     #12 (not this issue's scope).
       - name: three-rs integration tests (no GPU)
         run: |
           tests=(
@@ -115,6 +110,7 @@ jobs:
             math_vector4
             nodes_instanced_attributes
             nodes_morph
+            nodes_mx_noise
             nodes_range_buffers
             objects_group
             scenes_scene
