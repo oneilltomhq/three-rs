@@ -1799,6 +1799,37 @@ fn main() {
     // rung webgpu_postprocessing_ca.
     dump_room_environment();
     dump_chromatic_aberration();
+
+    // rung `webgpu_custom_fog_background`: the composite quad, against
+    // `dump-custom_fog_background/m08_fragment_fragment_RenderPipeline.wgsl`.
+    // The scene program is `webgpu_loader_gltf`'s `Material_MR`, already
+    // covered by that rung's section.
+    //
+    // Built from a real `PassNode` so that the pass-as-a-value `to_var` pair
+    // and the memoised depth node are the port's own. `set_multisample( true )`
+    // is what `renderTarget.samples = renderer.samples` does under
+    // `antialias: true`; without it the binding would be `texture_depth_2d`
+    // and `multisampled: false`.
+    let fog_pass = three_rs::PassNode::new();
+    fog_pass.depth_texture().set_multisample(true);
+    let fog_factor = range_fog_factor_with_view_z(
+        float(2.7),
+        float(4.0),
+        fog_pass.view_z_node(three_rs::renderer::DEPTH_ATTACHMENT),
+    );
+    let scene_pass_tm = three_rs::materials::tone_mapping_node(
+        three_rs::ToneMapping::AcesFilmic,
+        float(1.0),
+        fog_pass.node(),
+    );
+    let mut custom_fog_quad = MeshBasicNodeMaterial::new();
+    custom_fog_quad.name = "RenderPipeline";
+    custom_fog_quad.fragment_node = Some(three_rs::materials::render_output(
+        fog_factor.mix(scene_pass_tm, Color::from_hex(0x4080cc)),
+        three_rs::ToneMapping::None,
+    ));
+    custom_fog_quad.vertex_node = Some(three_rs::materials::quad_vertex_node());
+    show("custom_fog_quad", &custom_fog_quad, SetupContext::default());
 }
 
 /// `webgpu_postprocessing_ca`'s two quad programs: the `RTT` pass that

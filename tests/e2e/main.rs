@@ -191,6 +191,10 @@ mod webgpu_mrt;
 #[allow(dead_code)]
 mod webgpu_loader_gltf;
 
+#[path = "../../examples/webgpu_custom_fog_background.rs"]
+#[allow(dead_code)]
+mod webgpu_custom_fog_background;
+
 #[path = "../../examples/webgpu_lights_phong.rs"]
 #[allow(dead_code)]
 mod webgpu_lights_phong;
@@ -1365,6 +1369,69 @@ fn webgpu_loader_gltf() {
     });
 }
 
+/// The gate on `pass.getViewZNode()`: the depth attachment of a **4×MSAA**
+/// pass, read back with `textureLoad( …, 0 )` through a
+/// `texture_depth_multisampled_2d` binding and converted with
+/// `perspectiveDepthToViewZ( depth, cameraNear, cameraFar )`.
+///
+/// Everything the frame shows rides on that one number. The scene is
+/// `webgpu_loader_gltf`'s helmet with no background at all, so most of the
+/// image is the *cleared* depth — 1.0, a view z of −`far` — which saturates
+/// `smoothstep( 2.7, 4 )` and paints the fog colour. Getting the near/far
+/// uniforms, the sample index or the multisample flag wrong changes the whole
+/// picture rather than an edge. See `docs/nodes.md` §24.
+#[test]
+fn webgpu_custom_fog_background() {
+    let name = "webgpu_custom_fog_background";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_custom_fog_background::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_custom_fog_background::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    // The `antialias: true` renderer makes the pass target multisampled, and
+    // its depth attachment is what the composite binds.
+    assert!(
+        app.scene_pass.depth_texture().is_multisample(),
+        "the pass's depth attachment is a 4x MSAA texture"
+    );
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(
+        name,
+        &mut app,
+        webgpu_custom_fog_background::animate,
+        |app| app.renderer.device(),
+    );
+}
+
 /// The gate on multiple render targets as a *pass* property rather than a
 /// material one, and on `WGSLNodeBuilder.isUnfilterable()`.
 ///
@@ -2432,6 +2499,7 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_lines_fat);
     rung!(webgpu_loader_gltf);
     rung!(webgpu_mrt);
+    rung!(webgpu_custom_fog_background);
 }
 
 // ---------------------------------------------------------------------------
