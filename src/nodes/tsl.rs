@@ -536,6 +536,15 @@ pub fn length(v: impl Into<NodeRef>) -> NodeRef {
     math("length", vec![v.into()], Type::F32)
 }
 
+/// `a.distance( b )` — `MathNode.DISTANCE`, a scalar out of two vectors.
+///
+/// Both operands are widened to the wider of the two, not to the `f32` result:
+/// `screenUV.distance( 0.5 )` is `distance( uv, vec2<f32>( 0.5 ) )`, and the
+/// splat of the scalar is what the builder's `distance` arm is for.
+pub fn distance(a: impl Into<NodeRef>, b: impl Into<NodeRef>) -> NodeRef {
+    math("distance", vec![a.into(), b.into()], Type::F32)
+}
+
 /// `TWO_PI` — `three.js/src/nodes/math/MathUtils.js`. A `float` const node, so
 /// `TWO_PI.div( 3 )` is emitted as the division, never folded.
 pub fn two_pi() -> NodeRef {
@@ -2595,7 +2604,12 @@ pub fn loop_index() -> NodeRef {
 
 pub fn loop_statement(count: usize, index: NodeRef, body: Vec<NodeRef>) -> NodeRef {
     let count = int(count as i64);
-    NodeRef::new(Node::Loop { index, count, body })
+    NodeRef::new(Node::Loop {
+        start: None,
+        index,
+        count,
+        body,
+    })
 }
 
 /// `If( cond, () => { … } )` with no `Else` — a statement.
@@ -3036,7 +3050,38 @@ pub fn loop_n(
         ty: Type::I32,
     });
     let body = body(&index);
-    NodeRef::new(Node::Loop { count, index, body })
+    NodeRef::new(Node::Loop {
+        start: None,
+        count,
+        index,
+        body,
+    })
+}
+
+/// `Loop( { start, end }, ( { i } ) => { … } )` — the two-bounded form.
+///
+/// Three.js writes the start into the loop header exactly as the node builds,
+/// so a `start` of `halfSamples.negate()` becomes
+/// `for ( var i : i32 = i32( ( - nodeVar1 ) ); i < i32( nodeVar1 ); i ++ )`
+/// and not a rebased `0`. Both bounds are the caller's to cast: the loop index
+/// is `i32` whatever the bounds' own type is.
+pub fn loop_range(
+    name: &'static str,
+    start: NodeRef,
+    end: NodeRef,
+    body: impl FnOnce(&NodeRef) -> Vec<NodeRef>,
+) -> NodeRef {
+    let index = NodeRef::new(Node::Param {
+        name,
+        ty: Type::I32,
+    });
+    let body = body(&index);
+    NodeRef::new(Node::Loop {
+        start: Some(start),
+        count: end,
+        index,
+        body,
+    })
 }
 
 /// `If( cond, () => { … } )`.

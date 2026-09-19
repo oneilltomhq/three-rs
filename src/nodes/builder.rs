@@ -472,8 +472,12 @@ impl NodeBuilder {
                 v.push(result.clone());
                 v
             }
-            Node::Loop { count, body, .. } => {
-                let mut v = vec![count.clone()];
+            Node::Loop {
+                start, count, body, ..
+            } => {
+                let mut v = Vec::new();
+                v.extend(start.iter().cloned());
+                v.push(count.clone());
                 v.extend(body.iter().cloned());
                 v
             }
@@ -1155,28 +1159,27 @@ impl NodeBuilder {
                 if name == "tsl_mod_float" {
                     self.add_code("tsl_mod_float", wgsl::MOD_FLOAT_SNIPPET);
                 }
-                // `MathNode.generate()`'s generic branch builds every operand
-                // at the node's *input* type — the widest of the operands —
-                // not at the result type. For `dot` those differ: the result
-                // is a scalar. `luminance( vec4 )` is the case that makes it
-                // load-bearing (`webgpu_postprocessing_difference`): three
-                // widens the `vec3` coefficients to `vec4( vec3( … ), 1.0 )`,
-                // so the alpha difference is weighted 1.0 and not dropped.
-                let input_ty = if name == "dot" {
-                    args.iter()
-                        .map(|a| a.ty())
-                        .max_by_key(|t| t.components())
-                        .unwrap_or(ty)
-                } else {
-                    ty
-                };
                 // `mix`'s interpolant and `cross`/`reflect`'s operands keep
                 // their own types; everything else is widened to the result
                 // type, as `MathNode.generate()` does.
+                // `MathNode.getInputType()`: a method whose result is narrower
+                // than its operands widens its operands to the wider *operand*,
+                // not to the result type. `distance` returns an `f32` from two
+                // vectors, so `format( a, ty )` would swizzle them down; `dot`
+                // is the same, and `luminance( vec4 )` is the case that makes
+                // it load-bearing (`webgpu_postprocessing_difference`): three
+                // widens the `vec3` coefficients to `vec4( vec3( … ), 1.0 )`,
+                // so the alpha difference is weighted 1.0 and not dropped.
+                let input_ty = args
+                    .iter()
+                    .map(|a| a.ty())
+                    .max_by_key(|t| t.components())
+                    .unwrap_or(ty);
                 let parts: Vec<String> = args
                     .iter()
                     .enumerate()
                     .map(|(i, a)| match name {
+                        "distance" => self.format(a, input_ty),
                         "mix" if i == 2 => self.generate(a),
                         "dot" => self.format(a, input_ty),
                         "cross" | "reflect" | "normalize" | "transpose" | "tsl_inverse_mat3"
@@ -1440,8 +1443,21 @@ impl NodeBuilder {
                 self.generate(&result)
             }
 
-            Node::Loop { count, index, body } => {
-                let (count, index, body) = (count.clone(), index.clone(), body.clone());
+            Node::Loop {
+                start,
+                count,
+                index,
+                body,
+            } => {
+                let (start, count, index, body) =
+                    (start.clone(), count.clone(), index.clone(), body.clone());
+                // The start is generated before the end, which is the order
+                // three.js' `LoopNode` builds them in and so the order their
+                // vars and uniforms are numbered in.
+                let sstart = match &start {
+                    Some(start) => self.generate(start),
+                    None => "0".to_string(),
+                };
                 let scount = self.generate(&count);
                 let name = match &*index.0 {
                     Node::Param { name, .. } => *name,
@@ -1449,7 +1465,7 @@ impl NodeBuilder {
                 };
                 self.emit(String::new());
                 self.emit(format!(
-                    "for ( var {name} : i32 = 0; {name} < {scount}; {name} ++ ) {{"
+                    "for ( var {name} : i32 = {sstart}; {name} < {scount}; {name} ++ ) {{"
                 ));
                 self.emit(String::new());
                 self.push_scope();
