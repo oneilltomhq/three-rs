@@ -227,6 +227,10 @@ impl Primitive {
 
 /// One entry of the render list, already resolved to what the draw needs.
 struct Renderable {
+    /// `renderItem.object` — `frame.object` for a node whose `updateType` is
+    /// `NodeUpdateType.OBJECT`. `None` for the draws three.js makes with its
+    /// own `QuadMesh` or background mesh, which carry no application node.
+    object: Option<Node>,
     geometry: Rc<BufferGeometry>,
     material: MeshBasicNodeMaterial,
     /// `material.id` / `material.version` of the material this item was
@@ -1084,6 +1088,7 @@ impl Renderer {
             material.color_node = Some(color_node);
 
             items.push(Renderable {
+                object: None,
                 geometry: self.background_geometry(),
                 material,
                 key,
@@ -1241,6 +1246,7 @@ impl Renderer {
             };
 
             items.push(Renderable {
+                object: Some(item.node.clone()),
                 geometry: geometry.clone(),
                 material: material.clone(),
                 key: MaterialKey::of(material),
@@ -1508,6 +1514,7 @@ impl Renderer {
                 let instance_count = object.instance_count();
 
                 items.push(Renderable {
+                    object: Some(item.node.clone()),
                     geometry: geometry.clone(),
                     material: materials::shadow_material(source),
                     key: MaterialKey::of(source).variant(VARIANT_SHADOW),
@@ -1711,6 +1718,7 @@ impl Renderer {
                 let instance_color = object.instance_color().cloned();
                 let instance_count = object.instance_count();
                 items.push(Renderable {
+                    object: Some(item.node.clone()),
                     geometry: geometry.clone(),
                     material: materials::shadow_material(source),
                     key: MaterialKey::of(source).variant(VARIANT_SHADOW),
@@ -1850,6 +1858,7 @@ impl Renderer {
         material.vertex_node = Some(materials::quad_vertex_node());
 
         let items = [Renderable {
+            object: None,
             fog: None,
             geometry: self.quad_geometry(),
             material,
@@ -1903,6 +1912,7 @@ impl Renderer {
         self.begin_frame();
 
         let items = [Renderable {
+            object: None,
             fog: None,
             geometry,
             material: material.clone(),
@@ -2058,7 +2068,13 @@ impl Renderer {
             };
             self.ensure_pipeline(pipeline);
 
+            // `frame.object` for the draw's object-update nodes. Read-only
+            // for the length of the draw's binding build, which is the whole
+            // of three's `nodeFrame.updateBefore*`/`update*` window.
+            let object = item.object.as_ref().map(|node| node.borrow());
+
             let uniforms = UniformContext {
+                object: object.as_deref(),
                 model_world: item.model_world,
                 material_color: item.material.color,
                 material_opacity: item.material.opacity,
@@ -2313,6 +2329,7 @@ impl Renderer {
         material.fragment_node = Some(materials::output_fragment_node(&texture, self.tone_mapping));
 
         let items = [Renderable {
+            object: None,
             fog: None,
             geometry: self.quad_geometry(),
             material,

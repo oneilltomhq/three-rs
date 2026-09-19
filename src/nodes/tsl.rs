@@ -286,6 +286,26 @@ pub fn uniform_settable(ty: Type, values: Vec<f64>) -> (NodeRef, SettableValue) 
     (node, cell)
 }
 
+/// A `uniform()` whose value is recomputed from the render object it is about
+/// to be drawn for — the whole of a `Node` with `updateType =
+/// NodeUpdateType.OBJECT` wrapping a `uniform()`, which is what
+/// `webgpu_instance_uniform`'s `InstanceUniformNode` is.
+///
+/// The callback is three's `update( frame )` with `frame.object`. It runs once
+/// per draw, just before the object group's bytes are written, so twelve meshes
+/// sharing one material still get twelve different values out of one program.
+pub fn uniform_object(
+    ty: Type,
+    update: impl Fn(&crate::core::Object3D) -> Vec<f64> + 'static,
+) -> NodeRef {
+    uniform(
+        UniformSource::ObjectUpdate(crate::nodes::node::ObjectUpdate::new(update)),
+        ty,
+        UniformGroup::Object,
+        None,
+    )
+}
+
 pub fn uniform(
     source: UniformSource,
     ty: Type,

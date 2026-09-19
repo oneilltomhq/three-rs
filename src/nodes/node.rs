@@ -230,6 +230,62 @@ pub enum UniformSource {
     /// first: one node, one program, eight different values across the eight
     /// accumulation draws of a frame.
     Settable(SettableValue),
+    /// A `uniform()` inside a node whose `updateType` is
+    /// `NodeUpdateType.OBJECT`: three calls `node.update( frame )` with
+    /// `frame.object` set to the render object about to be drawn, and the
+    /// callback writes `uniformNode.value` before that object's bindings are
+    /// built. `webgpu_instance_uniform`'s `InstanceUniformNode` is the ladder's
+    /// first — twelve meshes share one material, one program and one pipeline,
+    /// and differ only in the three floats this uniform resolves to.
+    ///
+    /// The port has no place to hang a `mesh.color` the way the page does, so
+    /// the callback receives the object itself and answers from whatever the
+    /// application keyed to it. See `docs/nodes.md` §18.
+    ObjectUpdate(ObjectUpdate),
+}
+
+/// The callback behind [`UniformSource::ObjectUpdate`] — `Node.update( frame )`
+/// narrowed to the one thing an `OBJECT` update can read, `frame.object`.
+///
+/// Two callbacks with the same behaviour are still two uniforms, so, like
+/// [`SettableValue`], this compares by identity: the program cache must not
+/// merge two per-object uniforms that happen to be spelled alike.
+#[derive(Clone)]
+pub struct ObjectUpdate(Rc<ObjectUpdateFn>);
+
+/// The body of an [`ObjectUpdate`]: three's `update( frame )` with `frame`
+/// narrowed to its `object`.
+pub type ObjectUpdateFn = dyn Fn(&crate::core::Object3D) -> Vec<f64>;
+
+impl ObjectUpdate {
+    pub fn new(update: impl Fn(&crate::core::Object3D) -> Vec<f64> + 'static) -> Self {
+        Self(Rc::new(update))
+    }
+
+    /// `node.update( { object } )` — the value for one render object.
+    pub fn value(&self, object: &crate::core::Object3D) -> Vec<f64> {
+        (self.0)(object)
+    }
+}
+
+impl std::fmt::Debug for ObjectUpdate {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("ObjectUpdate")
+            .field(&Rc::as_ptr(&self.0).cast::<u8>())
+            .finish()
+    }
+}
+
+impl PartialEq for ObjectUpdate {
+    fn eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl std::hash::Hash for ObjectUpdate {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        (Rc::as_ptr(&self.0).cast::<u8>() as usize).hash(state);
+    }
 }
 
 /// The cell behind [`UniformSource::Settable`]. Two cells with equal contents
@@ -294,7 +350,8 @@ impl UniformSource {
             | UniformSource::BindMatrix
             | UniformSource::BindMatrixInverse
             | UniformSource::Value(_)
-            | UniformSource::Settable(_) => UpdateType::Object,
+            | UniformSource::Settable(_)
+            | UniformSource::ObjectUpdate(_) => UpdateType::Object,
             _ => UpdateType::Render,
         }
     }
