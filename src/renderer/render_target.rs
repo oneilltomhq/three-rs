@@ -193,9 +193,15 @@ impl RenderTarget {
     }
 
     /// `renderTarget.viewport.set( x, y, width, height )` — the rectangle of
-    /// *this* target a render into it is confined to. Origin top-left, in the
-    /// target's own pixels; see
+    /// *this* target a render into it is confined to, and what
+    /// `PMREMGenerator._setViewport()` sets before each tile of the cubeUV
+    /// atlas is rendered, so that 21 passes share two textures. Origin
+    /// top-left, in the target's own pixels; see
     /// [`Renderer::set_viewport`](super::Renderer::set_viewport).
+    ///
+    /// `( 0, 0, width, height )` — the default, and what [`Self::set_size`]
+    /// restores — is the whole target, which is the rectangle wgpu would use
+    /// anyway.
     pub fn set_viewport(&self, x: f64, y: f64, width: f64, height: f64) {
         self.0.borrow_mut().viewport = Vector4::new(x, y, width, height);
     }

@@ -2349,17 +2349,55 @@ impl Renderer {
         self.read_texture_pixels(&texture, width, height)
     }
 
-    /// The one copy-to-buffer-and-map path both readbacks above go through:
-    /// mip 0 of `texture` as top-down, tightly packed RGBA8.
+    /// The same readback off an `rgba16float` [`RenderTarget`] — the format
+    /// PMREM's cubeUV atlas and the renderer's own framebuffer target are in —
+    /// decoded to `f32`, four channels a texel, top-down.
+    ///
+    /// [`read_target_pixels`](Self::read_target_pixels) cannot serve this: it
+    /// promises RGBA8 bytes, and a half-float target read through it would come
+    /// back as plausible-looking garbage. The conversion is
+    /// [`from_half_float`](crate::extras::from_half_float), which is exact, so
+    /// what comes back is the texel the GPU wrote and not a re-rounding of it.
+    pub fn read_target_pixels_rgba16f(
+        &mut self,
+        render_target: &RenderTarget,
+    ) -> Result<(u32, u32, Vec<f32>), Error> {
+        self.prepare_render_target(render_target);
+
+        let inner = render_target.inner().borrow();
+        let (width, height) = (inner.width, inner.height);
+        let texture = inner.texture.with_gpu(|gpu| gpu.clone());
+        drop(inner);
+
+        let format = texture.format();
+        if format != wgpu::TextureFormat::Rgba16Float {
+            return Err(Error::Readback {
+                reason: format!("{format:?} is not rgba16float"),
+            });
+        }
+
+        let (width, height, bytes) = self.read_texture_bytes(&texture, width, height)?;
+        let pixels = bytes
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|half| crate::extras::from_half_float(u16::from_le_bytes(*half)))
+            .collect();
+
+        Ok((width, height, pixels))
+    }
+
+    /// The one copy-to-buffer-and-map path both RGBA8 readbacks above go
+    /// through: mip 0 of `texture` as top-down, tightly packed RGBA8.
     fn read_texture_pixels(
         &self,
         texture: &wgpu::Texture,
         width: u32,
         height: u32,
     ) -> Result<(u32, u32, Vec<u8>), Error> {
-        // The row stripping below, and the four bytes a pixel the callers are
-        // promised, assume an 8-bit-per-channel colour format. A float target
-        // would read back as garbage rather than fail, so say so instead.
+        // The four bytes a pixel the callers are promised assume an
+        // 8-bit-per-channel colour format. A float target would read back as
+        // garbage rather than fail, so say so instead.
         let format = texture.format();
         if format.block_copy_size(None) != Some(4) {
             return Err(Error::Readback {
@@ -2367,9 +2405,27 @@ impl Renderer {
             });
         }
 
+        self.read_texture_bytes(texture, width, height)
+    }
+
+    /// Mip 0 of `texture` copied back as tightly packed, top-down bytes in the
+    /// texture's own format.
+    fn read_texture_bytes(
+        &self,
+        texture: &wgpu::Texture,
+        width: u32,
+        height: u32,
+    ) -> Result<(u32, u32, Vec<u8>), Error> {
+        let format = texture.format();
+        let bytes_per_texel = format
+            .block_copy_size(None)
+            .ok_or_else(|| Error::Readback {
+                reason: format!("{format:?} has no single block size"),
+            })?;
+
         // `copy_texture_to_buffer` needs 256-byte aligned rows; the padding is
         // stripped again below (FINDINGS #19: not stripping it shears the image).
-        let unpadded_bytes_per_row = width * 4;
+        let unpadded_bytes_per_row = width * bytes_per_texel;
         let bytes_per_row = unpadded_bytes_per_row.div_ceil(256) * 256;
 
         let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
@@ -2864,18 +2920,21 @@ impl Renderer {
                 })
             }
             TextureSource::Cube(cube) => {
-                let anisotropy = cube.inner().borrow().anisotropy;
+                let inner = cube.inner().borrow();
                 self.device.create_sampler(&wgpu::SamplerDescriptor {
                     label: Some("three-rs cube sampler"),
                     // `CubeTexture`'s wrapping is `ClampToEdgeWrapping` on all axes.
                     address_mode_u: wgpu::AddressMode::ClampToEdge,
                     address_mode_v: wgpu::AddressMode::ClampToEdge,
                     address_mode_w: wgpu::AddressMode::ClampToEdge,
-                    // `LinearFilter` / `LinearMipmapLinearFilter`.
-                    mag_filter: wgpu::FilterMode::Linear,
-                    min_filter: wgpu::FilterMode::Linear,
-                    mipmap_filter: wgpu::MipmapFilterMode::Linear,
-                    anisotropy_clamp: anisotropy,
+                    // `LinearFilter` / `LinearMipmapLinearFilter` by default;
+                    // `HDRCubeTextureLoader` sets `minFilter = LinearFilter`,
+                    // which drops the mip filter to `nearest` — there is only
+                    // one mip in that cube for it to choose between anyway.
+                    mag_filter: filter(inner.mag_filter),
+                    min_filter: filter(inner.min_filter.min()),
+                    mipmap_filter: mipmap(inner.min_filter.mipmap()),
+                    anisotropy_clamp: inner.anisotropy,
                     ..Default::default()
                 })
             }
@@ -3233,6 +3292,13 @@ impl Renderer {
             view_formats: &[],
         });
 
+        // The row stride comes from the format, not from a hardcoded RGBA8:
+        // an `HDRCubeTextureLoader` face is `rgba16float`, eight bytes a texel,
+        // and a four-byte stride would shear every face into diagonal garbage.
+        let bytes_per_texel = format
+            .block_copy_size(None)
+            .expect("three-rs: the cube texture format has no single block size");
+
         {
             let inner = texture.inner().borrow();
             assert!(!inner.flip_y, "three-rs: CubeTexture.flipY is false");
@@ -3251,7 +3317,7 @@ impl Renderer {
                     &image.data,
                     wgpu::TexelCopyBufferLayout {
                         offset: 0,
-                        bytes_per_row: Some(image.width * 4),
+                        bytes_per_row: Some(image.width * bytes_per_texel),
                         rows_per_image: Some(image.height),
                     },
                     wgpu::Extent3d {
