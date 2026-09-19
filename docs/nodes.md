@@ -1452,3 +1452,54 @@ One thing is missing rather than divergent: **a loaded material has no name.**
 names have no counterpart. Nothing generated reads the name — it is not in the
 WGSL, the cache key or the bindings — so the dump sections pick the materials
 out by the mesh they sit on instead.
+
+## 17. Environment cube maps without the node system (`webgpu_materials_envmaps`, `webgpu_materials_cubemap_mipmaps`)
+
+Two rungs that add no divergence class, and the reason is worth writing down:
+neither page reaches the node system at all.
+
+`webgpu_materials_envmaps` is graded on its *first* frame, which is its GUI
+defaults — `Type: 'Cube'`, `Refraction: false` — so the frame is a
+`CubeTexture` background and one `MeshBasicMaterial` sphere on the
+`CubeMapNode` reflection path. `webgpu_materials_cubemap_mipmaps` is two
+`MeshBasicMaterial` spheres on that same path. The vertex and fragment modules
+three.js dumps for all three of those spheres (`m03` / `m04` of the one,
+`m00` / `m01` of the other) are byte-for-byte identical to each other and to
+what `examples/dump_wgsl.rs`' `basic_envmap` has printed since rung 3;
+`webgpu_materials_envmaps`' background matches `background_cube`. Everything
+these rungs added is on the upload side.
+
+**`CubeRefractionMapping` and `EquirectangularReflectionMapping` are not
+ported.** `Mapping::CubeRefraction` exists as a constant and nothing reads it:
+`setupEnvironment()` would have to pick `refractVector()` over
+`reflectVector()` and thread `material.refractionRatio`, and an equirect env
+map would need `EquirectUVNode` and a `Texture` rather than a `CubeTexture` in
+`material.env_map`. Both are only reachable by moving the page's GUI, which the
+graded frame never does.
+
+### A three.js mip-count quirk, reproduced on purpose
+
+`CubeTexture::mip_level_count()` is `mipmaps.len() + 1` when the levels were
+supplied by hand. That `+ 1` is not arithmetic the port chose: three.js'
+`Textures.getMipLevels()` returns `texture.mipmaps.length` for *every* texture,
+which is right for a 2D texture (whose `mipmaps` array holds level 0 too) and
+one short for an uncompressed cube (whose `mipmaps` array holds the mips only,
+level 0 living in `images`). Rather than fix `getMipLevels()`, three.js
+corrects it at the call site:
+
+```js
+// TODO: Uniformly handle mipmap definitions
+if ( texture.isCubeTexture && texture.mipmaps.length > 0 ) options.levels ++;
+```
+
+The port carries the same shape and the same comment, because the count is
+observable: `webgpu_materials_cubemap_mipmaps`' 256² cube with eight
+hand-authored mips has to be a nine-level GPU texture, which is what three's
+own texture descriptor says, and an eight-level one would put the sampler's
+`lodMaxClamp` a level short and drift the far side of the sphere.
+
+`needsMipmaps()` comes with it: `generateMipmaps === true || mipmaps.length > 0`,
+so a texture with `generateMipmaps = false` and hand-supplied levels is still
+mipmapped — and generation is skipped only because
+`Textures.updateTexture()` guards it with `texture.mipmaps.length === 0`, not
+because `generateMipmaps` is false.
