@@ -1,0 +1,40 @@
+
+> three@0.186.0 test-e2e-webgpu
+> node test/e2e/puppeteer.js --webgpu webgpu_postprocessing_bloom_emissive webgpu_postprocessing_bloom_selective webgpu_postprocessing_difference webgpu_postprocessing_dof_basic webgpu_postprocessing_fog webgpu_postprocessing_godrays webgpu_postprocessing_lensflare
+
+[32mDiff 0.0% in file: webgpu_postprocessing_bloom_emissive (3.3s)[39m
+[32mDiff 0.0% in file: webgpu_postprocessing_bloom_selective (3.0s)[39m
+[32mDiff 0.0% in file: webgpu_postprocessing_difference (3.0s)[39m
+[32mDiff 0.0% in file: webgpu_postprocessing_dof_basic (3.4s)[39m
+[32mDiff 0.0% in file: webgpu_postprocessing_fog (4.0s)[39m
+[32mDiff 0.0% in file: webgpu_postprocessing_godrays (3.1s)[39m
+[32mDiff 0.0% in file: webgpu_postprocessing_lensflare (3.3s)[39m
+[32mTEST PASSED! 7 screenshots rendered correctly.[39m
+Closing...
+
+> three@0.186.0 test-e2e-webgpu
+> node test/e2e/puppeteer.js --webgpu webgpu_postprocessing_motion_blur webgpu_postprocessing_outline webgpu_postprocessing_radial_blur webgpu_postprocessing_smaa webgpu_postprocessing_ssaa webgpu_postprocessing_ssr
+
+[32mDiff 0.0% in file: webgpu_postprocessing_motion_blur (3.3s)[39m
+[32mDiff 0.0% in file: webgpu_postprocessing_outline (3.1s)[39m
+[32mDiff 0.0% in file: webgpu_postprocessing_radial_blur (3.0s)[39m
+[31mError: Diff wrong in 0.3% of pixels in file: webgpu_postprocessing_smaa (3.0s)[39m
+[32mDiff 0.0% in file: webgpu_postprocessing_ssaa (3.0s)[39m
+[31mError: Diff wrong in 0.1% of pixels in file: webgpu_postprocessing_ssr (3.2s)[39m
+[31mList of failed screenshots: webgpu_postprocessing_smaa webgpu_postprocessing_ssr[39m
+[31mIf you are sure that everything is correct, try to run "npm run make-screenshot webgpu_postprocessing_smaa webgpu_postprocessing_ssr". If this does not help, add remaining screenshots to the exception list.[39m
+[31mTEST FAILED! 2 from 6 screenshots have not rendered correctly.[39m
+Closing...
+
+> three@0.186.0 test-e2e-webgpu
+> node test/e2e/puppeteer.js --webgpu webgpu_postprocessing_radial_blur webgpu_postprocessing_ssaa webgpu_postprocessing_bloom_selective webgpu_postprocessing_direct webgpu_postprocessing_difference webgpu_postprocessing_fxaa webgpu_postprocessing_sobel
+
+[32mDiff 0.0% in file: webgpu_postprocessing_bloom_selective (3.1s)[39m
+[32mDiff 0.0% in file: webgpu_postprocessing_difference (3.0s)[39m
+[32mDiff 0.0% in file: webgpu_postprocessing_direct (3.1s)[39m
+[32mDiff 0.1% in file: webgpu_postprocessing_fxaa (3.3s)[39m
+[32mDiff 0.0% in file: webgpu_postprocessing_radial_blur (3.7s)[39m
+[32mDiff 0.1% in file: webgpu_postprocessing_sobel (5.8s)[39m
+[32mDiff 0.0% in file: webgpu_postprocessing_ssaa (3.0s)[39m
+[32mTEST PASSED! 7 screenshots rendered correctly.[39m
+Closing...

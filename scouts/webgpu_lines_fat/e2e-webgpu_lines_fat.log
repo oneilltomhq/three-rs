@@ -1,0 +1,16 @@
+# Three's own grader, this machine (Intel Iris Xe, Mesa 25.3.6, Fedora 43),
+# vendor ~/src/vendor/three.js @ r186 with rung0/grader-flags.patch applied.
+# Run under flock /run/user/1000/three-rs-gpu.lock.
+
+$ npm run test-e2e-webgpu -- webgpu_lines_fat
+Diff 0.0% in file: webgpu_lines_fat (3.0s)
+TEST PASSED! 1 screenshots rendered correctly.
+
+$ npm run test-e2e-webgpu -- webgpu_lines_fat webgpu_lines_fat_raycasting webgpu_lines_fat_wireframe
+Diff 0.0% in file: webgpu_lines_fat (3.0s)
+Diff 0.1% in file: webgpu_lines_fat_raycasting (3.0s)
+Diff 0.1% in file: webgpu_lines_fat_wireframe (3.0s)
+TEST PASSED! 3 screenshots rendered correctly.
+
+# webgpu_lines_fat is NOT on test/e2e/puppeteer.js's exceptionList (checked at
+# r186; the list has no `lines` entry of any kind).
