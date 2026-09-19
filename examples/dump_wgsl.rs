@@ -168,6 +168,7 @@ fn main() {
         &inst,
         SetupContext {
             environment: None,
+            lighting_disabled: false,
             instance_count: Some(1000),
             instanced: true,
             instance_color: None,
@@ -179,6 +180,7 @@ fn main() {
             mrt: None,
             output: None,
             vertex_color_size: 0,
+            geometry_missing_normal: false,
         },
     );
 
@@ -1869,6 +1871,124 @@ fn main() {
     ));
     custom_fog_quad.vertex_node = Some(three_rs::materials::quad_vertex_node());
     show("custom_fog_quad", &custom_fog_quad, SetupContext::default());
+
+    dump_deferred();
+}
+
+/// rung `webgpu_deferred`: the G-buffer material and the resolve quad, against
+/// `dump-deferred/m11`+`m12` and `m13`+`m14`.
+///
+/// The two are the same `MeshStandardNodeMaterial` flow read twice — once
+/// writing the G-buffer and once reading it — so the interesting lines are at
+/// the two ends:
+///
+/// * the G-buffer fragment has an empty light list (`lighting.enabled =
+///   false`), so `Output` is only the emissive, and three attachments whose
+///   `position` / `normal` members are `vec4( positionView, Metalness )` /
+///   `vec4( normalView, Roughness )`;
+/// * the resolve fragment opens with `output.depth = …` from `depthNode`,
+///   discards on a cleared depth, and then runs the whole standard lighting
+///   flow with `nodeVar3.xyz` / `nodeVar4.xyz` inlined wherever `positionView`
+///   and `normalView` would have been — `overrideNodes()` hands the
+///   replacement back with no `toVar()`, so there is no var of its own.
+///   `Roughness` is `min( ( max( …, 0.0525 ) + 0.0 ), 1.0 )`: the quad
+///   geometry has no normal attribute, so `getGeometryRoughness()` is
+///   `float( 0 )`.
+fn dump_deferred() {
+    let eight_points: Vec<LightDesc> = (0..8)
+        .map(|index| LightDesc {
+            index,
+            kind: LightKind::Point,
+            shadow_map: None,
+        })
+        .collect();
+
+    // `opaquePass.setMRT( mrt( { output: diffuseColor, position: vec4(
+    // positionView, metalness ), normal: vec4( normalView, roughness ) } ) )`.
+    let g_buffer = || three_rs::materials::MrtContext {
+        node: {
+            let mut node = three_rs::nodes::mrt(vec![("output", diffuse_color())]);
+            node.set_deferred("position", || vec4_join(vec![position_view(), metalness()]));
+            node.set_deferred("normal", || vec4_join(vec![normal_view(), roughness()]));
+            node
+        },
+        attachments: vec![
+            "output".to_string(),
+            "position".to_string(),
+            "normal".to_string(),
+        ],
+    };
+
+    // `new THREE.MeshStandardMaterial( { color: 0x333333, roughness: 0.2,
+    // metalness: 0.8 } )` on the teapot, drawn by the unlit opaque pass.
+    let teapot = MeshBasicNodeMaterial::standard(Color::from_hex(0x333333), 0.2, 0.8);
+    show(
+        "deferred_gbuffer",
+        &teapot,
+        SetupContext {
+            mrt: Some(g_buffer()),
+            // `opaquePass.lighting = false`: the G-buffer pass builds its
+            // materials with no lights and no environment, so the teapot's
+            // standard material emits no lighting chain at all.
+            lighting_disabled: true,
+            ..SetupContext::default()
+        },
+    );
+
+    // The resolve quad. The G-buffer taps are plain textures here rather than
+    // a live `PassNode`'s attachments — the node the builder sees is the same
+    // `texture( … , uv() )` either way.
+    let attachment = || Texture::new(1, 1, Some(vec![0; 4]));
+    let output_attachment = texture_uv(&attachment(), uv());
+    let position_attachment = texture_uv(&attachment(), uv());
+    let normal_attachment = texture_uv(&attachment(), uv());
+    let depth = DepthTexture::new();
+    let depth_node = pass_depth_texture(&depth);
+
+    let mut resolve = MeshBasicNodeMaterial::standard(Color::new(1.0, 1.0, 1.0), 1.0, 0.0);
+    resolve.color_node = Some(block(
+        vec![if_then(
+            depth_node.greater_than_equal(float(1.0)),
+            vec![discard()],
+        )],
+        output_attachment,
+    ));
+    resolve.metalness_node = Some(position_attachment.w());
+    resolve.roughness_node = Some(normal_attachment.w());
+    resolve.vertex_node = Some(vec4_join(vec![
+        position_geometry().xy(),
+        float(0.0),
+        float(1.0),
+    ]));
+    resolve.depth_node = Some(depth_node);
+    resolve.context_overrides = Some(OverrideNodes {
+        position_view: Some(position_attachment.xyz()),
+        position_view_direction: Some(position_attachment.xyz().negate().normalize()),
+        normal_view: Some(normal_attachment.xyz()),
+    });
+
+    let hdr_cube = CubeTexture::new(vec![
+        Image {
+            width: 1,
+            height: 1,
+            data: vec![0; 4],
+        };
+        6
+    ]);
+    let environment = PmremEnvironment::new(&hdr_cube);
+
+    show(
+        "deferred_resolve",
+        &resolve,
+        SetupContext {
+            environment: Some(environment.handle()),
+            lights: eight_points,
+            // The quad geometry has position and uv and no normal, which is
+            // what makes `getGeometryRoughness()` `float( 0 )`.
+            geometry_missing_normal: true,
+            ..SetupContext::default()
+        },
+    );
 }
 
 /// `webgpu_postprocessing_ca`'s two quad programs: the `RTT` pass that

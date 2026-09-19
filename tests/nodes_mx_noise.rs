@@ -52,6 +52,7 @@ fn fragment_wgsl(noise: NodeRef) -> String {
     // `positionLocal` reaches the fragment stage as a varying, exactly as the
     // dumped `main( @location( 0 ) positionLocal : vec3<f32> )` shows.
     let flow = MaterialFlow {
+        depth: None,
         pre_vertex_statements: vec![],
         fragment_statements: vec![three_rs::nodes::tsl::discard_if(
             noise.greater_than(float(0.0)),

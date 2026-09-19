@@ -74,6 +74,23 @@ pub struct SetupContext {
     /// `vec4` with an alpha of 1. It is part of the program's cache key,
     /// because it changes the vertex attribute's WGSL type.
     pub vertex_color_size: usize,
+    /// `builder.renderer.lighting.enabled === false` — the pass was rendered
+    /// with its lighting disabled (`PassNode`'s `lighting: false`), so
+    /// `NodeMaterial.setupLighting()`'s `sceneLighting` is false: the material
+    /// collects no `materialLightings` (the environment among them) and, with
+    /// an empty `LightsNode`, emits no lighting chain at all — the outgoing
+    /// light is the diffuse colour. `webgpu_deferred`'s G-buffer pass is that
+    /// case. The sense is inverted so that `Default` (every ordinary pass)
+    /// stays "lighting enabled".
+    pub lighting_disabled: bool,
+    /// `builder.geometry.attributes.normal === undefined` —
+    /// `getGeometryRoughness()` returns `float( 0 )` for a geometry with no
+    /// normal attribute instead of the `dFdx`/`dFdy` term, because the
+    /// derivative would be taken of a constant. `webgpu_deferred`'s resolve
+    /// quad is exactly that case: a `MeshStandardNodeMaterial` on the
+    /// two-attribute quad geometry. It changes the generated WGSL, so it
+    /// belongs in the dynamic cache key.
+    pub geometry_missing_normal: bool,
     /// `builder.context.getOutput` — the renderer's context node, which
     /// `DirectRenderPipeline` sets so that the output transform is applied
     /// **inside every material's fragment shader** instead of in a quad of its
@@ -303,6 +320,20 @@ pub fn setup(
     // `bumpMap` normal-maps through `BumpMapNode`.
     // `MaterialNode.NORMAL`: `normalMap` first, then `bumpMap`, then the
     // geometry's own `normalView`.
+    // `material.contextNode = overrideNodes( [ … ] )`: the replacements are
+    // installed for the whole of the material's setup, so every accessor the
+    // lighting flow reaches resolves to the G-buffer texture instead of to the
+    // geometry. See `docs/nodes.md` §27.
+    crate::nodes::tsl::with_override_nodes(material.context_overrides.as_ref(), || {
+        setup_overridden(material, ctx, fog)
+    })
+}
+
+fn setup_overridden(
+    material: &MeshBasicNodeMaterial,
+    ctx: &SetupContext,
+    fog: Option<&FogNode>,
+) -> MaterialFlow {
     let normal = with_material_side(material.side, || {
         match (
             &material.normal_node,
@@ -560,6 +591,14 @@ fn setup_inner(
 
     MaterialFlow {
         pre_vertex_statements: pre_vertex,
+        // `if ( this.depthWrite === true || this.depthTest === true )` —
+        // three's own guard on `setupDepth()`. The port carries only the
+        // explicit `depthNode` branch; the logarithmic / orthographic
+        // fallbacks want `renderer.logarithmicDepthBuffer`, which no rung sets.
+        depth: material
+            .depth_node
+            .clone()
+            .filter(|_| material.depth_write || material.depth_test),
         fragment_statements: fragment,
         output,
         output_assign,
@@ -990,18 +1029,26 @@ fn setup_standard(
     // --- setupVariants. `metalnessNode` is reached twice — once for the
     // `Metalness` property and once for `DiffuseContribution` — so the node is
     // shared, exactly as three.js shares the `materialMetalness` node.
-    let metalness_node = match &material.metalness_map {
+    // `const metalnessNode = this.metalnessNode ? float( this.metalnessNode )
+    // : materialMetalness` — the explicit node replaces the uniform *and* its
+    // map, because `materialMetalness` is what folds the map in.
+    let metalness_node = match (&material.metalness_node, &material.metalness_map) {
+        (Some(node), _) => node.clone(),
         // glTF packing: metalness in blue, roughness in green.
-        Some(map) => material_metalness().mul(texture(map).z()),
-        None => material_metalness(),
+        (None, Some(map)) => material_metalness().mul(texture(map).z()),
+        (None, None) => material_metalness(),
     };
     fragment.push(metalness().assign(metalness_node.clone()));
 
-    let roughness_node = match &material.roughness_map {
-        Some(map) => material_roughness().mul(texture(map).y()),
-        None => material_roughness(),
+    let roughness_node = match (&material.roughness_node, &material.roughness_map) {
+        (Some(node), _) => node.clone(),
+        (None, Some(map)) => material_roughness().mul(texture(map).y()),
+        (None, None) => material_roughness(),
     };
-    fragment.push(roughness().assign(physical::get_roughness(roughness_node)));
+    fragment.push(roughness().assign(physical::get_roughness(
+        roughness_node,
+        !ctx.geometry_missing_normal,
+    )));
 
     if material.kind == MaterialKind::Physical {
         // `MeshPhysicalNodeMaterial.setupSpecular()`: F0 from the index of
@@ -1063,9 +1110,27 @@ fn setup_standard(
 
     fragment.push(emissive_color().assign(material_emissive_value(material)));
 
-    let outgoing = if material.lights {
+    // `NodeMaterial.setupLighting()`: `sceneLighting = this.lights === true &&
+    // builder.renderer.lighting.enabled`, `materialLightings = sceneLighting ?
+    // this.setupMaterialLightings( builder ) : []` — the environment is one of
+    // those, so a pass with lighting disabled drops it too — and the chain is
+    // built only `if ( lightsNode && ( materialLightings.length > 0 ||
+    // lightsNode.getScope().hasLights ) )`. With neither, `setupOutgoingLight()`
+    // stands as it is: `DiffuseColor.rgb`.
+    let scene_lighting = material.lights && !ctx.lighting_disabled;
+    let environment = material
+        .pmrem_env
+        .as_ref()
+        .or(ctx.environment.as_ref())
+        .filter(|_| scene_lighting);
+    let lights = if scene_lighting {
+        material_lights(material, ctx)
+    } else {
+        Vec::new()
+    };
+
+    let outgoing = if scene_lighting && (environment.is_some() || !lights.is_empty()) {
         let model = Physical::start(use_sheen, fragment);
-        let lights = material_lights(material, ctx);
 
         // `LightingContextNode`'s five accumulators. three.js declares each at
         // the point of its first use; hoisting the zeros here is the one
@@ -1090,8 +1155,7 @@ fn setup_standard(
         // `EnvironmentNode` is a lighting node, so its two `addAssign`s land
         // between `indirectDiffuse()` and `indirectSpecular()` — and with them
         // the declarations of `radiance` and `iblIrradiance`.
-        let env = material.pmrem_env.as_ref().or(ctx.environment.as_ref());
-        if let Some(environment) = env {
+        if let Some(environment) = environment {
             environment::setup(environment, fragment);
         }
         // `AONode( context.ambientOcclusion )`, the last entry
@@ -1104,7 +1168,7 @@ fn setup_standard(
                 ambient_occlusion().assign(ambient_occlusion().mul(ambient_occlusion_property())),
             );
         }
-        model.indirect_specular(env.is_some(), fragment);
+        model.indirect_specular(environment.is_some(), fragment);
         model.ambient_occlusion(material.ao_map.is_some(), fragment);
 
         fragment.push(total_diffuse().assign(direct_diffuse().add(indirect_diffuse())));

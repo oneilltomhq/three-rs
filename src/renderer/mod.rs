@@ -35,7 +35,7 @@ pub use render_target::{RenderTarget, RenderTargetInner, RenderTargetOptions, OU
 pub use ssaa_pass::SsaaPassNode;
 
 use crate::cameras::{OrthographicCamera, PerspectiveCamera, RenderCamera};
-use crate::core::{BufferGeometry, Index, Node};
+use crate::core::{BufferGeometry, Index, Layers, Node};
 use crate::error::Error;
 use crate::geometries::{quad_geometry, sphere_geometry};
 use crate::lights::{LightKind, LightObject, CUBE_DIRECTIONS, CUBE_UPS};
@@ -308,6 +308,12 @@ const VARIANT_SHADOW: u64 = 1;
 const VARIANT_QUAD: u64 = 2;
 /// `MaterialKey::variant` for a `PMREMGenerator` lod-plane draw.
 const VARIANT_PMREM: u64 = 3;
+/// `MaterialKey::variant` for the two halves of `_renderObjectDirect()`'s
+/// transparent `DoubleSide` split — the same material drawn `BackSide` and
+/// then `FrontSide`, which are two programs because the side reaches
+/// `faceDirection` and so the normal.
+const VARIANT_BACK_SIDE: u64 = 4;
+const VARIANT_FRONT_SIDE: u64 = 5;
 
 /// One material's built programs — `NodeManager.nodeBuilderCache`'s entries
 /// for one `material.id`, at one `material.version`. The per-draw resolution
@@ -500,6 +506,31 @@ pub struct Renderer {
     pub auto_clear_color: bool,
     /// `Renderer.autoClearDepth`.
     pub auto_clear_depth: bool,
+
+    /// `Renderer.opaque` — the gate on `_renderObjects( opaqueObjects, … )`.
+    /// `webgpu_deferred`'s transparent pass turns it off, which also drops the
+    /// skybox: `Background.update()` unshifts the background into
+    /// `renderList.opaque`, so it is one of the opaque objects this gate
+    /// skips.
+    pub opaque: bool,
+    /// `Renderer.transparent` — the matching gate on `_renderTransparents()`.
+    /// `webgpu_deferred`'s opaque pass turns it off so that the G-buffer holds
+    /// opaque geometry only.
+    pub transparent: bool,
+    /// `renderer.lighting.enabled` — `RenderList.finish()`'s
+    /// `this.lightsNode.setLights( this.lighting.enabled ? this.lightsArray :
+    /// _emptyArray )`. A pass with lighting disabled builds every material
+    /// with an empty light list, which is what makes `webgpu_deferred`'s
+    /// G-buffer pass write unlit `diffuseColor`.
+    ///
+    /// Three models this as a `Lighting` object the pass swaps in; the port
+    /// carries only the flag, because nothing on the ladder uses a `Lighting`
+    /// for anything else.
+    pub lighting_enabled: bool,
+    /// `PassNode.updateBefore()`'s `camera.layers.mask = this._layers.mask` —
+    /// the layer mask `_projectObject()` tests against for the duration of one
+    /// pass. `None` leaves the camera's own mask alone.
+    pub camera_layers: Option<Layers>,
 
     /// `Renderer.sortObjects`. With it off, `_projectObject()` leaves each render
     /// item's `z` alone and the lists keep traversal order.
@@ -783,6 +814,10 @@ impl Renderer {
             auto_clear: true,
             auto_clear_color: true,
             auto_clear_depth: true,
+            opaque: true,
+            transparent: true,
+            lighting_enabled: true,
+            camera_layers: None,
             sort_objects: true,
             canvas: None,
             render_target: None,
@@ -1103,7 +1138,11 @@ impl Renderer {
             }
             _ => None,
         };
-        if let Some((color_node, variant)) = background {
+        // `Background.update()` unshifts the skybox into `renderList.opaque`,
+        // so `if ( this.opaque === true )` gates it along with everything else
+        // in that list. `webgpu_deferred`'s transparent pass is the case that
+        // shows it: no skybox behind the planes.
+        if let Some((color_node, variant)) = background.filter(|_| self.opaque) {
             let key = MaterialKey::of(&self.background_material).variant(variant);
             let mut material = self.background_material.clone();
             material.color_node = Some(color_node);
@@ -1140,6 +1179,13 @@ impl Renderer {
                 primitive: Primitive::TRIANGLES,
                 sub_draws: Vec::new(),
             });
+        }
+
+        // `RenderList.finish()`: `this.lightsNode.setLights( this.lighting
+        // .enabled ? this.lightsArray : _emptyArray )` — a pass with lighting
+        // disabled builds every material with no lights at all.
+        if !self.lighting_enabled {
+            render_list.lights.clear();
         }
 
         // `LightsNode.setupLightsNode()` starts with `sortLights( lights )`,
@@ -1195,7 +1241,38 @@ impl Renderer {
             }
         }
 
-        for item in render_list.items() {
+        // `Renderer._renderScene()`'s two gated calls, plus
+        // `_renderObjectDirect()`'s split of a transparent `DoubleSide`
+        // material into a `BackSide` draw (pass id `'backSide'`) and a
+        // `FrontSide` one, per object and in list order. Note this is *not*
+        // `RenderList.transparentDoublePass`, which needs `transmission > 0`
+        // and draws the whole back-side list before the whole front-side one.
+        let mut draws: Vec<(&RenderItem, Option<Side>)> = Vec::new();
+        if self.opaque {
+            draws.extend(render_list.opaque.iter().map(|item| (item, None)));
+        }
+        if self.transparent {
+            for item in &render_list.transparent {
+                let object = item.node.borrow();
+                let material = scene
+                    .override_material
+                    .as_ref()
+                    .or(object.material())
+                    .unwrap_or(&self.default_material);
+                // `material.transparent === true && material.side ===
+                // DoubleSide && material.forceSinglePass === false`.
+                let split = material.transparent && material.side == Side::Double;
+                drop(object);
+                if split {
+                    draws.push((item, Some(Side::Back)));
+                    draws.push((item, Some(Side::Front)));
+                } else {
+                    draws.push((item, None));
+                }
+            }
+        }
+
+        for (item, side) in draws {
             let object = item.node.borrow();
             // `renderItem.geometry` / `renderItem.material` — a `Mesh`, an
             // `InstancedMesh` or a `Line`, all of which `_projectObject()`
@@ -1267,6 +1344,25 @@ impl Renderer {
                 None => scene.environment.clone(),
             };
 
+            // `material.side = BackSide` / `= FrontSide` around each of the
+            // two `_handleObjectFunction()` calls, restored to `DoubleSide`
+            // after. The port clones instead of mutating, so the two halves
+            // need their own cache keys — but the key is taken from the
+            // *original* material, because `MaterialId::clone()` mints a fresh
+            // id (that is what makes two `MeshBasicNodeMaterial`s built from
+            // the same one two materials) and a key minted per frame would
+            // rebuild every program every frame.
+            let side_variant = match side {
+                Some(Side::Back) => VARIANT_BACK_SIDE,
+                Some(Side::Front) => VARIANT_FRONT_SIDE,
+                _ => 0,
+            };
+            let key = MaterialKey::of(material).variant(side_variant);
+            let mut material = material.clone();
+            if let Some(side) = side {
+                material.side = side;
+            }
+
             items.push(Renderable {
                 object: Some(item.node.clone()),
                 geometry: geometry.clone(),
@@ -1276,9 +1372,13 @@ impl Renderer {
                 // material drawn both with and without one — the same
                 // `MeshStandardNodeMaterial` in an environment scene and in the
                 // real scene — already gets two programs.
-                key: MaterialKey::of(material),
+                key,
                 setup: SetupContext {
                     environment: scene_environment,
+                    // `builder.renderer.lighting.enabled`: a pass with lighting
+                    // disabled builds its materials with no lights *and* no
+                    // environment (see `SetupContext::lighting_disabled`).
+                    lighting_disabled: !self.lighting_enabled,
                     // `InstanceNode.setup()` branches on
                     // `instanceMatrix.count * 16 * 4` against
                     // `maxUniformBufferBindingSize`, i.e. on the *array*
@@ -1317,6 +1417,9 @@ impl Renderer {
                         .get_attribute("color")
                         .map(|attribute| attribute.item_size)
                         .unwrap_or(0),
+                    // `getGeometryRoughness()`'s
+                    // `builder.geometry.attributes.normal === undefined`.
+                    geometry_missing_normal: !geometry.has_attribute("normal"),
                 },
                 fog: scene.fog_node.clone(),
                 model_world: item.matrix_world,
@@ -1348,7 +1451,7 @@ impl Renderer {
         // forceClear === true ) { renderContext.clearColor =
         // renderer.autoClearColor; renderContext.clearDepth =
         // renderer.autoClearDepth; … } else { … = false }`.
-        let clear = if self.auto_clear || force_clear {
+        let mut clear = if self.auto_clear || force_clear {
             ClearOps {
                 color: self.auto_clear_color.then_some(clear_color),
                 depth: self.auto_clear_depth,
@@ -1356,6 +1459,27 @@ impl Renderer {
         } else {
             ClearOps::default()
         };
+
+        // `Renderer._renderScene()`'s "make sure a new render target has
+        // correct default depth values": the *first* render into a target with
+        // a depth buffer clears the depth anyway when the auto-clear would not
+        // have, because an uninitialised depth attachment is undefined.
+        //
+        // It is per render *target*, not per texture, so `webgpu_deferred`'s
+        // transparent pass — a second target over the opaque pass's depth
+        // attachment — takes the manual clear on its first frame and throws
+        // away exactly the depth it was given the texture for. Three does this
+        // and the reference image shows it: on the graded frame the six planes
+        // are not occluded by the teapot. It is reproduced on purpose; see
+        // `docs/nodes.md` §27.
+        if let Some(target) = &self.render_target {
+            if target.depth_buffer() && !target.depth_initialized() {
+                if !self.auto_clear || !self.auto_clear_depth {
+                    clear.depth = true;
+                }
+                target.set_depth_initialized(true);
+            }
+        }
 
         // `LightsNode.setupLights()`: each light resolves to its colour scaled
         // by intensity plus its position in view space. The list is
@@ -1548,6 +1672,7 @@ impl Renderer {
                     key: MaterialKey::of(source).variant(VARIANT_SHADOW),
                     setup: SetupContext {
                         environment: None,
+                        lighting_disabled: false,
                         instance_count: instance_matrix.as_ref().map(|_| instance_count as usize),
                         instanced: instance_matrix.is_some(),
                         instance_color: instance_color.as_ref().map(|a| a.count()),
@@ -1571,6 +1696,9 @@ impl Renderer {
                         // `shadow_material()` leaves `vertexColors` false, so
                         // the shadow program never reads the attribute.
                         vertex_color_size: 0,
+                        // A shadow material is `MeshBasicNodeMaterial`: it has
+                        // no roughness, so the flag cannot reach any code.
+                        geometry_missing_normal: false,
                     },
                     fog: None,
                     model_world: item.matrix_world,
@@ -1753,6 +1881,7 @@ impl Renderer {
                     key: MaterialKey::of(source).variant(VARIANT_SHADOW),
                     setup: SetupContext {
                         environment: None,
+                        lighting_disabled: false,
                         instance_count: instance_matrix.as_ref().map(|_| instance_count as usize),
                         instanced: instance_matrix.is_some(),
                         instance_color: instance_color.as_ref().map(|a| a.count()),
@@ -1774,6 +1903,9 @@ impl Renderer {
                         // `shadow_material()` leaves `vertexColors` false, so
                         // the shadow program never reads the attribute.
                         vertex_color_size: 0,
+                        // A shadow material is `MeshBasicNodeMaterial`: it has
+                        // no roughness, so the flag cannot reach any code.
+                        geometry_missing_normal: false,
                     },
                     fog: None,
                     model_world: item.matrix_world,
@@ -1859,9 +1991,16 @@ impl Renderer {
     /// and the lights work of later rungs both want the list without the draw.
     pub fn project_scene(&self, scene: &Scene, camera: &dyn RenderCamera) -> RenderList {
         let mut render_list = RenderList::new();
+        // `PassNode.updateBefore()` writes `camera.layers.mask` and restores it
+        // after its render. The port keeps the override on the renderer and
+        // applies it here, which is the only place the mask is read.
+        let mut project_camera = ProjectCamera::new(camera);
+        if let Some(layers) = self.camera_layers {
+            project_camera.layers = layers;
+        }
         project_object(
             &scene.node,
-            &ProjectCamera::new(camera),
+            &project_camera,
             0.0,
             &mut render_list,
             self.sort_objects,

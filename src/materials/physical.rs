@@ -26,7 +26,15 @@ pub const RECIPROCAL_PI: f64 = std::f64::consts::FRAC_1_PI;
 /// `getGeometryRoughness()` — `max3( max( abs( dFdx( normalViewGeometry ) ),
 /// abs( dFdy( normalViewGeometry ) ) ) )`, with `dFdy`'s sign flip inside
 /// `dpdy()`.
-pub fn geometry_roughness() -> NodeRef {
+/// `has_normal` is `builder.geometry.hasAttribute( 'normal' )`: with no normal
+/// attribute the function returns `float( 0 )` outright, and the derivative
+/// pair is never emitted. `webgpu_deferred`'s resolve quad is the first
+/// geometry on the ladder that has none, and its dump reads
+/// `min( ( max( nodeVar4.w, 0.0525 ) + 0.0 ), 1.0 )`.
+pub fn geometry_roughness(has_normal: bool) -> NodeRef {
+    if !has_normal {
+        return float(0.0);
+    }
     let d = max(
         abs(dpdx(normal_view_geometry())),
         abs(dpdy(normal_view_geometry())),
@@ -37,9 +45,9 @@ pub fn geometry_roughness() -> NodeRef {
 /// `getRoughness( { roughness } )` — `min( max( roughness, 0.0525 ) +
 /// geometryRoughness, 1.0 )`. The 0.0525 floor keeps the GGX highlight from
 /// aliasing to a single pixel.
-pub fn get_roughness(roughness: NodeRef) -> NodeRef {
+pub fn get_roughness(roughness: NodeRef, has_normal: bool) -> NodeRef {
     max(roughness, float(0.0525))
-        .add(geometry_roughness())
+        .add(geometry_roughness(has_normal))
         .min(float(1.0))
 }
 
