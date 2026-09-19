@@ -433,6 +433,8 @@ impl GLTFLoader {
             }
         }
 
+        check_required_extensions(&json)?;
+
         let mut loader = Self {
             json,
             glb_buffer,
@@ -1970,4 +1972,44 @@ fn decode_base64(input: &str) -> Result<Vec<u8>, Error> {
 /// `json[ key ]` as a `usize`, for the many optional indices in a glTF.
 fn json_usize(value: &Value, key: &str) -> Option<usize> {
     value.get(key).and_then(Value::as_u64).map(|v| v as usize)
+}
+
+/// The `extensionsUsed` names this loader reads, as `GLTFLoader.parse`'s
+/// `switch` and `GLTFParser`'s `extendMaterialParams` calls between them
+/// cover. Geometry-rewriting extensions (`KHR_draco_mesh_compression`,
+/// `EXT_meshopt_compression`, `KHR_mesh_quantization`) are *not* here: the
+/// port reads none of them.
+const SUPPORTED_EXTENSIONS: &[&str] = &[
+    "KHR_materials_anisotropy",
+    "KHR_materials_clearcoat",
+    "KHR_materials_emissive_strength",
+    "KHR_materials_ior",
+    "KHR_materials_sheen",
+    "KHR_materials_specular",
+    "KHR_materials_transmission",
+    "KHR_materials_volume",
+    "KHR_texture_transform",
+];
+
+/// `GLTFLoader.parse`'s `extensionsRequired` check, made fatal.
+///
+/// three.js `console.warn`s `'THREE.GLTFLoader: Unknown extension'` and carries
+/// on, which for `KHR_draco_mesh_compression` means every accessor in the file
+/// resolves to a `bufferView`-less accessor and the meshes come out as zeroed
+/// attributes — a scene that renders, empty. This commit's message has the case
+/// that found this. A required extension the port cannot read is an error.
+fn check_required_extensions(json: &Value) -> Result<(), Error> {
+    let required = json
+        .get("extensionsRequired")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+
+    for name in required.iter().filter_map(Value::as_str) {
+        if !SUPPORTED_EXTENSIONS.contains(&name) {
+            return Err(GltfError::UnsupportedRequiredExtension(name.to_string()).into());
+        }
+    }
+
+    Ok(())
 }

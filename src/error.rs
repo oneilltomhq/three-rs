@@ -102,6 +102,11 @@ pub enum GltfError {
     BadDataUri(String),
     /// A character that is not in the base64 alphabet.
     BadBase64(char),
+    /// An extension in `extensionsRequired` that the port does not read.
+    /// three.js only warns here (`'Unknown extension'`) and then decodes
+    /// nothing, which on this stack is a silent wrong picture, so the port
+    /// refuses the asset instead.
+    UnsupportedRequiredExtension(String),
 }
 
 impl fmt::Display for Error {
@@ -163,6 +168,9 @@ impl fmt::Display for GltfError {
             Self::UnsupportedAccessorType(name) => write!(f, "unsupported accessor type {name}"),
             Self::BadDataUri(uri) => write!(f, "bad data URI {uri}"),
             Self::BadBase64(c) => write!(f, "bad base64 character {c:?}"),
+            Self::UnsupportedRequiredExtension(name) => {
+                write!(f, "unknown required extension \"{name}\"")
+            }
         }
     }
 }
