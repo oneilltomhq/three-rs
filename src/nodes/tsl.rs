@@ -18,6 +18,7 @@ use super::node::{
     BufferNode, BufferSource, Builtin, FnDef, InstanceBuffer, Lazy, Node, NodeRef, SampleMode,
     Type, UniformGroup, UniformNode, UniformSource, VarDef, VaryingDef,
 };
+use crate::materials::Side;
 use crate::math::{Color, Matrix3};
 use crate::textures::{CubeDepthTexture, CubeTexture, DataArrayTexture, DepthTexture, Texture};
 
@@ -29,10 +30,10 @@ pub use super::node::TextureSource;
 
 /// Cache key shared by the per-(sub-build layer, normal value) caches below:
 /// `(sub_build_layer, normal_value_id)`.
-type SubBuildKey = (Option<&'static str>, Option<usize>);
+type SubBuildKey = (Option<&'static str>, Option<usize>, Side);
 
 /// [`SubBuildKey`] plus the flat-shading flag, for `normalView`'s cache.
-type NormalViewKey = (Option<&'static str>, Option<usize>, bool);
+type NormalViewKey = (Option<&'static str>, Option<usize>, bool, Side);
 
 thread_local! {
     /// `NodeBuilder.subBuildLayers`. One layer at a time is all the ladder
@@ -46,6 +47,9 @@ thread_local! {
     /// === false`. `normalViewGeometry` reads it, so like `NORMAL_VALUE` it is
     /// installed for the whole of one material's setup.
     static FLAT_SHADING: RefCell<bool> = const { RefCell::new(false) };
+    /// `builder.material.side` — what `negateOnBackSide()` branches on, and so
+    /// part of every cache key that reaches `normalView` or the tangent frame.
+    static MATERIAL_SIDE: RefCell<Side> = const { RefCell::new(Side::Front) };
     /// `normalViewGeometry`'s node per flat-shading flag — the stand-in for
     /// three.js' per-build `nodeData`, which gives the two forms of the
     /// accessor's `Fn( … ).once()` separate cache entries.
@@ -97,14 +101,43 @@ fn in_sub_build<R>(layer: &'static str, f: impl FnOnce() -> R) -> R {
 pub fn with_material_normal<R>(
     normal: Option<NodeRef>,
     flat_shading: bool,
+    side: Side,
     f: impl FnOnce() -> R,
 ) -> R {
     let previous = NORMAL_VALUE.with(|v| v.replace(normal));
     let previous_flat = FLAT_SHADING.with(|v| v.replace(flat_shading));
+    let previous_side = MATERIAL_SIDE.with(|v| v.replace(side));
     let out = f();
     NORMAL_VALUE.with(|v| *v.borrow_mut() = previous);
     FLAT_SHADING.with(|v| *v.borrow_mut() = previous_flat);
+    MATERIAL_SIDE.with(|v| *v.borrow_mut() = previous_side);
     out
+}
+
+/// `builder.material.side` alone, for the window in which
+/// `NodeMaterial.setupNormal()` builds the material's normal node. three.js
+/// calls `setupNormal()` lazily from inside the build, so the side is already
+/// in scope there; the port builds the node up front and so has to open the
+/// scope explicitly, or a `DoubleSide` material's TBN frame would be built
+/// front-sided and then cached.
+pub fn with_material_side<R>(side: Side, f: impl FnOnce() -> R) -> R {
+    let previous = MATERIAL_SIDE.with(|v| v.replace(side));
+    let out = f();
+    MATERIAL_SIDE.with(|v| *v.borrow_mut() = previous);
+    out
+}
+
+/// `negateOnBackSide( vector )` — `FrontFacingNode.js`. A back-sided material
+/// inverts the vector outright; a double-sided one scales it by
+/// `faceDirection`, so only the back-facing fragments flip. `normalView` and
+/// the tangent frame both go through it, which is why a `DoubleSide` material's
+/// dump multiplies three vectors by the same `( f32( isFront ) * 2 - 1 )`.
+fn negate_on_back_side(vector: NodeRef) -> NodeRef {
+    match MATERIAL_SIDE.with(|s| *s.borrow()) {
+        Side::Front => vector,
+        Side::Back => vector.mul(float(-1.0)),
+        Side::Double => vector.mul(face_direction()),
+    }
 }
 
 /// `builder.context.setupPositionView = () => this.setupPositionView( builder )`
@@ -741,6 +774,45 @@ pub fn material_metalness() -> NodeRef {
     )
 }
 
+/// `materialIOR` / `materialSpecularIntensity` / `materialSpecularColor` —
+/// `MeshPhysicalNodeMaterial.setupSpecular()`'s three uniforms.
+pub fn material_ior() -> NodeRef {
+    uniform(
+        UniformSource::MaterialIor,
+        Type::F32,
+        UniformGroup::Object,
+        None,
+    )
+}
+
+pub fn material_specular_intensity() -> NodeRef {
+    uniform(
+        UniformSource::MaterialSpecularIntensity,
+        Type::F32,
+        UniformGroup::Object,
+        None,
+    )
+}
+
+pub fn material_specular_color() -> NodeRef {
+    uniform(
+        UniformSource::MaterialSpecularColor,
+        Type::Vec3,
+        UniformGroup::Object,
+        None,
+    )
+}
+
+/// `materialNormalScale` — a `vec2`.
+pub fn material_normal_scale() -> NodeRef {
+    uniform(
+        UniformSource::MaterialNormalScale,
+        Type::Vec2,
+        UniformGroup::Object,
+        None,
+    )
+}
+
 pub fn material_roughness() -> NodeRef {
     uniform(
         UniformSource::MaterialRoughness,
@@ -780,20 +852,25 @@ pub fn inverse_sqrt(x: impl Into<NodeRef>) -> NodeRef {
 /// sub-build layers its descendants declare, which is why the centre teapot's
 /// dump calls it `NORMAL_TBNViewMatrix`; here the layer is simply still open.
 pub fn tbn_view_matrix() -> NodeRef {
+    // Keyed like `tangentView` and `normalWorld`, and for the same reason: the
+    // frame it joins depends on the material's side, so a singleton would bake
+    // in whichever material was built first.
     thread_local! {
-        static CELL: Lazy<NodeRef> = const { Lazy::new() };
+        static CELL: RefCell<HashMap<SubBuildKey, NodeRef>> = RefCell::new(HashMap::new());
     }
-    CELL.with(|c| {
-        c.get(|| {
-            to_var(
-                Some("TBNViewMatrix"),
-                join(
-                    Type::Mat3,
-                    vec![tangent_view(), bitangent_view(), normal_view()],
-                ),
-            )
-        })
-    })
+    let key = normal_key();
+    if let Some(node) = CELL.with(|m| m.borrow().get(&key).cloned()) {
+        return node;
+    }
+    let node = to_var(
+        Some("TBNViewMatrix"),
+        join(
+            Type::Mat3,
+            vec![tangent_view(), bitangent_view(), normal_view()],
+        ),
+    );
+    CELL.with(|m| m.borrow_mut().insert(key, node.clone()));
+    node
 }
 
 /// Port of `NormalMapNode` for `TangentSpaceNormalMap` with no scale:
@@ -808,6 +885,24 @@ pub fn normal_map(node: impl Into<NodeRef>) -> NodeRef {
     in_sub_build("NORMAL", || {
         tbn_view_matrix()
             .mul(texel.mul(2.0).sub(1.0).xyz())
+            .normalize()
+    })
+}
+
+/// `normalMap( node, scale )` — the `scaleNode` branch of `NormalMapNode`:
+/// `vec3( ( texel * 2 - 1 ).xy * scale, ( texel * 2 - 1 ).z )` through the TBN.
+///
+/// The unpacked texel is read twice, so it lands in a var of its own; the
+/// no-scale [`normal_map`] reads it once and does not.
+pub fn normal_map_scaled(node: impl Into<NodeRef>, scale: NodeRef) -> NodeRef {
+    let texel = node.into();
+    in_sub_build("NORMAL", || {
+        let unpacked = to_var(None, texel.mul(2.0).sub(1.0));
+        tbn_view_matrix()
+            .mul(vec3_join(vec![
+                unpacked.xy().mul(scale.clone()),
+                unpacked.z(),
+            ]))
             .normalize()
     })
 }
@@ -1485,14 +1580,18 @@ pub fn normal_view_geometry() -> NodeRef {
 /// per-build `nodeData` gives it for free.
 /// The cache key every node that reads `normalView` shares: the open sub-build
 /// layer plus the material's own normal node.
-fn normal_key() -> (Option<&'static str>, Option<usize>) {
+fn normal_key() -> SubBuildKey {
     let layer = SUB_BUILD.with(|s| *s.borrow());
     let value = if layer.is_some() {
         None
     } else {
         NORMAL_VALUE.with(|v| v.borrow().clone())
     };
-    (layer, value.as_ref().map(|v| v.key()))
+    (
+        layer,
+        value.as_ref().map(|v| v.key()),
+        MATERIAL_SIDE.with(|s| *s.borrow()),
+    )
 }
 
 pub fn normal_view() -> NodeRef {
@@ -1502,17 +1601,25 @@ pub fn normal_view() -> NodeRef {
     } else {
         NORMAL_VALUE.with(|v| v.borrow().clone())
     };
+    let flat = FLAT_SHADING.with(|f| *f.borrow());
     let key = (
         layer,
         value.as_ref().map(|v| v.key()),
-        FLAT_SHADING.with(|f| *f.borrow()),
+        flat,
+        MATERIAL_SIDE.with(|s| *s.borrow()),
     );
     if let Some(node) = NORMAL_VIEW.with(|m| m.borrow().get(&key).cloned()) {
         return node;
     }
+    // Inside the `NORMAL` layer the value is the geometric normal, and
+    // `negateOnBackSide()` applies unless the material is flat shaded.
     let node = to_var(
         Some("normalView"),
-        value.unwrap_or_else(normal_view_geometry),
+        match value {
+            Some(value) => value,
+            None if flat => normal_view_geometry(),
+            None => negate_on_back_side(normal_view_geometry()),
+        },
     );
     NORMAL_VIEW.with(|m| m.borrow_mut().insert(key, node.clone()));
     node
@@ -1548,14 +1655,31 @@ fn tangent_frame() -> (NodeRef, NodeRef) {
         .equal(float(0.0))
         .select(float(0.0), inverse_sqrt(det));
 
+    // `tangentView` / `bitangentView` go through `negateOnBackSide()` too,
+    // unless the material is flat shaded.
+    let flat = FLAT_SHADING.with(|f| *f.borrow());
+    let frame = |name, value| {
+        if flat {
+            value
+        } else {
+            let _ = name;
+            negate_on_back_side(value)
+        }
+    };
     let pair = (
         to_var(
             Some("tangentView"),
-            to_var_untagged("tangentViewFrame", t.mul(scale.clone())),
+            frame(
+                "tangentView",
+                to_var_untagged("tangentViewFrame", t.mul(scale.clone())),
+            ),
         ),
         to_var(
             Some("bitangentView"),
-            to_var_untagged("bitangentViewFrame", b.mul(scale)),
+            frame(
+                "bitangentView",
+                to_var_untagged("bitangentViewFrame", b.mul(scale)),
+            ),
         ),
     );
     TANGENT_VIEW.with(|m| m.borrow_mut().insert(key, pair.clone()));
@@ -1678,6 +1802,8 @@ prop!(multi_scattering, "multiScattering", Type::Vec3);
 prop!(roughness, "Roughness", Type::F32);
 prop!(specular_color_blended, "SpecularColorBlended", Type::Vec3);
 prop!(specular_f90, "SpecularF90", Type::F32);
+// `MeshPhysicalNodeMaterial.setupSpecular()`'s `ior` property.
+prop!(ior, "IOR", Type::F32);
 prop!(diffuse_contribution, "DiffuseContribution", Type::Vec3);
 prop!(
     single_scattering_dielectric,
@@ -2242,6 +2368,28 @@ pub fn srgb_transfer_oetf(color: NodeRef) -> NodeRef {
         })
     });
     call(&def, vec![color])
+}
+
+/// `linearToneMapping` — `ToneMappingFunctions.js`. The cheapest of the three:
+/// exposure and a clamp, and nothing else.
+pub fn linear_tone_mapping(color: NodeRef, exposure: NodeRef) -> NodeRef {
+    thread_local! { static CELL: Lazy<Rc<FnDef>> = const { Lazy::new() }; }
+    let def = CELL.with(|c| {
+        c.get(|| {
+            shader_fn(
+                Some("linearToneMapping"),
+                vec![("color", Type::Vec3), ("exposure", Type::F32)],
+                Type::Vec3,
+                |args| {
+                    args[0]
+                        .clone()
+                        .mul(args[1].clone())
+                        .clamp(float(0.0), float(1.0))
+                },
+            )
+        })
+    });
+    call(&def, vec![color, exposure])
 }
 
 /// `reinhardToneMapping` — `ToneMappingFunctions.js`, emitted as a real `fn`.

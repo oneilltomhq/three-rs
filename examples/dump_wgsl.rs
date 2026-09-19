@@ -519,8 +519,19 @@ fn main() {
 
     // rung 10: Michelle's skinned body, against
     // `handoff/scouts/rung10/m03_vertex_Ch03_Body-r186.wgsl`.
-    let mut body = MeshBasicNodeMaterial::standard(Color::new(1.0, 1.0, 1.0), 1.0, 0.0);
+    let diffuse = Texture::new(512, 512, Some(vec![0; 4]));
+    let glossiness = Texture::new(512, 512, Some(vec![0; 4]));
+    let specular_map = Texture::new(512, 512, Some(vec![0; 4]));
+    let normal_tex = Texture::new(512, 512, Some(vec![0; 4]));
+    let mut body = MeshBasicNodeMaterial::physical(Color::new(1.0, 1.0, 1.0), 1.0, 0.5);
     body.side = Side::Double;
+    body.map = Some(diffuse);
+    body.metalness_map = Some(glossiness.clone());
+    body.roughness_map = Some(glossiness);
+    body.specular_color_map = Some(specular_map);
+    body.normal_map = Some(normal_tex);
+    body.normal_scale = three_rs::math::Vector2::new(1.0, -1.0);
+    body.ior = 1.45;
     show(
         "skinning_body",
         &body,

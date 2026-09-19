@@ -1455,6 +1455,10 @@ impl Renderer {
                 material_metalness: item.material.metalness,
                 material_roughness: item.material.roughness,
                 material_bump_scale: item.material.bump_scale,
+                material_ior: item.material.ior,
+                material_specular_intensity: item.material.specular_intensity,
+                material_specular_color: item.material.specular_color,
+                material_normal_scale: item.material.normal_scale,
                 tone_mapping_exposure: self.tone_mapping_exposure,
                 viewport: Vector2::new(target.width as f64, target.height as f64),
                 ..camera_uniforms

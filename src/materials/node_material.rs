@@ -152,11 +152,20 @@ pub fn setup(
     // normal map. See `docs/nodes.md` §7.
     // `MaterialNode.NORMAL`: with no `normalNode` of its own, a material with a
     // `bumpMap` normal-maps through `BumpMapNode`.
-    let normal = match (&material.normal_node, &material.bump_map) {
-        (Some(node), _) => Some(node.clone()),
-        (None, Some(bump)) => Some(bump_map(bump, material_bump_scale())),
-        (None, None) => None,
-    };
+    // `MaterialNode.NORMAL`: `normalMap` first, then `bumpMap`, then the
+    // geometry's own `normalView`.
+    let normal = with_material_side(material.side, || {
+        match (
+            &material.normal_node,
+            &material.normal_map,
+            &material.bump_map,
+        ) {
+            (Some(node), _, _) => Some(node.clone()),
+            (None, Some(map), _) => Some(normal_map_scaled(texture(map), material_normal_scale())),
+            (None, None, Some(bump)) => Some(bump_map(bump, material_bump_scale())),
+            (None, None, None) => None,
+        }
+    });
     // `builder.context.setupPositionView = () => this.setupPositionView(
     // builder )` — the seam `SpriteNodeMaterial` overrides. Built here, before
     // either stage is flowed, exactly as `NodeMaterial.setup()` installs it.
@@ -164,7 +173,7 @@ pub fn setup(
         MaterialKind::Sprite => Some(setup_position_view_sprite(material)),
         _ => None,
     };
-    with_material_normal(normal, material.flat_shading, || {
+    with_material_normal(normal, material.flat_shading, material.side, || {
         with_material_position_view(position_view, || setup_inner(material, ctx, fog))
     })
 }
@@ -238,7 +247,7 @@ fn setup_inner(
         fragment_node.clone()
     } else if material.kind == MaterialKind::Phong {
         setup_phong(material, ctx, &mut fragment)
-    } else if material.kind == MaterialKind::Standard {
+    } else if material.kind == MaterialKind::Standard || material.kind == MaterialKind::Physical {
         setup_standard(material, ctx, &mut fragment)
     } else {
         setup_diffuse_color(material, &mut fragment);
@@ -481,6 +490,10 @@ pub fn render_output(color: NodeRef, tone_mapping: ToneMapping) -> NodeRef {
         ToneMapping::None => unpremultiplied,
         // `outputNode.toneMapping( toneMapping )` — `ToneMappingNode` keeps the
         // alpha and tone maps the colour with `toneMappingExposure`.
+        ToneMapping::Linear => vec4_join(vec![
+            linear_tone_mapping(unpremultiplied.clone().rgb(), tone_mapping_exposure()),
+            unpremultiplied.a(),
+        ]),
         ToneMapping::Reinhard => vec4_join(vec![
             reinhard_tone_mapping(unpremultiplied.clone().rgb(), tone_mapping_exposure()),
             unpremultiplied.a(),
@@ -616,15 +629,50 @@ fn setup_standard(
     };
     fragment.push(roughness().assign(physical::get_roughness(roughness_node)));
 
-    // `setupSpecular()`: a dielectric F0 of 0.04, blended towards the albedo by
-    // metalness, and an F90 of 1.
-    fragment.push(specular_color().assign(vec3(0.04, 0.04, 0.04)));
-    fragment.push(specular_color_blended().assign(mix(
-        vec3(0.04, 0.04, 0.04),
-        diffuse_color().rgb(),
-        metalness(),
-    )));
-    fragment.push(specular_f90().assign(float(1.0)));
+    if material.kind == MaterialKind::Physical {
+        // `MeshPhysicalNodeMaterial.setupSpecular()`: F0 from the index of
+        // refraction rather than the dielectric constant 0.04, tinted by
+        // `specularColor` (times `specularColorMap`) and scaled by
+        // `specularIntensity` — which is also the F90. This block is the entire
+        // delta over the Standard material above.
+        fragment.push(ior().assign(material_ior()));
+        // `pow2( ior.sub( 1 ).div( ior.add( 1 ) ) )` — the quotient is read
+        // twice, so it is a var.
+        let f0 = to_var(None, ior().sub(float(1.0)).div(ior().add(float(1.0))));
+        let specular = match &material.specular_color_map {
+            Some(map) => material_specular_color().mul(texture(map).xyz()),
+            None => material_specular_color(),
+        };
+        fragment.push(
+            specular_color().assign(
+                f0.clone()
+                    .mul(f0)
+                    .mul(specular)
+                    .min(vec3(1.0, 1.0, 1.0))
+                    .mul(material_specular_intensity()),
+            ),
+        );
+        fragment.push(specular_color_blended().assign(mix(
+            specular_color(),
+            diffuse_color().xyz(),
+            metalness(),
+        )));
+        fragment.push(specular_f90().assign(mix(
+            material_specular_intensity(),
+            float(1.0),
+            metalness(),
+        )));
+    } else {
+        // `setupSpecular()`: a dielectric F0 of 0.04, blended towards the
+        // albedo by metalness, and an F90 of 1.
+        fragment.push(specular_color().assign(vec3(0.04, 0.04, 0.04)));
+        fragment.push(specular_color_blended().assign(mix(
+            vec3(0.04, 0.04, 0.04),
+            diffuse_color().rgb(),
+            metalness(),
+        )));
+        fragment.push(specular_f90().assign(float(1.0)));
+    }
     fragment
         .push(diffuse_contribution().assign(diffuse_color().rgb().mul(metalness_node.one_minus())));
 

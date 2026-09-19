@@ -379,6 +379,12 @@ pub struct UniformContext<'a> {
     pub material_metalness: f64,
     pub material_roughness: f64,
     pub material_bump_scale: f64,
+    /// `MeshPhysicalMaterial.ior` / `.specularIntensity` / `.specularColor`,
+    /// and `MeshStandardMaterial.normalScale`.
+    pub material_ior: f64,
+    pub material_specular_intensity: f64,
+    pub material_specular_color: Color,
+    pub material_normal_scale: Vector2,
     pub env_rotation: Matrix4,
     pub background_rotation: Matrix4,
     pub background_blurriness: f64,
@@ -425,6 +431,11 @@ impl Default for UniformContext<'_> {
             material_metalness: 0.0,
             material_roughness: 1.0,
             material_bump_scale: 1.0,
+            // `MeshPhysicalMaterial`'s defaults.
+            material_ior: 1.5,
+            material_specular_intensity: 1.0,
+            material_specular_color: Color::new(1.0, 1.0, 1.0),
+            material_normal_scale: Vector2::new(1.0, 1.0),
             env_rotation: Matrix4::identity(),
             background_rotation: Matrix4::identity(),
             background_blurriness: 0.0,
@@ -486,6 +497,19 @@ impl UniformContext<'_> {
                 UniformSource::MaterialMetalness => vec![self.material_metalness as f32],
                 UniformSource::MaterialRoughness => vec![self.material_roughness as f32],
                 UniformSource::MaterialBumpScale => vec![self.material_bump_scale as f32],
+                UniformSource::MaterialIor => vec![self.material_ior as f32],
+                UniformSource::MaterialSpecularIntensity => {
+                    vec![self.material_specular_intensity as f32]
+                }
+                UniformSource::MaterialSpecularColor => vec![
+                    self.material_specular_color.r as f32,
+                    self.material_specular_color.g as f32,
+                    self.material_specular_color.b as f32,
+                ],
+                UniformSource::MaterialNormalScale => vec![
+                    self.material_normal_scale.x as f32,
+                    self.material_normal_scale.y as f32,
+                ],
                 UniformSource::EnvRotationMatrix => self.env_rotation.to_f32_array().to_vec(),
                 UniformSource::BackgroundRotation => {
                     self.background_rotation.to_f32_array().to_vec()

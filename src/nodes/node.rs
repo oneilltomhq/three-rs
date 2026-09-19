@@ -183,6 +183,12 @@ pub enum UniformSource {
     MaterialMetalness,
     MaterialRoughness,
     MaterialBumpScale,
+    /// `MeshPhysicalMaterial`'s `ior` / `specularIntensity` / `specularColor`,
+    /// and `MeshStandardMaterial.normalScale`.
+    MaterialIor,
+    MaterialSpecularIntensity,
+    MaterialSpecularColor,
+    MaterialNormalScale,
     /// `toneMappingExposure` — `renderer.toneMappingExposure`.
     ToneMappingExposure,
     /// `reference( 'bindMatrix', 'mat4' )` / `reference( 'bindMatrixInverse',
@@ -208,6 +214,10 @@ impl UniformSource {
             | UniformSource::MaterialMetalness
             | UniformSource::MaterialRoughness
             | UniformSource::MaterialBumpScale
+            | UniformSource::MaterialIor
+            | UniformSource::MaterialSpecularIntensity
+            | UniformSource::MaterialSpecularColor
+            | UniformSource::MaterialNormalScale
             | UniformSource::EnvRotationMatrix
             | UniformSource::MorphBase
             | UniformSource::BindMatrix
