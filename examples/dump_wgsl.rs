@@ -1463,8 +1463,11 @@ fn main() {
         SetupContext::default(),
     );
 
-    // `scene.backgroundNode = pmremTexture( map, normalWorldGeometry,
-    // uniform( 0.5 ) )` — three's `m05_fragment_fragment_Background.material`.
+    // `webgpu_pmrem_equirectangular`'s `scene.backgroundNode = pmremTexture(
+    // map, normalWorldGeometry, uniform( 0.5 ) )` — three's `m05`/`m06` in
+    // `dump-pmrem_equirectangular/`, which this matches line for line once the
+    // uniform *numbering* and the render/object struct order are normalised
+    // (§8's first two entries).
     // The PMREM has not been generated here, so the three cubeUV uniforms are
     // still zero; they are uniforms, so the WGSL does not depend on their
     // values, which is the whole reason `PMREMNode` holds them as uniforms
@@ -1488,6 +1491,23 @@ fn main() {
     let mut sphere = MeshBasicNodeMaterial::physical(Color::new(1.0, 1.0, 1.0), 0.2, 0.6);
     sphere.pmrem_env = Some(environment.handle());
     show("pmrem_physical", &sphere, SetupContext::default());
+
+    // `webgpu_pmrem_equirectangular`'s grid cell — three's `m07`/`m08` in
+    // `dump-pmrem_equirectangular/`. Roughness and metalness are uniforms, so
+    // all thirty cells compile to this one module; it is shown at the page's
+    // `i = 0, j = 4` (roughness 0, metalness 1), the mirror sphere at the top
+    // left, because that is the cell a wrong environment is most visible on.
+    //
+    // It is the same module `pmrem_physical` above prints, which is the point:
+    // this rung's delta is the *loader*, not the node graph. The two entries
+    // are kept apart so a change to either example's material shows up here.
+    let mut equirect_sphere = MeshBasicNodeMaterial::physical(Color::from_hex(0xffffff), 0.0, 1.0);
+    equirect_sphere.pmrem_env = Some(environment.handle());
+    show(
+        "pmrem_equirectangular_physical",
+        &equirect_sphere,
+        SetupContext::default(),
+    );
 
     // `webgpu_pmrem_test`'s background: `scene.background = radianceMap`,
     // which is `Background.update()`'s node branch with
