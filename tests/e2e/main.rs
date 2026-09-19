@@ -132,6 +132,10 @@ mod webgpu_shadowmap;
 #[path = "../../examples/webgpu_skinning.rs"]
 #[allow(dead_code)]
 mod webgpu_skinning;
+
+#[path = "../../examples/webgpu_compute_points.rs"]
+#[allow(dead_code)]
+mod webgpu_compute_points;
 #[path = "../../examples/webgpu_tsl_galaxy.rs"]
 #[allow(dead_code)]
 mod webgpu_tsl_galaxy;
@@ -458,6 +462,67 @@ fn webgpu_morphtargets() {
     });
 }
 
+/// The rung whose pixels prove the least.
+///
+/// Three's own frame is black apart from the particle cloud, which at 400x250
+/// — the size `image.js` downscales to — is a couple of lit pixels near the
+/// centre. Everything the compute stage does is upstream of a frame that
+/// Three's comparator would pass at 0.0% if the particles never moved. So this
+/// test is here because the brief requires every rung to be graded, and the
+/// rung's real gates are `tests/nodes_compute_wgsl.rs` (what the kernels
+/// compile to) and `tests/renderer_compute_points.rs` (what they wrote). See
+/// docs/rung12-progress.md.
+#[test]
+fn webgpu_compute_points() {
+    let name = "webgpu_compute_points";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_compute_points::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_compute_points::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+
+    // Not a pixel assertion — a liveness one, and the only thing this frame
+    // can honestly say. The compute stage put 300 000 particles somewhere;
+    // if the frame is entirely black, nothing was drawn at all, and the
+    // comparison above would still have passed.
+    let lit = pixels.chunks_exact(4).filter(|p| p[0] > 0).count();
+    assert!(lit > 0, "{name}: the frame is completely black");
+    println!("{name}: {lit} lit pixels at {width}x{height}");
+
+    steady_frame(name, &mut app, webgpu_compute_points::animate, |app| {
+        app.renderer.device()
+    });
+}
+
 #[test]
 fn webgpu_tsl_galaxy() {
     let name = "webgpu_tsl_galaxy";
@@ -754,6 +819,7 @@ fn steady_frame_builds_nothing() {
     // The batch rewrites its indirect texture every `onBeforeRender()` and its
     // matrices texture every `animateMeshes()`; three.js uploads the same two.
     rung!(webgpu_mesh_batch, 2);
+    rung!(webgpu_compute_points);
 }
 
 // ---------------------------------------------------------------------------
