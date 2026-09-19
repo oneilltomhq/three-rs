@@ -71,8 +71,13 @@ pub struct TextureInner {
     pub repeat: Vector2,
     pub center: Vector2,
     pub rotation: f64,
-    /// `Texture.matrix`, kept in step with the four above.
+    /// `Texture.matrix`, kept in step with the four above — unless
+    /// [`Texture::set_matrix`] has overridden it.
     pub matrix: Matrix3,
+    /// `Texture.channel` — which `uv` attribute `TextureNode.getDefaultUV()`
+    /// samples along: 0 is `uv`, 1 is `uv1`. `GLTFLoader` sets it from a
+    /// texture reference's `texCoord`.
+    pub channel: usize,
     /// `false` for `renderTarget.texture` — the renderer owns the GPU texture.
     pub own_gpu: bool,
     pub gpu: Option<wgpu::Texture>,
@@ -120,6 +125,7 @@ impl Texture {
                 center: Vector2::new(0.0, 0.0),
                 rotation: 0.0,
                 matrix: Matrix3::identity(),
+                channel: 0,
                 own_gpu: true,
                 gpu: None,
                 format: wgpu::TextureFormat::Rgba8Unorm,
@@ -301,6 +307,61 @@ impl Texture {
         self.1.get()
     }
 
+    /// `Texture.clone()` — `new Texture().copy( this )`: a second texture over
+    /// the same image, with its own id, its own uv transform and its own
+    /// `channel`. `Texture`'s `Clone` impl is JS' assignment (a handle copy);
+    /// this is JS' `.clone()`, and the two are deliberately different names.
+    ///
+    /// Three shares the `Source` between the original and the clone, so the
+    /// WebGPU backend uploads the image once. This port keys its GPU textures
+    /// on the `Texture` id, so a clone is uploaded again — same texels, one
+    /// more upload. Nothing on this ladder clones more than a handful.
+    pub fn clone_texture(&self) -> Self {
+        let inner = self.0.borrow();
+        Self(
+            Rc::new(RefCell::new(TextureInner {
+                width: inner.width,
+                height: inner.height,
+                data: inner.data.clone(),
+                color_space: inner.color_space,
+                flip_y: inner.flip_y,
+                generate_mipmaps: inner.generate_mipmaps,
+                wrap_s: inner.wrap_s,
+                wrap_t: inner.wrap_t,
+                mag_filter: inner.mag_filter,
+                min_filter: inner.min_filter,
+                anisotropy: inner.anisotropy,
+                offset: inner.offset,
+                repeat: inner.repeat,
+                center: inner.center,
+                rotation: inner.rotation,
+                matrix: inner.matrix,
+                channel: inner.channel,
+                own_gpu: inner.own_gpu,
+                gpu: None,
+                format: inner.format,
+                version: inner.version,
+            })),
+            TextureId::next(),
+        )
+    }
+
+    /// `Texture.channel`.
+    pub fn channel(&self) -> usize {
+        self.0.borrow().channel
+    }
+
+    /// `texture.channel = n`. Only 0 and 1 have an accessor
+    /// ([`uv`](crate::nodes::tsl::uv) and [`uv1`](crate::nodes::tsl::uv1)), so
+    /// anything else is refused here rather than silently sampled along `uv`.
+    pub fn set_channel(&self, channel: usize) {
+        assert!(
+            channel <= 1,
+            "three-rs: Texture.channel {channel} has no uv accessor (only uv and uv1 are ported)"
+        );
+        self.0.borrow_mut().channel = channel;
+    }
+
     /// `texture.colorSpace = SRGBColorSpace`. As with `CubeTexture`, the
     /// transfer function is applied by the GPU on sample — the format becomes
     /// `rgba8unorm-srgb` and `WGSLNodeBuilder.needsToWorkingColorSpace()` stays
@@ -406,6 +467,15 @@ impl Texture {
         inner.matrix.set_uv_transform(
             offset.x, offset.y, repeat.x, repeat.y, rotation, center.x, center.y,
         );
+    }
+
+    /// `texture.matrix.set( … )` with `texture.matrixAutoUpdate = false` — the
+    /// escape hatch `GLTFTextureTransformExtension` uses, because glTF composes
+    /// its uv transform as `T * R * S` and three.js as `T * S * R`. There is no
+    /// `matrixAutoUpdate` field here: the matrix is read once, when the texture
+    /// node is built, so an override simply has to be the last write.
+    pub fn set_matrix(&self, matrix: Matrix3) {
+        self.0.borrow_mut().matrix = matrix;
     }
 
     /// `Texture.matrix` — what `TextureNode.setupUV()` multiplies the UV by.
