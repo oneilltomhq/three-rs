@@ -202,6 +202,9 @@ mod webgpu_custom_fog_background;
 #[path = "../../examples/webgpu_deferred.rs"]
 #[allow(dead_code)]
 mod webgpu_deferred;
+#[path = "../../examples/webgpu_loader_gltf_anisotropy.rs"]
+#[allow(dead_code)]
+mod webgpu_loader_gltf_anisotropy;
 
 #[path = "../../examples/webgpu_lights_phong.rs"]
 #[allow(dead_code)]
@@ -1436,6 +1439,61 @@ fn webgpu_loader_gltf_sheen() {
     });
 }
 
+/// The Anisotropy Barn Lamp: `KHR_materials_anisotropy` on the shade,
+/// `KHR_materials_transmission` + `_volume` on the glass, an UltraHDR
+/// equirect as both `scene.environment` and a blurred `scene.background`.
+///
+/// Two things carry the frame. The scene has no lights at all, so every lit
+/// pixel comes from the PMREM — the anisotropic bent normal is what bends the
+/// shade's reflection, and a wrong tangent frame shows up as a streak in the
+/// wrong direction rather than as an error. And the glass is drawn in a second
+/// pass that samples the renderer's mipped copy of the opaque frame, so a
+/// missed copy leaves an opaque white bulb over roughly 2% of the image.
+#[test]
+fn webgpu_loader_gltf_anisotropy() {
+    let name = "webgpu_loader_gltf_anisotropy";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_loader_gltf_anisotropy::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_loader_gltf_anisotropy::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(
+        name,
+        &mut app,
+        webgpu_loader_gltf_anisotropy::animate,
+        |app| app.renderer.device(),
+    );
+}
+
 /// The gate on `pass.getViewZNode()`: the depth attachment of a **4×MSAA**
 /// pass, read back with `textureLoad( …, 0 )` through a
 /// `texture_depth_multisampled_2d` binding and converted with
@@ -2633,6 +2691,7 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_mrt);
     rung!(webgpu_custom_fog_background);
     rung!(webgpu_deferred);
+    rung!(webgpu_loader_gltf_anisotropy);
 }
 
 // ---------------------------------------------------------------------------
