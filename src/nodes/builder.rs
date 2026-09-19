@@ -753,14 +753,7 @@ impl NodeBuilder {
 
     fn format(&mut self, node: &NodeRef, want: Type) -> String {
         let snippet = self.generate(node);
-        let have = node.ty();
-        if have == want || want == Type::Void {
-            return snippet;
-        }
-        if have.components() == 1 && want.components() > 1 {
-            return format!("{}( {snippet} )", wgsl::type_name(want));
-        }
-        snippet
+        wgsl::convert(&snippet, node.ty(), want)
     }
 
     fn generate_inner(&mut self, node: &NodeRef) -> String {
@@ -999,10 +992,20 @@ impl NodeBuilder {
                 format!("{snippet}.{components}")
             }
 
+            // `ConvertNode.generate()` is `builder.format( snippet, from, to )`.
+            // Widening goes through the shared ladder, so `vec3( vec2 )` is
+            // `vec3<f32>( v, 0.0 )` and not a splat; a same-width or narrowing
+            // cast keeps the explicit constructor the port has always emitted
+            // (see `wgsl::convert`).
             Node::Cast { node: inner, ty } => {
                 let (inner, ty) = (inner.clone(), *ty);
+                let from = inner.ty();
                 let snippet = self.generate(&inner);
-                format!("{}( {snippet} )", wgsl::type_name(ty))
+                if ty.components() > from.components() {
+                    wgsl::convert(&snippet, from, ty)
+                } else {
+                    format!("{}( {snippet} )", wgsl::type_name(ty))
+                }
             }
 
             Node::Neg { node: inner, .. } => {

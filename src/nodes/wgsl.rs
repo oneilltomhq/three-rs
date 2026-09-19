@@ -29,19 +29,107 @@ pub fn type_name(ty: Type) -> &'static str {
     }
 }
 
-/// A number as three.js writes it: JS `toString()`, with `.0` appended when the
-/// result would otherwise read as an integer.
+/// A number as three.js writes it — `TSLBase.js`' `toFloat( value )`:
+/// `Number.isInteger( value ) ? value + '.0' : String( value )`.
 pub fn number(v: f64) -> String {
     if v == v.trunc() && v.abs() < 1e21 {
         format!("{:.1}", v)
     } else {
-        let s = format!("{}", v);
-        if s.contains('.') || s.contains('e') {
-            s
-        } else {
-            format!("{s}.0")
-        }
+        js_to_string(v)
     }
+}
+
+/// JS `Number.prototype.toString()` for a non-integral finite double, i.e.
+/// ECMA-262 §6.1.6.1.20 steps 5-12 over the shortest round-tripping decimal.
+///
+/// Rust's own `{}` is the same shortest representation but always in positional
+/// notation, so `1e-8` prints as `0.00000001` where JS — and therefore three.js'
+/// dumped WGSL — writes `1e-8`. `webgpu_compute_points` is the first rung with
+/// a literal small enough to tell them apart (`1e-8`, `1e-7`); everything the
+/// earlier rungs emit is in the positional range and is unchanged.
+fn js_to_string(v: f64) -> String {
+    // `{:e}` is the shortest round-tripping mantissa with one digit before the
+    // point, plus the base-10 exponent — exactly the `s` and `n - 1` of the
+    // spec.
+    let sci = format!("{:e}", v);
+    let (mantissa, exponent) = sci
+        .split_once('e')
+        .expect("three-rs: `{:e}` always writes an exponent");
+    let exponent: i32 = exponent
+        .parse()
+        .expect("three-rs: `{:e}`'s exponent is an integer");
+
+    let negative = mantissa.starts_with('-');
+    let digits: String = mantissa.chars().filter(|c| c.is_ascii_digit()).collect();
+    let k = digits.len() as i32;
+    // `s * 10^( n - k ) = |v|`, with `s` the digit string.
+    let n = exponent + 1;
+    let sign = if negative { "-" } else { "" };
+
+    // Steps 6-8: positional notation for `-6 < n <= 21`.
+    if n > -6 && n <= 21 {
+        if k <= n {
+            return format!("{sign}{digits}{}", "0".repeat((n - k) as usize));
+        }
+        if n > 0 {
+            let at = n as usize;
+            return format!("{sign}{}.{}", &digits[..at], &digits[at..]);
+        }
+        return format!("{sign}0.{}{digits}", "0".repeat((-n) as usize));
+    }
+
+    // Steps 9-12: exponential notation, `e+`/`e-` and the exponent `n - 1`.
+    let exponent_sign = if n > 0 { "+" } else { "-" };
+    let exponent = (n - 1).abs();
+    if k == 1 {
+        format!("{sign}{digits}e{exponent_sign}{exponent}")
+    } else {
+        format!(
+            "{sign}{}.{}e{exponent_sign}{exponent}",
+            &digits[..1],
+            &digits[1..]
+        )
+    }
+}
+
+/// `NodeBuilder.format( snippet, fromType, toType )` — the *widening* half.
+///
+/// three.js' ladder (`src/nodes/core/NodeBuilder.js:2726-2790`) also narrows
+/// (`v.xyz`), changes component type in place (`f32( i )`) and cuts a `mat4`
+/// down to a `mat3`. Those arms are deliberately not here: this port reaches
+/// `format()` from places three.js does not — `Node::Op` widens both operands
+/// to the result type, so a `bool` comparison would come out as
+/// `f32( a <= b )` — and every narrowing the port needs is written explicitly
+/// by the caller (`.xyz()`, `to_vec3()`, `Type::Mat3` joins). Implementing them
+/// here changes the WGSL of six already-green rungs for no gain; see
+/// `docs/nodes.md` §8.
+///
+/// What is here is the widening three.js does and the port used to splat: a
+/// `vec2` promoted to a `vec3` is `vec3<f32>( v, 0.0 )`, a `vec3` promoted to a
+/// `vec4` is `vec4<f32>( v, 1.0 )`, and a scalar splats.
+pub fn convert(snippet: &str, from: Type, to: Type) -> String {
+    if from == to || to == Type::Void || from.is_matrix() || to.is_matrix() {
+        return snippet.to_string();
+    }
+
+    let (from_len, to_len) = (from.components(), to.components());
+    if to_len <= from_len || to_len == 0 {
+        return snippet.to_string();
+    }
+
+    if to_len == 4 && from_len > 1 {
+        let widened = Type::vector_of(from.component_type(), 3);
+        let inner = convert(snippet, from, widened);
+        return format!("{}( {inner}, 1.0 )", type_name(to));
+    }
+
+    if from_len == 2 {
+        // `to_len == 3`.
+        return format!("{}( {snippet}, 0.0 )", type_name(to));
+    }
+
+    // A scalar splats.
+    format!("{}( {snippet} )", type_name(to))
 }
 
 /// A literal of `ty` from its components.
