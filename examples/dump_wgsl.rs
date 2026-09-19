@@ -167,6 +167,7 @@ fn main() {
             skin: None,
             batch: None,
             line_segments: None,
+            mrt: None,
         },
     );
 
@@ -347,6 +348,33 @@ fn main() {
                     shadow_map: None,
                 }))
                 .collect(),
+            ..SetupContext::default()
+        },
+    );
+
+    // rung webgpu_postprocessing_bloom_selective (part A): the MRT scene
+    // material. One `MeshBasicNodeMaterial` per sphere, each with
+    // `mrtNode = mrt( { bloomIntensity: uniform( 0 or 1 ) } )` over the pass's
+    // `mrt( { output, bloomIntensity: float( 0 ) } )`. The fragment stage's
+    // `OutputType` struct and its two `output.mN` lines are the whole of what
+    // part A adds; diffed against `m00`/`m01` of the scout's dump.
+    let mut bloom_scene = MeshBasicNodeMaterial::new();
+    bloom_scene.color = Color::new(0.25, 0.5, 0.75);
+    bloom_scene.mrt_node = Some(three_rs::nodes::mrt(vec![(
+        "bloomIntensity",
+        uniform_value(three_rs::nodes::Type::F32, vec![1.0]),
+    )]));
+    show(
+        "bloom_selective_scene",
+        &bloom_scene,
+        SetupContext {
+            mrt: Some(three_rs::materials::MrtContext {
+                node: three_rs::nodes::mrt(vec![
+                    ("output", output_property()),
+                    ("bloomIntensity", float(0.0)),
+                ]),
+                attachments: vec!["output".to_string(), "bloomIntensity".to_string()],
+            }),
             ..SetupContext::default()
         },
     );
