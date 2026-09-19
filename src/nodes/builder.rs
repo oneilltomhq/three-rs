@@ -1201,6 +1201,10 @@ impl NodeBuilder {
                     .map(|(i, a)| match name {
                         "distance" => self.format(a, input_ty),
                         "mix" if i == 2 => self.generate(a),
+                        // `MathNode.REFRACT`: I and N take the input type, eta
+                        // is built as a `float`.
+                        "refract" if i == 2 => self.format(a, Type::F32),
+                        "refract" => self.format(a, input_ty),
                         "dot" => self.format(a, input_ty),
                         "cross" | "reflect" | "normalize" | "transpose" | "tsl_inverse_mat3"
                         | "length" | "dpdx" | "- dpdy" | "inverseSqrt" => self.generate(a),
