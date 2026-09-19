@@ -14,9 +14,10 @@
 //! into the top 768×512 of it, then ten GGX steps of two passes each prefilter
 //! the pyramid, which is the dump's 21 PMREM render passes.
 //!
-//! Only `fromCubemap` is ported. `fromScene` (and with it `_blur` /
-//! `sphericalGaussianBlur`) and `fromEquirectangular` have no caller on this
-//! rung.
+//! `fromCubemap` and `fromEquirectangular` are ported; they differ only in
+//! `_setSizeFromTexture` and in which of the two one-tap materials fills level
+//! 0, which is three's own shape. `fromScene` (and with it `_blur` /
+//! `sphericalGaussianBlur`) has no caller yet.
 
 use std::rc::Rc;
 
@@ -26,7 +27,8 @@ use crate::materials::{Blending, MeshBasicNodeMaterial};
 use crate::nodes::node::{SettableValue, Type};
 use crate::nodes::pmrem_utils::{self, CubeUvSize};
 use crate::nodes::tsl::{
-    attribute, cube_texture, float, material_env_rotation, uniform_settable, vec4_join,
+    attribute, cube_texture, equirect_uv, float, material_env_rotation, texture_level,
+    uniform_settable, vec4_join,
 };
 use crate::nodes::NodeRef;
 use crate::textures::{CubeTexture, Texture, TextureFilter, TextureType};
@@ -68,6 +70,38 @@ pub struct GgxUniforms {
     pub mip_int: SettableValue,
 }
 
+/// What a PMREM is generated from.
+///
+/// Three branches on `texture.mapping` inside `_setSizeFromTexture` and
+/// `_textureToCubeUV`; the port makes the two cases a type, because a
+/// `CubeTexture` and a `Texture` are different types here and the mapping
+/// constant carries no other information. Anything that is not a cube mapping
+/// takes the equirectangular branch upstream, which is why the decoded HDR's
+/// `UVMapping` needs no representation at all.
+#[derive(Clone, Debug)]
+pub enum PmremSource {
+    /// `fromCubemap( cubemap )`.
+    Cube(CubeTexture),
+    /// `fromEquirectangular( equirectangular )` — a 2-D longitude/latitude map.
+    Equirectangular(Texture),
+}
+
+impl PmremSource {
+    /// `_setSizeFromTexture( texture )`'s argument: a cube is sized from face
+    /// 0 (an empty one falls back to 16), an equirect map from **a quarter of
+    /// its width**, so the 1024×512 `spot1Lux.hdr` gives a 256² face and the
+    /// same 768×1024 atlas a 256² cube does.
+    fn cube_size(&self) -> usize {
+        match self {
+            PmremSource::Cube(cube) => match cube.size().0 {
+                0 => 16,
+                width => width as usize,
+            },
+            PmremSource::Equirectangular(texture) => texture.size().0 as usize / 4,
+        }
+    }
+}
+
 /// One entry of `_createPlanes()`: the six-quad geometry covering a level's
 /// tiles, and that level's face size (`_sizeLods`).
 pub struct LodMesh {
@@ -93,6 +127,8 @@ pub struct PmremGenerator {
     ggx: Option<(MeshBasicNodeMaterial, GgxUniforms)>,
     /// `this._cubemapMaterial`.
     cubemap_material: Option<MeshBasicNodeMaterial>,
+    /// `this._equirectMaterial`.
+    equirect_material: Option<MeshBasicNodeMaterial>,
 }
 
 impl Default for PmremGenerator {
@@ -110,6 +146,7 @@ impl PmremGenerator {
             ping_pong: None,
             ggx: None,
             cubemap_material: None,
+            equirect_material: None,
         }
     }
 
@@ -156,14 +193,35 @@ impl PmremGenerator {
         cubemap: &CubeTexture,
         render_target: Option<RenderTarget>,
     ) -> Result<RenderTarget, Error> {
-        // `_setSizeFromTexture()`: a cube texture is sized from face 0, and an
-        // empty cube falls back to 16.
-        let (face_width, _) = cubemap.size();
-        self.set_size(if face_width == 0 {
-            16
-        } else {
-            face_width as usize
-        });
+        self.from_texture(renderer, &PmremSource::Cube(cubemap.clone()), render_target)
+    }
+
+    /// `fromEquirectangular( equirectangular )` — the PMREM of a 2-D
+    /// longitude/latitude map, which is what an `.hdr` decodes to.
+    pub fn from_equirectangular(
+        &mut self,
+        renderer: &mut super::Renderer,
+        equirectangular: &Texture,
+        render_target: Option<RenderTarget>,
+    ) -> Result<RenderTarget, Error> {
+        self.from_texture(
+            renderer,
+            &PmremSource::Equirectangular(equirectangular.clone()),
+            render_target,
+        )
+    }
+
+    /// `_fromTexture( texture, renderTarget )` — both entry points, which
+    /// differ only in the size they take from the source and in the material
+    /// `_textureToCubeUV` picks.
+    pub fn from_texture(
+        &mut self,
+        renderer: &mut super::Renderer,
+        source: &PmremSource,
+        render_target: Option<RenderTarget>,
+    ) -> Result<RenderTarget, Error> {
+        // `_setSizeFromTexture()`.
+        self.set_size(source.cube_size());
 
         let old_target = renderer.render_target();
 
@@ -172,7 +230,7 @@ impl PmremGenerator {
             None => self.allocate_target(false)?,
         };
         self.init(&target)?;
-        self.texture_to_cube_uv(renderer, cubemap, &target);
+        self.texture_to_cube_uv(renderer, source, &target);
         self.apply_pmrem(renderer, &target);
 
         // `_cleanup( outputTarget )`.
@@ -189,20 +247,24 @@ impl PmremGenerator {
     fn texture_to_cube_uv(
         &mut self,
         renderer: &mut super::Renderer,
-        cubemap: &CubeTexture,
+        source: &PmremSource,
         target: &RenderTarget,
     ) {
-        // Three keeps one material and assigns `fragmentNode.value = texture`;
-        // the port bakes the cube into the node, so the material is built for
-        // the cube it is first asked about. `PMREMNode` caches one generated
-        // PMREM per source texture, so a generator never sees two.
-        if self.cubemap_material.is_none() {
-            self.cubemap_material = Some(cubemap_material(cubemap));
-        }
-        let material = self
-            .cubemap_material
-            .clone()
-            .expect("three-rs: the cubemap material was just built");
+        // Three keeps one material per kind and assigns
+        // `fragmentNode.value = texture`; the port bakes the source into the
+        // node, so the material is built for the texture it is first asked
+        // about. `PmremEnvironment` owns one generator per source texture, so
+        // a generator never sees two.
+        let material = match source {
+            PmremSource::Cube(cube) => self
+                .cubemap_material
+                .get_or_insert_with(|| cubemap_material(cube))
+                .clone(),
+            PmremSource::Equirectangular(map) => self
+                .equirect_material
+                .get_or_insert_with(|| equirect_material(map))
+                .clone(),
+        };
 
         let size = self.cube_size;
         set_viewport(target, 0, 0, 3 * size, 2 * size);
@@ -394,6 +456,24 @@ pub fn cubemap_material(cubemap: &CubeTexture) -> MeshBasicNodeMaterial {
     let mut material = pmrem_material("PMREM_cubemap");
     let dir = material_env_rotation().mul(vec4_join(vec![output_direction(), float(1.0)]));
     material.fragment_node = Some(cube_texture(cubemap, dir));
+    material
+}
+
+/// `_getEquirectMaterial( envTexture )` — `texture( envTexture, equirectUV(
+/// _outputDirection ), 0 )` and nothing else.
+///
+/// Note what is *not* here: the environment rotation. `cubeTexture()` applies
+/// `materialEnvRotation` inside `CubeTextureNode.setupUV()`, so the cubemap
+/// material carries it; a plain 2-D `texture()` node does not, so this one
+/// does not either. Three's dump of `webgpu_pmrem_test` agrees — its
+/// `PMREM_equirect` fragment module has one uniform, the map.
+pub fn equirect_material(map: &Texture) -> MeshBasicNodeMaterial {
+    let mut material = pmrem_material("PMREM_equirect");
+    material.fragment_node = Some(texture_level(
+        map,
+        equirect_uv(output_direction()),
+        float(0.0),
+    ));
     material
 }
 

@@ -32,7 +32,7 @@ use crate::nodes::node::{SettableValue, Type};
 use crate::nodes::pmrem_utils::{texture_cube_uv, CubeUvSize};
 use crate::nodes::tsl::{float, material_env_rotation, uniform_settable, vec3_join, vec4_join};
 use crate::nodes::NodeRef;
-use crate::renderer::pmrem::PmremGenerator;
+use crate::renderer::pmrem::{PmremGenerator, PmremSource};
 use crate::renderer::{RenderTarget, Renderer};
 use crate::textures::{CubeTexture, Texture};
 
@@ -56,14 +56,14 @@ struct Cells {
     max_mip: SettableValue,
 }
 
-/// One environment: a source cube texture, the PMREM generated from it, and the
-/// uniform cells the shader reads it through.
+/// One environment: a source texture (a cube or an equirect map), the PMREM
+/// generated from it, and the uniform cells the shader reads it through.
 ///
 /// This is `PMREMNode`'s private state (`_texture`, `_width`, `_height`,
 /// `_maxMip`, `_generator`, `_pmrem`) with a name, because in Rust it has to
 /// outlive the nodes that read it.
 pub struct PmremEnvironment {
-    source: CubeTexture,
+    source: PmremSource,
     generator: PmremGenerator,
     /// The generated atlas, kept so a second `update` can render into it again
     /// rather than allocate — three's `cache.get( texture )` reuse.
@@ -79,12 +79,23 @@ impl PmremEnvironment {
     /// `pmremTexture( cubeTexture )` — an environment that has not been built
     /// yet. Nothing is rendered until [`update`](Self::update).
     pub fn new(source: &CubeTexture) -> Self {
+        Self::from_source(PmremSource::Cube(source.clone()))
+    }
+
+    /// The same, from an equirectangular 2-D map — `scene.environment =
+    /// hdrTexture`, which three funnels into
+    /// `PMREMGenerator.fromEquirectangular`.
+    pub fn from_equirectangular(source: &Texture) -> Self {
+        Self::from_source(PmremSource::Equirectangular(source.clone()))
+    }
+
+    fn from_source(source: PmremSource) -> Self {
         let (texel_width, texel_width_cell) = uniform_settable(Type::F32, vec![0.0]);
         let (texel_height, texel_height_cell) = uniform_settable(Type::F32, vec![0.0]);
         let (max_mip, max_mip_cell) = uniform_settable(Type::F32, vec![0.0]);
 
         Self {
-            source: source.clone(),
+            source,
             generator: PmremGenerator::new(),
             target: None,
             // Size and format are replaced when the atlas is built; the handle
@@ -116,7 +127,7 @@ impl PmremEnvironment {
 
         let target = self
             .generator
-            .from_cubemap(renderer, &self.source, self.target.take())?;
+            .from_texture(renderer, &self.source, self.target.take())?;
 
         // `updateFromTexture( pmrem )`.
         let (_, height) = target.size();

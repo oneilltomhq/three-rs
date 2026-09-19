@@ -1093,6 +1093,15 @@ impl NodeRef {
     pub fn sin(&self) -> NodeRef {
         math("sin", vec![self.clone()], self.ty())
     }
+    /// `x.asin()` — `MathNode.ASIN`.
+    pub fn asin(&self) -> NodeRef {
+        math("asin", vec![self.clone()], self.ty())
+    }
+    /// `y.atan( x )` — `MathNode.ATAN` with two arguments, which WGSL spells
+    /// `atan2( y, x )`. The receiver is the numerator, as in TSL.
+    pub fn atan2(&self, x: impl Into<NodeRef>) -> NodeRef {
+        math("atan2", vec![self.clone(), x.into()], self.ty())
+    }
     pub fn floor(&self) -> NodeRef {
         math("floor", vec![self.clone()], self.ty())
     }
@@ -2155,6 +2164,44 @@ pub fn texture_grad(map: &Texture, coord: NodeRef) -> NodeRef {
         SampleMode::Grad,
         Type::Vec4,
     )
+}
+
+/// `texture( map, uv, level )` — a 2-D tap at an explicit mip level.
+///
+/// `PMREMGenerator._getEquirectMaterial` samples the equirect source at level
+/// `0` rather than letting the implicit derivative pick one: the six quads of
+/// the lod plane are a wildly non-uniform parameterisation of the sphere, so
+/// the derivative would pick a different level per face. With
+/// `generateMipmaps = false` on the decoded HDR the two agree here, but the
+/// WGSL has to say `textureSampleLevel( …, 0.0 )` to match three's.
+pub fn texture_level(map: &Texture, coord: NodeRef, level: NodeRef) -> NodeRef {
+    texture_node(
+        TextureSource::Texture2D(map.clone()),
+        coord,
+        SampleMode::Level(level),
+        Type::Vec4,
+    )
+}
+
+/// `equirectUV( direction )` — `nodes/utils/EquirectUV.js`.
+///
+/// The longitude/latitude of a direction, in `[ 0, 1 ]²`. Three writes it as a
+/// two-line `Fn`; a single-expression `Fn` inlines at its use site, which is
+/// why three's own dump carries the whole thing on the `textureSampleLevel`
+/// line rather than as a WGSL function.
+pub fn equirect_uv(direction: NodeRef) -> NodeRef {
+    let u = direction
+        .z()
+        .atan2(direction.x())
+        .mul(float(1.0 / (std::f64::consts::PI * 2.0)))
+        .add(float(0.5));
+    let v = direction
+        .y()
+        .clamp(float(-1.0), float(1.0))
+        .asin()
+        .mul(float(1.0 / std::f64::consts::PI))
+        .add(float(0.5));
+    vec2_join(vec![u, v])
 }
 
 /// `texture( map, uv )` without the default UV.

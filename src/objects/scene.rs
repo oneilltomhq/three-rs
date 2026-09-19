@@ -22,6 +22,17 @@ pub enum Background {
     /// Any node, not just a `color()`: `webgpu_skinning` uses
     /// `screenUV.y.mix( color( 0x66bbff ), color( 0x4466ff ) )`.
     Node(crate::nodes::NodeRef),
+    /// `scene.background = <the texture of a generated PMREM>`.
+    ///
+    /// Upstream this is a plain `Texture` whose `mapping` is
+    /// `CubeUVReflectionMapping`; `NodeManager.getBackgroundNode()` turns it
+    /// into `pmremTexture( background )` and `Background.update()` wraps that
+    /// in the node branch's context — `getUV` is `backgroundRotation.mul(
+    /// normalWorldGeometry )` and `getTextureLevel` is `backgroundBlurriness`.
+    /// The port carries the handle rather than the texture, because the three
+    /// cubeUV uniforms a cubeUV read needs travel with it; the renderer builds
+    /// the node, so an application writes the one line the page does.
+    Pmrem(crate::materials::environment::PmremHandle),
 }
 
 impl From<Color> for Background {

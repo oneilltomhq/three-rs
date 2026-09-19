@@ -603,6 +603,22 @@ pub fn background_color_node(map: &crate::textures::CubeTexture) -> NodeRef {
     sample.mul(background_intensity())
 }
 
+/// `scene.background = <a generated PMREM>`: the skybox sphere sampling the
+/// cubeUV atlas, which is the `isNode` branch with
+/// `NodeManager.getBackgroundNode()`'s `pmremTexture( background )` inside it
+/// and the node context supplying the two accessors.
+///
+/// `getUV: () => backgroundRotation.mul( normalWorldGeometry )` and
+/// `getTextureLevel: () => backgroundBlurriness` are the context; the port has
+/// no node context, so they are passed as arguments, which is the same graph.
+/// `backgroundRotation` is a `mat4`, so the product is a `vec4` and
+/// `PMREMNode`'s Y flip swizzles out of it — three's own dump reads
+/// `vec3( nodeVar3.x, - nodeVar3.y, nodeVar3.z )` off exactly that.
+pub fn background_pmrem_color_node(pmrem: &crate::materials::environment::PmremHandle) -> NodeRef {
+    let uv = background_rotation().mul(vec4_join(vec![normal_world_geometry(), float(1.0)]));
+    background_node_color_node(pmrem.sample(uv, background_blurriness()))
+}
+
 /// `Background.update()`'s `isNode` branch:
 /// `vec4( backgroundNode ).mul( backgroundIntensity )`.
 pub fn background_node_color_node(node: NodeRef) -> NodeRef {

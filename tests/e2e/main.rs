@@ -128,6 +128,10 @@ mod webgpu_postprocessing_ssaa;
 #[allow(dead_code)]
 mod webgpu_pmrem_cubemap;
 
+#[path = "../../examples/webgpu_pmrem_test.rs"]
+#[allow(dead_code)]
+mod webgpu_pmrem_test;
+
 #[path = "../../examples/webgpu_lights_phong.rs"]
 #[allow(dead_code)]
 mod webgpu_lights_phong;
@@ -624,6 +628,48 @@ fn webgpu_pmrem_cubemap() {
 }
 
 #[test]
+fn webgpu_pmrem_test() {
+    let name = "webgpu_pmrem_test";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_pmrem_test::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_pmrem_test::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_pmrem_test::animate, |app| {
+        app.renderer.device()
+    });
+}
+
+#[test]
 fn webgpu_lights_phong() {
     let name = "webgpu_lights_phong";
     let out = out_dir(name);
@@ -1071,6 +1117,7 @@ fn steady_frame_builds_nothing() {
     // The PMREM is built once, before the first frame; `update` is idempotent,
     // so the steady frames neither render nor upload anything for it.
     rung!(webgpu_pmrem_cubemap);
+    rung!(webgpu_pmrem_test);
     rung!(webgpu_skinning);
     // The batch rewrites its indirect texture every `onBeforeRender()` and its
     // matrices texture every `animateMeshes()`; three.js uploads the same two.

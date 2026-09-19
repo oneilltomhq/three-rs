@@ -1034,6 +1034,13 @@ impl Renderer {
                 materials::background_node_color_node(node),
             ))
             .map(|(variant, color_node)| (color_node, variant)),
+            // The cubeUV atlas, keyed by the texture it is read through — the
+            // handle is a cheap clone of one borrowed `Texture`, so its id is
+            // stable across frames the way a `CubeTexture`'s is.
+            Some(Background::Pmrem(pmrem)) => {
+                let variant = hash_of(&("pmrem", pmrem.texture.id()));
+                Some((materials::background_pmrem_color_node(&pmrem), variant))
+            }
             _ => None,
         };
         if let Some((color_node, variant)) = background {
