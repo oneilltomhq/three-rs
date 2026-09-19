@@ -178,6 +178,16 @@ fn main() {
     );
 
     // rung 3: the env-mapped sphere and the skybox background.
+    //
+    // `webgpu_materials_envmaps` and `webgpu_materials_cubemap_mipmaps` are
+    // the same two materials and are covered by the same two sections: the
+    // sphere modules three.js dumps for both of them (`m03`/`m04` and
+    // `m00`/`m01` respectively) are byte-for-byte each other and match
+    // `basic_envmap` below, and `webgpu_materials_envmaps`' background
+    // (`m01`/`m02`) matches `background_cube`. Neither example reaches the
+    // node system at all: what they add is on the upload side — JPEG faces
+    // and a hand-supplied cube mip chain. See
+    // `docs/webgpu_materials_envmaps-progress.md`.
     let cube = CubeTexture::new(vec![
         Image {
             width: 1,
