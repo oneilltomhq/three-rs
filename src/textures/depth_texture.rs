@@ -64,6 +64,11 @@ pub struct DepthTextureInner {
     /// The GPU texture, created by the renderer when the owning render target
     /// is first used.
     pub gpu: Option<wgpu::Texture>,
+    /// `texture.isMultisampleRenderTargetTexture` — set when the owning render
+    /// target's `samples` is raised above 1, which is what makes the node
+    /// builder declare the binding `texture_depth_multisampled_2d` and the
+    /// bind-group layout entry `multisampled: true`.
+    pub multisample: bool,
 }
 
 #[derive(Clone)]
@@ -95,6 +100,7 @@ impl DepthTexture {
                 width: 0,
                 height: 0,
                 gpu: None,
+                multisample: false,
             })),
             TextureId::next(),
         )
@@ -107,6 +113,23 @@ impl DepthTexture {
         let mut inner = self.0.borrow_mut();
         inner.min_filter = min_filter;
         inner.mag_filter = mag_filter;
+    }
+
+    /// `texture.isMultisampleRenderTargetTexture`, which
+    /// `RenderTarget::set_samples` keeps in step with the target's sample
+    /// count. A multisampled depth attachment is never resolved — the fog
+    /// composite reads sample 0 of it directly.
+    pub fn set_multisample(&self, multisample: bool) {
+        let mut inner = self.0.borrow_mut();
+        if inner.multisample != multisample {
+            inner.multisample = multisample;
+            inner.gpu = None;
+        }
+    }
+
+    /// Whether this depth texture is a multisampled render-target attachment.
+    pub fn is_multisample(&self) -> bool {
+        self.0.borrow().multisample
     }
 
     /// `depthTexture.type = type`. Errors rather than deferring the failure to

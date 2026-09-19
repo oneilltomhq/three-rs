@@ -180,6 +180,12 @@ pub enum TextureKind {
     /// `DataTexture`, `BatchedMesh._indirectTexture`.
     Uint2D,
     Depth2D,
+    /// `texture_depth_multisampled_2d` — the depth attachment of an MSAA
+    /// render target, which WebGPU never resolves. `textureLoad` takes the
+    /// sample index, and three passes `0`, so the composite reads the first
+    /// sample of each fragment. `webgpu_custom_fog_background` is the page
+    /// this exists for (`docs/nodes.md` §24).
+    DepthMultisampled2D,
     /// A depth texture bound for `textureSampleCompare`: the same
     /// `texture_depth_2d`, but with a `sampler_comparison` beside it.
     DepthCompare2D,
@@ -196,6 +202,7 @@ impl TextureKind {
             TextureKind::FloatData2D => "texture_2d<f32>",
             TextureKind::Uint2D => "texture_2d<u32>",
             TextureKind::Depth2D | TextureKind::DepthCompare2D => "texture_depth_2d",
+            TextureKind::DepthMultisampled2D => "texture_depth_multisampled_2d",
             TextureKind::Cube => "texture_cube<f32>",
             TextureKind::DepthCube => "texture_depth_cube",
         }
@@ -215,6 +222,7 @@ impl TextureKind {
         !matches!(
             self,
             TextureKind::Depth2D
+                | TextureKind::DepthMultisampled2D
                 | TextureKind::Float2DArray
                 | TextureKind::FloatData2D
                 | TextureKind::Uint2D
@@ -257,8 +265,15 @@ pub fn texture_load_layer(texture: &str, coord: &str, layer: &str) -> String {
     format!("textureLoad( {texture}, {coord}, {layer}, u32( 0u ) )")
 }
 
-pub fn texture_dimensions(texture: &str) -> String {
-    format!("textureDimensions( {texture}, u32( 0 ) )")
+/// `WGSLNodeBuilder.generateTextureDimension()`. A multisampled texture has
+/// exactly one level and WGSL gives `textureDimensions` no level overload for
+/// one, so three (and this) drop the argument there.
+pub fn texture_dimensions(texture: &str, kind: TextureKind) -> String {
+    if kind == TextureKind::DepthMultisampled2D {
+        format!("textureDimensions( {texture} )")
+    } else {
+        format!("textureDimensions( {texture}, u32( 0 ) )")
+    }
 }
 
 /// `WGSLNodeBuilder.generateTextureLoad()` with an explicit texel coordinate

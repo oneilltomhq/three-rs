@@ -296,7 +296,9 @@ impl RenderTarget {
     }
 
     pub fn set_depth_texture(&self, depth_texture: DepthTexture) {
-        self.0.borrow_mut().depth_texture = Some(depth_texture);
+        let mut inner = self.0.borrow_mut();
+        depth_texture.set_multisample(inner.samples > 1);
+        inner.depth_texture = Some(depth_texture);
     }
 
     pub fn depth_texture(&self) -> Option<DepthTexture> {
@@ -345,7 +347,21 @@ impl RenderTarget {
     /// `renderTarget.samples = renderer.samples`, which is what
     /// `PassNode.setup()` does before the first nested render.
     pub fn set_samples(&self, samples: u32) {
-        self.0.borrow_mut().samples = samples;
+        let mut inner = self.0.borrow_mut();
+        if inner.samples == samples {
+            return;
+        }
+        inner.samples = samples;
+        inner.msaa = None;
+        inner.msaa_extra.clear();
+        inner.depth = None;
+        // An attached `DepthTexture` is allocated with the target's sample
+        // count, so the flag the node builder reads has to move with it —
+        // `pass( scene, camera )` under `antialias: true` binds
+        // `texture_depth_multisampled_2d`.
+        if let Some(depth_texture) = &inner.depth_texture {
+            depth_texture.set_multisample(samples > 1);
+        }
     }
 
     /// `renderTarget.viewport`.

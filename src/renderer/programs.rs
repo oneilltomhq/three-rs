@@ -313,9 +313,10 @@ fn layout_entry(binding: u32, desc: &BindingDesc) -> wgpu::BindGroupLayoutEntry 
                     }
                     // `r32uint` — `BatchedMesh._indirectTexture`.
                     TextureKind::Uint2D => wgpu::TextureSampleType::Uint,
-                    TextureKind::Depth2D | TextureKind::DepthCompare2D | TextureKind::DepthCube => {
-                        wgpu::TextureSampleType::Depth
-                    }
+                    TextureKind::Depth2D
+                    | TextureKind::DepthMultisampled2D
+                    | TextureKind::DepthCompare2D
+                    | TextureKind::DepthCube => wgpu::TextureSampleType::Depth,
                     _ => wgpu::TextureSampleType::Float { filterable: true },
                 },
                 view_dimension: match kind {
@@ -323,7 +324,7 @@ fn layout_entry(binding: u32, desc: &BindingDesc) -> wgpu::BindGroupLayoutEntry 
                     TextureKind::Float2DArray => wgpu::TextureViewDimension::D2Array,
                     _ => wgpu::TextureViewDimension::D2,
                 },
-                multisampled: false,
+                multisampled: matches!(kind, TextureKind::DepthMultisampled2D),
             },
             count: None,
         },
