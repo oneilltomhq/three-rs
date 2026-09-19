@@ -623,6 +623,15 @@ fn main() {
     );
     show("materials_grid", &grid_material, SetupContext::default());
 
+    colour(
+        "materials_triplanar",
+        triplanar_texture(&uv_texture, None, None, float(0.01)),
+    );
+    colour(
+        "materials_screen_uv",
+        texture_uv(&uv_texture, screen_uv().flip_y()),
+    );
+
     let mut normal = MeshBasicNodeMaterial::normal();
     normal.opacity = 0.5;
     normal.transparent = true;

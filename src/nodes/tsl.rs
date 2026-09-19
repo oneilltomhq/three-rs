@@ -1143,6 +1143,9 @@ impl NodeRef {
     pub fn zw(&self) -> NodeRef {
         swizzle(self.clone(), "zw")
     }
+    pub fn zx(&self) -> NodeRef {
+        swizzle(self.clone(), "zx")
+    }
     pub fn xyz(&self) -> NodeRef {
         swizzle(self.clone(), "xyz")
     }
@@ -1215,6 +1218,34 @@ impl NodeRef {
             b: b.into(),
             ty,
         })
+    }
+
+    /// `.flipY()` — `FlipNode` over the y component: `vec2( v.x, 1.0 - v.y )`.
+    ///
+    /// `FlipNode.generate()` does not ask the usage counter for a temp, it
+    /// takes one unconditionally (`builder.getVarFromNode( this )`) and assigns
+    /// the *source* snippet into it, because it has to read two components of
+    /// the source and will not evaluate it twice. So the var here is explicit
+    /// rather than a `needs_var` promotion, and it is the flip's var, not the
+    /// source's.
+    ///
+    /// **Divergence, cosmetic** (`docs/nodes.md` §8): three writes the flipped
+    /// component as the bare string `1.0 - v.y`; the port builds it out of
+    /// `sub`, so it comes out parenthesised as `( 1.0 - v.y )`. Same value,
+    /// two characters more.
+    pub fn flip_y(&self) -> NodeRef {
+        let source = to_var(None, self.clone());
+        match self.ty() {
+            Type::Vec2 => vec2_join(vec![source.x(), float(1.0).sub(source.y())]),
+            Type::Vec3 => vec3_join(vec![source.x(), float(1.0).sub(source.y()), source.z()]),
+            Type::Vec4 => vec4_join(vec![
+                source.x(),
+                float(1.0).sub(source.y()),
+                source.z(),
+                source.w(),
+            ]),
+            ty => panic!("flipY() on a {ty:?}"),
+        }
     }
 
     pub fn to_var(&self, name: &'static str) -> NodeRef {
@@ -1515,11 +1546,13 @@ accessor!(
 );
 
 accessor!(
-    /// `screenUV` — `screenCoordinate.div( screenSize )`.
+    /// `screenUV` — `ScreenNode`'s `UV` scope: `screenCoordinate.div(
+    /// screenSize )`, the fragment's position normalised into `[0,1]`.
     ///
-    /// No Y flip: `ScreenNode` flips only under WebGL (`builder.renderer.backend
-    /// .isWebGLBackend`), and `webgpu_skinning`'s dumped background shader reads
-    /// `( fragCoord.xy / render.nodeUniform0 ).y` straight.
+    /// No Y flip, so y points *down*: `ScreenNode` flips only under WebGL
+    /// (`builder.renderer.backend.isWebGLBackend`), and `webgpu_skinning`'s
+    /// dumped background shader reads `( fragCoord.xy / render.nodeUniform0 ).y`
+    /// straight.
     screen_uv,
     frag_coord().xy().div(viewport_size())
 );
@@ -1921,6 +1954,45 @@ pub fn texture(map: &Texture) -> NodeRef {
         SampleMode::Sample,
         Type::Vec4,
     )
+}
+
+/// `triplanarTexture( textureX, textureY, textureZ, scale )` —
+/// `TriplanarTextures.js`. Three axis-aligned taps of the map, blended by the
+/// normal: `bf = normalize( abs( normalLocal ) )`, renormalised so its
+/// components sum to one, then `texture( x, position.yz * scale ) * bf.x + …`.
+///
+/// The `Fn()` has no layout, so three inlines it; this is a plain Rust
+/// function for the same reason. The taps go through [`texture_uv`], not
+/// [`texture`]: three calls `texture( value, tx )` with an explicit uv, and
+/// `TextureNode.setupUV()` only applies the map's uv matrix to the *default*
+/// uv, so no texture-matrix uniform appears.
+///
+/// **Divergence, API shape** (`docs/nodes.md` §8): three takes texture *nodes*
+/// and reads `.value` back off them to rebuild a tap per axis. A `NodeRef` is
+/// an opaque `Rc<Node>` here with no way back to the `Texture`, so the port
+/// takes the maps themselves. `None` for y or z means "sample x", exactly as
+/// three's `null` does.
+pub fn triplanar_texture(
+    map_x: &Texture,
+    map_y: Option<&Texture>,
+    map_z: Option<&Texture>,
+    scale: NodeRef,
+) -> NodeRef {
+    let map_y = map_y.unwrap_or(map_x);
+    let map_z = map_z.unwrap_or(map_x);
+
+    let bf = normal_local().abs().normalize();
+    let bf = bf.clone().div(bf.dot(vec3(1.0, 1.0, 1.0)));
+
+    let tx = position_local().yz().mul(scale.clone());
+    let ty = position_local().zx().mul(scale.clone());
+    let tz = position_local().xy().mul(scale);
+
+    let cx = texture_uv(map_x, tx).mul(bf.clone().x());
+    let cy = texture_uv(map_y, ty).mul(bf.clone().y());
+    let cz = texture_uv(map_z, tz).mul(bf.z());
+
+    cx.add(cy).add(cz)
 }
 
 /// Port of `BumpMapNode` — `bumpMap( texture( bumpMap ).r, materialBumpScale )`.
