@@ -108,6 +108,10 @@ mod webgpu_materials;
 #[allow(dead_code)]
 mod webgpu_materials_basic;
 
+#[path = "../../examples/webgpu_materials_envmaps.rs"]
+#[allow(dead_code)]
+mod webgpu_materials_envmaps;
+
 #[path = "../../examples/webgpu_rtt.rs"]
 #[allow(dead_code)]
 mod webgpu_rtt;
@@ -350,6 +354,53 @@ fn webgpu_materials() {
     );
 
     steady_frame(name, &mut app, webgpu_materials::animate, |app| {
+        app.renderer.device()
+    });
+}
+
+/// `webgpu_materials_envmaps`: the cube-reflection default of the environment
+/// mapping page — a `CubeTexture` background and one `MeshBasicMaterial`
+/// sphere reflecting it. Both the GUI's `Type` and its `Refraction` toggle
+/// are at their defaults for the first frame, so nothing equirectangular and
+/// nothing refractive is in this image.
+#[test]
+fn webgpu_materials_envmaps() {
+    let name = "webgpu_materials_envmaps";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_materials_envmaps::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_materials_envmaps::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_materials_envmaps::animate, |app| {
         app.renderer.device()
     });
 }
@@ -1859,6 +1910,7 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_instance_mesh);
     rung!(webgpu_materials);
     rung!(webgpu_materials_basic);
+    rung!(webgpu_materials_envmaps);
     rung!(webgpu_rtt);
     rung!(webgpu_postprocessing_masking);
     rung!(webgpu_postprocessing_difference);

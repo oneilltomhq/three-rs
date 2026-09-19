@@ -75,6 +75,10 @@ name = "webgpu_materials_basic"
 path = "examples/webgpu_materials_basic.rs"
 
 [[example]]
+name = "webgpu_materials_envmaps"
+path = "examples/webgpu_materials_envmaps.rs"
+
+[[example]]
 name = "webgpu_rtt"
 path = "examples/webgpu_rtt.rs"
 
