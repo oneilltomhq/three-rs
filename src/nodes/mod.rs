@@ -20,7 +20,7 @@ pub use builder::{
     BindingDesc, ComputeFlow, ComputeProgram, MaterialFlow, NodeBuilder, NodeProgram, Stage,
     UniformMember, Visibility,
 };
-pub use mrt::{mrt, MrtNode};
+pub use mrt::{mrt, MrtNode, MrtValue};
 pub use node::{
     BufferSource, Node, NodeRef, TextureSource, Type, UniformGroup, UniformSource, UpdateType,
 };

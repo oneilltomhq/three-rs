@@ -17,8 +17,50 @@
 //! "ignore if the output exists in the MRT but has never been used".
 
 use std::hash::{Hash, Hasher};
+use std::rc::Rc;
 
 use super::NodeRef;
+
+/// One entry of an [`MrtNode`].
+///
+/// Three's outputs are *node objects*, and a node object's `setup( builder )`
+/// runs once per material build — so `mrt( { normal: packNormalToRGB(
+/// normalView ) } )` means a different `normalView` for every material the
+/// pass draws. This port's TSL is eager: `normal_view()` reads the material
+/// side and normal map that are installed *now*, so an expression built in an
+/// example's `init()` would freeze the defaults into every draw.
+///
+/// [`MrtValue::Deferred`] is the shim for that: a closure re-run inside each
+/// material's setup, where the thread-locals hold that material's state. See
+/// `docs/nodes.md` §23.
+#[derive(Clone)]
+pub enum MrtValue {
+    /// A value that does not depend on the material, such as a uniform or a
+    /// property read like `output` or `diffuseColor`.
+    Node(NodeRef),
+    /// A value rebuilt per material, standing in for a three.js node object
+    /// whose `setup()` reads the builder's material.
+    Deferred(Rc<dyn Fn() -> NodeRef>),
+}
+
+impl MrtValue {
+    /// The node for the material currently being set up.
+    fn resolve(&self) -> NodeRef {
+        match self {
+            MrtValue::Node(node) => node.clone(),
+            MrtValue::Deferred(build) => build(),
+        }
+    }
+}
+
+impl std::fmt::Debug for MrtValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MrtValue::Node(node) => node.fmt(f),
+            MrtValue::Deferred(_) => f.write_str("Deferred"),
+        }
+    }
+}
 
 /// `mrt( outputNodes )` — the outputs by name, in insertion order.
 ///
@@ -26,7 +68,7 @@ use super::NodeRef;
 /// fresh `MRTNode` too, so nothing observes the identity of one.
 #[derive(Clone, Debug, Default)]
 pub struct MrtNode {
-    outputs: Vec<(String, NodeRef)>,
+    outputs: Vec<(String, MrtValue)>,
     blend_modes: Vec<(String, crate::materials::Blending)>,
 }
 
@@ -46,6 +88,23 @@ impl MrtNode {
     /// `mrtNode.outputNodes[ name ] = value`, replacing in place so the
     /// insertion order of an existing key is kept — `{ ...a, ...b }`.
     pub fn set<N: Into<String>>(&mut self, name: N, value: NodeRef) {
+        self.set_value(name, MrtValue::Node(value));
+    }
+
+    /// `mrtNode.outputNodes[ name ] = node` where the node's `setup()` reads
+    /// the material — `packNormalToRGB( normalView )` and nothing else on this
+    /// ladder. The closure runs once per material build, inside the same
+    /// material state `NodeMaterial.setup()` installs, so `normalView` picks up
+    /// that material's normal map and `side`.
+    pub fn set_deferred<N: Into<String>>(
+        &mut self,
+        name: N,
+        build: impl Fn() -> NodeRef + 'static,
+    ) {
+        self.set_value(name, MrtValue::Deferred(Rc::new(build)));
+    }
+
+    fn set_value<N: Into<String>>(&mut self, name: N, value: MrtValue) {
         let name = name.into();
         match self.outputs.iter_mut().find(|(n, _)| *n == name) {
             Some(entry) => entry.1 = value,
@@ -87,12 +146,12 @@ impl MrtNode {
         self.outputs.iter().any(|(n, _)| n == name)
     }
 
-    /// `mrtNode.get( name )`.
+    /// `mrtNode.get( name )`, resolved for the material being set up.
     pub fn get(&self, name: &str) -> Option<NodeRef> {
         self.outputs
             .iter()
             .find(|(n, _)| n == name)
-            .map(|(_, v)| v.clone())
+            .map(|(_, v)| v.resolve())
     }
 
     /// The names this MRT writes, in insertion order.
@@ -107,7 +166,7 @@ impl MrtNode {
     pub fn merge(&self, other: &MrtNode) -> MrtNode {
         let mut merged = self.clone();
         for (name, value) in &other.outputs {
-            merged.set(name.clone(), value.clone());
+            merged.set_value(name.clone(), value.clone());
         }
         for (name, blending) in &other.blend_modes {
             merged.set_blend_mode(name.clone(), *blending);
@@ -127,7 +186,7 @@ impl MrtNode {
         let mut members: Vec<Option<NodeRef>> = vec![None; attachments.len()];
         for (name, value) in &self.outputs {
             if let Some(index) = attachments.iter().position(|a| a == name) {
-                members[index] = Some(value.clone());
+                members[index] = Some(value.resolve());
             }
         }
         while matches!(members.last(), Some(None)) {
@@ -147,7 +206,16 @@ impl Hash for MrtNode {
     fn hash<H: Hasher>(&self, state: &mut H) {
         for (name, value) in &self.outputs {
             name.hash(state);
-            value.key().hash(state);
+            match value {
+                MrtValue::Node(node) => node.key().hash(state),
+                // The closure's identity, not its result: resolving it here
+                // would build nodes outside any material's setup, which is the
+                // very thing it exists to avoid. Two passes with distinct
+                // `set_deferred` calls therefore key distinct programs even if
+                // the closures would agree — and the *material* state the
+                // closure reads is already in the key by other fields.
+                MrtValue::Deferred(build) => Rc::as_ptr(build).cast::<()>().hash(state),
+            }
         }
     }
 }
