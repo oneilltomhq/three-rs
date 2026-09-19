@@ -55,14 +55,68 @@ iridescence: this is the first graded page to take a Radiance `.hdr`
 fed it an UltraHDR JPEG. A wrong `evalIridescence` would colour the shade, and
 the shade is right.
 
+## Where the 1.5% is — measured, not guessed
+
+Four measurements, in the order they were taken. `tools/dump-webgpu.mjs`
+leaves three's own frame at `target/dumps/irid/actual_full.png`, which makes
+all of them possible.
+
+1. **The grader's reference is reproducible on this machine.** Three's own
+   render, put through the same unmodified `test/e2e/image.js`, is **0 of
+   100000 pixels** against `examples/screenshots/webgpu_loader_gltf_iridescence.jpg`.
+   So the 1534 is the port's, not the reference's, and three's frame is a
+   per-pixel oracle.
+
+2. **The `.hdr` decode is bit-identical.** `HDRLoader.parse` over
+   `venice_sunset_1k.hdr` under node, against `HdrLoader::parse`'s
+   `to_bytes()`: 2097152 bytes, `cmp` clean. (`tests/hdr_loader.rs` only
+   grades the six pisa faces, so this needed checking separately.) The source
+   texture is right.
+
+3. **The smooth sky is right; the detail is not.** Port frame against three's
+   frame, per channel, 800×500:
+
+   | region | mean abs. diff | mean signed (r, g, b) |
+   | --- | --- | --- |
+   | sky, `y` 0–80 | **0.16** | −0.01, 0.00, 0.00 |
+   | skyline, `y` 150–250 | 4.81 | −0.12, −2.46, +1.34 |
+   | lamp, `y` 100–400, `x` 300–500 | 3.79 | −3.74, −1.80, −0.12 |
+   | ground, `y` 420–500 | 2.23 | −0.05, −0.04, −0.02 |
+
+   A flat gradient drawn from the cube is reproduced to a sixth of a code
+   value, so the skybox path, the cube's orientation and the mip level it is
+   read at are all right. Everything that differs is high-frequency.
+
+4. **It is not an integer pixel shift.** Rolling three's frame by ±1 px in
+   each axis and comparing over a background-only crop makes the match worse
+   in every direction but one, and that one (−1, 0) only marginally
+   (6.39 vs 6.80) — the signature of a sub-pixel difference, not an offset.
+
+5. **Forcing the source mip chain changes nothing.**
+   `CubeRenderTarget.fromEquirectangularTexture()` sets
+   `texture.generateMipmaps = true` on the source for the duration of the
+   conversion (three's line 76), which is why three's dump shows the equirect
+   with `mipLevelCount: 11` where the port's `HdrLoader` texture has 1.
+   Porting that line — set on entry, restored on exit — moved the count by
+   **0 pixels**, which stands to reason: the conversion box samples with
+   `texture( texture, uvNode, 0 )`, an explicit level 0. The change was
+   reverted rather than committed unverified against the full ladder.
+
+The conclusion the next session should start from: the difference is
+sub-pixel, inside the equirect→cube conversion's *sampling*, and it is
+invisible on smooth input. The port's four other users of
+`cube_render_target::from_equirectangular_texture` all feed it a 2048×1024
+UltraHDR JPEG (a 1024² face); this page feeds it a 1024×512 `.hdr` (a 512²
+face), so every earlier page had twice the cube resolution to hide it in.
+Descriptor-level suspects that remain unchecked: the face camera's
+`near`/`far` and the frustum the negative FOV builds, `equirect_uv`'s
+half-texel convention against three's, and the sampler's address mode at the
+equirect's seam and poles.
+
 ## What is missing
 
-1. **The background cube.** The suspects, in the order they are worth
-   checking: the `flipY` the `.hdr` data texture carries versus the
-   `positionWorldDirection` the conversion box samples along; the face size
-   (`texture.image.height` is 512 here, half what every UltraHDR page uses);
-   and the filtering of a 512² `rgba16float` face with no mips. Three's own
-   `m04_fragment_fragment_Background.material.wgsl` is a plain
+1. **The equirect→cube conversion's sub-pixel sampling**, as measured above.
+   Three's own `m04_fragment_fragment_Background.material.wgsl` is a plain
    `textureSampleLevel( …, render.nodeUniform5 )` cube read, so the shader is
    not where the difference is — the cube's contents are.
 2. **A `dump_wgsl.rs` section.** The generated WGSL was read against
