@@ -4,6 +4,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::error::Error;
+use crate::math::Vector4;
 use crate::textures::{DepthTexture, Texture, TextureFilter, TextureType};
 
 /// `new RenderTarget( width, height, options )` — the options the port reads.
@@ -51,6 +52,16 @@ pub struct RenderTargetInner {
     /// The depth buffer auto-allocated when `depth_buffer` is set and no
     /// `DepthTexture` was attached.
     pub depth: Option<wgpu::Texture>,
+    /// `renderTarget.viewport` — `new Vector4( 0, 0, width, height )`, in the
+    /// target's own pixels (a render target has no pixel ratio). A pass into
+    /// this target restricts itself to this rectangle; see
+    /// [`Renderer::set_viewport`](super::Renderer::set_viewport) for the origin
+    /// convention, which is the same one.
+    pub viewport: Vector4,
+    /// `renderTarget.scissor`, applied only when `scissor_test` is set.
+    pub scissor: Vector4,
+    /// `renderTarget.scissorTest`.
+    pub scissor_test: bool,
 }
 
 /// Cloning is a handle copy, matching JS object identity.
@@ -91,6 +102,9 @@ impl RenderTarget {
             texture: Texture::render_target(width, height, options.texture_type.color_gpu_format()),
             msaa: None,
             depth: None,
+            viewport: Vector4::new(0.0, 0.0, width as f64, height as f64),
+            scissor: Vector4::new(0.0, 0.0, width as f64, height as f64),
+            scissor_test: false,
         }))))
     }
 
@@ -146,6 +160,10 @@ impl RenderTarget {
             inner.height = height;
             inner.texture.set_size(width, height);
             inner.texture.clear_gpu();
+            // `RenderTarget.setSize()`: the viewport and the scissor go back to
+            // the whole target.
+            inner.viewport = Vector4::new(0.0, 0.0, width as f64, height as f64);
+            inner.scissor = Vector4::new(0.0, 0.0, width as f64, height as f64);
             inner.msaa = None;
             inner.depth = None;
             if let Some(depth_texture) = &inner.depth_texture {
@@ -167,6 +185,39 @@ impl RenderTarget {
     /// `PassNode.setup()` does before the first nested render.
     pub fn set_samples(&self, samples: u32) {
         self.0.borrow_mut().samples = samples;
+    }
+
+    /// `renderTarget.viewport`.
+    pub fn viewport(&self) -> Vector4 {
+        self.0.borrow().viewport
+    }
+
+    /// `renderTarget.viewport.set( x, y, width, height )` — the rectangle of
+    /// *this* target a render into it is confined to. Origin top-left, in the
+    /// target's own pixels; see
+    /// [`Renderer::set_viewport`](super::Renderer::set_viewport).
+    pub fn set_viewport(&self, x: f64, y: f64, width: f64, height: f64) {
+        self.0.borrow_mut().viewport = Vector4::new(x, y, width, height);
+    }
+
+    /// `renderTarget.scissor`.
+    pub fn scissor(&self) -> Vector4 {
+        self.0.borrow().scissor
+    }
+
+    /// `renderTarget.scissor.set( x, y, width, height )`.
+    pub fn set_scissor(&self, x: f64, y: f64, width: f64, height: f64) {
+        self.0.borrow_mut().scissor = Vector4::new(x, y, width, height);
+    }
+
+    /// `renderTarget.scissorTest`.
+    pub fn scissor_test(&self) -> bool {
+        self.0.borrow().scissor_test
+    }
+
+    /// `renderTarget.scissorTest = value`.
+    pub fn set_scissor_test(&self, scissor_test: bool) {
+        self.0.borrow_mut().scissor_test = scissor_test;
     }
 
     pub fn color_format(&self) -> wgpu::TextureFormat {

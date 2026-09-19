@@ -201,9 +201,10 @@ whole schedule, so all 17 draws carry `loadOp: "load"` and the only clears are
 the explicit `renderer.clear( true, true )` calls — which are, in the port as in
 three.js, a `beginRenderPass` with `loadOp: "clear"` and no draws at all.
 `setClearColor` and `clear( color, depth )` are the three.js API, minus its
-third `stencil` argument, which has no buffer behind it here; the port's
-`clear()` does not run the output pass when clearing the canvas, which three.js
-would.
+third `stencil` argument, which has no buffer behind it here. Every clear this
+rung makes has a render target bound, so it is the bare pass; a `clear()` on the
+canvas goes through the internal framebuffer target and ends in the output blit,
+as `Renderer.clear()` does.
 
 A scene with a `Color` background still clears, `autoClear` or not: three.js's
 `Background.update()` forces the clear itself. The eight scene renders here have
