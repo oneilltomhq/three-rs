@@ -138,6 +138,9 @@ mod webgpu_compute_points;
 #[path = "../../examples/webgpu_lights_physical.rs"]
 #[allow(dead_code)]
 mod webgpu_lights_physical;
+#[path = "../../examples/webgpu_lines_fat.rs"]
+#[allow(dead_code)]
+mod webgpu_lines_fat;
 #[path = "../../examples/webgpu_mesh_batch.rs"]
 #[allow(dead_code)]
 mod webgpu_mesh_batch;
@@ -528,6 +531,48 @@ fn webgpu_postprocessing_ssaa() {
         out.display()
     );
     steady_frame(name, &mut app, webgpu_postprocessing_ssaa::animate, |app| {
+        app.renderer.device()
+    });
+}
+
+#[test]
+fn webgpu_lines_fat() {
+    let name = "webgpu_lines_fat";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_lines_fat::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_lines_fat::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_lines_fat::animate, |app| {
         app.renderer.device()
     });
 }
@@ -982,6 +1027,7 @@ fn steady_frame_builds_nothing() {
     // matrices texture every `animateMeshes()`; three.js uploads the same two.
     rung!(webgpu_mesh_batch, 2);
     rung!(webgpu_compute_points);
+    rung!(webgpu_lines_fat);
 }
 
 // ---------------------------------------------------------------------------
