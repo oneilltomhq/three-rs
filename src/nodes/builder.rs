@@ -297,6 +297,7 @@ struct FnScope {
     indent: usize,
     locals: Vec<(String, Type)>,
     var_counter: usize,
+    const_counter: usize,
     scopes: Vec<HashMap<usize, String>>,
 }
 
@@ -314,6 +315,8 @@ pub struct NodeBuilder {
     /// `nodeUniformN` / `nodeVarN` / `nodeVaryingN` / `NodeBuffer_N` counters.
     uniform_counter: usize,
     var_counter: usize,
+    /// `nodeConstN` — `toConst()`'s counter, separate from `nodeVarN`'s.
+    const_counter: usize,
     varying_counter: usize,
     buffer_counter: usize,
     /// `nodeAttributeN` counter and the names already handed out, keyed by
@@ -352,6 +355,7 @@ impl NodeBuilder {
             groups: HashMap::new(),
             uniform_counter: 0,
             var_counter: 0,
+            const_counter: 0,
             varying_counter: 0,
             buffer_counter: 0,
             attribute_counter: 0,
@@ -402,6 +406,7 @@ impl NodeBuilder {
             | Node::Param { .. } => vec![],
             Node::BufferElement { index, .. } => vec![index.clone()],
             Node::Var(v) => vec![v.value.clone()],
+            Node::Let(v) => vec![v.value.clone()],
             Node::Varying(v) => vec![v.value.clone()],
             Node::Assign { target, value } => vec![value.clone(), target.clone()],
             Node::Op { a, b, .. } => vec![a.clone(), b.clone()],
@@ -465,6 +470,7 @@ impl NodeBuilder {
             Node::Discard => vec![],
             Node::TextureSize { level, .. } => vec![level.clone()],
             Node::VaryingProperty { .. } => vec![],
+            Node::Return { value } => vec![value.clone()],
             Node::Not { node } => vec![node.clone()],
         }
     }
@@ -574,6 +580,22 @@ impl NodeBuilder {
             s.decls.push((name.clone(), ty));
         }
         name
+    }
+
+    /// `NodeBuilder.getVarFromNode()`'s `readOnly` half — the `nodeConstN`
+    /// counter, which three.js keeps separate from `nodeVarN`.
+    fn declare_const(&mut self, name: Option<&str>) -> String {
+        if let Some(n) = name {
+            return n.to_string();
+        }
+        if let Some(scope) = self.fn_scopes.last_mut() {
+            let n = format!("nodeConst{}", scope.const_counter);
+            scope.const_counter += 1;
+            return n;
+        }
+        let n = format!("nodeConst{}", self.const_counter);
+        self.const_counter += 1;
+        n
     }
 
     fn add_code(&mut self, name: &str, src: &str) {
@@ -910,6 +932,18 @@ impl NodeBuilder {
                 let snippet = self.generate(&v.value);
                 let name = self.declare_var(v.name.as_deref(), v.ty);
                 self.emit(format!("{name} = {snippet};"));
+                self.cache_put(node.key(), name.clone());
+                name
+            }
+
+            // `NodeBuilder.getVarFromNode( node, name, type, readOnly )` with
+            // `readOnly`: a WGSL `let`, declared at the point it is assigned
+            // rather than hoisted into the `// vars` block.
+            Node::Let(v) => {
+                let v = v.clone();
+                let snippet = self.generate(&v.value);
+                let name = self.declare_const(v.name.as_deref());
+                self.emit(format!("let {name} = {snippet};"));
                 self.cache_put(node.key(), name.clone());
                 name
             }
@@ -1300,6 +1334,15 @@ impl NodeBuilder {
                 String::new()
             }
 
+            // `return value;` — only legal inside an emitted `fn`, which is
+            // the only place Three's `Fn()` bodies put one.
+            Node::Return { value } => {
+                let value = value.clone();
+                let snippet = self.generate(&value);
+                self.emit(format!("return {snippet};"));
+                String::new()
+            }
+
             Node::Not { node: inner } => {
                 let inner = inner.clone();
                 let snippet = self.generate(&inner);
@@ -1341,6 +1384,7 @@ impl NodeBuilder {
             indent: 1,
             locals: Vec::new(),
             var_counter: 0,
+            const_counter: 0,
             scopes: vec![HashMap::new()],
         });
         let result = self.format(&body, def.ret);

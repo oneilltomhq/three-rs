@@ -330,4 +330,13 @@ impl Payload {
             _ => None,
         }
     }
+
+    /// `InstancedMesh.instanceColor` — `None` until `setColorAt()` is called,
+    /// and `None` for a plain mesh.
+    pub fn instance_color(&self) -> Option<&InstancedBufferAttribute> {
+        match self {
+            Payload::InstancedMesh(instanced) => instanced.instance_color.as_ref(),
+            _ => None,
+        }
+    }
 }

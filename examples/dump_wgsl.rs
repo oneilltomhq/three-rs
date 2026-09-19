@@ -159,6 +159,7 @@ fn main() {
         SetupContext {
             instance_count: Some(1000),
             instanced: true,
+            instance_color: None,
             lights: Vec::new(),
             morph: None,
             skin: None,
@@ -241,6 +242,50 @@ fn main() {
     ));
     masking.vertex_node = Some(three_rs::materials::quad_vertex_node());
     show("masking_quad", &masking, SetupContext::default());
+
+    // rung webgpu_postprocessing_radial_blur: the RenderPipeline quad.
+    let pass_rt = Texture::render_target(800, 500, wgpu::TextureFormat::Rgba16Float);
+    let options = three_rs::nodes::display::RadialBlurOptions {
+        weight: uniform_value(three_rs::nodes::Type::F32, vec![0.9]),
+        decay: uniform_value(three_rs::nodes::Type::F32, vec![0.95]),
+        exposure: uniform_value(three_rs::nodes::Type::F32, vec![5.0]),
+        count: uniform_value(three_rs::nodes::Type::F32, vec![32.0]),
+        ..Default::default()
+    };
+    let mut radial = MeshBasicNodeMaterial::new();
+    radial.fragment_node = Some(three_rs::materials::render_output(
+        three_rs::nodes::display::radial_blur(&pass_rt, &options),
+        three_rs::ToneMapping::Neutral,
+    ));
+    radial.vertex_node = Some(three_rs::materials::quad_vertex_node());
+    show("radial_blur_quad", &radial, SetupContext::default());
+
+    // …and its scene: one flat-shaded instanced `MeshStandardMaterial` with
+    // `setColorAt()` colours, under a hemisphere light and a point light.
+    let mut radial_scene = MeshBasicNodeMaterial::standard(Color::new(1.0, 1.0, 1.0), 1.0, 0.0);
+    radial_scene.flat_shading = true;
+    show(
+        "radial_blur_scene",
+        &radial_scene,
+        SetupContext {
+            instance_count: Some(100),
+            instanced: true,
+            instance_color: Some(100),
+            lights: vec![
+                LightDesc {
+                    index: 0,
+                    kind: LightKind::Hemisphere,
+                    shadow_map: None,
+                },
+                LightDesc {
+                    index: 1,
+                    kind: LightKind::Point,
+                    shadow_map: None,
+                },
+            ],
+            ..SetupContext::default()
+        },
+    );
 
     // rung 5: the three teapots and the light spheres, against
     // `target/dumps/webgpu_lights_phong/`.

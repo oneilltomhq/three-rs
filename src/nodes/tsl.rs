@@ -30,11 +30,12 @@ pub use super::node::TextureSource;
 // sub-builds and the build context (`docs/nodes.md` §7)
 // ---------------------------------------------------------------------------
 
-/// Cache key shared by the per-(sub-build layer, normal value) caches below:
-/// `(sub_build_layer, normal_value_id)`.
-type SubBuildKey = (Option<&'static str>, Option<usize>, Side);
-
-/// [`SubBuildKey`] plus the flat-shading flag, for `normalView`'s cache.
+/// Cache key shared by every cache below that holds a node reading
+/// `normalView`: `(sub_build_layer, normal_value_id, flat_shading,
+/// material_side)`. The flat-shading flag belongs in it because
+/// `normalViewGeometry` reads it and `negateOnBackSide()` is skipped when it
+/// is set, so two materials that differ only there must not share a cached
+/// node; the side is there for the same reason.
 type NormalViewKey = (Option<&'static str>, Option<usize>, bool, Side);
 
 thread_local! {
@@ -61,12 +62,12 @@ thread_local! {
     static NORMAL_VIEW: RefCell<HashMap<NormalViewKey, NodeRef>> =
         RefCell::new(HashMap::new());
     /// `tangentView` / `bitangentView`, keyed the same way.
-    static TANGENT_VIEW: RefCell<HashMap<SubBuildKey, (NodeRef, NodeRef)>> =
+    static TANGENT_VIEW: RefCell<HashMap<NormalViewKey, (NodeRef, NodeRef)>> =
         RefCell::new(HashMap::new());
     /// `normalWorld`, keyed the same way: it reads `normalView`, so a plain
     /// singleton would bake in whichever material was built first and then
     /// re-assign `normalView` from the geometric normal in every later one.
-    static NORMAL_WORLD: RefCell<HashMap<SubBuildKey, NodeRef>> =
+    static NORMAL_WORLD: RefCell<HashMap<NormalViewKey, NodeRef>> =
         RefCell::new(HashMap::new());
     /// `builder.context.setupPositionView()` — `NodeMaterial.setup()` installs
     /// it before either stage is flowed, and `SpriteNodeMaterial` overrides it
@@ -275,6 +276,18 @@ pub fn uniform(
 pub fn to_var(name: Option<&'static str>, value: NodeRef) -> NodeRef {
     let ty = value.ty();
     NodeRef::new(Node::Var(Rc::new(VarDef {
+        name: name.map(sub_build_name),
+        value,
+        ty,
+    })))
+}
+
+/// `node.toConst( name )` — a WGSL `let`. Same shape as [`to_var`], but the
+/// value is written once where it is declared, so it takes its own
+/// `nodeConstN` counter and no `var<private>` declaration.
+pub fn to_const(name: Option<&'static str>, value: NodeRef) -> NodeRef {
+    let ty = value.ty();
+    NodeRef::new(Node::Let(Rc::new(VarDef {
         name: name.map(sub_build_name),
         value,
         ty,
@@ -858,7 +871,7 @@ pub fn tbn_view_matrix() -> NodeRef {
     // frame it joins depends on the material's side, so a singleton would bake
     // in whichever material was built first.
     thread_local! {
-        static CELL: RefCell<HashMap<SubBuildKey, NodeRef>> = RefCell::new(HashMap::new());
+        static CELL: RefCell<HashMap<NormalViewKey, NodeRef>> = RefCell::new(HashMap::new());
     }
     let key = normal_key();
     if let Some(node) = CELL.with(|m| m.borrow().get(&key).cloned()) {
@@ -1603,7 +1616,7 @@ pub fn normal_view_geometry() -> NodeRef {
 /// per-build `nodeData` gives it for free.
 /// The cache key every node that reads `normalView` shares: the open sub-build
 /// layer plus the material's own normal node.
-fn normal_key() -> SubBuildKey {
+fn normal_key() -> NormalViewKey {
     let layer = SUB_BUILD.with(|s| *s.borrow());
     let value = if layer.is_some() {
         None
@@ -1613,24 +1626,25 @@ fn normal_key() -> SubBuildKey {
     (
         layer,
         value.as_ref().map(|v| v.key()),
+        FLAT_SHADING.with(|f| *f.borrow()),
         MATERIAL_SIDE.with(|s| *s.borrow()),
     )
 }
 
-pub fn normal_view() -> NodeRef {
+/// The material's normal node for the current build, or `None` inside a
+/// sub-build layer, which runs on the geometric normal.
+fn normal_value() -> Option<NodeRef> {
     let layer = SUB_BUILD.with(|s| *s.borrow());
-    let value = if layer.is_some() {
+    if layer.is_some() {
         None
     } else {
         NORMAL_VALUE.with(|v| v.borrow().clone())
-    };
+    }
+}
+
+pub fn normal_view() -> NodeRef {
+    let key = normal_key();
     let flat = FLAT_SHADING.with(|f| *f.borrow());
-    let key = (
-        layer,
-        value.as_ref().map(|v| v.key()),
-        flat,
-        MATERIAL_SIDE.with(|s| *s.borrow()),
-    );
     if let Some(node) = NORMAL_VIEW.with(|m| m.borrow().get(&key).cloned()) {
         return node;
     }
@@ -1638,7 +1652,7 @@ pub fn normal_view() -> NodeRef {
     // `negateOnBackSide()` applies unless the material is flat shaded.
     let node = to_var(
         Some("normalView"),
-        match value {
+        match normal_value() {
             Some(value) => value,
             None if flat => normal_view_geometry(),
             None => negate_on_back_side(normal_view_geometry()),
@@ -2101,6 +2115,25 @@ pub fn instance_matrix(count: usize) -> NodeRef {
         (0..4)
             .map(|i| instanced_attribute(&interleaved, i * 4, Type::Vec4))
             .collect(),
+    )
+}
+
+/// `instanceColor` — `varyingProperty( 'vec3', 'vInstanceColor' )` fed by
+/// `instancedBufferAttribute( new InstancedBufferAttribute( colors.array, 3 ),
+/// 'vec3', 3, 0 )` (`src/nodes/accessors/Instance.js`).
+///
+/// Unlike the matrices there is no uniform-buffer branch: three.js always
+/// re-wraps the colours as an instanced vertex attribute.
+pub fn instance_color(count: usize) -> NodeRef {
+    let buffer = Rc::new(InstanceBuffer {
+        id: crate::nodes::node::BufferId::next(),
+        source: BufferSource::InstanceColor,
+        count: count.max(1),
+        item_size: 3,
+    });
+    to_varying(
+        Some("vInstanceColor"),
+        instanced_attribute(&buffer, 0, Type::Vec3),
     )
 }
 
@@ -2578,6 +2611,12 @@ pub fn if_then(cond: NodeRef, body: Vec<NodeRef>) -> NodeRef {
     NodeRef::new(Node::If { cond, body })
 }
 
+/// `return value;` inside a `Fn()` body — the statement an early-out `If(
+/// cond, () => { return x; } )` compiles to.
+pub fn return_statement(value: NodeRef) -> NodeRef {
+    NodeRef::new(Node::Return { value })
+}
+
 /// `Discard()`.
 pub fn discard() -> NodeRef {
     NodeRef::new(Node::Discard)
@@ -2743,6 +2782,57 @@ pub fn aces_filmic_tone_mapping(color: NodeRef, exposure: NodeRef) -> NodeRef {
                         .mul(c.add(float(0.432951)).mul(float(0.983729)))
                         .add(float(0.238081));
                     output.mul(a.div(b)).saturate()
+                },
+            )
+        })
+    });
+    call(&def, vec![color, exposure])
+}
+
+/// `neutralToneMapping( color, exposure )` — `ToneMappingFunctions.js`'
+/// Khronos PBR Neutral, emitted as a real `fn`.
+///
+/// `StartCompression` is `0.8 - 0.04`; three.js prints the double as `0.76`,
+/// and `0.76f32` is the same float, so the literal is written out.
+pub fn neutral_tone_mapping(color: NodeRef, exposure: NodeRef) -> NodeRef {
+    thread_local! { static CELL: Lazy<Rc<FnDef>> = const { Lazy::new() }; }
+    let def = CELL.with(|c| {
+        c.get(|| {
+            shader_fn(
+                Some("neutralToneMapping"),
+                vec![("color", Type::Vec3), ("exposure", Type::F32)],
+                Type::Vec3,
+                |args| {
+                    let start_compression = || float(0.76);
+                    let desaturation = float(0.15);
+                    // `color = color.mul( exposure )` — reassigned twice
+                    // below, so it is a var, not a temp.
+                    let color = to_var(None, args[0].clone().mul(args[1].clone()));
+                    let x = color.x().min(color.y().min(color.z()));
+                    let offset = x
+                        .less_than(float(0.08))
+                        .select(x.sub(float(6.25).mul(x.mul(x.clone()))), float(0.04));
+                    let peak = color.x().max(color.y().max(color.z()));
+                    let d = float(1.0).sub(start_compression());
+                    let new_peak =
+                        float(1.0).sub(d.mul(d.clone()).div(peak.add(d.sub(start_compression()))));
+                    let g = float(1.0).sub(
+                        float(1.0)
+                            .div(desaturation.mul(peak.sub(new_peak.clone())).add(float(1.0))),
+                    );
+                    block(
+                        vec![
+                            color.assign(color.sub(offset)),
+                            // `If( peak.lessThan( StartCompression ), () => {
+                            // return color; } )`.
+                            if_statement(
+                                peak.less_than(start_compression()),
+                                vec![return_statement(color.clone())],
+                            ),
+                            color.assign(color.mul(new_peak.div(peak))),
+                        ],
+                        mix(color, new_peak.to(Type::Vec3), g),
+                    )
                 },
             )
         })

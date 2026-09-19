@@ -247,6 +247,11 @@ impl Object3D {
         self.payload.instance_matrix()
     }
 
+    /// `InstancedMesh.instanceColor`, `None` until `setColorAt()` is called.
+    pub fn instance_color(&self) -> Option<&InstancedBufferAttribute> {
+        self.payload.instance_color()
+    }
+
     /// `InstancedMesh.setMatrixAt( index, matrix )`, reached through the payload.
     ///
     /// Panics if this node is not an `InstancedMesh`, the way the JS would throw.
@@ -255,6 +260,16 @@ impl Object3D {
             .instanced_mesh_mut()
             .expect("three-rs: setMatrixAt on an object that is not an InstancedMesh")
             .set_matrix_at(index, matrix);
+    }
+
+    /// `InstancedMesh.setColorAt( index, color )`, reached through the payload.
+    ///
+    /// Panics if this node is not an `InstancedMesh`, the way the JS would throw.
+    pub fn set_color_at(&mut self, index: usize, color: &crate::math::Color) {
+        self.payload
+            .instanced_mesh_mut()
+            .expect("three-rs: setColorAt on an object that is not an InstancedMesh")
+            .set_color_at(index, color);
     }
 
     /// `object.rotation.set( x, y, z )` — the Euler `onChange` callback then

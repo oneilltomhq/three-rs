@@ -458,13 +458,27 @@ differences, each verified to be pixel-neutral.
 * **Fog parameters as constants.** `fogColor` / `fogNear` / `fogFar` are folded
   into the WGSL as literals rather than carried as `renderStruct` members,
   because nothing in the port animates them. Same numbers.
-* **`toConst`.** Three's `toConst()` emits a `let nodeConstN = …` where this
-  port emits `nodeVarN = …` into a `var<private>`. The port has no const form,
-  so `pointShadowFilter`'s `shadowPosition` and `shadowPositionAbs` are
-  `to_var()`s instead. Same single evaluation, same value. Two of them are not
-  optional: `Node::Swizzle` and `Node::Neg` are not kinds the builder promotes
-  on usage count, so `shadowCoord.xyz` and `viewZ.negate()` are wrapped by hand
-  or the expression would be emitted twice.
+* **`toConst` on the shadow filter.** `to_const()` exists since
+  `webgpu_postprocessing_radial_blur` (`Node::Let`, a WGSL `let nodeConstN`),
+  but `pointShadowFilter`'s `shadowPosition` and `shadowPositionAbs` are still
+  `to_var()`s, where Three uses `toConst()`. Same single evaluation, same
+  value. Two of them are not optional: `Node::Swizzle` and `Node::Neg` are not
+  kinds the builder promotes on usage count, so `shadowCoord.xyz` and
+  `viewZ.negate()` are wrapped by hand or the expression would be emitted
+  twice.
+* **Helper `fn` declaration order and `fn0`/`fn1` numbering.** The `// codes`
+  block is emitted in the order the builder first *generates* a call, which is
+  not the order Three declares them in, and an anonymous `Fn()` takes its
+  number from that order too — so `premultiplyAlpha` / `unpremultiplyAlpha` are
+  `fn0` / `fn1` in the radial-blur quad where Three has them the other way
+  round. WGSL has no forward-declaration rule for functions in the same module,
+  so naga accepts both orders and the bodies are identical. (The MaterialX
+  entry below is the same cause, seen first.)
+* **`Node::Block` needs an explicit var.** An effect built as a statement list
+  ending in a value — `radial_blur()` — is wrapped in a `to_var()` by the port,
+  because `Node::Block` is not a kind `generate()` caches or `analyze()`
+  promotes, so without it the whole block would be emitted once per read. Three
+  gets the same result from `Fn()`'s own stack. Same statements, same order.
 * **Named lighting temps.** Three names `singleScatteringDielectric`,
   `multiScatteringDielectric`, `singleScatteringMetallic`,
   `multiScatteringMetallic`, `dfg` and `multiScatteringCompensation`; this port

@@ -226,6 +226,10 @@ struct Renderable {
     fog: Option<FogNode>,
     model_world: Matrix4,
     instance_matrix: Option<InstancedBufferAttribute>,
+    /// `InstancedMesh.instanceColor` — the three floats per instance
+    /// `setColorAt()` wrote. Carried per draw beside the matrices so two
+    /// objects sharing one material cannot share one colour buffer.
+    instance_color: Option<InstancedBufferAttribute>,
     instance_count: u32,
     /// `Mesh.morphTargetInfluences`, and `Morph.js`' `base` uniform, which is
     /// `1 - Σ influences` for non-relative morph targets.
@@ -747,6 +751,7 @@ impl Renderer {
                 // `matrixWorld` stays the identity.
                 model_world: Matrix4::identity(),
                 instance_matrix: None,
+                instance_color: None,
                 instance_count: 1,
                 morph_influences: Vec::new(),
                 morph_base: 1.0,
@@ -846,6 +851,7 @@ impl Renderer {
 
             let instance_count = object.instance_count();
             let instance_matrix = object.instance_matrix().cloned();
+            let instance_color = object.instance_color().cloned();
 
             // `SkinningNode`'s `OnObjectUpdate`: `skeleton.update()` runs once
             // per frame per *skeleton*, however many meshes share it, and it
@@ -890,6 +896,7 @@ impl Renderer {
                     // buffer past the 64 KiB cap.
                     instance_count: instance_matrix.as_ref().map(|a| a.count()),
                     instanced: instance_matrix.is_some(),
+                    instance_color: instance_color.as_ref().map(|a| a.count()),
                     lights: light_descs
                         .iter()
                         .enumerate()
@@ -910,6 +917,7 @@ impl Renderer {
                 fog: scene.fog_node.clone(),
                 model_world: item.matrix_world,
                 instance_matrix,
+                instance_color,
                 instance_count,
                 morph_influences,
                 morph_base,
@@ -1109,6 +1117,7 @@ impl Renderer {
                 let source = object.material().unwrap_or(&self.default_material);
                 let primitive = Primitive::of(&object, &geometry);
                 let instance_matrix = object.instance_matrix().cloned();
+                let instance_color = object.instance_color().cloned();
                 let instance_count = object.instance_count();
 
                 items.push(Renderable {
@@ -1118,6 +1127,7 @@ impl Renderer {
                     setup: SetupContext {
                         instance_count: instance_matrix.as_ref().map(|_| instance_count as usize),
                         instanced: instance_matrix.is_some(),
+                        instance_color: instance_color.as_ref().map(|a| a.count()),
                         lights: Vec::new(),
                         // The shadow pass does not carry morph targets yet:
                         // nothing in the ladder both morphs and casts a shadow.
@@ -1128,6 +1138,7 @@ impl Renderer {
                     fog: None,
                     model_world: item.matrix_world,
                     instance_matrix,
+                    instance_color,
                     instance_count,
                     morph_influences: Vec::new(),
                     morph_base: 1.0,
@@ -1286,6 +1297,7 @@ impl Renderer {
                 let source = object.material().unwrap_or(&self.default_material);
                 let primitive = Primitive::of(&object, &geometry);
                 let instance_matrix = object.instance_matrix().cloned();
+                let instance_color = object.instance_color().cloned();
                 let instance_count = object.instance_count();
                 items.push(Renderable {
                     geometry: geometry.clone(),
@@ -1294,6 +1306,7 @@ impl Renderer {
                     setup: SetupContext {
                         instance_count: instance_matrix.as_ref().map(|_| instance_count as usize),
                         instanced: instance_matrix.is_some(),
+                        instance_color: instance_color.as_ref().map(|a| a.count()),
                         lights: Vec::new(),
                         morph: None,
                         skin: None,
@@ -1302,6 +1315,7 @@ impl Renderer {
                     fog: None,
                     model_world: item.matrix_world,
                     instance_matrix,
+                    instance_color,
                     instance_count,
                     morph_influences: Vec::new(),
                     morph_base: 1.0,
@@ -1393,6 +1407,7 @@ impl Renderer {
             setup: SetupContext::default(),
             model_world: Matrix4::identity(),
             instance_matrix: None,
+            instance_color: None,
             instance_count: 1,
             morph_influences: Vec::new(),
             morph_base: 1.0,
@@ -1536,8 +1551,13 @@ impl Renderer {
             // two materials that differ only in which texture or which
             // `range()` buffer they name share one `Program` — and must still
             // draw with their own resources. `Program` holds none.
-            let bind_groups =
-                self.bind_groups(program_key, &node, &uniforms, &item.instance_matrix);
+            let bind_groups = self.bind_groups(
+                program_key,
+                &node,
+                &uniforms,
+                &item.instance_matrix,
+                &item.instance_color,
+            );
 
             let vertex_buffers = node
                 .vertex_buffers()
@@ -1547,7 +1567,7 @@ impl Renderer {
                         self.geometries[&geometry_id].gpu.attribute(name).clone()
                     }
                     VertexBufferSource::Instance(buffer) => {
-                        self.instance_buffer(buffer, &item.instance_matrix)
+                        self.instance_buffer(buffer, &item.instance_matrix, &item.instance_color)
                     }
                 })
                 .collect();
@@ -1721,6 +1741,7 @@ impl Renderer {
             setup: SetupContext::default(),
             model_world: Matrix4::identity(),
             instance_matrix: None,
+            instance_color: None,
             instance_count: 1,
             morph_influences: Vec::new(),
             morph_base: 1.0,
@@ -2114,6 +2135,7 @@ impl Renderer {
         node: &NodeProgram,
         uniforms: &UniformContext,
         instance_matrix: &Option<InstancedBufferAttribute>,
+        instance_color: &Option<InstancedBufferAttribute>,
     ) -> Vec<wgpu::BindGroup> {
         enum Resource {
             Buffer(wgpu::Buffer),
@@ -2149,6 +2171,7 @@ impl Renderer {
                         *count,
                         *element_ty,
                         instance_matrix,
+                        instance_color,
                         uniforms,
                     )),
                     BindingDesc::Texture { source, kind, .. } => {
@@ -2185,6 +2208,12 @@ impl Renderer {
 
     /// A `BufferNode`'s uniform buffer. `range()` is filled from the page's
     /// `Math.random` exactly once, because `RangeNode.setup()` runs once.
+    // Eight arguments: `instanceColor` joined `instanceMatrix` here when the
+    // radial-blur rung landed on top of the batched-mesh one, and the two
+    // attributes are resolved the same way by `buffer_for` below. Bundling
+    // them would put a struct between two callers that already hold the
+    // fields separately.
+    #[allow(clippy::too_many_arguments)]
     fn node_buffer(
         &mut self,
         id: usize,
@@ -2192,6 +2221,7 @@ impl Renderer {
         count: usize,
         element_ty: Type,
         instance_matrix: &Option<InstancedBufferAttribute>,
+        instance_color: &Option<InstancedBufferAttribute>,
         uniforms: &UniformContext,
     ) -> wgpu::Buffer {
         // `skeleton.update()` rewrites `boneMatrices` every frame, so the bone
@@ -2229,6 +2259,7 @@ impl Renderer {
             source,
             count,
             instance_matrix,
+            instance_color,
             wgpu::BufferUsages::UNIFORM,
         )
     }
@@ -2267,6 +2298,7 @@ impl Renderer {
         &mut self,
         buffer: &Rc<crate::nodes::node::InstanceBuffer>,
         instance_matrix: &Option<InstancedBufferAttribute>,
+        instance_color: &Option<InstancedBufferAttribute>,
     ) -> wgpu::Buffer {
         let id = buffer.id.get();
         self.buffer_for(
@@ -2274,6 +2306,7 @@ impl Renderer {
             &buffer.source,
             buffer.count,
             instance_matrix,
+            instance_color,
             wgpu::BufferUsages::VERTEX,
         )
     }
@@ -2290,6 +2323,7 @@ impl Renderer {
         source: &BufferSource,
         count: usize,
         instance_matrix: &Option<InstancedBufferAttribute>,
+        instance_color: &Option<InstancedBufferAttribute>,
         usage: wgpu::BufferUsages,
     ) -> wgpu::Buffer {
         match source {
@@ -2302,6 +2336,16 @@ impl Renderer {
                     .expect("three-rs: instanceMatrix needs an InstancedMesh");
                 self.create_buffer_init(
                     "three-rs instanceMatrix",
+                    bytemuck::cast_slice(&attribute.array),
+                    usage,
+                )
+            }
+            BufferSource::InstanceColor => {
+                let attribute = instance_color
+                    .as_ref()
+                    .expect("three-rs: instanceColor needs an InstancedMesh with setColorAt");
+                self.create_buffer_init(
+                    "three-rs instanceColor",
                     bytemuck::cast_slice(&attribute.array),
                     usage,
                 )
