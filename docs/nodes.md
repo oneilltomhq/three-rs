@@ -1769,3 +1769,74 @@ only prepares a canvas now when there is not one already.
   absent `VERTEX_` sub-build temps. Everything else in all four modules is
   statement for statement three's, including the whole of both copied bodies and
   the eighteen-statement TSL fragment.
+
+## 21. `webgpu_pmrem_equirectangular` — the UltraHDR loader
+
+The node graph in this example is §13's. `scene.backgroundNode = pmremTexture(
+map, normalWorldGeometry, uniform( 0.5 ) )` generates the module that
+`examples/dump_wgsl.rs`'s `pmrem_background` prints, and it matches three's
+`m05`/`m06` line for line once the uniform numbering is normalised. The grid's
+`MeshPhysicalNodeMaterial` generates `m07`/`m08`, whose only differences from
+the port are the multi-scattering and `NORMAL_normalView` entries §8 already
+records from earlier rungs. Nothing shader-side is new.
+
+What is new is the decode. `royal_esplanade_2k.hdr.jpg` is an UltraHDR file: a
+baseline sRGB JPEG with a second JPEG (the *gain map*) appended after it, an
+MPF APP2 index giving the second image's offset, and per-image XMP describing
+how to recombine them. `UltraHdrLoader` ports
+`examples/jsm/loaders/UltraHDRLoader.js`, and the divergences below are the
+ones that could move a pixel.
+
+**`SRGB_TO_LINEAR` truncates its argument.** Upstream builds a 1024-entry table
+and indexes it with `value | 0`, so an input of 512.9 reads entry 512 rather
+than interpolating. That is not a rounding convenience, it is what produced the
+reference image, so `srgb_to_linear` reproduces it:
+
+```rust
+if value < 10.31475 { return value * 0.000303527; }
+if value < 1024.0 { return srgb_to_linear_table()[value as usize]; }
+```
+
+and `srgb_to_linear_truncates_in_the_table_range` pins it.
+
+**The JPEG decoder is zune-jpeg, not libjpeg-turbo.** The browser decodes both
+JPEGs through Chromium's decoder; the port uses `decode_jpeg_bytes` from
+`texture_loader.rs`. The two IDCTs disagree by at most one unit in the last
+place on some blocks. That is the whole of this example's diff: **1 pixel of
+100000**, on a specular highlight where a one-unit difference in the gain map
+crosses a rounding boundary after the half-float conversion. It is not fixable
+without shipping a second JPEG decoder, and it is a decoder difference, not a
+port bug.
+
+**The ICC profile is ignored.** Upstream's own feature list says "ICC profile
+(not implemented)" and every UltraHDR asset in `three.js/examples` carries a
+plain sRGB profile, so Chromium's canvas conversion is the identity. The port
+skips the APP2 `ICC_PROFILE` segment rather than parsing one it would then not
+apply. An asset with a wide-gamut profile would decode wrong in both.
+
+**`resize_bilinear` is dead code against the in-tree assets.** `applyGainMap`
+draws the gain map onto a canvas sized to the SDR image, which rescales it when
+the two differ. Both SOF0s in this asset are 2048x1024, so the draw is a 1:1
+copy. The resize is kept because the format permits a half- or quarter-scale
+gain map and a future asset will use one; it is untested against a reference
+until such an asset lands.
+
+**There is no placeholder texture.** `UltraHDRLoader` is a `Loader`, not a
+`DataTextureLoader`: it returns a 0x1 `DataTexture` immediately and fills it in
+the fetch callback. The port's `load()` is synchronous and returns the finished
+texture, so the frame where three has a 0x1 environment does not exist here.
+The graded frame is after the callback either way.
+
+**`generateMipmaps` is set and never read.** Upstream's texture asks for
+mipmaps and three's dump duly contains twelve mipmap passes, but
+`_getEquirectMaterial` samples at an explicit level 0, so no pixel depends on
+them. The port sets the flag anyway so the pass structure keeps matching the
+dump.
+
+The metadata parser handles both containers the format allows — the legacy
+Adobe `hdrgm:` XMP attributes and the binary ISO 21496-1 APP2 block, including
+its common-denominator and per-value-denominator encodings — and has unit tests
+for each, because eight further examples (`webgpu_loader_gltf`, `_anisotropy`,
+`_sheen`, `webgpu_mrt`, `webgpu_materials_transmission`, `webgpu_deferred`,
+`webgpu_performance`, `webgpu_custom_fog_background`) load UltraHDR files and
+will exercise paths this one does not.

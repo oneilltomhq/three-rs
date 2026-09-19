@@ -39,7 +39,7 @@
 //!   three's UltraHDR files all store the gain map at full resolution, which
 //!   [`apply_gain_map`] takes as a straight copy.
 //!
-//! Recorded in `docs/nodes.md` §19.
+//! Recorded in `docs/nodes.md` §21.
 
 use std::path::Path;
 
