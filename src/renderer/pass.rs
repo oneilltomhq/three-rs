@@ -106,17 +106,26 @@ impl PassNode {
     /// attachment, creating the attachment on first ask
     /// (`PassNode.getTexture()`).
     ///
-    /// `getTextureNode()` with no argument is [`PassNode::node`]: the same
-    /// `to_var( texture_uv( … ) )` pair, on `renderTarget.textures[ 0 ]`.
+    /// Unlike [`PassNode::node`] this is **one** var, not two: a
+    /// `PassTextureNode` is what the graph holds, and the `PassNode` it builds
+    /// from its own `setup()` is then built only that once — `hasDependencies`
+    /// is false, so `TempNode` gives it no var of its own. `pass( scene, camera )`
+    /// used directly is the case with two, because there the graph holds the
+    /// `PassNode` as well and its usage count reaches two.
+    ///
+    /// `getTextureNode()` with no argument is that direct use,
+    /// [`PassNode::node`]; `getTextureNode( 'output' )` is this, on the same
+    /// `renderTarget.textures[ 0 ]`.
     pub fn texture_node(&self, name: &str) -> NodeRef {
-        if name == crate::renderer::OUTPUT_ATTACHMENT {
-            return self.node();
-        }
         if let Some(node) = self.texture_nodes.borrow().get(name) {
             return node.clone();
         }
-        let texture = self.render_target.add_texture(name);
-        let node = to_var(None, texture_uv(&texture, uv()));
+        let texture = if name == crate::renderer::OUTPUT_ATTACHMENT {
+            self.render_target.texture()
+        } else {
+            self.render_target.add_texture(name)
+        };
+        let node = texture_uv(&texture, uv());
         self.texture_nodes
             .borrow_mut()
             .insert(name.to_string(), node.clone());
