@@ -463,6 +463,10 @@ pub struct UniformContext<'a> {
     pub material_ior: f64,
     pub material_specular_intensity: f64,
     pub material_specular_color: Color,
+    /// `MeshPhysicalMaterial.sheen` / `.sheenColor` / `.sheenRoughness`.
+    pub material_sheen: f64,
+    pub material_sheen_color: Color,
+    pub material_sheen_roughness: f64,
     pub material_normal_scale: Vector2,
     pub env_rotation: Matrix4,
     /// `material.envMapIntensity` — 1 on every material this rung builds.
@@ -526,6 +530,9 @@ impl Default for UniformContext<'_> {
             material_ior: 1.5,
             material_specular_intensity: 1.0,
             material_specular_color: Color::new(1.0, 1.0, 1.0),
+            material_sheen: 0.0,
+            material_sheen_color: Color::new(0.0, 0.0, 0.0),
+            material_sheen_roughness: 1.0,
             material_normal_scale: Vector2::new(1.0, 1.0),
             env_rotation: Matrix4::identity(),
             material_env_intensity: 1.0,
@@ -617,6 +624,15 @@ impl UniformContext<'_> {
                     self.material_specular_color.g as f32,
                     self.material_specular_color.b as f32,
                 ],
+                UniformSource::MaterialSheen => vec![self.material_sheen as f32],
+                UniformSource::MaterialSheenColor => vec![
+                    self.material_sheen_color.r as f32,
+                    self.material_sheen_color.g as f32,
+                    self.material_sheen_color.b as f32,
+                ],
+                UniformSource::MaterialSheenRoughness => {
+                    vec![self.material_sheen_roughness as f32]
+                }
                 UniformSource::MaterialNormalScale => vec![
                     self.material_normal_scale.x as f32,
                     self.material_normal_scale.y as f32,

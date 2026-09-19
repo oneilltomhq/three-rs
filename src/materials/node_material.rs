@@ -1050,10 +1050,21 @@ fn setup_standard(
     fragment
         .push(diffuse_contribution().assign(diffuse_color().rgb().mul(metalness_node.one_minus())));
 
+    // `MeshPhysicalNodeMaterial.setupVariants()`' SHEEN block, gated on
+    // `useSheen` — `this.sheen > 0`. `MaterialNode.SHEEN` is `sheenColor.mul(
+    // sheen )` with the multiply left in the shader, and
+    // `MaterialNode.SHEEN_ROUGHNESS` clamps to `[ 0.0001, 1 ]` so `1 / alpha`
+    // in `D_Charlie` cannot divide by zero.
+    let use_sheen = material.kind == MaterialKind::Physical && material.sheen > 0.0;
+    if use_sheen {
+        fragment.push(sheen().assign(material_sheen_color().mul(material_sheen())));
+        fragment.push(sheen_roughness().assign(material_sheen_roughness().clamp(0.0001, 1.0)));
+    }
+
     fragment.push(emissive_color().assign(material_emissive_value(material)));
 
     let outgoing = if material.lights {
-        let model = Physical::start();
+        let model = Physical::start(use_sheen, fragment);
         let lights = material_lights(material, ctx);
 
         // `LightingContextNode`'s five accumulators. three.js declares each at
@@ -1099,6 +1110,8 @@ fn setup_standard(
         fragment.push(total_diffuse().assign(direct_diffuse().add(indirect_diffuse())));
         fragment.push(total_specular().assign(direct_specular().add(indirect_specular())));
         fragment.push(outgoing_light().assign(total_diffuse().add(total_specular())));
+        // `LightingModel.finish()` — the sheen lobe, added last.
+        model.finish(fragment);
         outgoing_light()
     } else {
         diffuse_color().xyz()

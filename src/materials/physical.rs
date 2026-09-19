@@ -134,6 +134,122 @@ pub fn brdf_ggx(light_direction: NodeRef, f0: NodeRef, f90: NodeRef) -> NodeRef 
     f.mul(v).mul(d)
 }
 
+/// `D_Charlie( { roughness, dotNH } )` — Estevez and Kulla 2017, "Production
+/// Friendly Microfacet Sheen BRDF", by way of Filament. A real WGSL `fn`,
+/// because three.js gives it a layout.
+fn d_charlie() -> Rc<FnDef> {
+    thread_local! { static CELL: crate::nodes::node::Lazy<Rc<FnDef>> = const { crate::nodes::node::Lazy::new() }; }
+    CELL.with(|c| {
+        c.get(|| {
+            shader_fn(
+                Some("D_Charlie"),
+                vec![("roughness", Type::F32), ("dotNH", Type::F32)],
+                Type::F32,
+                |args| {
+                    let (roughness_value, dot_nh) = (args[0].clone(), args[1].clone());
+                    let alpha = roughness_value.clone().mul(roughness_value);
+                    let inv_alpha = float(1.0).div(alpha);
+                    let cos2h = dot_nh.clone().mul(dot_nh);
+                    // `2^( -14/2 )`, so `sin2h^2 > 0` in fp16.
+                    let sin2h = max(cos2h.one_minus(), float(0.0078125));
+                    float(2.0)
+                        .add(inv_alpha.clone())
+                        .mul(sin2h.pow(inv_alpha.mul(0.5)))
+                        .div(2.0 * std::f64::consts::PI)
+                },
+            )
+        })
+    })
+}
+
+/// `V_Neubelt( { dotNV, dotNL } )` — Neubelt and Pettineo 2013, "Crafting a
+/// Next-gen Material Pipeline for The Order: 1886".
+fn v_neubelt() -> Rc<FnDef> {
+    thread_local! { static CELL: crate::nodes::node::Lazy<Rc<FnDef>> = const { crate::nodes::node::Lazy::new() }; }
+    CELL.with(|c| {
+        c.get(|| {
+            shader_fn(
+                Some("V_Neubelt"),
+                vec![("dotNV", Type::F32), ("dotNL", Type::F32)],
+                Type::F32,
+                |args| {
+                    let (dot_nv, dot_nl) = (args[0].clone(), args[1].clone());
+                    float(1.0)
+                        .div(
+                            float(4.0)
+                                .mul(dot_nl.clone().add(dot_nv.clone()).sub(dot_nl.mul(dot_nv))),
+                        )
+                        .saturate()
+                },
+            )
+        })
+    })
+}
+
+/// `BRDF_Sheen( { lightDirection } )` — `sheen * D_Charlie * V_Neubelt`.
+///
+/// No page on this ladder reaches it: `webgpu_loader_gltf_sheen` has no light
+/// in the scene, so `PhysicalLightingModel.direct()` is never called and
+/// neither `D_Charlie` nor `V_Neubelt` appears in three's own dump for it. It
+/// is written from `BRDF_Sheen.js` all the same, because `direct()`'s sheen
+/// branch is not optional in three and leaving it out would make the port's
+/// lighting model quietly different for the first sheen page that does light
+/// its model. `docs/nodes.md` §25.
+pub fn brdf_sheen(light_direction: NodeRef) -> NodeRef {
+    let half_dir = light_direction
+        .clone()
+        .add(position_view_direction())
+        .normalize();
+
+    let dot_nl = normal_view().dot(light_direction).saturate();
+    let dot_nv = normal_view().dot(position_view_direction()).saturate();
+    let dot_nh = normal_view().dot(half_dir).saturate();
+
+    let d = call(&d_charlie(), vec![sheen_roughness(), dot_nh]);
+    let v = call(&v_neubelt(), vec![dot_nv, dot_nl]);
+
+    sheen().mul(d).mul(v)
+}
+
+/// `IBLSheenBRDF( { normal, viewDir, roughness } )` — the curve-fit of the
+/// Charlie sheen BRDF integrated over the hemisphere. Three gives it no
+/// layout, so it is inlined at each of its four uses rather than emitted as a
+/// `fn`; `r2` and `rInv` are read twice each and so become temps, which is
+/// what the dump shows.
+fn ibl_sheen_brdf(normal: NodeRef, view_dir: NodeRef, roughness_value: NodeRef) -> NodeRef {
+    let dot_nv = normal.dot(view_dir).saturate();
+    let r2 = roughness_value.clone().mul(roughness_value.clone());
+    let r_inv = roughness_value.clone().add(0.1).reciprocal();
+
+    let a = float(-1.9362)
+        .add(roughness_value.clone().mul(1.0678))
+        .add(r2.clone().mul(0.4573))
+        .sub(r_inv.clone().mul(0.8469));
+    let b = float(-0.6014)
+        .add(roughness_value.mul(0.5538))
+        .sub(r2.mul(0.4670))
+        .sub(r_inv.mul(0.1255));
+
+    exp(a.mul(dot_nv).add(b)).saturate()
+}
+
+/// `IBLSheenBRDF( { normalView, positionViewDirection, sheenRoughness } )`,
+/// the argument triple every indirect use passes.
+fn sheen_albedo() -> NodeRef {
+    ibl_sheen_brdf(normal_view(), position_view_direction(), sheen_roughness())
+}
+
+/// `sheen.r.max( sheen.g ).max( sheen.b ).mul( albedo ).oneMinus()` — the
+/// energy the sheen lobe took, which the layer underneath does not get.
+fn sheen_energy_comp(albedo: NodeRef) -> NodeRef {
+    sheen()
+        .x()
+        .max(sheen().y())
+        .max(sheen().z())
+        .mul(albedo)
+        .one_minus()
+}
+
 /// `DFGLUT( { roughness, dotNV } )` — the 16×16 RG16F table, sampled with an
 /// explicit UV so no texture matrix is applied.
 fn dfg_sample(roughness_value: NodeRef, dot_nv: NodeRef) -> NodeRef {
@@ -145,21 +261,31 @@ fn dfg_sample(roughness_value: NodeRef, dot_nv: NodeRef) -> NodeRef {
 // PhysicalLightingModel
 // ---------------------------------------------------------------------------
 
-/// `new PhysicalLightingModel()` — the clearcoat / sheen / iridescence /
-/// transmission / anisotropy flags are all off for this rung's materials, so
-/// the model carries only what `start()` prepares.
+/// `new PhysicalLightingModel( clearcoat, sheen, … )` — the clearcoat /
+/// iridescence / transmission / anisotropy flags are all off for this ladder's
+/// materials; `sheen` is `MeshPhysicalNodeMaterial.useSheen`, which
+/// `webgpu_loader_gltf_sheen`'s fabric turns on.
 pub struct Physical {
     /// `this.dfg` — `toConst( 'dfg' )`.
     pub dfg: NodeRef,
     /// `this.multiScatteringCompensation`.
     pub multi_scattering_compensation: NodeRef,
+    /// `this.sheen`. Every sheen branch below is gated on it, and with it
+    /// false the emitted WGSL is what it was before sheen existed.
+    pub sheen: bool,
 }
 
 impl Physical {
     /// `PhysicalLightingModel.start()`: the DFG lookup and the direct-light
-    /// multi-scattering compensation. Emits no statement of its own — both are
-    /// `toConst`, so they materialise where they are first used.
-    pub fn start() -> Self {
+    /// multi-scattering compensation, both `toConst` so they materialise where
+    /// they are first used — plus, with sheen, the two `vec3().toVar()`
+    /// accumulators, which three declares here and the dump shows here.
+    pub fn start(sheen: bool, out: &mut Vec<NodeRef>) -> Self {
+        if sheen {
+            out.push(sheen_specular_direct().assign(vec3(0.0, 0.0, 0.0)));
+            out.push(sheen_specular_indirect().assign(vec3(0.0, 0.0, 0.0)));
+        }
+
         let dot_nv = normal_view().dot(position_view_direction()).clamp(0.0, 1.0);
         let dfg = dfg_sample(roughness(), dot_nv);
 
@@ -172,6 +298,21 @@ impl Physical {
         Self {
             dfg,
             multi_scattering_compensation,
+            sheen,
+        }
+    }
+
+    /// `PhysicalLightingModel.finish()` — the sheen lobe is added to the
+    /// outgoing light after `setupLighting()` has summed the four accumulators.
+    pub fn finish(&self, out: &mut Vec<NodeRef>) {
+        if self.sheen {
+            out.push(
+                outgoing_light().assign(
+                    outgoing_light()
+                        .add(sheen_specular_direct())
+                        .add(sheen_specular_indirect()),
+                ),
+            );
         }
     }
 
@@ -210,7 +351,37 @@ impl Physical {
     /// `PhysicalLightingModel.direct( { lightDirection, lightColor } )`.
     pub fn direct(&self, light_direction: NodeRef, light_color: NodeRef, out: &mut Vec<NodeRef>) {
         let dot_nl = normal_view().dot(light_direction.clone()).clamp(0.0, 1.0);
-        let irradiance = dot_nl.mul(light_color);
+        // `irradiance` is `.toVar()` in three; without sheen nothing assigns
+        // to it again, so the port leaves it inline there and every already
+        // green example generates exactly the WGSL it did before.
+        let irradiance = if self.sheen {
+            to_var(None, dot_nl.mul(light_color))
+        } else {
+            dot_nl.mul(light_color)
+        };
+
+        if self.sheen {
+            out.push(
+                sheen_specular_direct().assign(
+                    sheen_specular_direct()
+                        .add(irradiance.clone().mul(brdf_sheen(light_direction.clone()))),
+                ),
+            );
+
+            // The view and the light each see their own sheen albedo here;
+            // the energy taken is the larger of the two.
+            let albedo_v = sheen_albedo();
+            let albedo_l =
+                ibl_sheen_brdf(normal_view(), light_direction.clone(), sheen_roughness());
+
+            out.push(
+                irradiance.clone().assign(
+                    irradiance
+                        .clone()
+                        .mul(sheen_energy_comp(albedo_v.max(albedo_l))),
+                ),
+            );
+        }
 
         // glTF's `fresnel_mix`: light reflected by the specular interface is not
         // available to the diffuse layer.
@@ -261,6 +432,33 @@ impl Physical {
             .mul(brdf_lambert(diffuse_contribution()))
             .mul(single_scattering().add(multi_scattering()).one_minus());
 
+        let diffuse = if self.sheen {
+            let diffuse = to_var(None, diffuse);
+
+            // Not a `toVar` in three: the node is simply read twice, and the
+            // builder gives a shared node a temp of its own.
+            let albedo = sheen_albedo();
+            out.push(
+                sheen_specular_indirect().assign(
+                    sheen_specular_indirect().add(
+                        irradiance()
+                            .mul(sheen())
+                            .mul(albedo.clone())
+                            .mul(RECIPROCAL_PI),
+                    ),
+                ),
+            );
+
+            out.push(
+                diffuse
+                    .clone()
+                    .assign(diffuse.clone().mul(sheen_energy_comp(albedo))),
+            );
+            diffuse
+        } else {
+            diffuse
+        };
+
         out.push(indirect_diffuse().assign(indirect_diffuse().add(diffuse)));
     }
 
@@ -270,6 +468,19 @@ impl Physical {
     /// block contributes nothing — three.js emits it regardless, and so do we,
     /// because the zero has to reach the pixel through the same arithmetic.
     pub fn indirect_specular(&self, has_environment: bool, out: &mut Vec<NodeRef>) {
+        if self.sheen {
+            out.push(
+                sheen_specular_indirect().assign(
+                    sheen_specular_indirect().add(
+                        ibl_irradiance()
+                            .mul(sheen())
+                            .mul(sheen_albedo())
+                            .mul(RECIPROCAL_PI),
+                    ),
+                ),
+            );
+        }
+
         out.push(single_scattering_dielectric().assign(vec3(0.0, 0.0, 0.0)));
         out.push(multi_scattering_dielectric().assign(vec3(0.0, 0.0, 0.0)));
         out.push(single_scattering_metallic().assign(vec3(0.0, 0.0, 0.0)));
@@ -321,6 +532,21 @@ impl Physical {
         let diffuse = diffuse_contribution().mul(total_scattering_dielectric.one_minus());
         let indirect_diffuse_value = diffuse.mul(cosine_weighted_irradiance);
 
+        let (indirect_specular_value, indirect_diffuse_value) = if self.sheen {
+            // Both are `.toVar()` in three, so that the sheen energy
+            // compensation can multiply them in place.
+            let specular = to_var(None, indirect_specular_value);
+            let diffuse = to_var(None, indirect_diffuse_value);
+
+            let comp = sheen_energy_comp(sheen_albedo());
+            out.push(specular.clone().assign(specular.clone().mul(comp.clone())));
+            out.push(diffuse.clone().assign(diffuse.clone().mul(comp)));
+
+            (specular, diffuse)
+        } else {
+            (indirect_specular_value, indirect_diffuse_value)
+        };
+
         out.push(indirect_specular().assign(indirect_specular().add(indirect_specular_value)));
         out.push(indirect_diffuse().assign(indirect_diffuse().add(indirect_diffuse_value)));
     }
@@ -335,6 +561,13 @@ impl Physical {
     pub fn ambient_occlusion(&self, has_ao_node: bool, out: &mut Vec<NodeRef>) {
         if !has_ao_node {
             out.push(ambient_occlusion().assign(float(1.0)));
+        }
+
+        if self.sheen {
+            out.push(
+                sheen_specular_indirect()
+                    .assign(sheen_specular_indirect().mul(ambient_occlusion())),
+            );
         }
 
         out.push(indirect_diffuse().assign(indirect_diffuse().mul(ambient_occlusion())));
