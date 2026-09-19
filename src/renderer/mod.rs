@@ -1874,7 +1874,7 @@ impl Renderer {
     ///
     /// Returns the buffer's raw f32 components, `element_ty.components()` per
     /// element. A `vec3` array is **not** tightly packed — see
-    /// [`storage_stride`] — and is not read back this way.
+    /// `storage_stride` — and is not read back this way.
     pub fn read_storage_buffer(&mut self, array: &StorageArray) -> Result<Vec<f32>, Error> {
         let components = array.element_ty().components();
         assert_eq!(
