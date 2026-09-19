@@ -232,6 +232,67 @@ impl Texture {
         texture
     }
 
+    /// `new DataTexture( new Uint16Array( data ), width, height, RGBAFormat,
+    /// HalfFloatType )` — what `DataTextureLoader` builds from
+    /// [`HdrLoader::parse`](crate::loaders::HdrLoader::parse)'s half-float
+    /// result.
+    ///
+    /// `DataTexture`'s constructor differs from `Texture`'s in three places
+    /// (`DataTexture.js`): `flipY = false`, `generateMipmaps = false` and
+    /// `minFilter = magFilter = NearestFilter`. `HDRLoader`'s `texData` then
+    /// sets both filters back to `LinearFilter` and `flipY` to true, which
+    /// [`HdrLoader::load`](crate::loaders::HdrLoader::load) does; the cube
+    /// loader leaves `flipY` at the `DataTexture` default. The colour space
+    /// stays `NoColorSpace` — `LinearSRGBColorSpace` is the working space and
+    /// carries no transfer function, so `rgba16float` is the right format and
+    /// nothing is applied on sample.
+    ///
+    /// `data` is one binary16 bit pattern per channel, four per texel, which is
+    /// the `Uint16Array` upstream hands `write_texture` unchanged.
+    pub fn data_rgba16float(width: u32, height: u32, data: &[u16]) -> Self {
+        assert_eq!(
+            data.len() as u32,
+            width * height * 4,
+            "three-rs: an RGBA HalfFloatType DataTexture holds four halves per texel"
+        );
+        Self::data_float(
+            width,
+            height,
+            wgpu::TextureFormat::Rgba16Float,
+            bytemuck::cast_slice(data),
+        )
+    }
+
+    /// `new DataTexture( new Float32Array( data ), width, height, RGBAFormat,
+    /// FloatType )` — the `FloatType` half of the same loader.
+    pub fn data_rgba32float(width: u32, height: u32, data: &[f32]) -> Self {
+        assert_eq!(
+            data.len() as u32,
+            width * height * 4,
+            "three-rs: an RGBA FloatType DataTexture holds four floats per texel"
+        );
+        Self::data_float(
+            width,
+            height,
+            wgpu::TextureFormat::Rgba32Float,
+            bytemuck::cast_slice(data),
+        )
+    }
+
+    /// The `DataTexture` defaults both float constructors share.
+    fn data_float(width: u32, height: u32, format: wgpu::TextureFormat, bytes: &[u8]) -> Self {
+        let texture = Self::new(width, height, Some(bytes.to_vec()));
+        {
+            let mut inner = texture.0.borrow_mut();
+            inner.flip_y = false;
+            inner.generate_mipmaps = false;
+            inner.mag_filter = TextureFilter::Linear;
+            inner.min_filter = MinFilter::Linear;
+            inner.format = format;
+        }
+        texture
+    }
+
     pub fn id(&self) -> usize {
         self.1.get()
     }
