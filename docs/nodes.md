@@ -607,6 +607,22 @@ differences, each verified to be pixel-neutral.
   uniform buffer at binding 0 and the three data textures at 1–3; the port
   emits the textures first and the buffer last. Same class as "Instance buffer
   binding indices": the layout and the shader come from the same descriptors.
+* **The indirect-diffuse block is emitted before the environment's (§25).**
+  `PhysicalLightingModel.indirectDiffuse()` reads `irradiance`, and three runs
+  it after `EnvironmentNode` has written `radiance` / `iblIrradiance`; this port
+  pushes it while building `indirectDiffuse`, which is before. Nothing between
+  the two points writes `irradiance` — on a lit page the light loop has already
+  run, and on `webgpu_loader_gltf_sheen` there are no lights at all — so the
+  statements are the same statements in a different order, with the same
+  values. It is visible in the dump as the whole `singleScattering` /
+  `multiScattering` pair (and, with sheen, the first `IBLSheenBRDF` term)
+  sitting above `radiance = vec3<f32>( 0.0, 0.0, 0.0 )` instead of below it.
+* **`IBLSheenBRDF` is inlined three times (§25).** Three gives it no
+  `setLayout`, so it is not a `fn`; each of its three readers — the `irradiance`
+  sheen term, the `iblIrradiance` one and the energy compensation — rebuilds
+  the whole fit. The port does the same, because the three calls are three
+  separate `NodeRef`s and the builder promotes by `Rc` identity. Identical
+  arithmetic, identical text apart from the temp numbers.
 
 ### `LineBasicNodeMaterial` adds no divergence class
 
@@ -2200,6 +2216,170 @@ the `// codes` helpers are emitted in, and the splat form
 `vec3<f32>( 0.0, 0.0, 0.0 )` where three prints `vec3<f32>( 0.0 )` inside
 `acesFilmicToneMapping`. The scene program is §23's `Material_MR`, unchanged.
 
+## 25. `webgpu_loader_gltf_sheen` — the sheen lobe, and a glTF asset's uv transforms
+
+§23's environment with SheenChair in front of it. The page adds **no lights**
+(its one `DirectionalLight` is commented out upstream), so every term in the
+frame is indirect and the sheen shows as a rim rather than a highlight. Three
+things are new, and they are independent of each other: the sheen half of
+`PhysicalLightingModel`, `KHR_texture_transform`, and a second uv set.
+
+### 25.1 `useSheen`, and the two properties it turns on
+
+`MeshPhysicalNodeMaterial` sets `useSheen = this.sheen > 0`, so *the float*
+decides whether the lobe is built at all. The material carries both halves of
+three's shape — `Material::sheen` (a `f64`, 0 by default) and
+`Material::sheen_color` (a `Color`, black) — and `setup_standard()` gates on the
+first:
+
+```rust
+let use_sheen = material.kind == MaterialKind::Physical && material.sheen > 0.0;
+if use_sheen {
+    fragment.push(sheen().assign(material_sheen_color().mul(material_sheen())));
+    fragment.push(sheen_roughness().assign(material_sheen_roughness().clamp(0.0001, 1.0)));
+}
+```
+
+which is `MaterialNode.SHEEN` (`sheenColor.mul( sheen )`) and
+`MaterialNode.SHEEN_ROUGHNESS` (`sheenRoughness.clamp( 0.0001, 1.0 )`), in
+three's order, between `DiffuseContribution` and `EmissiveColor`. The multiply
+stays in the shader rather than being folded into the uniform, because the GUI
+slider the page adds writes `material.sheen` and nothing else — three's
+`sheenColor` uniform keeps the asset's value.
+
+The lower clamp is not cosmetic: `D_Charlie`'s `invAlpha` is `1 / r²`, so a
+sheen roughness of 0 is a division by zero.
+
+### 25.2 The lobe: `D_Charlie`, `V_Neubelt`, `IBLSheenBRDF`
+
+`src/materials/physical.rs` ports all four functions from `BRDF_Sheen.js` /
+`PhysicalLightingModel.js`. The split between what becomes a WGSL `fn` and what
+is inlined is three's, and it is decided by `setLayout`:
+
+| three | here | shape |
+| --- | --- | --- |
+| `D_Charlie` (`setLayout`) | `d_charlie()` | a real `fn D_Charlie( roughness : f32, dotNH : f32 ) -> f32` |
+| `V_Neubelt` (`setLayout`) | `v_neubelt()` | a real `fn V_Neubelt( dotNV : f32, dotNL : f32 ) -> f32` |
+| `BRDF_Sheen` (plain `Fn`) | `brdf_sheen()` | inlined — `sheen * D * V` |
+| `IBLSheenBRDF` (plain `Fn`) | `ibl_sheen_brdf()` | inlined, three times |
+
+`IBLSheenBRDF` is the analytic fit of the Charlie BRDF integrated over the
+hemisphere, and its three readers — the `irradiance` sheen term, the
+`iblIrradiance` one and the energy compensation — each rebuild it in full. The
+port produces the same three copies for a different reason (three separate
+`NodeRef`s, and the builder caches by `Rc` identity); §8 records it.
+
+`brdf_sheen` — the *direct* lobe — is unreachable on this page, because there
+are no lights. It is ported anyway, and the fact that no dump pins it is stated
+in its doc comment: the first sheen page that does light something would
+otherwise find a lighting model quietly missing half of itself.
+
+### 25.3 Where the sheen terms sit in the flow
+
+`Physical` gained a `sheen: bool` and five insertion points, one per hook in
+three's model. With `sheen` false every one of them is skipped and the emitted
+WGSL is byte-identical to what it was before this rung — which is how the nine
+green physical-material examples stayed at their exact pixel counts.
+
+| three's hook | what the port pushes |
+| --- | --- |
+| `start()` | `sheenSpecularDirect = vec3( 0 ); sheenSpecularIndirect = vec3( 0 );` |
+| `direct()` | `sheenSpecularDirect += irradiance * BRDF_Sheen(…)`, then `irradiance *= sheenEnergyComp( max( albedoV, albedoL ) )` |
+| `indirectDiffuse()` | `sheenSpecularIndirect += irradiance * Sheen * albedo / π`, then `diffuse *= sheenEnergyComp( albedo )` |
+| `indirectSpecular()` | `sheenSpecularIndirect += iblIrradiance * Sheen * albedo / π` **first**, then one shared `sheenEnergyComp` multiplying *both* accumulators |
+| `ambientOcclusion()` | `sheenSpecularIndirect *= ambientOcclusion`, before `indirectDiffuse` |
+| `finish()` | `outgoingLight = ( outgoingLight + sheenSpecularDirect ) + sheenSpecularIndirect` |
+
+Two orderings in that table are load-bearing and were taken from the dump, not
+from reading the JS:
+
+* **`indirectSpecular()` pushes the `iblIrradiance` sheen term before the
+  multiscattering block**, because three's `indirectSpecular()` starts with it.
+  Push it after and `sheenSpecularIndirect` is still right, but every
+  `nodeVarN` moves and the reader loses the correspondence.
+* **The energy compensation there is one value, not two.** Three builds
+  `sheenAlbedo` and `sheenEnergyComp` once and calls `mulAssign` on
+  `indirectSpecular` and then `indirectDiffuse`; both must be `toVar`s for that
+  to be expressible, so the port wraps both in `to_var()` in this branch only.
+
+`direct()` has the mirror of that last point: `irradiance` is a `.toVar()` in
+three unconditionally, and the port promotes it **only when sheen is on**, so
+that the lit examples already on the ladder keep their inlined form.
+
+### 25.4 `KHR_texture_transform`, and why one case needs the matrix written
+
+Every map in SheenChair carries a transform: the fabric's base colour is tiled
+seven times (`offset ( -3, 3 ), scale ( 7, 7 )`), its normal map twice, and the
+wood's colour and normal maps are also **rotated**.
+
+The port already emits a per-texture uv matrix — `TextureNode.getTransformedUV`
+is `matrixUniform * vec3( uv, 1 )` whenever the node has no explicit uvNode —
+so offset and repeat alone need nothing new in the node system:
+`Texture::set_offset` / `set_repeat` feed the same uniform three's do.
+
+The rotation does not, and the reason is a composition order:
+
+* glTF composes the transform **`T * R * S`** (`KHR_texture_transform`).
+* three.js' `Texture.updateMatrix()` composes **`T * S * R`** about `center`.
+
+They agree only when the rotation or the scale is the identity. Three's own
+`GLTFTextureTransformExtension` handles it by writing `texture.matrix` directly
+and setting `matrixAutoUpdate = false`; `assign_texture()` does the same through
+the new `Texture::set_matrix`, and nothing in the port recomputes a texture
+matrix after load, so the flag has no counterpart here — the written matrix is
+simply the last word. The offset and repeat fields are still set, so anything
+that reads them back (the debug view, a future `updateMatrix`) sees the asset's
+own numbers.
+
+`assign_texture()` also does three's cloning rule, which is easy to get wrong:
+a glTF *texture* is shared between materials, but a `texCoord` or a transform
+belongs to the *reference*. So the loader clones the `Texture` when the
+reference asks for either and leaves the cached original alone — the same
+reason three's extension calls `texture.clone()`.
+
+### 25.5 `TEXCOORD_1`
+
+All four occlusion maps are `texCoord: 1`. `Texture` gained a `channel`
+(`Texture.channel` in three, 0 or 1 here — the assert names the limit), and
+`tsl::texture()` resolves its default uv through it, which is
+`TextureNode.getDefaultUV()`'s `uv( this.value.channel )`. The attribute side is
+`tsl::uv1()`, an `attribute( 'uv1', vec2 )` through a varying, and it appears in
+the fabric's attribute list exactly where three's vertex dump has it:
+`uv`, `uv1`, `normal`, `position`.
+
+### 25.6 Promoting a glTF material to physical
+
+`build_material()` now produces a `MeshPhysicalNodeMaterial` when the material
+carries `KHR_materials_ior`, `KHR_materials_specular` or `KHR_materials_sheen`,
+and a standard one otherwise. That is what three's per-extension
+`getMaterialType()` comes to, and the dump pins it: only the fabric is a
+physical material here. Its `SpecularColor` comes out of the IOR and the
+specular factor —
+
+```wgsl
+	SpecularColor = ( min( ( vec3<f32>( ( nodeVar3 * nodeVar3 ) ) * object.nodeUniform12 ), vec3<f32>( 1.0, 1.0, 1.0 ) ) * vec3<f32>( object.nodeUniform13 ) );
+	SpecularF90 = mix( object.nodeUniform13, 1.0, Metalness );
+```
+
+— where the label, the wood and the metal compile the standard material's
+constant, `SpecularColor = vec3<f32>( 0.04, 0.04, 0.04 )`, with `SpecularF90 =
+1.0`. Promote all four and three of them change colour.
+
+### 25.7 Divergences
+
+Nothing new beyond the two bullets §8 gained for this rung (the indirect-diffuse
+block emitted above the environment's, and `IBLSheenBRDF` inlined three times).
+Everything else between the port's fabric fragment and three's
+`m10_fragment_fragment_fabric_Mystere_Mango_Velvet.wgsl` is in classes §8
+already lists: generated `nodeVarN` numbering, the hoisted accumulator zeros,
+"Named lighting temps" (three's `dfg`, `multiScatteringCompensation`,
+`singleScatteringDielectric` and friends are `let`s there and inlined or
+numbered here), and property-assignment temps. The arithmetic of every sheen
+statement — the `-1.9362 / 1.0678 / 0.4573 / 0.8469 / -0.6014 / 0.5538 / 0.467
+/ 0.1255` fit, the `1 / π`, the `max( max( Sheen.x, Sheen.y ), Sheen.z )` — is
+term for term three's.
+
+
 [`Scene::environment`]: ../src/objects/scene.rs
 [`MrtValue::Deferred`]: ../src/nodes/mrt.rs
 [`tsl::perspective_depth_to_view_z`]: ../src/nodes/tsl.rs
@@ -2210,3 +2390,7 @@ the `// codes` helpers are emitted in, and the splat form
 [`PassNode::depth_texture`]: ../src/renderer/pass.rs
 [`TextureKind::DepthMultisampled2D`]: ../src/nodes/wgsl.rs
 [`materials::tone_mapping_node`]: ../src/materials/node_material.rs
+[`Texture::set_matrix`]: ../src/textures/texture.rs
+[`Texture::set_channel`]: ../src/textures/texture.rs
+[`tsl::uv1`]: ../src/nodes/tsl.rs
+[`materials::physical::brdf_sheen`]: ../src/materials/physical.rs

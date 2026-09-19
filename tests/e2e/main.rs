@@ -191,6 +191,10 @@ mod webgpu_mrt;
 #[allow(dead_code)]
 mod webgpu_loader_gltf;
 
+#[path = "../../examples/webgpu_loader_gltf_sheen.rs"]
+#[allow(dead_code)]
+mod webgpu_loader_gltf_sheen;
+
 #[path = "../../examples/webgpu_custom_fog_background.rs"]
 #[allow(dead_code)]
 mod webgpu_custom_fog_background;
@@ -1369,6 +1373,65 @@ fn webgpu_loader_gltf() {
     });
 }
 
+/// `KHR_materials_sheen`: the sheen half of `PhysicalLightingModel`, lit by
+/// nothing but the environment.
+///
+/// SheenChair's fabric is the ladder's first material with `sheen > 0`, so
+/// this is the gate on `BRDF_Sheen`'s indirect half — `IBLSheenBRDF`'s
+/// analytic fit applied to both `irradiance` and `iblIrradiance`, and the
+/// energy compensation that takes what the sheen lobe reflected away from the
+/// diffuse and specular terms underneath it. The page has no lights (its one
+/// `DirectionalLight` is commented out upstream), so a sheen term that leaked
+/// into the direct path would not show and a missing energy compensation
+/// would brighten the whole chair.
+///
+/// It is also the gate on `KHR_texture_transform` (every map in the asset has
+/// one, two of them rotated, which glTF composes `T * R * S` where three.js'
+/// `Texture.updateMatrix` composes `T * S * R`) and on `Texture.channel` —
+/// the occlusion maps are `TEXCOORD_1`, so this is the first fragment shader
+/// that reads two uv sets. See `docs/nodes.md` §25.
+#[test]
+fn webgpu_loader_gltf_sheen() {
+    let name = "webgpu_loader_gltf_sheen";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_loader_gltf_sheen::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_loader_gltf_sheen::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_loader_gltf_sheen::animate, |app| {
+        app.renderer.device()
+    });
+}
+
 /// The gate on `pass.getViewZNode()`: the depth attachment of a **4×MSAA**
 /// pass, read back with `textureLoad( …, 0 )` through a
 /// `texture_depth_multisampled_2d` binding and converted with
@@ -2498,6 +2561,7 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_compute_points);
     rung!(webgpu_lines_fat);
     rung!(webgpu_loader_gltf);
+    rung!(webgpu_loader_gltf_sheen);
     rung!(webgpu_mrt);
     rung!(webgpu_custom_fog_background);
 }

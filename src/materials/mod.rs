@@ -274,7 +274,17 @@ pub struct MeshBasicNodeMaterial {
     /// shape when `MaterialKind::Physical` arrives.
     pub clearcoat: f64,
     pub clearcoat_roughness: f64,
-    pub sheen: Color,
+    /// `MeshPhysicalMaterial.sheen` / `.sheenColor` / `.sheenRoughness` —
+    /// `KHR_materials_sheen`. `sheen` is the intensity and `sheen_color` the
+    /// tint; `MaterialNode.SHEEN` is `sheenColor.mul( sheen )` and the shader
+    /// carries both as separate uniforms, which is why the multiply is in the
+    /// WGSL and not here.
+    ///
+    /// `sheen > 0` is `MeshPhysicalNodeMaterial.useSheen`: it is what turns the
+    /// whole sheen half of `PhysicalLightingModel` on, so a sheen colour with a
+    /// zero intensity generates exactly the shader it did before.
+    pub sheen: f64,
+    pub sheen_color: Color,
     pub sheen_roughness: f64,
     pub ior: f64,
     pub specular_intensity: f64,
@@ -403,7 +413,8 @@ impl Default for MeshBasicNodeMaterial {
             // `MeshPhysicalMaterial` defaults.
             clearcoat: 0.0,
             clearcoat_roughness: 0.0,
-            sheen: Color::new(0.0, 0.0, 0.0),
+            sheen: 0.0,
+            sheen_color: Color::new(0.0, 0.0, 0.0),
             sheen_roughness: 1.0,
             ior: 1.5,
             specular_intensity: 1.0,

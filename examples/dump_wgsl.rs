@@ -1764,6 +1764,45 @@ fn main() {
         },
     );
 
+    // rung `webgpu_loader_gltf_sheen`: `SheenChair_fabric` — against
+    // `dump-gltf_sheen/m10`. Three things meet here and nowhere else on the
+    // ladder: `Sheen` / `SheenRoughness` and the sheen half of
+    // `PhysicalLightingModel`, an `aoMap` on `uv1`, and a `KHR_texture_transform`
+    // uv matrix that is not the identity.
+    //
+    // The chair's other three materials are ordinary `MeshStandardMaterial`s —
+    // `GLTFMaterialsSheenExtension.getMaterialType()` promotes only the two
+    // fabrics — and `loader_gltf_helmet` above already covers that shape.
+    let sheen_map = || {
+        let map = Texture::new(4, 4, Some(vec![0; 4 * 4 * 4]));
+        map.set_offset(-3.0, 3.0);
+        map.set_repeat(7.0, 7.0);
+        map
+    };
+    let mut fabric = MeshBasicNodeMaterial::physical(Color::new(0.883, 0.035, 0.0), 0.8, 0.0);
+    fabric.name = "fabric Mystere Mango Velvet";
+    fabric.map = Some(sheen_map());
+    // `occlusionTexture.texCoord = 1`: the one `uv1` read on the ladder.
+    let ao = map();
+    ao.set_channel(1);
+    fabric.ao_map = Some(ao);
+    let normal = map();
+    normal.set_offset(-0.5, 0.5);
+    normal.set_repeat(2.0, 2.0);
+    fabric.normal_map = Some(normal);
+    fabric.normal_scale = three_rs::math::Vector2::new(0.6, -0.6);
+    fabric.sheen = 1.0;
+    fabric.sheen_color = Color::new(1.0, 0.329, 0.1);
+    fabric.sheen_roughness = 0.8;
+    show(
+        "loader_gltf_sheen_fabric",
+        &fabric,
+        SetupContext {
+            environment: Some(environment.handle()),
+            ..SetupContext::default()
+        },
+    );
+
     // rung `webgpu_instance_uniform`: twelve teapots, one material, one
     // per-object `vec3` uniform — against `dump-instance_uniform/m0{1,2}`.
     // The grid's `LineBasicNodeMaterial` is `materials_grid` above (the same

@@ -157,14 +157,14 @@ pub struct GltfMaterial {
     /// `pbrMetallicRoughness.baseColorFactor`, defaulting to `[1,1,1,1]`.
     pub base_color_factor: [f64; 4],
     /// `pbrMetallicRoughness.baseColorTexture.index`.
-    pub base_color_texture: Option<usize>,
+    pub base_color_texture: Option<GltfTextureRef>,
     pub metallic_factor: f64,
     pub roughness_factor: f64,
-    pub metallic_roughness_texture: Option<usize>,
-    pub normal_texture: Option<usize>,
+    pub metallic_roughness_texture: Option<GltfTextureRef>,
+    pub normal_texture: Option<GltfTextureRef>,
     pub normal_scale: f64,
-    pub occlusion_texture: Option<usize>,
-    pub emissive_texture: Option<usize>,
+    pub occlusion_texture: Option<GltfTextureRef>,
+    pub emissive_texture: Option<GltfTextureRef>,
     pub emissive_factor: [f64; 3],
     /// `'OPAQUE'` / `'MASK'` / `'BLEND'`.
     pub alpha_mode: String,
@@ -181,8 +181,84 @@ pub struct GltfMaterial {
     pub specular_factor: Option<f64>,
     /// `KHR_materials_specular.specularColorFactor` (default `[1,1,1]`).
     pub specular_color_factor: [f64; 3],
-    /// `KHR_materials_specular.specularColorTexture.index`.
-    pub specular_color_texture: Option<usize>,
+    /// `KHR_materials_specular.specularColorTexture`.
+    pub specular_color_texture: Option<GltfTextureRef>,
+    /// `KHR_materials_sheen.sheenColorFactor` and `.sheenRoughnessFactor`.
+    /// `Some` is the extension being present at all, which is what
+    /// `GLTFMaterialsSheenExtension.getMaterialType()` promotes the material to
+    /// a `MeshPhysicalMaterial` for — and what sets `sheen = 1`, since glTF has
+    /// no intensity of its own.
+    pub sheen: Option<GltfSheen>,
+}
+
+/// `KHR_materials_sheen`'s two factors, with the extension's own defaults
+/// (`[ 0, 0, 0 ]` and `0`) already applied.
+#[derive(Clone, Copy, Debug)]
+pub struct GltfSheen {
+    pub color_factor: [f64; 3],
+    pub roughness_factor: f64,
+}
+
+/// One glTF *texture reference* — a `{ index, texCoord, extensions }` object on
+/// a material, as distinct from the texture it points at. Two materials can
+/// point at one texture through different references and get different
+/// `Texture`s out, which is exactly what `KHR_texture_transform` is for.
+#[derive(Clone, Debug)]
+pub struct GltfTextureRef {
+    pub index: usize,
+    /// `textureDef.texCoord` — which `TEXCOORD_n` set to sample along.
+    pub tex_coord: Option<usize>,
+    /// `textureDef.extensions.KHR_texture_transform`.
+    pub transform: Option<GltfTextureTransform>,
+}
+
+/// `KHR_texture_transform`. Every field is optional in the spec and three
+/// branches on each being `undefined`, so they stay `Option` here: an absent
+/// field is not the same as its default once
+/// `GLTFTextureTransformExtension.extendTexture()`'s no-op test is involved.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct GltfTextureTransform {
+    pub offset: Option<[f64; 2]>,
+    pub rotation: Option<f64>,
+    pub scale: Option<[f64; 2]>,
+    pub tex_coord: Option<usize>,
+}
+
+impl GltfTextureRef {
+    /// A `{ index, texCoord, extensions }` object, or `None` when the material
+    /// has no such reference.
+    fn parse(def: Option<&Value>) -> Option<Self> {
+        let def = def?;
+        let index = def.get("index").and_then(Value::as_u64)? as usize;
+        let transform =
+            def.pointer("/extensions/KHR_texture_transform")
+                .map(|t| GltfTextureTransform {
+                    offset: pair(t.get("offset")),
+                    rotation: t.get("rotation").and_then(Value::as_f64),
+                    scale: pair(t.get("scale")),
+                    tex_coord: t
+                        .get("texCoord")
+                        .and_then(Value::as_u64)
+                        .map(|v| v as usize),
+                });
+        Some(Self {
+            index,
+            tex_coord: def
+                .get("texCoord")
+                .and_then(Value::as_u64)
+                .map(|v| v as usize),
+            transform,
+        })
+    }
+}
+
+/// A two-element JSON number array.
+fn pair(value: Option<&Value>) -> Option<[f64; 2]> {
+    let array = value?.as_array()?;
+    Some([
+        array.first().and_then(Value::as_f64)?,
+        array.get(1).and_then(Value::as_f64)?,
+    ])
 }
 
 /// `assignFinalMaterial`'s cache key —
@@ -1023,10 +1099,9 @@ impl GLTFLoader {
                     .unwrap_or("")
                     .to_string(),
                 base_color_factor,
-                base_color_texture: pbr
-                    .and_then(|pbr| pbr.pointer("/baseColorTexture/index"))
-                    .and_then(Value::as_u64)
-                    .map(|i| i as usize),
+                base_color_texture: GltfTextureRef::parse(
+                    pbr.and_then(|pbr| pbr.get("baseColorTexture")),
+                ),
                 metallic_factor: pbr
                     .and_then(|pbr| pbr.get("metallicFactor"))
                     .and_then(Value::as_f64)
@@ -1035,26 +1110,16 @@ impl GLTFLoader {
                     .and_then(|pbr| pbr.get("roughnessFactor"))
                     .and_then(Value::as_f64)
                     .unwrap_or(1.0),
-                metallic_roughness_texture: pbr
-                    .and_then(|pbr| pbr.pointer("/metallicRoughnessTexture/index"))
-                    .and_then(Value::as_u64)
-                    .map(|i| i as usize),
-                normal_texture: material_def
-                    .pointer("/normalTexture/index")
-                    .and_then(Value::as_u64)
-                    .map(|i| i as usize),
+                metallic_roughness_texture: GltfTextureRef::parse(
+                    pbr.and_then(|pbr| pbr.get("metallicRoughnessTexture")),
+                ),
+                normal_texture: GltfTextureRef::parse(material_def.get("normalTexture")),
                 normal_scale: material_def
                     .pointer("/normalTexture/scale")
                     .and_then(Value::as_f64)
                     .unwrap_or(1.0),
-                occlusion_texture: material_def
-                    .pointer("/occlusionTexture/index")
-                    .and_then(Value::as_u64)
-                    .map(|i| i as usize),
-                emissive_texture: material_def
-                    .pointer("/emissiveTexture/index")
-                    .and_then(Value::as_u64)
-                    .map(|i| i as usize),
+                occlusion_texture: GltfTextureRef::parse(material_def.get("occlusionTexture")),
+                emissive_texture: GltfTextureRef::parse(material_def.get("emissiveTexture")),
                 emissive_factor,
                 alpha_mode: material_def
                     .get("alphaMode")
@@ -1100,10 +1165,33 @@ impl GLTFLoader {
                         out
                     })
                     .unwrap_or([1.0; 3]),
-                specular_color_texture: material_def
-                    .pointer("/extensions/KHR_materials_specular/specularColorTexture/index")
-                    .and_then(Value::as_u64)
-                    .map(|i| i as usize),
+                specular_color_texture: GltfTextureRef::parse(
+                    material_def.pointer("/extensions/KHR_materials_specular/specularColorTexture"),
+                ),
+                // `GLTFMaterialsSheenExtension.extendMaterialParams`, which
+                // starts from `sheenColor = black`, `sheenRoughness = 0` and
+                // `sheen = 1` before reading the two factors.
+                sheen: material_def
+                    .pointer("/extensions/KHR_materials_sheen")
+                    .map(|sheen| GltfSheen {
+                        color_factor: sheen
+                            .get("sheenColorFactor")
+                            .and_then(Value::as_array)
+                            .map(|v| {
+                                let mut out = [0.0; 3];
+                                for (i, slot) in out.iter_mut().enumerate() {
+                                    if let Some(value) = v.get(i).and_then(Value::as_f64) {
+                                        *slot = value;
+                                    }
+                                }
+                                out
+                            })
+                            .unwrap_or([0.0; 3]),
+                        roughness_factor: sheen
+                            .get("sheenRoughnessFactor")
+                            .and_then(Value::as_f64)
+                            .unwrap_or(0.0),
+                    }),
             });
         }
 
@@ -1229,6 +1317,91 @@ impl GLTFLoader {
         Ok(Some(texture))
     }
 
+    /// `GLTFParser.assignTexture` — the texture a material *reference* names,
+    /// which is not always the texture the reference's `index` names.
+    ///
+    /// Three clones the `Texture` twice over: once when `textureDef.texCoord`
+    /// is past 0, and again in
+    /// `GLTFTextureTransformExtension.extendTexture()` when the transform is
+    /// not a no-op against what the texture already has (mrdoob/three.js#21819
+    /// is why the no-op test exists at all — cloning unconditionally broke
+    /// texture sharing). The clone is what lets two materials sample one image
+    /// through two different uv transforms, which `SheenChair.glb` does: its
+    /// occlusion map is `texCoord: 1` on every material, and its fabric samples
+    /// the base colour at `offset ( -3, 3 ) scale ( 7, 7 )`.
+    fn assign_texture(
+        &self,
+        cache: &mut HashMap<usize, Texture>,
+        textures: &[GltfTexture],
+        images: &[GltfImage],
+        map_def: &GltfTextureRef,
+        color_space: ColorSpace,
+    ) -> Result<Option<Texture>, Error> {
+        let Some(mut texture) = self.load_texture(cache, textures, images, map_def.index)? else {
+            return Ok(None);
+        };
+
+        if let Some(tex_coord) = map_def.tex_coord.filter(|&n| n > 0) {
+            texture = texture.clone_texture();
+            texture.set_channel(tex_coord);
+        }
+
+        if let Some(transform) = &map_def.transform {
+            let no_op = transform.tex_coord.is_none_or(|n| n == texture.channel())
+                && transform.offset.is_none()
+                && transform.rotation.is_none()
+                && transform.scale.is_none();
+
+            if !no_op {
+                texture = texture.clone_texture();
+
+                if let Some(tex_coord) = transform.tex_coord {
+                    texture.set_channel(tex_coord);
+                }
+                if let Some([x, y]) = transform.offset {
+                    texture.set_offset(x, y);
+                }
+                if let Some(rotation) = transform.rotation {
+                    texture.set_rotation(rotation);
+                }
+                if let Some([x, y]) = transform.scale {
+                    texture.set_repeat(x, y);
+                }
+
+                if let Some(rotation) = transform.rotation {
+                    // glTF composes the uv transform as `T * R * S` and three.js
+                    // as `T * S * R`, so a rotated transform cannot go through
+                    // `updateMatrix()`. Three writes the matrix itself and sets
+                    // `matrixAutoUpdate = false`; here the matrix is simply the
+                    // last write, and nothing recomputes it afterwards
+                    // (`Texture::set_matrix`).
+                    let (c, sin) = (rotation.cos(), rotation.sin());
+                    let repeat = transform.scale.unwrap_or([1.0, 1.0]);
+                    let offset = transform.offset.unwrap_or([0.0, 0.0]);
+                    let mut matrix = crate::math::Matrix3::identity();
+                    matrix.set(
+                        repeat[0] * c,
+                        repeat[1] * sin,
+                        offset[0],
+                        -repeat[0] * sin,
+                        repeat[1] * c,
+                        offset[1],
+                        0.0,
+                        0.0,
+                        1.0,
+                    );
+                    texture.set_matrix(matrix);
+                }
+            }
+        }
+
+        if color_space == ColorSpace::SRGB {
+            texture.set_color_space(color_space);
+        }
+
+        Ok(Some(texture))
+    }
+
     /// `GLTFParser.assignFinalMaterial`: the glTF material, then the variant
     /// clone the geometry asks for, out of a cache keyed exactly as three's
     /// `'ClonedMaterial:<uuid>:derivative-tangents:vertex-colors:flat-shading:'`
@@ -1310,7 +1483,10 @@ impl GLTFLoader {
 
         // `materialParams.color.setRGB( ..., LinearSRGBColorSpace )` — the
         // factor is already linear, so no transfer is applied.
-        let mut out = if material.ior.is_some() || material.specular_factor.is_some() {
+        let mut out = if material.ior.is_some()
+            || material.specular_factor.is_some()
+            || material.sheen.is_some()
+        {
             MeshBasicNodeMaterial::physical(
                 Color::new(r, g, b),
                 material.roughness_factor,
@@ -1356,30 +1532,24 @@ impl GLTFLoader {
         let [er, eg, eb] = material.emissive_factor;
         out.emissive = Color::new(er, eg, eb);
 
-        if let Some(index) = material.base_color_texture {
-            let map = self.load_texture(cache, textures, images, index)?;
-            if let Some(map) = &map {
-                map.set_color_space(ColorSpace::SRGB);
-            }
-            out.map = map;
+        if let Some(map_def) = &material.base_color_texture {
+            out.map = self.assign_texture(cache, textures, images, map_def, ColorSpace::SRGB)?;
         }
 
         // `metalnessMap` and `roughnessMap` are the same glTF texture: B is
         // metalness, G is roughness, and the material reads the channels.
-        if let Some(index) = material.metallic_roughness_texture {
-            let map = self.load_texture(cache, textures, images, index)?;
+        if let Some(map_def) = &material.metallic_roughness_texture {
+            let map =
+                self.assign_texture(cache, textures, images, map_def, ColorSpace::NoColorSpace)?;
             out.metalness_map = map.clone();
             out.roughness_map = map;
         }
 
         // `emissiveTexture` — an sRGB colour map, multiplied into
         // `emissive * emissiveIntensity` by `MaterialNode.EMISSIVE`.
-        if let Some(index) = material.emissive_texture {
-            let map = self.load_texture(cache, textures, images, index)?;
-            if let Some(map) = &map {
-                map.set_color_space(ColorSpace::SRGB);
-            }
-            out.emissive_map = map;
+        if let Some(map_def) = &material.emissive_texture {
+            out.emissive_map =
+                self.assign_texture(cache, textures, images, map_def, ColorSpace::SRGB)?;
         }
 
         // `occlusionTexture` → `aoMap`. `materialParams.aoMapIntensity =
@@ -1387,15 +1557,18 @@ impl GLTFLoader {
         // to 1 and DamagedHelmet leaves it there; `aoMapIntensity` is a
         // material field either way.
         //
-        // `aoMap` reads `uv1` in three and `uv` here, because the loader has no
-        // `TEXCOORD_1` support yet (see the GLTFLOADER scout note, item 6).
-        // Every asset on this ladder has only `TEXCOORD_0`, so the two agree.
-        if let Some(index) = material.occlusion_texture {
-            out.ao_map = self.load_texture(cache, textures, images, index)?;
+        // `occlusionTexture.texCoord` is 1 on every `SheenChair.glb` material,
+        // so the `aoMap` here really is sampled along `uv1` —
+        // `Texture::channel`, and the `uv1` attribute the mesh loader already
+        // names from `TEXCOORD_1`.
+        if let Some(map_def) = &material.occlusion_texture {
+            out.ao_map =
+                self.assign_texture(cache, textures, images, map_def, ColorSpace::NoColorSpace)?;
         }
 
-        if let Some(index) = material.normal_texture {
-            out.normal_map = self.load_texture(cache, textures, images, index)?;
+        if let Some(map_def) = &material.normal_texture {
+            out.normal_map =
+                self.assign_texture(cache, textures, images, map_def, ColorSpace::NoColorSpace)?;
             out.normal_scale = Vector2::new(material.normal_scale, material.normal_scale);
         }
 
@@ -1407,12 +1580,21 @@ impl GLTFLoader {
         }
         let [sr, sg, sb] = material.specular_color_factor;
         out.specular_color = Color::new(sr, sg, sb);
-        if let Some(index) = material.specular_color_texture {
-            let map = self.load_texture(cache, textures, images, index)?;
-            if let Some(map) = &map {
-                map.set_color_space(ColorSpace::SRGB);
-            }
-            out.specular_color_map = map;
+        if let Some(map_def) = &material.specular_color_texture {
+            out.specular_color_map =
+                self.assign_texture(cache, textures, images, map_def, ColorSpace::SRGB)?;
+        }
+
+        // `GLTFMaterialsSheenExtension`. glTF has no sheen *intensity*, so the
+        // extension's presence is `sheen = 1` and the factors are the colour
+        // and the roughness. `sheenColorTexture` / `sheenRoughnessTexture` are
+        // not ported — `SheenChair.glb` carries neither, and a map with no
+        // dump behind it would be a guess (`docs/nodes.md` §25).
+        if let Some(sheen) = material.sheen {
+            out.sheen = 1.0;
+            let [r, g, b] = sheen.color_factor;
+            out.sheen_color = Color::new(r, g, b);
+            out.sheen_roughness = sheen.roughness_factor;
         }
 
         Ok(out)
