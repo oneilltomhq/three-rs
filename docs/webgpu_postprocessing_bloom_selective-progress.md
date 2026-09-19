@@ -201,3 +201,138 @@ What sitting 1 leaves ready for it:
 * **A `read_target_pixels` that takes an attachment index.** `tests/renderer_mrt.rs`
   reads attachment 1 by sampling it into a probe target instead, which also
   proves the attachment binds as a texture — the thing `BloomNode` will do.
+
+---
+
+## Sitting 2 — `BloomNode`, the example, the image gate. **Green at 1 pixel.**
+
+Branch `rung-bloom-selective-2`, cut from `origin/main` at `512ece1` (which
+carries sitting 1's MRT work). This is the plan's **rung B** (§6.5–§6.9) and
+the list at the end of sitting 1, in that order.
+
+    webgpu_postprocessing_bloom_selective: 1 of 100000 pixels (0.001%), limit 0.1%
+
+Ladder after this branch, all eighteen rows unchanged:
+
+    depth_texture 0 / instance_mesh 60 / materials_basic 0 / rtt 1 /
+    lights_phong 31 / morphtargets 0 / shadowmap 7 / lights_physical 4 /
+    postprocessing_masking 18 / tsl_galaxy 40 / skinning 6 / mesh_batch 0 /
+    compute_points 4 / radial_blur 7 / materials 44 / ssaa 0 / lines_fat 0 /
+    pmrem_cubemap 0
+
+Steady frame 16.5 ms (ceiling 100 ms) over 63 draw calls and 256k triangles,
+and frames two and three build and upload **nothing**.
+
+## What was added
+
+| area | what |
+|---|---|
+| `src/nodes/display/bloom.rs` | new module: `BloomNode`, `bloom()`, `luminosity_high_pass()`, `HighPassInput`, the eleven render targets, `set_size`, the twelve-pass `render()`, and the four unit tests |
+| `src/nodes/node.rs` | `Node::ArrayVar` (an `array< T, N >` literal in a `var<private>`); `BufferSource::UniformArray` |
+| `src/nodes/builder.rs` | `declare_var_typed()` — a var whose WGSL type is not one of `Type`'s — and the `ArrayVar` generate arm |
+| `src/nodes/tsl.rs` | `array_var()`, `uniform_array_vec3()` + `UniformArray::element()`, `texture_sample()` |
+| `src/renderer/mod.rs` | the `BufferSource::UniformArray` upload arm, cached on the buffer id |
+| `src/renderer/pass.rs` | `texture_node( name )` is now **one** var, not two (see below) |
+| `examples/webgpu_postprocessing_bloom_selective.rs` | new: the fifty spheres, the MRT pass, the bloom and the output quad |
+| `examples/dump_wgsl.rs` | `bloom_high_pass`, `bloom_separable_0..4`, `bloom_comp`, `bloom_render_pipeline_quad` |
+| `tests/e2e/main.rs` | the rung's test, `assert_spheres()` before the pixel diff, and the `rung!()` row |
+| `tests/fixtures/webgpu_postprocessing_bloom_selective/` | `spheres_t0.json` + the `oracle.mjs` that generates it |
+| `docs/postprocessing.md` | "`BloomNode`: eleven render targets and twelve quads" |
+| `docs/nodes.md` | §8: `NodeBuffer_N` numbering and the uniform index a buffer does not consume |
+
+## WGSL
+
+Every one of the eight bloom modules was diffed against the scout's dump.
+
+| module | dump | difference |
+|---|---|---|
+| `Bloom_highPass` vertex / fragment | `m02` / `m03` | the `// Three.js r186` header line, and one blank line in the empty uniforms section |
+| `Bloom_separable` ×5 | `m05`..`m09` | the header line only — the baked offsets, weights and centre weights are **computed**, and they come out bit-identical |
+| `Bloom_comp` | `m11` | generated names only: `NodeBuffer_0` vs `NodeBuffer_1297`, `fn0` vs `fn4`, and the object struct's `0, 2, 4, 6, 8, 10, 11` against three's `0, 3, 5, 7, 9, 11, 12` — three's uniform *buffer* consumes a `nodeUniformN` index and this port's does not. Plus the struct declaration order (`docs/nodes.md` §8, "Declaration order") |
+| `RenderPipeline` | `m12` | `fn0`/`fn1` numbering and the order the two `fn`s are emitted in; the flow is line-for-line identical |
+
+The separable modules being byte-identical is the load-bearing one: five
+kernels, 35 magic floats, none of them pasted.
+
+## What the pixels found
+
+One pixel, on the first GPU run. What did *not* have to be found by pixels,
+because an earlier gate caught it:
+
+* **The fifty spheres came out somewhere else entirely** — `assert_spheres()`
+  failed on sphere 0's x before the renderer was asked for a frame. The bug was
+  in the oracle, not the port: `oracle.mjs` imported three's build unpatched, so
+  `Object3D`'s `generateUUID()` — `Math.random() * 0xffffffff` — ate a draw per
+  object and shifted the whole 450-draw sequence. `test/e2e/puppeteer.js`
+  rewrites exactly that expression to `Math._random()` before injecting the
+  build into the page, and `oracle.mjs` now does the same to the two build
+  files it loads. Had the oracle been written to match the port instead, this
+  would have been a silent agreement between two wrong things.
+* **The Gaussian and the mip chain** were unit tests before any GPU work, as
+  the plan asks. Both passed first time, which is the outcome that makes them
+  worth keeping: the 35 coefficients are now known to be three's, not
+  plausible.
+
+## Plan corrections
+
+* **`setSize` floors; it does not round.** The plan (§5.5) and sitting 1's
+  hand-off both read the dumped chain as `Math.round( w / 2 )` — "100 → 62, not
+  50". `BloomNode.js` is `Math.floor` throughout, and at these sizes the two
+  rules disagree: `floor( 125 / 2 )` is 62, `round( 125 / 2 )` is 63. The
+  numbers in the plan are right and the rule beside them is not.
+  `the_mip_chain_is_floor_halved` pins the rule.
+* **The §5.4 sphere oracle did not exist.** The plan proposed dumping
+  `spheres_t0.json` with `page.evaluate`; no such file was in `dump/`. It is
+  generated instead from three's own `build/` in node with no GPU and no
+  browser, the way `webgpu_materials`' `scene_t0.json` was, and the generator
+  ships next to it.
+* **Nine draws per sphere, not the plan's "450 draws" alone.** The order is
+  hue, lightness, the `bloomIntensity` coin flip, x, y, z, the
+  `multiplyScalar` radius, and **two** for
+  `scale.setScalar( Math.random() * Math.random() + 0.5 )`. 27 of the 50
+  spheres bloom.
+
+## Decisions a reviewer should look at
+
+* **`PassNode::texture_node( name )` now emits one var, not two**
+  (`src/renderer/pass.rs`, and `docs/postprocessing.md`'s `PassNode` section).
+  Sitting 1 gave it the same `to_var( texture_uv( … ) )` pair `node()` has. The
+  dumps say otherwise: `m03` samples the scene pass's output into a single
+  `nodeVar0`, while `m12` gives the *bloom* texture two
+  (`nodeVar2 = nodeVar1`). The rule is three's `TempNode` promotion —
+  `PassTextureNode.setup()` builds its `passNode`, so a pass reaches usage two
+  and earns a var only when the graph *also* holds the pass itself.
+  `pass( scene, camera )` used directly (radial blur, ssaa) is that case;
+  `getTextureNode( name )` is not. Nothing green used `texture_node` yet, so the
+  change is confined to this rung.
+* **Ten separable blur materials where three.js has five.** three.js swaps
+  `colorTexture.value` between a mip's horizontal and vertical pass; a
+  `Texture` is an identity here, so each direction needs its own material. The
+  WGSL is the same text — the five `bloom_separable_N` dump sections prove it —
+  and the cost is five extra pipelines. `docs/postprocessing.md`, "Ten
+  separable materials".
+* **`lerpBloomFactor` is one `FnDef` in a `thread_local`**, the way
+  `saturation()` and `hue()` already are. Five `shader_fn()` calls would be five
+  identical `fn`s in `Bloom_comp`; the dump has one.
+* **The oracle fixture is in this tree**, not in the scouts worktree where
+  `webgpu_lines_fat`'s lives, so the branch is self-contained and CI can run it
+  without a second checkout. `tests/fixtures/webgpu_materials/scene_t0.json` is
+  the precedent.
+
+## Left out
+
+* **`PassNode._resolutionScale`.** `BloomNode::set_resolution_scale` is real and
+  tested; the pass's own scale is still unported, and nothing on the ladder sets
+  it.
+* **`BloomNode.dispose()` and the `RenderTarget` disposal path.** The targets
+  live as long as the node, which lives as long as the app.
+* **The page's interaction.** `OrbitControls`, the raycaster that toggles a
+  sphere's `bloomIntensity` on pointerdown, and the inspector GUI folders are
+  not ported; none of them touches the graded frame. The uniform the raycaster
+  would flip is reachable (`material.mrt_node`), which is what `assert_spheres`
+  reads.
+* **`luminance()` on a `vec4`.** Still vec3-only, as sitting 1 left it: this
+  example's `m03` takes the `color.rgb` branch. The next `BloomNode` consumer
+  with a `vec4` high pass will need the other one.
+* **`BloomNode` in the viewer.** Keys 1..0 are full; the steady-frame number
+  comes from the e2e harness, as radial blur and ssaa did.

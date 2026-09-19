@@ -40,6 +40,16 @@ Two structural facts, both visible in the dumped WGSL:
   `nodeVar0 = textureSample( … ); nodeVar1 = nodeVar0;` — and `.a` is taken on
   the outer one (`nodeVar4.w` in the dump). The port models this as
   `to_var( None, texture_uv( rt.texture(), uv() ) )`.
+
+  **Two vars, but only when the graph holds the pass itself.** A `TempNode`
+  earns a var at usage two, and `PassTextureNode.setup()` builds its `passNode`
+  — that is the second usage. `pass( scene, camera )` composed directly (radial
+  blur, ssaa, and `bloom( … )`, which is a pass-like `TempNode` of its own) is
+  that case. `passNode.getTextureNode( name )` is not: the graph holds the
+  `PassTextureNode`, the `PassNode` is built only from its `setup()`, and the
+  sample lands in **one** var. `PassNode::node()` is the first;
+  `PassNode::texture_node( name )` is the second. `m03` and `m12` of
+  `webgpu_postprocessing_bloom_selective`'s dump show both in one example.
 * `PassTextureNode` calls `setUpdateMatrix( false )`, so a pass samples the raw
   `uv()` varying. `texture( map )` does not, so each JPEG contributes a
   `mat3x3<f32>` to the object uniform block. That asymmetry is what produces the
@@ -351,3 +361,78 @@ where three's `MaterialBlending` and `NoBlending` both come out as no
 blend state at all, and nothing on this ladder sets a per-output clear.
 MSAA and MRT never meet either: a `PassNode` with an MRT is `samples: 0`,
 so only attachment 0 can have a resolve target.
+
+## `BloomNode`: eleven render targets and twelve quads (`webgpu_postprocessing_bloom_selective`, part B)
+
+`bloom( input )` is the UnrealBloomPass as a node
+(`examples/jsm/tsl/display/BloomNode.js`): a luminosity high pass, five
+mip levels each blurred horizontally and then vertically with a separable
+Gaussian, and a composite that adds the five mips back together. It is the
+third and largest of the effect-node shapes in this document — an effect
+that owns render targets *and* several materials of its own.
+
+```rust
+let mut bloom_pass = bloom(output_pass.mul(bloom_intensity_pass));
+// once per frame, before the output quad
+bloom_pass.render(&mut renderer);
+render_pipeline.output_node = Some(render_output(
+    scene_pass.texture_node("output").add(bloom_pass.node()),
+    ToneMapping::Neutral,
+));
+```
+
+### The twelve passes
+
+`BloomNode::render` is `updateBefore()`: `resetRendererState` (no MRT, an
+opaque black clear colour, `autoClear` on), then the high pass into
+`bright`, then for each of the five mips a horizontal pass into `h[i]` and
+a vertical one into `v[i]`, then the composite back into `h0` — which is
+the texture `node()` samples. Every one of the twelve is a single
+attachment with no depth, because all eleven targets are
+`depth_buffer: false`, and every one clears: the quad covers the target
+anyway, but `autoClear` is what three.js leaves on here.
+
+### Sizes are floored, not rounded
+
+`setSize()` is `Math.floor( width * resolutionScale )` and then
+`Math.floor( res / 2 )` per mip. At 800×500 and the default half scale
+that is 400×250, 200×125, 100×**62**, 50×**31**, 25×15 — `floor( 125 / 2 )`
+is 62 where rounding would give 63, and the chain diverges from there
+down. `src/nodes/display/bloom.rs`'s `the_mip_chain_is_floor_halved` is
+the gate; the scout plan's "rounding, not integer division" reading of the
+dumped sizes is wrong about the rule and right about the numbers.
+
+### Ten separable materials, five programs' worth of WGSL
+
+three.js swaps `separableBlurMaterial.colorTexture.value` between the
+horizontal and the vertical pass of a mip, so one material serves both. A
+`Texture` is an identity in this port and a material's graph names it, so
+`BloomNode` builds **two** blur materials per mip, one per direction. Their
+generated WGSL is the same text — that is what the five
+`bloom_separable_N` sections of `dump_wgsl` diff against `m05..m09` — so
+the divergence is ten pipelines where three.js has five, not a different
+shader.
+
+### The high pass is replaceable
+
+`BloomNode::with_high_pass` takes the function three.js keeps in
+`bloomNode.highPassFn`. It is a constructor argument rather than a field
+because the port has no `setup()` stage to rebuild the quad materials in:
+the materials are built once, in `new`. `webgpu_postprocessing_bloom` and
+`_anamorphic` are the callers that will pass their own.
+
+### `uniformArray`
+
+The composite's five bloom tint colours are one `uniformArray`, not five
+uniforms: `uniform_array_vec3()` gives a handle whose `element( i )` all
+read the same binding, emitted as
+
+```wgsl
+struct NodeBuffer_0Struct { value : array< vec4<f32>, 5 > };
+```
+
+with each `Vector3` padded to a `vec4` exactly as
+`UniformArrayNode.js` does. The five bloom *factors* beside them are a
+`array_var()` — a `var<private> nodeVar0 : array< f32, 5 >` written once
+and indexed five times, which is what three's `array( [ … ] )` const
+becomes when it is read more than once.

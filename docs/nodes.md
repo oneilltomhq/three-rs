@@ -383,7 +383,14 @@ differences, each verified to be pixel-neutral.
   built; the widening half is the part that is load-bearing.
 * **Generated names.** `nodeVarN` / `nodeUniformN` / `nodeVaryingN` counters are
   allocated by this port's own traversal order, so the numbers differ from the
-  dumps even where the structure matches. Semantic names (`DiffuseColor`,
+  dumps even where the structure matches. Two more counters join them at
+  `webgpu_postprocessing_bloom_selective`: a `NodeBuffer_N` block is numbered
+  from the port's own buffer table rather than from three's node id
+  (`NodeBuffer_0` against the dump's `NodeBuffer_1297`), and a uniform *buffer*
+  does not consume a `nodeUniformN` index here where three.js gives it one —
+  so `Bloom_comp`'s object struct runs `0, 2, 4, 6, 8, 10, 11` where three's
+  runs `0, 3, 5, 7, 9, 11, 12`. Numbering the buffer would shift every green
+  dump for nothing. Semantic names (`DiffuseColor`,
   `positionLocal`, `modelViewMatrix`, `v_normalViewGeometry`,
   `cameraProjectionMatrix`) do match.
 * **`DiffuseColor.w = 1.0`.** Emitted under `builder.isOpaque()`, as
