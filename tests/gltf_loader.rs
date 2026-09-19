@@ -387,3 +387,104 @@ fn draco_required_is_an_error() {
         "THREE.GLTFLoader: unknown required extension \"KHR_draco_mesh_compression\""
     );
 }
+
+/// Every texture reference on a material is a `GltfTextureRef`, including the
+/// two the anisotropy rung left as bare indices: `anisotropyTexture` and
+/// `clearcoatNormalTexture` carry `texCoord` and `KHR_texture_transform` like
+/// any other map (`docs/nodes.md` §25.4). `AnisotropyBarnLamp.glb` writes both
+/// as plain `{ index }`, so the texCoord/transform half is exercised against a
+/// document built here.
+#[test]
+fn anisotropy_and_clearcoat_maps_are_texture_refs() {
+    // The asset the `webgpu_loader_gltf_anisotropy` rung draws: bare indices,
+    // no `texCoord`, no transform.
+    let gltf = GLTFLoader::load(models().join("AnisotropyBarnLamp.glb")).unwrap();
+    let metal = &gltf.materials[0];
+
+    let anisotropy = metal
+        .anisotropy_texture
+        .as_ref()
+        .expect("anisotropyTexture");
+    assert_eq!(anisotropy.index, 3);
+    assert_eq!(anisotropy.tex_coord, None);
+    assert!(anisotropy.transform.is_none());
+
+    let clearcoat = metal
+        .clearcoat_normal_texture
+        .as_ref()
+        .expect("clearcoatNormalTexture");
+    assert_eq!(clearcoat.index, 1);
+    assert_eq!(clearcoat.tex_coord, None);
+    assert!(clearcoat.transform.is_none());
+    assert_eq!(metal.clearcoat_normal_scale, 1.0);
+
+    // The same two references with the full `{ index, texCoord, extensions }`
+    // shape the sheen rung's parser reads.
+    let json = br#"{
+        "asset": { "version": "2.0" },
+        "scenes": [ { "nodes": [] } ],
+        "scene": 0,
+        "materials": [ {
+            "extensions": {
+                "KHR_materials_anisotropy": {
+                    "anisotropyStrength": 0.5,
+                    "anisotropyRotation": 1.25,
+                    "anisotropyTexture": {
+                        "index": 2,
+                        "texCoord": 1,
+                        "extensions": {
+                            "KHR_texture_transform": {
+                                "offset": [ 0.25, 0.5 ],
+                                "scale": [ 2.0, 3.0 ],
+                                "rotation": 0.5,
+                                "texCoord": 1
+                            }
+                        }
+                    }
+                },
+                "KHR_materials_clearcoat": {
+                    "clearcoatFactor": 1.0,
+                    "clearcoatNormalTexture": {
+                        "index": 4,
+                        "texCoord": 2,
+                        "scale": 0.75,
+                        "extensions": {
+                            "KHR_texture_transform": { "offset": [ 1.0, 2.0 ] }
+                        }
+                    }
+                }
+            }
+        } ]
+    }"#;
+
+    let gltf = GLTFLoader::parse(json, std::path::PathBuf::from(".")).unwrap();
+    let material = &gltf.materials[0];
+
+    let anisotropy = material
+        .anisotropy_texture
+        .as_ref()
+        .expect("anisotropyTexture");
+    assert_eq!(anisotropy.index, 2);
+    assert_eq!(anisotropy.tex_coord, Some(1));
+    let transform = anisotropy
+        .transform
+        .as_ref()
+        .expect("KHR_texture_transform");
+    assert_eq!(transform.offset, Some([0.25, 0.5]));
+    assert_eq!(transform.scale, Some([2.0, 3.0]));
+    assert_eq!(transform.rotation, Some(0.5));
+    assert_eq!(transform.tex_coord, Some(1));
+
+    let clearcoat = material
+        .clearcoat_normal_texture
+        .as_ref()
+        .expect("clearcoatNormalTexture");
+    assert_eq!(clearcoat.index, 4);
+    assert_eq!(clearcoat.tex_coord, Some(2));
+    let transform = clearcoat.transform.as_ref().expect("KHR_texture_transform");
+    assert_eq!(transform.offset, Some([1.0, 2.0]));
+    assert_eq!(transform.scale, None);
+    assert_eq!(transform.rotation, None);
+    // `scale` on the reference is the normal scale, not part of the transform.
+    assert_eq!(material.clearcoat_normal_scale, 0.75);
+}

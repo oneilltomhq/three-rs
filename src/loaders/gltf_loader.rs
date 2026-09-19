@@ -196,13 +196,13 @@ pub struct GltfMaterial {
     /// `anisotropyRotation` (default 0, radians) and `anisotropyTexture`.
     pub anisotropy_strength: Option<f64>,
     pub anisotropy_rotation: f64,
-    pub anisotropy_texture: Option<usize>,
+    pub anisotropy_texture: Option<GltfTextureRef>,
     /// `KHR_materials_clearcoat`: `clearcoatFactor` (default 0),
     /// `clearcoatRoughnessFactor` (default 0) and `clearcoatNormalTexture`
     /// with its `scale`.
     pub clearcoat_factor: Option<f64>,
     pub clearcoat_roughness_factor: f64,
-    pub clearcoat_normal_texture: Option<usize>,
+    pub clearcoat_normal_texture: Option<GltfTextureRef>,
     pub clearcoat_normal_scale: f64,
     /// `KHR_materials_transmission.transmissionFactor` (default 0).
     pub transmission_factor: Option<f64>,
@@ -1233,10 +1233,9 @@ impl GLTFLoader {
                     .pointer("/extensions/KHR_materials_anisotropy/anisotropyRotation")
                     .and_then(Value::as_f64)
                     .unwrap_or(0.0),
-                anisotropy_texture: material_def
-                    .pointer("/extensions/KHR_materials_anisotropy/anisotropyTexture/index")
-                    .and_then(Value::as_u64)
-                    .map(|i| i as usize),
+                anisotropy_texture: GltfTextureRef::parse(
+                    material_def.pointer("/extensions/KHR_materials_anisotropy/anisotropyTexture"),
+                ),
                 // `GLTFMaterialsClearcoat.extendMaterialParams`
                 clearcoat_factor: material_def
                     .pointer("/extensions/KHR_materials_clearcoat")
@@ -1249,10 +1248,10 @@ impl GLTFLoader {
                     .pointer("/extensions/KHR_materials_clearcoat/clearcoatRoughnessFactor")
                     .and_then(Value::as_f64)
                     .unwrap_or(0.0),
-                clearcoat_normal_texture: material_def
-                    .pointer("/extensions/KHR_materials_clearcoat/clearcoatNormalTexture/index")
-                    .and_then(Value::as_u64)
-                    .map(|i| i as usize),
+                clearcoat_normal_texture: GltfTextureRef::parse(
+                    material_def
+                        .pointer("/extensions/KHR_materials_clearcoat/clearcoatNormalTexture"),
+                ),
                 clearcoat_normal_scale: material_def
                     .pointer("/extensions/KHR_materials_clearcoat/clearcoatNormalTexture/scale")
                     .and_then(Value::as_f64)
@@ -1709,8 +1708,9 @@ impl GLTFLoader {
             out.anisotropy = strength;
             out.anisotropy_rotation = material.anisotropy_rotation;
         }
-        if let Some(index) = material.anisotropy_texture {
-            out.anisotropy_map = self.load_texture(cache, textures, images, index)?;
+        if let Some(map_def) = &material.anisotropy_texture {
+            out.anisotropy_map =
+                self.assign_texture(cache, textures, images, map_def, ColorSpace::NoColorSpace)?;
         }
 
         // `GLTFMaterialsClearcoat.extendMaterialParams`.
@@ -1718,8 +1718,9 @@ impl GLTFLoader {
             out.clearcoat = factor;
             out.clearcoat_roughness = material.clearcoat_roughness_factor;
         }
-        if let Some(index) = material.clearcoat_normal_texture {
-            out.clearcoat_normal_map = self.load_texture(cache, textures, images, index)?;
+        if let Some(map_def) = &material.clearcoat_normal_texture {
+            out.clearcoat_normal_map =
+                self.assign_texture(cache, textures, images, map_def, ColorSpace::NoColorSpace)?;
             let scale = material.clearcoat_normal_scale;
             out.clearcoat_normal_scale = Vector2::new(scale, scale);
         }
