@@ -1529,6 +1529,9 @@ impl Renderer {
             camera_world: camera.matrix_world(),
             time: self.time,
             lights: &lights,
+            // `scene.backgroundBlurriness` — a render-group uniform, so it
+            // rides the pass rather than the background draw.
+            background_blurriness: scene.background_blurriness,
             ..Default::default()
         };
 
