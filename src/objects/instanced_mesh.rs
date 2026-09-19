@@ -66,6 +66,7 @@ impl InstancedMesh {
                 geometry,
                 material: Some(material),
                 morph_target_influences: Vec::new(),
+                line_segments: None,
             },
             count,
             instance_matrix: InstancedBufferAttribute::new(vec![0.0; count * 16], 16),

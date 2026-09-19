@@ -3,6 +3,7 @@
 
 pub mod blending;
 mod dfg_lut;
+pub mod line2;
 mod node_material;
 pub mod phong;
 pub mod physical;
@@ -124,6 +125,11 @@ pub enum MaterialKind {
     /// takes neither the `colorNode` path nor the opacity / alpha-test /
     /// opaque-clamp tail.
     Normal,
+    /// `Line2NodeMaterial` — the fat line. `BasicLightingModel` like `Basic`,
+    /// plus an overridden `setupPosition()` (the screen-space quad) and
+    /// `setupDiffuseColor()` (round-cap coverage, per-end instance colour).
+    /// See [`crate::materials::line2`].
+    Line2,
 }
 
 /// Port of `MeshBasicNodeMaterial.js` + the `NodeMaterial.js` / `Material.js`
@@ -497,6 +503,24 @@ impl MeshBasicNodeMaterial {
         }
     }
 
+    /// `new Line2NodeMaterial( { color, linewidth, vertexColors } )` — the
+    /// fat line.
+    ///
+    /// `Line2NodeMaterial.setDefaultValues( new LineBasicMaterial() )` and then
+    /// `this.blending = NoBlending` — three sets it in the constructor because
+    /// the material writes its own coverage through the `discard` and must not
+    /// have the result blended a second time. That default has teeth here: it
+    /// makes [`is_opaque`](Self::is_opaque) false, so the fragment flow does
+    /// **not** emit `DiffuseColor.w = 1.0` (`docs/nodes.md` §8).
+    pub fn line2(color: Color) -> Self {
+        Self {
+            kind: MaterialKind::Line2,
+            color,
+            blending: Blending::No,
+            ..Self::default()
+        }
+    }
+
     /// `new MeshNormalNodeMaterial()` — `MeshNormalMaterial` under
     /// `WebGPURenderer`.
     ///
@@ -564,6 +588,10 @@ pub type MeshPhysicalNodeMaterial = MeshBasicNodeMaterial;
 /// three.js' name for a `NodeMaterial` whose kind is `Normal` — see
 /// [`MeshBasicNodeMaterial::normal`].
 pub type MeshNormalNodeMaterial = MeshBasicNodeMaterial;
+
+/// three.js' name for a `NodeMaterial` whose kind is `Line2` — see
+/// [`MeshBasicNodeMaterial::line2`] and [`crate::addons::lines`].
+pub type Line2NodeMaterial = MeshBasicNodeMaterial;
 
 /// three.js' name for the `NodeMaterial` a `Line` / `LineSegments` draws with.
 /// It carries no state of its own — see [`MeshBasicNodeMaterial::line`].

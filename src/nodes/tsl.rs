@@ -2495,18 +2495,36 @@ pub fn instanced_data_attribute(
     offset: usize,
     ty: Type,
 ) -> NodeRef {
-    assert!(
-        offset + ty.components() <= item_size,
-        "three-rs: instanced attribute reads past the instance stride"
-    );
+    instanced_buffer_attribute(&instanced_data_buffer(data, item_size), offset, ty)
+}
+
+/// `new InstancedInterleavedBuffer( array, stride, 1 )` — the buffer itself,
+/// so that several `InterleavedBufferAttribute` views of it can be taken with
+/// [`instanced_buffer_attribute`] and land in **one** `stepMode: 'instance'`
+/// vertex buffer.
+///
+/// [`NodeProgram::vertex_buffers`](crate::nodes::NodeProgram::vertex_buffers)
+/// groups on the buffer's `Rc` identity, so two `instanced_data_attribute`
+/// calls over the same array are two buffers; a fat line's `instanceStart` and
+/// `instanceEnd` have to be two views of one.
+pub fn instanced_data_buffer(data: &Rc<Vec<f32>>, item_size: usize) -> Rc<InstanceBuffer> {
     let count = data.len().checked_div(item_size).unwrap_or(0);
-    let buffer = Rc::new(InstanceBuffer {
+    Rc::new(InstanceBuffer {
         id: crate::nodes::node::BufferId::next(),
         source: BufferSource::Attribute(data.clone()),
         count,
         item_size,
-    });
-    instanced_attribute(&buffer, offset, ty)
+    })
+}
+
+/// `instancedBufferAttribute( buffer, type, stride, offset )` — one view of a
+/// buffer from [`instanced_data_buffer`]. `offset` is in components, not bytes.
+pub fn instanced_buffer_attribute(buffer: &Rc<InstanceBuffer>, offset: usize, ty: Type) -> NodeRef {
+    assert!(
+        offset + ty.components() <= buffer.item_size,
+        "three-rs: instanced attribute reads past the instance stride"
+    );
+    instanced_attribute(buffer, offset, ty)
 }
 
 // ---------------------------------------------------------------------------

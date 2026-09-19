@@ -40,7 +40,16 @@ Linux is the only backend that has been run.
   planar and cube shadow maps with Three's Vogel-disk filter.
 - **Renderer.** Render lists, instancing, morph targets, render targets,
   MSAA, the linear-to-sRGB output pass, `PassNode` post-processing, mipmaps,
-  cube textures, line topology.
+  cube textures, line topology, viewport / scissor / `clearDepth` and
+  `autoClear`.
+- **Addons.** `src/addons/` holds the `three/addons/…` tier that needs a core
+  change to work: `lines` (`LineSegmentsGeometry`, `LineGeometry`,
+  `LineSegments2`, `Line2` — fat lines, with `Line2NodeMaterial` in core beside
+  them, as three.js ships it) and `geometry_utils`. An addon that needs nothing
+  from core is a workspace crate instead — `addons/controls` — and that stays
+  the preferred shape; these live in the root crate because the e2e harness
+  pulls examples in with `#[path = "../../examples/…"]`, and an example in
+  another crate would need its own test binary.
 - **Loaders.** glTF/GLB (all accessor types, skins, animations, KHR specular
   and ior), textures (PNG, JPEG), cube textures.
 - **Animation.** Interpolants, keyframe tracks, clips, `PropertyMixer`,
@@ -85,6 +94,7 @@ Linux is the only backend that has been run.
 | webgpu_materials | 44 | 7.3 | 19 | 350065 |
 | webgpu_postprocessing_ssaa | 0 | 11.9 | 17 | 2119689 |
 | webgpu_compute_points | 4 (see below) | 10.7 | 2 | 1 + 300000 points |
+| webgpu_lines_fat | 0 | 3.8 | 6 | 11191 |
 
 `webgpu_compute_points` is graded like the rest and its 4 pixels mean less
 than the rest: its frame is black apart from a 2x2 block at the centre, so

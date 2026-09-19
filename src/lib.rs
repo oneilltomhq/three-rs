@@ -5,6 +5,7 @@
 //! comments name it. Nothing is added that the current rung's example does not
 //! use.
 
+pub mod addons;
 pub mod animation;
 pub mod cameras;
 pub mod core;
@@ -45,9 +46,9 @@ pub use loaders::{
     BufferGeometryLoader, CubeTextureLoader, HdrCubeTextureLoader, HdrLoader, TextureLoader,
 };
 pub use materials::{
-    LineBasicNodeMaterial, MaterialKind, MeshBasicNodeMaterial, MeshNormalNodeMaterial,
-    MeshPhongNodeMaterial, MeshPhysicalNodeMaterial, MeshStandardNodeMaterial, PointsNodeMaterial,
-    ToneMapping,
+    Line2NodeMaterial, LineBasicNodeMaterial, MaterialKind, MeshBasicNodeMaterial,
+    MeshNormalNodeMaterial, MeshPhongNodeMaterial, MeshPhysicalNodeMaterial,
+    MeshStandardNodeMaterial, PointsNodeMaterial, ToneMapping,
 };
 pub use math::{Color, Euler, Matrix3, Matrix4, Quaternion, Vector2, Vector3};
 pub use objects::{

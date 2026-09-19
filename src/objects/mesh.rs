@@ -18,6 +18,18 @@ pub struct Mesh {
     /// `Mesh.morphTargetInfluences` — one weight per `morphAttributes.position`
     /// entry, filled in by `updateMorphTargets()` from the constructor.
     pub morph_target_influences: Vec<f64>,
+    /// `LineSegmentsGeometry`'s instanced attributes, when this mesh is a
+    /// [`LineSegments2`](crate::addons::lines::LineSegments2).
+    ///
+    /// three.js keeps them on the geometry, as an `InstancedInterleavedBuffer`
+    /// with two `InterleavedBufferAttribute` views; the port's node system
+    /// carries an instanced attribute's data on the node, so they ride here
+    /// instead and reach `setup()` through
+    /// [`SetupContext::line_segments`](crate::materials::SetupContext). See
+    /// [`crate::nodes::lines`] for the trade, and
+    /// `docs/webgpu_lines_fat-progress.md` for the follow-up that moves them on
+    /// to `BufferGeometry`.
+    pub line_segments: Option<crate::nodes::lines::LineSegmentsAttributes>,
 }
 
 impl Mesh {
@@ -49,6 +61,7 @@ impl Mesh {
             geometry,
             material: material.into(),
             morph_target_influences,
+            line_segments: None,
         });
         object.into_node()
     }

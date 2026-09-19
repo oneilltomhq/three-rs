@@ -113,6 +113,7 @@ fn show_compute(label: &str, flow: &three_rs::nodes::ComputeFlow) {
     }
 }
 
+use three_rs::addons::lines::LineGeometry;
 use three_rs::nodes::materialx::{mx_fractal_noise_float, mx_fractal_noise_vec3};
 
 fn main() {
@@ -164,6 +165,7 @@ fn main() {
             morph: None,
             skin: None,
             batch: None,
+            line_segments: None,
         },
     );
 
@@ -999,4 +1001,44 @@ fn main() {
         back.xyz().div(back.w()),
     ));
     show("screen_uniforms", &screen, SetupContext::default());
+
+    // `webgpu_lines_fat`: the real `Line2NodeMaterial`, over a two-segment
+    // `LineGeometry`. Three's own text for both stages is
+    // `scouts/scouts/webgpu_lines_fat/dump/m00_vertex_vertex.wgsl` and
+    // `m01_fragment_fragment.wgsl`; the divergences are in `docs/nodes.md` §8.
+    //
+    // The vertex-buffer block below is the other half of the gate: four
+    // buffers, strides 12 / 24 / 8 / 24, two of them `stepMode: instance` with
+    // two views each. Two vertex buffers where three has one would draw a
+    // garbage ribbon and raise nothing.
+    let mut fat = LineGeometry::new();
+    fat.set_positions(&[0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0]);
+    fat.set_colors(&[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]);
+    let mut line2 = MeshBasicNodeMaterial::line2(Color::from_hex(0xffffff));
+    line2.linewidth = 5.0;
+    line2.vertex_colors = true;
+    show(
+        "line2",
+        &line2,
+        SetupContext {
+            line_segments: Some(fat.as_segments().attributes()),
+            ..SetupContext::default()
+        },
+    );
+
+    // The same material with `alphaToCoverage`, which is the other branch of
+    // `alphaLine()`: `smoothstep( 1 - dlen, 1 + dlen, len2 ).oneMinus()` in
+    // place of the `discard`. `webgpu_lines_fat` does not take it — the
+    // example's GUI does — but it is one flag away and a silent divergence if
+    // it rots.
+    let mut coverage = line2.clone();
+    coverage.alpha_to_coverage = true;
+    show(
+        "line2_alpha_to_coverage",
+        &coverage,
+        SetupContext {
+            line_segments: Some(fat.as_segments().attributes()),
+            ..SetupContext::default()
+        },
+    );
 }
