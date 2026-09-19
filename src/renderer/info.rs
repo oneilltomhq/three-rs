@@ -37,6 +37,26 @@ pub struct Info {
     pub build: BuildCounts,
     /// Not reset: what the renderer is holding on to right now.
     pub memory: MemoryCounts,
+    /// Not reset: `info.compute`.
+    pub compute: ComputeCounts,
+}
+
+/// `info.compute`.
+///
+/// three.js has a second field, `frameCalls`, cleared by `Info.reset()` — which
+/// its animation loop calls at the *top of the frame callback*
+/// (`Animation.js:81`), before `renderer.compute()` runs. This port has no
+/// animation loop and resets in [`Renderer::render`], which runs *after* the
+/// frame's compute calls, so a `frame_calls` here would always read zero. The
+/// cumulative count is the honest one; the per-frame question "did this frame
+/// build a compute pipeline" is answered by [`BuildCounts`] instead.
+///
+/// [`Renderer::render`]: crate::Renderer::render
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ComputeCounts {
+    /// `info.compute.calls`: `Renderer::compute()` calls since startup,
+    /// `onInit`'s recursive call included — three counts it too.
+    pub calls: u64,
 }
 
 /// `info.render`.
@@ -48,8 +68,6 @@ pub struct RenderCounts {
     /// Primitives, with the instance count multiplied in, as three.js counts
     /// them.
     pub triangles: u64,
-    /// Always 0 while the port has no `Points`; kept so the block mirrors
-    /// three.js'.
     pub points: u64,
     pub lines: u64,
 }

@@ -21,6 +21,10 @@ mod webgpu_tsl_galaxy;
 #[allow(dead_code)]
 mod webgpu_mesh_batch;
 
+#[path = "webgpu_compute_points.rs"]
+#[allow(dead_code)]
+mod webgpu_compute_points;
+
 fn show(label: &str, material: &MeshBasicNodeMaterial, ctx: SetupContext) {
     show_fog(label, material, ctx, None)
 }
@@ -87,6 +91,26 @@ fn strip_ids(line: &str) -> String {
     }
     out.push_str(rest);
     out
+}
+
+/// A compute kernel: one module, one entry point, and the dispatch the
+/// renderer will ask for. `dispatch` and `workgroup_size` are printed because
+/// three.js' dump records them beside the WGSL and a kernel with the right
+/// source and the wrong dispatch is the failure the graded image cannot see.
+fn show_compute(label: &str, flow: &three_rs::nodes::ComputeFlow) {
+    let program = NodeBuilder::new().build_compute(flow);
+    println!("########## {label} — compute");
+    println!("{}", program.wgsl);
+    println!(
+        "########## {label} — workgroup_size {:?} dispatch {:?}",
+        program.workgroup_size, program.dispatch
+    );
+    for (i, g) in program.groups.iter().enumerate() {
+        println!("  group {i}:");
+        for (b, d) in g.iter().enumerate() {
+            println!("    {b}: {}", strip_ids(&format!("{d:?}")));
+        }
+    }
 }
 
 use three_rs::nodes::materialx::{mx_fractal_noise_float, mx_fractal_noise_vec3};
@@ -596,5 +620,21 @@ fn main() {
             batch: Some(batch_entry),
             ..SetupContext::default()
         },
+    );
+
+    // Rung 12: the two compute kernels and the points material that reads what
+    // they wrote. The kernels are the only programs in the tree with no
+    // material behind them, so they go through `build_compute` instead of
+    // `show`.
+    let particles = webgpu_compute_points::particles();
+    show_compute(
+        "compute_points_precompute_velocity",
+        particles.update.on_init.as_ref().unwrap(),
+    );
+    show_compute("compute_points_update_particles", &particles.update);
+    show(
+        "compute_points_material",
+        &webgpu_compute_points::material(),
+        SetupContext::default(),
     );
 }

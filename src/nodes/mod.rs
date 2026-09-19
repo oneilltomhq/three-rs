@@ -11,7 +11,8 @@ pub mod tsl;
 pub mod wgsl;
 
 pub use builder::{
-    BindingDesc, MaterialFlow, NodeBuilder, NodeProgram, Stage, UniformMember, Visibility,
+    BindingDesc, ComputeFlow, ComputeProgram, MaterialFlow, NodeBuilder, NodeProgram, Stage,
+    UniformMember, Visibility,
 };
 pub use node::{
     BufferSource, Node, NodeRef, TextureSource, Type, UniformGroup, UniformSource, UpdateType,

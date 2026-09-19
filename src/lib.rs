@@ -47,8 +47,8 @@ pub use objects::{
     Background, Group, InstancedMesh, Line, LineSegments, Mesh, Payload, Points, QuadMesh, Scene,
 };
 pub use renderer::{
-    BuildCounts, Info, MemoryCounts, PassNode, RenderCounts, RenderPipeline, RenderTarget,
-    Renderer, RendererParameters,
+    BuildCounts, ComputeCounts, Info, MemoryCounts, PassNode, RenderCounts, RenderPipeline,
+    RenderTarget, Renderer, RendererParameters,
 };
 pub use textures::{
     ColorSpace, CubeTexture, DepthTexture, Mapping, MinFilter, Texture, TextureFilter, TextureType,

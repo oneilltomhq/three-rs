@@ -1103,6 +1103,12 @@ impl NodeRef {
     }
 
     // --- swizzles ---
+    /// `node[ components ]` — the general form of `.x` / `.xy` / `.rgb`, for
+    /// when the component is chosen at build time.
+    pub fn swizzle(&self, components: &'static str) -> NodeRef {
+        swizzle(self.clone(), components)
+    }
+
     pub fn x(&self) -> NodeRef {
         swizzle(self.clone(), "x")
     }
@@ -1994,6 +2000,52 @@ pub fn cube_texture_level(map: &CubeTexture, dir: NodeRef, level: NodeRef) -> No
 // ---------------------------------------------------------------------------
 // buffers
 // ---------------------------------------------------------------------------
+
+/// `instancedArray( count, type )` — `StorageBufferNode` over a
+/// `StorageInstancedBufferAttribute` with **no CPU array behind it**
+/// (`src/nodes/accessors/StorageBufferNode.js:270-290`): the storage is created
+/// on the GPU, zero-filled once, and only ever written by a compute pass.
+///
+/// Held by the caller, because its identity is the buffer: two
+/// `instancedArray( n, ty )` calls are two buffers, exactly as two
+/// `StorageBufferNode`s are in three.js, and the renderer keys the GPU buffer
+/// on it.
+#[derive(Clone)]
+pub struct StorageArray(Rc<BufferNode>);
+
+/// `instancedArray( count, type )`.
+pub fn instanced_array(count: usize, element_ty: Type) -> StorageArray {
+    StorageArray(Rc::new(BufferNode {
+        id: crate::nodes::node::BufferId::next(),
+        source: BufferSource::Storage,
+        element_ty,
+        count,
+    }))
+}
+
+impl StorageArray {
+    /// `.element( index )` — `NodeBuffer_N.value[ index ]`.
+    pub fn element(&self, index: impl Into<NodeRef>) -> NodeRef {
+        NodeRef::new(Node::BufferElement {
+            buffer: self.0.clone(),
+            index: index.into(),
+        })
+    }
+
+    /// The buffer's identity, which is how the renderer finds its GPU buffer.
+    pub fn id(&self) -> crate::nodes::node::BufferId {
+        self.0.id
+    }
+
+    /// The element count `instancedArray` was given.
+    pub fn count(&self) -> usize {
+        self.0.count
+    }
+
+    pub fn element_ty(&self) -> Type {
+        self.0.element_ty
+    }
+}
 
 fn buffer_element(source: BufferSource, element_ty: Type, count: usize, index: NodeRef) -> NodeRef {
     NodeRef::new(Node::BufferElement {
