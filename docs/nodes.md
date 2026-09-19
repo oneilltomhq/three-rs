@@ -1241,3 +1241,77 @@ tiles.
   spelling and a renumbering of `nodeVar`/`nodeUniform`. With no environment
   the two properties are still declared zero in `indirectSpecular`, which is
   why every other row of the ladder is byte-identical.
+
+## 14. The previous frame (`webgpu_postprocessing_difference`)
+
+Three builder rules this rung pinned. None of them is a divergence — each one
+moves the port onto three.js's behaviour — but each was invisible until a
+shader needed it.
+
+* **`dot` builds its operands at the *input* type.**
+  `MathNode.generate()`'s generic branch builds every operand at the node's
+  input type — the widest of the operands — and only `dot` has a result type
+  narrower than that. `luminance( vec4 )` is the case that matters: the `vec3`
+  coefficients widen to `vec4<f32>( vec3<f32>( 0.2126, 0.7152, 0.0722 ), 1.0 )`
+  and the alpha difference is weighted 1.0 rather than silently dropped.
+  `tests/nodes_dot_widening.rs`.
+* **An inlined `Fn()` call is transparent to `analyze()`.**
+  `ShaderCallNodeInternal.build()` in the analyze stage is
+  `outputNode.build( builder, output )` — it neither counts itself nor stops
+  the walk — so two call sites sharing one memoised body count *the body*
+  twice and it becomes a var. The port used to count the call node and early
+  out, which inlined the body once per use. `saturation()` read as a vec3 and
+  again for its `.w` is this rung's case; `webgpu_rtt`'s `hue( saturation( … ) )`
+  is the pre-existing one, and its quad fragment now hoists
+  `max( mix( … ) )` into a var exactly as three does. It is the only
+  `dump_wgsl` section this rung moved.
+* **A swizzle past the end of its source expands the source.**
+  `SplitNode.generate()` builds its input at a type long enough for the
+  components asked for (`getVectorLength()`), so `renderOutput()` taking the
+  alpha of a `vec3` output node emits `vec4<f32>( nodeVar2, 1.0 ).w`. The port
+  emitted `nodeVar2.w`, which is not WGSL.
+
+### Divergences specific to this rung
+
+* **`toggleTexture()` swaps GPU textures, not `Texture` objects.** A `NodeRef`
+  is immutable and holds its texture handle for good, so the pair alternates
+  behind two fixed handles (`Texture::swap_gpu`) and every bind group,
+  pipeline and cache key keyed on them stays valid. See
+  `docs/postprocessing.md`, "The previous frame".
+* **Fog parameters as constants** (the existing §8 entry) is the only
+  divergence in this rung's scene fragment: Three keeps `fogColor` / `fogNear`
+  / `fogFar` as render uniforms, the port folds the same values in.
+
+## 15. A context hook on the material output (`webgpu_postprocessing_direct`)
+
+`builder.context.getOutput( materialOutputNode, builder )` is the one seam
+`DirectRenderPipeline` uses, and it is inside `NodeMaterial.setup()` — the
+function every material in the crate goes through. The port's shape:
+
+* [`OutputContext`](crate::materials::OutputContext) is a field of
+  `SetupContext`, so it is part of the program cache key by construction
+  rather than by remembering to hash it.
+* `MaterialFlow::output_assign` carries the hook's *own*
+  `output.assign( materialOutputNode )`, which is why a direct-pipeline
+  fragment shader assigns the `Output` property twice in a row. That is
+  three's output, not a port artefact.
+* The gate for a change on this path is `dump_wgsl`: 244 sections before, 250
+  after (the rung's own `direct_scene` / `direct_background`), **zero changed**.
+  A material with `output: None` generates the byte-identical shader it
+  generated before.
+
+### Divergences specific to this rung
+
+* **The hook is chosen on the renderer, not inside the closure.** three.js's
+  closure tests `renderer.isOutputTarget` / `getRenderTarget()` per material;
+  the port filters once in `Renderer::render()` — the hook travels only when
+  the render goes to the canvas — and passes `output: None` from the shadow
+  passes. Same materials end up hooked.
+* **The scene fragment's divergences are the existing §8 ones**: named
+  lighting temporaries, hoisted accumulator zeros and the inlined
+  `faceDirection`, plus uniform renumbering. The tail from the doubled
+  `Output =` through `sRGBTransferOETF` is statement for statement three's.
+* **The background quad** matches `m00` / `m01` statement for statement; what
+  differs is uniform order inside the two structs, the `// codes` order with
+  `fn0` / `fn1` swapped, and the order of two `var<private>` declarations —
+  all §8 entries already.

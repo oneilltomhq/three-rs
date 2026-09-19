@@ -60,6 +60,10 @@ pub struct RenderTargetInner {
     /// Three clones `renderTarget.texture` for each, so every attachment shares
     /// the target's size, type and filters; only the name differs.
     pub extra_textures: Vec<(String, Texture)>,
+    /// `PassNode._previousTextures` — a second texture per output name, sized
+    /// and allocated with the target but **never** a colour attachment. See
+    /// [`RenderTarget::add_previous_texture`].
+    pub previous_textures: Vec<(String, Texture)>,
     /// The MSAA colour texture `samples > 1` asks for; the single-sample
     /// `color` texture is then its resolve target.
     pub msaa: Option<wgpu::Texture>,
@@ -115,6 +119,7 @@ impl RenderTarget {
             depth_texture: None,
             texture: Texture::render_target(width, height, options.texture_type.color_gpu_format()),
             extra_textures: Vec::new(),
+            previous_textures: Vec::new(),
             msaa: None,
             depth: None,
             viewport: Vector4::new(0.0, 0.0, width as f64, height as f64),
@@ -183,6 +188,58 @@ impl RenderTarget {
         texture
     }
 
+    /// `PassNode.getPreviousTexture( name )`: a second texture behind one
+    /// output name, holding the frame before this one. It shares the target's
+    /// descriptor and is allocated and resized with it, but it is never a
+    /// colour attachment — nothing is ever rendered into it directly.
+    ///
+    /// **How the toggle is modelled.** `PassNode.toggleTexture()` swaps the
+    /// two `Texture` objects — the one in `renderTarget.textures` and the one
+    /// held aside — and then calls `updateTexture()` on the two `TextureNode`s
+    /// so that "current" and "previous" follow them. A `NodeRef` in this port
+    /// is immutable, so the port alternates the other end:
+    /// `getTextureNode()`'s node always samples the attachment's texture,
+    /// `getPreviousTextureNode()`'s always samples this one, and
+    /// [`Self::toggle_texture`] exchanges the **GPU textures** behind the two
+    /// handles. The GPU sees the same two allocations alternating in the same
+    /// order; what differs is that the port's bind groups keep their texture
+    /// ids across the swap, where three.js' change every frame.
+    ///
+    /// Idempotent, as `_previousTextures[ name ]` makes it.
+    pub fn add_previous_texture(&self, name: &str) -> Texture {
+        let mut inner = self.0.borrow_mut();
+        if let Some((_, texture)) = inner.previous_textures.iter().find(|(n, _)| n == name) {
+            return texture.clone();
+        }
+        let texture = Texture::render_target(
+            inner.width,
+            inner.height,
+            inner.texture_type.color_gpu_format(),
+        );
+        inner
+            .previous_textures
+            .push((name.to_string(), texture.clone()));
+        texture
+    }
+
+    /// `PassNode.toggleTexture( name )` — see [`Self::add_previous_texture`].
+    /// A no-op for a name that has no previous texture, exactly as three's is.
+    pub fn toggle_texture(&self, name: &str) {
+        let inner = self.0.borrow();
+        let Some((_, previous)) = inner.previous_textures.iter().find(|(n, _)| n == name) else {
+            return;
+        };
+        let current = if name == OUTPUT_ATTACHMENT {
+            inner.texture.clone()
+        } else {
+            match inner.extra_textures.iter().find(|(n, _)| n == name) {
+                Some((_, texture)) => texture.clone(),
+                None => return,
+            }
+        };
+        current.swap_gpu(previous);
+    }
+
     /// `renderTarget.textures.map( texture => texture.name )` — what
     /// `MRTNode.setup()` resolves its output names against, so the position of
     /// a name here is the `@location` its value is written to.
@@ -231,7 +288,7 @@ impl RenderTarget {
             if let Some(depth_texture) = &inner.depth_texture {
                 depth_texture.inner().borrow_mut().gpu = None;
             }
-            for (_, texture) in &inner.extra_textures {
+            for (_, texture) in inner.extra_textures.iter().chain(&inner.previous_textures) {
                 texture.set_size(width, height);
                 texture.clear_gpu();
             }

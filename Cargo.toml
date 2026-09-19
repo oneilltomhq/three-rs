@@ -82,6 +82,14 @@ path = "examples/webgpu_rtt.rs"
 name = "webgpu_postprocessing_radial_blur"
 path = "examples/webgpu_postprocessing_radial_blur.rs"
 
+[[example]]
+name = "webgpu_postprocessing_difference"
+path = "examples/webgpu_postprocessing_difference.rs"
+
+[[example]]
+name = "webgpu_postprocessing_direct"
+path = "examples/webgpu_postprocessing_direct.rs"
+
 [[test]]
 name = "e2e"
 path = "tests/e2e/main.rs"

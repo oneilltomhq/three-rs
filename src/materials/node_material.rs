@@ -61,6 +61,36 @@ pub struct SetupContext {
     /// `None` is every draw into a single-attachment target, and leaves the
     /// fragment stage's `OutputStruct { color }` shape alone.
     pub mrt: Option<MrtContext>,
+    /// `builder.context.getOutput` — the renderer's context node, which
+    /// `DirectRenderPipeline` sets so that the output transform is applied
+    /// **inside every material's fragment shader** instead of in a quad of its
+    /// own. See [`OutputContext`].
+    pub output: Option<OutputContext>,
+}
+
+/// `context.getOutput( materialOutputNode, builder )`.
+///
+/// three.js passes a closure, which can look at the builder and hand the
+/// material's own output straight back when the draw is not going to the
+/// output target. The port makes that decision on the renderer instead — the
+/// hook only ever reaches a material that is being drawn into the canvas, so
+/// what travels here is just the node the closure would return: the
+/// pipeline's `outputNode`, already wrapped in `renderOutput( …, toneMapping,
+/// outputColorSpace )`, reading the material's result back through the
+/// `Output` property (`output_property()`).
+///
+/// It is part of `SetupContext`, so it is part of the program's cache key by
+/// construction, which is what keeps a material drawn with the hook and the
+/// same material drawn without it on two different programs.
+#[derive(Clone, Debug)]
+pub struct OutputContext {
+    pub node: NodeRef,
+}
+
+impl std::hash::Hash for OutputContext {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.node.key().hash(state);
+    }
 }
 
 /// What a draw into an MRT render target knows about it: the pass's MRT node
@@ -480,11 +510,33 @@ fn setup_inner(
         None => model_view_projection(),
     };
 
+    // `if ( builder.context.getOutput ) resultNode = builder.context.getOutput(
+    // resultNode, builder );` — `DirectRenderPipeline`'s hook, which does
+    // `output.assign( materialOutputNode )` and then returns its own node. The
+    // assign is a *second* write to the `Output` property, on top of
+    // `NodeMaterial.setup()`'s own, and three's dump has both lines.
+    //
+    // The MRT branch runs only with a render target bound, and the hook only
+    // without one, so the two never meet.
+    let (output_assign, output_node) = match &ctx.output {
+        Some(context) => (
+            Some(
+                material
+                    .output_node
+                    .clone()
+                    .unwrap_or_else(|| output.clone()),
+            ),
+            Some(context.node.clone()),
+        ),
+        None => (None, material.output_node.clone()),
+    };
+
     MaterialFlow {
         pre_vertex_statements: pre_vertex,
         fragment_statements: fragment,
         output,
-        output_node: material.output_node.clone(),
+        output_assign,
+        output_node,
         mrt,
         emit_output_property: material.fragment_node.is_none(),
         vertex_statements: Vec::new(),

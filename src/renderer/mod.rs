@@ -3,6 +3,7 @@
 //! bindings it declared, draw into a render target or into the "canvas"
 //! texture, read back.
 
+mod direct_render_pipeline;
 mod info;
 mod mipmap;
 mod pass;
@@ -18,6 +19,7 @@ mod ssaa_pass;
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 
+pub use direct_render_pipeline::DirectRenderPipeline;
 pub use info::{BuildCounts, ComputeCounts, Info, MemoryCounts, RenderCounts};
 use mipmap::{create_mipmap_pipeline, MipmapShader};
 pub use pass::PassNode;
@@ -532,6 +534,10 @@ pub struct Renderer {
     /// `Background.mesh.material`, minus the `colorNode` the scene's background
     /// supplies per frame; `Background` keeps one material too.
     background_material: MeshBasicNodeMaterial,
+    /// `renderer.contextNode`'s `getOutput` — see
+    /// [`Renderer::set_output_hook`] and
+    /// [`DirectRenderPipeline`](super::DirectRenderPipeline).
+    output_hook: Option<crate::materials::OutputContext>,
     /// `Renderer._renderOutput()`'s `outputColorTransform` quad material,
     /// minus the `fragmentNode` the frame's target and tone mapping supply.
     output_material: MeshBasicNodeMaterial,
@@ -761,6 +767,7 @@ impl Renderer {
             frames: 0,
             program_builds: 0,
             default_material: MeshBasicNodeMaterial::new(),
+            output_hook: None,
             background_material: {
                 let mut material = MeshBasicNodeMaterial::new();
                 material.name = "Background.material";
@@ -1004,6 +1011,17 @@ impl Renderer {
         // frame's scene no longer uses. See `sweep_caches`.
         self.begin_frame();
 
+        // `DirectRenderPipeline`'s `getOutput` hook, which every material of
+        // this render carries into its own setup. three.js makes the decision
+        // inside the closure — `if ( renderer.isOutputTarget === false && … )
+        // return materialOutputNode` — and the port makes it here: a draw into
+        // a render target (the shadow passes below, a `PassNode`'s target, the
+        // internal framebuffer target) is left exactly as it was.
+        let output_context = self
+            .output_hook
+            .clone()
+            .filter(|_| self.render_target.is_none());
+
         // `Renderer.render()`: `scene.updateMatrixWorld()` then
         // `camera.updateMatrixWorld()`, both honouring `matrixAutoUpdate` /
         // `matrixWorldAutoUpdate`.
@@ -1052,7 +1070,12 @@ impl Renderer {
                 geometry: self.background_geometry(),
                 material,
                 key,
-                setup: SetupContext::default(),
+                // `_getBackgroundNode()` exists so that the background quad
+                // takes the same inline output transform as everything else.
+                setup: SetupContext {
+                    output: output_context.clone(),
+                    ..SetupContext::default()
+                },
                 fog: None,
                 // `Background.mesh` is never added to the scene, so its
                 // `matrixWorld` stays the identity.
@@ -1234,6 +1257,7 @@ impl Renderer {
                     batch: batch.clone(),
                     line_segments: object.payload.line_segments().cloned(),
                     mrt: mrt_context.clone(),
+                    output: output_context.clone(),
                 },
                 fog: scene.fog_node.clone(),
                 model_world: item.matrix_world,
@@ -1466,6 +1490,9 @@ impl Renderer {
                         instance_count: instance_matrix.as_ref().map(|_| instance_count as usize),
                         instanced: instance_matrix.is_some(),
                         instance_color: instance_color.as_ref().map(|a| a.count()),
+                        // The shadow pass draws into the shadow map, which is
+                        // `renderer.isOutputTarget === false`: no hook.
+                        output: None,
                         lights: Vec::new(),
                         // The shadow pass does not carry morph targets yet:
                         // nothing in the ladder both morphs and casts a shadow.
@@ -1663,6 +1690,9 @@ impl Renderer {
                         instance_count: instance_matrix.as_ref().map(|_| instance_count as usize),
                         instanced: instance_matrix.is_some(),
                         instance_color: instance_color.as_ref().map(|a| a.count()),
+                        // The shadow pass draws into the shadow map, which is
+                        // `renderer.isOutputTarget === false`: no hook.
+                        output: None,
                         lights: Vec::new(),
                         morph: None,
                         skin: None,
@@ -3868,6 +3898,20 @@ impl Renderer {
         result
     }
 
+    /// `renderer.contextNode = this._contextNode` and its restore.
+    ///
+    /// The hook is consulted by every material of a render that goes to the
+    /// canvas; a render into a render target ignores it, as three's closure
+    /// does. `pub(crate)` because the only thing that sets one is
+    /// [`DirectRenderPipeline`](super::DirectRenderPipeline), which restores
+    /// it after the render.
+    pub(crate) fn set_output_hook(
+        &mut self,
+        hook: Option<crate::materials::OutputContext>,
+    ) -> Option<crate::materials::OutputContext> {
+        std::mem::replace(&mut self.output_hook, hook)
+    }
+
     /// `renderer.samples`.
     pub fn samples(&self) -> u32 {
         self.samples
@@ -4147,8 +4191,12 @@ impl Renderer {
         }
 
         // `renderTarget.textures` past the first: the same descriptor, one GPU
-        // texture each.
-        for (name, texture) in &inner.extra_textures {
+        // texture each. The pass's `_previousTextures` share the descriptor
+        // too — they are sampled, never drawn into, and a previous texture
+        // that has not had a turn as the attachment yet reads back as WebGPU's
+        // zero-initialised contents, which is what the graded first frame of
+        // `webgpu_postprocessing_difference` sees.
+        for (name, texture) in inner.extra_textures.iter().chain(&inner.previous_textures) {
             if !texture.has_gpu() {
                 texture.set_gpu(self.device.create_texture(&wgpu::TextureDescriptor {
                     label: Some("three-rs render target attachment"),

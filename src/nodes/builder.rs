@@ -383,6 +383,21 @@ impl NodeBuilder {
     /// `Node.analyze()`: count reaches, recursing only the first time a node is
     /// seen. The `usageCount > 1` test is what promotes a `TempNode` to a var.
     pub fn analyze(&mut self, node: &NodeRef) {
+        // `ShaderCallNodeInternal.build()` in the analyze stage is
+        // `outputNode.build( builder, output )` and nothing else: an inlined
+        // `Fn()` call neither counts itself nor stops the walk, so two call
+        // sites that share one memoised body count *the body* twice and it
+        // becomes a var. `saturation()` read as a vec3 and again for its `.w`
+        // by `renderOutput()` is that case
+        // (`webgpu_postprocessing_difference`).
+        if let Node::Call { def, args } = &*node.0 {
+            if !def.layout {
+                let (def, args) = (def.clone(), args.clone());
+                let body = self.call_body(node, &def, &args);
+                self.analyze(&body);
+                return;
+            }
+        }
         let key = node.key();
         let count = self.usage.entry(key).or_insert(0);
         *count += 1;
@@ -1140,18 +1155,32 @@ impl NodeBuilder {
                 if name == "tsl_mod_float" {
                     self.add_code("tsl_mod_float", wgsl::MOD_FLOAT_SNIPPET);
                 }
-                // `mix`'s interpolant and `dot`/`cross`/`reflect`'s operands
-                // keep their own types; everything else is widened to the
-                // result type, as `MathNode.generate()` does.
+                // `MathNode.generate()`'s generic branch builds every operand
+                // at the node's *input* type — the widest of the operands —
+                // not at the result type. For `dot` those differ: the result
+                // is a scalar. `luminance( vec4 )` is the case that makes it
+                // load-bearing (`webgpu_postprocessing_difference`): three
+                // widens the `vec3` coefficients to `vec4( vec3( … ), 1.0 )`,
+                // so the alpha difference is weighted 1.0 and not dropped.
+                let input_ty = if name == "dot" {
+                    args.iter()
+                        .map(|a| a.ty())
+                        .max_by_key(|t| t.components())
+                        .unwrap_or(ty)
+                } else {
+                    ty
+                };
+                // `mix`'s interpolant and `cross`/`reflect`'s operands keep
+                // their own types; everything else is widened to the result
+                // type, as `MathNode.generate()` does.
                 let parts: Vec<String> = args
                     .iter()
                     .enumerate()
                     .map(|(i, a)| match name {
                         "mix" if i == 2 => self.generate(a),
-                        "dot" | "cross" | "reflect" | "normalize" | "transpose"
-                        | "tsl_inverse_mat3" | "length" | "dpdx" | "- dpdy" | "inverseSqrt" => {
-                            self.generate(a)
-                        }
+                        "dot" => self.format(a, input_ty),
+                        "cross" | "reflect" | "normalize" | "transpose" | "tsl_inverse_mat3"
+                        | "length" | "dpdx" | "- dpdy" | "inverseSqrt" => self.generate(a),
                         // `select( f, t, cond )`'s condition is a bool, and the
                         // MaterialX helpers pass their own already-typed
                         // operands; nothing here is widened.
@@ -1172,7 +1201,27 @@ impl NodeBuilder {
                 ..
             } => {
                 let (inner, components) = (inner.clone(), *components);
-                let snippet = self.generate(&inner);
+                // `SplitNode.generate()`: `if ( componentsLength >=
+                // nodeTypeLength ) … node.build( builder, type )` — a
+                // component past the end of the source *expands* the source
+                // rather than swizzling out of bounds. `renderOutput()` asking
+                // a vec3 `outputNode` for its alpha is that case, and it is
+                // not cosmetic: `vec3.w` is not WGSL
+                // (`webgpu_postprocessing_difference`).
+                // `SplitNode.getVectorLength()`.
+                let reach = components
+                    .bytes()
+                    .map(|c| "xyzw".find(c as char).unwrap_or(0) + 1)
+                    .chain(std::iter::once(components.len()))
+                    .max()
+                    .unwrap_or(1);
+                let from = inner.ty();
+                let snippet = if reach > from.components() {
+                    let wider = Type::vector_of(from.component_type(), reach);
+                    self.format(&inner, wider)
+                } else {
+                    self.generate(&inner)
+                };
                 format!("{snippet}.{components}")
             }
 
@@ -1586,6 +1635,12 @@ pub struct MaterialFlow {
     /// The `vec4` the fragment stage writes to `output.color`, and — when
     /// `emit_output_property` is set — to the `Output` property.
     pub output: NodeRef,
+    /// `context.getOutput`'s own `output.assign( materialOutputNode )` — a
+    /// second write to the `Output` property, emitted immediately after
+    /// `NodeMaterial.setup()`'s own and before the node the hook returned.
+    /// Only `DirectRenderPipeline` sets it; see
+    /// [`OutputContext`](crate::materials::OutputContext).
+    pub output_assign: Option<NodeRef>,
     /// `material.outputNode`. `NodeMaterial.setup()` assigns the *basic*
     /// output to the `Output` property and then hands `output.color` to this
     /// node instead, so a custom output can read `Output` (or, as
@@ -1708,6 +1763,9 @@ impl NodeBuilder {
         if flow.emit_output_property && flow.output_node.is_none() && flow.mrt.is_none() {
             self.analyze(&flow.output);
         }
+        if let Some(node) = &flow.output_assign {
+            self.analyze(node);
+        }
         if let Some(node) = &flow.output_node {
             self.analyze(node);
         }
@@ -1736,8 +1794,15 @@ impl NodeBuilder {
             .emit_output_property
             .then(|| self.declare_var(Some("Output"), Type::Vec4));
         let mut color = self.generate(&flow.output);
-        if let Some(output_prop) = output_prop {
+        if let Some(output_prop) = &output_prop {
             self.emit(format!("{output_prop} = {color};"));
+        }
+        // The hook's own assign, which is why a direct-pipeline fragment has
+        // `Output = nodeVarN;` twice.
+        if let (Some(output_prop), Some(node)) = (&output_prop, &flow.output_assign) {
+            let node = node.clone();
+            let snippet = self.generate(&node);
+            self.emit(format!("{output_prop} = {snippet};"));
         }
         if let Some(node) = &flow.output_node {
             color = self.generate(node);
