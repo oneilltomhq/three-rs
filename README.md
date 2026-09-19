@@ -81,6 +81,8 @@ Linux is the only backend that has been run.
 | [`webgpu_pmrem_scene`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_pmrem_scene.rs) | [`webgpu_postprocessing_bloom`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_bloom.rs) | [`webgpu_materials_envmaps`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_materials_envmaps.rs) | [`webgpu_materials_cubemap_mipmaps`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_materials_cubemap_mipmaps.rs) |
 | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_postprocessing_bloom_emissive.jpg" alt="webgpu_postprocessing_bloom_emissive" width="200">](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_bloom_emissive-progress.md) |  |  |  |
 | [`webgpu_postprocessing_bloom_emissive`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_bloom_emissive.rs) |  |  |  |
+| [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_pmrem_scene.jpg" alt="webgpu_pmrem_scene" width="200">](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_pmrem_scene-progress.md) | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_postprocessing_bloom.jpg" alt="webgpu_postprocessing_bloom" width="200">](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_bloom-progress.md) | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_instance_uniform.jpg" alt="webgpu_instance_uniform" width="200">](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_instance_uniform.rs) |  |
+| [`webgpu_pmrem_scene`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_pmrem_scene.rs) | [`webgpu_postprocessing_bloom`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_bloom.rs) | [`webgpu_instance_uniform`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_instance_uniform.rs) |  |
 
 <sub>Our own rendered frames, one per graded example. See [`docs/gallery.md`](https://github.com/oneilltomhq/three-rs/blob/main/docs/gallery.md).</sub>
 <!-- gallery:end -->
@@ -115,6 +117,7 @@ Linux is the only backend that has been run.
 | webgpu_materials_envmaps | 0 | 2.1 | 3 | 7105 |
 | webgpu_materials_cubemap_mipmaps | 1 | 2.6 | 3 | 65025 |
 | webgpu_postprocessing_bloom_emissive | 28 | 5.1 | 15 | 17449 |
+| webgpu_instance_uniform | 13 | 6.0 | 14 | 247105 |
 
 `webgpu_compute_points` is graded like the rest and its 4 pixels mean less
 than the rest: its frame is black apart from a 2x2 block at the centre, so
