@@ -124,6 +124,10 @@ mod webgpu_postprocessing_radial_blur;
 #[allow(dead_code)]
 mod webgpu_postprocessing_ssaa;
 
+#[path = "../../examples/webgpu_postprocessing_bloom_selective.rs"]
+#[allow(dead_code)]
+mod webgpu_postprocessing_bloom_selective;
+
 #[path = "../../examples/webgpu_pmrem_cubemap.rs"]
 #[allow(dead_code)]
 mod webgpu_pmrem_cubemap;
@@ -541,6 +545,133 @@ fn webgpu_postprocessing_ssaa() {
     steady_frame(name, &mut app, webgpu_postprocessing_ssaa::animate, |app| {
         app.renderer.device()
     });
+}
+
+/// The fifty spheres, against
+/// `tests/fixtures/webgpu_postprocessing_bloom_selective/spheres_t0.json` —
+/// three.js' own `Color` / `Vector3` run in node under the e2e harness's
+/// seeded `Math.random` (the fixture's `oracle.mjs`).
+///
+/// Nine draws per sphere, and the third of each nine is the coin flip that
+/// decides whether that sphere blooms. An off-by-one in the sequence would not
+/// nudge the image, it would glow a different set of spheres — so this is
+/// asserted before a single pixel is compared, and its failure message names
+/// the sphere rather than a percentage.
+fn assert_spheres(scene: &three_rs::Scene) {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/webgpu_postprocessing_bloom_selective/spheres_t0.json");
+    let oracle: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(&path).expect("the oracle fixture is readable"),
+    )
+    .expect("the oracle fixture is JSON");
+    let expected = oracle["spheres"].as_array().expect("an array of spheres");
+
+    let children = scene.children();
+    assert_eq!(children.len(), expected.len(), "sphere count");
+
+    for (i, (child, want)) in children.iter().zip(expected).enumerate() {
+        let object = child.borrow();
+
+        let position = [object.position.x, object.position.y, object.position.z];
+        let want_position: Vec<f64> = want["position"]
+            .as_array()
+            .expect("position is an array")
+            .iter()
+            .map(|v| v.as_f64().expect("a number"))
+            .collect();
+        for (axis, (a, e)) in position.iter().zip(&want_position).enumerate() {
+            // The same 1e-9 every rung's oracle uses: Rust's `f64::sin` and
+            // V8's differ by up to an ulp, which the `* 10000` in the harness
+            // PRNG turns into ~2e-12 of the fraction.
+            assert!(
+                (a - e).abs() <= 1e-9,
+                "sphere {i} position[{axis}]: {a} vs {e}"
+            );
+        }
+
+        let scale = want["scale"].as_f64().expect("a number");
+        assert!(
+            (object.scale.x - scale).abs() <= 1e-9,
+            "sphere {i} scale: {} vs {scale}",
+            object.scale.x
+        );
+
+        let material = object.material().expect("every sphere has a material");
+        let color = material
+            .color
+            .get_hex(three_rs::math::ColorSpace::LinearSRGB);
+        let want_color = want["color"].as_u64().expect("a number") as u32;
+        assert_eq!(color, want_color, "sphere {i} color");
+
+        // `material.mrtNode.get( 'bloomIntensity' ).value` — the uniform the
+        // page's pointer handler would toggle, read back out of the graph.
+        let node = material
+            .mrt_node
+            .as_ref()
+            .expect("every sphere has an mrtNode")
+            .get("bloomIntensity")
+            .expect("the mrtNode has a bloomIntensity channel");
+        let value = match &*node.0 {
+            three_rs::nodes::Node::Uniform(uniform) => match &uniform.source {
+                three_rs::nodes::UniformSource::Value(values) => values[0],
+                other => panic!("sphere {i} bloomIntensity is {other:?}, not a value uniform"),
+            },
+            other => panic!("sphere {i} bloomIntensity is {other:?}, not a uniform"),
+        };
+        assert_eq!(
+            value,
+            want["bloomIntensity"].as_f64().expect("a number"),
+            "sphere {i} bloomIntensity"
+        );
+    }
+}
+
+#[test]
+fn webgpu_postprocessing_bloom_selective() {
+    let name = "webgpu_postprocessing_bloom_selective";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_postprocessing_bloom_selective::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    // Before the GPU is asked for anything: the scene itself.
+    assert_spheres(&app.scene);
+
+    webgpu_postprocessing_bloom_selective::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(
+        name,
+        &mut app,
+        webgpu_postprocessing_bloom_selective::animate,
+        |app| app.renderer.device(),
+    );
 }
 
 #[test]
@@ -1109,6 +1240,7 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_postprocessing_masking);
     rung!(webgpu_postprocessing_radial_blur);
     rung!(webgpu_postprocessing_ssaa);
+    rung!(webgpu_postprocessing_bloom_selective);
     rung!(webgpu_lights_phong);
     rung!(webgpu_morphtargets);
     rung!(webgpu_tsl_galaxy);

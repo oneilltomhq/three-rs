@@ -282,7 +282,7 @@ impl NodeProgram {
 struct StageState {
     lines: Vec<String>,
     indent: usize,
-    decls: Vec<(String, Type)>,
+    decls: Vec<(String, String)>,
     declared: HashSet<String>,
     attributes: Vec<AttributeSlot>,
     builtins: Vec<Builtin>,
@@ -295,7 +295,7 @@ struct StageState {
 struct FnScope {
     lines: Vec<String>,
     indent: usize,
-    locals: Vec<(String, Type)>,
+    locals: Vec<(String, String)>,
     var_counter: usize,
     const_counter: usize,
     scopes: Vec<HashMap<usize, String>>,
@@ -398,6 +398,7 @@ impl NodeBuilder {
         match &*node.0 {
             Node::Const { .. }
             | Node::ConstArray { .. }
+            | Node::ArrayVar { .. }
             | Node::Uniform(_)
             | Node::Attribute { .. }
             | Node::InstancedAttribute { .. }
@@ -571,6 +572,12 @@ impl NodeBuilder {
 
     /// `NodeBuilder.getVarFromNode()` — declare a `var` and return its name.
     fn declare_var(&mut self, name: Option<&str>, ty: Type) -> String {
+        self.declare_var_typed(name, wgsl::type_name(ty).to_string())
+    }
+
+    /// [`declare_var`](Self::declare_var) for a var whose WGSL type is not one
+    /// of [`Type`]'s — an `array< T, N >`, which only a literal array var is.
+    fn declare_var_typed(&mut self, name: Option<&str>, ty: String) -> String {
         if let Some(scope) = self.fn_scopes.last_mut() {
             let name = match name {
                 Some(n) => n.to_string(),
@@ -875,6 +882,27 @@ impl NodeBuilder {
                     values.len(),
                     parts.join(", ")
                 )
+            }
+
+            // `array( … )` the flow reads more than once: three.js gives it a
+            // `var<private>` of array type and assigns the literal once
+            // (`dump/m11`'s `nodeVar0 = array< f32, 5 >( 1.0, … )`).
+            Node::ArrayVar { element_ty, values } => {
+                let (element_ty, values) = (*element_ty, values.clone());
+                let parts: Vec<String> = values.iter().map(|v| wgsl::number(*v)).collect();
+                let literal = format!(
+                    "array< {}, {} >( {} )",
+                    wgsl::type_name(element_ty),
+                    values.len(),
+                    parts.join(", ")
+                );
+                let name = self.declare_var_typed(
+                    None,
+                    format!("array< {}, {} >", wgsl::type_name(element_ty), values.len()),
+                );
+                self.emit(format!("{name} = {literal};"));
+                self.cache_put(node.key(), name.clone());
+                name
             }
 
             Node::Uniform(u) => {
@@ -1499,7 +1527,7 @@ impl NodeBuilder {
             wgsl::type_name(def.ret)
         ));
         for (n, t) in &scope.locals {
-            src.push_str(&format!("\tvar {n} : {};\n", wgsl::type_name(*t)));
+            src.push_str(&format!("\tvar {n} : {t};\n"));
         }
         src.push('\n');
         for line in &scope.lines {
@@ -1969,10 +1997,7 @@ impl NodeBuilder {
 
         out.push_str("// vars\n");
         for (name, ty) in &s.decls {
-            out.push_str(&format!(
-                "var<private> {name} : {};\n",
-                wgsl::type_name(*ty)
-            ));
+            out.push_str(&format!("var<private> {name} : {ty};\n"));
         }
         out.push('\n');
 
@@ -2061,10 +2086,7 @@ impl NodeBuilder {
 
         out.push_str("// vars\n");
         for (name, ty) in &s.decls {
-            out.push_str(&format!(
-                "var<private> {name} : {};\n",
-                wgsl::type_name(*ty)
-            ));
+            out.push_str(&format!("var<private> {name} : {ty};\n"));
         }
         out.push('\n');
 

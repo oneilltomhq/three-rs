@@ -247,6 +247,20 @@ pub fn const_array(values: Vec<f64>) -> NodeRef {
     })
 }
 
+/// `array( [ … ] )` held in a `var<private> nodeVarN : array< f32, N >`.
+///
+/// Three emits the same literal as [`const_array`] does, but a `TempNode` the
+/// flow reads more than once is promoted to a var, and `BloomNode`'s composite
+/// reads its five bloom factors five times (`dump/m11`). `Node::ArrayVar` is
+/// not a kind the builder promotes on its own, so — as with `radial_blur`'s
+/// result — the caller asks for the var.
+pub fn array_var(values: Vec<f64>) -> NodeRef {
+    NodeRef::new(Node::ArrayVar {
+        element_ty: Type::F32,
+        values,
+    })
+}
+
 /// `attribute( name, type )`.
 pub fn attribute(name: &'static str, ty: Type) -> NodeRef {
     NodeRef::new(Node::Attribute { name, ty })
@@ -1257,7 +1271,7 @@ impl NodeRef {
             // Without the distinction a `vec2`'s `[ 0 ]` claims to be a
             // `vec2`, which `NodeBuilder.format()` then swizzles down —
             // `nodeVar1[ 0 ].x`, which three does not emit.
-            other if matches!(&*self.0, Node::ConstArray { .. }) => other,
+            other if matches!(&*self.0, Node::ConstArray { .. } | Node::ArrayVar { .. }) => other,
             other => other.component_type(),
         };
         NodeRef::new(Node::Element {
@@ -2204,6 +2218,31 @@ pub fn equirect_uv(direction: NodeRef) -> NodeRef {
     vec2_join(vec![u, v])
 }
 
+/// `texture( map ).sample( uv )` — the same tap as [`texture_uv`], but through
+/// the map's `mat3x3` uv matrix.
+///
+/// `TextureNode.sample()` *clones* the texture node and leaves `updateMatrix`
+/// on, so every sample of one map carries its **own** `uniform( texture.matrix
+/// )` — `BloomNode`'s separable blur samples one texture three times and
+/// three's dump has three `mat3x3` members for it (`dump/m05`). [`texture`]
+/// shares one matrix per map instead, which is what three does when the same
+/// *node* is read twice.
+pub fn texture_sample(map: &Texture, coord: NodeRef) -> NodeRef {
+    let matrix = uniform(
+        UniformSource::Value(
+            map.matrix()
+                .to_padded_f32_array()
+                .iter()
+                .map(|&v| v as f64)
+                .collect(),
+        ),
+        Type::Mat3,
+        UniformGroup::Object,
+        None,
+    );
+    texture_uv(map, matrix.mul(vec3_join(vec![coord, float(1.0)])).xy())
+}
+
 /// `texture( map, uv )` without the default UV.
 pub fn texture_uv(map: &Texture, coord: NodeRef) -> NodeRef {
     texture_node(
@@ -2309,6 +2348,45 @@ impl StorageArray {
 
     pub fn element_ty(&self) -> Type {
         self.0.element_ty
+    }
+}
+
+/// `uniformArray( values )` — a constant array in a uniform block, one
+/// `vec4<f32>` per element (`UniformArrayNode.getPaddedType()`).
+///
+/// Held by the caller like a [`StorageArray`], because its identity is the
+/// buffer: all five `element()` calls of `BloomNode`'s composite have to reach
+/// the *same* `NodeBuffer_N` binding.
+#[derive(Clone)]
+pub struct UniformArray(Rc<BufferNode>);
+
+/// `uniformArray( [ Vector3, … ] )`.
+///
+/// Three takes the element type from `value[ 0 ]`; the port takes the three
+/// components explicitly, since a `Vec<Vector3>` is the only shape the ladder
+/// asks for. Each element is padded to a `vec4` and read back as its `.xyz`,
+/// exactly as `UniformArrayElementNode.generate()` formats it.
+pub fn uniform_array_vec3(values: &[[f64; 3]]) -> UniformArray {
+    let mut padded = Vec::with_capacity(values.len() * 4);
+    for v in values {
+        padded.extend([v[0] as f32, v[1] as f32, v[2] as f32, 0.0]);
+    }
+    UniformArray(Rc::new(BufferNode {
+        id: crate::nodes::node::BufferId::next(),
+        source: BufferSource::UniformArray(Rc::new(padded)),
+        element_ty: Type::Vec4,
+        count: values.len(),
+    }))
+}
+
+impl UniformArray {
+    /// `.element( i )` — `NodeBuffer_N.value[ i ].xyz`.
+    pub fn element(&self, index: usize) -> NodeRef {
+        NodeRef::new(Node::BufferElement {
+            buffer: self.0.clone(),
+            index: constant(Type::U32, vec![index as f64]),
+        })
+        .xyz()
     }
 }
 

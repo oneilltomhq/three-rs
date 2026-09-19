@@ -327,6 +327,15 @@ pub enum BufferSource {
     /// `Morph.js`' `uniformArray( mesh.morphTargetInfluences, 'float' )` — one
     /// `vec4` per morph target with the influence in `.x`.
     MorphInfluences,
+    /// `uniformArray( values )` — a constant array the application supplies,
+    /// already padded to one `vec4` per element the way
+    /// `UniformArrayNode.updateBuffer()` pads it. `BloomNode.bloomTintColors`
+    /// is the ladder's first; `GodraysNode`, `SSAONode`, `GTAONode` and
+    /// `SSRNode` want the same node.
+    ///
+    /// The values travel in an `Rc` so the buffer can be cached on the node's
+    /// identity and uploaded once, like [`BufferSource::Attribute`].
+    UniformArray(Rc<Vec<f32>>),
     /// `referenceBuffer( 'skeleton.boneMatrices', 'mat4', bones )` — the
     /// skeleton's bone matrices as one `array< mat4x4<f32>, N >`. Three falls
     /// back to a bone *texture* when `bones * 64` passes the uniform buffer
@@ -544,6 +553,14 @@ pub enum Node {
         element_ty: Type,
         values: Vec<f64>,
     },
+    /// The same literal array held in a `var<private> nodeVarN : array< T, N >`
+    /// rather than written out at each use — three.js' `TempNode` promotion of
+    /// an `array()` that the flow reads more than once, which `BloomNode`'s
+    /// composite does five times (`dump/m11`).
+    ArrayVar {
+        element_ty: Type,
+        values: Vec<f64>,
+    },
     Uniform(Rc<UniformNode>),
     /// `BufferNode` element access: `NodeBuffer_N.value[ index ]`.
     BufferElement {
@@ -740,6 +757,7 @@ impl NodeRef {
         match &*self.0 {
             Node::Const { ty, .. } => *ty,
             Node::ConstArray { element_ty, .. } => *element_ty,
+            Node::ArrayVar { element_ty, .. } => *element_ty,
             Node::Uniform(u) => u.ty,
             Node::BufferElement { buffer, .. } => buffer.element_ty,
             Node::Attribute { ty, .. } => *ty,
@@ -931,7 +949,9 @@ impl std::hash::Hash for BufferSource {
             }
             // Identity, never contents — the array behind an instanced
             // attribute is megabytes and is resolved per draw anyway.
-            BufferSource::Attribute(data) => (Rc::as_ptr(data) as *const u8 as usize).hash(state),
+            BufferSource::Attribute(data) | BufferSource::UniformArray(data) => {
+                (Rc::as_ptr(data) as *const u8 as usize).hash(state)
+            }
             BufferSource::InstanceMatrix
             | BufferSource::InstanceColor
             | BufferSource::MorphInfluences
@@ -981,6 +1001,10 @@ impl std::fmt::Debug for BufferSource {
             BufferSource::BoneMatrices => f.write_str("BoneMatrices"),
             BufferSource::Attribute(data) => f
                 .debug_tuple("Attribute")
+                .field(&format_args!("{} floats", data.len()))
+                .finish(),
+            BufferSource::UniformArray(data) => f
+                .debug_tuple("UniformArray")
                 .field(&format_args!("{} floats", data.len()))
                 .finish(),
         }

@@ -2909,6 +2909,31 @@ impl Renderer {
                     usage,
                 )
             }
+            BufferSource::UniformArray(data) => {
+                // `uniformArray( values )`: the values never change (three
+                // re-uploads on `NodeUpdateType.RENDER`, but nothing on the
+                // ladder writes one), so the buffer is cached on the node's
+                // identity and uploaded once, like an instanced attribute's.
+                let frames = self.frames;
+                if let Some(entry) = self.buffers.get_mut(&id) {
+                    entry.last_used = frames;
+                    return entry.buffer.clone();
+                }
+                let buffer = self.create_buffer_init(
+                    "three-rs uniformArray",
+                    bytemuck::cast_slice(data.as_slice()),
+                    usage,
+                );
+                self.buffers.insert(
+                    id,
+                    BufferEntry {
+                        buffer: buffer.clone(),
+                        last_used: frames,
+                        data: None,
+                    },
+                );
+                buffer
+            }
             BufferSource::Attribute(data) => {
                 // Uploaded once per array, not once per draw: the caller
                 // rewrites its geometry by handing the node a new `Rc`

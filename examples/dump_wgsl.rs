@@ -379,6 +379,61 @@ fn main() {
         },
     );
 
+    // rung webgpu_postprocessing_bloom_selective (part B): the twelve bloom
+    // quads and the final `RenderPipeline` one, built from a real `BloomNode`
+    // over a real `PassNode` — so these are the port's own graphs, uniform
+    // numbering and all, and not hand-rolled stand-ins.
+    //
+    // The pass is the page's: `mrt( { output, bloomIntensity: float( 0 ) } )`,
+    // and the bloom input is `outputPass.mul( bloomIntensityPass )`.
+    let bloom_pass = three_rs::PassNode::new();
+    bloom_pass.set_mrt(three_rs::nodes::mrt(vec![
+        ("output", output_property()),
+        ("bloomIntensity", float(0.0)),
+    ]));
+    let bloom_node = three_rs::nodes::display::bloom(
+        bloom_pass
+            .texture_node("output")
+            .mul(bloom_pass.texture_node("bloomIntensity")),
+    );
+
+    // `m03`, then `m05..m09`, then `m11`. The vertical blur of each mip is the
+    // same module as its horizontal one with a different input texture and a
+    // different `direction` uniform value, so only the horizontal of each pair
+    // is dumped — three.js has five `Bloom_separable` modules for the same
+    // reason, having swapped `colorTexture.value` instead.
+    let materials = bloom_node.quad_materials();
+    let labels = [
+        "bloom_high_pass",
+        "bloom_separable_0",
+        "bloom_separable_1",
+        "bloom_separable_2",
+        "bloom_separable_3",
+        "bloom_separable_4",
+        "bloom_comp",
+    ];
+    let indices = [0usize, 1, 3, 5, 7, 9, 11];
+    for (label, index) in labels.iter().zip(indices) {
+        let mut quad = materials[index].clone();
+        quad.vertex_node = Some(three_rs::materials::quad_vertex_node());
+        show(label, &quad, SetupContext::default());
+    }
+
+    // `m12`: `outputNode = outputPass.add( bloomPass ).renderOutput()` with
+    // `outputColorTransform = false`, under neutral tone mapping.
+    let mut bloom_output = MeshBasicNodeMaterial::new();
+    bloom_output.name = "RenderPipeline";
+    bloom_output.fragment_node = Some(three_rs::materials::render_output(
+        bloom_pass.texture_node("output").add(bloom_node.node()),
+        three_rs::ToneMapping::Neutral,
+    ));
+    bloom_output.vertex_node = Some(three_rs::materials::quad_vertex_node());
+    show(
+        "bloom_render_pipeline_quad",
+        &bloom_output,
+        SetupContext::default(),
+    );
+
     // rung 5: the three teapots and the light spheres, against
     // `target/dumps/webgpu_lights_phong/`.
     let fog = fog(Color::from_hex(0xFF00FF), range_fog_factor(12.0, 30.0));
