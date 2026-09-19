@@ -160,6 +160,20 @@ pub struct MeshBasicNodeMaterial {
     /// `BasicEnvironmentNode( cubeTexture( envMap ) )`.
     pub env_map: Option<CubeTexture>,
     pub color_node: Option<NodeRef>,
+    /// `NodeMaterial.opacityNode` — replaces the `materialOpacity` uniform in
+    /// `setupDiffuseColor()`, so `DiffuseColor.a` is multiplied by a node's
+    /// value instead. `float( opacityNode )` narrows a wider node to its first
+    /// component, which is how `opacityNode = texture( map )` becomes
+    /// `DiffuseColor.w * texel.x`.
+    pub opacity_node: Option<NodeRef>,
+    /// `NodeMaterial.alphaTestNode` — `diffuseColor.a.lessThanEqual( node
+    /// ).discard()` at the end of `setupDiffuseColor()`.
+    ///
+    /// three.js also has a scalar `Material.alphaTest` with a
+    /// `materialAlphaTest` uniform behind it; the port has only the node form,
+    /// because that is what `webgpu_materials` sets and a uniform nothing
+    /// writes is a trap rather than an API.
+    pub alpha_test_node: Option<NodeRef>,
     /// `MeshPhongMaterial.specular` / `.shininess` / `.emissive` /
     /// `.emissiveIntensity`. The dumps show all four reaching the shader as
     /// object-group uniforms on every Phong material, even the ones the example
@@ -340,6 +354,8 @@ impl Default for MeshBasicNodeMaterial {
             reflectivity: 1.0,
             env_map: None,
             color_node: None,
+            opacity_node: None,
+            alpha_test_node: None,
             scale_node: None,
             rotation_node: None,
             rotation: 0.0,

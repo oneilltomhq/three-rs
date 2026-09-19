@@ -161,16 +161,45 @@ fn setup_diffuse_color(
     };
 
     fragment.push(diffuse_color().assign(color));
-    fragment.push(
-        diffuse_color()
-            .w()
-            .assign(diffuse_color().w().mul(material_opacity())),
-    );
+
+    // `const opacityNode = this.opacityNode ? float( this.opacityNode ) :
+    // materialOpacity` — a node *replaces* the uniform rather than scaling it,
+    // so a material with an `opacityNode` never reads `material.opacity`.
+    let opacity = match &material.opacity_node {
+        Some(node) => to_float(node.clone()),
+        None => material_opacity(),
+    };
+    fragment.push(diffuse_color().w().assign(diffuse_color().w().mul(opacity)));
+
+    // `if ( this.alphaTestNode !== null || this.alphaTest > 0 )
+    // diffuseColor.a.lessThanEqual( alphaTestNode ).discard()`. It is *after*
+    // the opacity multiply and *before* the opaque clamp, so the alpha the test
+    // sees is the one the opacity node produced, and the fragments that survive
+    // still get `w = 1.0` on an opaque material — the alpha-test teapot is not
+    // `transparent`, and the dump shows both lines.
+    if let Some(node) = &material.alpha_test_node {
+        let alpha_test = to_float(node.clone());
+        fragment.push(if_then(
+            diffuse_color().w().less_than_equal(alpha_test),
+            vec![discard()],
+        ));
+    }
+
     // `builder.isOpaque()` — the material is not transparent, blending is
     // NormalBlending and alphaToCoverage is off. A transparent or blended
     // material keeps its per-fragment alpha instead, all the way to `Output`.
     if material.is_opaque() {
         fragment.push(diffuse_color().w().assign(float(1.0)));
+    }
+}
+
+/// `float( node )` — `NodeBuilder.format()` narrowing to one component, which
+/// is what `setupDiffuseColor()` wraps `opacityNode` and `alphaTestNode` in.
+fn to_float(node: NodeRef) -> NodeRef {
+    match node.ty() {
+        Type::F32 => node,
+        Type::Vec2 | Type::Vec3 | Type::Vec4 => node.x(),
+        _ => node.to(Type::F32),
     }
 }
 
