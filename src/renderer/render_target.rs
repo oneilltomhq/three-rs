@@ -94,6 +94,37 @@ impl RenderTarget {
         }))))
     }
 
+    /// `renderTarget.clone()` — a second target with the same descriptor and
+    /// its **own** textures, which is what `SSAAPassNode.setup()` builds its
+    /// `_sampleRenderTarget` from.
+    ///
+    /// Not `Clone::clone`: that is the handle copy, and it has to stay one,
+    /// because a `RenderTarget` is a JS object identity everywhere else in the
+    /// port. `RenderTarget.copy()` copies the depth texture *reference*; this
+    /// gives the copy a fresh `DepthTexture` instead, because `RenderTarget`'s
+    /// constructor is what attached the original's and three.js' own
+    /// `_sampleRenderTarget` ends up with a depth texture of its own (the
+    /// dump's textures 5 and 28, one per target).
+    pub fn clone_target(&self) -> Self {
+        let inner = self.0.borrow();
+        let clone = Self::new_with_options(
+            inner.width,
+            inner.height,
+            RenderTargetOptions {
+                texture_type: inner.texture_type,
+                samples: inner.samples,
+                depth_buffer: inner.depth_buffer,
+                min_filter: inner.min_filter,
+                mag_filter: inner.mag_filter,
+            },
+        )
+        .expect("three-rs: the source target's texture type is already a colour type");
+        if inner.depth_texture.is_some() {
+            clone.set_depth_texture(DepthTexture::new());
+        }
+        clone
+    }
+
     pub fn set_depth_texture(&self, depth_texture: DepthTexture) {
         self.0.borrow_mut().depth_texture = Some(depth_texture);
     }
