@@ -22,6 +22,11 @@ use crate::nodes::{MaterialFlow, NodeRef};
 /// construction: a field added to this struct is in the key.
 #[derive(Clone, Debug, Default, Hash)]
 pub struct SetupContext {
+    /// `scene.environmentNode` — the scene-level environment map, which
+    /// `NodeMaterial.setupEnvironment()` falls back to when the material has
+    /// no `envNode` of its own. `None` for every pass that is not a scene
+    /// draw (the background quad, the shadow pass, `render_quad`).
+    pub environment: Option<environment::PmremHandle>,
     /// `Some(count)` when the object is an `InstancedMesh`, which is what makes
     /// `NodeMaterial.setupPosition()` insert the `InstanceNode` transform.
     pub instance_count: Option<usize>,
@@ -407,7 +412,9 @@ fn setup_inner(
     let output = if let Some(fragment_node) = &material.fragment_node {
         fragment_node.clone()
     } else if material.kind == MaterialKind::Phong {
-        setup_phong(material, ctx, &mut fragment)
+        setup_phong(material, ctx, true, &mut fragment)
+    } else if material.kind == MaterialKind::Lambert {
+        setup_phong(material, ctx, false, &mut fragment)
     } else if material.kind == MaterialKind::Standard || material.kind == MaterialKind::Physical {
         setup_standard(material, ctx, &mut fragment)
     } else if material.kind == MaterialKind::Normal {
@@ -797,20 +804,34 @@ pub fn render_output(color: NodeRef, tone_mapping: ToneMapping) -> NodeRef {
 /// `LightsNode` loop with `PhongLightingModel` or, when `lights === false`,
 /// nothing but the diffuse colour. Read off the dumps in
 /// `docs/rung5-progress.md` §4; the fog step (§5) is not wired yet.
+///
+/// `specular == false` is `MeshLambertNodeMaterial`, which is this same flow
+/// under `new PhongLightingModel( false )`. Three things fall out of the flag,
+/// all of them visible in `dump-postprocessing_ca/m07`:
+///
+/// * `MeshPhongNodeMaterial.setupVariants()`'s `shininess` and `specularColor`
+///   are not emitted — they are the Phong *material*'s, not the model's;
+/// * `PhongLightingModel.direct()` skips its `directSpecular.addAssign`;
+/// * and so `directSpecular` / `indirectSpecular` are first *read* in the
+///   shared tail, which is where three's `PropertyNode` declares them, after
+///   `totalDiffuse` rather than before the light loop.
 fn setup_phong(
     material: &MeshBasicNodeMaterial,
     ctx: &SetupContext,
+    specular: bool,
     fragment: &mut Vec<NodeRef>,
 ) -> NodeRef {
     setup_diffuse_color(material, ctx, fragment);
 
     // setupVariants: `PhongLightingModel` reads these three properties.
-    fragment.push(shininess().assign(max(material_shininess(), float(0.0001))));
-    let specular = match &material.specular_node {
-        Some(node) => node.clone().xyz(),
-        None => material_specular(),
-    };
-    fragment.push(specular_color().assign(specular));
+    if specular {
+        fragment.push(shininess().assign(max(material_shininess(), float(0.0001))));
+        let specular_value = match &material.specular_node {
+            Some(node) => node.clone().xyz(),
+            None => material_specular(),
+        };
+        fragment.push(specular_color().assign(specular_value));
+    }
     fragment.push(emissive_color().assign(material_emissive().mul(material_emissive_intensity())));
 
     let outgoing = if material.lights {
@@ -831,7 +852,9 @@ fn setup_phong(
         }
 
         fragment.push(direct_diffuse().assign(vec3(0.0, 0.0, 0.0)));
-        fragment.push(direct_specular().assign(vec3(0.0, 0.0, 0.0)));
+        if specular {
+            fragment.push(direct_specular().assign(vec3(0.0, 0.0, 0.0)));
+        }
         for light in &lights {
             if light.kind == LightKind::Ambient {
                 continue;
@@ -839,6 +862,7 @@ fn setup_phong(
             phong::direct_light(
                 light,
                 material.received_shadow_position_node.as_ref(),
+                specular,
                 fragment,
             );
         }
@@ -860,6 +884,12 @@ fn setup_phong(
         );
         fragment.push(indirect_diffuse().assign(indirect_diffuse().mul(ambient_occlusion())));
         fragment.push(total_diffuse().assign(direct_diffuse().add(indirect_diffuse())));
+        if !specular {
+            // Lambert reads both specular accumulators for the first time
+            // here, so this is where three declares them.
+            fragment.push(direct_specular().assign(vec3(0.0, 0.0, 0.0)));
+            fragment.push(indirect_specular().assign(vec3(0.0, 0.0, 0.0)));
+        }
         fragment.push(total_specular().assign(direct_specular().add(indirect_specular())));
         fragment.push(outgoing_light().assign(total_diffuse().add(total_specular())));
         outgoing_light()
@@ -1037,7 +1067,8 @@ fn setup_standard(
         // `EnvironmentNode` is a lighting node, so its two `addAssign`s land
         // between `indirectDiffuse()` and `indirectSpecular()` — and with them
         // the declarations of `radiance` and `iblIrradiance`.
-        if let Some(environment) = &material.pmrem_env {
+        let env = material.pmrem_env.as_ref().or(ctx.environment.as_ref());
+        if let Some(environment) = env {
             environment::setup(environment, fragment);
         }
         // `AONode( context.ambientOcclusion )`, the last entry
@@ -1050,7 +1081,7 @@ fn setup_standard(
                 ambient_occlusion().assign(ambient_occlusion().mul(ambient_occlusion_property())),
             );
         }
-        model.indirect_specular(material.pmrem_env.is_some(), fragment);
+        model.indirect_specular(env.is_some(), fragment);
         model.ambient_occlusion(material.ao_map.is_some(), fragment);
 
         fragment.push(total_diffuse().assign(direct_diffuse().add(indirect_diffuse())));

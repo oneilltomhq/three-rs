@@ -167,6 +167,7 @@ fn main() {
         "instance_mesh",
         &inst,
         SetupContext {
+            environment: None,
             instance_count: Some(1000),
             instanced: true,
             instance_color: None,

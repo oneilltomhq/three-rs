@@ -31,6 +31,21 @@ pub struct PmremHandle {
     pub size: CubeUvSize,
 }
 
+/// The handle is part of [`SetupContext`]'s derived hash — the render object's
+/// dynamic cache key — so it needs one, and neither `Texture` nor the three
+/// `NodeRef` uniforms in [`CubeUvSize`] derives `Hash`. What the *program*
+/// depends on is only that there **is** an environment and which texture it
+/// reads; the three cubeUV numbers are uniforms and change no code. So the
+/// texture's id is the whole key, which is also what makes two materials
+/// sharing one generated atlas share one program.
+///
+/// [`SetupContext`]: crate::materials::node_material::SetupContext
+impl std::hash::Hash for PmremHandle {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.texture.id().hash(state);
+    }
+}
+
 impl PmremHandle {
     /// `PMREMNode.setup()` — the rotated, Y-flipped sample.
     pub fn sample(&self, uv: NodeRef, level: NodeRef) -> NodeRef {
