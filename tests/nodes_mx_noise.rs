@@ -1,8 +1,10 @@
 //! The MaterialX noise chain, against three.js r186's own dumped WGSL.
 //!
-//! `handoff/scouts/rung7/m09_ShadowMaterial.frag-r186.wgsl` carries the twelve
+//! `tests/fixtures/rung7/m09_ShadowMaterial.frag-r186.wgsl` carries the twelve
 //! `fn`s of the `mx_fractal_noise_float` chain and
 //! `m11_phong_ground.frag-r186.wgsl` the five extra `fn`s of the `vec3` chain.
+//! Both are Three's own dumps of `webgpu_shadowmap`'s shadow and ground
+//! programs, kept whole so the surrounding program stays readable.
 //! Each emitted `fn` is compared to the dump's, line by line, with trailing
 //! whitespace normalised (the port tabs its blank lines; three.js does not).
 
@@ -12,7 +14,7 @@ use three_rs::nodes::materialx::{mx_fractal_noise_float, mx_fractal_noise_vec3};
 use three_rs::nodes::tsl::{float, position_local, to_varying, vec4};
 use three_rs::nodes::{MaterialFlow, NodeBuilder, NodeRef};
 
-const DUMPS: &str = "../handoff/scouts/rung7";
+const DUMPS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/rung7");
 
 /// Every `fn <name> ( … ) { … }` block in a WGSL source, keyed by name.
 fn functions(src: &str) -> HashMap<String, String> {
