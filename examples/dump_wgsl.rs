@@ -579,6 +579,176 @@ fn main() {
         SetupContext::default(),
     );
 
+    // rung `webgpu_materials`: the TSL breadth example, against
+    // `scouts/scouts/webgpu_materials/dump/m*.wgsl`.
+    // The uv-grid texture every textured material in the page shares (one
+    // `TextureLoader.load`, so one `Texture` and one texture matrix uniform).
+    let uv_texture = Texture::new(1024, 1024, Some(vec![0; 4]));
+    let opacity_texture = Texture::new(512, 512, Some(vec![0; 4]));
+
+    let colour = |label: &str, node: three_rs::nodes::NodeRef| {
+        let mut m = MeshBasicNodeMaterial::new();
+        m.color_node = Some(node);
+        show(label, &m, SetupContext::default());
+    };
+
+    colour("materials_position_local", position_local());
+    colour("materials_position_world", position_world());
+    colour("materials_normal_local", normal_local());
+    colour("materials_normal_world", normal_world());
+    colour("materials_normal_view", normal_view());
+    colour("materials_texture", texture(&uv_texture));
+    colour(
+        "materials_camera_projection",
+        camera_projection_matrix().mul(position_local()),
+    );
+
+    let mut opacity = MeshBasicNodeMaterial::new();
+    opacity.color_node = Some(Color::from_hex(0x0099ff).into());
+    opacity.opacity_node = Some(texture(&uv_texture));
+    opacity.transparent = true;
+    show("materials_opacity", &opacity, SetupContext::default());
+
+    let mut alpha_test = MeshBasicNodeMaterial::new();
+    alpha_test.color_node = Some(texture(&uv_texture));
+    alpha_test.opacity_node = Some(texture(&opacity_texture));
+    alpha_test.alpha_test_node = Some(float(0.5));
+    show("materials_alpha_test", &alpha_test, SetupContext::default());
+
+    let (_grid_geometry, grid_material) = three_rs::helpers::GridHelper::parts(
+        1000.0,
+        40,
+        Color::from_hex(0x303030),
+        Color::from_hex(0x303030),
+    );
+    show("materials_grid", &grid_material, SetupContext::default());
+
+    // Materials 28 and 29 of the page: `Fn( ( input ) => vec3( 0.299, 0.587,
+    // 0.114 ).dot( input.color.xyz ) )` called with the texture, and the same
+    // body with the texture captured and no inputs at all. Neither `Fn()` has
+    // a layout, so both inline, and three emits byte-identical WGSL for the
+    // two — which is why they share one pipeline. The port gets that for free:
+    // an inlined `FnDef` contributes nothing to the graph but its body.
+    let desaturate = inline_fn(1, three_rs::nodes::Type::F32, |args| {
+        vec3(0.299, 0.587, 0.114).dot(args[0].clone().xyz())
+    });
+    colour(
+        "materials_desaturate_fn",
+        call(&desaturate, vec![texture(&uv_texture)]),
+    );
+    colour(
+        "materials_desaturate_captured",
+        vec3(0.299, 0.587, 0.114).dot(texture(&uv_texture).xyz()),
+    );
+
+    colour(
+        "materials_triplanar",
+        triplanar_texture(&uv_texture, None, None, float(0.01)),
+    );
+    colour(
+        "materials_screen_uv",
+        texture_uv(&uv_texture, screen_uv().flip_y()),
+    );
+
+    // Materials 30 and 31 of the page: hand-written WGSL through `wgslFn`.
+    // The source text is copied through verbatim, including the example
+    // file's own indentation and the whitespace a JS template literal leaves
+    // after the closing brace, so these two string literals are written with
+    // the same tabs three's are.
+    let desaturate_wgsl = wgsl_fn(
+        "
+					fn desaturate( color:vec3<f32> ) -> vec3<f32> {
+
+						let lum = vec3<f32>( 0.299, 0.587, 0.114 );
+
+						return vec3<f32>( dot( lum, color ) );
+
+					}
+				",
+        vec![],
+    );
+    let some_wgsl = wgsl_fn(
+        "
+					fn someFn( color:vec3<f32> ) -> vec3<f32> {
+
+						return desaturate( color );
+
+					}
+				",
+        vec![desaturate_wgsl],
+    );
+    colour(
+        "materials_wgsl_include",
+        call_wgsl(&some_wgsl, vec![("color", texture(&uv_texture).xyz())]),
+    );
+
+    let get_sample = wgsl_fn(
+        "
+					fn getWGSLTextureSample( tex: texture_2d<f32>, tex_sampler: sampler, uv:vec2<f32> ) -> vec4<f32> {
+
+						return textureSample( tex, tex_sampler, uv ) * vec4<f32>( 0.0, 1.0, 0.0, 1.0 );
+
+					}
+				",
+        vec![],
+    );
+    // One `texture( uvTexture )` node bound to both the texture and the
+    // sampler parameter, which is how three's example writes it.
+    let texture_node = texture(&uv_texture);
+    colour(
+        "materials_wgsl_texture",
+        call_wgsl(
+            &get_sample,
+            vec![
+                ("tex", texture_node.clone()),
+                ("tex_sampler", texture_node),
+                ("uv", uv()),
+            ],
+        ),
+    );
+
+    // Material 34 of the page: a `Loop()` used as a `colorNode`. `LoopNode`
+    // is a *statement* node — its `generate()` writes the `for` and returns an
+    // empty snippet — so `vec4( colorNode )` in `setupDiffuseColor()` casts
+    // nothing and three emits `DiffuseColor = vec4<f32>(  );`. The loop still
+    // runs, its result is still discarded, and the teapot is opaque black.
+    // The port reproduces this on purpose: see docs/nodes.md §8.
+    const LOOP_COUNT: usize = 10;
+    let i = loop_index();
+    let out = to_var(None, vec4(0.0, 0.0, 0.0, 1.0));
+    let scale_i = osc_sine(time())
+        .mul(0.09)
+        .mul(i.to(three_rs::nodes::Type::F32));
+    // `scaleI.negate()` is read twice (the right and bottom taps). `Node::Neg`
+    // is not one of the kinds `needs_var` promotes, so the temp three's usage
+    // counter gives it has to be asked for here.
+    let scale_i_neg = to_var(None, scale_i.clone().negate());
+    let tap = |offset: three_rs::nodes::NodeRef| {
+        out.assign(out.add(texture_uv(&uv_texture, uv().add(offset))))
+    };
+    colour(
+        "materials_loop",
+        loop_statement(
+            LOOP_COUNT,
+            i.clone(),
+            vec![
+                tap(vec2_join(vec![scale_i.clone(), float(0.0)])),
+                tap(vec2_join(vec![scale_i_neg.clone(), float(0.0)])),
+                tap(vec2_join(vec![float(0.0), scale_i])),
+                tap(vec2_join(vec![float(0.0), scale_i_neg])),
+            ],
+        ),
+    );
+
+    let mut normal = MeshBasicNodeMaterial::normal();
+    normal.opacity = 0.5;
+    normal.transparent = true;
+    show(
+        "materials_normal_material",
+        &normal,
+        SetupContext::default(),
+    );
+
     // The output pass, this time with ACES filmic tone mapping.
     let mut aces = MeshBasicNodeMaterial::new();
     aces.fragment_node = Some(three_rs::materials::output_fragment_node(

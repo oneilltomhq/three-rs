@@ -119,6 +119,11 @@ pub enum MaterialKind {
     /// the sprite quad expansion is *not* taken; the only thing it keeps from
     /// `SpriteNodeMaterial` is `setupPositionView()` and `transparent = true`.
     Points,
+    /// `MeshNormalNodeMaterial` — no lighting model at all. It overrides
+    /// `setupDiffuseColor()` outright with the packed view-space normal, so it
+    /// takes neither the `colorNode` path nor the opacity / alpha-test /
+    /// opaque-clamp tail.
+    Normal,
 }
 
 /// Port of `MeshBasicNodeMaterial.js` + the `NodeMaterial.js` / `Material.js`
@@ -160,6 +165,20 @@ pub struct MeshBasicNodeMaterial {
     /// `BasicEnvironmentNode( cubeTexture( envMap ) )`.
     pub env_map: Option<CubeTexture>,
     pub color_node: Option<NodeRef>,
+    /// `NodeMaterial.opacityNode` — replaces the `materialOpacity` uniform in
+    /// `setupDiffuseColor()`, so `DiffuseColor.a` is multiplied by a node's
+    /// value instead. `float( opacityNode )` narrows a wider node to its first
+    /// component, which is how `opacityNode = texture( map )` becomes
+    /// `DiffuseColor.w * texel.x`.
+    pub opacity_node: Option<NodeRef>,
+    /// `NodeMaterial.alphaTestNode` — `diffuseColor.a.lessThanEqual( node
+    /// ).discard()` at the end of `setupDiffuseColor()`.
+    ///
+    /// three.js also has a scalar `Material.alphaTest` with a
+    /// `materialAlphaTest` uniform behind it; the port has only the node form,
+    /// because that is what `webgpu_materials` sets and a uniform nothing
+    /// writes is a trap rather than an API.
+    pub alpha_test_node: Option<NodeRef>,
     /// `MeshPhongMaterial.specular` / `.shininess` / `.emissive` /
     /// `.emissiveIntensity`. The dumps show all four reaching the shader as
     /// object-group uniforms on every Phong material, even the ones the example
@@ -340,6 +359,8 @@ impl Default for MeshBasicNodeMaterial {
             reflectivity: 1.0,
             env_map: None,
             color_node: None,
+            opacity_node: None,
+            alpha_test_node: None,
             scale_node: None,
             rotation_node: None,
             rotation: 0.0,
@@ -468,6 +489,20 @@ impl MeshBasicNodeMaterial {
         }
     }
 
+    /// `new MeshNormalNodeMaterial()` — `MeshNormalMaterial` under
+    /// `WebGPURenderer`.
+    ///
+    /// The whole subclass is one overridden `setupDiffuseColor()`:
+    /// `diffuseColor = colorSpaceToWorking( vec4( packNormalToRGB( normalView
+    /// ), opacity ), SRGBColorSpace )`. Nothing else about it differs from a
+    /// `MeshBasicNodeMaterial`, so it is a [`MaterialKind`] rather than a type.
+    pub fn normal() -> Self {
+        Self {
+            kind: MaterialKind::Normal,
+            ..Self::default()
+        }
+    }
+
     /// `new MeshPhongNodeMaterial( { color } )`. `NodeMaterial.lights` is true
     /// for every lit material, which is what puts the `LightsNode` flow in the
     /// fragment stage.
@@ -517,6 +552,10 @@ pub type PointsNodeMaterial = MeshBasicNodeMaterial;
 /// Likewise for `Standard` / `Physical` — one struct, one renderer list.
 pub type MeshStandardNodeMaterial = MeshBasicNodeMaterial;
 pub type MeshPhysicalNodeMaterial = MeshBasicNodeMaterial;
+
+/// three.js' name for a `NodeMaterial` whose kind is `Normal` — see
+/// [`MeshBasicNodeMaterial::normal`].
+pub type MeshNormalNodeMaterial = MeshBasicNodeMaterial;
 
 /// three.js' name for the `NodeMaterial` a `Line` / `LineSegments` draws with.
 /// It carries no state of its own — see [`MeshBasicNodeMaterial::line`].

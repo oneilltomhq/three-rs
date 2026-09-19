@@ -1143,6 +1143,9 @@ impl NodeRef {
     pub fn zw(&self) -> NodeRef {
         swizzle(self.clone(), "zw")
     }
+    pub fn zx(&self) -> NodeRef {
+        swizzle(self.clone(), "zx")
+    }
     pub fn xyz(&self) -> NodeRef {
         swizzle(self.clone(), "xyz")
     }
@@ -1217,6 +1220,34 @@ impl NodeRef {
         })
     }
 
+    /// `.flipY()` — `FlipNode` over the y component: `vec2( v.x, 1.0 - v.y )`.
+    ///
+    /// `FlipNode.generate()` does not ask the usage counter for a temp, it
+    /// takes one unconditionally (`builder.getVarFromNode( this )`) and assigns
+    /// the *source* snippet into it, because it has to read two components of
+    /// the source and will not evaluate it twice. So the var here is explicit
+    /// rather than a `needs_var` promotion, and it is the flip's var, not the
+    /// source's.
+    ///
+    /// **Divergence, cosmetic** (`docs/nodes.md` §8): three writes the flipped
+    /// component as the bare string `1.0 - v.y`; the port builds it out of
+    /// `sub`, so it comes out parenthesised as `( 1.0 - v.y )`. Same value,
+    /// two characters more.
+    pub fn flip_y(&self) -> NodeRef {
+        let source = to_var(None, self.clone());
+        match self.ty() {
+            Type::Vec2 => vec2_join(vec![source.x(), float(1.0).sub(source.y())]),
+            Type::Vec3 => vec3_join(vec![source.x(), float(1.0).sub(source.y()), source.z()]),
+            Type::Vec4 => vec4_join(vec![
+                source.x(),
+                float(1.0).sub(source.y()),
+                source.z(),
+                source.w(),
+            ]),
+            ty => panic!("flipY() on a {ty:?}"),
+        }
+    }
+
     pub fn to_var(&self, name: &'static str) -> NodeRef {
         to_var(Some(name), self.clone())
     }
@@ -1282,7 +1313,10 @@ accessor!(
     /// three.js declares the node as `vec4` and lets `NodeBuilder.format()`
     /// widen a three-component `color` attribute with an alpha of 1, which is
     /// the only shape the port's geometries carry; a four-component `color`
-    /// (three's `vertexAlphas`) is not modelled.
+    /// (three's `vertexAlphas`) is not modelled. The widening happens *before*
+    /// the varying, so the interpolated value is a `vec4` and the fragment
+    /// stage reads it whole — `webgpu_materials`' grid helper is the first
+    /// example to put this on screen and three's m13/m14 pin the shape.
     ///
     /// **Divergence, deliberate** (`docs/nodes.md` §10): three's
     /// `VertexColorNode.generate()` falls back to a white constant when the
@@ -1291,7 +1325,10 @@ accessor!(
     /// object — so `material.vertex_colors` alone decides, and the attribute
     /// has to be there.
     vertex_color,
-    vec4_join(vec![to_varying(None, attribute("color", Type::Vec3)), float(1.0)])
+    to_varying(
+        None,
+        vec4_join(vec![attribute("color", Type::Vec3), float(1.0)])
+    )
 );
 accessor!(
     /// `vertexIndex`.
@@ -1509,11 +1546,13 @@ accessor!(
 );
 
 accessor!(
-    /// `screenUV` — `screenCoordinate.div( screenSize )`.
+    /// `screenUV` — `ScreenNode`'s `UV` scope: `screenCoordinate.div(
+    /// screenSize )`, the fragment's position normalised into `[0,1]`.
     ///
-    /// No Y flip: `ScreenNode` flips only under WebGL (`builder.renderer.backend
-    /// .isWebGLBackend`), and `webgpu_skinning`'s dumped background shader reads
-    /// `( fragCoord.xy / render.nodeUniform0 ).y` straight.
+    /// No Y flip, so y points *down*: `ScreenNode` flips only under WebGL
+    /// (`builder.renderer.backend.isWebGLBackend`), and `webgpu_skinning`'s
+    /// dumped background shader reads `( fragCoord.xy / render.nodeUniform0 ).y`
+    /// straight.
     screen_uv,
     frag_coord().xy().div(viewport_size())
 );
@@ -1915,6 +1954,45 @@ pub fn texture(map: &Texture) -> NodeRef {
         SampleMode::Sample,
         Type::Vec4,
     )
+}
+
+/// `triplanarTexture( textureX, textureY, textureZ, scale )` —
+/// `TriplanarTextures.js`. Three axis-aligned taps of the map, blended by the
+/// normal: `bf = normalize( abs( normalLocal ) )`, renormalised so its
+/// components sum to one, then `texture( x, position.yz * scale ) * bf.x + …`.
+///
+/// The `Fn()` has no layout, so three inlines it; this is a plain Rust
+/// function for the same reason. The taps go through [`texture_uv`], not
+/// [`texture`]: three calls `texture( value, tx )` with an explicit uv, and
+/// `TextureNode.setupUV()` only applies the map's uv matrix to the *default*
+/// uv, so no texture-matrix uniform appears.
+///
+/// **Divergence, API shape** (`docs/nodes.md` §8): three takes texture *nodes*
+/// and reads `.value` back off them to rebuild a tap per axis. A `NodeRef` is
+/// an opaque `Rc<Node>` here with no way back to the `Texture`, so the port
+/// takes the maps themselves. `None` for y or z means "sample x", exactly as
+/// three's `null` does.
+pub fn triplanar_texture(
+    map_x: &Texture,
+    map_y: Option<&Texture>,
+    map_z: Option<&Texture>,
+    scale: NodeRef,
+) -> NodeRef {
+    let map_y = map_y.unwrap_or(map_x);
+    let map_z = map_z.unwrap_or(map_x);
+
+    let bf = normal_local().abs().normalize();
+    let bf = bf.clone().div(bf.dot(vec3(1.0, 1.0, 1.0)));
+
+    let tx = position_local().yz().mul(scale.clone());
+    let ty = position_local().zx().mul(scale.clone());
+    let tz = position_local().xy().mul(scale);
+
+    let cx = texture_uv(map_x, tx).mul(bf.clone().x());
+    let cy = texture_uv(map_y, ty).mul(bf.clone().y());
+    let cz = texture_uv(map_z, tz).mul(bf.z());
+
+    cx.add(cy).add(cz)
 }
 
 /// Port of `BumpMapNode` — `bumpMap( texture( bumpMap ).r, materialBumpScale )`.
@@ -2382,6 +2460,49 @@ pub fn inline_fn(
     })
 }
 
+/// `wgslFn( source )` / `wgslFn( source, includes )` — see
+/// [`crate::nodes::code`]. Re-exported here because every other TSL entry
+/// point lives in this module.
+pub use crate::nodes::code::wgsl_fn;
+
+/// Calling a `wgslFn` — `FunctionCallNode` with three's named-parameter form:
+/// `getWGSLTextureSample( { tex, tex_sampler, uv } )`. The names are the ones
+/// the WGSL declaration used, and the order they are given in does not matter.
+///
+/// # Panics
+///
+/// If a declared parameter has no argument, or an argument names a parameter
+/// the declaration does not have. Three leaves the first as `undefined` and
+/// generates a shader that will not compile; the port refuses at setup.
+pub fn call_wgsl(def: &Rc<crate::nodes::code::CodeDef>, args: Vec<(&str, NodeRef)>) -> NodeRef {
+    let ordered = def
+        .params
+        .iter()
+        .map(|(name, _)| {
+            args.iter()
+                .find(|(given, _)| given == name)
+                .map(|(_, node)| node.clone())
+                .unwrap_or_else(|| {
+                    panic!(
+                        "three-rs: wgslFn `{}` has no argument for `{name}`",
+                        def.name
+                    )
+                })
+        })
+        .collect();
+    for (given, _) in &args {
+        assert!(
+            def.params.iter().any(|(name, _)| name == given),
+            "three-rs: wgslFn `{}` has no parameter `{given}`",
+            def.name
+        );
+    }
+    NodeRef::new(Node::CodeCall {
+        def: def.clone(),
+        args: ordered,
+    })
+}
+
 /// `Fn( body, layout )`: a real WGSL `fn` is emitted and called.
 pub fn shader_fn(
     name: Option<&'static str>,
@@ -2525,6 +2646,45 @@ pub fn linear_tone_mapping(color: NodeRef, exposure: NodeRef) -> NodeRef {
         })
     });
     call(&def, vec![color, exposure])
+}
+
+/// `sRGBTransferEOTF` — `ColorSpaceFunctions.js`, emitted as a real `fn`. The
+/// inverse of [`srgb_transfer_oetf`]: sRGB in, working (linear-sRGB) out.
+pub fn srgb_transfer_eotf(color: NodeRef) -> NodeRef {
+    thread_local! { static CELL: Lazy<Rc<FnDef>> = const { Lazy::new() }; }
+    let def = CELL.with(|c| {
+        c.get(|| {
+            shader_fn(
+                Some("sRGBTransferEOTF"),
+                vec![("color", Type::Vec3)],
+                Type::Vec3,
+                |args| {
+                    let color = args[0].clone();
+                    mix(
+                        color
+                            .mul(float(0.9478672986))
+                            .add(float(0.0521327014))
+                            .pow(float(2.4)),
+                        color.mul(float(0.0773993808)),
+                        color.less_than_equal(float(0.04045)).to(Type::Vec3),
+                    )
+                },
+            )
+        })
+    });
+    call(&def, vec![color])
+}
+
+/// `colorSpaceToWorking( node, SRGBColorSpace )` — `ColorSpaceNode.setup()`'s
+/// `SRGBTransfer` branch: `vec4( sRGBTransferEOTF( node.rgb ), node.a )`.
+pub fn srgb_to_working(color: NodeRef) -> NodeRef {
+    vec4_join(vec![srgb_transfer_eotf(color.rgb()), color.a()])
+}
+
+/// `packNormalToRGB( node )` — `Packing.js`: `node * 0.5 + 0.5`, the
+/// convention that puts a unit direction in a colour.
+pub fn pack_normal_to_rgb(node: NodeRef) -> NodeRef {
+    node.mul(float(0.5)).add(float(0.5))
 }
 
 /// `reinhardToneMapping` — `ToneMappingFunctions.js`, emitted as a real `fn`.

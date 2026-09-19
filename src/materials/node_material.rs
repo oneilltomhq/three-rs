@@ -161,16 +161,45 @@ fn setup_diffuse_color(
     };
 
     fragment.push(diffuse_color().assign(color));
-    fragment.push(
-        diffuse_color()
-            .w()
-            .assign(diffuse_color().w().mul(material_opacity())),
-    );
+
+    // `const opacityNode = this.opacityNode ? float( this.opacityNode ) :
+    // materialOpacity` — a node *replaces* the uniform rather than scaling it,
+    // so a material with an `opacityNode` never reads `material.opacity`.
+    let opacity = match &material.opacity_node {
+        Some(node) => to_float(node.clone()),
+        None => material_opacity(),
+    };
+    fragment.push(diffuse_color().w().assign(diffuse_color().w().mul(opacity)));
+
+    // `if ( this.alphaTestNode !== null || this.alphaTest > 0 )
+    // diffuseColor.a.lessThanEqual( alphaTestNode ).discard()`. It is *after*
+    // the opacity multiply and *before* the opaque clamp, so the alpha the test
+    // sees is the one the opacity node produced, and the fragments that survive
+    // still get `w = 1.0` on an opaque material — the alpha-test teapot is not
+    // `transparent`, and the dump shows both lines.
+    if let Some(node) = &material.alpha_test_node {
+        let alpha_test = to_float(node.clone());
+        fragment.push(if_then(
+            diffuse_color().w().less_than_equal(alpha_test),
+            vec![discard()],
+        ));
+    }
+
     // `builder.isOpaque()` — the material is not transparent, blending is
     // NormalBlending and alphaToCoverage is off. A transparent or blended
     // material keeps its per-fragment alpha instead, all the way to `Output`.
     if material.is_opaque() {
         fragment.push(diffuse_color().w().assign(float(1.0)));
+    }
+}
+
+/// `float( node )` — `NodeBuilder.format()` narrowing to one component, which
+/// is what `setupDiffuseColor()` wraps `opacityNode` and `alphaTestNode` in.
+fn to_float(node: NodeRef) -> NodeRef {
+    match node.ty() {
+        Type::F32 => node,
+        Type::Vec2 | Type::Vec3 | Type::Vec4 => node.x(),
+        _ => node.to(Type::F32),
     }
 }
 
@@ -290,6 +319,25 @@ fn setup_inner(
         setup_phong(material, ctx, &mut fragment)
     } else if material.kind == MaterialKind::Standard || material.kind == MaterialKind::Physical {
         setup_standard(material, ctx, &mut fragment)
+    } else if material.kind == MaterialKind::Normal {
+        // `MeshNormalNodeMaterial.setupDiffuseColor()` replaces the base
+        // implementation outright: no `colorNode`, no vertex colours, no alpha
+        // test, and no `builder.isOpaque()` clamp — the opacity node (or the
+        // `materialOpacity` uniform) lands directly in the `vec4`'s `w`.
+        //
+        // "By convention, a normal packed to RGB is in sRGB color space", so
+        // the packed value is decoded into the working space on the way in;
+        // that is where `sRGBTransferEOTF` comes from, and it is the only
+        // material on the ladder that emits the EOTF rather than the OETF.
+        let opacity = match &material.opacity_node {
+            Some(node) => to_float(node.clone()),
+            None => material_opacity(),
+        };
+        fragment.push(diffuse_color().assign(srgb_to_working(vec4_join(vec![
+            pack_normal_to_rgb(normal_view()),
+            opacity,
+        ]))));
+        vec4_join(vec![diffuse_color().xyz(), diffuse_color().w()]).max(float(0.0))
     } else {
         setup_diffuse_color(material, ctx, &mut fragment);
 

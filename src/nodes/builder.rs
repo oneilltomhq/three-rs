@@ -439,6 +439,17 @@ impl NodeBuilder {
                     vec![self.call_body(node, def, args)]
                 }
             }
+            // A `wgslFn`'s texture and sampler arguments are *bindings*, not
+            // values: three never builds them, so they are not part of this
+            // graph and must not be counted — counting one would promote it to
+            // a var and emit a `textureSample` nothing reads.
+            Node::CodeCall { def, args } => def
+                .params
+                .iter()
+                .zip(args)
+                .filter(|((_, kind), _)| matches!(kind, crate::nodes::code::ParamKind::Value(_)))
+                .map(|(_, arg)| arg.clone())
+                .collect(),
             Node::Select { cond, a, b, .. } => vec![cond.clone(), a.clone(), b.clone()],
             Node::Block { statements, result } => {
                 let mut v = statements.clone();
@@ -802,6 +813,8 @@ impl NodeBuilder {
             // A call to an `Fn()` with a layout is a real function call, and
             // `FunctionCallNode` is a `TempNode`: cached once when shared.
             Node::Call { def, .. } if def.layout => self.usage_of(node) > 1,
+            // `FunctionCallNode` is a `TempNode` whatever it calls.
+            Node::CodeCall { .. } => self.usage_of(node) > 1,
             _ => false,
         }
     }
@@ -1216,6 +1229,24 @@ impl NodeBuilder {
                 format!("{name}( {} )", parts.join(", "))
             }
 
+            Node::CodeCall { def, args } => {
+                let (def, args) = (def.clone(), args.clone());
+                self.emit_code_fn(&def);
+                let parts: Vec<String> = def
+                    .params
+                    .iter()
+                    .zip(&args)
+                    .map(|((_, kind), arg)| match kind {
+                        crate::nodes::code::ParamKind::Value(ty) => self.format(arg, *ty),
+                        crate::nodes::code::ParamKind::Texture => self.code_texture(arg).0,
+                        crate::nodes::code::ParamKind::Sampler => {
+                            format!("{}_sampler", self.code_texture(arg).0)
+                        }
+                    })
+                    .collect();
+                format!("{}( {} )", def.name, parts.join(", "))
+            }
+
             Node::IfVar {
                 pre,
                 result,
@@ -1417,6 +1448,32 @@ impl NodeBuilder {
 
         self.add_code(&name, &src);
         name
+    }
+
+    /// `FunctionNode.generate()` — `includes` are built first, so a `wgslFn`
+    /// that calls another lands *after* it in `// codes`. The source goes in
+    /// verbatim with one newline appended, the way `getCodeFromNode()` stores
+    /// `code + '\n'`.
+    fn emit_code_fn(&mut self, def: &Rc<crate::nodes::code::CodeDef>) {
+        for include in &def.includes {
+            self.emit_code_fn(&include.clone());
+        }
+        let (name, code) = (def.name.clone(), format!("{}\n", def.code));
+        self.add_code(&name, &code);
+    }
+
+    /// The texture binding behind a `wgslFn` argument declared `texture_2d<f32>`
+    /// or `sampler`. Three passes a `TextureNode` for both and
+    /// `WGSLNodeBuilder.getPropertyName()` hands back the binding's name, plus
+    /// `_sampler` for the sampler half.
+    fn code_texture(&mut self, arg: &NodeRef) -> (String, crate::nodes::builder::TextureKind) {
+        match &*arg.0 {
+            Node::Texture { texture, .. } => {
+                let texture = texture.clone();
+                self.texture_slots(&texture)
+            }
+            _ => panic!("three-rs: a wgslFn texture parameter needs a texture node"),
+        }
     }
 }
 

@@ -447,6 +447,13 @@ differences, each verified to be pixel-neutral.
   before its callees. WGSL has no forward-declaration rule for functions
   defined in the same module, so naga accepts both orders and the bodies are
   identical.
+* **`FlipNode`'s one-minus.** `screenUV.flipY()` prints `vec2<f32>( v.x, 1.0 -
+  v.y )` in three, because `FlipNode.generate()` builds that component as a
+  bare string. The port builds it out of `sub`, so it comes out parenthesised:
+  `vec2<f32>( v.x, ( 1.0 - v.y ) )`. Same value.
+* **One trailing blank line in `// codes`.** Three's assembly leaves one more
+  empty line between the last `fn` and `@fragment` than this port's does. Pure
+  whitespace; naga does not see it.
 * **Splatted vector constants.** `clamp( x, vec3<f32>( 0.0, 0.0, 0.0 ),
   vec3<f32>( 1.0, 1.0, 1.0 ) )` where Three prints `vec3<f32>( 0.0 )` /
   `vec3<f32>( 1.0 )`. Same value.
@@ -593,6 +600,72 @@ Three's `vertexAlphas` branch — a four-component `color` attribute whose alpha
 reaches `DiffuseColor.a` — is not ported. `vertexColor()` is declared `vec4`
 as in three, and the three-component attribute is widened with an alpha of 1
 by the same rule as `NodeBuilder.format()`.
+
+The widening happens in the *vertex* stage, before the varying, so the
+interpolated value is a `vec4` and the fragment stage reads it whole — three's
+`VertexColorNode` is an `AttributeNode` declared `vec4`, and `webgpu_materials`'
+grid helper (m13/m14) pins the shape. Widening after the varying would give the
+same pixels, because a constant interpolates to itself, but a different varying
+layout.
+
+### `Loop()` as a value renders black, on purpose
+
+`webgpu_materials`' last teapot sets `colorNode` to a `Loop()`. `LoopNode` is a
+statement node: `generate()` writes the `for` into the flow and returns an
+**empty snippet**. `setupDiffuseColor()` then does `vec4( colorNode )`, which
+casts nothing, and three emits
+
+```wgsl
+	DiffuseColor = vec4<f32>(  );
+```
+
+— two spaces, a zero-initialised `vec4`, and the four texture taps the loop ran
+are thrown away. The teapot is opaque black in three's own reference image.
+
+**This port reproduces it bit for bit.** `Node::Cast` formats
+`"{type}( {snippet} )"`, and with the `Loop` arm's empty snippet that is exactly
+three's text. The loop body is still built, so its texture bindings are still in
+the layout and its cost is still in the frame.
+
+Not fixing it is the point: the graded frame contains that black teapot, and a
+port that made the loop's value flow through would lose those pixels. Pinned by
+`tests/scene_webgpu_materials.rs`'s
+`a_loop_as_a_color_node_discards_its_result`, rather than left to the 0.1%
+threshold, which one teapot out of seventeen would very nearly slip past.
+
+### `triplanarTexture` takes textures, not texture nodes
+
+Three's `triplanarTextures()` is handed texture *nodes* and reads `.value` back
+off each one to rebuild a tap per axis. A `NodeRef` here is an opaque
+`Rc<Node>` with no way back to the `Texture`, so `triplanar_texture()` takes
+the maps themselves; `None` for the y or z map means "sample x", exactly as
+three's `null` does. The generated WGSL is identical (m11/m12).
+
+### `wgslFn`: what is parsed and what is not
+
+`src/nodes/code.rs` ports `WGSLNodeFunction.js`: three's declaration regex as a
+hand-written scanner, `wgslTypeLib` as far as the port's `Type` reaches, and
+`getCode()`, which rebuilds `fn <name> ( <inputs> ) -> <out>` and then appends
+the source's own block **verbatim** — the example page's six-tab indentation
+and the whitespace a JS template literal leaves after the closing brace both
+end up in the shader, and three's dump pins that.
+
+Left out, because nothing on the ladder reaches it: a `void` return, `ptr<>`
+parameters, three's GLSL sibling (`glslFn`), and `wgslFn` in the vertex stage.
+A declared type the port does not model panics at setup; three silently
+produces a shader that will not compile.
+
+Two things about the arguments are worth knowing:
+
+* a `texture_2d<f32>` or `sampler` parameter takes a texture *node* and is
+  passed the binding, not a sample of it. Those arguments are therefore left
+  out of `sources()`: counting one would promote it to a var and emit a
+  `textureSample` nothing reads.
+* one `texture( map )` node bound to both parameters gives `nodeUniform0` and
+  `nodeUniform0_sampler`, which is how three's example writes it.
+
+`includes` are emitted before their caller, depth first, so `someFn` can call
+`desaturate` (m28).
 
 ## 9. Blending, and the instanced-attribute path
 

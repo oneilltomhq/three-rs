@@ -580,6 +580,12 @@ pub enum Node {
         def: Rc<FnDef>,
         args: Vec<NodeRef>,
     },
+    /// `FunctionCallNode` over a `wgslFn()` — a call into hand-written WGSL
+    /// the node system copies through verbatim. See [`crate::nodes::code`].
+    CodeCall {
+        def: Rc<crate::nodes::code::CodeDef>,
+        args: Vec<NodeRef>,
+    },
     /// A sequence of statements followed by the value they produce — the shape
     /// an inlined `Fn()` body with `toVar()` statements has. Three has no node
     /// for it: its `ShaderNode` call simply flows its body's statements into the
@@ -674,6 +680,7 @@ impl NodeRef {
             Node::Element { ty, .. } => *ty,
             Node::Texture { ty, .. } => *ty,
             Node::Call { def, .. } => def.ret,
+            Node::CodeCall { def, .. } => def.ret,
             Node::IfVar { result, .. } => result.ty(),
             Node::Select { ty, .. } => *ty,
             Node::Block { result, .. } => result.ty(),

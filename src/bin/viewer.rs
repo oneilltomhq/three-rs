@@ -11,7 +11,8 @@
 //! has a number key: `1` depth_texture, `2` instance_mesh, `3` materials_basic,
 //! `4` rtt, `5` lights_phong, `6` morphtargets, `7` shadowmap,
 //! `8` lights_physical, `9` postprocessing_masking, `0` tsl_galaxy,
-//! `a` skinning, `b` mesh_batch, `c` postprocessing_radial_blur. The same
+//! `a` skinning, `b` mesh_batch, `c` postprocessing_radial_blur,
+//! `d` materials. The same
 //! digit is accepted on the command line in place of the name, and `--list`
 //! prints the table. Left-drag orbits, right-drag (or middle-drag) pans, the
 //! wheel zooms and Esc quits.
@@ -66,6 +67,10 @@ mod webgpu_depth_texture;
 #[path = "../../examples/webgpu_instance_mesh.rs"]
 #[allow(dead_code)]
 mod webgpu_instance_mesh;
+
+#[path = "../../examples/webgpu_materials.rs"]
+#[allow(dead_code)]
+mod webgpu_materials;
 
 #[path = "../../examples/webgpu_materials_basic.rs"]
 #[allow(dead_code)]
@@ -133,12 +138,13 @@ enum Which {
     Skinning,
     MeshBatch,
     PostprocessingRadialBlur,
+    Materials,
 }
 
 impl Which {
     /// Every graded example, in README order; the index is the key (`1`..`9`,
     /// `0` for the tenth, then letters).
-    const ALL: [Which; 13] = [
+    const ALL: [Which; 14] = [
         Self::DepthTexture,
         Self::InstanceMesh,
         Self::MaterialsBasic,
@@ -152,6 +158,7 @@ impl Which {
         Self::Skinning,
         Self::MeshBatch,
         Self::PostprocessingRadialBlur,
+        Self::Materials,
     ];
 
     /// The name with or without its `webgpu_` prefix, or the key digit.
@@ -177,6 +184,7 @@ impl Which {
             Self::Skinning => "webgpu_skinning",
             Self::MeshBatch => "webgpu_mesh_batch",
             Self::PostprocessingRadialBlur => "webgpu_postprocessing_radial_blur",
+            Self::Materials => "webgpu_materials",
         }
     }
 
@@ -186,8 +194,9 @@ impl Which {
 
     /// The keyboard key (and the command-line shorthand) for this example.
     fn key(self) -> &'static str {
-        const KEYS: [&str; 13] = [
-            "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "a", "b", "c",
+        // Fourteen examples, ten digits: the rest take letters.
+        const KEYS: [&str; 14] = [
+            "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "a", "b", "c", "d",
         ];
         KEYS[Self::ALL.iter().position(|w| *w == self).unwrap()]
     }
@@ -258,6 +267,7 @@ enum Scene {
         app: webgpu_postprocessing_radial_blur::App,
         last_time: Option<f64>,
     },
+    Materials(webgpu_materials::App),
 }
 
 impl Scene {
@@ -289,6 +299,7 @@ impl Scene {
                 app: webgpu_postprocessing_radial_blur::init(),
                 last_time: None,
             },
+            Which::Materials => Scene::Materials(webgpu_materials::init()),
         };
 
         // `init()` is the graded example's code verbatim, so its `Renderer` is
@@ -342,6 +353,7 @@ impl Scene {
             Scene::Skinning { app, .. } => &mut app.renderer,
             Scene::MeshBatch(app) => &mut app.renderer,
             Scene::PostprocessingRadialBlur { app, .. } => &mut app.renderer,
+            Scene::Materials(app) => &mut app.renderer,
         }
     }
 
@@ -360,6 +372,7 @@ impl Scene {
             Scene::Skinning { app, .. } => &mut app.camera,
             Scene::MeshBatch(app) => &mut app.camera,
             Scene::PostprocessingRadialBlur { app, .. } => &mut app.camera,
+            Scene::Materials(app) => &mut app.camera,
         }
     }
 
@@ -617,6 +630,17 @@ impl Scene {
                 app.scene_pass
                     .render(&mut app.renderer, &mut app.scene, &mut app.camera);
                 app.render_pipeline.render(&mut app.renderer);
+            }
+            Scene::Materials(app) => {
+                // The page also orbits the camera; here the orbit controls own
+                // it, so only the teapots' own spin is restated.
+                for object in &app.objects {
+                    let mut object = object.borrow_mut();
+                    let (x, y, z) = (object.rotation.x, object.rotation.y, object.rotation.z);
+                    object.set_rotation(x + 0.01, y + 0.005, z);
+                }
+
+                app.renderer.render(&mut app.scene, &mut app.camera);
             }
         }
     }
