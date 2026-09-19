@@ -2068,5 +2068,145 @@ are `rgba8unorm` where attachment 0 is `rgba16float`), and `PassTarget::extra_co
 became `Vec<(TextureView, Option<TextureView>)>` — the view drawn into and the
 resolve target — so each extra attachment resolves like attachment 0 always has.
 
+## 24. `webgpu_custom_fog_background` — a pass's depth as a value
+
+The scene is §23's, minus `scene.background` and minus the renderer's tone
+mapping. Everything new is in the `RenderPipeline` quad:
+
+```js
+const scenePass     = pass( scene, camera );
+const scenePassViewZ = scenePass.getViewZNode();
+const fogFactor     = rangeFogFactor( 2.7, 4 ).context( { getViewZ: () => scenePassViewZ } );
+const compose       = fogFactor.mix( scenePass.toneMapping( ACESFilmicToneMapping, 1 ), color( 0x4080cc ) );
+```
+
+Three's `m08_fragment_fragment_RenderPipeline.wgsl` is 40 lines of flow, and
+the port reproduces all of it; the four pieces it needed are below.
+
+### 24.1 `pass.getViewZNode()` — the depth attachment as a bound texture
+
+`PassNode.getViewZNode( name = 'depth' )` is
+`perspectiveDepthToViewZ( getTextureNode( name ), cameraNear, cameraFar )`, and
+with `reversedDepthBuffer` off that is
+
+```
+near * far / ( ( far - near ) * depth - far )
+```
+
+([`tsl::perspective_depth_to_view_z`]). `getTexture( 'depth' )` is the pass's
+own `DepthTexture` — the constructor seeds `_textures[ 'depth' ]` with it — so
+the composite quad binds the very attachment the scene pass wrote, with no copy
+and no resolve. [`PassNode::view_z_node`] memoises the graph the way
+`_viewZNodes` does, and [`PassNode::depth_texture`] is `getTexture( 'depth' )`.
+
+`cameraNear` / `cameraFar` are `uniform( 0 )`s the pass owns and writes from its
+camera in `updateBefore()`. They are **object**-group uniforms of whatever
+material samples the pass, which is why the composite reads
+`object.nodeUniform1` / `object.nodeUniform2` and not the camera block. The port
+holds them as [`uniform_settable`] pairs and writes them at the top of
+`PassNode::render`, exactly where three does.
+
+### 24.2 `texture_depth_multisampled_2d`
+
+The page is `antialias: true`, so `PassNode.setup()`'s
+`renderTarget.samples = renderer.samples` makes the pass target 4×MSAA. WebGPU
+resolves colour attachments and **never** depth ones, so the depth texture the
+composite binds is still multisampled. Three's dump declares it
+
+```wgsl
+@binding( 3 ) @group( 0 ) var nodeUniform3 : texture_depth_multisampled_2d;
+```
+
+and reads sample 0 of the fragment:
+
+```wgsl
+nodeVar3 = textureDimensions( nodeUniform3 );
+nodeVar2 = textureLoad( nodeUniform3, vec2<u32>( … ), u32( 0 ) );
+```
+
+Three pieces of the port carry that:
+
+* [`TextureKind::DepthMultisampled2D`] — the declared WGSL type, no companion
+  sampler, and `multisampled: true` on the bind-group layout entry. A
+  `multisampled: false` entry against a 4-sample view is a wgpu validation
+  error, not wrong pixels.
+* `DepthTextureInner::multisample`, three's
+  `texture.isMultisampleRenderTargetTexture`. `RenderTarget::set_samples` keeps
+  it in step with the target's sample count, and `RenderTarget::set_depth_texture`
+  seeds it, so nothing outside the render target ever sets it by hand.
+  `NodeBuilder`'s texture slots read it to pick the kind.
+* `wgsl::texture_dimensions` drops its level argument for this kind. WGSL gives
+  a multisampled texture no `textureDimensions( t, level )` overload at all —
+  the same `u32( 0 )` every other `textureLoad` carries is a compile error here.
+  The sample index inside `textureLoad` stays.
+
+### 24.3 `rangeFogFactor( … ).context( { getViewZ } )` — a divergence in shape
+
+`Fog.js`' `getViewZNode( builder )` reads `builder.context.getViewZ` and falls
+back to `positionView.z`, then negates whichever it got. Upstream the choice is
+made **while the material is built**, because `rangeFogFactor` is an `Fn()` and
+its body runs against the builder; `.context( … )` is a `ContextNode` wrapped
+round it.
+
+This port's TSL is eager — the same reason §23.2 needed `MrtValue::Deferred` —
+so there is no builder in scope when `rangeFogFactor( 2.7, 4 )` is written, and
+no context to read. The port makes the choice by which function the caller
+calls:
+
+* [`tsl::range_fog_factor`] — `positionView.z`, what `scene.fogNode` uses;
+* [`tsl::range_fog_factor_with_view_z`] — the explicit override, what this page
+  uses.
+
+The generated WGSL is identical either way; this is an **API-shape divergence,
+not a code one**. A general `ContextNode` would be the upstream shape, and it is
+what a page that overrode `getViewZ` for a *material* would need; nothing on the
+ladder does, and §8's rule is to add only what a rung needs.
+
+### 24.4 `.toneMapping( mode, exposure )` on a node, and `outputColorTransform`
+
+`ToneMappingNode` is `vec4( toneMappingFn( color.rgb, exposure ), color.a )`,
+with `NoToneMapping` returning the colour untouched. The port had the four
+functions already, but only inside `render_output()` and only ever with the
+renderer's `toneMappingExposure` uniform. [`materials::tone_mapping_node`] is
+that step lifted out and given an explicit exposure node; `render_output()` now
+calls it. The page passes the literal `1`, so the shader reads
+`acesFilmicToneMapping( nodeVar1.xyz, 1.0 )` with no uniform at all.
+
+`renderPipeline.outputColorTransform = true` is the **default** and the port
+already had it (`webgpu_postprocessing_ca` is the one that sets it to `false`).
+What makes it interesting here is that it is paired with
+`renderer.toneMapping = NoToneMapping`: `renderOutput()` around the composite
+comes out as the alpha clamp, the unpremultiply, the sRGB OETF and the
+premultiply back, and nothing else. The tone map that *is* applied is the one
+inside the composite, on the scene pass alone — the fog colour is never tone
+mapped.
+
+### 24.5 Why the empty pixels are fog
+
+The page sets no `scene.background`. The pass target is cleared to
+`( 0, 0, 0, 0 )` at depth 1.0, so outside the helmet
+`perspectiveDepthToViewZ( 1, 0.25, 20 )` is exactly `-far`, `-20`; negated that
+is 20, and `smoothstep( 2.7, 4, 20 )` is 1. The composite is then the fog colour
+alone, at alpha 1 — which is why the background of the graded frame is a flat
+`0x4080cc` and not the clear colour. Get the near/far uniforms, the sample index
+or the multisample flag wrong and it is the whole image that moves, not an edge.
+
+### 24.6 Divergences
+
+None new. The composite quad differs from three's `m08` only in the classes §8
+already lists: generated var numbering (three numbers the `textureLoad` result
+before the `textureDimensions` temp, the port the other way round), the order
+the `// codes` helpers are emitted in, and the splat form
+`vec3<f32>( 0.0, 0.0, 0.0 )` where three prints `vec3<f32>( 0.0 )` inside
+`acesFilmicToneMapping`. The scene program is §23's `Material_MR`, unchanged.
+
 [`Scene::environment`]: ../src/objects/scene.rs
 [`MrtValue::Deferred`]: ../src/nodes/mrt.rs
+[`tsl::perspective_depth_to_view_z`]: ../src/nodes/tsl.rs
+[`tsl::range_fog_factor`]: ../src/nodes/tsl.rs
+[`tsl::range_fog_factor_with_view_z`]: ../src/nodes/tsl.rs
+[`uniform_settable`]: ../src/nodes/tsl.rs
+[`PassNode::view_z_node`]: ../src/renderer/pass.rs
+[`PassNode::depth_texture`]: ../src/renderer/pass.rs
+[`TextureKind::DepthMultisampled2D`]: ../src/nodes/wgsl.rs
+[`materials::tone_mapping_node`]: ../src/materials/node_material.rs
