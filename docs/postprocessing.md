@@ -252,3 +252,102 @@ this.renderTarget.depthTexture )`, so that a later effect reading the pass's
 uninitialised texture. Nothing in this example reads it, the port has no
 `copyTextureToTexture`, and the pass target's depth texture is simply never
 written. An effect that chains depth off an SSAA pass needs that copy first.
+
+## MRT: several colour attachments from one draw (`webgpu_postprocessing_bloom_selective`, part A)
+
+`mrt( { output, bloomIntensity: float( 0 ) } )` names the values a draw
+writes to a render target's several colour attachments. Three levels
+are involved and all three are ported:
+
+```rust
+let pass = PassNode::new();
+pass.set_mrt(mrt(vec![
+    ("output", output_property()),
+    ("bloomIntensity", float(0.0)),
+]));
+// asking for the node is what creates the attachment
+let bloom_intensity = pass.texture_node("bloomIntensity");
+
+// per material
+material.mrt_node = Some(mrt(vec![("bloomIntensity", uniform_value(Type::F32, vec![1.0]))]));
+```
+
+* **The pass** holds the default. `PassNode::set_mrt` is
+  `passNode.setMRT()`; `PassNode::render` hands it to the renderer for the
+  duration of its own render and restores the previous one, as
+  `PassNode.updateBefore()` does. `Renderer::set_mrt` / `mrt()` are
+  `Renderer.setMRT()` / `getMRT()`.
+* **The material** overrides it. `NodeMaterial.setup()` merges the two with
+  the material's entries winning, which is how fifty spheres sharing one
+  pipeline each get their own `bloomIntensity`.
+* **The render target** decides the layout. `MRTNode.setup()` resolves each
+  output *name* against `renderTarget.textures` and fills the members by
+  attachment **index**, so the order the attachments were created in is the
+  order of the `@location`s, and the dictionary's own order decides nothing.
+  An output with no attachment of that name is dropped.
+
+`PassNode::texture_node( name )` is `getTextureNode( name )`: it creates
+the attachment on first ask and memoises the node. Naming an output in the
+MRT does *not* create its attachment — three.js is the same, which is why
+a page that sets an MRT and never samples the extra output renders
+single-attachment.
+
+### What the fragment stage emits
+
+With an MRT in play the generated fragment stage takes three.js's other
+output shape, `OutputStructNode`'s:
+
+```wgsl
+struct OutputType {
+	@location( 0 ) m0 : vec4<f32>,
+	@location( 1 ) m1 : vec4<f32>,
+	
+};
+var<private> output : OutputType;
+…
+	Output = max( vec4<f32>( DiffuseColor.xyz, DiffuseColor.w ), vec4<f32>( 0.0 ) );
+	output.m0 = Output;
+	output.m1 = vec4<f32>( object.nodeUniform2 );
+
+	// result
+
+	return output;
+```
+
+The struct's *name* changes too (`OutputStruct` → `OutputType`), and the
+member names are `m0`, `m1`, … — that is three's own branch, not an
+accident, and `examples/dump_wgsl.rs`'s `bloom_selective_scene` section is
+byte-identical to `m01_fragment_fragment.wgsl` of the scout's dump.
+
+Two details are load-bearing:
+
+* **The assignments are in the flow, not in the result section.**
+  `OutputStructNode.generate()` pushes one `output.mN = …` line per member
+  and returns the struct's name, so the entry point ends at a bare `return
+  output;`.
+* **`Output` is analysed once, not twice.** Without an MRT the basic output
+  is reached both by the `Output` property and by `output.color`, which is
+  what gives it a var of its own. Here the MRT's `output` member reads the
+  *property* back, so the output node is reached only by the property
+  assignment and stays inlined into it — which is exactly what the dump
+  shows. It is the same rule a custom `material.output_node` already had.
+
+Everything else on the ladder is untouched: with no MRT set the fragment
+stage is the old `struct OutputStruct { @location( 0 ) color }` and one
+`output.color = …`. All 184 pre-existing `dump_wgsl` sections are
+byte-identical across this change.
+
+### The pass and the pipeline
+
+A pass gets one colour attachment per `renderTarget.textures` entry, all
+sharing the pass's clear op, and a pipeline one `ColorTargetState` per
+attachment. The attachment *count* is part of `RenderState`, so a program
+drawn into a one-attachment pass and into an MRT pass gets two pipelines
+rather than a validation error.
+
+`MRTNode.blendModes` and `MRTNode.clearColors` — three's per-output blend
+mode and clear colour — are not ported. Every MRT material here is opaque,
+where three's `MaterialBlending` and `NoBlending` both come out as no
+blend state at all, and nothing on this ladder sets a per-output clear.
+MSAA and MRT never meet either: a `PassNode` with an MRT is `samples: 0`,
+so only attachment 0 can have a resolve target.

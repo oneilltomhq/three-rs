@@ -695,6 +695,31 @@ Two things about the arguments are worth knowing:
 `includes` are emitted before their caller, depth first, so `someFn` can call
 `desaturate` (m28).
 
+### MRT adds no divergence class, and reproduces two quirks on purpose
+
+The MRT fragment of `webgpu_postprocessing_bloom_selective` is the first shader
+on the ladder that matches three's dump in full — no entry here. Two details of
+that match are deliberate rather than incidental, and a tidier port would lose
+them:
+
+* **the struct's name changes with the shape.** A single-attachment fragment
+  declares `struct OutputStruct { @location( 0 ) color: vec4<f32> }`; an MRT
+  one declares `struct OutputType` with `m0`, `m1`, …. That is two different
+  classes in three (`OutputStructNode` names its own type `OutputType`), not
+  one type with a variable member count, and both names are in the dumps.
+* **`OutputType` ends with a blank member line** — a `,` then a line holding
+  one tab. `getStructMembers()` pushes `` `\t${ this.getBuiltins( 'output' ) }` ``
+  as a final member for any output struct, and a fragment stage with no output
+  builtins makes that the tab alone. Reproduced literally.
+
+One thing that is *not* a divergence but is easy to read as one: with an MRT,
+`Output` is analysed once where the ordinary path analyses it twice. The second
+analysis exists because the basic path reaches the value through both `Output`
+and `output.color`, which promotes it to a var; an MRT's `output` member reads
+the property back instead, so the count is one and no var appears. Three gets
+there by the same route — `getFragmentOutput` vs. `OutputStructNode` — and its
+dump has no var either.
+
 ## 9. Blending, and the instanced-attribute path
 
 Two pieces of shared renderer work that no rung 1–9 material exercises, built
