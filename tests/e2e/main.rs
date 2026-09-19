@@ -132,6 +132,10 @@ mod webgpu_postprocessing_radial_blur;
 #[allow(dead_code)]
 mod webgpu_postprocessing_ssaa;
 
+#[path = "../../examples/webgpu_postprocessing_anamorphic.rs"]
+#[allow(dead_code)]
+mod webgpu_postprocessing_anamorphic;
+
 #[path = "../../examples/webgpu_postprocessing_bloom_selective.rs"]
 #[allow(dead_code)]
 mod webgpu_postprocessing_bloom_selective;
@@ -772,6 +776,51 @@ fn webgpu_postprocessing_bloom_selective() {
         name,
         &mut app,
         webgpu_postprocessing_bloom_selective::animate,
+        |app| app.renderer.device(),
+    );
+}
+
+#[test]
+fn webgpu_postprocessing_anamorphic() {
+    let name = "webgpu_postprocessing_anamorphic";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_postprocessing_anamorphic::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_postprocessing_anamorphic::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(
+        name,
+        &mut app,
+        webgpu_postprocessing_anamorphic::animate,
         |app| app.renderer.device(),
     );
 }
@@ -1451,6 +1500,7 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_postprocessing_radial_blur);
     rung!(webgpu_postprocessing_ssaa);
     rung!(webgpu_postprocessing_bloom_selective);
+    rung!(webgpu_postprocessing_anamorphic);
     rung!(webgpu_lights_phong);
     rung!(webgpu_morphtargets);
     rung!(webgpu_tsl_galaxy);

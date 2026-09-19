@@ -26,6 +26,10 @@ mod webgpu_mesh_batch;
 #[allow(dead_code)]
 mod webgpu_compute_points;
 
+#[path = "webgpu_postprocessing_anamorphic.rs"]
+#[allow(dead_code)]
+mod webgpu_postprocessing_anamorphic;
+
 fn show(label: &str, material: &MeshBasicNodeMaterial, ctx: SetupContext) {
     show_fog(label, material, ctx, None)
 }
@@ -524,6 +528,109 @@ fn main() {
             output: Some(direct_hook),
             ..SetupContext::default()
         },
+    );
+
+    // rung webgpu_postprocessing_anamorphic: the `backgroundNode` skybox,
+    // against `m01` — a screen-space vignette, so it is also where
+    // `screenUV.distance( 0.5 )` has to splat its scalar operand.
+    let mut anamorphic_background = MeshBasicNodeMaterial::new();
+    anamorphic_background.color_node = Some(three_rs::materials::background_node_color_node(mix(
+        Color::from_hex(0x111111),
+        Color::from_hex(0x000000),
+        distance(screen_uv(), float(0.5)).mul(float(2.0)),
+    )));
+    anamorphic_background.vertex_node = Some(three_rs::materials::background_vertex_node());
+    anamorphic_background.side = Side::Back;
+    anamorphic_background.depth_test = false;
+    anamorphic_background.depth_write = false;
+    anamorphic_background.fog = false;
+    show(
+        "anamorphic_background",
+        &anamorphic_background,
+        SetupContext::default(),
+    );
+
+    // rung webgpu_postprocessing_anamorphic: the instanced spheres, against
+    // `m02`/`m03`. The `positionNode` is applied *after* the instance matrix,
+    // so its `positionLocal` is the already-instanced one — that ordering is
+    // the whole content of the vertex diff.
+    let mut anamorphic_scene = MeshBasicNodeMaterial::new();
+    anamorphic_scene.color = Color::from_hex(0xffffff);
+    let time_scale = uniform_value(three_rs::nodes::Type::F32, vec![0.5]);
+    let bob = time()
+        .add(
+            instance_index()
+                .to(three_rs::nodes::Type::F32)
+                .mul(float(0.5)),
+        )
+        .mul(time_scale)
+        .sin()
+        .mul(float(5.0));
+    anamorphic_scene.position_node =
+        Some(position_local().add(vec3_join(vec![float(0.0), bob, float(0.0)])));
+    show(
+        "anamorphic_scene",
+        &anamorphic_scene,
+        SetupContext {
+            instance_count: Some(200),
+            instanced: true,
+            instance_color: Some(200),
+            ..SetupContext::default()
+        },
+    );
+
+    // rung webgpu_postprocessing_anamorphic: the `rtt()` quad, the streak that
+    // reads it, and the final `RenderPipeline` quad, against `m05`, `m07` and
+    // `m17` of the scout's `dump-anamorphic/`.
+    //
+    // The high pass is the example's own `anamorphic_high_pass`, included from
+    // the example rather than rebuilt here, so what is diffed is the graph the
+    // graded frame actually runs.
+    let anamorphic_pass = three_rs::PassNode::new();
+    let samples = uniform_value(three_rs::nodes::Type::F32, vec![80.0]);
+    let mut anamorphic_bright_pass = None;
+    let anamorphic_bloom = three_rs::nodes::display::BloomNode::with_high_pass(
+        anamorphic_pass.texture_node("output"),
+        |args| {
+            let (node, high_pass) =
+                webgpu_postprocessing_anamorphic::anamorphic_high_pass(args, samples);
+            anamorphic_bright_pass = Some(node);
+            high_pass
+        },
+    );
+    let anamorphic_bright_pass = anamorphic_bright_pass.expect("the high pass built its rtt()");
+
+    // `m05`: the bright pass proper, drawn into the `rtt()` target.
+    let mut anamorphic_rtt = anamorphic_bright_pass.quad_material().clone();
+    anamorphic_rtt.vertex_node = Some(three_rs::materials::quad_vertex_node());
+    show("anamorphic_rtt", &anamorphic_rtt, SetupContext::default());
+
+    // `m07`: the eighty-tap horizontal streak over that target, which is where
+    // `Loop( { start, end } )`'s node-valued start reaches the loop header.
+    let mut anamorphic_high_pass = anamorphic_bloom.quad_materials()[0].clone();
+    anamorphic_high_pass.vertex_node = Some(three_rs::materials::quad_vertex_node());
+    show(
+        "anamorphic_high_pass",
+        &anamorphic_high_pass,
+        SetupContext::default(),
+    );
+
+    // `m17`: `scenePass.add( bloomPass.mul( tintColor ) )` — a `vec4` plus a
+    // `vec4 * vec3`, so the tint widens with `w = 1.0`.
+    let tint_color = uniform_value(three_rs::nodes::Type::Vec3, vec![0.478, 0.541, 1.0]);
+    let mut anamorphic_output = MeshBasicNodeMaterial::new();
+    anamorphic_output.name = "RenderPipeline";
+    anamorphic_output.fragment_node = Some(three_rs::materials::render_output(
+        anamorphic_pass
+            .node()
+            .add(anamorphic_bloom.node().mul(tint_color)),
+        three_rs::ToneMapping::Neutral,
+    ));
+    anamorphic_output.vertex_node = Some(three_rs::materials::quad_vertex_node());
+    show(
+        "anamorphic_render_pipeline_quad",
+        &anamorphic_output,
+        SetupContext::default(),
     );
 
     // rung 5: the three teapots and the light spheres, against
