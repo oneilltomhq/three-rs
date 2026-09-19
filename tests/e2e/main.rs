@@ -108,6 +108,10 @@ mod webgpu_instance_uniform;
 #[allow(dead_code)]
 mod webgpu_materials;
 
+#[path = "../../examples/webgpu_materials_transmission.rs"]
+#[allow(dead_code)]
+mod webgpu_materials_transmission;
+
 #[path = "../../examples/webgpu_materials_basic.rs"]
 #[allow(dead_code)]
 mod webgpu_materials_basic;
@@ -1439,6 +1443,68 @@ fn webgpu_loader_gltf_sheen() {
     });
 }
 
+/// A `transmission: 1` sphere in front of the UltraHDR skybox: the ladder's
+/// direct test of the transmission path (`docs/nodes.md` §26, §29). Unlike the
+/// barn lamp's glass, the transmissive surface covers a fifth of the frame and
+/// everything behind it is background, so a missing or mis-sampled opaque-frame
+/// copy is not a detail — it is the sphere.
+///
+/// The `alphaMap` bands are the second half: seven stripes where `DiffuseColor.a`
+/// alternates 1 and 0, which is the one place `transparent: true` blending shows.
+///
+/// **Not yet green**: 198 of 100000 pixels differ, against a limit of 100
+/// (0.198% vs 0.1%). Every one of them is on the sphere's left limb, where the
+/// magnified reflection/refraction of the bright rainbow wall behind it lands;
+/// the rest of the frame — background, bands, the right limb — is inside the
+/// threshold. `docs/webgpu_materials_transmission-progress.md` has the
+/// measurement and what was ruled out. The example itself, its steady frame and
+/// its build counts are exercised by `steady_frame_builds_nothing` below.
+#[ignore = "0.198% of pixels differ, limit 0.1% — see the progress doc"]
+#[test]
+fn webgpu_materials_transmission() {
+    let name = "webgpu_materials_transmission";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_materials_transmission::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_materials_transmission::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(
+        name,
+        &mut app,
+        webgpu_materials_transmission::animate,
+        |app| app.renderer.device(),
+    );
+}
+
 /// The Anisotropy Barn Lamp: `KHR_materials_anisotropy` on the shade,
 /// `KHR_materials_transmission` + `_volume` on the glass, an UltraHDR
 /// equirect as both `scene.environment` and a blurred `scene.background`.
@@ -2692,6 +2758,7 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_custom_fog_background);
     rung!(webgpu_deferred);
     rung!(webgpu_loader_gltf_anisotropy);
+    rung!(webgpu_materials_transmission);
 }
 
 // ---------------------------------------------------------------------------
