@@ -140,6 +140,28 @@ all of them possible.
    nothing — but it is worth knowing before anyone tries to match that mip
    chain.
 
+9. **The stage split and the box.** Three's m01 puts
+   `varyings.v_positionWorldDirection = normalize( ( modelWorldMatrix *
+   vec4( positionLocal, 0.0 ) ).xyz )` in the vertex stage and m02 opens with
+   `positionWorldDirection = normalize( v_positionWorldDirection )`, with
+   `equirectUV` and the sample both in the fragment stage. `position_world_direction`
+   in `tsl.rs` is `to_var( to_varying( … .normalize() ).normalize() )` — the
+   same double normalize across the same varying — and `cube_render_target`
+   wraps `equirect_uv()` around the *var*, so the uv is per fragment on both
+   sides. Nothing is hoisted. The box is `box_geometry( 5, 5, 5, 1, 1, 1 )`
+   with `Side::Back`, and the face camera is `PerspectiveCamera::new( -90.0,
+   1.0, 1.0, 10.0 )` — `CubeCamera( 1, 10 )`'s shape, aspect 1, the negative
+   fov intact. **Nothing here diverges.**
+
+10. **Doubling the cube face makes it slightly worse.** Changing
+   `from_equirectangular_texture()`'s `let size = source.size().1` to
+   `* 2` — a 1024² cube from the same 1024×512 equirect, four times the texels
+   — moves the count from **1534 to 1603**. A sub-pixel sampling error in the
+   conversion would have fallen away at twice the resolution; instead it is
+   flat (and marginally the wrong way). **This exonerates the conversion**,
+   and with it measurement 5's mip experiment, checks 6–9 and the coverage
+   argument below: the equirect path is not where the pixels are. Reverted.
+
 ### What the rest of the ladder already proves about this path
 
 `webgpu_postprocessing_bloom_emissive` is green and is *this* configuration:
@@ -152,15 +174,20 @@ high-frequency error, and every detailed page so far had twice the face
 resolution. `venice_sunset` at 512 is the first case that has both, which is
 why this is the first page to show it.
 
-The conclusion the next session should start from: the difference is
-sub-pixel, inside the equirect→cube conversion, it needs both a small face
-and detailed input to show, and it is not in the sampler, the size or the UV.
-That leaves the rasterisation: the face camera's `near`/`far` and the frustum
-the negative FOV builds, and the per-face render-target-then-`copy_to_cube_layer`
-divergence this port makes where three renders straight into the layer. The
-next thing to measure is the cube's texels themselves — read back one face and
-compare it against three's texture 6, which localises it to the conversion or
-clears it entirely.
+The conclusion the next session should start from: **the equirect path is
+not the cause.** Measurement 10 settles what 5–9 each only narrowed. What
+remains true is the shape of the error — smooth regions identical to 0.16 of
+a code value, every high-contrast region off by 2–5 — and that shape is now
+unexplained by anything in the background pipeline. It is the signature of an
+edge-only difference: the skyline and the lamp are both edge-dense, the sky and
+the ground are not, and the grader's 800×500 → 400×250 downsample spreads an
+edge difference over its neighbours. `antialias: true` and the 4× MSAA resolve
+are the same on both sides and on the green siblings, so it is not the sample
+count itself; the next thing to measure is whether the *unresolved* samples
+agree, and failing that whether the lamp's own geometry (the glTF normals and
+tangents, which feed an iridescent specular lobe that is far more sensitive to
+them than a plain one) is what both regions have in common — the skyline is
+seen *through* and reflected *in* the lamp's glass in much of the frame.
 
 ## What is missing
 
