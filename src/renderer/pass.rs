@@ -21,6 +21,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 
 use crate::cameras::PerspectiveCamera;
+use crate::core::Layers;
 use crate::nodes::node::SettableValue;
 use crate::nodes::tsl::{
     pass_depth_texture, perspective_depth_to_view_z, texture_uv, to_var, uniform_settable, uv,
@@ -69,22 +70,47 @@ pub struct PassNode {
     /// composite's shader reads `object.nodeUniform1` / `object.nodeUniform2`.
     camera_near: (NodeRef, SettableValue),
     camera_far: (NodeRef, SettableValue),
+    /// `PassNode.autoClearDepth`.
+    auto_clear_depth: bool,
+    /// Whether the depth attachment is this pass's own. A pass handed another
+    /// pass's depth texture must not resize it — the owner already did, and
+    /// `set_size` on a shared handle would drop the contents this pass exists
+    /// to read.
+    owns_depth_texture: bool,
+    /// `PassNode._layers`.
+    layers: RefCell<Option<Layers>>,
+    /// `PassNode.opaque` / `.transparent` / `lighting.enabled`.
+    opaque: bool,
+    transparent: bool,
+    lighting_enabled: bool,
 }
 
 /// `pass( scene, camera, options )`'s options object, as far as the ported
 /// pages use it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub struct PassOptions {
     pub min_filter: TextureFilter,
     pub mag_filter: TextureFilter,
+    /// `options.depthTexture` — `depthTexture = options.depthTexture || new
+    /// DepthTexture()`. A pass given another pass's depth attachment renders
+    /// *into* it, which is how `webgpu_deferred`'s transparent pass depth-tests
+    /// against the opaque G-buffer it never drew.
+    pub depth_texture: Option<DepthTexture>,
+    /// `options.autoClearDepth`, copied onto `renderer.autoClearDepth` for the
+    /// duration of the pass. `false` keeps the shared depth attachment's
+    /// contents (`loadOp: "load"`).
+    pub auto_clear_depth: bool,
 }
 
 impl Default for PassOptions {
-    /// `RenderTarget`'s own defaults: `LinearFilter` on both sides.
+    /// `RenderTarget`'s own defaults: `LinearFilter` on both sides, a fresh
+    /// `DepthTexture`, and `autoClearDepth` on.
     fn default() -> Self {
         Self {
             min_filter: TextureFilter::Linear,
             mag_filter: TextureFilter::Linear,
+            depth_texture: None,
+            auto_clear_depth: true,
         }
     }
 }
@@ -126,7 +152,7 @@ impl PassNode {
             },
         )
         .expect("three-rs: PassNode's render target is a HalfFloat colour type");
-        render_target.set_depth_texture(DepthTexture::new());
+        render_target.set_depth_texture(options.depth_texture.clone().unwrap_or_else(DepthTexture::new));
 
         // `getTextureNode()`'s node — the `PassTextureNode` — and the
         // `PassNode` that wraps it. Both are `TempNode`s, which is why a pass
@@ -149,7 +175,38 @@ impl PassNode {
             view_z_nodes: RefCell::new(HashMap::new()),
             camera_near,
             camera_far,
+            auto_clear_depth: options.auto_clear_depth,
+            owns_depth_texture: options.depth_texture.is_none(),
+            layers: RefCell::new(None),
+            opaque: true,
+            transparent: true,
+            lighting_enabled: true,
         }
+    }
+
+    /// `passNode.setLayers( layers )` — the camera layer mask this pass renders
+    /// with. `Layers::default()` (layer 0 only) is what `webgpu_deferred`'s
+    /// opaque and transparent passes set, to keep the resolve quad on layer 2
+    /// out of them.
+    pub fn set_layers(&self, layers: Layers) {
+        *self.layers.borrow_mut() = Some(layers);
+    }
+
+    /// `passNode.opaque` — `false` skips the opaque half of the render list,
+    /// and with it the skybox.
+    pub fn set_opaque(&mut self, opaque: bool) {
+        self.opaque = opaque;
+    }
+
+    /// `passNode.transparent`.
+    pub fn set_transparent(&mut self, transparent: bool) {
+        self.transparent = transparent;
+    }
+
+    /// `passNode.lighting = new Lighting(); passNode.lighting.enabled = false`
+    /// — the pass renders every material with an empty light list.
+    pub fn set_lighting_enabled(&mut self, enabled: bool) {
+        self.lighting_enabled = enabled;
     }
 
     /// `passNode.getTexture( 'depth' )` — the pass's own depth attachment.
@@ -301,7 +358,8 @@ impl PassNode {
         camera: &mut PerspectiveCamera,
     ) {
         let (width, height) = renderer.drawing_buffer_size();
-        self.render_target.set_size(width, height);
+        self.render_target
+            .set_size_keeping_depth(width, height, !self.owns_depth_texture);
         // `PassNode.setup()`: `renderTarget.samples = renderer.samples`.
         self.render_target.set_samples(renderer.samples());
 
@@ -318,11 +376,29 @@ impl PassNode {
 
         let previous = renderer.render_target();
         let previous_mrt = renderer.mrt();
+        let previous_auto_clear_depth = renderer.auto_clear_depth;
+        let previous_opaque = renderer.opaque;
+        let previous_transparent = renderer.transparent;
+        let previous_lighting = renderer.lighting_enabled;
+        let previous_layers = renderer.camera_layers;
+
         renderer.set_render_target(Some(self.render_target.clone()));
         renderer.set_mrt(self.mrt.borrow().clone());
+        renderer.auto_clear_depth = self.auto_clear_depth;
+        renderer.opaque = self.opaque;
+        renderer.transparent = self.transparent;
+        renderer.lighting_enabled = self.lighting_enabled;
+        renderer.camera_layers = *self.layers.borrow();
+
         renderer.render(scene, camera);
+
         renderer.set_render_target(previous);
         renderer.set_mrt(previous_mrt);
+        renderer.auto_clear_depth = previous_auto_clear_depth;
+        renderer.opaque = previous_opaque;
+        renderer.transparent = previous_transparent;
+        renderer.lighting_enabled = previous_lighting;
+        renderer.camera_layers = previous_layers;
     }
 }
 

@@ -135,6 +135,7 @@ pub fn init() -> App {
     let scene_pass = PassNode::new_with_options(PassOptions {
         min_filter: TextureFilter::Nearest,
         mag_filter: TextureFilter::Nearest,
+        ..PassOptions::default()
     });
 
     // `scenePass.setMRT( mrt( { output, normal: packNormalToRGB( normalView ),

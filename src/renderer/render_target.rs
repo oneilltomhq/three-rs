@@ -312,6 +312,14 @@ impl RenderTarget {
 
     /// `RenderTarget.setSize()` — drops the GPU textures so they are recreated.
     pub fn set_size(&self, width: u32, height: u32) {
+        self.set_size_keeping_depth(width, height, false)
+    }
+
+    /// `setSize()` for a target whose `depthTexture` belongs to *another*
+    /// target — `pass( scene, camera, { depthTexture } )`. Dropping the shared
+    /// texture's GPU handle here would throw away the depth the owning pass
+    /// has already rendered, which is the whole point of sharing it.
+    pub fn set_size_keeping_depth(&self, width: u32, height: u32, shared_depth: bool) {
         let mut inner = self.0.borrow_mut();
         if inner.width != width || inner.height != height {
             inner.width = width;
@@ -325,8 +333,10 @@ impl RenderTarget {
             inner.msaa = None;
             inner.msaa_extra.clear();
             inner.depth = None;
-            if let Some(depth_texture) = &inner.depth_texture {
-                depth_texture.inner().borrow_mut().gpu = None;
+            if !shared_depth {
+                if let Some(depth_texture) = &inner.depth_texture {
+                    depth_texture.inner().borrow_mut().gpu = None;
+                }
             }
             for (_, texture) in inner.extra_textures.iter().chain(&inner.previous_textures) {
                 texture.set_size(width, height);
