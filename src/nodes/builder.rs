@@ -734,7 +734,14 @@ impl NodeBuilder {
                     TextureKind::Float2D
                 },
             ),
-            TextureSource::Depth(t) => (t.id(), TextureKind::Depth2D),
+            TextureSource::Depth(t) => (
+                t.id(),
+                if t.is_multisample() {
+                    TextureKind::DepthMultisampled2D
+                } else {
+                    TextureKind::Depth2D
+                },
+            ),
             TextureSource::ShadowMap(t) => (t.id(), TextureKind::DepthCompare2D),
             TextureSource::Cube(t) => (t.id(), TextureKind::Cube),
             TextureSource::DataArray(t) => (t.id(), TextureKind::Float2DArray),
@@ -1301,7 +1308,7 @@ impl NodeBuilder {
                 texture, uv, mode, ..
             } => {
                 let (texture, uv, mode) = (texture.clone(), uv.clone(), mode.clone());
-                let (name, _kind) = self.texture_slots(&texture);
+                let (name, kind) = self.texture_slots(&texture);
                 let suv = self.generate(&uv);
                 match mode {
                     SampleMode::Sample => {
@@ -1337,7 +1344,7 @@ impl NodeBuilder {
                     SampleMode::Load => {
                         self.add_code("tsl_coord_clampS_clampT_2d", wgsl::CLAMP_WRAP_SNIPPET);
                         let dims = self.declare_var(None, Type::UVec2);
-                        let dims_expr = wgsl::texture_dimensions(&name);
+                        let dims_expr = wgsl::texture_dimensions(&name, kind);
                         self.emit(format!("{dims} = {dims_expr};"));
                         wgsl::texture_load(&name, &suv, &dims)
                     }
