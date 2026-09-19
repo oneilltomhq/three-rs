@@ -189,6 +189,29 @@ pub struct GltfMaterial {
     /// a `MeshPhysicalMaterial` for — and what sets `sheen = 1`, since glTF has
     /// no intensity of its own.
     pub sheen: Option<GltfSheen>,
+    /// `KHR_materials_emissive_strength.emissiveStrength` (default 1), which
+    /// three assigns straight to `material.emissiveIntensity`.
+    pub emissive_strength: Option<f64>,
+    /// `KHR_materials_anisotropy`: `anisotropyStrength` (default 0),
+    /// `anisotropyRotation` (default 0, radians) and `anisotropyTexture`.
+    pub anisotropy_strength: Option<f64>,
+    pub anisotropy_rotation: f64,
+    pub anisotropy_texture: Option<usize>,
+    /// `KHR_materials_clearcoat`: `clearcoatFactor` (default 0),
+    /// `clearcoatRoughnessFactor` (default 0) and `clearcoatNormalTexture`
+    /// with its `scale`.
+    pub clearcoat_factor: Option<f64>,
+    pub clearcoat_roughness_factor: f64,
+    pub clearcoat_normal_texture: Option<usize>,
+    pub clearcoat_normal_scale: f64,
+    /// `KHR_materials_transmission.transmissionFactor` (default 0).
+    pub transmission_factor: Option<f64>,
+    /// `KHR_materials_volume`: `thicknessFactor` (default 0),
+    /// `attenuationDistance` (default `Infinity`) and `attenuationColor`
+    /// (default white).
+    pub thickness_factor: Option<f64>,
+    pub attenuation_distance: f64,
+    pub attenuation_color: [f64; 3],
 }
 
 /// `KHR_materials_sheen`'s two factors, with the extension's own defaults
@@ -1192,6 +1215,79 @@ impl GLTFLoader {
                             .and_then(Value::as_f64)
                             .unwrap_or(0.0),
                     }),
+                // `GLTFMaterialsEmissiveStrength.extendMaterialParams`
+                emissive_strength: material_def
+                    .pointer("/extensions/KHR_materials_emissive_strength/emissiveStrength")
+                    .and_then(Value::as_f64),
+                // `GLTFMaterialsAnisotropy.extendMaterialParams`
+                anisotropy_strength: material_def
+                    .pointer("/extensions/KHR_materials_anisotropy")
+                    .map(|ext| {
+                        ext.get("anisotropyStrength")
+                            .and_then(Value::as_f64)
+                            .unwrap_or(0.0)
+                    }),
+                anisotropy_rotation: material_def
+                    .pointer("/extensions/KHR_materials_anisotropy/anisotropyRotation")
+                    .and_then(Value::as_f64)
+                    .unwrap_or(0.0),
+                anisotropy_texture: material_def
+                    .pointer("/extensions/KHR_materials_anisotropy/anisotropyTexture/index")
+                    .and_then(Value::as_u64)
+                    .map(|i| i as usize),
+                // `GLTFMaterialsClearcoat.extendMaterialParams`
+                clearcoat_factor: material_def
+                    .pointer("/extensions/KHR_materials_clearcoat")
+                    .map(|ext| {
+                        ext.get("clearcoatFactor")
+                            .and_then(Value::as_f64)
+                            .unwrap_or(0.0)
+                    }),
+                clearcoat_roughness_factor: material_def
+                    .pointer("/extensions/KHR_materials_clearcoat/clearcoatRoughnessFactor")
+                    .and_then(Value::as_f64)
+                    .unwrap_or(0.0),
+                clearcoat_normal_texture: material_def
+                    .pointer("/extensions/KHR_materials_clearcoat/clearcoatNormalTexture/index")
+                    .and_then(Value::as_u64)
+                    .map(|i| i as usize),
+                clearcoat_normal_scale: material_def
+                    .pointer("/extensions/KHR_materials_clearcoat/clearcoatNormalTexture/scale")
+                    .and_then(Value::as_f64)
+                    .unwrap_or(1.0),
+                // `GLTFMaterialsTransmission.extendMaterialParams`
+                transmission_factor: material_def
+                    .pointer("/extensions/KHR_materials_transmission")
+                    .map(|ext| {
+                        ext.get("transmissionFactor")
+                            .and_then(Value::as_f64)
+                            .unwrap_or(0.0)
+                    }),
+                // `GLTFMaterialsVolume.extendMaterialParams`
+                thickness_factor: material_def
+                    .pointer("/extensions/KHR_materials_volume")
+                    .map(|ext| {
+                        ext.get("thicknessFactor")
+                            .and_then(Value::as_f64)
+                            .unwrap_or(0.0)
+                    }),
+                attenuation_distance: material_def
+                    .pointer("/extensions/KHR_materials_volume/attenuationDistance")
+                    .and_then(Value::as_f64)
+                    .unwrap_or(f64::INFINITY),
+                attenuation_color: material_def
+                    .pointer("/extensions/KHR_materials_volume/attenuationColor")
+                    .and_then(Value::as_array)
+                    .map(|v| {
+                        let mut out = [1.0; 3];
+                        for (i, slot) in out.iter_mut().enumerate() {
+                            if let Some(value) = v.get(i).and_then(Value::as_f64) {
+                                *slot = value;
+                            }
+                        }
+                        out
+                    })
+                    .unwrap_or([1.0; 3]),
             });
         }
 
@@ -1483,10 +1579,14 @@ impl GLTFLoader {
 
         // `materialParams.color.setRGB( ..., LinearSRGBColorSpace )` — the
         // factor is already linear, so no transfer is applied.
-        let mut out = if material.ior.is_some()
+        let physical = material.ior.is_some()
             || material.specular_factor.is_some()
             || material.sheen.is_some()
-        {
+            || material.anisotropy_strength.is_some()
+            || material.clearcoat_factor.is_some()
+            || material.transmission_factor.is_some()
+            || material.thickness_factor.is_some();
+        let mut out = if physical {
             MeshBasicNodeMaterial::physical(
                 Color::new(r, g, b),
                 material.roughness_factor,
@@ -1527,10 +1627,14 @@ impl GLTFLoader {
 
         // `materialParams.emissive = new Color().setRGB( ..., LinearSRGBColorSpace )`
         // — the factor is already linear, as `baseColorFactor` is.
-        // `emissiveIntensity` stays at three's default 1; glTF has no field for
-        // it (`KHR_materials_emissive_strength`, which does, is not ported).
         let [er, eg, eb] = material.emissive_factor;
         out.emissive = Color::new(er, eg, eb);
+        // `GLTFMaterialsEmissiveStrength`: `materialParams.emissiveIntensity =
+        // emissiveStrength`. The lamp filament's 25 is what makes it glow past
+        // white before tone mapping.
+        if let Some(strength) = material.emissive_strength {
+            out.emissive_intensity = strength;
+        }
 
         if let Some(map_def) = &material.base_color_texture {
             out.map = self.assign_texture(cache, textures, images, map_def, ColorSpace::SRGB)?;
@@ -1595,6 +1699,38 @@ impl GLTFLoader {
             let [r, g, b] = sheen.color_factor;
             out.sheen_color = Color::new(r, g, b);
             out.sheen_roughness = sheen.roughness_factor;
+        }
+
+        // `GLTFMaterialsAnisotropy.extendMaterialParams`. The texture is a
+        // data map (RG = the direction, B = the strength), so it stays linear.
+        if let Some(strength) = material.anisotropy_strength {
+            out.anisotropy = strength;
+            out.anisotropy_rotation = material.anisotropy_rotation;
+        }
+        if let Some(index) = material.anisotropy_texture {
+            out.anisotropy_map = self.load_texture(cache, textures, images, index)?;
+        }
+
+        // `GLTFMaterialsClearcoat.extendMaterialParams`.
+        if let Some(factor) = material.clearcoat_factor {
+            out.clearcoat = factor;
+            out.clearcoat_roughness = material.clearcoat_roughness_factor;
+        }
+        if let Some(index) = material.clearcoat_normal_texture {
+            out.clearcoat_normal_map = self.load_texture(cache, textures, images, index)?;
+            let scale = material.clearcoat_normal_scale;
+            out.clearcoat_normal_scale = Vector2::new(scale, scale);
+        }
+
+        // `GLTFMaterialsTransmission` / `GLTFMaterialsVolume`.
+        if let Some(factor) = material.transmission_factor {
+            out.transmission = factor;
+        }
+        if let Some(factor) = material.thickness_factor {
+            out.thickness = factor;
+            out.attenuation_distance = material.attenuation_distance;
+            let [ar, ag, ab] = material.attenuation_color;
+            out.attenuation_color = Color::new(ar, ag, ab);
         }
 
         Ok(out)
