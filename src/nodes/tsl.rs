@@ -1483,6 +1483,16 @@ accessor!(
 );
 
 accessor!(
+    /// `screenUV` — `screenCoordinate.div( screenSize )`.
+    ///
+    /// No Y flip: `ScreenNode` flips only under WebGL (`builder.renderer.backend
+    /// .isWebGLBackend`), and `webgpu_skinning`'s dumped background shader reads
+    /// `( fragCoord.xy / render.nodeUniform0 ).y` straight.
+    screen_uv,
+    frag_coord().xy().div(viewport_size())
+);
+
+accessor!(
     /// `positionLocal` — `positionGeometry.toVarying( 'positionLocal' )`, so
     /// that instancing, morphing and skinning can reassign it and so that a
     /// fragment-stage read (the torus knot's `maskNode`) carries it across as a

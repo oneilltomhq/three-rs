@@ -696,15 +696,14 @@ impl Renderer {
                 materials::background_color_node(&background),
                 hash_of(&("cube", background.id())),
             )),
-            Some(Background::Node(color)) => Some((
-                materials::background_node_color_node(color),
-                hash_of(&(
-                    "color",
-                    color.r.to_bits(),
-                    color.g.to_bits(),
-                    color.b.to_bits(),
-                )),
-            )),
+            // A background node is keyed by identity, as every other node in
+            // a material is (`NodeRef::key()`); the scene holds it, so it is
+            // the same node every frame.
+            Some(Background::Node(node)) => Some((
+                hash_of(&("node", node.key())),
+                materials::background_node_color_node(node),
+            ))
+            .map(|(variant, color_node)| (color_node, variant)),
             _ => None,
         };
         if let Some((color_node, variant)) = background {

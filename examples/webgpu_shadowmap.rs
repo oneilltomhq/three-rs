@@ -76,7 +76,7 @@ pub fn init() -> App {
     camera.node.borrow_mut().position.set(0.0, 10.0, 20.0);
 
     let mut scene = Scene::new();
-    scene.background = Some(Background::Node(Color::from_hex(0x222244)));
+    scene.background = Some(Background::Node(Color::from_hex(0x222244).into()));
     scene.fog_node = Some(fog(
         Color::from_hex(0x222244),
         range_fog_factor(50.0, 100.0),

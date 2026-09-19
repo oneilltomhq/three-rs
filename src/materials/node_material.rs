@@ -410,10 +410,10 @@ pub fn background_color_node(map: &crate::textures::CubeTexture) -> NodeRef {
     sample.mul(background_intensity())
 }
 
-/// `Background.update()`'s `isNode` branch with a plain `color()` node:
-/// `vec4( color ).mul( backgroundIntensity )`.
-pub fn background_node_color_node(color: crate::math::Color) -> NodeRef {
-    vec4_join(vec![color.into(), float(1.0)]).mul(background_intensity())
+/// `Background.update()`'s `isNode` branch:
+/// `vec4( backgroundNode ).mul( backgroundIntensity )`.
+pub fn background_node_color_node(node: NodeRef) -> NodeRef {
+    vec4_join(vec![node, float(1.0)]).mul(background_intensity())
 }
 
 pub fn background_vertex_node() -> NodeRef {
