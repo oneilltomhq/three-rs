@@ -1281,3 +1281,37 @@ shader needed it.
 * **Fog parameters as constants** (the existing §8 entry) is the only
   divergence in this rung's scene fragment: Three keeps `fogColor` / `fogNear`
   / `fogFar` as render uniforms, the port folds the same values in.
+
+## 15. A context hook on the material output (`webgpu_postprocessing_direct`)
+
+`builder.context.getOutput( materialOutputNode, builder )` is the one seam
+`DirectRenderPipeline` uses, and it is inside `NodeMaterial.setup()` — the
+function every material in the crate goes through. The port's shape:
+
+* [`OutputContext`](crate::materials::OutputContext) is a field of
+  `SetupContext`, so it is part of the program cache key by construction
+  rather than by remembering to hash it.
+* `MaterialFlow::output_assign` carries the hook's *own*
+  `output.assign( materialOutputNode )`, which is why a direct-pipeline
+  fragment shader assigns the `Output` property twice in a row. That is
+  three's output, not a port artefact.
+* The gate for a change on this path is `dump_wgsl`: 244 sections before, 250
+  after (the rung's own `direct_scene` / `direct_background`), **zero changed**.
+  A material with `output: None` generates the byte-identical shader it
+  generated before.
+
+### Divergences specific to this rung
+
+* **The hook is chosen on the renderer, not inside the closure.** three.js's
+  closure tests `renderer.isOutputTarget` / `getRenderTarget()` per material;
+  the port filters once in `Renderer::render()` — the hook travels only when
+  the render goes to the canvas — and passes `output: None` from the shadow
+  passes. Same materials end up hooked.
+* **The scene fragment's divergences are the existing §8 ones**: named
+  lighting temporaries, hoisted accumulator zeros and the inlined
+  `faceDirection`, plus uniform renumbering. The tail from the doubled
+  `Output =` through `sRGBTransferOETF` is statement for statement three's.
+* **The background quad** matches `m00` / `m01` statement for statement; what
+  differs is uniform order inside the two structs, the `// codes` order with
+  `fn0` / `fn1` swapped, and the order of two `var<private>` declarations —
+  all §8 entries already.

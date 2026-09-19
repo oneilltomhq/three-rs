@@ -168,6 +168,7 @@ fn main() {
             batch: None,
             line_segments: None,
             mrt: None,
+            output: None,
         },
     );
 
@@ -465,6 +466,64 @@ fn main() {
         &difference_scene,
         SetupContext::default(),
         Some(&fog(Color::from_hex(0x0487e2), range_fog_factor(7.0, 25.0))),
+    );
+
+    // rung webgpu_postprocessing_direct: the `DirectRenderPipeline` hook, which
+    // inlines the output transform at the end of *every* material's fragment
+    // shader. Diffed against `dump-direct/m03_fragment_fragment.wgsl` (the
+    // spheres) and `m01_…_Background.material.wgsl` (the background quad).
+    //
+    // The hook's node is what `_updateContext()` builds: `renderOutput(
+    // vec4( saturation( output.rgb, uniform( 0 ) ), output.a ),
+    // NeutralToneMapping )`, reading the material's own result back out of the
+    // `Output` property the hook has just assigned it to.
+    let direct_hook = three_rs::materials::OutputContext {
+        node: three_rs::materials::render_output(
+            vec4_join(vec![
+                saturation(
+                    output_property().rgb(),
+                    uniform_value(three_rs::nodes::Type::F32, vec![0.0]),
+                ),
+                output_property().a(),
+            ]),
+            three_rs::ToneMapping::Neutral,
+        ),
+    };
+    let direct_context = SetupContext {
+        output: Some(direct_hook.clone()),
+        lights: vec![
+            LightDesc {
+                index: 0,
+                kind: LightKind::Ambient,
+                shadow_map: None,
+            },
+            LightDesc {
+                index: 1,
+                kind: LightKind::Directional,
+                shadow_map: None,
+            },
+        ],
+        ..SetupContext::default()
+    };
+    let mut direct_scene = MeshBasicNodeMaterial::phong(Color::from_hex(0x888888));
+    direct_scene.flat_shading = true;
+    show("direct_scene", &direct_scene, direct_context);
+
+    // The background quad of the same frame: `Background.material` with the
+    // substituted `uniform( color )` node, and the same inline tail.
+    let mut direct_background = MeshBasicNodeMaterial::new();
+    direct_background.name = "Background.material";
+    direct_background.color_node = Some(three_rs::materials::background_node_color_node(
+        uniform_value(three_rs::nodes::Type::Vec3, vec![0.0, 0.0, 0.0]),
+    ));
+    direct_background.vertex_node = Some(three_rs::materials::background_vertex_node());
+    show(
+        "direct_background",
+        &direct_background,
+        SetupContext {
+            output: Some(direct_hook),
+            ..SetupContext::default()
+        },
     );
 
     // rung 5: the three teapots and the light spheres, against

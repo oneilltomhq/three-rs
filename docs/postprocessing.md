@@ -468,3 +468,67 @@ attachment.
 inner `PassTextureNode` on its own, so it emits one var and no
 `nodeVarN = nodeVarM;` copy. `webgpu_postprocessing_masking` takes the first
 form and this rung the second; both dumps show the difference.
+
+## No pass at all (`webgpu_postprocessing_direct`)
+
+Everything above puts the output transform on a quad of its own: render the
+scene into a target, then draw one triangle that reads the target, applies
+`renderOutput()` and writes the canvas. `DirectRenderPipeline` is the other
+arrangement — **no target, no quad**. The transform is compiled into the end
+of every material's fragment shader, and the frame is just the scene's draws
+straight to the canvas.
+
+```rust
+let mut pipeline = DirectRenderPipeline::new();
+pipeline.output_node = Some(vec4_join(vec![
+    saturation(output_property().rgb(), saturation_factor),
+    output_property().a(),
+]));
+pipeline.render(&mut renderer, &mut scene, &mut camera);
+```
+
+The mechanism is a hook on the material setup rather than a node in a graph.
+`DirectRenderPipeline::render()` builds `render_output( output_node,
+tone_mapping )` once, hands it to the renderer as an
+[`OutputContext`](crate::materials::OutputContext), renders with tone mapping
+and output colour space neutralised — so the renderer itself adds no output
+pass — and takes the hook back off. `NodeMaterial::setup()` does what three's
+`getOutput` closure does: assign the material's result to the `Output`
+property, then build the hook's node *in its place*, which reads `Output` back
+and assigns it again. Hence the doubled `Output = nodeVarN;` at the top of the
+tail, which is in three's dump too.
+
+Because it is a field of `SetupContext`, the hook is part of the program cache
+key by construction: the same material drawn with and without it compiles two
+programs, and neither can be served from the other's slot. The node itself is
+memoised on the pipeline, so a steady frame builds nothing.
+
+### What gets the hook
+
+three.js decides inside the closure (`if ( renderer.isOutputTarget === false
+&& renderer.getRenderTarget() !== null ) return materialOutputNode`). The port
+decides on the renderer, before any material is set up: the hook is applied
+only when the render is going to the canvas (`self.render_target.is_none()`),
+and shadow passes pass `output: None` explicitly. Same set of materials, one
+place to read it.
+
+### The background stops being a clear colour
+
+A solid `scene.background` is normally the clear value. Under a direct
+pipeline it would be the one thing in the frame that skipped the transform
+every material now applies — a visibly wrong backdrop. `_getBackgroundNode()`
+substitutes `uniform( color )` for the duration of the render, which promotes
+the background to a real quad draw whose fragment shader carries the same
+tail. The port swaps `scene.background` for `Background::Node` and restores it
+afterwards, memoising one uniform node per colour so the quad's program stays
+a cache hit.
+
+### Why it is not the default
+
+It saves a full-screen colour target and a full-screen draw, and pays for them
+by changing what blending means: every material now writes display-referred,
+tone-mapped colour, so anything blending against the framebuffer blends in the
+wrong space and a transmissive material sampling the framebuffer reads the
+wrong values. `outputColorTransform = false` (hand tone mapping down instead
+of baking it), the XR direct target and the `onBeforePipeline` /
+`onAfterPipeline` callbacks are not ported; nothing on the ladder uses them.
