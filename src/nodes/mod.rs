@@ -3,6 +3,7 @@
 
 pub mod batch;
 pub mod builder;
+pub mod code;
 pub mod display;
 pub mod materialx;
 pub mod morph;

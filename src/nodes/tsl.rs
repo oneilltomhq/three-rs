@@ -2460,6 +2460,49 @@ pub fn inline_fn(
     })
 }
 
+/// `wgslFn( source )` / `wgslFn( source, includes )` — see
+/// [`crate::nodes::code`]. Re-exported here because every other TSL entry
+/// point lives in this module.
+pub use crate::nodes::code::wgsl_fn;
+
+/// Calling a `wgslFn` — `FunctionCallNode` with three's named-parameter form:
+/// `getWGSLTextureSample( { tex, tex_sampler, uv } )`. The names are the ones
+/// the WGSL declaration used, and the order they are given in does not matter.
+///
+/// # Panics
+///
+/// If a declared parameter has no argument, or an argument names a parameter
+/// the declaration does not have. Three leaves the first as `undefined` and
+/// generates a shader that will not compile; the port refuses at setup.
+pub fn call_wgsl(def: &Rc<crate::nodes::code::CodeDef>, args: Vec<(&str, NodeRef)>) -> NodeRef {
+    let ordered = def
+        .params
+        .iter()
+        .map(|(name, _)| {
+            args.iter()
+                .find(|(given, _)| given == name)
+                .map(|(_, node)| node.clone())
+                .unwrap_or_else(|| {
+                    panic!(
+                        "three-rs: wgslFn `{}` has no argument for `{name}`",
+                        def.name
+                    )
+                })
+        })
+        .collect();
+    for (given, _) in &args {
+        assert!(
+            def.params.iter().any(|(name, _)| name == given),
+            "three-rs: wgslFn `{}` has no parameter `{given}`",
+            def.name
+        );
+    }
+    NodeRef::new(Node::CodeCall {
+        def: def.clone(),
+        args: ordered,
+    })
+}
+
 /// `Fn( body, layout )`: a real WGSL `fn` is emitted and called.
 pub fn shader_fn(
     name: Option<&'static str>,

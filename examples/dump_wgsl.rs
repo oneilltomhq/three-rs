@@ -650,6 +650,63 @@ fn main() {
         texture_uv(&uv_texture, screen_uv().flip_y()),
     );
 
+    // Materials 30 and 31 of the page: hand-written WGSL through `wgslFn`.
+    // The source text is copied through verbatim, including the example
+    // file's own indentation and the whitespace a JS template literal leaves
+    // after the closing brace, so these two string literals are written with
+    // the same tabs three's are.
+    let desaturate_wgsl = wgsl_fn(
+        "
+					fn desaturate( color:vec3<f32> ) -> vec3<f32> {
+
+						let lum = vec3<f32>( 0.299, 0.587, 0.114 );
+
+						return vec3<f32>( dot( lum, color ) );
+
+					}
+				",
+        vec![],
+    );
+    let some_wgsl = wgsl_fn(
+        "
+					fn someFn( color:vec3<f32> ) -> vec3<f32> {
+
+						return desaturate( color );
+
+					}
+				",
+        vec![desaturate_wgsl],
+    );
+    colour(
+        "materials_wgsl_include",
+        call_wgsl(&some_wgsl, vec![("color", texture(&uv_texture).xyz())]),
+    );
+
+    let get_sample = wgsl_fn(
+        "
+					fn getWGSLTextureSample( tex: texture_2d<f32>, tex_sampler: sampler, uv:vec2<f32> ) -> vec4<f32> {
+
+						return textureSample( tex, tex_sampler, uv ) * vec4<f32>( 0.0, 1.0, 0.0, 1.0 );
+
+					}
+				",
+        vec![],
+    );
+    // One `texture( uvTexture )` node bound to both the texture and the
+    // sampler parameter, which is how three's example writes it.
+    let texture_node = texture(&uv_texture);
+    colour(
+        "materials_wgsl_texture",
+        call_wgsl(
+            &get_sample,
+            vec![
+                ("tex", texture_node.clone()),
+                ("tex_sampler", texture_node),
+                ("uv", uv()),
+            ],
+        ),
+    );
+
     // Material 34 of the page: a `Loop()` used as a `colorNode`. `LoopNode`
     // is a *statement* node — its `generate()` writes the `for` and returns an
     // empty snippet — so `vec4( colorNode )` in `setupDiffuseColor()` casts
