@@ -179,6 +179,7 @@ fn main() {
             mrt: None,
             output: None,
             vertex_color_size: 0,
+            geometry_missing_normal: false,
         },
     );
 

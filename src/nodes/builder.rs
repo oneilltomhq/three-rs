@@ -1689,6 +1689,13 @@ pub struct MaterialFlow {
     /// either stage's own flow, which is where instancing, morphing and
     /// skinning reassign `positionLocal`.
     pub pre_vertex_statements: Vec<NodeRef>,
+    /// `NodeMaterial.setupDepth()`'s value: `depth.assign( depthNode )`, the
+    /// **first** fragment statement three emits (it runs before
+    /// `setupDiffuseColor()`), written to the fragment stage's
+    /// `@builtin( frag_depth )` output. `Some` widens the single-attachment
+    /// output struct to `{ @location( 0 ) color, @builtin( frag_depth )
+    /// depth }`. See `docs/nodes.md` §27.
+    pub depth: Option<NodeRef>,
     /// Fragment-stage statements, run before the output node.
     pub fragment_statements: Vec<NodeRef>,
     /// Whether to emit the `Output = …` property assignment. A material with a
@@ -1809,6 +1816,9 @@ impl NodeBuilder {
         for stmt in &flow.pre_vertex_statements {
             self.analyze(stmt);
         }
+        if let Some(node) = &flow.depth {
+            self.analyze(node);
+        }
         for stmt in &flow.fragment_statements {
             self.analyze(stmt);
         }
@@ -1846,6 +1856,14 @@ impl NodeBuilder {
         }
 
         self.stage = Stage::Fragment;
+        // `setupDepth()` runs before `setupDiffuseColor()`, so `output.depth`
+        // is the first line of the fragment flow, above the discard the
+        // colour node may add.
+        if let Some(node) = &flow.depth {
+            let node = node.clone();
+            let snippet = self.format(&node, Type::F32);
+            self.emit(format!("output.depth = {snippet};"));
+        }
         for stmt in &flow.fragment_statements {
             self.generate(stmt);
         }
@@ -1894,6 +1912,7 @@ impl NodeBuilder {
             Stage::Fragment,
             &color,
             flow.mrt.as_ref().map(|members| members.len()),
+            flow.depth.is_some(),
         );
         let vertex_wgsl = self.assemble(Stage::Vertex, &position);
 
@@ -2163,7 +2182,7 @@ impl NodeBuilder {
     }
 
     fn assemble(&self, stage: Stage, result: &str) -> String {
-        self.assemble_with_mrt(stage, result, None)
+        self.assemble_with_mrt(stage, result, None, false)
     }
 
     /// `mrt_members` is `Some(n)` for a fragment stage with an
@@ -2171,7 +2190,13 @@ impl NodeBuilder {
     /// `@location( i ) mi : vec4<f32>` members, and the entry point's result
     /// section is empty because `generate()` already wrote the assignments into
     /// the flow.
-    fn assemble_with_mrt(&self, stage: Stage, result: &str, mrt_members: Option<usize>) -> String {
+    fn assemble_with_mrt(
+        &self,
+        stage: Stage,
+        result: &str,
+        mrt_members: Option<usize>,
+        depth: bool,
+    ) -> String {
         let s = &self.stages[stage.index()];
         let mut out = String::from("// three-rs - Node System\n\n");
 
@@ -2185,6 +2210,10 @@ impl NodeBuilder {
                     }
                     out.push_str("\t\n};\nvar<private> output : OutputType;\n\n");
                 }
+                // `NodeBuilder.getOutputStructName()`'s depth member:
+                // `@builtin( frag_depth )`, with the comma and the spacing
+                // three's template puts around it.
+                None if depth => out.push_str("// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>,\n\t@builtin( frag_depth ) depth : f32\n};\nvar<private> output : OutputStruct;\n\n"),
                 None => out.push_str("// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n"),
             }
         } else {

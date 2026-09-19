@@ -36,12 +36,64 @@ pub use super::node::TextureSource;
 /// `normalViewGeometry` reads it and `negateOnBackSide()` is skipped when it
 /// is set, so two materials that differ only there must not share a cached
 /// node; the side is there for the same reason.
-type NormalViewKey = (Option<&'static str>, Option<usize>, bool, Side);
+type NormalViewKey = (
+    Option<&'static str>,
+    Option<usize>,
+    bool,
+    Side,
+    Option<usize>,
+);
+
+/// `overrideNodes( [ [ target, value ], … ] )` — `OverrideContextNode.js`.
+///
+/// Three keys the overrides on the *node objects* `positionView`,
+/// `positionViewDirection` and `normalView`, and `Node.getShared()` swaps the
+/// replacement in the first time the build reaches one, so every later use is
+/// the replacement inlined. This port's TSL is eager and those three accessors
+/// are functions, so the map is a struct of the three the ladder needs and the
+/// accessors read it directly. See `docs/nodes.md` §27.
+#[derive(Clone, Debug, Default)]
+pub struct OverrideNodes {
+    pub position_view: Option<NodeRef>,
+    pub position_view_direction: Option<NodeRef>,
+    pub normal_view: Option<NodeRef>,
+}
+
+impl std::hash::Hash for OverrideNodes {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        for node in [
+            &self.position_view,
+            &self.position_view_direction,
+            &self.normal_view,
+        ] {
+            node.as_ref().map(|n| n.key()).hash(state);
+        }
+    }
+}
+
+/// Install an [`OverrideNodes`] for the duration of one material's setup —
+/// `renderer.contextNode` / `material.contextNode` in three, which live for
+/// exactly that long.
+pub fn with_override_nodes<R>(overrides: Option<&OverrideNodes>, f: impl FnOnce() -> R) -> R {
+    let previous = OVERRIDE_NODES.with(|v| v.replace(overrides.cloned()));
+    let out = f();
+    OVERRIDE_NODES.with(|v| *v.borrow_mut() = previous);
+    out
+}
+
+/// The override for one of the three accessors, or `None` outside an override
+/// context.
+fn override_node(pick: fn(&OverrideNodes) -> &Option<NodeRef>) -> Option<NodeRef> {
+    OVERRIDE_NODES.with(|v| v.borrow().as_ref().and_then(|o| pick(o).clone()))
+}
 
 thread_local! {
     /// `NodeBuilder.subBuildLayers`. One layer at a time is all the ladder
     /// needs; `NORMAL` is the only name so far.
     static SUB_BUILD: RefCell<Option<&'static str>> = const { RefCell::new(None) };
+    /// `builder.context.overrideNodes` — the map `material.contextNode =
+    /// overrideNodes( … )` installs for the whole of one material's setup.
+    static OVERRIDE_NODES: RefCell<Option<OverrideNodes>> = const { RefCell::new(None) };
     /// `builder.context.setupNormal()` — `NodeMaterial.setupNormal()`'s result,
     /// i.e. the material's `normalNode`. `normal_view()` takes it as its value
     /// outside the `NORMAL` layer and `normalViewGeometry` inside it.
@@ -1843,6 +1895,9 @@ accessor!(
 /// `positionView` — `Position.js`' `Fn( builder =>
 /// builder.context.setupPositionView() ).once( [ 'POSITION', 'VERTEX' ] )`.
 pub fn position_view() -> NodeRef {
+    if let Some(node) = override_node(|o| &o.position_view) {
+        return node;
+    }
     position_view_pair().0
 }
 accessor!(
@@ -1878,14 +1933,24 @@ accessor!(
         .normalize()
     )
 );
-accessor!(
-    /// `positionViewDirection`.
-    position_view_direction,
-    to_var(
-        Some("positionViewDirection"),
-        to_varying(Some("v_positionViewDirection"), position_view().negate()).normalize()
-    )
-);
+/// `positionViewDirection`.
+///
+/// Not an `accessor!`: `overrideNodes` can replace it wholesale (§27), and a
+/// singleton cell would hand the replacement to the next material too.
+pub fn position_view_direction() -> NodeRef {
+    if let Some(node) = override_node(|o| &o.position_view_direction) {
+        return node;
+    }
+    thread_local! { static CELL: Lazy<NodeRef> = const { Lazy::new() }; }
+    CELL.with(|c| {
+        c.get(|| {
+            to_var(
+                Some("positionViewDirection"),
+                to_varying(Some("v_positionViewDirection"), position_view().negate()).normalize(),
+            )
+        })
+    })
+}
 /// `normalFlat` — `positionView.dFdx().cross( positionView.dFdy() ).normalize()
 /// .toVar( 'normalFlat' )`. `dpdy()` carries WGSL's sign flip, so this prints as
 /// `normalize( cross( dpdx( v_positionView ), - dpdy( v_positionView ) ) )`.
@@ -1950,6 +2015,10 @@ fn normal_key() -> NormalViewKey {
         value.as_ref().map(|v| v.key()),
         FLAT_SHADING.with(|f| *f.borrow()),
         MATERIAL_SIDE.with(|s| *s.borrow()),
+        // An `overrideNodes( [ [ normalView, … ] ] )` material reads a wholly
+        // different `normalView`, so everything cached off it — `normalWorld`,
+        // the tangent frame, the TBN matrix — has to be cached separately too.
+        override_node(|o| &o.normal_view).map(|n| n.key()),
     )
 }
 
@@ -1965,6 +2034,13 @@ fn normal_value() -> Option<NodeRef> {
 }
 
 pub fn normal_view() -> NodeRef {
+    // `Node.getShared()`'s override branch: the replacement is returned *as it
+    // is*, with no `toVar` of its own, which is why three's deferred resolve
+    // shader inlines `nodeVar4.xyz` at every use instead of declaring a
+    // `normalView` var.
+    if let Some(node) = override_node(|o| &o.normal_view) {
+        return node;
+    }
     let key = normal_key();
     let flat = FLAT_SHADING.with(|f| *f.borrow());
     if let Some(node) = NORMAL_VIEW.with(|m| m.borrow().get(&key).cloned()) {

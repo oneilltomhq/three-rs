@@ -342,6 +342,21 @@ pub struct MeshBasicNodeMaterial {
     /// a material whose `mrtNode` is `mrt( { bloomIntensity: uniform( 0 or 1 )
     /// } )`, over the pass's `mrt( { output, bloomIntensity: float( 0 ) } )`.
     pub mrt_node: Option<crate::nodes::MrtNode>,
+    /// `MeshStandardNodeMaterial.metalnessNode` / `.roughnessNode` — the two
+    /// `setupVariants()` inputs, replacing the `materialMetalness` /
+    /// `materialRoughness` uniforms (and their maps). `webgpu_deferred`'s
+    /// resolve material reads both out of the G-buffer.
+    pub metalness_node: Option<NodeRef>,
+    pub roughness_node: Option<NodeRef>,
+    /// `NodeMaterial.depthNode` — `setupDepth()`'s value, written to the
+    /// fragment stage's `@builtin( frag_depth )` output. Set only when the
+    /// material is drawn with a depth buffer (three checks
+    /// `depthWrite || depthTest` and the target's `depthBuffer`).
+    pub depth_node: Option<NodeRef>,
+    /// `NodeMaterial.contextNode = overrideNodes( [ … ] )` — the three
+    /// accessors `webgpu_deferred`'s resolve material reads out of the
+    /// G-buffer instead of out of the geometry. See `docs/nodes.md` §27.
+    pub context_overrides: Option<crate::nodes::tsl::OverrideNodes>,
     pub side: Side,
     /// `Material.visible` — `_projectObject()` skips an object whose material is
     /// not visible.
@@ -438,6 +453,10 @@ impl Default for MeshBasicNodeMaterial {
             linewidth: 1.0,
             size_attenuation: true,
             vertex_node: None,
+            metalness_node: None,
+            roughness_node: None,
+            depth_node: None,
+            context_overrides: None,
             fragment_node: None,
             output_node: None,
             mrt_node: None,
