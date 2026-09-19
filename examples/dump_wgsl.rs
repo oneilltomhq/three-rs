@@ -623,6 +623,24 @@ fn main() {
     );
     show("materials_grid", &grid_material, SetupContext::default());
 
+    // Materials 28 and 29 of the page: `Fn( ( input ) => vec3( 0.299, 0.587,
+    // 0.114 ).dot( input.color.xyz ) )` called with the texture, and the same
+    // body with the texture captured and no inputs at all. Neither `Fn()` has
+    // a layout, so both inline, and three emits byte-identical WGSL for the
+    // two — which is why they share one pipeline. The port gets that for free:
+    // an inlined `FnDef` contributes nothing to the graph but its body.
+    let desaturate = inline_fn(1, three_rs::nodes::Type::F32, |args| {
+        vec3(0.299, 0.587, 0.114).dot(args[0].clone().xyz())
+    });
+    colour(
+        "materials_desaturate_fn",
+        call(&desaturate, vec![texture(&uv_texture)]),
+    );
+    colour(
+        "materials_desaturate_captured",
+        vec3(0.299, 0.587, 0.114).dot(texture(&uv_texture).xyz()),
+    );
+
     colour(
         "materials_triplanar",
         triplanar_texture(&uv_texture, None, None, float(0.01)),
@@ -630,6 +648,39 @@ fn main() {
     colour(
         "materials_screen_uv",
         texture_uv(&uv_texture, screen_uv().flip_y()),
+    );
+
+    // Material 34 of the page: a `Loop()` used as a `colorNode`. `LoopNode`
+    // is a *statement* node — its `generate()` writes the `for` and returns an
+    // empty snippet — so `vec4( colorNode )` in `setupDiffuseColor()` casts
+    // nothing and three emits `DiffuseColor = vec4<f32>(  );`. The loop still
+    // runs, its result is still discarded, and the teapot is opaque black.
+    // The port reproduces this on purpose: see docs/nodes.md §8.
+    const LOOP_COUNT: usize = 10;
+    let i = loop_index();
+    let out = to_var(None, vec4(0.0, 0.0, 0.0, 1.0));
+    let scale_i = osc_sine(time())
+        .mul(0.09)
+        .mul(i.to(three_rs::nodes::Type::F32));
+    // `scaleI.negate()` is read twice (the right and bottom taps). `Node::Neg`
+    // is not one of the kinds `needs_var` promotes, so the temp three's usage
+    // counter gives it has to be asked for here.
+    let scale_i_neg = to_var(None, scale_i.clone().negate());
+    let tap = |offset: three_rs::nodes::NodeRef| {
+        out.assign(out.add(texture_uv(&uv_texture, uv().add(offset))))
+    };
+    colour(
+        "materials_loop",
+        loop_statement(
+            LOOP_COUNT,
+            i.clone(),
+            vec![
+                tap(vec2_join(vec![scale_i.clone(), float(0.0)])),
+                tap(vec2_join(vec![scale_i_neg.clone(), float(0.0)])),
+                tap(vec2_join(vec![float(0.0), scale_i])),
+                tap(vec2_join(vec![float(0.0), scale_i_neg])),
+            ],
+        ),
     );
 
     let mut normal = MeshBasicNodeMaterial::normal();
