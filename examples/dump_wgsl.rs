@@ -1089,6 +1089,18 @@ fn main() {
     let (ggx, _ggx_uniforms) = three_rs::renderer::pmrem::ggx_material(8, 768.0, 1024.0);
     show("pmrem_ggx", &ggx, SetupContext::default());
 
+    // `webgpu_pmrem_test`: the third `PMREMGenerator` material, the one that
+    // is the whole delta between the two examples. Three's dump of it is
+    // `m01`/`m02` in the scout's `dump-pmrem_test/`. The source is 1024×512,
+    // as `spot1Lux.hdr` decodes; the shader does not depend on the size, but
+    // the material is built from a texture so the binding has one.
+    let equirect = Texture::data_rgba16float(4, 2, &[0u16; 4 * 2 * 4]);
+    show(
+        "pmrem_equirect",
+        &three_rs::renderer::pmrem::equirect_material(&equirect),
+        SetupContext::default(),
+    );
+
     // `scene.backgroundNode = pmremTexture( map, normalWorldGeometry,
     // uniform( 0.5 ) )` — three's `m05_fragment_fragment_Background.material`.
     // The PMREM has not been generated here, so the three cubeUV uniforms are
@@ -1114,4 +1126,43 @@ fn main() {
     let mut sphere = MeshBasicNodeMaterial::physical(Color::new(1.0, 1.0, 1.0), 0.2, 0.6);
     sphere.pmrem_env = Some(environment.handle());
     show("pmrem_physical", &sphere, SetupContext::default());
+
+    // `webgpu_pmrem_test`'s background: `scene.background = radianceMap`,
+    // which is `Background.update()`'s node branch with
+    // `NodeManager.getBackgroundNode()`'s `pmremTexture( background )` inside
+    // it and `backgroundRotation` / `backgroundBlurriness` supplied by the
+    // node context. Three's dump of it is `m05`/`m06` in `dump-pmrem_test/`.
+    // Same atlas read as `pmrem_background` above, a different uv and level.
+    let mut pmrem_background = MeshBasicNodeMaterial::new();
+    pmrem_background.name = "Background.material";
+    pmrem_background.vertex_node = Some(three_rs::materials::background_vertex_node());
+    pmrem_background.side = Side::Back;
+    pmrem_background.depth_test = false;
+    pmrem_background.depth_write = false;
+    pmrem_background.color_node = Some(three_rs::materials::background_pmrem_color_node(
+        &environment.handle(),
+    ));
+    show(
+        "pmrem_test_background",
+        &pmrem_background,
+        SetupContext::default(),
+    );
+
+    // And the lit material with a light in the graph: the example's
+    // intensity-zero `DirectionalLight` is why `m08` carries a directional
+    // block at all. The colour is the row-0 white metal.
+    let mut lit = MeshBasicNodeMaterial::physical(Color::new(1.0, 1.0, 1.0), 0.0, 1.0);
+    lit.pmrem_env = Some(environment.handle());
+    show(
+        "pmrem_test_physical",
+        &lit,
+        SetupContext {
+            lights: vec![LightDesc {
+                index: 0,
+                kind: LightKind::Directional,
+                shadow_map: None,
+            }],
+            ..SetupContext::default()
+        },
+    );
 }
