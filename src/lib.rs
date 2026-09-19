@@ -41,7 +41,9 @@ pub use lights::{
     AmbientLight, DirectionalLight, HemisphereLight, Light, LightKind, LightObject, LightShadow,
     PointLight, ShadowCamera, SpotLight,
 };
-pub use loaders::{BufferGeometryLoader, CubeTextureLoader, TextureLoader};
+pub use loaders::{
+    BufferGeometryLoader, CubeTextureLoader, HdrCubeTextureLoader, HdrLoader, TextureLoader,
+};
 pub use materials::{
     LineBasicNodeMaterial, MaterialKind, MeshBasicNodeMaterial, MeshNormalNodeMaterial,
     MeshPhongNodeMaterial, MeshPhysicalNodeMaterial, MeshStandardNodeMaterial, PointsNodeMaterial,

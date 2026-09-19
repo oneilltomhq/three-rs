@@ -34,6 +34,10 @@ pub enum Error {
     },
     /// An image file the decoder rejected.
     Image { path: PathBuf, reason: String },
+    /// A Radiance RGBE (`.hdr`) file the decoder rejected. `reason` is
+    /// three.js' own `rgbe_error()` message, less its `THREE.HDRLoader: `
+    /// prefix.
+    Rgbe { reason: String },
     /// A file names a type, format or encoding this port does not implement.
     /// `what` says which field it was read from.
     UnsupportedFormat { what: &'static str, value: String },
@@ -112,6 +116,7 @@ impl fmt::Display for Error {
             Self::Image { path, reason } => {
                 write!(f, "cannot decode {}: {reason}", path.display())
             }
+            Self::Rgbe { reason } => write!(f, "THREE.HDRLoader: {reason}"),
             Self::UnsupportedFormat { what, value } => {
                 write!(f, "unsupported {what}: {value}")
             }
