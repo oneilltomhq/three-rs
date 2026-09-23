@@ -47,8 +47,7 @@ jobs:
   # browser here: this is the compile gate that keeps the wasm32 path from
   # rotting — a `std::fs` call sneaking back into a loader, or a native-only
   # dependency going unconditional — while the pixels are still graded by the
-  # manual native ladder. Grading a browser frame in headless Chrome is a
-  # later item on #128.
+  # manual native ladder and by the `web-gate` job below.
   wasm:
     runs-on: ubuntu-latest
     steps:
@@ -62,6 +61,65 @@ jobs:
       - run: cargo clippy --target wasm32-unknown-unknown -p three-rs -- -D warnings
       - run: cargo build --release --target wasm32-unknown-unknown -p three-rs-web
       - run: cargo clippy --target wasm32-unknown-unknown -p three-rs-web -- -D warnings
+
+  # The graded examples, built for wasm32 and rendered in headless Chrome on
+  # software WebGPU (Dawn on SwiftShader, which Chrome ships), then graded by
+  # three.js' own `test/e2e/image.js` against `examples/screenshots/` exactly
+  # as the native ladder grades them (issue #128). The one pixel gate CI can
+  # run without a GPU. `tools/web_gate.skip` lists, with a reason each, the
+  # examples that do not pass on the software adapter; they are still run and
+  # reported in the job summary.
+  web-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+
+      # The CLI must be the exact version Cargo.lock pins for the crate;
+      # web/build.sh refuses anything else.
+      - name: wasm-bindgen version
+        id: wasm-bindgen
+        run: echo "version=$(sed -n '/^name = "wasm-bindgen"$/{n;s/^version = "\(.*\)"$/\1/p;q}' Cargo.lock)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        id: wasm-bindgen-cache
+        with:
+          path: ~/.cargo/bin/wasm-bindgen
+          key: wasm-bindgen-cli-${{ runner.os }}-${{ steps.wasm-bindgen.outputs.version }}
+      - if: steps.wasm-bindgen-cache.outputs.cache-hit != 'true'
+        run: cargo install wasm-bindgen-cli --version ${{ steps.wasm-bindgen.outputs.version }} --locked
+
+      - run: web/build.sh
+
+      # Three's screenshots, image.js, puppeteer-core, pngjs and the Chrome
+      # three.js' own `npm ci` downloads for its e2e suite.
+      - name: Checkout three.js r186
+        run: git clone --branch r186 --depth 1 https://github.com/mrdoob/three.js "$THREE_JS_DIR"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: vendor/three.js/package-lock.json
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/puppeteer
+          key: puppeteer-${{ runner.os }}-${{ hashFiles('vendor/three.js/package-lock.json') }}
+      - name: npm ci (three.js)
+        working-directory: vendor/three.js
+        run: npm ci --no-audit --no-fund
+
+      - run: node tools/web_gate.mjs
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-gate
+          path: |
+            target/web-gate/
+            !target/web-gate/.profile/
+          if-no-files-found: ignore
 
   test:
     runs-on: ubuntu-latest
