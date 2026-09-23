@@ -21,6 +21,7 @@
 
 use std::rc::Rc;
 
+use three_rs::addons::controls::OrbitControls;
 use three_rs::nodes::tsl::{
     call_wgsl, camera_projection_matrix, code, float, inline_fn, loop_index, loop_statement,
     normal_local, normal_world, osc_sine, position_local, position_world, screen_uv, texture,
@@ -29,6 +30,7 @@ use three_rs::nodes::tsl::{
 use three_rs::nodes::{NodeRef, Type};
 use three_rs::testing::DeterministicRandom;
 use three_rs::textures::Wrapping;
+use three_rs::utils::date_now_ms;
 use three_rs::{
     teapot_geometry, Color, GridHelper, Mesh, MeshBasicNodeMaterial, PerspectiveCamera, Renderer,
     RendererParameters, Scene, Vector3,
@@ -262,8 +264,8 @@ pub fn init() -> App {
 
 /// The page's `animate()`.
 pub fn animate(app: &mut App) {
-    // `const timer = 0.0001 * Date.now();` — the harness pins `Date.now()` to 0.
-    let timer = 0.0f64;
+    // `const timer = 0.0001 * Date.now();`
+    let timer = 0.0001 * date_now_ms();
 
     {
         let mut camera_object = app.camera.node.borrow_mut();
@@ -281,6 +283,30 @@ pub fn animate(app: &mut App) {
     }
 
     app.renderer.render(&mut app.scene, &mut app.camera);
+}
+
+/// The page's `onWindowResize()`.
+///
+/// The rung harness never calls this — the graded frame is always
+/// 800 x 500 — but the viewer and the browser shell do, so the example
+/// owns its own reaction to a resized canvas instead of the host
+/// guessing at one.
+pub fn resize(app: &mut App, width: f64, height: f64) {
+    app.camera.aspect = width / height;
+    app.camera.update_projection_matrix();
+    app.renderer.set_size(width, height);
+}
+
+/// The example's controls, for a host that has a pointer. `None` here:
+/// the page creates none.
+pub fn controls(_app: &mut App) -> Option<&mut OrbitControls> {
+    None
+}
+
+/// The controls and the camera at once, for a host delivering pointer events.
+/// `None` here: the page creates no controls.
+pub fn controls_and_camera(_app: &mut App) -> Option<(&mut OrbitControls, &mut PerspectiveCamera)> {
+    None
 }
 
 const DESATURATE_WGSL: &str = "
@@ -310,6 +336,10 @@ const GET_WGSL_TEXTURE_SAMPLE: &str = "
 \t\t\t\t";
 
 fn main() {
+    // Pin both clocks to zero, as three.js' `test/e2e/deterministic-injection.js`
+    // does to the page, so that the frame this writes is the frame the rung
+    // grades no matter how long `init()` took.
+    three_rs::testing::pin_time(Some(0.0));
     let mut app = init();
     println!("adapter: {:?}", app.renderer.adapter_info());
     animate(&mut app);

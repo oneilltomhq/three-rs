@@ -672,9 +672,19 @@ pub struct Renderer {
     /// `renderer.toneMappingExposure`.
     pub tone_mapping_exposure: f64,
 
-    /// `NodeFrame.time`. `performance.now()` is pinned to 0 by the harness, so
-    /// every frame's delta is 0 and this stays 0.
+    /// `NodeFrame.time`, in seconds — what the TSL `time` node reads.
+    ///
+    /// Advanced by [`Renderer::update_node_frame`] out of
+    /// [`crate::utils::now_ms`] on every frame, exactly as
+    /// `NodeFrame.update()` advances it out of `performance.now()`. With the
+    /// clock pinned (the e2e harness, and every example's `main()`) every
+    /// delta is 0 and this stays 0, which is the graded frame; with the clock
+    /// running it tracks the wall clock and the time-driven node materials
+    /// animate.
     time: f64,
+    /// `NodeFrame.lastTime` — `undefined` until the first frame, which is what
+    /// makes that frame's delta 0 whatever the clock says.
+    node_frame_last_time: Option<f64>,
 
     /// The viewer's canvas → surface blit; see `present.rs`. Never touched by
     /// the e2e path.
@@ -983,6 +993,7 @@ impl Renderer {
             tone_mapping_exposure: 1.0,
             fullscreen_pass: false,
             time: 0.0,
+            node_frame_last_time: None,
             present: None,
             random: DeterministicRandom::new(),
             tone_mapping: ToneMapping::None,
@@ -1065,6 +1076,37 @@ impl Renderer {
             (self.width * self.pixel_ratio).floor() as u32,
             (self.height * self.pixel_ratio).floor() as u32,
         )
+    }
+
+    /// Rebuilds this renderer on `instance`, carrying over everything an
+    /// example's `init()` set after `new()`.
+    ///
+    /// A host with a window has to hand the renderer an instance that owns a
+    /// display handle, or there is no surface to present to. An example's
+    /// `init()` is the page's code and builds its own instance, so the host
+    /// swaps this one in underneath — and must not lose the
+    /// `RendererParameters` the example chose, the shadow map and tone mapping
+    /// it set, or how far it has already advanced the page's `Math.random`.
+    /// Doing it here rather than in the host means the host needs no table of
+    /// per-example renderer settings.
+    ///
+    /// The scene itself carries over untouched: every buffer, texture and
+    /// pipeline is uploaded lazily on the first render.
+    ///
+    /// Native only — a browser host has no second instance to move to.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn rebuilt_on(&self, instance: wgpu::Instance) -> Result<Self, Error> {
+        let mut renderer = Self::with_instance(
+            RendererParameters {
+                antialias: self.samples > 0,
+            },
+            instance,
+        )?;
+        renderer.shadow_map_enabled = self.shadow_map_enabled;
+        renderer.tone_mapping = self.tone_mapping;
+        renderer.tone_mapping_exposure = self.tone_mapping_exposure;
+        renderer.random = self.random.clone();
+        Ok(renderer)
     }
 
     /// Advance the page's `Math.random` by `n` draws before anything the
@@ -4320,10 +4362,36 @@ impl Renderer {
     /// go on the render that notices — but only a render to the screen is a
     /// new frame; see [`Renderer::frames`].
     fn begin_frame(&mut self) {
+        self.update_node_frame();
         if self.render_target.is_none() {
             self.frames += 1;
         }
         self.sweep_caches();
+    }
+
+    /// `NodeFrame.update()` (three.js/src/nodes/core/NodeFrame.js):
+    ///
+    /// ```js
+    /// if ( this.lastTime === undefined ) this.lastTime = performance.now();
+    /// this.deltaTime = ( performance.now() - this.lastTime ) / 1000;
+    /// this.lastTime = performance.now();
+    /// this.time += this.deltaTime;
+    /// ```
+    ///
+    /// `time` starts at 0 and only ever accumulates deltas, and on the first
+    /// frame `lastTime` is set immediately before it is read, so that delta is
+    /// 0 whatever the clock says. This is why the graded frame sees
+    /// `time === 0` — and why, with the harness' clock pinned, *every* frame
+    /// does.
+    ///
+    /// Here rather than in a host, so that an example animates the same in the
+    /// viewer, in a browser and under the grader without any of them knowing
+    /// about the TSL `time` node.
+    fn update_node_frame(&mut self) {
+        let now = crate::utils::now_ms();
+        let last = *self.node_frame_last_time.get_or_insert(now);
+        self.time += (now - last) / 1000.0;
+        self.node_frame_last_time = Some(now);
     }
 
     fn sweep_caches(&mut self) {

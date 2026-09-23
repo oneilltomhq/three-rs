@@ -9,7 +9,7 @@
 //! `object.rotation = ( 0.005, 0.01, 0 )` and not zero.
 //!
 //! `Math.random()` is the grader's seeded sequence
-//! ([`DeterministicRandom`](three_rs::testing::DeterministicRandom)). The
+//! ([`three_rs::testing::DeterministicRandom`]). The
 //! `Inspector` is constructed first and takes the five draws its lists make,
 //! then the mesh loop takes nine each: the colour, three position components,
 //! the `multiplyScalar` factor, three rotation angles and the scale.
@@ -33,6 +33,7 @@
 
 use std::rc::Rc;
 
+use three_rs::addons::controls::OrbitControls;
 use three_rs::core::Node;
 use three_rs::nodes::node::Type;
 use three_rs::nodes::tsl::{output_property, saturation, uniform_value, vec4_join};
@@ -162,7 +163,35 @@ pub fn animate(app: &mut App) {
         .render(&mut app.renderer, &mut app.scene, &mut app.camera);
 }
 
+/// The page's `onWindowResize()`.
+///
+/// The rung harness never calls this — the graded frame is always
+/// 800 x 500 — but the viewer and the browser shell do, so the example
+/// owns its own reaction to a resized canvas instead of the host
+/// guessing at one.
+pub fn resize(app: &mut App, width: f64, height: f64) {
+    app.camera.aspect = width / height;
+    app.camera.update_projection_matrix();
+    app.renderer.set_size(width, height);
+}
+
+/// The example's controls, for a host that has a pointer. `None` here:
+/// the page creates none.
+pub fn controls(_app: &mut App) -> Option<&mut OrbitControls> {
+    None
+}
+
+/// The controls and the camera at once, for a host delivering pointer events.
+/// `None` here: the page creates no controls.
+pub fn controls_and_camera(_app: &mut App) -> Option<(&mut OrbitControls, &mut PerspectiveCamera)> {
+    None
+}
+
 fn main() {
+    // Pin both clocks to zero, as three.js' `test/e2e/deterministic-injection.js`
+    // does to the page, so that the frame this writes is the frame the rung
+    // grades no matter how long `init()` took.
+    three_rs::testing::pin_time(Some(0.0));
     let mut app = init();
     println!("adapter: {:?}", app.renderer.adapter_info());
     animate(&mut app);

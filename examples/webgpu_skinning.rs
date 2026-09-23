@@ -23,9 +23,11 @@
 
 use std::f64::consts::PI;
 
+use three_rs::addons::controls::OrbitControls;
 use three_rs::animation::AnimationMixer;
 use three_rs::loaders::GLTFLoader;
 use three_rs::nodes::tsl::screen_uv;
+use three_rs::Timer;
 use three_rs::{
     AmbientLight, Background, Color, PerspectiveCamera, PointLight, Renderer, RendererParameters,
     Scene, ToneMapping, Vector3,
@@ -42,6 +44,8 @@ pub struct App {
     pub camera: PerspectiveCamera,
     /// The page's module-level `mixer`.
     pub mixer: AnimationMixer,
+    /// The page's module-level `timer`.
+    pub timer: Timer,
 }
 
 pub fn init() -> App {
@@ -88,6 +92,9 @@ pub fn init() -> App {
     renderer.tone_mapping_exposure = 0.4;
 
     App {
+        // `const timer = new THREE.Timer();` — constructed in `init()`, as the
+        // page does, so its `_startTime` is the moment the scene was built.
+        timer: Timer::new(),
         renderer,
         scene,
         camera,
@@ -100,11 +107,43 @@ pub fn init() -> App {
 /// frame draws the same pose — which is what `[ "", "" ]` in
 /// `steady_frame_builds_nothing` means by "nothing is done to the scene".
 pub fn animate(app: &mut App) {
-    app.mixer.update(0.0);
+    app.timer.update();
+    let delta = app.timer.get_delta();
+
+    app.mixer.update(delta);
     app.renderer.render(&mut app.scene, &mut app.camera);
 }
 
+/// The page's `onWindowResize()`.
+///
+/// The rung harness never calls this — the graded frame is always
+/// 800 x 500 — but the viewer and the browser shell do, so the example
+/// owns its own reaction to a resized canvas instead of the host
+/// guessing at one.
+pub fn resize(app: &mut App, width: f64, height: f64) {
+    app.camera.aspect = width / height;
+    app.camera.update_projection_matrix();
+
+    app.renderer.set_size(width, height);
+}
+
+/// The example's controls, for a host that has a pointer. `None` here:
+/// the page creates none.
+pub fn controls(_app: &mut App) -> Option<&mut OrbitControls> {
+    None
+}
+
+/// The controls and the camera at once, for a host delivering pointer events.
+/// `None` here: the page creates no controls.
+pub fn controls_and_camera(_app: &mut App) -> Option<(&mut OrbitControls, &mut PerspectiveCamera)> {
+    None
+}
+
 fn main() {
+    // Pin both clocks to zero, as three.js' `test/e2e/deterministic-injection.js`
+    // does to the page, so that the frame this writes is the frame the rung
+    // grades no matter how long `init()` took.
+    three_rs::testing::pin_time(Some(0.0));
     let mut app = init();
     println!("adapter: {:?}", app.renderer.adapter_info());
     animate(&mut app);

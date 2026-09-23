@@ -11,8 +11,10 @@
 
 use std::rc::Rc;
 
+use three_rs::addons::controls::OrbitControls;
 use three_rs::materials::instanced_range;
 use three_rs::nodes::tsl::{float, mix, normal_world, osc_sine, time};
+use three_rs::utils::date_now_ms;
 use three_rs::{
     BufferGeometryLoader, Color, InstancedMesh, MeshBasicNodeMaterial, Object3D, PerspectiveCamera,
     Renderer, RendererParameters, Scene, Vector3,
@@ -98,10 +100,34 @@ pub fn animate(app: &mut App) {
     app.renderer.render(&mut app.scene, &mut app.camera);
 }
 
+/// The page's `onWindowResize()`.
+///
+/// The rung harness never calls this — the graded frame is always
+/// 800 x 500 — but the viewer and the browser shell do, so the example
+/// owns its own reaction to a resized canvas instead of the host
+/// guessing at one.
+pub fn resize(app: &mut App, width: f64, height: f64) {
+    app.camera.aspect = width / height;
+    app.camera.update_projection_matrix();
+    app.renderer.set_size(width, height);
+}
+
+/// The example's controls, for a host that has a pointer. `None` here:
+/// the page creates none.
+pub fn controls(_app: &mut App) -> Option<&mut OrbitControls> {
+    None
+}
+
+/// The controls and the camera at once, for a host delivering pointer events.
+/// `None` here: the page creates no controls.
+pub fn controls_and_camera(_app: &mut App) -> Option<(&mut OrbitControls, &mut PerspectiveCamera)> {
+    None
+}
+
 /// The CPU half of `render()`, split out so tests can inspect it.
 pub fn animate_cpu_only(app: &mut App) {
-    // `const time = Date.now() * 0.001;` — the harness pins `Date.now()` to 0.
-    let time = 0.0f64;
+    // `const time = Date.now() * 0.001;`
+    let time = date_now_ms() * 0.001;
 
     for child in app.scene.children() {
         if !child.borrow().is_instanced_mesh() {
@@ -144,6 +170,10 @@ pub fn animate_cpu_only(app: &mut App) {
 }
 
 fn main() {
+    // Pin both clocks to zero, as three.js' `test/e2e/deterministic-injection.js`
+    // does to the page, so that the frame this writes is the frame the rung
+    // grades no matter how long `init()` took.
+    three_rs::testing::pin_time(Some(0.0));
     let mut app = init();
     println!("adapter: {:?}", app.renderer.adapter_info());
     animate(&mut app);

@@ -8,11 +8,12 @@
 
 use std::rc::Rc;
 
+use three_rs::addons::controls::OrbitControls;
 use three_rs::nodes::tsl;
 use three_rs::testing::DeterministicRandom;
 use three_rs::{
     torus_knot_geometry, Color, DepthTexture, Mesh, MeshBasicNodeMaterial, PerspectiveCamera,
-    QuadMesh, RenderTarget, Renderer, RendererParameters, Scene, TextureType, Vector3,
+    QuadMesh, RenderTarget, Renderer, RendererParameters, Scene, TextureType,
 };
 
 pub const INNER_WIDTH: f64 = 800.0;
@@ -26,6 +27,8 @@ pub struct App {
     pub camera: PerspectiveCamera,
     pub quad: QuadMesh,
     pub render_target: RenderTarget,
+    /// The page's `controls`.
+    pub controls: OrbitControls,
 }
 
 pub fn init() -> App {
@@ -85,12 +88,18 @@ pub fn init() -> App {
 
     //
 
-    // `new OrbitControls( camera, renderer.domElement )` calls `update()` in its
-    // constructor. With no input and the default target, the only thing that
-    // update() does to the camera is rebuild its position from spherical
-    // coordinates — which gives back (0, 2.45e-16, 4), a y below f32 precision —
-    // and then `object.lookAt( target )`.
-    camera.look_at(&Vector3::ZERO);
+    // `controls = new OrbitControls( camera, renderer.domElement );` The
+    // constructor's own `update()` rebuilds the camera position from spherical
+    // coordinates — which gives back (0, 2.45e-16, 4), a y below f32
+    // precision — and then runs `object.lookAt( target )`.
+    let mut controls = OrbitControls::new(&mut camera);
+    // The canvas the example renders at, standing in for the element's
+    // `clientWidth` / `clientHeight`.
+    controls.set_element_size(INNER_WIDTH, INNER_HEIGHT);
+    // `controls.enableDamping = true;` The page never calls `controls.update()`
+    // in `animate()`, so the damping never runs; that is the page's own
+    // inconsistency, transcribed as it stands.
+    controls.enable_damping = true;
 
     App {
         renderer,
@@ -98,6 +107,7 @@ pub fn init() -> App {
         camera,
         quad,
         render_target,
+        controls,
     }
 }
 
@@ -111,7 +121,48 @@ pub fn animate(app: &mut App) {
     app.renderer.render_quad(&app.quad);
 }
 
+/// The page's `onWindowResize()`.
+///
+/// The rung harness never calls this — the graded frame is always
+/// 800 x 500 — but the viewer and the browser shell do, so the example
+/// owns its own reaction to a resized canvas instead of the host
+/// guessing at one.
+///
+/// The last line is the page's `renderTarget.setSize( window.innerWidth * dpr,
+/// window.innerHeight * dpr )`: the target the scene pass draws into is sized
+/// in device pixels, not CSS ones, as it was in `init()`.
+pub fn resize(app: &mut App, width: f64, height: f64) {
+    app.camera.aspect = width / height;
+    app.camera.update_projection_matrix();
+
+    app.renderer.set_size(width, height);
+    app.render_target
+        .set_size((width * DPR) as u32, (height * DPR) as u32);
+}
+
+/// The example's controls, for a host that has a pointer. `None` when the
+/// page creates none — the signature is the same for every example so the
+/// viewer and the browser shell can drive any of them through one call.
+pub fn controls(app: &mut App) -> Option<&mut OrbitControls> {
+    Some(&mut app.controls)
+}
+
+/// The controls and the camera at once, which every one of the controls'
+/// event handlers needs: the JS holds the camera as `this.object` and Rust
+/// cannot, so `pointer_move` and the rest take it as an argument.
+///
+/// They are two fields of the same `App`, so borrowing both is sound — but
+/// only this module can say so; a host holding `&mut App` and calling
+/// [`controls`] and then reaching for the camera cannot. Hence the pair.
+pub fn controls_and_camera(app: &mut App) -> Option<(&mut OrbitControls, &mut PerspectiveCamera)> {
+    Some((&mut app.controls, &mut app.camera))
+}
+
 fn main() {
+    // Pin both clocks to zero, as three.js' `test/e2e/deterministic-injection.js`
+    // does to the page, so that the frame this writes is the frame the rung
+    // grades no matter how long `init()` took.
+    three_rs::testing::pin_time(Some(0.0));
     let mut app = init();
     println!("adapter: {:?}", app.renderer.adapter_info());
     animate(&mut app);

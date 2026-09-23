@@ -28,9 +28,11 @@
 //! `Math.random()` is never drawn from: `grep -c Math.random` is 0 in both the
 //! inspector and lil-gui, so there is no seeded sequence to keep in step.
 
+use three_rs::addons::controls::OrbitControls;
 use three_rs::animation::AnimationMixer;
 use three_rs::loaders::GLTFLoader;
 use three_rs::nodes::display::{bloom, BloomNode};
+use three_rs::Timer;
 use three_rs::{
     AmbientLight, Color, PassNode, PerspectiveCamera, PointLight, RenderPipeline, Renderer,
     RendererParameters, Scene, ToneMapping, Vector3,
@@ -45,7 +47,11 @@ pub struct App {
     pub renderer: Renderer,
     pub scene: Scene,
     pub camera: PerspectiveCamera,
+    /// The page's `controls`.
+    pub controls: OrbitControls,
     pub mixer: AnimationMixer,
+    /// The page's module-level `timer`.
+    pub timer: Timer,
     pub gltf_scene: three_rs::Node,
     pub scene_pass: PassNode,
     pub bloom_pass: BloomNode,
@@ -115,10 +121,26 @@ pub fn init() -> App {
     let mut render_pipeline = RenderPipeline::new();
     render_pipeline.output_node = Some(scene_pass.texture_node("output").add(bloom_pass.node()));
 
+    // `const controls = new OrbitControls( camera, renderer.domElement )`,
+    // built here because the page builds it here, after the render pipeline.
+    // Its constructor's `update()` is the `camera.look_at` above; nothing calls
+    // it again, so the limits below only matter to a host with a pointer.
+    let mut controls = OrbitControls::new(&mut camera);
+    // The canvas the example renders at, standing in for the element's
+    // `clientWidth` / `clientHeight`.
+    controls.set_element_size(INNER_WIDTH, INNER_HEIGHT);
+    controls.max_polar_angle = std::f64::consts::PI * 0.5;
+    controls.min_distance = 3.0;
+    controls.max_distance = 8.0;
+
     App {
+        // `const timer = new THREE.Timer();` — constructed in `init()`, as the
+        // page does, so its `_startTime` is the moment the scene was built.
+        timer: Timer::new(),
         renderer,
         scene,
         camera,
+        controls,
         mixer,
         gltf_scene: model,
         scene_pass,
@@ -129,9 +151,11 @@ pub fn init() -> App {
 
 /// The page's `animate()`, run once by the harness's single RAF.
 pub fn animate(app: &mut App) {
-    // `timer.update(); mixer.update( timer.getDelta() )` — `performance.now()`
-    // is pinned to 0, so the delta is 0 and the clip is at its first keyframe.
-    app.mixer.update(0.0);
+    // `timer.update(); const delta = timer.getDelta(); mixer.update( delta );`
+    app.timer.update();
+    let delta = app.timer.get_delta();
+
+    app.mixer.update(delta);
 
     // `PassNode.updateBefore()`, then `BloomNode.updateBefore()`'s twelve
     // quads, then the output quad — see `docs/postprocessing.md` for why the
@@ -142,7 +166,41 @@ pub fn animate(app: &mut App) {
     app.render_pipeline.render(&mut app.renderer);
 }
 
+/// The page's `onWindowResize()`.
+///
+/// The rung harness never calls this — the graded frame is always
+/// 800 x 500 — but the viewer and the browser shell do, so the example
+/// owns its own reaction to a resized canvas instead of the host
+/// guessing at one.
+pub fn resize(app: &mut App, width: f64, height: f64) {
+    app.camera.aspect = width / height;
+    app.camera.update_projection_matrix();
+    app.renderer.set_size(width, height);
+}
+
+/// The example's controls, for a host that has a pointer. `None` when the
+/// page creates none — the signature is the same for every example so the
+/// viewer and the browser shell can drive any of them through one call.
+pub fn controls(app: &mut App) -> Option<&mut OrbitControls> {
+    Some(&mut app.controls)
+}
+
+/// The controls and the camera at once, which every one of the controls'
+/// event handlers needs: the JS holds the camera as `this.object` and Rust
+/// cannot, so `pointer_move` and the rest take it as an argument.
+///
+/// They are two fields of the same `App`, so borrowing both is sound — but
+/// only this module can say so; a host holding `&mut App` and calling
+/// [`controls`] and then reaching for the camera cannot. Hence the pair.
+pub fn controls_and_camera(app: &mut App) -> Option<(&mut OrbitControls, &mut PerspectiveCamera)> {
+    Some((&mut app.controls, &mut app.camera))
+}
+
 fn main() {
+    // Pin both clocks to zero, as three.js' `test/e2e/deterministic-injection.js`
+    // does to the page, so that the frame this writes is the frame the rung
+    // grades no matter how long `init()` took.
+    three_rs::testing::pin_time(Some(0.0));
     let mut app = init();
     println!("adapter: {:?}", app.renderer.adapter_info());
     animate(&mut app);

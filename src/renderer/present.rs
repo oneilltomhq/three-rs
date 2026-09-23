@@ -63,12 +63,6 @@ impl Renderer {
         &self.queue
     }
 
-    /// `NodeFrame.time`, in seconds. The e2e harness leaves it at 0; the viewer
-    /// advances it so that time-driven node materials animate.
-    pub fn set_time(&mut self, time: f64) {
-        self.time = time;
-    }
-
     /// Copies the finished canvas texture into `target`.
     ///
     /// The canvas holds sRGB-encoded bytes in an `rgba8unorm` texture (the

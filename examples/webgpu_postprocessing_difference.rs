@@ -33,13 +33,15 @@
 
 use std::rc::Rc;
 
+use three_rs::addons::controls::OrbitControls;
 use three_rs::geometries::box_geometry_default;
 use three_rs::math::Color;
 use three_rs::nodes::tsl::{fog, luminance, range_fog_factor, saturation};
 use three_rs::renderer::OUTPUT_ATTACHMENT;
+use three_rs::Timer;
 use three_rs::{
     ColorSpace, Mesh, MeshBasicNodeMaterial, PassNode, PerspectiveCamera, RenderPipeline, Renderer,
-    RendererParameters, Scene, TextureLoader, ToneMapping, Vector3,
+    RendererParameters, Scene, TextureLoader, ToneMapping,
 };
 
 pub const INNER_WIDTH: f64 = 800.0;
@@ -51,7 +53,11 @@ pub struct App {
     pub renderer: Renderer,
     pub scene: Scene,
     pub camera: PerspectiveCamera,
+    /// The page's `controls`.
+    pub controls: OrbitControls,
     pub mesh: three_rs::Node,
+    /// The page's module-level `timer`.
+    pub timer: Timer,
     pub scene_pass: PassNode,
     pub render_pipeline: RenderPipeline,
 }
@@ -103,14 +109,26 @@ pub fn init() -> App {
     let mut render_pipeline = RenderPipeline::new();
     render_pipeline.output_node = Some(saturation(current_texture, saturation_amount));
 
-    // `new OrbitControls( camera, renderer.domElement )` — its `update()`
-    // points the camera at the target, and damping leaves it there.
-    camera.look_at(&Vector3::new(0.0, 0.0, 0.0));
+    // `const controls = new OrbitControls( camera, renderer.domElement );` —
+    // its `update()` points the camera at the target, the origin, and damping
+    // leaves it there for the graded frame.
+    let mut controls = OrbitControls::new(&mut camera);
+    // The canvas the example renders at, standing in for the element's
+    // `clientWidth` / `clientHeight`.
+    controls.set_element_size(INNER_WIDTH, INNER_HEIGHT);
+    controls.min_distance = 2.0;
+    controls.max_distance = 10.0;
+    controls.enable_damping = true;
+    controls.damping_factor = 0.01;
 
     App {
+        // `const timer = new THREE.Timer();` — constructed in `init()`, as the
+        // page does, so its `_startTime` is the moment the scene was built.
+        timer: Timer::new(),
         renderer,
         scene,
         camera,
+        controls,
         mesh,
         scene_pass,
         render_pipeline,
@@ -120,8 +138,14 @@ pub fn init() -> App {
 /// The page's `animate()`, run once by the harness's single RAF.
 pub fn animate(app: &mut App) {
     // `timer.update(); mesh.rotation.y += timer.getDelta() * 5 * params.speed`
-    // — `performance.now()` is 0 and `speed` is 0, so the box never turns.
-    let delta = 0.0;
+    // — `params.speed` is 0 and the GUI that could raise it is not ported, so
+    // the box never turns however long the clock runs.
+    app.timer.update();
+
+    // `controls.update();`
+    let _ = app.controls.update(&mut app.camera, None);
+
+    let delta = app.timer.get_delta();
     let speed = 0.0;
     {
         let mut mesh = app.mesh.borrow_mut();
@@ -136,7 +160,41 @@ pub fn animate(app: &mut App) {
     app.render_pipeline.render(&mut app.renderer);
 }
 
+/// The page's `onWindowResize()`.
+///
+/// The rung harness never calls this — the graded frame is always
+/// 800 x 500 — but the viewer and the browser shell do, so the example
+/// owns its own reaction to a resized canvas instead of the host
+/// guessing at one.
+pub fn resize(app: &mut App, width: f64, height: f64) {
+    app.camera.aspect = width / height;
+    app.camera.update_projection_matrix();
+    app.renderer.set_size(width, height);
+}
+
+/// The example's controls, for a host that has a pointer. `None` when the
+/// page creates none — the signature is the same for every example so the
+/// viewer and the browser shell can drive any of them through one call.
+pub fn controls(app: &mut App) -> Option<&mut OrbitControls> {
+    Some(&mut app.controls)
+}
+
+/// The controls and the camera at once, which every one of the controls'
+/// event handlers needs: the JS holds the camera as `this.object` and Rust
+/// cannot, so `pointer_move` and the rest take it as an argument.
+///
+/// They are two fields of the same `App`, so borrowing both is sound — but
+/// only this module can say so; a host holding `&mut App` and calling
+/// [`controls`] and then reaching for the camera cannot. Hence the pair.
+pub fn controls_and_camera(app: &mut App) -> Option<(&mut OrbitControls, &mut PerspectiveCamera)> {
+    Some((&mut app.controls, &mut app.camera))
+}
+
 fn main() {
+    // Pin both clocks to zero, as three.js' `test/e2e/deterministic-injection.js`
+    // does to the page, so that the frame this writes is the frame the rung
+    // grades no matter how long `init()` took.
+    three_rs::testing::pin_time(Some(0.0));
     let mut app = init();
     println!("adapter: {:?}", app.renderer.adapter_info());
     animate(&mut app);

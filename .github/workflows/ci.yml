@@ -70,8 +70,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
-      # Only tests/gltf_loader.rs reads this (Three's sample glTF models
-      # under examples/models/gltf); everything else here is self-contained.
+      # tests/gltf_loader.rs reads Three's sample glTF models here, and
+      # tests/addons_orbit_controls.rs runs Three's own OrbitControls.js out of
+      # it under node to compare against; everything else here is
+      # self-contained.
       - name: Checkout three.js r186 (for gltf_loader)
         run: |
           git clone --branch r186 --depth 1 https://github.com/mrdoob/three.js "$THREE_JS_DIR"
@@ -98,6 +100,7 @@ jobs:
       - name: three-rs integration tests (no GPU)
         run: |
           tests=(
+            addons_orbit_controls
             animation_animation_action
             animation_animation_clip
             animation_animation_mixer

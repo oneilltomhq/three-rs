@@ -34,7 +34,7 @@ pub mod textures;
 pub mod utils;
 
 pub use cameras::{OrthographicCamera, PerspectiveCamera, RenderCamera};
-pub use core::{BufferGeometry, Node, Object3D};
+pub use core::{BufferGeometry, Node, Object3D, Timer};
 pub use environments::RoomEnvironment;
 pub use error::{Error, GltfError};
 pub use extras::{CatmullRomCurve3, Curve, CurveType, FrenetFrames};

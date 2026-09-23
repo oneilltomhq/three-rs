@@ -33,16 +33,13 @@
 //!
 //! # Not ported, deliberately
 //!
-//! * `OrbitControls`. `controls.update()` on the first frame, with damping on
-//!   and no pointer input, only re-points the camera at `( 0, 0, 0 )` from
-//!   where `init()` already put it, so `camera.lookAt( 0, 0, 0 )` is the same
-//!   frame. The `controls` addon crate is not a dependency of this crate.
 //! * `line.computeLineDistances()` and the `dashed` GUI branch — the material
 //!   has `dashed: false` and nothing reads `instanceDistanceStart`.
 //! * `Stats` and the GUI.
 
 use std::rc::Rc;
 
+use three_rs::addons::controls::OrbitControls;
 use three_rs::addons::geometry_utils::hilbert_3d_default;
 use three_rs::addons::lines::{Line2, LineGeometry};
 use three_rs::core::BufferAttribute;
@@ -57,7 +54,9 @@ pub const INNER_HEIGHT: f64 = 500.0;
 /// `renderer.setPixelRatio( window.devicePixelRatio )`.
 pub const DPR: f64 = 1.0;
 
-/// `insetWidth = insetHeight = window.innerHeight / 4` — a square.
+/// `insetWidth = insetHeight = window.innerHeight / 4` — a square. The page
+/// writes the pair in `onWindowResize()`, which `init()` calls once before the
+/// first frame; this is that first value, and [`resize`] recomputes it.
 pub const INSET: f64 = INNER_HEIGHT / 4.0;
 
 pub struct App {
@@ -66,6 +65,18 @@ pub struct App {
     pub camera: PerspectiveCamera,
     pub camera2: PerspectiveCamera,
     pub background_node: three_rs::nodes::NodeRef,
+    /// The page's `controls`.
+    pub controls: OrbitControls,
+    /// `window.innerWidth` / `window.innerHeight`, which `animate()` reads for
+    /// the main viewport and for the inset's `posY` just as `onWindowResize()`
+    /// does. A page gets them from the window; an example that owns its own
+    /// resize has to remember them.
+    pub inner_width: f64,
+    pub inner_height: f64,
+    /// The page's module-level `insetWidth` / `insetHeight`, written by
+    /// `onWindowResize()` and read by `animate()`.
+    pub inset_width: f64,
+    pub inset_height: f64,
 }
 
 pub fn init() -> App {
@@ -80,13 +91,26 @@ pub fn init() -> App {
 
     let scene = Scene::new();
 
-    let camera = PerspectiveCamera::new(40.0, INNER_WIDTH / INNER_HEIGHT, 1.0, 1000.0);
+    let mut camera = PerspectiveCamera::new(40.0, INNER_WIDTH / INNER_HEIGHT, 1.0, 1000.0);
     camera.node.borrow_mut().position.set(-40.0, 0.0, 60.0);
 
     // `camera2.position.copy( camera.position )`, and `onWindowResize()` then
     // sets its aspect to `insetWidth / insetHeight` — 1.
     let camera2 = PerspectiveCamera::new(40.0, 1.0, 1.0, 1000.0);
     camera2.node.borrow_mut().position.set(-40.0, 0.0, 60.0);
+
+    // `const controls = new OrbitControls( camera, renderer.domElement );`
+    // The constructor's own `update()` aims the camera at the default
+    // `( 0, 0, 0 )` target from where the line above put it; `animate()`'s
+    // `controls.update()` then repeats that every frame, damping and all,
+    // and with no pointer input moves nothing.
+    let mut controls = OrbitControls::new(&mut camera);
+    // The canvas the example renders at, standing in for the element's
+    // `clientWidth` / `clientHeight`.
+    controls.set_element_size(INNER_WIDTH, INNER_HEIGHT);
+    controls.enable_damping = true;
+    controls.min_distance = 10.0;
+    controls.max_distance = 500.0;
 
     // `backgroundNode = color( 0x222222 )` — assigned to `scene.backgroundNode`
     // for the inset render only, so the inset's own background paints over the
@@ -153,6 +177,14 @@ pub fn init() -> App {
         camera,
         camera2,
         background_node,
+        controls,
+        // The page ends `init()` with a bare `onWindowResize()` call, which is
+        // where `insetWidth` / `insetHeight` and `camera2.aspect` — 1, the
+        // value it was constructed with — first get written.
+        inner_width: INNER_WIDTH,
+        inner_height: INNER_HEIGHT,
+        inset_width: INSET,
+        inset_height: INSET,
     }
 }
 
@@ -161,24 +193,25 @@ pub fn animate(app: &mut App) {
     // --- main scene
     app.renderer.set_clear_color(Color::from_hex(0x000000), 1.0);
     app.renderer
-        .set_viewport(0.0, 0.0, INNER_WIDTH, INNER_HEIGHT);
+        .set_viewport(0.0, 0.0, app.inner_width, app.inner_height);
 
-    // `controls.update()` — see the module comment: on this frame it is
-    // `camera.lookAt( target )` with the default `( 0, 0, 0 )` target.
-    app.camera.look_at(&Vector3::new(0.0, 0.0, 0.0));
+    // `controls.update();`
+    app.controls.update(&mut app.camera, None);
 
     app.renderer.auto_clear = true;
     app.scene.background = None;
     app.renderer.render(&mut app.scene, &mut app.camera);
 
     // --- inset scene
-    let pos_y = INNER_HEIGHT - INSET - 20.0;
+    let pos_y = app.inner_height - app.inset_height - 20.0;
     // "important!" — without it the inset's geometry loses the depth test
     // against the main frame it is drawing over.
     app.renderer.clear_depth();
     app.renderer.set_scissor_test(true);
-    app.renderer.set_scissor(20.0, pos_y, INSET, INSET);
-    app.renderer.set_viewport(20.0, pos_y, INSET, INSET);
+    app.renderer
+        .set_scissor(20.0, pos_y, app.inset_width, app.inset_height);
+    app.renderer
+        .set_viewport(20.0, pos_y, app.inset_width, app.inset_height);
 
     // `camera2.position.copy( camera.position ); camera2.quaternion.copy(
     // camera.quaternion );` — after `controls.update()`, so it picks up the
@@ -197,7 +230,56 @@ pub fn animate(app: &mut App) {
     app.renderer.set_scissor_test(false);
 }
 
+/// The page's `onWindowResize()`.
+///
+/// The rung harness never calls this — the graded frame is always
+/// 800 x 500 — but the viewer and the browser shell do, so the example
+/// owns its own reaction to a resized canvas instead of the host
+/// guessing at one.
+///
+/// This one does more than the usual three lines: it also rewrites the
+/// page's module-level `insetWidth` / `insetHeight` and the inset camera's
+/// aspect, which is why [`App`] carries them as fields rather than consts.
+pub fn resize(app: &mut App, width: f64, height: f64) {
+    app.inner_width = width;
+    app.inner_height = height;
+
+    app.camera.aspect = width / height;
+    app.camera.update_projection_matrix();
+
+    app.renderer.set_size(width, height);
+
+    // `insetWidth = window.innerHeight / 4; // square`
+    app.inset_width = height / 4.0;
+    app.inset_height = height / 4.0;
+
+    app.camera2.aspect = app.inset_width / app.inset_height;
+    app.camera2.update_projection_matrix();
+}
+
+/// The example's controls, for a host that has a pointer. `None` when the
+/// page creates none — the signature is the same for every example so the
+/// viewer and the browser shell can drive any of them through one call.
+pub fn controls(app: &mut App) -> Option<&mut OrbitControls> {
+    Some(&mut app.controls)
+}
+
+/// The controls and the camera at once, which every one of the controls'
+/// event handlers needs: the JS holds the camera as `this.object` and Rust
+/// cannot, so `pointer_move` and the rest take it as an argument.
+///
+/// They are two fields of the same `App`, so borrowing both is sound — but
+/// only this module can say so; a host holding `&mut App` and calling
+/// [`controls`] and then reaching for the camera cannot. Hence the pair.
+pub fn controls_and_camera(app: &mut App) -> Option<(&mut OrbitControls, &mut PerspectiveCamera)> {
+    Some((&mut app.controls, &mut app.camera))
+}
+
 fn main() {
+    // Pin both clocks to zero, as three.js' `test/e2e/deterministic-injection.js`
+    // does to the page, so that the frame this writes is the frame the rung
+    // grades no matter how long `init()` took.
+    three_rs::testing::pin_time(Some(0.0));
     let mut app = init();
     println!("adapter: {:?}", app.renderer.adapter_info());
     animate(&mut app);

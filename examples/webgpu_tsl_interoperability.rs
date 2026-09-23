@@ -22,6 +22,10 @@
 
 use std::rc::Rc;
 
+// `PerspectiveCamera` only names the type in `controls_and_camera`'s signature,
+// which is uniform across the examples; this page's camera is orthographic and it
+// creates no controls, so the function returns `None`.
+use three_rs::addons::controls::OrbitControls;
 use three_rs::materials::MeshBasicNodeMaterial;
 use three_rs::math::ColorSpace;
 use three_rs::nodes::tsl::{
@@ -30,6 +34,7 @@ use three_rs::nodes::tsl::{
 };
 use three_rs::nodes::Type;
 use three_rs::textures::Wrapping;
+use three_rs::PerspectiveCamera;
 use three_rs::{
     plane_geometry, Mesh, OrthographicCamera, Renderer, RendererParameters, Scene, TextureLoader,
 };
@@ -299,7 +304,37 @@ pub fn animate(app: &mut App) {
     app.renderer.render(&mut app.scene, &mut app.camera);
 }
 
+/// The page's `onWindowResize()`.
+///
+/// The rung harness never calls this — the graded frame is always
+/// 800 x 500 — but the viewer and the browser shell do, so the example
+/// owns its own reaction to a resized canvas instead of the host
+/// guessing at one.
+///
+/// The handler is only `renderer.setSize( window.innerWidth, window.innerHeight )`:
+/// the camera is orthographic and covers the quads whatever the canvas is, so
+/// the page has no `aspect` line to transcribe.
+pub fn resize(app: &mut App, width: f64, height: f64) {
+    app.renderer.set_size(width, height);
+}
+
+/// The example's controls, for a host that has a pointer. `None` here:
+/// the page creates none.
+pub fn controls(_app: &mut App) -> Option<&mut OrbitControls> {
+    None
+}
+
+/// The controls and the camera at once, for a host delivering pointer events.
+/// `None` here: the page creates no controls.
+pub fn controls_and_camera(_app: &mut App) -> Option<(&mut OrbitControls, &mut PerspectiveCamera)> {
+    None
+}
+
 fn main() {
+    // Pin both clocks to zero, as three.js' `test/e2e/deterministic-injection.js`
+    // does to the page, so that the frame this writes is the frame the rung
+    // grades no matter how long `init()` took.
+    three_rs::testing::pin_time(Some(0.0));
     let mut app = init();
     println!("adapter: {:?}", app.renderer.adapter_info());
     animate(&mut app);

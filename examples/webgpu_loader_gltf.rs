@@ -50,13 +50,15 @@
 //!
 //! [`Scene::environment`]: three_rs::Scene::environment
 
+use three_rs::addons::controls::OrbitControls;
 use three_rs::loaders::{GLTFLoader, UltraHdrLoader};
 use three_rs::materials::ToneMapping;
 use three_rs::math::Box3;
 use three_rs::nodes::pmrem_node::PmremEnvironment;
 use three_rs::objects::Background;
 use three_rs::renderer::cube_render_target;
-use three_rs::{PerspectiveCamera, Renderer, RendererParameters, Scene, Vector3};
+use three_rs::Timer;
+use three_rs::{PerspectiveCamera, Renderer, RendererParameters, Scene};
 
 pub const INNER_WIDTH: f64 = 800.0;
 pub const INNER_HEIGHT: f64 = 500.0;
@@ -72,14 +74,18 @@ pub struct App {
     pub scene: Scene,
     pub camera: PerspectiveCamera,
     pub environment: PmremEnvironment,
+    /// The page's `controls`.
+    pub controls: OrbitControls,
+    /// The page's module-level `timer`.
+    pub timer: Timer,
 }
 
 /// `fitCameraToSelection( camera, controls, selection, fitOffset = 1.3 )`,
-/// transcribed. `target` is `controls.target`, which the page has set to
-/// `( 0, 0, - 0.2 )` and which this leaves holding the model's centre.
+/// transcribed. It reads `controls.target`, which the page has set to
+/// `( 0, 0, - 0.2 )`, and leaves it holding the model's centre.
 fn fit_camera_to_selection(
     camera: &mut PerspectiveCamera,
-    target: &mut Vector3,
+    controls: &mut OrbitControls,
     selection: &three_rs::Node,
     fit_offset: f64,
 ) {
@@ -97,24 +103,28 @@ fn fit_camera_to_selection(
     let distance = fit_offset * fit_height_distance;
 
     let position = camera.node.borrow().position;
-    let direction = *target
+    let direction = *controls
+        .target
         .clone()
         .sub(&position)
         .normalize()
         .multiply_scalar(distance);
 
-    // `controls.maxDistance` / `minDistance` are set here too; with no pointer
-    // events they clamp nothing.
-    *target = center;
+    // The two distance limits the page set in `init()` are overwritten here;
+    // with no pointer events they clamp nothing either way.
+    controls.max_distance = distance * 10.0;
+    controls.min_distance = distance / 10.0;
+    // `controls.target.copy( center );`
+    controls.target = center;
 
     camera.near = distance / 100.0;
     camera.far = distance * 100.0;
     camera.update_projection_matrix();
 
-    camera.node.borrow_mut().position = *target.clone().sub(&direction);
+    camera.node.borrow_mut().position = *controls.target.clone().sub(&direction);
 
-    // `controls.update()`.
-    camera.look_at(target);
+    // `controls.update();`
+    controls.update(camera, None);
 }
 
 pub fn init() -> App {
@@ -132,6 +142,21 @@ pub fn init() -> App {
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
     renderer.tone_mapping = ToneMapping::AcesFilmic;
+
+    // `const controls = new OrbitControls( camera, renderer.domElement );`
+    // The one `update()` below is a `lookAt` at the target;
+    // `fitCameraToSelection()` then replaces almost all of it once the model
+    // has loaded.
+    let mut controls = OrbitControls::new(&mut camera);
+    // The canvas the example renders at, standing in for the element's
+    // `clientWidth` / `clientHeight`.
+    controls.set_element_size(INNER_WIDTH, INNER_HEIGHT);
+    controls.enable_damping = true;
+    controls.min_distance = 2.0;
+    controls.max_distance = 10.0;
+    controls.target.set(0.0, 0.0, -0.2);
+    // `controls.update();`
+    controls.update(&mut camera, None);
 
     // `new UltraHDRLoader().setPath( 'textures/equirectangular/' ).load(
     // 'royal_esplanade_2k.hdr.jpg', … )`. The loader resolves synchronously
@@ -165,28 +190,73 @@ pub fn init() -> App {
     // first draw either way.
     scene.add(&gltf.scene);
 
-    // `new OrbitControls( … )` with `target.set( 0, 0, - 0.2 )` and one
-    // `update()`, then `fitCameraToSelection` replaces almost all of it.
-    let mut target = Vector3::new(0.0, 0.0, -0.2);
-    camera.look_at(&target);
-    fit_camera_to_selection(&mut camera, &mut target, &gltf.scene, 1.3);
+    // `fitCameraToSelection( camera, controls, currentModel )`, from the
+    // loader's callback.
+    fit_camera_to_selection(&mut camera, &mut controls, &gltf.scene, 1.3);
 
     App {
+        // `const timer = new THREE.Timer();` — constructed in `init()`, as the
+        // page does, so its `_startTime` is the moment the scene was built.
+        timer: Timer::new(),
         renderer,
         scene,
         camera,
         environment,
+        controls,
     }
 }
 
 /// The page's `render()`. `timer.update()` and `controls.update()` move
 /// nothing, and `mixer` is never created — DamagedHelmet has no animations.
 pub fn animate(app: &mut App) {
+    // `timer.update()`. DamagedHelmet has no animations, so the page never
+    // builds the `AnimationMixer` this delta would drive and nothing reads it;
+    // the call is here because the page makes it.
+    app.timer.update();
+
+    // `controls.update();`
+    app.controls.update(&mut app.camera, None);
+
     app.environment.update(&mut app.renderer).unwrap();
     app.renderer.render(&mut app.scene, &mut app.camera);
 }
 
+/// The page's `onWindowResize()`.
+///
+/// The rung harness never calls this — the graded frame is always
+/// 800 x 500 — but the viewer and the browser shell do, so the example
+/// owns its own reaction to a resized canvas instead of the host
+/// guessing at one.
+pub fn resize(app: &mut App, width: f64, height: f64) {
+    app.camera.aspect = width / height;
+    app.camera.update_projection_matrix();
+
+    app.renderer.set_size(width, height);
+}
+
+/// The example's controls, for a host that has a pointer. `None` when the
+/// page creates none — the signature is the same for every example so the
+/// viewer and the browser shell can drive any of them through one call.
+pub fn controls(app: &mut App) -> Option<&mut OrbitControls> {
+    Some(&mut app.controls)
+}
+
+/// The controls and the camera at once, which every one of the controls'
+/// event handlers needs: the JS holds the camera as `this.object` and Rust
+/// cannot, so `pointer_move` and the rest take it as an argument.
+///
+/// They are two fields of the same `App`, so borrowing both is sound — but
+/// only this module can say so; a host holding `&mut App` and calling
+/// [`controls`] and then reaching for the camera cannot. Hence the pair.
+pub fn controls_and_camera(app: &mut App) -> Option<(&mut OrbitControls, &mut PerspectiveCamera)> {
+    Some((&mut app.controls, &mut app.camera))
+}
+
 fn main() {
+    // Pin both clocks to zero, as three.js' `test/e2e/deterministic-injection.js`
+    // does to the page, so that the frame this writes is the frame the rung
+    // grades no matter how long `init()` took.
+    three_rs::testing::pin_time(Some(0.0));
     let mut app = init();
     println!("adapter: {:?}", app.renderer.adapter_info());
     animate(&mut app);

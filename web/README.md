@@ -2,14 +2,24 @@
 
 This crate is the third driver of the ported examples. `tests/e2e/main.rs`
 renders one graded frame and hands it to three.js' comparator;
-`src/bin/viewer.rs` renders them in a window on the wall clock; this renders
-the same graded frame onto a `<canvas>`, on the browser's own WebGPU, from the
-same `init()`. The examples are included as modules, not reimplemented — see
-`src/shell.rs` for the flow.
+`src/bin/viewer.rs` runs them in a window; this runs them on a `<canvas>`, on
+the browser's own WebGPU, from the same `init()`. The examples are included as
+modules, not reimplemented — see `src/shell.rs` for the flow.
 
-Part of [issue #128](https://github.com/oneilltomhq/three-rs/issues/128). This
-first pass shows the *static* graded frame; the animation loop the viewer
-already has is the next item there.
+The page shows the graded frame first, at the example's own 800x500 with both
+clocks pinned to 0, exactly as the ladder renders it. Then it goes live: the
+canvas is sized to the window the way the three.js pages size theirs, and
+`requestAnimationFrame` calls the example's own `animate()` once a frame. The
+status line carries the frame rate.
+
+Drag to orbit, right-drag to pan, the wheel to dolly, the arrow keys to pan —
+on the 27 examples whose three.js page creates an `OrbitControls`. There is no
+controls implementation in this crate: the canvas' pointer, wheel and key
+events are translated into the value types `three_rs::addons::controls`
+defines and handed to the example's own controls, which is the same adapter
+the viewer writes over winit.
+
+Part of [issue #128](https://github.com/oneilltomhq/three-rs/issues/128).
 
 ## Build
 
@@ -69,8 +79,8 @@ README's set of graded examples.
 
 1. it has to be in the README's "Examples graded green" table;
 2. add it to `GRADED` in `examples/web_manifests.rs` and re-run the generator;
-3. add it to `EXAMPLES` in `web/src/shell.rs` and to the `EXAMPLES` array in
-   `web/index.html`.
+3. add a row to the `examples!` table in `web/src/shell.rs` and a name to the
+   `EXAMPLES` array in `web/index.html`.
 
 Steps 2 and 3 are hand-maintained lists because a `#[path]` attribute takes a
 string literal and cannot be generated from one; the `#[test]`s in step 2 fail

@@ -24,6 +24,7 @@ pub use strip::{strip, Step, Strip, StripFrame};
 /// ```
 ///
 /// The arithmetic is f64 throughout, matching JavaScript numbers.
+#[derive(Debug, Clone)]
 pub struct DeterministicRandom {
     seed: f64,
 }
@@ -55,6 +56,29 @@ impl DeterministicRandom {
         self.seed += 1.0;
         x - x.floor()
     }
+}
+
+/// The harness' clock injection: pins [`crate::utils::now_ms`] (`performance
+/// .now()`) and [`crate::utils::date_now_ms`] (`Date.now()`) to `ms`, or
+/// restores the real clocks with `None`.
+///
+/// This is three.js' `test/e2e/deterministic-injection.js`:
+///
+/// ```js
+/// Date.now = () => 0;
+/// performance.now = () => 0;
+/// ```
+///
+/// Every ported example's `main()` calls `pin_time( Some( 0.0 ) )`, and so
+/// does each rung of `tests/e2e`, which is why an `animate()` that reads the
+/// clock faithfully still produces exactly the frame the reference screenshot
+/// holds. A viewer or a browser leaves it unset and the same `animate()`
+/// animates.
+///
+/// The override is per thread: the e2e harness runs its rungs on Rust's test
+/// threads and each pins its own.
+pub fn pin_time(ms: Option<f64>) {
+    crate::utils::time::pin(ms);
 }
 
 /// Writes RGBA8 pixels as a PNG — the same container `page.screenshot()`

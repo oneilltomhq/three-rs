@@ -6,12 +6,14 @@
 //! `devicePixelRatio` are 800, 500 and 1, and `performance.now()` is 0 — so the
 //! `time` uniform is 0 and the galaxy is unrotated.
 //!
-//! `OrbitControls` is not ported: with `enableDamping` on, `controls.update()`
-//! on the first frame leaves the camera exactly where `camera.position.set()`
-//! put it, and the page never calls `controls.target.set()`.
+//! `OrbitControls` is ported, but it moves nothing here: with `enableDamping`
+//! on, `controls.update()` on the first frame leaves the camera exactly where
+//! `camera.position.set()` put it, and the page never calls
+//! `controls.target.set()`.
 
 use std::rc::Rc;
 
+use three_rs::addons::controls::OrbitControls;
 use three_rs::materials::{instanced_range, MeshBasicNodeMaterial};
 use three_rs::nodes::tsl::{
     float, length, mix, time, two_pi, uniform_value, uv, vec3_join, vec4_join,
@@ -53,6 +55,8 @@ pub struct App {
     pub renderer: Renderer,
     pub scene: Scene,
     pub camera: PerspectiveCamera,
+    /// The page's `controls`.
+    pub controls: OrbitControls,
 }
 
 /// The page's material graph, from `const material = new
@@ -132,9 +136,6 @@ pub fn galaxy_material() -> MeshBasicNodeMaterial {
 pub fn init() -> App {
     let mut camera = PerspectiveCamera::new(50.0, INNER_WIDTH / INNER_HEIGHT, 0.1, 100.0);
     camera.node.borrow_mut().position.set(4.0, 2.0, 5.0);
-    // `new OrbitControls( camera, … )` with the default `target` of (0,0,0):
-    // `controls.update()` aims the camera at the target on the first frame.
-    camera.look_at(&Vector3::ZERO);
 
     let mut scene = Scene::new();
     scene.set_background(Color::from_hex(0x201919));
@@ -154,19 +155,68 @@ pub fn init() -> App {
     // graded frame is the shared `Math.random` sequence it advances.
     renderer.skip_random_draws(INSPECTOR_RANDOM_DRAWS);
 
+    // `controls = new OrbitControls( camera, renderer.domElement );` — with the
+    // default `target` of ( 0, 0, 0 ), the `update()` its constructor ends with
+    // aims the camera at the origin.
+    let mut controls = OrbitControls::new(&mut camera);
+    // The canvas the example renders at, standing in for the element's
+    // `clientWidth` / `clientHeight`.
+    controls.set_element_size(INNER_WIDTH, INNER_HEIGHT);
+    controls.enable_damping = true;
+    controls.min_distance = 0.1;
+    controls.max_distance = 50.0;
+
     App {
         renderer,
         scene,
         camera,
+        controls,
     }
 }
 
 /// The page's `animate()`: `controls.update()` then `renderer.render()`.
 pub fn animate(app: &mut App) {
+    // `controls.update();`
+    let _ = app.controls.update(&mut app.camera, None);
+
     app.renderer.render(&mut app.scene, &mut app.camera);
 }
 
+/// The page's `onWindowResize()`.
+///
+/// The rung harness never calls this — the graded frame is always
+/// 800 x 500 — but the viewer and the browser shell do, so the example
+/// owns its own reaction to a resized canvas instead of the host
+/// guessing at one.
+pub fn resize(app: &mut App, width: f64, height: f64) {
+    app.camera.aspect = width / height;
+    app.camera.update_projection_matrix();
+    app.renderer.set_size(width, height);
+}
+
+/// The example's controls, for a host that has a pointer. `None` when the
+/// page creates none — the signature is the same for every example so the
+/// viewer and the browser shell can drive any of them through one call.
+pub fn controls(app: &mut App) -> Option<&mut OrbitControls> {
+    Some(&mut app.controls)
+}
+
+/// The controls and the camera at once, which every one of the controls'
+/// event handlers needs: the JS holds the camera as `this.object` and Rust
+/// cannot, so `pointer_move` and the rest take it as an argument.
+///
+/// They are two fields of the same `App`, so borrowing both is sound — but
+/// only this module can say so; a host holding `&mut App` and calling
+/// [`controls`] and then reaching for the camera cannot. Hence the pair.
+pub fn controls_and_camera(app: &mut App) -> Option<(&mut OrbitControls, &mut PerspectiveCamera)> {
+    Some((&mut app.controls, &mut app.camera))
+}
+
 fn main() {
+    // Pin both clocks to zero, as three.js' `test/e2e/deterministic-injection.js`
+    // does to the page, so that the frame this writes is the frame the rung
+    // grades no matter how long `init()` took.
+    three_rs::testing::pin_time(Some(0.0));
     let mut app = init();
     println!("adapter: {:?}", app.renderer.adapter_info());
     animate(&mut app);

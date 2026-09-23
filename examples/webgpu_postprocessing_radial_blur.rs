@@ -24,12 +24,14 @@
 
 use std::rc::Rc;
 
+use three_rs::addons::controls::OrbitControls;
 use three_rs::geometries::tetrahedron_geometry;
 use three_rs::math::ColorSpace;
 use three_rs::nodes::display::{radial_blur, RadialBlurOptions};
 use three_rs::nodes::tsl::uniform_value;
 use three_rs::nodes::Type;
 use three_rs::testing::DeterministicRandom;
+use three_rs::Timer;
 use three_rs::{
     Color, Group, HemisphereLight, InstancedMesh, MeshStandardNodeMaterial, Object3D, PassNode,
     PerspectiveCamera, PointLight, RenderPipeline, Renderer, RendererParameters, Scene,
@@ -49,6 +51,8 @@ pub struct App {
     pub scene: Scene,
     pub camera: PerspectiveCamera,
     pub group: three_rs::Node,
+    /// The page's module-level `timer`.
+    pub timer: Timer,
     pub scene_pass: PassNode,
     pub render_pipeline: RenderPipeline,
 }
@@ -152,6 +156,9 @@ pub fn init() -> App {
     render_pipeline.output_node = Some(blur_pass);
 
     App {
+        // `const timer = new THREE.Timer();` — constructed in `init()`, as the
+        // page does, so its `_startTime` is the moment the scene was built.
+        timer: Timer::new(),
         renderer,
         scene,
         camera,
@@ -163,9 +170,10 @@ pub fn init() -> App {
 
 /// The page's `animate()`, run once by the harness's single RAF.
 pub fn animate(app: &mut App) {
-    // `timer.update(); const delta = timer.getDelta();` — `performance.now()`
-    // is pinned to 0, so the delta is 0 and the group never rotates.
-    let delta = 0.0;
+    // `timer.update(); const delta = timer.getDelta();`, then the rotation
+    // under `params.animated`, which defaults to true.
+    app.timer.update();
+    let delta = app.timer.get_delta();
 
     {
         let mut group = app.group.borrow_mut();
@@ -180,7 +188,35 @@ pub fn animate(app: &mut App) {
     app.render_pipeline.render(&mut app.renderer);
 }
 
+/// The page's `onWindowResize()`.
+///
+/// The rung harness never calls this — the graded frame is always
+/// 800 x 500 — but the viewer and the browser shell do, so the example
+/// owns its own reaction to a resized canvas instead of the host
+/// guessing at one.
+pub fn resize(app: &mut App, width: f64, height: f64) {
+    app.camera.aspect = width / height;
+    app.camera.update_projection_matrix();
+    app.renderer.set_size(width, height);
+}
+
+/// The example's controls, for a host that has a pointer. `None` here:
+/// the page creates none.
+pub fn controls(_app: &mut App) -> Option<&mut OrbitControls> {
+    None
+}
+
+/// The controls and the camera at once, for a host delivering pointer events.
+/// `None` here: the page creates no controls.
+pub fn controls_and_camera(_app: &mut App) -> Option<(&mut OrbitControls, &mut PerspectiveCamera)> {
+    None
+}
+
 fn main() {
+    // Pin both clocks to zero, as three.js' `test/e2e/deterministic-injection.js`
+    // does to the page, so that the frame this writes is the frame the rung
+    // grades no matter how long `init()` took.
+    three_rs::testing::pin_time(Some(0.0));
     let mut app = init();
     println!("adapter: {:?}", app.renderer.adapter_info());
     animate(&mut app);

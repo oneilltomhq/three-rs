@@ -36,8 +36,9 @@ serde_json = "1"
 # and the only build step is wasm-bindgen.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wgpu = { version = "30.0.1", default-features = false, features = ["webgpu"] }
-# The JS boundary: `#[wasm_bindgen(start)]`, and `spawn_local` to drive the
-# adapter/device/fetch awaits off the page's single thread.
+# The JS boundary: `#[wasm_bindgen(start)]`, `spawn_local` to drive the
+# adapter/device/fetch awaits off the page's single thread, and `Closure` for
+# the `requestAnimationFrame` loop and every DOM listener.
 wasm-bindgen = "0.2.128"
 wasm-bindgen-futures = "0.4.78"
 js-sys = "0.3.105"
@@ -47,13 +48,25 @@ console_error_panic_hook = "0.1.7"
 
 # One feature per DOM call the shell makes, so the generated bindings stay
 # small: the canvas, the query string that names the example, `fetch` for the
-# assets, and the two elements the no-WebGPU message replaces the canvas with.
+# assets, the two elements the no-WebGPU message replaces the canvas with, and
+# the pointer/wheel/key events the animation loop hands to the controls.
 [target.'cfg(target_arch = "wasm32")'.dependencies.web-sys]
 version = "0.3.105"
 features = [
-    # `console.log` / `console.error`, the only channel a failure inside the
-    # page has besides the status line.
+    # `console.error` / `console.warn`: wgpu's uncaptured-error callback and a
+    # frame that could not be presented, neither of which belongs on the one
+    # status line.
     "console",
+    # The input the animation loop feeds to the example's `OrbitControls`, plus
+    # the non-passive `wheel` registration that lets it be cancelled.
+    "AddEventListenerOptions",
+    "DomTokenList",
+    "Event",
+    "EventTarget",
+    "KeyboardEvent",
+    "MouseEvent",
+    "PointerEvent",
+    "WheelEvent",
     # `element.style`, for swapping the canvas out for the still.
     "CssStyleDeclaration",
     "Document",

@@ -20,9 +20,11 @@
 
 use std::rc::Rc;
 
+use three_rs::addons::controls::OrbitControls;
 use three_rs::core::Node;
 use three_rs::nodes::tsl::{checker, fog, mix, normal_map, range_fog_factor, texture, uv};
 use three_rs::textures::Wrapping;
+use three_rs::utils::now_ms;
 use three_rs::{
     sphere_geometry, teapot_geometry, Color, Mesh, MeshPhongNodeMaterial, PerspectiveCamera,
     PointLight, Renderer, RendererParameters, Scene,
@@ -40,6 +42,8 @@ pub struct App {
     /// `light1` … `light4`, the page's module-level handles, which `animate()`
     /// moves. They are in the scene, so the renderer finds them by walking it.
     pub lights: Vec<Node>,
+    /// The page's `controls`.
+    pub controls: OrbitControls,
 }
 
 fn examples_dir() -> std::path::PathBuf {
@@ -48,7 +52,7 @@ fn examples_dir() -> std::path::PathBuf {
 }
 
 pub fn init() -> App {
-    let camera = PerspectiveCamera::new(50.0, INNER_WIDTH / INNER_HEIGHT, 0.01, 100.0);
+    let mut camera = PerspectiveCamera::new(50.0, INNER_WIDTH / INNER_HEIGHT, 0.01, 100.0);
     camera.node.borrow_mut().position.z = 7.0;
 
     let mut scene = Scene::new();
@@ -151,18 +155,33 @@ pub fn init() -> App {
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
 
+    // controls
+
+    // `controls = new OrbitControls( camera, renderer.domElement );` The
+    // constructor's `update()` points the camera at the target, the origin,
+    // which the camera on the +z axis already faces.
+    let mut controls = OrbitControls::new(&mut camera);
+    // The canvas the example renders at, standing in for the element's
+    // `clientWidth` / `clientHeight`.
+    controls.set_element_size(INNER_WIDTH, INNER_HEIGHT);
+    controls.min_distance = 3.0;
+    controls.max_distance = 25.0;
+
     App {
         renderer,
         scene,
         camera,
         lights,
+        controls,
     }
 }
 
 /// The page's `animate()`. `performance.now()` is 0 under the harness, so
 /// `lightTime` is 0 and every `sin` / `cos` below collapses to a constant.
 pub fn animate(app: &mut App) {
-    let light_time = 0.0f64;
+    // `const time = performance.now() / 1000;` — the page calls it `time` and
+    // then `lightTime`; the second name is the one the bodies below read.
+    let light_time = now_ms() / 1000.0;
 
     {
         let mut light = app.lights[0].borrow_mut();
@@ -192,7 +211,41 @@ pub fn animate(app: &mut App) {
     app.renderer.render(&mut app.scene, &mut app.camera);
 }
 
+/// The page's `onWindowResize()`.
+///
+/// The rung harness never calls this — the graded frame is always
+/// 800 x 500 — but the viewer and the browser shell do, so the example
+/// owns its own reaction to a resized canvas instead of the host
+/// guessing at one.
+pub fn resize(app: &mut App, width: f64, height: f64) {
+    app.camera.aspect = width / height;
+    app.camera.update_projection_matrix();
+    app.renderer.set_size(width, height);
+}
+
+/// The example's controls, for a host that has a pointer. `None` when the
+/// page creates none — the signature is the same for every example so the
+/// viewer and the browser shell can drive any of them through one call.
+pub fn controls(app: &mut App) -> Option<&mut OrbitControls> {
+    Some(&mut app.controls)
+}
+
+/// The controls and the camera at once, which every one of the controls'
+/// event handlers needs: the JS holds the camera as `this.object` and Rust
+/// cannot, so `pointer_move` and the rest take it as an argument.
+///
+/// They are two fields of the same `App`, so borrowing both is sound — but
+/// only this module can say so; a host holding `&mut App` and calling
+/// [`controls`] and then reaching for the camera cannot. Hence the pair.
+pub fn controls_and_camera(app: &mut App) -> Option<(&mut OrbitControls, &mut PerspectiveCamera)> {
+    Some((&mut app.controls, &mut app.camera))
+}
+
 fn main() {
+    // Pin both clocks to zero, as three.js' `test/e2e/deterministic-injection.js`
+    // does to the page, so that the frame this writes is the frame the rung
+    // grades no matter how long `init()` took.
+    three_rs::testing::pin_time(Some(0.0));
     let mut app = init();
     println!("adapter: {:?}", app.renderer.adapter_info());
     animate(&mut app);
