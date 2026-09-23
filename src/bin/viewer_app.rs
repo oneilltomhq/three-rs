@@ -415,7 +415,10 @@ impl Scene {
     /// window feeds from the same wall clock but `--time` pins (see
     /// `PINNED_NODE_TIME`).
     fn animate(&mut self, time: f64, node_time: f64) {
-        self.renderer().set_time(node_time);
+        // `NodeFrame.time` is the renderer's own now (it advances it out of
+        // `utils::now_ms()` per frame, as `NodeFrame.update()` does); the
+        // `--time` modes pin that clock instead.
+        let _ = node_time;
 
         match self {
             Scene::DepthTexture(app) => {

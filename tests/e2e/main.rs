@@ -19,7 +19,16 @@ use std::time::{Duration, Instant};
 static GPU: Mutex<()> = Mutex::new(());
 
 fn gpu() -> std::sync::MutexGuard<'static, ()> {
-    GPU.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    // Pin both clocks to zero for the rung, the way three.js' own harness
+    // does: `test/e2e/deterministic-injection.js` assigns `Date.now = () => 0`
+    // and `performance.now = () => 0` into the page before the example runs,
+    // so that an example animating on a clock still grades the same frame
+    // every time. The override is thread-local (`three_rs::testing::pin_time`)
+    // and every rung takes this guard, so pinning here pins it on whichever
+    // test thread the rung landed on, once, before any example code runs.
+    let guard = GPU.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    three_rs::testing::pin_time(Some(0.0));
+    guard
 }
 
 /// Frames rendered after the graded one. The second frame is the first that

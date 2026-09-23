@@ -64,8 +64,19 @@ winit = "0.30.8"
 
 # `webgpu` is wgpu's `navigator.gpu` backend: it talks to the browser's own
 # WebGPU implementation through web-sys rather than to a driver.
+#
+# `web-sys` and `js-sys` are the browser's two clocks and nothing else:
+# `src/utils/time.rs` reads `window.performance.now()` and `Date.now()`, which
+# is what a page's `Timer`, its `Date.now() * 0.001` and the TSL `time` node
+# all run on. The feature list is the minimum that reaches
+# `performance.now()`: `Window` for `web_sys::window()`, `Performance` for
+# `window.performance()` and the `now()` on it. (wgpu already pulls web-sys in
+# on this target; features are additive, so this adds no crate, only two
+# bindings.)
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wgpu = { version = "30.0.1", default-features = false, features = ["webgpu"] }
+web-sys = { version = "0.3", features = ["Window", "Performance"] }
+js-sys = "0.3"
 
 [dev-dependencies]
 # The examples gallery generator (`examples/gallery.rs`) only. Pure Rust with

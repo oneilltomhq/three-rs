@@ -1713,9 +1713,11 @@ version = "0.1.2"
 dependencies = [
  "bytemuck",
  "jpeg-encoder",
+ "js-sys",
  "png",
  "pollster",
  "serde_json",
+ "web-sys",
  "wgpu",
  "winit",
  "zune-jpeg",
