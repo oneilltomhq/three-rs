@@ -21,6 +21,13 @@ the viewer writes over winit.
 
 Part of [issue #128](https://github.com/oneilltomhq/three-rs/issues/128).
 
+**Live:** <https://oneilltomhq.github.io/three-rs/>, deployed from `main` by
+`.github/workflows/pages.yml` (which runs `web/build.sh` and publishes
+`web/dist/`). The README gallery's thumbnails link there, one
+`?example=<name>` page each. Every path the shell loads is relative, so it
+works under the `/three-rs/` sub-path as it does at a server's root; keep it
+that way.
+
 ## Build
 
     web/build.sh
