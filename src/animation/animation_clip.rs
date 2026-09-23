@@ -57,14 +57,11 @@ impl AnimationBlendMode {
 /// identical, and `uuid` is only ever used as an opaque identity.
 fn generate_uuid() -> String {
     use std::sync::atomic::{AtomicU64, Ordering};
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     static COUNTER: AtomicU64 = AtomicU64::new(0);
 
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos() as u64)
-        .unwrap_or(0);
+    // Not `SystemTime::now()`, which panics in a browser (issue #128).
+    let nanos = (crate::utils::time::real_date_now_ms() * 1e6) as u64;
 
     let counter = COUNTER.fetch_add(1, Ordering::Relaxed);
     let mut state = nanos ^ (counter.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1);

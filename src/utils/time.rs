@@ -79,8 +79,11 @@ fn real_now_ms() -> f64 {
     ORIGIN.get_or_init(Instant::now).elapsed().as_secs_f64() * 1e3
 }
 
+/// The unpinned wall clock, for the few readers that want entropy rather than
+/// a page's time (`generate_uuid()`'s seed). `std::time::SystemTime::now()`
+/// panics on wasm32-unknown-unknown, so they come here instead (issue #128).
 #[cfg(not(target_arch = "wasm32"))]
-fn real_date_now_ms() -> f64 {
+pub(crate) fn real_date_now_ms() -> f64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|since| since.as_secs_f64() * 1e3)
@@ -103,7 +106,7 @@ fn real_now_ms() -> f64 {
 
 /// `Date.now()`, through js-sys.
 #[cfg(target_arch = "wasm32")]
-fn real_date_now_ms() -> f64 {
+pub(crate) fn real_date_now_ms() -> f64 {
     js_sys::Date::now()
 }
 
