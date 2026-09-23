@@ -30,6 +30,7 @@
 
 use std::rc::Rc;
 
+use three_rs::addons::controls::OrbitControls;
 use three_rs::geometries::sphere_geometry;
 use three_rs::nodes::display::{luminosity_high_pass, rtt, BloomNode, RttNode};
 use three_rs::nodes::tsl::{
@@ -57,6 +58,8 @@ pub struct App {
     pub renderer: Renderer,
     pub scene: Scene,
     pub camera: PerspectiveCamera,
+    /// The page's `controls`.
+    pub controls: OrbitControls,
     pub scene_pass: PassNode,
     /// The `rtt()` inside the custom high pass. The port renders it explicitly,
     /// like every other node that owns a target; see `docs/postprocessing.md`.
@@ -189,6 +192,17 @@ pub fn init() -> App {
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
     renderer.tone_mapping = ToneMapping::Neutral;
 
+    // `const controls = new OrbitControls( camera, renderer.domElement )`,
+    // built here because the page builds it here, after the renderer. Its
+    // constructor ends in the `update()` the `camera.look_at` above stands in
+    // for, so the camera is already pointed at the default target.
+    let mut controls = OrbitControls::new(&mut camera);
+    // The canvas the example renders at, standing in for the element's
+    // `clientWidth` / `clientHeight`.
+    controls.set_element_size(INNER_WIDTH, INNER_HEIGHT);
+    controls.min_distance = 2.0;
+    controls.max_distance = 25.0;
+
     // post-processing
 
     let scene_pass = PassNode::new();
@@ -230,6 +244,7 @@ pub fn init() -> App {
         renderer,
         scene,
         camera,
+        controls,
         scene_pass,
         bright_pass,
         bloom_pass,
@@ -245,11 +260,43 @@ pub fn init() -> App {
 /// bloom's high-pass descriptor before the RTT pass it nests inside. See
 /// `docs/postprocessing.md` for why the port fires them explicitly.
 pub fn animate(app: &mut App) {
+    // `controls.update();`
+    app.controls.update(&mut app.camera, None);
     app.scene_pass
         .render(&mut app.renderer, &mut app.scene, &mut app.camera);
     app.bright_pass.render(&mut app.renderer);
     app.bloom_pass.render(&mut app.renderer);
     app.render_pipeline.render(&mut app.renderer);
+}
+
+/// The page's `onWindowResize()`.
+///
+/// The rung harness never calls this — the graded frame is always
+/// 800 x 500 — but the viewer and the browser shell do, so the example
+/// owns its own reaction to a resized canvas instead of the host
+/// guessing at one.
+pub fn resize(app: &mut App, width: f64, height: f64) {
+    app.camera.aspect = width / height;
+    app.camera.update_projection_matrix();
+    app.renderer.set_size(width, height);
+}
+
+/// The example's controls, for a host that has a pointer. `None` when the
+/// page creates none — the signature is the same for every example so the
+/// viewer and the browser shell can drive any of them through one call.
+pub fn controls(app: &mut App) -> Option<&mut OrbitControls> {
+    Some(&mut app.controls)
+}
+
+/// The controls and the camera at once, which every one of the controls'
+/// event handlers needs: the JS holds the camera as `this.object` and Rust
+/// cannot, so `pointer_move` and the rest take it as an argument.
+///
+/// They are two fields of the same `App`, so borrowing both is sound — but
+/// only this module can say so; a host holding `&mut App` and calling
+/// [`controls`] and then reaching for the camera cannot. Hence the pair.
+pub fn controls_and_camera(app: &mut App) -> Option<(&mut OrbitControls, &mut PerspectiveCamera)> {
+    Some((&mut app.controls, &mut app.camera))
 }
 
 fn main() {

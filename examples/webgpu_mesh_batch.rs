@@ -10,6 +10,7 @@
 use std::f64::consts::PI;
 use std::rc::Rc;
 
+use three_rs::addons::controls::OrbitControls;
 use three_rs::geometries::cone_geometry;
 use three_rs::materials::MeshBasicNodeMaterial;
 use three_rs::nodes::tsl::{diffuse_color, float, normal_view, vec4_join};
@@ -40,6 +41,8 @@ pub struct App {
     pub renderer: Renderer,
     pub scene: Scene,
     pub camera: PerspectiveCamera,
+    /// The page's `controls`.
+    pub controls: OrbitControls,
     pub mesh: Node,
     /// `mesh.userData.rotationSpeeds`.
     rotation_speeds: Vec<Matrix4>,
@@ -82,24 +85,17 @@ pub fn sort_function() -> CustomSort {
 /// camera and the batched mesh, built from the same deterministic random
 /// sequence. Split out so the CPU-side gates (texture sizes, draw ranges, the
 /// sorted draw list) can be tested without a GPU.
-pub fn build() -> (Scene, PerspectiveCamera, Node, Vec<Matrix4>, Vec<usize>) {
+pub fn build() -> (
+    Scene,
+    PerspectiveCamera,
+    OrbitControls,
+    Node,
+    Vec<Matrix4>,
+    Vec<usize>,
+) {
     // `new THREE.PerspectiveCamera( 70, aspect, 1, 100 ); camera.position.z = 30;`
     let mut camera = PerspectiveCamera::new(70.0, INNER_WIDTH / INNER_HEIGHT, 1.0, 100.0);
-
-    // `new OrbitControls( camera, … )` with `autoRotate = true` and
-    // `autoRotateSpeed = 1.0`. `OrbitControls` is not ported; its whole effect
-    // on the graded frame is the one `rotateLeft( 2π / 60 / 60 * speed )` step
-    // the first `update()` applies around the default target (0,0,0), followed
-    // by `lookAt( target )`. In spherical terms the camera starts at
-    // `radius = 30, theta = 0, phi = π / 2`, and `theta` moves by `-angle`.
-    let angle = 2.0 * PI / 60.0 / 60.0;
-    let (radius, theta, phi) = (30.0_f64, -angle, PI / 2.0);
-    camera.node.borrow_mut().position.set(
-        radius * phi.sin() * theta.sin(),
-        radius * phi.cos(),
-        radius * phi.sin() * theta.cos(),
-    );
-    camera.look_at(&Vector3::ZERO);
+    camera.node.borrow_mut().position.set_z(30.0);
 
     let mut scene = Scene::new();
     scene.set_background(Color::from_hex(0xc1c1ff));
@@ -152,11 +148,24 @@ pub fn build() -> (Scene, PerspectiveCamera, Node, Vec<Matrix4>, Vec<usize>) {
     mesh.borrow_mut().frustum_culled = false;
     scene.add(&mesh);
 
-    (scene, camera, mesh, rotation_speeds, ids)
+    // `const controls = new OrbitControls( camera, renderer.domElement );`
+    // The page builds it here, after `initGeometries()` and `initMesh()`; it is
+    // built here rather than in `init()` because `build()` owns the camera the
+    // constructor's `update()` moves, and the CPU-side gates need that camera
+    // in the pose the graded frame renders it from.
+    let mut controls = OrbitControls::new(&mut camera);
+    // The renderer's canvas stands in for the element's `clientWidth` /
+    // `clientHeight`.
+    controls.set_element_size(INNER_WIDTH, INNER_HEIGHT);
+    // `controls.autoRotate = true; controls.autoRotateSpeed = 1.0;`
+    controls.auto_rotate = true;
+    controls.auto_rotate_speed = 1.0;
+
+    (scene, camera, controls, mesh, rotation_speeds, ids)
 }
 
 pub fn init() -> App {
-    let (scene, camera, mesh, rotation_speeds, ids) = build();
+    let (scene, camera, controls, mesh, rotation_speeds, ids) = build();
 
     let mut renderer = Renderer::new(RendererParameters { antialias: true }).unwrap();
     renderer.set_pixel_ratio(DPR);
@@ -166,6 +175,7 @@ pub fn init() -> App {
         renderer,
         scene,
         camera,
+        controls,
         mesh,
         rotation_speeds,
         ids,
@@ -209,10 +219,45 @@ fn randomize_rotation_speed(random: &mut DeterministicRandom) -> Euler {
 }
 
 /// The page's `animate()`: `animateMeshes()`, `controls.update()`, then render.
-/// The camera's single `controls.update()` step is already baked into `init()`.
+/// With `autoRotate` on, that `update()` is what turns the camera around the
+/// target by `2π / 60 / 60 * autoRotateSpeed` each frame.
 pub fn animate(app: &mut App) {
     animate_meshes(&app.mesh, &app.ids, &app.rotation_speeds);
+
+    // `controls.update();`
+    app.controls.update(&mut app.camera, None);
+
     app.renderer.render(&mut app.scene, &mut app.camera);
+}
+
+/// The page's `onWindowResize()`.
+///
+/// The rung harness never calls this — the graded frame is always
+/// 800 x 500 — but the viewer and the browser shell do, so the example
+/// owns its own reaction to a resized canvas instead of the host
+/// guessing at one.
+pub fn resize(app: &mut App, width: f64, height: f64) {
+    app.camera.aspect = width / height;
+    app.camera.update_projection_matrix();
+    app.renderer.set_size(width, height);
+}
+
+/// The example's controls, for a host that has a pointer. `None` when the
+/// page creates none — the signature is the same for every example so the
+/// viewer and the browser shell can drive any of them through one call.
+pub fn controls(app: &mut App) -> Option<&mut OrbitControls> {
+    Some(&mut app.controls)
+}
+
+/// The controls and the camera at once, which every one of the controls'
+/// event handlers needs: the JS holds the camera as `this.object` and Rust
+/// cannot, so `pointer_move` and the rest take it as an argument.
+///
+/// They are two fields of the same `App`, so borrowing both is sound — but
+/// only this module can say so; a host holding `&mut App` and calling
+/// [`controls`] and then reaching for the camera cannot. Hence the pair.
+pub fn controls_and_camera(app: &mut App) -> Option<(&mut OrbitControls, &mut PerspectiveCamera)> {
+    Some((&mut app.controls, &mut app.camera))
 }
 
 /// `animateMeshes()`, plus the per-frame `api` assignments the page's

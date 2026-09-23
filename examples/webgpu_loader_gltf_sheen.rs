@@ -42,12 +42,13 @@
 //! slider, `material.sheen` over `[ 0, 1 ]`. The graded frame is the untouched
 //! asset value, which `GLTFMaterialsSheenExtension` sets to 1.
 
+use three_rs::addons::controls::OrbitControls;
 use three_rs::loaders::{GLTFLoader, UltraHdrLoader};
 use three_rs::materials::ToneMapping;
 use three_rs::nodes::pmrem_node::PmremEnvironment;
 use three_rs::objects::Background;
 use three_rs::renderer::cube_render_target;
-use three_rs::{PerspectiveCamera, Renderer, RendererParameters, Scene, Vector3};
+use three_rs::{PerspectiveCamera, Renderer, RendererParameters, Scene};
 
 pub const INNER_WIDTH: f64 = 800.0;
 pub const INNER_HEIGHT: f64 = 500.0;
@@ -63,6 +64,8 @@ pub struct App {
     pub scene: Scene,
     pub camera: PerspectiveCamera,
     pub environment: PmremEnvironment,
+    /// The page's `controls`.
+    pub controls: OrbitControls,
 }
 
 pub fn init() -> App {
@@ -119,24 +122,68 @@ pub fn init() -> App {
     environment.update(&mut renderer).unwrap();
     scene.environment = Some(environment.handle());
 
-    // `new OrbitControls( camera, renderer.domElement )` with `target.set( 0,
-    // 0.35, 0 )` and one `update()`. `enableDamping` / `minDistance` /
-    // `maxDistance` clamp nothing with no pointer events.
-    camera.look_at(&Vector3::new(0.0, 0.35, 0.0));
+    // `const controls = new OrbitControls( camera, renderer.domElement );`
+    // The one `update()` below is a `lookAt` at the target: `enableDamping`
+    // and the two distance limits clamp nothing with no pointer events.
+    let mut controls = OrbitControls::new(&mut camera);
+    // The canvas the example renders at, standing in for the element's
+    // `clientWidth` / `clientHeight`.
+    controls.set_element_size(INNER_WIDTH, INNER_HEIGHT);
+    controls.enable_damping = true;
+    controls.min_distance = 1.0;
+    controls.max_distance = 10.0;
+    controls.target.set(0.0, 0.35, 0.0);
+    // `controls.update();`
+    controls.update(&mut camera, None);
 
     App {
         renderer,
         scene,
         camera,
         environment,
+        controls,
     }
 }
 
 /// The page's `render()`, with `controls.update()` ahead of it — damping with
 /// no pointer input moves the camera nowhere.
 pub fn animate(app: &mut App) {
+    // `controls.update(); // required if damping enabled`
+    app.controls.update(&mut app.camera, None);
+
     app.environment.update(&mut app.renderer).unwrap();
     app.renderer.render(&mut app.scene, &mut app.camera);
+}
+
+/// The page's `onWindowResize()`.
+///
+/// The rung harness never calls this — the graded frame is always
+/// 800 x 500 — but the viewer and the browser shell do, so the example
+/// owns its own reaction to a resized canvas instead of the host
+/// guessing at one.
+pub fn resize(app: &mut App, width: f64, height: f64) {
+    app.camera.aspect = width / height;
+    app.camera.update_projection_matrix();
+
+    app.renderer.set_size(width, height);
+}
+
+/// The example's controls, for a host that has a pointer. `None` when the
+/// page creates none — the signature is the same for every example so the
+/// viewer and the browser shell can drive any of them through one call.
+pub fn controls(app: &mut App) -> Option<&mut OrbitControls> {
+    Some(&mut app.controls)
+}
+
+/// The controls and the camera at once, which every one of the controls'
+/// event handlers needs: the JS holds the camera as `this.object` and Rust
+/// cannot, so `pointer_move` and the rest take it as an argument.
+///
+/// They are two fields of the same `App`, so borrowing both is sound — but
+/// only this module can say so; a host holding `&mut App` and calling
+/// [`controls`] and then reaching for the camera cannot. Hence the pair.
+pub fn controls_and_camera(app: &mut App) -> Option<(&mut OrbitControls, &mut PerspectiveCamera)> {
+    Some((&mut app.controls, &mut app.camera))
 }
 
 fn main() {

@@ -29,6 +29,7 @@
 
 use std::rc::Rc;
 
+use three_rs::addons::controls::OrbitControls;
 use three_rs::geometries::icosahedron_geometry;
 use three_rs::{
     CubeTextureLoader, Mesh, MeshBasicNodeMaterial, PerspectiveCamera, Renderer,
@@ -44,6 +45,8 @@ pub struct App {
     pub renderer: Renderer,
     pub scene: Scene,
     pub camera: PerspectiveCamera,
+    /// The page's `controls`.
+    pub controls: OrbitControls,
 }
 
 fn examples_dir() -> std::path::PathBuf {
@@ -51,7 +54,7 @@ fn examples_dir() -> std::path::PathBuf {
 }
 
 pub fn init() -> App {
-    let camera = PerspectiveCamera::new(70.0, INNER_WIDTH / INNER_HEIGHT, 0.1, 100.0);
+    let mut camera = PerspectiveCamera::new(70.0, INNER_WIDTH / INNER_HEIGHT, 0.1, 100.0);
     camera.node.borrow_mut().position.set(0.0, 0.0, 2.5);
 
     let mut scene = Scene::new();
@@ -84,14 +87,24 @@ pub fn init() -> App {
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
 
-    // `new OrbitControls( camera, renderer.domElement )` with `minDistance`
-    // and `maxDistance`: with no pointer events the orbit is the identity and
-    // the distance limits never bite.
+    // `const controls = new OrbitControls( camera, renderer.domElement );`
+    // The page never calls `controls.update()` itself, but the constructor's
+    // own `update()` aims the camera at the default `( 0, 0, 0 )` target —
+    // which is where `animate()`'s `camera.lookAt( scene.position )` aims it
+    // anyway, so the graded frame is unchanged. With no pointer events the
+    // distance limits never bite.
+    let mut controls = OrbitControls::new(&mut camera);
+    // The canvas the example renders at, standing in for the element's
+    // `clientWidth` / `clientHeight`.
+    controls.set_element_size(INNER_WIDTH, INNER_HEIGHT);
+    controls.min_distance = 1.5;
+    controls.max_distance = 6.0;
 
     App {
         renderer,
         scene,
         camera,
+        controls,
     }
 }
 
@@ -101,6 +114,37 @@ pub fn animate(app: &mut App) {
     // `false`, so the whole body of `animate()` before the `lookAt` is skipped.
     app.camera.look_at(&Vector3::ZERO);
     app.renderer.render(&mut app.scene, &mut app.camera);
+}
+
+/// The page's `onWindowResize()`.
+///
+/// The rung harness never calls this — the graded frame is always
+/// 800 x 500 — but the viewer and the browser shell do, so the example
+/// owns its own reaction to a resized canvas instead of the host
+/// guessing at one.
+pub fn resize(app: &mut App, width: f64, height: f64) {
+    app.camera.aspect = width / height;
+    app.camera.update_projection_matrix();
+
+    app.renderer.set_size(width, height);
+}
+
+/// The example's controls, for a host that has a pointer. `None` when the
+/// page creates none — the signature is the same for every example so the
+/// viewer and the browser shell can drive any of them through one call.
+pub fn controls(app: &mut App) -> Option<&mut OrbitControls> {
+    Some(&mut app.controls)
+}
+
+/// The controls and the camera at once, which every one of the controls'
+/// event handlers needs: the JS holds the camera as `this.object` and Rust
+/// cannot, so `pointer_move` and the rest take it as an argument.
+///
+/// They are two fields of the same `App`, so borrowing both is sound — but
+/// only this module can say so; a host holding `&mut App` and calling
+/// [`controls`] and then reaching for the camera cannot. Hence the pair.
+pub fn controls_and_camera(app: &mut App) -> Option<(&mut OrbitControls, &mut PerspectiveCamera)> {
+    Some((&mut app.controls, &mut app.camera))
 }
 
 fn main() {

@@ -47,6 +47,7 @@
 
 use std::rc::Rc;
 
+use three_rs::addons::controls::OrbitControls;
 use three_rs::geometries::sphere_geometry;
 use three_rs::nodes::pmrem_node::PmremEnvironment;
 use three_rs::nodes::tsl::{normal_world, uniform_settable};
@@ -54,7 +55,7 @@ use three_rs::nodes::Type;
 
 use three_rs::{
     Color, CubeTexture, CubeTextureLoader, Mesh, MeshBasicNodeMaterial, PerspectiveCamera,
-    Renderer, RendererParameters, Scene, Vector3,
+    Renderer, RendererParameters, Scene,
 };
 
 pub const INNER_WIDTH: f64 = 800.0;
@@ -77,6 +78,8 @@ pub struct App {
     pub renderer: Renderer,
     pub scene: Scene,
     pub camera: PerspectiveCamera,
+    /// The page's `controls`.
+    pub controls: OrbitControls,
     pub environment: PmremEnvironment,
     /// The six decoded JPEG faces, kept so the e2e gate can hold the atlas'
     /// face tiles against the images they were rendered from.
@@ -100,12 +103,20 @@ pub fn init() -> App {
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
     // `renderer.toneMapping` is left at `NoToneMapping`; the page sets none.
 
-    // `new OrbitControls( camera, renderer.domElement )`, `minDistance = 2`,
-    // `maxDistance = 10`, `controls.update()`. The camera is 3.3 from the
-    // origin, so the distance clamp is inert, and with no pointer events the
-    // orbit is the identity — `update()` reduces to pointing the camera at the
-    // target.
-    camera.look_at(&Vector3::ZERO);
+    // `const controls = new OrbitControls( camera, renderer.domElement );`
+    let mut controls = OrbitControls::new(&mut camera);
+    // The renderer's canvas stands in for the element's `clientWidth` /
+    // `clientHeight`.
+    controls.set_element_size(INNER_WIDTH, INNER_HEIGHT);
+    // `controls.addEventListener( 'change', render )` is left out: the port
+    // dispatches no events, and its host drives the frame loop instead.
+    // `controls.minDistance = 2; controls.maxDistance = 10;`
+    controls.min_distance = 2.0;
+    controls.max_distance = 10.0;
+    // `controls.update();` The camera is 3.3 from the origin, so the distance
+    // clamp is inert, and with no pointer events the orbit is the identity —
+    // `update()` reduces to pointing the camera at the target.
+    controls.update(&mut camera, None);
 
     // `new THREE.CubeTextureLoader().setPath( './textures/cube/Park3Med/' )`,
     // then `scene.background = await loader.loadAsync( [ … ] )`.
@@ -156,6 +167,7 @@ pub fn init() -> App {
         renderer,
         scene,
         camera,
+        controls,
         environment,
         cube,
     }
@@ -168,6 +180,36 @@ pub fn animate(app: &mut App) {
     // PMREM examples make.
     app.environment.update(&mut app.renderer).unwrap();
     app.renderer.render(&mut app.scene, &mut app.camera);
+}
+
+/// The page's `onWindowResize()`.
+///
+/// The rung harness never calls this — the graded frame is always
+/// 800 x 500 — but the viewer and the browser shell do, so the example
+/// owns its own reaction to a resized canvas instead of the host
+/// guessing at one.
+pub fn resize(app: &mut App, width: f64, height: f64) {
+    app.camera.aspect = width / height;
+    app.camera.update_projection_matrix();
+    app.renderer.set_size(width, height);
+}
+
+/// The example's controls, for a host that has a pointer. `None` when the
+/// page creates none — the signature is the same for every example so the
+/// viewer and the browser shell can drive any of them through one call.
+pub fn controls(app: &mut App) -> Option<&mut OrbitControls> {
+    Some(&mut app.controls)
+}
+
+/// The controls and the camera at once, which every one of the controls'
+/// event handlers needs: the JS holds the camera as `this.object` and Rust
+/// cannot, so `pointer_move` and the rest take it as an argument.
+///
+/// They are two fields of the same `App`, so borrowing both is sound — but
+/// only this module can say so; a host holding `&mut App` and calling
+/// [`controls`] and then reaching for the camera cannot. Hence the pair.
+pub fn controls_and_camera(app: &mut App) -> Option<(&mut OrbitControls, &mut PerspectiveCamera)> {
+    Some((&mut app.controls, &mut app.camera))
 }
 
 fn main() {

@@ -19,6 +19,7 @@
 use std::f64::consts::PI;
 use std::rc::Rc;
 
+use three_rs::addons::controls::OrbitControls;
 use three_rs::core::Node;
 use three_rs::geometries::{cylinder_geometry, plane_geometry, torus_knot_geometry};
 use three_rs::nodes::materialx::{mx_fractal_noise_float, mx_fractal_noise_vec3};
@@ -31,7 +32,7 @@ use three_rs::utils::now_ms;
 use three_rs::Timer;
 use three_rs::{
     AmbientLight, Color, DirectionalLight, Group, Mesh, MeshPhongNodeMaterial, PerspectiveCamera,
-    Renderer, RendererParameters, Scene, SpotLight, ToneMapping, Vector3,
+    Renderer, RendererParameters, Scene, SpotLight, ToneMapping,
 };
 
 pub const INNER_WIDTH: f64 = 800.0;
@@ -43,6 +44,8 @@ pub struct App {
     pub renderer: Renderer,
     pub scene: Scene,
     pub camera: PerspectiveCamera,
+    /// The page's `controls`.
+    pub controls: OrbitControls,
     pub torus_knot: Node,
     pub dir_group: Node,
     pub dir_light: Node,
@@ -204,9 +207,19 @@ pub fn init() -> App {
     renderer.shadow_map_enabled = true;
     renderer.tone_mapping = ToneMapping::AcesFilmic;
 
-    // `new OrbitControls( camera, … )` then `controls.target.set( 0, 2, 0 )`
-    // and `controls.update()`.
-    camera.look_at(&Vector3::new(0.0, 2.0, 0.0));
+    // Mouse control
+    // `const controls = new OrbitControls( camera, renderer.domElement );` —
+    // the page's own `controls.update()` at the end is what points the camera
+    // at ( 0, 2, 0 ); nothing updates it again, so it is inert for the graded
+    // frame.
+    let mut controls = OrbitControls::new(&mut camera);
+    // The canvas the example renders at, standing in for the element's
+    // `clientWidth` / `clientHeight`.
+    controls.set_element_size(INNER_WIDTH, INNER_HEIGHT);
+    controls.target.set(0.0, 2.0, 0.0);
+    controls.min_distance = 7.0;
+    controls.max_distance = 40.0;
+    let _ = controls.update(&mut camera, None);
 
     App {
         // `const timer = new THREE.Timer();` — constructed in `init()`, as the
@@ -215,6 +228,7 @@ pub fn init() -> App {
         renderer,
         scene,
         camera,
+        controls,
         torus_knot,
         dir_group,
         dir_light,
@@ -242,6 +256,37 @@ pub fn animate(app: &mut App) {
     app.dir_light.borrow_mut().position.z = 17.0 + (time * 0.001).sin() * 5.0;
 
     app.renderer.render(&mut app.scene, &mut app.camera);
+}
+
+/// The page's `resize()` — the same three lines the other examples spell
+/// `onWindowResize()`.
+///
+/// The rung harness never calls this — the graded frame is always
+/// 800 x 500 — but the viewer and the browser shell do, so the example
+/// owns its own reaction to a resized canvas instead of the host
+/// guessing at one.
+pub fn resize(app: &mut App, width: f64, height: f64) {
+    app.camera.aspect = width / height;
+    app.camera.update_projection_matrix();
+    app.renderer.set_size(width, height);
+}
+
+/// The example's controls, for a host that has a pointer. `None` when the
+/// page creates none — the signature is the same for every example so the
+/// viewer and the browser shell can drive any of them through one call.
+pub fn controls(app: &mut App) -> Option<&mut OrbitControls> {
+    Some(&mut app.controls)
+}
+
+/// The controls and the camera at once, which every one of the controls'
+/// event handlers needs: the JS holds the camera as `this.object` and Rust
+/// cannot, so `pointer_move` and the rest take it as an argument.
+///
+/// They are two fields of the same `App`, so borrowing both is sound — but
+/// only this module can say so; a host holding `&mut App` and calling
+/// [`controls`] and then reaching for the camera cannot. Hence the pair.
+pub fn controls_and_camera(app: &mut App) -> Option<(&mut OrbitControls, &mut PerspectiveCamera)> {
+    Some((&mut app.controls, &mut app.camera))
 }
 
 fn main() {

@@ -28,6 +28,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use three_rs::addons::controls::OrbitControls;
 use three_rs::nodes::tsl::{
     cube_texture, float, material_env_rotation, reflect_vector, uniform_object, vec4_join,
 };
@@ -35,7 +36,7 @@ use three_rs::nodes::Type;
 use three_rs::testing::DeterministicRandom;
 use three_rs::{
     teapot_geometry, Color, CubeTextureLoader, GridHelper, Mesh, MeshBasicNodeMaterial,
-    PerspectiveCamera, Renderer, RendererParameters, Scene, Vector3,
+    PerspectiveCamera, Renderer, RendererParameters, Scene,
 };
 
 pub const INNER_WIDTH: f64 = 800.0;
@@ -51,6 +52,8 @@ pub struct App {
     pub objects: Vec<three_rs::core::Node>,
     /// The page's `mesh.color`, which an `Object3D` has nowhere to keep.
     pub colors: Rc<RefCell<HashMap<u32, Color>>>,
+    /// The page's `controls`.
+    pub controls: OrbitControls,
 }
 
 fn examples_dir() -> std::path::PathBuf {
@@ -149,12 +152,18 @@ pub fn init() -> App {
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
 
-    // `new OrbitControls( camera, renderer.domElement )`: the constructor's
-    // `update()` re-derives the camera position from the spherical offset to
-    // `target` (the origin) and points the camera at it. With no pointer events
-    // the offset is unchanged and the distance, 1216.55, is inside
-    // `[ minDistance, maxDistance ]`, so all that survives is the `lookAt`.
-    camera.look_at(&Vector3::ZERO);
+    // `controls = new OrbitControls( camera, renderer.domElement );` The
+    // constructor's `update()` re-derives the camera position from the
+    // spherical offset to `target` (the origin) and points the camera at it.
+    // With no pointer events the offset is unchanged and the distance,
+    // 1216.55, is inside `[ minDistance, maxDistance ]`, so all that survives
+    // is the `lookAt`.
+    let mut controls = OrbitControls::new(&mut camera);
+    // The canvas the example renders at, standing in for the element's
+    // `clientWidth` / `clientHeight`.
+    controls.set_element_size(INNER_WIDTH, INNER_HEIGHT);
+    controls.min_distance = 400.0;
+    controls.max_distance = 2000.0;
 
     App {
         renderer,
@@ -162,6 +171,7 @@ pub fn init() -> App {
         camera,
         objects,
         colors,
+        controls,
     }
 }
 
@@ -174,6 +184,36 @@ pub fn animate(app: &mut App) {
     }
 
     app.renderer.render(&mut app.scene, &mut app.camera);
+}
+
+/// The page's `onWindowResize()`.
+///
+/// The rung harness never calls this — the graded frame is always
+/// 800 x 500 — but the viewer and the browser shell do, so the example
+/// owns its own reaction to a resized canvas instead of the host
+/// guessing at one.
+pub fn resize(app: &mut App, width: f64, height: f64) {
+    app.camera.aspect = width / height;
+    app.camera.update_projection_matrix();
+    app.renderer.set_size(width, height);
+}
+
+/// The example's controls, for a host that has a pointer. `None` when the
+/// page creates none — the signature is the same for every example so the
+/// viewer and the browser shell can drive any of them through one call.
+pub fn controls(app: &mut App) -> Option<&mut OrbitControls> {
+    Some(&mut app.controls)
+}
+
+/// The controls and the camera at once, which every one of the controls'
+/// event handlers needs: the JS holds the camera as `this.object` and Rust
+/// cannot, so `pointer_move` and the rest take it as an argument.
+///
+/// They are two fields of the same `App`, so borrowing both is sound — but
+/// only this module can say so; a host holding `&mut App` and calling
+/// [`controls`] and then reaching for the camera cannot. Hence the pair.
+pub fn controls_and_camera(app: &mut App) -> Option<(&mut OrbitControls, &mut PerspectiveCamera)> {
+    Some((&mut app.controls, &mut app.camera))
 }
 
 fn main() {

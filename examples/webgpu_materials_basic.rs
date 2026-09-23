@@ -14,6 +14,7 @@
 
 use std::rc::Rc;
 
+use three_rs::addons::controls::OrbitControls;
 use three_rs::testing::DeterministicRandom;
 use three_rs::utils::date_now_ms;
 use three_rs::{
@@ -119,6 +120,34 @@ pub fn animate(app: &mut App) {
     }
 
     app.renderer.render(&mut app.scene, &mut app.camera);
+}
+
+/// The page's `onWindowResize()`.
+///
+/// The rung harness never calls this — the graded frame is always
+/// 800 x 500 — but the viewer and the browser shell do, so the example
+/// owns its own reaction to a resized canvas instead of the host
+/// guessing at one.
+pub fn resize(app: &mut App, width: f64, height: f64) {
+    // The page also sets its module-level `windowHalfX` / `windowHalfY` here.
+    // They exist only to recentre the `pointermove` handler's `mouseX` /
+    // `mouseY`, which this port has no equivalent of, so there is nothing
+    // here to update.
+    app.camera.aspect = width / height;
+    app.camera.update_projection_matrix();
+    app.renderer.set_size(width, height);
+}
+
+/// The example's controls, for a host that has a pointer. `None` here:
+/// the page creates none.
+pub fn controls(_app: &mut App) -> Option<&mut OrbitControls> {
+    None
+}
+
+/// The controls and the camera at once, for a host delivering pointer events.
+/// `None` here: the page creates no controls.
+pub fn controls_and_camera(_app: &mut App) -> Option<(&mut OrbitControls, &mut PerspectiveCamera)> {
+    None
 }
 
 fn main() {

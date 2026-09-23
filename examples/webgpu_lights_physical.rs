@@ -23,6 +23,7 @@
 
 use std::rc::Rc;
 
+use three_rs::addons::controls::OrbitControls;
 use three_rs::textures::Wrapping;
 use three_rs::utils::date_now_ms;
 use three_rs::{
@@ -51,6 +52,8 @@ pub struct App {
     pub bulb_light: Node,
     pub hemi_light: Node,
     pub bulb_mesh: Node,
+    /// The page's `controls`.
+    pub controls: OrbitControls,
 }
 
 fn examples_dir() -> std::path::PathBuf {
@@ -186,9 +189,14 @@ pub fn init() -> App {
     renderer.shadow_map_enabled = true;
     renderer.tone_mapping = ToneMapping::Reinhard;
 
-    // `new OrbitControls( camera, renderer.domElement )` — its `update()` points
-    // the camera at the target.
-    camera.look_at(&Vector3::new(0.0, 0.0, 0.0));
+    // `const controls = new OrbitControls( camera, renderer.domElement );` —
+    // the constructor's `update()` points the camera at the target, the origin.
+    let mut controls = OrbitControls::new(&mut camera);
+    // The canvas the example renders at, standing in for the element's
+    // `clientWidth` / `clientHeight`.
+    controls.set_element_size(INNER_WIDTH, INNER_HEIGHT);
+    controls.min_distance = 1.0;
+    controls.max_distance = 20.0;
 
     App {
         renderer,
@@ -197,6 +205,7 @@ pub fn init() -> App {
         bulb_light,
         hemi_light,
         bulb_mesh,
+        controls,
     }
 }
 
@@ -236,6 +245,36 @@ pub fn animate(app: &mut App) {
     app.bulb_light.borrow_mut().position.y = time.cos() * 0.75 + 1.25;
 
     app.renderer.render(&mut app.scene, &mut app.camera);
+}
+
+/// The page's `onWindowResize()`.
+///
+/// The rung harness never calls this — the graded frame is always
+/// 800 x 500 — but the viewer and the browser shell do, so the example
+/// owns its own reaction to a resized canvas instead of the host
+/// guessing at one.
+pub fn resize(app: &mut App, width: f64, height: f64) {
+    app.camera.aspect = width / height;
+    app.camera.update_projection_matrix();
+    app.renderer.set_size(width, height);
+}
+
+/// The example's controls, for a host that has a pointer. `None` when the
+/// page creates none — the signature is the same for every example so the
+/// viewer and the browser shell can drive any of them through one call.
+pub fn controls(app: &mut App) -> Option<&mut OrbitControls> {
+    Some(&mut app.controls)
+}
+
+/// The controls and the camera at once, which every one of the controls'
+/// event handlers needs: the JS holds the camera as `this.object` and Rust
+/// cannot, so `pointer_move` and the rest take it as an argument.
+///
+/// They are two fields of the same `App`, so borrowing both is sound — but
+/// only this module can say so; a host holding `&mut App` and calling
+/// [`controls`] and then reaching for the camera cannot. Hence the pair.
+pub fn controls_and_camera(app: &mut App) -> Option<(&mut OrbitControls, &mut PerspectiveCamera)> {
+    Some((&mut app.controls, &mut app.camera))
 }
 
 fn main() {

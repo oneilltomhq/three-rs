@@ -12,8 +12,9 @@
 //! once in `animate()`). With `deltaTime` null the auto-rotation angle is
 //! `2π/3600 * -0.1`, and damping takes a tenth of the accumulated delta each
 //! time, so the camera's azimuth moves 5.1e-5 rad in total: 2e-3 world units
-//! at a radius of 42, a fiftieth of a pixel. It is not modelled; what
-//! `controls.update()` does do that matters is aim the camera at
+//! at a radius of 42, a fiftieth of a pixel. The port runs the real
+//! `OrbitControls` for both updates, so that sliver of rotation is there; what
+//! `controls.update()` does that actually shows is aim the camera at
 //! `( 0, 0.5, 0 )`, which nothing else in the page does.
 //!
 //! `Math.random` is the harness's seeded sequence
@@ -31,6 +32,7 @@
 
 use std::rc::Rc;
 
+use three_rs::addons::controls::OrbitControls;
 use three_rs::core::BufferAttribute;
 use three_rs::geometries::{
     box_geometry, cone_geometry, cylinder_geometry, icosahedron_geometry, octahedron_geometry,
@@ -70,6 +72,8 @@ pub struct App {
     pub renderer: Renderer,
     pub scene: Scene,
     pub camera: PerspectiveCamera,
+    /// The page's `controls`.
+    pub controls: OrbitControls,
     /// The page's `mainGroup`, whose children `animate()` turns.
     pub main_group: three_rs::Node,
     /// The page's module-level `timer`.
@@ -197,6 +201,21 @@ pub fn init() -> App {
     // `controls.target.set( 0, 0.5, 0 ); controls.update()`.
     camera.look_at(&Vector3::new(0.0, 0.5, 0.0));
 
+    // `controls = new OrbitControls( camera, renderer.domElement )`, built
+    // here because the page builds it here, between the camera and the scene.
+    let mut controls = OrbitControls::new(&mut camera);
+    // The canvas the example renders at, standing in for the element's
+    // `clientWidth` / `clientHeight`.
+    controls.set_element_size(INNER_WIDTH, INNER_HEIGHT);
+    controls.enable_damping = true;
+    controls.damping_factor = 0.1;
+    controls.auto_rotate = true;
+    controls.auto_rotate_speed = -0.1;
+    controls.target.set(0.0, 0.5, 0.0);
+    // `controls.update();` — the `camera.look_at` above stands in for its
+    // effect on the pose.
+    controls.update(&mut camera, None);
+
     let mut scene = Scene::new();
     scene.set_background(Color::from_hex(0x0a0a0a));
 
@@ -252,6 +271,7 @@ pub fn init() -> App {
         renderer,
         scene,
         camera,
+        controls,
         scene_pass,
         ca_input,
         render_pipeline,
@@ -265,6 +285,9 @@ pub fn init() -> App {
 pub fn animate(app: &mut App) {
     app.timer.update();
     let time = app.timer.get_elapsed();
+
+    // `controls.update();`
+    app.controls.update(&mut app.camera, None);
 
     // `if ( params.animated )` — true, and the GUI that could turn it off is
     // not ported.
@@ -304,6 +327,36 @@ pub fn animate(app: &mut App) {
         .render(&mut app.renderer, &mut app.scene, &mut app.camera);
     app.ca_input.render(&mut app.renderer);
     app.render_pipeline.render(&mut app.renderer);
+}
+
+/// The page's `onWindowResize()`.
+///
+/// The rung harness never calls this — the graded frame is always
+/// 800 x 500 — but the viewer and the browser shell do, so the example
+/// owns its own reaction to a resized canvas instead of the host
+/// guessing at one.
+pub fn resize(app: &mut App, width: f64, height: f64) {
+    app.camera.aspect = width / height;
+    app.camera.update_projection_matrix();
+    app.renderer.set_size(width, height);
+}
+
+/// The example's controls, for a host that has a pointer. `None` when the
+/// page creates none — the signature is the same for every example so the
+/// viewer and the browser shell can drive any of them through one call.
+pub fn controls(app: &mut App) -> Option<&mut OrbitControls> {
+    Some(&mut app.controls)
+}
+
+/// The controls and the camera at once, which every one of the controls'
+/// event handlers needs: the JS holds the camera as `this.object` and Rust
+/// cannot, so `pointer_move` and the rest take it as an argument.
+///
+/// They are two fields of the same `App`, so borrowing both is sound — but
+/// only this module can say so; a host holding `&mut App` and calling
+/// [`controls`] and then reaching for the camera cannot. Hence the pair.
+pub fn controls_and_camera(app: &mut App) -> Option<(&mut OrbitControls, &mut PerspectiveCamera)> {
+    Some((&mut app.controls, &mut app.camera))
 }
 
 fn main() {

@@ -12,8 +12,9 @@
 //! environment override below exercise off the graded path.
 //!
 //! `OrbitControls` is constructed with `enableZoom = false` and never
-//! interacted with, and `renderer.inspector = new Inspector()` does not reach
-//! the image; neither is ported. The `resize` listener does not fire.
+//! interacted with on the graded path, so it does not move the camera;
+//! `renderer.inspector = new Inspector()` does not reach the image and is not
+//! ported. The `resize` listener does not fire.
 //!
 //! The camera is *in* the scene (`scene.add( camera )`) and the point light is a
 //! child of the camera, so the light's world matrix is the camera's: world
@@ -21,6 +22,7 @@
 
 use std::rc::Rc;
 
+use three_rs::addons::controls::OrbitControls;
 use three_rs::core::BufferAttribute;
 use three_rs::{
     box_geometry, AmbientLight, BufferGeometry, Color, Mesh, MeshPhongNodeMaterial,
@@ -36,6 +38,8 @@ pub struct App {
     pub renderer: Renderer,
     pub scene: Scene,
     pub camera: PerspectiveCamera,
+    /// The page's `controls`.
+    pub controls: OrbitControls,
     /// The page's module-level `mesh`, which `initGUI()`'s sliders would morph.
     pub mesh: three_rs::Node,
 }
@@ -96,7 +100,7 @@ pub fn init() -> App {
     let mut scene = Scene::new();
     scene.set_background(Color::from_hex(0x8FBCD4));
 
-    let camera = PerspectiveCamera::new(45.0, INNER_WIDTH / INNER_HEIGHT, 1.0, 20.0);
+    let mut camera = PerspectiveCamera::new(45.0, INNER_WIDTH / INNER_HEIGHT, 1.0, 20.0);
     camera.node.borrow_mut().position.z = 10.0;
     scene.add(&camera.node);
 
@@ -117,6 +121,14 @@ pub fn init() -> App {
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
 
+    // `const controls = new OrbitControls( camera, renderer.domElement );`
+    let mut controls = OrbitControls::new(&mut camera);
+    // The renderer's canvas stands in for the element's `clientWidth` /
+    // `clientHeight`.
+    controls.set_element_size(INNER_WIDTH, INNER_HEIGHT);
+    // `controls.enableZoom = false;`
+    controls.enable_zoom = false;
+
     // Off the graded path: `MORPH_INFLUENCES=1,0` drives the sliders that the
     // Inspector would, so the morph loop can be seen to work (plan §4 step 5).
     if let Ok(values) = std::env::var("MORPH_INFLUENCES") {
@@ -135,6 +147,7 @@ pub fn init() -> App {
         renderer,
         scene,
         camera,
+        controls,
         mesh,
     }
 }
@@ -143,6 +156,36 @@ pub fn init() -> App {
 /// else.
 pub fn animate(app: &mut App) {
     app.renderer.render(&mut app.scene, &mut app.camera);
+}
+
+/// The page's `onWindowResize()`.
+///
+/// The rung harness never calls this — the graded frame is always
+/// 800 x 500 — but the viewer and the browser shell do, so the example
+/// owns its own reaction to a resized canvas instead of the host
+/// guessing at one.
+pub fn resize(app: &mut App, width: f64, height: f64) {
+    app.camera.aspect = width / height;
+    app.camera.update_projection_matrix();
+    app.renderer.set_size(width, height);
+}
+
+/// The example's controls, for a host that has a pointer. `None` when the
+/// page creates none — the signature is the same for every example so the
+/// viewer and the browser shell can drive any of them through one call.
+pub fn controls(app: &mut App) -> Option<&mut OrbitControls> {
+    Some(&mut app.controls)
+}
+
+/// The controls and the camera at once, which every one of the controls'
+/// event handlers needs: the JS holds the camera as `this.object` and Rust
+/// cannot, so `pointer_move` and the rest take it as an argument.
+///
+/// They are two fields of the same `App`, so borrowing both is sound — but
+/// only this module can say so; a host holding `&mut App` and calling
+/// [`controls`] and then reaching for the camera cannot. Hence the pair.
+pub fn controls_and_camera(app: &mut App) -> Option<(&mut OrbitControls, &mut PerspectiveCamera)> {
+    Some((&mut app.controls, &mut app.camera))
 }
 
 fn main() {

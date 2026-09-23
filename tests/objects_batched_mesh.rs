@@ -19,8 +19,11 @@ fn assert_close(actual: f64, expected: f64, what: &str) {
 
 #[test]
 fn batched_mesh_matches_threes_state() {
-    let (_scene, mut camera, mesh, rotation_speeds, ids) = webgpu_mesh_batch::build();
+    let (_scene, mut camera, mut controls, mesh, rotation_speeds, ids) = webgpu_mesh_batch::build();
     webgpu_mesh_batch::animate_meshes(&mesh, &ids, &rotation_speeds);
+    // The page's `animate()` turns the camera with `controls.update()` before it
+    // renders, so the frame this gates is rendered from the rotated pose.
+    controls.update(&mut camera, None);
 
     let mut object = mesh.borrow_mut();
     let batched = object.payload.batched_mesh_mut().unwrap();
