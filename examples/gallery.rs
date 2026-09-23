@@ -32,7 +32,12 @@
 //! cargo test --release --test e2e          # fills target/e2e/<name>/
 //! cargo run --release --example gallery    # then this
 //! cargo run --release --example gallery -- --vendor /path/to/three.js
+//! cargo run --release --example gallery -- --readme-only
 //! ```
+//!
+//! `--readme-only` rewrites only the README block, from the thumbnails already
+//! committed under `docs/gallery/`: no ladder run, no GPU, no three.js
+//! checkout. It is for changing the block's shape, not for adding a rung.
 
 use std::fmt::Write as _;
 use std::fs;
@@ -43,6 +48,9 @@ const REPO: &str = "https://github.com/oneilltomhq/three-rs";
 /// Raw file URLs, so crates.io (which does not rewrite relative links)
 /// renders the grid's images.
 const RAW: &str = "https://raw.githubusercontent.com/oneilltomhq/three-rs/main";
+/// The browser shell (`web/`) as GitHub Pages deploys it from `main`; each
+/// thumbnail opens its example running there, at `?example=<name>`.
+const PAGES: &str = "https://oneilltomhq.github.io/three-rs/";
 
 /// The markers the README grid is regenerated between. A rung worker adding
 /// a row to the graded table never touches what is inside them.
@@ -174,6 +182,10 @@ fn replace_gallery_section(readme: &str, block: &str) -> String {
 /// A markdown table, `COLUMNS` cells across: one row of images, one row of
 /// captions, repeating. Image URLs are absolute raw-GitHub ones so crates.io
 /// renders them; the links are absolute too, for the same reason.
+///
+/// The image opens the example running in the browser (the `web/` shell on
+/// GitHub Pages); the caption under it links the ported source, and the
+/// rung's progress note when there is one.
 fn readme_grid(rows: &[&Entry]) -> String {
     let mut out = String::new();
     out.push_str(&format!("|{}\n", " |".repeat(COLUMNS)));
@@ -184,21 +196,16 @@ fn readme_grid(rows: &[&Entry]) -> String {
         let mut captions = String::from("|");
         for entry in chunk {
             let name = &entry.row.name;
-            // The image links to the rung's progress note when there is one,
-            // and to the ported source otherwise.
-            let target = match &entry.progress_doc {
-                Some(doc) => format!("{REPO}/blob/main/docs/{doc}"),
-                None => format!("{REPO}/blob/main/examples/{name}.rs"),
-            };
             let _ = write!(
                 images,
                 " [<img src=\"{RAW}/docs/gallery/{name}.jpg\" alt=\"{name}\" \
-                 width=\"{README_IMG_WIDTH}\">]({target}) |"
+                 width=\"{README_IMG_WIDTH}\">]({PAGES}?example={name}) |"
             );
-            let _ = write!(
-                captions,
-                " [`{name}`]({REPO}/blob/main/examples/{name}.rs) |"
-            );
+            let _ = write!(captions, " [`{name}`]({REPO}/blob/main/examples/{name}.rs)");
+            if let Some(doc) = &entry.progress_doc {
+                let _ = write!(captions, " · [notes]({REPO}/blob/main/docs/{doc})");
+            }
+            captions.push_str(" |");
         }
         for _ in chunk.len()..COLUMNS {
             images.push_str("  |");
@@ -213,6 +220,8 @@ fn readme_grid(rows: &[&Entry]) -> String {
     // Our own frames, and how to put them back when a rung lands.
     out.push_str(&format!(
         "\n<sub>Our own rendered frames, one per graded example. \
+         Each thumbnail opens the example running in your browser on WebGPU \
+         ([all of them]({PAGES})); the caption links the ported source. \
          See [`docs/gallery.md`]({REPO}/blob/main/docs/gallery.md).</sub>\n"
     ));
 
@@ -535,20 +544,70 @@ fn vendor_dir(args: &[String]) -> PathBuf {
     PathBuf::from(home).join("src/vendor/three.js")
 }
 
+/// `--readme-only`: the README block from the committed thumbnails alone.
+fn readme_only(root: &Path) {
+    let readme_path = root.join("README.md");
+    let readme = fs::read_to_string(&readme_path).expect("gallery: README.md");
+    let mut entries: Vec<Entry> = Vec::new();
+    let mut missing: Vec<String> = Vec::new();
+    for row in parse_graded_table(&readme) {
+        let thumb = root.join(format!("docs/gallery/{}.jpg", row.name));
+        if !thumb.is_file() {
+            missing.push(row.name);
+            continue;
+        }
+        let progress_doc = find_progress_doc(&root.join("docs"), &row.name);
+        entries.push(Entry {
+            actual: thumb,
+            progress_doc,
+            row,
+        });
+    }
+    if entries.is_empty() {
+        eprintln!("gallery: no committed thumbnails under docs/gallery/ for the graded table");
+        std::process::exit(1);
+    }
+    let ordered: Vec<&Entry> = entries.iter().collect();
+    let updated = replace_gallery_section(&readme, &readme_grid(&ordered));
+    if updated != readme {
+        fs::write(&readme_path, updated).expect("gallery: README.md");
+        println!(
+            "gallery: README.md gallery block updated ({} examples)",
+            ordered.len()
+        );
+    } else {
+        println!("gallery: README.md gallery block already current");
+    }
+    if !missing.is_empty() {
+        println!(
+            "gallery: no docs/gallery thumbnail for {}; run the ladder and the full generator",
+            missing.join(", ")
+        );
+    }
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.iter().any(|a| a == "-h" || a == "--help") {
         println!(
             "usage: cargo run --release --example gallery -- [--vendor <three.js checkout>]\n\
+             \x20      cargo run --release --example gallery -- --readme-only\n\
              \n\
              Reads the README's \"Examples graded green\" table and the frames the e2e\n\
              ladder left in target/e2e/<name>/actual.png, then writes docs/gallery/*.jpg,\n\
-             target/gallery/index.html and the README's gallery block."
+             target/gallery/index.html and the README's gallery block.\n\
+             \n\
+             --readme-only rewrites just the README block from the thumbnails already\n\
+             committed under docs/gallery/; it needs no ladder run and no GPU."
         );
         return;
     }
 
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    if args.iter().any(|a| a == "--readme-only") {
+        readme_only(&root);
+        return;
+    }
     let vendor = vendor_dir(&args);
     let tag = three_tag(&vendor);
 
@@ -732,10 +791,23 @@ Measured on Intel Iris Xe.
         let grid = readme_grid(&[&a, &b]);
 
         assert!(grid.contains(&format!("{RAW}/docs/gallery/webgpu_rtt.jpg")));
-        // The image links to the progress note when there is one...
-        assert!(grid.contains(&format!("{REPO}/blob/main/docs/rung4-progress.md")));
-        // ...and to the source when there is not.
+        // Every image opens its example running on Pages...
+        assert!(grid.contains(&format!(
+            "width=\"{README_IMG_WIDTH}\">]({PAGES}?example=webgpu_rtt)"
+        )));
+        assert!(grid.contains(&format!(
+            "width=\"{README_IMG_WIDTH}\">]({PAGES}?example=webgpu_tsl_galaxy)"
+        )));
+        // ...every caption links the source...
+        assert!(grid.contains(&format!("{REPO}/blob/main/examples/webgpu_rtt.rs")));
         assert!(grid.contains(&format!("{REPO}/blob/main/examples/webgpu_tsl_galaxy.rs")));
+        // ...and the progress note where there is one, and only there.
+        assert!(grid.contains(&format!(
+            "{REPO}/blob/main/examples/webgpu_rtt.rs) · [notes]({REPO}/blob/main/docs/rung4-progress.md) |"
+        )));
+        assert_eq!(grid.matches("[notes]").count(), 1);
+        // No image links anywhere but Pages.
+        assert!(!grid.contains("\">](https://github.com"));
         // Two cells filled, the row padded out to four.
         let rows: Vec<&str> = grid.lines().filter(|l| l.starts_with('|')).collect();
         assert_eq!(rows.len(), 4, "header, separator, images, captions");
