@@ -31,7 +31,7 @@ impl TextureLoader {
     /// happens in the shader).
     pub fn load<P: AsRef<Path>>(&self, url: P) -> Result<Texture, Error> {
         let path = url.as_ref();
-        let bytes = std::fs::read(path).map_err(|e| Error::io(path, e))?;
+        let bytes = crate::io::read(path)?;
         // `ImageLoader` gives the bytes to the browser, which picks the decoder
         // from the sniffed type and not from the extension. Three magic numbers
         // cover everything the ladder loads.

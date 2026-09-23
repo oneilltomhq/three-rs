@@ -124,7 +124,7 @@ impl HdrLoader {
     /// sample and no colour-space node appears in the generated WGSL.
     pub fn load<P: AsRef<Path>>(&self, path: P) -> Result<Texture, Error> {
         let path = path.as_ref();
-        let bytes = std::fs::read(path).map_err(|e| Error::io(path, e))?;
+        let bytes = crate::io::read(path)?;
         let tex_data = self.parse(&bytes)?;
 
         let texture = match &tex_data.data {

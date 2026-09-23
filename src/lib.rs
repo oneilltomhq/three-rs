@@ -14,6 +14,9 @@ pub mod error;
 pub mod extras;
 pub mod geometries;
 pub mod helpers;
+/// The one seam through which the loaders read bytes: `std::fs` natively, a
+/// host-preloaded map in a browser (issue #128).
+pub mod io;
 pub mod lights;
 pub mod loaders;
 pub mod materials;
