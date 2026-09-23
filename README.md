@@ -42,14 +42,15 @@ Linux is the only backend that has been run.
   MSAA, the linear-to-sRGB output pass, `PassNode` post-processing, mipmaps,
   cube textures, line topology, viewport / scissor / `clearDepth` and
   `autoClear`.
-- **Addons.** `src/addons/` holds the `three/addons/…` tier that needs a core
-  change to work: `lines` (`LineSegmentsGeometry`, `LineGeometry`,
+- **Addons.** `src/addons/` holds the `three/addons/…` tier that the graded
+  examples import: `lines` (`LineSegmentsGeometry`, `LineGeometry`,
   `LineSegments2`, `Line2` — fat lines, with `Line2NodeMaterial` in core beside
-  them, as three.js ships it) and `geometry_utils`. An addon that needs nothing
-  from core is a workspace crate instead — `addons/controls` — and that stays
-  the preferred shape; these live in the root crate because the e2e harness
-  pulls examples in with `#[path = "../../examples/…"]`, and an example in
-  another crate would need its own test binary.
+  them, as three.js ships it), `geometry_utils`, and `controls::OrbitControls`,
+  a port of the JS class graded against the JS class itself. An addon that
+  needs nothing from core would be a workspace crate instead — `addons/controls`
+  is one — and that stays the preferred shape; these live in the root crate
+  because the e2e harness pulls examples in with `#[path = "../../examples/…"]`,
+  and an example in another crate would need its own test binary.
 - **Loaders.** glTF/GLB (all accessor types, skins, animations, KHR specular
   and ior), textures (PNG, JPEG), cube textures.
 - **Animation.** Interpolants, keyframe tracks, clips, `PropertyMixer`,
@@ -90,7 +91,9 @@ Linux is the only backend that has been run.
 <!-- gallery:end -->
 
 Every one of these also runs in a browser, on the browser's own WebGPU, from
-the same `init()`: see [`web/README.md`](https://github.com/oneilltomhq/three-rs/blob/main/web/README.md)
+the same `init()`: the graded frame first, then the page's own animation loop,
+with drag to orbit, wheel to dolly and right-drag to pan. See
+[`web/README.md`](https://github.com/oneilltomhq/three-rs/blob/main/web/README.md)
 for how to build and serve the shell, and [issue #128](https://github.com/oneilltomhq/three-rs/issues/128)
 for where that is going.
 
@@ -195,11 +198,13 @@ cargo run --release --bin viewer -- 8                        # the same, by key
 cargo run --release --bin viewer -- shadowmap --headless --frames 40
 ```
 
-Opens the named example in a window (winit, tested on Wayland) with orbit,
-zoom and pan. All the graded examples but `webgpu_compute_points` are there;
-`--list` prints them with their keys (`1`-`9`, `0`, then letters), which
-switch examples in the window and stand in for the name on the command
-line. The window prints one line a second with
+Opens the named example in a window (winit, tested on Wayland). All 39 graded
+examples are there, and each one animates, orbits, dollies and pans through
+its *own* `animate()`, `resize()` and `OrbitControls` — the viewer drives the
+example, it does not restate it. `--list` prints the examples with their keys,
+and a key stands in for the name on the command line; in the window, `[` and
+`]` step to the previous and next example, because 39 of them do not fit in
+the 36 single keys a keyboard has. The window prints one line a second with
 the frame rate and the steady-state render time (mean and max over the last
 60 frames, after a 10-frame warm-up):
 
@@ -223,7 +228,20 @@ user, and without core's stability promise. `addons/` is the same tier here:
 workspace crates that depend on `three-rs` and are not ports of anything in
 three.js' `src/`.
 
-`addons/controls/` is `three-rs-controls`: a `MapControls` in the spirit of
+`three_rs::addons::controls::OrbitControls` is the exception to that rule, and
+it is in the root crate rather than a workspace one: 27 of the 39 graded pages
+create an `OrbitControls`, and an example pulled in by `#[path]` cannot reach a
+crate that depends on `three-rs`. It is a port of
+`examples/jsm/controls/OrbitControls.js` — the same state, the same defaults,
+the same `update()` — but input-agnostic: it takes `pointer_down`,
+`pointer_move`, `pointer_up`, `wheel` and `key` as plain values, so the same
+controls serve a winit window, a DOM canvas and a test. It is graded the way
+everything else here is, against the original: `tools/orbit_controls_reference.mjs`
+runs the JS class under node over twelve scripted scenarios and prints the
+camera it ends with, and `tests/addons_orbit_controls.rs` replays the same
+scenarios and asserts every number to 1e-9.
+
+`addons/controls/` is a different addon: `three-rs-controls`, a `MapControls` in the spirit of
 three.js' addon of that name, over a `Ground` — a sphere whose north pole is the
 world origin, so `R = 1e7` is a plane and a small R a planet, with no separate
 case. The orbit target is a point *on* the ground, the camera never rolls —

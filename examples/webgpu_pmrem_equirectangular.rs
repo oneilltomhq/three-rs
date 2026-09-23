@@ -19,7 +19,7 @@
 //! What is new is the **file**: `royal_esplanade_2k.hdr.jpg` is an UltraHDR
 //! image — a baseline JPEG carrying a second JPEG (the gain map) and the
 //! metadata to recombine them into HDR. That is
-//! [`UltraHdrLoader`](three_rs::loaders::UltraHdrLoader), and it is where every
+//! [`three_rs::loaders::UltraHdrLoader`], and it is where every
 //! pixel of this example comes from.
 //!
 //! # The two things that are easy to get wrong here

@@ -9,7 +9,7 @@
 //! `object.rotation = ( 0.005, 0.01, 0 )` and not zero.
 //!
 //! `Math.random()` is the grader's seeded sequence
-//! ([`DeterministicRandom`](three_rs::testing::DeterministicRandom)). The
+//! ([`three_rs::testing::DeterministicRandom`]). The
 //! `Inspector` is constructed first and takes the five draws its lists make,
 //! then the mesh loop takes nine each: the colour, three position components,
 //! the `multiplyScalar` factor, three rotation angles and the scale.

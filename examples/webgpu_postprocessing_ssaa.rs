@@ -8,7 +8,7 @@
 //! graded frame.
 //!
 //! `Math.random` is the harness's seeded sequence
-//! ([`DeterministicRandom`](three_rs::testing::DeterministicRandom)). The page
+//! ([`three_rs::testing::DeterministicRandom`]). The page
 //! draws from it **eight** times per instance, in this order: `position.x`,
 //! `position.y`, `position.z`, `rotation.x`, `rotation.y`, `rotation.z`,
 //! `scale`, and the hue of `color.setHSL()` — 960 draws. `setMatrixAt` is
