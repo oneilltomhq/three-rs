@@ -95,49 +95,52 @@ the same `init()`: the graded frame first, then the page's own animation loop,
 with drag to orbit, wheel to dolly and right-drag to pan. See
 [`web/README.md`](https://github.com/oneilltomhq/three-rs/blob/main/web/README.md)
 for how to build and serve the shell, and [issue #128](https://github.com/oneilltomhq/three-rs/issues/128)
-for where that is going.
+for where that is going. The table's `browser` column is CI's `web-gate` job:
+the same example in headless Chrome on software WebGPU, graded against the
+same screenshots at the same threshold (see
+[Grading in the browser](https://github.com/oneilltomhq/three-rs/blob/main/web/README.md#grading-in-the-browser)).
 
-| Three example | different pixels (of 100000) | steady frame (ms) | draw calls | triangles |
-|---|---|---|---|---|
-| webgpu_depth_texture | 0 | 11.0 | 43 | 671746 |
-| webgpu_instance_mesh | 60 (Three itself scores 60 against the same JPEG) | 9.3 | 2 | 967001 |
-| webgpu_materials_basic | 0 | 16.1 | 118 | 113345 |
-| webgpu_rtt | 1 | 2.3 | 3 | 14 |
-| webgpu_lights_phong | 31 | 4.3 | 5 | 62001 |
-| webgpu_morphtargets | 0 | 2.8 | 2 | 12289 |
-| webgpu_shadowmap | 7 | 7.7 | 19 | 39399 |
-| webgpu_lights_physical | 4 | 4.2 | 11 | 4267 |
-| webgpu_postprocessing_masking | 18 | 1.0 | 3 | 1037 |
-| webgpu_tsl_galaxy | 40 | 5.3 | 2 | 40001 |
-| webgpu_skinning | 6 | 3.0 | 3 | 30091 |
-| webgpu_mesh_batch | 0 | 2.5 | 454 | 44341 |
-| webgpu_postprocessing_radial_blur | 7 | 3.9 | 2 | 401 |
-| webgpu_materials | 44 | 7.3 | 19 | 350065 |
-| webgpu_postprocessing_ssaa | 0 | 11.9 | 17 | 2119689 |
-| webgpu_pmrem_cubemap | 0 | 8.2 | 32 | 243905 |
-| webgpu_postprocessing_bloom_selective | 1 | 16.5 | 63 | 256013 |
-| webgpu_compute_points | 4 (see below) | 10.7 | 2 | 1 + 300000 points |
-| webgpu_lines_fat | 0 | 3.8 | 6 | 11191 |
-| webgpu_pmrem_test | 27 | 6.1 | 35 | 67457 |
-| webgpu_postprocessing_difference | 13 | 1.5 | 2 | 13 |
-| webgpu_postprocessing_direct | 21 | 4.9 | 93 | 4192 |
-| webgpu_furnace_test | 0 | 7.1 | 122 | 116161 |
-| webgpu_postprocessing_anamorphic | 2 | 8.1 | 16 | 398798 |
-| webgpu_pmrem_scene | 0 | 3.8 | 9 | 58433 |
-| webgpu_postprocessing_bloom | 0 | 8.6 | 19 | 52085 |
-| webgpu_materials_envmaps | 0 | 2.1 | 3 | 7105 |
-| webgpu_materials_cubemap_mipmaps | 1 | 2.6 | 3 | 65025 |
-| webgpu_postprocessing_bloom_emissive | 28 | 5.1 | 15 | 17449 |
-| webgpu_instance_uniform | 13 | 6.0 | 14 | 247105 |
-| webgpu_tsl_interoperability | 0 | 2.2 | 2 | 4 |
-| webgpu_pmrem_equirectangular | 1 | 5.9 | 32 | 243905 |
-| webgpu_postprocessing_ca | 3 | 3.4 | 23 | 5658 (+ 42 lines) |
-| webgpu_loader_gltf | 59 | 1.9 | 3 | 17437 |
-| webgpu_mrt | 87 | 2.8 | 3 | 17437 |
-| webgpu_custom_fog_background | 57 | 2.0 | 2 | 15453 |
-| webgpu_loader_gltf_sheen | 3 | 3.1 | 6 | 41921 |
-| webgpu_deferred | 54 | 2.8 | 25 | 26378 |
-| webgpu_loader_gltf_anisotropy | 27 | 3.2 | 5 | 12188 |
+| Three example | different pixels (of 100000) | steady frame (ms) | draw calls | triangles | browser |
+|---|---|---|---|---|---|
+| webgpu_depth_texture | 0 | 11.0 | 43 | 671746 | yes |
+| webgpu_instance_mesh | 60 (Three itself scores 60 against the same JPEG) | 9.3 | 2 | 967001 | yes |
+| webgpu_materials_basic | 0 | 16.1 | 118 | 113345 | yes |
+| webgpu_rtt | 1 | 2.3 | 3 | 14 | yes |
+| webgpu_lights_phong | 31 | 4.3 | 5 | 62001 | yes |
+| webgpu_morphtargets | 0 | 2.8 | 2 | 12289 | yes |
+| webgpu_shadowmap | 7 | 7.7 | 19 | 39399 | yes |
+| webgpu_lights_physical | 4 | 4.2 | 11 | 4267 | yes |
+| webgpu_postprocessing_masking | 18 | 1.0 | 3 | 1037 | yes |
+| webgpu_tsl_galaxy | 40 | 5.3 | 2 | 40001 | yes |
+| webgpu_skinning | 6 | 3.0 | 3 | 30091 | yes |
+| webgpu_mesh_batch | 0 | 2.5 | 454 | 44341 | yes |
+| webgpu_postprocessing_radial_blur | 7 | 3.9 | 2 | 401 | yes |
+| webgpu_materials | 44 | 7.3 | 19 | 350065 | yes |
+| webgpu_postprocessing_ssaa | 0 | 11.9 | 17 | 2119689 | yes |
+| webgpu_pmrem_cubemap | 0 | 8.2 | 32 | 243905 | yes |
+| webgpu_postprocessing_bloom_selective | 1 | 16.5 | 63 | 256013 | yes |
+| webgpu_compute_points | 4 (see below) | 10.7 | 2 | 1 + 300000 points | yes |
+| webgpu_lines_fat | 0 | 3.8 | 6 | 11191 | yes |
+| webgpu_pmrem_test | 27 | 6.1 | 35 | 67457 | yes |
+| webgpu_postprocessing_difference | 13 | 1.5 | 2 | 13 | yes |
+| webgpu_postprocessing_direct | 21 | 4.9 | 93 | 4192 | yes |
+| webgpu_furnace_test | 0 | 7.1 | 122 | 116161 | yes |
+| webgpu_postprocessing_anamorphic | 2 | 8.1 | 16 | 398798 | yes |
+| webgpu_pmrem_scene | 0 | 3.8 | 9 | 58433 | yes |
+| webgpu_postprocessing_bloom | 0 | 8.6 | 19 | 52085 | yes |
+| webgpu_materials_envmaps | 0 | 2.1 | 3 | 7105 | yes |
+| webgpu_materials_cubemap_mipmaps | 1 | 2.6 | 3 | 65025 | yes |
+| webgpu_postprocessing_bloom_emissive | 28 | 5.1 | 15 | 17449 | yes |
+| webgpu_instance_uniform | 13 | 6.0 | 14 | 247105 | yes |
+| webgpu_tsl_interoperability | 0 | 2.2 | 2 | 4 | yes |
+| webgpu_pmrem_equirectangular | 1 | 5.9 | 32 | 243905 | yes |
+| webgpu_postprocessing_ca | 3 | 3.4 | 23 | 5658 (+ 42 lines) | yes |
+| webgpu_loader_gltf | 59 | 1.9 | 3 | 17437 | yes |
+| webgpu_mrt | 87 | 2.8 | 3 | 17437 | yes |
+| webgpu_custom_fog_background | 57 | 2.0 | 2 | 15453 | yes |
+| webgpu_loader_gltf_sheen | 3 | 3.1 | 6 | 41921 | yes |
+| webgpu_deferred | 54 | 2.8 | 25 | 26378 | yes |
+| webgpu_loader_gltf_anisotropy | 27 | 3.2 | 5 | 12188 | yes |
 
 `webgpu_compute_points` is graded like the rest and its 4 pixels mean less
 than the rest: its frame is black apart from a 2x2 block at the centre, so
