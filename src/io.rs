@@ -11,13 +11,14 @@
 //! `init()` runs. So this module is the one place the loaders touch the outside
 //! world, and it has two implementations:
 //!
-//! * natively, [`read`] and [`read_to_string`] are `std::fs`;
+//! * natively, `read` and `read_to_string` are `std::fs`;
 //! * on wasm32, they look the path up in a map the host filled with
-//!   [`preload`] beforehand, and a miss is an `Error::Io` carrying
+//!   `preload` beforehand (wasm32 only, so not a link from these docs), and a
+//!   miss is an `Error::Io` carrying
 //!   `ErrorKind::NotFound` — the same error a missing file gives natively, so a
 //!   caller's error handling does not fork per target.
 //!
-//! What the host has to preload is not guessed: [`start_recording`] makes a
+//! What the host has to preload is not guessed: `start_recording` makes a
 //! native run report every path it read, and the browser shell's per-example
 //! asset manifests are derived from exactly that (`examples/web_manifests.rs`,
 //! issue #128).
@@ -27,7 +28,7 @@ use std::path::{Path, PathBuf};
 use crate::error::Error;
 
 thread_local! {
-    /// The paths read since [`start_recording`], or `None` when no one is
+    /// The paths read since `start_recording`, or `None` when no one is
     /// recording — which is every ordinary run, so the cost of the seam on the
     /// grading path is one thread-local read of an `Option` that is `None`.
     static RECORDING: std::cell::RefCell<Option<Vec<PathBuf>>> =
@@ -36,7 +37,7 @@ thread_local! {
 
 #[cfg(target_arch = "wasm32")]
 thread_local! {
-    /// The bytes [`preload`] was given, keyed by the very path the loaders will
+    /// The bytes `preload` was given, keyed by the very path the loaders will
     /// ask for. There is no normalisation: the shell builds its keys as
     /// `three_js_dir().join(relative)`, which is how every example builds the
     /// paths it hands a loader.
@@ -61,7 +62,7 @@ pub fn preload(path: impl Into<PathBuf>, bytes: Vec<u8>) {
     PRELOADED.with(|map| map.borrow_mut().insert(path.into(), bytes));
 }
 
-/// Starts recording the paths [`read`] and [`read_to_string`] are called with,
+/// Starts recording the paths `read` and `read_to_string` are called with,
 /// discarding anything an earlier recording had collected.
 ///
 /// The asset manifests the browser shell ships are derived from a native run of

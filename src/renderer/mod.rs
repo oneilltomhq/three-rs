@@ -717,7 +717,7 @@ pub struct RendererParameters {
 }
 
 /// The wgpu backend every entry point in this crate asks an instance for, in
-/// the one place its callers — [`Renderer::new`], [`pick_adapter`], the viewer
+/// the one place its callers — [`Renderer::new`], `pick_adapter`, the viewer
 /// binary and the browser shell — can share it.
 ///
 /// three.js has no equivalent: `WebGPURenderer` gets whatever `navigator.gpu`
@@ -733,7 +733,7 @@ pub struct RendererParameters {
 #[cfg(not(target_arch = "wasm32"))]
 pub const BACKENDS: wgpu::Backends = wgpu::Backends::VULKAN;
 
-/// See the native [`BACKENDS`](self::BACKENDS) above.
+/// See the native `BACKENDS` above, which carries the reasoning for both.
 #[cfg(target_arch = "wasm32")]
 pub const BACKENDS: wgpu::Backends = wgpu::Backends::BROWSER_WEBGPU;
 
@@ -809,7 +809,9 @@ impl Renderer {
     /// the windowing system's display handle.
     ///
     /// Native only: it blocks on [`Renderer::with_instance_async`], and a
-    /// browser has no thread to block. See [`adopt_device`].
+    /// browser has no thread to block; there `Renderer::new` adopts a device
+    /// the host created instead (`renderer::adopt_device`, wasm32 only, so not
+    /// a link from these docs).
     #[cfg(not(target_arch = "wasm32"))]
     pub fn with_instance(
         parameters: RendererParameters,
