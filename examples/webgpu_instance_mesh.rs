@@ -13,6 +13,7 @@ use std::rc::Rc;
 
 use three_rs::materials::instanced_range;
 use three_rs::nodes::tsl::{float, mix, normal_world, osc_sine, time};
+use three_rs::utils::date_now_ms;
 use three_rs::{
     BufferGeometryLoader, Color, InstancedMesh, MeshBasicNodeMaterial, Object3D, PerspectiveCamera,
     Renderer, RendererParameters, Scene, Vector3,
@@ -100,8 +101,8 @@ pub fn animate(app: &mut App) {
 
 /// The CPU half of `render()`, split out so tests can inspect it.
 pub fn animate_cpu_only(app: &mut App) {
-    // `const time = Date.now() * 0.001;` — the harness pins `Date.now()` to 0.
-    let time = 0.0f64;
+    // `const time = Date.now() * 0.001;`
+    let time = date_now_ms() * 0.001;
 
     for child in app.scene.children() {
         if !child.borrow().is_instanced_mesh() {

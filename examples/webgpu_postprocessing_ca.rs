@@ -42,6 +42,7 @@ use three_rs::nodes::pmrem_node::PmremEnvironment;
 use three_rs::nodes::tsl::uniform_value;
 use three_rs::nodes::Type;
 use three_rs::testing::DeterministicRandom;
+use three_rs::Timer;
 use three_rs::{
     BufferGeometry, Color, GridHelper, Group, Mesh, MeshStandardNodeMaterial, PassNode,
     PerspectiveCamera, Points, PointsNodeMaterial, RenderPipeline, Renderer, RendererParameters,
@@ -69,6 +70,10 @@ pub struct App {
     pub renderer: Renderer,
     pub scene: Scene,
     pub camera: PerspectiveCamera,
+    /// The page's `mainGroup`, whose children `animate()` turns.
+    pub main_group: three_rs::Node,
+    /// The page's module-level `timer`.
+    pub timer: Timer,
     pub scene_pass: PassNode,
     pub ca_input: RttNode,
     pub render_pipeline: RenderPipeline,
@@ -241,6 +246,9 @@ pub fn init() -> App {
     render_pipeline.output_node = Some(ca_pass);
 
     App {
+        main_group,
+        // `const timer = new THREE.Timer();`
+        timer: Timer::new(),
         renderer,
         scene,
         camera,
@@ -255,6 +263,43 @@ pub fn init() -> App {
 /// is untouched and only the three passes run. See `docs/postprocessing.md`
 /// for why the port fires the first two explicitly.
 pub fn animate(app: &mut App) {
+    app.timer.update();
+    let time = app.timer.get_elapsed();
+
+    // `if ( params.animated )` — true, and the GUI that could turn it off is
+    // not ported.
+    //
+    // Transcribed as written, including the branch that never fires: the page
+    // tests `child.children.length > 0` first and only falls through to the
+    // "outer shapes" branch for a `Group` with no children, which `mainGroup`
+    // never holds. So every group under it takes the first branch, and the
+    // `Points` cloud takes neither.
+    for child in app.main_group.children() {
+        let children = child.children();
+        if children.is_empty() {
+            continue;
+        }
+
+        {
+            let mut object = child.borrow_mut();
+            let rotation = object.rotation;
+            object.set_rotation(rotation.x, time * 0.5, rotation.z);
+        }
+
+        for (sub_index, sub_child) in children.into_iter().enumerate() {
+            let mut object = sub_child.borrow_mut();
+            if object.geometry().is_none() {
+                continue;
+            }
+            let rotation = object.rotation;
+            object.set_rotation(
+                time * (1.0 + sub_index as f64 * 0.1),
+                rotation.y,
+                time * (1.0 - sub_index as f64 * 0.1),
+            );
+        }
+    }
+
     app.scene_pass
         .render(&mut app.renderer, &mut app.scene, &mut app.camera);
     app.ca_input.render(&mut app.renderer);

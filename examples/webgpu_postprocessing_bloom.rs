@@ -31,6 +31,7 @@
 use three_rs::animation::AnimationMixer;
 use three_rs::loaders::GLTFLoader;
 use three_rs::nodes::display::{bloom, BloomNode};
+use three_rs::Timer;
 use three_rs::{
     AmbientLight, Color, PassNode, PerspectiveCamera, PointLight, RenderPipeline, Renderer,
     RendererParameters, Scene, ToneMapping, Vector3,
@@ -46,6 +47,8 @@ pub struct App {
     pub scene: Scene,
     pub camera: PerspectiveCamera,
     pub mixer: AnimationMixer,
+    /// The page's module-level `timer`.
+    pub timer: Timer,
     pub gltf_scene: three_rs::Node,
     pub scene_pass: PassNode,
     pub bloom_pass: BloomNode,
@@ -116,6 +119,9 @@ pub fn init() -> App {
     render_pipeline.output_node = Some(scene_pass.texture_node("output").add(bloom_pass.node()));
 
     App {
+        // `const timer = new THREE.Timer();` — constructed in `init()`, as the
+        // page does, so its `_startTime` is the moment the scene was built.
+        timer: Timer::new(),
         renderer,
         scene,
         camera,
@@ -129,9 +135,11 @@ pub fn init() -> App {
 
 /// The page's `animate()`, run once by the harness's single RAF.
 pub fn animate(app: &mut App) {
-    // `timer.update(); mixer.update( timer.getDelta() )` — `performance.now()`
-    // is pinned to 0, so the delta is 0 and the clip is at its first keyframe.
-    app.mixer.update(0.0);
+    // `timer.update(); const delta = timer.getDelta(); mixer.update( delta );`
+    app.timer.update();
+    let delta = app.timer.get_delta();
+
+    app.mixer.update(delta);
 
     // `PassNode.updateBefore()`, then `BloomNode.updateBefore()`'s twelve
     // quads, then the output quad — see `docs/postprocessing.md` for why the

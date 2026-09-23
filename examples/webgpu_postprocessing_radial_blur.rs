@@ -30,6 +30,7 @@ use three_rs::nodes::display::{radial_blur, RadialBlurOptions};
 use three_rs::nodes::tsl::uniform_value;
 use three_rs::nodes::Type;
 use three_rs::testing::DeterministicRandom;
+use three_rs::Timer;
 use three_rs::{
     Color, Group, HemisphereLight, InstancedMesh, MeshStandardNodeMaterial, Object3D, PassNode,
     PerspectiveCamera, PointLight, RenderPipeline, Renderer, RendererParameters, Scene,
@@ -49,6 +50,8 @@ pub struct App {
     pub scene: Scene,
     pub camera: PerspectiveCamera,
     pub group: three_rs::Node,
+    /// The page's module-level `timer`.
+    pub timer: Timer,
     pub scene_pass: PassNode,
     pub render_pipeline: RenderPipeline,
 }
@@ -152,6 +155,9 @@ pub fn init() -> App {
     render_pipeline.output_node = Some(blur_pass);
 
     App {
+        // `const timer = new THREE.Timer();` — constructed in `init()`, as the
+        // page does, so its `_startTime` is the moment the scene was built.
+        timer: Timer::new(),
         renderer,
         scene,
         camera,
@@ -163,9 +169,10 @@ pub fn init() -> App {
 
 /// The page's `animate()`, run once by the harness's single RAF.
 pub fn animate(app: &mut App) {
-    // `timer.update(); const delta = timer.getDelta();` — `performance.now()`
-    // is pinned to 0, so the delta is 0 and the group never rotates.
-    let delta = 0.0;
+    // `timer.update(); const delta = timer.getDelta();`, then the rotation
+    // under `params.animated`, which defaults to true.
+    app.timer.update();
+    let delta = app.timer.get_delta();
 
     {
         let mut group = app.group.borrow_mut();

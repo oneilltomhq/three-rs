@@ -63,6 +63,7 @@ use three_rs::nodes::tsl::{
 };
 use three_rs::objects::Background;
 use three_rs::renderer::PassOptions;
+use three_rs::Timer;
 use three_rs::{
     Color, Group, Mesh, PassNode, PerspectiveCamera, PointLight, RenderPipeline, Renderer,
     RendererParameters, Scene, Vector3,
@@ -85,6 +86,12 @@ pub struct App {
     pub scene: Scene,
     pub camera: PerspectiveCamera,
     pub environment: PmremEnvironment,
+    /// The page's `lightGroup`, turned by `render()`.
+    pub light_group: three_rs::Node,
+    /// The page's `planesGroup`, turned the other way.
+    pub planes_group: three_rs::Node,
+    /// The page's module-level `timer`.
+    pub timer: Timer,
     pub opaque_pass: PassNode,
     pub resolved_pass: PassNode,
     pub transparent_pass: PassNode,
@@ -323,6 +330,10 @@ pub fn init() -> App {
         scene,
         camera,
         environment,
+        light_group,
+        planes_group,
+        // `const timer = new THREE.Timer();`
+        timer: Timer::new(),
         opaque_pass,
         resolved_pass,
         transparent_pass,
@@ -330,12 +341,30 @@ pub fn init() -> App {
     }
 }
 
-/// The page's `render()` with `params.animated` on but a zero delta: the two
-/// groups do not move on the graded frame. `renderPipeline.render()` fires the
-/// three passes' `updateBefore()` on its way; see `docs/postprocessing.md` for
-/// why the port fires them explicitly, and note the order — the resolve pass
-/// and the transparent pass both read what the opaque pass just wrote.
+/// The page's `render()`. `params.animated` defaults to true, so the two
+/// groups turn by the timer's delta — which is zero on the graded frame,
+/// because `Timer`'s first `update()` after a pinned clock has nowhere to
+/// move from. `renderPipeline.render()` fires the three passes'
+/// `updateBefore()` on its way; see `docs/postprocessing.md` for why the port
+/// fires them explicitly, and note the order — the resolve pass and the
+/// transparent pass both read what the opaque pass just wrote.
 pub fn animate(app: &mut App) {
+    app.timer.update();
+
+    // `if ( params.animated )` — true, and the GUI that could turn it off is
+    // not ported.
+    let delta = app.timer.get_delta();
+    {
+        let mut group = app.light_group.borrow_mut();
+        let rotation = group.rotation;
+        group.set_rotation(rotation.x, rotation.y + delta, rotation.z);
+    }
+    {
+        let mut group = app.planes_group.borrow_mut();
+        let rotation = group.rotation;
+        group.set_rotation(rotation.x, rotation.y - delta * 0.5, rotation.z);
+    }
+
     app.environment.update(&mut app.renderer).unwrap();
     app.opaque_pass
         .render(&mut app.renderer, &mut app.scene, &mut app.camera);

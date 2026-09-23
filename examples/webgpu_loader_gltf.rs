@@ -56,6 +56,7 @@ use three_rs::math::Box3;
 use three_rs::nodes::pmrem_node::PmremEnvironment;
 use three_rs::objects::Background;
 use three_rs::renderer::cube_render_target;
+use three_rs::Timer;
 use three_rs::{PerspectiveCamera, Renderer, RendererParameters, Scene, Vector3};
 
 pub const INNER_WIDTH: f64 = 800.0;
@@ -72,6 +73,8 @@ pub struct App {
     pub scene: Scene,
     pub camera: PerspectiveCamera,
     pub environment: PmremEnvironment,
+    /// The page's module-level `timer`.
+    pub timer: Timer,
 }
 
 /// `fitCameraToSelection( camera, controls, selection, fitOffset = 1.3 )`,
@@ -172,6 +175,9 @@ pub fn init() -> App {
     fit_camera_to_selection(&mut camera, &mut target, &gltf.scene, 1.3);
 
     App {
+        // `const timer = new THREE.Timer();` — constructed in `init()`, as the
+        // page does, so its `_startTime` is the moment the scene was built.
+        timer: Timer::new(),
         renderer,
         scene,
         camera,
@@ -182,6 +188,11 @@ pub fn init() -> App {
 /// The page's `render()`. `timer.update()` and `controls.update()` move
 /// nothing, and `mixer` is never created — DamagedHelmet has no animations.
 pub fn animate(app: &mut App) {
+    // `timer.update()`. DamagedHelmet has no animations, so the page never
+    // builds the `AnimationMixer` this delta would drive and nothing reads it;
+    // the call is here because the page makes it.
+    app.timer.update();
+
     app.environment.update(&mut app.renderer).unwrap();
     app.renderer.render(&mut app.scene, &mut app.camera);
 }

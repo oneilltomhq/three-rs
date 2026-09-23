@@ -29,6 +29,7 @@ use three_rs::nodes::tsl::{
 use three_rs::nodes::{NodeRef, Type};
 use three_rs::testing::DeterministicRandom;
 use three_rs::textures::Wrapping;
+use three_rs::utils::date_now_ms;
 use three_rs::{
     teapot_geometry, Color, GridHelper, Mesh, MeshBasicNodeMaterial, PerspectiveCamera, Renderer,
     RendererParameters, Scene, Vector3,
@@ -262,8 +263,8 @@ pub fn init() -> App {
 
 /// The page's `animate()`.
 pub fn animate(app: &mut App) {
-    // `const timer = 0.0001 * Date.now();` — the harness pins `Date.now()` to 0.
-    let timer = 0.0f64;
+    // `const timer = 0.0001 * Date.now();`
+    let timer = 0.0001 * date_now_ms();
 
     {
         let mut camera_object = app.camera.node.borrow_mut();

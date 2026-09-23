@@ -27,6 +27,8 @@ use three_rs::nodes::tsl::{
 };
 use three_rs::nodes::NodeRef;
 use three_rs::objects::Background;
+use three_rs::utils::now_ms;
+use three_rs::Timer;
 use three_rs::{
     AmbientLight, Color, DirectionalLight, Group, Mesh, MeshPhongNodeMaterial, PerspectiveCamera,
     Renderer, RendererParameters, Scene, SpotLight, ToneMapping, Vector3,
@@ -44,6 +46,8 @@ pub struct App {
     pub torus_knot: Node,
     pub dir_group: Node,
     pub dir_light: Node,
+    /// The page's module-level `timer`.
+    pub timer: Timer,
 }
 
 /// The ground's `Fn( () => { const pos = positionWorld.toVar(); pos.xz
@@ -205,6 +209,9 @@ pub fn init() -> App {
     camera.look_at(&Vector3::new(0.0, 2.0, 0.0));
 
     App {
+        // `const timer = new THREE.Timer();` — constructed in `init()`, as the
+        // page does, so its `_startTime` is the moment the scene was built.
+        timer: Timer::new(),
         renderer,
         scene,
         camera,
@@ -216,8 +223,11 @@ pub fn init() -> App {
 
 /// The page's `animate( time )` with `time = 0` and `Timer`'s first delta of 0.
 pub fn animate(app: &mut App) {
-    let delta = 0.0f64;
-    let time = 0.0f64;
+    app.timer.update();
+    let delta = app.timer.get_delta();
+    // `animate( time )`'s argument is `requestAnimationFrame`'s, which is
+    // `performance.now()` at the start of the frame.
+    let time = now_ms();
 
     {
         let mut object = app.torus_knot.borrow_mut();

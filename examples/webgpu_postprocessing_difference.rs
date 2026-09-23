@@ -37,6 +37,7 @@ use three_rs::geometries::box_geometry_default;
 use three_rs::math::Color;
 use three_rs::nodes::tsl::{fog, luminance, range_fog_factor, saturation};
 use three_rs::renderer::OUTPUT_ATTACHMENT;
+use three_rs::Timer;
 use three_rs::{
     ColorSpace, Mesh, MeshBasicNodeMaterial, PassNode, PerspectiveCamera, RenderPipeline, Renderer,
     RendererParameters, Scene, TextureLoader, ToneMapping, Vector3,
@@ -52,6 +53,8 @@ pub struct App {
     pub scene: Scene,
     pub camera: PerspectiveCamera,
     pub mesh: three_rs::Node,
+    /// The page's module-level `timer`.
+    pub timer: Timer,
     pub scene_pass: PassNode,
     pub render_pipeline: RenderPipeline,
 }
@@ -108,6 +111,9 @@ pub fn init() -> App {
     camera.look_at(&Vector3::new(0.0, 0.0, 0.0));
 
     App {
+        // `const timer = new THREE.Timer();` — constructed in `init()`, as the
+        // page does, so its `_startTime` is the moment the scene was built.
+        timer: Timer::new(),
         renderer,
         scene,
         camera,
@@ -120,8 +126,10 @@ pub fn init() -> App {
 /// The page's `animate()`, run once by the harness's single RAF.
 pub fn animate(app: &mut App) {
     // `timer.update(); mesh.rotation.y += timer.getDelta() * 5 * params.speed`
-    // — `performance.now()` is 0 and `speed` is 0, so the box never turns.
-    let delta = 0.0;
+    // — `params.speed` is 0 and the GUI that could raise it is not ported, so
+    // the box never turns however long the clock runs.
+    app.timer.update();
+    let delta = app.timer.get_delta();
     let speed = 0.0;
     {
         let mut mesh = app.mesh.borrow_mut();

@@ -26,6 +26,7 @@ use std::f64::consts::PI;
 use three_rs::animation::AnimationMixer;
 use three_rs::loaders::GLTFLoader;
 use three_rs::nodes::tsl::screen_uv;
+use three_rs::Timer;
 use three_rs::{
     AmbientLight, Background, Color, PerspectiveCamera, PointLight, Renderer, RendererParameters,
     Scene, ToneMapping, Vector3,
@@ -42,6 +43,8 @@ pub struct App {
     pub camera: PerspectiveCamera,
     /// The page's module-level `mixer`.
     pub mixer: AnimationMixer,
+    /// The page's module-level `timer`.
+    pub timer: Timer,
 }
 
 pub fn init() -> App {
@@ -88,6 +91,9 @@ pub fn init() -> App {
     renderer.tone_mapping_exposure = 0.4;
 
     App {
+        // `const timer = new THREE.Timer();` — constructed in `init()`, as the
+        // page does, so its `_startTime` is the moment the scene was built.
+        timer: Timer::new(),
         renderer,
         scene,
         camera,
@@ -100,7 +106,10 @@ pub fn init() -> App {
 /// frame draws the same pose — which is what `[ "", "" ]` in
 /// `steady_frame_builds_nothing` means by "nothing is done to the scene".
 pub fn animate(app: &mut App) {
-    app.mixer.update(0.0);
+    app.timer.update();
+    let delta = app.timer.get_delta();
+
+    app.mixer.update(delta);
     app.renderer.render(&mut app.scene, &mut app.camera);
 }
 

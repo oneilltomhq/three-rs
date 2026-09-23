@@ -20,6 +20,7 @@ use std::rc::Rc;
 use three_rs::geometries::torus_geometry;
 use three_rs::math::Color;
 use three_rs::nodes::tsl::texture;
+use three_rs::utils::now_ms;
 use three_rs::{
     box_geometry, ColorSpace, Mesh, MinFilter, PassNode, PerspectiveCamera, RenderPipeline,
     Renderer, RendererParameters, Scene,
@@ -125,8 +126,8 @@ pub fn init() -> App {
 
 /// The page's `animate()`, run once by the harness's single RAF.
 pub fn animate(app: &mut App) {
-    // `performance.now()` is 0 under the harness.
-    let time: f64 = 0.0 * 0.001 + 6000.0;
+    // `const time = performance.now() * 0.001 + 6000;`
+    let time: f64 = now_ms() * 0.001 + 6000.0;
 
     {
         let mut boxed = app.boxed.borrow_mut();

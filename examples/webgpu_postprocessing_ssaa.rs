@@ -23,6 +23,7 @@ use std::rc::Rc;
 use three_rs::geometries::sphere_geometry;
 use three_rs::math::ColorSpace;
 use three_rs::testing::DeterministicRandom;
+use three_rs::Timer;
 use three_rs::{
     AmbientLight, Color, Group, InstancedMesh, MeshStandardNodeMaterial, Object3D,
     PerspectiveCamera, PointLight, RenderPipeline, Renderer, RendererParameters, Scene,
@@ -45,6 +46,8 @@ pub struct App {
     pub scene: Scene,
     pub camera: PerspectiveCamera,
     pub mesh: three_rs::Node,
+    /// The page's module-level `timer`.
+    pub timer: Timer,
     pub ssaa_pass: SsaaPassNode,
     pub render_pipeline: RenderPipeline,
 }
@@ -142,6 +145,9 @@ pub fn init() -> App {
     ssaa_pass.sample_level = 3;
 
     App {
+        // `const timer = new THREE.Timer();` — constructed in `init()`, as the
+        // page does, so its `_startTime` is the moment the scene was built.
+        timer: Timer::new(),
         renderer,
         scene,
         camera,
@@ -153,9 +159,10 @@ pub fn init() -> App {
 
 /// The page's `animate()`, run once by the harness's single RAF.
 pub fn animate(app: &mut App) {
-    // `timer.update(); const delta = timer.getDelta();` — `performance.now()`
-    // is pinned to 0, so the delta is 0 and the spheres never rotate.
-    let delta = 0.0;
+    // `timer.update();` then, under `params.autoRotate` (true by default),
+    // `const delta = timer.getDelta();` and the rotation.
+    app.timer.update();
+    let delta = app.timer.get_delta();
     {
         let mut mesh = app.mesh.borrow_mut();
         let rotation = mesh.rotation;

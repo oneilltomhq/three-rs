@@ -24,6 +24,7 @@
 use std::rc::Rc;
 
 use three_rs::textures::Wrapping;
+use three_rs::utils::date_now_ms;
 use three_rs::{
     box_geometry, plane_geometry, sphere_geometry, Color, ColorSpace, HemisphereLight, Mesh,
     MeshStandardNodeMaterial, Node, PerspectiveCamera, PointLight, Renderer, RendererParameters,
@@ -230,7 +231,8 @@ pub fn animate(app: &mut App) {
         .light
         .intensity = HEMI_IRRADIANCE;
 
-    let time = 0.0f64;
+    // `const time = Date.now() * 0.0005;`
+    let time = date_now_ms() * 0.0005;
     app.bulb_light.borrow_mut().position.y = time.cos() * 0.75 + 1.25;
 
     app.renderer.render(&mut app.scene, &mut app.camera);

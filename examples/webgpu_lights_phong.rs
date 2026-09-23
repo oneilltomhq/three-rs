@@ -23,6 +23,7 @@ use std::rc::Rc;
 use three_rs::core::Node;
 use three_rs::nodes::tsl::{checker, fog, mix, normal_map, range_fog_factor, texture, uv};
 use three_rs::textures::Wrapping;
+use three_rs::utils::now_ms;
 use three_rs::{
     sphere_geometry, teapot_geometry, Color, Mesh, MeshPhongNodeMaterial, PerspectiveCamera,
     PointLight, Renderer, RendererParameters, Scene,
@@ -162,7 +163,9 @@ pub fn init() -> App {
 /// The page's `animate()`. `performance.now()` is 0 under the harness, so
 /// `lightTime` is 0 and every `sin` / `cos` below collapses to a constant.
 pub fn animate(app: &mut App) {
-    let light_time = 0.0f64;
+    // `const time = performance.now() / 1000;` — the page calls it `time` and
+    // then `lightTime`; the second name is the one the bodies below read.
+    let light_time = now_ms() / 1000.0;
 
     {
         let mut light = app.lights[0].borrow_mut();

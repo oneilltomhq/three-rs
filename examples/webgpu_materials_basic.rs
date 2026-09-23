@@ -15,6 +15,7 @@
 use std::rc::Rc;
 
 use three_rs::testing::DeterministicRandom;
+use three_rs::utils::date_now_ms;
 use three_rs::{
     sphere_geometry, Color, CubeTextureLoader, Mesh, MeshBasicNodeMaterial, PerspectiveCamera,
     Renderer, RendererParameters, Scene, Vector3,
@@ -95,8 +96,8 @@ pub fn init() -> App {
 
 /// The page's `animate()`.
 pub fn animate(app: &mut App) {
-    // `const timer = 0.0001 * Date.now();` — the harness pins `Date.now()` to 0.
-    let timer = 0.0f64;
+    // `const timer = 0.0001 * Date.now();`
+    let timer = 0.0001 * date_now_ms();
 
     // `mouseX` / `mouseY` are 0 with no pointer events, and the camera starts at
     // x = y = 0, so both of these are no-ops.
