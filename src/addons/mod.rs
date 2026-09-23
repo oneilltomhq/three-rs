@@ -9,6 +9,13 @@
 //! its own test binary and the ladder would stop being one command. Where an
 //! addon needs no core change — `controls` — it is a workspace crate, and that
 //! stays the preferred shape. See `README.md`, "Addons".
+//!
+//! [`controls::OrbitControls`] is the exception, and for the harness reason
+//! above: 25 of the 39 graded examples create one in their `init()`, and an
+//! example included by path cannot reach a crate that depends on this one. The
+//! `three-rs-controls` workspace crate is a different addon — a map camera
+//! over a ground, not a port of anything in three.js — and stays where it is.
 
+pub mod controls;
 pub mod geometry_utils;
 pub mod lines;
