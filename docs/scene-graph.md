@@ -324,6 +324,22 @@ So there are two routes, three.js' two:
 rewrite the `position` array and mark it — since a consumer moving one line of
 a diagram is what issue #47 was reported from.
 
+**The bounds follow the same rule.** Culling asks every object for its
+geometry's bounding sphere every frame, and the render-list sort asks for its
+centre, so `BufferGeometry` caches the box and sphere it computes (issue
+#133), keyed on the `position` attribute's id and version, each `position`
+morph target's id and version, and `morph_targets_relative`. An edit through
+`array_mut()` is therefore seen by culling only after `set_needs_update()`,
+exactly as it is seen by the GPU buffer; the `&mut` methods that swap or hand
+out an attribute (`set_attribute`, `delete_attribute`, `set_morph_attribute`,
+`get_attribute_mut`, and so `apply_matrix4`, `translate`, `center` and the
+rest) drop the cache outright, and a clone's fresh attribute ids never match
+its source's key. This is stricter than three.js, where `boundingSphere` is
+computed once and never invalidated by itself: a three.js app that moves
+vertices has to call `computeBoundingSphere()` again or be culled against the
+old sphere. The pub `bounding_sphere` override field still wins over the
+cache, as before.
+
 ## Lines
 
 `Line` and `LineSegments` are `Payload::Line( Line )`, one variant with an

@@ -379,6 +379,56 @@ pub struct DrawRange {
     pub count: Option<usize>,
 }
 
+/// What a cached pair of bounds was computed from: the `position` attribute's
+/// id and version, every `position` morph target's id and version in order,
+/// and `morph_targets_relative`. The ids are the numbers, never an
+/// [`AttributeId`] clone, which would mint a fresh id and never match.
+#[derive(Clone, Debug, PartialEq)]
+struct BoundsKey {
+    position: (usize, u32),
+    morph_positions: Vec<(usize, u32)>,
+    morph_targets_relative: bool,
+}
+
+impl BoundsKey {
+    /// Whether this key still describes `geometry`'s inputs, without building
+    /// a new key (that would allocate on every call, i.e. every frame).
+    fn matches(&self, geometry: &BufferGeometry, position: &BufferAttribute) -> bool {
+        if self.position != (position.id.get(), position.version())
+            || self.morph_targets_relative != geometry.morph_targets_relative
+        {
+            return false;
+        }
+        let morph = geometry.get_morph_attribute("position").unwrap_or(&[]);
+        morph.len() == self.morph_positions.len()
+            && morph
+                .iter()
+                .zip(&self.morph_positions)
+                .all(|(attribute, &key)| (attribute.id.get(), attribute.version()) == key)
+    }
+
+    fn of(geometry: &BufferGeometry, position: &BufferAttribute) -> Self {
+        Self {
+            position: (position.id.get(), position.version()),
+            morph_positions: geometry
+                .get_morph_attribute("position")
+                .unwrap_or(&[])
+                .iter()
+                .map(|attribute| (attribute.id.get(), attribute.version()))
+                .collect(),
+            morph_targets_relative: geometry.morph_targets_relative,
+        }
+    }
+}
+
+/// The box and the sphere computed together from one [`BoundsKey`].
+#[derive(Clone, Debug)]
+struct CachedBounds {
+    key: BoundsKey,
+    bounding_box: BoundingBox,
+    bounding_sphere: BoundingSphere,
+}
+
 /// Port of `BufferGeometry`'s state: the named attribute map, the index, morph
 /// attributes, groups and the draw range.
 ///
@@ -413,6 +463,11 @@ pub struct BufferGeometry {
     /// automatically what culling sees. The port's method has no field behind
     /// it, so the override lands here.
     pub bounding_sphere: Option<BoundingSphere>,
+    /// The last computed box and sphere and what they were computed from; see
+    /// [`compute_bounding_sphere`](Self::compute_bounding_sphere). Behind a
+    /// `RefCell` because the geometry is shared as `Rc<BufferGeometry>` and
+    /// culling asks for its sphere through `&self` every frame (issue #133).
+    bounds: RefCell<Option<CachedBounds>>,
 }
 
 impl BufferGeometry {
@@ -435,7 +490,11 @@ impl BufferGeometry {
     }
 
     /// `BufferGeometry.getAttribute( name )`, mutably.
+    ///
+    /// The `&mut` setters on [`BufferAttribute`] (`set_xyz` and the rest) do not
+    /// bump its version, so handing one out drops the cached bounds.
     pub fn get_attribute_mut(&mut self, name: &str) -> Option<&mut BufferAttribute> {
+        self.invalidate_bounds();
         self.attributes
             .iter_mut()
             .find(|(key, _)| key == name)
@@ -444,6 +503,7 @@ impl BufferGeometry {
 
     /// `BufferGeometry.setAttribute( name, attribute )`.
     pub fn set_attribute(&mut self, name: &str, attribute: BufferAttribute) -> &mut Self {
+        self.invalidate_bounds();
         match self.attributes.iter_mut().find(|(key, _)| key == name) {
             // a JS object keeps the key's original position on reassignment
             Some(slot) => slot.1 = attribute,
@@ -455,6 +515,7 @@ impl BufferGeometry {
 
     /// `BufferGeometry.deleteAttribute( name )`.
     pub fn delete_attribute(&mut self, name: &str) -> &mut Self {
+        self.invalidate_bounds();
         self.attributes.retain(|(key, _)| key != name);
         self
     }
@@ -500,6 +561,7 @@ impl BufferGeometry {
         name: &str,
         attributes: Vec<BufferAttribute>,
     ) -> &mut Self {
+        self.invalidate_bounds();
         match self
             .morph_attributes
             .iter_mut()
@@ -584,9 +646,17 @@ impl BufferGeometry {
         self.index = Some(index);
     }
 
+    /// Drops the cached bounds. The `&mut` methods that swap or hand out an
+    /// attribute call it; an edit through `array_mut()` is caught by the
+    /// version instead, once `set_needs_update()` bumps it.
+    fn invalidate_bounds(&mut self) {
+        *self.bounds.get_mut() = None;
+    }
+
     /// The centre of `BufferGeometry.computeBoundingSphere()`'s sphere, which is
     /// `Box3.setFromBufferAttribute( position ).getCenter()` — the only part of
-    /// the bounding sphere the render-list sort reads.
+    /// the bounding sphere the render-list sort reads. Served from the same
+    /// cache as [`compute_bounding_box`](Self::compute_bounding_box).
     pub fn bounding_sphere_center(&self) -> Vector3 {
         match self.compute_bounding_box() {
             Some(box3) => box3.center(),
@@ -597,9 +667,67 @@ impl BufferGeometry {
     /// `BufferGeometry.computeBoundingBox()` — `Box3.setFromBufferAttribute(
     /// position )`. `None` when there is no position attribute (three.js leaves
     /// `boundingBox` alone in that case).
+    ///
+    /// Cached, together with the sphere; see
+    /// [`compute_bounding_sphere`](Self::compute_bounding_sphere) for when the
+    /// cache is recomputed.
     pub fn compute_bounding_box(&self) -> Option<BoundingBox> {
+        self.cached_bounds().map(|(bounding_box, _)| bounding_box)
+    }
+
+    /// `BufferGeometry.computeBoundingSphere()`: the bounding box's centre, then
+    /// the largest distance from it to any vertex (which beats the box's own
+    /// sphere by up to sqrt(3)).
+    ///
+    /// The pub [`bounding_sphere`](Self::bounding_sphere) field, when set, is
+    /// returned as it is, ahead of anything computed here.
+    ///
+    /// Otherwise the box and the sphere are computed once and cached, keyed on
+    /// the `position` attribute's id and version, each `position` morph
+    /// target's id and version, and `morph_targets_relative`. Culling calls
+    /// this for every object every frame, so walking every vertex each time
+    /// was most of a frame for a scene of many meshes (issue #133). The cache
+    /// is dropped by the `&mut` methods that replace or hand out an attribute
+    /// (`set_attribute`, `delete_attribute`, `set_morph_attribute`,
+    /// `get_attribute_mut` and so everything built on it, `apply_matrix4` and
+    /// `set_from_points` included). An edit through
+    /// [`array_mut()`](BufferAttribute::array_mut) is seen only after
+    /// [`set_needs_update()`](BufferAttribute::set_needs_update), the same rule
+    /// the renderer's buffer upload follows. That is stricter than three.js,
+    /// whose `boundingSphere` is never invalidated by itself: there a moved
+    /// vertex needs `computeBoundingSphere()` called again by hand.
+    pub fn compute_bounding_sphere(&self) -> Option<BoundingSphere> {
+        if let Some(sphere) = self.bounding_sphere {
+            return Some(sphere);
+        }
+        self.cached_bounds()
+            .map(|(_, bounding_sphere)| bounding_sphere)
+    }
+
+    /// The cached box and sphere, recomputed first if their key has moved.
+    fn cached_bounds(&self) -> Option<(BoundingBox, BoundingSphere)> {
         let position = self.position()?;
 
+        if let Some(cached) = self.bounds.borrow().as_ref() {
+            if cached.key.matches(self, position) {
+                return Some((cached.bounding_box, cached.bounding_sphere));
+            }
+        }
+
+        let bounding_box = self.bounding_box_from_positions(position);
+        let bounding_sphere = self.bounding_sphere_from_positions(position, &bounding_box);
+
+        *self.bounds.borrow_mut() = Some(CachedBounds {
+            key: BoundsKey::of(self, position),
+            bounding_box,
+            bounding_sphere,
+        });
+
+        Some((bounding_box, bounding_sphere))
+    }
+
+    /// `computeBoundingBox()`'s body, uncached.
+    fn bounding_box_from_positions(&self, position: &BufferAttribute) -> BoundingBox {
         let mut bounding_box = BoundingBox::from_buffer_attribute(position);
 
         // process morph attributes if present
@@ -621,19 +749,18 @@ impl BufferGeometry {
             }
         }
 
-        Some(bounding_box)
+        bounding_box
     }
 
-    /// `BufferGeometry.computeBoundingSphere()`: the bounding box's centre, then
-    /// the largest distance from it to any vertex (which beats the box's own
-    /// sphere by up to sqrt(3)).
-    pub fn compute_bounding_sphere(&self) -> Option<BoundingSphere> {
-        if let Some(sphere) = self.bounding_sphere {
-            return Some(sphere);
-        }
-        let position = self.position()?;
+    /// `computeBoundingSphere()`'s body, uncached, around `bounding_box`'s
+    /// centre.
+    fn bounding_sphere_from_positions(
+        &self,
+        position: &BufferAttribute,
+        bounding_box: &BoundingBox,
+    ) -> BoundingSphere {
         // `_box` already has the morph targets expanded into it
-        let center = self.compute_bounding_box()?.center();
+        let center = bounding_box.center();
 
         let mut max_radius_sq: f64 = 0.0;
 
@@ -658,10 +785,10 @@ impl BufferGeometry {
             }
         }
 
-        Some(BoundingSphere {
+        BoundingSphere {
             center,
             radius: max_radius_sq.sqrt(),
-        })
+        }
     }
 
     /// `BufferGeometry.computeVertexNormals()`.
@@ -905,5 +1032,146 @@ impl BufferGeometry {
         }
 
         geometry2
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn triangle() -> BufferGeometry {
+        let mut geometry = BufferGeometry::new();
+        geometry.set_attribute(
+            "position",
+            BufferAttribute::new(vec![-1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 2.0, 0.0], 3),
+        );
+        geometry
+    }
+
+    #[test]
+    fn bounds_are_the_same_on_a_second_call() {
+        let geometry = triangle();
+        let box1 = geometry.compute_bounding_box().unwrap();
+        let sphere1 = geometry.compute_bounding_sphere().unwrap();
+        assert_eq!(geometry.compute_bounding_box().unwrap(), box1);
+        assert_eq!(geometry.compute_bounding_sphere().unwrap(), sphere1);
+        assert_eq!(geometry.bounding_sphere_center(), box1.center());
+        assert_eq!(sphere1.center, Vector3::new(0.0, 1.0, 0.0));
+    }
+
+    #[test]
+    fn an_in_place_edit_shows_after_set_needs_update() {
+        let geometry = triangle();
+        let before = geometry.compute_bounding_sphere().unwrap();
+
+        let position = geometry.position().unwrap();
+        position.array_mut()[0] = -11.0;
+        // not yet marked: the bounds, like the uploaded buffer, are stale
+        assert_eq!(geometry.compute_bounding_sphere().unwrap(), before);
+
+        position.set_needs_update();
+        let after = geometry.compute_bounding_sphere().unwrap();
+        assert_eq!(after.center, Vector3::new(-5.0, 1.0, 0.0));
+        assert_eq!(geometry.bounding_sphere_center(), after.center);
+        assert_eq!(
+            geometry.compute_bounding_box().unwrap().min,
+            Vector3::new(-11.0, 0.0, 0.0)
+        );
+    }
+
+    #[test]
+    fn set_attribute_recomputes() {
+        let mut geometry = triangle();
+        geometry.compute_bounding_sphere().unwrap();
+        geometry.set_attribute(
+            "position",
+            BufferAttribute::new(vec![10.0, 0.0, 0.0, 12.0, 0.0, 0.0], 3),
+        );
+        let sphere = geometry.compute_bounding_sphere().unwrap();
+        assert_eq!(sphere.center, Vector3::new(11.0, 0.0, 0.0));
+        assert_eq!(sphere.radius, 1.0);
+    }
+
+    #[test]
+    fn a_mutating_transform_recomputes() {
+        let mut geometry = triangle();
+        geometry.compute_bounding_sphere().unwrap();
+        geometry.translate(0.0, 0.0, 5.0);
+        assert_eq!(
+            geometry.compute_bounding_sphere().unwrap().center,
+            Vector3::new(0.0, 1.0, 5.0)
+        );
+        geometry.center();
+        assert_eq!(geometry.bounding_sphere_center(), Vector3::ZERO);
+    }
+
+    #[test]
+    fn a_clone_keeps_its_own_bounds() {
+        let original = triangle();
+        let original_sphere = original.compute_bounding_sphere().unwrap();
+
+        // the clone carries the original's cache, keyed on the original's ids
+        let clone = original.clone();
+        assert_eq!(clone.compute_bounding_sphere().unwrap(), original_sphere);
+
+        clone.position().unwrap().array_mut()[0] = -11.0;
+        clone.position().unwrap().set_needs_update();
+        assert_eq!(
+            clone.compute_bounding_sphere().unwrap().center,
+            Vector3::new(-5.0, 1.0, 0.0)
+        );
+        assert_eq!(original.compute_bounding_sphere().unwrap(), original_sphere);
+
+        original.position().unwrap().array_mut()[3] = 21.0;
+        original.position().unwrap().set_needs_update();
+        assert_eq!(
+            original.compute_bounding_sphere().unwrap().center,
+            Vector3::new(10.0, 1.0, 0.0)
+        );
+        assert_eq!(
+            clone.compute_bounding_sphere().unwrap().center,
+            Vector3::new(-5.0, 1.0, 0.0)
+        );
+    }
+
+    #[test]
+    fn a_morph_position_edit_recomputes() {
+        let mut geometry = triangle();
+        geometry.set_morph_attribute(
+            "position",
+            vec![BufferAttribute::new(
+                vec![-1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 2.0, 0.0],
+                3,
+            )],
+        );
+        let before = geometry.compute_bounding_box().unwrap();
+        assert_eq!(before.max, Vector3::new(1.0, 2.0, 0.0));
+
+        let morph = &geometry.get_morph_attribute("position").unwrap()[0];
+        morph.array_mut()[3] = 9.0;
+        morph.set_needs_update();
+        assert_eq!(
+            geometry.compute_bounding_box().unwrap().max,
+            Vector3::new(9.0, 2.0, 0.0)
+        );
+
+        // relative targets are offsets from `position`: a key change too
+        geometry.morph_targets_relative = true;
+        assert_eq!(
+            geometry.compute_bounding_box().unwrap().max,
+            Vector3::new(10.0, 4.0, 0.0)
+        );
+    }
+
+    #[test]
+    fn the_override_field_still_wins() {
+        let mut geometry = triangle();
+        geometry.compute_bounding_sphere().unwrap();
+        let sphere = BoundingSphere {
+            center: Vector3::new(7.0, 7.0, 7.0),
+            radius: 3.0,
+        };
+        geometry.bounding_sphere = Some(sphere);
+        assert_eq!(geometry.compute_bounding_sphere(), Some(sphere));
     }
 }
