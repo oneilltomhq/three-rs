@@ -2958,6 +2958,46 @@ impl Renderer {
     }
 
     pub fn read_canvas_pixels(&mut self) -> Result<(u32, u32, Vec<u8>), Error> {
+        let (texture, width, height) = self.canvas_color();
+        self.read_texture_pixels(&texture, width, height)
+    }
+
+    /// [`read_canvas_pixels`](Self::read_canvas_pixels) for a caller that
+    /// cannot block: the browser, where mapping a buffer is a promise and
+    /// `device.poll()` waits for nothing (issue #128, the web gate). The same
+    /// texture, the same copy, the same bytes; only the wait differs.
+    ///
+    /// Natively it is `read_canvas_pixels()` itself, already finished when
+    /// the future is first polled.
+    pub async fn read_canvas_pixels_async(&mut self) -> Result<(u32, u32, Vec<u8>), Error> {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.read_canvas_pixels()
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            let (texture, width, height) = self.canvas_color();
+            let readback = self.submit_readback(&texture, width, height)?;
+            let slice = readback.buffer.slice(..);
+            let mapped = MapFuture::default();
+            let done = mapped.state.clone();
+            slice.map_async(wgpu::MapMode::Read, move |result| {
+                let mut state = done.borrow_mut();
+                state.0 = Some(result);
+                if let Some(waker) = state.1.take() {
+                    waker.wake();
+                }
+            });
+            mapped.await.map_err(|e| Error::Readback {
+                reason: e.to_string(),
+            })?;
+            readback.finish()
+        }
+    }
+
+    /// The canvas' colour texture and its size, created first if nothing has
+    /// been drawn yet.
+    fn canvas_color(&mut self) -> (wgpu::Texture, u32, u32) {
         // Only when there is nothing to read yet. `prepare_canvas()` rebuilds
         // the canvas whenever the sample count it is asked for differs from
         // the one the canvas has, so asking for a single-sample canvas here
@@ -2971,9 +3011,7 @@ impl Renderer {
             .canvas
             .as_ref()
             .expect("three-rs: prepare_canvas() has just created the canvas");
-        let (texture, width, height) = (canvas.color.clone(), canvas.width, canvas.height);
-
-        self.read_texture_pixels(&texture, width, height)
+        (canvas.color.clone(), canvas.width, canvas.height)
     }
 
     /// The same readback off a [`RenderTarget`] rather than the canvas
@@ -3070,6 +3108,29 @@ impl Renderer {
         width: u32,
         height: u32,
     ) -> Result<(u32, u32, Vec<u8>), Error> {
+        let readback = self.submit_readback(texture, width, height)?;
+
+        let slice = readback.buffer.slice(..);
+        slice.map_async(wgpu::MapMode::Read, |_| {});
+        self.device
+            .poll(wgpu::PollType::wait_indefinitely())
+            .map_err(|e| Error::Readback {
+                reason: e.to_string(),
+            })?;
+
+        readback.finish()
+    }
+
+    /// The first half of every readback: a `MAP_READ` buffer, the copy of
+    /// mip 0 of `texture` into it, submitted. The caller maps the buffer and
+    /// waits in whichever way its platform allows, then calls
+    /// [`PendingReadback::finish`].
+    fn submit_readback(
+        &self,
+        texture: &wgpu::Texture,
+        width: u32,
+        height: u32,
+    ) -> Result<PendingReadback, Error> {
         let format = texture.format();
         let bytes_per_texel = format
             .block_copy_size(None)
@@ -3078,7 +3139,8 @@ impl Renderer {
             })?;
 
         // `copy_texture_to_buffer` needs 256-byte aligned rows; the padding is
-        // stripped again below (FINDINGS #19: not stripping it shears the image).
+        // stripped again in `finish` (FINDINGS #19: not stripping it shears
+        // the image).
         let unpadded_bytes_per_row = width * bytes_per_texel;
         let bytes_per_row = unpadded_bytes_per_row.div_ceil(256) * 256;
 
@@ -3119,29 +3181,13 @@ impl Renderer {
 
         self.queue.submit(Some(encoder.finish()));
 
-        let slice = buffer.slice(..);
-        slice.map_async(wgpu::MapMode::Read, |_| {});
-        self.device
-            .poll(wgpu::PollType::wait_indefinitely())
-            .map_err(|e| Error::Readback {
-                reason: e.to_string(),
-            })?;
-
-        let padded = slice
-            .get_mapped_range()
-            .map_err(|e| Error::Readback {
-                reason: e.to_string(),
-            })?
-            .to_vec();
-        buffer.unmap();
-
-        let mut data = Vec::with_capacity((unpadded_bytes_per_row * height) as usize);
-        for row in 0..height {
-            let start = (row * bytes_per_row) as usize;
-            data.extend_from_slice(&padded[start..start + unpadded_bytes_per_row as usize]);
-        }
-
-        Ok((width, height, data))
+        Ok(PendingReadback {
+            buffer,
+            width,
+            height,
+            bytes_per_row,
+            unpadded_bytes_per_row,
+        })
     }
 
     // -- bindings --------------------------------------------------------
@@ -4976,6 +5022,73 @@ impl Renderer {
                         | wgpu::TextureUsages::TEXTURE_BINDING,
                     view_formats: &[],
                 }));
+            }
+        }
+    }
+}
+
+/// A submitted texture-to-buffer copy, waiting for its buffer to be mapped.
+/// See [`Renderer::submit_readback`].
+struct PendingReadback {
+    buffer: wgpu::Buffer,
+    width: u32,
+    height: u32,
+    bytes_per_row: u32,
+    unpadded_bytes_per_row: u32,
+}
+
+impl PendingReadback {
+    /// The mapped buffer, with the rows' 256-byte alignment padding stripped.
+    fn finish(self) -> Result<(u32, u32, Vec<u8>), Error> {
+        let slice = self.buffer.slice(..);
+        let padded = slice
+            .get_mapped_range()
+            .map_err(|e| Error::Readback {
+                reason: e.to_string(),
+            })?
+            .to_vec();
+        self.buffer.unmap();
+
+        let mut data = Vec::with_capacity((self.unpadded_bytes_per_row * self.height) as usize);
+        for row in 0..self.height {
+            let start = (row * self.bytes_per_row) as usize;
+            data.extend_from_slice(&padded[start..start + self.unpadded_bytes_per_row as usize]);
+        }
+
+        Ok((self.width, self.height, data))
+    }
+}
+
+/// `buffer.mapAsync()` as a Rust future: the browser resolves the map on its
+/// own event loop and wgpu calls back, so the readback awaits instead of
+/// polling a device that cannot be waited on. One page, one thread, hence the
+/// `Rc`.
+#[cfg(target_arch = "wasm32")]
+#[derive(Default)]
+struct MapFuture {
+    #[allow(clippy::type_complexity)]
+    state: std::rc::Rc<
+        std::cell::RefCell<(
+            Option<Result<(), wgpu::BufferAsyncError>>,
+            Option<std::task::Waker>,
+        )>,
+    >,
+}
+
+#[cfg(target_arch = "wasm32")]
+impl std::future::Future for MapFuture {
+    type Output = Result<(), wgpu::BufferAsyncError>;
+
+    fn poll(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Self::Output> {
+        let mut state = self.state.borrow_mut();
+        match state.0.take() {
+            Some(result) => std::task::Poll::Ready(result),
+            None => {
+                state.1 = Some(cx.waker().clone());
+                std::task::Poll::Pending
             }
         }
     }

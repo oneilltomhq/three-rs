@@ -49,11 +49,54 @@ secure, so a plain static server is enough:
     python3 -m http.server --directory web/dist 8000
 
 Then <http://localhost:8000/> for the index, or
-<http://localhost:8000/?example=webgpu_loader_gltf> for one example.
+<http://localhost:8000/?example=webgpu_loader_gltf> for one example; add
+`&hold` to stay on the graded frame (see "Grading in the browser").
 
 Browsers: Chrome and Edge ship WebGPU. Firefox and Safari mostly do not yet —
 those get the still frame from the README's gallery and a line saying why,
 rather than a blank canvas.
+
+## Grading in the browser
+
+`tools/web_gate.mjs` is the ladder again, in headless Chrome: every graded
+example (one per committed manifest) is opened as
+`?example=<name>&hold`, which stops the page on the graded frame — no resize,
+no animation loop, no listeners — reads the renderer's 800x500 canvas texture
+back and publishes it as `window.__three_rs_graded`, then sets
+`<body data-graded>` (or `<body data-error>` on any failure, a panic
+included). The gate writes those pixels to `target/web-gate/<name>/actual.png`
+and runs `src/testing/compare.mjs` on them, the very script
+`tests/e2e/main.rs` runs natively: three.js' own `test/e2e/image.js`,
+unmodified, against `examples/screenshots/<name>.jpg`, at Three's threshold.
+
+    web/build.sh
+    node tools/web_gate.mjs                      # every graded example
+    node tools/web_gate.mjs webgpu_rtt webgpu_mrt  # some of them
+
+It needs the three.js r186 checkout at `$THREE_JS_DIR` (default
+`~/src/vendor/three.js`) with `npm ci` done: puppeteer-core, pngjs, `image.js`
+and the screenshots come from there, and so does Chrome (the one puppeteer
+downloads; `--chrome PATH` or `$CHROME` picks another). The assets the page
+would fetch from GitHub are answered from that checkout instead, so the gate
+needs no network. It prints a table (name, different pixels, verdict, ms),
+writes `target/web-gate/summary.json`, and exits non-zero if an example fails
+that `tools/web_gate.skip` does not list. CI runs it as the `web-gate` job, the
+one pixel gate CI can run without a GPU.
+
+The adapter is software on purpose: Dawn on SwiftShader's Vulkan, which Chrome
+ships, selected with `--enable-unsafe-webgpu --enable-features=Vulkan
+--use-angle=swiftshader --use-vulkan=swiftshader --ignore-gpu-blocklist` in
+new headless (`--headless=new`, puppeteer's default). On a desk with a GPU
+those flags still hand the page the `google`/`swiftshader` fallback adapter
+rather than the hardware, so the desk and CI grade the same renderer;
+`--hardware` swaps in `test/e2e/puppeteer.js`' own flags to grade the desk's
+GPU instead.
+
+**The finding** (#128 asked whether the web gate can share the native
+references or needs its own): it shares them. On SwiftShader, all 39 graded
+examples pass Three's own screenshots at Three's own threshold, with no skip
+list: the worst is `webgpu_mrt` at 0.08% different pixels against a 0.1%
+limit, then `webgpu_deferred` at 0.06%; 28 of the 39 round to 0.00%.
 
 ## Where the assets come from
 
