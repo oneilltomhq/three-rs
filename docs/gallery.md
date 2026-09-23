@@ -7,7 +7,10 @@ three.js's own `examples/` page, in two places:
   a thumbnail grid, four across, near the "Examples graded green" table whose
   numbers it illustrates. The image URLs are absolute
   `raw.githubusercontent.com` ones so the grid renders on crates.io as well as
-  on GitHub.
+  on GitHub. Each thumbnail opens the example running in the browser (the
+  `web/` shell, deployed to <https://oneilltomhq.github.io/three-rs/>); the
+  caption under it links the ported source, and the rung's progress note when
+  there is one.
 - **`target/gallery/index.html`**, local only: a filter box and one card per
   example, pairing our frame with Three's reference screenshot at full size,
   with the diff count, the steady frame, the draw calls and the triangles
@@ -25,6 +28,16 @@ cargo test --release --test e2e            # fills target/e2e/<name>/actual.png
 cargo run --release --example gallery      # thumbnails, README block, index.html
 cargo run --release --example gallery -- --vendor /path/to/three.js
 ```
+
+To change only the shape of the README block (its links, its captions), with
+no ladder run, no GPU and no three.js checkout:
+
+```sh
+cargo run --release --example gallery -- --readme-only
+```
+
+That rebuilds the block from the thumbnails already committed under
+`docs/gallery/`; it does not add a rung, which still needs the full run.
 
 The three.js checkout the local page reads its reference screenshots from is
 `--vendor`, else `$THREE_VENDOR`, else `$THREE_JS_DIR`, else

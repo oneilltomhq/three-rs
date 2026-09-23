@@ -1,0 +1,77 @@
+# Builds the browser shell (web/, issue #128) and deploys web/dist/ to GitHub
+# Pages, at https://oneilltomhq.github.io/three-rs/, on every push to main.
+# The README gallery's thumbnails link there.
+#
+# Pull requests run the build job only, so a change that breaks web/build.sh
+# shows up before it reaches main; only main deploys. Nothing of three.js'
+# is published: the shell fetches each example's assets at run time from the
+# pinned r186 tag on raw.githubusercontent.com.
+name: pages
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+
+      # The CLI must match the `wasm-bindgen` crate in Cargo.lock exactly
+      # (build.sh checks); read the pin the same way build.sh does, and cache
+      # the binary on it so it is compiled once per version, not per push.
+      - name: wasm-bindgen version from Cargo.lock
+        id: wasm-bindgen
+        run: |
+          version="$(sed -n '/^name = "wasm-bindgen"$/{n;s/^version = "\(.*\)"$/\1/p;q}' Cargo.lock)"
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Cache wasm-bindgen-cli
+        id: wasm-bindgen-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/wasm-bindgen
+          key: wasm-bindgen-cli-${{ runner.os }}-${{ steps.wasm-bindgen.outputs.version }}
+      - name: Install wasm-bindgen-cli
+        if: steps.wasm-bindgen-cache.outputs.cache-hit != 'true'
+        run: cargo install wasm-bindgen-cli --version "${{ steps.wasm-bindgen.outputs.version }}" --locked
+
+      - run: web/build.sh
+
+      - uses: actions/configure-pages@v5
+        if: github.event_name != 'pull_request'
+      - uses: actions/upload-pages-artifact@v3
+        if: github.event_name != 'pull_request'
+        with:
+          path: web/dist
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    # One deploy at a time; a newer push queues behind a running one rather
+    # than cancelling it half-way.
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
