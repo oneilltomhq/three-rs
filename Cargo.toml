@@ -142,3 +142,12 @@ path = "examples/dump_wgsl.rs"
 name = "gallery"
 path = "examples/gallery.rs"
 test = true
+
+# The browser shell's per-example asset manifests (issue #128). `test = true`
+# so the freshness gates that need no GPU — the table here is the README's
+# graded list, and every graded example has a committed manifest — run under a
+# plain `cargo test`. The contents check needs a GPU and is `--check`.
+[[example]]
+name = "web_manifests"
+path = "examples/web_manifests.rs"
+test = true

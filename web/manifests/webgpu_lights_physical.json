@@ -1,0 +1,9 @@
+[
+  "examples/textures/brick_bump.jpg",
+  "examples/textures/brick_diffuse.jpg",
+  "examples/textures/hardwood2_bump.jpg",
+  "examples/textures/hardwood2_diffuse.jpg",
+  "examples/textures/hardwood2_roughness.jpg",
+  "examples/textures/planets/earth_atmos_2048.jpg",
+  "examples/textures/planets/earth_specular_2048.jpg"
+]
