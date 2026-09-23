@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "sdf-text", "addons/controls"]
+members = [".", "sdf-text", "addons/controls", "web"]
 
 [workspace.package]
 edition = "2021"
@@ -31,6 +31,10 @@ exclude = [
     # The gallery thumbnails. The README's grid points at raw.githubusercontent
     # URLs (so crates.io renders it), so the bytes need not ship in the crate.
     "docs/gallery/**",
+    # The browser shell (issue #128). A workspace member, not part of this
+    # crate: a bin crate that includes the examples as modules and is only ever
+    # built for wasm32.
+    "web/**",
     "target/**",
 ]
 

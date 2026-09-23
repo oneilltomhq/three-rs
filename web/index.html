@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>three-rs — the graded examples in the browser</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  One page, two modes. Without `?example=` it is the index: the same grid of
+  our own rendered frames the README's gallery shows. With `?example=<name>`
+  it is that example, rendered here by the wasm build (issue #128).
+
+  Plain HTML and CSS on purpose, and no framework: the only build step in
+  `web/build.sh` is wasm-bindgen, and a page whose whole job is to hold a
+  canvas should not need a bundler to do it. The example list below is the one
+  piece of duplication — the README's graded table is the source of truth, and
+  `examples/web_manifests.rs`'s `#[test]` is what keeps the Rust side of the
+  list honest; this copy only decides what the index links to.
+-->
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0;
+    padding: 2rem 1rem;
+    background: #111;
+    color: #ddd;
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 1120px; margin: 0 auto; }
+  h1 { font-size: 1.4rem; font-weight: 600; margin: 0 0 .25rem; }
+  h1 a, p a { color: #7ab8ff; }
+  p.lede { margin: 0 0 2rem; color: #999; }
+
+  /* The index grid. */
+  #gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 1.25rem; }
+  #gallery figure { margin: 0; }
+  #gallery img { width: 100%; display: block; border-radius: 4px; background: #000; }
+  #gallery figcaption { margin-top: .4rem; font-size: 13px; word-break: break-all; }
+  #gallery figcaption a { color: #ddd; text-decoration: none; }
+  #gallery figcaption a:hover { text-decoration: underline; }
+  #gallery .original { color: #777; font-size: 12px; }
+  #gallery .original a { color: #777; }
+
+  /* The example stage. */
+  #stage { display: none; }
+  #canvas, #still { max-width: 100%; height: auto; border-radius: 4px; background: #000; }
+  #still { display: none; }
+  #status { margin-top: .75rem; color: #999; font-size: 13px; min-height: 1.5em; }
+  nav { margin-bottom: 1.5rem; font-size: 13px; }
+  nav a { color: #7ab8ff; margin-right: 1rem; }
+</style>
+
+<main>
+  <h1><a href="https://github.com/oneilltomhq/three-rs">three-rs</a> — the graded examples, in the browser</h1>
+  <p class="lede">
+    Each one is the port's own graded frame, rendered here on this browser's WebGPU
+    from the same <code>init()</code> the native grading ladder runs.
+  </p>
+
+  <section id="stage">
+    <nav>
+      <a href="./">&larr; all examples</a>
+      <a id="original" href="#">the three.js original &rarr;</a>
+      <a id="source" href="#">the ported source &rarr;</a>
+    </nav>
+    <canvas id="canvas" width="800" height="500"></canvas>
+    <img id="still" alt="">
+    <p id="status">loading…</p>
+  </section>
+
+  <section id="gallery"></section>
+</main>
+
+<script type="module">
+  // The README's "Examples graded green", in its order.
+  const EXAMPLES = [
+  "webgpu_depth_texture",
+  "webgpu_instance_mesh",
+  "webgpu_materials_basic",
+  "webgpu_rtt",
+  "webgpu_lights_phong",
+  "webgpu_morphtargets",
+  "webgpu_shadowmap",
+  "webgpu_lights_physical",
+  "webgpu_postprocessing_masking",
+  "webgpu_tsl_galaxy",
+  "webgpu_skinning",
+  "webgpu_mesh_batch",
+  "webgpu_postprocessing_radial_blur",
+  "webgpu_materials",
+  "webgpu_postprocessing_ssaa",
+  "webgpu_pmrem_cubemap",
+  "webgpu_postprocessing_bloom_selective",
+  "webgpu_compute_points",
+  "webgpu_lines_fat",
+  "webgpu_pmrem_test",
+  "webgpu_postprocessing_difference",
+  "webgpu_postprocessing_direct",
+  "webgpu_furnace_test",
+  "webgpu_postprocessing_anamorphic",
+  "webgpu_pmrem_scene",
+  "webgpu_postprocessing_bloom",
+  "webgpu_materials_envmaps",
+  "webgpu_materials_cubemap_mipmaps",
+  "webgpu_postprocessing_bloom_emissive",
+  "webgpu_instance_uniform",
+  "webgpu_tsl_interoperability",
+  "webgpu_pmrem_equirectangular",
+  "webgpu_postprocessing_ca",
+  "webgpu_loader_gltf",
+  "webgpu_mrt",
+  "webgpu_custom_fog_background",
+  "webgpu_loader_gltf_sheen",
+  "webgpu_deferred",
+  "webgpu_loader_gltf_anisotropy"
+  ];
+
+  const REPO = "https://github.com/oneilltomhq/three-rs";
+  const THUMBS = "https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery";
+
+  const wanted = new URLSearchParams(location.search).get("example");
+
+  if (wanted && EXAMPLES.includes(wanted)) {
+    document.title = `${wanted} — three-rs`;
+    document.getElementById("stage").style.display = "block";
+    document.getElementById("original").href = `https://threejs.org/examples/#${wanted}`;
+    document.getElementById("source").href = `${REPO}/blob/main/examples/${wanted}.rs`;
+    // The wasm module reads `?example=` for itself; loading it only here keeps
+    // the index a static page with no wasm download at all.
+    const { default: init } = await import("./three_rs_web.js");
+    await init();
+  } else {
+    if (wanted) {
+      document.getElementById("stage").style.display = "block";
+      document.getElementById("status").textContent = `No graded example named ${wanted}.`;
+    }
+    const gallery = document.getElementById("gallery");
+    gallery.innerHTML = EXAMPLES.map((name) => `
+      <figure>
+        <a href="?example=${name}"><img src="${THUMBS}/${name}.jpg" alt="${name}" loading="lazy"></a>
+        <figcaption>
+          <a href="?example=${name}">${name}</a><br>
+          <span class="original"><a href="https://threejs.org/examples/#${name}">three.js original</a></span>
+        </figcaption>
+      </figure>`).join("");
+  }
+</script>

@@ -197,45 +197,96 @@ mod webgpu_loader_gltf_anisotropy;
 /// is what the loaders read on the way.
 #[allow(clippy::type_complexity)]
 const GRADED: &[(&str, fn())] = &[
-    ("webgpu_depth_texture", || drop(webgpu_depth_texture::init())),
-    ("webgpu_instance_mesh", || drop(webgpu_instance_mesh::init())),
-    ("webgpu_materials_basic", || drop(webgpu_materials_basic::init())),
+    (
+        "webgpu_depth_texture",
+        || drop(webgpu_depth_texture::init()),
+    ),
+    (
+        "webgpu_instance_mesh",
+        || drop(webgpu_instance_mesh::init()),
+    ),
+    ("webgpu_materials_basic", || {
+        drop(webgpu_materials_basic::init())
+    }),
     ("webgpu_rtt", || drop(webgpu_rtt::init())),
     ("webgpu_lights_phong", || drop(webgpu_lights_phong::init())),
     ("webgpu_morphtargets", || drop(webgpu_morphtargets::init())),
     ("webgpu_shadowmap", || drop(webgpu_shadowmap::init())),
-    ("webgpu_lights_physical", || drop(webgpu_lights_physical::init())),
-    ("webgpu_postprocessing_masking", || drop(webgpu_postprocessing_masking::init())),
+    ("webgpu_lights_physical", || {
+        drop(webgpu_lights_physical::init())
+    }),
+    ("webgpu_postprocessing_masking", || {
+        drop(webgpu_postprocessing_masking::init())
+    }),
     ("webgpu_tsl_galaxy", || drop(webgpu_tsl_galaxy::init())),
     ("webgpu_skinning", || drop(webgpu_skinning::init())),
     ("webgpu_mesh_batch", || drop(webgpu_mesh_batch::init())),
-    ("webgpu_postprocessing_radial_blur", || drop(webgpu_postprocessing_radial_blur::init())),
+    ("webgpu_postprocessing_radial_blur", || {
+        drop(webgpu_postprocessing_radial_blur::init())
+    }),
     ("webgpu_materials", || drop(webgpu_materials::init())),
-    ("webgpu_postprocessing_ssaa", || drop(webgpu_postprocessing_ssaa::init())),
-    ("webgpu_pmrem_cubemap", || drop(webgpu_pmrem_cubemap::init())),
-    ("webgpu_postprocessing_bloom_selective", || drop(webgpu_postprocessing_bloom_selective::init())),
-    ("webgpu_compute_points", || drop(webgpu_compute_points::init())),
+    ("webgpu_postprocessing_ssaa", || {
+        drop(webgpu_postprocessing_ssaa::init())
+    }),
+    (
+        "webgpu_pmrem_cubemap",
+        || drop(webgpu_pmrem_cubemap::init()),
+    ),
+    ("webgpu_postprocessing_bloom_selective", || {
+        drop(webgpu_postprocessing_bloom_selective::init())
+    }),
+    ("webgpu_compute_points", || {
+        drop(webgpu_compute_points::init())
+    }),
     ("webgpu_lines_fat", || drop(webgpu_lines_fat::init())),
     ("webgpu_pmrem_test", || drop(webgpu_pmrem_test::init())),
-    ("webgpu_postprocessing_difference", || drop(webgpu_postprocessing_difference::init())),
-    ("webgpu_postprocessing_direct", || drop(webgpu_postprocessing_direct::init())),
+    ("webgpu_postprocessing_difference", || {
+        drop(webgpu_postprocessing_difference::init())
+    }),
+    ("webgpu_postprocessing_direct", || {
+        drop(webgpu_postprocessing_direct::init())
+    }),
     ("webgpu_furnace_test", || drop(webgpu_furnace_test::init())),
-    ("webgpu_postprocessing_anamorphic", || drop(webgpu_postprocessing_anamorphic::init())),
+    ("webgpu_postprocessing_anamorphic", || {
+        drop(webgpu_postprocessing_anamorphic::init())
+    }),
     ("webgpu_pmrem_scene", || drop(webgpu_pmrem_scene::init())),
-    ("webgpu_postprocessing_bloom", || drop(webgpu_postprocessing_bloom::init())),
-    ("webgpu_materials_envmaps", || drop(webgpu_materials_envmaps::init())),
-    ("webgpu_materials_cubemap_mipmaps", || drop(webgpu_materials_cubemap_mipmaps::init())),
-    ("webgpu_postprocessing_bloom_emissive", || drop(webgpu_postprocessing_bloom_emissive::init())),
-    ("webgpu_instance_uniform", || drop(webgpu_instance_uniform::init())),
-    ("webgpu_tsl_interoperability", || drop(webgpu_tsl_interoperability::init())),
-    ("webgpu_pmrem_equirectangular", || drop(webgpu_pmrem_equirectangular::init())),
-    ("webgpu_postprocessing_ca", || drop(webgpu_postprocessing_ca::init())),
+    ("webgpu_postprocessing_bloom", || {
+        drop(webgpu_postprocessing_bloom::init())
+    }),
+    ("webgpu_materials_envmaps", || {
+        drop(webgpu_materials_envmaps::init())
+    }),
+    ("webgpu_materials_cubemap_mipmaps", || {
+        drop(webgpu_materials_cubemap_mipmaps::init())
+    }),
+    ("webgpu_postprocessing_bloom_emissive", || {
+        drop(webgpu_postprocessing_bloom_emissive::init())
+    }),
+    ("webgpu_instance_uniform", || {
+        drop(webgpu_instance_uniform::init())
+    }),
+    ("webgpu_tsl_interoperability", || {
+        drop(webgpu_tsl_interoperability::init())
+    }),
+    ("webgpu_pmrem_equirectangular", || {
+        drop(webgpu_pmrem_equirectangular::init())
+    }),
+    ("webgpu_postprocessing_ca", || {
+        drop(webgpu_postprocessing_ca::init())
+    }),
     ("webgpu_loader_gltf", || drop(webgpu_loader_gltf::init())),
     ("webgpu_mrt", || drop(webgpu_mrt::init())),
-    ("webgpu_custom_fog_background", || drop(webgpu_custom_fog_background::init())),
-    ("webgpu_loader_gltf_sheen", || drop(webgpu_loader_gltf_sheen::init())),
+    ("webgpu_custom_fog_background", || {
+        drop(webgpu_custom_fog_background::init())
+    }),
+    ("webgpu_loader_gltf_sheen", || {
+        drop(webgpu_loader_gltf_sheen::init())
+    }),
     ("webgpu_deferred", || drop(webgpu_deferred::init())),
-    ("webgpu_loader_gltf_anisotropy", || drop(webgpu_loader_gltf_anisotropy::init())),
+    ("webgpu_loader_gltf_anisotropy", || {
+        drop(webgpu_loader_gltf_anisotropy::init())
+    }),
 ];
 
 /// Where the committed manifests live, one `<example>.json` each.
@@ -337,10 +388,9 @@ mod tests {
     /// The README's "Examples graded green" table, by name — the same source
     /// of truth `examples/gallery.rs` parses, read the same way.
     fn readme_graded() -> Vec<String> {
-        let readme = std::fs::read_to_string(
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("README.md"),
-        )
-        .expect("web_manifests: cannot read README.md");
+        let readme =
+            std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("README.md"))
+                .expect("web_manifests: cannot read README.md");
 
         let mut names = Vec::new();
         let mut in_section = false;
@@ -352,7 +402,12 @@ mod tests {
             if !in_section || !line.trim_start().starts_with('|') {
                 continue;
             }
-            let cells: Vec<&str> = line.trim().trim_matches('|').split('|').map(str::trim).collect();
+            let cells: Vec<&str> = line
+                .trim()
+                .trim_matches('|')
+                .split('|')
+                .map(str::trim)
+                .collect();
             if cells.len() == 5 && cells[0].starts_with("webgpu_") {
                 names.push(cells[0].to_string());
             }
@@ -405,7 +460,10 @@ mod tests {
             let mut sorted = assets.clone();
             sorted.sort();
             sorted.dedup();
-            assert_eq!(assets, sorted, "{name}: manifest is not sorted and deduplicated");
+            assert_eq!(
+                assets, sorted,
+                "{name}: manifest is not sorted and deduplicated"
+            );
 
             for asset in &assets {
                 assert!(
@@ -416,7 +474,11 @@ mod tests {
 
             // And it round-trips through the renderer, so `--check` compares
             // like with like.
-            assert_eq!(render(&assets), text, "{name}: manifest is not in the generator's format");
+            assert_eq!(
+                render(&assets),
+                text,
+                "{name}: manifest is not in the generator's format"
+            );
         }
     }
 }
