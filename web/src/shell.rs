@@ -26,6 +26,27 @@
 //!    the input listeners and run `requestAnimationFrame` until the tab
 //!    closes.
 //!
+//! # Held on the graded frame: `&hold`
+//!
+//! `?example=<name>&hold` stops after step 5. There is no step 6 — no resize
+//! to the window, no animation loop, no listeners — so the frame on the canvas
+//! stays the graded one. Instead the renderer's own 800x500 canvas texture is
+//! read back, the same texture and the same copy `tests/e2e/main.rs` grades
+//! natively, and handed to the page's JavaScript:
+//!
+//! - `window.__three_rs_graded` is `{ width, height, pixels }`, `pixels` a
+//!   `Uint8Array` of tightly packed, top-down RGBA8;
+//! - `<body data-graded="1">` says it is there;
+//! - any failure on the way — no WebGPU, a fetch, a panic — sets
+//!   `<body data-error="…">` instead, so a driver polling for one of the two
+//!   attributes never waits out its timeout on a page that has already died.
+//!
+//! This is what `tools/web_gate.mjs` drives: it grades the pixels outside the
+//! page with three.js' own `image.js`, exactly as the native ladder does. The
+//! pixels are read from the texture rather than the canvas element because a
+//! WebGPU canvas' `toDataURL()` after the frame has been presented is allowed
+//! to be blank.
+//!
 //! Step 5 is exactly what it was before this loop existed, and deliberately:
 //! the first thing a visitor sees is the frame the ladder grades, and it is
 //! reproducible because `now_ms()` and `date_now_ms()` both return 0 while
@@ -357,10 +378,18 @@ impl Page {
 /// wait on them with.
 #[wasm_bindgen(start)]
 pub fn start() {
-    console_error_panic_hook::set_once();
+    // The readable console trace `console_error_panic_hook` gives, and the
+    // same message on `<body data-error>` for a driver to find (see "Held on
+    // the graded frame" above): a panic otherwise leaves a page that simply
+    // never finishes.
+    std::panic::set_hook(Box::new(|info| {
+        console_error_panic_hook::hook(info);
+        mark_error(&format!("panic: {info}"));
+    }));
     wasm_bindgen_futures::spawn_local(async {
         if let Err(message) = run().await {
             report(&message);
+            mark_error(&message);
         }
     });
 }
@@ -370,6 +399,29 @@ fn requested_example() -> Option<String> {
     let search = window().location().search().ok()?;
     let params = web_sys::UrlSearchParams::new_with_str(&search).ok()?;
     params.get("example")
+}
+
+/// `&hold` in the query: stop on the graded frame and publish its pixels.
+fn requested_hold() -> bool {
+    let Ok(search) = window().location().search() else {
+        return false;
+    };
+    web_sys::UrlSearchParams::new_with_str(&search)
+        .map(|params| params.has("hold"))
+        .unwrap_or(false)
+}
+
+/// Sets `data-<name>` on `<body>`, the one place a driver polls.
+fn mark(name: &str, value: &str) {
+    if let Some(body) = document().body() {
+        let _ = body.set_attribute(&format!("data-{name}"), value);
+    }
+}
+
+/// Records a failure where a driver will look for it. Set on every page, held
+/// or not; an attribute nobody reads costs nothing.
+fn mark_error(message: &str) {
+    mark("error", message);
 }
 
 fn window() -> web_sys::Window {
@@ -410,6 +462,7 @@ fn no_webgpu(name: &str, reason: &str) {
         "This browser has no WebGPU ({reason}), so this is a still of the frame \
          three-rs renders natively."
     ));
+    mark_error(&format!("no WebGPU: {reason}"));
 }
 
 fn surface_configuration(
@@ -513,7 +566,13 @@ async fn run() -> Result<(), String> {
     // page they would otherwise only reach the devtools console, and a frame
     // that failed validation is a black canvas with no explanation.
     device.on_uncaptured_error(std::sync::Arc::new(|error| {
-        web_sys::console::error_1(&JsValue::from_str(&format!("wgpu: {error}")));
+        let message = format!("wgpu: {error}");
+        web_sys::console::error_1(&JsValue::from_str(&message));
+        // Natively an uncaptured validation error panics; a held page is being
+        // graded, so it fails here as loudly as the native ladder would.
+        if requested_hold() {
+            mark_error(&message);
+        }
     }));
 
     let format = {
@@ -557,6 +616,10 @@ async fn run() -> Result<(), String> {
         "{name} — the graded frame, {pixel_width}x{pixel_height}, rendered in this browser",
     ));
 
+    if requested_hold() {
+        return publish_graded_frame(example.renderer()).await;
+    }
+
     let page = Rc::new(RefCell::new(Page {
         which,
         example,
@@ -582,6 +645,34 @@ async fn run() -> Result<(), String> {
     install_window_resize(&page);
     start_animation_loop(&page);
 
+    Ok(())
+}
+
+/// Reads the renderer's canvas texture back and hands it to the page's
+/// JavaScript as `window.__three_rs_graded`, then sets `data-graded`. See
+/// "Held on the graded frame" in the module header.
+async fn publish_graded_frame(renderer: &mut three_rs::Renderer) -> Result<(), String> {
+    let (width, height, pixels) = renderer
+        .read_canvas_pixels_async()
+        .await
+        .map_err(|error| format!("cannot read the graded frame back: {error}"))?;
+
+    let graded = js_sys::Object::new();
+    let set = |key: &str, value: &JsValue| {
+        js_sys::Reflect::set(&graded, &JsValue::from_str(key), value)
+            .map(|_| ())
+            .map_err(|error| format!("cannot publish the graded frame: {error:?}"))
+    };
+    set("width", &JsValue::from(width))?;
+    set("height", &JsValue::from(height))?;
+    set(
+        "pixels",
+        &js_sys::Uint8Array::from(pixels.as_slice()).into(),
+    )?;
+    js_sys::Reflect::set(&window(), &JsValue::from_str("__three_rs_graded"), &graded)
+        .map_err(|error| format!("cannot publish the graded frame: {error:?}"))?;
+
+    mark("graded", "1");
     Ok(())
 }
 
