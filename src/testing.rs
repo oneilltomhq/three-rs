@@ -24,6 +24,7 @@ pub use strip::{strip, Step, Strip, StripFrame};
 /// ```
 ///
 /// The arithmetic is f64 throughout, matching JavaScript numbers.
+#[derive(Debug, Clone)]
 pub struct DeterministicRandom {
     seed: f64,
 }

@@ -1078,6 +1078,37 @@ impl Renderer {
         )
     }
 
+    /// Rebuilds this renderer on `instance`, carrying over everything an
+    /// example's `init()` set after `new()`.
+    ///
+    /// A host with a window has to hand the renderer an instance that owns a
+    /// display handle, or there is no surface to present to. An example's
+    /// `init()` is the page's code and builds its own instance, so the host
+    /// swaps this one in underneath — and must not lose the
+    /// `RendererParameters` the example chose, the shadow map and tone mapping
+    /// it set, or how far it has already advanced the page's `Math.random`.
+    /// Doing it here rather than in the host means the host needs no table of
+    /// per-example renderer settings.
+    ///
+    /// The scene itself carries over untouched: every buffer, texture and
+    /// pipeline is uploaded lazily on the first render.
+    ///
+    /// Native only — a browser host has no second instance to move to.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn rebuilt_on(&self, instance: wgpu::Instance) -> Result<Self, Error> {
+        let mut renderer = Self::with_instance(
+            RendererParameters {
+                antialias: self.samples > 0,
+            },
+            instance,
+        )?;
+        renderer.shadow_map_enabled = self.shadow_map_enabled;
+        renderer.tone_mapping = self.tone_mapping;
+        renderer.tone_mapping_exposure = self.tone_mapping_exposure;
+        renderer.random = self.random.clone();
+        Ok(renderer)
+    }
+
     /// Advance the page's `Math.random` by `n` draws before anything the
     /// renderer itself fills from it.
     ///
