@@ -45,6 +45,27 @@
   #status { margin-top: .75rem; color: #999; font-size: 13px; min-height: 1.5em; }
   nav { margin-bottom: 1.5rem; font-size: 13px; }
   nav a { color: #7ab8ff; margin-right: 1rem; }
+
+  /*
+    Once an example is live the shell adds `playing` to <body>: the canvas is
+    sized to window.innerWidth/innerHeight, the way the three.js pages size
+    theirs, so it has to be full-bleed and the chrome has to float over it.
+    That is also what lets a pointer event's clientX/clientY go to the
+    controls unadjusted — the canvas' top-left is the viewport's.
+  */
+  body.playing { padding: 0; overflow: hidden; }
+  body.playing main { max-width: none; margin: 0; }
+  body.playing h1, body.playing p.lede, body.playing #gallery { display: none; }
+  body.playing #canvas {
+    display: block; max-width: none; border-radius: 0;
+    position: fixed; top: 0; left: 0; outline: none;
+  }
+  body.playing nav, body.playing #status {
+    position: fixed; left: 0; margin: 0; padding: .5rem 1rem;
+    background: rgba(0, 0, 0, .55); backdrop-filter: blur(2px);
+  }
+  body.playing nav { top: 0; }
+  body.playing #status { bottom: 0; }
 </style>
 
 <main>
