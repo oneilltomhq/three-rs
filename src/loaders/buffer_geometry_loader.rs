@@ -26,7 +26,7 @@ impl BufferGeometryLoader {
     /// renders a single frame once loading has settled.
     pub fn load(&self, path: impl AsRef<Path>) -> Result<BufferGeometry, Error> {
         let path = path.as_ref();
-        let text = std::fs::read_to_string(path).map_err(|e| Error::io(path, e))?;
+        let text = crate::io::read_to_string(path)?;
         let json: serde_json::Value =
             serde_json::from_str(&text).map_err(|source| Error::Json {
                 path: Some(path.to_path_buf()),

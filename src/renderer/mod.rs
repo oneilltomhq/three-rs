@@ -716,27 +716,124 @@ pub struct RendererParameters {
     pub antialias: bool,
 }
 
+/// The wgpu backend every entry point in this crate asks an instance for, in
+/// the one place its callers — [`Renderer::new`], `pick_adapter`, the viewer
+/// binary and the browser shell — can share it.
+///
+/// three.js has no equivalent: `WebGPURenderer` gets whatever `navigator.gpu`
+/// hands it. Here the choice is the target's, and there is exactly one sensible
+/// answer per target, so it is a constant rather than a parameter:
+///
+/// * natively, `VULKAN` alone. The whole grading ladder is calibrated against
+///   one Mesa/Vulkan rasterizer; letting wgpu fall back to GL or to a software
+///   adapter would silently change every reference comparison.
+/// * on wasm32, `BROWSER_WEBGPU` — `navigator.gpu`, which is the only backend
+///   wgpu has in a browser that this port's compute passes and storage
+///   textures can run on (WebGL2 cannot).
+#[cfg(not(target_arch = "wasm32"))]
+pub const BACKENDS: wgpu::Backends = wgpu::Backends::VULKAN;
+
+/// See the native `BACKENDS` above, which carries the reasoning for both.
+#[cfg(target_arch = "wasm32")]
+pub const BACKENDS: wgpu::Backends = wgpu::Backends::BROWSER_WEBGPU;
+
+#[cfg(target_arch = "wasm32")]
+thread_local! {
+    /// The `(Adapter, Device, Queue)` a browser host created asynchronously
+    /// before it called into any example; see [`adopt_device`].
+    static ADOPTED_DEVICE: std::cell::RefCell<
+        Option<(wgpu::Adapter, wgpu::Device, wgpu::Queue)>,
+    > = const { std::cell::RefCell::new(None) };
+}
+
+/// Hands the renderer a device the host already created, for
+/// [`Renderer::new`] on wasm32 to pick up.
+///
+/// This is the browser flavour of the "the host adopts the renderer" design
+/// [`Renderer::with_device`] describes, and it exists because of one
+/// constraint: adapter and device creation are asynchronous in a browser and
+/// nothing can block a page's single thread, yet every ported example builds
+/// its scene in a synchronous `init()` that calls `Renderer::new`. Those
+/// `init()` functions are the corpus being graded and must not change shape,
+/// so the asynchrony is moved *out* of them: the shell awaits
+/// `request_adapter` / `request_device` itself, parks the result here, and then
+/// calls `init()` as the e2e harness and the viewer do.
+///
+/// The handles are `Clone`-able refcounts, and this leaves them in place rather
+/// than taking them, so an example that builds more than one `Renderer` gets
+/// them all on the one device — which is also what a page with two canvases
+/// would want.
+///
+/// Call it before the first `Renderer::new`; a `Renderer::new` with nothing
+/// adopted returns [`Error::NoAdoptedDevice`] rather than panicking, because on
+/// this target it is a host sequencing mistake and not an invariant.
+#[cfg(target_arch = "wasm32")]
+pub fn adopt_device(adapter: wgpu::Adapter, device: wgpu::Device, queue: wgpu::Queue) {
+    ADOPTED_DEVICE.with(|slot| *slot.borrow_mut() = Some((adapter, device, queue)));
+}
+
 impl Renderer {
     /// `new WebGPURenderer( parameters )`, plus the `init()` three.js does
     /// lazily: picking an adapter and creating a device, either of which the
     /// machine can refuse.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn new(parameters: RendererParameters) -> Result<Self, Error> {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::VULKAN,
+            backends: BACKENDS,
             ..wgpu::InstanceDescriptor::new_without_display_handle()
         });
 
         Self::with_instance(parameters, instance)
     }
 
+    /// `new WebGPURenderer( parameters )` in a browser: the device the host
+    /// parked with [`adopt_device`], through [`Renderer::with_device`].
+    ///
+    /// The signature is the native one on purpose — see [`adopt_device`] for
+    /// why the examples' synchronous `init()` is the constraint that shapes
+    /// this. A page that wants to create the device itself, in order, should
+    /// use [`Renderer::with_instance_async`] instead.
+    #[cfg(target_arch = "wasm32")]
+    pub fn new(parameters: RendererParameters) -> Result<Self, Error> {
+        let adopted = ADOPTED_DEVICE.with(|slot| slot.borrow().clone());
+        match adopted {
+            Some((adapter, device, queue)) => {
+                Ok(Self::with_device(parameters, adapter, device, queue))
+            }
+            None => Err(Error::NoAdoptedDevice),
+        }
+    }
+
     /// `new()` against an instance the caller already created. The viewer needs
     /// this because a Wayland/X11 surface only works on an instance built with
     /// the windowing system's display handle.
+    ///
+    /// Native only: it blocks on [`Renderer::with_instance_async`], and a
+    /// browser has no thread to block; there `Renderer::new` adopts a device
+    /// the host created instead (`renderer::adopt_device`, wasm32 only, so not
+    /// a link from these docs).
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn with_instance(
         parameters: RendererParameters,
         instance: wgpu::Instance,
     ) -> Result<Self, Error> {
-        let adapter = pick_adapter(&instance)?;
+        pollster::block_on(Self::with_instance_async(parameters, instance))
+    }
+
+    /// The primitive both synchronous constructors are made of: pick an
+    /// adapter, request a device, hand both to [`Renderer::with_device`].
+    ///
+    /// WebGPU is asynchronous in every implementation — `navigator.gpu
+    /// .requestAdapter()` and `adapter.requestDevice()` are promises, and wgpu
+    /// mirrors that with futures on every backend. Natively the two awaits
+    /// resolve immediately and `pollster::block_on` is free; in a browser they
+    /// are real, so this is the only constructor that exists there and the
+    /// caller drives it from `wasm_bindgen_futures::spawn_local`.
+    pub async fn with_instance_async(
+        parameters: RendererParameters,
+        instance: wgpu::Instance,
+    ) -> Result<Self, Error> {
+        let adapter = pick_adapter(&instance).await?;
 
         // `FLOAT32_FILTERABLE` is what lets an `r32float` texture be sampled
         // through a filtering sampler — the SDF atlas is
@@ -752,8 +849,8 @@ impl Renderer {
             .features()
             .contains(wgpu::Features::FLOAT32_FILTERABLE);
 
-        let (device, queue) =
-            pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+        let (device, queue) = adapter
+            .request_device(&wgpu::DeviceDescriptor {
                 label: Some("three-rs device"),
                 required_features: if float32_filterable {
                     wgpu::Features::FLOAT32_FILTERABLE
@@ -764,7 +861,8 @@ impl Renderer {
                 experimental_features: wgpu::ExperimentalFeatures::disabled(),
                 memory_hints: wgpu::MemoryHints::MemoryUsage,
                 trace: wgpu::Trace::Off,
-            }))?;
+            })
+            .await?;
 
         Ok(Self::with_device(parameters, adapter, device, queue))
     }
@@ -4861,9 +4959,23 @@ fn write_face(
     );
 }
 
-fn pick_adapter(instance: &wgpu::Instance) -> Result<wgpu::Adapter, Error> {
+/// The browser has no adapter enumeration: `wgpu::Instance::enumerate_adapters`
+/// returns nothing on `BROWSER_WEBGPU`, because `navigator.gpu` only exposes
+/// `requestAdapter()`. So the preference order below — and the
+/// `THREE_RS_ADAPTER_NAME` override that goes with it, which names a Vulkan
+/// physical device — has no meaning here; the browser picks.
+#[cfg(target_arch = "wasm32")]
+async fn pick_adapter(instance: &wgpu::Instance) -> Result<wgpu::Adapter, Error> {
+    instance
+        .request_adapter(&wgpu::RequestAdapterOptions::default())
+        .await
+        .map_err(|_| Error::NoAdapter { wanted: None })
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+async fn pick_adapter(instance: &wgpu::Instance) -> Result<wgpu::Adapter, Error> {
     let wanted = std::env::var("THREE_RS_ADAPTER_NAME").ok();
-    let adapters = pollster::block_on(instance.enumerate_adapters(wgpu::Backends::VULKAN));
+    let adapters = instance.enumerate_adapters(BACKENDS).await;
 
     if let Some(wanted) = &wanted {
         if let Some(adapter) = adapters

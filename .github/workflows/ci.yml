@@ -43,6 +43,26 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --workspace --all-targets
 
+  # The library and the browser shell for wasm32 (issue #128). No GPU and no
+  # browser here: this is the compile gate that keeps the wasm32 path from
+  # rotting — a `std::fs` call sneaking back into a loader, or a native-only
+  # dependency going unconditional — while the pixels are still graded by the
+  # manual native ladder. Grading a browser frame in headless Chrome is a
+  # later item on #128.
+  wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --target wasm32-unknown-unknown -p three-rs
+      - run: cargo clippy --target wasm32-unknown-unknown -p three-rs -- -D warnings
+      - run: cargo build --release --target wasm32-unknown-unknown -p three-rs-web
+      - run: cargo clippy --target wasm32-unknown-unknown -p three-rs-web -- -D warnings
+
   test:
     runs-on: ubuntu-latest
     steps:
@@ -61,6 +81,15 @@ jobs:
           cargo test -p three-rs --lib
           cargo test -p sdf-text --lib
           cargo test -p three-rs-controls --lib
+
+      # The gallery generator's and the web manifest generator's own tests
+      # (`test = true` on their `[[example]]`), neither of which needs a GPU:
+      # the README table parse, the marker replacement, and that every graded
+      # example has a committed web manifest.
+      - name: Generator tests (no GPU)
+        run: |
+          cargo test -p three-rs --example gallery
+          cargo test -p three-rs --example web_manifests
 
       # Every other `tests/*.rs` file that does not create a `Renderer`.
       # Excluded on purpose:

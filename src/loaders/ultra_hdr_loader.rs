@@ -225,7 +225,7 @@ impl UltraHdrLoader {
     /// three's dump has the mip passes and a texture with 12 levels.
     pub fn load<P: AsRef<Path>>(&self, url: P) -> Result<Texture, Error> {
         let path = url.as_ref();
-        let bytes = std::fs::read(path).map_err(|e| Error::io(path, e))?;
+        let bytes = crate::io::read(path)?;
         let tex_data = self.parse(path, &bytes)?;
 
         let texture = match &tex_data.data {

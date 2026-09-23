@@ -6,7 +6,9 @@
 
 mod strip;
 
+#[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
+#[cfg(not(target_arch = "wasm32"))]
 use std::process::Command;
 
 pub use strip::{strip, Step, Strip, StripFrame};
@@ -57,6 +59,13 @@ impl DeterministicRandom {
 
 /// Writes RGBA8 pixels as a PNG — the same container `page.screenshot()`
 /// produces, so the comparator's decode path is identical.
+///
+/// Not gated to native, unlike [`compare`], although a browser has nowhere to
+/// write to: every ported example's `main()` calls it, and the browser shell
+/// compiles those examples as modules (`#[path = "../../examples/<name>.rs"]`)
+/// exactly as the viewer and the e2e harness do. `std::fs` compiles for
+/// wasm32-unknown-unknown and fails at run time, which is the right shape here
+/// — nothing in a page ever reaches an example's `main()`.
 pub fn write_png(path: &str, width: u32, height: u32, pixels: &[u8]) {
     if let Some(parent) = std::path::Path::new(path).parent() {
         std::fs::create_dir_all(parent).ok();
@@ -74,6 +83,7 @@ pub fn write_png(path: &str, width: u32, height: u32, pixels: &[u8]) {
 /// set, else `$HOME/src/vendor/<name>`. Nothing under `src/` reads these; only
 /// the examples (their textures and models come from Three's own `examples/`)
 /// and the tests (Three's e2e reference screenshots) do.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn vendor_dir(env_var: &str, name: &str) -> std::path::PathBuf {
     match std::env::var(env_var) {
         Ok(dir) => std::path::PathBuf::from(dir),
@@ -81,6 +91,20 @@ pub fn vendor_dir(env_var: &str, name: &str) -> std::path::PathBuf {
             .join("src/vendor")
             .join(name),
     }
+}
+
+/// A fixed virtual root in a browser, where there is no checkout, no `$HOME`
+/// and no environment to read one out of.
+///
+/// The paths the examples build under it are never opened: they are the keys
+/// [`crate::io::preload`] is called with, so all that matters is that the host
+/// and the example agree, and they agree by both going through this function.
+/// The browser shell derives each key as
+/// `three_js_dir().join(<path relative to the three.js checkout>)`, exactly the
+/// relative paths a native run recorded into the example's manifest (#128).
+#[cfg(target_arch = "wasm32")]
+pub fn vendor_dir(_env_var: &str, name: &str) -> std::path::PathBuf {
+    std::path::PathBuf::from("/vendor").join(name)
 }
 
 /// The three.js checkout (`THREE_JS_DIR`), expected at tag r186 with
@@ -108,6 +132,11 @@ pub struct Comparison {
 /// `actual.jpg`, `expected.jpg` and `diff.jpg` land for a look. `image.js`'s
 /// `scale()` and `compare()` come from [`three_js_dir`] by shelling out to
 /// `node`, so no second implementation of the comparator exists on this side.
+///
+/// Native only: it shells out to `node` against a three.js checkout, and a
+/// browser build has neither. Grading a browser frame is issue #128's fourth
+/// item, and it runs the comparator *outside* the page.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn compare(actual: &Path, expected: &Path, out: &Path) -> Comparison {
     assert!(
         expected.exists(),
@@ -154,4 +183,5 @@ pub fn compare(actual: &Path, expected: &Path, out: &Path) -> Comparison {
 }
 
 /// The script [`compare`] runs; written next to the images it produces.
+#[cfg(not(target_arch = "wasm32"))]
 const COMPARE_MJS: &str = include_str!("testing/compare.mjs");

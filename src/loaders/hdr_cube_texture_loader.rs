@@ -90,7 +90,7 @@ impl HdrCubeTextureLoader {
         let mut images = Vec::with_capacity(6);
         for url in urls.iter() {
             let path = self.path.join(url.as_ref());
-            let bytes = std::fs::read(&path).map_err(|e| Error::io(&path, e))?;
+            let bytes = crate::io::read(&path)?;
             let tex_data = loader.parse(&bytes)?;
 
             // `new DataTexture( texData.data, texData.width, texData.height )`.

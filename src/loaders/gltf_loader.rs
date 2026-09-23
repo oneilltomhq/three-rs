@@ -405,7 +405,7 @@ impl GLTFLoader {
     /// `loader.load( url )`, synchronously: read the file and parse it.
     pub fn load(path: impl AsRef<Path>) -> Result<Gltf, Error> {
         let path = path.as_ref();
-        let data = std::fs::read(path).map_err(|e| Error::io(path, e))?;
+        let data = crate::io::read(path)?;
         let base = path.parent().unwrap_or(Path::new(".")).to_path_buf();
         Self::parse(&data, base)
     }
@@ -470,8 +470,7 @@ impl GLTFLoader {
                 }
                 Some(uri) => {
                     let path = self.base.join(uri);
-                    self.buffers
-                        .push(std::fs::read(&path).map_err(|e| Error::io(&path, e))?);
+                    self.buffers.push(crate::io::read(&path)?);
                 }
             }
         }
@@ -1328,7 +1327,7 @@ impl GLTFLoader {
 
             let data = match (&uri, json_usize(&image_def, "bufferView")) {
                 (Some(uri), _) if uri.starts_with("data:") => decode_data_uri(uri)?,
-                (Some(uri), _) => std::fs::read(self.base.join(uri)).unwrap_or_default(),
+                (Some(uri), _) => crate::io::read(&self.base.join(uri)).unwrap_or_default(),
                 (None, Some(view)) => self.buffer_view(view)?.to_vec(),
                 (None, None) => Vec::new(),
             };

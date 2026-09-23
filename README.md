@@ -88,6 +88,12 @@ Linux is the only backend that has been run.
 
 <sub>Our own rendered frames, one per graded example. See [`docs/gallery.md`](https://github.com/oneilltomhq/three-rs/blob/main/docs/gallery.md).</sub>
 <!-- gallery:end -->
+
+Every one of these also runs in a browser, on the browser's own WebGPU, from
+the same `init()`: see [`web/README.md`](https://github.com/oneilltomhq/three-rs/blob/main/web/README.md)
+for how to build and serve the shell, and [issue #128](https://github.com/oneilltomhq/three-rs/issues/128)
+for where that is going.
+
 | Three example | different pixels (of 100000) | steady frame (ms) | draw calls | triangles |
 |---|---|---|---|---|
 | webgpu_depth_texture | 0 | 11.0 | 43 | 671746 |

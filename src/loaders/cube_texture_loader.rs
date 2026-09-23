@@ -59,6 +59,6 @@ impl CubeTextureLoader {
 /// `webgpu_pmrem_scene`'s are JPEG, and both reach
 /// [`super::texture_loader::decode_image`].
 fn decode(path: &Path) -> Result<Image, Error> {
-    let bytes = std::fs::read(path).map_err(|e| Error::io(path, e))?;
+    let bytes = crate::io::read(path)?;
     super::texture_loader::decode_image(path, &bytes)
 }
