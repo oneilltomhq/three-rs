@@ -14,6 +14,7 @@ version = "0.1.2"
 description = "A port of three.js core and its WebGPURenderer to Rust on wgpu, graded against three.js's own end-to-end pixel comparison."
 documentation = "https://docs.rs/three-rs"
 readme = "README.md"
+autobins = false
 keywords = ["graphics", "3d", "wgpu", "webgpu", "threejs"]
 categories = ["rendering::engine", "graphics", "game-development"]
 edition.workspace = true
@@ -34,14 +35,33 @@ exclude = [
 ]
 
 [dependencies]
-wgpu = { version = "30.0.1", default-features = false, features = ["std", "vulkan", "wgsl"] }
+# The backend is not in this table: the grader's Vulkan backend has no meaning
+# in a browser and the WebGPU one has none on a desktop, so each is requested
+# from its own target table below. Feature sets are additive across tables, so
+# a native build gets `std, wgsl, vulkan` and a wasm32 build `std, wgsl,
+# webgpu` (issue #128).
+wgpu = { version = "30.0.1", default-features = false, features = ["std", "wgsl"] }
 bytemuck = { version = "1", features = ["derive"] }
-pollster = "0.4"
 png = "0.17"
 serde_json = "1"
 zune-jpeg = { version = "0.5.15", default-features = false, features = ["std"] }
-# The viewer binary only; the e2e path does not touch it.
+
+# Everything that only makes sense on a desktop.
+#
+# `vulkan` is the backend the whole grading ladder is calibrated on.
+# `pollster` drives the async constructor to completion for the blocking
+# `Renderer::new` / `with_instance`; a browser cannot block its one thread, so
+# on wasm32 the async constructor is the only one (see `renderer::BACKENDS`).
+# `winit` is the viewer binary alone, which is compiled away on wasm32.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+wgpu = { version = "30.0.1", default-features = false, features = ["vulkan"] }
+pollster = "0.4"
 winit = "0.30.8"
+
+# `webgpu` is wgpu's `navigator.gpu` backend: it talks to the browser's own
+# WebGPU implementation through web-sys rather than to a driver.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wgpu = { version = "30.0.1", default-features = false, features = ["webgpu"] }
 
 [dev-dependencies]
 # The examples gallery generator (`examples/gallery.rs`) only. Pure Rust with
@@ -54,6 +74,9 @@ jpeg-encoder = { version = "0.7", default-features = false, features = ["std"] }
 # manifest (path-only) or make three-rs unpublishable (versioned). The SDF
 # text examples and their gates live in `sdf-text/` instead (#16).
 
+# Explicit, and `autobins = false` above, so that `src/bin/viewer_app.rs` —
+# the viewer's body, which `viewer.rs` includes only when the target is not
+# wasm32 — is not picked up as a binary of its own.
 [[bin]]
 name = "viewer"
 path = "src/bin/viewer.rs"

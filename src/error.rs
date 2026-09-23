@@ -61,9 +61,19 @@ pub enum Error {
     },
     /// A track name `PropertyBinding` cannot parse.
     TrackName(ParseTrackNameError),
-    /// No Vulkan adapter to render on. `wanted` is the `THREE_RS_ADAPTER_NAME`
-    /// filter, when one was set and matched nothing.
+    /// No adapter to render on — no Vulkan device natively, or
+    /// `navigator.gpu.requestAdapter()` resolving to null in a browser.
+    /// `wanted` is the `THREE_RS_ADAPTER_NAME` filter, when one was set and
+    /// matched nothing; it is always `None` on wasm32, where the browser picks
+    /// the adapter and there is nothing to filter.
     NoAdapter { wanted: Option<String> },
+    /// `Renderer::new()` on wasm32 with nothing handed to
+    /// `renderer::adopt_device()` first. Device creation is asynchronous in a
+    /// browser and the examples' `init()` is not, so the host must create the
+    /// device and park it before the first `Renderer::new()`; see
+    /// `renderer::adopt_device`. wasm32 only.
+    #[cfg(target_arch = "wasm32")]
+    NoAdoptedDevice,
     /// `adapter.request_device()` failed.
     Device(wgpu::RequestDeviceError),
     /// Reading pixels back off the GPU failed; `reason` is what wgpu said.
@@ -142,6 +152,12 @@ impl fmt::Display for Error {
                 write!(f, "no Vulkan adapter matching THREE_RS_ADAPTER_NAME={name}")
             }
             Self::NoAdapter { wanted: None } => write!(f, "no Vulkan adapter found"),
+            #[cfg(target_arch = "wasm32")]
+            Self::NoAdoptedDevice => write!(
+                f,
+                "no device was adopted: call three_rs::renderer::adopt_device() \
+                 before Renderer::new()"
+            ),
             Self::Device(source) => write!(f, "cannot create the device: {source}"),
             Self::Readback { reason } => write!(f, "cannot read pixels back: {reason}"),
         }
