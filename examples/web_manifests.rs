@@ -408,7 +408,7 @@ mod tests {
                 .split('|')
                 .map(str::trim)
                 .collect();
-            if cells.len() == 5 && cells[0].starts_with("webgpu_") {
+            if (5..=6).contains(&cells.len()) && cells[0].starts_with("webgpu_") {
                 names.push(cells[0].to_string());
             }
         }

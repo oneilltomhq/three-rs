@@ -47,8 +47,28 @@ The three.js checkout the local page reads its reference screenshots from is
 committed (~10 KB each, 400 px wide, JPEG quality 80), so a new rung's picture
 only appears once someone regenerates and commits it. The generator is
 idempotent: re-running it with nothing new changes nothing, and it only ever
-rewrites what is between the two markers, so a rung worker adding a row to the
-graded table will not collide with it.
+rewrites what is between the two markers and the table's `browser` column, so
+a rung worker adding a row to the graded table will not collide with it.
+
+## The `browser` column
+
+The graded table's last column says whether CI's `web-gate` job grades the
+example in headless Chrome (see "Grading in the browser" in
+[`web/README.md`](../web/README.md#grading-in-the-browser)). The generator
+derives it, `--readme-only` included, and it is never typed by hand:
+
+| cell | when |
+|---|---|
+| `yes` | `web/manifests/<name>.json` exists and `tools/web_gate.skip` does not list the name |
+| `no (<reason>)` | `tools/web_gate.skip` lists the name; the reason is the rest of its line |
+| `not yet` | no manifest: the example is not on the Pages build, so the gate cannot see it |
+
+A row added by hand may stop at the `triangles` cell; the generator appends
+the sixth. The test `the_readme_browser_column_is_current` (run by
+`cargo test -p three-rs --example gallery`, which CI runs) fails when a cell
+disagrees with the manifests and the skip list, or when a manifest has no row
+in the table. The fix is the same either way: add the row if it is missing,
+then `cargo run --release --example gallery -- --readme-only`.
 
 ## One source of truth
 

@@ -21,6 +21,18 @@
 //! inventing a third one. The table's row order is the rung order, and the
 //! gallery keeps it.
 //!
+//! **The `browser` column.** The table's sixth column says whether CI's
+//! `web-gate` job (`tools/web_gate.mjs`: headless Chrome, software WebGPU,
+//! the same screenshots at the same threshold) grades the example. It is
+//! derived, never typed: `yes` when `web/manifests/<name>.json` exists and
+//! `tools/web_gate.skip` does not list the name, `no (<reason>)` when the
+//! skip file does, and `not yet` when there is no manifest (the example is
+//! not on the Pages build, so the gate cannot see it). Every run of this
+//! tool, `--readme-only` included, rewrites the column's header and cells in
+//! place and nothing else in the row, so a rung worker adding a row by hand
+//! may leave the cell off. The test `the_readme_browser_column_is_current`
+//! fails CI when the column and the manifests drift apart.
+//!
 //! **Reference images.** Nothing derived from Three's reference screenshots
 //! is ever written into the tree. The committed thumbnails are downscales of
 //! our own frames. The local `target/gallery/index.html` *does* point at the
@@ -35,10 +47,13 @@
 //! cargo run --release --example gallery -- --readme-only
 //! ```
 //!
-//! `--readme-only` rewrites only the README block, from the thumbnails already
-//! committed under `docs/gallery/`: no ladder run, no GPU, no three.js
-//! checkout. It is for changing the block's shape, not for adding a rung.
+//! `--readme-only` rewrites only the README block and the `browser` column,
+//! from the thumbnails already committed under `docs/gallery/` and the
+//! manifests under `web/manifests/`: no ladder run, no GPU, no three.js
+//! checkout. It is for changing the block's shape and refreshing the column,
+//! not for adding a rung.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -58,6 +73,13 @@ const GALLERY_START: &str = "<!-- gallery:start -->";
 const GALLERY_END: &str = "<!-- gallery:end -->";
 /// The heading the block is inserted under the first time it is written.
 const GALLERY_SECTION: &str = "## Examples graded green";
+/// The first header cell of the graded table, and the header of the column
+/// this tool owns in it.
+const TABLE_FIRST_HEADER: &str = "Three example";
+const BROWSER_HEADER: &str = "browser";
+/// Cells in a graded row without, and with, the `browser` column.
+const ROW_CELLS: usize = 5;
+const ROW_CELLS_WITH_BROWSER: usize = 6;
 
 /// Thumbnails: 400 px wide (the graded frame is 800x500, so an exact 2:1
 /// area average), JPEG quality 80. That lands each one well under 40 KB.
@@ -85,14 +107,18 @@ struct Row {
     draw_calls: u64,
     /// The triangles cell verbatim; one row says "1 + 300000 points".
     triangles: String,
+    /// The `browser` cell verbatim, or `None` on a five-cell row that has not
+    /// been through the generator yet.
+    browser: Option<String>,
 }
 
 /// Parse the README's "Examples graded green" table.
 ///
 /// Only rows inside that section are considered, and only rows whose first
 /// cell is an example name; the header and the `---` separator fall out on
-/// their own. A row whose numbers do not parse is skipped and named on
-/// stderr rather than guessed at.
+/// their own. A row has five cells, or six once the generator has filled in
+/// its `browser` cell. A row whose numbers do not parse is skipped and named
+/// on stderr rather than guessed at.
 fn parse_graded_table(readme: &str) -> Vec<Row> {
     let mut rows = Vec::new();
     let mut in_section = false;
@@ -106,13 +132,10 @@ fn parse_graded_table(readme: &str) -> Vec<Row> {
             continue;
         }
 
-        let cells: Vec<&str> = line
-            .trim()
-            .trim_matches('|')
-            .split('|')
-            .map(str::trim)
-            .collect();
-        if cells.len() != 5 || !cells[0].starts_with("webgpu_") {
+        let cells = table_cells(line);
+        if !(cells.len() == ROW_CELLS || cells.len() == ROW_CELLS_WITH_BROWSER)
+            || !cells[0].starts_with("webgpu_")
+        {
             continue;
         }
 
@@ -130,6 +153,7 @@ fn parse_graded_table(readme: &str) -> Vec<Row> {
                 steady_ms: cells[2].parse().ok()?,
                 draw_calls: cells[3].parse().ok()?,
                 triangles: cells[4].to_string(),
+                browser: cells.get(5).map(|c| c.to_string()),
             })
         })();
 
@@ -140,6 +164,148 @@ fn parse_graded_table(readme: &str) -> Vec<Row> {
     }
 
     rows
+}
+
+/// The trimmed cells of a Markdown table line.
+fn table_cells(line: &str) -> Vec<&str> {
+    line.trim()
+        .trim_matches('|')
+        .split('|')
+        .map(str::trim)
+        .collect()
+}
+
+// ---------------------------------------------------------------------------
+// The `browser` column: what CI's web gate grades.
+// ---------------------------------------------------------------------------
+
+/// Parse `tools/web_gate.skip` the way `tools/web_gate.mjs` does: one
+/// `<example>  <reason>` per line, whitespace-separated, `#` to end of line
+/// a comment, blank lines ignored.
+fn parse_skip_list(text: &str) -> BTreeMap<String, String> {
+    let mut skip = BTreeMap::new();
+    for raw in text.lines() {
+        let line = raw.split('#').next().unwrap_or("").trim();
+        let mut words = line.split_whitespace();
+        let Some(name) = words.next() else { continue };
+        skip.insert(name.to_string(), words.collect::<Vec<_>>().join(" "));
+    }
+    skip
+}
+
+/// The examples `web/manifests/` builds for Pages, and therefore the ones the
+/// web gate grades: one `<name>.json` each.
+fn read_manifests(root: &Path) -> BTreeSet<String> {
+    let dir = root.join("web/manifests");
+    let Ok(read) = fs::read_dir(&dir) else {
+        return BTreeSet::new();
+    };
+    read.filter_map(|e| e.ok())
+        .filter_map(|e| {
+            e.file_name()
+                .to_str()
+                .and_then(|f| f.strip_suffix(".json"))
+                .map(str::to_string)
+        })
+        .collect()
+}
+
+/// `tools/web_gate.skip`, parsed; empty when the file does not exist.
+fn read_skip_list(root: &Path) -> BTreeMap<String, String> {
+    fs::read_to_string(root.join("tools/web_gate.skip"))
+        .map(|t| parse_skip_list(&t))
+        .unwrap_or_default()
+}
+
+/// The `browser` cell for one example.
+fn browser_cell(
+    name: &str,
+    manifests: &BTreeSet<String>,
+    skip: &BTreeMap<String, String>,
+) -> String {
+    match skip.get(name) {
+        // A `|` in a reason would split the cell.
+        Some(reason) if reason.is_empty() => "no (skipped)".to_string(),
+        Some(reason) => format!("no ({})", reason.replace('|', "/")),
+        None if manifests.contains(name) => "yes".to_string(),
+        None => "not yet".to_string(),
+    }
+}
+
+/// `line` (a table line with `cells` cells) with its last cell set to
+/// `value` when it has `full` cells, or `value` appended when it has one
+/// fewer. The other cells keep their text and spacing byte for byte.
+fn with_last_cell(line: &str, cells: usize, full: usize, value: &str) -> String {
+    let body = line.trim_end().strip_suffix('|').unwrap_or(line.trim_end());
+    let body = if cells == full {
+        body.rfind('|').map_or(body, |at| &body[..at])
+    } else {
+        body
+    };
+    format!("{} | {value} |", body.trim_end())
+}
+
+/// Rewrite the graded table's `browser` header and cells in place from the
+/// manifests and the skip list. Nothing else in the README changes: not the
+/// other cells, not the row order, not the gallery block.
+fn rewrite_browser_column(
+    readme: &str,
+    manifests: &BTreeSet<String>,
+    skip: &BTreeMap<String, String>,
+) -> String {
+    let mut out = String::with_capacity(readme.len() + 4096);
+    let mut in_section = false;
+    let mut in_block = false;
+    let mut after_header = false;
+
+    for line in readme.split_inclusive('\n') {
+        let (text, newline) = match line.strip_suffix('\n') {
+            Some(t) => (t, "\n"),
+            None => (line, ""),
+        };
+        let was_after_header = std::mem::take(&mut after_header);
+
+        if let Some(heading) = text.strip_prefix("## ") {
+            in_section = format!("## {}", heading.trim()) == GALLERY_SECTION;
+        } else if text.trim() == GALLERY_START {
+            in_block = true;
+        } else if text.trim() == GALLERY_END {
+            in_block = false;
+        } else if in_section && !in_block && text.trim_start().starts_with('|') {
+            let cells = table_cells(text);
+            let n = cells.len();
+            let fits = n == ROW_CELLS || n == ROW_CELLS_WITH_BROWSER;
+            if fits && cells[0] == TABLE_FIRST_HEADER {
+                out.push_str(&with_last_cell(
+                    text,
+                    n,
+                    ROW_CELLS_WITH_BROWSER,
+                    BROWSER_HEADER,
+                ));
+                out.push_str(newline);
+                after_header = true;
+                continue;
+            }
+            let separator = cells
+                .iter()
+                .all(|c| !c.is_empty() && c.chars().all(|ch| ch == '-' || ch == ':'));
+            if fits && was_after_header && separator {
+                // Every cell of our table's separator is a plain `---`.
+                out.push('|');
+                out.push_str(&"---|".repeat(ROW_CELLS_WITH_BROWSER));
+                out.push_str(newline);
+                continue;
+            }
+            if fits && cells[0].starts_with("webgpu_") {
+                let cell = browser_cell(cells[0], manifests, skip);
+                out.push_str(&with_last_cell(text, n, ROW_CELLS_WITH_BROWSER, &cell));
+                out.push_str(newline);
+                continue;
+            }
+        }
+        out.push_str(line);
+    }
+    out
 }
 
 /// Splice `block` between the gallery markers, idempotently.
@@ -544,10 +710,29 @@ fn vendor_dir(args: &[String]) -> PathBuf {
     PathBuf::from(home).join("src/vendor/three.js")
 }
 
-/// `--readme-only`: the README block from the committed thumbnails alone.
+/// Write the README with a fresh gallery block and `browser` column, if
+/// either changed.
+fn write_readme(root: &Path, readme: &str, entries: &[&Entry]) {
+    let updated = rewrite_browser_column(
+        &replace_gallery_section(readme, &readme_grid(entries)),
+        &read_manifests(root),
+        &read_skip_list(root),
+    );
+    if updated != readme {
+        fs::write(root.join("README.md"), updated).expect("gallery: README.md");
+        println!(
+            "gallery: README.md gallery block and browser column updated ({} examples)",
+            entries.len()
+        );
+    } else {
+        println!("gallery: README.md gallery block and browser column already current");
+    }
+}
+
+/// `--readme-only`: the README block from the committed thumbnails alone,
+/// and the `browser` column from the manifests.
 fn readme_only(root: &Path) {
-    let readme_path = root.join("README.md");
-    let readme = fs::read_to_string(&readme_path).expect("gallery: README.md");
+    let readme = fs::read_to_string(root.join("README.md")).expect("gallery: README.md");
     let mut entries: Vec<Entry> = Vec::new();
     let mut missing: Vec<String> = Vec::new();
     for row in parse_graded_table(&readme) {
@@ -568,16 +753,7 @@ fn readme_only(root: &Path) {
         std::process::exit(1);
     }
     let ordered: Vec<&Entry> = entries.iter().collect();
-    let updated = replace_gallery_section(&readme, &readme_grid(&ordered));
-    if updated != readme {
-        fs::write(&readme_path, updated).expect("gallery: README.md");
-        println!(
-            "gallery: README.md gallery block updated ({} examples)",
-            ordered.len()
-        );
-    } else {
-        println!("gallery: README.md gallery block already current");
-    }
+    write_readme(root, &readme, &ordered);
     if !missing.is_empty() {
         println!(
             "gallery: no docs/gallery thumbnail for {}; run the ladder and the full generator",
@@ -595,10 +771,12 @@ fn main() {
              \n\
              Reads the README's \"Examples graded green\" table and the frames the e2e\n\
              ladder left in target/e2e/<name>/actual.png, then writes docs/gallery/*.jpg,\n\
-             target/gallery/index.html and the README's gallery block.\n\
+             target/gallery/index.html, the README's gallery block and the table's\n\
+             browser column (from web/manifests/ and tools/web_gate.skip).\n\
              \n\
-             --readme-only rewrites just the README block from the thumbnails already\n\
-             committed under docs/gallery/; it needs no ladder run and no GPU."
+             --readme-only rewrites just the README block, from the thumbnails already\n\
+             committed under docs/gallery/, and the browser column; it needs no ladder\n\
+             run and no GPU."
         );
         return;
     }
@@ -611,8 +789,7 @@ fn main() {
     let vendor = vendor_dir(&args);
     let tag = three_tag(&vendor);
 
-    let readme_path = root.join("README.md");
-    let readme = fs::read_to_string(&readme_path).expect("gallery: README.md");
+    let readme = fs::read_to_string(root.join("README.md")).expect("gallery: README.md");
     let rows = parse_graded_table(&readme);
     if rows.is_empty() {
         eprintln!("gallery: no rows in the README's \"{GALLERY_SECTION}\" table; nothing to do");
@@ -666,13 +843,7 @@ fn main() {
     let index = out_dir.join("index.html");
     fs::write(&index, index_html(&ordered, &root, &vendor, &tag)).expect("gallery: index.html");
 
-    let updated = replace_gallery_section(&readme, &readme_grid(&ordered));
-    if updated != readme {
-        fs::write(&readme_path, updated).expect("gallery: README.md");
-        println!("gallery: README.md gallery block updated");
-    } else {
-        println!("gallery: README.md gallery block already current");
-    }
+    write_readme(&root, &readme, &ordered);
 
     println!(
         "gallery: {} example(s), {} KB of thumbnails, file://{}",
@@ -722,6 +893,7 @@ Measured on Intel Iris Xe.
                 steady_ms: 1.0,
                 draw_calls: 1,
                 triangles: "1".to_string(),
+                browser: None,
             },
             actual: PathBuf::from("/dev/null"),
             progress_doc: doc.map(str::to_string),
@@ -748,6 +920,157 @@ Measured on Intel Iris Xe.
         assert_eq!(
             rows[1].diff_note,
             "(Three itself scores 60 against the same JPEG)"
+        );
+    }
+
+    #[test]
+    fn parses_five_and_six_cell_rows() {
+        let readme = "\
+## Examples graded green
+
+| Three example | different pixels (of 100000) | steady frame (ms) | draw calls | triangles | browser |
+|---|---|---|---|---|---|
+| webgpu_rtt | 1 | 2.3 | 3 | 14 | yes |
+| webgpu_mrt | 87 (a note) | 2.8 | 3 | 17437 | no (flaky on SwiftShader) |
+| webgpu_new_rung | 5 | 1.0 | 2 | 10 |
+";
+        let rows = parse_graded_table(readme);
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0].browser.as_deref(), Some("yes"));
+        assert_eq!(rows[0].triangles, "14");
+        assert_eq!(rows[1].diff_pixels, 87);
+        assert_eq!(rows[1].diff_note, "(a note)");
+        assert_eq!(
+            rows[1].browser.as_deref(),
+            Some("no (flaky on SwiftShader)")
+        );
+        assert_eq!(rows[2].name, "webgpu_new_rung");
+        assert_eq!(rows[2].browser, None, "a hand-added row may leave it off");
+    }
+
+    #[test]
+    fn parses_the_skip_file_like_web_gate_mjs() {
+        let skip = parse_skip_list(
+            "# one example per line, then why\n\
+             \n\
+             webgpu_mrt   0.12% on SwiftShader, see #999  # trailing comment\n\
+             webgpu_bare\n",
+        );
+        assert_eq!(skip.len(), 2);
+        assert_eq!(skip["webgpu_mrt"], "0.12% on SwiftShader, see");
+        assert_eq!(skip["webgpu_bare"], "");
+    }
+
+    #[test]
+    fn derives_the_browser_cell() {
+        let manifests: BTreeSet<String> = ["webgpu_rtt", "webgpu_mrt", "webgpu_bare"]
+            .map(str::to_string)
+            .into();
+        let skip = parse_skip_list("webgpu_mrt  0.12% on SwiftShader\nwebgpu_bare\n");
+        assert_eq!(browser_cell("webgpu_rtt", &manifests, &skip), "yes");
+        assert_eq!(
+            browser_cell("webgpu_mrt", &manifests, &skip),
+            "no (0.12% on SwiftShader)"
+        );
+        assert_eq!(
+            browser_cell("webgpu_bare", &manifests, &skip),
+            "no (skipped)"
+        );
+        assert_eq!(browser_cell("webgpu_unbuilt", &manifests, &skip), "not yet");
+    }
+
+    #[test]
+    fn fills_the_browser_column_in_place() {
+        let manifests: BTreeSet<String> = ["webgpu_depth_texture", "webgpu_instance_mesh"]
+            .map(str::to_string)
+            .into();
+        let skip = parse_skip_list("webgpu_instance_mesh  too slow\n");
+        let once = rewrite_browser_column(TABLE, &manifests, &skip);
+        assert!(once.contains(
+            "| Three example | different pixels (of 100000) | steady frame (ms) \
+             | draw calls | triangles | browser |\n|---|---|---|---|---|---|\n"
+        ));
+        assert!(once.contains("| webgpu_depth_texture | 0 | 11.0 | 43 | 671746 | yes |\n"));
+        assert!(once.contains(
+            "| webgpu_instance_mesh | 60 (Three itself scores 60 against the same JPEG) \
+             | 9.3 | 2 | 967001 | no (too slow) |\n"
+        ));
+        assert!(once.contains("| webgpu_rtt | 1 | 2.3 | 3 | 14 | not yet |\n"));
+        // The table in the other section, and the rest, are untouched.
+        assert!(once.contains("|---|---|---|\n| `D3_GALLERY_DIR` |"));
+        assert_eq!(once.lines().count(), TABLE.lines().count());
+        // The rows still parse, notes and all.
+        let rows = parse_graded_table(&once);
+        assert_eq!(rows.len(), 3);
+        assert_eq!(
+            rows[1].diff_note,
+            "(Three itself scores 60 against the same JPEG)"
+        );
+        // Idempotent, and a changed verdict replaces the cell, not appends.
+        assert_eq!(rewrite_browser_column(&once, &manifests, &skip), once);
+        let twice = rewrite_browser_column(&once, &manifests, &BTreeMap::new());
+        assert!(twice.contains("| 9.3 | 2 | 967001 | yes |\n"));
+        assert_eq!(parse_graded_table(&twice).len(), 3);
+    }
+
+    #[test]
+    fn leaves_the_gallery_block_alone() {
+        let readme = replace_gallery_section(TABLE, "| a | b |\n|---|---|\n| webgpu_rtt | x |");
+        let manifests = BTreeSet::new();
+        let out = rewrite_browser_column(&readme, &manifests, &BTreeMap::new());
+        let block = |s: &str| {
+            let a = s.find(GALLERY_START).unwrap();
+            let b = s.find(GALLERY_END).unwrap();
+            s[a..b].to_string()
+        };
+        assert_eq!(block(&out), block(&readme));
+    }
+
+    /// The CI gate on the column: the committed README, `web/manifests/` and
+    /// `tools/web_gate.skip` must agree. The `web-gate` job grades every
+    /// manifest, so this is what makes the column say what CI enforces.
+    #[test]
+    fn the_readme_browser_column_is_current() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let readme = fs::read_to_string(root.join("README.md")).expect("README.md");
+        let manifests = read_manifests(root);
+        let skip = read_skip_list(root);
+        let fix =
+            "run `cargo run --release --example gallery -- --readme-only` and commit README.md";
+
+        let rows = parse_graded_table(&readme);
+        assert!(!rows.is_empty(), "no graded table in README.md");
+        let mut drift = Vec::new();
+        for row in &rows {
+            let want = browser_cell(&row.name, &manifests, &skip);
+            if row.browser.as_deref() != Some(want.as_str()) {
+                drift.push(format!(
+                    "{}: browser cell is {:?}, web/manifests + tools/web_gate.skip say {want:?}",
+                    row.name, row.browser
+                ));
+            }
+        }
+        let named: BTreeSet<&str> = rows.iter().map(|r| r.name.as_str()).collect();
+        for m in &manifests {
+            if !named.contains(m.as_str()) {
+                drift.push(format!(
+                    "web/manifests/{m}.json has no row in the README's graded table; \
+                     add the row (the web gate grades it)"
+                ));
+            }
+        }
+        for s in skip.keys() {
+            if !manifests.contains(s) {
+                drift.push(format!(
+                    "tools/web_gate.skip names {s}, which has no manifest"
+                ));
+            }
+        }
+        assert!(drift.is_empty(), "{}\n\n{fix}", drift.join("\n"));
+        assert_eq!(
+            rewrite_browser_column(&readme, &manifests, &skip),
+            readme,
+            "the graded table's browser header or cells are stale; {fix}"
         );
     }
 
