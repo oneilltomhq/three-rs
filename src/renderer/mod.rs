@@ -3,6 +3,7 @@
 //! bindings it declared, draw into a render target or into the "canvas"
 //! texture, read back.
 
+mod bindings;
 pub mod cube_render_target;
 mod direct_render_pipeline;
 mod info;
@@ -20,6 +21,10 @@ mod ssaa_pass;
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 
+use bindings::{
+    BindGroupKey, DrawKey, LayoutKey, Occurrences, Resource, SamplerKey, Serial, Serials, SlotKey,
+    SlotOwner, VERTEX_SLOTS,
+};
 pub use direct_render_pipeline::DirectRenderPipeline;
 pub use info::{BuildCounts, ComputeCounts, Info, MemoryCounts, RenderCounts};
 use mipmap::{create_mipmap_pipeline, MipmapShader};
@@ -52,7 +57,7 @@ use crate::objects::{Background, InstancedBufferAttribute, QuadMesh, Scene, SubD
 use crate::testing::DeterministicRandom;
 use crate::textures::{
     CubeDepthTexture, CubeTexture, DataArrayTexture, DataTexture, DataTextureData, DepthTexture,
-    Texture, TextureFilter, TextureType, Wrapping,
+    Texture, TextureFilter, TextureType,
 };
 
 /// How many **frames** a cache entry survives without being used, for the
@@ -77,7 +82,7 @@ const CACHE_GRACE_FRAMES: u64 = 4;
 /// or one upload of an `InstancedBufferAttribute`'s array — with the same
 /// `render()`-clock stamp the material states carry.
 struct BufferEntry {
-    buffer: wgpu::Buffer,
+    buffer: Serial<wgpu::Buffer>,
     last_used: u64,
     /// For a `BufferSource::Attribute`: the very array the buffer holds. The
     /// buffer is reused while the node still points at this `Rc`, and rebuilt
@@ -85,6 +90,32 @@ struct BufferEntry {
     /// (`BatchedText::sync`) does so by making new arrays. Holding the `Rc`
     /// also keeps its address from being reused under the cache (issue #58).
     data: Option<Rc<Vec<f32>>>,
+}
+
+/// One draw's persistent buffer for one binding — a uniform group, its bone
+/// matrices, its instance matrix — keyed by [`SlotKey`]. three.js'
+/// `UniformBuffer`: allocated once, and each frame's bytes are
+/// `queue.write_buffer`n into it; re-created only when a rebuilt program needs
+/// it bigger (issue #137).
+struct SlotBuffer {
+    buffer: Serial<wgpu::Buffer>,
+    usage: wgpu::BufferUsages,
+    last_used: u64,
+}
+
+/// One cached texture view, with the texture it views: the entry is good for
+/// as long as that is still the texture behind the id. See
+/// [`Renderer::texture_view`].
+struct ViewEntry {
+    texture: wgpu::Texture,
+    view: Serial<wgpu::TextureView>,
+    last_used: u64,
+}
+
+/// One cached bind group; see [`BindGroupKey`].
+struct BindGroupEntry {
+    group: wgpu::BindGroup,
+    last_used: u64,
 }
 
 /// One geometry's uploaded buffers, plus the liveness signal the cache sweep
@@ -340,6 +371,29 @@ struct MaterialStates {
 struct Texture2DEntry {
     gpu: wgpu::Texture,
     version: u32,
+}
+
+/// The [`BuildCounts`] field a newly created binding resource adds one to.
+trait Counted {
+    fn count(build: &mut BuildCounts);
+}
+
+impl Counted for wgpu::Buffer {
+    fn count(build: &mut BuildCounts) {
+        build.buffers_created += 1;
+    }
+}
+
+impl Counted for wgpu::TextureView {
+    fn count(build: &mut BuildCounts) {
+        build.views_created += 1;
+    }
+}
+
+impl Counted for wgpu::Sampler {
+    fn count(build: &mut BuildCounts) {
+        build.samplers_created += 1;
+    }
 }
 
 /// The attachments, formats and size of the pass about to run.
@@ -636,7 +690,27 @@ pub struct Renderer {
     /// attribute is disposed).
     ///
     /// [`buffers`]: Self::buffers
-    storage_buffers: HashMap<usize, wgpu::Buffer>,
+    storage_buffers: HashMap<usize, Serial<wgpu::Buffer>>,
+    /// Each draw's uniform groups, bone matrices, morph influences and
+    /// instance data, one persistent buffer per (draw, group, binding) that
+    /// every frame writes into rather than re-creating. Keyed on ids, see
+    /// [`DrawKey`]; aged out by [`CACHE_GRACE_FRAMES`], since a draw's object
+    /// and material have no liveness signal the renderer can read.
+    slot_buffers: HashMap<SlotKey, SlotBuffer>,
+    /// Texture views, by `TextureId` and view dimension, one entry per
+    /// `wgpu::Texture` that id has recently stood for; see
+    /// [`Renderer::texture_view`]. Aged out by [`CACHE_GRACE_FRAMES`], which
+    /// also bounds how long a cached view keeps a dropped texture's memory.
+    views: HashMap<(usize, Option<wgpu::TextureViewDimension>), Vec<ViewEntry>>,
+    /// Samplers, by descriptor, for the renderer's life; see [`SamplerKey`].
+    samplers: HashMap<SamplerKey, Serial<wgpu::Sampler>>,
+    /// Bind groups, by layout and the serials of what they bind; see
+    /// [`BindGroupKey`]. A frame that only rewrote its buffers' contents finds
+    /// every group here. Aged out by [`CACHE_GRACE_FRAMES`]: a group whose
+    /// member was replaced is never asked for again and goes with the window.
+    bind_group_cache: HashMap<BindGroupKey, BindGroupEntry>,
+    /// The counter [`Serial`]s are numbered from.
+    serials: Serials,
     /// Built `ComputeProgram`s, keyed by the structure of the `ComputeFlow`
     /// they came from, so a per-frame `compute()` call builds nothing.
     compute_programs: HashMap<u64, Rc<crate::nodes::ComputeProgram>>,
@@ -983,6 +1057,11 @@ impl Renderer {
             mipmap_pipelines: HashMap::new(),
             buffers: HashMap::new(),
             storage_buffers: HashMap::new(),
+            slot_buffers: HashMap::new(),
+            views: HashMap::new(),
+            samplers: HashMap::new(),
+            bind_group_cache: HashMap::new(),
+            serials: Serials::default(),
             compute_programs: HashMap::new(),
             compute_pipelines: HashMap::new(),
             background_geometry: None,
@@ -2385,6 +2464,7 @@ impl Renderer {
         clear: ClearOps,
     ) {
         let mut draws = Vec::with_capacity(items.len());
+        let mut occurrences = Occurrences::default();
 
         // `RenderList.push()` routes `material.transmission > 0` into the
         // transparent list, and the first such draw is where
@@ -2496,8 +2576,16 @@ impl Renderer {
             // two materials that differ only in which texture or which
             // `range()` buffer they name share one `Program` — and must still
             // draw with their own resources. `Program` holds none.
+            let owner = SlotOwner::Draw(occurrences.next(DrawKey {
+                object: object.as_ref().map(|object| object.id),
+                geometry: geometry_id,
+                material: item.key.id,
+                variant: item.key.variant,
+                occurrence: 0,
+            }));
             let bind_groups = self.bind_groups(
                 program_key,
+                owner,
                 &node,
                 &uniforms,
                 &item.instance_matrix,
@@ -2507,13 +2595,21 @@ impl Renderer {
             let vertex_buffers = node
                 .vertex_buffers()
                 .iter()
-                .map(|desc| match &desc.source {
+                .enumerate()
+                .map(|(slot, desc)| match &desc.source {
                     VertexBufferSource::Geometry(name) => {
                         self.geometries[&geometry_id].gpu.attribute(name).clone()
                     }
-                    VertexBufferSource::Instance(buffer) => {
-                        self.instance_buffer(buffer, &item.instance_matrix, &item.instance_color)
-                    }
+                    VertexBufferSource::Instance(buffer) => self.instance_buffer(
+                        SlotKey {
+                            owner,
+                            group: VERTEX_SLOTS,
+                            binding: slot as u32,
+                        },
+                        buffer,
+                        &item.instance_matrix,
+                        &item.instance_color,
+                    ),
                 })
                 .collect();
 
@@ -2856,10 +2952,6 @@ impl Renderer {
         program: &crate::nodes::ComputeProgram,
         uniforms: &UniformContext,
     ) -> Vec<wgpu::BindGroup> {
-        enum Resource {
-            Buffer(wgpu::Buffer),
-        }
-
         let mut out = Vec::with_capacity(program.groups.len());
         for (group_index, descs) in program.groups.iter().enumerate() {
             let mut resources = Vec::with_capacity(descs.len());
@@ -2867,7 +2959,12 @@ impl Renderer {
                 resources.push(match desc {
                     BindingDesc::Uniforms { members, size, .. } => {
                         let bytes = uniforms.bytes(members, *size);
-                        Resource::Buffer(self.create_buffer_init(
+                        Resource::Buffer(self.slot_buffer(
+                            SlotKey {
+                                owner: SlotOwner::Compute(program_key),
+                                group: group_index as u32,
+                                binding: resources.len() as u32,
+                            },
                             "three-rs compute uniforms",
                             &bytes,
                             wgpu::BufferUsages::UNIFORM,
@@ -2885,20 +2982,7 @@ impl Renderer {
                 });
             }
 
-            let entries: Vec<wgpu::BindGroupEntry> = resources
-                .iter()
-                .enumerate()
-                .map(|(binding, Resource::Buffer(buffer))| wgpu::BindGroupEntry {
-                    binding: binding as u32,
-                    resource: buffer.as_entire_binding(),
-                })
-                .collect();
-
-            out.push(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("three-rs compute bind group"),
-                layout: &self.compute_pipelines[&program_key].layouts[group_index],
-                entries: &entries,
-            }));
+            out.push(self.bind_group(LayoutKey::Compute(program_key), group_index, &resources));
         }
         out
     }
@@ -2921,7 +3005,9 @@ impl Renderer {
             components * 4,
             "three-rs: read_storage_buffer does not unpick a padded element stride"
         );
-        let buffer = self.storage_buffer(array.id().get(), array.count(), array.element_ty());
+        let buffer = self
+            .storage_buffer(array.id().get(), array.count(), array.element_ty())
+            .gpu;
         let size = buffer.size();
 
         let staging = self.device.create_buffer(&wgpu::BufferDescriptor {
@@ -3260,28 +3346,28 @@ impl Renderer {
     fn bind_groups(
         &mut self,
         program_key: u64,
+        owner: SlotOwner,
         node: &NodeProgram,
         uniforms: &UniformContext,
         instance_matrix: &Option<InstancedBufferAttribute>,
         instance_color: &Option<InstancedBufferAttribute>,
     ) -> Vec<wgpu::BindGroup> {
-        enum Resource {
-            Buffer(wgpu::Buffer),
-            View(wgpu::TextureView),
-            Sampler(wgpu::Sampler),
-        }
+        let mut out = Vec::with_capacity(node.groups.len());
 
-        let groups = node.groups.clone();
-        let mut out = Vec::with_capacity(groups.len());
-
-        for (group_index, descs) in groups.iter().enumerate() {
+        for (group_index, descs) in node.groups.iter().enumerate() {
             let mut resources = Vec::with_capacity(descs.len());
 
             for desc in descs {
+                let slot = SlotKey {
+                    owner,
+                    group: group_index as u32,
+                    binding: resources.len() as u32,
+                };
                 resources.push(match desc {
                     BindingDesc::Uniforms { members, size, .. } => {
                         let bytes = uniforms.bytes(members, *size);
-                        Resource::Buffer(self.create_buffer_init(
+                        Resource::Buffer(self.slot_buffer(
+                            slot,
                             "three-rs uniforms",
                             &bytes,
                             wgpu::BufferUsages::UNIFORM,
@@ -3294,6 +3380,7 @@ impl Renderer {
                         element_ty,
                         ..
                     } => Resource::Buffer(self.node_buffer(
+                        slot,
                         *id,
                         source,
                         *count,
@@ -3311,27 +3398,76 @@ impl Renderer {
                 });
             }
 
-            let entries: Vec<wgpu::BindGroupEntry> = resources
-                .iter()
-                .enumerate()
-                .map(|(binding, resource)| wgpu::BindGroupEntry {
-                    binding: binding as u32,
-                    resource: match resource {
-                        Resource::Buffer(buffer) => buffer.as_entire_binding(),
-                        Resource::View(view) => wgpu::BindingResource::TextureView(view),
-                        Resource::Sampler(sampler) => wgpu::BindingResource::Sampler(sampler),
-                    },
-                })
-                .collect();
-
-            out.push(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("three-rs bind group"),
-                layout: &self.programs[&program_key].layouts[group_index],
-                entries: &entries,
-            }));
+            out.push(self.bind_group(LayoutKey::Render(program_key), group_index, &resources));
         }
 
         out
+    }
+
+    /// The bind group for `resources` in group `group` of `layout`'s
+    /// pipeline layout: the cached one if these very resources were bound
+    /// there before, a new one otherwise (issue #137).
+    ///
+    /// The key is the resources' [`Serial`]s, so a buffer whose *contents* were
+    /// rewritten this frame keeps its group, and only a *replaced* resource —
+    /// a re-created slot buffer, a new view of a resized target, a rebuilt
+    /// `Attribute` buffer — misses and builds one.
+    fn bind_group(
+        &mut self,
+        layout: LayoutKey,
+        group: usize,
+        resources: &[Resource],
+    ) -> wgpu::BindGroup {
+        let key = BindGroupKey::of(layout, group as u32, resources);
+        let frames = self.frames;
+        if let Some(entry) = self.bind_group_cache.get_mut(&key) {
+            entry.last_used = frames;
+            return entry.group.clone();
+        }
+
+        let entries: Vec<wgpu::BindGroupEntry> = resources
+            .iter()
+            .enumerate()
+            .map(|(binding, resource)| wgpu::BindGroupEntry {
+                binding: binding as u32,
+                resource: resource.binding(),
+            })
+            .collect();
+        let (label, layout) = match layout {
+            LayoutKey::Render(program) => (
+                "three-rs bind group",
+                &self.programs[&program].layouts[group],
+            ),
+            LayoutKey::Compute(program) => (
+                "three-rs compute bind group",
+                &self.compute_pipelines[&program].layouts[group],
+            ),
+        };
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some(label),
+            layout,
+            entries: &entries,
+        });
+        self.info.build.bind_groups_created += 1;
+        self.bind_group_cache.insert(
+            key,
+            BindGroupEntry {
+                group: bind_group.clone(),
+                last_used: frames,
+            },
+        );
+        bind_group
+    }
+
+    /// `gpu`, numbered for the bind group cache. Every binding buffer, view
+    /// and sampler is created through here, so it is also where they are
+    /// counted.
+    fn serial<T: Counted>(&mut self, gpu: T) -> Serial<T> {
+        T::count(&mut self.info.build);
+        Serial {
+            serial: self.serials.next(),
+            gpu,
+        }
     }
 
     /// A `BufferNode`'s uniform buffer. `range()` is filled from the page's
@@ -3344,6 +3480,7 @@ impl Renderer {
     #[allow(clippy::too_many_arguments)]
     fn node_buffer(
         &mut self,
+        slot: SlotKey,
         id: usize,
         source: &BufferSource,
         count: usize,
@@ -3351,15 +3488,16 @@ impl Renderer {
         instance_matrix: &Option<InstancedBufferAttribute>,
         instance_color: &Option<InstancedBufferAttribute>,
         uniforms: &UniformContext,
-    ) -> wgpu::Buffer {
+    ) -> Serial<wgpu::Buffer> {
         // `skeleton.update()` rewrites `boneMatrices` every frame, so the bone
-        // buffer is re-uploaded per draw like the instance matrix, never cached
-        // on the node's identity.
+        // buffer is re-written per draw like the instance matrix: kept on the
+        // draw's slot, never on the node's identity.
         if let BufferSource::BoneMatrices = source {
             let mut data = vec![0f32; count * 16];
             let n = data.len().min(uniforms.bone_matrices.len());
             data[..n].copy_from_slice(&uniforms.bone_matrices[..n]);
-            return self.create_buffer_init(
+            return self.slot_buffer(
+                slot,
                 "three-rs boneMatrices",
                 bytemuck::cast_slice(&data),
                 wgpu::BufferUsages::UNIFORM,
@@ -3367,13 +3505,14 @@ impl Renderer {
         }
         if let BufferSource::MorphInfluences = source {
             // `uniformArray( influences, 'float' )`: one `vec4` per target with
-            // the influence in `.x`, so 16 bytes each — not 4. Re-uploaded per
+            // the influence in `.x`, so 16 bytes each — not 4. Re-written per
             // draw like the instance matrix: the influences change per frame.
             let mut data = vec![0f32; count * 4];
             for (i, influence) in uniforms.morph_influences.iter().enumerate().take(count) {
                 data[i * 4] = *influence as f32;
             }
-            return self.create_buffer_init(
+            return self.slot_buffer(
+                slot,
                 "three-rs morphTargetInfluences",
                 bytemuck::cast_slice(&data),
                 wgpu::BufferUsages::UNIFORM,
@@ -3383,6 +3522,7 @@ impl Renderer {
             return self.storage_buffer(id, count, element_ty);
         }
         self.buffer_for(
+            slot,
             id,
             source,
             count,
@@ -3400,7 +3540,12 @@ impl Renderer {
     /// `COPY_SRC` is only for [`read_storage_buffer`](Self::read_storage_buffer)
     /// — the gate that can see whether a compute pass did anything, which the
     /// graded image of `webgpu_compute_points` cannot.
-    fn storage_buffer(&mut self, id: usize, count: usize, element_ty: Type) -> wgpu::Buffer {
+    fn storage_buffer(
+        &mut self,
+        id: usize,
+        count: usize,
+        element_ty: Type,
+    ) -> Serial<wgpu::Buffer> {
         if let Some(buffer) = self.storage_buffers.get(&id) {
             return buffer.clone();
         }
@@ -3413,6 +3558,7 @@ impl Renderer {
                 | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        let buffer = self.serial(buffer);
         self.storage_buffers.insert(id, buffer.clone());
         buffer
     }
@@ -3424,12 +3570,14 @@ impl Renderer {
     /// branch was taken.
     fn instance_buffer(
         &mut self,
+        slot: SlotKey,
         buffer: &Rc<crate::nodes::node::InstanceBuffer>,
         instance_matrix: &Option<InstancedBufferAttribute>,
         instance_color: &Option<InstancedBufferAttribute>,
     ) -> wgpu::Buffer {
         let id = buffer.id.get();
         self.buffer_for(
+            slot,
             id,
             &buffer.source,
             buffer.count,
@@ -3437,23 +3585,28 @@ impl Renderer {
             instance_color,
             wgpu::BufferUsages::VERTEX,
         )
+        .gpu
     }
 
     /// `range()` is filled from the page's `Math.random` exactly once, because
     /// `RangeNode.setup()` runs once — so the buffer is cached on the node's own
     /// identity, never on its min/max/count, which two `range( 0, 1 )` calls
-    /// share. The instance matrix is re-uploaded per draw instead: its contents
-    /// change with the scene, and three.js re-uploads on
-    /// `instanceMatrix.version`.
+    /// share. The instance matrix and colours are re-written per draw instead,
+    /// into the draw's own persistent `slot`: their contents change with the
+    /// scene, and three.js re-uploads on `instanceMatrix.version`, which the
+    /// port's `InstancedBufferAttribute` does not have yet (issue #89).
+    // Eight arguments: `node_buffer`'s seven plus the slot, see there.
+    #[allow(clippy::too_many_arguments)]
     fn buffer_for(
         &mut self,
+        slot: SlotKey,
         id: usize,
         source: &BufferSource,
         count: usize,
         instance_matrix: &Option<InstancedBufferAttribute>,
         instance_color: &Option<InstancedBufferAttribute>,
         usage: wgpu::BufferUsages,
-    ) -> wgpu::Buffer {
+    ) -> Serial<wgpu::Buffer> {
         match source {
             BufferSource::MorphInfluences | BufferSource::BoneMatrices | BufferSource::Storage => {
                 unreachable!("three-rs: this buffer source is resolved by node_buffer")
@@ -3462,7 +3615,8 @@ impl Renderer {
                 let attribute = instance_matrix
                     .as_ref()
                     .expect("three-rs: instanceMatrix needs an InstancedMesh");
-                self.create_buffer_init(
+                self.slot_buffer(
+                    slot,
                     "three-rs instanceMatrix",
                     bytemuck::cast_slice(&attribute.array),
                     usage,
@@ -3472,7 +3626,8 @@ impl Renderer {
                 let attribute = instance_color
                     .as_ref()
                     .expect("three-rs: instanceColor needs an InstancedMesh with setColorAt");
-                self.create_buffer_init(
+                self.slot_buffer(
+                    slot,
                     "three-rs instanceColor",
                     bytemuck::cast_slice(&attribute.array),
                     usage,
@@ -3493,6 +3648,7 @@ impl Renderer {
                     bytemuck::cast_slice(data.as_slice()),
                     usage,
                 );
+                let buffer = self.serial(buffer);
                 self.buffers.insert(
                     id,
                     BufferEntry {
@@ -3521,6 +3677,7 @@ impl Renderer {
                     bytemuck::cast_slice(data.as_slice()),
                     usage,
                 );
+                let buffer = self.serial(buffer);
                 self.buffers.insert(
                     id,
                     BufferEntry {
@@ -3549,6 +3706,7 @@ impl Renderer {
                     bytemuck::cast_slice(&range),
                     usage,
                 );
+                let buffer = self.serial(buffer);
                 self.buffers.insert(
                     id,
                     BufferEntry {
@@ -3562,145 +3720,103 @@ impl Renderer {
         }
     }
 
-    fn texture_view(&mut self, source: &TextureSource, kind: TextureKind) -> wgpu::TextureView {
-        match source {
+    /// The view a binding reads `source` through, from the view cache.
+    ///
+    /// A view is keyed on its texture's id and the one descriptor field the
+    /// port varies, the dimension (every view here spans every mip and every
+    /// layer). It is valid for as long as the `wgpu::Texture` behind the id is
+    /// the one it was made from: a `needsUpdate` re-upload writes into that
+    /// same texture and keeps it, a render target resized to a new
+    /// allocation replaces it, and the entry is rebuilt on the first read
+    /// after that (issue #137).
+    fn texture_view(
+        &mut self,
+        source: &TextureSource,
+        kind: TextureKind,
+    ) -> Serial<wgpu::TextureView> {
+        let (id, gpu, dimension) = match source {
             TextureSource::Texture2D(texture) => {
-                let gpu = self.ensure_texture_2d(texture);
-                gpu.create_view(&Default::default())
+                (texture.id(), self.ensure_texture_2d(texture), None)
             }
             TextureSource::Depth(depth) | TextureSource::ShadowMap(depth) => {
-                let inner = depth.inner().borrow();
-                let gpu = inner
+                let gpu = depth
+                    .inner()
+                    .borrow()
                     .gpu
-                    .as_ref()
+                    .clone()
                     .expect("three-rs: the depth texture has not been rendered into yet");
-                gpu.create_view(&Default::default())
+                (depth.id(), gpu, None)
             }
             TextureSource::DataArray(data) => {
                 assert_eq!(kind, TextureKind::Float2DArray);
                 let gpu = self.ensure_data_array_texture(data);
-                gpu.create_view(&wgpu::TextureViewDescriptor {
-                    dimension: Some(wgpu::TextureViewDimension::D2Array),
-                    ..Default::default()
-                })
+                (data.id(), gpu, Some(wgpu::TextureViewDimension::D2Array))
             }
             TextureSource::Data(data) => {
                 assert!(matches!(
                     kind,
                     TextureKind::FloatData2D | TextureKind::Uint2D
                 ));
-                let gpu = self.ensure_data_texture(data);
-                gpu.create_view(&Default::default())
+                (data.id(), self.ensure_data_texture(data), None)
             }
             TextureSource::Cube(cube) => {
                 assert_eq!(kind, TextureKind::Cube);
                 let gpu = self.ensure_cube_texture(cube);
-                gpu.create_view(&wgpu::TextureViewDescriptor {
-                    dimension: Some(wgpu::TextureViewDimension::Cube),
-                    ..Default::default()
-                })
+                (cube.id(), gpu, Some(wgpu::TextureViewDimension::Cube))
             }
             TextureSource::CubeDepth(cube) => {
-                let inner = cube.inner().borrow();
-                let gpu = inner
+                let gpu = cube
+                    .inner()
+                    .borrow()
                     .gpu
-                    .as_ref()
+                    .clone()
                     .expect("three-rs: the shadow map has not been rendered into yet");
-                gpu.create_view(&wgpu::TextureViewDescriptor {
-                    dimension: Some(wgpu::TextureViewDimension::Cube),
-                    ..Default::default()
-                })
+                (cube.id(), gpu, Some(wgpu::TextureViewDimension::Cube))
             }
+        };
+
+        let frames = self.frames;
+        let key = (id, dimension);
+        // Comparing the cached `wgpu::Texture` with the current one is an
+        // identity test, not a key: the entry holds its texture alive, so no
+        // other texture can be the same object while it is here.
+        if let Some(entry) = self
+            .views
+            .get_mut(&key)
+            .and_then(|entries| entries.iter_mut().find(|entry| entry.texture == gpu))
+        {
+            entry.last_used = frames;
+            return entry.view.clone();
         }
+        let view = gpu.create_view(&wgpu::TextureViewDescriptor {
+            dimension,
+            ..Default::default()
+        });
+        let view = self.serial(view);
+        // Kept beside, not instead of, the views this id already has: a
+        // `PassNode`'s previous texture swaps its `wgpu::Texture` with the
+        // current one's every frame (`toggle_texture`), so one id stands for
+        // two textures in turn, and a single slot would rebuild both views
+        // and their bind groups on every frame.
+        self.views.entry(key).or_default().push(ViewEntry {
+            texture: gpu,
+            view: view.clone(),
+            last_used: frames,
+        });
+        view
     }
 
-    /// `WebGPUTextureUtils.updateSampler()`.
-    fn texture_sampler(&mut self, source: &TextureSource) -> wgpu::Sampler {
-        let filter = |f: TextureFilter| match f {
-            TextureFilter::Nearest => wgpu::FilterMode::Nearest,
-            TextureFilter::Linear => wgpu::FilterMode::Linear,
-        };
-        let mipmap = |f: TextureFilter| match f {
-            TextureFilter::Nearest => wgpu::MipmapFilterMode::Nearest,
-            TextureFilter::Linear => wgpu::MipmapFilterMode::Linear,
-        };
-        let address = |w: Wrapping| match w {
-            Wrapping::ClampToEdge => wgpu::AddressMode::ClampToEdge,
-            Wrapping::Repeat => wgpu::AddressMode::Repeat,
-            Wrapping::MirroredRepeat => wgpu::AddressMode::MirrorRepeat,
-        };
-
-        match source {
-            TextureSource::Texture2D(texture) => {
-                let inner = texture.borrow();
-                self.device.create_sampler(&wgpu::SamplerDescriptor {
-                    label: Some("three-rs sampler"),
-                    address_mode_u: address(inner.wrap_s),
-                    address_mode_v: address(inner.wrap_t),
-                    address_mode_w: wgpu::AddressMode::ClampToEdge,
-                    mag_filter: filter(inner.mag_filter),
-                    min_filter: filter(inner.min_filter.min()),
-                    mipmap_filter: mipmap(inner.min_filter.mipmap()),
-                    anisotropy_clamp: inner.anisotropy,
-                    ..Default::default()
-                })
-            }
-            TextureSource::Cube(cube) => {
-                let inner = cube.inner().borrow();
-                self.device.create_sampler(&wgpu::SamplerDescriptor {
-                    label: Some("three-rs cube sampler"),
-                    // `CubeTexture`'s wrapping is `ClampToEdgeWrapping` on all axes.
-                    address_mode_u: wgpu::AddressMode::ClampToEdge,
-                    address_mode_v: wgpu::AddressMode::ClampToEdge,
-                    address_mode_w: wgpu::AddressMode::ClampToEdge,
-                    // `LinearFilter` / `LinearMipmapLinearFilter` by default;
-                    // `HDRCubeTextureLoader` sets `minFilter = LinearFilter`,
-                    // which drops the mip filter to `nearest` — there is only
-                    // one mip in that cube for it to choose between anyway.
-                    mag_filter: filter(inner.mag_filter),
-                    min_filter: filter(inner.min_filter.min()),
-                    mipmap_filter: mipmap(inner.min_filter.mipmap()),
-                    anisotropy_clamp: inner.anisotropy,
-                    ..Default::default()
-                })
-            }
-            // `ShadowNode.setupShadow()`: `LinearFilter` on both when the
-            // shadow type is `PCFShadowMap`, and `compareFunction =
-            // LessEqualCompare`, which `WebGPUTextureUtils.updateSampler()`
-            // turns into a comparison sampler.
-            TextureSource::ShadowMap(depth) => {
-                let inner = depth.inner().borrow();
-                self.device.create_sampler(&wgpu::SamplerDescriptor {
-                    label: Some("three-rs shadow map sampler"),
-                    address_mode_u: wgpu::AddressMode::ClampToEdge,
-                    address_mode_v: wgpu::AddressMode::ClampToEdge,
-                    address_mode_w: wgpu::AddressMode::ClampToEdge,
-                    mag_filter: filter(inner.mag_filter),
-                    min_filter: filter(inner.min_filter),
-                    mipmap_filter: wgpu::MipmapFilterMode::Nearest,
-                    compare: Some(wgpu::CompareFunction::LessEqual),
-                    ..Default::default()
-                })
-            }
-            TextureSource::CubeDepth(_) => {
-                // `compareFunction = LessEqualCompare` makes this a comparison
-                // sampler; `CubeDepthTexture`'s filters are `LinearFilter`.
-                self.device.create_sampler(&wgpu::SamplerDescriptor {
-                    label: Some("three-rs shadow sampler"),
-                    address_mode_u: wgpu::AddressMode::ClampToEdge,
-                    address_mode_v: wgpu::AddressMode::ClampToEdge,
-                    address_mode_w: wgpu::AddressMode::ClampToEdge,
-                    mag_filter: wgpu::FilterMode::Linear,
-                    min_filter: wgpu::FilterMode::Linear,
-                    mipmap_filter: wgpu::MipmapFilterMode::Nearest,
-                    compare: Some(wgpu::CompareFunction::LessEqual),
-                    ..Default::default()
-                })
-            }
-            TextureSource::Depth(_) | TextureSource::DataArray(_) | TextureSource::Data(_) => {
-                panic!("three-rs: this texture is read with textureLoad, not sampled")
-            }
+    /// `WebGPUTextureUtils.updateSampler()`, memoised on the descriptor: see
+    /// [`SamplerKey`].
+    fn texture_sampler(&mut self, source: &TextureSource) -> Serial<wgpu::Sampler> {
+        let key = SamplerKey::of(source);
+        if let Some(sampler) = self.samplers.get(&key) {
+            return sampler.clone();
         }
+        let sampler = self.device.create_sampler(&key.descriptor());
+        let sampler = self.serial(sampler);
+        self.samplers.insert(key, sampler.clone());
+        sampler
     }
 
     // -- resources -------------------------------------------------------
@@ -4449,6 +4565,15 @@ impl Renderer {
         self.node_builder_states
             .retain(|_, states| states.last_used >= cutoff);
         self.buffers.retain(|_, entry| entry.last_used >= cutoff);
+        let frames = self.frames;
+        self.slot_buffers
+            .retain(|_, entry| bindings::is_fresh(entry.last_used, frames));
+        self.views.retain(|_, entries| {
+            entries.retain(|entry| bindings::is_fresh(entry.last_used, frames));
+            !entries.is_empty()
+        });
+        self.bind_group_cache
+            .retain(|_, entry| bindings::is_fresh(entry.last_used, frames));
     }
 
     /// Entries in the uploaded-geometry cache. A consumer that churns geometry
@@ -4465,6 +4590,54 @@ impl Renderer {
     /// Entries in the `range()` / instance-buffer cache.
     pub fn buffer_cache_len(&self) -> usize {
         self.buffers.len()
+    }
+
+    /// Entries in the per-draw binding caches: persistent draw buffers
+    /// (uniform groups, bone matrices, instance data), texture views, and bind
+    /// groups (issue #137). Like the caches above, these should hold steady
+    /// under churn rather than climb.
+    pub fn binding_cache_lens(&self) -> (usize, usize, usize) {
+        (
+            self.slot_buffers.len(),
+            self.views.values().map(Vec::len).sum(),
+            self.bind_group_cache.len(),
+        )
+    }
+
+    /// The persistent buffer behind `slot`, holding `contents` for this draw:
+    /// written into the buffer the slot already has when it is big enough and
+    /// of the same usage, and only otherwise created (issue #137).
+    ///
+    /// A buffer left bigger than a rebuilt program's group is fine to bind
+    /// whole: the shader reads its struct's prefix and the layout's minimum
+    /// binding size is a lower bound.
+    fn slot_buffer(
+        &mut self,
+        slot: SlotKey,
+        label: &str,
+        contents: &[u8],
+        usage: wgpu::BufferUsages,
+    ) -> Serial<wgpu::Buffer> {
+        let frames = self.frames;
+        let bytes = bindings::padded(contents);
+        if let Some(entry) = self.slot_buffers.get_mut(&slot) {
+            if entry.usage == usage && entry.buffer.gpu.size() >= bytes.len() as u64 {
+                entry.last_used = frames;
+                self.queue.write_buffer(&entry.buffer.gpu, 0, &bytes);
+                return entry.buffer.clone();
+            }
+        }
+        let buffer = self.create_buffer_init(label, &bytes, usage);
+        let buffer = self.serial(buffer);
+        self.slot_buffers.insert(
+            slot,
+            SlotBuffer {
+                buffer: buffer.clone(),
+                usage,
+                last_used: frames,
+            },
+        );
+        buffer
     }
 
     fn create_buffer_init(

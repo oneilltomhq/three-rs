@@ -265,6 +265,22 @@ correct form for each kind of key. It happens once, at the top of `render()`:
 | morph textures | `BufferGeometry.id` | the same `Weak`, swept on the next `get_entry()` |
 | `node_builder_states` | `material.id` | unused for `CACHE_GRACE_RENDERS` (4) renders |
 | `buffers` (`range()`) | `BufferId` | unused for `CACHE_GRACE_RENDERS` renders |
+| `slot_buffers` (a draw's uniform groups, bone matrices, morph influences, instance data) | `DrawKey` (`Object3D.id`, `BufferGeometry.id`, `material.id`, variant, occurrence in the pass) + group + binding | unused for `CACHE_GRACE_FRAMES` frames |
+| `views` | `TextureId` + view dimension, one entry per `wgpu::Texture` behind the id | unused for `CACHE_GRACE_FRAMES` frames |
+| `bind_group_cache` | layout + the `Serial` of each bound resource | unused for `CACHE_GRACE_FRAMES` frames |
+
+The three binding caches (issue #137) are three.js' `Bindings`: a draw keeps
+one uniform buffer per group for its life and each frame writes its bytes into
+it, and its bind group is rebuilt only when a member resource is *replaced*,
+never when a buffer's contents change. A resource's identity for that purpose
+is its `Serial`, a number from one renderer counter handed out when the buffer,
+view or sampler is created — not wgpu's own `Eq`, which defers to a backend
+handle that is recycled once freed. `DrawKey`'s occurrence is the n-th draw of
+the same object, geometry and material within one pass: a pass resolves all
+its draws before it submits, and a `write_buffer` lands at that submit, so two
+draws of one pass must not share a buffer. Samplers are memoised by
+descriptor for the renderer's life (`SamplerKey`); they have no contents, and
+their number is bounded by the filter combinations in use.
 
 A geometry is an `Rc`, so its strong count *is* three.js' `dispose` event —
 exact and immediate, and it costs one `Weak` per entry. A material is a value

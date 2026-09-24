@@ -85,10 +85,25 @@ pub struct BuildCounts {
     /// Attribute and index buffers written as part of those uploads — four for
     /// a geometry with position, normal, uv and an index. Per-draw data that
     /// the scene changes every frame (an `InstancedMesh`'s matrix, morph
-    /// influences) is not a build and is not counted here.
+    /// influences) is written into a buffer the draw already has, which is
+    /// not a build and is not counted here or anywhere.
     pub buffers_written: u64,
     /// Textures uploaded: 2D, cube and the morph data-array textures.
     pub textures_uploaded: u64,
+    /// GPU buffers created for bindings: a draw's uniform groups, bone
+    /// matrices, morph influences and instance data the first time it is
+    /// drawn, a `range()` / `uniformArray()` / instanced-attribute buffer, an
+    /// `instancedArray()`'s storage (issue #137).
+    pub buffers_created: u64,
+    /// Texture views created for bindings — one per texture and view
+    /// dimension, and again when a render target is re-allocated.
+    pub views_created: u64,
+    /// Samplers created — one per distinct filter / wrap / compare
+    /// combination for the renderer's life.
+    pub samplers_created: u64,
+    /// Bind groups created — one per draw group the first time it is drawn,
+    /// and again when one of its resources is replaced.
+    pub bind_groups_created: u64,
 }
 
 /// `info.memory` plus `info.programs.length`: resident counts, never reset.
@@ -153,6 +168,10 @@ impl BuildCounts {
             + self.geometries_uploaded
             + self.buffers_written
             + self.textures_uploaded
+            + self.buffers_created
+            + self.views_created
+            + self.samplers_created
+            + self.bind_groups_created
     }
 }
 
@@ -162,7 +181,8 @@ impl std::fmt::Display for Info {
         write!(
             f,
             "calls {} triangles {} lines {} | programs {} pipelines {} geometries {} \
-             buffers {} textures {} | resident {} geometries {} textures {} programs",
+             buffers {} textures {} | created {} buffers {} views {} samplers {} bind groups \
+             | resident {} geometries {} textures {} programs",
             self.render.calls,
             self.render.triangles,
             self.render.lines,
@@ -171,6 +191,10 @@ impl std::fmt::Display for Info {
             self.build.geometries_uploaded,
             self.build.buffers_written,
             self.build.textures_uploaded,
+            self.build.buffers_created,
+            self.build.views_created,
+            self.build.samplers_created,
+            self.build.bind_groups_created,
             self.memory.geometries,
             self.memory.textures,
             self.memory.programs,
