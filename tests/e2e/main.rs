@@ -2611,7 +2611,12 @@ fn steady_frame_builds_nothing() {
         ($module:ident) => {
             rung!($module, 0)
         };
-        ($module:ident, $textures:expr) => {{
+        ($module:ident, $textures:expr) => {
+            rung!($module, $textures, 1)
+        };
+        // `$steady_from`: the first frame index held to zero. 1 for every
+        // rung but one; see `webgpu_postprocessing_difference` below.
+        ($module:ident, $textures:expr, $steady_from:expr) => {{
             let mut app = $module::init();
 
             // `[ "", "" ]`: nothing is done to the scene between the three
@@ -2646,7 +2651,7 @@ fn steady_frame_builds_nothing() {
                 "{}: the third frame drew nothing, so it is not a frame",
                 stringify!($module)
             );
-            strip.assert_steady_uploading(1.., $textures);
+            strip.assert_steady_uploading($steady_from.., $textures);
 
             let png = out_dir(stringify!($module)).join("steady-strip.png");
             strip.write_png(png.to_str().expect("three-rs: the strip path is UTF-8"));
@@ -2663,7 +2668,13 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_materials_cubemap_mipmaps);
     rung!(webgpu_rtt);
     rung!(webgpu_postprocessing_masking);
-    rung!(webgpu_postprocessing_difference);
+    // A two-frame cycle: `PassNode.toggleTexture()` swaps the current and
+    // previous textures' GPU allocations before every render, so frame two
+    // is the first to see each texture handle over its *other* allocation,
+    // and makes the one view per handle and the one bind group that pairing
+    // needs (issue #137). Frame three is back on frame one's pairing and
+    // must create nothing; so must every frame after.
+    rung!(webgpu_postprocessing_difference, 0, 2);
     rung!(webgpu_postprocessing_direct);
     rung!(webgpu_postprocessing_radial_blur);
     rung!(webgpu_postprocessing_ssaa);
@@ -2992,6 +3003,93 @@ fn a_mutated_attribute_rewrites_one_buffer() {
     );
 }
 
+/// Issue #137: a draw's uniform buffer and bind group are kept across frames,
+/// so a steady frame creates neither — and the cache must not freeze what is
+/// in them. Changing a material's colour, and then moving the mesh, has to
+/// reach the pixels through the same buffer and the same bind group, with no
+/// creation at all.
+#[test]
+fn a_mutated_uniform_reaches_the_pixels_through_the_kept_buffer() {
+    use std::rc::Rc;
+    use three_rs::materials::MeshBasicNodeMaterial;
+    use three_rs::{
+        box_geometry, BuildCounts, Color, Mesh, PerspectiveCamera, Renderer, RendererParameters,
+        Scene,
+    };
+
+    let _gpu = gpu();
+
+    let mut renderer = Renderer::new(RendererParameters { antialias: false }).unwrap();
+    renderer.set_pixel_ratio(1.0);
+    renderer.set_size(64.0, 64.0);
+    let mut camera = PerspectiveCamera::new(60.0, 1.0, 0.1, 100.0);
+    camera.node.borrow_mut().position.z = 5.0;
+
+    let mut material = MeshBasicNodeMaterial::new();
+    material.color = Color::from_hex(0xff0000);
+    let mesh = Mesh::new(Rc::new(box_geometry(1.0, 1.0, 1.0, 1, 1, 1)), material);
+    let mut scene = Scene::new();
+    scene.add(&mesh);
+
+    // The centre texel, RGBA.
+    let centre = |renderer: &mut Renderer| {
+        let (width, height, pixels) = renderer.read_canvas_pixels().unwrap();
+        let at = ((height / 2 * width + width / 2) * 4) as usize;
+        [pixels[at], pixels[at + 1], pixels[at + 2]]
+    };
+
+    // Two frames: the first builds, the second is steady.
+    renderer.render(&mut scene, &mut camera);
+    renderer.render(&mut scene, &mut camera);
+    assert_eq!(
+        renderer.info().build,
+        BuildCounts::default(),
+        "a steady frame creates no buffer, view, sampler or bind group"
+    );
+    let red = centre(&mut renderer);
+    assert!(
+        red[0] > 200 && red[1] < 50 && red[2] < 50,
+        "the box starts red, got {red:?}"
+    );
+
+    // `material.color = …` with no `needsUpdate`: the program is unchanged,
+    // only the uniform's bytes move.
+    mesh.borrow_mut()
+        .mesh_mut()
+        .expect("three-rs: the mesh is a mesh")
+        .material
+        .as_mut()
+        .expect("three-rs: the mesh has a material")
+        .color = Color::from_hex(0x0000ff);
+    renderer.render(&mut scene, &mut camera);
+    let info = renderer.info().clone();
+    println!("mutated uniform: {info}");
+    assert_eq!(
+        info.build,
+        BuildCounts::default(),
+        "a new colour is a buffer write, not a new buffer or bind group"
+    );
+    let blue = centre(&mut renderer);
+    assert!(
+        blue[0] < 50 && blue[1] < 50 && blue[2] > 200,
+        "the colour change must reach the pixels, got {blue:?} (was {red:?})"
+    );
+
+    // And the object's half of the same group: move the box off the centre.
+    mesh.borrow_mut().position.x = 3.0;
+    renderer.render(&mut scene, &mut camera);
+    assert_eq!(
+        renderer.info().build,
+        BuildCounts::default(),
+        "a moved object is a buffer write, not a new buffer or bind group"
+    );
+    let moved = centre(&mut renderer);
+    assert_ne!(
+        moved, blue,
+        "the box moved off the centre, so the centre must have changed"
+    );
+}
+
 /// Issue #58's repro, and the two properties that between them make it
 /// impossible rather than unlikely.
 ///
@@ -3162,6 +3260,7 @@ fn churning_geometry_and_materials_does_not_grow_the_caches() {
     camera.node.borrow_mut().position.z = 5.0;
 
     let mut sizes = Vec::new();
+    let mut bindings = Vec::new();
     for frame in 0..FRAMES {
         // A new geometry and a new material every frame, both dropped with the
         // scene at the end of it. `instanced_range` is what puts an entry in
@@ -3181,7 +3280,23 @@ fn churning_geometry_and_materials_does_not_grow_the_caches() {
             renderer.material_cache_len(),
             renderer.buffer_cache_len(),
         ));
+        bindings.push(renderer.binding_cache_lens());
     }
+
+    // Issue #137's caches: each frame's mesh is a new object with a new
+    // material, so its draw buffers and bind groups are new entries every
+    // frame, and must age out at the same rate they arrive.
+    println!(
+        "churn: binding caches (draw buffers, views, bind groups) frame 10 {:?}, frame {FRAMES} {:?}",
+        bindings[9],
+        bindings[FRAMES - 1]
+    );
+    let (settled, last) = (bindings[9], bindings[FRAMES - 1]);
+    assert!(
+        last.0 <= settled.0 && last.1 <= settled.1 && last.2 <= settled.2,
+        "the binding caches were still growing at frame {FRAMES}: {settled:?} at frame 10, \
+         {last:?} at the end"
+    );
 
     println!(
         "churn: cache sizes (geometry, material, buffer) frame 1 {:?}, frame 10 {:?}, \

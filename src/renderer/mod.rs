@@ -373,6 +373,29 @@ struct Texture2DEntry {
     version: u32,
 }
 
+/// The [`BuildCounts`] field a newly created binding resource adds one to.
+trait Counted {
+    fn count(build: &mut BuildCounts);
+}
+
+impl Counted for wgpu::Buffer {
+    fn count(build: &mut BuildCounts) {
+        build.buffers_created += 1;
+    }
+}
+
+impl Counted for wgpu::TextureView {
+    fn count(build: &mut BuildCounts) {
+        build.views_created += 1;
+    }
+}
+
+impl Counted for wgpu::Sampler {
+    fn count(build: &mut BuildCounts) {
+        build.samplers_created += 1;
+    }
+}
+
 /// The attachments, formats and size of the pass about to run.
 /// One `drawIndexed` / `draw`, with everything it needs already resolved.
 struct Draw {
@@ -674,10 +697,11 @@ pub struct Renderer {
     /// [`DrawKey`]; aged out by [`CACHE_GRACE_FRAMES`], since a draw's object
     /// and material have no liveness signal the renderer can read.
     slot_buffers: HashMap<SlotKey, SlotBuffer>,
-    /// Texture views, by `TextureId` and view dimension; see
+    /// Texture views, by `TextureId` and view dimension, one entry per
+    /// `wgpu::Texture` that id has recently stood for; see
     /// [`Renderer::texture_view`]. Aged out by [`CACHE_GRACE_FRAMES`], which
     /// also bounds how long a cached view keeps a dropped texture's memory.
-    views: HashMap<(usize, Option<wgpu::TextureViewDimension>), ViewEntry>,
+    views: HashMap<(usize, Option<wgpu::TextureViewDimension>), Vec<ViewEntry>>,
     /// Samplers, by descriptor, for the renderer's life; see [`SamplerKey`].
     samplers: HashMap<SamplerKey, Serial<wgpu::Sampler>>,
     /// Bind groups, by layout and the serials of what they bind; see
@@ -3424,6 +3448,7 @@ impl Renderer {
             layout,
             entries: &entries,
         });
+        self.info.build.bind_groups_created += 1;
         self.bind_group_cache.insert(
             key,
             BindGroupEntry {
@@ -3434,8 +3459,11 @@ impl Renderer {
         bind_group
     }
 
-    /// `gpu`, numbered for the bind group cache.
-    fn serial<T>(&mut self, gpu: T) -> Serial<T> {
+    /// `gpu`, numbered for the bind group cache. Every binding buffer, view
+    /// and sampler is created through here, so it is also where they are
+    /// counted.
+    fn serial<T: Counted>(&mut self, gpu: T) -> Serial<T> {
+        T::count(&mut self.info.build);
         Serial {
             serial: self.serials.next(),
             gpu,
@@ -3749,28 +3777,32 @@ impl Renderer {
 
         let frames = self.frames;
         let key = (id, dimension);
-        if let Some(entry) = self.views.get_mut(&key) {
-            // Comparing the cached `wgpu::Texture` with the current one is an
-            // identity test, not a key: the entry holds its texture alive, so
-            // no other texture can be the same object while it is here.
-            if entry.texture == gpu {
-                entry.last_used = frames;
-                return entry.view.clone();
-            }
+        // Comparing the cached `wgpu::Texture` with the current one is an
+        // identity test, not a key: the entry holds its texture alive, so no
+        // other texture can be the same object while it is here.
+        if let Some(entry) = self
+            .views
+            .get_mut(&key)
+            .and_then(|entries| entries.iter_mut().find(|entry| entry.texture == gpu))
+        {
+            entry.last_used = frames;
+            return entry.view.clone();
         }
         let view = gpu.create_view(&wgpu::TextureViewDescriptor {
             dimension,
             ..Default::default()
         });
         let view = self.serial(view);
-        self.views.insert(
-            key,
-            ViewEntry {
-                texture: gpu,
-                view: view.clone(),
-                last_used: frames,
-            },
-        );
+        // Kept beside, not instead of, the views this id already has: a
+        // `PassNode`'s previous texture swaps its `wgpu::Texture` with the
+        // current one's every frame (`toggle_texture`), so one id stands for
+        // two textures in turn, and a single slot would rebuild both views
+        // and their bind groups on every frame.
+        self.views.entry(key).or_default().push(ViewEntry {
+            texture: gpu,
+            view: view.clone(),
+            last_used: frames,
+        });
         view
     }
 
@@ -4536,8 +4568,10 @@ impl Renderer {
         let frames = self.frames;
         self.slot_buffers
             .retain(|_, entry| bindings::is_fresh(entry.last_used, frames));
-        self.views
-            .retain(|_, entry| bindings::is_fresh(entry.last_used, frames));
+        self.views.retain(|_, entries| {
+            entries.retain(|entry| bindings::is_fresh(entry.last_used, frames));
+            !entries.is_empty()
+        });
         self.bind_group_cache
             .retain(|_, entry| bindings::is_fresh(entry.last_used, frames));
     }
@@ -4556,6 +4590,18 @@ impl Renderer {
     /// Entries in the `range()` / instance-buffer cache.
     pub fn buffer_cache_len(&self) -> usize {
         self.buffers.len()
+    }
+
+    /// Entries in the per-draw binding caches: persistent draw buffers
+    /// (uniform groups, bone matrices, instance data), texture views, and bind
+    /// groups (issue #137). Like the caches above, these should hold steady
+    /// under churn rather than climb.
+    pub fn binding_cache_lens(&self) -> (usize, usize, usize) {
+        (
+            self.slot_buffers.len(),
+            self.views.values().map(Vec::len).sum(),
+            self.bind_group_cache.len(),
+        )
     }
 
     /// The persistent buffer behind `slot`, holding `contents` for this draw:
