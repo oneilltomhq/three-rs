@@ -21,7 +21,7 @@ mod ssaa_pass;
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 
-use bindings::{DrawKey, Occurrences, SlotKey, SlotOwner, VERTEX_SLOTS};
+use bindings::{DrawKey, Occurrences, SamplerKey, SlotKey, SlotOwner, VERTEX_SLOTS};
 pub use direct_render_pipeline::DirectRenderPipeline;
 pub use info::{BuildCounts, ComputeCounts, Info, MemoryCounts, RenderCounts};
 use mipmap::{create_mipmap_pipeline, MipmapShader};
@@ -54,7 +54,7 @@ use crate::objects::{Background, InstancedBufferAttribute, QuadMesh, Scene, SubD
 use crate::testing::DeterministicRandom;
 use crate::textures::{
     CubeDepthTexture, CubeTexture, DataArrayTexture, DataTexture, DataTextureData, DepthTexture,
-    Texture, TextureFilter, TextureType, Wrapping,
+    Texture, TextureFilter, TextureType,
 };
 
 /// How many **frames** a cache entry survives without being used, for the
@@ -97,6 +97,15 @@ struct BufferEntry {
 struct SlotBuffer {
     buffer: wgpu::Buffer,
     usage: wgpu::BufferUsages,
+    last_used: u64,
+}
+
+/// One cached texture view, with the texture it views: the entry is good for
+/// as long as that is still the texture behind the id. See
+/// [`Renderer::texture_view`].
+struct ViewEntry {
+    texture: wgpu::Texture,
+    view: wgpu::TextureView,
     last_used: u64,
 }
 
@@ -656,6 +665,12 @@ pub struct Renderer {
     /// [`DrawKey`]; aged out by [`CACHE_GRACE_FRAMES`], since a draw's object
     /// and material have no liveness signal the renderer can read.
     slot_buffers: HashMap<SlotKey, SlotBuffer>,
+    /// Texture views, by `TextureId` and view dimension; see
+    /// [`Renderer::texture_view`]. Aged out by [`CACHE_GRACE_FRAMES`], which
+    /// also bounds how long a cached view keeps a dropped texture's memory.
+    views: HashMap<(usize, Option<wgpu::TextureViewDimension>), ViewEntry>,
+    /// Samplers, by descriptor, for the renderer's life; see [`SamplerKey`].
+    samplers: HashMap<SamplerKey, wgpu::Sampler>,
     /// Built `ComputeProgram`s, keyed by the structure of the `ComputeFlow`
     /// they came from, so a per-frame `compute()` call builds nothing.
     compute_programs: HashMap<u64, Rc<crate::nodes::ComputeProgram>>,
@@ -1003,6 +1018,8 @@ impl Renderer {
             buffers: HashMap::new(),
             storage_buffers: HashMap::new(),
             slot_buffers: HashMap::new(),
+            views: HashMap::new(),
+            samplers: HashMap::new(),
             compute_programs: HashMap::new(),
             compute_pipelines: HashMap::new(),
             background_geometry: None,
@@ -3623,145 +3640,93 @@ impl Renderer {
         }
     }
 
+    /// The view a binding reads `source` through, from the view cache.
+    ///
+    /// A view is keyed on its texture's id and the one descriptor field the
+    /// port varies, the dimension (every view here spans every mip and every
+    /// layer). It is valid for as long as the `wgpu::Texture` behind the id is
+    /// the one it was made from: a `needsUpdate` re-upload writes into that
+    /// same texture and keeps it, a render target resized to a new
+    /// allocation replaces it, and the entry is rebuilt on the first read
+    /// after that (issue #137).
     fn texture_view(&mut self, source: &TextureSource, kind: TextureKind) -> wgpu::TextureView {
-        match source {
+        let (id, gpu, dimension) = match source {
             TextureSource::Texture2D(texture) => {
-                let gpu = self.ensure_texture_2d(texture);
-                gpu.create_view(&Default::default())
+                (texture.id(), self.ensure_texture_2d(texture), None)
             }
             TextureSource::Depth(depth) | TextureSource::ShadowMap(depth) => {
-                let inner = depth.inner().borrow();
-                let gpu = inner
+                let gpu = depth
+                    .inner()
+                    .borrow()
                     .gpu
-                    .as_ref()
+                    .clone()
                     .expect("three-rs: the depth texture has not been rendered into yet");
-                gpu.create_view(&Default::default())
+                (depth.id(), gpu, None)
             }
             TextureSource::DataArray(data) => {
                 assert_eq!(kind, TextureKind::Float2DArray);
                 let gpu = self.ensure_data_array_texture(data);
-                gpu.create_view(&wgpu::TextureViewDescriptor {
-                    dimension: Some(wgpu::TextureViewDimension::D2Array),
-                    ..Default::default()
-                })
+                (data.id(), gpu, Some(wgpu::TextureViewDimension::D2Array))
             }
             TextureSource::Data(data) => {
                 assert!(matches!(
                     kind,
                     TextureKind::FloatData2D | TextureKind::Uint2D
                 ));
-                let gpu = self.ensure_data_texture(data);
-                gpu.create_view(&Default::default())
+                (data.id(), self.ensure_data_texture(data), None)
             }
             TextureSource::Cube(cube) => {
                 assert_eq!(kind, TextureKind::Cube);
                 let gpu = self.ensure_cube_texture(cube);
-                gpu.create_view(&wgpu::TextureViewDescriptor {
-                    dimension: Some(wgpu::TextureViewDimension::Cube),
-                    ..Default::default()
-                })
+                (cube.id(), gpu, Some(wgpu::TextureViewDimension::Cube))
             }
             TextureSource::CubeDepth(cube) => {
-                let inner = cube.inner().borrow();
-                let gpu = inner
+                let gpu = cube
+                    .inner()
+                    .borrow()
                     .gpu
-                    .as_ref()
+                    .clone()
                     .expect("three-rs: the shadow map has not been rendered into yet");
-                gpu.create_view(&wgpu::TextureViewDescriptor {
-                    dimension: Some(wgpu::TextureViewDimension::Cube),
-                    ..Default::default()
-                })
+                (cube.id(), gpu, Some(wgpu::TextureViewDimension::Cube))
+            }
+        };
+
+        let frames = self.frames;
+        let key = (id, dimension);
+        if let Some(entry) = self.views.get_mut(&key) {
+            // Comparing the cached `wgpu::Texture` with the current one is an
+            // identity test, not a key: the entry holds its texture alive, so
+            // no other texture can be the same object while it is here.
+            if entry.texture == gpu {
+                entry.last_used = frames;
+                return entry.view.clone();
             }
         }
+        let view = gpu.create_view(&wgpu::TextureViewDescriptor {
+            dimension,
+            ..Default::default()
+        });
+        self.views.insert(
+            key,
+            ViewEntry {
+                texture: gpu,
+                view: view.clone(),
+                last_used: frames,
+            },
+        );
+        view
     }
 
-    /// `WebGPUTextureUtils.updateSampler()`.
+    /// `WebGPUTextureUtils.updateSampler()`, memoised on the descriptor: see
+    /// [`SamplerKey`].
     fn texture_sampler(&mut self, source: &TextureSource) -> wgpu::Sampler {
-        let filter = |f: TextureFilter| match f {
-            TextureFilter::Nearest => wgpu::FilterMode::Nearest,
-            TextureFilter::Linear => wgpu::FilterMode::Linear,
-        };
-        let mipmap = |f: TextureFilter| match f {
-            TextureFilter::Nearest => wgpu::MipmapFilterMode::Nearest,
-            TextureFilter::Linear => wgpu::MipmapFilterMode::Linear,
-        };
-        let address = |w: Wrapping| match w {
-            Wrapping::ClampToEdge => wgpu::AddressMode::ClampToEdge,
-            Wrapping::Repeat => wgpu::AddressMode::Repeat,
-            Wrapping::MirroredRepeat => wgpu::AddressMode::MirrorRepeat,
-        };
-
-        match source {
-            TextureSource::Texture2D(texture) => {
-                let inner = texture.borrow();
-                self.device.create_sampler(&wgpu::SamplerDescriptor {
-                    label: Some("three-rs sampler"),
-                    address_mode_u: address(inner.wrap_s),
-                    address_mode_v: address(inner.wrap_t),
-                    address_mode_w: wgpu::AddressMode::ClampToEdge,
-                    mag_filter: filter(inner.mag_filter),
-                    min_filter: filter(inner.min_filter.min()),
-                    mipmap_filter: mipmap(inner.min_filter.mipmap()),
-                    anisotropy_clamp: inner.anisotropy,
-                    ..Default::default()
-                })
-            }
-            TextureSource::Cube(cube) => {
-                let inner = cube.inner().borrow();
-                self.device.create_sampler(&wgpu::SamplerDescriptor {
-                    label: Some("three-rs cube sampler"),
-                    // `CubeTexture`'s wrapping is `ClampToEdgeWrapping` on all axes.
-                    address_mode_u: wgpu::AddressMode::ClampToEdge,
-                    address_mode_v: wgpu::AddressMode::ClampToEdge,
-                    address_mode_w: wgpu::AddressMode::ClampToEdge,
-                    // `LinearFilter` / `LinearMipmapLinearFilter` by default;
-                    // `HDRCubeTextureLoader` sets `minFilter = LinearFilter`,
-                    // which drops the mip filter to `nearest` — there is only
-                    // one mip in that cube for it to choose between anyway.
-                    mag_filter: filter(inner.mag_filter),
-                    min_filter: filter(inner.min_filter.min()),
-                    mipmap_filter: mipmap(inner.min_filter.mipmap()),
-                    anisotropy_clamp: inner.anisotropy,
-                    ..Default::default()
-                })
-            }
-            // `ShadowNode.setupShadow()`: `LinearFilter` on both when the
-            // shadow type is `PCFShadowMap`, and `compareFunction =
-            // LessEqualCompare`, which `WebGPUTextureUtils.updateSampler()`
-            // turns into a comparison sampler.
-            TextureSource::ShadowMap(depth) => {
-                let inner = depth.inner().borrow();
-                self.device.create_sampler(&wgpu::SamplerDescriptor {
-                    label: Some("three-rs shadow map sampler"),
-                    address_mode_u: wgpu::AddressMode::ClampToEdge,
-                    address_mode_v: wgpu::AddressMode::ClampToEdge,
-                    address_mode_w: wgpu::AddressMode::ClampToEdge,
-                    mag_filter: filter(inner.mag_filter),
-                    min_filter: filter(inner.min_filter),
-                    mipmap_filter: wgpu::MipmapFilterMode::Nearest,
-                    compare: Some(wgpu::CompareFunction::LessEqual),
-                    ..Default::default()
-                })
-            }
-            TextureSource::CubeDepth(_) => {
-                // `compareFunction = LessEqualCompare` makes this a comparison
-                // sampler; `CubeDepthTexture`'s filters are `LinearFilter`.
-                self.device.create_sampler(&wgpu::SamplerDescriptor {
-                    label: Some("three-rs shadow sampler"),
-                    address_mode_u: wgpu::AddressMode::ClampToEdge,
-                    address_mode_v: wgpu::AddressMode::ClampToEdge,
-                    address_mode_w: wgpu::AddressMode::ClampToEdge,
-                    mag_filter: wgpu::FilterMode::Linear,
-                    min_filter: wgpu::FilterMode::Linear,
-                    mipmap_filter: wgpu::MipmapFilterMode::Nearest,
-                    compare: Some(wgpu::CompareFunction::LessEqual),
-                    ..Default::default()
-                })
-            }
-            TextureSource::Depth(_) | TextureSource::DataArray(_) | TextureSource::Data(_) => {
-                panic!("three-rs: this texture is read with textureLoad, not sampled")
-            }
+        let key = SamplerKey::of(source);
+        if let Some(sampler) = self.samplers.get(&key) {
+            return sampler.clone();
         }
+        let sampler = self.device.create_sampler(&key.descriptor());
+        self.samplers.insert(key, sampler.clone());
+        sampler
     }
 
     // -- resources -------------------------------------------------------
@@ -4512,6 +4477,8 @@ impl Renderer {
         self.buffers.retain(|_, entry| entry.last_used >= cutoff);
         let frames = self.frames;
         self.slot_buffers
+            .retain(|_, entry| bindings::is_fresh(entry.last_used, frames));
+        self.views
             .retain(|_, entry| bindings::is_fresh(entry.last_used, frames));
     }
 

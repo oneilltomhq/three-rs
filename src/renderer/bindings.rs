@@ -11,6 +11,8 @@
 use std::collections::HashMap;
 
 use super::CACHE_GRACE_FRAMES;
+use crate::nodes::node::TextureSource;
+use crate::textures::{TextureFilter, Wrapping};
 
 /// One draw's identity, for the buffers that hold its per-draw data — its
 /// uniform groups, its bone matrices and morph influences, its instance
@@ -84,6 +86,121 @@ pub(super) struct SlotKey {
     pub binding: u32,
 }
 
+/// Everything a `wgpu::Sampler` is made of, which is all it is: a sampler has
+/// no contents, so two textures whose filters and wrapping agree can share
+/// one, and the renderer memoises them in one map for its whole life
+/// (`WebGPUTextureUtils.updateSampler()` builds one per texture; the port
+/// builds one per distinct descriptor). The map needs no eviction — its size
+/// is bounded by the handful of filter, wrap and compare combinations a
+/// program uses, not by how many textures it creates.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(super) struct SamplerKey {
+    pub address: [wgpu::AddressMode; 3],
+    pub mag_filter: wgpu::FilterMode,
+    pub min_filter: wgpu::FilterMode,
+    pub mipmap_filter: wgpu::MipmapFilterMode,
+    pub anisotropy_clamp: u16,
+    pub compare: Option<wgpu::CompareFunction>,
+}
+
+impl SamplerKey {
+    /// `WebGPUTextureUtils.updateSampler()`'s descriptor for `source`.
+    ///
+    /// # Panics
+    ///
+    /// For a texture that is read with `textureLoad` and has no sampler.
+    pub fn of(source: &TextureSource) -> Self {
+        let filter = |f: TextureFilter| match f {
+            TextureFilter::Nearest => wgpu::FilterMode::Nearest,
+            TextureFilter::Linear => wgpu::FilterMode::Linear,
+        };
+        let mipmap = |f: TextureFilter| match f {
+            TextureFilter::Nearest => wgpu::MipmapFilterMode::Nearest,
+            TextureFilter::Linear => wgpu::MipmapFilterMode::Linear,
+        };
+        let address = |w: Wrapping| match w {
+            Wrapping::ClampToEdge => wgpu::AddressMode::ClampToEdge,
+            Wrapping::Repeat => wgpu::AddressMode::Repeat,
+            Wrapping::MirroredRepeat => wgpu::AddressMode::MirrorRepeat,
+        };
+        let clamp = wgpu::AddressMode::ClampToEdge;
+
+        match source {
+            TextureSource::Texture2D(texture) => {
+                let inner = texture.borrow();
+                Self {
+                    address: [address(inner.wrap_s), address(inner.wrap_t), clamp],
+                    mag_filter: filter(inner.mag_filter),
+                    min_filter: filter(inner.min_filter.min()),
+                    mipmap_filter: mipmap(inner.min_filter.mipmap()),
+                    anisotropy_clamp: inner.anisotropy,
+                    compare: None,
+                }
+            }
+            TextureSource::Cube(cube) => {
+                let inner = cube.inner().borrow();
+                Self {
+                    // `CubeTexture`'s wrapping is `ClampToEdgeWrapping` on all axes.
+                    address: [clamp; 3],
+                    // `LinearFilter` / `LinearMipmapLinearFilter` by default;
+                    // `HDRCubeTextureLoader` sets `minFilter = LinearFilter`,
+                    // which drops the mip filter to `nearest` — there is only
+                    // one mip in that cube for it to choose between anyway.
+                    mag_filter: filter(inner.mag_filter),
+                    min_filter: filter(inner.min_filter.min()),
+                    mipmap_filter: mipmap(inner.min_filter.mipmap()),
+                    anisotropy_clamp: inner.anisotropy,
+                    compare: None,
+                }
+            }
+            // `ShadowNode.setupShadow()`: `LinearFilter` on both when the
+            // shadow type is `PCFShadowMap`, and `compareFunction =
+            // LessEqualCompare`, which `WebGPUTextureUtils.updateSampler()`
+            // turns into a comparison sampler.
+            TextureSource::ShadowMap(depth) => {
+                let inner = depth.inner().borrow();
+                Self {
+                    address: [clamp; 3],
+                    mag_filter: filter(inner.mag_filter),
+                    min_filter: filter(inner.min_filter),
+                    mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+                    anisotropy_clamp: 1,
+                    compare: Some(wgpu::CompareFunction::LessEqual),
+                }
+            }
+            // `compareFunction = LessEqualCompare` makes this a comparison
+            // sampler; `CubeDepthTexture`'s filters are `LinearFilter`.
+            TextureSource::CubeDepth(_) => Self {
+                address: [clamp; 3],
+                mag_filter: wgpu::FilterMode::Linear,
+                min_filter: wgpu::FilterMode::Linear,
+                mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+                anisotropy_clamp: 1,
+                compare: Some(wgpu::CompareFunction::LessEqual),
+            },
+            TextureSource::Depth(_) | TextureSource::DataArray(_) | TextureSource::Data(_) => {
+                panic!("three-rs: this texture is read with textureLoad, not sampled")
+            }
+        }
+    }
+
+    pub fn descriptor(&self) -> wgpu::SamplerDescriptor<'static> {
+        let [address_mode_u, address_mode_v, address_mode_w] = self.address;
+        wgpu::SamplerDescriptor {
+            label: Some("three-rs sampler"),
+            address_mode_u,
+            address_mode_v,
+            address_mode_w,
+            mag_filter: self.mag_filter,
+            min_filter: self.min_filter,
+            mipmap_filter: self.mipmap_filter,
+            anisotropy_clamp: self.anisotropy_clamp,
+            compare: self.compare,
+            ..Default::default()
+        }
+    }
+}
+
 /// Whether an entry last used at `last_used` survives a sweep at `frames`:
 /// the same [`CACHE_GRACE_FRAMES`] window `node_builder_states` and `buffers`
 /// age out by.
@@ -140,6 +257,42 @@ mod tests {
         assert!(!is_fresh(10, 11 + CACHE_GRACE_FRAMES));
         // The first frames cannot underflow into evicting everything.
         assert!(is_fresh(0, 1));
+    }
+
+    #[test]
+    fn textures_that_filter_alike_share_a_sampler_key() {
+        use crate::textures::{DepthTexture, MinFilter, Texture};
+
+        let a = Texture::new(1, 1, None);
+        let b = Texture::new(4, 4, None);
+        let key = |texture: &Texture| SamplerKey::of(&TextureSource::Texture2D(texture.clone()));
+        // Two textures, one descriptor: the size and the pixels are not in it.
+        assert_eq!(key(&a), key(&b));
+
+        // Every field that is in it separates them.
+        b.set_wrapping(Wrapping::Repeat, Wrapping::ClampToEdge);
+        assert_ne!(key(&a), key(&b));
+        assert_eq!(key(&b).address[0], wgpu::AddressMode::Repeat);
+        b.set_wrapping(Wrapping::ClampToEdge, Wrapping::ClampToEdge);
+        assert_eq!(key(&a), key(&b));
+
+        b.set_min_filter(MinFilter::Nearest);
+        assert_ne!(key(&a), key(&b));
+        b.set_min_filter(a.borrow().min_filter);
+        b.set_anisotropy(a.borrow().anisotropy + 1);
+        assert_ne!(key(&a), key(&b));
+
+        // A shadow map's sampler compares, so it never shares with a colour
+        // texture's even when the filters agree.
+        let shadow = SamplerKey::of(&TextureSource::ShadowMap(DepthTexture::new()));
+        assert_eq!(shadow.compare, Some(wgpu::CompareFunction::LessEqual));
+        assert_ne!(shadow, key(&a));
+
+        // And the descriptor is the key, field for field.
+        let descriptor = key(&a).descriptor();
+        assert_eq!(descriptor.mag_filter, key(&a).mag_filter);
+        assert_eq!(descriptor.mipmap_filter, key(&a).mipmap_filter);
+        assert_eq!(descriptor.compare, None);
     }
 
     #[test]
