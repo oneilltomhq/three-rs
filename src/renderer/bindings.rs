@@ -201,6 +201,95 @@ impl SamplerKey {
     }
 }
 
+/// A GPU resource numbered for the bind group cache.
+///
+/// The serial is the resource's identity: handed out from one never-reused
+/// counter ([`Serials`]) when the resource is created, and carried with it
+/// through every cache that holds it. wgpu 30 has no public `global_id()`,
+/// and its `Eq`/`Hash` on resources defer to whatever handle the backend
+/// uses — a registry slot whose index is recycled on native, a JS object on
+/// the web — so a key built on them would mean something different per
+/// backend and, on native, be reusable once the resource is freed. A counter
+/// of the renderer's own is the same on every backend and never repeats.
+#[derive(Clone, Debug)]
+pub(super) struct Serial<T> {
+    pub serial: u64,
+    pub gpu: T,
+}
+
+/// The counter behind [`Serial`]. Starts at 1 so no resource is ever 0.
+#[derive(Default)]
+pub(super) struct Serials(u64);
+
+impl Serials {
+    pub fn next(&mut self) -> u64 {
+        self.0 += 1;
+        self.0
+    }
+}
+
+/// One binding's resource, as a bind group entry needs it.
+pub(super) enum Resource {
+    Buffer(Serial<wgpu::Buffer>),
+    View(Serial<wgpu::TextureView>),
+    Sampler(Serial<wgpu::Sampler>),
+}
+
+impl Resource {
+    pub fn serial(&self) -> u64 {
+        match self {
+            Resource::Buffer(buffer) => buffer.serial,
+            Resource::View(view) => view.serial,
+            Resource::Sampler(sampler) => sampler.serial,
+        }
+    }
+
+    pub fn binding(&self) -> wgpu::BindingResource<'_> {
+        match self {
+            Resource::Buffer(buffer) => buffer.gpu.as_entire_binding(),
+            Resource::View(view) => wgpu::BindingResource::TextureView(&view.gpu),
+            Resource::Sampler(sampler) => wgpu::BindingResource::Sampler(&sampler.gpu),
+        }
+    }
+}
+
+/// Whose pipeline layout a bind group is made against: a render program's
+/// (`Program`, by the program cache key) or a compute kernel's. Neither cache
+/// is ever evicted or overwritten, so a key names one layout for the
+/// renderer's life.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(super) enum LayoutKey {
+    Render(u64),
+    Compute(u64),
+}
+
+/// A bind group's identity: the layout it was made against, the group index,
+/// and the [`Serial`] of each resource in binding order.
+///
+/// A resource's *contents* are not in it — a uniform buffer rewritten this
+/// frame is the same serial, so its group is reused. Replacing a resource is
+/// a new serial, and a new group.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub(super) struct BindGroupKey {
+    layout: LayoutKey,
+    group: u32,
+    resources: Vec<u64>,
+}
+
+impl BindGroupKey {
+    pub fn of(layout: LayoutKey, group: u32, resources: &[Resource]) -> Self {
+        Self::from_serials(layout, group, resources.iter().map(Resource::serial))
+    }
+
+    fn from_serials(layout: LayoutKey, group: u32, serials: impl Iterator<Item = u64>) -> Self {
+        Self {
+            layout,
+            group,
+            resources: serials.collect(),
+        }
+    }
+}
+
 /// Whether an entry last used at `last_used` survives a sweep at `frames`:
 /// the same [`CACHE_GRACE_FRAMES`] window `node_builder_states` and `buffers`
 /// age out by.
@@ -293,6 +382,47 @@ mod tests {
         assert_eq!(descriptor.mag_filter, key(&a).mag_filter);
         assert_eq!(descriptor.mipmap_filter, key(&a).mipmap_filter);
         assert_eq!(descriptor.compare, None);
+    }
+
+    #[test]
+    fn a_bind_group_is_keyed_on_what_it_binds_not_on_its_contents() {
+        let mut serials = Serials::default();
+        let (uniforms, view, sampler) = (serials.next(), serials.next(), serials.next());
+        assert!(uniforms != view && view != sampler && uniforms != 0);
+
+        let key = |layout, group, members: &[u64]| {
+            BindGroupKey::from_serials(layout, group, members.iter().copied())
+        };
+        let first = key(LayoutKey::Render(9), 1, &[uniforms, view, sampler]);
+
+        // Next frame the uniform buffer's bytes were rewritten, but it is the
+        // same buffer: the same key.
+        assert_eq!(
+            key(LayoutKey::Render(9), 1, &[uniforms, view, sampler]),
+            first
+        );
+
+        // A replaced member is a new serial, and a new group.
+        let resized = serials.next();
+        assert_ne!(
+            key(LayoutKey::Render(9), 1, &[uniforms, resized, sampler]),
+            first
+        );
+
+        // The same resources against another layout, another group index or
+        // in another order are other groups too.
+        assert_ne!(
+            key(LayoutKey::Compute(9), 1, &[uniforms, view, sampler]),
+            first
+        );
+        assert_ne!(
+            key(LayoutKey::Render(9), 0, &[uniforms, view, sampler]),
+            first
+        );
+        assert_ne!(
+            key(LayoutKey::Render(9), 1, &[view, uniforms, sampler]),
+            first
+        );
     }
 
     #[test]

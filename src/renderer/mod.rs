@@ -21,7 +21,10 @@ mod ssaa_pass;
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 
-use bindings::{DrawKey, Occurrences, SamplerKey, SlotKey, SlotOwner, VERTEX_SLOTS};
+use bindings::{
+    BindGroupKey, DrawKey, LayoutKey, Occurrences, Resource, SamplerKey, Serial, Serials, SlotKey,
+    SlotOwner, VERTEX_SLOTS,
+};
 pub use direct_render_pipeline::DirectRenderPipeline;
 pub use info::{BuildCounts, ComputeCounts, Info, MemoryCounts, RenderCounts};
 use mipmap::{create_mipmap_pipeline, MipmapShader};
@@ -79,7 +82,7 @@ const CACHE_GRACE_FRAMES: u64 = 4;
 /// or one upload of an `InstancedBufferAttribute`'s array — with the same
 /// `render()`-clock stamp the material states carry.
 struct BufferEntry {
-    buffer: wgpu::Buffer,
+    buffer: Serial<wgpu::Buffer>,
     last_used: u64,
     /// For a `BufferSource::Attribute`: the very array the buffer holds. The
     /// buffer is reused while the node still points at this `Rc`, and rebuilt
@@ -95,7 +98,7 @@ struct BufferEntry {
 /// `queue.write_buffer`n into it; re-created only when a rebuilt program needs
 /// it bigger (issue #137).
 struct SlotBuffer {
-    buffer: wgpu::Buffer,
+    buffer: Serial<wgpu::Buffer>,
     usage: wgpu::BufferUsages,
     last_used: u64,
 }
@@ -105,7 +108,13 @@ struct SlotBuffer {
 /// [`Renderer::texture_view`].
 struct ViewEntry {
     texture: wgpu::Texture,
-    view: wgpu::TextureView,
+    view: Serial<wgpu::TextureView>,
+    last_used: u64,
+}
+
+/// One cached bind group; see [`BindGroupKey`].
+struct BindGroupEntry {
+    group: wgpu::BindGroup,
     last_used: u64,
 }
 
@@ -658,7 +667,7 @@ pub struct Renderer {
     /// attribute is disposed).
     ///
     /// [`buffers`]: Self::buffers
-    storage_buffers: HashMap<usize, wgpu::Buffer>,
+    storage_buffers: HashMap<usize, Serial<wgpu::Buffer>>,
     /// Each draw's uniform groups, bone matrices, morph influences and
     /// instance data, one persistent buffer per (draw, group, binding) that
     /// every frame writes into rather than re-creating. Keyed on ids, see
@@ -670,7 +679,14 @@ pub struct Renderer {
     /// also bounds how long a cached view keeps a dropped texture's memory.
     views: HashMap<(usize, Option<wgpu::TextureViewDimension>), ViewEntry>,
     /// Samplers, by descriptor, for the renderer's life; see [`SamplerKey`].
-    samplers: HashMap<SamplerKey, wgpu::Sampler>,
+    samplers: HashMap<SamplerKey, Serial<wgpu::Sampler>>,
+    /// Bind groups, by layout and the serials of what they bind; see
+    /// [`BindGroupKey`]. A frame that only rewrote its buffers' contents finds
+    /// every group here. Aged out by [`CACHE_GRACE_FRAMES`]: a group whose
+    /// member was replaced is never asked for again and goes with the window.
+    bind_group_cache: HashMap<BindGroupKey, BindGroupEntry>,
+    /// The counter [`Serial`]s are numbered from.
+    serials: Serials,
     /// Built `ComputeProgram`s, keyed by the structure of the `ComputeFlow`
     /// they came from, so a per-frame `compute()` call builds nothing.
     compute_programs: HashMap<u64, Rc<crate::nodes::ComputeProgram>>,
@@ -1020,6 +1036,8 @@ impl Renderer {
             slot_buffers: HashMap::new(),
             views: HashMap::new(),
             samplers: HashMap::new(),
+            bind_group_cache: HashMap::new(),
+            serials: Serials::default(),
             compute_programs: HashMap::new(),
             compute_pipelines: HashMap::new(),
             background_geometry: None,
@@ -2910,10 +2928,6 @@ impl Renderer {
         program: &crate::nodes::ComputeProgram,
         uniforms: &UniformContext,
     ) -> Vec<wgpu::BindGroup> {
-        enum Resource {
-            Buffer(wgpu::Buffer),
-        }
-
         let mut out = Vec::with_capacity(program.groups.len());
         for (group_index, descs) in program.groups.iter().enumerate() {
             let mut resources = Vec::with_capacity(descs.len());
@@ -2944,20 +2958,7 @@ impl Renderer {
                 });
             }
 
-            let entries: Vec<wgpu::BindGroupEntry> = resources
-                .iter()
-                .enumerate()
-                .map(|(binding, Resource::Buffer(buffer))| wgpu::BindGroupEntry {
-                    binding: binding as u32,
-                    resource: buffer.as_entire_binding(),
-                })
-                .collect();
-
-            out.push(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("three-rs compute bind group"),
-                layout: &self.compute_pipelines[&program_key].layouts[group_index],
-                entries: &entries,
-            }));
+            out.push(self.bind_group(LayoutKey::Compute(program_key), group_index, &resources));
         }
         out
     }
@@ -2980,7 +2981,9 @@ impl Renderer {
             components * 4,
             "three-rs: read_storage_buffer does not unpick a padded element stride"
         );
-        let buffer = self.storage_buffer(array.id().get(), array.count(), array.element_ty());
+        let buffer = self
+            .storage_buffer(array.id().get(), array.count(), array.element_ty())
+            .gpu;
         let size = buffer.size();
 
         let staging = self.device.create_buffer(&wgpu::BufferDescriptor {
@@ -3325,12 +3328,6 @@ impl Renderer {
         instance_matrix: &Option<InstancedBufferAttribute>,
         instance_color: &Option<InstancedBufferAttribute>,
     ) -> Vec<wgpu::BindGroup> {
-        enum Resource {
-            Buffer(wgpu::Buffer),
-            View(wgpu::TextureView),
-            Sampler(wgpu::Sampler),
-        }
-
         let mut out = Vec::with_capacity(node.groups.len());
 
         for (group_index, descs) in node.groups.iter().enumerate() {
@@ -3377,27 +3374,72 @@ impl Renderer {
                 });
             }
 
-            let entries: Vec<wgpu::BindGroupEntry> = resources
-                .iter()
-                .enumerate()
-                .map(|(binding, resource)| wgpu::BindGroupEntry {
-                    binding: binding as u32,
-                    resource: match resource {
-                        Resource::Buffer(buffer) => buffer.as_entire_binding(),
-                        Resource::View(view) => wgpu::BindingResource::TextureView(view),
-                        Resource::Sampler(sampler) => wgpu::BindingResource::Sampler(sampler),
-                    },
-                })
-                .collect();
-
-            out.push(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("three-rs bind group"),
-                layout: &self.programs[&program_key].layouts[group_index],
-                entries: &entries,
-            }));
+            out.push(self.bind_group(LayoutKey::Render(program_key), group_index, &resources));
         }
 
         out
+    }
+
+    /// The bind group for `resources` in group `group` of `layout`'s
+    /// pipeline layout: the cached one if these very resources were bound
+    /// there before, a new one otherwise (issue #137).
+    ///
+    /// The key is the resources' [`Serial`]s, so a buffer whose *contents* were
+    /// rewritten this frame keeps its group, and only a *replaced* resource —
+    /// a re-created slot buffer, a new view of a resized target, a rebuilt
+    /// `Attribute` buffer — misses and builds one.
+    fn bind_group(
+        &mut self,
+        layout: LayoutKey,
+        group: usize,
+        resources: &[Resource],
+    ) -> wgpu::BindGroup {
+        let key = BindGroupKey::of(layout, group as u32, resources);
+        let frames = self.frames;
+        if let Some(entry) = self.bind_group_cache.get_mut(&key) {
+            entry.last_used = frames;
+            return entry.group.clone();
+        }
+
+        let entries: Vec<wgpu::BindGroupEntry> = resources
+            .iter()
+            .enumerate()
+            .map(|(binding, resource)| wgpu::BindGroupEntry {
+                binding: binding as u32,
+                resource: resource.binding(),
+            })
+            .collect();
+        let (label, layout) = match layout {
+            LayoutKey::Render(program) => (
+                "three-rs bind group",
+                &self.programs[&program].layouts[group],
+            ),
+            LayoutKey::Compute(program) => (
+                "three-rs compute bind group",
+                &self.compute_pipelines[&program].layouts[group],
+            ),
+        };
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some(label),
+            layout,
+            entries: &entries,
+        });
+        self.bind_group_cache.insert(
+            key,
+            BindGroupEntry {
+                group: bind_group.clone(),
+                last_used: frames,
+            },
+        );
+        bind_group
+    }
+
+    /// `gpu`, numbered for the bind group cache.
+    fn serial<T>(&mut self, gpu: T) -> Serial<T> {
+        Serial {
+            serial: self.serials.next(),
+            gpu,
+        }
     }
 
     /// A `BufferNode`'s uniform buffer. `range()` is filled from the page's
@@ -3418,7 +3460,7 @@ impl Renderer {
         instance_matrix: &Option<InstancedBufferAttribute>,
         instance_color: &Option<InstancedBufferAttribute>,
         uniforms: &UniformContext,
-    ) -> wgpu::Buffer {
+    ) -> Serial<wgpu::Buffer> {
         // `skeleton.update()` rewrites `boneMatrices` every frame, so the bone
         // buffer is re-written per draw like the instance matrix: kept on the
         // draw's slot, never on the node's identity.
@@ -3470,7 +3512,12 @@ impl Renderer {
     /// `COPY_SRC` is only for [`read_storage_buffer`](Self::read_storage_buffer)
     /// — the gate that can see whether a compute pass did anything, which the
     /// graded image of `webgpu_compute_points` cannot.
-    fn storage_buffer(&mut self, id: usize, count: usize, element_ty: Type) -> wgpu::Buffer {
+    fn storage_buffer(
+        &mut self,
+        id: usize,
+        count: usize,
+        element_ty: Type,
+    ) -> Serial<wgpu::Buffer> {
         if let Some(buffer) = self.storage_buffers.get(&id) {
             return buffer.clone();
         }
@@ -3483,6 +3530,7 @@ impl Renderer {
                 | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        let buffer = self.serial(buffer);
         self.storage_buffers.insert(id, buffer.clone());
         buffer
     }
@@ -3509,6 +3557,7 @@ impl Renderer {
             instance_color,
             wgpu::BufferUsages::VERTEX,
         )
+        .gpu
     }
 
     /// `range()` is filled from the page's `Math.random` exactly once, because
@@ -3529,7 +3578,7 @@ impl Renderer {
         instance_matrix: &Option<InstancedBufferAttribute>,
         instance_color: &Option<InstancedBufferAttribute>,
         usage: wgpu::BufferUsages,
-    ) -> wgpu::Buffer {
+    ) -> Serial<wgpu::Buffer> {
         match source {
             BufferSource::MorphInfluences | BufferSource::BoneMatrices | BufferSource::Storage => {
                 unreachable!("three-rs: this buffer source is resolved by node_buffer")
@@ -3571,6 +3620,7 @@ impl Renderer {
                     bytemuck::cast_slice(data.as_slice()),
                     usage,
                 );
+                let buffer = self.serial(buffer);
                 self.buffers.insert(
                     id,
                     BufferEntry {
@@ -3599,6 +3649,7 @@ impl Renderer {
                     bytemuck::cast_slice(data.as_slice()),
                     usage,
                 );
+                let buffer = self.serial(buffer);
                 self.buffers.insert(
                     id,
                     BufferEntry {
@@ -3627,6 +3678,7 @@ impl Renderer {
                     bytemuck::cast_slice(&range),
                     usage,
                 );
+                let buffer = self.serial(buffer);
                 self.buffers.insert(
                     id,
                     BufferEntry {
@@ -3649,7 +3701,11 @@ impl Renderer {
     /// same texture and keeps it, a render target resized to a new
     /// allocation replaces it, and the entry is rebuilt on the first read
     /// after that (issue #137).
-    fn texture_view(&mut self, source: &TextureSource, kind: TextureKind) -> wgpu::TextureView {
+    fn texture_view(
+        &mut self,
+        source: &TextureSource,
+        kind: TextureKind,
+    ) -> Serial<wgpu::TextureView> {
         let (id, gpu, dimension) = match source {
             TextureSource::Texture2D(texture) => {
                 (texture.id(), self.ensure_texture_2d(texture), None)
@@ -3706,6 +3762,7 @@ impl Renderer {
             dimension,
             ..Default::default()
         });
+        let view = self.serial(view);
         self.views.insert(
             key,
             ViewEntry {
@@ -3719,12 +3776,13 @@ impl Renderer {
 
     /// `WebGPUTextureUtils.updateSampler()`, memoised on the descriptor: see
     /// [`SamplerKey`].
-    fn texture_sampler(&mut self, source: &TextureSource) -> wgpu::Sampler {
+    fn texture_sampler(&mut self, source: &TextureSource) -> Serial<wgpu::Sampler> {
         let key = SamplerKey::of(source);
         if let Some(sampler) = self.samplers.get(&key) {
             return sampler.clone();
         }
         let sampler = self.device.create_sampler(&key.descriptor());
+        let sampler = self.serial(sampler);
         self.samplers.insert(key, sampler.clone());
         sampler
     }
@@ -4480,6 +4538,8 @@ impl Renderer {
             .retain(|_, entry| bindings::is_fresh(entry.last_used, frames));
         self.views
             .retain(|_, entry| bindings::is_fresh(entry.last_used, frames));
+        self.bind_group_cache
+            .retain(|_, entry| bindings::is_fresh(entry.last_used, frames));
     }
 
     /// Entries in the uploaded-geometry cache. A consumer that churns geometry
@@ -4511,17 +4571,18 @@ impl Renderer {
         label: &str,
         contents: &[u8],
         usage: wgpu::BufferUsages,
-    ) -> wgpu::Buffer {
+    ) -> Serial<wgpu::Buffer> {
         let frames = self.frames;
         let bytes = bindings::padded(contents);
         if let Some(entry) = self.slot_buffers.get_mut(&slot) {
-            if entry.usage == usage && entry.buffer.size() >= bytes.len() as u64 {
+            if entry.usage == usage && entry.buffer.gpu.size() >= bytes.len() as u64 {
                 entry.last_used = frames;
-                self.queue.write_buffer(&entry.buffer, 0, &bytes);
+                self.queue.write_buffer(&entry.buffer.gpu, 0, &bytes);
                 return entry.buffer.clone();
             }
         }
         let buffer = self.create_buffer_init(label, &bytes, usage);
+        let buffer = self.serial(buffer);
         self.slot_buffers.insert(
             slot,
             SlotBuffer {
