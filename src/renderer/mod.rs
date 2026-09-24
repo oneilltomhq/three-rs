@@ -3,6 +3,7 @@
 //! bindings it declared, draw into a render target or into the "canvas"
 //! texture, read back.
 
+mod bindings;
 pub mod cube_render_target;
 mod direct_render_pipeline;
 mod info;
@@ -20,6 +21,7 @@ mod ssaa_pass;
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 
+use bindings::{DrawKey, Occurrences, SlotKey, SlotOwner, VERTEX_SLOTS};
 pub use direct_render_pipeline::DirectRenderPipeline;
 pub use info::{BuildCounts, ComputeCounts, Info, MemoryCounts, RenderCounts};
 use mipmap::{create_mipmap_pipeline, MipmapShader};
@@ -85,6 +87,17 @@ struct BufferEntry {
     /// (`BatchedText::sync`) does so by making new arrays. Holding the `Rc`
     /// also keeps its address from being reused under the cache (issue #58).
     data: Option<Rc<Vec<f32>>>,
+}
+
+/// One draw's persistent buffer for one binding — a uniform group, its bone
+/// matrices, its instance matrix — keyed by [`SlotKey`]. three.js'
+/// `UniformBuffer`: allocated once, and each frame's bytes are
+/// `queue.write_buffer`n into it; re-created only when a rebuilt program needs
+/// it bigger (issue #137).
+struct SlotBuffer {
+    buffer: wgpu::Buffer,
+    usage: wgpu::BufferUsages,
+    last_used: u64,
 }
 
 /// One geometry's uploaded buffers, plus the liveness signal the cache sweep
@@ -637,6 +650,12 @@ pub struct Renderer {
     ///
     /// [`buffers`]: Self::buffers
     storage_buffers: HashMap<usize, wgpu::Buffer>,
+    /// Each draw's uniform groups, bone matrices, morph influences and
+    /// instance data, one persistent buffer per (draw, group, binding) that
+    /// every frame writes into rather than re-creating. Keyed on ids, see
+    /// [`DrawKey`]; aged out by [`CACHE_GRACE_FRAMES`], since a draw's object
+    /// and material have no liveness signal the renderer can read.
+    slot_buffers: HashMap<SlotKey, SlotBuffer>,
     /// Built `ComputeProgram`s, keyed by the structure of the `ComputeFlow`
     /// they came from, so a per-frame `compute()` call builds nothing.
     compute_programs: HashMap<u64, Rc<crate::nodes::ComputeProgram>>,
@@ -983,6 +1002,7 @@ impl Renderer {
             mipmap_pipelines: HashMap::new(),
             buffers: HashMap::new(),
             storage_buffers: HashMap::new(),
+            slot_buffers: HashMap::new(),
             compute_programs: HashMap::new(),
             compute_pipelines: HashMap::new(),
             background_geometry: None,
@@ -2385,6 +2405,7 @@ impl Renderer {
         clear: ClearOps,
     ) {
         let mut draws = Vec::with_capacity(items.len());
+        let mut occurrences = Occurrences::default();
 
         // `RenderList.push()` routes `material.transmission > 0` into the
         // transparent list, and the first such draw is where
@@ -2496,8 +2517,16 @@ impl Renderer {
             // two materials that differ only in which texture or which
             // `range()` buffer they name share one `Program` — and must still
             // draw with their own resources. `Program` holds none.
+            let owner = SlotOwner::Draw(occurrences.next(DrawKey {
+                object: object.as_ref().map(|object| object.id),
+                geometry: geometry_id,
+                material: item.key.id,
+                variant: item.key.variant,
+                occurrence: 0,
+            }));
             let bind_groups = self.bind_groups(
                 program_key,
+                owner,
                 &node,
                 &uniforms,
                 &item.instance_matrix,
@@ -2507,13 +2536,21 @@ impl Renderer {
             let vertex_buffers = node
                 .vertex_buffers()
                 .iter()
-                .map(|desc| match &desc.source {
+                .enumerate()
+                .map(|(slot, desc)| match &desc.source {
                     VertexBufferSource::Geometry(name) => {
                         self.geometries[&geometry_id].gpu.attribute(name).clone()
                     }
-                    VertexBufferSource::Instance(buffer) => {
-                        self.instance_buffer(buffer, &item.instance_matrix, &item.instance_color)
-                    }
+                    VertexBufferSource::Instance(buffer) => self.instance_buffer(
+                        SlotKey {
+                            owner,
+                            group: VERTEX_SLOTS,
+                            binding: slot as u32,
+                        },
+                        buffer,
+                        &item.instance_matrix,
+                        &item.instance_color,
+                    ),
                 })
                 .collect();
 
@@ -2867,7 +2904,12 @@ impl Renderer {
                 resources.push(match desc {
                     BindingDesc::Uniforms { members, size, .. } => {
                         let bytes = uniforms.bytes(members, *size);
-                        Resource::Buffer(self.create_buffer_init(
+                        Resource::Buffer(self.slot_buffer(
+                            SlotKey {
+                                owner: SlotOwner::Compute(program_key),
+                                group: group_index as u32,
+                                binding: resources.len() as u32,
+                            },
                             "three-rs compute uniforms",
                             &bytes,
                             wgpu::BufferUsages::UNIFORM,
@@ -3260,6 +3302,7 @@ impl Renderer {
     fn bind_groups(
         &mut self,
         program_key: u64,
+        owner: SlotOwner,
         node: &NodeProgram,
         uniforms: &UniformContext,
         instance_matrix: &Option<InstancedBufferAttribute>,
@@ -3271,17 +3314,22 @@ impl Renderer {
             Sampler(wgpu::Sampler),
         }
 
-        let groups = node.groups.clone();
-        let mut out = Vec::with_capacity(groups.len());
+        let mut out = Vec::with_capacity(node.groups.len());
 
-        for (group_index, descs) in groups.iter().enumerate() {
+        for (group_index, descs) in node.groups.iter().enumerate() {
             let mut resources = Vec::with_capacity(descs.len());
 
             for desc in descs {
+                let slot = SlotKey {
+                    owner,
+                    group: group_index as u32,
+                    binding: resources.len() as u32,
+                };
                 resources.push(match desc {
                     BindingDesc::Uniforms { members, size, .. } => {
                         let bytes = uniforms.bytes(members, *size);
-                        Resource::Buffer(self.create_buffer_init(
+                        Resource::Buffer(self.slot_buffer(
+                            slot,
                             "three-rs uniforms",
                             &bytes,
                             wgpu::BufferUsages::UNIFORM,
@@ -3294,6 +3342,7 @@ impl Renderer {
                         element_ty,
                         ..
                     } => Resource::Buffer(self.node_buffer(
+                        slot,
                         *id,
                         source,
                         *count,
@@ -3344,6 +3393,7 @@ impl Renderer {
     #[allow(clippy::too_many_arguments)]
     fn node_buffer(
         &mut self,
+        slot: SlotKey,
         id: usize,
         source: &BufferSource,
         count: usize,
@@ -3353,13 +3403,14 @@ impl Renderer {
         uniforms: &UniformContext,
     ) -> wgpu::Buffer {
         // `skeleton.update()` rewrites `boneMatrices` every frame, so the bone
-        // buffer is re-uploaded per draw like the instance matrix, never cached
-        // on the node's identity.
+        // buffer is re-written per draw like the instance matrix: kept on the
+        // draw's slot, never on the node's identity.
         if let BufferSource::BoneMatrices = source {
             let mut data = vec![0f32; count * 16];
             let n = data.len().min(uniforms.bone_matrices.len());
             data[..n].copy_from_slice(&uniforms.bone_matrices[..n]);
-            return self.create_buffer_init(
+            return self.slot_buffer(
+                slot,
                 "three-rs boneMatrices",
                 bytemuck::cast_slice(&data),
                 wgpu::BufferUsages::UNIFORM,
@@ -3367,13 +3418,14 @@ impl Renderer {
         }
         if let BufferSource::MorphInfluences = source {
             // `uniformArray( influences, 'float' )`: one `vec4` per target with
-            // the influence in `.x`, so 16 bytes each — not 4. Re-uploaded per
+            // the influence in `.x`, so 16 bytes each — not 4. Re-written per
             // draw like the instance matrix: the influences change per frame.
             let mut data = vec![0f32; count * 4];
             for (i, influence) in uniforms.morph_influences.iter().enumerate().take(count) {
                 data[i * 4] = *influence as f32;
             }
-            return self.create_buffer_init(
+            return self.slot_buffer(
+                slot,
                 "three-rs morphTargetInfluences",
                 bytemuck::cast_slice(&data),
                 wgpu::BufferUsages::UNIFORM,
@@ -3383,6 +3435,7 @@ impl Renderer {
             return self.storage_buffer(id, count, element_ty);
         }
         self.buffer_for(
+            slot,
             id,
             source,
             count,
@@ -3424,12 +3477,14 @@ impl Renderer {
     /// branch was taken.
     fn instance_buffer(
         &mut self,
+        slot: SlotKey,
         buffer: &Rc<crate::nodes::node::InstanceBuffer>,
         instance_matrix: &Option<InstancedBufferAttribute>,
         instance_color: &Option<InstancedBufferAttribute>,
     ) -> wgpu::Buffer {
         let id = buffer.id.get();
         self.buffer_for(
+            slot,
             id,
             &buffer.source,
             buffer.count,
@@ -3442,11 +3497,15 @@ impl Renderer {
     /// `range()` is filled from the page's `Math.random` exactly once, because
     /// `RangeNode.setup()` runs once — so the buffer is cached on the node's own
     /// identity, never on its min/max/count, which two `range( 0, 1 )` calls
-    /// share. The instance matrix is re-uploaded per draw instead: its contents
-    /// change with the scene, and three.js re-uploads on
-    /// `instanceMatrix.version`.
+    /// share. The instance matrix and colours are re-written per draw instead,
+    /// into the draw's own persistent `slot`: their contents change with the
+    /// scene, and three.js re-uploads on `instanceMatrix.version`, which the
+    /// port's `InstancedBufferAttribute` does not have yet (issue #89).
+    // Eight arguments: `node_buffer`'s seven plus the slot, see there.
+    #[allow(clippy::too_many_arguments)]
     fn buffer_for(
         &mut self,
+        slot: SlotKey,
         id: usize,
         source: &BufferSource,
         count: usize,
@@ -3462,7 +3521,8 @@ impl Renderer {
                 let attribute = instance_matrix
                     .as_ref()
                     .expect("three-rs: instanceMatrix needs an InstancedMesh");
-                self.create_buffer_init(
+                self.slot_buffer(
+                    slot,
                     "three-rs instanceMatrix",
                     bytemuck::cast_slice(&attribute.array),
                     usage,
@@ -3472,7 +3532,8 @@ impl Renderer {
                 let attribute = instance_color
                     .as_ref()
                     .expect("three-rs: instanceColor needs an InstancedMesh with setColorAt");
-                self.create_buffer_init(
+                self.slot_buffer(
+                    slot,
                     "three-rs instanceColor",
                     bytemuck::cast_slice(&attribute.array),
                     usage,
@@ -4449,6 +4510,9 @@ impl Renderer {
         self.node_builder_states
             .retain(|_, states| states.last_used >= cutoff);
         self.buffers.retain(|_, entry| entry.last_used >= cutoff);
+        let frames = self.frames;
+        self.slot_buffers
+            .retain(|_, entry| bindings::is_fresh(entry.last_used, frames));
     }
 
     /// Entries in the uploaded-geometry cache. A consumer that churns geometry
@@ -4465,6 +4529,41 @@ impl Renderer {
     /// Entries in the `range()` / instance-buffer cache.
     pub fn buffer_cache_len(&self) -> usize {
         self.buffers.len()
+    }
+
+    /// The persistent buffer behind `slot`, holding `contents` for this draw:
+    /// written into the buffer the slot already has when it is big enough and
+    /// of the same usage, and only otherwise created (issue #137).
+    ///
+    /// A buffer left bigger than a rebuilt program's group is fine to bind
+    /// whole: the shader reads its struct's prefix and the layout's minimum
+    /// binding size is a lower bound.
+    fn slot_buffer(
+        &mut self,
+        slot: SlotKey,
+        label: &str,
+        contents: &[u8],
+        usage: wgpu::BufferUsages,
+    ) -> wgpu::Buffer {
+        let frames = self.frames;
+        let bytes = bindings::padded(contents);
+        if let Some(entry) = self.slot_buffers.get_mut(&slot) {
+            if entry.usage == usage && entry.buffer.size() >= bytes.len() as u64 {
+                entry.last_used = frames;
+                self.queue.write_buffer(&entry.buffer, 0, &bytes);
+                return entry.buffer.clone();
+            }
+        }
+        let buffer = self.create_buffer_init(label, &bytes, usage);
+        self.slot_buffers.insert(
+            slot,
+            SlotBuffer {
+                buffer: buffer.clone(),
+                usage,
+                last_used: frames,
+            },
+        );
+        buffer
     }
 
     fn create_buffer_init(
