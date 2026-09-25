@@ -1,5 +1,7 @@
 # `webgpu_loader_gltf_anisotropy`
 
+2026-09-25: regraded against three.js 5f610f5 (the cube PMREM of 2f80402, #146): 94 of 100000 pixels (was 27); the anisotropic `clampedAlphaT` of 2f80402 has no port path yet.
+
 Status: **green.** 27 of 100000 pixels against three.js r186's own
 `test/e2e/image.js`, threshold 0.1%. Intel Iris Xe, Mesa 25.3.6, wgpu 30.0.1
 on Vulkan. Steady frame 3.2 ms, 5 draw calls, 12188 triangles.

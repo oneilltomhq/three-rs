@@ -117,11 +117,11 @@ same screenshots at the same threshold (see
 | webgpu_postprocessing_radial_blur | 7 | 3.9 | 2 | 401 | yes |
 | webgpu_materials | 44 | 7.3 | 19 | 350065 | yes |
 | webgpu_postprocessing_ssaa | 0 | 11.9 | 17 | 2119689 | yes |
-| webgpu_pmrem_cubemap | 0 | 8.2 | 32 | 243905 | yes |
+| webgpu_pmrem_cubemap | 31 | 8.2 | 32 | 243905 | yes |
 | webgpu_postprocessing_bloom_selective | 1 | 16.5 | 63 | 256013 | yes |
 | webgpu_compute_points | 4 (see below) | 10.7 | 2 | 1 + 300000 points | yes |
 | webgpu_lines_fat | 0 | 3.8 | 6 | 11191 | yes |
-| webgpu_pmrem_test | 27 | 6.1 | 35 | 67457 | yes |
+| webgpu_pmrem_test | 0 | 6.1 | 35 | 67457 | yes |
 | webgpu_postprocessing_difference | 13 | 1.5 | 2 | 13 | yes |
 | webgpu_postprocessing_direct | 21 | 4.9 | 93 | 4192 | yes |
 | webgpu_furnace_test | 0 | 7.1 | 122 | 116161 | yes |
@@ -130,17 +130,17 @@ same screenshots at the same threshold (see
 | webgpu_postprocessing_bloom | 0 | 8.6 | 19 | 52085 | yes |
 | webgpu_materials_envmaps | 0 | 2.1 | 3 | 7105 | yes |
 | webgpu_materials_cubemap_mipmaps | 1 | 2.6 | 3 | 65025 | yes |
-| webgpu_postprocessing_bloom_emissive | 28 | 5.1 | 15 | 17449 | yes |
+| webgpu_postprocessing_bloom_emissive | 0 | 5.1 | 15 | 17449 | yes |
 | webgpu_instance_uniform | 13 | 6.0 | 14 | 247105 | yes |
 | webgpu_tsl_interoperability | 0 | 2.2 | 2 | 4 | yes |
-| webgpu_pmrem_equirectangular | 1 | 5.9 | 32 | 243905 | yes |
-| webgpu_postprocessing_ca | 3 | 3.4 | 23 | 5658 (+ 42 lines) | yes |
-| webgpu_loader_gltf | 59 | 1.9 | 3 | 17437 | yes |
-| webgpu_mrt | 87 | 2.8 | 3 | 17437 | yes |
-| webgpu_custom_fog_background | 57 | 2.0 | 2 | 15453 | yes |
-| webgpu_loader_gltf_sheen | 3 | 3.1 | 6 | 41921 | yes |
-| webgpu_deferred | 54 | 2.8 | 25 | 26378 | yes |
-| webgpu_loader_gltf_anisotropy | 27 | 3.2 | 5 | 12188 | yes |
+| webgpu_pmrem_equirectangular | 0 | 5.9 | 32 | 243905 | yes |
+| webgpu_postprocessing_ca | 0 | 3.4 | 23 | 5658 (+ 42 lines) | yes |
+| webgpu_loader_gltf | 22 | 1.9 | 3 | 17437 | yes |
+| webgpu_mrt | 10 | 2.8 | 3 | 17437 | yes |
+| webgpu_custom_fog_background | 7 | 2.0 | 2 | 15453 | yes |
+| webgpu_loader_gltf_sheen | 28 | 3.1 | 6 | 41921 | yes |
+| webgpu_deferred | 0 | 2.8 | 25 | 26378 | yes |
+| webgpu_loader_gltf_anisotropy | 94 | 3.2 | 5 | 12188 | yes |
 
 `webgpu_compute_points` is graded like the rest and its 4 pixels mean less
 than the rest: its frame is black apart from a 2x2 block at the centre, so

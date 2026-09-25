@@ -1,5 +1,7 @@
 # webgpu_postprocessing_ca
 
+2026-09-25: regraded against three.js 5f610f5 (the cube PMREM of 2f80402, #146): 0 of 100000 pixels (was 3).
+
 Branch `rung-room-environment`, cut from `origin/main` 2c96ac5. **PASS — 3 of
 100000 pixels differ (0.003%), limit 0.1%.**
 

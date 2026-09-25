@@ -1,5 +1,7 @@
 # webgpu_postprocessing_bloom_emissive
 
+2026-09-25: regraded against three.js 5f610f5 (the cube PMREM of 2f80402, #146): 0 of 100000 pixels (was 28).
+
 Branch `rung-bloom-emissive`, cut from `9df096f` (the tip of `rung-gltf-bloom`,
 i.e. the `webgpu_postprocessing_bloom` rung).
 

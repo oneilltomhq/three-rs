@@ -1,5 +1,7 @@
 # webgpu_pmrem_cubemap — first sitting (steps 1–3), done
 
+2026-09-25: regraded against three.js 5f610f5 (the cube PMREM of 2f80402, #146): 31 of 100000 pixels (was 0); the reference did not move, the PMREM did.
+
 **Status: the first half is done.** This is the CPU-and-plumbing half of
 `webgpu_pmrem_cubemap`: the RGBE decoder, `HDRCubeTextureLoader`, half-float
 textures and cube textures, an `rgba16float` render target with a readback, and
