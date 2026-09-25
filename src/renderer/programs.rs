@@ -48,6 +48,9 @@ pub struct RenderState {
     /// `_getPrimitiveState()`: set only for an indexed `Line` that is not a
     /// `LineSegments`, from the index array's type.
     pub strip_index_format: Option<wgpu::IndexFormat>,
+    /// `WebGPUPipelineUtils.createRenderPipeline()`'s
+    /// `alphaToCoverageEnabled: material.alphaToCoverage && samples > 1`.
+    pub alpha_to_coverage: bool,
 }
 
 /// How many colour attachments past the first a pass may have here.
@@ -256,7 +259,7 @@ impl Program {
             multisample: wgpu::MultisampleState {
                 count: state.sample_count,
                 mask: !0,
-                alpha_to_coverage_enabled: false,
+                alpha_to_coverage_enabled: state.alpha_to_coverage,
             },
             multiview_mask: None,
             cache: None,

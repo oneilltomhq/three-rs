@@ -392,8 +392,9 @@ pub struct MeshBasicNodeMaterial {
     /// `Material.premultipliedAlpha` — selects the other half of the
     /// `_getBlending()` table.
     pub premultiplied_alpha: bool,
-    /// `Material.alphaToCoverage`. Only `builder.isOpaque()` reads it so far;
-    /// the pipeline's `alphaToCoverageEnabled` is still hardcoded false.
+    /// `Material.alphaToCoverage` — read by `builder.isOpaque()`, by
+    /// `Line2NodeMaterial`'s `alphaLine`, and by the pipeline's
+    /// `alphaToCoverageEnabled` (with more than one sample).
     pub alpha_to_coverage: bool,
     /// `Line2NodeMaterial.worldUnits` (`_useWorldUnits`) — the fat line's
     /// `linewidth` is in world units rather than screen pixels. Read by
@@ -629,11 +630,15 @@ impl MeshBasicNodeMaterial {
     /// have the result blended a second time. That default has teeth here: it
     /// makes [`is_opaque`](Self::is_opaque) false, so the fragment flow does
     /// **not** emit `DiffuseColor.w = 1.0` (`docs/nodes.md` §8).
+    ///
+    /// `this._useAlphaToCoverage = true` is the constructor's other default,
+    /// so `alpha_to_coverage` starts true; `webgpu_lines_fat` turns it off.
     pub fn line2(color: Color) -> Self {
         Self {
             kind: MaterialKind::Line2,
             color,
             blending: Blending::No,
+            alpha_to_coverage: true,
             ..Self::default()
         }
     }

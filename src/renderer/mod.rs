@@ -2486,6 +2486,7 @@ impl Renderer {
                 blend: item.material.blend_state(),
                 topology: item.primitive.topology,
                 strip_index_format: item.primitive.strip_index_format,
+                alpha_to_coverage: item.material.alpha_to_coverage && target.sample_count > 1,
             };
             let pipeline = PipelineKey {
                 program: program_key,

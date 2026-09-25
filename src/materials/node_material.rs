@@ -305,6 +305,7 @@ fn setup_diffuse_color(
         if let Some(attributes) = &ctx.line_segments {
             crate::materials::line2::setup_diffuse_color(
                 material.alpha_to_coverage,
+                material.world_units,
                 material.vertex_colors,
                 attributes,
                 fragment,
@@ -415,7 +416,10 @@ fn setup_inner(
     // neither of which a fat line has.
     if material.kind == MaterialKind::Line2 {
         if let Some(attributes) = &ctx.line_segments {
-            pre_vertex.push(crate::materials::line2::setup_position(attributes));
+            pre_vertex.push(crate::materials::line2::setup_position(
+                attributes,
+                material.world_units,
+            ));
         }
     }
 

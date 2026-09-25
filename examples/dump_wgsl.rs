@@ -1415,6 +1415,7 @@ fn main() {
     let mut line2 = MeshBasicNodeMaterial::line2(Color::from_hex(0xffffff));
     line2.linewidth = 5.0;
     line2.vertex_colors = true;
+    line2.alpha_to_coverage = false;
     show(
         "line2",
         &line2,
