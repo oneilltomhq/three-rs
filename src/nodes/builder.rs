@@ -335,7 +335,7 @@ pub struct NodeBuilder {
     /// Inlined `Fn()` bodies, expanded once per call site node.
     call_bodies: HashMap<usize, NodeRef>,
     /// Emitted `fn` names for `Fn()`s with a layout.
-    fn_names: HashMap<usize, String>,
+    fn_names: HashMap<(usize, usize), String>,
     fn_counter: usize,
     usage: HashMap<usize, u32>,
 }
@@ -1650,18 +1650,26 @@ impl NodeBuilder {
     /// `FunctionNode` — emit a real WGSL `fn` once and return its name.
     fn emit_function(&mut self, def: &Rc<FnDef>) -> String {
         let key = Rc::as_ptr(def) as *const u8 as usize;
-        if let Some(name) = self.fn_names.get(&key).cloned() {
+        // Emitted once per *stage*: each stage is its own WGSL module, so a
+        // `Fn()` both stages call — the raging sea's `mx_noise_float`, read by
+        // `positionNode` and again by `emissiveNode` — is written into both,
+        // as three.js' per-stage `codes` has it. The name is shared.
+        let stage_key = (self.stage.index(), key);
+        if let Some(name) = self.fn_names.get(&stage_key).cloned() {
             return name;
         }
-        let name = match def.name {
-            Some(n) => n.to_string(),
-            None => {
-                let n = format!("fn{}", self.fn_counter);
-                self.fn_counter += 1;
-                n
-            }
+        let name = match self.fn_names.iter().find(|((_, k), _)| *k == key) {
+            Some((_, name)) => name.clone(),
+            None => match def.name {
+                Some(n) => n.to_string(),
+                None => {
+                    let n = format!("fn{}", self.fn_counter);
+                    self.fn_counter += 1;
+                    n
+                }
+            },
         };
-        self.fn_names.insert(key, name.clone());
+        self.fn_names.insert(stage_key, name.clone());
 
         let params: Vec<NodeRef> = def
             .params
