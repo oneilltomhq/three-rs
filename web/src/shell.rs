@@ -231,6 +231,7 @@ PmremCubemap, webgpu_pmrem_cubemap, "../../examples/webgpu_pmrem_cubemap.rs";
 PostprocessingBloomSelective, webgpu_postprocessing_bloom_selective, "../../examples/webgpu_postprocessing_bloom_selective.rs";
 ComputePoints, webgpu_compute_points, "../../examples/webgpu_compute_points.rs";
 LinesFat, webgpu_lines_fat, "../../examples/webgpu_lines_fat.rs";
+LinesFatRaycasting, webgpu_lines_fat_raycasting, "../../examples/webgpu_lines_fat_raycasting.rs";
 PmremTest, webgpu_pmrem_test, "../../examples/webgpu_pmrem_test.rs";
 PostprocessingDifference, webgpu_postprocessing_difference, "../../examples/webgpu_postprocessing_difference.rs";
 PostprocessingDirect, webgpu_postprocessing_direct, "../../examples/webgpu_postprocessing_direct.rs";
