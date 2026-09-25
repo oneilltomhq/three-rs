@@ -337,8 +337,6 @@ const VARIANT_SHADOW: u64 = 1;
 /// `MaterialKey::variant` for `QuadMesh.render()`'s copy with the full-screen
 /// `vertexNode`.
 const VARIANT_QUAD: u64 = 2;
-/// `MaterialKey::variant` for a `PMREMGenerator` lod-plane draw.
-const VARIANT_PMREM: u64 = 3;
 /// `MaterialKey::variant` for the two halves of `_renderObjectDirect()`'s
 /// transparent `DoubleSide` split — the same material drawn `BackSide` and
 /// then `FrontSide`, which are two programs because the side reaches
@@ -1371,9 +1369,9 @@ impl Renderer {
                 materials::background_node_color_node(node),
             ))
             .map(|(variant, color_node)| (color_node, variant)),
-            // The cubeUV atlas, keyed by the texture it is read through — the
-            // handle is a cheap clone of one borrowed `Texture`, so its id is
-            // stable across frames the way a `CubeTexture`'s is.
+            // The PMREM cube, keyed by the texture it is read through — the
+            // handle is a cheap clone of the environment's `CubeTexture`, so its
+            // id is stable across frames.
             Some(Background::Pmrem(pmrem)) => {
                 let variant = hash_of(&("pmrem", pmrem.texture.id()));
                 Some((materials::background_pmrem_color_node(&pmrem), variant))
@@ -2340,55 +2338,6 @@ impl Renderer {
         self.fullscreen_pass = previous_fullscreen_pass;
     }
 
-    /// `PMREMGenerator`'s `renderer.render( lodMesh, _flatCamera )`.
-    ///
-    /// The lod planes are already in clip space, so the camera is
-    /// `OrthographicCamera( -1, 1, 1, -1, 0, 1 )` — the same one `QuadMesh`
-    /// uses, which is why this shares `quad_camera_uniforms()` rather than
-    /// building a second. `clear` carries `renderer.autoClear`: three leaves it
-    /// alone for `_textureToCubeUV` and turns it off for the whole of
-    /// `_applyPMREM`, so every prefilter pass loads the tile beside the one it
-    /// writes.
-    pub(crate) fn render_pmrem_mesh(
-        &mut self,
-        geometry: Rc<BufferGeometry>,
-        material: &MeshBasicNodeMaterial,
-        clear: bool,
-    ) {
-        self.begin_frame();
-
-        let items = [Renderable {
-            object: None,
-            fog: None,
-            geometry,
-            material: material.clone(),
-            key: MaterialKey::of(material).variant(VARIANT_PMREM),
-            setup: SetupContext::default(),
-            model_world: Matrix4::identity(),
-            instance_matrix: None,
-            instance_color: None,
-            instance_count: 1,
-            morph_influences: Vec::new(),
-            morph_base: 1.0,
-            bind_matrix: Matrix4::identity(),
-            bind_matrix_inverse: Matrix4::identity(),
-            bone_matrices: Vec::new(),
-            primitive: Primitive::TRIANGLES,
-            sub_draws: Vec::new(),
-        }];
-
-        let camera_uniforms = self.quad_camera_uniforms();
-        let clear = if clear && self.auto_clear {
-            ClearOps {
-                color: self.auto_clear_color.then_some(self.clear_color),
-                depth: self.auto_clear_depth,
-            }
-        } else {
-            ClearOps::default()
-        };
-        self.render_list(&items, camera_uniforms, clear);
-    }
-
     fn quad_camera_uniforms(&self) -> UniformContext<'static> {
         UniformContext {
             camera_projection: self.quad_camera.projection_matrix,
@@ -3128,7 +3077,7 @@ impl Renderer {
     }
 
     /// The same readback off an `rgba16float` [`RenderTarget`] — the format
-    /// PMREM's cubeUV atlas and the renderer's own framebuffer target are in —
+    /// a PMREM face target and the renderer's own framebuffer target are in —
     /// decoded to `f32`, four channels a texel, top-down.
     ///
     /// [`read_target_pixels`](Self::read_target_pixels) cannot serve this: it
@@ -3207,6 +3156,42 @@ impl Renderer {
         readback.finish()
     }
 
+    /// One face of one mip level of an `rgba16float` [`CubeTexture`] — a PMREM
+    /// or its source target — decoded to `f32`, four channels a texel,
+    /// top-down, as [`read_target_pixels_rgba16f`](Self::read_target_pixels_rgba16f)
+    /// gives a 2-D target.
+    pub fn read_cube_pixels_rgba16f(
+        &mut self,
+        cube: &CubeTexture,
+        layer: u32,
+        mip_level: u32,
+    ) -> Result<(u32, u32, Vec<f32>), Error> {
+        let texture = self.ensure_cube_texture(cube);
+        let format = texture.format();
+        if format != wgpu::TextureFormat::Rgba16Float {
+            return Err(Error::Readback {
+                reason: format!("{format:?} is not rgba16float"),
+            });
+        }
+        let size = texture.width() >> mip_level;
+        let readback = self.submit_readback_at(&texture, mip_level, layer, size, size)?;
+        let slice = readback.buffer.slice(..);
+        slice.map_async(wgpu::MapMode::Read, |_| {});
+        self.device
+            .poll(wgpu::PollType::wait_indefinitely())
+            .map_err(|e| Error::Readback {
+                reason: e.to_string(),
+            })?;
+        let (width, height, bytes) = readback.finish()?;
+        let pixels = bytes
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|half| crate::extras::from_half_float(u16::from_le_bytes(*half)))
+            .collect();
+        Ok((width, height, pixels))
+    }
+
     /// The first half of every readback: a `MAP_READ` buffer, the copy of
     /// mip 0 of `texture` into it, submitted. The caller maps the buffer and
     /// waits in whichever way its platform allows, then calls
@@ -3214,6 +3199,19 @@ impl Renderer {
     fn submit_readback(
         &self,
         texture: &wgpu::Texture,
+        width: u32,
+        height: u32,
+    ) -> Result<PendingReadback, Error> {
+        self.submit_readback_at(texture, 0, 0, width, height)
+    }
+
+    /// [`submit_readback`](Self::submit_readback) of mip `mip_level`, array
+    /// layer `layer`.
+    fn submit_readback_at(
+        &self,
+        texture: &wgpu::Texture,
+        mip_level: u32,
+        layer: u32,
         width: u32,
         height: u32,
     ) -> Result<PendingReadback, Error> {
@@ -3246,8 +3244,12 @@ impl Renderer {
         encoder.copy_texture_to_buffer(
             wgpu::TexelCopyTextureInfo {
                 texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
+                mip_level,
+                origin: wgpu::Origin3d {
+                    x: 0,
+                    y: 0,
+                    z: layer,
+                },
                 aspect: wgpu::TextureAspect::All,
             },
             wgpu::TexelCopyBufferInfo {
@@ -4104,18 +4106,21 @@ impl Renderer {
         );
     }
 
-    /// One face of a [`cube_render_target`] conversion: the 2-D target the face
-    /// was drawn into, copied into array layer `layer` of the cube's GPU
-    /// texture.
+    /// One face of a [`cube_render_target`] conversion or of a PMREM level: the
+    /// 2-D target the face was drawn into, copied into array layer `layer`,
+    /// mip level `mip`, of the cube's GPU texture.
     ///
-    /// Three renders into the layer directly; this port has no layered colour
-    /// attachment, and a same-format, same-extent `copyTextureToTexture` is the
-    /// exact move of the texels rather than a resample of them.
+    /// Three renders into the layer (and, for a PMREM, the mip level) directly
+    /// — `setRenderTarget( target, face, activeMipmapLevel )`; this port has no
+    /// layered colour attachment, and a same-format, same-extent
+    /// `copyTextureToTexture` is the exact move of the texels rather than a
+    /// resample of them.
     pub(crate) fn copy_to_cube_layer(
         &mut self,
         source: &RenderTarget,
         cube: &CubeTexture,
         layer: u32,
+        mip: u32,
     ) {
         let destination = self.ensure_cube_texture(cube);
         let (width, height) = source.size();
@@ -4135,7 +4140,7 @@ impl Renderer {
             },
             wgpu::TexelCopyTextureInfo {
                 texture: &destination,
-                mip_level: 0,
+                mip_level: mip,
                 origin: wgpu::Origin3d {
                     x: 0,
                     y: 0,
@@ -4150,6 +4155,17 @@ impl Renderer {
             },
         );
         self.queue.submit([encoder.finish()]);
+    }
+
+    /// `backend.generateMipmaps( texture )` for a cube render target, once all
+    /// six faces of level 0 are defined — what `CubeCamera.update()` gets by
+    /// restoring `mipmapsAutoUpdate` before its last face.
+    pub(crate) fn generate_cube_mipmaps(&mut self, cube: &CubeTexture) {
+        let gpu = self.ensure_cube_texture(cube);
+        let count = gpu.mip_level_count();
+        if count > 1 {
+            self.generate_mipmaps(&gpu, cube.gpu_format(), count, 6);
+        }
     }
 
     /// `Textures.updateTexture()` for a `CubeTexture`: one 2D texture with six
@@ -4176,7 +4192,10 @@ impl Renderer {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format,
+            // COPY_SRC lets tests read a PMREM face back
+            // (`read_cube_pixels_rgba16f`).
             usage: wgpu::TextureUsages::COPY_DST
+                | wgpu::TextureUsages::COPY_SRC
                 | wgpu::TextureUsages::TEXTURE_BINDING
                 | wgpu::TextureUsages::RENDER_ATTACHMENT,
             view_formats: &[],
@@ -4219,7 +4238,10 @@ impl Renderer {
 
         // `Textures.updateTexture()` generates only when the texture supplied
         // no levels of its own: `needsMipmaps && texture.mipmaps.length === 0`.
-        if mip_level_count > 1 && !has_mipmaps {
+        // A render target's mips are rendered or generated after its faces
+        // are drawn, never at allocation: there is nothing in level 0 yet.
+        let is_render_target = texture.inner().borrow().images[0].data.is_empty();
+        if mip_level_count > 1 && !has_mipmaps && !is_render_target {
             self.generate_mipmaps(&gpu, format, mip_level_count, 6);
         }
 

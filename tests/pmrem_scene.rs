@@ -1,229 +1,103 @@
-//! `PMREMGenerator.fromScene` — the two gates `webgpu_furnace_test`'s image
-//! cannot give you.
+//! `PMREMGenerator.fromScene` — the gate `webgpu_furnace_test`'s image cannot
+//! give you.
 //!
 //! The image is a strong gate for the *material*: a white furnace makes an
 //! energy error a visible band. It is a weak gate for the *generator*, because
-//! the environment is one colour, so a permuted face, a flipped `up` or a
-//! viewport in the wrong tile all produce the same uniform atlas. So the two
-//! halves are gated separately:
-//!
-//! * the six cube-camera bases and the six viewport rectangles, against
-//!   three's own `upSign` / `forwardSign` / `_setViewport` arithmetic, with no
-//!   GPU at all;
-//! * the atlas itself, which under a constant environment has to *stay*
-//!   constant through all ten GGX steps — the white-furnace identity one level
-//!   below the one the image tests.
+//! the environment is one colour, so a permuted face or a flipped `up`
+//! produces the same uniform cube. The face orientation is gated by
+//! `webgpu_pmrem_scene`'s e2e rung, which reads each face back; this file gates
+//! the prefilter itself: under a constant environment every level of the PMREM
+//! cube has to *stay* that constant, through the GGX levels, the integration
+//! levels and (with a `sigma`) the two blur passes — the white-furnace
+//! identity one level below the one the image tests.
 
-use three_rs::math::{Color, Vector3};
-use three_rs::renderer::pmrem::{face_camera, face_tile, PmremGenerator};
+use three_rs::math::Color;
+use three_rs::renderer::pmrem::{max_lod_for, PmremGenerator};
 use three_rs::{Background, Renderer, RendererParameters, Scene};
 
-/// `_setSize( 256 )` ⇒ `lodMax = 8`, atlas 768×1024.
-const FACE: u32 = 256;
-const ATLAS_WIDTH: u32 = 768;
-const ATLAS_HEIGHT: u32 = 1024;
-/// `_lodMeshes.length` — `lodMax - LOD_MIN + 1 + EXTRA_LODS`.
-const LOD_COUNT: usize = 11;
+/// `fromScene()`'s `_setSize( 256 )`.
+const SIZE: u32 = 256;
 
 /// `webgpu_furnace_test`'s `const COLOR = 0xcccccc`.
 const COLOR: u32 = 0xcccccc;
 
-/// **The six faces, with no GPU.** Three's `_sceneToCubeUV`:
-///
-/// ```js
-/// const upSign = [ 1, 1, 1, 1, -1, 1 ];
-/// const forwardSign = [ 1, -1, 1, -1, 1, -1 ];
-/// // col 0: up = ( 0, upSign[i], 0 ),  lookAt( x + forwardSign[i], y, z )
-/// // col 1: up = ( 0, 0, upSign[i] ),  lookAt( x, y + forwardSign[i], z )
-/// // col 2: up = ( 0, upSign[i], 0 ),  lookAt( x, y, z + forwardSign[i] )
-/// this._setViewport( target, col * size, i > 2 ? size : 0, size, size );
-/// ```
-///
-/// Written out here as literals rather than recomputed, so the test fails if
-/// the port's table drifts rather than agreeing with itself.
-///
-/// **That is the WebGPU generator**, `src/renderers/common/extras/`. r186 also
-/// ships an older `src/extras/PMREMGenerator.js` for the WebGL renderer, whose
-/// tables are `[ 1, -1, 1, 1, 1, 1 ]` / `[ 1, 1, 1, -1, -1, -1 ]` and which
-/// draws the background box inside the face loop. Both spell a solid-colour
-/// furnace identically, which is exactly why this test holds the right one by
-/// hand rather than reading whichever file is open.
-#[test]
-fn the_six_cube_faces_are_threes() {
-    let origin = Vector3::ZERO;
-    let expected: [([f64; 3], [f64; 3]); 6] = [
-        ([0.0, 1.0, 0.0], [1.0, 0.0, 0.0]),  // +x
-        ([0.0, 0.0, 1.0], [0.0, -1.0, 0.0]), // second column, up along +z
-        ([0.0, 1.0, 0.0], [0.0, 0.0, 1.0]),  // +z
-        ([0.0, 1.0, 0.0], [-1.0, 0.0, 0.0]), // -x
-        ([0.0, 0.0, -1.0], [0.0, 1.0, 0.0]), // second column, up along -z
-        ([0.0, 1.0, 0.0], [0.0, 0.0, -1.0]), // -z
-    ];
-
-    for (face, (up, look_at)) in expected.iter().enumerate() {
-        let (got_up, got_look_at) = face_camera(face, origin);
-        assert_eq!(
-            [got_up.x, got_up.y, got_up.z],
-            *up,
-            "face {face}: up vector"
-        );
-        assert_eq!(
-            [got_look_at.x, got_look_at.y, got_look_at.z],
-            *look_at,
-            "face {face}: lookAt target"
-        );
-    }
-
-    let size = FACE as usize;
-    let expected_tiles = [
-        (0, 0),
-        (size, 0),
-        (2 * size, 0),
-        (0, size),
-        (size, size),
-        (2 * size, size),
-    ];
-    for (face, (x, y)) in expected_tiles.iter().enumerate() {
-        assert_eq!(
-            face_tile(size, face),
-            (*x, *y, size, size),
-            "face {face}: viewport tile"
-        );
-    }
-}
-
-/// **The atlas is the furnace.** `fromScene` over `webgpu_furnace_test`'s
-/// environment scene — one `Color` background and nothing else — has to fill
-/// every level of the atlas with that colour:
-///
-/// * level 0 is the background box, drawn once over the whole atlas through a
-///   90° frustum from inside a unit cube;
-/// * every GGX step after it convolves a constant with a normalised kernel,
-///   which is the constant again. That is the white-furnace identity one level
-///   below the material: if the prefilter loses or gains energy, it shows up
-///   here, with no BSDF in the way to blame.
+/// Captures a solid-colour scene with `sigma` and checks every face of every
+/// level.
 ///
 /// The tolerance is **1% of the value**, justified by the storage rather than
-/// by what was measured: the atlas is `rgba16float`, whose relative precision
-/// near 0.6 is 2⁻¹¹ ≈ 0.049%, and the ladder re-quantises through it once per
-/// GGX step, so the error can only walk up by about that much per level over
-/// eleven levels. It does exactly that — 0.0516% at LOD 0 rising to 0.3751%
-/// at LOD 10, one ulp at a time — which is the signature of rounding and not
-/// of a lost energy term, and leaves the limit about 2.7× clear. Every level's
+/// by what was measured: both cubes are `rgba16float`, whose relative
+/// precision near 0.6 is 2⁻¹¹ ≈ 0.049%, and each level is a normalised sum of
+/// texels that were themselves rounded, a handful of times over. Every level's
 /// worst case is printed, so a regression that eats the margin is visible
 /// before it fails.
 ///
 /// Nothing here comes from a reference image: the expected value is
 /// `Color::from_hex( 0xcccccc )`, the page's own constant through three's own
 /// sRGB → linear conversion.
-#[test]
-fn the_atlas_of_a_solid_colour_scene_is_that_colour() {
+fn solid_colour_pmrem_is_that_colour(sigma: f64) {
     let mut renderer = Renderer::new(RendererParameters { antialias: false }).unwrap();
 
     let mut scene = Scene::new();
     scene.background = Some(Background::Color(Color::from_hex(COLOR)));
 
     let mut generator = PmremGenerator::new();
-    let target = generator
-        .from_scene(&mut renderer, &mut scene, 0.0, None)
+    let pmrem = generator
+        .from_scene(&mut renderer, &mut scene, sigma, None)
         .unwrap();
-    assert_eq!(target.size(), (ATLAS_WIDTH, ATLAS_HEIGHT));
+    assert_eq!(pmrem.size(), (SIZE, SIZE));
+    let max_lod = max_lod_for(SIZE);
+    assert_eq!(pmrem.mip_level_count(), max_lod + 1, "maxLod + 1 levels");
 
-    // `_sceneToCubeUV` puts the background back when it is done.
+    // `fromScene` puts the background back when it is done.
     assert!(
         matches!(scene.background, Some(Background::Color(_))),
         "the env scene keeps its background; three restores it after borrowing it"
     );
 
     let expected = Color::from_hex(COLOR).r as f32;
-    let (width, _, pixels) = renderer.read_target_pixels_rgba16f(&target).unwrap();
-
-    let sizes: Vec<usize> = three_rs::renderer::pmrem::create_planes(8)
-        .iter()
-        .map(|mesh| mesh.size)
-        .collect();
-    assert_eq!(sizes.len(), LOD_COUNT);
-
     let mut worst = 0.0f32;
-    for (lod, size) in sizes.iter().enumerate() {
-        let (x, y, size) = three_rs::renderer::pmrem::tile_rect(8, FACE as usize, *size, lod);
-        let (x, y, w, h) = (x as u32, y as u32, 3 * size as u32, 2 * size as u32);
-
+    for lod in 0..=max_lod {
         let mut lod_worst = 0.0f32;
-        for row in y..y + h {
-            for column in x..x + w {
-                let at = ((row * width + column) * 4) as usize;
-                for channel in 0..3 {
-                    let error = (pixels[at + channel] - expected).abs() / expected;
-                    lod_worst = lod_worst.max(error);
+        for face in 0..6 {
+            let (width, height, pixels) = renderer
+                .read_cube_pixels_rgba16f(&pmrem, face, lod)
+                .unwrap();
+            assert_eq!((width, height), (SIZE >> lod, SIZE >> lod), "lod {lod}");
+            for texel in pixels.chunks_exact(4) {
+                for &value in &texel[..3] {
+                    lod_worst = lod_worst.max((value - expected).abs() / expected);
                 }
             }
         }
         println!(
-            "LOD {lod} ({size}² faces at ( {x}, {y} )): worst {:.4}%",
+            "sigma {sigma}: LOD {lod} ({}² faces): worst {:.4}%",
+            SIZE >> lod,
             lod_worst * 100.0
         );
         assert!(
             lod_worst <= 0.01,
             "LOD {lod} drifts {:.3}% off the furnace colour; a constant environment \
-             convolved with a normalised GGX kernel is that constant, so this is an \
+             convolved with a normalised kernel is that constant, so this is an \
              energy term, not a rounding error",
             lod_worst * 100.0
         );
         worst = worst.max(lod_worst);
     }
-    println!("atlas: worst {:.4}% off {expected}", worst * 100.0);
+    println!("sigma {sigma}: worst {:.4}% off {expected}", worst * 100.0);
 }
 
-/// **`_blurPass`'s viewport, with no GPU.** `fromScene( scene, 0.04 )` — every
-/// `RoomEnvironment` page — runs two `sphericalGaussianBlur` passes over level
-/// 0 before the GGX ladder starts. Under a constant environment (the other
-/// test here) a blur of the wrong rectangle is invisible, and in a real scene
-/// it is a soft wrongness that reads as "the PMREM is a bit off" rather than
-/// as a failure, so the arithmetic is held by hand.
-///
-/// Three's own expression, for `lodMax = 8`, `cubeSize = 256`:
-///
-/// ```js
-/// const x = 3 * outputSize * ( lodOut > lodMax - LOD_MIN ? lodOut - lodMax + LOD_MIN : 0 );
-/// const y = 4 * ( cubeSize - outputSize );
-/// ```
-///
-/// Note this is *not* `tile_rect`'s arithmetic: `tile_rect` walks `_sizeLods`
-/// to find the row, `_blurPass` computes it from `cubeSize` directly. They
-/// agree for `lodOut <= lodMax - LOD_MIN` and diverge above it, which is why
-/// the table below runs past level 4.
+/// `fromScene( scene )` — `webgpu_furnace_test`'s call: capture, mips, then
+/// `_applyPMREM`'s GGX and integration levels.
 #[test]
-fn the_blur_viewport_is_threes() {
-    let sizes: Vec<usize> = three_rs::renderer::pmrem::create_planes(8)
-        .iter()
-        .map(|mesh| mesh.size)
-        .collect();
-    assert_eq!(
-        sizes,
-        vec![256, 128, 64, 32, 16, 16, 16, 16, 16, 16, 16],
-        "`_sizeLods` for lodMax 8: five halvings then six repeats of 16"
-    );
+fn a_solid_colour_scene_prefilters_to_that_colour() {
+    solid_colour_pmrem_is_that_colour(0.0);
+}
 
-    let expected = [
-        (0, 0),
-        (0, 512),
-        (0, 768),
-        (0, 896),
-        (0, 960),
-        (48, 960),
-        (96, 960),
-        (144, 960),
-        (192, 960),
-        (240, 960),
-        (288, 960),
-    ];
-
-    for (lod, &(x, y)) in expected.iter().enumerate() {
-        assert_eq!(
-            three_rs::renderer::pmrem::blur_tile(8, FACE as usize, sizes[lod], lod),
-            (x, y),
-            "`_blurPass` viewport origin for level {lod}"
-        );
-    }
+/// `fromScene( scene, 0.04 )` — every `RoomEnvironment` page: the capture is
+/// blurred source → PMREM level 0 → source level 0 before the mips are
+/// generated. A blur of a constant is the constant, so a blur that reads the
+/// wrong target or the wrong level shows up as drift here.
+#[test]
+fn a_blurred_solid_colour_scene_prefilters_to_that_colour() {
+    solid_colour_pmrem_is_that_colour(0.04);
 }

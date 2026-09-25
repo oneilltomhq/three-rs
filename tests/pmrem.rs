@@ -1,226 +1,137 @@
 //! Numeric gates for the PMREM generator, against oracles taken from three.js
 //! itself.
 //!
-//! Every table below was printed by running three's own code (r186, the vendor
-//! tree) rather than by transcribing its arithmetic:
-//!
-//! * the GGX ladder and the atlas rectangles came from driving a real
-//!   `PMREMGenerator` — `_setSize( 256 )`, `_allocateTarget( false )`,
-//!   `_init( … )` — and calling `_applyGGXFilter( target, i - 1, i )` for
-//!   `i` in `1 .. _lodMeshes.length` with `_setViewport` and
-//!   `renderer.render` replaced by recorders, so the numbers are the ones
-//!   three would have written into its uniforms;
-//! * the cubeUV sizes came from `_generateCubeUVSize` in `PMREMNode.js`.
+//! Every table below was printed by node against the vendor tree at 5f610f5
+//! (after 2f80402 replaced the cubeUV atlas with a mipmapped cube):
+//! `PMREMGenerator.lodToRoughness` is the class's own static,
+//! `floorPowerOfTwo` is `MathUtils`', and the `lodBias` and integration
+//! `sourceLod` columns evaluate `_applyPMREM()`'s two expressions for each
+//! level. `roughnessToMip` is `PMREMUtils.js`' after b745e6c dropped the
+//! base-level texel correction.
 //!
 //! The shaders are gated separately, by diffing `examples/dump_wgsl.rs`'s
-//! output against the scout's capture of three's WGSL.
+//! output against three's WGSL.
 
-use three_rs::nodes::pmrem_node::generate_cube_uv_size;
-use three_rs::renderer::pmrem::{create_planes, ggx_step, tile_rect, LOD_MIN};
+use three_rs::nodes::pmrem_utils::roughness_to_mip_value;
+use three_rs::renderer::pmrem::{
+    cube_size_for, lod_bias, lod_to_roughness, max_lod_for, uses_integration, INTEGRATION_SIZE,
+};
 
-/// `_setSize( 256 )`: `lodMax = floor( log2( 256 ) )`, `cubeSize = 2 ^ lodMax`.
-const LOD_MAX: usize = 8;
-const CUBE_SIZE: usize = 256;
-/// `_lodMeshes.length` — `lodMax - LOD_MIN + 1 + EXTRA_LODS`.
-const LOD_COUNT: usize = 11;
-
-/// `_createPlanes( 8 ).sizeLods`.
+/// `_setSize( n )` — `max( 256, floorPowerOfTwo( n ) )`.
 #[test]
-fn plane_sizes_match_three() {
-    let sizes: Vec<usize> = create_planes(LOD_MAX).iter().map(|m| m.size).collect();
-    assert_eq!(sizes, vec![256, 128, 64, 32, 16, 16, 16, 16, 16, 16, 16]);
-    assert_eq!(sizes.len(), LOD_COUNT);
+fn cube_size_matches_three() {
+    for &(requested, size) in &[
+        (1u32, 256u32),
+        (100, 256),
+        (255, 256),
+        (256, 256),
+        (257, 256),
+        (511, 256),
+        (512, 512),
+        (1000, 512),
+        (1024, 1024),
+        (2048, 2048),
+    ] {
+        assert_eq!(cube_size_for(requested), size, "_setSize( {requested} )");
+    }
 }
 
-/// `_allocateTarget`: `3 * max( cubeSize, 16 * 7 ) x 4 * cubeSize`.
-#[test]
-fn atlas_size_matches_three() {
-    assert_eq!(3 * CUBE_SIZE.max(16 * 7), 768);
-    assert_eq!(4 * CUBE_SIZE, 1024);
-}
-
-/// `lodIn`, `lodOut`, `ggxUniforms.roughness.value` and
-/// `ggxUniforms.mipInt.value` for the filter pass, `mipInt` for the copy-back,
-/// then the viewport `x`, `y` and the LOD's plane size.
-///
-/// `mipInt` goes negative for the extra LODs, which is why the port does the
-/// subtraction in floating point: `lodIn` runs up to 9 against a `lodMax` of 8.
-struct Step {
-    lod_in: usize,
-    lod_out: usize,
+/// One level of `_applyPMREM()`: its roughness, whether the integration
+/// material fills it, and the uniform that material reads — `lodBias` for
+/// GGX, `sourceLod` for the integration.
+struct Level {
     roughness: f64,
-    mip_in: f64,
-    mip_out: f64,
-    x: usize,
-    y: usize,
-    size: usize,
+    integration: bool,
+    bias_or_source_lod: f64,
 }
 
-const GGX_LADDER: [Step; 10] = [
-    Step {
-        lod_in: 0,
-        lod_out: 1,
-        roughness: 0.0125,
-        mip_in: 8.0,
-        mip_out: 7.0,
-        x: 0,
-        y: 512,
-        size: 128,
-    },
-    Step {
-        lod_in: 1,
-        lod_out: 2,
-        roughness: 0.04330127018922194,
-        mip_in: 7.0,
-        mip_out: 6.0,
-        x: 0,
-        y: 768,
-        size: 64,
-    },
-    Step {
-        lod_in: 2,
-        lod_out: 3,
-        roughness: 0.0838525491562421,
-        mip_in: 6.0,
-        mip_out: 5.0,
-        x: 0,
-        y: 896,
-        size: 32,
-    },
-    Step {
-        lod_in: 3,
-        lod_out: 4,
-        roughness: 0.13228756555322957,
-        mip_in: 5.0,
-        mip_out: 4.0,
-        x: 0,
-        y: 960,
-        size: 16,
-    },
-    Step {
-        lod_in: 4,
-        lod_out: 5,
-        roughness: 0.18749999999999994,
-        mip_in: 4.0,
-        mip_out: 3.0,
-        x: 48,
-        y: 960,
-        size: 16,
-    },
-    Step {
-        lod_in: 5,
-        lod_out: 6,
-        roughness: 0.24874685927665496,
-        mip_in: 3.0,
-        mip_out: 2.0,
-        x: 96,
-        y: 960,
-        size: 16,
-    },
-    Step {
-        lod_in: 6,
-        lod_out: 7,
-        roughness: 0.315485736603099,
-        mip_in: 2.0,
-        mip_out: 1.0,
-        x: 144,
-        y: 960,
-        size: 16,
-    },
-    Step {
-        lod_in: 7,
-        lod_out: 8,
-        roughness: 0.3872983346207419,
-        mip_in: 1.0,
-        mip_out: 0.0,
-        x: 192,
-        y: 960,
-        size: 16,
-    },
-    Step {
-        lod_in: 8,
-        lod_out: 9,
-        roughness: 0.4638493828819867,
-        mip_in: 0.0,
-        mip_out: -1.0,
-        x: 240,
-        y: 960,
-        size: 16,
-    },
-    Step {
-        lod_in: 9,
-        lod_out: 10,
-        roughness: 0.5448623679425841,
-        mip_in: -1.0,
-        mip_out: -2.0,
-        x: 288,
-        y: 960,
-        size: 16,
-    },
+const fn level(roughness: f64, integration: bool, bias_or_source_lod: f64) -> Level {
+    Level {
+        roughness,
+        integration,
+        bias_or_source_lod,
+    }
+}
+
+const LADDER_256: [Level; 6] = [
+    level(0.0, false, 0.0),
+    level(0.10557280900008414, false, 12.279860827031644),
+    level(0.2254033307585166, false, 10.091319771730024),
+    level(0.3675444679663241, true, 4.0),
+    level(0.5527864045000421, true, 4.0),
+    level(1.0, true, 4.0),
 ];
 
-#[test]
-fn ggx_ladder_matches_three() {
-    for step in &GGX_LADDER {
-        let (lod_in, lod_out) = (step.lod_in, step.lod_out);
-        let (got_roughness, got_mip) = ggx_step(LOD_MAX, LOD_COUNT, lod_in, lod_out);
+const LADDER_512: [Level; 7] = [
+    level(0.0, false, 0.0),
+    level(0.0871290708247231, false, 13.833885314256298),
+    level(0.18350341907227397, false, 11.684723552334452),
+    level(0.2928932188134524, false, 10.335587856687802),
+    level(0.42264973081037416, true, 5.0),
+    level(0.5917517095361371, true, 5.0),
+    level(1.0, true, 5.0),
+];
+
+const LADDER_1024: [Level; 8] = [
+    level(0.0, false, 0.0),
+    level(0.07417990022744847, false, 15.298136975098014),
+    level(0.15484574527148343, false, 13.174673955480015),
+    level(0.2440710539815456, false, 11.861735027312122),
+    level(0.3453463292920228, false, 10.860249661666892),
+    level(0.4654775161751512, true, 6.0),
+    level(0.6220355269907727, true, 6.0),
+    level(1.0, true, 6.0),
+];
+
+fn check_ladder(size: u32, ladder: &[Level]) {
+    let max_lod = max_lod_for(size);
+    // `maxLod = log2( size ) - LOD_MIN`, and the target has `maxLod + 1` levels.
+    assert_eq!(max_lod as usize + 1, ladder.len(), "maxLod for {size}");
+    for (lod, want) in ladder.iter().enumerate() {
+        let lod = lod as u32;
+        let roughness = lod_to_roughness(lod, max_lod);
         // Bit-exact: the same sequence of f64 operations on the same inputs.
+        assert_eq!(roughness, want.roughness, "roughness, {size} lod {lod}");
         assert_eq!(
-            got_roughness, step.roughness,
-            "adjustedRoughness for {lod_in} -> {lod_out}"
+            uses_integration(lod, max_lod),
+            want.integration,
+            "material, {size} lod {lod}"
         );
-        assert_eq!(
-            got_mip, step.mip_in,
-            "mipInt for the {lod_in} -> {lod_out} filter"
-        );
-        assert_eq!(
-            LOD_MAX as f64 - lod_out as f64,
-            step.mip_out,
-            "mipInt for the {lod_in} -> {lod_out} copy-back"
-        );
+        let got = if want.integration {
+            (size as f64 / INTEGRATION_SIZE as f64).log2()
+        } else {
+            lod_bias(size, roughness)
+        };
+        assert_eq!(got, want.bias_or_source_lod, "uniform, {size} lod {lod}");
     }
 }
 
 #[test]
-fn atlas_rectangles_match_three() {
-    let sizes: Vec<usize> = create_planes(LOD_MAX).iter().map(|m| m.size).collect();
-    for step in &GGX_LADDER {
-        let (lod_out, x, y, size) = (step.lod_out, step.x, step.y, step.size);
-        assert_eq!(sizes[lod_out], size, "sizeLods[{lod_out}]");
-        let (got_x, got_y, got_size) = tile_rect(LOD_MAX, CUBE_SIZE, size, lod_out);
-        assert_eq!((got_x, got_y, got_size), (x, y, size), "tile {lod_out}");
-        // Both passes of a step write the same 3x2-tile rectangle, the first
-        // into the ping-pong target and the second back into the atlas.
-        assert_eq!((3 * got_size, 2 * got_size), (3 * size, 2 * size));
-        assert!(
-            x + 3 * size <= 768 && y + 2 * size <= 1024,
-            "tile {lod_out} fits"
-        );
-    }
-    // Mip 0 is the full-width band at the top: `_textureToCubeUV` writes it
-    // directly rather than through `_applyGGXFilter`.
-    assert_eq!(tile_rect(LOD_MAX, CUBE_SIZE, CUBE_SIZE, 0), (0, 0, 256));
-    // `LOD_MIN` is what puts the extra LODs in their own columns: lod 4 is the
-    // last one in column 0.
-    assert_eq!(LOD_MIN, 4);
+fn level_ladder_matches_three() {
+    check_ladder(256, &LADDER_256);
+    check_ladder(512, &LADDER_512);
+    check_ladder(1024, &LADDER_1024);
 }
 
-/// `_generateCubeUVSize( imageHeight )` for the atlas heights a 1024², 512²,
-/// 256², 128² and 64² PMREM has. The `7 * 16` floor is why the last three all
-/// share a `texelWidth`.
+/// `roughnessToMip( r, 5 )` — `maxLod * r * ( 2 - r )` on a clamped `r`.
+/// It inverts `lodToRoughness`, so each level's roughness reads back its own
+/// level.
 #[test]
-fn cube_uv_size_matches_three() {
-    for &(height, texel_width, texel_height, max_mip) in &[
-        (1024u32, 0.0013020833333333333, 0.0009765625, 8.0),
-        (512, 0.0026041666666666665, 0.001953125, 7.0),
-        (256, 0.002976190476190476, 0.00390625, 6.0),
-        (128, 0.002976190476190476, 0.0078125, 5.0),
-        (64, 0.002976190476190476, 0.015625, 4.0),
+fn roughness_to_mip_matches_three() {
+    for &(roughness, mip) in &[
+        (-1.0, 0.0),
+        (0.0, 0.0),
+        (0.045, 0.43987499999999996),
+        (0.25, 2.1875),
+        (0.5, 3.75),
+        (0.75, 4.6875),
+        (1.0, 5.0),
+        (2.0, 5.0),
     ] {
-        assert_eq!(
-            generate_cube_uv_size(height),
-            (texel_width, texel_height, max_mip),
-            "_generateCubeUVSize( {height} )"
-        );
+        assert_eq!(roughness_to_mip_value(roughness, 5.0), mip, "roughnessToMip( {roughness} )");
+    }
+    for lod in 0..=5 {
+        let back = roughness_to_mip_value(lod_to_roughness(lod, 5), 5.0);
+        assert!((back - lod as f64).abs() < 1e-12, "lod {lod} reads back {back}");
     }
 }

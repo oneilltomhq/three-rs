@@ -39,7 +39,7 @@ use std::rc::Rc;
 /// Note px looking at **-x** and nx at **+x**: the same left-handed cube-map
 /// convention the `x` negation in `CubeTextureNode.setupUV()` undoes at the
 /// sampling end.
-const FACES: [([f64; 3], [f64; 3]); 6] = [
+pub(crate) const FACES: [([f64; 3], [f64; 3]); 6] = [
     ([0.0, -1.0, 0.0], [-1.0, 0.0, 0.0]),
     ([0.0, -1.0, 0.0], [1.0, 0.0, 0.0]),
     ([0.0, 0.0, 1.0], [0.0, 1.0, 0.0]),
@@ -51,7 +51,7 @@ const FACES: [([f64; 3], [f64; 3]); 6] = [
 /// `const fov = - 90; // negative fov is not an error` — the vertical flip a
 /// cube face needs under WebGPU's top-left texture origin, expressed as a
 /// frustum with `top < bottom`.
-const FOV: f64 = -90.0;
+pub(crate) const FOV: f64 = -90.0;
 
 /// `new CubeRenderTarget( texture.image.height ).fromEquirectangularTexture(
 /// renderer, texture )`.
@@ -115,7 +115,7 @@ pub fn from_equirectangular_texture(
         }
         camera.look_at(&Vector3::new(look_at[0], look_at[1], look_at[2]));
         renderer.render(&mut scene, &mut camera);
-        renderer.copy_to_cube_layer(&face_target, &cube, layer as u32);
+        renderer.copy_to_cube_layer(&face_target, &cube, layer as u32, 0);
     }
 
     renderer.set_render_target(previous_target);

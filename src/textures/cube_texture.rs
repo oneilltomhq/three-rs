@@ -159,6 +159,42 @@ impl CubeTexture {
         texture
     }
 
+    /// `PMREMGenerator._createRenderTarget( size, generateMipmaps, … )` — a
+    /// `HalfFloatType` cube render target with `LinearMipmapLinearFilter`.
+    ///
+    /// `levels` is the number of mip levels the GPU texture gets:
+    ///
+    /// * `Some( n )` is `_allocateTarget()`'s PMREM, whose `texture.mipmaps`
+    ///   lists one `{ width: size >> lod }` per prefiltered level. Three's
+    ///   render-target cube counts level 0 in that list; this port's
+    ///   [`CubeTextureInner::mipmaps`] never does, so it holds `n - 1` entries.
+    ///   Each level is rendered, none is generated.
+    /// * `None` is `_getSourceTarget()`'s `generateMipmaps: true`: the full
+    ///   chain, box-filtered from level 0 once its six faces are drawn.
+    pub fn pmrem_render_target(size: u32, levels: Option<u32>) -> Self {
+        let texture = Self::render_target(size, TextureType::HalfFloat);
+        {
+            let mut inner = texture.0.borrow_mut();
+            inner.min_filter = MinFilter::LinearMipmapLinear;
+            match levels {
+                Some(levels) => {
+                    inner.mipmaps = (1..levels)
+                        .map(|lod| {
+                            let face = Image {
+                                width: size >> lod,
+                                height: size >> lod,
+                                data: Vec::new(),
+                            };
+                            vec![face; 6]
+                        })
+                        .collect();
+                }
+                None => inner.generate_mipmaps = true,
+            }
+        }
+        texture
+    }
+
     pub fn set_color_space(&self, color_space: ColorSpace) {
         self.0.borrow_mut().color_space = color_space;
     }
