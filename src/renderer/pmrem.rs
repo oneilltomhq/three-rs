@@ -130,9 +130,7 @@ pub fn lod_to_roughness(lod: u32, max_lod: u32) -> f64 {
 /// per-sample `log2( alpha2 * invQ )` term.
 pub fn lod_bias(size: u32, roughness: f64) -> f64 {
     if roughness > 0.0 {
-        (size as f64).log2()
-            + 0.5 * (6.0 / (GGX_SAMPLES as f64 * roughness.powi(4))).log2()
-            + 0.5
+        (size as f64).log2() + 0.5 * (6.0 / (GGX_SAMPLES as f64 * roughness.powi(4))).log2() + 0.5
     } else {
         0.0
     }

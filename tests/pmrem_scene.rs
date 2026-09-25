@@ -63,7 +63,7 @@ fn solid_colour_pmrem_is_that_colour(sigma: f64) {
                 .read_cube_pixels_rgba16f(&pmrem, face, lod)
                 .unwrap();
             assert_eq!((width, height), (SIZE >> lod, SIZE >> lod), "lod {lod}");
-            for texel in pixels.chunks_exact(4) {
+            for texel in pixels.as_chunks::<4>().0 {
                 for &value in &texel[..3] {
                     lod_worst = lod_worst.max((value - expected).abs() / expected);
                 }

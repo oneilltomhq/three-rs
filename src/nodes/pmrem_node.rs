@@ -29,7 +29,9 @@ use crate::materials::environment::PmremHandle;
 use crate::nodes::node::Type;
 use crate::nodes::tsl::uniform_value;
 use crate::nodes::NodeRef;
-use crate::renderer::pmrem::{allocate_target, cube_size_for, max_lod_for, PmremGenerator, PmremSource, SCENE_SIZE};
+use crate::renderer::pmrem::{
+    allocate_target, cube_size_for, max_lod_for, PmremGenerator, PmremSource, SCENE_SIZE,
+};
 use crate::renderer::Renderer;
 use crate::textures::{CubeTexture, Texture};
 

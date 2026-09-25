@@ -86,10 +86,7 @@ pub fn spherical_gaussian_blur(
         move |i: &NodeRef| {
             // Stratified inverse-CDF sampling of the Gaussian, placed on a
             // golden-angle spiral.
-            let stratum = i
-                .to(Type::F32)
-                .add(float(0.5))
-                .div(float(samples as f64));
+            let stratum = i.to(Type::F32).add(float(0.5)).div(float(samples as f64));
             let theta = to_var(
                 None,
                 sigma.mul(sqrt(
@@ -184,9 +181,7 @@ pub fn ggx_convolution(
     let prefiltered_color = to_var(None, vec3(0.0, 0.0, 0.0));
 
     // For very low roughness, just sample the environment directly.
-    let direct = prefiltered_color.assign(
-        cube_texture_level(env_map, n.clone(), float(0.0)).xyz(),
-    );
+    let direct = prefiltered_color.assign(cube_texture_level(env_map, n.clone(), float(0.0)).xyz());
 
     let alpha = to_const(None, roughness.mul(roughness.clone()));
     let alpha2 = to_const(None, alpha.mul(alpha.clone()));
@@ -203,8 +198,12 @@ pub fn ggx_convolution(
             prefiltered_color.clone(),
             total_weight.clone(),
         );
-        let (env_map, alpha, alpha2, lod_bias) =
-            (env_map.clone(), alpha.clone(), alpha2.clone(), lod_bias.clone());
+        let (env_map, alpha, alpha2, lod_bias) = (
+            env_map.clone(),
+            alpha.clone(),
+            alpha2.clone(),
+            lod_bias.clone(),
+        );
         move |i: &NodeRef| {
             let xi = to_const(None, hammersley(i.clone(), ggx_samples));
 

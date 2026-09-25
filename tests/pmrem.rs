@@ -128,10 +128,17 @@ fn roughness_to_mip_matches_three() {
         (1.0, 5.0),
         (2.0, 5.0),
     ] {
-        assert_eq!(roughness_to_mip_value(roughness, 5.0), mip, "roughnessToMip( {roughness} )");
+        assert_eq!(
+            roughness_to_mip_value(roughness, 5.0),
+            mip,
+            "roughnessToMip( {roughness} )"
+        );
     }
     for lod in 0..=5 {
         let back = roughness_to_mip_value(lod_to_roughness(lod, 5), 5.0);
-        assert!((back - lod as f64).abs() < 1e-12, "lod {lod} reads back {back}");
+        assert!(
+            (back - lod as f64).abs() < 1e-12,
+            "lod {lod} reads back {back}"
+        );
     }
 }
