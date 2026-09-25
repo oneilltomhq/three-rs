@@ -12,6 +12,7 @@ mod quad_mesh;
 mod scene;
 mod skeleton;
 mod skinned_mesh;
+mod sprite;
 
 pub use batched_mesh::{
     BatchCamera, BatchedMesh, CustomSort, GeometryInfo, InstanceInfo, MultiDrawItem, SortContext,
@@ -28,3 +29,4 @@ pub use quad_mesh::QuadMesh;
 pub use scene::{Background, Scene};
 pub use skeleton::Skeleton;
 pub use skinned_mesh::{BindMode, SkinnedMesh};
+pub use sprite::Sprite;

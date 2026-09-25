@@ -124,6 +124,17 @@ impl Frustum {
         self.intersects_sphere(&sphere)
     }
 
+    /// `Frustum.intersectsSprite()`: the sprite's quad, bounded by a sphere of
+    /// radius `√½` plus the `center` offset at its origin, against the six
+    /// planes. `false` for a node that is not a [`Sprite`](crate::objects::Sprite).
+    pub fn intersects_sprite(&self, sprite: &Node) -> bool {
+        let object = sprite.borrow();
+        let Some(sprite) = object.payload.sprite() else {
+            return false;
+        };
+        self.intersects_sphere(&sprite.bounding_sphere_in(&object.matrix_world))
+    }
+
     /// `Frustum.intersectsSphere()`.
     pub fn intersects_sphere(&self, sphere: &Sphere) -> bool {
         let planes = &self.planes;

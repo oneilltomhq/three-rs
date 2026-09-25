@@ -154,7 +154,7 @@ pub enum MaterialKind {
 /// - a field the *program* depends on — any node (`color_node`,
 ///   `position_node`, `fragment_node`, …), any map or `env_map`, `kind`,
 ///   `lights`, `lights_node`, `flat_shading`, `fog`, `transparent`,
-///   `blending`, `alpha_to_coverage`, `size_attenuation`, `mask_node` — needs
+///   `blending`, `alpha_to_coverage`, `world_units`, `size_attenuation`, `mask_node` — needs
 ///   [`set_needs_update`](Self::set_needs_update) after it changes, which is
 ///   `material.needsUpdate = true`. Without it the old program keeps drawing.
 /// - a field the program reads as a **uniform** — `color`, `opacity`,
@@ -395,6 +395,12 @@ pub struct MeshBasicNodeMaterial {
     /// `Material.alphaToCoverage`. Only `builder.isOpaque()` reads it so far;
     /// the pipeline's `alphaToCoverageEnabled` is still hardcoded false.
     pub alpha_to_coverage: bool,
+    /// `Line2NodeMaterial.worldUnits` (`_useWorldUnits`) — the fat line's
+    /// `linewidth` is in world units rather than screen pixels. Read by
+    /// `setup()` and by `LineSegments2.raycast()`; ignored by every other
+    /// material. A program input: set it before the first frame, or call
+    /// [`set_needs_update`](Self::set_needs_update).
+    pub world_units: bool,
     /// `Material.blendSrc` / `.blendDst` / `.blendEquation` and the three
     /// `*Alpha` overrides (`None` is Three's `null`), read only under
     /// `CustomBlending`.
@@ -498,6 +504,7 @@ impl Default for MeshBasicNodeMaterial {
             blending: Blending::Normal,
             premultiplied_alpha: false,
             alpha_to_coverage: false,
+            world_units: false,
             blend_src: BlendFactor::SrcAlpha,
             blend_dst: BlendFactor::OneMinusSrcAlpha,
             blend_equation: BlendEquation::Add,

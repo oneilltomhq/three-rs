@@ -1473,11 +1473,22 @@ impl Renderer {
             coordinate_system: camera.coordinate_system(),
             far: camera.far(),
         };
+        // `LineSegments2.onBeforeRender( renderer )`:
+        // `renderer.getViewport( _viewport )`, then `_resolution.set( _viewport.z,
+        // _viewport.w )` — the size its screen-space `raycast()` projects into.
+        let viewport = self.viewport();
         for item in render_list.items() {
             let matrix_world = item.matrix_world;
             let mut object = item.node.borrow_mut();
             if let Some(batched) = object.payload.batched_mesh_mut() {
                 batched.on_before_render(&matrix_world, &batch_camera);
+            }
+            if let Some(segments) = object
+                .payload
+                .mesh_mut()
+                .and_then(|mesh| mesh.line_segments.as_mut())
+            {
+                segments.resolution = crate::math::Vector2::new(viewport.z, viewport.w);
             }
         }
 
