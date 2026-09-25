@@ -157,6 +157,10 @@ mod webgpu_postprocessing_ssaa;
 #[allow(dead_code)]
 mod webgpu_postprocessing_ca;
 
+#[path = "../../examples/webgpu_procedural_texture.rs"]
+#[allow(dead_code)]
+mod webgpu_procedural_texture;
+
 #[path = "../../examples/webgpu_postprocessing_anamorphic.rs"]
 #[allow(dead_code)]
 mod webgpu_postprocessing_anamorphic;
@@ -920,6 +924,48 @@ fn webgpu_postprocessing_ca() {
         out.display()
     );
     steady_frame(name, &mut app, webgpu_postprocessing_ca::animate, |app| {
+        app.renderer.device()
+    });
+}
+
+#[test]
+fn webgpu_procedural_texture() {
+    let name = "webgpu_procedural_texture";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_procedural_texture::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_procedural_texture::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_procedural_texture::animate, |app| {
         app.renderer.device()
     });
 }
@@ -2703,6 +2749,7 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_custom_fog_background);
     rung!(webgpu_deferred);
     rung!(webgpu_loader_gltf_anisotropy);
+    rung!(webgpu_procedural_texture);
 }
 
 // ---------------------------------------------------------------------------
