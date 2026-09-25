@@ -13,10 +13,12 @@
 
 mod bloom;
 mod chromatic_aberration;
+mod gaussian_blur;
 mod radial_blur;
 mod rtt;
 
 pub use bloom::{bloom, luminosity_high_pass, BloomNode, HighPassInput};
 pub use chromatic_aberration::chromatic_aberration;
+pub use gaussian_blur::{gaussian_blur, GaussianBlurNode, GaussianBlurOptions};
 pub use radial_blur::{radial_blur, RadialBlurOptions};
 pub use rtt::{convert_to_texture, rtt, RttNode};
