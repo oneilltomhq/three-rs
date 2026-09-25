@@ -1493,26 +1493,32 @@ impl NodeBuilder {
             Node::Loop {
                 start,
                 count,
+                condition,
                 index,
                 body,
             } => {
-                let (start, count, index, body) =
-                    (start.clone(), count.clone(), index.clone(), body.clone());
+                let (start, count, condition, index, body) = (
+                    start.clone(),
+                    count.clone(),
+                    *condition,
+                    index.clone(),
+                    body.clone(),
+                );
                 // The start is generated before the end, which is the order
                 // three.js' `LoopNode` builds them in and so the order their
                 // vars and uniforms are numbered in.
                 let sstart = match &start {
-                    Some(start) => self.generate(start),
+                    Some(start) => self.loop_bound(start),
                     None => "0".to_string(),
                 };
-                let scount = self.generate(&count);
+                let scount = self.loop_bound(&count);
                 let name = match &*index.0 {
                     Node::Param { name, .. } => *name,
                     _ => "i",
                 };
                 self.emit(String::new());
                 self.emit(format!(
-                    "for ( var {name} : i32 = {sstart}; {name} < {scount}; {name} ++ ) {{"
+                    "for ( var {name} : i32 = {sstart}; {name} {condition} {scount}; {name} ++ ) {{"
                 ));
                 self.emit(String::new());
                 self.push_scope();
@@ -1542,6 +1548,7 @@ impl NodeBuilder {
                 for statement in &body {
                     self.generate(statement);
                 }
+                self.if_arm_tail(&body);
                 self.pop_scope();
                 self.emit(String::new());
                 // A one-armed `If` emits exactly what it always did; the
@@ -1554,6 +1561,7 @@ impl NodeBuilder {
                     for statement in &else_body {
                         self.generate(statement);
                     }
+                    self.if_arm_tail(&else_body);
                     self.pop_scope();
                     self.emit(String::new());
                 }
@@ -1581,6 +1589,41 @@ impl NodeBuilder {
                 let snippet = self.generate(&inner);
                 format!("( ! {snippet} )")
             }
+        }
+    }
+
+    /// A `Loop` bound, which `LoopNode.generate()` builds as its `int` type:
+    /// a constant is regenerated as an integer literal (`float( 1 )` is `1`,
+    /// `-1` is `-1`), anything else is converted (`i32( … )`).
+    fn loop_bound(&mut self, bound: &NodeRef) -> String {
+        match &*bound.0 {
+            Node::Const { values, .. } if values.len() == 1 => wgsl::constant(Type::I32, values),
+            _ => self.format(bound, Type::I32),
+        }
+    }
+
+    /// The end of an `If` / `Else` arm. `ConditionalNode.generate()` closes
+    /// an arm with `tab + '\t' + snippet + '\n\n'`, where `snippet` is what
+    /// the arm's callback returned: `return x;` when it returned a value (the
+    /// port's trailing [`Node::Return`]) and nothing at all when it returned
+    /// nothing — which still leaves that tab-indented line, empty.
+    fn if_arm_tail(&mut self, arm: &[NodeRef]) {
+        if !matches!(arm.last().map(|n| &*n.0), Some(Node::Return { .. })) {
+            self.emit_blank_tab();
+        }
+    }
+
+    /// An indented line with nothing on it. [`emit`](Self::emit) writes a
+    /// blank separator as a truly empty line, which is what three's own
+    /// separators are; this one is three's `tab + ''`.
+    fn emit_blank_tab(&mut self) {
+        if let Some(scope) = self.fn_scopes.last_mut() {
+            let tab = "\t".repeat(scope.indent);
+            scope.lines.push(tab);
+        } else {
+            let s = &mut self.stages[self.stage.index()];
+            let tab = "\t".repeat(s.indent);
+            s.lines.push(tab);
         }
     }
 
@@ -1640,6 +1683,11 @@ impl NodeBuilder {
         ));
         for (n, t) in &scope.locals {
             src.push_str(&format!("\tvar {n} : {t};\n"));
+        }
+        // `WGSLNodeBuilder._getWGSLMethod()`'s template is `\t${ vars }` on a
+        // line of its own, so a `fn` with no locals still has that tab line.
+        if scope.locals.is_empty() {
+            src.push_str("\t\n");
         }
         src.push('\n');
         for line in &scope.lines {

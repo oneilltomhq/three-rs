@@ -3161,6 +3161,7 @@ pub fn loop_statement(count: usize, index: NodeRef, body: Vec<NodeRef>) -> NodeR
         start: None,
         index,
         count,
+        condition: "<",
         body,
     })
 }
@@ -3613,6 +3614,7 @@ pub fn loop_n(
     NodeRef::new(Node::Loop {
         start: None,
         count,
+        condition: "<",
         index,
         body,
     })
@@ -3639,6 +3641,36 @@ pub fn loop_range(
     NodeRef::new(Node::Loop {
         start: Some(start),
         count: end,
+        condition: "<",
+        index,
+        body,
+    })
+}
+
+/// `Loop( { start, end, name, condition }, ( { name } ) => { … } )` — the
+/// two-bounded form with an explicit comparison, which the MaterialX Worley
+/// noises use to walk `-1 ..= 1`:
+/// `for ( var x : i32 = -1; x <= 1; x ++ )`.
+///
+/// Both bounds are built as `int`, as `LoopNode.generate()` builds them: a
+/// constant is written as an integer literal whatever its own type
+/// (`float( 1 )` is `1`), and any other node is converted (`i32( … )`).
+pub fn loop_range_cond(
+    name: &'static str,
+    start: NodeRef,
+    end: NodeRef,
+    condition: &'static str,
+    body: impl FnOnce(&NodeRef) -> Vec<NodeRef>,
+) -> NodeRef {
+    let index = NodeRef::new(Node::Param {
+        name,
+        ty: Type::I32,
+    });
+    let body = body(&index);
+    NodeRef::new(Node::Loop {
+        start: Some(start),
+        count: end,
+        condition,
         index,
         body,
     })

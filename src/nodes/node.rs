@@ -783,6 +783,9 @@ pub enum Node {
         /// reaches the loop header as `i32( ( - nodeVar1 ) )`.
         start: Option<NodeRef>,
         count: NodeRef,
+        /// `Loop( { condition } )` — the comparison in the loop header, `<`
+        /// unless the caller named another (`<=` in the Worley noises).
+        condition: &'static str,
         /// The loop index, as it appears inside `body` (`Node::Param`).
         index: NodeRef,
         body: Vec<NodeRef>,
