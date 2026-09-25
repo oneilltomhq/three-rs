@@ -41,11 +41,17 @@ pub trait RenderCamera {
     fn layers(&self) -> Layers;
     /// `camera.far` — the sort key scale `BatchedMesh`' custom sort uses.
     fn far(&self) -> f64;
+    /// `camera.near` — what `PassNode.updateBefore()` copies into its
+    /// `_cameraNear` uniform.
+    fn near(&self) -> f64;
 }
 
 impl RenderCamera for PerspectiveCamera {
     fn far(&self) -> f64 {
         self.far
+    }
+    fn near(&self) -> f64 {
+        self.near
     }
     fn update_matrix_world(&mut self) {
         self.update_matrix_world();
@@ -73,6 +79,9 @@ impl RenderCamera for PerspectiveCamera {
 impl RenderCamera for OrthographicCamera {
     fn far(&self) -> f64 {
         self.far
+    }
+    fn near(&self) -> f64 {
+        self.near
     }
     fn update_matrix_world(&mut self) {
         self.update_matrix_world();
