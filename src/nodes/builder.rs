@@ -1487,12 +1487,20 @@ impl NodeBuilder {
                 result
             }
 
+            // A block reached a second time in the same scope — one inlined
+            // `Fn()` call site read by two consumers, as the raging sea's
+            // `elevation` is by `emissiveNode` and by `normalNode` — is its
+            // result, not a second run of its statements: three.js builds a
+            // node's stack once per stage and hands every later reader the
+            // snippet it left.
             Node::Block { statements, result } => {
                 let (statements, result) = (statements.clone(), result.clone());
                 for stmt in &statements {
                     self.generate(stmt);
                 }
-                self.generate(&result)
+                let snippet = self.generate(&result);
+                self.cache_put(node.key(), snippet.clone());
+                snippet
             }
 
             Node::Loop {
