@@ -489,6 +489,13 @@ pub struct UniformContext<'a> {
     pub background_rotation: Matrix4,
     pub background_blurriness: f64,
     pub background_intensity: f64,
+    /// `scene.fog`'s colour (working space), `near`, `far` and `density` —
+    /// whichever the fog kind has; the rest keep their defaults and are never
+    /// read, because the other kind's node does not reference them.
+    pub fog_color: Color,
+    pub fog_near: f64,
+    pub fog_far: f64,
+    pub fog_density: f64,
     /// `viewportSize` — the bound target's dimensions.
     pub viewport_size: Vector2,
     /// `viewport` — `( x, y, width, height )` of the pass rectangle, in
@@ -562,6 +569,10 @@ impl Default for UniformContext<'_> {
             background_rotation: Matrix4::identity(),
             background_blurriness: 0.0,
             background_intensity: 1.0,
+            fog_color: Color::new(1.0, 1.0, 1.0),
+            fog_near: 1.0,
+            fog_far: 1000.0,
+            fog_density: 0.00025,
             viewport_size: Vector2::new(0.0, 0.0),
             viewport: Vector4::new(0.0, 0.0, 0.0, 0.0),
             screen_dpr: 1.0,
@@ -696,6 +707,14 @@ impl UniformContext<'_> {
                 }
                 UniformSource::BackgroundBlurriness => vec![self.background_blurriness as f32],
                 UniformSource::BackgroundIntensity => vec![self.background_intensity as f32],
+                UniformSource::FogColor => vec![
+                    self.fog_color.r as f32,
+                    self.fog_color.g as f32,
+                    self.fog_color.b as f32,
+                ],
+                UniformSource::FogNear => vec![self.fog_near as f32],
+                UniformSource::FogFar => vec![self.fog_far as f32],
+                UniformSource::FogDensity => vec![self.fog_density as f32],
                 UniformSource::Time => vec![self.time as f32],
                 UniformSource::ViewportSize => {
                     vec![self.viewport_size.x as f32, self.viewport_size.y as f32]

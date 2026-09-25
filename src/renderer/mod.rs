@@ -53,7 +53,7 @@ use crate::nodes::tsl::FogNode;
 use crate::nodes::tsl::StorageArray;
 use crate::nodes::wgsl::TextureKind;
 use crate::nodes::{BindingDesc, ComputeFlow, NodeBuilder, NodeProgram, Type};
-use crate::objects::{Background, InstancedBufferAttribute, QuadMesh, Scene, SubDraw};
+use crate::objects::{Background, InstancedBufferAttribute, QuadMesh, Scene, SceneFog, SubDraw};
 use crate::testing::DeterministicRandom;
 use crate::textures::{
     CubeDepthTexture, CubeTexture, DataArrayTexture, DataTexture, DataTextureData, DepthTexture,
@@ -1460,6 +1460,19 @@ impl Renderer {
         let mut skeletons_updated: std::collections::HashSet<usize> =
             std::collections::HashSet::new();
 
+        // `NodeManager.getFogNode( scene )`, once per render: `scene.fogNode`
+        // if set, else the node `updateFog()` builds for `scene.fog` — which
+        // reads its parameters from the render group, filled in below.
+        let fog_node = scene
+            .fog_node
+            .clone()
+            .or_else(|| scene.fog.as_ref().map(SceneFog::node));
+        let (fog_color, fog_near, fog_far, fog_density) = match &scene.fog {
+            Some(SceneFog::Linear(fog)) => (fog.color, fog.near, fog.far, 0.00025),
+            Some(SceneFog::Exp2(fog)) => (fog.color, 1.0, 1000.0, fog.density),
+            None => (Color::new(1.0, 1.0, 1.0), 1.0, 1000.0, 0.00025),
+        };
+
         // `Renderer._renderObjects()` calls `object.onBeforeRender()` per
         // render item, immediately before that item's draw. The port builds
         // every `Renderable` first and records the pass afterwards, so the hook
@@ -1688,7 +1701,10 @@ impl Renderer {
                     geometry_missing_normal: !geometry.has_attribute("normal"),
                     has_tangent_attribute: geometry.has_attribute("tangent"),
                 },
-                fog: scene.fog_node.clone(),
+                // `NodeManager.getFogNode( scene )`: `scene.fogNode ||
+                // this.get( scene ).fogNode` — an explicit fog node wins over
+                // the one `updateFog()` builds from `scene.fog`.
+                fog: fog_node.clone(),
                 model_world: item.matrix_world,
                 instance_matrix,
                 instance_color,
@@ -1798,6 +1814,10 @@ impl Renderer {
             // `scene.backgroundBlurriness` — a render-group uniform, so it
             // rides the pass rather than the background draw.
             background_blurriness: scene.background_blurriness,
+            fog_color,
+            fog_near,
+            fog_far,
+            fog_density,
             ..Default::default()
         };
 
