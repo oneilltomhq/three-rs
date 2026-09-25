@@ -757,6 +757,11 @@ pub struct Renderer {
     /// `NodeFrame.lastTime` — `undefined` until the first frame, which is what
     /// makes that frame's delta 0 whatever the clock says.
     node_frame_last_time: Option<f64>,
+    /// `NodeFrame.deltaTime` — the last update's step, what `deltaTime` reads.
+    delta_time: f64,
+    /// `NodeFrame.frameId` — incremented by every `NodeFrame.update()`, what
+    /// `frameId` reads.
+    frame_id: u32,
 
     /// The viewer's canvas → surface blit; see `present.rs`. Never touched by
     /// the e2e path.
@@ -1071,6 +1076,8 @@ impl Renderer {
             fullscreen_pass: false,
             time: 0.0,
             node_frame_last_time: None,
+            delta_time: 0.0,
+            frame_id: 0,
             present: None,
             random: DeterministicRandom::new(),
             tone_mapping: ToneMapping::None,
@@ -1794,6 +1801,8 @@ impl Renderer {
             camera_view: camera.matrix_world_inverse(),
             camera_world: camera.matrix_world(),
             time: self.time,
+            delta_time: self.delta_time,
+            frame_id: self.frame_id,
             lights: &lights,
             // `scene.backgroundBlurriness` — a render-group uniform, so it
             // rides the pass rather than the background draw.
@@ -1997,6 +2006,8 @@ impl Renderer {
                 camera_view: view,
                 camera_world: world,
                 time: self.time,
+                delta_time: self.delta_time,
+                frame_id: self.frame_id,
                 ..Default::default()
             };
 
@@ -2244,6 +2255,8 @@ impl Renderer {
                 camera_view: face_camera.matrix_world_inverse,
                 camera_world: face_camera.node.borrow().matrix_world,
                 time: self.time,
+                delta_time: self.delta_time,
+                frame_id: self.frame_id,
                 ..Default::default()
             };
 
@@ -2345,6 +2358,8 @@ impl Renderer {
             camera_view: self.quad_camera.matrix_world_inverse,
             camera_world: self.quad_camera.object.matrix_world,
             time: self.time,
+            delta_time: self.delta_time,
+            frame_id: self.frame_id,
             ..Default::default()
         }
     }
@@ -4573,8 +4588,10 @@ impl Renderer {
     /// about the TSL `time` node.
     fn update_node_frame(&mut self) {
         let now = crate::utils::now_ms();
+        self.frame_id = self.frame_id.wrapping_add(1);
         let last = *self.node_frame_last_time.get_or_insert(now);
-        self.time += (now - last) / 1000.0;
+        self.delta_time = (now - last) / 1000.0;
+        self.time += self.delta_time;
         self.node_frame_last_time = Some(now);
     }
 

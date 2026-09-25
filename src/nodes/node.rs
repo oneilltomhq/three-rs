@@ -35,7 +35,14 @@ pub enum Type {
     /// `vec4<u32>` — the `skinIndex` attribute, which three.js declares
     /// `attribute( 'skinIndex', 'uvec4' )` and uploads as a `Uint32Array`.
     UVec4,
+    /// `vec3<i32>` / `vec4<i32>` — TSL's `ivec3()` / `ivec4()`.
+    IVec3,
+    IVec4,
+    /// `vec2<bool>` / `vec3<bool>` / `vec4<bool>` — TSL's `bvec2()` … `bvec4()`,
+    /// and what a component-wise comparison of two vectors is.
+    BVec2,
     BVec3,
+    BVec4,
     /// `mat2` — `RotateNode`'s vec2 path emits `mat2x2<f32>( cos, sin, -sin, cos )`.
     Mat2,
     Mat3,
@@ -48,9 +55,9 @@ impl Type {
         match self {
             Type::Void => 0,
             Type::Bool | Type::F32 | Type::I32 | Type::U32 => 1,
-            Type::Vec2 | Type::UVec2 | Type::IVec2 => 2,
-            Type::Vec3 | Type::UVec3 | Type::BVec3 => 3,
-            Type::Vec4 | Type::UVec4 => 4,
+            Type::Vec2 | Type::UVec2 | Type::IVec2 | Type::BVec2 => 2,
+            Type::Vec3 | Type::UVec3 | Type::IVec3 | Type::BVec3 => 3,
+            Type::Vec4 | Type::UVec4 | Type::IVec4 | Type::BVec4 => 4,
             Type::Mat2 => 4,
             Type::Mat3 => 9,
             Type::Mat4 => 16,
@@ -61,8 +68,8 @@ impl Type {
     pub fn component_type(self) -> Type {
         match self {
             Type::UVec2 | Type::UVec3 | Type::UVec4 => Type::U32,
-            Type::IVec2 => Type::I32,
-            Type::BVec3 => Type::Bool,
+            Type::IVec2 | Type::IVec3 | Type::IVec4 => Type::I32,
+            Type::BVec2 | Type::BVec3 | Type::BVec4 => Type::Bool,
             Type::Vec2 | Type::Vec3 | Type::Vec4 | Type::Mat2 | Type::Mat3 | Type::Mat4 => {
                 Type::F32
             }
@@ -77,7 +84,11 @@ impl Type {
             (Type::U32, 2) => Type::UVec2,
             (Type::I32, 2) => Type::IVec2,
             (Type::U32, 3) => Type::UVec3,
+            (Type::I32, 3) => Type::IVec3,
+            (Type::I32, 4) => Type::IVec4,
+            (Type::Bool, 2) => Type::BVec2,
             (Type::Bool, 3) => Type::BVec3,
+            (Type::Bool, 4) => Type::BVec4,
             (Type::F32, 2) => Type::Vec2,
             (Type::F32, 3) => Type::Vec3,
             (Type::F32, 4) => Type::Vec4,
@@ -176,6 +187,12 @@ pub enum UniformSource {
     BackgroundBlurriness,
     BackgroundIntensity,
     Time,
+    /// `deltaTime` — `TimerNode.DELTA`, `frame.deltaTime`: the seconds since
+    /// the previous `NodeFrame.update()`.
+    DeltaTime,
+    /// `frameId` — `TimerNode.FRAME`, `uniform( 0, 'uint' )` updated from
+    /// `frame.frameId`: the count of `NodeFrame.update()` calls.
+    FrameId,
     /// `viewportSize` — the render target's pixel dimensions.
     ViewportSize,
     /// `viewport` — `ScreenNode.VIEWPORT`, the whole rectangle as
@@ -783,8 +800,12 @@ pub enum Node {
         /// reaches the loop header as `i32( ( - nodeVar1 ) )`.
         start: Option<NodeRef>,
         count: NodeRef,
-        /// The loop index, as it appears inside `body` (`Node::Param`).
+        /// The loop index, as it appears inside `body` (`Node::Param`). Its
+        /// type is the loop's `type` (`i32` unless the `Loop( { type } )`
+        /// form says otherwise).
         index: NodeRef,
+        /// `Loop( { condition } )` — `'<'` unless given.
+        condition: &'static str,
         body: Vec<NodeRef>,
     },
     /// `If( cond, () => { … } )` as a bare statement (`setupDiscard`),
@@ -821,9 +842,15 @@ pub enum Node {
     Return {
         value: NodeRef,
     },
-    /// `x.not()` — `( ! x )`.
+    /// `x.not()` — `( ! x )`. A `bool`, or a `bvecN` for an `N`-vector
+    /// operand (`OperatorNode.getNodeType()`'s `'!'` arm).
     Not {
         node: NodeRef,
+    },
+    /// `x.bitNot()` — `( ~ x )`, typed `getIntegerType( typeA )`.
+    BitNot {
+        node: NodeRef,
+        ty: Type,
     },
     /// `cond.select( a, b )` — lowered to an `if`/`else` writing a result var,
     /// exactly as Three does.
@@ -883,7 +910,8 @@ impl NodeRef {
             Node::Select { ty, .. } => *ty,
             Node::Block { result, .. } => result.ty(),
             Node::Loop { .. } | Node::If { .. } | Node::Discard | Node::Return { .. } => Type::Void,
-            Node::Not { .. } => Type::Bool,
+            Node::Not { node } => Type::vector_of(Type::Bool, node.ty().components().max(1)),
+            Node::BitNot { ty, .. } => *ty,
         }
     }
 }
