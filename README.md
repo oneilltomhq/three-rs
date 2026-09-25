@@ -149,7 +149,9 @@ That rung is gated on the WGSL its kernels compile to and on reading the
 storage buffers back — `docs/rung12-progress.md` says why and what the tests
 assert.
 
-Measured on Intel Iris Xe, Mesa 25.3.6, Fedora 43, against three.js r186.
+Measured on Intel Iris Xe, Mesa 25.3.6, Fedora 43, against three.js 5f610f5
+(past r186, for the cube PMREM of 2f80402; the pin becomes the r187 tag once
+upstream tags it).
 Other GPUs and drivers will land somewhere else on the pass threshold; the
 threshold is Three's own (0.1% of pixels).
 
@@ -270,7 +272,8 @@ directory, and the grader reads Three's reference screenshots and runs its
 comparator under node. So they need a three.js checkout:
 
 ```sh
-git clone --branch r186 --depth 1 https://github.com/mrdoob/three.js ~/src/vendor/three.js
+git clone https://github.com/mrdoob/three.js ~/src/vendor/three.js
+git -C ~/src/vendor/three.js checkout 5f610f5   # the r187 tag, once upstream tags it
 (cd ~/src/vendor/three.js && npm ci)
 export THREE_JS_DIR=~/src/vendor/three.js     # this is the default location
 cargo test --test e2e -- --nocapture

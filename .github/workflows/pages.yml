@@ -5,7 +5,8 @@
 # Pull requests run the build job only, so a change that breaks web/build.sh
 # shows up before it reaches main; only main deploys. Nothing of three.js'
 # is published: the shell fetches each example's assets at run time from the
-# pinned r186 tag on raw.githubusercontent.com.
+# pinned three.js commit (web/src/shell.rs `THREE_JS_REV`, 5f610f5; the r187
+# tag once upstream tags it) on raw.githubusercontent.com.
 name: pages
 
 on:

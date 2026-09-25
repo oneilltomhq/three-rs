@@ -16,7 +16,7 @@
 //! 3. hand the three handles to [`three_rs::renderer::adopt_device`], so that
 //!    the `Renderer::new` inside the example's `init()` finds them;
 //! 4. fetch every asset the example's manifest names from a pinned three.js
-//!    r186 tag on raw.githubusercontent.com, and
+//!    commit on raw.githubusercontent.com, and
 //!    [`three_rs::io::preload`] each one under the path the example will ask
 //!    for;
 //! 5. call `init()`, then `animate()` once, then blit the renderer's canvas
@@ -253,11 +253,12 @@ Deferred, webgpu_deferred, "../../examples/webgpu_deferred.rs";
 LoaderGltfAnisotropy, webgpu_loader_gltf_anisotropy, "../../examples/webgpu_loader_gltf_anisotropy.rs";
 }
 
-/// Where an example's assets come from: three.js at the tag this port is
+/// Where an example's assets come from: three.js at the commit this port is
 /// graded against, so a browser frame reads the very bytes the native ladder
 /// reads off disk. Pinned, never `main` — an asset changing upstream would
-/// silently move a graded frame.
-const THREE_JS_TAG: &str = "r186";
+/// silently move a graded frame. 5f610f5 is past r186 for the cube PMREM
+/// (#146); it becomes the r187 tag once upstream tags it.
+const THREE_JS_REV: &str = "5f610f516730eb11e0166d9fc21dfc34538dcdeb";
 const ASSET_BASE: &str = "https://raw.githubusercontent.com/mrdoob/three.js";
 
 /// Our own rendered frame for each example, for the browsers that cannot run
@@ -925,7 +926,7 @@ async fn preload_assets(which: Which) -> Result<(), String> {
             index + 1,
             assets.len()
         ));
-        let url = format!("{ASSET_BASE}/{THREE_JS_TAG}/{asset}");
+        let url = format!("{ASSET_BASE}/{THREE_JS_REV}/{asset}");
         let bytes = fetch(&url).await?;
         three_rs::io::preload(PathBuf::from(&root).join(asset), bytes);
     }
