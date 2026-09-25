@@ -209,7 +209,8 @@ Mrt, webgpu_mrt, "../../examples/webgpu_mrt.rs";
 CustomFogBackground, webgpu_custom_fog_background, "../../examples/webgpu_custom_fog_background.rs";
 LoaderGltfSheen, webgpu_loader_gltf_sheen, "../../examples/webgpu_loader_gltf_sheen.rs";
 Deferred, webgpu_deferred, "../../examples/webgpu_deferred.rs";
-LoaderGltfAnisotropy, webgpu_loader_gltf_anisotropy, "../../examples/webgpu_loader_gltf_anisotropy.rs";}
+LoaderGltfAnisotropy, webgpu_loader_gltf_anisotropy, "../../examples/webgpu_loader_gltf_anisotropy.rs";
+TslRagingSea, webgpu_tsl_raging_sea, "../../examples/webgpu_tsl_raging_sea.rs";}
 
 impl Which {
     /// The name with or without its `webgpu_` prefix, or its 1-based index in
