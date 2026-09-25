@@ -3999,7 +3999,7 @@ impl Renderer {
             }
             let gpu = cached.gpu.clone();
             self.upload_texture_2d(&gpu, texture);
-            if mip_level_count > 1 {
+            if mip_level_count > 1 && !texture.has_mipmaps() {
                 self.generate_mipmaps(&gpu, format, mip_level_count, 1);
             }
             self.textures_2d.insert(
@@ -4053,7 +4053,9 @@ impl Renderer {
 
         self.upload_texture_2d(&gpu, texture);
 
-        if mip_level_count > 1 {
+        // `Textures.updateTexture()` generates only when `texture.mipmaps` is
+        // empty: page-supplied levels are uploaded as they are.
+        if mip_level_count > 1 && !texture.has_mipmaps() {
             self.generate_mipmaps(&gpu, format, mip_level_count, 1);
         }
 
@@ -4079,11 +4081,44 @@ impl Renderer {
         let format = texture.format();
 
         let inner = texture.borrow();
+
+        // `WebGPUTextureUtils.updateTexture()`: with `texture.mipmaps` set,
+        // each level is its own `_copyImageToTexture( mipmap, …, flipY, …, i )`
+        // and the image itself is not uploaded.
+        if !inner.mipmaps.is_empty() {
+            for (level, image) in inner.mipmaps.iter().enumerate() {
+                self.write_texture_level(
+                    gpu,
+                    format,
+                    level as u32,
+                    image.width,
+                    image.height,
+                    &image.data,
+                    inner.flip_y,
+                );
+            }
+            return;
+        }
+
         let data = inner
             .data
             .as_ref()
             .expect("three-rs: the texture has no image data");
+        self.write_texture_level(gpu, format, 0, width, height, data, inner.flip_y);
+    }
 
+    /// One level of [`upload_texture_2d`](Self::upload_texture_2d).
+    #[allow(clippy::too_many_arguments)]
+    fn write_texture_level(
+        &self,
+        gpu: &wgpu::Texture,
+        format: wgpu::TextureFormat,
+        mip_level: u32,
+        width: u32,
+        height: u32,
+        data: &[u8],
+        flip_y: bool,
+    ) {
         // The row stride comes from the format, not from a hardcoded
         // RGBA8: `r32float` is also 4 bytes per texel but for a different
         // reason, and the next wider float format would shear the upload.
@@ -4094,7 +4129,7 @@ impl Renderer {
         // `copyExternalImageToTexture( { flipY } )`: the source rows are
         // uploaded bottom-up. (three.js' `_flipY()` pass is only for the
         // `_copyBufferToTexture` path, and is the same flip.)
-        let rows: Vec<u8> = if inner.flip_y {
+        let rows: Vec<u8> = if flip_y {
             let stride = (width * bytes_per_texel) as usize;
             let mut flipped = Vec::with_capacity(data.len());
             for row in (0..height as usize).rev() {
@@ -4102,13 +4137,13 @@ impl Renderer {
             }
             flipped
         } else {
-            data.clone()
+            data.to_vec()
         };
 
         self.queue.write_texture(
             wgpu::TexelCopyTextureInfo {
                 texture: gpu,
-                mip_level: 0,
+                mip_level,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
