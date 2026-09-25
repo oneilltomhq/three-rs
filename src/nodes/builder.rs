@@ -1603,6 +1603,13 @@ impl NodeBuilder {
     fn loop_bound(&mut self, bound: &NodeRef) -> String {
         match &*bound.0 {
             Node::Const { values, .. } if values.len() == 1 => wgsl::constant(Type::I32, values),
+            // `LoopNode.generate()` builds a non-constant bound with
+            // `.build( builder, 'int' )`, whose same-length arm is `i32( … )`
+            // — which `wgsl::convert` leaves out (see its doc), so it is
+            // written here: `i < i32( ( nodeUniform4 + 1.0 ) )`.
+            _ if bound.ty() != Type::I32 && bound.ty().components() == 1 => {
+                format!("i32( {} )", self.generate(bound))
+            }
             _ => self.format(bound, Type::I32),
         }
     }
