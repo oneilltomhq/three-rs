@@ -332,6 +332,9 @@ pub struct NodeBuilder {
     /// Varyings the fragment stage asked for, in allocation order.
     varyings: Vec<(String, Type, bool)>,
     varying_slots: HashMap<usize, String>,
+    /// Varyings the vertex stage has assigned to (`positionLocal.assign( …
+    /// )`) before the fragment stage asked for them; see `Node::Varying`.
+    reassigned_varyings: std::collections::HashSet<usize>,
     /// Inlined `Fn()` bodies, expanded once per call site node.
     call_bodies: HashMap<usize, NodeRef>,
     /// Emitted `fn` names for `Fn()`s with a layout.
@@ -365,6 +368,7 @@ impl NodeBuilder {
             texture_names: HashMap::new(),
             varyings: Vec::new(),
             varying_slots: HashMap::new(),
+            reassigned_varyings: std::collections::HashSet::new(),
             call_bodies: HashMap::new(),
             fn_names: HashMap::new(),
             fn_counter: 0,
@@ -1089,8 +1093,22 @@ impl NodeBuilder {
                         self.varying_slots.insert(node.key(), name.clone());
                         // The vertex-side chain is flowed into the vertex stage
                         // at the point the fragment stage asks for it.
+                        //
+                        // When the vertex stage already holds it as a private
+                        // var — `positionLocal` read, and reassigned, by the
+                        // `context.position` statements flowed before either
+                        // stage (`material.positionNode`, instancing,
+                        // skinning) — the varying carries that var's current
+                        // value. In three.js the varying *is* the variable
+                        // (`varyings.positionLocal = ( varyings.positionLocal
+                        // + … )`), so the fragment stage sees the reassigned
+                        // value, not the attribute; see `docs/nodes.md` §8.
                         self.stage = Stage::Vertex;
-                        let snippet = self.generate(&v.value);
+                        let reassigned = self.reassigned_varyings.contains(&node.key());
+                        let snippet = match self.cache_get(node.key()) {
+                            Some(var) if reassigned => var,
+                            _ => self.generate(&v.value),
+                        };
                         self.emit(format!("varyings.{name} = {snippet};"));
                         self.stage = Stage::Fragment;
                         name
@@ -1106,6 +1124,9 @@ impl NodeBuilder {
                 // first assigns to it, and the temps the value needs are
                 // numbered after it.
                 let lhs = self.generate(&target);
+                if self.stage == Stage::Vertex && matches!(&*target.0, Node::Varying(_)) {
+                    self.reassigned_varyings.insert(target.key());
+                }
                 let snippet = self.format(&value, want);
                 // `AssignNode.needsSplitAssign()`: WGSL has no swizzle assign
                 // (`builder.isAvailable( 'swizzleAssign' )` is false), so a
