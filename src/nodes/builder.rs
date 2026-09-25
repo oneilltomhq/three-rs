@@ -1263,7 +1263,12 @@ impl NodeBuilder {
                 let (inner, ty) = (inner.clone(), *ty);
                 let from = inner.ty();
                 let snippet = self.generate(&inner);
-                if ty.components() == from.components() {
+                if ty == from {
+                    // `ConvertNode` to the type it already has — see
+                    // `materialx::mx_nodes::convert`. `format()` returns the
+                    // snippet untouched.
+                    snippet
+                } else if ty.components() == from.components() {
                     format!("{}( {snippet} )", wgsl::type_name(ty))
                 } else {
                     wgsl::convert(&snippet, from, ty)
