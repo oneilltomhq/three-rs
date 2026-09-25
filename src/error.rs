@@ -117,6 +117,14 @@ pub enum GltfError {
     /// nothing, which on this stack is a silent wrong picture, so the port
     /// refuses the asset instead.
     UnsupportedRequiredExtension(String),
+    /// A `KHR_draco_mesh_compression` primitive that does not decode. `mesh`
+    /// and `primitive` locate it; `reason` is the decoder's, or what
+    /// `DRACOLoader` would have thrown on.
+    Draco {
+        mesh: usize,
+        primitive: usize,
+        reason: String,
+    },
 }
 
 impl fmt::Display for Error {
@@ -187,6 +195,14 @@ impl fmt::Display for GltfError {
             Self::UnsupportedRequiredExtension(name) => {
                 write!(f, "unknown required extension \"{name}\"")
             }
+            Self::Draco {
+                mesh,
+                primitive,
+                reason,
+            } => write!(
+                f,
+                "mesh {mesh} primitive {primitive}: THREE.DRACOLoader: {reason}"
+            ),
         }
     }
 }
