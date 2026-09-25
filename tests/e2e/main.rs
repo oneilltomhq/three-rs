@@ -247,6 +247,9 @@ mod webgpu_tsl_galaxy;
 #[path = "../../examples/webgpu_tsl_interoperability.rs"]
 #[allow(dead_code)]
 mod webgpu_tsl_interoperability;
+#[path = "../../examples/webgpu_tsl_raging_sea.rs"]
+#[allow(dead_code)]
+mod webgpu_tsl_raging_sea;
 
 fn three_js_dir() -> PathBuf {
     three_rs::testing::three_js_dir()
@@ -2345,6 +2348,52 @@ fn webgpu_tsl_galaxy() {
 }
 
 #[test]
+fn webgpu_tsl_raging_sea() {
+    let name = "webgpu_tsl_raging_sea";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_tsl_raging_sea::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_tsl_raging_sea::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    // The draw calls and triangles the README's graded table records.
+    let info = app.renderer.info();
+    println!("{name}: info {info:?}");
+
+    steady_frame(name, &mut app, webgpu_tsl_raging_sea::animate, |app| {
+        app.renderer.device()
+    });
+}
+
+#[test]
 fn webgpu_tsl_interoperability() {
     let name = "webgpu_tsl_interoperability";
     let out = out_dir(name);
@@ -2681,6 +2730,7 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_morphtargets);
     rung!(webgpu_tsl_galaxy);
     rung!(webgpu_tsl_interoperability);
+    rung!(webgpu_tsl_raging_sea);
     rung!(webgpu_shadowmap);
     rung!(webgpu_lights_physical);
     // The PMREM is built once, before the first frame; `update` is idempotent,
