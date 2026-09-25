@@ -178,6 +178,7 @@ fn main() {
             skin: None,
             batch: None,
             line_segments: None,
+            sprite: false,
             mrt: None,
             output: None,
             vertex_color_size: 0,

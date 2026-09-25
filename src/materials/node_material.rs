@@ -8,7 +8,7 @@ use super::physical::{self, Physical};
 use super::transmission;
 use super::{Blending, MaterialKind, MeshBasicNodeMaterial, Side, ToneMapping};
 use crate::lights::LightKind;
-use crate::nodes::node::Type;
+use crate::nodes::node::{Type, UniformGroup, UniformSource};
 use crate::nodes::tsl::FogNode;
 use crate::nodes::tsl::*;
 use crate::nodes::{MaterialFlow, NodeRef};
@@ -60,6 +60,12 @@ pub struct SetupContext {
     /// [`crate::nodes::lines`] for why they travel here rather than on the
     /// geometry.
     pub line_segments: Option<crate::nodes::lines::LineSegmentsAttributes>,
+    /// `object.center && object.center.isVector2` — the object is a `Sprite`,
+    /// so `SpriteNodeMaterial.setupPositionView()` offsets the quad by
+    /// `center - 0.5`. A `SpriteNodeMaterial` on anything else (the
+    /// instanced-mesh particles of `webgpu_compute_particles_*`) has no
+    /// `center` and skips the step, which changes the WGSL.
+    pub sprite: bool,
     /// `renderer.getMRT()` and the names of the bound render target's colour
     /// attachments — the pass-level half of `NodeMaterial.setup()`'s MRT
     /// branch, which only runs `if ( renderTarget !== null )`.
@@ -373,7 +379,7 @@ fn setup_overridden(
     // builder )` — the seam `SpriteNodeMaterial` overrides. Built here, before
     // either stage is flowed, exactly as `NodeMaterial.setup()` installs it.
     let position_view = match material.kind {
-        MaterialKind::Sprite => Some(setup_position_view_sprite(material)),
+        MaterialKind::Sprite => Some(setup_position_view_sprite(material, ctx.sprite)),
         MaterialKind::Points => Some(setup_position_view_points(material)),
         _ => None,
     };
@@ -676,16 +682,18 @@ fn to_vec2(node: NodeRef) -> NodeRef {
 /// if ( scaleNode !== null ) scale = scale.mul( vec2( scaleNode ) );
 /// if ( camera.isPerspectiveCamera && sizeAttenuation === false )
 ///     scale = scale.mul( mvPosition.z.negate() );
-/// let alignedPosition = positionGeometry.xy;       // object.center is unset
+/// let alignedPosition = positionGeometry.xy;
+/// if ( object.center && object.center.isVector2 )
+///     alignedPosition = alignedPosition.sub( reference( 'center', 'vec2', object ).sub( 0.5 ) );
 /// alignedPosition = alignedPosition.mul( scale );
 /// const rotation = float( rotationNode || materialRotation );
 /// return vec4( mvPosition.xy.add( rotate( alignedPosition, rotation ) ),
 ///              mvPosition.zw );
 /// ```
 ///
-/// `object.center` is an `InstancedMesh`-less `Sprite` field, so the
-/// `alignedPosition.sub( center.sub( 0.5 ) )` step never fires here.
-fn setup_position_view_sprite(material: &MeshBasicNodeMaterial) -> NodeRef {
+/// `object.center` exists only on a [`Sprite`](crate::objects::Sprite), so
+/// `has_center` is [`SetupContext::sprite`].
+fn setup_position_view_sprite(material: &MeshBasicNodeMaterial, has_center: bool) -> NodeRef {
     let position = match &material.position_node {
         Some(node) => to_vec3(node.clone()),
         None => vec3(0.0, 0.0, 0.0),
@@ -708,7 +716,17 @@ fn setup_position_view_sprite(material: &MeshBasicNodeMaterial) -> NodeRef {
         scale = scale.mul(mv_position.z().negate());
     }
 
-    let aligned = position_geometry().xy().mul(scale);
+    let mut aligned = position_geometry().xy();
+    if has_center {
+        let center = uniform(
+            UniformSource::ObjectCenter,
+            Type::Vec2,
+            UniformGroup::Object,
+            None,
+        );
+        aligned = aligned.sub(center.sub(0.5));
+    }
+    let aligned = aligned.mul(scale);
     let rotation = match &material.rotation_node {
         Some(node) => node.clone(),
         None => material_rotation(),

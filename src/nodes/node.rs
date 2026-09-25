@@ -244,6 +244,9 @@ pub enum UniformSource {
     /// 'mat4' )` — `SkinnedMesh`'s two bind matrices, in the object group.
     BindMatrix,
     BindMatrixInverse,
+    /// `reference( 'center', 'vec2', object )` — `Sprite.center`, read by
+    /// `SpriteNodeMaterial.setupPositionView()`, in the object group.
+    ObjectCenter,
     /// A plain `uniform( value )` the example supplies.
     Value(Vec<f64>),
     /// `uniform( value )` whose `.value` is written between draws — three.js'
@@ -374,6 +377,7 @@ impl UniformSource {
             | UniformSource::MorphBase
             | UniformSource::BindMatrix
             | UniformSource::BindMatrixInverse
+            | UniformSource::ObjectCenter
             | UniformSource::Value(_)
             | UniformSource::Settable(_)
             | UniformSource::ObjectUpdate(_) => UpdateType::Object,

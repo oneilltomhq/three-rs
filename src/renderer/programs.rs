@@ -509,6 +509,9 @@ pub struct UniformContext<'a> {
     /// `SkinnedMesh.bindMatrix` / `.bindMatrixInverse`.
     pub bind_matrix: Matrix4,
     pub bind_matrix_inverse: Matrix4,
+    /// `Sprite.center`, for `SpriteNodeMaterial`'s
+    /// `reference( 'center', 'vec2', object )`.
+    pub object_center: Vector2,
     /// `skeleton.boneMatrices` — the flat `mat4` array the bone buffer holds,
     /// already updated for this frame.
     pub bone_matrices: &'a [f32],
@@ -572,6 +575,7 @@ impl Default for UniformContext<'_> {
             morph_influences: &[],
             bind_matrix: Matrix4::identity(),
             bind_matrix_inverse: Matrix4::identity(),
+            object_center: Vector2::new(0.5, 0.5),
             bone_matrices: &[],
             object: None,
         }
@@ -731,6 +735,9 @@ impl UniformContext<'_> {
                 UniformSource::BindMatrix => self.bind_matrix.to_f32_array().to_vec(),
                 UniformSource::BindMatrixInverse => {
                     self.bind_matrix_inverse.to_f32_array().to_vec()
+                }
+                UniformSource::ObjectCenter => {
+                    vec![self.object_center.x as f32, self.object_center.y as f32]
                 }
                 UniformSource::LightTargetPosition(i) => {
                     let p = self.lights[*i].target_position;
