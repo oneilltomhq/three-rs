@@ -259,6 +259,12 @@ fn constant(ty: Type, values: Vec<f64>) -> NodeRef {
     NodeRef::new(Node::Const { ty, values })
 }
 
+/// `mat3( a, b, c, … )` from nine numbers, column-major as GLSL and three.js
+/// fill it: a constant `mat3x3<f32>( … )`.
+pub fn mat3(values: [f64; 9]) -> NodeRef {
+    constant(Type::Mat3, values.to_vec())
+}
+
 /// `float( x )`.
 pub fn float(v: impl Into<f64>) -> NodeRef {
     constant(Type::F32, vec![v.into()])
@@ -705,6 +711,15 @@ pub fn fwidth(x: impl Into<NodeRef>) -> NodeRef {
 /// system means it, so `MathNode` emits a helper; see `wgsl::MOD_FLOAT_SNIPPET`.
 pub fn mod_float(x: impl Into<NodeRef>, y: impl Into<NodeRef>) -> NodeRef {
     math("tsl_mod_float", vec![x.into(), y.into()], Type::F32)
+}
+
+/// `rand( uv )` — `MathNode.js`' hash: `fract( sin( mod( dot( uv.xy, vec2(
+/// 12.9898, 78.233 ) ), PI ) ) * 43758.5453 )`. A layout-less `Fn`, so it is
+/// inlined at every call, as `webgpu_backdrop_area`'s `hashBlur` dump has it.
+pub fn rand(uv: impl Into<NodeRef>) -> NodeRef {
+    let dt = dot(uv.into().xy(), vec2(12.9898, 78.233));
+    let sn = mod_float(dt, float(std::f64::consts::PI));
+    fract(sn.sin().mul(43758.5453))
 }
 
 /// `smoothstep( low, high, x )`.
@@ -2818,9 +2833,16 @@ pub fn depth_texture(map: &DepthTexture) -> NodeRef {
 /// a `PassTextureNode` calls `setUpdateMatrix( false )`, so the pass's depth
 /// attachment carries no `mat3x3` in the object uniform block.
 pub fn pass_depth_texture(map: &DepthTexture) -> NodeRef {
+    pass_depth_texture_uv(map, uv())
+}
+
+/// `passNode.getTextureNode( 'depth' ).sample( coord )` — the pass's depth
+/// attachment read at another uv, as `PixelationPassNode`'s neighbour taps
+/// read it.
+pub fn pass_depth_texture_uv(map: &DepthTexture, coord: NodeRef) -> NodeRef {
     texture_node(
         TextureSource::Depth(map.clone()),
-        uv(),
+        coord,
         SampleMode::Load,
         Type::F32,
     )
@@ -3161,6 +3183,7 @@ pub fn loop_statement(count: usize, index: NodeRef, body: Vec<NodeRef>) -> NodeR
         start: None,
         index,
         count,
+        condition: "<",
         body,
     })
 }
@@ -3613,6 +3636,7 @@ pub fn loop_n(
     NodeRef::new(Node::Loop {
         start: None,
         count,
+        condition: "<",
         index,
         body,
     })
@@ -3639,6 +3663,33 @@ pub fn loop_range(
     NodeRef::new(Node::Loop {
         start: Some(start),
         count: end,
+        condition: "<",
+        index,
+        body,
+    })
+}
+
+/// `Loop( { start, end, type, condition, name }, ( { i } ) => { … } )` — the
+/// full options object.
+///
+/// `ty` is the index type: `Type::I32` (three's default `'int'`) or
+/// `Type::F32` (`type: 'float'`, `hashBlur`'s), which three writes as
+/// `for ( var i : f32 = 0.0; i < 45.0; i += 1. )`. `condition` is the
+/// comparison, `"<"` by default and `"<="` in `boxBlur`.
+pub fn loop_options(
+    name: &'static str,
+    ty: Type,
+    start: NodeRef,
+    end: NodeRef,
+    condition: &'static str,
+    body: impl FnOnce(&NodeRef) -> Vec<NodeRef>,
+) -> NodeRef {
+    let index = NodeRef::new(Node::Param { name, ty });
+    let body = body(&index);
+    NodeRef::new(Node::Loop {
+        start: Some(start),
+        count: end,
+        condition,
         index,
         body,
     })

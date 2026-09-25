@@ -1493,11 +1493,13 @@ impl NodeBuilder {
             Node::Loop {
                 start,
                 count,
+                condition,
                 index,
                 body,
             } => {
                 let (start, count, index, body) =
                     (start.clone(), count.clone(), index.clone(), body.clone());
+                let condition = *condition;
                 // The start is generated before the end, which is the order
                 // three.js' `LoopNode` builds them in and so the order their
                 // vars and uniforms are numbered in.
@@ -1506,13 +1508,19 @@ impl NodeBuilder {
                     None => "0".to_string(),
                 };
                 let scount = self.generate(&count);
-                let name = match &*index.0 {
-                    Node::Param { name, .. } => *name,
-                    _ => "i",
+                let (name, ty) = match &*index.0 {
+                    Node::Param { name, ty } => (*name, *ty),
+                    _ => ("i", Type::I32),
+                };
+                // `LoopNode`: an `int` index steps with `++`, a `float` one
+                // with `+= 1.`, and the var takes the index's own type.
+                let (wgsl_ty, step) = match ty {
+                    Type::F32 => ("f32", "+= 1."),
+                    _ => ("i32", "++"),
                 };
                 self.emit(String::new());
                 self.emit(format!(
-                    "for ( var {name} : i32 = {sstart}; {name} < {scount}; {name} ++ ) {{"
+                    "for ( var {name} : {wgsl_ty} = {sstart}; {name} {condition} {scount}; {name} {step} ) {{"
                 ));
                 self.emit(String::new());
                 self.push_scope();

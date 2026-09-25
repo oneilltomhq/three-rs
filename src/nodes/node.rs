@@ -783,7 +783,12 @@ pub enum Node {
         /// reaches the loop header as `i32( ( - nodeVar1 ) )`.
         start: Option<NodeRef>,
         count: NodeRef,
-        /// The loop index, as it appears inside `body` (`Node::Param`).
+        /// `Loop( { condition } )` — `"<"` unless the caller asked for
+        /// another comparison (`boxBlur`'s `"<="`).
+        condition: &'static str,
+        /// The loop index, as it appears inside `body` (`Node::Param`). Its
+        /// type is `Loop( { type } )`: `i32`, or `f32` for `hashBlur`'s
+        /// `type: 'float'`, which also changes the step to `i += 1.`.
         index: NodeRef,
         body: Vec<NodeRef>,
     },
