@@ -4,7 +4,12 @@
 // a throwaway puppeteer script in the vendor tree. This is that script, kept.
 //
 // Usage:
-//   node tools/dump-webgpu.mjs <example_name> [--out DIR]
+//   node tools/dump-webgpu.mjs <example_name> [--out DIR] [--page FILE]
+//
+// `--page FILE` serves FILE (from this repository) in place of
+// examples/<example_name>.html, for a page that is not a three.js example —
+// `tests/fixtures/materialx_library/page.html` is one. The rest of the vendor
+// checkout is served as usual, so the page's `../build/…` imports resolve.
 //
 // Reads the three.js checkout at $THREE_JS_DIR (default ~/src/vendor/three.js,
 // matching src/testing.rs::vendor_dir) and Chrome + puppeteer-core from that
@@ -31,7 +36,7 @@ const repoRoot = path.resolve(__dirname, '..');
 
 function usage(msg) {
 	if (msg) console.error(msg);
-	console.error('usage: node tools/dump-webgpu.mjs <example_name> [--out DIR]');
+	console.error('usage: node tools/dump-webgpu.mjs <example_name> [--out DIR] [--page FILE]');
 	process.exit(1);
 }
 
@@ -40,18 +45,22 @@ function parseArgs(argv) {
 	if (args.length === 0 || args[0].startsWith('-')) usage();
 	const example = args[0];
 	let out = null;
+	let page = null;
 	for (let i = 1; i < args.length; i++) {
 		if (args[i] === '--out') {
 			out = args[++i];
 			if (!out) usage('--out needs a DIR');
+		} else if (args[i] === '--page') {
+			page = args[++i];
+			if (!page) usage('--page needs a FILE');
 		} else {
 			usage(`unrecognised argument: ${args[i]}`);
 		}
 	}
-	return { example, out };
+	return { example, out, page };
 }
 
-const { example, out } = parseArgs(process.argv);
+const { example, out, page: pageFile } = parseArgs(process.argv);
 
 const vendorDir = process.env.THREE_JS_DIR
 	|| path.join(process.env.HOME, 'src/vendor/three.js');
@@ -647,6 +656,8 @@ async function main() {
 			"Object.defineProperty(this, 'trackTimestamp', { get: () => false, set: () => {} });"
 		);
 
+	const pageBody = pageFile ? await fs.readFile(path.resolve(pageFile), 'utf8') : null;
+
 	const buildNames = ['three.core.js', 'three.module.js', 'three.webgpu.js'];
 	const builds = {};
 	for (const name of buildNames) {
@@ -695,6 +706,10 @@ async function main() {
 
 		page.on('request', async (request) => {
 			const url = request.url();
+			if (pageBody !== null && url === `http://localhost:${port}/examples/${example}.html`) {
+				await request.respond({ status: 200, contentType: 'text/html; charset=utf-8', body: pageBody });
+				return;
+			}
 			for (const build in builds) {
 				if (url === `http://localhost:${port}/build/${build}`) {
 					await request.respond({ status: 200, contentType: 'application/javascript; charset=utf-8', body: builds[build] });
