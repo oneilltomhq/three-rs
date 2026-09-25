@@ -198,6 +198,16 @@ fn more_cases(_uv: fn() -> NodeRef) -> Vec<Case> {
         case("unifiednoise3d", Type::F32, &[P3], |a| {
             mx::mx_unifiednoise3d(mx::UnifiedNoise::new_3d(2, a[0].clone()))
         }),
+        // colour
+        case("hsvtorgb", Type::Vec3, &[P3], |a| {
+            mx::mx_hsvtorgb(a[0].clone())
+        }),
+        case("rgbtohsv", Type::Vec3, &[P3], |a| {
+            mx::mx_rgbtohsv(a[0].clone())
+        }),
+        case("srgb_texture_to_lin_rec709", Type::Vec3, &[P3], |a| {
+            mx::mx_srgb_texture_to_lin_rec709(a[0].clone())
+        }),
         // core
         case("rotate2d", Type::Vec2, &[P2, F], |a| {
             mx::mx_rotate2d(a[0].clone(), a[1].clone())
@@ -249,6 +259,30 @@ fn generated(cases: &[Case]) -> String {
     NodeBuilder::new().build(&flow).fragment_wgsl
 }
 
+/// Functions whose statements deliberately differ from three's (see
+/// `docs/nodes.md` §8, "The MaterialX library"). Only their signature and
+/// control flow are compared.
+///
+/// `mx_hsvtorgb`: three reads f / p / q / t from vars it assigned in a
+/// *sibling* `if` branch, so its WGSL is wrong for hue sectors 2 to 5; the
+/// port hoists each value in the branch that reads it.
+const DIVERGENT: &[&str] = &["mx_hsvtorgb"];
+
+/// The signature, every `if` / `else` / `for` line and every `return`.
+fn skeleton(f: &str) -> String {
+    f.lines()
+        .filter(|l| {
+            let t = l.trim_start();
+            l.starts_with("fn ")
+                || t.starts_with("if ")
+                || t.starts_with("} else")
+                || t.starts_with("for ")
+                || t.starts_with("return")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 #[test]
 fn every_materialx_export_matches_r186() {
     let cases = cases();
@@ -286,6 +320,11 @@ fn every_materialx_export_matches_r186() {
         let Some(w) = want.get(name) else {
             failures.push(format!("three.js emitted no `fn {name}`"));
             continue;
+        };
+        let (g, w) = if DIVERGENT.contains(&name) {
+            (skeleton(g), skeleton(w))
+        } else {
+            (g.clone(), w.clone())
         };
         if g != w {
             let (gl, wl): (Vec<&str>, Vec<&str>) = (g.lines().collect(), w.lines().collect());

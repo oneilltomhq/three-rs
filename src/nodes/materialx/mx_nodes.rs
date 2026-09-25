@@ -377,3 +377,22 @@ pub fn mx_unifiednoise2d(params: UnifiedNoise) -> NodeRef {
 pub fn mx_unifiednoise3d(params: UnifiedNoise) -> NodeRef {
     mx_noise::mx_unifiednoise(3, params.args())
 }
+
+// ---------------------------------------------------------------------------
+// colour
+// ---------------------------------------------------------------------------
+
+/// `mx_hsvtorgb( hsv )`.
+pub fn mx_hsvtorgb(hsv: NodeRef) -> NodeRef {
+    super::mx_color::mx_hsvtorgb(hsv.to(Type::Vec3))
+}
+
+/// `mx_rgbtohsv( c )`.
+pub fn mx_rgbtohsv(c: NodeRef) -> NodeRef {
+    super::mx_color::mx_rgbtohsv(c.to(Type::Vec3))
+}
+
+/// `mx_srgb_texture_to_lin_rec709( color )`.
+pub fn mx_srgb_texture_to_lin_rec709(color: NodeRef) -> NodeRef {
+    super::mx_color::mx_srgb_texture_to_lin_rec709(color.to(Type::Vec3))
+}

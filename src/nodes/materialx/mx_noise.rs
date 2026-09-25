@@ -57,15 +57,6 @@ fn unassigned_var(name: &'static str, ty: Type) -> NodeRef {
     property(name, ty)
 }
 
-macro_rules! mx_fn {
-    ($rust:ident, $wgsl:literal, $params:expr, $ret:expr, $body:expr) => {
-        fn $rust() -> Rc<FnDef> {
-            thread_local! { static CELL: Lazy<Rc<FnDef>> = Lazy::new(); }
-            CELL.with(|c| c.get(|| shader_fn(Some($wgsl), $params, $ret, $body)))
-        }
-    };
-}
-
 // ---------------------------------------------------------------------------
 // scalar helpers
 // ---------------------------------------------------------------------------
@@ -1180,16 +1171,6 @@ pub(super) enum Fractal {
 // ---------------------------------------------------------------------------
 // Worley noise
 // ---------------------------------------------------------------------------
-
-/// A layout-less `Fn()`, built once per thread and inlined at every call.
-macro_rules! mx_inline {
-    ($rust:ident, $params:expr, $ret:expr, $body:expr) => {
-        fn $rust() -> Rc<FnDef> {
-            thread_local! { static CELL: Lazy<Rc<FnDef>> = const { Lazy::new() }; }
-            CELL.with(|c| c.get(|| inline_fn($params, $ret, $body)))
-        }
-    };
-}
 
 /// `vecN( … )` of `dim` components.
 fn vec_n(dim: usize) -> Type {
