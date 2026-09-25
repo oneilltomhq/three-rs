@@ -2558,7 +2558,7 @@ the eight lights' sphere meshes out of the resolve.
   resolve quad's geometry has `position` and `uv` only, so three's
   `builder.geometry.attributes.normal === undefined` branch returns a constant
   instead of the `dFdx`/`dFdy` term, and the dump shows
-  `Roughness = min( ( max( nodeVar4.w, 0.0525 ) + 0.0 ), 1.0 )`. The port
+  `Roughness = min( ( max( nodeVar4.w, 0.045 ) + 0.0 ), 1.0 )`. The port
   carries it as [`SetupContext::geometry_missing_normal`].
 * **`Color.setHSL()` defaults to the *working* colour space.** The eight light
   colours are `new THREE.Color().setHSL( i / 8, 1.0, 0.5 )`, and

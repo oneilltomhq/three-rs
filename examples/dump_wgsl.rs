@@ -1961,7 +1961,7 @@ fn main() {
 ///   flow with `nodeVar3.xyz` / `nodeVar4.xyz` inlined wherever `positionView`
 ///   and `normalView` would have been — `overrideNodes()` hands the
 ///   replacement back with no `toVar()`, so there is no var of its own.
-///   `Roughness` is `min( ( max( …, 0.0525 ) + 0.0 ), 1.0 )`: the quad
+///   `Roughness` is `min( ( max( …, 0.045 ) + 0.0 ), 1.0 )`: the quad
 ///   geometry has no normal attribute, so `getGeometryRoughness()` is
 ///   `float( 0 )`.
 fn dump_deferred() {

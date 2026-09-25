@@ -31,7 +31,7 @@ pub const RECIPROCAL_PI: f64 = std::f64::consts::FRAC_1_PI;
 /// attribute the function returns `float( 0 )` outright, and the derivative
 /// pair is never emitted. `webgpu_deferred`'s resolve quad is the first
 /// geometry on the ladder that has none, and its dump reads
-/// `min( ( max( nodeVar4.w, 0.0525 ) + 0.0 ), 1.0 )`.
+/// `min( ( max( nodeVar4.w, 0.045 ) + 0.0 ), 1.0 )`.
 pub fn geometry_roughness(has_normal: bool) -> NodeRef {
     if !has_normal {
         return float(0.0);
@@ -43,11 +43,13 @@ pub fn geometry_roughness(has_normal: bool) -> NodeRef {
     max(max(d.x(), d.y()), d.z())
 }
 
-/// `getRoughness( { roughness } )` — `min( max( roughness, 0.0525 ) +
-/// geometryRoughness, 1.0 )`. The 0.0525 floor keeps the GGX highlight from
-/// aliasing to a single pixel.
+/// `getRoughness( { roughness } )` — `min( max( roughness, 0.045 ) +
+/// geometryRoughness, 1.0 )`. "Minimum roughness, so even a perfect mirror
+/// samples a prefiltered level of the environment map" — Filament's desktop
+/// `MIN_PERCEPTUAL_ROUGHNESS`, which three.js restored in b745e6c (#34645)
+/// after r186's 0.0525.
 pub fn get_roughness(roughness: NodeRef, has_normal: bool) -> NodeRef {
-    max(roughness, float(0.0525))
+    max(roughness, float(0.045))
         .add(geometry_roughness(has_normal))
         .min(float(1.0))
 }
@@ -120,8 +122,10 @@ fn d_ggx() -> Rc<FnDef> {
 /// `BRDF_GGX( { lightDirection, f0, f90, roughness } )` — the isotropic,
 /// non-iridescent path, which is all this rung's materials ask for.
 pub fn brdf_ggx(light_direction: NodeRef, f0: NodeRef, f90: NodeRef) -> NodeRef {
-    // `roughness.pow2()` — UE4's alpha.
-    let alpha = roughness().mul(roughness());
+    // `roughness.max( 0.045 ).pow2()` — UE4's alpha, over the floor "punctual
+    // lights need a minimum roughness to show a highlight".
+    let floored = max(roughness(), float(0.045));
+    let alpha = floored.clone().mul(floored);
 
     let half_dir = light_direction
         .clone()
