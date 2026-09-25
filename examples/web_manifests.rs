@@ -161,6 +161,14 @@ mod webgpu_pmrem_equirectangular;
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_postprocessing_ca;
 
+#[path = "webgpu_postprocessing_transition.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_postprocessing_transition;
+
+#[path = "webgpu_postprocessing_sobel.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_postprocessing_sobel;
+
 #[path = "webgpu_procedural_texture.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_procedural_texture;
@@ -291,6 +299,8 @@ const GRADED: &[(&str, fn())] = &[
     ("webgpu_loader_gltf_anisotropy", || {
         drop(webgpu_loader_gltf_anisotropy::init())
     }),
+    ("webgpu_postprocessing_transition", || drop(webgpu_postprocessing_transition::init())),
+    ("webgpu_postprocessing_sobel", || drop(webgpu_postprocessing_sobel::init())),
     ("webgpu_procedural_texture", || {
         drop(webgpu_procedural_texture::init())
     }),
