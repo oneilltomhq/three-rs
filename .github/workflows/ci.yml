@@ -166,6 +166,7 @@ jobs:
       - name: three-rs integration tests (no GPU)
         run: |
           tests=(
+            addons_lines_raycast
             addons_orbit_controls
             animation_animation_action
             animation_animation_clip
@@ -180,6 +181,7 @@ jobs:
             core_buffer_geometry
             core_layers
             core_object3d
+            core_raycaster
             geometries
             gltf_loader
             math_box2
@@ -207,10 +209,19 @@ jobs:
             math_vector3
             math_vector4
             nodes_instanced_attributes
+            nodes_line2_world_units
             nodes_morph
             nodes_mx_noise
             nodes_range_buffers
+            objects_batched_mesh
             objects_group
+            objects_instanced_mesh
+            objects_line
+            objects_line_segments
+            objects_mesh
+            objects_points
+            objects_skinned_mesh
+            objects_sprite
             pmrem
             scenes_scene
           )
