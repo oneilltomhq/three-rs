@@ -160,7 +160,39 @@ fn cases() -> Vec<Case> {
 }
 
 fn more_cases(_uv: fn() -> NodeRef) -> Vec<Case> {
-    vec![]
+    vec![
+        // worley
+        case("worley_noise_float_2", Type::F32, &[P2], |a| {
+            mx::mx_worley_noise_float(a[0].clone(), 1.0, 0)
+        }),
+        case("worley_noise_float_3", Type::F32, &[P3], |a| {
+            mx::mx_worley_noise_float(a[0].clone(), 0.5, 1)
+        }),
+        case("worley_noise_float_2d", Type::F32, &[P2], |a| {
+            mx::mx_worley_noise_float_2d(a[0].clone(), 1.0, 0)
+        }),
+        case("worley_noise_float_3d", Type::F32, &[P3], |a| {
+            mx::mx_worley_noise_float_3d(a[0].clone(), 1.0, 0)
+        }),
+        case("worley_noise_vec2_2", Type::Vec2, &[P2], |a| {
+            mx::mx_worley_noise_vec2(a[0].clone(), 1.0)
+        }),
+        case("worley_noise_vec2_3", Type::Vec2, &[P3], |a| {
+            mx::mx_worley_noise_vec2(a[0].clone(), 1.0)
+        }),
+        case("worley_noise_vec3_2", Type::Vec3, &[P2], |a| {
+            mx::mx_worley_noise_vec3(a[0].clone(), 1.0, 1)
+        }),
+        case("worley_noise_vec3_3", Type::Vec3, &[P3], |a| {
+            mx::mx_worley_noise_vec3(a[0].clone(), 1.0, 2)
+        }),
+        case("worley_noise_vec3_style_2", Type::Vec3, &[P2], |a| {
+            mx::mx_worley_noise_vec3_style(a[0].clone(), 1.0, 0, 0)
+        }),
+        case("worley_noise_vec3_style_3", Type::Vec3, &[P3], |a| {
+            mx::mx_worley_noise_vec3_style(a[0].clone(), 1.0, 1, 0)
+        }),
+    ]
 }
 
 /// The port's fragment program for every case, summed into the colour the

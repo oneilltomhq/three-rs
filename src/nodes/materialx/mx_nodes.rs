@@ -11,7 +11,7 @@
 //! `impl Into<NodeRef>`: pass `1.0`, not `1`, which would be an `int`.
 
 use crate::nodes::node::{NodeRef, Type};
-use crate::nodes::tsl::{call, vec2, vec4_join};
+use crate::nodes::tsl::{call, int, vec2, vec4_join};
 
 use super::mx_noise::{self, fractal_def, Fractal};
 
@@ -198,4 +198,77 @@ pub fn mx_fractal_noise_vec4(
         diminish,
         amplitude,
     )
+}
+
+// ---------------------------------------------------------------------------
+// Worley noise
+// ---------------------------------------------------------------------------
+//
+// `style` and `metric` are `int( … )`-converted by three, so pass them as
+// Rust integers (`0`, not `0.0`): an integer is an `int` constant already,
+// and anything else is converted with `i32( … )` as three's `int()` would.
+
+/// `mx_worley_noise_float( texcoord = uv(), jitter = 1, style = 0 )` — always
+/// the 3D body; a `vec2` texcoord is widened with `z = 0`.
+pub fn mx_worley_noise_float(
+    texcoord: NodeRef,
+    jitter: impl Into<NodeRef>,
+    style: impl Into<NodeRef>,
+) -> NodeRef {
+    mx_worley_noise_float_3d(vec2_or_vec3(texcoord), jitter, style)
+}
+
+/// `mx_worley_noise_float_2d( texcoord = uv(), jitter = 1, style = 0 )`.
+pub fn mx_worley_noise_float_2d(
+    texcoord: NodeRef,
+    jitter: impl Into<NodeRef>,
+    style: impl Into<NodeRef>,
+) -> NodeRef {
+    mx_noise::mx_worley_noise_float_2d(texcoord, jitter.into(), style.into())
+}
+
+/// `mx_worley_noise_float_3d( texcoord = uv(), jitter = 1, style = 0 )`.
+pub fn mx_worley_noise_float_3d(
+    texcoord: NodeRef,
+    jitter: impl Into<NodeRef>,
+    style: impl Into<NodeRef>,
+) -> NodeRef {
+    mx_noise::mx_worley_noise_float_3d(texcoord, jitter.into(), style.into())
+}
+
+/// `mx_worley_noise_vec2( texcoord = uv(), jitter = 1 )` — the two nearest
+/// Euclidean distances (metric is fixed at `int( 1 )`).
+pub fn mx_worley_noise_vec2(texcoord: NodeRef, jitter: impl Into<NodeRef>) -> NodeRef {
+    mx_noise::mx_worley_noise_vec2(vec2_or_vec3(texcoord), jitter.into(), int(1))
+}
+
+/// `mx_worley_noise_vec3( texcoord = uv(), jitter = 1, metric = 1 )` — the
+/// three nearest distances.
+pub fn mx_worley_noise_vec3(
+    texcoord: NodeRef,
+    jitter: impl Into<NodeRef>,
+    metric: impl Into<NodeRef>,
+) -> NodeRef {
+    mx_noise::mx_worley_noise_vec3(vec2_or_vec3(texcoord), jitter.into(), to_int(metric))
+}
+
+/// `mx_worley_noise_vec3_style( texcoord = uv(), jitter = 1, style = 0,
+/// metric = 0 )`.
+pub fn mx_worley_noise_vec3_style(
+    texcoord: NodeRef,
+    jitter: impl Into<NodeRef>,
+    style: impl Into<NodeRef>,
+    metric: impl Into<NodeRef>,
+) -> NodeRef {
+    mx_noise::mx_worley_noise_vec3_style(
+        vec2_or_vec3(texcoord),
+        jitter.into(),
+        to_int(style),
+        to_int(metric),
+    )
+}
+
+/// three's `int( x )`: a no-op on an `int`, a conversion otherwise.
+fn to_int(x: impl Into<NodeRef>) -> NodeRef {
+    x.into().to(Type::I32)
 }

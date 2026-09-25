@@ -27,8 +27,9 @@ use std::rc::Rc;
 
 use crate::nodes::node::{FnDef, Lazy, NodeRef, Type};
 use crate::nodes::tsl::{
-    block, call, float, inline_fn, int, join, loop_n, property, shader_fn, to_var, uint, vec2_join,
-    vec3, vec3_join, vec4_join, wgsl_select,
+    block, call, float, if_else, if_else_if, if_then, inline_fn, int, join, loop_n,
+    loop_range_cond, property, return_statement, shader_fn, to_var, uint, vec2, vec2_join, vec3,
+    vec3_join, vec4_join, wgsl_select,
 };
 
 // ---------------------------------------------------------------------------
@@ -1174,4 +1175,520 @@ pub(super) enum Fractal {
     Vec2,
     Vec3,
     Vec4,
+}
+
+// ---------------------------------------------------------------------------
+// Worley noise
+// ---------------------------------------------------------------------------
+
+/// A layout-less `Fn()`, built once per thread and inlined at every call.
+macro_rules! mx_inline {
+    ($rust:ident, $params:expr, $ret:expr, $body:expr) => {
+        fn $rust() -> Rc<FnDef> {
+            thread_local! { static CELL: Lazy<Rc<FnDef>> = const { Lazy::new() }; }
+            CELL.with(|c| c.get(|| inline_fn($params, $ret, $body)))
+        }
+    };
+}
+
+/// `vecN( … )` of `dim` components.
+fn vec_n(dim: usize) -> Type {
+    if dim == 2 {
+        Type::Vec2
+    } else {
+        Type::Vec3
+    }
+}
+
+/// `Loop( { start: - 1, end: int( 1 ), name, condition: '<=' } )`, nested
+/// `x` / `y` (/ `z`) as the Worley bodies write it; `body` gets the indices.
+fn worley_loops(dim: usize, body: impl FnOnce(&[NodeRef]) -> Vec<NodeRef>) -> NodeRef {
+    let walk = |name: &'static str, inner: Box<dyn FnOnce(&NodeRef) -> Vec<NodeRef> + '_>| {
+        loop_range_cond(name, int(-1), int(1), "<=", inner)
+    };
+    if dim == 2 {
+        walk(
+            "x",
+            Box::new(|x| vec![walk("y", Box::new(|y| body(&[x.clone(), y.clone()])))]),
+        )
+    } else {
+        walk(
+            "x",
+            Box::new(|x| {
+                vec![walk(
+                    "y",
+                    Box::new(|y| {
+                        vec![walk(
+                            "z",
+                            Box::new(|z| body(&[x.clone(), y.clone(), z.clone()])),
+                        )]
+                    }),
+                )]
+            }),
+        )
+    }
+}
+
+/// `off.subAssign( 0.5 ); off.mulAssign( jitter ); off.addAssign( 0.5 );`
+fn jitter_offset(off: &NodeRef, jitter: &NodeRef) -> [NodeRef; 3] {
+    [
+        off.sub_assign(float(0.5)),
+        off.mul_assign(jitter),
+        off.add_assign(float(0.5)),
+    ]
+}
+
+/// `vecN( float( x ), float( y )[, float( z )] )`.
+fn cell_corner(idx: &[NodeRef]) -> NodeRef {
+    join(
+        vec_n(idx.len()),
+        idx.iter().map(|i| i.to(Type::F32)).collect(),
+    )
+}
+
+/// `mx_worley_distance_0` / `_1`: the jittered cell point of one neighbour
+/// and its distance to `p` under `metric` — 2 is Manhattan, 3 Chebyshev, and
+/// anything else squared Euclidean. `dim` is 2 for `_0`, 3 for `_1`.
+fn worley_distance_body(params: &[NodeRef], dim: usize) -> NodeRef {
+    let (mut stmts, v) = reverse_vars(params);
+    let p = v[0].clone();
+    let idx = &v[1..=dim];
+    let offs = &v[dim + 1..=2 * dim];
+    let (jitter, metric) = (v[2 * dim + 1].clone(), v[2 * dim + 2].clone());
+    let cell = join(
+        vec_n(dim),
+        idx.iter().zip(offs).map(|(i, o)| i.add(o)).collect(),
+    );
+    let off = if dim == 2 {
+        let tmp = to_var(None, call(&mx_cell_noise_vec3_1_def(), vec![cell]));
+        stmts.push(tmp.clone());
+        to_var(None, vec2_join(vec![tmp.x(), tmp.y()]))
+    } else {
+        to_var(None, mx_cell_noise_vec3_3d(cell))
+    };
+    stmts.push(off.clone());
+    stmts.extend(jitter_offset(&off, &jitter));
+    let cellpos = to_var(None, cell_corner(idx).add(&off));
+    let diff = to_var(None, cellpos.sub(&p));
+    stmts.extend([cellpos, diff.clone()]);
+    // Fresh `abs()` nodes for each metric: shared ones would be reached twice
+    // and hoisted into vars.
+    let comps = || -> Vec<NodeRef> {
+        [diff.x(), diff.y(), diff.z()][..dim]
+            .iter()
+            .map(|c| c.abs())
+            .collect()
+    };
+    let (m, c) = (comps(), comps());
+    let manhattan = m[1..].iter().fold(m[0].clone(), |a, x| a.add(x));
+    let chebyshev = c[1..].iter().fold(c[0].clone(), |a, x| a.max(x));
+    stmts.push(if_then(
+        metric.equal(int(2)),
+        vec![return_statement(manhattan)],
+    ));
+    stmts.push(if_then(
+        metric.equal(int(3)),
+        vec![return_statement(chebyshev)],
+    ));
+    block(stmts, diff.dot(&diff))
+}
+
+mx_fn!(
+    mx_worley_distance_0_def,
+    "mx_worley_distance_0",
+    vec![
+        ("p", Type::Vec2),
+        ("x", Type::I32),
+        ("y", Type::I32),
+        ("xoff", Type::I32),
+        ("yoff", Type::I32),
+        ("jitter", Type::F32),
+        ("metric", Type::I32),
+    ],
+    Type::F32,
+    |params| worley_distance_body(params, 2)
+);
+
+mx_fn!(
+    mx_worley_distance_1_def,
+    "mx_worley_distance_1",
+    vec![
+        ("p", Type::Vec3),
+        ("x", Type::I32),
+        ("y", Type::I32),
+        ("z", Type::I32),
+        ("xoff", Type::I32),
+        ("yoff", Type::I32),
+        ("zoff", Type::I32),
+        ("jitter", Type::F32),
+        ("metric", Type::I32),
+    ],
+    Type::F32,
+    |params| worley_distance_body(params, 3)
+);
+
+/// `mx_worley_distance( localpos, x, y[, z], X, Y[, Z], jitter, metric )`.
+fn worley_distance(
+    localpos: &NodeRef,
+    idx: &[NodeRef],
+    cells: &[NodeRef],
+    jitter: &NodeRef,
+    metric: NodeRef,
+) -> NodeRef {
+    let def = if idx.len() == 2 {
+        mx_worley_distance_0_def()
+    } else {
+        mx_worley_distance_1_def()
+    };
+    let mut args = vec![localpos.clone()];
+    args.extend(idx.iter().cloned());
+    args.extend(cells.iter().cloned());
+    args.extend([jitter.clone(), metric]);
+    call(&def, args)
+}
+
+/// The integer cells `X, Y[, Z]` (`int().toVar()`) and
+/// `localpos = vecN( mx_floorfrac( p.x, X ), … ).toVar()`.
+fn worley_cells(p: &NodeRef, dim: usize) -> (Vec<NodeRef>, Vec<NodeRef>, NodeRef) {
+    let cells: Vec<NodeRef> = (0..dim).map(|_| to_var(None, int(0))).collect();
+    let comps = [p.x(), p.y(), p.z()];
+    let localpos = to_var(
+        None,
+        join(
+            vec_n(dim),
+            cells
+                .iter()
+                .zip(comps)
+                .map(|(c, x)| mx_floorfrac(x, c))
+                .collect(),
+        ),
+    );
+    let mut stmts = cells.clone();
+    stmts.push(localpos.clone());
+    (stmts, cells, localpos)
+}
+
+/// `mx_worley_noise_vec2_*` / `mx_worley_noise_vec3_*`: the `out`-many
+/// smallest distances, kept sorted by an `If … ElseIf` insertion.
+fn worley_nearest_body(params: &[NodeRef], dim: usize, out: usize) -> NodeRef {
+    let (mut stmts, v) = reverse_vars(params);
+    let (p, jitter, metric) = (v[0].clone(), v[1].clone(), v[2].clone());
+    let (cell_stmts, cells, localpos) = worley_cells(&p, dim);
+    stmts.extend(cell_stmts);
+    let sqdist = to_var(
+        None,
+        if out == 2 {
+            vec2(1e6, 1e6)
+        } else {
+            vec3(1e6, 1e6, 1e6)
+        },
+    );
+    stmts.push(sqdist.clone());
+    stmts.push(worley_loops(dim, |idx| {
+        let dist = to_var(
+            None,
+            worley_distance(&localpos, idx, &cells, &jitter, metric.clone()),
+        );
+        let (sx, sy, sz) = (sqdist.x(), sqdist.y(), sqdist.z());
+        let insert = if out == 2 {
+            if_else_if(
+                dist.less_than(&sx),
+                vec![sy.assign(&sx), sx.assign(&dist)],
+                dist.less_than(&sy),
+                vec![sy.assign(&dist)],
+            )
+        } else {
+            if_else(
+                dist.less_than(&sx),
+                vec![sz.assign(&sy), sy.assign(&sx), sx.assign(&dist)],
+                vec![if_else_if(
+                    dist.less_than(&sy),
+                    vec![sz.assign(&sy), sy.assign(&dist)],
+                    dist.less_than(&sz),
+                    vec![sz.assign(&dist)],
+                )],
+            )
+        };
+        vec![dist, insert]
+    }));
+    stmts.push(if_then(
+        metric.equal(int(0)),
+        vec![sqdist.assign(sqdist.sqrt())],
+    ));
+    block(stmts, sqdist)
+}
+
+fn worley_nearest_params(dim: usize) -> Vec<(&'static str, Type)> {
+    vec![
+        ("p", vec_n(dim)),
+        ("jitter", Type::F32),
+        ("metric", Type::I32),
+    ]
+}
+
+mx_fn!(
+    mx_worley_noise_vec2_0_def,
+    "mx_worley_noise_vec2_0",
+    worley_nearest_params(2),
+    Type::Vec2,
+    |params| worley_nearest_body(params, 2, 2)
+);
+
+mx_fn!(
+    mx_worley_noise_vec2_1_def,
+    "mx_worley_noise_vec2_1",
+    worley_nearest_params(3),
+    Type::Vec2,
+    |params| worley_nearest_body(params, 3, 2)
+);
+
+mx_fn!(
+    mx_worley_noise_vec3_0_def,
+    "mx_worley_noise_vec3_0",
+    worley_nearest_params(2),
+    Type::Vec3,
+    |params| worley_nearest_body(params, 2, 3)
+);
+
+mx_fn!(
+    mx_worley_noise_vec3_1_def,
+    "mx_worley_noise_vec3_1",
+    worley_nearest_params(3),
+    Type::Vec3,
+    |params| worley_nearest_body(params, 3, 3)
+);
+
+/// The nearest-cell search the float and `vec3_style` Worley noises share:
+/// `sqdist` / `minpos` are updated with the closest jittered cell point.
+/// `metric` is the distance metric node passed to `mx_worley_distance`.
+fn worley_min_loops(
+    dim: usize,
+    localpos: &NodeRef,
+    cells: &[NodeRef],
+    jitter: &NodeRef,
+    metric: &NodeRef,
+    sqdist: &NodeRef,
+    minpos: &NodeRef,
+) -> NodeRef {
+    worley_loops(dim, |idx| {
+        let dist = to_var(
+            None,
+            worley_distance(localpos, idx, cells, jitter, metric.clone()),
+        );
+        let cell = join(
+            vec_n(dim),
+            cells.iter().zip(idx).map(|(c, i)| c.add(i)).collect(),
+        );
+        let mut body = vec![dist.clone()];
+        let off = if dim == 2 {
+            let tmp = to_var(None, call(&mx_cell_noise_vec3_1_def(), vec![cell]));
+            body.push(tmp.clone());
+            to_var(None, vec2_join(vec![tmp.x(), tmp.y()]))
+        } else {
+            to_var(None, mx_cell_noise_vec3_3d(cell))
+        };
+        body.push(off.clone());
+        body.extend(jitter_offset(&off, jitter));
+        let cellpos = to_var(None, cell_corner(idx).add(&off).sub(localpos));
+        body.push(cellpos.clone());
+        body.push(if_then(
+            dist.less_than(sqdist),
+            vec![sqdist.assign(&dist), minpos.assign(&cellpos)],
+        ));
+        body
+    })
+}
+
+/// `vecN( 0, 0[, 0] )`.
+fn zero_n(dim: usize) -> NodeRef {
+    if dim == 2 {
+        vec2(0.0, 0.0)
+    } else {
+        vec3(0.0, 0.0, 0.0)
+    }
+}
+
+/// `mx_worley_noise_vec3_style_0` / `_1`: `mx_worley_noise_vec3`, or with
+/// `style == 1` the cell noise of the nearest cell.
+fn worley_style_body(params: &[NodeRef], dim: usize) -> NodeRef {
+    let (mut stmts, v) = reverse_vars(params);
+    let (p, jitter, style, metric) = (v[0].clone(), v[1].clone(), v[2].clone(), v[3].clone());
+    let (cell_stmts, cells, localpos) = worley_cells(&p, dim);
+    stmts.extend(cell_stmts);
+    let sqdist = to_var(None, float(1e6));
+    let minpos = to_var(None, zero_n(dim));
+    stmts.extend([sqdist.clone(), minpos.clone()]);
+    stmts.push(worley_min_loops(
+        dim, &localpos, &cells, &jitter, &metric, &sqdist, &minpos,
+    ));
+    let nearest = if dim == 2 {
+        mx_worley_noise_vec3_0_def()
+    } else {
+        mx_worley_noise_vec3_1_def()
+    };
+    let result = to_var(None, call(&nearest, vec![p.clone(), jitter, metric]));
+    let cell_noise = if dim == 2 {
+        call(&mx_cell_noise_vec3_1_def(), vec![minpos.add(&p)])
+    } else {
+        mx_cell_noise_vec3_3d(minpos.add(&p))
+    };
+    stmts.push(result.clone());
+    stmts.push(if_then(
+        style.equal(int(1)),
+        vec![result.assign(cell_noise)],
+    ));
+    block(stmts, result)
+}
+
+fn worley_style_params(dim: usize) -> Vec<(&'static str, Type)> {
+    vec![
+        ("p", vec_n(dim)),
+        ("jitter", Type::F32),
+        ("style", Type::I32),
+        ("metric", Type::I32),
+    ]
+}
+
+mx_fn!(
+    mx_worley_noise_vec3_style_0_def,
+    "mx_worley_noise_vec3_style_0",
+    worley_style_params(2),
+    Type::Vec3,
+    |params| worley_style_body(params, 2)
+);
+
+mx_fn!(
+    mx_worley_noise_vec3_style_1_def,
+    "mx_worley_noise_vec3_style_1",
+    worley_style_params(3),
+    Type::Vec3,
+    |params| worley_style_body(params, 3)
+);
+
+/// `If( style.equal( int( 1 ) ), cell noise of the nearest cell ).Else( sqrt )`.
+fn worley_float_tail(style: &NodeRef, sqdist: &NodeRef, cell_noise: NodeRef) -> NodeRef {
+    if_else(
+        style.equal(int(1)),
+        vec![sqdist.assign(cell_noise)],
+        vec![sqdist.assign(sqdist.sqrt())],
+    )
+}
+
+// `mx_worley_noise_float_3d( position, jitter, style )` — no layout. Unlike
+// the other converted bodies its copies are in source order.
+mx_inline!(mx_worley_noise_float_3d_def, 3, Type::F32, |a| {
+    let position = to_var(None, a[0].to(Type::Vec3));
+    let jitter = to_var(None, a[1].to(Type::F32));
+    let style = to_var(None, a[2].to(Type::I32));
+    let mut stmts = vec![position.clone(), jitter.clone(), style.clone()];
+    let (cell_stmts, cells, localpos) = worley_cells(&position, 3);
+    stmts.extend(cell_stmts);
+    let sqdist = to_var(None, float(1e6));
+    let minpos = to_var(None, zero_n(3));
+    stmts.extend([sqdist.clone(), minpos.clone()]);
+    stmts.push(worley_min_loops(
+        3,
+        &localpos,
+        &cells,
+        &jitter,
+        &int(0),
+        &sqdist,
+        &minpos,
+    ));
+    stmts.push(worley_float_tail(
+        &style,
+        &sqdist,
+        mx_cell_noise_float(minpos.add(&position)),
+    ));
+    block(stmts, sqdist)
+});
+
+// `mx_worley_noise_float_2d( texcoord, jitter, style )` — no layout, and a
+// body of its own: the jitter comes from two `mx_cell_noise_float` lookups
+// and the distance is always squared Euclidean.
+mx_inline!(mx_worley_noise_float_2d_def, 3, Type::F32, |a| {
+    let texcoord = to_var(None, a[0].to(Type::Vec2));
+    let jitter = to_var(None, a[1].to(Type::F32));
+    let style = to_var(None, a[2].to(Type::I32));
+    let floor_pos = to_var(None, texcoord.floor());
+    let localpos = to_var(
+        None,
+        vec2_join(vec![texcoord.x().fract(), texcoord.y().fract()]),
+    );
+    let sqdist = to_var(None, float(1e6));
+    let minpos = to_var(None, zero_n(2));
+    let mut stmts = vec![
+        texcoord.clone(),
+        jitter.clone(),
+        style.clone(),
+        floor_pos.clone(),
+        localpos.clone(),
+        sqdist.clone(),
+        minpos.clone(),
+    ];
+    stmts.push(worley_loops(2, |idx| {
+        let cell = to_var(None, cell_corner(idx));
+        let seed = to_var(
+            None,
+            vec2_join(vec![
+                cell.x().add(floor_pos.x()),
+                cell.y().add(floor_pos.y()),
+            ]),
+        );
+        let lookup = |w: f64| mx_cell_noise_float(vec3_join(vec![seed.x(), seed.y(), float(w)]));
+        let off = to_var(None, vec2_join(vec![lookup(0.0), lookup(1.0)]));
+        let mut body = vec![cell.clone(), seed.clone(), off.clone()];
+        body.extend(jitter_offset(&off, &jitter));
+        let cellpos = to_var(None, cell.add(&off).sub(&localpos));
+        let dist = to_var(None, cellpos.dot(&cellpos));
+        body.extend([cellpos.clone(), dist.clone()]);
+        body.push(if_then(
+            dist.less_than(&sqdist),
+            vec![sqdist.assign(&dist), minpos.assign(&cellpos)],
+        ));
+        body
+    }));
+    stmts.push(worley_float_tail(
+        &style,
+        &sqdist,
+        mx_cell_noise_float(minpos.add(&texcoord)),
+    ));
+    block(stmts, sqdist)
+});
+
+/// `mx_worley_noise_float_3d( position, jitter, style )`.
+pub(super) fn mx_worley_noise_float_3d(p: NodeRef, jitter: NodeRef, style: NodeRef) -> NodeRef {
+    call(&mx_worley_noise_float_3d_def(), vec![p, jitter, style])
+}
+
+/// `mx_worley_noise_float_2d( texcoord, jitter, style )`.
+pub(super) fn mx_worley_noise_float_2d(p: NodeRef, jitter: NodeRef, style: NodeRef) -> NodeRef {
+    call(&mx_worley_noise_float_2d_def(), vec![p, jitter, style])
+}
+
+/// `mx_worley_noise_vec2( p, jitter, metric )` — `_0` for a `vec2`, `_1` for a `vec3`.
+pub(super) fn mx_worley_noise_vec2(p: NodeRef, jitter: NodeRef, metric: NodeRef) -> NodeRef {
+    let def = by_position(&p, mx_worley_noise_vec2_0_def, mx_worley_noise_vec2_1_def);
+    call(&def, vec![p, jitter, metric])
+}
+
+/// `mx_worley_noise_vec3( p, jitter, metric )` — `_0` for a `vec2`, `_1` for a `vec3`.
+pub(super) fn mx_worley_noise_vec3(p: NodeRef, jitter: NodeRef, metric: NodeRef) -> NodeRef {
+    let def = by_position(&p, mx_worley_noise_vec3_0_def, mx_worley_noise_vec3_1_def);
+    call(&def, vec![p, jitter, metric])
+}
+
+/// `mx_worley_noise_vec3_style( p, jitter, style, metric )`.
+pub(super) fn mx_worley_noise_vec3_style(
+    p: NodeRef,
+    jitter: NodeRef,
+    style: NodeRef,
+    metric: NodeRef,
+) -> NodeRef {
+    let def = by_position(
+        &p,
+        mx_worley_noise_vec3_style_0_def,
+        mx_worley_noise_vec3_style_1_def,
+    );
+    call(&def, vec![p, jitter, style, metric])
 }
