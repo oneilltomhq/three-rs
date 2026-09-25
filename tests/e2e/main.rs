@@ -232,6 +232,9 @@ mod webgpu_lights_physical;
 #[path = "../../examples/webgpu_lines_fat.rs"]
 #[allow(dead_code)]
 mod webgpu_lines_fat;
+#[path = "../../examples/webgpu_lines_fat_raycasting.rs"]
+#[allow(dead_code)]
+mod webgpu_lines_fat_raycasting;
 #[path = "../../examples/webgpu_mesh_batch.rs"]
 #[allow(dead_code)]
 mod webgpu_mesh_batch;
@@ -1250,6 +1253,58 @@ fn webgpu_lines_fat() {
     steady_frame(name, &mut app, webgpu_lines_fat::animate, |app| {
         app.renderer.device()
     });
+}
+
+/// The world-units fat line: `Line2NodeMaterial`'s `worldUnits` branch with
+/// `alphaToCoverage` on a four-sample target, and a raycast from a pointer at
+/// infinity that must hit nothing (the marker spheres stay hidden).
+#[test]
+fn webgpu_lines_fat_raycasting() {
+    let name = "webgpu_lines_fat_raycasting";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_lines_fat_raycasting::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_lines_fat_raycasting::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+    assert!(
+        !app.sphere_inter.borrow().visible && !app.sphere_on_line.borrow().visible,
+        "a ray from ( Infinity, Infinity ) is NaN and hits nothing"
+    );
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(
+        name,
+        &mut app,
+        webgpu_lines_fat_raycasting::animate,
+        |app| app.renderer.device(),
+    );
 }
 
 #[test]
@@ -2697,6 +2752,7 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_mesh_batch, 2);
     rung!(webgpu_compute_points);
     rung!(webgpu_lines_fat);
+    rung!(webgpu_lines_fat_raycasting);
     rung!(webgpu_loader_gltf);
     rung!(webgpu_loader_gltf_sheen);
     rung!(webgpu_mrt);
