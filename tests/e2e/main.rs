@@ -973,9 +973,12 @@ fn webgpu_postprocessing_transition() {
         result.num_different_pixels,
         out.display()
     );
-    steady_frame(name, &mut app, webgpu_postprocessing_transition::animate, |app| {
-        app.renderer.device()
-    });
+    steady_frame(
+        name,
+        &mut app,
+        webgpu_postprocessing_transition::animate,
+        |app| app.renderer.device(),
+    );
 }
 
 #[test]
@@ -1015,9 +1018,12 @@ fn webgpu_postprocessing_sobel() {
         result.num_different_pixels,
         out.display()
     );
-    steady_frame(name, &mut app, webgpu_postprocessing_sobel::animate, |app| {
-        app.renderer.device()
-    });
+    steady_frame(
+        name,
+        &mut app,
+        webgpu_postprocessing_sobel::animate,
+        |app| app.renderer.device(),
+    );
 }
 
 #[test]

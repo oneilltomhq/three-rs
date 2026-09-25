@@ -32,8 +32,8 @@ use std::rc::Rc;
 use three_rs::addons::controls::OrbitControls;
 use three_rs::geometries::{box_geometry, icosahedron_geometry};
 use three_rs::nodes::display::transition;
-use three_rs::nodes::tsl::uniform_settable;
 use three_rs::nodes::node::SettableValue;
+use three_rs::nodes::tsl::uniform_settable;
 use three_rs::nodes::Type;
 use three_rs::testing::DeterministicRandom;
 use three_rs::{

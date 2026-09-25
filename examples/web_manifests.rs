@@ -299,8 +299,12 @@ const GRADED: &[(&str, fn())] = &[
     ("webgpu_loader_gltf_anisotropy", || {
         drop(webgpu_loader_gltf_anisotropy::init())
     }),
-    ("webgpu_postprocessing_transition", || drop(webgpu_postprocessing_transition::init())),
-    ("webgpu_postprocessing_sobel", || drop(webgpu_postprocessing_sobel::init())),
+    ("webgpu_postprocessing_transition", || {
+        drop(webgpu_postprocessing_transition::init())
+    }),
+    ("webgpu_postprocessing_sobel", || {
+        drop(webgpu_postprocessing_sobel::init())
+    }),
     ("webgpu_procedural_texture", || {
         drop(webgpu_procedural_texture::init())
     }),
