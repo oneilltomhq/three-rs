@@ -787,6 +787,51 @@ The vertex stage is where the port and three genuinely disagree:
   translations, so the graded frame is unaffected. A rung that instances with
   rotation *and* a `positionNode` will have to pick three's order.
 
+### The MaterialX library (#142)
+
+`src/nodes/materialx/` ports every export of `MaterialXNodes.js` except
+`mx_frame`, which reads `frameId`, a node the port does not have. Three's
+unreachable internal overloads (`mx_hash_int_0/3/4`,
+`mx_cell_noise_float_0/3`, `mx_cell_noise_vec3_0/3`) are also not ported:
+no export resolves to them. `tests/nodes_mx_library.rs` compares every
+`mx_*` fn line for line with r186's dump of
+`tests/fixtures/materialx_library/page.html`. It makes two concessions:
+
+* **`mx_hsvtorgb` is compared by skeleton only.** Three's body reads `f`,
+  `p`, `q` and `t` from vars it assigned in a *sibling* `If` branch, so its
+  WGSL is wrong for hue sectors 2 to 5. The port assigns each value in the
+  branch that reads it. The signature and every `if` / `else` / `for` /
+  `return` line still match.
+* **`uv()`'s varying name is normalised.** The port numbers `nodeVaryingN`
+  from its own counter; three's page happens to make it `nodeVarying3`.
+
+The library needed one change in the builder:
+
+* **A same-type `Node::Cast` prints as its operand.** This is three's
+  `ConvertNode` when no conversion is needed (`float( x )` on a float). It
+  is still a node of its own, so wrapping a value in it counts that value
+  once and keeps it inline. `mx_place2d` needs this to leave its `div` where
+  three leaves it.
+
+The `webgpu_tsl_raging_sea` rung, the library's graded consumer, needed four
+more (`docs/webgpu_tsl_raging_sea-progress.md`):
+
+* **A non-`int` loop bound is written `i32( … )`.** This is what
+  `LoopNode`'s `.build( builder, 'int' )` does. `wgsl::convert` still has no
+  same-length arm, so the loop header writes it.
+* **An inlined `Fn()` block is built once per scope.** A second reader gets
+  the result, not a second run of its statements. Three builds a stack once
+  per stage.
+* **A layout `fn` is emitted into each stage that calls it.** Each stage is
+  its own module. The name is shared.
+* **A varying the vertex stage has assigned to is written from that var.**
+  In three `positionLocal` *is* the varying, so the fragment stage reads the
+  value after `positionLocal.assign( positionNode )`. The port writes
+  `varyings.positionLocal = positionLocal;` after the assignment instead of
+  three's `varyings.positionLocal = ( varyings.positionLocal + … )` in
+  place: the text differs, but the value the fragment reads is the same. A
+  varying that was only read keeps its old form.
+
 ## 9. Blending, and the instanced-attribute path
 
 Two pieces of shared renderer work that no rung 1–9 material exercises, built
