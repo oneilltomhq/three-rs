@@ -214,6 +214,9 @@ mod webgpu_deferred;
 #[path = "../../examples/webgpu_loader_gltf_anisotropy.rs"]
 #[allow(dead_code)]
 mod webgpu_loader_gltf_anisotropy;
+#[path = "../../examples/webgpu_materials_texture_manualmipmap.rs"]
+#[allow(dead_code)]
+mod webgpu_materials_texture_manualmipmap;
 
 #[path = "../../examples/webgpu_lights_phong.rs"]
 #[allow(dead_code)]
@@ -1503,6 +1506,58 @@ fn webgpu_loader_gltf_anisotropy() {
     );
 }
 
+/// `scene.fog` (issue #140) and page-supplied mip levels. Two scenes under
+/// `new THREE.Fog( 0x000000, 1500, 4000 )`, one per scissor half: the floor
+/// fades into the black background through the render-group fog uniforms,
+/// and its texture's eight hand-painted levels — one colour each — show which
+/// mip the sampler picks, linear-filtered on the left and
+/// `NearestMipmapNearest` on the right. A generated chain in place of the
+/// page's levels turns the red / green / blue bands grey.
+#[test]
+fn webgpu_materials_texture_manualmipmap() {
+    let name = "webgpu_materials_texture_manualmipmap";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_materials_texture_manualmipmap::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_materials_texture_manualmipmap::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(
+        name,
+        &mut app,
+        webgpu_materials_texture_manualmipmap::animate,
+        |app| app.renderer.device(),
+    );
+}
+
 /// The gate on `pass.getViewZNode()`: the depth attachment of a **4×MSAA**
 /// pass, read back with `textureLoad( …, 0 )` through a
 /// `texture_depth_multisampled_2d` binding and converted with
@@ -2703,6 +2758,7 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_custom_fog_background);
     rung!(webgpu_deferred);
     rung!(webgpu_loader_gltf_anisotropy);
+    rung!(webgpu_materials_texture_manualmipmap);
 }
 
 // ---------------------------------------------------------------------------
