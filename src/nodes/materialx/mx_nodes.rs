@@ -11,7 +11,9 @@
 //! `impl Into<NodeRef>`: pass `1.0`, not `1`, which would be an `int`.
 
 use crate::nodes::node::{NodeRef, Type};
-use crate::nodes::tsl::{call, int, vec2, vec4_join};
+use crate::nodes::tsl::{call, int, vec2, vec3, vec4_join};
+
+pub use super::mx_core::{mx_rotate2d, mx_rotate3d};
 
 use super::mx_noise::{self, fractal_def, Fractal};
 
@@ -271,4 +273,107 @@ pub fn mx_worley_noise_vec3_style(
 /// three's `int( x )`: a no-op on an `int`, a conversion otherwise.
 fn to_int(x: impl Into<NodeRef>) -> NodeRef {
     x.into().to(Type::I32)
+}
+
+// ---------------------------------------------------------------------------
+// unified noise
+// ---------------------------------------------------------------------------
+
+/// The arguments of `mx_unifiednoise2d` / `mx_unifiednoise3d`. Three takes
+/// them positionally with defaults; [`UnifiedNoise::new_2d`] /
+/// [`UnifiedNoise::new_3d`] fill in the same defaults, and the fields can be
+/// overridden before the call.
+#[derive(Clone)]
+pub struct UnifiedNoise {
+    /// `0` Perlin, `1` cell, `2` Worley, `3` fractal.
+    pub noise_type: NodeRef,
+    /// Default `uv()`.
+    pub texcoord: NodeRef,
+    /// Default `vec2( 1, 1 )` / `vec3( 1, 1, 1 )`.
+    pub freq: NodeRef,
+    /// Default `vec2( 0, 0 )` / `vec3( 0, 0, 0 )`.
+    pub offset: NodeRef,
+    /// Default `1`.
+    pub jitter: NodeRef,
+    /// Default `0`.
+    pub outmin: NodeRef,
+    /// Default `1`.
+    pub outmax: NodeRef,
+    /// Default `false`; three converts it with `float()`.
+    pub clampoutput: NodeRef,
+    /// Default `1`.
+    pub octaves: NodeRef,
+    /// Default `2`.
+    pub lacunarity: NodeRef,
+    /// Default `.5`.
+    pub diminish: NodeRef,
+    /// Default `0`.
+    pub style: NodeRef,
+}
+
+impl UnifiedNoise {
+    fn with_defaults(
+        noise_type: NodeRef,
+        texcoord: NodeRef,
+        freq: NodeRef,
+        offset: NodeRef,
+    ) -> Self {
+        Self {
+            noise_type,
+            texcoord,
+            freq,
+            offset,
+            jitter: 1.0.into(),
+            outmin: 0.0.into(),
+            outmax: 1.0.into(),
+            clampoutput: false.into(),
+            octaves: 1.into(),
+            lacunarity: 2.0.into(),
+            diminish: 0.5.into(),
+            style: 0.into(),
+        }
+    }
+
+    /// `mx_unifiednoise2d( noiseType, texcoord )`'s defaults.
+    pub fn new_2d(noise_type: impl Into<NodeRef>, texcoord: NodeRef) -> Self {
+        Self::with_defaults(noise_type.into(), texcoord, vec2(1.0, 1.0), vec2(0.0, 0.0))
+    }
+
+    /// `mx_unifiednoise3d( noiseType, texcoord )`'s defaults.
+    pub fn new_3d(noise_type: impl Into<NodeRef>, texcoord: NodeRef) -> Self {
+        Self::with_defaults(
+            noise_type.into(),
+            texcoord,
+            vec3(1.0, 1.0, 1.0),
+            vec3(0.0, 0.0, 0.0),
+        )
+    }
+
+    fn args(self) -> Vec<NodeRef> {
+        vec![
+            self.noise_type,
+            self.texcoord,
+            self.freq,
+            self.offset,
+            self.jitter,
+            self.outmin,
+            self.outmax,
+            self.clampoutput,
+            self.octaves,
+            self.lacunarity,
+            self.diminish,
+            self.style,
+        ]
+    }
+}
+
+/// `mx_unifiednoise2d( noiseType, texcoord = uv(), freq, offset, jitter,
+/// outmin, outmax, clampoutput, octaves, lacunarity, diminish, style )`.
+pub fn mx_unifiednoise2d(params: UnifiedNoise) -> NodeRef {
+    mx_noise::mx_unifiednoise(2, params.args())
+}
+
+/// `mx_unifiednoise3d( noiseType, position = uv(), … )`.
+pub fn mx_unifiednoise3d(params: UnifiedNoise) -> NodeRef {
+    mx_noise::mx_unifiednoise(3, params.args())
 }

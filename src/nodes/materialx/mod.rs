@@ -4,6 +4,7 @@
 //! [`mx_nodes`] is the public surface (`MaterialXNodes.js`, which is what TSL
 //! re-exports); the other modules hold the converted functions behind it.
 
+mod mx_core;
 pub mod mx_nodes;
 mod mx_noise;
 

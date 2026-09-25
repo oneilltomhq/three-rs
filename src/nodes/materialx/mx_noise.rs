@@ -1692,3 +1692,142 @@ pub(super) fn mx_worley_noise_vec3_style(
     );
     call(&def, vec![p, jitter, style, metric])
 }
+
+// ---------------------------------------------------------------------------
+// unified noise
+// ---------------------------------------------------------------------------
+
+/// `mx_perlin_noise_float_scaled( texcoord, amplitude, pivot )`.
+fn perlin_noise_float_scaled(texcoord: NodeRef, amplitude: f64, pivot: f64) -> NodeRef {
+    mx_perlin_noise_float(texcoord)
+        .mul(float(amplitude))
+        .add(float(pivot))
+}
+
+/// The twelve `toVar()` copies both unified noises open with, in source
+/// order, typed as three converts them; `pos` is `vec2` or `vec3`.
+fn unified_copies(a: &[NodeRef], pos: Type) -> Vec<NodeRef> {
+    let types = [
+        Type::I32,
+        pos,
+        pos,
+        pos,
+        Type::F32,
+        Type::F32,
+        Type::F32,
+        Type::F32,
+        Type::I32,
+        Type::F32,
+        Type::F32,
+        Type::I32,
+    ];
+    a.iter()
+        .zip(types)
+        .map(|(x, ty)| to_var(None, x.to(ty)))
+        .collect()
+}
+
+/// The shared tail: remap `result` into `[outmin, outmax]` and clamp it when
+/// `clampoutput` is `1`.
+fn unified_tail(stmts: &mut Vec<NodeRef>, v: &[NodeRef], result: &NodeRef) -> NodeRef {
+    let (outmin, outmax, clampoutput) = (&v[5], &v[6], &v[7]);
+    let ranged = to_var(None, outmin.add(result.mul(outmax.sub(outmin))));
+    let clamped = to_var(None, ranged.clamp(outmin, outmax));
+    let output = to_var(None, ranged.clone());
+    stmts.extend([ranged, clamped.clone(), output.clone()]);
+    stmts.push(if_then(
+        clampoutput.equal(float(1.0)),
+        vec![output.assign(clamped)],
+    ));
+    output
+}
+
+/// `offset + position * freq` and `cellJitterMult = ( jitter - 1 ) * 90000`.
+fn unified_prelude(stmts: &mut Vec<NodeRef>, v: &[NodeRef]) -> (NodeRef, NodeRef) {
+    let apply_freq = to_var(None, v[1].mul(&v[2]));
+    let apply_offset = to_var(None, apply_freq.add(&v[3]));
+    let jitter_mult = to_var(None, v[4].sub(float(1.0)).mul(float(90000.0)));
+    stmts.extend([apply_freq, apply_offset.clone(), jitter_mult.clone()]);
+    (apply_offset, jitter_mult)
+}
+
+// `mx_unifiednoise2d( noiseType, texcoord, freq, offset, jitter, outmin,
+// outmax, clampoutput, octaves, lacunarity, diminish, style )` — no layout.
+mx_inline!(mx_unifiednoise2d_def, 12, Type::F32, |a| {
+    let v = unified_copies(a, Type::Vec2);
+    let mut stmts = v.clone();
+    let (apply_offset, jitter_mult) = unified_prelude(&mut stmts, &v);
+    let cell_jitter = to_var(
+        None,
+        super::mx_core::mx_rotate2d(apply_offset.clone(), jitter_mult.clone()),
+    );
+    let fractal_input = to_var(
+        None,
+        vec3_join(vec![apply_offset.x(), apply_offset.y(), jitter_mult]),
+    );
+    let result = to_var(None, float(0.0));
+    stmts.extend([cell_jitter.clone(), fractal_input.clone(), result.clone()]);
+    let noise_type = &v[0];
+    let noises = [
+        perlin_noise_float_scaled(cell_jitter.clone(), 0.5, 0.5),
+        mx_cell_noise_float(cell_jitter),
+        mx_worley_noise_float_2d(apply_offset, v[4].clone(), v[11].clone()),
+        call(
+            &mx_fractal_noise_float_def(),
+            vec![fractal_input, v[8].clone(), v[9].clone(), v[10].clone()],
+        ),
+    ];
+    for (i, noise) in noises.into_iter().enumerate() {
+        stmts.push(if_then(
+            noise_type.equal(int(i as i64)),
+            vec![result.assign(noise)],
+        ));
+    }
+    let output = unified_tail(&mut stmts, &v, &result);
+    block(stmts, output)
+});
+
+// `mx_unifiednoise3d( … )` — no layout. Unlike the 2D form it starts from the
+// Perlin value and rotates about `( 0.1, 1, 0 )`.
+mx_inline!(mx_unifiednoise3d_def, 12, Type::F32, |a| {
+    let v = unified_copies(a, Type::Vec3);
+    let mut stmts = v.clone();
+    let (apply_offset, jitter_mult) = unified_prelude(&mut stmts, &v);
+    let cell_jitter = to_var(
+        None,
+        super::mx_core::mx_rotate3d(apply_offset.clone(), jitter_mult, vec3(0.1, 1.0, 0.0)),
+    );
+    stmts.push(cell_jitter.clone());
+    let result = to_var(
+        None,
+        perlin_noise_float_scaled(cell_jitter.clone(), 0.5, 0.5),
+    );
+    stmts.push(result.clone());
+    let noise_type = &v[0];
+    let noises = [
+        mx_cell_noise_float(cell_jitter.clone()),
+        mx_worley_noise_float_3d(apply_offset, v[4].clone(), v[11].clone()),
+        call(
+            &mx_fractal_noise_float_def(),
+            vec![cell_jitter, v[8].clone(), v[9].clone(), v[10].clone()],
+        ),
+    ];
+    for (i, noise) in noises.into_iter().enumerate() {
+        stmts.push(if_then(
+            noise_type.equal(int(i as i64 + 1)),
+            vec![result.assign(noise)],
+        ));
+    }
+    let output = unified_tail(&mut stmts, &v, &result);
+    block(stmts, output)
+});
+
+/// `mx_unifiednoise2d` / `mx_unifiednoise3d` with its twelve arguments.
+pub(super) fn mx_unifiednoise(dim: usize, args: Vec<NodeRef>) -> NodeRef {
+    let def = if dim == 2 {
+        mx_unifiednoise2d_def()
+    } else {
+        mx_unifiednoise3d_def()
+    };
+    call(&def, args)
+}

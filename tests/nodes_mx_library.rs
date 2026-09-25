@@ -26,7 +26,7 @@ use std::rc::Rc;
 
 use three_rs::nodes::materialx as mx;
 use three_rs::nodes::node::{FnDef, Type};
-use three_rs::nodes::tsl::{call, float, position_local, shader_fn, to_varying, uv, vec4};
+use three_rs::nodes::tsl::{call, float, position_local, shader_fn, to_varying, uv, vec3, vec4};
 use three_rs::nodes::{MaterialFlow, NodeBuilder, NodeRef};
 
 const FIXTURE: &str = concat!(
@@ -191,6 +191,22 @@ fn more_cases(_uv: fn() -> NodeRef) -> Vec<Case> {
         }),
         case("worley_noise_vec3_style_3", Type::Vec3, &[P3], |a| {
             mx::mx_worley_noise_vec3_style(a[0].clone(), 1.0, 1, 0)
+        }),
+        case("unifiednoise2d", Type::F32, &[P2], |a| {
+            mx::mx_unifiednoise2d(mx::UnifiedNoise::new_2d(0, a[0].clone()))
+        }),
+        case("unifiednoise3d", Type::F32, &[P3], |a| {
+            mx::mx_unifiednoise3d(mx::UnifiedNoise::new_3d(2, a[0].clone()))
+        }),
+        // core
+        case("rotate2d", Type::Vec2, &[P2, F], |a| {
+            mx::mx_rotate2d(a[0].clone(), a[1].clone())
+        }),
+        case("rotate3d", Type::Vec3, &[P3, F], |a| {
+            mx::mx_rotate3d(a[0].clone(), a[1].clone(), vec3(0.0, 1.0, 0.0))
+        }),
+        case("rotate3d_axis", Type::Vec3, &[P3, F], |a| {
+            mx::mx_rotate3d(a[0].clone(), a[1].clone(), vec3(1.0, 0.0, 0.0))
         }),
     ]
 }
