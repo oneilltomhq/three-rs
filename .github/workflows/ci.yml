@@ -208,6 +208,7 @@ jobs:
             math_vector4
             nodes_instanced_attributes
             nodes_morph
+            nodes_mx_library
             nodes_mx_noise
             nodes_range_buffers
             objects_group

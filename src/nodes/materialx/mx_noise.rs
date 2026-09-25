@@ -1184,30 +1184,22 @@ fn vec_n(dim: usize) -> Type {
 /// `Loop( { start: - 1, end: int( 1 ), name, condition: '<=' } )`, nested
 /// `x` / `y` (/ `z`) as the Worley bodies write it; `body` gets the indices.
 fn worley_loops(dim: usize, body: impl FnOnce(&[NodeRef]) -> Vec<NodeRef>) -> NodeRef {
-    let walk = |name: &'static str, inner: Box<dyn FnOnce(&NodeRef) -> Vec<NodeRef> + '_>| {
+    fn walk(name: &'static str, inner: impl FnOnce(&NodeRef) -> Vec<NodeRef>) -> NodeRef {
         loop_range_cond(name, int(-1), int(1), "<=", inner)
-    };
-    if dim == 2 {
-        walk(
-            "x",
-            Box::new(|x| vec![walk("y", Box::new(|y| body(&[x.clone(), y.clone()])))]),
-        )
-    } else {
-        walk(
-            "x",
-            Box::new(|x| {
-                vec![walk(
-                    "y",
-                    Box::new(|y| {
-                        vec![walk(
-                            "z",
-                            Box::new(|z| body(&[x.clone(), y.clone(), z.clone()])),
-                        )]
-                    }),
-                )]
-            }),
-        )
     }
+    let mut body = Some(body);
+    let mut run = |idx: &[NodeRef]| (body.take().expect("one innermost body"))(idx);
+    walk("x", |x: &NodeRef| {
+        vec![walk("y", |y: &NodeRef| {
+            if dim == 2 {
+                run(&[x.clone(), y.clone()])
+            } else {
+                vec![walk("z", |z: &NodeRef| {
+                    run(&[x.clone(), y.clone(), z.clone()])
+                })]
+            }
+        })]
+    })
 }
 
 /// `off.subAssign( 0.5 ); off.mulAssign( jitter ); off.addAssign( 0.5 );`

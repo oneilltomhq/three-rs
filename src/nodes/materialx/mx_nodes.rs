@@ -10,8 +10,11 @@
 //! JS numbers become `float` constants in TSL, so a numeric argument here is
 //! `impl Into<NodeRef>`: pass `1.0`, not `1`, which would be an `int`.
 
-use crate::nodes::node::{NodeRef, Type};
-use crate::nodes::tsl::{call, int, vec2, vec3, vec4_join};
+use crate::nodes::node::{Node, NodeRef, Type};
+use crate::nodes::tsl::{
+    call, dpdx, dpdy, float, int, length, mix, sign, smoothstep, step, time, vec2, vec2_join, vec3,
+    vec3_join, vec4_join,
+};
 
 pub use super::mx_core::{mx_rotate2d, mx_rotate3d};
 
@@ -395,4 +398,331 @@ pub fn mx_rgbtohsv(c: NodeRef) -> NodeRef {
 /// `mx_srgb_texture_to_lin_rec709( color )`.
 pub fn mx_srgb_texture_to_lin_rec709(color: NodeRef) -> NodeRef {
     super::mx_color::mx_srgb_texture_to_lin_rec709(color.to(Type::Vec3))
+}
+
+// ---------------------------------------------------------------------------
+// texture-coordinate helpers
+// ---------------------------------------------------------------------------
+
+/// `vec2( x )` of a node that is already a `vec2`: three still wraps it in a
+/// `ConvertNode`, which prints as `x` but is a node of its own, so `x` is
+/// reached once however often the wrapper is read and never becomes a var.
+/// `mx_place2d` reads `mx_rotate2d`'s input four times and three writes the
+/// `( centered / scale )` out four times; `NodeRef::to()` would return `x`
+/// itself and let the builder hoist it.
+fn convert(x: NodeRef) -> NodeRef {
+    let ty = x.ty();
+    NodeRef::new(Node::Cast { node: x, ty })
+}
+
+/// `mix( a, b, t )` with a `bool` weight, which `MathNode` builds as
+/// `f32( t )` — the component count of the weight, not of the output.
+fn mix_bool(a: impl Into<NodeRef>, b: impl Into<NodeRef>, t: NodeRef) -> NodeRef {
+    let ty = Type::vector_of(Type::F32, t.ty().components());
+    mix(a, b, t.to(ty))
+}
+
+/// `mx_aastep( threshold, value )` — a step antialiased over one pixel's
+/// screen-space footprint of `value`. Three's literal `0.70710678118654757`
+/// is the same `f64` as `FRAC_1_SQRT_2`.
+pub fn mx_aastep(threshold: impl Into<NodeRef>, value: impl Into<NodeRef>) -> NodeRef {
+    let threshold = threshold.into().to(Type::F32);
+    let value = value.into().to(Type::F32);
+    let afwidth = length(vec2_join(vec![dpdx(&value), dpdy(&value)]))
+        .mul(float(std::f64::consts::FRAC_1_SQRT_2));
+    smoothstep(threshold.sub(&afwidth), threshold.add(&afwidth), value)
+}
+
+/// `mx_ramplr( valuel, valuer, texcoord = uv() )` — left-to-right ramp.
+pub fn mx_ramplr(
+    valuel: impl Into<NodeRef>,
+    valuer: impl Into<NodeRef>,
+    texcoord: NodeRef,
+) -> NodeRef {
+    mix(valuel, valuer, texcoord.x().clamp(float(0.0), float(1.0)))
+}
+
+/// `mx_ramptb( valueb, valuet, texcoord = uv() )` — bottom-to-top ramp.
+pub fn mx_ramptb(
+    valueb: impl Into<NodeRef>,
+    valuet: impl Into<NodeRef>,
+    texcoord: NodeRef,
+) -> NodeRef {
+    mix(valueb, valuet, texcoord.y().clamp(float(0.0), float(1.0)))
+}
+
+/// `mx_ramp4( valuetl, valuetr, valuebl, valuebr, texcoord = uv() )` —
+/// bilinear between four corners.
+pub fn mx_ramp4(
+    valuetl: impl Into<NodeRef>,
+    valuetr: impl Into<NodeRef>,
+    valuebl: impl Into<NodeRef>,
+    valuebr: impl Into<NodeRef>,
+    texcoord: NodeRef,
+) -> NodeRef {
+    let u = texcoord.x().clamp(float(0.0), float(1.0));
+    let v = texcoord.y().clamp(float(0.0), float(1.0));
+    let top = mix(valuetl, valuetr, &u);
+    let bottom = mix(valuebl, valuebr, &u);
+    mix(bottom, top, v)
+}
+
+/// `mx_splitlr( valuel, valuer, center, texcoord = uv() )` — an antialiased
+/// left/right split at `center`.
+pub fn mx_splitlr(
+    valuel: impl Into<NodeRef>,
+    valuer: impl Into<NodeRef>,
+    center: impl Into<NodeRef>,
+    texcoord: NodeRef,
+) -> NodeRef {
+    mix(valuel, valuer, mx_aastep(center, texcoord.x()))
+}
+
+/// `mx_splittb( valueb, valuet, center, texcoord = uv() )`.
+pub fn mx_splittb(
+    valueb: impl Into<NodeRef>,
+    valuet: impl Into<NodeRef>,
+    center: impl Into<NodeRef>,
+    texcoord: NodeRef,
+) -> NodeRef {
+    mix(valueb, valuet, mx_aastep(center, texcoord.y()))
+}
+
+/// `mx_transform_uv( uv_scale = 1, uv_offset = 0, uv_geo = uv() )`.
+pub fn mx_transform_uv(
+    uv_scale: impl Into<NodeRef>,
+    uv_offset: impl Into<NodeRef>,
+    uv_geo: NodeRef,
+) -> NodeRef {
+    uv_geo.mul(uv_scale).add(uv_offset)
+}
+
+/// `mx_place2d( texcoord, pivot = vec2( 0, 0 ), scale = vec2( 1, 1 ),
+/// rotate = float( 0 ), offset = vec2( 0, 0 ), operationorder = int( 0 ) )`.
+pub fn mx_place2d(
+    texcoord: impl Into<NodeRef>,
+    pivot: impl Into<NodeRef>,
+    scale: impl Into<NodeRef>,
+    rotate: impl Into<NodeRef>,
+    offset: impl Into<NodeRef>,
+    operationorder: Place2dOrder,
+) -> NodeRef {
+    let (pivot, scale, rotate, offset) = (pivot.into(), scale.into(), rotate.into(), offset.into());
+    let centered = texcoord.into().sub(&pivot);
+    let srt = || {
+        mx_rotate2d(convert(centered.div(&scale)), rotate.clone())
+            .sub(&offset)
+            .add(&pivot)
+    };
+    let trs = || {
+        mx_rotate2d(convert(centered.sub(&offset)), rotate.clone())
+            .div(&scale)
+            .add(&pivot)
+    };
+    match operationorder {
+        Place2dOrder::Srt => srt(),
+        Place2dOrder::Trs => trs(),
+        Place2dOrder::Node(order) => {
+            // `float( int( 0 ) )` of a constant is folded to `0.0` by TSL.
+            let order = match &*order.0 {
+                Node::Const { values, .. } if values.len() == 1 => float(values[0]),
+                _ => order.to(Type::F32),
+            };
+            mix(srt(), trs(), step(float(0.5), order))
+        }
+    }
+}
+
+/// `mx_place2d`'s `operationorder`. Three branches on whether it is a JS
+/// number (picked at build time) or a node (blended in the shader).
+#[derive(Clone)]
+pub enum Place2dOrder {
+    /// The number `0`: scale, rotate, translate.
+    Srt,
+    /// Any other number: translate, rotate, scale.
+    Trs,
+    /// A node: `mix( srt, trs, step( 0.5, float( order ) ) )`. Three's default
+    /// is `Node( int( 0 ) )`.
+    Node(NodeRef),
+}
+
+/// `mx_heighttonormal( input, scale = 1, texcoord = uv() )` — a tangent-space
+/// normal from the screen-space derivatives of a height, remapped to `[0, 1]`.
+pub fn mx_heighttonormal(
+    input: impl Into<NodeRef>,
+    scale: impl Into<NodeRef>,
+    texcoord: NodeRef,
+) -> NodeRef {
+    let sobel_scale = float(1.0 / 16.0);
+    let height = input.into().to(Type::F32);
+    let uv_node = convert(texcoord.to(Type::Vec2));
+    let d_hds = vec2_join(vec![dpdx(&height), dpdy(&height)])
+        .mul(scale.into().to(Type::F32))
+        .mul(sobel_scale);
+    let d_uds = vec2_join(vec![dpdx(uv_node.x()), dpdy(uv_node.x())]);
+    let d_vds = vec2_join(vec![dpdx(uv_node.y()), dpdy(uv_node.y())]);
+    let tangent = vec3_join(vec![d_uds.x(), d_vds.x(), d_hds.x()]);
+    let bitangent = vec3_join(vec![d_uds.y(), d_vds.y(), d_hds.y()]);
+    let n = tangent.cross(bitangent);
+    let invalid = n.dot(&n).less_than(float(1e-12));
+    let n = mix_bool(&n, vec3(0.0, 0.0, 1.0), invalid);
+    let mirrored = n.z().less_than(float(0.0));
+    let n = mix_bool(&n, n.mul(float(-1.0)), mirrored);
+    n.normalize().mul(float(0.5)).add(float(0.5))
+}
+
+// ---------------------------------------------------------------------------
+// math
+// ---------------------------------------------------------------------------
+
+/// `mx_safepower( in1, in2 = 1 )` — `pow( abs( in1 ), in2 ) * sign( in1 )`.
+pub fn mx_safepower(in1: impl Into<NodeRef>, in2: impl Into<NodeRef>) -> NodeRef {
+    let in1 = in1.into().to(Type::F32);
+    in1.abs().pow(in2).mul(sign(&in1))
+}
+
+/// `mx_contrast( input, amount = 1, pivot = .5 )`.
+pub fn mx_contrast(
+    input: impl Into<NodeRef>,
+    amount: impl Into<NodeRef>,
+    pivot: impl Into<NodeRef>,
+) -> NodeRef {
+    let pivot = pivot.into();
+    input
+        .into()
+        .to(Type::F32)
+        .sub(&pivot)
+        .mul(amount)
+        .add(pivot)
+}
+
+/// `mx_smoothstep( in, low = 0, high = 1 )` — MaterialX's smoothstep, which
+/// degrades to a step when `high <= low` instead of dividing by zero.
+pub fn mx_smoothstep(
+    input: impl Into<NodeRef>,
+    low: impl Into<NodeRef>,
+    high: impl Into<NodeRef>,
+) -> NodeRef {
+    let (input, low, high) = (input.into(), low.into(), high.into());
+    let range = high.sub(&low);
+    let safe_range = range.abs().max(float(1e-6));
+    let t = input
+        .sub(&low)
+        .div(safe_range)
+        .clamp(float(0.0), float(1.0));
+    let hermite = t.mul(&t).mul(float(3.0).sub(float(2.0).mul(&t)));
+    let fallback = step(&high, &input);
+    let use_fallback = step(&high, &low);
+    mix(hermite, fallback, use_fallback)
+}
+
+/// `mx_add( in1, in2 = float( 0 ) )`.
+pub fn mx_add(in1: impl Into<NodeRef>, in2: impl Into<NodeRef>) -> NodeRef {
+    in1.into().add(in2)
+}
+
+/// `mx_subtract( in1, in2 = float( 0 ) )`.
+pub fn mx_subtract(in1: impl Into<NodeRef>, in2: impl Into<NodeRef>) -> NodeRef {
+    in1.into().sub(in2)
+}
+
+/// `mx_multiply( in1, in2 = float( 1 ) )`.
+pub fn mx_multiply(in1: impl Into<NodeRef>, in2: impl Into<NodeRef>) -> NodeRef {
+    in1.into().mul(in2)
+}
+
+/// `mx_divide( in1, in2 = float( 1 ) )`.
+pub fn mx_divide(in1: impl Into<NodeRef>, in2: impl Into<NodeRef>) -> NodeRef {
+    in1.into().div(in2)
+}
+
+/// `mx_modulo( in1, in2 = float( 1 ) )` — `in1 - in2 * floor( in1 / in2 )`,
+/// GLSL's `mod`, not WGSL's truncating `%`.
+pub fn mx_modulo(in1: impl Into<NodeRef>, in2: impl Into<NodeRef>) -> NodeRef {
+    let (in1, in2) = (in1.into(), in2.into());
+    in1.sub(in2.mul(in1.div(&in2).floor()))
+}
+
+/// `mx_power( in1, in2 = float( 1 ) )`.
+pub fn mx_power(in1: impl Into<NodeRef>, in2: impl Into<NodeRef>) -> NodeRef {
+    in1.into().pow(in2)
+}
+
+/// `mx_atan2( in1 = float( 0 ), in2 = float( 1 ) )` — `atan( y, x )`.
+pub fn mx_atan2(in1: impl Into<NodeRef>, in2: impl Into<NodeRef>) -> NodeRef {
+    in1.into().atan2(in2)
+}
+
+/// `mx_timer()` — three's `time`.
+pub fn mx_timer() -> NodeRef {
+    time()
+}
+
+/// `mx_invert( in1, amount = float( 1 ) )` — `amount - in1`.
+pub fn mx_invert(in1: impl Into<NodeRef>, amount: impl Into<NodeRef>) -> NodeRef {
+    amount.into().sub(in1)
+}
+
+/// `mx_ifgreater( value1, value2, in1, in2 )` — `in1` where `value1 > value2`.
+pub fn mx_ifgreater(
+    value1: impl Into<NodeRef>,
+    value2: impl Into<NodeRef>,
+    in1: impl Into<NodeRef>,
+    in2: impl Into<NodeRef>,
+) -> NodeRef {
+    mix_bool(in2, in1, value1.into().greater_than(value2))
+}
+
+/// `mx_ifgreatereq( value1, value2, in1, in2 )`.
+pub fn mx_ifgreatereq(
+    value1: impl Into<NodeRef>,
+    value2: impl Into<NodeRef>,
+    in1: impl Into<NodeRef>,
+    in2: impl Into<NodeRef>,
+) -> NodeRef {
+    mix_bool(in2, in1, value1.into().greater_than_equal(value2))
+}
+
+/// `mx_ifequal( value1, value2, in1, in2 )`.
+pub fn mx_ifequal(
+    value1: impl Into<NodeRef>,
+    value2: impl Into<NodeRef>,
+    in1: impl Into<NodeRef>,
+    in2: impl Into<NodeRef>,
+) -> NodeRef {
+    mix_bool(in2, in1, value1.into().equal(value2))
+}
+
+/// `mx_separate( in1, channelOrOut = null )`'s second argument.
+#[derive(Clone, Copy, Debug)]
+pub enum MxChannel<'a> {
+    /// `null`: the input itself.
+    Whole,
+    /// A channel name — `'x'`/`'r'` … `'w'`/`'a'`, optionally `out`-prefixed
+    /// (`'outy'`), any case. An unknown name returns the input.
+    Name(&'a str),
+    /// A component index.
+    Index(usize),
+}
+
+/// `mx_separate( in1, channelOrOut )` — one component of `in1`.
+pub fn mx_separate(in1: NodeRef, channel: MxChannel<'_>) -> NodeRef {
+    let index = |c: &str| match c {
+        "x" | "r" => Some(0),
+        "y" | "g" => Some(1),
+        "z" | "b" => Some(2),
+        "w" | "a" => Some(3),
+        _ => None,
+    };
+    match channel {
+        MxChannel::Whole => in1,
+        MxChannel::Index(i) => in1.element(i),
+        MxChannel::Name(name) => {
+            let c = name.strip_prefix("out").unwrap_or(name).to_lowercase();
+            match index(&c) {
+                Some(i) => in1.element(i),
+                None => in1,
+            }
+        }
+    }
 }

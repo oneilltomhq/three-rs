@@ -26,7 +26,9 @@ use std::rc::Rc;
 
 use three_rs::nodes::materialx as mx;
 use three_rs::nodes::node::{FnDef, Type};
-use three_rs::nodes::tsl::{call, float, position_local, shader_fn, to_varying, uv, vec3, vec4};
+use three_rs::nodes::tsl::{
+    call, float, int, position_local, shader_fn, to_varying, uv, vec2, vec3, vec4,
+};
 use three_rs::nodes::{MaterialFlow, NodeBuilder, NodeRef};
 
 const FIXTURE: &str = concat!(
@@ -159,8 +161,117 @@ fn cases() -> Vec<Case> {
     .collect()
 }
 
-fn more_cases(_uv: fn() -> NodeRef) -> Vec<Case> {
+fn more_cases(uv: fn() -> NodeRef) -> Vec<Case> {
+    use mx::{MxChannel, Place2dOrder};
     vec![
+        // helpers
+        case("aastep", Type::F32, &[F, F], |a| {
+            mx::mx_aastep(a[0].clone(), a[1].clone())
+        }),
+        case("ramplr", Type::Vec3, &[P3, P3, P2], |a| {
+            mx::mx_ramplr(a[0].clone(), a[1].clone(), a[2].clone())
+        }),
+        case("ramptb", Type::Vec3, &[P3, P3], move |a| {
+            mx::mx_ramptb(a[0].clone(), a[1].clone(), uv())
+        }),
+        case("ramp4", Type::Vec3, &[P3, P3, P3, P3, P2], |a| {
+            mx::mx_ramp4(
+                a[0].clone(),
+                a[1].clone(),
+                a[2].clone(),
+                a[3].clone(),
+                a[4].clone(),
+            )
+        }),
+        case("splitlr", Type::Vec3, &[P3, P3, F, P2], |a| {
+            mx::mx_splitlr(a[0].clone(), a[1].clone(), a[2].clone(), a[3].clone())
+        }),
+        case("splittb", Type::Vec3, &[P3, P3, F], move |a| {
+            mx::mx_splittb(a[0].clone(), a[1].clone(), a[2].clone(), uv())
+        }),
+        case("transform_uv", Type::Vec2, &[F, F, P2], |a| {
+            mx::mx_transform_uv(a[0].clone(), a[1].clone(), a[2].clone())
+        }),
+        case("transform_uv_default", Type::Vec2, &[], move |_| {
+            mx::mx_transform_uv(1.0, 0.0, uv())
+        }),
+        case("safepower", Type::F32, &[F, F], |a| {
+            mx::mx_safepower(a[0].clone(), a[1].clone())
+        }),
+        case("contrast", Type::F32, &[F], |a| {
+            mx::mx_contrast(a[0].clone(), 1.0, 0.5)
+        }),
+        case("contrast_args", Type::F32, &[F, F, F], |a| {
+            mx::mx_contrast(a[0].clone(), a[1].clone(), a[2].clone())
+        }),
+        case("smoothstep", Type::F32, &[F, F, F], |a| {
+            mx::mx_smoothstep(a[0].clone(), a[1].clone(), a[2].clone())
+        }),
+        case("add", Type::Vec3, &[P3, P3], |a| {
+            mx::mx_add(a[0].clone(), a[1].clone())
+        }),
+        case("subtract", Type::Vec3, &[P3, P3], |a| {
+            mx::mx_subtract(a[0].clone(), a[1].clone())
+        }),
+        case("multiply", Type::Vec3, &[P3, F], |a| {
+            mx::mx_multiply(a[0].clone(), a[1].clone())
+        }),
+        case("divide", Type::Vec3, &[P3, F], |a| {
+            mx::mx_divide(a[0].clone(), a[1].clone())
+        }),
+        case("modulo", Type::Vec3, &[P3, F], |a| {
+            mx::mx_modulo(a[0].clone(), a[1].clone())
+        }),
+        case("modulo_default", Type::F32, &[F], |a| {
+            mx::mx_modulo(a[0].clone(), 1.0)
+        }),
+        case("power", Type::F32, &[F, F], |a| {
+            mx::mx_power(a[0].clone(), a[1].clone())
+        }),
+        case("atan2", Type::F32, &[F, F], |a| {
+            mx::mx_atan2(a[0].clone(), a[1].clone())
+        }),
+        case("timer", Type::F32, &[], |_| mx::mx_timer()),
+        case("invert", Type::F32, &[F], |a| {
+            mx::mx_invert(a[0].clone(), 1.0)
+        }),
+        case("ifgreater", Type::Vec3, &[F, F, P3, P3], |a| {
+            mx::mx_ifgreater(a[0].clone(), a[1].clone(), a[2].clone(), a[3].clone())
+        }),
+        case("ifgreatereq", Type::Vec3, &[F, F, P3, P3], |a| {
+            mx::mx_ifgreatereq(a[0].clone(), a[1].clone(), a[2].clone(), a[3].clone())
+        }),
+        case("ifequal", Type::F32, &[F, F, F, F], |a| {
+            mx::mx_ifequal(a[0].clone(), a[1].clone(), a[2].clone(), a[3].clone())
+        }),
+        case("separate", Type::F32, &[P3], |a| {
+            mx::mx_separate(a[0].clone(), MxChannel::Name("outy"))
+                .add(mx::mx_separate(a[0].clone(), MxChannel::Index(2)))
+                .add(mx::mx_separate(a[0].clone(), MxChannel::Whole).x())
+        }),
+        case("place2d", Type::Vec2, &[P2, F], |a| {
+            mx::mx_place2d(
+                a[0].clone(),
+                vec2(0.5, 0.5),
+                vec2(2.0, 3.0),
+                a[1].clone(),
+                vec2(0.25, 0.0),
+                Place2dOrder::Node(int(0)),
+            )
+        }),
+        case("place2d_trs", Type::Vec2, &[P2, F], |a| {
+            mx::mx_place2d(
+                a[0].clone(),
+                vec2(0.5, 0.5),
+                vec2(2.0, 3.0),
+                a[1].clone(),
+                vec2(0.25, 0.0),
+                Place2dOrder::Trs,
+            )
+        }),
+        case("heighttonormal", Type::Vec3, &[F, P2], |a| {
+            mx::mx_heighttonormal(a[0].clone(), 2.0, a[1].clone())
+        }),
         // worley
         case("worley_noise_float_2", Type::F32, &[P2], |a| {
             mx::mx_worley_noise_float(a[0].clone(), 1.0, 0)
@@ -290,7 +401,7 @@ fn every_materialx_export_matches_r186() {
     // `uv()` is a varying the port numbers from its own counter; three's page
     // happens to make it `nodeVarying3`.
     let uv_name = wgsl.lines().find_map(|l| {
-        let l = l.trim_start_matches(|c: char| c == '\t' || c == ' ');
+        let l = l.trim_start_matches(['\t', ' ']);
         let rest = l.split("@location( ").nth(1)?;
         let name = rest.split(") ").nth(1)?.split(" :").next()?;
         (name.starts_with("nodeVarying") && l.contains("vec2<f32>")).then(|| name.to_string())
