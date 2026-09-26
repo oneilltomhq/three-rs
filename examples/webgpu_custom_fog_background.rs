@@ -47,16 +47,19 @@
 //! `rangeFogFactor( 2.7, 4 ).context( { getViewZ: () => scenePassViewZ } )` is
 //! that node fed to the fog factor in place of `positionView.z` — which is
 //! what a fragment shader running over a full-screen quad has no useful
-//! version of. The port passes it as an argument
-//! ([`range_fog_factor_with_view_z`]); `docs/nodes.md` §24 says why.
+//! version of. The port spells it the same way: [`context`] installs
+//! `getViewZ` and [`range_fog_factor`]'s `Fn()` body reads it when the
+//! builder expands it (`docs/nodes.md` §24.3, §39).
 //!
-//! [`range_fog_factor_with_view_z`]: three_rs::nodes::tsl::range_fog_factor_with_view_z
+//! [`context`]: three_rs::nodes::tsl::context
+//! [`range_fog_factor`]: three_rs::nodes::tsl::range_fog_factor
 
 use three_rs::addons::controls::OrbitControls;
 use three_rs::loaders::{GLTFLoader, UltraHdrLoader};
 use three_rs::materials::{tone_mapping_node, ToneMapping};
 use three_rs::nodes::pmrem_node::PmremEnvironment;
-use three_rs::nodes::tsl::{float, range_fog_factor_with_view_z};
+use three_rs::nodes::tsl::{float, range_fog_factor};
+use three_rs::nodes::ContextValue;
 use three_rs::{
     Color, PassNode, PerspectiveCamera, RenderPipeline, Renderer, RendererParameters, Scene,
 };
@@ -112,7 +115,8 @@ pub fn init() -> App {
     // `const fogFactor = rangeFogFactor( 2.7, 4 ).context( { getViewZ: () =>
     // scenePassViewZ } )` — equivalent to `scene.fog = new THREE.Fog(
     // 0x4080cc, 2.7, 4 )`, but evaluated over the composite quad.
-    let fog_factor = range_fog_factor_with_view_z(float(2.7), float(4.0), scene_pass_view_z);
+    let fog_factor = range_fog_factor(float(2.7), float(4.0))
+        .context(ContextValue::new().set("getViewZ", scene_pass_view_z));
 
     // `const scenePassTM = scenePass.toneMapping( THREE.ACESFilmicToneMapping, 1 )`.
     let scene_pass_tm = tone_mapping_node(ToneMapping::AcesFilmic, float(1.0), scene_pass.node());
