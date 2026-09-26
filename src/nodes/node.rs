@@ -103,21 +103,35 @@ impl Type {
     }
 }
 
-/// Which of the generated shader's two uniform blocks a uniform lives in.
+/// Which of the generated shader's uniform blocks a uniform lives in.
 ///
-/// Three has a `UniformGroupNode` per uniform; the two the ladder uses are
-/// `renderGroup` (per render call — camera, time, viewport) and `objectGroup`
-/// (per render object — model matrices, material values).
+/// Three has a `UniformGroupNode` per uniform; the ladder uses `renderGroup`
+/// (per render call — camera, time, viewport), `objectGroup` (per render
+/// object — model matrices, material values) and, under an `ArrayCamera`,
+/// `sharedUniformGroup( 'cameraIndex' )` — the one `u32` the backend swaps
+/// per sub-camera (`docs/nodes.md` §40).
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum UniformGroup {
     Render,
+    /// `cameraIndex`'s group, which three sorts between the two others
+    /// (`@group( 1 )` in `webgpu_camera_array`'s dump).
+    CameraIndex,
     Object,
 }
 
 impl UniformGroup {
+    /// The order the groups take their `@group( n )` indices in, each one
+    /// only when it has a binding.
+    pub const ORDER: [UniformGroup; 3] = [
+        UniformGroup::Render,
+        UniformGroup::CameraIndex,
+        UniformGroup::Object,
+    ];
+
     pub fn struct_name(self) -> &'static str {
         match self {
             UniformGroup::Render => "render",
+            UniformGroup::CameraIndex => "cameraIndex",
             UniformGroup::Object => "object",
         }
     }
@@ -139,6 +153,11 @@ pub enum UpdateType {
 pub enum UniformSource {
     CameraProjectionMatrix,
     CameraViewMatrix,
+    /// `cameraIndex` — `uniform( 0, 'uint' ).setName( 'u_cameraIndex' )`, the
+    /// sub-camera an `ArrayCamera` draw is for. The backend binds one group
+    /// per sub-camera rather than rewriting it, so the value written here is
+    /// never read; see `Draw::sub_cameras` in the renderer.
+    CameraIndex,
     CameraWorldMatrix,
     /// `cameraPosition` — `camera.matrixWorld`'s translation, which
     /// `getIBLVolumeRefraction` takes the world-space view vector from.
@@ -500,6 +519,14 @@ pub enum BufferSource {
     /// The values travel in an `Rc` so the buffer can be cached on the node's
     /// identity and uploaded once, like [`BufferSource::Attribute`].
     UniformArray(Rc<Vec<f32>>),
+    /// `Camera.js`' `uniformArray( matrices ).setGroup( renderGroup )
+    /// .setName( 'cameraViewMatrices' )` — every `ArrayCamera` sub-camera's
+    /// `matrixWorldInverse`, rewritten per render. A render-group buffer, the
+    /// only one.
+    CameraViewMatrices,
+    /// The same for `cameraProjectionMatrices` — the sub-cameras'
+    /// `projectionMatrix`.
+    CameraProjectionMatrices,
     /// `referenceBuffer( 'skeleton.boneMatrices', 'mat4', bones )` — the
     /// skeleton's bone matrices as one `array< mat4x4<f32>, N >`. Three falls
     /// back to a bone *texture* when `bones * 64` passes the uniform buffer
@@ -545,6 +572,19 @@ impl BufferSource {
             self,
             BufferSource::Storage | BufferSource::AtomicStorage | BufferSource::Struct { .. }
         )
+    }
+
+    /// The group the binding joins and the name three gives it: the two
+    /// camera arrays are `renderGroup` buffers named by `setName()`, and
+    /// everything else is an object-group `NodeBuffer_N` (`None`).
+    pub fn group_and_name(&self) -> (UniformGroup, Option<&'static str>) {
+        match self {
+            BufferSource::CameraViewMatrices => (UniformGroup::Render, Some("cameraViewMatrices")),
+            BufferSource::CameraProjectionMatrices => {
+                (UniformGroup::Render, Some("cameraProjectionMatrices"))
+            }
+            _ => (UniformGroup::Object, None),
+        }
     }
 }
 
@@ -1408,6 +1448,8 @@ impl std::hash::Hash for BufferSource {
             | BufferSource::InstanceColor
             | BufferSource::MorphInfluences
             | BufferSource::BoneMatrices
+            | BufferSource::CameraViewMatrices
+            | BufferSource::CameraProjectionMatrices
             | BufferSource::Storage
             | BufferSource::AtomicStorage => {}
         }
@@ -1468,6 +1510,8 @@ impl std::fmt::Debug for BufferSource {
                 .finish(),
             BufferSource::MorphInfluences => f.write_str("MorphInfluences"),
             BufferSource::BoneMatrices => f.write_str("BoneMatrices"),
+            BufferSource::CameraViewMatrices => f.write_str("CameraViewMatrices"),
+            BufferSource::CameraProjectionMatrices => f.write_str("CameraProjectionMatrices"),
             BufferSource::Attribute(data) => f
                 .debug_tuple("Attribute")
                 .field(&format_args!("{} floats", data.len()))

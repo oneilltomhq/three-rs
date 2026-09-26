@@ -234,9 +234,15 @@ mod webgpu_shadowmap_pointlight;
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_struct_drawindirect;
 
+#[path = "webgpu_camera_array.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_camera_array;
 #[path = "webgpu_clearcoat.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_clearcoat;
+#[path = "webgpu_materials_toon.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_materials_toon;
 #[path = "webgpu_modifier_curve.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_modifier_curve;
@@ -246,6 +252,13 @@ mod webgpu_occlusion;
 #[path = "webgpu_particles.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_particles;
+
+#[path = "webgpu_instance_sprites.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_instance_sprites;
+#[path = "webgpu_sprites.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_sprites;
 
 /// Every graded example, in the README's order, paired with a call of its
 /// `init()`.
@@ -397,6 +410,14 @@ const GRADED: &[(&str, fn())] = &[
     ("webgpu_clearcoat", || drop(webgpu_clearcoat::init())),
     ("webgpu_modifier_curve", || {
         drop(webgpu_modifier_curve::init())
+    }),
+    ("webgpu_camera_array", || drop(webgpu_camera_array::init())),
+    ("webgpu_sprites", || drop(webgpu_sprites::init())),
+    ("webgpu_instance_sprites", || {
+        drop(webgpu_instance_sprites::init())
+    }),
+    ("webgpu_materials_toon", || {
+        drop(webgpu_materials_toon::init())
     }),
     ("webgpu_occlusion", || drop(webgpu_occlusion::init())),
 ];
