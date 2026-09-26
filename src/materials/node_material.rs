@@ -563,7 +563,26 @@ fn setup_inner(
     } else {
         setup_diffuse_color(material, ctx, &mut fragment);
 
-        let outgoing = if let Some(env_map) = &material.env_map {
+        // `NodeMaterial.setupLighting()` for a material with no lighting model
+        // of its own: `lights = this.lights || this.lightsNode !== null`, and
+        // the `LightsNode` runs only `if ( lightsNode.getScope().hasLights )`.
+        // The model then comes from the `lightsNode.context( { lightingModel
+        // } )` the example wrapped the lights in.
+        let custom_lighting = material.lighting_model.as_ref().and_then(|model| {
+            let lights =
+                (material.lights && !ctx.lighting_disabled) || material.lights_node.is_some();
+            let list = material_lights(material, ctx);
+            (lights && !list.is_empty()).then_some((model, list))
+        });
+
+        let outgoing = if let Some((model, lights)) = custom_lighting {
+            crate::materials::lighting_model::lights_node(
+                model.as_ref(),
+                &lights,
+                material.received_shadow_position_node.as_ref(),
+                &mut fragment,
+            )
+        } else if let Some(env_map) = &material.env_map {
             // `BasicLightingModel` with an indirect environment contribution.
             fragment.push(
                 indirect_diffuse().assign(
