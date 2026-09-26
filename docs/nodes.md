@@ -3593,3 +3593,61 @@ Nothing generated changed. `dump_wgsl`'s output is byte-identical before and
 after, apart from one pointer printed in a `Debug` of an `ObjectUpdate`
 closure. Every `tests/nodes_*` gate passes unchanged, and so does the full
 ladder.
+
+## 38. `MeshToonNodeMaterial` and `toonOutlinePass` (`webgpu_materials_toon`)
+
+**The lighting model.** `ToonLightingModel` extends `LightingModel` directly,
+but its `indirect()` is Lambert's line for line: ambient irradiance times
+`BRDF_Lambert`, multiplied by AO. The port therefore runs `MaterialKind::Toon`
+through `setup_phong()`'s Lambert arm (`specular = false`). Only the per-light
+term changes. `toon::direct_light()` replaces Lambert's `saturate( dotNL )`
+with `getGradientIrradiance()`:
+
+* **With a `gradientMap`.** The irradiance is `vec3( gradientMap.r )`,
+  sampled at `vec2( dotNL * 0.5 + 0.5, 0 )`. Three reaches the map with
+  `materialReference( 'gradientMap', 'texture' ).context( { getUV } )`.
+  `getUV` replaces only the default `uv()`, and the texture node's
+  `updateMatrix` stays on, so the coordinate still goes through the map's uv
+  matrix. `tsl::texture_with_uv()` is that `.context( { getUV } )`: it is
+  `texture()` with the uv argument given, and it uses the same
+  `transformed_uv` and the same one uniform per texture.
+* **Without one.** It is the two-step ramp `mix( vec3( 0.7 ), vec3( 1 ),
+  smoothstep( 0.7 - fw.x, 0.7 + fw.x, coord.x ) )` with `fw = fwidth( coord )
+  * 0.5`. No rung draws this branch yet.
+
+**The gradient maps.** The page builds each ramp as `new DataTexture( colors,
+n, 1, RedFormat )`. `Texture::data_r8()` is that texture: `R8Unorm`,
+`flipY` false, no mipmaps, and `NearestFilter` for both min and mag. The last
+of these makes it unfilterable, so its tap is a `textureLoad` with the
+`tsl_coord_clampS_clampT_2d` helper, as three's dump has it. The page's loop
+writes one byte past the end of the array, and that store is dropped. The
+port simply builds `n` bytes.
+
+**`toonOutlinePass`.** Three's `ToonOutlinePassNode` is a `PassNode`. Its
+`updateBefore()` swaps the renderer's render-object function for one that
+draws a toon object with its outline material, then with its own material.
+The port's `ToonOutlinePassNode` wraps a `PassNode` and makes the same swap
+through the renderer's `toon_outline` field. The render loop checks that
+field at the point where three calls the function. For every draw whose
+material is `MaterialKind::Toon`, it pushes a copy of the draw with the
+outline material immediately before it. The outline material is three's
+`_createMaterial()`: a back-side node material whose `vertexNode` pushes each
+clip-space vertex along `normalize( pos - mvp * ( positionLocal -
+normalLocal ) )` by `thickness * pos.w`, with `colorNode = vec4( color, alpha
+)`.
+
+The divergences:
+
+* **One outline material, not one per toon material.** Three caches one
+  outline material per source material (`_materialCache`). Every one of them
+  is built from the same three nodes, so they differ only in identity. The
+  port keeps the one template. Each outline draw's program key is the source
+  material's key with a `VARIANT_TOON_OUTLINE` variant hashed with the
+  template's id, which is the way shadow materials are keyed. This keeps the
+  steady frame building nothing.
+* **No wireframe case.** Three skips the outline for a
+  `material.wireframe` toon material. The port's materials have no wireframe
+  mode, so there is nothing to skip.
+* **The outline is a `Basic` material.** Three's is a bare `NodeMaterial`
+  with `lights = false`. The port's `Basic` kind with its default `lights =
+  false` emits the same fragment flow (`m03`).
