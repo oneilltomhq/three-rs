@@ -158,6 +158,10 @@ struct GeometryGpu {
     /// because the rest of the renderer reaches for them by name.
     other: Vec<(String, wgpu::Buffer)>,
     index: Option<(wgpu::Buffer, wgpu::IndexFormat, u32)>,
+    /// `Geometries.wireframes.get( geometry )` — the `getWireframeIndex()`
+    /// buffer, built the first time a `wireframe` material draws this
+    /// geometry and kept beside the triangle index for the geometry's life.
+    wireframe_index: Option<(wgpu::Buffer, wgpu::IndexFormat, u32)>,
     vertex_count: u32,
     /// The `BufferAttribute.version` each of [`UPLOADED_ATTRIBUTES`] had when
     /// its buffer was written — three.js' `attribute.version` against
@@ -172,6 +176,16 @@ struct GeometryGpu {
 const UPLOADED_ATTRIBUTES: [&str; 3] = ["position", "normal", "uv"];
 
 impl GeometryGpu {
+    /// `Geometries.getIndex( renderObject )`: the wireframe index under a
+    /// `wireframe` material, the geometry's own otherwise.
+    fn draw_index(&self, wireframe: bool) -> Option<&(wgpu::Buffer, wgpu::IndexFormat, u32)> {
+        if wireframe {
+            self.wireframe_index.as_ref()
+        } else {
+            self.index.as_ref()
+        }
+    }
+
     fn slot(&self, index: usize) -> Option<&wgpu::Buffer> {
         match index {
             0 => self.position.as_ref(),
@@ -230,6 +244,10 @@ struct Primitive {
     topology: wgpu::PrimitiveTopology,
     /// Set only for an indexed `Line` that is not a `LineSegments`.
     strip_index_format: Option<wgpu::IndexFormat>,
+    /// A `Mesh` under a `wireframe` material: drawn through the geometry's
+    /// wireframe index, with `drawRange` doubled (`_getDrawParameters()`'s
+    /// `rangeFactor = 2`).
+    wireframe: bool,
 }
 
 impl Primitive {
@@ -239,18 +257,22 @@ impl Primitive {
     const TRIANGLES: Self = Self {
         topology: wgpu::PrimitiveTopology::TriangleList,
         strip_index_format: None,
+        wireframe: false,
     };
 
     /// `WebGPUUtils.getPrimitiveTopology( object, material )` plus the
     /// `stripIndexFormat` branch of `_getPrimitiveState()`.
     ///
     /// three.js' order is `isPoints`, then `isLineSegments || ( isMesh &&
-    /// material.wireframe )`, then `isLine`, then `isMesh`. `wireframe` is not
-    /// in this port, so the second arm is `isLineSegments` alone.
-    fn of(object: &crate::core::Object3D, geometry: &BufferGeometry) -> Self {
+    /// material.wireframe )`, then `isLine`, then `isMesh`.
+    fn of(object: &crate::core::Object3D, geometry: &BufferGeometry, wireframe: bool) -> Self {
+        // `material.wireframe === true && ! object.isPoints && ! object.isLineSegments
+        // && ! object.isLine` — `RenderObject`'s `rangeFactor` test; the
+        // topology's own test reads `isMesh`, which is the same set here.
+        let wireframe = wireframe && object.is_mesh();
         let topology = if object.is_points() {
             wgpu::PrimitiveTopology::PointList
-        } else if object.is_line_segments() {
+        } else if object.is_line_segments() || wireframe {
             wgpu::PrimitiveTopology::LineList
         } else if object.is_line() {
             wgpu::PrimitiveTopology::LineStrip
@@ -271,6 +293,7 @@ impl Primitive {
         Self {
             topology,
             strip_index_format,
+            wireframe,
         }
     }
 }
@@ -462,6 +485,8 @@ struct Draw {
     /// camera index, its own `cameraIndex` bind group. Empty for every other
     /// camera, which draws once.
     sub_cameras: Vec<SubCameraDraw>,
+    /// Draw through the geometry's wireframe index (`Primitive::wireframe`).
+    wireframe: bool,
 }
 
 /// One sub-camera of an `ArrayCamera` draw: `pass.setViewport( floor( vp *
@@ -1716,7 +1741,7 @@ impl Renderer {
                 .or(object.material())
                 .unwrap_or(&self.default_material);
 
-            let primitive = Primitive::of(&object, &geometry);
+            let primitive = Primitive::of(&object, &geometry, material.wireframe);
 
             // `MorphNode.update()`: with `morphTargetsRelative === false` the
             // base keeps the unmorphed position's share of the blend.
@@ -2212,7 +2237,9 @@ impl Renderer {
                     .expect("three-rs: the render list only holds drawables")
                     .clone();
                 let source = object.material().unwrap_or(&self.default_material);
-                let primitive = Primitive::of(&object, &geometry);
+                // The shadow material is never `wireframe`, so neither is the
+                // draw.
+                let primitive = Primitive::of(&object, &geometry, false);
                 let instance_matrix = object.instance_matrix().cloned();
                 let instance_color = object.instance_color().cloned();
                 let instance_count = object.instance_count();
@@ -2591,7 +2618,9 @@ impl Renderer {
                     .expect("three-rs: the render list only holds drawables")
                     .clone();
                 let source = object.material().unwrap_or(&self.default_material);
-                let primitive = Primitive::of(&object, &geometry);
+                // The shadow material is never `wireframe`, so neither is the
+                // draw.
+                let primitive = Primitive::of(&object, &geometry, false);
                 let instance_matrix = object.instance_matrix().cloned();
                 let instance_color = object.instance_color().cloned();
                 let instance_count = object.instance_count();
@@ -2916,6 +2945,9 @@ impl Renderer {
         for item in items {
             let geometry_id = item.geometry.id();
             self.ensure_geometry(&item.geometry);
+            if item.primitive.wireframe {
+                self.ensure_wireframe_index(&item.geometry);
+            }
 
             // `NodeManager.getForRender( renderObject )`: the material's built
             // program, from the cache on a steady frame and from
@@ -3057,13 +3089,16 @@ impl Renderer {
             // `{ start: 0, count: Infinity }` is the whole buffer, so this is
             // a no-op for every rung that does not set it —
             // `webgpu_compute_points` sets `drawRange.count = 1`.
-            let available = match &gpu.index {
+            let available = match gpu.draw_index(item.primitive.wireframe) {
                 Some((_, _, count)) => *count,
                 None => gpu.vertex_count,
             };
-            let first = (item.geometry.draw_range.start as u32).min(available);
+            // `rangeFactor`: a wireframe draw's indices are two per triangle
+            // corner, so the range is scaled to match.
+            let range_factor = if item.primitive.wireframe { 2 } else { 1 };
+            let first = (item.geometry.draw_range.start as u32 * range_factor).min(available);
             let elements = match item.geometry.draw_range.count {
-                Some(count) => (count as u32).min(available - first),
+                Some(count) => (count as u32 * range_factor).min(available - first),
                 None => available - first,
             };
             if item.sub_draws.is_empty() {
@@ -3106,6 +3141,7 @@ impl Renderer {
                 object: object.as_ref().map(|object| object.id),
                 occlusion_test: object.as_ref().is_some_and(|object| object.occlusion_test),
                 sub_cameras,
+                wireframe: item.primitive.wireframe,
             });
         }
 
@@ -3365,7 +3401,7 @@ impl Renderer {
             return;
         }
 
-        match &geometry.index {
+        match geometry.draw_index(draw.wireframe) {
             Some((buffer, format, _)) => {
                 pass.set_index_buffer(buffer.slice(..), *format);
                 pass.draw_indexed(
@@ -5544,6 +5580,7 @@ impl Renderer {
                     uv,
                     other,
                     index,
+                    wireframe_index: None,
                     vertex_count,
                     versions,
                 },
@@ -5551,6 +5588,69 @@ impl Renderer {
             },
         );
         self.info.memory.geometries = self.geometries.len();
+    }
+
+    /// `Geometries.getIndex()`'s `material.wireframe` arm: the geometry's
+    /// `getWireframeIndex()` buffer, built once per geometry and kept.
+    ///
+    /// Each triangle `a b c` becomes the three edges `a b`, `b c`, `c a`, from
+    /// the index when there is one and from the vertex order when there is
+    /// not. Three's non-indexed `count` is `position.array.length / 3 - 1`
+    /// (one short), with `Math.ceil( count / 3 ) * 6` indices — ported as is.
+    ///
+    /// Three rebuilds it when the geometry's index or position version moves;
+    /// the port's index is not versioned (see [`Self::refresh_geometry`]), so
+    /// a changed index is a new geometry and this entry goes with the old one.
+    fn ensure_wireframe_index(&mut self, geometry: &Rc<BufferGeometry>) {
+        let id = geometry.id();
+        if self.geometries[&id].gpu.wireframe_index.is_some() {
+            return;
+        }
+
+        let vertex_count = geometry.position().map(|p| p.count()).unwrap_or(0);
+        let source: Option<Vec<u32>> = geometry.index.as_ref().map(|index| match index {
+            Index::U16(v) => v.iter().map(|&i| u32::from(i)).collect(),
+            Index::U32(v) => v.clone(),
+        });
+        let count = match &source {
+            Some(array) => array.len(),
+            None => vertex_count.saturating_sub(1),
+        };
+        let mut indices: Vec<u32> = vec![0; count.div_ceil(3) * 6];
+        let mut j = 0;
+        let mut i = 0;
+        while i < count {
+            let (a, b, c) = match &source {
+                // Past the end of a short index JS reads `undefined`, which
+                // the typed array stores as 0.
+                Some(array) => (
+                    array[i],
+                    array.get(i + 1).copied().unwrap_or(0),
+                    array.get(i + 2).copied().unwrap_or(0),
+                ),
+                None => (i as u32, i as u32 + 1, i as u32 + 2),
+            };
+            indices[j..j + 6].copy_from_slice(&[a, b, b, c, c, a]);
+            j += 6;
+            i += 3;
+        }
+
+        // Three builds a `Uint16BufferAttribute` below 65535 vertices, but
+        // `WebGPUAttributeUtils.createAttribute()` widens every non-normalized
+        // `Uint16Array` to a `Uint32Array` on upload, so the GPU always sees
+        // `uint32` — as three's dump of `webgpu_camera` shows.
+        let (bytes, format) = (
+            bytemuck::cast_slice(&indices).to_vec(),
+            wgpu::IndexFormat::Uint32,
+        );
+        let buffer = self.create_buffer_init(
+            "three-rs wireframe index",
+            &bytes,
+            wgpu::BufferUsages::INDEX,
+        );
+        self.info.build.buffers_written += 1;
+        self.geometries.get_mut(&id).unwrap().gpu.wireframe_index =
+            Some((buffer, format, indices.len() as u32));
     }
 
     /// `WebGPUBackend.updateAttribute()`: an already-uploaded geometry whose
