@@ -8,9 +8,11 @@ against its own `examples/screenshots/webgpu_postprocessing_afterimage.jpg`
 here, both through `tools/dump-webgpu.mjs` and through three's unchanged
 `test/e2e/puppeteer.js --webgpu`, so the port scores the same 521. Intel Iris
 Xe, Mesa 25.3.6, wgpu on Vulkan. The e2e test is `#[ignore]`d with that
-reason, as `webgpu_textures_anisotropy`'s is, and the page sits in the
-steady-frame strip, which checks that frames two and three build and upload
-nothing.
+reason, as `webgpu_textures_anisotropy`'s is. The page sits in the
+steady-frame strip, which checks that frame three builds and uploads nothing.
+Frame two is exempt, as `webgpu_postprocessing_difference`'s is: the
+`_compRT` / `_oldRT` swap puts each texture handle over its other allocation
+for the first time there, which makes two views and two bind groups.
 
 The page draws 50000 additive `SpriteNodeMaterial` sprites, 2 units across,
 placed on a sphere and spiralled by `instancedBufferAttribute` time offsets,
