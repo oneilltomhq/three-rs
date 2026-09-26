@@ -4,6 +4,7 @@
 pub mod blending;
 mod dfg_lut;
 pub mod environment;
+pub mod lighting_model;
 pub mod line2;
 mod node_material;
 pub mod phong;
@@ -184,7 +185,7 @@ pub enum MaterialKind {
 ///
 /// - a field the *program* depends on — any node (`color_node`,
 ///   `position_node`, `fragment_node`, …), any map or `env_map`, `kind`,
-///   `lights`, `lights_node`, `flat_shading`, `fog`, `transparent`,
+///   `lights`, `lights_node`, `lighting_model`, `flat_shading`, `fog`, `transparent`,
 ///   `blending`, `alpha_to_coverage`, `world_units`, `size_attenuation`, `mask_node` — needs
 ///   [`set_needs_update`](Self::set_needs_update) after it changes, which is
 ///   `material.needsUpdate = true`. Without it the old program keeps drawing.
@@ -267,6 +268,18 @@ pub struct MeshBasicNodeMaterial {
     /// scene here rather than shared through an `Rc`. `None` means "every light
     /// in the scene", which is what `LightsNode` defaults to.
     pub lights_node: Option<Vec<usize>>,
+    /// The `lightingModel` of `material.lightsNode = lights( [ … ] ).context(
+    /// { lightingModel } )` — a user-defined
+    /// [`LightingModel`](lighting_model::LightingModel) that the `LightsNode`
+    /// drives in place of a built-in one.
+    ///
+    /// `LightingContextNode.setup()` reads `this.lightingModel ||
+    /// builder.context.lightingModel`, so the material's own
+    /// `setupLightingModel()` wins: this is read only by the kinds that have
+    /// none of their own — `Points`, `Sprite`, and `Basic` standing in for a
+    /// bare `NodeMaterial` — and ignored, as in three, by Phong, Lambert,
+    /// Standard and Physical. A program input, like `lights_node`.
+    pub lighting_model: Option<std::rc::Rc<dyn lighting_model::LightingModel>>,
     /// `material.maskNode` — `NodeMaterial.setupDiscard()` turns it into
     /// `If( mask.not(), () => Discard() )` at the top of the fragment.
     pub mask_node: Option<NodeRef>,
@@ -495,6 +508,7 @@ impl Default for MeshBasicNodeMaterial {
             flat_shading: false,
             lights: false,
             lights_node: None,
+            lighting_model: None,
             mask_node: None,
             received_shadow_position_node: None,
             fog: true,

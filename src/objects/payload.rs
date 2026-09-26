@@ -356,6 +356,7 @@ impl Payload {
                 Some(attributes) => attributes.instance_count() as u32,
                 None => mesh.count.unwrap_or(1) as u32,
             },
+            Payload::Sprite(sprite) => sprite.count as u32,
             _ => 1,
         }
     }

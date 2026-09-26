@@ -8,7 +8,7 @@
 //! [`PassNode`](crate::renderer::PassNode) and sets the renderer's
 //! `toon_outline` hook around [`PassNode::render`] instead, which the render
 //! loop reads per draw exactly where three calls the function. See
-//! `docs/nodes.md` §38.
+//! `docs/nodes.md` §42.
 
 use std::rc::Rc;
 

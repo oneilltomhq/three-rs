@@ -70,6 +70,7 @@ fn show_into(
     let flow = setup(material, &ctx, fog);
     let program = NodeBuilder::new()
         .with_output_components(components)
+        .with_array_cameras(ctx.array_cameras)
         .build(&flow);
     println!("########## {label} — vertex");
     println!("{}", program.vertex_wgsl);
@@ -210,6 +211,7 @@ fn main() {
             geometry_missing_normal: false,
             has_tangent_attribute: false,
             instanced_attributes: Vec::new(),
+            array_cameras: 0,
         },
     );
 
@@ -2413,6 +2415,54 @@ fn dump_room_environment() {
         outline.outline_material(),
         SetupContext::default(),
     );
+    // rung `webgpu_sprites`: one `SpriteNodeMaterial` on a `Sprite` (so
+    // `object.center` is read), rotated by `userData( 'rotation', 'float' )`,
+    // under `fog( color( 0x0000ff ), rangeFogFactor( 1500, 2100 ) )`. Against
+    // three's `m01` / `m02`.
+    let sprite_map = Texture::new(4, 4, Some(vec![0; 4 * 4 * 4]));
+    let sprite_texture = texture(&sprite_map);
+    let mut sprite_material = MeshBasicNodeMaterial::sprite();
+    sprite_material.color_node = Some(sprite_texture.mul(uv()).mul(2.0).saturate());
+    sprite_material.opacity_node = Some(sprite_texture.w());
+    sprite_material.rotation_node = Some(user_data("rotation", three_rs::nodes::Type::F32));
+    show_fog(
+        "sprites",
+        &sprite_material,
+        SetupContext {
+            sprite: true,
+            ..SetupContext::default()
+        },
+        Some(&fog(color(0x0000ff), range_fog_factor(1500.0, 2100.0))),
+    );
+    // rung `webgpu_instance_sprites`: `SpriteNodeMaterial( { map, alphaMap:
+    // map, alphaTest: 0.1 } )` on one `Sprite` of count 10000, placed by an
+    // instanced attribute and rotated by `time.add( instanceIndex ).sin()`,
+    // under `scene.fog = new FogExp2( … )`. Against three's `m01` / `m02`.
+    let snowflake = Texture::new(4, 4, Some(vec![0; 4 * 4 * 4]));
+    let mut instance_sprite = MeshBasicNodeMaterial::sprite();
+    instance_sprite.map = Some(snowflake.clone());
+    instance_sprite.alpha_map = Some(snowflake);
+    instance_sprite.alpha_test = 0.1;
+    instance_sprite.position_node = Some(instanced_data_attribute(
+        &std::rc::Rc::new(vec![0.0; 30]),
+        3,
+        0,
+        three_rs::nodes::Type::Vec3,
+    ));
+    instance_sprite.rotation_node = Some(time().add(instance_index()).sin());
+    instance_sprite.scale_node = Some(uniform_value(three_rs::nodes::Type::F32, vec![15.0]));
+    show_fog(
+        "instance_sprites",
+        &instance_sprite,
+        SetupContext {
+            sprite: true,
+            ..SetupContext::default()
+        },
+        Some(
+            &three_rs::SceneFog::from(three_rs::FogExp2::new(Color::from_hex(0x000000), 0.001))
+                .node(),
+        ),
+    );
     // `webgpu_textures_2d-array_compressed`: `new NodeMaterial()` with
     // `colorNode = texture( texturearray, uv().flipY() ).depth( depth )`.
     // The texture is a stand-in with the page's layer count; only its being
@@ -2438,6 +2488,84 @@ fn dump_room_environment() {
         "textures_2d_array_compressed",
         &array_material,
         SetupContext::default(),
+    );
+
+    // `webgpu_lights_custom`: the page's `CustomLightingModel` on a
+    // `PointsNodeMaterial` whose `lightsNode` is `lights( [ light1, light2,
+    // light3 ] ).context( { lightingModel } )` — three's `m05`.
+    #[derive(Debug)]
+    struct CustomLightingModel;
+    impl three_rs::materials::lighting_model::LightingModel for CustomLightingModel {
+        fn direct(
+            &self,
+            data: &three_rs::materials::lighting_model::DirectLightData,
+            builder: &mut three_rs::materials::lighting_model::LightingBuilder,
+        ) {
+            builder.push(
+                data.reflected_light
+                    .direct_diffuse
+                    .add_assign(data.light_color.clone()),
+            );
+        }
+    }
+    let mut custom_points = MeshBasicNodeMaterial::points();
+    custom_points.lights_node = Some(vec![0, 1, 2]);
+    custom_points.lighting_model = Some(std::rc::Rc::new(CustomLightingModel));
+    show(
+        "lights_custom_points",
+        &custom_points,
+        SetupContext {
+            lights: (0..3)
+                .map(|index| LightDesc {
+                    index,
+                    kind: LightKind::Point,
+                    shadow_map: None,
+                })
+                .collect(),
+            ..SetupContext::default()
+        },
+    );
+    // Its light spheres: a bare `NodeMaterial` with `colorNode = color( hex )`
+    // and the empty `lights()` — three's `m01`.
+    let mut custom_sphere = MeshBasicNodeMaterial::new();
+    custom_sphere.color_node = Some(Color::from_hex(0xffaa00).into());
+    custom_sphere.lights_node = Some(Vec::new());
+    show(
+        "lights_custom_sphere",
+        &custom_sphere,
+        SetupContext::default(),
+    );
+
+    dump_camera_array();
+}
+
+/// Rung `webgpu_camera_array`: the cylinder's `MeshPhongNodeMaterial` drawn
+/// through a 36-camera `ArrayCamera`, lit by the ambient light and the
+/// shadow-casting directional one, against `dump-camera_array/m0{2,3}`. The
+/// camera matrices are `array< mat4x4<f32>, 36 >` render-group buffers indexed
+/// by the flat `v_cameraIndex`, and the object group moves to `@group( 2 )`.
+fn dump_camera_array() {
+    let map = DepthTexture::new();
+    let material = MeshBasicNodeMaterial::phong(Color::from_hex(0xff0000));
+    show(
+        "camera_array_phong",
+        &material,
+        SetupContext {
+            array_cameras: 36,
+            lights: vec![
+                LightDesc {
+                    index: 0,
+                    kind: LightKind::Ambient,
+                    shadow_map: None,
+                },
+                LightDesc {
+                    index: 1,
+                    kind: LightKind::Directional,
+                    shadow_map: Some(ShadowMap::Planar(map)),
+                },
+            ],
+            ..SetupContext::default()
+        },
     );
 }
 

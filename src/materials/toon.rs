@@ -7,7 +7,7 @@
 //! material's `gradientMap`. Its `indirect()` is Lambert's word for word, so
 //! the fragment flow around it is `setup_phong()`'s Lambert arm; only the
 //! per-light term lives here. Read off `webgpu_materials_toon`'s dump
-//! (`m05`, `docs/nodes.md` §38).
+//! (`m05`, `docs/nodes.md` §42).
 
 use crate::nodes::tsl::*;
 use crate::nodes::{NodeRef, Type};

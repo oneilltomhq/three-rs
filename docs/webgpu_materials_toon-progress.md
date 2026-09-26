@@ -34,7 +34,7 @@ Both match statement for statement. The one difference is the port's usual
 | `tools/dump-webgpu.mjs` | dropped a stale `pageFile` line that threw `ReferenceError` on every page |
 | `examples/` | `webgpu_materials_toon.rs`; `dump_wgsl` sections `toon` and `toon_outline` |
 
-`docs/nodes.md` §38 is the long form.
+`docs/nodes.md` §42 is the long form.
 
 ## What the pixels found
 

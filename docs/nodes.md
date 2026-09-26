@@ -290,6 +290,10 @@ duration of that node's build. Two things follow from being inside a layer:
 
 ### What this port does
 
+> Since §38 the layer and `NORMAL_VALUE` are the `sub_build` and
+> `setup_normal` fields of one `BuildContext` stack; what follows is
+> otherwise unchanged.
+
 `src/nodes/tsl.rs` holds the layer and the context in two thread-locals,
 because our TSL functions are free functions rather than methods on a builder
 that is threaded through every call:
@@ -3594,7 +3598,270 @@ after, apart from one pointer printed in a `Debug` of an `ObjectUpdate`
 closure. Every `tests/nodes_*` gate passes unchanged, and so does the full
 ladder.
 
-## 38. `MeshToonNodeMaterial` and `toonOutlinePass` (`webgpu_materials_toon`)
+## 37. View offsets on both cameras, and render-pipeline hooks (issue #164)
+
+The groundwork TRAA (#165) needs, from #154 decisions 2 and 3. No rung.
+
+* **`set_view_offset` / `clear_view_offset` on `RenderCamera`.** Both of
+  three's cameras have them, so a hook or pass node can jitter whichever
+  camera it holds. `OrthographicCamera` gains `view: Option<CameraView>` and
+  three's `updateProjectionMatrix()` branch: `scaleW = ( right - left ) /
+  fullWidth / zoom`, then the window's planes. Unlike the perspective camera,
+  the orthographic one leaves `aspect` alone because it has none.
+  `tests/cameras_orthographic_camera.rs` ports three's QUnit file. That file
+  has no view-offset case, so the offset tests compare against matrices three
+  printed under node, and they match bit for bit.
+* **`RenderPipeline::on_before_render` / `on_after_render`.** These are
+  three's `OnBeforeRenderPipeline` / `OnAfterRenderPipeline`, typed
+  `Box<dyn FnMut(&mut Renderer)>`. Before-hooks run after the output node is
+  reassigned and before the renderer's tone mapping is neutralised.
+  After-hooks run once it is restored. Within each list, hooks run in the
+  order they were added. `tests/renderer_pipeline_hooks.rs` (GPU) checks the
+  order against the draw count.
+* **Divergence: hooks outlive a rebuild.** three collects the callbacks from
+  `EventNode`s while the quad material builds, into a context that
+  `_updateContext()` recreates, so a new `outputNode` drops them. The port has
+  no builder context to collect into. The node that needs a hook adds it when
+  it is built, and it stays for the pipeline's life.
+* **`SsaaPassNode` is unchanged.** It jitters once per sample inside its own
+  `render`, not once per pipeline render, so the hooks do not fit it. It
+  still reads `PerspectiveCamera.view` directly.
+
+## 38. `BuildContext`: one stack for `builder.context` (issue #160)
+
+Eight thread-locals in `tsl.rs` held `builder.context` one key at a time.
+Each had its own `with_…` function that swapped a value in and restored the
+old one afterwards. #155 §2 lists them: `SUB_BUILD`, `OVERRIDE_NODES`,
+`NORMAL_VALUE`, `FLAT_SHADING`, `MATERIAL_SIDE`, `HAS_TANGENT`,
+`POSITION_VIEW_VALUE` and `CLEARCOAT_NORMAL_VALUE`. They are now fields of
+one struct, `BuildContext` in `src/nodes/builder.rs`, kept on one stack.
+
+| was | `BuildContext` field | three |
+|---|---|---|
+| `SUB_BUILD` | `sub_build` | `builder.subBuildLayers` (one layer deep) |
+| `OVERRIDE_NODES` | `override_nodes` | `context.overrideNodes` (§27) |
+| `NORMAL_VALUE` | `setup_normal` | `context.setupNormal` (§7) |
+| `FLAT_SHADING` | `flat_shading` | `builder.isFlatShading()` |
+| `MATERIAL_SIDE` | `material_side` | `builder.material.side` |
+| `HAS_TANGENT` | `has_tangent` | `builder.geometry.hasAttribute( 'tangent' )` |
+| `POSITION_VIEW_VALUE` | `setup_position_view` | `context.setupPositionView` |
+| `CLEARCOAT_NORMAL_VALUE` | `setup_clearcoat_normal` | `context.setupClearcoatNormal` |
+
+Core keys are typed fields. Addon keys will go in `extra`, a
+`HashMap<&'static str, NodeRef>` (#155 decision 6), which nothing reads yet.
+Three of the fields are not `builder.context` keys in three: the layer, the
+flat-shading flag and the tangent flag live on the builder, its material and
+its geometry. They are here because they have the same lifetime and the same
+readers.
+
+`push_context( |cx| … )` is `ContextNode`'s setup. It copies the top entry,
+lets the caller change the keys it sets, pushes the copy and returns a
+`ContextGuard`, which pops it when dropped. `current_context( |cx| … )` reads
+the top entry, or the default one when nothing has been pushed. The `with_…`
+functions keep their signatures and are each a push and a call now. The
+change is that one stack holds all the keys, so a scope restores all of them
+in one pop, and #161's `context( node, { … } )` has a place to push to.
+
+**The stack is a thread-local beside the builder, not a field of it.** Three
+calls `NodeMaterial.setup()` from inside `builder.build()`, so the context
+object can live on the builder. The port builds the flow in
+`materials::setup()` first and creates the `NodeBuilder` afterwards
+(`Renderer::node_builder_state`), so there is no builder to hold it while the
+keys are being read. Merging the two phases is a bigger change than this
+issue. The stack is empty between material setups, and because the guard
+pops on drop, a panic inside one setup can no longer leave its keys
+installed for the next build on that thread.
+
+**Not moved.** The accessor memo maps (`NORMAL_VIEW`, `TANGENT_VIEW`,
+`NORMAL_WORLD`, `POSITION_VIEW`, `CLEARCOAT_NORMAL_VIEW`, …) and the
+singleton `Lazy` cells stay thread-locals. They are process-wide
+memoisation keyed on context values, not context: they give two builds with
+the same context the same node, as three's per-build `nodeData` gives one
+build one node. #155 proposes keying them on a hash of the context; that is
+left for when `context()` can install arbitrary keys.
+
+Nothing generated changed. `dump_wgsl`'s output is identical after each of
+the eight migrations, apart from the one `ObjectUpdate` pointer noted in §36.
+Every `tests/nodes_*` gate passes unchanged, and so does the full ladder.
+
+## 40. A user `LightingModel` and `ArrayCamera` (`webgpu_lights_custom`, `webgpu_camera_array`)
+
+### 40.1 `LightingModel` as a trait
+
+`webgpu_lights_custom` subclasses `THREE.LightingModel` and hands the instance
+to a material through `lights( [ … ] ).context( { lightingModel } )`.
+`src/materials/lighting_model.rs` ports the base class as a trait:
+
+* `start()`, `direct()`, `indirect()` and `finish()` default to three's base
+  bodies. `start()` runs `builder.lightsNode.setupLights()`, which calls
+  `direct()` once per direct light, and then calls `indirect()`.
+* three's methods append to the builder's current stack implicitly. The
+  port's methods push onto `LightingBuilder::stack` instead, and that stack is
+  spliced into the material's fragment statements.
+* `ReflectedLight`'s four accumulators are `vec3().toVar( name )`, as in
+  `LightingContextNode`. Each one is therefore declared where it is first
+  read, which is why `indirectDiffuse` is zeroed only in `totalDiffuse`'s
+  line in three's dump as well as ours.
+* `lights_node()` is `LightsNode.setup()`: `start()`, then the
+  `totalDiffuse` / `totalSpecular` / `outgoingLight` tail, then `finish()`.
+
+The material field `lighting_model` is the `lightingModel` from the
+context. `LightingContextNode.setup()` reads `this.lightingModel ||
+builder.context.lightingModel`, so it only takes effect on kinds with no model
+of their own (Points, Sprite, and Basic standing in for a bare
+`NodeMaterial`). The built-in models stay the `match` on `MaterialKind`. The
+trait is how a model the port does not ship gets in; it does not replace the
+built-in path.
+
+Not ported: `directRectArea()`, because the port has no `RectAreaLight`, and
+`ambientOcclusion()`, which is never called on a user model.
+
+### 40.2 `ArrayCamera`: how three does it
+
+With an `ArrayCamera`, `Camera.js` turns `cameraViewMatrix` and
+`cameraProjectionMatrix` into
+`uniformArray( matrices ).setGroup( renderGroup ).element( cameraIndex )`.
+`cameraIndex` is a `u32` uniform in its own `sharedUniformGroup(
+'cameraIndex' )`, read in the fragment stage through a flat `v_cameraIndex`
+varying. That group takes `@group(1)`, and the object group moves to
+`@group(2)`.
+
+`WebGPUBackend.draw()` then loops over the sub-cameras for every object. For
+each one it calls `setViewport( floor( vp * dpr ) )`, binds that
+sub-camera's prebuilt `cameraIndex` bind group, and issues the draw. `dpr` is
+the renderer's pixel ratio for the canvas and 1 for a user render target.
+Culling goes through a `FrustumArray`: an object is drawn if any sub-camera's
+frustum holds it, and it is then drawn for every sub-camera.
+
+### 40.3 `ArrayCamera`: the port
+
+* **Substitution at build time.** `NodeBuilder::with_array_cameras( n )`
+  swaps the `CameraViewMatrix` / `CameraProjectionMatrix` uniform nodes for
+  `BufferElement` nodes in `analyze()` and `generate()`. It does not rebuild
+  them in `tsl`: the TSL singletons (`camera_view_matrix()` and the nodes
+  built on it, such as `positionView` and `modelViewMatrix`) are cached
+  process-wide and already hold the plain uniform. The element is
+  `BufferSource::CameraViewMatrices[ v_cameraIndex ]`, where the varying wraps
+  a `UniformGroup::CameraIndex` uniform.
+* **Bind groups.** `UniformGroup::ORDER` is `[Render, CameraIndex, Object]`.
+  Group numbers count the groups in use, so pages without an array camera
+  keep `Render = 0, Object = 1` byte for byte. The two matrix arrays sit in
+  the render group under three's fixed names `cameraViewMatrices` and
+  `cameraProjectionMatrices`, not `NodeBuffer_N`.
+* **The cache key.** `SetupContext::array_cameras` is the sub-camera count,
+  so a material drawn through both kinds of camera builds two programs. The
+  shadow passes set it to 0.
+* **Draws.** `Renderer::sub_camera_draws()` makes one 16-byte slot buffer and
+  bind group per sub-camera index (`SlotOwner::CameraIndex(i)`). `record_pass`
+  sets the pipeline, bind groups and vertex buffers once. Then, for each
+  sub-camera, it sets the viewport, rebinds the `cameraIndex` group and calls
+  `issue_draw()` (the old draw body).
+* **Culling.** `ProjectCamera::sub_frustums` is `FrustumArray`: an object is
+  kept if any sub-frustum holds its bounding sphere.
+* **`camera.viewport`.** `PerspectiveCamera::viewport` is
+  `Option<Vector4>`, in CSS pixels with a top-left origin as in three.
+  `ArrayCamera` is a base `PerspectiveCamera` (`Deref`) plus `cameras`.
+  `RenderCamera::sub_cameras()` defaults to `&[]`.
+
+### 40.4 Divergences
+
+* **Binding numbers of the matrix arrays.** Three gives each stage its own
+  `cameraViewMatrices` binding (the fragment's at 1, the vertex's at 2 and
+  3). The port declares each array once per program. The WGSL indexes them
+  the same way.
+* **`v_cameraIndex` in the vertex stage.** Three reads
+  `varyings.v_cameraIndex` back in the vertex stage. The port reads a private
+  `v_cameraIndex` it assigned from the same uniform, which gives the same
+  value. Varying locations are ordered differently, as in §8.
+* **`subcamera.copy( camera )` is reproduced as the page wrote it.** It
+  copies the `ArrayCamera`'s own defaults (fov 50, far 2000), not the sub-camera's
+  constructor's 40 / 10. The example does the same, and the frame is
+  pixel-identical to three's `actual_full.png`.
+* **No XR, bundles or layer textures.** `WebGPUBackend`'s array-texture
+  (multiview) path and its render-bundle path are not ported.
+  `object.layers.test( subCamera.layers )` always passes, because the port
+  has no layers.
+
+## 41. Sprites: `userData`, `Sprite.count`, and fog in the material's scope (`webgpu_sprites`, `webgpu_instance_sprites`)
+
+Both pages draw `SpriteNodeMaterial`, which the port already had for the
+galaxy and the particles (§33). What they add is small, but one piece of it
+is a correction to how every fog node was built.
+
+### 41.1 `userData( name, type )`
+
+`webgpu_sprites` gives two hundred `Sprite`s one material and sets
+`material.rotationNode = userData( 'rotation', 'float' )`. Each sprite's
+`userData.rotation` grows by a different step each frame. `UserDataNode` is a
+`ReferenceNode` whose reference is `frame.object.userData`, with
+`updateType = OBJECT`: an object-group `uniform()` rewritten before each draw.
+The port already had that shape as `uniform_object` (§19), so
+`tsl::user_data( name, ty )` is `uniform_object( ty, |object| … )` reading
+`object.user_data[ name ]`. `Object3D.user_data` is three's open `userData`
+object, a `serde_json::Map`. It is deep-copied on clone, as three's
+`JSON.parse( JSON.stringify( … ) )` copies it. All two hundred draws share one
+program and one pipeline, and each writes its own float into
+`object.nodeUniform4` (`nodeUniform3` in the port's numbering).
+
+### 41.2 Fog is built inside the material
+
+`Fog.js`' factors are `Fn()`s. `rangeFogFactor( near, far )` reads
+`getViewZNode( builder )`, which is `positionView.z` read **while the
+material is being built**. `positionView` is
+`builder.context.setupPositionView()`, and for a sprite that is
+`SpriteNodeMaterial.setupPositionView()`, the billboarded `vec4`. Three's
+sprite fragment therefore fogs by `v_positionView.xyz.z` of the one sprite
+varying.
+
+The port built the fog graph eagerly, when `scene.fogNode` (or `scene.fog`'s
+cached node) was made. That is outside any material, so the factor held the
+base class' `modelViewMatrix * positionLocal` varying. A sprite then carried
+a second `v_positionView` (a `vec3`, of the un-billboarded quad corner), and
+fogged by it. At `webgpu_sprites`' pinned time the group is not rotated, so
+the two depths agreed and the frame was already at 0 pixels. They part as
+soon as the group turns.
+
+`range_fog_factor`, `density_fog_factor` and `exponential_height_fog_factor`
+now return an inline, argument-less `Fn()` call. `NodeMaterial` setup runs
+its body, through `tsl::resolve_fog_factor`, inside the material's
+`with_material_position_view` scope, where `position_view()` is the
+material's own. For a mesh, the scope's `positionView` is the base class' pair,
+cached per context, so the node is the one it always was. The ladder's fog
+rungs are unchanged to the pixel. A factor used anywhere else is inlined by
+the builder with the base class' `positionView`, which is what it read
+before. The `_with_view_z` forms (§24) are unchanged: their view z is
+explicit.
+
+### 41.3 `Sprite.count`
+
+`webgpu_instance_sprites` draws ten thousand snowflakes as one `Sprite` with
+`count = 10000`. `positionNode` is an `instancedBufferAttribute` and
+`rotationNode` is `time.add( instanceIndex ).sin()`. `Sprite` gains three's
+`count` (default 1), and `Payload::count()` returns it, which is
+`RenderObject.getInstanceCount()`. The rest was in place: the instanced
+attribute's `stepMode: 'instance'` buffer, `instanceIndex` cast to `f32` in
+the add, `alphaMap` with its `vec4` product (§32.4), and `FogExp2`'s render-group
+uniforms (§28).
+
+### Divergences specific to this section
+
+* **`userData` reads a flat key on the render object.** three's
+  `ReferenceNode` walks a dotted path and also accepts an explicit
+  `userData` object in place of the render object's. The ladder uses neither.
+  A number or numeric array is read as the uniform's components. Anything
+  else, or a missing key, reads as zero, where three would write `undefined`.
+* **One uv-matrix uniform per texture, not per `texture()` node.**
+  `webgpu_instance_sprites` samples the snowflake twice, as `map` and as
+  `alphaMap`. Three's dump has two `mat3` members, `nodeUniform3` and
+  `nodeUniform5`, one per `TextureNode`. The port's `transformed_uv` keys the
+  member on the texture, so both samples read one member. The values are the
+  same matrix, so no pixel can differ.
+* The rest of the two pages' WGSL differs from the dumps only in §8's
+  classes: `let nodeConstN` against `var nodeVarN`, uniform numbering and
+  member order, and `@location` order. `dump_wgsl`'s `sprites` and
+  `instance_sprites` sections print it.
+
+## 42. `MeshToonNodeMaterial` and `toonOutlinePass` (`webgpu_materials_toon`)
 
 **The lighting model.** `ToonLightingModel` extends `LightingModel` directly,
 but its `indirect()` is Lambert's line for line: ambient irradiance times
