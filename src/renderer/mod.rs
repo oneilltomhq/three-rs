@@ -1438,24 +1438,60 @@ impl Renderer {
         // `renderContext.fullscreenPass = scene.isQuadMesh === true`: a scene
         // render nested in a quad's draw is not a fullscreen pass.
         let previous_fullscreen_pass = std::mem::replace(&mut self.fullscreen_pass, false);
+        self.poll_occlusion();
+        // `scene.updateMatrixWorld()` then `camera.updateMatrixWorld()`, both
+        // honouring `matrixAutoUpdate` / `matrixWorldAutoUpdate`.
+        scene.update_matrix_world();
+        camera.update_matrix_world();
         self.render_scene(scene, camera);
         self.fullscreen_pass = previous_fullscreen_pass;
         self.end_frame(render);
     }
 
-    /// The body of [`render`](Self::render), between the frame bookkeeping.
-    fn render_scene(&mut self, scene: &mut Scene, camera: &mut dyn RenderCamera) {
-        // `resolveOccludedAsync()`'s `await mapAsync()` resolving: in a
-        // browser the map's callback runs from the event loop between frames;
-        // natively it runs from a poll, so poll (without blocking) whenever a
-        // map is outstanding, and fold what landed into `occluded`.
+    /// [`render`](Self::render) for a pass that holds its scene and camera in
+    /// `RefCell`s and renders from `updateBefore()` (`docs/nodes.md` §57).
+    ///
+    /// Three's JS renders a scene from inside a draw of the same scene
+    /// without asking; in Rust the outer render holds the borrow. So this
+    /// takes both shared. The camera's `updateMatrixWorld()` needs it
+    /// mutably: when an outer render of this frame already holds the camera,
+    /// that render has just updated it, and this one skips the update.
+    pub(crate) fn render_shared(
+        &mut self,
+        scene: &Scene,
+        camera: &std::cell::RefCell<dyn RenderCamera>,
+    ) {
+        if self.info.auto_reset && self.call_depth == 0 {
+            self.info.reset();
+        }
+        let render = self.begin_frame();
+        let previous_fullscreen_pass = std::mem::replace(&mut self.fullscreen_pass, false);
+        self.poll_occlusion();
+        scene.update_matrix_world();
+        if let Ok(mut camera) = camera.try_borrow_mut() {
+            camera.update_matrix_world();
+        }
+        self.render_scene(scene, &*camera.borrow());
+        self.fullscreen_pass = previous_fullscreen_pass;
+        self.end_frame(render);
+    }
+
+    /// `resolveOccludedAsync()`'s `await mapAsync()` resolving: in a browser
+    /// the map's callback runs from the event loop between frames; natively
+    /// it runs from a poll, so poll (without blocking) whenever a map is
+    /// outstanding, and fold what landed into `occluded`.
+    fn poll_occlusion(&mut self) {
         if self.occlusion.has_pending() {
             // A lost device surfaces on the next submit; here the poll only
             // drives callbacks.
             let _ = self.device.poll(wgpu::PollType::Poll);
             self.occlusion.collect();
         }
+    }
 
+    /// The body of [`render`](Self::render), between the frame bookkeeping,
+    /// once the occlusion poll and the matrix updates have run.
+    fn render_scene(&mut self, scene: &Scene, camera: &dyn RenderCamera) {
         // `DirectRenderPipeline`'s `getOutput` hook, which every material of
         // this render carries into its own setup. three.js makes the decision
         // inside the closure — `if ( renderer.isOutputTarget === false && … )
@@ -1466,12 +1502,6 @@ impl Renderer {
             .output_hook
             .clone()
             .filter(|_| self.render_target.is_none());
-
-        // `Renderer.render()`: `scene.updateMatrixWorld()` then
-        // `camera.updateMatrixWorld()`, both honouring `matrixAutoUpdate` /
-        // `matrixWorldAutoUpdate`.
-        scene.update_matrix_world();
-        camera.update_matrix_world();
 
         // `Renderer._renderScene()`: `_projectObject()` walks the real scene
         // graph into the render list, `finish()`/`sort()` order it, and

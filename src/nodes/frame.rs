@@ -294,6 +294,9 @@ impl NodeFrameState {
     }
 }
 
+/// A [`TEXTURE_UPDATES`] entry: the node's update reference, and the node.
+type TextureUpdate = (usize, Weak<dyn NodeUpdate>);
+
 thread_local! {
     /// Which node fills a texture from its `updateBefore()`, by texture id:
     /// `PassTextureNode.passNode`, and `RTTNode` being the `TextureNode` of
@@ -301,7 +304,7 @@ thread_local! {
     /// [`Node::Texture`](crate::nodes::Node::Texture) over the texture, so the
     /// link sits beside the texture instead of on the node. Weak: the pass
     /// is kept alive by whoever made it, as the example's `App` does.
-    static TEXTURE_UPDATES: RefCell<HashMap<usize, (usize, Weak<dyn NodeUpdate>)>> =
+    static TEXTURE_UPDATES: RefCell<HashMap<usize, TextureUpdate>> =
         RefCell::new(HashMap::new());
 }
 

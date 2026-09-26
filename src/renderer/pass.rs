@@ -462,7 +462,10 @@ impl PassNode {
         scene: &mut Scene,
         camera: &mut dyn RenderCamera,
     ) {
-        self.0.render_with(renderer, scene, camera);
+        let (near, far) = (camera.near(), camera.far());
+        self.0.render_with(renderer, near, far, |renderer| {
+            renderer.render(scene, camera)
+        });
     }
 }
 
@@ -470,11 +473,16 @@ impl PassState {
     /// `PassNode.updateBefore( frame )`: size the target to the drawing buffer,
     /// then `renderer.setRenderTarget( this.renderTarget ); renderer.render(
     /// this.scene, this.camera )` with the previous target restored after.
+    ///
+    /// `render` is the `renderer.render( this.scene, this.camera )` call, so
+    /// that a pass holding its scene in a `RefCell` can render it through a
+    /// shared borrow (see [`update_before`](NodeUpdate::update_before)).
     fn render_with(
         &self,
         renderer: &mut Renderer,
-        scene: &mut Scene,
-        camera: &mut dyn RenderCamera,
+        near: f64,
+        far: f64,
+        render: impl FnOnce(&mut Renderer),
     ) {
         let (width, height) = renderer.drawing_buffer_size();
         // `PixelationPassNode.setSize()`: `Math.floor( size / pixelSize )`
@@ -494,8 +502,8 @@ impl PassState {
 
         // `this._cameraNear.value = camera.near; this._cameraFar.value =
         // camera.far;`
-        self.camera_near.1.set(vec![camera.near()]);
-        self.camera_far.1.set(vec![camera.far()]);
+        self.camera_near.1.set(vec![near]);
+        self.camera_far.1.set(vec![far]);
 
         let previous = renderer.render_target();
         let previous_mrt = renderer.mrt();
@@ -513,7 +521,7 @@ impl PassState {
         renderer.lighting_enabled = self.lighting_enabled.get();
         renderer.camera_layers = *self.layers.borrow();
 
-        renderer.render(scene, camera);
+        render(renderer);
 
         renderer.set_render_target(previous);
         renderer.set_mrt(previous_mrt);
@@ -533,13 +541,22 @@ impl NodeUpdate for PassState {
 
     /// `PassNode.updateBefore( frame )`. A pass with no scene has nothing to
     /// render, and does not count, so it is tried again at the next draw.
+    ///
+    /// The scene and camera are borrowed shared, not mutably: a pass's scene
+    /// can draw a material that samples another pass over the same scene
+    /// (the deferred page's resolve quad reads the opaque pass), and that
+    /// nested render borrows them again while the outer one holds them.
     fn update_before(&self, renderer: &mut Renderer) -> bool {
         let Some((scene, camera)) = self.scene.borrow().clone() else {
             return false;
         };
-        let mut scene = scene.borrow_mut();
-        let mut camera = camera.borrow_mut();
-        self.render_with(renderer, &mut scene, &mut *camera);
+        let (near, far) = {
+            let camera = camera.borrow();
+            (camera.near(), camera.far())
+        };
+        self.render_with(renderer, near, far, |renderer| {
+            renderer.render_shared(&scene.borrow(), &camera)
+        });
         true
     }
 }
