@@ -258,6 +258,10 @@ mod webgpu_textures_anisotropy;
 #[allow(dead_code)]
 mod webgpu_lights_phong;
 
+#[path = "../../examples/webgpu_lights_selective.rs"]
+#[allow(dead_code)]
+mod webgpu_lights_selective;
+
 #[path = "../../examples/webgpu_morphtargets.rs"]
 #[allow(dead_code)]
 mod webgpu_morphtargets;
@@ -2990,6 +2994,50 @@ fn webgpu_lights_phong() {
     });
 }
 
+/// Three `MeshStandardNodeMaterial` teapots, two of them lit by one light
+/// each through `lights( [ … ] )`, the middle one by all four.
+#[test]
+fn webgpu_lights_selective() {
+    let name = "webgpu_lights_selective";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_lights_selective::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_lights_selective::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_lights_selective::animate, |app| {
+        app.renderer.device()
+    });
+}
+
 #[test]
 fn webgpu_morphtargets() {
     let name = "webgpu_morphtargets";
@@ -3653,6 +3701,7 @@ fn steady_frame_builds_nothing() {
     // them either.
     rung!(webgpu_postprocessing_bloom_emissive);
     rung!(webgpu_lights_phong);
+    rung!(webgpu_lights_selective);
     rung!(webgpu_morphtargets);
     rung!(webgpu_tsl_galaxy);
     rung!(webgpu_tsl_interoperability);
