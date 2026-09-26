@@ -120,6 +120,8 @@ pub enum ToneMapping {
     Linear,
     /// `NeutralToneMapping` — the Khronos PBR Neutral tone mapper.
     Neutral,
+    /// `AgXToneMapping` — Blender's AgX, through Rec. 2020.
+    AgX,
 }
 
 /// Which `NodeMaterial` subclass this is — i.e. which `setupLightingModel()`
@@ -186,7 +188,7 @@ pub enum MaterialKind {
 /// - a field the *program* depends on — any node (`color_node`,
 ///   `position_node`, `fragment_node`, …), any map or `env_map`, `kind`,
 ///   `lights`, `lights_node`, `lighting_model`, `flat_shading`, `fog`, `transparent`,
-///   `blending`, `alpha_to_coverage`, `world_units`, `size_attenuation`, `mask_node` — needs
+///   `blending`, `alpha_to_coverage`, `world_units`, `size_attenuation`, `mask_node`, `cast_shadow_node` — needs
 ///   [`set_needs_update`](Self::set_needs_update) after it changes, which is
 ///   `material.needsUpdate = true`. Without it the old program keeps drawing.
 /// - a field the program reads as a **uniform** — `color`, `opacity`,
@@ -283,6 +285,11 @@ pub struct MeshBasicNodeMaterial {
     /// `material.maskNode` — `NodeMaterial.setupDiscard()` turns it into
     /// `If( mask.not(), () => Discard() )` at the top of the fragment.
     pub mask_node: Option<NodeRef>,
+    /// `material.castShadowNode` — the colour this material casts into the
+    /// shadow map's colour target, which receivers tint their shadow by when
+    /// `renderer.shadowMap.transmitted` is on (`docs/nodes.md` §43).
+    /// `Renderer._getShadowNodes()` reads its `.rgb` and `.a`.
+    pub cast_shadow_node: Option<NodeRef>,
     /// `material.receivedShadowPositionNode` —
     /// `ShadowBaseNode.setupShadowPosition()` assigns it to
     /// `shadowPositionWorld` instead of `positionWorld`.
@@ -382,6 +389,9 @@ pub struct MeshBasicNodeMaterial {
     /// `transmission` moves the object into the renderer's transmission pass.
     pub transmission: f64,
     pub thickness: f64,
+    /// `MeshPhysicalMaterial.thicknessMap` — `MaterialNode.THICKNESS`
+    /// multiplies `thickness` by the texel's green channel.
+    pub thickness_map: Option<Texture>,
     pub attenuation_distance: f64,
     pub attenuation_color: Color,
     /// `material.normalNode` — e.g. `normalMap( texture( map ) )`.
@@ -510,6 +520,7 @@ impl Default for MeshBasicNodeMaterial {
             lights_node: None,
             lighting_model: None,
             mask_node: None,
+            cast_shadow_node: None,
             received_shadow_position_node: None,
             fog: true,
             // `MeshStandardMaterial` defaults.
@@ -548,6 +559,7 @@ impl Default for MeshBasicNodeMaterial {
             transmission: 0.0,
             // three's `MeshPhysicalMaterial` defaults: no volume at all.
             thickness: 0.0,
+            thickness_map: None,
             attenuation_distance: f64::INFINITY,
             attenuation_color: Color::new(1.0, 1.0, 1.0),
             normal_node: None,

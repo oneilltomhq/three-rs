@@ -4025,6 +4025,113 @@ for six frames once the sphere is moved in front of it.
   In the browser, `webgpu_occlusion`'s plane stays blue. It comes back once
   wgpu forwards the set.
 
+## 43. `webgpu_fog_height` and `webgpu_shadowmap_opacity` — height fog under a lit, instanced material; transmitted shadows and AgX
+
+36.1–36.3 are `webgpu_fog_height`, 36.4–36.8 `webgpu_shadowmap_opacity`.
+
+
+The page is the first graded use of `exponentialHeightFogFactor` (§28.2). It
+needed nothing new in `src/`: the factor, `scene.fogNode`, a `color()`
+background node, a lit `InstancedMesh` and damped `OrbitControls` were all
+in place. The rung is here so that it stays that way.
+
+### 43.1 What three does
+
+`Fog.js`' height factor is
+
+```js
+const distance = height.sub( positionWorld.y ).max( 0 ).toConst();
+const m = distance.mul( viewZ ).toConst();
+return density.mul( density, m, m ).negate().exp().oneMinus();
+```
+
+so the fog is zero above the world height `height` and thickens with the
+depth below it times the view distance. `density` and `height` are the page's
+`uniform( 0.04 )` / `uniform( 2 )`: plain `uniform()`s, so object group, after
+the material's own members. That differs from `scene.fog`'s factors, whose
+`reference()` uniforms are set to the render group (§28.1).
+
+### 43.2 Checked against
+
+`dump_wgsl`'s `fog_height` section (an instanced Phong material, one
+directional and one ambient light, the page's fog node) against three's `m02`
+/ `m03`. The fog lines match three's exactly, including the two `let` constants
+and where the uniforms sit. The rest matches up to the naming classes in §8.
+
+### 43.3 Divergences specific to this section
+
+* **The GUI's uniforms are plain values.** The page's `Inspector` writes
+  `density.value` / `height.value` from sliders. The port builds them with
+  `uniform_value`, which has no handle to write through, because nothing in
+  the graded frame or the viewer writes them. `uniform_settable` is the
+  writeable form if a host ever wants the sliders.
+
+### 43.4 `webgpu_shadowmap_opacity`: what three does
+
+Two transmissive dragons (`DragonAttenuation.glb`, the second a clone with
+`attenuationColor = 0xff0000`) cast coloured shadows onto the cloth backdrop.
+Three pieces were missing from the port:
+
+* **`renderer.shadowMap.transmitted`.** `ShadowNode.setupShadow()` samples
+  `shadowMap.texture`, the shadow pass's `rgba8` colour target, which is
+  cleared to `( 0, 0, 0, 0 )`, at the receiver's shadow coordinate. It then
+  tints the filtered factor by it:
+
+  ```js
+  const shadowColor = texture( shadowMap.texture, shadowCoord );
+  shadowOutput = mix( 1, shadowNode.rgb.mix( shadowColor, 1 ), shadowIntensity.mul( shadowColor.a ) );
+  ```
+
+  In three's WGSL the colour is sampled before the frustum branch, and the
+  PCF filter keeps its five vogel-disk taps inside it. The port is
+  `ShadowMap::Transmitted { map, color }`, wrapping the planar or filtered
+  map the light would have had. `phong::shadow_factor_transmitted` builds the
+  receiver side. `Renderer::render_shadows` wraps each spot or directional map
+  in it when `shadow_map_transmitted` is set.
+* **`material.castShadowNode`.** `Renderer._getShadowNodes()` makes the
+  override material's colour `vec4( castShadowNode.rgb, castShadowNode.a )`.
+  That alpha is then multiplied by the map's and the `colorNode`'s alphas, as
+  before. For a `vec3` node, `.a` is `vec4( node, 1 ).w`, which is what three
+  emits. The port has `MeshBasicNodeMaterial::cast_shadow_node` and
+  `shadow_material_for`.
+* **`AgXToneMapping`.** `ToneMappingFunctions.js`' `agxToneMapping` is
+  `tsl::agx_tone_mapping`, statement for statement: the Rec.2020 matrices,
+  the log2 encoding and the polynomial contrast approximation. The matrices
+  are written column-major, so their constants read like three's.
+
+The page also needed `MeshPhysicalMaterial.thicknessMap`: the dragon's
+`KHR_materials_volume.thicknessTexture`. `MaterialNode.THICKNESS` is
+`thickness * thicknessMap.g`, and the glTF loader now reads the texture as a
+data map.
+
+### 43.5 `webgpu_shadowmap_opacity`: checked against
+
+`dump_wgsl`'s `dump_shadowmap_opacity()` was checked against three's dump:
+
+* **`shadowmap_opacity_cast_shadow` against `m01`.** It is three's line for
+  line: the constant `mix`, the `vec4( c, vec4( c, 1 ).w )` join, then opacity.
+* **`shadowmap_opacity_backdrop` against `m05`.** The colour sample comes
+  before the branch, there are five taps, and it is the same double `mix`.
+* **`shadowmap_opacity_output_agx` against `m09`.** It differs only in how
+  the constant is spelled: `mat3x3( 9 scalars )` where three writes
+  `mat3x3( vec3, vec3, vec3 )`. The values are identical.
+
+The dragon's transmission shader (`m07`) is not in `dump_wgsl`, because it
+needs the transmission pass's context. The graded pixels cover it.
+
+### 43.6 Divergences specific to `webgpu_shadowmap_opacity`
+
+* **The tinted factor is `.xyz`'d.** Three's `mix` above is a `vec4`, which
+  makes the light's `vec3` colour widen to `vec4( color, 1 )`. Its direct
+  lighting then runs in `vec4` and ends in `.xyz`, which is visible in `m05`.
+  The port takes `.xyz` of the tinted factor and keeps the light path in
+  `vec3`. The rgb values are the same.
+* **Point-light shadows ignore `transmitted`.** Three would sample the cube
+  target's colour. The port's `ShadowMap::Cube` hands receivers only the
+  depth cube, and nothing on the ladder asks for more.
+* **No `shadow.autoUpdate`.** The page renders the shadow map once
+  (`autoUpdate = false`, `needsUpdate = true`). The port renders it every
+  frame. Nothing in the scene moves, so every frame renders the same map.
 ## 45. `Node::Custom`, `context()` and `isolate()` (issue #161)
 
 Three's node set is open. Any class that `extends Node` and overrides

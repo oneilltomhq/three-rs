@@ -869,6 +869,11 @@ pub struct Renderer {
     pub shadow_map_enabled: bool,
     /// `renderer.shadowMap.type` — `PCFShadowMap` by default.
     pub shadow_map_type: ShadowMapType,
+    /// `renderer.shadowMap.transmitted` — the receivers of a spot or
+    /// directional shadow also read the shadow pass's colour target, where
+    /// each caster's `castShadowNode` was written, and tint the shadow by it.
+    /// Point-light shadows ignore it (`docs/nodes.md` §43).
+    pub shadow_map_transmitted: bool,
     /// The depth texture of each shadow-casting light's shadow map, keyed by the
     /// light's index in the render list — `light.shadow.map` in three.js. Filled
     /// by the shadow pass, before any material setup reads it.
@@ -1184,6 +1189,7 @@ impl Renderer {
             tone_mapping: ToneMapping::None,
             shadow_map_enabled: false,
             shadow_map_type: ShadowMapType::default(),
+            shadow_map_transmitted: false,
             vsm_passes: HashMap::new(),
             shadow_maps: HashMap::new(),
             shadow_targets: HashMap::new(),
@@ -1298,6 +1304,7 @@ impl Renderer {
         )?;
         renderer.shadow_map_enabled = self.shadow_map_enabled;
         renderer.shadow_map_type = self.shadow_map_type;
+        renderer.shadow_map_transmitted = self.shadow_map_transmitted;
         renderer.tone_mapping = self.tone_mapping;
         renderer.tone_mapping_exposure = self.tone_mapping_exposure;
         renderer.random = self.random.clone();
@@ -2129,7 +2136,8 @@ impl Renderer {
             let vsm = shadow_type == ShadowMapType::Vsm;
 
             // `ShadowNode.setupRenderTarget()`: an `rgba8unorm` colour target
-            // that is written and never sampled, plus the `depth24plus`
+            // — sampled only with `shadowMap.transmitted`, where it holds each
+            // caster's `castShadowNode` — plus the `depth24plus`
             // `ShadowDepthTexture` every `textureSampleCompare` reads.
             let (width, height) = (map_size.x as u32, map_size.y as u32);
             let target = self
@@ -2308,6 +2316,17 @@ impl Renderer {
                     map: ShadowFilterMap::Depth(depth),
                     filter,
                 }
+            };
+            // `ShadowNode.setupShadow()`: with `shadowMap.transmitted` the
+            // receivers also sample `shadowMap.texture`, the colour target
+            // the pass above cleared to `( 0, 0, 0, 0 )` and drew into.
+            let shadow_map = if self.shadow_map_transmitted {
+                ShadowMap::Transmitted {
+                    map: Box::new(shadow_map),
+                    color: target.texture(),
+                }
+            } else {
+                shadow_map
             };
             self.shadow_maps.insert(index, shadow_map);
         }
