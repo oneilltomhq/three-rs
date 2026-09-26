@@ -787,6 +787,12 @@ The vertex stage is where the port and three genuinely disagree:
   translations, so the graded frame is unaffected. A rung that instances with
   rotation *and* a `positionNode` will have to pick three's order.
 
+### Shadow filters add no new class
+
+The VSM and point-light-alpha modules differ from three's dumps only in the
+classes above. The hooks' API shapes, the missing `shadowSide` and the
+silent `PCFSoftShadowMap` are listed in §28.5.
+
 ## 9. Blending, and the instanced-attribute path
 
 Two pieces of shared renderer work that no rung 1–9 material exercises, built
@@ -2719,6 +2725,98 @@ None new beyond the classes §8 already lists, and one fix that was a real bug:
   `textureBicubicLevel` are inlined.** That is three's own split: the first
   three carry a `setLayout()`, the rest are plain `Fn()`. Reproduced
   deliberately so the two dumps line up statement for statement.
+
+## 28. Shadow filters, `filterNode` / `shadowNode`, and VSM (`webgpu_shadowmap_vsm`, `webgpu_shadowmap_pointlight`)
+
+`ShadowNode.setupShadow()` picks the filter as `shadow.filterNode ||
+_shadowFilterLib[ renderer.shadowMap.type ]`, over `[ BasicShadowFilter,
+PCFShadowFilter, null, VSMShadowFilter ]`. The port spells that
+`ShadowFilter::of( type, filter_node )` in `src/lights/shadow_filter.rs`, with
+`Renderer::shadow_map_type` (`ShadowMapType::{Basic, Pcf, PcfSoft, Vsm}`,
+where `PcfSoft` resolves to `Pcf` as `Renderer.render()` rewrites it) and
+`LightShadow::{filter_node, shadow_node}`.
+
+### 28.1 What each type changes besides the filter
+
+* **The depth texture's filtering.** Linear for PCF (the compare sampler
+  interpolates), Nearest for Basic and VSM. The cube depth texture follows
+  the same rule, which is why the `CubeDepth` sampler now reads the texture's
+  own filters instead of a hard-coded Linear.
+* **VSM (non-point lights).** There is no compare sampler. Two `RGFormat` /
+  `HalfFloatType` targets with no depth buffer (`VSMVertical`,
+  `VSMHorizontal`) get one `QuadMesh` pass each (`vsm_pass_vertical`,
+  `vsm_pass_horizontal`), and the lit material's `VSMShadowFilter` reads the
+  second target's `( mean, stdDev )`. The passes read `radius`,
+  `blurSamples` and `mapSize` through the same `Shadow*( index )` render
+  uniforms the lit material uses.
+* **VSM's shadow pass.** The override material keeps `material.side` instead
+  of `_shadowSide[ side ]`. `receiveShadow` objects are drawn into the map too
+  (the `renderObject` function `ShadowNode` installs). Both apply to point
+  lights under VSM as well, because the shadow pass does not know the light
+  kind.
+* **Point lights** use `BasicPointShadowFilter` when the type is Basic and
+  `PointShadowFilter` otherwise, **VSM included**: `PointShadowNode` has no
+  VSM path, so a VSM renderer gets PCF on its point lights. Reproduced.
+
+### 28.2 An `RGFormat` texture is a `vec2` node
+
+`NodeUtils.getTextureType()` types a texture node by its format's component
+count. The port now does this for two-channel formats (`tsl::texture`,
+`tsl::texture_uv`): the node is `Type::Vec2`, and the builder appends `.xy` to
+the fetch, so the value is cached as `nodeVarN : vec2<f32> = textureSample(
+… ).xy`, as in three's `VSMHorizontal` module and in `VSMShadowFilter`'s
+`distribution`. The DFG LUT is `Rg16Float` too, so every physical material's
+`dfg` sample moved from a `vec4` var read as `nodeVarN.xy.x` to three's own
+`vec2` var read as `nodeVarN.x`. The arithmetic is identical and no rung moved.
+Red-only formats stay `vec4` until a rung needs three's `float` typing.
+
+### 28.3 `NodeBuilder.getOutputType()` for an RG target
+
+A pass into an RG target declares `@location( 0 ) color : vec2<f32>` and
+writes a `vec2` (`NodeBuilder::with_output_components`). The renderer keys the
+program on the target's component count, because the same material drawn into
+an RGBA target is a different module.
+
+### 28.4 `alphaMap` and `alphaTest`
+
+`webgpu_shadowmap_pointlight` needed both. `MaterialNode.OPACITY` with an
+`alphaMap` is `opacity * texture( alphaMap )`, a `vec4` product, which the
+`DiffuseColor.w` assign narrows to `.x`. Three's dump reads `( vec4<f32>(
+DiffuseColor.w ) * ( vec4<f32>( opacity ) * texel ) ).x`, and so does the
+port's. `alphaTest > 0` discards against the `materialAlphaTest` object
+uniform, with `alphaTestNode` still taking precedence. The shadow pass copies
+both onto its override material (`overrideMaterial.alphaTest` /
+`.alphaMap`), so the cut-away bands cast no shadow. The override keeps its own
+`opacity` of 1.
+
+### 28.5 Divergences
+
+* **`filterNode`'s signature.** Three calls `filterNode( { depthTexture,
+  shadowCoord, shadow, depthLayer } )`, and for point lights `{ depthTexture,
+  bd3D, dp, shadow }`. The port's hook is a Rust closure
+  (`ShadowFilterFn`) over `ShadowFilterInputs { index, map, shadow_coord, dp
+  }`. `index` stands in for `shadow`, because the light's shadow uniforms
+  (`radius`, `mapSize`, …) are addressed by light index. A point light's
+  `bd3D` arrives as `shadow_coord`. There is no `depthLayer`, because array
+  and CSM shadows are out of scope.
+* **`shadowNode`** is a `NodeRef` that replaces the whole `ShadowNode` for
+  that light. It is still gated on `castShadow`, `receiveShadow` and
+  `shadowMap.enabled`, no map is rendered, and no shadow position is pushed,
+  exactly as `AnalyticLightNode` does it.
+* **No `material.shadowSide`.** The override side is `_shadowSide[ side ]`,
+  or `side` under VSM. A material that sets `shadowSide` would need the field.
+* **`PCFSoftShadowMap` resolves silently.** Three logs a deprecation warning.
+* **Var numbering in `VSMVertical`.** Three numbers the `textureLoad` result
+  before the `textureDimensions` temp, and the port the other way round. This
+  is the §24.6 class.
+* **Fog in `webgpu_shadowmap_vsm`.** `new THREE.Fog()` is spelt as the
+  constant `fog( color, rangeFogFactor( near, far ) )` node, as in
+  `webgpu_shadowmap`. The colour and range are literals where three reads
+  uniforms.
+* Everything else in the lit modules is §8's `toConst` / var class and the
+  uniform-slot numbering. The filter bodies line up statement for statement:
+  `VSMShadowFilter`'s `step`, the `!= 1.0` branch, and the Chebyshev bound
+  remapped by `( p - 0.3 ) / 0.65`.
 
 [`Renderer::draw`]: ../src/renderer/mod.rs
 [`materials::transmission`]: ../src/materials/transmission.rs

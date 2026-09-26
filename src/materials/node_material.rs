@@ -150,6 +150,27 @@ pub struct MrtContext {
 /// builds a fresh material per object instead, which is the same thing because
 /// the program is keyed on the generated WGSL.
 pub fn shadow_material(source: &MeshBasicNodeMaterial) -> MeshBasicNodeMaterial {
+    shadow_material_for(source, crate::lights::ShadowMapType::Pcf)
+}
+
+/// [`shadow_material`] for a given `renderer.shadowMap.type`.
+/// `Renderer._renderObjectDirect`'s override differs by one line:
+///
+/// ```js
+/// if ( this.shadowMap.type === VSMShadowMap ) {
+///     overrideMaterial.side = material.shadowSide ?? material.side;
+/// } else {
+///     overrideMaterial.side = material.shadowSide ?? _shadowSide[ material.side ];
+/// }
+/// ```
+///
+/// — VSM draws the faces the material itself draws, where every other type
+/// draws the opposite ones. (The port has no `material.shadowSide`; it is
+/// always `null` on the ladder.)
+pub fn shadow_material_for(
+    source: &MeshBasicNodeMaterial,
+    shadow_type: crate::lights::ShadowMapType,
+) -> MeshBasicNodeMaterial {
     let mut material = MeshBasicNodeMaterial::new();
     material.name = "ShadowMaterial";
     material.blending = Blending::No;
@@ -159,11 +180,12 @@ pub fn shadow_material(source: &MeshBasicNodeMaterial) -> MeshBasicNodeMaterial 
     // of a front-sided material, which is where the shadow pipelines'
     // `frontFace: cw` comes from.
     material.transparent = source.transparent;
-    material.side = match source.side {
-        Side::Front => Side::Back,
-        Side::Back => Side::Front,
+    material.side = match (shadow_type.resolved(), source.side) {
+        (crate::lights::ShadowMapType::Vsm, side) => side,
+        (_, Side::Front) => Side::Back,
+        (_, Side::Back) => Side::Front,
         // `_shadowSide = { [ DoubleSide ]: DoubleSide }`.
-        Side::Double => Side::Double,
+        (_, Side::Double) => Side::Double,
     };
 
     // `shadowRGB = vec3( 0 )`, `shadowAlpha = float( 1 )`, and the source
@@ -183,9 +205,24 @@ pub fn shadow_material(source: &MeshBasicNodeMaterial) -> MeshBasicNodeMaterial 
             vec4_join(vec![vec3(0.0, 0.0, 0.0), alpha])
         }
     });
+    // `overrideMaterial.alphaTest = material.alphaTest` and `.alphaMap =
+    // material.alphaMap`: a cut-away texel casts no shadow.
+    material.alpha_test = source.alpha_test;
+    material.alpha_map = source.alpha_map.clone();
     // `Fn( ( [ color ] ) => { maskNode.not().discard(); return color; } )`.
     material.mask_node = source.mask_node.clone();
     material
+}
+
+/// `materialOpacity` — `MaterialNode.OPACITY`: the `opacity` uniform, times
+/// `texture( alphaMap )` when the material has one. The product is a `vec4`
+/// (three multiplies by the whole texel, not its green channel), and the
+/// `DiffuseColor.w` assign narrows it back to `.x`.
+fn material_opacity_for(material: &MeshBasicNodeMaterial) -> NodeRef {
+    match &material.alpha_map {
+        Some(map) => material_opacity().mul(texture(map)),
+        None => material_opacity(),
+    }
 }
 
 /// `vec4( node )` the way `setupDiffuseColor` builds it: a scalar splats, a
@@ -266,7 +303,7 @@ fn setup_diffuse_color(
     // so a material with an `opacityNode` never reads `material.opacity`.
     let opacity = match &material.opacity_node {
         Some(node) => to_float(node.clone()),
-        None => material_opacity(),
+        None => material_opacity_for(material),
     };
     fragment.push(diffuse_color().w().assign(diffuse_color().w().mul(opacity)));
 
@@ -276,8 +313,12 @@ fn setup_diffuse_color(
     // sees is the one the opacity node produced, and the fragments that survive
     // still get `w = 1.0` on an opaque material — the alpha-test teapot is not
     // `transparent`, and the dump shows both lines.
-    if let Some(node) = &material.alpha_test_node {
-        let alpha_test = to_float(node.clone());
+    let alpha_test = match &material.alpha_test_node {
+        Some(node) => Some(to_float(node.clone())),
+        None if material.alpha_test > 0.0 => Some(material_alpha_test()),
+        None => None,
+    };
+    if let Some(alpha_test) = alpha_test {
         fragment.push(if_then(
             diffuse_color().w().less_than_equal(alpha_test),
             vec![discard()],
@@ -496,7 +537,7 @@ fn setup_inner(
         // material on the ladder that emits the EOTF rather than the OETF.
         let opacity = match &material.opacity_node {
             Some(node) => to_float(node.clone()),
-            None => material_opacity(),
+            None => material_opacity_for(material),
         };
         fragment.push(diffuse_color().assign(srgb_to_working(vec4_join(vec![
             pack_normal_to_rgb(normal_view()),

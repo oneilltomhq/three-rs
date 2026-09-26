@@ -5,7 +5,7 @@
 #[path = "webgpu_morphtargets.rs"]
 mod morphtargets;
 
-use three_rs::lights::LightKind;
+use three_rs::lights::{LightKind, ShadowFilter, ShadowFilterMap};
 use three_rs::materials::phong::{LightDesc, ShadowMap};
 use three_rs::materials::{setup, MeshBasicNodeMaterial, SetupContext, Side};
 use three_rs::math::Color;
@@ -44,8 +44,23 @@ fn show_fog(
     ctx: SetupContext,
     fog: Option<&three_rs::nodes::tsl::FogNode>,
 ) {
+    show_into(label, material, ctx, fog, 4)
+}
+
+/// [`show_fog`] for a render target with `components` colour channels —
+/// `NodeBuilder.getOutputType()`, which makes the VSM blur passes write a
+/// `vec2` into their `RGFormat` targets.
+fn show_into(
+    label: &str,
+    material: &MeshBasicNodeMaterial,
+    ctx: SetupContext,
+    fog: Option<&three_rs::nodes::tsl::FogNode>,
+    components: u32,
+) {
     let flow = setup(material, &ctx, fog);
-    let program = NodeBuilder::new().build(&flow);
+    let program = NodeBuilder::new()
+        .with_output_components(components)
+        .build(&flow);
     println!("########## {label} — vertex");
     println!("{}", program.vertex_wgsl);
     println!("########## {label} — fragment");
@@ -1036,6 +1051,114 @@ fn main() {
     show(
         "shadowmap_shadow_knot",
         &three_rs::materials::shadow_material(&knot),
+        SetupContext::default(),
+    );
+
+    // rung `webgpu_shadowmap_vsm`, against three's
+    // `target/dumps/webgpu_shadowmap_vsm/m*.wgsl`: the same Phong scene
+    // without the noise, `renderer.shadowMap.type = VSMShadowMap`. Every
+    // mesh casts *and* receives, so there is one lit program; the shadow
+    // pass draws each material's own side (`shadow_material_for`), which is
+    // pipeline state and does not show in the WGSL.
+    let vsm_spot = DepthTexture::new();
+    let vsm_vertical = Texture::new(256, 256, None);
+    let vsm_horizontal = Texture::new(256, 256, None);
+    // `RGFormat` / `HalfFloatType`, as `ShadowNode` creates both targets.
+    vsm_vertical.set_format(wgpu::TextureFormat::Rg16Float);
+    vsm_horizontal.set_format(wgpu::TextureFormat::Rg16Float);
+    let vsm_dir_moments = Texture::new(512, 512, None);
+    vsm_dir_moments.set_format(wgpu::TextureFormat::Rg16Float);
+    let mut vsm_vertical_material = MeshBasicNodeMaterial::new();
+    vsm_vertical_material.fragment_node = Some(three_rs::lights::vsm_pass_vertical(1, &vsm_spot));
+    vsm_vertical_material.vertex_node = Some(three_rs::materials::quad_vertex_node());
+    show_into(
+        "shadowmap_vsm_vertical",
+        &vsm_vertical_material,
+        SetupContext::default(),
+        None,
+        2,
+    );
+    let mut vsm_horizontal_material = MeshBasicNodeMaterial::new();
+    vsm_horizontal_material.fragment_node =
+        Some(three_rs::lights::vsm_pass_horizontal(1, &vsm_vertical));
+    vsm_horizontal_material.vertex_node = Some(three_rs::materials::quad_vertex_node());
+    show_into(
+        "shadowmap_vsm_horizontal",
+        &vsm_horizontal_material,
+        SetupContext::default(),
+        None,
+        2,
+    );
+    let vsm_lit = SetupContext {
+        lights: vec![
+            LightDesc {
+                index: 0,
+                kind: LightKind::Ambient,
+                shadow_map: None,
+            },
+            LightDesc {
+                index: 1,
+                kind: LightKind::Spot,
+                shadow_map: Some(ShadowMap::Filtered {
+                    map: ShadowFilterMap::Moments(vsm_horizontal.clone()),
+                    filter: ShadowFilter::Vsm,
+                }),
+            },
+            LightDesc {
+                index: 2,
+                kind: LightKind::Directional,
+                shadow_map: Some(ShadowMap::Filtered {
+                    map: ShadowFilterMap::Moments(vsm_dir_moments.clone()),
+                    filter: ShadowFilter::Vsm,
+                }),
+            },
+        ],
+        ..SetupContext::default()
+    };
+    show_fog("shadowmap_vsm_phong", &pillars, vsm_lit, Some(&shadow_fog));
+
+    // rung `webgpu_shadowmap_pointlight`, against
+    // `target/dumps/webgpu_shadowmap_pointlight/m*.wgsl`: the alpha-mapped,
+    // alpha-tested double-sided spheres (m06), the back-sided room box (m08)
+    // and the shadow pass's override material for the spheres (m04).
+    let bars = Texture::new(2, 2, Some(vec![0; 16]));
+    let two_points = SetupContext {
+        lights: vec![
+            LightDesc {
+                index: 0,
+                kind: LightKind::Ambient,
+                shadow_map: None,
+            },
+            LightDesc {
+                index: 1,
+                kind: LightKind::Point,
+                shadow_map: Some(ShadowMap::Cube(three_rs::textures::CubeDepthTexture::new(
+                    128,
+                ))),
+            },
+            LightDesc {
+                index: 2,
+                kind: LightKind::Point,
+                shadow_map: Some(ShadowMap::Cube(three_rs::textures::CubeDepthTexture::new(
+                    128,
+                ))),
+            },
+        ],
+        ..SetupContext::default()
+    };
+    let mut cage = MeshBasicNodeMaterial::phong(Color::from_hex(0xffffff));
+    cage.side = Side::Double;
+    cage.alpha_map = Some(bars.clone());
+    cage.alpha_test = 0.5;
+    show("pointlight_cage", &cage, two_points.clone());
+    let mut room = MeshBasicNodeMaterial::phong(Color::from_hex(0xa0adaf));
+    room.shininess = 10.0;
+    room.specular = Color::from_hex(0x111111);
+    room.side = Side::Back;
+    show("pointlight_room", &room, two_points);
+    show(
+        "pointlight_cage_shadow",
+        &three_rs::materials::shadow_material_for(&cage, Default::default()),
         SetupContext::default(),
     );
 

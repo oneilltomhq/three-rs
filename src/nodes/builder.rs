@@ -338,6 +338,11 @@ pub struct NodeBuilder {
     fn_names: HashMap<usize, String>,
     fn_counter: usize,
     usage: HashMap<usize, u32>,
+    /// `NodeBuilder.getOutputType()` — the fragment entry point's
+    /// `@location( 0 )` type. Three reads it off the render target's colour
+    /// texture: `vec2` for an `RGFormat` target (the VSM blur passes'
+    /// `VSMVertical` / `VSMHorizontal`), `vec4` for everything else.
+    output_type: Type,
 }
 
 impl Default for NodeBuilder {
@@ -369,6 +374,7 @@ impl NodeBuilder {
             fn_names: HashMap::new(),
             fn_counter: 0,
             usage: HashMap::new(),
+            output_type: Type::Vec4,
         };
         for s in &mut b.stages {
             s.scopes.push(HashMap::new());
@@ -1312,9 +1318,23 @@ impl NodeBuilder {
                 texture, uv, mode, ..
             } => {
                 let (texture, uv, mode) = (texture.clone(), uv.clone(), mode.clone());
+                let mode_is_color = matches!(
+                    mode,
+                    SampleMode::Sample | SampleMode::Grad | SampleMode::Level(_) | SampleMode::Load
+                ) && matches!(*texture, TextureSource::Texture2D(_));
                 let (name, kind) = self.texture_slots(&texture);
                 let suv = self.generate(&uv);
-                match mode {
+                // `TextureNode.generate()` builds the snippet as a `vec4` and
+                // `format()`s it to the node type: an RG map's `vec2` node
+                // gets `.xy` on the fetch itself.
+                let narrow = |s: String| {
+                    if node.ty() == Type::Vec2 {
+                        format!("{s}.xy")
+                    } else {
+                        s
+                    }
+                };
+                let snippet = match mode {
                     SampleMode::Sample => {
                         format!("textureSample( {name}, {name}_sampler, {suv} )")
                     }
@@ -1352,6 +1372,11 @@ impl NodeBuilder {
                         self.emit(format!("{dims} = {dims_expr};"));
                         wgsl::texture_load(&name, &suv, &dims)
                     }
+                };
+                if mode_is_color {
+                    narrow(snippet)
+                } else {
+                    snippet
                 }
             }
 
@@ -1816,6 +1841,18 @@ impl NodeBuilder {
         }
     }
 
+    /// The fragment output type for a render target whose colour attachment
+    /// has `components` channels — `NodeBuilder.getOutputType()`, which maps
+    /// the target texture's format to a vector length. Only the two-channel
+    /// case differs from the default `vec4`.
+    pub fn with_output_components(mut self, components: u32) -> Self {
+        self.output_type = match components {
+            2 => Type::Vec2,
+            _ => Type::Vec4,
+        };
+        self
+    }
+
     pub fn build(mut self, flow: &MaterialFlow) -> NodeProgram {
         for stmt in &flow.pre_vertex_statements {
             self.analyze(stmt);
@@ -1881,7 +1918,8 @@ impl NodeBuilder {
         // `vec4` as its output type, so a `fragmentNode` that returns a
         // `vec3` — `webgpu_tsl_interoperability`'s `crtFragment` — is widened
         // here rather than assigned as it is.
-        let mut color = self.format(&flow.output, Type::Vec4);
+        let output_type = self.output_type;
+        let mut color = self.format(&flow.output, output_type);
         if let Some(output_prop) = &output_prop {
             self.emit(format!("{output_prop} = {color};"));
         }
@@ -1894,7 +1932,7 @@ impl NodeBuilder {
         }
         if let Some(node) = &flow.output_node {
             let node = node.clone();
-            color = self.format(&node, Type::Vec4);
+            color = self.format(&node, output_type);
         }
         // `OutputStructNode.generate()`: one `output.mN = <member>` line per
         // member, pushed onto the *flow* — the entry point's result section is
@@ -2217,8 +2255,8 @@ impl NodeBuilder {
                 // `NodeBuilder.getOutputStructName()`'s depth member:
                 // `@builtin( frag_depth )`, with the comma and the spacing
                 // three's template puts around it.
-                None if depth => out.push_str("// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>,\n\t@builtin( frag_depth ) depth : f32\n};\nvar<private> output : OutputStruct;\n\n"),
-                None => out.push_str("// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n"),
+                None if depth => out.push_str(&format!("// structs\n\nstruct OutputStruct {{\n\t@location( 0 ) color: {},\n\t@builtin( frag_depth ) depth : f32\n}};\nvar<private> output : OutputStruct;\n\n", wgsl::type_name(self.output_type))),
+                None => out.push_str(&format!("// structs\n\nstruct OutputStruct {{\n\t@location( 0 ) color: {}\n}};\nvar<private> output : OutputStruct;\n\n", wgsl::type_name(self.output_type))),
             }
         } else {
             out.push_str("// directives\n\n\n// structs\n\n\n");

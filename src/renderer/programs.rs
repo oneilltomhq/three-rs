@@ -400,6 +400,8 @@ pub struct LightState {
     pub shadow_normal_bias: f64,
     /// `light.shadow.radius`.
     pub shadow_radius: f64,
+    /// `light.shadow.blurSamples` (VSM).
+    pub shadow_blur_samples: f64,
     /// `light.shadow.mapSize`.
     pub shadow_map_size: Vector2,
     /// `light.shadow.intensity`.
@@ -424,6 +426,7 @@ impl Default for LightState {
             shadow_bias: 0.0,
             shadow_normal_bias: 0.0,
             shadow_radius: 1.0,
+            shadow_blur_samples: 8.0,
             shadow_map_size: Vector2::new(512.0, 512.0),
             shadow_intensity: 1.0,
         }
@@ -447,6 +450,7 @@ pub struct UniformContext<'a> {
     pub model_world: Matrix4,
     pub material_color: Color,
     pub material_opacity: f64,
+    pub material_alpha_test: f64,
     pub material_rotation: f64,
     /// `material.linewidth`.
     pub material_line_width: f64,
@@ -524,6 +528,7 @@ impl Default for UniformContext<'_> {
             model_world: Matrix4::identity(),
             material_color: Color::new(1.0, 1.0, 1.0),
             material_opacity: 1.0,
+            material_alpha_test: 0.0,
             material_rotation: 0.0,
             material_line_width: 1.0,
             material_reflectivity: 1.0,
@@ -617,6 +622,7 @@ impl UniformContext<'_> {
                     self.material_color.b as f32,
                 ],
                 UniformSource::MaterialOpacity => vec![self.material_opacity as f32],
+                UniformSource::MaterialAlphaTest => vec![self.material_alpha_test as f32],
                 UniformSource::MaterialRotation => vec![self.material_rotation as f32],
                 UniformSource::MaterialReflectivity => vec![self.material_reflectivity as f32],
                 UniformSource::MaterialEnvIntensity => vec![self.material_env_intensity as f32],
@@ -754,6 +760,9 @@ impl UniformContext<'_> {
                     vec![self.lights[*i].shadow_normal_bias as f32]
                 }
                 UniformSource::ShadowRadius(i) => vec![self.lights[*i].shadow_radius as f32],
+                UniformSource::ShadowBlurSamples(i) => {
+                    vec![self.lights[*i].shadow_blur_samples as f32]
+                }
                 UniformSource::ShadowMapSize(i) => {
                     let s = self.lights[*i].shadow_map_size;
                     vec![s.x as f32, s.y as f32]

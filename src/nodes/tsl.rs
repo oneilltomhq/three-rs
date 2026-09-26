@@ -960,6 +960,17 @@ pub fn shadow_radius(index: usize) -> NodeRef {
     )
 }
 
+/// `reference( 'blurSamples', 'float', shadow )` — read by the two VSM blur
+/// passes only.
+pub fn shadow_blur_samples(index: usize) -> NodeRef {
+    uniform(
+        UniformSource::ShadowBlurSamples(index),
+        Type::F32,
+        UniformGroup::Render,
+        None,
+    )
+}
+
 /// `reference( 'mapSize', 'vec2', shadow )`.
 pub fn shadow_map_size(index: usize) -> NodeRef {
     uniform(
@@ -1803,6 +1814,16 @@ accessor!(
     )
 );
 accessor!(
+    /// `materialAlphaTest`.
+    material_alpha_test,
+    uniform(
+        UniformSource::MaterialAlphaTest,
+        Type::F32,
+        UniformGroup::Object,
+        None
+    )
+);
+accessor!(
     /// `materialRotation` — `SpriteMaterial.rotation`, the angle
     /// `SpriteNodeMaterial.setupPositionView()` rotates the quad by when the
     /// material sets no `rotationNode`.
@@ -2617,8 +2638,20 @@ pub fn texture(map: &Texture) -> NodeRef {
         TextureSource::Texture2D(map.clone()),
         transformed_uv(default_uv(map), (0, map.id()), map.matrix()),
         sample_mode_for(map),
-        Type::Vec4,
+        texture_type_for(map),
     )
+}
+
+/// `NodeUtils.getTextureType( texture )`'s component count: an `RGFormat`
+/// map (the DFG LUT, VSM's moment targets) is a `vec2` node, so the builder
+/// caches `textureSample( … ).xy` in a `vec2<f32>` var rather than keeping
+/// the whole `vec4`. Only the two-channel case is ported; red-only formats
+/// stay `vec4` until a rung needs three's `float` typing.
+fn texture_type_for(map: &Texture) -> Type {
+    match map.format().components() {
+        2 => Type::Vec2,
+        _ => Type::Vec4,
+    }
 }
 
 /// `WGSLNodeBuilder.generateTextureSample`'s choice for a colour texture:
@@ -2798,7 +2831,7 @@ pub fn texture_uv(map: &Texture, coord: NodeRef) -> NodeRef {
         TextureSource::Texture2D(map.clone()),
         coord,
         sample_mode_for(map),
-        Type::Vec4,
+        texture_type_for(map),
     )
 }
 
@@ -2808,6 +2841,34 @@ pub fn depth_texture(map: &DepthTexture) -> NodeRef {
     texture_node(
         TextureSource::Depth(map.clone()),
         transformed_uv(uv(), (1, map.id()), Matrix3::identity()),
+        SampleMode::Load,
+        Type::F32,
+    )
+}
+
+/// `texture( depthTexture ).sample( uv )` — the [`depth_texture`] load at an
+/// explicit coordinate, through a `mat3x3` uv matrix of its own.
+///
+/// As with [`texture_sample`], `TextureNode.sample()` clones the node and
+/// keeps `updateMatrix` on, so the tap carries a fresh `uniform(
+/// texture.matrix )` rather than sharing the map's. `ShadowNode`'s
+/// `VSMPassVertical` reads the shadow map's depth this way.
+pub fn depth_texture_sample(map: &DepthTexture, coord: NodeRef) -> NodeRef {
+    let matrix = uniform(
+        UniformSource::Value(
+            Matrix3::identity()
+                .to_padded_f32_array()
+                .iter()
+                .map(|&v| v as f64)
+                .collect(),
+        ),
+        Type::Mat3,
+        UniformGroup::Object,
+        None,
+    );
+    texture_node(
+        TextureSource::Depth(map.clone()),
+        matrix.mul(vec3_join(vec![coord, float(1.0)])).xy(),
         SampleMode::Load,
         Type::F32,
     )

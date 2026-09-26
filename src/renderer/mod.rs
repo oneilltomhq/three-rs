@@ -43,7 +43,10 @@ use crate::cameras::{OrthographicCamera, PerspectiveCamera, RenderCamera};
 use crate::core::{BufferGeometry, Index, Layers, Node};
 use crate::error::Error;
 use crate::geometries::{quad_geometry, sphere_geometry};
-use crate::lights::{LightKind, LightObject, CUBE_DIRECTIONS, CUBE_UPS};
+use crate::lights::{
+    LightKind, LightObject, LightShadow, ShadowFilter, ShadowFilterMap, ShadowMapType,
+    CUBE_DIRECTIONS, CUBE_UPS,
+};
 use crate::materials::phong::{LightDesc, ShadowMap};
 use crate::materials::{self, MeshBasicNodeMaterial, MrtContext, SetupContext, Side, ToneMapping};
 use crate::math::{Color, Matrix4, Vector2, Vector4};
@@ -466,6 +469,17 @@ impl ClearOps {
     }
 }
 
+/// `ShadowNode`'s VSM state for one light: the two `RGFormat` /
+/// `HalfFloatType` blur targets and the quad materials that fill them. Built
+/// once, like three's, so the materials keep their ids and the programs stay
+/// cached.
+struct VsmPasses {
+    vertical: RenderTarget,
+    horizontal: RenderTarget,
+    vertical_material: MeshBasicNodeMaterial,
+    horizontal_material: MeshBasicNodeMaterial,
+}
+
 /// A viewport or scissor rectangle in a pass target's own pixels, with its
 /// origin at the **top-left**.
 ///
@@ -771,6 +785,8 @@ pub struct Renderer {
     pub tone_mapping: ToneMapping,
     /// `renderer.shadowMap.enabled`.
     pub shadow_map_enabled: bool,
+    /// `renderer.shadowMap.type` — `PCFShadowMap` by default.
+    pub shadow_map_type: ShadowMapType,
     /// The depth texture of each shadow-casting light's shadow map, keyed by the
     /// light's index in the render list — `light.shadow.map` in three.js. Filled
     /// by the shadow pass, before any material setup reads it.
@@ -783,6 +799,9 @@ pub struct Renderer {
     /// `CubeDepthTexture` the shader samples plus the colour attachment the
     /// pass needs and nothing samples.
     cube_shadow_targets: HashMap<usize, (CubeDepthTexture, wgpu::Texture)>,
+    /// `ShadowNode.vsmShadowMapVertical` / `vsmShadowMapHorizontal` and the
+    /// two `NodeMaterial`s that blur into them, per VSM-shadowed light.
+    vsm_passes: HashMap<usize, VsmPasses>,
 
     /// Whether the device enabled `FLOAT32_FILTERABLE`; see `new()`.
     float32_filterable: bool,
@@ -1075,6 +1094,8 @@ impl Renderer {
             random: DeterministicRandom::new(),
             tone_mapping: ToneMapping::None,
             shadow_map_enabled: false,
+            shadow_map_type: ShadowMapType::default(),
+            vsm_passes: HashMap::new(),
             shadow_maps: HashMap::new(),
             shadow_targets: HashMap::new(),
             cube_shadow_targets: HashMap::new(),
@@ -1180,6 +1201,7 @@ impl Renderer {
             instance,
         )?;
         renderer.shadow_map_enabled = self.shadow_map_enabled;
+        renderer.shadow_map_type = self.shadow_map_type;
         renderer.tone_mapping = self.tone_mapping;
         renderer.tone_mapping_exposure = self.tone_mapping_exposure;
         renderer.random = self.random.clone();
@@ -1782,6 +1804,7 @@ impl Renderer {
                     shadow_bias: shadow.map_or(0.0, |s| s.bias),
                     shadow_normal_bias: shadow.map_or(0.0, |s| s.normal_bias),
                     shadow_radius: shadow.map_or(1.0, |s| s.radius),
+                    shadow_blur_samples: shadow.map_or(8.0, |s| s.blur_samples as f64),
                     shadow_map_size: shadow.map_or(Vector2::new(512.0, 512.0), |s| s.map_size),
                     shadow_intensity: shadow.map_or(1.0, |s| s.intensity),
                 }
@@ -1824,7 +1847,31 @@ impl Renderer {
             return;
         }
 
+        // `Renderer.render()`: `PCFSoftShadowMap` has been removed and is
+        // rendered as `PCFShadowMap`.
+        let shadow_type = self.shadow_map_type.resolved();
+
         for (index, node) in render_list.lights.iter().enumerate() {
+            // `AnalyticLightNode.setupShadow()`: a `shadow.shadowNode` is the
+            // light's whole shadow factor. It is not a `ShadowNode`, so
+            // nothing renders a map for it.
+            let custom_shadow_node = {
+                let object = node.borrow();
+                object
+                    .cast_shadow
+                    .then(|| {
+                        object
+                            .light()
+                            .and_then(|l| l.shadow.as_ref())
+                            .and_then(|s| s.shadow_node.clone())
+                    })
+                    .flatten()
+            };
+            if let Some(shadow_node) = custom_shadow_node {
+                self.shadow_maps.insert(index, ShadowMap::Node(shadow_node));
+                continue;
+            }
+
             // `PointShadowNode.renderShadow()` — six faces into a cube map.
             let is_point = {
                 let object = node.borrow();
@@ -1862,13 +1909,15 @@ impl Renderer {
                             shadow.camera.projection_matrix(),
                             shadow.camera.matrix_world_inverse(),
                             shadow.camera.matrix_world(),
+                            shadow.clone(),
                         )
                     })
                 }
             };
-            let Some((map_size, projection, view, world)) = prepared else {
+            let Some((map_size, projection, view, world, shadow)) = prepared else {
                 continue;
             };
+            let vsm = shadow_type == ShadowMapType::Vsm;
 
             // `ShadowNode.setupRenderTarget()`: an `rgba8unorm` colour target
             // that is written and never sampled, plus the `depth24plus`
@@ -1897,6 +1946,19 @@ impl Renderer {
                 })
                 .clone();
             target.set_size(width, height);
+            // `ShadowNode.setupShadow()`: `LinearFilter` only for
+            // `PCFShadowMap` (the comparison sampler then gives four
+            // bilinear-weighted comparisons per tap), `NearestFilter`
+            // otherwise.
+            let depth_filter = if shadow_type == ShadowMapType::Pcf {
+                TextureFilter::Linear
+            } else {
+                TextureFilter::Nearest
+            };
+            target
+                .depth_texture()
+                .expect("three-rs: the shadow target has a depth texture")
+                .set_filters(depth_filter, depth_filter);
 
             // `renderer.render( scene, shadow.camera )` — a full
             // `_projectObject` walk against the shadow camera's own frustum,
@@ -1919,7 +1981,10 @@ impl Renderer {
             let mut items = Vec::with_capacity(shadow_list.len());
             for item in shadow_list.items() {
                 let object = item.node.borrow();
-                if !object.cast_shadow {
+                // `getShadowRenderObjectFunction`: VSM also draws the objects
+                // that only *receive* a shadow, so their own depth is in the
+                // moments they are compared against.
+                if !(object.cast_shadow || (vsm && object.receive_shadow)) {
                     continue;
                 }
                 // A `Line` casts a shadow in three.js too — the shadow pass is
@@ -1938,7 +2003,7 @@ impl Renderer {
                 items.push(Renderable {
                     object: Some(item.node.clone()),
                     geometry: geometry.clone(),
-                    material: materials::shadow_material(source),
+                    material: materials::shadow_material_for(source, shadow_type),
                     key: MaterialKey::of(source).variant(VARIANT_SHADOW),
                     setup: SetupContext {
                         environment: None,
@@ -2008,15 +2073,148 @@ impl Renderer {
                 ClearOps::all([0.0, 0.0, 0.0, 0.0]),
             );
 
-            self.shadow_maps.insert(
+            let depth = target
+                .depth_texture()
+                .expect("three-rs: the shadow target has a depth texture");
+            let filter = ShadowFilter::of(shadow_type, shadow.filter_node.as_ref());
+            let shadow_map = if vsm {
+                // `ShadowNode.vsmPass()`, and the filter reads the second
+                // pass's target instead of the depth texture.
+                let moments = self.render_vsm_passes(index, &depth, &shadow);
+                ShadowMap::Filtered {
+                    map: ShadowFilterMap::Moments(moments),
+                    filter,
+                }
+            } else if matches!(filter, ShadowFilter::Pcf) {
+                ShadowMap::Planar(depth)
+            } else {
+                ShadowMap::Filtered {
+                    map: ShadowFilterMap::Depth(depth),
+                    filter,
+                }
+            };
+            self.shadow_maps.insert(index, shadow_map);
+        }
+    }
+
+    /// `ShadowNode.vsmPass( renderer )`: the vertical blur of the shadow
+    /// map's depth into `VSMVertical`, then the horizontal blur of that into
+    /// `VSMHorizontal`, each a `QuadMesh` render into an `RGFormat` /
+    /// `HalfFloatType` target with no depth buffer. Returns the
+    /// `VSMHorizontal` texture the `VSMShadowFilter` samples.
+    fn render_vsm_passes(
+        &mut self,
+        index: usize,
+        depth: &DepthTexture,
+        shadow: &LightShadow,
+    ) -> Texture {
+        let (width, height) = (shadow.map_size.x as u32, shadow.map_size.y as u32);
+        let passes = self.vsm_passes.entry(index).or_insert_with(|| {
+            // `builder.createRenderTarget( w, h, { format: RGFormat, type:
+            // HalfFloatType, depthBuffer: false } )`.
+            let target = || {
+                let target = RenderTarget::new_with_options(
+                    width,
+                    height,
+                    RenderTargetOptions {
+                        texture_type: TextureType::HalfFloat,
+                        samples: 0,
+                        depth_buffer: false,
+                        min_filter: TextureFilter::Linear,
+                        mag_filter: TextureFilter::Linear,
+                    },
+                )
+                .expect("three-rs: HalfFloat is a colour type");
+                target.set_rg_format();
+                target
+            };
+            let vertical = target();
+            let horizontal = target();
+            let mut vertical_material = MeshBasicNodeMaterial::new();
+            vertical_material.name = "VSMVertical";
+            vertical_material.fragment_node = Some(crate::lights::vsm_pass_vertical(index, depth));
+            let mut horizontal_material = MeshBasicNodeMaterial::new();
+            horizontal_material.name = "VSMHorizontal";
+            horizontal_material.fragment_node = Some(crate::lights::vsm_pass_horizontal(
                 index,
-                ShadowMap::Planar(
-                    target
-                        .depth_texture()
-                        .expect("three-rs: the shadow target has a depth texture"),
-                ),
+                &vertical.texture(),
+            ));
+            VsmPasses {
+                vertical,
+                horizontal,
+                vertical_material,
+                horizontal_material,
+            }
+        });
+        passes.vertical.set_size(width, height);
+        passes.horizontal.set_size(width, height);
+        // The key comes from the stored material, before the per-draw clone:
+        // `clone()` mints a fresh `MaterialId`, and a key taken from the copy
+        // would rebuild both programs every frame.
+        let steps = [
+            (
+                passes.vertical.clone(),
+                MaterialKey::of(&passes.vertical_material).variant(VARIANT_QUAD),
+                passes.vertical_material.clone(),
+            ),
+            (
+                passes.horizontal.clone(),
+                MaterialKey::of(&passes.horizontal_material).variant(VARIANT_QUAD),
+                passes.horizontal_material.clone(),
+            ),
+        ];
+        let moments = passes.horizontal.texture();
+
+        // The passes read `blurSamples`, `radius` and `mapSize` of this light
+        // only, through the same `Shadow*( index )` uniforms the lit
+        // materials use.
+        let mut lights = vec![LightState::default(); index + 1];
+        lights[index].shadow_radius = shadow.radius;
+        lights[index].shadow_blur_samples = shadow.blur_samples as f64;
+        lights[index].shadow_map_size = shadow.map_size;
+
+        let previous_fullscreen_pass = std::mem::replace(&mut self.fullscreen_pass, true);
+        for (target, key, material) in steps {
+            let mut material = material;
+            material.vertex_node = Some(materials::quad_vertex_node());
+            let items = [Renderable {
+                object: None,
+                fog: None,
+                geometry: self.quad_geometry(),
+                material,
+                key,
+                setup: SetupContext::default(),
+                model_world: Matrix4::identity(),
+                instance_matrix: None,
+                instance_color: None,
+                instance_count: 1,
+                morph_influences: Vec::new(),
+                morph_base: 1.0,
+                bind_matrix: Matrix4::identity(),
+                bind_matrix_inverse: Matrix4::identity(),
+                bone_matrices: Vec::new(),
+                primitive: Primitive::TRIANGLES,
+                sub_draws: Vec::new(),
+            }];
+            let uniforms = UniformContext {
+                lights: &lights,
+                ..self.quad_camera_uniforms()
+            };
+            let pass_target = self.render_target_pass(&target);
+            // `resetRendererAndSceneState()` left `setClearColor( 0x000000, 0
+            // )` in place; the full-screen triangle overwrites every texel.
+            self.draw(
+                &items,
+                uniforms,
+                &pass_target,
+                ClearOps {
+                    color: Some([0.0, 0.0, 0.0, 0.0]),
+                    depth: false,
+                },
             );
         }
+        self.fullscreen_pass = previous_fullscreen_pass;
+        moments
     }
 
     /// `PointShadowNode.renderShadow()` + `PointLightShadow.updateMatrices()`:
@@ -2032,7 +2230,8 @@ impl Renderer {
     ) {
         // `PointLightShadow.updateMatrices( light )`: `far = light.distance ||
         // camera.far`, `shadowMatrix.makeTranslation( - lightPositionWorld )`.
-        let (light_world_position, near, far, size) = {
+        let shadow_type = self.shadow_map_type.resolved();
+        let (light_world_position, near, far, size, filter_node) = {
             let mut object = node.borrow_mut();
             let light_world_position = LightObject::world_position(&object.matrix_world);
             let light = object
@@ -2049,6 +2248,7 @@ impl Renderer {
                 shadow.camera.near(),
                 shadow.camera.far(),
                 shadow.map_size.x as u32,
+                shadow.filter_node.clone(),
             )
         };
 
@@ -2097,6 +2297,14 @@ impl Renderer {
                 self.cube_shadow_targets.insert(index, entry.clone());
                 entry
             });
+        // `ShadowNode.setupShadow()`, which `PointShadowNode` inherits:
+        // `LinearFilter` for `PCFShadowMap`, `NearestFilter` otherwise.
+        let cube_filter = if shadow_type == ShadowMapType::Pcf {
+            TextureFilter::Linear
+        } else {
+            TextureFilter::Nearest
+        };
+        depth_texture.set_filters(cube_filter, cube_filter);
 
         for face in 0..6 {
             let mut face_camera = PerspectiveCamera::new(90.0, 1.0, near, far);
@@ -2132,7 +2340,12 @@ impl Renderer {
             let mut items = Vec::with_capacity(face_list.len());
             for item in face_list.items() {
                 let object = item.node.borrow();
-                if !object.cast_shadow {
+                // As in the planar pass, VSM draws the receivers too — the
+                // render-object function is `ShadowBaseNode`'s, shared by
+                // `PointShadowNode`, even though VSM never filters a point
+                // light.
+                let vsm = shadow_type == ShadowMapType::Vsm;
+                if !(object.cast_shadow || (vsm && object.receive_shadow)) {
                     continue;
                 }
                 // As in the planar pass: a `Line` casts a shadow the same way,
@@ -2149,7 +2362,7 @@ impl Renderer {
                 items.push(Renderable {
                     object: Some(item.node.clone()),
                     geometry: geometry.clone(),
-                    material: materials::shadow_material(source),
+                    material: materials::shadow_material_for(source, shadow_type),
                     key: MaterialKey::of(source).variant(VARIANT_SHADOW),
                     setup: SetupContext {
                         environment: None,
@@ -2255,8 +2468,22 @@ impl Renderer {
             );
         }
 
-        self.shadow_maps
-            .insert(index, ShadowMap::Cube(depth_texture));
+        // `PointShadowNode.getShadowFilterFn( type )`: `BasicPointShadowFilter`
+        // for `BasicShadowMap`, `PointShadowFilter` for everything else — VSM
+        // included — unless the light brings its own `filterNode`.
+        let filter = match (filter_node, shadow_type) {
+            (Some(filter), _) => ShadowFilter::Custom(filter),
+            (None, ShadowMapType::Basic) => ShadowFilter::Basic,
+            (None, _) => ShadowFilter::Pcf,
+        };
+        let shadow_map = match filter {
+            ShadowFilter::Pcf => ShadowMap::Cube(depth_texture),
+            filter => ShadowMap::Filtered {
+                map: ShadowFilterMap::Cube(depth_texture),
+                filter,
+            },
+        };
+        self.shadow_maps.insert(index, shadow_map);
     }
 
     /// `Renderer._renderScene()`'s render-list half: `renderList.begin()`,
@@ -2439,7 +2666,7 @@ impl Renderer {
             // `NodeManager.getForRender( renderObject )`: the material's built
             // program, from the cache on a steady frame and from
             // `NodeMaterial.setup()` → `NodeBuilder.build()` on a miss.
-            let node = self.node_builder_state(item);
+            let node = self.node_builder_state(item, target.color_format.components());
             let program_key = node.cache_key;
 
             let mut extra_color_targets = [None; MAX_EXTRA_COLOR_ATTACHMENTS];
@@ -2478,6 +2705,7 @@ impl Renderer {
                 model_world: item.model_world,
                 material_color: item.material.color,
                 material_opacity: item.material.opacity,
+                material_alpha_test: item.material.alpha_test,
                 material_rotation: item.material.rotation,
                 material_reflectivity: item.material.reflectivity,
                 material_shininess: item.material.shininess,
@@ -3290,8 +3518,12 @@ impl Renderer {
     /// material variant. Only a miss runs `setup()` and `NodeBuilder::build`;
     /// a material whose version moved drops every state it had, as
     /// `renderObject.dispose()` does.
-    fn node_builder_state(&mut self, item: &Renderable) -> Rc<NodeProgram> {
-        let dynamic_key = hash_of(&(item.key.variant, &item.setup, &item.fog));
+    /// `output_components` is the channel count of the pass's colour
+    /// attachment: `NodeBuilder.getOutputType()` reads the render target's
+    /// texture, so the same material built for an `RGFormat` target writes a
+    /// `vec2` and is a different program.
+    fn node_builder_state(&mut self, item: &Renderable, output_components: u8) -> Rc<NodeProgram> {
+        let dynamic_key = hash_of(&(item.key.variant, &item.setup, &item.fog, output_components));
 
         let frames = self.frames;
         let states = self
@@ -3314,7 +3546,11 @@ impl Renderer {
         // `NodeMaterial.setup()` → `NodeBuilder.build()`: the WGSL and the
         // bindings the material declares.
         let flow = materials::setup(&item.material, &item.setup, item.fog.as_ref());
-        let node = Rc::new(NodeBuilder::new().build(&flow));
+        let node = Rc::new(
+            NodeBuilder::new()
+                .with_output_components(output_components as u32)
+                .build(&flow),
+        );
         self.program_builds += 1;
         self.info.build.programs_compiled += 1;
         self.programs
@@ -4864,7 +5100,7 @@ impl Renderer {
         self.prepare_render_target(render_target);
 
         let inner = render_target.inner().borrow();
-        let color_format = inner.texture_type.color_gpu_format();
+        let color_format = inner.texture.format();
         let single = inner
             .texture
             .with_gpu(|gpu| gpu.create_view(&Default::default()));
@@ -5092,7 +5328,7 @@ impl Renderer {
         let (width, height) = (inner.width, inner.height);
         let sample_count = inner.samples.max(1);
 
-        let format = inner.texture_type.color_gpu_format();
+        let format = inner.texture.format();
 
         if !inner.texture.has_gpu() {
             inner

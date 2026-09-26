@@ -12,6 +12,8 @@ use crate::nodes::tsl::{
 };
 use crate::textures::CubeDepthTexture;
 
+use super::shadow_filter::{ShadowFilter, ShadowFilterInputs, ShadowFilterMap};
+
 /// The six cube faces as `renderShadow()` walks them, in the WebGPU
 /// coordinate system (the ±Y directions are swapped to match the sampling
 /// convention). Face order: +X, −X, +Y, −Y, +Z, −Z.
@@ -81,15 +83,31 @@ pub const CUBE_UPS: [Vector3; 6] = [
     },
 ];
 
+/// `BasicPointShadowFilter` — one hardware comparison along `bd3D`:
+/// `cubeTexture( depthTexture, bd3D ).compare( dp )`.
+pub fn basic_point_shadow_filter(inputs: &ShadowFilterInputs) -> NodeRef {
+    let (depth_texture, bd3d, dp) = point_inputs(inputs, "BasicPointShadowFilter");
+    cube_depth_texture_compare(&depth_texture, bd3d, dp)
+}
+
+fn point_inputs(inputs: &ShadowFilterInputs, filter: &str) -> (CubeDepthTexture, NodeRef, NodeRef) {
+    match (&inputs.map, &inputs.dp) {
+        (ShadowFilterMap::Cube(map), Some(dp)) => {
+            (map.clone(), inputs.shadow_coord.clone(), dp.clone())
+        }
+        (other, _) => {
+            panic!("three-rs: {filter} reads a cube depth texture and a dp, got {other:?}")
+        }
+    }
+}
+
 /// `PointShadowFilter` — percentage-closer filtering with five Vogel-disk taps
 /// in the tangent frame of `bd3D`, rotated per pixel by interleaved gradient
 /// noise.
-fn point_shadow_filter(
-    index: usize,
-    depth_texture: &CubeDepthTexture,
-    bd3d: NodeRef,
-    dp: NodeRef,
-) -> NodeRef {
+pub fn point_shadow_filter(inputs: &ShadowFilterInputs) -> NodeRef {
+    let index = inputs.index;
+    let (depth_texture, bd3d, dp) = point_inputs(inputs, "PointShadowFilter");
+    let depth_texture = &depth_texture;
     let texel_size = shadow_radius(index).div(shadow_map_size(index).x());
 
     let abs_dir = abs(bd3d.clone());
@@ -137,6 +155,17 @@ fn point_shadow_filter(
 /// `ShadowBaseNode.setupShadowPosition()`, which the caller pushes because it
 /// is a statement rather than an expression (same seam as `shadow_factor`).
 pub fn point_shadow(index: usize, depth_texture: &CubeDepthTexture) -> NodeRef {
+    point_shadow_filtered(index, depth_texture, &ShadowFilter::Pcf)
+}
+
+/// [`point_shadow`] through a given filter — `PointShadowNode.getShadowFilterFn(
+/// type )` (`BasicPointShadowFilter` for `BasicShadowMap`, `PointShadowFilter`
+/// otherwise, VSM included) or the light's own `shadow.filterNode`.
+pub fn point_shadow_filtered(
+    index: usize,
+    depth_texture: &CubeDepthTexture,
+    filter: &ShadowFilter,
+) -> NodeRef {
     // `setupShadow()`: `shadowMatrix * ( shadowPositionWorld + normalWorld *
     // normalBias )`, and `PointShadowNode.setupShadowCoord()` leaves it
     // unprojected.
@@ -183,7 +212,12 @@ pub fn point_shadow(index: usize, depth_texture: &CubeDepthTexture) -> NodeRef {
     let dp_bias = dp.clone().assign(dp.clone().add(shadow_bias(index)));
 
     let bd3d = shadow_position.normalize();
-    let filtered = point_shadow_filter(index, depth_texture, bd3d, dp.clone());
+    let filtered = filter.apply(&ShadowFilterInputs {
+        index,
+        map: ShadowFilterMap::Cube(depth_texture.clone()),
+        shadow_coord: bd3d,
+        dp: Some(dp.clone()),
+    });
 
     let node = if_node(
         vec![shadow_position_abs],
