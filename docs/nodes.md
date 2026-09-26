@@ -4896,6 +4896,32 @@ legacy `PointsMaterial` but keeps `transparent`. That rung is green, and it
 was not changed here. Moving it to the opaque list would be a separate
 change, checked against that page's own dump.
 
+## 58. `webgpu_multisampled_renderbuffers`, an ignored rung on §50's wireframe
+
+The page draws two `InstancedMesh`es of fifty boxes, one with `wireframe: true`,
+into a `RenderTarget` with `samples: 4`, then shows `renderTarget.texture`
+through a `QuadMesh`. Both halves already exist in the port. The multisampled
+target (an MSAA colour attachment resolved into `rgba8unorm`, and a
+multisampled `depth24plus`) is the existing `RenderTarget` path. The wireframe
+is §50.2's `Material.wireframe` from `webgpu_layers`. The rung adds no API.
+
+Two details of three's wireframe that §50.2 leaves out do not reach this page:
+
+* `NodeBuilder.isFlatShading()` is `flatShading && !wireframe`, but
+  `MeshBasicMaterial` has no flat shading to turn off.
+* The index is `uint16` below 65535 vertices in three and always `uint32` in
+  the port. The format does not change which lines are drawn.
+
+**Why the rung is ignored.** Three itself scores 2405 of 100000 pixels against
+`screenshots/webgpu_multisampled_renderbuffers.jpg` on this machine (Intel Iris
+Xe, Mesa 25.3.6). Every one of those pixels is on a wireframe line: Vulkan
+leaves line rasterization to the implementation, and the reference came from
+another GPU. The port's frame is measured against three's own frame for the
+page (`tools/dump-webgpu.mjs`), and
+`docs/webgpu_multisampled_renderbuffers-progress.md` gives the counts. As with
+`webgpu_textures_anisotropy`, the e2e test is `#[ignore]`d with that reason and
+the page stays in the steady-frame strip. It has no README, web or viewer
+registration, and the grader is not loosened.
 ## 54. The EON diffuse lobe and `KHR_materials_diffuse_roughness` (`webgpu_loader_gltf_diffuse_roughness`)
 
 `MeshPhysicalMaterial.diffuseRoughness` turns the Lambert diffuse lobe into
