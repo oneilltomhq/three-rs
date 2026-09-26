@@ -2879,9 +2879,16 @@ pub fn depth_texture(map: &DepthTexture) -> NodeRef {
 /// a `PassTextureNode` calls `setUpdateMatrix( false )`, so the pass's depth
 /// attachment carries no `mat3x3` in the object uniform block.
 pub fn pass_depth_texture(map: &DepthTexture) -> NodeRef {
+    pass_depth_texture_uv(map, uv())
+}
+
+/// `passNode.getTextureNode( 'depth' ).sample( coord )` — the pass's depth
+/// attachment read at another uv, as `PixelationPassNode`'s neighbour taps
+/// read it.
+pub fn pass_depth_texture_uv(map: &DepthTexture, coord: NodeRef) -> NodeRef {
     texture_node(
         TextureSource::Depth(map.clone()),
-        uv(),
+        coord,
         SampleMode::Load,
         Type::F32,
     )
@@ -3702,8 +3709,34 @@ pub fn loop_range(
     NodeRef::new(Node::Loop {
         start: Some(start),
         count: end,
-        index,
         condition: "<",
+        index,
+        body,
+    })
+}
+
+/// `Loop( { start, end, type, condition, name }, ( { i } ) => { … } )` — the
+/// full options object.
+///
+/// `ty` is the index type: `Type::I32` (three's default `'int'`) or
+/// `Type::F32` (`type: 'float'`, `hashBlur`'s), which three writes as
+/// `for ( var i : f32 = 0.0; i < 45.0; i += 1. )`. `condition` is the
+/// comparison, `"<"` by default and `"<="` in `boxBlur`.
+pub fn loop_options(
+    name: &'static str,
+    ty: Type,
+    start: NodeRef,
+    end: NodeRef,
+    condition: &'static str,
+    body: impl FnOnce(&NodeRef) -> Vec<NodeRef>,
+) -> NodeRef {
+    let index = NodeRef::new(Node::Param { name, ty });
+    let body = body(&index);
+    NodeRef::new(Node::Loop {
+        start: Some(start),
+        count: end,
+        index,
+        condition,
         body,
     })
 }

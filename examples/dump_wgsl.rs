@@ -30,6 +30,9 @@ mod webgpu_compute_points;
 #[allow(dead_code)]
 mod webgpu_postprocessing_anamorphic;
 
+#[path = "../tests/display/materials.rs"]
+mod display_materials;
+
 #[path = "webgpu_tsl_interoperability.rs"]
 #[allow(dead_code)]
 mod webgpu_tsl_interoperability;
@@ -1897,6 +1900,14 @@ fn main() {
     dump_room_environment();
     dump_scene_fog();
     dump_chromatic_aberration();
+
+    // #144's display nodes, each as the three.js page that dumps it builds it:
+    // the quads `tests/nodes_display_wgsl.rs` checks against
+    // `tests/fixtures/nodes_display/`, whose names say which dump each is.
+    for quad in display_materials::display_quads() {
+        println!("########## {} — three's is {}", quad.label, quad.fixture);
+        show(quad.label, &quad.material, SetupContext::default());
+    }
 
     // rung `webgpu_custom_fog_background`: the composite quad, against
     // `dump-custom_fog_background/m08_fragment_fragment_RenderPipeline.wgsl`.

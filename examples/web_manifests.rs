@@ -165,6 +165,18 @@ mod webgpu_pmrem_equirectangular;
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_postprocessing_ca;
 
+#[path = "webgpu_postprocessing_transition.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_postprocessing_transition;
+
+#[path = "webgpu_postprocessing_sobel.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_postprocessing_sobel;
+
+#[path = "webgpu_procedural_texture.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_procedural_texture;
+
 #[path = "webgpu_loader_gltf.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_loader_gltf;
@@ -306,6 +318,15 @@ const GRADED: &[(&str, fn())] = &[
     }),
     ("webgpu_tsl_vfx_flames", || {
         drop(webgpu_tsl_vfx_flames::init())
+    }),
+    ("webgpu_procedural_texture", || {
+        drop(webgpu_procedural_texture::init())
+    }),
+    ("webgpu_postprocessing_sobel", || {
+        drop(webgpu_postprocessing_sobel::init())
+    }),
+    ("webgpu_postprocessing_transition", || {
+        drop(webgpu_postprocessing_transition::init())
     }),
 ];
 

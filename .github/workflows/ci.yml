@@ -209,6 +209,7 @@ jobs:
             math_vector3
             math_vector4
             nodes_fog
+            nodes_display_wgsl
             nodes_instanced_attributes
             nodes_line2_world_units
             nodes_morph

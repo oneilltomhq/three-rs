@@ -1384,9 +1384,29 @@ impl NodeBuilder {
                     }
                     SampleMode::Load => {
                         self.add_code("tsl_coord_clampS_clampT_2d", wgsl::CLAMP_WRAP_SNIPPET);
-                        let dims = self.declare_var(None, Type::UVec2);
-                        let dims_expr = wgsl::texture_dimensions(&name, kind);
-                        self.emit(format!("{dims} = {dims_expr};"));
+                        // `WGSLNodeBuilder.generateTextureDimension()` keeps
+                        // one dimensions var per texture in the build cache,
+                        // so a second tap in the same scope (or one nested in
+                        // it) reuses it, and a sibling `if` declares its own.
+                        // The scope stack is that cache; the key is the
+                        // texture's slot name, hashed out of the node-key
+                        // space.
+                        let dims_key = {
+                            use std::hash::{Hash, Hasher};
+                            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                            ("textureDimensions", name.as_str()).hash(&mut hasher);
+                            hasher.finish() as usize
+                        };
+                        let dims = match self.cache_get(dims_key) {
+                            Some(dims) => dims,
+                            None => {
+                                let dims = self.declare_var(None, Type::UVec2);
+                                let dims_expr = wgsl::texture_dimensions(&name, kind);
+                                self.emit(format!("{dims} = {dims_expr};"));
+                                self.cache_put(dims_key, dims.clone());
+                                dims
+                            }
+                        };
                         wgsl::texture_load(&name, &suv, &dims)
                     }
                 }
@@ -1524,7 +1544,14 @@ impl NodeBuilder {
                 for stmt in &statements {
                     self.generate(stmt);
                 }
-                self.generate(&result)
+                // A block is an inline `Fn()` call: three builds its stack
+                // once per build and a second reference reuses the result
+                // snippet, statements and all not repeated. Without this a
+                // block read twice (`renderOutput()` reads its colour's `.xyz`
+                // and `.w`) emitted every statement twice.
+                let snippet = self.generate(&result);
+                self.cache_put(node.key(), snippet.clone());
+                snippet
             }
 
             Node::Loop {

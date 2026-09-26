@@ -814,10 +814,11 @@ pub enum Node {
         start: Option<NodeRef>,
         count: NodeRef,
         /// The loop index, as it appears inside `body` (`Node::Param`). Its
-        /// type is the loop's `type` (`i32` unless the `Loop( { type } )`
-        /// form says otherwise).
+        /// type is `Loop( { type } )`: `i32`, or `f32` for `hashBlur`'s
+        /// `type: 'float'`, which also changes the step to `i += 1.`.
         index: NodeRef,
-        /// `Loop( { condition } )` — `'<'` unless given.
+        /// `Loop( { condition } )` — `"<"` unless the caller asked for
+        /// another comparison (`boxBlur`'s `"<="`).
         condition: &'static str,
         body: Vec<NodeRef>,
     },

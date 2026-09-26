@@ -254,6 +254,9 @@ Deferred, webgpu_deferred, "../../examples/webgpu_deferred.rs";
 LoaderGltfAnisotropy, webgpu_loader_gltf_anisotropy, "../../examples/webgpu_loader_gltf_anisotropy.rs";
 MaterialsTextureManualmipmap, webgpu_materials_texture_manualmipmap, "../../examples/webgpu_materials_texture_manualmipmap.rs";
 TslVfxFlames, webgpu_tsl_vfx_flames, "../../examples/webgpu_tsl_vfx_flames.rs";
+ProceduralTexture, webgpu_procedural_texture, "../../examples/webgpu_procedural_texture.rs";
+PostprocessingSobel, webgpu_postprocessing_sobel, "../../examples/webgpu_postprocessing_sobel.rs";
+PostprocessingTransition, webgpu_postprocessing_transition, "../../examples/webgpu_postprocessing_transition.rs";
 }
 
 /// Where an example's assets come from: three.js at the commit this port is
