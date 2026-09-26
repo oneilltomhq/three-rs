@@ -346,6 +346,14 @@ mod webgpu_materials_toon;
 #[allow(dead_code)]
 mod webgpu_occlusion;
 
+#[path = "../../examples/webgpu_materials_alphahash.rs"]
+#[allow(dead_code)]
+mod webgpu_materials_alphahash;
+
+#[path = "../../examples/webgpu_materials_arrays.rs"]
+#[allow(dead_code)]
+mod webgpu_materials_arrays;
+
 fn three_js_dir() -> PathBuf {
     three_rs::testing::three_js_dir()
 }
@@ -2009,6 +2017,105 @@ fn webgpu_shadowmap_opacity() {
         out.display()
     );
     steady_frame(name, &mut app, webgpu_shadowmap_opacity::animate, |app| {
+        app.renderer.device()
+    });
+}
+
+/// Not graded: three.js itself scores 3.782% (3782 pixels) against its own
+/// `webgpu_materials_alphahash.jpg` on this machine, far over the 0.1% limit —
+/// the hashed-alpha noise is `fract( 10000 * sin( … ) )` of
+/// `floor( positionLocal * 2^n )`, which turns any last-bit difference in the
+/// reference machine's `sin` or derivatives into a different grain. The
+/// port's frame is pixel-identical to three's (`tools/dump-webgpu.mjs`'
+/// `actual_full.png`, max channel difference 0). See
+/// `docs/webgpu_materials_alphahash-progress.md`.
+#[test]
+#[ignore = "three.js itself fails its own reference for this page on this machine"]
+fn webgpu_materials_alphahash() {
+    let name = "webgpu_materials_alphahash";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_materials_alphahash::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_materials_alphahash::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_materials_alphahash::animate, |app| {
+        app.renderer.device()
+    });
+}
+
+/// Not graded: three.js itself scores 0.251% (251 pixels) against its own
+/// `webgpu_materials_arrays.jpg` on this machine, over the 0.1% limit, all of
+/// them on MSAA-resolved silhouette edges. The port's frame is
+/// pixel-identical to three's (`tools/dump-webgpu.mjs`' `actual_full.png`,
+/// max channel difference 0). See `docs/webgpu_materials_arrays-progress.md`.
+#[test]
+#[ignore = "three.js itself fails its own reference for this page on this machine"]
+fn webgpu_materials_arrays() {
+    let name = "webgpu_materials_arrays";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_materials_arrays::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_materials_arrays::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_materials_arrays::animate, |app| {
         app.renderer.device()
     });
 }
@@ -4030,6 +4137,8 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_tsl_angular_slicing);
     rung!(webgpu_fog_height);
     rung!(webgpu_shadowmap_opacity);
+    rung!(webgpu_materials_alphahash);
+    rung!(webgpu_materials_arrays);
 }
 
 // ---------------------------------------------------------------------------
