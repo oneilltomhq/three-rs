@@ -488,3 +488,91 @@ fn anisotropy_and_clearcoat_maps_are_texture_refs() {
     // `scale` on the reference is the normal scale, not part of the transform.
     assert_eq!(material.clearcoat_normal_scale, 0.75);
 }
+
+/// `KHR_texture_basisu`: a texture whose extension names a KTX 2.0 image is
+/// loaded through `KTX2Loader`, and the plain `source` (a PNG fallback, here
+/// one that does not exist) is never read — `GLTFTextureBasisUExtension`
+/// runs before the default `loadTexture`. None of three's own basisu assets
+/// loads in the port yet (`CarbonFrameBike.glb` also needs Draco,
+/// `facecap.glb` and `coffeemat.glb` meshopt), so the document is built here
+/// around one of the `textures/ktx2/` samples. The transcode itself is
+/// checked byte for byte against three in `tests/ktx2_loader.rs`.
+#[test]
+fn khr_texture_basisu_goes_through_ktx2_loader() {
+    use three_rs::loaders::{Ktx2Loader, Ktx2Support};
+    use three_rs::textures::{ColorSpace, MinFilter};
+
+    let ktx2 = three_rs::testing::three_js_dir().join("examples/textures/ktx2");
+    // One triangle: three `vec3<f32>`, base64.
+    let positions: Vec<u8> = [0.0f32, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0]
+        .iter()
+        .flat_map(|v| v.to_le_bytes())
+        .collect();
+    let json = format!(
+        r#"{{
+        "asset": {{ "version": "2.0" }},
+        "extensionsUsed": [ "KHR_texture_basisu" ],
+        "extensionsRequired": [ "KHR_texture_basisu" ],
+        "buffers": [ {{ "byteLength": 36, "uri": "data:application/octet-stream;base64,{}" }} ],
+        "bufferViews": [ {{ "buffer": 0, "byteLength": 36 }} ],
+        "accessors": [ {{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3",
+                          "min": [ 0, 0, 0 ], "max": [ 1, 1, 0 ] }} ],
+        "images": [ {{ "uri": "2d_etc1s.ktx2" }}, {{ "uri": "no-such-fallback.png" }} ],
+        "textures": [ {{ "source": 1, "extensions": {{ "KHR_texture_basisu": {{ "source": 0 }} }} }} ],
+        "materials": [ {{ "pbrMetallicRoughness": {{ "baseColorTexture": {{ "index": 0 }} }} }} ],
+        "meshes": [ {{ "primitives": [ {{ "attributes": {{ "POSITION": 0 }}, "material": 0 }} ] }} ],
+        "nodes": [ {{ "mesh": 0 }} ],
+        "scenes": [ {{ "nodes": [ 0 ] }} ],
+        "scene": 0
+    }}"#,
+        base64_encode(&positions)
+    );
+
+    let map_of = |gltf: &three_rs::loaders::Gltf| {
+        let node = gltf.primitives[0].node.borrow();
+        let material = node.payload.material().expect("a material");
+        material.map.clone().expect("baseColorTexture")
+    };
+
+    // The default loader: no `setKTX2Loader`, so the RGBA fallback.
+    let gltf = GLTFLoader::parse(json.as_bytes(), ktx2.clone()).unwrap();
+    let map = map_of(&gltf);
+    assert_eq!(map.size(), (40, 40));
+    assert_eq!(map.format(), wgpu::TextureFormat::Rgba8UnormSrgb);
+    assert_eq!(map.color_space(), ColorSpace::SRGB);
+    assert_eq!(map.mip_level_count(), 6, "the KTX2 mip chain is kept");
+    assert!(!map.borrow().flip_y);
+    // The glTF sampler's defaults win over the KTX2 texture's filters.
+    assert_eq!(map.borrow().min_filter, MinFilter::LinearMipmapLinear);
+
+    // A loader that has seen a BC-capable device: BC7.
+    let bc = Ktx2Loader::new().with_support(Ktx2Support {
+        bptc: true,
+        dxt: true,
+        ..Default::default()
+    });
+    let gltf = GLTFLoader::parse_with_ktx2(json.as_bytes(), ktx2, &bc).unwrap();
+    assert_eq!(
+        map_of(&gltf).format(),
+        wgpu::TextureFormat::Bc7RgbaUnormSrgb
+    );
+}
+
+fn base64_encode(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::new();
+    for chunk in bytes.chunks(3) {
+        let n = chunk
+            .iter()
+            .enumerate()
+            .fold(0u32, |n, (i, &b)| n | (b as u32) << (16 - 8 * i));
+        for i in 0..4 {
+            if i <= chunk.len() {
+                out.push(ALPHABET[(n >> (18 - 6 * i)) as usize & 63] as char);
+            } else {
+                out.push('=');
+            }
+        }
+    }
+    out
+}

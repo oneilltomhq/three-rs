@@ -16,6 +16,9 @@
 //! `CUBICSPLINE` interpolation (needs `GLTFCubicSplineInterpolant`), cameras,
 //! primitive-key geometry deduplication and the `groups` it implies, and
 //! `GLTFMeshStandardSGMaterial`.
+//!
+//! `KHR_texture_basisu` textures are transcoded by [`Ktx2Loader`]; see
+//! [`GLTFLoader::load_with_ktx2`] for which one.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -27,7 +30,7 @@ use serde_json::Value;
 use crate::animation::{AnimationClip, InterpolationMode, KeyframeTrack, SceneResolver};
 use crate::core::{BufferAttribute, BufferGeometry, Index, Node, Object3D};
 use crate::error::{Error, GltfError};
-use crate::loaders::TextureLoader;
+use crate::loaders::{Ktx2Loader, TextureLoader};
 use crate::materials::{MeshBasicNodeMaterial, Side};
 use crate::math::{Color, Matrix4, Vector2};
 use crate::objects::{Bone, Mesh, Skeleton, SkinnedMesh};
@@ -314,6 +317,10 @@ pub struct GltfImage {
 pub struct GltfTexture {
     pub source: Option<usize>,
     pub sampler: Option<usize>,
+    /// `extensions.KHR_texture_basisu.source` — a KTX 2.0 image that, when
+    /// present, takes the place of `source` (which is then a PNG/JPEG
+    /// fallback, or absent).
+    pub basisu_source: Option<usize>,
 }
 
 /// One drawable produced by a glTF primitive. `node` is the scene-graph node it
@@ -399,6 +406,8 @@ pub struct GLTFLoader {
     base: PathBuf,
     /// `GLTFParser.nodeNamesUsed`.
     node_names_used: HashMap<String, usize>,
+    /// `loader.setKTX2Loader( ktx2Loader )`.
+    ktx2_loader: Ktx2Loader,
 }
 
 impl GLTFLoader {
@@ -410,9 +419,37 @@ impl GLTFLoader {
         Self::parse(&data, base)
     }
 
+    /// `loader.setKTX2Loader( ktx2Loader ).load( url )`: [`load`](Self::load)
+    /// with the `KTX2Loader` that `KHR_texture_basisu` textures go through —
+    /// one that has run `detectSupport( renderer )`, so they transcode to a
+    /// format the device samples compressed.
+    ///
+    /// **Divergence**: three refuses a `KHR_texture_basisu` asset when
+    /// `setKTX2Loader` was never called ("setKTX2Loader must be called before
+    /// loading KTX2 textures"). [`load`](Self::load) and
+    /// [`parse`](Self::parse) instead use `Ktx2Loader::new()`, which
+    /// transcodes to uncompressed RGBA — valid on every device — so the
+    /// common case needs no renderer in hand to load a model.
+    pub fn load_with_ktx2(path: impl AsRef<Path>, ktx2_loader: &Ktx2Loader) -> Result<Gltf, Error> {
+        let path = path.as_ref();
+        let data = crate::io::read(path)?;
+        let base = path.parent().unwrap_or(Path::new(".")).to_path_buf();
+        Self::parse_with_ktx2(&data, base, ktx2_loader)
+    }
+
     /// `loader.parse( data, path )`. Sniffs the GLB magic the way
     /// `GLTFLoader.parse` does.
     pub fn parse(data: &[u8], base: PathBuf) -> Result<Gltf, Error> {
+        Self::parse_with_ktx2(data, base, &Ktx2Loader::new())
+    }
+
+    /// [`parse`](Self::parse) with a `KTX2Loader`; see
+    /// [`load_with_ktx2`](Self::load_with_ktx2).
+    pub fn parse_with_ktx2(
+        data: &[u8],
+        base: PathBuf,
+        ktx2_loader: &Ktx2Loader,
+    ) -> Result<Gltf, Error> {
         let (json, glb_buffer) = if data.len() >= 4 && &data[0..4] == b"glTF" {
             let (json, bin) = parse_glb(data)?;
             (json, bin)
@@ -441,6 +478,7 @@ impl GLTFLoader {
             buffers: Vec::new(),
             base,
             node_names_used: HashMap::new(),
+            ktx2_loader: ktx2_loader.clone(),
         };
 
         loader.load_buffers()?;
@@ -1305,6 +1343,9 @@ impl GLTFLoader {
             .map(|texture| GltfTexture {
                 source: json_usize(texture, "source"),
                 sampler: json_usize(texture, "sampler"),
+                basisu_source: texture
+                    .pointer("/extensions/KHR_texture_basisu")
+                    .and_then(|extension| json_usize(extension, "source")),
             })
             .collect()
     }
@@ -1373,11 +1414,19 @@ impl GLTFLoader {
         let Some(def) = textures.get(index) else {
             return Ok(None);
         };
-        let Some(image) = def.source.and_then(|source| images.get(source)) else {
-            return Ok(None);
-        };
 
-        let texture = TextureLoader::new().from_bytes(&image.data, image.mime_type.as_deref())?;
+        // `GLTFTextureBasisUExtension.loadTexture` runs before the default
+        // `loadTexture`, and wins when the texture has the extension: the
+        // KTX 2.0 image goes through `KTX2Loader` and `source`, if any, is
+        // never read.
+        let texture = if let Some(image) = def.basisu_source.and_then(|source| images.get(source)) {
+            self.ktx2_loader.parse(&image.data)?.into_texture()?
+        } else {
+            let Some(image) = def.source.and_then(|source| images.get(source)) else {
+                return Ok(None);
+            };
+            TextureLoader::new().from_bytes(&image.data, image.mime_type.as_deref())?
+        };
 
         // `texture.flipY = false` in `GLTFParser.loadTextureImage`: glTF UVs
         // have their origin at the top left, so the image is not flipped.
@@ -1988,6 +2037,7 @@ const SUPPORTED_EXTENSIONS: &[&str] = &[
     "KHR_materials_specular",
     "KHR_materials_transmission",
     "KHR_materials_volume",
+    "KHR_texture_basisu",
     "KHR_texture_transform",
 ];
 

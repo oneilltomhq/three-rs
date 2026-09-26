@@ -38,6 +38,10 @@ pub enum Error {
     /// three.js' own `rgbe_error()` message, less its `THREE.HDRLoader: `
     /// prefix.
     Rgbe { reason: String },
+    /// A KTX 2.0 file `KTX2Loader` rejected, or one it cannot transcode for
+    /// this device. `reason` is three.js' own message, less its
+    /// `THREE.KTX2Loader: ` prefix.
+    Ktx2 { reason: String },
     /// A file names a type, format or encoding this port does not implement.
     /// `what` says which field it was read from.
     UnsupportedFormat { what: &'static str, value: String },
@@ -132,6 +136,7 @@ impl fmt::Display for Error {
                 write!(f, "cannot decode {}: {reason}", path.display())
             }
             Self::Rgbe { reason } => write!(f, "THREE.HDRLoader: {reason}"),
+            Self::Ktx2 { reason } => write!(f, "THREE.KTX2Loader: {reason}"),
             Self::UnsupportedFormat { what, value } => {
                 write!(f, "unsupported {what}: {value}")
             }

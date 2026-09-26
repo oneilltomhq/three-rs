@@ -48,7 +48,8 @@ pub use lights::{
     PointLight, ShadowCamera, SpotLight,
 };
 pub use loaders::{
-    BufferGeometryLoader, CubeTextureLoader, HdrCubeTextureLoader, HdrLoader, TextureLoader,
+    BufferGeometryLoader, CubeTextureLoader, HdrCubeTextureLoader, HdrLoader, Ktx2Loader,
+    TextureLoader,
 };
 pub use materials::{
     Line2NodeMaterial, LineBasicNodeMaterial, MaterialKind, MeshBasicNodeMaterial,

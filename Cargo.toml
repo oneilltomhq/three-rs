@@ -49,6 +49,14 @@ bytemuck = { version = "1", features = ["derive"] }
 png = "0.17"
 serde_json = "1"
 zune-jpeg = { version = "0.5.15", default-features = false, features = ["std"] }
+# `KTX2Loader` (issue #172): `ktx2` reads the container, `basisu` is a pure
+# Rust port of the Basis Universal transcoder three.js runs as wasm, and
+# `ruzstd` inflates Zstandard-supercompressed levels of non-Basis files.
+# `ruzstd` is pinned to the 0.7 line `basisu` itself depends on, so the tree
+# carries one Zstandard decoder rather than two.
+ktx2 = "0.5"
+basisu = "0.1"
+ruzstd = { version = "0.7", default-features = false }
 
 # Everything that only makes sense on a desktop.
 #

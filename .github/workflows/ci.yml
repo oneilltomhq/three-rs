@@ -182,6 +182,7 @@ jobs:
             core_object3d
             geometries
             gltf_loader
+            ktx2_loader
             math_box2
             math_box3
             math_color
