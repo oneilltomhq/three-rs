@@ -245,7 +245,9 @@ InstanceSprites, webgpu_instance_sprites, "../../examples/webgpu_instance_sprite
 MaterialsToon, webgpu_materials_toon, "../../examples/webgpu_materials_toon.rs";
 Occlusion, webgpu_occlusion, "../../examples/webgpu_occlusion.rs";
 FogHeight, webgpu_fog_height, "../../examples/webgpu_fog_height.rs";
-ShadowmapOpacity, webgpu_shadowmap_opacity, "../../examples/webgpu_shadowmap_opacity.rs";}
+ShadowmapOpacity, webgpu_shadowmap_opacity, "../../examples/webgpu_shadowmap_opacity.rs";
+MultipleRendertargets, webgpu_multiple_rendertargets, "../../examples/webgpu_multiple_rendertargets.rs";
+MultipleRendertargetsReadback, webgpu_multiple_rendertargets_readback, "../../examples/webgpu_multiple_rendertargets_readback.rs";}
 
 impl Which {
     /// The name with or without its `webgpu_` prefix, or its 1-based index in

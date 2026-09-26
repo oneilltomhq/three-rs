@@ -249,6 +249,12 @@ mod webgpu_materials_toon;
 #[path = "webgpu_modifier_curve.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_modifier_curve;
+#[path = "webgpu_multiple_rendertargets.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_multiple_rendertargets;
+#[path = "webgpu_multiple_rendertargets_readback.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_multiple_rendertargets_readback;
 #[path = "webgpu_occlusion.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_occlusion;
@@ -429,6 +435,12 @@ const GRADED: &[(&str, fn())] = &[
     ("webgpu_fog_height", || drop(webgpu_fog_height::init())),
     ("webgpu_shadowmap_opacity", || {
         drop(webgpu_shadowmap_opacity::init())
+    }),
+    ("webgpu_multiple_rendertargets", || {
+        drop(webgpu_multiple_rendertargets::init())
+    }),
+    ("webgpu_multiple_rendertargets_readback", || {
+        drop(webgpu_multiple_rendertargets_readback::init())
     }),
 ];
 
