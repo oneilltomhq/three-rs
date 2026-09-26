@@ -288,13 +288,11 @@ fn check(name: &str) {
     // --- the geometry the crate draws -------------------------------------
     let gltf = match GLTFLoader::load(asset(name)) {
         Ok(gltf) => gltf,
-        // WebP, AVIF and Basis textures are their own issues; the typed
-        // arrays above are the Draco half of these assets.
+        // AVIF textures are not decoded (docs/nodes.md §30); the typed
+        // arrays above are the Draco half of that asset.
         Err(e)
             if e.to_string()
-                .contains("unknown required extension \"EXT_texture_")
-                || e.to_string()
-                    .contains("unknown required extension \"KHR_texture_basisu") =>
+                .contains("unknown required extension \"EXT_texture_avif") =>
         {
             eprintln!("{name}: geometry checked, the load itself stops at: {e}");
             return;

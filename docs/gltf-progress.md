@@ -88,7 +88,7 @@ too because it exercises two skins and a split mesh.
    between primitives and the task's "groups when a primitive is split" follows
    from that. Not ported; each primitive gets its own geometry and its own child
    node named `<mesh>_<i>`.
-5. Not ported at all: extensions other than `SUPPORTED_EXTENSIONS` (WebP/AVIF
+5. Not ported at all: extensions other than `SUPPORTED_EXTENSIONS` (AVIF
    textures), cameras, lights,
    `GLTFMeshStandardSGMaterial`, `Mesh`/`Points`/`Line` modes (everything is
    treated as `TRIANGLES`).
@@ -112,8 +112,8 @@ too because it exercises two skins and a split mesh.
    `GLTFLoader` by `src/loaders/draco.rs`. `tests/gltf_draco.rs` compares
    every Draco asset in the three.js examples with `DRACOLoader` itself, run
    under node by `tools/draco_reference.mjs`; all fifteen match bit for bit.
-   Seven of them (the WebP, AVIF and Basis ones) still stop at load on their
-   texture extension.
+   The AVIF one (`forest_house.glb`) still stops at load on its texture
+   extension.
 
 ## Running the tests
 

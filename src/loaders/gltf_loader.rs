@@ -23,6 +23,8 @@
 //!
 //! Not ported (explicit TODOs): extensions other than those in
 //! `SUPPORTED_EXTENSIONS`,
+//! Not ported (explicit TODOs): extensions (`KHR_*`, Draco, meshopt,
+//! `EXT_texture_avif`; `EXT_texture_webp` is read, see `load_textures`),
 //! `CUBICSPLINE` interpolation (needs `GLTFCubicSplineInterpolant`), cameras,
 //! primitive-key geometry deduplication and the `groups` it implies, and
 //! `GLTFMeshStandardSGMaterial`.
@@ -329,6 +331,8 @@ pub struct GltfImage {
 /// One glTF texture: which image, which sampler.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct GltfTexture {
+    /// The image the texture samples: `extensions.EXT_texture_webp.source`
+    /// when the texture has one, `source` otherwise.
     pub source: Option<usize>,
     pub sampler: Option<usize>,
     /// `extensions.KHR_texture_basisu.source` — a KTX 2.0 image that, when
@@ -1627,6 +1631,18 @@ impl GLTFLoader {
     }
 
     /// `GLTFParser.loadTexture`, as a data record.
+    ///
+    /// `GLTFParser.loadTexture` asks the texture extensions first, and
+    /// `GLTFTextureWebPExtension.loadTexture` answers for any texture that
+    /// carries `EXT_texture_webp`, with the extension's `source`; the
+    /// texture's own `source` (a PNG or JPEG fallback, when there is one) is
+    /// then never read. The port decodes WebP (issue #179), so it always
+    /// takes that branch, as a browser does.
+    ///
+    /// `EXT_texture_avif` is not read: the port has no AVIF decoder, so a
+    /// file that requires it is refused by `check_required_extensions`, and
+    /// one that only uses it gets the texture's fallback `source`. That is
+    /// what three.js does in a browser without AVIF support.
     fn load_textures(&self) -> Vec<GltfTexture> {
         self.json
             .get("textures")
@@ -1635,7 +1651,10 @@ impl GLTFLoader {
             .unwrap_or(&[])
             .iter()
             .map(|texture| GltfTexture {
-                source: json_usize(texture, "source"),
+                source: texture.pointer("/extensions/EXT_texture_webp").map_or_else(
+                    || json_usize(texture, "source"),
+                    |webp| json_usize(webp, "source"),
+                ),
                 sampler: json_usize(texture, "sampler"),
                 basisu_source: texture
                     .pointer("/extensions/KHR_texture_basisu")
@@ -2354,6 +2373,7 @@ fn json_usize(value: &Value, key: &str) -> Option<usize> {
 /// `EXT_meshopt_compression` and `KHR_mesh_quantization` are all here.
 const SUPPORTED_EXTENSIONS: &[&str] = &[
     "EXT_meshopt_compression",
+    "EXT_texture_webp",
     "KHR_draco_mesh_compression",
     "KHR_materials_anisotropy",
     "KHR_materials_clearcoat",
