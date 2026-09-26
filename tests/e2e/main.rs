@@ -254,6 +254,10 @@ mod webgpu_fog_height;
 #[allow(dead_code)]
 mod webgpu_shadowmap_opacity;
 
+#[path = "../../examples/webgpu_textures_partialupdate.rs"]
+#[allow(dead_code)]
+mod webgpu_textures_partialupdate;
+
 #[path = "../../examples/webgpu_clearcoat.rs"]
 #[allow(dead_code)]
 mod webgpu_clearcoat;
@@ -2011,6 +2015,140 @@ fn webgpu_shadowmap_opacity() {
     steady_frame(name, &mut app, webgpu_shadowmap_opacity::animate, |app| {
         app.renderer.device()
     });
+}
+
+/// The partial-update rung: a carbon-fibre plane whose map is patched by
+/// `renderer.copyTextureToTexture( dataTexture, diffuseMap, null, position )`
+/// every tenth of a second.
+///
+/// Under the pinned clock the page never reaches its first copy, so the graded
+/// frame is the untouched texture — as it is for three's grader. The second
+/// half of the rung moves the clock to 150 ms, lets `animate()` make exactly
+/// one copy, and checks the next frame against three's semantics rather than
+/// a screenshot: every pixel that changed lies in the one 32 x 32-texel block
+/// at `position` (texel rows counted from the bottom of the image, because the
+/// map was uploaded with `flipY`), and the block shows the copied colour.
+#[test]
+fn webgpu_textures_partialupdate() {
+    let name = "webgpu_textures_partialupdate";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_textures_partialupdate::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_textures_partialupdate::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(
+        name,
+        &mut app,
+        webgpu_textures_partialupdate::animate,
+        |app| app.renderer.device(),
+    );
+
+    // The copy. 150 ms is past the page's 0.1 s interval: the first frame at
+    // it renders the old texture and then copies; the second renders the
+    // patched one and copies nothing (0.15 - 0.15 is not over 0.1).
+    three_rs::testing::pin_time(Some(150.0));
+    webgpu_textures_partialupdate::animate(&mut app);
+    webgpu_textures_partialupdate::animate(&mut app);
+    three_rs::testing::pin_time(Some(0.0));
+    let (_, _, patched) = app.renderer.read_canvas_pixels().unwrap();
+    three_rs::testing::write_png(
+        out.join("patched.png").to_str().unwrap(),
+        width,
+        height,
+        &patched,
+    );
+
+    // The same three draws the page makes: `randInt( 1, 16 )` twice, then
+    // the colour.
+    let mut random = three_rs::testing::DeterministicRandom::new();
+    let mut rand_int = |low: i32, high: i32| low + (random.next() * (high - low + 1) as f64) as i32;
+    let x = (32 * rand_int(1, 16) - 32) as f64;
+    let y = (32 * rand_int(1, 16) - 32) as f64;
+    assert_eq!((app.position.x, app.position.y), (x, y));
+    let [r, g, b] = [app.data[0], app.data[1], app.data[2]];
+
+    // The 2 x 2 plane at the camera's distance 2 under a 70 degree vertical
+    // field of view: `250 / ( 2 * tan( 35 deg ) )` pixels per unit, 512 texels
+    // across two units.
+    let half = 250.0 / (2.0 * 35f64.to_radians().tan());
+    let texel = 2.0 * half / 512.0;
+    let (left, bottom) = (400.0 - half, 250.0 + half);
+    let expected = (
+        left + x * texel,
+        left + (x + 32.0) * texel,
+        bottom - (y + 32.0) * texel,
+        bottom - y * texel,
+    );
+
+    let (mut min_x, mut max_x, mut min_y, mut max_y) = (u32::MAX, 0, u32::MAX, 0);
+    for py in 0..height {
+        for px in 0..width {
+            let i = ((py * width + px) * 4) as usize;
+            if pixels[i..i + 3] != patched[i..i + 3] {
+                min_x = min_x.min(px);
+                max_x = max_x.max(px);
+                min_y = min_y.min(py);
+                max_y = max_y.max(py);
+            }
+        }
+    }
+    println!(
+        "{name}: copy at ({x}, {y}), colour ({r}, {g}, {b}); changed pixels span \
+         x {min_x}..={max_x}, y {min_y}..={max_y}; expected x {:.1}..{:.1}, y {:.1}..{:.1}",
+        expected.0, expected.1, expected.2, expected.3
+    );
+    let near = |got: u32, want: f64| (got as f64 - want).abs() <= 2.0;
+    assert!(
+        near(min_x, expected.0)
+            && near(max_x + 1, expected.1)
+            && near(min_y, expected.2)
+            && near(max_y + 1, expected.3),
+        "{name}: the copied block is not where copyTextureToTexture puts it"
+    );
+
+    // The block's centre: the copied bytes, decoded from sRGB by the sampler
+    // and encoded back by the output transform.
+    let (cx, cy) = (
+        ((min_x + max_x) / 2) as usize,
+        ((min_y + max_y) / 2) as usize,
+    );
+    let i = (cy * width as usize + cx) * 4;
+    for (got, want) in patched[i..i + 3].iter().zip([r, g, b]) {
+        assert!(
+            (*got as i32 - want as i32).abs() <= 2,
+            "{name}: the copied block shows {:?}, not ({r}, {g}, {b})",
+            &patched[i..i + 3]
+        );
+    }
 }
 
 /// The occlusion rung: a Phong plane whose `colorNode` is an
@@ -4030,6 +4168,7 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_tsl_angular_slicing);
     rung!(webgpu_fog_height);
     rung!(webgpu_shadowmap_opacity);
+    rung!(webgpu_textures_partialupdate);
 }
 
 // ---------------------------------------------------------------------------
