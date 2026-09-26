@@ -15,8 +15,9 @@ use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
 use super::node::{
-    BufferNode, BufferSource, Builtin, FnDef, InstanceBuffer, Node, NodeRef, SampleMode,
-    TextureSource, Type, UniformGroup, UniformNode, UniformSource, UpdateType, VaryingDef,
+    BufferNode, BufferSource, Builtin, ContextValue, CustomNode, FnDef, InstanceBuffer, Node,
+    NodeRef, SampleMode, TextureSource, Type, UniformGroup, UniformNode, UniformSource, UpdateType,
+    VaryingDef,
 };
 use super::wgsl::{self, TextureKind};
 
@@ -212,6 +213,18 @@ pub struct ComputeFlow {
     pub on_init: Option<Box<ComputeFlow>>,
 }
 
+impl std::fmt::Debug for ComputeFlow {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ComputeFlow")
+            .field("statements", &self.statements.len())
+            .field("count", &self.count)
+            .field("workgroup_size", &self.workgroup_size)
+            .field("name", &self.name)
+            .field("on_init", &self.on_init.is_some())
+            .finish()
+    }
+}
+
 /// The built compute shader and everything its pipeline and dispatch need.
 pub struct ComputeProgram {
     pub wgsl: String,
@@ -238,6 +251,11 @@ pub struct NodeProgram {
     /// fills it from [`SetupContext::instanced_attributes`](crate::materials::SetupContext)
     /// after the build, through [`with_instanced_attributes`](Self::with_instanced_attributes).
     pub instanced_attributes: Vec<String>,
+    /// The `ComputeNode`s the material reached as values (a `positionNode`
+    /// that is `Fn( … )().compute( count )`). Their `updateBeforeType` is
+    /// `FRAME`: the renderer runs each once per frame, before the draw that
+    /// reads it, as `ComputeNode.updateBefore()`'s `renderer.compute( this )`.
+    pub computes: Vec<Rc<ComputeFlow>>,
 }
 
 impl NodeProgram {
@@ -421,9 +439,14 @@ pub(crate) struct BuildContext {
     /// `setupClearcoatNormal`: `MeshPhysicalNodeMaterial.setup()`'s clearcoat
     /// lobe normal, the clearcoat twin of `setup_normal`.
     pub(crate) setup_clearcoat_normal: Option<NodeRef>,
-    /// Addon keys (`TRAANode`, `ClusteredLightsNode`, the light-data nodes).
-    /// Nothing reads it yet; `context( node, { … } )` (#161) will.
-    #[allow(dead_code)]
+    /// `material.alphaToCoverage && renderer.currentSamples > 0`: what
+    /// `shapeCircle()` branches on. Three reads both inside the `Fn` body at
+    /// build time; the renderer pushes their conjunction around the build and
+    /// keys the program on it.
+    pub(crate) alpha_to_coverage_samples: bool,
+    /// Addon keys (`getViewZ`, `getUV`, `TRAANode`'s, the light-data
+    /// nodes'): what `context( node, { … } )` installs, and what a
+    /// [`CustomNode`] reads through [`NodeBuilder::context`].
     pub(crate) extra: HashMap<&'static str, NodeRef>,
 }
 
@@ -438,6 +461,7 @@ impl Default for BuildContext {
             has_tangent: false,
             setup_position_view: None,
             setup_clearcoat_normal: None,
+            alpha_to_coverage_samples: false,
             extra: HashMap::new(),
         }
     }
@@ -479,6 +503,25 @@ pub(crate) fn push_context(edit: impl FnOnce(&mut BuildContext)) -> ContextGuard
         let mut stack = stack.borrow_mut();
         stack.push(cx);
         ContextGuard { depth: stack.len() }
+    })
+}
+
+/// `material.alphaToCoverage && renderer.currentSamples > 0` for every build
+/// inside `f` — what `shapeCircle()` branches on. The renderer sets it around
+/// each material build from the target it draws into; a tool that builds
+/// programs without a renderer (`examples/dump_wgsl.rs`) sets it itself.
+pub fn with_alpha_to_coverage_samples<R>(on: bool, f: impl FnOnce() -> R) -> R {
+    let _guard = push_context(|cx| cx.alpha_to_coverage_samples = on);
+    f()
+}
+
+/// `ContextNode`'s `builder.addContext( value )`: [`push_context`] with
+/// `value`'s keys merged over the current ones.
+fn push_context_value(value: &ContextValue) -> ContextGuard {
+    push_context(|cx| {
+        for (key, node) in &value.entries {
+            cx.extra.insert(key, node.clone());
+        }
     })
 }
 
@@ -564,15 +607,37 @@ pub struct NodeBuilder {
     /// Varyings the vertex stage has assigned to (`positionLocal.assign( …
     /// )`) before the fragment stage asked for them; see `Node::Varying`.
     reassigned_varyings: std::collections::HashSet<usize>,
-    /// Inlined `Fn()` bodies, expanded once per call site node. The entry
-    /// holds the call node too: the key is its address, and a call dropped
-    /// once its `fn` body was emitted would otherwise hand its expansion to
-    /// whichever node the allocator next puts there.
-    call_bodies: HashMap<usize, (NodeRef, NodeRef)>,
+    /// `nodeProperties.outputNode`: inlined `Fn()` bodies and
+    /// [`CustomNode::setup`] results, expanded once per node per data cache
+    /// (see `data_cache`). The entry holds the node too: the key is its
+    /// address, and a node dropped once its `fn` body was emitted would
+    /// otherwise hand its expansion to whichever node the allocator next puts
+    /// there.
+    outputs: HashMap<(usize, usize), (NodeRef, NodeRef)>,
+    /// The half of three's `NodeCache` that `analyze` and `setup` write: the
+    /// cache a node's usage count and output live in. `0` is the build's own
+    /// cache; each [`Node::Isolate`] gets one more, whose parent is whichever
+    /// was current where the isolate was first built. A lookup walks the
+    /// parents; a first write lands in the current one. The generated
+    /// snippets are the other half, in [`NodeCache`]. See `docs/nodes.md` §45.
+    data_cache: usize,
+    data_parents: Vec<Option<usize>>,
+    /// `getCacheFromNode( isolateNode )`: each isolate's data cache, and the
+    /// node itself, held for the reason `outputs` holds its nodes.
+    isolate_caches: HashMap<usize, (NodeRef, usize)>,
+    /// The snippets an isolate's subgraph generated, per isolate, stage and
+    /// `fn` depth, so a second build of the same isolate finds them again as
+    /// three's persistent child cache does.
+    isolate_snippets: HashMap<(usize, usize, usize), HashMap<CacheKey, String>>,
+    /// Every `ComputeNode` the render stages reached as a value, in first-use
+    /// order — three's `updateBeforeNodes`, narrowed to the one kind that has
+    /// an `updateBefore()` here. See [`NodeProgram::computes`].
+    computes: Vec<Rc<ComputeFlow>>,
     /// Emitted `fn` names for `Fn()`s with a layout.
     fn_names: HashMap<(usize, usize), String>,
     fn_counter: usize,
-    usage: HashMap<usize, u32>,
+    /// `usageCount`, keyed on `(data cache, node)`.
+    usage: HashMap<(usize, usize), u32>,
     /// `NodeBuilder.getOutputType()` — the fragment entry point's
     /// `@location( 0 )` type. Three reads it off the render target's colour
     /// texture: `vec2` for an `RGFormat` target (the VSM blur passes'
@@ -621,7 +686,12 @@ impl NodeBuilder {
             varyings: Vec::new(),
             varying_slots: HashMap::new(),
             reassigned_varyings: std::collections::HashSet::new(),
-            call_bodies: HashMap::new(),
+            outputs: HashMap::new(),
+            data_cache: 0,
+            data_parents: vec![None],
+            isolate_caches: HashMap::new(),
+            isolate_snippets: HashMap::new(),
+            computes: Vec::new(),
             fn_names: HashMap::new(),
             fn_counter: 0,
             usage: HashMap::new(),
@@ -644,6 +714,16 @@ impl NodeBuilder {
             self.analyze(&element);
             return;
         }
+        // A `ComputeNode` outside the compute stage is its output and nothing
+        // else, so it neither counts nor is counted.
+        if let Node::Compute { flow, output } = &*node.0 {
+            if !self.computes.iter().any(|f| Rc::ptr_eq(f, flow)) {
+                self.computes.push(flow.clone());
+            }
+            let output = output.clone();
+            self.analyze(&output);
+            return;
+        }
         // `ShaderCallNodeInternal.build()` in the analyze stage is
         // `outputNode.build( builder, output )` and nothing else: an inlined
         // `Fn()` call neither counts itself nor stops the walk, so two call
@@ -651,23 +731,86 @@ impl NodeBuilder {
         // becomes a var. `saturation()` read as a vec3 and again for its `.w`
         // by `renderOutput()` is that case
         // (`webgpu_postprocessing_difference`).
-        if let Node::Call { def, args } = &*node.0 {
-            if !def.layout {
+        match &*node.0 {
+            Node::Call { def, args } if !def.layout => {
                 let (def, args) = (def.clone(), args.clone());
                 let body = self.call_body(node, &def, &args);
                 self.analyze(&body);
                 return;
             }
+            // `IsolateNode.build()`: not cacheable, so it is never counted
+            // itself; its node is built in its own cache.
+            Node::Isolate { node: inner } => {
+                let inner = inner.clone();
+                let outer = self.enter_isolate(node);
+                self.analyze(&inner);
+                self.data_cache = outer;
+                return;
+            }
+            _ => {}
         }
-        let key = node.key();
-        let count = self.usage.entry(key).or_insert(0);
-        *count += 1;
-        if *count > 1 {
+        if self.increase_usage(node) > 1 {
             return;
         }
+        // `ContextNode.analyze()`: counted like any node, and its node built
+        // under its context the first time only.
+        let _context = match &*node.0 {
+            Node::Context { value, .. } => Some(push_context_value(value)),
+            _ => None,
+        };
         for child in self.children(node) {
             self.analyze(&child);
         }
+    }
+
+    /// `builder.increaseUsage( node )`: the count lives in the first data
+    /// cache up the chain that has one for `node`, else in the current one.
+    fn increase_usage(&mut self, node: &NodeRef) -> u32 {
+        let key = node.key();
+        let cache = self
+            .data_owner(|b, id| b.usage.contains_key(&(id, key)))
+            .unwrap_or(self.data_cache);
+        let count = self.usage.entry((cache, key)).or_insert(0);
+        *count += 1;
+        *count
+    }
+
+    /// `NodeCache.getData()`'s walk: the nearest data cache, from the current
+    /// one up, for which `has` holds.
+    fn data_owner(&self, has: impl Fn(&Self, usize) -> bool) -> Option<usize> {
+        let mut cache = Some(self.data_cache);
+        while let Some(id) = cache {
+            if has(self, id) {
+                return Some(id);
+            }
+            cache = self.data_parents[id];
+        }
+        None
+    }
+
+    /// Make `isolate`'s data cache current, creating it as a child of the
+    /// current one the first time (`getCacheFromNode( node, true )`), and
+    /// return the one it replaced.
+    fn enter_isolate(&mut self, isolate: &NodeRef) -> usize {
+        let id = match self.isolate_caches.get(&isolate.key()) {
+            Some((_, id)) => *id,
+            None => {
+                let id = self.data_parents.len();
+                self.data_parents.push(Some(self.data_cache));
+                self.isolate_caches
+                    .insert(isolate.key(), (isolate.clone(), id));
+                id
+            }
+        };
+        std::mem::replace(&mut self.data_cache, id)
+    }
+
+    /// `builder.context`: the value installed for `key` by the nearest
+    /// enclosing [`context`](crate::nodes::tsl::context) node, if any. What a
+    /// [`CustomNode::setup`] reads where three's reads
+    /// `builder.context.getViewZ`.
+    pub fn context(&self, key: &str) -> Option<NodeRef> {
+        current_context(|cx| cx.extra.get(key).cloned())
     }
 
     fn children(&mut self, node: &NodeRef) -> Vec<NodeRef> {
@@ -681,6 +824,7 @@ impl NodeBuilder {
             | Node::Builtin(_)
             | Node::Property { .. }
             | Node::Param { .. } => vec![],
+            Node::Compute { output, .. } => vec![output.clone()],
             Node::BufferElement { index, .. } => vec![index.clone()],
             Node::Var(v) => vec![v.value.clone()],
             Node::Let(v) => vec![v.value.clone()],
@@ -697,9 +841,22 @@ impl NodeBuilder {
                 let mut v = vec![uv.clone()];
                 match mode {
                     SampleMode::Level(l)
+                    | SampleMode::Bias(l)
                     | SampleMode::LoadLayer(l)
                     | SampleMode::SampleLayer(l)
                     | SampleMode::Compare(l) => v.push(l.clone()),
+                    SampleMode::Grad(x, y) => {
+                        v.push(x.clone());
+                        v.push(y.clone());
+                    }
+                    SampleMode::Gather { component, offset } => {
+                        v.push(component.clone());
+                        v.extend(offset.clone());
+                    }
+                    SampleMode::GatherCompare { compare, offset } => {
+                        v.push(compare.clone());
+                        v.extend(offset.clone());
+                    }
                     _ => {}
                 }
                 v
@@ -780,6 +937,12 @@ impl NodeBuilder {
             Node::Return { value } => vec![value.clone()],
             Node::Not { node } | Node::BitNot { node, .. } => vec![node.clone()],
             Node::StructMember { .. } | Node::Workgroup(_) | Node::Barrier { .. } => vec![],
+            // `Node.analyze()` over `nodeProperties`: what `setup` returned.
+            Node::Custom(custom) => {
+                let custom = custom.clone();
+                vec![self.custom_output(node, &custom)]
+            }
+            Node::Context { node, .. } | Node::Isolate { node } => vec![node.clone()],
             Node::Atomic { pointer, value, .. } => {
                 let mut v = vec![pointer.clone()];
                 v.extend(value.iter().cloned());
@@ -789,13 +952,27 @@ impl NodeBuilder {
     }
 
     fn call_body(&mut self, node: &NodeRef, def: &Rc<FnDef>, args: &[NodeRef]) -> NodeRef {
-        if let Some((_, body)) = self.call_bodies.get(&node.key()) {
-            return body.clone();
+        let def = def.clone();
+        self.output_of(node, |_| (def.body)(args))
+    }
+
+    /// [`CustomNode::setup`], once per node per data cache.
+    fn custom_output(&mut self, node: &NodeRef, custom: &Rc<dyn CustomNode>) -> NodeRef {
+        let custom = custom.clone();
+        self.output_of(node, |builder| custom.setup(builder))
+    }
+
+    /// `nodeProperties.outputNode`: the one found up the data-cache chain,
+    /// else `setup`'s, stored in the current cache.
+    fn output_of(&mut self, node: &NodeRef, setup: impl FnOnce(&Self) -> NodeRef) -> NodeRef {
+        let key = node.key();
+        if let Some(cache) = self.data_owner(|b, id| b.outputs.contains_key(&(id, key))) {
+            return self.outputs[&(cache, key)].1.clone();
         }
-        let body = (def.body)(args);
-        self.call_bodies
-            .insert(node.key(), (node.clone(), body.clone()));
-        body
+        let output = setup(self);
+        self.outputs
+            .insert((self.data_cache, key), (node.clone(), output.clone()));
+        output
     }
 
     // -- flow ------------------------------------------------------------
@@ -1184,7 +1361,9 @@ impl NodeBuilder {
     }
 
     fn usage_of(&self, node: &NodeRef) -> u32 {
-        *self.usage.get(&node.key()).unwrap_or(&1)
+        let key = node.key();
+        self.data_owner(|b, id| b.usage.contains_key(&(id, key)))
+            .map_or(1, |cache| self.usage[&(cache, key)])
     }
 
     /// `TempNode.hasDependencies()` — a computed node used more than once gets
@@ -1201,6 +1380,11 @@ impl NodeBuilder {
             Node::Call { def, .. } if def.layout => self.usage_of(node) > 1,
             // `FunctionCallNode` is a `TempNode` whatever it calls.
             Node::CodeCall { .. } => self.usage_of(node) > 1,
+            // `Node.build()`'s `cacheResult`: a cacheable node with a value,
+            // reached more than once.
+            Node::Custom(custom) => {
+                custom.is_cacheable() && custom.node_type() != Type::Void && self.usage_of(node) > 1
+            }
             _ => false,
         }
     }
@@ -1208,6 +1392,12 @@ impl NodeBuilder {
     pub fn generate(&mut self, node: &NodeRef) -> String {
         if let Some(element) = self.array_camera_element(node) {
             return self.generate(&element);
+        }
+        // `ComputeNode.generate()` outside the compute stage:
+        // `outputComputeNode.build( builder, output )`.
+        if let Node::Compute { output, .. } = &*node.0 {
+            let output = output.clone();
+            return self.generate(&output);
         }
         if let Some(name) = self.cache_get(CacheKey::node(node)) {
             return name;
@@ -1351,6 +1541,14 @@ impl NodeBuilder {
             }
 
             Node::Builtin(b) => {
+                // `FrontFacingNode.generate()`: outside the fragment stage
+                // there is no face, and three writes the literal `true`. The
+                // vertex stage reaches it when a double-sided material with a
+                // `tangent` attribute builds `bitangentView` there, whose
+                // `negateOnBackSide()` then multiplies by `f32( true ) * 2 - 1`.
+                if *b == Builtin::FrontFacing && self.stage != Stage::Fragment {
+                    return "true".to_string();
+                }
                 if self.stage == Stage::Compute {
                     // `instanceIndex` is the module-scope `var<private>` the
                     // entry point fills from `globalId`, not a parameter —
@@ -1744,7 +1942,11 @@ impl NodeBuilder {
                 let (texture, uv, mode) = (texture.clone(), uv.clone(), mode.clone());
                 let mode_is_color = matches!(
                     mode,
-                    SampleMode::Sample | SampleMode::Grad | SampleMode::Level(_) | SampleMode::Load
+                    SampleMode::Sample
+                        | SampleMode::Grad(..)
+                        | SampleMode::Level(_)
+                        | SampleMode::Bias(_)
+                        | SampleMode::Load
                 ) && matches!(*texture, TextureSource::Texture2D(_));
                 let (name, kind) = self.texture_slots(&texture);
                 let suv = self.generate(&uv);
@@ -1762,22 +1964,75 @@ impl NodeBuilder {
                     SampleMode::Sample => {
                         format!("textureSample( {name}, {name}_sampler, {suv} )")
                     }
-                    SampleMode::Grad => format!(
-                        "textureSampleGrad( {name}, {name}_sampler, {suv}, vec2<f32>( 0.0, 0.0 ), vec2<f32>( 0.0, 0.0 ) )"
-                    ),
+                    SampleMode::Grad(grad_x, grad_y) => {
+                        let sx = self.format(&grad_x, Type::Vec2);
+                        let sy = self.format(&grad_y, Type::Vec2);
+                        format!("textureSampleGrad( {name}, {name}_sampler, {suv}, {sx}, {sy} )")
+                    }
+                    // `generateTextureGather()`, with three's spacing: no
+                    // space before the closing parenthesis without an offset.
+                    SampleMode::Gather { component, offset } => {
+                        let scomponent = self.format(&component, Type::I32);
+                        match offset {
+                            Some(offset) => {
+                                let soffset = self.format(&offset, Type::IVec2);
+                                format!(
+                                    "textureGather( {scomponent}, {name}, {name}_sampler, {suv}, {soffset} )"
+                                )
+                            }
+                            None => format!(
+                                "textureGather( {scomponent}, {name}, {name}_sampler, {suv})"
+                            ),
+                        }
+                    }
+                    // `generateTextureGatherCompare()`, the same spacing.
+                    //
+                    // Quirk kept: `TextureNode.generate()` types a gather's
+                    // snippet from `texture.type`, and a `DepthTexture` is
+                    // `UnsignedIntType` by default, so three takes the result
+                    // for a `uvec4` and formats it to the node's `vec4` —
+                    // `vec4<f32>( textureGatherCompare( … ) )`, a no-op cast
+                    // in WGSL (`docs/nodes.md` §44).
+                    SampleMode::GatherCompare { compare, offset } => {
+                        let int_typed = match &*texture {
+                            TextureSource::Depth(t) | TextureSource::ShadowMap(t) => {
+                                t.texture_type() == crate::textures::TextureType::UnsignedInt
+                            }
+                            _ => false,
+                        };
+                        let scompare = self.format(&compare, Type::F32);
+                        let gather = match offset {
+                            Some(offset) => {
+                                let soffset = self.format(&offset, Type::IVec2);
+                                format!(
+                                    "textureGatherCompare( {name}, {name}_sampler, {suv}, {scompare}, {soffset} )"
+                                )
+                            }
+                            None => format!(
+                                "textureGatherCompare( {name}, {name}_sampler, {suv}, {scompare})"
+                            ),
+                        };
+                        if int_typed {
+                            format!("vec4<f32>( {gather} )")
+                        } else {
+                            gather
+                        }
+                    }
                     // `texture3D( … ).sample( uv ).r`: the texture node is
                     // built as a `float`, so the fetch itself is narrowed and
                     // the node's var is an `f32` — three's
                     // `nodeVar7 = textureSampleLevel( … ).x`.
                     SampleMode::Level(level) if node.ty().components() == 1 => {
                         let slevel = self.generate(&level);
-                        format!(
-                            "textureSampleLevel( {name}, {name}_sampler, {suv}, {slevel} ).x"
-                        )
+                        format!("textureSampleLevel( {name}, {name}_sampler, {suv}, {slevel} ).x")
                     }
                     SampleMode::Level(level) => {
                         let slevel = self.generate(&level);
                         format!("textureSampleLevel( {name}, {name}_sampler, {suv}, {slevel} )")
+                    }
+                    SampleMode::Bias(bias) => {
+                        let sbias = self.generate(&bias);
+                        format!("textureSampleBias( {name}, {name}_sampler, {suv}, {sbias} )")
                     }
                     SampleMode::LoadLayer(layer) => {
                         let slayer = self.generate(&layer);
@@ -2223,7 +2478,45 @@ impl NodeBuilder {
                 name
             }
 
+            // Resolved in `generate()` before it gets here.
+            Node::Compute { .. } => unreachable!("three-rs: a ComputeNode generates its output"),
+
             // `BarrierNode.generate()`: `addLineFlowCode( `${ scope }Barrier()` )`.
+            // `Node.generate()` with an `outputNode`: build what `setup`
+            // returned, in this node's place.
+            Node::Custom(custom) => {
+                let custom = custom.clone();
+                let output = self.custom_output(node, &custom);
+                self.generate(&output)
+            }
+
+            // `ContextNode.generate()`.
+            Node::Context { node: inner, value } => {
+                let (inner, value) = (inner.clone(), value.clone());
+                let _context = push_context_value(&value);
+                self.generate(&inner)
+            }
+
+            // `IsolateNode.build()`: `inner` against the isolate's own cache,
+            // which falls through to the one in force here. Its snippets are
+            // kept for the next build of the same isolate and dropped from
+            // view outside it.
+            Node::Isolate { node: inner } => {
+                let inner = inner.clone();
+                let outer = self.enter_isolate(node);
+                let slot = (node.key(), self.stage.index(), self.fn_scopes.len());
+                self.cache_mut().push_child();
+                if let Some(data) = self.isolate_snippets.remove(&slot) {
+                    self.cache_mut().data = data;
+                }
+                let snippet = self.generate(&inner);
+                let data = std::mem::take(&mut self.cache_mut().data);
+                self.isolate_snippets.insert(slot, data);
+                self.cache_mut().pop_child();
+                self.data_cache = outer;
+                snippet
+            }
+
             Node::Barrier { scope } => {
                 let scope = *scope;
                 assert_eq!(
@@ -2766,6 +3059,7 @@ impl NodeBuilder {
             groups,
             cache_key,
             instanced_attributes: Vec::new(),
+            computes: std::mem::take(&mut self.computes),
         }
     }
 
@@ -2852,7 +3146,14 @@ impl NodeBuilder {
                 }
                 // `WGSLNodeBuilder.getStorageAccess()`: `read_write` in the
                 // compute stage and forced to `read` everywhere else.
-                let access = if visibility.compute {
+                let read_only = matches!(
+                    source,
+                    BufferSource::StorageData {
+                        read_only: true,
+                        ..
+                    }
+                );
+                let access = if visibility.compute && !read_only {
                     "read_write"
                 } else {
                     "read"
@@ -2865,7 +3166,7 @@ impl NodeBuilder {
                         layout.name
                     )),
                     // A runtime-sized array — no element count.
-                    BufferSource::Storage => out.push_str(&format!(
+                    BufferSource::Storage | BufferSource::StorageData { .. } => out.push_str(&format!(
                         "\nstruct {name}Struct {{\n\tvalue : array< {element} >\n}};\n@binding( {binding} ) @group( {gi} )\nvar<storage, {access}> {name} : {name}Struct;\n"
                     )),
                     // `bufferNode.isAtomic ? `atomic<${ bufferType }>``.
