@@ -385,6 +385,11 @@ pub type ObjectUpdateFn = dyn Fn(&NodeFrame) -> Vec<f64>;
 /// the render object and the renderer's occlusion results for the render
 /// context being drawn, which is all `frame.renderer.isOccluded( object )`
 /// reads (`webgpu_occlusion`, `docs/nodes.md` §39).
+///
+/// This is the per-object view of the frame. The frame itself — `frameId`,
+/// `renderId`, the clock and the update maps — is
+/// [`NodeFrameState`](crate::nodes::NodeFrameState), which the renderer owns
+/// (`docs/nodes.md` §57).
 #[derive(Clone, Copy)]
 pub struct NodeFrame<'a> {
     /// `frame.object` — the render object about to be drawn.
@@ -1234,8 +1239,9 @@ pub enum Node {
     /// count )` set as a material's `positionNode`. Outside the compute stage
     /// it generates `output` (`properties.outputComputeNode`); the kernel
     /// itself runs from `updateBefore()` (`NodeUpdateType.FRAME`), which the
-    /// builder records in [`NodeProgram::computes`](crate::nodes::NodeProgram)
-    /// for the renderer to dispatch. See `docs/nodes.md` §44.
+    /// builder records in
+    /// [`NodeProgram::update_before`](crate::nodes::NodeProgram) for the
+    /// renderer to dispatch. See `docs/nodes.md` §44 and §57.
     Compute {
         flow: Rc<crate::nodes::ComputeFlow>,
         output: NodeRef,

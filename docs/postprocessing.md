@@ -63,11 +63,11 @@ canvas `beginRenderPass` is the first thing in the API trace even though the
 nested passes execute first. The nested renders use their own command encoders
 and are submitted before the canvas pass's encoder.
 
-Rust ownership makes a node that holds `&mut Scene` across a frame impractical,
-so the port keeps the node and the application calls `PassNode::render`
-explicitly, immediately before `RenderPipeline::render`. The GPU sees the same
-four passes in the same order; only the recording order of the canvas pass's
-descriptor differs, and nothing observes that.
+The port did this by hand until #162: the application called
+`PassNode::render` before `RenderPipeline::render`. Now the pass holds its
+scene and camera (`pass( scene, camera )`, as `Rc<RefCell<…>>`), and the
+renderer fires it from the quad's draw behind the `FRAME` guard, as three
+does (`docs/nodes.md` §57). The explicit `render` is a deprecated forward.
 
 ## `RenderPipeline`
 
@@ -383,7 +383,7 @@ render_pipeline.output_node = Some(render_output(
 
 ### The twelve passes
 
-`BloomNode::render` is `updateBefore()`: `resetRendererState` (no MRT, an
+`BloomNode.updateBefore()`, which the renderer runs (§57 of `docs/nodes.md`), is `resetRendererState` (no MRT, an
 opaque black clear colour, `autoClear` on), then the high pass into
 `bright`, then for each of the five mips a horizontal pass into `h[i]` and
 a vertical one into `v[i]`, then the composite back into `h0` — which is
@@ -575,15 +575,14 @@ Three things about the target are not `BloomNode`'s:
 
 ### Who fires it
 
-The same ownership divergence as `PassNode`, `SsaaPassNode` and `BloomNode`,
-recorded above: three.js fires `RTTNode.updateBefore()` from inside the render
-that samples the texture, so its pass is *recorded* after the pass that reads
-it and *submitted* before it. The port has the application call
-`RttNode::render( renderer )` explicitly, ahead of the reader, which gives the
-GPU the same submission order — the anamorphic example's `animate()` is
-`scene_pass`, `bright_pass`, `bloom_pass`, `render_pipeline`, which is three's
-submit order exactly, and `webgpu_postprocessing_ca`'s is the same three-call
-shape: the scene pass, the RTT pass, the pipeline.
+Since #162 the renderer fires `RTTNode.updateBefore()` from inside the render
+that samples the texture, as three does (`docs/nodes.md` §57). The anamorphic
+example's `animate()` is `renderPipeline.render()` alone. The output quad's
+draw pulls the anamorphic chain: `bright_pass` pulls `scene_pass` in turn.
+That submits `scene_pass`, `bright_pass`, the bloom, and the output quad, in
+three's submit order. `webgpu_postprocessing_ca` is the same: the scene pass,
+the RTT pass, the pipeline. `RttNode::render` remains as a deprecated
+forward.
 
 ### `fullscreenPass` and `currentSamples`
 
@@ -652,7 +651,9 @@ The nodes follow the shapes above:
 
 - The single-pass nodes are functions that return a node.
 - `GaussianBlurNode` and `AfterImageNode` own their targets and quads, as
-  `BloomNode` does. Their `render()` is `updateBefore()`, fired by the example.
+  `BloomNode` does. Their `render()` is `updateBefore()`, still fired by the
+  example: #162 moved `PassNode`, `RttNode` and `BloomNode` onto the
+  renderer's update phases and left these two for later.
 - `PixelationPassNode` wraps a `PassNode` rather than subclassing one. The
   wrapped pass renders nearest-filtered at `floor( drawingBuffer / pixelSize )`,
   through `PassNode`'s new size divisor, with an `{ output, normal }` MRT.
