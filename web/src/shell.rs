@@ -91,6 +91,18 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 
+/// An example's three.js name: its module's, unless the table gives one.
+/// Three's `webgpu_textures_2d-array_compressed` has a hyphen, which a Rust
+/// module name cannot.
+macro_rules! example_name {
+    ($module:ident) => {
+        stringify!($module)
+    };
+    ($module:ident $name:literal) => {
+        $name
+    };
+}
+
 /// Every graded example, in the README's order, as modules plus the two enums
 /// and the dispatch over them.
 ///
@@ -101,7 +113,7 @@ use wasm_bindgen_futures::JsFuture;
 /// the list is the README's; a name here with no committed manifest fails to
 /// compile at the `include_str!` below.
 macro_rules! examples {
-    ( $( $variant:ident , $module:ident , $path:literal ; )* ) => {
+    ( $( $variant:ident , $module:ident , $path:literal $( , $name:literal )? ; )* ) => {
         $(
             #[path = $path]
             #[allow(dead_code)] // the example's own `main()` is unused here
@@ -125,7 +137,7 @@ macro_rules! examples {
 
             fn name(self) -> &'static str {
                 match self {
-                    $( Self::$variant => stringify!($module), )*
+                    $( Self::$variant => example_name!($module $( $name )?), )*
                 }
             }
 
@@ -136,7 +148,7 @@ macro_rules! examples {
             fn manifest(self) -> &'static str {
                 match self {
                     $( Self::$variant => include_str!(
-                        concat!("../manifests/", stringify!($module), ".json")
+                        concat!("../manifests/", example_name!($module $( $name )?), ".json")
                     ), )*
                 }
             }
@@ -231,6 +243,7 @@ PmremCubemap, webgpu_pmrem_cubemap, "../../examples/webgpu_pmrem_cubemap.rs";
 PostprocessingBloomSelective, webgpu_postprocessing_bloom_selective, "../../examples/webgpu_postprocessing_bloom_selective.rs";
 ComputePoints, webgpu_compute_points, "../../examples/webgpu_compute_points.rs";
 LinesFat, webgpu_lines_fat, "../../examples/webgpu_lines_fat.rs";
+LinesFatRaycasting, webgpu_lines_fat_raycasting, "../../examples/webgpu_lines_fat_raycasting.rs";
 PmremTest, webgpu_pmrem_test, "../../examples/webgpu_pmrem_test.rs";
 PostprocessingDifference, webgpu_postprocessing_difference, "../../examples/webgpu_postprocessing_difference.rs";
 PostprocessingDirect, webgpu_postprocessing_direct, "../../examples/webgpu_postprocessing_direct.rs";
@@ -251,6 +264,21 @@ CustomFogBackground, webgpu_custom_fog_background, "../../examples/webgpu_custom
 LoaderGltfSheen, webgpu_loader_gltf_sheen, "../../examples/webgpu_loader_gltf_sheen.rs";
 Deferred, webgpu_deferred, "../../examples/webgpu_deferred.rs";
 LoaderGltfAnisotropy, webgpu_loader_gltf_anisotropy, "../../examples/webgpu_loader_gltf_anisotropy.rs";
+MaterialsTextureManualmipmap, webgpu_materials_texture_manualmipmap, "../../examples/webgpu_materials_texture_manualmipmap.rs";
+TslVfxFlames, webgpu_tsl_vfx_flames, "../../examples/webgpu_tsl_vfx_flames.rs";
+ProceduralTexture, webgpu_procedural_texture, "../../examples/webgpu_procedural_texture.rs";
+PostprocessingSobel, webgpu_postprocessing_sobel, "../../examples/webgpu_postprocessing_sobel.rs";
+PostprocessingTransition, webgpu_postprocessing_transition, "../../examples/webgpu_postprocessing_transition.rs";
+TslRagingSea, webgpu_tsl_raging_sea, "../../examples/webgpu_tsl_raging_sea.rs";
+TslAngularSlicing, webgpu_tsl_angular_slicing, "../../examples/webgpu_tsl_angular_slicing.rs";
+Textures2dArrayCompressed, webgpu_textures_2d_array_compressed, "../../examples/webgpu_textures_2d-array_compressed.rs", "webgpu_textures_2d-array_compressed";
+ComputeTexture, webgpu_compute_texture, "../../examples/webgpu_compute_texture.rs";
+VolumePerlin, webgpu_volume_perlin, "../../examples/webgpu_volume_perlin.rs";
+ShadowmapVsm, webgpu_shadowmap_vsm, "../../examples/webgpu_shadowmap_vsm.rs";
+ShadowmapPointlight, webgpu_shadowmap_pointlight, "../../examples/webgpu_shadowmap_pointlight.rs";
+StructDrawindirect, webgpu_struct_drawindirect, "../../examples/webgpu_struct_drawindirect.rs";
+Particles, webgpu_particles, "../../examples/webgpu_particles.rs";
+Clearcoat, webgpu_clearcoat, "../../examples/webgpu_clearcoat.rs";
 ModifierCurve, webgpu_modifier_curve, "../../examples/webgpu_modifier_curve.rs";
 }
 
@@ -541,21 +569,17 @@ async fn run() -> Result<(), String> {
 
     // The same feature request `Renderer::with_instance_async` makes: an
     // `r32float` texture is only sampled through a filtering sampler on a
-    // device that asked for it. Requested when the adapter has it, exactly as
-    // the native path does, so a browser device is not quietly less capable
-    // than a desktop one.
-    let float32_filterable = adapter
-        .features()
-        .contains(wgpu::Features::FLOAT32_FILTERABLE);
+    // device that asked for it, and a KTX2 texture only transcodes to a
+    // compressed format the device asked for. Requested when the adapter has
+    // them, exactly as the native path does, so a browser device is not
+    // quietly less capable than a desktop one.
+    let required_features = adapter.features()
+        & (wgpu::Features::FLOAT32_FILTERABLE | three_rs::renderer::COMPRESSION_FEATURES);
 
     let (device, queue) = adapter
         .request_device(&wgpu::DeviceDescriptor {
             label: Some("three-rs device"),
-            required_features: if float32_filterable {
-                wgpu::Features::FLOAT32_FILTERABLE
-            } else {
-                wgpu::Features::empty()
-            },
+            required_features,
             required_limits: wgpu::Limits::default(),
             experimental_features: wgpu::ExperimentalFeatures::disabled(),
             memory_hints: wgpu::MemoryHints::MemoryUsage,

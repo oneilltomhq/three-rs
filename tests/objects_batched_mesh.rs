@@ -101,3 +101,57 @@ fn batched_mesh_matches_threes_state() {
     );
     assert_eq!(batched.sub_draws().len(), 453, "drawIndexed() calls");
 }
+
+// `BatchedMesh.raycast()`: one `Mesh.raycast()` per instance over its
+// geometry's range, tagged with the `batchId`. Expected values are three.js'
+// for the same batch, run under node.
+#[test]
+fn raycast() {
+    use three_rs::core::Raycaster;
+    use three_rs::geometries::{box_geometry, plane_geometry};
+    use three_rs::materials::MeshBasicNodeMaterial;
+    use three_rs::math::Vector3;
+    use three_rs::objects::BatchedMesh;
+
+    let mesh = BatchedMesh::new(3, 100, 100, MeshBasicNodeMaterial::default());
+    {
+        let mut object = mesh.borrow_mut();
+        let batched = object.payload.batched_mesh_mut().unwrap();
+        let cube = batched.add_geometry(&box_geometry(1.0, 1.0, 1.0, 1, 1, 1));
+        let plane = batched.add_geometry(&plane_geometry(1.0, 1.0, 1, 1));
+        let ids = [
+            batched.add_instance(cube),
+            batched.add_instance(plane),
+            batched.add_instance(cube),
+        ];
+        for (i, id) in ids.into_iter().enumerate() {
+            let mut matrix = Matrix4::identity();
+            matrix.make_translation(2.0 * i as f64 - 2.0, 0.0, 0.0);
+            batched.set_matrix_at(id, &matrix);
+        }
+    }
+    mesh.update_matrix_world(false);
+
+    for (x, batch_id, distance, face_index, face) in [
+        (2.0, 2, 4.5, 8, (16, 18, 17)),
+        (0.0, 1, 5.0, 12, (24, 26, 25)),
+        (-2.0, 0, 4.5, 8, (16, 18, 17)),
+    ] {
+        let raycaster = Raycaster::new(
+            Vector3::new(x, 0.1, 5.0),
+            Vector3::new(0.0, 0.0, -1.0),
+            0.0,
+            f64::INFINITY,
+        );
+        let hits = raycaster.intersect_object(&mesh, false);
+        assert_eq!(hits.len(), 1, "x = {x}");
+        let hit = &hits[0];
+        assert_eq!(hit.batch_id, Some(batch_id));
+        assert_eq!(hit.distance, distance);
+        assert_eq!(hit.face_index, Some(face_index));
+        let f = hit.face.unwrap();
+        assert_eq!((f.a, f.b, f.c), face);
+        let uv = hit.uv.unwrap();
+        assert!((uv.x - 0.5).abs() < 1e-12 && (uv.y - 0.6).abs() < 1e-12);
+    }
+}

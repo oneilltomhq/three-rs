@@ -2,11 +2,14 @@
 
 mod buffer_geometry_loader;
 mod cube_texture_loader;
+pub mod draco;
 mod font_loader;
 mod gif;
 mod gltf_loader;
 mod hdr_cube_texture_loader;
 mod hdr_loader;
+mod ktx2_loader;
+pub mod meshopt;
 mod texture_loader;
 mod ultra_hdr_loader;
 
@@ -19,6 +22,9 @@ pub use gltf_loader::{
 };
 pub use hdr_cube_texture_loader::HdrCubeTextureLoader;
 pub use hdr_loader::{HdrData, HdrLoader, HdrTexData};
+pub use ktx2_loader::{
+    EngineFormat, EngineType, Ktx2Class, Ktx2ColorSpace, Ktx2Loader, Ktx2Support, Ktx2Texture,
+};
 pub use texture_loader::TextureLoader;
 pub use ultra_hdr_loader::{
     apply_gain_map, srgb_to_linear, UltraHdrData, UltraHdrLoader, UltraHdrMetadata, UltraHdrTexData,

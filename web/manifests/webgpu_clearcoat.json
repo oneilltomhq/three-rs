@@ -1,0 +1,13 @@
+[
+  "examples/textures/carbon/Carbon.png",
+  "examples/textures/carbon/Carbon_Normal.png",
+  "examples/textures/cube/pisaHDR/nx.hdr",
+  "examples/textures/cube/pisaHDR/ny.hdr",
+  "examples/textures/cube/pisaHDR/nz.hdr",
+  "examples/textures/cube/pisaHDR/px.hdr",
+  "examples/textures/cube/pisaHDR/py.hdr",
+  "examples/textures/cube/pisaHDR/pz.hdr",
+  "examples/textures/golfball.jpg",
+  "examples/textures/pbr/Scratched_gold/Scratched_gold_01_1K_Normal.png",
+  "examples/textures/water/Water_1_M_Normal.jpg"
+]

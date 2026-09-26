@@ -120,6 +120,12 @@ pub struct BufferAttribute {
     /// `WebGPUAttributeUtils.createAttribute()` reads the format off the array
     /// type.
     integer: bool,
+    /// `isInstancedBufferAttribute` — `new InstancedBufferAttribute( array,
+    /// itemSize )`: the attribute steps once per instance, not per vertex
+    /// (`WebGPUAttributeUtils.createShaderVertexBuffers()`'s `stepMode`).
+    /// Only meaningful on an instanced geometry; see
+    /// [`BufferGeometry::instance_count`].
+    instanced: bool,
 }
 
 impl BufferAttribute {
@@ -130,7 +136,22 @@ impl BufferAttribute {
             item_size,
             version: Cell::new(0),
             integer: false,
+            instanced: false,
         }
+    }
+
+    /// `new InstancedBufferAttribute( array, itemSize )` — one element per
+    /// instance. See [`is_instanced`](Self::is_instanced).
+    pub fn new_instanced(array: Vec<f32>, item_size: usize) -> Self {
+        Self {
+            instanced: true,
+            ..Self::new(array, item_size)
+        }
+    }
+
+    /// `attribute.isInstancedBufferAttribute`.
+    pub fn is_instanced(&self) -> bool {
+        self.instanced
     }
 
     /// An attribute whose values are indices, not numbers: uploaded as `u32`
@@ -361,6 +382,14 @@ impl Index {
             Index::U32(v) => v.len(),
         }
     }
+
+    /// `index.getX( i )` — the `i`-th vertex index.
+    pub fn get_x(&self, i: usize) -> usize {
+        match self {
+            Index::U16(v) => v[i] as usize,
+            Index::U32(v) => v[i] as usize,
+        }
+    }
 }
 
 /// One entry of `BufferGeometry.groups`.
@@ -463,6 +492,15 @@ pub struct BufferGeometry {
     /// automatically what culling sees. The port's method has no field behind
     /// it, so the override lands here.
     pub bounding_sphere: Option<BoundingSphere>,
+    /// `InstancedBufferGeometry.instanceCount`. `Some` makes this an
+    /// `InstancedBufferGeometry`: `RenderObject.getInstanceCount()` reads it
+    /// ahead of the object's own count, and its
+    /// [instanced attributes](BufferAttribute::new_instanced) step per
+    /// instance.
+    pub instance_count: Option<usize>,
+    /// `BufferGeometry.indirect` — set with
+    /// [`set_indirect`](Self::set_indirect).
+    indirect: Option<super::IndirectStorageBufferAttribute>,
     /// The last computed box and sphere and what they were computed from; see
     /// [`compute_bounding_sphere`](Self::compute_bounding_sphere). Behind a
     /// `RefCell` because the geometry is shared as `Rc<BufferGeometry>` and
@@ -477,6 +515,20 @@ impl BufferGeometry {
 
     /// `BufferGeometry.id` — the renderer's cache key for this geometry's
     /// uploaded buffers.
+    /// `geometry.setIndirect( attribute )`: the draw's arguments come from
+    /// this buffer on the GPU — `drawIndirect` for a non-indexed geometry,
+    /// `drawIndexedIndirect` for an indexed one — so the vertex and instance
+    /// counts a kernel wrote are the ones drawn, with no CPU round trip.
+    pub fn set_indirect(&mut self, indirect: super::IndirectStorageBufferAttribute) -> &mut Self {
+        self.indirect = Some(indirect);
+        self
+    }
+
+    /// `geometry.indirect`.
+    pub fn indirect(&self) -> Option<&super::IndirectStorageBufferAttribute> {
+        self.indirect.as_ref()
+    }
+
     pub fn id(&self) -> usize {
         self.id.get()
     }

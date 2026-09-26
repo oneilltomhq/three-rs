@@ -4,9 +4,8 @@
 //! `WebGPUBindingUtils` + `Bindings.updateBinding()`, generically driven by the
 //! descriptors the node builder produced — there is nothing per-material here.
 
-use crate::materials::Side;
+use crate::materials::{DepthFunc, Side};
 use crate::math::{Color, Matrix3, Matrix4, Vector2, Vector3, Vector4};
-use crate::nodes::node::BufferSource;
 use crate::nodes::wgsl::TextureKind;
 use crate::nodes::{BindingDesc, NodeProgram, Type, UniformMember, UniformSource};
 
@@ -36,6 +35,11 @@ pub struct RenderState {
     pub side: Side,
     pub depth_test: bool,
     pub depth_write: bool,
+    /// `Material.depthFunc`, read only while `depth_test` is on.
+    pub depth_func: DepthFunc,
+    /// `Material.alphaToCoverage`; the pipeline enables it only on a
+    /// multisampled target, as `createRenderPipeline()` does.
+    pub alpha_to_coverage: bool,
     /// `WebGPUPipelineUtils.createRenderPipeline()`'s `materialBlending`, i.e.
     /// `MeshBasicNodeMaterial::blend_state()`. Part of the key because an
     /// additive and an opaque pipeline share one program.
@@ -243,10 +247,19 @@ impl Program {
             depth_stencil: state.depth_format.map(|format| wgpu::DepthStencilState {
                 format,
                 depth_write_enabled: Some(state.depth_write),
-                // `Material.depthFunc` defaults to `LessEqualDepth`; with
-                // `depthTest` off `_getDepthCompare()` returns `'always'`.
+                // `_getDepthCompare()`: `Material.depthFunc` one-to-one,
+                // and `'always'` with `depthTest` off.
                 depth_compare: Some(if state.depth_test {
-                    wgpu::CompareFunction::LessEqual
+                    match state.depth_func {
+                        DepthFunc::Never => wgpu::CompareFunction::Never,
+                        DepthFunc::Always => wgpu::CompareFunction::Always,
+                        DepthFunc::Less => wgpu::CompareFunction::Less,
+                        DepthFunc::LessEqual => wgpu::CompareFunction::LessEqual,
+                        DepthFunc::Equal => wgpu::CompareFunction::Equal,
+                        DepthFunc::GreaterEqual => wgpu::CompareFunction::GreaterEqual,
+                        DepthFunc::Greater => wgpu::CompareFunction::Greater,
+                        DepthFunc::NotEqual => wgpu::CompareFunction::NotEqual,
+                    }
                 } else {
                     wgpu::CompareFunction::Always
                 }),
@@ -256,7 +269,9 @@ impl Program {
             multisample: wgpu::MultisampleState {
                 count: state.sample_count,
                 mask: !0,
-                alpha_to_coverage_enabled: false,
+                // `alphaToCoverageEnabled: material.alphaToCoverage &&
+                // sampleCount > 1`.
+                alpha_to_coverage_enabled: state.alpha_to_coverage && state.sample_count > 1,
             },
             multiview_mask: None,
             cache: None,
@@ -286,13 +301,44 @@ fn layout_entry(binding: u32, desc: &BindingDesc) -> wgpu::BindGroupLayoutEntry 
                 // compute, `read` in the vertex and fragment stages, which is
                 // why the page asks for `maxStorageBuffersInVertexStage: 1`.
                 ty: match source {
-                    BufferSource::Storage => wgpu::BufferBindingType::Storage {
+                    source if source.is_storage() => wgpu::BufferBindingType::Storage {
                         read_only: !visibility.compute,
                     },
                     _ => wgpu::BufferBindingType::Uniform,
                 },
                 has_dynamic_offset: false,
                 min_binding_size: None,
+            },
+            count: None,
+        },
+        // `WebGPUBindingUtils.createBindingsLayout()`'s `storageTexture`
+        // branch: the texture's own format, the node's access in a compute
+        // stage and `read-only` in any other, and a 3D view for a
+        // `Storage3DTexture`.
+        BindingDesc::Texture {
+            kind:
+                TextureKind::Storage {
+                    format,
+                    access,
+                    dim3,
+                },
+            visibility,
+            ..
+        } => wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility: visibility.stages(),
+            ty: wgpu::BindingType::StorageTexture {
+                access: if visibility.compute {
+                    access.wgpu()
+                } else {
+                    wgpu::StorageTextureAccess::ReadOnly
+                },
+                format: *format,
+                view_dimension: if *dim3 {
+                    wgpu::TextureViewDimension::D3
+                } else {
+                    wgpu::TextureViewDimension::D2
+                },
             },
             count: None,
         },
@@ -321,7 +367,10 @@ fn layout_entry(binding: u32, desc: &BindingDesc) -> wgpu::BindGroupLayoutEntry 
                 },
                 view_dimension: match kind {
                     TextureKind::Cube | TextureKind::DepthCube => wgpu::TextureViewDimension::Cube,
-                    TextureKind::Float2DArray => wgpu::TextureViewDimension::D2Array,
+                    TextureKind::Float2DArray | TextureKind::Sampled2DArray => {
+                        wgpu::TextureViewDimension::D2Array
+                    }
+                    TextureKind::Float3D => wgpu::TextureViewDimension::D3,
                     _ => wgpu::TextureViewDimension::D2,
                 },
                 multisampled: matches!(kind, TextureKind::DepthMultisampled2D),
@@ -400,6 +449,8 @@ pub struct LightState {
     pub shadow_normal_bias: f64,
     /// `light.shadow.radius`.
     pub shadow_radius: f64,
+    /// `light.shadow.blurSamples` (VSM).
+    pub shadow_blur_samples: f64,
     /// `light.shadow.mapSize`.
     pub shadow_map_size: Vector2,
     /// `light.shadow.intensity`.
@@ -424,6 +475,7 @@ impl Default for LightState {
             shadow_bias: 0.0,
             shadow_normal_bias: 0.0,
             shadow_radius: 1.0,
+            shadow_blur_samples: 8.0,
             shadow_map_size: Vector2::new(512.0, 512.0),
             shadow_intensity: 1.0,
         }
@@ -447,6 +499,7 @@ pub struct UniformContext<'a> {
     pub model_world: Matrix4,
     pub material_color: Color,
     pub material_opacity: f64,
+    pub material_alpha_test: f64,
     pub material_rotation: f64,
     /// `material.linewidth`.
     pub material_line_width: f64,
@@ -489,6 +542,13 @@ pub struct UniformContext<'a> {
     pub background_rotation: Matrix4,
     pub background_blurriness: f64,
     pub background_intensity: f64,
+    /// `scene.fog`'s colour (working space), `near`, `far` and `density` —
+    /// whichever the fog kind has; the rest keep their defaults and are never
+    /// read, because the other kind's node does not reference them.
+    pub fog_color: Color,
+    pub fog_near: f64,
+    pub fog_far: f64,
+    pub fog_density: f64,
     /// `viewportSize` — the bound target's dimensions.
     pub viewport_size: Vector2,
     /// `viewport` — `( x, y, width, height )` of the pass rectangle, in
@@ -497,6 +557,9 @@ pub struct UniformContext<'a> {
     /// `screenDPR` — `renderer.getPixelRatio()`.
     pub screen_dpr: f64,
     pub time: f64,
+    /// `NodeFrame.deltaTime` / `NodeFrame.frameId`.
+    pub delta_time: f64,
+    pub frame_id: u32,
     /// `renderer.toneMappingExposure`.
     pub tone_mapping_exposure: f64,
     /// The lights of the pass, in `Scene.lights` order. Borrowed so the context
@@ -509,6 +572,9 @@ pub struct UniformContext<'a> {
     /// `SkinnedMesh.bindMatrix` / `.bindMatrixInverse`.
     pub bind_matrix: Matrix4,
     pub bind_matrix_inverse: Matrix4,
+    /// `Sprite.center`, for `SpriteNodeMaterial`'s
+    /// `reference( 'center', 'vec2', object )`.
+    pub object_center: Vector2,
     /// `skeleton.boneMatrices` — the flat `mat4` array the bone buffer holds,
     /// already updated for this frame.
     pub bone_matrices: &'a [f32],
@@ -524,6 +590,7 @@ impl Default for UniformContext<'_> {
             model_world: Matrix4::identity(),
             material_color: Color::new(1.0, 1.0, 1.0),
             material_opacity: 1.0,
+            material_alpha_test: 0.0,
             material_rotation: 0.0,
             material_line_width: 1.0,
             material_reflectivity: 1.0,
@@ -562,16 +629,23 @@ impl Default for UniformContext<'_> {
             background_rotation: Matrix4::identity(),
             background_blurriness: 0.0,
             background_intensity: 1.0,
+            fog_color: Color::new(1.0, 1.0, 1.0),
+            fog_near: 1.0,
+            fog_far: 1000.0,
+            fog_density: 0.00025,
             viewport_size: Vector2::new(0.0, 0.0),
             viewport: Vector4::new(0.0, 0.0, 0.0, 0.0),
             screen_dpr: 1.0,
             time: 0.0,
+            delta_time: 0.0,
+            frame_id: 0,
             tone_mapping_exposure: 1.0,
             lights: &[],
             morph_base: 1.0,
             morph_influences: &[],
             bind_matrix: Matrix4::identity(),
             bind_matrix_inverse: Matrix4::identity(),
+            object_center: Vector2::new(0.5, 0.5),
             bone_matrices: &[],
             object: None,
         }
@@ -617,6 +691,7 @@ impl UniformContext<'_> {
                     self.material_color.b as f32,
                 ],
                 UniformSource::MaterialOpacity => vec![self.material_opacity as f32],
+                UniformSource::MaterialAlphaTest => vec![self.material_alpha_test as f32],
                 UniformSource::MaterialRotation => vec![self.material_rotation as f32],
                 UniformSource::MaterialReflectivity => vec![self.material_reflectivity as f32],
                 UniformSource::MaterialEnvIntensity => vec![self.material_env_intensity as f32],
@@ -696,7 +771,19 @@ impl UniformContext<'_> {
                 }
                 UniformSource::BackgroundBlurriness => vec![self.background_blurriness as f32],
                 UniformSource::BackgroundIntensity => vec![self.background_intensity as f32],
+                UniformSource::FogColor => vec![
+                    self.fog_color.r as f32,
+                    self.fog_color.g as f32,
+                    self.fog_color.b as f32,
+                ],
+                UniformSource::FogNear => vec![self.fog_near as f32],
+                UniformSource::FogFar => vec![self.fog_far as f32],
+                UniformSource::FogDensity => vec![self.fog_density as f32],
                 UniformSource::Time => vec![self.time as f32],
+                UniformSource::DeltaTime => vec![self.delta_time as f32],
+                // A `u32` member: written as its integer bits below, exact
+                // for the first 2^24 frames.
+                UniformSource::FrameId => vec![self.frame_id as f32],
                 UniformSource::ViewportSize => {
                     vec![self.viewport_size.x as f32, self.viewport_size.y as f32]
                 }
@@ -732,6 +819,9 @@ impl UniformContext<'_> {
                 UniformSource::BindMatrixInverse => {
                     self.bind_matrix_inverse.to_f32_array().to_vec()
                 }
+                UniformSource::ObjectCenter => {
+                    vec![self.object_center.x as f32, self.object_center.y as f32]
+                }
                 UniformSource::LightTargetPosition(i) => {
                     let p = self.lights[*i].target_position;
                     vec![p.x as f32, p.y as f32, p.z as f32]
@@ -754,6 +844,9 @@ impl UniformContext<'_> {
                     vec![self.lights[*i].shadow_normal_bias as f32]
                 }
                 UniformSource::ShadowRadius(i) => vec![self.lights[*i].shadow_radius as f32],
+                UniformSource::ShadowBlurSamples(i) => {
+                    vec![self.lights[*i].shadow_blur_samples as f32]
+                }
                 UniformSource::ShadowMapSize(i) => {
                     let s = self.lights[*i].shadow_map_size;
                     vec![s.x as f32, s.y as f32]
@@ -786,12 +879,12 @@ impl UniformContext<'_> {
             // is what says how to write them. Exact for magnitudes below 2^24,
             // which is every count a `dispatchWorkgroups` limit of 65535 groups
             // of 64 can reach anyway.
-            if member.ty == Type::U32 {
+            if member.ty.component_type() == Type::U32 {
                 let raw: Vec<u32> = values.iter().map(|&v| v as u32).collect();
                 data[offset..offset + raw.len() * 4].copy_from_slice(bytemuck::cast_slice(&raw));
                 continue;
             }
-            if member.ty == Type::I32 {
+            if member.ty.component_type() == Type::I32 {
                 let raw: Vec<i32> = values.iter().map(|&v| v as i32).collect();
                 data[offset..offset + raw.len() * 4].copy_from_slice(bytemuck::cast_slice(&raw));
                 continue;

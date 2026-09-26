@@ -231,9 +231,31 @@ pub struct NodeProgram {
     /// Bind groups in `@group` order.
     pub groups: Vec<Vec<BindingDesc>>,
     pub cache_key: u64,
+    /// The geometry attributes that are `InstancedBufferAttribute`s, which
+    /// step once per instance. Not the builder's to know — three reads
+    /// `isInstancedBufferAttribute` off the geometry in
+    /// `WebGPUAttributeUtils.createShaderVertexBuffers()` — so the renderer
+    /// fills it from [`SetupContext::instanced_attributes`](crate::materials::SetupContext)
+    /// after the build, through [`with_instanced_attributes`](Self::with_instanced_attributes).
+    pub instanced_attributes: Vec<String>,
 }
 
 impl NodeProgram {
+    /// Mark `names` as per-instance geometry attributes, and fold them into
+    /// the cache key: the step mode is baked into the pipeline, so the same
+    /// WGSL over a per-vertex `offset` and a per-instance one is two programs.
+    pub fn with_instanced_attributes(mut self, names: &[String]) -> Self {
+        if names.is_empty() {
+            return self;
+        }
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        self.cache_key.hash(&mut hasher);
+        names.hash(&mut hasher);
+        self.cache_key = hasher.finish();
+        self.instanced_attributes = names.to_vec();
+        self
+    }
+
     /// `WebGPUAttributeUtils.createShaderVertexBuffers( renderObject )`: the
     /// attributes grouped into vertex buffers, in first-use order — geometry
     /// attributes one per buffer, instanced attributes one buffer per
@@ -247,7 +269,7 @@ impl NodeProgram {
                 AttributeSource::Geometry(name) => out.push(VertexBufferDesc {
                     source: VertexBufferSource::Geometry(name),
                     array_stride: (slot.ty.components() * 4) as u64,
-                    instanced: false,
+                    instanced: self.instanced_attributes.iter().any(|n| n == name),
                     attributes: vec![(location, slot.ty, 0)],
                 }),
                 AttributeSource::Instance { buffer, offset } => {
@@ -319,6 +341,14 @@ pub struct NodeBuilder {
     const_counter: usize,
     varying_counter: usize,
     buffer_counter: usize,
+    /// `WorkgroupArray_N` — one name per `workgroupArray()`, by identity, and
+    /// the `var<workgroup>` lines `WGSLNodeBuilder.getScopedArrays()` puts
+    /// under `// locals`, in first-use order.
+    workgroup_names: HashMap<usize, String>,
+    workgroup_locals: Vec<String>,
+    /// The key of the statement [`generate_statement`](Self::generate_statement)
+    /// is generating.
+    statement: Option<usize>,
     /// `nodeAttributeN` counter and the names already handed out, keyed by
     /// `( instance buffer identity, offset )`.
     attribute_counter: usize,
@@ -328,16 +358,30 @@ pub struct NodeBuilder {
     attribute_varyings: HashMap<usize, NodeRef>,
     uniform_names: HashMap<usize, String>,
     /// texture key -> (name, kind, binding slots in the object group)
-    texture_names: HashMap<usize, (String, TextureKind, Vec<usize>)>,
+    /// Keyed on the texture id *and* whether the binding is a storage one:
+    /// a `StorageTexture` stored to by a kernel and sampled by a material is
+    /// two bindings of one texture, with two names.
+    texture_names: HashMap<(usize, bool), (String, TextureKind, Vec<usize>)>,
     /// Varyings the fragment stage asked for, in allocation order.
     varyings: Vec<(String, Type, bool)>,
     varying_slots: HashMap<usize, String>,
-    /// Inlined `Fn()` bodies, expanded once per call site node.
-    call_bodies: HashMap<usize, NodeRef>,
+    /// Varyings the vertex stage has assigned to (`positionLocal.assign( …
+    /// )`) before the fragment stage asked for them; see `Node::Varying`.
+    reassigned_varyings: std::collections::HashSet<usize>,
+    /// Inlined `Fn()` bodies, expanded once per call site node. The entry
+    /// holds the call node too: the key is its address, and a call dropped
+    /// once its `fn` body was emitted would otherwise hand its expansion to
+    /// whichever node the allocator next puts there.
+    call_bodies: HashMap<usize, (NodeRef, NodeRef)>,
     /// Emitted `fn` names for `Fn()`s with a layout.
-    fn_names: HashMap<usize, String>,
+    fn_names: HashMap<(usize, usize), String>,
     fn_counter: usize,
     usage: HashMap<usize, u32>,
+    /// `NodeBuilder.getOutputType()` — the fragment entry point's
+    /// `@location( 0 )` type. Three reads it off the render target's colour
+    /// texture: `vec2` for an `RGFormat` target (the VSM blur passes'
+    /// `VSMVertical` / `VSMHorizontal`), `vec4` for everything else.
+    output_type: Type,
 }
 
 impl Default for NodeBuilder {
@@ -358,6 +402,9 @@ impl NodeBuilder {
             const_counter: 0,
             varying_counter: 0,
             buffer_counter: 0,
+            workgroup_names: HashMap::new(),
+            workgroup_locals: Vec::new(),
+            statement: None,
             attribute_counter: 0,
             attribute_names: HashMap::new(),
             attribute_varyings: HashMap::new(),
@@ -365,10 +412,12 @@ impl NodeBuilder {
             texture_names: HashMap::new(),
             varyings: Vec::new(),
             varying_slots: HashMap::new(),
+            reassigned_varyings: std::collections::HashSet::new(),
             call_bodies: HashMap::new(),
             fn_names: HashMap::new(),
             fn_counter: 0,
             usage: HashMap::new(),
+            output_type: Type::Vec4,
         };
         for s in &mut b.stages {
             s.scopes.push(HashMap::new());
@@ -435,9 +484,10 @@ impl NodeBuilder {
             Node::Texture { uv, mode, .. } => {
                 let mut v = vec![uv.clone()];
                 match mode {
-                    SampleMode::Level(l) | SampleMode::LoadLayer(l) | SampleMode::Compare(l) => {
-                        v.push(l.clone())
-                    }
+                    SampleMode::Level(l)
+                    | SampleMode::LoadLayer(l)
+                    | SampleMode::SampleLayer(l)
+                    | SampleMode::Compare(l) => v.push(l.clone()),
                     _ => {}
                 }
                 v
@@ -476,11 +526,16 @@ impl NodeBuilder {
                 v
             }
             Node::Loop {
-                start, count, body, ..
+                start,
+                count,
+                update,
+                body,
+                ..
             } => {
                 let mut v = Vec::new();
                 v.extend(start.iter().cloned());
                 v.push(count.clone());
+                v.extend(update.iter().cloned());
                 v.extend(body.iter().cloned());
                 v
             }
@@ -506,20 +561,28 @@ impl NodeBuilder {
                 v.extend(body.iter().cloned());
                 v
             }
-            Node::Discard => vec![],
+            Node::Discard | Node::Break => vec![],
+            Node::TextureStore { coord, value, .. } => vec![coord.clone(), value.clone()],
             Node::TextureSize { level, .. } => vec![level.clone()],
             Node::VaryingProperty { .. } => vec![],
             Node::Return { value } => vec![value.clone()],
-            Node::Not { node } => vec![node.clone()],
+            Node::Not { node } | Node::BitNot { node, .. } => vec![node.clone()],
+            Node::StructMember { .. } | Node::Workgroup(_) | Node::Barrier { .. } => vec![],
+            Node::Atomic { pointer, value, .. } => {
+                let mut v = vec![pointer.clone()];
+                v.extend(value.iter().cloned());
+                v
+            }
         }
     }
 
     fn call_body(&mut self, node: &NodeRef, def: &Rc<FnDef>, args: &[NodeRef]) -> NodeRef {
-        if let Some(body) = self.call_bodies.get(&node.key()) {
+        if let Some((_, body)) = self.call_bodies.get(&node.key()) {
             return body.clone();
         }
         let body = (def.body)(args);
-        self.call_bodies.insert(node.key(), body.clone());
+        self.call_bodies
+            .insert(node.key(), (node.clone(), body.clone()));
         body
     }
 
@@ -696,15 +759,18 @@ impl NodeBuilder {
             ..
         } = &mut g.bindings[slot]
         {
-            let align = wgsl::align_of(u.ty);
+            // A `bool` has no host-shareable layout, so three declares the
+            // member with the shared node's input type, `u32`.
+            let member_ty = if u.ty == Type::Bool { Type::U32 } else { u.ty };
+            let align = wgsl::align_of(member_ty);
             let offset = size.div_ceil(align) * align;
             members.push(UniformMember {
                 name: name.clone(),
                 source: u.source.clone(),
-                ty: u.ty,
+                ty: member_ty,
                 offset,
             });
-            *size = offset + wgsl::size_of(u.ty);
+            *size = offset + wgsl::size_of(member_ty);
             visibility.add(stage);
         }
 
@@ -728,7 +794,16 @@ impl NodeBuilder {
                 // `WGSLNodeBuilder.isUnfilterable()`: a `NearestFilter` /
                 // `NearestFilter` colour texture is bound `non-filtering`,
                 // with no sampler, and read with `textureLoad`.
-                if t.is_unfilterable() {
+                if t.is_array() {
+                    // `CompressedArrayTexture` — `getTextureType()`'s
+                    // `texture_2d_array`, sampled. An unfilterable array
+                    // (three's `textureLoad` on it) has no page yet.
+                    assert!(
+                        !t.is_unfilterable(),
+                        "three-rs: a NearestFilter array texture is not supported yet"
+                    );
+                    TextureKind::Sampled2DArray
+                } else if t.is_unfilterable() {
                     TextureKind::FloatData2D
                 } else {
                     TextureKind::Float2D
@@ -754,7 +829,36 @@ impl NodeBuilder {
                 },
             ),
             TextureSource::CubeDepth(t) => (t.id(), TextureKind::DepthCube),
+            TextureSource::Texture3D(t) => {
+                // The unfilterable 3D path (`textureLoad` against
+                // `textureDimensions`) is not ported: no page on the ladder
+                // samples a `NearestFilter` volume, and a sampler-less
+                // `textureSampleLevel` would be a compile error, not pixels.
+                assert!(
+                    !t.is_unfilterable(),
+                    "three-rs: texture3D() of an unfilterable (NearestFilter) \
+                     Data3DTexture is not ported; set LinearFilter on both filters"
+                );
+                (t.id(), TextureKind::Float3D)
+            }
+            TextureSource::Storage(t, access) => (
+                t.id(),
+                TextureKind::Storage {
+                    format: t.format(),
+                    access: *access,
+                    dim3: false,
+                },
+            ),
+            TextureSource::Storage3D(t, access) => (
+                t.id(),
+                TextureKind::Storage {
+                    format: t.format(),
+                    access: *access,
+                    dim3: true,
+                },
+            ),
         };
+        let key = (key, source.is_storage_binding());
 
         if let Some((name, kind, slots)) = self.texture_names.get(&key).cloned() {
             let g = self.groups.entry(UniformGroup::Object).or_default();
@@ -851,6 +955,14 @@ impl NodeBuilder {
 
     // -- generate --------------------------------------------------------
 
+    /// Generate one statement of a flow or a block. `StackNode` is the
+    /// parent the flow's statements share; [`Node::Atomic`] asks whether it is
+    /// one, which is `AtomicFunctionNode`'s `parents[ 0 ].isStackNode`.
+    fn generate_statement(&mut self, stmt: &NodeRef) -> String {
+        self.statement = Some(stmt.key());
+        self.generate(stmt)
+    }
+
     fn usage_of(&self, node: &NodeRef) -> u32 {
         *self.usage.get(&node.key()).unwrap_or(&1)
     }
@@ -860,6 +972,9 @@ impl NodeBuilder {
     fn needs_var(&self, node: &NodeRef) -> bool {
         match &*node.0 {
             Node::Texture { .. } => true,
+            // `UniformNode.generate()`: a `bool` uniform is a `u32` in the
+            // buffer, converted once into a var — "cache to variable".
+            Node::Uniform(u) => u.ty == Type::Bool,
             Node::Op { .. } | Node::Math { .. } | Node::Join { .. } => self.usage_of(node) > 1,
             // A call to an `Fn()` with a layout is a real function call, and
             // `FunctionCallNode` is a `TempNode`: cached once when shared.
@@ -887,6 +1002,16 @@ impl NodeBuilder {
     }
 
     fn format(&mut self, node: &NodeRef, want: Type) -> String {
+        // `ConstNode.generate()`: a scalar number constant asked for as
+        // another scalar number type is regenerated as that type's literal
+        // (`_regNum = /float|u?int/`), so `state.mul( 747796405 )` on a `u32`
+        // is `747796405u`, not a conversion.
+        if let Node::Const { ty, values } = &*node.0 {
+            let numeric = |t: Type| matches!(t, Type::F32 | Type::I32 | Type::U32);
+            if numeric(*ty) && numeric(want) {
+                return wgsl::constant(want, values);
+            }
+        }
         let snippet = self.generate(node);
         wgsl::convert(&snippet, node.ty(), want)
     }
@@ -946,7 +1071,13 @@ impl NodeBuilder {
 
             Node::Uniform(u) => {
                 let u = u.clone();
-                self.uniform_snippet(&u, node.key())
+                let snippet = self.uniform_snippet(&u, node.key());
+                if u.ty == Type::Bool {
+                    // `builder.format( uniformName, 'uint', 'bool' )`, into
+                    // the var `needs_var` gives it.
+                    return format!("bool( {snippet} )");
+                }
+                snippet
             }
 
             Node::BufferElement { buffer, index } => {
@@ -1001,8 +1132,28 @@ impl NodeBuilder {
                     // `instanceIndex` is the module-scope `var<private>` the
                     // entry point fills from `globalId`, not a parameter —
                     // `WGSLNodeBuilder.getBuiltins( 'compute' )` never lists it.
+                    // `invocationLocalIndex` is the one compute builtin that
+                    // is declared only once a kernel asks for it.
+                    if *b == Builtin::InvocationLocalIndex {
+                        let s = &mut self.stages[Stage::Compute.index()];
+                        if !s.builtins.contains(b) {
+                            s.builtins.push(*b);
+                        }
+                    }
                     return b.name().to_string();
                 }
+                assert!(
+                    !matches!(
+                        b,
+                        Builtin::InvocationLocalIndex
+                            | Builtin::WorkgroupId
+                            | Builtin::LocalId
+                            | Builtin::GlobalId
+                            | Builtin::NumWorkgroups
+                    ),
+                    "three-rs: the compute builtin {} is only readable in a compute kernel",
+                    b.name()
+                );
                 // `IndexNode.generate()`
                 // (`src/nodes/core/IndexNode.js:96-112`): the vertex and
                 // instance indices are the raw builtin in the vertex and
@@ -1089,8 +1240,28 @@ impl NodeBuilder {
                         self.varying_slots.insert(node.key(), name.clone());
                         // The vertex-side chain is flowed into the vertex stage
                         // at the point the fragment stage asks for it.
+                        //
+                        // When the vertex stage already holds it as a private
+                        // var — `positionLocal` read, and reassigned, by the
+                        // `context.position` statements flowed before either
+                        // stage (`material.positionNode`, instancing,
+                        // skinning) — the varying carries that var's current
+                        // value. In three.js the varying *is* the variable
+                        // (`varyings.positionLocal = ( varyings.positionLocal
+                        // + … )`), so the fragment stage sees the reassigned
+                        // value, not the attribute; see `docs/nodes.md` §8.
                         self.stage = Stage::Vertex;
-                        let snippet = self.generate(&v.value);
+                        // Three's vertex stage writes every assignment to a
+                        // varying straight into `varyings.name`, so what
+                        // reaches the fragment stage is the last value
+                        // assigned (`webgpu_particles`' `positionLocal`, moved
+                        // by its `positionNode`). The port's vertex stage
+                        // holds that value in the private var until now.
+                        let reassigned = self.reassigned_varyings.contains(&node.key());
+                        let snippet = match self.cache_get(node.key()) {
+                            Some(var) if reassigned => var,
+                            _ => self.generate(&v.value),
+                        };
                         self.emit(format!("varyings.{name} = {snippet};"));
                         self.stage = Stage::Fragment;
                         name
@@ -1106,6 +1277,9 @@ impl NodeBuilder {
                 // first assigns to it, and the temps the value needs are
                 // numbered after it.
                 let lhs = self.generate(&target);
+                if self.stage == Stage::Vertex && matches!(&*target.0, Node::Varying(_)) {
+                    self.reassigned_varyings.insert(target.key());
+                }
                 let snippet = self.format(&value, want);
                 // `AssignNode.needsSplitAssign()`: WGSL has no swizzle assign
                 // (`builder.isAvailable( 'swizzleAssign' )` is false), so a
@@ -1130,12 +1304,20 @@ impl NodeBuilder {
 
             Node::Op { op, a, b, ty } => {
                 let (op, a, b, ty) = (*op, a.clone(), b.clone(), *ty);
-                let want = if ty == Type::Bool || ty == Type::BVec3 {
-                    let n = a.ty().components().max(b.ty().components());
-                    if n == 1 {
+                // A comparison's operands are formatted to the wider
+                // *operand* type (`OperatorNode.getNodeType()`'s
+                // `typeA`/`typeB`), not to its `bool` result; the component
+                // type is the operand's, so a `u32` comparison stays `u32`.
+                let want = if ty.component_type() == Type::Bool {
+                    let (ta, tb) = (a.ty(), b.ty());
+                    if ta.components() > 1 {
+                        ta
+                    } else if tb.components() > 1 {
+                        tb
+                    } else if ta != tb {
                         Type::F32
                     } else {
-                        Type::vector_of(Type::F32, n)
+                        ta
                     }
                 } else {
                     ty
@@ -1156,6 +1338,13 @@ impl NodeBuilder {
                     let sa = self.generate(&a);
                     let sb = self.generate(&b);
                     format!("{sa} {op} {sb}")
+                } else if op == ">>" || op == "<<" {
+                    // `OperatorNode`: a shift's amount is `changeComponentType(
+                    // typeB, 'uint' )`, the value is the result type.
+                    let sa = self.format(&a, want);
+                    let amount = Type::vector_of(Type::U32, b.ty().components().max(1));
+                    let sb = self.format(&b, amount);
+                    format!("( {sa} {op} {sb} )")
                 } else {
                     let sa = if a.ty().is_matrix() {
                         self.generate(&a)
@@ -1173,11 +1362,10 @@ impl NodeBuilder {
 
             Node::Math { name, args, ty } => {
                 let (name, args, ty) = (*name, args.clone(), *ty);
-                if name == "tsl_inverse_mat3" {
-                    self.add_code("tsl_inverse_mat3", wgsl::INVERSE_MAT3_SNIPPET);
-                }
-                if name == "tsl_mod_float" {
-                    self.add_code("tsl_mod_float", wgsl::MOD_FLOAT_SNIPPET);
+                // `WGSLNodeBuilder`'s `wgslPolyfill` table: a method that
+                // lowers to a `tsl_*` helper brings the helper's code with it.
+                if let Some(snippet) = wgsl::polyfill(name) {
+                    self.add_code(name, snippet);
                 }
                 // `mix`'s interpolant and `cross`/`reflect`'s operands keep
                 // their own types; everything else is widened to the result
@@ -1206,16 +1394,16 @@ impl NodeBuilder {
                         "refract" if i == 2 => self.format(a, Type::F32),
                         "refract" => self.format(a, input_ty),
                         "dot" => self.format(a, input_ty),
-                        "cross" | "reflect" | "normalize" | "transpose" | "tsl_inverse_mat3"
-                        | "length" | "dpdx" | "- dpdy" | "inverseSqrt" => self.generate(a),
+                        "cross" | "reflect" | "normalize" | "transpose" | "tsl_inverse_mat2"
+                        | "tsl_inverse_mat3" | "tsl_inverse_mat4" | "determinant" | "length"
+                        | "dpdx" | "- dpdy" | "inverseSqrt" => self.generate(a),
                         // `select( f, t, cond )`'s condition is a bool, and the
                         // MaterialX helpers pass their own already-typed
                         // operands; nothing here is widened.
                         "select" | "step" | "fract" | "sqrt" | "abs" => self.generate(a),
-                        // `smoothstep( near, far, x )` keeps each operand's own
-                        // type: the dumps show three f32 arguments, never a
-                        // widened vector.
-                        "smoothstep" => self.generate(a),
+                        // `BitcastNode` builds its operand as it stands; the
+                        // result type is the cast's, not the input's.
+                        n if n.starts_with("bitcast<") => self.generate(a),
                         _ => self.format(a, ty),
                     })
                     .collect();
@@ -1263,6 +1451,25 @@ impl NodeBuilder {
                 let (inner, ty) = (inner.clone(), *ty);
                 let from = inner.ty();
                 let snippet = self.generate(&inner);
+                if ty == from {
+                    // `ConvertNode` to the type it already has — see
+                    // `materialx::mx_nodes::convert`. `format()` returns the
+                    // snippet untouched.
+                    return snippet;
+                }
+                // `NodeBuilder.format()`'s two matrix narrowings.
+                if from == Type::Mat4 && ty == Type::Mat3 {
+                    return format!(
+                        "{}( {snippet}[ 0 ].xyz, {snippet}[ 1 ].xyz, {snippet}[ 2 ].xyz )",
+                        wgsl::type_name(ty)
+                    );
+                }
+                if from == Type::Mat3 && ty == Type::Mat2 {
+                    return format!(
+                        "{}( {snippet}[ 0 ].xy, {snippet}[ 1 ].xy )",
+                        wgsl::type_name(ty)
+                    );
+                }
                 if ty.components() == from.components() {
                     format!("{}( {snippet} )", wgsl::type_name(ty))
                 } else {
@@ -1312,15 +1519,39 @@ impl NodeBuilder {
                 texture, uv, mode, ..
             } => {
                 let (texture, uv, mode) = (texture.clone(), uv.clone(), mode.clone());
+                let mode_is_color = matches!(
+                    mode,
+                    SampleMode::Sample | SampleMode::Grad | SampleMode::Level(_) | SampleMode::Load
+                ) && matches!(*texture, TextureSource::Texture2D(_));
                 let (name, kind) = self.texture_slots(&texture);
                 let suv = self.generate(&uv);
-                match mode {
+                // `TextureNode.generate()` builds the snippet as a `vec4` and
+                // `format()`s it to the node type: an RG map's `vec2` node
+                // gets `.xy` on the fetch itself.
+                let narrow = |s: String| {
+                    if node.ty() == Type::Vec2 {
+                        format!("{s}.xy")
+                    } else {
+                        s
+                    }
+                };
+                let snippet = match mode {
                     SampleMode::Sample => {
                         format!("textureSample( {name}, {name}_sampler, {suv} )")
                     }
                     SampleMode::Grad => format!(
                         "textureSampleGrad( {name}, {name}_sampler, {suv}, vec2<f32>( 0.0, 0.0 ), vec2<f32>( 0.0, 0.0 ) )"
                     ),
+                    // `texture3D( … ).sample( uv ).r`: the texture node is
+                    // built as a `float`, so the fetch itself is narrowed and
+                    // the node's var is an `f32` — three's
+                    // `nodeVar7 = textureSampleLevel( … ).x`.
+                    SampleMode::Level(level) if node.ty().components() == 1 => {
+                        let slevel = self.generate(&level);
+                        format!(
+                            "textureSampleLevel( {name}, {name}_sampler, {suv}, {slevel} ).x"
+                        )
+                    }
                     SampleMode::Level(level) => {
                         let slevel = self.generate(&level);
                         format!("textureSampleLevel( {name}, {name}_sampler, {suv}, {slevel} )")
@@ -1328,6 +1559,17 @@ impl NodeBuilder {
                     SampleMode::LoadLayer(layer) => {
                         let slayer = self.generate(&layer);
                         wgsl::texture_load_layer(&name, &suv, &slayer)
+                    }
+                    SampleMode::SampleLayer(layer) => {
+                        let slayer = self.generate(&layer);
+                        // `depthNode.build( builder, 'int' )`: a float layer
+                        // is cast, an int one passes through.
+                        let slayer = if layer.ty() == Type::I32 {
+                            slayer
+                        } else {
+                            format!("i32( {slayer} )")
+                        };
+                        format!("textureSample( {name}, {name}_sampler, {suv}, {slayer} )")
                     }
                     SampleMode::Compare(depth) => {
                         let sdepth = self.generate(&depth);
@@ -1347,12 +1589,79 @@ impl NodeBuilder {
                     }
                     SampleMode::Load => {
                         self.add_code("tsl_coord_clampS_clampT_2d", wgsl::CLAMP_WRAP_SNIPPET);
-                        let dims = self.declare_var(None, Type::UVec2);
-                        let dims_expr = wgsl::texture_dimensions(&name, kind);
-                        self.emit(format!("{dims} = {dims_expr};"));
+                        // `WGSLNodeBuilder.generateTextureDimension()` keeps
+                        // one dimensions var per texture in the build cache,
+                        // so a second tap in the same scope (or one nested in
+                        // it) reuses it, and a sibling `if` declares its own.
+                        // The scope stack is that cache; the key is the
+                        // texture's slot name, hashed out of the node-key
+                        // space.
+                        let dims_key = {
+                            use std::hash::{Hash, Hasher};
+                            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                            ("textureDimensions", name.as_str()).hash(&mut hasher);
+                            hasher.finish() as usize
+                        };
+                        let dims = match self.cache_get(dims_key) {
+                            Some(dims) => dims,
+                            None => {
+                                let dims = self.declare_var(None, Type::UVec2);
+                                let dims_expr = wgsl::texture_dimensions(&name, kind);
+                                self.emit(format!("{dims} = {dims_expr};"));
+                                self.cache_put(dims_key, dims.clone());
+                                dims
+                            }
+                        };
                         wgsl::texture_load(&name, &suv, &dims)
                     }
+                    // `generateStorageTextureLoad()`: no level argument.
+                    SampleMode::StorageLoad => {
+                        let snippet = format!("textureLoad( {name}, {suv} )");
+                        if node.ty().components() == 1 {
+                            format!("{snippet}.x")
+                        } else {
+                            snippet
+                        }
+                    }
+                };
+                if mode_is_color {
+                    narrow(snippet)
+                } else {
+                    snippet
                 }
+            }
+
+            // `StorageTextureNode.generateStore()` →
+            // `WGSLNodeBuilder.generateTextureStore()`.
+            Node::TextureStore {
+                texture,
+                coord,
+                value,
+            } => {
+                let (texture, coord, value) = (texture.clone(), coord.clone(), value.clone());
+                let (name, kind) = self.texture_slots(&texture);
+                let dim3 = matches!(kind, TextureKind::Storage { dim3: true, .. });
+                let scoord = self.generate(&coord);
+                let svalue = self.format(&value, Type::Vec4);
+                // `uvNode.build( builder, 'uvec2' | 'uvec3' )`, whatever the
+                // coordinate's own type: `textureStore( t, vec2<u32>( a, b ),
+                // … )` for a `uvec2( a, b )`, `vec2<u32>( c )` for an `ivec2`
+                // held in `c`.
+                let coord_ty = if dim3 { "vec3<u32>" } else { "vec2<u32>" };
+                let scoord = match &*coord.0 {
+                    Node::Join { args, .. } => {
+                        let parts: Vec<String> = args.iter().map(|a| self.generate(a)).collect();
+                        format!("{coord_ty}( {} )", parts.join(", "))
+                    }
+                    _ => format!("{coord_ty}( {scoord} )"),
+                };
+                self.emit(format!("textureStore( {name}, {scoord}, {svalue} );"));
+                String::new()
+            }
+
+            Node::Break => {
+                self.emit("break;".to_string());
+                String::new()
             }
 
             Node::TextureSize { texture, level } => {
@@ -1431,7 +1740,7 @@ impl NodeBuilder {
                 // everything ahead of the result var first, then the var's own
                 // initialiser, then the condition, then the block.
                 for stmt in &pre {
-                    self.generate(stmt);
+                    self.generate_statement(stmt);
                 }
                 let name = self.generate(&result);
                 let scond = self.generate(&cond);
@@ -1440,7 +1749,7 @@ impl NodeBuilder {
                 self.emit(String::new());
                 self.push_scope();
                 for stmt in &body {
-                    self.generate(stmt);
+                    self.generate_statement(stmt);
                 }
                 self.emit(String::new());
                 self.pop_scope();
@@ -1482,42 +1791,80 @@ impl NodeBuilder {
                 result
             }
 
+            // A block reached a second time in the same scope — one inlined
+            // `Fn()` call site read by two consumers, as the raging sea's
+            // `elevation` is by `emissiveNode` and by `normalNode` — is its
+            // result, not a second run of its statements: three.js builds a
+            // node's stack once per stage and hands every later reader the
+            // snippet it left.
             Node::Block { statements, result } => {
                 let (statements, result) = (statements.clone(), result.clone());
                 for stmt in &statements {
-                    self.generate(stmt);
+                    self.generate_statement(stmt);
                 }
-                self.generate(&result)
+                // A block is an inline `Fn()` call: three builds its stack
+                // once per build and a second reference reuses the result
+                // snippet, statements and all not repeated. Without this a
+                // block read twice (`renderOutput()` reads its colour's `.xyz`
+                // and `.w`) emitted every statement twice.
+                let snippet = self.generate(&result);
+                self.cache_put(node.key(), snippet.clone());
+                snippet
             }
 
             Node::Loop {
                 start,
                 count,
                 index,
+                condition,
+                update,
                 body,
             } => {
-                let (start, count, index, body) =
-                    (start.clone(), count.clone(), index.clone(), body.clone());
+                let (start, count, index, condition, update, body) = (
+                    start.clone(),
+                    count.clone(),
+                    index.clone(),
+                    *condition,
+                    update.clone(),
+                    body.clone(),
+                );
                 // The start is generated before the end, which is the order
                 // three.js' `LoopNode` builds them in and so the order their
                 // vars and uniforms are numbered in.
+                let index_ty = index.ty();
                 let sstart = match &start {
-                    Some(start) => self.generate(start),
-                    None => "0".to_string(),
+                    Some(start) => self.loop_bound(start, index_ty),
+                    None => wgsl::constant(index_ty, &[0.0]),
                 };
-                let scount = self.generate(&count);
+                let scount = self.loop_bound(&count, index_ty);
                 let name = match &*index.0 {
                     Node::Param { name, .. } => *name,
                     _ => "i",
                 };
+                let ty = wgsl::type_name(index_ty);
+                // `LoopNode.generate()`'s default update: `++` / `--` for an
+                // integer index, `+= 1.` / `-= 1.` for anything else.
+                let rising = condition.contains('<');
+                let default_update = match (index_ty, rising) {
+                    (Type::I32 | Type::U32, true) => "++",
+                    (Type::I32 | Type::U32, false) => "--",
+                    (_, true) => "+= 1.",
+                    (_, false) => "-= 1.",
+                };
+                // `Loop( { update } )` — `i += update` in place of the
+                // default, `RaymarchingBox`'s float march.
+                let step = match &update {
+                    Some(update) => format!("{name} += {}", self.generate(update)),
+                    None => format!("{name} {default_update}"),
+                };
                 self.emit(String::new());
                 self.emit(format!(
-                    "for ( var {name} : i32 = {sstart}; {name} < {scount}; {name} ++ ) {{"
+                    "for ( var {name} : {ty} = {sstart}; {name} {condition} {scount}; {step} ) {{"
                 ));
                 self.emit(String::new());
                 self.push_scope();
                 for stmt in &body {
-                    self.generate(stmt);
+                    self.generate_statement(stmt);
                 }
                 self.pop_scope();
                 self.emit(String::new());
@@ -1540,8 +1887,9 @@ impl NodeBuilder {
                 self.emit(String::new());
                 self.push_scope();
                 for statement in &body {
-                    self.generate(statement);
+                    self.generate_statement(statement);
                 }
+                self.if_arm_tail(&body);
                 self.pop_scope();
                 self.emit(String::new());
                 // A one-armed `If` emits exactly what it always did; the
@@ -1552,8 +1900,9 @@ impl NodeBuilder {
                     self.emit(String::new());
                     self.push_scope();
                     for statement in &else_body {
-                        self.generate(statement);
+                        self.generate_statement(statement);
                     }
+                    self.if_arm_tail(&else_body);
                     self.pop_scope();
                     self.emit(String::new());
                 }
@@ -1581,24 +1930,176 @@ impl NodeBuilder {
                 let snippet = self.generate(&inner);
                 format!("( ! {snippet} )")
             }
+
+            // `MemberNode` over a custom-struct storage buffer:
+            // `WGSLNodeBuilder.getPropertyName()` returns the bare buffer name
+            // for `isCustomStruct()`, with no `.value`.
+            Node::StructMember { buffer, member } => {
+                let (buffer, member) = (buffer.clone(), *member);
+                assert_eq!(
+                    self.stage,
+                    Stage::Compute,
+                    "three-rs: a struct storage buffer is only ported for compute kernels"
+                );
+                let name = self.buffer_snippet(&buffer);
+                let BufferSource::Struct { layout, .. } = &buffer.source else {
+                    unreachable!("three-rs: a struct member is only built on a struct buffer")
+                };
+                format!("{name}.{}", layout.members[member].name)
+            }
+
+            // `AtomicFunctionNode.generate()`. `parents.length === 1 &&
+            // parents[ 0 ].isStackNode` — nothing but the flow reads it — is a
+            // bare call; anything else also reads the old value, which three
+            // holds in a `let` declared where the call is made.
+            Node::Atomic {
+                method,
+                pointer,
+                value,
+            } => {
+                let (method, pointer, value) = (*method, pointer.clone(), value.clone());
+                let is_statement = self.statement == Some(node.key());
+                assert_ne!(
+                    self.stage,
+                    Stage::Vertex,
+                    "three-rs: {method} is not supported in the vertex stage"
+                );
+                let ty = pointer.ty();
+                let mut params = vec![format!("&{}", self.generate(&pointer))];
+                if let Some(value) = &value {
+                    // `b.build( builder, inputType )` — a float into a `u32`
+                    // atomic is `u32( x )`, the same-width conversion
+                    // `wgsl::convert` writes out.
+                    params.push(self.format(value, ty));
+                }
+                let call = format!("{method}( {} )", params.join(", "));
+                if is_statement && self.usage_of(node) <= 1 {
+                    self.emit(format!("{call};"));
+                    return String::new();
+                }
+                let name = self.declare_const(None);
+                // `generateLetStatement()` is `let ${ name }` in WGSL — no type.
+                self.emit(format!("let {name} = {call};"));
+                self.cache_put(node.key(), name.clone());
+                name
+            }
+
+            // `WorkgroupInfoNode.generate()` → `builder.getScopedArray()`.
+            Node::Workgroup(def) => {
+                let def = def.clone();
+                assert_eq!(
+                    self.stage,
+                    Stage::Compute,
+                    "three-rs: workgroupArray() can only be used in a compute kernel"
+                );
+                let key = Rc::as_ptr(&def) as *const u8 as usize;
+                if let Some(name) = self.workgroup_names.get(&key) {
+                    return name.clone();
+                }
+                let name = format!("WorkgroupArray_{}", self.workgroup_names.len());
+                let ty = wgsl::type_name(def.element_ty);
+                let ty = if def.atomic {
+                    format!("atomic<{ty}>")
+                } else {
+                    ty.to_string()
+                };
+                self.workgroup_locals.push(format!(
+                    "var<workgroup> {name}: array< {ty}, {} >;",
+                    def.count
+                ));
+                self.workgroup_names.insert(key, name.clone());
+                name
+            }
+
+            // `BarrierNode.generate()`: `addLineFlowCode( `${ scope }Barrier()` )`.
+            Node::Barrier { scope } => {
+                let scope = *scope;
+                assert_eq!(
+                    self.stage,
+                    Stage::Compute,
+                    "three-rs: {scope}Barrier() can only be used in a compute kernel"
+                );
+                self.emit(format!("{scope}Barrier();"));
+                String::new()
+            }
+            // `OperatorNode.generate()`'s `'~'` arm: the operand is built as
+            // its own type, `( ~ a )`.
+            Node::BitNot { node: inner, .. } => {
+                let inner = inner.clone();
+                let snippet = self.generate(&inner);
+                format!("( ~ {snippet} )")
+            }
+        }
+    }
+
+    /// A `Loop` bound, which `LoopNode.generate()` builds as the loop's own
+    /// `type` (`int` unless `Loop( { type } )` says otherwise): a constant
+    /// is regenerated as a literal of that type (`float( 1 )` is `1` in an
+    /// `int` loop, `45` is `45.0` in a `float` one), anything else is
+    /// converted (`i32( … )`, `f32( … )`).
+    fn loop_bound(&mut self, bound: &NodeRef, ty: Type) -> String {
+        match &*bound.0 {
+            Node::Const { values, .. } if values.len() == 1 => wgsl::constant(ty, values),
+            // `LoopNode.generate()` builds a non-constant bound with
+            // `.build( builder, type )`, whose same-length arm is `i32( … )`
+            // (or `f32( … )` for a `type: 'float'` loop) — which
+            // `wgsl::convert` leaves out (see its doc), so it is written
+            // here: `i < i32( ( nodeUniform4 + 1.0 ) )`.
+            _ if bound.ty() != ty && bound.ty().components() == 1 => {
+                format!("{}( {} )", wgsl::type_name(ty), self.generate(bound))
+            }
+            _ => self.format(bound, ty),
+        }
+    }
+
+    /// The end of an `If` / `Else` arm. `ConditionalNode.generate()` closes
+    /// an arm with `tab + '\t' + snippet + '\n\n'`, where `snippet` is what
+    /// the arm's callback returned: `return x;` when it returned a value (the
+    /// port's trailing [`Node::Return`]) and nothing at all when it returned
+    /// nothing — which still leaves that tab-indented line, empty.
+    fn if_arm_tail(&mut self, arm: &[NodeRef]) {
+        if !matches!(arm.last().map(|n| &*n.0), Some(Node::Return { .. })) {
+            self.emit_blank_tab();
+        }
+    }
+
+    /// An indented line with nothing on it. [`emit`](Self::emit) writes a
+    /// blank separator as a truly empty line, which is what three's own
+    /// separators are; this one is three's `tab + ''`.
+    fn emit_blank_tab(&mut self) {
+        if let Some(scope) = self.fn_scopes.last_mut() {
+            let tab = "\t".repeat(scope.indent);
+            scope.lines.push(tab);
+        } else {
+            let s = &mut self.stages[self.stage.index()];
+            let tab = "\t".repeat(s.indent);
+            s.lines.push(tab);
         }
     }
 
     /// `FunctionNode` — emit a real WGSL `fn` once and return its name.
     fn emit_function(&mut self, def: &Rc<FnDef>) -> String {
         let key = Rc::as_ptr(def) as *const u8 as usize;
-        if let Some(name) = self.fn_names.get(&key).cloned() {
+        // Emitted once per *stage*: each stage is its own WGSL module, so a
+        // `Fn()` both stages call — the raging sea's `mx_noise_float`, read by
+        // `positionNode` and again by `emissiveNode` — is written into both,
+        // as three.js' per-stage `codes` has it. The name is shared.
+        let stage_key = (self.stage.index(), key);
+        if let Some(name) = self.fn_names.get(&stage_key).cloned() {
             return name;
         }
-        let name = match def.name {
-            Some(n) => n.to_string(),
-            None => {
-                let n = format!("fn{}", self.fn_counter);
-                self.fn_counter += 1;
-                n
-            }
+        let name = match self.fn_names.iter().find(|((_, k), _)| *k == key) {
+            Some((_, name)) => name.clone(),
+            None => match def.name {
+                Some(n) => n.to_string(),
+                None => {
+                    let n = format!("fn{}", self.fn_counter);
+                    self.fn_counter += 1;
+                    n
+                }
+            },
         };
-        self.fn_names.insert(key, name.clone());
+        self.fn_names.insert(stage_key, name.clone());
 
         let params: Vec<NodeRef> = def
             .params
@@ -1640,6 +2141,11 @@ impl NodeBuilder {
         ));
         for (n, t) in &scope.locals {
             src.push_str(&format!("\tvar {n} : {t};\n"));
+        }
+        // `WGSLNodeBuilder._getWGSLMethod()`'s template is `\t${ vars }` on a
+        // line of its own, so a `fn` with no locals still has that tab line.
+        if scope.locals.is_empty() {
+            src.push_str("\t\n");
         }
         src.push('\n');
         for line in &scope.lines {
@@ -1747,7 +2253,7 @@ impl NodeBuilder {
             self.analyze(stmt);
         }
         for stmt in &flow.statements {
-            self.generate(stmt);
+            self.generate_statement(stmt);
         }
 
         // `ComputeNode.setup()` builds its bounds check *after* the kernel body
@@ -1816,6 +2322,18 @@ impl NodeBuilder {
         }
     }
 
+    /// The fragment output type for a render target whose colour attachment
+    /// has `components` channels — `NodeBuilder.getOutputType()`, which maps
+    /// the target texture's format to a vector length. Only the two-channel
+    /// case differs from the default `vec4`.
+    pub fn with_output_components(mut self, components: u32) -> Self {
+        self.output_type = match components {
+            2 => Type::Vec2,
+            _ => Type::Vec4,
+        };
+        self
+    }
+
     pub fn build(mut self, flow: &MaterialFlow) -> NodeProgram {
         for stmt in &flow.pre_vertex_statements {
             self.analyze(stmt);
@@ -1856,7 +2374,7 @@ impl NodeBuilder {
 
         self.stage = Stage::Vertex;
         for stmt in &flow.pre_vertex_statements {
-            self.generate(stmt);
+            self.generate_statement(stmt);
         }
 
         self.stage = Stage::Fragment;
@@ -1869,7 +2387,7 @@ impl NodeBuilder {
             self.emit(format!("output.depth = {snippet};"));
         }
         for stmt in &flow.fragment_statements {
-            self.generate(stmt);
+            self.generate_statement(stmt);
         }
         // `NodeMaterial.setup()` registers the `Output` property *before* the
         // output node's own flow runs, so `Output` is declared above the temps
@@ -1881,7 +2399,8 @@ impl NodeBuilder {
         // `vec4` as its output type, so a `fragmentNode` that returns a
         // `vec3` — `webgpu_tsl_interoperability`'s `crtFragment` — is widened
         // here rather than assigned as it is.
-        let mut color = self.format(&flow.output, Type::Vec4);
+        let output_type = self.output_type;
+        let mut color = self.format(&flow.output, output_type);
         if let Some(output_prop) = &output_prop {
             self.emit(format!("{output_prop} = {color};"));
         }
@@ -1894,7 +2413,7 @@ impl NodeBuilder {
         }
         if let Some(node) = &flow.output_node {
             let node = node.clone();
-            color = self.format(&node, Type::Vec4);
+            color = self.format(&node, output_type);
         }
         // `OutputStructNode.generate()`: one `output.mN = <member>` line per
         // member, pushed onto the *flow* — the entry point's result section is
@@ -1908,7 +2427,7 @@ impl NodeBuilder {
 
         self.stage = Stage::Vertex;
         for stmt in &flow.vertex_statements {
-            self.generate(stmt);
+            self.generate_statement(stmt);
         }
         let position = self.generate(&flow.position);
 
@@ -1974,6 +2493,7 @@ impl NodeBuilder {
             attributes,
             groups,
             cache_key,
+            instanced_attributes: Vec::new(),
         }
     }
 
@@ -2036,10 +2556,62 @@ impl NodeBuilder {
                         let name = self.texture_name(source);
                         out.push_str(&format!(
                             "@binding( {binding} ) @group( {gi} ) var {name} : {};\n",
-                            kind.wgsl()
+                            kind.declaration(stage == Stage::Compute)
                         ));
                     }
                     _ => {}
+                }
+            }
+        }
+
+        // `WGSLNodeBuilder.getUniforms()` collects `bufferSnippets` and
+        // `structSnippets` separately and writes every buffer before any
+        // uniform struct, whichever group each is in.
+        for group in [UniformGroup::Render, UniformGroup::Object] {
+            let Some(g) = self.groups.get(&group) else {
+                continue;
+            };
+            let gi = self.group_index(group);
+            for (binding, desc) in g.bindings.iter().enumerate() {
+                let BindingDesc::Buffer {
+                    name,
+                    element_ty,
+                    count,
+                    visibility,
+                    source,
+                    ..
+                } = desc
+                else {
+                    continue;
+                };
+                if !Self::visible(*visibility, stage) {
+                    continue;
+                }
+                // `WGSLNodeBuilder.getStorageAccess()`: `read_write` in the
+                // compute stage and forced to `read` everywhere else.
+                let access = if visibility.compute {
+                    "read_write"
+                } else {
+                    "read"
+                };
+                let element = wgsl::type_name(*element_ty);
+                match source {
+                    // `isCustomStruct()`: the struct itself, on one line.
+                    BufferSource::Struct { layout, .. } => out.push_str(&format!(
+                        "@binding( {binding} ) @group( {gi} ) var<storage, {access}> {name} : {};\n",
+                        layout.name
+                    )),
+                    // A runtime-sized array — no element count.
+                    BufferSource::Storage => out.push_str(&format!(
+                        "\nstruct {name}Struct {{\n\tvalue : array< {element} >\n}};\n@binding( {binding} ) @group( {gi} )\nvar<storage, {access}> {name} : {name}Struct;\n"
+                    )),
+                    // `bufferNode.isAtomic ? `atomic<${ bufferType }>``.
+                    BufferSource::AtomicStorage => out.push_str(&format!(
+                        "\nstruct {name}Struct {{\n\tvalue : array< atomic<{element}> >\n}};\n@binding( {binding} ) @group( {gi} )\nvar<storage, {access}> {name} : {name}Struct;\n"
+                    )),
+                    _ => out.push_str(&format!(
+                        "\nstruct {name}Struct {{\n\tvalue : array< {element}, {count} >\n}};\n@binding( {binding} ) @group( {gi} )\nvar<uniform> {name} : {name}Struct;\n"
+                    )),
                 }
             }
         }
@@ -2050,59 +2622,27 @@ impl NodeBuilder {
             };
             let gi = self.group_index(group);
             for (binding, desc) in g.bindings.iter().enumerate() {
-                match desc {
-                    BindingDesc::Buffer {
-                        name,
-                        element_ty,
-                        count,
-                        visibility,
-                        source,
-                        ..
-                    } => {
-                        if !Self::visible(*visibility, stage) {
-                            continue;
-                        }
-                        if let BufferSource::Storage = source {
-                            // `WGSLNodeBuilder.getStorageAccess()`: a runtime-
-                            // sized array, `read_write` in the compute stage
-                            // and forced to `read` everywhere else.
-                            let access = if visibility.compute {
-                                "read_write"
-                            } else {
-                                "read"
-                            };
-                            out.push_str(&format!(
-                                "\nstruct {name}Struct {{\n\tvalue : array< {} >\n}};\n@binding( {binding} ) @group( {gi} )\nvar<storage, {access}> {name} : {name}Struct;\n",
-                                wgsl::type_name(*element_ty)
-                            ));
-                            continue;
-                        }
-                        out.push_str(&format!(
-                            "\nstruct {name}Struct {{\n\tvalue : array< {}, {count} >\n}};\n@binding( {binding} ) @group( {gi} )\nvar<uniform> {name} : {name}Struct;\n",
-                            wgsl::type_name(*element_ty)
-                        ));
-                    }
-                    BindingDesc::Uniforms {
-                        members,
-                        visibility,
-                        ..
-                    } => {
-                        if !Self::visible(*visibility, stage) || members.is_empty() {
-                            continue;
-                        }
-                        let name = group.struct_name();
-                        out.push_str(&format!("\nstruct {name}Struct {{\n"));
-                        let decls: Vec<String> = members
-                            .iter()
-                            .map(|m| format!("\t{} : {}", m.name, wgsl::type_name(m.ty)))
-                            .collect();
-                        out.push_str(&decls.join(",\n"));
-                        out.push_str(&format!(
-                            "\n}};\n@binding( {binding} ) @group( {gi} )\nvar<uniform> {name} : {name}Struct;\n"
-                        ));
-                    }
-                    _ => {}
+                let BindingDesc::Uniforms {
+                    members,
+                    visibility,
+                    ..
+                } = desc
+                else {
+                    continue;
+                };
+                if !Self::visible(*visibility, stage) || members.is_empty() {
+                    continue;
                 }
+                let name = group.struct_name();
+                out.push_str(&format!("\nstruct {name}Struct {{\n"));
+                let decls: Vec<String> = members
+                    .iter()
+                    .map(|m| format!("\t{} : {}", m.name, wgsl::type_name(m.ty)))
+                    .collect();
+                out.push_str(&decls.join(",\n"));
+                out.push_str(&format!(
+                    "\n}};\n@binding( {binding} ) @group( {gi} )\nvar<uniform> {name} : {name}Struct;\n"
+                ));
             }
         }
 
@@ -2118,15 +2658,7 @@ impl NodeBuilder {
     }
 
     fn texture_name(&self, source: &TextureSource) -> String {
-        let key = match source {
-            TextureSource::Texture2D(t) => t.id(),
-            TextureSource::Depth(t) => t.id(),
-            TextureSource::ShadowMap(t) => t.id(),
-            TextureSource::Cube(t) => t.id(),
-            TextureSource::DataArray(t) => t.id(),
-            TextureSource::Data(t) => t.id(),
-            TextureSource::CubeDepth(t) => t.id(),
-        };
+        let key = (source.id(), source.is_storage_binding());
         self.texture_names[&key].0.clone()
     }
 
@@ -2144,17 +2676,49 @@ impl NodeBuilder {
         let mut out = String::from("// three-rs - Node System\n\n");
         out.push_str("// directives\n\n");
         out.push_str("// system\nvar<private> instanceIndex : u32;\n\n");
-        out.push_str("// locals\n\n\n// structs\n\n\n");
+        // `// locals\n${ scopedArrays }\n\n` and `// structs\n${ structs }\n\n`,
+        // `getStructs()` being `\n` + the structs + `\n` when there are any.
+        out.push_str(&format!(
+            "// locals\n{}\n\n",
+            self.workgroup_locals.join("\n")
+        ));
+        let mut structs: Vec<String> = Vec::new();
+        for group in [UniformGroup::Render, UniformGroup::Object] {
+            let Some(g) = self.groups.get(&group) else {
+                continue;
+            };
+            for desc in &g.bindings {
+                if let BindingDesc::Buffer {
+                    source: BufferSource::Struct { layout, .. },
+                    ..
+                } = desc
+                {
+                    let text = layout.wgsl();
+                    if !structs.contains(&text) {
+                        structs.push(text);
+                    }
+                }
+            }
+        }
+        let structs = if structs.is_empty() {
+            String::new()
+        } else {
+            format!("\n{}\n", structs.join("\n\n"))
+        };
+        out.push_str(&format!("// structs\n{structs}\n\n"));
 
         out.push_str("// uniforms\n");
         out.push_str(&self.uniform_declarations(Stage::Compute));
         out.push('\n');
 
-        out.push_str("// vars\n");
-        for (name, ty) in &s.decls {
-            out.push_str(&format!("var<private> {name} : {ty};\n"));
-        }
-        out.push('\n');
+        // `// vars\n${ vars }\n\n`, the declarations joined by `\n` — so a
+        // kernel with none still has the blank line.
+        let vars: Vec<String> = s
+            .decls
+            .iter()
+            .map(|(name, ty)| format!("var<private> {name} : {ty};"))
+            .collect();
+        out.push_str(&format!("// vars\n{}\n\n", vars.join("\n")));
 
         out.push_str("// codes\n");
         for code in &s.codes {
@@ -2164,9 +2728,17 @@ impl NodeBuilder {
         out.push_str("\n\n");
 
         let [wx, wy, wz] = workgroup_size;
+        // `getBuiltin( 'local_invocation_index', … )` registers the parameter
+        // while the flow is generated, i.e. before `getAttributes()` adds the
+        // four fixed ones — so it comes first.
+        let local_index = if s.builtins.contains(&Builtin::InvocationLocalIndex) {
+            "@builtin( local_invocation_index ) invocationLocalIndex : u32,\n\t"
+        } else {
+            ""
+        };
         out.push_str(&format!(
             "@compute @workgroup_size( {wx}, {wy}, {wz} )\n\
-             fn main( @builtin( global_invocation_id ) globalId : vec3<u32>,\n\
+             fn main( {local_index}@builtin( global_invocation_id ) globalId : vec3<u32>,\n\
              \t@builtin( workgroup_id ) workgroupId : vec3<u32>,\n\
              \t@builtin( local_invocation_id ) localId : vec3<u32>,\n\
              \t@builtin( num_workgroups ) numWorkgroups : vec3<u32> ) {{\n\n\
@@ -2217,8 +2789,8 @@ impl NodeBuilder {
                 // `NodeBuilder.getOutputStructName()`'s depth member:
                 // `@builtin( frag_depth )`, with the comma and the spacing
                 // three's template puts around it.
-                None if depth => out.push_str("// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>,\n\t@builtin( frag_depth ) depth : f32\n};\nvar<private> output : OutputStruct;\n\n"),
-                None => out.push_str("// structs\n\nstruct OutputStruct {\n\t@location( 0 ) color: vec4<f32>\n};\nvar<private> output : OutputStruct;\n\n"),
+                None if depth => out.push_str(&format!("// structs\n\nstruct OutputStruct {{\n\t@location( 0 ) color: {},\n\t@builtin( frag_depth ) depth : f32\n}};\nvar<private> output : OutputStruct;\n\n", wgsl::type_name(self.output_type))),
+                None => out.push_str(&format!("// structs\n\nstruct OutputStruct {{\n\t@location( 0 ) color: {}\n}};\nvar<private> output : OutputStruct;\n\n", wgsl::type_name(self.output_type))),
             }
         } else {
             out.push_str("// directives\n\n\n// structs\n\n\n");
@@ -2249,11 +2821,14 @@ impl NodeBuilder {
             out.push_str("\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n");
         }
 
-        out.push_str("// vars\n");
-        for (name, ty) in &s.decls {
-            out.push_str(&format!("var<private> {name} : {ty};\n"));
-        }
-        out.push('\n');
+        // `// vars\n${ vars }\n\n`, the declarations joined by `\n` — so a
+        // kernel with none still has the blank line.
+        let vars: Vec<String> = s
+            .decls
+            .iter()
+            .map(|(name, ty)| format!("var<private> {name} : {ty};"))
+            .collect();
+        out.push_str(&format!("// vars\n{}\n\n", vars.join("\n")));
 
         out.push_str("// codes\n");
         for code in &s.codes {
@@ -2271,6 +2846,13 @@ impl NodeBuilder {
                 Builtin::InstanceIndex => "instance_index",
                 Builtin::FragCoord => "position",
                 Builtin::FrontFacing => "front_facing",
+                Builtin::InvocationLocalIndex
+                | Builtin::WorkgroupId
+                | Builtin::LocalId
+                | Builtin::GlobalId
+                | Builtin::NumWorkgroups => {
+                    unreachable!("three-rs: compute builtins never reach a render stage")
+                }
             };
             params.push(format!(
                 "@builtin( {builtin} ) {} : {}",

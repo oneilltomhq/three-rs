@@ -26,6 +26,9 @@ use crate::textures::{
 
 pub use super::node::TextureSource;
 
+mod wrappers;
+pub use wrappers::*;
+
 // ---------------------------------------------------------------------------
 // sub-builds and the build context (`docs/nodes.md` §7)
 // ---------------------------------------------------------------------------
@@ -267,6 +270,11 @@ pub fn float(v: impl Into<f64>) -> NodeRef {
 /// `int( x )`.
 pub fn int(v: i64) -> NodeRef {
     constant(Type::I32, vec![v as f64])
+}
+
+/// `bool( v )` — a `true` / `false` literal.
+pub fn boolean(v: bool) -> NodeRef {
+    constant(Type::Bool, vec![f64::from(u8::from(v))])
 }
 
 /// `vec2( x, y )`.
@@ -707,17 +715,17 @@ pub fn mod_float(x: impl Into<NodeRef>, y: impl Into<NodeRef>) -> NodeRef {
     math("tsl_mod_float", vec![x.into(), y.into()], Type::F32)
 }
 
-/// `smoothstep( low, high, x )`.
+/// `smoothstep( low, high, x )` — `MathNode.SMOOTHSTEP`, typed (and its
+/// operands built) as `MathNode.getInputType()`: `smoothstep( 0, 1, uv )` is
+/// `smoothstep( vec2<f32>( 0.0 ), vec2<f32>( 1.0 ), uv )`.
 pub fn smoothstep(
     low: impl Into<NodeRef>,
     high: impl Into<NodeRef>,
     x: impl Into<NodeRef>,
 ) -> NodeRef {
-    math(
-        "smoothstep",
-        vec![low.into(), high.into(), x.into()],
-        Type::F32,
-    )
+    let (low, high, x) = (low.into(), high.into(), x.into());
+    let ty = wrappers::math_input_type(&[&low, &high, &x]);
+    math("smoothstep", vec![low, high, x], ty)
 }
 
 /// `dFdx( x )` — WGSL `dpdx`.
@@ -779,6 +787,64 @@ pub fn range_fog_factor_with_view_z(
     view_z: impl Into<NodeRef>,
 ) -> NodeRef {
     smoothstep(near, far, view_z.into().negate())
+}
+
+/// Port of `three.js/src/nodes/fog/Fog.js`' `densityFogFactor( density )`,
+/// the exponential squared fog `FogExp2` builds:
+/// `density.mul( density, viewZ, viewZ ).negate().exp().oneMinus()`.
+///
+/// `viewZ` is `positionView.z.negate()`, read twice. three.js' usage count
+/// turns it into a `let nodeConstN`; the port's builder does not promote a
+/// negation on usage (`docs/nodes.md` §8, "`toConst` on the shadow filter"), so
+/// the const is taken here by hand and the WGSL is the same.
+pub fn density_fog_factor(density: impl Into<NodeRef>) -> NodeRef {
+    density_fog_factor_with_view_z(density, position_view().z())
+}
+
+/// [`density_fog_factor`] over an explicit view-space z, the
+/// `.context( { getViewZ } )` form [`range_fog_factor_with_view_z`] documents.
+pub fn density_fog_factor_with_view_z(
+    density: impl Into<NodeRef>,
+    view_z: impl Into<NodeRef>,
+) -> NodeRef {
+    let density = density.into();
+    let view_z = to_const(None, view_z.into().negate());
+    exp(density
+        .clone()
+        .mul(density)
+        .mul(view_z.clone())
+        .mul(view_z)
+        .negate())
+    .one_minus()
+}
+
+/// Port of `three.js/src/nodes/fog/Fog.js`'
+/// `exponentialHeightFogFactor( density, height )`: fog only below the world
+/// height `height`, thickening with the depth below it times the view distance.
+///
+/// ```js
+/// const distance = height.sub( positionWorld.y ).max( 0 ).toConst();
+/// const m = distance.mul( viewZ ).toConst();
+/// return density.mul( density, m, m ).negate().exp().oneMinus();
+/// ```
+pub fn exponential_height_fog_factor(
+    density: impl Into<NodeRef>,
+    height: impl Into<NodeRef>,
+) -> NodeRef {
+    exponential_height_fog_factor_with_view_z(density, height, position_view().z())
+}
+
+/// [`exponential_height_fog_factor`] over an explicit view-space z.
+pub fn exponential_height_fog_factor_with_view_z(
+    density: impl Into<NodeRef>,
+    height: impl Into<NodeRef>,
+    view_z: impl Into<NodeRef>,
+) -> NodeRef {
+    let density = density.into();
+    let view_z = view_z.into().negate();
+    let distance = to_const(None, height.into().sub(position_world().y()).max(0.0));
+    let m = to_const(None, distance.mul(view_z));
+    exp(density.clone().mul(density).mul(m.clone()).mul(m).negate()).one_minus()
 }
 
 /// Port of `three.js/src/nodes/fog/Fog.js`' `fog( color, factor )`. The node it
@@ -954,6 +1020,17 @@ pub fn shadow_normal_bias(index: usize) -> NodeRef {
 pub fn shadow_radius(index: usize) -> NodeRef {
     uniform(
         UniformSource::ShadowRadius(index),
+        Type::F32,
+        UniformGroup::Render,
+        None,
+    )
+}
+
+/// `reference( 'blurSamples', 'float', shadow )` — read by the two VSM blur
+/// passes only.
+pub fn shadow_blur_samples(index: usize) -> NodeRef {
+    uniform(
+        UniformSource::ShadowBlurSamples(index),
         Type::F32,
         UniformGroup::Render,
         None,
@@ -1349,27 +1426,6 @@ impl NodeRef {
         binary("-", float(1.0), self.clone())
     }
 
-    /// `remap( node, inLow, inHigh, outLow = 0, outHigh = 1 )` — `RemapNode`
-    /// without `doClamp`, which `setup()`s to
-    /// `node.sub( inLow ).div( inHigh.sub( inLow ) ).mul( outHigh.sub( outLow ) ).add( outLow )`.
-    /// Nothing is folded, so `remap( 0, 0.1, 3, 1 )` emits
-    /// `( ( ( ( x - 0.0 ) / ( 0.1 - 0.0 ) ) * ( 1.0 - 3.0 ) ) + 3.0 )` as
-    /// three.js does. Pass `float( 0.0 )` / `float( 1.0 )` for the defaults.
-    pub fn remap(
-        &self,
-        in_low: impl Into<NodeRef>,
-        in_high: impl Into<NodeRef>,
-        out_low: impl Into<NodeRef>,
-        out_high: impl Into<NodeRef>,
-    ) -> NodeRef {
-        let in_low = in_low.into();
-        let out_low = out_low.into();
-        self.sub(in_low.clone())
-            .div(in_high.into().sub(in_low))
-            .mul(out_high.into().sub(out_low.clone()))
-            .add(out_low)
-    }
-
     pub fn negate(&self) -> NodeRef {
         NodeRef::new(Node::Neg {
             node: self.clone(),
@@ -1725,6 +1781,32 @@ accessor!(
     NodeRef::new(Node::Builtin(Builtin::InstanceIndex))
 );
 accessor!(
+    /// `invocationLocalIndex` — `@builtin( local_invocation_index )`, compute
+    /// only; the entry point declares it only when a kernel reads it.
+    invocation_local_index,
+    NodeRef::new(Node::Builtin(Builtin::InvocationLocalIndex))
+);
+accessor!(
+    /// `workgroupId` — `@builtin( workgroup_id )`, compute only.
+    workgroup_id,
+    NodeRef::new(Node::Builtin(Builtin::WorkgroupId))
+);
+accessor!(
+    /// `localId` — `@builtin( local_invocation_id )`, compute only.
+    local_id,
+    NodeRef::new(Node::Builtin(Builtin::LocalId))
+);
+accessor!(
+    /// `globalId` — `@builtin( global_invocation_id )`, compute only.
+    global_id,
+    NodeRef::new(Node::Builtin(Builtin::GlobalId))
+);
+accessor!(
+    /// `numWorkgroups` — `@builtin( num_workgroups )`, compute only.
+    num_workgroups,
+    NodeRef::new(Node::Builtin(Builtin::NumWorkgroups))
+);
+accessor!(
     /// `frontFacing` — `@builtin( front_facing )`, fragment stage only.
     front_facing,
     NodeRef::new(Node::Builtin(Builtin::FrontFacing))
@@ -1818,6 +1900,16 @@ accessor!(
     material_opacity,
     uniform(
         UniformSource::MaterialOpacity,
+        Type::F32,
+        UniformGroup::Object,
+        None
+    )
+);
+accessor!(
+    /// `materialAlphaTest`.
+    material_alpha_test,
+    uniform(
+        UniformSource::MaterialAlphaTest,
         Type::F32,
         UniformGroup::Object,
         None
@@ -2543,8 +2635,12 @@ pub fn with_clearcoat_normal<R>(normal: Option<NodeRef>, f: impl FnOnce() -> R) 
 }
 
 /// `clearcoatNormalView` — `Normal.js`' var, whose value is the material's
-/// clearcoat normal map through the `NORMAL` sub-build, or `normalView` when
-/// the material has none.
+/// clearcoat normal map through the `NORMAL` sub-build, or — when the material
+/// has none — `MaterialNode.CLEARCOAT_NORMAL`'s `normalView` *as read inside
+/// that sub-build*: the geometric normal, `NORMAL_normalView`, not the
+/// material's normal-mapped one. A coat with no map of its own is smooth over
+/// a bumpy base, which is the whole look of `webgpu_clearcoat`'s carbon fibre
+/// and car paint.
 pub fn clearcoat_normal_view() -> NodeRef {
     let value = CLEARCOAT_NORMAL_VALUE.with(|v| v.borrow().clone());
     let key = value.as_ref().map(|v| v.key());
@@ -2553,7 +2649,7 @@ pub fn clearcoat_normal_view() -> NodeRef {
     }
     let node = to_var(
         Some("clearcoatNormalView"),
-        value.unwrap_or_else(normal_view),
+        value.unwrap_or_else(|| in_sub_build("NORMAL", normal_view)),
     );
     CLEARCOAT_NORMAL_VIEW.with(|m| m.borrow_mut().insert(key, node.clone()));
     node
@@ -2638,8 +2734,176 @@ pub fn texture(map: &Texture) -> NodeRef {
         TextureSource::Texture2D(map.clone()),
         transformed_uv(default_uv(map), (0, map.id()), map.matrix()),
         sample_mode_for(map),
-        Type::Vec4,
+        texture_type_for(map),
     )
+}
+
+/// `texture3D( texture, null, level )` — `Texture3DNode` with a level, which
+/// is how both volume pages read their volume: `textureSampleLevel` at a
+/// fixed level, never the implicit-derivative `textureSample` a raymarch loop
+/// could not use. The node is a handle for `.sample()` and `.normal()`, the
+/// two things a raymarcher calls on it.
+#[derive(Clone, Debug)]
+pub struct Texture3DNode {
+    source: Rc<TextureSource>,
+    level: NodeRef,
+}
+
+/// `texture3D( texture, null, level )`.
+pub fn texture_3d(texture: &crate::textures::Data3DTexture, level: NodeRef) -> Texture3DNode {
+    Texture3DNode {
+        source: Rc::new(TextureSource::Texture3D(texture.clone())),
+        level,
+    }
+}
+
+impl Texture3DNode {
+    /// `node.sample( uv )` — the `vec4` texel at `uv` in `[ 0, 1 ]³`.
+    pub fn sample(&self, uv: impl Into<NodeRef>) -> NodeRef {
+        NodeRef::new(Node::Texture {
+            texture: self.source.clone(),
+            uv: uv.into(),
+            mode: SampleMode::Level(self.level.clone()),
+            ty: Type::Vec4,
+        })
+    }
+
+    /// `node.sample( uv ).r`. Three builds the texture node itself as a
+    /// `float` when only `.r` is read, so its var is an `f32` holding
+    /// `textureSampleLevel( … ).x` rather than a `vec4` swizzled afterwards;
+    /// this is the node that reproduces that.
+    pub fn sample_r(&self, uv: impl Into<NodeRef>) -> NodeRef {
+        NodeRef::new(Node::Texture {
+            texture: self.source.clone(),
+            uv: uv.into(),
+            mode: SampleMode::Level(self.level.clone()),
+            ty: Type::F32,
+        })
+    }
+
+    /// `Texture3DNode.normal( uv )` — the volume's gradient at `uv` by central
+    /// differences of `.r`, 0.01 apart, and the inward axis on the six faces
+    /// of the unit cube. The `If().ElseIf()…Else()` chain nests exactly as
+    /// three's does.
+    pub fn normal(&self, uv: NodeRef) -> NodeRef {
+        let epsilon = 0.0001;
+        let ret = to_var(None, vec3(0.0, 0.0, 0.0));
+        let step = 0.01;
+        let x = self
+            .sample_r(uv.add(vec3(-step, 0.0, 0.0)))
+            .sub(self.sample_r(uv.add(vec3(step, 0.0, 0.0))));
+        let y = self
+            .sample_r(uv.add(vec3(0.0, -step, 0.0)))
+            .sub(self.sample_r(uv.add(vec3(0.0, step, 0.0))));
+        let z = self
+            .sample_r(uv.add(vec3(0.0, 0.0, -step)))
+            .sub(self.sample_r(uv.add(vec3(0.0, 0.0, step))));
+        let arms = [
+            (uv.x().less_than(epsilon), vec3(1.0, 0.0, 0.0)),
+            (uv.y().less_than(epsilon), vec3(0.0, 1.0, 0.0)),
+            (uv.z().less_than(epsilon), vec3(0.0, 0.0, 1.0)),
+            (uv.x().greater_than(1.0 - epsilon), vec3(-1.0, 0.0, 0.0)),
+            (uv.y().greater_than(1.0 - epsilon), vec3(0.0, -1.0, 0.0)),
+            (uv.z().greater_than(1.0 - epsilon), vec3(0.0, 0.0, -1.0)),
+        ];
+        let mut chain = vec![ret.assign(vec3_join(vec![x, y, z]))];
+        for (cond, axis) in arms.into_iter().rev() {
+            chain = vec![if_else(cond, vec![ret.assign(axis)], chain)];
+        }
+        let mut statements = vec![ret.clone()];
+        statements.extend(chain);
+        block(statements, ret.normalize())
+    }
+}
+
+/// `storageTexture( texture )` — a `StorageTextureNode`, write-only until
+/// [`set_access`](Self::set_access) says otherwise. It is the handle
+/// [`texture_store`] writes through and [`load`](Self::load) reads through;
+/// sampling the same texture in a material is `texture( texture )`, a
+/// different binding.
+#[derive(Clone, Debug)]
+pub struct StorageTextureNode {
+    source: Rc<TextureSource>,
+}
+
+/// `storageTexture( StorageTexture )`.
+pub fn storage_texture(texture: &Texture) -> StorageTextureNode {
+    assert!(
+        texture.is_storage(),
+        "three-rs: storageTexture() needs a Texture::storage()"
+    );
+    StorageTextureNode {
+        source: Rc::new(TextureSource::Storage(
+            texture.clone(),
+            crate::nodes::node::StorageAccess::WriteOnly,
+        )),
+    }
+}
+
+/// `storageTexture( Storage3DTexture )`.
+pub fn storage_texture_3d(texture: &crate::textures::Data3DTexture) -> StorageTextureNode {
+    assert!(
+        texture.is_storage(),
+        "three-rs: storageTexture() needs a Data3DTexture::storage()"
+    );
+    StorageTextureNode {
+        source: Rc::new(TextureSource::Storage3D(
+            texture.clone(),
+            crate::nodes::node::StorageAccess::WriteOnly,
+        )),
+    }
+}
+
+impl StorageTextureNode {
+    /// `.setAccess( NodeAccess.* )`.
+    pub fn set_access(self, access: crate::nodes::node::StorageAccess) -> Self {
+        let source = match &*self.source {
+            TextureSource::Storage(t, _) => TextureSource::Storage(t.clone(), access),
+            TextureSource::Storage3D(t, _) => TextureSource::Storage3D(t.clone(), access),
+            _ => unreachable!("three-rs: a StorageTextureNode holds a storage source"),
+        };
+        Self {
+            source: Rc::new(source),
+        }
+    }
+
+    /// `.load( coord )` — `textureLoad( t, coord )`, the texel at an integer
+    /// coordinate, with no level (`generateStorageTextureLoad()`).
+    pub fn load(&self, coord: impl Into<NodeRef>) -> NodeRef {
+        NodeRef::new(Node::Texture {
+            texture: self.source.clone(),
+            uv: coord.into(),
+            mode: SampleMode::StorageLoad,
+            ty: Type::Vec4,
+        })
+    }
+}
+
+/// `textureStore( storageTexture, coord, value )` — a statement. `coord` is a
+/// `uvec2` (a `uvec3` for a 3D texture) or anything that converts to one;
+/// `value` is widened to a `vec4`.
+pub fn texture_store(
+    texture: &StorageTextureNode,
+    coord: impl Into<NodeRef>,
+    value: impl Into<NodeRef>,
+) -> NodeRef {
+    NodeRef::new(Node::TextureStore {
+        texture: texture.source.clone(),
+        coord: coord.into(),
+        value: value.into(),
+    })
+}
+
+/// `NodeUtils.getTextureType( texture )`'s component count: an `RGFormat`
+/// map (the DFG LUT, VSM's moment targets) is a `vec2` node, so the builder
+/// caches `textureSample( … ).xy` in a `vec2<f32>` var rather than keeping
+/// the whole `vec4`. Only the two-channel case is ported; red-only formats
+/// stay `vec4` until a rung needs three's `float` typing.
+fn texture_type_for(map: &Texture) -> Type {
+    match map.format().components() {
+        2 => Type::Vec2,
+        _ => Type::Vec4,
+    }
 }
 
 /// `WGSLNodeBuilder.generateTextureSample`'s choice for a colour texture:
@@ -2761,6 +3025,22 @@ pub fn texture_level(map: &Texture, coord: NodeRef, level: NodeRef) -> NodeRef {
     )
 }
 
+/// `texture( map, uv ).depth( layer )` — one layer of a
+/// `CompressedArrayTexture`, sampled (`webgpu_textures_2d-array_compressed`).
+/// The uv is taken as given, with no uv matrix, as for [`texture_uv`].
+pub fn texture_array(map: &Texture, coord: NodeRef, layer: NodeRef) -> NodeRef {
+    assert!(
+        map.is_array(),
+        "three-rs: texture_array needs a texture with array layers"
+    );
+    texture_node(
+        TextureSource::Texture2D(map.clone()),
+        coord,
+        SampleMode::SampleLayer(layer),
+        Type::Vec4,
+    )
+}
+
 /// `equirectUV( direction )` — `nodes/utils/EquirectUV.js`.
 ///
 /// The longitude/latitude of a direction, in `[ 0, 1 ]²`. Three writes it as a
@@ -2819,7 +3099,7 @@ pub fn texture_uv(map: &Texture, coord: NodeRef) -> NodeRef {
         TextureSource::Texture2D(map.clone()),
         coord,
         sample_mode_for(map),
-        Type::Vec4,
+        texture_type_for(map),
     )
 }
 
@@ -2834,14 +3114,49 @@ pub fn depth_texture(map: &DepthTexture) -> NodeRef {
     )
 }
 
+/// `texture( depthTexture ).sample( uv )` — the [`depth_texture`] load at an
+/// explicit coordinate, through a `mat3x3` uv matrix of its own.
+///
+/// As with [`texture_sample`], `TextureNode.sample()` clones the node and
+/// keeps `updateMatrix` on, so the tap carries a fresh `uniform(
+/// texture.matrix )` rather than sharing the map's. `ShadowNode`'s
+/// `VSMPassVertical` reads the shadow map's depth this way.
+pub fn depth_texture_sample(map: &DepthTexture, coord: NodeRef) -> NodeRef {
+    let matrix = uniform(
+        UniformSource::Value(
+            Matrix3::identity()
+                .to_padded_f32_array()
+                .iter()
+                .map(|&v| v as f64)
+                .collect(),
+        ),
+        Type::Mat3,
+        UniformGroup::Object,
+        None,
+    );
+    texture_node(
+        TextureSource::Depth(map.clone()),
+        matrix.mul(vec3_join(vec![coord, float(1.0)])).xy(),
+        SampleMode::Load,
+        Type::F32,
+    )
+}
+
 /// `passNode.getTextureNode( 'depth' )` — the same `textureLoad` as
 /// [`depth_texture`], but with the raw `uv()` varying and no texture matrix:
 /// a `PassTextureNode` calls `setUpdateMatrix( false )`, so the pass's depth
 /// attachment carries no `mat3x3` in the object uniform block.
 pub fn pass_depth_texture(map: &DepthTexture) -> NodeRef {
+    pass_depth_texture_uv(map, uv())
+}
+
+/// `passNode.getTextureNode( 'depth' ).sample( coord )` — the pass's depth
+/// attachment read at another uv, as `PixelationPassNode`'s neighbour taps
+/// read it.
+pub fn pass_depth_texture_uv(map: &DepthTexture, coord: NodeRef) -> NodeRef {
     texture_node(
         TextureSource::Depth(map.clone()),
-        uv(),
+        coord,
         SampleMode::Load,
         Type::F32,
     )
@@ -2932,6 +3247,205 @@ impl StorageArray {
     pub fn element_ty(&self) -> Type {
         self.0.element_ty
     }
+}
+
+impl StorageArray {
+    /// `.toAtomic()` — the same buffer, its elements declared `atomic< T >`
+    /// (`StorageBufferNode.setAtomic( true )`), so they are read and written
+    /// only through the [atomic functions](atomic_add).
+    ///
+    /// Three flips a flag on the node it was called on; here the call hands
+    /// back the atomic view, which keeps the buffer's identity (and so its GPU
+    /// buffer) and replaces the plain one. Use one or the other in a program:
+    /// the declaration is per buffer.
+    pub fn to_atomic(&self) -> StorageArray {
+        assert!(
+            matches!(self.0.element_ty, Type::U32 | Type::I32),
+            "three-rs: an atomic storage array holds u32 or i32 (WGSL atomic<T>)"
+        );
+        StorageArray(Rc::new(BufferNode {
+            id: self.0.id,
+            source: BufferSource::AtomicStorage,
+            element_ty: self.0.element_ty,
+            count: self.0.count,
+        }))
+    }
+}
+
+pub use super::node::StructLayout;
+/// One member of [`struct_type`]'s object — `'uint'`, or `{ type: 'uint',
+/// atomic: true }` with [`atomic`](StructMember::atomic) set.
+pub use super::node::StructMember;
+
+/// `struct( { name: type, … }, 'Name' )` — `StructTypeNode`, a named WGSL
+/// struct laid out in the members' order.
+pub fn struct_type(name: &'static str, members: Vec<StructMember>) -> Rc<StructLayout> {
+    Rc::new(StructLayout { name, members })
+}
+
+impl StructMember {
+    /// `name: 'type'`.
+    pub fn new(name: &'static str, ty: Type) -> Self {
+        Self {
+            name,
+            ty,
+            atomic: false,
+        }
+    }
+
+    /// `name: { type, atomic: true }`.
+    pub fn atomic(name: &'static str, ty: Type) -> Self {
+        Self {
+            name,
+            ty,
+            atomic: true,
+        }
+    }
+}
+
+/// `storage( indirectAttribute, structType, count )` over an
+/// `IndirectStorageBufferAttribute`: a `StorageBufferNode` whose WGSL type is
+/// the struct itself. Held like a [`StorageArray`]; its identity is the
+/// attribute's, so the GPU buffer a kernel writes through it is the one
+/// `geometry.setIndirect()` draws from.
+#[derive(Clone)]
+pub struct StorageStruct(Rc<BufferNode>);
+
+/// `storage( attribute, struct( … ), attribute.count )`.
+///
+/// Three accepts any struct over any storage attribute; the port takes the
+/// one case the ladder has — a single struct, one `u32` per member, over an
+/// `IndirectStorageBufferAttribute` — and asserts the sizes agree.
+pub fn storage_struct(
+    attribute: &crate::core::IndirectStorageBufferAttribute,
+    layout: Rc<StructLayout>,
+) -> StorageStruct {
+    assert!(
+        layout
+            .members
+            .iter()
+            .all(|m| matches!(m.ty, Type::U32 | Type::I32 | Type::F32)),
+        "three-rs: storage_struct() lays out 4-byte scalar members only"
+    );
+    assert_eq!(
+        layout.members.len(),
+        attribute.array().len(),
+        "three-rs: struct {} does not cover the indirect attribute's words",
+        layout.name
+    );
+    StorageStruct(Rc::new(BufferNode {
+        id: attribute.id(),
+        source: BufferSource::Struct {
+            layout,
+            init: attribute.array(),
+        },
+        element_ty: Type::U32,
+        count: attribute.count(),
+    }))
+}
+
+impl StorageStruct {
+    /// `.get( 'member' )` — `MemberNode`: `NodeBuffer_N.member`.
+    pub fn get(&self, member: &str) -> NodeRef {
+        let BufferSource::Struct { layout, .. } = &self.0.source else {
+            unreachable!("three-rs: a StorageStruct is always a struct buffer")
+        };
+        NodeRef::new(Node::StructMember {
+            buffer: self.0.clone(),
+            member: layout.member(member),
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// atomics, workgroup memory and barriers (`src/nodes/gpgpu/`)
+// ---------------------------------------------------------------------------
+
+fn atomic_function(method: &'static str, pointer: NodeRef, value: Option<NodeRef>) -> NodeRef {
+    NodeRef::new(Node::Atomic {
+        method,
+        pointer,
+        value,
+    })
+}
+
+macro_rules! atomic_fns {
+    ($($(#[$m:meta])* $name:ident => $method:literal;)*) => {
+        $(
+            $(#[$m])*
+            pub fn $name(pointer: impl Into<NodeRef>, value: impl Into<NodeRef>) -> NodeRef {
+                atomic_function($method, pointer.into(), Some(value.into()))
+            }
+        )*
+    };
+}
+
+atomic_fns! {
+    /// `atomicStore( pointer, value )`.
+    atomic_store => "atomicStore";
+    /// `atomicAdd( pointer, value )` — returns the old value.
+    atomic_add => "atomicAdd";
+    /// `atomicSub( pointer, value )`.
+    atomic_sub => "atomicSub";
+    /// `atomicMax( pointer, value )`.
+    atomic_max => "atomicMax";
+    /// `atomicMin( pointer, value )`.
+    atomic_min => "atomicMin";
+    /// `atomicAnd( pointer, value )`.
+    atomic_and => "atomicAnd";
+    /// `atomicOr( pointer, value )`.
+    atomic_or => "atomicOr";
+    /// `atomicXor( pointer, value )`.
+    atomic_xor => "atomicXor";
+}
+
+/// `atomicLoad( pointer )`.
+pub fn atomic_load(pointer: impl Into<NodeRef>) -> NodeRef {
+    atomic_function("atomicLoad", pointer.into(), None)
+}
+
+/// `workgroupArray( type, count )` — see [`WorkgroupArrayDef`](super::node::WorkgroupArrayDef).
+#[derive(Clone)]
+pub struct WorkgroupArray(Rc<super::node::WorkgroupArrayDef>);
+
+/// `workgroupArray( type, count )`.
+pub fn workgroup_array(element_ty: Type, count: usize) -> WorkgroupArray {
+    WorkgroupArray(Rc::new(super::node::WorkgroupArrayDef {
+        element_ty,
+        count,
+        atomic: false,
+    }))
+}
+
+impl WorkgroupArray {
+    /// `.element( index )` — `WorkgroupArray_N[ index ]`.
+    pub fn element(&self, index: impl Into<NodeRef>) -> NodeRef {
+        NodeRef::new(Node::Element {
+            node: NodeRef::new(Node::Workgroup(self.0.clone())),
+            index: index.into(),
+            ty: self.0.element_ty,
+        })
+    }
+
+    /// `.toAtomic()` — `array< atomic<T>, N >`. Like
+    /// [`StorageArray::to_atomic`], a new handle rather than a flag: a
+    /// different array.
+    pub fn to_atomic(&self) -> WorkgroupArray {
+        WorkgroupArray(Rc::new(super::node::WorkgroupArrayDef {
+            atomic: true,
+            ..*self.0
+        }))
+    }
+}
+
+/// `workgroupBarrier()`.
+pub fn workgroup_barrier() -> NodeRef {
+    NodeRef::new(Node::Barrier { scope: "workgroup" })
+}
+
+/// `storageBarrier()`.
+pub fn storage_barrier() -> NodeRef {
+    NodeRef::new(Node::Barrier { scope: "storage" })
 }
 
 /// `uniformArray( values )` — a constant array in a uniform block, one
@@ -3182,6 +3696,8 @@ pub fn loop_statement(count: usize, index: NodeRef, body: Vec<NodeRef>) -> NodeR
         start: None,
         index,
         count,
+        condition: "<",
+        update: None,
         body,
     })
 }
@@ -3635,6 +4151,8 @@ pub fn loop_n(
         start: None,
         count,
         index,
+        condition: "<",
+        update: None,
         body,
     })
 }
@@ -3660,9 +4178,68 @@ pub fn loop_range(
     NodeRef::new(Node::Loop {
         start: Some(start),
         count: end,
+        condition: "<",
+        update: None,
         index,
         body,
     })
+}
+
+/// `Loop( { start, end, type, condition, name }, ( { i } ) => { … } )` — the
+/// full options object.
+///
+/// `ty` is the index type: `Type::I32` (three's default `'int'`) or
+/// `Type::F32` (`type: 'float'`, `hashBlur`'s), which three writes as
+/// `for ( var i : f32 = 0.0; i < 45.0; i += 1. )`. `condition` is the
+/// comparison, `"<"` by default and `"<="` in `boxBlur`.
+pub fn loop_options(
+    name: &'static str,
+    ty: Type,
+    start: NodeRef,
+    end: NodeRef,
+    condition: &'static str,
+    body: impl FnOnce(&NodeRef) -> Vec<NodeRef>,
+) -> NodeRef {
+    let index = NodeRef::new(Node::Param { name, ty });
+    let body = body(&index);
+    NodeRef::new(Node::Loop {
+        start: Some(start),
+        count: end,
+        index,
+        condition,
+        update: None,
+        body,
+    })
+}
+
+/// `Loop( { type: 'float', start, end, update }, () => { … } )` — a float
+/// index stepped by `update`: `for ( var i : f32 = start; i < end; i +=
+/// update )`. `RaymarchingBox` is the one user.
+pub fn loop_float(
+    name: &'static str,
+    start: NodeRef,
+    end: NodeRef,
+    update: NodeRef,
+    body: impl FnOnce(&NodeRef) -> Vec<NodeRef>,
+) -> NodeRef {
+    let index = NodeRef::new(Node::Param {
+        name,
+        ty: Type::F32,
+    });
+    let body = body(&index);
+    NodeRef::new(Node::Loop {
+        start: Some(start),
+        count: end,
+        index,
+        condition: "<",
+        update: Some(update),
+        body,
+    })
+}
+
+/// `Break()` — out of the innermost `Loop`.
+pub fn break_loop() -> NodeRef {
+    NodeRef::new(Node::Break)
 }
 
 /// `If( cond, () => { … } )`.

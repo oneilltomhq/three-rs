@@ -74,7 +74,7 @@ scores 3.
 * **`TransformControls` and the `Raycaster`.** The page creates the gizmo only
   on a `pointerdown` that hits a handle, so neither draws on the graded frame.
   The handles cannot be dragged in the viewer or the browser shell.
-* **A generic `Flow` over an `Object3D` tree.** `docs/nodes.md` §28 has the
+* **A generic `Flow` over an `Object3D` tree.** `docs/nodes.md` §35 has the
   details.
 
-`docs/nodes.md` §28 lists the divergences.
+`docs/nodes.md` §35 lists the divergences.

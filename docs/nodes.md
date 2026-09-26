@@ -486,9 +486,11 @@ differences, each verified to be pixel-neutral.
   `mx_fractal_noise_vec3` in `webgpu_shadowmap` — Three's cache emits it once
   and reuses the temp; this port re-evaluates it in each chain. The function is
   pure, so the values agree; only the instruction count differs.
-* **Fog parameters as constants.** `fogColor` / `fogNear` / `fogFar` are folded
-  into the WGSL as literals rather than carried as `renderStruct` members,
-  because nothing in the port animates them. Same numbers.
+* ~~**Fog parameters as constants.**~~ Gone since `scene.fog` (§28): a page
+  that sets `scene.fog` gets `fogColor` / `fogNear` / `fogFar` (or
+  `density`) as `renderStruct` members, as three does. Only a hand-built
+  `scene.fog_node` with literal arguments — `webgpu_lights_phong`'s, which
+  is literal in the page too — still has constants.
 * **`toConst` on the shadow filter.** `to_const()` exists since
   `webgpu_postprocessing_radial_blur` (`Node::Let`, a WGSL `let nodeConstN`),
   but `pointShadowFilter`'s `shadowPosition` and `shadowPositionAbs` are still
@@ -549,6 +551,11 @@ differences, each verified to be pixel-neutral.
   (`directDiffuse`, `directSpecular`, `irradiance`, `indirectDiffuse`,
   `indirectSpecular`) are zeroed together before the light loop rather than each
   at its first use. Nothing reads one before it is written either way.
+* **`clearcoatNormalView` assigned before the light loop (§34).** Three
+  assigns the var at its first read, inside `direct()` after `irradiance`; the
+  port assigns it where the normal is set up, ahead of the loop, and emits the
+  direct clearcoat statement before the `irradiance` var rather than after.
+  Straight-line assignments of the same values, each ahead of every read.
 * **Inlined `faceDirection` and the extra `length()` temp.** Three keeps
   `faceDirection` and the point light's `length( lVector )` as their own vars;
   this port inlines the first and re-emits the second inside each arm of the
@@ -574,6 +581,18 @@ differences, each verified to be pixel-neutral.
   `uv_grid_opengl.jpg` against the browser's own decode: 34030 of 4194304
   channels differ by 1, 4428 by 2, 16 by 3; worst per-texel RGB distance 3.46,
   against a comparator threshold of 44.
+* **meshopt filters follow the SIMD build, on purpose.** three.js'
+  `meshopt_decoder.module.js` runs meshoptimizer's WebAssembly SIMD filters
+  wherever SIMD validates (every current browser, and node). Those round
+  `x + 0x1.8p23` to nearest-even and keep the low bits of the float, where the
+  scalar C++ filters, and the `meshopt-rs` crate's copy of them, round half
+  away from zero, and the crate's quaternion filter also reads its components
+  unsigned. `src/loaders/meshopt.rs` ports the SIMD kernels operation for
+  operation; `tests/gltf_meshopt.rs` holds them to the WebAssembly bytes.
+* **Malformed `EXT_meshopt_compression` is an error.** A mode, filter and
+  `byteStride` the extension does not allow together is `GltfError::Meshopt`
+  up front; meshoptimizer only `assert`s them, and its release WebAssembly
+  build compiles the asserts out and decodes garbage.
 
 * **The skin matrix is CSEd.** `getSkinnedNormalAndTangent()` builds
   `bindMatrixInverse * skinMatrix * bindMatrix` once and reads three columns off
@@ -633,6 +652,73 @@ differences, each verified to be pixel-neutral.
   the whole fit. The port does the same, because the three calls are three
   separate `NodeRef`s and the builder promotes by `Rc` identity. Identical
   arithmetic, identical text apart from the temp numbers.
+* **`uv().flipY()` as a texture coordinate is not re-declared (§29).** In
+  `webgpu_textures_2d-array_compressed` three writes the flip as `nodeVar0 =
+  nodeVarying4; let nodeVar0 = vec2<f32>( nodeVar0.x, 1.0 - nodeVar0.y );` —
+  a `let` shadowing the var it was just assigned — and samples with the `let`.
+  The port keeps the var and puts the `vec2` inline in the `textureSample`
+  call. Same expression evaluated once either way; the parenthesised one-minus
+  is the `FlipNode` entry above.
+
+* **A shared conversion is written out at each use (issue #141).** Three's
+  `Node.build()` caches *any* cacheable node read more than once as
+  `let nodeConstN`; the port promotes only `Op`, `Math` and `Join` nodes
+  (`needs_var`) and leaves a shared `Cast` inline, so
+  `determinant( mat3x3<f32>( m ) )` / `inverse( … )` repeat the constructor
+  where three names it once. Same expression, same value; widening the
+  promotion to casts would renumber the temps in every green dump.
+  `tests/nodes_tsl_batch.rs::inline_let()` folds three's `let` back in before
+  comparing.
+* **`let nodeConstN` against `var nodeVarN`.** Where three caches a shared
+  value it writes an immutable `let`; the port's promoted temp is a `var`.
+  Pixel-neutral; `nodes_tsl_batch.rs` maps the one onto the other.
+* **`billboarding()`'s matrices are explicit vars (issue #141).** Three
+  assigns straight into the `modelWorldMatrix` / `modelViewMatrix` operator
+  nodes and lets its builder turn them into temps; the port asks for the two
+  `var`s itself (`to_var`) and assigns their elements in the flow. Same
+  statements, same order, same value — `webgpu_tsl_vfx_flames` grades 31 of
+  100000.
+* **Usage-promoted temps (§31).** Three at 5f610f5 turns a temp that is read
+  more than once into `let nodeConstN` without a `toConst()` in the source:
+  `webgpu_compute_texture`'s `posX`, `posY`, `x`, `y` and `v`,
+  `RaymarchingBox`'s hit-box temps and `webgpu_volume_perlin`'s
+  `surfacePos + 0.5`. The port's builder still promotes such a temp to a
+  `nodeVarN`, so both examples and `raymarching_box()` ask for `to_const`
+  where the dump has a `let`, with a comment at each. The material tail's
+  output value, `let nodeConstN = max( vec4<f32>( DiffuseColor.xyz,
+  DiffuseColor.w ), vec4<f32>( 0.0 ) )`, is shared by every rung and stays a
+  var here. Same single evaluation,
+  same value; `tests/nodes_texture_wgsl.rs` compares the sections up to it.
+* **Whitespace-only lines (§31).** Three leaves an indented blank line after
+  the last statement of every `If` body and an empty `// directives` block at
+  the top of a render stage. The port emits neither;
+  `tests/nodes_texture_wgsl.rs::canonical()` drops lines that are empty or
+  only whitespace on both sides.
+* **Two unread `vec3` privates in `webgpu_volume_perlin` (§31).** Three's
+  fragment declares two `var<private>` `vec3<f32>` temps (`nodeVar14`,
+  `nodeVar15` in the fixture) that no statement in the module reads or writes. Nothing in `RaymarchingBox`, the page's
+  `opaqueRaymarchingTexture` or `Texture3DNode.normal()` explains them —
+  unexplained, and the port does not declare them. The gate compares the
+  uniform block and the flow, not the `// vars` block.
+* **One flat `instanceIndex` varying per `range()` (§33).** Every
+  `tsl::instanced_range` wraps its own `instanceIndex` in its own varying (§9),
+  so `webgpu_particles`' smoke sprite passes two flat `u32` varyings holding
+  the same value, where three's `IndexNode` gives the one `instanceIndex` one
+  varying. Same values, one extra interpolant, and the later `@location`s
+  shift by one.
+* **`varyings.positionLocal = positionLocal` (§33).** Three writes every
+  assignment to a varying straight into `varyings.name`, so its vertex stage
+  has `varyings.positionLocal = position;` and later `varyings.positionLocal =
+  nodeConst1;`. The port keeps the vertex-stage value in a private var and
+  writes the varying once, from that var, when the fragment stage asks for it.
+  The fragment stage reads the same final value. Before #167 the port wrote
+  the geometry's position there instead of the var, which was wrong, not a
+  divergence; no graded frame could see it.
+* **The banner.** The pinned commit's dumps are headed
+  `// Three.js r187dev - Node System`, where r186's said `r186` and the port
+  says `three-rs`.
+  `tests/nodes_compute_indirect_wgsl.rs::canonical()` drops it, as
+  `tests/nodes_compute_wgsl.rs` drops r186's.
 
 ### `LineBasicNodeMaterial` adds no divergence class
 
@@ -786,6 +872,56 @@ The vertex stage is where the port and three genuinely disagree:
   offset — and `webgpu_postprocessing_anamorphic`'s instance matrices are pure
   translations, so the graded frame is unaffected. A rung that instances with
   rotation *and* a `positionNode` will have to pick three's order.
+
+### The MaterialX library (#142)
+
+`src/nodes/materialx/` ports every export of `MaterialXNodes.js` except
+`mx_frame`, which reads `frameId`, a node the port does not have. Three's
+unreachable internal overloads (`mx_hash_int_0/3/4`,
+`mx_cell_noise_float_0/3`, `mx_cell_noise_vec3_0/3`) are also not ported:
+no export resolves to them. `tests/nodes_mx_library.rs` compares every
+`mx_*` fn line for line with r186's dump of
+`tests/fixtures/materialx_library/page.html`. It makes two concessions:
+
+* **`mx_hsvtorgb` is compared by skeleton only.** Three's body reads `f`,
+  `p`, `q` and `t` from vars it assigned in a *sibling* `If` branch, so its
+  WGSL is wrong for hue sectors 2 to 5. The port assigns each value in the
+  branch that reads it. The signature and every `if` / `else` / `for` /
+  `return` line still match.
+* **`uv()`'s varying name is normalised.** The port numbers `nodeVaryingN`
+  from its own counter; three's page happens to make it `nodeVarying3`.
+
+The library needed one change in the builder:
+
+* **A same-type `Node::Cast` prints as its operand.** This is three's
+  `ConvertNode` when no conversion is needed (`float( x )` on a float). It
+  is still a node of its own, so wrapping a value in it counts that value
+  once and keeps it inline. `mx_place2d` needs this to leave its `div` where
+  three leaves it.
+
+The `webgpu_tsl_raging_sea` rung, the library's graded consumer, needed four
+more (`docs/webgpu_tsl_raging_sea-progress.md`):
+
+* **A non-`int` loop bound is written `i32( … )`.** This is what
+  `LoopNode`'s `.build( builder, 'int' )` does. `wgsl::convert` still has no
+  same-length arm, so the loop header writes it.
+* **An inlined `Fn()` block is built once per scope.** A second reader gets
+  the result, not a second run of its statements. Three builds a stack once
+  per stage.
+* **A layout `fn` is emitted into each stage that calls it.** Each stage is
+  its own module. The name is shared.
+* **A varying the vertex stage has assigned to is written from that var.**
+  In three `positionLocal` *is* the varying, so the fragment stage reads the
+  value after `positionLocal.assign( positionNode )`. The port writes
+  `varyings.positionLocal = positionLocal;` after the assignment instead of
+  three's `varyings.positionLocal = ( varyings.positionLocal + … )` in
+  place: the text differs, but the value the fragment reads is the same. A
+  varying that was only read keeps its old form.
+### Shadow filters add no new class
+
+The VSM and point-light-alpha modules differ from three's dumps only in the
+classes above. The hooks' API shapes, the missing `shadowSide` and the
+silent `PCFSoftShadowMap` are listed in §32.5.
 
 ## 9. Blending, and the instanced-attribute path
 
@@ -1373,9 +1509,13 @@ shader needed it.
   behind two fixed handles (`Texture::swap_gpu`) and every bind group,
   pipeline and cache key keyed on them stays valid. See
   `docs/postprocessing.md`, "The previous frame".
-* **Fog parameters as constants** (the existing §8 entry) is the only
-  divergence in this rung's scene fragment: Three keeps `fogColor` / `fogNear`
-  / `fogFar` as render uniforms, the port folds the same values in.
+* The scene fragment has no divergence left. It used to fold the fog's
+  colour, near and far in as constants (the old §8 entry); since `scene.fog`
+  (§28) the page's `new THREE.Fog( 0x0487e2, 7, 25 )` is ported as written,
+  and the fog statement, uniform names included, is three's r186 `m02` line
+  for line: `nodeVar1 = vec4<f32>( mix( Output.xyz, render.nodeUniform4,
+  smoothstep( render.nodeUniform5, render.nodeUniform6, ( - v_positionView.z )
+  ) ), Output.w );`.
 
 ## 15. A context hook on the material output (`webgpu_postprocessing_direct`)
 
@@ -2720,13 +2860,638 @@ None new beyond the classes §8 already lists, and one fix that was a real bug:
   three carry a `setLayout()`, the rest are plain `Fn()`. Reproduced
   deliberately so the two dumps line up statement for statement.
 
+## 28. `scene.fog` — `Fog`, `FogExp2` and their render-group uniforms
+
+Issue #140. Until this section, the port had only `scene.fogNode`, so every
+page that says `scene.fog = new THREE.Fog( … )` was ported as a
+`fog( color, rangeFogFactor( near, far ) )` with the numbers folded in.
+
+### 28.1 What three does
+
+`NodeManager.updateFog( scene )` runs every render. When `scene.fog` is set,
+it builds (and caches per fog object) one node whose parameters are
+`reference( 'color' | 'near' | 'far' | 'density', …, sceneFog ).setGroup(
+renderGroup )` uniforms:
+
+```js
+fog( color, rangeFogFactor( near, far ) )   // Fog
+fog( color, densityFogFactor( density ) )   // FogExp2
+```
+
+and `getFogNode()` is `scene.fogNode || sceneData.fogNode`: an explicit fog
+node wins. `NodeMaterial.setupFog()` then mixes the output towards the fog
+colour: `vec4( mix( output.rgb, color, factor ), output.a )`.
+
+### 28.2 The port
+
+* [`Fog`] / [`FogExp2`] are the two classes, and [`SceneFog`] the enum
+  `scene.fog` holds, so `isFog` / `isFogExp2` is a `match`.
+* [`SceneFog::node`] is `updateFog()`'s node. Its uniforms name *where* the
+  value comes from — `UniformSource::FogColor` / `FogNear` / `FogFar` /
+  `FogDensity`, render group — rather than holding the fog object, and
+  `Renderer::render` writes the scene's current values into the render group
+  each frame. So the node does not depend on the values and there is one per
+  fog kind, built once per thread: its identity, and with it the program
+  cache key, is the same across frames and across fog objects of one kind. A
+  new `near` is a uniform write; switching `Fog` for `FogExp2` is a new
+  program, as in three.
+* `Renderer::render` picks `scene.fog_node` first, then `scene.fog`'s node —
+  `getFogNode()`'s `||`.
+* [`tsl::density_fog_factor`] and [`tsl::exponential_height_fog_factor`] are
+  `Fog.js`' other two factors, each with a `_with_view_z` twin for the
+  `.context( { getViewZ } )` form (§24.3). `viewZ` is wrapped in `to_const`
+  by hand because the builder does not promote a negation on usage count
+  (§8, "`toConst` on the shadow filter"); three's `let` comes from the usage
+  count.
+
+### 28.3 Checked against
+
+No three.js example renders a lit material under plain `Fog` or `FogExp2`
+alone, so two minimal pages do it: `tools/dump-pages/fog_standard_linear.html`
+and `fog_standard_exp2.html` (a `MeshStandardNodeMaterial` sphere, one
+directional light). `tools/dump-webgpu.mjs --html FILE` serves such a page in
+place of the checkout's. Against the r186 build, the fog statement is line
+for line the port's (`dump_wgsl`'s `fog_standard_linear` /
+`fog_standard_exp2`), and the fog members sit in the render struct after the
+light members in both; `tests/nodes_fog.rs` holds that shape. The dumps of
+`webgpu_postprocessing_difference` and `webgpu_shadowmap` now match on the fog
+line too. The rest of the standard fragment differs only in the classes §8
+already lists.
+
+`webgpu_materials_texture_manualmipmap` is the graded rung: two scenes under
+`new THREE.Fog( 0x000000, 1500, 4000 )`, and a floor whose eight mip levels
+the page paints by hand (`Texture::set_mipmaps`: three uploads
+`texture.mipmaps` level by level and generates nothing).
+
+### 28.4 Divergences
+
+* **Uniforms name a source, not an object.** Three's `reference()` reads
+  `sceneFog.color` from the fog it was built for; the port's uniforms read
+  whichever fog the scene being rendered holds. The same node therefore serves
+  every scene, where three builds one per fog object. The WGSL is the same.
+* **`webgpu_instance_sprites`, the issue's first choice of rung, is not
+  ported.** It needs the `Sprite` object (issue #143, in progress on its own
+  branch), `alphaMap`, and `alphaTest`. Building `Sprite` here would collide
+  with #143, so the rung is `webgpu_materials_texture_manualmipmap`.
+
+[`Fog`]: ../src/objects/fog.rs
+[`FogExp2`]: ../src/objects/fog.rs
+[`SceneFog`]: ../src/objects/fog.rs
+[`SceneFog::node`]: ../src/objects/fog.rs
+[`tsl::density_fog_factor`]: ../src/nodes/tsl.rs
+[`tsl::exponential_height_fog_factor`]: ../src/nodes/tsl.rs
+
+## 29. KTX2 and compressed textures (`webgpu_textures_2d-array_compressed`, issue #172)
+
+`Ktx2Loader` (`src/loaders/ktx2_loader.rs`) is `KTX2Loader.js` on three pure
+Rust crates: `ktx2` for the container, `basisu` (Basis Universal v2.1) for
+ETC1S / UASTC / UASTC HDR transcoding, and `ruzstd` for Zstandard
+supercompression. `tests/ktx2_loader.rs` checks it against three's own loader
+under node (`tools/ktx2_reference.mjs`), byte for byte, on every `.ktx2` in
+the examples, two zstd repacks and the Basis images of the three basisu GLBs,
+for each of the four device profiles a WebGPU adapter can present (no
+compression, BC, ASTC, ETC2).
+
+A compressed texture is a [`Texture`] with `mipmaps` and, for an array, a
+`depth` (`src/textures/compressed_texture.rs`); the renderer uploads the
+levels as given with a block-counted row stride and never generates mips for
+it. A texture with `depth > 0` binds as `texture_2d_array<f32>`
+(`TextureKind::Sampled2DArray`) and `texture_array( map, uv, layer )` samples
+it as `textureSample( t, s, uv, i32( layer ) )`, which is three's
+`texture( map, uv ).depth( layer )`.
+
+### Divergences
+
+* **ETC1S → BC7 turns Basis v2's chroma filtering off.** Three ships the
+  v1.16 transcoder; `basisu` is v2.1, whose ETC1S → BC7 path smooths chroma
+  by default. `transcode_flags()` passes `NO_ETC1S_CHROMA_FILTERING` for that
+  one pair, which makes it bit-exact with three again (the test fails on
+  `2d_etc1s` mips 0–3 under the `bc` profile without it). Every other path
+  already matched.
+* **`GLTFLoader` without `setKTX2Loader`.** Three refuses a
+  `KHR_texture_basisu` texture unless a `KTX2Loader` was set. `GLTFLoader::load`
+  / `parse` use `Ktx2Loader::new()` instead, which transcodes to uncompressed
+  RGBA; `load_with_ktx2` / `parse_with_ktx2` take a loader that has run
+  `detect_support`, which is three's call.
+* **`ruzstd` 0.7, not 0.9.** `basisu` depends on 0.7; using the same version
+  keeps one Zstandard decoder in the build.
+* **`CompressedCubeTexture` and `Data3DTexture` load but do not render.**
+  `Ktx2Loader::parse` returns them (the eight PMREM cubes are in the oracle
+  test), but `Ktx2Texture::into_texture` returns an error for both, because the
+  renderer has no compressed-cube or 3-D upload path yet.
+* **Display P3 has no gamut conversion.** `parse_color_space` reports
+  `display-p3` / `display-p3-linear` like three; `into_texture` maps it to
+  `SRGB` / `NoColorSpace` by transfer function only, since the port has no P3
+  working space. No graded page uses a P3 file.
+* **An unfilterable (`NearestFilter`) array texture is not supported.** Three
+  would `textureLoad` it; the builder asserts instead. `KTX2Loader` only
+  makes arrays of compressed (linear-filtered) textures, so only a hand-built
+  array with both filters set to `Nearest` reaches the assertion.
+
+[`Texture`]: ../src/textures/texture.rs
+## 30. WebP and AVIF glTF textures (issue #179)
+
+Three has no image decoders: `GLTFLoader` hands a texture's bytes to the
+browser's `createImageBitmap` (with `premultiplyAlpha: 'none'`,
+`colorSpaceConversion: 'none'`) and the renderer uploads the bitmap with
+`copyExternalImageToTexture`. The port decodes in Rust instead, in
+[`TextureLoader`](../src/loaders/texture_loader.rs), and a decoder is only
+taken when it gives the texels Chromium gives.
+
+**WebP** goes through `image-webp`. `tests/loaders_webp.rs` runs Chromium's own
+decode and upload (`tools/image_reference.mjs`, in the headless Chrome three's
+`npm ci` downloads) over every WebP image in the examples — 64 images in eight
+GLBs: lossy, lossy with an `ALPH` plane, and lossless — and requires every
+texel to be equal. They are, with no tolerance. `EXT_texture_webp` is in
+`SUPPORTED_EXTENSIONS`, and a texture carrying it samples the extension's
+`source`, never its own fallback `source`, as `GLTFTextureWebPExtension` does.
+
+### 30.1 Divergences
+
+* **AVIF is not decoded.** `EXT_texture_avif` is not in `SUPPORTED_EXTENSIONS`,
+  so a file that *requires* it (`AVIFTest/forest_house.glb`, the only one in
+  the examples) is refused with `UnsupportedRequiredExtension`, where Chrome
+  would decode it. A file that only *uses* it gets the texture's fallback
+  `source`, which is what three does in a browser without AVIF. An AVIF image
+  reached any other way is an error that names AVIF, not a JPEG error. No
+  pure-Rust AV1 decoder is fit yet: `rav1d` (and its `re_rav1d` fork) do not
+  compile for wasm32-unknown-unknown; `avif-rust` 0.0.7 compiles everywhere
+  but refuses 2 of forest_house's 12 images ("too many padding bits"), which
+  dav1d decodes; `rav1d-safe` and `zenavif` are AGPL; `avif-decode` is `rav1d`
+  underneath and needs Rust 1.98; `oxideav-av1` is a scaffold.
+* **An animated WebP gives its first frame**, which is what `createImageBitmap`
+  gives too; no three.js asset is animated, so this is untested.
+
+## 31. `Data3DTexture` and storage textures — `webgpu_compute_texture`, `webgpu_volume_perlin`
+
+Issue #166. Two texture kinds and the node plumbing around them:
+
+* `Texture::storage( w, h )` is three's `StorageTexture`: no image, written by
+  a kernel through `textureStore()`, sampled afterwards like any texture.
+* `Data3DTexture` (`src/textures/data3d_texture.rs`) is three's
+  `Data3DTexture`, and `Data3DTexture::storage( w, h, d )` its
+  `Storage3DTexture`. They share a type because a `Storage3DTexture` *is* a
+  3-D texture with `isStorageTexture` set, and the renderer path is the same.
+
+`webgpu_compute_texture` grades the 2-D storage path and
+`webgpu_volume_perlin` the sampled 3-D path. `Storage3DTexture` has no graded
+rung (§31.6); `tests/nodes_texture_wgsl.rs` builds a kernel that writes one
+and a material that samples it, and validates both modules with naga.
+
+### 31.1 A storage binding is a different binding
+
+`storageTexture( t )` and `texture( t )` of the same texture are two bindings
+in three: `NodeStorageTexture` versus `NodeSampledTexture`, with different
+layout entries and, in `WebGPUBindingUtils`, different views. The port keys a
+texture binding by `(texture id, is_storage_binding)` in the builder and by
+`(texture id, view dimension, storage)` in the renderer's view cache, so a
+material that samples the texture a kernel writes gets its own view and
+sampler.
+
+The declaration is `texture_storage_2d<format, access>` (or `_3d`), with the
+format from the texture (`wgsl::storage_format()`, which panics on a format
+WGSL cannot store) and the access from the node. Outside a compute stage
+three's `getNodeAccess()` forces `read` whatever the node says, and so does
+the port (`TextureKind::declaration`), because a fragment or vertex stage cannot
+declare a writable storage texture without a feature the ladder does not ask
+for.
+
+`textureStore( t, uvec2( posX, posY ), value )` is a statement, not a value:
+`Node::TextureStore` pushes `textureStore( t, vec2<u32>( … ), … );` and
+returns nothing to its reader. The coordinate is converted to `vec2<u32>` /
+`vec3<u32>` as `generateTextureStore()` does.
+
+### 31.2 The storage view has one mip, and a store makes the chain stale
+
+A `StorageTexture` keeps `generateMipmaps = true`, so it is allocated with its
+full chain (a 512² texture has ten levels), but WebGPU only binds one level as
+a storage texture: `WebGPUBindingUtils` gives a storage binding a view with
+`mipLevelCount: 1`. The port does the same (`mip_level_count:
+storage.then_some(1)`).
+
+The kernel writes level 0 only. Three then rebuilds the chain from it:
+`Bindings._update()` marks a storage texture `needsMipmap` when it is bound
+for a store, and the next time the texture is bound as an ordinary sampled
+texture it generates the mips first. The port carries the same flag on its
+2-D texture entry (`needs_mipmap`), set when a `Storage` binding is built and
+cleared by `update_storage_mipmaps()` when a sampled binding next asks for the
+view. This is the whole of `webgpu_compute_texture`'s frame: the plane is
+minified, `LinearFilter` picks the nearest mip, and without the rebuild it
+reads a zero-filled level 1 (15876 of 100000 pixels, most of the plane black).
+
+A storage texture is created with `STORAGE_BINDING` added to its usages and is
+never uploaded, and it is checked against
+`format.guaranteed_format_features( device.features() )` before it is created
+(`assert_storage_format`), with a panic that names the format. That is the
+wasm32 concern the issue raises: Vulkan adapters report storage support for
+formats a browser's WebGPU does not guarantee (`r8unorm`, and `bgra8unorm`
+without a feature, among others), so a check against the adapter would pass
+on the desktop and fail as a validation error on the web. The guaranteed set
+is what wgpu promises on every backend, so a format that passes here passes
+in the browser too. Both rungs use `rgba8unorm`; the pingpong page's
+`rgba16float` is in the set as well.
+
+Compute bind groups now take textures and samplers as well as buffers, through
+the same `texture_view()` the render path uses.
+
+### 31.3 `Data3DTexture` and `texture3D()`
+
+`Data3DTexture` defaults to `NearestFilter` and `ClampToEdgeWrapping` on all
+three axes, as three's does, and uploads its bytes as one `D3` texture with
+`mipmaps` never generated (three's `generateMipmaps = false`). Its sampler key
+adds the `r` wrap.
+
+`texture3D( t, null, level )` is `Texture3DNode`: `sample( uv )` is
+`textureSampleLevel( t, s, uv, level )`, and `.r` on it builds the node as a
+`float`, which the builder writes as a `.x` on the sample, as three does.
+`normal( uv )` is `Texture3DNode.normal()`: the central difference over six
+taps at `±0.01`, emitted as three emits it — six nested `If`s, each tap a
+var, and a normalised difference. Three has a second path for an
+unfilterable volume (`textureLoad` against `textureDimensions`, no sampler);
+no page on the ladder samples a `NearestFilter` volume, so the builder asserts
+instead of porting it. A sampler-less `textureSampleLevel` would be a shader
+compile error, not a wrong picture, so the assertion is the honest failure.
+
+`webgpu_volume_perlin` sets `LinearFilter` on both filters, which makes it
+filterable: `texture_3d<f32>` with a filtering sampler.
+
+### 31.4 `Loop( { type: 'float' } )`, `Break()` and `bool` uniforms
+
+`RaymarchingBox` (`src/addons/raymarching.rs`) needs three things the node
+system did not have:
+
+* **a float loop with a step.** `loop_float( name, start, end, update, body )`
+  is `Loop( { type: 'float', start, end, update } )`: `for ( var i : f32 =
+  start; i < end; i += update )`. `update` is a node, here the step size var.
+* **`Break()`**, as `break_loop()`: a statement that emits `break;`.
+* **a `bool` uniform.** `uniform( true )` is `refine` in the page. WGSL has no
+  host-shareable `bool`, so three stores it as a `u32` member of the object
+  struct and reads it back as `bool( object.nodeUniformN )`, into a var at the
+  first read. The port does the same, and `programs.rs` writes the member
+  through its existing `u32` path, as `0` / `1`.
+
+`boolean( v )` is `bool( v )` of a literal, for the `false` / `true` the
+raymarcher assigns to its hit flag.
+
+### 31.5 What the WGSL gate compares
+
+`tests/nodes_texture_wgsl.rs` compares:
+
+* `webgpu_compute_texture`'s kernel as a whole module;
+* its material's uniform block and flow;
+* `webgpu_volume_perlin`'s fragment uniform block and flow (the slab test,
+  the float loop, the bisection with its two `select`s, `normal()`'s nested
+  `If`s, `break`);
+* the vertex stage's two ray varyings, by expression.
+
+Three §8 entries come from these dumps: "Usage-promoted temps",
+"Whitespace-only lines" and the two unread `vec3` privates. The same file pins
+`ImprovedNoise`'s volume: a checksum over all 2 097 152 bytes, computed by
+running the page's fill under Node against three's `ImprovedNoise.js`. That
+fill writes into a `Uint8Array`, whose `ToUint8` wraps rather than clamps, so a
+noise value of exactly 1 becomes 0, not 255. `volume_data()` wraps the same
+way (`trunc` then `rem_euclid( 256 )`).
+
+### 31.6 What was left out
+
+* **`webgpu_compute_texture_pingpong`.** Its first frame is a hash noise,
+  `fract( sin( dot( uv, seed ) ) * 43758.5453 )`, whose low bits are GPU `sin`
+  precision, not something the port controls. Its seed is `Math.random()`,
+  redrawn once a second from `performance.now()`. And it blurs between two
+  `HalfFloatType` storage textures, alternating which one `material.map`
+  shows. The frame the grader sees is not a function of the page's source, so
+  there is no rung to grade. The pieces it needs (a read-only storage binding
+  through `.load()`, an `rgba16float` storage format) are in the port.
+* **`webgpu_compute_texture_3d`.** It writes a `Storage3DTexture` from a
+  kernel, which is here and tested (§31), but it also needs `CanvasTexture`
+  for the sky's gradient and MaterialX's `mx_noise_vec3` with the time, which
+  are other issues. The storage-3D path has a WGSL and naga test but no
+  graded frame until that rung lands.
+* **The unfilterable 3-D sample** (§31.3) and **`RenderTarget3D`** and
+  **KTX2** volumes, the last two out of the issue's scope.
+
+## 32. Shadow filters, `filterNode` / `shadowNode`, and VSM (`webgpu_shadowmap_vsm`, `webgpu_shadowmap_pointlight`)
+
+`ShadowNode.setupShadow()` picks the filter as `shadow.filterNode ||
+_shadowFilterLib[ renderer.shadowMap.type ]`, over `[ BasicShadowFilter,
+PCFShadowFilter, null, VSMShadowFilter ]`. The port spells that
+`ShadowFilter::of( type, filter_node )` in `src/lights/shadow_filter.rs`, with
+`Renderer::shadow_map_type` (`ShadowMapType::{Basic, Pcf, PcfSoft, Vsm}`,
+where `PcfSoft` resolves to `Pcf` as `Renderer.render()` rewrites it) and
+`LightShadow::{filter_node, shadow_node}`.
+
+### 32.1 What each type changes besides the filter
+
+* **The depth texture's filtering.** Linear for PCF (the compare sampler
+  interpolates), Nearest for Basic and VSM. The cube depth texture follows
+  the same rule, which is why the `CubeDepth` sampler now reads the texture's
+  own filters instead of a hard-coded Linear.
+* **VSM (non-point lights).** There is no compare sampler. Two `RGFormat` /
+  `HalfFloatType` targets with no depth buffer (`VSMVertical`,
+  `VSMHorizontal`) get one `QuadMesh` pass each (`vsm_pass_vertical`,
+  `vsm_pass_horizontal`), and the lit material's `VSMShadowFilter` reads the
+  second target's `( mean, stdDev )`. The passes read `radius`,
+  `blurSamples` and `mapSize` through the same `Shadow*( index )` render
+  uniforms the lit material uses.
+* **VSM's shadow pass.** The override material keeps `material.side` instead
+  of `_shadowSide[ side ]`. `receiveShadow` objects are drawn into the map too
+  (the `renderObject` function `ShadowNode` installs). Both apply to point
+  lights under VSM as well, because the shadow pass does not know the light
+  kind.
+* **Point lights** use `BasicPointShadowFilter` when the type is Basic and
+  `PointShadowFilter` otherwise, **VSM included**: `PointShadowNode` has no
+  VSM path, so a VSM renderer gets PCF on its point lights. Reproduced.
+
+### 32.2 An `RGFormat` texture is a `vec2` node
+
+`NodeUtils.getTextureType()` types a texture node by its format's component
+count. The port now does this for two-channel formats (`tsl::texture`,
+`tsl::texture_uv`): the node is `Type::Vec2`, and the builder appends `.xy` to
+the fetch, so the value is cached as `nodeVarN : vec2<f32> = textureSample(
+… ).xy`, as in three's `VSMHorizontal` module and in `VSMShadowFilter`'s
+`distribution`. The DFG LUT is `Rg16Float` too, so every physical material's
+`dfg` sample moved from a `vec4` var read as `nodeVarN.xy.x` to three's own
+`vec2` var read as `nodeVarN.x`. The arithmetic is identical and no rung moved.
+Red-only formats stay `vec4` until a rung needs three's `float` typing.
+
+### 32.3 `NodeBuilder.getOutputType()` for an RG target
+
+A pass into an RG target declares `@location( 0 ) color : vec2<f32>` and
+writes a `vec2` (`NodeBuilder::with_output_components`). The renderer keys the
+program on the target's component count, because the same material drawn into
+an RGBA target is a different module.
+
+### 32.4 `alphaMap` and `alphaTest`
+
+`webgpu_shadowmap_pointlight` needed both. `MaterialNode.OPACITY` with an
+`alphaMap` is `opacity * texture( alphaMap )`, a `vec4` product, which the
+`DiffuseColor.w` assign narrows to `.x`. Three's dump reads `( vec4<f32>(
+DiffuseColor.w ) * ( vec4<f32>( opacity ) * texel ) ).x`, and so does the
+port's. `alphaTest > 0` discards against the `materialAlphaTest` object
+uniform, with `alphaTestNode` still taking precedence. The shadow pass copies
+both onto its override material (`overrideMaterial.alphaTest` /
+`.alphaMap`), so the cut-away bands cast no shadow. The override keeps its own
+`opacity` of 1.
+
+### 32.5 Divergences
+
+* **`filterNode`'s signature.** Three calls `filterNode( { depthTexture,
+  shadowCoord, shadow, depthLayer } )`, and for point lights `{ depthTexture,
+  bd3D, dp, shadow }`. The port's hook is a Rust closure
+  (`ShadowFilterFn`) over `ShadowFilterInputs { index, map, shadow_coord, dp
+  }`. `index` stands in for `shadow`, because the light's shadow uniforms
+  (`radius`, `mapSize`, …) are addressed by light index. A point light's
+  `bd3D` arrives as `shadow_coord`. There is no `depthLayer`, because array
+  and CSM shadows are out of scope.
+* **`shadowNode`** is a `NodeRef` that replaces the whole `ShadowNode` for
+  that light. It is still gated on `castShadow`, `receiveShadow` and
+  `shadowMap.enabled`, no map is rendered, and no shadow position is pushed,
+  exactly as `AnalyticLightNode` does it.
+* **No `material.shadowSide`.** The override side is `_shadowSide[ side ]`,
+  or `side` under VSM. A material that sets `shadowSide` would need the field.
+* **`PCFSoftShadowMap` resolves silently.** Three logs a deprecation warning.
+* **Var numbering in `VSMVertical`.** Three numbers the `textureLoad` result
+  before the `textureDimensions` temp, and the port the other way round. This
+  is the §24.6 class.
+* **Fog in `webgpu_shadowmap_vsm`.** `new THREE.Fog()` is spelt as the
+  constant `fog( color, rangeFogFactor( near, far ) )` node, as in
+  `webgpu_shadowmap`. The colour and range are literals where three reads
+  uniforms.
+* Everything else in the lit modules is §8's `toConst` / var class and the
+  uniform-slot numbering. The filter bodies line up statement for statement:
+  `VSMShadowFilter`'s `step`, the `!= 1.0` branch, and the Chebyshev bound
+  remapped by `( p - 0.3 ) / 0.65`.
+
+## 33. Indirect draws, struct storage, atomics and workgroup memory (`webgpu_struct_drawindirect`, `webgpu_particles`)
+
+Issue #167. The compute stage of §11 wrote flat arrays over a flat index. This
+section adds what the rest of three's compute examples build on: a buffer the
+GPU both computes into and draws from, typed views of it, atomics, and memory
+shared inside a workgroup.
+
+### 33.1 `IndirectStorageBufferAttribute` and the indirect draw
+
+`IndirectStorageBufferAttribute::new( words, item_size )` is a `u32` array
+with its own `BufferId`. The renderer creates one GPU buffer for it, with
+`STORAGE | INDIRECT | COPY_SRC | COPY_DST` usage, keyed by that id. A kernel
+that binds the attribute as storage and a draw that reads it as arguments
+therefore use the same buffer, which is the whole point of the class.
+
+`BufferGeometry::set_indirect( attr )` is `geometry.setIndirect( attr )`. A
+draw whose geometry has one calls `draw_indexed_indirect` (indexed geometry)
+or `draw_indirect` at offset 0, in place of the direct draw. The arguments
+are WebGPU's: `[ vertexCount, instanceCount, firstVertex, firstInstance ]`,
+or `[ indexCount, instanceCount, firstIndex, baseVertex, firstInstance ]`
+when indexed.
+
+`renderer.info()` records the CPU-side counts for an indirect draw, as
+three's `WebGPUBackend.draw()` does (`info.update( object, vertexCount,
+instanceCount )` after the indirect branch). What the GPU actually drew is
+not known on the CPU, so neither counts it. `Renderer::read_indirect_buffer()`
+reads the arguments back, for tests.
+
+`Renderer::compute_indirect( flow, attr )` is `computeIndirect`: the dispatch
+size comes from the attribute's first three words.
+
+Two smaller pieces ride along:
+
+* **`BufferGeometry::instance_count`** and
+  **`BufferAttribute::new_instanced()`** (`InstancedBufferGeometry` and
+  `InstancedBufferAttribute`). An instanced attribute's vertex buffer steps
+  per instance. The program's cache key includes which attributes are
+  instanced, because the same material on a plain geometry needs a
+  per-vertex layout.
+* **`Mesh.count`**. `SpriteNodeMaterial` draws `count` instances of a plain
+  mesh with no `InstancedMesh`, as `webgpu_particles` does.
+
+### 33.2 `struct` storage
+
+`struct_type( name, members )` is `struct( { … }, name )`, and
+`storage_struct( &attr, layout )` is `storage( attr, structType )`.
+`.get( member )` reads one member.
+
+```wgsl
+// structs
+
+struct DrawBuffer {
+	vertexCount : u32,
+	instanceCount : atomic< u32 >,
+	firstVertex : u32,
+	firstInstance : u32,
+	offset : u32
+};
+
+
+// uniforms
+@binding( 0 ) @group( 0 ) var<storage, read_write> NodeBuffer_0 : DrawBuffer;
+```
+
+These are three's spellings, reproduced exactly: the `// structs` section
+of a compute module, a struct binding declared on one line, and
+`atomic< u32 >` with spaces for a struct member. (An array of atomics is
+`array< atomic<u32> >`, without them.) The layout has to be all 4-byte
+members whose count matches the attribute's `item_size`; `storage_struct`
+asserts both, because a mismatch would be a buffer the kernel reads past.
+
+### 33.3 Atomics
+
+`atomic_store`, `atomic_add`, `atomic_sub`, `atomic_max`, `atomic_min`,
+`atomic_and`, `atomic_or`, `atomic_xor` and `atomic_load` take a pointer node:
+an atomic struct member, an element of `StorageArray::to_atomic()`, or an
+element of `WorkgroupArray::to_atomic()`. `AtomicFunctionNode` has two
+spellings, and the port follows its rule:
+
+* a call that is itself a statement of the flow, and is not used anywhere
+  else, is a bare `atomicAdd( &…, 1u );`. This is three's
+  `parents[ 0 ].isStackNode` test, which the builder answers with the key of
+  the statement it is generating (`generate_statement`);
+* anything else is a `let nodeConstN = atomicAdd( … );` whose name is the
+  value.
+
+A float value stored into a `u32` atomic is wrapped in `u32( … )`, as three's
+`AtomicFunctionNode` does.
+
+### 33.4 Workgroup memory and the compute builtins
+
+`workgroup_array( ty, count )` is `workgroupArray( type, count )`. It declares
+`var<workgroup> WorkgroupArray_N: array< u32, 64 >;` under `// locals`, and
+`.element( i )` indexes it. `workgroup_barrier()` and `storage_barrier()` are
+the bare statements. `invocation_local_index()`, `workgroup_id()`,
+`local_id()`, `global_id()` and `num_workgroups()` are the compute builtins.
+A kernel that reads `invocationLocalIndex` gets
+`@builtin( local_invocation_index ) invocationLocalIndex : u32` first among
+its entry point's parameters, where three puts it. Reading any of them
+outside a compute kernel is a panic that names it.
+
+The storage buffers of a stage are now declared before its uniform structs,
+which is three's order (`m04` above has the struct binding, then
+`objectStruct`). Every earlier WGSL gate still passes with it.
+
+### 33.5 The varying a vertex stage reassigns
+
+`positionLocal` is a varying (§1), and `setupPosition()` assigns
+`positionNode` to it. Three's vertex stage writes every assignment to a
+varying straight into `varyings.positionLocal`. The port's vertex stage holds
+the value in a private var until the fragment stage asks for the varying. It
+then wrote `varyings.positionLocal = position`, the unmoved geometry position.
+It now writes the var's current value when the vertex stage has assigned to
+it (`reassigned_varyings` in the builder). `webgpu_particles`' smoke colour
+reads `positionLocal.y`, which is how this came up.
+
+### 33.6 What the images cannot grade
+
+Both rungs graded here have frames that do not show the feature.
+`webgpu_struct_drawindirect` draws before its kernels run, so its graded
+frame is the background. `webgpu_particles` is pinned to a time at which
+every sprite's opacity is 0. Their progress notes list the WGSL and GPU
+gates that stand in for the image. `tests/renderer_compute_indirect.rs` also
+checks atomics, workgroup memory and an indirect dispatch in small kernels
+whose answers are known in closed form.
+
+`webgpu_compute_reduce`, the issue's third candidate, is not a rung. Its page
+runs two renderers on two half-width canvases under a DOM thread display, and
+its later reductions use `subgroupAdd`, which #167 leaves out with the rest
+of the subgroup functions. Its workgroup-memory kernels are the source of
+the spellings §33.4 asserts.
+
+### Divergences specific to this section
+
+The two new classes are in §8: one flat `instanceIndex` varying per
+`range()`, and `varyings.positionLocal` written once from the var. Compute
+modules also have the subgroup omission and the banner that §8 already
+lists. Apart from those, both of `webgpu_struct_drawindirect`'s kernels
+match three's dump line for line once generated names are renumbered.
+
 [`Renderer::draw`]: ../src/renderer/mod.rs
 [`materials::transmission`]: ../src/materials/transmission.rs
 [`tsl::with_tangent_attribute`]: ../src/nodes/tsl.rs
 [`tsl::bent_normal_view`]: ../src/nodes/tsl.rs
 [`Scene::background_blurriness`]: ../src/objects/scene.rs
 
-## 28. Curves, shapes and `Flow` (`webgpu_modifier_curve`, issue #170)
+## 34. `webgpu_clearcoat` — the direct clearcoat lobe, and the coat's own normal
+
+Four `MeshPhysicalMaterial` spheres with `clearcoat = 1`, the Pisa HDR cube as
+background and (PMREM-filtered) environment, and one `PointLight` of intensity
+30. It is the first graded page that lights a clearcoat: every earlier
+clearcoat on the ladder (the barn lamp, §26) sat in a scene with no lights, so
+only the coat's indirect half had ever run. Issue #171.
+
+| sphere | base | coat normal | three's program |
+| --- | --- | --- | --- |
+| car paint | blue, metalness 0.9, `FlakesTexture` normal map at 0.15 | none | `m10` |
+| fibers | carbon colour map and normal map, tiled 10× | none | `m12` |
+| golf | golf-ball normal map | `Scratched_gold` normal map, scale `( 2, -2 )` | `m14` |
+| red | water normal map at 0.15, metalness 1 | the same `Scratched_gold` map | `m14` |
+
+### 34.1 `direct()`'s clearcoat branch
+
+`PhysicalLightingModel.direct()` runs, between the sheen block and the base
+lobes,
+
+```js
+const dotNLcc = clearcoatNormalView.dot( lightDirection ).clamp();
+const ccIrradiance = dotNLcc.mul( lightColor );
+this.clearcoatSpecularDirect.addAssign( ccIrradiance.mul( BRDF_GGX( { lightDirection,
+    f0: clearcoatF0, f90: clearcoatF90, roughness: clearcoatRoughness,
+    normalView: clearcoatNormalView } ) ) );
+```
+
+with `clearcoatF0 = vec3( 0.04 )` and `clearcoatF90 = 1`. The port's
+`BRDF_GGX` used to read `roughness` and `normalView` directly; it is now
+`physical::brdf_ggx_on( L, f0, f90, roughness, normal )`, with `brdf_ggx` the
+default-argument call. `finish()` already blended `clearcoatSpecularDirect` in
+through `Fcc`; the accumulator had simply never been written.
+
+`irradiance` is a var (`nodeVar4` in `m10`) whenever clearcoat is on, as it is
+with sheen: in three it is always `.toVar()`, and the port keeps it inline only
+where no dump shows the var.
+
+### 34.2 `clearcoatNormalView` without a clearcoat normal map is the *geometric* normal
+
+`MaterialNode.CLEARCOAT_NORMAL` is `normalView` when the material has no
+`clearcoatNormalMap`, but it is evaluated inside the `NORMAL` sub-build, where
+`normalView` is `NORMAL_normalView` — the normal *before* the material's own
+normal map. So the coat is smooth over a bumpy base: `m10` and `m12` both read
+`clearcoatNormalView = NORMAL_normalView;`. The port had it as the outer,
+normal-mapped `normalView`, which was invisible until a sphere had a normal
+map and a coat without one; on this page it put the carbon weave into the
+coat's reflection and highlight (141 pixels over the limit). Fixed in
+`tsl::clearcoat_normal_view`. The barn lamp has a clearcoat normal map, so it
+never took this branch.
+
+### 34.3 `FlakesTexture`
+
+`examples/jsm/textures/FlakesTexture.js` paints 4000 random round flakes on a
+2D canvas. The port rasterises the same fills into RGBA8
+(`addons::textures::FlakesTexture`), drawing from the grader's seeded
+`Math.random()` after the inspector's five draws — the flakes are made in the
+HDR loader's callback, after `init()` has built the inspector. The fill colour
+is CSS-rounded, as the canvas parses it. The flake rim is antialiased with a
+one-pixel distance ramp, the only approximation: against the canvas Chrome
+paints (read back from the page, not from the screenshot) every flake interior
+is exact and the mean difference is 0.7 levels in 255.
+
+### 34.4 What the pixels found
+
+| state | different pixels (of 100000) |
+| --- | --- |
+| direct lobe, coat normal = normal-mapped `normalView` | 141 |
+| direct lobe, coat normal = `NORMAL_normalView` | **4** |
+
+### 34.5 Divergences
+
+* **Where `clearcoatNormalView` is assigned.** Three assigns it at its first
+  read, inside the light loop after `irradiance`; the port assigns it right
+  after `normalView`, before the loop. Both are straight-line assignments of
+  the same value ahead of every read. Listed in §8.
+* **`irradiance` after the clearcoat statement.** The port emits the
+  `irradiance` var's assignment after `clearcoatSpecularDirect +=` rather than
+  before it; nothing in the clearcoat statement reads it.
+* Otherwise `m10`, `m12` and `m14` match `dump_wgsl`'s `clearcoat_car_paint`,
+  `clearcoat_fibers` and `clearcoat_golf` statement for statement, modulo the
+  naming classes §8 lists (`let nodeConstN` vs `nodeVarN`, uniform numbering).
+
+## 35. Curves, shapes and `Flow` (`webgpu_modifier_curve`, issue #170)
 
 `src/extras/` ports three's `Curve` family, `Path` / `Shape` / `ShapePath`,
 `ShapeUtils` and Earcut. `src/geometries/` adds `ShapeGeometry`,
@@ -2738,7 +3503,7 @@ spline texture is checked half-float for half-float. The node side adds only
 `NodeRef::remap` (a `RemapNode` without `doClamp`, unfolded as three emits it)
 and `Mesh::count`.
 
-### 28.1 `Flow`'s shader
+### 35.1 `Flow`'s shader
 
 `positionNode` is three's `Fn()`, written as a `block` that assigns `mt` and
 the `curveNormal` varying and then yields the bent position. `normalNode` is

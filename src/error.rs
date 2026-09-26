@@ -38,6 +38,10 @@ pub enum Error {
     /// three.js' own `rgbe_error()` message, less its `THREE.HDRLoader: `
     /// prefix.
     Rgbe { reason: String },
+    /// A KTX 2.0 file `KTX2Loader` rejected, or one it cannot transcode for
+    /// this device. `reason` is three.js' own message, less its
+    /// `THREE.KTX2Loader: ` prefix.
+    Ktx2 { reason: String },
     /// A file names a type, format or encoding this port does not implement.
     /// `what` says which field it was read from.
     UnsupportedFormat { what: &'static str, value: String },
@@ -78,6 +82,14 @@ pub enum Error {
     Device(wgpu::RequestDeviceError),
     /// Reading pixels back off the GPU failed; `reason` is what wgpu said.
     Readback { reason: String },
+    /// A material field that is set but that no part of the port reads for
+    /// this kind of material — see
+    /// [`MeshBasicNodeMaterial::check_supported`](crate::materials::MeshBasicNodeMaterial::check_supported)
+    /// and the audit in `docs/api.md`. `field` is the three.js name.
+    Unsupported {
+        field: &'static str,
+        kind: crate::materials::MaterialKind,
+    },
 }
 
 /// What went wrong inside a glTF asset, as far as the loader reads it.
@@ -117,6 +129,19 @@ pub enum GltfError {
     /// nothing, which on this stack is a silent wrong picture, so the port
     /// refuses the asset instead.
     UnsupportedRequiredExtension(String),
+    /// A `KHR_draco_mesh_compression` primitive that does not decode. `mesh`
+    /// and `primitive` locate it; `reason` is the decoder's, or what
+    /// `DRACOLoader` would have thrown on.
+    Draco {
+        mesh: usize,
+        primitive: usize,
+        reason: String,
+    },
+    /// A bufferView whose byte range runs past the end of its buffer.
+    BufferViewOutOfRange { index: usize },
+    /// An `EXT_meshopt_compression` bufferView that does not decode.
+    /// `reason` is the decoder's, or the extension rule it breaks.
+    Meshopt { buffer_view: usize, reason: String },
 }
 
 impl fmt::Display for Error {
@@ -132,6 +157,7 @@ impl fmt::Display for Error {
                 write!(f, "cannot decode {}: {reason}", path.display())
             }
             Self::Rgbe { reason } => write!(f, "THREE.HDRLoader: {reason}"),
+            Self::Ktx2 { reason } => write!(f, "THREE.KTX2Loader: {reason}"),
             Self::UnsupportedFormat { what, value } => {
                 write!(f, "unsupported {what}: {value}")
             }
@@ -160,6 +186,12 @@ impl fmt::Display for Error {
             ),
             Self::Device(source) => write!(f, "cannot create the device: {source}"),
             Self::Readback { reason } => write!(f, "cannot read pixels back: {reason}"),
+            Self::Unsupported { field, kind } => {
+                write!(
+                    f,
+                    "material.{field} is not supported on a {kind:?} material"
+                )
+            }
         }
     }
 }
@@ -187,6 +219,21 @@ impl fmt::Display for GltfError {
             Self::UnsupportedRequiredExtension(name) => {
                 write!(f, "unknown required extension \"{name}\"")
             }
+            Self::Draco {
+                mesh,
+                primitive,
+                reason,
+            } => write!(
+                f,
+                "mesh {mesh} primitive {primitive}: THREE.DRACOLoader: {reason}"
+            ),
+            Self::BufferViewOutOfRange { index } => {
+                write!(f, "bufferView {index} runs past the end of its buffer")
+            }
+            Self::Meshopt {
+                buffer_view,
+                reason,
+            } => write!(f, "bufferView {buffer_view}: MeshoptDecoder: {reason}"),
         }
     }
 }

@@ -70,6 +70,18 @@ use winit::window::{Window, WindowId};
 
 // ---------------------------------------------------------------- the scenes
 
+/// An example's three.js name: its module's, unless the table gives one.
+/// Three's `webgpu_textures_2d-array_compressed` has a hyphen, which a Rust
+/// module name cannot.
+macro_rules! example_name {
+    ($module:ident) => {
+        stringify!($module)
+    };
+    ($module:ident $name:literal) => {
+        $name
+    };
+}
+
 /// Declares the viewer's whole knowledge of the examples: one line per
 /// example, giving its enum name, its module and the file to include.
 ///
@@ -80,7 +92,7 @@ use winit::window::{Window, WindowId};
 /// each example's `animate()` and carried a table of their camera targets and
 /// renderer options, and each of those was a place to get an example wrong.
 macro_rules! examples {
-    ( $( $variant:ident , $module:ident , $path:literal ; )* ) => {
+    ( $( $variant:ident , $module:ident , $path:literal $( , $name:literal )? ; )* ) => {
         $(
             #[path = $path]
             #[allow(dead_code)] // each module's `main()` is unused here
@@ -109,7 +121,7 @@ macro_rules! examples {
 
             fn name(self) -> &'static str {
                 match self {
-                    $( Self::$variant => stringify!($module), )*
+                    $( Self::$variant => example_name!($module $( $name )?), )*
                 }
             }
         }
@@ -190,6 +202,7 @@ PmremCubemap, webgpu_pmrem_cubemap, "../../examples/webgpu_pmrem_cubemap.rs";
 PostprocessingBloomSelective, webgpu_postprocessing_bloom_selective, "../../examples/webgpu_postprocessing_bloom_selective.rs";
 ComputePoints, webgpu_compute_points, "../../examples/webgpu_compute_points.rs";
 LinesFat, webgpu_lines_fat, "../../examples/webgpu_lines_fat.rs";
+LinesFatRaycasting, webgpu_lines_fat_raycasting, "../../examples/webgpu_lines_fat_raycasting.rs";
 PmremTest, webgpu_pmrem_test, "../../examples/webgpu_pmrem_test.rs";
 PostprocessingDifference, webgpu_postprocessing_difference, "../../examples/webgpu_postprocessing_difference.rs";
 PostprocessingDirect, webgpu_postprocessing_direct, "../../examples/webgpu_postprocessing_direct.rs";
@@ -210,6 +223,21 @@ CustomFogBackground, webgpu_custom_fog_background, "../../examples/webgpu_custom
 LoaderGltfSheen, webgpu_loader_gltf_sheen, "../../examples/webgpu_loader_gltf_sheen.rs";
 Deferred, webgpu_deferred, "../../examples/webgpu_deferred.rs";
 LoaderGltfAnisotropy, webgpu_loader_gltf_anisotropy, "../../examples/webgpu_loader_gltf_anisotropy.rs";
+MaterialsTextureManualmipmap, webgpu_materials_texture_manualmipmap, "../../examples/webgpu_materials_texture_manualmipmap.rs";
+TslVfxFlames, webgpu_tsl_vfx_flames, "../../examples/webgpu_tsl_vfx_flames.rs";
+ProceduralTexture, webgpu_procedural_texture, "../../examples/webgpu_procedural_texture.rs";
+PostprocessingSobel, webgpu_postprocessing_sobel, "../../examples/webgpu_postprocessing_sobel.rs";
+PostprocessingTransition, webgpu_postprocessing_transition, "../../examples/webgpu_postprocessing_transition.rs";
+TslRagingSea, webgpu_tsl_raging_sea, "../../examples/webgpu_tsl_raging_sea.rs";
+TslAngularSlicing, webgpu_tsl_angular_slicing, "../../examples/webgpu_tsl_angular_slicing.rs";
+Textures2dArrayCompressed, webgpu_textures_2d_array_compressed, "../../examples/webgpu_textures_2d-array_compressed.rs", "webgpu_textures_2d-array_compressed";
+ComputeTexture, webgpu_compute_texture, "../../examples/webgpu_compute_texture.rs";
+VolumePerlin, webgpu_volume_perlin, "../../examples/webgpu_volume_perlin.rs";
+ShadowmapVsm, webgpu_shadowmap_vsm, "../../examples/webgpu_shadowmap_vsm.rs";
+ShadowmapPointlight, webgpu_shadowmap_pointlight, "../../examples/webgpu_shadowmap_pointlight.rs";
+StructDrawindirect, webgpu_struct_drawindirect, "../../examples/webgpu_struct_drawindirect.rs";
+Particles, webgpu_particles, "../../examples/webgpu_particles.rs";
+Clearcoat, webgpu_clearcoat, "../../examples/webgpu_clearcoat.rs";
 ModifierCurve, webgpu_modifier_curve, "../../examples/webgpu_modifier_curve.rs";}
 
 impl Which {

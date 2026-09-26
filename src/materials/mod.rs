@@ -13,7 +13,8 @@ pub mod transmission;
 pub use node_material::{
     background_color_node, background_node_color_node, background_pmrem_color_node,
     background_vertex_node, instanced_range, output_fragment_node, quad_vertex_node, render_output,
-    setup, shadow_material, tone_mapping_node, MrtContext, OutputContext, SetupContext,
+    setup, shadow_material, shadow_material_for, tone_mapping_node, MrtContext, OutputContext,
+    SetupContext,
 };
 
 pub use blending::{
@@ -77,6 +78,30 @@ pub enum Side {
     /// `DoubleSide` — `_getPrimitiveState()` leaves `cullMode` at `'none'`, so
     /// the front-face winding no longer matters. `BatchedText`'s material.
     Double,
+}
+
+/// `three.js/src/constants.js` depth functions — `Material.depthFunc`, which
+/// `WebGPUPipelineUtils._getDepthCompare()` maps one-to-one onto a WebGPU
+/// compare function when `depthTest` is on.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum DepthFunc {
+    /// `NeverDepth`.
+    Never,
+    /// `AlwaysDepth`.
+    Always,
+    /// `LessDepth`.
+    Less,
+    /// `LessEqualDepth` — three's default.
+    #[default]
+    LessEqual,
+    /// `EqualDepth`.
+    Equal,
+    /// `GreaterEqualDepth`.
+    GreaterEqual,
+    /// `GreaterDepth`.
+    Greater,
+    /// `NotEqualDepth`.
+    NotEqual,
 }
 
 /// `three.js/src/constants.js` tone-mapping modes — the ones the port needs.
@@ -154,7 +179,7 @@ pub enum MaterialKind {
 /// - a field the *program* depends on — any node (`color_node`,
 ///   `position_node`, `fragment_node`, …), any map or `env_map`, `kind`,
 ///   `lights`, `lights_node`, `flat_shading`, `fog`, `transparent`,
-///   `blending`, `alpha_to_coverage`, `size_attenuation`, `mask_node` — needs
+///   `blending`, `alpha_to_coverage`, `world_units`, `size_attenuation`, `mask_node` — needs
 ///   [`set_needs_update`](Self::set_needs_update) after it changes, which is
 ///   `material.needsUpdate = true`. Without it the old program keeps drawing.
 /// - a field the program reads as a **uniform** — `color`, `opacity`,
@@ -196,11 +221,19 @@ pub struct MeshBasicNodeMaterial {
     /// `NodeMaterial.alphaTestNode` — `diffuseColor.a.lessThanEqual( node
     /// ).discard()` at the end of `setupDiffuseColor()`.
     ///
-    /// three.js also has a scalar `Material.alphaTest` with a
-    /// `materialAlphaTest` uniform behind it; the port has only the node form,
-    /// because that is what `webgpu_materials` sets and a uniform nothing
-    /// writes is a trap rather than an API.
+    /// Takes precedence over [`alpha_test`](Self::alpha_test), as in three.
     pub alpha_test_node: Option<NodeRef>,
+    /// `Material.alphaTest` — when positive, `setupDiffuseColor()` discards
+    /// against the `materialAlphaTest` object uniform
+    /// (`webgpu_shadowmap_pointlight`'s spheres use 0.5). The shadow pass
+    /// copies it onto its override material, so cut-away texels cast no
+    /// shadow either.
+    pub alpha_test: f64,
+    /// `Material.alphaMap` — `materialOpacity` becomes `opacity * texture(
+    /// alphaMap )` (`MaterialNode.OPACITY`), a `vec4` product that the alpha
+    /// assign narrows back to its `.x`. Copied onto the shadow pass's
+    /// override material like [`alpha_test`](Self::alpha_test).
+    pub alpha_map: Option<Texture>,
     /// `NodeMaterial.emissiveNode` — `setupLighting()`'s EMISSIVE tail:
     /// `EmissiveColor = vec3( emissiveNode )` and `outgoingLight +=
     /// EmissiveColor`. On a Phong or Standard material the `materialEmissive`
@@ -275,6 +308,13 @@ pub struct MeshBasicNodeMaterial {
     /// shape when `MaterialKind::Physical` arrives.
     pub clearcoat: f64,
     pub clearcoat_roughness: f64,
+    /// `MeshPhysicalMaterial.clearcoatMap` — `MaterialNode.CLEARCOAT`
+    /// multiplies `clearcoat` by the texel's red channel.
+    pub clearcoat_map: Option<Texture>,
+    /// `MeshPhysicalMaterial.clearcoatRoughnessMap` —
+    /// `MaterialNode.CLEARCOAT_ROUGHNESS` multiplies `clearcoatRoughness` by
+    /// the texel's green channel.
+    pub clearcoat_roughness_map: Option<Texture>,
     /// `MeshPhysicalMaterial.sheen` / `.sheenColor` / `.sheenRoughness` —
     /// `KHR_materials_sheen`. `sheen` is the intensity and `sheen_color` the
     /// tint; `MaterialNode.SHEEN` is `sheenColor.mul( sheen )` and the shader
@@ -386,15 +426,26 @@ pub struct MeshBasicNodeMaterial {
     /// `Material.transparent` — which of the render list's two arrays the object
     /// goes into, and so whether it is sorted front-to-back or back-to-front.
     pub transparent: bool,
+    /// `Material.forceSinglePass` — a transparent `DoubleSide` material is
+    /// drawn once, both faces together, instead of as three's back-then-front
+    /// pair.
+    pub force_single_pass: bool,
     /// `Material.blending` — `NormalBlending` by default, which together with
     /// `transparent: false` is what keeps a pipeline blend-state-free.
     pub blending: Blending,
     /// `Material.premultipliedAlpha` — selects the other half of the
     /// `_getBlending()` table.
     pub premultiplied_alpha: bool,
-    /// `Material.alphaToCoverage`. Only `builder.isOpaque()` reads it so far;
-    /// the pipeline's `alphaToCoverageEnabled` is still hardcoded false.
+    /// `Material.alphaToCoverage` — read by `builder.isOpaque()`, by
+    /// `Line2NodeMaterial`'s `alphaLine`, and by the pipeline's
+    /// `alphaToCoverageEnabled` (with more than one sample).
     pub alpha_to_coverage: bool,
+    /// `Line2NodeMaterial.worldUnits` (`_useWorldUnits`) — the fat line's
+    /// `linewidth` is in world units rather than screen pixels. Read by
+    /// `setup()` and by `LineSegments2.raycast()`; ignored by every other
+    /// material. A program input: set it before the first frame, or call
+    /// [`set_needs_update`](Self::set_needs_update).
+    pub world_units: bool,
     /// `Material.blendSrc` / `.blendDst` / `.blendEquation` and the three
     /// `*Alpha` overrides (`None` is Three's `null`), read only under
     /// `CustomBlending`.
@@ -406,6 +457,8 @@ pub struct MeshBasicNodeMaterial {
     pub blend_equation_alpha: Option<BlendEquation>,
     pub depth_test: bool,
     pub depth_write: bool,
+    /// `Material.depthFunc` — the depth compare while `depth_test` is on.
+    pub depth_func: DepthFunc,
     /// `Background`'s material samples the cube map through the background
     /// uniforms rather than an env map.
     pub name: &'static str,
@@ -450,6 +503,8 @@ impl Default for MeshBasicNodeMaterial {
             // `MeshPhysicalMaterial` defaults.
             clearcoat: 0.0,
             clearcoat_roughness: 0.0,
+            clearcoat_map: None,
+            clearcoat_roughness_map: None,
             sheen: 0.0,
             sheen_color: Color::new(0.0, 0.0, 0.0),
             sheen_roughness: 1.0,
@@ -478,6 +533,8 @@ impl Default for MeshBasicNodeMaterial {
             color_node: None,
             opacity_node: None,
             alpha_test_node: None,
+            alpha_test: 0.0,
+            alpha_map: None,
             emissive_node: None,
             scale_node: None,
             rotation_node: None,
@@ -495,9 +552,11 @@ impl Default for MeshBasicNodeMaterial {
             side: Side::Front,
             visible: true,
             transparent: false,
+            force_single_pass: false,
             blending: Blending::Normal,
             premultiplied_alpha: false,
             alpha_to_coverage: false,
+            world_units: false,
             blend_src: BlendFactor::SrcAlpha,
             blend_dst: BlendFactor::OneMinusSrcAlpha,
             blend_equation: BlendEquation::Add,
@@ -506,6 +565,7 @@ impl Default for MeshBasicNodeMaterial {
             blend_equation_alpha: None,
             depth_test: true,
             depth_write: true,
+            depth_func: DepthFunc::LessEqual,
             name: "",
         }
     }
@@ -514,6 +574,50 @@ impl Default for MeshBasicNodeMaterial {
 impl MeshBasicNodeMaterial {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// The fields set on this material that nothing in the port reads for its
+    /// [`kind`](Self::kind), by their three.js names — the audit in
+    /// `docs/api.md` ("Material fields the port does not read"). The renderer
+    /// logs each one once per material when it builds the program; call
+    /// [`check_supported`](Self::check_supported) to fail on them instead.
+    ///
+    /// A field three's own class for that kind lacks (a `clearcoat` on a
+    /// Standard material, say) is not listed: three ignores it too.
+    pub fn unsupported_fields(&self) -> Vec<&'static str> {
+        use MaterialKind::*;
+        let mut fields = Vec::new();
+        let pbr = matches!(self.kind, Standard | Physical);
+        // `MeshPhongMaterial.envMap` / `MeshLambertMaterial.envMap` (the
+        // `combine` blend) and a plain cube `envMap` on a PBR material, which
+        // three would PMREM on the fly: only the Basic path samples it; a PBR
+        // material takes `pmrem_env` instead.
+        if self.env_map.is_some() && self.kind != Basic {
+            fields.push("envMap");
+        }
+        // A PMREM environment is only read by `PhysicalLightingModel`.
+        if self.pmrem_env.is_some() && !pbr {
+            fields.push("envMap (PMREM)");
+        }
+        // `setupAmbientOcclusion()` is only wired into the Standard flow.
+        if self.ao_map.is_some() && !pbr {
+            fields.push("aoMap");
+        }
+        fields
+    }
+
+    /// `Err(Error::Unsupported)` for the first of
+    /// [`unsupported_fields`](Self::unsupported_fields), so an application
+    /// that would rather fail than draw a material differently from three can
+    /// ask before its first frame.
+    pub fn check_supported(&self) -> Result<(), crate::Error> {
+        match self.unsupported_fields().first() {
+            Some(&field) => Err(crate::Error::Unsupported {
+                field,
+                kind: self.kind,
+            }),
+            None => Ok(()),
+        }
     }
 
     /// `material.needsUpdate = true`: `Material.js`' setter, which bumps
@@ -622,11 +726,15 @@ impl MeshBasicNodeMaterial {
     /// have the result blended a second time. That default has teeth here: it
     /// makes [`is_opaque`](Self::is_opaque) false, so the fragment flow does
     /// **not** emit `DiffuseColor.w = 1.0` (`docs/nodes.md` §8).
+    ///
+    /// `this._useAlphaToCoverage = true` is the constructor's other default,
+    /// so `alpha_to_coverage` starts true; `webgpu_lines_fat` turns it off.
     pub fn line2(color: Color) -> Self {
         Self {
             kind: MaterialKind::Line2,
             color,
             blending: Blending::No,
+            alpha_to_coverage: true,
             ..Self::default()
         }
     }

@@ -135,14 +135,32 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       # tests/gltf_loader.rs reads Three's sample glTF models here, and
-      # tests/addons_orbit_controls.rs runs Three's own OrbitControls.js out of
-      # it under node to compare against; everything else here is
-      # self-contained.
+      # tests/addons_orbit_controls.rs, tests/gltf_draco.rs and
+      # tests/gltf_meshopt.rs run Three's own OrbitControls.js and GLTFLoader +
+      # DRACOLoader / MeshoptDecoder out of it under node to compare against;
+      # everything else here is self-contained.
       - name: Checkout three.js at THREE_JS_REV (for gltf_loader)
         run: |
           git init -q "$THREE_JS_DIR"
           git -C "$THREE_JS_DIR" fetch -q --depth 1 https://github.com/mrdoob/three.js "$THREE_JS_REV"
           git -C "$THREE_JS_DIR" checkout -q FETCH_HEAD
+
+      # tests/loaders_webp.rs decodes every WebP image in the examples in the
+      # headless Chrome three.js' own `npm ci` downloads (the oracle is the
+      # browser's `createImageBitmap`); with `CI` set it fails rather than
+      # skip when node or that Chrome is missing.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: vendor/three.js/package-lock.json
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/puppeteer
+          key: puppeteer-${{ runner.os }}-${{ hashFiles('vendor/three.js/package-lock.json') }}
+      - name: npm ci (three.js)
+        working-directory: vendor/three.js
+        run: npm ci --no-audit --no-fund
 
       - name: Unit tests (no GPU)
         run: |
@@ -161,11 +179,13 @@ jobs:
 
       # Every other `tests/*.rs` file that does not create a `Renderer`.
       # Excluded on purpose:
-      #   - renderer_blending, renderer_instanced, renderer_lines: build a
-      #     `Renderer`, which needs a Vulkan adapter.
+      #   - renderer_blending, renderer_instanced, renderer_lines,
+      #     renderer_textures: build a `Renderer`, which needs a Vulkan
+      #     adapter.
       - name: three-rs integration tests (no GPU)
         run: |
           tests=(
+            addons_lines_raycast
             addons_orbit_controls
             animation_animation_action
             animation_animation_clip
@@ -180,12 +200,18 @@ jobs:
             core_buffer_geometry
             core_layers
             core_object3d
+            core_raycaster
+            geometries
+            gltf_draco
             extras_catmull_rom_curve3
             extras_core
             extras_curves
             geometries
             geometries_shape_oracle
             gltf_loader
+            gltf_meshopt
+            ktx2_loader
+            loaders_webp
             math_box2
             math_box3
             math_color
@@ -210,12 +236,30 @@ jobs:
             math_vector2
             math_vector3
             math_vector4
+            nodes_fog
+            nodes_display_wgsl
+            nodes_compute_indirect_wgsl
             nodes_instanced_attributes
+            nodes_line2_world_units
             nodes_morph
+            nodes_mx_library
             nodes_mx_noise
             nodes_range_buffers
+            nodes_tsl_batch
+            objects_batched_mesh
+            nodes_texture_wgsl
+            nodes_shadow_filters
             objects_group
+            objects_instanced_mesh
+            objects_line
+            objects_line_segments
+            objects_mesh
+            objects_points
+            objects_skinned_mesh
+            objects_sprite
             pmrem
+            scenes_fog
+            scenes_fog_exp2
             scenes_scene
           )
           for t in "${tests[@]}"; do
