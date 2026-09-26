@@ -44,6 +44,13 @@ mod webgpu_instance_path;
 #[allow(dead_code)]
 mod webgpu_tsl_interoperability;
 
+#[path = "webgpu_texturegather.rs"]
+#[allow(dead_code)]
+mod webgpu_texturegather;
+#[path = "webgpu_texturegrad.rs"]
+#[allow(dead_code)]
+mod webgpu_texturegrad;
+
 fn show(label: &str, material: &MeshBasicNodeMaterial, ctx: SetupContext) {
     show_fog(label, material, ctx, None)
 }
@@ -2548,6 +2555,26 @@ fn dump_room_environment() {
         SetupContext::default(),
     );
 
+    // rung `webgpu_texturegrad`: three's m02 fragment — the page's `Fn` with
+    // four `textureSampleGrad` taps. A stand-in texture; only its being a
+    // filterable 2-D texture reaches the WGSL.
+    let mut grad_material = MeshBasicNodeMaterial::new();
+    grad_material.color_node = Some(webgpu_texturegrad::color_node(&Texture::new(
+        4,
+        4,
+        Some(vec![0; 4 * 4 * 4]),
+    )));
+    show("texturegrad", &grad_material, SetupContext::default());
+
+    // rung `webgpu_texturegather`: three's m04 fragment — `textureGather` of
+    // the render target's colour and `textureGatherCompare` of its depth,
+    // behind an `If`/`Else`. Stand-in textures; only their kinds reach the WGSL.
+    let mut gather_material = MeshBasicNodeMaterial::new();
+    gather_material.color_node = Some(webgpu_texturegather::color_node(
+        &Texture::new(4, 4, Some(vec![0; 4 * 4 * 4])),
+        &three_rs::DepthTexture::new(),
+    ));
+    show("texturegather", &gather_material, SetupContext::default());
     // `webgpu_lights_custom`: the page's `CustomLightingModel` on a
     // `PointsNodeMaterial` whose `lightsNode` is `lights( [ light1, light2,
     // light3 ] ).context( { lightingModel } )` — three's `m05`.
