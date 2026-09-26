@@ -551,6 +551,11 @@ differences, each verified to be pixel-neutral.
   (`directDiffuse`, `directSpecular`, `irradiance`, `indirectDiffuse`,
   `indirectSpecular`) are zeroed together before the light loop rather than each
   at its first use. Nothing reads one before it is written either way.
+* **`clearcoatNormalView` assigned before the light loop (§34).** Three
+  assigns the var at its first read, inside `direct()` after `irradiance`; the
+  port assigns it where the normal is set up, ahead of the loop, and emits the
+  direct clearcoat statement before the `irradiance` var rather than after.
+  Straight-line assignments of the same values, each ahead of every read.
 * **Inlined `faceDirection` and the extra `length()` temp.** Three keeps
   `faceDirection` and the point light's `length( lVector )` as their own vars;
   this port inlines the first and re-emits the second inside each arm of the
@@ -3402,3 +3407,86 @@ match three's dump line for line once generated names are renumbered.
 [`tsl::with_tangent_attribute`]: ../src/nodes/tsl.rs
 [`tsl::bent_normal_view`]: ../src/nodes/tsl.rs
 [`Scene::background_blurriness`]: ../src/objects/scene.rs
+
+## 34. `webgpu_clearcoat` — the direct clearcoat lobe, and the coat's own normal
+
+Four `MeshPhysicalMaterial` spheres with `clearcoat = 1`, the Pisa HDR cube as
+background and (PMREM-filtered) environment, and one `PointLight` of intensity
+30. It is the first graded page that lights a clearcoat: every earlier
+clearcoat on the ladder (the barn lamp, §26) sat in a scene with no lights, so
+only the coat's indirect half had ever run. Issue #171.
+
+| sphere | base | coat normal | three's program |
+| --- | --- | --- | --- |
+| car paint | blue, metalness 0.9, `FlakesTexture` normal map at 0.15 | none | `m10` |
+| fibers | carbon colour map and normal map, tiled 10× | none | `m12` |
+| golf | golf-ball normal map | `Scratched_gold` normal map, scale `( 2, -2 )` | `m14` |
+| red | water normal map at 0.15, metalness 1 | the same `Scratched_gold` map | `m14` |
+
+### 34.1 `direct()`'s clearcoat branch
+
+`PhysicalLightingModel.direct()` runs, between the sheen block and the base
+lobes,
+
+```js
+const dotNLcc = clearcoatNormalView.dot( lightDirection ).clamp();
+const ccIrradiance = dotNLcc.mul( lightColor );
+this.clearcoatSpecularDirect.addAssign( ccIrradiance.mul( BRDF_GGX( { lightDirection,
+    f0: clearcoatF0, f90: clearcoatF90, roughness: clearcoatRoughness,
+    normalView: clearcoatNormalView } ) ) );
+```
+
+with `clearcoatF0 = vec3( 0.04 )` and `clearcoatF90 = 1`. The port's
+`BRDF_GGX` used to read `roughness` and `normalView` directly; it is now
+`physical::brdf_ggx_on( L, f0, f90, roughness, normal )`, with `brdf_ggx` the
+default-argument call. `finish()` already blended `clearcoatSpecularDirect` in
+through `Fcc`; the accumulator had simply never been written.
+
+`irradiance` is a var (`nodeVar4` in `m10`) whenever clearcoat is on, as it is
+with sheen: in three it is always `.toVar()`, and the port keeps it inline only
+where no dump shows the var.
+
+### 34.2 `clearcoatNormalView` without a clearcoat normal map is the *geometric* normal
+
+`MaterialNode.CLEARCOAT_NORMAL` is `normalView` when the material has no
+`clearcoatNormalMap`, but it is evaluated inside the `NORMAL` sub-build, where
+`normalView` is `NORMAL_normalView` — the normal *before* the material's own
+normal map. So the coat is smooth over a bumpy base: `m10` and `m12` both read
+`clearcoatNormalView = NORMAL_normalView;`. The port had it as the outer,
+normal-mapped `normalView`, which was invisible until a sphere had a normal
+map and a coat without one; on this page it put the carbon weave into the
+coat's reflection and highlight (141 pixels over the limit). Fixed in
+`tsl::clearcoat_normal_view`. The barn lamp has a clearcoat normal map, so it
+never took this branch.
+
+### 34.3 `FlakesTexture`
+
+`examples/jsm/textures/FlakesTexture.js` paints 4000 random round flakes on a
+2D canvas. The port rasterises the same fills into RGBA8
+(`addons::textures::FlakesTexture`), drawing from the grader's seeded
+`Math.random()` after the inspector's five draws — the flakes are made in the
+HDR loader's callback, after `init()` has built the inspector. The fill colour
+is CSS-rounded, as the canvas parses it. The flake rim is antialiased with a
+one-pixel distance ramp, the only approximation: against the canvas Chrome
+paints (read back from the page, not from the screenshot) every flake interior
+is exact and the mean difference is 0.7 levels in 255.
+
+### 34.4 What the pixels found
+
+| state | different pixels (of 100000) |
+| --- | --- |
+| direct lobe, coat normal = normal-mapped `normalView` | 141 |
+| direct lobe, coat normal = `NORMAL_normalView` | **4** |
+
+### 34.5 Divergences
+
+* **Where `clearcoatNormalView` is assigned.** Three assigns it at its first
+  read, inside the light loop after `irradiance`; the port assigns it right
+  after `normalView`, before the loop. Both are straight-line assignments of
+  the same value ahead of every read. Listed in §8.
+* **`irradiance` after the clearcoat statement.** The port emits the
+  `irradiance` var's assignment after `clearcoatSpecularDirect +=` rather than
+  before it; nothing in the clearcoat statement reads it.
+* Otherwise `m10`, `m12` and `m14` match `dump_wgsl`'s `clearcoat_car_paint`,
+  `clearcoat_fibers` and `clearcoat_golf` statement for statement, modulo the
+  naming classes §8 lists (`let nodeConstN` vs `nodeVarN`, uniform numbering).

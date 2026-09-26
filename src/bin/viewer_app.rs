@@ -236,7 +236,8 @@ VolumePerlin, webgpu_volume_perlin, "../../examples/webgpu_volume_perlin.rs";
 ShadowmapVsm, webgpu_shadowmap_vsm, "../../examples/webgpu_shadowmap_vsm.rs";
 ShadowmapPointlight, webgpu_shadowmap_pointlight, "../../examples/webgpu_shadowmap_pointlight.rs";
 StructDrawindirect, webgpu_struct_drawindirect, "../../examples/webgpu_struct_drawindirect.rs";
-Particles, webgpu_particles, "../../examples/webgpu_particles.rs";}
+Particles, webgpu_particles, "../../examples/webgpu_particles.rs";
+Clearcoat, webgpu_clearcoat, "../../examples/webgpu_clearcoat.rs";}
 
 impl Which {
     /// The name with or without its `webgpu_` prefix, or its 1-based index in

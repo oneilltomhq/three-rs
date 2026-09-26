@@ -970,12 +970,7 @@ fn setup_phong(
         };
         fragment.push(specular_color().assign(specular_value));
     }
-    // `vec3( emissiveNode ? emissiveNode : materialEmissive )`.
-    let emissive = match &material.emissive_node {
-        Some(node) => to_vec3(node.clone()),
-        None => material_emissive().mul(material_emissive_intensity()),
-    };
-    fragment.push(emissive_color().assign(emissive));
+    fragment.push(emissive_color().assign(material_emissive_value(material)));
 
     let outgoing = if material.lights {
         // `LightsNode`: the scene's lights, or the selective subset the
@@ -1092,9 +1087,8 @@ fn setup_ambient_occlusion(material: &MeshBasicNodeMaterial, fragment: &mut Vec<
 /// `( vec4<f32>( ( emissive * intensity ), 1.0 ) * tex ).xyz` is, and why the
 /// port builds the `vec4` explicitly rather than multiplying three components.
 ///
-/// A material with an `emissiveNode` takes it instead, whole:
-/// `emissive.assign( vec3( emissiveNode ? emissiveNode : materialEmissive ) )`
-/// — the node is not scaled by `emissiveIntensity` nor multiplied by the map.
+/// An `emissiveNode` replaces all of it: `setupLighting()` assigns `vec3(
+/// emissiveNode ? emissiveNode : materialEmissive )` on every lit kind.
 fn material_emissive_value(material: &MeshBasicNodeMaterial) -> NodeRef {
     if let Some(node) = &material.emissive_node {
         return to_vec3(node.clone());
@@ -1202,9 +1196,19 @@ fn setup_standard(
     let use_anisotropy = material.kind == MaterialKind::Physical && material.anisotropy > 0.0;
 
     if use_clearcoat {
-        fragment.push(clearcoat().assign(material_clearcoat()));
+        // `MaterialNode.CLEARCOAT` / `.CLEARCOAT_ROUGHNESS`: the factor
+        // times the map's red channel, the roughness times its green one.
+        let clearcoat_value = match &material.clearcoat_map {
+            Some(map) => material_clearcoat().mul(texture(map).x()),
+            None => material_clearcoat(),
+        };
+        let clearcoat_roughness_value = match &material.clearcoat_roughness_map {
+            Some(map) => material_clearcoat_roughness().mul(texture(map).y()),
+            None => material_clearcoat_roughness(),
+        };
+        fragment.push(clearcoat().assign(clearcoat_value));
         fragment.push(clearcoat_roughness().assign(physical::get_roughness(
-            material_clearcoat_roughness(),
+            clearcoat_roughness_value,
             !ctx.geometry_missing_normal,
         )));
     }

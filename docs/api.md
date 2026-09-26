@@ -185,6 +185,50 @@ textures.
   keeps the three.js correspondence. `set_data` panics on the wrong byte count
   and on a texture the renderer does not own.
 
+## 7. A material field the port does not read says so
+
+`MeshBasicNodeMaterial` is one struct for every kind (decision 3), so a field
+can be set on a kind whose flow never looks at it. Issue #171 audited every
+public field against what `materials::setup()` and the pipeline read, and
+settled each one that was silently ignored: either it is implemented, or it is
+loud. Loud means the renderer prints `three-rs: material <id> (<kind>): <field>
+is set but not supported, and is ignored` once per material when it builds
+the program, and `MeshBasicNodeMaterial::check_supported()` returns
+`Err(Error::Unsupported { field, kind })` for an application that would rather
+fail before its first frame. `unsupported_fields()` lists them all.
+
+Implemented by the audit:
+
+| Field | What reads it now |
+|---|---|
+| `depth_func` (new) | `RenderState` → `depthCompare`, as `_getDepthCompare()` maps `Material.depthFunc`. |
+| `alpha_to_coverage` | the pipeline's `alphaToCoverageEnabled`, `&& sampleCount > 1` as in three. It used to be hard-wired off. |
+| `emissive_node` on Phong, Lambert, Standard, Physical | `setupLighting()`'s `vec3( emissiveNode ?? materialEmissive )`. Only the Basic flow read it before. |
+| `emissive_map` on Phong, Lambert | `MaterialNode.EMISSIVE`'s map multiply, as on Standard. |
+| `clearcoat_map`, `clearcoat_roughness_map` (new) | `MaterialNode.CLEARCOAT` (× `.r`) and `.CLEARCOAT_ROUGHNESS` (× `.g`); `GLTFLoader` fills them from `clearcoatTexture` / `clearcoatRoughnessTexture`. |
+| `clearcoat`, `clearcoat_roughness`, `clearcoat_normal_map` under a direct light | the direct clearcoat lobe in `PhysicalLightingModel.direct()`. The indirect lobe was already there; with a light in the scene the coat had no highlight. |
+| `clearcoat_normal_scale` on a glTF primitive with no tangents | the derivative-tangent `.y` flip three applies to it as well as to `normalScale`. |
+
+Loud:
+
+| Field | On | Why |
+|---|---|---|
+| `env_map` | anything but Basic | The Basic flow's `BasicEnvironmentNode` is the only reader. Phong and Lambert wrap the same node in their own lighting model, which is not ported; a PBR material takes a PMREM through `pmrem_env` (or `scene.environment`) rather than a raw cube. |
+| `pmrem_env` | anything but Standard / Physical | Only `PhysicalLightingModel` reads a PMREM. |
+| `ao_map` | anything but Standard / Physical | `setupAmbientOcclusion()` is wired into the PBR flow only; Basic and Phong's indirect term does not multiply by it. |
+| `anisotropy` | Physical, lit by a point, spot or directional light | The anisotropic `BRDF_GGX` (`V_GGX_SmithCorrelated_Anisotropic`, `D_GGX_Anisotropic`) is not ported, so the direct highlight would be the isotropic one. The indirect bent normal is ported, which is why an unlit anisotropic page such as `webgpu_loader_gltf_anisotropy` is quiet. |
+
+Not fields, so nothing to be loud about: three.js properties the struct does
+not have at all — `wireframe`, the `stencil*` family, `clippingPlanes`,
+`sheenColorMap` / `sheenRoughnessMap`, `iridescence*`, `alphaTest` (the
+scalar; `alpha_test_node` is the port's form), `polygonOffset*`, `dithering`.
+Setting one is a compile error, which is louder than a log line. A field
+three's own class for that kind lacks — `clearcoat` on a Standard material,
+`shininess` on a Physical one — is ignored by three too and is not listed.
+`scene.environment` is not applied to Phong or Lambert either, which is
+three's behaviour: `NodeMaterial.setupEnvironment()`, which those kinds
+inherit, reads only `material.envNode` / `material.envMap`.
+
 ## Where each decision came from
 
 Decision 6 came out of the compositor consumer and issue #62; the gaps it

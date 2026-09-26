@@ -217,10 +217,13 @@ pub struct GltfMaterial {
     pub anisotropy_rotation: f64,
     pub anisotropy_texture: Option<GltfTextureRef>,
     /// `KHR_materials_clearcoat`: `clearcoatFactor` (default 0),
-    /// `clearcoatRoughnessFactor` (default 0) and `clearcoatNormalTexture`
-    /// with its `scale`.
+    /// `clearcoatRoughnessFactor` (default 0), `clearcoatTexture`,
+    /// `clearcoatRoughnessTexture` and `clearcoatNormalTexture` with its
+    /// `scale`.
     pub clearcoat_factor: Option<f64>,
     pub clearcoat_roughness_factor: f64,
+    pub clearcoat_texture: Option<GltfTextureRef>,
+    pub clearcoat_roughness_texture: Option<GltfTextureRef>,
     pub clearcoat_normal_texture: Option<GltfTextureRef>,
     pub clearcoat_normal_scale: f64,
     /// `KHR_materials_transmission.transmissionFactor` (default 0).
@@ -1583,6 +1586,13 @@ impl GLTFLoader {
                     .pointer("/extensions/KHR_materials_clearcoat/clearcoatRoughnessFactor")
                     .and_then(Value::as_f64)
                     .unwrap_or(0.0),
+                clearcoat_texture: GltfTextureRef::parse(
+                    material_def.pointer("/extensions/KHR_materials_clearcoat/clearcoatTexture"),
+                ),
+                clearcoat_roughness_texture: GltfTextureRef::parse(
+                    material_def
+                        .pointer("/extensions/KHR_materials_clearcoat/clearcoatRoughnessTexture"),
+                ),
                 clearcoat_normal_texture: GltfTextureRef::parse(
                     material_def
                         .pointer("/extensions/KHR_materials_clearcoat/clearcoatNormalTexture"),
@@ -1917,6 +1927,11 @@ impl GLTFLoader {
             // `circle2_constant2_0` comes out of three's own parse with
             // `normalScale ( 1, -1 )` and no map to apply it to.
             material.normal_scale.y *= -1.0;
+            // `if ( cachedMaterial.clearcoatNormalScale ) …` — every
+            // `MeshPhysicalMaterial` has one, map or not.
+            if material.kind == crate::materials::MaterialKind::Physical {
+                material.clearcoat_normal_scale.y *= -1.0;
+            }
         }
 
         material_cache.insert(variant, material.clone());
@@ -2078,6 +2093,15 @@ impl GLTFLoader {
         if let Some(factor) = material.clearcoat_factor {
             out.clearcoat = factor;
             out.clearcoat_roughness = material.clearcoat_roughness_factor;
+        }
+        // Both are data maps (R = the factor, G = the roughness).
+        if let Some(map_def) = &material.clearcoat_texture {
+            out.clearcoat_map =
+                self.assign_texture(cache, textures, images, map_def, ColorSpace::NoColorSpace)?;
+        }
+        if let Some(map_def) = &material.clearcoat_roughness_texture {
+            out.clearcoat_roughness_map =
+                self.assign_texture(cache, textures, images, map_def, ColorSpace::NoColorSpace)?;
         }
         if let Some(map_def) = &material.clearcoat_normal_texture {
             out.clearcoat_normal_map =

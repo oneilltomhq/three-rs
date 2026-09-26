@@ -82,6 +82,14 @@ pub enum Error {
     Device(wgpu::RequestDeviceError),
     /// Reading pixels back off the GPU failed; `reason` is what wgpu said.
     Readback { reason: String },
+    /// A material field that is set but that no part of the port reads for
+    /// this kind of material — see
+    /// [`MeshBasicNodeMaterial::check_supported`](crate::materials::MeshBasicNodeMaterial::check_supported)
+    /// and the audit in `docs/api.md`. `field` is the three.js name.
+    Unsupported {
+        field: &'static str,
+        kind: crate::materials::MaterialKind,
+    },
 }
 
 /// What went wrong inside a glTF asset, as far as the loader reads it.
@@ -178,6 +186,12 @@ impl fmt::Display for Error {
             ),
             Self::Device(source) => write!(f, "cannot create the device: {source}"),
             Self::Readback { reason } => write!(f, "cannot read pixels back: {reason}"),
+            Self::Unsupported { field, kind } => {
+                write!(
+                    f,
+                    "material.{field} is not supported on a {kind:?} material"
+                )
+            }
         }
     }
 }

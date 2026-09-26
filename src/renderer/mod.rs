@@ -2806,10 +2806,11 @@ impl Renderer {
                 side: item.material.side,
                 depth_test: item.material.depth_test,
                 depth_write: item.material.depth_write,
+                depth_func: item.material.depth_func,
+                alpha_to_coverage: item.material.alpha_to_coverage,
                 blend: item.material.blend_state(),
                 topology: item.primitive.topology,
                 strip_index_format: item.primitive.strip_index_format,
-                alpha_to_coverage: item.material.alpha_to_coverage && target.sample_count > 1,
             };
             let pipeline = PipelineKey {
                 program: program_key,
@@ -3759,6 +3760,8 @@ impl Renderer {
         if let Some(node) = states.by_dynamic_key.get(&dynamic_key) {
             return node.clone();
         }
+
+        warn_unsupported(item.key.id, &item.material, &item.setup);
 
         // `NodeMaterial.setup()` → `NodeBuilder.build()`: the WGSL and the
         // bindings the material declares.
@@ -6283,4 +6286,49 @@ fn compute_flow_key(flow: &ComputeFlow) -> u64 {
     flow.workgroup_size.hash(&mut hasher);
     flow.name.hash(&mut hasher);
     hasher.finish()
+}
+
+/// The fields of `material` the port does not read, each said once per
+/// material on stderr when its program is built — the "loud" half of the
+/// material-field audit in `docs/api.md`. The list is
+/// [`MeshBasicNodeMaterial::unsupported_fields`] plus the one case only a
+/// draw can see: an anisotropic material lit by a direct light, whose
+/// anisotropic `BRDF_GGX` is not ported, so the highlight would be the
+/// isotropic one.
+fn warn_unsupported(id: usize, material: &MeshBasicNodeMaterial, setup: &SetupContext) {
+    thread_local! {
+        static WARNED: std::cell::RefCell<std::collections::HashSet<(usize, &'static str)>> =
+            std::cell::RefCell::new(std::collections::HashSet::new());
+    }
+    let mut fields = material.unsupported_fields();
+    let direct_light = setup.lights.iter().any(|light| {
+        matches!(
+            light.kind,
+            LightKind::Point | LightKind::Spot | LightKind::Directional
+        )
+    });
+    if material.kind == materials::MaterialKind::Physical
+        && material.anisotropy > 0.0
+        && direct_light
+        && material.lights
+    {
+        fields.push("anisotropy (under a direct light)");
+    }
+    WARNED.with(|warned| {
+        let mut warned = warned.borrow_mut();
+        for field in fields {
+            if warned.insert((id, field)) {
+                eprintln!(
+                    "three-rs: material {id} ({:?}{}): {} is set but not supported, and is ignored",
+                    material.kind,
+                    if material.name.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" \"{}\"", material.name)
+                    },
+                    field,
+                );
+            }
+        }
+    });
 }
