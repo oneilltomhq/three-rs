@@ -1,5 +1,7 @@
 # webgpu_materials_texture_manualmipmap — done
 
+2026-09-26: regraded against three.js 5f610f5 (#146) after rebasing onto it: 81 of 100000 pixels, unchanged. The page and its screenshot are the same bytes as at r186, and every material on it is a `MeshBasicMaterial`, so the PMREM and roughness changes that moved nine other rungs never reach this frame.
+
 **Status: green, 81 of 100000 pixels** (limit 100). This is the graded rung for
 issue #140, `scene.fog`. Linear fog is the page's only fog, and it is what
 fades the floor into the black background.
