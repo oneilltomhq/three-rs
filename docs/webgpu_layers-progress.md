@@ -4,7 +4,7 @@ Status: **green.** 76 of 100000 pixels against three.js 5f610f5's own
 `test/e2e/image.js`, threshold 0.1%. Three's own frame for the page scores the
 same 76 against the same JPEG: the port's frame is pixel-identical to three's
 (`tools/dump-webgpu.mjs`' `actual_full.png`, max channel difference 0). Intel
-Iris Xe, Mesa 25.3.6, wgpu on Vulkan. Steady frame 8.5 ms, 5 draw calls,
+Iris Xe, Mesa 25.3.6, wgpu on Vulkan. Steady frame 3.5 ms (full ladder run), 5 draw calls,
 16985 triangles.
 
 Three plain `Mesh`es of 2500 instanced petals each (`mesh.count = 2500`), one
