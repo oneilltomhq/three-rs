@@ -257,6 +257,7 @@ TslVfxFlames, webgpu_tsl_vfx_flames, "../../examples/webgpu_tsl_vfx_flames.rs";
 ProceduralTexture, webgpu_procedural_texture, "../../examples/webgpu_procedural_texture.rs";
 PostprocessingSobel, webgpu_postprocessing_sobel, "../../examples/webgpu_postprocessing_sobel.rs";
 PostprocessingTransition, webgpu_postprocessing_transition, "../../examples/webgpu_postprocessing_transition.rs";
+TslRagingSea, webgpu_tsl_raging_sea, "../../examples/webgpu_tsl_raging_sea.rs";
 }
 
 /// Where an example's assets come from: three.js at the commit this port is

@@ -923,7 +923,12 @@ fn setup_phong(
         };
         fragment.push(specular_color().assign(specular_value));
     }
-    fragment.push(emissive_color().assign(material_emissive().mul(material_emissive_intensity())));
+    // `vec3( emissiveNode ? emissiveNode : materialEmissive )`.
+    let emissive = match &material.emissive_node {
+        Some(node) => to_vec3(node.clone()),
+        None => material_emissive().mul(material_emissive_intensity()),
+    };
+    fragment.push(emissive_color().assign(emissive));
 
     let outgoing = if material.lights {
         // `LightsNode`: the scene's lights, or the selective subset the
@@ -1039,7 +1044,14 @@ fn setup_ambient_occlusion(material: &MeshBasicNodeMaterial, fragment: &mut Vec<
 /// takes `.xyz`. That is what the dump's
 /// `( vec4<f32>( ( emissive * intensity ), 1.0 ) * tex ).xyz` is, and why the
 /// port builds the `vec4` explicitly rather than multiplying three components.
+///
+/// A material with an `emissiveNode` takes it instead, whole:
+/// `emissive.assign( vec3( emissiveNode ? emissiveNode : materialEmissive ) )`
+/// — the node is not scaled by `emissiveIntensity` nor multiplied by the map.
 fn material_emissive_value(material: &MeshBasicNodeMaterial) -> NodeRef {
+    if let Some(node) = &material.emissive_node {
+        return to_vec3(node.clone());
+    }
     let emissive = material_emissive().mul(material_emissive_intensity());
 
     match &material.emissive_map {

@@ -204,6 +204,9 @@ mod webgpu_loader_gltf_anisotropy;
 #[path = "webgpu_materials_texture_manualmipmap.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_materials_texture_manualmipmap;
+#[path = "webgpu_tsl_raging_sea.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_tsl_raging_sea;
 #[path = "webgpu_tsl_vfx_flames.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_tsl_vfx_flames;
@@ -327,6 +330,9 @@ const GRADED: &[(&str, fn())] = &[
     }),
     ("webgpu_postprocessing_transition", || {
         drop(webgpu_postprocessing_transition::init())
+    }),
+    ("webgpu_tsl_raging_sea", || {
+        drop(webgpu_tsl_raging_sea::init())
     }),
 ];
 

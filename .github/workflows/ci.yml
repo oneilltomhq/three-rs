@@ -213,6 +213,7 @@ jobs:
             nodes_instanced_attributes
             nodes_line2_world_units
             nodes_morph
+            nodes_mx_library
             nodes_mx_noise
             nodes_range_buffers
             nodes_tsl_batch

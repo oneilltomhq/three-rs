@@ -215,7 +215,8 @@ MaterialsTextureManualmipmap, webgpu_materials_texture_manualmipmap, "../../exam
 TslVfxFlames, webgpu_tsl_vfx_flames, "../../examples/webgpu_tsl_vfx_flames.rs";
 ProceduralTexture, webgpu_procedural_texture, "../../examples/webgpu_procedural_texture.rs";
 PostprocessingSobel, webgpu_postprocessing_sobel, "../../examples/webgpu_postprocessing_sobel.rs";
-PostprocessingTransition, webgpu_postprocessing_transition, "../../examples/webgpu_postprocessing_transition.rs";}
+PostprocessingTransition, webgpu_postprocessing_transition, "../../examples/webgpu_postprocessing_transition.rs";
+TslRagingSea, webgpu_tsl_raging_sea, "../../examples/webgpu_tsl_raging_sea.rs";}
 
 impl Which {
     /// The name with or without its `webgpu_` prefix, or its 1-based index in

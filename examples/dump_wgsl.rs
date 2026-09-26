@@ -18,6 +18,10 @@ use three_rs::textures::{CubeTexture, DepthTexture, Image, Texture};
 #[allow(dead_code)] // the example's own `main()` is unused here
 mod webgpu_tsl_galaxy;
 
+#[path = "webgpu_tsl_raging_sea.rs"]
+#[allow(dead_code)]
+mod webgpu_tsl_raging_sea;
+
 #[path = "webgpu_mesh_batch.rs"]
 #[allow(dead_code)]
 mod webgpu_mesh_batch;
@@ -1939,6 +1943,21 @@ fn main() {
     ));
     custom_fog_quad.vertex_node = Some(three_rs::materials::quad_vertex_node());
     show("custom_fog_quad", &custom_fog_quad, SetupContext::default());
+
+    // `webgpu_tsl_raging_sea`: the MaterialX `mx_noise_float` waves (#142),
+    // against three.js' `m00_vertex` / `m01_fragment` for the page.
+    show(
+        "tsl_raging_sea",
+        &webgpu_tsl_raging_sea::raging_sea_material(),
+        SetupContext {
+            lights: vec![LightDesc {
+                index: 0,
+                kind: LightKind::Directional,
+                shadow_map: None,
+            }],
+            ..SetupContext::default()
+        },
+    );
 
     dump_deferred();
 }
