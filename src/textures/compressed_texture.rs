@@ -88,10 +88,4 @@ impl Texture {
     pub fn is_array(&self) -> bool {
         self.borrow().depth > 0
     }
-
-    /// `texture.mipmaps.length > 0` — the texture uploads the levels it was
-    /// given rather than `data`.
-    pub fn has_mipmaps(&self) -> bool {
-        !self.borrow().mipmaps.is_empty()
-    }
 }

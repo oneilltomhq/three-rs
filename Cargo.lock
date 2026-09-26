@@ -407,6 +407,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d8b14ccef22fc6f5a8f4d7d768562a182c04ce9a3b3157b91390b52ddfdf1a76"
 
 [[package]]
+name = "draco-core"
+version = "2.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2ddbf2f1e1ba6f0fecbf31398634c6f46cbe1548e7e42aec967e3d478d96bc97"
+dependencies = [
+ "bytemuck",
+]
+
+[[package]]
 name = "equivalent"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1738,6 +1747,7 @@ version = "0.1.2"
 dependencies = [
  "basisu",
  "bytemuck",
+ "draco-core",
  "jpeg-encoder",
  "js-sys",
  "ktx2",

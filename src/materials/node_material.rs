@@ -8,7 +8,7 @@ use super::physical::{self, Physical};
 use super::transmission;
 use super::{Blending, MaterialKind, MeshBasicNodeMaterial, Side, ToneMapping};
 use crate::lights::LightKind;
-use crate::nodes::node::Type;
+use crate::nodes::node::{Type, UniformGroup, UniformSource};
 use crate::nodes::tsl::FogNode;
 use crate::nodes::tsl::*;
 use crate::nodes::{MaterialFlow, NodeRef};
@@ -60,6 +60,12 @@ pub struct SetupContext {
     /// [`crate::nodes::lines`] for why they travel here rather than on the
     /// geometry.
     pub line_segments: Option<crate::nodes::lines::LineSegmentsAttributes>,
+    /// `object.center && object.center.isVector2` — the object is a `Sprite`,
+    /// so `SpriteNodeMaterial.setupPositionView()` offsets the quad by
+    /// `center - 0.5`. A `SpriteNodeMaterial` on anything else (the
+    /// instanced-mesh particles of `webgpu_compute_particles_*`) has no
+    /// `center` and skips the step, which changes the WGSL.
+    pub sprite: bool,
     /// `renderer.getMRT()` and the names of the bound render target's colour
     /// attachments — the pass-level half of `NodeMaterial.setup()`'s MRT
     /// branch, which only runs `if ( renderTarget !== null )`.
@@ -299,6 +305,7 @@ fn setup_diffuse_color(
         if let Some(attributes) = &ctx.line_segments {
             crate::materials::line2::setup_diffuse_color(
                 material.alpha_to_coverage,
+                material.world_units,
                 material.vertex_colors,
                 attributes,
                 fragment,
@@ -373,7 +380,7 @@ fn setup_overridden(
     // builder )` — the seam `SpriteNodeMaterial` overrides. Built here, before
     // either stage is flowed, exactly as `NodeMaterial.setup()` installs it.
     let position_view = match material.kind {
-        MaterialKind::Sprite => Some(setup_position_view_sprite(material)),
+        MaterialKind::Sprite => Some(setup_position_view_sprite(material, ctx.sprite)),
         MaterialKind::Points => Some(setup_position_view_points(material)),
         _ => None,
     };
@@ -409,7 +416,10 @@ fn setup_inner(
     // neither of which a fat line has.
     if material.kind == MaterialKind::Line2 {
         if let Some(attributes) = &ctx.line_segments {
-            pre_vertex.push(crate::materials::line2::setup_position(attributes));
+            pre_vertex.push(crate::materials::line2::setup_position(
+                attributes,
+                material.world_units,
+            ));
         }
     }
 
@@ -465,7 +475,7 @@ fn setup_inner(
                 matrix.element(2).xyz(),
             ],
         );
-        let inv_t = transpose(inverse_mat3(m3));
+        let inv_t = transpose(inverse(m3));
         pre_vertex.push(normal_local().assign(inv_t.mul(normal_local()).normalize()));
     }
 
@@ -676,16 +686,18 @@ fn to_vec2(node: NodeRef) -> NodeRef {
 /// if ( scaleNode !== null ) scale = scale.mul( vec2( scaleNode ) );
 /// if ( camera.isPerspectiveCamera && sizeAttenuation === false )
 ///     scale = scale.mul( mvPosition.z.negate() );
-/// let alignedPosition = positionGeometry.xy;       // object.center is unset
+/// let alignedPosition = positionGeometry.xy;
+/// if ( object.center && object.center.isVector2 )
+///     alignedPosition = alignedPosition.sub( reference( 'center', 'vec2', object ).sub( 0.5 ) );
 /// alignedPosition = alignedPosition.mul( scale );
 /// const rotation = float( rotationNode || materialRotation );
 /// return vec4( mvPosition.xy.add( rotate( alignedPosition, rotation ) ),
 ///              mvPosition.zw );
 /// ```
 ///
-/// `object.center` is an `InstancedMesh`-less `Sprite` field, so the
-/// `alignedPosition.sub( center.sub( 0.5 ) )` step never fires here.
-fn setup_position_view_sprite(material: &MeshBasicNodeMaterial) -> NodeRef {
+/// `object.center` exists only on a [`Sprite`](crate::objects::Sprite), so
+/// `has_center` is [`SetupContext::sprite`].
+fn setup_position_view_sprite(material: &MeshBasicNodeMaterial, has_center: bool) -> NodeRef {
     let position = match &material.position_node {
         Some(node) => to_vec3(node.clone()),
         None => vec3(0.0, 0.0, 0.0),
@@ -708,7 +720,17 @@ fn setup_position_view_sprite(material: &MeshBasicNodeMaterial) -> NodeRef {
         scale = scale.mul(mv_position.z().negate());
     }
 
-    let aligned = position_geometry().xy().mul(scale);
+    let mut aligned = position_geometry().xy();
+    if has_center {
+        let center = uniform(
+            UniformSource::ObjectCenter,
+            Type::Vec2,
+            UniformGroup::Object,
+            None,
+        );
+        aligned = aligned.sub(center.sub(0.5));
+    }
+    let aligned = aligned.mul(scale);
     let rotation = match &material.rotation_node {
         Some(node) => node.clone(),
         None => material_rotation(),
@@ -801,25 +823,6 @@ pub fn quad_vertex_node() -> NodeRef {
     let x = const_array(vec![-1.0, -1.0, 3.0]).element_node(vertex_index());
     let y = const_array(vec![3.0, -1.0, -1.0]).element_node(vertex_index());
     join(Type::Vec4, vec![x, y, float(0.0), float(1.0)])
-}
-
-/// `transpose( m )`.
-fn transpose(m: NodeRef) -> NodeRef {
-    math_call("transpose", m)
-}
-
-/// `WGSLNodeBuilder`'s `inverse( mat3 )` polyfill.
-fn inverse_mat3(m: NodeRef) -> NodeRef {
-    math_call("tsl_inverse_mat3", m)
-}
-
-fn math_call(name: &'static str, m: NodeRef) -> NodeRef {
-    let ty = m.ty();
-    crate::nodes::NodeRef::new(crate::nodes::Node::Math {
-        name,
-        args: vec![m],
-        ty,
-    })
 }
 
 /// `RangeNode` on an instanced mesh: one `vec4` per instance, from a uniform
@@ -920,7 +923,12 @@ fn setup_phong(
         };
         fragment.push(specular_color().assign(specular_value));
     }
-    fragment.push(emissive_color().assign(material_emissive().mul(material_emissive_intensity())));
+    // `vec3( emissiveNode ? emissiveNode : materialEmissive )`.
+    let emissive = match &material.emissive_node {
+        Some(node) => to_vec3(node.clone()),
+        None => material_emissive().mul(material_emissive_intensity()),
+    };
+    fragment.push(emissive_color().assign(emissive));
 
     let outgoing = if material.lights {
         // `LightsNode`: the scene's lights, or the selective subset the
@@ -1036,7 +1044,14 @@ fn setup_ambient_occlusion(material: &MeshBasicNodeMaterial, fragment: &mut Vec<
 /// takes `.xyz`. That is what the dump's
 /// `( vec4<f32>( ( emissive * intensity ), 1.0 ) * tex ).xyz` is, and why the
 /// port builds the `vec4` explicitly rather than multiplying three components.
+///
+/// A material with an `emissiveNode` takes it instead, whole:
+/// `emissive.assign( vec3( emissiveNode ? emissiveNode : materialEmissive ) )`
+/// — the node is not scaled by `emissiveIntensity` nor multiplied by the map.
 fn material_emissive_value(material: &MeshBasicNodeMaterial) -> NodeRef {
+    if let Some(node) = &material.emissive_node {
+        return to_vec3(node.clone());
+    }
     let emissive = material_emissive().mul(material_emissive_intensity());
 
     match &material.emissive_map {

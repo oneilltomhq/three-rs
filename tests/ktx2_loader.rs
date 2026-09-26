@@ -44,7 +44,9 @@ fn min_filter_constant(filter: MinFilter) -> u64 {
     match filter {
         MinFilter::Nearest => 1003,
         MinFilter::NearestMipmapNearest => 1004,
+        MinFilter::NearestMipmapLinear => 1005,
         MinFilter::Linear => 1006,
+        MinFilter::LinearMipmapNearest => 1007,
         MinFilter::LinearMipmapLinear => 1008,
     }
 }

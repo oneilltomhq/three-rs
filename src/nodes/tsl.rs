@@ -26,6 +26,9 @@ use crate::textures::{
 
 pub use super::node::TextureSource;
 
+mod wrappers;
+pub use wrappers::*;
+
 // ---------------------------------------------------------------------------
 // sub-builds and the build context (`docs/nodes.md` §7)
 // ---------------------------------------------------------------------------
@@ -707,17 +710,17 @@ pub fn mod_float(x: impl Into<NodeRef>, y: impl Into<NodeRef>) -> NodeRef {
     math("tsl_mod_float", vec![x.into(), y.into()], Type::F32)
 }
 
-/// `smoothstep( low, high, x )`.
+/// `smoothstep( low, high, x )` — `MathNode.SMOOTHSTEP`, typed (and its
+/// operands built) as `MathNode.getInputType()`: `smoothstep( 0, 1, uv )` is
+/// `smoothstep( vec2<f32>( 0.0 ), vec2<f32>( 1.0 ), uv )`.
 pub fn smoothstep(
     low: impl Into<NodeRef>,
     high: impl Into<NodeRef>,
     x: impl Into<NodeRef>,
 ) -> NodeRef {
-    math(
-        "smoothstep",
-        vec![low.into(), high.into(), x.into()],
-        Type::F32,
-    )
+    let (low, high, x) = (low.into(), high.into(), x.into());
+    let ty = wrappers::math_input_type(&[&low, &high, &x]);
+    math("smoothstep", vec![low, high, x], ty)
 }
 
 /// `dFdx( x )` — WGSL `dpdx`.
@@ -779,6 +782,64 @@ pub fn range_fog_factor_with_view_z(
     view_z: impl Into<NodeRef>,
 ) -> NodeRef {
     smoothstep(near, far, view_z.into().negate())
+}
+
+/// Port of `three.js/src/nodes/fog/Fog.js`' `densityFogFactor( density )`,
+/// the exponential squared fog `FogExp2` builds:
+/// `density.mul( density, viewZ, viewZ ).negate().exp().oneMinus()`.
+///
+/// `viewZ` is `positionView.z.negate()`, read twice. three.js' usage count
+/// turns it into a `let nodeConstN`; the port's builder does not promote a
+/// negation on usage (`docs/nodes.md` §8, "`toConst` on the shadow filter"), so
+/// the const is taken here by hand and the WGSL is the same.
+pub fn density_fog_factor(density: impl Into<NodeRef>) -> NodeRef {
+    density_fog_factor_with_view_z(density, position_view().z())
+}
+
+/// [`density_fog_factor`] over an explicit view-space z, the
+/// `.context( { getViewZ } )` form [`range_fog_factor_with_view_z`] documents.
+pub fn density_fog_factor_with_view_z(
+    density: impl Into<NodeRef>,
+    view_z: impl Into<NodeRef>,
+) -> NodeRef {
+    let density = density.into();
+    let view_z = to_const(None, view_z.into().negate());
+    exp(density
+        .clone()
+        .mul(density)
+        .mul(view_z.clone())
+        .mul(view_z)
+        .negate())
+    .one_minus()
+}
+
+/// Port of `three.js/src/nodes/fog/Fog.js`'
+/// `exponentialHeightFogFactor( density, height )`: fog only below the world
+/// height `height`, thickening with the depth below it times the view distance.
+///
+/// ```js
+/// const distance = height.sub( positionWorld.y ).max( 0 ).toConst();
+/// const m = distance.mul( viewZ ).toConst();
+/// return density.mul( density, m, m ).negate().exp().oneMinus();
+/// ```
+pub fn exponential_height_fog_factor(
+    density: impl Into<NodeRef>,
+    height: impl Into<NodeRef>,
+) -> NodeRef {
+    exponential_height_fog_factor_with_view_z(density, height, position_view().z())
+}
+
+/// [`exponential_height_fog_factor`] over an explicit view-space z.
+pub fn exponential_height_fog_factor_with_view_z(
+    density: impl Into<NodeRef>,
+    height: impl Into<NodeRef>,
+    view_z: impl Into<NodeRef>,
+) -> NodeRef {
+    let density = density.into();
+    let view_z = view_z.into().negate();
+    let distance = to_const(None, height.into().sub(position_world().y()).max(0.0));
+    let m = to_const(None, distance.mul(view_z));
+    exp(density.clone().mul(density).mul(m.clone()).mul(m).negate()).one_minus()
 }
 
 /// Port of `three.js/src/nodes/fog/Fog.js`' `fog( color, factor )`. The node it
@@ -2834,9 +2895,16 @@ pub fn depth_texture(map: &DepthTexture) -> NodeRef {
 /// a `PassTextureNode` calls `setUpdateMatrix( false )`, so the pass's depth
 /// attachment carries no `mat3x3` in the object uniform block.
 pub fn pass_depth_texture(map: &DepthTexture) -> NodeRef {
+    pass_depth_texture_uv(map, uv())
+}
+
+/// `passNode.getTextureNode( 'depth' ).sample( coord )` — the pass's depth
+/// attachment read at another uv, as `PixelationPassNode`'s neighbour taps
+/// read it.
+pub fn pass_depth_texture_uv(map: &DepthTexture, coord: NodeRef) -> NodeRef {
     texture_node(
         TextureSource::Depth(map.clone()),
-        uv(),
+        coord,
         SampleMode::Load,
         Type::F32,
     )
@@ -3177,6 +3245,7 @@ pub fn loop_statement(count: usize, index: NodeRef, body: Vec<NodeRef>) -> NodeR
         start: None,
         index,
         count,
+        condition: "<",
         body,
     })
 }
@@ -3630,6 +3699,7 @@ pub fn loop_n(
         start: None,
         count,
         index,
+        condition: "<",
         body,
     })
 }
@@ -3655,7 +3725,34 @@ pub fn loop_range(
     NodeRef::new(Node::Loop {
         start: Some(start),
         count: end,
+        condition: "<",
         index,
+        body,
+    })
+}
+
+/// `Loop( { start, end, type, condition, name }, ( { i } ) => { … } )` — the
+/// full options object.
+///
+/// `ty` is the index type: `Type::I32` (three's default `'int'`) or
+/// `Type::F32` (`type: 'float'`, `hashBlur`'s), which three writes as
+/// `for ( var i : f32 = 0.0; i < 45.0; i += 1. )`. `condition` is the
+/// comparison, `"<"` by default and `"<="` in `boxBlur`.
+pub fn loop_options(
+    name: &'static str,
+    ty: Type,
+    start: NodeRef,
+    end: NodeRef,
+    condition: &'static str,
+    body: impl FnOnce(&NodeRef) -> Vec<NodeRef>,
+) -> NodeRef {
+    let index = NodeRef::new(Node::Param { name, ty });
+    let body = body(&index);
+    NodeRef::new(Node::Loop {
+        start: Some(start),
+        count: end,
+        index,
+        condition,
         body,
     })
 }

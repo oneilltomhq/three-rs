@@ -371,20 +371,25 @@ fn michelle_material() {
     assert_eq!(specular.color_space(), ColorSpace::SRGB);
 }
 
-/// `IridescentDishWithOlives.glb` (the `webgpu_loader_gltf_transmission` page)
-/// lists `KHR_draco_mesh_compression` in `extensionsRequired`. Nothing in the
-/// port decodes Draco, and its accessors carry no `bufferView`, so without the
-/// check the file loads "successfully" into four zero-sized meshes. See the
-/// message of the commit that added this check.
+/// An extension in `extensionsRequired` that the port does not read is an
+/// error. three.js only warns (`'Unknown extension'`) and decodes nothing:
+/// before Draco was ported, `IridescentDishWithOlives.glb` loaded
+/// "successfully" that way into four zero-sized meshes. See the message of
+/// the commit that added this check. meshopt is still unread.
 #[test]
-fn draco_required_is_an_error() {
-    let Err(error) = GLTFLoader::load(models().join("IridescentDishWithOlives.glb")) else {
-        panic!("a Draco-required asset must not load");
+fn unread_required_extension_is_an_error() {
+    let json = br#"{
+        "asset": { "version": "2.0" },
+        "extensionsUsed": [ "EXT_meshopt_compression" ],
+        "extensionsRequired": [ "EXT_meshopt_compression" ]
+    }"#;
+    let Err(error) = GLTFLoader::parse(json, std::path::PathBuf::from(".")) else {
+        panic!("a meshopt-required asset must not load");
     };
 
     assert_eq!(
         error.to_string(),
-        "THREE.GLTFLoader: unknown required extension \"KHR_draco_mesh_compression\""
+        "THREE.GLTFLoader: unknown required extension \"EXT_meshopt_compression\""
     );
 }
 

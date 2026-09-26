@@ -2,6 +2,7 @@
 
 mod buffer_geometry_loader;
 mod cube_texture_loader;
+pub mod draco;
 mod gif;
 mod gltf_loader;
 mod hdr_cube_texture_loader;

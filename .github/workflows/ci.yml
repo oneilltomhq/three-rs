@@ -135,9 +135,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       # tests/gltf_loader.rs reads Three's sample glTF models here, and
-      # tests/addons_orbit_controls.rs runs Three's own OrbitControls.js out of
-      # it under node to compare against; everything else here is
-      # self-contained.
+      # tests/addons_orbit_controls.rs and tests/gltf_draco.rs run Three's own
+      # OrbitControls.js and GLTFLoader + DRACOLoader out of it under node to
+      # compare against; everything else here is self-contained.
       - name: Checkout three.js at THREE_JS_REV (for gltf_loader)
         run: |
           git init -q "$THREE_JS_DIR"
@@ -166,6 +166,7 @@ jobs:
       - name: three-rs integration tests (no GPU)
         run: |
           tests=(
+            addons_lines_raycast
             addons_orbit_controls
             animation_animation_action
             animation_animation_clip
@@ -180,7 +181,9 @@ jobs:
             core_buffer_geometry
             core_layers
             core_object3d
+            core_raycaster
             geometries
+            gltf_draco
             gltf_loader
             ktx2_loader
             math_box2
@@ -207,12 +210,27 @@ jobs:
             math_vector2
             math_vector3
             math_vector4
+            nodes_fog
+            nodes_display_wgsl
             nodes_instanced_attributes
+            nodes_line2_world_units
             nodes_morph
+            nodes_mx_library
             nodes_mx_noise
             nodes_range_buffers
+            nodes_tsl_batch
+            objects_batched_mesh
             objects_group
+            objects_instanced_mesh
+            objects_line
+            objects_line_segments
+            objects_mesh
+            objects_points
+            objects_skinned_mesh
+            objects_sprite
             pmrem
+            scenes_fog
+            scenes_fog_exp2
             scenes_scene
           )
           for t in "${tests[@]}"; do
