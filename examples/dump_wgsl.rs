@@ -30,6 +30,14 @@ mod webgpu_mesh_batch;
 #[allow(dead_code)]
 mod webgpu_compute_points;
 
+#[path = "webgpu_skinning_points.rs"]
+#[allow(dead_code)]
+mod webgpu_skinning_points;
+
+#[path = "webgpu_instance_points.rs"]
+#[allow(dead_code)]
+mod webgpu_instance_points;
+
 #[path = "webgpu_postprocessing_anamorphic.rs"]
 #[allow(dead_code)]
 mod webgpu_postprocessing_anamorphic;
@@ -43,6 +51,13 @@ mod webgpu_instance_path;
 #[path = "webgpu_tsl_interoperability.rs"]
 #[allow(dead_code)]
 mod webgpu_tsl_interoperability;
+
+#[path = "webgpu_texturegather.rs"]
+#[allow(dead_code)]
+mod webgpu_texturegather;
+#[path = "webgpu_texturegrad.rs"]
+#[allow(dead_code)]
+mod webgpu_texturegrad;
 
 fn show(label: &str, material: &MeshBasicNodeMaterial, ctx: SetupContext) {
     show_fog(label, material, ctx, None)
@@ -818,6 +833,33 @@ fn main() {
     ));
     right.shininess = 90.0;
     show_fog("phong_right", &right, four.clone(), Some(&fog));
+
+    // webgpu_lights_selective: the same teapots as `MeshStandardNodeMaterial`
+    // — against `target/dumps/webgpu_lights_selective/` m02 (left), m04
+    // (centre), m06 (right) and m08 (the unlit light sphere).
+    let grey_standard = || MeshBasicNodeMaterial::standard(grey, 1.0, 0.0);
+
+    let mut left = grey_standard();
+    left.lights_node = Some(vec![0]);
+    left.roughness_node = Some(texture(&alpha_texture));
+    left.metalness = 0.0;
+    show_fog("selective_left", &left, four.clone(), Some(&fog));
+
+    let mut centre = grey_standard();
+    centre.normal_node = Some(normal_map(texture(&normal_map_texture)));
+    centre.metalness = 0.5;
+    centre.roughness = 0.5;
+    show_fog("selective_centre", &centre, four.clone(), Some(&fog));
+
+    let mut right = grey_standard();
+    right.lights_node = Some(vec![1]);
+    right.metalness_node = Some(texture(&alpha_texture));
+    show_fog("selective_right", &right, four.clone(), Some(&fog));
+
+    let mut sphere = MeshBasicNodeMaterial::standard(Color::from_hex(0xffffff), 1.0, 0.0);
+    sphere.color_node = Some(Color::from_hex(0xff0040).into());
+    sphere.lights = false;
+    show_fog("selective_light_sphere", &sphere, four.clone(), Some(&fog));
 
     // rung 8: the four physical materials, against
     // `handoff/scouts/rung8/MeshStandardMaterial_*`.
@@ -2058,11 +2100,11 @@ fn main() {
     // and `multisampled: false`.
     let fog_pass = three_rs::PassNode::new();
     fog_pass.depth_texture().set_multisample(true);
-    let fog_factor = range_fog_factor_with_view_z(
-        float(2.7),
-        float(4.0),
-        fog_pass.view_z_node(three_rs::renderer::DEPTH_ATTACHMENT),
-    );
+    let fog_factor =
+        range_fog_factor(float(2.7), float(4.0)).context(three_rs::nodes::ContextValue::new().set(
+            "getViewZ",
+            fog_pass.view_z_node(three_rs::renderer::DEPTH_ATTACHMENT),
+        ));
     let scene_pass_tm = three_rs::materials::tone_mapping_node(
         three_rs::ToneMapping::AcesFilmic,
         float(1.0),
@@ -2522,6 +2564,73 @@ fn dump_room_environment() {
         SetupContext::default(),
     );
 
+    // rung `webgpu_loader_gltf_compressed`: coffeemat's `Material.001`,
+    // against `dump-compressed/m00` (vertex) and `m01` (fragment). Double
+    // sided with a `tangent` attribute, so the vertex stage builds
+    // `bitangentView` through `negateOnBackSide()` and writes
+    // `FrontFacingNode`'s `f32( true )`; the fragment reads the colour,
+    // metal-roughness (also the AO) and normal maps under one point light.
+    // `OREO.001` (m02/m03) is the same program without the ORM maps.
+    let mut coffee = MeshBasicNodeMaterial::standard(Color::new(1.0, 1.0, 1.0), 1.0, 1.0);
+    coffee.side = Side::Double;
+    coffee.map = Some(map());
+    let orm = map();
+    coffee.metalness_map = Some(orm.clone());
+    coffee.roughness_map = Some(orm.clone());
+    coffee.ao_map = Some(orm);
+    coffee.normal_map = Some(map());
+    show(
+        "loader_gltf_compressed_coffee",
+        &coffee,
+        SetupContext {
+            lights: vec![LightDesc {
+                index: 0,
+                kind: LightKind::Point,
+                shadow_map: None,
+            }],
+            has_tangent_attribute: true,
+            ..SetupContext::default()
+        },
+    );
+
+    // rung `webgpu_equirectangular`: `scene.backgroundNode = texture( map,
+    // equirectUV(), 0 )`, against `dump-equirect/m01` (vertex) and `m02`
+    // (fragment). `vec4()` of the vec4 sample is the sample itself.
+    let equirect = Texture::new(4, 4, Some(vec![0; 4 * 4 * 4]));
+    let mut equirect_bg = MeshBasicNodeMaterial::new();
+    equirect_bg.name = "Background.material";
+    equirect_bg.color_node = Some(three_rs::materials::background_node_color_node(
+        texture_level(
+            &equirect,
+            equirect_uv(position_world_direction()),
+            float(0.0),
+        ),
+    ));
+    equirect_bg.vertex_node = Some(three_rs::materials::background_vertex_node());
+    equirect_bg.side = Side::Back;
+    equirect_bg.depth_test = false;
+    equirect_bg.depth_write = false;
+    show("background_equirect", &equirect_bg, SetupContext::default());
+    // rung `webgpu_texturegrad`: three's m02 fragment — the page's `Fn` with
+    // four `textureSampleGrad` taps. A stand-in texture; only its being a
+    // filterable 2-D texture reaches the WGSL.
+    let mut grad_material = MeshBasicNodeMaterial::new();
+    grad_material.color_node = Some(webgpu_texturegrad::color_node(&Texture::new(
+        4,
+        4,
+        Some(vec![0; 4 * 4 * 4]),
+    )));
+    show("texturegrad", &grad_material, SetupContext::default());
+
+    // rung `webgpu_texturegather`: three's m04 fragment — `textureGather` of
+    // the render target's colour and `textureGatherCompare` of its depth,
+    // behind an `If`/`Else`. Stand-in textures; only their kinds reach the WGSL.
+    let mut gather_material = MeshBasicNodeMaterial::new();
+    gather_material.color_node = Some(webgpu_texturegather::color_node(
+        &Texture::new(4, 4, Some(vec![0; 4 * 4 * 4])),
+        &three_rs::DepthTexture::new(),
+    ));
+    show("texturegather", &gather_material, SetupContext::default());
     // `webgpu_lights_custom`: the page's `CustomLightingModel` on a
     // `PointsNodeMaterial` whose `lightsNode` is `lights( [ light1, light2,
     // light3 ] ).context( { lightingModel } )` — three's `m05`.
@@ -2569,6 +2678,8 @@ fn dump_room_environment() {
     );
 
     dump_camera_array();
+    dump_skinning_points();
+    dump_instance_points();
 }
 
 /// Rung `webgpu_camera_array`: the cylinder's `MeshPhongNodeMaterial` drawn
@@ -2599,6 +2710,74 @@ fn dump_camera_array() {
             ..SetupContext::default()
         },
     );
+}
+
+/// Rung `webgpu_skinning_points`: Michelle's first mesh as a point cloud,
+/// against `target/dumps/webgpu_skinning_points/m0{0,1,2,3}`. `m00` is the
+/// `onInit` kernel and `m01` the per-frame one — the same body, each with its
+/// own read-only copies of `position` / `skinIndex` / `skinWeight` — and
+/// `m02`/`m03` the `PointsNodeMaterial` on a `Sprite`: the kernel's output
+/// read back as an instanced `vec3` attribute, `setupVertexSprite()`'s
+/// screen-space offset, and `shapeCircle()`'s hard edge (no
+/// `alphaToCoverage`).
+fn dump_skinning_points() {
+    let three = three_rs::testing::three_js_dir();
+    let gltf = three_rs::loaders::GLTFLoader::load(three.join("examples/models/gltf/Michelle.glb"))
+        .expect("three-rs: Michelle.glb loads");
+    let mut meshes = Vec::new();
+    gltf.scene.traverse(&mut |child| {
+        if child.borrow().is_mesh() {
+            meshes.push(child.clone());
+        }
+    });
+    let child = &meshes[0];
+    let count = match &child.borrow().payload {
+        three_rs::objects::Payload::SkinnedMesh(skinned) => skinned
+            .mesh
+            .geometry
+            .get_attribute("position")
+            .expect("three-rs: Michelle has positions")
+            .count(),
+        _ => panic!("three-rs: Michelle's meshes are skinned"),
+    };
+    let (update, positions, speeds) = webgpu_skinning_points::kernels(child, count);
+    show_compute(
+        "skinning_points_init",
+        update
+            .on_init
+            .as_ref()
+            .expect("three-rs: the kernel has an onInit"),
+    );
+    show_compute("skinning_points_update", &update);
+    show(
+        "skinning_points_material",
+        &webgpu_skinning_points::material(update, &positions, &speeds),
+        SetupContext {
+            sprite: true,
+            ..SetupContext::default()
+        },
+    );
+}
+
+/// Rung `webgpu_instance_points`, against
+/// `target/dumps/webgpu_instance_points/m0{0,1,2}`: the size kernel writing a
+/// `StorageInstancedBufferAttribute`, and the `PointsNodeMaterial` on a
+/// `Sprite` that reads it back as an instanced `f32` attribute. The material
+/// has `alphaToCoverage` on and the frame is multisampled, so `shapeCircle()`
+/// takes its `fwidth` / `smoothstep` edge.
+fn dump_instance_points() {
+    let points = webgpu_instance_points::instanced_points();
+    show_compute("instance_points_compute_size", &points.compute_size);
+    three_rs::nodes::builder::with_alpha_to_coverage_samples(true, || {
+        show(
+            "instance_points_material",
+            &points.material,
+            SetupContext {
+                sprite: true,
+                ..SetupContext::default()
+            },
+        )
+    });
 }
 
 /// Issue #140: the classic `scene.fog`. One `MeshStandardNodeMaterial` lit by

@@ -412,6 +412,10 @@ pub struct MeshBasicNodeMaterial {
     /// `SpriteNodeMaterial.scaleNode` / `.rotationNode`.
     pub scale_node: Option<NodeRef>,
     pub rotation_node: Option<NodeRef>,
+    /// `PointsNodeMaterial.sizeNode` — the point size in pixels when the
+    /// material draws a [`Sprite`](crate::objects::Sprite) (instanced quads)
+    /// rather than `Points`. Read by `setupVertexSprite()` only.
+    pub size_node: Option<NodeRef>,
     /// `SpriteMaterial.rotation` — the `materialRotation` uniform.
     pub rotation: f64,
     /// `LineBasicMaterial.linewidth` — the `materialLineWidth` uniform.
@@ -580,6 +584,7 @@ impl Default for MeshBasicNodeMaterial {
             alpha_map: None,
             emissive_node: None,
             scale_node: None,
+            size_node: None,
             rotation_node: None,
             rotation: 0.0,
             linewidth: 1.0,

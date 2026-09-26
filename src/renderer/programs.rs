@@ -7,7 +7,7 @@
 use crate::materials::{DepthFunc, Side};
 use crate::math::{Color, Matrix3, Matrix4, Vector2, Vector3, Vector4};
 use crate::nodes::wgsl::TextureKind;
-use crate::nodes::{BindingDesc, NodeProgram, Type, UniformMember, UniformSource};
+use crate::nodes::{BindingDesc, BufferSource, NodeProgram, Type, UniformMember, UniformSource};
 
 /// Everything about a pass that the pipeline has to bake in, beyond the shader.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -301,6 +301,10 @@ fn layout_entry(binding: u32, desc: &BindingDesc) -> wgpu::BindGroupLayoutEntry 
                 // compute, `read` in the vertex and fragment stages, which is
                 // why the page asks for `maxStorageBuffersInVertexStage: 1`.
                 ty: match source {
+                    // `.toReadOnly()` is `read` in a kernel too.
+                    BufferSource::StorageData {
+                        read_only: true, ..
+                    } => wgpu::BufferBindingType::Storage { read_only: true },
                     source if source.is_storage() => wgpu::BufferBindingType::Storage {
                         read_only: !visibility.compute,
                     },
@@ -876,6 +880,8 @@ impl UniformContext<'_> {
                 // Read per draw, so `sampleWeight.value = …` between two
                 // `render_quad()` calls reaches the second one's buffer.
                 UniformSource::Settable(cell) => cell.get().iter().map(|&v| v as f32).collect(),
+                // Read when the buffer is written, from the object it names.
+                UniformSource::Live(value) => value.get().iter().map(|&v| v as f32).collect(),
                 // `Node.update( frame )` for a `NodeUpdateType.OBJECT` node,
                 // run here rather than in a separate pre-pass because here is
                 // where three runs it too: `Bindings.updateBindings()` calls
