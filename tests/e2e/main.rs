@@ -1733,6 +1733,41 @@ fn webgpu_materials_texture_manualmipmap() {
     println!("adapter: {:?}", app.renderer.adapter_info());
 
     webgpu_materials_texture_manualmipmap::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(
+        name,
+        &mut app,
+        webgpu_materials_texture_manualmipmap::animate,
+        |app| app.renderer.device(),
+    );
+}
+
 /// Issue #139's rung: `gears.glb` is three Draco-compressed meshes, and the
 /// outer hull's `maskNode` cuts an angular wedge out of it — in the shadow
 /// pass too — while its `outputNode` paints the exposed back faces a flat
@@ -1775,12 +1810,6 @@ fn webgpu_tsl_angular_slicing() {
         result.different_pixels,
         result.num_different_pixels,
         out.display()
-    );
-    steady_frame(
-        name,
-        &mut app,
-        webgpu_materials_texture_manualmipmap::animate,
-        |app| app.renderer.device(),
     );
     steady_frame(name, &mut app, webgpu_tsl_angular_slicing::animate, |app| {
         app.renderer.device()

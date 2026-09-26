@@ -204,15 +204,15 @@ mod webgpu_loader_gltf_anisotropy;
 #[path = "webgpu_materials_texture_manualmipmap.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_materials_texture_manualmipmap;
+#[path = "webgpu_tsl_angular_slicing.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_tsl_angular_slicing;
 #[path = "webgpu_tsl_raging_sea.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_tsl_raging_sea;
 #[path = "webgpu_tsl_vfx_flames.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_tsl_vfx_flames;
-#[path = "webgpu_tsl_angular_slicing.rs"]
-#[allow(dead_code)] // only `init()` is called here
-mod webgpu_tsl_angular_slicing;
 
 /// Every graded example, in the README's order, paired with a call of its
 /// `init()`.
