@@ -18,7 +18,7 @@
 //! three's methods append to the builder's current stack implicitly; here
 //! they push onto [`LightingBuilder::stack`], the same `Vec<NodeRef>` of
 //! statements the rest of the material setup writes into. See
-//! `docs/nodes.md` §36.
+//! `docs/nodes.md` §40.
 
 use std::fmt::Debug;
 

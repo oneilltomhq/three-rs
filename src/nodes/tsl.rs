@@ -14,6 +14,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use super::builder::{current_context, push_context};
 use super::node::{
     BufferNode, BufferSource, Builtin, FnDef, InstanceBuffer, Lazy, Node, NodeRef, SampleMode,
     SettableValue, Type, UniformGroup, UniformNode, UniformSource, VarDef, VaryingDef,
@@ -81,41 +82,17 @@ impl std::hash::Hash for OverrideNodes {
 /// `renderer.contextNode` / `material.contextNode` in three, which live for
 /// exactly that long.
 pub fn with_override_nodes<R>(overrides: Option<&OverrideNodes>, f: impl FnOnce() -> R) -> R {
-    let previous = OVERRIDE_NODES.with(|v| v.replace(overrides.cloned()));
-    let out = f();
-    OVERRIDE_NODES.with(|v| *v.borrow_mut() = previous);
-    out
+    let _overrides = push_context(|cx| cx.override_nodes = overrides.cloned());
+    f()
 }
 
 /// The override for one of the three accessors, or `None` outside an override
 /// context.
 fn override_node(pick: fn(&OverrideNodes) -> &Option<NodeRef>) -> Option<NodeRef> {
-    OVERRIDE_NODES.with(|v| v.borrow().as_ref().and_then(|o| pick(o).clone()))
+    current_context(|cx| cx.override_nodes.as_ref().and_then(|o| pick(o).clone()))
 }
 
 thread_local! {
-    /// `NodeBuilder.subBuildLayers`. One layer at a time is all the ladder
-    /// needs; `NORMAL` is the only name so far.
-    static SUB_BUILD: RefCell<Option<&'static str>> = const { RefCell::new(None) };
-    /// `builder.context.overrideNodes` — the map `material.contextNode =
-    /// overrideNodes( … )` installs for the whole of one material's setup.
-    static OVERRIDE_NODES: RefCell<Option<OverrideNodes>> = const { RefCell::new(None) };
-    /// `builder.context.setupNormal()` — `NodeMaterial.setupNormal()`'s result,
-    /// i.e. the material's `normalNode`. `normal_view()` takes it as its value
-    /// outside the `NORMAL` layer and `normalViewGeometry` inside it.
-    static NORMAL_VALUE: RefCell<Option<NodeRef>> = const { RefCell::new(None) };
-    /// `builder.isFlatShading()` — `material.flatShading && material.wireframe
-    /// === false`. `normalViewGeometry` reads it, so like `NORMAL_VALUE` it is
-    /// installed for the whole of one material's setup.
-    static FLAT_SHADING: RefCell<bool> = const { RefCell::new(false) };
-    /// `builder.material.side` — what `negateOnBackSide()` branches on, and so
-    /// part of every cache key that reaches `normalView` or the tangent frame.
-    static MATERIAL_SIDE: RefCell<Side> = const { RefCell::new(Side::Front) };
-    /// `builder.geometry.hasAttribute( 'tangent' )` — what `Tangent.js` and
-    /// `Bitangent.js` branch on. With the attribute the frame comes from the
-    /// `tangent` vec4 through `modelViewMatrix`; without it, from the screen
-    /// derivatives of `TangentUtils.js`.
-    static HAS_TANGENT: RefCell<bool> = const { RefCell::new(false) };
     /// `normalViewGeometry`'s node per flat-shading flag — the stand-in for
     /// three.js' per-build `nodeData`, which gives the two forms of the
     /// accessor's `Fn( … ).once()` separate cache entries.
@@ -132,11 +109,6 @@ thread_local! {
     /// re-assign `normalView` from the geometric normal in every later one.
     static NORMAL_WORLD: RefCell<HashMap<NormalViewKey, NodeRef>> =
         RefCell::new(HashMap::new());
-    /// `builder.context.setupPositionView()` — `NodeMaterial.setup()` installs
-    /// it before either stage is flowed, and `SpriteNodeMaterial` overrides it
-    /// with the billboarded view position. `None` is the base class'
-    /// `modelViewMatrix.mul( positionLocal ).xyz`.
-    static POSITION_VIEW_VALUE: RefCell<Option<NodeRef>> = const { RefCell::new(None) };
     /// `positionView` / `modelViewProjection` per context value — three.js' own
     /// `Fn( … ).once()` cache is per build, so a second material in the same
     /// process must not inherit the first one's node.
@@ -147,7 +119,7 @@ thread_local! {
 /// `NodeBuilder.getSubBuildProperty( name )`: inside a layer a var's name is
 /// prefixed with the layer's, which is where `NORMAL_normalView` comes from.
 fn sub_build_name(name: &str) -> String {
-    match SUB_BUILD.with(|s| *s.borrow()) {
+    match current_context(|cx| cx.sub_build) {
         Some(layer) => format!("{layer}_{name}"),
         None => name.to_string(),
     }
@@ -155,10 +127,8 @@ fn sub_build_name(name: &str) -> String {
 
 /// `subBuild( node, name )` — build `f`'s nodes inside the named layer.
 fn in_sub_build<R>(layer: &'static str, f: impl FnOnce() -> R) -> R {
-    let previous = SUB_BUILD.with(|s| s.replace(Some(layer)));
-    let out = f();
-    SUB_BUILD.with(|s| *s.borrow_mut() = previous);
-    out
+    let _layer = push_context(|cx| cx.sub_build = Some(layer));
+    f()
 }
 
 /// Install the material's `normalNode` as `builder.context.setupNormal` for the
@@ -170,14 +140,12 @@ pub fn with_material_normal<R>(
     side: Side,
     f: impl FnOnce() -> R,
 ) -> R {
-    let previous = NORMAL_VALUE.with(|v| v.replace(normal));
-    let previous_flat = FLAT_SHADING.with(|v| v.replace(flat_shading));
-    let previous_side = MATERIAL_SIDE.with(|v| v.replace(side));
-    let out = f();
-    NORMAL_VALUE.with(|v| *v.borrow_mut() = previous);
-    FLAT_SHADING.with(|v| *v.borrow_mut() = previous_flat);
-    MATERIAL_SIDE.with(|v| *v.borrow_mut() = previous_side);
-    out
+    let _material = push_context(|cx| {
+        cx.setup_normal = normal;
+        cx.flat_shading = flat_shading;
+        cx.material_side = side;
+    });
+    f()
 }
 
 /// `builder.geometry.hasAttribute( 'tangent' )` for the whole of one
@@ -185,10 +153,8 @@ pub fn with_material_normal<R>(
 /// the material's own normal node is built before the flow starts and already
 /// reads the TBN frame.
 pub fn with_tangent_attribute<R>(has_tangent: bool, f: impl FnOnce() -> R) -> R {
-    let previous = HAS_TANGENT.with(|v| v.replace(has_tangent));
-    let out = f();
-    HAS_TANGENT.with(|v| *v.borrow_mut() = previous);
-    out
+    let _tangent = push_context(|cx| cx.has_tangent = has_tangent);
+    f()
 }
 
 /// `builder.material.side` alone, for the window in which
@@ -198,10 +164,8 @@ pub fn with_tangent_attribute<R>(has_tangent: bool, f: impl FnOnce() -> R) -> R 
 /// scope explicitly, or a `DoubleSide` material's TBN frame would be built
 /// front-sided and then cached.
 pub fn with_material_side<R>(side: Side, f: impl FnOnce() -> R) -> R {
-    let previous = MATERIAL_SIDE.with(|v| v.replace(side));
-    let out = f();
-    MATERIAL_SIDE.with(|v| *v.borrow_mut() = previous);
-    out
+    let _side = push_context(|cx| cx.material_side = side);
+    f()
 }
 
 /// `negateOnBackSide( vector )` — `FrontFacingNode.js`. A back-sided material
@@ -210,7 +174,7 @@ pub fn with_material_side<R>(side: Side, f: impl FnOnce() -> R) -> R {
 /// the tangent frame both go through it, which is why a `DoubleSide` material's
 /// dump multiplies three vectors by the same `( f32( isFront ) * 2 - 1 )`.
 fn negate_on_back_side(vector: NodeRef) -> NodeRef {
-    match MATERIAL_SIDE.with(|s| *s.borrow()) {
+    match current_context(|cx| cx.material_side) {
         Side::Front => vector,
         Side::Back => vector.mul(float(-1.0)),
         Side::Double => vector.mul(face_direction()),
@@ -223,16 +187,14 @@ fn negate_on_back_side(vector: NodeRef) -> NodeRef {
 /// **`vec4`** rather than the base class' `vec3`, which is why `v_positionView`
 /// is `vec4<f32>` in the galaxy dump.
 pub fn with_material_position_view<R>(value: Option<NodeRef>, f: impl FnOnce() -> R) -> R {
-    let previous = POSITION_VIEW_VALUE.with(|v| v.replace(value));
-    let out = f();
-    POSITION_VIEW_VALUE.with(|v| *v.borrow_mut() = previous);
-    out
+    let _position_view = push_context(|cx| cx.setup_position_view = value);
+    f()
 }
 
 /// `positionView` and `modelViewProjection`, built together because both hang
 /// off the same `builder.context` entry.
 fn position_view_pair() -> (NodeRef, NodeRef) {
-    let value = POSITION_VIEW_VALUE.with(|v| v.borrow().clone());
+    let value = current_context(|cx| cx.setup_position_view.clone());
     let key = value.as_ref().map(|v| v.key());
     if let Some(pair) = POSITION_VIEW.with(|m| m.borrow().get(&key).cloned()) {
         return pair;
@@ -2210,7 +2172,7 @@ pub fn normal_flat() -> NodeRef {
 /// transformNormalToView( normalLocal ).toVarying( 'v_normalViewGeometry'
 /// ).normalize() ).once()().toVar( 'normalViewGeometry' )`.
 pub fn normal_view_geometry() -> NodeRef {
-    let flat = FLAT_SHADING.with(|f| *f.borrow());
+    let flat = current_context(|cx| cx.flat_shading);
     if let Some(node) = NORMAL_VIEW_GEOMETRY.with(|m| m.borrow().get(&flat).cloned()) {
         return node;
     }
@@ -2244,18 +2206,18 @@ pub fn normal_view_geometry() -> NodeRef {
 /// The cache key every node that reads `normalView` shares: the open sub-build
 /// layer plus the material's own normal node.
 fn normal_key() -> NormalViewKey {
-    let layer = SUB_BUILD.with(|s| *s.borrow());
+    let layer = current_context(|cx| cx.sub_build);
     let value = if layer.is_some() {
         None
     } else {
-        NORMAL_VALUE.with(|v| v.borrow().clone())
+        current_context(|cx| cx.setup_normal.clone())
     };
     (
         layer,
         value.as_ref().map(|v| v.key()),
-        FLAT_SHADING.with(|f| *f.borrow()),
-        MATERIAL_SIDE.with(|s| *s.borrow()),
-        HAS_TANGENT.with(|t| *t.borrow()),
+        current_context(|cx| cx.flat_shading),
+        current_context(|cx| cx.material_side),
+        current_context(|cx| cx.has_tangent),
         // An `overrideNodes( [ [ normalView, … ] ] )` material reads a wholly
         // different `normalView`, so everything cached off it — `normalWorld`,
         // the tangent frame, the TBN matrix — has to be cached separately too.
@@ -2266,11 +2228,11 @@ fn normal_key() -> NormalViewKey {
 /// The material's normal node for the current build, or `None` inside a
 /// sub-build layer, which runs on the geometric normal.
 fn normal_value() -> Option<NodeRef> {
-    let layer = SUB_BUILD.with(|s| *s.borrow());
+    let layer = current_context(|cx| cx.sub_build);
     if layer.is_some() {
         None
     } else {
-        NORMAL_VALUE.with(|v| v.borrow().clone())
+        current_context(|cx| cx.setup_normal.clone())
     }
 }
 
@@ -2283,7 +2245,7 @@ pub fn normal_view() -> NodeRef {
         return node;
     }
     let key = normal_key();
-    let flat = FLAT_SHADING.with(|f| *f.borrow());
+    let flat = current_context(|cx| cx.flat_shading);
     if let Some(node) = NORMAL_VIEW.with(|m| m.borrow().get(&key).cloned()) {
         return node;
     }
@@ -2310,7 +2272,7 @@ fn tangent_frame() -> (NodeRef, NodeRef) {
     if let Some(pair) = TANGENT_VIEW.with(|m| m.borrow().get(&key).cloned()) {
         return pair;
     }
-    if HAS_TANGENT.with(|t| *t.borrow()) {
+    if current_context(|cx| cx.has_tangent) {
         let pair = tangent_attribute_frame();
         TANGENT_VIEW.with(|m| m.borrow_mut().insert(key, pair.clone()));
         return pair;
@@ -2338,7 +2300,7 @@ fn tangent_frame() -> (NodeRef, NodeRef) {
 
     // `tangentView` / `bitangentView` go through `negateOnBackSide()` too,
     // unless the material is flat shaded.
-    let flat = FLAT_SHADING.with(|f| *f.borrow());
+    let flat = current_context(|cx| cx.flat_shading);
     let frame = |name, value| {
         if flat {
             value
@@ -2386,7 +2348,7 @@ fn tangent_attribute_frame() -> (NodeRef, NodeRef) {
     let tangent_geometry = attribute("tangent", Type::Vec4);
     let tangent_local = to_var(Some("tangentLocal"), tangent_geometry.clone().xyz());
 
-    let flat = FLAT_SHADING.with(|f| *f.borrow());
+    let flat = current_context(|cx| cx.flat_shading);
     let front_side = |value: NodeRef| {
         if flat {
             value
@@ -2415,7 +2377,7 @@ fn tangent_attribute_frame() -> (NodeRef, NodeRef) {
 
     // `getBitangent( normalView.cross( tangentView ), 'v_bitangentView' )`.
     let cross_normal_tangent = cross(normal_view(), tangent_view.clone()).mul(tangent_geometry.w());
-    let in_normal_layer = SUB_BUILD.with(|s| *s.borrow()) == Some("NORMAL");
+    let in_normal_layer = current_context(|cx| cx.sub_build) == Some("NORMAL");
     let bitangent = if in_normal_layer && !flat {
         // The varying's name goes through `getSubBuildProperty()` here because
         // the node carries the layer; `v_tangentView` above does not, because
@@ -2618,9 +2580,8 @@ lighting_var!(
 );
 
 thread_local! {
-    /// `builder.context.setupClearcoatNormal()` — the clearcoat lobe's normal
-    /// for the material being set up, the clearcoat twin of `NORMAL_VALUE`.
-    static CLEARCOAT_NORMAL_VALUE: RefCell<Option<NodeRef>> = const { RefCell::new(None) };
+    /// `clearcoatNormalView`'s node per `setupClearcoatNormal` value, the
+    /// clearcoat twin of `NORMAL_VIEW`.
     static CLEARCOAT_NORMAL_VIEW: RefCell<HashMap<Option<usize>, NodeRef>> =
         RefCell::new(HashMap::new());
 }
@@ -2628,10 +2589,8 @@ thread_local! {
 /// Install the material's clearcoat normal node for the duration of `f` —
 /// `MeshPhysicalNodeMaterial.setup()`'s `builder.context.setupClearcoatNormal`.
 pub fn with_clearcoat_normal<R>(normal: Option<NodeRef>, f: impl FnOnce() -> R) -> R {
-    let previous = CLEARCOAT_NORMAL_VALUE.with(|v| v.replace(normal));
-    let out = f();
-    CLEARCOAT_NORMAL_VALUE.with(|v| *v.borrow_mut() = previous);
-    out
+    let _clearcoat = push_context(|cx| cx.setup_clearcoat_normal = normal);
+    f()
 }
 
 /// `clearcoatNormalView` — `Normal.js`' var, whose value is the material's
@@ -2642,7 +2601,7 @@ pub fn with_clearcoat_normal<R>(normal: Option<NodeRef>, f: impl FnOnce() -> R) 
 /// a bumpy base, which is the whole look of `webgpu_clearcoat`'s carbon fibre
 /// and car paint.
 pub fn clearcoat_normal_view() -> NodeRef {
-    let value = CLEARCOAT_NORMAL_VALUE.with(|v| v.borrow().clone());
+    let value = current_context(|cx| cx.setup_clearcoat_normal.clone());
     let key = value.as_ref().map(|v| v.key());
     if let Some(node) = CLEARCOAT_NORMAL_VIEW.with(|m| m.borrow().get(&key).cloned()) {
         return node;

@@ -9,7 +9,7 @@
 //! into its own `134 x 84` viewport of a 6 x 6 grid. The shaders index
 //! `cameraViewMatrices` / `cameraProjectionMatrices` by a flat
 //! `v_cameraIndex` varying, and the backend swaps a `cameraIndex` bind group
-//! and the viewport per sub-camera (`docs/nodes.md` §36).
+//! and the viewport per sub-camera (`docs/nodes.md` §40).
 //!
 //! `subcamera.copy( camera )` copies the *array camera's* projection
 //! parameters, which are `new PerspectiveCamera()`'s defaults — so every

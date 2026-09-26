@@ -61,6 +61,24 @@ impl RenderCamera for ArrayCamera {
     fn update_matrix_world(&mut self) {
         self.camera.update_matrix_world();
     }
+    /// `ArrayCamera` inherits `PerspectiveCamera.setViewOffset`, so the
+    /// offset lands on the outer camera; three's sub-cameras keep their own
+    /// projections, and so do these.
+    fn set_view_offset(
+        &mut self,
+        full_width: f64,
+        full_height: f64,
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+    ) {
+        self.camera
+            .set_view_offset(full_width, full_height, x, y, width, height);
+    }
+    fn clear_view_offset(&mut self) {
+        self.camera.clear_view_offset();
+    }
     fn projection_matrix(&self) -> Matrix4 {
         self.camera.projection_matrix
     }

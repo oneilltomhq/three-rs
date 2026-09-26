@@ -22,7 +22,7 @@ colour straight into `directDiffuse`. Each light carries a small sphere whose
 | `src/materials/mod.rs`, `node_material.rs` | the material's `lighting_model`, read by the kinds with no model of their own, as `LightingContextNode.setup()` does |
 | `examples/` | `webgpu_lights_custom.rs`; `dump_wgsl` sections `lights_custom_points` and `lights_custom_sphere` (three's `m05` and `m01`) |
 
-`docs/nodes.md` §36 has the full design.
+`docs/nodes.md` §40 has the full design.
 
 ## What the pixels found
 

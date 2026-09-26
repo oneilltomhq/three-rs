@@ -29,7 +29,7 @@ three's WGSL dumped by `tools/dump-webgpu.mjs` into
 | `src/renderer/` | per-sub-camera `cameraIndex` bind groups and viewports in `record_pass`; `FrustumArray` culling |
 | `examples/` | `webgpu_camera_array.rs`; `dump_wgsl` section `camera_array_phong` |
 
-`docs/nodes.md` §36 has the full design.
+`docs/nodes.md` §40 has the full design.
 
 ## What the pixels found
 

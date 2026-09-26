@@ -123,7 +123,7 @@ pub struct SetupContext {
     /// `ArrayCamera` (0 otherwise) — `RenderObject.getCacheKey()`'s
     /// `camera.isArrayCamera ? camera.cameras.length : 0`. It sizes the
     /// camera matrix arrays and moves the object group to `@group( 2 )`, so
-    /// it is part of the program's cache key. `docs/nodes.md` §36.
+    /// it is part of the program's cache key. `docs/nodes.md` §40.
     pub array_cameras: usize,
 }
 

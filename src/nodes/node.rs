@@ -109,7 +109,7 @@ impl Type {
 /// (per render call — camera, time, viewport), `objectGroup` (per render
 /// object — model matrices, material values) and, under an `ArrayCamera`,
 /// `sharedUniformGroup( 'cameraIndex' )` — the one `u32` the backend swaps
-/// per sub-camera (`docs/nodes.md` §36).
+/// per sub-camera (`docs/nodes.md` §40).
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum UniformGroup {
     Render,
