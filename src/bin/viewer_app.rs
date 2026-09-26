@@ -70,6 +70,18 @@ use winit::window::{Window, WindowId};
 
 // ---------------------------------------------------------------- the scenes
 
+/// An example's three.js name: its module's, unless the table gives one.
+/// Three's `webgpu_textures_2d-array_compressed` has a hyphen, which a Rust
+/// module name cannot.
+macro_rules! example_name {
+    ($module:ident) => {
+        stringify!($module)
+    };
+    ($module:ident $name:literal) => {
+        $name
+    };
+}
+
 /// Declares the viewer's whole knowledge of the examples: one line per
 /// example, giving its enum name, its module and the file to include.
 ///
@@ -80,7 +92,7 @@ use winit::window::{Window, WindowId};
 /// each example's `animate()` and carried a table of their camera targets and
 /// renderer options, and each of those was a place to get an example wrong.
 macro_rules! examples {
-    ( $( $variant:ident , $module:ident , $path:literal ; )* ) => {
+    ( $( $variant:ident , $module:ident , $path:literal $( , $name:literal )? ; )* ) => {
         $(
             #[path = $path]
             #[allow(dead_code)] // each module's `main()` is unused here
@@ -109,7 +121,7 @@ macro_rules! examples {
 
             fn name(self) -> &'static str {
                 match self {
-                    $( Self::$variant => stringify!($module), )*
+                    $( Self::$variant => example_name!($module $( $name )?), )*
                 }
             }
         }
@@ -217,7 +229,8 @@ ProceduralTexture, webgpu_procedural_texture, "../../examples/webgpu_procedural_
 PostprocessingSobel, webgpu_postprocessing_sobel, "../../examples/webgpu_postprocessing_sobel.rs";
 PostprocessingTransition, webgpu_postprocessing_transition, "../../examples/webgpu_postprocessing_transition.rs";
 TslRagingSea, webgpu_tsl_raging_sea, "../../examples/webgpu_tsl_raging_sea.rs";
-TslAngularSlicing, webgpu_tsl_angular_slicing, "../../examples/webgpu_tsl_angular_slicing.rs";}
+TslAngularSlicing, webgpu_tsl_angular_slicing, "../../examples/webgpu_tsl_angular_slicing.rs";
+Textures2dArrayCompressed, webgpu_textures_2d_array_compressed, "../../examples/webgpu_textures_2d-array_compressed.rs", "webgpu_textures_2d-array_compressed";}
 
 impl Which {
     /// The name with or without its `webgpu_` prefix, or its 1-based index in

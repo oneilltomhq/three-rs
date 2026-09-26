@@ -2153,6 +2153,33 @@ fn dump_room_environment() {
         ..MeshBasicNodeMaterial::lambert(Color::from_hex(0x000000))
     };
     show("room_panel", &panel, point);
+
+    // `webgpu_textures_2d-array_compressed`: `new NodeMaterial()` with
+    // `colorNode = texture( texturearray, uv().flipY() ).depth( depth )`.
+    // The texture is a stand-in with the page's layer count; only its being
+    // an array texture reaches the WGSL.
+    let array = Texture::compressed_array(
+        vec![three_rs::textures::Mipmap {
+            data: vec![0; 4 * 4 * 4 * 5],
+            width: 4,
+            height: 4,
+        }],
+        4,
+        4,
+        5,
+        wgpu::TextureFormat::Rgba8UnormSrgb,
+    );
+    let mut array_material = MeshBasicNodeMaterial::new();
+    array_material.color_node = Some(texture_array(
+        &array,
+        uv().flip_y(),
+        uniform_value(three_rs::nodes::Type::F32, vec![1.0]),
+    ));
+    show(
+        "textures_2d_array_compressed",
+        &array_material,
+        SetupContext::default(),
+    );
 }
 
 /// Issue #140: the classic `scene.fog`. One `MeshStandardNodeMaterial` lit by

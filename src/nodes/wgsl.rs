@@ -210,6 +210,10 @@ pub enum TextureKind {
     /// `texture_2d_array<f32>` — the morph data texture, read with
     /// `textureLoad` only, so it needs no sampler.
     Float2DArray,
+    /// `texture_2d_array<f32>` with a filtering sampler — a
+    /// `CompressedArrayTexture` (or any [`Texture`](crate::textures::Texture)
+    /// with array layers) read with `textureSample( …, layer )`.
+    Sampled2DArray,
     /// `texture_2d<f32>` for a `DataTexture`: `rgba32float`, `NearestFilter`,
     /// read with `textureLoad` only — no sampler, non-filterable.
     FloatData2D,
@@ -235,7 +239,7 @@ impl TextureKind {
     pub fn wgsl(self) -> &'static str {
         match self {
             TextureKind::Float2D => "texture_2d<f32>",
-            TextureKind::Float2DArray => "texture_2d_array<f32>",
+            TextureKind::Float2DArray | TextureKind::Sampled2DArray => "texture_2d_array<f32>",
             TextureKind::FloatData2D => "texture_2d<f32>",
             TextureKind::Uint2D => "texture_2d<u32>",
             TextureKind::Depth2D | TextureKind::DepthCompare2D => "texture_depth_2d",

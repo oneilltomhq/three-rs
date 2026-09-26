@@ -64,6 +64,14 @@ impl MinFilter {
     }
 }
 
+/// One entry of `Texture.mipmaps`: a level the file (or the page) supplies
+/// rather than one the renderer generates. The same shape as a cube face,
+/// and the same type: `data` is the level's bytes in the texture's GPU
+/// format, every array layer of the level one after the other
+/// (`KTX2Loader`'s `concat( layerMips )`); for a block-compressed format
+/// these are whole blocks, rows of blocks top-down.
+pub type Mipmap = Image;
+
 pub struct TextureInner {
     pub width: u32,
     pub height: u32,
@@ -72,11 +80,13 @@ pub struct TextureInner {
     pub color_space: ColorSpace,
     pub flip_y: bool,
     pub generate_mipmaps: bool,
-    /// `Texture.mipmaps` — levels supplied by the page, level 0 first. When
-    /// there are any they are the whole mip chain: `Textures.getMipLevels()`
-    /// takes its count from them and nothing is generated on top
-    /// (`webgpu_materials_texture_manualmipmap` paints each level a different
-    /// colour). Each is RGBA8 in the texture's format, top row first.
+    /// `Texture.mipmaps` — levels supplied by the page or the file, level 0
+    /// first. When there are any they are the whole mip chain:
+    /// `Textures.getMipLevels()` takes its count from them and nothing is
+    /// generated on top (`webgpu_materials_texture_manualmipmap` paints each
+    /// level a different colour; a `CompressedTexture` or a KTX2 `DataTexture`
+    /// brings its own, and a block-compressed format could not be rendered
+    /// into anyway). Each level is in the texture's format, top row first.
     pub mipmaps: Vec<Image>,
     pub wrap_s: Wrapping,
     pub wrap_t: Wrapping,
@@ -105,6 +115,14 @@ pub struct TextureInner {
     /// `needsUpdate` is set to true". Part of the renderer's texture cache
     /// key, exactly as `Material.version` is part of the program cache key.
     pub version: u32,
+    /// `image.depth` of a `CompressedArrayTexture` — the layer count. Zero
+    /// for every 2-D texture, which is what marks this one as an array: it
+    /// is bound as `texture_2d_array<f32>` and sampled with a layer index.
+    pub depth: u32,
+    /// `Texture.premultiplyAlpha`. Only `KTX2Loader` sets it, from the DFD's
+    /// `KHR_DF_FLAG_ALPHA_PREMULTIPLIED`; it is recorded, not acted on — three's
+    /// WebGPU backend ignores it for compressed uploads as well.
+    pub premultiply_alpha: bool,
 }
 
 /// Cloning is a handle copy, as in JS.
@@ -149,6 +167,8 @@ impl Texture {
                 gpu: None,
                 format: wgpu::TextureFormat::Rgba8Unorm,
                 version: 0,
+                depth: 0,
+                premultiply_alpha: false,
             })),
             TextureId::next(),
         )
@@ -362,6 +382,8 @@ impl Texture {
                 gpu: None,
                 format: inner.format,
                 version: inner.version,
+                depth: inner.depth,
+                premultiply_alpha: inner.premultiply_alpha,
             })),
             TextureId::next(),
         )
@@ -387,12 +409,18 @@ impl Texture {
     /// transfer function is applied by the GPU on sample — the format becomes
     /// `rgba8unorm-srgb` and `WGSLNodeBuilder.needsToWorkingColorSpace()` stays
     /// false, so no colour-space node appears in the generated WGSL.
+    ///
+    /// `WebGPUTextureUtils.getFormat()` picks the `-srgb` twin of whatever
+    /// the format is — `rgba8unorm-srgb`, `bc7-rgba-unorm-srgb`,
+    /// `astc-4x4-unorm-srgb` — and leaves a format that has none (the float
+    /// formats, BC4/BC5/BC6H) alone, which is what wgpu's
+    /// `add_srgb_suffix` / `remove_srgb_suffix` do.
     pub fn set_color_space(&self, color_space: ColorSpace) {
         let mut inner = self.0.borrow_mut();
         inner.color_space = color_space;
         inner.format = match color_space {
-            ColorSpace::SRGB => wgpu::TextureFormat::Rgba8UnormSrgb,
-            ColorSpace::NoColorSpace => wgpu::TextureFormat::Rgba8Unorm,
+            ColorSpace::SRGB => inner.format.add_srgb_suffix(),
+            ColorSpace::NoColorSpace => inner.format.remove_srgb_suffix(),
         };
     }
 
@@ -465,6 +493,10 @@ impl Texture {
 
     pub fn borrow(&self) -> Ref<'_, TextureInner> {
         self.0.borrow()
+    }
+
+    pub(crate) fn borrow_mut_inner(&self) -> std::cell::RefMut<'_, TextureInner> {
+        self.0.borrow_mut()
     }
 
     /// `texture.wrapS = texture.wrapT = wrapping`.
@@ -656,7 +688,8 @@ impl Texture {
         self.set_format(texture_type.color_gpu_format());
     }
 
-    /// `Texture.mipmapCount` — `floor( log2( max( w, h ) ) ) + 1`.
+    /// `Texture.mipmapCount` — `floor( log2( max( w, h ) ) ) + 1`, or the
+    /// length of `mipmaps` when the texture brings its own.
     pub fn mip_level_count(&self) -> u32 {
         let inner = self.0.borrow();
         // `Textures.getMipLevels()`: `texture.mipmaps.length` when the page
@@ -698,6 +731,8 @@ impl std::fmt::Debug for TextureInner {
             .field("own_gpu", &self.own_gpu)
             .field("gpu", &self.gpu)
             .field("format", &self.format)
+            .field("depth", &self.depth)
+            .field("premultiply_alpha", &self.premultiply_alpha)
             .finish()
     }
 }

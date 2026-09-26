@@ -635,6 +635,13 @@ differences, each verified to be pixel-neutral.
   the whole fit. The port does the same, because the three calls are three
   separate `NodeRef`s and the builder promotes by `Rc` identity. Identical
   arithmetic, identical text apart from the temp numbers.
+* **`uv().flipY()` as a texture coordinate is not re-declared (§29).** In
+  `webgpu_textures_2d-array_compressed` three writes the flip as `nodeVar0 =
+  nodeVarying4; let nodeVar0 = vec2<f32>( nodeVar0.x, 1.0 - nodeVar0.y );` —
+  a `let` shadowing the var it was just assigned — and samples with the `let`.
+  The port keeps the var and puts the `vec2` inline in the `textureSample`
+  call. Same expression evaluated once either way; the parenthesised one-minus
+  is the `FlipNode` entry above.
 
 * **A shared conversion is written out at each use (issue #141).** Three's
   `Node.build()` caches *any* cacheable node read more than once as
@@ -2876,3 +2883,52 @@ the page paints by hand (`Texture::set_mipmaps`: three uploads
 [`SceneFog::node`]: ../src/objects/fog.rs
 [`tsl::density_fog_factor`]: ../src/nodes/tsl.rs
 [`tsl::exponential_height_fog_factor`]: ../src/nodes/tsl.rs
+
+## 29. KTX2 and compressed textures (`webgpu_textures_2d-array_compressed`, issue #172)
+
+`Ktx2Loader` (`src/loaders/ktx2_loader.rs`) is `KTX2Loader.js` on three pure
+Rust crates: `ktx2` for the container, `basisu` (Basis Universal v2.1) for
+ETC1S / UASTC / UASTC HDR transcoding, and `ruzstd` for Zstandard
+supercompression. `tests/ktx2_loader.rs` checks it against three's own loader
+under node (`tools/ktx2_reference.mjs`), byte for byte, on every `.ktx2` in
+the examples, two zstd repacks and the Basis images of the three basisu GLBs,
+for each of the four device profiles a WebGPU adapter can present (no
+compression, BC, ASTC, ETC2).
+
+A compressed texture is a [`Texture`] with `mipmaps` and, for an array, a
+`depth` (`src/textures/compressed_texture.rs`); the renderer uploads the
+levels as given with a block-counted row stride and never generates mips for
+it. A texture with `depth > 0` binds as `texture_2d_array<f32>`
+(`TextureKind::Sampled2DArray`) and `texture_array( map, uv, layer )` samples
+it as `textureSample( t, s, uv, i32( layer ) )`, which is three's
+`texture( map, uv ).depth( layer )`.
+
+### Divergences
+
+* **ETC1S → BC7 turns Basis v2's chroma filtering off.** Three ships the
+  v1.16 transcoder; `basisu` is v2.1, whose ETC1S → BC7 path smooths chroma
+  by default. `transcode_flags()` passes `NO_ETC1S_CHROMA_FILTERING` for that
+  one pair, which makes it bit-exact with three again (the test fails on
+  `2d_etc1s` mips 0–3 under the `bc` profile without it). Every other path
+  already matched.
+* **`GLTFLoader` without `setKTX2Loader`.** Three refuses a
+  `KHR_texture_basisu` texture unless a `KTX2Loader` was set. `GLTFLoader::load`
+  / `parse` use `Ktx2Loader::new()` instead, which transcodes to uncompressed
+  RGBA; `load_with_ktx2` / `parse_with_ktx2` take a loader that has run
+  `detect_support`, which is three's call.
+* **`ruzstd` 0.7, not 0.9.** `basisu` depends on 0.7; using the same version
+  keeps one Zstandard decoder in the build.
+* **`CompressedCubeTexture` and `Data3DTexture` load but do not render.**
+  `Ktx2Loader::parse` returns them (the eight PMREM cubes are in the oracle
+  test), but `Ktx2Texture::into_texture` returns an error for both, because the
+  renderer has no compressed-cube or 3-D upload path yet.
+* **Display P3 has no gamut conversion.** `parse_color_space` reports
+  `display-p3` / `display-p3-linear` like three; `into_texture` maps it to
+  `SRGB` / `NoColorSpace` by transfer function only, since the port has no P3
+  working space. No graded page uses a P3 file.
+* **An unfilterable (`NearestFilter`) array texture is not supported.** Three
+  would `textureLoad` it; the builder asserts instead. `KTX2Loader` only
+  makes arrays of compressed (linear-filtered) textures, so only a hand-built
+  array with both filters set to `Nearest` reaches the assertion.
+
+[`Texture`]: ../src/textures/texture.rs

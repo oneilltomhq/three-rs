@@ -78,6 +78,14 @@ use crate::textures::{
 /// clock that quad's program was evicted and rebuilt every frame.
 const CACHE_GRACE_FRAMES: u64 = 4;
 
+/// The `texture-compression-*` features WebGPU names — `-bc`, `-etc2` and
+/// `-astc` — which `WebGPUBackend` requests whenever the adapter has them.
+/// A host that builds its own device (`with_device`, `adopt_device`) passes
+/// these in its `required_features` to get compressed KTX2 textures.
+pub const COMPRESSION_FEATURES: wgpu::Features = wgpu::Features::TEXTURE_COMPRESSION_BC
+    .union(wgpu::Features::TEXTURE_COMPRESSION_ETC2)
+    .union(wgpu::Features::TEXTURE_COMPRESSION_ASTC);
+
 /// A cached GPU buffer that is filled exactly once — `range()`'s random draw,
 /// or one upload of an `InstancedBufferAttribute`'s array — with the same
 /// `render()`-clock stamp the material states carry.
@@ -935,18 +943,20 @@ impl Renderer {
         // (`ensure_texture_2d`), because a silently non-filterable float
         // texture is exactly the "silent wrong output" failure the handoff
         // warns about.
-        let float32_filterable = adapter
-            .features()
-            .contains(wgpu::Features::FLOAT32_FILTERABLE);
+        //
+        // The texture-compression features are `WebGPUBackend.init()`'s
+        // `requiredFeatures`: three asks for every `GPUFeatureName` the adapter
+        // has, and `KTX2Loader.detectSupport()` then reads them back off the
+        // device to pick a transcode target. Without them a Basis texture
+        // falls back to uncompressed RGBA — correct, four to eight times the
+        // memory, and not the texture three samples.
+        let wanted = wgpu::Features::FLOAT32_FILTERABLE | COMPRESSION_FEATURES;
+        let required_features = adapter.features() & wanted;
 
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("three-rs device"),
-                required_features: if float32_filterable {
-                    wgpu::Features::FLOAT32_FILTERABLE
-                } else {
-                    wgpu::Features::empty()
-                },
+                required_features,
                 required_limits: wgpu::Limits::default(),
                 experimental_features: wgpu::ExperimentalFeatures::disabled(),
                 memory_hints: wgpu::MemoryHints::MemoryUsage,
@@ -1095,6 +1105,13 @@ impl Renderer {
 
     pub fn adapter_info(&self) -> &wgpu::AdapterInfo {
         &self.adapter_info
+    }
+
+    /// `renderer.hasFeature( name )`, for all of them at once: the features
+    /// the device was created with. `KTX2Loader::detect_support` reads the
+    /// texture-compression ones.
+    pub fn features(&self) -> wgpu::Features {
+        self.device.features()
     }
 
     pub fn set_pixel_ratio(&mut self, pixel_ratio: f64) {
@@ -3801,7 +3818,13 @@ impl Renderer {
     ) -> Serial<wgpu::TextureView> {
         let (id, gpu, dimension) = match source {
             TextureSource::Texture2D(texture) => {
-                (texture.id(), self.ensure_texture_2d(texture), None)
+                // A `CompressedArrayTexture` is a 2-D array however many
+                // layers it has; wgpu's default view of a one-layer texture
+                // would be `D2`, which a `texture_2d_array` binding rejects.
+                let dimension = texture
+                    .is_array()
+                    .then_some(wgpu::TextureViewDimension::D2Array);
+                (texture.id(), self.ensure_texture_2d(texture), dimension)
             }
             TextureSource::Depth(depth) | TextureSource::ShadowMap(depth) => {
                 let gpu = depth
@@ -4076,21 +4099,38 @@ impl Renderer {
                  which this adapter does not expose"
             );
         }
+        // BC / ETC2 / ASTC, and the 16-bit normalized formats a raw KTX2 file
+        // can carry. `Ktx2Loader::detect_support` only picks a compressed
+        // target the device has; a texture built by hand for another device
+        // fails here instead of as a wgpu validation error.
+        let missing = format.required_features() - self.device.features();
+        assert!(
+            missing.is_empty(),
+            "three-rs: {format:?} needs {missing:?}, which this device does not have \
+             (see Ktx2Loader::detect_support)"
+        );
+
+        // A texture that brings its own levels (`texture.mipmaps`) never has
+        // them generated, so it is never a render attachment — which a
+        // compressed or `rgb9e5ufloat` format could not be.
+        let has_mipmaps = texture.has_mipmaps();
+        let mut usage = wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING;
+        if !has_mipmaps {
+            usage |= wgpu::TextureUsages::RENDER_ATTACHMENT;
+        }
 
         let gpu = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("three-rs texture"),
             size: wgpu::Extent3d {
                 width,
                 height,
-                depth_or_array_layers: 1,
+                depth_or_array_layers: texture.borrow().depth.max(1),
             },
             mip_level_count,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format,
-            usage: wgpu::TextureUsages::COPY_DST
-                | wgpu::TextureUsages::TEXTURE_BINDING
-                | wgpu::TextureUsages::RENDER_ATTACHMENT,
+            usage,
             view_formats: &[],
         });
 
@@ -4098,7 +4138,7 @@ impl Renderer {
 
         // `Textures.updateTexture()` generates only when `texture.mipmaps` is
         // empty: page-supplied levels are uploaded as they are.
-        if mip_level_count > 1 && !texture.has_mipmaps() {
+        if mip_level_count > 1 && !has_mipmaps {
             self.generate_mipmaps(&gpu, format, mip_level_count, 1);
         }
 
@@ -4124,6 +4164,19 @@ impl Renderer {
         let format = texture.format();
 
         let inner = texture.borrow();
+
+        // Levels the texture brings with it are written as stored —
+        // `_copyCompressedBufferToTexture` for a block format ("can't flip
+        // compressed textures"), `_copyBufferToTexture` per level for a
+        // `DataTexture`, neither of which flips — unless this is an image
+        // texture whose `flipY` is set, which is `_copyImageToTexture`'s
+        // `{ flipY }` per level below.
+        let as_stored = format.block_dimensions() != (1, 1) || inner.depth > 0 || !inner.flip_y;
+        if !inner.mipmaps.is_empty() && as_stored {
+            drop(inner);
+            self.upload_mipmaps(gpu, texture);
+            return;
+        }
 
         // `WebGPUTextureUtils.updateTexture()`: with `texture.mipmaps` set,
         // each level is its own `_copyImageToTexture( mipmap, …, flipY, …, i )`
@@ -4202,6 +4255,56 @@ impl Renderer {
                 depth_or_array_layers: 1,
             },
         );
+    }
+
+    /// `WebGPUTextureUtils._copyCompressedBufferToTexture( texture.mipmaps, … )`
+    /// (and `_copyBufferToTexture` per mip, for a `DataTexture` with
+    /// `mipmaps`): every level the texture carries, written as stored. Each
+    /// level's `data` holds all `depth` layers of it in turn. There is no
+    /// flip — "can't flip compressed textures" — and the row stride counts
+    /// blocks: `ceil( width / blockWidth ) * blockBytes`, three's
+    /// `bytesPerRow` for a block format. The copy extent is the level's size
+    /// rounded up to whole blocks, the "physical" size WebGPU requires.
+    fn upload_mipmaps(&self, gpu: &wgpu::Texture, texture: &Texture) {
+        let inner = texture.borrow();
+        let format = inner.format;
+        let layers = inner.depth.max(1);
+        let (block_width, block_height) = format.block_dimensions();
+        let block_bytes = format
+            .block_copy_size(None)
+            .expect("three-rs: the texture format has no single block size");
+
+        for (level, mip) in inner.mipmaps.iter().enumerate() {
+            let blocks_x = mip.width.div_ceil(block_width);
+            let blocks_y = mip.height.div_ceil(block_height);
+            let bytes_per_row = blocks_x * block_bytes;
+            assert_eq!(
+                mip.data.len(),
+                (bytes_per_row * blocks_y * layers) as usize,
+                "three-rs: mip {level} of a {}x{} {format:?} texture has the wrong size",
+                mip.width,
+                mip.height
+            );
+            self.queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: gpu,
+                    mip_level: level as u32,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                &mip.data,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(bytes_per_row),
+                    rows_per_image: Some(blocks_y),
+                },
+                wgpu::Extent3d {
+                    width: blocks_x * block_width,
+                    height: blocks_y * block_height,
+                    depth_or_array_layers: layers,
+                },
+            );
+        }
     }
 
     /// One face of a [`cube_render_target`] conversion or of a PMREM level: the

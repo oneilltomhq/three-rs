@@ -60,6 +60,14 @@ draco-core = { version = "2.2.0", default-features = false, features = [
     "legacy_bitstream_decode",
     "point_cloud_decode",
 ] }
+# `KTX2Loader` (issue #172): `ktx2` reads the container, `basisu` is a pure
+# Rust port of the Basis Universal transcoder three.js runs as wasm, and
+# `ruzstd` inflates Zstandard-supercompressed levels of non-Basis files.
+# `ruzstd` is pinned to the 0.7 line `basisu` itself depends on, so the tree
+# carries one Zstandard decoder rather than two.
+ktx2 = "0.5"
+basisu = "0.1"
+ruzstd = { version = "0.7", default-features = false }
 
 # Everything that only makes sense on a desktop.
 #

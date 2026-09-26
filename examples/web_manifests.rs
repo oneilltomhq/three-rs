@@ -204,6 +204,9 @@ mod webgpu_loader_gltf_anisotropy;
 #[path = "webgpu_materials_texture_manualmipmap.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_materials_texture_manualmipmap;
+#[path = "webgpu_textures_2d-array_compressed.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_textures_2d_array_compressed;
 #[path = "webgpu_tsl_angular_slicing.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_tsl_angular_slicing;
@@ -339,6 +342,9 @@ const GRADED: &[(&str, fn())] = &[
     }),
     ("webgpu_tsl_angular_slicing", || {
         drop(webgpu_tsl_angular_slicing::init())
+    }),
+    ("webgpu_textures_2d-array_compressed", || {
+        drop(webgpu_textures_2d_array_compressed::init())
     }),
 ];
 

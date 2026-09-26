@@ -442,9 +442,10 @@ impl NodeBuilder {
             Node::Texture { uv, mode, .. } => {
                 let mut v = vec![uv.clone()];
                 match mode {
-                    SampleMode::Level(l) | SampleMode::LoadLayer(l) | SampleMode::Compare(l) => {
-                        v.push(l.clone())
-                    }
+                    SampleMode::Level(l)
+                    | SampleMode::LoadLayer(l)
+                    | SampleMode::SampleLayer(l)
+                    | SampleMode::Compare(l) => v.push(l.clone()),
                     _ => {}
                 }
                 v
@@ -736,7 +737,16 @@ impl NodeBuilder {
                 // `WGSLNodeBuilder.isUnfilterable()`: a `NearestFilter` /
                 // `NearestFilter` colour texture is bound `non-filtering`,
                 // with no sampler, and read with `textureLoad`.
-                if t.is_unfilterable() {
+                if t.is_array() {
+                    // `CompressedArrayTexture` — `getTextureType()`'s
+                    // `texture_2d_array`, sampled. An unfilterable array
+                    // (three's `textureLoad` on it) has no page yet.
+                    assert!(
+                        !t.is_unfilterable(),
+                        "three-rs: a NearestFilter array texture is not supported yet"
+                    );
+                    TextureKind::Sampled2DArray
+                } else if t.is_unfilterable() {
                     TextureKind::FloatData2D
                 } else {
                     TextureKind::Float2D
@@ -1396,6 +1406,17 @@ impl NodeBuilder {
                     SampleMode::LoadLayer(layer) => {
                         let slayer = self.generate(&layer);
                         wgsl::texture_load_layer(&name, &suv, &slayer)
+                    }
+                    SampleMode::SampleLayer(layer) => {
+                        let slayer = self.generate(&layer);
+                        // `depthNode.build( builder, 'int' )`: a float layer
+                        // is cast, an int one passes through.
+                        let slayer = if layer.ty() == Type::I32 {
+                            slayer
+                        } else {
+                            format!("i32( {slayer} )")
+                        };
+                        format!("textureSample( {name}, {name}_sampler, {suv}, {slayer} )")
                     }
                     SampleMode::Compare(depth) => {
                         let sdepth = self.generate(&depth);
