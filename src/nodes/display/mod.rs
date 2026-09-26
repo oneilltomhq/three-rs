@@ -24,6 +24,7 @@ mod radial_blur;
 mod rgb_shift;
 mod rtt;
 mod sobel;
+mod toon_outline_pass;
 mod transition;
 
 pub use after_image::{after_image, AfterImageNode};
@@ -39,4 +40,5 @@ pub use radial_blur::{radial_blur, RadialBlurOptions};
 pub use rgb_shift::rgb_shift;
 pub use rtt::{convert_to_texture, rtt, RttNode};
 pub use sobel::{sobel, SobelOperatorNode};
+pub use toon_outline_pass::{toon_outline_pass, ToonOutlinePassNode};
 pub use transition::transition;

@@ -578,6 +578,18 @@ pub struct NodeBuilder {
     /// texture: `vec2` for an `RGFormat` target (the VSM blur passes'
     /// `VSMVertical` / `VSMHorizontal`), `vec4` for everything else.
     output_type: Type,
+    /// `builder.camera.isArrayCamera`: the `cameraViewMatrix` and
+    /// `cameraProjectionMatrix` element nodes `Camera.js` returns for an
+    /// `ArrayCamera`, which stand in for the plain uniforms wherever the
+    /// graph reaches them. See [`with_array_cameras`](Self::with_array_cameras).
+    array_cameras: Option<ArrayCameraNodes>,
+}
+
+/// `Camera.js`' `ArrayCamera` arm: `uniformArray( matrices ).element(
+/// cameraIndex )` for the view and the projection matrix.
+struct ArrayCameraNodes {
+    view: NodeRef,
+    projection: NodeRef,
 }
 
 impl Default for NodeBuilder {
@@ -614,6 +626,7 @@ impl NodeBuilder {
             fn_counter: 0,
             usage: HashMap::new(),
             output_type: Type::Vec4,
+            array_cameras: None,
         };
         for s in &mut b.stages {
             // Statements in `fn main` sit one tab in.
@@ -627,6 +640,10 @@ impl NodeBuilder {
     /// `Node.analyze()`: count reaches, recursing only the first time a node is
     /// seen. The `usageCount > 1` test is what promotes a `TempNode` to a var.
     pub fn analyze(&mut self, node: &NodeRef) {
+        if let Some(element) = self.array_camera_element(node) {
+            self.analyze(&element);
+            return;
+        }
         // `ShaderCallNodeInternal.build()` in the analyze stage is
         // `outputNode.build( builder, output )` and nothing else: an inlined
         // `Fn()` call neither counts itself nor stops the walk, so two call
@@ -684,6 +701,18 @@ impl NodeBuilder {
                     | SampleMode::LoadLayer(l)
                     | SampleMode::SampleLayer(l)
                     | SampleMode::Compare(l) => v.push(l.clone()),
+                    SampleMode::Grad(x, y) => {
+                        v.push(x.clone());
+                        v.push(y.clone());
+                    }
+                    SampleMode::Gather { component, offset } => {
+                        v.push(component.clone());
+                        v.extend(offset.clone());
+                    }
+                    SampleMode::GatherCompare { compare, offset } => {
+                        v.push(compare.clone());
+                        v.extend(offset.clone());
+                    }
                     _ => {}
                 }
                 v
@@ -1096,7 +1125,8 @@ impl NodeBuilder {
     fn buffer_snippet(&mut self, buffer: &Rc<BufferNode>) -> String {
         let stage = self.stage;
         let buffer_id = buffer.id.get();
-        let g = self.groups.entry(UniformGroup::Object).or_default();
+        let (group, fixed_name) = buffer.source.group_and_name();
+        let g = self.groups.entry(group).or_default();
         for b in g.bindings.iter_mut() {
             if let BindingDesc::Buffer {
                 name,
@@ -1111,8 +1141,15 @@ impl NodeBuilder {
                 }
             }
         }
-        let name = format!("NodeBuffer_{}", self.buffer_counter);
-        self.buffer_counter += 1;
+        let name = match fixed_name {
+            Some(name) => name.to_string(),
+            None => {
+                let name = format!("NodeBuffer_{}", self.buffer_counter);
+                self.buffer_counter += 1;
+                name
+            }
+        };
+        let g = self.groups.entry(group).or_default();
         let mut visibility = Visibility::default();
         visibility.add(stage);
         g.bindings.push(BindingDesc::Buffer {
@@ -1182,6 +1219,9 @@ impl NodeBuilder {
     }
 
     pub fn generate(&mut self, node: &NodeRef) -> String {
+        if let Some(element) = self.array_camera_element(node) {
+            return self.generate(&element);
+        }
         if let Some(name) = self.cache_get(CacheKey::node(node)) {
             return name;
         }
@@ -1718,7 +1758,7 @@ impl NodeBuilder {
                 let mode_is_color = matches!(
                     mode,
                     SampleMode::Sample
-                        | SampleMode::Grad
+                        | SampleMode::Grad(..)
                         | SampleMode::Level(_)
                         | SampleMode::Bias(_)
                         | SampleMode::Load
@@ -1739,18 +1779,67 @@ impl NodeBuilder {
                     SampleMode::Sample => {
                         format!("textureSample( {name}, {name}_sampler, {suv} )")
                     }
-                    SampleMode::Grad => format!(
-                        "textureSampleGrad( {name}, {name}_sampler, {suv}, vec2<f32>( 0.0, 0.0 ), vec2<f32>( 0.0, 0.0 ) )"
-                    ),
+                    SampleMode::Grad(grad_x, grad_y) => {
+                        let sx = self.format(&grad_x, Type::Vec2);
+                        let sy = self.format(&grad_y, Type::Vec2);
+                        format!("textureSampleGrad( {name}, {name}_sampler, {suv}, {sx}, {sy} )")
+                    }
+                    // `generateTextureGather()`, with three's spacing: no
+                    // space before the closing parenthesis without an offset.
+                    SampleMode::Gather { component, offset } => {
+                        let scomponent = self.format(&component, Type::I32);
+                        match offset {
+                            Some(offset) => {
+                                let soffset = self.format(&offset, Type::IVec2);
+                                format!(
+                                    "textureGather( {scomponent}, {name}, {name}_sampler, {suv}, {soffset} )"
+                                )
+                            }
+                            None => format!(
+                                "textureGather( {scomponent}, {name}, {name}_sampler, {suv})"
+                            ),
+                        }
+                    }
+                    // `generateTextureGatherCompare()`, the same spacing.
+                    //
+                    // Quirk kept: `TextureNode.generate()` types a gather's
+                    // snippet from `texture.type`, and a `DepthTexture` is
+                    // `UnsignedIntType` by default, so three takes the result
+                    // for a `uvec4` and formats it to the node's `vec4` —
+                    // `vec4<f32>( textureGatherCompare( … ) )`, a no-op cast
+                    // in WGSL (`docs/nodes.md` §44).
+                    SampleMode::GatherCompare { compare, offset } => {
+                        let int_typed = match &*texture {
+                            TextureSource::Depth(t) | TextureSource::ShadowMap(t) => {
+                                t.texture_type() == crate::textures::TextureType::UnsignedInt
+                            }
+                            _ => false,
+                        };
+                        let scompare = self.format(&compare, Type::F32);
+                        let gather = match offset {
+                            Some(offset) => {
+                                let soffset = self.format(&offset, Type::IVec2);
+                                format!(
+                                    "textureGatherCompare( {name}, {name}_sampler, {suv}, {scompare}, {soffset} )"
+                                )
+                            }
+                            None => format!(
+                                "textureGatherCompare( {name}, {name}_sampler, {suv}, {scompare})"
+                            ),
+                        };
+                        if int_typed {
+                            format!("vec4<f32>( {gather} )")
+                        } else {
+                            gather
+                        }
+                    }
                     // `texture3D( … ).sample( uv ).r`: the texture node is
                     // built as a `float`, so the fetch itself is narrowed and
                     // the node's var is an `f32` — three's
                     // `nodeVar7 = textureSampleLevel( … ).x`.
                     SampleMode::Level(level) if node.ty().components() == 1 => {
                         let slevel = self.generate(&level);
-                        format!(
-                            "textureSampleLevel( {name}, {name}_sampler, {suv}, {slevel} ).x"
-                        )
+                        format!("textureSampleLevel( {name}, {name}_sampler, {suv}, {slevel} ).x")
                     }
                     SampleMode::Level(level) => {
                         let slevel = self.generate(&level);
@@ -2477,7 +2566,7 @@ impl NodeBuilder {
         let wgsl = self.assemble_compute(flow.workgroup_size);
 
         let mut groups: Vec<Vec<BindingDesc>> = Vec::new();
-        for group in [UniformGroup::Render, UniformGroup::Object] {
+        for group in UniformGroup::ORDER {
             if let Some(g) = self.groups.get(&group) {
                 if !g.bindings.is_empty() {
                     groups.push(g.bindings.clone());
@@ -2519,6 +2608,66 @@ impl NodeBuilder {
     /// has `components` channels — `NodeBuilder.getOutputType()`, which maps
     /// the target texture's format to a vector length. Only the two-channel
     /// case differs from the default `vec4`.
+    /// Build for an `ArrayCamera` of `count` sub-cameras (0: an ordinary
+    /// camera, and nothing changes).
+    ///
+    /// three.js' `cameraViewMatrix` and `cameraProjectionMatrix` are
+    /// `Fn( ( { camera } ) => … ).once()`, so which node they are is decided
+    /// per build from `builder.camera`. The port's accessors are process-wide
+    /// singletons that every cached node (`normalWorld`, `positionView`, a
+    /// light's direction) already holds, so the decision is made here
+    /// instead: wherever the build reaches one of the two uniforms it builds
+    /// the array element in its place. The element's index is `cameraIndex`
+    /// — `uniform( 0, 'uint' ).setName( 'u_cameraIndex' ).setGroup(
+    /// sharedUniformGroup( 'cameraIndex' ) ).toVarying( 'v_cameraIndex' )`,
+    /// which is flat because it is a `u32`. `docs/nodes.md` §40.
+    pub fn with_array_cameras(mut self, count: usize) -> Self {
+        if count == 0 {
+            return self;
+        }
+        let camera_index = NodeRef::new(Node::Varying(Rc::new(super::node::VaryingDef {
+            name: Some("v_cameraIndex"),
+            value: NodeRef::new(Node::Uniform(Rc::new(UniformNode {
+                source: UniformSource::CameraIndex,
+                ty: Type::U32,
+                group: UniformGroup::CameraIndex,
+                name: Some("u_cameraIndex"),
+            }))),
+            ty: Type::U32,
+            flat: true,
+        })));
+        let element = |source| {
+            NodeRef::new(Node::BufferElement {
+                buffer: Rc::new(super::node::BufferNode {
+                    id: super::node::BufferId::next(),
+                    source,
+                    element_ty: Type::Mat4,
+                    count,
+                }),
+                index: camera_index.clone(),
+            })
+        };
+        self.array_cameras = Some(ArrayCameraNodes {
+            view: element(BufferSource::CameraViewMatrices),
+            projection: element(BufferSource::CameraProjectionMatrices),
+        });
+        self
+    }
+
+    /// The array element that stands in for `node` under an `ArrayCamera`,
+    /// when `node` is the camera's view or projection uniform.
+    fn array_camera_element(&self, node: &NodeRef) -> Option<NodeRef> {
+        let nodes = self.array_cameras.as_ref()?;
+        match &*node.0 {
+            Node::Uniform(u) => match u.source {
+                UniformSource::CameraViewMatrix => Some(nodes.view.clone()),
+                UniformSource::CameraProjectionMatrix => Some(nodes.projection.clone()),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
     pub fn with_output_components(mut self, components: u32) -> Self {
         self.output_type = match components {
             2 => Type::Vec2,
@@ -2635,7 +2784,7 @@ impl NodeBuilder {
         let attributes = self.stages[Stage::Vertex.index()].attributes.clone();
 
         let mut groups: Vec<Vec<BindingDesc>> = Vec::new();
-        for group in [UniformGroup::Render, UniformGroup::Object] {
+        for group in UniformGroup::ORDER {
             if let Some(g) = self.groups.get(&group) {
                 if !g.bindings.is_empty() {
                     groups.push(g.bindings.clone());
@@ -2690,24 +2839,15 @@ impl NodeBuilder {
         }
     }
 
-    /// The group index a uniform group ended up at: the render group takes 0
-    /// when it is used at all, and the object group follows it.
+    /// The group index a uniform group ended up at: the groups take their
+    /// indices in [`UniformGroup::ORDER`], each only when it is used at all —
+    /// render, then `cameraIndex`, then object.
     fn group_index(&self, group: UniformGroup) -> u32 {
-        let render_used = self
-            .groups
-            .get(&UniformGroup::Render)
-            .map(|g| !g.bindings.is_empty())
-            .unwrap_or(false);
-        match group {
-            UniformGroup::Render => 0,
-            UniformGroup::Object => {
-                if render_used {
-                    1
-                } else {
-                    0
-                }
-            }
-        }
+        UniformGroup::ORDER
+            .iter()
+            .take_while(|g| **g != group)
+            .filter(|g| self.groups.get(g).is_some_and(|g| !g.bindings.is_empty()))
+            .count() as u32
     }
 
     fn uniform_declarations(&self, stage: Stage) -> String {
@@ -2760,7 +2900,7 @@ impl NodeBuilder {
         // `WGSLNodeBuilder.getUniforms()` collects `bufferSnippets` and
         // `structSnippets` separately and writes every buffer before any
         // uniform struct, whichever group each is in.
-        for group in [UniformGroup::Render, UniformGroup::Object] {
+        for group in UniformGroup::ORDER {
             let Some(g) = self.groups.get(&group) else {
                 continue;
             };
@@ -2809,7 +2949,7 @@ impl NodeBuilder {
             }
         }
 
-        for group in [UniformGroup::Render, UniformGroup::Object] {
+        for group in UniformGroup::ORDER {
             let Some(g) = self.groups.get(&group) else {
                 continue;
             };
@@ -2876,7 +3016,7 @@ impl NodeBuilder {
             self.workgroup_locals.join("\n")
         ));
         let mut structs: Vec<String> = Vec::new();
-        for group in [UniformGroup::Render, UniformGroup::Object] {
+        for group in UniformGroup::ORDER {
             let Some(g) = self.groups.get(&group) else {
                 continue;
             };

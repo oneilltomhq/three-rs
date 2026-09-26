@@ -129,6 +129,11 @@ pub struct ProjectCamera {
     pub proj_screen_matrix: Matrix4,
     /// `_frustum`, set from `_projScreenMatrix`.
     pub frustum: Frustum,
+    /// `_frustumArray.setFromArrayCamera( camera )` — one frustum per
+    /// `ArrayCamera` sub-camera, which replaces `frustum` in the culling test:
+    /// an object is drawn when any sub-camera sees it. Empty for every other
+    /// camera.
+    pub sub_frustums: Vec<Frustum>,
 }
 
 impl ProjectCamera {
@@ -157,6 +162,7 @@ impl ProjectCamera {
             layers,
             proj_screen_matrix,
             frustum,
+            sub_frustums: Vec::new(),
         }
     }
 
@@ -170,10 +176,23 @@ impl ProjectCamera {
         // nothing in the ladder turns it on.
         frustum.set_from_projection_matrix(&proj_screen_matrix, camera.coordinate_system(), false);
 
+        let sub_frustums = camera
+            .sub_cameras()
+            .iter()
+            .map(|sub| {
+                let mut matrix = Matrix4::identity();
+                matrix.multiply_matrices(&sub.projection_matrix, &sub.matrix_world_inverse);
+                let mut frustum = Frustum::default();
+                frustum.set_from_projection_matrix(&matrix, sub.coordinate_system, false);
+                frustum
+            })
+            .collect();
+
         Self {
             layers: camera.layers(),
             proj_screen_matrix,
             frustum,
+            sub_frustums,
         }
     }
 }
@@ -285,6 +304,11 @@ fn project_drawable(
     // through `matrixWorld`.
     if o.frustum_culled {
         let inside = match o.payload.bounding_sphere_in(&o.matrix_world) {
+            // `FrustumArray.intersectsObject()` under an `ArrayCamera`.
+            Some(sphere) if !camera.sub_frustums.is_empty() => camera
+                .sub_frustums
+                .iter()
+                .any(|frustum| frustum.intersects_sphere(&sphere)),
             Some(sphere) => camera.frustum.intersects_sphere(&sphere),
             // A geometry with no position attribute has no bounding sphere;
             // three.js would throw, we treat it as nothing to draw.

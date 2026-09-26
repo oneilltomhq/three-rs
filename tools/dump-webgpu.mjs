@@ -668,7 +668,6 @@ async function main() {
 			"Object.defineProperty(this, 'trackTimestamp', { get: () => false, set: () => {} });"
 		);
 
-
 	const buildNames = ['three.core.js', 'three.module.js', 'three.webgpu.js'];
 	const builds = {};
 	for (const name of buildNames) {
