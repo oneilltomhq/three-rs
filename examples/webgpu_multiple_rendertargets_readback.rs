@@ -88,8 +88,11 @@ pub struct App {
     pub scene_mrt: MrtNode,
     pub render_target: RenderTarget,
     pub readback_target: RenderTarget,
-    pub material: MeshBasicNodeMaterial,
-    pub readback_material: MeshBasicNodeMaterial,
+    /// Whichever of the page's `material` / `readbackMaterial` is not in
+    /// `quad_mesh.material` right now; see [`animate`].
+    pub other_material: MeshBasicNodeMaterial,
+    /// Whether `quad_mesh.material` is `readbackMaterial`.
+    pub quad_is_readback: bool,
     pub pixel_buffer_texture: Texture,
     /// The page's anonymous `new OrbitControls( camera, renderer.domElement )`.
     pub controls: OrbitControls,
@@ -178,7 +181,7 @@ pub fn init() -> App {
         step(0.5, screen_uv().x()),
     ));
 
-    let quad_mesh = QuadMesh::new(material.clone());
+    let quad_mesh = QuadMesh::new(material);
 
     // Controls
 
@@ -195,8 +198,8 @@ pub fn init() -> App {
         scene_mrt,
         render_target,
         readback_target,
-        material,
-        readback_material,
+        other_material: readback_material,
+        quad_is_readback: false,
         pixel_buffer_texture,
         controls,
     }
@@ -230,12 +233,18 @@ pub fn animate(app: &mut App) {
     app.renderer.set_mrt(None);
     app.renderer.set_render_target(None);
 
-    if is_readback {
-        app.quad_mesh.material = app.readback_material.clone();
+    // `quadMesh.material = isReadback ? readbackMaterial : material`. A JS
+    // assignment keeps the object's identity; a Rust `clone()` of a material
+    // is a *new* material (`MaterialId::clone`, as `material.clone()` is
+    // upstream) and would rebuild its program every frame. So the two
+    // materials trade places instead, and each stays the one object it is.
+    if is_readback != app.quad_is_readback {
+        std::mem::swap(&mut app.quad_mesh.material, &mut app.other_material);
+        app.quad_is_readback = is_readback;
+    }
 
+    if is_readback {
         readback(app);
-    } else {
-        app.quad_mesh.material = app.material.clone();
     }
 
     app.renderer.render_quad(&app.quad_mesh);
