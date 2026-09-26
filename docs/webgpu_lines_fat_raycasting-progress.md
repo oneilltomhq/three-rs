@@ -11,12 +11,12 @@ grades them.
 
 | Piece | Commit | Gate |
 | --- | --- | --- |
-| `Triangle::get_interpolated_attribute`, `Frustum::intersects_sprite` | `93fcebc`, `2382801` | `tests/math_triangle.rs`, `tests/math_frustum.rs` (QUnit) |
-| `Raycaster` (`set`, `set_from_camera`, `intersect_object(s)`, `near`/`far`, `layers`, `params`) and `Intersection` | `2382801` | `tests/core_raycaster.rs` (QUnit) |
-| `raycast()` on `Mesh`, `InstancedMesh`, `SkinnedMesh`, `BatchedMesh`, `Line`, `LineSegments`, `Points`, `Sprite`, `LineSegments2` | `2382801` | `tests/objects_*.rs` (QUnit), `tests/addons_lines_raycast.rs` |
-| `Sprite`: `Payload::Sprite`, the shared quad, the render path | `8e0b260` | `tests/renderer_sprites.rs`: WGSL sections against three's dump, and pixels |
-| `Line2NodeMaterial` world units and `alphaToCoverage` | `ae836c6` | `tests/nodes_line2_world_units.rs`, against three's dump |
-| the example and the image | `870ccc9` | `tests/e2e/main.rs::webgpu_lines_fat_raycasting` |
+| `Triangle::get_interpolated_attribute`, `Frustum::intersects_sprite` | `2deb3aa`, `baf01ad` | `tests/math_triangle.rs`, `tests/math_frustum.rs` (QUnit) |
+| `Raycaster` (`set`, `set_from_camera`, `intersect_object(s)`, `near`/`far`, `layers`, `params`) and `Intersection` | `baf01ad` | `tests/core_raycaster.rs` (QUnit) |
+| `raycast()` on `Mesh`, `InstancedMesh`, `SkinnedMesh`, `BatchedMesh`, `Line`, `LineSegments`, `Points`, `Sprite`, `LineSegments2` | `baf01ad` | `tests/objects_*.rs` (QUnit), `tests/addons_lines_raycast.rs` |
+| `Sprite`: `Payload::Sprite`, the shared quad, the render path | `4bdec71` | `tests/renderer_sprites.rs`: WGSL sections against three's dump, and pixels |
+| `Line2NodeMaterial` world units and `alphaToCoverage` | `19cde95` | `tests/nodes_line2_world_units.rs`, against three's dump |
+| the example and the image | `195d58d` | `tests/e2e/main.rs::webgpu_lines_fat_raycasting` |
 
 ## What the graded frame does and does not cover
 
