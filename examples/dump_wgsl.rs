@@ -2720,4 +2720,53 @@ fn dump_shadowmap_opacity() {
         &out,
         SetupContext::default(),
     );
+
+    // rung `webgpu_mirror`: three's `dump-mirror` m06 (the back wall: blue
+    // plus the vertical reflector, its uv nudged by a repeated normal map)
+    // and m08 (the floor: white mixed toward the ground reflector by the
+    // decal's alpha), both Phong under the page's four point lights.
+    let mirror_ctx = || SetupContext {
+        lights: (0..4)
+            .map(|index| LightDesc {
+                index,
+                kind: LightKind::Point,
+                shadow_map: None,
+            })
+            .collect(),
+        ..SetupContext::default()
+    };
+    let map = || Texture::new(4, 4, Some(vec![0; 4 * 4 * 4]));
+    {
+        use three_rs::nodes::reflector_node::{reflector, ReflectorParameters};
+
+        let floor_normal = map();
+        let mut vertical = reflector(ReflectorParameters::default());
+        vertical.uv_node = vertical.uv_node.add(
+            texture_uv(&floor_normal, uv().mul(5.0))
+                .xy()
+                .mul(2.0)
+                .sub(1.0)
+                .mul(0.1),
+        );
+        let mut back = MeshBasicNodeMaterial::phong(Color::from_hex(0xffffff));
+        back.color_node = Some(
+            three_rs::nodes::NodeRef::from(Color::from_hex(0x0000ff))
+                .mul(0.1)
+                .add(&vertical),
+        );
+        show("mirror_vertical", &back, mirror_ctx());
+
+        let (decal_diffuse, decal_normal) = (map(), map());
+        let mut ground = reflector(ReflectorParameters::default());
+        ground.uv_node = ground
+            .uv_node
+            .add(texture(&decal_normal).xy().mul(2.0).sub(1.0).mul(-0.08));
+        let mut bottom = MeshBasicNodeMaterial::phong(Color::from_hex(0xffffff));
+        bottom.color_node = Some(
+            texture(&decal_diffuse)
+                .a()
+                .mix(Color::from_hex(0xffffff), &ground),
+        );
+        show("mirror_ground", &bottom, mirror_ctx());
+    }
 }
