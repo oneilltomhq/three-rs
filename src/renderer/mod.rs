@@ -3207,8 +3207,12 @@ impl Renderer {
         };
 
         // One attachment per `renderTarget.textures` entry. They share the
-        // pass's clear op: `MRTNode.clearColors` is three's per-output
-        // override and nothing on this ladder sets one.
+        // pass's load op but not its clear *value*: `WebGPUBackend.beginRender()`
+        // clears attachment 0 to `renderContext.clearColorValue` and every
+        // other one to `( 0, 0, 0, 1 )`. (`MRTNode.clearColors` is three's
+        // per-output override and nothing on this ladder sets one.)
+        // `webgpu_multiple_rendertargets` shows it: its `normal` half is black
+        // where the knot is not, not the scene's `0x222222`.
         let mut color_attachments = vec![Some(wgpu::RenderPassColorAttachment {
             view: &target.color,
             depth_slice: None,
@@ -3218,13 +3222,22 @@ impl Renderer {
                 store: wgpu::StoreOp::Store,
             },
         })];
+        let extra_load = match clear.color {
+            Some(_) => wgpu::LoadOp::Clear(wgpu::Color {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a: 1.0,
+            }),
+            None => wgpu::LoadOp::Load,
+        };
         for (view, resolve) in &target.extra_colors {
             color_attachments.push(Some(wgpu::RenderPassColorAttachment {
                 view,
                 depth_slice: None,
                 resolve_target: resolve.as_ref(),
                 ops: wgpu::Operations {
-                    load,
+                    load: extra_load,
                     store: wgpu::StoreOp::Store,
                 },
             }));
