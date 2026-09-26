@@ -826,6 +826,33 @@ fn main() {
     right.shininess = 90.0;
     show_fog("phong_right", &right, four.clone(), Some(&fog));
 
+    // webgpu_lights_selective: the same teapots as `MeshStandardNodeMaterial`
+    // — against `target/dumps/webgpu_lights_selective/` m02 (left), m04
+    // (centre), m06 (right) and m08 (the unlit light sphere).
+    let grey_standard = || MeshBasicNodeMaterial::standard(grey, 1.0, 0.0);
+
+    let mut left = grey_standard();
+    left.lights_node = Some(vec![0]);
+    left.roughness_node = Some(texture(&alpha_texture));
+    left.metalness = 0.0;
+    show_fog("selective_left", &left, four.clone(), Some(&fog));
+
+    let mut centre = grey_standard();
+    centre.normal_node = Some(normal_map(texture(&normal_map_texture)));
+    centre.metalness = 0.5;
+    centre.roughness = 0.5;
+    show_fog("selective_centre", &centre, four.clone(), Some(&fog));
+
+    let mut right = grey_standard();
+    right.lights_node = Some(vec![1]);
+    right.metalness_node = Some(texture(&alpha_texture));
+    show_fog("selective_right", &right, four.clone(), Some(&fog));
+
+    let mut sphere = MeshBasicNodeMaterial::standard(Color::from_hex(0xffffff), 1.0, 0.0);
+    sphere.color_node = Some(Color::from_hex(0xff0040).into());
+    sphere.lights = false;
+    show_fog("selective_light_sphere", &sphere, four.clone(), Some(&fog));
+
     // rung 8: the four physical materials, against
     // `handoff/scouts/rung8/MeshStandardMaterial_*`.
     let bulb_lights = |shadow: Option<ShadowMap>| SetupContext {

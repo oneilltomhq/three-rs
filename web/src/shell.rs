@@ -290,6 +290,7 @@ FogHeight, webgpu_fog_height, "../../examples/webgpu_fog_height.rs";
 ShadowmapOpacity, webgpu_shadowmap_opacity, "../../examples/webgpu_shadowmap_opacity.rs";
 Texturegrad, webgpu_texturegrad, "../../examples/webgpu_texturegrad.rs";
 Texturegather, webgpu_texturegather, "../../examples/webgpu_texturegather.rs";
+LightsSelective, webgpu_lights_selective, "../../examples/webgpu_lights_selective.rs";
 }
 
 /// Where an example's assets come from: three.js at the commit this port is

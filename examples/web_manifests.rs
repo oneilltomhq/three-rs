@@ -247,6 +247,9 @@ mod webgpu_clearcoat;
 #[path = "webgpu_fog_height.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_fog_height;
+#[path = "webgpu_lights_selective.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_lights_selective;
 #[path = "webgpu_materials_toon.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_materials_toon;
@@ -447,6 +450,9 @@ const GRADED: &[(&str, fn())] = &[
     ),
     ("webgpu_postprocessing_fxaa", || {
         drop(webgpu_postprocessing_fxaa::init())
+    }),
+    ("webgpu_lights_selective", || {
+        drop(webgpu_lights_selective::init())
     }),
 ];
 
