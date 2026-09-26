@@ -543,6 +543,10 @@ pub enum SampleMode {
     /// `textureLoad( t, coord, layer, u32( 0u ) )` on a 2-D-array texture —
     /// `textureLoad( … ).depth( layer )`, with no clamping and no sampler.
     LoadLayer(NodeRef),
+    /// `textureSample( t, t_sampler, uv, i32( layer ) )` on a 2-D-array
+    /// texture — `texture( map, uv ).depth( layer )`. Three builds the depth
+    /// node as `'int'`, so a float layer arrives truncated by `i32()`.
+    SampleLayer(NodeRef),
     /// `textureSampleCompare( t, t_sampler, uv, depth )` — the depth-compare
     /// read `ShadowFilterNode`'s `depthCompare` lowers to.
     Compare(NodeRef),

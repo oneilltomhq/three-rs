@@ -117,7 +117,11 @@ fn compare(label: &str, got: &Ktx2Texture, dir: &Path) -> Vec<String> {
 
     field("class", json["class"].clone(), got.class.name().into());
     field("format", json["format"].clone(), (got.format as u32).into());
-    field("type", json["type"].clone(), (got.texture_type as u32).into());
+    field(
+        "type",
+        json["type"].clone(),
+        (got.texture_type as u32).into(),
+    );
     field(
         "colorSpace",
         json["colorSpace"].clone(),
@@ -182,11 +186,7 @@ fn compare(label: &str, got: &Ktx2Texture, dir: &Path) -> Vec<String> {
             }
             let bytes = std::fs::read(dir.join(want["file"].as_str().unwrap())).unwrap();
             if bytes != mip.data {
-                let differing = bytes
-                    .iter()
-                    .zip(&mip.data)
-                    .filter(|(a, b)| a != b)
-                    .count();
+                let differing = bytes.iter().zip(&mip.data).filter(|(a, b)| a != b).count();
                 failures.push(format!(
                     "{at}: {} bytes, three has {}; {differing} of the common bytes differ",
                     mip.data.len(),

@@ -319,7 +319,10 @@ impl Ktx2Loader {
                     // texture with non-multiple-of-four dimensions upload
                     // (mrdoob/three.js#25908).
                     let (block_width, block_height) = file.source_format().block_dims();
-                    (info.num_blocks_x * block_width, info.num_blocks_y * block_height)
+                    (
+                        info.num_blocks_x * block_width,
+                        info.num_blocks_y * block_height,
+                    )
                 };
 
                 // `concat( layerMips )`.
@@ -684,9 +687,8 @@ fn create_raw_texture(container: &ktx2::Reader<&[u8]>) -> Result<Ktx2Texture, Er
     let header = container.header();
     let vk_format = header.format.expect("a raw texture has a vkFormat");
 
-    let (format, texture_type) = raw_format(vk_format).ok_or_else(|| {
-        ktx2_error(format!("Unsupported vkFormat: {}", vk_format.value()))
-    })?;
+    let (format, texture_type) = raw_format(vk_format)
+        .ok_or_else(|| ktx2_error(format!("Unsupported vkFormat: {}", vk_format.value())))?;
 
     let mut mipmaps = Vec::new();
     for (level_index, level) in container.levels().enumerate() {

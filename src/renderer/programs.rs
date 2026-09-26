@@ -321,7 +321,9 @@ fn layout_entry(binding: u32, desc: &BindingDesc) -> wgpu::BindGroupLayoutEntry 
                 },
                 view_dimension: match kind {
                     TextureKind::Cube | TextureKind::DepthCube => wgpu::TextureViewDimension::Cube,
-                    TextureKind::Float2DArray => wgpu::TextureViewDimension::D2Array,
+                    TextureKind::Float2DArray | TextureKind::Sampled2DArray => {
+                        wgpu::TextureViewDimension::D2Array
+                    }
                     _ => wgpu::TextureViewDimension::D2,
                 },
                 multisampled: matches!(kind, TextureKind::DepthMultisampled2D),

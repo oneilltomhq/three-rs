@@ -2740,6 +2740,22 @@ pub fn texture_level(map: &Texture, coord: NodeRef, level: NodeRef) -> NodeRef {
     )
 }
 
+/// `texture( map, uv ).depth( layer )` — one layer of a
+/// `CompressedArrayTexture`, sampled (`webgpu_textures_2d-array_compressed`).
+/// The uv is taken as given, with no uv matrix, as for [`texture_uv`].
+pub fn texture_array(map: &Texture, coord: NodeRef, layer: NodeRef) -> NodeRef {
+    assert!(
+        map.is_array(),
+        "three-rs: texture_array needs a texture with array layers"
+    );
+    texture_node(
+        TextureSource::Texture2D(map.clone()),
+        coord,
+        SampleMode::SampleLayer(layer),
+        Type::Vec4,
+    )
+}
+
 /// `equirectUV( direction )` — `nodes/utils/EquirectUV.js`.
 ///
 /// The longitude/latitude of a direction, in `[ 0, 1 ]²`. Three writes it as a
