@@ -32,6 +32,9 @@ use three_rs::Texture;
 #[path = "../examples/webgpu_compute_texture.rs"]
 #[allow(dead_code)]
 mod compute_texture;
+#[path = "../examples/webgpu_texturegather.rs"]
+#[allow(dead_code)]
+mod texturegather;
 #[path = "../examples/webgpu_texturegrad.rs"]
 #[allow(dead_code)]
 mod texturegrad;
@@ -358,5 +361,31 @@ fn texturegrad_fragment_matches_three() {
         &section(&program.fragment_wgsl, "// flow", "DiffuseColor = "),
         &section(three, "// flow", "DiffuseColor = "),
         "texturegrad fragment flow",
+    );
+}
+
+/// `webgpu_texturegather`'s `colorNode`: an `If`/`Else` between a
+/// `textureGather` of the render target's colour and a `textureGatherCompare`
+/// of its depth, both with an `ivec2( 0, 7 )` offset. The textures are
+/// stand-ins; only their kinds reach the WGSL.
+#[test]
+fn texturegather_fragment_matches_three() {
+    let color = Texture::new(4, 4, Some(vec![0; 4 * 4 * 4]));
+    let depth = three_rs::DepthTexture::new();
+    let mut material = three_rs::materials::MeshBasicNodeMaterial::new();
+    material.color_node = Some(texturegather::color_node(&color, &depth));
+    let flow = setup(&material, &SetupContext::default(), None);
+    let program = NodeBuilder::new().build(&flow);
+    let three = include_str!("fixtures/textures/texturegather.fragment.wgsl");
+
+    assert_same(
+        &section(&program.fragment_wgsl, "// uniforms", "// vars"),
+        &section(three, "// uniforms", "// vars"),
+        "texturegather fragment uniforms",
+    );
+    assert_same(
+        &section(&program.fragment_wgsl, "// flow", "DiffuseColor = "),
+        &section(three, "// flow", "DiffuseColor = "),
+        "texturegather fragment flow",
     );
 }

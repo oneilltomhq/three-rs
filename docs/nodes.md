@@ -3394,6 +3394,29 @@ its later reductions use `subgroupAdd`, which #167 leaves out with the rest
 of the subgroup functions. Its workgroup-memory kernels are the source of
 the spellings §33.4 asserts.
 
+`texture.sample( uv ).offset( o ).gather( c )` is `SampleMode::Gather {
+component, offset }` (`tsl::texture_gather`), and the same on a
+`DepthTexture` with `.compare( z )` is `SampleMode::GatherCompare { compare,
+offset }` (`tsl::depth_texture_gather_compare`), emitted as
+`generateTextureGather()` / `generateTextureGatherCompare()` write them:
+`textureGather( c, t, t_sampler, uv, offset )` and `textureGatherCompare( t,
+t_sampler, uv, z, offset )`, the component built as an `int`, the offset as
+an `ivec2` and the reference as a `float`. Both read mip level 0 and ignore
+the texture's filters. Three drops the space before the closing parenthesis
+when there is no offset, and so does the port. The depth form binds the
+comparison sampler `shadow_map_compare` binds (`LessEqualCompare`), the one
+`compareFunction` `webgpu_texturegather` sets; the port's `DepthTexture`
+carries no `compareFunction` of its own.
+
+One quirk kept: `TextureNode.generate()` types a gather's snippet from
+`texture.type`, and a `DepthTexture` is `UnsignedIntType` by default, so three
+takes the compare's result for a `uvec4` and formats it into the node's
+`vec4`, writing `vec4<f32>( textureGatherCompare( … ) )` — a no-op cast. The
+port writes the same cast when the depth texture's type is `UnsignedInt`.
+`webgpu_texturegather`'s `m04` fragment matches from `// flow` to
+`DiffuseColor = ` after renumbering
+(`tests/nodes_texture_wgsl.rs::texturegather_fragment_matches_three`).
+
 ### Divergences specific to this section
 
 The two new classes are in §8: one flat `instanceIndex` varying per
@@ -3553,7 +3576,7 @@ dump apart from `var` placement: the port declares `worldPos` inside the
 * **No `TransformControls`.** `webgpu_modifier_curve`'s handles cannot be
   dragged. The graded frame never shows the gizmo.
 
-## 36. Explicit-gradient taps, and two canvases on one (`webgpu_texturegrad`)
+## 36. Explicit-gradient and gathered taps, and two canvases on one (`webgpu_texturegrad`, `webgpu_texturegather`)
 
 `textureNode.grad( gradX, gradY )` is `SampleMode::Grad( grad_x, grad_y )`,
 emitted as `WGSLNodeBuilder.generateTextureGrad()` writes it for a 2-D
@@ -3586,3 +3609,5 @@ the sum as read twice.
   the scissor, both through the WGSL path. The grader cannot tell — the page's
   two halves are the same picture apart from the background, and the port
   grades 0 pixels.
+  `webgpu_texturegather` is drawn the same way, and grades 16 pixels: the
+  corners of the depth-compare pentagon on the left half.

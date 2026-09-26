@@ -243,6 +243,9 @@ mod webgpu_modifier_curve;
 #[path = "webgpu_particles.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_particles;
+#[path = "webgpu_texturegather.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_texturegather;
 #[path = "webgpu_texturegrad.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_texturegrad;
@@ -399,6 +402,10 @@ const GRADED: &[(&str, fn())] = &[
         drop(webgpu_modifier_curve::init())
     }),
     ("webgpu_texturegrad", || drop(webgpu_texturegrad::init())),
+    (
+        "webgpu_texturegather",
+        || drop(webgpu_texturegather::init()),
+    ),
 ];
 
 /// Where the committed manifests live, one `<example>.json` each.

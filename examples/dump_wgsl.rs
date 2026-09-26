@@ -44,6 +44,9 @@ mod webgpu_instance_path;
 #[allow(dead_code)]
 mod webgpu_tsl_interoperability;
 
+#[path = "webgpu_texturegather.rs"]
+#[allow(dead_code)]
+mod webgpu_texturegather;
 #[path = "webgpu_texturegrad.rs"]
 #[allow(dead_code)]
 mod webgpu_texturegrad;
@@ -2426,6 +2429,16 @@ fn dump_room_environment() {
         Some(vec![0; 4 * 4 * 4]),
     )));
     show("texturegrad", &grad_material, SetupContext::default());
+
+    // rung `webgpu_texturegather`: three's m04 fragment — `textureGather` of
+    // the render target's colour and `textureGatherCompare` of its depth,
+    // behind an `If`/`Else`. Stand-in textures; only their kinds reach the WGSL.
+    let mut gather_material = MeshBasicNodeMaterial::new();
+    gather_material.color_node = Some(webgpu_texturegather::color_node(
+        &Texture::new(4, 4, Some(vec![0; 4 * 4 * 4])),
+        &three_rs::DepthTexture::new(),
+    ));
+    show("texturegather", &gather_material, SetupContext::default());
 }
 
 /// Issue #140: the classic `scene.fog`. One `MeshStandardNodeMaterial` lit by
