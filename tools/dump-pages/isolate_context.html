@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three-rs dump page - isolate() and context() on one MeshBasicNodeMaterial</title>
+		<meta charset="utf-8">
+	</head>
+	<body>
+		<!--
+			Not a three.js example: a minimal page for tools/dump-webgpu.mjs --html,
+			so the WGSL of isolate() and context() can be dumped and gated in
+			tests/nodes_custom.rs (issue #161). No example page calls .isolate()
+			itself; EnvironmentNode does, inside a graph too large to gate on.
+
+			x: `a` is reached first inside the isolate, so the isolate's cache holds
+			   its usage count and the reach outside starts a fresh one: no var,
+			   sin() twice.
+			y: `b` is reached first outside, so the isolate finds its data in the
+			   parent cache and the two reaches share one count: one var, cos()
+			   once.
+			z: rangeFogFactor's Fn() body reads context.getViewZ.
+		-->
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "../build/three.webgpu.js",
+					"three/webgpu": "../build/three.webgpu.js",
+					"three/tsl": "../build/three.tsl.js",
+					"three/addons/": "./jsm/"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			import * as THREE from 'three/webgpu';
+			import { time, sin, cos, vec3, isolate, rangeFogFactor, uniform } from 'three/tsl';
+
+			const camera = new THREE.PerspectiveCamera( 50, window.innerWidth / window.innerHeight, 0.1, 100 );
+			camera.position.set( 0, 0, 4 );
+
+			const scene = new THREE.Scene();
+
+			const a = sin( time ).mul( 2 );
+			const b = cos( time ).mul( 3 );
+			const viewZ = uniform( - 2 );
+
+			const material = new THREE.MeshBasicNodeMaterial();
+			material.colorNode = vec3(
+				isolate( a ).add( a ),
+				b.add( isolate( b.mul( 0.5 ) ) ),
+				rangeFogFactor( 1, 3 ).context( { getViewZ: () => viewZ } )
+			);
+
+			const mesh = new THREE.Mesh( new THREE.PlaneGeometry( 2, 2 ), material );
+			scene.add( mesh );
+
+			const renderer = new THREE.WebGPURenderer();
+			renderer.setPixelRatio( window.devicePixelRatio );
+			renderer.setSize( window.innerWidth, window.innerHeight );
+			renderer.setAnimationLoop( () => renderer.render( scene, camera ) );
+			document.body.appendChild( renderer.domElement );
+
+		</script>
+	</body>
+</html>
