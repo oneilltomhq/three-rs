@@ -53,7 +53,7 @@ use crate::nodes::tsl::FogNode;
 use crate::nodes::tsl::StorageArray;
 use crate::nodes::wgsl::TextureKind;
 use crate::nodes::{BindingDesc, ComputeFlow, NodeBuilder, NodeProgram, Type};
-use crate::objects::{Background, InstancedBufferAttribute, QuadMesh, Scene, SubDraw};
+use crate::objects::{Background, InstancedBufferAttribute, QuadMesh, Scene, SceneFog, SubDraw};
 use crate::testing::DeterministicRandom;
 use crate::textures::{
     CubeDepthTexture, CubeTexture, DataArrayTexture, DataTexture, DataTextureData, DepthTexture,
@@ -1467,6 +1467,19 @@ impl Renderer {
         let mut skeletons_updated: std::collections::HashSet<usize> =
             std::collections::HashSet::new();
 
+        // `NodeManager.getFogNode( scene )`, once per render: `scene.fogNode`
+        // if set, else the node `updateFog()` builds for `scene.fog` — which
+        // reads its parameters from the render group, filled in below.
+        let fog_node = scene
+            .fog_node
+            .clone()
+            .or_else(|| scene.fog.as_ref().map(SceneFog::node));
+        let (fog_color, fog_near, fog_far, fog_density) = match &scene.fog {
+            Some(SceneFog::Linear(fog)) => (fog.color, fog.near, fog.far, 0.00025),
+            Some(SceneFog::Exp2(fog)) => (fog.color, 1.0, 1000.0, fog.density),
+            None => (Color::new(1.0, 1.0, 1.0), 1.0, 1000.0, 0.00025),
+        };
+
         // `Renderer._renderObjects()` calls `object.onBeforeRender()` per
         // render item, immediately before that item's draw. The port builds
         // every `Renderable` first and records the pass afterwards, so the hook
@@ -1695,7 +1708,10 @@ impl Renderer {
                     geometry_missing_normal: !geometry.has_attribute("normal"),
                     has_tangent_attribute: geometry.has_attribute("tangent"),
                 },
-                fog: scene.fog_node.clone(),
+                // `NodeManager.getFogNode( scene )`: `scene.fogNode ||
+                // this.get( scene ).fogNode` — an explicit fog node wins over
+                // the one `updateFog()` builds from `scene.fog`.
+                fog: fog_node.clone(),
                 model_world: item.matrix_world,
                 instance_matrix,
                 instance_color,
@@ -1807,6 +1823,10 @@ impl Renderer {
             // `scene.backgroundBlurriness` — a render-group uniform, so it
             // rides the pass rather than the background draw.
             background_blurriness: scene.background_blurriness,
+            fog_color,
+            fog_near,
+            fog_far,
+            fog_density,
             ..Default::default()
         };
 
@@ -3994,7 +4014,7 @@ impl Renderer {
             }
             let gpu = cached.gpu.clone();
             self.upload_texture_2d(&gpu, texture);
-            if mip_level_count > 1 {
+            if mip_level_count > 1 && !texture.has_mipmaps() {
                 self.generate_mipmaps(&gpu, format, mip_level_count, 1);
             }
             self.textures_2d.insert(
@@ -4048,7 +4068,9 @@ impl Renderer {
 
         self.upload_texture_2d(&gpu, texture);
 
-        if mip_level_count > 1 {
+        // `Textures.updateTexture()` generates only when `texture.mipmaps` is
+        // empty: page-supplied levels are uploaded as they are.
+        if mip_level_count > 1 && !texture.has_mipmaps() {
             self.generate_mipmaps(&gpu, format, mip_level_count, 1);
         }
 
@@ -4074,11 +4096,44 @@ impl Renderer {
         let format = texture.format();
 
         let inner = texture.borrow();
+
+        // `WebGPUTextureUtils.updateTexture()`: with `texture.mipmaps` set,
+        // each level is its own `_copyImageToTexture( mipmap, …, flipY, …, i )`
+        // and the image itself is not uploaded.
+        if !inner.mipmaps.is_empty() {
+            for (level, image) in inner.mipmaps.iter().enumerate() {
+                self.write_texture_level(
+                    gpu,
+                    format,
+                    level as u32,
+                    image.width,
+                    image.height,
+                    &image.data,
+                    inner.flip_y,
+                );
+            }
+            return;
+        }
+
         let data = inner
             .data
             .as_ref()
             .expect("three-rs: the texture has no image data");
+        self.write_texture_level(gpu, format, 0, width, height, data, inner.flip_y);
+    }
 
+    /// One level of [`upload_texture_2d`](Self::upload_texture_2d).
+    #[allow(clippy::too_many_arguments)]
+    fn write_texture_level(
+        &self,
+        gpu: &wgpu::Texture,
+        format: wgpu::TextureFormat,
+        mip_level: u32,
+        width: u32,
+        height: u32,
+        data: &[u8],
+        flip_y: bool,
+    ) {
         // The row stride comes from the format, not from a hardcoded
         // RGBA8: `r32float` is also 4 bytes per texel but for a different
         // reason, and the next wider float format would shear the upload.
@@ -4089,7 +4144,7 @@ impl Renderer {
         // `copyExternalImageToTexture( { flipY } )`: the source rows are
         // uploaded bottom-up. (three.js' `_flipY()` pass is only for the
         // `_copyBufferToTexture` path, and is the same flip.)
-        let rows: Vec<u8> = if inner.flip_y {
+        let rows: Vec<u8> = if flip_y {
             let stride = (width * bytes_per_texel) as usize;
             let mut flipped = Vec::with_capacity(data.len());
             for row in (0..height as usize).rev() {
@@ -4097,13 +4152,13 @@ impl Renderer {
             }
             flipped
         } else {
-            data.clone()
+            data.to_vec()
         };
 
         self.queue.write_texture(
             wgpu::TexelCopyTextureInfo {
                 texture: gpu,
-                mip_level: 0,
+                mip_level,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },

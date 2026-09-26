@@ -486,9 +486,11 @@ differences, each verified to be pixel-neutral.
   `mx_fractal_noise_vec3` in `webgpu_shadowmap` — Three's cache emits it once
   and reuses the temp; this port re-evaluates it in each chain. The function is
   pure, so the values agree; only the instruction count differs.
-* **Fog parameters as constants.** `fogColor` / `fogNear` / `fogFar` are folded
-  into the WGSL as literals rather than carried as `renderStruct` members,
-  because nothing in the port animates them. Same numbers.
+* ~~**Fog parameters as constants.**~~ Gone since `scene.fog` (§28): a page
+  that sets `scene.fog` gets `fogColor` / `fogNear` / `fogFar` (or
+  `density`) as `renderStruct` members, as three does. Only a hand-built
+  `scene.fog_node` with literal arguments — `webgpu_lights_phong`'s, which
+  is literal in the page too — still has constants.
 * **`toConst` on the shadow filter.** `to_const()` exists since
   `webgpu_postprocessing_radial_blur` (`Node::Let`, a WGSL `let nodeConstN`),
   but `pointShadowFilter`'s `shadowPosition` and `shadowPositionAbs` are still
@@ -1392,9 +1394,13 @@ shader needed it.
   behind two fixed handles (`Texture::swap_gpu`) and every bind group,
   pipeline and cache key keyed on them stays valid. See
   `docs/postprocessing.md`, "The previous frame".
-* **Fog parameters as constants** (the existing §8 entry) is the only
-  divergence in this rung's scene fragment: Three keeps `fogColor` / `fogNear`
-  / `fogFar` as render uniforms, the port folds the same values in.
+* The scene fragment has no divergence left. It used to fold the fog's
+  colour, near and far in as constants (the old §8 entry); since `scene.fog`
+  (§28) the page's `new THREE.Fog( 0x0487e2, 7, 25 )` is ported as written,
+  and the fog statement, uniform names included, is three's r186 `m02` line
+  for line: `nodeVar1 = vec4<f32>( mix( Output.xyz, render.nodeUniform4,
+  smoothstep( render.nodeUniform5, render.nodeUniform6, ( - v_positionView.z )
+  ) ), Output.w );`.
 
 ## 15. A context hook on the material output (`webgpu_postprocessing_direct`)
 
@@ -2744,3 +2750,84 @@ None new beyond the classes §8 already lists, and one fix that was a real bug:
 [`tsl::with_tangent_attribute`]: ../src/nodes/tsl.rs
 [`tsl::bent_normal_view`]: ../src/nodes/tsl.rs
 [`Scene::background_blurriness`]: ../src/objects/scene.rs
+
+## 28. `scene.fog` — `Fog`, `FogExp2` and their render-group uniforms
+
+Issue #140. Until this section, the port had only `scene.fogNode`, so every
+page that says `scene.fog = new THREE.Fog( … )` was ported as a
+`fog( color, rangeFogFactor( near, far ) )` with the numbers folded in.
+
+### 28.1 What three does
+
+`NodeManager.updateFog( scene )` runs every render. When `scene.fog` is set,
+it builds (and caches per fog object) one node whose parameters are
+`reference( 'color' | 'near' | 'far' | 'density', …, sceneFog ).setGroup(
+renderGroup )` uniforms:
+
+```js
+fog( color, rangeFogFactor( near, far ) )   // Fog
+fog( color, densityFogFactor( density ) )   // FogExp2
+```
+
+and `getFogNode()` is `scene.fogNode || sceneData.fogNode`: an explicit fog
+node wins. `NodeMaterial.setupFog()` then mixes the output towards the fog
+colour: `vec4( mix( output.rgb, color, factor ), output.a )`.
+
+### 28.2 The port
+
+* [`Fog`] / [`FogExp2`] are the two classes, and [`SceneFog`] the enum
+  `scene.fog` holds, so `isFog` / `isFogExp2` is a `match`.
+* [`SceneFog::node`] is `updateFog()`'s node. Its uniforms name *where* the
+  value comes from — `UniformSource::FogColor` / `FogNear` / `FogFar` /
+  `FogDensity`, render group — rather than holding the fog object, and
+  `Renderer::render` writes the scene's current values into the render group
+  each frame. So the node does not depend on the values and there is one per
+  fog kind, built once per thread: its identity, and with it the program
+  cache key, is the same across frames and across fog objects of one kind. A
+  new `near` is a uniform write; switching `Fog` for `FogExp2` is a new
+  program, as in three.
+* `Renderer::render` picks `scene.fog_node` first, then `scene.fog`'s node —
+  `getFogNode()`'s `||`.
+* [`tsl::density_fog_factor`] and [`tsl::exponential_height_fog_factor`] are
+  `Fog.js`' other two factors, each with a `_with_view_z` twin for the
+  `.context( { getViewZ } )` form (§24.3). `viewZ` is wrapped in `to_const`
+  by hand because the builder does not promote a negation on usage count
+  (§8, "`toConst` on the shadow filter"); three's `let` comes from the usage
+  count.
+
+### 28.3 Checked against
+
+No three.js example renders a lit material under plain `Fog` or `FogExp2`
+alone, so two minimal pages do it: `tools/dump-pages/fog_standard_linear.html`
+and `fog_standard_exp2.html` (a `MeshStandardNodeMaterial` sphere, one
+directional light). `tools/dump-webgpu.mjs --html FILE` serves such a page in
+place of the checkout's. Against the r186 build, the fog statement is line
+for line the port's (`dump_wgsl`'s `fog_standard_linear` /
+`fog_standard_exp2`), and the fog members sit in the render struct after the
+light members in both; `tests/nodes_fog.rs` holds that shape. The dumps of
+`webgpu_postprocessing_difference` and `webgpu_shadowmap` now match on the fog
+line too. The rest of the standard fragment differs only in the classes §8
+already lists.
+
+`webgpu_materials_texture_manualmipmap` is the graded rung: two scenes under
+`new THREE.Fog( 0x000000, 1500, 4000 )`, and a floor whose eight mip levels
+the page paints by hand (`Texture::set_mipmaps`: three uploads
+`texture.mipmaps` level by level and generates nothing).
+
+### 28.4 Divergences
+
+* **Uniforms name a source, not an object.** Three's `reference()` reads
+  `sceneFog.color` from the fog it was built for; the port's uniforms read
+  whichever fog the scene being rendered holds. The same node therefore serves
+  every scene, where three builds one per fog object. The WGSL is the same.
+* **`webgpu_instance_sprites`, the issue's first choice of rung, is not
+  ported.** It needs the `Sprite` object (issue #143, in progress on its own
+  branch), `alphaMap`, and `alphaTest`. Building `Sprite` here would collide
+  with #143, so the rung is `webgpu_materials_texture_manualmipmap`.
+
+[`Fog`]: ../src/objects/fog.rs
+[`FogExp2`]: ../src/objects/fog.rs
+[`SceneFog`]: ../src/objects/fog.rs
+[`SceneFog::node`]: ../src/objects/fog.rs
+[`tsl::density_fog_factor`]: ../src/nodes/tsl.rs
+[`tsl::exponential_height_fog_factor`]: ../src/nodes/tsl.rs
