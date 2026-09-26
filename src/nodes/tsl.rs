@@ -16,8 +16,9 @@ use std::rc::Rc;
 
 use super::builder::{current_context, push_context};
 use super::node::{
-    BufferNode, BufferSource, Builtin, FnDef, InstanceBuffer, Lazy, Node, NodeRef, SampleMode,
-    SettableValue, Type, UniformGroup, UniformNode, UniformSource, VarDef, VaryingDef,
+    BufferNode, BufferSource, Builtin, ContextValue, CustomNode, FnDef, InstanceBuffer, Lazy, Node,
+    NodeRef, SampleMode, SettableValue, Type, UniformGroup, UniformNode, UniformSource, VarDef,
+    VaryingDef,
 };
 use crate::materials::Side;
 use crate::math::{Color, Matrix3};
@@ -123,6 +124,37 @@ fn sub_build_name(name: &str) -> String {
         Some(layer) => format!("{layer}_{name}"),
         None => name.to_string(),
     }
+}
+
+/// `context( node, { … } )` — `ContextNode.js`. `node` is built with
+/// `value`'s keys merged into `builder.context`, and the keys in force before
+/// are restored after it.
+///
+/// What reads the keys is whatever is *set up* while `node` is being built: an
+/// inlined `Fn()`'s body ([`range_fog_factor`] reads `getViewZ`) or a
+/// [`CustomNode::setup`]. A node already built when `context` is called was
+/// set up under the context of its own construction, as a JS node that has
+/// already been built once keeps its `nodeData`. See `docs/nodes.md` §45.
+pub fn context(node: impl Into<NodeRef>, value: ContextValue) -> NodeRef {
+    NodeRef::new(Node::Context {
+        node: node.into(),
+        value: Rc::new(value),
+    })
+}
+
+/// `isolate( node )` — `IsolateNode.js`: `node` is built in a `NodeCache` of
+/// its own whose parent is the current one. A node that the subgraph reaches
+/// for the first time is counted, set up and declared there, so the same node
+/// reached again outside is a stranger to it; a node already known outside
+/// is shared. `cache( node, false )`, the deprecated parentless form, is not
+/// ported.
+pub fn isolate(node: impl Into<NodeRef>) -> NodeRef {
+    NodeRef::new(Node::Isolate { node: node.into() })
+}
+
+/// `new MyNode( … )` for a [`CustomNode`] defined outside the crate.
+pub fn custom(node: impl CustomNode + 'static) -> NodeRef {
+    NodeRef::new(Node::Custom(Rc::new(node)))
 }
 
 /// `subBuild( node, name )` — build `f`'s nodes inside the named layer.
@@ -775,8 +807,21 @@ pub fn perspective_depth_to_view_z(
         .div(far.clone().sub(near).mul(depth).sub(far))
 }
 
+/// `Fog.js`' `getViewZNode( builder )`: `builder.context.getViewZ` if an
+/// enclosing [`context`] installed one, else `positionView.z`. Read inside a
+/// fog factor's deferred body (see [`fog_factor_fn`]), so `positionView` is
+/// the building material's own and the context is the one the builder has
+/// pushed by then.
+fn fog_view_z() -> NodeRef {
+    current_context(|cx| cx.extra.get("getViewZ").cloned()).unwrap_or_else(|| position_view().z())
+}
+
 /// Port of `three.js/src/nodes/fog/Fog.js`' `rangeFogFactor( near, far )`:
-/// `smoothstep( near, far, positionView.z.negate() )`.
+/// `smoothstep( near, far, viewZ.negate() )`, where `viewZ` is
+/// `builder.context.getViewZ` or `positionView.z` (three's `getViewZNode`). So
+/// `range_fog_factor( 2.7, 4.0 ).context( ContextValue::new().set(
+/// "getViewZ", scene_pass_view_z ) )` is the page's own spelling
+/// (`docs/nodes.md` §45).
 ///
 /// Like three's, the factor reads `positionView` when the *material* is built,
 /// not when the fog is made: it is an inline `Fn()` whose body
@@ -785,9 +830,7 @@ pub fn perspective_depth_to_view_z(
 /// (`docs/nodes.md` §41).
 pub fn range_fog_factor(near: impl Into<NodeRef>, far: impl Into<NodeRef>) -> NodeRef {
     let (near, far) = (near.into(), far.into());
-    fog_factor_fn(move || {
-        range_fog_factor_with_view_z(near.clone(), far.clone(), position_view().z())
-    })
+    fog_factor_fn(move || range_fog_factor_with_view_z(near.clone(), far.clone(), fog_view_z()))
 }
 
 /// `Fog.js`' factors are `Fn()`s whose `getViewZNode( builder )` runs during
@@ -795,8 +838,9 @@ pub fn range_fog_factor(near: impl Into<NodeRef>, far: impl Into<NodeRef>) -> No
 /// material's own. The port's graph is eager, so the body is held in an
 /// inline, argument-less call and run by [`resolve_fog_factor`] inside
 /// `NodeMaterial` setup's position-view scope. A factor that reaches the
-/// builder unresolved (used outside `scene.fogNode`) is inlined there, with the
-/// base class' `positionView`, which is what it read before.
+/// builder unresolved (used outside `scene.fogNode`, or wrapped in a
+/// [`context`]) is inlined there, with the base class' `positionView`, which
+/// is what it read before.
 fn fog_factor_fn(body: impl Fn() -> NodeRef + 'static) -> NodeRef {
     call(&inline_fn(0, Type::F32, move |_| body()), Vec::new())
 }
@@ -810,14 +854,11 @@ pub fn resolve_fog_factor(factor: &NodeRef) -> NodeRef {
     }
 }
 
-/// `rangeFogFactor( near, far ).context( { getViewZ: () => viewZ } )`.
+/// `rangeFogFactor( near, far ).context( { getViewZ: () => viewZ } )`, with
+/// the override passed as an argument.
 ///
-/// `Fog.js`' `getViewZNode( builder )` reads `builder.context.getViewZ` and
-/// falls back to `positionView.z`, then negates whichever it got. Three
-/// supplies the override through the *builder* context because its `Fn()` body
-/// is evaluated while the material is built; this port's graph is built
-/// eagerly, so the same choice is made by which function the caller calls.
-/// `docs/nodes.md` §24 records the divergence.
+/// The form the port had before [`context`] existed (`docs/nodes.md` §24.3);
+/// the generated WGSL is the same as the context form's.
 pub fn range_fog_factor_with_view_z(
     near: impl Into<NodeRef>,
     far: impl Into<NodeRef>,
@@ -830,15 +871,16 @@ pub fn range_fog_factor_with_view_z(
 /// the exponential squared fog `FogExp2` builds:
 /// `density.mul( density, viewZ, viewZ ).negate().exp().oneMinus()`.
 ///
-/// `viewZ` is `positionView.z.negate()`, read twice. three.js' usage count
-/// turns it into a `let nodeConstN`; the port's builder does not promote a
-/// negation on usage (`docs/nodes.md` §8, "`toConst` on the shadow filter"), so
-/// the const is taken here by hand and the WGSL is the same.
+/// `viewZ` is `positionView.z.negate()` (or `builder.context.getViewZ`, as
+/// in [`range_fog_factor`]), read twice. three.js' usage count turns it into a
+/// `let nodeConstN`; the port's builder does not promote a negation on usage
+/// (`docs/nodes.md` §8, "`toConst` on the shadow filter"), so the const is
+/// taken here by hand and the WGSL is the same.
 ///
 /// Deferred to the material's build as [`range_fog_factor`] is.
 pub fn density_fog_factor(density: impl Into<NodeRef>) -> NodeRef {
     let density = density.into();
-    fog_factor_fn(move || density_fog_factor_with_view_z(density.clone(), position_view().z()))
+    fog_factor_fn(move || density_fog_factor_with_view_z(density.clone(), fog_view_z()))
 }
 
 /// [`density_fog_factor`] over an explicit view-space z, the
@@ -873,11 +915,7 @@ pub fn exponential_height_fog_factor(
 ) -> NodeRef {
     let (density, height) = (density.into(), height.into());
     fog_factor_fn(move || {
-        exponential_height_fog_factor_with_view_z(
-            density.clone(),
-            height.clone(),
-            position_view().z(),
-        )
+        exponential_height_fog_factor_with_view_z(density.clone(), height.clone(), fog_view_z())
     })
 }
 
@@ -1706,6 +1744,16 @@ impl NodeRef {
 
     pub fn to_var(&self, name: &'static str) -> NodeRef {
         to_var(Some(name), self.clone())
+    }
+
+    /// `node.context( { … } )` — see [`context`].
+    pub fn context(&self, value: ContextValue) -> NodeRef {
+        context(self.clone(), value)
+    }
+
+    /// `node.isolate()` — see [`isolate`].
+    pub fn isolate(&self) -> NodeRef {
+        isolate(self.clone())
     }
 
     pub fn to_varying(&self, name: &'static str) -> NodeRef {

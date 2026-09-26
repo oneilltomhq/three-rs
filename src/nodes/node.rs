@@ -963,8 +963,103 @@ impl std::fmt::Debug for FnDef {
     }
 }
 
+/// A node type defined outside the crate: the port of `class MyNode extends
+/// Node` with a `setup( builder )` override, the shape every addon in
+/// `examples/jsm/tsl/` has.
+///
+/// **`setup` composes; it never emits.** It returns a graph of the existing
+/// [`Node`] variants, and the builder builds that graph in its place. It
+/// cannot write a WGSL statement of its own, declare a binding, or change how
+/// a variant is generated. Three's addons never override `generate` either:
+/// they override `setup` (and `updateBefore`, which is #162). A node that needs
+/// a statement shape nothing can compose into belongs in the crate as a
+/// variant, where the exhaustive `match` in the builder and the dump gates see
+/// it (#155 decision 2).
+///
+/// The builder calls `setup` once per build, the first time it reaches the
+/// node, and keeps the result as three keeps `nodeProperties.outputNode`: in
+/// the builder's per-build data, keyed on the node's identity and scoped by
+/// [`isolate`](crate::nodes::tsl::isolate). Two reaches of one
+/// `Node::Custom` share one expansion; two `Node::Custom`s over equal structs
+/// are two nodes. See `docs/nodes.md` §45.
+///
+/// ```ignore
+/// struct Double(NodeRef);
+///
+/// impl CustomNode for Double {
+///     fn type_name(&self) -> &'static str { "DoubleNode" }
+///     fn node_type(&self) -> Type { self.0.ty() }
+///     fn setup(&self, _: &NodeBuilder) -> NodeRef { self.0.clone().mul(2.0) }
+/// }
+///
+/// let doubled = custom(Double(uv().x()));
+/// ```
+pub trait CustomNode {
+    /// three's `static get type()`: the class name, `'RGBShiftNode'`. Only
+    /// `Debug` output and panic messages read it.
+    fn type_name(&self) -> &'static str;
+
+    /// `Node.getNodeType( builder )`: the WGSL type of the value `setup`
+    /// returns. The port needs it before the build, because the TSL methods
+    /// that wrap this node (`.mul()`, `.x()`, …) type their result eagerly.
+    fn node_type(&self) -> Type;
+
+    /// `Node.isCacheable( builder )`: whether a node reached more than once
+    /// is built into a var once and read from there. r187dev's `Node.build()`
+    /// does that for every cacheable node with a value (`cacheResult`), not
+    /// only for `TempNode`s, so the default is `true`, as three's is.
+    /// `false` builds the output again at every reach.
+    fn is_cacheable(&self) -> bool {
+        true
+    }
+
+    /// `Node.setup( builder )`: the graph this node stands for.
+    ///
+    /// `builder` is shared, not mutable: the only thing to ask it is
+    /// [`context`](crate::nodes::NodeBuilder::context), three's
+    /// `builder.context`, as installed by an enclosing
+    /// [`context`](crate::nodes::tsl::context) node. The TSL functions called
+    /// here see the same context through the crate's own accessors.
+    fn setup(&self, builder: &crate::nodes::NodeBuilder) -> NodeRef;
+}
+
+impl std::fmt::Debug for dyn CustomNode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.type_name())
+    }
+}
+
+/// `context( node, { … } )`'s value: the `builder.context` keys a
+/// [`Node::Context`] installs for its subgraph, merged over the ones already
+/// in force (`builder.addContext()`).
+///
+/// Three's values are arbitrary JS; the port's are nodes (`getViewZ: () =>
+/// scenePassViewZ` is `.set( "getViewZ", scene_pass_view_z )`), held in
+/// `BuildContext`'s string-keyed `extra` map, which is where #155 decision 6
+/// put addon keys. The typed core keys (`setupNormal`, the material side, …)
+/// are installed by the material's own setup and cannot be set from here.
+#[derive(Clone, Debug, Default)]
+pub struct ContextValue {
+    pub(crate) entries: Vec<(&'static str, NodeRef)>,
+}
+
+impl ContextValue {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// `{ …, key: value }`. A later `set` of the same key wins, as the later
+    /// of two properties does in a JS object literal.
+    pub fn set(mut self, key: &'static str, value: impl Into<NodeRef>) -> Self {
+        self.entries.retain(|(k, _)| *k != key);
+        self.entries.push((key, value.into()));
+        self
+    }
+}
+
 /// The node set. Closed on purpose: an exhaustive `match` in the builder is
 /// what tells the next rung it has added something the generator cannot emit.
+/// [`Node::Custom`] is the one opening, and it can only compose the others.
 #[derive(Debug)]
 pub enum Node {
     /// A literal. `values` holds one entry per component.
@@ -1220,6 +1315,23 @@ pub enum Node {
     Barrier {
         scope: &'static str,
     },
+    /// A node type defined outside the crate; see [`CustomNode`]. Built by
+    /// building what its `setup` returns.
+    Custom(Rc<dyn CustomNode>),
+    /// `ContextNode` — `node.context( { … } )`. Builds `node` with `value`'s
+    /// keys merged into `builder.context`, and restores the previous context
+    /// afterwards.
+    Context {
+        node: NodeRef,
+        value: Rc<ContextValue>,
+    },
+    /// `IsolateNode` — `isolate( node )`. Builds `node` in a `NodeCache` of
+    /// its own, whose parent is the cache in force where the isolate is
+    /// built: what `node`'s subgraph sets up, counts or declares for the first
+    /// time stays inside it.
+    Isolate {
+        node: NodeRef,
+    },
 }
 
 /// A handle on a node. Fluent TSL methods hang off this; see `tsl.rs`.
@@ -1285,6 +1397,8 @@ impl NodeRef {
             Node::Atomic { pointer, .. } => pointer.ty(),
             Node::Workgroup(def) => def.element_ty,
             Node::Barrier { .. } => Type::Void,
+            Node::Custom(custom) => custom.node_type(),
+            Node::Context { node, .. } | Node::Isolate { node } => node.ty(),
         }
     }
 }
