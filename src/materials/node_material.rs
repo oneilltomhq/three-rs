@@ -730,17 +730,18 @@ fn setup_inner(
     //
     // The MRT branch runs only with a render target bound, and the hook only
     // without one, so the two never meet.
+    // A deferred `Fn()` output node runs here, in this material's context
+    // (see `resolve_fn_call`).
+    let material_output = material
+        .output_node
+        .as_ref()
+        .map(crate::nodes::tsl::resolve_fn_call);
     let (output_assign, output_node) = match &ctx.output {
         Some(context) => (
-            Some(
-                material
-                    .output_node
-                    .clone()
-                    .unwrap_or_else(|| output.clone()),
-            ),
+            Some(material_output.unwrap_or_else(|| output.clone())),
             Some(context.node.clone()),
         ),
-        None => (None, material.output_node.clone()),
+        None => (None, material_output),
     };
 
     MaterialFlow {

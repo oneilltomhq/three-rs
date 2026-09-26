@@ -181,6 +181,17 @@ mod webgpu_postprocessing_transition;
 #[allow(dead_code)]
 mod webgpu_postprocessing_sobel;
 
+#[path = "../../examples/webgpu_postprocessing_afterimage.rs"]
+#[allow(dead_code)]
+mod webgpu_postprocessing_afterimage;
+
+#[path = "../../examples/webgpu_tsl_earth.rs"]
+#[allow(dead_code)]
+mod webgpu_tsl_earth;
+#[path = "../../examples/webgpu_tsl_halftone.rs"]
+#[allow(dead_code)]
+mod webgpu_tsl_halftone;
+
 #[path = "../../examples/webgpu_postprocessing.rs"]
 #[allow(dead_code)]
 mod webgpu_postprocessing;
@@ -1284,6 +1295,149 @@ fn webgpu_postprocessing_sobel() {
         webgpu_postprocessing_sobel::animate,
         |app| app.renderer.device(),
     );
+}
+
+/// 50000 additive sprites spiralling on a sphere through one scene pass and
+/// `AfterImageNode`'s feedback composite. The graded frame is the first, so
+/// the composite's previous target is still zero.
+///
+/// Ignored: the port's frame is identical to three.js' own frame for the page
+/// here, and three itself fails `webgpu_postprocessing_afterimage.jpg` on
+/// this machine by the same 521 pixels. See
+/// `docs/webgpu_postprocessing_afterimage-progress.md`.
+#[test]
+#[ignore = "three.js itself fails its own reference for this page on this machine"]
+fn webgpu_postprocessing_afterimage() {
+    let name = "webgpu_postprocessing_afterimage";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_postprocessing_afterimage::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_postprocessing_afterimage::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(
+        name,
+        &mut app,
+        webgpu_postprocessing_afterimage::animate,
+        |app| app.renderer.device(),
+    );
+}
+
+/// Two screen-space halftone patterns written over `MeshStandardNodeMaterial`'s
+/// `Output` through `outputNode`, on a torus knot, a sphere and the skinned
+/// `Michelle.glb` in its bind pose.
+#[test]
+fn webgpu_tsl_halftone() {
+    let name = "webgpu_tsl_halftone";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_tsl_halftone::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_tsl_halftone::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_tsl_halftone::animate, |app| {
+        app.renderer.device()
+    });
+}
+
+/// A `bumpMap()` of a TSL expression, a night side and an atmosphere mixed in
+/// through `outputNode`, and a `BackSide` transparent shell.
+#[test]
+fn webgpu_tsl_earth() {
+    let name = "webgpu_tsl_earth";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_tsl_earth::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_tsl_earth::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_tsl_earth::animate, |app| {
+        app.renderer.device()
+    });
 }
 
 /// Not graded: three.js itself scores 0.107% (107 pixels) against its own
@@ -5237,6 +5391,14 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_tsl_angular_slicing);
     rung!(webgpu_fog_height);
     rung!(webgpu_shadowmap_opacity);
+    // The same two-frame cycle as `webgpu_postprocessing_difference`'s
+    // above: `AfterImageNode`'s `_compRT` / `_oldRT` swap is the port's
+    // `toggle_texture()` before every render, so frame two is the first to
+    // see each texture handle over its other allocation and makes the views
+    // and bind groups that pairing needs. Frame three must create nothing.
+    rung!(webgpu_postprocessing_afterimage, 0, 2);
+    rung!(webgpu_tsl_halftone);
+    rung!(webgpu_tsl_earth);
     rung!(webgpu_mirror);
     rung!(webgpu_multiple_rendertargets);
     rung!(webgpu_multiple_rendertargets_readback);

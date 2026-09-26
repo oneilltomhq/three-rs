@@ -260,7 +260,9 @@ TexturesPartialupdate, webgpu_textures_partialupdate, "../../examples/webgpu_tex
 Layers, webgpu_layers, "../../examples/webgpu_layers.rs";
 LoaderGltfDiffuseRoughness, webgpu_loader_gltf_diffuse_roughness, "../../examples/webgpu_loader_gltf_diffuse_roughness.rs";
 CubemapMix, webgpu_cubemap_mix, "../../examples/webgpu_cubemap_mix.rs";
-Mirror, webgpu_mirror, "../../examples/webgpu_mirror.rs";}
+Mirror, webgpu_mirror, "../../examples/webgpu_mirror.rs";
+TslHalftone, webgpu_tsl_halftone, "../../examples/webgpu_tsl_halftone.rs";
+TslEarth, webgpu_tsl_earth, "../../examples/webgpu_tsl_earth.rs";}
 
 impl Which {
     /// The name with or without its `webgpu_` prefix, or its 1-based index in

@@ -5229,3 +5229,113 @@ nodeVar0.x )`.
 `generateMipmaps`, `depth` (the reflector's `getDepthNode()`) and
 `reflector.forceUpdate` from outside are not ported, since no graded page
 uses them. The clip bias is 0, as in three.
+## 53. `webgpu_tsl_halftone` and `webgpu_tsl_earth` — a deferred `Fn()` as `outputNode`, and `bumpMap()` of an expression
+
+The page mixes two halftone dot screens into every material's `output`:
+`material.outputNode = halftones( output )`, where `halftones` and `halftone`
+are TSL `Fn`s. Each screen is a rotated grid in screen space
+(`screenCoordinate / screenSize.yy`), with dots sized by how far
+`normalWorld` points along a light direction. The page applies it to a
+default `MeshStandardNodeMaterial` on a torus knot and a sphere, and to every
+material of the skinned `Michelle.glb`. Nothing new was needed in the builder:
+`rotate`, `mod`, `remapClamp`, `step` and the split `Output.x = …` assign
+were all there.
+
+### 53.1 `outputNode` runs in its material's context
+
+A TSL `Fn` body is not run where it is called. It runs inside the build of the
+material that uses it, so `normalWorld` inside `halftones` reads *that*
+material's `normalView`. For Michelle that is the normal-mapped normal,
+negated on back faces because the GLTF material is `DoubleSide`. The port's
+graph is eager. Built at the call site in `init()`, with no material in scope,
+`normal_world()` keyed on the bare geometric normal. The fragment then
+re-assigned `normalView = normalViewGeometry` just ahead of `normalWorld`,
+which put 134 pixels on Michelle's hair and body and failed the rung.
+
+The port already had a seam for exactly this: `scene.fogNode`'s factor is held
+in an argument-less inline `Fn` call and run by `resolve_fog_factor` inside
+`NodeMaterial` setup. That body is now `tsl::resolve_fn_call`, and
+`resolve_fog_factor` delegates to it. The same function runs a deferred
+`outputNode` in `node_material::setup_inner`. The example wraps `halftones`'
+body in `call( &inline_fn( 0, … ), vec![] )`, so each material runs it once
+with its own normal, and the body's normal is the one the lighting used.
+Only an argument-less inline call is resolved. Every other `outputNode` is
+used as it is, and no existing rung has one of those, so the ladder did not
+move.
+
+The one divergence is that three passes `output` as the `Fn`'s argument, while
+the port's body closes over `output_property()`. It is the same node.
+
+### 53.2 Checked against
+
+`dump_wgsl`'s `dump_tsl_halftone()` was compared with three's dump:
+
+* **`tsl_halftone_default` against `m00` / `m01`.** The halftone tail is
+  three's, statement for statement. The lighting has the same terms in a
+  different order. Three emits the DFG lookup and the dielectric scattering
+  first and zero-initialises each accumulator where it is first used. The
+  port zero-initialises them all up front (twice) and emits the directional
+  light before the DFG. Three also writes `normalView` through
+  `NORMAL_normalView = normalViewGeometry` where the port assigns it directly.
+  The rest is spelling: `fragCoord` is the first fragment parameter rather
+  than the last, and a `nodeVarN` stands where three writes
+  `let nodeConstN`. None of it changes a value, and the frame shows that.
+* **`tsl_halftone_body` against `m03` / `m04`** (`Ch03_Body`: physical,
+  `DoubleSide`, normal map, 65 bones). After the fix, the halftone tail reads
+  the TBN-mapped `normalView` exactly as three's does. The rest is the same
+  reordering and spelling as the default material, plus the numbering of
+  varyings and uniforms.
+  The skinned vertex shader is the one the existing skinning path already
+  emits. Three writes the bone-matrix sum out three times inside the
+  `mat3x3` for `normalLocal`, and the port holds it in one var.
+
+The port's 800x500 frame is pixel-identical to three's own
+`actual_full.png`. Three itself scores 93 of 100000 pixels against the
+reference JPEG on this machine, and so does the port.
+
+### 53.3 `webgpu_tsl_earth`: `bumpMap()` of an expression
+
+The globe's normal is `bumpMap( max( texture( map ).r, cloudsStrength ) )`,
+a height built from two taps rather than one map's `.r`. Three's
+`dHdxy_fwd` handles any `textureNode` by sampling it three times under a
+`context( { getUV, forceUVContext: true } )`. That context moves every
+default-uv texture tap inside the expression to `uv`, `uv + dFdx( uv )` and
+`uv + dFdy( uv )`, and each tap still goes through its map's uv matrix. The
+port's eager graph has no such context. `tsl::bump_map_with( height, scale )`
+calls `height` once per tap and hands it a stand-in for `texture( map )`
+that samples at that tap's uv. `bump_map( map, scale )` is now
+`bump_map_with( |texture| texture( map ).x(), scale )`, which builds the same
+nodes as before.
+
+A node the closure captures instead of building through the stand-in is
+shared by all three taps. That is what three does with `cloudsStrength`,
+which samples at an explicit `uv()`: its dump has the same `nodeConst0` in
+all three `max()`es, and so does the port's.
+
+The rest of the page needed nothing new: `positionWorld`, `cameraPosition`,
+`normalWorldGeometry`, `smoothstep`, `remap`, `step`, a `roughnessNode` and
+an eager `outputNode` (it reads only `normalWorldGeometry`, which does not
+depend on the material). The `BackSide` transparent atmosphere is a
+`MeshBasicNodeMaterial` whose `outputNode` replaces its colour.
+
+### 53.4 `webgpu_tsl_earth`: checked against
+
+* **`tsl_earth_globe` against `m01` / `m02`.** The bump section is three's
+  statement for statement, including the order of the taps: the `dFdx` tap,
+  then `Hll`, then the `max()`, then the `dFdy` tap. One divergence: three
+  gives each `texture()` call its own uv-matrix uniform (`nodeUniform5` for
+  the roughness tap, `nodeUniform14` for the bump taps). The port keys the
+  uniform by map and slot, so both read one. The matrices are the same
+  identity. The lighting is reordered as in §53.2, and the `outputNode` tail
+  is three's.
+* **`tsl_earth_atmosphere` against `m03` / `m04`.** The `outputNode` is
+  three's. Three's `BasicLightingModel` preamble writes `indirectDiffuse`
+  through a `vec4` and the port's writes `Output` directly. That value never
+  reaches the target, because `outputNode` replaces it.
+
+The port scores 0 of 100000 pixels, and so does three's own frame. Against
+three's 800x500 frame, 27781 pixels differ by one or two levels across the
+globe, and 9 isolated ones near the sun's highlight differ by up to 75.
+The likely source is the filtering of the three 4096x2048 JPEGs (mip
+generation, 8x anisotropy). That was not pinned down, since none of it
+reaches the grader's threshold.
