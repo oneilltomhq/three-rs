@@ -196,7 +196,7 @@ Three things the readback caught that nothing else would have:
   this frame build a compute pipeline" is answered by `info.build`.
 * **Subgroup operations**, and compute over anything but a flat index. None
   is reachable from this example. Workgroup shared memory, barriers, atomics
-  and indirect dispatch landed later, with #167 (`docs/nodes.md` §28).
+  and indirect dispatch landed later, with #167 (`docs/nodes.md` §33).
 * **The example in `src/bin/viewer.rs`.** Every other graded example is
   browsable there; this one is not, because `Scene::camera()` returns a
   `&mut PerspectiveCamera` and `set_size()` writes `aspect` on it, and this
@@ -207,6 +207,6 @@ Three things the readback caught that nothing else would have:
   comes from the release e2e run rather than `viewer --headless --frames 40`.
 * **Sweeping the storage-buffer cache.** `Renderer` holds storage buffers by
   `BufferId` and never drops them; a `StorageArray` is application-owned and
-  lives as long as the app. Geometry and texture caches are swept (issue #58);
+  lives as long as the app. Geometry and texture caches are swept (issues #58, #158);
   this one would need the same treatment the first time a rung creates storage
   buffers per frame.

@@ -28,8 +28,8 @@ use three_rs::addons::controls::OrbitControls;
 use three_rs::core::IndirectStorageBufferAttribute;
 use three_rs::materials::{instanced_range, Blending, MeshBasicNodeMaterial};
 use three_rs::nodes::tsl::{
-    float, mix, mod_float, position_local, rotate_uv, texture_uv, time, uniform_value, uv, vec2,
-    vec3,
+    float, mix, mod_float, position_local, rotate_uv_about, texture_uv, time, uniform_value, uv,
+    vec2, vec3,
 };
 use three_rs::nodes::Type;
 use three_rs::textures::Texture;
@@ -110,7 +110,7 @@ pub fn materials(map: &Texture) -> (MeshBasicNodeMaterial, MeshBasicNodeMaterial
     // `const textureNode = texture( map, rotateUV( uv(), scaledTime.mul( rotateRange ) ) );`
     let texture_node = texture_uv(
         map,
-        rotate_uv(uv(), scaled_time.mul(rotate_range), vec2(0.5, 0.5)),
+        rotate_uv_about(uv(), scaled_time.mul(rotate_range), vec2(0.5, 0.5)),
     );
 
     // `const opacityNode = textureNode.a.mul( life.oneMinus() );`

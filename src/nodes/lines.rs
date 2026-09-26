@@ -42,6 +42,13 @@ pub struct LineSegmentsAttributes {
     pub positions: Rc<Vec<f32>>,
     pub colors: Option<Rc<Vec<f32>>>,
     pub distances: Option<Rc<Vec<f32>>>,
+    /// `LineSegments2._resolution` — the renderer's viewport size in logical
+    /// pixels, written by `onBeforeRender()` every draw and read only by the
+    /// screen-space `raycast()`. Not an attribute, but it belongs to the
+    /// `LineSegments2` half of the object as the attributes do, and this is
+    /// where that half lives. `( 0, 0 )` until the first render, which makes
+    /// a screen-space raycast hit nothing, as in three.js. Not hashed.
+    pub resolution: crate::math::Vector2,
 }
 
 impl LineSegmentsAttributes {

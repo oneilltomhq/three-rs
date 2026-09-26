@@ -4,6 +4,9 @@
 
 use crate::cameras::{OrthographicCamera, PerspectiveCamera};
 use crate::math::{Matrix4, Vector2, Vector3, RAD2DEG};
+use crate::nodes::NodeRef;
+
+use super::shadow_filter::ShadowFilterFn;
 
 /// `LightShadow.camera` — a `PerspectiveCamera` for `SpotLightShadow`, an
 /// `OrthographicCamera` for `DirectionalLightShadow`.
@@ -126,7 +129,7 @@ pub struct LightShadow {
     pub normal_bias: f64,
     /// `this.radius` — the PCF disk radius, in texels.
     pub radius: f64,
-    /// `this.blurSamples` (VSM only; carried for completeness).
+    /// `this.blurSamples` — the tap count of each VSM blur pass.
     pub blur_samples: usize,
     /// `this.mapSize`.
     pub map_size: Vector2,
@@ -137,6 +140,12 @@ pub struct LightShadow {
     pub focus: f64,
     /// `SpotLightShadow.aspect`.
     pub aspect: f64,
+    /// `this.filterNode` — a shadow filter used in place of the one
+    /// `renderer.shadowMap.type` picks. `None` is three's `undefined`.
+    pub filter_node: Option<ShadowFilterFn>,
+    /// `this.shadowNode` — a node used as the light's whole shadow factor
+    /// instead of a `ShadowNode`; no shadow map is rendered for the light.
+    pub shadow_node: Option<NodeRef>,
 }
 
 impl LightShadow {
@@ -174,6 +183,8 @@ impl LightShadow {
             matrix: Matrix4::identity(),
             focus: 1.0,
             aspect: 1.0,
+            filter_node: None,
+            shadow_node: None,
         }
     }
 

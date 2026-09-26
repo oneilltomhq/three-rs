@@ -13,7 +13,8 @@ pub mod transmission;
 pub use node_material::{
     background_color_node, background_node_color_node, background_pmrem_color_node,
     background_vertex_node, instanced_range, output_fragment_node, quad_vertex_node, render_output,
-    setup, shadow_material, tone_mapping_node, MrtContext, OutputContext, SetupContext,
+    setup, shadow_material, shadow_material_for, tone_mapping_node, MrtContext, OutputContext,
+    SetupContext,
 };
 
 pub use blending::{
@@ -154,7 +155,7 @@ pub enum MaterialKind {
 /// - a field the *program* depends on — any node (`color_node`,
 ///   `position_node`, `fragment_node`, …), any map or `env_map`, `kind`,
 ///   `lights`, `lights_node`, `flat_shading`, `fog`, `transparent`,
-///   `blending`, `alpha_to_coverage`, `size_attenuation`, `mask_node` — needs
+///   `blending`, `alpha_to_coverage`, `world_units`, `size_attenuation`, `mask_node` — needs
 ///   [`set_needs_update`](Self::set_needs_update) after it changes, which is
 ///   `material.needsUpdate = true`. Without it the old program keeps drawing.
 /// - a field the program reads as a **uniform** — `color`, `opacity`,
@@ -196,11 +197,19 @@ pub struct MeshBasicNodeMaterial {
     /// `NodeMaterial.alphaTestNode` — `diffuseColor.a.lessThanEqual( node
     /// ).discard()` at the end of `setupDiffuseColor()`.
     ///
-    /// three.js also has a scalar `Material.alphaTest` with a
-    /// `materialAlphaTest` uniform behind it; the port has only the node form,
-    /// because that is what `webgpu_materials` sets and a uniform nothing
-    /// writes is a trap rather than an API.
+    /// Takes precedence over [`alpha_test`](Self::alpha_test), as in three.
     pub alpha_test_node: Option<NodeRef>,
+    /// `Material.alphaTest` — when positive, `setupDiffuseColor()` discards
+    /// against the `materialAlphaTest` object uniform
+    /// (`webgpu_shadowmap_pointlight`'s spheres use 0.5). The shadow pass
+    /// copies it onto its override material, so cut-away texels cast no
+    /// shadow either.
+    pub alpha_test: f64,
+    /// `Material.alphaMap` — `materialOpacity` becomes `opacity * texture(
+    /// alphaMap )` (`MaterialNode.OPACITY`), a `vec4` product that the alpha
+    /// assign narrows back to its `.x`. Copied onto the shadow pass's
+    /// override material like [`alpha_test`](Self::alpha_test).
+    pub alpha_map: Option<Texture>,
     /// `NodeMaterial.emissiveNode` — `setupLighting()`'s EMISSIVE tail:
     /// `EmissiveColor = vec3( emissiveNode )` and `outgoingLight +=
     /// EmissiveColor`. On a Phong or Standard material the `materialEmissive`
@@ -396,9 +405,16 @@ pub struct MeshBasicNodeMaterial {
     /// `Material.premultipliedAlpha` — selects the other half of the
     /// `_getBlending()` table.
     pub premultiplied_alpha: bool,
-    /// `Material.alphaToCoverage`. Only `builder.isOpaque()` reads it so far;
-    /// the pipeline's `alphaToCoverageEnabled` is still hardcoded false.
+    /// `Material.alphaToCoverage` — read by `builder.isOpaque()`, by
+    /// `Line2NodeMaterial`'s `alphaLine`, and by the pipeline's
+    /// `alphaToCoverageEnabled` (with more than one sample).
     pub alpha_to_coverage: bool,
+    /// `Line2NodeMaterial.worldUnits` (`_useWorldUnits`) — the fat line's
+    /// `linewidth` is in world units rather than screen pixels. Read by
+    /// `setup()` and by `LineSegments2.raycast()`; ignored by every other
+    /// material. A program input: set it before the first frame, or call
+    /// [`set_needs_update`](Self::set_needs_update).
+    pub world_units: bool,
     /// `Material.blendSrc` / `.blendDst` / `.blendEquation` and the three
     /// `*Alpha` overrides (`None` is Three's `null`), read only under
     /// `CustomBlending`.
@@ -482,6 +498,8 @@ impl Default for MeshBasicNodeMaterial {
             color_node: None,
             opacity_node: None,
             alpha_test_node: None,
+            alpha_test: 0.0,
+            alpha_map: None,
             emissive_node: None,
             scale_node: None,
             rotation_node: None,
@@ -503,6 +521,7 @@ impl Default for MeshBasicNodeMaterial {
             blending: Blending::Normal,
             premultiplied_alpha: false,
             alpha_to_coverage: false,
+            world_units: false,
             blend_src: BlendFactor::SrcAlpha,
             blend_dst: BlendFactor::OneMinusSrcAlpha,
             blend_equation: BlendEquation::Add,
@@ -627,11 +646,15 @@ impl MeshBasicNodeMaterial {
     /// have the result blended a second time. That default has teeth here: it
     /// makes [`is_opaque`](Self::is_opaque) false, so the fragment flow does
     /// **not** emit `DiffuseColor.w = 1.0` (`docs/nodes.md` §8).
+    ///
+    /// `this._useAlphaToCoverage = true` is the constructor's other default,
+    /// so `alpha_to_coverage` starts true; `webgpu_lines_fat` turns it off.
     pub fn line2(color: Color) -> Self {
         Self {
             kind: MaterialKind::Line2,
             color,
             blending: Blending::No,
+            alpha_to_coverage: true,
             ..Self::default()
         }
     }

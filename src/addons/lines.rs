@@ -3,8 +3,8 @@
 //! * `LineSegmentsGeometry.js` and `LineGeometry.js` verbatim.
 //! * `webgpu/LineSegments2.js` and `webgpu/Line2.js`, the WebGPU variants that
 //!   pair with [`Line2NodeMaterial`](crate::materials::Line2NodeMaterial).
-//!   Only the object half is here; `raycast()` and its world-units cousin are
-//!   not ported, because nothing on the ladder picks.
+//!   The object half and `raycast()`, both its world-units and its
+//!   screen-space branch, are here.
 //!
 //! A fat line is a `Mesh`, not a `Line`: the segment list becomes instanced
 //! attributes over a fixed eight-vertex quad, and the vertex shader expands
@@ -15,9 +15,12 @@
 
 use std::rc::Rc;
 
-use crate::core::{BoundingBox, BoundingSphere, BufferAttribute, BufferGeometry, Node};
+use crate::core::{
+    BoundingBox, BoundingSphere, BufferAttribute, BufferGeometry, Intersection, Node, Raycaster,
+    RaycasterCamera,
+};
 use crate::materials::MeshBasicNodeMaterial;
-use crate::math::Vector3;
+use crate::math::{Box3, Line3, Matrix4, Ray, Sphere, Vector2, Vector3, Vector4};
 use crate::nodes::lines::LineSegmentsAttributes;
 use crate::objects::{Mesh, Payload};
 
@@ -154,6 +157,7 @@ impl LineSegmentsGeometry {
             positions,
             colors: self.colors.clone(),
             distances: None,
+            resolution: Vector2::new(0.0, 0.0),
         }
     }
 
@@ -246,5 +250,276 @@ impl Line2 {
     #[allow(clippy::new_ret_no_self)] // mirrors three.js' constructor: it returns a scene-graph `Node`.
     pub fn new(geometry: &LineGeometry, material: MeshBasicNodeMaterial) -> Node {
         LineSegments2::from_parts("Line2", geometry.as_segments(), material)
+    }
+}
+
+/// `LineSegments2.raycast( raycaster, intersects )` for a node whose payload
+/// is `mesh`, a fat line (its [`Mesh::line_segments`] is set).
+///
+/// The segments are the instanced `instanceStart` / `instanceEnd` pairs, not
+/// the quad geometry, so the bounds tested first are
+/// `LineSegmentsGeometry`'s — the box and sphere of every endpoint.
+pub fn raycast(
+    mesh: &Mesh,
+    matrix_world: &Matrix4,
+    object: &Node,
+    raycaster: &Raycaster,
+    intersects: &mut Vec<Intersection>,
+) {
+    let Some(segments) = &mesh.line_segments else {
+        return;
+    };
+    let Some(material) = &mesh.material else {
+        return;
+    };
+    let world_units = material.world_units;
+    let camera = raycaster.camera.as_ref();
+    if camera.is_none() && !world_units {
+        eprintln!(
+            "THREE.LineSegments2: \"Raycaster.camera\" needs to be set in order to raycast against LineSegments2 while worldUnits is set to false."
+        );
+        return;
+    }
+    let resolution = segments.resolution;
+    if !world_units && (resolution.x == 0.0 || resolution.y == 0.0) {
+        return;
+    }
+
+    let threshold = raycaster.params.line2.threshold;
+    let ray = &raycaster.ray;
+    let line_width = material.linewidth + threshold;
+
+    let positions: &[f32] = &segments.positions;
+    let Some(bounds) = segment_bounds(positions) else {
+        return;
+    };
+    let (bounding_box, bounding_sphere) = bounds;
+
+    let mut sphere = Sphere::new(bounding_sphere.center, bounding_sphere.radius);
+    sphere.apply_matrix4(matrix_world);
+    let sphere_margin = match camera {
+        Some(camera) if !world_units => {
+            let distance_to_sphere = camera.near.max(sphere.distance_to_point(&ray.origin));
+            world_space_half_width(camera, distance_to_sphere, &resolution, line_width)
+        }
+        _ => line_width * 0.5,
+    };
+    sphere.radius += sphere_margin;
+    if !ray.intersects_sphere(&sphere) {
+        return;
+    }
+
+    let mut box3 = Box3::new(bounding_box.min, bounding_box.max);
+    box3.apply_matrix4(matrix_world);
+    let box_margin = match camera {
+        Some(camera) if !world_units => {
+            let distance_to_box = camera.near.max(box3.distance_to_point(&ray.origin));
+            world_space_half_width(camera, distance_to_box, &resolution, line_width)
+        }
+        _ => line_width * 0.5,
+    };
+    box3.expand_by_scalar(box_margin);
+    if !ray.intersects_box(&box3) {
+        return;
+    }
+
+    match camera {
+        Some(camera) if !world_units => raycast_screen_space(
+            positions,
+            matrix_world,
+            &resolution,
+            line_width,
+            camera,
+            ray,
+            object,
+            intersects,
+        ),
+        _ => raycast_world_units(positions, matrix_world, line_width, ray, object, intersects),
+    }
+}
+
+/// `LineSegmentsGeometry.computeBoundingBox()` / `computeBoundingSphere()`
+/// over the flat `[ start, end, start, end, … ]` array.
+fn segment_bounds(positions: &[f32]) -> Option<(BoundingBox, BoundingSphere)> {
+    if positions.is_empty() {
+        return None;
+    }
+    let points = || {
+        positions
+            .as_chunks::<3>()
+            .0
+            .iter()
+            .map(|p| Vector3::new(p[0] as f64, p[1] as f64, p[2] as f64))
+    };
+    let mut bounding_box = BoundingBox::empty();
+    for v in points() {
+        bounding_box.expand_by_point(&v);
+    }
+    let center = bounding_box.center();
+    let max_radius_sq = points().fold(0.0_f64, |r, v| r.max(center.distance_to_squared(&v)));
+    Some((
+        bounding_box,
+        BoundingSphere {
+            center,
+            radius: max_radius_sq.sqrt(),
+        },
+    ))
+}
+
+/// Segment `i`'s two endpoints, in object space.
+fn segment(positions: &[f32], i: usize) -> (Vector3, Vector3) {
+    let p = &positions[i * 6..i * 6 + 6];
+    (
+        Vector3::new(p[0] as f64, p[1] as f64, p[2] as f64),
+        Vector3::new(p[3] as f64, p[4] as f64, p[5] as f64),
+    )
+}
+
+/// `getWorldSpaceHalfWidth( camera, distance, resolution )` — how wide
+/// `line_width` screen pixels are, in world units, `distance` in front of the
+/// camera. (three names it a half width; it is the full pixel width mapped
+/// through the projection, and the margin it feeds is only a coarse test.)
+fn world_space_half_width(
+    camera: &RaycasterCamera,
+    distance: f64,
+    resolution: &Vector2,
+    line_width: f64,
+) -> f64 {
+    let mut clip_to_world = Vector4::new(0.0, 0.0, -distance, 1.0);
+    clip_to_world.apply_matrix4(&camera.projection_matrix);
+    clip_to_world.multiply_scalar(1.0 / clip_to_world.w);
+    clip_to_world.x = line_width / resolution.width();
+    clip_to_world.y = line_width / resolution.height();
+    clip_to_world.apply_matrix4(&camera.projection_matrix_inverse);
+    clip_to_world.multiply_scalar(1.0 / clip_to_world.w);
+    clip_to_world.x.max(clip_to_world.y).abs()
+}
+
+/// The hit record both branches push: the closest points on the ray and on
+/// the (world-space) segment.
+fn segment_intersection(ray: &Ray, line: &Line3, i: usize, object: &Node) -> Intersection {
+    let mut point = Vector3::ZERO;
+    let mut point_on_line = Vector3::ZERO;
+    ray.distance_sq_to_segment(
+        &line.start,
+        &line.end,
+        Some(&mut point),
+        Some(&mut point_on_line),
+    );
+    let mut intersection = Intersection::new(ray.origin.distance_to(&point), point, object.clone());
+    intersection.point_on_line = Some(point_on_line);
+    intersection.face_index = Some(i);
+    intersection
+}
+
+/// `raycastWorldUnits( lineSegments, intersects )` — the ray against each
+/// world-space segment, inside when within half a line width. Unlike every
+/// core `raycast()`, it does not check `raycaster.near` / `far`.
+fn raycast_world_units(
+    positions: &[f32],
+    matrix_world: &Matrix4,
+    line_width: f64,
+    ray: &Ray,
+    object: &Node,
+    intersects: &mut Vec<Intersection>,
+) {
+    for i in 0..positions.len() / 6 {
+        let (start, end) = segment(positions, i);
+        let mut line = Line3 { start, end };
+        line.apply_matrix4(matrix_world);
+
+        let intersection = segment_intersection(ray, &line, i, object);
+        let point_on_line = intersection.point_on_line.unwrap_or(Vector3::ZERO);
+        let is_inside = intersection.point.distance_to(&point_on_line) < line_width * 0.5;
+        if is_inside {
+            intersects.push(intersection);
+        }
+    }
+}
+
+/// `raycastScreenSpace( lineSegments, camera, intersects )` — each segment
+/// clipped to the near plane and projected to pixels, then the pixel under
+/// the ray tested against it with the screen-space line width.
+#[allow(clippy::too_many_arguments)]
+fn raycast_screen_space(
+    positions: &[f32],
+    matrix_world: &Matrix4,
+    resolution: &Vector2,
+    line_width: f64,
+    camera: &RaycasterCamera,
+    ray: &Ray,
+    object: &Node,
+    intersects: &mut Vec<Intersection>,
+) {
+    let projection_matrix = &camera.projection_matrix;
+    let near = -camera.near;
+
+    // The pixel the ray passes through: one unit along it, projected.
+    let at = ray.at(1.0);
+    let mut ss_origin = Vector4::new(at.x, at.y, at.z, 1.0);
+    ss_origin.apply_matrix4(&camera.matrix_world_inverse);
+    ss_origin.apply_matrix4(projection_matrix);
+    ss_origin.multiply_scalar(1.0 / ss_origin.w);
+    ss_origin.x *= resolution.x / 2.0;
+    ss_origin.y *= resolution.y / 2.0;
+    ss_origin.z = 0.0;
+    let ss_origin3 = Vector3::new(ss_origin.x, ss_origin.y, ss_origin.z);
+
+    let mut mv_matrix = Matrix4::identity();
+    mv_matrix.multiply_matrices(&camera.matrix_world_inverse, matrix_world);
+
+    for i in 0..positions.len() / 6 {
+        let (start, end) = segment(positions, i);
+        let mut start4 = Vector4::new(start.x, start.y, start.z, 1.0);
+        let mut end4 = Vector4::new(end.x, end.y, end.z, 1.0);
+        start4.apply_matrix4(&mv_matrix);
+        end4.apply_matrix4(&mv_matrix);
+
+        // Skip the segment if it is entirely behind the camera's near plane.
+        let is_behind_camera_near = start4.z > near && end4.z > near;
+        if is_behind_camera_near {
+            continue;
+        }
+
+        // Trim the segment if it extends behind the camera's near plane.
+        if start4.z > near {
+            let delta_dist = start4.z - end4.z;
+            let t = (start4.z - near) / delta_dist;
+            start4.lerp(&end4, t);
+        } else if end4.z > near {
+            let delta_dist = end4.z - start4.z;
+            let t = (end4.z - near) / delta_dist;
+            end4.lerp(&start4, t);
+        }
+
+        // Clip space, then NDC, then screen space.
+        start4.apply_matrix4(projection_matrix);
+        end4.apply_matrix4(projection_matrix);
+        start4.multiply_scalar(1.0 / start4.w);
+        end4.multiply_scalar(1.0 / end4.w);
+        start4.x *= resolution.x / 2.0;
+        start4.y *= resolution.y / 2.0;
+        end4.x *= resolution.x / 2.0;
+        end4.y *= resolution.y / 2.0;
+
+        // A 2D segment, to check the pixel against.
+        let line = Line3 {
+            start: Vector3::new(start4.x, start4.y, 0.0),
+            end: Vector3::new(end4.x, end4.y, 0.0),
+        };
+
+        // The closest screen-space point on the segment, and whether its
+        // depth lies inside the clip volume.
+        let param = line.closest_point_to_point_parameter(&ss_origin3, true);
+        let closest_point = line.at(param);
+        let z_pos = crate::math::math_utils::lerp(start4.z, end4.z, param);
+        let is_in_clip_space = (-1.0..=1.0).contains(&z_pos);
+        let is_inside = ss_origin3.distance_to(&closest_point) < line_width * 0.5;
+
+        if is_in_clip_space && is_inside {
+            let mut line = Line3 { start, end };
+            line.apply_matrix4(matrix_world);
+            intersects.push(segment_intersection(ray, &line, i, object));
+        }
     }
 }

@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three-rs: the MaterialX library, one fn per export</title>
+		<meta charset="utf-8">
+	</head>
+	<body>
+
+		<!--
+			Not a three.js example: a page for tools/dump-webgpu.mjs ( - -page ) that
+			calls every export of src/nodes/materialx/MaterialXNodes.js once, so that
+			three.js' own WGSL for each can be pinned by tests/nodes_mx_library.rs.
+
+			Each call is wrapped in a `Fn()` with a layout named `t_<what>`, which
+			makes three.js emit it as a `fn` of its own with its own `nodeVarN`
+			numbering. That is what lets an *inlined* export (the worley and
+			unified noises, and every one-line helper) be compared line for line:
+			its body lands in `fn t_…` instead of in the middle of `main`.
+		-->
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "../build/three.webgpu.js",
+					"three/webgpu": "../build/three.webgpu.js",
+					"three/tsl": "../build/three.tsl.js",
+					"three/addons/": "./jsm/"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			import * as THREE from 'three/webgpu';
+			import * as TSL from 'three/tsl';
+
+			const { Fn, float, int, vec2, vec3, positionLocal, uv } = TSL;
+
+			const t = ( name, type, inputs, body ) => ( { type, fn: Fn( body ).setLayout( {
+				name: 't_' + name, type, inputs: inputs.map( ( type, i ) => ( { name: 'a' + i, type } ) )
+			} ) } );
+
+			// [ wrapper, argument builder ] — `p2` is a vec2, `p3` a vec3, `f` a float.
+			const cases = [
+
+				// noise
+				[ t( 'noise_float_2', 'float', [ 'vec2' ], ( [ p ] ) => TSL.mx_noise_float( p ) ), 'p2' ],
+				[ t( 'noise_float_3', 'float', [ 'vec3' ], ( [ p ] ) => TSL.mx_noise_float( p, 1, 0 ) ), 'p3' ],
+				[ t( 'noise_vec3_2', 'vec3', [ 'vec2' ], ( [ p ] ) => TSL.mx_noise_vec3( p ) ), 'p2' ],
+				[ t( 'noise_vec3_3', 'vec3', [ 'vec3' ], ( [ p ] ) => TSL.mx_noise_vec3( p, 2, 0.5 ) ), 'p3' ],
+				[ t( 'noise_vec4_2', 'vec4', [ 'vec2' ], ( [ p ] ) => TSL.mx_noise_vec4( p ) ), 'p2' ],
+				[ t( 'noise_vec4_3', 'vec4', [ 'vec3' ], ( [ p ] ) => TSL.mx_noise_vec4( p ) ), 'p3' ],
+				[ t( 'cell_noise_float_2', 'float', [ 'vec2' ], ( [ p ] ) => TSL.mx_cell_noise_float( p ) ), 'p2' ],
+				[ t( 'cell_noise_float_3', 'float', [ 'vec3' ], ( [ p ] ) => TSL.mx_cell_noise_float( p ) ), 'p3' ],
+				[ t( 'cell_noise_vec3_2', 'vec3', [ 'vec2' ], ( [ p ] ) => TSL.mx_cell_noise_vec3( p ) ), 'p2' ],
+				[ t( 'cell_noise_vec3_3', 'vec3', [ 'vec3' ], ( [ p ] ) => TSL.mx_cell_noise_vec3( p ) ), 'p3' ],
+				[ t( 'worley_noise_float_2', 'float', [ 'vec2' ], ( [ p ] ) => TSL.mx_worley_noise_float( p ) ), 'p2' ],
+				[ t( 'worley_noise_float_3', 'float', [ 'vec3' ], ( [ p ] ) => TSL.mx_worley_noise_float( p, 0.5, 1 ) ), 'p3' ],
+				[ t( 'worley_noise_float_2d', 'float', [ 'vec2' ], ( [ p ] ) => TSL.mx_worley_noise_float_2d( p ) ), 'p2' ],
+				[ t( 'worley_noise_float_3d', 'float', [ 'vec3' ], ( [ p ] ) => TSL.mx_worley_noise_float_3d( p ) ), 'p3' ],
+				[ t( 'worley_noise_vec2_2', 'vec2', [ 'vec2' ], ( [ p ] ) => TSL.mx_worley_noise_vec2( p ) ), 'p2' ],
+				[ t( 'worley_noise_vec2_3', 'vec2', [ 'vec3' ], ( [ p ] ) => TSL.mx_worley_noise_vec2( p ) ), 'p3' ],
+				[ t( 'worley_noise_vec3_2', 'vec3', [ 'vec2' ], ( [ p ] ) => TSL.mx_worley_noise_vec3( p ) ), 'p2' ],
+				[ t( 'worley_noise_vec3_3', 'vec3', [ 'vec3' ], ( [ p ] ) => TSL.mx_worley_noise_vec3( p, 1, 2 ) ), 'p3' ],
+				[ t( 'worley_noise_vec3_style_2', 'vec3', [ 'vec2' ], ( [ p ] ) => TSL.mx_worley_noise_vec3_style( p ) ), 'p2' ],
+				[ t( 'worley_noise_vec3_style_3', 'vec3', [ 'vec3' ], ( [ p ] ) => TSL.mx_worley_noise_vec3_style( p, 1, 1, 0 ) ), 'p3' ],
+				[ t( 'unifiednoise2d', 'float', [ 'vec2' ], ( [ p ] ) => TSL.mx_unifiednoise2d( int( 0 ), p ) ), 'p2' ],
+				[ t( 'unifiednoise3d', 'float', [ 'vec3' ], ( [ p ] ) => TSL.mx_unifiednoise3d( int( 2 ), p ) ), 'p3' ],
+				[ t( 'fractal_noise_float_2d', 'float', [ 'vec2' ], ( [ p ] ) => TSL.mx_fractal_noise_float_2d( p ) ), 'p2' ],
+				[ t( 'fractal_noise_float', 'float', [ 'vec3' ], ( [ p ] ) => TSL.mx_fractal_noise_float( p ) ), 'p3' ],
+				[ t( 'fractal_noise_vec2', 'vec2', [ 'vec3' ], ( [ p ] ) => TSL.mx_fractal_noise_vec2( p ) ), 'p3' ],
+				[ t( 'fractal_noise_vec3', 'vec3', [ 'vec3' ], ( [ p ] ) => TSL.mx_fractal_noise_vec3( p ) ), 'p3' ],
+				[ t( 'fractal_noise_vec4', 'vec4', [ 'vec3' ], ( [ p ] ) => TSL.mx_fractal_noise_vec4( p, 4, 2.5, 0.25, 2 ) ), 'p3' ],
+
+				// colour
+				[ t( 'hsvtorgb', 'vec3', [ 'vec3' ], ( [ c ] ) => TSL.mx_hsvtorgb( c ) ), 'p3' ],
+				[ t( 'rgbtohsv', 'vec3', [ 'vec3' ], ( [ c ] ) => TSL.mx_rgbtohsv( c ) ), 'p3' ],
+				[ t( 'srgb_texture_to_lin_rec709', 'vec3', [ 'vec3' ], ( [ c ] ) => TSL.mx_srgb_texture_to_lin_rec709( c ) ), 'p3' ],
+
+				// core
+				[ t( 'rotate2d', 'vec2', [ 'vec2', 'float' ], ( [ p, a ] ) => TSL.mx_rotate2d( p, a ) ), 'p2f' ],
+				[ t( 'rotate3d', 'vec3', [ 'vec3', 'float' ], ( [ p, a ] ) => TSL.mx_rotate3d( p, a ) ), 'p3f' ],
+				[ t( 'rotate3d_axis', 'vec3', [ 'vec3', 'float' ], ( [ p, a ] ) => TSL.mx_rotate3d( p, a, vec3( 1, 0, 0 ) ) ), 'p3f' ],
+
+				// helpers
+				[ t( 'aastep', 'float', [ 'float', 'float' ], ( [ a, b ] ) => TSL.mx_aastep( a, b ) ), 'ff' ],
+				[ t( 'ramplr', 'vec3', [ 'vec3', 'vec3', 'vec2' ], ( [ a, b, c ] ) => TSL.mx_ramplr( a, b, c ) ), 'p3p3p2' ],
+				[ t( 'ramptb', 'vec3', [ 'vec3', 'vec3' ], ( [ a, b ] ) => TSL.mx_ramptb( a, b ) ), 'p3p3' ],
+				[ t( 'ramp4', 'vec3', [ 'vec3', 'vec3', 'vec3', 'vec3', 'vec2' ], ( [ a, b, c, d, e ] ) => TSL.mx_ramp4( a, b, c, d, e ) ), 'p3p3p3p3p2' ],
+				[ t( 'splitlr', 'vec3', [ 'vec3', 'vec3', 'float', 'vec2' ], ( [ a, b, c, d ] ) => TSL.mx_splitlr( a, b, c, d ) ), 'p3p3fp2' ],
+				[ t( 'splittb', 'vec3', [ 'vec3', 'vec3', 'float' ], ( [ a, b, c ] ) => TSL.mx_splittb( a, b, c ) ), 'p3p3f' ],
+				[ t( 'transform_uv', 'vec2', [ 'float', 'float', 'vec2' ], ( [ a, b, c ] ) => TSL.mx_transform_uv( a, b, c ) ), 'ffp2' ],
+				[ t( 'transform_uv_default', 'vec2', [], () => TSL.mx_transform_uv() ), '' ],
+				[ t( 'safepower', 'float', [ 'float', 'float' ], ( [ a, b ] ) => TSL.mx_safepower( a, b ) ), 'ff' ],
+				[ t( 'contrast', 'float', [ 'float' ], ( [ a ] ) => TSL.mx_contrast( a ) ), 'f' ],
+				[ t( 'contrast_args', 'float', [ 'float', 'float', 'float' ], ( [ a, b, c ] ) => TSL.mx_contrast( a, b, c ) ), 'fff' ],
+				[ t( 'smoothstep', 'float', [ 'float', 'float', 'float' ], ( [ a, b, c ] ) => TSL.mx_smoothstep( a, b, c ) ), 'fff' ],
+				[ t( 'add', 'vec3', [ 'vec3', 'vec3' ], ( [ a, b ] ) => TSL.mx_add( a, b ) ), 'p3p3' ],
+				[ t( 'subtract', 'vec3', [ 'vec3', 'vec3' ], ( [ a, b ] ) => TSL.mx_subtract( a, b ) ), 'p3p3' ],
+				[ t( 'multiply', 'vec3', [ 'vec3', 'float' ], ( [ a, b ] ) => TSL.mx_multiply( a, b ) ), 'p3f' ],
+				[ t( 'divide', 'vec3', [ 'vec3', 'float' ], ( [ a, b ] ) => TSL.mx_divide( a, b ) ), 'p3f' ],
+				[ t( 'modulo', 'vec3', [ 'vec3', 'float' ], ( [ a, b ] ) => TSL.mx_modulo( a, b ) ), 'p3f' ],
+				[ t( 'modulo_default', 'float', [ 'float' ], ( [ a ] ) => TSL.mx_modulo( a ) ), 'f' ],
+				[ t( 'power', 'float', [ 'float', 'float' ], ( [ a, b ] ) => TSL.mx_power( a, b ) ), 'ff' ],
+				[ t( 'atan2', 'float', [ 'float', 'float' ], ( [ a, b ] ) => TSL.mx_atan2( a, b ) ), 'ff' ],
+				[ t( 'timer', 'float', [], () => TSL.mx_timer() ), '' ],
+				[ t( 'invert', 'float', [ 'float' ], ( [ a ] ) => TSL.mx_invert( a ) ), 'f' ],
+				[ t( 'ifgreater', 'vec3', [ 'float', 'float', 'vec3', 'vec3' ], ( [ a, b, c, d ] ) => TSL.mx_ifgreater( a, b, c, d ) ), 'ffp3p3' ],
+				[ t( 'ifgreatereq', 'vec3', [ 'float', 'float', 'vec3', 'vec3' ], ( [ a, b, c, d ] ) => TSL.mx_ifgreatereq( a, b, c, d ) ), 'ffp3p3' ],
+				[ t( 'ifequal', 'float', [ 'float', 'float', 'float', 'float' ], ( [ a, b, c, d ] ) => TSL.mx_ifequal( a, b, c, d ) ), 'ffff' ],
+				[ t( 'separate', 'float', [ 'vec3' ], ( [ a ] ) => TSL.mx_separate( a, 'outy' ).add( TSL.mx_separate( a, 2 ) ).add( TSL.mx_separate( a ).x ) ), 'p3' ],
+				[ t( 'place2d', 'vec2', [ 'vec2', 'float' ], ( [ a, b ] ) => TSL.mx_place2d( a, vec2( 0.5, 0.5 ), vec2( 2, 3 ), b, vec2( 0.25, 0 ) ) ), 'p2f' ],
+				[ t( 'place2d_trs', 'vec2', [ 'vec2', 'float' ], ( [ a, b ] ) => TSL.mx_place2d( a, vec2( 0.5, 0.5 ), vec2( 2, 3 ), b, vec2( 0.25, 0 ), 1 ) ), 'p2f' ],
+				[ t( 'heighttonormal', 'vec3', [ 'float', 'vec2' ], ( [ a, b ] ) => TSL.mx_heighttonormal( a, 2, b ) ), 'fp2' ],
+
+			];
+
+			const p2 = uv();
+			const p3 = positionLocal;
+			const f = positionLocal.x;
+
+			const args = ( spec ) => {
+
+				const out = [];
+				for ( let i = 0; i < spec.length; ) {
+
+					if ( spec.startsWith( 'p2', i ) ) { out.push( p2 ); i += 2; }
+					else if ( spec.startsWith( 'p3', i ) ) { out.push( p3 ); i += 2; }
+					else { out.push( f ); i += 1; }
+
+				}
+
+				return out;
+
+			};
+
+			const material = new THREE.MeshBasicNodeMaterial();
+			material.colorNode = Fn( () => {
+
+				let sum = float( 0 );
+				for ( const [ { type, fn }, spec ] of cases ) {
+
+					const value = fn( ...args( spec ) );
+					sum = sum.add( type === 'float' ? value : value.x );
+
+				}
+
+				return vec3( sum.mul( 1e-3 ) );
+
+			} )();
+
+			const camera = new THREE.PerspectiveCamera( 50, window.innerWidth / window.innerHeight, 0.1, 10 );
+			camera.position.set( 0, 0, 2 );
+
+			const scene = new THREE.Scene();
+			scene.add( new THREE.Mesh( new THREE.PlaneGeometry( 2, 2 ), material ) );
+
+			const renderer = new THREE.WebGPURenderer();
+			renderer.setPixelRatio( window.devicePixelRatio );
+			renderer.setSize( window.innerWidth, window.innerHeight );
+			renderer.setAnimationLoop( () => renderer.render( scene, camera ) );
+			document.body.appendChild( renderer.domElement );
+
+		</script>
+	</body>
+</html>

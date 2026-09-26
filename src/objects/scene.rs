@@ -82,6 +82,12 @@ pub struct Scene {
     ///
     /// [`MeshBasicNodeMaterial::set_needs_update`]: crate::materials::MeshBasicNodeMaterial::set_needs_update
     pub environment: Option<crate::materials::environment::PmremHandle>,
+    /// `scene.fog` — a classic [`Fog`](super::Fog) or
+    /// [`FogExp2`](super::FogExp2). The renderer turns it into a fog node
+    /// whose parameters are render-group uniforms (`NodeManager.updateFog()`),
+    /// so changing a value is a uniform write; changing the *kind* is a new
+    /// program. [`Scene::fog_node`] wins when both are set, as in three.js.
+    pub fog: Option<super::SceneFog>,
     /// `scene.fogNode`. Read by `NodeMaterial`'s output flow on every material
     /// in the scene (rung 5).
     pub fog_node: Option<FogNode>,
@@ -101,6 +107,7 @@ impl Default for Scene {
             background: None,
             background_blurriness: 0.0,
             environment: None,
+            fog: None,
             fog_node: None,
             override_material: None,
         }

@@ -20,7 +20,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use crate::cameras::PerspectiveCamera;
+use crate::cameras::RenderCamera;
 use crate::core::Layers;
 use crate::nodes::node::SettableValue;
 use crate::nodes::tsl::{
@@ -79,6 +79,9 @@ pub struct PassNode {
     owns_depth_texture: bool,
     /// `PassNode._layers`.
     layers: RefCell<Option<Layers>>,
+    /// `PixelationPassNode.pixelSize` — the target is the drawing buffer's
+    /// size divided by this, floored. 1 for every other pass.
+    size_divisor: std::cell::Cell<u32>,
     /// `PassNode.opaque` / `.transparent` / `lighting.enabled`.
     opaque: bool,
     transparent: bool,
@@ -178,10 +181,25 @@ impl PassNode {
             auto_clear_depth: options.auto_clear_depth,
             owns_depth_texture: options.depth_texture.is_none(),
             layers: RefCell::new(None),
+            size_divisor: std::cell::Cell::new(1),
             opaque: true,
             transparent: true,
             lighting_enabled: true,
         }
+    }
+
+    /// `PixelationPassNode.pixelSize = n` — the render target becomes
+    /// `floor( drawingBuffer / n )` on the next render. Crate-private: only
+    /// [`PixelationPassNode`](crate::nodes::display::PixelationPassNode)
+    /// overrides `setSize()` in three.js.
+    pub(crate) fn set_size_divisor(&self, divisor: u32) {
+        self.size_divisor.set(divisor);
+    }
+
+    /// The pass's depth attachment, sampled at `coord` — the tap
+    /// `getTextureNode( 'depth' ).sample( coord )` makes.
+    pub fn depth_texture_node_at(&self, coord: NodeRef) -> NodeRef {
+        crate::nodes::tsl::pass_depth_texture_uv(&self.depth_texture(), coord)
     }
 
     /// `passNode.setLayers( layers )` — the camera layer mask this pass renders
@@ -366,9 +384,13 @@ impl PassNode {
         &self,
         renderer: &mut Renderer,
         scene: &mut Scene,
-        camera: &mut PerspectiveCamera,
+        camera: &mut dyn RenderCamera,
     ) {
         let (width, height) = renderer.drawing_buffer_size();
+        // `PixelationPassNode.setSize()`: `Math.floor( size / pixelSize )`
+        // before `PassNode.setSize()` — a divisor of 1 is `PassNode`'s own.
+        let divisor = self.size_divisor.get().max(1);
+        let (width, height) = (width / divisor, height / divisor);
         self.render_target
             .set_size_keeping_depth(width, height, !self.owns_depth_texture);
         // `PassNode.setup()`: `renderTarget.samples = renderer.samples`.
@@ -382,8 +404,8 @@ impl PassNode {
 
         // `this._cameraNear.value = camera.near; this._cameraFar.value =
         // camera.far;`
-        self.camera_near.1.set(vec![camera.near]);
-        self.camera_far.1.set(vec![camera.far]);
+        self.camera_near.1.set(vec![camera.near()]);
+        self.camera_far.1.set(vec![camera.far()]);
 
         let previous = renderer.render_target();
         let previous_mrt = renderer.mrt();

@@ -19,7 +19,7 @@ use crate::lights::LightObject;
 use crate::materials::MeshBasicNodeMaterial;
 use crate::math::{Matrix4, Sphere};
 use crate::objects::{
-    BatchedMesh, InstancedBufferAttribute, InstancedMesh, Line, Mesh, Points, SkinnedMesh,
+    BatchedMesh, InstancedBufferAttribute, InstancedMesh, Line, Mesh, Points, SkinnedMesh, Sprite,
 };
 
 /// The subclass state of one [`crate::core::Object3D`].
@@ -50,6 +50,10 @@ pub enum Payload {
     /// `Points extends Object3D` — like `Line`, not a `Mesh`: the renderer
     /// reads the object to pick `point-list` over `triangle-list`.
     Points(Points),
+    /// `Sprite extends Object3D` — not a `Mesh` either: `_projectObject()`
+    /// gives it an arm of its own, culled by `Frustum.intersectsSprite()` and
+    /// sorted by its origin rather than by a geometry bounding sphere.
+    Sprite(Sprite),
     /// `Light extends Object3D`, one variant per subclass. The renderer reaches
     /// it through `RenderList.lights`, which `_projectObject()` fills from
     /// `object.is_light` — set alongside this variant.
@@ -74,6 +78,7 @@ impl fmt::Debug for Payload {
                 }
             }
             Payload::Points(_) => "Points",
+            Payload::Sprite(_) => "Sprite",
             Payload::Light(_) => "Light",
         };
         f.write_str(name)
@@ -134,6 +139,26 @@ impl Payload {
         matches!(self, Payload::Points(_))
     }
 
+    /// `object.isSprite`.
+    pub fn is_sprite(&self) -> bool {
+        matches!(self, Payload::Sprite(_))
+    }
+
+    /// The `Sprite` this node is, if it is one.
+    pub fn sprite(&self) -> Option<&Sprite> {
+        match self {
+            Payload::Sprite(sprite) => Some(sprite),
+            _ => None,
+        }
+    }
+
+    pub fn sprite_mut(&mut self) -> Option<&mut Sprite> {
+        match self {
+            Payload::Sprite(sprite) => Some(sprite),
+            _ => None,
+        }
+    }
+
     /// The `Points` this node is, if it is one.
     pub fn points(&self) -> Option<&Points> {
         match self {
@@ -165,7 +190,7 @@ impl Payload {
     }
 
     /// `object.geometry` for anything `_projectObject()`'s
-    /// `isMesh || isLine || isPoints` arm draws.
+    /// `isMesh || isLine || isPoints` arm draws, and for its `isSprite` arm.
     pub fn geometry(&self) -> Option<&Rc<BufferGeometry>> {
         match self {
             Payload::Mesh(mesh) => Some(&mesh.geometry),
@@ -174,6 +199,7 @@ impl Payload {
             Payload::BatchedMesh(batched) => Some(&batched.mesh.geometry),
             Payload::Line(line) => Some(&line.geometry),
             Payload::Points(points) => Some(&points.geometry),
+            Payload::Sprite(sprite) => Some(&sprite.geometry),
             _ => None,
         }
     }
@@ -189,6 +215,7 @@ impl Payload {
             Payload::BatchedMesh(batched) => batched.mesh.material.as_ref(),
             Payload::Line(line) => line.material.as_ref(),
             Payload::Points(points) => points.material.as_ref(),
+            Payload::Sprite(sprite) => Some(&sprite.material),
             _ => None,
         }
     }
@@ -205,6 +232,9 @@ impl Payload {
         match self {
             Payload::Line(line) => line.bounding_sphere_in(matrix_world),
             Payload::Points(points) => points.bounding_sphere_in(matrix_world),
+            // `Sprite.intersectsFrustum( frustum )` is
+            // `frustum.intersectsSprite( this )`, whose sphere is this.
+            Payload::Sprite(sprite) => Some(sprite.bounding_sphere_in(matrix_world)),
             Payload::InstancedMesh(instanced) => match instanced.bounding_sphere {
                 Some(bounding_sphere) => {
                     let mut sphere = bounding_sphere;

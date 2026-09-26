@@ -12,7 +12,8 @@ use std::rc::Rc;
 
 use crate::math::{Color, Matrix4, Vector2, Vector3};
 use crate::textures::{
-    CubeDepthTexture, CubeTexture, DataArrayTexture, DataTexture, DepthTexture, Texture,
+    CubeDepthTexture, CubeTexture, Data3DTexture, DataArrayTexture, DataTexture, DepthTexture,
+    Texture,
 };
 
 /// A WGSL value type. Three carries these as strings (`'vec3'`); the closed set
@@ -35,7 +36,14 @@ pub enum Type {
     /// `vec4<u32>` — the `skinIndex` attribute, which three.js declares
     /// `attribute( 'skinIndex', 'uvec4' )` and uploads as a `Uint32Array`.
     UVec4,
+    /// `vec3<i32>` / `vec4<i32>` — TSL's `ivec3()` / `ivec4()`.
+    IVec3,
+    IVec4,
+    /// `vec2<bool>` / `vec3<bool>` / `vec4<bool>` — TSL's `bvec2()` … `bvec4()`,
+    /// and what a component-wise comparison of two vectors is.
+    BVec2,
     BVec3,
+    BVec4,
     /// `mat2` — `RotateNode`'s vec2 path emits `mat2x2<f32>( cos, sin, -sin, cos )`.
     Mat2,
     Mat3,
@@ -48,9 +56,9 @@ impl Type {
         match self {
             Type::Void => 0,
             Type::Bool | Type::F32 | Type::I32 | Type::U32 => 1,
-            Type::Vec2 | Type::UVec2 | Type::IVec2 => 2,
-            Type::Vec3 | Type::UVec3 | Type::BVec3 => 3,
-            Type::Vec4 | Type::UVec4 => 4,
+            Type::Vec2 | Type::UVec2 | Type::IVec2 | Type::BVec2 => 2,
+            Type::Vec3 | Type::UVec3 | Type::IVec3 | Type::BVec3 => 3,
+            Type::Vec4 | Type::UVec4 | Type::IVec4 | Type::BVec4 => 4,
             Type::Mat2 => 4,
             Type::Mat3 => 9,
             Type::Mat4 => 16,
@@ -61,8 +69,8 @@ impl Type {
     pub fn component_type(self) -> Type {
         match self {
             Type::UVec2 | Type::UVec3 | Type::UVec4 => Type::U32,
-            Type::IVec2 => Type::I32,
-            Type::BVec3 => Type::Bool,
+            Type::IVec2 | Type::IVec3 | Type::IVec4 => Type::I32,
+            Type::BVec2 | Type::BVec3 | Type::BVec4 => Type::Bool,
             Type::Vec2 | Type::Vec3 | Type::Vec4 | Type::Mat2 | Type::Mat3 | Type::Mat4 => {
                 Type::F32
             }
@@ -77,7 +85,11 @@ impl Type {
             (Type::U32, 2) => Type::UVec2,
             (Type::I32, 2) => Type::IVec2,
             (Type::U32, 3) => Type::UVec3,
+            (Type::I32, 3) => Type::IVec3,
+            (Type::I32, 4) => Type::IVec4,
+            (Type::Bool, 2) => Type::BVec2,
             (Type::Bool, 3) => Type::BVec3,
+            (Type::Bool, 4) => Type::BVec4,
             (Type::F32, 2) => Type::Vec2,
             (Type::F32, 3) => Type::Vec3,
             (Type::F32, 4) => Type::Vec4,
@@ -143,6 +155,8 @@ pub enum UniformSource {
     /// `materialColor` — `MeshBasicMaterial.color` in the working space.
     MaterialColor,
     MaterialOpacity,
+    /// `materialAlphaTest` — `Material.alphaTest`.
+    MaterialAlphaTest,
     MaterialReflectivity,
     /// `materialEnvIntensity` — `MeshStandardMaterial.envMapIntensity`, the
     /// scale `EnvironmentNode` puts on both IBL terms.
@@ -175,7 +189,22 @@ pub enum UniformSource {
     BackgroundRotation,
     BackgroundBlurriness,
     BackgroundIntensity,
+    /// `reference( 'color' | 'near' | 'far' | 'density', …, scene.fog )
+    /// .setGroup( renderGroup )` — the classic `scene.fog`'s parameters, which
+    /// `NodeManager.updateFog()` binds as render-group uniforms so that a fog
+    /// whose values change never rebuilds a program. The colour is in the
+    /// working space.
+    FogColor,
+    FogNear,
+    FogFar,
+    FogDensity,
     Time,
+    /// `deltaTime` — `TimerNode.DELTA`, `frame.deltaTime`: the seconds since
+    /// the previous `NodeFrame.update()`.
+    DeltaTime,
+    /// `frameId` — `TimerNode.FRAME`, `uniform( 0, 'uint' )` updated from
+    /// `frame.frameId`: the count of `NodeFrame.update()` calls.
+    FrameId,
     /// `viewportSize` — the render target's pixel dimensions.
     ViewportSize,
     /// `viewport` — `ScreenNode.VIEWPORT`, the whole rectangle as
@@ -215,6 +244,9 @@ pub enum UniformSource {
     ShadowBias(usize),
     ShadowNormalBias(usize),
     ShadowRadius(usize),
+    /// `reference( 'blurSamples', 'float', shadow )` — the VSM blur passes'
+    /// tap count.
+    ShadowBlurSamples(usize),
     ShadowMapSize(usize),
     ShadowIntensity(usize),
     /// `materialLineWidth` — `MaterialNode.LINE_WIDTH`, i.e.
@@ -244,6 +276,9 @@ pub enum UniformSource {
     /// 'mat4' )` — `SkinnedMesh`'s two bind matrices, in the object group.
     BindMatrix,
     BindMatrixInverse,
+    /// `reference( 'center', 'vec2', object )` — `Sprite.center`, read by
+    /// `SpriteNodeMaterial.setupPositionView()`, in the object group.
+    ObjectCenter,
     /// A plain `uniform( value )` the example supplies.
     Value(Vec<f64>),
     /// `uniform( value )` whose `.value` is written between draws — three.js'
@@ -351,6 +386,7 @@ impl UniformSource {
             | UniformSource::ModelNormalMatrix
             | UniformSource::MaterialColor
             | UniformSource::MaterialOpacity
+            | UniformSource::MaterialAlphaTest
             | UniformSource::MaterialReflectivity
             | UniformSource::MaterialEnvIntensity
             | UniformSource::MaterialShininess
@@ -374,6 +410,7 @@ impl UniformSource {
             | UniformSource::MorphBase
             | UniformSource::BindMatrix
             | UniformSource::BindMatrixInverse
+            | UniformSource::ObjectCenter
             | UniformSource::Value(_)
             | UniformSource::Settable(_)
             | UniformSource::ObjectUpdate(_) => UpdateType::Object,
@@ -608,6 +645,91 @@ pub enum TextureSource {
     Data(DataTexture),
     /// A point light's shadow map — `cubeTexture( CubeDepthTexture )`.
     CubeDepth(CubeDepthTexture),
+    /// `texture3D( Data3DTexture | Storage3DTexture )` — a sampled
+    /// `texture_3d<f32>`.
+    Texture3D(Data3DTexture),
+    /// `storageTexture( StorageTexture )` — a `texture_storage_2d<format,
+    /// access>`, what `textureStore()` writes and `.load()` reads.
+    Storage(Texture, StorageAccess),
+    /// `storageTexture( Storage3DTexture )` — `texture_storage_3d`.
+    Storage3D(Data3DTexture, StorageAccess),
+}
+
+impl TextureSource {
+    /// The texture's id — `Texture.id`, whichever class it is.
+    pub fn id(&self) -> usize {
+        match self {
+            TextureSource::Texture2D(t) | TextureSource::Storage(t, _) => t.id(),
+            TextureSource::Depth(t) | TextureSource::ShadowMap(t) => t.id(),
+            TextureSource::Cube(t) => t.id(),
+            TextureSource::DataArray(t) => t.id(),
+            TextureSource::Data(t) => t.id(),
+            TextureSource::CubeDepth(t) => t.id(),
+            TextureSource::Texture3D(t) | TextureSource::Storage3D(t, _) => t.id(),
+        }
+    }
+
+    /// Bound as a storage texture rather than a sampled one. A texture a
+    /// kernel stores into and a material samples is two bindings of one
+    /// texture, so the builder keys its binding names on this as well as on
+    /// [`id`](Self::id).
+    pub fn is_storage_binding(&self) -> bool {
+        matches!(
+            self,
+            TextureSource::Storage(..) | TextureSource::Storage3D(..)
+        )
+    }
+}
+
+/// `NodeAccess` for a `StorageTextureNode` — the `access` of its
+/// `texture_storage_*` declaration.
+///
+/// `StorageTextureNode`'s default is `WRITE_ONLY`; `WGSLNodeBuilder
+/// .getStorageAccess()` forces `READ_ONLY` outside the compute stage, which the
+/// builder applies when it declares the binding.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum StorageAccess {
+    #[default]
+    WriteOnly,
+    ReadOnly,
+    ReadWrite,
+}
+
+impl StorageAccess {
+    /// `WGSLNodeBuilder`'s `accessNames`.
+    pub fn wgsl(self) -> &'static str {
+        match self {
+            StorageAccess::WriteOnly => "write",
+            StorageAccess::ReadOnly => "read",
+            StorageAccess::ReadWrite => "read_write",
+        }
+    }
+
+    /// The `wgpu` spelling, for the bind group layout.
+    pub fn wgpu(self) -> wgpu::StorageTextureAccess {
+        match self {
+            StorageAccess::WriteOnly => wgpu::StorageTextureAccess::WriteOnly,
+            StorageAccess::ReadOnly => wgpu::StorageTextureAccess::ReadOnly,
+            StorageAccess::ReadWrite => wgpu::StorageTextureAccess::ReadWrite,
+        }
+    }
+}
+
+impl TextureSource {
+    /// The texture's liveness, for the renderer's view cache to sweep on; see
+    /// [`TextureOwner`](crate::textures::TextureOwner).
+    pub(crate) fn owner(&self) -> crate::textures::TextureOwner {
+        match self {
+            TextureSource::Texture2D(texture) => texture.owner(),
+            TextureSource::Depth(depth) | TextureSource::ShadowMap(depth) => depth.owner(),
+            TextureSource::Cube(cube) => cube.owner(),
+            TextureSource::DataArray(data) => data.owner(),
+            TextureSource::Data(data) => data.owner(),
+            TextureSource::CubeDepth(cube) => cube.owner(),
+            TextureSource::Texture3D(data) | TextureSource::Storage3D(data, _) => data.owner(),
+            TextureSource::Storage(texture, _) => texture.owner(),
+        }
+    }
 }
 
 /// How a `TextureNode` reads its texture — `WGSLNodeBuilder.generateTexture*`.
@@ -629,6 +751,10 @@ pub enum SampleMode {
     /// `textureLoad( t, coord, layer, u32( 0u ) )` on a 2-D-array texture —
     /// `textureLoad( … ).depth( layer )`, with no clamping and no sampler.
     LoadLayer(NodeRef),
+    /// `textureSample( t, t_sampler, uv, i32( layer ) )` on a 2-D-array
+    /// texture — `texture( map, uv ).depth( layer )`. Three builds the depth
+    /// node as `'int'`, so a float layer arrives truncated by `i32()`.
+    SampleLayer(NodeRef),
     /// `textureSampleCompare( t, t_sampler, uv, depth )` — the depth-compare
     /// read `ShadowFilterNode`'s `depthCompare` lowers to.
     Compare(NodeRef),
@@ -638,6 +764,10 @@ pub enum SampleMode {
     /// how Three's `textureLoad( … ).x` on the `r32uint` indirect table lands
     /// in one `u32` property.
     LoadTexel,
+    /// `storageTexture( t ).load( coord )` — `textureLoad( t, coord )` on a
+    /// `texture_storage_*`, which takes no level argument
+    /// (`WGSLNodeBuilder.generateStorageTextureLoad()`).
+    StorageLoad,
 }
 
 /// A WGSL builtin input.
@@ -892,9 +1022,29 @@ pub enum Node {
         /// reaches the loop header as `i32( ( - nodeVar1 ) )`.
         start: Option<NodeRef>,
         count: NodeRef,
-        /// The loop index, as it appears inside `body` (`Node::Param`).
+        /// The loop index, as it appears inside `body` (`Node::Param`). Its
+        /// type is `Loop( { type } )`: `i32`, or `f32` for `hashBlur`'s
+        /// `type: 'float'`, which also changes the step to `i += 1.`.
         index: NodeRef,
+        /// `Loop( { condition } )` — `"<"` unless the caller asked for
+        /// another comparison (`boxBlur`'s `"<="`).
+        condition: &'static str,
+        /// `Loop( { update } )` — `i += update` in place of the default step.
+        update: Option<NodeRef>,
         body: Vec<NodeRef>,
+    },
+    /// `Break()` — a bare `break;` out of the innermost `Loop`.
+    Break,
+    /// `textureStore( storageTexture, coord, value )` — a statement.
+    ///
+    /// `StorageTextureNode.generateStore()` writes the coordinate as
+    /// `vec2<u32>( … )` (`vec3<u32>` for a 3D texture) around whatever the
+    /// caller passed, so a `uvec2` coordinate is wrapped once more, exactly as
+    /// three's dump shows.
+    TextureStore {
+        texture: Rc<TextureSource>,
+        coord: NodeRef,
+        value: NodeRef,
     },
     /// `If( cond, () => { … } )` as a bare statement (`setupDiscard`),
     /// optionally with the `.Else( … )` / `.ElseIf( … )` arm `StackNode` adds.
@@ -930,9 +1080,15 @@ pub enum Node {
     Return {
         value: NodeRef,
     },
-    /// `x.not()` — `( ! x )`.
+    /// `x.not()` — `( ! x )`. A `bool`, or a `bvecN` for an `N`-vector
+    /// operand (`OperatorNode.getNodeType()`'s `'!'` arm).
     Not {
         node: NodeRef,
+    },
+    /// `x.bitNot()` — `( ~ x )`, typed `getIntegerType( typeA )`.
+    BitNot {
+        node: NodeRef,
+        ty: Type,
     },
     /// `cond.select( a, b )` — lowered to an `if`/`else` writing a result var,
     /// exactly as Three does.
@@ -1014,8 +1170,14 @@ impl NodeRef {
             Node::IfVar { result, .. } => result.ty(),
             Node::Select { ty, .. } => *ty,
             Node::Block { result, .. } => result.ty(),
-            Node::Loop { .. } | Node::If { .. } | Node::Discard | Node::Return { .. } => Type::Void,
-            Node::Not { .. } => Type::Bool,
+            Node::Loop { .. }
+            | Node::If { .. }
+            | Node::Discard
+            | Node::Break
+            | Node::TextureStore { .. }
+            | Node::Return { .. } => Type::Void,
+            Node::Not { node } => Type::vector_of(Type::Bool, node.ty().components().max(1)),
+            Node::BitNot { ty, .. } => *ty,
             Node::StructMember { buffer, member } => match &buffer.source {
                 BufferSource::Struct { layout, .. } => layout.members[*member].ty,
                 _ => unreachable!("three-rs: a struct member is only built on a struct buffer"),
@@ -1157,6 +1319,7 @@ impl std::hash::Hash for UniformSource {
             | UniformSource::ShadowBias(i)
             | UniformSource::ShadowNormalBias(i)
             | UniformSource::ShadowRadius(i)
+            | UniformSource::ShadowBlurSamples(i)
             | UniformSource::ShadowMapSize(i)
             | UniformSource::ShadowIntensity(i) => i.hash(state),
             // A baked `uniform( value )`: two materials can generate identical
@@ -1229,6 +1392,16 @@ impl std::hash::Hash for TextureSource {
             TextureSource::DataArray(texture) => texture.id().hash(state),
             TextureSource::Data(texture) => texture.id().hash(state),
             TextureSource::CubeDepth(texture) => texture.id().hash(state),
+            TextureSource::Texture3D(texture) => texture.id().hash(state),
+            // The access is part of the declaration, so it is part of the key.
+            TextureSource::Storage(texture, access) => {
+                texture.id().hash(state);
+                access.hash(state);
+            }
+            TextureSource::Storage3D(texture, access) => {
+                texture.id().hash(state);
+                access.hash(state);
+            }
         }
     }
 }

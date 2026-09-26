@@ -112,9 +112,10 @@ pub struct MemoryCounts {
     /// Entries in the uploaded-geometry cache, swept as the consumer drops
     /// geometries (issue #58).
     pub geometries: usize,
-    /// Entries in the 2D and cube texture caches. A render target's own colour
-    /// texture and a morph data-array texture live on the texture rather than
-    /// in a renderer map, so they upload but do not land here.
+    /// Entries in the 2D and cube texture caches, swept as the consumer drops
+    /// textures (issue #158). A render target's own colour texture and a morph
+    /// data-array texture live on the texture rather than in a renderer map,
+    /// so they upload but do not land here; they are freed with their owner.
     pub textures: usize,
     /// Distinct compiled programs — `renderer.info.programs.length`. Two
     /// materials that generate the same WGSL share one.

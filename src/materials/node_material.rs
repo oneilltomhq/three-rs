@@ -8,7 +8,7 @@ use super::physical::{self, Physical};
 use super::transmission;
 use super::{Blending, MaterialKind, MeshBasicNodeMaterial, Side, ToneMapping};
 use crate::lights::LightKind;
-use crate::nodes::node::Type;
+use crate::nodes::node::{Type, UniformGroup, UniformSource};
 use crate::nodes::tsl::FogNode;
 use crate::nodes::tsl::*;
 use crate::nodes::{MaterialFlow, NodeRef};
@@ -60,6 +60,12 @@ pub struct SetupContext {
     /// [`crate::nodes::lines`] for why they travel here rather than on the
     /// geometry.
     pub line_segments: Option<crate::nodes::lines::LineSegmentsAttributes>,
+    /// `object.center && object.center.isVector2` — the object is a `Sprite`,
+    /// so `SpriteNodeMaterial.setupPositionView()` offsets the quad by
+    /// `center - 0.5`. A `SpriteNodeMaterial` on anything else (the
+    /// instanced-mesh particles of `webgpu_compute_particles_*`) has no
+    /// `center` and skips the step, which changes the WGSL.
+    pub sprite: bool,
     /// `renderer.getMRT()` and the names of the bound render target's colour
     /// attachments — the pass-level half of `NodeMaterial.setup()`'s MRT
     /// branch, which only runs `if ( renderTarget !== null )`.
@@ -156,6 +162,27 @@ pub struct MrtContext {
 /// builds a fresh material per object instead, which is the same thing because
 /// the program is keyed on the generated WGSL.
 pub fn shadow_material(source: &MeshBasicNodeMaterial) -> MeshBasicNodeMaterial {
+    shadow_material_for(source, crate::lights::ShadowMapType::Pcf)
+}
+
+/// [`shadow_material`] for a given `renderer.shadowMap.type`.
+/// `Renderer._renderObjectDirect`'s override differs by one line:
+///
+/// ```js
+/// if ( this.shadowMap.type === VSMShadowMap ) {
+///     overrideMaterial.side = material.shadowSide ?? material.side;
+/// } else {
+///     overrideMaterial.side = material.shadowSide ?? _shadowSide[ material.side ];
+/// }
+/// ```
+///
+/// — VSM draws the faces the material itself draws, where every other type
+/// draws the opposite ones. (The port has no `material.shadowSide`; it is
+/// always `null` on the ladder.)
+pub fn shadow_material_for(
+    source: &MeshBasicNodeMaterial,
+    shadow_type: crate::lights::ShadowMapType,
+) -> MeshBasicNodeMaterial {
     let mut material = MeshBasicNodeMaterial::new();
     material.name = "ShadowMaterial";
     material.blending = Blending::No;
@@ -165,11 +192,12 @@ pub fn shadow_material(source: &MeshBasicNodeMaterial) -> MeshBasicNodeMaterial 
     // of a front-sided material, which is where the shadow pipelines'
     // `frontFace: cw` comes from.
     material.transparent = source.transparent;
-    material.side = match source.side {
-        Side::Front => Side::Back,
-        Side::Back => Side::Front,
+    material.side = match (shadow_type.resolved(), source.side) {
+        (crate::lights::ShadowMapType::Vsm, side) => side,
+        (_, Side::Front) => Side::Back,
+        (_, Side::Back) => Side::Front,
         // `_shadowSide = { [ DoubleSide ]: DoubleSide }`.
-        Side::Double => Side::Double,
+        (_, Side::Double) => Side::Double,
     };
 
     // `shadowRGB = vec3( 0 )`, `shadowAlpha = float( 1 )`, and the source
@@ -189,9 +217,24 @@ pub fn shadow_material(source: &MeshBasicNodeMaterial) -> MeshBasicNodeMaterial 
             vec4_join(vec![vec3(0.0, 0.0, 0.0), alpha])
         }
     });
+    // `overrideMaterial.alphaTest = material.alphaTest` and `.alphaMap =
+    // material.alphaMap`: a cut-away texel casts no shadow.
+    material.alpha_test = source.alpha_test;
+    material.alpha_map = source.alpha_map.clone();
     // `Fn( ( [ color ] ) => { maskNode.not().discard(); return color; } )`.
     material.mask_node = source.mask_node.clone();
     material
+}
+
+/// `materialOpacity` — `MaterialNode.OPACITY`: the `opacity` uniform, times
+/// `texture( alphaMap )` when the material has one. The product is a `vec4`
+/// (three multiplies by the whole texel, not its green channel), and the
+/// `DiffuseColor.w` assign narrows it back to `.x`.
+fn material_opacity_for(material: &MeshBasicNodeMaterial) -> NodeRef {
+    match &material.alpha_map {
+        Some(map) => material_opacity().mul(texture(map)),
+        None => material_opacity(),
+    }
 }
 
 /// `vec4( node )` the way `setupDiffuseColor` builds it: a scalar splats, a
@@ -272,7 +315,7 @@ fn setup_diffuse_color(
     // so a material with an `opacityNode` never reads `material.opacity`.
     let opacity = match &material.opacity_node {
         Some(node) => to_float(node.clone()),
-        None => material_opacity(),
+        None => material_opacity_for(material),
     };
     fragment.push(diffuse_color().w().assign(diffuse_color().w().mul(opacity)));
 
@@ -282,8 +325,12 @@ fn setup_diffuse_color(
     // sees is the one the opacity node produced, and the fragments that survive
     // still get `w = 1.0` on an opaque material — the alpha-test teapot is not
     // `transparent`, and the dump shows both lines.
-    if let Some(node) = &material.alpha_test_node {
-        let alpha_test = to_float(node.clone());
+    let alpha_test = match &material.alpha_test_node {
+        Some(node) => Some(to_float(node.clone())),
+        None if material.alpha_test > 0.0 => Some(material_alpha_test()),
+        None => None,
+    };
+    if let Some(alpha_test) = alpha_test {
         fragment.push(if_then(
             diffuse_color().w().less_than_equal(alpha_test),
             vec![discard()],
@@ -305,6 +352,7 @@ fn setup_diffuse_color(
         if let Some(attributes) = &ctx.line_segments {
             crate::materials::line2::setup_diffuse_color(
                 material.alpha_to_coverage,
+                material.world_units,
                 material.vertex_colors,
                 attributes,
                 fragment,
@@ -379,7 +427,7 @@ fn setup_overridden(
     // builder )` — the seam `SpriteNodeMaterial` overrides. Built here, before
     // either stage is flowed, exactly as `NodeMaterial.setup()` installs it.
     let position_view = match material.kind {
-        MaterialKind::Sprite => Some(setup_position_view_sprite(material)),
+        MaterialKind::Sprite => Some(setup_position_view_sprite(material, ctx.sprite)),
         MaterialKind::Points => Some(setup_position_view_points(material)),
         _ => None,
     };
@@ -415,7 +463,10 @@ fn setup_inner(
     // neither of which a fat line has.
     if material.kind == MaterialKind::Line2 {
         if let Some(attributes) = &ctx.line_segments {
-            pre_vertex.push(crate::materials::line2::setup_position(attributes));
+            pre_vertex.push(crate::materials::line2::setup_position(
+                attributes,
+                material.world_units,
+            ));
         }
     }
 
@@ -471,7 +522,7 @@ fn setup_inner(
                 matrix.element(2).xyz(),
             ],
         );
-        let inv_t = transpose(inverse_mat3(m3));
+        let inv_t = transpose(inverse(m3));
         pre_vertex.push(normal_local().assign(inv_t.mul(normal_local()).normalize()));
     }
 
@@ -502,7 +553,7 @@ fn setup_inner(
         // material on the ladder that emits the EOTF rather than the OETF.
         let opacity = match &material.opacity_node {
             Some(node) => to_float(node.clone()),
-            None => material_opacity(),
+            None => material_opacity_for(material),
         };
         fragment.push(diffuse_color().assign(srgb_to_working(vec4_join(vec![
             pack_normal_to_rgb(normal_view()),
@@ -682,16 +733,18 @@ fn to_vec2(node: NodeRef) -> NodeRef {
 /// if ( scaleNode !== null ) scale = scale.mul( vec2( scaleNode ) );
 /// if ( camera.isPerspectiveCamera && sizeAttenuation === false )
 ///     scale = scale.mul( mvPosition.z.negate() );
-/// let alignedPosition = positionGeometry.xy;       // object.center is unset
+/// let alignedPosition = positionGeometry.xy;
+/// if ( object.center && object.center.isVector2 )
+///     alignedPosition = alignedPosition.sub( reference( 'center', 'vec2', object ).sub( 0.5 ) );
 /// alignedPosition = alignedPosition.mul( scale );
 /// const rotation = float( rotationNode || materialRotation );
 /// return vec4( mvPosition.xy.add( rotate( alignedPosition, rotation ) ),
 ///              mvPosition.zw );
 /// ```
 ///
-/// `object.center` is an `InstancedMesh`-less `Sprite` field, so the
-/// `alignedPosition.sub( center.sub( 0.5 ) )` step never fires here.
-fn setup_position_view_sprite(material: &MeshBasicNodeMaterial) -> NodeRef {
+/// `object.center` exists only on a [`Sprite`](crate::objects::Sprite), so
+/// `has_center` is [`SetupContext::sprite`].
+fn setup_position_view_sprite(material: &MeshBasicNodeMaterial, has_center: bool) -> NodeRef {
     let position = match &material.position_node {
         Some(node) => to_vec3(node.clone()),
         None => vec3(0.0, 0.0, 0.0),
@@ -714,7 +767,17 @@ fn setup_position_view_sprite(material: &MeshBasicNodeMaterial) -> NodeRef {
         scale = scale.mul(mv_position.z().negate());
     }
 
-    let aligned = position_geometry().xy().mul(scale);
+    let mut aligned = position_geometry().xy();
+    if has_center {
+        let center = uniform(
+            UniformSource::ObjectCenter,
+            Type::Vec2,
+            UniformGroup::Object,
+            None,
+        );
+        aligned = aligned.sub(center.sub(0.5));
+    }
+    let aligned = aligned.mul(scale);
     let rotation = match &material.rotation_node {
         Some(node) => node.clone(),
         None => material_rotation(),
@@ -807,25 +870,6 @@ pub fn quad_vertex_node() -> NodeRef {
     let x = const_array(vec![-1.0, -1.0, 3.0]).element_node(vertex_index());
     let y = const_array(vec![3.0, -1.0, -1.0]).element_node(vertex_index());
     join(Type::Vec4, vec![x, y, float(0.0), float(1.0)])
-}
-
-/// `transpose( m )`.
-fn transpose(m: NodeRef) -> NodeRef {
-    math_call("transpose", m)
-}
-
-/// `WGSLNodeBuilder`'s `inverse( mat3 )` polyfill.
-fn inverse_mat3(m: NodeRef) -> NodeRef {
-    math_call("tsl_inverse_mat3", m)
-}
-
-fn math_call(name: &'static str, m: NodeRef) -> NodeRef {
-    let ty = m.ty();
-    crate::nodes::NodeRef::new(crate::nodes::Node::Math {
-        name,
-        args: vec![m],
-        ty,
-    })
 }
 
 /// `RangeNode` on an instanced mesh: one `vec4` per instance, from a uniform
@@ -926,7 +970,12 @@ fn setup_phong(
         };
         fragment.push(specular_color().assign(specular_value));
     }
-    fragment.push(emissive_color().assign(material_emissive().mul(material_emissive_intensity())));
+    // `vec3( emissiveNode ? emissiveNode : materialEmissive )`.
+    let emissive = match &material.emissive_node {
+        Some(node) => to_vec3(node.clone()),
+        None => material_emissive().mul(material_emissive_intensity()),
+    };
+    fragment.push(emissive_color().assign(emissive));
 
     let outgoing = if material.lights {
         // `LightsNode`: the scene's lights, or the selective subset the
@@ -1042,7 +1091,14 @@ fn setup_ambient_occlusion(material: &MeshBasicNodeMaterial, fragment: &mut Vec<
 /// takes `.xyz`. That is what the dump's
 /// `( vec4<f32>( ( emissive * intensity ), 1.0 ) * tex ).xyz` is, and why the
 /// port builds the `vec4` explicitly rather than multiplying three components.
+///
+/// A material with an `emissiveNode` takes it instead, whole:
+/// `emissive.assign( vec3( emissiveNode ? emissiveNode : materialEmissive ) )`
+/// — the node is not scaled by `emissiveIntensity` nor multiplied by the map.
 fn material_emissive_value(material: &MeshBasicNodeMaterial) -> NodeRef {
+    if let Some(node) = &material.emissive_node {
+        return to_vec3(node.clone());
+    }
     let emissive = material_emissive().mul(material_emissive_intensity());
 
     match &material.emissive_map {

@@ -42,7 +42,7 @@ So the rung is gated on what the image cannot see:
 | `src/materials/mod.rs` | `force_single_pass`, which keeps a transparent `DoubleSide` material in one draw as three does |
 | `examples/webgpu_struct_drawindirect.rs` | the port |
 
-`docs/nodes.md` §28 is the reference for all of it.
+`docs/nodes.md` §33 is the reference for all of it.
 
 ## Notes
 
