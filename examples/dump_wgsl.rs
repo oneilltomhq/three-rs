@@ -2411,6 +2411,52 @@ fn dump_room_environment() {
         &array_material,
         SetupContext::default(),
     );
+
+    // `webgpu_lights_custom`: the page's `CustomLightingModel` on a
+    // `PointsNodeMaterial` whose `lightsNode` is `lights( [ light1, light2,
+    // light3 ] ).context( { lightingModel } )` — three's `m05`.
+    #[derive(Debug)]
+    struct CustomLightingModel;
+    impl three_rs::materials::lighting_model::LightingModel for CustomLightingModel {
+        fn direct(
+            &self,
+            data: &three_rs::materials::lighting_model::DirectLightData,
+            builder: &mut three_rs::materials::lighting_model::LightingBuilder,
+        ) {
+            builder.push(
+                data.reflected_light
+                    .direct_diffuse
+                    .add_assign(data.light_color.clone()),
+            );
+        }
+    }
+    let mut custom_points = MeshBasicNodeMaterial::points();
+    custom_points.lights_node = Some(vec![0, 1, 2]);
+    custom_points.lighting_model = Some(std::rc::Rc::new(CustomLightingModel));
+    show(
+        "lights_custom_points",
+        &custom_points,
+        SetupContext {
+            lights: (0..3)
+                .map(|index| LightDesc {
+                    index,
+                    kind: LightKind::Point,
+                    shadow_map: None,
+                })
+                .collect(),
+            ..SetupContext::default()
+        },
+    );
+    // Its light spheres: a bare `NodeMaterial` with `colorNode = color( hex )`
+    // and the empty `lights()` — three's `m01`.
+    let mut custom_sphere = MeshBasicNodeMaterial::new();
+    custom_sphere.color_node = Some(Color::from_hex(0xffaa00).into());
+    custom_sphere.lights_node = Some(Vec::new());
+    show(
+        "lights_custom_sphere",
+        &custom_sphere,
+        SetupContext::default(),
+    );
 }
 
 /// Issue #140: the classic `scene.fog`. One `MeshStandardNodeMaterial` lit by
