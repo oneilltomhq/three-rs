@@ -3552,3 +3552,41 @@ dump apart from `var` placement: the port declares `worldPos` inside the
   logs and then throws on `ret.offsetX`.
 * **No `TransformControls`.** `webgpu_modifier_curve`'s handles cannot be
   dragged. The graded frame never shows the gizmo.
+
+## 36. `webgpu_fog_height` — `exponentialHeightFogFactor` under a lit, instanced material
+
+The page is the first graded use of `exponentialHeightFogFactor` (§28.2). It
+needed nothing new in `src/`: the factor, `scene.fogNode`, a `color()`
+background node, a lit `InstancedMesh` and damped `OrbitControls` were all
+in place. The rung is here so that it stays that way.
+
+### 36.1 What three does
+
+`Fog.js`' height factor is
+
+```js
+const distance = height.sub( positionWorld.y ).max( 0 ).toConst();
+const m = distance.mul( viewZ ).toConst();
+return density.mul( density, m, m ).negate().exp().oneMinus();
+```
+
+so the fog is zero above the world height `height` and thickens with the
+depth below it times the view distance. `density` and `height` are the page's
+`uniform( 0.04 )` / `uniform( 2 )`: plain `uniform()`s, so object group, after
+the material's own members. That differs from `scene.fog`'s factors, whose
+`reference()` uniforms are set to the render group (§28.1).
+
+### 36.2 Checked against
+
+`dump_wgsl`'s `fog_height` section (an instanced Phong material, one
+directional and one ambient light, the page's fog node) against three's `m02`
+/ `m03`. The fog lines match three's exactly, including the two `let` constants
+and where the uniforms sit. The rest matches up to the naming classes in §8.
+
+### 36.3 Divergences specific to this section
+
+* **The GUI's uniforms are plain values.** The page's `Inspector` writes
+  `density.value` / `height.value` from sliders. The port builds them with
+  `uniform_value`, which has no handle to write through, because nothing in
+  the graded frame or the viewer writes them. `uniform_settable` is the
+  writeable form if a host ever wants the sliders.
