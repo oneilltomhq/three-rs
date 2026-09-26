@@ -240,6 +240,9 @@ mod webgpu_camera_array;
 #[path = "webgpu_clearcoat.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_clearcoat;
+#[path = "webgpu_materials_toon.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_materials_toon;
 #[path = "webgpu_modifier_curve.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_modifier_curve;
@@ -409,6 +412,9 @@ const GRADED: &[(&str, fn())] = &[
     ("webgpu_sprites", || drop(webgpu_sprites::init())),
     ("webgpu_instance_sprites", || {
         drop(webgpu_instance_sprites::init())
+    }),
+    ("webgpu_materials_toon", || {
+        drop(webgpu_materials_toon::init())
     }),
 ];
 

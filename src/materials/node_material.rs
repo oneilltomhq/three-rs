@@ -5,6 +5,7 @@
 use super::environment;
 use super::phong::{self, LightDesc};
 use super::physical::{self, Physical};
+use super::toon;
 use super::transmission;
 use super::{Blending, MaterialKind, MeshBasicNodeMaterial, Side, ToneMapping};
 use crate::lights::LightKind;
@@ -543,7 +544,7 @@ fn setup_inner(
         fragment_node.clone()
     } else if material.kind == MaterialKind::Phong {
         setup_phong(material, ctx, true, &mut fragment)
-    } else if material.kind == MaterialKind::Lambert {
+    } else if material.kind == MaterialKind::Lambert || material.kind == MaterialKind::Toon {
         setup_phong(material, ctx, false, &mut fragment)
     } else if material.kind == MaterialKind::Standard || material.kind == MaterialKind::Physical {
         setup_standard(material, ctx, &mut fragment)
@@ -1024,12 +1025,23 @@ fn setup_phong(
             if light.kind == LightKind::Ambient {
                 continue;
             }
-            phong::direct_light(
-                light,
-                material.received_shadow_position_node.as_ref(),
-                specular,
-                fragment,
-            );
+            // `ToonLightingModel` is Lambert with its own `direct()`; the
+            // rest of the flow — `indirect()` included — is shared.
+            if material.kind == MaterialKind::Toon {
+                toon::direct_light(
+                    light,
+                    material.received_shadow_position_node.as_ref(),
+                    material.gradient_map.as_ref(),
+                    fragment,
+                );
+            } else {
+                phong::direct_light(
+                    light,
+                    material.received_shadow_position_node.as_ref(),
+                    specular,
+                    fragment,
+                );
+            }
         }
 
         // The tail every lit material shares.

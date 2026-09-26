@@ -9,6 +9,7 @@ pub mod line2;
 mod node_material;
 pub mod phong;
 pub mod physical;
+pub mod toon;
 pub mod transmission;
 
 pub use node_material::{
@@ -164,6 +165,11 @@ pub enum MaterialKind {
     /// `setupDiffuseColor()` (round-cap coverage, per-end instance colour).
     /// See [`crate::materials::line2`].
     Line2,
+    /// `MeshToonNodeMaterial` — `ToonLightingModel`: the Lambert flow with
+    /// the direct light's `dotNL` replaced by a lookup in
+    /// [`gradient_map`](MeshBasicNodeMaterial::gradient_map) (or a fixed
+    /// two-step ramp without one). See [`crate::materials::toon`].
+    Toon,
 }
 
 /// Port of `MeshBasicNodeMaterial.js` + the `NodeMaterial.js` / `Material.js`
@@ -306,6 +312,10 @@ pub struct MeshBasicNodeMaterial {
     /// (`vec4( emissive, 1 ) * tex`) and the `.xyz` is taken afterwards, which
     /// is why the port builds it the same way rather than multiplying `vec3`s.
     pub emissive_map: Option<Texture>,
+    /// `MeshToonMaterial.gradientMap` — the ramp `ToonLightingModel` reads
+    /// the direct light's `dotNL * 0.5 + 0.5` through. Read by the `Toon`
+    /// kind only.
+    pub gradient_map: Option<Texture>,
     /// `MeshStandardMaterial.aoMap` / `.aoMapIntensity` — `materialAO`,
     /// `tex.r.sub( 1 ).mul( aoMapIntensity ).add( 1 )`, assigned to the
     /// `AmbientOcclusion` property by `NodeMaterial.setupAmbientOcclusion()`.
@@ -510,6 +520,7 @@ impl Default for MeshBasicNodeMaterial {
             roughness_map: None,
             metalness_map: None,
             emissive_map: None,
+            gradient_map: None,
             ao_map: None,
             ao_map_intensity: 1.0,
             bump_map: None,
@@ -795,6 +806,21 @@ impl MeshBasicNodeMaterial {
 }
 
 impl MeshBasicNodeMaterial {
+    /// `new MeshToonNodeMaterial( { color, gradientMap } )`.
+    ///
+    /// `MeshToonMaterial`'s defaults over `Material`'s — white, `emissive`
+    /// black at intensity 1, no maps — are all ones the struct already
+    /// carries, and `lights = true` is the constructor's own.
+    pub fn toon(color: Color, gradient_map: Option<Texture>) -> Self {
+        Self {
+            kind: MaterialKind::Toon,
+            color,
+            gradient_map,
+            lights: true,
+            ..Self::default()
+        }
+    }
+
     /// `new MeshStandardNodeMaterial( { color, roughness, metalness } )`.
     pub fn standard(color: Color, roughness: f64, metalness: f64) -> Self {
         Self {
@@ -826,6 +852,10 @@ pub type MeshPhongNodeMaterial = MeshBasicNodeMaterial;
 /// three.js' name for a `NodeMaterial` whose kind is `Lambert`. The struct is
 /// shared for the reason [`MeshPhongNodeMaterial`] is.
 pub type MeshLambertNodeMaterial = MeshBasicNodeMaterial;
+
+/// three.js' name for a `NodeMaterial` whose kind is `Toon` — see
+/// [`MeshBasicNodeMaterial::toon`].
+pub type MeshToonNodeMaterial = MeshBasicNodeMaterial;
 
 /// three.js' name for a `NodeMaterial` whose kind is `Sprite`.
 pub type SpriteNodeMaterial = MeshBasicNodeMaterial;

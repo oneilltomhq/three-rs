@@ -330,6 +330,10 @@ mod webgpu_sprites;
 #[allow(dead_code)]
 mod webgpu_instance_sprites;
 
+#[path = "../../examples/webgpu_materials_toon.rs"]
+#[allow(dead_code)]
+mod webgpu_materials_toon;
+
 fn three_js_dir() -> PathBuf {
     three_rs::testing::three_js_dir()
 }
@@ -1911,6 +1915,53 @@ fn webgpu_materials_texture_manualmipmap() {
         webgpu_materials_texture_manualmipmap::animate,
         |app| app.renderer.device(),
     );
+}
+
+/// `MeshToonNodeMaterial` through `toonOutlinePass()`: 216 toon spheres, each
+/// with a `RedFormat` `DataTexture` gradient ramp read by `textureLoad`,
+/// every one drawn twice — its back-side outline first — under an ambient
+/// and a point light, then the text labels and the light's own sphere, which
+/// take no outline.
+#[test]
+fn webgpu_materials_toon() {
+    let name = "webgpu_materials_toon";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_materials_toon::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_materials_toon::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_materials_toon::animate, |app| {
+        app.renderer.device()
+    });
 }
 
 /// The clearcoat rung (issue #171): four `MeshPhysicalMaterial` spheres with
@@ -3820,6 +3871,7 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_postprocessing_transition);
     rung!(webgpu_postprocessing_sobel);
     rung!(webgpu_procedural_texture);
+    rung!(webgpu_materials_toon);
     rung!(webgpu_instance_sprites);
     rung!(webgpu_sprites);
     rung!(webgpu_clearcoat);

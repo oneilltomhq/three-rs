@@ -2387,6 +2387,34 @@ fn dump_room_environment() {
         ..MeshBasicNodeMaterial::physical(Color::new(1.0, 1.0, 1.0), 0.1, 0.0)
     };
     show("clearcoat_golf", &golf, clearcoat_ctx());
+    // rung `webgpu_materials_toon`: three's `dump-materials_toon` m04/m05 (a
+    // `MeshToonNodeMaterial` with a `RedFormat` gradient map, under the
+    // page's ambient and point light) and m02/m03 (`toonOutlinePass`'s
+    // `Toon_Outline` material).
+    let toon_ctx = SetupContext {
+        lights: vec![
+            LightDesc {
+                index: 0,
+                kind: LightKind::Ambient,
+                shadow_map: None,
+            },
+            LightDesc {
+                index: 1,
+                kind: LightKind::Point,
+                shadow_map: None,
+            },
+        ],
+        ..SetupContext::default()
+    };
+    let ramp = Texture::data_r8(3, 1, &[0, 85, 170]);
+    let toon = MeshBasicNodeMaterial::toon(Color::new(0.5, 0.25, 0.25), Some(ramp));
+    show("toon", &toon, toon_ctx);
+    let outline = three_rs::nodes::display::toon_outline_pass();
+    show(
+        "toon_outline",
+        outline.outline_material(),
+        SetupContext::default(),
+    );
     // rung `webgpu_sprites`: one `SpriteNodeMaterial` on a `Sprite` (so
     // `object.center` is read), rotated by `userData( 'rotation', 'float' )`,
     // under `fog( color( 0x0000ff ), rangeFogFactor( 1500, 2100 ) )`. Against

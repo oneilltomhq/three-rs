@@ -283,6 +283,7 @@ ModifierCurve, webgpu_modifier_curve, "../../examples/webgpu_modifier_curve.rs";
 CameraArray, webgpu_camera_array, "../../examples/webgpu_camera_array.rs";
 Sprites, webgpu_sprites, "../../examples/webgpu_sprites.rs";
 InstanceSprites, webgpu_instance_sprites, "../../examples/webgpu_instance_sprites.rs";
+MaterialsToon, webgpu_materials_toon, "../../examples/webgpu_materials_toon.rs";
 }
 
 /// Where an example's assets come from: three.js at the commit this port is
