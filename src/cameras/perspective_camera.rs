@@ -3,7 +3,7 @@
 
 use crate::core::{Node, Object3D};
 use crate::math::math_utils::{js_max, js_min};
-use crate::math::{CoordinateSystem, Matrix4, Vector2, Vector3, DEG2RAD, RAD2DEG};
+use crate::math::{CoordinateSystem, Matrix4, Vector2, Vector3, Vector4, DEG2RAD, RAD2DEG};
 
 /// `PerspectiveCamera.view` — the frustum window specification set by
 /// [`PerspectiveCamera::set_view_offset`].
@@ -39,6 +39,11 @@ pub struct PerspectiveCamera {
     pub projection_matrix: Matrix4,
     pub projection_matrix_inverse: Matrix4,
     pub matrix_world_inverse: Matrix4,
+    /// `camera.viewport` — not a `Camera` field in three.js until an
+    /// application sets one: an [`ArrayCamera`](super::ArrayCamera)'s
+    /// sub-camera's rectangle in CSS pixels, top-left origin, which the
+    /// backend turns into the draw's `setViewport()`.
+    pub viewport: Option<Vector4>,
 }
 
 impl PerspectiveCamera {
@@ -66,6 +71,7 @@ impl PerspectiveCamera {
             projection_matrix: Matrix4::identity(),
             projection_matrix_inverse: Matrix4::identity(),
             matrix_world_inverse: Matrix4::identity(),
+            viewport: None,
         };
         camera.update_projection_matrix();
         camera
