@@ -5207,7 +5207,10 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_postprocessing);
     rung!(webgpu_postprocessing_fxaa);
     rung!(webgpu_procedural_texture);
-    rung!(webgpu_camera);
+    // `webgpu_camera` is not here: its `render()` calls
+    // `cameraPerspectiveHelper.update()` every frame, which sets the helper's
+    // `position.needsUpdate` and so re-uploads that buffer on every frame,
+    // exactly as three.js does. A steady frame there writes one buffer.
     rung!(webgpu_layers);
     rung!(webgpu_multisampled_renderbuffers);
     rung!(webgpu_materials_arrays);
