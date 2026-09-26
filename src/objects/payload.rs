@@ -220,6 +220,16 @@ impl Payload {
         }
     }
 
+    /// `object.material` when it is an array (`Array.isArray( material )`):
+    /// the [`Mesh::materials`] of a plain `Mesh`, empty for everything else
+    /// and for a mesh with a single material.
+    pub fn material_array(&self) -> &[MeshBasicNodeMaterial] {
+        match self {
+            Payload::Mesh(mesh) => &mesh.materials,
+            _ => &[],
+        }
+    }
+
     /// `Frustum.intersectsObject( object )`' geometry half, for a mesh or a
     /// line.
     ///
@@ -349,6 +359,7 @@ impl Payload {
         match self {
             Payload::InstancedMesh(instanced) => instanced.count as u32,
             Payload::Points(points) => points.count.unwrap_or(1) as u32,
+            Payload::Sprite(sprite) => sprite.count as u32,
             // `RenderObject.getInstanceCount()`: an instanced geometry's
             // `instanceCount` wins over `object.count`. A `LineSegments2`'s
             // geometry is one, and its count is the number of segments.
@@ -356,7 +367,6 @@ impl Payload {
                 Some(attributes) => attributes.instance_count() as u32,
                 None => mesh.count.unwrap_or(1) as u32,
             },
-            Payload::Sprite(sprite) => sprite.count as u32,
             _ => 1,
         }
     }

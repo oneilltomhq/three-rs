@@ -2036,6 +2036,7 @@ fn main() {
     dump_room_environment();
     dump_scene_fog();
     dump_shadowmap_opacity();
+    dump_materials_alphahash();
     dump_diffuse_roughness();
     dump_cubemap_mix();
     dump_chromatic_aberration();
@@ -2801,6 +2802,39 @@ fn dump_cubemap_mix() {
         &helmet,
         SetupContext {
             environment: Some(Environment::Node(node)),
+            ..SetupContext::default()
+        },
+    );
+}
+/// Rung `webgpu_materials_alphahash`, against
+/// `target/dumps/webgpu_materials_alphahash/m13`+`m14`: the instanced
+/// `MeshStandardMaterial` with `alphaHash` and `opacity` 0.5 under a PMREM
+/// environment. The fragment opens with `getAlphaHashThreshold` as a real
+/// `fn` (its `hash2D` / `hash3D` inlined, the CDF `select`s as nested
+/// `if`s) and discards `DiffuseColor.w < getAlphaHashThreshold(
+/// positionLocal )` — the instanced `positionLocal` varying — before the
+/// opaque `DiffuseColor.w = 1.0`.
+fn dump_materials_alphahash() {
+    let cube = CubeTexture::new(vec![
+        Image {
+            width: 1,
+            height: 1,
+            data: vec![0; 4],
+        };
+        6
+    ]);
+    let environment = PmremEnvironment::new(&cube);
+    let mut material = MeshBasicNodeMaterial::standard(Color::from_hex(0xffffff), 1.0, 0.0);
+    material.alpha_hash = true;
+    material.opacity = 0.5;
+    show(
+        "materials_alphahash",
+        &material,
+        SetupContext {
+            instance_count: Some(27),
+            instanced: true,
+            instance_color: Some(27),
+            environment: Some(Environment::Pmrem(environment.handle())),
             ..SetupContext::default()
         },
     );

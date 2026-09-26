@@ -16,8 +16,9 @@ use std::rc::Rc;
 
 use super::builder::{current_context, push_context};
 use super::node::{
-    BufferNode, BufferSource, Builtin, FnDef, InstanceBuffer, Lazy, Node, NodeRef, SampleMode,
-    SettableValue, Type, UniformGroup, UniformNode, UniformSource, VarDef, VaryingDef,
+    BufferNode, BufferSource, Builtin, ContextValue, CustomNode, FnDef, InstanceBuffer, Lazy, Node,
+    NodeRef, SampleMode, SettableValue, Type, UniformGroup, UniformNode, UniformSource, VarDef,
+    VaryingDef,
 };
 use crate::materials::Side;
 use crate::math::{Color, Matrix3};
@@ -123,6 +124,37 @@ fn sub_build_name(name: &str) -> String {
         Some(layer) => format!("{layer}_{name}"),
         None => name.to_string(),
     }
+}
+
+/// `context( node, { … } )` — `ContextNode.js`. `node` is built with
+/// `value`'s keys merged into `builder.context`, and the keys in force before
+/// are restored after it.
+///
+/// What reads the keys is whatever is *set up* while `node` is being built: an
+/// inlined `Fn()`'s body ([`range_fog_factor`] reads `getViewZ`) or a
+/// [`CustomNode::setup`]. A node already built when `context` is called was
+/// set up under the context of its own construction, as a JS node that has
+/// already been built once keeps its `nodeData`. See `docs/nodes.md` §45.
+pub fn context(node: impl Into<NodeRef>, value: ContextValue) -> NodeRef {
+    NodeRef::new(Node::Context {
+        node: node.into(),
+        value: Rc::new(value),
+    })
+}
+
+/// `isolate( node )` — `IsolateNode.js`: `node` is built in a `NodeCache` of
+/// its own whose parent is the current one. A node that the subgraph reaches
+/// for the first time is counted, set up and declared there, so the same node
+/// reached again outside is a stranger to it; a node already known outside
+/// is shared. `cache( node, false )`, the deprecated parentless form, is not
+/// ported.
+pub fn isolate(node: impl Into<NodeRef>) -> NodeRef {
+    NodeRef::new(Node::Isolate { node: node.into() })
+}
+
+/// `new MyNode( … )` for a [`CustomNode`] defined outside the crate.
+pub fn custom(node: impl CustomNode + 'static) -> NodeRef {
+    NodeRef::new(Node::Custom(Rc::new(node)))
 }
 
 /// `subBuild( node, name )` — build `f`'s nodes inside the named layer.
@@ -672,34 +704,70 @@ pub fn two_pi() -> NodeRef {
     float(std::f64::consts::TAU)
 }
 
-/// `rotate( position, rotation )` — `RotateNode`'s `vec2` branch
-/// (`src/nodes/utils/RotateNode.js:106`):
+/// `rotate( position, rotation )` — `RotateNode.setup()`
+/// (`src/nodes/utils/RotateNode.js`), with its default `'XYZ'` order.
+///
+/// The `vec2` branch:
 ///
 /// ```ignore
 /// mat2( cos, sin, sin.negate(), cos ).mul( position )
 /// ```
 ///
 /// `cos`/`sin` are one node each, used twice, so both become `nodeVarN` temps.
-/// The `vec3`/`vec4` branch (three chained `mat4` rotations) is not ported.
+///
+/// The `vec3` branch builds one `mat4` per axis and chains them in the
+/// order's letters, `X.mul( Y ).mul( Z ).mul( vec4( position, 1 ) ).xyz`.
+/// Every `rotation.x` / `cos( rotation.x )` there is a fresh node in three,
+/// so each is emitted inline; only `rotation` itself is shared (twelve uses),
+/// which is what makes the builder hoist it into a temp.
 pub fn rotate(position: impl Into<NodeRef>, rotation: impl Into<NodeRef>) -> NodeRef {
     let (position, rotation) = (position.into(), rotation.into());
-    assert_eq!(
-        position.ty(),
-        Type::Vec2,
-        "three-rs: rotate() only ports RotateNode's vec2 branch"
-    );
-    let cos_angle = rotation.cos();
-    let sin_angle = rotation.sin();
-    join(
-        Type::Mat2,
-        vec![
-            cos_angle.clone(),
-            sin_angle.clone(),
-            sin_angle.negate(),
-            cos_angle,
-        ],
-    )
-    .mul(position)
+    match position.ty() {
+        Type::Vec2 => {
+            let cos_angle = rotation.cos();
+            let sin_angle = rotation.sin();
+            join(
+                Type::Mat2,
+                vec![
+                    cos_angle.clone(),
+                    sin_angle.clone(),
+                    sin_angle.negate(),
+                    cos_angle,
+                ],
+            )
+            .mul(position)
+        }
+        Type::Vec3 => {
+            let r = &rotation;
+            let row = |args: Vec<NodeRef>| join(Type::Vec4, args);
+            let mat4 = |rows: Vec<NodeRef>| join(Type::Mat4, rows);
+            let zero = || float(0.0);
+            let rotation_x = mat4(vec![
+                vec4(1.0, 0.0, 0.0, 0.0),
+                row(vec![zero(), r.x().cos(), r.x().sin(), zero()]),
+                row(vec![zero(), r.x().sin().negate(), r.x().cos(), zero()]),
+                vec4(0.0, 0.0, 0.0, 1.0),
+            ]);
+            let rotation_y = mat4(vec![
+                row(vec![r.y().cos(), zero(), r.y().sin().negate(), zero()]),
+                vec4(0.0, 1.0, 0.0, 0.0),
+                row(vec![r.y().sin(), zero(), r.y().cos(), zero()]),
+                vec4(0.0, 0.0, 0.0, 1.0),
+            ]);
+            let rotation_z = mat4(vec![
+                row(vec![r.z().cos(), r.z().sin(), zero(), zero()]),
+                row(vec![r.z().sin().negate(), r.z().cos(), zero(), zero()]),
+                vec4(0.0, 0.0, 1.0, 0.0),
+                vec4(0.0, 0.0, 0.0, 1.0),
+            ]);
+            rotation_x
+                .mul(rotation_y)
+                .mul(rotation_z)
+                .mul(vec4_join(vec![position, float(1.0)]))
+                .xyz()
+        }
+        ty => panic!("three-rs: rotate() of a {ty:?}"),
+    }
 }
 
 /// `abs( x )`.
@@ -775,8 +843,21 @@ pub fn perspective_depth_to_view_z(
         .div(far.clone().sub(near).mul(depth).sub(far))
 }
 
+/// `Fog.js`' `getViewZNode( builder )`: `builder.context.getViewZ` if an
+/// enclosing [`context`] installed one, else `positionView.z`. Read inside a
+/// fog factor's deferred body (see [`fog_factor_fn`]), so `positionView` is
+/// the building material's own and the context is the one the builder has
+/// pushed by then.
+fn fog_view_z() -> NodeRef {
+    current_context(|cx| cx.extra.get("getViewZ").cloned()).unwrap_or_else(|| position_view().z())
+}
+
 /// Port of `three.js/src/nodes/fog/Fog.js`' `rangeFogFactor( near, far )`:
-/// `smoothstep( near, far, positionView.z.negate() )`.
+/// `smoothstep( near, far, viewZ.negate() )`, where `viewZ` is
+/// `builder.context.getViewZ` or `positionView.z` (three's `getViewZNode`). So
+/// `range_fog_factor( 2.7, 4.0 ).context( ContextValue::new().set(
+/// "getViewZ", scene_pass_view_z ) )` is the page's own spelling
+/// (`docs/nodes.md` §45).
 ///
 /// Like three's, the factor reads `positionView` when the *material* is built,
 /// not when the fog is made: it is an inline `Fn()` whose body
@@ -785,9 +866,7 @@ pub fn perspective_depth_to_view_z(
 /// (`docs/nodes.md` §41).
 pub fn range_fog_factor(near: impl Into<NodeRef>, far: impl Into<NodeRef>) -> NodeRef {
     let (near, far) = (near.into(), far.into());
-    fog_factor_fn(move || {
-        range_fog_factor_with_view_z(near.clone(), far.clone(), position_view().z())
-    })
+    fog_factor_fn(move || range_fog_factor_with_view_z(near.clone(), far.clone(), fog_view_z()))
 }
 
 /// `Fog.js`' factors are `Fn()`s whose `getViewZNode( builder )` runs during
@@ -795,8 +874,9 @@ pub fn range_fog_factor(near: impl Into<NodeRef>, far: impl Into<NodeRef>) -> No
 /// material's own. The port's graph is eager, so the body is held in an
 /// inline, argument-less call and run by [`resolve_fog_factor`] inside
 /// `NodeMaterial` setup's position-view scope. A factor that reaches the
-/// builder unresolved (used outside `scene.fogNode`) is inlined there, with the
-/// base class' `positionView`, which is what it read before.
+/// builder unresolved (used outside `scene.fogNode`, or wrapped in a
+/// [`context`]) is inlined there, with the base class' `positionView`, which
+/// is what it read before.
 fn fog_factor_fn(body: impl Fn() -> NodeRef + 'static) -> NodeRef {
     call(&inline_fn(0, Type::F32, move |_| body()), Vec::new())
 }
@@ -810,14 +890,11 @@ pub fn resolve_fog_factor(factor: &NodeRef) -> NodeRef {
     }
 }
 
-/// `rangeFogFactor( near, far ).context( { getViewZ: () => viewZ } )`.
+/// `rangeFogFactor( near, far ).context( { getViewZ: () => viewZ } )`, with
+/// the override passed as an argument.
 ///
-/// `Fog.js`' `getViewZNode( builder )` reads `builder.context.getViewZ` and
-/// falls back to `positionView.z`, then negates whichever it got. Three
-/// supplies the override through the *builder* context because its `Fn()` body
-/// is evaluated while the material is built; this port's graph is built
-/// eagerly, so the same choice is made by which function the caller calls.
-/// `docs/nodes.md` §24 records the divergence.
+/// The form the port had before [`context`] existed (`docs/nodes.md` §24.3);
+/// the generated WGSL is the same as the context form's.
 pub fn range_fog_factor_with_view_z(
     near: impl Into<NodeRef>,
     far: impl Into<NodeRef>,
@@ -830,15 +907,16 @@ pub fn range_fog_factor_with_view_z(
 /// the exponential squared fog `FogExp2` builds:
 /// `density.mul( density, viewZ, viewZ ).negate().exp().oneMinus()`.
 ///
-/// `viewZ` is `positionView.z.negate()`, read twice. three.js' usage count
-/// turns it into a `let nodeConstN`; the port's builder does not promote a
-/// negation on usage (`docs/nodes.md` §8, "`toConst` on the shadow filter"), so
-/// the const is taken here by hand and the WGSL is the same.
+/// `viewZ` is `positionView.z.negate()` (or `builder.context.getViewZ`, as
+/// in [`range_fog_factor`]), read twice. three.js' usage count turns it into a
+/// `let nodeConstN`; the port's builder does not promote a negation on usage
+/// (`docs/nodes.md` §8, "`toConst` on the shadow filter"), so the const is
+/// taken here by hand and the WGSL is the same.
 ///
 /// Deferred to the material's build as [`range_fog_factor`] is.
 pub fn density_fog_factor(density: impl Into<NodeRef>) -> NodeRef {
     let density = density.into();
-    fog_factor_fn(move || density_fog_factor_with_view_z(density.clone(), position_view().z()))
+    fog_factor_fn(move || density_fog_factor_with_view_z(density.clone(), fog_view_z()))
 }
 
 /// [`density_fog_factor`] over an explicit view-space z, the
@@ -873,11 +951,7 @@ pub fn exponential_height_fog_factor(
 ) -> NodeRef {
     let (density, height) = (density.into(), height.into());
     fog_factor_fn(move || {
-        exponential_height_fog_factor_with_view_z(
-            density.clone(),
-            height.clone(),
-            position_view().z(),
-        )
+        exponential_height_fog_factor_with_view_z(density.clone(), height.clone(), fog_view_z())
     })
 }
 
@@ -1717,6 +1791,16 @@ impl NodeRef {
 
     pub fn to_var(&self, name: &'static str) -> NodeRef {
         to_var(Some(name), self.clone())
+    }
+
+    /// `node.context( { … } )` — see [`context`].
+    pub fn context(&self, value: ContextValue) -> NodeRef {
+        context(self.clone(), value)
+    }
+
+    /// `node.isolate()` — see [`isolate`].
+    pub fn isolate(&self) -> NodeRef {
+        isolate(self.clone())
     }
 
     pub fn to_varying(&self, name: &'static str) -> NodeRef {
@@ -3068,14 +3152,53 @@ pub fn bump_map(map: &Texture, scale: NodeRef) -> NodeRef {
     })
 }
 
-/// `texture( map ).sample( uv ).grad( vec2(), vec2() )` — a tap with the
-/// gradients pinned to zero, which is how `PMREMUtils.bilinearCubeUV` turns
-/// anisotropic filtering off on the cubeUV atlas.
-pub fn texture_grad(map: &Texture, coord: NodeRef) -> NodeRef {
+/// `texture( map, uv ).grad( gradX, gradY )` — a 2-D tap with explicit
+/// screen-space gradients, `textureSampleGrad` (`webgpu_texturegrad`). The uv
+/// is taken as given, with no uv matrix, as for [`texture_uv`].
+pub fn texture_grad(map: &Texture, coord: NodeRef, grad_x: NodeRef, grad_y: NodeRef) -> NodeRef {
     texture_node(
         TextureSource::Texture2D(map.clone()),
         coord,
-        SampleMode::Grad,
+        SampleMode::Grad(grad_x, grad_y),
+        Type::Vec4,
+    )
+}
+
+/// `texture( map ).sample( uv ).offset( offset ).gather( component )` —
+/// `textureGather`: channel `component` of the four texels around `uv`, from
+/// mip level 0 (`webgpu_texturegather`). The uv is taken as given, as for
+/// [`texture_uv`]; `offset` is a texel offset, `None` for no `.offset()`.
+pub fn texture_gather(
+    map: &Texture,
+    coord: NodeRef,
+    component: NodeRef,
+    offset: Option<NodeRef>,
+) -> NodeRef {
+    texture_node(
+        TextureSource::Texture2D(map.clone()),
+        coord,
+        SampleMode::Gather { component, offset },
+        Type::Vec4,
+    )
+}
+
+/// `texture( depthTexture ).sample( uv ).offset( offset ).gather().compare( z )`
+/// — `textureGatherCompare` on a depth texture with a comparison sampler:
+/// the four texels' results, as a `vec4`.
+///
+/// The sampler is [`shadow_map_compare`]'s, `LessEqualCompare`: the one
+/// `compareFunction` a page on the ladder sets on its own `DepthTexture`, so
+/// the port's `DepthTexture` carries none (`docs/nodes.md` §44).
+pub fn depth_texture_gather_compare(
+    map: &DepthTexture,
+    coord: NodeRef,
+    compare: NodeRef,
+    offset: Option<NodeRef>,
+) -> NodeRef {
+    texture_node(
+        TextureSource::ShadowMap(map.clone()),
+        coord,
+        SampleMode::GatherCompare { compare, offset },
         Type::Vec4,
     )
 }
@@ -3093,6 +3216,17 @@ pub fn texture_level(map: &Texture, coord: NodeRef, level: NodeRef) -> NodeRef {
         TextureSource::Texture2D(map.clone()),
         coord,
         SampleMode::Level(level),
+        Type::Vec4,
+    )
+}
+
+/// `texture( map, uv ).bias( value )` — a 2-D tap with a mip bias, the
+/// uv taken as given (no uv matrix), as for [`texture_uv`].
+pub fn texture_bias(map: &Texture, coord: NodeRef, bias: NodeRef) -> NodeRef {
+    texture_node(
+        TextureSource::Texture2D(map.clone()),
+        coord,
+        SampleMode::Bias(bias),
         Type::Vec4,
     )
 }
@@ -3344,6 +3478,146 @@ impl StorageArray {
     }
 }
 
+/// `WebGPUAttributeUtils.createAttribute()`'s storage stride, in floats: a
+/// `vec3` is padded to four ("WGSL does not support packed vec3 data in
+/// storage buffers"), everything else is packed.
+fn storage_item_size(element_ty: Type) -> usize {
+    match element_ty.components() {
+        3 => 4,
+        n => n,
+    }
+}
+
+/// `storage( attribute, type, attribute.count )` over an attribute that has a
+/// CPU array: `new StorageInstancedBufferAttribute( array, itemSize )`, or
+/// `computeSkinning()`'s `new InstancedBufferAttribute( array, itemSize )`.
+///
+/// `words` are the array's elements as bits (`f32::to_bits` for a float
+/// array, the integers themselves for a `Uint32Array`), `itemSize` of them per
+/// element and unpadded, as the typed array holds them. They are laid out at
+/// the storage stride here, which is what the GPU buffer gets.
+pub fn storage_data(words: &[u32], element_ty: Type) -> StorageArray {
+    let item_size = element_ty.components();
+    let stride = storage_item_size(element_ty);
+    let count = words.len() / item_size;
+    let mut init = vec![0u32; count * stride];
+    for (i, element) in words.chunks_exact(item_size).enumerate() {
+        init[i * stride..i * stride + item_size].copy_from_slice(element);
+    }
+    StorageArray(Rc::new(BufferNode {
+        id: crate::nodes::node::BufferId::next(),
+        source: BufferSource::StorageData {
+            init: Rc::new(init),
+            read_only: false,
+        },
+        element_ty,
+        count,
+    }))
+}
+
+/// [`storage_data`] over a float array.
+pub fn storage_f32(array: &[f32], element_ty: Type) -> StorageArray {
+    let words: Vec<u32> = array.iter().map(|v| v.to_bits()).collect();
+    storage_data(&words, element_ty)
+}
+
+impl StorageArray {
+    /// `.toReadOnly()` — `var<storage, read>` in a kernel as well. The same
+    /// buffer, so the same GPU buffer; only the declaration changes.
+    pub fn to_read_only(&self) -> StorageArray {
+        let source = match &self.0.source {
+            BufferSource::StorageData { init, .. } => BufferSource::StorageData {
+                init: init.clone(),
+                read_only: true,
+            },
+            _ => panic!("three-rs: to_read_only() is ported for storage over a CPU array"),
+        };
+        StorageArray(Rc::new(BufferNode {
+            id: self.0.id,
+            source,
+            element_ty: self.0.element_ty,
+            count: self.0.count,
+        }))
+    }
+
+    /// `.toAttribute()` — `bufferAttribute( storageAttribute, type )`: the
+    /// storage buffer read as a vertex attribute. It is an
+    /// `InstancedBufferAttribute` (`StorageInstancedBufferAttribute`), so it
+    /// steps once per instance, and it is the *same* GPU buffer the kernels
+    /// write — the vertex buffer shares the storage node's id. The stride is
+    /// the padded storage stride: a `vec3` array is read 16 bytes apart.
+    pub fn to_attribute(&self) -> NodeRef {
+        let buffer = Rc::new(InstanceBuffer {
+            id: self.0.id,
+            source: self.0.source.clone(),
+            count: self.0.count,
+            item_size: storage_item_size(self.0.element_ty),
+        });
+        instanced_attribute(&buffer, 0, self.0.element_ty)
+    }
+}
+
+/// A `ComputeNode` read as a value — `Fn( () => { …; return output } )()
+/// .compute( count )` set as, say, a material's `positionNode`.
+///
+/// Outside the compute stage three's `ComputeNode.generate()` returns its
+/// `outputComputeNode` (the `Fn`'s return value) and its `updateBefore`
+/// (`NodeUpdateType.FRAME`) runs `renderer.compute( this )`: the kernel is
+/// dispatched once per frame before the pass that draws with its result. The
+/// statements of `flow` are the kernel; `output` is what the vertex stage
+/// reads. `flow.on_init` runs once, before the first dispatch, as usual.
+pub fn compute_node(flow: crate::nodes::ComputeFlow, output: NodeRef) -> NodeRef {
+    NodeRef::new(Node::Compute {
+        flow: Rc::new(flow),
+        output,
+    })
+}
+
+/// `objectWorldMatrix( object3d )` — `Object3DNode( WORLD_MATRIX, object3d )`
+/// with an explicit object: an object-group `mat4` that reads
+/// `object3d.matrixWorld` whenever the buffer is written, in a draw or in a
+/// kernel.
+pub fn object_world_matrix(object: &crate::core::Node) -> NodeRef {
+    let object = object.downgrade();
+    uniform(
+        UniformSource::Live(crate::nodes::node::LiveValue::new(move || {
+            let object = object
+                .upgrade()
+                .expect("three-rs: objectWorldMatrix( object ) outlived its object");
+            let world = object.borrow().matrix_world;
+            world.elements.to_vec()
+        })),
+        Type::Mat4,
+        UniformGroup::Object,
+        None,
+    )
+}
+
+/// `shapeCircle( coord = uv() )` (`src/nodes/shapes/Shapes.js`): 1 inside the
+/// unit circle over the quad, 0 outside — softened over one `fwidth` when the
+/// material has `alphaToCoverage` and the target is multisampled.
+///
+/// Three reads `material.alphaToCoverage` and `renderer.currentSamples` inside
+/// the `Fn` body, i.e. at build time; the body here does the same from the
+/// [`BuildContext`](crate::nodes::builder) the renderer installs around the
+/// build, so one node serves both branches.
+pub fn shape_circle() -> NodeRef {
+    thread_local! {
+        static DEF: Rc<FnDef> = inline_fn(1, Type::F32, |args| {
+            let coord = args[0].clone();
+            let len2 = length_sq(coord.mul(2.0).sub(1.0));
+            let smooth = crate::nodes::builder::current_context(|cx| cx.alpha_to_coverage_samples);
+            if smooth {
+                let dlen = to_var(None, fwidth(len2.clone()));
+                smoothstep(dlen.one_minus(), dlen.add(1.0), len2).one_minus()
+            } else {
+                len2.greater_than(1.0).select(float(0.0), float(1.0))
+            }
+        });
+    }
+    DEF.with(|def| call(def, vec![uv()]))
+}
+
 pub use super::node::StructLayout;
 /// One member of [`struct_type`]'s object — `'uint'`, or `{ type: 'uint',
 /// atomic: true }` with [`atomic`](StructMember::atomic) set.
@@ -3548,6 +3822,21 @@ pub fn uniform_array_vec3(values: &[[f64; 3]]) -> UniformArray {
     }))
 }
 
+/// `uniformArray( [ 1.0, 1.5, … ] )` — an array of floats, each padded to a
+/// `vec4` and read back as its `.x` (`UniformArrayElementNode.generate()`).
+pub fn uniform_array_f32(values: &[f64]) -> UniformArray {
+    let mut padded = Vec::with_capacity(values.len() * 4);
+    for &v in values {
+        padded.extend([v as f32, 0.0, 0.0, 0.0]);
+    }
+    UniformArray(Rc::new(BufferNode {
+        id: crate::nodes::node::BufferId::next(),
+        source: BufferSource::UniformArray(Rc::new(padded)),
+        element_ty: Type::Vec4,
+        count: values.len(),
+    }))
+}
+
 impl UniformArray {
     /// `.element( i )` — `NodeBuffer_N.value[ i ].xyz`.
     pub fn element(&self, index: usize) -> NodeRef {
@@ -3556,6 +3845,16 @@ impl UniformArray {
             index: constant(Type::U32, vec![index as f64]),
         })
         .xyz()
+    }
+
+    /// `.element( i )` on a float array — `NodeBuffer_N.value[ i ].x`, the
+    /// index a node (a loop's `i`, or a `u32` constant).
+    pub fn element_x(&self, index: NodeRef) -> NodeRef {
+        NodeRef::new(Node::BufferElement {
+            buffer: self.0.clone(),
+            index,
+        })
+        .x()
     }
 }
 
