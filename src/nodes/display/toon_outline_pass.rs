@@ -127,7 +127,7 @@ impl ToonOutlinePassNode {
         camera: &mut dyn RenderCamera,
     ) {
         let previous = renderer.toon_outline.replace(self.material.clone());
-        self.pass.render(renderer, scene, camera);
+        self.pass.render_scene(renderer, scene, camera);
         renderer.toon_outline = previous;
     }
 }

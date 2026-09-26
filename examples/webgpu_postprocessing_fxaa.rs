@@ -17,6 +17,7 @@
 //! encoded first, `FXAANode` runs `convertToTexture()` on that, and the
 //! pipeline's own quad is the FXAA shader alone.
 
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use three_rs::addons::controls::OrbitControls;
@@ -26,7 +27,7 @@ use three_rs::nodes::display::{convert_to_texture, fxaa, FxaaNode, RttNode};
 use three_rs::testing::DeterministicRandom;
 use three_rs::Timer;
 use three_rs::{
-    Color, DirectionalLight, Group, HemisphereLight, InstancedMesh, MeshStandardNodeMaterial,
+    pass, Color, DirectionalLight, Group, HemisphereLight, InstancedMesh, MeshStandardNodeMaterial,
     Object3D, PassNode, PerspectiveCamera, RenderPipeline, Renderer, RendererParameters, Scene,
 };
 
@@ -46,8 +47,10 @@ pub struct Params {
 
 pub struct App {
     pub renderer: Renderer,
-    pub scene: Scene,
-    pub camera: PerspectiveCamera,
+    /// Shared with `scene_pass`, which renders it from `updateBefore()`.
+    pub scene: Rc<RefCell<Scene>>,
+    /// Shared with `scene_pass`.
+    pub camera: Rc<RefCell<PerspectiveCamera>>,
     pub group: three_rs::Node,
     /// The page's module-level `timer`.
     pub timer: Timer,
@@ -130,7 +133,11 @@ pub fn init() -> App {
 
     // scene pass
 
-    let scene_pass = PassNode::new();
+    // `pass( scene, camera )` — the pass holds both, and the renderer renders
+    // it the first time a draw samples its texture (`docs/nodes.md` §57).
+    let scene = Rc::new(RefCell::new(scene));
+    let camera = Rc::new(RefCell::new(camera));
+    let scene_pass = pass(scene.clone(), camera.clone());
     let output_pass = render_output(scene_pass.node(), renderer.tone_mapping);
 
     // FXAA must be computed in sRGB color space (so after tone mapping and color space conversion)
@@ -167,20 +174,25 @@ pub fn animate(app: &mut App) {
         group.set_rotation(rotation.x, rotation.y + delta * 0.1, rotation.z);
     }
 
-    // `renderPipeline.render()`: the scene pass, the RTT of its render
-    // output, `FXAANode.updateBefore()`, then the quad — see
-    // `docs/postprocessing.md` for why the port fires them explicitly.
-    app.scene_pass
-        .render(&mut app.renderer, &mut app.scene, &mut app.camera);
-    app.fxaa_input.render(&mut app.renderer);
+    // `renderPipeline.render()`: the output quad's draw runs the scene pass's
+    // and the RTT's `updateBefore()` first (`docs/nodes.md` §57).
+    //
+    // `FXAANode` is not itself a `NodeUpdate` node, so `fxaa.update()` stays a
+    // hand call for its `invSize` uniform; the RTT's target follows the
+    // drawing buffer regardless of when it is actually drawn, so this sizes
+    // it explicitly first rather than reading a texture that has not resized
+    // yet.
+    let (width, height) = app.renderer.drawing_buffer_size();
+    app.fxaa_input.set_size(width, height);
     app.fxaa.update();
     app.render_pipeline.render(&mut app.renderer);
 }
 
 /// The page's `onWindowResize()`.
 pub fn resize(app: &mut App, width: f64, height: f64) {
-    app.camera.aspect = width / height;
-    app.camera.update_projection_matrix();
+    let mut camera = app.camera.borrow_mut();
+    camera.aspect = width / height;
+    camera.update_projection_matrix();
     app.renderer.set_size(width, height);
 }
 

@@ -387,6 +387,11 @@ pub type ObjectUpdateFn = dyn Fn(&NodeFrame) -> Vec<f64>;
 /// the render object and the renderer's occlusion results for the render
 /// context being drawn, which is all `frame.renderer.isOccluded( object )`
 /// reads (`webgpu_occlusion`, `docs/nodes.md` §39).
+///
+/// This is the per-object view of the frame. The frame itself — `frameId`,
+/// `renderId`, the clock and the update maps — is
+/// [`NodeFrameState`](crate::nodes::NodeFrameState), which the renderer owns
+/// (`docs/nodes.md` §57).
 #[derive(Clone, Copy)]
 pub struct NodeFrame<'a> {
     /// `frame.object` — the render object about to be drawn.
@@ -1101,6 +1106,58 @@ pub trait CustomNode {
     /// [`context`](crate::nodes::tsl::context) node. The TSL functions called
     /// here see the same context through the crate's own accessors.
     fn setup(&self, builder: &crate::nodes::NodeBuilder) -> NodeRef;
+
+    /// `updateBeforeType`. Anything but `None` puts the node in the
+    /// material's update-before list; see `docs/nodes.md` §57.
+    fn update_before_type(&self) -> crate::nodes::NodeUpdateType {
+        crate::nodes::NodeUpdateType::None
+    }
+    /// `updateType`.
+    fn update_type(&self) -> crate::nodes::NodeUpdateType {
+        crate::nodes::NodeUpdateType::None
+    }
+    /// `updateAfterType`.
+    fn update_after_type(&self) -> crate::nodes::NodeUpdateType {
+        crate::nodes::NodeUpdateType::None
+    }
+    /// `updateBefore( frame )`. `false` leaves the guard untouched, as
+    /// three's `=== false` does. See [`NodeUpdate`](crate::nodes::NodeUpdate).
+    fn update_before(&self, _renderer: &mut crate::renderer::Renderer) -> bool {
+        true
+    }
+    /// `update( frame )`.
+    fn update(&self, _renderer: &mut crate::renderer::Renderer) -> bool {
+        true
+    }
+    /// `updateAfter( frame )`.
+    fn update_after(&self, _renderer: &mut crate::renderer::Renderer) -> bool {
+        true
+    }
+}
+
+/// A [`CustomNode`] seen through [`NodeUpdate`](crate::nodes::NodeUpdate), so
+/// the renderer drives it like any other updating node.
+pub(crate) struct CustomUpdate(pub(crate) Rc<dyn CustomNode>);
+
+impl crate::nodes::NodeUpdate for CustomUpdate {
+    fn update_before_type(&self) -> crate::nodes::NodeUpdateType {
+        self.0.update_before_type()
+    }
+    fn update_type(&self) -> crate::nodes::NodeUpdateType {
+        self.0.update_type()
+    }
+    fn update_after_type(&self) -> crate::nodes::NodeUpdateType {
+        self.0.update_after_type()
+    }
+    fn update_before(&self, renderer: &mut crate::renderer::Renderer) -> bool {
+        self.0.update_before(renderer)
+    }
+    fn update(&self, renderer: &mut crate::renderer::Renderer) -> bool {
+        self.0.update(renderer)
+    }
+    fn update_after(&self, renderer: &mut crate::renderer::Renderer) -> bool {
+        self.0.update_after(renderer)
+    }
 }
 
 impl std::fmt::Debug for dyn CustomNode {
@@ -1185,8 +1242,9 @@ pub enum Node {
     /// count )` set as a material's `positionNode`. Outside the compute stage
     /// it generates `output` (`properties.outputComputeNode`); the kernel
     /// itself runs from `updateBefore()` (`NodeUpdateType.FRAME`), which the
-    /// builder records in [`NodeProgram::computes`](crate::nodes::NodeProgram)
-    /// for the renderer to dispatch. See `docs/nodes.md` §44.
+    /// builder records in
+    /// [`NodeProgram::update_before`](crate::nodes::NodeProgram) for the
+    /// renderer to dispatch. See `docs/nodes.md` §44 and §57.
     Compute {
         flow: Rc<crate::nodes::ComputeFlow>,
         output: NodeRef,

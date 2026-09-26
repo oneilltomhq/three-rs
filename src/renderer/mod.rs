@@ -30,7 +30,7 @@ use bindings::{
 pub use direct_render_pipeline::DirectRenderPipeline;
 pub use info::{BuildCounts, ComputeCounts, Info, MemoryCounts, RenderCounts};
 use mipmap::{create_mipmap_pipeline, MipmapShader};
-pub use pass::{PassNode, PassOptions, DEPTH_ATTACHMENT};
+pub use pass::{pass, CameraRef, PassNode, PassOptions, SceneRef, DEPTH_ATTACHMENT};
 pub use pmrem::PmremGenerator;
 use programs::{
     ComputeProgramGpu, ExtraColorTarget, PipelineKey, Program, MAX_EXTRA_COLOR_ATTACHMENTS,
@@ -748,23 +748,23 @@ pub struct Renderer {
     /// `material.id`. A steady frame is served from here without touching the
     /// node builder; see `node_builder_state()`.
     node_builder_states: HashMap<usize, MaterialStates>,
-    /// Frames so far — the clock the by-use caches (`node_builder_states`,
+    /// Three's `NodeFrame`: the clock (`time`, `deltaTime`, `frameId`,
+    /// `renderId`) and the update maps behind the `NodeUpdateType` guards.
+    ///
+    /// `frame_id` is also the clock the by-use caches (`node_builder_states`,
     /// `buffers`) age their entries against, since a material is a value here
     /// and has no liveness signal of its own. See [`CACHE_GRACE_FRAMES`].
     ///
-    /// A frame is a render whose destination is the screen: `render()` or
+    /// A frame is opened by the first render after the last one closed, and
+    /// closed by a render whose destination is the screen: `render()` or
     /// `render_quad()` with no render target set. Renders *into* a render
     /// target — the nested scene renders of a `PassNode`, an `SsaaPassNode`'s
     /// eight samples and its eight accumulation quads — belong to the frame
-    /// they precede and do not advance it.
-    frames: u64,
-    /// `NodeUpdateType.FRAME` bookkeeping: the frame each `ComputeNode`
-    /// reached through a material last ran in, keyed by the flow's address
-    /// (the material holds the flow for as long as it can be drawn).
-    frame_computes: HashMap<usize, u64>,
-    /// The frame each `computeSkinning()` skeleton was last `update()`d in —
-    /// its `OnObjectUpdate`'s `_skeletonsUpdated` map.
-    frame_skeletons: HashMap<usize, u64>,
+    /// they are part of. See `docs/nodes.md` §57.
+    node_frame: crate::nodes::NodeFrameState,
+    /// How many `render()` / `render_quad()` calls are running: more than
+    /// one while a pass renders from inside a draw. Three's `_callDepth`.
+    call_depth: u32,
     /// Every render context's occlusion queries and results — see
     /// `occlusion.rs`.
     occlusion: occlusion::Occlusion,
@@ -780,9 +780,6 @@ pub struct Renderer {
     texture_overrides: Vec<(usize, Texture)>,
     /// `ReflectorNode.js`' module-level `_inReflector`.
     in_reflector: bool,
-    /// `Renderer._callDepth` — how many `render()`s are on the stack. A
-    /// reflector's is nested inside the one that drew its mirror.
-    call_depth: u32,
     /// How many times `NodeBuilder::build` has run — the number a steady frame
     /// must leave unchanged. See `program_builds()`.
     program_builds: u64,
@@ -885,25 +882,6 @@ pub struct Renderer {
 
     /// `renderer.toneMappingExposure`.
     pub tone_mapping_exposure: f64,
-
-    /// `NodeFrame.time`, in seconds — what the TSL `time` node reads.
-    ///
-    /// Advanced by [`Renderer::update_node_frame`] out of
-    /// [`crate::utils::now_ms`] on every frame, exactly as
-    /// `NodeFrame.update()` advances it out of `performance.now()`. With the
-    /// clock pinned (the e2e harness, and every example's `main()`) every
-    /// delta is 0 and this stays 0, which is the graded frame; with the clock
-    /// running it tracks the wall clock and the time-driven node materials
-    /// animate.
-    time: f64,
-    /// `NodeFrame.lastTime` — `undefined` until the first frame, which is what
-    /// makes that frame's delta 0 whatever the clock says.
-    node_frame_last_time: Option<f64>,
-    /// `NodeFrame.deltaTime` — the last update's step, what `deltaTime` reads.
-    delta_time: f64,
-    /// `NodeFrame.frameId` — incremented by every `NodeFrame.update()`, what
-    /// `frameId` reads.
-    frame_id: u32,
 
     /// The viewer's canvas → surface blit; see `present.rs`. Never touched by
     /// the e2e path.
@@ -1190,14 +1168,12 @@ impl Renderer {
             mipmap_shader,
             programs: HashMap::new(),
             node_builder_states: HashMap::new(),
-            frames: 0,
-            frame_computes: HashMap::new(),
-            frame_skeletons: HashMap::new(),
+            node_frame: crate::nodes::NodeFrameState::default(),
+            call_depth: 0,
             occlusion: occlusion::Occlusion::default(),
             occlusion_context: None,
             texture_overrides: Vec::new(),
             in_reflector: false,
-            call_depth: 0,
             program_builds: 0,
             default_material: MeshBasicNodeMaterial::new(),
             output_hook: None,
@@ -1236,10 +1212,6 @@ impl Renderer {
             neutral_output: false,
             tone_mapping_exposure: 1.0,
             fullscreen_pass: false,
-            time: 0.0,
-            node_frame_last_time: None,
-            delta_time: 0.0,
-            frame_id: 0,
             present: None,
             random: DeterministicRandom::new(),
             tone_mapping: ToneMapping::None,
@@ -1497,30 +1469,91 @@ impl Renderer {
         // `Renderer.render()`: `if ( this.info.autoReset === true )
         // this.info.reset()`. A frame that is several renders turns
         // `auto_reset` off and resets once itself; see [`Info::auto_reset`].
-        //
-        // A render nested inside another — a reflector's — is part of the
-        // same frame: it neither resets the counters nor starts a frame.
-        if self.call_depth == 0 {
-            if self.info.auto_reset {
-                self.info.reset();
-            }
-
-            // Before anything of this frame is looked up: return what the last
-            // frame's scene no longer uses. See `sweep_caches`.
-            self.begin_frame();
+        // A render nested in another's draw — a pass rendering from
+        // `updateBefore()` — is part of that render and does not reset it.
+        if self.info.auto_reset && self.call_depth == 0 {
+            self.info.reset();
         }
 
-        // `resolveOccludedAsync()`'s `await mapAsync()` resolving: in a
-        // browser the map's callback runs from the event loop between frames;
-        // natively it runs from a poll, so poll (without blocking) whenever a
-        // map is outstanding, and fold what landed into `occluded`.
+        // Before anything of this frame is looked up: return what the last
+        // frame's scene no longer uses. See `sweep_caches`.
+        let render = self.begin_frame();
+        // `renderContext.fullscreenPass = scene.isQuadMesh === true`: a scene
+        // render nested in a quad's draw is not a fullscreen pass.
+        let previous_fullscreen_pass = std::mem::replace(&mut self.fullscreen_pass, false);
+        self.poll_occlusion();
+        // `scene.updateMatrixWorld()` then `camera.updateMatrixWorld()`, both
+        // honouring `matrixAutoUpdate` / `matrixWorldAutoUpdate`.
+        scene.update_matrix_world();
+        camera.update_matrix_world();
+        self.render_scene(scene, camera);
+        self.fullscreen_pass = previous_fullscreen_pass;
+        self.end_frame(render);
+    }
+
+    /// [`render`](Self::render) for a pass that holds its scene and camera in
+    /// `RefCell`s and renders from `updateBefore()` (`docs/nodes.md` §57).
+    ///
+    /// Three's JS renders a scene from inside a draw of the same scene
+    /// without asking; in Rust the outer render holds the borrow. So this
+    /// takes both shared. The camera's `updateMatrixWorld()` needs it
+    /// mutably: when an outer render of this frame already holds the camera,
+    /// that render has just updated it, and this one skips the update.
+    pub(crate) fn render_shared(
+        &mut self,
+        scene: &Scene,
+        camera: &std::cell::RefCell<dyn RenderCamera>,
+    ) {
+        if self.info.auto_reset && self.call_depth == 0 {
+            self.info.reset();
+        }
+        let render = self.begin_frame();
+        let previous_fullscreen_pass = std::mem::replace(&mut self.fullscreen_pass, false);
+        self.poll_occlusion();
+        scene.update_matrix_world();
+        if let Ok(mut camera) = camera.try_borrow_mut() {
+            camera.update_matrix_world();
+        }
+        self.render_scene(scene, &*camera.borrow());
+        self.fullscreen_pass = previous_fullscreen_pass;
+        self.end_frame(render);
+    }
+
+    /// [`render`](Self::render) for a reflector's nested render
+    /// (`ReflectorBaseNode.updateBefore()`): the outer render of this frame
+    /// holds the scene shared, so this takes it shared too, with the
+    /// reflector's own virtual camera. Part of the outer frame, as a pass's
+    /// nested render is (`docs/nodes.md` §55 and §57).
+    pub(crate) fn render_nested(&mut self, scene: &Scene, camera: &mut dyn RenderCamera) {
+        if self.info.auto_reset && self.call_depth == 0 {
+            self.info.reset();
+        }
+        let render = self.begin_frame();
+        let previous_fullscreen_pass = std::mem::replace(&mut self.fullscreen_pass, false);
+        self.poll_occlusion();
+        scene.update_matrix_world();
+        camera.update_matrix_world();
+        self.render_scene(scene, camera);
+        self.fullscreen_pass = previous_fullscreen_pass;
+        self.end_frame(render);
+    }
+
+    /// `resolveOccludedAsync()`'s `await mapAsync()` resolving: in a browser
+    /// the map's callback runs from the event loop between frames; natively
+    /// it runs from a poll, so poll (without blocking) whenever a map is
+    /// outstanding, and fold what landed into `occluded`.
+    fn poll_occlusion(&mut self) {
         if self.occlusion.has_pending() {
             // A lost device surfaces on the next submit; here the poll only
             // drives callbacks.
             let _ = self.device.poll(wgpu::PollType::Poll);
             self.occlusion.collect();
         }
+    }
 
+    /// The body of [`render`](Self::render), between the frame bookkeeping,
+    /// once the occlusion poll and the matrix updates have run.
+    fn render_scene(&mut self, scene: &Scene, camera: &dyn RenderCamera) {
         // `DirectRenderPipeline`'s `getOutput` hook, which every material of
         // this render carries into its own setup. three.js makes the decision
         // inside the closure — `if ( renderer.isOutputTarget === false && … )
@@ -1531,12 +1564,6 @@ impl Renderer {
             .output_hook
             .clone()
             .filter(|_| self.render_target.is_none());
-
-        // `Renderer.render()`: `scene.updateMatrixWorld()` then
-        // `camera.updateMatrixWorld()`, both honouring `matrixAutoUpdate` /
-        // `matrixWorldAutoUpdate`.
-        scene.update_matrix_world();
-        camera.update_matrix_world();
 
         // `Renderer._renderScene()`: `_projectObject()` walks the real scene
         // graph into the render list, `finish()`/`sort()` order it, and
@@ -1669,9 +1696,6 @@ impl Renderer {
                 (light.kind, object.cast_shadow && light.shadow.is_some())
             })
             .collect();
-
-        let mut skeletons_updated: std::collections::HashSet<usize> =
-            std::collections::HashSet::new();
 
         // `NodeManager.getFogNode( scene )`, once per render: `scene.fogNode`
         // if set, else the node `updateFog()` builds for `scene.fog` — which
@@ -1816,11 +1840,15 @@ impl Renderer {
             // per frame per *skeleton*, however many meshes share it, and it
             // runs here — after `updateMatrixWorld()` has refreshed every
             // bone's `matrixWorld` and the mesh's `bindMatrixInverse`.
+            let skeleton = object
+                .payload
+                .skinned_mesh()
+                .and_then(|mesh| mesh.skeleton.clone());
+            if let Some(skeleton) = &skeleton {
+                update_skeleton(&mut self.node_frame, skeleton);
+            }
             let skin = object.payload.skinned_mesh().and_then(|mesh| {
-                let skeleton = mesh.skeleton.clone()?;
-                if skeletons_updated.insert(Rc::as_ptr(&skeleton) as *const u8 as usize) {
-                    skeleton.borrow_mut().update();
-                }
+                let skeleton = skeleton.as_ref()?;
                 let skeleton = skeleton.borrow();
                 Some((
                     crate::nodes::skinning::SkinEntry {
@@ -2114,9 +2142,9 @@ impl Renderer {
             camera_view_matrices: &camera_view_matrices,
             camera_projection_matrices: &camera_projection_matrices,
             camera_viewports: &camera_viewports,
-            time: self.time,
-            delta_time: self.delta_time,
-            frame_id: self.frame_id,
+            time: self.node_frame.time,
+            delta_time: self.node_frame.delta_time,
+            frame_id: self.node_frame.frame_id as u32,
             lights: &lights,
             // `scene.backgroundBlurriness` — a render-group uniform, so it
             // rides the pass rather than the background draw.
@@ -2386,9 +2414,9 @@ impl Renderer {
                 },
                 camera_view: view,
                 camera_world: world,
-                time: self.time,
-                delta_time: self.delta_time,
-                frame_id: self.frame_id,
+                time: self.node_frame.time,
+                delta_time: self.node_frame.delta_time,
+                frame_id: self.node_frame.frame_id as u32,
                 ..Default::default()
             };
 
@@ -2806,9 +2834,9 @@ impl Renderer {
                 },
                 camera_view: face_camera.matrix_world_inverse,
                 camera_world: face_camera.node.borrow().matrix_world,
-                time: self.time,
-                delta_time: self.delta_time,
-                frame_id: self.frame_id,
+                time: self.node_frame.time,
+                delta_time: self.node_frame.delta_time,
+                frame_id: self.node_frame.frame_id as u32,
                 ..Default::default()
             };
 
@@ -2869,9 +2897,14 @@ impl Renderer {
     pub fn render_quad(&mut self, quad: &QuadMesh) {
         // A `RenderPipeline`'s quad is the last draw of its frame and the only
         // one that reads its material, so the frame clock has to count it —
-        // see [`Renderer::frames`].
-        self.begin_frame();
+        // see [`Renderer::node_frame`].
+        let render = self.begin_frame();
+        self.render_quad_mesh(quad);
+        self.end_frame(render);
+    }
 
+    /// The body of [`render_quad`](Self::render_quad).
+    fn render_quad_mesh(&mut self, quad: &QuadMesh) {
         // `Renderer._renderScene()`: `renderContext.fullscreenPass =
         // scene.isQuadMesh === true`.
         let previous_fullscreen_pass = std::mem::replace(&mut self.fullscreen_pass, true);
@@ -2926,9 +2959,9 @@ impl Renderer {
             camera_projection_inverse: self.quad_camera.projection_matrix_inverse,
             camera_view: self.quad_camera.matrix_world_inverse,
             camera_world: self.quad_camera.object.matrix_world,
-            time: self.time,
-            delta_time: self.delta_time,
-            frame_id: self.frame_id,
+            time: self.node_frame.time,
+            delta_time: self.node_frame.delta_time,
+            frame_id: self.node_frame.frame_id as u32,
             ..Default::default()
         }
     }
@@ -3042,10 +3075,17 @@ impl Renderer {
             let program_key = node.cache_key;
 
             // `nodes.updateBefore( renderObject )`: a `ComputeNode` the
-            // material reads as a value dispatches itself, once per frame,
-            // ahead of the pass that draws with its result.
-            for flow in &node.computes {
-                self.update_before_compute(flow);
+            // material reads as a value dispatches itself, and a pass whose
+            // texture it samples renders its scene, each behind its guard and
+            // ahead of the pass that draws with the result. Each nested
+            // render or dispatch is its own submit, so the GPU runs it before
+            // this pass, which is submitted below. Then `nodes.updateForRender(
+            // renderObject )`.
+            for entry in &node.update_before {
+                self.update_before_node(entry);
+            }
+            for entry in &node.update {
+                self.update_node(entry);
             }
 
             let mut extra_color_targets = [None; MAX_EXTRA_COLOR_ATTACHMENTS];
@@ -3255,6 +3295,13 @@ impl Renderer {
                 sub_cameras,
                 wireframe: item.primitive.wireframe,
             });
+
+            // `nodes.updateAfter( renderObject )`, once the draw is made. The
+            // object's borrow ends first, so an update may touch it.
+            drop(object);
+            for entry in &node.update_after {
+                self.update_after_node(entry);
+            }
         }
 
         // `WebGPUBackend.beginRender()`: a query set when any draw of this
@@ -3601,18 +3648,6 @@ impl Renderer {
         self.compute_dispatch(flow, None)
     }
 
-    /// `ComputeNode.updateBefore()` — `renderer.compute( this )` — gated by
-    /// its `updateBeforeType`, `NodeUpdateType.FRAME`: at most once per frame
-    /// however many draws read it.
-    fn update_before_compute(&mut self, flow: &Rc<ComputeFlow>) {
-        let key = Rc::as_ptr(flow) as *const u8 as usize;
-        if self.frame_computes.insert(key, self.frames) == Some(self.frames) {
-            return;
-        }
-        self.compute(flow)
-            .expect("three-rs: a material's ComputeNode dispatches");
-    }
-
     /// `computeSkinning()`'s bone matrices for one dispatch. The skeleton's
     /// `OnObjectUpdate` — `skeleton.update()`, once per frame per skeleton —
     /// runs first, which is what makes a `SkinnedMesh` that is never drawn
@@ -3623,10 +3658,7 @@ impl Renderer {
         skeleton: &crate::nodes::node::SkeletonRef,
         count: usize,
     ) -> Serial<wgpu::Buffer> {
-        let key = Rc::as_ptr(&skeleton.0) as *const u8 as usize;
-        if self.frame_skeletons.insert(key, self.frames) != Some(self.frames) {
-            skeleton.0.borrow_mut().update();
-        }
+        update_skeleton(&mut self.node_frame, &skeleton.0);
         let skeleton = skeleton.0.borrow();
         let mut data = vec![0f32; count * 16];
         let n = data.len().min(skeleton.bone_matrices.len());
@@ -3694,7 +3726,7 @@ impl Renderer {
         // `time` is the render group's one uniform a kernel can read; it is
         // the `NodeFrame`'s, which the last `render()` advanced.
         let uniforms = UniformContext {
-            time: self.time,
+            time: self.node_frame.time,
             ..Default::default()
         };
         let bind_groups = self.compute_bind_groups(program.cache_key, &program, &uniforms);
@@ -4252,7 +4284,7 @@ impl Renderer {
             alpha_to_coverage_samples,
         ));
 
-        let frames = self.frames;
+        let frames = self.node_frame.frame_id;
         let states = self
             .node_builder_states
             .entry(item.key.id)
@@ -4460,7 +4492,7 @@ impl Renderer {
         resources: &[Resource],
     ) -> wgpu::BindGroup {
         let key = BindGroupKey::of(layout, group as u32, resources);
-        let frames = self.frames;
+        let frames = self.node_frame.frame_id;
         if let Some(entry) = self.bind_group_cache.get_mut(&key) {
             entry.last_used = frames;
             return entry.group.clone();
@@ -4776,7 +4808,7 @@ impl Renderer {
                 // re-uploads on `NodeUpdateType.RENDER`, but nothing on the
                 // ladder writes one), so the buffer is cached on the node's
                 // identity and uploaded once, like an instanced attribute's.
-                let frames = self.frames;
+                let frames = self.node_frame.frame_id;
                 if let Some(entry) = self.buffers.get_mut(&id) {
                     entry.last_used = frames;
                     return entry.buffer.clone();
@@ -4803,7 +4835,7 @@ impl Renderer {
                 // (`BatchedText::sync`), so the same `Rc` means the same
                 // bytes. Re-creating this per draw, sized to the batch's
                 // capacity, was most of a frame (issue #89).
-                let frames = self.frames;
+                let frames = self.node_frame.frame_id;
                 if let Some(entry) = self.buffers.get_mut(&id) {
                     if entry.data.as_ref().is_some_and(|d| Rc::ptr_eq(d, data)) {
                         entry.last_used = frames;
@@ -4827,7 +4859,7 @@ impl Renderer {
                 buffer
             }
             BufferSource::Range { min, max } => {
-                let frames = self.frames;
+                let frames = self.node_frame.frame_id;
                 if let Some(entry) = self.buffers.get_mut(&id) {
                     entry.last_used = frames;
                     return entry.buffer.clone();
@@ -4941,7 +4973,7 @@ impl Renderer {
             }
         };
 
-        let frames = self.frames;
+        let frames = self.node_frame.frame_id;
         let key = (id, dimension, storage);
         // Comparing the cached `wgpu::Texture` with the current one is an
         // identity test, not a key: the entry holds its texture alive, so no
@@ -6119,40 +6151,81 @@ impl Renderer {
     /// Advance the frame clock if this render's destination is the screen,
     /// then sweep. Every render sweeps — a geometry the scene dropped should
     /// go on the render that notices — but only a render to the screen is a
-    /// new frame; see [`Renderer::frames`].
-    fn begin_frame(&mut self) {
-        self.update_node_frame();
-        if self.render_target.is_none() {
-            self.frames += 1;
-        }
+    /// new frame; see [`Renderer::node_frame`].
+    ///
+    /// Returns what [`end_frame`](Self::end_frame) needs: the outer render's
+    /// id, and whether this render draws to the screen.
+    fn begin_frame(&mut self) -> (u64, bool) {
+        let to_screen = self.render_target.is_none() && self.call_depth == 0;
+        self.call_depth += 1;
+        let previous = self.node_frame.begin_render(crate::utils::now_ms());
         self.sweep_caches();
+        (previous, to_screen)
     }
 
-    /// `NodeFrame.update()` (three.js/src/nodes/core/NodeFrame.js):
-    ///
-    /// ```js
-    /// if ( this.lastTime === undefined ) this.lastTime = performance.now();
-    /// this.deltaTime = ( performance.now() - this.lastTime ) / 1000;
-    /// this.lastTime = performance.now();
-    /// this.time += this.deltaTime;
-    /// ```
-    ///
-    /// `time` starts at 0 and only ever accumulates deltas, and on the first
-    /// frame `lastTime` is set immediately before it is read, so that delta is
-    /// 0 whatever the clock says. This is why the graded frame sees
-    /// `time === 0` — and why, with the harness' clock pinned, *every* frame
-    /// does.
-    ///
-    /// Here rather than in a host, so that an example animates the same in the
-    /// viewer, in a browser and under the grader without any of them knowing
-    /// about the TSL `time` node.
-    fn update_node_frame(&mut self) {
-        let now = crate::utils::now_ms();
-        self.frame_id = self.frame_id.wrapping_add(1);
-        let last = *self.node_frame_last_time.get_or_insert(now);
-        self.delta_time = (now - last) / 1000.0;
-        self.time += self.delta_time;
-        self.node_frame_last_time = Some(now);
+    /// The end of a render: the outer render's id back, and the frame closed
+    /// if this render drew to the screen.
+    fn end_frame(&mut self, (previous, to_screen): (u64, bool)) {
+        self.call_depth -= 1;
+        self.node_frame.end_render(previous, to_screen);
+    }
+
+    /// What a pass's deprecated explicit `render()` does before it renders:
+    /// open the frame the render belongs to, and take the pass's
+    /// update-before for that frame. Taking it first matters for a node
+    /// whose own draws sample its output texture (a bloom's blur reads the
+    /// target it also exposes), which would otherwise run the node again
+    /// from inside itself. The draw that samples the pass later in the frame
+    /// then finds it done (`docs/nodes.md` §57).
+    pub(crate) fn mark_update_before(&mut self, reference: usize) {
+        self.node_frame.open(crate::utils::now_ms());
+        self.node_frame
+            .mark(crate::nodes::frame::UpdatePhase::Before, reference);
+    }
+
+    /// Three's `NodeFrame`, as the renderer keeps it: `frameId`, `renderId`,
+    /// `time` and `deltaTime`. A node's update phases read the clock here.
+    pub fn node_frame(&self) -> &crate::nodes::NodeFrameState {
+        &self.node_frame
+    }
+
+    /// `NodeFrame.updateBeforeNode( node )`.
+    pub(crate) fn update_before_node(&mut self, entry: &crate::nodes::UpdateNode) {
+        use crate::nodes::frame::UpdatePhase;
+        let ty = entry.node.update_before_type();
+        if let Some(claim) = self
+            .node_frame
+            .claim(UpdatePhase::Before, entry.reference, ty)
+        {
+            let counted = entry.node.update_before(self);
+            self.node_frame.settle(claim, counted);
+        }
+    }
+
+    /// `NodeFrame.updateNode( node )`.
+    pub(crate) fn update_node(&mut self, entry: &crate::nodes::UpdateNode) {
+        use crate::nodes::frame::UpdatePhase;
+        let ty = entry.node.update_type();
+        if let Some(claim) = self
+            .node_frame
+            .claim(UpdatePhase::Update, entry.reference, ty)
+        {
+            let counted = entry.node.update(self);
+            self.node_frame.settle(claim, counted);
+        }
+    }
+
+    /// `NodeFrame.updateAfterNode( node )`.
+    pub(crate) fn update_after_node(&mut self, entry: &crate::nodes::UpdateNode) {
+        use crate::nodes::frame::UpdatePhase;
+        let ty = entry.node.update_after_type();
+        if let Some(claim) = self
+            .node_frame
+            .claim(UpdatePhase::After, entry.reference, ty)
+        {
+            let counted = entry.node.update_after(self);
+            self.node_frame.settle(claim, counted);
+        }
     }
 
     fn sweep_caches(&mut self) {
@@ -6160,11 +6233,12 @@ impl Renderer {
             .retain(|_, entry| entry.owner.strong_count() > 0);
         self.info.memory.geometries = self.geometries.len();
 
-        let cutoff = self.frames.saturating_sub(CACHE_GRACE_FRAMES);
+        let cutoff = self.node_frame.frame_id.saturating_sub(CACHE_GRACE_FRAMES);
+        self.node_frame.sweep(CACHE_GRACE_FRAMES);
         self.node_builder_states
             .retain(|_, states| states.last_used >= cutoff);
         self.buffers.retain(|_, entry| entry.last_used >= cutoff);
-        let frames = self.frames;
+        let frames = self.node_frame.frame_id;
         self.slot_buffers
             .retain(|_, entry| bindings::is_fresh(entry.last_used, frames));
 
@@ -6248,7 +6322,7 @@ impl Renderer {
         contents: &[u8],
         usage: wgpu::BufferUsages,
     ) -> Serial<wgpu::Buffer> {
-        let frames = self.frames;
+        let frames = self.node_frame.frame_id;
         let bytes = bindings::padded(contents);
         if let Some(entry) = self.slot_buffers.get_mut(&slot) {
             if entry.usage == usage && entry.buffer.gpu.size() >= bytes.len() as u64 {
@@ -7131,4 +7205,25 @@ fn warn_unsupported(id: usize, material: &MeshBasicNodeMaterial, setup: &SetupCo
             }
         }
     });
+}
+
+/// `SkinningNode.update( frame )`: `if ( _frameId.get( skeleton ) ===
+/// frame.frameId ) return;` then `skeleton.update()` — once per frame per
+/// skeleton, whether a draw or a `computeSkinning()` kernel reads it first.
+/// The guard is the node frame's, under the skeleton's address. A free
+/// function so it borrows the node frame and nothing else of the renderer.
+fn update_skeleton(
+    node_frame: &mut crate::nodes::NodeFrameState,
+    skeleton: &Rc<std::cell::RefCell<crate::objects::Skeleton>>,
+) {
+    use crate::nodes::frame::UpdatePhase;
+    let key = Rc::as_ptr(skeleton) as *const u8 as usize;
+    if let Some(claim) = node_frame.claim(
+        UpdatePhase::Update,
+        key,
+        crate::nodes::NodeUpdateType::Frame,
+    ) {
+        skeleton.borrow_mut().update();
+        node_frame.settle(claim, true);
+    }
 }

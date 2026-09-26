@@ -56,7 +56,8 @@ use three_rs::addons::controls::{
     Key as OrbitKey, KeyEvent, MouseButton as OrbitButton, OrbitControls, PointerEvent, WheelDelta,
     WheelEvent,
 };
-use three_rs::{PerspectiveCamera, Renderer};
+use three_rs::cameras::CameraMut;
+use three_rs::Renderer;
 
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
@@ -173,9 +174,10 @@ macro_rules! examples {
             /// here.
             fn controls_and_camera(
                 &mut self,
-            ) -> Option<(&mut OrbitControls, &mut PerspectiveCamera)> {
+            ) -> Option<(&mut OrbitControls, CameraMut<'_>)> {
                 match self {
-                    $( Example::$variant(app) => $module::controls_and_camera(app), )*
+                    $( Example::$variant(app) => $module::controls_and_camera(app)
+                        .map(|(controls, camera)| (controls, camera.into())), )*
                 }
             }
         }
@@ -695,8 +697,8 @@ impl ApplicationHandler for Viewer {
                             meta_key: false,
                             shift_key: self.modifiers.1,
                         };
-                        if let Some((controls, camera)) = scene.controls_and_camera() {
-                            controls.key(camera, &event);
+                        if let Some((controls, mut camera)) = scene.controls_and_camera() {
+                            controls.key(&mut camera, &event);
                         }
                     }
                 }
@@ -720,9 +722,9 @@ impl ApplicationHandler for Viewer {
                 let Some(scene) = self.scene.as_mut() else {
                     return;
                 };
-                if let Some((controls, camera)) = scene.controls_and_camera() {
+                if let Some((controls, mut camera)) = scene.controls_and_camera() {
                     if pressed {
-                        controls.pointer_down(camera, &event);
+                        controls.pointer_down(&mut camera, &event);
                     } else {
                         controls.pointer_up(&event);
                     }
@@ -735,8 +737,8 @@ impl ApplicationHandler for Viewer {
                 let Some(scene) = self.scene.as_mut() else {
                     return;
                 };
-                if let Some((controls, camera)) = scene.controls_and_camera() {
-                    controls.pointer_move(camera, &event);
+                if let Some((controls, mut camera)) = scene.controls_and_camera() {
+                    controls.pointer_move(&mut camera, &event);
                 }
             }
 
@@ -759,8 +761,8 @@ impl ApplicationHandler for Viewer {
                 let Some(scene) = self.scene.as_mut() else {
                     return;
                 };
-                if let Some((controls, camera)) = scene.controls_and_camera() {
-                    controls.wheel(camera, &event);
+                if let Some((controls, mut camera)) = scene.controls_and_camera() {
+                    controls.wheel(&mut camera, &event);
                 }
             }
 
@@ -834,7 +836,7 @@ fn drive(scene: &mut Example, size: (u32, u32), orbit: (f64, f64), zoom: f64, pa
     }
 
     let centre = (size.0 as f64 / 2.0, size.1 as f64 / 2.0);
-    let Some((controls, camera)) = scene.controls_and_camera() else {
+    let Some((controls, mut camera)) = scene.controls_and_camera() else {
         eprintln!(
             "--orbit/--zoom/--pan ignored: this example's page creates no OrbitControls, \
              so neither does it"
@@ -853,9 +855,9 @@ fn drive(scene: &mut Example, size: (u32, u32), orbit: (f64, f64), zoom: f64, pa
     };
 
     if orbit != (0.0, 0.0) {
-        controls.pointer_down(camera, &at(OrbitButton::Left, centre.0, centre.1));
+        controls.pointer_down(&mut camera, &at(OrbitButton::Left, centre.0, centre.1));
         controls.pointer_move(
-            camera,
+            &mut camera,
             &at(OrbitButton::Left, centre.0 + orbit.0, centre.1 + orbit.1),
         );
         controls.pointer_up(&at(
@@ -870,7 +872,7 @@ fn drive(scene: &mut Example, size: (u32, u32), orbit: (f64, f64), zoom: f64, pa
         // page's `_getZoomScale` reads it that way; `--zoom N` is N notches
         // towards the scene.
         controls.wheel(
-            camera,
+            &mut camera,
             &WheelEvent {
                 client_x: centre.0,
                 client_y: centre.1,
@@ -882,9 +884,9 @@ fn drive(scene: &mut Example, size: (u32, u32), orbit: (f64, f64), zoom: f64, pa
     }
 
     if pan != (0.0, 0.0) {
-        controls.pointer_down(camera, &at(OrbitButton::Right, centre.0, centre.1));
+        controls.pointer_down(&mut camera, &at(OrbitButton::Right, centre.0, centre.1));
         controls.pointer_move(
-            camera,
+            &mut camera,
             &at(OrbitButton::Right, centre.0 + pan.0, centre.1 + pan.1),
         );
         controls.pointer_up(&at(OrbitButton::Right, centre.0 + pan.0, centre.1 + pan.1));

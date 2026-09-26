@@ -33,6 +33,9 @@
 //! [`cube_render_target`]: three_rs::renderer::cube_render_target
 //! [`PmremEnvironment`]: three_rs::nodes::pmrem_node::PmremEnvironment
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use three_rs::addons::controls::OrbitControls;
 use three_rs::loaders::{GLTFLoader, HdrLoader};
 use three_rs::materials::Blending;
@@ -44,8 +47,8 @@ use three_rs::objects::Background;
 use three_rs::renderer::cube_render_target;
 use three_rs::textures::TextureType;
 use three_rs::{
-    PassNode, PerspectiveCamera, RenderPipeline, Renderer, RendererParameters, Scene, ToneMapping,
-    Vector3,
+    pass, PassNode, PerspectiveCamera, RenderPipeline, Renderer, RendererParameters, Scene,
+    ToneMapping, Vector3,
 };
 
 pub const INNER_WIDTH: f64 = 800.0;
@@ -59,8 +62,10 @@ fn examples_dir() -> std::path::PathBuf {
 
 pub struct App {
     pub renderer: Renderer,
-    pub scene: Scene,
-    pub camera: PerspectiveCamera,
+    /// Shared with `scene_pass`, which renders it from `updateBefore()`.
+    pub scene: Rc<RefCell<Scene>>,
+    /// Shared with `scene_pass`.
+    pub camera: Rc<RefCell<PerspectiveCamera>>,
     /// The page's `controls`.
     pub controls: OrbitControls,
     pub environment: PmremEnvironment,
@@ -127,7 +132,11 @@ pub fn init() -> App {
 
     // post processing
 
-    let scene_pass = PassNode::new();
+    // `pass( scene, camera )`: the pass holds both and the renderer renders
+    // it the first time a draw samples its texture (`docs/nodes.md` §57).
+    let scene = Rc::new(RefCell::new(scene));
+    let camera = Rc::new(RefCell::new(camera));
+    let scene_pass = pass(scene.clone(), camera.clone());
 
     // `mrt( { output, emissive: vec4( emissive, output.a ) } )`, with
     // `NormalBlending` on the emissive attachment. `_getBlending()` reads the
@@ -167,7 +176,7 @@ pub fn init() -> App {
     // `const controls = new OrbitControls( camera, renderer.domElement )`,
     // built here because the page builds it here, after the render pipeline.
     // Its `target` and the one `update()` are the `camera.look_at` above.
-    let mut controls = OrbitControls::new(&mut camera);
+    let mut controls = OrbitControls::new(&mut camera.borrow_mut());
     // The canvas the example renders at, standing in for the element's
     // `clientWidth` / `clientHeight`.
     controls.set_element_size(INNER_WIDTH, INNER_HEIGHT);
@@ -175,7 +184,7 @@ pub fn init() -> App {
     controls.max_distance = 10.0;
     controls.target.set(0.0, 0.0, -0.2);
     // `controls.update();`
-    controls.update(&mut camera, None);
+    controls.update(&mut camera.borrow_mut(), None);
 
     App {
         renderer,
@@ -191,12 +200,9 @@ pub fn init() -> App {
 
 /// The page's `render()`, run once by the harness's single RAF.
 pub fn animate(app: &mut App) {
-    // `renderPipeline.render()` alone upstream: `PassNode.updateBefore()`, then
-    // `BloomNode.updateBefore()`'s twelve quads, then the output quad — see
-    // `docs/postprocessing.md` for why the port fires them explicitly.
-    app.scene_pass
-        .render(&mut app.renderer, &mut app.scene, &mut app.camera);
-    app.bloom_pass.render(&mut app.renderer);
+    // `renderPipeline.render()`: the output quad's draw runs
+    // `PassNode.updateBefore()` and `BloomNode.updateBefore()`'s twelve quads
+    // first (`docs/nodes.md` §57).
     app.render_pipeline.render(&mut app.renderer);
 }
 
@@ -207,8 +213,9 @@ pub fn animate(app: &mut App) {
 /// owns its own reaction to a resized canvas instead of the host
 /// guessing at one.
 pub fn resize(app: &mut App, width: f64, height: f64) {
-    app.camera.aspect = width / height;
-    app.camera.update_projection_matrix();
+    let mut camera = app.camera.borrow_mut();
+    camera.aspect = width / height;
+    camera.update_projection_matrix();
     app.renderer.set_size(width, height);
 }
 
@@ -226,8 +233,10 @@ pub fn controls(app: &mut App) -> Option<&mut OrbitControls> {
 /// They are two fields of the same `App`, so borrowing both is sound — but
 /// only this module can say so; a host holding `&mut App` and calling
 /// [`controls`] and then reaching for the camera cannot. Hence the pair.
-pub fn controls_and_camera(app: &mut App) -> Option<(&mut OrbitControls, &mut PerspectiveCamera)> {
-    Some((&mut app.controls, &mut app.camera))
+pub fn controls_and_camera(
+    app: &mut App,
+) -> Option<(&mut OrbitControls, std::cell::RefMut<'_, PerspectiveCamera>)> {
+    Some((&mut app.controls, app.camera.borrow_mut()))
 }
 
 fn main() {

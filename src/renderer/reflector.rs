@@ -30,7 +30,7 @@ impl Renderer {
     /// samples a reflector, in list order.
     pub(super) fn update_reflectors(
         &mut self,
-        scene: &mut Scene,
+        scene: &Scene,
         camera: &dyn RenderCamera,
         items: &mut [Renderable],
     ) {
@@ -114,7 +114,7 @@ impl Renderer {
     fn reflector_update_before(
         &mut self,
         reflector: &Reflector,
-        scene: &mut Scene,
+        scene: &Scene,
         camera: &dyn RenderCamera,
         object: &Node,
     ) {
@@ -283,7 +283,7 @@ impl Renderer {
 
             reflector.borrow_mut().has_output = false;
         } else {
-            self.render(scene, &mut virtual_camera);
+            self.render_nested(scene, &mut virtual_camera);
 
             reflector.borrow_mut().has_output = true;
         }

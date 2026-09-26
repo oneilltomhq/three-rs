@@ -190,6 +190,10 @@ pub fn init() -> App {
 /// harness's frozen clock (`time` is 0): `renderPipeline.render()`, whose
 /// scene pass and after-image composite the port fires in turn (see
 /// `docs/postprocessing.md`).
+/// The scene pass is still rendered by hand: `AfterImageNode` is not yet on
+/// the renderer-owned update path (`docs/nodes.md` §57), so the frame's order
+/// is kept explicit here.
+#[allow(deprecated)]
 pub fn animate(app: &mut App) {
     // `animate( time )` is handed the RAF timestamp, `performance.now()`.
     let time = three_rs::utils::now_ms();

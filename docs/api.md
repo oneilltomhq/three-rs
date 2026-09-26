@@ -263,7 +263,28 @@ not only in practice. The pre-`context` spellings stay:
 `range_fog_factor_with_view_z` and `density_fog_factor_with_view_z` build the
 same WGSL as the `.context( { getViewZ } )` form.
 
+## 10. Passes render themselves; their explicit `render()` is deprecated
+
+`PassNode::render`, `RttNode::render` and `BloomNode::render` are
+`#[deprecated(since = "0.1.3")]`. The renderer now runs a pass from
+`updateBefore()`, the first time in a frame a draw samples the pass's
+texture, as three does (`docs/nodes.md` §57). A pass holds its scene and
+camera through `pass( scene, camera )` or `set_scene` instead of borrowing them
+per call. The methods were kept rather than removed, because they are 0.1.x
+public API and callers use them. Each one forwards: it marks the pass done
+for the frame and renders it, so an unconverted caller gets the frame it got
+before, rendered once. They go in 0.2.0.
+
+The pass types became `Rc` handles to make this work, and their setters
+take `&self`. Code that held them by value still compiles, because a handle
+derefs to its state. `controls_and_camera` hosts take the camera as
+`cameras::CameraMut`, because an example that shares its camera with a pass
+can lend it only as a `RefMut`.
+
 ## Where each decision came from
+
+Decision 10 is issue #162.
+
 
 Decision 8 is #155's design note and its decisions 1, 2, 3 and 6, built in
 #161.

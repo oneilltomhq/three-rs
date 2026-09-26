@@ -67,8 +67,9 @@ pub use objects::{
     QuadMesh, Scene, SceneFog, Sprite,
 };
 pub use renderer::{
-    BuildCounts, ComputeCounts, DirectRenderPipeline, Info, MemoryCounts, PassNode, RenderCounts,
-    RenderPipeline, RenderTarget, Renderer, RendererParameters, SsaaPassNode, BACKENDS,
+    pass, BuildCounts, CameraRef, ComputeCounts, DirectRenderPipeline, Info, MemoryCounts,
+    PassNode, RenderCounts, RenderPipeline, RenderTarget, Renderer, RendererParameters, SceneRef,
+    SsaaPassNode, BACKENDS,
 };
 pub use textures::{
     ColorSpace, CubeTexture, Data3DTexture, DepthTexture, Mapping, MinFilter, Texture,

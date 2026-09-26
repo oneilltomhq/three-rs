@@ -253,6 +253,6 @@ impl PixelationPassNode {
         scene: &mut Scene,
         camera: &mut dyn RenderCamera,
     ) {
-        self.pass.render(renderer, scene, camera);
+        self.pass.render_scene(renderer, scene, camera);
     }
 }

@@ -1661,7 +1661,7 @@ fn webgpu_postprocessing_bloom_selective() {
     println!("adapter: {:?}", app.renderer.adapter_info());
 
     // Before the GPU is asked for anything: the scene itself.
-    assert_spheres(&app.scene);
+    assert_spheres(&app.scene.borrow());
 
     webgpu_postprocessing_bloom_selective::animate(&mut app);
 

@@ -179,8 +179,15 @@ pub fn init() -> App {
 }
 
 /// The page's `animate()`: `renderPipeline.render()`, which fires the scene
-/// pass's `updateBefore()` on its way. See `docs/postprocessing.md` for why
-/// the port fires the pass explicitly.
+/// pass's `updateBefore()` on its way.
+///
+/// This page still fires the pass by hand, through the deprecated forward.
+/// The composite reads the pass's multisampled depth (`getViewZNode()`).
+/// Three's `PassNode.setup()` sets `renderTarget.samples` while the
+/// composite builds; the port sets it when the pass renders. From
+/// `updateBefore()` that is after the composite's bind-group layout was made
+/// for a single-sampled depth. `docs/nodes.md` §57.5.
+#[allow(deprecated)]
 pub fn animate(app: &mut App) {
     app.environment.update(&mut app.renderer).unwrap();
     app.scene_pass

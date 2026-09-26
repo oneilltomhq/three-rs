@@ -30,6 +30,7 @@
 //! with a pixel size of 1", so `PointsNodeMaterial.setupVertexSprite()` — the
 //! only reader of either — runs for a `Sprite`, never for a `Points`.
 
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use three_rs::addons::controls::OrbitControls;
@@ -46,7 +47,7 @@ use three_rs::nodes::Type;
 use three_rs::testing::DeterministicRandom;
 use three_rs::Timer;
 use three_rs::{
-    BufferGeometry, Color, GridHelper, Group, Mesh, MeshStandardNodeMaterial, PassNode,
+    pass, BufferGeometry, Color, GridHelper, Group, Mesh, MeshStandardNodeMaterial, PassNode,
     PerspectiveCamera, Points, PointsNodeMaterial, RenderPipeline, Renderer, RendererParameters,
     RoomEnvironment, Scene, Vector3,
 };
@@ -70,8 +71,10 @@ const SCALE: f64 = 1.2;
 
 pub struct App {
     pub renderer: Renderer,
-    pub scene: Scene,
-    pub camera: PerspectiveCamera,
+    /// Shared with `scene_pass`, which renders it from `updateBefore()`.
+    pub scene: Rc<RefCell<Scene>>,
+    /// Shared with `scene_pass`.
+    pub camera: Rc<RefCell<PerspectiveCamera>>,
     /// The page's `controls`.
     pub controls: OrbitControls,
     /// The page's `mainGroup`, whose children `animate()` turns.
@@ -242,7 +245,11 @@ pub fn init() -> App {
 
     // post processing
 
-    let scene_pass = PassNode::new();
+    // `pass( scene, camera )` — the pass holds both, and the renderer renders
+    // it the first time a draw samples its texture (`docs/nodes.md` §57).
+    let scene = Rc::new(RefCell::new(scene));
+    let camera = Rc::new(RefCell::new(camera));
+    let scene_pass = pass(scene.clone(), camera.clone());
 
     // `const outputPass = renderOutput( scenePass )` — then
     // `chromaticAberration()` calls `convertToTexture()` on it, which is an
@@ -280,14 +287,14 @@ pub fn init() -> App {
 
 /// The page's `animate()`, run once by the harness's single RAF. Every value
 /// it assigns is derived from `timer.getElapsed()`, which is 0, so the scene
-/// is untouched and only the three passes run. See `docs/postprocessing.md`
-/// for why the port fires the first two explicitly.
+/// is untouched. `renderPipeline.render()`'s output quad's draw runs the
+/// scene pass's and the RTT's `updateBefore()` first (`docs/nodes.md` §57).
 pub fn animate(app: &mut App) {
     app.timer.update();
     let time = app.timer.get_elapsed();
 
     // `controls.update();`
-    app.controls.update(&mut app.camera, None);
+    app.controls.update(&mut app.camera.borrow_mut(), None);
 
     // `if ( params.animated )` — true, and the GUI that could turn it off is
     // not ported.
@@ -323,9 +330,6 @@ pub fn animate(app: &mut App) {
         }
     }
 
-    app.scene_pass
-        .render(&mut app.renderer, &mut app.scene, &mut app.camera);
-    app.ca_input.render(&mut app.renderer);
     app.render_pipeline.render(&mut app.renderer);
 }
 
@@ -336,8 +340,9 @@ pub fn animate(app: &mut App) {
 /// owns its own reaction to a resized canvas instead of the host
 /// guessing at one.
 pub fn resize(app: &mut App, width: f64, height: f64) {
-    app.camera.aspect = width / height;
-    app.camera.update_projection_matrix();
+    let mut camera = app.camera.borrow_mut();
+    camera.aspect = width / height;
+    camera.update_projection_matrix();
     app.renderer.set_size(width, height);
 }
 
@@ -355,8 +360,10 @@ pub fn controls(app: &mut App) -> Option<&mut OrbitControls> {
 /// They are two fields of the same `App`, so borrowing both is sound — but
 /// only this module can say so; a host holding `&mut App` and calling
 /// [`controls`] and then reaching for the camera cannot. Hence the pair.
-pub fn controls_and_camera(app: &mut App) -> Option<(&mut OrbitControls, &mut PerspectiveCamera)> {
-    Some((&mut app.controls, &mut app.camera))
+pub fn controls_and_camera(
+    app: &mut App,
+) -> Option<(&mut OrbitControls, std::cell::RefMut<'_, PerspectiveCamera>)> {
+    Some((&mut app.controls, app.camera.borrow_mut()))
 }
 
 fn main() {

@@ -4328,7 +4328,8 @@ three treats a node whose `setup` returned an `outputNode`:
   composes into has to be a variant in the crate, where the exhaustive
   `match` and the dump gates see it. Three's addons live inside the same
   limit: they override `setup` and `updateBefore`, never `generate`.
-  `updateBefore` and the rest of `NodeFrame` are #162.
+  `updateBefore` and the rest of `NodeFrame` came with #162: a
+  `CustomNode` can take part in all three update phases (§57).
 * **Why `node_type` is explicit.** Three works a node's type out from its
   built output. The port's TSL methods type their results when they are
   called (`.mul()` has to know what it multiplies), which is before any
@@ -4646,10 +4647,10 @@ per frame, before the draw that built it.
 
 The port has `Node::Compute { flow, output }` and `tsl::compute_node( flow,
 output )`. The builder's `analyze()` records the flow, deduplicated by
-pointer, into `NodeProgram::computes`, and generates `output` in its place.
-`Renderer::draw()` then calls `update_before_compute()` for each flow of each
-item's program. That dispatches the kernel through the ordinary `compute()`
-path at most once per `frames` count. `onInit` needs no new code: the
+pointer, into `NodeProgram::update_before`, and generates `output` in its
+place. `Renderer::draw()` runs each item's update-before list behind the
+`FRAME` guard (§57), so the kernel is dispatched through the ordinary
+`compute()` path at most once per frame. `onInit` needs no new code: the
 existing `compute_dispatch` runs it the first time the kernel's pipeline is
 built, so the order is `onInit`, the kernel, then the pass, as in three's
 dump.
@@ -5339,3 +5340,160 @@ globe, and 9 isolated ones near the sun's highlight differ by up to 75.
 The likely source is the filtering of the three 4096x2048 JPEGs (mip
 generation, 8x anisotropy). That was not pinned down, since none of it
 reaches the grader's threshold.
+## 57. The renderer-owned `NodeFrame` and its three update phases (issue #162)
+
+### 57.1 What three does
+
+A node can ask to be called around the draws that reach it. It says how
+often with `updateBeforeType`, `updateType` and `updateAfterType`, each a
+`NodeUpdateType`: `NONE`, `FRAME` (once per frame), `RENDER` (once per
+`render()` call) or `OBJECT` (every draw). `Renderer._renderObjectDirect()`
+runs `nodes.updateBefore( renderObject )`, then `updateForRender`, the draw,
+and `nodes.updateAfter( renderObject )`. `NodeFrame` holds the clock
+(`frameId`, `renderId`, `time`, `deltaTime`) and one map per phase that
+stamps each node with the `frameId` / `renderId` it last ran in.
+
+`updateBeforeNode()` writes the stamp *before* it calls the node and puts the
+old one back if the call returns `false`. `updateNode()` and
+`updateAfterNode()` write it only after a call that did not return `false`.
+The early stamp is what stops a pass from recursing: a pass's own scene
+render reaches the pass again and finds it done. `renderId` is `info.calls`
+for the render that is running. A nested render puts the outer value back
+when it returns.
+
+`PassNode`, `RTTNode`, `BloomNode` and `ComputeNode` all use
+`updateBeforeType = FRAME`. A pass renders the first time in a frame that a
+draw samples its texture, from inside that draw. That is why three's
+canvas `beginRenderPass` is recorded before the passes it samples, but
+submitted after them.
+
+### 57.2 The port
+
+`nodes::frame::NodeFrameState` is the renderer's `NodeFrame`: the clock,
+the render id and the stamp maps. `Renderer::node_frame()` reads it.
+`nodes::NodeFrame<'a>`, the object and occlusion view a per-object uniform is
+handed (§39), stays as it was. It is the per-draw slice of the same frame.
+`NodeUpdateType` and the `NodeUpdate` trait (`update_before_type()` …
+`update_after( &mut Renderer ) -> bool`) are the node half. A method is handed
+the renderer rather than the frame, and reads the clock back through
+`renderer.node_frame()`.
+
+* **Collection.** The builder puts every update node a material reaches into
+  `NodeProgram::update_before` / `update` / `update_after`, deduplicated by
+  reference, in the order `analyze()` meets them. The lists are cached with
+  the program, so a steady frame walks three short lists and no graph:
+  `steady_frame_builds_nothing` and `STEADY_FRAME_CEILING` do not move. The
+  nodes that take part are:
+  * a `ComputeFlow` read as a value (§44.1, `FRAME`, before);
+  * a `CustomNode` that overrides the new trait methods (§45);
+  * a pass whose texture the material samples (below).
+* **Order.** `Renderer::draw()` runs each item's update-before list, then its
+  update list, before the item is encoded. It runs the update-after list
+  once the item is recorded. A pass rendered from an update-before is a
+  nested render with its own submit, which happens before the outer pass's
+  encoder is submitted. So the GPU sees the order three's does.
+* **Guards.** `NodeFrameState::claim()` and `settle()` split three's three
+  `update*Node()` methods at the call. `claim` takes the before-stamp early,
+  and `settle` puts it back on `false`, or writes the late stamp for the
+  other two phases. `OBJECT` always runs.
+* **Skeletons.** `skeleton.update()` (`SkinningNode.update()`) runs behind the
+  `FRAME` guard of the update map, keyed on the skeleton. This replaces the
+  renderer's `frame_skeletons` set, and the compute path replaces
+  `frame_computes`. There is one frame notion, not three.
+
+### 57.3 Where a frame starts and ends
+
+Three's animation loop calls `nodeFrame.update()` once per display frame.
+The port has no loop that it owns (the viewer, the web shell and the e2e
+harness each drive their own). So a frame **opens at the first `render()` or
+`render_quad()` after the last one closed**, and **closes at the end of a
+render to the screen**: no render target, and not nested inside another
+render. A render into a target, whether a pass's scene or a bloom's quads,
+belongs to the frame it is part of. `frame_id` counts these frames, and the
+`frameId` uniform now reads it too. Before, it counted every `render()`.
+`time` and `deltaTime` advance once per frame, as three's do. Under the
+pinned clock of the e2e harness they stay 0.
+
+`renderId` is a counter that never resets, taken at the start of every
+render and put back when a nested render returns. `info` resets only at the
+start of an outermost render (`call_depth == 0`), as three's `info.reset()`
+does, which never runs for a nested pass. A nested scene render also clears
+`fullscreen_pass` for its own duration and restores it afterwards.
+
+### 57.4 Passes render from `update_before`
+
+`PassNode`, `RttNode` and `BloomNode` are now `Rc` handles. A clone shares
+the node, and `Deref` reaches its state. `pass( scene, camera )` takes a
+`SceneRef` (`Rc<RefCell<Scene>>`) and a `CameraRef`
+(`Rc<RefCell<dyn RenderCamera>>`), and `set_scene` sets them later. That is
+the `&mut Scene` the old explicit call borrowed, now shared the way three
+shares it. Configuration setters take `&self`.
+
+Three's `PassTextureNode` carries its `passNode`, and an `RTTNode` is its own
+texture node. The port's texture node is a bare `Node::Texture`, so the link
+sits beside the texture instead. `frame::register_texture_update( texture_id,
+&node )` records which node fills which texture, as a `Weak`. After binding
+layout, the builder looks up every sampled texture and adds that node to the
+program's update-before list.
+
+* A pass links its output and each MRT attachment. It links its depth
+  texture only if it made that texture. The deferred example shares one
+  depth texture between passes, and the pass that did not make it must not
+  claim it.
+* A bloom links `horizontal[0]`, the texture its `node()` samples. Its own
+  blur also reads that target. The early before-stamp makes the bloom's own
+  draw of it a no-op, as three's does for a pass that reaches itself.
+
+**Divergence:** the link is on the texture, not on the node. Any draw that
+samples a pass's texture, through any texture node, runs the pass once per
+frame. In three, only a draw that samples the pass's `PassTextureNode` does
+this. No ladder page samples a pass's target through a plain `texture()`.
+
+The examples now do what their pages do: `renderPipeline.render()`, or
+`renderer.render( scene, camera )` for a mesh that samples an RTT. They hold
+the scene and camera as `Rc<RefCell<…>>`. `controls_and_camera` then lends
+the camera as a `RefMut`. The viewer and the web shell take either kind
+through `cameras::CameraMut` and hand `OrbitControls` a
+`&mut PerspectiveCamera` as before.
+
+### 57.5 The deprecated explicit `render()`
+
+`PassNode::render`, `RttNode::render` and `BloomNode::render` stay as
+`#[deprecated]` forwards (`docs/api.md` decision 10). A forward does two
+things:
+
+1. It opens the frame if none is open, and marks the node's update-before as
+   done for that frame, through `Renderer::mark_update_before`.
+2. It then renders unconditionally, as the old call did.
+
+The order matters. Marking after the render let a bloom's blur, which
+samples its own `horizontal[0]`, reach the bloom again from inside itself.
+The draw that samples the pass later in the frame finds it done, so a caller
+that still fires passes by hand gets the old frame, rendered once.
+
+`GaussianBlurNode`, `AfterImageNode`, `PixelationPassNode`,
+`ToonOutlinePassNode` and `SsaaPassNode` are outside #162's list. Their
+examples still fire `render()` by hand, and the port has not moved them.
+
+`webgpu_custom_fog_background` still calls the deprecated forward, under
+`#[allow(deprecated)]`, for a reason that is a real gap. Its composite reads
+the pass's depth through `getViewZNode()`, and that depth is multisampled.
+Three sets `renderTarget.samples = renderer.samples` in `PassNode.setup()`,
+while the composite builds. The port sets it in the pass's render. When the
+pass renders from `updateBefore()`, the composite's bind-group layout has
+already been made for a single-sampled texture, and wgpu rejects the bind
+group. The fix is to move the sample count to where the builder first sees
+the pass's textures. That is left for a follow-up.
+
+### 57.6 Gates
+
+* `nodes::frame` unit tests run two frames of two renders with two draws
+  each. They check the phase order, `FRAME` once per frame, `RENDER` once per
+  render and `OBJECT` per draw. They also check that a phase returning
+  `false` runs again, and that a nested render restores the render id.
+* `tests/nodes_frame.rs` (GPU, not in CI's no-GPU list) drives the same
+  pattern through a real `Renderer`. It uses one `CustomNode` shared by two
+  meshes, a render into a target, then a render to the canvas, over two
+  frames.
+* The full ladder keeps every pixel count. The converted examples render
+  their passes from the output quad's draw.
