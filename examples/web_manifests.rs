@@ -258,6 +258,12 @@ mod webgpu_particles;
 #[path = "webgpu_shadowmap_opacity.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_shadowmap_opacity;
+#[path = "webgpu_tsl_earth.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_tsl_earth;
+#[path = "webgpu_tsl_halftone.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_tsl_halftone;
 
 #[path = "webgpu_instance_sprites.rs"]
 #[allow(dead_code)] // only `init()` is called here
@@ -430,6 +436,8 @@ const GRADED: &[(&str, fn())] = &[
     ("webgpu_shadowmap_opacity", || {
         drop(webgpu_shadowmap_opacity::init())
     }),
+    ("webgpu_tsl_halftone", || drop(webgpu_tsl_halftone::init())),
+    ("webgpu_tsl_earth", || drop(webgpu_tsl_earth::init())),
 ];
 
 /// Where the committed manifests live, one `<example>.json` each.
