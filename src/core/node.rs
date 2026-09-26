@@ -382,6 +382,18 @@ fn update_own_matrix_world(node: &Node, force: bool) -> bool {
         node.borrow_mut().update_matrix();
     }
 
+    // `this.matrix` *is* another object's `matrixWorld` (`CameraHelper`):
+    // read it now, as the multiply below would read the shared object.
+    let alias = node
+        .borrow()
+        .matrix_alias
+        .as_ref()
+        .and_then(WeakNode::upgrade);
+    if let Some(source) = alias {
+        let matrix_world = source.borrow().matrix_world;
+        node.borrow_mut().matrix = matrix_world;
+    }
+
     let (needs_update, world_auto_update) = {
         let object = node.borrow();
         (

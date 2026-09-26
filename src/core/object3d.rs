@@ -51,6 +51,13 @@ pub struct Object3D {
     pub matrix_world_auto_update: bool,
     /// `Object3D.matrixWorldNeedsUpdate`.
     pub matrix_world_needs_update: bool,
+    /// `this.matrix = other.matrixWorld` — `CameraHelper`'s sharing of its
+    /// camera's world matrix *object*. JS aliases the two; the port copies the
+    /// other node's `matrix_world` into `matrix` at the moment
+    /// `updateMatrixWorld()` reads `matrix`, which is when the alias would be
+    /// observed. `None` for everything else, and for a clone (`copy()` copies
+    /// the matrix's values, not the object).
+    pub matrix_alias: Option<crate::core::WeakNode>,
     /// `Object3D.isCamera` — `lookAt()` points a camera the other way round.
     pub is_camera: bool,
     /// `Object3D.isLight` — as `is_camera`.
@@ -106,6 +113,7 @@ impl Default for Object3D {
             matrix_auto_update: true,
             matrix_world_auto_update: true,
             matrix_world_needs_update: false,
+            matrix_alias: None,
             is_camera: false,
             is_light: false,
             cast_shadow: false,
@@ -145,6 +153,7 @@ impl Clone for Object3D {
             matrix_auto_update: self.matrix_auto_update,
             matrix_world_auto_update: self.matrix_world_auto_update,
             matrix_world_needs_update: self.matrix_world_needs_update,
+            matrix_alias: None,
             is_camera: self.is_camera,
             is_light: self.is_light,
             cast_shadow: self.cast_shadow,
