@@ -206,6 +206,7 @@ jobs:
             math_vector2
             math_vector3
             math_vector4
+            nodes_display_wgsl
             nodes_instanced_attributes
             nodes_morph
             nodes_mx_noise
