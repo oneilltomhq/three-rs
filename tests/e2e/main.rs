@@ -342,6 +342,10 @@ mod webgpu_instance_sprites;
 #[allow(dead_code)]
 mod webgpu_materials_toon;
 
+#[path = "../../examples/webgpu_occlusion.rs"]
+#[allow(dead_code)]
+mod webgpu_occlusion;
+
 fn three_js_dir() -> PathBuf {
     three_rs::testing::three_js_dir()
 }
@@ -1926,6 +1930,48 @@ fn webgpu_materials_texture_manualmipmap() {
 }
 
 #[test]
+fn webgpu_fog_height() {
+    let name = "webgpu_fog_height";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_fog_height::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_fog_height::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_fog_height::animate, |app| {
+        app.renderer.device()
+    });
+}
+
+#[test]
 fn webgpu_shadowmap_opacity() {
     let name = "webgpu_shadowmap_opacity";
     let out = out_dir(name);
@@ -1967,16 +2013,22 @@ fn webgpu_shadowmap_opacity() {
     });
 }
 
+/// The occlusion rung: a Phong plane whose `colorNode` is an
+/// `updateType = NodeUpdateType.OBJECT` node asking
+/// `frame.renderer.isOccluded( sphere )`, and the sphere behind it wrapped in
+/// an occlusion query (`object.occlusionTest`). The query's answer is two
+/// frames away, so the graded frame is the plane in its "visible" blue;
+/// `tests/renderer_occlusion.rs` checks the green that follows.
 #[test]
-fn webgpu_fog_height() {
-    let name = "webgpu_fog_height";
+fn webgpu_occlusion() {
+    let name = "webgpu_occlusion";
     let out = out_dir(name);
     let _gpu = gpu();
 
-    let mut app = webgpu_fog_height::init();
+    let mut app = webgpu_occlusion::init();
     println!("adapter: {:?}", app.renderer.adapter_info());
 
-    webgpu_fog_height::animate(&mut app);
+    webgpu_occlusion::animate(&mut app);
 
     let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
     assert_eq!((width, height), (800, 500));
@@ -2004,7 +2056,7 @@ fn webgpu_fog_height() {
         result.num_different_pixels,
         out.display()
     );
-    steady_frame(name, &mut app, webgpu_fog_height::animate, |app| {
+    steady_frame(name, &mut app, webgpu_occlusion::animate, |app| {
         app.renderer.device()
     });
 }
@@ -3963,6 +4015,7 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_postprocessing_transition);
     rung!(webgpu_postprocessing_sobel);
     rung!(webgpu_procedural_texture);
+    rung!(webgpu_occlusion);
     rung!(webgpu_materials_toon);
     rung!(webgpu_instance_sprites);
     rung!(webgpu_sprites);
