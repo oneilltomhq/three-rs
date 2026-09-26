@@ -488,6 +488,10 @@ impl NodeBuilder {
                     | SampleMode::LoadLayer(l)
                     | SampleMode::SampleLayer(l)
                     | SampleMode::Compare(l) => v.push(l.clone()),
+                    SampleMode::Grad(x, y) => {
+                        v.push(x.clone());
+                        v.push(y.clone());
+                    }
                     _ => {}
                 }
                 v
@@ -1521,7 +1525,10 @@ impl NodeBuilder {
                 let (texture, uv, mode) = (texture.clone(), uv.clone(), mode.clone());
                 let mode_is_color = matches!(
                     mode,
-                    SampleMode::Sample | SampleMode::Grad | SampleMode::Level(_) | SampleMode::Load
+                    SampleMode::Sample
+                        | SampleMode::Grad(..)
+                        | SampleMode::Level(_)
+                        | SampleMode::Load
                 ) && matches!(*texture, TextureSource::Texture2D(_));
                 let (name, kind) = self.texture_slots(&texture);
                 let suv = self.generate(&uv);
@@ -1539,18 +1546,18 @@ impl NodeBuilder {
                     SampleMode::Sample => {
                         format!("textureSample( {name}, {name}_sampler, {suv} )")
                     }
-                    SampleMode::Grad => format!(
-                        "textureSampleGrad( {name}, {name}_sampler, {suv}, vec2<f32>( 0.0, 0.0 ), vec2<f32>( 0.0, 0.0 ) )"
-                    ),
+                    SampleMode::Grad(grad_x, grad_y) => {
+                        let sx = self.format(&grad_x, Type::Vec2);
+                        let sy = self.format(&grad_y, Type::Vec2);
+                        format!("textureSampleGrad( {name}, {name}_sampler, {suv}, {sx}, {sy} )")
+                    }
                     // `texture3D( … ).sample( uv ).r`: the texture node is
                     // built as a `float`, so the fetch itself is narrowed and
                     // the node's var is an `f32` — three's
                     // `nodeVar7 = textureSampleLevel( … ).x`.
                     SampleMode::Level(level) if node.ty().components() == 1 => {
                         let slevel = self.generate(&level);
-                        format!(
-                            "textureSampleLevel( {name}, {name}_sampler, {suv}, {slevel} ).x"
-                        )
+                        format!("textureSampleLevel( {name}, {name}_sampler, {suv}, {slevel} ).x")
                     }
                     SampleMode::Level(level) => {
                         let slevel = self.generate(&level);

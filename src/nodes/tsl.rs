@@ -2996,14 +2996,14 @@ pub fn bump_map(map: &Texture, scale: NodeRef) -> NodeRef {
     })
 }
 
-/// `texture( map ).sample( uv ).grad( vec2(), vec2() )` — a tap with the
-/// gradients pinned to zero, which is how `PMREMUtils.bilinearCubeUV` turns
-/// anisotropic filtering off on the cubeUV atlas.
-pub fn texture_grad(map: &Texture, coord: NodeRef) -> NodeRef {
+/// `texture( map, uv ).grad( gradX, gradY )` — a 2-D tap with explicit
+/// screen-space gradients, `textureSampleGrad` (`webgpu_texturegrad`). The uv
+/// is taken as given, with no uv matrix, as for [`texture_uv`].
+pub fn texture_grad(map: &Texture, coord: NodeRef, grad_x: NodeRef, grad_y: NodeRef) -> NodeRef {
     texture_node(
         TextureSource::Texture2D(map.clone()),
         coord,
-        SampleMode::Grad,
+        SampleMode::Grad(grad_x, grad_y),
         Type::Vec4,
     )
 }
