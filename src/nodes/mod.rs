@@ -12,6 +12,7 @@ pub mod mrt;
 pub mod node;
 pub mod pmrem_node;
 pub mod pmrem_utils;
+pub mod reflector_node;
 pub mod skinning;
 pub mod tsl;
 pub mod wgsl;

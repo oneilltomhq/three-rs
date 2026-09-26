@@ -14,6 +14,7 @@ pub mod pmrem;
 /// Additive seam for the interactive viewer; see `present.rs`.
 mod present;
 mod programs;
+mod reflector;
 mod render_list;
 mod render_pipeline;
 mod render_target;
@@ -321,6 +322,11 @@ struct Renderable {
     /// whole index buffer once; non-empty replaces that single `drawIndexed`
     /// with one call per range, exactly as `WebGPUBackend.draw()` does.
     sub_draws: Vec<SubDraw>,
+    /// `textureNode.value` for each reflector this item's material samples,
+    /// as the reflector left it when the item came up in the render list:
+    /// (the reflector's default texture id, the texture to bind instead). See
+    /// `nodes::reflector_node` and `docs/nodes.md` §55.
+    texture_overrides: Vec<(usize, Texture)>,
 }
 
 /// The material's half of `RenderObject.getCacheKey()`: `material.id` and
@@ -732,6 +738,15 @@ pub struct Renderer {
     /// queries and `isOccluded()` read it. The shadow passes and the output
     /// blit are other draws and never see it.
     occlusion_context: Option<occlusion::ContextKey>,
+    /// The draw being bound's reflector textures; see
+    /// [`Renderable::texture_overrides`]. Empty outside `draw()`'s binding
+    /// build.
+    texture_overrides: Vec<(usize, Texture)>,
+    /// `ReflectorNode.js`' module-level `_inReflector`.
+    in_reflector: bool,
+    /// `Renderer._callDepth` — how many `render()`s are on the stack. A
+    /// reflector's is nested inside the one that drew its mirror.
+    call_depth: u32,
     /// How many times `NodeBuilder::build` has run — the number a steady frame
     /// must leave unchanged. See `program_builds()`.
     program_builds: u64,
@@ -1142,6 +1157,9 @@ impl Renderer {
             frames: 0,
             occlusion: occlusion::Occlusion::default(),
             occlusion_context: None,
+            texture_overrides: Vec::new(),
+            in_reflector: false,
+            call_depth: 0,
             program_builds: 0,
             default_material: MeshBasicNodeMaterial::new(),
             output_hook: None,
@@ -1433,13 +1451,18 @@ impl Renderer {
         // `Renderer.render()`: `if ( this.info.autoReset === true )
         // this.info.reset()`. A frame that is several renders turns
         // `auto_reset` off and resets once itself; see [`Info::auto_reset`].
-        if self.info.auto_reset {
-            self.info.reset();
-        }
+        //
+        // A render nested inside another — a reflector's — is part of the
+        // same frame: it neither resets the counters nor starts a frame.
+        if self.call_depth == 0 {
+            if self.info.auto_reset {
+                self.info.reset();
+            }
 
-        // Before anything of this frame is looked up: return what the last
-        // frame's scene no longer uses. See `sweep_caches`.
-        self.begin_frame();
+            // Before anything of this frame is looked up: return what the last
+            // frame's scene no longer uses. See `sweep_caches`.
+            self.begin_frame();
+        }
 
         // `resolveOccludedAsync()`'s `await mapAsync()` resolving: in a
         // browser the map's callback runs from the event loop between frames;
@@ -1555,6 +1578,7 @@ impl Renderer {
                 bone_matrices: Vec::new(),
                 primitive: Primitive::TRIANGLES,
                 sub_draws: Vec::new(),
+                texture_overrides: Vec::new(),
             });
         }
 
@@ -1881,6 +1905,7 @@ impl Renderer {
                 bone_matrices: skin.map(|s| s.3).unwrap_or_default(),
                 primitive,
                 sub_draws,
+                texture_overrides: Vec::new(),
             };
 
             // `ToonOutlinePassNode`'s render-object function: a toon material
@@ -1903,6 +1928,16 @@ impl Renderer {
                 });
             }
             items.push(renderable);
+        }
+
+        // `ReflectorBaseNode.updateBefore()`, which three runs from
+        // `_renderObjectDirect()` just before the item that carries it draws:
+        // each reflector renders the scene from its mirrored camera, once per
+        // `render()`. See `reflector.rs`.
+        if crate::nodes::reflector_node::any() {
+            self.call_depth += 1;
+            self.update_reflectors(scene, camera, &mut items);
+            self.call_depth -= 1;
         }
 
         // `Background.update()`: a `Color` background becomes the clear colour
@@ -2271,6 +2306,7 @@ impl Renderer {
                     bone_matrices: Vec::new(),
                     primitive,
                     sub_draws: Vec::new(),
+                    texture_overrides: Vec::new(),
                 });
             }
 
@@ -2430,6 +2466,7 @@ impl Renderer {
                 bone_matrices: Vec::new(),
                 primitive: Primitive::TRIANGLES,
                 sub_draws: Vec::new(),
+                texture_overrides: Vec::new(),
                 object_center: Vector2::new(0.5, 0.5),
             }];
             let uniforms = UniformContext {
@@ -2647,6 +2684,7 @@ impl Renderer {
                     bone_matrices: Vec::new(),
                     primitive,
                     sub_draws: Vec::new(),
+                    texture_overrides: Vec::new(),
                 });
             }
 
@@ -2790,6 +2828,7 @@ impl Renderer {
             bone_matrices: Vec::new(),
             primitive: Primitive::TRIANGLES,
             sub_draws: Vec::new(),
+            texture_overrides: Vec::new(),
         }];
 
         let camera_uniforms = self.quad_camera_uniforms();
@@ -3018,6 +3057,8 @@ impl Renderer {
                 variant: item.key.variant,
                 occurrence: 0,
             }));
+            // `textureNode.value` as the reflectors left it for this item.
+            self.texture_overrides.clone_from(&item.texture_overrides);
             let bind_groups = self.bind_groups(
                 program_key,
                 owner,
@@ -3026,6 +3067,7 @@ impl Renderer {
                 &item.instance_matrix,
                 &item.instance_color,
             );
+            self.texture_overrides.clear();
 
             let vertex_buffers = node
                 .vertex_buffers()
@@ -3412,6 +3454,7 @@ impl Renderer {
             bone_matrices: Vec::new(),
             primitive: Primitive::TRIANGLES,
             sub_draws: Vec::new(),
+            texture_overrides: Vec::new(),
         }];
 
         let camera_uniforms = self.quad_camera_uniforms();
@@ -4563,6 +4606,8 @@ impl Renderer {
         source: &TextureSource,
         kind: TextureKind,
     ) -> Serial<wgpu::TextureView> {
+        let overridden = self.texture_override(source);
+        let source = overridden.as_ref().unwrap_or(source);
         // A storage binding views mip 0 alone — `WebGPUBindingUtils`
         // `createBindGroup()` gives a storage texture `mipLevelCount: 1` at
         // `binding.mipLevel`, which is 0 on every page the port grades — and
@@ -4665,7 +4710,23 @@ impl Renderer {
 
     /// `WebGPUTextureUtils.updateSampler()`, memoised on the descriptor: see
     /// [`SamplerKey`].
+    /// The texture a reflector's binding reads for the draw being bound — the
+    /// port's `textureNode.value = renderTarget.texture` (see
+    /// [`Renderable::texture_overrides`]).
+    fn texture_override(&self, source: &TextureSource) -> Option<TextureSource> {
+        match source {
+            TextureSource::Texture2D(texture) if !self.texture_overrides.is_empty() => self
+                .texture_overrides
+                .iter()
+                .find(|(id, _)| *id == texture.id())
+                .map(|(_, value)| TextureSource::Texture2D(value.clone())),
+            _ => None,
+        }
+    }
+
     fn texture_sampler(&mut self, source: &TextureSource) -> Serial<wgpu::Sampler> {
+        let overridden = self.texture_override(source);
+        let source = overridden.as_ref().unwrap_or(source);
         let key = SamplerKey::of(source);
         if let Some(sampler) = self.samplers.get(&key) {
             return sampler.clone();
