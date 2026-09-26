@@ -10,5 +10,5 @@ When a branch is done: `git worktree remove <branch>` from `three-rs/`. The bran
 
 Sessions start inside a worktree (`main/` or `<branch>/`), never in `three-rs/` itself.
 
-To recreate the layout on a fresh machine: `git clone --bare <url> .bare && echo 'gitdir: ./.bare' > .git && git worktree add main main`, then give every worktree one cargo cache: `mkdir -p .cargo && printf '[build]\ntarget-dir = "%s/.target"\n' "$PWD" > .cargo/config.toml`. Cargo reads `.cargo/config.toml` from any directory below `three-rs/`, so a new worktree starts warm instead of recompiling every dependency into its own `target/`; builds in the shared directory serialise on cargo's lock, and it only grows, so `cargo clean` it now and then. The uplifted binaries (`.target/<profile>/<name>`, `.target/<profile>/examples/<name>`) are whichever worktree built last, so run a binary with `cargo run` (build and run in one call) or copy it out right after `cargo build`; `cargo test` runs from `deps/` and is unaffected.
+To recreate the layout on a fresh machine: `git clone --bare <url> .bare && echo 'gitdir: ./.bare' > .git && git worktree add main main`.
 
