@@ -262,6 +262,10 @@ mod webgpu_clearcoat;
 #[allow(dead_code)]
 mod webgpu_layers;
 
+#[path = "../../examples/webgpu_camera.rs"]
+#[allow(dead_code)]
+mod webgpu_camera;
+
 #[path = "../../examples/webgpu_camera_array.rs"]
 #[allow(dead_code)]
 mod webgpu_camera_array;
@@ -2207,6 +2211,60 @@ fn webgpu_layers() {
     });
 }
 
+/// One scene drawn twice per frame into the two halves of the canvas
+/// (`setScissorTest` / `setScissor` / `setViewport`), through a perspective
+/// camera on a rig and an overview camera that sees the first one's
+/// `CameraHelper`: a gate on the helper, on `wireframe` meshes (the
+/// `line-list` wireframe index) and on the viewport-and-scissor output pass.
+///
+/// Not graded: three.js itself scores 0.922% (922 pixels) against its own
+/// `webgpu_camera.jpg` on this machine, over the 0.1% limit, and the port's
+/// frame is pixel-identical to three's (`tools/dump-webgpu.mjs`'
+/// `actual_full.png`, max channel difference 0). See
+/// `docs/webgpu_camera-progress.md`.
+#[test]
+#[ignore = "three.js itself fails its own reference for this page on this machine"]
+fn webgpu_camera() {
+    let name = "webgpu_camera";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_camera::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_camera::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_camera::animate, |app| {
+        app.renderer.device()
+    });
+}
+
 /// Two hundred `Sprite`s sharing one `SpriteNodeMaterial`, each turned by its
 /// own `userData.rotation` through `userData( 'rotation', 'float' )`, under a
 /// `rangeFogFactor` fog node.
@@ -4081,6 +4139,10 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_fog_height);
     rung!(webgpu_shadowmap_opacity);
     rung!(webgpu_layers);
+    // `webgpu_camera` is not here: its `render()` calls
+    // `cameraPerspectiveHelper.update()` every frame, which sets the helper's
+    // `position.needsUpdate` and so re-uploads that buffer on every frame,
+    // exactly as three.js does. A steady frame there writes one buffer.
 }
 
 // ---------------------------------------------------------------------------
