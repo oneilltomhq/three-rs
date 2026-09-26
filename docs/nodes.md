@@ -4641,6 +4641,105 @@ effect, because the sprite quad has no `color` attribute and three checks
 `nodes::builder::with_alpha_to_coverage_samples()` is the public seam
 `dump_wgsl` uses to build the smoothed branch without a renderer.
 
+## 51. `alphaHash` and multi-material groups (`webgpu_materials_alphahash`, `webgpu_materials_arrays`)
+
+Neither page is graded. Three.js itself fails its own reference for both
+on this machine: 3782 and 251 pixels. The port's frames are pixel-identical
+to three's frames here (see the two progress docs). This section records what
+was ported so a machine where three hits the reference can grade them as they
+stand.
+
+### 51.1 `alphaHash`: what three does
+
+`NodeMaterial.setupDiffuseColor()` runs after the alpha test and before the
+opaque `diffuseColor.a = 1`:
+
+```js
+if ( this.alphaHash === true ) {
+    diffuseColor.a.lessThan( getAlphaHashThreshold( positionLocal ) ).discard();
+}
+```
+
+`getAlphaHashThreshold` (`nodes/functions/material/getAlphaHashThreshold.js`)
+is Wyman and McGuire's hashed alpha test. The pixel scale comes from
+`max( length( dpdx( position ) ), length( dpdy( position ) ) )`. It is
+bracketed by the two neighbouring powers of two, and each is hashed with
+`hash3D( floor( 2^n * position ) )`. `hash3D` is `hash2D( vec2( hash2D(
+xy ), z ) )`, and `hash2D` is `fract( 1e4 * sin( 17 x + 0.1 y ) * ( 0.1 + abs(
+sin( 13 y + x ) ) ) )`. The two hashes are mixed by `fract( log2( pixScale ) )`
+and then passed through the uniform-distribution CDF. The CDF's three cases
+are a nested `select`, and the result is clamped to `[ 1e-6, 1 ]`. The outer
+function has a `setLayout`, so it becomes a real WGSL `fn`; the two hashes are
+plain `Fn()`s, inlined at each call.
+
+`src/nodes/alpha_hash.rs` builds the same graph: `shader_fn` with the layout,
+and `inline_fn` for the hashes. `Material.alpha_hash` is the flag, and
+`node_material.rs` emits the discard at three's point in `setup_diffuse_color`.
+The two pages' materials pay nothing when the flag is off.
+
+### 51.2 Multi-material groups: what three does
+
+`Mesh.material` may be an array. `Renderer._projectObject()` handles it like
+this:
+
+```js
+if ( Array.isArray( material ) ) {
+    for ( const group of geometry.groups ) {
+        const groupMaterial = material[ group.materialIndex ];
+        if ( groupMaterial && groupMaterial.visible ) {
+            renderList.push( object, geometry, groupMaterial, groupOrder, z, group, clippingContext );
+        }
+    }
+}
+```
+
+Every render item carries its `group`. Opaque or transparent is decided per
+group material. `RenderObject.getDrawParameters()` intersects the geometry's
+`drawRange` with `[ group.start, group.start + group.count )` and clamps it to
+the index or position count. Render objects are keyed by ( object, material,
+… ), so two groups that share a material share a pipeline and bindings, and
+differ only in the draw call.
+
+The port keeps the array form in a separate field, `Mesh.materials`, created
+by `Mesh::with_materials( geometry, materials )`, with `material: None`. The
+alternative, making `Mesh.material` an enum, would have touched every call
+site in the port for one page. `Payload::material_array()` exposes it.
+`render_list.rs` pushes one `RenderItem` per group, with `group: Some( group )`.
+`RenderItem::material( object )` is the single place that resolves `material[
+group.materialIndex ]`, so the renderer never reads `object.material()`
+directly for a drawable. The draw builder, the transmission probe, the
+opaque/transparent split and both shadow passes (planar and point) all use it.
+`Renderable.group` feeds the draw-range intersection in `src/renderer/mod.rs`,
+which is three's arithmetic in `u64`. `geometry.addGroup()` already existed
+(`BoxGeometry`, the cylinder, extrude); nothing downstream of it did.
+
+### 51.3 Checked against
+
+`dump_wgsl`'s `materials_alphahash` against three's `m13` (vertex) and `m14`
+(fragment), for the instanced, instance-coloured standard material under a
+PMREM environment. `getAlphaHashThreshold` has the same statements in the
+same order: the log2/exp2/floor/ceil bracket, the two `hash3D`s, the mix, the
+CDF and the clamp. The discard sits between the alpha test's place and the
+opaque clamp, as in three. `webgpu_materials_arrays` builds no new WGSL. Each
+group draws with the program of an ordinary `MeshStandardMaterial`, which the
+ladder already checks.
+
+### 51.4 Divergences specific to this section
+
+* **Naming.** The port writes `var nodeVarN` where three writes `let
+  nodeConstN`. This is the §8 class.
+* **The CDF's `cases` vector.** Three writes `vec3( … )` inline in each branch
+  of the nested `select`, as `.x`, `.y`, `.z`. The port's usage counter sees
+  the node used more than once within the branch scope and promotes it to a
+  var in each branch. The value and the pixels are the same.
+* **Array materials only on `Mesh`.** `InstancedMesh`, `SkinnedMesh`,
+  `BatchedMesh`, lines and points keep a single material (`materials` is
+  empty). Three allows arrays there too, but nothing on the ladder uses them.
+* **Not in raycasting.** Three's `Mesh.raycast` walks the groups, tests each
+  with `material[ group.materialIndex ].side`, and reports that
+  `materialIndex`. The port's raycaster still reads the single `material`, so
+  a `with_materials` mesh is tested as one front-sided mesh over its whole
+  draw range, with `face.materialIndex` 0. No graded page raycasts one.
 ## 56. `copyTextureToTexture` (`webgpu_textures_partialupdate`)
 
 The page patches a loaded texture in place: every tenth of a second a 32 x 32

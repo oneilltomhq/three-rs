@@ -41,7 +41,7 @@ pub use render_target::{RenderTarget, RenderTargetInner, RenderTargetOptions, OU
 pub use ssaa_pass::SsaaPassNode;
 
 use crate::cameras::{OrthographicCamera, PerspectiveCamera, RenderCamera};
-use crate::core::{BufferGeometry, Index, Layers, Node};
+use crate::core::{BufferGeometry, Group, Index, Layers, Node};
 use crate::error::Error;
 use crate::geometries::{quad_geometry, sphere_geometry};
 use crate::lights::{
@@ -321,6 +321,10 @@ struct Renderable {
     /// whole index buffer once; non-empty replaces that single `drawIndexed`
     /// with one call per range, exactly as `WebGPUBackend.draw()` does.
     sub_draws: Vec<SubDraw>,
+    /// `renderObject.group` — the `geometry.groups` entry of a multi-material
+    /// mesh's render item, whose `start` / `count` `getDrawParameters()`
+    /// intersects with `geometry.drawRange`. `None` for every other draw.
+    group: Option<Group>,
 }
 
 /// The material's half of `RenderObject.getCacheKey()`: `material.id` and
@@ -1572,6 +1576,7 @@ impl Renderer {
                 bone_matrices: Vec::new(),
                 primitive: Primitive::TRIANGLES,
                 sub_draws: Vec::new(),
+                group: None,
             });
         }
 
@@ -1669,7 +1674,7 @@ impl Renderer {
             scene
                 .override_material
                 .as_ref()
-                .or(object.material())
+                .or(item.material(&object))
                 .is_some_and(|material| material.transmission > 0.0)
         });
         let opaque_frame = transmits.then(|| {
@@ -1695,7 +1700,7 @@ impl Renderer {
                 let material = scene
                     .override_material
                     .as_ref()
-                    .or(object.material())
+                    .or(item.material(&object))
                     .unwrap_or(&self.default_material);
                 // `material.transparent === true && material.side ===
                 // DoubleSide && material.forceSinglePass === false`.
@@ -1730,7 +1735,7 @@ impl Renderer {
             let material: &MeshBasicNodeMaterial = scene
                 .override_material
                 .as_ref()
-                .or(object.material())
+                .or(item.material(&object))
                 .unwrap_or(&self.default_material);
 
             let primitive = Primitive::of(&object, &geometry);
@@ -1898,6 +1903,7 @@ impl Renderer {
                 bone_matrices: skin.map(|s| s.3).unwrap_or_default(),
                 primitive,
                 sub_draws,
+                group: item.group,
             };
 
             // `ToonOutlinePassNode`'s render-object function: a toon material
@@ -2228,7 +2234,7 @@ impl Renderer {
                     .geometry()
                     .expect("three-rs: the render list only holds drawables")
                     .clone();
-                let source = object.material().unwrap_or(&self.default_material);
+                let source = item.material(&object).unwrap_or(&self.default_material);
                 let primitive = Primitive::of(&object, &geometry);
                 let instance_matrix = object.instance_matrix().cloned();
                 let instance_color = object.instance_color().cloned();
@@ -2288,6 +2294,7 @@ impl Renderer {
                     bone_matrices: Vec::new(),
                     primitive,
                     sub_draws: Vec::new(),
+                    group: item.group,
                 });
             }
 
@@ -2447,6 +2454,7 @@ impl Renderer {
                 bone_matrices: Vec::new(),
                 primitive: Primitive::TRIANGLES,
                 sub_draws: Vec::new(),
+                group: None,
                 object_center: Vector2::new(0.5, 0.5),
             }];
             let uniforms = UniformContext {
@@ -2607,7 +2615,7 @@ impl Renderer {
                     .geometry()
                     .expect("three-rs: the render list only holds drawables")
                     .clone();
-                let source = object.material().unwrap_or(&self.default_material);
+                let source = item.material(&object).unwrap_or(&self.default_material);
                 let primitive = Primitive::of(&object, &geometry);
                 let instance_matrix = object.instance_matrix().cloned();
                 let instance_color = object.instance_color().cloned();
@@ -2664,6 +2672,7 @@ impl Renderer {
                     bone_matrices: Vec::new(),
                     primitive,
                     sub_draws: Vec::new(),
+                    group: item.group,
                 });
             }
 
@@ -2807,6 +2816,7 @@ impl Renderer {
             bone_matrices: Vec::new(),
             primitive: Primitive::TRIANGLES,
             sub_draws: Vec::new(),
+            group: None,
         }];
 
         let camera_uniforms = self.quad_camera_uniforms();
@@ -3089,11 +3099,26 @@ impl Renderer {
                 Some((_, _, count)) => *count,
                 None => gpu.vertex_count,
             };
-            let first = (item.geometry.draw_range.start as u32).min(available);
-            let elements = match item.geometry.draw_range.count {
-                Some(count) => (count as u32).min(available - first),
-                None => available - first,
-            };
+            //
+            // `if ( group !== null )`: a multi-material mesh's group item
+            // narrows that range to `[ group.start, group.start + group.count
+            // )` as well — `firstVertex = max( …, group.start )`, `lastVertex
+            // = min( …, group.start + group.count )`, both then clamped to the
+            // buffer.
+            let draw_start = item.geometry.draw_range.start as u64;
+            let mut last = item
+                .geometry
+                .draw_range
+                .count
+                .map_or(u64::MAX, |count| draw_start + count as u64);
+            let mut first = draw_start;
+            if let Some(group) = item.group {
+                first = first.max(group.start as u64);
+                last = last.min(group.start as u64 + group.count as u64);
+            }
+            let last = last.min(available as u64);
+            let first = first.min(last) as u32;
+            let elements = last as u32 - first;
             if item.sub_draws.is_empty() {
                 self.info
                     .record_draw(item.primitive.topology, elements, item.instance_count);
@@ -3440,6 +3465,7 @@ impl Renderer {
             bone_matrices: Vec::new(),
             primitive: Primitive::TRIANGLES,
             sub_draws: Vec::new(),
+            group: None,
         }];
 
         let camera_uniforms = self.quad_camera_uniforms();

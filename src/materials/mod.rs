@@ -238,6 +238,11 @@ pub struct MeshBasicNodeMaterial {
     /// copies it onto its override material, so cut-away texels cast no
     /// shadow either.
     pub alpha_test: f64,
+    /// `Material.alphaHash` — when set, `setupDiffuseColor()` discards the
+    /// fragments whose alpha is below `getAlphaHashThreshold( positionLocal )`
+    /// (see [`crate::nodes::alpha_hash`]), the stochastic stand-in for
+    /// blending that `webgpu_materials_alphahash` renders.
+    pub alpha_hash: bool,
     /// `Material.alphaMap` — `materialOpacity` becomes `opacity * texture(
     /// alphaMap )` (`MaterialNode.OPACITY`), a `vec4` product that the alpha
     /// assign narrows back to its `.x`. Copied onto the shadow pass's
@@ -575,6 +580,7 @@ impl Default for MeshBasicNodeMaterial {
             opacity_node: None,
             alpha_test_node: None,
             alpha_test: 0.0,
+            alpha_hash: false,
             alpha_map: None,
             emissive_node: None,
             scale_node: None,

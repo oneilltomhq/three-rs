@@ -9,7 +9,8 @@
 use std::cmp::Ordering;
 
 use crate::cameras::RenderCamera;
-use crate::core::{Layers, Node};
+use crate::core::{Group, Layers, Node, Object3D};
+use crate::materials::MeshBasicNodeMaterial;
 use crate::math::{CoordinateSystem, Frustum, Matrix4};
 use crate::objects::Payload;
 
@@ -17,8 +18,9 @@ use crate::objects::Payload;
 ///
 /// three.js' render item also carries `geometry`, `material`, `group` and the
 /// clipping context; geometry and material are reachable through
-/// `node.borrow().mesh()`, and the other two belong to features this port has
-/// not reached.
+/// `node.borrow().mesh()` (for a multi-material mesh, through
+/// [`material`](Self::material) and [`group`](Self::group)), and the clipping
+/// context belongs to a feature this port has not reached.
 #[derive(Clone)]
 pub struct RenderItem {
     /// `renderItem.object`.
@@ -35,6 +37,24 @@ pub struct RenderItem {
     pub z: f64,
     /// `object.matrixWorld` at the time of the walk.
     pub matrix_world: Matrix4,
+    /// `renderItem.group` — the `geometry.groups` entry this item draws, for
+    /// an object whose `material` is an array; `None` (three's `null`) for
+    /// every other object. Its `material_index` picks the item's material and
+    /// its `start` / `count` clip the draw range
+    /// (`RenderObject.getDrawParameters()`).
+    pub group: Option<Group>,
+}
+
+impl RenderItem {
+    /// `renderItem.material` — `material[ group.materialIndex ]` for a group
+    /// item, `object.material` otherwise. `object` is this item's node,
+    /// borrowed.
+    pub fn material<'a>(&self, object: &'a Object3D) -> Option<&'a MeshBasicNodeMaterial> {
+        match self.group {
+            Some(group) => object.payload.material_array().get(group.material_index),
+            None => object.material(),
+        }
+    }
 }
 
 /// `painterSortStable( a, b )`.
@@ -335,6 +355,40 @@ fn project_drawable(
         0.0
     };
 
+    // `if ( Array.isArray( material ) )`: one item per `geometry.groups`
+    // entry whose `material[ group.materialIndex ]` exists and is visible, in
+    // group order, all at the object's one `z`. The painter sort is stable and
+    // every item carries the same `id`, so the groups draw in that order.
+    let material_array = o.payload.material_array();
+    if !material_array.is_empty() {
+        let items: Vec<(RenderItem, bool)> = geometry
+            .groups
+            .iter()
+            .filter_map(|group| {
+                let material = material_array.get(group.material_index)?;
+                material.visible.then(|| {
+                    (
+                        RenderItem {
+                            node: object.clone(),
+                            id: o.id,
+                            group_order,
+                            render_order: o.render_order,
+                            z,
+                            matrix_world: o.matrix_world,
+                            group: Some(*group),
+                        },
+                        material.transparent || material.transmission > 0.0,
+                    )
+                })
+            })
+            .collect();
+        drop(o);
+        for (item, transparent) in items {
+            render_list.push(item, transparent);
+        }
+        return;
+    }
+
     // `if ( material.visible ) renderList.push( … )`. A mesh with no material of
     // its own is drawn with `scene.overrideMaterial`, which three.js substitutes
     // later (in `_renderObjects`), after the list is built — so a missing
@@ -362,6 +416,7 @@ fn project_drawable(
         render_order: o.render_order,
         z,
         matrix_world: o.matrix_world,
+        group: None,
     };
 
     drop(o);
@@ -428,6 +483,41 @@ mod tests {
         );
         list.sort();
         list
+    }
+
+    /// `Array.isArray( material )`: one item per `geometry.groups` entry, in
+    /// group order, each routed by *its* material's `transparent`; a group
+    /// whose `materialIndex` has no material, or an invisible one, is skipped.
+    #[test]
+    fn multi_material_mesh_pushes_one_item_per_group() {
+        let scene = Scene::new();
+        let opaque = MeshBasicNodeMaterial::new();
+        let mut transparent = MeshBasicNodeMaterial::new();
+        transparent.transparent = true;
+        let mut hidden = MeshBasicNodeMaterial::new();
+        hidden.visible = false;
+        // `BoxGeometry` has six groups, `materialIndex` 0..5; only 0..2 have
+        // a material here.
+        let mesh = Mesh::with_materials(unit_box(), vec![opaque, transparent.clone(), hidden]);
+        scene.add(&mesh);
+
+        let list = project(&scene, &camera());
+        let groups = |items: &[RenderItem]| -> Vec<usize> {
+            items
+                .iter()
+                .map(|item| item.group.expect("a group item").material_index)
+                .collect()
+        };
+        assert_eq!(groups(&list.opaque), vec![0]);
+        assert_eq!(groups(&list.transparent), vec![1]);
+
+        let object = mesh.borrow();
+        let item = &list.transparent[0];
+        assert!(item.material(&object).unwrap().transparent);
+        assert_eq!(
+            (item.group.unwrap().start, item.group.unwrap().count),
+            (6, 6)
+        );
     }
 
     #[test]

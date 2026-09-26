@@ -15,6 +15,17 @@ use crate::objects::Payload;
 pub struct Mesh {
     pub geometry: Rc<BufferGeometry>,
     pub material: Option<MeshBasicNodeMaterial>,
+    /// `Mesh.material` when it is an *array* — `Array.isArray( material )`.
+    ///
+    /// three.js has one property that holds either a material or an array of
+    /// them; the port keeps the array form here, beside
+    /// [`material`](Self::material), and a mesh built with
+    /// [`Mesh::with_materials`] has `material: None` and a non-empty
+    /// `materials`. `Renderer._projectObject()` then pushes one render item
+    /// per entry of `geometry.groups`, drawn with `materials[
+    /// group.materialIndex ]` over the group's index (or vertex) range — see
+    /// `docs/nodes.md` §51.
+    pub materials: Vec<MeshBasicNodeMaterial>,
     /// `Mesh.morphTargetInfluences` — one weight per `morphAttributes.position`
     /// entry, filled in by `updateMorphTargets()` from the constructor.
     pub morph_target_influences: Vec<f64>,
@@ -71,11 +82,27 @@ impl Mesh {
         object.payload = Payload::Mesh(Self {
             geometry,
             material: material.into(),
+            materials: Vec::new(),
             morph_target_influences,
             line_segments: None,
             count: None,
         });
         object.into_node()
+    }
+
+    /// `new Mesh( geometry, materials )` with an array of materials: each of
+    /// `geometry.groups` is drawn with `materials[ group.materialIndex ]`.
+    /// A group whose index has no material is skipped, as three.js'
+    /// `if ( groupMaterial && groupMaterial.visible )` skips it.
+    pub fn with_materials(
+        geometry: Rc<BufferGeometry>,
+        materials: Vec<MeshBasicNodeMaterial>,
+    ) -> Node {
+        let node = Self::new(geometry, None);
+        if let Payload::Mesh(mesh) = &mut node.borrow_mut().payload {
+            mesh.materials = materials;
+        }
+        node
     }
 
     /// The `Mesh` state alone, for a caller that already has the [`Node`] to
@@ -92,6 +119,7 @@ impl Mesh {
         Self {
             geometry,
             material,
+            materials: Vec::new(),
             morph_target_influences,
             line_segments: None,
             count: None,
@@ -193,10 +221,12 @@ pub(crate) fn vertex_position(
 /// `SkinnedMesh` a bone-aware vertex position.
 pub(crate) struct MeshRaycast<'a> {
     pub geometry: &'a BufferGeometry,
-    /// `material.side`. The port's `Mesh` has one material, so three's
-    /// `Array.isArray( material )` branch — one pass per geometry group, each
-    /// with its group's material and `materialIndex` — collapses to the
-    /// single-material loop, and `face.materialIndex` is always 0.
+    /// `material.side`. Raycasting reads only the single `material`, so
+    /// three's `Array.isArray( material )` branch (one pass per geometry
+    /// group, each with its group's material and `materialIndex`) collapses to
+    /// the single-material loop. A [`Mesh::with_materials`] mesh is tested
+    /// front-sided over its whole draw range, and `face.materialIndex` is
+    /// always 0 (docs/nodes.md §51).
     pub side: Side,
     pub matrix_world: Matrix4,
     /// `geometry.drawRange.start`.
