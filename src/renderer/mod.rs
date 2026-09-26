@@ -291,6 +291,9 @@ struct Renderable {
     bind_matrix: Matrix4,
     bind_matrix_inverse: Matrix4,
     bone_matrices: Vec<f32>,
+    /// `Sprite.center` — `SpriteNodeMaterial`'s `reference( 'center', 'vec2',
+    /// object )`. `(0.5, 0.5)`, the sprite default, for everything else.
+    object_center: Vector2,
     /// `_getPrimitiveState()`'s object half — the topology this draw's pipeline
     /// is built with.
     primitive: Primitive,
@@ -1422,6 +1425,7 @@ impl Renderer {
                 morph_base: 1.0,
                 bind_matrix: Matrix4::identity(),
                 bind_matrix_inverse: Matrix4::identity(),
+                object_center: Vector2::new(0.5, 0.5),
                 bone_matrices: Vec::new(),
                 primitive: Primitive::TRIANGLES,
                 sub_draws: Vec::new(),
@@ -1493,11 +1497,22 @@ impl Renderer {
             coordinate_system: camera.coordinate_system(),
             far: camera.far(),
         };
+        // `LineSegments2.onBeforeRender( renderer )`:
+        // `renderer.getViewport( _viewport )`, then `_resolution.set( _viewport.z,
+        // _viewport.w )` — the size its screen-space `raycast()` projects into.
+        let viewport = self.viewport();
         for item in render_list.items() {
             let matrix_world = item.matrix_world;
             let mut object = item.node.borrow_mut();
             if let Some(batched) = object.payload.batched_mesh_mut() {
                 batched.on_before_render(&matrix_world, &batch_camera);
+            }
+            if let Some(segments) = object
+                .payload
+                .mesh_mut()
+                .and_then(|mesh| mesh.line_segments.as_mut())
+            {
+                segments.resolution = crate::math::Vector2::new(viewport.z, viewport.w);
             }
         }
 
@@ -1693,6 +1708,7 @@ impl Renderer {
                     skin: skin.as_ref().map(|s| s.0),
                     batch: batch.clone(),
                     line_segments: object.payload.line_segments().cloned(),
+                    sprite: object.payload.is_sprite(),
                     mrt: mrt_context.clone(),
                     output: output_context.clone(),
                     // `VertexColorNode.generate()`'s
@@ -1720,6 +1736,10 @@ impl Renderer {
                 morph_base,
                 bind_matrix: skin.as_ref().map(|s| s.1).unwrap_or_else(Matrix4::identity),
                 bind_matrix_inverse: skin.as_ref().map(|s| s.2).unwrap_or_else(Matrix4::identity),
+                object_center: object
+                    .payload
+                    .sprite()
+                    .map_or(Vector2::new(0.5, 0.5), |sprite| sprite.center),
                 bone_matrices: skin.map(|s| s.3).unwrap_or_default(),
                 primitive,
                 sub_draws,
@@ -1989,6 +2009,7 @@ impl Renderer {
                         // material takes the plain MVP path, which the quad
                         // geometry is not in.
                         line_segments: None,
+                        sprite: false,
                         // A shadow pass renders into a depth-only target; MRT
                         // is a colour-attachment feature and three.js's
                         // `renderer._mrt` is null for it either way.
@@ -2010,6 +2031,7 @@ impl Renderer {
                     morph_base: 1.0,
                     bind_matrix: Matrix4::identity(),
                     bind_matrix_inverse: Matrix4::identity(),
+                    object_center: Vector2::new(0.5, 0.5),
                     bone_matrices: Vec::new(),
                     primitive,
                     sub_draws: Vec::new(),
@@ -2200,6 +2222,7 @@ impl Renderer {
                         // material takes the plain MVP path, which the quad
                         // geometry is not in.
                         line_segments: None,
+                        sprite: false,
                         // A shadow pass renders into a depth-only target; MRT
                         // is a colour-attachment feature and three.js's
                         // `renderer._mrt` is null for it either way.
@@ -2221,6 +2244,7 @@ impl Renderer {
                     morph_base: 1.0,
                     bind_matrix: Matrix4::identity(),
                     bind_matrix_inverse: Matrix4::identity(),
+                    object_center: Vector2::new(0.5, 0.5),
                     bone_matrices: Vec::new(),
                     primitive,
                     sub_draws: Vec::new(),
@@ -2349,6 +2373,7 @@ impl Renderer {
             morph_base: 1.0,
             bind_matrix: Matrix4::identity(),
             bind_matrix_inverse: Matrix4::identity(),
+            object_center: Vector2::new(0.5, 0.5),
             bone_matrices: Vec::new(),
             primitive: Primitive::TRIANGLES,
             sub_draws: Vec::new(),
@@ -2496,6 +2521,7 @@ impl Renderer {
                 blend: item.material.blend_state(),
                 topology: item.primitive.topology,
                 strip_index_format: item.primitive.strip_index_format,
+                alpha_to_coverage: item.material.alpha_to_coverage && target.sample_count > 1,
             };
             let pipeline = PipelineKey {
                 program: program_key,
@@ -2523,6 +2549,7 @@ impl Renderer {
                 morph_influences: &item.morph_influences,
                 bind_matrix: item.bind_matrix,
                 bind_matrix_inverse: item.bind_matrix_inverse,
+                object_center: item.object_center,
                 bone_matrices: &item.bone_matrices,
                 material_metalness: item.material.metalness,
                 material_roughness: item.material.roughness,
@@ -2845,6 +2872,7 @@ impl Renderer {
             morph_base: 1.0,
             bind_matrix: Matrix4::identity(),
             bind_matrix_inverse: Matrix4::identity(),
+            object_center: Vector2::new(0.5, 0.5),
             bone_matrices: Vec::new(),
             primitive: Primitive::TRIANGLES,
             sub_draws: Vec::new(),

@@ -361,6 +361,14 @@ impl Index {
             Index::U32(v) => v.len(),
         }
     }
+
+    /// `index.getX( i )` — the `i`-th vertex index.
+    pub fn get_x(&self, i: usize) -> usize {
+        match self {
+            Index::U16(v) => v[i] as usize,
+            Index::U32(v) => v[i] as usize,
+        }
+    }
 }
 
 /// One entry of `BufferGeometry.groups`.

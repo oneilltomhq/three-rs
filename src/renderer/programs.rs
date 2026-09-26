@@ -48,6 +48,9 @@ pub struct RenderState {
     /// `_getPrimitiveState()`: set only for an indexed `Line` that is not a
     /// `LineSegments`, from the index array's type.
     pub strip_index_format: Option<wgpu::IndexFormat>,
+    /// `WebGPUPipelineUtils.createRenderPipeline()`'s
+    /// `alphaToCoverageEnabled: material.alphaToCoverage && samples > 1`.
+    pub alpha_to_coverage: bool,
 }
 
 /// How many colour attachments past the first a pass may have here.
@@ -256,7 +259,7 @@ impl Program {
             multisample: wgpu::MultisampleState {
                 count: state.sample_count,
                 mask: !0,
-                alpha_to_coverage_enabled: false,
+                alpha_to_coverage_enabled: state.alpha_to_coverage,
             },
             multiview_mask: None,
             cache: None,
@@ -519,6 +522,9 @@ pub struct UniformContext<'a> {
     /// `SkinnedMesh.bindMatrix` / `.bindMatrixInverse`.
     pub bind_matrix: Matrix4,
     pub bind_matrix_inverse: Matrix4,
+    /// `Sprite.center`, for `SpriteNodeMaterial`'s
+    /// `reference( 'center', 'vec2', object )`.
+    pub object_center: Vector2,
     /// `skeleton.boneMatrices` — the flat `mat4` array the bone buffer holds,
     /// already updated for this frame.
     pub bone_matrices: &'a [f32],
@@ -588,6 +594,7 @@ impl Default for UniformContext<'_> {
             morph_influences: &[],
             bind_matrix: Matrix4::identity(),
             bind_matrix_inverse: Matrix4::identity(),
+            object_center: Vector2::new(0.5, 0.5),
             bone_matrices: &[],
             object: None,
         }
@@ -759,6 +766,9 @@ impl UniformContext<'_> {
                 UniformSource::BindMatrix => self.bind_matrix.to_f32_array().to_vec(),
                 UniformSource::BindMatrixInverse => {
                     self.bind_matrix_inverse.to_f32_array().to_vec()
+                }
+                UniformSource::ObjectCenter => {
+                    vec![self.object_center.x as f32, self.object_center.y as f32]
                 }
                 UniformSource::LightTargetPosition(i) => {
                     let p = self.lights[*i].target_position;

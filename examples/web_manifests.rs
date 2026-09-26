@@ -105,6 +105,10 @@ mod webgpu_compute_points;
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_lines_fat;
 
+#[path = "webgpu_lines_fat_raycasting.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_lines_fat_raycasting;
+
 #[path = "webgpu_pmrem_test.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_pmrem_test;
@@ -246,6 +250,9 @@ const GRADED: &[(&str, fn())] = &[
         drop(webgpu_compute_points::init())
     }),
     ("webgpu_lines_fat", || drop(webgpu_lines_fat::init())),
+    ("webgpu_lines_fat_raycasting", || {
+        drop(webgpu_lines_fat_raycasting::init())
+    }),
     ("webgpu_pmrem_test", || drop(webgpu_pmrem_test::init())),
     ("webgpu_postprocessing_difference", || {
         drop(webgpu_postprocessing_difference::init())
