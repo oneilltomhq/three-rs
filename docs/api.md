@@ -229,6 +229,14 @@ three's own class for that kind lacks — `clearcoat` on a Standard material,
 three's behaviour: `NodeMaterial.setupEnvironment()`, which those kinds
 inherit, reads only `material.envNode` / `material.envMap`.
 
+## 8. Render-pipeline hooks take the renderer and nothing else
+
+`RenderPipeline::on_before_render` and `on_after_render` take a
+`Box<dyn FnMut(&mut Renderer)>`. A hook that has to move a camera captures
+the camera itself, through `RenderCamera::set_view_offset` (issue #164). The
+hook signature does not pass one in, because three's callbacks take no
+arguments either. `docs/nodes.md` §37 has the ordering.
+
 ## Where each decision came from
 
 Decision 6 came out of the compositor consumer and issue #62; the gaps it

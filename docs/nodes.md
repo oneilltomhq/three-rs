@@ -290,7 +290,7 @@ duration of that node's build. Two things follow from being inside a layer:
 
 ### What this port does
 
-> Since §37 the layer and `NORMAL_VALUE` are the `sub_build` and
+> Since §38 the layer and `NORMAL_VALUE` are the `sub_build` and
 > `setup_normal` fields of one `BuildContext` stack; what follows is
 > otherwise unchanged.
 
@@ -3598,7 +3598,36 @@ after, apart from one pointer printed in a `Debug` of an `ObjectUpdate`
 closure. Every `tests/nodes_*` gate passes unchanged, and so does the full
 ladder.
 
-## 37. `BuildContext`: one stack for `builder.context` (issue #160)
+## 37. View offsets on both cameras, and render-pipeline hooks (issue #164)
+
+The groundwork TRAA (#165) needs, from #154 decisions 2 and 3. No rung.
+
+* **`set_view_offset` / `clear_view_offset` on `RenderCamera`.** Both of
+  three's cameras have them, so a hook or pass node can jitter whichever
+  camera it holds. `OrthographicCamera` gains `view: Option<CameraView>` and
+  three's `updateProjectionMatrix()` branch: `scaleW = ( right - left ) /
+  fullWidth / zoom`, then the window's planes. Unlike the perspective camera,
+  the orthographic one leaves `aspect` alone because it has none.
+  `tests/cameras_orthographic_camera.rs` ports three's QUnit file. That file
+  has no view-offset case, so the offset tests compare against matrices three
+  printed under node, and they match bit for bit.
+* **`RenderPipeline::on_before_render` / `on_after_render`.** These are
+  three's `OnBeforeRenderPipeline` / `OnAfterRenderPipeline`, typed
+  `Box<dyn FnMut(&mut Renderer)>`. Before-hooks run after the output node is
+  reassigned and before the renderer's tone mapping is neutralised.
+  After-hooks run once it is restored. Within each list, hooks run in the
+  order they were added. `tests/renderer_pipeline_hooks.rs` (GPU) checks the
+  order against the draw count.
+* **Divergence: hooks outlive a rebuild.** three collects the callbacks from
+  `EventNode`s while the quad material builds, into a context that
+  `_updateContext()` recreates, so a new `outputNode` drops them. The port has
+  no builder context to collect into. The node that needs a hook adds it when
+  it is built, and it stays for the pipeline's life.
+* **`SsaaPassNode` is unchanged.** It jitters once per sample inside its own
+  `render`, not once per pipeline render, so the hooks do not fit it. It
+  still reads `PerspectiveCamera.view` directly.
+
+## 38. `BuildContext`: one stack for `builder.context` (issue #160)
 
 Eight thread-locals in `tsl.rs` held `builder.context` one key at a time.
 Each had its own `with_…` function that swapped a value in and restored the

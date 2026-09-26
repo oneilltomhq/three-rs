@@ -195,6 +195,7 @@ jobs:
             animation_keyframe_track
             animation_property_binding
             animation_property_mixer
+            cameras_orthographic_camera
             cameras_perspective_camera
             core_buffer_attribute
             core_buffer_geometry

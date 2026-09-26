@@ -8,12 +8,23 @@
 //! `Renderer.needsFrameBufferTarget` is false and the quad draws straight into
 //! the canvas — the colour transform lives in the quad's own shader instead of
 //! in a second output pass.
+//!
+//! Before/after hooks ([`RenderPipeline::on_before_render`],
+//! [`RenderPipeline::on_after_render`]) are three's `OnBeforeRenderPipeline` /
+//! `OnAfterRenderPipeline` events: closures run around the quad's draw, which
+//! is where `TRAANode` jitters the camera and clears the jitter again.
 
 use crate::materials::{render_output, MeshBasicNodeMaterial, ToneMapping};
 use crate::nodes::NodeRef;
 use crate::objects::QuadMesh;
 
 use super::Renderer;
+
+/// A render-pipeline hook: three's `OnBeforeRenderPipeline( callback )` /
+/// `OnAfterRenderPipeline( callback )` callback. It is handed the renderer; a
+/// hook that jitters a camera captures that camera itself (three's TRAA
+/// closes over `this`, which holds its camera).
+type RenderPipelineHook = Box<dyn FnMut(&mut Renderer)>;
 
 pub struct RenderPipeline {
     /// `renderPipeline.outputNode`.
@@ -30,6 +41,10 @@ pub struct RenderPipeline {
     /// `needsUpdate` set alongside, so a steady frame's program is a cache
     /// hit rather than a rebuild.
     built_for: Option<(usize, bool, ToneMapping)>,
+    /// `_contextData.onBeforePipelineCallbacks`.
+    before_render: Vec<RenderPipelineHook>,
+    /// `_contextData.onAfterPipelineCallbacks`.
+    after_render: Vec<RenderPipelineHook>,
 }
 
 impl Default for RenderPipeline {
@@ -47,7 +62,31 @@ impl RenderPipeline {
             output_color_transform: true,
             quad_mesh: QuadMesh::new(material),
             built_for: None,
+            before_render: Vec::new(),
+            after_render: Vec::new(),
         }
+    }
+
+    /// `OnBeforeRenderPipeline( callback )`: run `hook` at the start of every
+    /// [`render`](Self::render), after the output node is (re)assigned and
+    /// before the renderer's tone mapping is neutralised. Hooks run in the
+    /// order they were added.
+    ///
+    /// three collects these from `EventNode`s while the pipeline's quad
+    /// material builds, into a context that `_updateContext()` recreates, so a
+    /// new `outputNode` drops the old hooks and its own nodes register fresh
+    /// ones. The port has no builder context to collect into: the node that
+    /// needs a hook (TRAA, issue #165) adds it here when it is built, and it
+    /// stays for the pipeline's life.
+    pub fn on_before_render(&mut self, hook: RenderPipelineHook) {
+        self.before_render.push(hook);
+    }
+
+    /// `OnAfterRenderPipeline( callback )`: run `hook` at the end of every
+    /// [`render`](Self::render), after the renderer's tone mapping and output
+    /// colour space are restored. Hooks run in the order they were added.
+    pub fn on_after_render(&mut self, hook: RenderPipelineHook) {
+        self.after_render.push(hook);
     }
 
     /// `RenderPipeline.render()`.
@@ -74,9 +113,17 @@ impl RenderPipeline {
             self.built_for = Some(built_for);
         }
 
+        for hook in &mut self.before_render {
+            hook(renderer);
+        }
+
         // `renderer.toneMapping = NoToneMapping; renderer.outputColorSpace =
         // workingColorSpace;` — restored after the draw.
         let quad = &self.quad_mesh;
         renderer.with_neutral_output(|renderer| renderer.render_quad(quad));
+
+        for hook in &mut self.after_render {
+            hook(renderer);
+        }
     }
 }

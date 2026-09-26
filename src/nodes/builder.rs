@@ -389,7 +389,7 @@ impl NodeCache {
 /// of it, because the port's `NodeMaterial.setup()` builds the flow *before*
 /// the builder exists (three calls it from inside `builder.build()`). It is
 /// empty between material setups; outside any push, reads see the default.
-/// See `docs/nodes.md` §37.
+/// See `docs/nodes.md` §38.
 #[derive(Clone)]
 pub(crate) struct BuildContext {
     /// `NodeBuilder.subBuildLayers`, one layer deep: `NORMAL` is the only name

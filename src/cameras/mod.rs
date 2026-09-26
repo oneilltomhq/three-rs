@@ -43,6 +43,22 @@ pub trait RenderCamera {
     fn far(&self) -> f64;
     /// `camera.near` — `LineSegments2`' screen-space raycast clips to it.
     fn near(&self) -> f64;
+    /// `camera.setViewOffset( fullWidth, fullHeight, x, y, width, height )`,
+    /// which both of three's cameras implement and `updateProjectionMatrix()`s
+    /// through. On the trait so a render-pipeline hook or a pass node can
+    /// jitter whichever camera it was handed (TRAA's
+    /// `OnBeforeRenderPipeline`, issue #154 decision 3).
+    fn set_view_offset(
+        &mut self,
+        full_width: f64,
+        full_height: f64,
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+    );
+    /// `camera.clearViewOffset()`.
+    fn clear_view_offset(&mut self);
     /// `camera.isPerspectiveCamera`.
     fn is_perspective_camera(&self) -> bool {
         false
@@ -54,6 +70,20 @@ pub trait RenderCamera {
 }
 
 impl RenderCamera for PerspectiveCamera {
+    fn set_view_offset(
+        &mut self,
+        full_width: f64,
+        full_height: f64,
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+    ) {
+        self.set_view_offset(full_width, full_height, x, y, width, height);
+    }
+    fn clear_view_offset(&mut self) {
+        self.clear_view_offset();
+    }
     fn far(&self) -> f64 {
         self.far
     }
@@ -87,6 +117,20 @@ impl RenderCamera for PerspectiveCamera {
 }
 
 impl RenderCamera for OrthographicCamera {
+    fn set_view_offset(
+        &mut self,
+        full_width: f64,
+        full_height: f64,
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+    ) {
+        self.set_view_offset(full_width, full_height, x, y, width, height);
+    }
+    fn clear_view_offset(&mut self) {
+        self.clear_view_offset();
+    }
     fn far(&self) -> f64 {
         self.far
     }
