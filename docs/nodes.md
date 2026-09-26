@@ -3552,3 +3552,101 @@ dump apart from `var` placement: the port declares `worldPos` inside the
   logs and then throws on `ret.offsetX`.
 * **No `TransformControls`.** `webgpu_modifier_curve`'s handles cannot be
   dragged. The graded frame never shows the gizmo.
+
+## 36. A user `LightingModel` and `ArrayCamera` (`webgpu_lights_custom`, `webgpu_camera_array`)
+
+### 36.1 `LightingModel` as a trait
+
+`webgpu_lights_custom` subclasses `THREE.LightingModel` and hands the instance
+to a material through `lights( [ … ] ).context( { lightingModel } )`.
+`src/materials/lighting_model.rs` ports the base class as a trait:
+
+* `start()`, `direct()`, `indirect()` and `finish()` default to three's base
+  bodies. `start()` runs `builder.lightsNode.setupLights()`, which calls
+  `direct()` once per direct light, and then calls `indirect()`.
+* three's methods append to the builder's current stack implicitly. The
+  port's methods push onto `LightingBuilder::stack` instead, and that stack is
+  spliced into the material's fragment statements.
+* `ReflectedLight`'s four accumulators are `vec3().toVar( name )`, as in
+  `LightingContextNode`. Each one is therefore declared where it is first
+  read, which is why `indirectDiffuse` is zeroed only in `totalDiffuse`'s
+  line in three's dump as well as ours.
+* `lights_node()` is `LightsNode.setup()`: `start()`, then the
+  `totalDiffuse` / `totalSpecular` / `outgoingLight` tail, then `finish()`.
+
+The material field `lighting_model` is the `lightingModel` from the
+context. `LightingContextNode.setup()` reads `this.lightingModel ||
+builder.context.lightingModel`, so it only takes effect on kinds with no model
+of their own (Points, Sprite, and Basic standing in for a bare
+`NodeMaterial`). The built-in models stay the `match` on `MaterialKind`. The
+trait is how a model the port does not ship gets in; it does not replace the
+built-in path.
+
+Not ported: `directRectArea()`, because the port has no `RectAreaLight`, and
+`ambientOcclusion()`, which is never called on a user model.
+
+### 36.2 `ArrayCamera`: how three does it
+
+With an `ArrayCamera`, `Camera.js` turns `cameraViewMatrix` and
+`cameraProjectionMatrix` into
+`uniformArray( matrices ).setGroup( renderGroup ).element( cameraIndex )`.
+`cameraIndex` is a `u32` uniform in its own `sharedUniformGroup(
+'cameraIndex' )`, read in the fragment stage through a flat `v_cameraIndex`
+varying. That group takes `@group(1)`, and the object group moves to
+`@group(2)`.
+
+`WebGPUBackend.draw()` then loops over the sub-cameras for every object. For
+each one it calls `setViewport( floor( vp * dpr ) )`, binds that
+sub-camera's prebuilt `cameraIndex` bind group, and issues the draw. `dpr` is
+the renderer's pixel ratio for the canvas and 1 for a user render target.
+Culling goes through a `FrustumArray`: an object is drawn if any sub-camera's
+frustum holds it, and it is then drawn for every sub-camera.
+
+### 36.3 `ArrayCamera`: the port
+
+* **Substitution at build time.** `NodeBuilder::with_array_cameras( n )`
+  swaps the `CameraViewMatrix` / `CameraProjectionMatrix` uniform nodes for
+  `BufferElement` nodes in `analyze()` and `generate()`. It does not rebuild
+  them in `tsl`: the TSL singletons (`camera_view_matrix()` and the nodes
+  built on it, such as `positionView` and `modelViewMatrix`) are cached
+  process-wide and already hold the plain uniform. The element is
+  `BufferSource::CameraViewMatrices[ v_cameraIndex ]`, where the varying wraps
+  a `UniformGroup::CameraIndex` uniform.
+* **Bind groups.** `UniformGroup::ORDER` is `[Render, CameraIndex, Object]`.
+  Group numbers count the groups in use, so pages without an array camera
+  keep `Render = 0, Object = 1` byte for byte. The two matrix arrays sit in
+  the render group under three's fixed names `cameraViewMatrices` and
+  `cameraProjectionMatrices`, not `NodeBuffer_N`.
+* **The cache key.** `SetupContext::array_cameras` is the sub-camera count,
+  so a material drawn through both kinds of camera builds two programs. The
+  shadow passes set it to 0.
+* **Draws.** `Renderer::sub_camera_draws()` makes one 16-byte slot buffer and
+  bind group per sub-camera index (`SlotOwner::CameraIndex(i)`). `record_pass`
+  sets the pipeline, bind groups and vertex buffers once. Then, for each
+  sub-camera, it sets the viewport, rebinds the `cameraIndex` group and calls
+  `issue_draw()` (the old draw body).
+* **Culling.** `ProjectCamera::sub_frustums` is `FrustumArray`: an object is
+  kept if any sub-frustum holds its bounding sphere.
+* **`camera.viewport`.** `PerspectiveCamera::viewport` is
+  `Option<Vector4>`, in CSS pixels with a top-left origin as in three.
+  `ArrayCamera` is a base `PerspectiveCamera` (`Deref`) plus `cameras`.
+  `RenderCamera::sub_cameras()` defaults to `&[]`.
+
+### 36.4 Divergences
+
+* **Binding numbers of the matrix arrays.** Three gives each stage its own
+  `cameraViewMatrices` binding (the fragment's at 1, the vertex's at 2 and
+  3). The port declares each array once per program. The WGSL indexes them
+  the same way.
+* **`v_cameraIndex` in the vertex stage.** Three reads
+  `varyings.v_cameraIndex` back in the vertex stage. The port reads a private
+  `v_cameraIndex` it assigned from the same uniform, which gives the same
+  value. Varying locations are ordered differently, as in §8.
+* **`subcamera.copy( camera )` is reproduced as the page wrote it.** It
+  copies the `ArrayCamera`'s own defaults (fov 50, far 2000), not the sub-camera's
+  constructor's 40 / 10. The example does the same, and the frame is
+  pixel-identical to three's `actual_full.png`.
+* **No XR, bundles or layer textures.** `WebGPUBackend`'s array-texture
+  (multiview) path and its render-bundle path are not ported.
+  `object.layers.test( subCamera.layers )` always passes, because the port
+  has no layers.
