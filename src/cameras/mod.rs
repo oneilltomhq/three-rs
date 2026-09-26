@@ -41,6 +41,9 @@ pub trait RenderCamera {
     fn matrix_world(&self) -> Matrix4;
     /// `camera.layers`.
     fn layers(&self) -> Layers;
+    /// `camera.id` — the key `ReflectorBaseNode`'s `virtualCameras` map is
+    /// held on.
+    fn id(&self) -> u32;
     /// `camera.far` — the sort key scale `BatchedMesh`' custom sort uses.
     fn far(&self) -> f64;
     /// `camera.near` — `LineSegments2`' screen-space raycast clips to it.
@@ -132,6 +135,9 @@ impl RenderCamera for PerspectiveCamera {
     fn layers(&self) -> Layers {
         self.node.borrow().layers
     }
+    fn id(&self) -> u32 {
+        self.node.borrow().id
+    }
 }
 
 impl RenderCamera for OrthographicCamera {
@@ -178,6 +184,9 @@ impl RenderCamera for OrthographicCamera {
     }
     fn layers(&self) -> Layers {
         self.object.layers
+    }
+    fn id(&self) -> u32 {
+        self.object.id
     }
 }
 

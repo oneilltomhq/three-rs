@@ -5144,3 +5144,88 @@ three's `m10` repeats the `mix` and the `oscSine` for `radiance` and for
 * **The graded frame shows one cube.** The harness pins `time` to 0, where
   `oscSine` is 0, so the mix is all `cube2`, the Milky Way. The Pisa cube's
   PMREM is still generated and sampled, but it gets weight 0.
+## 55. `reflector()` — planar mirrors as nested renders (`webgpu_mirror`)
+
+`src/nodes/utils/ReflectorNode.js` is two nodes. `ReflectorNode` is a
+`TextureNode` whose uv is `screenUV.flipX()` and whose uv matrix is off
+(`setUpdateMatrix( false )`). `ReflectorBaseNode` is an `updateBefore` node of
+type `RENDER`. Right before the object whose material carries it is drawn, it
+renders the scene into a `HalfFloatType` target sized to the drawing buffer
+times `resolutionScale`. It renders from a virtual camera, which is the real
+camera mirrored in the plane of `reflector.target` (a point on the plane at
+its world position, its world +Z the normal). The virtual camera's projection
+has its third row replaced so that the near plane is the mirror plane
+(Lengyel's oblique clip). It then points `textureNode.value` at that target.
+
+The port is `src/nodes/reflector_node.rs` (the nodes and their state) and
+`src/renderer/reflector.rs` (`updateBefore()`, which is a nested
+`renderer.render()` and so has to live with the renderer). The
+`updateBefore()` is a line-by-line port: the facing-away early-out and its
+`hasOutput` clear, the reflected view, look target and up vector, the
+oblique projection, hiding the carrier's material for the length of the
+render, and saving and restoring the render target, MRT and `autoClear`.
+
+### 55.1 What the dump shows, and why the order matters
+
+`webgpu_mirror` has two mirrors, the floor (`R19`) and the back wall (`R20`).
+Both use the default `bounces: true`, so each one also renders while the other
+is rendering. Three's dump is 33 passes:
+
+* pass 0 is the main pass;
+* pass 1 is `R19` from `V1`, and pass 2 is `R20` rendering from `V2` *inside*
+  pass 1;
+* pass 30 is `R20` from `V3`, and pass 31 is `R19` rendering from `V4` inside
+  pass 30.
+
+The passes in between are mipmaps and the output transform. A nested render
+is submitted before the render around it. Every draw binds whatever
+`textureNode.value` is when the draw is *recorded*. That is the target of
+`virtual( current camera )`, and it is not always the last target the
+reflector rendered into. For example, the main pass's floor is recorded
+after `R20`'s nested render has moved `R19.value` to `V4`'s target, but it
+binds `V1`'s target, because it was recorded before that happened.
+
+### 55.2 Divergence: the pre-pass and per-draw overrides
+
+The port records a pass only once it has built every item, so it cannot
+interleave a nested render between two draws of the same pass. Instead,
+`render()` walks the items in draw order before it records anything
+(`Renderer::update_reflectors`). For each item it looks up the program the
+draw will use and scans its texture bindings for a reflector's default
+texture. It fires each reflector's `updateBefore()` once per `render()` (three's
+`renderId` check), and it snapshots `( default texture, value )` into the item
+(`Renderable::texture_overrides`). `draw()` substitutes the snapshot when it
+resolves that item's bind groups. The renders happen in the same order and
+are submitted before the outer pass, and each draw sees the texture three's
+would.
+
+Because the graph only holds bindings, three's single module-level
+`_defaultRT` becomes one default target per reflector. That texture's id is
+how the renderer tells a reflector binding from any other texture. A
+thread-local registry maps the id to the reflector. The registry holds the
+reflector strongly, since in the port the material graph holds only the
+texture node. It drops a reflector once nothing but the reflector itself
+holds that default texture any more.
+
+A render nested inside another neither resets `renderer.info` nor starts a
+new frame (`Renderer::call_depth`). It is part of the frame around it.
+
+`RenderCamera::id()` was added because `virtualCameras` is a `WeakMap` keyed
+on the camera object. The virtual camera is taken out of its map for the
+length of its render, so a nested update of the same reflector cannot alias
+it.
+
+### 55.3 WGSL
+
+`dump_wgsl` sections `mirror_vertical` and `mirror_ground` match three's `m06`
+and `m08` statement for statement: `nodeVar0 = fragCoord.xy /
+render.nodeUniform1`, the sample at `vec2( 1.0 - nodeVar0.x, nodeVar0.y ) +
+offset` with no uv matrix, and the floor's `mix( vec4( white, 1 ), reflection,
+decal.w )`. The only difference is that the port parenthesises `( 1.0 -
+nodeVar0.x )`.
+
+### 55.4 Not ported
+
+`generateMipmaps`, `depth` (the reflector's `getDepthNode()`) and
+`reflector.forceUpdate` from outside are not ported, since no graded page
+uses them. The clip bias is 0, as in three.

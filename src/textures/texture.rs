@@ -427,6 +427,12 @@ impl Texture {
         self.1.get()
     }
 
+    /// How many handles share this texture — how the reflector registry
+    /// tells a reflector some graph still samples from one nothing does.
+    pub(crate) fn handle_count(&self) -> usize {
+        Rc::strong_count(&self.0)
+    }
+
     /// The handle's liveness, without the handle; see [`TextureOwner`].
     ///
     /// [`TextureOwner`]: super::TextureOwner

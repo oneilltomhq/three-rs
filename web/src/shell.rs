@@ -301,6 +301,7 @@ TexturesPartialupdate, webgpu_textures_partialupdate, "../../examples/webgpu_tex
 Layers, webgpu_layers, "../../examples/webgpu_layers.rs";
 LoaderGltfDiffuseRoughness, webgpu_loader_gltf_diffuse_roughness, "../../examples/webgpu_loader_gltf_diffuse_roughness.rs";
 CubemapMix, webgpu_cubemap_mix, "../../examples/webgpu_cubemap_mix.rs";
+Mirror, webgpu_mirror, "../../examples/webgpu_mirror.rs";
 }
 
 /// Where an example's assets come from: three.js at the commit this port is

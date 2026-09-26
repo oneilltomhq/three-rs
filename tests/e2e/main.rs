@@ -400,6 +400,10 @@ mod webgpu_materials_toon;
 #[allow(dead_code)]
 mod webgpu_occlusion;
 
+#[path = "../../examples/webgpu_mirror.rs"]
+#[allow(dead_code)]
+mod webgpu_mirror;
+
 #[path = "../../examples/webgpu_materials_alphahash.rs"]
 #[allow(dead_code)]
 mod webgpu_materials_alphahash;
@@ -2811,6 +2815,52 @@ fn webgpu_occlusion() {
     });
 }
 
+/// `reflector()`: a Phong box whose floor and back wall are planar mirrors,
+/// each rendering the scene from its mirrored camera into a half-float target
+/// before it is drawn. With `bounces` on, each mirror also renders inside the
+/// other's render, so the frame is five scene renders (`docs/nodes.md` §55).
+#[test]
+fn webgpu_mirror() {
+    let name = "webgpu_mirror";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_mirror::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_mirror::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_mirror::animate, |app| {
+        app.renderer.device()
+    });
+}
+
 /// `MeshToonNodeMaterial` through `toonOutlinePass()`: 216 toon spheres, each
 /// with a `RedFormat` `DataTexture` gradient ramp read by `textureLoad`,
 /// every one drawn twice — its back-side outline first — under an ambient
@@ -5187,6 +5237,7 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_tsl_angular_slicing);
     rung!(webgpu_fog_height);
     rung!(webgpu_shadowmap_opacity);
+    rung!(webgpu_mirror);
     rung!(webgpu_multiple_rendertargets);
     rung!(webgpu_multiple_rendertargets_readback);
 }

@@ -1789,6 +1789,24 @@ impl NodeRef {
         }
     }
 
+    /// `.flipX()` — `FlipNode` over the x component: `vec2( 1.0 - v.x, v.y )`.
+    /// Same var and same cosmetic parenthesisation as [`flip_y`](Self::flip_y);
+    /// `ReflectorNode`'s default uv, `screenUV.flipX()`, is the caller.
+    pub fn flip_x(&self) -> NodeRef {
+        let source = to_var(None, self.clone());
+        match self.ty() {
+            Type::Vec2 => vec2_join(vec![float(1.0).sub(source.x()), source.y()]),
+            Type::Vec3 => vec3_join(vec![float(1.0).sub(source.x()), source.y(), source.z()]),
+            Type::Vec4 => vec4_join(vec![
+                float(1.0).sub(source.x()),
+                source.y(),
+                source.z(),
+                source.w(),
+            ]),
+            ty => panic!("flipX() on a {ty:?}"),
+        }
+    }
+
     pub fn to_var(&self, name: &'static str) -> NodeRef {
         to_var(Some(name), self.clone())
     }
