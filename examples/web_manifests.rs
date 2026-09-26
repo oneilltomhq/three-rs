@@ -246,6 +246,9 @@ mod webgpu_modifier_curve;
 #[path = "webgpu_particles.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_particles;
+#[path = "webgpu_skinning_points.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_skinning_points;
 
 /// Every graded example, in the README's order, paired with a call of its
 /// `init()`.
@@ -399,6 +402,9 @@ const GRADED: &[(&str, fn())] = &[
         drop(webgpu_modifier_curve::init())
     }),
     ("webgpu_camera_array", || drop(webgpu_camera_array::init())),
+    ("webgpu_skinning_points", || {
+        drop(webgpu_skinning_points::init())
+    }),
 ];
 
 /// Where the committed manifests live, one `<example>.json` each.

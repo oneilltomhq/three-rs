@@ -296,6 +296,9 @@ mod webgpu_shadowmap_vsm;
 #[path = "../../examples/webgpu_skinning.rs"]
 #[allow(dead_code)]
 mod webgpu_skinning;
+#[path = "../../examples/webgpu_skinning_points.rs"]
+#[allow(dead_code)]
+mod webgpu_skinning_points;
 #[path = "../../examples/webgpu_tsl_galaxy.rs"]
 #[allow(dead_code)]
 mod webgpu_tsl_galaxy;
@@ -3582,6 +3585,48 @@ fn webgpu_skinning() {
     });
 }
 
+#[test]
+fn webgpu_skinning_points() {
+    let name = "webgpu_skinning_points";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_skinning_points::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_skinning_points::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_skinning_points::animate, |app| {
+        app.renderer.device()
+    });
+}
+
 /// Issue #56's "done when", as issue #67's counts: a steady frame builds and
 /// uploads *nothing*. Every graded rung is rendered three times; the first
 /// frame builds its programs and uploads its geometries and textures, and by
@@ -3707,6 +3752,7 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_furnace_test);
     rung!(webgpu_pmrem_scene);
     rung!(webgpu_skinning);
+    rung!(webgpu_skinning_points);
     // The batch rewrites its indirect texture every `onBeforeRender()` and its
     // matrices texture every `animateMeshes()`; three.js uploads the same two.
     rung!(webgpu_mesh_batch, 2);
