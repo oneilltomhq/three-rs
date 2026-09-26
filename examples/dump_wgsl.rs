@@ -2387,6 +2387,54 @@ fn dump_room_environment() {
         ..MeshBasicNodeMaterial::physical(Color::new(1.0, 1.0, 1.0), 0.1, 0.0)
     };
     show("clearcoat_golf", &golf, clearcoat_ctx());
+    // rung `webgpu_sprites`: one `SpriteNodeMaterial` on a `Sprite` (so
+    // `object.center` is read), rotated by `userData( 'rotation', 'float' )`,
+    // under `fog( color( 0x0000ff ), rangeFogFactor( 1500, 2100 ) )`. Against
+    // three's `m01` / `m02`.
+    let sprite_map = Texture::new(4, 4, Some(vec![0; 4 * 4 * 4]));
+    let sprite_texture = texture(&sprite_map);
+    let mut sprite_material = MeshBasicNodeMaterial::sprite();
+    sprite_material.color_node = Some(sprite_texture.mul(uv()).mul(2.0).saturate());
+    sprite_material.opacity_node = Some(sprite_texture.w());
+    sprite_material.rotation_node = Some(user_data("rotation", three_rs::nodes::Type::F32));
+    show_fog(
+        "sprites",
+        &sprite_material,
+        SetupContext {
+            sprite: true,
+            ..SetupContext::default()
+        },
+        Some(&fog(color(0x0000ff), range_fog_factor(1500.0, 2100.0))),
+    );
+    // rung `webgpu_instance_sprites`: `SpriteNodeMaterial( { map, alphaMap:
+    // map, alphaTest: 0.1 } )` on one `Sprite` of count 10000, placed by an
+    // instanced attribute and rotated by `time.add( instanceIndex ).sin()`,
+    // under `scene.fog = new FogExp2( … )`. Against three's `m01` / `m02`.
+    let snowflake = Texture::new(4, 4, Some(vec![0; 4 * 4 * 4]));
+    let mut instance_sprite = MeshBasicNodeMaterial::sprite();
+    instance_sprite.map = Some(snowflake.clone());
+    instance_sprite.alpha_map = Some(snowflake);
+    instance_sprite.alpha_test = 0.1;
+    instance_sprite.position_node = Some(instanced_data_attribute(
+        &std::rc::Rc::new(vec![0.0; 30]),
+        3,
+        0,
+        three_rs::nodes::Type::Vec3,
+    ));
+    instance_sprite.rotation_node = Some(time().add(instance_index()).sin());
+    instance_sprite.scale_node = Some(uniform_value(three_rs::nodes::Type::F32, vec![15.0]));
+    show_fog(
+        "instance_sprites",
+        &instance_sprite,
+        SetupContext {
+            sprite: true,
+            ..SetupContext::default()
+        },
+        Some(
+            &three_rs::SceneFog::from(three_rs::FogExp2::new(Color::from_hex(0x000000), 0.001))
+                .node(),
+        ),
+    );
     // `webgpu_textures_2d-array_compressed`: `new NodeMaterial()` with
     // `colorNode = texture( texturearray, uv().flipY() ).depth( depth )`.
     // The texture is a stand-in with the page's layer count; only its being

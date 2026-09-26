@@ -3781,3 +3781,82 @@ frustum holds it, and it is then drawn for every sub-camera.
   (multiview) path and its render-bundle path are not ported.
   `object.layers.test( subCamera.layers )` always passes, because the port
   has no layers.
+
+## 41. Sprites: `userData`, `Sprite.count`, and fog in the material's scope (`webgpu_sprites`, `webgpu_instance_sprites`)
+
+Both pages draw `SpriteNodeMaterial`, which the port already had for the
+galaxy and the particles (§33). What they add is small, but one piece of it
+is a correction to how every fog node was built.
+
+### 41.1 `userData( name, type )`
+
+`webgpu_sprites` gives two hundred `Sprite`s one material and sets
+`material.rotationNode = userData( 'rotation', 'float' )`. Each sprite's
+`userData.rotation` grows by a different step each frame. `UserDataNode` is a
+`ReferenceNode` whose reference is `frame.object.userData`, with
+`updateType = OBJECT`: an object-group `uniform()` rewritten before each draw.
+The port already had that shape as `uniform_object` (§19), so
+`tsl::user_data( name, ty )` is `uniform_object( ty, |object| … )` reading
+`object.user_data[ name ]`. `Object3D.user_data` is three's open `userData`
+object, a `serde_json::Map`. It is deep-copied on clone, as three's
+`JSON.parse( JSON.stringify( … ) )` copies it. All two hundred draws share one
+program and one pipeline, and each writes its own float into
+`object.nodeUniform4` (`nodeUniform3` in the port's numbering).
+
+### 41.2 Fog is built inside the material
+
+`Fog.js`' factors are `Fn()`s. `rangeFogFactor( near, far )` reads
+`getViewZNode( builder )`, which is `positionView.z` read **while the
+material is being built**. `positionView` is
+`builder.context.setupPositionView()`, and for a sprite that is
+`SpriteNodeMaterial.setupPositionView()`, the billboarded `vec4`. Three's
+sprite fragment therefore fogs by `v_positionView.xyz.z` of the one sprite
+varying.
+
+The port built the fog graph eagerly, when `scene.fogNode` (or `scene.fog`'s
+cached node) was made. That is outside any material, so the factor held the
+base class' `modelViewMatrix * positionLocal` varying. A sprite then carried
+a second `v_positionView` (a `vec3`, of the un-billboarded quad corner), and
+fogged by it. At `webgpu_sprites`' pinned time the group is not rotated, so
+the two depths agreed and the frame was already at 0 pixels. They part as
+soon as the group turns.
+
+`range_fog_factor`, `density_fog_factor` and `exponential_height_fog_factor`
+now return an inline, argument-less `Fn()` call. `NodeMaterial` setup runs
+its body, through `tsl::resolve_fog_factor`, inside the material's
+`with_material_position_view` scope, where `position_view()` is the
+material's own. For a mesh, the scope's `positionView` is the base class' pair,
+cached per context, so the node is the one it always was. The ladder's fog
+rungs are unchanged to the pixel. A factor used anywhere else is inlined by
+the builder with the base class' `positionView`, which is what it read
+before. The `_with_view_z` forms (§24) are unchanged: their view z is
+explicit.
+
+### 41.3 `Sprite.count`
+
+`webgpu_instance_sprites` draws ten thousand snowflakes as one `Sprite` with
+`count = 10000`. `positionNode` is an `instancedBufferAttribute` and
+`rotationNode` is `time.add( instanceIndex ).sin()`. `Sprite` gains three's
+`count` (default 1), and `Payload::count()` returns it, which is
+`RenderObject.getInstanceCount()`. The rest was in place: the instanced
+attribute's `stepMode: 'instance'` buffer, `instanceIndex` cast to `f32` in
+the add, `alphaMap` with its `vec4` product (§32.4), and `FogExp2`'s render-group
+uniforms (§28).
+
+### Divergences specific to this section
+
+* **`userData` reads a flat key on the render object.** three's
+  `ReferenceNode` walks a dotted path and also accepts an explicit
+  `userData` object in place of the render object's. The ladder uses neither.
+  A number or numeric array is read as the uniform's components. Anything
+  else, or a missing key, reads as zero, where three would write `undefined`.
+* **One uv-matrix uniform per texture, not per `texture()` node.**
+  `webgpu_instance_sprites` samples the snowflake twice, as `map` and as
+  `alphaMap`. Three's dump has two `mat3` members, `nodeUniform3` and
+  `nodeUniform5`, one per `TextureNode`. The port's `transformed_uv` keys the
+  member on the texture, so both samples read one member. The values are the
+  same matrix, so no pixel can differ.
+* The rest of the two pages' WGSL differs from the dumps only in §8's
+  classes: `let nodeConstN` against `var nodeVarN`, uniform numbering and
+  member order, and `@location` order. `dump_wgsl`'s `sprites` and
+  `instance_sprites` sections print it.

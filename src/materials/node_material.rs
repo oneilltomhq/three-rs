@@ -644,7 +644,9 @@ fn setup_inner(
                 mix(
                     output_property().xyz(),
                     fog.color.clone(),
-                    fog.factor.clone(),
+                    // Built now, inside this material's `setupPositionView`
+                    // scope, as three builds `Fog.js`' `Fn()` (§41).
+                    crate::nodes::tsl::resolve_fog_factor(&fog.factor),
                 ),
                 output_property().w(),
             ]);
