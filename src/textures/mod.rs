@@ -2,6 +2,7 @@
 
 use std::cell::Cell;
 
+mod compressed_texture;
 mod cube_depth_texture;
 mod cube_texture;
 mod data_array_texture;
@@ -14,7 +15,7 @@ pub use cube_texture::{ColorSpace, CubeTexture, CubeTextureInner, Image, Mapping
 pub use data_array_texture::{DataArrayTexture, DataArrayTextureInner};
 pub use data_texture::{DataTexture, DataTextureData, DataTextureInner};
 pub use depth_texture::{DepthTexture, DepthTextureInner, TextureFilter, TextureType};
-pub use texture::{MinFilter, Texture, TextureInner, Wrapping};
+pub use texture::{MinFilter, Mipmap, Texture, TextureInner, Wrapping};
 
 /// `Texture.id` — three.js' `_textureId ++`, shared by every texture class the
 /// port has, the way `Source`/`Texture` ids are one counter upstream.

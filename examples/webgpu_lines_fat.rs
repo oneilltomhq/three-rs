@@ -151,6 +151,7 @@ pub fn init() -> App {
     // units are off, so this is 5 screen pixels.
     mat_line.linewidth = 5.0;
     mat_line.vertex_colors = true;
+    mat_line.alpha_to_coverage = false;
 
     let line = Line2::new(&geometry, mat_line);
     // `line.computeLineDistances()` is skipped: `dashed` is false.

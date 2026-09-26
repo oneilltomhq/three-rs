@@ -157,6 +157,18 @@ mod webgpu_postprocessing_ssaa;
 #[allow(dead_code)]
 mod webgpu_postprocessing_ca;
 
+#[path = "../../examples/webgpu_postprocessing_transition.rs"]
+#[allow(dead_code)]
+mod webgpu_postprocessing_transition;
+
+#[path = "../../examples/webgpu_postprocessing_sobel.rs"]
+#[allow(dead_code)]
+mod webgpu_postprocessing_sobel;
+
+#[path = "../../examples/webgpu_procedural_texture.rs"]
+#[allow(dead_code)]
+mod webgpu_procedural_texture;
+
 #[path = "../../examples/webgpu_postprocessing_anamorphic.rs"]
 #[allow(dead_code)]
 mod webgpu_postprocessing_anamorphic;
@@ -214,6 +226,17 @@ mod webgpu_deferred;
 #[path = "../../examples/webgpu_loader_gltf_anisotropy.rs"]
 #[allow(dead_code)]
 mod webgpu_loader_gltf_anisotropy;
+#[path = "../../examples/webgpu_materials_texture_manualmipmap.rs"]
+#[allow(dead_code)]
+mod webgpu_materials_texture_manualmipmap;
+
+#[path = "../../examples/webgpu_tsl_angular_slicing.rs"]
+#[allow(dead_code)]
+mod webgpu_tsl_angular_slicing;
+
+#[path = "../../examples/webgpu_textures_2d-array_compressed.rs"]
+#[allow(dead_code)]
+mod webgpu_textures_2d_array_compressed;
 
 #[path = "../../examples/webgpu_lights_phong.rs"]
 #[allow(dead_code)]
@@ -232,6 +255,9 @@ mod webgpu_lights_physical;
 #[path = "../../examples/webgpu_lines_fat.rs"]
 #[allow(dead_code)]
 mod webgpu_lines_fat;
+#[path = "../../examples/webgpu_lines_fat_raycasting.rs"]
+#[allow(dead_code)]
+mod webgpu_lines_fat_raycasting;
 #[path = "../../examples/webgpu_mesh_batch.rs"]
 #[allow(dead_code)]
 mod webgpu_mesh_batch;
@@ -247,6 +273,13 @@ mod webgpu_tsl_galaxy;
 #[path = "../../examples/webgpu_tsl_interoperability.rs"]
 #[allow(dead_code)]
 mod webgpu_tsl_interoperability;
+#[path = "../../examples/webgpu_tsl_vfx_flames.rs"]
+#[allow(dead_code)]
+mod webgpu_tsl_vfx_flames;
+
+#[path = "../../examples/webgpu_tsl_raging_sea.rs"]
+#[allow(dead_code)]
+mod webgpu_tsl_raging_sea;
 
 fn three_js_dir() -> PathBuf {
     three_rs::testing::three_js_dir()
@@ -924,6 +957,138 @@ fn webgpu_postprocessing_ca() {
     });
 }
 
+#[test]
+fn webgpu_postprocessing_transition() {
+    let name = "webgpu_postprocessing_transition";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_postprocessing_transition::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_postprocessing_transition::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(
+        name,
+        &mut app,
+        webgpu_postprocessing_transition::animate,
+        |app| app.renderer.device(),
+    );
+}
+
+#[test]
+fn webgpu_postprocessing_sobel() {
+    let name = "webgpu_postprocessing_sobel";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_postprocessing_sobel::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_postprocessing_sobel::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(
+        name,
+        &mut app,
+        webgpu_postprocessing_sobel::animate,
+        |app| app.renderer.device(),
+    );
+}
+
+#[test]
+fn webgpu_procedural_texture() {
+    let name = "webgpu_procedural_texture";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_procedural_texture::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_procedural_texture::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_procedural_texture::animate, |app| {
+        app.renderer.device()
+    });
+}
+
 /// The fifty spheres, against
 /// `tests/fixtures/webgpu_postprocessing_bloom_selective/spheres_t0.json` —
 /// three.js' own `Color` / `Vector3` run in node under the e2e harness's
@@ -1252,6 +1417,58 @@ fn webgpu_lines_fat() {
     });
 }
 
+/// The world-units fat line: `Line2NodeMaterial`'s `worldUnits` branch with
+/// `alphaToCoverage` on a four-sample target, and a raycast from a pointer at
+/// infinity that must hit nothing (the marker spheres stay hidden).
+#[test]
+fn webgpu_lines_fat_raycasting() {
+    let name = "webgpu_lines_fat_raycasting";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_lines_fat_raycasting::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_lines_fat_raycasting::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+    assert!(
+        !app.sphere_inter.borrow().visible && !app.sphere_on_line.borrow().visible,
+        "a ray from ( Infinity, Infinity ) is NaN and hits nothing"
+    );
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(
+        name,
+        &mut app,
+        webgpu_lines_fat_raycasting::animate,
+        |app| app.renderer.device(),
+    );
+}
+
 #[test]
 fn webgpu_pmrem_cubemap() {
     let name = "webgpu_pmrem_cubemap";
@@ -1501,6 +1718,157 @@ fn webgpu_loader_gltf_anisotropy() {
         webgpu_loader_gltf_anisotropy::animate,
         |app| app.renderer.device(),
     );
+}
+
+/// `scene.fog` (issue #140) and page-supplied mip levels. Two scenes under
+/// `new THREE.Fog( 0x000000, 1500, 4000 )`, one per scissor half: the floor
+/// fades into the black background through the render-group fog uniforms,
+/// and its texture's eight hand-painted levels — one colour each — show which
+/// mip the sampler picks, linear-filtered on the left and
+/// `NearestMipmapNearest` on the right. A generated chain in place of the
+/// page's levels turns the red / green / blue bands grey.
+#[test]
+fn webgpu_materials_texture_manualmipmap() {
+    let name = "webgpu_materials_texture_manualmipmap";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_materials_texture_manualmipmap::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_materials_texture_manualmipmap::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(
+        name,
+        &mut app,
+        webgpu_materials_texture_manualmipmap::animate,
+        |app| app.renderer.device(),
+    );
+}
+
+/// A KTX2 `CompressedArrayTexture` (issue #172): the six-layer UASTC
+/// `spiritedaway.ktx2`, transcoded by `Ktx2Loader` for this adapter — BC7
+/// where the device has `TEXTURE_COMPRESSION_BC` — and sampled one layer at a
+/// time through a `texture_2d_array<f32>` binding. The layer is `1`, because
+/// the pinned clock gives the page's `depthStep` a zero delta. A wrong layer,
+/// a flipped uv or a mis-strided block upload each change most of the plane.
+#[test]
+fn webgpu_textures_2d_array_compressed() {
+    let name = "webgpu_textures_2d-array_compressed";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_textures_2d_array_compressed::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_textures_2d_array_compressed::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(
+        name,
+        &mut app,
+        webgpu_textures_2d_array_compressed::animate,
+        |app| app.renderer.device(),
+    );
+}
+
+/// Issue #139's rung: `gears.glb` is three Draco-compressed meshes, and the
+/// outer hull's `maskNode` cuts an angular wedge out of it — in the shadow
+/// pass too — while its `outputNode` paints the exposed back faces a flat
+/// colour. A decoder that got the Draco positions, normals or index wrong
+/// moves the whole silhouette; a missing mask in the shadow pass leaves the
+/// wedge's shadow on the plane.
+#[test]
+fn webgpu_tsl_angular_slicing() {
+    let name = "webgpu_tsl_angular_slicing";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_tsl_angular_slicing::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_tsl_angular_slicing::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_tsl_angular_slicing::animate, |app| {
+        app.renderer.device()
+    });
 }
 
 /// The gate on `pass.getViewZNode()`: the depth attachment of a **4×MSAA**
@@ -2345,6 +2713,95 @@ fn webgpu_tsl_galaxy() {
 }
 
 #[test]
+fn webgpu_tsl_vfx_flames() {
+    let name = "webgpu_tsl_vfx_flames";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_tsl_vfx_flames::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_tsl_vfx_flames::animate(&mut app);
+    println!("{name}: info {:?}", app.renderer.info());
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_tsl_vfx_flames::animate, |app| {
+        app.renderer.device()
+    });
+}
+
+#[test]
+fn webgpu_tsl_raging_sea() {
+    let name = "webgpu_tsl_raging_sea";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_tsl_raging_sea::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_tsl_raging_sea::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    // The draw calls and triangles the README's graded table records.
+    let info = app.renderer.info();
+    println!("{name}: info {info:?}");
+
+    steady_frame(name, &mut app, webgpu_tsl_raging_sea::animate, |app| {
+        app.renderer.device()
+    });
+}
+
+#[test]
 fn webgpu_tsl_interoperability() {
     let name = "webgpu_tsl_interoperability";
     let out = out_dir(name);
@@ -2681,6 +3138,8 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_morphtargets);
     rung!(webgpu_tsl_galaxy);
     rung!(webgpu_tsl_interoperability);
+    rung!(webgpu_tsl_vfx_flames);
+    rung!(webgpu_tsl_raging_sea);
     rung!(webgpu_shadowmap);
     rung!(webgpu_lights_physical);
     // The PMREM is built once, before the first frame; `update` is idempotent,
@@ -2697,12 +3156,19 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_mesh_batch, 2);
     rung!(webgpu_compute_points);
     rung!(webgpu_lines_fat);
+    rung!(webgpu_lines_fat_raycasting);
     rung!(webgpu_loader_gltf);
     rung!(webgpu_loader_gltf_sheen);
     rung!(webgpu_mrt);
     rung!(webgpu_custom_fog_background);
     rung!(webgpu_deferred);
     rung!(webgpu_loader_gltf_anisotropy);
+    rung!(webgpu_materials_texture_manualmipmap);
+    rung!(webgpu_postprocessing_transition);
+    rung!(webgpu_postprocessing_sobel);
+    rung!(webgpu_procedural_texture);
+    rung!(webgpu_textures_2d_array_compressed);
+    rung!(webgpu_tsl_angular_slicing);
 }
 
 // ---------------------------------------------------------------------------

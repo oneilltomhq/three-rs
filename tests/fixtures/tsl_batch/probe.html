@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>tsl batch probe</title>
+		<meta charset="utf-8">
+		<link type="text/css" rel="stylesheet" href="example.css">
+	</head>
+	<body>
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "../build/three.webgpu.js",
+					"three/webgpu": "../build/three.webgpu.js",
+					"three/tsl": "../build/three.tsl.js",
+					"three/addons/": "./jsm/"
+				}
+			}
+		</script>
+		<script type="module">
+
+			import * as THREE from 'three/webgpu';
+			import * as T from 'three/tsl';
+			const { Fn, uv, vec2, vec3, vec4, float, int, uint, bool, color, mat2, mat3, mat4, uvec2, uvec3, uvec4, ivec3, ivec4, bvec2, bvec3, bvec4,
+				PI, PI2, HALF_PI, EPSILON, INFINITY, TWO_PI,
+				atan, acos, asin, tan, round, trunc, degrees, radians, sinh, cosh, tanh, asinh, acosh, atanh,
+				hash, rand, triNoise3D, determinant, inverse, transpose,
+				pow2, pow3, pow4, difference, cbrt, faceForward, pcurve, gain, parabola, sinc, lengthSq,
+				xor, bitNot, increment, decrement, incrementBefore, decrementBefore, countOneBits, countTrailingZeros, countLeadingZeros,
+				floatBitsToInt, floatBitsToUint, intBitsToFloat, uintBitsToFloat,
+				oscTriangle, oscSquare, oscSawtooth, oscSine, rotateUV, spherizeUV, remap, remapClamp, deltaTime, frameId, time,
+				modelWorldMatrix, uniform, mod, smoothstep, step, positionLocal } = T;
+
+			const probes = [];
+			const probe = ( name, build ) => probes.push( [ name, build ] );
+
+			const x = () => uv().x;
+			const y = () => uv().y;
+
+			probe( 'constructors_color', () => vec4( color( 0xff8000 ).add( color( 0.25, 0.5, 0.75 ) ), 1 ) );
+			probe( 'constructors_int_vectors', () => vec4( vec3( uvec3( 1, 2, 3 ) ).add( vec3( ivec3( - 1, 2, - 3 ) ) ).add( vec3( uvec3( x().mul( 10 ) ) ) ), float( ivec4( 1, 2, 3, 4 ).w ) ) );
+			probe( 'constructors_uvec_join', () => vec4( vec2( uvec2( x().mul( 4 ), y().mul( 4 ) ) ), float( uvec4( 1, 2, 3, 4 ).z ), 1 ) );
+			probe( 'constructors_bool_vectors', () => vec4( vec2( bvec2( x.call().greaterThan( 0.5 ), true ) ), vec2( bvec3( true, false, y().lessThan( 0.5 ) ).xy ) ).add( float( bool( x().greaterThan( y() ) ) ) ).add( vec4( bvec4( true, false, true, false ) ) ) );
+			probe( 'constructors_matrices', () => vec4( mat3( modelWorldMatrix ).mul( vec3( uv(), 1 ) ), 1 ).add( vec4( mat2( 1, 2, 3, 4 ).mul( uv() ), 0, 0 ) ) );
+			probe( 'constants', () => vec4( x().mul( PI ), x().mul( PI2 ), x().mul( HALF_PI ), x().add( EPSILON ).min( INFINITY ) ) );
+			probe( 'trig', () => vec4( atan( x() ).add( acos( x() ) ).add( asin( x() ) ).add( tan( x() ) ), sinh( x() ).add( cosh( x() ) ).add( tanh( x() ) ), asinh( x() ).add( acosh( x().add( 1 ) ) ).add( atanh( x().mul( 0.5 ) ) ), round( x() ).add( trunc( y() ) ).add( degrees( x() ) ).add( radians( y() ) ) ) );
+			probe( 'trig_methods', () => vec4( uv().atan(), uv().tan(), 1 ) );
+			probe( 'matrices', () => {
+				const m2 = mat2( x(), y(), 0.5, 1 );
+				const m3 = mat3( modelWorldMatrix );
+				return vec4( inverse( m2 ).mul( uv() ), determinant( m3 ), 1 ).add( vec4( transpose( m3 ).mul( vec3( uv(), 1 ) ), 1 ) ).add( inverse( modelWorldMatrix ).mul( vec4( uv(), 0, 1 ) ) ).add( vec4( inverse( m3 ).mul( vec3( uv(), 1 ) ), 1 ) );
+			} );
+			probe( 'powers', () => vec4( pow2( x() ), pow3( y() ), pow4( x() ), difference( x(), y() ).add( cbrt( x() ) ).add( lengthSq( uv() ) ) ) );
+			probe( 'face_forward', () => vec4( faceForward( vec3( uv(), 1 ), vec3( 0, 0, 1 ), vec3( y(), x(), 0.5 ) ), 1 ) );
+			probe( 'shaping', () => vec4( pcurve( x(), 2, 3 ), gain( x(), 2 ), parabola( y(), 2 ), sinc( x(), float( 3 ) ) ) );
+			probe( 'bits', () => {
+				const i = int( x().mul( 100 ) );
+				const u = uint( y().mul( 100 ) );
+				return vec4( float( xor( x().greaterThan( 0.5 ), y().greaterThan( 0.5 ) ) ), float( bitNot( i ) ), float( countOneBits( u ).add( countTrailingZeros( u ) ).add( countLeadingZeros( u ) ) ), 1 );
+			} );
+			probe( 'bitcast', () => vec4( float( floatBitsToInt( x() ) ), float( floatBitsToUint( y() ) ), intBitsToFloat( int( x().mul( 10 ) ) ), uintBitsToFloat( uint( y().mul( 10 ) ) ) ) );
+			probe( 'increment', Fn( () => {
+				const i = int( x().mul( 10 ) ).toVar();
+				const a = increment( i );
+				const b = decrement( i );
+				const c = incrementBefore( i );
+				const d = decrementBefore( i );
+				return vec4( float( a ), float( b ), float( c ), float( d ) );
+			} ) );
+			probe( 'hash_rand', () => vec4( hash( x().mul( 100 ) ), rand( uv() ), 0, 1 ) );
+			probe( 'tri_noise_3d', () => vec4( vec3( triNoise3D( vec3( uv(), 0.5 ), 1, time ) ), 1 ) );
+			probe( 'oscillators', () => vec4( oscTriangle(), oscSquare(), oscSawtooth( x() ), oscSine() ) );
+			probe( 'uv_utils', () => vec4( rotateUV( uv(), time ), spherizeUV( uv(), 10 ) ) );
+			probe( 'remap', () => vec4( x().remap( 0.2, 0.8 ), x().remapClamp( 0.2, 0.8, 1, 2 ), remap( y(), 0, 1, 2, 3 ), remapClamp( y(), 0.1, 0.9 ) ) );
+			probe( 'timer', () => vec4( deltaTime, float( frameId ), time, 1 ) );
+			probe( 'mod', () => vec4( uv().mod( 0.5 ), x().mod( 0.25 ), float( int( x().mul( 10 ) ).mod( 3 ) ) ).add( vec4( vec3( uv(), 1 ).mod( vec3( 0.5 ) ), 1 ) ).add( vec4( uv(), 0, 1 ).mod( 1 ) ) );
+			probe( 'element_forms', () => vec4( x().smoothstep( 0.2, 0.8 ), y().step( 0.5 ), smoothstep( 0, 1, uv() ) ) );
+
+			init();
+
+			async function init() {
+
+				const camera = new THREE.PerspectiveCamera( 50, window.innerWidth / window.innerHeight, 0.1, 100 );
+				camera.position.set( 0, 0, 10 );
+
+				const scene = new THREE.Scene();
+
+				const geometry = new THREE.PlaneGeometry( 0.5, 0.5 );
+
+				probes.forEach( ( [ name, build ], index ) => {
+
+					const material = new THREE.MeshBasicNodeMaterial();
+					material.name = name;
+					material.fragmentNode = build();
+					const mesh = new THREE.Mesh( geometry, material );
+					mesh.position.x = ( index % 6 ) - 2.5;
+					mesh.position.y = Math.floor( index / 6 ) - 2;
+					mesh.renderOrder = index;
+					scene.add( mesh );
+
+				} );
+
+				const renderer = new THREE.WebGPURenderer();
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				document.body.appendChild( renderer.domElement );
+				await renderer.init();
+				renderer.setAnimationLoop( () => renderer.render( scene, camera ) );
+
+			}
+
+		</script>
+	</body>
+</html>

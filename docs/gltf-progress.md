@@ -88,9 +88,32 @@ too because it exercises two skins and a split mesh.
    between primitives and the task's "groups when a primitive is split" follows
    from that. Not ported; each primitive gets its own geometry and its own child
    node named `<mesh>_<i>`.
-5. Not ported at all: extensions (`KHR_*`, Draco, meshopt), cameras, lights,
+5. Not ported at all: extensions other than `SUPPORTED_EXTENSIONS` (WebP/AVIF
+   textures), cameras, lights,
    `GLTFMeshStandardSGMaterial`, `Mesh`/`Points`/`Line` modes (everything is
    treated as `TRIANGLES`).
+6. **meshopt** (`EXT_meshopt_compression`, issue #173): a compressed bufferView
+   is decoded the first time it is read, by `src/loaders/meshopt.rs`: the
+   vertex and index codecs from the `meshopt-rs` crate, the four filters ported
+   from meshoptimizer 1.1's SIMD kernels (the crate's quaternion filter is
+   wrong and its others are the scalar variants; the module header has the
+   numbers). `KHR_mesh_quantization`, which both meshopt assets also require,
+   needs nothing more than the accessor reading already does.
+   `tests/gltf_meshopt.rs` compares `coffeemat.glb` and `facecap.glb` (the only
+   two meshopt assets in the examples) with three.js' `MeshoptDecoder`, run
+   under node by `tools/meshopt_reference.mjs`: every compressed bufferView
+   byte for byte, every accessor, and every built primitive. It also sweeps
+   the filters and the `INDICES` mode, which the assets do not reach, against
+   the same decoder. Both assets also need `KHR_texture_basisu`, which
+   `Ktx2Loader` (issue #172) now reads; neither graded example that uses them
+   (`webgpu_loader_gltf_compressed`, `webgpu_morphtargets_face`) is ported yet.
+7. **Draco** (`KHR_draco_mesh_compression`, issue #139): decoded with the
+   `draco-core` crate, then turned into the typed arrays `DRACOLoader` hands
+   `GLTFLoader` by `src/loaders/draco.rs`. `tests/gltf_draco.rs` compares
+   every Draco asset in the three.js examples with `DRACOLoader` itself, run
+   under node by `tools/draco_reference.mjs`; all fifteen match bit for bit.
+   Seven of them (the WebP, AVIF and Basis ones) still stop at load on their
+   texture extension.
 
 ## Running the tests
 

@@ -48,6 +48,9 @@ pub struct RenderState {
     /// `_getPrimitiveState()`: set only for an indexed `Line` that is not a
     /// `LineSegments`, from the index array's type.
     pub strip_index_format: Option<wgpu::IndexFormat>,
+    /// `WebGPUPipelineUtils.createRenderPipeline()`'s
+    /// `alphaToCoverageEnabled: material.alphaToCoverage && samples > 1`.
+    pub alpha_to_coverage: bool,
 }
 
 /// How many colour attachments past the first a pass may have here.
@@ -256,7 +259,7 @@ impl Program {
             multisample: wgpu::MultisampleState {
                 count: state.sample_count,
                 mask: !0,
-                alpha_to_coverage_enabled: false,
+                alpha_to_coverage_enabled: state.alpha_to_coverage,
             },
             multiview_mask: None,
             cache: None,
@@ -321,7 +324,9 @@ fn layout_entry(binding: u32, desc: &BindingDesc) -> wgpu::BindGroupLayoutEntry 
                 },
                 view_dimension: match kind {
                     TextureKind::Cube | TextureKind::DepthCube => wgpu::TextureViewDimension::Cube,
-                    TextureKind::Float2DArray => wgpu::TextureViewDimension::D2Array,
+                    TextureKind::Float2DArray | TextureKind::Sampled2DArray => {
+                        wgpu::TextureViewDimension::D2Array
+                    }
                     _ => wgpu::TextureViewDimension::D2,
                 },
                 multisampled: matches!(kind, TextureKind::DepthMultisampled2D),
@@ -489,6 +494,13 @@ pub struct UniformContext<'a> {
     pub background_rotation: Matrix4,
     pub background_blurriness: f64,
     pub background_intensity: f64,
+    /// `scene.fog`'s colour (working space), `near`, `far` and `density` —
+    /// whichever the fog kind has; the rest keep their defaults and are never
+    /// read, because the other kind's node does not reference them.
+    pub fog_color: Color,
+    pub fog_near: f64,
+    pub fog_far: f64,
+    pub fog_density: f64,
     /// `viewportSize` — the bound target's dimensions.
     pub viewport_size: Vector2,
     /// `viewport` — `( x, y, width, height )` of the pass rectangle, in
@@ -497,6 +509,9 @@ pub struct UniformContext<'a> {
     /// `screenDPR` — `renderer.getPixelRatio()`.
     pub screen_dpr: f64,
     pub time: f64,
+    /// `NodeFrame.deltaTime` / `NodeFrame.frameId`.
+    pub delta_time: f64,
+    pub frame_id: u32,
     /// `renderer.toneMappingExposure`.
     pub tone_mapping_exposure: f64,
     /// The lights of the pass, in `Scene.lights` order. Borrowed so the context
@@ -509,6 +524,9 @@ pub struct UniformContext<'a> {
     /// `SkinnedMesh.bindMatrix` / `.bindMatrixInverse`.
     pub bind_matrix: Matrix4,
     pub bind_matrix_inverse: Matrix4,
+    /// `Sprite.center`, for `SpriteNodeMaterial`'s
+    /// `reference( 'center', 'vec2', object )`.
+    pub object_center: Vector2,
     /// `skeleton.boneMatrices` — the flat `mat4` array the bone buffer holds,
     /// already updated for this frame.
     pub bone_matrices: &'a [f32],
@@ -562,16 +580,23 @@ impl Default for UniformContext<'_> {
             background_rotation: Matrix4::identity(),
             background_blurriness: 0.0,
             background_intensity: 1.0,
+            fog_color: Color::new(1.0, 1.0, 1.0),
+            fog_near: 1.0,
+            fog_far: 1000.0,
+            fog_density: 0.00025,
             viewport_size: Vector2::new(0.0, 0.0),
             viewport: Vector4::new(0.0, 0.0, 0.0, 0.0),
             screen_dpr: 1.0,
             time: 0.0,
+            delta_time: 0.0,
+            frame_id: 0,
             tone_mapping_exposure: 1.0,
             lights: &[],
             morph_base: 1.0,
             morph_influences: &[],
             bind_matrix: Matrix4::identity(),
             bind_matrix_inverse: Matrix4::identity(),
+            object_center: Vector2::new(0.5, 0.5),
             bone_matrices: &[],
             object: None,
         }
@@ -696,7 +721,19 @@ impl UniformContext<'_> {
                 }
                 UniformSource::BackgroundBlurriness => vec![self.background_blurriness as f32],
                 UniformSource::BackgroundIntensity => vec![self.background_intensity as f32],
+                UniformSource::FogColor => vec![
+                    self.fog_color.r as f32,
+                    self.fog_color.g as f32,
+                    self.fog_color.b as f32,
+                ],
+                UniformSource::FogNear => vec![self.fog_near as f32],
+                UniformSource::FogFar => vec![self.fog_far as f32],
+                UniformSource::FogDensity => vec![self.fog_density as f32],
                 UniformSource::Time => vec![self.time as f32],
+                UniformSource::DeltaTime => vec![self.delta_time as f32],
+                // A `u32` member: written as its integer bits below, exact
+                // for the first 2^24 frames.
+                UniformSource::FrameId => vec![self.frame_id as f32],
                 UniformSource::ViewportSize => {
                     vec![self.viewport_size.x as f32, self.viewport_size.y as f32]
                 }
@@ -731,6 +768,9 @@ impl UniformContext<'_> {
                 UniformSource::BindMatrix => self.bind_matrix.to_f32_array().to_vec(),
                 UniformSource::BindMatrixInverse => {
                     self.bind_matrix_inverse.to_f32_array().to_vec()
+                }
+                UniformSource::ObjectCenter => {
+                    vec![self.object_center.x as f32, self.object_center.y as f32]
                 }
                 UniformSource::LightTargetPosition(i) => {
                     let p = self.lights[*i].target_position;
@@ -786,12 +826,12 @@ impl UniformContext<'_> {
             // is what says how to write them. Exact for magnitudes below 2^24,
             // which is every count a `dispatchWorkgroups` limit of 65535 groups
             // of 64 can reach anyway.
-            if member.ty == Type::U32 {
+            if member.ty.component_type() == Type::U32 {
                 let raw: Vec<u32> = values.iter().map(|&v| v as u32).collect();
                 data[offset..offset + raw.len() * 4].copy_from_slice(bytemuck::cast_slice(&raw));
                 continue;
             }
-            if member.ty == Type::I32 {
+            if member.ty.component_type() == Type::I32 {
                 let raw: Vec<i32> = values.iter().map(|&v| v as i32).collect();
                 data[offset..offset + raw.len() * 4].copy_from_slice(bytemuck::cast_slice(&raw));
                 continue;
