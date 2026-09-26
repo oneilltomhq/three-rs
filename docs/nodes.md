@@ -4155,6 +4155,96 @@ needs the transmission pass's context. The graded pixels cover it.
 * **No `shadow.autoUpdate`.** The page renders the shadow map once
   (`autoUpdate = false`, `needsUpdate = true`). The port renders it every
   frame. Nothing in the scene moves, so every frame renders the same map.
+
+## 52. `renderer.setMRT()` on a user render target (`webgpu_multiple_rendertargets`, `webgpu_multiple_rendertargets_readback`)
+
+Both pages draw a hardwood-textured torus knot into a two-attachment
+`RenderTarget` of their own, `{ output, normal: normalWorld }`, and composite
+the two attachments side by side at `screenUV.x = 0.5`. Before them, every
+MRT on the ladder went through a `pass()` node (`webgpu_mrt`, `webgpu_deferred`,
+the bloom pages), which names its attachments itself. Here the page does.
+
+### 52.1 What three does
+
+* **`count`.** `new RenderTarget( w, h, { count: 2 } )` clones
+  `renderTarget.texture` once; the clone has the target's size, type and
+  filters and an empty `name`. The page then sets `textures[ 0 ].name =
+  'output'` and `textures[ 1 ].name = 'normal'`.
+* **The names are the whole contract.** `MRTNode.setup()` looks every output
+  name up in `renderer.getRenderTarget().textures` by `name`
+  (`getTextureIndex()`), and skips a name it does not find ("Ignore if the
+  output exists in the MRT but has never been used"). The readback page's
+  512² `readbackTarget` is `{ count: 2 }` and its textures are never named.
+  The graded frame is `'mrt'` and never renders into that target, so the dump
+  does not show what three writes to it.
+* **The clear value per attachment.** `WebGPUBackend.beginRender()` clears
+  attachment 0 to `renderContext.clearColorValue` and every other attachment
+  to `( 0, 0, 0, 1 )`, unless `MRTNode.setClearColor()` names one. The
+  `normal` half of both pages is black off the knot for this reason: the
+  scene's `0x222222` is only ever written into attachment 0.
+* **What lands in `normal`.** `vec4( normalWorld, 1.0 )` into `rgba8unorm`,
+  so every negative component clamps to 0. The attachments are the default
+  `UnsignedByteType`, whatever the page's "Float buffers" comment says, and
+  single-sampled: `antialias` does not reach a user render target.
+* **`NearestFilter` both ways** makes both attachments unfilterable: the
+  composite has no sampler and reads them with `textureLoad` (§23).
+* **Where the canvas transform runs.** The first page composites through a
+  `RenderPipeline`, so the sRGB transform is inline in the quad's shader
+  (three's `m04_fragment_fragment_RenderPipeline`). The readback page uses a
+  `QuadMesh` with a bare `NodeMaterial`, so under `antialias: true` the quad
+  draws into the 4x `rgba16float` framebuffer target and a separate
+  `outputColorTransform` pass follows (`m05` / `m06`).
+
+### 52.2 What the port adds
+
+* `RenderTarget::set_count()` and `RenderTarget::set_texture_name()`. They
+  are setters, like `set_rg_format()`, so that `RenderTargetOptions` literals
+  across the tree do not change. Attachment 0 is always `output` in this port,
+  because the name lives on the target and not the texture. Naming it anything
+  else panics, where it would otherwise silently leave `mrt( { output } )`
+  unwritten.
+* `record_pass()` now clears the extra attachments to `( 0, 0, 0, 1 )` rather
+  than to the pass's clear colour. That was wrong since MRT first landed, and
+  no rung could see it: `webgpu_mrt` has a skybox over every pixel, and the
+  bloom and deferred passes clear to black or read only where geometry is.
+  Without it the first page was at 42120 pixels, the whole right half.
+* `Renderer::read_render_target_pixels( target, x, y, width, height,
+  texture_index )` is `readRenderTargetPixelsAsync`. It blocks, as every
+  native readback here does. It copies the whole attachment and cuts the
+  rectangle out on the CPU, which costs more but gives the same bytes.
+  `faceIndex` is not taken.
+* `Texture::data_rgba8()` is `new DataTexture( Uint8Array, w, h )` with its
+  own defaults: `flipY = false`, no mipmaps, `NearestFilter` both ways. The
+  readback page's `pixelBufferTexture.image.data = …; needsUpdate = true` is
+  `Texture::set_data()`.
+
+### 52.3 Checked against
+
+`dump_wgsl`'s `multiple_rendertargets_knot` against three's `m02`, and
+`multiple_rendertargets_composite` against `m04_fragment_fragment_RenderPipeline`.
+Both pages dump the same `m01` / `m02`. The composite matches line for line up
+to the naming classes in §8 (`let nodeConstN` against `nodeVarN`, member
+order). The two `textureLoad`s, the clamp-wrapping helpers, the
+`fragCoord.xy / render.nodeUniform4` screen UV and the inline sRGB tail all
+match exactly.
+
+### 52.4 Divergences specific to this section
+
+* **The knot's `NORMAL_normalView`.** Three's `m02` reads `normalWorld`
+  through `normalViewGeometry → NORMAL_normalView → normalView`. The port's
+  unlit material, which stands in for the bare `NodeMaterial` as in
+  `webgpu_textures_2d-array_compressed`, goes `normalViewGeometry →
+  normalView` without the `NORMAL` sub-build's copy. It is the same value,
+  one private var shorter.
+* **The readback branch is not graded,** and neither is the Inspector
+  dropdown that reaches it. `App::options` is the dropdown. The example's
+  `main()` takes `THREE_RS_SELECTION=diffuse|normal`, so the branch can be
+  looked at. In the port, `'diffuse'` shows the knot, because attachment 0
+  answers to `output` whatever the page calls it. `'normal'` is black: the
+  unnamed attachment 1 gets only its `( 0, 0, 0, 1 )` clear, which is what
+  `getTextureIndex()` implies. Whether three's attachment 0, whose name is
+  empty, also stays unwritten there has not been checked against a dump of
+  that mode.
 ## 44. Explicit-gradient and gathered taps, and two canvases on one (`webgpu_texturegrad`, `webgpu_texturegather`)
 
 `textureNode.grad( gradX, gradY )` is `SampleMode::Grad( grad_x, grad_y )`,
@@ -4895,3 +4985,162 @@ after `PointsNodeMaterial::points()`. `webgpu_postprocessing_ca` also passes a
 legacy `PointsMaterial` but keeps `transparent`. That rung is green, and it
 was not changed here. Moving it to the opaque list would be a separate
 change, checked against that page's own dump.
+
+## 58. `webgpu_multisampled_renderbuffers`, an ignored rung on §50's wireframe
+
+The page draws two `InstancedMesh`es of fifty boxes, one with `wireframe: true`,
+into a `RenderTarget` with `samples: 4`, then shows `renderTarget.texture`
+through a `QuadMesh`. Both halves already exist in the port. The multisampled
+target (an MSAA colour attachment resolved into `rgba8unorm`, and a
+multisampled `depth24plus`) is the existing `RenderTarget` path. The wireframe
+is §50.2's `Material.wireframe` from `webgpu_layers`. The rung adds no API.
+
+Two details of three's wireframe that §50.2 leaves out do not reach this page:
+
+* `NodeBuilder.isFlatShading()` is `flatShading && !wireframe`, but
+  `MeshBasicMaterial` has no flat shading to turn off.
+* The index is `uint16` below 65535 vertices in three and always `uint32` in
+  the port. The format does not change which lines are drawn.
+
+**Why the rung is ignored.** Three itself scores 2405 of 100000 pixels against
+`screenshots/webgpu_multisampled_renderbuffers.jpg` on this machine (Intel Iris
+Xe, Mesa 25.3.6). Every one of those pixels is on a wireframe line: Vulkan
+leaves line rasterization to the implementation, and the reference came from
+another GPU. The port's frame is measured against three's own frame for the
+page (`tools/dump-webgpu.mjs`), and
+`docs/webgpu_multisampled_renderbuffers-progress.md` gives the counts. As with
+`webgpu_textures_anisotropy`, the e2e test is `#[ignore]`d with that reason and
+the page stays in the steady-frame strip. It has no README, web or viewer
+registration, and the grader is not loosened.
+## 54. The EON diffuse lobe and `KHR_materials_diffuse_roughness` (`webgpu_loader_gltf_diffuse_roughness`)
+
+`MeshPhysicalMaterial.diffuseRoughness` turns the Lambert diffuse lobe into
+the Energy-preserving Oren-Nayar lobe (Portsmouth et al. 2025), as
+`BRDF_EON.js` implements it. `webgpu_loader_gltf_diffuse_roughness` loads
+Khronos' `DiffuseRoughnessParameterSweep.glb` under a PMREM of
+`RoomEnvironment`. It is a grid of spheres whose
+`KHR_materials_diffuse_roughness.diffuseRoughnessFactor` runs from 0 to 1.
+
+### 54.1 What three does, and what the port does
+
+* **`useDiffuseRoughness`.** `MeshPhysicalNodeMaterial` sets it when
+  `diffuseRoughness > 0` (or there is a `diffuseRoughnessMap`).
+  `setupVariants()` then writes the `DiffuseRoughness` property from the
+  clamped `materialDiffuseRoughness` uniform. The port writes it in the same
+  place, just before the clearcoat assignments, through
+  `tsl::diffuse_roughness()` and `tsl::material_diffuse_roughness()`
+  (`UniformSource::MaterialDiffuseRoughness`, object group).
+* **`PhysicalLightingModel`.** With the flag on, three changes three terms:
+  * `direct()` uses `BRDF_EON( lightDirection, diffuseColor, roughness )`
+    times `1 - metalness` in place of `BRDF_Lambert`.
+  * `indirectDiffuse()` scales irradiance by `EON_DirectionalAlbedo( ... )`
+    / π in place of `diffuseColor`.
+  * `indirectSpecular()` uses the same albedo where it would use
+    `diffuseContribution`.
+
+  `physical::Physical` gains a `diffuse_roughness` flag. It picks
+  `brdf_eon()` and `eon_diffuse_albedo()` at the same three points.
+* **The constants.** `FON_A = 1/2 - 2/(3π)`, `FON_AVG = 2/3 - 28/(15π)` and
+  the `1e-7` epsilon are written to the same digits as three's, so the dump
+  diffs clean.
+* **`rho ≤ ε` falls back to Lambert.** Three does this through a
+  `select()`, which the port writes as its usual if/else into a var.
+* **`GLTFLoader`.** `GLTFMaterialsDiffuseRoughnessExtension` reads
+  `diffuseRoughnessFactor` (default 0). Like the other physical extensions,
+  its presence promotes the material to `MeshPhysicalMaterial` whatever the
+  factor.
+
+### 54.2 The page's winding flip
+
+The page walks the scene and swaps index `i + 1` and `i + 2` of every
+triangle, because "the draft sample asset currently uses clockwise triangle
+winding". The port does the same with `Index::set_x` on a clone of each
+distinct geometry. It keys a map by pointer, so a geometry shared by several
+meshes is flipped once, as three's loop does through its `Set` of visited
+geometries.
+
+### 54.3 Checked against three's dump
+
+`dump_wgsl`'s `gltf_diffuse_roughness_on` was diffed against three's
+fragment shader for the sweep's material. The `DiffuseRoughness` assignment
+comes in the same place, the two EON `if/else` blocks (direct and
+directional albedo) have the same arithmetic and constants, and the
+uniform order is the same (`diffuseRoughness` is `nodeUniform9` in both).
+`gltf_diffuse_roughness_zero` is the Lambert shader, unchanged.
+
+### 54.4 Divergences
+
+* **`diffuseRoughnessMap` is not ported.** Nothing on the ladder has one.
+  The loader reads only the factor and says so in a comment.
+* **A hoisted temp.** In the `rho > ε` branch the port writes
+  `nodeVar7 = clamp(...); nodeVar6 = nodeVar7;` where three assigns
+  directly. The value is the same.
+* **`indirectDiffuse`'s `diffuse` is inlined.** Three makes it a `toVar()`.
+  This divergence was already there.
+* **The grader cannot see the lobe.** The page grades at 0 pixels with the
+  EON lobe switched off as well, because pixelmatch's 0.1 YIQ threshold is
+  wider than anything the lobe moves. With it on, the frame differs from the
+  Lambert frame by up to 15 levels in 255 over about 73000 pixels. Against
+  three's `expected.jpg`, the mean absolute error in the sphere grid is
+  1.35 levels with EON and 3.60 without. So the lobe is checked by the dump
+  and by that measurement, not by the pixel count.
+
+### 54.5 `scene.environmentNode` as a graph (`webgpu_cubemap_mix`)
+
+`webgpu_cubemap_mix` sets `scene.environmentNode` to
+`mix( pmremTexture( cube2 ), pmremTexture( cube1 ), oscSine( time.mul( .1 ) ) )`,
+and `scene.backgroundNode` to the same node with `.context( { getTextureLevel:
+() => float( .5 ) } )`.
+
+Both `pmremTexture()` calls have no UV and no level of their own.
+`PMREMNode.setup()` takes them from the build context:
+* `EnvironmentNode.setup()` builds the whole graph twice, once under
+  `createRadianceContext()` (the reflect vector, `roughness`) and once under
+  `createIrradianceContext()` (`normalWorld`, 1). With a clearcoat it builds
+  it a third time.
+* `Background.update()` builds it under `backgroundRotation.mul(
+  normalWorldGeometry )` and `backgroundBlurriness`.
+* The inner `.context()` wins over both for the level.
+
+The port has no node context. Before this page the environment was always a
+`PmremHandle`, and `environment::setup` called its `sample( uv, level )`
+directly. Now the environment is one of two things:
+
+* `environment::EnvironmentNode`: an `Rc<dyn Fn( uv, level ) -> NodeRef>`
+  with an identity. It is the graph as a function of the two values the
+  context would supply, and the page's closure calls `PmremHandle::sample`
+  for each `pmremTexture()` leaf. `with_texture_level( level )` is
+  `.context( { getTextureLevel } )`, and it is a new node, as `.context()`
+  is.
+* `environment::Environment`, which is `Pmrem( PmremHandle )` or
+  `Node( EnvironmentNode )`. `SetupContext::environment` and
+  `environment::setup` take it.
+
+`Scene::environment_node` is `scene.environmentNode`, and it wins over
+`Scene::environment` as `NodeManager.getEnvironmentNode()` does.
+`Background::EnvironmentNode` is the background case, which
+`background_environment_color_node()` builds. Both are keyed by the node's
+identity, as `Background::Node` is.
+
+Each call of the closure builds the graph again, which matches the dump:
+three's `m10` repeats the `mix` and the `oscSine` for `radiance` and for
+`iblIrradiance`, and so does the port's `cubemap_mix_material`.
+
+### 54.6 `webgpu_cubemap_mix`: checked against
+
+* **`cubemap_mix_background` against `m08`.** It has the same two
+  `textureSampleLevel`s, each with its own `materialEnvRotation` multiply and
+  its own `clamp( 0.5 )`, and the same `mix` and `sin`. The only difference
+  is that the port computes `backgroundRotation * vec4( normalWorldGeometry,
+  1 )` once and shares it between the two reads. Three calls `getUV()` once
+  per leaf and repeats it. The value is the same.
+* **`cubemap_mix_material` against `m10`'s environment half.** The reflect
+  vector is shared by both radiance reads and each read rotates it itself,
+  as three does (`nodeConst12`, then `nodeConst13` and `nodeConst15`). The
+  irradiance reads are the same.
+
+### 54.7 Divergences specific to `webgpu_cubemap_mix`
+
+* **The graded frame shows one cube.** The harness pins `time` to 0, where
+  `oscSine` is 0, so the mix is all `cube2`, the Milky Way. The Pisa cube's
+  PMREM is still generated and sampled, but it gets weight 0.

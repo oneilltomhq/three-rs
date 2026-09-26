@@ -280,6 +280,139 @@ fn sheen_energy_comp(albedo: NodeRef) -> NodeRef {
         .one_minus()
 }
 
+// ---------------------------------------------------------------------------
+// BRDF_EON.js — Portsmouth et al. 2025, "EON: A Practical Energy-Preserving
+// Rough Diffuse BRDF", https://jcgt.org/published/0014/01/06/
+// ---------------------------------------------------------------------------
+
+/// `EON_EPSILON`.
+const EON_EPSILON: f64 = 1e-7;
+/// `FON_A_COEFFICIENT` — `0.5 - 2 / ( 3 * Math.PI )`.
+const FON_A_COEFFICIENT: f64 = 0.5 - 2.0 / (3.0 * std::f64::consts::PI);
+/// `FON_AVERAGE_ALBEDO_COEFFICIENT` — `2 / 3 - 28 / ( 15 * Math.PI )`.
+const FON_AVERAGE_ALBEDO_COEFFICIENT: f64 = 2.0 / 3.0 - 28.0 / (15.0 * std::f64::consts::PI);
+
+/// `FON_DirectionalAlbedo( { mu, roughness, A } )` — an inline `Fn()`, so
+/// its arithmetic lands in the caller's flow.
+fn fon_directional_albedo(mu: NodeRef, roughness_value: NodeRef, a: NodeRef) -> NodeRef {
+    let mu_comp = mu.one_minus();
+    let g_over_pi = mu_comp.clone().mul(
+        mu_comp
+            .clone()
+            .mul(
+                mu_comp
+                    .clone()
+                    .mul(mu_comp.mul(0.0714429953).sub(0.332181442))
+                    .add(0.491881867),
+            )
+            .add(0.0571085289),
+    );
+    a.mul(roughness_value.mul(g_over_pi).add(1.0))
+}
+
+/// `A = roughness.mul( FON_A_COEFFICIENT ).add( 1.0 ).reciprocal()`.
+fn fon_a(roughness_value: NodeRef) -> NodeRef {
+    roughness_value.mul(FON_A_COEFFICIENT).add(1.0).reciprocal()
+}
+
+/// `averageAlbedo` and `rhoMultiScatter`, which `BRDF_EON` and
+/// `EON_DirectionalAlbedo` build the same way.
+fn eon_multi_scatter(rho: NodeRef, roughness_value: NodeRef, a: NodeRef) -> (NodeRef, NodeRef) {
+    let average_albedo = a.mul(roughness_value.mul(FON_AVERAGE_ALBEDO_COEFFICIENT).add(1.0));
+    let rho_multi_scatter = rho
+        .clone()
+        .mul(rho.clone())
+        .mul(average_albedo.clone())
+        .div(
+            rho.mul(average_albedo.clone().one_minus())
+                .one_minus()
+                .max(EON_EPSILON),
+        );
+    (average_albedo, rho_multi_scatter)
+}
+
+/// `EON_DirectionalAlbedo( { diffuseColor, roughness, dotNV } )` — the
+/// albedo of the EON lobe seen from `dotNV`, which the indirect diffuse terms
+/// use in place of `DiffuseContribution` when `useDiffuseRoughness` is on.
+/// The `select` becomes an `if` / `else` into a var, as three's
+/// `ConditionalNode` does.
+pub fn eon_directional_albedo(
+    diffuse_color_value: NodeRef,
+    roughness_value: NodeRef,
+    dot_nv: NodeRef,
+) -> NodeRef {
+    let rho = diffuse_color_value.clamp(0.0, 1.0);
+    let a = fon_a(roughness_value.clone());
+    let directional_albedo =
+        fon_directional_albedo(dot_nv.clamp(0.0, 1.0), roughness_value.clone(), a.clone());
+    let (_, rho_multi_scatter) = eon_multi_scatter(rho.clone(), roughness_value.clone(), a);
+    let eon_albedo = rho
+        .clone()
+        .mul(directional_albedo.clone())
+        .add(rho_multi_scatter.mul(directional_albedo.one_minus()));
+
+    roughness_value
+        .less_than_equal(EON_EPSILON)
+        .select(rho, eon_albedo)
+}
+
+/// `BRDF_EON( { lightDirection, diffuseColor, roughness } )` with the default
+/// `normalView` / `positionViewDirection`. No graded page reaches it — the
+/// one diffuse-roughness page is lit by its environment alone — but
+/// `direct()` is ported with it so a first lit page does not find a
+/// Lambert lobe where three has this one.
+pub fn brdf_eon(
+    light_direction: NodeRef,
+    diffuse_color_value: NodeRef,
+    roughness_value: NodeRef,
+) -> NodeRef {
+    let rho = diffuse_color_value.clamp(0.0, 1.0);
+    let dot_nl = normal_view().dot(light_direction.clone()).clamp(0.0, 1.0);
+    let dot_nv = normal_view().dot(position_view_direction()).clamp(0.0, 1.0);
+    let s = light_direction
+        .dot(position_view_direction())
+        .sub(dot_nl.clone().mul(dot_nv.clone()));
+    let s_over_t = s.greater_than(0.0).select(
+        s.clone()
+            .div(dot_nl.clone().max(dot_nv.clone()).max(EON_EPSILON)),
+        s,
+    );
+
+    let a = fon_a(roughness_value.clone());
+    let single_scatter = rho
+        .clone()
+        .mul(RECIPROCAL_PI)
+        .mul(a.clone())
+        .mul(roughness_value.clone().mul(s_over_t).add(1.0));
+
+    let albedo_v = fon_directional_albedo(dot_nv, roughness_value.clone(), a.clone());
+    let albedo_l = fon_directional_albedo(dot_nl, roughness_value.clone(), a.clone());
+    let (average_albedo, rho_multi_scatter) =
+        eon_multi_scatter(rho.clone(), roughness_value.clone(), a);
+    let multi_scatter = rho_multi_scatter
+        .mul(RECIPROCAL_PI)
+        .mul(albedo_v.one_minus().max(EON_EPSILON))
+        .mul(albedo_l.one_minus().max(EON_EPSILON))
+        .div(average_albedo.one_minus().max(EON_EPSILON));
+    let eon = single_scatter.add(multi_scatter);
+
+    roughness_value
+        .less_than_equal(EON_EPSILON)
+        .select(rho.mul(RECIPROCAL_PI), eon)
+}
+
+/// `EON_DirectionalAlbedo( { diffuseColor: diffuseColor.rgb, roughness:
+/// diffuseRoughness, dotNV: normalView.dot( positionViewDirection ).clamp() }
+/// ).mul( metalness.oneMinus() )` — what both indirect terms read.
+fn eon_diffuse_albedo() -> NodeRef {
+    eon_directional_albedo(
+        diffuse_color().rgb(),
+        diffuse_roughness(),
+        normal_view().dot(position_view_direction()).clamp(0.0, 1.0),
+    )
+    .mul(metalness().one_minus())
+}
+
 /// `DFGLUT( { roughness, dotNV } )` — the 16×16 RG16F table, sampled with an
 /// explicit UV so no texture matrix is applied.
 fn dfg_sample(roughness_value: NodeRef, dot_nv: NodeRef) -> NodeRef {
@@ -292,8 +425,9 @@ fn dfg_sample(roughness_value: NodeRef, dot_nv: NodeRef) -> NodeRef {
 // ---------------------------------------------------------------------------
 
 /// `new PhysicalLightingModel( clearcoat, sheen, iridescence, anisotropy,
-/// transmission, dispersion, retroreflection )`. Iridescence, dispersion and
-/// retroreflection are still off for every material the ladder builds;
+/// transmission, dispersion, retroreflection, diffuseRoughness )`.
+/// Iridescence, dispersion and retroreflection are still off for every
+/// material the ladder builds;
 /// `sheen` is `MeshPhysicalNodeMaterial.useSheen`, which
 /// `webgpu_loader_gltf_sheen`'s fabric turns on, and clearcoat and anisotropy
 /// are the two the barn lamp turns on.
@@ -308,6 +442,9 @@ pub struct Physical {
     /// `this.clearcoat` — the flag that gives the model its three clearcoat
     /// accumulators and the extra lobe in `indirectSpecular()` / `finish()`.
     pub clearcoat: bool,
+    /// `this.diffuseRoughness` — `useDiffuseRoughness`: the three diffuse
+    /// terms take the EON lobe instead of Lambert's.
+    pub diffuse_roughness: bool,
     /// `builder.context.backdrop` — `getIBLVolumeRefraction()`'s `vec4`, set
     /// by the transmission branch of `start()` and read once more where
     /// `LightsNode` blends it into `totalDiffuse`.
@@ -323,6 +460,7 @@ impl Physical {
     pub fn start(
         sheen: bool,
         clearcoat: bool,
+        diffuse_roughness: bool,
         opaque_frame: Option<&transmission::OpaqueFrame>,
         out: &mut Vec<NodeRef>,
     ) -> Self {
@@ -377,6 +515,7 @@ impl Physical {
             multi_scattering_compensation,
             sheen,
             clearcoat,
+            diffuse_roughness,
             backdrop,
         }
     }
@@ -536,16 +675,22 @@ impl Physical {
         let dot_vh = position_view_direction().dot(half_dir).clamp(0.0, 1.0);
         let f = phong::f_schlick(specular_color(), specular_f90(), dot_vh);
 
+        let diffuse_brdf = if self.diffuse_roughness {
+            brdf_eon(
+                light_direction.clone(),
+                diffuse_color().rgb(),
+                diffuse_roughness(),
+            )
+            .mul(metalness().one_minus())
+        } else {
+            brdf_lambert(diffuse_contribution())
+        };
+
         let specular_brdf = brdf_ggx(light_direction, specular_color_blended(), float(1.0));
 
         out.push(
             direct_diffuse().assign(
-                direct_diffuse().add(
-                    irradiance
-                        .clone()
-                        .mul(brdf_lambert(diffuse_contribution()))
-                        .mul(f.one_minus()),
-                ),
+                direct_diffuse().add(irradiance.clone().mul(diffuse_brdf).mul(f.one_minus())),
             ),
         );
         out.push(
@@ -572,8 +717,13 @@ impl Physical {
             out,
         );
 
+        let diffuse_brdf = if self.diffuse_roughness {
+            eon_diffuse_albedo().mul(RECIPROCAL_PI)
+        } else {
+            brdf_lambert(diffuse_contribution())
+        };
         let diffuse = irradiance()
-            .mul(brdf_lambert(diffuse_contribution()))
+            .mul(diffuse_brdf)
             .mul(single_scattering().add(multi_scattering()).one_minus());
 
         let diffuse = if self.sheen {
@@ -688,7 +838,12 @@ impl Physical {
         // Diffuse energy conservation uses the dielectric path.
         let total_scattering_dielectric =
             single_scattering_dielectric().add(multi_scattering_dielectric());
-        let diffuse = diffuse_contribution().mul(total_scattering_dielectric.one_minus());
+        let diffuse_albedo = if self.diffuse_roughness {
+            eon_diffuse_albedo()
+        } else {
+            diffuse_contribution()
+        };
+        let diffuse = diffuse_albedo.mul(total_scattering_dielectric.one_minus());
         let indirect_diffuse_value = diffuse.mul(cosine_weighted_irradiance);
 
         let (indirect_specular_value, indirect_diffuse_value) = if self.sheen {

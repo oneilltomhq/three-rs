@@ -1558,6 +1558,11 @@ impl Renderer {
                 let variant = hash_of(&("pmrem", pmrem.texture.id()));
                 Some((materials::background_pmrem_color_node(&pmrem), variant))
             }
+            // Keyed by the node's identity, as `Background::Node` is.
+            Some(Background::EnvironmentNode(node)) => {
+                let variant = hash_of(&("environment node", &node));
+                Some((materials::background_environment_color_node(&node), variant))
+            }
             _ => None,
         };
         // `Background.update()` unshifts the skybox into `renderList.opaque`,
@@ -1813,9 +1818,20 @@ impl Renderer {
 
             // `NodeMaterial.setupEnvironment()`: the material's own `envNode`
             // wins, and `scene.environmentNode` is the fallback.
+            // `getEnvironmentNode( scene )` is `scene.environmentNode` when set
+            // and the node made from `scene.environment` otherwise.
             let scene_environment = match material.pmrem_env {
                 Some(_) => None,
-                None => scene.environment.clone(),
+                None => scene
+                    .environment_node
+                    .clone()
+                    .map(materials::environment::Environment::Node)
+                    .or_else(|| {
+                        scene
+                            .environment
+                            .clone()
+                            .map(materials::environment::Environment::Pmrem)
+                    }),
             };
 
             // `material.side = BackSide` / `= FrontSide` around each of the
@@ -3054,6 +3070,7 @@ impl Renderer {
                 material_sheen: item.material.sheen,
                 material_sheen_color: item.material.sheen_color,
                 material_sheen_roughness: item.material.sheen_roughness,
+                material_diffuse_roughness: item.material.diffuse_roughness,
                 material_normal_scale: item.material.normal_scale,
                 material_anisotropy: item.material.anisotropy,
                 material_anisotropy_rotation: item.material.anisotropy_rotation,
@@ -3296,8 +3313,12 @@ impl Renderer {
         };
 
         // One attachment per `renderTarget.textures` entry. They share the
-        // pass's clear op: `MRTNode.clearColors` is three's per-output
-        // override and nothing on this ladder sets one.
+        // pass's load op but not its clear *value*: `WebGPUBackend.beginRender()`
+        // clears attachment 0 to `renderContext.clearColorValue` and every
+        // other one to `( 0, 0, 0, 1 )`. (`MRTNode.clearColors` is three's
+        // per-output override and nothing on this ladder sets one.)
+        // `webgpu_multiple_rendertargets` shows it: its `normal` half is black
+        // where the knot is not, not the scene's `0x222222`.
         let mut color_attachments = vec![Some(wgpu::RenderPassColorAttachment {
             view: &target.color,
             depth_slice: None,
@@ -3307,13 +3328,22 @@ impl Renderer {
                 store: wgpu::StoreOp::Store,
             },
         })];
+        let extra_load = match clear.color {
+            Some(_) => wgpu::LoadOp::Clear(wgpu::Color {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a: 1.0,
+            }),
+            None => wgpu::LoadOp::Load,
+        };
         for (view, resolve) in &target.extra_colors {
             color_attachments.push(Some(wgpu::RenderPassColorAttachment {
                 view,
                 depth_slice: None,
                 resolve_target: resolve.as_ref(),
                 ops: wgpu::Operations {
-                    load,
+                    load: extra_load,
                     store: wgpu::StoreOp::Store,
                 },
             }));
@@ -3886,6 +3916,61 @@ impl Renderer {
         drop(inner);
 
         self.read_texture_pixels(&texture, width, height)
+    }
+
+    /// `renderer.readRenderTargetPixelsAsync( renderTarget, x, y, width,
+    /// height, textureIndex )`: the `width` x `height` rectangle at `( x, y )`
+    /// of `renderTarget.textures[ textureIndex ]`, as tightly packed RGBA8
+    /// bytes, rows top-down in the texture's own orientation — what three's
+    /// `copyTextureToBuffer()` hands back.
+    ///
+    /// Blocking, where three's is a promise, as every readback here is
+    /// natively. The whole attachment is copied and the rectangle cut out of
+    /// it on the CPU; three copies only the rectangle, which is a cost and not
+    /// a difference in the bytes. `faceIndex` is not taken: no rung reads a
+    /// cube target back.
+    pub fn read_render_target_pixels(
+        &mut self,
+        render_target: &RenderTarget,
+        x: u32,
+        y: u32,
+        width: u32,
+        height: u32,
+        texture_index: usize,
+    ) -> Result<Vec<u8>, Error> {
+        self.prepare_render_target(render_target);
+
+        let textures = render_target.textures();
+        let Some(texture) = textures.get(texture_index) else {
+            return Err(Error::Readback {
+                reason: format!(
+                    "renderTarget.textures[ {texture_index} ] does not exist ({} attachments)",
+                    textures.len()
+                ),
+            });
+        };
+        let texture = texture.with_gpu(|gpu| gpu.clone());
+        let (full_width, full_height) = render_target.size();
+        if x + width > full_width || y + height > full_height {
+            return Err(Error::Readback {
+                reason: format!(
+                    "the rectangle ( {x}, {y}, {width}, {height} ) is outside the \
+                     {full_width}x{full_height} target"
+                ),
+            });
+        }
+
+        let (_, _, pixels) = self.read_texture_pixels(&texture, full_width, full_height)?;
+        if (x, y, width, height) == (0, 0, full_width, full_height) {
+            return Ok(pixels);
+        }
+        let row = full_width as usize * 4;
+        let mut out = Vec::with_capacity(width as usize * height as usize * 4);
+        for r in y as usize..(y + height) as usize {
+            let start = r * row + x as usize * 4;
+            out.extend_from_slice(&pixels[start..start + width as usize * 4]);
+        }
+        Ok(out)
     }
 
     /// The same readback off an `rgba16float` [`RenderTarget`] — the format

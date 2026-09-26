@@ -268,6 +268,12 @@ mod webgpu_materials_toon;
 #[path = "webgpu_modifier_curve.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_modifier_curve;
+#[path = "webgpu_multiple_rendertargets.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_multiple_rendertargets;
+#[path = "webgpu_multiple_rendertargets_readback.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_multiple_rendertargets_readback;
 #[path = "webgpu_occlusion.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_occlusion;
@@ -286,6 +292,14 @@ mod webgpu_texturegrad;
 #[path = "webgpu_textures_partialupdate.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_textures_partialupdate;
+
+#[path = "webgpu_loader_gltf_diffuse_roughness.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_loader_gltf_diffuse_roughness;
+
+#[path = "webgpu_cubemap_mix.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_cubemap_mix;
 
 #[path = "webgpu_instance_sprites.rs"]
 #[allow(dead_code)] // only `init()` is called here
@@ -461,6 +475,12 @@ const GRADED: &[(&str, fn())] = &[
     ("webgpu_shadowmap_opacity", || {
         drop(webgpu_shadowmap_opacity::init())
     }),
+    ("webgpu_multiple_rendertargets", || {
+        drop(webgpu_multiple_rendertargets::init())
+    }),
+    ("webgpu_multiple_rendertargets_readback", || {
+        drop(webgpu_multiple_rendertargets_readback::init())
+    }),
     ("webgpu_texturegrad", || drop(webgpu_texturegrad::init())),
     (
         "webgpu_texturegather",
@@ -488,6 +508,10 @@ const GRADED: &[(&str, fn())] = &[
         drop(webgpu_textures_partialupdate::init())
     }),
     ("webgpu_layers", || drop(webgpu_layers::init())),
+    ("webgpu_loader_gltf_diffuse_roughness", || {
+        drop(webgpu_loader_gltf_diffuse_roughness::init())
+    }),
+    ("webgpu_cubemap_mix", || drop(webgpu_cubemap_mix::init())),
 ];
 
 /// Where the committed manifests live, one `<example>.json` each.

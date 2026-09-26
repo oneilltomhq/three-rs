@@ -28,7 +28,7 @@ pub struct SetupContext {
     /// `NodeMaterial.setupEnvironment()` falls back to when the material has
     /// no `envNode` of its own. `None` for every pass that is not a scene
     /// draw (the background quad, the shadow pass, `render_quad`).
-    pub environment: Option<environment::PmremHandle>,
+    pub environment: Option<environment::Environment>,
     /// `Some(count)` when the object is an `InstancedMesh`, which is what makes
     /// `NodeMaterial.setupPosition()` insert the `InstanceNode` transform.
     pub instance_count: Option<usize>,
@@ -945,6 +945,24 @@ pub fn background_pmrem_color_node(pmrem: &crate::materials::environment::PmremH
     background_node_color_node(pmrem.sample(uv, background_blurriness()))
 }
 
+/// `scene.backgroundNode` set to an environment graph: the same context as
+/// [`background_pmrem_color_node`] — `backgroundRotation.mul(
+/// normalWorldGeometry )` and `backgroundBlurriness` — handed to every
+/// `pmremTexture()` in it. A `.context( { getTextureLevel } )` on the node
+/// itself ([`EnvironmentNode::with_texture_level`]) is inside this one and
+/// wins, as the inner context does in three.
+///
+/// Three calls `getUV()` once per leaf, and its dump repeats the rotation for
+/// each; the port builds it once and shares it, which is the same value.
+///
+/// [`EnvironmentNode::with_texture_level`]: crate::materials::environment::EnvironmentNode::with_texture_level
+pub fn background_environment_color_node(
+    node: &crate::materials::environment::EnvironmentNode,
+) -> NodeRef {
+    let uv = background_rotation().mul(vec4_join(vec![normal_world_geometry(), float(1.0)]));
+    background_node_color_node(node.sample(uv, background_blurriness()))
+}
+
 /// `Background.update()`'s `isNode` branch:
 /// `vec4( backgroundNode ).mul( backgroundIntensity )`. `vec4()` of a node
 /// that already is one is the node itself — `webgpu_equirectangular`'s
@@ -1318,7 +1336,17 @@ fn setup_standard(
         .push(diffuse_contribution().assign(diffuse_color().rgb().mul(metalness_node.one_minus())));
 
     // `MeshPhysicalNodeMaterial.setupVariants()`, after
-    // `MeshStandardNodeMaterial`'s: clearcoat first, then anisotropy.
+    // `MeshStandardNodeMaterial`'s: diffuse roughness, clearcoat, sheen, then
+    // anisotropy.
+    //
+    // DIFFUSE ROUGHNESS — `useDiffuseRoughness` is `diffuseRoughness > 0`, and
+    // `DiffuseRoughness` is `materialDiffuseRoughness.clamp()`.
+    let use_diffuse_roughness =
+        material.kind == MaterialKind::Physical && material.diffuse_roughness > 0.0;
+    if use_diffuse_roughness {
+        fragment.push(diffuse_roughness().assign(material_diffuse_roughness().clamp(0.0, 1.0)));
+    }
+
     let use_clearcoat = material.kind == MaterialKind::Physical && material.clearcoat > 0.0;
     let use_anisotropy = material.kind == MaterialKind::Physical && material.anisotropy > 0.0;
 
@@ -1441,8 +1469,11 @@ fn setup_standard(
     // lightsNode.getScope().hasLights ) )`. With neither, `setupOutgoingLight()`
     // stands as it is: `DiffuseColor.rgb`.
     let scene_lighting = material.lights && !ctx.lighting_disabled;
-    let environment = material
+    let material_environment = material
         .pmrem_env
+        .clone()
+        .map(environment::Environment::Pmrem);
+    let environment = material_environment
         .as_ref()
         .or(ctx.environment.as_ref())
         .filter(|_| scene_lighting);
@@ -1453,7 +1484,13 @@ fn setup_standard(
     };
 
     let outgoing = if scene_lighting && (environment.is_some() || !lights.is_empty()) {
-        let model = Physical::start(use_sheen, use_clearcoat, opaque_frame, fragment);
+        let model = Physical::start(
+            use_sheen,
+            use_clearcoat,
+            use_diffuse_roughness,
+            opaque_frame,
+            fragment,
+        );
 
         // `LightingContextNode`'s five accumulators. three.js declares each at
         // the point of its first use; hoisting the zeros here is the one

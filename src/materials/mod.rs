@@ -13,10 +13,10 @@ pub mod toon;
 pub mod transmission;
 
 pub use node_material::{
-    background_color_node, background_node_color_node, background_pmrem_color_node,
-    background_vertex_node, instanced_range, output_fragment_node, quad_vertex_node, render_output,
-    setup, shadow_material, shadow_material_for, tone_mapping_node, MrtContext, OutputContext,
-    SetupContext,
+    background_color_node, background_environment_color_node, background_node_color_node,
+    background_pmrem_color_node, background_vertex_node, instanced_range, output_fragment_node,
+    quad_vertex_node, render_output, setup, shadow_material, shadow_material_for,
+    tone_mapping_node, MrtContext, OutputContext, SetupContext,
 };
 
 pub use blending::{
@@ -362,6 +362,12 @@ pub struct MeshBasicNodeMaterial {
     pub sheen: f64,
     pub sheen_color: Color,
     pub sheen_roughness: f64,
+    /// `MeshPhysicalMaterial.diffuseRoughness` — `KHR_materials_diffuse_roughness`.
+    /// `diffuse_roughness > 0` is `MeshPhysicalNodeMaterial.useDiffuseRoughness`,
+    /// which swaps the Lambert diffuse lobe of `PhysicalLightingModel` for
+    /// the energy-preserving Oren–Nayar one (EON). `diffuseRoughnessMap` is
+    /// not ported: no graded page carries one.
+    pub diffuse_roughness: f64,
     pub ior: f64,
     pub specular_intensity: f64,
     pub specular_color: Color,
@@ -560,6 +566,7 @@ impl Default for MeshBasicNodeMaterial {
             sheen: 0.0,
             sheen_color: Color::new(0.0, 0.0, 0.0),
             sheen_roughness: 1.0,
+            diffuse_roughness: 0.0,
             ior: 1.5,
             specular_intensity: 1.0,
             specular_color: Color::new(1.0, 1.0, 1.0),
