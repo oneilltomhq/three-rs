@@ -272,7 +272,7 @@ pub struct NodeProgram {
     /// that has an `updateBefore()`, in the order the build met them. A
     /// `ComputeNode` read as a value (`renderer.compute( this )`, once per
     /// frame), a pass or `rtt()` whose texture is bound (it renders into
-    /// it), a [`CustomNode`](crate::nodes::CustomNode) with an update type.
+    /// it), a [`CustomNode`] with an update type.
     /// Kept with the program, so a steady frame reads the list and walks no
     /// graph. See `docs/nodes.md` §57.
     pub update_before: Vec<UpdateNode>,
