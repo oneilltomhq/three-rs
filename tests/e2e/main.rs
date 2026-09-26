@@ -173,6 +173,14 @@ mod webgpu_postprocessing_transition;
 #[allow(dead_code)]
 mod webgpu_postprocessing_sobel;
 
+#[path = "../../examples/webgpu_postprocessing.rs"]
+#[allow(dead_code)]
+mod webgpu_postprocessing;
+
+#[path = "../../examples/webgpu_postprocessing_fxaa.rs"]
+#[allow(dead_code)]
+mod webgpu_postprocessing_fxaa;
+
 #[path = "../../examples/webgpu_procedural_texture.rs"]
 #[allow(dead_code)]
 mod webgpu_procedural_texture;
@@ -1218,6 +1226,96 @@ fn webgpu_postprocessing_sobel() {
         webgpu_postprocessing_sobel::animate,
         |app| app.renderer.device(),
     );
+}
+
+/// Not graded: three.js itself scores 0.107% (107 pixels) against its own
+/// `webgpu_postprocessing.jpg` on this machine, over the 0.1% limit, and the
+/// port's frame is pixel-identical to three's (`tools/dump-webgpu.mjs`'
+/// `actual_full.png`, max channel difference 0). See
+/// `docs/webgpu_postprocessing-progress.md`.
+#[test]
+#[ignore = "three.js itself fails its own reference for this page on this machine"]
+fn webgpu_postprocessing() {
+    let name = "webgpu_postprocessing";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_postprocessing::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_postprocessing::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_postprocessing::animate, |app| {
+        app.renderer.device()
+    });
+}
+
+#[test]
+fn webgpu_postprocessing_fxaa() {
+    let name = "webgpu_postprocessing_fxaa";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_postprocessing_fxaa::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_postprocessing_fxaa::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_postprocessing_fxaa::animate, |app| {
+        app.renderer.device()
+    });
 }
 
 #[test]
@@ -4226,6 +4324,8 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_materials_texture_manualmipmap);
     rung!(webgpu_postprocessing_transition);
     rung!(webgpu_postprocessing_sobel);
+    rung!(webgpu_postprocessing);
+    rung!(webgpu_postprocessing_fxaa);
     rung!(webgpu_procedural_texture);
     rung!(webgpu_texturegrad);
     rung!(webgpu_texturegather);
