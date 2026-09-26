@@ -280,6 +280,7 @@ StructDrawindirect, webgpu_struct_drawindirect, "../../examples/webgpu_struct_dr
 Particles, webgpu_particles, "../../examples/webgpu_particles.rs";
 Clearcoat, webgpu_clearcoat, "../../examples/webgpu_clearcoat.rs";
 ModifierCurve, webgpu_modifier_curve, "../../examples/webgpu_modifier_curve.rs";
+Occlusion, webgpu_occlusion, "../../examples/webgpu_occlusion.rs";
 }
 
 /// Where an example's assets come from: three.js at the commit this port is

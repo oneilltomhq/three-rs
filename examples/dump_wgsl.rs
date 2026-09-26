@@ -2385,6 +2385,36 @@ fn dump_room_environment() {
         ..MeshBasicNodeMaterial::physical(Color::new(1.0, 1.0, 1.0), 0.1, 0.0)
     };
     show("clearcoat_golf", &golf, clearcoat_ctx());
+
+    // rung `webgpu_occlusion`: the plane (`m01`, `DoubleSide`, its `colorNode`
+    // the `OcclusionNode`'s per-object `vec3` uniform) and the sphere (`m02`),
+    // under one ambient and one directional light.
+    let occlusion_ctx = || SetupContext {
+        lights: vec![
+            LightDesc {
+                index: 0,
+                kind: LightKind::Ambient,
+                shadow_map: None,
+            },
+            LightDesc {
+                index: 1,
+                kind: LightKind::Directional,
+                shadow_map: None,
+            },
+        ],
+        ..SetupContext::default()
+    };
+    let mut occlusion_plane = MeshBasicNodeMaterial::phong(Color::from_hex(0x00ff00));
+    occlusion_plane.side = Side::Double;
+    occlusion_plane.color_node = Some(uniform_frame(three_rs::nodes::Type::Vec3, |_| {
+        vec![0.0, 0.0, 1.0]
+    }));
+    show("occlusion_plane", &occlusion_plane, occlusion_ctx());
+    show(
+        "occlusion_sphere",
+        &MeshBasicNodeMaterial::phong(Color::from_hex(0xffff00)),
+        occlusion_ctx(),
+    );
     // `webgpu_textures_2d-array_compressed`: `new NodeMaterial()` with
     // `colorNode = texture( texturearray, uv().flipY() ).depth( depth )`.
     // The texture is a stand-in with the page's layer count; only its being

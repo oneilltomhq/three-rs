@@ -3552,3 +3552,97 @@ dump apart from `var` placement: the port declares `worldPos` inside the
   logs and then throws on `ret.offsetX`.
 * **No `TransformControls`.** `webgpu_modifier_curve`'s handles cannot be
   dragged. The graded frame never shows the gizmo.
+
+## 36. Occlusion queries and `frame.renderer.isOccluded()` (`webgpu_occlusion`)
+
+A green Phong plane in front of a yellow Phong sphere. The sphere carries
+`occlusionTest = true`, and the plane's `colorNode` is a custom node with
+`updateType = NodeUpdateType.OBJECT`, as §19's is, whose `update( frame )`
+asks the renderer:
+
+```js
+async update( frame ) {
+    const isOccluded = frame.renderer.isOccluded( this.testObject );
+    this.uniformNode.value.copy( isOccluded ? this.occludedColor : this.normalColor );
+}
+```
+
+### What three does
+
+`RenderList.push()` counts the runs of consecutive pushes of an object with
+`occlusionTest`, and `beginRender()` creates an occlusion `GPUQuerySet` of that
+size for the render context's pass. `WebGPUBackend.draw()` walks the draws with
+`lastOcclusionObject`: where the object changes it ends the open query (if the
+last object was tested, bumping `occlusionQueryIndex`) and begins one if the new
+object is tested, recording the object at that index. `finishRender()` ends the
+last one, resolves the set into a `QUERY_RESOLVE` buffer (cached by size),
+copies it into a fresh `MAP_READ` buffer and calls `resolveOccludedAsync()`,
+which maps **the previous `finishRender()`'s buffer**, not this one. When the
+map lands, every object whose query counted zero samples goes into a `WeakSet`,
+`renderContextData.occluded`, and `isOccluded( object )` reads that set for
+`_currentRenderContext`.
+
+So an answer reaches `update()` two frames after the draw it measured, at the
+earliest. The graded frame is the first, and the plane is blue on it. Three's
+screenshot shows exactly that, and so does the port.
+
+### What the port has
+
+| three.js | three-rs |
+|---|---|
+| `object.occlusionTest` (ad hoc) | `Object3D::occlusion_test` |
+| `renderContextData.occlusionQuerySet` / `occlusionQueryBuffer` / `occluded` | `renderer::occlusion::OcclusionContext` |
+| `occludedResolveCache` | `Occlusion::resolve_buffers` |
+| `lastOcclusionObject` walk in `draw()` / `finishRender()` | `record_pass()`, counted by `occlusion::query_objects` |
+| `resolveOccludedAsync()` | `Occlusion::finish()` issues the map; `Occlusion::collect()` reads it |
+| `frame.renderer.isOccluded( object )` | [`NodeFrame::is_occluded`](../src/nodes/node.rs) |
+| `Node` with `updateType = OBJECT` reading more than `frame.object` | [`tsl::uniform_frame( ty, \|frame\| … )`](../src/nodes/tsl.rs) |
+
+`ObjectUpdate` now calls its callback with a `NodeFrame` (the object, plus the
+render context's occlusion results) rather than a bare `&Object3D`.
+`uniform_object` is unchanged for its callers: it wraps its closure to read
+`frame.object`.
+
+The render context is set by `render()` just before `render_list()`, and the
+next `draw()` takes it, which is the scene pass. The shadow passes and the
+output blit are draws of their own and never see it, as in three, where each is
+its own render context.
+
+The map's callback cannot touch the renderer, because natively it runs from
+inside `device.poll()` and must be `Send`. It sets an atomic, and `render()`
+polls without blocking whenever a map is outstanding and folds whatever has
+landed into `occluded` before any draw is built. A renderer with no query in
+flight never polls, so no other rung sees any of this.
+
+`tests/renderer_occlusion.rs` checks what the graded frame cannot: the plane is
+blue on frames one and two and green from frame three on, and it stays blue
+for six frames once the sphere is moved in front of it.
+
+### Divergences specific to this section
+
+* **`occlusion_test` is a field.** §19 declined to add `mesh.color` because
+  only the page reads it. `occlusionTest` is different: it is ad hoc in three
+  too, but the renderer reads it (`RenderList`, `WebGPUBackend`), so it is
+  renderer API. Being ad hoc, `Object3D.copy()` does not carry it, and the
+  port's `Clone` does not either.
+* **The render context has no camera.** three keys `RenderContexts` on the
+  scene, the camera, the render target, the MRT and the call depth. The port
+  keys occlusion on the scene and the render target only: `RenderCamera` is a
+  trait over owned camera structs with no shared identity. Two cameras
+  rendering one scene into one target share their occlusion results here.
+* **The query set is reused.** three creates a query set in every
+  `beginRender()` and destroys the previous one. The port keeps one per render
+  context and makes a bigger one only when the count outgrows it. By the time
+  it is reused, the previous frame's resolve has been submitted, so the queries
+  are the same. The `MAP_READ` buffer is still fresh per frame, as in three.
+* **Queries are counted in draw order.** three sizes the set by
+  `RenderList.occlusionQueryCount`, which counts runs in push order, and then
+  indexes it in the sorted draw order, which can have more runs. The port
+  counts in draw order, so the index cannot overrun the set.
+* **A transmissive split records queries only in its first pass.** When
+  `ViewportTextureNode` splits the scene pass in two, three records into
+  both. No page on the ladder puts an occlusion test on a split pass.
+* **Answers land on a poll, not on the event loop.** In a browser, wgpu's
+  callback fires between frames as three's promise does. Natively it fires on
+  the next `render()`'s non-blocking poll, which on this machine is always in
+  time for the next frame. That is the soonest three could have it too.

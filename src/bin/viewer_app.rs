@@ -238,7 +238,8 @@ ShadowmapPointlight, webgpu_shadowmap_pointlight, "../../examples/webgpu_shadowm
 StructDrawindirect, webgpu_struct_drawindirect, "../../examples/webgpu_struct_drawindirect.rs";
 Particles, webgpu_particles, "../../examples/webgpu_particles.rs";
 Clearcoat, webgpu_clearcoat, "../../examples/webgpu_clearcoat.rs";
-ModifierCurve, webgpu_modifier_curve, "../../examples/webgpu_modifier_curve.rs";}
+ModifierCurve, webgpu_modifier_curve, "../../examples/webgpu_modifier_curve.rs";
+Occlusion, webgpu_occlusion, "../../examples/webgpu_occlusion.rs";}
 
 impl Which {
     /// The name with or without its `webgpu_` prefix, or its 1-based index in

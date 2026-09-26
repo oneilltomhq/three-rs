@@ -250,6 +250,10 @@ mod webgpu_textures_2d_array_compressed;
 #[allow(dead_code)]
 mod webgpu_clearcoat;
 
+#[path = "../../examples/webgpu_occlusion.rs"]
+#[allow(dead_code)]
+mod webgpu_occlusion;
+
 #[path = "../../examples/webgpu_lights_phong.rs"]
 #[allow(dead_code)]
 mod webgpu_lights_phong;
@@ -1946,6 +1950,54 @@ fn webgpu_clearcoat() {
     });
 }
 
+/// The occlusion rung: a Phong plane whose `colorNode` is an
+/// `updateType = NodeUpdateType.OBJECT` node asking
+/// `frame.renderer.isOccluded( sphere )`, and the sphere behind it wrapped in
+/// an occlusion query (`object.occlusionTest`). The query's answer is two
+/// frames away, so the graded frame is the plane in its "visible" blue;
+/// `tests/renderer_occlusion.rs` checks the green that follows.
+#[test]
+fn webgpu_occlusion() {
+    let name = "webgpu_occlusion";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_occlusion::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_occlusion::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_occlusion::animate, |app| {
+        app.renderer.device()
+    });
+}
+
 /// Two `SpriteNodeMaterial`s over 2000 and 1000 instances, the fire drawn
 /// through `drawIndexedIndirect`. At three's pinned time every sprite's
 /// opacity is zero, so the graded frame is the grid on the background;
@@ -3625,6 +3677,7 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_postprocessing_sobel);
     rung!(webgpu_procedural_texture);
     rung!(webgpu_clearcoat);
+    rung!(webgpu_occlusion);
     rung!(webgpu_particles);
     rung!(webgpu_struct_drawindirect);
     rung!(webgpu_volume_perlin);
