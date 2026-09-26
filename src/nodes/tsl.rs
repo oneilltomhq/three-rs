@@ -2522,8 +2522,12 @@ pub fn with_clearcoat_normal<R>(normal: Option<NodeRef>, f: impl FnOnce() -> R) 
 }
 
 /// `clearcoatNormalView` — `Normal.js`' var, whose value is the material's
-/// clearcoat normal map through the `NORMAL` sub-build, or `normalView` when
-/// the material has none.
+/// clearcoat normal map through the `NORMAL` sub-build, or — when the material
+/// has none — `MaterialNode.CLEARCOAT_NORMAL`'s `normalView` *as read inside
+/// that sub-build*: the geometric normal, `NORMAL_normalView`, not the
+/// material's normal-mapped one. A coat with no map of its own is smooth over
+/// a bumpy base, which is the whole look of `webgpu_clearcoat`'s carbon fibre
+/// and car paint.
 pub fn clearcoat_normal_view() -> NodeRef {
     let value = CLEARCOAT_NORMAL_VALUE.with(|v| v.borrow().clone());
     let key = value.as_ref().map(|v| v.key());
@@ -2532,7 +2536,7 @@ pub fn clearcoat_normal_view() -> NodeRef {
     }
     let node = to_var(
         Some("clearcoatNormalView"),
-        value.unwrap_or_else(normal_view),
+        value.unwrap_or_else(|| in_sub_build("NORMAL", normal_view)),
     );
     CLEARCOAT_NORMAL_VIEW.with(|m| m.borrow_mut().insert(key, node.clone()));
     node

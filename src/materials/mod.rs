@@ -79,6 +79,30 @@ pub enum Side {
     Double,
 }
 
+/// `three.js/src/constants.js` depth functions — `Material.depthFunc`, which
+/// `WebGPUPipelineUtils._getDepthCompare()` maps one-to-one onto a WebGPU
+/// compare function when `depthTest` is on.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum DepthFunc {
+    /// `NeverDepth`.
+    Never,
+    /// `AlwaysDepth`.
+    Always,
+    /// `LessDepth`.
+    Less,
+    /// `LessEqualDepth` — three's default.
+    #[default]
+    LessEqual,
+    /// `EqualDepth`.
+    Equal,
+    /// `GreaterEqualDepth`.
+    GreaterEqual,
+    /// `GreaterDepth`.
+    Greater,
+    /// `NotEqualDepth`.
+    NotEqual,
+}
+
 /// `three.js/src/constants.js` tone-mapping modes — the ones the port needs.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum ToneMapping {
@@ -275,6 +299,13 @@ pub struct MeshBasicNodeMaterial {
     /// shape when `MaterialKind::Physical` arrives.
     pub clearcoat: f64,
     pub clearcoat_roughness: f64,
+    /// `MeshPhysicalMaterial.clearcoatMap` — `MaterialNode.CLEARCOAT`
+    /// multiplies `clearcoat` by the texel's red channel.
+    pub clearcoat_map: Option<Texture>,
+    /// `MeshPhysicalMaterial.clearcoatRoughnessMap` —
+    /// `MaterialNode.CLEARCOAT_ROUGHNESS` multiplies `clearcoatRoughness` by
+    /// the texel's green channel.
+    pub clearcoat_roughness_map: Option<Texture>,
     /// `MeshPhysicalMaterial.sheen` / `.sheenColor` / `.sheenRoughness` —
     /// `KHR_materials_sheen`. `sheen` is the intensity and `sheen_color` the
     /// tint; `MaterialNode.SHEEN` is `sheenColor.mul( sheen )` and the shader
@@ -392,8 +423,9 @@ pub struct MeshBasicNodeMaterial {
     /// `Material.premultipliedAlpha` — selects the other half of the
     /// `_getBlending()` table.
     pub premultiplied_alpha: bool,
-    /// `Material.alphaToCoverage`. Only `builder.isOpaque()` reads it so far;
-    /// the pipeline's `alphaToCoverageEnabled` is still hardcoded false.
+    /// `Material.alphaToCoverage` — read by `builder.isOpaque()` and, as in
+    /// three, turned into the pipeline's `alphaToCoverageEnabled` only when
+    /// the render target is multisampled.
     pub alpha_to_coverage: bool,
     /// `Material.blendSrc` / `.blendDst` / `.blendEquation` and the three
     /// `*Alpha` overrides (`None` is Three's `null`), read only under
@@ -406,6 +438,8 @@ pub struct MeshBasicNodeMaterial {
     pub blend_equation_alpha: Option<BlendEquation>,
     pub depth_test: bool,
     pub depth_write: bool,
+    /// `Material.depthFunc` — the depth compare while `depth_test` is on.
+    pub depth_func: DepthFunc,
     /// `Background`'s material samples the cube map through the background
     /// uniforms rather than an env map.
     pub name: &'static str,
@@ -450,6 +484,8 @@ impl Default for MeshBasicNodeMaterial {
             // `MeshPhysicalMaterial` defaults.
             clearcoat: 0.0,
             clearcoat_roughness: 0.0,
+            clearcoat_map: None,
+            clearcoat_roughness_map: None,
             sheen: 0.0,
             sheen_color: Color::new(0.0, 0.0, 0.0),
             sheen_roughness: 1.0,
@@ -506,6 +542,7 @@ impl Default for MeshBasicNodeMaterial {
             blend_equation_alpha: None,
             depth_test: true,
             depth_write: true,
+            depth_func: DepthFunc::LessEqual,
             name: "",
         }
     }
@@ -514,6 +551,50 @@ impl Default for MeshBasicNodeMaterial {
 impl MeshBasicNodeMaterial {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// The fields set on this material that nothing in the port reads for its
+    /// [`kind`](Self::kind), by their three.js names — the audit in
+    /// `docs/api.md` ("Material fields the port does not read"). The renderer
+    /// logs each one once per material when it builds the program; call
+    /// [`check_supported`](Self::check_supported) to fail on them instead.
+    ///
+    /// A field three's own class for that kind lacks (a `clearcoat` on a
+    /// Standard material, say) is not listed: three ignores it too.
+    pub fn unsupported_fields(&self) -> Vec<&'static str> {
+        use MaterialKind::*;
+        let mut fields = Vec::new();
+        let pbr = matches!(self.kind, Standard | Physical);
+        // `MeshPhongMaterial.envMap` / `MeshLambertMaterial.envMap` (the
+        // `combine` blend) and a plain cube `envMap` on a PBR material, which
+        // three would PMREM on the fly: only the Basic path samples it; a PBR
+        // material takes `pmrem_env` instead.
+        if self.env_map.is_some() && self.kind != Basic {
+            fields.push("envMap");
+        }
+        // A PMREM environment is only read by `PhysicalLightingModel`.
+        if self.pmrem_env.is_some() && !pbr {
+            fields.push("envMap (PMREM)");
+        }
+        // `setupAmbientOcclusion()` is only wired into the Standard flow.
+        if self.ao_map.is_some() && !pbr {
+            fields.push("aoMap");
+        }
+        fields
+    }
+
+    /// `Err(Error::Unsupported)` for the first of
+    /// [`unsupported_fields`](Self::unsupported_fields), so an application
+    /// that would rather fail than draw a material differently from three can
+    /// ask before its first frame.
+    pub fn check_supported(&self) -> Result<(), crate::Error> {
+        match self.unsupported_fields().first() {
+            Some(&field) => Err(crate::Error::Unsupported {
+                field,
+                kind: self.kind,
+            }),
+            None => Ok(()),
+        }
     }
 
     /// `material.needsUpdate = true`: `Material.js`' setter, which bumps

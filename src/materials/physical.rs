@@ -120,11 +120,25 @@ fn d_ggx() -> Rc<FnDef> {
 }
 
 /// `BRDF_GGX( { lightDirection, f0, f90, roughness } )` — the isotropic,
-/// non-iridescent path, which is all this rung's materials ask for.
+/// non-iridescent path, with the default `normalView` and the material's own
+/// `roughness`.
 pub fn brdf_ggx(light_direction: NodeRef, f0: NodeRef, f90: NodeRef) -> NodeRef {
+    brdf_ggx_on(light_direction, f0, f90, roughness(), normal_view())
+}
+
+/// `BRDF_GGX( { lightDirection, f0, f90, roughness, normalView } )` — the
+/// same lobe about another surface: the clearcoat layer calls it with
+/// `clearcoatRoughness` and `clearcoatNormalView`.
+pub fn brdf_ggx_on(
+    light_direction: NodeRef,
+    f0: NodeRef,
+    f90: NodeRef,
+    roughness_value: NodeRef,
+    normal: NodeRef,
+) -> NodeRef {
     // `roughness.max( 0.045 ).pow2()` — UE4's alpha, over the floor "punctual
     // lights need a minimum roughness to show a highlight".
-    let floored = max(roughness(), float(0.045));
+    let floored = max(roughness_value, float(0.045));
     let alpha = floored.clone().mul(floored);
 
     let half_dir = light_direction
@@ -132,9 +146,12 @@ pub fn brdf_ggx(light_direction: NodeRef, f0: NodeRef, f90: NodeRef) -> NodeRef 
         .add(position_view_direction())
         .normalize();
 
-    let dot_nl = normal_view().dot(light_direction).clamp(0.0, 1.0);
-    let dot_nv = normal_view().dot(position_view_direction()).clamp(0.0, 1.0);
-    let dot_nh = normal_view().dot(half_dir.clone()).clamp(0.0, 1.0);
+    let dot_nl = normal.clone().dot(light_direction).clamp(0.0, 1.0);
+    let dot_nv = normal
+        .clone()
+        .dot(position_view_direction())
+        .clamp(0.0, 1.0);
+    let dot_nh = normal.dot(half_dir.clone()).clamp(0.0, 1.0);
     let dot_vh = position_view_direction().dot(half_dir).clamp(0.0, 1.0);
 
     let f = phong::f_schlick(f0, f90, dot_vh);
@@ -460,10 +477,12 @@ impl Physical {
         // `irradiance` is `.toVar()` in three; without sheen nothing assigns
         // to it again, so the port leaves it inline there and every already
         // green example generates exactly the WGSL it did before.
-        let irradiance = if self.sheen {
-            to_var(None, dot_nl.mul(light_color))
+        // (Clearcoat does not assign to it either, but three's clearcoat pages
+        // are the only ones that show the var, so it follows them there.)
+        let irradiance = if self.sheen || self.clearcoat {
+            to_var(None, dot_nl.mul(light_color.clone()))
         } else {
-            dot_nl.mul(light_color)
+            dot_nl.mul(light_color.clone())
         };
 
         if self.sheen {
@@ -486,6 +505,25 @@ impl Physical {
                         .clone()
                         .mul(sheen_energy_comp(albedo_v.max(albedo_l))),
                 ),
+            );
+        }
+
+        if self.clearcoat {
+            // `clearcoatF0` is `vec3( 0.04 )` and `clearcoatF90` `float( 1 )`.
+            let dot_nlcc = clearcoat_normal_view()
+                .dot(light_direction.clone())
+                .clamp(0.0, 1.0);
+            let cc_irradiance = dot_nlcc.mul(light_color);
+            out.push(
+                clearcoat_specular_direct().assign(clearcoat_specular_direct().add(
+                    cc_irradiance.mul(brdf_ggx_on(
+                        light_direction.clone(),
+                        vec3(0.04, 0.04, 0.04),
+                        float(1.0),
+                        clearcoat_roughness(),
+                        clearcoat_normal_view(),
+                    )),
+                )),
             );
         }
 

@@ -19,3 +19,4 @@
 pub mod controls;
 pub mod geometry_utils;
 pub mod lines;
+pub mod textures;

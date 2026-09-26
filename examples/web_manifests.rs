@@ -185,6 +185,10 @@ mod webgpu_deferred;
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_loader_gltf_anisotropy;
 
+#[path = "webgpu_clearcoat.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_clearcoat;
+
 /// Every graded example, in the README's order, paired with a call of its
 /// `init()`.
 ///
@@ -287,6 +291,7 @@ const GRADED: &[(&str, fn())] = &[
     ("webgpu_loader_gltf_anisotropy", || {
         drop(webgpu_loader_gltf_anisotropy::init())
     }),
+    ("webgpu_clearcoat", || drop(webgpu_clearcoat::init())),
 ];
 
 /// Where the committed manifests live, one `<example>.json` each.

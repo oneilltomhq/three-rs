@@ -2117,4 +2117,50 @@ fn dump_room_environment() {
         ..MeshBasicNodeMaterial::lambert(Color::from_hex(0x000000))
     };
     show("room_panel", &panel, point);
+
+    // rung `webgpu_clearcoat`: three's `dump-clearcoat` m10 (car paint, which
+    // has a normal map and no clearcoat normal map), m12 (fibers: a colour
+    // map too) and m14 (golf and the red sphere share it: both maps). One
+    // point light, so `direct()`'s clearcoat lobe is in all three.
+    let hdr_cube = CubeTexture::new(vec![
+        Image {
+            width: 1,
+            height: 1,
+            data: vec![0; 4],
+        };
+        6
+    ]);
+    let environment = PmremEnvironment::new(&hdr_cube);
+    let clearcoat_ctx = || SetupContext {
+        environment: Some(environment.handle()),
+        lights: vec![LightDesc {
+            index: 0,
+            kind: LightKind::Point,
+            shadow_map: None,
+        }],
+        ..SetupContext::default()
+    };
+    let map = || Texture::new(4, 4, Some(vec![0; 4 * 4 * 4]));
+    let car_paint = MeshBasicNodeMaterial {
+        clearcoat: 1.0,
+        clearcoat_roughness: 0.1,
+        normal_map: Some(map()),
+        ..MeshBasicNodeMaterial::physical(Color::from_hex(0x0000ff), 0.5, 0.9)
+    };
+    show("clearcoat_car_paint", &car_paint, clearcoat_ctx());
+    let fibers = MeshBasicNodeMaterial {
+        clearcoat: 1.0,
+        clearcoat_roughness: 0.1,
+        map: Some(map()),
+        normal_map: Some(map()),
+        ..MeshBasicNodeMaterial::physical(Color::new(1.0, 1.0, 1.0), 0.5, 0.0)
+    };
+    show("clearcoat_fibers", &fibers, clearcoat_ctx());
+    let golf = MeshBasicNodeMaterial {
+        clearcoat: 1.0,
+        normal_map: Some(map()),
+        clearcoat_normal_map: Some(map()),
+        ..MeshBasicNodeMaterial::physical(Color::new(1.0, 1.0, 1.0), 0.1, 0.0)
+    };
+    show("clearcoat_golf", &golf, clearcoat_ctx());
 }

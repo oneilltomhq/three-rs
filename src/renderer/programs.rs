@@ -4,7 +4,7 @@
 //! `WebGPUBindingUtils` + `Bindings.updateBinding()`, generically driven by the
 //! descriptors the node builder produced — there is nothing per-material here.
 
-use crate::materials::Side;
+use crate::materials::{DepthFunc, Side};
 use crate::math::{Color, Matrix3, Matrix4, Vector2, Vector3, Vector4};
 use crate::nodes::node::BufferSource;
 use crate::nodes::wgsl::TextureKind;
@@ -36,6 +36,11 @@ pub struct RenderState {
     pub side: Side,
     pub depth_test: bool,
     pub depth_write: bool,
+    /// `Material.depthFunc`, read only while `depth_test` is on.
+    pub depth_func: DepthFunc,
+    /// `Material.alphaToCoverage`; the pipeline enables it only on a
+    /// multisampled target, as `createRenderPipeline()` does.
+    pub alpha_to_coverage: bool,
     /// `WebGPUPipelineUtils.createRenderPipeline()`'s `materialBlending`, i.e.
     /// `MeshBasicNodeMaterial::blend_state()`. Part of the key because an
     /// additive and an opaque pipeline share one program.
@@ -243,10 +248,19 @@ impl Program {
             depth_stencil: state.depth_format.map(|format| wgpu::DepthStencilState {
                 format,
                 depth_write_enabled: Some(state.depth_write),
-                // `Material.depthFunc` defaults to `LessEqualDepth`; with
-                // `depthTest` off `_getDepthCompare()` returns `'always'`.
+                // `_getDepthCompare()`: `Material.depthFunc` one-to-one,
+                // and `'always'` with `depthTest` off.
                 depth_compare: Some(if state.depth_test {
-                    wgpu::CompareFunction::LessEqual
+                    match state.depth_func {
+                        DepthFunc::Never => wgpu::CompareFunction::Never,
+                        DepthFunc::Always => wgpu::CompareFunction::Always,
+                        DepthFunc::Less => wgpu::CompareFunction::Less,
+                        DepthFunc::LessEqual => wgpu::CompareFunction::LessEqual,
+                        DepthFunc::Equal => wgpu::CompareFunction::Equal,
+                        DepthFunc::GreaterEqual => wgpu::CompareFunction::GreaterEqual,
+                        DepthFunc::Greater => wgpu::CompareFunction::Greater,
+                        DepthFunc::NotEqual => wgpu::CompareFunction::NotEqual,
+                    }
                 } else {
                     wgpu::CompareFunction::Always
                 }),
@@ -256,7 +270,9 @@ impl Program {
             multisample: wgpu::MultisampleState {
                 count: state.sample_count,
                 mask: !0,
-                alpha_to_coverage_enabled: false,
+                // `alphaToCoverageEnabled: material.alphaToCoverage &&
+                // sampleCount > 1`.
+                alpha_to_coverage_enabled: state.alpha_to_coverage && state.sample_count > 1,
             },
             multiview_mask: None,
             cache: None,
