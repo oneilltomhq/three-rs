@@ -60,6 +60,11 @@ pub struct Sprite {
     /// vertex shader through a `reference( 'center', 'vec2', object )` uniform,
     /// by `raycast()`, and by `Frustum.intersectsSprite()`.
     pub center: Vector2,
+    /// `Sprite.count` — how many instances of the quad one draw call renders.
+    /// 1 unless a node material places the instances itself, as
+    /// `PointsNodeMaterial`'s `setupVertexSprite()` does off `instanceIndex`-
+    /// indexed storage.
+    pub count: usize,
 }
 
 impl Sprite {
@@ -83,6 +88,7 @@ impl Sprite {
             geometry: GEOMETRY.with(Rc::clone),
             material: material.unwrap_or_else(MeshBasicNodeMaterial::sprite),
             center: Vector2::new(0.5, 0.5),
+            count: 1,
         }
     }
 
