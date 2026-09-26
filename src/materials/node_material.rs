@@ -5,6 +5,7 @@
 use super::environment;
 use super::phong::{self, LightDesc};
 use super::physical::{self, Physical};
+use super::toon;
 use super::transmission;
 use super::{Blending, MaterialKind, MeshBasicNodeMaterial, Side, ToneMapping};
 use crate::lights::LightKind;
@@ -119,6 +120,12 @@ pub struct SetupContext {
     /// **inside every material's fragment shader** instead of in a quad of its
     /// own. See [`OutputContext`].
     pub output: Option<OutputContext>,
+    /// `camera.cameras.length` when the pass is drawn through an
+    /// `ArrayCamera` (0 otherwise) — `RenderObject.getCacheKey()`'s
+    /// `camera.isArrayCamera ? camera.cameras.length : 0`. It sizes the
+    /// camera matrix arrays and moves the object group to `@group( 2 )`, so
+    /// it is part of the program's cache key. `docs/nodes.md` §40.
+    pub array_cameras: usize,
 }
 
 /// `context.getOutput( materialOutputNode, builder )`.
@@ -547,7 +554,7 @@ fn setup_inner(
         fragment_node.clone()
     } else if material.kind == MaterialKind::Phong {
         setup_phong(material, ctx, true, &mut fragment)
-    } else if material.kind == MaterialKind::Lambert {
+    } else if material.kind == MaterialKind::Lambert || material.kind == MaterialKind::Toon {
         setup_phong(material, ctx, false, &mut fragment)
     } else if material.kind == MaterialKind::Standard || material.kind == MaterialKind::Physical {
         setup_standard(material, ctx, &mut fragment)
@@ -573,7 +580,26 @@ fn setup_inner(
     } else {
         setup_diffuse_color(material, ctx, &mut fragment);
 
-        let outgoing = if let Some(env_map) = &material.env_map {
+        // `NodeMaterial.setupLighting()` for a material with no lighting model
+        // of its own: `lights = this.lights || this.lightsNode !== null`, and
+        // the `LightsNode` runs only `if ( lightsNode.getScope().hasLights )`.
+        // The model then comes from the `lightsNode.context( { lightingModel
+        // } )` the example wrapped the lights in.
+        let custom_lighting = material.lighting_model.as_ref().and_then(|model| {
+            let lights =
+                (material.lights && !ctx.lighting_disabled) || material.lights_node.is_some();
+            let list = material_lights(material, ctx);
+            (lights && !list.is_empty()).then_some((model, list))
+        });
+
+        let outgoing = if let Some((model, lights)) = custom_lighting {
+            crate::materials::lighting_model::lights_node(
+                model.as_ref(),
+                &lights,
+                material.received_shadow_position_node.as_ref(),
+                &mut fragment,
+            )
+        } else if let Some(env_map) = &material.env_map {
             // `BasicLightingModel` with an indirect environment contribution.
             fragment.push(
                 indirect_diffuse().assign(
@@ -629,7 +655,9 @@ fn setup_inner(
                 mix(
                     output_property().xyz(),
                     fog.color.clone(),
-                    fog.factor.clone(),
+                    // Built now, inside this material's `setupPositionView`
+                    // scope, as three builds `Fog.js`' `Fn()` (§41).
+                    crate::nodes::tsl::resolve_fog_factor(&fog.factor),
                 ),
                 output_property().w(),
             ]);
@@ -1011,12 +1039,23 @@ fn setup_phong(
             if light.kind == LightKind::Ambient {
                 continue;
             }
-            phong::direct_light(
-                light,
-                material.received_shadow_position_node.as_ref(),
-                specular,
-                fragment,
-            );
+            // `ToonLightingModel` is Lambert with its own `direct()`; the
+            // rest of the flow — `indirect()` included — is shared.
+            if material.kind == MaterialKind::Toon {
+                toon::direct_light(
+                    light,
+                    material.received_shadow_position_node.as_ref(),
+                    material.gradient_map.as_ref(),
+                    fragment,
+                );
+            } else {
+                phong::direct_light(
+                    light,
+                    material.received_shadow_position_node.as_ref(),
+                    specular,
+                    fragment,
+                );
+            }
         }
 
         // The tail every lit material shares.

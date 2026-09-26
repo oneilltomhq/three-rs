@@ -34,7 +34,7 @@ Three's WGSL was dumped by `tools/dump-webgpu.mjs` into
 | `examples/` | `webgpu_shadowmap_opacity.rs`; a `dump_wgsl` section (three's `m01`, `m05`, `m09`) |
 | registrations | the `rung!` and `#[test]` entries, the README row and gallery thumbnail, the web trio and manifest, the viewer row |
 
-`docs/nodes.md` §36.4–36.6 is the long form.
+`docs/nodes.md` §43.4–36.6 is the long form.
 
 ## What the pixels found
 
@@ -49,7 +49,7 @@ is on the backdrop, where the tinted shadows fall.
   branch, five vogel taps, the same double `mix`;
 * the AgX output pass: equal apart from how the `mat3x3` constant is spelled.
 
-The divergences are listed in §36.6:
+The divergences are listed in §43.6:
 
 * the tinted factor is `.xyz`'d where three widens the light colour to `vec4`;
 * point lights ignore `transmitted`;

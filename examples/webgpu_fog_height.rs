@@ -53,7 +53,7 @@ pub fn init() -> App {
 
     // `const density = uniform( 0.04 ); const height = uniform( 2 );` — object
     // group uniforms, as in three's dump (`object.nodeUniform15` / `16`).
-    // Divergence (`docs/nodes.md` §36.3): plain values, not the settable
+    // Divergence (`docs/nodes.md` §43.3): plain values, not the settable
     // form, because no host writes the page's two GUI sliders.
     let density = uniform_value(Type::F32, vec![0.04]);
     let height = uniform_value(Type::F32, vec![2.0]);

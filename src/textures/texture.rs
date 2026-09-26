@@ -312,6 +312,33 @@ impl Texture {
         texture
     }
 
+    /// `new DataTexture( new Uint8Array( data ), width, height, RedFormat )` —
+    /// `webgpu_materials_toon`'s gradient maps, one byte per texel
+    /// (`r8unorm`).
+    ///
+    /// Unlike [`data_r32float`](Self::data_r32float) this keeps all of
+    /// `DataTexture`'s own defaults: `NearestFilter` on both sides, which makes
+    /// the map unfilterable ([`is_unfilterable`](Self::is_unfilterable)), so
+    /// three binds it with no sampler and reads it with `textureLoad`. That is
+    /// what gives a toon ramp its hard steps.
+    pub fn data_r8(width: u32, height: u32, data: &[u8]) -> Self {
+        assert_eq!(
+            data.len() as u32,
+            width * height,
+            "three-rs: a RedFormat UnsignedByteType DataTexture holds one byte per texel"
+        );
+        let texture = Self::new(width, height, Some(data.to_vec()));
+        {
+            let mut inner = texture.0.borrow_mut();
+            inner.flip_y = false;
+            inner.generate_mipmaps = false;
+            inner.mag_filter = TextureFilter::Nearest;
+            inner.min_filter = MinFilter::Nearest;
+            inner.format = wgpu::TextureFormat::R8Unorm;
+        }
+        texture
+    }
+
     /// `new DataTexture( new Uint16Array( data ), width, height, RGBAFormat,
     /// HalfFloatType )` — what `DataTextureLoader` builds from
     /// [`HdrLoader::parse`](crate::loaders::HdrLoader::parse)'s half-float

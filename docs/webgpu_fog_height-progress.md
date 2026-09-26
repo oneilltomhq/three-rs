@@ -32,7 +32,7 @@ background (`Background::Node`), `InstancedMesh` under a lit material, and
 | `tools/dump-webgpu.mjs` | a stray read of the old `pageFile` option, left by a merge, made every dump throw; removed |
 | registrations | the `rung!` and `#[test]` entries, the README row and gallery thumbnail, the web trio and manifest, the viewer row |
 
-`docs/nodes.md` §36 is the long form.
+`docs/nodes.md` §43 is the long form.
 
 ## What the pixels found
 

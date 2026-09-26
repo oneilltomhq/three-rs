@@ -315,7 +315,7 @@ pub fn shadow_factor_filtered(
 /// the alpha zeroes the weight and the light is untouched; where a caster is
 /// the nearest surface the depth test passes and the inner mix is 1.
 ///
-/// **Divergence** (`docs/nodes.md` §36): the output is a `vec4` in three, and
+/// **Divergence** (`docs/nodes.md` §43): the output is a `vec4` in three, and
 /// `lightColor.mul( shadow )` then widens the whole direct term to `vec4`
 /// (`vec4( lightColor, 1 ) * shadow`, and `( vec4( directDiffuse, 1 ) + … ).xyz`
 /// in the dump). The port takes the `.xyz` here, so the light colour stays a

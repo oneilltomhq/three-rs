@@ -5,7 +5,7 @@
 //! onto the cloth backdrop: `renderer.shadowMap.transmitted = true` makes the
 //! receivers sample the shadow pass's colour target, and each dragon's
 //! `material.castShadowNode` writes its `attenuationColor` into it (see
-//! `docs/nodes.md` §36). The output is `AgXToneMapping` at exposure 1.5.
+//! `docs/nodes.md` §43). The output is `AgXToneMapping` at exposure 1.5.
 //!
 //! Divergence: the page sets `dirLight.shadow.autoUpdate = false` and
 //! `needsUpdate = true`, so three renders the shadow map once. The port has no

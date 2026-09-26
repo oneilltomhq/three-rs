@@ -275,6 +275,7 @@ impl Primitive {
 }
 
 /// One entry of the render list, already resolved to what the draw needs.
+#[derive(Clone)]
 struct Renderable {
     /// `renderItem.object` — `frame.object` for a node whose `updateType` is
     /// `NodeUpdateType.OBJECT`. `None` for the draws three.js makes with its
@@ -363,6 +364,9 @@ const VARIANT_QUAD: u64 = 2;
 /// then `FrontSide`, which are two programs because the side reaches
 /// `faceDirection` and so the normal.
 const VARIANT_BACK_SIDE: u64 = 4;
+/// `MaterialKey::variant` (hashed with the pass's template id) for
+/// `ToonOutlinePassNode._getOutlineMaterial( source )`.
+const VARIANT_TOON_OUTLINE: u64 = 6;
 const VARIANT_FRONT_SIDE: u64 = 5;
 
 /// One material's built programs — `NodeManager.nodeBuilderCache`'s entries
@@ -448,6 +452,18 @@ struct Draw {
     /// it (`drawIndirect` / `drawIndexedIndirect` at offset 0) and
     /// `instance_count`, `first` and `elements` are not used.
     indirect: Option<wgpu::Buffer>,
+    /// `WebGPUBackend.draw()`'s `ArrayCamera` arm: one entry per sub-camera,
+    /// each drawn with its own viewport and, when the program reads the
+    /// camera index, its own `cameraIndex` bind group. Empty for every other
+    /// camera, which draws once.
+    sub_cameras: Vec<SubCameraDraw>,
+}
+
+/// One sub-camera of an `ArrayCamera` draw: `pass.setViewport( floor( vp *
+/// pixelRatio ) )` and `pass.setBindGroup( indexPos, indexesGPU[ i ] )`.
+struct SubCameraDraw {
+    viewport: [f32; 4],
+    camera_index: Option<(u32, wgpu::BindGroup)>,
 }
 
 struct PassTarget {
@@ -649,6 +665,12 @@ pub struct Renderer {
     /// carries only the flag, because nothing on the ladder uses a `Lighting`
     /// for anything else.
     pub lighting_enabled: bool,
+    /// `renderer.setRenderObjectFunction()` as `ToonOutlinePassNode` sets it
+    /// for the duration of its own render: the outline material every
+    /// `MeshToonNodeMaterial` draw is preceded by. `None` is three's default
+    /// render-object function. See
+    /// [`ToonOutlinePassNode`](crate::nodes::display::ToonOutlinePassNode).
+    pub(crate) toon_outline: Option<Rc<MeshBasicNodeMaterial>>,
     /// `PassNode.updateBefore()`'s `camera.layers.mask = this._layers.mask` —
     /// the layer mask `_projectObject()` tests against for the duration of one
     /// pass. `None` leaves the camera's own mask alone.
@@ -836,7 +858,7 @@ pub struct Renderer {
     /// `renderer.shadowMap.transmitted` — the receivers of a spot or
     /// directional shadow also read the shadow pass's colour target, where
     /// each caster's `castShadowNode` was written, and tint the shadow by it.
-    /// Point-light shadows ignore it (`docs/nodes.md` §36).
+    /// Point-light shadows ignore it (`docs/nodes.md` §43).
     pub shadow_map_transmitted: bool,
     /// The depth texture of each shadow-casting light's shadow map, keyed by the
     /// light's index in the render list — `light.shadow.map` in three.js. Filled
@@ -1091,6 +1113,7 @@ impl Renderer {
             opaque: true,
             transparent: true,
             lighting_enabled: true,
+            toon_outline: None,
             camera_layers: None,
             sort_objects: true,
             canvas: None,
@@ -1745,7 +1768,7 @@ impl Renderer {
                 .then(|| opaque_frame.clone())
                 .flatten();
 
-            items.push(Renderable {
+            let renderable = Renderable {
                 object: Some(item.node.clone()),
                 geometry: geometry.clone(),
                 material: material.clone(),
@@ -1756,6 +1779,7 @@ impl Renderer {
                 // real scene — already gets two programs.
                 key,
                 setup: SetupContext {
+                    array_cameras: camera.sub_cameras().len(),
                     environment: scene_environment,
                     // `builder.renderer.lighting.enabled`: a pass with lighting
                     // disabled builds its materials with no lights *and* no
@@ -1830,7 +1854,28 @@ impl Renderer {
                 bone_matrices: skin.map(|s| s.3).unwrap_or_default(),
                 primitive,
                 sub_draws,
-            });
+            };
+
+            // `ToonOutlinePassNode`'s render-object function: a toon material
+            // is drawn twice, its outline first — the same object and
+            // geometry under the pass's back-side outline material — then
+            // itself. `material.wireframe === false` is the other half of
+            // three's test; the port has no wireframe, so it always holds.
+            if let Some(outline) = self
+                .toon_outline
+                .as_ref()
+                .filter(|_| renderable.material.kind == materials::MaterialKind::Toon)
+            {
+                items.push(Renderable {
+                    material: (**outline).clone(),
+                    // `_materialCache.get( originalMaterial )`: one outline
+                    // material per source material, so the key is the
+                    // source's, tagged with which pass's template it is.
+                    key: key.variant(hash_of(&(VARIANT_TOON_OUTLINE, outline.id.get()))),
+                    ..renderable.clone()
+                });
+            }
+            items.push(renderable);
         }
 
         // `Background.update()`: a `Color` background becomes the clear colour
@@ -1919,11 +1964,30 @@ impl Renderer {
             })
             .collect();
 
+        // `Camera.js`' `uniformArray()`s for an `ArrayCamera`: every
+        // sub-camera's view and projection matrix, in `camera.cameras` order.
+        let sub_cameras = camera.sub_cameras();
+        let camera_view_matrices: Vec<f32> = sub_cameras
+            .iter()
+            .flat_map(|c| c.matrix_world_inverse.to_f32_array())
+            .collect();
+        let camera_projection_matrices: Vec<f32> = sub_cameras
+            .iter()
+            .flat_map(|c| c.projection_matrix.to_f32_array())
+            .collect();
+        let camera_viewports: Vec<Vector4> = sub_cameras
+            .iter()
+            .map(|c| c.viewport.unwrap_or(Vector4::new(0.0, 0.0, 0.0, 0.0)))
+            .collect();
+
         let camera_uniforms = UniformContext {
             camera_projection: camera.projection_matrix(),
             camera_projection_inverse: camera.projection_matrix_inverse(),
             camera_view: camera.matrix_world_inverse(),
             camera_world: camera.matrix_world(),
+            camera_view_matrices: &camera_view_matrices,
+            camera_projection_matrices: &camera_projection_matrices,
+            camera_viewports: &camera_viewports,
             time: self.time,
             delta_time: self.delta_time,
             frame_id: self.frame_id,
@@ -2121,6 +2185,8 @@ impl Renderer {
                     material: materials::shadow_material_for(source, shadow_type),
                     key: MaterialKey::of(source).variant(VARIANT_SHADOW),
                     setup: SetupContext {
+                        // A shadow camera is never an `ArrayCamera`.
+                        array_cameras: 0,
                         environment: None,
                         lighting_disabled: false,
                         viewport_opaque_mip: None,
@@ -2497,6 +2563,8 @@ impl Renderer {
                     material: materials::shadow_material_for(source, shadow_type),
                     key: MaterialKey::of(source).variant(VARIANT_SHADOW),
                     setup: SetupContext {
+                        // A shadow camera is never an `ArrayCamera`.
+                        array_cameras: 0,
                         environment: None,
                         lighting_disabled: false,
                         viewport_opaque_mip: None,
@@ -2966,6 +3034,12 @@ impl Renderer {
                 }
             }
 
+            let sub_cameras = if item.setup.array_cameras > 0 {
+                self.sub_camera_draws(program_key, &node, uniforms.camera_viewports)
+            } else {
+                Vec::new()
+            };
+
             // `WebGPUBackend.draw()`'s `if ( drawIndirect !== null )` arm.
             let indirect = item
                 .geometry
@@ -2982,6 +3056,7 @@ impl Renderer {
                 first,
                 elements,
                 indirect,
+                sub_cameras,
             });
         }
 
@@ -3109,8 +3184,6 @@ impl Renderer {
         }
 
         for draw in draws.iter() {
-            let geometry = &self.geometries[&draw.geometry_id].gpu;
-
             pass.set_pipeline(
                 self.pipelines
                     .get(&draw.pipeline)
@@ -3123,55 +3196,76 @@ impl Renderer {
                 pass.set_vertex_buffer(slot as u32, buffer.slice(..));
             }
 
-            if !draw.sub_draws.is_empty() {
-                let (buffer, format, _) = geometry
-                    .index
-                    .as_ref()
-                    .expect("three-rs: a batched mesh is always indexed");
-                pass.set_index_buffer(buffer.slice(..), *format);
-                // `WebGPUBackend.draw()`'s `isBatchedMesh` arm:
-                // `drawIndexed( counts[ i ], 1, starts[ i ] / bytesPerElement, 0, i )`.
-                // `firstInstance` is the draw ordinal `i`, not the instance
-                // id — `@builtin(instance_index)` reads it and
-                // `_indirectTexture` maps it back.
-                for sub in &draw.sub_draws {
-                    pass.draw_indexed(
-                        sub.first_index..sub.first_index + sub.index_count,
-                        0,
-                        sub.first_instance..sub.first_instance + 1,
-                    );
-                }
+            if draw.sub_cameras.is_empty() {
+                self.issue_draw(&mut pass, draw);
                 continue;
             }
-
-            // `renderObject.getIndirectOffset()` is 0 for every geometry
-            // that is not a `BatchedMesh`'s multi-draw, which is all of them
-            // here.
-            if let Some(indirect) = &draw.indirect {
-                match &geometry.index {
-                    Some((buffer, format, _)) => {
-                        pass.set_index_buffer(buffer.slice(..), *format);
-                        pass.draw_indexed_indirect(indirect, 0);
-                    }
-                    None => pass.draw_indirect(indirect, 0),
+            // `WebGPUBackend.draw()`'s `ArrayCamera` arm: the object once per
+            // sub-camera, each into its own viewport. The last sub-camera's
+            // viewport stays set, as it does in three.js.
+            for sub in &draw.sub_cameras {
+                let [x, y, width, height] = sub.viewport;
+                pass.set_viewport(x, y, width, height, 0.0, 1.0);
+                if let Some((index, group)) = &sub.camera_index {
+                    pass.set_bind_group(*index, group, &[]);
                 }
-                continue;
+                self.issue_draw(&mut pass, draw);
             }
+        }
+    }
 
+    /// The draw call itself, with the pipeline, bind groups and vertex
+    /// buffers already set: `WebGPUBackend._draw()`.
+    fn issue_draw(&self, pass: &mut wgpu::RenderPass, draw: &Draw) {
+        let geometry = &self.geometries[&draw.geometry_id].gpu;
+        if !draw.sub_draws.is_empty() {
+            let (buffer, format, _) = geometry
+                .index
+                .as_ref()
+                .expect("three-rs: a batched mesh is always indexed");
+            pass.set_index_buffer(buffer.slice(..), *format);
+            // `WebGPUBackend.draw()`'s `isBatchedMesh` arm:
+            // `drawIndexed( counts[ i ], 1, starts[ i ] / bytesPerElement, 0, i )`.
+            // `firstInstance` is the draw ordinal `i`, not the instance
+            // id — `@builtin(instance_index)` reads it and
+            // `_indirectTexture` maps it back.
+            for sub in &draw.sub_draws {
+                pass.draw_indexed(
+                    sub.first_index..sub.first_index + sub.index_count,
+                    0,
+                    sub.first_instance..sub.first_instance + 1,
+                );
+            }
+            return;
+        }
+
+        // `renderObject.getIndirectOffset()` is 0 for every geometry
+        // that is not a `BatchedMesh`'s multi-draw, which is all of them
+        // here.
+        if let Some(indirect) = &draw.indirect {
             match &geometry.index {
                 Some((buffer, format, _)) => {
                     pass.set_index_buffer(buffer.slice(..), *format);
-                    pass.draw_indexed(
-                        draw.first..draw.first + draw.elements,
-                        0,
-                        0..draw.instance_count,
-                    );
+                    pass.draw_indexed_indirect(indirect, 0);
                 }
-                None => pass.draw(
-                    draw.first..draw.first + draw.elements,
-                    0..draw.instance_count,
-                ),
+                None => pass.draw_indirect(indirect, 0),
             }
+            return;
+        }
+
+        match &geometry.index {
+            Some((buffer, format, _)) => {
+                pass.set_index_buffer(buffer.slice(..), *format);
+                pass.draw_indexed(
+                    draw.first..draw.first + draw.elements,
+                    0,
+                    0..draw.instance_count,
+                );
+            }
+            None => pass.draw(
+                draw.first..draw.first + draw.elements,
+                0..draw.instance_count,
+            ),
         }
     }
 
@@ -3788,6 +3882,7 @@ impl Renderer {
         let node = Rc::new(
             NodeBuilder::new()
                 .with_output_components(output_components as u32)
+                .with_array_cameras(item.setup.array_cameras)
                 .build(&flow)
                 .with_instanced_attributes(&item.setup.instanced_attributes),
         );
@@ -3882,6 +3977,75 @@ impl Renderer {
         out
     }
 
+    /// `WebGPUBackend.draw()`'s `ArrayCamera` arm, resolved: per sub-camera
+    /// its viewport in physical pixels and, when the program declares the
+    /// `cameraIndex` group, the bind group holding that sub-camera's index.
+    ///
+    /// three.js builds `indexesGPU` once per camera with
+    /// `createBindGroupIndex()`; the port keeps one slot buffer per index,
+    /// shared by every draw, and the bind group cache does the rest. The
+    /// viewport is `Math.floor( vp * pixelRatio )`, where `pixelRatio` is the
+    /// renderer's for the canvas and the internal framebuffer target and 1
+    /// for an application's render target.
+    fn sub_camera_draws(
+        &mut self,
+        program_key: u64,
+        node: &NodeProgram,
+        viewports: &[Vector4],
+    ) -> Vec<SubCameraDraw> {
+        let pixel_ratio = if self.render_target.is_none() {
+            self.pixel_ratio
+        } else {
+            1.0
+        };
+        let group_index = node.groups.iter().position(|descs| {
+            descs.iter().any(|desc| {
+                matches!(
+                    desc,
+                    BindingDesc::Uniforms {
+                        group: crate::nodes::UniformGroup::CameraIndex,
+                        ..
+                    }
+                )
+            })
+        });
+
+        viewports
+            .iter()
+            .enumerate()
+            .map(|(i, vp)| {
+                let camera_index = group_index.map(|group| {
+                    let data: [u32; 4] = [i as u32, 0, 0, 0];
+                    let buffer = self.slot_buffer(
+                        SlotKey {
+                            owner: SlotOwner::CameraIndex(i as u32),
+                            group: 0,
+                            binding: 0,
+                        },
+                        "three-rs cameraIndex",
+                        bytemuck::cast_slice(&data),
+                        wgpu::BufferUsages::UNIFORM,
+                    );
+                    let bind_group = self.bind_group(
+                        LayoutKey::Render(program_key),
+                        group,
+                        &[Resource::Buffer(buffer)],
+                    );
+                    (group as u32, bind_group)
+                });
+                SubCameraDraw {
+                    viewport: [
+                        (vp.x * pixel_ratio).floor() as f32,
+                        (vp.y * pixel_ratio).floor() as f32,
+                        (vp.z * pixel_ratio).floor() as f32,
+                        (vp.w * pixel_ratio).floor() as f32,
+                    ],
+                    camera_index,
+                }
+            })
+            .collect()
+    }
+
     /// The bind group for `resources` in group `group` of `layout`'s
     /// pipeline layout: the cached one if these very resources were bound
     /// there before, a new one otherwise (issue #137).
@@ -3970,6 +4134,23 @@ impl Renderer {
         // `skeleton.update()` rewrites `boneMatrices` every frame, so the bone
         // buffer is re-written per draw like the instance matrix: kept on the
         // draw's slot, never on the node's identity.
+        // `Camera.js`' `uniformArray()`s of an `ArrayCamera`'s matrices, which
+        // the render group re-uploads every render.
+        if let BufferSource::CameraViewMatrices | BufferSource::CameraProjectionMatrices = source {
+            let matrices = match source {
+                BufferSource::CameraViewMatrices => uniforms.camera_view_matrices,
+                _ => uniforms.camera_projection_matrices,
+            };
+            let mut data = vec![0f32; count * 16];
+            let n = data.len().min(matrices.len());
+            data[..n].copy_from_slice(&matrices[..n]);
+            return self.slot_buffer(
+                slot,
+                "three-rs camera matrices",
+                bytemuck::cast_slice(&data),
+                wgpu::BufferUsages::UNIFORM,
+            );
+        }
         if let BufferSource::BoneMatrices = source {
             let mut data = vec![0f32; count * 16];
             let n = data.len().min(uniforms.bone_matrices.len());
@@ -4140,6 +4321,8 @@ impl Renderer {
         match source {
             BufferSource::MorphInfluences
             | BufferSource::BoneMatrices
+            | BufferSource::CameraViewMatrices
+            | BufferSource::CameraProjectionMatrices
             | BufferSource::Storage
             | BufferSource::AtomicStorage
             | BufferSource::Struct { .. } => {
