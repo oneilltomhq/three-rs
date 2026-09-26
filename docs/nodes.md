@@ -3862,3 +3862,20 @@ this page takes the hard edge.
   pixel-identical to three's `actual_full.png`.
 * **`subgroup_size`.** Three's kernels declare `enable subgroups` and a
   `subgroup_size` builtin they never read. The port does not.
+
+### 44.6 `webgpu_instance_points`: a `StorageInstancedBufferAttribute`
+
+The second page has a kernel that writes each point's size into
+`storage( new StorageInstancedBufferAttribute( sizes, 1 ), 'float', n )`. The
+material reads the same attribute back with `instancedBufferAttribute()`.
+In the port that is `storage_f32( &sizes, Type::F32 )` and
+`.to_attribute()`. One `BufferId` means one GPU buffer, filled from `sizes`
+and then overwritten by the kernel, which `animate()` dispatches with
+`renderer.compute()` before each frame. A `float` array is packed at 4
+bytes, as three's `float32` vertex attribute is. The page's `alphaToCoverage:
+true` takes `shapeCircle()`'s smoothed edge and turns on the pipeline's
+alpha-to-coverage (the frame is multisampled). `vertexColors: true` has no
+effect, because the sprite quad has no `color` attribute and three checks
+`geometry.hasAttribute( 'color' )`. The example leaves it off and says so.
+`nodes::builder::with_alpha_to_coverage_samples()` is the public seam
+`dump_wgsl` uses to build the smoothed branch without a renderer.
