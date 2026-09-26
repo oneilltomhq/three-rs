@@ -137,6 +137,14 @@ mod webgpu_materials_cubemap_mipmaps;
 #[allow(dead_code)]
 mod webgpu_materials_envmaps;
 
+#[path = "../../examples/webgpu_multiple_rendertargets_readback.rs"]
+#[allow(dead_code)]
+mod webgpu_multiple_rendertargets_readback;
+
+#[path = "../../examples/webgpu_multiple_rendertargets.rs"]
+#[allow(dead_code)]
+mod webgpu_multiple_rendertargets;
+
 #[path = "../../examples/webgpu_rtt.rs"]
 #[allow(dead_code)]
 mod webgpu_rtt;
@@ -2011,6 +2019,96 @@ fn webgpu_shadowmap_opacity() {
     steady_frame(name, &mut app, webgpu_shadowmap_opacity::animate, |app| {
         app.renderer.device()
     });
+}
+
+#[test]
+fn webgpu_multiple_rendertargets() {
+    let name = "webgpu_multiple_rendertargets";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_multiple_rendertargets::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_multiple_rendertargets::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(
+        name,
+        &mut app,
+        webgpu_multiple_rendertargets::animate,
+        |app| app.renderer.device(),
+    );
+}
+
+#[test]
+fn webgpu_multiple_rendertargets_readback() {
+    let name = "webgpu_multiple_rendertargets_readback";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_multiple_rendertargets_readback::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_multiple_rendertargets_readback::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(
+        name,
+        &mut app,
+        webgpu_multiple_rendertargets_readback::animate,
+        |app| app.renderer.device(),
+    );
 }
 
 /// The occlusion rung: a Phong plane whose `colorNode` is an
@@ -4030,6 +4128,8 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_tsl_angular_slicing);
     rung!(webgpu_fog_height);
     rung!(webgpu_shadowmap_opacity);
+    rung!(webgpu_multiple_rendertargets);
+    rung!(webgpu_multiple_rendertargets_readback);
 }
 
 // ---------------------------------------------------------------------------

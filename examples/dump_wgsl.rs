@@ -2720,4 +2720,80 @@ fn dump_shadowmap_opacity() {
         &out,
         SetupContext::default(),
     );
+
+    // rung `webgpu_multiple_rendertargets`: the knot's bare `NodeMaterial`
+    // (`colorNode = texture( diffuse, uv() * vec2( 10, 4 ) )`) under the
+    // renderer's two-attachment MRT `{ output, normal: normalWorld }` —
+    // against `m02` — and the `RenderPipeline` composite of the two
+    // `NearestFilter` attachments, split at `screenUV.x = 0.5` — against
+    // `m04_fragment_fragment_RenderPipeline`. Both attachments are
+    // unfilterable, so the composite has no sampler and two `textureLoad`s.
+    let hardwood = Texture::new(4, 4, Some(vec![0; 4 * 4 * 4]));
+    hardwood.set_wrapping(
+        three_rs::textures::Wrapping::Repeat,
+        three_rs::textures::Wrapping::Repeat,
+    );
+    let mut knot = MeshBasicNodeMaterial::new();
+    knot.color_node = Some(texture_uv(&hardwood, uv().mul(vec2(10.0, 4.0))));
+    show(
+        "multiple_rendertargets_knot",
+        &knot,
+        SetupContext {
+            mrt: Some(three_rs::materials::MrtContext {
+                node: {
+                    let mut node = three_rs::nodes::mrt(vec![("output", output_property())]);
+                    node.set_deferred("normal", normal_world);
+                    node
+                },
+                attachments: vec!["output".to_string(), "normal".to_string()],
+            }),
+            ..SetupContext::default()
+        },
+    );
+    let g_buffer = three_rs::renderer::RenderTarget::new_with_options(
+        800,
+        500,
+        three_rs::renderer::RenderTargetOptions {
+            min_filter: three_rs::TextureFilter::Nearest,
+            mag_filter: three_rs::TextureFilter::Nearest,
+            ..three_rs::renderer::RenderTargetOptions::default()
+        },
+    )
+    .unwrap();
+    g_buffer.set_count(2);
+    g_buffer.set_texture_name(1, "normal");
+    let attachments = g_buffer.textures();
+    let mut composite = MeshBasicNodeMaterial::new();
+    composite.name = "RenderPipeline";
+    composite.fragment_node = Some(three_rs::materials::render_output(
+        mix(
+            texture(&attachments[0]),
+            texture(&attachments[1]),
+            step(0.5, screen_uv().x()),
+        ),
+        three_rs::ToneMapping::None,
+    ));
+    composite.vertex_node = Some(three_rs::materials::quad_vertex_node());
+    show(
+        "multiple_rendertargets_composite",
+        &composite,
+        SetupContext::default(),
+    );
+
+    // …and `webgpu_multiple_rendertargets_readback`'s `QuadMesh`, the same
+    // composite as a bare `NodeMaterial`'s `colorNode` — against its `m04`.
+    // No inline sRGB tail: the separate `outputColorTransform` pass (`m06`)
+    // does that, as for every quad drawn with `antialias: true`.
+    let mut readback_quad = MeshBasicNodeMaterial::new();
+    readback_quad.color_node = Some(mix(
+        texture(&attachments[0]),
+        texture(&attachments[1]),
+        step(0.5, screen_uv().x()),
+    ));
+    readback_quad.vertex_node = Some(three_rs::materials::quad_vertex_node());
+    show(
+        "multiple_rendertargets_readback_quad",
+        &readback_quad,
+        SetupContext::default(),
+    );
 }
