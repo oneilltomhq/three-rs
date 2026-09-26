@@ -28,7 +28,7 @@ merge that failed every run, and the first commit on the branch removes it.
 | `src/nodes/tsl.rs`, `src/materials/node_material.rs` | fog factors built inside the material's `positionView` scope |
 | `examples/` | `webgpu_sprites.rs`; `dump_wgsl` section `sprites` |
 
-`docs/nodes.md` §36 is the long form.
+`docs/nodes.md` §41 is the long form.
 
 ## What the pixels found
 
@@ -39,7 +39,7 @@ port's fog factor had been built when the fog node was made, outside the
 material. So it read the base class' `modelViewMatrix * positionLocal`, a
 second `vec3` varying of the un-billboarded quad. At the pinned time
 (`Date.now() = 0`) the group has no rotation, so the two depths agree on
-every pixel. They would part as soon as the group turned. The fix (§36.2)
+every pixel. They would part as soon as the group turned. The fix (§41.2)
 makes the factor an inline `Fn()` that the material's setup builds. After it,
 the sprite shaders carry one `v_positionView`, as three's do, and every
 existing fog rung keeps its pixel count.

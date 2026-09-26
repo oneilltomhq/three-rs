@@ -3,7 +3,7 @@
 //!
 //! Two hundred `Sprite`s share one `SpriteNodeMaterial` and differ only in
 //! their transform and in `sprite.userData.rotation`, which the material reads
-//! per draw through `userData( 'rotation', 'float' )` (`docs/nodes.md` §36).
+//! per draw through `userData( 'rotation', 'float' )` (`docs/nodes.md` §41).
 //!
 //! Under the e2e harness the viewport is `400 * 2` x `250 * 2` with no
 //! `deviceScaleFactor`, so `window.innerWidth` / `innerHeight` /

@@ -25,7 +25,7 @@ WGSL in `target/dumps/webgpu_instance_sprites/` (uncommitted), against
 | `src/objects/sprite.rs`, `payload.rs` | `Sprite.count`, the draw's instance count |
 | `examples/` | `webgpu_instance_sprites.rs`; `dump_wgsl` section `instance_sprites` |
 
-It also relies on `webgpu_sprites`' fog change (§36.2): `FogExp2`'s density
+It also relies on `webgpu_sprites`' fog change (§41.2): `FogExp2`'s density
 factor now reads the sprite's `v_positionView`, as three's does.
 
 ## What the pixels found
@@ -43,4 +43,4 @@ stay 0 and the camera stays on the z axis. The inspector's
 
 Structurally, the one divergence from the dump beyond §8's classes is the uv
 matrix. Three has one `mat3` per `texture()` node (map and alphaMap), and the
-port has one per texture (§36).
+port has one per texture (§41).
