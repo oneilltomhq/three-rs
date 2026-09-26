@@ -409,6 +409,11 @@ pub(crate) struct BuildContext {
     /// `builder.material.side`: what `negateOnBackSide()` branches on, and so
     /// part of every cache key that reaches `normalView` or the tangent frame.
     pub(crate) material_side: crate::materials::Side,
+    /// `builder.geometry.hasAttribute( 'tangent' )`: what `Tangent.js` and
+    /// `Bitangent.js` branch on. With the attribute the frame comes from the
+    /// `tangent` vec4 through `modelViewMatrix`; without it, from the screen
+    /// derivatives of `TangentUtils.js`.
+    pub(crate) has_tangent: bool,
     /// Addon keys (`TRAANode`, `ClusteredLightsNode`, the light-data nodes).
     /// Nothing reads it yet; `context( node, { … } )` (#161) will.
     #[allow(dead_code)]
@@ -423,6 +428,7 @@ impl Default for BuildContext {
             setup_normal: None,
             flat_shading: false,
             material_side: crate::materials::Side::Front,
+            has_tangent: false,
             extra: HashMap::new(),
         }
     }

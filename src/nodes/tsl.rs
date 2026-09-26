@@ -93,11 +93,6 @@ fn override_node(pick: fn(&OverrideNodes) -> &Option<NodeRef>) -> Option<NodeRef
 }
 
 thread_local! {
-    /// `builder.geometry.hasAttribute( 'tangent' )` — what `Tangent.js` and
-    /// `Bitangent.js` branch on. With the attribute the frame comes from the
-    /// `tangent` vec4 through `modelViewMatrix`; without it, from the screen
-    /// derivatives of `TangentUtils.js`.
-    static HAS_TANGENT: RefCell<bool> = const { RefCell::new(false) };
     /// `normalViewGeometry`'s node per flat-shading flag — the stand-in for
     /// three.js' per-build `nodeData`, which gives the two forms of the
     /// accessor's `Fn( … ).once()` separate cache entries.
@@ -163,10 +158,8 @@ pub fn with_material_normal<R>(
 /// the material's own normal node is built before the flow starts and already
 /// reads the TBN frame.
 pub fn with_tangent_attribute<R>(has_tangent: bool, f: impl FnOnce() -> R) -> R {
-    let previous = HAS_TANGENT.with(|v| v.replace(has_tangent));
-    let out = f();
-    HAS_TANGENT.with(|v| *v.borrow_mut() = previous);
-    out
+    let _tangent = push_context(|cx| cx.has_tangent = has_tangent);
+    f()
 }
 
 /// `builder.material.side` alone, for the window in which
@@ -2231,7 +2224,7 @@ fn normal_key() -> NormalViewKey {
         value.as_ref().map(|v| v.key()),
         current_context(|cx| cx.flat_shading),
         current_context(|cx| cx.material_side),
-        HAS_TANGENT.with(|t| *t.borrow()),
+        current_context(|cx| cx.has_tangent),
         // An `overrideNodes( [ [ normalView, … ] ] )` material reads a wholly
         // different `normalView`, so everything cached off it — `normalWorld`,
         // the tangent frame, the TBN matrix — has to be cached separately too.
@@ -2286,7 +2279,7 @@ fn tangent_frame() -> (NodeRef, NodeRef) {
     if let Some(pair) = TANGENT_VIEW.with(|m| m.borrow().get(&key).cloned()) {
         return pair;
     }
-    if HAS_TANGENT.with(|t| *t.borrow()) {
+    if current_context(|cx| cx.has_tangent) {
         let pair = tangent_attribute_frame();
         TANGENT_VIEW.with(|m| m.borrow_mut().insert(key, pair.clone()));
         return pair;
