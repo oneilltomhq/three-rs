@@ -2440,4 +2440,39 @@ fn dump_scene_fog() {
 
     let exp2 = three_rs::SceneFog::from(three_rs::FogExp2::new(Color::from_hex(0x4080cc), 0.25));
     show_fog("fog_standard_exp2", &material, lit, Some(&exp2.node()));
+
+    // rung `webgpu_fog_height`: three's `dump-fog_height` m02 / m03. One
+    // instanced `MeshPhongMaterial` under a directional and an ambient light,
+    // with `scene.fogNode = fog( color( 0xffdfc1 ), exponentialHeightFogFactor(
+    // uniform( 0.04 ), uniform( 2 ) ) )` — object-group uniforms after the
+    // material's own, where `scene.fog`'s are render-group ones.
+    let height_fog = fog(
+        Color::from_hex(0xffdfc1),
+        exponential_height_fog_factor(
+            uniform_value(three_rs::nodes::Type::F32, vec![0.04]),
+            uniform_value(three_rs::nodes::Type::F32, vec![2.0]),
+        ),
+    );
+    show_fog(
+        "fog_height",
+        &MeshBasicNodeMaterial::phong(Color::from_hex(0xcd959a)),
+        SetupContext {
+            instance_count: Some(100),
+            instanced: true,
+            lights: vec![
+                LightDesc {
+                    index: 0,
+                    kind: LightKind::Directional,
+                    shadow_map: None,
+                },
+                LightDesc {
+                    index: 1,
+                    kind: LightKind::Ambient,
+                    shadow_map: None,
+                },
+            ],
+            ..SetupContext::default()
+        },
+        Some(&height_fog),
+    );
 }
