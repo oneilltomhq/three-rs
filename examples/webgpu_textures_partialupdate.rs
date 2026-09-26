@@ -156,7 +156,7 @@ fn update_data_texture(app: &mut App) {
     let g = (app.color.g * 255.0).floor() as u8;
     let b = (app.color.b * 255.0).floor() as u8;
 
-    for texel in app.data.chunks_exact_mut(4) {
+    for texel in app.data.as_chunks_mut::<4>().0 {
         texel[0] = r;
         texel[1] = g;
         texel[2] = b;
