@@ -813,7 +813,7 @@ fn install_input(page: &Rc<RefCell<Page>>, canvas: &web_sys::HtmlCanvasElement) 
                 let mut page = page.borrow_mut();
                 if let Some((controls, mut camera)) = page.example.controls_and_camera() {
                     controls.pointer_down(&mut camera, &pointer_event(&event));
-                }
+                };
             },
         );
     }
@@ -829,7 +829,7 @@ fn install_input(page: &Rc<RefCell<Page>>, canvas: &web_sys::HtmlCanvasElement) 
                 let mut page = page.borrow_mut();
                 if let Some((controls, mut camera)) = page.example.controls_and_camera() {
                     controls.pointer_move(&mut camera, &pointer_event(&event));
-                }
+                };
             },
         );
     }
@@ -853,7 +853,7 @@ fn install_input(page: &Rc<RefCell<Page>>, canvas: &web_sys::HtmlCanvasElement) 
             let mut page = page.borrow_mut();
             if let Some((controls, mut camera)) = page.example.controls_and_camera() {
                 controls.wheel(&mut camera, &wheel_event(&event));
-            }
+            };
         });
     }
 
@@ -878,7 +878,7 @@ fn install_input(page: &Rc<RefCell<Page>>, canvas: &web_sys::HtmlCanvasElement) 
                 let mut page = page.borrow_mut();
                 if let Some((controls, mut camera)) = page.example.controls_and_camera() {
                     controls.key(&mut camera, &key);
-                }
+                };
             },
         );
     }
