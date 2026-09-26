@@ -26,6 +26,9 @@ use crate::textures::{
 
 pub use super::node::TextureSource;
 
+mod wrappers;
+pub use wrappers::*;
+
 // ---------------------------------------------------------------------------
 // sub-builds and the build context (`docs/nodes.md` §7)
 // ---------------------------------------------------------------------------
@@ -707,17 +710,17 @@ pub fn mod_float(x: impl Into<NodeRef>, y: impl Into<NodeRef>) -> NodeRef {
     math("tsl_mod_float", vec![x.into(), y.into()], Type::F32)
 }
 
-/// `smoothstep( low, high, x )`.
+/// `smoothstep( low, high, x )` — `MathNode.SMOOTHSTEP`, typed (and its
+/// operands built) as `MathNode.getInputType()`: `smoothstep( 0, 1, uv )` is
+/// `smoothstep( vec2<f32>( 0.0 ), vec2<f32>( 1.0 ), uv )`.
 pub fn smoothstep(
     low: impl Into<NodeRef>,
     high: impl Into<NodeRef>,
     x: impl Into<NodeRef>,
 ) -> NodeRef {
-    math(
-        "smoothstep",
-        vec![low.into(), high.into(), x.into()],
-        Type::F32,
-    )
+    let (low, high, x) = (low.into(), high.into(), x.into());
+    let ty = wrappers::math_input_type(&[&low, &high, &x]);
+    math("smoothstep", vec![low, high, x], ty)
 }
 
 /// `dFdx( x )` — WGSL `dpdx`.
@@ -3219,6 +3222,7 @@ pub fn loop_statement(count: usize, index: NodeRef, body: Vec<NodeRef>) -> NodeR
         start: None,
         index,
         count,
+        condition: "<",
         body,
     })
 }
@@ -3672,6 +3676,7 @@ pub fn loop_n(
         start: None,
         count,
         index,
+        condition: "<",
         body,
     })
 }
@@ -3698,6 +3703,7 @@ pub fn loop_range(
         start: Some(start),
         count: end,
         index,
+        condition: "<",
         body,
     })
 }

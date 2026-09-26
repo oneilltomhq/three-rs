@@ -188,6 +188,9 @@ mod webgpu_loader_gltf_anisotropy;
 #[path = "webgpu_materials_texture_manualmipmap.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_materials_texture_manualmipmap;
+#[path = "webgpu_tsl_vfx_flames.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_tsl_vfx_flames;
 
 /// Every graded example, in the README's order, paired with a call of its
 /// `init()`.
@@ -293,6 +296,9 @@ const GRADED: &[(&str, fn())] = &[
     }),
     ("webgpu_materials_texture_manualmipmap", || {
         drop(webgpu_materials_texture_manualmipmap::init())
+    }),
+    ("webgpu_tsl_vfx_flames", || {
+        drop(webgpu_tsl_vfx_flames::init())
     }),
 ];
 

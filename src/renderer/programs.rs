@@ -504,6 +504,9 @@ pub struct UniformContext<'a> {
     /// `screenDPR` — `renderer.getPixelRatio()`.
     pub screen_dpr: f64,
     pub time: f64,
+    /// `NodeFrame.deltaTime` / `NodeFrame.frameId`.
+    pub delta_time: f64,
+    pub frame_id: u32,
     /// `renderer.toneMappingExposure`.
     pub tone_mapping_exposure: f64,
     /// The lights of the pass, in `Scene.lights` order. Borrowed so the context
@@ -577,6 +580,8 @@ impl Default for UniformContext<'_> {
             viewport: Vector4::new(0.0, 0.0, 0.0, 0.0),
             screen_dpr: 1.0,
             time: 0.0,
+            delta_time: 0.0,
+            frame_id: 0,
             tone_mapping_exposure: 1.0,
             lights: &[],
             morph_base: 1.0,
@@ -716,6 +721,10 @@ impl UniformContext<'_> {
                 UniformSource::FogFar => vec![self.fog_far as f32],
                 UniformSource::FogDensity => vec![self.fog_density as f32],
                 UniformSource::Time => vec![self.time as f32],
+                UniformSource::DeltaTime => vec![self.delta_time as f32],
+                // A `u32` member: written as its integer bits below, exact
+                // for the first 2^24 frames.
+                UniformSource::FrameId => vec![self.frame_id as f32],
                 UniformSource::ViewportSize => {
                     vec![self.viewport_size.x as f32, self.viewport_size.y as f32]
                 }
@@ -805,12 +814,12 @@ impl UniformContext<'_> {
             // is what says how to write them. Exact for magnitudes below 2^24,
             // which is every count a `dispatchWorkgroups` limit of 65535 groups
             // of 64 can reach anyway.
-            if member.ty == Type::U32 {
+            if member.ty.component_type() == Type::U32 {
                 let raw: Vec<u32> = values.iter().map(|&v| v as u32).collect();
                 data[offset..offset + raw.len() * 4].copy_from_slice(bytemuck::cast_slice(&raw));
                 continue;
             }
-            if member.ty == Type::I32 {
+            if member.ty.component_type() == Type::I32 {
                 let raw: Vec<i32> = values.iter().map(|&v| v as i32).collect();
                 data[offset..offset + raw.len() * 4].copy_from_slice(bytemuck::cast_slice(&raw));
                 continue;

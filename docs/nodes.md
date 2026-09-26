@@ -636,6 +636,25 @@ differences, each verified to be pixel-neutral.
   separate `NodeRef`s and the builder promotes by `Rc` identity. Identical
   arithmetic, identical text apart from the temp numbers.
 
+* **A shared conversion is written out at each use (issue #141).** Three's
+  `Node.build()` caches *any* cacheable node read more than once as
+  `let nodeConstN`; the port promotes only `Op`, `Math` and `Join` nodes
+  (`needs_var`) and leaves a shared `Cast` inline, so
+  `determinant( mat3x3<f32>( m ) )` / `inverse( … )` repeat the constructor
+  where three names it once. Same expression, same value; widening the
+  promotion to casts would renumber the temps in every green dump.
+  `tests/nodes_tsl_batch.rs::inline_let()` folds three's `let` back in before
+  comparing.
+* **`let nodeConstN` against `var nodeVarN`.** Where three caches a shared
+  value it writes an immutable `let`; the port's promoted temp is a `var`.
+  Pixel-neutral; `nodes_tsl_batch.rs` maps the one onto the other.
+* **`billboarding()`'s matrices are explicit vars (issue #141).** Three
+  assigns straight into the `modelWorldMatrix` / `modelViewMatrix` operator
+  nodes and lets its builder turn them into temps; the port asks for the two
+  `var`s itself (`to_var`) and assigns their elements in the flow. Same
+  statements, same order, same value — `webgpu_tsl_vfx_flames` grades 31 of
+  100000.
+
 ### `LineBasicNodeMaterial` adds no divergence class
 
 Three's own `LineBasicNodeMaterial` program, dumped off
