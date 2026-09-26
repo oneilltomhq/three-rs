@@ -4,12 +4,13 @@
 // a throwaway puppeteer script in the vendor tree. This is that script, kept.
 //
 // Usage:
-//   node tools/dump-webgpu.mjs <example_name> [--out DIR] [--page FILE]
+//   node tools/dump-webgpu.mjs <example_name> [--out DIR] [--html FILE]
 //
-// `--page FILE` serves FILE (from this repository) in place of
-// examples/<example_name>.html, for a page that is not a three.js example —
-// `tests/fixtures/materialx_library/page.html` is one. The rest of the vendor
-// checkout is served as usual, so the page's `../build/…` imports resolve.
+// `--html FILE` serves FILE in place of the checkout's
+// `examples/<example_name>.html`, for a page that is not a three.js example
+// (tools/dump-pages/, e.g. one fogged material in isolation). It is served at
+// that same URL, so the page's import map and relative asset paths resolve
+// against the checkout exactly as an example's do.
 //
 // Reads the three.js checkout at $THREE_JS_DIR (default ~/src/vendor/three.js,
 // matching src/testing.rs::vendor_dir) and Chrome + puppeteer-core from that
@@ -36,7 +37,7 @@ const repoRoot = path.resolve(__dirname, '..');
 
 function usage(msg) {
 	if (msg) console.error(msg);
-	console.error('usage: node tools/dump-webgpu.mjs <example_name> [--out DIR] [--page FILE]');
+	console.error('usage: node tools/dump-webgpu.mjs <example_name> [--out DIR] [--html FILE]');
 	process.exit(1);
 }
 
@@ -45,22 +46,22 @@ function parseArgs(argv) {
 	if (args.length === 0 || args[0].startsWith('-')) usage();
 	const example = args[0];
 	let out = null;
-	let page = null;
+	let html = null;
 	for (let i = 1; i < args.length; i++) {
 		if (args[i] === '--out') {
 			out = args[++i];
 			if (!out) usage('--out needs a DIR');
-		} else if (args[i] === '--page') {
-			page = args[++i];
-			if (!page) usage('--page needs a FILE');
+		} else if (args[i] === '--html') {
+			html = args[++i];
+			if (!html) usage('--html needs a FILE');
 		} else {
 			usage(`unrecognised argument: ${args[i]}`);
 		}
 	}
-	return { example, out, page };
+	return { example, out, html };
 }
 
-const { example, out, page: pageFile } = parseArgs(process.argv);
+const { example, out, html } = parseArgs(process.argv);
 
 const vendorDir = process.env.THREE_JS_DIR
 	|| path.join(process.env.HOME, 'src/vendor/three.js');
@@ -703,6 +704,8 @@ async function main() {
 		page.on('console', (msg) => {
 			if (msg.type() === 'error') errors.push(msg.text());
 		});
+
+		const pageBody = html ? await fs.readFile(path.resolve(html), 'utf8') : null;
 
 		page.on('request', async (request) => {
 			const url = request.url();

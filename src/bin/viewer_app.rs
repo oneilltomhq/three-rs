@@ -190,6 +190,7 @@ PmremCubemap, webgpu_pmrem_cubemap, "../../examples/webgpu_pmrem_cubemap.rs";
 PostprocessingBloomSelective, webgpu_postprocessing_bloom_selective, "../../examples/webgpu_postprocessing_bloom_selective.rs";
 ComputePoints, webgpu_compute_points, "../../examples/webgpu_compute_points.rs";
 LinesFat, webgpu_lines_fat, "../../examples/webgpu_lines_fat.rs";
+LinesFatRaycasting, webgpu_lines_fat_raycasting, "../../examples/webgpu_lines_fat_raycasting.rs";
 PmremTest, webgpu_pmrem_test, "../../examples/webgpu_pmrem_test.rs";
 PostprocessingDifference, webgpu_postprocessing_difference, "../../examples/webgpu_postprocessing_difference.rs";
 PostprocessingDirect, webgpu_postprocessing_direct, "../../examples/webgpu_postprocessing_direct.rs";
@@ -210,6 +211,11 @@ CustomFogBackground, webgpu_custom_fog_background, "../../examples/webgpu_custom
 LoaderGltfSheen, webgpu_loader_gltf_sheen, "../../examples/webgpu_loader_gltf_sheen.rs";
 Deferred, webgpu_deferred, "../../examples/webgpu_deferred.rs";
 LoaderGltfAnisotropy, webgpu_loader_gltf_anisotropy, "../../examples/webgpu_loader_gltf_anisotropy.rs";
+MaterialsTextureManualmipmap, webgpu_materials_texture_manualmipmap, "../../examples/webgpu_materials_texture_manualmipmap.rs";
+TslVfxFlames, webgpu_tsl_vfx_flames, "../../examples/webgpu_tsl_vfx_flames.rs";
+ProceduralTexture, webgpu_procedural_texture, "../../examples/webgpu_procedural_texture.rs";
+PostprocessingSobel, webgpu_postprocessing_sobel, "../../examples/webgpu_postprocessing_sobel.rs";
+PostprocessingTransition, webgpu_postprocessing_transition, "../../examples/webgpu_postprocessing_transition.rs";
 TslRagingSea, webgpu_tsl_raging_sea, "../../examples/webgpu_tsl_raging_sea.rs";}
 
 impl Which {

@@ -26,7 +26,7 @@
 //! (cd $S/three-r186 && npx rollup -c utils/build/rollup.config.js)
 //! # $S/vendor-r186: a symlink per entry of $THREE, except build -> $S/three-r186/build
 //! THREE_JS_DIR=$S/vendor-r186 node tools/dump-webgpu.mjs materialx_library \
-//!     --page tests/fixtures/materialx_library/page.html --out target/dumps/materialx_library
+//!     --html tests/fixtures/materialx_library/page.html --out target/dumps/materialx_library
 //! cp target/dumps/materialx_library/fragment.wgsl tests/fixtures/materialx_library/fragment-r186.wgsl
 //! ```
 

@@ -514,7 +514,7 @@ impl NodeBuilder {
             Node::TextureSize { level, .. } => vec![level.clone()],
             Node::VaryingProperty { .. } => vec![],
             Node::Return { value } => vec![value.clone()],
-            Node::Not { node } => vec![node.clone()],
+            Node::Not { node } | Node::BitNot { node, .. } => vec![node.clone()],
         }
     }
 
@@ -891,6 +891,16 @@ impl NodeBuilder {
     }
 
     fn format(&mut self, node: &NodeRef, want: Type) -> String {
+        // `ConstNode.generate()`: a scalar number constant asked for as
+        // another scalar number type is regenerated as that type's literal
+        // (`_regNum = /float|u?int/`), so `state.mul( 747796405 )` on a `u32`
+        // is `747796405u`, not a conversion.
+        if let Node::Const { ty, values } = &*node.0 {
+            let numeric = |t: Type| matches!(t, Type::F32 | Type::I32 | Type::U32);
+            if numeric(*ty) && numeric(want) {
+                return wgsl::constant(want, values);
+            }
+        }
         let snippet = self.generate(node);
         wgsl::convert(&snippet, node.ty(), want)
     }
@@ -1151,12 +1161,20 @@ impl NodeBuilder {
 
             Node::Op { op, a, b, ty } => {
                 let (op, a, b, ty) = (*op, a.clone(), b.clone(), *ty);
-                let want = if ty == Type::Bool || ty == Type::BVec3 {
-                    let n = a.ty().components().max(b.ty().components());
-                    if n == 1 {
+                // A comparison's operands are formatted to the wider
+                // *operand* type (`OperatorNode.getNodeType()`'s
+                // `typeA`/`typeB`), not to its `bool` result; the component
+                // type is the operand's, so a `u32` comparison stays `u32`.
+                let want = if ty.component_type() == Type::Bool {
+                    let (ta, tb) = (a.ty(), b.ty());
+                    if ta.components() > 1 {
+                        ta
+                    } else if tb.components() > 1 {
+                        tb
+                    } else if ta != tb {
                         Type::F32
                     } else {
-                        Type::vector_of(Type::F32, n)
+                        ta
                     }
                 } else {
                     ty
@@ -1177,6 +1195,13 @@ impl NodeBuilder {
                     let sa = self.generate(&a);
                     let sb = self.generate(&b);
                     format!("{sa} {op} {sb}")
+                } else if op == ">>" || op == "<<" {
+                    // `OperatorNode`: a shift's amount is `changeComponentType(
+                    // typeB, 'uint' )`, the value is the result type.
+                    let sa = self.format(&a, want);
+                    let amount = Type::vector_of(Type::U32, b.ty().components().max(1));
+                    let sb = self.format(&b, amount);
+                    format!("( {sa} {op} {sb} )")
                 } else {
                     let sa = if a.ty().is_matrix() {
                         self.generate(&a)
@@ -1194,11 +1219,10 @@ impl NodeBuilder {
 
             Node::Math { name, args, ty } => {
                 let (name, args, ty) = (*name, args.clone(), *ty);
-                if name == "tsl_inverse_mat3" {
-                    self.add_code("tsl_inverse_mat3", wgsl::INVERSE_MAT3_SNIPPET);
-                }
-                if name == "tsl_mod_float" {
-                    self.add_code("tsl_mod_float", wgsl::MOD_FLOAT_SNIPPET);
+                // `WGSLNodeBuilder`'s `wgslPolyfill` table: a method that
+                // lowers to a `tsl_*` helper brings the helper's code with it.
+                if let Some(snippet) = wgsl::polyfill(name) {
+                    self.add_code(name, snippet);
                 }
                 // `mix`'s interpolant and `cross`/`reflect`'s operands keep
                 // their own types; everything else is widened to the result
@@ -1227,16 +1251,16 @@ impl NodeBuilder {
                         "refract" if i == 2 => self.format(a, Type::F32),
                         "refract" => self.format(a, input_ty),
                         "dot" => self.format(a, input_ty),
-                        "cross" | "reflect" | "normalize" | "transpose" | "tsl_inverse_mat3"
-                        | "length" | "dpdx" | "- dpdy" | "inverseSqrt" => self.generate(a),
+                        "cross" | "reflect" | "normalize" | "transpose" | "tsl_inverse_mat2"
+                        | "tsl_inverse_mat3" | "tsl_inverse_mat4" | "determinant" | "length"
+                        | "dpdx" | "- dpdy" | "inverseSqrt" => self.generate(a),
                         // `select( f, t, cond )`'s condition is a bool, and the
                         // MaterialX helpers pass their own already-typed
                         // operands; nothing here is widened.
                         "select" | "step" | "fract" | "sqrt" | "abs" => self.generate(a),
-                        // `smoothstep( near, far, x )` keeps each operand's own
-                        // type: the dumps show three f32 arguments, never a
-                        // widened vector.
-                        "smoothstep" => self.generate(a),
+                        // `BitcastNode` builds its operand as it stands; the
+                        // result type is the cast's, not the input's.
+                        n if n.starts_with("bitcast<") => self.generate(a),
                         _ => self.format(a, ty),
                     })
                     .collect();
@@ -1288,8 +1312,22 @@ impl NodeBuilder {
                     // `ConvertNode` to the type it already has — see
                     // `materialx::mx_nodes::convert`. `format()` returns the
                     // snippet untouched.
-                    snippet
-                } else if ty.components() == from.components() {
+                    return snippet;
+                }
+                // `NodeBuilder.format()`'s two matrix narrowings.
+                if from == Type::Mat4 && ty == Type::Mat3 {
+                    return format!(
+                        "{}( {snippet}[ 0 ].xyz, {snippet}[ 1 ].xyz, {snippet}[ 2 ].xyz )",
+                        wgsl::type_name(ty)
+                    );
+                }
+                if from == Type::Mat3 && ty == Type::Mat2 {
+                    return format!(
+                        "{}( {snippet}[ 0 ].xy, {snippet}[ 1 ].xy )",
+                        wgsl::type_name(ty)
+                    );
+                }
+                if ty.components() == from.components() {
                     format!("{}( {snippet} )", wgsl::type_name(ty))
                 } else {
                     wgsl::convert(&snippet, from, ty)
@@ -1373,9 +1411,29 @@ impl NodeBuilder {
                     }
                     SampleMode::Load => {
                         self.add_code("tsl_coord_clampS_clampT_2d", wgsl::CLAMP_WRAP_SNIPPET);
-                        let dims = self.declare_var(None, Type::UVec2);
-                        let dims_expr = wgsl::texture_dimensions(&name, kind);
-                        self.emit(format!("{dims} = {dims_expr};"));
+                        // `WGSLNodeBuilder.generateTextureDimension()` keeps
+                        // one dimensions var per texture in the build cache,
+                        // so a second tap in the same scope (or one nested in
+                        // it) reuses it, and a sibling `if` declares its own.
+                        // The scope stack is that cache; the key is the
+                        // texture's slot name, hashed out of the node-key
+                        // space.
+                        let dims_key = {
+                            use std::hash::{Hash, Hasher};
+                            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                            ("textureDimensions", name.as_str()).hash(&mut hasher);
+                            hasher.finish() as usize
+                        };
+                        let dims = match self.cache_get(dims_key) {
+                            Some(dims) => dims,
+                            None => {
+                                let dims = self.declare_var(None, Type::UVec2);
+                                let dims_expr = wgsl::texture_dimensions(&name, kind);
+                                self.emit(format!("{dims} = {dims_expr};"));
+                                self.cache_put(dims_key, dims.clone());
+                                dims
+                            }
+                        };
                         wgsl::texture_load(&name, &suv, &dims)
                     }
                 }
@@ -1519,6 +1577,11 @@ impl NodeBuilder {
                 for stmt in &statements {
                     self.generate(stmt);
                 }
+                // A block is an inline `Fn()` call: three builds its stack
+                // once per build and a second reference reuses the result
+                // snippet, statements and all not repeated. Without this a
+                // block read twice (`renderOutput()` reads its colour's `.xyz`
+                // and `.w`) emitted every statement twice.
                 let snippet = self.generate(&result);
                 self.cache_put(node.key(), snippet.clone());
                 snippet
@@ -1527,15 +1590,15 @@ impl NodeBuilder {
             Node::Loop {
                 start,
                 count,
-                condition,
                 index,
+                condition,
                 body,
             } => {
-                let (start, count, condition, index, body) = (
+                let (start, count, index, condition, body) = (
                     start.clone(),
                     count.clone(),
-                    *condition,
                     index.clone(),
+                    *condition,
                     body.clone(),
                 );
                 // The start is generated before the end, which is the order
@@ -1550,9 +1613,20 @@ impl NodeBuilder {
                     Node::Param { name, .. } => *name,
                     _ => "i",
                 };
+                let index_ty = index.ty();
+                let ty = wgsl::type_name(index_ty);
+                // `LoopNode.generate()`'s default update: `++` / `--` for an
+                // integer index, `+= 1.` / `-= 1.` for anything else.
+                let rising = condition.contains('<');
+                let update = match (index_ty, rising) {
+                    (Type::I32 | Type::U32, true) => "++",
+                    (Type::I32 | Type::U32, false) => "--",
+                    (_, true) => "+= 1.",
+                    (_, false) => "-= 1.",
+                };
                 self.emit(String::new());
                 self.emit(format!(
-                    "for ( var {name} : i32 = {sstart}; {name} {condition} {scount}; {name} ++ ) {{"
+                    "for ( var {name} : {ty} = {sstart}; {name} {condition} {scount}; {name} {update} ) {{"
                 ));
                 self.emit(String::new());
                 self.push_scope();
@@ -1622,6 +1696,14 @@ impl NodeBuilder {
                 let inner = inner.clone();
                 let snippet = self.generate(&inner);
                 format!("( ! {snippet} )")
+            }
+
+            // `OperatorNode.generate()`'s `'~'` arm: the operand is built as
+            // its own type, `( ~ a )`.
+            Node::BitNot { node: inner, .. } => {
+                let inner = inner.clone();
+                let snippet = self.generate(&inner);
+                format!("( ~ {snippet} )")
             }
         }
     }

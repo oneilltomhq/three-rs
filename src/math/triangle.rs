@@ -2,7 +2,7 @@
 
 use crate::core::BufferAttribute;
 
-use super::{Box3, Plane, Vector3};
+use super::{Box3, Plane, Vector3, Vector4};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Triangle {
@@ -105,6 +105,40 @@ impl Triangle {
         target.add_scaled_vector(v3, bary.z);
 
         Some(target)
+    }
+
+    /// `Triangle.getInterpolatedAttribute()` (static): the attribute's values
+    /// at vertices `i1`, `i2`, `i3`, weighted by `barycoord`.
+    ///
+    /// three.js takes a `Vector2`/`Vector3`/`Vector4` target and reads as many
+    /// components as the target has; the port returns a [`Vector4`] holding the
+    /// first `min( itemSize, 4 )` components, the rest 0, and the caller takes
+    /// the swizzle it wants (`Mesh` takes `xy` for `uv` and `xyz` for
+    /// `normal`, which is what its `new Vector2()` / `new Vector3()` targets
+    /// read).
+    pub fn static_get_interpolated_attribute(
+        attr: &BufferAttribute,
+        i1: usize,
+        i2: usize,
+        i3: usize,
+        barycoord: &Vector3,
+    ) -> Vector4 {
+        let item_size = attr.item_size.min(4);
+        let array = attr.array();
+        let read = |index: usize| {
+            let mut v = Vector4::new(0.0, 0.0, 0.0, 0.0);
+            for component in 0..item_size {
+                v.set_component(component, array[index * attr.item_size + component] as f64);
+            }
+            v
+        };
+        let (v40, v41, v42) = (read(i1), read(i2), read(i3));
+
+        let mut target = Vector4::new(0.0, 0.0, 0.0, 0.0);
+        target.add_scaled_vector(&v40, barycoord.x);
+        target.add_scaled_vector(&v41, barycoord.y);
+        target.add_scaled_vector(&v42, barycoord.z);
+        target
     }
 
     /// `Triangle.isFrontFacing()` (static).

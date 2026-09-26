@@ -395,3 +395,18 @@ fn equals() {
     // three.js' own assertion here is `a.equals( a )`, not `a.equals( b )`.
     assert!(a.equals(&a), "a equals b after copy()");
 }
+
+// Not in three's suite, which has no case for it: `getInterpolatedAttribute()`
+// weights the three vertices' components by the barycentric coordinates and
+// leaves the components past `itemSize` at zero.
+#[test]
+fn get_interpolated_attribute() {
+    let uv = BufferAttribute::new(vec![0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 9.0, 9.0], 2);
+    let bary = Vector3::new(0.25, 0.5, 0.25);
+    let v = Triangle::static_get_interpolated_attribute(&uv, 0, 1, 2, &bary);
+    assert_eq!((v.x, v.y, v.z, v.w), (0.5, 0.25, 0.0, 0.0));
+
+    let normal = BufferAttribute::new(vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0], 3);
+    let v = Triangle::static_get_interpolated_attribute(&normal, 2, 1, 0, &bary);
+    assert_eq!((v.x, v.y, v.z, v.w), (0.25, 0.5, 0.25, 0.0));
+}

@@ -22,7 +22,7 @@ use three_rs::materials::MeshBasicNodeMaterial;
 use three_rs::nodes::materialx::mx_noise_float;
 use three_rs::nodes::node::FnDef;
 use three_rs::nodes::tsl::{
-    block, call, camera_view_matrix, float, inline_fn, loop_range_cond, model_normal_matrix,
+    block, call, camera_view_matrix, float, inline_fn, loop_options, model_normal_matrix,
     position_local, time, to_var, transform_direction, uniform_value, vec3_join,
 };
 use three_rs::nodes::{NodeRef, Type};
@@ -125,15 +125,16 @@ fn waves_elevation(w: Rc<Waves>) -> Rc<FnDef> {
         //   } );
         //
         // `LoopNode` writes a constant bound as an integer literal and
-        // converts any other, which is `loop_range_cond`'s contract.
+        // converts any other, which is `loop_options`' contract.
         //
         // The index is an `i32` and three's `format()` converts it to the
         // `f32` the arithmetic wants as `f32( i )` at each use; the port's
         // `wgsl::convert` does not change component type in place, so each
         // use casts it — separately, as a cast shared by both uses would be
         // hoisted into a var three does not have.
-        let small = loop_range_cond(
+        let small = loop_options(
             "i",
+            Type::I32,
             float(1.0),
             w.small_waves_iterations.add(float(1.0)),
             "<",

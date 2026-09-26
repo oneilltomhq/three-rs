@@ -27,9 +27,9 @@ use std::rc::Rc;
 
 use crate::nodes::node::{FnDef, Lazy, NodeRef, Type};
 use crate::nodes::tsl::{
-    block, call, float, if_else, if_else_if, if_then, inline_fn, int, join, loop_n,
-    loop_range_cond, property, return_statement, shader_fn, to_var, uint, vec2, vec2_join, vec3,
-    vec3_join, vec4_join, wgsl_select,
+    block, call, float, if_else, if_else_if, if_then, inline_fn, int, join, loop_n, loop_options,
+    property, return_statement, shader_fn, to_var, uint, vec2, vec2_join, vec3, vec3_join,
+    vec4_join, wgsl_select,
 };
 
 // ---------------------------------------------------------------------------
@@ -1185,7 +1185,7 @@ fn vec_n(dim: usize) -> Type {
 /// `x` / `y` (/ `z`) as the Worley bodies write it; `body` gets the indices.
 fn worley_loops(dim: usize, body: impl FnOnce(&[NodeRef]) -> Vec<NodeRef>) -> NodeRef {
     fn walk(name: &'static str, inner: impl FnOnce(&NodeRef) -> Vec<NodeRef>) -> NodeRef {
-        loop_range_cond(name, int(-1), int(1), "<=", inner)
+        loop_options(name, Type::I32, int(-1), int(1), "<=", inner)
     }
     let mut body = Some(body);
     let mut run = |idx: &[NodeRef]| (body.take().expect("one innermost body"))(idx);
