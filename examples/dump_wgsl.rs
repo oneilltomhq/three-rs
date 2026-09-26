@@ -2064,11 +2064,11 @@ fn main() {
     // and `multisampled: false`.
     let fog_pass = three_rs::PassNode::new();
     fog_pass.depth_texture().set_multisample(true);
-    let fog_factor = range_fog_factor_with_view_z(
-        float(2.7),
-        float(4.0),
-        fog_pass.view_z_node(three_rs::renderer::DEPTH_ATTACHMENT),
-    );
+    let fog_factor =
+        range_fog_factor(float(2.7), float(4.0)).context(three_rs::nodes::ContextValue::new().set(
+            "getViewZ",
+            fog_pass.view_z_node(three_rs::renderer::DEPTH_ATTACHMENT),
+        ));
     let scene_pass_tm = three_rs::materials::tone_mapping_node(
         three_rs::ToneMapping::AcesFilmic,
         float(1.0),
