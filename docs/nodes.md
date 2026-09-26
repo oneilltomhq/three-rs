@@ -4201,3 +4201,63 @@ uniform order is the same (`diffuseRoughness` is `nodeUniform9` in both).
   three's `expected.jpg`, the mean absolute error in the sphere grid is
   1.35 levels with EON and 3.60 without. So the lobe is checked by the dump
   and by that measurement, not by the pixel count.
+
+### 54.5 `scene.environmentNode` as a graph (`webgpu_cubemap_mix`)
+
+`webgpu_cubemap_mix` sets `scene.environmentNode` to
+`mix( pmremTexture( cube2 ), pmremTexture( cube1 ), oscSine( time.mul( .1 ) ) )`,
+and `scene.backgroundNode` to the same node with `.context( { getTextureLevel:
+() => float( .5 ) } )`.
+
+Both `pmremTexture()` calls have no UV and no level of their own.
+`PMREMNode.setup()` takes them from the build context:
+* `EnvironmentNode.setup()` builds the whole graph twice, once under
+  `createRadianceContext()` (the reflect vector, `roughness`) and once under
+  `createIrradianceContext()` (`normalWorld`, 1). With a clearcoat it builds
+  it a third time.
+* `Background.update()` builds it under `backgroundRotation.mul(
+  normalWorldGeometry )` and `backgroundBlurriness`.
+* The inner `.context()` wins over both for the level.
+
+The port has no node context. Before this page the environment was always a
+`PmremHandle`, and `environment::setup` called its `sample( uv, level )`
+directly. Now the environment is one of two things:
+
+* `environment::EnvironmentNode`: an `Rc<dyn Fn( uv, level ) -> NodeRef>`
+  with an identity. It is the graph as a function of the two values the
+  context would supply, and the page's closure calls `PmremHandle::sample`
+  for each `pmremTexture()` leaf. `with_texture_level( level )` is
+  `.context( { getTextureLevel } )`, and it is a new node, as `.context()`
+  is.
+* `environment::Environment`, which is `Pmrem( PmremHandle )` or
+  `Node( EnvironmentNode )`. `SetupContext::environment` and
+  `environment::setup` take it.
+
+`Scene::environment_node` is `scene.environmentNode`, and it wins over
+`Scene::environment` as `NodeManager.getEnvironmentNode()` does.
+`Background::EnvironmentNode` is the background case, which
+`background_environment_color_node()` builds. Both are keyed by the node's
+identity, as `Background::Node` is.
+
+Each call of the closure builds the graph again, which matches the dump:
+three's `m10` repeats the `mix` and the `oscSine` for `radiance` and for
+`iblIrradiance`, and so does the port's `cubemap_mix_material`.
+
+### 54.6 `webgpu_cubemap_mix`: checked against
+
+* **`cubemap_mix_background` against `m08`.** It has the same two
+  `textureSampleLevel`s, each with its own `materialEnvRotation` multiply and
+  its own `clamp( 0.5 )`, and the same `mix` and `sin`. The only difference
+  is that the port computes `backgroundRotation * vec4( normalWorldGeometry,
+  1 )` once and shares it between the two reads. Three calls `getUV()` once
+  per leaf and repeats it. The value is the same.
+* **`cubemap_mix_material` against `m10`'s environment half.** The reflect
+  vector is shared by both radiance reads and each read rotates it itself,
+  as three does (`nodeConst12`, then `nodeConst13` and `nodeConst15`). The
+  irradiance reads are the same.
+
+### 54.7 Divergences specific to `webgpu_cubemap_mix`
+
+* **The graded frame shows one cube.** The harness pins `time` to 0, where
+  `oscSine` is 0, so the mix is all `cube2`, the Milky Way. The Pisa cube's
+  PMREM is still generated and sampled, but it gets weight 0.

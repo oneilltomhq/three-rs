@@ -263,6 +263,10 @@ mod webgpu_shadowmap_opacity;
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_loader_gltf_diffuse_roughness;
 
+#[path = "webgpu_cubemap_mix.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_cubemap_mix;
+
 #[path = "webgpu_instance_sprites.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_instance_sprites;
@@ -437,6 +441,7 @@ const GRADED: &[(&str, fn())] = &[
     ("webgpu_loader_gltf_diffuse_roughness", || {
         drop(webgpu_loader_gltf_diffuse_roughness::init())
     }),
+    ("webgpu_cubemap_mix", || drop(webgpu_cubemap_mix::init())),
 ];
 
 /// Where the committed manifests live, one `<example>.json` each.

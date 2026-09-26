@@ -258,6 +258,10 @@ mod webgpu_shadowmap_opacity;
 #[allow(dead_code)]
 mod webgpu_loader_gltf_diffuse_roughness;
 
+#[path = "../../examples/webgpu_cubemap_mix.rs"]
+#[allow(dead_code)]
+mod webgpu_cubemap_mix;
+
 #[path = "../../examples/webgpu_clearcoat.rs"]
 #[allow(dead_code)]
 mod webgpu_clearcoat;
@@ -2070,6 +2074,54 @@ fn webgpu_loader_gltf_diffuse_roughness() {
         webgpu_loader_gltf_diffuse_roughness::animate,
         |app| app.renderer.device(),
     );
+}
+
+/// `scene.environmentNode` as a graph: two PMREMs cross-faded by
+/// `oscSine( time.mul( .1 ) )`, lighting DamagedHelmet, and the same node read
+/// at roughness 0.5 as the background. At the pinned `time = 0` the mix is all
+/// Milky Way, so this grades the graph's plumbing — both lighting contexts, the
+/// background context and the `getTextureLevel` override — not the blend.
+/// See `docs/nodes.md` §54.5.
+#[test]
+fn webgpu_cubemap_mix() {
+    let name = "webgpu_cubemap_mix";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_cubemap_mix::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_cubemap_mix::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_cubemap_mix::animate, |app| {
+        app.renderer.device()
+    });
 }
 
 /// The occlusion rung: a Phong plane whose `colorNode` is an
@@ -4090,6 +4142,7 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_fog_height);
     rung!(webgpu_shadowmap_opacity);
     rung!(webgpu_loader_gltf_diffuse_roughness);
+    rung!(webgpu_cubemap_mix);
 }
 
 // ---------------------------------------------------------------------------

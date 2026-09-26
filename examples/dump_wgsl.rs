@@ -6,7 +6,7 @@
 mod morphtargets;
 
 use three_rs::lights::{LightKind, ShadowFilter, ShadowFilterMap};
-use three_rs::materials::environment::Environment;
+use three_rs::materials::environment::{Environment, EnvironmentNode};
 use three_rs::materials::phong::{LightDesc, ShadowMap};
 use three_rs::materials::{setup, MeshBasicNodeMaterial, SetupContext, Side};
 use three_rs::math::Color;
@@ -2037,6 +2037,7 @@ fn main() {
     dump_scene_fog();
     dump_shadowmap_opacity();
     dump_diffuse_roughness();
+    dump_cubemap_mix();
     dump_chromatic_aberration();
 
     // #144's display nodes, each as the three.js page that dumps it builds it:
@@ -2750,4 +2751,57 @@ fn dump_diffuse_roughness() {
     show("gltf_diffuse_roughness_on", &rough, ctx());
     let matte = MeshBasicNodeMaterial::physical(Color::new(0.45, 0.28, 0.21), 0.95, 0.0);
     show("gltf_diffuse_roughness_zero", &matte, ctx());
+}
+
+/// `webgpu_cubemap_mix`: `scene.environmentNode = mix( pmremTexture( cube2 ),
+/// pmremTexture( cube1 ), oscSine( time.mul( .1 ) ) )`, and the background is
+/// the same node with `getTextureLevel` fixed at 0.5. Three's `m08` (the
+/// background) and `m10` (DamagedHelmet's `Material_MR`, here without its
+/// maps: the environment half is what this section is for).
+fn dump_cubemap_mix() {
+    let face = || {
+        vec![
+            Image {
+                width: 1,
+                height: 1,
+                data: vec![0; 4],
+            };
+            6
+        ]
+    };
+    let cube1 = PmremEnvironment::new(&CubeTexture::new(face()));
+    let cube2 = PmremEnvironment::new(&CubeTexture::new(face()));
+    let (pmrem1, pmrem2) = (cube1.handle(), cube2.handle());
+    let node = EnvironmentNode::new(move |uv, level| {
+        mix(
+            pmrem2.sample(uv.clone(), level.clone()),
+            pmrem1.sample(uv, level),
+            osc_sine(time().mul(0.1)),
+        )
+    });
+
+    let mut background = MeshBasicNodeMaterial::new();
+    background.name = "Background.material";
+    background.vertex_node = Some(three_rs::materials::background_vertex_node());
+    background.side = Side::Back;
+    background.depth_test = false;
+    background.depth_write = false;
+    background.color_node = Some(three_rs::materials::background_environment_color_node(
+        &node.with_texture_level(float(0.5)),
+    ));
+    show(
+        "cubemap_mix_background",
+        &background,
+        SetupContext::default(),
+    );
+
+    let helmet = MeshBasicNodeMaterial::standard(Color::new(1.0, 1.0, 1.0), 1.0, 1.0);
+    show(
+        "cubemap_mix_material",
+        &helmet,
+        SetupContext {
+            environment: Some(Environment::Node(node)),
+            ..SetupContext::default()
+        },
+    );
 }
