@@ -31,10 +31,10 @@ second comparator was added.
 ## What was added
 
 Nothing in `src/`. The page needs `Material.wireframe`, which PR #203
-(`webgpu_layers`) adds and `docs/nodes.md` §50.2 describes: a `line-list`
+(`webgpu_layers`) added and `docs/nodes.md` §50.2 describes: a `line-list`
 through a `getWireframeIndex()` buffer built once per geometry, with the draw
-range doubled. This branch is built on #203 and adds only the example, its
-ignored e2e test, this doc and `docs/nodes.md` §58.
+range doubled. This rung adds only the example, its ignored e2e test, this doc
+and `docs/nodes.md` §58.
 
 The render target path needed nothing new either: `samples: 4` already gives
 an MSAA colour attachment resolved into the `rgba8unorm` texture and a

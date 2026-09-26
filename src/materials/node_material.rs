@@ -354,6 +354,21 @@ fn setup_diffuse_color(
         ));
     }
 
+    // `if ( this.alphaHash === true ) diffuseColor.a.lessThan(
+    // getAlphaHashThreshold( positionLocal ) ).discard()` — after the alpha
+    // test, before the opaque clamp. `lessThan`, where the alpha test is
+    // `lessThanEqual`.
+    if material.alpha_hash {
+        fragment.push(if_then(
+            diffuse_color()
+                .w()
+                .less_than(crate::nodes::alpha_hash::get_alpha_hash_threshold(
+                    position_local(),
+                )),
+            vec![discard()],
+        ));
+    }
+
     // `builder.isOpaque()` — the material is not transparent, blending is
     // NormalBlending and alphaToCoverage is off. A transparent or blended
     // material keeps its per-fragment alpha instead, all the way to `Output`.
@@ -698,6 +713,14 @@ fn setup_inner(
         Some(node) => node.clone(),
         None => model_view_projection(),
     };
+    // `PointsNodeMaterial.setupVertex()`: on anything but `Points` — a
+    // `Sprite` with `count` instances — the clip position is offset into a
+    // screen-space quad.
+    let position = if material.kind == MaterialKind::Points && ctx.sprite {
+        setup_vertex_sprite(material, position)
+    } else {
+        position
+    };
 
     // `if ( builder.context.getOutput ) resultNode = builder.context.getOutput(
     // resultNode, builder );` — `DirectRenderPipeline`'s hook, which does
@@ -830,6 +853,47 @@ fn setup_position_view_sprite(material: &MeshBasicNodeMaterial, has_center: bool
     )
 }
 
+/// `PointsNodeMaterial.setupVertexSprite()`
+/// (`src/materials/nodes/PointsNodeMaterial.js:89-150`) — each instance's
+/// quad corner pushed out from the clip position by `sizeNode` pixels:
+///
+/// ```ignore
+/// let pointSize = sizeNode !== null ? vec2( sizeNode ) : materialPointSize;
+/// pointSize = pointSize.mul( screenDPR );
+/// if ( camera.isPerspectiveCamera && sizeAttenuation === true )
+///     pointSize = pointSize.mul( scale.div( positionView.z.negate() ) );
+/// if ( scaleNode ) pointSize = pointSize.mul( vec2( scaleNode ) );
+/// let offset = positionGeometry.xy;
+/// if ( rotationNode ) offset = rotate( offset, float( rotationNode ) );
+/// offset = offset.mul( pointSize ).div( viewportSize.div( 2 ) ).mul( mvp.w );
+/// return mvp.add( vec4( offset, 0, 0 ) );
+/// ```
+///
+/// Ported for what the ladder sets: a `sizeNode` and `sizeAttenuation =
+/// false`. `materialPointSize` (no `sizeNode`) and the attenuated branch are
+/// reported by the renderer's unsupported-field warning and draw as if
+/// `sizeNode` were 1 and attenuation off. `viewportSize` is `viewport.zw`,
+/// which is what three's dump reads.
+fn setup_vertex_sprite(material: &MeshBasicNodeMaterial, mvp: NodeRef) -> NodeRef {
+    let size = match &material.size_node {
+        Some(node) => to_vec2(node.clone()),
+        None => vec2(1.0, 1.0),
+    };
+    let mut point_size = size.mul(to_vec2(screen_dpr()));
+    if let Some(scale) = &material.scale_node {
+        point_size = point_size.mul(to_vec2(scale.clone()));
+    }
+    let mut offset = position_geometry().xy();
+    if let Some(rotation) = &material.rotation_node {
+        offset = rotate(offset, rotation.clone());
+    }
+    let offset = offset
+        .mul(point_size)
+        .div(viewport().zw().div(vec2(2.0, 2.0)))
+        .mul(to_vec2(mvp.w()));
+    mvp.add(vec4_join(vec![offset, float(0.0), float(0.0)]))
+}
+
 /// `PointsNodeMaterial.setupPositionView()`
 /// (`src/materials/nodes/PointsNodeMaterial.js:81-87`):
 ///
@@ -882,9 +946,15 @@ pub fn background_pmrem_color_node(pmrem: &crate::materials::environment::PmremH
 }
 
 /// `Background.update()`'s `isNode` branch:
-/// `vec4( backgroundNode ).mul( backgroundIntensity )`.
+/// `vec4( backgroundNode ).mul( backgroundIntensity )`. `vec4()` of a node
+/// that already is one is the node itself — `webgpu_equirectangular`'s
+/// `texture( map, equirectUV(), 0 )` — and of a colour it appends `1.0`.
 pub fn background_node_color_node(node: NodeRef) -> NodeRef {
-    vec4_join(vec![node, float(1.0)]).mul(background_intensity())
+    let color = match node.ty() {
+        Type::Vec4 => node,
+        _ => vec4_join(vec![node, float(1.0)]),
+    };
+    color.mul(background_intensity())
 }
 
 pub fn background_vertex_node() -> NodeRef {
@@ -1178,8 +1248,12 @@ fn setup_standard(
     // `const metalnessNode = this.metalnessNode ? float( this.metalnessNode )
     // : materialMetalness` — the explicit node replaces the uniform *and* its
     // map, because `materialMetalness` is what folds the map in.
+    //
+    // The `float()` matters when the node is wider than a float, as a bare
+    // `texture( map )` is: `DiffuseContribution` then takes `1 - map.x` on
+    // every channel, not `1 - map.rgb` (`webgpu_lights_selective`, §46).
     let metalness_node = match (&material.metalness_node, &material.metalness_map) {
-        (Some(node), _) => node.clone(),
+        (Some(node), _) => node.to_float(),
         // glTF packing: metalness in blue, roughness in green.
         (None, Some(map)) => material_metalness().mul(texture(map).z()),
         (None, None) => material_metalness(),
@@ -1187,7 +1261,7 @@ fn setup_standard(
     fragment.push(metalness().assign(metalness_node.clone()));
 
     let roughness_node = match (&material.roughness_node, &material.roughness_map) {
-        (Some(node), _) => node.clone(),
+        (Some(node), _) => node.to_float(),
         (None, Some(map)) => material_roughness().mul(texture(map).y()),
         (None, None) => material_roughness(),
     };

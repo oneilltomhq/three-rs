@@ -238,6 +238,11 @@ pub struct MeshBasicNodeMaterial {
     /// copies it onto its override material, so cut-away texels cast no
     /// shadow either.
     pub alpha_test: f64,
+    /// `Material.alphaHash` — when set, `setupDiffuseColor()` discards the
+    /// fragments whose alpha is below `getAlphaHashThreshold( positionLocal )`
+    /// (see [`crate::nodes::alpha_hash`]), the stochastic stand-in for
+    /// blending that `webgpu_materials_alphahash` renders.
+    pub alpha_hash: bool,
     /// `Material.alphaMap` — `materialOpacity` becomes `opacity * texture(
     /// alphaMap )` (`MaterialNode.OPACITY`), a `vec4` product that the alpha
     /// assign narrows back to its `.x`. Copied onto the shadow pass's
@@ -407,6 +412,10 @@ pub struct MeshBasicNodeMaterial {
     /// `SpriteNodeMaterial.scaleNode` / `.rotationNode`.
     pub scale_node: Option<NodeRef>,
     pub rotation_node: Option<NodeRef>,
+    /// `PointsNodeMaterial.sizeNode` — the point size in pixels when the
+    /// material draws a [`Sprite`](crate::objects::Sprite) (instanced quads)
+    /// rather than `Points`. Read by `setupVertexSprite()` only.
+    pub size_node: Option<NodeRef>,
     /// `SpriteMaterial.rotation` — the `materialRotation` uniform.
     pub rotation: f64,
     /// `LineBasicMaterial.linewidth` — the `materialLineWidth` uniform.
@@ -578,9 +587,11 @@ impl Default for MeshBasicNodeMaterial {
             opacity_node: None,
             alpha_test_node: None,
             alpha_test: 0.0,
+            alpha_hash: false,
             alpha_map: None,
             emissive_node: None,
             scale_node: None,
+            size_node: None,
             rotation_node: None,
             rotation: 0.0,
             linewidth: 1.0,
