@@ -2282,6 +2282,10 @@ not a code one**. A general `ContextNode` would be the upstream shape, and it is
 what a page that overrode `getViewZ` for a *material* would need; nothing on the
 ladder does, and §8's rule is to add only what a rung needs.
 
+§39 added that `ContextNode`, and the page now uses the upstream shape:
+`range_fog_factor( 2.7, 4.0 ).context( … )`. The argument form stays and
+builds the same WGSL.
+
 ### 24.4 `.toneMapping( mode, exposure )` on a node, and `outputColorTransform`
 
 `ToneMappingNode` is `vec4( toneMappingFn( color.rgb, exposure ), color.a )`,
@@ -3654,3 +3658,185 @@ left for when `context()` can install arbitrary keys.
 Nothing generated changed. `dump_wgsl`'s output is identical after each of
 the eight migrations, apart from the one `ObjectUpdate` pointer noted in §36.
 Every `tests/nodes_*` gate passes unchanged, and so does the full ladder.
+
+## 39. `Node::Custom`, `context()` and `isolate()` (issue #161)
+
+Three's node set is open. Any class that `extends Node` and overrides
+`setup( builder )` is a node, and the addons in `examples/jsm/tsl/` define
+dozens that way. The port's `Node` is a closed enum, so until now every addon
+node had to be written inside the crate. #155 settled how to open it: one
+more variant, `Node::Custom(Rc<dyn CustomNode>)` (decision 1), whose `setup`
+may only compose the variants that already exist (decision 2), shipped as an
+additive 0.1.x change (decision 3). This section also adds the two core
+nodes that act on the builder rather than on values: `ContextNode` and
+`IsolateNode`.
+
+### 39.1 `CustomNode`
+
+```rust
+pub trait CustomNode {
+    fn type_name(&self) -> &'static str;   // static get type(): 'RGBShiftNode'
+    fn node_type(&self) -> Type;           // getNodeType( builder )
+    fn is_cacheable(&self) -> bool { true } // isCacheable( builder )
+    fn setup(&self, builder: &NodeBuilder) -> NodeRef;
+}
+```
+
+`tsl::custom( node )` wraps one in a `Node::Custom`. The builder treats it as
+three treats a node whose `setup` returned an `outputNode`:
+
+* **Setup once per build.** The first time `analyze` reaches the node, the
+  builder calls `setup` and stores the result under the node's identity. This
+  is three's `nodeProperties.outputNode`. The inlined `Fn()` bodies
+  (`call_body`) have always been stored this way, and the two now share one
+  map, `outputs`. `generate` builds the stored graph in the node's place.
+  A second build calls `setup` again, because the per-build data starts empty.
+* **Counted as a node, cached when shared.** `Node.analyze()` counts the
+  node itself and walks its output only on the first reach. In r187dev
+  `Node.build()` then gives *every* cacheable node with a value a var once
+  its count passes one (`cacheResult`); this used to be `TempNode`'s job, and
+  the display addons now `extend Node` and rely on it. So a custom node
+  reached twice builds its output once into a var, unless it answers
+  `is_cacheable() == false`. The difference shows as soon as `renderOutput()`
+  reads a node as `.xyz` and `.w`. The first version of the gate below
+  counted a custom node as a plain non-caching `Node` and failed there, with
+  the join inlined twice.
+* **Compose, never emit.** `setup` gets `&NodeBuilder`, not `&mut`, so it
+  cannot generate, declare or bind anything. What it can ask the builder for
+  is `builder.context( key )`. A node that needs a statement shape nothing
+  composes into has to be a variant in the crate, where the exhaustive
+  `match` and the dump gates see it. Three's addons live inside the same
+  limit: they override `setup` and `updateBefore`, never `generate`.
+  `updateBefore` and the rest of `NodeFrame` are #162.
+* **Why `node_type` is explicit.** Three works a node's type out from its
+  built output. The port's TSL methods type their results when they are
+  called (`.mul()` has to know what it multiplies), which is before any
+  builder exists, so the type has to be declared up front.
+
+The sketch in #161 also had a `hash` method, for `customCacheKey()`. It is
+not added because nothing in the port would read it. Per-build data is keyed
+on identity (§1), and the program cache is keyed on the generated WGSL and
+the binding descriptions, not on a hash of the graph. If #162's
+per-object update deduplication turns out to need a hash, it can be added
+then.
+
+The proof that the trait is enough is in `tests/nodes_custom.rs`: an
+`RGBShiftNode` written there, outside the crate, builds byte-identical WGSL
+to the crate's `display::rgb_shift`, which is itself gated against three's
+dump (#144). The crate's version stays.
+
+### 39.2 `context( node, { … } )`
+
+`ContextNode.js` merges its value into `builder.context`, builds its node,
+and restores the previous context. It does this in `analyze` (on the first
+reach only), in `setup` and in `generate`. `Node::Context { node, value }`
+does the same with §37's stack: `push_context` in `analyze` and `generate`,
+and the guard pops it again. `ContextValue` holds string keys mapped to
+nodes, which lands in `BuildContext.extra`, the addon half of #155 decision
+6. Three's values are arbitrary JS, often functions (`getViewZ: () =>
+scenePassViewZ`). The port's are nodes, because every such key the ladder
+has met is a function returning a node. The typed core keys are left out
+of `ContextValue`: they are installed by the material's own setup.
+
+**Who reads the keys.** Only code that runs *during the build* sees a
+context node's keys. That means an inlined `Fn()` body (expanded in
+`analyze`) and a `CustomNode::setup`. Most of the port's TSL runs eagerly
+when the graph is constructed (§24.3, §37), and a node that already exists
+when `.context()` wraps it was set up under whatever context was current at
+its construction. That is the same rule three follows for a node whose
+`nodeData` was filled by an earlier build.
+
+**The material's own keys are not visible during the build.** §37 put the
+context stack beside the builder because `materials::setup()` runs before
+the builder exists, and the stack is empty again by the time `build()` runs.
+So a `CustomNode::setup` that calls `normal_view()` gets the default
+context, not its material's `setupNormal` or side. In three the material's
+keys are there. Nothing on the ladder does this yet. The fix, when a rung
+needs it, is to snapshot the material's context into `MaterialFlow` and
+push it at the start of `build()`.
+
+**Fog now reads `getViewZ`.** `Fog.js`' `getViewZNode( builder )` reads
+`builder.context.getViewZ` and falls back to `positionView.z`. The port's
+`range_fog_factor` and `density_fog_factor` are now inlined `Fn()`s, as
+three's are. Each body reads `getViewZ` from the context when the builder
+expands it. The fallback `positionView.z` is taken when the factor is
+constructed, so it still sees a sprite or points material's
+`setupPositionView`. `webgpu_custom_fog_background` now spells its fog as
+the page does:
+
+```rust
+range_fog_factor(float(2.7), float(4.0))
+    .context(ContextValue::new().set("getViewZ", scene_pass_view_z))
+```
+
+That closes §24.3's shape divergence. An inlined call is transparent to
+`analyze` and `generate`, so the scene-fog programs did not change by a byte.
+
+### 39.3 `isolate( node )`
+
+`IsolateNode.build()` swaps in `getCacheFromNode( this, parent )`: a
+`NodeCache` kept per isolate node, whose parent is the cache that was
+current when the isolate was first built. Its node is built against it, and
+then the previous cache is restored. `NodeCache.getData()` falls through to
+the parent. `getDataFromNode()` creates a node's data in the current cache
+only when the lookup finds none anywhere. So the data of a node the isolate
+reaches *first* lives inside the isolate, and a node already known outside
+is shared. The dump page shows both:
+
+* `isolate( a ).add( a )`: `a` is counted inside the isolate first, so the
+  reach outside starts a fresh count. Neither count reaches two, so there is
+  no var, and `sin()` appears twice.
+* `b.add( isolate( b.mul( 0.5 ) ) )`: `b` is counted outside first, the
+  isolate finds that count through its parent, and the total reaches two.
+  One var, one `cos()`.
+
+The port's `NodeCache` (§36) holds only generated snippets, and it is shaped
+by block scopes. `analyze` has no scopes at all. So the port keeps three's
+per-node data in two places:
+
+* **Counts and outputs** (`usage`, `outputs`) are keyed on `(data cache,
+  node)`. Cache `0` belongs to the build. Each `Node::Isolate` is given its
+  own cache the first time it is built, with the current one as its parent
+  (`data_parents`). A lookup walks up the parents. The first write lands in
+  the current cache, and later writes land wherever that first one did.
+  This is three's rule exactly.
+* **Snippets** go into a child `NodeCache` that `generate` pushes around the
+  isolate's node, like a block scope without the indent. The child's entries
+  are kept per isolate (and per stage and `fn` depth), so a second build of
+  the same isolate finds its vars again.
+
+**One divergence.** When three's lookup finds a node's data in the parent,
+it hands back the parent's object, and the snippet written into it later is
+visible outside. The port's snippet cache writes into the isolate's child.
+The two differ only for a node that was counted outside the isolate but
+first *generated* inside it. That would need `analyze` and `generate` to
+visit the graph in different orders, which neither does today.
+`cache( node, false )`, the deprecated parentless form, is not ported.
+
+### 39.4 Gates
+
+`tests/nodes_custom.rs`, against `tests/fixtures/nodes_custom/`:
+
+* **`context`**: the composite quad of `webgpu_custom_fog_background`
+  (three's `m10`), built with `.context( { getViewZ } )`. Its `smoothstep`
+  must match three's after renaming, and its WGSL must be byte-identical to
+  the argument form. A third test checks that outside a context the factor
+  still reads `positionView.z`.
+* **`isolate` and `context`**: `tools/dump-pages/isolate_context.html`, a
+  one-material page written for this gate, since no example calls
+  `.isolate()` itself (`EnvironmentNode` does, inside a graph far too large
+  to gate on). The whole fragment body must match three's once
+  `nodeVar`/`nodeConst`/`nodeUniform` are renamed in order of first
+  appearance. A control test checks that without the isolate the same graph
+  has one `sin()`.
+* **`CustomNode`**: the out-of-crate `RGBShiftNode` above. A second test
+  checks that `setup` runs once per build, is shared by three reaches, and
+  reads a `context` key through `builder.context()`.
+
+`dump_wgsl`'s output is byte-identical before and after, apart from §36's
+`ObjectUpdate` pointer, and so is the full ladder.
+
+On the way, `tools/dump-webgpu.mjs` had stopped working: a merge had left a
+second read of the `--html` page behind, naming a variable that no longer
+exists. Every dump died with a `ReferenceError` before Chrome started. The
+stray line is gone.

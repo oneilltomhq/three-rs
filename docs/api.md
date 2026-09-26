@@ -229,7 +229,36 @@ three's own class for that kind lacks — `clearcoat` on a Standard material,
 three's behaviour: `NodeMaterial.setupEnvironment()`, which those kinds
 inherit, reads only `material.envNode` / `material.envMap`.
 
+## 8. The node enum opens through `Node::Custom`
+
+`nodes::Node` is a closed enum, and an exhaustive `match` over it in the
+builder is what tells a rung it has added something the generator cannot
+emit. Issue #155 settled how user code gets node types of its own anyway:
+one more variant, `Node::Custom(Rc<dyn CustomNode>)`, rather than trait
+objects everywhere or a registry of kinds. A `CustomNode` has a
+`type_name`, a `node_type`, an `is_cacheable` flag and a `setup(
+&NodeBuilder ) -> NodeRef` that **composes existing variants and never emits WGSL of its
+own**; a node that needs a new statement shape becomes a variant in the
+crate, where the dump gates see it. `tsl::custom( node )` wraps one.
+`tsl::context( node, ContextValue )` and `tsl::isolate( node )` (and the
+`.context()` / `.isolate()` methods) are three's `ContextNode` and
+`IsolateNode`; `ContextValue` holds string-keyed node values, the addon half
+of `BuildContext` (#155 decision 6). `NodeBuilder::context( key )` is how a
+`setup` reads them. `docs/nodes.md` §39 has the semantics.
+
+All of this shipped in 0.1.x (#155 decision 3). Strictly, three new variants
+on a public enum break a caller that matches on `Node` exhaustively; no
+published consumer does, since they build graphs and hand them to the
+builder, so the change was taken as additive. 0.2.0 marks `Node`
+`#[non_exhaustive]`, so that later variants are additive by the rules and
+not only in practice. The pre-`context` spellings stay:
+`range_fog_factor_with_view_z` and `density_fog_factor_with_view_z` build the
+same WGSL as the `.context( { getViewZ } )` form.
+
 ## Where each decision came from
+
+Decision 8 is #155's design note and its decisions 1, 2, 3 and 6, built in
+#161.
 
 Decision 6 came out of the compositor consumer and issue #62; the gaps it
 closes were found by trying to build the compositor's scene against 0.1.2.
