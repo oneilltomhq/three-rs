@@ -239,7 +239,8 @@ StructDrawindirect, webgpu_struct_drawindirect, "../../examples/webgpu_struct_dr
 Particles, webgpu_particles, "../../examples/webgpu_particles.rs";
 Clearcoat, webgpu_clearcoat, "../../examples/webgpu_clearcoat.rs";
 ModifierCurve, webgpu_modifier_curve, "../../examples/webgpu_modifier_curve.rs";
-FogHeight, webgpu_fog_height, "../../examples/webgpu_fog_height.rs";}
+FogHeight, webgpu_fog_height, "../../examples/webgpu_fog_height.rs";
+ShadowmapOpacity, webgpu_shadowmap_opacity, "../../examples/webgpu_shadowmap_opacity.rs";}
 
 impl Which {
     /// The name with or without its `webgpu_` prefix, or its 1-based index in

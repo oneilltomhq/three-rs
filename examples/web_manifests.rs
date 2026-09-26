@@ -246,6 +246,9 @@ mod webgpu_modifier_curve;
 #[path = "webgpu_particles.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_particles;
+#[path = "webgpu_shadowmap_opacity.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_shadowmap_opacity;
 
 /// Every graded example, in the README's order, paired with a call of its
 /// `init()`.
@@ -399,6 +402,9 @@ const GRADED: &[(&str, fn())] = &[
         drop(webgpu_modifier_curve::init())
     }),
     ("webgpu_fog_height", || drop(webgpu_fog_height::init())),
+    ("webgpu_shadowmap_opacity", || {
+        drop(webgpu_shadowmap_opacity::init())
+    }),
 ];
 
 /// Where the committed manifests live, one `<example>.json` each.
