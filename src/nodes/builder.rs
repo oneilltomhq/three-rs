@@ -335,8 +335,11 @@ pub struct NodeBuilder {
     /// Varyings the vertex stage has assigned to (`positionLocal.assign( …
     /// )`) before the fragment stage asked for them; see `Node::Varying`.
     reassigned_varyings: std::collections::HashSet<usize>,
-    /// Inlined `Fn()` bodies, expanded once per call site node.
-    call_bodies: HashMap<usize, NodeRef>,
+    /// Inlined `Fn()` bodies, expanded once per call site node. The entry
+    /// holds the call node too: the key is its address, and a call dropped
+    /// once its `fn` body was emitted would otherwise hand its expansion to
+    /// whichever node the allocator next puts there.
+    call_bodies: HashMap<usize, (NodeRef, NodeRef)>,
     /// Emitted `fn` names for `Fn()`s with a layout.
     fn_names: HashMap<(usize, usize), String>,
     fn_counter: usize,
@@ -519,11 +522,12 @@ impl NodeBuilder {
     }
 
     fn call_body(&mut self, node: &NodeRef, def: &Rc<FnDef>, args: &[NodeRef]) -> NodeRef {
-        if let Some(body) = self.call_bodies.get(&node.key()) {
+        if let Some((_, body)) = self.call_bodies.get(&node.key()) {
             return body.clone();
         }
         let body = (def.body)(args);
-        self.call_bodies.insert(node.key(), body.clone());
+        self.call_bodies
+            .insert(node.key(), (node.clone(), body.clone()));
         body
     }
 
