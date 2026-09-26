@@ -250,6 +250,14 @@ mod webgpu_textures_2d_array_compressed;
 #[allow(dead_code)]
 mod webgpu_clearcoat;
 
+#[path = "../../examples/webgpu_loader_gltf_compressed.rs"]
+#[allow(dead_code)]
+mod webgpu_loader_gltf_compressed;
+
+#[path = "../../examples/webgpu_equirectangular.rs"]
+#[allow(dead_code)]
+mod webgpu_equirectangular;
+
 #[path = "../../examples/webgpu_lights_phong.rs"]
 #[allow(dead_code)]
 mod webgpu_lights_phong;
@@ -2189,6 +2197,106 @@ fn webgpu_textures_2d_array_compressed() {
     );
 }
 
+/// `coffeemat.glb`: meshopt-compressed, quantized geometry and five
+/// `KHR_texture_basisu` maps, transcoded by `Ktx2Loader` after
+/// `detectSupport( renderer )` — BC7 where the device has
+/// `TEXTURE_COMPRESSION_BC` — each behind a `KHR_texture_transform` into an
+/// atlas. Lit by one camera-parented `PointLight` under Reinhard tone mapping.
+/// A wrong meshopt filter or quantization scale moves the whole model; a
+/// wrong transcode or texture transform repaints it.
+#[test]
+fn webgpu_loader_gltf_compressed() {
+    let name = "webgpu_loader_gltf_compressed";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_loader_gltf_compressed::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_loader_gltf_compressed::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(
+        name,
+        &mut app,
+        webgpu_loader_gltf_compressed::animate,
+        |app| app.renderer.device(),
+    );
+}
+
+/// `scene.backgroundNode = texture( map, equirectUV(), 0 )`: a 4096×2048
+/// sRGB JPEG on the skybox sphere, sampled at level 0 along
+/// `positionWorldDirection`. No mesh and no light, so every pixel is the
+/// `equirectUV` mapping; a wrong `atan2` argument order, a missing clamp or a
+/// flipped v moves the whole panorama. The camera has auto-rotated 0.1° from
+/// `( 1, 0, 0 )` by the graded frame.
+#[test]
+fn webgpu_equirectangular() {
+    let name = "webgpu_equirectangular";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_equirectangular::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_equirectangular::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_equirectangular::animate, |app| {
+        app.renderer.device()
+    });
+}
+
 /// Issue #139's rung: `gears.glb` is three Draco-compressed meshes, and the
 /// outer hull's `maskNode` cuts an angular wedge out of it — in the shadow
 /// pass too — while its `outputNode` paints the exposed back faces a flat
@@ -3631,6 +3739,8 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_compute_texture);
     rung!(webgpu_textures_2d_array_compressed);
     rung!(webgpu_tsl_angular_slicing);
+    rung!(webgpu_loader_gltf_compressed);
+    rung!(webgpu_equirectangular);
 }
 
 // ---------------------------------------------------------------------------

@@ -3683,3 +3683,48 @@ left for when `context()` can install arbitrary keys.
 Nothing generated changed. `dump_wgsl`'s output is identical after each of
 the eight migrations, apart from the one `ObjectUpdate` pointer noted in §36.
 Every `tests/nodes_*` gate passes unchanged, and so does the full ladder.
+
+## 43. `frontFacing` outside the fragment stage, and `vec4()` of a vec4 background (`webgpu_loader_gltf_compressed`, `webgpu_equirectangular`)
+
+Two small gaps, each found by the first page that reached it.
+
+**`FrontFacingNode.generate()` writes `true` outside the fragment stage.**
+A double-sided material on a geometry with a `tangent` attribute builds
+`bitangentView` in the vertex stage: `Bitangent.js` crosses
+`normalView` and `tangentView` there and hands the product over as the
+`NORMAL_v_bitangentView` varying. Both factors go through
+`negateOnBackSide()`, which for `DoubleSide` multiplies by `faceDirection`,
+which reads `frontFacing`. WGSL has no `@builtin( front_facing )` in a
+vertex entry point, and three never asks for one there: its
+`FrontFacingNode.generate()` returns the literal `'true'` whenever
+`builder.shaderStage !== 'fragment'`, so three's dump reads
+`( ( f32( true ) * 2.0 ) - 1.0 )` in the vertex stage and
+`( ( f32( isFront ) * 2.0 ) - 1.0 )` in the fragment. The port declared the
+builtin in whatever stage read it, and wgpu refused the vertex module
+("Built-in FrontFacing is not available at this stage"). `NodeBuilder`'s
+`Node::Builtin` arm now returns `true` for `FrontFacing` in any stage but the
+fragment. No earlier rung took this path, because it needs all three: a
+double-sided material, a normal map (only the normal map reads the tangent
+frame), and a `tangent` attribute. The barn lamp has tangents and normal
+maps but is single sided. `PrimaryIonDrive`'s double-sided materials have
+tangents but no normal map. coffeemat has all three.
+
+Three's `generate()` also returns `'false'` for a `BackSide` material. The
+port does not need that branch: its `negate_on_back_side()` multiplies a
+back-sided vector by `-1` and never reads `frontFacing`, as three's does.
+
+**`vec4( backgroundNode )` of a node that is already a vec4 is the node.**
+`Background.update()` colours the skybox with
+`vec4( backgroundNode ).mul( backgroundIntensity )`. Every background node
+the ladder had used before was a colour, a vec3, so
+`background_node_color_node` always appended `1.0`.
+`webgpu_equirectangular`'s node is `texture( map, equirectUV(), 0 )`, a vec4
+sample, and appending to it would build a five-component join. The function
+now keeps a vec4 node as it is and appends `1.0` to anything else. Three's
+dump shows `DiffuseColor = ( nodeVar0 * vec4<f32>( render.nodeUniform2 ) )`,
+the sample times the intensity with no constructor around it, and so does
+the port's `dump_wgsl` section `background_equirect`.
+
+Nothing else was missing. `equirect_uv`, `texture_level`, the meshopt
+decoder, `KHR_mesh_quantization`, the `KHR_texture_basisu` transcode and
+`KHR_texture_transform` were all already in place.
