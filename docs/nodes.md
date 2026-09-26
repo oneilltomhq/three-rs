@@ -633,6 +633,25 @@ differences, each verified to be pixel-neutral.
   the whole fit. The port does the same, because the three calls are three
   separate `NodeRef`s and the builder promotes by `Rc` identity. Identical
   arithmetic, identical text apart from the temp numbers.
+* **One flat `instanceIndex` varying per `range()` (§28).** Every
+  `tsl::instanced_range` wraps its own `instanceIndex` in its own varying (§9),
+  so `webgpu_particles`' smoke sprite passes two flat `u32` varyings holding
+  the same value, where three's `IndexNode` gives the one `instanceIndex` one
+  varying. Same values, one extra interpolant, and the later `@location`s
+  shift by one.
+* **`varyings.positionLocal = positionLocal` (§28).** Three writes every
+  assignment to a varying straight into `varyings.name`, so its vertex stage
+  has `varyings.positionLocal = position;` and later `varyings.positionLocal =
+  nodeConst1;`. The port keeps the vertex-stage value in a private var and
+  writes the varying once, from that var, when the fragment stage asks for it.
+  The fragment stage reads the same final value. Before #167 the port wrote
+  the geometry's position there instead of the var, which was wrong, not a
+  divergence; no graded frame could see it.
+* **The banner.** The pinned commit's dumps are headed
+  `// Three.js r187dev - Node System`, where r186's said `r186` and the port
+  says `three-rs`.
+  `tests/nodes_compute_indirect_wgsl.rs::canonical()` drops it, as
+  `tests/nodes_compute_wgsl.rs` drops r186's.
 
 ### `LineBasicNodeMaterial` adds no divergence class
 
@@ -2719,6 +2738,146 @@ None new beyond the classes §8 already lists, and one fix that was a real bug:
   `textureBicubicLevel` are inlined.** That is three's own split: the first
   three carry a `setLayout()`, the rest are plain `Fn()`. Reproduced
   deliberately so the two dumps line up statement for statement.
+
+## 28. Indirect draws, struct storage, atomics and workgroup memory (`webgpu_struct_drawindirect`, `webgpu_particles`)
+
+Issue #167. The compute stage of §11 wrote flat arrays over a flat index. This
+section adds what the rest of three's compute examples build on: a buffer the
+GPU both computes into and draws from, typed views of it, atomics, and memory
+shared inside a workgroup.
+
+### 28.1 `IndirectStorageBufferAttribute` and the indirect draw
+
+`IndirectStorageBufferAttribute::new( words, item_size )` is a `u32` array
+with its own `BufferId`. The renderer creates one GPU buffer for it, with
+`STORAGE | INDIRECT | COPY_SRC | COPY_DST` usage, keyed by that id. A kernel
+that binds the attribute as storage and a draw that reads it as arguments
+therefore use the same buffer, which is the whole point of the class.
+
+`BufferGeometry::set_indirect( attr )` is `geometry.setIndirect( attr )`. A
+draw whose geometry has one calls `draw_indexed_indirect` (indexed geometry)
+or `draw_indirect` at offset 0, in place of the direct draw. The arguments
+are WebGPU's: `[ vertexCount, instanceCount, firstVertex, firstInstance ]`,
+or `[ indexCount, instanceCount, firstIndex, baseVertex, firstInstance ]`
+when indexed.
+
+`renderer.info()` records the CPU-side counts for an indirect draw, as
+three's `WebGPUBackend.draw()` does (`info.update( object, vertexCount,
+instanceCount )` after the indirect branch). What the GPU actually drew is
+not known on the CPU, so neither counts it. `Renderer::read_indirect_buffer()`
+reads the arguments back, for tests.
+
+`Renderer::compute_indirect( flow, attr )` is `computeIndirect`: the dispatch
+size comes from the attribute's first three words.
+
+Two smaller pieces ride along:
+
+* **`BufferGeometry::instance_count`** and
+  **`BufferAttribute::new_instanced()`** (`InstancedBufferGeometry` and
+  `InstancedBufferAttribute`). An instanced attribute's vertex buffer steps
+  per instance. The program's cache key includes which attributes are
+  instanced, because the same material on a plain geometry needs a
+  per-vertex layout.
+* **`Mesh.count`**. `SpriteNodeMaterial` draws `count` instances of a plain
+  mesh with no `InstancedMesh`, as `webgpu_particles` does.
+
+### 28.2 `struct` storage
+
+`struct_type( name, members )` is `struct( { … }, name )`, and
+`storage_struct( &attr, layout )` is `storage( attr, structType )`.
+`.get( member )` reads one member.
+
+```wgsl
+// structs
+
+struct DrawBuffer {
+	vertexCount : u32,
+	instanceCount : atomic< u32 >,
+	firstVertex : u32,
+	firstInstance : u32,
+	offset : u32
+};
+
+
+// uniforms
+@binding( 0 ) @group( 0 ) var<storage, read_write> NodeBuffer_0 : DrawBuffer;
+```
+
+These are three's spellings, reproduced exactly: the `// structs` section
+of a compute module, a struct binding declared on one line, and
+`atomic< u32 >` with spaces for a struct member. (An array of atomics is
+`array< atomic<u32> >`, without them.) The layout has to be all 4-byte
+members whose count matches the attribute's `item_size`; `storage_struct`
+asserts both, because a mismatch would be a buffer the kernel reads past.
+
+### 28.3 Atomics
+
+`atomic_store`, `atomic_add`, `atomic_sub`, `atomic_max`, `atomic_min`,
+`atomic_and`, `atomic_or`, `atomic_xor` and `atomic_load` take a pointer node:
+an atomic struct member, an element of `StorageArray::to_atomic()`, or an
+element of `WorkgroupArray::to_atomic()`. `AtomicFunctionNode` has two
+spellings, and the port follows its rule:
+
+* a call that is itself a statement of the flow, and is not used anywhere
+  else, is a bare `atomicAdd( &…, 1u );`. This is three's
+  `parents[ 0 ].isStackNode` test, which the builder answers with the key of
+  the statement it is generating (`generate_statement`);
+* anything else is a `let nodeConstN = atomicAdd( … );` whose name is the
+  value.
+
+A float value stored into a `u32` atomic is wrapped in `u32( … )`, as three's
+`AtomicFunctionNode` does.
+
+### 28.4 Workgroup memory and the compute builtins
+
+`workgroup_array( ty, count )` is `workgroupArray( type, count )`. It declares
+`var<workgroup> WorkgroupArray_N: array< u32, 64 >;` under `// locals`, and
+`.element( i )` indexes it. `workgroup_barrier()` and `storage_barrier()` are
+the bare statements. `invocation_local_index()`, `workgroup_id()`,
+`local_id()`, `global_id()` and `num_workgroups()` are the compute builtins.
+A kernel that reads `invocationLocalIndex` gets
+`@builtin( local_invocation_index ) invocationLocalIndex : u32` first among
+its entry point's parameters, where three puts it. Reading any of them
+outside a compute kernel is a panic that names it.
+
+The storage buffers of a stage are now declared before its uniform structs,
+which is three's order (`m04` above has the struct binding, then
+`objectStruct`). Every earlier WGSL gate still passes with it.
+
+### 28.5 The varying a vertex stage reassigns
+
+`positionLocal` is a varying (§1), and `setupPosition()` assigns
+`positionNode` to it. Three's vertex stage writes every assignment to a
+varying straight into `varyings.positionLocal`. The port's vertex stage holds
+the value in a private var until the fragment stage asks for the varying. It
+then wrote `varyings.positionLocal = position`, the unmoved geometry position.
+It now writes the var's current value when the vertex stage has assigned to
+it (`reassigned_varyings` in the builder). `webgpu_particles`' smoke colour
+reads `positionLocal.y`, which is how this came up.
+
+### 28.6 What the images cannot grade
+
+Both rungs graded here have frames that do not show the feature.
+`webgpu_struct_drawindirect` draws before its kernels run, so its graded
+frame is the background. `webgpu_particles` is pinned to a time at which
+every sprite's opacity is 0. Their progress notes list the WGSL and GPU
+gates that stand in for the image. `tests/renderer_compute_indirect.rs` also
+checks atomics, workgroup memory and an indirect dispatch in small kernels
+whose answers are known in closed form.
+
+`webgpu_compute_reduce`, the issue's third candidate, is not a rung. Its page
+runs two renderers on two half-width canvases under a DOM thread display, and
+its later reductions use `subgroupAdd`, which #167 leaves out with the rest
+of the subgroup functions. Its workgroup-memory kernels are the source of
+the spellings §28.4 asserts.
+
+### Divergences specific to this section
+
+The two new classes are in §8: one flat `instanceIndex` varying per
+`range()`, and `varyings.positionLocal` written once from the var. Compute
+modules also have the subgroup omission and the banner that §8 already
+lists. Apart from those, both of `webgpu_struct_drawindirect`'s kernels
+match three's dump line for line once generated names are renumbered.
 
 [`Renderer::draw`]: ../src/renderer/mod.rs
 [`materials::transmission`]: ../src/materials/transmission.rs

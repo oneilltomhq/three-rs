@@ -194,9 +194,9 @@ Three things the readback caught that nothing else would have:
   `render()`, which runs *after* the frame's compute calls, so a `frame_calls`
   here would always read zero. The cumulative `calls` is the honest one; "did
   this frame build a compute pipeline" is answered by `info.build`.
-* **Subgroup operations**, workgroup shared memory, storage barriers,
-  indirect dispatch, and compute over anything but a flat index. None is
-  reachable from this example.
+* **Subgroup operations**, and compute over anything but a flat index. None
+  is reachable from this example. Workgroup shared memory, barriers, atomics
+  and indirect dispatch landed later, with #167 (`docs/nodes.md` §28).
 * **The example in `src/bin/viewer.rs`.** Every other graded example is
   browsable there; this one is not, because `Scene::camera()` returns a
   `&mut PerspectiveCamera` and `set_size()` writes `aspect` on it, and this
