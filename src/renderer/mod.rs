@@ -708,6 +708,13 @@ pub struct Renderer {
     /// eight samples and its eight accumulation quads — belong to the frame
     /// they precede and do not advance it.
     frames: u64,
+    /// `NodeUpdateType.FRAME` bookkeeping: the frame each `ComputeNode`
+    /// reached through a material last ran in, keyed by the flow's address
+    /// (the material holds the flow for as long as it can be drawn).
+    frame_computes: HashMap<usize, u64>,
+    /// The frame each `computeSkinning()` skeleton was last `update()`d in —
+    /// its `OnObjectUpdate`'s `_skeletonsUpdated` map.
+    frame_skeletons: HashMap<usize, u64>,
     /// How many times `NodeBuilder::build` has run — the number a steady frame
     /// must leave unchanged. See `program_builds()`.
     program_builds: u64,
@@ -1110,6 +1117,8 @@ impl Renderer {
             programs: HashMap::new(),
             node_builder_states: HashMap::new(),
             frames: 0,
+            frame_computes: HashMap::new(),
+            frame_skeletons: HashMap::new(),
             program_builds: 0,
             default_material: MeshBasicNodeMaterial::new(),
             output_hook: None,
@@ -2823,8 +2832,19 @@ impl Renderer {
             // `NodeManager.getForRender( renderObject )`: the material's built
             // program, from the cache on a steady frame and from
             // `NodeMaterial.setup()` → `NodeBuilder.build()` on a miss.
-            let node = self.node_builder_state(item, target.color_format.components());
+            let node = self.node_builder_state(
+                item,
+                target.color_format.components(),
+                target.sample_count,
+            );
             let program_key = node.cache_key;
+
+            // `nodes.updateBefore( renderObject )`: a `ComputeNode` the
+            // material reads as a value dispatches itself, once per frame,
+            // ahead of the pass that draws with its result.
+            for flow in &node.computes {
+                self.update_before_compute(flow);
+            }
 
             let mut extra_color_targets = [None; MAX_EXTRA_COLOR_ATTACHMENTS];
             for (slot, extra) in extra_color_targets
@@ -3275,6 +3295,44 @@ impl Renderer {
         self.compute_dispatch(flow, None)
     }
 
+    /// `ComputeNode.updateBefore()` — `renderer.compute( this )` — gated by
+    /// its `updateBeforeType`, `NodeUpdateType.FRAME`: at most once per frame
+    /// however many draws read it.
+    fn update_before_compute(&mut self, flow: &Rc<ComputeFlow>) {
+        let key = Rc::as_ptr(flow) as *const u8 as usize;
+        if self.frame_computes.insert(key, self.frames) == Some(self.frames) {
+            return;
+        }
+        self.compute(flow)
+            .expect("three-rs: a material's ComputeNode dispatches");
+    }
+
+    /// `computeSkinning()`'s bone matrices for one dispatch. The skeleton's
+    /// `OnObjectUpdate` — `skeleton.update()`, once per frame per skeleton —
+    /// runs first, which is what makes a `SkinnedMesh` that is never drawn
+    /// (`webgpu_skinning_points` hides it) still pose its skin.
+    fn skeleton_bone_buffer(
+        &mut self,
+        slot: SlotKey,
+        skeleton: &crate::nodes::node::SkeletonRef,
+        count: usize,
+    ) -> Serial<wgpu::Buffer> {
+        let key = Rc::as_ptr(&skeleton.0) as *const u8 as usize;
+        if self.frame_skeletons.insert(key, self.frames) != Some(self.frames) {
+            skeleton.0.borrow_mut().update();
+        }
+        let skeleton = skeleton.0.borrow();
+        let mut data = vec![0f32; count * 16];
+        let n = data.len().min(skeleton.bone_matrices.len());
+        data[..n].copy_from_slice(&skeleton.bone_matrices[..n]);
+        self.slot_buffer(
+            slot,
+            "three-rs computeSkinning boneMatrices",
+            bytemuck::cast_slice(&data),
+            wgpu::BufferUsages::UNIFORM,
+        )
+    }
+
     /// `renderer.compute( computeNode, indirectAttribute )` — the same kernel
     /// with its workgroup counts read from `dispatch[ 0..3 ]` on the GPU
     /// (`WebGPUBackend.compute()`'s `dispatchWorkgroupsIndirect( buffer, 0 )`
@@ -3392,6 +3450,19 @@ impl Renderer {
                             wgpu::BufferUsages::UNIFORM,
                         ))
                     }
+                    BindingDesc::Buffer {
+                        source: BufferSource::SkeletonBoneMatrices(skeleton),
+                        count,
+                        ..
+                    } => Resource::Buffer(self.skeleton_bone_buffer(
+                        SlotKey {
+                            owner: SlotOwner::Compute(program_key),
+                            group: group_index as u32,
+                            binding: resources.len() as u32,
+                        },
+                        skeleton,
+                        *count,
+                    )),
                     BindingDesc::Buffer {
                         id,
                         count,
@@ -3802,8 +3873,23 @@ impl Renderer {
     /// attachment: `NodeBuilder.getOutputType()` reads the render target's
     /// texture, so the same material built for an `RGFormat` target writes a
     /// `vec2` and is a different program.
-    fn node_builder_state(&mut self, item: &Renderable, output_components: u8) -> Rc<NodeProgram> {
-        let dynamic_key = hash_of(&(item.key.variant, &item.setup, &item.fog, output_components));
+    fn node_builder_state(
+        &mut self,
+        item: &Renderable,
+        output_components: u8,
+        sample_count: u32,
+    ) -> Rc<NodeProgram> {
+        // `builder.renderer.currentSamples > 0` (the target's samples) with
+        // `material.alphaToCoverage`: `shapeCircle()` reads it at build time,
+        // so it keys the build. A material edit bumps the version anyway.
+        let alpha_to_coverage_samples = item.material.alpha_to_coverage && sample_count > 1;
+        let dynamic_key = hash_of(&(
+            item.key.variant,
+            &item.setup,
+            &item.fog,
+            output_components,
+            alpha_to_coverage_samples,
+        ));
 
         let frames = self.frames;
         let states = self
@@ -3825,6 +3911,9 @@ impl Renderer {
 
         warn_unsupported(item.key.id, &item.material, &item.setup);
 
+        let _samples = crate::nodes::builder::push_context(|cx| {
+            cx.alpha_to_coverage_samples = alpha_to_coverage_samples;
+        });
         // `NodeMaterial.setup()` → `NodeBuilder.build()`: the WGSL and the
         // bindings the material declares.
         let flow = materials::setup(&item.material, &item.setup, item.fog.as_ref());
@@ -4111,6 +4200,9 @@ impl Renderer {
                 wgpu::BufferUsages::UNIFORM,
             );
         }
+        if let BufferSource::SkeletonBoneMatrices(skeleton) = source {
+            return self.skeleton_bone_buffer(slot, skeleton, count);
+        }
         if let BufferSource::MorphInfluences = source {
             // `uniformArray( influences, 'float' )`: one `vec4` per target with
             // the influence in `.x`, so 16 bytes each — not 4. Re-written per
@@ -4149,6 +4241,9 @@ impl Renderer {
     /// — the gate that can see whether a compute pass did anything, which the
     /// graded image of `webgpu_compute_points` cannot.
     ///
+    /// `VERTEX` is there for `toAttribute()`, which draws straight from the
+    /// buffer a kernel wrote; three's storage attributes carry it too.
+    ///
     /// `INDIRECT` is on every storage buffer, not only on an
     /// `IndirectStorageBufferAttribute`'s: the buffer a kernel writes is the
     /// one `drawIndirect` / `dispatchWorkgroupsIndirect` then read, and it is
@@ -4166,6 +4261,7 @@ impl Renderer {
             label: Some("three-rs storage buffer"),
             size,
             usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::VERTEX
                 | wgpu::BufferUsages::INDIRECT
                 | wgpu::BufferUsages::COPY_SRC
                 | wgpu::BufferUsages::COPY_DST,
@@ -4192,7 +4288,7 @@ impl Renderer {
         element_ty: Type,
     ) -> Serial<wgpu::Buffer> {
         match source {
-            BufferSource::Struct { init, .. } => {
+            BufferSource::Struct { init, .. } | BufferSource::StorageData { init, .. } => {
                 self.storage_buffer(id, (init.len() * 4) as u64, Some(init))
             }
             _ => self.storage_buffer(id, (count * storage_stride(element_ty)) as u64, None),
@@ -4236,6 +4332,19 @@ impl Renderer {
         instance_color: &Option<InstancedBufferAttribute>,
     ) -> wgpu::Buffer {
         let id = buffer.id.get();
+        // `bufferNode.toAttribute()`: the storage buffer a kernel writes,
+        // bound as a vertex buffer — one GPU buffer under both names, keyed on
+        // the storage node's id. `item_size` is the padded storage stride.
+        if buffer.source.is_storage() {
+            let size = (buffer.count * buffer.item_size * 4) as u64;
+            let init = match &buffer.source {
+                BufferSource::StorageData { init, .. } => Some(init.clone()),
+                _ => None,
+            };
+            return self
+                .storage_buffer(id, size, init.as_deref().map(|v| v.as_slice()))
+                .gpu;
+        }
         self.buffer_for(
             slot,
             id,
@@ -4274,7 +4383,9 @@ impl Renderer {
             | BufferSource::CameraProjectionMatrices
             | BufferSource::Storage
             | BufferSource::AtomicStorage
-            | BufferSource::Struct { .. } => {
+            | BufferSource::Struct { .. }
+            | BufferSource::StorageData { .. }
+            | BufferSource::SkeletonBoneMatrices(_) => {
                 unreachable!("three-rs: this buffer source is resolved by node_buffer")
             }
             BufferSource::InstanceMatrix => {
@@ -6464,6 +6575,16 @@ fn warn_unsupported(id: usize, material: &MeshBasicNodeMaterial, setup: &SetupCo
         && material.lights
     {
         fields.push("anisotropy (under a direct light)");
+    }
+    // `PointsNodeMaterial.setupVertexSprite()` is ported for a `sizeNode`
+    // without size attenuation, which is what the ladder draws.
+    if material.kind == materials::MaterialKind::Points && setup.sprite {
+        if material.size_attenuation {
+            fields.push("sizeAttenuation (PointsNodeMaterial on a Sprite)");
+        }
+        if material.size_node.is_none() {
+            fields.push("size without sizeNode (PointsNodeMaterial on a Sprite)");
+        }
     }
     WARNED.with(|warned| {
         let mut warned = warned.borrow_mut();
