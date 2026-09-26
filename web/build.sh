@@ -46,6 +46,11 @@ fi
 rm -rf "$dist"
 mkdir -p "$dist"
 
+# Where cargo put the build: `target/` next to the workspace unless a
+# `.cargo/config.toml` above the checkout sets a shared `target-dir`.
+target_root=$(cd "$root" && cargo metadata --format-version 1 --no-deps \
+    | sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')
+
 # `--target web` emits an ES module with a default-export initialiser, which is
 # what index.html's `import("./three_rs_web.js")` expects. No --no-modules and
 # no bundler step.
@@ -53,7 +58,7 @@ wasm-bindgen \
     --target web \
     --out-dir "$dist" \
     --out-name three_rs_web \
-    "$root/target/wasm32-unknown-unknown/$target_dir/three_rs_web.wasm"
+    "$target_root/wasm32-unknown-unknown/$target_dir/three_rs_web.wasm"
 
 cp "$here/index.html" "$dist/index.html"
 

@@ -253,6 +253,9 @@ mod webgpu_fog_height;
 #[path = "webgpu_instance_points.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_instance_points;
+#[path = "webgpu_layers.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_layers;
 #[path = "webgpu_lights_selective.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_lights_selective;
@@ -262,9 +265,18 @@ mod webgpu_loader_gltf_compressed;
 #[path = "webgpu_materials_toon.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_materials_toon;
+#[path = "webgpu_mirror.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_mirror;
 #[path = "webgpu_modifier_curve.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_modifier_curve;
+#[path = "webgpu_multiple_rendertargets.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_multiple_rendertargets;
+#[path = "webgpu_multiple_rendertargets_readback.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_multiple_rendertargets_readback;
 #[path = "webgpu_occlusion.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_occlusion;
@@ -280,6 +292,23 @@ mod webgpu_texturegather;
 #[path = "webgpu_texturegrad.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_texturegrad;
+#[path = "webgpu_textures_partialupdate.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_textures_partialupdate;
+
+#[path = "webgpu_loader_gltf_diffuse_roughness.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_loader_gltf_diffuse_roughness;
+
+#[path = "webgpu_cubemap_mix.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_cubemap_mix;
+#[path = "webgpu_tsl_earth.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_tsl_earth;
+#[path = "webgpu_tsl_halftone.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_tsl_halftone;
 
 #[path = "webgpu_instance_sprites.rs"]
 #[allow(dead_code)] // only `init()` is called here
@@ -455,6 +484,12 @@ const GRADED: &[(&str, fn())] = &[
     ("webgpu_shadowmap_opacity", || {
         drop(webgpu_shadowmap_opacity::init())
     }),
+    ("webgpu_multiple_rendertargets", || {
+        drop(webgpu_multiple_rendertargets::init())
+    }),
+    ("webgpu_multiple_rendertargets_readback", || {
+        drop(webgpu_multiple_rendertargets_readback::init())
+    }),
     ("webgpu_texturegrad", || drop(webgpu_texturegrad::init())),
     (
         "webgpu_texturegather",
@@ -478,6 +513,17 @@ const GRADED: &[(&str, fn())] = &[
     ("webgpu_instance_points", || {
         drop(webgpu_instance_points::init())
     }),
+    ("webgpu_textures_partialupdate", || {
+        drop(webgpu_textures_partialupdate::init())
+    }),
+    ("webgpu_layers", || drop(webgpu_layers::init())),
+    ("webgpu_loader_gltf_diffuse_roughness", || {
+        drop(webgpu_loader_gltf_diffuse_roughness::init())
+    }),
+    ("webgpu_cubemap_mix", || drop(webgpu_cubemap_mix::init())),
+    ("webgpu_mirror", || drop(webgpu_mirror::init())),
+    ("webgpu_tsl_halftone", || drop(webgpu_tsl_halftone::init())),
+    ("webgpu_tsl_earth", || drop(webgpu_tsl_earth::init())),
 ];
 
 /// Where the committed manifests live, one `<example>.json` each.

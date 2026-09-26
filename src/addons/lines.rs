@@ -235,6 +235,7 @@ impl LineSegments2 {
         object.payload = Payload::Mesh(Mesh {
             geometry: Rc::new(geometry.geometry.clone()),
             material: Some(material),
+            materials: Vec::new(),
             morph_target_influences: Vec::new(),
             line_segments: Some(geometry.attributes()),
             count: None,

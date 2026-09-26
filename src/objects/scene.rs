@@ -33,6 +33,11 @@ pub enum Background {
     /// `maxLod` uniform the read needs travels with it; the renderer builds the
     /// node, so an application writes the one line the page does.
     Pmrem(crate::materials::environment::PmremHandle),
+    /// `scene.backgroundNode = <a graph of pmremTexture()s>` —
+    /// `webgpu_cubemap_mix`'s `mix( pmremTexture( cube2 ), pmremTexture(
+    /// cube1 ), … )`. `Background.update()` builds it under the same context
+    /// as [`Background::Pmrem`].
+    EnvironmentNode(crate::materials::environment::EnvironmentNode),
 }
 
 impl From<Color> for Background {
@@ -82,6 +87,13 @@ pub struct Scene {
     ///
     /// [`MeshBasicNodeMaterial::set_needs_update`]: crate::materials::MeshBasicNodeMaterial::set_needs_update
     pub environment: Option<crate::materials::environment::PmremHandle>,
+    /// `scene.environmentNode` set by hand to a graph of `pmremTexture()`s.
+    /// `NodeManager.getEnvironmentNode()` returns it ahead of the node it would
+    /// make from [`Scene::environment`], so it wins when both are set. The same
+    /// rule about [`MeshBasicNodeMaterial::set_needs_update`] applies.
+    ///
+    /// [`MeshBasicNodeMaterial::set_needs_update`]: crate::materials::MeshBasicNodeMaterial::set_needs_update
+    pub environment_node: Option<crate::materials::environment::EnvironmentNode>,
     /// `scene.fog` — a classic [`Fog`](super::Fog) or
     /// [`FogExp2`](super::FogExp2). The renderer turns it into a fog node
     /// whose parameters are render-group uniforms (`NodeManager.updateFog()`),
@@ -107,6 +119,7 @@ impl Default for Scene {
             background: None,
             background_blurriness: 0.0,
             environment: None,
+            environment_node: None,
             fog: None,
             fog_node: None,
             override_material: None,

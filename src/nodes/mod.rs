@@ -1,6 +1,7 @@
 //! Port of `three.js/src/nodes/` — the node system the WebGPU renderer builds
 //! every material through. See `docs/nodes.md`.
 
+pub mod alpha_hash;
 pub mod batch;
 pub mod builder;
 pub mod code;
@@ -13,6 +14,7 @@ pub mod mrt;
 pub mod node;
 pub mod pmrem_node;
 pub mod pmrem_utils;
+pub mod reflector_node;
 pub mod skinning;
 pub mod tsl;
 pub mod wgsl;

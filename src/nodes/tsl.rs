@@ -704,34 +704,70 @@ pub fn two_pi() -> NodeRef {
     float(std::f64::consts::TAU)
 }
 
-/// `rotate( position, rotation )` — `RotateNode`'s `vec2` branch
-/// (`src/nodes/utils/RotateNode.js:106`):
+/// `rotate( position, rotation )` — `RotateNode.setup()`
+/// (`src/nodes/utils/RotateNode.js`), with its default `'XYZ'` order.
+///
+/// The `vec2` branch:
 ///
 /// ```ignore
 /// mat2( cos, sin, sin.negate(), cos ).mul( position )
 /// ```
 ///
 /// `cos`/`sin` are one node each, used twice, so both become `nodeVarN` temps.
-/// The `vec3`/`vec4` branch (three chained `mat4` rotations) is not ported.
+///
+/// The `vec3` branch builds one `mat4` per axis and chains them in the
+/// order's letters, `X.mul( Y ).mul( Z ).mul( vec4( position, 1 ) ).xyz`.
+/// Every `rotation.x` / `cos( rotation.x )` there is a fresh node in three,
+/// so each is emitted inline; only `rotation` itself is shared (twelve uses),
+/// which is what makes the builder hoist it into a temp.
 pub fn rotate(position: impl Into<NodeRef>, rotation: impl Into<NodeRef>) -> NodeRef {
     let (position, rotation) = (position.into(), rotation.into());
-    assert_eq!(
-        position.ty(),
-        Type::Vec2,
-        "three-rs: rotate() only ports RotateNode's vec2 branch"
-    );
-    let cos_angle = rotation.cos();
-    let sin_angle = rotation.sin();
-    join(
-        Type::Mat2,
-        vec![
-            cos_angle.clone(),
-            sin_angle.clone(),
-            sin_angle.negate(),
-            cos_angle,
-        ],
-    )
-    .mul(position)
+    match position.ty() {
+        Type::Vec2 => {
+            let cos_angle = rotation.cos();
+            let sin_angle = rotation.sin();
+            join(
+                Type::Mat2,
+                vec![
+                    cos_angle.clone(),
+                    sin_angle.clone(),
+                    sin_angle.negate(),
+                    cos_angle,
+                ],
+            )
+            .mul(position)
+        }
+        Type::Vec3 => {
+            let r = &rotation;
+            let row = |args: Vec<NodeRef>| join(Type::Vec4, args);
+            let mat4 = |rows: Vec<NodeRef>| join(Type::Mat4, rows);
+            let zero = || float(0.0);
+            let rotation_x = mat4(vec![
+                vec4(1.0, 0.0, 0.0, 0.0),
+                row(vec![zero(), r.x().cos(), r.x().sin(), zero()]),
+                row(vec![zero(), r.x().sin().negate(), r.x().cos(), zero()]),
+                vec4(0.0, 0.0, 0.0, 1.0),
+            ]);
+            let rotation_y = mat4(vec![
+                row(vec![r.y().cos(), zero(), r.y().sin().negate(), zero()]),
+                vec4(0.0, 1.0, 0.0, 0.0),
+                row(vec![r.y().sin(), zero(), r.y().cos(), zero()]),
+                vec4(0.0, 0.0, 0.0, 1.0),
+            ]);
+            let rotation_z = mat4(vec![
+                row(vec![r.z().cos(), r.z().sin(), zero(), zero()]),
+                row(vec![r.z().sin().negate(), r.z().cos(), zero(), zero()]),
+                vec4(0.0, 0.0, 1.0, 0.0),
+                vec4(0.0, 0.0, 0.0, 1.0),
+            ]);
+            rotation_x
+                .mul(rotation_y)
+                .mul(rotation_z)
+                .mul(vec4_join(vec![position, float(1.0)]))
+                .xyz()
+        }
+        ty => panic!("three-rs: rotate() of a {ty:?}"),
+    }
 }
 
 /// `abs( x )`.
@@ -848,9 +884,25 @@ fn fog_factor_fn(body: impl Fn() -> NodeRef + 'static) -> NodeRef {
 /// Runs a fog factor's deferred body (see [`range_fog_factor`]) in the
 /// current material's context. Any other node is returned as it is.
 pub fn resolve_fog_factor(factor: &NodeRef) -> NodeRef {
-    match &*factor.0 {
+    resolve_fn_call(factor)
+}
+
+/// Runs an argument-less inline `Fn()` call's body in the current material's
+/// context; any other node is returned as it is.
+///
+/// three.js runs every `Fn` body lazily, inside the build of the material that
+/// uses it, so `normalWorld` in a `material.outputNode = Fn( … )( output )`
+/// reads *that* material's `normalView` — normal-mapped and `DoubleSide`-
+/// negated for a GLTF body. The port's graph is eager: built at the call site,
+/// with no material in scope, `normal_world()` keys on the bare geometric
+/// normal and the fragment re-assigns `normalView = normalViewGeometry` just
+/// ahead of it. Holding the body in an argument-less call and resolving it here,
+/// inside `NodeMaterial` setup, is the same deferral [`resolve_fog_factor`]
+/// already gives `scene.fogNode`.
+pub fn resolve_fn_call(node: &NodeRef) -> NodeRef {
+    match &*node.0 {
         Node::Call { def, args } if !def.layout && args.is_empty() => (def.body)(&[]),
-        _ => factor.clone(),
+        _ => node.clone(),
     }
 }
 
@@ -1208,6 +1260,17 @@ pub fn material_sheen_color() -> NodeRef {
 pub fn material_sheen_roughness() -> NodeRef {
     uniform(
         UniformSource::MaterialSheenRoughness,
+        Type::F32,
+        UniformGroup::Object,
+        None,
+    )
+}
+
+/// `materialDiffuseRoughness` — `MaterialNode.DIFFUSE_ROUGHNESS` without a
+/// map, the raw uniform. `setupVariants()` clamps it into `DiffuseRoughness`.
+pub fn material_diffuse_roughness() -> NodeRef {
+    uniform(
+        UniformSource::MaterialDiffuseRoughness,
         Type::F32,
         UniformGroup::Object,
         None,
@@ -1739,6 +1802,24 @@ impl NodeRef {
                 source.w(),
             ]),
             ty => panic!("flipY() on a {ty:?}"),
+        }
+    }
+
+    /// `.flipX()` — `FlipNode` over the x component: `vec2( 1.0 - v.x, v.y )`.
+    /// Same var and same cosmetic parenthesisation as [`flip_y`](Self::flip_y);
+    /// `ReflectorNode`'s default uv, `screenUV.flipX()`, is the caller.
+    pub fn flip_x(&self) -> NodeRef {
+        let source = to_var(None, self.clone());
+        match self.ty() {
+            Type::Vec2 => vec2_join(vec![float(1.0).sub(source.x()), source.y()]),
+            Type::Vec3 => vec3_join(vec![float(1.0).sub(source.x()), source.y(), source.z()]),
+            Type::Vec4 => vec4_join(vec![
+                float(1.0).sub(source.x()),
+                source.y(),
+                source.z(),
+                source.w(),
+            ]),
+            ty => panic!("flipX() on a {ty:?}"),
         }
     }
 
@@ -2662,6 +2743,8 @@ prop!(sheen, "Sheen", Type::Vec3);
 prop!(sheen_roughness, "SheenRoughness", Type::F32);
 prop!(sheen_specular_direct, "sheenSpecularDirect", Type::Vec3);
 prop!(sheen_specular_indirect, "sheenSpecularIndirect", Type::Vec3);
+// `MeshPhysicalNodeMaterial.setupVariants()`' diffuse-roughness property.
+prop!(diffuse_roughness, "DiffuseRoughness", Type::F32);
 prop!(
     single_scattering_dielectric,
     "singleScatteringDielectric",
@@ -3078,9 +3161,34 @@ pub fn triplanar_texture(
 /// wraps `setupNormal()`: that is what makes the normal it reads the geometric
 /// one (`NORMAL_normalView`) instead of recursing into this node.
 pub fn bump_map(map: &Texture, scale: NodeRef) -> NodeRef {
+    bump_map_with(|texture| texture(map).x(), scale)
+}
+
+/// `bumpMap( textureNode, scaleNode )` for a height that is any expression of
+/// texture taps, not just one map's `.r`: `webgpu_tsl_earth`'s
+/// `bumpMap( max( texture( map ).r, cloudsStrength ) )`.
+///
+/// `dHdxy_fwd` samples its `textureNode` three times under a
+/// `context( { getUV: … , forceUVContext: true } )` that moves every texture
+/// tap inside it to `uv`, `uv + dFdx( uv )` and `uv + dFdy( uv )`. The port's
+/// graph has no such context, so `height` is called once per tap with a
+/// stand-in for `texture( map )` that samples at that tap's uv, through the
+/// map's uv matrix as three's `setupUV()` does after `getUV`. Anything the
+/// closure captures instead, such as a tap at an explicit `uv()`, is shared
+/// by all three, which is what three's dump shows for `cloudsStrength`: the
+/// same `nodeConst` in all three `max()`es.
+pub fn bump_map_with(
+    height: impl Fn(&dyn Fn(&Texture) -> NodeRef) -> NodeRef,
+    scale: NodeRef,
+) -> NodeRef {
     in_sub_build("NORMAL", || {
         let tap = |coord: NodeRef| {
-            texture_uv(map, transformed_uv(coord, (0, map.id()), map.matrix())).x()
+            height(&|map: &Texture| {
+                texture_uv(
+                    map,
+                    transformed_uv(coord.clone(), (0, map.id()), map.matrix()),
+                )
+            })
         };
         let hll = tap(uv());
         let dhdxy = join(

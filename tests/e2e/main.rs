@@ -137,6 +137,14 @@ mod webgpu_materials_cubemap_mipmaps;
 #[allow(dead_code)]
 mod webgpu_materials_envmaps;
 
+#[path = "../../examples/webgpu_multiple_rendertargets_readback.rs"]
+#[allow(dead_code)]
+mod webgpu_multiple_rendertargets_readback;
+
+#[path = "../../examples/webgpu_multiple_rendertargets.rs"]
+#[allow(dead_code)]
+mod webgpu_multiple_rendertargets;
+
 #[path = "../../examples/webgpu_rtt.rs"]
 #[allow(dead_code)]
 mod webgpu_rtt;
@@ -172,6 +180,17 @@ mod webgpu_postprocessing_transition;
 #[path = "../../examples/webgpu_postprocessing_sobel.rs"]
 #[allow(dead_code)]
 mod webgpu_postprocessing_sobel;
+
+#[path = "../../examples/webgpu_postprocessing_afterimage.rs"]
+#[allow(dead_code)]
+mod webgpu_postprocessing_afterimage;
+
+#[path = "../../examples/webgpu_tsl_earth.rs"]
+#[allow(dead_code)]
+mod webgpu_tsl_earth;
+#[path = "../../examples/webgpu_tsl_halftone.rs"]
+#[allow(dead_code)]
+mod webgpu_tsl_halftone;
 
 #[path = "../../examples/webgpu_postprocessing.rs"]
 #[allow(dead_code)]
@@ -262,9 +281,33 @@ mod webgpu_fog_height;
 #[allow(dead_code)]
 mod webgpu_shadowmap_opacity;
 
+#[path = "../../examples/webgpu_loader_gltf_diffuse_roughness.rs"]
+#[allow(dead_code)]
+mod webgpu_loader_gltf_diffuse_roughness;
+
+#[path = "../../examples/webgpu_cubemap_mix.rs"]
+#[allow(dead_code)]
+mod webgpu_cubemap_mix;
+
+#[path = "../../examples/webgpu_textures_partialupdate.rs"]
+#[allow(dead_code)]
+mod webgpu_textures_partialupdate;
+
+#[path = "../../examples/webgpu_multisampled_renderbuffers.rs"]
+#[allow(dead_code)]
+mod webgpu_multisampled_renderbuffers;
+
 #[path = "../../examples/webgpu_clearcoat.rs"]
 #[allow(dead_code)]
 mod webgpu_clearcoat;
+
+#[path = "../../examples/webgpu_layers.rs"]
+#[allow(dead_code)]
+mod webgpu_layers;
+
+#[path = "../../examples/webgpu_camera.rs"]
+#[allow(dead_code)]
+mod webgpu_camera;
 
 #[path = "../../examples/webgpu_textures_anisotropy.rs"]
 #[allow(dead_code)]
@@ -367,6 +410,18 @@ mod webgpu_materials_toon;
 #[path = "../../examples/webgpu_occlusion.rs"]
 #[allow(dead_code)]
 mod webgpu_occlusion;
+
+#[path = "../../examples/webgpu_mirror.rs"]
+#[allow(dead_code)]
+mod webgpu_mirror;
+
+#[path = "../../examples/webgpu_materials_alphahash.rs"]
+#[allow(dead_code)]
+mod webgpu_materials_alphahash;
+
+#[path = "../../examples/webgpu_materials_arrays.rs"]
+#[allow(dead_code)]
+mod webgpu_materials_arrays;
 
 #[path = "../../examples/webgpu_loader_gltf_compressed.rs"]
 #[allow(dead_code)]
@@ -1240,6 +1295,149 @@ fn webgpu_postprocessing_sobel() {
         webgpu_postprocessing_sobel::animate,
         |app| app.renderer.device(),
     );
+}
+
+/// 50000 additive sprites spiralling on a sphere through one scene pass and
+/// `AfterImageNode`'s feedback composite. The graded frame is the first, so
+/// the composite's previous target is still zero.
+///
+/// Ignored: the port's frame is identical to three.js' own frame for the page
+/// here, and three itself fails `webgpu_postprocessing_afterimage.jpg` on
+/// this machine by the same 521 pixels. See
+/// `docs/webgpu_postprocessing_afterimage-progress.md`.
+#[test]
+#[ignore = "three.js itself fails its own reference for this page on this machine"]
+fn webgpu_postprocessing_afterimage() {
+    let name = "webgpu_postprocessing_afterimage";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_postprocessing_afterimage::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_postprocessing_afterimage::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(
+        name,
+        &mut app,
+        webgpu_postprocessing_afterimage::animate,
+        |app| app.renderer.device(),
+    );
+}
+
+/// Two screen-space halftone patterns written over `MeshStandardNodeMaterial`'s
+/// `Output` through `outputNode`, on a torus knot, a sphere and the skinned
+/// `Michelle.glb` in its bind pose.
+#[test]
+fn webgpu_tsl_halftone() {
+    let name = "webgpu_tsl_halftone";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_tsl_halftone::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_tsl_halftone::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_tsl_halftone::animate, |app| {
+        app.renderer.device()
+    });
+}
+
+/// A `bumpMap()` of a TSL expression, a night side and an atmosphere mixed in
+/// through `outputNode`, and a `BackSide` transparent shell.
+#[test]
+fn webgpu_tsl_earth() {
+    let name = "webgpu_tsl_earth";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_tsl_earth::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_tsl_earth::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_tsl_earth::animate, |app| {
+        app.renderer.device()
+    });
 }
 
 /// Not graded: three.js itself scores 0.107% (107 pixels) against its own
@@ -2150,6 +2348,102 @@ fn webgpu_texturegrad() {
 }
 
 #[test]
+fn webgpu_multiple_rendertargets() {
+    let name = "webgpu_multiple_rendertargets";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_multiple_rendertargets::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_multiple_rendertargets::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(
+        name,
+        &mut app,
+        webgpu_multiple_rendertargets::animate,
+        |app| app.renderer.device(),
+    );
+}
+
+#[test]
+fn webgpu_multiple_rendertargets_readback() {
+    let name = "webgpu_multiple_rendertargets_readback";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_multiple_rendertargets_readback::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_multiple_rendertargets_readback::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(
+        name,
+        &mut app,
+        webgpu_multiple_rendertargets_readback::animate,
+        |app| app.renderer.device(),
+    );
+}
+
+/// The occlusion rung: a Phong plane whose `colorNode` is an
+/// `updateType = NodeUpdateType.OBJECT` node asking
+/// `frame.renderer.isOccluded( sphere )`, and the sphere behind it wrapped in
+/// an occlusion query (`object.occlusionTest`). The query's answer is two
+/// frames away, so the graded frame is the plane in its "visible" blue;
+/// `tests/renderer_occlusion.rs` checks the green that follows.
+#[test]
 fn webgpu_fog_height() {
     let name = "webgpu_fog_height";
     let out = out_dir(name);
@@ -2233,6 +2527,400 @@ fn webgpu_shadowmap_opacity() {
     });
 }
 
+/// `KHR_materials_diffuse_roughness`: the EON rough-diffuse lobe of
+/// `PhysicalLightingModel`, lit only by a `RoomEnvironment` PMREM.
+///
+/// The parameter sweep puts a plain `MeshStandardMaterial` beside a
+/// `MeshPhysicalMaterial` at `diffuseRoughness = 1` over four albedos, and
+/// sweeps `diffuseRoughness` over `[ 0, 1 ]` at two specular roughnesses.
+/// With no lights the lobe shows through `EON_DirectionalAlbedo` in
+/// `indirectDiffuse()` and `indirectSpecular()`'s diffuse half, so a missing
+/// or misplaced term darkens or brightens whole columns. It is also the gate
+/// on the page's index-winding flip. See `docs/nodes.md` §54.
+#[test]
+fn webgpu_loader_gltf_diffuse_roughness() {
+    let name = "webgpu_loader_gltf_diffuse_roughness";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_loader_gltf_diffuse_roughness::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_loader_gltf_diffuse_roughness::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(
+        name,
+        &mut app,
+        webgpu_loader_gltf_diffuse_roughness::animate,
+        |app| app.renderer.device(),
+    );
+}
+
+/// `scene.environmentNode` as a graph: two PMREMs cross-faded by
+/// `oscSine( time.mul( .1 ) )`, lighting DamagedHelmet, and the same node read
+/// at roughness 0.5 as the background. At the pinned `time = 0` the mix is all
+/// Milky Way, so this grades the graph's plumbing — both lighting contexts, the
+/// background context and the `getTextureLevel` override — not the blend.
+/// See `docs/nodes.md` §54.5.
+#[test]
+fn webgpu_cubemap_mix() {
+    let name = "webgpu_cubemap_mix";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_cubemap_mix::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_cubemap_mix::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_cubemap_mix::animate, |app| {
+        app.renderer.device()
+    });
+}
+
+/// The partial-update rung: a carbon-fibre plane whose map is patched by
+/// `renderer.copyTextureToTexture( dataTexture, diffuseMap, null, position )`
+/// every tenth of a second.
+///
+/// Under the pinned clock the page never reaches its first copy, so the graded
+/// frame is the untouched texture — as it is for three's grader. The second
+/// half of the rung moves the clock to 150 ms, lets `animate()` make exactly
+/// one copy, and checks the next frame against three's semantics rather than
+/// a screenshot: every pixel that changed lies in the one 32 x 32-texel block
+/// at `position` (texel rows counted from the bottom of the image, because the
+/// map was uploaded with `flipY`), and the block shows the copied colour.
+#[test]
+fn webgpu_textures_partialupdate() {
+    let name = "webgpu_textures_partialupdate";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_textures_partialupdate::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_textures_partialupdate::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(
+        name,
+        &mut app,
+        webgpu_textures_partialupdate::animate,
+        |app| app.renderer.device(),
+    );
+
+    // The copy. 150 ms is past the page's 0.1 s interval: the first frame at
+    // it renders the old texture and then copies; the second renders the
+    // patched one and copies nothing (0.15 - 0.15 is not over 0.1).
+    three_rs::testing::pin_time(Some(150.0));
+    webgpu_textures_partialupdate::animate(&mut app);
+    webgpu_textures_partialupdate::animate(&mut app);
+    three_rs::testing::pin_time(Some(0.0));
+    let (_, _, patched) = app.renderer.read_canvas_pixels().unwrap();
+    three_rs::testing::write_png(
+        out.join("patched.png").to_str().unwrap(),
+        width,
+        height,
+        &patched,
+    );
+
+    // The same three draws the page makes: `randInt( 1, 16 )` twice, then
+    // the colour.
+    let mut random = three_rs::testing::DeterministicRandom::new();
+    let mut rand_int = |low: i32, high: i32| low + (random.next() * (high - low + 1) as f64) as i32;
+    let x = (32 * rand_int(1, 16) - 32) as f64;
+    let y = (32 * rand_int(1, 16) - 32) as f64;
+    assert_eq!((app.position.x, app.position.y), (x, y));
+    let [r, g, b] = [app.data[0], app.data[1], app.data[2]];
+
+    // The 2 x 2 plane at the camera's distance 2 under a 70 degree vertical
+    // field of view: `250 / ( 2 * tan( 35 deg ) )` pixels per unit, 512 texels
+    // across two units.
+    let half = 250.0 / (2.0 * 35f64.to_radians().tan());
+    let texel = 2.0 * half / 512.0;
+    let (left, bottom) = (400.0 - half, 250.0 + half);
+    let expected = (
+        left + x * texel,
+        left + (x + 32.0) * texel,
+        bottom - (y + 32.0) * texel,
+        bottom - y * texel,
+    );
+
+    let (mut min_x, mut max_x, mut min_y, mut max_y) = (u32::MAX, 0, u32::MAX, 0);
+    for py in 0..height {
+        for px in 0..width {
+            let i = ((py * width + px) * 4) as usize;
+            if pixels[i..i + 3] != patched[i..i + 3] {
+                min_x = min_x.min(px);
+                max_x = max_x.max(px);
+                min_y = min_y.min(py);
+                max_y = max_y.max(py);
+            }
+        }
+    }
+    println!(
+        "{name}: copy at ({x}, {y}), colour ({r}, {g}, {b}); changed pixels span \
+         x {min_x}..={max_x}, y {min_y}..={max_y}; expected x {:.1}..{:.1}, y {:.1}..{:.1}",
+        expected.0, expected.1, expected.2, expected.3
+    );
+    let near = |got: u32, want: f64| (got as f64 - want).abs() <= 2.0;
+    assert!(
+        near(min_x, expected.0)
+            && near(max_x + 1, expected.1)
+            && near(min_y, expected.2)
+            && near(max_y + 1, expected.3),
+        "{name}: the copied block is not where copyTextureToTexture puts it"
+    );
+
+    // The block's centre: the copied bytes, decoded from sRGB by the sampler
+    // and encoded back by the output transform.
+    let (cx, cy) = (
+        ((min_x + max_x) / 2) as usize,
+        ((min_y + max_y) / 2) as usize,
+    );
+    let i = (cy * width as usize + cx) * 4;
+    for (got, want) in patched[i..i + 3].iter().zip([r, g, b]) {
+        assert!(
+            (*got as i32 - want as i32).abs() <= 2,
+            "{name}: the copied block shows {:?}, not ({r}, {g}, {b})",
+            &patched[i..i + 3]
+        );
+    }
+}
+
+/// Not graded: three.js itself scores 3.782% (3782 pixels) against its own
+/// `webgpu_materials_alphahash.jpg` on this machine, far over the 0.1% limit —
+/// the hashed-alpha noise is `fract( 10000 * sin( … ) )` of
+/// `floor( positionLocal * 2^n )`, which turns any last-bit difference in the
+/// reference machine's `sin` or derivatives into a different grain. The
+/// port's frame is pixel-identical to three's (`tools/dump-webgpu.mjs`'
+/// `actual_full.png`, max channel difference 0). See
+/// `docs/webgpu_materials_alphahash-progress.md`.
+#[test]
+#[ignore = "three.js itself fails its own reference for this page on this machine"]
+fn webgpu_materials_alphahash() {
+    let name = "webgpu_materials_alphahash";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_materials_alphahash::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_materials_alphahash::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_materials_alphahash::animate, |app| {
+        app.renderer.device()
+    });
+}
+
+/// Not graded: three.js itself scores 0.251% (251 pixels) against its own
+/// `webgpu_materials_arrays.jpg` on this machine, over the 0.1% limit, all of
+/// them on MSAA-resolved silhouette edges. The port's frame is
+/// pixel-identical to three's (`tools/dump-webgpu.mjs`' `actual_full.png`,
+/// max channel difference 0). See `docs/webgpu_materials_arrays-progress.md`.
+#[test]
+#[ignore = "three.js itself fails its own reference for this page on this machine"]
+fn webgpu_materials_arrays() {
+    let name = "webgpu_materials_arrays";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_materials_arrays::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_materials_arrays::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_materials_arrays::animate, |app| {
+        app.renderer.device()
+    });
+}
+
+/// The multisampled render target rung: two `InstancedMesh`es of fifty boxes,
+/// one `wireframe`, drawn into a `RenderTarget` with `samples: 4` (an MSAA
+/// colour attachment resolved into `rgba8unorm`, and a multisampled depth
+/// buffer) and shown through a `QuadMesh`. The wireframe is a `line-list`
+/// through `Geometries.getWireframeAttribute()`'s index.
+///
+/// Not graded: three.js itself scores 2405 pixels against its own
+/// `webgpu_multisampled_renderbuffers.jpg` on this machine, all on the
+/// wireframe lines, whose rasterised coverage differs from the reference's
+/// GPU. The port's frame scores 0 against three's own frame
+/// (`tools/dump-webgpu.mjs`' `actual_full.png`), so it scores the same 2405.
+/// See `docs/webgpu_multisampled_renderbuffers-progress.md`.
+#[test]
+#[ignore = "three.js itself fails its own reference for this page on this machine"]
+fn webgpu_multisampled_renderbuffers() {
+    let name = "webgpu_multisampled_renderbuffers";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_multisampled_renderbuffers::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_multisampled_renderbuffers::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(
+        name,
+        &mut app,
+        webgpu_multisampled_renderbuffers::animate,
+        |app| app.renderer.device(),
+    );
+}
+
 /// The occlusion rung: a Phong plane whose `colorNode` is an
 /// `updateType = NodeUpdateType.OBJECT` node asking
 /// `frame.renderer.isOccluded( sphere )`, and the sphere behind it wrapped in
@@ -2277,6 +2965,52 @@ fn webgpu_occlusion() {
         out.display()
     );
     steady_frame(name, &mut app, webgpu_occlusion::animate, |app| {
+        app.renderer.device()
+    });
+}
+
+/// `reflector()`: a Phong box whose floor and back wall are planar mirrors,
+/// each rendering the scene from its mirrored camera into a half-float target
+/// before it is drawn. With `bounces` on, each mirror also renders inside the
+/// other's render, so the frame is five scene renders (`docs/nodes.md` §55).
+#[test]
+fn webgpu_mirror() {
+    let name = "webgpu_mirror";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_mirror::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_mirror::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_mirror::animate, |app| {
         app.renderer.device()
     });
 }
@@ -2373,6 +3107,106 @@ fn webgpu_clearcoat() {
         out.display()
     );
     steady_frame(name, &mut app, webgpu_clearcoat::animate, |app| {
+        app.renderer.device()
+    });
+}
+
+/// Three instanced `Mesh`es of 2500 petals each, one per layer
+/// (`particles.layers.set( i )`), under a camera enabled on layers 0–2: a gate
+/// on `_projectObject`'s `layers.test( camera.layers )` and on `RotateNode`'s
+/// `vec3` branch, which turns each petal by its instanced rotation.
+#[test]
+fn webgpu_layers() {
+    let name = "webgpu_layers";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_layers::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_layers::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_layers::animate, |app| {
+        app.renderer.device()
+    });
+}
+
+/// One scene drawn twice per frame into the two halves of the canvas
+/// (`setScissorTest` / `setScissor` / `setViewport`), through a perspective
+/// camera on a rig and an overview camera that sees the first one's
+/// `CameraHelper`: a gate on the helper, on `wireframe` meshes (the
+/// `line-list` wireframe index) and on the viewport-and-scissor output pass.
+///
+/// Not graded: three.js itself scores 0.922% (922 pixels) against its own
+/// `webgpu_camera.jpg` on this machine, over the 0.1% limit, and the port's
+/// frame is pixel-identical to three's (`tools/dump-webgpu.mjs`'
+/// `actual_full.png`, max channel difference 0). See
+/// `docs/webgpu_camera-progress.md`.
+#[test]
+#[ignore = "three.js itself fails its own reference for this page on this machine"]
+fn webgpu_camera() {
+    let name = "webgpu_camera";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_camera::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_camera::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_camera::animate, |app| {
         app.renderer.device()
     });
 }
@@ -4527,6 +5361,17 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_postprocessing);
     rung!(webgpu_postprocessing_fxaa);
     rung!(webgpu_procedural_texture);
+    // `webgpu_camera` is not here: its `render()` calls
+    // `cameraPerspectiveHelper.update()` every frame, which sets the helper's
+    // `position.needsUpdate` and so re-uploads that buffer on every frame,
+    // exactly as three.js does. A steady frame there writes one buffer.
+    rung!(webgpu_layers);
+    rung!(webgpu_multisampled_renderbuffers);
+    rung!(webgpu_materials_arrays);
+    rung!(webgpu_materials_alphahash);
+    rung!(webgpu_textures_partialupdate);
+    rung!(webgpu_cubemap_mix);
+    rung!(webgpu_loader_gltf_diffuse_roughness);
     rung!(webgpu_equirectangular);
     rung!(webgpu_loader_gltf_compressed);
     rung!(webgpu_texturegrad);
@@ -4546,6 +5391,17 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_tsl_angular_slicing);
     rung!(webgpu_fog_height);
     rung!(webgpu_shadowmap_opacity);
+    // The same two-frame cycle as `webgpu_postprocessing_difference`'s
+    // above: `AfterImageNode`'s `_compRT` / `_oldRT` swap is the port's
+    // `toggle_texture()` before every render, so frame two is the first to
+    // see each texture handle over its other allocation and makes the views
+    // and bind groups that pairing needs. Frame three must create nothing.
+    rung!(webgpu_postprocessing_afterimage, 0, 2);
+    rung!(webgpu_tsl_halftone);
+    rung!(webgpu_tsl_earth);
+    rung!(webgpu_mirror);
+    rung!(webgpu_multiple_rendertargets);
+    rung!(webgpu_multiple_rendertargets_readback);
 }
 
 // ---------------------------------------------------------------------------

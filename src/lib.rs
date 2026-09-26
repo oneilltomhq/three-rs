@@ -46,7 +46,7 @@ pub use geometries::{
     box_geometry, plane_geometry, quad_geometry, sphere_geometry, teapot_geometry,
     torus_knot_geometry,
 };
-pub use helpers::GridHelper;
+pub use helpers::{CameraHelper, GridHelper};
 pub use lights::{
     AmbientLight, DirectionalLight, HemisphereLight, Light, LightKind, LightObject, LightShadow,
     PointLight, ShadowCamera, SpotLight,

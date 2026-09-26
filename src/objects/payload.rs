@@ -220,6 +220,31 @@ impl Payload {
         }
     }
 
+    /// `object.material` for writing — what `ReflectorNode.updateBefore()`
+    /// needs to set `material.visible = false` around its own render.
+    pub fn material_mut(&mut self) -> Option<&mut MeshBasicNodeMaterial> {
+        match self {
+            Payload::Mesh(mesh) => mesh.material.as_mut(),
+            Payload::InstancedMesh(instanced) => instanced.mesh.material.as_mut(),
+            Payload::SkinnedMesh(skin) => skin.mesh.material.as_mut(),
+            Payload::BatchedMesh(batched) => batched.mesh.material.as_mut(),
+            Payload::Line(line) => line.material.as_mut(),
+            Payload::Points(points) => points.material.as_mut(),
+            Payload::Sprite(sprite) => Some(&mut sprite.material),
+            _ => None,
+        }
+    }
+
+    /// `object.material` when it is an array (`Array.isArray( material )`):
+    /// the [`Mesh::materials`] of a plain `Mesh`, empty for everything else
+    /// and for a mesh with a single material.
+    pub fn material_array(&self) -> &[MeshBasicNodeMaterial] {
+        match self {
+            Payload::Mesh(mesh) => &mesh.materials,
+            _ => &[],
+        }
+    }
+
     /// `Frustum.intersectsObject( object )`' geometry half, for a mesh or a
     /// line.
     ///

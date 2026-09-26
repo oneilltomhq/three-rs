@@ -89,6 +89,9 @@ pub trait RenderCamera {
     fn matrix_world(&self) -> Matrix4;
     /// `camera.layers`.
     fn layers(&self) -> Layers;
+    /// `camera.id` — the key `ReflectorBaseNode`'s `virtualCameras` map is
+    /// held on.
+    fn id(&self) -> u32;
     /// `camera.far` — the sort key scale `BatchedMesh`' custom sort uses.
     fn far(&self) -> f64;
     /// `camera.near` — `LineSegments2`' screen-space raycast clips to it.
@@ -123,9 +126,19 @@ pub trait RenderCamera {
     fn sub_cameras(&self) -> &[PerspectiveCamera] {
         &[]
     }
+    /// The camera as a scene-graph object — `Camera extends Object3D` — for
+    /// what needs the object itself rather than a copy of its matrices
+    /// (`CameraHelper`'s `this.matrix = camera.matrixWorld`). `None` for a
+    /// camera the port keeps outside the graph (`OrthographicCamera`).
+    fn node(&self) -> Option<&crate::core::Node> {
+        None
+    }
 }
 
 impl RenderCamera for PerspectiveCamera {
+    fn node(&self) -> Option<&crate::core::Node> {
+        Some(&self.node)
+    }
     fn set_view_offset(
         &mut self,
         full_width: f64,
@@ -169,6 +182,9 @@ impl RenderCamera for PerspectiveCamera {
     }
     fn layers(&self) -> Layers {
         self.node.borrow().layers
+    }
+    fn id(&self) -> u32 {
+        self.node.borrow().id
     }
 }
 
@@ -216,6 +232,9 @@ impl RenderCamera for OrthographicCamera {
     }
     fn layers(&self) -> Layers {
         self.object.layers
+    }
+    fn id(&self) -> u32 {
+        self.object.id
     }
 }
 

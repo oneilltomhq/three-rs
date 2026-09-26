@@ -390,6 +390,16 @@ impl Index {
             Index::U32(v) => v[i] as usize,
         }
     }
+
+    /// `index.setX( i, x )`. The index carries no version of its own, so
+    /// this is for a geometry the renderer has not uploaded yet.
+    pub fn set_x(&mut self, i: usize, x: usize) -> &mut Self {
+        match self {
+            Index::U16(v) => v[i] = x as u16,
+            Index::U32(v) => v[i] = x as u32,
+        }
+        self
+    }
 }
 
 /// One entry of `BufferGeometry.groups`.

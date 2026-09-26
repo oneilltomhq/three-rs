@@ -1,0 +1,21 @@
+[
+  "examples/models/gltf/DamagedHelmet/glTF/DamagedHelmet.bin",
+  "examples/models/gltf/DamagedHelmet/glTF/DamagedHelmet.gltf",
+  "examples/models/gltf/DamagedHelmet/glTF/Default_AO.jpg",
+  "examples/models/gltf/DamagedHelmet/glTF/Default_albedo.jpg",
+  "examples/models/gltf/DamagedHelmet/glTF/Default_emissive.jpg",
+  "examples/models/gltf/DamagedHelmet/glTF/Default_metalRoughness.jpg",
+  "examples/models/gltf/DamagedHelmet/glTF/Default_normal.jpg",
+  "examples/textures/cube/MilkyWay/dark-s_nx.jpg",
+  "examples/textures/cube/MilkyWay/dark-s_ny.jpg",
+  "examples/textures/cube/MilkyWay/dark-s_nz.jpg",
+  "examples/textures/cube/MilkyWay/dark-s_px.jpg",
+  "examples/textures/cube/MilkyWay/dark-s_py.jpg",
+  "examples/textures/cube/MilkyWay/dark-s_pz.jpg",
+  "examples/textures/cube/pisaHDR/nx.hdr",
+  "examples/textures/cube/pisaHDR/ny.hdr",
+  "examples/textures/cube/pisaHDR/nz.hdr",
+  "examples/textures/cube/pisaHDR/px.hdr",
+  "examples/textures/cube/pisaHDR/py.hdr",
+  "examples/textures/cube/pisaHDR/pz.hdr"
+]
