@@ -444,15 +444,12 @@ impl BloomNode {
     /// node done for the frame, so that draw does not repeat it.
     /// `docs/nodes.md` §57.
     #[deprecated(
-        since = "0.1.1",
+        since = "0.1.3",
         note = "the renderer runs `updateBefore()` when a draw samples the node (docs/nodes.md §57)"
     )]
     pub fn render(&self, renderer: &mut Renderer) {
+        renderer.mark_update_before(Rc::as_ptr(&self.0) as *const u8 as usize);
         self.0.render_quads(renderer);
-        renderer.node_frame_mut().mark(
-            crate::nodes::frame::UpdatePhase::Before,
-            Rc::as_ptr(&self.0) as *const u8 as usize,
-        );
     }
 }
 

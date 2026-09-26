@@ -5773,17 +5773,23 @@ impl Renderer {
         self.node_frame.end_render(previous, to_screen);
     }
 
+    /// What a pass's deprecated explicit `render()` does before it renders:
+    /// open the frame the render belongs to, and take the pass's
+    /// update-before for that frame. Taking it first matters for a node
+    /// whose own draws sample its output texture (a bloom's blur reads the
+    /// target it also exposes), which would otherwise run the node again
+    /// from inside itself. The draw that samples the pass later in the frame
+    /// then finds it done (`docs/nodes.md` §57).
+    pub(crate) fn mark_update_before(&mut self, reference: usize) {
+        self.node_frame.open(crate::utils::now_ms());
+        self.node_frame
+            .mark(crate::nodes::frame::UpdatePhase::Before, reference);
+    }
+
     /// Three's `NodeFrame`, as the renderer keeps it: `frameId`, `renderId`,
     /// `time` and `deltaTime`. A node's update phases read the clock here.
     pub fn node_frame(&self) -> &crate::nodes::NodeFrameState {
         &self.node_frame
-    }
-
-    /// The update maps, for a pass whose deprecated explicit `render()`
-    /// marks its update-before as done; see
-    /// [`NodeFrameState::mark`](crate::nodes::NodeFrameState::mark).
-    pub(crate) fn node_frame_mut(&mut self) -> &mut crate::nodes::NodeFrameState {
-        &mut self.node_frame
     }
 
     /// `NodeFrame.updateBeforeNode( node )`.

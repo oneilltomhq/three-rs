@@ -439,7 +439,7 @@ impl PassNode {
     /// and marks the pass done for the frame, so a draw later in the same
     /// frame does not render it again. `docs/nodes.md` §57.
     #[deprecated(
-        since = "0.1.1",
+        since = "0.1.3",
         note = "give the pass its scene and camera with `pass( scene, camera )` or \
                 `set_scene`; the renderer renders it from `updateBefore()` (docs/nodes.md §57)"
     )]
@@ -449,11 +449,8 @@ impl PassNode {
         scene: &mut Scene,
         camera: &mut dyn RenderCamera,
     ) {
+        renderer.mark_update_before(Rc::as_ptr(&self.0) as *const u8 as usize);
         self.render_scene(renderer, scene, camera);
-        renderer.node_frame_mut().mark(
-            crate::nodes::frame::UpdatePhase::Before,
-            Rc::as_ptr(&self.0) as *const u8 as usize,
-        );
     }
 
     /// The render [`render`](Self::render) does, without marking the frame:

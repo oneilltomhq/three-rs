@@ -195,12 +195,17 @@ impl NodeFrameState {
     /// before any render of it), then take a new render id. Returns the id
     /// to put back with [`end_render`](Self::end_render).
     pub(crate) fn begin_render(&mut self, now: f64) -> u64 {
+        self.open(now);
+        self.renders += 1;
+        std::mem::replace(&mut self.render_id, self.renders)
+    }
+
+    /// Open a frame if none is open, as the first render of one does.
+    pub(crate) fn open(&mut self, now: f64) {
         if !self.open {
             self.update(now);
             self.open = true;
         }
-        self.renders += 1;
-        std::mem::replace(&mut self.render_id, self.renders)
     }
 
     /// The end of a render: put the outer render's id back, and close the
