@@ -295,6 +295,8 @@ LoaderGltfCompressed, webgpu_loader_gltf_compressed, "../../examples/webgpu_load
 Equirectangular, webgpu_equirectangular, "../../examples/webgpu_equirectangular.rs";
 SkinningPoints, webgpu_skinning_points, "../../examples/webgpu_skinning_points.rs";
 InstancePoints, webgpu_instance_points, "../../examples/webgpu_instance_points.rs";
+TexturesPartialupdate, webgpu_textures_partialupdate, "../../examples/webgpu_textures_partialupdate.rs";
+Layers, webgpu_layers, "../../examples/webgpu_layers.rs";
 }
 
 /// Where an example's assets come from: three.js at the commit this port is

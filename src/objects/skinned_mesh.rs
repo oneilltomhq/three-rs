@@ -78,6 +78,7 @@ impl SkinnedMesh {
             mesh: Mesh {
                 geometry,
                 material,
+                materials: Vec::new(),
                 morph_target_influences: Vec::new(),
                 line_segments: None,
                 count: None,

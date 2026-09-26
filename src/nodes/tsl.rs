@@ -704,34 +704,70 @@ pub fn two_pi() -> NodeRef {
     float(std::f64::consts::TAU)
 }
 
-/// `rotate( position, rotation )` — `RotateNode`'s `vec2` branch
-/// (`src/nodes/utils/RotateNode.js:106`):
+/// `rotate( position, rotation )` — `RotateNode.setup()`
+/// (`src/nodes/utils/RotateNode.js`), with its default `'XYZ'` order.
+///
+/// The `vec2` branch:
 ///
 /// ```ignore
 /// mat2( cos, sin, sin.negate(), cos ).mul( position )
 /// ```
 ///
 /// `cos`/`sin` are one node each, used twice, so both become `nodeVarN` temps.
-/// The `vec3`/`vec4` branch (three chained `mat4` rotations) is not ported.
+///
+/// The `vec3` branch builds one `mat4` per axis and chains them in the
+/// order's letters, `X.mul( Y ).mul( Z ).mul( vec4( position, 1 ) ).xyz`.
+/// Every `rotation.x` / `cos( rotation.x )` there is a fresh node in three,
+/// so each is emitted inline; only `rotation` itself is shared (twelve uses),
+/// which is what makes the builder hoist it into a temp.
 pub fn rotate(position: impl Into<NodeRef>, rotation: impl Into<NodeRef>) -> NodeRef {
     let (position, rotation) = (position.into(), rotation.into());
-    assert_eq!(
-        position.ty(),
-        Type::Vec2,
-        "three-rs: rotate() only ports RotateNode's vec2 branch"
-    );
-    let cos_angle = rotation.cos();
-    let sin_angle = rotation.sin();
-    join(
-        Type::Mat2,
-        vec![
-            cos_angle.clone(),
-            sin_angle.clone(),
-            sin_angle.negate(),
-            cos_angle,
-        ],
-    )
-    .mul(position)
+    match position.ty() {
+        Type::Vec2 => {
+            let cos_angle = rotation.cos();
+            let sin_angle = rotation.sin();
+            join(
+                Type::Mat2,
+                vec![
+                    cos_angle.clone(),
+                    sin_angle.clone(),
+                    sin_angle.negate(),
+                    cos_angle,
+                ],
+            )
+            .mul(position)
+        }
+        Type::Vec3 => {
+            let r = &rotation;
+            let row = |args: Vec<NodeRef>| join(Type::Vec4, args);
+            let mat4 = |rows: Vec<NodeRef>| join(Type::Mat4, rows);
+            let zero = || float(0.0);
+            let rotation_x = mat4(vec![
+                vec4(1.0, 0.0, 0.0, 0.0),
+                row(vec![zero(), r.x().cos(), r.x().sin(), zero()]),
+                row(vec![zero(), r.x().sin().negate(), r.x().cos(), zero()]),
+                vec4(0.0, 0.0, 0.0, 1.0),
+            ]);
+            let rotation_y = mat4(vec![
+                row(vec![r.y().cos(), zero(), r.y().sin().negate(), zero()]),
+                vec4(0.0, 1.0, 0.0, 0.0),
+                row(vec![r.y().sin(), zero(), r.y().cos(), zero()]),
+                vec4(0.0, 0.0, 0.0, 1.0),
+            ]);
+            let rotation_z = mat4(vec![
+                row(vec![r.z().cos(), r.z().sin(), zero(), zero()]),
+                row(vec![r.z().sin().negate(), r.z().cos(), zero(), zero()]),
+                vec4(0.0, 0.0, 1.0, 0.0),
+                vec4(0.0, 0.0, 0.0, 1.0),
+            ]);
+            rotation_x
+                .mul(rotation_y)
+                .mul(rotation_z)
+                .mul(vec4_join(vec![position, float(1.0)]))
+                .xyz()
+        }
+        ty => panic!("three-rs: rotate() of a {ty:?}"),
+    }
 }
 
 /// `abs( x )`.

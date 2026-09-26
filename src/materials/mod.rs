@@ -238,6 +238,11 @@ pub struct MeshBasicNodeMaterial {
     /// copies it onto its override material, so cut-away texels cast no
     /// shadow either.
     pub alpha_test: f64,
+    /// `Material.alphaHash` — when set, `setupDiffuseColor()` discards the
+    /// fragments whose alpha is below `getAlphaHashThreshold( positionLocal )`
+    /// (see [`crate::nodes::alpha_hash`]), the stochastic stand-in for
+    /// blending that `webgpu_materials_alphahash` renders.
+    pub alpha_hash: bool,
     /// `Material.alphaMap` — `materialOpacity` becomes `opacity * texture(
     /// alphaMap )` (`MaterialNode.OPACITY`), a `vec4` product that the alpha
     /// assign narrows back to its `.x`. Copied onto the shadow pass's
@@ -467,6 +472,13 @@ pub struct MeshBasicNodeMaterial {
     /// drawn once, both faces together, instead of as three's back-then-front
     /// pair.
     pub force_single_pass: bool,
+    /// `Material.wireframe` — only `MeshBasicMaterial` and its kin expose it.
+    /// It reaches no shader: `WebGPUUtils.getPrimitiveTopology()` turns a
+    /// wireframe `Mesh` into a `line-list`, and `Geometries.getIndex()`
+    /// swaps the geometry's index for `getWireframeIndex()`'s — each
+    /// triangle's three edges as six indices (see `Renderer`'s
+    /// `wireframe_index`).
+    pub wireframe: bool,
     /// `Material.blending` — `NormalBlending` by default, which together with
     /// `transparent: false` is what keeps a pipeline blend-state-free.
     pub blending: Blending,
@@ -575,6 +587,7 @@ impl Default for MeshBasicNodeMaterial {
             opacity_node: None,
             alpha_test_node: None,
             alpha_test: 0.0,
+            alpha_hash: false,
             alpha_map: None,
             emissive_node: None,
             scale_node: None,
@@ -595,6 +608,7 @@ impl Default for MeshBasicNodeMaterial {
             visible: true,
             transparent: false,
             force_single_pass: false,
+            wireframe: false,
             blending: Blending::Normal,
             premultiplied_alpha: false,
             alpha_to_coverage: false,

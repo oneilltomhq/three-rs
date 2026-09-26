@@ -41,7 +41,7 @@ pub use render_target::{RenderTarget, RenderTargetInner, RenderTargetOptions, OU
 pub use ssaa_pass::SsaaPassNode;
 
 use crate::cameras::{OrthographicCamera, PerspectiveCamera, RenderCamera};
-use crate::core::{BufferGeometry, Index, Layers, Node};
+use crate::core::{BufferGeometry, Group, Index, Layers, Node};
 use crate::error::Error;
 use crate::geometries::{quad_geometry, sphere_geometry};
 use crate::lights::{
@@ -158,6 +158,10 @@ struct GeometryGpu {
     /// because the rest of the renderer reaches for them by name.
     other: Vec<(String, wgpu::Buffer)>,
     index: Option<(wgpu::Buffer, wgpu::IndexFormat, u32)>,
+    /// `Geometries.wireframes.get( geometry )` — the `getWireframeIndex()`
+    /// buffer, built the first time a `wireframe` material draws this
+    /// geometry and kept beside the triangle index for the geometry's life.
+    wireframe_index: Option<(wgpu::Buffer, wgpu::IndexFormat, u32)>,
     vertex_count: u32,
     /// The `BufferAttribute.version` each of [`UPLOADED_ATTRIBUTES`] had when
     /// its buffer was written — three.js' `attribute.version` against
@@ -172,6 +176,16 @@ struct GeometryGpu {
 const UPLOADED_ATTRIBUTES: [&str; 3] = ["position", "normal", "uv"];
 
 impl GeometryGpu {
+    /// `Geometries.getIndex( renderObject )`: the wireframe index under a
+    /// `wireframe` material, the geometry's own otherwise.
+    fn draw_index(&self, wireframe: bool) -> Option<&(wgpu::Buffer, wgpu::IndexFormat, u32)> {
+        if wireframe {
+            self.wireframe_index.as_ref()
+        } else {
+            self.index.as_ref()
+        }
+    }
+
     fn slot(&self, index: usize) -> Option<&wgpu::Buffer> {
         match index {
             0 => self.position.as_ref(),
@@ -230,6 +244,10 @@ struct Primitive {
     topology: wgpu::PrimitiveTopology,
     /// Set only for an indexed `Line` that is not a `LineSegments`.
     strip_index_format: Option<wgpu::IndexFormat>,
+    /// A `Mesh` under a `wireframe` material: drawn through the geometry's
+    /// wireframe index, with `drawRange` doubled (`_getDrawParameters()`'s
+    /// `rangeFactor = 2`).
+    wireframe: bool,
 }
 
 impl Primitive {
@@ -239,18 +257,22 @@ impl Primitive {
     const TRIANGLES: Self = Self {
         topology: wgpu::PrimitiveTopology::TriangleList,
         strip_index_format: None,
+        wireframe: false,
     };
 
     /// `WebGPUUtils.getPrimitiveTopology( object, material )` plus the
     /// `stripIndexFormat` branch of `_getPrimitiveState()`.
     ///
     /// three.js' order is `isPoints`, then `isLineSegments || ( isMesh &&
-    /// material.wireframe )`, then `isLine`, then `isMesh`. `wireframe` is not
-    /// in this port, so the second arm is `isLineSegments` alone.
-    fn of(object: &crate::core::Object3D, geometry: &BufferGeometry) -> Self {
+    /// material.wireframe )`, then `isLine`, then `isMesh`.
+    fn of(object: &crate::core::Object3D, geometry: &BufferGeometry, wireframe: bool) -> Self {
+        // `material.wireframe === true && ! object.isPoints && ! object.isLineSegments
+        // && ! object.isLine` — `RenderObject`'s `rangeFactor` test; the
+        // topology's own test reads `isMesh`, which is the same set here.
+        let wireframe = wireframe && object.is_mesh();
         let topology = if object.is_points() {
             wgpu::PrimitiveTopology::PointList
-        } else if object.is_line_segments() {
+        } else if object.is_line_segments() || wireframe {
             wgpu::PrimitiveTopology::LineList
         } else if object.is_line() {
             wgpu::PrimitiveTopology::LineStrip
@@ -271,6 +293,7 @@ impl Primitive {
         Self {
             topology,
             strip_index_format,
+            wireframe,
         }
     }
 }
@@ -321,6 +344,10 @@ struct Renderable {
     /// whole index buffer once; non-empty replaces that single `drawIndexed`
     /// with one call per range, exactly as `WebGPUBackend.draw()` does.
     sub_draws: Vec<SubDraw>,
+    /// `renderObject.group` — the `geometry.groups` entry of a multi-material
+    /// mesh's render item, whose `start` / `count` `getDrawParameters()`
+    /// intersects with `geometry.drawRange`. `None` for every other draw.
+    group: Option<Group>,
 }
 
 /// The material's half of `RenderObject.getCacheKey()`: `material.id` and
@@ -462,6 +489,8 @@ struct Draw {
     /// camera index, its own `cameraIndex` bind group. Empty for every other
     /// camera, which draws once.
     sub_cameras: Vec<SubCameraDraw>,
+    /// Draw through the geometry's wireframe index (`Primitive::wireframe`).
+    wireframe: bool,
 }
 
 /// One sub-camera of an `ArrayCamera` draw: `pass.setViewport( floor( vp *
@@ -1572,6 +1601,7 @@ impl Renderer {
                 bone_matrices: Vec::new(),
                 primitive: Primitive::TRIANGLES,
                 sub_draws: Vec::new(),
+                group: None,
             });
         }
 
@@ -1669,7 +1699,7 @@ impl Renderer {
             scene
                 .override_material
                 .as_ref()
-                .or(object.material())
+                .or(item.material(&object))
                 .is_some_and(|material| material.transmission > 0.0)
         });
         let opaque_frame = transmits.then(|| {
@@ -1695,7 +1725,7 @@ impl Renderer {
                 let material = scene
                     .override_material
                     .as_ref()
-                    .or(object.material())
+                    .or(item.material(&object))
                     .unwrap_or(&self.default_material);
                 // `material.transparent === true && material.side ===
                 // DoubleSide && material.forceSinglePass === false`.
@@ -1730,10 +1760,10 @@ impl Renderer {
             let material: &MeshBasicNodeMaterial = scene
                 .override_material
                 .as_ref()
-                .or(object.material())
+                .or(item.material(&object))
                 .unwrap_or(&self.default_material);
 
-            let primitive = Primitive::of(&object, &geometry);
+            let primitive = Primitive::of(&object, &geometry, material.wireframe);
 
             // `MorphNode.update()`: with `morphTargetsRelative === false` the
             // base keeps the unmorphed position's share of the blend.
@@ -1898,6 +1928,7 @@ impl Renderer {
                 bone_matrices: skin.map(|s| s.3).unwrap_or_default(),
                 primitive,
                 sub_draws,
+                group: item.group,
             };
 
             // `ToonOutlinePassNode`'s render-object function: a toon material
@@ -2228,8 +2259,10 @@ impl Renderer {
                     .geometry()
                     .expect("three-rs: the render list only holds drawables")
                     .clone();
-                let source = object.material().unwrap_or(&self.default_material);
-                let primitive = Primitive::of(&object, &geometry);
+                let source = item.material(&object).unwrap_or(&self.default_material);
+                // The shadow material is never `wireframe`, so neither is the
+                // draw.
+                let primitive = Primitive::of(&object, &geometry, false);
                 let instance_matrix = object.instance_matrix().cloned();
                 let instance_color = object.instance_color().cloned();
                 let instance_count = object.instance_count();
@@ -2288,6 +2321,7 @@ impl Renderer {
                     bone_matrices: Vec::new(),
                     primitive,
                     sub_draws: Vec::new(),
+                    group: item.group,
                 });
             }
 
@@ -2447,6 +2481,7 @@ impl Renderer {
                 bone_matrices: Vec::new(),
                 primitive: Primitive::TRIANGLES,
                 sub_draws: Vec::new(),
+                group: None,
                 object_center: Vector2::new(0.5, 0.5),
             }];
             let uniforms = UniformContext {
@@ -2607,8 +2642,10 @@ impl Renderer {
                     .geometry()
                     .expect("three-rs: the render list only holds drawables")
                     .clone();
-                let source = object.material().unwrap_or(&self.default_material);
-                let primitive = Primitive::of(&object, &geometry);
+                let source = item.material(&object).unwrap_or(&self.default_material);
+                // The shadow material is never `wireframe`, so neither is the
+                // draw.
+                let primitive = Primitive::of(&object, &geometry, false);
                 let instance_matrix = object.instance_matrix().cloned();
                 let instance_color = object.instance_color().cloned();
                 let instance_count = object.instance_count();
@@ -2664,6 +2701,7 @@ impl Renderer {
                     bone_matrices: Vec::new(),
                     primitive,
                     sub_draws: Vec::new(),
+                    group: item.group,
                 });
             }
 
@@ -2807,6 +2845,7 @@ impl Renderer {
             bone_matrices: Vec::new(),
             primitive: Primitive::TRIANGLES,
             sub_draws: Vec::new(),
+            group: None,
         }];
 
         let camera_uniforms = self.quad_camera_uniforms();
@@ -2933,6 +2972,9 @@ impl Renderer {
         for item in items {
             let geometry_id = item.geometry.id();
             self.ensure_geometry(&item.geometry);
+            if item.primitive.wireframe {
+                self.ensure_wireframe_index(&item.geometry);
+            }
 
             // `NodeManager.getForRender( renderObject )`: the material's built
             // program, from the cache on a steady frame and from
@@ -3085,15 +3127,33 @@ impl Renderer {
             // `{ start: 0, count: Infinity }` is the whole buffer, so this is
             // a no-op for every rung that does not set it —
             // `webgpu_compute_points` sets `drawRange.count = 1`.
-            let available = match &gpu.index {
+            let available = match gpu.draw_index(item.primitive.wireframe) {
                 Some((_, _, count)) => *count,
                 None => gpu.vertex_count,
             };
-            let first = (item.geometry.draw_range.start as u32).min(available);
-            let elements = match item.geometry.draw_range.count {
-                Some(count) => (count as u32).min(available - first),
-                None => available - first,
-            };
+            // `rangeFactor`: a wireframe draw's indices are two per triangle
+            // corner, so the range is scaled to match.
+            //
+            // `if ( group !== null )`: a multi-material mesh's group item
+            // narrows that range to `[ group.start, group.start + group.count
+            // )` as well, scaled the same way — `firstVertex = max( …,
+            // group.start * rangeFactor )`, `lastVertex = min( …, ( group.start
+            // + group.count ) * rangeFactor )`, both then clamped to the buffer.
+            let range_factor: u64 = if item.primitive.wireframe { 2 } else { 1 };
+            let draw_start = item.geometry.draw_range.start as u64 * range_factor;
+            let mut last = item
+                .geometry
+                .draw_range
+                .count
+                .map_or(u64::MAX, |count| draw_start + count as u64 * range_factor);
+            let mut first = draw_start;
+            if let Some(group) = item.group {
+                first = first.max(group.start as u64 * range_factor);
+                last = last.min((group.start as u64 + group.count as u64) * range_factor);
+            }
+            let last = last.min(available as u64);
+            let first = first.min(last) as u32;
+            let elements = last as u32 - first;
             if item.sub_draws.is_empty() {
                 self.info
                     .record_draw(item.primitive.topology, elements, item.instance_count);
@@ -3134,6 +3194,7 @@ impl Renderer {
                 object: object.as_ref().map(|object| object.id),
                 occlusion_test: object.as_ref().is_some_and(|object| object.occlusion_test),
                 sub_cameras,
+                wireframe: item.primitive.wireframe,
             });
         }
 
@@ -3393,7 +3454,7 @@ impl Renderer {
             return;
         }
 
-        match &geometry.index {
+        match geometry.draw_index(draw.wireframe) {
             Some((buffer, format, _)) => {
                 pass.set_index_buffer(buffer.slice(..), *format);
                 pass.draw_indexed(
@@ -3440,6 +3501,7 @@ impl Renderer {
             bone_matrices: Vec::new(),
             primitive: Primitive::TRIANGLES,
             sub_draws: Vec::new(),
+            group: None,
         }];
 
         let camera_uniforms = self.quad_camera_uniforms();
@@ -5111,7 +5173,12 @@ impl Renderer {
         // them generated, so it is never a render attachment — which a
         // compressed or `rgb9e5ufloat` format could not be.
         let has_mipmaps = texture.has_mipmaps();
-        let mut usage = wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING;
+        // `TEXTURE_BINDING | COPY_DST | COPY_SRC`, as `WebGPUTextureUtils.createTexture()`
+        // gives every texture: `COPY_SRC` is what lets it be the source of a
+        // `copyTextureToTexture`.
+        let mut usage = wgpu::TextureUsages::COPY_DST
+            | wgpu::TextureUsages::COPY_SRC
+            | wgpu::TextureUsages::TEXTURE_BINDING;
         if !has_mipmaps {
             usage |= wgpu::TextureUsages::RENDER_ATTACHMENT;
         }
@@ -5314,6 +5381,86 @@ impl Renderer {
                     depth_or_array_layers: layers,
                 },
             );
+        }
+    }
+
+    /// `renderer.copyTextureToTexture( srcTexture, dstTexture, srcRegion,
+    /// dstPosition )` — `Renderer.copyTextureToTexture()` plus
+    /// `WebGPUBackend.copyTextureToTexture()` at `srcLevel = dstLevel = 0`.
+    ///
+    /// Both textures go through `updateTexture()` first, so a `needsUpdate`
+    /// on either (a data texture whose bytes were just rewritten) is uploaded
+    /// before the copy reads or writes it. The region defaults to the whole
+    /// source image and the position to the destination's origin; both are in
+    /// the GPU texture's texel rows, which is after any `flipY` the uploads
+    /// applied, exactly as in three. The copy is submitted on its own command
+    /// encoder, and a destination that carries a mip chain has it regenerated
+    /// (`generateMipmaps && mipmapsAutoUpdate`; the port has no
+    /// `mipmapsAutoUpdate`, so it is always on).
+    ///
+    /// Only 2-D textures the renderer uploads are supported: a render
+    /// target's colour texture has no image to size the default region from.
+    pub fn copy_texture_to_texture(
+        &mut self,
+        src_texture: &Texture,
+        dst_texture: &Texture,
+        src_region: Option<&crate::math::Box2>,
+        dst_position: Option<&Vector2>,
+    ) {
+        let source = self.ensure_texture_2d(src_texture);
+        let destination = self.ensure_texture_2d(dst_texture);
+
+        let (mut src_x, mut src_y) = (0, 0);
+        let (mut src_width, mut src_height) = src_texture.size();
+        if let Some(region) = src_region {
+            src_x = region.min.x as u32;
+            src_y = region.min.y as u32;
+            src_width = (region.max.x - region.min.x) as u32;
+            src_height = (region.max.y - region.min.y) as u32;
+        }
+        let (dst_x, dst_y) = dst_position.map_or((0, 0), |p| (p.x as u32, p.y as u32));
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some(&format!(
+                    "copyTextureToTexture_{}_{}",
+                    src_texture.id(),
+                    dst_texture.id()
+                )),
+            });
+        encoder.copy_texture_to_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &source,
+                mip_level: 0,
+                origin: wgpu::Origin3d {
+                    x: src_x,
+                    y: src_y,
+                    z: 0,
+                },
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyTextureInfo {
+                texture: &destination,
+                mip_level: 0,
+                origin: wgpu::Origin3d {
+                    x: dst_x,
+                    y: dst_y,
+                    z: 0,
+                },
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::Extent3d {
+                width: src_width,
+                height: src_height,
+                depth_or_array_layers: 1,
+            },
+        );
+        self.queue.submit([encoder.finish()]);
+
+        let mips = destination.mip_level_count();
+        if mips > 1 && dst_texture.borrow().generate_mipmaps {
+            self.generate_mipmaps(&destination, destination.format(), mips, 1);
         }
     }
 
@@ -5663,6 +5810,7 @@ impl Renderer {
                     uv,
                     other,
                     index,
+                    wireframe_index: None,
                     vertex_count,
                     versions,
                 },
@@ -5670,6 +5818,69 @@ impl Renderer {
             },
         );
         self.info.memory.geometries = self.geometries.len();
+    }
+
+    /// `Geometries.getIndex()`'s `material.wireframe` arm: the geometry's
+    /// `getWireframeIndex()` buffer, built once per geometry and kept.
+    ///
+    /// Each triangle `a b c` becomes the three edges `a b`, `b c`, `c a`, from
+    /// the index when there is one and from the vertex order when there is
+    /// not. Three's non-indexed `count` is `position.array.length / 3 - 1`
+    /// (one short), with `Math.ceil( count / 3 ) * 6` indices — ported as is.
+    ///
+    /// Three rebuilds it when the geometry's index or position version moves;
+    /// the port's index is not versioned (see [`Self::refresh_geometry`]), so
+    /// a changed index is a new geometry and this entry goes with the old one.
+    fn ensure_wireframe_index(&mut self, geometry: &Rc<BufferGeometry>) {
+        let id = geometry.id();
+        if self.geometries[&id].gpu.wireframe_index.is_some() {
+            return;
+        }
+
+        let vertex_count = geometry.position().map(|p| p.count()).unwrap_or(0);
+        let source: Option<Vec<u32>> = geometry.index.as_ref().map(|index| match index {
+            Index::U16(v) => v.iter().map(|&i| u32::from(i)).collect(),
+            Index::U32(v) => v.clone(),
+        });
+        let count = match &source {
+            Some(array) => array.len(),
+            None => vertex_count.saturating_sub(1),
+        };
+        let mut indices: Vec<u32> = vec![0; count.div_ceil(3) * 6];
+        let mut j = 0;
+        let mut i = 0;
+        while i < count {
+            let (a, b, c) = match &source {
+                // Past the end of a short index JS reads `undefined`, which
+                // the typed array stores as 0.
+                Some(array) => (
+                    array[i],
+                    array.get(i + 1).copied().unwrap_or(0),
+                    array.get(i + 2).copied().unwrap_or(0),
+                ),
+                None => (i as u32, i as u32 + 1, i as u32 + 2),
+            };
+            indices[j..j + 6].copy_from_slice(&[a, b, b, c, c, a]);
+            j += 6;
+            i += 3;
+        }
+
+        // Three builds a `Uint16BufferAttribute` below 65535 vertices, but
+        // `WebGPUAttributeUtils.createAttribute()` widens every non-normalized
+        // `Uint16Array` to a `Uint32Array` on upload, so the GPU always sees
+        // `uint32` — as three's dump of `webgpu_camera` shows.
+        let (bytes, format) = (
+            bytemuck::cast_slice(&indices).to_vec(),
+            wgpu::IndexFormat::Uint32,
+        );
+        let buffer = self.create_buffer_init(
+            "three-rs wireframe index",
+            &bytes,
+            wgpu::BufferUsages::INDEX,
+        );
+        self.info.build.buffers_written += 1;
+        self.geometries.get_mut(&id).unwrap().gpu.wireframe_index =
+            Some((buffer, format, indices.len() as u32));
     }
 
     /// `WebGPUBackend.updateAttribute()`: an already-uploaded geometry whose

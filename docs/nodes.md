@@ -4640,3 +4640,258 @@ effect, because the sprite quad has no `color` attribute and three checks
 `geometry.hasAttribute( 'color' )`. The example leaves it off and says so.
 `nodes::builder::with_alpha_to_coverage_samples()` is the public seam
 `dump_wgsl` uses to build the smoothed branch without a renderer.
+
+## 51. `alphaHash` and multi-material groups (`webgpu_materials_alphahash`, `webgpu_materials_arrays`)
+
+Neither page is graded. Three.js itself fails its own reference for both
+on this machine: 3782 and 251 pixels. The port's frames are pixel-identical
+to three's frames here (see the two progress docs). This section records what
+was ported so a machine where three hits the reference can grade them as they
+stand.
+
+### 51.1 `alphaHash`: what three does
+
+`NodeMaterial.setupDiffuseColor()` runs after the alpha test and before the
+opaque `diffuseColor.a = 1`:
+
+```js
+if ( this.alphaHash === true ) {
+    diffuseColor.a.lessThan( getAlphaHashThreshold( positionLocal ) ).discard();
+}
+```
+
+`getAlphaHashThreshold` (`nodes/functions/material/getAlphaHashThreshold.js`)
+is Wyman and McGuire's hashed alpha test. The pixel scale comes from
+`max( length( dpdx( position ) ), length( dpdy( position ) ) )`. It is
+bracketed by the two neighbouring powers of two, and each is hashed with
+`hash3D( floor( 2^n * position ) )`. `hash3D` is `hash2D( vec2( hash2D(
+xy ), z ) )`, and `hash2D` is `fract( 1e4 * sin( 17 x + 0.1 y ) * ( 0.1 + abs(
+sin( 13 y + x ) ) ) )`. The two hashes are mixed by `fract( log2( pixScale ) )`
+and then passed through the uniform-distribution CDF. The CDF's three cases
+are a nested `select`, and the result is clamped to `[ 1e-6, 1 ]`. The outer
+function has a `setLayout`, so it becomes a real WGSL `fn`; the two hashes are
+plain `Fn()`s, inlined at each call.
+
+`src/nodes/alpha_hash.rs` builds the same graph: `shader_fn` with the layout,
+and `inline_fn` for the hashes. `Material.alpha_hash` is the flag, and
+`node_material.rs` emits the discard at three's point in `setup_diffuse_color`.
+The two pages' materials pay nothing when the flag is off.
+
+### 51.2 Multi-material groups: what three does
+
+`Mesh.material` may be an array. `Renderer._projectObject()` handles it like
+this:
+
+```js
+if ( Array.isArray( material ) ) {
+    for ( const group of geometry.groups ) {
+        const groupMaterial = material[ group.materialIndex ];
+        if ( groupMaterial && groupMaterial.visible ) {
+            renderList.push( object, geometry, groupMaterial, groupOrder, z, group, clippingContext );
+        }
+    }
+}
+```
+
+Every render item carries its `group`. Opaque or transparent is decided per
+group material. `RenderObject.getDrawParameters()` intersects the geometry's
+`drawRange` with `[ group.start, group.start + group.count )` and clamps it to
+the index or position count. Render objects are keyed by ( object, material,
+… ), so two groups that share a material share a pipeline and bindings, and
+differ only in the draw call.
+
+The port keeps the array form in a separate field, `Mesh.materials`, created
+by `Mesh::with_materials( geometry, materials )`, with `material: None`. The
+alternative, making `Mesh.material` an enum, would have touched every call
+site in the port for one page. `Payload::material_array()` exposes it.
+`render_list.rs` pushes one `RenderItem` per group, with `group: Some( group )`.
+`RenderItem::material( object )` is the single place that resolves `material[
+group.materialIndex ]`, so the renderer never reads `object.material()`
+directly for a drawable. The draw builder, the transmission probe, the
+opaque/transparent split and both shadow passes (planar and point) all use it.
+`Renderable.group` feeds the draw-range intersection in `src/renderer/mod.rs`,
+which is three's arithmetic in `u64`. `geometry.addGroup()` already existed
+(`BoxGeometry`, the cylinder, extrude); nothing downstream of it did.
+
+### 51.3 Checked against
+
+`dump_wgsl`'s `materials_alphahash` against three's `m13` (vertex) and `m14`
+(fragment), for the instanced, instance-coloured standard material under a
+PMREM environment. `getAlphaHashThreshold` has the same statements in the
+same order: the log2/exp2/floor/ceil bracket, the two `hash3D`s, the mix, the
+CDF and the clamp. The discard sits between the alpha test's place and the
+opaque clamp, as in three. `webgpu_materials_arrays` builds no new WGSL. Each
+group draws with the program of an ordinary `MeshStandardMaterial`, which the
+ladder already checks.
+
+### 51.4 Divergences specific to this section
+
+* **Naming.** The port writes `var nodeVarN` where three writes `let
+  nodeConstN`. This is the §8 class.
+* **The CDF's `cases` vector.** Three writes `vec3( … )` inline in each branch
+  of the nested `select`, as `.x`, `.y`, `.z`. The port's usage counter sees
+  the node used more than once within the branch scope and promotes it to a
+  var in each branch. The value and the pixels are the same.
+* **Array materials only on `Mesh`.** `InstancedMesh`, `SkinnedMesh`,
+  `BatchedMesh`, lines and points keep a single material (`materials` is
+  empty). Three allows arrays there too, but nothing on the ladder uses them.
+* **Not in raycasting.** Three's `Mesh.raycast` walks the groups, tests each
+  with `material[ group.materialIndex ].side`, and reports that
+  `materialIndex`. The port's raycaster still reads the single `material`, so
+  a `with_materials` mesh is tested as one front-sided mesh over its whole
+  draw range, with `face.materialIndex` 0. No graded page raycasts one.
+## 56. `copyTextureToTexture` (`webgpu_textures_partialupdate`)
+
+The page patches a loaded texture in place: every tenth of a second a 32 x 32
+`DataTexture` is refilled with one random colour and
+`renderer.copyTextureToTexture( dataTexture, diffuseMap, null, position )`
+copies it into `Carbon.png` at a random multiple of 32 texels. Nothing in the
+node graph changes. The shader is the plain `MeshBasicMaterial` with a `map`
+that §5 already builds, and the dump's `m01` has nothing new in it.
+
+### 56.1 The port
+
+`Renderer::copy_texture_to_texture( src, dst, src_region, dst_position )` is
+`Renderer.copyTextureToTexture()` and `WebGPUBackend.copyTextureToTexture()`
+at `srcLevel = dstLevel = 0`:
+
+* **Both textures are updated first.** Three calls
+  `_textures.updateTexture()` on each, so the data texture's `needsUpdate`
+  (its bytes were just rewritten) is uploaded before the copy reads it. The
+  port calls `ensure_texture_2d()` on both, which is the same thing.
+* **The region is in GPU texel rows.** The default region is the whole source
+  image and the default position is the destination's origin. `Box2` gives
+  `min` and `max`, and the extent is `max - min`. The coordinates are those of
+  the GPU texture after the upload's `flipY`. `Carbon.png` is uploaded
+  flipped and the data texture is not (`DataTexture.flipY = false`), so row
+  `y` of the destination is `y` texels up from the bottom of the image. The
+  e2e rung checks exactly that.
+* **One encoder, one submit.** Then, if the destination has
+  `generateMipmaps` and more than one level, its chain is regenerated. Three
+  also checks `mipmapsAutoUpdate`, which the port does not have, so it is
+  always on. The page turns `generateMipmaps` off, so the branch does not run
+  here.
+* **`COPY_SRC` on every uploaded texture.** `WebGPUTextureUtils.createTexture()`
+  gives every texture `TEXTURE_BINDING | COPY_DST | COPY_SRC`. The port had
+  left out `COPY_SRC`, which wgpu needs on a copy's source. Adding a usage
+  flag changes no pixels, and the ladder confirms it.
+
+`Texture::data_rgba8` is `new DataTexture( Uint8Array, w, h )`: `RGBAFormat`,
+`UnsignedByteType`, and `DataTexture`'s own `flipY = false`,
+`generateMipmaps = false` and `NearestFilter`.
+
+### 56.2 What the grader sees, and what it does not
+
+Under the pinned clock `timer.getElapsed()` is 0 on every frame, so
+`elapsedTime - last > 0.1` never holds and neither three nor the port copies
+anything before the graded frame. The screenshot is the untouched texture. The
+copy path is gated by the rung's second half instead: the test moves the
+clock to 150 ms and lets `animate()` make one copy from the seeded
+`Math.random()` sequence (`randInt( 1, 16 )` twice, then the colour). It then
+asserts that the pixels that changed are exactly the 32 x 32-texel block where
+three's semantics put it, within two pixels, and that the block shows the
+copied bytes. This checks the port against three's documented behaviour, not
+against a reference image, so it is not a second comparator.
+
+### 56.3 Page quirks reproduced
+
+* **The bytes are linear.** `color.setHex( Math.random() * 0xffffff )` converts
+  from sRGB, so the bytes written are the *linear* channels. They go into an
+  sRGB texture, which decodes them once more.
+* **The alpha is 1, not 255.** `data[ stride + 3 ] = 1` is kept. The
+  material is opaque, so `DiffuseColor.w = 1.0` hides it.
+
+## 50. `RotateNode`'s `vec3` branch, `wireframe`, and `CameraHelper` (`webgpu_layers`, `webgpu_camera`)
+
+### 50.1 `rotate( vec3, vec3 )`
+
+`tsl::rotate` now ports both branches of `RotateNode.setup()`. The `vec3`
+branch builds one `mat4` per axis:
+
+```js
+const rotationXMatrix = mat4( vec4( 1, 0, 0, 0 ), vec4( 0, cos( rotation.x ), sin( rotation.x ), 0 ), … );
+…
+return matrixMap[ order[ 0 ] ].mul( matrixMap[ order[ 1 ] ] ).mul( matrixMap[ order[ 2 ] ] ).mul( vec4( positionNode, 1.0 ) ).xyz;
+```
+
+Only the default `'XYZ'` order is ported, because `rotate()`'s third argument
+is not used on the ladder. Each `rotation.x`, `cos( rotation.x )` and
+`sin( rotation.x )` is a new node in three, so the port builds each one anew
+too. Sharing them would turn the inline `cos( nodeConst1.x )` calls in three's
+WGSL into temps. Only `rotation` itself is one node, used twelve times, and the
+builder hoists it: `nodeConst1` in three's `webgpu_layers` `m03`, a `nodeVar`
+in the port (the same temp spelling difference as elsewhere).
+
+### 50.2 `material.wireframe`
+
+No shader reads it. In three it changes three things, all in the renderer:
+
+* `WebGPUUtils.getPrimitiveTopology()`: `isLineSegments || ( isMesh &&
+  wireframe )` is a `line-list`. The port's `Primitive::of` takes the
+  material's flag and records it as `Primitive::wireframe`, which is true only
+  for a mesh.
+* `Geometries.getIndex()` swaps the geometry's index for
+  `getWireframeIndex()`'s: each triangle `a b c` becomes `a b b c c a`, read
+  from the index, or from the vertex order when there is no index. The port
+  builds it once per geometry (`GeometryGpu::wireframe_index`) the first time
+  a wireframe material draws that geometry. It is always `uint32`. Three
+  builds a `Uint16BufferAttribute` below 65535 vertices, but
+  `WebGPUAttributeUtils.createAttribute()` widens every non-normalized
+  `Uint16Array` to `Uint32Array` on upload, and three's dump of
+  `webgpu_camera` shows `format: "uint32"`.
+* `RenderObject.getDrawParameters()`'s `rangeFactor = 2` scales `drawRange` to
+  the doubled index count.
+
+Divergence: three rebuilds the wireframe index when the geometry's index or
+position version moves. The port's index is not versioned (a changed index
+is a new geometry), so the wireframe index lives and dies with the geometry.
+
+### 50.3 `CameraHelper` and a shared matrix
+
+`CameraHelper` is a `LineSegments` of 50 vertices with vertex colours.
+`update()` un-projects 21 named NDC points through
+`camera.projectionMatrixInverse` alone, so the geometry is in the camera's
+local space. Its matrix places it:
+
+```js
+this.matrix = camera.matrixWorld;
+this.matrixAutoUpdate = false;
+```
+
+That line shares the matrix *object*, it does not copy it. Every
+`updateMatrixWorld()` traversal that reaches the helper multiplies in whatever
+the camera's world matrix holds at that moment. The port has no shared
+`Matrix4`s, so `Object3D::matrix_alias` holds a `WeakNode` to the camera, and
+`update_own_matrix_world` copies that node's `matrix_world` into `matrix` just
+before composing. That is the point where three would read the shared object.
+
+`webgpu_camera` shows why the timing has to be exact. The helper is added to
+the scene before `cameraRig`, so within one traversal it is visited before its
+camera. The first `render()` of a frame gives it the camera's world matrix
+from before the rig's `lookAt()`. The second gives it the one the first
+traversal computed. Only the second is visible (`activeHelper.visible` is
+toggled between the two renders), and the port draws it where three does,
+pixel for pixel.
+
+`RenderCamera::node()` is how the helper finds the camera's node. The port's
+`OrthographicCamera` is not a scene-graph node, so it returns `None`, and its
+helper takes a one-time copy of the camera's world matrix instead. That is a
+divergence, and `webgpu_camera` never shows it: the orthographic helper is
+hidden on every frame the page draws.
+
+`camera.reversedDepth` is not on the port's cameras, so `update()` takes
+near/far from the coordinate system alone. `toneMapped: false` has no
+counterpart, as with `GridHelper`.
+
+### 50.4 A legacy `PointsMaterial` is opaque
+
+`NodeLibrary.fromMaterial()` builds the node material and then assigns every
+property of the legacy one over it. A `PointsMaterial` therefore gives a
+`PointsNodeMaterial` with `transparent = false`, not the `true` that
+`PointsNodeMaterial` inherits from `SpriteNodeMaterial`. Three's dump of
+`webgpu_camera`'s points pipeline has no blend state, and its fragment ends
+in the opaque `DiffuseColor.w = 1.0`. The page sets `transparent = false`
+after `PointsNodeMaterial::points()`. `webgpu_postprocessing_ca` also passes a
+legacy `PointsMaterial` but keeps `transparent`. That rung is green, and it
+was not changed here. Moving it to the opaque list would be a separate
+change, checked against that page's own dump.

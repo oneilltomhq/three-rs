@@ -354,6 +354,21 @@ fn setup_diffuse_color(
         ));
     }
 
+    // `if ( this.alphaHash === true ) diffuseColor.a.lessThan(
+    // getAlphaHashThreshold( positionLocal ) ).discard()` — after the alpha
+    // test, before the opaque clamp. `lessThan`, where the alpha test is
+    // `lessThanEqual`.
+    if material.alpha_hash {
+        fragment.push(if_then(
+            diffuse_color()
+                .w()
+                .less_than(crate::nodes::alpha_hash::get_alpha_hash_threshold(
+                    position_local(),
+                )),
+            vec![discard()],
+        ));
+    }
+
     // `builder.isOpaque()` — the material is not transparent, blending is
     // NormalBlending and alphaToCoverage is off. A transparent or blended
     // material keeps its per-fragment alpha instead, all the way to `Output`.

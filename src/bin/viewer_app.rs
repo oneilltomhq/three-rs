@@ -253,7 +253,9 @@ LightsSelective, webgpu_lights_selective, "../../examples/webgpu_lights_selectiv
 LoaderGltfCompressed, webgpu_loader_gltf_compressed, "../../examples/webgpu_loader_gltf_compressed.rs";
 Equirectangular, webgpu_equirectangular, "../../examples/webgpu_equirectangular.rs";
 SkinningPoints, webgpu_skinning_points, "../../examples/webgpu_skinning_points.rs";
-InstancePoints, webgpu_instance_points, "../../examples/webgpu_instance_points.rs";}
+InstancePoints, webgpu_instance_points, "../../examples/webgpu_instance_points.rs";
+TexturesPartialupdate, webgpu_textures_partialupdate, "../../examples/webgpu_textures_partialupdate.rs";
+Layers, webgpu_layers, "../../examples/webgpu_layers.rs";}
 
 impl Which {
     /// The name with or without its `webgpu_` prefix, or its 1-based index in

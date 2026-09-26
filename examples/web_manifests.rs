@@ -253,6 +253,9 @@ mod webgpu_fog_height;
 #[path = "webgpu_instance_points.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_instance_points;
+#[path = "webgpu_layers.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_layers;
 #[path = "webgpu_lights_selective.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_lights_selective;
@@ -280,6 +283,9 @@ mod webgpu_texturegather;
 #[path = "webgpu_texturegrad.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_texturegrad;
+#[path = "webgpu_textures_partialupdate.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_textures_partialupdate;
 
 #[path = "webgpu_instance_sprites.rs"]
 #[allow(dead_code)] // only `init()` is called here
@@ -478,6 +484,10 @@ const GRADED: &[(&str, fn())] = &[
     ("webgpu_instance_points", || {
         drop(webgpu_instance_points::init())
     }),
+    ("webgpu_textures_partialupdate", || {
+        drop(webgpu_textures_partialupdate::init())
+    }),
+    ("webgpu_layers", || drop(webgpu_layers::init())),
 ];
 
 /// Where the committed manifests live, one `<example>.json` each.
