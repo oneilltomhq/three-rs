@@ -234,6 +234,9 @@ mod webgpu_shadowmap_pointlight;
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_struct_drawindirect;
 
+#[path = "webgpu_camera_array.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_camera_array;
 #[path = "webgpu_clearcoat.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_clearcoat;
@@ -395,6 +398,7 @@ const GRADED: &[(&str, fn())] = &[
     ("webgpu_modifier_curve", || {
         drop(webgpu_modifier_curve::init())
     }),
+    ("webgpu_camera_array", || drop(webgpu_camera_array::init())),
 ];
 
 /// Where the committed manifests live, one `<example>.json` each.
