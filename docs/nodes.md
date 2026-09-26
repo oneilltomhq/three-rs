@@ -486,9 +486,11 @@ differences, each verified to be pixel-neutral.
   `mx_fractal_noise_vec3` in `webgpu_shadowmap` — Three's cache emits it once
   and reuses the temp; this port re-evaluates it in each chain. The function is
   pure, so the values agree; only the instruction count differs.
-* **Fog parameters as constants.** `fogColor` / `fogNear` / `fogFar` are folded
-  into the WGSL as literals rather than carried as `renderStruct` members,
-  because nothing in the port animates them. Same numbers.
+* ~~**Fog parameters as constants.**~~ Gone since `scene.fog` (§28): a page
+  that sets `scene.fog` gets `fogColor` / `fogNear` / `fogFar` (or
+  `density`) as `renderStruct` members, as three does. Only a hand-built
+  `scene.fog_node` with literal arguments — `webgpu_lights_phong`'s, which
+  is literal in the page too — still has constants.
 * **`toConst` on the shadow filter.** `to_const()` exists since
   `webgpu_postprocessing_radial_blur` (`Node::Let`, a WGSL `let nodeConstN`),
   but `pointShadowFilter`'s `shadowPosition` and `shadowPositionAbs` are still
@@ -574,6 +576,18 @@ differences, each verified to be pixel-neutral.
   `uv_grid_opengl.jpg` against the browser's own decode: 34030 of 4194304
   channels differ by 1, 4428 by 2, 16 by 3; worst per-texel RGB distance 3.46,
   against a comparator threshold of 44.
+* **meshopt filters follow the SIMD build, on purpose.** three.js'
+  `meshopt_decoder.module.js` runs meshoptimizer's WebAssembly SIMD filters
+  wherever SIMD validates (every current browser, and node). Those round
+  `x + 0x1.8p23` to nearest-even and keep the low bits of the float, where the
+  scalar C++ filters, and the `meshopt-rs` crate's copy of them, round half
+  away from zero, and the crate's quaternion filter also reads its components
+  unsigned. `src/loaders/meshopt.rs` ports the SIMD kernels operation for
+  operation; `tests/gltf_meshopt.rs` holds them to the WebAssembly bytes.
+* **Malformed `EXT_meshopt_compression` is an error.** A mode, filter and
+  `byteStride` the extension does not allow together is `GltfError::Meshopt`
+  up front; meshoptimizer only `assert`s them, and its release WebAssembly
+  build compiles the asserts out and decodes garbage.
 
 * **The skin matrix is CSEd.** `getSkinnedNormalAndTangent()` builds
   `bindMatrixInverse * skinMatrix * bindMatrix` once and reads three columns off
@@ -633,6 +647,32 @@ differences, each verified to be pixel-neutral.
   the whole fit. The port does the same, because the three calls are three
   separate `NodeRef`s and the builder promotes by `Rc` identity. Identical
   arithmetic, identical text apart from the temp numbers.
+* **`uv().flipY()` as a texture coordinate is not re-declared (§29).** In
+  `webgpu_textures_2d-array_compressed` three writes the flip as `nodeVar0 =
+  nodeVarying4; let nodeVar0 = vec2<f32>( nodeVar0.x, 1.0 - nodeVar0.y );` —
+  a `let` shadowing the var it was just assigned — and samples with the `let`.
+  The port keeps the var and puts the `vec2` inline in the `textureSample`
+  call. Same expression evaluated once either way; the parenthesised one-minus
+  is the `FlipNode` entry above.
+
+* **A shared conversion is written out at each use (issue #141).** Three's
+  `Node.build()` caches *any* cacheable node read more than once as
+  `let nodeConstN`; the port promotes only `Op`, `Math` and `Join` nodes
+  (`needs_var`) and leaves a shared `Cast` inline, so
+  `determinant( mat3x3<f32>( m ) )` / `inverse( … )` repeat the constructor
+  where three names it once. Same expression, same value; widening the
+  promotion to casts would renumber the temps in every green dump.
+  `tests/nodes_tsl_batch.rs::inline_let()` folds three's `let` back in before
+  comparing.
+* **`let nodeConstN` against `var nodeVarN`.** Where three caches a shared
+  value it writes an immutable `let`; the port's promoted temp is a `var`.
+  Pixel-neutral; `nodes_tsl_batch.rs` maps the one onto the other.
+* **`billboarding()`'s matrices are explicit vars (issue #141).** Three
+  assigns straight into the `modelWorldMatrix` / `modelViewMatrix` operator
+  nodes and lets its builder turn them into temps; the port asks for the two
+  `var`s itself (`to_var`) and assigns their elements in the flow. Same
+  statements, same order, same value — `webgpu_tsl_vfx_flames` grades 31 of
+  100000.
 
 ### `LineBasicNodeMaterial` adds no divergence class
 
@@ -786,6 +826,51 @@ The vertex stage is where the port and three genuinely disagree:
   offset — and `webgpu_postprocessing_anamorphic`'s instance matrices are pure
   translations, so the graded frame is unaffected. A rung that instances with
   rotation *and* a `positionNode` will have to pick three's order.
+
+### The MaterialX library (#142)
+
+`src/nodes/materialx/` ports every export of `MaterialXNodes.js` except
+`mx_frame`, which reads `frameId`, a node the port does not have. Three's
+unreachable internal overloads (`mx_hash_int_0/3/4`,
+`mx_cell_noise_float_0/3`, `mx_cell_noise_vec3_0/3`) are also not ported:
+no export resolves to them. `tests/nodes_mx_library.rs` compares every
+`mx_*` fn line for line with r186's dump of
+`tests/fixtures/materialx_library/page.html`. It makes two concessions:
+
+* **`mx_hsvtorgb` is compared by skeleton only.** Three's body reads `f`,
+  `p`, `q` and `t` from vars it assigned in a *sibling* `If` branch, so its
+  WGSL is wrong for hue sectors 2 to 5. The port assigns each value in the
+  branch that reads it. The signature and every `if` / `else` / `for` /
+  `return` line still match.
+* **`uv()`'s varying name is normalised.** The port numbers `nodeVaryingN`
+  from its own counter; three's page happens to make it `nodeVarying3`.
+
+The library needed one change in the builder:
+
+* **A same-type `Node::Cast` prints as its operand.** This is three's
+  `ConvertNode` when no conversion is needed (`float( x )` on a float). It
+  is still a node of its own, so wrapping a value in it counts that value
+  once and keeps it inline. `mx_place2d` needs this to leave its `div` where
+  three leaves it.
+
+The `webgpu_tsl_raging_sea` rung, the library's graded consumer, needed four
+more (`docs/webgpu_tsl_raging_sea-progress.md`):
+
+* **A non-`int` loop bound is written `i32( … )`.** This is what
+  `LoopNode`'s `.build( builder, 'int' )` does. `wgsl::convert` still has no
+  same-length arm, so the loop header writes it.
+* **An inlined `Fn()` block is built once per scope.** A second reader gets
+  the result, not a second run of its statements. Three builds a stack once
+  per stage.
+* **A layout `fn` is emitted into each stage that calls it.** Each stage is
+  its own module. The name is shared.
+* **A varying the vertex stage has assigned to is written from that var.**
+  In three `positionLocal` *is* the varying, so the fragment stage reads the
+  value after `positionLocal.assign( positionNode )`. The port writes
+  `varyings.positionLocal = positionLocal;` after the assignment instead of
+  three's `varyings.positionLocal = ( varyings.positionLocal + … )` in
+  place: the text differs, but the value the fragment reads is the same. A
+  varying that was only read keeps its old form.
 
 ## 9. Blending, and the instanced-attribute path
 
@@ -1373,9 +1458,13 @@ shader needed it.
   behind two fixed handles (`Texture::swap_gpu`) and every bind group,
   pipeline and cache key keyed on them stays valid. See
   `docs/postprocessing.md`, "The previous frame".
-* **Fog parameters as constants** (the existing §8 entry) is the only
-  divergence in this rung's scene fragment: Three keeps `fogColor` / `fogNear`
-  / `fogFar` as render uniforms, the port folds the same values in.
+* The scene fragment has no divergence left. It used to fold the fog's
+  colour, near and far in as constants (the old §8 entry); since `scene.fog`
+  (§28) the page's `new THREE.Fog( 0x0487e2, 7, 25 )` is ported as written,
+  and the fog statement, uniform names included, is three's r186 `m02` line
+  for line: `nodeVar1 = vec4<f32>( mix( Output.xyz, render.nodeUniform4,
+  smoothstep( render.nodeUniform5, render.nodeUniform6, ( - v_positionView.z )
+  ) ), Output.w );`.
 
 ## 15. A context hook on the material output (`webgpu_postprocessing_direct`)
 
@@ -2725,3 +2814,165 @@ None new beyond the classes §8 already lists, and one fix that was a real bug:
 [`tsl::with_tangent_attribute`]: ../src/nodes/tsl.rs
 [`tsl::bent_normal_view`]: ../src/nodes/tsl.rs
 [`Scene::background_blurriness`]: ../src/objects/scene.rs
+
+## 28. `scene.fog` — `Fog`, `FogExp2` and their render-group uniforms
+
+Issue #140. Until this section, the port had only `scene.fogNode`, so every
+page that says `scene.fog = new THREE.Fog( … )` was ported as a
+`fog( color, rangeFogFactor( near, far ) )` with the numbers folded in.
+
+### 28.1 What three does
+
+`NodeManager.updateFog( scene )` runs every render. When `scene.fog` is set,
+it builds (and caches per fog object) one node whose parameters are
+`reference( 'color' | 'near' | 'far' | 'density', …, sceneFog ).setGroup(
+renderGroup )` uniforms:
+
+```js
+fog( color, rangeFogFactor( near, far ) )   // Fog
+fog( color, densityFogFactor( density ) )   // FogExp2
+```
+
+and `getFogNode()` is `scene.fogNode || sceneData.fogNode`: an explicit fog
+node wins. `NodeMaterial.setupFog()` then mixes the output towards the fog
+colour: `vec4( mix( output.rgb, color, factor ), output.a )`.
+
+### 28.2 The port
+
+* [`Fog`] / [`FogExp2`] are the two classes, and [`SceneFog`] the enum
+  `scene.fog` holds, so `isFog` / `isFogExp2` is a `match`.
+* [`SceneFog::node`] is `updateFog()`'s node. Its uniforms name *where* the
+  value comes from — `UniformSource::FogColor` / `FogNear` / `FogFar` /
+  `FogDensity`, render group — rather than holding the fog object, and
+  `Renderer::render` writes the scene's current values into the render group
+  each frame. So the node does not depend on the values and there is one per
+  fog kind, built once per thread: its identity, and with it the program
+  cache key, is the same across frames and across fog objects of one kind. A
+  new `near` is a uniform write; switching `Fog` for `FogExp2` is a new
+  program, as in three.
+* `Renderer::render` picks `scene.fog_node` first, then `scene.fog`'s node —
+  `getFogNode()`'s `||`.
+* [`tsl::density_fog_factor`] and [`tsl::exponential_height_fog_factor`] are
+  `Fog.js`' other two factors, each with a `_with_view_z` twin for the
+  `.context( { getViewZ } )` form (§24.3). `viewZ` is wrapped in `to_const`
+  by hand because the builder does not promote a negation on usage count
+  (§8, "`toConst` on the shadow filter"); three's `let` comes from the usage
+  count.
+
+### 28.3 Checked against
+
+No three.js example renders a lit material under plain `Fog` or `FogExp2`
+alone, so two minimal pages do it: `tools/dump-pages/fog_standard_linear.html`
+and `fog_standard_exp2.html` (a `MeshStandardNodeMaterial` sphere, one
+directional light). `tools/dump-webgpu.mjs --html FILE` serves such a page in
+place of the checkout's. Against the r186 build, the fog statement is line
+for line the port's (`dump_wgsl`'s `fog_standard_linear` /
+`fog_standard_exp2`), and the fog members sit in the render struct after the
+light members in both; `tests/nodes_fog.rs` holds that shape. The dumps of
+`webgpu_postprocessing_difference` and `webgpu_shadowmap` now match on the fog
+line too. The rest of the standard fragment differs only in the classes §8
+already lists.
+
+`webgpu_materials_texture_manualmipmap` is the graded rung: two scenes under
+`new THREE.Fog( 0x000000, 1500, 4000 )`, and a floor whose eight mip levels
+the page paints by hand (`Texture::set_mipmaps`: three uploads
+`texture.mipmaps` level by level and generates nothing).
+
+### 28.4 Divergences
+
+* **Uniforms name a source, not an object.** Three's `reference()` reads
+  `sceneFog.color` from the fog it was built for; the port's uniforms read
+  whichever fog the scene being rendered holds. The same node therefore serves
+  every scene, where three builds one per fog object. The WGSL is the same.
+* **`webgpu_instance_sprites`, the issue's first choice of rung, is not
+  ported.** It needs the `Sprite` object (issue #143, in progress on its own
+  branch), `alphaMap`, and `alphaTest`. Building `Sprite` here would collide
+  with #143, so the rung is `webgpu_materials_texture_manualmipmap`.
+
+[`Fog`]: ../src/objects/fog.rs
+[`FogExp2`]: ../src/objects/fog.rs
+[`SceneFog`]: ../src/objects/fog.rs
+[`SceneFog::node`]: ../src/objects/fog.rs
+[`tsl::density_fog_factor`]: ../src/nodes/tsl.rs
+[`tsl::exponential_height_fog_factor`]: ../src/nodes/tsl.rs
+
+## 29. KTX2 and compressed textures (`webgpu_textures_2d-array_compressed`, issue #172)
+
+`Ktx2Loader` (`src/loaders/ktx2_loader.rs`) is `KTX2Loader.js` on three pure
+Rust crates: `ktx2` for the container, `basisu` (Basis Universal v2.1) for
+ETC1S / UASTC / UASTC HDR transcoding, and `ruzstd` for Zstandard
+supercompression. `tests/ktx2_loader.rs` checks it against three's own loader
+under node (`tools/ktx2_reference.mjs`), byte for byte, on every `.ktx2` in
+the examples, two zstd repacks and the Basis images of the three basisu GLBs,
+for each of the four device profiles a WebGPU adapter can present (no
+compression, BC, ASTC, ETC2).
+
+A compressed texture is a [`Texture`] with `mipmaps` and, for an array, a
+`depth` (`src/textures/compressed_texture.rs`); the renderer uploads the
+levels as given with a block-counted row stride and never generates mips for
+it. A texture with `depth > 0` binds as `texture_2d_array<f32>`
+(`TextureKind::Sampled2DArray`) and `texture_array( map, uv, layer )` samples
+it as `textureSample( t, s, uv, i32( layer ) )`, which is three's
+`texture( map, uv ).depth( layer )`.
+
+### Divergences
+
+* **ETC1S → BC7 turns Basis v2's chroma filtering off.** Three ships the
+  v1.16 transcoder; `basisu` is v2.1, whose ETC1S → BC7 path smooths chroma
+  by default. `transcode_flags()` passes `NO_ETC1S_CHROMA_FILTERING` for that
+  one pair, which makes it bit-exact with three again (the test fails on
+  `2d_etc1s` mips 0–3 under the `bc` profile without it). Every other path
+  already matched.
+* **`GLTFLoader` without `setKTX2Loader`.** Three refuses a
+  `KHR_texture_basisu` texture unless a `KTX2Loader` was set. `GLTFLoader::load`
+  / `parse` use `Ktx2Loader::new()` instead, which transcodes to uncompressed
+  RGBA; `load_with_ktx2` / `parse_with_ktx2` take a loader that has run
+  `detect_support`, which is three's call.
+* **`ruzstd` 0.7, not 0.9.** `basisu` depends on 0.7; using the same version
+  keeps one Zstandard decoder in the build.
+* **`CompressedCubeTexture` and `Data3DTexture` load but do not render.**
+  `Ktx2Loader::parse` returns them (the eight PMREM cubes are in the oracle
+  test), but `Ktx2Texture::into_texture` returns an error for both, because the
+  renderer has no compressed-cube or 3-D upload path yet.
+* **Display P3 has no gamut conversion.** `parse_color_space` reports
+  `display-p3` / `display-p3-linear` like three; `into_texture` maps it to
+  `SRGB` / `NoColorSpace` by transfer function only, since the port has no P3
+  working space. No graded page uses a P3 file.
+* **An unfilterable (`NearestFilter`) array texture is not supported.** Three
+  would `textureLoad` it; the builder asserts instead. `KTX2Loader` only
+  makes arrays of compressed (linear-filtered) textures, so only a hand-built
+  array with both filters set to `Nearest` reaches the assertion.
+
+[`Texture`]: ../src/textures/texture.rs
+## 30. WebP and AVIF glTF textures (issue #179)
+
+Three has no image decoders: `GLTFLoader` hands a texture's bytes to the
+browser's `createImageBitmap` (with `premultiplyAlpha: 'none'`,
+`colorSpaceConversion: 'none'`) and the renderer uploads the bitmap with
+`copyExternalImageToTexture`. The port decodes in Rust instead, in
+[`TextureLoader`](../src/loaders/texture_loader.rs), and a decoder is only
+taken when it gives the texels Chromium gives.
+
+**WebP** goes through `image-webp`. `tests/loaders_webp.rs` runs Chromium's own
+decode and upload (`tools/image_reference.mjs`, in the headless Chrome three's
+`npm ci` downloads) over every WebP image in the examples — 64 images in eight
+GLBs: lossy, lossy with an `ALPH` plane, and lossless — and requires every
+texel to be equal. They are, with no tolerance. `EXT_texture_webp` is in
+`SUPPORTED_EXTENSIONS`, and a texture carrying it samples the extension's
+`source`, never its own fallback `source`, as `GLTFTextureWebPExtension` does.
+
+### 30.1 Divergences
+
+* **AVIF is not decoded.** `EXT_texture_avif` is not in `SUPPORTED_EXTENSIONS`,
+  so a file that *requires* it (`AVIFTest/forest_house.glb`, the only one in
+  the examples) is refused with `UnsupportedRequiredExtension`, where Chrome
+  would decode it. A file that only *uses* it gets the texture's fallback
+  `source`, which is what three does in a browser without AVIF. An AVIF image
+  reached any other way is an error that names AVIF, not a JPEG error. No
+  pure-Rust AV1 decoder is fit yet: `rav1d` (and its `re_rav1d` fork) do not
+  compile for wasm32-unknown-unknown; `avif-rust` 0.0.7 compiles everywhere
+  but refuses 2 of forest_house's 12 images ("too many padding bits"), which
+  dav1d decodes; `rav1d-safe` and `zenavif` are AGPL; `avif-decode` is `rav1d`
+  underneath and needs Rust 1.98; `oxideav-av1` is a scaffold.
+* **An animated WebP gives its first frame**, which is what `createImageBitmap`
+  gives too; no three.js asset is animated, so this is untested.
