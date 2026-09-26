@@ -67,6 +67,7 @@ impl InstancedMesh {
                 material: Some(material),
                 morph_target_influences: Vec::new(),
                 line_segments: None,
+                count: 1,
             },
             count,
             instance_matrix: InstancedBufferAttribute::new(vec![0.0; count * 16], 16),
@@ -119,6 +120,74 @@ impl InstancedMesh {
         }
 
         self.bounding_sphere = Some(bounding_sphere);
+    }
+
+    /// `InstancedMesh.raycast( raycaster, intersects )` — the object's own
+    /// bounding sphere first, then `Mesh.raycast()` once per instance with
+    /// `matrixWorld × instanceMatrix`, each hit tagged with its `instanceId`.
+    ///
+    /// three.js raycasts each instance through a scratch `Mesh` that has no
+    /// `morphTargetInfluences`, so morph targets are ignored here too.
+    pub fn raycast(
+        &mut self,
+        matrix_world: &Matrix4,
+        object: &crate::core::Node,
+        raycaster: &crate::core::Raycaster,
+        intersects: &mut Vec<crate::core::Intersection>,
+    ) {
+        // Test with the bounding sphere first.
+        if self.bounding_sphere.is_none() {
+            self.compute_bounding_sphere();
+        }
+        let Some(mut sphere) = self.bounding_sphere else {
+            return;
+        };
+        sphere.apply_matrix4(matrix_world);
+        if !raycaster.ray.intersects_sphere(&sphere) {
+            return;
+        }
+
+        let geometry = &self.mesh.geometry;
+        let Some(geometry_sphere) = geometry.compute_bounding_sphere() else {
+            return;
+        };
+        let geometry_sphere = Sphere::new(geometry_sphere.center, geometry_sphere.radius);
+        let side = self
+            .mesh
+            .material
+            .as_ref()
+            .map_or(crate::materials::Side::Front, |m| m.side);
+
+        // Now test each instance.
+        let mut instance_intersects = Vec::new();
+        for instance_id in 0..self.count {
+            // The world matrix of this instance; the mesh represents it alone.
+            let mut instance_world_matrix = Matrix4::identity();
+            instance_world_matrix.multiply_matrices(matrix_world, &self.matrix_at(instance_id));
+
+            let target = crate::objects::mesh::MeshRaycast {
+                geometry,
+                side,
+                matrix_world: instance_world_matrix,
+                draw_start: geometry.draw_range.start,
+                draw_count: geometry.draw_range.count,
+                vertex_position: &|index| {
+                    crate::objects::mesh::vertex_position(geometry, &[], index)
+                },
+            };
+            target.raycast(
+                &geometry_sphere,
+                None,
+                object,
+                raycaster,
+                &mut instance_intersects,
+            );
+
+            for mut intersect in instance_intersects.drain(..) {
+                intersect.instance_id = Some(instance_id);
+                intersects.push(intersect);
+            }
+        }
     }
 
     /// `InstancedMesh.setColorAt( index, color )`.

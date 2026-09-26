@@ -36,12 +36,12 @@ use std::rc::Rc;
 use three_rs::addons::controls::OrbitControls;
 use three_rs::geometries::box_geometry_default;
 use three_rs::math::Color;
-use three_rs::nodes::tsl::{fog, luminance, range_fog_factor, saturation};
+use three_rs::nodes::tsl::{luminance, saturation};
 use three_rs::renderer::OUTPUT_ATTACHMENT;
 use three_rs::Timer;
 use three_rs::{
-    ColorSpace, Mesh, MeshBasicNodeMaterial, PassNode, PerspectiveCamera, RenderPipeline, Renderer,
-    RendererParameters, Scene, TextureLoader, ToneMapping,
+    ColorSpace, Fog, Mesh, MeshBasicNodeMaterial, PassNode, PerspectiveCamera, RenderPipeline,
+    Renderer, RendererParameters, Scene, TextureLoader, ToneMapping,
 };
 
 pub const INNER_WIDTH: f64 = 800.0;
@@ -74,9 +74,9 @@ pub fn init() -> App {
     camera.node.borrow_mut().position.set(1.0, 2.0, 3.0);
 
     let mut scene = Scene::new();
-    // `new Fog( 0x0487e2, 7, 25 )` — linear fog, the same colour as the
+    // `new THREE.Fog( 0x0487e2, 7, 25 )` — linear fog, the same colour as the
     // background, so the box fades into it rather than into black.
-    scene.fog_node = Some(fog(Color::from_hex(0x0487e2), range_fog_factor(7.0, 25.0)));
+    scene.fog = Some(Fog::new(Color::from_hex(0x0487e2), 7.0, 25.0).into());
     scene.set_background(Color::from_hex(0x0487e2));
 
     // `new THREE.TextureLoader().load( 'textures/crate.gif' )` — a real GIF89a,

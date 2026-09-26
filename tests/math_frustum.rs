@@ -326,6 +326,22 @@ fn set_from_projection_matrix_make_perspective_intersects_sphere() {
 }
 
 #[test]
+fn intersects_sprite() {
+    let m = perspective();
+    let a = from_projection_matrix(&m);
+    let sprite = three_rs::objects::Sprite::new(None);
+
+    let intersects = a.intersects_sprite(&sprite);
+    assert!(!intersects, "No intersection");
+
+    sprite.borrow_mut().position.set(-1.0, -1.0, -1.0);
+    sprite.update_matrix_world(false);
+
+    let intersects = a.intersects_sprite(&sprite);
+    assert!(intersects, "Successful intersection");
+}
+
+#[test]
 fn intersects_box() {
     let m = perspective();
     let a = from_projection_matrix(&m);

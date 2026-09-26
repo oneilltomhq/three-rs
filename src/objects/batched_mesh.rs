@@ -149,6 +149,7 @@ impl BatchedMesh {
                 material: Some(material),
                 morph_target_influences: Vec::new(),
                 line_segments: None,
+                count: 1,
             },
             per_object_frustum_culled: true,
             sort_objects: true,
@@ -554,6 +555,74 @@ impl BatchedMesh {
                 Some(Sphere::new(center, max_radius_sq.sqrt()));
         }
         self.geometry_info[geometry_id].bounding_sphere
+    }
+
+    /// `BatchedMesh.raycast( raycaster, intersects )` — `Mesh.raycast()` once
+    /// per active, visible instance, over that instance's geometry range with
+    /// its per-geometry bounds and `matrixWorld × instanceMatrix`, each hit
+    /// tagged with its `batchId`.
+    ///
+    /// three.js points a scratch `Mesh` (no morph targets) at the batch
+    /// geometry's attributes for this; the port passes the same pieces to the
+    /// shared mesh raycast directly.
+    pub fn raycast(
+        &mut self,
+        matrix_world: &Matrix4,
+        object: &Node,
+        raycaster: &crate::core::Raycaster,
+        intersects: &mut Vec<crate::core::Intersection>,
+    ) {
+        let side = self
+            .mesh
+            .material
+            .as_ref()
+            .map_or(crate::materials::Side::Front, |m| m.side);
+        let mut batch_intersects = Vec::new();
+
+        for i in 0..self.instance_info.len() {
+            let info = self.instance_info[i];
+            if !info.visible || !info.active {
+                continue;
+            }
+
+            let geometry_id = info.geometry_index;
+            let (Some(bounding_box), Some(bounding_sphere)) = (
+                self.bounding_box_at(geometry_id),
+                self.bounding_sphere_at(geometry_id),
+            ) else {
+                continue;
+            };
+            let geometry_info = &self.geometry_info[geometry_id];
+
+            // Get the intersects.
+            let mut instance_world_matrix = self.matrix_at(i);
+            instance_world_matrix.premultiply(matrix_world);
+
+            let geometry = &self.mesh.geometry;
+            let target = crate::objects::mesh::MeshRaycast {
+                geometry,
+                side,
+                matrix_world: instance_world_matrix,
+                draw_start: geometry_info.start,
+                draw_count: Some(geometry_info.count),
+                vertex_position: &|index| {
+                    crate::objects::mesh::vertex_position(geometry, &[], index)
+                },
+            };
+            target.raycast(
+                &bounding_sphere,
+                Some(&bounding_box),
+                object,
+                raycaster,
+                &mut batch_intersects,
+            );
+
+            // Add the batch id to the intersects.
+            for mut intersect in batch_intersects.drain(..) {
+                intersect.batch_id = Some(i);
+                intersects.push(intersect);
+            }
+        }
     }
 
     /// `_multiDrawCount` after the last `onBeforeRender()`.

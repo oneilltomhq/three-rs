@@ -34,7 +34,7 @@ pub mod textures;
 pub mod utils;
 
 pub use cameras::{OrthographicCamera, PerspectiveCamera, RenderCamera};
-pub use core::{BufferGeometry, Node, Object3D, Timer};
+pub use core::{BufferGeometry, Intersection, Node, Object3D, Raycaster, Timer};
 pub use environments::RoomEnvironment;
 pub use error::{Error, GltfError};
 pub use extras::{CatmullRomCurve3, Curve, CurveType, FrenetFrames};
@@ -48,21 +48,25 @@ pub use lights::{
     PointLight, ShadowCamera, SpotLight,
 };
 pub use loaders::{
-    BufferGeometryLoader, CubeTextureLoader, HdrCubeTextureLoader, HdrLoader, TextureLoader,
+    BufferGeometryLoader, CubeTextureLoader, HdrCubeTextureLoader, HdrLoader, Ktx2Loader,
+    TextureLoader,
 };
 pub use materials::{
     Line2NodeMaterial, LineBasicNodeMaterial, MaterialKind, MeshBasicNodeMaterial,
     MeshLambertNodeMaterial, MeshNormalNodeMaterial, MeshPhongNodeMaterial,
-    MeshPhysicalNodeMaterial, MeshStandardNodeMaterial, PointsNodeMaterial, ToneMapping,
+    MeshPhysicalNodeMaterial, MeshStandardNodeMaterial, PointsNodeMaterial, SpriteNodeMaterial,
+    ToneMapping,
 };
 pub use math::{Color, Euler, Matrix3, Matrix4, Quaternion, Vector2, Vector3};
 pub use objects::{
-    Background, Group, InstancedMesh, Line, LineSegments, Mesh, Payload, Points, QuadMesh, Scene,
+    Background, Fog, FogExp2, Group, InstancedMesh, Line, LineSegments, Mesh, Payload, Points,
+    QuadMesh, Scene, SceneFog, Sprite,
 };
 pub use renderer::{
     BuildCounts, ComputeCounts, DirectRenderPipeline, Info, MemoryCounts, PassNode, RenderCounts,
     RenderPipeline, RenderTarget, Renderer, RendererParameters, SsaaPassNode, BACKENDS,
 };
 pub use textures::{
-    ColorSpace, CubeTexture, DepthTexture, Mapping, MinFilter, Texture, TextureFilter, TextureType,
+    ColorSpace, CubeTexture, Data3DTexture, DepthTexture, Mapping, MinFilter, Texture,
+    TextureFilter, TextureType,
 };

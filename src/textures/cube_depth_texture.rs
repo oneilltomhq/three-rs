@@ -51,6 +51,15 @@ impl CubeDepthTexture {
         )
     }
 
+    /// `depthTexture.minFilter` / `.magFilter` — `ShadowNode.setupShadow()`
+    /// picks `LinearFilter` for `PCFShadowMap` and `NearestFilter` for every
+    /// other type.
+    pub fn set_filters(&self, min_filter: TextureFilter, mag_filter: TextureFilter) {
+        let mut inner = self.0.borrow_mut();
+        inner.min_filter = min_filter;
+        inner.mag_filter = mag_filter;
+    }
+
     pub fn size(&self) -> u32 {
         self.0.borrow().size
     }
@@ -63,6 +72,13 @@ impl CubeDepthTexture {
 
     pub fn id(&self) -> usize {
         self.1.get()
+    }
+
+    /// The handle's liveness, without the handle; see [`TextureOwner`].
+    ///
+    /// [`TextureOwner`]: super::TextureOwner
+    pub(crate) fn owner(&self) -> super::TextureOwner {
+        Rc::downgrade(&self.0) as super::TextureOwner
     }
 
     pub(crate) fn inner(&self) -> &RefCell<CubeDepthTextureInner> {

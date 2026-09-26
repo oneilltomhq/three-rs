@@ -105,6 +105,10 @@ mod webgpu_compute_points;
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_lines_fat;
 
+#[path = "webgpu_lines_fat_raycasting.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_lines_fat_raycasting;
+
 #[path = "webgpu_pmrem_test.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_pmrem_test;
@@ -161,6 +165,18 @@ mod webgpu_pmrem_equirectangular;
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_postprocessing_ca;
 
+#[path = "webgpu_postprocessing_transition.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_postprocessing_transition;
+
+#[path = "webgpu_postprocessing_sobel.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_postprocessing_sobel;
+
+#[path = "webgpu_procedural_texture.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_procedural_texture;
+
 #[path = "webgpu_loader_gltf.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_loader_gltf;
@@ -185,9 +201,45 @@ mod webgpu_deferred;
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_loader_gltf_anisotropy;
 
+#[path = "webgpu_compute_texture.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_compute_texture;
+#[path = "webgpu_materials_texture_manualmipmap.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_materials_texture_manualmipmap;
+#[path = "webgpu_textures_2d-array_compressed.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_textures_2d_array_compressed;
+#[path = "webgpu_tsl_angular_slicing.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_tsl_angular_slicing;
+#[path = "webgpu_tsl_raging_sea.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_tsl_raging_sea;
+#[path = "webgpu_tsl_vfx_flames.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_tsl_vfx_flames;
+
+#[path = "webgpu_shadowmap_vsm.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_shadowmap_vsm;
+#[path = "webgpu_volume_perlin.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_volume_perlin;
+
+#[path = "webgpu_shadowmap_pointlight.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_shadowmap_pointlight;
+#[path = "webgpu_struct_drawindirect.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_struct_drawindirect;
+
 #[path = "webgpu_clearcoat.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_clearcoat;
+#[path = "webgpu_particles.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_particles;
 
 /// Every graded example, in the README's order, paired with a call of its
 /// `init()`.
@@ -243,6 +295,9 @@ const GRADED: &[(&str, fn())] = &[
         drop(webgpu_compute_points::init())
     }),
     ("webgpu_lines_fat", || drop(webgpu_lines_fat::init())),
+    ("webgpu_lines_fat_raycasting", || {
+        drop(webgpu_lines_fat_raycasting::init())
+    }),
     ("webgpu_pmrem_test", || drop(webgpu_pmrem_test::init())),
     ("webgpu_postprocessing_difference", || {
         drop(webgpu_postprocessing_difference::init())
@@ -291,6 +346,48 @@ const GRADED: &[(&str, fn())] = &[
     ("webgpu_loader_gltf_anisotropy", || {
         drop(webgpu_loader_gltf_anisotropy::init())
     }),
+    ("webgpu_materials_texture_manualmipmap", || {
+        drop(webgpu_materials_texture_manualmipmap::init())
+    }),
+    ("webgpu_tsl_vfx_flames", || {
+        drop(webgpu_tsl_vfx_flames::init())
+    }),
+    ("webgpu_procedural_texture", || {
+        drop(webgpu_procedural_texture::init())
+    }),
+    ("webgpu_postprocessing_sobel", || {
+        drop(webgpu_postprocessing_sobel::init())
+    }),
+    ("webgpu_postprocessing_transition", || {
+        drop(webgpu_postprocessing_transition::init())
+    }),
+    ("webgpu_tsl_raging_sea", || {
+        drop(webgpu_tsl_raging_sea::init())
+    }),
+    ("webgpu_tsl_angular_slicing", || {
+        drop(webgpu_tsl_angular_slicing::init())
+    }),
+    ("webgpu_textures_2d-array_compressed", || {
+        drop(webgpu_textures_2d_array_compressed::init())
+    }),
+    ("webgpu_compute_texture", || {
+        drop(webgpu_compute_texture::init())
+    }),
+    (
+        "webgpu_volume_perlin",
+        || drop(webgpu_volume_perlin::init()),
+    ),
+    (
+        "webgpu_shadowmap_vsm",
+        || drop(webgpu_shadowmap_vsm::init()),
+    ),
+    ("webgpu_shadowmap_pointlight", || {
+        drop(webgpu_shadowmap_pointlight::init())
+    }),
+    ("webgpu_struct_drawindirect", || {
+        drop(webgpu_struct_drawindirect::init())
+    }),
+    ("webgpu_particles", || drop(webgpu_particles::init())),
     ("webgpu_clearcoat", || drop(webgpu_clearcoat::init())),
 ];
 

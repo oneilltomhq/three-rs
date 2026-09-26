@@ -9,7 +9,10 @@
 
 #![allow(dead_code)] // wired into `setup()` by the next step of rung 5
 
-use crate::lights::{point_shadow, LightKind};
+use crate::lights::{
+    point_shadow, point_shadow_filtered, LightKind, ShadowFilter, ShadowFilterInputs,
+    ShadowFilterMap,
+};
 use crate::nodes::tsl::*;
 use crate::nodes::NodeRef;
 use crate::textures::{CubeDepthTexture, DepthTexture};
@@ -94,12 +97,27 @@ pub fn brdf_blinn_phong(light_direction: NodeRef) -> NodeRef {
     f.mul(0.25).mul(d_blinn_phong(shininess(), dot_nh))
 }
 
-/// One light's rendered shadow map: `ShadowNode`'s 2-D depth texture for a
-/// spot or directional light, `PointShadowNode`'s cube for a point light.
+/// One light's shadow as the material setup sees it: `ShadowNode`'s 2-D
+/// depth texture for a spot or directional light, `PointShadowNode`'s cube
+/// for a point light — each read through the filter
+/// `renderer.shadowMap.type` (or the light's `shadow.filterNode`) picks — or
+/// the light's own `shadow.shadowNode`.
 #[derive(Clone, Debug)]
 pub enum ShadowMap {
+    /// A planar depth map through `PCFShadowFilter` — the default type.
     Planar(DepthTexture),
+    /// A cube depth map through `PointShadowFilter` — the default type.
     Cube(CubeDepthTexture),
+    /// Any map through any filter: `BasicShadowMap`, `VSMShadowMap` (whose
+    /// map is the `VSMHorizontal` moments) or `shadow.filterNode`.
+    Filtered {
+        map: ShadowFilterMap,
+        filter: ShadowFilter,
+    },
+    /// `light.shadow.shadowNode` — `AnalyticLightNode.setupShadow()` uses
+    /// it as the shadow factor in place of a `ShadowNode`, so no shadow
+    /// position is assigned and no map is rendered.
+    Node(NodeRef),
 }
 
 /// By identity, as a texture contributes its `uuid` to `Node.getCacheKey()`:
@@ -110,6 +128,11 @@ impl std::hash::Hash for ShadowMap {
         match self {
             ShadowMap::Planar(texture) => texture.id().hash(state),
             ShadowMap::Cube(texture) => texture.id().hash(state),
+            ShadowMap::Filtered { map, filter } => {
+                map.hash(state);
+                filter.hash(state);
+            }
+            ShadowMap::Node(node) => node.key().hash(state),
         }
     }
 }
@@ -137,6 +160,9 @@ pub fn shadow_node(
     received_shadow_position: Option<&NodeRef>,
     out: &mut Vec<NodeRef>,
 ) -> NodeRef {
+    if let ShadowMap::Node(node) = map {
+        return node.clone();
+    }
     let position = match received_shadow_position {
         Some(node) => node.clone(),
         None => position_world(),
@@ -145,6 +171,12 @@ pub fn shadow_node(
     match map {
         ShadowMap::Planar(map) => shadow_factor(index, map),
         ShadowMap::Cube(map) => point_shadow(index, map),
+        ShadowMap::Filtered {
+            map: ShadowFilterMap::Cube(map),
+            filter,
+        } => point_shadow_filtered(index, map, filter),
+        ShadowMap::Filtered { map, filter } => shadow_factor_filtered(index, map, filter),
+        ShadowMap::Node(_) => unreachable!("three-rs: returned above"),
     }
 }
 
@@ -230,6 +262,19 @@ pub fn setup_light(
 /// `ShadowBaseNode.setupShadowPosition()`, which the caller pushes because it is
 /// a statement rather than an expression.
 pub fn shadow_factor(index: usize, map: &DepthTexture) -> NodeRef {
+    shadow_factor_filtered(
+        index,
+        &ShadowFilterMap::Depth(map.clone()),
+        &ShadowFilter::Pcf,
+    )
+}
+
+/// [`shadow_factor`] through a given filter and the texture it reads.
+pub fn shadow_factor_filtered(
+    index: usize,
+    map: &ShadowFilterMap,
+    filter: &ShadowFilter,
+) -> NodeRef {
     // `shadowPosition = shadowMatrix * vec4( shadowPositionWorld +
     // normalWorld * normalBias, 1 )`.
     let position = shadow_matrix(index).mul(vec4_join(vec![
@@ -257,33 +302,15 @@ pub fn shadow_factor(index: usize, map: &DepthTexture) -> NodeRef {
         .and(coord.clone().y().less_than_equal(float(1.0)))
         .and(coord.clone().z().less_than_equal(float(1.0)));
 
-    let shadow = frustum_test.select(pcf_shadow(index, map, coord), float(1.0));
+    let filtered = filter.apply(&ShadowFilterInputs {
+        index,
+        map: map.clone(),
+        shadow_coord: coord,
+        dp: None,
+    });
+    let shadow = frustum_test.select(filtered, float(1.0));
 
     mix(float(1.0), shadow, shadow_intensity(index))
-}
-
-/// `PCFShadowFilter` — five Vogel-disk taps rotated by interleaved gradient
-/// noise, each one a hardware comparison sample (so 20 effective taps).
-fn pcf_shadow(index: usize, map: &DepthTexture, coord: NodeRef) -> NodeRef {
-    let texel_size = vec2(1.0, 1.0).div(shadow_map_size(index));
-    let radius_scaled = shadow_radius(index).mul(texel_size.x());
-    // `6.28318530718` mirrors three.js's `PCFShadowFilter` literal (an approximation
-    // of `TAU`, not the exact constant); keeping the same literal keeps this
-    // pixel-identical to three.js's output.
-    #[allow(clippy::approx_constant)]
-    let phi = interleaved_gradient_noise(frag_coord().xy()).mul(float(6.28318530718));
-
-    let mut sum: Option<NodeRef> = None;
-    for i in 0..5 {
-        let offset = vogel_disk_sample(int(i), int(5), phi.clone()).mul(radius_scaled.clone());
-        let tap = shadow_map_compare(map, coord.clone().xy().add(offset), coord.clone().z());
-        sum = Some(match sum {
-            Some(acc) => acc.add(tap),
-            None => tap,
-        });
-    }
-    sum.expect("three-rs: the five-tap loop always sets sum")
-        .mul(float(1.0 / 5.0))
 }
 
 /// `AmbientLightNode.setup()` — `irradiance += lightColor`, no attenuation.

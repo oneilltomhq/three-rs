@@ -37,7 +37,7 @@ confirms they did not move. The barn lamp has a clearcoat but also no light.
 | `src/addons/textures/` | `FlakesTexture` |
 | `examples/` | `webgpu_clearcoat.rs`; `dump_wgsl` sections `clearcoat_car_paint`, `_fibers`, `_golf` |
 
-`docs/nodes.md` §28 is the long form.
+`docs/nodes.md` §34 is the long form.
 
 ## What the pixels found
 
