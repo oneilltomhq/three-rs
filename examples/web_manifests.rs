@@ -173,6 +173,10 @@ mod webgpu_postprocessing_transition;
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_postprocessing_sobel;
 
+#[path = "webgpu_postprocessing_fxaa.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_postprocessing_fxaa;
+
 #[path = "webgpu_procedural_texture.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_procedural_texture;
@@ -394,6 +398,9 @@ const GRADED: &[(&str, fn())] = &[
     ("webgpu_clearcoat", || drop(webgpu_clearcoat::init())),
     ("webgpu_modifier_curve", || {
         drop(webgpu_modifier_curve::init())
+    }),
+    ("webgpu_postprocessing_fxaa", || {
+        drop(webgpu_postprocessing_fxaa::init())
     }),
 ];
 
