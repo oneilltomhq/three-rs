@@ -1,5 +1,6 @@
 //! Port of `three.js/examples/jsm/tsl/display/SobelOperatorNode.js`.
 
+use crate::math::Matrix3;
 use crate::nodes::node::{SettableValue, Type};
 use crate::nodes::tsl::{
     float, luminance, mat3, texture_uv, uniform_settable, uv, vec2, vec3_join, vec4_join,
@@ -34,8 +35,12 @@ impl SobelOperatorNode {
         };
 
         // kernel definition (in glsl matrices are filled in column-major order)
-        let gx = mat3([-1.0, -2.0, -1.0, 0.0, 0.0, 0.0, 1.0, 2.0, 1.0]); // x direction kernel
-        let gy = mat3([-1.0, 0.0, 1.0, -2.0, 0.0, 2.0, -1.0, 0.0, 1.0]); // y direction kernel
+        let gx = mat3(Matrix3 {
+            elements: [-1.0, -2.0, -1.0, 0.0, 0.0, 0.0, 1.0, 2.0, 1.0],
+        }); // x direction kernel
+        let gy = mat3(Matrix3 {
+            elements: [-1.0, 0.0, 1.0, -2.0, 0.0, 2.0, -1.0, 0.0, 1.0],
+        }); // y direction kernel
 
         // fetch the 3x3 neighbourhood of a fragment
 

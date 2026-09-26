@@ -262,12 +262,6 @@ fn constant(ty: Type, values: Vec<f64>) -> NodeRef {
     NodeRef::new(Node::Const { ty, values })
 }
 
-/// `mat3( a, b, c, … )` from nine numbers, column-major as GLSL and three.js
-/// fill it: a constant `mat3x3<f32>( … )`.
-pub fn mat3(values: [f64; 9]) -> NodeRef {
-    constant(Type::Mat3, values.to_vec())
-}
-
 /// `float( x )`.
 pub fn float(v: impl Into<f64>) -> NodeRef {
     constant(Type::F32, vec![v.into()])
@@ -714,15 +708,6 @@ pub fn fwidth(x: impl Into<NodeRef>) -> NodeRef {
 /// system means it, so `MathNode` emits a helper; see `wgsl::MOD_FLOAT_SNIPPET`.
 pub fn mod_float(x: impl Into<NodeRef>, y: impl Into<NodeRef>) -> NodeRef {
     math("tsl_mod_float", vec![x.into(), y.into()], Type::F32)
-}
-
-/// `rand( uv )` — `MathNode.js`' hash: `fract( sin( mod( dot( uv.xy, vec2(
-/// 12.9898, 78.233 ) ), PI ) ) * 43758.5453 )`. A layout-less `Fn`, so it is
-/// inlined at every call, as `webgpu_backdrop_area`'s `hashBlur` dump has it.
-pub fn rand(uv: impl Into<NodeRef>) -> NodeRef {
-    let dt = dot(uv.into().xy(), vec2(12.9898, 78.233));
-    let sn = mod_float(dt, float(std::f64::consts::PI));
-    fract(sn.sin().mul(43758.5453))
 }
 
 /// `smoothstep( low, high, x )` — `MathNode.SMOOTHSTEP`, typed (and its
