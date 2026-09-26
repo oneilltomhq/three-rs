@@ -254,6 +254,10 @@ mod webgpu_fog_height;
 #[allow(dead_code)]
 mod webgpu_shadowmap_opacity;
 
+#[path = "../../examples/webgpu_multisampled_renderbuffers.rs"]
+#[allow(dead_code)]
+mod webgpu_multisampled_renderbuffers;
+
 #[path = "../../examples/webgpu_clearcoat.rs"]
 #[allow(dead_code)]
 mod webgpu_clearcoat;
@@ -2019,6 +2023,64 @@ fn webgpu_shadowmap_opacity() {
     steady_frame(name, &mut app, webgpu_shadowmap_opacity::animate, |app| {
         app.renderer.device()
     });
+}
+
+/// The multisampled render target rung: two `InstancedMesh`es of fifty boxes,
+/// one `wireframe`, drawn into a `RenderTarget` with `samples: 4` (an MSAA
+/// colour attachment resolved into `rgba8unorm`, and a multisampled depth
+/// buffer) and shown through a `QuadMesh`. The wireframe is a `line-list`
+/// through `Geometries.getWireframeAttribute()`'s index.
+///
+/// Not graded: three.js itself scores 2405 pixels against its own
+/// `webgpu_multisampled_renderbuffers.jpg` on this machine, all on the
+/// wireframe lines, whose rasterised coverage differs from the reference's
+/// GPU. The port's frame scores 0 against three's own frame
+/// (`tools/dump-webgpu.mjs`' `actual_full.png`), so it scores the same 2405.
+/// See `docs/webgpu_multisampled_renderbuffers-progress.md`.
+#[test]
+#[ignore = "three.js itself fails its own reference for this page on this machine"]
+fn webgpu_multisampled_renderbuffers() {
+    let name = "webgpu_multisampled_renderbuffers";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_multisampled_renderbuffers::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_multisampled_renderbuffers::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(
+        name,
+        &mut app,
+        webgpu_multisampled_renderbuffers::animate,
+        |app| app.renderer.device(),
+    );
 }
 
 /// The occlusion rung: a Phong plane whose `colorNode` is an
@@ -4143,6 +4205,7 @@ fn steady_frame_builds_nothing() {
     // `cameraPerspectiveHelper.update()` every frame, which sets the helper's
     // `position.needsUpdate` and so re-uploads that buffer on every frame,
     // exactly as three.js does. A steady frame there writes one buffer.
+    rung!(webgpu_multisampled_renderbuffers);
 }
 
 // ---------------------------------------------------------------------------
