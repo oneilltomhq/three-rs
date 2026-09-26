@@ -798,8 +798,37 @@ pub fn perspective_depth_to_view_z(
 
 /// Port of `three.js/src/nodes/fog/Fog.js`' `rangeFogFactor( near, far )`:
 /// `smoothstep( near, far, positionView.z.negate() )`.
+///
+/// Like three's, the factor reads `positionView` when the *material* is built,
+/// not when the fog is made: it is an inline `Fn()` whose body
+/// [`resolve_fog_factor`] runs inside the material's setup, so a
+/// `SpriteNodeMaterial` fogs by its billboarded `v_positionView`
+/// (`docs/nodes.md` §36).
 pub fn range_fog_factor(near: impl Into<NodeRef>, far: impl Into<NodeRef>) -> NodeRef {
-    range_fog_factor_with_view_z(near, far, position_view().z())
+    let (near, far) = (near.into(), far.into());
+    fog_factor_fn(move || {
+        range_fog_factor_with_view_z(near.clone(), far.clone(), position_view().z())
+    })
+}
+
+/// `Fog.js`' factors are `Fn()`s whose `getViewZNode( builder )` runs during
+/// the material's build, when `builder.context.setupPositionView` is the
+/// material's own. The port's graph is eager, so the body is held in an
+/// inline, argument-less call and run by [`resolve_fog_factor`] inside
+/// `NodeMaterial` setup's position-view scope. A factor that reaches the
+/// builder unresolved (used outside `scene.fogNode`) is inlined there, with the
+/// base class' `positionView`, which is what it read before.
+fn fog_factor_fn(body: impl Fn() -> NodeRef + 'static) -> NodeRef {
+    call(&inline_fn(0, Type::F32, move |_| body()), Vec::new())
+}
+
+/// Runs a fog factor's deferred body (see [`range_fog_factor`]) in the
+/// current material's context. Any other node is returned as it is.
+pub fn resolve_fog_factor(factor: &NodeRef) -> NodeRef {
+    match &*factor.0 {
+        Node::Call { def, args } if !def.layout && args.is_empty() => (def.body)(&[]),
+        _ => factor.clone(),
+    }
 }
 
 /// `rangeFogFactor( near, far ).context( { getViewZ: () => viewZ } )`.
@@ -826,8 +855,11 @@ pub fn range_fog_factor_with_view_z(
 /// turns it into a `let nodeConstN`; the port's builder does not promote a
 /// negation on usage (`docs/nodes.md` §8, "`toConst` on the shadow filter"), so
 /// the const is taken here by hand and the WGSL is the same.
+///
+/// Deferred to the material's build as [`range_fog_factor`] is.
 pub fn density_fog_factor(density: impl Into<NodeRef>) -> NodeRef {
-    density_fog_factor_with_view_z(density, position_view().z())
+    let density = density.into();
+    fog_factor_fn(move || density_fog_factor_with_view_z(density.clone(), position_view().z()))
 }
 
 /// [`density_fog_factor`] over an explicit view-space z, the
@@ -860,7 +892,14 @@ pub fn exponential_height_fog_factor(
     density: impl Into<NodeRef>,
     height: impl Into<NodeRef>,
 ) -> NodeRef {
-    exponential_height_fog_factor_with_view_z(density, height, position_view().z())
+    let (density, height) = (density.into(), height.into());
+    fog_factor_fn(move || {
+        exponential_height_fog_factor_with_view_z(
+            density.clone(),
+            height.clone(),
+            position_view().z(),
+        )
+    })
 }
 
 /// [`exponential_height_fog_factor`] over an explicit view-space z.
