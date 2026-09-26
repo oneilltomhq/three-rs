@@ -12,7 +12,7 @@ use std::collections::{HashMap, HashSet};
 
 use super::CACHE_GRACE_FRAMES;
 use crate::nodes::node::TextureSource;
-use crate::textures::{TextureFilter, Wrapping};
+use crate::textures::{MinFilter, TextureFilter, Wrapping};
 
 /// One draw's identity, for the buffers that hold its per-draw data — its
 /// uniform groups, its bone matrices and morph influences, its instance
@@ -127,6 +127,21 @@ impl SamplerKey {
             Wrapping::MirroredRepeat => wgpu::AddressMode::MirrorRepeat,
         };
         let clamp = wgpu::AddressMode::ClampToEdge;
+        // "anisotropy can only be used when all filter modes are set to
+        // linear": three.js sets `maxAnisotropy` only then and leaves the
+        // descriptor's default of 1 otherwise. wgpu enforces the same rule
+        // with a validation error, so a `NearestFilter` texture that also
+        // asks for anisotropy has to drop it here, as three's does.
+        let anisotropy = |mag: TextureFilter, min: MinFilter, anisotropy: u16| {
+            let linear = mag == TextureFilter::Linear
+                && min.min() == TextureFilter::Linear
+                && min.mipmap() == TextureFilter::Linear;
+            if linear {
+                anisotropy
+            } else {
+                1
+            }
+        };
 
         match source {
             TextureSource::Texture2D(texture) => {
@@ -136,7 +151,11 @@ impl SamplerKey {
                     mag_filter: filter(inner.mag_filter),
                     min_filter: filter(inner.min_filter.min()),
                     mipmap_filter: mipmap(inner.min_filter.mipmap()),
-                    anisotropy_clamp: inner.anisotropy,
+                    anisotropy_clamp: anisotropy(
+                        inner.mag_filter,
+                        inner.min_filter,
+                        inner.anisotropy,
+                    ),
                     compare: None,
                 }
             }
@@ -152,7 +171,11 @@ impl SamplerKey {
                     mag_filter: filter(inner.mag_filter),
                     min_filter: filter(inner.min_filter.min()),
                     mipmap_filter: mipmap(inner.min_filter.mipmap()),
-                    anisotropy_clamp: inner.anisotropy,
+                    anisotropy_clamp: anisotropy(
+                        inner.mag_filter,
+                        inner.min_filter,
+                        inner.anisotropy,
+                    ),
                     compare: None,
                 }
             }
@@ -413,6 +436,14 @@ mod tests {
         b.set_min_filter(a.borrow().min_filter);
         b.set_anisotropy(a.borrow().anisotropy + 1);
         assert_ne!(key(&a), key(&b));
+
+        // Anisotropy only reaches the descriptor when every filter is linear.
+        b.set_anisotropy(16);
+        assert_eq!(key(&b).anisotropy_clamp, 16);
+        b.set_min_filter(MinFilter::LinearMipmapNearest);
+        assert_eq!(key(&b).anisotropy_clamp, 1);
+        b.set_min_filter(a.borrow().min_filter);
+        b.set_anisotropy(a.borrow().anisotropy);
 
         // A shadow map's sampler compares, so it never shares with a colour
         // texture's even when the filters agree.

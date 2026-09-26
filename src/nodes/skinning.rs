@@ -131,3 +131,105 @@ pub fn skinning(entry: &SkinEntry) -> Vec<NodeRef> {
 
     statements
 }
+
+/// `computeSkinning( skinnedMesh, toPosition = null )` — `SkinningNode` in
+/// compute mode: `getSkinnedPosition()` over storage copies of the geometry's
+/// `position`, `skinIndex` and `skinWeight` rather than vertex attributes,
+/// indexed by `instanceIndex`. The value is the skinned position in the
+/// mesh's local space (a `vec3`), for a kernel to write where it likes.
+///
+/// Three builds each storage buffer as `new InstancedBufferAttribute( array,
+/// itemSize )` over the geometry attribute's own array, so every
+/// `computeSkinning()` call gets its own GPU copies — `webgpu_skinning_points`
+/// calls it twice per mesh (the per-frame kernel and its `onInit`) and the
+/// dump has two sets of bindings. The same here.
+///
+/// `bindMatrix` / `bindMatrixInverse` are read off the mesh whenever the
+/// kernel's object buffer is written, and the bone matrices come from the
+/// mesh's skeleton, updated once per frame by the renderer
+/// (`SkinningNode.update()`'s `skeleton.update()`), since the mesh itself is
+/// usually hidden and never reaches the render list.
+///
+/// # Panics
+///
+/// If `mesh` is not a skinned mesh with a skeleton and skin attributes.
+pub fn compute_skinning(mesh: &crate::core::Node) -> NodeRef {
+    use crate::nodes::node::{LiveValue, SkeletonRef};
+    use crate::objects::Payload;
+
+    let (geometry, skeleton) = match &mesh.borrow().payload {
+        Payload::SkinnedMesh(skinned) => (
+            skinned.mesh.geometry.clone(),
+            skinned
+                .skeleton
+                .clone()
+                .expect("three-rs: computeSkinning() on a SkinnedMesh with no skeleton"),
+        ),
+        _ => panic!("three-rs: computeSkinning() needs a SkinnedMesh"),
+    };
+    let attribute = |name: &str| {
+        geometry
+            .get_attribute(name)
+            .unwrap_or_else(|| panic!("three-rs: computeSkinning() needs `{name}`"))
+    };
+    let position = storage_f32(&attribute("position").array(), Type::Vec3).to_read_only();
+    // `skinIndex` is a `Uint16Array` in three; `storage( …, 'uvec4' )` over it
+    // is a `u32` array on the GPU. The port keeps the indices as floats.
+    let indices: Vec<u32> = attribute("skinIndex")
+        .array()
+        .iter()
+        .map(|&v| v as u32)
+        .collect();
+    let skin_index = storage_data(&indices, Type::UVec4).to_read_only();
+    let skin_weight = storage_f32(&attribute("skinWeight").array(), Type::Vec4).to_read_only();
+
+    let skinned = |read: fn(&crate::objects::SkinnedMesh) -> Vec<f64>| {
+        let mesh = mesh.downgrade();
+        uniform(
+            UniformSource::Live(LiveValue::new(move || {
+                let mesh = mesh
+                    .upgrade()
+                    .expect("three-rs: computeSkinning() outlived its mesh");
+                let node = mesh.borrow();
+                match &node.payload {
+                    Payload::SkinnedMesh(skinned) => read(skinned),
+                    _ => unreachable!("three-rs: checked above"),
+                }
+            })),
+            Type::Mat4,
+            UniformGroup::Object,
+            None,
+        )
+    };
+    let bind_matrix = skinned(|m| m.bind_matrix.elements.to_vec());
+    let bind_matrix_inverse = skinned(|m| m.bind_matrix_inverse.elements.to_vec());
+
+    let bones = skeleton.borrow().bones.len();
+    let buffer = Rc::new(BufferNode {
+        id: BufferId::next(),
+        source: BufferSource::SkeletonBoneMatrices(SkeletonRef(skeleton)),
+        element_ty: Type::Mat4,
+        count: bones.max(1),
+    });
+
+    let index = to_var(None, skin_index.element(instance_index()));
+    let weight = to_var(None, skin_weight.element(instance_index()));
+    let position = to_var(None, position.element(instance_index()));
+
+    let mats = [
+        bone(&buffer, index.x()),
+        bone(&buffer, index.y()),
+        bone(&buffer, index.z()),
+        bone(&buffer, index.w()),
+    ];
+    let weights = [weight.x(), weight.y(), weight.z(), weight.w()];
+
+    // `getSkinnedPosition()`: in compute mode three's `skinVertex` is a plain
+    // (cached) product, a `let` in the dump.
+    let skin_vertex = bind_matrix.mul(vec4_join(vec![position, float(1.0)]));
+    let skinned = (0..4)
+        .map(|i| weights[i].mul(mats[i].clone()).mul(skin_vertex.clone()))
+        .reduce(|a, b| a.add(b))
+        .expect("three-rs: four bone terms");
+    bind_matrix_inverse.mul(skinned).xyz()
+}

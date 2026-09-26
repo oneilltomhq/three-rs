@@ -5,8 +5,8 @@
 
 use three_rs::materials::{quad_vertex_node, render_output, MeshBasicNodeMaterial};
 use three_rs::nodes::display::{
-    after_image, box_blur, dot_screen, gaussian_blur, hash_blur, pixelation_pass, rgb_shift, sobel,
-    BoxBlurOptions, GaussianBlurOptions, HashBlurOptions,
+    after_image, box_blur, dot_screen, fxaa, gaussian_blur, hash_blur, pixelation_pass, rgb_shift,
+    sobel, BoxBlurOptions, GaussianBlurOptions, HashBlurOptions,
 };
 use three_rs::nodes::tsl::{float, texture_uv, uniform_value, uv};
 use three_rs::nodes::Type;
@@ -94,6 +94,15 @@ pub fn display_quads() -> Vec<DisplayQuad> {
             rgb_shift(&input(), float(0.001), float(0.0)),
             ToneMapping::None,
         ),
+    ));
+
+    // webgpu_postprocessing_fxaa `m05`: `fxaa( renderOutput( scenePass ) )`
+    // as the `RenderPipeline`'s output with `outputColorTransform = false`,
+    // so the quad's fragment is the node itself.
+    quads.push(quad(
+        "fxaa",
+        "webgpu_postprocessing_fxaa_m05_fxaa.wgsl",
+        fxaa(&input()).node(),
     ));
 
     // webgpu_postprocessing_afterimage `m04`: `afterImage( scenePass, 0.96 )`.
