@@ -40,6 +40,9 @@ mod display_materials;
 #[allow(dead_code)]
 mod webgpu_instance_path;
 
+#[path = "webgpu_tsl_earth.rs"]
+#[allow(dead_code)]
+mod webgpu_tsl_earth;
 #[path = "webgpu_tsl_halftone.rs"]
 #[allow(dead_code)]
 mod webgpu_tsl_halftone;
@@ -2039,6 +2042,7 @@ fn main() {
     dump_scene_fog();
     dump_shadowmap_opacity();
     dump_tsl_halftone();
+    dump_tsl_earth();
     dump_chromatic_aberration();
 
     // #144's display nodes, each as the three.js page that dumps it builds it:
@@ -2781,4 +2785,29 @@ fn dump_tsl_halftone() {
             ..SetupContext::default()
         },
     );
+}
+
+/// `webgpu_tsl_earth`: the globe (a `MeshStandardNodeMaterial` with a
+/// `bumpMap()` of a TSL expression and an `outputNode` mixing in the night
+/// side and the atmosphere) against three's `m01` / `m02`, and the `BackSide`
+/// atmosphere against `m03` / `m04`. One directional light.
+fn dump_tsl_earth() {
+    let day = Texture::new(4096, 2048, Some(vec![0; 4]));
+    let night = Texture::new(4096, 2048, Some(vec![0; 4]));
+    let bump = Texture::new(4096, 2048, Some(vec![0; 4]));
+    let (globe, atmosphere) =
+        webgpu_tsl_earth::materials(&day, &night, &bump, three_rs::Vector3::new(0.0, 0.0, 3.0));
+    show(
+        "tsl_earth_globe",
+        &globe,
+        SetupContext {
+            lights: vec![LightDesc {
+                index: 0,
+                kind: LightKind::Directional,
+                shadow_map: None,
+            }],
+            ..SetupContext::default()
+        },
+    );
+    show("tsl_earth_atmosphere", &atmosphere, SetupContext::default());
 }
