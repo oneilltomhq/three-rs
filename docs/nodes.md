@@ -4128,3 +4128,98 @@ needs the transmission pass's context. The graded pixels cover it.
 * **No `shadow.autoUpdate`.** The page renders the shadow map once
   (`autoUpdate = false`, `needsUpdate = true`). The port renders it every
   frame. Nothing in the scene moves, so every frame renders the same map.
+
+## 50. `RotateNode`'s `vec3` branch, `wireframe`, and `CameraHelper` (`webgpu_layers`, `webgpu_camera`)
+
+### 50.1 `rotate( vec3, vec3 )`
+
+`tsl::rotate` now ports both branches of `RotateNode.setup()`. The `vec3`
+branch builds one `mat4` per axis:
+
+```js
+const rotationXMatrix = mat4( vec4( 1, 0, 0, 0 ), vec4( 0, cos( rotation.x ), sin( rotation.x ), 0 ), … );
+…
+return matrixMap[ order[ 0 ] ].mul( matrixMap[ order[ 1 ] ] ).mul( matrixMap[ order[ 2 ] ] ).mul( vec4( positionNode, 1.0 ) ).xyz;
+```
+
+Only the default `'XYZ'` order is ported, because `rotate()`'s third argument
+is not used on the ladder. Each `rotation.x`, `cos( rotation.x )` and
+`sin( rotation.x )` is a new node in three, so the port builds each one anew
+too. Sharing them would turn the inline `cos( nodeConst1.x )` calls in three's
+WGSL into temps. Only `rotation` itself is one node, used twelve times, and the
+builder hoists it: `nodeConst1` in three's `webgpu_layers` `m03`, a `nodeVar`
+in the port (the same temp spelling difference as elsewhere).
+
+### 50.2 `material.wireframe`
+
+No shader reads it. In three it changes three things, all in the renderer:
+
+* `WebGPUUtils.getPrimitiveTopology()`: `isLineSegments || ( isMesh &&
+  wireframe )` is a `line-list`. The port's `Primitive::of` takes the
+  material's flag and records it as `Primitive::wireframe`, which is true only
+  for a mesh.
+* `Geometries.getIndex()` swaps the geometry's index for
+  `getWireframeIndex()`'s: each triangle `a b c` becomes `a b b c c a`, read
+  from the index, or from the vertex order when there is no index. The port
+  builds it once per geometry (`GeometryGpu::wireframe_index`) the first time
+  a wireframe material draws that geometry. It is always `uint32`. Three
+  builds a `Uint16BufferAttribute` below 65535 vertices, but
+  `WebGPUAttributeUtils.createAttribute()` widens every non-normalized
+  `Uint16Array` to `Uint32Array` on upload, and three's dump of
+  `webgpu_camera` shows `format: "uint32"`.
+* `RenderObject.getDrawParameters()`'s `rangeFactor = 2` scales `drawRange` to
+  the doubled index count.
+
+Divergence: three rebuilds the wireframe index when the geometry's index or
+position version moves. The port's index is not versioned (a changed index
+is a new geometry), so the wireframe index lives and dies with the geometry.
+
+### 50.3 `CameraHelper` and a shared matrix
+
+`CameraHelper` is a `LineSegments` of 50 vertices with vertex colours.
+`update()` un-projects 21 named NDC points through
+`camera.projectionMatrixInverse` alone, so the geometry is in the camera's
+local space. Its matrix places it:
+
+```js
+this.matrix = camera.matrixWorld;
+this.matrixAutoUpdate = false;
+```
+
+That line shares the matrix *object*, it does not copy it. Every
+`updateMatrixWorld()` traversal that reaches the helper multiplies in whatever
+the camera's world matrix holds at that moment. The port has no shared
+`Matrix4`s, so `Object3D::matrix_alias` holds a `WeakNode` to the camera, and
+`update_own_matrix_world` copies that node's `matrix_world` into `matrix` just
+before composing. That is the point where three would read the shared object.
+
+`webgpu_camera` shows why the timing has to be exact. The helper is added to
+the scene before `cameraRig`, so within one traversal it is visited before its
+camera. The first `render()` of a frame gives it the camera's world matrix
+from before the rig's `lookAt()`. The second gives it the one the first
+traversal computed. Only the second is visible (`activeHelper.visible` is
+toggled between the two renders), and the port draws it where three does,
+pixel for pixel.
+
+`RenderCamera::node()` is how the helper finds the camera's node. The port's
+`OrthographicCamera` is not a scene-graph node, so it returns `None`, and its
+helper takes a one-time copy of the camera's world matrix instead. That is a
+divergence, and `webgpu_camera` never shows it: the orthographic helper is
+hidden on every frame the page draws.
+
+`camera.reversedDepth` is not on the port's cameras, so `update()` takes
+near/far from the coordinate system alone. `toneMapped: false` has no
+counterpart, as with `GridHelper`.
+
+### 50.4 A legacy `PointsMaterial` is opaque
+
+`NodeLibrary.fromMaterial()` builds the node material and then assigns every
+property of the legacy one over it. A `PointsMaterial` therefore gives a
+`PointsNodeMaterial` with `transparent = false`, not the `true` that
+`PointsNodeMaterial` inherits from `SpriteNodeMaterial`. Three's dump of
+`webgpu_camera`'s points pipeline has no blend state, and its fragment ends
+in the opaque `DiffuseColor.w = 1.0`. The page sets `transparent = false`
+after `PointsNodeMaterial::points()`. `webgpu_postprocessing_ca` also passes a
+legacy `PointsMaterial` but keeps `transparent`. That rung is green, and it
+was not changed here. Moving it to the opaque list would be a separate
+change, checked against that page's own dump.
