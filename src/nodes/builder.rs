@@ -390,7 +390,7 @@ impl NodeCache {
 /// the builder exists (three calls it from inside `builder.build()`). It is
 /// empty between material setups; outside any push, reads see the default.
 /// See `docs/nodes.md` §37.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub(crate) struct BuildContext {
     /// `NodeBuilder.subBuildLayers`, one layer deep: `NORMAL` is the only name
     /// the ladder needs. Three keeps it on the builder beside `context`.
@@ -406,10 +406,26 @@ pub(crate) struct BuildContext {
     /// === false`. `normalViewGeometry` reads it. A builder method in three,
     /// kept here because it lives exactly as long as `setup_normal`.
     pub(crate) flat_shading: bool,
+    /// `builder.material.side`: what `negateOnBackSide()` branches on, and so
+    /// part of every cache key that reaches `normalView` or the tangent frame.
+    pub(crate) material_side: crate::materials::Side,
     /// Addon keys (`TRAANode`, `ClusteredLightsNode`, the light-data nodes).
     /// Nothing reads it yet; `context( node, { … } )` (#161) will.
     #[allow(dead_code)]
     pub(crate) extra: HashMap<&'static str, NodeRef>,
+}
+
+impl Default for BuildContext {
+    fn default() -> Self {
+        Self {
+            sub_build: None,
+            override_nodes: None,
+            setup_normal: None,
+            flat_shading: false,
+            material_side: crate::materials::Side::Front,
+            extra: HashMap::new(),
+        }
+    }
 }
 
 thread_local! {

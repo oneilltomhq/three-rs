@@ -93,9 +93,6 @@ fn override_node(pick: fn(&OverrideNodes) -> &Option<NodeRef>) -> Option<NodeRef
 }
 
 thread_local! {
-    /// `builder.material.side` — what `negateOnBackSide()` branches on, and so
-    /// part of every cache key that reaches `normalView` or the tangent frame.
-    static MATERIAL_SIDE: RefCell<Side> = const { RefCell::new(Side::Front) };
     /// `builder.geometry.hasAttribute( 'tangent' )` — what `Tangent.js` and
     /// `Bitangent.js` branch on. With the attribute the frame comes from the
     /// `tangent` vec4 through `modelViewMatrix`; without it, from the screen
@@ -153,14 +150,12 @@ pub fn with_material_normal<R>(
     side: Side,
     f: impl FnOnce() -> R,
 ) -> R {
-    let _normal = push_context(|cx| {
+    let _material = push_context(|cx| {
         cx.setup_normal = normal;
         cx.flat_shading = flat_shading;
+        cx.material_side = side;
     });
-    let previous_side = MATERIAL_SIDE.with(|v| v.replace(side));
-    let out = f();
-    MATERIAL_SIDE.with(|v| *v.borrow_mut() = previous_side);
-    out
+    f()
 }
 
 /// `builder.geometry.hasAttribute( 'tangent' )` for the whole of one
@@ -181,10 +176,8 @@ pub fn with_tangent_attribute<R>(has_tangent: bool, f: impl FnOnce() -> R) -> R 
 /// scope explicitly, or a `DoubleSide` material's TBN frame would be built
 /// front-sided and then cached.
 pub fn with_material_side<R>(side: Side, f: impl FnOnce() -> R) -> R {
-    let previous = MATERIAL_SIDE.with(|v| v.replace(side));
-    let out = f();
-    MATERIAL_SIDE.with(|v| *v.borrow_mut() = previous);
-    out
+    let _side = push_context(|cx| cx.material_side = side);
+    f()
 }
 
 /// `negateOnBackSide( vector )` — `FrontFacingNode.js`. A back-sided material
@@ -193,7 +186,7 @@ pub fn with_material_side<R>(side: Side, f: impl FnOnce() -> R) -> R {
 /// the tangent frame both go through it, which is why a `DoubleSide` material's
 /// dump multiplies three vectors by the same `( f32( isFront ) * 2 - 1 )`.
 fn negate_on_back_side(vector: NodeRef) -> NodeRef {
-    match MATERIAL_SIDE.with(|s| *s.borrow()) {
+    match current_context(|cx| cx.material_side) {
         Side::Front => vector,
         Side::Back => vector.mul(float(-1.0)),
         Side::Double => vector.mul(face_direction()),
@@ -2237,7 +2230,7 @@ fn normal_key() -> NormalViewKey {
         layer,
         value.as_ref().map(|v| v.key()),
         current_context(|cx| cx.flat_shading),
-        MATERIAL_SIDE.with(|s| *s.borrow()),
+        current_context(|cx| cx.material_side),
         HAS_TANGENT.with(|t| *t.borrow()),
         // An `overrideNodes( [ [ normalView, … ] ] )` material reads a wholly
         // different `normalView`, so everything cached off it — `normalWorld`,
