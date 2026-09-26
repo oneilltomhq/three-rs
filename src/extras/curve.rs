@@ -6,18 +6,23 @@
 //!
 //! three.js' `Curve` is an abstract base class whose subclasses override
 //! `getPoint`; here it is a trait with `get_point` required and everything
-//! else default-implemented on top of it.
+//! else default-implemented on top of it. three.js' curves return a `Vector2`
+//! or a `Vector3` depending on the subclass, and the base class branches on
+//! `pt1.isVector2` where it has to build one; here that is the associated
+//! [`Curve::Point`] type, bounded by [`CurveVector`].
 //!
-//! **Deliberate divergence: no arc length cache.** `Curve.getLengths()`
-//! memoises its result into `this.cacheArcLengths` and invalidates it when
-//! `needsUpdate` is set. The methods here take `&self`, so there is nowhere to
-//! memoise; `get_lengths` recomputes on every call instead. The computation is
-//! pure, so the numbers are identical — only the cost differs. With nothing to
-//! invalidate, `updateArcLengths` and `needsUpdate` have no meaning and are not
-//! ported.
+//! **Deliberate divergence: no arc length cache on the leaf curves.**
+//! `Curve.getLengths()` memoises its result into `this.cacheArcLengths` and
+//! invalidates it when `needsUpdate` is set. The methods here take `&self`, so
+//! a leaf curve (a line, a Bézier, an ellipse, a spline) recomputes on every
+//! call instead. The computation is pure, so the numbers are identical — only
+//! the cost differs. [`CurvePath`](super::CurvePath) is the exception: its
+//! `getPoint` is itself built on `getLength`, so recomputing there is
+//! quadratic, and it keeps both of three.js' caches, with three.js'
+//! invalidation rules (see its doc).
 
 use crate::math::math_utils::clamp;
-use crate::math::{Matrix4, Vector3};
+use crate::math::{Matrix4, Vector2, Vector3};
 
 /// The return value of [`Curve::compute_frenet_frames`], three.js'
 /// `{ tangents, normals, binormals }`.
@@ -28,12 +33,108 @@ pub struct FrenetFrames {
     pub binormals: Vec<Vector3>,
 }
 
+/// What a curve's points are: `Vector2` for the 2D curves (`LineCurve`,
+/// `EllipseCurve`, `Path`, `Shape`, ...), `Vector3` for the 3D ones. The
+/// handful of vector operations the base class uses generically.
+pub trait CurveVector: Copy + Default + PartialEq + std::fmt::Debug + 'static {
+    /// `v.distanceTo( w )`.
+    fn distance_to(&self, v: &Self) -> f64;
+    /// `v.equals( w )`.
+    fn equals(&self, v: &Self) -> bool;
+    /// `new VectorN().copy( pt2 ).sub( pt1 ).normalize()` — `Curve.getTangent`'s
+    /// body.
+    fn tangent(pt1: &Self, pt2: &Self) -> Self;
+    /// The point as a `Vector3`, `z = 0` for a `Vector2`. Only
+    /// [`Curve::compute_frenet_frames`] uses it; three.js copies a `Vector2`
+    /// tangent into a `Vector3` there, which leaves `z` `undefined` (`NaN`
+    /// downstream), so frames of a 2D curve are meaningless in three.js and
+    /// merely planar here.
+    fn to_vector3(&self) -> Vector3;
+}
+
+impl CurveVector for Vector2 {
+    fn distance_to(&self, v: &Self) -> f64 {
+        Vector2::distance_to(self, v)
+    }
+    fn equals(&self, v: &Self) -> bool {
+        Vector2::equals(self, v)
+    }
+    fn tangent(pt1: &Self, pt2: &Self) -> Self {
+        let mut tangent = Vector2::default();
+        tangent.copy(pt2).sub(pt1).normalize();
+        tangent
+    }
+    fn to_vector3(&self) -> Vector3 {
+        Vector3::new(self.x, self.y, 0.0)
+    }
+}
+
+impl CurveVector for Vector3 {
+    fn distance_to(&self, v: &Self) -> f64 {
+        Vector3::distance_to(self, v)
+    }
+    fn equals(&self, v: &Self) -> bool {
+        Vector3::equals(self, v)
+    }
+    fn tangent(pt1: &Self, pt2: &Self) -> Self {
+        let mut tangent = Vector3::default();
+        tangent.copy(pt2).sub(pt1).normalize();
+        tangent
+    }
+    fn to_vector3(&self) -> Vector3 {
+        *self
+    }
+}
+
+/// `Curve.getLengths( divisions )`'s computation, without the cache, so that
+/// an implementor that does cache ([`CurvePath`](super::CurvePath)) can
+/// override [`Curve::get_lengths`] and still call it.
+pub fn compute_lengths<C: Curve + ?Sized>(curve: &C, divisions: usize) -> Vec<f64> {
+    let mut cache = Vec::new();
+    let mut last = curve.get_point(0.0);
+    let mut sum = 0.0;
+
+    cache.push(0.0);
+
+    for p in 1..=divisions {
+        let current = curve.get_point(p as f64 / divisions as f64);
+        sum += current.distance_to(&last);
+        cache.push(sum);
+        last = current;
+    }
+
+    cache
+}
+
 /// `Curve`. Implementors provide [`Curve::get_point`]; the rest is three.js'
 /// own generic machinery built on it.
 pub trait Curve {
+    /// `Vector2` or `Vector3`.
+    type Point: CurveVector;
+
     /// `Curve.getPoint( t, optionalTarget )`. `t` is an interpolation factor in
     /// `[0,1]`.
-    fn get_point(&self, t: f64) -> Vector3;
+    fn get_point(&self, t: f64) -> Self::Point;
+
+    /// `Curve.type`: `'LineCurve'`, `'EllipseCurve'`, `'Path'`, ...
+    fn type_name(&self) -> &'static str;
+
+    /// How many divisions `CurvePath.getPoints( divisions )` asks this curve
+    /// for. three.js writes it as a chain of brand checks in `CurvePath`:
+    /// `isEllipseCurve` doubles it, `isLineCurve` / `isLineCurve3` use 1 and
+    /// `isSplineCurve` multiplies by its point count; every other curve uses
+    /// `divisions` as given. Here each of those subclasses overrides this.
+    fn curve_path_resolution(&self, divisions: usize) -> usize {
+        divisions
+    }
+
+    /// `extrudePath.isCatmullRomCurve3 ? extrudePath.closed : false` — the one
+    /// place three.js reads a subclass' `closed` generically
+    /// (`ExtrudeGeometry`). Only [`CatmullRomCurve3`](super::CatmullRomCurve3)
+    /// overrides it.
+    fn is_closed_catmull_rom(&self) -> bool {
+        false
+    }
 
     /// `Curve.arcLengthDivisions`, default 200.
     fn arc_length_divisions(&self) -> usize {
@@ -41,13 +142,13 @@ pub trait Curve {
     }
 
     /// `Curve.getPointAt( u, optionalTarget )`.
-    fn get_point_at(&self, u: f64) -> Vector3 {
+    fn get_point_at(&self, u: f64) -> Self::Point {
         let t = self.get_u_to_t_mapping(u, None);
         self.get_point(t)
     }
 
     /// `Curve.getPoints( divisions )`; returns `divisions + 1` points.
-    fn get_points(&self, divisions: usize) -> Vec<Vector3> {
+    fn get_points(&self, divisions: usize) -> Vec<Self::Point> {
         let mut points = Vec::new();
 
         for d in 0..=divisions {
@@ -58,7 +159,7 @@ pub trait Curve {
     }
 
     /// `Curve.getSpacedPoints( divisions )`; returns `divisions + 1` points.
-    fn get_spaced_points(&self, divisions: usize) -> Vec<Vector3> {
+    fn get_spaced_points(&self, divisions: usize) -> Vec<Self::Point> {
         let mut points = Vec::new();
 
         for d in 0..=divisions {
@@ -76,20 +177,7 @@ pub trait Curve {
 
     /// `Curve.getLengths( divisions )`. See the module doc: no cache.
     fn get_lengths(&self, divisions: usize) -> Vec<f64> {
-        let mut cache = Vec::new();
-        let mut last = self.get_point(0.0);
-        let mut sum = 0.0;
-
-        cache.push(0.0);
-
-        for p in 1..=divisions {
-            let current = self.get_point(p as f64 / divisions as f64);
-            sum += current.distance_to(&last);
-            cache.push(sum);
-            last = current;
-        }
-
-        cache
+        compute_lengths(self, divisions)
     }
 
     /// `Curve.getUtoTmapping( u, distance )`, statement for statement.
@@ -169,7 +257,7 @@ pub trait Curve {
     }
 
     /// `Curve.getTangent( t, optionalTarget )`.
-    fn get_tangent(&self, t: f64) -> Vector3 {
+    fn get_tangent(&self, t: f64) -> Self::Point {
         let delta = 0.0001;
         let mut t1 = t - delta;
         let mut t2 = t + delta;
@@ -186,15 +274,11 @@ pub trait Curve {
         let pt1 = self.get_point(t1);
         let pt2 = self.get_point(t2);
 
-        let mut tangent = Vector3::default();
-
-        tangent.copy(&pt2).sub(&pt1).normalize();
-
-        tangent
+        Self::Point::tangent(&pt1, &pt2)
     }
 
     /// `Curve.getTangentAt( u, optionalTarget )`.
-    fn get_tangent_at(&self, u: f64) -> Vector3 {
+    fn get_tangent_at(&self, u: f64) -> Self::Point {
         let t = self.get_u_to_t_mapping(u, None);
         self.get_tangent(t)
     }
@@ -217,7 +301,7 @@ pub trait Curve {
         for i in 0..=segments {
             let u = i as f64 / segments as f64;
 
-            tangents.push(self.get_tangent_at(u));
+            tangents.push(self.get_tangent_at(u).to_vector3());
         }
 
         // select an initial normal vector perpendicular to the first tangent vector,

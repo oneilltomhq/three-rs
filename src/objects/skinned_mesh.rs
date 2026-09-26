@@ -80,7 +80,7 @@ impl SkinnedMesh {
                 material,
                 morph_target_influences: Vec::new(),
                 line_segments: None,
-                count: 1,
+                count: None,
             },
             skeleton: None,
             bind_mode: BindMode::Attached,

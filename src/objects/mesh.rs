@@ -30,12 +30,17 @@ pub struct Mesh {
     /// `docs/webgpu_lines_fat-progress.md` for the follow-up that moves them on
     /// to `BufferGeometry`.
     pub line_segments: Option<crate::nodes::lines::LineSegmentsAttributes>,
-    /// `Mesh.count` — how many instances one draw of this mesh makes, with no
-    /// instance matrix involved. `RenderObject.getInstanceCount()` reads it
-    /// when the geometry is not an `InstancedBufferGeometry`; a node reads
-    /// which instance it is through `instanceIndex`, which is how
-    /// `webgpu_particles` draws 2000 sprites from one `range()`-driven mesh.
-    pub count: usize,
+    /// `mesh.count`, which is **not** a `Mesh` property in three.js: a page
+    /// sets it ad hoc (`webgpu_instance_path`'s `mesh.count = 1000`,
+    /// `webgpu_particles`' `smokeInstancedSprite.count = 2000`) and
+    /// `RenderObject.getInstanceCount()` (`RenderObject.js:617-631`) reads it
+    /// as `object.count !== undefined ? max( 0, object.count ) : 1`, so a
+    /// plain mesh — one whose geometry is not an `InstancedBufferGeometry` —
+    /// draws that many instances, and a node tells them apart through
+    /// `instanceIndex` or an `instancedBufferAttribute`. `None` is
+    /// `undefined`. [`Points::count`](crate::objects::Points) is the same
+    /// thing on `Points`.
+    pub count: Option<usize>,
 }
 
 impl Mesh {
@@ -68,7 +73,7 @@ impl Mesh {
             material: material.into(),
             morph_target_influences,
             line_segments: None,
-            count: 1,
+            count: None,
         });
         object.into_node()
     }
@@ -89,7 +94,7 @@ impl Mesh {
             material,
             morph_target_influences,
             line_segments: None,
-            count: 1,
+            count: None,
         }
     }
 

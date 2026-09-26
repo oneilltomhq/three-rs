@@ -237,6 +237,9 @@ mod webgpu_struct_drawindirect;
 #[path = "webgpu_clearcoat.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_clearcoat;
+#[path = "webgpu_modifier_curve.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_modifier_curve;
 #[path = "webgpu_particles.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_particles;
@@ -389,6 +392,9 @@ const GRADED: &[(&str, fn())] = &[
     }),
     ("webgpu_particles", || drop(webgpu_particles::init())),
     ("webgpu_clearcoat", || drop(webgpu_clearcoat::init())),
+    ("webgpu_modifier_curve", || {
+        drop(webgpu_modifier_curve::init())
+    }),
 ];
 
 /// Where the committed manifests live, one `<example>.json` each.

@@ -3490,3 +3490,65 @@ is exact and the mean difference is 0.7 levels in 255.
 * Otherwise `m10`, `m12` and `m14` match `dump_wgsl`'s `clearcoat_car_paint`,
   `clearcoat_fibers` and `clearcoat_golf` statement for statement, modulo the
   naming classes §8 lists (`let nodeConstN` vs `nodeVarN`, uniform numbering).
+
+## 35. Curves, shapes and `Flow` (`webgpu_modifier_curve`, issue #170)
+
+`src/extras/` ports three's `Curve` family, `Path` / `Shape` / `ShapePath`,
+`ShapeUtils` and Earcut. `src/geometries/` adds `ShapeGeometry`,
+`ExtrudeGeometry` and `TubeGeometry`. On top of those sit `FontLoader` /
+`TextGeometry` and `CurveModifierGPU`'s `Flow`. The geometry side is all `f64`,
+in three's expression order, and `tests/geometries_shape_oracle.rs` checks it
+against three's own output (from `tools/geometry_reference.mjs`) to 1e-6. The
+spline texture is checked half-float for half-float. The node side adds only
+`NodeRef::remap` (a `RemapNode` without `doClamp`, unfolded as three emits it)
+and `Mesh::count`.
+
+### 35.1 `Flow`'s shader
+
+`positionNode` is three's `Fn()`, written as a `block` that assigns `mt` and
+the `curveNormal` varying and then yields the bent position. `normalNode` is
+`varyingProperty( 'vec3', 'curveNormal' )`. The generated WGSL matches three's
+dump apart from `var` placement: the port declares `worldPos` inside the
+`select` branch and again later. It is cosmetic and changes no value, like
+§8's "Declaration order" and "Property-assignment temps". The texture reads are `textureSampleLevel( …, 0 )` in both.
+
+### Divergences specific to this section
+
+* **No arc-length cache on the leaf curves.** `Curve.getLengths()` memoises
+  into `cacheArcLengths`. The port's leaf curves take `&self` and recompute
+  on every call. The result is identical and only the cost differs.
+  `CurvePath` keeps both of three's caches (see the next item).
+* **`CurvePath`'s stale arc lengths, reproduced.** `cacheArcLengths` survives
+  adding a curve, in three as here. `getPointAt` after a later `lineTo`
+  therefore maps through the old path's lengths until `updateArcLengths()` is
+  called.
+* **`CurvePath::get_point` panics past the end** where three returns `null`.
+  `ShapePath` likewise panics where three would throw on a `null`
+  `currentPath`.
+* **Frenet frames of a 2D curve are planar (`z = 0`).** three copies a
+  `Vector2` tangent into a `Vector3`, which leaves `z` `undefined`, and the
+  frames come out `NaN`. Nothing depends on them.
+* **`TubeGeometry` takes 3D paths only.** Given a 2D path, three fills its
+  buffers with `NaN`.
+* **`UvGenerator` has no geometry argument.** three passes the half-built
+  geometry first. `WorldUVGenerator` ignores it, and the port has nothing to
+  read from it.
+* **`Mesh::count`.** In three this is not a `Mesh` property. A page sets it
+  ad hoc, and `RenderObject.getInstanceCount()` reads it off any object. Here
+  it is an `Option<usize>` field, where `None` is `undefined`.
+* **`Flow`'s `wrapY` typo, reproduced.** Upstream sets `wrapS` and then
+  `wrapY` (not a `Texture` property), so the spline texture repeats in `s` and
+  clamps in `t`. The port does the same.
+* **`Flow` bends one mesh.** Upstream clones an `Object3D` and patches every
+  `Mesh` / `InstancedMesh` under it. The port has no generic scene-graph
+  clone, so `Flow::new` takes a geometry and a material and builds the single
+  mesh. That covers every use the examples make of it.
+* **`arcLengthDivisions` through an adapter.** `updateSplineTexture` mutates
+  the caller's `curve.arcLengthDivisions`. The port's curves have no such
+  field (`CatmullRomCurve3` has the trait default of 200), so a private
+  `ArcLengthDivisions` wrapper presents the curve with 512 divisions instead.
+  The caller's curve is left unchanged afterwards, where three's keeps 512.
+* **A glyph the font lacks, with no `?` to fall back on, is skipped.** three
+  logs and then throws on `ret.offsetX`.
+* **No `TransformControls`.** `webgpu_modifier_curve`'s handles cannot be
+  dragged. The graded frame never shows the gizmo.

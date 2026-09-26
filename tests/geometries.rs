@@ -20,3 +20,6 @@ mod batch0;
 
 #[path = "geometry/rounded_box.rs"]
 mod rounded_box;
+
+#[path = "geometry/shapes.rs"]
+mod shapes;

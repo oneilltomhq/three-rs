@@ -279,6 +279,7 @@ ShadowmapPointlight, webgpu_shadowmap_pointlight, "../../examples/webgpu_shadowm
 StructDrawindirect, webgpu_struct_drawindirect, "../../examples/webgpu_struct_drawindirect.rs";
 Particles, webgpu_particles, "../../examples/webgpu_particles.rs";
 Clearcoat, webgpu_clearcoat, "../../examples/webgpu_clearcoat.rs";
+ModifierCurve, webgpu_modifier_curve, "../../examples/webgpu_modifier_curve.rs";
 }
 
 /// Where an example's assets come from: three.js at the commit this port is

@@ -37,7 +37,11 @@ pub use cameras::{OrthographicCamera, PerspectiveCamera, RenderCamera};
 pub use core::{BufferGeometry, Intersection, Node, Object3D, Raycaster, Timer};
 pub use environments::RoomEnvironment;
 pub use error::{Error, GltfError};
-pub use extras::{CatmullRomCurve3, Curve, CurveType, FrenetFrames};
+pub use extras::{
+    CatmullRomCurve3, CubicBezierCurve, CubicBezierCurve3, Curve, CurvePath, CurveType,
+    CurveVector, EllipseCurve, FrenetFrames, LineCurve, LineCurve3, Path, QuadraticBezierCurve,
+    QuadraticBezierCurve3, Shape, ShapePath, SplineCurve,
+};
 pub use geometries::{
     box_geometry, plane_geometry, quad_geometry, sphere_geometry, teapot_geometry,
     torus_knot_geometry,

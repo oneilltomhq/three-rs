@@ -203,6 +203,11 @@ jobs:
             core_raycaster
             geometries
             gltf_draco
+            extras_catmull_rom_curve3
+            extras_core
+            extras_curves
+            geometries
+            geometries_shape_oracle
             gltf_loader
             gltf_meshopt
             ktx2_loader

@@ -182,7 +182,7 @@ pub fn init() -> App {
 
     let smoke = Mesh::new(Rc::new(plane_geometry(1.0, 1.0, 1, 1)), smoke_material);
     smoke.borrow_mut().scale.set(400.0, 400.0, 400.0);
-    smoke.borrow_mut().payload.mesh_mut().unwrap().count = SMOKE_COUNT;
+    smoke.borrow_mut().payload.mesh_mut().unwrap().count = Some(SMOKE_COUNT);
     scene.add(&smoke);
 
     //
@@ -213,7 +213,7 @@ pub fn init() -> App {
     {
         let mut fire = fire.borrow_mut();
         fire.scale.set(400.0, 400.0, 400.0);
-        fire.payload.mesh_mut().unwrap().count = fire_count;
+        fire.payload.mesh_mut().unwrap().count = Some(fire_count);
         fire.position.y = -100.0;
         fire.render_order = 1.0;
     }
