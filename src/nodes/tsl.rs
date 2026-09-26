@@ -804,9 +804,25 @@ fn fog_factor_fn(body: impl Fn() -> NodeRef + 'static) -> NodeRef {
 /// Runs a fog factor's deferred body (see [`range_fog_factor`]) in the
 /// current material's context. Any other node is returned as it is.
 pub fn resolve_fog_factor(factor: &NodeRef) -> NodeRef {
-    match &*factor.0 {
+    resolve_fn_call(factor)
+}
+
+/// Runs an argument-less inline `Fn()` call's body in the current material's
+/// context; any other node is returned as it is.
+///
+/// three.js runs every `Fn` body lazily, inside the build of the material that
+/// uses it, so `normalWorld` in a `material.outputNode = Fn( … )( output )`
+/// reads *that* material's `normalView` — normal-mapped and `DoubleSide`-
+/// negated for a GLTF body. The port's graph is eager: built at the call site,
+/// with no material in scope, `normal_world()` keys on the bare geometric
+/// normal and the fragment re-assigns `normalView = normalViewGeometry` just
+/// ahead of it. Holding the body in an argument-less call and resolving it here,
+/// inside `NodeMaterial` setup, is the same deferral [`resolve_fog_factor`]
+/// already gives `scene.fogNode`.
+pub fn resolve_fn_call(node: &NodeRef) -> NodeRef {
+    match &*node.0 {
         Node::Call { def, args } if !def.layout && args.is_empty() => (def.body)(&[]),
-        _ => factor.clone(),
+        _ => node.clone(),
     }
 }
 
