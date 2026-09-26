@@ -427,12 +427,20 @@ light's `irradiance` statements ahead of it, as the dump has them.
 
 ## What is not wired up yet
 
-- `SkinnedMesh` is still a sibling struct owning its own `Node` rather than a
-  `Payload` variant, so the walk does not draw it. Rung 10 adds
-  `Payload::SkinnedMesh` and moves `geometry`/`skeleton` into it.
-- No `LOD`, `Sprite`, `Points`, `BatchedMesh` or `BundleGroup` arm in
-  `project_object`, no multi-material `geometry.groups` arm, no clipping context
-  and no `transparentDoublePass` (transmission).
-- `PointLight` and `AmbientLight` exist (rungs 5 and 6). `DirectionalLight`,
-  `SpotLight` and `HemisphereLight` are further lighting rungs; so are shadows
-  (rung 7).
+Drawn by the walk today: `Mesh`, `InstancedMesh`, `SkinnedMesh`,
+`BatchedMesh`, `Line`/`LineSegments` (and the fat `Line2`/`LineSegments2`,
+which are meshes), `Points` and `Sprite`. `Sprite` is `Payload::Sprite`: one
+shared unit quad, a `SpriteNodeMaterial`, and `center` fed to the vertex stage
+as an object uniform; transparent sprites sort on their world position, as
+`_projectObject` does. Every light type is wired: `PointLight`,
+`AmbientLight`, `DirectionalLight`, `SpotLight` and `HemisphereLight`, with
+shadows for the point, spot and directional kinds.
+
+Still missing:
+
+- No `LOD` or `BundleGroup` arm in `project_object`.
+- No multi-material meshes: a mesh holds one material, so the
+  `geometry.groups` arm that picks `material[ group.materialIndex ]` is absent.
+- No clipping context (`ClippingGroup`, `material.clippingPlanes`).
+- Sprite fog reads the mesh `positionView` rather than the sprite's billboarded
+  one (see `tests/renderer_sprites.rs`); no graded rung has a fogged sprite.

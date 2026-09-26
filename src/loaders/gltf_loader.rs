@@ -12,7 +12,9 @@
 //! Materials and images come out as data records ([`GltfMaterial`],
 //! [`GltfImage`]) because the material types do not exist in this crate yet.
 //!
-//! `EXT_meshopt_compression` bufferViews are decoded by
+//! `KHR_draco_mesh_compression` primitives are decoded by
+//! [`draco`](crate::loaders::draco), to the typed arrays `DRACOLoader`
+//! produces. `EXT_meshopt_compression` bufferViews are decoded by
 //! [`meshopt`](crate::loaders::meshopt) when first read, as
 //! `GLTFMeshoptCompression.loadBufferView` does, and `KHR_mesh_quantization`
 //! needs nothing beyond the accessor reading above: every component type is
@@ -20,10 +22,13 @@
 //! anyway.
 //!
 //! Not ported (explicit TODOs): extensions other than those in
-//! `SUPPORTED_EXTENSIONS` (Draco, `KHR_meshopt_compression`, …),
+//! `SUPPORTED_EXTENSIONS`,
 //! `CUBICSPLINE` interpolation (needs `GLTFCubicSplineInterpolant`), cameras,
 //! primitive-key geometry deduplication and the `groups` it implies, and
 //! `GLTFMeshStandardSGMaterial`.
+//!
+//! `KHR_texture_basisu` textures are transcoded by [`Ktx2Loader`]; see
+//! [`GLTFLoader::load_with_ktx2`] for which one.
 
 use std::cell::{OnceCell, RefCell};
 use std::collections::HashMap;
@@ -35,8 +40,11 @@ use serde_json::Value;
 use crate::animation::{AnimationClip, InterpolationMode, KeyframeTrack, SceneResolver};
 use crate::core::{BufferAttribute, BufferGeometry, Index, Node, Object3D};
 use crate::error::{Error, GltfError};
+use crate::loaders::draco::{
+    self, DracoArray, DracoArrayType, DracoAttribute, DracoPrimitive, Request as DracoRequest,
+};
 use crate::loaders::meshopt::{self, Filter as MeshoptFilter, Mode as MeshoptMode};
-use crate::loaders::TextureLoader;
+use crate::loaders::{Ktx2Loader, TextureLoader};
 use crate::materials::{MeshBasicNodeMaterial, Side};
 use crate::math::{Color, Matrix4, Vector2};
 use crate::objects::{Bone, Mesh, Skeleton, SkinnedMesh};
@@ -323,6 +331,10 @@ pub struct GltfImage {
 pub struct GltfTexture {
     pub source: Option<usize>,
     pub sampler: Option<usize>,
+    /// `extensions.KHR_texture_basisu.source` — a KTX 2.0 image that, when
+    /// present, takes the place of `source` (which is then a PNG/JPEG
+    /// fallback, or absent).
+    pub basisu_source: Option<usize>,
 }
 
 /// One drawable produced by a glTF primitive. `node` is the scene-graph node it
@@ -411,6 +423,8 @@ pub struct GLTFLoader {
     base: PathBuf,
     /// `GLTFParser.nodeNamesUsed`.
     node_names_used: HashMap<String, usize>,
+    /// `loader.setKTX2Loader( ktx2Loader )`.
+    ktx2_loader: Ktx2Loader,
 }
 
 impl GLTFLoader {
@@ -419,17 +433,47 @@ impl GLTFLoader {
         Self::open(path.as_ref(), true)?.build()
     }
 
+    /// `loader.setKTX2Loader( ktx2Loader ).load( url )`: [`load`](Self::load)
+    /// with the `KTX2Loader` that `KHR_texture_basisu` textures go through —
+    /// one that has run `detectSupport( renderer )`, so they transcode to a
+    /// format the device samples compressed.
+    ///
+    /// **Divergence**: three refuses a `KHR_texture_basisu` asset when
+    /// `setKTX2Loader` was never called ("setKTX2Loader must be called before
+    /// loading KTX2 textures"). [`load`](Self::load) and
+    /// [`parse`](Self::parse) instead use `Ktx2Loader::new()`, which
+    /// transcodes to uncompressed RGBA — valid on every device — so the
+    /// common case needs no renderer in hand to load a model.
+    pub fn load_with_ktx2(path: impl AsRef<Path>, ktx2_loader: &Ktx2Loader) -> Result<Gltf, Error> {
+        let mut loader = Self::open(path.as_ref(), true)?;
+        loader.ktx2_loader = ktx2_loader.clone();
+        loader.build()
+    }
+
     /// `loader.parse( data, path )`. Sniffs the GLB magic the way
     /// `GLTFLoader.parse` does.
     pub fn parse(data: &[u8], base: PathBuf) -> Result<Gltf, Error> {
         Self::read(data, base, true)?.build()
     }
 
+    /// [`parse`](Self::parse) with a `KTX2Loader`; see
+    /// [`load_with_ktx2`](Self::load_with_ktx2).
+    pub fn parse_with_ktx2(
+        data: &[u8],
+        base: PathBuf,
+        ktx2_loader: &Ktx2Loader,
+    ) -> Result<Gltf, Error> {
+        let mut loader = Self::read(data, base, true)?;
+        loader.ktx2_loader = ktx2_loader.clone();
+        loader.build()
+    }
+
     /// Read the file and its buffers, without building anything.
     /// `check_extensions` is `check_required_extensions`, which only matters
-    /// to a build: [`GLTFLoader::meshopt_buffer_views`] and
-    /// [`GLTFLoader::accessors`] read data alone, so an unread texture
-    /// extension (Basis, WebP, AVIF) need not stop them.
+    /// to a build: [`GLTFLoader::draco_primitives`],
+    /// [`GLTFLoader::meshopt_buffer_views`] and [`GLTFLoader::accessors`] read
+    /// data alone, so an unread texture extension (WebP, AVIF) need not stop
+    /// them.
     fn open(path: &Path, check_extensions: bool) -> Result<Self, Error> {
         let data = crate::io::read(path)?;
         let base = path.parent().unwrap_or(Path::new(".")).to_path_buf();
@@ -473,6 +517,7 @@ impl GLTFLoader {
             meshopt_views: (0..view_count).map(|_| OnceCell::new()).collect(),
             base,
             node_names_used: HashMap::new(),
+            ktx2_loader: Ktx2Loader::new(),
         };
 
         loader.load_buffers()?;
@@ -1136,6 +1181,15 @@ impl GLTFLoader {
         for (i, primitive) in primitive_defs.iter().enumerate() {
             let mut geometry = BufferGeometry::new();
 
+            // `GLTFDracoMeshCompressionExtension.decodePrimitive`, then
+            // `addPrimitiveAttributes` fills in whatever it did not set.
+            if let Some(draco) = self.draco_primitive(index, i, primitive)? {
+                for attribute in &draco.attributes {
+                    geometry.set_attribute(&attribute.name, draco_buffer_attribute(attribute));
+                }
+                geometry.index = draco.index.map(Index::U32);
+            }
+
             for (semantic, accessor) in primitive
                 .get("attributes")
                 .and_then(Value::as_object)
@@ -1146,6 +1200,10 @@ impl GLTFLoader {
                     continue;
                 };
                 let name = attribute_name(&semantic);
+                // `if ( threeAttributeName in geometry.attributes ) continue;`
+                if geometry.get_attribute(&name).is_some() {
+                    continue;
+                }
                 let mut attribute = self.attribute(accessor as usize)?;
                 // `JOINTS_0` is an unnormalized `Uint8`/`Uint16` accessor and
                 // stays one in three.js all the way to
@@ -1158,7 +1216,8 @@ impl GLTFLoader {
                 geometry.set_attribute(&name, attribute);
             }
 
-            if let Some(accessor) = json_usize(primitive, "indices") {
+            // `if ( primitiveDef.indices !== undefined && ! geometry.index )`
+            if let (Some(accessor), None) = (json_usize(primitive, "indices"), &geometry.index) {
                 geometry.index = Some(self.index_attribute(accessor)?);
             }
 
@@ -1234,6 +1293,115 @@ impl GLTFLoader {
                     .map(|(i, name)| (name, i))
                     .collect(),
             });
+        }
+
+        Ok(out)
+    }
+
+    /// `GLTFDracoMeshCompressionExtension.decodePrimitive` for mesh `mesh`'s
+    /// primitive `index`, or `None` when it is not Draco-compressed.
+    ///
+    /// Every attribute the extension lists is requested by its unique id,
+    /// as the typed array its accessor's `componentType` names, and then
+    /// takes the accessor's `normalized`. An extension attribute with no
+    /// accessor in `primitive.attributes` has no type to ask for; three.js
+    /// throws there (`TypedArray` is `undefined` in `decodeAttribute`), and
+    /// so does this.
+    fn draco_primitive(
+        &self,
+        mesh: usize,
+        index: usize,
+        primitive: &Value,
+    ) -> Result<Option<DracoPrimitive>, Error> {
+        let Some(extension) = primitive.pointer("/extensions/KHR_draco_mesh_compression") else {
+            return Ok(None);
+        };
+        let draco_error = |reason: String| -> Error {
+            GltfError::Draco {
+                mesh,
+                primitive: index,
+                reason,
+            }
+            .into()
+        };
+
+        let buffer_view = json_usize(extension, "bufferView").ok_or(GltfError::MissingField {
+            what: "KHR_draco_mesh_compression.bufferView",
+        })?;
+        let accessors = primitive.get("attributes").and_then(Value::as_object);
+
+        let mut requests = Vec::new();
+        for (semantic, unique_id) in extension
+            .get("attributes")
+            .and_then(Value::as_object)
+            .into_iter()
+            .flatten()
+        {
+            let name = attribute_name(semantic);
+            let unique_id = unique_id
+                .as_u64()
+                .and_then(|id| u32::try_from(id).ok())
+                .ok_or_else(|| draco_error(format!("bad unique id for {semantic}")))?;
+            let accessor = accessors
+                .and_then(|accessors| accessors.get(semantic))
+                .and_then(Value::as_u64)
+                .and_then(|accessor| self.json.pointer(&format!("/accessors/{accessor}")))
+                .ok_or_else(|| {
+                    draco_error(format!("{semantic} has no accessor to take a type from"))
+                })?;
+            let component_type = accessor
+                .get("componentType")
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
+            let array_type = DracoArrayType::from_component_type(component_type)
+                .ok_or(GltfError::UnsupportedComponentType(component_type as i64))?;
+
+            requests.push(DracoRequest {
+                name,
+                unique_id,
+                array_type,
+                normalized: accessor.get("normalized").and_then(Value::as_bool) == Some(true),
+            });
+        }
+
+        let data = self.buffer_view(buffer_view)?;
+        draco::decode_primitive(data, &requests)
+            .map(Some)
+            .map_err(draco_error)
+    }
+
+    /// The Draco primitives of a glTF, as `DRACOLoader` hands them to
+    /// `GLTFLoader`: typed arrays, `normalized` flags and index as three.js
+    /// has them, before this crate's [`BufferAttribute`] widens them to
+    /// `f32`. Each comes with its mesh and primitive index.
+    ///
+    /// For comparing against three.js (`tests/gltf_draco.rs`); a load goes
+    /// through [`GLTFLoader::load`].
+    pub fn draco_primitives(
+        path: impl AsRef<Path>,
+    ) -> Result<Vec<(usize, usize, DracoPrimitive)>, Error> {
+        let loader = Self::open(path.as_ref(), false)?;
+        let mut out = Vec::new();
+
+        for (m, mesh) in loader
+            .json
+            .get("meshes")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            for (p, primitive) in mesh
+                .get("primitives")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .enumerate()
+            {
+                if let Some(draco) = loader.draco_primitive(m, p, primitive)? {
+                    out.push((m, p, draco));
+                }
+            }
         }
 
         Ok(out)
@@ -1469,6 +1637,9 @@ impl GLTFLoader {
             .map(|texture| GltfTexture {
                 source: json_usize(texture, "source"),
                 sampler: json_usize(texture, "sampler"),
+                basisu_source: texture
+                    .pointer("/extensions/KHR_texture_basisu")
+                    .and_then(|extension| json_usize(extension, "source")),
             })
             .collect()
     }
@@ -1537,11 +1708,19 @@ impl GLTFLoader {
         let Some(def) = textures.get(index) else {
             return Ok(None);
         };
-        let Some(image) = def.source.and_then(|source| images.get(source)) else {
-            return Ok(None);
-        };
 
-        let texture = TextureLoader::new().from_bytes(&image.data, image.mime_type.as_deref())?;
+        // `GLTFTextureBasisUExtension.loadTexture` runs before the default
+        // `loadTexture`, and wins when the texture has the extension: the
+        // KTX 2.0 image goes through `KTX2Loader` and `source`, if any, is
+        // never read.
+        let texture = if let Some(image) = def.basisu_source.and_then(|source| images.get(source)) {
+            self.ktx2_loader.parse(&image.data)?.into_texture()?
+        } else {
+            let Some(image) = def.source.and_then(|source| images.get(source)) else {
+                return Ok(None);
+            };
+            TextureLoader::new().from_bytes(&image.data, image.mime_type.as_deref())?
+        };
 
         // `texture.flipY = false` in `GLTFParser.loadTextureImage`: glTF UVs
         // have their origin at the top left, so the image is not flipped.
@@ -2133,6 +2312,37 @@ fn decode_base64(input: &str) -> Result<Vec<u8>, Error> {
     Ok(out)
 }
 
+/// A decoded Draco attribute as this crate stores it: widened to `f32`, and
+/// a `normalized` one scaled into range the way [`GLTFLoader::accessor`]
+/// scales an uncompressed one. `skinIndex` stays integer, as it does there.
+fn draco_buffer_attribute(attribute: &DracoAttribute) -> BufferAttribute {
+    let scale = if attribute.normalized {
+        match attribute.array {
+            DracoArray::I8(_) => ComponentType::Byte,
+            DracoArray::U8(_) => ComponentType::UnsignedByte,
+            DracoArray::I16(_) => ComponentType::Short,
+            DracoArray::U16(_) => ComponentType::UnsignedShort,
+            DracoArray::U32(_) => ComponentType::UnsignedInt,
+            DracoArray::F32(_) => ComponentType::Float,
+        }
+        .normalized_scale()
+    } else {
+        1.0
+    };
+    let values = attribute
+        .array
+        .to_f64()
+        .into_iter()
+        .map(|value| (value * scale) as f32)
+        .collect();
+
+    if attribute.name == "skinIndex" {
+        BufferAttribute::new_integer(values, attribute.item_size)
+    } else {
+        BufferAttribute::new(values, attribute.item_size)
+    }
+}
+
 /// `json[ key ]` as a `usize`, for the many optional indices in a glTF.
 fn json_usize(value: &Value, key: &str) -> Option<usize> {
     value.get(key).and_then(Value::as_u64).map(|v| v as usize)
@@ -2140,11 +2350,11 @@ fn json_usize(value: &Value, key: &str) -> Option<usize> {
 
 /// The `extensionsUsed` names this loader reads, as `GLTFLoader.parse`'s
 /// `switch` and `GLTFParser`'s `extendMaterialParams` calls between them
-/// cover. Of the geometry-rewriting extensions, `EXT_meshopt_compression`
-/// and `KHR_mesh_quantization` are here; `KHR_draco_mesh_compression` and
-/// `KHR_meshopt_compression` are not read.
+/// cover. The geometry-rewriting extensions `KHR_draco_mesh_compression`,
+/// `EXT_meshopt_compression` and `KHR_mesh_quantization` are all here.
 const SUPPORTED_EXTENSIONS: &[&str] = &[
     "EXT_meshopt_compression",
+    "KHR_draco_mesh_compression",
     "KHR_materials_anisotropy",
     "KHR_materials_clearcoat",
     "KHR_materials_emissive_strength",
@@ -2154,6 +2364,7 @@ const SUPPORTED_EXTENSIONS: &[&str] = &[
     "KHR_materials_transmission",
     "KHR_materials_volume",
     "KHR_mesh_quantization",
+    "KHR_texture_basisu",
     "KHR_texture_transform",
 ];
 
