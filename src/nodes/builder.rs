@@ -505,6 +505,15 @@ pub(crate) fn push_context(edit: impl FnOnce(&mut BuildContext)) -> ContextGuard
     })
 }
 
+/// `material.alphaToCoverage && renderer.currentSamples > 0` for every build
+/// inside `f` — what `shapeCircle()` branches on. The renderer sets it around
+/// each material build from the target it draws into; a tool that builds
+/// programs without a renderer (`examples/dump_wgsl.rs`) sets it itself.
+pub fn with_alpha_to_coverage_samples<R>(on: bool, f: impl FnOnce() -> R) -> R {
+    let _guard = push_context(|cx| cx.alpha_to_coverage_samples = on);
+    f()
+}
+
 /// Read the current context: the top of the stack, or the default one
 /// outside any push.
 pub(crate) fn current_context<R>(read: impl FnOnce(&BuildContext) -> R) -> R {
