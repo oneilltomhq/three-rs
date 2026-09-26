@@ -58,8 +58,8 @@ pub use loaders::{
 pub use materials::{
     Line2NodeMaterial, LineBasicNodeMaterial, MaterialKind, MeshBasicNodeMaterial,
     MeshLambertNodeMaterial, MeshNormalNodeMaterial, MeshPhongNodeMaterial,
-    MeshPhysicalNodeMaterial, MeshStandardNodeMaterial, PointsNodeMaterial, SpriteNodeMaterial,
-    ToneMapping,
+    MeshPhysicalNodeMaterial, MeshStandardNodeMaterial, MeshToonNodeMaterial, PointsNodeMaterial,
+    SpriteNodeMaterial, ToneMapping,
 };
 pub use math::{Color, Euler, Matrix3, Matrix4, Quaternion, Vector2, Vector3};
 pub use objects::{

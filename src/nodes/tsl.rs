@@ -2738,6 +2738,21 @@ pub fn texture(map: &Texture) -> NodeRef {
     )
 }
 
+/// `texture( map ).context( { getUV: () => coord } )` — the map read at a
+/// coordinate the *context* supplies. `TextureNode.setup()` takes `getUV()`'s
+/// node in place of the default `uv()` and then still applies
+/// `getTransformedUV()`, so unlike [`texture_uv`] the tap goes through the
+/// map's `mat3x3` uv matrix — one shared per map, as [`texture`]'s is.
+/// `ToonLightingModel`'s gradient lookup is the caller.
+pub fn texture_with_uv(map: &Texture, coord: NodeRef) -> NodeRef {
+    texture_node(
+        TextureSource::Texture2D(map.clone()),
+        transformed_uv(coord, (0, map.id()), map.matrix()),
+        sample_mode_for(map),
+        texture_type_for(map),
+    )
+}
+
 /// `texture3D( texture, null, level )` — `Texture3DNode` with a level, which
 /// is how both volume pages read their volume: `textureSampleLevel` at a
 /// fixed level, never the implicit-derivative `textureSample` a raymarch loop

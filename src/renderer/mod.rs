@@ -275,6 +275,7 @@ impl Primitive {
 }
 
 /// One entry of the render list, already resolved to what the draw needs.
+#[derive(Clone)]
 struct Renderable {
     /// `renderItem.object` — `frame.object` for a node whose `updateType` is
     /// `NodeUpdateType.OBJECT`. `None` for the draws three.js makes with its
@@ -363,6 +364,9 @@ const VARIANT_QUAD: u64 = 2;
 /// then `FrontSide`, which are two programs because the side reaches
 /// `faceDirection` and so the normal.
 const VARIANT_BACK_SIDE: u64 = 4;
+/// `MaterialKey::variant` (hashed with the pass's template id) for
+/// `ToonOutlinePassNode._getOutlineMaterial( source )`.
+const VARIANT_TOON_OUTLINE: u64 = 6;
 const VARIANT_FRONT_SIDE: u64 = 5;
 
 /// One material's built programs — `NodeManager.nodeBuilderCache`'s entries
@@ -649,6 +653,12 @@ pub struct Renderer {
     /// carries only the flag, because nothing on the ladder uses a `Lighting`
     /// for anything else.
     pub lighting_enabled: bool,
+    /// `renderer.setRenderObjectFunction()` as `ToonOutlinePassNode` sets it
+    /// for the duration of its own render: the outline material every
+    /// `MeshToonNodeMaterial` draw is preceded by. `None` is three's default
+    /// render-object function. See
+    /// [`ToonOutlinePassNode`](crate::nodes::display::ToonOutlinePassNode).
+    pub(crate) toon_outline: Option<Rc<MeshBasicNodeMaterial>>,
     /// `PassNode.updateBefore()`'s `camera.layers.mask = this._layers.mask` —
     /// the layer mask `_projectObject()` tests against for the duration of one
     /// pass. `None` leaves the camera's own mask alone.
@@ -1086,6 +1096,7 @@ impl Renderer {
             opaque: true,
             transparent: true,
             lighting_enabled: true,
+            toon_outline: None,
             camera_layers: None,
             sort_objects: true,
             canvas: None,
@@ -1738,7 +1749,7 @@ impl Renderer {
                 .then(|| opaque_frame.clone())
                 .flatten();
 
-            items.push(Renderable {
+            let renderable = Renderable {
                 object: Some(item.node.clone()),
                 geometry: geometry.clone(),
                 material: material.clone(),
@@ -1823,7 +1834,28 @@ impl Renderer {
                 bone_matrices: skin.map(|s| s.3).unwrap_or_default(),
                 primitive,
                 sub_draws,
-            });
+            };
+
+            // `ToonOutlinePassNode`'s render-object function: a toon material
+            // is drawn twice, its outline first — the same object and
+            // geometry under the pass's back-side outline material — then
+            // itself. `material.wireframe === false` is the other half of
+            // three's test; the port has no wireframe, so it always holds.
+            if let Some(outline) = self
+                .toon_outline
+                .as_ref()
+                .filter(|_| renderable.material.kind == materials::MaterialKind::Toon)
+            {
+                items.push(Renderable {
+                    material: (**outline).clone(),
+                    // `_materialCache.get( originalMaterial )`: one outline
+                    // material per source material, so the key is the
+                    // source's, tagged with which pass's template it is.
+                    key: key.variant(hash_of(&(VARIANT_TOON_OUTLINE, outline.id.get()))),
+                    ..renderable.clone()
+                });
+            }
+            items.push(renderable);
         }
 
         // `Background.update()`: a `Color` background becomes the clear colour
