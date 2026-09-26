@@ -210,7 +210,7 @@ pub fn project_object(
             (
                 o.is_group,
                 o.is_light,
-                o.is_mesh() || o.is_line() || o.is_points(),
+                o.is_mesh() || o.is_line() || o.is_points() || o.payload.is_sprite(),
             )
         };
 
@@ -232,6 +232,13 @@ pub fn project_object(
 /// `_projectObject()` — one arm in three.js too, because everything it does
 /// reads `object.geometry` and `object.material` and neither the frustum test
 /// nor the sort `z` cares which primitive the object draws.
+///
+/// `object.isSprite` has an arm of its own in three.js, which this one folds
+/// in: its frustum test is `Sprite.intersectsFrustum()` —
+/// `frustum.intersectsSprite( this )`, reached through
+/// [`Payload::bounding_sphere_in`] like everyone else's — and its sort `z` is
+/// the object's origin rather than a geometry bounding-sphere centre. The rest
+/// is the same.
 ///
 /// `object.isLineLoop` is *not* handled: three.js' own arm above this one calls
 /// `error( 'Renderer: Objects of type THREE.LineLoop are not supported…' )`, so
@@ -291,7 +298,12 @@ fn project_drawable(
 
     // `_vector4.copy( geometry.boundingSphere.center )
     //      .applyMatrix4( object.matrixWorld ).applyMatrix4( _projScreenMatrix )`
-    let z = if sort_objects {
+    let z = if sort_objects && o.payload.is_sprite() {
+        // `_vector4.setFromMatrixPosition( object.matrixWorld )
+        //      .applyMatrix4( _projScreenMatrix )`
+        let e = &o.matrix_world.elements;
+        apply_matrix4_vector4(&camera.proj_screen_matrix, [e[12], e[13], e[14], e[15]])[2]
+    } else if sort_objects {
         let center = geometry.bounding_sphere_center();
         let v = apply_matrix4_vector4(&o.matrix_world, [center.x, center.y, center.z, 1.0]);
         apply_matrix4_vector4(&camera.proj_screen_matrix, v)[2]

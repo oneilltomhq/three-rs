@@ -166,6 +166,7 @@ jobs:
       - name: three-rs integration tests (no GPU)
         run: |
           tests=(
+            addons_lines_raycast
             addons_orbit_controls
             animation_animation_action
             animation_animation_clip
@@ -180,6 +181,7 @@ jobs:
             core_buffer_geometry
             core_layers
             core_object3d
+            core_raycaster
             geometries
             gltf_draco
             gltf_loader
@@ -207,12 +209,27 @@ jobs:
             math_vector2
             math_vector3
             math_vector4
+            nodes_fog
+            nodes_display_wgsl
             nodes_instanced_attributes
+            nodes_line2_world_units
             nodes_morph
+            nodes_mx_library
             nodes_mx_noise
             nodes_range_buffers
+            nodes_tsl_batch
+            objects_batched_mesh
             objects_group
+            objects_instanced_mesh
+            objects_line
+            objects_line_segments
+            objects_mesh
+            objects_points
+            objects_skinned_mesh
+            objects_sprite
             pmrem
+            scenes_fog
+            scenes_fog_exp2
             scenes_scene
           )
           for t in "${tests[@]}"; do

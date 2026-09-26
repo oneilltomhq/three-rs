@@ -12,18 +12,16 @@
 //!
 //! Three's material branches at setup time on three flags. Ported here:
 //!
-//! * `_useWorldUnits = false` — the **screen-space** branch of `mvpLine` and
-//!   the round-endcap branch of `alphaLine`.
+//! * `_useWorldUnits` — both branches: the screen-space quad with round caps,
+//!   and the world-space ribbon (`worldStart` / `worldEnd` / `worldPos`
+//!   varying properties, `closestLineToLine`) that `webgpu_lines_fat_raycasting`
+//!   draws, keyed on
+//!   [`Material::world_units`](crate::materials::MeshBasicNodeMaterial::world_units).
 //! * `_useAlphaToCoverage` — both branches, keyed on
 //!   [`Material::alpha_to_coverage`](crate::materials::MeshBasicNodeMaterial::alpha_to_coverage).
 //!
 //! Not ported: `_useDash` (the `instanceDistance*` attributes, `lineDistance`,
-//! `dashSize` / `gapSize` and the `mod`-discard) and `_useWorldUnits`
-//! (`closestLineToLine` and the world-space ribbon). Both are off the graded
-//! frame's path — `webgpu_lines_fat` sets `dashed: false` and leaves world
-//! units at their default — and both want node shapes the port does not have
-//! yet (a `varyingProperty` assigned in the vertex stage before it is read).
-//! `docs/webgpu_lines_fat-progress.md` records them as the rung's gaps.
+//! `dashSize` / `gapSize` and the `mod`-discard). No graded frame dashes.
 
 use std::rc::Rc;
 
@@ -59,13 +57,71 @@ fn trim_segment_alpha() -> Rc<FnDef> {
     )
 }
 
-/// `mvpLine` — the screen-space branch: each segment becomes a quad in NDC,
-/// widened by `materialLineWidth` screen pixels and extended by half a width at
-/// each end for the round caps.
+/// `closestLineToLine( { p1, p2, p3, p4 } )` — the parameters `( mua, mub )`
+/// of the closest points between the lines `p1 p2` and `p3 p4`, each clamped
+/// to its segment. A real WGSL `fn`, as three's `Fn` with a layout is.
+fn closest_line_to_line() -> Rc<FnDef> {
+    shader_fn(
+        None,
+        vec![
+            ("p1", Type::Vec3),
+            ("p2", Type::Vec3),
+            ("p3", Type::Vec3),
+            ("p4", Type::Vec3),
+        ],
+        Type::Vec2,
+        |args| {
+            let (p1, p2, p3, p4) = (
+                args[0].clone(),
+                args[1].clone(),
+                args[2].clone(),
+                args[3].clone(),
+            );
+            let p13 = p1.sub(p3.clone());
+            let p43 = p4.sub(p3);
+            let p21 = p2.sub(p1);
+
+            let d1343 = p13.dot(p43.clone());
+            let d4321 = p43.dot(p21.clone());
+            let d1321 = p13.dot(p21.clone());
+            let d4343 = p43.dot(p43.clone());
+            let d2121 = p21.dot(p21.clone());
+
+            let denom = d2121.mul(d4343.clone()).sub(d4321.mul(d4321.clone()));
+            let numer = d1343.mul(d4321.clone()).sub(d1321.mul(d4343.clone()));
+
+            let mua = numer.div(denom).saturate();
+            let mub = d1343.add(d4321.mul(mua.clone())).div(d4343).saturate();
+
+            vec2_join(vec![mua, mub])
+        },
+    )
+}
+
+/// `varyingProperty( 'vec3', 'worldStart' )` — the segment start in view
+/// space ("world" in three's naming), written by the vertex stage.
+fn world_start() -> NodeRef {
+    varying_property("worldStart", Type::Vec3, false)
+}
+
+/// `varyingProperty( 'vec3', 'worldEnd' )`.
+fn world_end() -> NodeRef {
+    varying_property("worldEnd", Type::Vec3, false)
+}
+
+/// `varyingProperty( 'vec4', 'worldPos' )` — the ribbon corner in view space.
+fn world_pos() -> NodeRef {
+    varying_property("worldPos", Type::Vec4, false)
+}
+
+/// `mvpLine`: each segment becomes a quad. In screen space (the default) the
+/// quad is built in NDC, widened by `materialLineWidth` screen pixels and
+/// extended by half a width at each end for the round caps; with world units
+/// it is a view-space box `materialLineWidth` wide, projected.
 ///
 /// Returns the statements to flow into the vertex stage and the clip-space
 /// position they leave in the `clip` var.
-fn mvp_line(attributes: &LineSegmentsAttributes) -> (Vec<NodeRef>, NodeRef) {
+fn mvp_line(attributes: &LineSegmentsAttributes, world_units: bool) -> (Vec<NodeRef>, NodeRef) {
     let (instance_start, instance_end) = attributes.start_end();
 
     // camera space
@@ -80,15 +136,23 @@ fn mvp_line(attributes: &LineSegmentsAttributes) -> (Vec<NodeRef>, NodeRef) {
 
     let mut statements = vec![start.clone(), end.clone()];
 
+    if world_units {
+        statements.push(world_start().assign(start.xyz()));
+        statements.push(world_end().assign(end.xyz()));
+    }
+
     // "special case for perspective projection, and segments that terminate
     // either in, or behind, the camera plane" — 4th entry in the 3rd column.
-    let perspective = camera_projection_matrix()
-        .element(2)
-        .element(3)
-        .equal(float(-1.0));
+    let perspective = to_const(
+        None,
+        camera_projection_matrix()
+            .element(2)
+            .element(3)
+            .equal(float(-1.0)),
+    );
     let trim = trim_segment_alpha();
     statements.push(if_then(
-        perspective,
+        perspective.clone(),
         vec![if_else_if(
             start
                 .z()
@@ -137,6 +201,68 @@ fn mvp_line(attributes: &LineSegmentsAttributes) -> (Vec<NodeRef>, NodeRef) {
 
     let clip = to_var(None, vec4(0.0, 0.0, 0.0, 1.0));
     statements.push(clip.clone());
+
+    if world_units {
+        // get the offset direction as perpendicular to the view vector
+        let world_dir = end.xyz().sub(start.xyz()).normalize();
+        let tmp_fwd = perspective.select(
+            mix(start.xyz(), end.xyz(), float(0.5)).normalize(),
+            vec3(0.0, 0.0, -1.0),
+        );
+        let world_up = world_dir.cross(tmp_fwd).normalize();
+        let world_fwd = world_dir.cross(world_up.clone());
+        let world_pos = world_pos();
+        let below_half = || position_geometry().y().less_than(float(0.5));
+
+        statements.push(world_pos.assign(below_half().select(start.clone(), end.clone())));
+
+        // height offset
+        let hw = material_line_width().mul(float(0.5));
+        statements.push(world_pos.add_assign(vec4_join(vec![
+            position_geometry().x().less_than(float(0.0)).select(
+                world_up.mul(hw.clone()),
+                world_up.mul(hw.clone()).negate(),
+            ),
+            float(0.0),
+        ])));
+
+        // cap extension (`! useDash`; dashes are not ported)
+        statements.push(world_pos.add_assign(vec4_join(vec![
+            below_half().select(
+                world_dir.mul(hw.clone()).negate(),
+                world_dir.mul(hw.clone()),
+            ),
+            float(0.0),
+        ])));
+
+        // add width to the box
+        statements
+            .push(world_pos.add_assign(vec4_join(vec![world_fwd.mul(hw.clone()), float(0.0)])));
+
+        // endcaps
+        statements.push(if_then(
+            position_geometry()
+                .y()
+                .greater_than(float(1.0))
+                .or(position_geometry().y().less_than(float(0.0))),
+            vec![world_pos.sub_assign(vec4_join(vec![
+                world_fwd.mul(float(2.0)).mul(hw),
+                float(0.0),
+            ]))],
+        ));
+
+        // project the worldpos
+        statements.push(clip.assign(camera_projection_matrix().mul(world_pos)));
+
+        // shift the depth of the projected points so the line segments overlap
+        // neatly
+        let clip_pose = to_var(None, vec3(0.0, 0.0, 0.0));
+        statements.push(clip_pose.clone());
+        statements.push(clip_pose.assign(below_half().select(ndc_start, ndc_end)));
+        statements.push(clip.z().assign(clip_pose.z().mul(clip.w())));
+
+        return (statements, clip);
+    }
 
     let offset = to_var(Some("offset"), vec2_join(vec![dir.y(), dir.x().negate()]));
     statements.push(offset.clone());
@@ -197,8 +323,8 @@ fn mvp_line(attributes: &LineSegmentsAttributes) -> (Vec<NodeRef>, NodeRef) {
 /// only thing that lets the fat line reuse `modelViewProjection`. Do not
 /// simplify it: `v_positionView` and `v_modelViewProjection` still appear after
 /// it in three's dump, and so do they here.
-pub fn setup_position(attributes: &LineSegmentsAttributes) -> NodeRef {
-    let (statements, clip) = mvp_line(attributes);
+pub fn setup_position(attributes: &LineSegmentsAttributes, world_units: bool) -> NodeRef {
+    let (statements, clip) = mvp_line(attributes, world_units);
     let local = to_var(
         None,
         model_world_matrix_inverse()
@@ -209,7 +335,9 @@ pub fn setup_position(attributes: &LineSegmentsAttributes) -> NodeRef {
     position_local().assign(block(statements, local.xyz().div(local.w())))
 }
 
-/// `alphaLine` — the round-endcap coverage of a screen-space fat line.
+/// `alphaLine` — the coverage of a fat line: the distance to the segment for
+/// a world-units line (see [`alpha_line_world_units`]), the round endcaps for
+/// a screen-space one.
 ///
 /// The quad runs from `uv.y = -2` to `2` with the segment itself between `-1`
 /// and `1`, so `abs( uv.y ) > 1` is inside one of the two caps and the fragment
@@ -219,7 +347,10 @@ pub fn setup_position(attributes: &LineSegmentsAttributes) -> NodeRef {
 /// by a `discard`; three also requires `renderer.currentSamples > 0` for that
 /// branch, which the port folds into the material flag because a material with
 /// `alphaToCoverage` on an unsampled target is not a case any example makes.
-fn alpha_line(alpha_to_coverage: bool) -> NodeRef {
+fn alpha_line(alpha_to_coverage: bool, world_units: bool) -> NodeRef {
+    if world_units {
+        return alpha_line_world_units(alpha_to_coverage);
+    }
     let v_uv = uv();
     let alpha = to_var(Some("alpha"), float(1.0));
 
@@ -254,6 +385,82 @@ fn alpha_line(alpha_to_coverage: bool) -> NodeRef {
     block(statements, alpha)
 }
 
+/// `alphaLine`'s `useWorldUnits` branch: the view-space distance from the
+/// fragment's view ray to the segment, over `materialLineWidth`. Under an
+/// orthographic projection the rays are parallel to z, so it is the 2D
+/// distance to the segment in view-space xy.
+fn alpha_line_world_units(alpha_to_coverage: bool) -> NodeRef {
+    let alpha = to_var(Some("alpha"), float(1.0));
+    let len = to_var(None, float(0.0));
+    let orthographic = to_const(
+        None,
+        camera_projection_matrix()
+            .element(2)
+            .element(3)
+            .not_equal(float(-1.0)),
+    );
+    let (world_start, world_end, world_pos) = (world_start(), world_end(), world_pos());
+
+    let ortho = {
+        let line_dir = to_const(None, world_end.xy().sub(world_start.xy()));
+        let t = world_pos
+            .xy()
+            .sub(world_start.xy())
+            .dot(line_dir.clone())
+            .div(line_dir.dot(line_dir.clone()))
+            .saturate();
+        vec![
+            line_dir.clone(),
+            len.assign(length(
+                world_start.xy().add(line_dir.mul(t)).sub(world_pos.xy()),
+            )),
+        ]
+    };
+    let persp = {
+        let ray_end = to_const(None, world_pos.xyz().normalize().mul(float(1e5)));
+        let line_dir = world_end.clone().sub(world_start.clone());
+        let params = to_const(
+            None,
+            call(
+                &closest_line_to_line(),
+                vec![
+                    world_start.clone(),
+                    world_end.clone(),
+                    vec3(0.0, 0.0, 0.0),
+                    ray_end.clone(),
+                ],
+            ),
+        );
+        let p1 = world_start.add(line_dir.mul(params.x()));
+        let p2 = ray_end.clone().mul(params.y());
+        vec![ray_end, params.clone(), len.assign(length(p1.sub(p2)))]
+    };
+
+    let norm = to_const(None, len.div(material_line_width()));
+    // `useAlphaToCoverage && renderer.currentSamples > 0`; see `alpha_line`.
+    let coverage = if alpha_to_coverage {
+        let dnorm = to_const(None, fwidth(norm.clone()));
+        vec![
+            norm.clone(),
+            dnorm.clone(),
+            alpha.assign(
+                smoothstep(dnorm.negate().add(float(0.5)), dnorm.add(float(0.5)), norm).one_minus(),
+            ),
+        ]
+    } else {
+        vec![if_then(norm.greater_than(float(0.5)), vec![discard()])]
+    };
+
+    let mut statements = vec![
+        alpha.clone(),
+        len.clone(),
+        orthographic.clone(),
+        if_else(orthographic, ortho, persp),
+    ];
+    statements.extend(coverage);
+    block(statements, alpha)
+}
+
 /// `Line2NodeMaterial.setupDiffuseColor()`'s two additions over
 /// `NodeMaterial`'s: the coverage multiply, and the per-end instance colour.
 ///
@@ -263,6 +470,7 @@ fn alpha_line(alpha_to_coverage: bool) -> NodeRef {
 /// selected per end here, in the *fragment* stage, through two varyings.
 pub fn setup_diffuse_color(
     alpha_to_coverage: bool,
+    world_units: bool,
     vertex_colors: bool,
     attributes: &LineSegmentsAttributes,
     fragment: &mut Vec<NodeRef>,
@@ -270,7 +478,7 @@ pub fn setup_diffuse_color(
     fragment.push(
         diffuse_color()
             .w()
-            .mul_assign(alpha_line(alpha_to_coverage)),
+            .mul_assign(alpha_line(alpha_to_coverage, world_units)),
     );
 
     if vertex_colors {

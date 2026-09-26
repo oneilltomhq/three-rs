@@ -633,3 +633,44 @@ unaffected: it binds a render target, so it takes the first branch and keeps
 `renderer.samples()`. That is where this page's antialiasing actually happens —
 the scene is drawn 4x into the pass target and resolved before bloom ever
 samples it.
+
+## The display nodes of #144
+
+`src/nodes/display/` now also has these ports of
+`examples/jsm/tsl/display/`:
+
+- `GaussianBlurNode`;
+- `SobelOperatorNode`, `DotScreenNode`, `RGBShiftNode` and `TransitionNode`;
+- `hashBlur` and `boxBlur`;
+- `AfterImageNode` and `PixelationPassNode`.
+
+`tests/nodes_display_wgsl.rs` gates each against three's dump of a page that
+uses it. `webgpu_procedural_texture`, `webgpu_postprocessing_sobel` and
+`webgpu_postprocessing_transition` are the graded rungs.
+
+The nodes follow the shapes above:
+
+- The single-pass nodes are functions that return a node.
+- `GaussianBlurNode` and `AfterImageNode` own their targets and quads, as
+  `BloomNode` does. Their `render()` is `updateBefore()`, fired by the example.
+- `PixelationPassNode` wraps a `PassNode` rather than subclassing one. The
+  wrapped pass renders nearest-filtered at `floor( drawingBuffer / pixelSize )`,
+  through `PassNode`'s new size divisor, with an `{ output, normal }` MRT.
+  `PassNode::render` now takes any `RenderCamera` because that page's camera
+  is orthographic.
+
+Divergences, each noted where it lives:
+
+- A node that three hands a `TextureNode` takes a `&Texture`. The example
+  makes the `convertToTexture()` RTT itself, as `webgpu_postprocessing_ca`
+  does.
+- `DotScreenNode` reads `screenSize` from the viewport size, the uniform
+  three's dump binds (`render.nodeUniform1`). It does not add a setter.
+- `TransitionNode`'s mix texture is fixed when the node is built. Three
+  swaps `mixTextureNode.value` per frame.
+- `AfterImageNode` keeps last frame's output with the render target's
+  previous-texture swap from `webgpu_postprocessing_difference`. It does not
+  copy.
+- `hashBlur` over `viewportSharedTexture()` (`webgpu_backdrop_area`) needs a
+  viewport texture the port does not have yet. `hash_blur_with` takes any tap,
+  so that page can pass one once the texture exists.
