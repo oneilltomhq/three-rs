@@ -2032,6 +2032,7 @@ fn main() {
     // rung webgpu_postprocessing_ca.
     dump_room_environment();
     dump_scene_fog();
+    dump_shadowmap_opacity();
     dump_chromatic_aberration();
 
     // #144's display nodes, each as the three.js page that dumps it builds it:
@@ -2474,5 +2475,63 @@ fn dump_scene_fog() {
             ..SetupContext::default()
         },
         Some(&height_fog),
+    );
+}
+
+/// Rung `webgpu_shadowmap_opacity`, against
+/// `target/dumps/webgpu_shadowmap_opacity/m*.wgsl`: the shadow pass's override
+/// material for a caster with a `castShadowNode` (m01, m02 with the red
+/// colour), the backdrop receiving a PCF shadow with `shadowMap.transmitted`
+/// (m05), and the output pass with AgX tone mapping (m09).
+fn dump_shadowmap_opacity() {
+    let mut dragon = MeshBasicNodeMaterial::physical(Color::from_hex(0xffffff), 0.0, 0.0);
+    dragon.cast_shadow_node = Some(mix(
+        vec3(1.0, 1.0, 1.0),
+        three_rs::nodes::NodeRef::from(Color::new(0.921, 0.64, 0.064)),
+        float(1.0),
+    ));
+    show(
+        "shadowmap_opacity_cast_shadow",
+        &three_rs::materials::shadow_material_for(&dragon, Default::default()),
+        SetupContext::default(),
+    );
+
+    let cloth = Texture::new(2, 2, Some(vec![0; 16]));
+    let mut backdrop = MeshBasicNodeMaterial::standard(Color::from_hex(0xffffff), 0.4935, 0.0);
+    backdrop.map = Some(cloth);
+    let colour = Texture::render_target(2048, 2048, wgpu::TextureFormat::Rgba8Unorm);
+    show(
+        "shadowmap_opacity_backdrop",
+        &backdrop,
+        SetupContext {
+            lights: vec![
+                LightDesc {
+                    index: 0,
+                    kind: LightKind::Ambient,
+                    shadow_map: None,
+                },
+                LightDesc {
+                    index: 1,
+                    kind: LightKind::Directional,
+                    shadow_map: Some(ShadowMap::Transmitted {
+                        map: Box::new(ShadowMap::Planar(DepthTexture::new())),
+                        color: colour,
+                    }),
+                },
+            ],
+            ..SetupContext::default()
+        },
+    );
+
+    let framebuffer = Texture::render_target(800, 500, wgpu::TextureFormat::Rgba16Float);
+    let mut out = MeshBasicNodeMaterial::new();
+    out.fragment_node = Some(three_rs::materials::output_fragment_node(
+        &framebuffer,
+        three_rs::ToneMapping::AgX,
+    ));
+    show(
+        "shadowmap_opacity_output_agx",
+        &out,
+        SetupContext::default(),
     );
 }
