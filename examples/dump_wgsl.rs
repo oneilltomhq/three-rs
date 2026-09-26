@@ -30,6 +30,10 @@ mod webgpu_compute_points;
 #[allow(dead_code)]
 mod webgpu_postprocessing_anamorphic;
 
+#[path = "webgpu_instance_path.rs"]
+#[allow(dead_code)]
+mod webgpu_instance_path;
+
 #[path = "webgpu_tsl_interoperability.rs"]
 #[allow(dead_code)]
 mod webgpu_tsl_interoperability;
@@ -1924,6 +1928,63 @@ fn main() {
     show("custom_fog_quad", &custom_fog_quad, SetupContext::default());
 
     dump_deferred();
+    dump_instance_path();
+    dump_modifier_curve();
+}
+
+/// Rung `webgpu_modifier_curve`: the text's `Flow`-bent
+/// `MeshStandardNodeMaterial` under the page's directional and ambient
+/// lights, against `dump-modifier_curve/m0{2,3}`.
+fn dump_modifier_curve() {
+    let flow = three_rs::addons::curve_modifier_gpu::Flow::new(
+        std::rc::Rc::new(three_rs::core::BufferGeometry::new()),
+        &MeshBasicNodeMaterial::standard(Color::from_hex(0x99ffff), 1.0, 0.0),
+        1,
+    );
+    let object = flow.object3d.borrow();
+    let material = object.payload.mesh().unwrap().material.clone().unwrap();
+    show(
+        "modifier_curve_text",
+        &material,
+        SetupContext {
+            lights: vec![
+                LightDesc {
+                    index: 0,
+                    kind: LightKind::Directional,
+                    shadow_map: None,
+                },
+                LightDesc {
+                    index: 1,
+                    kind: LightKind::Ambient,
+                    shadow_map: None,
+                },
+            ],
+            ..SetupContext::default()
+        },
+    );
+}
+
+/// Rung `webgpu_instance_path`: the thousand instanced ico-spheres'
+/// `MeshStandardNodeMaterial`, against `dump-instance_path/m1{5,6}`.
+fn dump_instance_path() {
+    let material = webgpu_instance_path::material(&webgpu_instance_path::heart_path());
+    let cube = CubeTexture::new(vec![
+        Image {
+            width: 1,
+            height: 1,
+            data: vec![0; 4],
+        };
+        6
+    ]);
+    let environment = PmremEnvironment::new(&cube);
+    show(
+        "instance_path_spheres",
+        &material,
+        SetupContext {
+            environment: Some(environment.handle()),
+            ..SetupContext::default()
+        },
+    );
 }
 
 /// rung `webgpu_deferred`: the G-buffer material and the resolve quad, against

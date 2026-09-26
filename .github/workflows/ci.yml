@@ -180,7 +180,11 @@ jobs:
             core_buffer_geometry
             core_layers
             core_object3d
+            extras_catmull_rom_curve3
+            extras_core
+            extras_curves
             geometries
+            geometries_shape_oracle
             gltf_loader
             math_box2
             math_box3

@@ -120,6 +120,16 @@ impl CatmullRomCurve3 {
 }
 
 impl Curve for CatmullRomCurve3 {
+    type Point = Vector3;
+
+    fn type_name(&self) -> &'static str {
+        "CatmullRomCurve3"
+    }
+
+    fn is_closed_catmull_rom(&self) -> bool {
+        self.closed
+    }
+
     /// `CatmullRomCurve3.getPoint( t, optionalTarget )`.
     fn get_point(&self, t: f64) -> Vector3 {
         let mut point = Vector3::default();

@@ -109,6 +109,14 @@ mod webgpu_depth_texture;
 #[allow(dead_code)]
 mod webgpu_instance_mesh;
 
+#[path = "../../examples/webgpu_instance_path.rs"]
+#[allow(dead_code)]
+mod webgpu_instance_path;
+
+#[path = "../../examples/webgpu_modifier_curve.rs"]
+#[allow(dead_code)]
+mod webgpu_modifier_curve;
+
 #[path = "../../examples/webgpu_instance_uniform.rs"]
 #[allow(dead_code)]
 mod webgpu_instance_uniform;
@@ -353,6 +361,98 @@ fn webgpu_instance_mesh() {
         out.display()
     );
     steady_frame(name, &mut app, webgpu_instance_mesh::animate, |app| {
+        app.renderer.device()
+    });
+}
+
+/// Not graded: three.js itself scores 0.314% (314 pixels) against its own
+/// `webgpu_instance_path.jpg` on this machine, over the 0.1% limit, and the
+/// port's frame is pixel-identical to three's (`tools/dump-webgpu.mjs`'
+/// `actual_full.png`, max channel difference 0). See
+/// `docs/webgpu_modifier_curve-progress.md`.
+#[test]
+#[ignore = "three.js itself fails its own reference for this page on this machine"]
+fn webgpu_instance_path() {
+    let name = "webgpu_instance_path";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_instance_path::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_instance_path::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+
+    steady_frame(name, &mut app, webgpu_instance_path::animate, |app| {
+        app.renderer.device()
+    });
+}
+
+#[test]
+fn webgpu_modifier_curve() {
+    let name = "webgpu_modifier_curve";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_modifier_curve::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_modifier_curve::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+
+    steady_frame(name, &mut app, webgpu_modifier_curve::animate, |app| {
         app.renderer.device()
     });
 }
@@ -2652,6 +2752,8 @@ fn steady_frame_builds_nothing() {
 
     rung!(webgpu_depth_texture);
     rung!(webgpu_instance_mesh);
+    rung!(webgpu_instance_path);
+    rung!(webgpu_modifier_curve);
     rung!(webgpu_instance_uniform);
     rung!(webgpu_materials);
     rung!(webgpu_materials_basic);

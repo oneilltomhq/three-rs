@@ -1349,6 +1349,27 @@ impl NodeRef {
         binary("-", float(1.0), self.clone())
     }
 
+    /// `remap( node, inLow, inHigh, outLow = 0, outHigh = 1 )` — `RemapNode`
+    /// without `doClamp`, which `setup()`s to
+    /// `node.sub( inLow ).div( inHigh.sub( inLow ) ).mul( outHigh.sub( outLow ) ).add( outLow )`.
+    /// Nothing is folded, so `remap( 0, 0.1, 3, 1 )` emits
+    /// `( ( ( ( x - 0.0 ) / ( 0.1 - 0.0 ) ) * ( 1.0 - 3.0 ) ) + 3.0 )` as
+    /// three.js does. Pass `float( 0.0 )` / `float( 1.0 )` for the defaults.
+    pub fn remap(
+        &self,
+        in_low: impl Into<NodeRef>,
+        in_high: impl Into<NodeRef>,
+        out_low: impl Into<NodeRef>,
+        out_high: impl Into<NodeRef>,
+    ) -> NodeRef {
+        let in_low = in_low.into();
+        let out_low = out_low.into();
+        self.sub(in_low.clone())
+            .div(in_high.into().sub(in_low))
+            .mul(out_high.into().sub(out_low.clone()))
+            .add(out_low)
+    }
+
     pub fn negate(&self) -> NodeRef {
         NodeRef::new(Node::Neg {
             node: self.clone(),

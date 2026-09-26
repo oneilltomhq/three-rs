@@ -17,5 +17,7 @@
 //! over a ground, not a port of anything in three.js — and stays where it is.
 
 pub mod controls;
+pub mod curve_modifier_gpu;
 pub mod geometry_utils;
 pub mod lines;
+pub mod text_geometry;

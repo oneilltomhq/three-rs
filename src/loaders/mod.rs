@@ -2,6 +2,7 @@
 
 mod buffer_geometry_loader;
 mod cube_texture_loader;
+mod font_loader;
 mod gif;
 mod gltf_loader;
 mod hdr_cube_texture_loader;
@@ -11,6 +12,7 @@ mod ultra_hdr_loader;
 
 pub use buffer_geometry_loader::BufferGeometryLoader;
 pub use cube_texture_loader::CubeTextureLoader;
+pub use font_loader::{Font, FontLoader, TextDirection};
 pub use gltf_loader::{
     sanitize_node_name, ComponentType, GLTFLoader, Gltf, GltfImage, GltfMaterial, GltfPrimitive,
     GltfTexture,

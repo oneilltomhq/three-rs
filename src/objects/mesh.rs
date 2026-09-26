@@ -30,6 +30,14 @@ pub struct Mesh {
     /// `docs/webgpu_lines_fat-progress.md` for the follow-up that moves them on
     /// to `BufferGeometry`.
     pub line_segments: Option<crate::nodes::lines::LineSegmentsAttributes>,
+    /// `mesh.count`, which is **not** a `Mesh` property in three.js: a page
+    /// sets it ad hoc (`webgpu_instance_path`'s `mesh.count = 1000`) and
+    /// `RenderObject.getInstanceCount()` (`RenderObject.js:617-631`) reads it
+    /// as `object.count !== undefined ? max( 0, object.count ) : 1`, so a
+    /// plain mesh draws that many instances and `instancedBufferAttribute`
+    /// nodes index them. `None` is `undefined`. [`Points::count`](crate::objects::Points)
+    /// is the same thing on `Points`.
+    pub count: Option<usize>,
 }
 
 impl Mesh {
@@ -62,6 +70,7 @@ impl Mesh {
             material: material.into(),
             morph_target_influences,
             line_segments: None,
+            count: None,
         });
         object.into_node()
     }
@@ -82,6 +91,7 @@ impl Mesh {
             material,
             morph_target_influences,
             line_segments: None,
+            count: None,
         }
     }
 

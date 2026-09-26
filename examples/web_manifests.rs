@@ -185,6 +185,10 @@ mod webgpu_deferred;
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_loader_gltf_anisotropy;
 
+#[path = "webgpu_modifier_curve.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_modifier_curve;
+
 /// Every graded example, in the README's order, paired with a call of its
 /// `init()`.
 ///
@@ -286,6 +290,9 @@ const GRADED: &[(&str, fn())] = &[
     ("webgpu_deferred", || drop(webgpu_deferred::init())),
     ("webgpu_loader_gltf_anisotropy", || {
         drop(webgpu_loader_gltf_anisotropy::init())
+    }),
+    ("webgpu_modifier_curve", || {
+        drop(webgpu_modifier_curve::init())
     }),
 ];
 

@@ -233,6 +233,7 @@ impl LineSegments2 {
             material: Some(material),
             morph_target_influences: Vec::new(),
             line_segments: Some(geometry.attributes()),
+            count: None,
         });
         object.into_node()
     }

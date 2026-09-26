@@ -28,7 +28,11 @@ Linux is the only backend that has been run.
   attributes, layers, cameras. Verified against Three's QUnit tests.
 - **Geometries.** Box, Plane, Cylinder, Cone, Torus, the polyhedra, Circle,
   Ring, Lathe, Capsule, plus the Teapot and RoundedBox addons, bit-exact
-  against samples generated from Three.
+  against samples generated from Three. The curve family (`Curve`,
+  `CurvePath`, lines, Béziers, ellipses/arcs, splines, `CatmullRomCurve3`),
+  `Path` / `Shape` / `ShapePath`, `ShapeUtils` with Earcut, and `Shape`,
+  `Extrude` and `Tube` geometries, with their QUnit ports and a 1e-6 oracle
+  against Three's own output.
 - **Node system (TSL).** A `NodeBuilder` that generates both WGSL stages and the
   bind group layout from a node graph, following Three's `nodes/` and
   `renderers/webgpu/nodes/`. Generated WGSL is kept structurally identical to
@@ -45,14 +49,16 @@ Linux is the only backend that has been run.
 - **Addons.** `src/addons/` holds the `three/addons/…` tier that the graded
   examples import: `lines` (`LineSegmentsGeometry`, `LineGeometry`,
   `LineSegments2`, `Line2` — fat lines, with `Line2NodeMaterial` in core beside
-  them, as three.js ships it), `geometry_utils`, and `controls::OrbitControls`,
+  them, as three.js ships it), `geometry_utils`, `text_geometry`
+  (`TextGeometry`), `curve_modifier_gpu` (`Flow`), and `controls::OrbitControls`,
   a port of the JS class graded against the JS class itself. An addon that
   needs nothing from core would be a workspace crate instead — `addons/controls`
   is one — and that stays the preferred shape; these live in the root crate
   because the e2e harness pulls examples in with `#[path = "../../examples/…"]`,
   and an example in another crate would need its own test binary.
 - **Loaders.** glTF/GLB (all accessor types, skins, animations, KHR specular
-  and ior), textures (PNG, JPEG), cube textures.
+  and ior), textures (PNG, JPEG), cube textures, typeface.json fonts
+  (`FontLoader`).
 - **Animation.** Interpolants, keyframe tracks, clips, `PropertyMixer`,
   `AnimationAction` and `AnimationMixer`.
 - **Workspace crate.** `sdf-text`: signed-distance-field text rendering with
@@ -84,8 +90,8 @@ Linux is the only backend that has been run.
 | [`webgpu_postprocessing_bloom_emissive`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_bloom_emissive.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_bloom_emissive-progress.md) | [`webgpu_instance_uniform`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_instance_uniform.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_instance_uniform-progress.md) | [`webgpu_tsl_interoperability`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_tsl_interoperability.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_tsl_interoperability-progress.md) | [`webgpu_pmrem_equirectangular`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_pmrem_equirectangular.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_pmrem_equirectangular-progress.md) |
 | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_postprocessing_ca.jpg" alt="webgpu_postprocessing_ca" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_postprocessing_ca) | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_loader_gltf.jpg" alt="webgpu_loader_gltf" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_loader_gltf) | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_mrt.jpg" alt="webgpu_mrt" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_mrt) | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_custom_fog_background.jpg" alt="webgpu_custom_fog_background" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_custom_fog_background) |
 | [`webgpu_postprocessing_ca`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_ca.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_ca-progress.md) | [`webgpu_loader_gltf`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_loader_gltf.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_loader_gltf-progress.md) | [`webgpu_mrt`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_mrt.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_loader_gltf-progress.md) | [`webgpu_custom_fog_background`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_custom_fog_background.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_custom_fog_background-progress.md) |
-| [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_loader_gltf_sheen.jpg" alt="webgpu_loader_gltf_sheen" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_loader_gltf_sheen) | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_deferred.jpg" alt="webgpu_deferred" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_deferred) | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_loader_gltf_anisotropy.jpg" alt="webgpu_loader_gltf_anisotropy" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_loader_gltf_anisotropy) |  |
-| [`webgpu_loader_gltf_sheen`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_loader_gltf_sheen.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_loader_gltf_sheen-progress.md) | [`webgpu_deferred`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_deferred.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_deferred-progress.md) | [`webgpu_loader_gltf_anisotropy`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_loader_gltf_anisotropy.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_loader_gltf_anisotropy-progress.md) |  |
+| [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_loader_gltf_sheen.jpg" alt="webgpu_loader_gltf_sheen" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_loader_gltf_sheen) | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_deferred.jpg" alt="webgpu_deferred" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_deferred) | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_loader_gltf_anisotropy.jpg" alt="webgpu_loader_gltf_anisotropy" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_loader_gltf_anisotropy) | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_modifier_curve.jpg" alt="webgpu_modifier_curve" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_modifier_curve) |
+| [`webgpu_loader_gltf_sheen`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_loader_gltf_sheen.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_loader_gltf_sheen-progress.md) | [`webgpu_deferred`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_deferred.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_deferred-progress.md) | [`webgpu_loader_gltf_anisotropy`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_loader_gltf_anisotropy.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_loader_gltf_anisotropy-progress.md) | [`webgpu_modifier_curve`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_modifier_curve.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_modifier_curve-progress.md) |
 
 <sub>Our own rendered frames, one per graded example. Each thumbnail opens the example running in your browser on WebGPU ([all of them](https://oneilltomhq.github.io/three-rs/)); the caption links the ported source. See [`docs/gallery.md`](https://github.com/oneilltomhq/three-rs/blob/main/docs/gallery.md).</sub>
 <!-- gallery:end -->
@@ -141,6 +147,7 @@ same screenshots at the same threshold (see
 | webgpu_loader_gltf_sheen | 28 | 3.1 | 6 | 41921 | yes |
 | webgpu_deferred | 0 | 2.8 | 25 | 26378 | yes |
 | webgpu_loader_gltf_anisotropy | 94 | 3.2 | 5 | 12188 | yes |
+| webgpu_modifier_curve | 3 (Three itself scores 3 against the same JPEG) | 1.3 | 7 | 34753 (+ 50 lines) | yes |
 
 `webgpu_compute_points` is graded like the rest and its 4 pixels mean less
 than the rest: its frame is black apart from a 2x2 block at the centre, so
@@ -203,12 +210,12 @@ cargo run --release --bin viewer -- 8                        # the same, by key
 cargo run --release --bin viewer -- shadowmap --headless --frames 40
 ```
 
-Opens the named example in a window (winit, tested on Wayland). All 39 graded
+Opens the named example in a window (winit, tested on Wayland). All 40 graded
 examples are there, and each one animates, orbits, dollies and pans through
 its *own* `animate()`, `resize()` and `OrbitControls` — the viewer drives the
 example, it does not restate it. `--list` prints the examples with their keys,
 and a key stands in for the name on the command line; in the window, `[` and
-`]` step to the previous and next example, because 39 of them do not fit in
+`]` step to the previous and next example, because 40 of them do not fit in
 the 36 single keys a keyboard has. The window prints one line a second with
 the frame rate and the steady-state render time (mean and max over the last
 60 frames, after a 10-frame warm-up):
@@ -234,7 +241,7 @@ workspace crates that depend on `three-rs` and are not ports of anything in
 three.js' `src/`.
 
 `three_rs::addons::controls::OrbitControls` is the exception to that rule, and
-it is in the root crate rather than a workspace one: 27 of the 39 graded pages
+it is in the root crate rather than a workspace one: 27 of the 40 graded pages
 create an `OrbitControls`, and an example pulled in by `#[path]` cannot reach a
 crate that depends on `three-rs`. It is a port of
 `examples/jsm/controls/OrbitControls.js` — the same state, the same defaults,
