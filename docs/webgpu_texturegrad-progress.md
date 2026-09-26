@@ -30,12 +30,12 @@ page loaded.
 | `examples/` | `webgpu_texturegrad.rs`; a `dump_wgsl` section `texturegrad` |
 | `tests/` | `nodes_texture_wgsl.rs::texturegrad_fragment_matches_three` against three's verbatim `m02` |
 
-`docs/nodes.md` §36 is the long form.
+`docs/nodes.md` §44 is the long form.
 
 ## What the pixels found
 
 Nothing to chase: the first frame graded 0 pixels. The page's two canvases
 are two `WebGPURenderer`s, one on the WebGL backend; the port renders both
 halves of one canvas through the viewport and the scissor with the WGSL path
-(§36), and the right half matches the WebGL canvas to the grader's
+(§44), and the right half matches the WebGL canvas to the grader's
 threshold.

@@ -85,7 +85,7 @@ pub fn color_node(map: &Texture) -> NodeRef {
     // Three's dump names each tap's uv in a `let nodeConstN` just before the
     // tap — `TextureNode.setup()` wraps the uv in an inline `Fn()`, and the
     // builder counts the sum as read twice — so the port asks for the `let`
-    // here too (`docs/nodes.md` §36).
+    // here too (`docs/nodes.md` §44).
     let tap = |x: NodeRef, y: NodeRef| {
         texture_grad(
             map,

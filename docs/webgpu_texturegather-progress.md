@@ -30,7 +30,7 @@ path is the `m04` fragment.
 | `examples/` | `webgpu_texturegather.rs`; a `dump_wgsl` section `texturegather` |
 | `tests/` | `nodes_texture_wgsl.rs::texturegather_fragment_matches_three` against three's verbatim `m04` |
 
-`docs/nodes.md` §36 is the long form.
+`docs/nodes.md` §44 is the long form.
 
 ## What the pixels found
 

@@ -17,7 +17,7 @@
 //!
 //! The page's two canvases (a WebGPU backend and a `forceWebGL` one) are the
 //! two halves of one canvas here, as in `webgpu_texturegrad`; see that
-//! example's module docs and `docs/nodes.md` §36.
+//! example's module docs and `docs/nodes.md` §44.
 //!
 //! The page asks the target for `generateMipmaps: true` and
 //! `minFilter: LinearMipmapLinearFilter`. `textureGather` reads mip level 0
