@@ -290,6 +290,9 @@ FogHeight, webgpu_fog_height, "../../examples/webgpu_fog_height.rs";
 ShadowmapOpacity, webgpu_shadowmap_opacity, "../../examples/webgpu_shadowmap_opacity.rs";
 Texturegrad, webgpu_texturegrad, "../../examples/webgpu_texturegrad.rs";
 Texturegather, webgpu_texturegather, "../../examples/webgpu_texturegather.rs";
+LightsSelective, webgpu_lights_selective, "../../examples/webgpu_lights_selective.rs";
+LoaderGltfCompressed, webgpu_loader_gltf_compressed, "../../examples/webgpu_loader_gltf_compressed.rs";
+Equirectangular, webgpu_equirectangular, "../../examples/webgpu_equirectangular.rs";
 SkinningPoints, webgpu_skinning_points, "../../examples/webgpu_skinning_points.rs";
 InstancePoints, webgpu_instance_points, "../../examples/webgpu_instance_points.rs";
 }

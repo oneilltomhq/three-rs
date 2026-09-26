@@ -4436,6 +4436,113 @@ reason, and the page stays in the steady-frame strip.
   three does not. The value, the calls and the literals are the same, and
   the frame is byte-identical to three's. The port's usage analysis is
   shared by every rung, so this is recorded rather than changed.
+
+## 46. Sampler anisotropy, a transparent canvas, and `float()` on standard nodes (`webgpu_textures_anisotropy`, `webgpu_lights_selective`)
+
+**Anisotropy needs all-linear filters.** `WebGPUTextureUtils.updateSampler()`
+copies `texture.anisotropy` into the descriptor's `maxAnisotropy` only when
+`magFilter`, `minFilter` and `mipmapFilter` are all `'linear'`. Otherwise it
+leaves the reset descriptor's 1. `SamplerKey::of()` applies the same rule to
+2-D and cube textures. It has to: wgpu's `anisotropy_clamp` fails validation
+above 1 unless every filter is linear, so the old copy-through would have
+failed on a `NearestFilter` texture that asked for anisotropy.
+`Renderer::get_max_anisotropy()` is `WebGPUCapabilities.getMaxAnisotropy()`,
+which returns 16 without asking the adapter. wgpu then clamps the value to
+what the hardware supports, as Dawn does.
+
+The key already carried `anisotropy_clamp`, and three's own sampler key
+includes `texture.anisotropy`. So the two halves of
+`webgpu_textures_anisotropy`, identical but for 16 against 1, get two
+samplers in the port as in three's dump (samplers 30 and 73 there).
+
+**Ungraded on this machine.** The port's frame is pixel-identical to three's
+frame here (max channel difference 0), and three's frame scores 9234 of
+100000 against its own reference. Both halves differ, including the one with
+no anisotropy, so the reference's GPU minifies differently. The e2e test is
+`#[ignore]`d, like `webgpu_instance_path`'s
+(`docs/webgpu_textures_anisotropy-progress.md`).
+
+**A transparent canvas is graded over the page.** With `alpha: true`, the
+`WebGPURenderer` default, three's clear colour is `( 0, 0, 0, 0 )`.
+`WebGPUBackend.getClearColor()` premultiplies it, and the canvas is configured
+`alphaMode: 'premultiplied'`. Wherever nothing draws, Chrome shows the page
+behind the canvas, and `page.screenshot()` captures that composite. Until now
+this never mattered. Every graded page either covered its canvas (a
+background, a full-screen quad) or had `example.css`'s black `<body>`, where
+source-over of premultiplied colour onto black is the colour itself.
+`webgpu_textures_anisotropy` sets `body { background-color: #f1f1f1 }` in its
+own `<style>`, and the floor does not reach the horizon. Everything above the
+far plane is that grey.
+
+`testing::composite_over_page( pixels, 0xf1f1f1 )` is that composite: `c +
+page * ( 1 - a )` per 8-bit channel, alpha set to 255. The colour is the
+page's CSS, carried on the example as `PAGE_BACKGROUND`. It is not taken from
+the reference image. The renderer is unchanged: the canvas it hands back
+still has alpha 0 there, as three's does. Only the harness, standing in for
+the browser's compositor, applies the page colour.
+
+**`float()` around `metalnessNode` and `roughnessNode`.**
+`MeshStandardNodeMaterial.setupVariants()` starts with
+
+```js
+const metalnessNode = this.metalnessNode ? float( this.metalnessNode ) : materialMetalness;
+let roughnessNode = this.roughnessNode ? float( this.roughnessNode ) : materialRoughness;
+```
+
+and the port used the node as given. For a float node there is no
+difference. For `texture( alphaTexture )`, a `vec4`, the conversion is
+`.x`, and it matters where the node is reused. `diffuseContribution =
+diffuseColor.rgb.mul( metalnessNode.oneMinus() )` became `( vec4( diffuse,
+1 ) * ( 1 - map ) ).xyz`, one minus each channel of the map, instead of
+`diffuse * ( 1 - map.x )`. `getRoughness()`'s clamp ran on four lanes before
+`Roughness` took `.x`. Both now emit what three's dump has (`m02`, `m06` of
+`webgpu_lights_selective`). The test texture is grey, so the frame could not
+show the bug. The WGSL comparison found it.
+
+## 48. `frontFacing` outside the fragment stage, and `vec4()` of a vec4 background (`webgpu_loader_gltf_compressed`, `webgpu_equirectangular`)
+
+Two small gaps, each found by the first page that reached it.
+
+**`FrontFacingNode.generate()` writes `true` outside the fragment stage.**
+A double-sided material on a geometry with a `tangent` attribute builds
+`bitangentView` in the vertex stage: `Bitangent.js` crosses
+`normalView` and `tangentView` there and hands the product over as the
+`NORMAL_v_bitangentView` varying. Both factors go through
+`negateOnBackSide()`, which for `DoubleSide` multiplies by `faceDirection`,
+which reads `frontFacing`. WGSL has no `@builtin( front_facing )` in a
+vertex entry point, and three never asks for one there: its
+`FrontFacingNode.generate()` returns the literal `'true'` whenever
+`builder.shaderStage !== 'fragment'`, so three's dump reads
+`( ( f32( true ) * 2.0 ) - 1.0 )` in the vertex stage and
+`( ( f32( isFront ) * 2.0 ) - 1.0 )` in the fragment. The port declared the
+builtin in whatever stage read it, and wgpu refused the vertex module
+("Built-in FrontFacing is not available at this stage"). `NodeBuilder`'s
+`Node::Builtin` arm now returns `true` for `FrontFacing` in any stage but the
+fragment. No earlier rung took this path, because it needs all three: a
+double-sided material, a normal map (only the normal map reads the tangent
+frame), and a `tangent` attribute. The barn lamp has tangents and normal
+maps but is single sided. `PrimaryIonDrive`'s double-sided materials have
+tangents but no normal map. coffeemat has all three.
+
+Three's `generate()` also returns `'false'` for a `BackSide` material. The
+port does not need that branch: its `negate_on_back_side()` multiplies a
+back-sided vector by `-1` and never reads `frontFacing`, as three's does.
+
+**`vec4( backgroundNode )` of a node that is already a vec4 is the node.**
+`Background.update()` colours the skybox with
+`vec4( backgroundNode ).mul( backgroundIntensity )`. Every background node
+the ladder had used before was a colour, a vec3, so
+`background_node_color_node` always appended `1.0`.
+`webgpu_equirectangular`'s node is `texture( map, equirectUV(), 0 )`, a vec4
+sample, and appending to it would build a five-component join. The function
+now keeps a vec4 node as it is and appends `1.0` to anything else. Three's
+dump shows `DiffuseColor = ( nodeVar0 * vec4<f32>( render.nodeUniform2 ) )`,
+the sample times the intensity with no constructor around it, and so does
+the port's `dump_wgsl` section `background_equirect`.
+
+Nothing else was missing. `equirect_uv`, `texture_level`, the meshopt
+decoder, `KHR_mesh_quantization`, the `KHR_texture_basisu` transcode and
+`KHR_texture_transform` were all already in place.
 ## 44. Compute skinning and points on a `Sprite` (`webgpu_skinning_points`)
 
 ### 44.1 A `ComputeNode` read as a value

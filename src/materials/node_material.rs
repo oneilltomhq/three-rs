@@ -931,9 +931,15 @@ pub fn background_pmrem_color_node(pmrem: &crate::materials::environment::PmremH
 }
 
 /// `Background.update()`'s `isNode` branch:
-/// `vec4( backgroundNode ).mul( backgroundIntensity )`.
+/// `vec4( backgroundNode ).mul( backgroundIntensity )`. `vec4()` of a node
+/// that already is one is the node itself — `webgpu_equirectangular`'s
+/// `texture( map, equirectUV(), 0 )` — and of a colour it appends `1.0`.
 pub fn background_node_color_node(node: NodeRef) -> NodeRef {
-    vec4_join(vec![node, float(1.0)]).mul(background_intensity())
+    let color = match node.ty() {
+        Type::Vec4 => node,
+        _ => vec4_join(vec![node, float(1.0)]),
+    };
+    color.mul(background_intensity())
 }
 
 pub fn background_vertex_node() -> NodeRef {
@@ -1227,8 +1233,12 @@ fn setup_standard(
     // `const metalnessNode = this.metalnessNode ? float( this.metalnessNode )
     // : materialMetalness` — the explicit node replaces the uniform *and* its
     // map, because `materialMetalness` is what folds the map in.
+    //
+    // The `float()` matters when the node is wider than a float, as a bare
+    // `texture( map )` is: `DiffuseContribution` then takes `1 - map.x` on
+    // every channel, not `1 - map.rgb` (`webgpu_lights_selective`, §46).
     let metalness_node = match (&material.metalness_node, &material.metalness_map) {
-        (Some(node), _) => node.clone(),
+        (Some(node), _) => node.to_float(),
         // glTF packing: metalness in blue, roughness in green.
         (None, Some(map)) => material_metalness().mul(texture(map).z()),
         (None, None) => material_metalness(),
@@ -1236,7 +1246,7 @@ fn setup_standard(
     fragment.push(metalness().assign(metalness_node.clone()));
 
     let roughness_node = match (&material.roughness_node, &material.roughness_map) {
-        (Some(node), _) => node.clone(),
+        (Some(node), _) => node.to_float(),
         (None, Some(map)) => material_roughness().mul(texture(map).y()),
         (None, None) => material_roughness(),
     };

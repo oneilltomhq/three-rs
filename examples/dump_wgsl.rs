@@ -834,6 +834,33 @@ fn main() {
     right.shininess = 90.0;
     show_fog("phong_right", &right, four.clone(), Some(&fog));
 
+    // webgpu_lights_selective: the same teapots as `MeshStandardNodeMaterial`
+    // — against `target/dumps/webgpu_lights_selective/` m02 (left), m04
+    // (centre), m06 (right) and m08 (the unlit light sphere).
+    let grey_standard = || MeshBasicNodeMaterial::standard(grey, 1.0, 0.0);
+
+    let mut left = grey_standard();
+    left.lights_node = Some(vec![0]);
+    left.roughness_node = Some(texture(&alpha_texture));
+    left.metalness = 0.0;
+    show_fog("selective_left", &left, four.clone(), Some(&fog));
+
+    let mut centre = grey_standard();
+    centre.normal_node = Some(normal_map(texture(&normal_map_texture)));
+    centre.metalness = 0.5;
+    centre.roughness = 0.5;
+    show_fog("selective_centre", &centre, four.clone(), Some(&fog));
+
+    let mut right = grey_standard();
+    right.lights_node = Some(vec![1]);
+    right.metalness_node = Some(texture(&alpha_texture));
+    show_fog("selective_right", &right, four.clone(), Some(&fog));
+
+    let mut sphere = MeshBasicNodeMaterial::standard(Color::from_hex(0xffffff), 1.0, 0.0);
+    sphere.color_node = Some(Color::from_hex(0xff0040).into());
+    sphere.lights = false;
+    show_fog("selective_light_sphere", &sphere, four.clone(), Some(&fog));
+
     // rung 8: the four physical materials, against
     // `handoff/scouts/rung8/MeshStandardMaterial_*`.
     let bulb_lights = |shadow: Option<ShadowMap>| SetupContext {
@@ -2536,6 +2563,53 @@ fn dump_room_environment() {
         SetupContext::default(),
     );
 
+    // rung `webgpu_loader_gltf_compressed`: coffeemat's `Material.001`,
+    // against `dump-compressed/m00` (vertex) and `m01` (fragment). Double
+    // sided with a `tangent` attribute, so the vertex stage builds
+    // `bitangentView` through `negateOnBackSide()` and writes
+    // `FrontFacingNode`'s `f32( true )`; the fragment reads the colour,
+    // metal-roughness (also the AO) and normal maps under one point light.
+    // `OREO.001` (m02/m03) is the same program without the ORM maps.
+    let mut coffee = MeshBasicNodeMaterial::standard(Color::new(1.0, 1.0, 1.0), 1.0, 1.0);
+    coffee.side = Side::Double;
+    coffee.map = Some(map());
+    let orm = map();
+    coffee.metalness_map = Some(orm.clone());
+    coffee.roughness_map = Some(orm.clone());
+    coffee.ao_map = Some(orm);
+    coffee.normal_map = Some(map());
+    show(
+        "loader_gltf_compressed_coffee",
+        &coffee,
+        SetupContext {
+            lights: vec![LightDesc {
+                index: 0,
+                kind: LightKind::Point,
+                shadow_map: None,
+            }],
+            has_tangent_attribute: true,
+            ..SetupContext::default()
+        },
+    );
+
+    // rung `webgpu_equirectangular`: `scene.backgroundNode = texture( map,
+    // equirectUV(), 0 )`, against `dump-equirect/m01` (vertex) and `m02`
+    // (fragment). `vec4()` of the vec4 sample is the sample itself.
+    let equirect = Texture::new(4, 4, Some(vec![0; 4 * 4 * 4]));
+    let mut equirect_bg = MeshBasicNodeMaterial::new();
+    equirect_bg.name = "Background.material";
+    equirect_bg.color_node = Some(three_rs::materials::background_node_color_node(
+        texture_level(
+            &equirect,
+            equirect_uv(position_world_direction()),
+            float(0.0),
+        ),
+    ));
+    equirect_bg.vertex_node = Some(three_rs::materials::background_vertex_node());
+    equirect_bg.side = Side::Back;
+    equirect_bg.depth_test = false;
+    equirect_bg.depth_write = false;
+    show("background_equirect", &equirect_bg, SetupContext::default());
     // rung `webgpu_texturegrad`: three's m02 fragment — the page's `Fn` with
     // four `textureSampleGrad` taps. A stand-in texture; only its being a
     // filterable 2-D texture reaches the WGSL.

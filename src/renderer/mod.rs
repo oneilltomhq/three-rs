@@ -1212,6 +1212,14 @@ impl Renderer {
         &self.adapter_info
     }
 
+    /// `renderer.getMaxAnisotropy()` — `WebGPUCapabilities.getMaxAnisotropy()`
+    /// returns 16 unconditionally, the WebGPU spec's ceiling for a sampler's
+    /// `maxAnisotropy` (wgpu's `anisotropy_clamp` takes the same range and
+    /// clamps it further to what the adapter supports).
+    pub fn get_max_anisotropy(&self) -> u16 {
+        16
+    }
+
     /// `renderer.hasFeature( name )`, for all of them at once: the features
     /// the device was created with. `KTX2Loader::detect_support` reads the
     /// texture-compression ones.

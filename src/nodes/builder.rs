@@ -1541,6 +1541,14 @@ impl NodeBuilder {
             }
 
             Node::Builtin(b) => {
+                // `FrontFacingNode.generate()`: outside the fragment stage
+                // there is no face, and three writes the literal `true`. The
+                // vertex stage reaches it when a double-sided material with a
+                // `tangent` attribute builds `bitangentView` there, whose
+                // `negateOnBackSide()` then multiplies by `f32( true ) * 2 - 1`.
+                if *b == Builtin::FrontFacing && self.stage != Stage::Fragment {
+                    return "true".to_string();
+                }
                 if self.stage == Stage::Compute {
                     // `instanceIndex` is the module-scope `var<private>` the
                     // entry point fills from `globalId`, not a parameter —

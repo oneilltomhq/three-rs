@@ -1,0 +1,268 @@
+//! Port of `three.js/examples/webgpu_lights_selective.html`, calling the three-rs
+//! API in the same order the page's `init()` / `animate()` do.
+//!
+//! Under the e2e harness the viewport is `400 * 2` x `250 * 2` with no
+//! `deviceScaleFactor`, so `window.innerWidth` / `innerHeight` /
+//! `devicePixelRatio` are 800, 500 and 1.
+//!
+//! The same scene as `webgpu_lights_phong` with `MeshStandardNodeMaterial`
+//! teapots: the left one lit by the red light alone through `lights( [ light1
+//! ] )` with a textured `roughnessNode`, the right one by the blue light alone
+//! with a textured `metalnessNode`, the centre one by all four through a
+//! normal map.
+//!
+//! `performance.now()` is pinned to 0, so `lightTime` is 0 and the four lights
+//! sit at (0, 4, 3), (3, 0, 0), (0, 4, 0) and (0, 4, 0) — lights 3 and 4
+//! coincide, and only light 2's sphere is inside the frustum (the other three
+//! project above the top of the viewport).
+//!
+//! `TextureLoader.load()` is asynchronous on the page, but the harness only
+//! fires its single RAF once the network is idle, so both JPEGs are always
+//! present for the graded frame; here they are decoded synchronously.
+//!
+//! `OrbitControls` is constructed but never updated, and `renderer.inspector =
+//! new Inspector()` only registers the scene for the inspector panel, so
+//! neither touches the graded frame. The `resize` listener does not fire.
+
+use std::rc::Rc;
+
+use three_rs::addons::controls::OrbitControls;
+use three_rs::core::Node;
+use three_rs::nodes::tsl::{fog, normal_map, range_fog_factor, texture};
+use three_rs::textures::Wrapping;
+use three_rs::utils::now_ms;
+use three_rs::{
+    sphere_geometry, teapot_geometry, Color, Mesh, MeshStandardNodeMaterial, PerspectiveCamera,
+    PointLight, Renderer, RendererParameters, Scene,
+};
+
+pub const INNER_WIDTH: f64 = 800.0;
+pub const INNER_HEIGHT: f64 = 500.0;
+/// `renderer.setPixelRatio( window.devicePixelRatio )`
+pub const DPR: f64 = 1.0;
+
+pub struct App {
+    pub renderer: Renderer,
+    pub scene: Scene,
+    pub camera: PerspectiveCamera,
+    /// `light1` … `light4`, the page's module-level handles, which `animate()`
+    /// moves. They are in the scene, so the renderer finds them by walking it.
+    pub lights: Vec<Node>,
+    /// The page's `controls`.
+    pub controls: OrbitControls,
+}
+
+fn examples_dir() -> std::path::PathBuf {
+    let three = three_rs::testing::three_js_dir();
+    three.join("examples")
+}
+
+pub fn init() -> App {
+    let mut camera = PerspectiveCamera::new(50.0, INNER_WIDTH / INNER_HEIGHT, 0.01, 100.0);
+    camera.node.borrow_mut().position.z = 7.0;
+
+    let mut scene = Scene::new();
+    scene.fog_node = Some(fog(Color::from_hex(0xFF00FF), range_fog_factor(12.0, 30.0)));
+
+    let sphere_geometry = Rc::new(sphere_geometry(0.1, 16, 8));
+
+    // textures
+
+    let texture_loader = three_rs::TextureLoader::new();
+
+    let normal_map_texture = texture_loader
+        .load(examples_dir().join("textures/water/Water_1_M_Normal.jpg"))
+        .unwrap();
+    normal_map_texture.set_wrapping(Wrapping::Repeat, Wrapping::Repeat);
+
+    let alpha_texture = texture_loader
+        .load(examples_dir().join("textures/roughness_map.jpg"))
+        .unwrap();
+    alpha_texture.set_wrapping(Wrapping::Repeat, Wrapping::Repeat);
+
+    // lights
+
+    // `addLight( hexColor, power = 1700, distance = 100 )`: the sphere mesh is an
+    // ordinary child of the light, so it inherits the light's world matrix and
+    // draws through the scene walk, while the light itself is collected into
+    // `RenderList.lights` instead of being drawn.
+    let add_light = |scene: &Scene, hex: u32| -> Node {
+        // `new THREE.MeshStandardNodeMaterial()`: white, roughness 1,
+        // metalness 0 — none of which reaches the shader with `lights` off.
+        let mut material = MeshStandardNodeMaterial::standard(Color::from_hex(0xffffff), 1.0, 0.0);
+        material.color_node = Some(Color::from_hex(hex).into());
+        material.lights = false;
+
+        let mesh = Mesh::new(sphere_geometry.clone(), material);
+
+        let light = PointLight::new(Color::from_hex(hex), 1.0, 100.0);
+        light.borrow_mut().light_mut().unwrap().set_power(1700.0);
+        light.add(&mesh);
+
+        scene.add(&light);
+        light
+    };
+
+    let lights = vec![
+        add_light(&scene, 0xff0040),
+        add_light(&scene, 0x0040ff),
+        add_light(&scene, 0x80ff80),
+        add_light(&scene, 0xffaa00),
+    ];
+
+    // light nodes ( selective lights )
+
+    // `lights( [ light1 ] )` / `lights( [ light2 ] )` — indices into the
+    // renderer's light list, which is scene-traversal order; the four lights are
+    // added before the teapots, so it is the order they were added in.
+    let red_lights_node = vec![0];
+    let blue_lights_node = vec![1];
+
+    // models
+
+    let geometry_teapot = Rc::new(teapot_geometry(0.8, 18));
+
+    // `new THREE.MeshStandardNodeMaterial( { color: 0x555555 } )` — roughness
+    // 1 and metalness 0 until the page says otherwise.
+    let grey = || MeshStandardNodeMaterial::standard(Color::from_hex(0x555555), 1.0, 0.0);
+
+    let mut left_material = grey();
+    left_material.lights_node = Some(red_lights_node);
+    left_material.roughness_node = Some(texture(&alpha_texture));
+    left_material.metalness = 0.0;
+    let left_object = Mesh::new(geometry_teapot.clone(), left_material);
+    left_object.borrow_mut().position.x = -3.0;
+
+    let mut centre_material = grey();
+    centre_material.normal_node = Some(normal_map(texture(&normal_map_texture)));
+    centre_material.metalness = 0.5;
+    centre_material.roughness = 0.5;
+    let centre_object = Mesh::new(geometry_teapot.clone(), centre_material);
+
+    let mut right_material = grey();
+    right_material.lights_node = Some(blue_lights_node);
+    right_material.metalness_node = Some(texture(&alpha_texture));
+    let right_object = Mesh::new(geometry_teapot, right_material);
+    right_object.borrow_mut().position.x = 3.0;
+
+    for object in [&left_object, &centre_object, &right_object] {
+        // `object.rotation.y = …` in three.js runs `Euler.onChange`, which is
+        // `quaternion.setFromEuler( rotation, false )`; `set_rotation` is that
+        // pair, and the matrix is composed from the quaternion.
+        let mut object = object.borrow_mut();
+        object.set_rotation(0.0, std::f64::consts::PI * -0.5, 0.0);
+        object.position.y = -1.0;
+    }
+
+    scene.add(&left_object);
+    scene.add(&centre_object);
+    scene.add(&right_object);
+
+    // renderer
+
+    let mut renderer = Renderer::new(RendererParameters { antialias: true }).unwrap();
+    renderer.set_pixel_ratio(DPR);
+    renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
+
+    // controls
+
+    // `controls = new OrbitControls( camera, renderer.domElement );` The
+    // constructor's `update()` points the camera at the target, the origin,
+    // which the camera on the +z axis already faces.
+    let mut controls = OrbitControls::new(&mut camera);
+    // The canvas the example renders at, standing in for the element's
+    // `clientWidth` / `clientHeight`.
+    controls.set_element_size(INNER_WIDTH, INNER_HEIGHT);
+    controls.min_distance = 3.0;
+    controls.max_distance = 25.0;
+
+    App {
+        renderer,
+        scene,
+        camera,
+        lights,
+        controls,
+    }
+}
+
+/// The page's `animate()`. `performance.now()` is 0 under the harness, so
+/// `lightTime` is 0 and every `sin` / `cos` below collapses to a constant.
+pub fn animate(app: &mut App) {
+    // `const time = performance.now() / 1000;` — the page calls it `time` and
+    // then `lightTime`; the second name is the one the bodies below read.
+    let light_time = now_ms() / 1000.0;
+
+    {
+        let mut light = app.lights[0].borrow_mut();
+        light.position.x = (light_time * 0.7).sin() * 3.0;
+        light.position.y = (light_time * 0.5).cos() * 4.0;
+        light.position.z = (light_time * 0.3).cos() * 3.0;
+    }
+    {
+        let mut light = app.lights[1].borrow_mut();
+        light.position.x = (light_time * 0.3).cos() * 3.0;
+        light.position.y = (light_time * 0.5).sin() * 4.0;
+        light.position.z = (light_time * 0.7).sin() * 3.0;
+    }
+    {
+        let mut light = app.lights[2].borrow_mut();
+        light.position.x = (light_time * 0.7).sin() * 3.0;
+        light.position.y = (light_time * 0.3).cos() * 4.0;
+        light.position.z = (light_time * 0.5).sin() * 3.0;
+    }
+    {
+        let mut light = app.lights[3].borrow_mut();
+        light.position.x = (light_time * 0.3).sin() * 3.0;
+        light.position.y = (light_time * 0.7).cos() * 4.0;
+        light.position.z = (light_time * 0.5).sin() * 3.0;
+    }
+
+    app.renderer.render(&mut app.scene, &mut app.camera);
+}
+
+/// The page's `onWindowResize()`.
+///
+/// The rung harness never calls this — the graded frame is always
+/// 800 x 500 — but the viewer and the browser shell do, so the example
+/// owns its own reaction to a resized canvas instead of the host
+/// guessing at one.
+pub fn resize(app: &mut App, width: f64, height: f64) {
+    app.camera.aspect = width / height;
+    app.camera.update_projection_matrix();
+    app.renderer.set_size(width, height);
+}
+
+/// The example's controls, for a host that has a pointer. `None` when the
+/// page creates none — the signature is the same for every example so the
+/// viewer and the browser shell can drive any of them through one call.
+pub fn controls(app: &mut App) -> Option<&mut OrbitControls> {
+    Some(&mut app.controls)
+}
+
+/// The controls and the camera at once, which every one of the controls'
+/// event handlers needs: the JS holds the camera as `this.object` and Rust
+/// cannot, so `pointer_move` and the rest take it as an argument.
+///
+/// They are two fields of the same `App`, so borrowing both is sound — but
+/// only this module can say so; a host holding `&mut App` and calling
+/// [`controls`] and then reaching for the camera cannot. Hence the pair.
+pub fn controls_and_camera(app: &mut App) -> Option<(&mut OrbitControls, &mut PerspectiveCamera)> {
+    Some((&mut app.controls, &mut app.camera))
+}
+
+fn main() {
+    // Pin both clocks to zero, as three.js' `test/e2e/deterministic-injection.js`
+    // does to the page, so that the frame this writes is the frame the rung
+    // grades no matter how long `init()` took.
+    three_rs::testing::pin_time(Some(0.0));
+    let mut app = init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+    animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    let path = std::env::args()
+        .nth(1)
+        .unwrap_or_else(|| "target/webgpu_lights_selective.png".to_string());
+    three_rs::testing::write_png(&path, width, height, &pixels);
+    println!("wrote {path} ({width}x{height})");
+}
