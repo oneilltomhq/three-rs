@@ -2555,6 +2555,53 @@ fn dump_room_environment() {
         SetupContext::default(),
     );
 
+    // rung `webgpu_loader_gltf_compressed`: coffeemat's `Material.001`,
+    // against `dump-compressed/m00` (vertex) and `m01` (fragment). Double
+    // sided with a `tangent` attribute, so the vertex stage builds
+    // `bitangentView` through `negateOnBackSide()` and writes
+    // `FrontFacingNode`'s `f32( true )`; the fragment reads the colour,
+    // metal-roughness (also the AO) and normal maps under one point light.
+    // `OREO.001` (m02/m03) is the same program without the ORM maps.
+    let mut coffee = MeshBasicNodeMaterial::standard(Color::new(1.0, 1.0, 1.0), 1.0, 1.0);
+    coffee.side = Side::Double;
+    coffee.map = Some(map());
+    let orm = map();
+    coffee.metalness_map = Some(orm.clone());
+    coffee.roughness_map = Some(orm.clone());
+    coffee.ao_map = Some(orm);
+    coffee.normal_map = Some(map());
+    show(
+        "loader_gltf_compressed_coffee",
+        &coffee,
+        SetupContext {
+            lights: vec![LightDesc {
+                index: 0,
+                kind: LightKind::Point,
+                shadow_map: None,
+            }],
+            has_tangent_attribute: true,
+            ..SetupContext::default()
+        },
+    );
+
+    // rung `webgpu_equirectangular`: `scene.backgroundNode = texture( map,
+    // equirectUV(), 0 )`, against `dump-equirect/m01` (vertex) and `m02`
+    // (fragment). `vec4()` of the vec4 sample is the sample itself.
+    let equirect = Texture::new(4, 4, Some(vec![0; 4 * 4 * 4]));
+    let mut equirect_bg = MeshBasicNodeMaterial::new();
+    equirect_bg.name = "Background.material";
+    equirect_bg.color_node = Some(three_rs::materials::background_node_color_node(
+        texture_level(
+            &equirect,
+            equirect_uv(position_world_direction()),
+            float(0.0),
+        ),
+    ));
+    equirect_bg.vertex_node = Some(three_rs::materials::background_vertex_node());
+    equirect_bg.side = Side::Back;
+    equirect_bg.depth_test = false;
+    equirect_bg.depth_write = false;
+    show("background_equirect", &equirect_bg, SetupContext::default());
     // rung `webgpu_texturegrad`: three's m02 fragment — the page's `Fn` with
     // four `textureSampleGrad` taps. A stand-in texture; only its being a
     // filterable 2-D texture reaches the WGSL.

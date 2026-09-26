@@ -244,12 +244,18 @@ mod webgpu_camera_array;
 #[path = "webgpu_clearcoat.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_clearcoat;
+#[path = "webgpu_equirectangular.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_equirectangular;
 #[path = "webgpu_fog_height.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_fog_height;
 #[path = "webgpu_lights_selective.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_lights_selective;
+#[path = "webgpu_loader_gltf_compressed.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_loader_gltf_compressed;
 #[path = "webgpu_materials_toon.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_materials_toon;
@@ -453,6 +459,12 @@ const GRADED: &[(&str, fn())] = &[
     }),
     ("webgpu_lights_selective", || {
         drop(webgpu_lights_selective::init())
+    }),
+    ("webgpu_loader_gltf_compressed", || {
+        drop(webgpu_loader_gltf_compressed::init())
+    }),
+    ("webgpu_equirectangular", || {
+        drop(webgpu_equirectangular::init())
     }),
 ];
 
