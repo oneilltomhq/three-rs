@@ -743,6 +743,22 @@ pub enum SampleMode {
     /// `textureNode.grad( gradX, gradY )` (`generateTextureGrad()`), each
     /// gradient built as a `vec2`.
     Grad(NodeRef, NodeRef),
+    /// `textureGather( component, t, t_sampler, uv[, offset] )` —
+    /// `textureNode.gather( component )`, optionally `.offset( ivec2 )`
+    /// (`WGSLNodeBuilder.generateTextureGather()`): one channel of the four
+    /// texels a bilinear tap would read, from mip level 0.
+    Gather {
+        component: NodeRef,
+        offset: Option<NodeRef>,
+    },
+    /// `textureGatherCompare( t, t_sampler, uv, depth[, offset] )` —
+    /// `depthNode.gather().compare( depth )` on a depth texture with a
+    /// comparison sampler (`generateTextureGatherCompare()`): the four
+    /// texels' comparison results.
+    GatherCompare {
+        compare: NodeRef,
+        offset: Option<NodeRef>,
+    },
     /// The non-filterable path: `textureLoad` against `textureDimensions`,
     /// with no sampler binding at all. What Three emits for a depth texture.
     Load,
