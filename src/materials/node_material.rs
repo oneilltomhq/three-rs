@@ -698,6 +698,14 @@ fn setup_inner(
         Some(node) => node.clone(),
         None => model_view_projection(),
     };
+    // `PointsNodeMaterial.setupVertex()`: on anything but `Points` — a
+    // `Sprite` with `count` instances — the clip position is offset into a
+    // screen-space quad.
+    let position = if material.kind == MaterialKind::Points && ctx.sprite {
+        setup_vertex_sprite(material, position)
+    } else {
+        position
+    };
 
     // `if ( builder.context.getOutput ) resultNode = builder.context.getOutput(
     // resultNode, builder );` — `DirectRenderPipeline`'s hook, which does
@@ -828,6 +836,47 @@ fn setup_position_view_sprite(material: &MeshBasicNodeMaterial, has_center: bool
             mv_position.zw(),
         ],
     )
+}
+
+/// `PointsNodeMaterial.setupVertexSprite()`
+/// (`src/materials/nodes/PointsNodeMaterial.js:89-150`) — each instance's
+/// quad corner pushed out from the clip position by `sizeNode` pixels:
+///
+/// ```ignore
+/// let pointSize = sizeNode !== null ? vec2( sizeNode ) : materialPointSize;
+/// pointSize = pointSize.mul( screenDPR );
+/// if ( camera.isPerspectiveCamera && sizeAttenuation === true )
+///     pointSize = pointSize.mul( scale.div( positionView.z.negate() ) );
+/// if ( scaleNode ) pointSize = pointSize.mul( vec2( scaleNode ) );
+/// let offset = positionGeometry.xy;
+/// if ( rotationNode ) offset = rotate( offset, float( rotationNode ) );
+/// offset = offset.mul( pointSize ).div( viewportSize.div( 2 ) ).mul( mvp.w );
+/// return mvp.add( vec4( offset, 0, 0 ) );
+/// ```
+///
+/// Ported for what the ladder sets: a `sizeNode` and `sizeAttenuation =
+/// false`. `materialPointSize` (no `sizeNode`) and the attenuated branch are
+/// reported by the renderer's unsupported-field warning and draw as if
+/// `sizeNode` were 1 and attenuation off. `viewportSize` is `viewport.zw`,
+/// which is what three's dump reads.
+fn setup_vertex_sprite(material: &MeshBasicNodeMaterial, mvp: NodeRef) -> NodeRef {
+    let size = match &material.size_node {
+        Some(node) => to_vec2(node.clone()),
+        None => vec2(1.0, 1.0),
+    };
+    let mut point_size = size.mul(to_vec2(screen_dpr()));
+    if let Some(scale) = &material.scale_node {
+        point_size = point_size.mul(to_vec2(scale.clone()));
+    }
+    let mut offset = position_geometry().xy();
+    if let Some(rotation) = &material.rotation_node {
+        offset = rotate(offset, rotation.clone());
+    }
+    let offset = offset
+        .mul(point_size)
+        .div(viewport().zw().div(vec2(2.0, 2.0)))
+        .mul(to_vec2(mvp.w()));
+    mvp.add(vec4_join(vec![offset, float(0.0), float(0.0)]))
 }
 
 /// `PointsNodeMaterial.setupPositionView()`

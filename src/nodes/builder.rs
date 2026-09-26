@@ -213,6 +213,18 @@ pub struct ComputeFlow {
     pub on_init: Option<Box<ComputeFlow>>,
 }
 
+impl std::fmt::Debug for ComputeFlow {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ComputeFlow")
+            .field("statements", &self.statements.len())
+            .field("count", &self.count)
+            .field("workgroup_size", &self.workgroup_size)
+            .field("name", &self.name)
+            .field("on_init", &self.on_init.is_some())
+            .finish()
+    }
+}
+
 /// The built compute shader and everything its pipeline and dispatch need.
 pub struct ComputeProgram {
     pub wgsl: String,
@@ -239,6 +251,11 @@ pub struct NodeProgram {
     /// fills it from [`SetupContext::instanced_attributes`](crate::materials::SetupContext)
     /// after the build, through [`with_instanced_attributes`](Self::with_instanced_attributes).
     pub instanced_attributes: Vec<String>,
+    /// The `ComputeNode`s the material reached as values (a `positionNode`
+    /// that is `Fn( … )().compute( count )`). Their `updateBeforeType` is
+    /// `FRAME`: the renderer runs each once per frame, before the draw that
+    /// reads it, as `ComputeNode.updateBefore()`'s `renderer.compute( this )`.
+    pub computes: Vec<Rc<ComputeFlow>>,
 }
 
 impl NodeProgram {
@@ -422,6 +439,11 @@ pub(crate) struct BuildContext {
     /// `setupClearcoatNormal`: `MeshPhysicalNodeMaterial.setup()`'s clearcoat
     /// lobe normal, the clearcoat twin of `setup_normal`.
     pub(crate) setup_clearcoat_normal: Option<NodeRef>,
+    /// `material.alphaToCoverage && renderer.currentSamples > 0`: what
+    /// `shapeCircle()` branches on. Three reads both inside the `Fn` body at
+    /// build time; the renderer pushes their conjunction around the build and
+    /// keys the program on it.
+    pub(crate) alpha_to_coverage_samples: bool,
     /// Addon keys (`getViewZ`, `getUV`, `TRAANode`'s, the light-data
     /// nodes'): what `context( node, { … } )` installs, and what a
     /// [`CustomNode`] reads through [`NodeBuilder::context`].
@@ -439,6 +461,7 @@ impl Default for BuildContext {
             has_tangent: false,
             setup_position_view: None,
             setup_clearcoat_normal: None,
+            alpha_to_coverage_samples: false,
             extra: HashMap::new(),
         }
     }
@@ -481,6 +504,15 @@ pub(crate) fn push_context(edit: impl FnOnce(&mut BuildContext)) -> ContextGuard
         stack.push(cx);
         ContextGuard { depth: stack.len() }
     })
+}
+
+/// `material.alphaToCoverage && renderer.currentSamples > 0` for every build
+/// inside `f` — what `shapeCircle()` branches on. The renderer sets it around
+/// each material build from the target it draws into; a tool that builds
+/// programs without a renderer (`examples/dump_wgsl.rs`) sets it itself.
+pub fn with_alpha_to_coverage_samples<R>(on: bool, f: impl FnOnce() -> R) -> R {
+    let _guard = push_context(|cx| cx.alpha_to_coverage_samples = on);
+    f()
 }
 
 /// `ContextNode`'s `builder.addContext( value )`: [`push_context`] with
@@ -597,6 +629,10 @@ pub struct NodeBuilder {
     /// `fn` depth, so a second build of the same isolate finds them again as
     /// three's persistent child cache does.
     isolate_snippets: HashMap<(usize, usize, usize), HashMap<CacheKey, String>>,
+    /// Every `ComputeNode` the render stages reached as a value, in first-use
+    /// order — three's `updateBeforeNodes`, narrowed to the one kind that has
+    /// an `updateBefore()` here. See [`NodeProgram::computes`].
+    computes: Vec<Rc<ComputeFlow>>,
     /// Emitted `fn` names for `Fn()`s with a layout.
     fn_names: HashMap<(usize, usize), String>,
     fn_counter: usize,
@@ -655,6 +691,7 @@ impl NodeBuilder {
             data_parents: vec![None],
             isolate_caches: HashMap::new(),
             isolate_snippets: HashMap::new(),
+            computes: Vec::new(),
             fn_names: HashMap::new(),
             fn_counter: 0,
             usage: HashMap::new(),
@@ -675,6 +712,16 @@ impl NodeBuilder {
     pub fn analyze(&mut self, node: &NodeRef) {
         if let Some(element) = self.array_camera_element(node) {
             self.analyze(&element);
+            return;
+        }
+        // A `ComputeNode` outside the compute stage is its output and nothing
+        // else, so it neither counts nor is counted.
+        if let Node::Compute { flow, output } = &*node.0 {
+            if !self.computes.iter().any(|f| Rc::ptr_eq(f, flow)) {
+                self.computes.push(flow.clone());
+            }
+            let output = output.clone();
+            self.analyze(&output);
             return;
         }
         // `ShaderCallNodeInternal.build()` in the analyze stage is
@@ -777,6 +824,7 @@ impl NodeBuilder {
             | Node::Builtin(_)
             | Node::Property { .. }
             | Node::Param { .. } => vec![],
+            Node::Compute { output, .. } => vec![output.clone()],
             Node::BufferElement { index, .. } => vec![index.clone()],
             Node::Var(v) => vec![v.value.clone()],
             Node::Let(v) => vec![v.value.clone()],
@@ -1344,6 +1392,12 @@ impl NodeBuilder {
     pub fn generate(&mut self, node: &NodeRef) -> String {
         if let Some(element) = self.array_camera_element(node) {
             return self.generate(&element);
+        }
+        // `ComputeNode.generate()` outside the compute stage:
+        // `outputComputeNode.build( builder, output )`.
+        if let Node::Compute { output, .. } = &*node.0 {
+            let output = output.clone();
+            return self.generate(&output);
         }
         if let Some(name) = self.cache_get(CacheKey::node(node)) {
             return name;
@@ -2424,6 +2478,9 @@ impl NodeBuilder {
                 name
             }
 
+            // Resolved in `generate()` before it gets here.
+            Node::Compute { .. } => unreachable!("three-rs: a ComputeNode generates its output"),
+
             // `BarrierNode.generate()`: `addLineFlowCode( `${ scope }Barrier()` )`.
             // `Node.generate()` with an `outputNode`: build what `setup`
             // returned, in this node's place.
@@ -3002,6 +3059,7 @@ impl NodeBuilder {
             groups,
             cache_key,
             instanced_attributes: Vec::new(),
+            computes: std::mem::take(&mut self.computes),
         }
     }
 
@@ -3088,7 +3146,14 @@ impl NodeBuilder {
                 }
                 // `WGSLNodeBuilder.getStorageAccess()`: `read_write` in the
                 // compute stage and forced to `read` everywhere else.
-                let access = if visibility.compute {
+                let read_only = matches!(
+                    source,
+                    BufferSource::StorageData {
+                        read_only: true,
+                        ..
+                    }
+                );
+                let access = if visibility.compute && !read_only {
                     "read_write"
                 } else {
                     "read"
@@ -3101,7 +3166,7 @@ impl NodeBuilder {
                         layout.name
                     )),
                     // A runtime-sized array — no element count.
-                    BufferSource::Storage => out.push_str(&format!(
+                    BufferSource::Storage | BufferSource::StorageData { .. } => out.push_str(&format!(
                         "\nstruct {name}Struct {{\n\tvalue : array< {element} >\n}};\n@binding( {binding} ) @group( {gi} )\nvar<storage, {access}> {name} : {name}Struct;\n"
                     )),
                     // `bufferNode.isAtomic ? `atomic<${ bufferType }>``.

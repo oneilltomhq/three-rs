@@ -3429,6 +3429,146 @@ impl StorageArray {
     }
 }
 
+/// `WebGPUAttributeUtils.createAttribute()`'s storage stride, in floats: a
+/// `vec3` is padded to four ("WGSL does not support packed vec3 data in
+/// storage buffers"), everything else is packed.
+fn storage_item_size(element_ty: Type) -> usize {
+    match element_ty.components() {
+        3 => 4,
+        n => n,
+    }
+}
+
+/// `storage( attribute, type, attribute.count )` over an attribute that has a
+/// CPU array: `new StorageInstancedBufferAttribute( array, itemSize )`, or
+/// `computeSkinning()`'s `new InstancedBufferAttribute( array, itemSize )`.
+///
+/// `words` are the array's elements as bits (`f32::to_bits` for a float
+/// array, the integers themselves for a `Uint32Array`), `itemSize` of them per
+/// element and unpadded, as the typed array holds them. They are laid out at
+/// the storage stride here, which is what the GPU buffer gets.
+pub fn storage_data(words: &[u32], element_ty: Type) -> StorageArray {
+    let item_size = element_ty.components();
+    let stride = storage_item_size(element_ty);
+    let count = words.len() / item_size;
+    let mut init = vec![0u32; count * stride];
+    for (i, element) in words.chunks_exact(item_size).enumerate() {
+        init[i * stride..i * stride + item_size].copy_from_slice(element);
+    }
+    StorageArray(Rc::new(BufferNode {
+        id: crate::nodes::node::BufferId::next(),
+        source: BufferSource::StorageData {
+            init: Rc::new(init),
+            read_only: false,
+        },
+        element_ty,
+        count,
+    }))
+}
+
+/// [`storage_data`] over a float array.
+pub fn storage_f32(array: &[f32], element_ty: Type) -> StorageArray {
+    let words: Vec<u32> = array.iter().map(|v| v.to_bits()).collect();
+    storage_data(&words, element_ty)
+}
+
+impl StorageArray {
+    /// `.toReadOnly()` — `var<storage, read>` in a kernel as well. The same
+    /// buffer, so the same GPU buffer; only the declaration changes.
+    pub fn to_read_only(&self) -> StorageArray {
+        let source = match &self.0.source {
+            BufferSource::StorageData { init, .. } => BufferSource::StorageData {
+                init: init.clone(),
+                read_only: true,
+            },
+            _ => panic!("three-rs: to_read_only() is ported for storage over a CPU array"),
+        };
+        StorageArray(Rc::new(BufferNode {
+            id: self.0.id,
+            source,
+            element_ty: self.0.element_ty,
+            count: self.0.count,
+        }))
+    }
+
+    /// `.toAttribute()` — `bufferAttribute( storageAttribute, type )`: the
+    /// storage buffer read as a vertex attribute. It is an
+    /// `InstancedBufferAttribute` (`StorageInstancedBufferAttribute`), so it
+    /// steps once per instance, and it is the *same* GPU buffer the kernels
+    /// write — the vertex buffer shares the storage node's id. The stride is
+    /// the padded storage stride: a `vec3` array is read 16 bytes apart.
+    pub fn to_attribute(&self) -> NodeRef {
+        let buffer = Rc::new(InstanceBuffer {
+            id: self.0.id,
+            source: self.0.source.clone(),
+            count: self.0.count,
+            item_size: storage_item_size(self.0.element_ty),
+        });
+        instanced_attribute(&buffer, 0, self.0.element_ty)
+    }
+}
+
+/// A `ComputeNode` read as a value — `Fn( () => { …; return output } )()
+/// .compute( count )` set as, say, a material's `positionNode`.
+///
+/// Outside the compute stage three's `ComputeNode.generate()` returns its
+/// `outputComputeNode` (the `Fn`'s return value) and its `updateBefore`
+/// (`NodeUpdateType.FRAME`) runs `renderer.compute( this )`: the kernel is
+/// dispatched once per frame before the pass that draws with its result. The
+/// statements of `flow` are the kernel; `output` is what the vertex stage
+/// reads. `flow.on_init` runs once, before the first dispatch, as usual.
+pub fn compute_node(flow: crate::nodes::ComputeFlow, output: NodeRef) -> NodeRef {
+    NodeRef::new(Node::Compute {
+        flow: Rc::new(flow),
+        output,
+    })
+}
+
+/// `objectWorldMatrix( object3d )` — `Object3DNode( WORLD_MATRIX, object3d )`
+/// with an explicit object: an object-group `mat4` that reads
+/// `object3d.matrixWorld` whenever the buffer is written, in a draw or in a
+/// kernel.
+pub fn object_world_matrix(object: &crate::core::Node) -> NodeRef {
+    let object = object.downgrade();
+    uniform(
+        UniformSource::Live(crate::nodes::node::LiveValue::new(move || {
+            let object = object
+                .upgrade()
+                .expect("three-rs: objectWorldMatrix( object ) outlived its object");
+            let world = object.borrow().matrix_world;
+            world.elements.to_vec()
+        })),
+        Type::Mat4,
+        UniformGroup::Object,
+        None,
+    )
+}
+
+/// `shapeCircle( coord = uv() )` (`src/nodes/shapes/Shapes.js`): 1 inside the
+/// unit circle over the quad, 0 outside — softened over one `fwidth` when the
+/// material has `alphaToCoverage` and the target is multisampled.
+///
+/// Three reads `material.alphaToCoverage` and `renderer.currentSamples` inside
+/// the `Fn` body, i.e. at build time; the body here does the same from the
+/// [`BuildContext`](crate::nodes::builder) the renderer installs around the
+/// build, so one node serves both branches.
+pub fn shape_circle() -> NodeRef {
+    thread_local! {
+        static DEF: Rc<FnDef> = inline_fn(1, Type::F32, |args| {
+            let coord = args[0].clone();
+            let len2 = length_sq(coord.mul(2.0).sub(1.0));
+            let smooth = crate::nodes::builder::current_context(|cx| cx.alpha_to_coverage_samples);
+            if smooth {
+                let dlen = to_var(None, fwidth(len2.clone()));
+                smoothstep(dlen.one_minus(), dlen.add(1.0), len2).one_minus()
+            } else {
+                len2.greater_than(1.0).select(float(0.0), float(1.0))
+            }
+        });
+    }
+    DEF.with(|def| call(def, vec![uv()]))
+}
+
 pub use super::node::StructLayout;
 /// One member of [`struct_type`]'s object — `'uint'`, or `{ type: 'uint',
 /// atomic: true }` with [`atomic`](StructMember::atomic) set.

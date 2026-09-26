@@ -250,6 +250,9 @@ mod webgpu_equirectangular;
 #[path = "webgpu_fog_height.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_fog_height;
+#[path = "webgpu_instance_points.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_instance_points;
 #[path = "webgpu_lights_selective.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_lights_selective;
@@ -281,6 +284,9 @@ mod webgpu_texturegrad;
 #[path = "webgpu_instance_sprites.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_instance_sprites;
+#[path = "webgpu_skinning_points.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_skinning_points;
 #[path = "webgpu_sprites.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_sprites;
@@ -465,6 +471,12 @@ const GRADED: &[(&str, fn())] = &[
     }),
     ("webgpu_equirectangular", || {
         drop(webgpu_equirectangular::init())
+    }),
+    ("webgpu_skinning_points", || {
+        drop(webgpu_skinning_points::init())
+    }),
+    ("webgpu_instance_points", || {
+        drop(webgpu_instance_points::init())
     }),
 ];
 

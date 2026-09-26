@@ -318,6 +318,51 @@ pub enum UniformSource {
     /// the callback receives the object itself and answers from whatever the
     /// application keyed to it. See `docs/nodes.md` §18.
     ObjectUpdate(ObjectUpdate),
+    /// A uniform that holds a *reference* to an application object and reads
+    /// it when the buffer is written: three's `uniform( skinnedMesh.bindMatrix
+    /// )` (the `Matrix4` itself, not a copy of its elements) and
+    /// `objectWorldMatrix( object3d )` (`Object3DNode` with an explicit object,
+    /// whose `OBJECT` update reads `object3d.matrixWorld`). Unlike
+    /// [`UniformSource::ObjectUpdate`] it does not need a render object, so a
+    /// compute kernel can read it: `computeSkinning()` and
+    /// `webgpu_skinning_points` are the first. See `docs/nodes.md` §44.
+    Live(LiveValue),
+}
+
+/// The reader behind [`UniformSource::Live`]. Compares and hashes by
+/// identity, like [`SettableValue`]: the value moves, the program does not.
+#[derive(Clone)]
+pub struct LiveValue(Rc<dyn Fn() -> Vec<f64>>);
+
+impl LiveValue {
+    pub fn new(read: impl Fn() -> Vec<f64> + 'static) -> Self {
+        Self(Rc::new(read))
+    }
+
+    /// The value now.
+    pub fn get(&self) -> Vec<f64> {
+        (self.0)()
+    }
+}
+
+impl std::fmt::Debug for LiveValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("LiveValue")
+            .field(&Rc::as_ptr(&self.0).cast::<u8>())
+            .finish()
+    }
+}
+
+impl PartialEq for LiveValue {
+    fn eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl std::hash::Hash for LiveValue {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        (Rc::as_ptr(&self.0).cast::<u8>() as usize).hash(state);
+    }
 }
 
 /// The callback behind [`UniformSource::ObjectUpdate`] — `Node.update( frame )`
@@ -473,7 +518,8 @@ impl UniformSource {
             | UniformSource::ObjectCenter
             | UniformSource::Value(_)
             | UniformSource::Settable(_)
-            | UniformSource::ObjectUpdate(_) => UpdateType::Object,
+            | UniformSource::ObjectUpdate(_)
+            | UniformSource::Live(_) => UpdateType::Object,
             _ => UpdateType::Render,
         }
     }
@@ -562,6 +608,23 @@ pub enum BufferSource {
         layout: Rc<StructLayout>,
         init: Rc<Vec<u32>>,
     },
+    /// `storage( attribute, type, count )` over an attribute that *has* a CPU
+    /// array — `computeSkinning()`'s `storage( new InstancedBufferAttribute(
+    /// position.array, 3 ), 'vec3' )`, or a `StorageInstancedBufferAttribute(
+    /// array, itemSize )`. Uploaded once, when the GPU buffer is made, then
+    /// left to the kernels. `init` is the array's bits already laid out at the
+    /// storage stride (a `vec3` padded to 16 bytes, as
+    /// `WebGPUAttributeUtils.createAttribute()` pads it).
+    ///
+    /// `read_only` is `.toReadOnly()`: `var<storage, read>` in a kernel too.
+    StorageData { init: Rc<Vec<u32>>, read_only: bool },
+    /// `buffer( skeleton.boneMatrices, 'mat4', bones )` — `computeSkinning()`'s
+    /// bone matrices: a plain uniform `BufferNode` over the skeleton's own
+    /// array rather than `SkinningNode`'s `referenceBuffer`, so it is resolved
+    /// from the skeleton it names and not from a render object. The
+    /// skeleton's `OnObjectUpdate` (`skeleton.update()`, once per frame) runs
+    /// when the buffer is written.
+    SkeletonBoneMatrices(SkeletonRef),
 }
 
 impl BufferSource {
@@ -570,7 +633,10 @@ impl BufferSource {
     pub fn is_storage(&self) -> bool {
         matches!(
             self,
-            BufferSource::Storage | BufferSource::AtomicStorage | BufferSource::Struct { .. }
+            BufferSource::Storage
+                | BufferSource::AtomicStorage
+                | BufferSource::Struct { .. }
+                | BufferSource::StorageData { .. }
         )
     }
 
@@ -585,6 +651,17 @@ impl BufferSource {
             }
             _ => (UniformGroup::Object, None),
         }
+    }
+}
+
+/// The skeleton behind [`BufferSource::SkeletonBoneMatrices`], compared by
+/// identity: one skeleton is one buffer however many kernels read it.
+#[derive(Clone)]
+pub struct SkeletonRef(pub Rc<RefCell<crate::objects::Skeleton>>);
+
+impl PartialEq for SkeletonRef {
+    fn eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
     }
 }
 
@@ -1101,6 +1178,16 @@ pub enum Node {
         ty: Type,
     },
     Builtin(Builtin),
+    /// `ComputeNode` used as a value — `Fn( () => { …; return x } )().compute(
+    /// count )` set as a material's `positionNode`. Outside the compute stage
+    /// it generates `output` (`properties.outputComputeNode`); the kernel
+    /// itself runs from `updateBefore()` (`NodeUpdateType.FRAME`), which the
+    /// builder records in [`NodeProgram::computes`](crate::nodes::NodeProgram)
+    /// for the renderer to dispatch. See `docs/nodes.md` §44.
+    Compute {
+        flow: Rc<crate::nodes::ComputeFlow>,
+        output: NodeRef,
+    },
     Var(Rc<VarDef>),
     /// `VarNode` with `readOnly` set — `node.toConst()`. A WGSL `let`, so it is
     /// declared where it is assigned and, unlike a `var<private>`, cannot be
@@ -1397,6 +1484,7 @@ impl NodeRef {
             Node::Atomic { pointer, .. } => pointer.ty(),
             Node::Workgroup(def) => def.element_ty,
             Node::Barrier { .. } => Type::Void,
+            Node::Compute { output, .. } => output.ty(),
             Node::Custom(custom) => custom.node_type(),
             Node::Context { node, .. } | Node::Isolate { node } => node.ty(),
         }
@@ -1547,6 +1635,7 @@ impl std::hash::Hash for UniformSource {
             // Identity, never contents: the whole point is that the value
             // moves between draws while the program stays one program.
             UniformSource::Settable(cell) => cell.hash(state),
+            UniformSource::Live(value) => value.hash(state),
             _ => {}
         }
     }
@@ -1575,6 +1664,11 @@ impl std::hash::Hash for BufferSource {
                     member.ty.hash(state);
                     member.atomic.hash(state);
                 }
+            }
+            // The array is a value; `.toReadOnly()` is spelt into the WGSL.
+            BufferSource::StorageData { read_only, .. } => read_only.hash(state),
+            BufferSource::SkeletonBoneMatrices(skeleton) => {
+                (Rc::as_ptr(&skeleton.0) as *const u8 as usize).hash(state)
             }
             BufferSource::InstanceMatrix
             | BufferSource::InstanceColor
@@ -1651,6 +1745,15 @@ impl std::fmt::Debug for BufferSource {
             BufferSource::UniformArray(data) => f
                 .debug_tuple("UniformArray")
                 .field(&format_args!("{} floats", data.len()))
+                .finish(),
+            BufferSource::StorageData { init, read_only } => f
+                .debug_struct("StorageData")
+                .field("init", &format_args!("{} words", init.len()))
+                .field("read_only", read_only)
+                .finish(),
+            BufferSource::SkeletonBoneMatrices(skeleton) => f
+                .debug_tuple("SkeletonBoneMatrices")
+                .field(&format_args!("{} bones", skeleton.0.borrow().bones.len()))
                 .finish(),
         }
     }

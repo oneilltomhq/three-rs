@@ -4543,3 +4543,100 @@ the port's `dump_wgsl` section `background_equirect`.
 Nothing else was missing. `equirect_uv`, `texture_level`, the meshopt
 decoder, `KHR_mesh_quantization`, the `KHR_texture_basisu` transcode and
 `KHR_texture_transform` were all already in place.
+## 44. Compute skinning and points on a `Sprite` (`webgpu_skinning_points`)
+
+### 44.1 A `ComputeNode` read as a value
+
+`Fn( () => { …; return pointPositionArray.toAttribute() } )().compute( n )`
+set as a material's `positionNode` does two things in three. Outside the
+compute stage, `ComputeNode.generate()` returns its `outputComputeNode`, the
+`Fn`'s return value, so the vertex stage reads the attribute. Its
+`updateBefore` (`NodeUpdateType.FRAME`) runs `renderer.compute( this )`, once
+per frame, before the draw that built it.
+
+The port has `Node::Compute { flow, output }` and `tsl::compute_node( flow,
+output )`. The builder's `analyze()` records the flow, deduplicated by
+pointer, into `NodeProgram::computes`, and generates `output` in its place.
+`Renderer::draw()` then calls `update_before_compute()` for each flow of each
+item's program. That dispatches the kernel through the ordinary `compute()`
+path at most once per `frames` count. `onInit` needs no new code: the
+existing `compute_dispatch` runs it the first time the kernel's pipeline is
+built, so the order is `onInit`, the kernel, then the pass, as in three's
+dump.
+
+### 44.2 `computeSkinning( mesh )`
+
+`SkinningNode` in compute mode is `getSkinnedPosition()` over storage copies
+of the geometry's `position` (`vec3`, padded to 16 bytes), `skinIndex`
+(`uvec4` as `u32`) and `skinWeight`, each indexed by `instanceIndex`. The
+result is `bindMatrixInverse * Σ w·B·(bindMatrix * p)`, as a `vec3`.
+
+* **Storage over a CPU array.** `BufferSource::StorageData { init,
+  read_only }` is uploaded like `Struct`, at the storage stride
+  (`storage_data` pads a `vec3` to four words). Three builds a new
+  `InstancedBufferAttribute` per `computeSkinning()` call, and the page calls
+  it once per kernel. So two sets of read-only buffers exist, as in three's
+  dump.
+* **Live uniforms.** `bindMatrix`, `bindMatrixInverse` and
+  `objectWorldMatrix( child )` name a specific object, not the render item.
+  A kernel has no render item. `UniformSource::Live( LiveValue )` wraps a
+  closure over a weak `Node`, which is read whenever the kernel's object
+  buffer is written. It is hashed and compared by identity.
+* **Bone matrices without a draw.** The mesh is hidden
+  (`child.visible = false`), so it never reaches the render list, and
+  nothing else would call `skeleton.update()`. `BufferSource::SkeletonBoneMatrices`
+  carries the skeleton. `Renderer::skeleton_bone_buffer()` updates it once per
+  frame and writes the uniform array, as `SkinningNode.update()` does.
+
+### 44.3 `.toAttribute()` and `Sprite.count`
+
+`StorageArray::to_attribute()` is an `InstanceBuffer` with the storage node's
+own `BufferId`. The renderer therefore finds the storage buffer the kernel
+wrote, not a copy. Storage buffers now carry `VERTEX` usage. The stride is
+the storage stride, so a `vec3` array is read 16 bytes apart (three's dump
+declares it `float32x4`). `Sprite.count` (default 1) is the instance count
+in `Payload::count()`.
+
+### 44.4 `PointsNodeMaterial.setupVertexSprite()` and `shapeCircle()`
+
+A points material on anything but `Points` offsets the clip position:
+`mvp + vec4( positionGeometry.xy * sizeNode * screenDPR / ( viewport.zw / 2 )
+* mvp.w, 0, 0 )`. `viewportSize` is `viewport.zw` here because that is what
+three's dump reads. Only the `sizeNode` path with `sizeAttenuation = false`
+is ported. The renderer's unsupported-field warning names the other two
+(attenuation, or no `sizeNode`).
+
+`shapeCircle()` branches on `material.alphaToCoverage &&
+renderer.currentSamples > 0` at build time: `fwidth` smoothing, or a hard
+`select`. Three reads both inside the `Fn` body. The port puts their
+conjunction in `BuildContext::alpha_to_coverage_samples`. The renderer pushes
+it around `setup()` and `build()` and adds it to the program's dynamic key.
+`PointsNodeMaterial.alphaToCoverage` is `undefined` (false) by default, so
+this page takes the hard edge.
+
+### 44.5 Divergences
+
+* **WGSL shape.** Three writes the skinned `bindMatrix * p` product and the
+  world position as `let` constants. The port writes them as private vars.
+  Its object members are numbered in a different order, and so are its
+  storage bindings. The values are the same, and the frame is
+  pixel-identical to three's `actual_full.png`.
+* **`subgroup_size`.** Three's kernels declare `enable subgroups` and a
+  `subgroup_size` builtin they never read. The port does not.
+
+### 44.6 `webgpu_instance_points`: a `StorageInstancedBufferAttribute`
+
+The second page has a kernel that writes each point's size into
+`storage( new StorageInstancedBufferAttribute( sizes, 1 ), 'float', n )`. The
+material reads the same attribute back with `instancedBufferAttribute()`.
+In the port that is `storage_f32( &sizes, Type::F32 )` and
+`.to_attribute()`. One `BufferId` means one GPU buffer, filled from `sizes`
+and then overwritten by the kernel, which `animate()` dispatches with
+`renderer.compute()` before each frame. A `float` array is packed at 4
+bytes, as three's `float32` vertex attribute is. The page's `alphaToCoverage:
+true` takes `shapeCircle()`'s smoothed edge and turns on the pipeline's
+alpha-to-coverage (the frame is multisampled). `vertexColors: true` has no
+effect, because the sprite quad has no `color` attribute and three checks
+`geometry.hasAttribute( 'color' )`. The example leaves it off and says so.
+`nodes::builder::with_alpha_to_coverage_samples()` is the public seam
+`dump_wgsl` uses to build the smoothed branch without a renderer.

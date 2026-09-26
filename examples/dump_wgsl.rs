@@ -30,6 +30,14 @@ mod webgpu_mesh_batch;
 #[allow(dead_code)]
 mod webgpu_compute_points;
 
+#[path = "webgpu_skinning_points.rs"]
+#[allow(dead_code)]
+mod webgpu_skinning_points;
+
+#[path = "webgpu_instance_points.rs"]
+#[allow(dead_code)]
+mod webgpu_instance_points;
+
 #[path = "webgpu_postprocessing_anamorphic.rs"]
 #[allow(dead_code)]
 mod webgpu_postprocessing_anamorphic;
@@ -2669,6 +2677,8 @@ fn dump_room_environment() {
     );
 
     dump_camera_array();
+    dump_skinning_points();
+    dump_instance_points();
 }
 
 /// Rung `webgpu_camera_array`: the cylinder's `MeshPhongNodeMaterial` drawn
@@ -2699,6 +2709,74 @@ fn dump_camera_array() {
             ..SetupContext::default()
         },
     );
+}
+
+/// Rung `webgpu_skinning_points`: Michelle's first mesh as a point cloud,
+/// against `target/dumps/webgpu_skinning_points/m0{0,1,2,3}`. `m00` is the
+/// `onInit` kernel and `m01` the per-frame one — the same body, each with its
+/// own read-only copies of `position` / `skinIndex` / `skinWeight` — and
+/// `m02`/`m03` the `PointsNodeMaterial` on a `Sprite`: the kernel's output
+/// read back as an instanced `vec3` attribute, `setupVertexSprite()`'s
+/// screen-space offset, and `shapeCircle()`'s hard edge (no
+/// `alphaToCoverage`).
+fn dump_skinning_points() {
+    let three = three_rs::testing::three_js_dir();
+    let gltf = three_rs::loaders::GLTFLoader::load(three.join("examples/models/gltf/Michelle.glb"))
+        .expect("three-rs: Michelle.glb loads");
+    let mut meshes = Vec::new();
+    gltf.scene.traverse(&mut |child| {
+        if child.borrow().is_mesh() {
+            meshes.push(child.clone());
+        }
+    });
+    let child = &meshes[0];
+    let count = match &child.borrow().payload {
+        three_rs::objects::Payload::SkinnedMesh(skinned) => skinned
+            .mesh
+            .geometry
+            .get_attribute("position")
+            .expect("three-rs: Michelle has positions")
+            .count(),
+        _ => panic!("three-rs: Michelle's meshes are skinned"),
+    };
+    let (update, positions, speeds) = webgpu_skinning_points::kernels(child, count);
+    show_compute(
+        "skinning_points_init",
+        update
+            .on_init
+            .as_ref()
+            .expect("three-rs: the kernel has an onInit"),
+    );
+    show_compute("skinning_points_update", &update);
+    show(
+        "skinning_points_material",
+        &webgpu_skinning_points::material(update, &positions, &speeds),
+        SetupContext {
+            sprite: true,
+            ..SetupContext::default()
+        },
+    );
+}
+
+/// Rung `webgpu_instance_points`, against
+/// `target/dumps/webgpu_instance_points/m0{0,1,2}`: the size kernel writing a
+/// `StorageInstancedBufferAttribute`, and the `PointsNodeMaterial` on a
+/// `Sprite` that reads it back as an instanced `f32` attribute. The material
+/// has `alphaToCoverage` on and the frame is multisampled, so `shapeCircle()`
+/// takes its `fwidth` / `smoothstep` edge.
+fn dump_instance_points() {
+    let points = webgpu_instance_points::instanced_points();
+    show_compute("instance_points_compute_size", &points.compute_size);
+    three_rs::nodes::builder::with_alpha_to_coverage_samples(true, || {
+        show(
+            "instance_points_material",
+            &points.material,
+            SetupContext {
+                sprite: true,
+                ..SetupContext::default()
+            },
+        )
+    });
 }
 
 /// Issue #140: the classic `scene.fog`. One `MeshStandardNodeMaterial` lit by

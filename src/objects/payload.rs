@@ -349,6 +349,7 @@ impl Payload {
         match self {
             Payload::InstancedMesh(instanced) => instanced.count as u32,
             Payload::Points(points) => points.count.unwrap_or(1) as u32,
+            Payload::Sprite(sprite) => sprite.count as u32,
             // `RenderObject.getInstanceCount()`: an instanced geometry's
             // `instanceCount` wins over `object.count`. A `LineSegments2`'s
             // geometry is one, and its count is the number of segments.
@@ -356,7 +357,6 @@ impl Payload {
                 Some(attributes) => attributes.instance_count() as u32,
                 None => mesh.count.unwrap_or(1) as u32,
             },
-            Payload::Sprite(sprite) => sprite.count as u32,
             _ => 1,
         }
     }
