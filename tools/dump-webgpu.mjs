@@ -668,8 +668,6 @@ async function main() {
 			"Object.defineProperty(this, 'trackTimestamp', { get: () => false, set: () => {} });"
 		);
 
-	const pageBody = pageFile ? await fs.readFile(path.resolve(pageFile), 'utf8') : null;
-
 	const buildNames = ['three.core.js', 'three.module.js', 'three.webgpu.js'];
 	const builds = {};
 	for (const name of buildNames) {
