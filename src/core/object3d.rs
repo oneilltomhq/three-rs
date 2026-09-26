@@ -74,6 +74,11 @@ pub struct Object3D {
     pub up: Vector3,
     pub matrix: Matrix4,
     pub matrix_world: Matrix4,
+    /// `Object3D.userData` — the application's own data on the object, an
+    /// open JSON object as in three.js. The node system reads it through
+    /// [`user_data`](crate::nodes::tsl::user_data), once per draw, as
+    /// `UserDataNode` does.
+    pub user_data: serde_json::Map<String, serde_json::Value>,
     /// What three.js would get from subclassing: the `Mesh`/`InstancedMesh`
     /// state that makes this node drawable. See [`Payload`].
     pub payload: Payload,
@@ -108,6 +113,7 @@ impl Default for Object3D {
             up: Vector3::new(0.0, 1.0, 0.0),
             matrix: Matrix4::identity(),
             matrix_world: Matrix4::identity(),
+            user_data: serde_json::Map::new(),
             payload: Payload::None,
         }
     }
@@ -144,6 +150,8 @@ impl Clone for Object3D {
             up: self.up,
             matrix: self.matrix,
             matrix_world: self.matrix_world,
+            // `JSON.parse( JSON.stringify( source.userData ) )`: a deep copy.
+            user_data: self.user_data.clone(),
             payload: self.payload.clone(),
         }
     }

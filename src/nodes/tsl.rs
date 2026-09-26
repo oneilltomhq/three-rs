@@ -385,6 +385,35 @@ pub fn uniform_object(
     )
 }
 
+/// `userData( name, inputType )` — `UserDataNode`, a `ReferenceNode` on the
+/// render object's own `userData`: an object-group `uniform()` whose value is
+/// `object.userData[ name ]`, re-read before every draw
+/// (`NodeUpdateType.OBJECT`), so every object sharing the material gets its
+/// own value out of one program. `webgpu_sprites` drives each sprite's
+/// `rotationNode` with it.
+///
+/// three's `ReferenceNode` walks a dotted `name` (`'a.b'`) and also accepts an
+/// explicit `userData` object in place of the render object's; the ladder uses
+/// neither, so the port takes a flat key on the render object. A number or a
+/// numeric array is read as the uniform's components; a missing key or any
+/// other value reads as zero, where three would write `undefined` and trip
+/// over it.
+pub fn user_data(name: &str, ty: Type) -> NodeRef {
+    let name = name.to_owned();
+    let length = ty.components();
+    uniform_object(ty, move |object| {
+        let mut values = match object.user_data.get(&name) {
+            Some(serde_json::Value::Number(n)) => vec![n.as_f64().unwrap_or(0.0)],
+            Some(serde_json::Value::Array(items)) => {
+                items.iter().map(|v| v.as_f64().unwrap_or(0.0)).collect()
+            }
+            _ => Vec::new(),
+        };
+        values.resize(length, 0.0);
+        values
+    })
+}
+
 pub fn uniform(
     source: UniformSource,
     ty: Type,
