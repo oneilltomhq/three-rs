@@ -3046,9 +3046,34 @@ pub fn triplanar_texture(
 /// wraps `setupNormal()`: that is what makes the normal it reads the geometric
 /// one (`NORMAL_normalView`) instead of recursing into this node.
 pub fn bump_map(map: &Texture, scale: NodeRef) -> NodeRef {
+    bump_map_with(|texture| texture(map).x(), scale)
+}
+
+/// `bumpMap( textureNode, scaleNode )` for a height that is any expression of
+/// texture taps, not just one map's `.r`: `webgpu_tsl_earth`'s
+/// `bumpMap( max( texture( map ).r, cloudsStrength ) )`.
+///
+/// `dHdxy_fwd` samples its `textureNode` three times under a
+/// `context( { getUV: … , forceUVContext: true } )` that moves every texture
+/// tap inside it to `uv`, `uv + dFdx( uv )` and `uv + dFdy( uv )`. The port's
+/// graph has no such context, so `height` is called once per tap with a
+/// stand-in for `texture( map )` that samples at that tap's uv, through the
+/// map's uv matrix as three's `setupUV()` does after `getUV`. Anything the
+/// closure captures instead, such as a tap at an explicit `uv()`, is shared
+/// by all three, which is what three's dump shows for `cloudsStrength`: the
+/// same `nodeConst` in all three `max()`es.
+pub fn bump_map_with(
+    height: impl Fn(&dyn Fn(&Texture) -> NodeRef) -> NodeRef,
+    scale: NodeRef,
+) -> NodeRef {
     in_sub_build("NORMAL", || {
         let tap = |coord: NodeRef| {
-            texture_uv(map, transformed_uv(coord, (0, map.id()), map.matrix())).x()
+            height(&|map: &Texture| {
+                texture_uv(
+                    map,
+                    transformed_uv(coord.clone(), (0, map.id()), map.matrix()),
+                )
+            })
         };
         let hll = tap(uv());
         let dhdxy = join(
