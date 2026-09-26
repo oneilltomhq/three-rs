@@ -2034,6 +2034,7 @@ fn main() {
     // rung webgpu_postprocessing_ca.
     dump_room_environment();
     dump_scene_fog();
+    dump_shadowmap_opacity();
     dump_chromatic_aberration();
 
     // #144's display nodes, each as the three.js page that dumps it builds it:
@@ -2626,4 +2627,97 @@ fn dump_scene_fog() {
 
     let exp2 = three_rs::SceneFog::from(three_rs::FogExp2::new(Color::from_hex(0x4080cc), 0.25));
     show_fog("fog_standard_exp2", &material, lit, Some(&exp2.node()));
+
+    // rung `webgpu_fog_height`: three's `dump-fog_height` m02 / m03. One
+    // instanced `MeshPhongMaterial` under a directional and an ambient light,
+    // with `scene.fogNode = fog( color( 0xffdfc1 ), exponentialHeightFogFactor(
+    // uniform( 0.04 ), uniform( 2 ) ) )` — object-group uniforms after the
+    // material's own, where `scene.fog`'s are render-group ones.
+    let height_fog = fog(
+        Color::from_hex(0xffdfc1),
+        exponential_height_fog_factor(
+            uniform_value(three_rs::nodes::Type::F32, vec![0.04]),
+            uniform_value(three_rs::nodes::Type::F32, vec![2.0]),
+        ),
+    );
+    show_fog(
+        "fog_height",
+        &MeshBasicNodeMaterial::phong(Color::from_hex(0xcd959a)),
+        SetupContext {
+            instance_count: Some(100),
+            instanced: true,
+            lights: vec![
+                LightDesc {
+                    index: 0,
+                    kind: LightKind::Directional,
+                    shadow_map: None,
+                },
+                LightDesc {
+                    index: 1,
+                    kind: LightKind::Ambient,
+                    shadow_map: None,
+                },
+            ],
+            ..SetupContext::default()
+        },
+        Some(&height_fog),
+    );
+}
+
+/// Rung `webgpu_shadowmap_opacity`, against
+/// `target/dumps/webgpu_shadowmap_opacity/m*.wgsl`: the shadow pass's override
+/// material for a caster with a `castShadowNode` (m01, m02 with the red
+/// colour), the backdrop receiving a PCF shadow with `shadowMap.transmitted`
+/// (m05), and the output pass with AgX tone mapping (m09).
+fn dump_shadowmap_opacity() {
+    let mut dragon = MeshBasicNodeMaterial::physical(Color::from_hex(0xffffff), 0.0, 0.0);
+    dragon.cast_shadow_node = Some(mix(
+        vec3(1.0, 1.0, 1.0),
+        three_rs::nodes::NodeRef::from(Color::new(0.921, 0.64, 0.064)),
+        float(1.0),
+    ));
+    show(
+        "shadowmap_opacity_cast_shadow",
+        &three_rs::materials::shadow_material_for(&dragon, Default::default()),
+        SetupContext::default(),
+    );
+
+    let cloth = Texture::new(2, 2, Some(vec![0; 16]));
+    let mut backdrop = MeshBasicNodeMaterial::standard(Color::from_hex(0xffffff), 0.4935, 0.0);
+    backdrop.map = Some(cloth);
+    let colour = Texture::render_target(2048, 2048, wgpu::TextureFormat::Rgba8Unorm);
+    show(
+        "shadowmap_opacity_backdrop",
+        &backdrop,
+        SetupContext {
+            lights: vec![
+                LightDesc {
+                    index: 0,
+                    kind: LightKind::Ambient,
+                    shadow_map: None,
+                },
+                LightDesc {
+                    index: 1,
+                    kind: LightKind::Directional,
+                    shadow_map: Some(ShadowMap::Transmitted {
+                        map: Box::new(ShadowMap::Planar(DepthTexture::new())),
+                        color: colour,
+                    }),
+                },
+            ],
+            ..SetupContext::default()
+        },
+    );
+
+    let framebuffer = Texture::render_target(800, 500, wgpu::TextureFormat::Rgba16Float);
+    let mut out = MeshBasicNodeMaterial::new();
+    out.fragment_node = Some(three_rs::materials::output_fragment_node(
+        &framebuffer,
+        three_rs::ToneMapping::AgX,
+    ));
+    show(
+        "shadowmap_opacity_output_agx",
+        &out,
+        SetupContext::default(),
+    );
 }

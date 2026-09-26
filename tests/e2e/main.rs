@@ -246,6 +246,14 @@ mod webgpu_tsl_angular_slicing;
 #[allow(dead_code)]
 mod webgpu_textures_2d_array_compressed;
 
+#[path = "../../examples/webgpu_fog_height.rs"]
+#[allow(dead_code)]
+mod webgpu_fog_height;
+
+#[path = "../../examples/webgpu_shadowmap_opacity.rs"]
+#[allow(dead_code)]
+mod webgpu_shadowmap_opacity;
+
 #[path = "../../examples/webgpu_clearcoat.rs"]
 #[allow(dead_code)]
 mod webgpu_clearcoat;
@@ -1919,6 +1927,90 @@ fn webgpu_materials_texture_manualmipmap() {
         webgpu_materials_texture_manualmipmap::animate,
         |app| app.renderer.device(),
     );
+}
+
+#[test]
+fn webgpu_fog_height() {
+    let name = "webgpu_fog_height";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_fog_height::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_fog_height::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_fog_height::animate, |app| {
+        app.renderer.device()
+    });
+}
+
+#[test]
+fn webgpu_shadowmap_opacity() {
+    let name = "webgpu_shadowmap_opacity";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_shadowmap_opacity::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_shadowmap_opacity::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_shadowmap_opacity::animate, |app| {
+        app.renderer.device()
+    });
 }
 
 /// The occlusion rung: a Phong plane whose `colorNode` is an
@@ -3936,6 +4028,8 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_compute_texture);
     rung!(webgpu_textures_2d_array_compressed);
     rung!(webgpu_tsl_angular_slicing);
+    rung!(webgpu_fog_height);
+    rung!(webgpu_shadowmap_opacity);
 }
 
 // ---------------------------------------------------------------------------

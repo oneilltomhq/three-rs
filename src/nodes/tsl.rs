@@ -4512,6 +4512,115 @@ pub fn aces_filmic_tone_mapping(color: NodeRef, exposure: NodeRef) -> NodeRef {
     call(&def, vec![color, exposure])
 }
 
+/// `agxToneMapping( color, exposure )` — `ToneMappingFunctions.js`' AgX,
+/// emitted as a real `fn`. `agxDefaultContrastApprox` has no layout upstream,
+/// so it inlines here too, with its three `toVar()`s.
+///
+/// The matrices are `mat3( vec3, vec3, vec3 )` — columns — and are written
+/// out column by column, as the WGSL prints them. The first and last are
+/// `LINEAR_SRGB_TO_LINEAR_REC2020` and its inverse from `ColorSpaceFunctions`.
+pub fn agx_tone_mapping(color: NodeRef, exposure: NodeRef) -> NodeRef {
+    thread_local! { static CELL: Lazy<Rc<FnDef>> = const { Lazy::new() }; }
+    let def = CELL.with(|c| {
+        c.get(|| {
+            shader_fn(
+                Some("agxToneMapping"),
+                vec![("color", Type::Vec3), ("exposure", Type::F32)],
+                Type::Vec3,
+                |args| {
+                    let (color, exposure) = (args[0].clone(), args[1].clone());
+                    let srgb_to_rec2020 = constant(
+                        Type::Mat3,
+                        vec![
+                            0.6274, 0.0691, 0.0164, //
+                            0.3293, 0.9195, 0.088, //
+                            0.0433, 0.0113, 0.8956,
+                        ],
+                    );
+                    let inset = constant(
+                        Type::Mat3,
+                        vec![
+                            0.856627153315983,
+                            0.137318972929847,
+                            0.11189821299995,
+                            0.0951212405381588,
+                            0.761241990602591,
+                            0.0767994186031903,
+                            0.0482516061458583,
+                            0.101439036467562,
+                            0.811302368396859,
+                        ],
+                    );
+                    let outset = constant(
+                        Type::Mat3,
+                        vec![
+                            1.1271005818144368,
+                            -0.1413297634984383,
+                            -0.14132976349843826,
+                            -0.11060664309660323,
+                            1.157823702216272,
+                            -0.11060664309660294,
+                            -0.016493938717834573,
+                            -0.016493938717834257,
+                            1.2519364065950405,
+                        ],
+                    );
+                    let rec2020_to_srgb = constant(
+                        Type::Mat3,
+                        vec![
+                            1.6605, -0.1246, -0.0182, //
+                            -0.5876, 1.1329, -0.1006, //
+                            -0.0728, -0.0083, 1.1187,
+                        ],
+                    );
+                    let min_ev = || float(-12.47393);
+                    let max_ev = float(4.026069);
+
+                    let colortone = to_var(None, color);
+                    // `agxDefaultContrastApprox( colortone )`, inlined.
+                    let x = to_var(None, colortone.clone());
+                    let x2 = to_var(None, x.clone().mul(x.clone()));
+                    let x4 = to_var(None, x2.clone().mul(x2.clone()));
+                    let contrast = float(15.5)
+                        .mul(x4.clone().mul(x2.clone()))
+                        .sub(float(40.14).mul(x4.clone().mul(x.clone())))
+                        .add(
+                            float(31.96)
+                                .mul(x4)
+                                .sub(float(6.868).mul(x2.clone().mul(x.clone())))
+                                .add(
+                                    float(0.4298)
+                                        .mul(x2)
+                                        .add(float(0.1191).mul(x).sub(float(0.00232))),
+                                ),
+                        );
+                    block(
+                        vec![
+                            colortone.assign(colortone.mul(exposure)),
+                            colortone.assign(srgb_to_rec2020.mul(colortone.clone())),
+                            colortone.assign(inset.mul(colortone.clone())),
+                            colortone.assign(max(colortone.clone(), float(1e-10))),
+                            colortone.assign(log2(colortone.clone())),
+                            colortone.assign(colortone.sub(min_ev()).div(max_ev.sub(min_ev()))),
+                            colortone.assign(colortone.clamp(0.0, 1.0)),
+                            colortone.assign(contrast),
+                            colortone.assign(outset.mul(colortone.clone())),
+                            colortone.assign(
+                                max(vec3(0.0, 0.0, 0.0), colortone.clone())
+                                    .pow(vec3(2.2, 2.2, 2.2)),
+                            ),
+                            colortone.assign(rec2020_to_srgb.mul(colortone.clone())),
+                            colortone.assign(colortone.clamp(0.0, 1.0)),
+                        ],
+                        colortone,
+                    )
+                },
+            )
+        })
+    });
+    call(&def, vec![color, exposure])
+}
+
 /// `neutralToneMapping( color, exposure )` — `ToneMappingFunctions.js`'
 /// Khronos PBR Neutral, emitted as a real `fn`.
 ///
