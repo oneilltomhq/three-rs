@@ -173,6 +173,10 @@ mod webgpu_postprocessing_transition;
 #[allow(dead_code)]
 mod webgpu_postprocessing_sobel;
 
+#[path = "../../examples/webgpu_postprocessing_afterimage.rs"]
+#[allow(dead_code)]
+mod webgpu_postprocessing_afterimage;
+
 #[path = "../../examples/webgpu_procedural_texture.rs"]
 #[allow(dead_code)]
 mod webgpu_procedural_texture;
@@ -1200,6 +1204,60 @@ fn webgpu_postprocessing_sobel() {
         name,
         &mut app,
         webgpu_postprocessing_sobel::animate,
+        |app| app.renderer.device(),
+    );
+}
+
+/// 50000 additive sprites spiralling on a sphere through one scene pass and
+/// `AfterImageNode`'s feedback composite. The graded frame is the first, so
+/// the composite's previous target is still zero.
+///
+/// Ignored: the port's frame is identical to three.js' own frame for the page
+/// here, and three itself fails `webgpu_postprocessing_afterimage.jpg` on
+/// this machine by the same 521 pixels. See
+/// `docs/webgpu_postprocessing_afterimage-progress.md`.
+#[test]
+#[ignore = "three.js itself fails its own reference for this page on this machine"]
+fn webgpu_postprocessing_afterimage() {
+    let name = "webgpu_postprocessing_afterimage";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_postprocessing_afterimage::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_postprocessing_afterimage::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(
+        name,
+        &mut app,
+        webgpu_postprocessing_afterimage::animate,
         |app| app.renderer.device(),
     );
 }
@@ -4030,6 +4088,7 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_tsl_angular_slicing);
     rung!(webgpu_fog_height);
     rung!(webgpu_shadowmap_opacity);
+    rung!(webgpu_postprocessing_afterimage);
 }
 
 // ---------------------------------------------------------------------------
