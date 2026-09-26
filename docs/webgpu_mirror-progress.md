@@ -2,7 +2,8 @@
 
 Status: **green.** 22 of 100000 pixels against three.js' own
 `test/e2e/image.js`, threshold 0.1%. Intel Iris Xe, Mesa 25.3.6, wgpu on
-Vulkan. Steady frame STEADY ms, CALLS draw calls, TRIS triangles.
+Vulkan. Steady frame 6.4 ms, 40 draw calls (five scene renders of eight
+meshes), 6269 triangles; the steady frame builds nothing.
 
 A Cornell-style box of six Phong planes around a half sphere and a
 flat-shaded icosahedron, lit by four point lights. The floor and the back wall

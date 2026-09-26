@@ -246,6 +246,9 @@ mod webgpu_fog_height;
 #[path = "webgpu_materials_toon.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_materials_toon;
+#[path = "webgpu_mirror.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_mirror;
 #[path = "webgpu_modifier_curve.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_modifier_curve;
@@ -430,6 +433,7 @@ const GRADED: &[(&str, fn())] = &[
     ("webgpu_shadowmap_opacity", || {
         drop(webgpu_shadowmap_opacity::init())
     }),
+    ("webgpu_mirror", || drop(webgpu_mirror::init())),
 ];
 
 /// Where the committed manifests live, one `<example>.json` each.
