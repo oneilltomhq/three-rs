@@ -8,7 +8,7 @@
 //! `webgpu_materials_basic`'s frame-time floor. Everything here is pure, so the
 //! identity rules can be tested without a device.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use super::CACHE_GRACE_FRAMES;
 use crate::nodes::node::TextureSource;
@@ -288,6 +288,11 @@ impl BindGroupKey {
             resources: serials.collect(),
         }
     }
+
+    /// Whether any of this group's resources is one of `serials`.
+    pub fn binds_any(&self, serials: &HashSet<u64>) -> bool {
+        self.resources.iter().any(|serial| serials.contains(serial))
+    }
 }
 
 /// Whether an entry last used at `last_used` survives a sweep at `frames`:
@@ -337,6 +342,15 @@ mod tests {
         let mut next = Occurrences::default();
         assert_eq!(next.next(draw(1, 2)), first);
         assert_eq!(next.next(draw(1, 2)), second);
+    }
+
+    #[test]
+    fn a_bind_group_key_knows_the_serials_it_binds() {
+        let key = BindGroupKey::from_serials(LayoutKey::Render(1), 0, [3, 5, 8].into_iter());
+        assert!(key.binds_any(&HashSet::from([5])));
+        assert!(key.binds_any(&HashSet::from([1, 8])));
+        assert!(!key.binds_any(&HashSet::from([1, 2, 4])));
+        assert!(!key.binds_any(&HashSet::new()));
     }
 
     #[test]
