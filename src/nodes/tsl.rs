@@ -14,6 +14,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use super::builder::{current_context, push_context};
 use super::node::{
     BufferNode, BufferSource, Builtin, FnDef, InstanceBuffer, Lazy, Node, NodeRef, SampleMode,
     SettableValue, Type, UniformGroup, UniformNode, UniformSource, VarDef, VaryingDef,
@@ -94,9 +95,6 @@ fn override_node(pick: fn(&OverrideNodes) -> &Option<NodeRef>) -> Option<NodeRef
 }
 
 thread_local! {
-    /// `NodeBuilder.subBuildLayers`. One layer at a time is all the ladder
-    /// needs; `NORMAL` is the only name so far.
-    static SUB_BUILD: RefCell<Option<&'static str>> = const { RefCell::new(None) };
     /// `builder.context.overrideNodes` — the map `material.contextNode =
     /// overrideNodes( … )` installs for the whole of one material's setup.
     static OVERRIDE_NODES: RefCell<Option<OverrideNodes>> = const { RefCell::new(None) };
@@ -147,7 +145,7 @@ thread_local! {
 /// `NodeBuilder.getSubBuildProperty( name )`: inside a layer a var's name is
 /// prefixed with the layer's, which is where `NORMAL_normalView` comes from.
 fn sub_build_name(name: &str) -> String {
-    match SUB_BUILD.with(|s| *s.borrow()) {
+    match current_context(|cx| cx.sub_build) {
         Some(layer) => format!("{layer}_{name}"),
         None => name.to_string(),
     }
@@ -155,10 +153,8 @@ fn sub_build_name(name: &str) -> String {
 
 /// `subBuild( node, name )` — build `f`'s nodes inside the named layer.
 fn in_sub_build<R>(layer: &'static str, f: impl FnOnce() -> R) -> R {
-    let previous = SUB_BUILD.with(|s| s.replace(Some(layer)));
-    let out = f();
-    SUB_BUILD.with(|s| *s.borrow_mut() = previous);
-    out
+    let _layer = push_context(|cx| cx.sub_build = Some(layer));
+    f()
 }
 
 /// Install the material's `normalNode` as `builder.context.setupNormal` for the
@@ -2244,7 +2240,7 @@ pub fn normal_view_geometry() -> NodeRef {
 /// The cache key every node that reads `normalView` shares: the open sub-build
 /// layer plus the material's own normal node.
 fn normal_key() -> NormalViewKey {
-    let layer = SUB_BUILD.with(|s| *s.borrow());
+    let layer = current_context(|cx| cx.sub_build);
     let value = if layer.is_some() {
         None
     } else {
@@ -2266,7 +2262,7 @@ fn normal_key() -> NormalViewKey {
 /// The material's normal node for the current build, or `None` inside a
 /// sub-build layer, which runs on the geometric normal.
 fn normal_value() -> Option<NodeRef> {
-    let layer = SUB_BUILD.with(|s| *s.borrow());
+    let layer = current_context(|cx| cx.sub_build);
     if layer.is_some() {
         None
     } else {
@@ -2415,7 +2411,7 @@ fn tangent_attribute_frame() -> (NodeRef, NodeRef) {
 
     // `getBitangent( normalView.cross( tangentView ), 'v_bitangentView' )`.
     let cross_normal_tangent = cross(normal_view(), tangent_view.clone()).mul(tangent_geometry.w());
-    let in_normal_layer = SUB_BUILD.with(|s| *s.borrow()) == Some("NORMAL");
+    let in_normal_layer = current_context(|cx| cx.sub_build) == Some("NORMAL");
     let bitangent = if in_normal_layer && !flat {
         // The varying's name goes through `getSubBuildProperty()` here because
         // the node carries the layer; `v_tangentView` above does not, because

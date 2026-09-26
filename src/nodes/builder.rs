@@ -373,6 +373,85 @@ impl NodeCache {
     }
 }
 
+// ---------------------------------------------------------------------------
+
+/// `builder.context`: the keys a node reads while its graph is being set up,
+/// and the only build-scoped state the TSL constructors in `tsl.rs` consult.
+///
+/// three.js keeps a plain object on the builder and `ContextNode` merges keys
+/// into it for one subgraph, restoring the previous object afterwards. The
+/// port does the same with a stack of these: [`push_context`] copies the top
+/// entry, lets the caller change the keys it installs, and the returned
+/// [`ContextGuard`] pops it again. Core keys are typed fields; `extra` holds
+/// the string-keyed ones addons add (#155 decision 6).
+///
+/// The stack is one `thread_local!` beside [`NodeBuilder`] rather than a field
+/// of it, because the port's `NodeMaterial.setup()` builds the flow *before*
+/// the builder exists (three calls it from inside `builder.build()`). It is
+/// empty between material setups; outside any push, reads see the default.
+/// See `docs/nodes.md` §37.
+#[derive(Clone, Default)]
+pub(crate) struct BuildContext {
+    /// `NodeBuilder.subBuildLayers`, one layer deep: `NORMAL` is the only name
+    /// the ladder needs. Three keeps it on the builder beside `context`.
+    pub(crate) sub_build: Option<&'static str>,
+    /// Addon keys (`TRAANode`, `ClusteredLightsNode`, the light-data nodes).
+    /// Nothing reads it yet; `context( node, { … } )` (#161) will.
+    #[allow(dead_code)]
+    pub(crate) extra: HashMap<&'static str, NodeRef>,
+}
+
+thread_local! {
+    static BUILD_CONTEXT: std::cell::RefCell<Vec<BuildContext>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Pops the [`BuildContext`] [`push_context`] pushed when it goes out of
+/// scope, so an early return or a panic cannot leak one material's context
+/// into the next build.
+#[must_use = "the context is popped as soon as the guard is dropped"]
+pub(crate) struct ContextGuard {
+    depth: usize,
+}
+
+impl Drop for ContextGuard {
+    fn drop(&mut self) {
+        BUILD_CONTEXT.with(|stack| {
+            let mut stack = stack.borrow_mut();
+            debug_assert_eq!(
+                stack.len(),
+                self.depth,
+                "three-rs: BuildContext guards dropped out of order"
+            );
+            stack.pop();
+        });
+    }
+}
+
+/// `ContextNode`'s setup: a copy of the current context with `edit` applied,
+/// in force until the returned guard is dropped.
+pub(crate) fn push_context(edit: impl FnOnce(&mut BuildContext)) -> ContextGuard {
+    let mut cx = current_context(BuildContext::clone);
+    edit(&mut cx);
+    BUILD_CONTEXT.with(|stack| {
+        let mut stack = stack.borrow_mut();
+        stack.push(cx);
+        ContextGuard { depth: stack.len() }
+    })
+}
+
+/// Read the current context: the top of the stack, or the default one
+/// outside any push.
+pub(crate) fn current_context<R>(read: impl FnOnce(&BuildContext) -> R) -> R {
+    thread_local! {
+        static EMPTY: BuildContext = BuildContext::default();
+    }
+    BUILD_CONTEXT.with(|stack| match stack.borrow().last() {
+        Some(cx) => read(cx),
+        None => EMPTY.with(read),
+    })
+}
+
 #[derive(Default)]
 struct StageState {
     lines: Vec<String>,
@@ -2983,5 +3062,25 @@ impl NodeBuilder {
             Stage::Compute => unreachable!("three-rs: assemble_compute writes the compute entry"),
         }
         out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{current_context, push_context};
+
+    #[test]
+    fn build_context_nests_and_restores() {
+        assert_eq!(current_context(|cx| cx.sub_build), None);
+        {
+            let _outer = push_context(|cx| cx.sub_build = Some("NORMAL"));
+            assert_eq!(current_context(|cx| cx.sub_build), Some("NORMAL"));
+            {
+                let _inner = push_context(|cx| cx.sub_build = Some("VERTEX"));
+                assert_eq!(current_context(|cx| cx.sub_build), Some("VERTEX"));
+            }
+            assert_eq!(current_context(|cx| cx.sub_build), Some("NORMAL"));
+        }
+        assert_eq!(current_context(|cx| cx.sub_build), None);
     }
 }
