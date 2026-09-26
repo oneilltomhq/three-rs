@@ -103,6 +103,12 @@ pub struct SetupContext {
     /// gets the screen-derivative one. It changes both stages' code, so it is
     /// part of the program's cache key.
     pub has_tangent_attribute: bool,
+    /// The geometry's `InstancedBufferAttribute`s by name —
+    /// `isInstancedBufferAttribute`, which sets their vertex buffer's
+    /// `stepMode` to `instance`. It changes the pipeline, not the WGSL, and is
+    /// in the key for that reason; see
+    /// [`NodeProgram::instanced_attributes`](crate::nodes::NodeProgram).
+    pub instanced_attributes: Vec<String>,
     /// `viewportOpaqueMipTexture()` — the renderer's mipped copy of the frame
     /// as it stood when the last opaque object had been drawn, which is what a
     /// transmissive material reads through. `None` on every pass that makes no

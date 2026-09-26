@@ -110,6 +110,10 @@ Linux is the only backend that has been run.
 | [`webgpu_loader_gltf_sheen`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_loader_gltf_sheen.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_loader_gltf_sheen-progress.md) | [`webgpu_deferred`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_deferred.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_deferred-progress.md) | [`webgpu_loader_gltf_anisotropy`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_loader_gltf_anisotropy.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_loader_gltf_anisotropy-progress.md) | [`webgpu_shadowmap_vsm`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_shadowmap_vsm.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_shadowmap_vsm-progress.md) |
 | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_shadowmap_pointlight.jpg" alt="webgpu_shadowmap_pointlight" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_shadowmap_pointlight) |  |  |  |
 | [`webgpu_shadowmap_pointlight`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_shadowmap_pointlight.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_shadowmap_pointlight-progress.md) |  |  |  |
+| [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_loader_gltf_sheen.jpg" alt="webgpu_loader_gltf_sheen" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_loader_gltf_sheen) | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_deferred.jpg" alt="webgpu_deferred" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_deferred) | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_loader_gltf_anisotropy.jpg" alt="webgpu_loader_gltf_anisotropy" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_loader_gltf_anisotropy) | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_struct_drawindirect.jpg" alt="webgpu_struct_drawindirect" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_struct_drawindirect) |
+| [`webgpu_loader_gltf_sheen`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_loader_gltf_sheen.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_loader_gltf_sheen-progress.md) | [`webgpu_deferred`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_deferred.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_deferred-progress.md) | [`webgpu_loader_gltf_anisotropy`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_loader_gltf_anisotropy.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_loader_gltf_anisotropy-progress.md) | [`webgpu_struct_drawindirect`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_struct_drawindirect.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_struct_drawindirect-progress.md) |
+| [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_particles.jpg" alt="webgpu_particles" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_particles) |  |  |  |
+| [`webgpu_particles`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_particles.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_particles-progress.md) |  |  |  |
 
 <sub>Our own rendered frames, one per graded example. Each thumbnail opens the example running in your browser on WebGPU ([all of them](https://oneilltomhq.github.io/three-rs/)); the caption links the ported source. See [`docs/gallery.md`](https://github.com/oneilltomhq/three-rs/blob/main/docs/gallery.md).</sub>
 <!-- gallery:end -->
@@ -178,6 +182,8 @@ same screenshots at the same threshold (see
 | webgpu_volume_perlin | 23 | 5.2 | 2 | 13 | yes |
 | webgpu_shadowmap_vsm | 0 | 4.5 | 22 | 10419 | yes |
 | webgpu_shadowmap_pointlight | 63 (Three itself scores 63 against the same JPEG) | 5.0 | 20 | 7421 | yes |
+| webgpu_struct_drawindirect | 0 (see below) | 1.3 | 2 | 100001 (drawn indirect) | yes |
+| webgpu_particles | 0 (see below) | 5.8 | 4 | 6001 (+ 82 lines; the fire's 2000 drawn indirect) | yes |
 
 `webgpu_compute_points` is graded like the rest and its 4 pixels mean less
 than the rest: its frame is black apart from a 2x2 block at the centre, so
@@ -185,6 +191,16 @@ Three's comparator would pass it at 0.0% even if the compute passes never ran.
 That rung is gated on the WGSL its kernels compile to and on reading the
 storage buffers back — `docs/rung12-progress.md` says why and what the tests
 assert.
+
+`webgpu_struct_drawindirect` and `webgpu_particles` are the same kind of
+green. three's page draws before it dispatches the kernels that fill the
+indirect buffer, so the graded frame of the first is the clear colour; at the
+grader's pinned time every sprite of the second has zero opacity, so its frame
+is the grid. Both are gated on their shaders against three's own dump
+(`tests/nodes_compute_indirect_wgsl.rs`) and on what the GPU draws a frame or
+a moment later (`tests/renderer_compute_indirect.rs`); the notes say what each
+asserts. The triangle counts are the CPU-side counts `renderer.info()` records
+for an indirect draw, as three's does, not what the GPU was told to draw.
 
 Measured on Intel Iris Xe, Mesa 25.3.6, Fedora 43, against three.js 5f610f5
 (past r186, for the cube PMREM of 2f80402; the pin becomes the r187 tag once

@@ -6,7 +6,6 @@
 
 use crate::materials::Side;
 use crate::math::{Color, Matrix3, Matrix4, Vector2, Vector3, Vector4};
-use crate::nodes::node::BufferSource;
 use crate::nodes::wgsl::TextureKind;
 use crate::nodes::{BindingDesc, NodeProgram, Type, UniformMember, UniformSource};
 
@@ -289,7 +288,7 @@ fn layout_entry(binding: u32, desc: &BindingDesc) -> wgpu::BindGroupLayoutEntry 
                 // compute, `read` in the vertex and fragment stages, which is
                 // why the page asks for `maxStorageBuffersInVertexStage: 1`.
                 ty: match source {
-                    BufferSource::Storage => wgpu::BufferBindingType::Storage {
+                    source if source.is_storage() => wgpu::BufferBindingType::Storage {
                         read_only: !visibility.compute,
                     },
                     _ => wgpu::BufferBindingType::Uniform,

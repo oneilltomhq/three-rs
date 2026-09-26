@@ -276,6 +276,8 @@ ComputeTexture, webgpu_compute_texture, "../../examples/webgpu_compute_texture.r
 VolumePerlin, webgpu_volume_perlin, "../../examples/webgpu_volume_perlin.rs";
 ShadowmapVsm, webgpu_shadowmap_vsm, "../../examples/webgpu_shadowmap_vsm.rs";
 ShadowmapPointlight, webgpu_shadowmap_pointlight, "../../examples/webgpu_shadowmap_pointlight.rs";
+StructDrawindirect, webgpu_struct_drawindirect, "../../examples/webgpu_struct_drawindirect.rs";
+Particles, webgpu_particles, "../../examples/webgpu_particles.rs";
 }
 
 /// Where an example's assets come from: three.js at the commit this port is

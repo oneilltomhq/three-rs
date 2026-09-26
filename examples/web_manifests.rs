@@ -230,6 +230,13 @@ mod webgpu_volume_perlin;
 #[path = "webgpu_shadowmap_pointlight.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_shadowmap_pointlight;
+#[path = "webgpu_struct_drawindirect.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_struct_drawindirect;
+
+#[path = "webgpu_particles.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_particles;
 
 /// Every graded example, in the README's order, paired with a call of its
 /// `init()`.
@@ -374,6 +381,10 @@ const GRADED: &[(&str, fn())] = &[
     ("webgpu_shadowmap_pointlight", || {
         drop(webgpu_shadowmap_pointlight::init())
     }),
+    ("webgpu_struct_drawindirect", || {
+        drop(webgpu_struct_drawindirect::init())
+    }),
+    ("webgpu_particles", || drop(webgpu_particles::init())),
 ];
 
 /// Where the committed manifests live, one `<example>.json` each.

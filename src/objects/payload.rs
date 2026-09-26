@@ -354,7 +354,7 @@ impl Payload {
             // geometry is one, and its count is the number of segments.
             Payload::Mesh(mesh) => match &mesh.line_segments {
                 Some(attributes) => attributes.instance_count() as u32,
-                None => 1,
+                None => mesh.count as u32,
             },
             _ => 1,
         }

@@ -294,6 +294,14 @@ mod webgpu_tsl_raging_sea;
 #[allow(dead_code)]
 mod webgpu_volume_perlin;
 
+#[path = "../../examples/webgpu_struct_drawindirect.rs"]
+#[allow(dead_code)]
+mod webgpu_struct_drawindirect;
+
+#[path = "../../examples/webgpu_particles.rs"]
+#[allow(dead_code)]
+mod webgpu_particles;
+
 fn three_js_dir() -> PathBuf {
     three_rs::testing::three_js_dir()
 }
@@ -1783,6 +1791,103 @@ fn webgpu_materials_texture_manualmipmap() {
         webgpu_materials_texture_manualmipmap::animate,
         |app| app.renderer.device(),
     );
+}
+
+/// Two `SpriteNodeMaterial`s over 2000 and 1000 instances, the fire drawn
+/// through `drawIndexedIndirect`. At three's pinned time every sprite's
+/// opacity is zero, so the graded frame is the grid on the background;
+/// `tests/nodes_compute_indirect_wgsl.rs` checks the sprite's shaders
+/// against three's dump and `tests/renderer_compute_indirect.rs` the frame a
+/// later time draws.
+#[test]
+fn webgpu_particles() {
+    let name = "webgpu_particles";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_particles::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_particles::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_particles::animate, |app| {
+        app.renderer.device()
+    });
+}
+
+/// The indirect draw and the `struct` storage buffer
+/// (`IndirectStorageBufferAttribute`, `drawIndirect`). three's page renders
+/// before it runs its two kernels, so the graded frame draws the
+/// zero-instance arguments the buffer was created with and is the clear
+/// colour alone; `tests/renderer_compute_indirect.rs` checks the kernels'
+/// arguments and the frame they draw, and `tests/nodes_compute_indirect_wgsl.rs`
+/// checks the kernels against three's own dump.
+#[test]
+fn webgpu_struct_drawindirect() {
+    let name = "webgpu_struct_drawindirect";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_struct_drawindirect::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_struct_drawindirect::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_struct_drawindirect::animate, |app| {
+        app.renderer.device()
+    });
 }
 
 /// The gate on `Data3DTexture` and `texture3D` (issue #166): a 128³ `r8unorm`
@@ -3364,6 +3469,8 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_postprocessing_transition);
     rung!(webgpu_postprocessing_sobel);
     rung!(webgpu_procedural_texture);
+    rung!(webgpu_particles);
+    rung!(webgpu_struct_drawindirect);
     rung!(webgpu_volume_perlin);
     rung!(webgpu_compute_texture);
     rung!(webgpu_textures_2d_array_compressed);
