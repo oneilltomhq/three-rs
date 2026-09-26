@@ -181,6 +181,7 @@ fn main() {
             skin: None,
             batch: None,
             line_segments: None,
+            sprite: false,
             mrt: None,
             output: None,
             vertex_color_size: 0,
@@ -492,7 +493,10 @@ fn main() {
         "difference_scene",
         &difference_scene,
         SetupContext::default(),
-        Some(&fog(Color::from_hex(0x0487e2), range_fog_factor(7.0, 25.0))),
+        Some(
+            &three_rs::SceneFog::from(three_rs::Fog::new(Color::from_hex(0x0487e2), 7.0, 25.0))
+                .node(),
+        ),
     );
 
     // rung webgpu_postprocessing_direct: the `DirectRenderPipeline` hook, which
@@ -930,7 +934,7 @@ fn main() {
     // `handoff/scouts/rung7/m0*-r186.wgsl`. Light order is the scene order:
     // ambient, spot, directional.
     let shadow_fog =
-        three_rs::nodes::tsl::fog(Color::from_hex(0x222244), range_fog_factor(50.0, 100.0));
+        three_rs::SceneFog::from(three_rs::Fog::new(Color::from_hex(0x222244), 50.0, 100.0)).node();
 
     let mut background = MeshBasicNodeMaterial::new();
     background.color_node = Some(three_rs::materials::background_node_color_node(
@@ -1417,6 +1421,7 @@ fn main() {
     let mut line2 = MeshBasicNodeMaterial::line2(Color::from_hex(0xffffff));
     line2.linewidth = 5.0;
     line2.vertex_colors = true;
+    line2.alpha_to_coverage = false;
     show(
         "line2",
         &line2,
@@ -1893,6 +1898,7 @@ fn main() {
     show("interoperability_tsl", &tsl_crt, SetupContext::default());
     // rung webgpu_postprocessing_ca.
     dump_room_environment();
+    dump_scene_fog();
     dump_chromatic_aberration();
 
     // #144's display nodes, each as the three.js page that dumps it builds it:
@@ -2128,4 +2134,33 @@ fn dump_room_environment() {
         ..MeshBasicNodeMaterial::lambert(Color::from_hex(0x000000))
     };
     show("room_panel", &panel, point);
+}
+
+/// Issue #140: the classic `scene.fog`. One `MeshStandardNodeMaterial` lit by
+/// one `DirectionalLight`, under `new Fog( 0x4080cc, 2, 6 )` and under
+/// `new FogExp2( 0x4080cc, 0.25 )`, against
+/// `node tools/dump-webgpu.mjs fog_standard_{linear,exp2} --html
+/// tools/dump-pages/fog_standard_{linear,exp2}.html` (`m00` vertex, `m01`
+/// fragment). The fog parameters are render-group uniforms, after the light's.
+fn dump_scene_fog() {
+    let lit = SetupContext {
+        lights: vec![LightDesc {
+            index: 0,
+            kind: LightKind::Directional,
+            shadow_map: None,
+        }],
+        ..SetupContext::default()
+    };
+    let material = MeshBasicNodeMaterial::standard(Color::from_hex(0xff8040), 0.5, 0.2);
+
+    let linear = three_rs::SceneFog::from(three_rs::Fog::new(Color::from_hex(0x4080cc), 2.0, 6.0));
+    show_fog(
+        "fog_standard_linear",
+        &material,
+        lit.clone(),
+        Some(&linear.node()),
+    );
+
+    let exp2 = three_rs::SceneFog::from(three_rs::FogExp2::new(Color::from_hex(0x4080cc), 0.25));
+    show_fog("fog_standard_exp2", &material, lit, Some(&exp2.node()));
 }

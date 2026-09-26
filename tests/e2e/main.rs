@@ -226,6 +226,9 @@ mod webgpu_deferred;
 #[path = "../../examples/webgpu_loader_gltf_anisotropy.rs"]
 #[allow(dead_code)]
 mod webgpu_loader_gltf_anisotropy;
+#[path = "../../examples/webgpu_materials_texture_manualmipmap.rs"]
+#[allow(dead_code)]
+mod webgpu_materials_texture_manualmipmap;
 
 #[path = "../../examples/webgpu_lights_phong.rs"]
 #[allow(dead_code)]
@@ -244,6 +247,9 @@ mod webgpu_lights_physical;
 #[path = "../../examples/webgpu_lines_fat.rs"]
 #[allow(dead_code)]
 mod webgpu_lines_fat;
+#[path = "../../examples/webgpu_lines_fat_raycasting.rs"]
+#[allow(dead_code)]
+mod webgpu_lines_fat_raycasting;
 #[path = "../../examples/webgpu_mesh_batch.rs"]
 #[allow(dead_code)]
 mod webgpu_mesh_batch;
@@ -259,6 +265,9 @@ mod webgpu_tsl_galaxy;
 #[path = "../../examples/webgpu_tsl_interoperability.rs"]
 #[allow(dead_code)]
 mod webgpu_tsl_interoperability;
+#[path = "../../examples/webgpu_tsl_vfx_flames.rs"]
+#[allow(dead_code)]
+mod webgpu_tsl_vfx_flames;
 
 fn three_js_dir() -> PathBuf {
     three_rs::testing::three_js_dir()
@@ -1396,6 +1405,58 @@ fn webgpu_lines_fat() {
     });
 }
 
+/// The world-units fat line: `Line2NodeMaterial`'s `worldUnits` branch with
+/// `alphaToCoverage` on a four-sample target, and a raycast from a pointer at
+/// infinity that must hit nothing (the marker spheres stay hidden).
+#[test]
+fn webgpu_lines_fat_raycasting() {
+    let name = "webgpu_lines_fat_raycasting";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_lines_fat_raycasting::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_lines_fat_raycasting::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+    assert!(
+        !app.sphere_inter.borrow().visible && !app.sphere_on_line.borrow().visible,
+        "a ray from ( Infinity, Infinity ) is NaN and hits nothing"
+    );
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(
+        name,
+        &mut app,
+        webgpu_lines_fat_raycasting::animate,
+        |app| app.renderer.device(),
+    );
+}
+
 #[test]
 fn webgpu_pmrem_cubemap() {
     let name = "webgpu_pmrem_cubemap";
@@ -1643,6 +1704,58 @@ fn webgpu_loader_gltf_anisotropy() {
         name,
         &mut app,
         webgpu_loader_gltf_anisotropy::animate,
+        |app| app.renderer.device(),
+    );
+}
+
+/// `scene.fog` (issue #140) and page-supplied mip levels. Two scenes under
+/// `new THREE.Fog( 0x000000, 1500, 4000 )`, one per scissor half: the floor
+/// fades into the black background through the render-group fog uniforms,
+/// and its texture's eight hand-painted levels — one colour each — show which
+/// mip the sampler picks, linear-filtered on the left and
+/// `NearestMipmapNearest` on the right. A generated chain in place of the
+/// page's levels turns the red / green / blue bands grey.
+#[test]
+fn webgpu_materials_texture_manualmipmap() {
+    let name = "webgpu_materials_texture_manualmipmap";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_materials_texture_manualmipmap::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_materials_texture_manualmipmap::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(
+        name,
+        &mut app,
+        webgpu_materials_texture_manualmipmap::animate,
         |app| app.renderer.device(),
     );
 }
@@ -2489,6 +2602,49 @@ fn webgpu_tsl_galaxy() {
 }
 
 #[test]
+fn webgpu_tsl_vfx_flames() {
+    let name = "webgpu_tsl_vfx_flames";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_tsl_vfx_flames::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_tsl_vfx_flames::animate(&mut app);
+    println!("{name}: info {:?}", app.renderer.info());
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_tsl_vfx_flames::animate, |app| {
+        app.renderer.device()
+    });
+}
+
+#[test]
 fn webgpu_tsl_interoperability() {
     let name = "webgpu_tsl_interoperability";
     let out = out_dir(name);
@@ -2825,6 +2981,7 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_morphtargets);
     rung!(webgpu_tsl_galaxy);
     rung!(webgpu_tsl_interoperability);
+    rung!(webgpu_tsl_vfx_flames);
     rung!(webgpu_shadowmap);
     rung!(webgpu_lights_physical);
     // The PMREM is built once, before the first frame; `update` is idempotent,
@@ -2841,12 +2998,14 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_mesh_batch, 2);
     rung!(webgpu_compute_points);
     rung!(webgpu_lines_fat);
+    rung!(webgpu_lines_fat_raycasting);
     rung!(webgpu_loader_gltf);
     rung!(webgpu_loader_gltf_sheen);
     rung!(webgpu_mrt);
     rung!(webgpu_custom_fog_background);
     rung!(webgpu_deferred);
     rung!(webgpu_loader_gltf_anisotropy);
+    rung!(webgpu_materials_texture_manualmipmap);
     rung!(webgpu_postprocessing_transition);
     rung!(webgpu_postprocessing_sobel);
     rung!(webgpu_procedural_texture);

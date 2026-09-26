@@ -4,7 +4,13 @@
 // a throwaway puppeteer script in the vendor tree. This is that script, kept.
 //
 // Usage:
-//   node tools/dump-webgpu.mjs <example_name> [--out DIR]
+//   node tools/dump-webgpu.mjs <example_name> [--out DIR] [--html FILE]
+//
+// `--html FILE` serves FILE in place of the checkout's
+// `examples/<example_name>.html`, for a page that is not a three.js example
+// (tools/dump-pages/, e.g. one fogged material in isolation). It is served at
+// that same URL, so the page's import map and relative asset paths resolve
+// against the checkout exactly as an example's do.
 //
 // Reads the three.js checkout at $THREE_JS_DIR (default ~/src/vendor/three.js,
 // matching src/testing.rs::vendor_dir) and Chrome + puppeteer-core from that
@@ -31,7 +37,7 @@ const repoRoot = path.resolve(__dirname, '..');
 
 function usage(msg) {
 	if (msg) console.error(msg);
-	console.error('usage: node tools/dump-webgpu.mjs <example_name> [--out DIR]');
+	console.error('usage: node tools/dump-webgpu.mjs <example_name> [--out DIR] [--html FILE]');
 	process.exit(1);
 }
 
@@ -40,18 +46,22 @@ function parseArgs(argv) {
 	if (args.length === 0 || args[0].startsWith('-')) usage();
 	const example = args[0];
 	let out = null;
+	let html = null;
 	for (let i = 1; i < args.length; i++) {
 		if (args[i] === '--out') {
 			out = args[++i];
 			if (!out) usage('--out needs a DIR');
+		} else if (args[i] === '--html') {
+			html = args[++i];
+			if (!html) usage('--html needs a FILE');
 		} else {
 			usage(`unrecognised argument: ${args[i]}`);
 		}
 	}
-	return { example, out };
+	return { example, out, html };
 }
 
-const { example, out } = parseArgs(process.argv);
+const { example, out, html } = parseArgs(process.argv);
 
 const vendorDir = process.env.THREE_JS_DIR
 	|| path.join(process.env.HOME, 'src/vendor/three.js');
@@ -693,8 +703,14 @@ async function main() {
 			if (msg.type() === 'error') errors.push(msg.text());
 		});
 
+		const pageBody = html ? await fs.readFile(path.resolve(html), 'utf8') : null;
+
 		page.on('request', async (request) => {
 			const url = request.url();
+			if (pageBody !== null && url === `http://localhost:${port}/examples/${example}.html`) {
+				await request.respond({ status: 200, contentType: 'text/html; charset=utf-8', body: pageBody });
+				return;
+			}
 			for (const build in builds) {
 				if (url === `http://localhost:${port}/build/${build}`) {
 					await request.respond({ status: 200, contentType: 'application/javascript; charset=utf-8', body: builds[build] });

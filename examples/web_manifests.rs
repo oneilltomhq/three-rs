@@ -105,6 +105,10 @@ mod webgpu_compute_points;
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_lines_fat;
 
+#[path = "webgpu_lines_fat_raycasting.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_lines_fat_raycasting;
+
 #[path = "webgpu_pmrem_test.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_pmrem_test;
@@ -197,6 +201,13 @@ mod webgpu_deferred;
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_loader_gltf_anisotropy;
 
+#[path = "webgpu_materials_texture_manualmipmap.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_materials_texture_manualmipmap;
+#[path = "webgpu_tsl_vfx_flames.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_tsl_vfx_flames;
+
 /// Every graded example, in the README's order, paired with a call of its
 /// `init()`.
 ///
@@ -251,6 +262,9 @@ const GRADED: &[(&str, fn())] = &[
         drop(webgpu_compute_points::init())
     }),
     ("webgpu_lines_fat", || drop(webgpu_lines_fat::init())),
+    ("webgpu_lines_fat_raycasting", || {
+        drop(webgpu_lines_fat_raycasting::init())
+    }),
     ("webgpu_pmrem_test", || drop(webgpu_pmrem_test::init())),
     ("webgpu_postprocessing_difference", || {
         drop(webgpu_postprocessing_difference::init())
@@ -298,6 +312,12 @@ const GRADED: &[(&str, fn())] = &[
     ("webgpu_deferred", || drop(webgpu_deferred::init())),
     ("webgpu_loader_gltf_anisotropy", || {
         drop(webgpu_loader_gltf_anisotropy::init())
+    }),
+    ("webgpu_materials_texture_manualmipmap", || {
+        drop(webgpu_materials_texture_manualmipmap::init())
+    }),
+    ("webgpu_tsl_vfx_flames", || {
+        drop(webgpu_tsl_vfx_flames::init())
     }),
     ("webgpu_procedural_texture", || {
         drop(webgpu_procedural_texture::init())

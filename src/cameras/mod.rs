@@ -14,8 +14,8 @@ use crate::math::{Box3, CoordinateSystem, Matrix4, Vector3};
 /// `matrixWorldInverse`, `matrixWorld`, `layers` and `coordinateSystem`.
 ///
 /// `Vector3::project()`/`unproject()` read the same four matrix accessors, and
-/// `Raycaster.setFromCamera()` will read them too when it is ported; nothing
-/// here is renderer-only.
+/// `Raycaster.setFromCamera()` reads them and the type flags; nothing here is
+/// renderer-only.
 ///
 /// three.js has a real `Camera extends Object3D` base class that both cameras
 /// extend; the port grew `PerspectiveCamera` first and kept them as separate
@@ -41,9 +41,16 @@ pub trait RenderCamera {
     fn layers(&self) -> Layers;
     /// `camera.far` — the sort key scale `BatchedMesh`' custom sort uses.
     fn far(&self) -> f64;
-    /// `camera.near` — what `PassNode.updateBefore()` copies into its
-    /// `_cameraNear` uniform.
+    /// `camera.near` — `LineSegments2`' screen-space raycast clips to it.
     fn near(&self) -> f64;
+    /// `camera.isPerspectiveCamera`.
+    fn is_perspective_camera(&self) -> bool {
+        false
+    }
+    /// `camera.isOrthographicCamera`.
+    fn is_orthographic_camera(&self) -> bool {
+        false
+    }
 }
 
 impl RenderCamera for PerspectiveCamera {
@@ -52,6 +59,9 @@ impl RenderCamera for PerspectiveCamera {
     }
     fn near(&self) -> f64 {
         self.near
+    }
+    fn is_perspective_camera(&self) -> bool {
+        true
     }
     fn update_matrix_world(&mut self) {
         self.update_matrix_world();
@@ -82,6 +92,9 @@ impl RenderCamera for OrthographicCamera {
     }
     fn near(&self) -> f64 {
         self.near
+    }
+    fn is_orthographic_camera(&self) -> bool {
+        true
     }
     fn update_matrix_world(&mut self) {
         self.update_matrix_world();
