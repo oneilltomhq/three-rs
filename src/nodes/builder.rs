@@ -398,6 +398,10 @@ pub(crate) struct BuildContext {
     /// `overrideNodes`: what `material.contextNode = overrideNodes( … )`
     /// installs for the whole of one material's setup (§27).
     pub(crate) override_nodes: Option<super::tsl::OverrideNodes>,
+    /// `setupNormal`: `NodeMaterial.setupNormal()`'s result, the material's
+    /// `normalNode`. `normalView` takes it as its value outside the `NORMAL`
+    /// layer and `normalViewGeometry` inside it.
+    pub(crate) setup_normal: Option<NodeRef>,
     /// Addon keys (`TRAANode`, `ClusteredLightsNode`, the light-data nodes).
     /// Nothing reads it yet; `context( node, { … } )` (#161) will.
     #[allow(dead_code)]

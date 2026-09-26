@@ -93,12 +93,8 @@ fn override_node(pick: fn(&OverrideNodes) -> &Option<NodeRef>) -> Option<NodeRef
 }
 
 thread_local! {
-    /// `builder.context.setupNormal()` — `NodeMaterial.setupNormal()`'s result,
-    /// i.e. the material's `normalNode`. `normal_view()` takes it as its value
-    /// outside the `NORMAL` layer and `normalViewGeometry` inside it.
-    static NORMAL_VALUE: RefCell<Option<NodeRef>> = const { RefCell::new(None) };
     /// `builder.isFlatShading()` — `material.flatShading && material.wireframe
-    /// === false`. `normalViewGeometry` reads it, so like `NORMAL_VALUE` it is
+    /// === false`. `normalViewGeometry` reads it, so like `setup_normal` it is
     /// installed for the whole of one material's setup.
     static FLAT_SHADING: RefCell<bool> = const { RefCell::new(false) };
     /// `builder.material.side` — what `negateOnBackSide()` branches on, and so
@@ -161,11 +157,10 @@ pub fn with_material_normal<R>(
     side: Side,
     f: impl FnOnce() -> R,
 ) -> R {
-    let previous = NORMAL_VALUE.with(|v| v.replace(normal));
+    let _normal = push_context(|cx| cx.setup_normal = normal);
     let previous_flat = FLAT_SHADING.with(|v| v.replace(flat_shading));
     let previous_side = MATERIAL_SIDE.with(|v| v.replace(side));
     let out = f();
-    NORMAL_VALUE.with(|v| *v.borrow_mut() = previous);
     FLAT_SHADING.with(|v| *v.borrow_mut() = previous_flat);
     MATERIAL_SIDE.with(|v| *v.borrow_mut() = previous_side);
     out
@@ -2239,7 +2234,7 @@ fn normal_key() -> NormalViewKey {
     let value = if layer.is_some() {
         None
     } else {
-        NORMAL_VALUE.with(|v| v.borrow().clone())
+        current_context(|cx| cx.setup_normal.clone())
     };
     (
         layer,
@@ -2261,7 +2256,7 @@ fn normal_value() -> Option<NodeRef> {
     if layer.is_some() {
         None
     } else {
-        NORMAL_VALUE.with(|v| v.borrow().clone())
+        current_context(|cx| cx.setup_normal.clone())
     }
 }
 
@@ -2610,7 +2605,7 @@ lighting_var!(
 
 thread_local! {
     /// `builder.context.setupClearcoatNormal()` — the clearcoat lobe's normal
-    /// for the material being set up, the clearcoat twin of `NORMAL_VALUE`.
+    /// for the material being set up, the clearcoat twin of `setup_normal`.
     static CLEARCOAT_NORMAL_VALUE: RefCell<Option<NodeRef>> = const { RefCell::new(None) };
     static CLEARCOAT_NORMAL_VIEW: RefCell<HashMap<Option<usize>, NodeRef>> =
         RefCell::new(HashMap::new());
