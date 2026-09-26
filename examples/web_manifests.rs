@@ -237,6 +237,9 @@ mod webgpu_struct_drawindirect;
 #[path = "webgpu_clearcoat.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_clearcoat;
+#[path = "webgpu_materials_toon.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_materials_toon;
 #[path = "webgpu_modifier_curve.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_modifier_curve;
@@ -394,6 +397,9 @@ const GRADED: &[(&str, fn())] = &[
     ("webgpu_clearcoat", || drop(webgpu_clearcoat::init())),
     ("webgpu_modifier_curve", || {
         drop(webgpu_modifier_curve::init())
+    }),
+    ("webgpu_materials_toon", || {
+        drop(webgpu_materials_toon::init())
     }),
 ];
 
