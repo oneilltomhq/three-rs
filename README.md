@@ -175,6 +175,7 @@ same screenshots at the same threshold (see
 | webgpu_particles | 0 (see below) | 5.8 | 4 | 6001 (+ 82 lines; the fire's 2000 drawn indirect) | yes |
 | webgpu_clearcoat | 4 | 2.7 | 6 | 17857 | yes |
 | webgpu_modifier_curve | 3 (Three itself scores 3 against the same JPEG) | 1.3 | 7 | 34753 (+ 50 lines) | yes |
+| webgpu_lights_selective | 9 (Three itself scores 9 against the same JPEG) | 4.4 | 5 | 62001 | yes |
 
 `webgpu_compute_points` is graded like the rest and its 4 pixels mean less
 than the rest: its frame is black apart from a 2x2 block at the centre, so

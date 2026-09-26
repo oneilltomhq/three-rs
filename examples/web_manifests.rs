@@ -237,6 +237,9 @@ mod webgpu_struct_drawindirect;
 #[path = "webgpu_clearcoat.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_clearcoat;
+#[path = "webgpu_lights_selective.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_lights_selective;
 #[path = "webgpu_modifier_curve.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_modifier_curve;
@@ -394,6 +397,9 @@ const GRADED: &[(&str, fn())] = &[
     ("webgpu_clearcoat", || drop(webgpu_clearcoat::init())),
     ("webgpu_modifier_curve", || {
         drop(webgpu_modifier_curve::init())
+    }),
+    ("webgpu_lights_selective", || {
+        drop(webgpu_lights_selective::init())
     }),
 ];
 
