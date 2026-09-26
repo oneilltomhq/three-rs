@@ -32,7 +32,7 @@ shaders zero every indirect term, as the port's do.
 | `src/nodes/builder.rs` | `FrontFacingNode.generate()`'s `true` outside the fragment stage |
 | `examples/` | `webgpu_loader_gltf_compressed.rs`; `dump_wgsl` section `loader_gltf_compressed_coffee` |
 
-`docs/nodes.md` §43 is the long form.
+`docs/nodes.md` §48 is the long form.
 
 ## What the pixels found
 

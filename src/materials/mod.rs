@@ -4,10 +4,12 @@
 pub mod blending;
 mod dfg_lut;
 pub mod environment;
+pub mod lighting_model;
 pub mod line2;
 mod node_material;
 pub mod phong;
 pub mod physical;
+pub mod toon;
 pub mod transmission;
 
 pub use node_material::{
@@ -118,6 +120,8 @@ pub enum ToneMapping {
     Linear,
     /// `NeutralToneMapping` — the Khronos PBR Neutral tone mapper.
     Neutral,
+    /// `AgXToneMapping` — Blender's AgX, through Rec. 2020.
+    AgX,
 }
 
 /// Which `NodeMaterial` subclass this is — i.e. which `setupLightingModel()`
@@ -163,6 +167,11 @@ pub enum MaterialKind {
     /// `setupDiffuseColor()` (round-cap coverage, per-end instance colour).
     /// See [`crate::materials::line2`].
     Line2,
+    /// `MeshToonNodeMaterial` — `ToonLightingModel`: the Lambert flow with
+    /// the direct light's `dotNL` replaced by a lookup in
+    /// [`gradient_map`](MeshBasicNodeMaterial::gradient_map) (or a fixed
+    /// two-step ramp without one). See [`crate::materials::toon`].
+    Toon,
 }
 
 /// Port of `MeshBasicNodeMaterial.js` + the `NodeMaterial.js` / `Material.js`
@@ -178,8 +187,8 @@ pub enum MaterialKind {
 ///
 /// - a field the *program* depends on — any node (`color_node`,
 ///   `position_node`, `fragment_node`, …), any map or `env_map`, `kind`,
-///   `lights`, `lights_node`, `flat_shading`, `fog`, `transparent`,
-///   `blending`, `alpha_to_coverage`, `world_units`, `size_attenuation`, `mask_node` — needs
+///   `lights`, `lights_node`, `lighting_model`, `flat_shading`, `fog`, `transparent`,
+///   `blending`, `alpha_to_coverage`, `world_units`, `size_attenuation`, `mask_node`, `cast_shadow_node` — needs
 ///   [`set_needs_update`](Self::set_needs_update) after it changes, which is
 ///   `material.needsUpdate = true`. Without it the old program keeps drawing.
 /// - a field the program reads as a **uniform** — `color`, `opacity`,
@@ -261,9 +270,26 @@ pub struct MeshBasicNodeMaterial {
     /// scene here rather than shared through an `Rc`. `None` means "every light
     /// in the scene", which is what `LightsNode` defaults to.
     pub lights_node: Option<Vec<usize>>,
+    /// The `lightingModel` of `material.lightsNode = lights( [ … ] ).context(
+    /// { lightingModel } )` — a user-defined
+    /// [`LightingModel`](lighting_model::LightingModel) that the `LightsNode`
+    /// drives in place of a built-in one.
+    ///
+    /// `LightingContextNode.setup()` reads `this.lightingModel ||
+    /// builder.context.lightingModel`, so the material's own
+    /// `setupLightingModel()` wins: this is read only by the kinds that have
+    /// none of their own — `Points`, `Sprite`, and `Basic` standing in for a
+    /// bare `NodeMaterial` — and ignored, as in three, by Phong, Lambert,
+    /// Standard and Physical. A program input, like `lights_node`.
+    pub lighting_model: Option<std::rc::Rc<dyn lighting_model::LightingModel>>,
     /// `material.maskNode` — `NodeMaterial.setupDiscard()` turns it into
     /// `If( mask.not(), () => Discard() )` at the top of the fragment.
     pub mask_node: Option<NodeRef>,
+    /// `material.castShadowNode` — the colour this material casts into the
+    /// shadow map's colour target, which receivers tint their shadow by when
+    /// `renderer.shadowMap.transmitted` is on (`docs/nodes.md` §43).
+    /// `Renderer._getShadowNodes()` reads its `.rgb` and `.a`.
+    pub cast_shadow_node: Option<NodeRef>,
     /// `material.receivedShadowPositionNode` —
     /// `ShadowBaseNode.setupShadowPosition()` assigns it to
     /// `shadowPositionWorld` instead of `positionWorld`.
@@ -293,6 +319,10 @@ pub struct MeshBasicNodeMaterial {
     /// (`vec4( emissive, 1 ) * tex`) and the `.xyz` is taken afterwards, which
     /// is why the port builds it the same way rather than multiplying `vec3`s.
     pub emissive_map: Option<Texture>,
+    /// `MeshToonMaterial.gradientMap` — the ramp `ToonLightingModel` reads
+    /// the direct light's `dotNL * 0.5 + 0.5` through. Read by the `Toon`
+    /// kind only.
+    pub gradient_map: Option<Texture>,
     /// `MeshStandardMaterial.aoMap` / `.aoMapIntensity` — `materialAO`,
     /// `tex.r.sub( 1 ).mul( aoMapIntensity ).add( 1 )`, assigned to the
     /// `AmbientOcclusion` property by `NodeMaterial.setupAmbientOcclusion()`.
@@ -359,6 +389,9 @@ pub struct MeshBasicNodeMaterial {
     /// `transmission` moves the object into the renderer's transmission pass.
     pub transmission: f64,
     pub thickness: f64,
+    /// `MeshPhysicalMaterial.thicknessMap` — `MaterialNode.THICKNESS`
+    /// multiplies `thickness` by the texel's green channel.
+    pub thickness_map: Option<Texture>,
     pub attenuation_distance: f64,
     pub attenuation_color: Color,
     /// `material.normalNode` — e.g. `normalMap( texture( map ) )`.
@@ -485,7 +518,9 @@ impl Default for MeshBasicNodeMaterial {
             flat_shading: false,
             lights: false,
             lights_node: None,
+            lighting_model: None,
             mask_node: None,
+            cast_shadow_node: None,
             received_shadow_position_node: None,
             fog: true,
             // `MeshStandardMaterial` defaults.
@@ -496,6 +531,7 @@ impl Default for MeshBasicNodeMaterial {
             roughness_map: None,
             metalness_map: None,
             emissive_map: None,
+            gradient_map: None,
             ao_map: None,
             ao_map_intensity: 1.0,
             bump_map: None,
@@ -523,6 +559,7 @@ impl Default for MeshBasicNodeMaterial {
             transmission: 0.0,
             // three's `MeshPhysicalMaterial` defaults: no volume at all.
             thickness: 0.0,
+            thickness_map: None,
             attenuation_distance: f64::INFINITY,
             attenuation_color: Color::new(1.0, 1.0, 1.0),
             normal_node: None,
@@ -781,6 +818,21 @@ impl MeshBasicNodeMaterial {
 }
 
 impl MeshBasicNodeMaterial {
+    /// `new MeshToonNodeMaterial( { color, gradientMap } )`.
+    ///
+    /// `MeshToonMaterial`'s defaults over `Material`'s — white, `emissive`
+    /// black at intensity 1, no maps — are all ones the struct already
+    /// carries, and `lights = true` is the constructor's own.
+    pub fn toon(color: Color, gradient_map: Option<Texture>) -> Self {
+        Self {
+            kind: MaterialKind::Toon,
+            color,
+            gradient_map,
+            lights: true,
+            ..Self::default()
+        }
+    }
+
     /// `new MeshStandardNodeMaterial( { color, roughness, metalness } )`.
     pub fn standard(color: Color, roughness: f64, metalness: f64) -> Self {
         Self {
@@ -812,6 +864,10 @@ pub type MeshPhongNodeMaterial = MeshBasicNodeMaterial;
 /// three.js' name for a `NodeMaterial` whose kind is `Lambert`. The struct is
 /// shared for the reason [`MeshPhongNodeMaterial`] is.
 pub type MeshLambertNodeMaterial = MeshBasicNodeMaterial;
+
+/// three.js' name for a `NodeMaterial` whose kind is `Toon` — see
+/// [`MeshBasicNodeMaterial::toon`].
+pub type MeshToonNodeMaterial = MeshBasicNodeMaterial;
 
 /// three.js' name for a `NodeMaterial` whose kind is `Sprite`.
 pub type SpriteNodeMaterial = MeshBasicNodeMaterial;

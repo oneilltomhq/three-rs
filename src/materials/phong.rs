@@ -14,7 +14,7 @@ use crate::lights::{
     ShadowFilterMap,
 };
 use crate::nodes::tsl::*;
-use crate::nodes::NodeRef;
+use crate::nodes::{NodeRef, Type};
 use crate::textures::{CubeDepthTexture, DepthTexture};
 
 /// `1 / π` — three.js' `RECIPROCAL_PI`, which prints as
@@ -118,6 +118,14 @@ pub enum ShadowMap {
     /// it as the shadow factor in place of a `ShadowNode`, so no shadow
     /// position is assigned and no map is rendered.
     Node(NodeRef),
+    /// `renderer.shadowMap.transmitted`: a spot or directional light's
+    /// depth map (`Planar` or a non-cube `Filtered`) plus the colour target
+    /// the shadow pass wrote each caster's `castShadowNode` into, which
+    /// tints the shadow (`ShadowNode.setupShadow()`'s `shadowColor` branch).
+    Transmitted {
+        map: Box<ShadowMap>,
+        color: crate::textures::Texture,
+    },
 }
 
 /// By identity, as a texture contributes its `uuid` to `Node.getCacheKey()`:
@@ -133,6 +141,10 @@ impl std::hash::Hash for ShadowMap {
                 filter.hash(state);
             }
             ShadowMap::Node(node) => node.key().hash(state),
+            ShadowMap::Transmitted { map, color } => {
+                map.hash(state);
+                color.id().hash(state);
+            }
         }
     }
 }
@@ -176,6 +188,18 @@ pub fn shadow_node(
             filter,
         } => point_shadow_filtered(index, map, filter),
         ShadowMap::Filtered { map, filter } => shadow_factor_filtered(index, map, filter),
+        ShadowMap::Transmitted { map, color } => match &**map {
+            ShadowMap::Planar(depth) => shadow_factor_transmitted(
+                index,
+                &ShadowFilterMap::Depth(depth.clone()),
+                &ShadowFilter::Pcf,
+                Some(color),
+            ),
+            ShadowMap::Filtered { map, filter } if !matches!(map, ShadowFilterMap::Cube(_)) => {
+                shadow_factor_transmitted(index, map, filter, Some(color))
+            }
+            _ => unreachable!("three-rs: only a planar shadow map carries a colour target"),
+        },
         ShadowMap::Node(_) => unreachable!("three-rs: returned above"),
     }
 }
@@ -275,6 +299,33 @@ pub fn shadow_factor_filtered(
     map: &ShadowFilterMap,
     filter: &ShadowFilter,
 ) -> NodeRef {
+    shadow_factor_transmitted(index, map, filter, None)
+}
+
+/// [`shadow_factor_filtered`], and with `color` — the shadow pass's colour
+/// target under `renderer.shadowMap.transmitted` — tinted by what the casters
+/// wrote there:
+///
+/// ```js
+/// shadowColor = texture( shadowMap.texture, shadowCoord );
+/// shadowOutput = mix( 1, shadowNode.rgb.mix( shadowColor, 1 ), shadowIntensity.mul( shadowColor.a ) ).toVar();
+/// ```
+///
+/// Where nothing was cast the target keeps its `( 0, 0, 0, 0 )` clear, so
+/// the alpha zeroes the weight and the light is untouched; where a caster is
+/// the nearest surface the depth test passes and the inner mix is 1.
+///
+/// **Divergence** (`docs/nodes.md` §43): the output is a `vec4` in three, and
+/// `lightColor.mul( shadow )` then widens the whole direct term to `vec4`
+/// (`vec4( lightColor, 1 ) * shadow`, and `( vec4( directDiffuse, 1 ) + … ).xyz`
+/// in the dump). The port takes the `.xyz` here, so the light colour stays a
+/// `vec3`; the three channels are the same numbers.
+pub fn shadow_factor_transmitted(
+    index: usize,
+    map: &ShadowFilterMap,
+    filter: &ShadowFilter,
+    color: Option<&crate::textures::Texture>,
+) -> NodeRef {
     // `shadowPosition = shadowMatrix * vec4( shadowPositionWorld +
     // normalWorld * normalBias, 1 )`.
     let position = shadow_matrix(index).mul(vec4_join(vec![
@@ -305,12 +356,28 @@ pub fn shadow_factor_filtered(
     let filtered = filter.apply(&ShadowFilterInputs {
         index,
         map: map.clone(),
-        shadow_coord: coord,
+        shadow_coord: coord.clone(),
         dp: None,
     });
     let shadow = frustum_test.select(filtered, float(1.0));
 
-    mix(float(1.0), shadow, shadow_intensity(index))
+    match color {
+        None => mix(float(1.0), shadow, shadow_intensity(index)),
+        Some(color) => {
+            let shadow_color = texture_uv(color, coord.xy());
+            let tinted = mix(
+                shadow_color.clone(),
+                vec4(1.0, 1.0, 1.0, 1.0),
+                shadow.to(Type::Vec4),
+            );
+            mix(
+                vec4(1.0, 1.0, 1.0, 1.0),
+                tinted,
+                shadow_intensity(index).mul(shadow_color.w()),
+            )
+            .xyz()
+        }
+    }
 }
 
 /// `AmbientLightNode.setup()` — `irradiance += lightColor`, no attenuation.

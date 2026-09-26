@@ -489,6 +489,10 @@ pub struct UniformContext<'a> {
     /// for the passes three.js draws with its own internal `QuadMesh` or
     /// background mesh, which no application node can be attached to.
     pub object: Option<&'a crate::core::Object3D>,
+    /// `frame.renderer.isOccluded()`'s answers for the render context being
+    /// drawn — see [`crate::nodes::NodeFrame`]. `None` outside a scene pass
+    /// and before a query has resolved.
+    pub occluded: Option<&'a std::collections::HashSet<u32>>,
     pub camera_projection: Matrix4,
     pub camera_view: Matrix4,
     pub camera_world: Matrix4,
@@ -578,6 +582,14 @@ pub struct UniformContext<'a> {
     /// `skeleton.boneMatrices` — the flat `mat4` array the bone buffer holds,
     /// already updated for this frame.
     pub bone_matrices: &'a [f32],
+    /// An `ArrayCamera`'s sub-cameras' `matrixWorldInverse` and
+    /// `projectionMatrix`, sixteen floats each in `camera.cameras` order —
+    /// what `cameraViewMatrices` / `cameraProjectionMatrices` hold. Empty
+    /// for every other camera.
+    pub camera_view_matrices: &'a [f32],
+    pub camera_projection_matrices: &'a [f32],
+    /// The same sub-cameras' `viewport`s, in CSS pixels.
+    pub camera_viewports: &'a [Vector4],
 }
 
 impl Default for UniformContext<'_> {
@@ -636,6 +648,9 @@ impl Default for UniformContext<'_> {
             viewport_size: Vector2::new(0.0, 0.0),
             viewport: Vector4::new(0.0, 0.0, 0.0, 0.0),
             screen_dpr: 1.0,
+            camera_view_matrices: &[],
+            camera_projection_matrices: &[],
+            camera_viewports: &[],
             time: 0.0,
             delta_time: 0.0,
             frame_id: 0,
@@ -648,6 +663,7 @@ impl Default for UniformContext<'_> {
             object_center: Vector2::new(0.5, 0.5),
             bone_matrices: &[],
             object: None,
+            occluded: None,
         }
     }
 }
@@ -664,6 +680,9 @@ impl UniformContext<'_> {
                     self.camera_projection.to_f32_array().to_vec()
                 }
                 UniformSource::CameraViewMatrix => self.camera_view.to_f32_array().to_vec(),
+                // Never read: each sub-camera binds its own group; see
+                // `UniformSource::CameraIndex`.
+                UniformSource::CameraIndex => vec![0.0],
                 UniformSource::CameraWorldMatrix => self.camera_world.to_f32_array().to_vec(),
                 UniformSource::CameraPosition => {
                     let m = self.camera_world.to_f32_array();
@@ -863,9 +882,12 @@ impl UniformContext<'_> {
                 // `nodeFrame.updateBeforeNode`/`updateNode` for the render
                 // object whose buffer it is about to write.
                 UniformSource::ObjectUpdate(update) => update
-                    .value(self.object.expect(
-                        "three-rs: an object-update uniform is only reachable from a draw that has a render object",
-                    ))
+                    .value(&crate::nodes::NodeFrame {
+                        object: self.object.expect(
+                            "three-rs: an object-update uniform is only reachable from a draw that has a render object",
+                        ),
+                        occluded: self.occluded,
+                    })
                     .iter()
                     .map(|&v| v as f32)
                     .collect(),

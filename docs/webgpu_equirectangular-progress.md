@@ -29,7 +29,7 @@ ported. The graded intensity is the default 1.
 | `src/materials/node_material.rs` | `background_node_color_node` keeps a vec4 node as it is (`vec4( node )`) |
 | `examples/` | `webgpu_equirectangular.rs`; `dump_wgsl` section `background_equirect` |
 
-`docs/nodes.md` §43 is the long form.
+`docs/nodes.md` §48 is the long form.
 
 ## What the pixels found
 
