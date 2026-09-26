@@ -2580,9 +2580,8 @@ lighting_var!(
 );
 
 thread_local! {
-    /// `builder.context.setupClearcoatNormal()` — the clearcoat lobe's normal
-    /// for the material being set up, the clearcoat twin of `setup_normal`.
-    static CLEARCOAT_NORMAL_VALUE: RefCell<Option<NodeRef>> = const { RefCell::new(None) };
+    /// `clearcoatNormalView`'s node per `setupClearcoatNormal` value, the
+    /// clearcoat twin of `NORMAL_VIEW`.
     static CLEARCOAT_NORMAL_VIEW: RefCell<HashMap<Option<usize>, NodeRef>> =
         RefCell::new(HashMap::new());
 }
@@ -2590,10 +2589,8 @@ thread_local! {
 /// Install the material's clearcoat normal node for the duration of `f` —
 /// `MeshPhysicalNodeMaterial.setup()`'s `builder.context.setupClearcoatNormal`.
 pub fn with_clearcoat_normal<R>(normal: Option<NodeRef>, f: impl FnOnce() -> R) -> R {
-    let previous = CLEARCOAT_NORMAL_VALUE.with(|v| v.replace(normal));
-    let out = f();
-    CLEARCOAT_NORMAL_VALUE.with(|v| *v.borrow_mut() = previous);
-    out
+    let _clearcoat = push_context(|cx| cx.setup_clearcoat_normal = normal);
+    f()
 }
 
 /// `clearcoatNormalView` — `Normal.js`' var, whose value is the material's
@@ -2604,7 +2601,7 @@ pub fn with_clearcoat_normal<R>(normal: Option<NodeRef>, f: impl FnOnce() -> R) 
 /// a bumpy base, which is the whole look of `webgpu_clearcoat`'s carbon fibre
 /// and car paint.
 pub fn clearcoat_normal_view() -> NodeRef {
-    let value = CLEARCOAT_NORMAL_VALUE.with(|v| v.borrow().clone());
+    let value = current_context(|cx| cx.setup_clearcoat_normal.clone());
     let key = value.as_ref().map(|v| v.key());
     if let Some(node) = CLEARCOAT_NORMAL_VIEW.with(|m| m.borrow().get(&key).cloned()) {
         return node;

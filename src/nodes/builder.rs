@@ -418,6 +418,9 @@ pub(crate) struct BuildContext {
     /// `SpriteNodeMaterial` and `PointsNodeMaterial` override. `None` is the
     /// base class' `modelViewMatrix.mul( positionLocal ).xyz`.
     pub(crate) setup_position_view: Option<NodeRef>,
+    /// `setupClearcoatNormal`: `MeshPhysicalNodeMaterial.setup()`'s clearcoat
+    /// lobe normal, the clearcoat twin of `setup_normal`.
+    pub(crate) setup_clearcoat_normal: Option<NodeRef>,
     /// Addon keys (`TRAANode`, `ClusteredLightsNode`, the light-data nodes).
     /// Nothing reads it yet; `context( node, { … } )` (#161) will.
     #[allow(dead_code)]
@@ -434,6 +437,7 @@ impl Default for BuildContext {
             material_side: crate::materials::Side::Front,
             has_tangent: false,
             setup_position_view: None,
+            setup_clearcoat_normal: None,
             extra: HashMap::new(),
         }
     }
