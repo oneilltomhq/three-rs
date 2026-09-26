@@ -49,6 +49,17 @@ bytemuck = { version = "1", features = ["derive"] }
 png = "0.17"
 serde_json = "1"
 zune-jpeg = { version = "0.5.15", default-features = false, features = ["std"] }
+# `KHR_draco_mesh_compression` (issue #139). three.js ships libdraco only as
+# an Emscripten build, so the bitstream is taken from this pure-Rust port of
+# it; `src/loaders/draco.rs` ports the DRACOLoader half on top. Decoder
+# features only: valence edgebreaker, pre-2.2 bitstreams and point clouds
+# are all things libdraco's decoder (and so DRACOLoader) accepts.
+draco-core = { version = "2.2.0", default-features = false, features = [
+    "decoder",
+    "edgebreaker_valence_decode",
+    "legacy_bitstream_decode",
+    "point_cloud_decode",
+] }
 
 # Everything that only makes sense on a desktop.
 #
