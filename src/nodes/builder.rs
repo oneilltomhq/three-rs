@@ -14,6 +14,7 @@ use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
+use super::frame::{NodeUpdate, NodeUpdateType, UpdateNode};
 use super::node::{
     BufferNode, BufferSource, Builtin, ContextValue, CustomNode, FnDef, InstanceBuffer, Node,
     NodeRef, SampleMode, TextureSource, Type, UniformGroup, UniformNode, UniformSource, UpdateType,
@@ -225,6 +226,22 @@ impl std::fmt::Debug for ComputeFlow {
     }
 }
 
+/// `ComputeNode.updateBefore( frame )`: `frame.renderer.compute( this )`,
+/// with `updateBeforeType = NodeUpdateType.FRAME` — a kernel a material reads
+/// as a value runs once a frame, before the first draw that reads it.
+impl NodeUpdate for ComputeFlow {
+    fn update_before_type(&self) -> NodeUpdateType {
+        NodeUpdateType::Frame
+    }
+
+    fn update_before(&self, renderer: &mut crate::renderer::Renderer) -> bool {
+        renderer
+            .compute(self)
+            .expect("three-rs: a material's ComputeNode dispatches");
+        true
+    }
+}
+
 /// The built compute shader and everything its pipeline and dispatch need.
 pub struct ComputeProgram {
     pub wgsl: String,
@@ -251,11 +268,18 @@ pub struct NodeProgram {
     /// fills it from [`SetupContext::instanced_attributes`](crate::materials::SetupContext)
     /// after the build, through [`with_instanced_attributes`](Self::with_instanced_attributes).
     pub instanced_attributes: Vec<String>,
-    /// The `ComputeNode`s the material reached as values (a `positionNode`
-    /// that is `Fn( … )().compute( count )`). Their `updateBeforeType` is
-    /// `FRAME`: the renderer runs each once per frame, before the draw that
-    /// reads it, as `ComputeNode.updateBefore()`'s `renderer.compute( this )`.
-    pub computes: Vec<Rc<ComputeFlow>>,
+    /// `nodeBuilderState.updateBeforeNodes`: every node the material reaches
+    /// that has an `updateBefore()`, in the order the build met them. A
+    /// `ComputeNode` read as a value (`renderer.compute( this )`, once per
+    /// frame), a pass or `rtt()` whose texture is bound (it renders into
+    /// it), a [`CustomNode`](crate::nodes::CustomNode) with an update type.
+    /// Kept with the program, so a steady frame reads the list and walks no
+    /// graph. See `docs/nodes.md` §57.
+    pub update_before: Vec<UpdateNode>,
+    /// `nodeBuilderState.updateNodes`.
+    pub update: Vec<UpdateNode>,
+    /// `nodeBuilderState.updateAfterNodes`.
+    pub update_after: Vec<UpdateNode>,
 }
 
 impl NodeProgram {
@@ -629,10 +653,9 @@ pub struct NodeBuilder {
     /// `fn` depth, so a second build of the same isolate finds them again as
     /// three's persistent child cache does.
     isolate_snippets: HashMap<(usize, usize, usize), HashMap<CacheKey, String>>,
-    /// Every `ComputeNode` the render stages reached as a value, in first-use
-    /// order — three's `updateBeforeNodes`, narrowed to the one kind that has
-    /// an `updateBefore()` here. See [`NodeProgram::computes`].
-    computes: Vec<Rc<ComputeFlow>>,
+    /// Three's `updateBeforeNodes` / `updateNodes` / `updateAfterNodes`, in
+    /// first-use order. See [`NodeProgram::update_before`].
+    update_nodes: [Vec<UpdateNode>; 3],
     /// Emitted `fn` names for `Fn()`s with a layout.
     fn_names: HashMap<(usize, usize), String>,
     fn_counter: usize,
@@ -691,7 +714,7 @@ impl NodeBuilder {
             data_parents: vec![None],
             isolate_caches: HashMap::new(),
             isolate_snippets: HashMap::new(),
-            computes: Vec::new(),
+            update_nodes: Default::default(),
             fn_names: HashMap::new(),
             fn_counter: 0,
             usage: HashMap::new(),
@@ -717,9 +740,7 @@ impl NodeBuilder {
         // A `ComputeNode` outside the compute stage is its output and nothing
         // else, so it neither counts nor is counted.
         if let Node::Compute { flow, output } = &*node.0 {
-            if !self.computes.iter().any(|f| Rc::ptr_eq(f, flow)) {
-                self.computes.push(flow.clone());
-            }
+            self.add_update_node(UpdateNode::new(flow.clone()));
             let output = output.clone();
             self.analyze(&output);
             return;
@@ -959,7 +980,26 @@ impl NodeBuilder {
     /// [`CustomNode::setup`], once per node per data cache.
     fn custom_output(&mut self, node: &NodeRef, custom: &Rc<dyn CustomNode>) -> NodeRef {
         let custom = custom.clone();
+        self.add_update_node(UpdateNode::with_reference(
+            Rc::as_ptr(&custom) as *const u8 as usize,
+            Rc::new(crate::nodes::node::CustomUpdate(custom.clone())),
+        ));
         self.output_of(node, |builder| custom.setup(builder))
+    }
+
+    /// `NodeBuilder.addNode()`'s update half: `node` joins each list whose
+    /// type is not `NONE`, once.
+    fn add_update_node(&mut self, entry: UpdateNode) {
+        let types = [
+            entry.node.update_before_type(),
+            entry.node.update_type(),
+            entry.node.update_after_type(),
+        ];
+        for (list, ty) in self.update_nodes.iter_mut().zip(types) {
+            if ty != NodeUpdateType::None && !list.iter().any(|e| e.reference == entry.reference) {
+                list.push(entry.clone());
+            }
+        }
     }
 
     /// `nodeProperties.outputNode`: the one found up the data-cache chain,
@@ -3052,6 +3092,19 @@ impl NodeBuilder {
         groups.hash(&mut hasher);
         let cache_key = hasher.finish();
 
+        // `PassTextureNode.setup()` builds its `passNode`, and an `RTTNode`
+        // is its own texture node, so a material that samples a pass has the
+        // pass among its update-before nodes. The port's texture node is a
+        // bare texture, so the link is looked up by the texture bound.
+        for binding in groups.iter().flatten() {
+            if let BindingDesc::Texture { source, .. } = binding {
+                if let Some(entry) = crate::nodes::frame::texture_update(source.id()) {
+                    self.add_update_node(entry);
+                }
+            }
+        }
+        let [update_before, update, update_after] = std::mem::take(&mut self.update_nodes);
+
         NodeProgram {
             vertex_wgsl,
             fragment_wgsl,
@@ -3059,7 +3112,9 @@ impl NodeBuilder {
             groups,
             cache_key,
             instanced_attributes: Vec::new(),
-            computes: std::mem::take(&mut self.computes),
+            update_before,
+            update,
+            update_after,
         }
     }
 

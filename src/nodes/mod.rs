@@ -5,6 +5,7 @@ pub mod batch;
 pub mod builder;
 pub mod code;
 pub mod display;
+pub mod frame;
 pub mod lines;
 pub mod materialx;
 pub mod morph;
@@ -20,6 +21,7 @@ pub use builder::{
     BindingDesc, ComputeFlow, ComputeProgram, MaterialFlow, NodeBuilder, NodeProgram, Stage,
     UniformMember, Visibility,
 };
+pub use frame::{NodeFrameState, NodeUpdate, NodeUpdateType, UpdateNode};
 pub use mrt::{mrt, MrtNode, MrtValue};
 pub use node::{
     BufferSource, ContextValue, CustomNode, Node, NodeFrame, NodeRef, StorageAccess, TextureSource,

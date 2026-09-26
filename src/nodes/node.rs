@@ -1098,6 +1098,58 @@ pub trait CustomNode {
     /// [`context`](crate::nodes::tsl::context) node. The TSL functions called
     /// here see the same context through the crate's own accessors.
     fn setup(&self, builder: &crate::nodes::NodeBuilder) -> NodeRef;
+
+    /// `updateBeforeType`. Anything but `None` puts the node in the
+    /// material's update-before list; see `docs/nodes.md` §57.
+    fn update_before_type(&self) -> crate::nodes::NodeUpdateType {
+        crate::nodes::NodeUpdateType::None
+    }
+    /// `updateType`.
+    fn update_type(&self) -> crate::nodes::NodeUpdateType {
+        crate::nodes::NodeUpdateType::None
+    }
+    /// `updateAfterType`.
+    fn update_after_type(&self) -> crate::nodes::NodeUpdateType {
+        crate::nodes::NodeUpdateType::None
+    }
+    /// `updateBefore( frame )`. `false` leaves the guard untouched, as
+    /// three's `=== false` does. See [`NodeUpdate`](crate::nodes::NodeUpdate).
+    fn update_before(&self, _renderer: &mut crate::renderer::Renderer) -> bool {
+        true
+    }
+    /// `update( frame )`.
+    fn update(&self, _renderer: &mut crate::renderer::Renderer) -> bool {
+        true
+    }
+    /// `updateAfter( frame )`.
+    fn update_after(&self, _renderer: &mut crate::renderer::Renderer) -> bool {
+        true
+    }
+}
+
+/// A [`CustomNode`] seen through [`NodeUpdate`](crate::nodes::NodeUpdate), so
+/// the renderer drives it like any other updating node.
+pub(crate) struct CustomUpdate(pub(crate) Rc<dyn CustomNode>);
+
+impl crate::nodes::NodeUpdate for CustomUpdate {
+    fn update_before_type(&self) -> crate::nodes::NodeUpdateType {
+        self.0.update_before_type()
+    }
+    fn update_type(&self) -> crate::nodes::NodeUpdateType {
+        self.0.update_type()
+    }
+    fn update_after_type(&self) -> crate::nodes::NodeUpdateType {
+        self.0.update_after_type()
+    }
+    fn update_before(&self, renderer: &mut crate::renderer::Renderer) -> bool {
+        self.0.update_before(renderer)
+    }
+    fn update(&self, renderer: &mut crate::renderer::Renderer) -> bool {
+        self.0.update(renderer)
+    }
+    fn update_after(&self, renderer: &mut crate::renderer::Renderer) -> bool {
+        self.0.update_after(renderer)
+    }
 }
 
 impl std::fmt::Debug for dyn CustomNode {
