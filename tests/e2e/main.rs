@@ -250,6 +250,10 @@ mod webgpu_textures_2d_array_compressed;
 #[allow(dead_code)]
 mod webgpu_clearcoat;
 
+#[path = "../../examples/webgpu_texturegrad.rs"]
+#[allow(dead_code)]
+mod webgpu_texturegrad;
+
 #[path = "../../examples/webgpu_lights_phong.rs"]
 #[allow(dead_code)]
 mod webgpu_lights_phong;
@@ -1946,6 +1950,52 @@ fn webgpu_clearcoat() {
     });
 }
 
+/// Explicit-gradient sampling (`textureNode.grad( gradX, gradY )` →
+/// `textureSampleGrad`): a unit plane of `uv_grid_opengl.jpg` blurred by four
+/// gradient taps, the bottom half at zero gradient. The page's two canvases
+/// (WebGPU and WebGL backend) are the two halves of one canvas here.
+#[test]
+fn webgpu_texturegrad() {
+    let name = "webgpu_texturegrad";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_texturegrad::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_texturegrad::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_texturegrad::animate, |app| {
+        app.renderer.device()
+    });
+}
+
 /// Two `SpriteNodeMaterial`s over 2000 and 1000 instances, the fire drawn
 /// through `drawIndexedIndirect`. At three's pinned time every sprite's
 /// opacity is zero, so the graded frame is the grid on the background;
@@ -3625,6 +3675,7 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_postprocessing_sobel);
     rung!(webgpu_procedural_texture);
     rung!(webgpu_clearcoat);
+    rung!(webgpu_texturegrad);
     rung!(webgpu_particles);
     rung!(webgpu_struct_drawindirect);
     rung!(webgpu_volume_perlin);
