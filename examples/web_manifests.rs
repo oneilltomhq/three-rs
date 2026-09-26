@@ -240,6 +240,9 @@ mod webgpu_camera_array;
 #[path = "webgpu_clearcoat.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_clearcoat;
+#[path = "webgpu_fog_height.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_fog_height;
 #[path = "webgpu_materials_toon.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_materials_toon;
@@ -252,6 +255,9 @@ mod webgpu_occlusion;
 #[path = "webgpu_particles.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_particles;
+#[path = "webgpu_shadowmap_opacity.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_shadowmap_opacity;
 #[path = "webgpu_texturegather.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_texturegather;
@@ -426,6 +432,10 @@ const GRADED: &[(&str, fn())] = &[
         drop(webgpu_materials_toon::init())
     }),
     ("webgpu_occlusion", || drop(webgpu_occlusion::init())),
+    ("webgpu_fog_height", || drop(webgpu_fog_height::init())),
+    ("webgpu_shadowmap_opacity", || {
+        drop(webgpu_shadowmap_opacity::init())
+    }),
     ("webgpu_texturegrad", || drop(webgpu_texturegrad::init())),
     (
         "webgpu_texturegather",
