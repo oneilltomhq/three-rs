@@ -22,7 +22,7 @@ central-difference gradient (`Texture3DNode.normal()`) and its position.
 | `src/nodes/builder.rs` | a scalar `textureSampleLevel( … ).x` | `.sample( uv ).r` builds the texture node as a `float` |
 | `src/renderer/mod.rs` | `ensure_data3d_texture()`, the `D3` view, the 3-D sampler | `WebGPUTextureUtils` for `is3DTexture` |
 
-`docs/nodes.md` §28 has the detail.
+`docs/nodes.md` §31 has the detail.
 
 ## What the WGSL found
 

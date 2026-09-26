@@ -22,7 +22,7 @@ nothing moves.
 | `src/renderer/mod.rs` | storage textures created with `STORAGE_BINDING`, never uploaded, bound through a one-mip view; compute bind groups take textures and samplers | `WebGPUTextureUtils.createTexture()`, `WebGPUBindingUtils.createBindGroup()` |
 | `src/renderer/mod.rs` | `needs_mipmap` on the 2D texture entry | `Bindings._update()`: a store marks the chain stale, the next sampled binding rebuilds it |
 
-`docs/nodes.md` §28 has the detail.
+`docs/nodes.md` §31 has the detail.
 
 ## What the pixels found
 
