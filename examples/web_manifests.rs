@@ -173,6 +173,10 @@ mod webgpu_postprocessing_transition;
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_postprocessing_sobel;
 
+#[path = "webgpu_postprocessing_fxaa.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_postprocessing_fxaa;
+
 #[path = "webgpu_procedural_texture.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_procedural_texture;
@@ -246,6 +250,9 @@ mod webgpu_equirectangular;
 #[path = "webgpu_fog_height.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_fog_height;
+#[path = "webgpu_lights_selective.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_lights_selective;
 #[path = "webgpu_loader_gltf_compressed.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_loader_gltf_compressed;
@@ -447,6 +454,12 @@ const GRADED: &[(&str, fn())] = &[
         "webgpu_texturegather",
         || drop(webgpu_texturegather::init()),
     ),
+    ("webgpu_postprocessing_fxaa", || {
+        drop(webgpu_postprocessing_fxaa::init())
+    }),
+    ("webgpu_lights_selective", || {
+        drop(webgpu_lights_selective::init())
+    }),
     ("webgpu_loader_gltf_compressed", || {
         drop(webgpu_loader_gltf_compressed::init())
     }),

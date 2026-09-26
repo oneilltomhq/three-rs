@@ -4371,6 +4371,133 @@ On the way, `tools/dump-webgpu.mjs` had stopped working: a merge had left a
 second read of the `--html` page behind, naming a variable that no longer
 exists. Every dump died with a `ReferenceError` before Chrome started. The
 stray line is gone.
+## 42. `FXAANode`, `textureSampleBias`, and a float `uniformArray` (`webgpu_postprocessing_fxaa`, `webgpu_postprocessing`)
+
+`fxaa( node )` is `examples/jsm/tsl/display/FXAANode.js`, ported line by
+line into `src/nodes/display/fxaa.rs`. Like `sobel()`, it takes the texture
+that `convertToTexture()` would have made. The page hands it the `RTTNode`
+of `renderOutput( scenePass )`, because FXAA works on sRGB values.
+
+**One real `fn`.** `ApplyFXAA` is the only `Fn` with a layout
+(`FxaaPixelShader( uv, texSize )`), so three's `main()` is a single call. The
+helpers are either plain arrow functions (`SampleLuminanceNeighborhood`,
+`DetermineEdge`, …) or `Fn`s without a layout (`Sample`, `SampleLuminance`,
+`SampleLuminanceOffset`), and both kinds inline at the call site. The port
+keeps them as Rust closures and functions, called in the same order as in
+the JS. Each helper that puts vars or `If`s on three's stack hands back its
+statements, and the caller splices them into the `If( ShouldSkipPixel( l
+).not() )` block in the order three pushes them. The eight neighbour taps
+come out in first-use order, not declaration order: `max( s, e, n, w, m )`
+builds the south tap first. That order falls out of the builder and needs no
+code of its own.
+
+**Checked against.** `tests/nodes_display_wgsl.rs` gains a
+`Region::Function( name )`, which takes the fingerprint over the body of a
+named WGSL `fn`, because `main()` here is only the call. With names
+normalised, the port's `FxaaPixelShader` matches three's `m05` statement for
+statement except for the divergence below.
+
+**`textureSampleBias`.** `textureNode.bias( -100 )` pins every tap to the top
+mip. This is `SampleMode::Bias` and `tsl::texture_bias( map, uv, bias )`. As
+with `texture_uv`, the uv is taken as given, with no uv matrix. WGSL allows
+`textureSampleBias` only under uniform control flow. Most of these taps sit
+inside `if`s and loops, which is why the module keeps three's `diagnostic(
+off, derivative_uniformity )`.
+
+**`uniformArray( [ floats ] )`.** `tsl::uniform_array_f32` pads each float
+to a `vec4`, and `UniformArray::element_x( index )` reads it back as
+`NodeBuffer_N.value[ i ].x`. The index is a node, either `uint( 0 )` or the
+loop's `i`, as in three.
+
+**`Loop( { start: 1, end: float( 6 ) } )`.** Three writes the header as
+`i < 6`, the bound's value in the index type, so the port passes
+`loop_range( "i", int( 1 ), int( 6 ), … )`.
+
+### 42.1 `webgpu_postprocessing` sits on three's own line
+
+This page builds nothing new. `dot_screen` and `rgb_shift` were already gated
+against its `m03` and `m05`, and the page wires them as `rgbShift( rtt(
+dotScreen( passTexture ) ) )`. The port's 800×500 frame is byte-identical to
+three's own frame on this machine (`tools/dump-webgpu.mjs`'
+`actual_full.png`). Both score **107** of 100000 pixels against
+`webgpu_postprocessing.jpg`, which is over the 100-pixel limit. The halftone
+multiplies the channel average by 10 before adding the dot pattern, so a
+difference of one LSB between two GPUs moves a dot's rim by a pixel. The 107
+pixels are exactly those single-pixel dot rims, scattered across the frame.
+Following `webgpu_instance_path`, the e2e test is `#[ignore]`d with the
+reason, and the page stays in the steady-frame strip.
+
+### 42.2 Divergences
+
+* **`max( pixelBlend, edgeBlend )` gets a var in each arm.** In the final
+  `If( edge.isHorizontal )` / `Else`, three inlines `finalBlend` into both
+  `addAssign`s. The port declares it as a var at the top of each arm first.
+  The port counts the one node's two uses, one per sibling arm, as two;
+  three does not. The value, the calls and the literals are the same, and
+  the frame is byte-identical to three's. The port's usage analysis is
+  shared by every rung, so this is recorded rather than changed.
+
+## 46. Sampler anisotropy, a transparent canvas, and `float()` on standard nodes (`webgpu_textures_anisotropy`, `webgpu_lights_selective`)
+
+**Anisotropy needs all-linear filters.** `WebGPUTextureUtils.updateSampler()`
+copies `texture.anisotropy` into the descriptor's `maxAnisotropy` only when
+`magFilter`, `minFilter` and `mipmapFilter` are all `'linear'`. Otherwise it
+leaves the reset descriptor's 1. `SamplerKey::of()` applies the same rule to
+2-D and cube textures. It has to: wgpu's `anisotropy_clamp` fails validation
+above 1 unless every filter is linear, so the old copy-through would have
+failed on a `NearestFilter` texture that asked for anisotropy.
+`Renderer::get_max_anisotropy()` is `WebGPUCapabilities.getMaxAnisotropy()`,
+which returns 16 without asking the adapter. wgpu then clamps the value to
+what the hardware supports, as Dawn does.
+
+The key already carried `anisotropy_clamp`, and three's own sampler key
+includes `texture.anisotropy`. So the two halves of
+`webgpu_textures_anisotropy`, identical but for 16 against 1, get two
+samplers in the port as in three's dump (samplers 30 and 73 there).
+
+**Ungraded on this machine.** The port's frame is pixel-identical to three's
+frame here (max channel difference 0), and three's frame scores 9234 of
+100000 against its own reference. Both halves differ, including the one with
+no anisotropy, so the reference's GPU minifies differently. The e2e test is
+`#[ignore]`d, like `webgpu_instance_path`'s
+(`docs/webgpu_textures_anisotropy-progress.md`).
+
+**A transparent canvas is graded over the page.** With `alpha: true`, the
+`WebGPURenderer` default, three's clear colour is `( 0, 0, 0, 0 )`.
+`WebGPUBackend.getClearColor()` premultiplies it, and the canvas is configured
+`alphaMode: 'premultiplied'`. Wherever nothing draws, Chrome shows the page
+behind the canvas, and `page.screenshot()` captures that composite. Until now
+this never mattered. Every graded page either covered its canvas (a
+background, a full-screen quad) or had `example.css`'s black `<body>`, where
+source-over of premultiplied colour onto black is the colour itself.
+`webgpu_textures_anisotropy` sets `body { background-color: #f1f1f1 }` in its
+own `<style>`, and the floor does not reach the horizon. Everything above the
+far plane is that grey.
+
+`testing::composite_over_page( pixels, 0xf1f1f1 )` is that composite: `c +
+page * ( 1 - a )` per 8-bit channel, alpha set to 255. The colour is the
+page's CSS, carried on the example as `PAGE_BACKGROUND`. It is not taken from
+the reference image. The renderer is unchanged: the canvas it hands back
+still has alpha 0 there, as three's does. Only the harness, standing in for
+the browser's compositor, applies the page colour.
+
+**`float()` around `metalnessNode` and `roughnessNode`.**
+`MeshStandardNodeMaterial.setupVariants()` starts with
+
+```js
+const metalnessNode = this.metalnessNode ? float( this.metalnessNode ) : materialMetalness;
+let roughnessNode = this.roughnessNode ? float( this.roughnessNode ) : materialRoughness;
+```
+
+and the port used the node as given. For a float node there is no
+difference. For `texture( alphaTexture )`, a `vec4`, the conversion is
+`.x`, and it matters where the node is reused. `diffuseContribution =
+diffuseColor.rgb.mul( metalnessNode.oneMinus() )` became `( vec4( diffuse,
+1 ) * ( 1 - map ) ).xyz`, one minus each channel of the map, instead of
+`diffuse * ( 1 - map.x )`. `getRoughness()`'s clamp ran on four lanes before
+`Roughness` took `.x`. Both now emit what three's dump has (`m02`, `m06` of
+`webgpu_lights_selective`). The test texture is grey, so the frame could not
+show the bug. The WGSL comparison found it.
 
 ## 48. `frontFacing` outside the fragment stage, and `vec4()` of a vec4 background (`webgpu_loader_gltf_compressed`, `webgpu_equirectangular`)
 

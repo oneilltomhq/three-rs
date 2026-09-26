@@ -820,6 +820,10 @@ pub enum SampleMode {
     Sample,
     /// `textureSampleLevel( t, t_sampler, uv, level )`.
     Level(NodeRef),
+    /// `textureSampleBias( t, t_sampler, uv, bias )` — `textureNode.bias(
+    /// value )`. `FXAANode` samples its input at a bias of `-100`, pinning
+    /// every tap to the top mip.
+    Bias(NodeRef),
     /// `textureSampleGrad( t, t_sampler, uv, gradX, gradY )` —
     /// `textureNode.grad( gradX, gradY )` (`generateTextureGrad()`), each
     /// gradient built as a `vec2`.

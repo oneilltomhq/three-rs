@@ -793,6 +793,7 @@ impl NodeBuilder {
                 let mut v = vec![uv.clone()];
                 match mode {
                     SampleMode::Level(l)
+                    | SampleMode::Bias(l)
                     | SampleMode::LoadLayer(l)
                     | SampleMode::SampleLayer(l)
                     | SampleMode::Compare(l) => v.push(l.clone()),
@@ -1890,6 +1891,7 @@ impl NodeBuilder {
                     SampleMode::Sample
                         | SampleMode::Grad(..)
                         | SampleMode::Level(_)
+                        | SampleMode::Bias(_)
                         | SampleMode::Load
                 ) && matches!(*texture, TextureSource::Texture2D(_));
                 let (name, kind) = self.texture_slots(&texture);
@@ -1973,6 +1975,10 @@ impl NodeBuilder {
                     SampleMode::Level(level) => {
                         let slevel = self.generate(&level);
                         format!("textureSampleLevel( {name}, {name}_sampler, {suv}, {slevel} )")
+                    }
+                    SampleMode::Bias(bias) => {
+                        let sbias = self.generate(&bias);
+                        format!("textureSampleBias( {name}, {name}_sampler, {suv}, {sbias} )")
                     }
                     SampleMode::LoadLayer(layer) => {
                         let slayer = self.generate(&layer);

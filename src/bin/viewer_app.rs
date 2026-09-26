@@ -227,6 +227,7 @@ MaterialsTextureManualmipmap, webgpu_materials_texture_manualmipmap, "../../exam
 TslVfxFlames, webgpu_tsl_vfx_flames, "../../examples/webgpu_tsl_vfx_flames.rs";
 ProceduralTexture, webgpu_procedural_texture, "../../examples/webgpu_procedural_texture.rs";
 PostprocessingSobel, webgpu_postprocessing_sobel, "../../examples/webgpu_postprocessing_sobel.rs";
+PostprocessingFxaa, webgpu_postprocessing_fxaa, "../../examples/webgpu_postprocessing_fxaa.rs";
 PostprocessingTransition, webgpu_postprocessing_transition, "../../examples/webgpu_postprocessing_transition.rs";
 TslRagingSea, webgpu_tsl_raging_sea, "../../examples/webgpu_tsl_raging_sea.rs";
 TslAngularSlicing, webgpu_tsl_angular_slicing, "../../examples/webgpu_tsl_angular_slicing.rs";
@@ -248,6 +249,7 @@ FogHeight, webgpu_fog_height, "../../examples/webgpu_fog_height.rs";
 ShadowmapOpacity, webgpu_shadowmap_opacity, "../../examples/webgpu_shadowmap_opacity.rs";
 Texturegrad, webgpu_texturegrad, "../../examples/webgpu_texturegrad.rs";
 Texturegather, webgpu_texturegather, "../../examples/webgpu_texturegather.rs";
+LightsSelective, webgpu_lights_selective, "../../examples/webgpu_lights_selective.rs";
 LoaderGltfCompressed, webgpu_loader_gltf_compressed, "../../examples/webgpu_loader_gltf_compressed.rs";
 Equirectangular, webgpu_equirectangular, "../../examples/webgpu_equirectangular.rs";}
 
