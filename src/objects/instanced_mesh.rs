@@ -65,6 +65,7 @@ impl InstancedMesh {
             mesh: Mesh {
                 geometry,
                 material: Some(material),
+                materials: Vec::new(),
                 morph_target_influences: Vec::new(),
                 line_segments: None,
                 count: None,

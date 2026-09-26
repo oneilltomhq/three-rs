@@ -220,6 +220,16 @@ impl Payload {
         }
     }
 
+    /// `object.material` when it is an array (`Array.isArray( material )`):
+    /// the [`Mesh::materials`] of a plain `Mesh`, empty for everything else
+    /// and for a mesh with a single material.
+    pub fn material_array(&self) -> &[MeshBasicNodeMaterial] {
+        match self {
+            Payload::Mesh(mesh) => &mesh.materials,
+            _ => &[],
+        }
+    }
+
     /// `Frustum.intersectsObject( object )`' geometry half, for a mesh or a
     /// line.
     ///
