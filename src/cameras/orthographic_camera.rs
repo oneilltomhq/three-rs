@@ -4,6 +4,8 @@
 use crate::core::Object3D;
 use crate::math::{Box3, CoordinateSystem, Matrix4, Vector3};
 
+use super::CameraView;
+
 #[derive(Clone)]
 pub struct OrthographicCamera {
     pub object: Object3D,
@@ -14,6 +16,9 @@ pub struct OrthographicCamera {
     pub near: f64,
     pub far: f64,
     pub zoom: f64,
+    /// `OrthographicCamera.view`, set by
+    /// [`set_view_offset`](Self::set_view_offset).
+    pub view: Option<CameraView>,
     pub coordinate_system: CoordinateSystem,
     pub projection_matrix: Matrix4,
     pub projection_matrix_inverse: Matrix4,
@@ -31,6 +36,7 @@ impl OrthographicCamera {
             near,
             far,
             zoom: 1.0,
+            view: None,
             coordinate_system: CoordinateSystem::WebGPU,
             projection_matrix: Matrix4::identity(),
             projection_matrix_inverse: Matrix4::identity(),
@@ -41,18 +47,68 @@ impl OrthographicCamera {
         camera
     }
 
-    /// `OrthographicCamera.updateProjectionMatrix()` with no view offset.
+    /// `OrthographicCamera.setViewOffset()`: this camera renders the window
+    /// `x, y, width, height` of a `full_width` × `full_height` frame. Unlike
+    /// the perspective camera's, it leaves the frustum's planes alone and
+    /// only narrows the projection — there is no `aspect` to overwrite.
+    pub fn set_view_offset(
+        &mut self,
+        full_width: f64,
+        full_height: f64,
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+    ) {
+        self.view = Some(CameraView {
+            enabled: true,
+            full_width,
+            full_height,
+            offset_x: x,
+            offset_y: y,
+            width,
+            height,
+        });
+
+        self.update_projection_matrix();
+    }
+
+    /// `OrthographicCamera.clearViewOffset()`.
+    pub fn clear_view_offset(&mut self) {
+        if let Some(view) = self.view.as_mut() {
+            view.enabled = false;
+        }
+
+        self.update_projection_matrix();
+    }
+
+    /// `OrthographicCamera.updateProjectionMatrix()`.
     pub fn update_projection_matrix(&mut self) {
         let dx = (self.right - self.left) / (2.0 * self.zoom);
         let dy = (self.top - self.bottom) / (2.0 * self.zoom);
         let cx = (self.right + self.left) / 2.0;
         let cy = (self.top + self.bottom) / 2.0;
 
+        let mut left = cx - dx;
+        let mut right = cx + dx;
+        let mut top = cy + dy;
+        let mut bottom = cy - dy;
+
+        if let Some(view) = self.view.filter(|view| view.enabled) {
+            let scale_w = (self.right - self.left) / view.full_width / self.zoom;
+            let scale_h = (self.top - self.bottom) / view.full_height / self.zoom;
+
+            left += scale_w * view.offset_x;
+            right = left + scale_w * view.width;
+            top -= scale_h * view.offset_y;
+            bottom = top - scale_h * view.height;
+        }
+
         self.projection_matrix.make_orthographic(
-            cx - dx,
-            cx + dx,
-            cy + dy,
-            cy - dy,
+            left,
+            right,
+            top,
+            bottom,
             self.near,
             self.far,
             self.coordinate_system,
