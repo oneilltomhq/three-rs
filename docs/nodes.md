@@ -4128,3 +4128,93 @@ needs the transmission pass's context. The graded pixels cover it.
 * **No `shadow.autoUpdate`.** The page renders the shadow map once
   (`autoUpdate = false`, `needsUpdate = true`). The port renders it every
   frame. Nothing in the scene moves, so every frame renders the same map.
+
+## 52. `renderer.setMRT()` on a user render target (`webgpu_multiple_rendertargets`, `webgpu_multiple_rendertargets_readback`)
+
+Both pages draw a hardwood-textured torus knot into a two-attachment
+`RenderTarget` of their own, `{ output, normal: normalWorld }`, and composite
+the two attachments side by side at `screenUV.x = 0.5`. Before them, every
+MRT on the ladder went through a `pass()` node (`webgpu_mrt`, `webgpu_deferred`,
+the bloom pages), which names its attachments itself. Here the page does.
+
+### 52.1 What three does
+
+* **`count`.** `new RenderTarget( w, h, { count: 2 } )` clones
+  `renderTarget.texture` once; the clone has the target's size, type and
+  filters and an empty `name`. The page then sets `textures[ 0 ].name =
+  'output'` and `textures[ 1 ].name = 'normal'`.
+* **The names are the whole contract.** `MRTNode.setup()` looks every output
+  name up in `renderer.getRenderTarget().textures` by `name`
+  (`getTextureIndex()`), and skips a name it does not find ("Ignore if the
+  output exists in the MRT but has never been used"). The readback page's
+  512² `readbackTarget` is `{ count: 2 }` and its textures are never named.
+  The graded frame is `'mrt'` and never renders into that target, so the dump
+  does not show what three writes to it.
+* **The clear value per attachment.** `WebGPUBackend.beginRender()` clears
+  attachment 0 to `renderContext.clearColorValue` and every other attachment
+  to `( 0, 0, 0, 1 )`, unless `MRTNode.setClearColor()` names one. The
+  `normal` half of both pages is black off the knot for this reason: the
+  scene's `0x222222` is only ever written into attachment 0.
+* **What lands in `normal`.** `vec4( normalWorld, 1.0 )` into `rgba8unorm`,
+  so every negative component clamps to 0. The attachments are the default
+  `UnsignedByteType`, whatever the page's "Float buffers" comment says, and
+  single-sampled: `antialias` does not reach a user render target.
+* **`NearestFilter` both ways** makes both attachments unfilterable: the
+  composite has no sampler and reads them with `textureLoad` (§23).
+* **Where the canvas transform runs.** The first page composites through a
+  `RenderPipeline`, so the sRGB transform is inline in the quad's shader
+  (three's `m04_fragment_fragment_RenderPipeline`). The readback page uses a
+  `QuadMesh` with a bare `NodeMaterial`, so under `antialias: true` the quad
+  draws into the 4x `rgba16float` framebuffer target and a separate
+  `outputColorTransform` pass follows (`m05` / `m06`).
+
+### 52.2 What the port adds
+
+* `RenderTarget::set_count()` and `RenderTarget::set_texture_name()`. They
+  are setters, like `set_rg_format()`, so that `RenderTargetOptions` literals
+  across the tree do not change. Attachment 0 is always `output` in this port,
+  because the name lives on the target and not the texture. Naming it anything
+  else panics, where it would otherwise silently leave `mrt( { output } )`
+  unwritten.
+* `record_pass()` now clears the extra attachments to `( 0, 0, 0, 1 )` rather
+  than to the pass's clear colour. That was wrong since MRT first landed, and
+  no rung could see it: `webgpu_mrt` has a skybox over every pixel, and the
+  bloom and deferred passes clear to black or read only where geometry is.
+  Without it the first page was at 42120 pixels, the whole right half.
+* `Renderer::read_render_target_pixels( target, x, y, width, height,
+  texture_index )` is `readRenderTargetPixelsAsync`. It blocks, as every
+  native readback here does. It copies the whole attachment and cuts the
+  rectangle out on the CPU, which costs more but gives the same bytes.
+  `faceIndex` is not taken.
+* `Texture::data_rgba8()` is `new DataTexture( Uint8Array, w, h )` with its
+  own defaults: `flipY = false`, no mipmaps, `NearestFilter` both ways. The
+  readback page's `pixelBufferTexture.image.data = …; needsUpdate = true` is
+  `Texture::set_data()`.
+
+### 52.3 Checked against
+
+`dump_wgsl`'s `multiple_rendertargets_knot` against three's `m02`, and
+`multiple_rendertargets_composite` against `m04_fragment_fragment_RenderPipeline`.
+Both pages dump the same `m01` / `m02`. The composite matches line for line up
+to the naming classes in §8 (`let nodeConstN` against `nodeVarN`, member
+order). The two `textureLoad`s, the clamp-wrapping helpers, the
+`fragCoord.xy / render.nodeUniform4` screen UV and the inline sRGB tail all
+match exactly.
+
+### 52.4 Divergences specific to this section
+
+* **The knot's `NORMAL_normalView`.** Three's `m02` reads `normalWorld`
+  through `normalViewGeometry → NORMAL_normalView → normalView`. The port's
+  unlit material, which stands in for the bare `NodeMaterial` as in
+  `webgpu_textures_2d-array_compressed`, goes `normalViewGeometry →
+  normalView` without the `NORMAL` sub-build's copy. It is the same value,
+  one private var shorter.
+* **The readback branch is not graded,** and neither is the Inspector
+  dropdown that reaches it. `App::options` is the dropdown. The example's
+  `main()` takes `THREE_RS_SELECTION=diffuse|normal`, so the branch can be
+  looked at. In the port, `'diffuse'` shows the knot, because attachment 0
+  answers to `output` whatever the page calls it. `'normal'` is black: the
+  unnamed attachment 1 gets only its `( 0, 0, 0, 1 )` clear, which is what
+  `getTextureIndex()` implies. Whether three's attachment 0, whose name is
+  empty, also stays unwritten there has not been checked against a dump of
+  that mode.
