@@ -4184,7 +4184,12 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_tsl_angular_slicing);
     rung!(webgpu_fog_height);
     rung!(webgpu_shadowmap_opacity);
-    rung!(webgpu_postprocessing_afterimage);
+    // The same two-frame cycle as `webgpu_postprocessing_difference`'s
+    // above: `AfterImageNode`'s `_compRT` / `_oldRT` swap is the port's
+    // `toggle_texture()` before every render, so frame two is the first to
+    // see each texture handle over its other allocation and makes the views
+    // and bind groups that pairing needs. Frame three must create nothing.
+    rung!(webgpu_postprocessing_afterimage, 0, 2);
     rung!(webgpu_tsl_halftone);
     rung!(webgpu_tsl_earth);
 }
