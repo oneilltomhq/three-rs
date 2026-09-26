@@ -293,6 +293,52 @@ impl RenderTarget {
         names
     }
 
+    /// `new RenderTarget( width, height, { count } )`: `count - 1` clones of
+    /// `renderTarget.texture` pushed onto `renderTarget.textures`, each with
+    /// the target's size, type and filters and an empty `name` — the page
+    /// names them afterwards ([`Self::set_texture_name`]), and `MRTNode`
+    /// writes only the ones whose name its outputs carry.
+    ///
+    /// A setter rather than a [`RenderTargetOptions`] field, for the same
+    /// reason as [`Self::set_rg_format`]. It only ever grows the list, and it
+    /// has to run before the target is first drawn into, as three's
+    /// constructor option does by construction.
+    pub fn set_count(&self, count: usize) {
+        let mut inner = self.0.borrow_mut();
+        while inner.extra_textures.len() + 1 < count {
+            let texture = color_attachment(
+                inner.width,
+                inner.height,
+                inner.texture.format(),
+                inner.min_filter,
+                inner.mag_filter,
+            );
+            inner.extra_textures.push((String::new(), texture));
+        }
+    }
+
+    /// `renderTarget.textures[ index ].name = name` — what the attachment
+    /// answers to in `mrt( { name: … } )` and in [`Self::add_texture`].
+    ///
+    /// Attachment 0 is always [`OUTPUT_ATTACHMENT`] in this port (the name
+    /// lives on the target, not the texture), so naming it anything else
+    /// panics rather than silently leaving `mrt( { output } )` unwritten.
+    pub fn set_texture_name(&self, index: usize, name: &str) {
+        if index == 0 {
+            assert_eq!(
+                name, OUTPUT_ATTACHMENT,
+                "three-rs: renderTarget.textures[ 0 ] is always named `{OUTPUT_ATTACHMENT}` here"
+            );
+            return;
+        }
+        let mut inner = self.0.borrow_mut();
+        let entry = inner
+            .extra_textures
+            .get_mut(index - 1)
+            .expect("three-rs: set_texture_name past renderTarget.textures' count");
+        entry.0 = name.to_string();
+    }
+
     /// `renderTarget.textures` — attachment 0 first.
     pub fn textures(&self) -> Vec<Texture> {
         let inner = self.0.borrow();
