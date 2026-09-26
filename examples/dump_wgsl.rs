@@ -40,6 +40,9 @@ mod display_materials;
 #[allow(dead_code)]
 mod webgpu_instance_path;
 
+#[path = "webgpu_tsl_halftone.rs"]
+#[allow(dead_code)]
+mod webgpu_tsl_halftone;
 #[path = "webgpu_tsl_interoperability.rs"]
 #[allow(dead_code)]
 mod webgpu_tsl_interoperability;
@@ -2035,6 +2038,7 @@ fn main() {
     dump_room_environment();
     dump_scene_fog();
     dump_shadowmap_opacity();
+    dump_tsl_halftone();
     dump_chromatic_aberration();
 
     // #144's display nodes, each as the three.js page that dumps it builds it:
@@ -2719,5 +2723,62 @@ fn dump_shadowmap_opacity() {
         "shadowmap_opacity_output_agx",
         &out,
         SetupContext::default(),
+    );
+}
+
+/// Rung `webgpu_tsl_halftone`, against `target/dumps/webgpu_tsl_halftone/`:
+/// the shared default material (m00, m01) and Michelle's skinned body (m03,
+/// m04), both with `outputNode = halftones( output )`, under the page's
+/// directional and ambient lights.
+fn dump_tsl_halftone() {
+    let halftones = webgpu_tsl_halftone::Halftones::new();
+    let lights = || {
+        vec![
+            LightDesc {
+                index: 0,
+                kind: LightKind::Ambient,
+                shadow_map: None,
+            },
+            LightDesc {
+                index: 1,
+                kind: LightKind::Directional,
+                shadow_map: None,
+            },
+        ]
+    };
+
+    let mut default = MeshBasicNodeMaterial::standard(Color::from_hex(0xff622e), 1.0, 0.0);
+    default.output_node = Some(halftones.output_node());
+    show(
+        "tsl_halftone_default",
+        &default,
+        SetupContext {
+            lights: lights(),
+            ..SetupContext::default()
+        },
+    );
+
+    let diffuse = Texture::new(512, 512, Some(vec![0; 4]));
+    let glossiness = Texture::new(512, 512, Some(vec![0; 4]));
+    let specular_map = Texture::new(512, 512, Some(vec![0; 4]));
+    let normal_tex = Texture::new(512, 512, Some(vec![0; 4]));
+    let mut body = MeshBasicNodeMaterial::physical(Color::new(1.0, 1.0, 1.0), 1.0, 0.5);
+    body.side = Side::Double;
+    body.map = Some(diffuse);
+    body.metalness_map = Some(glossiness.clone());
+    body.roughness_map = Some(glossiness);
+    body.specular_color_map = Some(specular_map);
+    body.normal_map = Some(normal_tex);
+    body.normal_scale = three_rs::math::Vector2::new(1.0, -1.0);
+    body.ior = 1.45;
+    body.output_node = Some(halftones.output_node());
+    show(
+        "tsl_halftone_body",
+        &body,
+        SetupContext {
+            skin: Some(three_rs::nodes::skinning::SkinEntry { bones: 65 }),
+            lights: lights(),
+            ..SetupContext::default()
+        },
     );
 }
