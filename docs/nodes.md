@@ -907,7 +907,7 @@ more (`docs/webgpu_tsl_raging_sea-progress.md`):
   same-length arm, so the loop header writes it.
 * **An inlined `Fn()` block is built once per scope.** A second reader gets
   the result, not a second run of its statements. Three builds a stack once
-  per stage.
+  per stage. The result sits in the builder's `NodeCache` (§36).
 * **A layout `fn` is emitted into each stage that calls it.** Each stage is
   its own module. The name is shared.
 * **A varying the vertex stage has assigned to is written from that var.**
@@ -3552,3 +3552,44 @@ dump apart from `var` placement: the port declares `worldPos` inside the
   logs and then throws on `ret.offsetX`.
 * **No `TransformControls`.** `webgpu_modifier_curve`'s handles cannot be
   dragged. The graded frame never shows the gizmo.
+
+## 36. `NodeCache`: one parent-chained cache for per-build data (issue #156)
+
+Two rungs taught the builder the same rule on their own. The display nodes
+(#148) found that a `Block` read twice, as `renderOutput()` reads its colour's
+`.xyz` and `.w`, emitted its statements twice. They also found that each
+nearest `textureLoad` declared its own `textureDimensions` var where three
+shares one per texture per scope. MaterialX (#151) found the first of these
+again in the raging sea's `elevation`, one inlined `Fn()` read by
+`emissiveNode` and by `normalNode`. Both fixes wrote into the var cache,
+which was a `Vec<HashMap<usize, String>>` per stage and another per layout
+`fn`. The texture-size entry was keyed by hashing `("textureDimensions",
+name)` into the same `usize` space as node addresses.
+
+The builder now has three's shape instead. `NodeCache` (`NodeCache.js`) is a
+map with an optional parent: `get` falls through to the parent, and `set`
+writes only to the cache it is called on.
+
+* **What it holds.** The key is a `CacheKey` enum. `Node(key)` is a node's
+  generated snippet: the var, `let`, `if` result or block result it left.
+  `TextureDimensions(name)` is `generateTextureDimension()`'s
+  `textureData.dimensionsSnippet` for one texture binding. The two can no
+  longer collide.
+* **Where it lives.** Each stage owns one, and so does each layout `fn` body.
+  A `fn` body's cache has no parent, because it sees nothing of its caller.
+* **Scopes are children.** Opening a block (an `If` arm, a loop body, a
+  `select` arm) makes the current cache a child of itself, and closing the
+  block restores the parent. A snippet built before the arm is visible inside
+  it. One built inside the arm is visible to the rest of the arm and not
+  after it. A sibling arm builds its own. This is what the scope stack did
+  before; the change is only in the shape.
+
+This is step (1) of #155's plan. `isolate( node )` will be a node that swaps
+in a child with or without a parent (`getCacheFromNode( node, parent )`),
+and `subBuild` layers will join the key. Neither is added here, because no
+rung needs them yet.
+
+Nothing generated changed. `dump_wgsl`'s output is byte-identical before and
+after, apart from one pointer printed in a `Debug` of an `ObjectUpdate`
+closure. Every `tests/nodes_*` gate passes unchanged, and so does the full
+ladder.
