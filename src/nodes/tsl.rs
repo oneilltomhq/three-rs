@@ -3171,6 +3171,17 @@ pub fn texture_level(map: &Texture, coord: NodeRef, level: NodeRef) -> NodeRef {
     )
 }
 
+/// `texture( map, uv ).bias( value )` — a 2-D tap with a mip bias, the
+/// uv taken as given (no uv matrix), as for [`texture_uv`].
+pub fn texture_bias(map: &Texture, coord: NodeRef, bias: NodeRef) -> NodeRef {
+    texture_node(
+        TextureSource::Texture2D(map.clone()),
+        coord,
+        SampleMode::Bias(bias),
+        Type::Vec4,
+    )
+}
+
 /// `texture( map, uv ).depth( layer )` — one layer of a
 /// `CompressedArrayTexture`, sampled (`webgpu_textures_2d-array_compressed`).
 /// The uv is taken as given, with no uv matrix, as for [`texture_uv`].
@@ -3622,6 +3633,21 @@ pub fn uniform_array_vec3(values: &[[f64; 3]]) -> UniformArray {
     }))
 }
 
+/// `uniformArray( [ 1.0, 1.5, … ] )` — an array of floats, each padded to a
+/// `vec4` and read back as its `.x` (`UniformArrayElementNode.generate()`).
+pub fn uniform_array_f32(values: &[f64]) -> UniformArray {
+    let mut padded = Vec::with_capacity(values.len() * 4);
+    for &v in values {
+        padded.extend([v as f32, 0.0, 0.0, 0.0]);
+    }
+    UniformArray(Rc::new(BufferNode {
+        id: crate::nodes::node::BufferId::next(),
+        source: BufferSource::UniformArray(Rc::new(padded)),
+        element_ty: Type::Vec4,
+        count: values.len(),
+    }))
+}
+
 impl UniformArray {
     /// `.element( i )` — `NodeBuffer_N.value[ i ].xyz`.
     pub fn element(&self, index: usize) -> NodeRef {
@@ -3630,6 +3656,16 @@ impl UniformArray {
             index: constant(Type::U32, vec![index as f64]),
         })
         .xyz()
+    }
+
+    /// `.element( i )` on a float array — `NodeBuffer_N.value[ i ].x`, the
+    /// index a node (a loop's `i`, or a `u32` constant).
+    pub fn element_x(&self, index: NodeRef) -> NodeRef {
+        NodeRef::new(Node::BufferElement {
+            buffer: self.0.clone(),
+            index,
+        })
+        .x()
     }
 }
 
