@@ -119,6 +119,12 @@ pub struct SetupContext {
     /// **inside every material's fragment shader** instead of in a quad of its
     /// own. See [`OutputContext`].
     pub output: Option<OutputContext>,
+    /// `camera.cameras.length` when the pass is drawn through an
+    /// `ArrayCamera` (0 otherwise) — `RenderObject.getCacheKey()`'s
+    /// `camera.isArrayCamera ? camera.cameras.length : 0`. It sizes the
+    /// camera matrix arrays and moves the object group to `@group( 2 )`, so
+    /// it is part of the program's cache key. `docs/nodes.md` §36.
+    pub array_cameras: usize,
 }
 
 /// `context.getOutput( materialOutputNode, builder )`.

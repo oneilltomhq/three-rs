@@ -70,6 +70,7 @@ fn show_into(
     let flow = setup(material, &ctx, fog);
     let program = NodeBuilder::new()
         .with_output_components(components)
+        .with_array_cameras(ctx.array_cameras)
         .build(&flow);
     println!("########## {label} — vertex");
     println!("{}", program.vertex_wgsl);
@@ -210,6 +211,7 @@ fn main() {
             geometry_missing_normal: false,
             has_tangent_attribute: false,
             instanced_attributes: Vec::new(),
+            array_cameras: 0,
         },
     );
 
@@ -2456,6 +2458,38 @@ fn dump_room_environment() {
         "lights_custom_sphere",
         &custom_sphere,
         SetupContext::default(),
+    );
+
+    dump_camera_array();
+}
+
+/// Rung `webgpu_camera_array`: the cylinder's `MeshPhongNodeMaterial` drawn
+/// through a 36-camera `ArrayCamera`, lit by the ambient light and the
+/// shadow-casting directional one, against `dump-camera_array/m0{2,3}`. The
+/// camera matrices are `array< mat4x4<f32>, 36 >` render-group buffers indexed
+/// by the flat `v_cameraIndex`, and the object group moves to `@group( 2 )`.
+fn dump_camera_array() {
+    let map = DepthTexture::new();
+    let material = MeshBasicNodeMaterial::phong(Color::from_hex(0xff0000));
+    show(
+        "camera_array_phong",
+        &material,
+        SetupContext {
+            array_cameras: 36,
+            lights: vec![
+                LightDesc {
+                    index: 0,
+                    kind: LightKind::Ambient,
+                    shadow_map: None,
+                },
+                LightDesc {
+                    index: 1,
+                    kind: LightKind::Directional,
+                    shadow_map: Some(ShadowMap::Planar(map)),
+                },
+            ],
+            ..SetupContext::default()
+        },
     );
 }
 
