@@ -6,6 +6,7 @@
 mod morphtargets;
 
 use three_rs::lights::{LightKind, ShadowFilter, ShadowFilterMap};
+use three_rs::materials::environment::Environment;
 use three_rs::materials::phong::{LightDesc, ShadowMap};
 use three_rs::materials::{setup, MeshBasicNodeMaterial, SetupContext, Side};
 use three_rs::math::Color;
@@ -1829,7 +1830,7 @@ fn main() {
         "loader_gltf_helmet",
         &gltf_helmet,
         SetupContext {
-            environment: Some(environment.handle()),
+            environment: Some(Environment::Pmrem(environment.handle())),
             ..SetupContext::default()
         },
     );
@@ -1857,7 +1858,7 @@ fn main() {
         "loader_gltf_anisotropy_metal",
         &lamp_metal,
         SetupContext {
-            environment: Some(environment.handle()),
+            environment: Some(Environment::Pmrem(environment.handle())),
             has_tangent_attribute: true,
             instanced_attributes: Vec::new(),
             ..SetupContext::default()
@@ -1879,7 +1880,7 @@ fn main() {
         "loader_gltf_anisotropy_glass",
         &lamp_glass,
         SetupContext {
-            environment: Some(environment.handle()),
+            environment: Some(Environment::Pmrem(environment.handle())),
             viewport_opaque_mip: Some(three_rs::materials::transmission::OpaqueFrame {
                 // `viewportOpaqueMipTexture()` — the renderer owns the real
                 // one; only its identity reaches the shader.
@@ -1897,7 +1898,7 @@ fn main() {
         "loader_gltf_anisotropy_filament",
         &lamp_filament,
         SetupContext {
-            environment: Some(environment.handle()),
+            environment: Some(Environment::Pmrem(environment.handle())),
             ..SetupContext::default()
         },
     );
@@ -1954,7 +1955,7 @@ fn main() {
         "mrt_helmet",
         &gltf_helmet,
         SetupContext {
-            environment: Some(environment.handle()),
+            environment: Some(Environment::Pmrem(environment.handle())),
             mrt: Some(mrt_four()),
             ..SetupContext::default()
         },
@@ -1994,7 +1995,7 @@ fn main() {
         "loader_gltf_sheen_fabric",
         &fabric,
         SetupContext {
-            environment: Some(environment.handle()),
+            environment: Some(Environment::Pmrem(environment.handle())),
             ..SetupContext::default()
         },
     );
@@ -2145,7 +2146,7 @@ fn dump_instance_path() {
         "instance_path_spheres",
         &material,
         SetupContext {
-            environment: Some(environment.handle()),
+            environment: Some(Environment::Pmrem(environment.handle())),
             ..SetupContext::default()
         },
     );
@@ -2257,7 +2258,7 @@ fn dump_deferred() {
         "deferred_resolve",
         &resolve,
         SetupContext {
-            environment: Some(environment.handle()),
+            environment: Some(Environment::Pmrem(environment.handle())),
             lights: eight_points,
             // The quad geometry has position and uv and no normal, which is
             // what makes `getGeometryRoughness()` `float( 0 )`.
@@ -2357,7 +2358,7 @@ fn dump_room_environment() {
     ]);
     let environment = PmremEnvironment::new(&hdr_cube);
     let clearcoat_ctx = || SetupContext {
-        environment: Some(environment.handle()),
+        environment: Some(Environment::Pmrem(environment.handle())),
         lights: vec![LightDesc {
             index: 0,
             kind: LightKind::Point,

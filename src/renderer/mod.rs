@@ -1512,6 +1512,11 @@ impl Renderer {
                 let variant = hash_of(&("pmrem", pmrem.texture.id()));
                 Some((materials::background_pmrem_color_node(&pmrem), variant))
             }
+            // Keyed by the node's identity, as `Background::Node` is.
+            Some(Background::EnvironmentNode(node)) => {
+                let variant = hash_of(&("environment node", &node));
+                Some((materials::background_environment_color_node(&node), variant))
+            }
             _ => None,
         };
         // `Background.update()` unshifts the skybox into `renderList.opaque`,
@@ -1766,9 +1771,20 @@ impl Renderer {
 
             // `NodeMaterial.setupEnvironment()`: the material's own `envNode`
             // wins, and `scene.environmentNode` is the fallback.
+            // `getEnvironmentNode( scene )` is `scene.environmentNode` when set
+            // and the node made from `scene.environment` otherwise.
             let scene_environment = match material.pmrem_env {
                 Some(_) => None,
-                None => scene.environment.clone(),
+                None => scene
+                    .environment_node
+                    .clone()
+                    .map(materials::environment::Environment::Node)
+                    .or_else(|| {
+                        scene
+                            .environment
+                            .clone()
+                            .map(materials::environment::Environment::Pmrem)
+                    }),
             };
 
             // `material.side = BackSide` / `= FrontSide` around each of the
