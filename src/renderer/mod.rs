@@ -3760,6 +3760,61 @@ impl Renderer {
         self.read_texture_pixels(&texture, width, height)
     }
 
+    /// `renderer.readRenderTargetPixelsAsync( renderTarget, x, y, width,
+    /// height, textureIndex )`: the `width` x `height` rectangle at `( x, y )`
+    /// of `renderTarget.textures[ textureIndex ]`, as tightly packed RGBA8
+    /// bytes, rows top-down in the texture's own orientation — what three's
+    /// `copyTextureToBuffer()` hands back.
+    ///
+    /// Blocking, where three's is a promise, as every readback here is
+    /// natively. The whole attachment is copied and the rectangle cut out of
+    /// it on the CPU; three copies only the rectangle, which is a cost and not
+    /// a difference in the bytes. `faceIndex` is not taken: no rung reads a
+    /// cube target back.
+    pub fn read_render_target_pixels(
+        &mut self,
+        render_target: &RenderTarget,
+        x: u32,
+        y: u32,
+        width: u32,
+        height: u32,
+        texture_index: usize,
+    ) -> Result<Vec<u8>, Error> {
+        self.prepare_render_target(render_target);
+
+        let textures = render_target.textures();
+        let Some(texture) = textures.get(texture_index) else {
+            return Err(Error::Readback {
+                reason: format!(
+                    "renderTarget.textures[ {texture_index} ] does not exist ({} attachments)",
+                    textures.len()
+                ),
+            });
+        };
+        let texture = texture.with_gpu(|gpu| gpu.clone());
+        let (full_width, full_height) = render_target.size();
+        if x + width > full_width || y + height > full_height {
+            return Err(Error::Readback {
+                reason: format!(
+                    "the rectangle ( {x}, {y}, {width}, {height} ) is outside the \
+                     {full_width}x{full_height} target"
+                ),
+            });
+        }
+
+        let (_, _, pixels) = self.read_texture_pixels(&texture, full_width, full_height)?;
+        if (x, y, width, height) == (0, 0, full_width, full_height) {
+            return Ok(pixels);
+        }
+        let row = full_width as usize * 4;
+        let mut out = Vec::with_capacity(width as usize * height as usize * 4);
+        for r in y as usize..(y + height) as usize {
+            let start = r * row + x as usize * 4;
+            out.extend_from_slice(&pixels[start..start + width as usize * 4]);
+        }
+        Ok(out)
+    }
+
     /// The same readback off an `rgba16float` [`RenderTarget`] — the format
     /// a PMREM face target and the renderer's own framebuffer target are in —
     /// decoded to `f32`, four channels a texel, top-down.

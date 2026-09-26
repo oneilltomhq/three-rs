@@ -339,6 +339,32 @@ impl Texture {
         texture
     }
 
+    /// `new DataTexture( new Uint8Array( data ), width, height )` with
+    /// `type = UnsignedByteType` and `format = RGBAFormat` — the defaults, and
+    /// what `webgpu_multiple_rendertargets_readback` fills from
+    /// `readRenderTargetPixelsAsync()` (`rgba8unorm`).
+    ///
+    /// Keeps `DataTexture`'s own constructor defaults, as
+    /// [`data_r8`](Self::data_r8) does: `flipY = false`, `generateMipmaps =
+    /// false`, `NearestFilter` on both sides (so it is unfilterable and read
+    /// with `textureLoad`), `NoColorSpace`.
+    pub fn data_rgba8(width: u32, height: u32, data: &[u8]) -> Self {
+        assert_eq!(
+            data.len() as u32,
+            width * height * 4,
+            "three-rs: an RGBA UnsignedByteType DataTexture holds four bytes per texel"
+        );
+        let texture = Self::new(width, height, Some(data.to_vec()));
+        {
+            let mut inner = texture.0.borrow_mut();
+            inner.flip_y = false;
+            inner.generate_mipmaps = false;
+            inner.mag_filter = TextureFilter::Nearest;
+            inner.min_filter = MinFilter::Nearest;
+        }
+        texture
+    }
+
     /// `new DataTexture( new Uint16Array( data ), width, height, RGBAFormat,
     /// HalfFloatType )` — what `DataTextureLoader` builds from
     /// [`HdrLoader::parse`](crate::loaders::HdrLoader::parse)'s half-float
