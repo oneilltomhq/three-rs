@@ -347,6 +347,52 @@ pub fn uniform_object(
     )
 }
 
+/// [`uniform_object`] for a node whose `update( frame )` reads more than
+/// `frame.object` — `webgpu_occlusion`'s `OcclusionNode`, which asks
+/// `frame.renderer.isOccluded( testObject )`. See [`NodeFrame`].
+///
+/// [`NodeFrame`]: crate::nodes::NodeFrame
+pub fn uniform_frame(
+    ty: Type,
+    update: impl Fn(&crate::nodes::NodeFrame) -> Vec<f64> + 'static,
+) -> NodeRef {
+    uniform(
+        UniformSource::ObjectUpdate(crate::nodes::node::ObjectUpdate::with_frame(update)),
+        ty,
+        UniformGroup::Object,
+        None,
+    )
+}
+
+/// `userData( name, inputType )` — `UserDataNode`, a `ReferenceNode` on the
+/// render object's own `userData`: an object-group `uniform()` whose value is
+/// `object.userData[ name ]`, re-read before every draw
+/// (`NodeUpdateType.OBJECT`), so every object sharing the material gets its
+/// own value out of one program. `webgpu_sprites` drives each sprite's
+/// `rotationNode` with it.
+///
+/// three's `ReferenceNode` walks a dotted `name` (`'a.b'`) and also accepts an
+/// explicit `userData` object in place of the render object's; the ladder uses
+/// neither, so the port takes a flat key on the render object. A number or a
+/// numeric array is read as the uniform's components; a missing key or any
+/// other value reads as zero, where three would write `undefined` and trip
+/// over it.
+pub fn user_data(name: &str, ty: Type) -> NodeRef {
+    let name = name.to_owned();
+    let length = ty.components();
+    uniform_object(ty, move |object| {
+        let mut values = match object.user_data.get(&name) {
+            Some(serde_json::Value::Number(n)) => vec![n.as_f64().unwrap_or(0.0)],
+            Some(serde_json::Value::Array(items)) => {
+                items.iter().map(|v| v.as_f64().unwrap_or(0.0)).collect()
+            }
+            _ => Vec::new(),
+        };
+        values.resize(length, 0.0);
+        values
+    })
+}
+
 pub fn uniform(
     source: UniformSource,
     ty: Type,
@@ -731,8 +777,37 @@ pub fn perspective_depth_to_view_z(
 
 /// Port of `three.js/src/nodes/fog/Fog.js`' `rangeFogFactor( near, far )`:
 /// `smoothstep( near, far, positionView.z.negate() )`.
+///
+/// Like three's, the factor reads `positionView` when the *material* is built,
+/// not when the fog is made: it is an inline `Fn()` whose body
+/// [`resolve_fog_factor`] runs inside the material's setup, so a
+/// `SpriteNodeMaterial` fogs by its billboarded `v_positionView`
+/// (`docs/nodes.md` §41).
 pub fn range_fog_factor(near: impl Into<NodeRef>, far: impl Into<NodeRef>) -> NodeRef {
-    range_fog_factor_with_view_z(near, far, position_view().z())
+    let (near, far) = (near.into(), far.into());
+    fog_factor_fn(move || {
+        range_fog_factor_with_view_z(near.clone(), far.clone(), position_view().z())
+    })
+}
+
+/// `Fog.js`' factors are `Fn()`s whose `getViewZNode( builder )` runs during
+/// the material's build, when `builder.context.setupPositionView` is the
+/// material's own. The port's graph is eager, so the body is held in an
+/// inline, argument-less call and run by [`resolve_fog_factor`] inside
+/// `NodeMaterial` setup's position-view scope. A factor that reaches the
+/// builder unresolved (used outside `scene.fogNode`) is inlined there, with the
+/// base class' `positionView`, which is what it read before.
+fn fog_factor_fn(body: impl Fn() -> NodeRef + 'static) -> NodeRef {
+    call(&inline_fn(0, Type::F32, move |_| body()), Vec::new())
+}
+
+/// Runs a fog factor's deferred body (see [`range_fog_factor`]) in the
+/// current material's context. Any other node is returned as it is.
+pub fn resolve_fog_factor(factor: &NodeRef) -> NodeRef {
+    match &*factor.0 {
+        Node::Call { def, args } if !def.layout && args.is_empty() => (def.body)(&[]),
+        _ => factor.clone(),
+    }
 }
 
 /// `rangeFogFactor( near, far ).context( { getViewZ: () => viewZ } )`.
@@ -759,8 +834,11 @@ pub fn range_fog_factor_with_view_z(
 /// turns it into a `let nodeConstN`; the port's builder does not promote a
 /// negation on usage (`docs/nodes.md` §8, "`toConst` on the shadow filter"), so
 /// the const is taken here by hand and the WGSL is the same.
+///
+/// Deferred to the material's build as [`range_fog_factor`] is.
 pub fn density_fog_factor(density: impl Into<NodeRef>) -> NodeRef {
-    density_fog_factor_with_view_z(density, position_view().z())
+    let density = density.into();
+    fog_factor_fn(move || density_fog_factor_with_view_z(density.clone(), position_view().z()))
 }
 
 /// [`density_fog_factor`] over an explicit view-space z, the
@@ -793,7 +871,14 @@ pub fn exponential_height_fog_factor(
     density: impl Into<NodeRef>,
     height: impl Into<NodeRef>,
 ) -> NodeRef {
-    exponential_height_fog_factor_with_view_z(density, height, position_view().z())
+    let (density, height) = (density.into(), height.into());
+    fog_factor_fn(move || {
+        exponential_height_fog_factor_with_view_z(
+            density.clone(),
+            height.clone(),
+            position_view().z(),
+        )
+    })
 }
 
 /// [`exponential_height_fog_factor`] over an explicit view-space z.
@@ -2692,6 +2777,21 @@ pub fn texture(map: &Texture) -> NodeRef {
     texture_node(
         TextureSource::Texture2D(map.clone()),
         transformed_uv(default_uv(map), (0, map.id()), map.matrix()),
+        sample_mode_for(map),
+        texture_type_for(map),
+    )
+}
+
+/// `texture( map ).context( { getUV: () => coord } )` — the map read at a
+/// coordinate the *context* supplies. `TextureNode.setup()` takes `getUV()`'s
+/// node in place of the default `uv()` and then still applies
+/// `getTransformedUV()`, so unlike [`texture_uv`] the tap goes through the
+/// map's `mat3x3` uv matrix — one shared per map, as [`texture`]'s is.
+/// `ToonLightingModel`'s gradient lookup is the caller.
+pub fn texture_with_uv(map: &Texture, coord: NodeRef) -> NodeRef {
+    texture_node(
+        TextureSource::Texture2D(map.clone()),
+        transformed_uv(coord, (0, map.id()), map.matrix()),
         sample_mode_for(map),
         texture_type_for(map),
     )

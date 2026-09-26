@@ -3683,3 +3683,340 @@ left for when `context()` can install arbitrary keys.
 Nothing generated changed. `dump_wgsl`'s output is identical after each of
 the eight migrations, apart from the one `ObjectUpdate` pointer noted in §36.
 Every `tests/nodes_*` gate passes unchanged, and so does the full ladder.
+
+## 40. A user `LightingModel` and `ArrayCamera` (`webgpu_lights_custom`, `webgpu_camera_array`)
+
+### 40.1 `LightingModel` as a trait
+
+`webgpu_lights_custom` subclasses `THREE.LightingModel` and hands the instance
+to a material through `lights( [ … ] ).context( { lightingModel } )`.
+`src/materials/lighting_model.rs` ports the base class as a trait:
+
+* `start()`, `direct()`, `indirect()` and `finish()` default to three's base
+  bodies. `start()` runs `builder.lightsNode.setupLights()`, which calls
+  `direct()` once per direct light, and then calls `indirect()`.
+* three's methods append to the builder's current stack implicitly. The
+  port's methods push onto `LightingBuilder::stack` instead, and that stack is
+  spliced into the material's fragment statements.
+* `ReflectedLight`'s four accumulators are `vec3().toVar( name )`, as in
+  `LightingContextNode`. Each one is therefore declared where it is first
+  read, which is why `indirectDiffuse` is zeroed only in `totalDiffuse`'s
+  line in three's dump as well as ours.
+* `lights_node()` is `LightsNode.setup()`: `start()`, then the
+  `totalDiffuse` / `totalSpecular` / `outgoingLight` tail, then `finish()`.
+
+The material field `lighting_model` is the `lightingModel` from the
+context. `LightingContextNode.setup()` reads `this.lightingModel ||
+builder.context.lightingModel`, so it only takes effect on kinds with no model
+of their own (Points, Sprite, and Basic standing in for a bare
+`NodeMaterial`). The built-in models stay the `match` on `MaterialKind`. The
+trait is how a model the port does not ship gets in; it does not replace the
+built-in path.
+
+Not ported: `directRectArea()`, because the port has no `RectAreaLight`, and
+`ambientOcclusion()`, which is never called on a user model.
+
+### 40.2 `ArrayCamera`: how three does it
+
+With an `ArrayCamera`, `Camera.js` turns `cameraViewMatrix` and
+`cameraProjectionMatrix` into
+`uniformArray( matrices ).setGroup( renderGroup ).element( cameraIndex )`.
+`cameraIndex` is a `u32` uniform in its own `sharedUniformGroup(
+'cameraIndex' )`, read in the fragment stage through a flat `v_cameraIndex`
+varying. That group takes `@group(1)`, and the object group moves to
+`@group(2)`.
+
+`WebGPUBackend.draw()` then loops over the sub-cameras for every object. For
+each one it calls `setViewport( floor( vp * dpr ) )`, binds that
+sub-camera's prebuilt `cameraIndex` bind group, and issues the draw. `dpr` is
+the renderer's pixel ratio for the canvas and 1 for a user render target.
+Culling goes through a `FrustumArray`: an object is drawn if any sub-camera's
+frustum holds it, and it is then drawn for every sub-camera.
+
+### 40.3 `ArrayCamera`: the port
+
+* **Substitution at build time.** `NodeBuilder::with_array_cameras( n )`
+  swaps the `CameraViewMatrix` / `CameraProjectionMatrix` uniform nodes for
+  `BufferElement` nodes in `analyze()` and `generate()`. It does not rebuild
+  them in `tsl`: the TSL singletons (`camera_view_matrix()` and the nodes
+  built on it, such as `positionView` and `modelViewMatrix`) are cached
+  process-wide and already hold the plain uniform. The element is
+  `BufferSource::CameraViewMatrices[ v_cameraIndex ]`, where the varying wraps
+  a `UniformGroup::CameraIndex` uniform.
+* **Bind groups.** `UniformGroup::ORDER` is `[Render, CameraIndex, Object]`.
+  Group numbers count the groups in use, so pages without an array camera
+  keep `Render = 0, Object = 1` byte for byte. The two matrix arrays sit in
+  the render group under three's fixed names `cameraViewMatrices` and
+  `cameraProjectionMatrices`, not `NodeBuffer_N`.
+* **The cache key.** `SetupContext::array_cameras` is the sub-camera count,
+  so a material drawn through both kinds of camera builds two programs. The
+  shadow passes set it to 0.
+* **Draws.** `Renderer::sub_camera_draws()` makes one 16-byte slot buffer and
+  bind group per sub-camera index (`SlotOwner::CameraIndex(i)`). `record_pass`
+  sets the pipeline, bind groups and vertex buffers once. Then, for each
+  sub-camera, it sets the viewport, rebinds the `cameraIndex` group and calls
+  `issue_draw()` (the old draw body).
+* **Culling.** `ProjectCamera::sub_frustums` is `FrustumArray`: an object is
+  kept if any sub-frustum holds its bounding sphere.
+* **`camera.viewport`.** `PerspectiveCamera::viewport` is
+  `Option<Vector4>`, in CSS pixels with a top-left origin as in three.
+  `ArrayCamera` is a base `PerspectiveCamera` (`Deref`) plus `cameras`.
+  `RenderCamera::sub_cameras()` defaults to `&[]`.
+
+### 40.4 Divergences
+
+* **Binding numbers of the matrix arrays.** Three gives each stage its own
+  `cameraViewMatrices` binding (the fragment's at 1, the vertex's at 2 and
+  3). The port declares each array once per program. The WGSL indexes them
+  the same way.
+* **`v_cameraIndex` in the vertex stage.** Three reads
+  `varyings.v_cameraIndex` back in the vertex stage. The port reads a private
+  `v_cameraIndex` it assigned from the same uniform, which gives the same
+  value. Varying locations are ordered differently, as in §8.
+* **`subcamera.copy( camera )` is reproduced as the page wrote it.** It
+  copies the `ArrayCamera`'s own defaults (fov 50, far 2000), not the sub-camera's
+  constructor's 40 / 10. The example does the same, and the frame is
+  pixel-identical to three's `actual_full.png`.
+* **No XR, bundles or layer textures.** `WebGPUBackend`'s array-texture
+  (multiview) path and its render-bundle path are not ported.
+  `object.layers.test( subCamera.layers )` always passes, because the port
+  has no layers.
+
+## 41. Sprites: `userData`, `Sprite.count`, and fog in the material's scope (`webgpu_sprites`, `webgpu_instance_sprites`)
+
+Both pages draw `SpriteNodeMaterial`, which the port already had for the
+galaxy and the particles (§33). What they add is small, but one piece of it
+is a correction to how every fog node was built.
+
+### 41.1 `userData( name, type )`
+
+`webgpu_sprites` gives two hundred `Sprite`s one material and sets
+`material.rotationNode = userData( 'rotation', 'float' )`. Each sprite's
+`userData.rotation` grows by a different step each frame. `UserDataNode` is a
+`ReferenceNode` whose reference is `frame.object.userData`, with
+`updateType = OBJECT`: an object-group `uniform()` rewritten before each draw.
+The port already had that shape as `uniform_object` (§19), so
+`tsl::user_data( name, ty )` is `uniform_object( ty, |object| … )` reading
+`object.user_data[ name ]`. `Object3D.user_data` is three's open `userData`
+object, a `serde_json::Map`. It is deep-copied on clone, as three's
+`JSON.parse( JSON.stringify( … ) )` copies it. All two hundred draws share one
+program and one pipeline, and each writes its own float into
+`object.nodeUniform4` (`nodeUniform3` in the port's numbering).
+
+### 41.2 Fog is built inside the material
+
+`Fog.js`' factors are `Fn()`s. `rangeFogFactor( near, far )` reads
+`getViewZNode( builder )`, which is `positionView.z` read **while the
+material is being built**. `positionView` is
+`builder.context.setupPositionView()`, and for a sprite that is
+`SpriteNodeMaterial.setupPositionView()`, the billboarded `vec4`. Three's
+sprite fragment therefore fogs by `v_positionView.xyz.z` of the one sprite
+varying.
+
+The port built the fog graph eagerly, when `scene.fogNode` (or `scene.fog`'s
+cached node) was made. That is outside any material, so the factor held the
+base class' `modelViewMatrix * positionLocal` varying. A sprite then carried
+a second `v_positionView` (a `vec3`, of the un-billboarded quad corner), and
+fogged by it. At `webgpu_sprites`' pinned time the group is not rotated, so
+the two depths agreed and the frame was already at 0 pixels. They part as
+soon as the group turns.
+
+`range_fog_factor`, `density_fog_factor` and `exponential_height_fog_factor`
+now return an inline, argument-less `Fn()` call. `NodeMaterial` setup runs
+its body, through `tsl::resolve_fog_factor`, inside the material's
+`with_material_position_view` scope, where `position_view()` is the
+material's own. For a mesh, the scope's `positionView` is the base class' pair,
+cached per context, so the node is the one it always was. The ladder's fog
+rungs are unchanged to the pixel. A factor used anywhere else is inlined by
+the builder with the base class' `positionView`, which is what it read
+before. The `_with_view_z` forms (§24) are unchanged: their view z is
+explicit.
+
+### 41.3 `Sprite.count`
+
+`webgpu_instance_sprites` draws ten thousand snowflakes as one `Sprite` with
+`count = 10000`. `positionNode` is an `instancedBufferAttribute` and
+`rotationNode` is `time.add( instanceIndex ).sin()`. `Sprite` gains three's
+`count` (default 1), and `Payload::count()` returns it, which is
+`RenderObject.getInstanceCount()`. The rest was in place: the instanced
+attribute's `stepMode: 'instance'` buffer, `instanceIndex` cast to `f32` in
+the add, `alphaMap` with its `vec4` product (§32.4), and `FogExp2`'s render-group
+uniforms (§28).
+
+### Divergences specific to this section
+
+* **`userData` reads a flat key on the render object.** three's
+  `ReferenceNode` walks a dotted path and also accepts an explicit
+  `userData` object in place of the render object's. The ladder uses neither.
+  A number or numeric array is read as the uniform's components. Anything
+  else, or a missing key, reads as zero, where three would write `undefined`.
+* **One uv-matrix uniform per texture, not per `texture()` node.**
+  `webgpu_instance_sprites` samples the snowflake twice, as `map` and as
+  `alphaMap`. Three's dump has two `mat3` members, `nodeUniform3` and
+  `nodeUniform5`, one per `TextureNode`. The port's `transformed_uv` keys the
+  member on the texture, so both samples read one member. The values are the
+  same matrix, so no pixel can differ.
+* The rest of the two pages' WGSL differs from the dumps only in §8's
+  classes: `let nodeConstN` against `var nodeVarN`, uniform numbering and
+  member order, and `@location` order. `dump_wgsl`'s `sprites` and
+  `instance_sprites` sections print it.
+
+## 42. `MeshToonNodeMaterial` and `toonOutlinePass` (`webgpu_materials_toon`)
+
+**The lighting model.** `ToonLightingModel` extends `LightingModel` directly,
+but its `indirect()` is Lambert's line for line: ambient irradiance times
+`BRDF_Lambert`, multiplied by AO. The port therefore runs `MaterialKind::Toon`
+through `setup_phong()`'s Lambert arm (`specular = false`). Only the per-light
+term changes. `toon::direct_light()` replaces Lambert's `saturate( dotNL )`
+with `getGradientIrradiance()`:
+
+* **With a `gradientMap`.** The irradiance is `vec3( gradientMap.r )`,
+  sampled at `vec2( dotNL * 0.5 + 0.5, 0 )`. Three reaches the map with
+  `materialReference( 'gradientMap', 'texture' ).context( { getUV } )`.
+  `getUV` replaces only the default `uv()`, and the texture node's
+  `updateMatrix` stays on, so the coordinate still goes through the map's uv
+  matrix. `tsl::texture_with_uv()` is that `.context( { getUV } )`: it is
+  `texture()` with the uv argument given, and it uses the same
+  `transformed_uv` and the same one uniform per texture.
+* **Without one.** It is the two-step ramp `mix( vec3( 0.7 ), vec3( 1 ),
+  smoothstep( 0.7 - fw.x, 0.7 + fw.x, coord.x ) )` with `fw = fwidth( coord )
+  * 0.5`. No rung draws this branch yet.
+
+**The gradient maps.** The page builds each ramp as `new DataTexture( colors,
+n, 1, RedFormat )`. `Texture::data_r8()` is that texture: `R8Unorm`,
+`flipY` false, no mipmaps, and `NearestFilter` for both min and mag. The last
+of these makes it unfilterable, so its tap is a `textureLoad` with the
+`tsl_coord_clampS_clampT_2d` helper, as three's dump has it. The page's loop
+writes one byte past the end of the array, and that store is dropped. The
+port simply builds `n` bytes.
+
+**`toonOutlinePass`.** Three's `ToonOutlinePassNode` is a `PassNode`. Its
+`updateBefore()` swaps the renderer's render-object function for one that
+draws a toon object with its outline material, then with its own material.
+The port's `ToonOutlinePassNode` wraps a `PassNode` and makes the same swap
+through the renderer's `toon_outline` field. The render loop checks that
+field at the point where three calls the function. For every draw whose
+material is `MaterialKind::Toon`, it pushes a copy of the draw with the
+outline material immediately before it. The outline material is three's
+`_createMaterial()`: a back-side node material whose `vertexNode` pushes each
+clip-space vertex along `normalize( pos - mvp * ( positionLocal -
+normalLocal ) )` by `thickness * pos.w`, with `colorNode = vec4( color, alpha
+)`.
+
+The divergences:
+
+* **One outline material, not one per toon material.** Three caches one
+  outline material per source material (`_materialCache`). Every one of them
+  is built from the same three nodes, so they differ only in identity. The
+  port keeps the one template. Each outline draw's program key is the source
+  material's key with a `VARIANT_TOON_OUTLINE` variant hashed with the
+  template's id, which is the way shadow materials are keyed. This keeps the
+  steady frame building nothing.
+* **No wireframe case.** Three skips the outline for a
+  `material.wireframe` toon material. The port's materials have no wireframe
+  mode, so there is nothing to skip.
+* **The outline is a `Basic` material.** Three's is a bare `NodeMaterial`
+  with `lights = false`. The port's `Basic` kind with its default `lights =
+  false` emits the same fragment flow (`m03`).
+## 39. Occlusion queries and `frame.renderer.isOccluded()` (`webgpu_occlusion`)
+
+A green Phong plane in front of a yellow Phong sphere. The sphere carries
+`occlusionTest = true`, and the plane's `colorNode` is a custom node with
+`updateType = NodeUpdateType.OBJECT`, as §19's is, whose `update( frame )`
+asks the renderer:
+
+```js
+async update( frame ) {
+    const isOccluded = frame.renderer.isOccluded( this.testObject );
+    this.uniformNode.value.copy( isOccluded ? this.occludedColor : this.normalColor );
+}
+```
+
+### What three does
+
+`RenderList.push()` counts the runs of consecutive pushes of an object with
+`occlusionTest`, and `beginRender()` creates an occlusion `GPUQuerySet` of that
+size for the render context's pass. `WebGPUBackend.draw()` walks the draws with
+`lastOcclusionObject`: where the object changes it ends the open query (if the
+last object was tested, bumping `occlusionQueryIndex`) and begins one if the new
+object is tested, recording the object at that index. `finishRender()` ends the
+last one, resolves the set into a `QUERY_RESOLVE` buffer (cached by size),
+copies it into a fresh `MAP_READ` buffer and calls `resolveOccludedAsync()`,
+which maps **the previous `finishRender()`'s buffer**, not this one. When the
+map lands, every object whose query counted zero samples goes into a `WeakSet`,
+`renderContextData.occluded`, and `isOccluded( object )` reads that set for
+`_currentRenderContext`.
+
+So an answer reaches `update()` two frames after the draw it measured, at the
+earliest. The graded frame is the first, and the plane is blue on it. Three's
+screenshot shows exactly that, and so does the port.
+
+### What the port has
+
+| three.js | three-rs |
+|---|---|
+| `object.occlusionTest` (ad hoc) | `Object3D::occlusion_test` |
+| `renderContextData.occlusionQuerySet` / `occlusionQueryBuffer` / `occluded` | `renderer::occlusion::OcclusionContext` |
+| `occludedResolveCache` | `Occlusion::resolve_buffers` |
+| `lastOcclusionObject` walk in `draw()` / `finishRender()` | `record_pass()`, counted by `occlusion::query_objects` |
+| `resolveOccludedAsync()` | `Occlusion::finish()` issues the map; `Occlusion::collect()` reads it |
+| `frame.renderer.isOccluded( object )` | [`NodeFrame::is_occluded`](../src/nodes/node.rs) |
+| `Node` with `updateType = OBJECT` reading more than `frame.object` | [`tsl::uniform_frame( ty, \|frame\| … )`](../src/nodes/tsl.rs) |
+
+`ObjectUpdate` now calls its callback with a `NodeFrame` (the object, plus the
+render context's occlusion results) rather than a bare `&Object3D`.
+`uniform_object` is unchanged for its callers: it wraps its closure to read
+`frame.object`.
+
+The render context is set by `render()` just before `render_list()`, and the
+next `draw()` takes it, which is the scene pass. The shadow passes and the
+output blit are draws of their own and never see it, as in three, where each is
+its own render context.
+
+The map's callback cannot touch the renderer, because natively it runs from
+inside `device.poll()` and must be `Send`. It sets an atomic, and `render()`
+polls without blocking whenever a map is outstanding and folds whatever has
+landed into `occluded` before any draw is built. A renderer with no query in
+flight never polls, so no other rung sees any of this.
+
+`tests/renderer_occlusion.rs` checks what the graded frame cannot: the plane is
+blue on frames one and two and green from frame three on, and it stays blue
+for six frames once the sphere is moved in front of it.
+
+### Divergences specific to this section
+
+* **`occlusion_test` is a field.** §19 declined to add `mesh.color` because
+  only the page reads it. `occlusionTest` is different: it is ad hoc in three
+  too, but the renderer reads it (`RenderList`, `WebGPUBackend`), so it is
+  renderer API. Being ad hoc, `Object3D.copy()` does not carry it, and the
+  port's `Clone` does not either.
+* **The render context has no camera.** three keys `RenderContexts` on the
+  scene, the camera, the render target, the MRT and the call depth. The port
+  keys occlusion on the scene and the render target only: `RenderCamera` is a
+  trait over owned camera structs with no shared identity. Two cameras
+  rendering one scene into one target share their occlusion results here.
+* **The query set is reused.** three creates a query set in every
+  `beginRender()` and destroys the previous one. The port keeps one per render
+  context and makes a bigger one only when the count outgrows it. By the time
+  it is reused, the previous frame's resolve has been submitted, so the queries
+  are the same. The `MAP_READ` buffer is still fresh per frame, as in three.
+* **Queries are counted in draw order.** three sizes the set by
+  `RenderList.occlusionQueryCount`, which counts runs in push order, and then
+  indexes it in the sorted draw order, which can have more runs. The port
+  counts in draw order, so the index cannot overrun the set.
+* **A transmissive split records queries only in its first pass.** When
+  `ViewportTextureNode` splits the scene pass in two, three records into
+  both. No page on the ladder puts an occlusion test on a split pass.
+* **Answers land on a poll, not on the event loop.** Natively the map
+  callback fires on the next `render()`'s non-blocking poll, which on this
+  machine is always in time for the next frame. That is the soonest three
+  could have it too.
+* **No queries in the browser.** wgpu 30's WebGPU backend never copies
+  `occlusion_query_set` into the `GPURenderPassDescriptor`, so the first
+  `beginOcclusionQuery()` invalidates the encoder ("The occlusionQuerySet in
+  RenderPassDescriptor is not set") and the frame is never submitted.
+  `occlusion::supported()` turns the queries off on
+  `Backend::BrowserWebGpu`, so `isOccluded()` is always false there. That is
+  three's answer until the first query lands, so the graded frame is the same.
+  In the browser, `webgpu_occlusion`'s plane stays blue. It comes back once
+  wgpu forwards the set.

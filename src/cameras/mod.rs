@@ -1,8 +1,10 @@
 //! Ports of `three.js/src/cameras`.
 
+mod array_camera;
 mod orthographic_camera;
 mod perspective_camera;
 
+pub use array_camera::ArrayCamera;
 pub use orthographic_camera::OrthographicCamera;
 pub use perspective_camera::{CameraView, PerspectiveCamera};
 
@@ -66,6 +68,12 @@ pub trait RenderCamera {
     /// `camera.isOrthographicCamera`.
     fn is_orthographic_camera(&self) -> bool {
         false
+    }
+    /// `camera.isArrayCamera ? camera.cameras : []` — the sub-cameras one
+    /// render draws through, each into its own viewport. Empty for every
+    /// camera but an [`ArrayCamera`].
+    fn sub_cameras(&self) -> &[PerspectiveCamera] {
+        &[]
     }
 }
 
