@@ -179,8 +179,9 @@ jobs:
 
       # Every other `tests/*.rs` file that does not create a `Renderer`.
       # Excluded on purpose:
-      #   - renderer_blending, renderer_instanced, renderer_lines: build a
-      #     `Renderer`, which needs a Vulkan adapter.
+      #   - renderer_blending, renderer_instanced, renderer_lines,
+      #     renderer_textures: build a `Renderer`, which needs a Vulkan
+      #     adapter.
       - name: three-rs integration tests (no GPU)
         run: |
           tests=(

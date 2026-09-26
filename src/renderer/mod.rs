@@ -18,7 +18,7 @@ mod render_pipeline;
 mod render_target;
 mod ssaa_pass;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::{Rc, Weak};
 
 use bindings::{
@@ -57,7 +57,7 @@ use crate::objects::{Background, InstancedBufferAttribute, QuadMesh, Scene, Scen
 use crate::testing::DeterministicRandom;
 use crate::textures::{
     CubeDepthTexture, CubeTexture, DataArrayTexture, DataTexture, DataTextureData, DepthTexture,
-    Texture, TextureFilter, TextureType,
+    Texture, TextureFilter, TextureOwner, TextureType,
 };
 
 /// How many **frames** a cache entry survives without being used, for the
@@ -114,10 +114,17 @@ struct SlotBuffer {
 /// One cached texture view, with the texture it views: the entry is good for
 /// as long as that is still the texture behind the id. See
 /// [`Renderer::texture_view`].
+///
+/// `owner` is the texture handle the view was made for. A view keeps its
+/// `wgpu::Texture` alive, so without it a render target the consumer dropped
+/// would hold its GPU memory through this cache — and through every bind group
+/// built from the view — until both aged out; with it, both go on the first
+/// render after the last handle does (issue #158).
 struct ViewEntry {
     texture: wgpu::Texture,
     view: Serial<wgpu::TextureView>,
     last_used: u64,
+    owner: TextureOwner,
 }
 
 /// One cached bind group; see [`BindGroupKey`].
@@ -377,9 +384,21 @@ struct MaterialStates {
 /// frame write the new bytes into this same `wgpu::Texture` rather than return
 /// stale pixels. Without it a changed image would either never reach the GPU or
 /// force a fresh allocation every frame.
+///
+/// `owner` is the liveness signal the cache sweep reads, as
+/// [`GeometryEntry::owner`] is for a geometry: once the consumer has dropped
+/// every handle to the texture, the entry and its `wgpu::Texture` go at the
+/// start of the next `render()` (issue #158).
 struct Texture2DEntry {
     gpu: wgpu::Texture,
     version: u32,
+    owner: TextureOwner,
+}
+
+/// One uploaded `CubeTexture`, swept like a [`Texture2DEntry`].
+struct CubeTextureEntry {
+    gpu: wgpu::Texture,
+    owner: TextureOwner,
 }
 
 /// The [`BuildCounts`] field a newly created binding resource adds one to.
@@ -679,9 +698,10 @@ pub struct Renderer {
     /// [`GeometryEntry`].
     geometries: HashMap<usize, GeometryEntry>,
     /// `Textures`' GPU side, keyed by texture identity. The entry carries the
-    /// `Texture.version` it was uploaded at; see [`Texture2DEntry`].
+    /// `Texture.version` it was uploaded at; see [`Texture2DEntry`]. Swept by
+    /// liveness at the start of every `render()`, like `geometries`.
     textures_2d: HashMap<usize, Texture2DEntry>,
-    cube_textures: HashMap<usize, wgpu::Texture>,
+    cube_textures: HashMap<usize, CubeTextureEntry>,
     /// `WebGPUTexturePassUtils.transferPipelines`, keyed by texture format.
     mipmap_pipelines: HashMap<wgpu::TextureFormat, wgpu::RenderPipeline>,
     /// `BufferNode` / `InstanceBuffer` storage, keyed by the node's own
@@ -708,8 +728,9 @@ pub struct Renderer {
     slot_buffers: HashMap<SlotKey, SlotBuffer>,
     /// Texture views, by `TextureId` and view dimension, one entry per
     /// `wgpu::Texture` that id has recently stood for; see
-    /// [`Renderer::texture_view`]. Aged out by [`CACHE_GRACE_FRAMES`], which
-    /// also bounds how long a cached view keeps a dropped texture's memory.
+    /// [`Renderer::texture_view`]. Aged out by [`CACHE_GRACE_FRAMES`], and
+    /// swept by liveness besides, so a cached view never keeps a dropped
+    /// texture's memory past the next render; see [`ViewEntry`].
     views: HashMap<(usize, Option<wgpu::TextureViewDimension>), Vec<ViewEntry>>,
     /// Samplers, by descriptor, for the renderer's life; see [`SamplerKey`].
     samplers: HashMap<SamplerKey, Serial<wgpu::Sampler>>,
@@ -3890,6 +3911,7 @@ impl Renderer {
             texture: gpu,
             view: view.clone(),
             last_used: frames,
+            owner: source.owner(),
         });
         view
     }
@@ -4073,6 +4095,7 @@ impl Renderer {
                 Texture2DEntry {
                     gpu: gpu.clone(),
                     version,
+                    owner: texture.owner(),
                 },
             );
             // One upload, the way a rewritten attribute is one buffer write;
@@ -4148,6 +4171,7 @@ impl Renderer {
             Texture2DEntry {
                 gpu: gpu.clone(),
                 version,
+                owner: texture.owner(),
             },
         );
         self.info.build.textures_uploaded += 1;
@@ -4374,8 +4398,8 @@ impl Renderer {
     /// and one `copyExternalImageToTexture` per face with `flipY: false`.
     fn ensure_cube_texture(&mut self, texture: &CubeTexture) -> wgpu::Texture {
         let id = texture.id();
-        if let Some(gpu) = self.cube_textures.get(&id) {
-            return gpu.clone();
+        if let Some(entry) = self.cube_textures.get(&id) {
+            return entry.gpu.clone();
         }
 
         let (width, height) = texture.size();
@@ -4447,7 +4471,13 @@ impl Renderer {
         }
 
         texture.inner().borrow_mut().gpu = Some(gpu.clone());
-        self.cube_textures.insert(id, gpu.clone());
+        self.cube_textures.insert(
+            id,
+            CubeTextureEntry {
+                gpu: gpu.clone(),
+                owner: texture.owner(),
+            },
+        );
         self.info.build.textures_uploaded += 1;
         self.info.memory.textures = self.textures_2d.len() + self.cube_textures.len();
         gpu
@@ -4731,8 +4761,9 @@ impl Renderer {
     /// `NodeManager` listen for. The port has no dispose event, and two kinds
     /// of key:
     ///
-    /// - a geometry is an `Rc`, so its strong count *is* the dispose event —
-    ///   exact, immediate, and it costs one `Weak` per entry;
+    /// - a geometry or a texture is an `Rc`, so its strong count *is* the
+    ///   dispose event — exact, immediate, and it costs one `Weak` per entry
+    ///   (issues #58 and #158);
     /// - a material is a value (the renderer only ever sees per-frame clones)
     ///   and a `BufferNode` lives inside a material's node graph, so neither
     ///   has a count to read. Those age out instead: an entry unused for
@@ -4793,12 +4824,43 @@ impl Renderer {
         let frames = self.frames;
         self.slot_buffers
             .retain(|_, entry| bindings::is_fresh(entry.last_used, frames));
+
+        // Textures, by liveness (issue #158). After `node_builder_states`,
+        // because a material's built `NodeProgram` holds handles to the
+        // textures it samples: a texture whose last holder was a program
+        // evicted just above goes in this same sweep, not the next one.
+        //
+        // The `wgpu::Texture` is dropped, not `destroy()`ed. The views and bind
+        // groups made from it are swept below, so nothing of the renderer's
+        // keeps it; a handle the consumer took with `Texture::with_gpu` is
+        // theirs, and wgpu frees the memory when the last one goes.
+        self.textures_2d
+            .retain(|_, entry| entry.owner.strong_count() > 0);
+        self.cube_textures
+            .retain(|_, entry| entry.owner.strong_count() > 0);
+        self.info.memory.textures = self.textures_2d.len() + self.cube_textures.len();
+
+        // Views, by age and by liveness: a view of any texture class — a
+        // render target's attachments and depth texture included, which live
+        // on the target rather than in a renderer map — goes with its owner.
+        // A bind group holding a swept-for-liveness view goes with it, since
+        // it holds the texture too and can never be asked for again: its key
+        // names a view serial no lookup will return.
+        let mut orphaned = HashSet::new();
         self.views.retain(|_, entries| {
-            entries.retain(|entry| bindings::is_fresh(entry.last_used, frames));
+            entries.retain(|entry| {
+                if entry.owner.strong_count() == 0 {
+                    orphaned.insert(entry.view.serial);
+                    return false;
+                }
+                bindings::is_fresh(entry.last_used, frames)
+            });
             !entries.is_empty()
         });
-        self.bind_group_cache
-            .retain(|_, entry| bindings::is_fresh(entry.last_used, frames));
+        self.bind_group_cache.retain(|key, entry| {
+            bindings::is_fresh(entry.last_used, frames)
+                && (orphaned.is_empty() || !key.binds_any(&orphaned))
+        });
     }
 
     /// Entries in the uploaded-geometry cache. A consumer that churns geometry

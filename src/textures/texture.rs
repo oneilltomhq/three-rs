@@ -346,6 +346,13 @@ impl Texture {
         self.1.get()
     }
 
+    /// The handle's liveness, without the handle; see [`TextureOwner`].
+    ///
+    /// [`TextureOwner`]: super::TextureOwner
+    pub(crate) fn owner(&self) -> super::TextureOwner {
+        Rc::downgrade(&self.0) as super::TextureOwner
+    }
+
     /// `Texture.clone()` — `new Texture().copy( this )`: a second texture over
     /// the same image, with its own id, its own uv transform and its own
     /// `channel`. `Texture`'s `Clone` impl is JS' assignment (a handle copy);

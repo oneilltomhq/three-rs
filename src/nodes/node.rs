@@ -554,6 +554,21 @@ pub enum TextureSource {
     CubeDepth(CubeDepthTexture),
 }
 
+impl TextureSource {
+    /// The texture's liveness, for the renderer's view cache to sweep on; see
+    /// [`TextureOwner`](crate::textures::TextureOwner).
+    pub(crate) fn owner(&self) -> crate::textures::TextureOwner {
+        match self {
+            TextureSource::Texture2D(texture) => texture.owner(),
+            TextureSource::Depth(depth) | TextureSource::ShadowMap(depth) => depth.owner(),
+            TextureSource::Cube(cube) => cube.owner(),
+            TextureSource::DataArray(data) => data.owner(),
+            TextureSource::Data(data) => data.owner(),
+            TextureSource::CubeDepth(cube) => cube.owner(),
+        }
+    }
+}
+
 /// How a `TextureNode` reads its texture — `WGSLNodeBuilder.generateTexture*`.
 #[derive(Clone, Debug)]
 pub enum SampleMode {
