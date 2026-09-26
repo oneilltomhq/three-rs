@@ -97,6 +97,9 @@ impl RenderCamera for ArrayCamera {
     fn layers(&self) -> Layers {
         self.camera.node.borrow().layers
     }
+    fn id(&self) -> u32 {
+        self.camera.node.borrow().id
+    }
     fn sub_cameras(&self) -> &[PerspectiveCamera] {
         &self.cameras
     }

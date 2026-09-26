@@ -71,6 +71,88 @@ impl PmremHandle {
     }
 }
 
+/// `scene.environmentNode` set to a node graph rather than a texture:
+/// `EnvironmentNode.setup()`'s non-texture branch, which builds that graph
+/// under each lighting context in turn.
+///
+/// Three reads the environment through context: every `PMREMNode` in the
+/// graph asks `builder.context.getUV()` and `getTextureLevel()` for its
+/// direction and roughness, and `EnvironmentNode` builds the same graph once
+/// under the radiance context and once under the irradiance one. The port has
+/// no node context, so the graph is a function of those two values instead.
+/// [`PmremHandle::sample`] is the `pmremTexture()` leaf it calls. Each call
+/// builds the graph again, which is what three's context build does: its
+/// dump repeats the `mix` and the `oscSine` for radiance and for
+/// `iblIrradiance`.
+///
+/// `webgpu_cubemap_mix`: `mix( pmremTexture( cube2 ), pmremTexture( cube1 ),
+/// oscSine( time.mul( .1 ) ) )`.
+#[derive(Clone)]
+pub struct EnvironmentNode {
+    id: u64,
+    build: std::rc::Rc<dyn Fn(NodeRef, NodeRef) -> NodeRef>,
+}
+
+impl EnvironmentNode {
+    /// `build( uv, level )` is the graph under a context whose `getUV()` is
+    /// `uv` and whose `getTextureLevel()` is `level`.
+    pub fn new(build: impl Fn(NodeRef, NodeRef) -> NodeRef + 'static) -> Self {
+        static NEXT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        Self {
+            id: NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            build: std::rc::Rc::new(build),
+        }
+    }
+
+    /// The graph read along `uv` at roughness `level`.
+    pub fn sample(&self, uv: NodeRef, level: NodeRef) -> NodeRef {
+        (self.build)(uv, level)
+    }
+
+    /// `node.context( { getTextureLevel: () => level } )`: the same graph with
+    /// every `pmremTexture()` in it read at `level`, whatever roughness the
+    /// reader asks for. It is a new node, as `.context()` is.
+    pub fn with_texture_level(&self, level: NodeRef) -> Self {
+        let inner = self.clone();
+        Self::new(move |uv, _| inner.sample(uv, level.clone()))
+    }
+}
+
+impl std::fmt::Debug for EnvironmentNode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EnvironmentNode")
+            .field("id", &self.id)
+            .finish_non_exhaustive()
+    }
+}
+
+/// Keyed by identity, as every node in a material is: the scene holds it, so
+/// it is the same node, and the same program, every frame.
+impl std::hash::Hash for EnvironmentNode {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+    }
+}
+
+/// What `EnvironmentNode` is built from: a generated PMREM
+/// (`pmremTexture( envMap )`) or a node graph over PMREMs.
+#[derive(Clone, Debug, Hash)]
+pub enum Environment {
+    Pmrem(PmremHandle),
+    Node(EnvironmentNode),
+}
+
+impl Environment {
+    /// The environment read along `uv` at roughness `level`, under the
+    /// context `EnvironmentNode` gives it.
+    pub fn sample(&self, uv: NodeRef, level: NodeRef) -> NodeRef {
+        match self {
+            Self::Pmrem(pmrem) => pmrem.sample(uv, level),
+            Self::Node(node) => node.sample(uv, level),
+        }
+    }
+}
+
 /// `createRadianceContext( roughness, normalView )`'s `getUV`.
 ///
 /// "Mixing the reflection with the normal is more accurate and keeps rough
@@ -101,7 +183,7 @@ fn pow4(x: NodeRef) -> NodeRef {
 /// declared at their first use, which is here and not in `indirectSpecular` —
 /// so this function owns them, and `PhysicalLightingModel::indirect_specular`
 /// only writes them when there is no environment.
-pub fn setup(env: &PmremHandle, anisotropy: bool, clearcoat: bool, out: &mut Vec<NodeRef>) {
+pub fn setup(env: &Environment, anisotropy: bool, clearcoat: bool, out: &mut Vec<NodeRef>) {
     let radiance_prop = crate::nodes::tsl::radiance();
     let ibl_prop = crate::nodes::tsl::ibl_irradiance();
 

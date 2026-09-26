@@ -7,7 +7,7 @@
 use crate::materials::{DepthFunc, Side};
 use crate::math::{Color, Matrix3, Matrix4, Vector2, Vector3, Vector4};
 use crate::nodes::wgsl::TextureKind;
-use crate::nodes::{BindingDesc, NodeProgram, Type, UniformMember, UniformSource};
+use crate::nodes::{BindingDesc, BufferSource, NodeProgram, Type, UniformMember, UniformSource};
 
 /// Everything about a pass that the pipeline has to bake in, beyond the shader.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -301,6 +301,10 @@ fn layout_entry(binding: u32, desc: &BindingDesc) -> wgpu::BindGroupLayoutEntry 
                 // compute, `read` in the vertex and fragment stages, which is
                 // why the page asks for `maxStorageBuffersInVertexStage: 1`.
                 ty: match source {
+                    // `.toReadOnly()` is `read` in a kernel too.
+                    BufferSource::StorageData {
+                        read_only: true, ..
+                    } => wgpu::BufferBindingType::Storage { read_only: true },
                     source if source.is_storage() => wgpu::BufferBindingType::Storage {
                         read_only: !visibility.compute,
                     },
@@ -524,6 +528,8 @@ pub struct UniformContext<'a> {
     pub material_sheen: f64,
     pub material_sheen_color: Color,
     pub material_sheen_roughness: f64,
+    /// `MeshPhysicalMaterial.diffuseRoughness`.
+    pub material_diffuse_roughness: f64,
     pub material_normal_scale: Vector2,
     /// `MeshPhysicalMaterial.anisotropy` / `.anisotropyRotation` /
     /// `.clearcoat` / `.clearcoatRoughness` / `.clearcoatNormalScale`.
@@ -625,6 +631,7 @@ impl Default for UniformContext<'_> {
             material_sheen: 0.0,
             material_sheen_color: Color::new(0.0, 0.0, 0.0),
             material_sheen_roughness: 1.0,
+            material_diffuse_roughness: 0.0,
             material_normal_scale: Vector2::new(1.0, 1.0),
             material_anisotropy: 0.0,
             material_anisotropy_rotation: 0.0,
@@ -753,6 +760,9 @@ impl UniformContext<'_> {
                 UniformSource::MaterialSheenRoughness => {
                     vec![self.material_sheen_roughness as f32]
                 }
+                UniformSource::MaterialDiffuseRoughness => {
+                    vec![self.material_diffuse_roughness as f32]
+                }
                 UniformSource::MaterialNormalScale => vec![
                     self.material_normal_scale.x as f32,
                     self.material_normal_scale.y as f32,
@@ -876,6 +886,8 @@ impl UniformContext<'_> {
                 // Read per draw, so `sampleWeight.value = …` between two
                 // `render_quad()` calls reaches the second one's buffer.
                 UniformSource::Settable(cell) => cell.get().iter().map(|&v| v as f32).collect(),
+                // Read when the buffer is written, from the object it names.
+                UniformSource::Live(value) => value.get().iter().map(|&v| v as f32).collect(),
                 // `Node.update( frame )` for a `NodeUpdateType.OBJECT` node,
                 // run here rather than in a separate pre-pass because here is
                 // where three runs it too: `Bindings.updateBindings()` calls

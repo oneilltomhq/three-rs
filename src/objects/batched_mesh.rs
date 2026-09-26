@@ -147,6 +147,7 @@ impl BatchedMesh {
             mesh: Mesh {
                 geometry: Rc::new(BufferGeometry::new()),
                 material: Some(material),
+                materials: Vec::new(),
                 morph_target_influences: Vec::new(),
                 line_segments: None,
                 count: None,

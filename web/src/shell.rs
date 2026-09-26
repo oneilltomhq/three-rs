@@ -268,6 +268,7 @@ MaterialsTextureManualmipmap, webgpu_materials_texture_manualmipmap, "../../exam
 TslVfxFlames, webgpu_tsl_vfx_flames, "../../examples/webgpu_tsl_vfx_flames.rs";
 ProceduralTexture, webgpu_procedural_texture, "../../examples/webgpu_procedural_texture.rs";
 PostprocessingSobel, webgpu_postprocessing_sobel, "../../examples/webgpu_postprocessing_sobel.rs";
+PostprocessingFxaa, webgpu_postprocessing_fxaa, "../../examples/webgpu_postprocessing_fxaa.rs";
 PostprocessingTransition, webgpu_postprocessing_transition, "../../examples/webgpu_postprocessing_transition.rs";
 TslRagingSea, webgpu_tsl_raging_sea, "../../examples/webgpu_tsl_raging_sea.rs";
 TslAngularSlicing, webgpu_tsl_angular_slicing, "../../examples/webgpu_tsl_angular_slicing.rs";
@@ -287,6 +288,20 @@ MaterialsToon, webgpu_materials_toon, "../../examples/webgpu_materials_toon.rs";
 Occlusion, webgpu_occlusion, "../../examples/webgpu_occlusion.rs";
 FogHeight, webgpu_fog_height, "../../examples/webgpu_fog_height.rs";
 ShadowmapOpacity, webgpu_shadowmap_opacity, "../../examples/webgpu_shadowmap_opacity.rs";
+MultipleRendertargets, webgpu_multiple_rendertargets, "../../examples/webgpu_multiple_rendertargets.rs";
+MultipleRendertargetsReadback, webgpu_multiple_rendertargets_readback, "../../examples/webgpu_multiple_rendertargets_readback.rs";
+Texturegrad, webgpu_texturegrad, "../../examples/webgpu_texturegrad.rs";
+Texturegather, webgpu_texturegather, "../../examples/webgpu_texturegather.rs";
+LightsSelective, webgpu_lights_selective, "../../examples/webgpu_lights_selective.rs";
+LoaderGltfCompressed, webgpu_loader_gltf_compressed, "../../examples/webgpu_loader_gltf_compressed.rs";
+Equirectangular, webgpu_equirectangular, "../../examples/webgpu_equirectangular.rs";
+SkinningPoints, webgpu_skinning_points, "../../examples/webgpu_skinning_points.rs";
+InstancePoints, webgpu_instance_points, "../../examples/webgpu_instance_points.rs";
+TexturesPartialupdate, webgpu_textures_partialupdate, "../../examples/webgpu_textures_partialupdate.rs";
+Layers, webgpu_layers, "../../examples/webgpu_layers.rs";
+LoaderGltfDiffuseRoughness, webgpu_loader_gltf_diffuse_roughness, "../../examples/webgpu_loader_gltf_diffuse_roughness.rs";
+CubemapMix, webgpu_cubemap_mix, "../../examples/webgpu_cubemap_mix.rs";
+Mirror, webgpu_mirror, "../../examples/webgpu_mirror.rs";
 TslHalftone, webgpu_tsl_halftone, "../../examples/webgpu_tsl_halftone.rs";
 TslEarth, webgpu_tsl_earth, "../../examples/webgpu_tsl_earth.rs";
 }

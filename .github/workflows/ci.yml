@@ -239,6 +239,7 @@ jobs:
             math_vector4
             nodes_fog
             nodes_display_wgsl
+            nodes_custom
             nodes_compute_indirect_wgsl
             nodes_instanced_attributes
             nodes_line2_world_units

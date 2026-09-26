@@ -1,6 +1,7 @@
 //! The WGSL gate for issue #166's two rungs: what the node system generates
 //! for `webgpu_compute_texture`'s kernel and material and for
-//! `webgpu_volume_perlin`'s raymarch, against three.js' own dumps of the same
+//! `webgpu_volume_perlin`'s raymarch — and since, for `webgpu_texturegrad`'s
+//! gradient taps — against three.js' own dumps of the same
 //! pages at 5f610f5 (`tests/fixtures/textures/`, verbatim output of
 //! `tools/dump-webgpu.mjs`).
 //!
@@ -31,6 +32,12 @@ use three_rs::Texture;
 #[path = "../examples/webgpu_compute_texture.rs"]
 #[allow(dead_code)]
 mod compute_texture;
+#[path = "../examples/webgpu_texturegather.rs"]
+#[allow(dead_code)]
+mod texturegather;
+#[path = "../examples/webgpu_texturegrad.rs"]
+#[allow(dead_code)]
+mod texturegrad;
 #[path = "../examples/webgpu_volume_perlin.rs"]
 #[allow(dead_code)]
 mod volume_perlin;
@@ -330,4 +337,55 @@ fn storage_3d_texture_is_written_and_sampled() {
     validate(&program.vertex_wgsl, "storage 3D sampled vertex");
     assert!(program.fragment_wgsl.contains("texture_3d<f32>;"));
     assert!(program.fragment_wgsl.contains("textureSampleLevel( "));
+}
+
+/// `webgpu_texturegrad`'s `colorNode`: four `textureSampleGrad` taps whose
+/// gradient is a var an `If` zeroes, the white seam, and the page's two
+/// usage-promoted `let`s. The texture is a stand-in; only its being a
+/// filterable 2-D texture reaches the WGSL.
+#[test]
+fn texturegrad_fragment_matches_three() {
+    let map = Texture::new(4, 4, Some(vec![0; 4 * 4 * 4]));
+    let mut material = three_rs::materials::MeshBasicNodeMaterial::new();
+    material.color_node = Some(texturegrad::color_node(&map));
+    let flow = setup(&material, &SetupContext::default(), None);
+    let program = NodeBuilder::new().build(&flow);
+    let three = include_str!("fixtures/textures/texturegrad.fragment.wgsl");
+
+    assert_same(
+        &section(&program.fragment_wgsl, "// uniforms", "// vars"),
+        &section(three, "// uniforms", "// vars"),
+        "texturegrad fragment uniforms",
+    );
+    assert_same(
+        &section(&program.fragment_wgsl, "// flow", "DiffuseColor = "),
+        &section(three, "// flow", "DiffuseColor = "),
+        "texturegrad fragment flow",
+    );
+}
+
+/// `webgpu_texturegather`'s `colorNode`: an `If`/`Else` between a
+/// `textureGather` of the render target's colour and a `textureGatherCompare`
+/// of its depth, both with an `ivec2( 0, 7 )` offset. The textures are
+/// stand-ins; only their kinds reach the WGSL.
+#[test]
+fn texturegather_fragment_matches_three() {
+    let color = Texture::new(4, 4, Some(vec![0; 4 * 4 * 4]));
+    let depth = three_rs::DepthTexture::new();
+    let mut material = three_rs::materials::MeshBasicNodeMaterial::new();
+    material.color_node = Some(texturegather::color_node(&color, &depth));
+    let flow = setup(&material, &SetupContext::default(), None);
+    let program = NodeBuilder::new().build(&flow);
+    let three = include_str!("fixtures/textures/texturegather.fragment.wgsl");
+
+    assert_same(
+        &section(&program.fragment_wgsl, "// uniforms", "// vars"),
+        &section(three, "// uniforms", "// vars"),
+        "texturegather fragment uniforms",
+    );
+    assert_same(
+        &section(&program.fragment_wgsl, "// flow", "DiffuseColor = "),
+        &section(three, "// flow", "DiffuseColor = "),
+        "texturegather fragment flow",
+    );
 }

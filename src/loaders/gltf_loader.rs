@@ -208,6 +208,10 @@ pub struct GltfMaterial {
     /// a `MeshPhysicalMaterial` for — and what sets `sheen = 1`, since glTF has
     /// no intensity of its own.
     pub sheen: Option<GltfSheen>,
+    /// `KHR_materials_diffuse_roughness.diffuseRoughnessFactor` (default 0).
+    /// `Some` is the extension being present, which promotes the material to
+    /// a `MeshPhysicalMaterial` even at a factor of 0.
+    pub diffuse_roughness_factor: Option<f64>,
     /// `KHR_materials_emissive_strength.emissiveStrength` (default 1), which
     /// three assigns straight to `material.emissiveIntensity`.
     pub emissive_strength: Option<f64>,
@@ -1557,6 +1561,15 @@ impl GLTFLoader {
                             .and_then(Value::as_f64)
                             .unwrap_or(0.0),
                     }),
+                // `GLTFMaterialsDiffuseRoughnessExtension.extendMaterialParams`
+                diffuse_roughness_factor: material_def
+                    .pointer("/extensions/KHR_materials_diffuse_roughness")
+                    .map(|extension| {
+                        extension
+                            .get("diffuseRoughnessFactor")
+                            .and_then(Value::as_f64)
+                            .unwrap_or(0.0)
+                    }),
                 // `GLTFMaterialsEmissiveStrength.extendMaterialParams`
                 emissive_strength: material_def
                     .pointer("/extensions/KHR_materials_emissive_strength/emissiveStrength")
@@ -1964,6 +1977,7 @@ impl GLTFLoader {
         let physical = material.ior.is_some()
             || material.specular_factor.is_some()
             || material.sheen.is_some()
+            || material.diffuse_roughness_factor.is_some()
             || material.anisotropy_strength.is_some()
             || material.clearcoat_factor.is_some()
             || material.transmission_factor.is_some()
@@ -2081,6 +2095,13 @@ impl GLTFLoader {
             let [r, g, b] = sheen.color_factor;
             out.sheen_color = Color::new(r, g, b);
             out.sheen_roughness = sheen.roughness_factor;
+        }
+
+        // `GLTFMaterialsDiffuseRoughnessExtension.extendMaterialParams`.
+        // `diffuseRoughnessTexture` is not ported: the parameter sweep carries
+        // no textures at all, and `diffuseRoughnessMap` has no dump behind it.
+        if let Some(factor) = material.diffuse_roughness_factor {
+            out.diffuse_roughness = factor;
         }
 
         // `GLTFMaterialsAnisotropy.extendMaterialParams`. The texture is a
@@ -2410,6 +2431,7 @@ const SUPPORTED_EXTENSIONS: &[&str] = &[
     "KHR_draco_mesh_compression",
     "KHR_materials_anisotropy",
     "KHR_materials_clearcoat",
+    "KHR_materials_diffuse_roughness",
     "KHR_materials_emissive_strength",
     "KHR_materials_ior",
     "KHR_materials_sheen",

@@ -103,6 +103,33 @@ pub fn write_png(path: &str, width: u32, height: u32, pixels: &[u8]) {
     writer.write_image_data(pixels).expect("three-rs: PNG data");
 }
 
+/// What `page.screenshot()` sees where the canvas is not opaque: Chrome
+/// composites the canvas — `alphaMode: 'premultiplied'`, which three.js asks
+/// for whenever the renderer's `alpha` is on, the default — over the page
+/// behind it, `source-over` on 8-bit sRGB values.
+///
+/// Every rung so far either covers the whole canvas or sits on
+/// `example.css`'s black body, where the composite changes nothing. A page
+/// that leaves the canvas transparent over a coloured `<body>` (its own
+/// `<style>`, not the reference image, gives the colour) needs this before
+/// its frame is graded: `webgpu_textures_anisotropy` clears to
+/// `( 0, 0, 0, 0 )` and draws the floor only below the horizon.
+pub fn composite_over_page(pixels: &mut [u8], page_background: u32) {
+    let page = [
+        (page_background >> 16) & 0xff,
+        (page_background >> 8) & 0xff,
+        page_background & 0xff,
+    ];
+    for pixel in pixels.as_chunks_mut::<4>().0 {
+        let transparency = 255 - u32::from(pixel[3]);
+        for (channel, &behind) in pixel.iter_mut().zip(&page) {
+            let over = u32::from(*channel) + (behind * transparency + 127) / 255;
+            *channel = over.min(255) as u8;
+        }
+        pixel[3] = 255;
+    }
+}
+
 /// A vendored upstream checkout the examples and tests read from: `env_var` if
 /// set, else `$HOME/src/vendor/<name>`. Nothing under `src/` reads these; only
 /// the examples (their textures and models come from Three's own `examples/`)

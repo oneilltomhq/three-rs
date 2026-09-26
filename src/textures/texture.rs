@@ -339,6 +339,29 @@ impl Texture {
         texture
     }
 
+    /// `new DataTexture( new Uint8Array( data ), width, height )` — the
+    /// defaults, `RGBAFormat` + `UnsignedByteType` (`rgba8unorm`, or
+    /// `rgba8unorm-srgb` once the colour space is set to sRGB), with
+    /// `DataTexture`'s own `flipY = false`, `generateMipmaps = false` and
+    /// `NearestFilter` on both sides. `webgpu_textures_partialupdate`'s
+    /// source for `copyTextureToTexture`.
+    pub fn data_rgba8(width: u32, height: u32, data: Vec<u8>) -> Self {
+        assert_eq!(
+            data.len() as u32,
+            width * height * 4,
+            "three-rs: an RGBA UnsignedByteType DataTexture holds four bytes per texel"
+        );
+        let texture = Self::new(width, height, Some(data));
+        {
+            let mut inner = texture.0.borrow_mut();
+            inner.flip_y = false;
+            inner.generate_mipmaps = false;
+            inner.mag_filter = TextureFilter::Nearest;
+            inner.min_filter = MinFilter::Nearest;
+        }
+        texture
+    }
+
     /// `new DataTexture( new Uint16Array( data ), width, height, RGBAFormat,
     /// HalfFloatType )` — what `DataTextureLoader` builds from
     /// [`HdrLoader::parse`](crate::loaders::HdrLoader::parse)'s half-float
@@ -402,6 +425,12 @@ impl Texture {
 
     pub fn id(&self) -> usize {
         self.1.get()
+    }
+
+    /// How many handles share this texture — how the reflector registry
+    /// tells a reflector some graph still samples from one nothing does.
+    pub(crate) fn handle_count(&self) -> usize {
+        Rc::strong_count(&self.0)
     }
 
     /// The handle's liveness, without the handle; see [`TextureOwner`].
