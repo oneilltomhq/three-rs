@@ -7,9 +7,18 @@
 //! wrappers through the port and compares every `mx_*` and `t_*` `fn` line for
 //! line (trailing whitespace normalised, as in `nodes_mx_noise.rs`).
 //!
-//! Regenerating the fixture: three's committed `build/` is newer than r186 and
-//! caches shared temps as `let nodeConstN`, which the port does not follow, so
-//! build the r186 tag into a scratch copy first:
+//! The fixture stays at r186 although the ladder is graded against 5f610f5.
+//! A dump from 5f610f5's committed `build/` (r187dev) has the same 111 `fn`s,
+//! and 17 of them differ: `mx_hsvtorgb`, `main`, and fifteen of the `t_*`
+//! wrappers (the `mx_noise_vec4` pair, the unified noises, the rotates,
+//! `aastep`, `ramp4`, the splits, `smoothstep`, the `place2d`s,
+//! `heighttonormal`). Every one of those differences is r187dev caching a
+//! shared temp as `let nodeConstN` where r186 repeats the expression or
+//! assigns a `nodeVarN`. The port's builder follows r186 there, for every
+//! material and not just these, so moving this fixture to 5f610f5 waits on
+//! the builder learning that rule.
+//!
+//! Regenerating the fixture: build the r186 tag into a scratch copy first:
 //!
 //! ```text
 //! git -C $THREE archive r186 src utils package.json | tar -x -C $S/three-r186
