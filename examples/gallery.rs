@@ -57,6 +57,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 /// The repository the README's absolute URLs point into.
 const REPO: &str = "https://github.com/oneilltomhq/three-rs";
@@ -470,20 +471,75 @@ fn downscale_rgb(src: &[u8], w: u32, h: u32, dst_w: u32) -> (u32, u32, Vec<u8>) 
     (dst_w, dst_h, out)
 }
 
-/// Write `docs/gallery/<name>.jpg` from our own frame. Returns its size.
-fn write_thumbnail(actual: &Path, out: &Path) -> Result<u64, String> {
-    let (w, h, rgb) = read_png_rgb(actual)?;
-    let (tw, th, thumb) = downscale_rgb(&rgb, w, h, THUMB_WIDTH);
-
-    let encoder = jpeg_encoder::Encoder::new_file(out, JPEG_QUALITY)
-        .map_err(|e| format!("{}: {e}", out.display()))?;
-    encoder
+/// Encode the thumbnail of one frame, in memory.
+///
+/// Byte-deterministic: the same frame always gives the same JPEG. The box
+/// filter is integer arithmetic, and `jpeg-encoder` is pure Rust built without
+/// its `simd` feature (runtime CPU dispatch), with its defaults otherwise
+/// (4:2:0 chroma, baseline, no restart markers). `the_thumbnail_encoding_is_pinned`
+/// holds those bytes still, so an encoder upgrade that would re-encode every
+/// committed thumbnail fails a test instead of showing up as a noisy diff.
+fn encode_thumbnail(rgb: &[u8], w: u32, h: u32) -> Result<Vec<u8>, String> {
+    let (tw, th, thumb) = downscale_rgb(rgb, w, h, THUMB_WIDTH);
+    let mut jpeg = Vec::new();
+    jpeg_encoder::Encoder::new(&mut jpeg, JPEG_QUALITY)
         .encode(&thumb, tw as u16, th as u16, jpeg_encoder::ColorType::Rgb)
-        .map_err(|e| format!("{}: {e}", out.display()))?;
+        .map_err(|e| e.to_string())?;
+    Ok(jpeg)
+}
 
-    fs::metadata(out)
-        .map(|m| m.len())
-        .map_err(|e| format!("{}: {e}", out.display()))
+/// What [`write_thumbnail`] did.
+enum Thumb {
+    Written(u64),
+    Unchanged(u64),
+}
+
+/// Write `docs/gallery/<name>.jpg` from our own frame, unless the file on disk
+/// already holds exactly those bytes; then it is not touched at all.
+fn write_thumbnail(actual: &Path, out: &Path) -> Result<Thumb, String> {
+    let (w, h, rgb) = read_png_rgb(actual)?;
+    let jpeg = encode_thumbnail(&rgb, w, h).map_err(|e| format!("{}: {e}", out.display()))?;
+    let bytes = jpeg.len() as u64;
+    if fs::read(out).is_ok_and(|old| old == jpeg) {
+        return Ok(Thumb::Unchanged(bytes));
+    }
+    fs::write(out, &jpeg).map_err(|e| format!("{}: {e}", out.display()))?;
+    Ok(Thumb::Written(bytes))
+}
+
+/// When the newest build of the e2e test binary was linked, under
+/// `target/{debug,release}/deps/e2e-*`.
+///
+/// A frame older than that was rendered by code that has since been rebuilt,
+/// so it may not be what the tree renders now. That, not the render and not
+/// the encoder, is what made gallery runs rewrite thumbnails (issue #157): the
+/// ladder's frames are bit-identical run to run, but `target/e2e/` keeps
+/// whatever the last run of each rung left there, from before a rebase or
+/// from a rung's own earlier iterations, and the generator used to thumbnail
+/// all of it.
+fn newest_e2e_build(root: &Path) -> Option<SystemTime> {
+    ["debug", "release"]
+        .iter()
+        .filter_map(|profile| fs::read_dir(root.join("target").join(profile).join("deps")).ok())
+        .flatten()
+        .flatten()
+        .filter(|e| {
+            let name = e.file_name();
+            let name = name.to_string_lossy();
+            // The binary, not its `.d` dep-info file.
+            name.starts_with("e2e-") && !name.contains('.')
+        })
+        .filter_map(|e| e.metadata().ok()?.modified().ok())
+        .max()
+}
+
+/// Whether `actual` was rendered before the newest e2e build.
+fn is_stale(actual: &Path, built: Option<SystemTime>) -> bool {
+    let (Some(built), Ok(rendered)) = (built, fs::metadata(actual).and_then(|m| m.modified()))
+    else {
+        return false;
+    };
+    rendered < built
 }
 
 // ---------------------------------------------------------------------------
@@ -733,21 +789,7 @@ fn write_readme(root: &Path, readme: &str, entries: &[&Entry]) {
 /// and the `browser` column from the manifests.
 fn readme_only(root: &Path) {
     let readme = fs::read_to_string(root.join("README.md")).expect("gallery: README.md");
-    let mut entries: Vec<Entry> = Vec::new();
-    let mut missing: Vec<String> = Vec::new();
-    for row in parse_graded_table(&readme) {
-        let thumb = root.join(format!("docs/gallery/{}.jpg", row.name));
-        if !thumb.is_file() {
-            missing.push(row.name);
-            continue;
-        }
-        let progress_doc = find_progress_doc(&root.join("docs"), &row.name);
-        entries.push(Entry {
-            actual: thumb,
-            progress_doc,
-            row,
-        });
-    }
+    let (entries, missing) = committed_entries(root, &readme);
     if entries.is_empty() {
         eprintln!("gallery: no committed thumbnails under docs/gallery/ for the graded table");
         std::process::exit(1);
@@ -760,6 +802,27 @@ fn readme_only(root: &Path) {
             missing.join(", ")
         );
     }
+}
+
+/// The graded rows that have a committed thumbnail, in table order, and the
+/// names of those that do not. What `--readme-only` builds the block from.
+fn committed_entries(root: &Path, readme: &str) -> (Vec<Entry>, Vec<String>) {
+    let mut entries: Vec<Entry> = Vec::new();
+    let mut missing: Vec<String> = Vec::new();
+    for row in parse_graded_table(readme) {
+        let thumb = root.join(format!("docs/gallery/{}.jpg", row.name));
+        if !thumb.is_file() {
+            missing.push(row.name);
+            continue;
+        }
+        let progress_doc = find_progress_doc(&root.join("docs"), &row.name);
+        entries.push(Entry {
+            actual: thumb,
+            progress_doc,
+            row,
+        });
+    }
+    (entries, missing)
 }
 
 fn main() {
@@ -801,7 +864,10 @@ fn main() {
 
     let mut entries: Vec<Entry> = Vec::new();
     let mut missing: Vec<String> = Vec::new();
+    let mut stale: Vec<String> = Vec::new();
     let mut total_bytes = 0u64;
+    let (mut written, mut unchanged) = (0usize, 0usize);
+    let built = newest_e2e_build(&root);
 
     for row in rows {
         let actual = root.join(format!("target/e2e/{}/actual.png", row.name));
@@ -810,14 +876,29 @@ fn main() {
             continue;
         }
         let thumb = gallery_dir.join(format!("{}.jpg", row.name));
-        match write_thumbnail(&actual, &thumb) {
-            Ok(bytes) => {
-                total_bytes += bytes;
-                println!("gallery: docs/gallery/{}.jpg ({bytes} bytes)", row.name);
-            }
-            Err(e) => {
-                eprintln!("gallery: {e}");
+        if is_stale(&actual, built) {
+            // Keep the committed thumbnail; never rewrite one from a frame
+            // the current build did not render.
+            stale.push(row.name.clone());
+            if !thumb.is_file() {
                 continue;
+            }
+            total_bytes += fs::metadata(&thumb).map(|m| m.len()).unwrap_or(0);
+        } else {
+            match write_thumbnail(&actual, &thumb) {
+                Ok(Thumb::Written(bytes)) => {
+                    total_bytes += bytes;
+                    written += 1;
+                    println!("gallery: docs/gallery/{}.jpg ({bytes} bytes)", row.name);
+                }
+                Ok(Thumb::Unchanged(bytes)) => {
+                    total_bytes += bytes;
+                    unchanged += 1;
+                }
+                Err(e) => {
+                    eprintln!("gallery: {e}");
+                    continue;
+                }
             }
         }
         let progress_doc = find_progress_doc(&root.join("docs"), &row.name);
@@ -851,6 +932,14 @@ fn main() {
         total_bytes.div_ceil(1024),
         index.display()
     );
+    println!("gallery: {written} thumbnail(s) written, {unchanged} already current");
+    if !stale.is_empty() {
+        println!(
+            "gallery: left alone, rendered before the last e2e build: {} — rerun those rungs \
+             to refresh them",
+            stale.join(", ")
+        );
+    }
     if !missing.is_empty() {
         println!(
             "gallery: no target/e2e frame for {} — run the ladder to include {}",
@@ -1074,6 +1163,45 @@ Measured on Intel Iris Xe.
         );
     }
 
+    /// The committed README block must be exactly what `--readme-only`
+    /// writes. Every rung PR regenerates the block, and git merges two such
+    /// regenerations line by line: each grid line holds four examples, so a
+    /// clean-looking merge has left the same example in the grid up to six
+    /// times (main from e9310af to 9bf35ba). The generator itself is
+    /// idempotent; this catches the merge.
+    #[test]
+    fn the_readme_gallery_block_is_current() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let readme = fs::read_to_string(root.join("README.md")).expect("README.md");
+        let fix =
+            "run `cargo run --release --example gallery -- --readme-only` and commit README.md";
+
+        assert_eq!(readme.matches(GALLERY_START).count(), 1, "{fix}");
+        assert_eq!(readme.matches(GALLERY_END).count(), 1, "{fix}");
+
+        let rows = parse_graded_table(&readme);
+        let mut seen = BTreeSet::new();
+        let twice: Vec<&str> = rows
+            .iter()
+            .map(|r| r.name.as_str())
+            .filter(|n| !seen.insert(*n))
+            .collect();
+        assert!(
+            twice.is_empty(),
+            "graded table rows listed twice: {twice:?}"
+        );
+
+        let (entries, _) = committed_entries(root, &readme);
+        let ordered: Vec<&Entry> = entries.iter().collect();
+        let start = readme.find(GALLERY_START).unwrap();
+        let end = readme.find(GALLERY_END).unwrap() + GALLERY_END.len();
+        let want = replace_gallery_section(&readme[start..end], &readme_grid(&ordered));
+        assert!(
+            readme[start..end] == want,
+            "the README gallery block is stale or a merge duplicated its rows; {fix}"
+        );
+    }
+
     #[test]
     fn ignores_tables_in_other_sections() {
         let rows = parse_graded_table(TABLE);
@@ -1137,6 +1265,97 @@ Measured on Intel Iris Xe.
         for row in &rows {
             assert_eq!(row.matches('|').count(), COLUMNS + 1);
         }
+    }
+
+    /// A synthetic 800x500 frame: gradients and a hard-edged checker, so
+    /// the encoder sees both smooth areas and edges.
+    fn test_frame() -> Vec<u8> {
+        let (w, h) = (800u32, 500u32);
+        let mut rgb = Vec::with_capacity((w * h * 3) as usize);
+        for y in 0..h {
+            for x in 0..w {
+                let checker = ((x / 40 + y / 40) % 2) as u8 * 96;
+                rgb.push((x * 255 / w) as u8);
+                rgb.push((y * 255 / h) as u8 ^ checker);
+                rgb.push(((x + y) % 256) as u8);
+            }
+        }
+        rgb
+    }
+
+    /// FNV-1a, 64-bit: a hash whose value does not depend on the toolchain.
+    fn fnv1a(bytes: &[u8]) -> u64 {
+        bytes.iter().fold(0xcbf2_9ce4_8422_2325, |h, b| {
+            (h ^ *b as u64).wrapping_mul(0x0100_0000_01b3)
+        })
+    }
+
+    /// The same frame always encodes to the same bytes, and to these bytes.
+    /// If this fails after a `jpeg-encoder` bump or a change to the
+    /// thumbnail's size, quality or filter, every committed thumbnail will
+    /// re-encode differently: regenerate all of `docs/gallery/` from a fresh
+    /// full ladder in one commit, then update the numbers here.
+    #[test]
+    fn the_thumbnail_encoding_is_pinned() {
+        let frame = test_frame();
+        let a = encode_thumbnail(&frame, 800, 500).unwrap();
+        let b = encode_thumbnail(&frame, 800, 500).unwrap();
+        assert_eq!(a, b, "the thumbnail encoder is not deterministic");
+        assert_eq!((a.len(), fnv1a(&a)), (16929, 0xc383_0ae2_d5a5_b857));
+    }
+
+    #[test]
+    fn an_unchanged_thumbnail_is_not_rewritten() {
+        let dir = std::env::temp_dir().join(format!("three-rs-gallery-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let (png_path, jpg_path) = (dir.join("actual.png"), dir.join("thumb.jpg"));
+        {
+            let file = fs::File::create(&png_path).unwrap();
+            let mut enc = png::Encoder::new(file, 800, 500);
+            enc.set_color(png::ColorType::Rgb);
+            enc.set_depth(png::BitDepth::Eight);
+            enc.write_header()
+                .unwrap()
+                .write_image_data(&test_frame())
+                .unwrap();
+        }
+        let _ = fs::remove_file(&jpg_path);
+        assert!(matches!(
+            write_thumbnail(&png_path, &jpg_path),
+            Ok(Thumb::Written(_))
+        ));
+        let first = fs::read(&jpg_path).unwrap();
+        assert!(matches!(
+            write_thumbnail(&png_path, &jpg_path),
+            Ok(Thumb::Unchanged(_))
+        ));
+        assert_eq!(fs::read(&jpg_path).unwrap(), first);
+        fs::write(&jpg_path, b"not the same").unwrap();
+        assert!(matches!(
+            write_thumbnail(&png_path, &jpg_path),
+            Ok(Thumb::Written(_))
+        ));
+        assert_eq!(fs::read(&jpg_path).unwrap(), first);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_frame_older_than_the_build_is_stale() {
+        let dir =
+            std::env::temp_dir().join(format!("three-rs-gallery-stale-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let frame = dir.join("actual.png");
+        fs::write(&frame, b"x").unwrap();
+        let rendered = fs::metadata(&frame).unwrap().modified().unwrap();
+        let second = std::time::Duration::from_secs(1);
+        assert!(is_stale(&frame, Some(rendered + second)));
+        assert!(!is_stale(&frame, Some(rendered)));
+        assert!(!is_stale(&frame, Some(rendered - second)));
+        assert!(
+            !is_stale(&frame, None),
+            "no e2e build found: trust the frame"
+        );
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
