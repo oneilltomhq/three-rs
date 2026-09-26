@@ -354,6 +354,14 @@ mod webgpu_loader_gltf_compressed;
 #[allow(dead_code)]
 mod webgpu_equirectangular;
 
+#[path = "../../examples/webgpu_texturegather.rs"]
+#[allow(dead_code)]
+mod webgpu_texturegather;
+
+#[path = "../../examples/webgpu_texturegrad.rs"]
+#[allow(dead_code)]
+mod webgpu_texturegrad;
+
 fn three_js_dir() -> PathBuf {
     three_rs::testing::three_js_dir()
 }
@@ -1935,6 +1943,98 @@ fn webgpu_materials_texture_manualmipmap() {
         webgpu_materials_texture_manualmipmap::animate,
         |app| app.renderer.device(),
     );
+}
+
+/// Gathered taps (`texture.sample( uv ).offset( ivec2 ).gather( 0 )` →
+/// `textureGather`, and `.gather( 0 ).compare( 1 )` on the depth texture →
+/// `textureGatherCompare`) of a 100x100 render target holding a lit box. The
+/// page's two canvases are the two halves of one canvas here.
+#[test]
+fn webgpu_texturegather() {
+    let name = "webgpu_texturegather";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_texturegather::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_texturegather::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_texturegather::animate, |app| {
+        app.renderer.device()
+    });
+}
+
+/// Explicit-gradient sampling (`textureNode.grad( gradX, gradY )` →
+/// `textureSampleGrad`): a unit plane of `uv_grid_opengl.jpg` blurred by four
+/// gradient taps, the bottom half at zero gradient. The page's two canvases
+/// (WebGPU and WebGL backend) are the two halves of one canvas here.
+#[test]
+fn webgpu_texturegrad() {
+    let name = "webgpu_texturegrad";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_texturegrad::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_texturegrad::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_texturegrad::animate, |app| {
+        app.renderer.device()
+    });
 }
 
 #[test]
@@ -4125,6 +4225,8 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_procedural_texture);
     rung!(webgpu_equirectangular);
     rung!(webgpu_loader_gltf_compressed);
+    rung!(webgpu_texturegrad);
+    rung!(webgpu_texturegather);
     rung!(webgpu_occlusion);
     rung!(webgpu_materials_toon);
     rung!(webgpu_instance_sprites);

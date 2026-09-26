@@ -3055,14 +3055,53 @@ pub fn bump_map(map: &Texture, scale: NodeRef) -> NodeRef {
     })
 }
 
-/// `texture( map ).sample( uv ).grad( vec2(), vec2() )` — a tap with the
-/// gradients pinned to zero, which is how `PMREMUtils.bilinearCubeUV` turns
-/// anisotropic filtering off on the cubeUV atlas.
-pub fn texture_grad(map: &Texture, coord: NodeRef) -> NodeRef {
+/// `texture( map, uv ).grad( gradX, gradY )` — a 2-D tap with explicit
+/// screen-space gradients, `textureSampleGrad` (`webgpu_texturegrad`). The uv
+/// is taken as given, with no uv matrix, as for [`texture_uv`].
+pub fn texture_grad(map: &Texture, coord: NodeRef, grad_x: NodeRef, grad_y: NodeRef) -> NodeRef {
     texture_node(
         TextureSource::Texture2D(map.clone()),
         coord,
-        SampleMode::Grad,
+        SampleMode::Grad(grad_x, grad_y),
+        Type::Vec4,
+    )
+}
+
+/// `texture( map ).sample( uv ).offset( offset ).gather( component )` —
+/// `textureGather`: channel `component` of the four texels around `uv`, from
+/// mip level 0 (`webgpu_texturegather`). The uv is taken as given, as for
+/// [`texture_uv`]; `offset` is a texel offset, `None` for no `.offset()`.
+pub fn texture_gather(
+    map: &Texture,
+    coord: NodeRef,
+    component: NodeRef,
+    offset: Option<NodeRef>,
+) -> NodeRef {
+    texture_node(
+        TextureSource::Texture2D(map.clone()),
+        coord,
+        SampleMode::Gather { component, offset },
+        Type::Vec4,
+    )
+}
+
+/// `texture( depthTexture ).sample( uv ).offset( offset ).gather().compare( z )`
+/// — `textureGatherCompare` on a depth texture with a comparison sampler:
+/// the four texels' results, as a `vec4`.
+///
+/// The sampler is [`shadow_map_compare`]'s, `LessEqualCompare`: the one
+/// `compareFunction` a page on the ladder sets on its own `DepthTexture`, so
+/// the port's `DepthTexture` carries none (`docs/nodes.md` §44).
+pub fn depth_texture_gather_compare(
+    map: &DepthTexture,
+    coord: NodeRef,
+    compare: NodeRef,
+    offset: Option<NodeRef>,
+) -> NodeRef {
+    texture_node(
+        TextureSource::ShadowMap(map.clone()),
+        coord,
+        SampleMode::GatherCompare { compare, offset },
         Type::Vec4,
     )
 }
