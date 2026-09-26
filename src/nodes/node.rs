@@ -320,7 +320,7 @@ pub type ObjectUpdateFn = dyn Fn(&NodeFrame) -> Vec<f64>;
 /// three hands the node the whole frame, renderer included; the port hands it
 /// the render object and the renderer's occlusion results for the render
 /// context being drawn, which is all `frame.renderer.isOccluded( object )`
-/// reads (`webgpu_occlusion`, `docs/nodes.md` §36).
+/// reads (`webgpu_occlusion`, `docs/nodes.md` §39).
 #[derive(Clone, Copy)]
 pub struct NodeFrame<'a> {
     /// `frame.object` — the render object about to be drawn.

@@ -5,8 +5,9 @@ use crate::core::{Node, Object3D};
 use crate::math::math_utils::{js_max, js_min};
 use crate::math::{CoordinateSystem, Matrix4, Vector2, Vector3, DEG2RAD, RAD2DEG};
 
-/// `PerspectiveCamera.view` — the frustum window specification set by
-/// [`PerspectiveCamera::set_view_offset`].
+/// `Camera.view` — the frustum window specification set by
+/// [`PerspectiveCamera::set_view_offset`] and
+/// [`OrthographicCamera::set_view_offset`](super::OrthographicCamera::set_view_offset).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct CameraView {
     pub enabled: bool,

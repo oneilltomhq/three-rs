@@ -1,4 +1,4 @@
-//! The occlusion queries behind `webgpu_occlusion` (`docs/nodes.md` §36),
+//! The occlusion queries behind `webgpu_occlusion` (`docs/nodes.md` §39),
 //! checked where the graded frame cannot see them.
 //!
 //! The graded frame is the first, and a query's answer is at least two frames

@@ -12,7 +12,7 @@
 //! blue into its `uniform( new Color() )` while the sphere is visible and green
 //! once `frame.renderer.isOccluded( sphere )` says it is not. Here that node is
 //! [`three_rs::nodes::tsl::uniform_frame`], whose callback receives a
-//! [`three_rs::nodes::NodeFrame`] to ask. `docs/nodes.md` §36.
+//! [`three_rs::nodes::NodeFrame`] to ask. `docs/nodes.md` §39.
 //!
 //! The sphere is directly behind the plane, so it is occluded from the first
 //! draw — but a query's answer comes back asynchronously, two frames after the

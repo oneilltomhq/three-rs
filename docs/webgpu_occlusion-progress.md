@@ -42,7 +42,7 @@ own frame loop:
 | `tests/` | `renderer_occlusion.rs` (GPU) |
 | `tools/dump-webgpu.mjs` | a stray line from a merge (`pageFile`, undefined) made every dump throw; removed |
 
-`docs/nodes.md` §36 is the long form.
+`docs/nodes.md` §39 is the long form.
 
 The two materials' WGSL matches three's `m00`–`m02` structurally. The only
 differences are the ones §8 already lists: `nodeVar` against `nodeConst`,

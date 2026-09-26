@@ -290,6 +290,10 @@ duration of that node's build. Two things follow from being inside a layer:
 
 ### What this port does
 
+> Since §38 the layer and `NORMAL_VALUE` are the `sub_build` and
+> `setup_normal` fields of one `BuildContext` stack; what follows is
+> otherwise unchanged.
+
 `src/nodes/tsl.rs` holds the layer and the context in two thread-locals,
 because our TSL functions are free functions rather than methods on a builder
 that is threaded through every call:
@@ -907,7 +911,7 @@ more (`docs/webgpu_tsl_raging_sea-progress.md`):
   same-length arm, so the loop header writes it.
 * **An inlined `Fn()` block is built once per scope.** A second reader gets
   the result, not a second run of its statements. Three builds a stack once
-  per stage.
+  per stage. The result sits in the builder's `NodeCache` (§36).
 * **A layout `fn` is emitted into each stage that calls it.** Each stage is
   its own module. The name is shared.
 * **A varying the vertex stage has assigned to is written from that var.**
@@ -3553,7 +3557,134 @@ dump apart from `var` placement: the port declares `worldPos` inside the
 * **No `TransformControls`.** `webgpu_modifier_curve`'s handles cannot be
   dragged. The graded frame never shows the gizmo.
 
-## 36. Occlusion queries and `frame.renderer.isOccluded()` (`webgpu_occlusion`)
+## 36. `NodeCache`: one parent-chained cache for per-build data (issue #156)
+
+Two rungs taught the builder the same rule on their own. The display nodes
+(#148) found that a `Block` read twice, as `renderOutput()` reads its colour's
+`.xyz` and `.w`, emitted its statements twice. They also found that each
+nearest `textureLoad` declared its own `textureDimensions` var where three
+shares one per texture per scope. MaterialX (#151) found the first of these
+again in the raging sea's `elevation`, one inlined `Fn()` read by
+`emissiveNode` and by `normalNode`. Both fixes wrote into the var cache,
+which was a `Vec<HashMap<usize, String>>` per stage and another per layout
+`fn`. The texture-size entry was keyed by hashing `("textureDimensions",
+name)` into the same `usize` space as node addresses.
+
+The builder now has three's shape instead. `NodeCache` (`NodeCache.js`) is a
+map with an optional parent: `get` falls through to the parent, and `set`
+writes only to the cache it is called on.
+
+* **What it holds.** The key is a `CacheKey` enum. `Node(key)` is a node's
+  generated snippet: the var, `let`, `if` result or block result it left.
+  `TextureDimensions(name)` is `generateTextureDimension()`'s
+  `textureData.dimensionsSnippet` for one texture binding. The two can no
+  longer collide.
+* **Where it lives.** Each stage owns one, and so does each layout `fn` body.
+  A `fn` body's cache has no parent, because it sees nothing of its caller.
+* **Scopes are children.** Opening a block (an `If` arm, a loop body, a
+  `select` arm) makes the current cache a child of itself, and closing the
+  block restores the parent. A snippet built before the arm is visible inside
+  it. One built inside the arm is visible to the rest of the arm and not
+  after it. A sibling arm builds its own. This is what the scope stack did
+  before; the change is only in the shape.
+
+This is step (1) of #155's plan. `isolate( node )` will be a node that swaps
+in a child with or without a parent (`getCacheFromNode( node, parent )`),
+and `subBuild` layers will join the key. Neither is added here, because no
+rung needs them yet.
+
+Nothing generated changed. `dump_wgsl`'s output is byte-identical before and
+after, apart from one pointer printed in a `Debug` of an `ObjectUpdate`
+closure. Every `tests/nodes_*` gate passes unchanged, and so does the full
+ladder.
+
+## 37. View offsets on both cameras, and render-pipeline hooks (issue #164)
+
+The groundwork TRAA (#165) needs, from #154 decisions 2 and 3. No rung.
+
+* **`set_view_offset` / `clear_view_offset` on `RenderCamera`.** Both of
+  three's cameras have them, so a hook or pass node can jitter whichever
+  camera it holds. `OrthographicCamera` gains `view: Option<CameraView>` and
+  three's `updateProjectionMatrix()` branch: `scaleW = ( right - left ) /
+  fullWidth / zoom`, then the window's planes. Unlike the perspective camera,
+  the orthographic one leaves `aspect` alone because it has none.
+  `tests/cameras_orthographic_camera.rs` ports three's QUnit file. That file
+  has no view-offset case, so the offset tests compare against matrices three
+  printed under node, and they match bit for bit.
+* **`RenderPipeline::on_before_render` / `on_after_render`.** These are
+  three's `OnBeforeRenderPipeline` / `OnAfterRenderPipeline`, typed
+  `Box<dyn FnMut(&mut Renderer)>`. Before-hooks run after the output node is
+  reassigned and before the renderer's tone mapping is neutralised.
+  After-hooks run once it is restored. Within each list, hooks run in the
+  order they were added. `tests/renderer_pipeline_hooks.rs` (GPU) checks the
+  order against the draw count.
+* **Divergence: hooks outlive a rebuild.** three collects the callbacks from
+  `EventNode`s while the quad material builds, into a context that
+  `_updateContext()` recreates, so a new `outputNode` drops them. The port has
+  no builder context to collect into. The node that needs a hook adds it when
+  it is built, and it stays for the pipeline's life.
+* **`SsaaPassNode` is unchanged.** It jitters once per sample inside its own
+  `render`, not once per pipeline render, so the hooks do not fit it. It
+  still reads `PerspectiveCamera.view` directly.
+
+## 38. `BuildContext`: one stack for `builder.context` (issue #160)
+
+Eight thread-locals in `tsl.rs` held `builder.context` one key at a time.
+Each had its own `with_…` function that swapped a value in and restored the
+old one afterwards. #155 §2 lists them: `SUB_BUILD`, `OVERRIDE_NODES`,
+`NORMAL_VALUE`, `FLAT_SHADING`, `MATERIAL_SIDE`, `HAS_TANGENT`,
+`POSITION_VIEW_VALUE` and `CLEARCOAT_NORMAL_VALUE`. They are now fields of
+one struct, `BuildContext` in `src/nodes/builder.rs`, kept on one stack.
+
+| was | `BuildContext` field | three |
+|---|---|---|
+| `SUB_BUILD` | `sub_build` | `builder.subBuildLayers` (one layer deep) |
+| `OVERRIDE_NODES` | `override_nodes` | `context.overrideNodes` (§27) |
+| `NORMAL_VALUE` | `setup_normal` | `context.setupNormal` (§7) |
+| `FLAT_SHADING` | `flat_shading` | `builder.isFlatShading()` |
+| `MATERIAL_SIDE` | `material_side` | `builder.material.side` |
+| `HAS_TANGENT` | `has_tangent` | `builder.geometry.hasAttribute( 'tangent' )` |
+| `POSITION_VIEW_VALUE` | `setup_position_view` | `context.setupPositionView` |
+| `CLEARCOAT_NORMAL_VALUE` | `setup_clearcoat_normal` | `context.setupClearcoatNormal` |
+
+Core keys are typed fields. Addon keys will go in `extra`, a
+`HashMap<&'static str, NodeRef>` (#155 decision 6), which nothing reads yet.
+Three of the fields are not `builder.context` keys in three: the layer, the
+flat-shading flag and the tangent flag live on the builder, its material and
+its geometry. They are here because they have the same lifetime and the same
+readers.
+
+`push_context( |cx| … )` is `ContextNode`'s setup. It copies the top entry,
+lets the caller change the keys it sets, pushes the copy and returns a
+`ContextGuard`, which pops it when dropped. `current_context( |cx| … )` reads
+the top entry, or the default one when nothing has been pushed. The `with_…`
+functions keep their signatures and are each a push and a call now. The
+change is that one stack holds all the keys, so a scope restores all of them
+in one pop, and #161's `context( node, { … } )` has a place to push to.
+
+**The stack is a thread-local beside the builder, not a field of it.** Three
+calls `NodeMaterial.setup()` from inside `builder.build()`, so the context
+object can live on the builder. The port builds the flow in
+`materials::setup()` first and creates the `NodeBuilder` afterwards
+(`Renderer::node_builder_state`), so there is no builder to hold it while the
+keys are being read. Merging the two phases is a bigger change than this
+issue. The stack is empty between material setups, and because the guard
+pops on drop, a panic inside one setup can no longer leave its keys
+installed for the next build on that thread.
+
+**Not moved.** The accessor memo maps (`NORMAL_VIEW`, `TANGENT_VIEW`,
+`NORMAL_WORLD`, `POSITION_VIEW`, `CLEARCOAT_NORMAL_VIEW`, …) and the
+singleton `Lazy` cells stay thread-locals. They are process-wide
+memoisation keyed on context values, not context: they give two builds with
+the same context the same node, as three's per-build `nodeData` gives one
+build one node. #155 proposes keying them on a hash of the context; that is
+left for when `context()` can install arbitrary keys.
+
+Nothing generated changed. `dump_wgsl`'s output is identical after each of
+the eight migrations, apart from the one `ObjectUpdate` pointer noted in §36.
+Every `tests/nodes_*` gate passes unchanged, and so does the full ladder.
+
+## 39. Occlusion queries and `frame.renderer.isOccluded()` (`webgpu_occlusion`)
 
 A green Phong plane in front of a yellow Phong sphere. The sphere carries
 `occlusionTest = true`, and the plane's `colorNode` is a custom node with

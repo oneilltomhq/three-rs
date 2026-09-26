@@ -1,6 +1,6 @@
 //! Occlusion queries: `object.occlusionTest` and `renderer.isOccluded()`
 //! (`WebGPUBackend.beginRender()` / `draw()` / `finishRender()` /
-//! `resolveOccludedAsync()`). `docs/nodes.md` §36.
+//! `resolveOccludedAsync()`). `docs/nodes.md` §39.
 //!
 //! A render context whose pass draws an object with `occlusion_test` set gets
 //! an occlusion query set with one query per run of consecutive draws of such

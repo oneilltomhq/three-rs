@@ -300,6 +300,200 @@ impl NodeProgram {
 
 // ---------------------------------------------------------------------------
 
+/// What [`NodeCache`] keys its data on: what three.js' `getDataFromNode()`
+/// is handed.
+#[derive(Clone, PartialEq, Eq, Hash)]
+enum CacheKey {
+    /// A node's generated snippet: the var, `let` or result it left
+    /// (`nodeData.snippet` / `nodeData.propertyName`), keyed by identity.
+    Node(usize),
+    /// `WGSLNodeBuilder.generateTextureDimension()`'s
+    /// `textureData.dimensionsSnippet`: the `textureDimensions` var of one
+    /// texture, keyed by its binding name (one name per texture, see
+    /// `NodeBuilder::texture_names`). Three keys it on the texture object
+    /// and the level snippet; the port's only level is `0`.
+    TextureDimensions(String),
+}
+
+impl CacheKey {
+    fn node(node: &NodeRef) -> Self {
+        CacheKey::Node(node.key())
+    }
+}
+
+/// `NodeCache`: per-build data with a parent chain. A lookup falls through
+/// to the parent when this cache has no entry; a write lands here only.
+///
+/// three.js' builder holds one (`builder.cache`) and swaps in a child for a
+/// subgraph (`IsolateNode`, via `getCacheFromNode( node, parent )`). The port
+/// opens a child for every block scope it emits — an `If` arm, a loop body,
+/// a `select`'s two arms — which is where three's per-scope data comes from
+/// in practice: a var declared inside an arm is visible to the rest of that
+/// arm and to nothing after it, and a snippet built before the arm is
+/// visible inside it. A layout `fn`'s body gets a cache with no parent (its
+/// own locals, its own numbering). See `docs/nodes.md` §36.
+#[derive(Default)]
+struct NodeCache {
+    data: HashMap<CacheKey, String>,
+    parent: Option<Box<NodeCache>>,
+}
+
+impl NodeCache {
+    /// `NodeCache.getData()`: this cache's entry, else the nearest parent's.
+    fn get(&self, key: &CacheKey) -> Option<&String> {
+        let mut cache = self;
+        loop {
+            if let Some(value) = cache.data.get(key) {
+                return Some(value);
+            }
+            cache = cache.parent.as_deref()?;
+        }
+    }
+
+    /// `NodeCache.setData()`.
+    fn set(&mut self, key: CacheKey, value: String) {
+        self.data.insert(key, value);
+    }
+
+    /// Make this cache a fresh child of what it was: `new NodeCache(
+    /// builder.getCache() )` followed by `builder.setCache()`.
+    fn push_child(&mut self) {
+        let parent = std::mem::take(self);
+        self.parent = Some(Box::new(parent));
+    }
+
+    /// Drop this cache's entries and restore its parent: `builder.setCache(
+    /// previousCache )`.
+    fn pop_child(&mut self) {
+        let parent = self
+            .parent
+            .take()
+            .expect("three-rs: a NodeCache child is popped only after it was pushed");
+        *self = *parent;
+    }
+}
+
+// ---------------------------------------------------------------------------
+
+/// `builder.context`: the keys a node reads while its graph is being set up,
+/// and the only build-scoped state the TSL constructors in `tsl.rs` consult.
+///
+/// three.js keeps a plain object on the builder and `ContextNode` merges keys
+/// into it for one subgraph, restoring the previous object afterwards. The
+/// port does the same with a stack of these: [`push_context`] copies the top
+/// entry, lets the caller change the keys it installs, and the returned
+/// [`ContextGuard`] pops it again. Core keys are typed fields; `extra` holds
+/// the string-keyed ones addons add (#155 decision 6).
+///
+/// The stack is one `thread_local!` beside [`NodeBuilder`] rather than a field
+/// of it, because the port's `NodeMaterial.setup()` builds the flow *before*
+/// the builder exists (three calls it from inside `builder.build()`). It is
+/// empty between material setups; outside any push, reads see the default.
+/// See `docs/nodes.md` §38.
+#[derive(Clone)]
+pub(crate) struct BuildContext {
+    /// `NodeBuilder.subBuildLayers`, one layer deep: `NORMAL` is the only name
+    /// the ladder needs. Three keeps it on the builder beside `context`.
+    pub(crate) sub_build: Option<&'static str>,
+    /// `overrideNodes`: what `material.contextNode = overrideNodes( … )`
+    /// installs for the whole of one material's setup (§27).
+    pub(crate) override_nodes: Option<super::tsl::OverrideNodes>,
+    /// `setupNormal`: `NodeMaterial.setupNormal()`'s result, the material's
+    /// `normalNode`. `normalView` takes it as its value outside the `NORMAL`
+    /// layer and `normalViewGeometry` inside it.
+    pub(crate) setup_normal: Option<NodeRef>,
+    /// `builder.isFlatShading()`: `material.flatShading && material.wireframe
+    /// === false`. `normalViewGeometry` reads it. A builder method in three,
+    /// kept here because it lives exactly as long as `setup_normal`.
+    pub(crate) flat_shading: bool,
+    /// `builder.material.side`: what `negateOnBackSide()` branches on, and so
+    /// part of every cache key that reaches `normalView` or the tangent frame.
+    pub(crate) material_side: crate::materials::Side,
+    /// `builder.geometry.hasAttribute( 'tangent' )`: what `Tangent.js` and
+    /// `Bitangent.js` branch on. With the attribute the frame comes from the
+    /// `tangent` vec4 through `modelViewMatrix`; without it, from the screen
+    /// derivatives of `TangentUtils.js`.
+    pub(crate) has_tangent: bool,
+    /// `setupPositionView`: `NodeMaterial.setupPositionView()`'s result, which
+    /// `SpriteNodeMaterial` and `PointsNodeMaterial` override. `None` is the
+    /// base class' `modelViewMatrix.mul( positionLocal ).xyz`.
+    pub(crate) setup_position_view: Option<NodeRef>,
+    /// `setupClearcoatNormal`: `MeshPhysicalNodeMaterial.setup()`'s clearcoat
+    /// lobe normal, the clearcoat twin of `setup_normal`.
+    pub(crate) setup_clearcoat_normal: Option<NodeRef>,
+    /// Addon keys (`TRAANode`, `ClusteredLightsNode`, the light-data nodes).
+    /// Nothing reads it yet; `context( node, { … } )` (#161) will.
+    #[allow(dead_code)]
+    pub(crate) extra: HashMap<&'static str, NodeRef>,
+}
+
+impl Default for BuildContext {
+    fn default() -> Self {
+        Self {
+            sub_build: None,
+            override_nodes: None,
+            setup_normal: None,
+            flat_shading: false,
+            material_side: crate::materials::Side::Front,
+            has_tangent: false,
+            setup_position_view: None,
+            setup_clearcoat_normal: None,
+            extra: HashMap::new(),
+        }
+    }
+}
+
+thread_local! {
+    static BUILD_CONTEXT: std::cell::RefCell<Vec<BuildContext>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Pops the [`BuildContext`] [`push_context`] pushed when it goes out of
+/// scope, so an early return or a panic cannot leak one material's context
+/// into the next build.
+#[must_use = "the context is popped as soon as the guard is dropped"]
+pub(crate) struct ContextGuard {
+    depth: usize,
+}
+
+impl Drop for ContextGuard {
+    fn drop(&mut self) {
+        BUILD_CONTEXT.with(|stack| {
+            let mut stack = stack.borrow_mut();
+            debug_assert_eq!(
+                stack.len(),
+                self.depth,
+                "three-rs: BuildContext guards dropped out of order"
+            );
+            stack.pop();
+        });
+    }
+}
+
+/// `ContextNode`'s setup: a copy of the current context with `edit` applied,
+/// in force until the returned guard is dropped.
+pub(crate) fn push_context(edit: impl FnOnce(&mut BuildContext)) -> ContextGuard {
+    let mut cx = current_context(BuildContext::clone);
+    edit(&mut cx);
+    BUILD_CONTEXT.with(|stack| {
+        let mut stack = stack.borrow_mut();
+        stack.push(cx);
+        ContextGuard { depth: stack.len() }
+    })
+}
+
+/// Read the current context: the top of the stack, or the default one
+/// outside any push.
+pub(crate) fn current_context<R>(read: impl FnOnce(&BuildContext) -> R) -> R {
+    thread_local! {
+        static EMPTY: BuildContext = BuildContext::default();
+    }
+    BUILD_CONTEXT.with(|stack| match stack.borrow().last() {
+        Some(cx) => read(cx),
+        None => EMPTY.with(read),
+    })
+}
+
 #[derive(Default)]
 struct StageState {
     lines: Vec<String>,
@@ -310,8 +504,8 @@ struct StageState {
     builtins: Vec<Builtin>,
     codes: Vec<String>,
     code_names: HashSet<String>,
-    /// The var cache, one scope per open block.
-    scopes: Vec<HashMap<usize, String>>,
+    /// The stage's [`NodeCache`], a child per open block.
+    cache: NodeCache,
 }
 
 struct FnScope {
@@ -320,7 +514,9 @@ struct FnScope {
     locals: Vec<(String, String)>,
     var_counter: usize,
     const_counter: usize,
-    scopes: Vec<HashMap<usize, String>>,
+    /// The body's [`NodeCache`]: no parent, since a `fn` sees nothing of
+    /// the stage that calls it.
+    cache: NodeCache,
 }
 
 #[derive(Default)]
@@ -420,7 +616,6 @@ impl NodeBuilder {
             output_type: Type::Vec4,
         };
         for s in &mut b.stages {
-            s.scopes.push(HashMap::new());
             // Statements in `fn main` sit one tab in.
             s.indent = 1;
         }
@@ -609,50 +804,50 @@ impl NodeBuilder {
         }
     }
 
+    /// Open a block scope: one tab deeper, and a child [`NodeCache`].
     fn push_scope(&mut self) {
         if let Some(scope) = self.fn_scopes.last_mut() {
-            scope.scopes.push(HashMap::new());
+            scope.cache.push_child();
             scope.indent += 1;
         } else {
             let s = &mut self.stages[self.stage.index()];
-            s.scopes.push(HashMap::new());
+            s.cache.push_child();
             s.indent += 1;
         }
     }
 
     fn pop_scope(&mut self) {
         if let Some(scope) = self.fn_scopes.last_mut() {
-            scope.scopes.pop();
+            scope.cache.pop_child();
             scope.indent -= 1;
         } else {
             let s = &mut self.stages[self.stage.index()];
-            s.scopes.pop();
+            s.cache.pop_child();
             s.indent -= 1;
         }
     }
 
-    fn cache_get(&self, key: usize) -> Option<String> {
-        let scopes = match self.fn_scopes.last() {
-            Some(scope) => &scope.scopes,
-            None => &self.stages[self.stage.index()].scopes,
-        };
-        for scope in scopes.iter().rev() {
-            if let Some(name) = scope.get(&key) {
-                return Some(name.clone());
-            }
+    /// `builder.cache` — the open `fn` body's, else the current stage's.
+    fn cache(&self) -> &NodeCache {
+        match self.fn_scopes.last() {
+            Some(scope) => &scope.cache,
+            None => &self.stages[self.stage.index()].cache,
         }
-        None
     }
 
-    fn cache_put(&mut self, key: usize, name: String) {
-        let scopes = match self.fn_scopes.last_mut() {
-            Some(scope) => &mut scope.scopes,
-            None => &mut self.stages[self.stage.index()].scopes,
-        };
-        scopes
-            .last_mut()
-            .expect("three-rs: the scope stack is never empty")
-            .insert(key, name);
+    fn cache_mut(&mut self) -> &mut NodeCache {
+        match self.fn_scopes.last_mut() {
+            Some(scope) => &mut scope.cache,
+            None => &mut self.stages[self.stage.index()].cache,
+        }
+    }
+
+    fn cache_get(&self, key: CacheKey) -> Option<String> {
+        self.cache().get(&key).cloned()
+    }
+
+    fn cache_put(&mut self, key: CacheKey, snippet: String) {
+        self.cache_mut().set(key, snippet);
     }
 
     /// `NodeBuilder.getVarFromNode()` — declare a `var` and return its name.
@@ -986,7 +1181,7 @@ impl NodeBuilder {
     }
 
     pub fn generate(&mut self, node: &NodeRef) -> String {
-        if let Some(name) = self.cache_get(node.key()) {
+        if let Some(name) = self.cache_get(CacheKey::node(node)) {
             return name;
         }
 
@@ -994,7 +1189,7 @@ impl NodeBuilder {
             let snippet = self.generate_inner(node);
             let name = self.declare_var(None, node.ty());
             self.emit(format!("{name} = {snippet};"));
-            self.cache_put(node.key(), name.clone());
+            self.cache_put(CacheKey::node(node), name.clone());
             return name;
         }
 
@@ -1065,7 +1260,7 @@ impl NodeBuilder {
                     format!("array< {}, {} >", wgsl::type_name(element_ty), values.len()),
                 );
                 self.emit(format!("{name} = {literal};"));
-                self.cache_put(node.key(), name.clone());
+                self.cache_put(CacheKey::node(node), name.clone());
                 name
             }
 
@@ -1186,7 +1381,7 @@ impl NodeBuilder {
                 let snippet = self.generate(&v.value);
                 let name = self.declare_var(v.name.as_deref(), v.ty);
                 self.emit(format!("{name} = {snippet};"));
-                self.cache_put(node.key(), name.clone());
+                self.cache_put(CacheKey::node(node), name.clone());
                 name
             }
 
@@ -1198,7 +1393,7 @@ impl NodeBuilder {
                 let snippet = self.generate(&v.value);
                 let name = self.declare_const(v.name.as_deref());
                 self.emit(format!("let {name} = {snippet};"));
-                self.cache_put(node.key(), name.clone());
+                self.cache_put(CacheKey::node(node), name.clone());
                 name
             }
 
@@ -1224,7 +1419,7 @@ impl NodeBuilder {
                         let snippet = self.generate(&v.value);
                         let name = self.declare_var(v.name, v.ty);
                         self.emit(format!("{name} = {snippet};"));
-                        self.cache_put(node.key(), name.clone());
+                        self.cache_put(CacheKey::node(node), name.clone());
                         name
                     }
                     Stage::Fragment => {
@@ -1258,7 +1453,7 @@ impl NodeBuilder {
                         // by its `positionNode`). The port's vertex stage
                         // holds that value in the private var until now.
                         let reassigned = self.reassigned_varyings.contains(&node.key());
-                        let snippet = match self.cache_get(node.key()) {
+                        let snippet = match self.cache_get(CacheKey::node(node)) {
                             Some(var) if reassigned => var,
                             _ => self.generate(&v.value),
                         };
@@ -1590,19 +1785,11 @@ impl NodeBuilder {
                     SampleMode::Load => {
                         self.add_code("tsl_coord_clampS_clampT_2d", wgsl::CLAMP_WRAP_SNIPPET);
                         // `WGSLNodeBuilder.generateTextureDimension()` keeps
-                        // one dimensions var per texture in the build cache,
+                        // one dimensions var per texture in `builder.cache`,
                         // so a second tap in the same scope (or one nested in
                         // it) reuses it, and a sibling `if` declares its own.
-                        // The scope stack is that cache; the key is the
-                        // texture's slot name, hashed out of the node-key
-                        // space.
-                        let dims_key = {
-                            use std::hash::{Hash, Hasher};
-                            let mut hasher = std::collections::hash_map::DefaultHasher::new();
-                            ("textureDimensions", name.as_str()).hash(&mut hasher);
-                            hasher.finish() as usize
-                        };
-                        let dims = match self.cache_get(dims_key) {
+                        let dims_key = CacheKey::TextureDimensions(name.clone());
+                        let dims = match self.cache_get(dims_key.clone()) {
                             Some(dims) => dims,
                             None => {
                                 let dims = self.declare_var(None, Type::UVec2);
@@ -1756,7 +1943,7 @@ impl NodeBuilder {
                 self.emit(String::new());
                 self.emit("}".to_string());
                 self.emit(String::new());
-                self.cache_put(node.key(), name.clone());
+                self.cache_put(CacheKey::node(node), name.clone());
                 name
             }
 
@@ -1787,28 +1974,25 @@ impl NodeBuilder {
                 // `ConditionalNode.generate()` remembers its result property in
                 // `nodeData`, so a second reference reuses the branch rather
                 // than emitting the whole if/else again.
-                self.cache_put(node.key(), result.clone());
+                self.cache_put(CacheKey::node(node), result.clone());
                 result
             }
 
-            // A block reached a second time in the same scope — one inlined
-            // `Fn()` call site read by two consumers, as the raging sea's
-            // `elevation` is by `emissiveNode` and by `normalNode` — is its
-            // result, not a second run of its statements: three.js builds a
-            // node's stack once per stage and hands every later reader the
-            // snippet it left.
+            // A block is an inline `Fn()` call. Three builds its stack once
+            // and leaves the result snippet in `builder.cache`, so a block
+            // reached a second time in the same scope (or one nested in it)
+            // is that snippet, not a second run of its statements. The two
+            // readers that found this: `renderOutput()` reading its colour's
+            // `.xyz` and `.w` (the display nodes), and the raging sea's
+            // `elevation`, one call site read by `emissiveNode` and by
+            // `normalNode`. See `docs/nodes.md` §36.
             Node::Block { statements, result } => {
                 let (statements, result) = (statements.clone(), result.clone());
                 for stmt in &statements {
                     self.generate_statement(stmt);
                 }
-                // A block is an inline `Fn()` call: three builds its stack
-                // once per build and a second reference reuses the result
-                // snippet, statements and all not repeated. Without this a
-                // block read twice (`renderOutput()` reads its colour's `.xyz`
-                // and `.w`) emitted every statement twice.
                 let snippet = self.generate(&result);
-                self.cache_put(node.key(), snippet.clone());
+                self.cache_put(CacheKey::node(node), snippet.clone());
                 snippet
             }
 
@@ -1980,7 +2164,7 @@ impl NodeBuilder {
                 let name = self.declare_const(None);
                 // `generateLetStatement()` is `let ${ name }` in WGSL — no type.
                 self.emit(format!("let {name} = {call};"));
-                self.cache_put(node.key(), name.clone());
+                self.cache_put(CacheKey::node(node), name.clone());
                 name
             }
 
@@ -2119,7 +2303,7 @@ impl NodeBuilder {
             locals: Vec::new(),
             var_counter: 0,
             const_counter: 0,
-            scopes: vec![HashMap::new()],
+            cache: NodeCache::default(),
         });
         let result = self.format(&body, def.ret);
         let scope = self
@@ -2920,5 +3104,25 @@ impl NodeBuilder {
             Stage::Compute => unreachable!("three-rs: assemble_compute writes the compute entry"),
         }
         out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{current_context, push_context};
+
+    #[test]
+    fn build_context_nests_and_restores() {
+        assert_eq!(current_context(|cx| cx.sub_build), None);
+        {
+            let _outer = push_context(|cx| cx.sub_build = Some("NORMAL"));
+            assert_eq!(current_context(|cx| cx.sub_build), Some("NORMAL"));
+            {
+                let _inner = push_context(|cx| cx.sub_build = Some("VERTEX"));
+                assert_eq!(current_context(|cx| cx.sub_build), Some("VERTEX"));
+            }
+            assert_eq!(current_context(|cx| cx.sub_build), Some("NORMAL"));
+        }
+        assert_eq!(current_context(|cx| cx.sub_build), None);
     }
 }
