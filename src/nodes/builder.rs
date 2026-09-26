@@ -1604,16 +1604,16 @@ impl NodeBuilder {
                 // The start is generated before the end, which is the order
                 // three.js' `LoopNode` builds them in and so the order their
                 // vars and uniforms are numbered in.
+                let index_ty = index.ty();
                 let sstart = match &start {
-                    Some(start) => self.loop_bound(start),
-                    None => "0".to_string(),
+                    Some(start) => self.loop_bound(start, index_ty),
+                    None => wgsl::constant(index_ty, &[0.0]),
                 };
-                let scount = self.loop_bound(&count);
+                let scount = self.loop_bound(&count, index_ty);
                 let name = match &*index.0 {
                     Node::Param { name, .. } => *name,
                     _ => "i",
                 };
-                let index_ty = index.ty();
                 let ty = wgsl::type_name(index_ty);
                 // `LoopNode.generate()`'s default update: `++` / `--` for an
                 // integer index, `+= 1.` / `-= 1.` for anything else.
@@ -1708,20 +1708,23 @@ impl NodeBuilder {
         }
     }
 
-    /// A `Loop` bound, which `LoopNode.generate()` builds as its `int` type:
-    /// a constant is regenerated as an integer literal (`float( 1 )` is `1`,
-    /// `-1` is `-1`), anything else is converted (`i32( … )`).
-    fn loop_bound(&mut self, bound: &NodeRef) -> String {
+    /// A `Loop` bound, which `LoopNode.generate()` builds as the loop's own
+    /// `type` (`int` unless `Loop( { type } )` says otherwise): a constant
+    /// is regenerated as a literal of that type (`float( 1 )` is `1` in an
+    /// `int` loop, `45` is `45.0` in a `float` one), anything else is
+    /// converted (`i32( … )`, `f32( … )`).
+    fn loop_bound(&mut self, bound: &NodeRef, ty: Type) -> String {
         match &*bound.0 {
-            Node::Const { values, .. } if values.len() == 1 => wgsl::constant(Type::I32, values),
+            Node::Const { values, .. } if values.len() == 1 => wgsl::constant(ty, values),
             // `LoopNode.generate()` builds a non-constant bound with
-            // `.build( builder, 'int' )`, whose same-length arm is `i32( … )`
-            // — which `wgsl::convert` leaves out (see its doc), so it is
-            // written here: `i < i32( ( nodeUniform4 + 1.0 ) )`.
-            _ if bound.ty() != Type::I32 && bound.ty().components() == 1 => {
-                format!("i32( {} )", self.generate(bound))
+            // `.build( builder, type )`, whose same-length arm is `i32( … )`
+            // (or `f32( … )` for a `type: 'float'` loop) — which
+            // `wgsl::convert` leaves out (see its doc), so it is written
+            // here: `i < i32( ( nodeUniform4 + 1.0 ) )`.
+            _ if bound.ty() != ty && bound.ty().components() == 1 => {
+                format!("{}( {} )", wgsl::type_name(ty), self.generate(bound))
             }
-            _ => self.format(bound, Type::I32),
+            _ => self.format(bound, ty),
         }
     }
 
