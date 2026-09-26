@@ -200,23 +200,33 @@ pub fn shadow_material_for(
         (_, Side::Double) => Side::Double,
     };
 
-    // `shadowRGB = vec3( 0 )`, `shadowAlpha = float( 1 )`, and the source
-    // material's own colour only contributes its alpha.
-    material.color_node = Some(match (&source.color_node, &source.map, &source.mask_node) {
-        // `hasMap || hasColorNode || hasCastShadowNode || hasMaskNode` is
-        // false: the override material keeps its own `vec4( 0, 0, 0, 1 )`,
-        // which is a flat four-component constant rather than a join.
-        (None, None, None) => vec4(0.0, 0.0, 0.0, 1.0),
-        (color, map, _) => {
-            // The colour node's alpha when there is one, else the map's.
-            let alpha = match (color, map) {
-                (Some(color), _) => float(1.0).mul(to_vec4(color.clone()).w()),
-                (None, Some(map)) => float(1.0).mul(texture(map).a()),
-                (None, None) => float(1.0),
-            };
-            vec4_join(vec![vec3(0.0, 0.0, 0.0), alpha])
-        }
-    });
+    // `shadowRGB = vec3( 0 )`, `shadowAlpha = float( 1 )` — or the
+    // `castShadowNode`'s `.rgb` / `.a` — and the source material's own colour
+    // only contributes its alpha.
+    let cast = &source.cast_shadow_node;
+    material.color_node = Some(
+        match (&source.color_node, &source.map, &source.mask_node, cast) {
+            // `hasMap || hasColorNode || hasCastShadowNode || hasMaskNode` is
+            // false: the override material keeps its own `vec4( 0, 0, 0, 1 )`,
+            // which is a flat four-component constant rather than a join.
+            (None, None, None, None) => vec4(0.0, 0.0, 0.0, 1.0),
+            (color, map, _, cast) => {
+                // `castShadowNode.a` of a `vec3` is `vec4( node, 1 ).w`, as
+                // three's `.a` on a three-component node emits it.
+                let (rgb, alpha) = match cast {
+                    Some(cast) => (cast.clone().rgb(), to_vec4(cast.clone()).w()),
+                    None => (vec3(0.0, 0.0, 0.0), float(1.0)),
+                };
+                // The colour node's alpha when there is one, else the map's.
+                let alpha = match (color, map) {
+                    (Some(color), _) => alpha.mul(to_vec4(color.clone()).w()),
+                    (None, Some(map)) => alpha.mul(texture(map).a()),
+                    (None, None) => alpha,
+                };
+                vec4_join(vec![rgb, alpha])
+            }
+        },
+    );
     // `overrideMaterial.alphaTest = material.alphaTest` and `.alphaMap =
     // material.alphaMap`: a cut-away texel casts no shadow.
     material.alpha_test = source.alpha_test;
@@ -934,6 +944,10 @@ pub fn tone_mapping_node(mode: ToneMapping, exposure: NodeRef, color: NodeRef) -
             neutral_tone_mapping(color.clone().rgb(), exposure),
             color.a(),
         ]),
+        ToneMapping::AgX => vec4_join(vec![
+            agx_tone_mapping(color.clone().rgb(), exposure),
+            color.a(),
+        ]),
     }
 }
 
@@ -1294,7 +1308,12 @@ fn setup_standard(
     };
     if opaque_frame.is_some() {
         fragment.push(transmission().assign(material_transmission()));
-        fragment.push(thickness().assign(material_thickness()));
+        // `MaterialNode.THICKNESS`: the factor times the map's green channel.
+        let thickness_value = match &material.thickness_map {
+            Some(map) => material_thickness().mul(texture(map).y()),
+            None => material_thickness(),
+        };
+        fragment.push(thickness().assign(thickness_value));
         fragment.push(attenuation_distance().assign(material_attenuation_distance()));
         fragment.push(attenuation_color().assign(material_attenuation_color()));
     }
