@@ -250,6 +250,10 @@ mod webgpu_textures_2d_array_compressed;
 #[allow(dead_code)]
 mod webgpu_clearcoat;
 
+#[path = "../../examples/webgpu_textures_anisotropy.rs"]
+#[allow(dead_code)]
+mod webgpu_textures_anisotropy;
+
 #[path = "../../examples/webgpu_lights_phong.rs"]
 #[allow(dead_code)]
 mod webgpu_lights_phong;
@@ -1946,6 +1950,64 @@ fn webgpu_clearcoat() {
     });
 }
 
+/// The crate floor twice, one half of the canvas each through the scissor:
+/// the left sampler with `maxAnisotropy` 16, the right with 1. The canvas is
+/// transparent above the horizon, so the frame is composited over the page's
+/// `#f1f1f1` body before it is graded, as `page.screenshot()` sees it.
+///
+/// Not graded: three.js itself scores 9.234% (9234 pixels) against its own
+/// `webgpu_textures_anisotropy.jpg` on this machine — the reference's
+/// minified texels come from another GPU's sampler, in both halves — and the
+/// port's frame is pixel-identical to three's (`tools/dump-webgpu.mjs`'
+/// `actual_full.png`, max channel difference 0), so it scores the same 9234.
+/// See `docs/webgpu_textures_anisotropy-progress.md`.
+#[test]
+#[ignore = "three.js itself fails its own reference for this page on this machine"]
+fn webgpu_textures_anisotropy() {
+    let name = "webgpu_textures_anisotropy";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_textures_anisotropy::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_textures_anisotropy::animate(&mut app);
+
+    let (width, height, mut pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+    three_rs::testing::composite_over_page(
+        &mut pixels,
+        webgpu_textures_anisotropy::PAGE_BACKGROUND,
+    );
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_textures_anisotropy::animate, |app| {
+        app.renderer.device()
+    });
+}
+
 /// Two `SpriteNodeMaterial`s over 2000 and 1000 instances, the fire drawn
 /// through `drawIndexedIndirect`. At three's pinned time every sprite's
 /// opacity is zero, so the graded frame is the grid on the background;
@@ -3563,6 +3625,7 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_depth_texture);
     rung!(webgpu_instance_mesh);
     rung!(webgpu_instance_path);
+    rung!(webgpu_textures_anisotropy);
     rung!(webgpu_modifier_curve);
     rung!(webgpu_instance_uniform);
     rung!(webgpu_materials);
