@@ -739,6 +739,10 @@ pub enum SampleMode {
     Sample,
     /// `textureSampleLevel( t, t_sampler, uv, level )`.
     Level(NodeRef),
+    /// `textureSampleBias( t, t_sampler, uv, bias )` — `textureNode.bias(
+    /// value )`. `FXAANode` samples its input at a bias of `-100`, pinning
+    /// every tap to the top mip.
+    Bias(NodeRef),
     /// `textureSampleGrad( t, t_sampler, uv, vec2( 0 ), vec2( 0 ) )` —
     /// `textureNode.grad( vec2(), vec2() )`, which is how `PMREMUtils`'
     /// `bilinearCubeUV` turns anisotropic filtering off on the cubeUV atlas.
