@@ -11,6 +11,54 @@ pub use perspective_camera::{CameraView, PerspectiveCamera};
 use crate::core::Layers;
 use crate::math::{Box3, CoordinateSystem, Matrix4, Vector3};
 
+/// A `&mut PerspectiveCamera` that is either plain or taken out of a
+/// `RefCell`.
+///
+/// An example whose `pass( scene, camera )` renders from `updateBefore()`
+/// shares its camera with the pass (`docs/nodes.md` §57), so it holds an
+/// `Rc<RefCell<PerspectiveCamera>>` and can only lend the camera as a
+/// `RefMut`. The viewer and the browser shell hand either kind to
+/// `OrbitControls`, which takes `&mut PerspectiveCamera`; this is what they
+/// hold in between.
+pub enum CameraMut<'a> {
+    /// A camera that is a plain field of the example.
+    Borrowed(&'a mut PerspectiveCamera),
+    /// A camera the example shares with its passes.
+    Shared(std::cell::RefMut<'a, PerspectiveCamera>),
+}
+
+impl std::ops::Deref for CameraMut<'_> {
+    type Target = PerspectiveCamera;
+
+    fn deref(&self) -> &PerspectiveCamera {
+        match self {
+            Self::Borrowed(camera) => camera,
+            Self::Shared(camera) => camera,
+        }
+    }
+}
+
+impl std::ops::DerefMut for CameraMut<'_> {
+    fn deref_mut(&mut self) -> &mut PerspectiveCamera {
+        match self {
+            Self::Borrowed(camera) => camera,
+            Self::Shared(camera) => camera,
+        }
+    }
+}
+
+impl<'a> From<&'a mut PerspectiveCamera> for CameraMut<'a> {
+    fn from(camera: &'a mut PerspectiveCamera) -> Self {
+        Self::Borrowed(camera)
+    }
+}
+
+impl<'a> From<std::cell::RefMut<'a, PerspectiveCamera>> for CameraMut<'a> {
+    fn from(camera: std::cell::RefMut<'a, PerspectiveCamera>) -> Self {
+        Self::Shared(camera)
+    }
+}
+
 /// The slice of `Camera` that `Renderer.render()` and `_projectObject()`
 /// actually read: `updateMatrixWorld()`, `projectionMatrix`,
 /// `matrixWorldInverse`, `matrixWorld`, `layers` and `coordinateSystem`.

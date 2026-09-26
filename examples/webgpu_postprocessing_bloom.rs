@@ -28,13 +28,16 @@
 //! `Math.random()` is never drawn from: `grep -c Math.random` is 0 in both the
 //! inspector and lil-gui, so there is no seeded sequence to keep in step.
 
+use std::cell::{RefCell, RefMut};
+use std::rc::Rc;
+
 use three_rs::addons::controls::OrbitControls;
 use three_rs::animation::AnimationMixer;
 use three_rs::loaders::GLTFLoader;
 use three_rs::nodes::display::{bloom, BloomNode};
 use three_rs::Timer;
 use three_rs::{
-    AmbientLight, Color, PassNode, PerspectiveCamera, PointLight, RenderPipeline, Renderer,
+    pass, AmbientLight, Color, PassNode, PerspectiveCamera, PointLight, RenderPipeline, Renderer,
     RendererParameters, Scene, ToneMapping, Vector3,
 };
 
@@ -45,8 +48,10 @@ pub const DPR: f64 = 1.0;
 
 pub struct App {
     pub renderer: Renderer,
-    pub scene: Scene,
-    pub camera: PerspectiveCamera,
+    /// Shared with `scene_pass`, which renders it from `updateBefore()`.
+    pub scene: Rc<RefCell<Scene>>,
+    /// Shared with `scene_pass`.
+    pub camera: Rc<RefCell<PerspectiveCamera>>,
     /// The page's `controls`.
     pub controls: OrbitControls,
     pub mixer: AnimationMixer,
@@ -109,7 +114,11 @@ pub fn init() -> App {
 
     // post processing
 
-    let scene_pass = PassNode::new();
+    // `pass( scene, camera )`: the pass holds both and the renderer renders
+    // it the first time a draw samples its texture (`docs/nodes.md` §57).
+    let scene = Rc::new(RefCell::new(scene));
+    let camera = Rc::new(RefCell::new(camera));
+    let scene_pass = pass(scene.clone(), camera.clone());
     // `toInspector( 'Color' )` and `toInspector( 'Bloom' )` are no-ops on the
     // rendered frame: they name the node for the inspector panel and return it
     // unchanged.
@@ -125,7 +134,7 @@ pub fn init() -> App {
     // built here because the page builds it here, after the render pipeline.
     // Its constructor's `update()` is the `camera.look_at` above; nothing calls
     // it again, so the limits below only matter to a host with a pointer.
-    let mut controls = OrbitControls::new(&mut camera);
+    let mut controls = OrbitControls::new(&mut camera.borrow_mut());
     // The canvas the example renders at, standing in for the element's
     // `clientWidth` / `clientHeight`.
     controls.set_element_size(INNER_WIDTH, INNER_HEIGHT);
@@ -157,12 +166,9 @@ pub fn animate(app: &mut App) {
 
     app.mixer.update(delta);
 
-    // `PassNode.updateBefore()`, then `BloomNode.updateBefore()`'s twelve
-    // quads, then the output quad — see `docs/postprocessing.md` for why the
-    // port fires them explicitly.
-    app.scene_pass
-        .render(&mut app.renderer, &mut app.scene, &mut app.camera);
-    app.bloom_pass.render(&mut app.renderer);
+    // `renderPipeline.render()`: the output quad's draw runs
+    // `PassNode.updateBefore()` and `BloomNode.updateBefore()`'s twelve quads
+    // first (`docs/nodes.md` §57).
     app.render_pipeline.render(&mut app.renderer);
 }
 
@@ -173,8 +179,9 @@ pub fn animate(app: &mut App) {
 /// owns its own reaction to a resized canvas instead of the host
 /// guessing at one.
 pub fn resize(app: &mut App, width: f64, height: f64) {
-    app.camera.aspect = width / height;
-    app.camera.update_projection_matrix();
+    let mut camera = app.camera.borrow_mut();
+    camera.aspect = width / height;
+    camera.update_projection_matrix();
     app.renderer.set_size(width, height);
 }
 
@@ -192,8 +199,10 @@ pub fn controls(app: &mut App) -> Option<&mut OrbitControls> {
 /// They are two fields of the same `App`, so borrowing both is sound — but
 /// only this module can say so; a host holding `&mut App` and calling
 /// [`controls`] and then reaching for the camera cannot. Hence the pair.
-pub fn controls_and_camera(app: &mut App) -> Option<(&mut OrbitControls, &mut PerspectiveCamera)> {
-    Some((&mut app.controls, &mut app.camera))
+pub fn controls_and_camera(
+    app: &mut App,
+) -> Option<(&mut OrbitControls, RefMut<'_, PerspectiveCamera>)> {
+    Some((&mut app.controls, app.camera.borrow_mut()))
 }
 
 fn main() {

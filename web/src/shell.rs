@@ -86,7 +86,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use three_rs::addons::controls::{Key, KeyEvent, MouseButton, OrbitControls, WheelDelta};
-use three_rs::PerspectiveCamera;
+use three_rs::cameras::CameraMut;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
@@ -214,9 +214,10 @@ macro_rules! examples {
             /// the example can say so.
             fn controls_and_camera(
                 &mut self,
-            ) -> Option<(&mut OrbitControls, &mut PerspectiveCamera)> {
+            ) -> Option<(&mut OrbitControls, CameraMut<'_>)> {
                 match self {
-                    $( Example::$variant(app) => $module::controls_and_camera(app), )*
+                    $( Example::$variant(app) => $module::controls_and_camera(app)
+                        .map(|(controls, camera)| (controls, camera.into())), )*
                 }
             }
         }
@@ -810,8 +811,8 @@ fn install_input(page: &Rc<RefCell<Page>>, canvas: &web_sys::HtmlCanvasElement) 
                 let _ = canvas.focus();
                 event.prevent_default();
                 let mut page = page.borrow_mut();
-                if let Some((controls, camera)) = page.example.controls_and_camera() {
-                    controls.pointer_down(camera, &pointer_event(&event));
+                if let Some((controls, mut camera)) = page.example.controls_and_camera() {
+                    controls.pointer_down(&mut camera, &pointer_event(&event));
                 }
             },
         );
@@ -826,8 +827,8 @@ fn install_input(page: &Rc<RefCell<Page>>, canvas: &web_sys::HtmlCanvasElement) 
             move |event: web_sys::PointerEvent| {
                 event.prevent_default();
                 let mut page = page.borrow_mut();
-                if let Some((controls, camera)) = page.example.controls_and_camera() {
-                    controls.pointer_move(camera, &pointer_event(&event));
+                if let Some((controls, mut camera)) = page.example.controls_and_camera() {
+                    controls.pointer_move(&mut camera, &pointer_event(&event));
                 }
             },
         );
@@ -850,8 +851,8 @@ fn install_input(page: &Rc<RefCell<Page>>, canvas: &web_sys::HtmlCanvasElement) 
         listen(canvas, "wheel", false, move |event: web_sys::WheelEvent| {
             event.prevent_default();
             let mut page = page.borrow_mut();
-            if let Some((controls, camera)) = page.example.controls_and_camera() {
-                controls.wheel(camera, &wheel_event(&event));
+            if let Some((controls, mut camera)) = page.example.controls_and_camera() {
+                controls.wheel(&mut camera, &wheel_event(&event));
             }
         });
     }
@@ -875,8 +876,8 @@ fn install_input(page: &Rc<RefCell<Page>>, canvas: &web_sys::HtmlCanvasElement) 
                 let Some(key) = key_event(&event) else { return };
                 event.prevent_default();
                 let mut page = page.borrow_mut();
-                if let Some((controls, camera)) = page.example.controls_and_camera() {
-                    controls.key(camera, &key);
+                if let Some((controls, mut camera)) = page.example.controls_and_camera() {
+                    controls.key(&mut camera, &key);
                 }
             },
         );
