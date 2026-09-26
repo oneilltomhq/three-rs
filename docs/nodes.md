@@ -4128,3 +4128,64 @@ needs the transmission pass's context. The graded pixels cover it.
 * **No `shadow.autoUpdate`.** The page renders the shadow map once
   (`autoUpdate = false`, `needsUpdate = true`). The port renders it every
   frame. Nothing in the scene moves, so every frame renders the same map.
+
+## 56. `copyTextureToTexture` (`webgpu_textures_partialupdate`)
+
+The page patches a loaded texture in place: every tenth of a second a 32 x 32
+`DataTexture` is refilled with one random colour and
+`renderer.copyTextureToTexture( dataTexture, diffuseMap, null, position )`
+copies it into `Carbon.png` at a random multiple of 32 texels. Nothing in the
+node graph changes. The shader is the plain `MeshBasicMaterial` with a `map`
+that §5 already builds, and the dump's `m01` has nothing new in it.
+
+### 56.1 The port
+
+`Renderer::copy_texture_to_texture( src, dst, src_region, dst_position )` is
+`Renderer.copyTextureToTexture()` and `WebGPUBackend.copyTextureToTexture()`
+at `srcLevel = dstLevel = 0`:
+
+* **Both textures are updated first.** Three calls
+  `_textures.updateTexture()` on each, so the data texture's `needsUpdate`
+  (its bytes were just rewritten) is uploaded before the copy reads it. The
+  port calls `ensure_texture_2d()` on both, which is the same thing.
+* **The region is in GPU texel rows.** The default region is the whole source
+  image and the default position is the destination's origin. `Box2` gives
+  `min` and `max`, and the extent is `max - min`. The coordinates are those of
+  the GPU texture after the upload's `flipY`. `Carbon.png` is uploaded
+  flipped and the data texture is not (`DataTexture.flipY = false`), so row
+  `y` of the destination is `y` texels up from the bottom of the image. The
+  e2e rung checks exactly that.
+* **One encoder, one submit.** Then, if the destination has
+  `generateMipmaps` and more than one level, its chain is regenerated. Three
+  also checks `mipmapsAutoUpdate`, which the port does not have, so it is
+  always on. The page turns `generateMipmaps` off, so the branch does not run
+  here.
+* **`COPY_SRC` on every uploaded texture.** `WebGPUTextureUtils.createTexture()`
+  gives every texture `TEXTURE_BINDING | COPY_DST | COPY_SRC`. The port had
+  left out `COPY_SRC`, which wgpu needs on a copy's source. Adding a usage
+  flag changes no pixels, and the ladder confirms it.
+
+`Texture::data_rgba8` is `new DataTexture( Uint8Array, w, h )`: `RGBAFormat`,
+`UnsignedByteType`, and `DataTexture`'s own `flipY = false`,
+`generateMipmaps = false` and `NearestFilter`.
+
+### 56.2 What the grader sees, and what it does not
+
+Under the pinned clock `timer.getElapsed()` is 0 on every frame, so
+`elapsedTime - last > 0.1` never holds and neither three nor the port copies
+anything before the graded frame. The screenshot is the untouched texture. The
+copy path is gated by the rung's second half instead: the test moves the
+clock to 150 ms and lets `animate()` make one copy from the seeded
+`Math.random()` sequence (`randInt( 1, 16 )` twice, then the colour). It then
+asserts that the pixels that changed are exactly the 32 x 32-texel block where
+three's semantics put it, within two pixels, and that the block shows the
+copied bytes. This checks the port against three's documented behaviour, not
+against a reference image, so it is not a second comparator.
+
+### 56.3 Page quirks reproduced
+
+* **The bytes are linear.** `color.setHex( Math.random() * 0xffffff )` converts
+  from sRGB, so the bytes written are the *linear* channels. They go into an
+  sRGB texture, which decodes them once more.
+* **The alpha is 1, not 255.** `data[ stride + 3 ] = 1` is kept. The
+  material is opaque, so `DiffuseColor.w = 1.0` hides it.
