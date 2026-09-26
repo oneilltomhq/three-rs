@@ -4992,7 +4992,12 @@ impl Renderer {
         // them generated, so it is never a render attachment — which a
         // compressed or `rgb9e5ufloat` format could not be.
         let has_mipmaps = texture.has_mipmaps();
-        let mut usage = wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING;
+        // `TEXTURE_BINDING | COPY_DST | COPY_SRC`, as `WebGPUTextureUtils.createTexture()`
+        // gives every texture: `COPY_SRC` is what lets it be the source of a
+        // `copyTextureToTexture`.
+        let mut usage = wgpu::TextureUsages::COPY_DST
+            | wgpu::TextureUsages::COPY_SRC
+            | wgpu::TextureUsages::TEXTURE_BINDING;
         if !has_mipmaps {
             usage |= wgpu::TextureUsages::RENDER_ATTACHMENT;
         }
@@ -5195,6 +5200,86 @@ impl Renderer {
                     depth_or_array_layers: layers,
                 },
             );
+        }
+    }
+
+    /// `renderer.copyTextureToTexture( srcTexture, dstTexture, srcRegion,
+    /// dstPosition )` — `Renderer.copyTextureToTexture()` plus
+    /// `WebGPUBackend.copyTextureToTexture()` at `srcLevel = dstLevel = 0`.
+    ///
+    /// Both textures go through `updateTexture()` first, so a `needsUpdate`
+    /// on either (a data texture whose bytes were just rewritten) is uploaded
+    /// before the copy reads or writes it. The region defaults to the whole
+    /// source image and the position to the destination's origin; both are in
+    /// the GPU texture's texel rows, which is after any `flipY` the uploads
+    /// applied, exactly as in three. The copy is submitted on its own command
+    /// encoder, and a destination that carries a mip chain has it regenerated
+    /// (`generateMipmaps && mipmapsAutoUpdate`; the port has no
+    /// `mipmapsAutoUpdate`, so it is always on).
+    ///
+    /// Only 2-D textures the renderer uploads are supported: a render
+    /// target's colour texture has no image to size the default region from.
+    pub fn copy_texture_to_texture(
+        &mut self,
+        src_texture: &Texture,
+        dst_texture: &Texture,
+        src_region: Option<&crate::math::Box2>,
+        dst_position: Option<&Vector2>,
+    ) {
+        let source = self.ensure_texture_2d(src_texture);
+        let destination = self.ensure_texture_2d(dst_texture);
+
+        let (mut src_x, mut src_y) = (0, 0);
+        let (mut src_width, mut src_height) = src_texture.size();
+        if let Some(region) = src_region {
+            src_x = region.min.x as u32;
+            src_y = region.min.y as u32;
+            src_width = (region.max.x - region.min.x) as u32;
+            src_height = (region.max.y - region.min.y) as u32;
+        }
+        let (dst_x, dst_y) = dst_position.map_or((0, 0), |p| (p.x as u32, p.y as u32));
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some(&format!(
+                    "copyTextureToTexture_{}_{}",
+                    src_texture.id(),
+                    dst_texture.id()
+                )),
+            });
+        encoder.copy_texture_to_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &source,
+                mip_level: 0,
+                origin: wgpu::Origin3d {
+                    x: src_x,
+                    y: src_y,
+                    z: 0,
+                },
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyTextureInfo {
+                texture: &destination,
+                mip_level: 0,
+                origin: wgpu::Origin3d {
+                    x: dst_x,
+                    y: dst_y,
+                    z: 0,
+                },
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::Extent3d {
+                width: src_width,
+                height: src_height,
+                depth_or_array_layers: 1,
+            },
+        );
+        self.queue.submit([encoder.finish()]);
+
+        let mips = destination.mip_level_count();
+        if mips > 1 && dst_texture.borrow().generate_mipmaps {
+            self.generate_mipmaps(&destination, destination.format(), mips, 1);
         }
     }
 
