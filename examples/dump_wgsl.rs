@@ -70,6 +70,7 @@ fn show_into(
     let flow = setup(material, &ctx, fog);
     let program = NodeBuilder::new()
         .with_output_components(components)
+        .with_array_cameras(ctx.array_cameras)
         .build(&flow);
     println!("########## {label} — vertex");
     println!("{}", program.vertex_wgsl);
@@ -210,6 +211,7 @@ fn main() {
             geometry_missing_normal: false,
             has_tangent_attribute: false,
             instanced_attributes: Vec::new(),
+            array_cameras: 0,
         },
     );
 
@@ -2059,6 +2061,7 @@ fn main() {
     // rung webgpu_postprocessing_ca.
     dump_room_environment();
     dump_scene_fog();
+    dump_shadowmap_opacity();
     dump_chromatic_aberration();
 
     // #144's display nodes, each as the three.js page that dumps it builds it:
@@ -2412,6 +2415,112 @@ fn dump_room_environment() {
         ..MeshBasicNodeMaterial::physical(Color::new(1.0, 1.0, 1.0), 0.1, 0.0)
     };
     show("clearcoat_golf", &golf, clearcoat_ctx());
+
+    // rung `webgpu_occlusion`: the plane (`m01`, `DoubleSide`, its `colorNode`
+    // the `OcclusionNode`'s per-object `vec3` uniform) and the sphere (`m02`),
+    // under one ambient and one directional light.
+    let occlusion_ctx = || SetupContext {
+        lights: vec![
+            LightDesc {
+                index: 0,
+                kind: LightKind::Ambient,
+                shadow_map: None,
+            },
+            LightDesc {
+                index: 1,
+                kind: LightKind::Directional,
+                shadow_map: None,
+            },
+        ],
+        ..SetupContext::default()
+    };
+    // rung `webgpu_materials_toon`: three's `dump-materials_toon` m04/m05 (a
+    // `MeshToonNodeMaterial` with a `RedFormat` gradient map, under the
+    // page's ambient and point light) and m02/m03 (`toonOutlinePass`'s
+    // `Toon_Outline` material).
+    let toon_ctx = SetupContext {
+        lights: vec![
+            LightDesc {
+                index: 0,
+                kind: LightKind::Ambient,
+                shadow_map: None,
+            },
+            LightDesc {
+                index: 1,
+                kind: LightKind::Point,
+                shadow_map: None,
+            },
+        ],
+        ..SetupContext::default()
+    };
+    let mut occlusion_plane = MeshBasicNodeMaterial::phong(Color::from_hex(0x00ff00));
+    occlusion_plane.side = Side::Double;
+    occlusion_plane.color_node = Some(uniform_frame(three_rs::nodes::Type::Vec3, |_| {
+        vec![0.0, 0.0, 1.0]
+    }));
+    show("occlusion_plane", &occlusion_plane, occlusion_ctx());
+    show(
+        "occlusion_sphere",
+        &MeshBasicNodeMaterial::phong(Color::from_hex(0xffff00)),
+        occlusion_ctx(),
+    );
+    let ramp = Texture::data_r8(3, 1, &[0, 85, 170]);
+    let toon = MeshBasicNodeMaterial::toon(Color::new(0.5, 0.25, 0.25), Some(ramp));
+    show("toon", &toon, toon_ctx);
+    let outline = three_rs::nodes::display::toon_outline_pass();
+    show(
+        "toon_outline",
+        outline.outline_material(),
+        SetupContext::default(),
+    );
+    // rung `webgpu_sprites`: one `SpriteNodeMaterial` on a `Sprite` (so
+    // `object.center` is read), rotated by `userData( 'rotation', 'float' )`,
+    // under `fog( color( 0x0000ff ), rangeFogFactor( 1500, 2100 ) )`. Against
+    // three's `m01` / `m02`.
+    let sprite_map = Texture::new(4, 4, Some(vec![0; 4 * 4 * 4]));
+    let sprite_texture = texture(&sprite_map);
+    let mut sprite_material = MeshBasicNodeMaterial::sprite();
+    sprite_material.color_node = Some(sprite_texture.mul(uv()).mul(2.0).saturate());
+    sprite_material.opacity_node = Some(sprite_texture.w());
+    sprite_material.rotation_node = Some(user_data("rotation", three_rs::nodes::Type::F32));
+    show_fog(
+        "sprites",
+        &sprite_material,
+        SetupContext {
+            sprite: true,
+            ..SetupContext::default()
+        },
+        Some(&fog(color(0x0000ff), range_fog_factor(1500.0, 2100.0))),
+    );
+    // rung `webgpu_instance_sprites`: `SpriteNodeMaterial( { map, alphaMap:
+    // map, alphaTest: 0.1 } )` on one `Sprite` of count 10000, placed by an
+    // instanced attribute and rotated by `time.add( instanceIndex ).sin()`,
+    // under `scene.fog = new FogExp2( … )`. Against three's `m01` / `m02`.
+    let snowflake = Texture::new(4, 4, Some(vec![0; 4 * 4 * 4]));
+    let mut instance_sprite = MeshBasicNodeMaterial::sprite();
+    instance_sprite.map = Some(snowflake.clone());
+    instance_sprite.alpha_map = Some(snowflake);
+    instance_sprite.alpha_test = 0.1;
+    instance_sprite.position_node = Some(instanced_data_attribute(
+        &std::rc::Rc::new(vec![0.0; 30]),
+        3,
+        0,
+        three_rs::nodes::Type::Vec3,
+    ));
+    instance_sprite.rotation_node = Some(time().add(instance_index()).sin());
+    instance_sprite.scale_node = Some(uniform_value(three_rs::nodes::Type::F32, vec![15.0]));
+    show_fog(
+        "instance_sprites",
+        &instance_sprite,
+        SetupContext {
+            sprite: true,
+            ..SetupContext::default()
+        },
+        Some(
+            &three_rs::SceneFog::from(three_rs::FogExp2::new(Color::from_hex(0x000000), 0.001))
+                .node(),
+        ),
+    );
     // `webgpu_textures_2d-array_compressed`: `new NodeMaterial()` with
     // `colorNode = texture( texturearray, uv().flipY() ).depth( depth )`.
     // The texture is a stand-in with the page's layer count; only its being
@@ -2437,6 +2546,84 @@ fn dump_room_environment() {
         "textures_2d_array_compressed",
         &array_material,
         SetupContext::default(),
+    );
+
+    // `webgpu_lights_custom`: the page's `CustomLightingModel` on a
+    // `PointsNodeMaterial` whose `lightsNode` is `lights( [ light1, light2,
+    // light3 ] ).context( { lightingModel } )` — three's `m05`.
+    #[derive(Debug)]
+    struct CustomLightingModel;
+    impl three_rs::materials::lighting_model::LightingModel for CustomLightingModel {
+        fn direct(
+            &self,
+            data: &three_rs::materials::lighting_model::DirectLightData,
+            builder: &mut three_rs::materials::lighting_model::LightingBuilder,
+        ) {
+            builder.push(
+                data.reflected_light
+                    .direct_diffuse
+                    .add_assign(data.light_color.clone()),
+            );
+        }
+    }
+    let mut custom_points = MeshBasicNodeMaterial::points();
+    custom_points.lights_node = Some(vec![0, 1, 2]);
+    custom_points.lighting_model = Some(std::rc::Rc::new(CustomLightingModel));
+    show(
+        "lights_custom_points",
+        &custom_points,
+        SetupContext {
+            lights: (0..3)
+                .map(|index| LightDesc {
+                    index,
+                    kind: LightKind::Point,
+                    shadow_map: None,
+                })
+                .collect(),
+            ..SetupContext::default()
+        },
+    );
+    // Its light spheres: a bare `NodeMaterial` with `colorNode = color( hex )`
+    // and the empty `lights()` — three's `m01`.
+    let mut custom_sphere = MeshBasicNodeMaterial::new();
+    custom_sphere.color_node = Some(Color::from_hex(0xffaa00).into());
+    custom_sphere.lights_node = Some(Vec::new());
+    show(
+        "lights_custom_sphere",
+        &custom_sphere,
+        SetupContext::default(),
+    );
+
+    dump_camera_array();
+}
+
+/// Rung `webgpu_camera_array`: the cylinder's `MeshPhongNodeMaterial` drawn
+/// through a 36-camera `ArrayCamera`, lit by the ambient light and the
+/// shadow-casting directional one, against `dump-camera_array/m0{2,3}`. The
+/// camera matrices are `array< mat4x4<f32>, 36 >` render-group buffers indexed
+/// by the flat `v_cameraIndex`, and the object group moves to `@group( 2 )`.
+fn dump_camera_array() {
+    let map = DepthTexture::new();
+    let material = MeshBasicNodeMaterial::phong(Color::from_hex(0xff0000));
+    show(
+        "camera_array_phong",
+        &material,
+        SetupContext {
+            array_cameras: 36,
+            lights: vec![
+                LightDesc {
+                    index: 0,
+                    kind: LightKind::Ambient,
+                    shadow_map: None,
+                },
+                LightDesc {
+                    index: 1,
+                    kind: LightKind::Directional,
+                    shadow_map: Some(ShadowMap::Planar(map)),
+                },
+            ],
+            ..SetupContext::default()
+        },
     );
 }
 
@@ -2467,4 +2654,97 @@ fn dump_scene_fog() {
 
     let exp2 = three_rs::SceneFog::from(three_rs::FogExp2::new(Color::from_hex(0x4080cc), 0.25));
     show_fog("fog_standard_exp2", &material, lit, Some(&exp2.node()));
+
+    // rung `webgpu_fog_height`: three's `dump-fog_height` m02 / m03. One
+    // instanced `MeshPhongMaterial` under a directional and an ambient light,
+    // with `scene.fogNode = fog( color( 0xffdfc1 ), exponentialHeightFogFactor(
+    // uniform( 0.04 ), uniform( 2 ) ) )` — object-group uniforms after the
+    // material's own, where `scene.fog`'s are render-group ones.
+    let height_fog = fog(
+        Color::from_hex(0xffdfc1),
+        exponential_height_fog_factor(
+            uniform_value(three_rs::nodes::Type::F32, vec![0.04]),
+            uniform_value(three_rs::nodes::Type::F32, vec![2.0]),
+        ),
+    );
+    show_fog(
+        "fog_height",
+        &MeshBasicNodeMaterial::phong(Color::from_hex(0xcd959a)),
+        SetupContext {
+            instance_count: Some(100),
+            instanced: true,
+            lights: vec![
+                LightDesc {
+                    index: 0,
+                    kind: LightKind::Directional,
+                    shadow_map: None,
+                },
+                LightDesc {
+                    index: 1,
+                    kind: LightKind::Ambient,
+                    shadow_map: None,
+                },
+            ],
+            ..SetupContext::default()
+        },
+        Some(&height_fog),
+    );
+}
+
+/// Rung `webgpu_shadowmap_opacity`, against
+/// `target/dumps/webgpu_shadowmap_opacity/m*.wgsl`: the shadow pass's override
+/// material for a caster with a `castShadowNode` (m01, m02 with the red
+/// colour), the backdrop receiving a PCF shadow with `shadowMap.transmitted`
+/// (m05), and the output pass with AgX tone mapping (m09).
+fn dump_shadowmap_opacity() {
+    let mut dragon = MeshBasicNodeMaterial::physical(Color::from_hex(0xffffff), 0.0, 0.0);
+    dragon.cast_shadow_node = Some(mix(
+        vec3(1.0, 1.0, 1.0),
+        three_rs::nodes::NodeRef::from(Color::new(0.921, 0.64, 0.064)),
+        float(1.0),
+    ));
+    show(
+        "shadowmap_opacity_cast_shadow",
+        &three_rs::materials::shadow_material_for(&dragon, Default::default()),
+        SetupContext::default(),
+    );
+
+    let cloth = Texture::new(2, 2, Some(vec![0; 16]));
+    let mut backdrop = MeshBasicNodeMaterial::standard(Color::from_hex(0xffffff), 0.4935, 0.0);
+    backdrop.map = Some(cloth);
+    let colour = Texture::render_target(2048, 2048, wgpu::TextureFormat::Rgba8Unorm);
+    show(
+        "shadowmap_opacity_backdrop",
+        &backdrop,
+        SetupContext {
+            lights: vec![
+                LightDesc {
+                    index: 0,
+                    kind: LightKind::Ambient,
+                    shadow_map: None,
+                },
+                LightDesc {
+                    index: 1,
+                    kind: LightKind::Directional,
+                    shadow_map: Some(ShadowMap::Transmitted {
+                        map: Box::new(ShadowMap::Planar(DepthTexture::new())),
+                        color: colour,
+                    }),
+                },
+            ],
+            ..SetupContext::default()
+        },
+    );
+
+    let framebuffer = Texture::render_target(800, 500, wgpu::TextureFormat::Rgba16Float);
+    let mut out = MeshBasicNodeMaterial::new();
+    out.fragment_node = Some(three_rs::materials::output_fragment_node(
+        &framebuffer,
+        three_rs::ToneMapping::AgX,
+    ));
+    show(
+        "shadowmap_opacity_output_agx",
+        &out,
+        SetupContext::default(),
+    );
 }

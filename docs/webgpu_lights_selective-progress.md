@@ -31,7 +31,7 @@ explicit metalness or roughness node. A bare `texture()` node is a `vec4`, so
 the right teapot's `DiffuseContribution` was `( vec4( diffuse, 1 ) * ( 1 -
 map ) ).xyz`, one minus each of the map's channels, where three has
 `diffuse * ( 1 - map.x )`. `roughness_map.jpg` is grey, so the pixels could
-not tell. §40 of `docs/nodes.md` has the details.
+not tell. §46 of `docs/nodes.md` has the details.
 
 The rest of the Standard lighting flow differs from three's dump in order and
 in a few duplicated terms: `directDiffuse = vec3( 0 )` is assigned twice, and

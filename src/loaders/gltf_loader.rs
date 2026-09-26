@@ -232,6 +232,8 @@ pub struct GltfMaterial {
     /// `attenuationDistance` (default `Infinity`) and `attenuationColor`
     /// (default white).
     pub thickness_factor: Option<f64>,
+    /// `KHR_materials_volume.thicknessTexture`, a data map (G = thickness).
+    pub thickness_texture: Option<GltfTextureRef>,
     pub attenuation_distance: f64,
     pub attenuation_color: [f64; 3],
 }
@@ -1617,6 +1619,9 @@ impl GLTFLoader {
                             .and_then(Value::as_f64)
                             .unwrap_or(0.0)
                     }),
+                thickness_texture: GltfTextureRef::parse(
+                    material_def.pointer("/extensions/KHR_materials_volume/thicknessTexture"),
+                ),
                 attenuation_distance: material_def
                     .pointer("/extensions/KHR_materials_volume/attenuationDistance")
                     .and_then(Value::as_f64)
@@ -2119,6 +2124,10 @@ impl GLTFLoader {
             out.attenuation_distance = material.attenuation_distance;
             let [ar, ag, ab] = material.attenuation_color;
             out.attenuation_color = Color::new(ar, ag, ab);
+        }
+        if let Some(map_def) = &material.thickness_texture {
+            out.thickness_map =
+                self.assign_texture(cache, textures, images, map_def, ColorSpace::NoColorSpace)?;
         }
 
         Ok(out)

@@ -44,7 +44,7 @@ move against three's frame, and none of the right half's do.
 | `tools/dump-webgpu.mjs` | a stale `pageFile` line, left by a merge, that made every dump throw |
 | `examples/` | `webgpu_textures_anisotropy.rs` |
 
-`docs/nodes.md` §40 is the long form.
+`docs/nodes.md` §46 is the long form.
 
 ## What the pixels found
 

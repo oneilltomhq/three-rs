@@ -70,6 +70,9 @@ impl Occurrences {
 pub(super) enum SlotOwner {
     Draw(DrawKey),
     Compute(u64),
+    /// Sub-camera `i` of an `ArrayCamera`: its `cameraIndex` buffer, holding
+    /// `i`, shared by every draw — `cameraData.indexesGPU[ i ]`.
+    CameraIndex(u32),
 }
 
 /// The group a vertex buffer's [`SlotKey`] is filed under — no bind group
