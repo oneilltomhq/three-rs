@@ -3683,3 +3683,65 @@ left for when `context()` can install arbitrary keys.
 Nothing generated changed. `dump_wgsl`'s output is identical after each of
 the eight migrations, apart from the one `ObjectUpdate` pointer noted in §36.
 Every `tests/nodes_*` gate passes unchanged, and so does the full ladder.
+
+## 40. Sampler anisotropy, a transparent canvas, and `float()` on standard nodes (`webgpu_textures_anisotropy`, `webgpu_lights_selective`)
+
+**Anisotropy needs all-linear filters.** `WebGPUTextureUtils.updateSampler()`
+copies `texture.anisotropy` into the descriptor's `maxAnisotropy` only when
+`magFilter`, `minFilter` and `mipmapFilter` are all `'linear'`. Otherwise it
+leaves the reset descriptor's 1. `SamplerKey::of()` applies the same rule to
+2-D and cube textures. It has to: wgpu's `anisotropy_clamp` fails validation
+above 1 unless every filter is linear, so the old copy-through would have
+failed on a `NearestFilter` texture that asked for anisotropy.
+`Renderer::get_max_anisotropy()` is `WebGPUCapabilities.getMaxAnisotropy()`,
+which returns 16 without asking the adapter. wgpu then clamps the value to
+what the hardware supports, as Dawn does.
+
+The key already carried `anisotropy_clamp`, and three's own sampler key
+includes `texture.anisotropy`. So the two halves of
+`webgpu_textures_anisotropy`, identical but for 16 against 1, get two
+samplers in the port as in three's dump (samplers 30 and 73 there).
+
+**Ungraded on this machine.** The port's frame is pixel-identical to three's
+frame here (max channel difference 0), and three's frame scores 9234 of
+100000 against its own reference. Both halves differ, including the one with
+no anisotropy, so the reference's GPU minifies differently. The e2e test is
+`#[ignore]`d, like `webgpu_instance_path`'s
+(`docs/webgpu_textures_anisotropy-progress.md`).
+
+**A transparent canvas is graded over the page.** With `alpha: true`, the
+`WebGPURenderer` default, three's clear colour is `( 0, 0, 0, 0 )`.
+`WebGPUBackend.getClearColor()` premultiplies it, and the canvas is configured
+`alphaMode: 'premultiplied'`. Wherever nothing draws, Chrome shows the page
+behind the canvas, and `page.screenshot()` captures that composite. Until now
+this never mattered. Every graded page either covered its canvas (a
+background, a full-screen quad) or had `example.css`'s black `<body>`, where
+source-over of premultiplied colour onto black is the colour itself.
+`webgpu_textures_anisotropy` sets `body { background-color: #f1f1f1 }` in its
+own `<style>`, and the floor does not reach the horizon. Everything above the
+far plane is that grey.
+
+`testing::composite_over_page( pixels, 0xf1f1f1 )` is that composite: `c +
+page * ( 1 - a )` per 8-bit channel, alpha set to 255. The colour is the
+page's CSS, carried on the example as `PAGE_BACKGROUND`. It is not taken from
+the reference image. The renderer is unchanged: the canvas it hands back
+still has alpha 0 there, as three's does. Only the harness, standing in for
+the browser's compositor, applies the page colour.
+
+**`float()` around `metalnessNode` and `roughnessNode`.**
+`MeshStandardNodeMaterial.setupVariants()` starts with
+
+```js
+const metalnessNode = this.metalnessNode ? float( this.metalnessNode ) : materialMetalness;
+let roughnessNode = this.roughnessNode ? float( this.roughnessNode ) : materialRoughness;
+```
+
+and the port used the node as given. For a float node there is no
+difference. For `texture( alphaTexture )`, a `vec4`, the conversion is
+`.x`, and it matters where the node is reused. `diffuseContribution =
+diffuseColor.rgb.mul( metalnessNode.oneMinus() )` became `( vec4( diffuse,
+1 ) * ( 1 - map ) ).xyz`, one minus each channel of the map, instead of
+`diffuse * ( 1 - map.x )`. `getRoughness()`'s clamp ran on four lanes before
+`Roughness` took `.x`. Both now emit what three's dump has (`m02`, `m06` of
+`webgpu_lights_selective`). The test texture is grey, so the frame could not
+show the bug. The WGSL comparison found it.
