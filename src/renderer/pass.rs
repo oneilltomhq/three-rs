@@ -17,8 +17,9 @@
 //! the raw `uv()` varying with no texture matrix — unlike `texture( map )`,
 //! which carries a `mat3x3` in the object uniform block.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use crate::cameras::RenderCamera;
 use crate::core::Layers;
@@ -26,7 +27,7 @@ use crate::nodes::node::SettableValue;
 use crate::nodes::tsl::{
     pass_depth_texture, perspective_depth_to_view_z, texture_uv, to_var, uniform_settable, uv,
 };
-use crate::nodes::{MrtNode, NodeRef, Type};
+use crate::nodes::{MrtNode, NodeRef, NodeUpdate, NodeUpdateType, Type};
 use crate::objects::Scene;
 use crate::textures::{DepthTexture, TextureFilter, TextureType};
 
@@ -38,16 +39,36 @@ use super::Renderer;
 
 /// `pass( scene, camera )`.
 ///
-/// Ownership divergence from three.js, documented in `docs/postprocessing.md`:
-/// three.js discovers the pass nodes of a frame by collecting the graph's
-/// `updateBefore` nodes while the quad's material is built, and fires them from
-/// inside the quad's own render. Rust's ownership rules make a node that holds
-/// `&mut Scene` across a frame impractical, so the port keeps the node and calls
-/// [`PassNode::render`] explicitly, immediately before
-/// [`RenderPipeline::render`](super::RenderPipeline::render). The GPU sees the
-/// same order: in three.js the nested renders use their own command encoders and
-/// are submitted before the canvas pass they are nested inside.
-pub struct PassNode {
+/// A handle: clones share one pass. The pass renders its scene from
+/// `updateBefore()` (`NodeUpdateType.FRAME`), which the renderer fires the
+/// first time in a frame that a draw samples one of the pass's textures, as
+/// three's does (`docs/nodes.md` §57). The nested render is its own submit,
+/// so the GPU runs it before the pass that samples it.
+///
+/// The scene and camera are shared handles, given by [`pass`] or
+/// [`PassNode::set_scene`]: the node holds them across frames, as three's
+/// `this.scene` / `this.camera` do. A pass without them renders only when
+/// [`render`](PassNode::render) is called, which is deprecated.
+#[derive(Clone)]
+pub struct PassNode(Rc<PassState>);
+
+/// The handle reads through to what it shares, so the accessors below read
+/// the pass's fields as they did before it was a handle.
+impl std::ops::Deref for PassNode {
+    type Target = PassState;
+
+    fn deref(&self) -> &PassState {
+        &self.0
+    }
+}
+
+/// A shared scene, as a pass holds it.
+pub type SceneRef = Rc<RefCell<Scene>>;
+/// A shared camera, as a pass holds it.
+pub type CameraRef = Rc<RefCell<dyn RenderCamera>>;
+
+/// What a [`PassNode`] handle shares.
+pub struct PassState {
     render_target: RenderTarget,
     node: NodeRef,
     /// `PassNode._previousTextureNodes` — the node for the *other* texture
@@ -83,9 +104,19 @@ pub struct PassNode {
     /// size divided by this, floored. 1 for every other pass.
     size_divisor: std::cell::Cell<u32>,
     /// `PassNode.opaque` / `.transparent` / `lighting.enabled`.
-    opaque: bool,
-    transparent: bool,
-    lighting_enabled: bool,
+    opaque: Cell<bool>,
+    transparent: Cell<bool>,
+    lighting_enabled: Cell<bool>,
+    /// `this.scene` / `this.camera`.
+    scene: RefCell<Option<(SceneRef, CameraRef)>>,
+}
+
+/// `pass( scene, camera )`: a pass that renders `scene` through `camera`
+/// whenever a draw samples it.
+pub fn pass(scene: SceneRef, camera: CameraRef) -> PassNode {
+    let node = PassNode::new();
+    node.set_scene(scene, camera);
+    node
 }
 
 /// `pass( scene, camera, options )`'s options object, as far as the ported
@@ -169,7 +200,7 @@ impl PassNode {
         let camera_near = uniform_settable(Type::F32, vec![0.0]);
         let camera_far = uniform_settable(Type::F32, vec![0.0]);
 
-        Self {
+        let pass = Self(Rc::new(PassState {
             render_target,
             node,
             previous_texture_nodes: RefCell::new(HashMap::new()),
@@ -182,10 +213,31 @@ impl PassNode {
             owns_depth_texture: options.depth_texture.is_none(),
             layers: RefCell::new(None),
             size_divisor: std::cell::Cell::new(1),
-            opaque: true,
-            transparent: true,
-            lighting_enabled: true,
+            opaque: Cell::new(true),
+            transparent: Cell::new(true),
+            lighting_enabled: Cell::new(true),
+            scene: RefCell::new(None),
+        }));
+        // `PassTextureNode.passNode`: a draw that binds one of the pass's
+        // textures has the pass among its update-before nodes. The depth
+        // attachment only when it is this pass's own: a pass rendering into
+        // another's depth must not be taken for its producer.
+        pass.link(pass.0.render_target.texture().id());
+        if pass.0.owns_depth_texture {
+            pass.link(pass.depth_texture().id());
         }
+        pass
+    }
+
+    /// Register `texture_id` as filled by this pass's `updateBefore()`.
+    fn link(&self, texture_id: usize) {
+        crate::nodes::frame::register_texture_update(texture_id, &self.0);
+    }
+
+    /// `passNode.scene = scene; passNode.camera = camera` — what the pass
+    /// renders from `updateBefore()`.
+    pub fn set_scene(&self, scene: SceneRef, camera: CameraRef) {
+        *self.0.scene.borrow_mut() = Some((scene, camera));
     }
 
     /// `PixelationPassNode.pixelSize = n` — the render target becomes
@@ -213,18 +265,18 @@ impl PassNode {
     /// `passNode.opaque` — `false` skips the opaque half of the render list,
     /// and with it the skybox.
     pub fn set_opaque(&mut self, opaque: bool) {
-        self.opaque = opaque;
+        self.0.opaque.set(opaque);
     }
 
     /// `passNode.transparent`.
     pub fn set_transparent(&mut self, transparent: bool) {
-        self.transparent = transparent;
+        self.0.transparent.set(transparent);
     }
 
     /// `passNode.lighting = new Lighting(); passNode.lighting.enabled = false`
     /// — the pass renders every material with an empty light list.
     pub fn set_lighting_enabled(&mut self, enabled: bool) {
-        self.lighting_enabled = enabled;
+        self.0.lighting_enabled.set(enabled);
     }
 
     /// `passNode.getTexture( 'depth' )` — the pass's own depth attachment.
@@ -316,6 +368,7 @@ impl PassNode {
         } else {
             self.render_target.add_texture(name)
         };
+        self.link(texture.id());
         let node = texture_uv(&texture, uv());
         self.texture_nodes
             .borrow_mut()
@@ -342,6 +395,7 @@ impl PassNode {
         // name );` — the attachment has to exist before its shadow does.
         let _ = self.texture_node(name);
         let texture = self.render_target.add_previous_texture(name);
+        self.link(texture.id());
         let node = texture_uv(&texture, uv());
         self.previous_texture_nodes
             .borrow_mut()
@@ -377,10 +431,49 @@ impl PassNode {
         &self.render_target
     }
 
+    /// `PassNode.updateBefore( frame )`, called by hand.
+    ///
+    /// The renderer now renders the pass itself, the first time a draw in a
+    /// frame samples it, when the pass was given its scene and camera
+    /// ([`pass`], [`set_scene`](Self::set_scene)). This does the same render
+    /// and marks the pass done for the frame, so a draw later in the same
+    /// frame does not render it again. `docs/nodes.md` §57.
+    #[deprecated(
+        since = "0.1.1",
+        note = "give the pass its scene and camera with `pass( scene, camera )` or \
+                `set_scene`; the renderer renders it from `updateBefore()` (docs/nodes.md §57)"
+    )]
+    pub fn render(
+        &self,
+        renderer: &mut Renderer,
+        scene: &mut Scene,
+        camera: &mut dyn RenderCamera,
+    ) {
+        self.render_scene(renderer, scene, camera);
+        renderer.node_frame_mut().mark(
+            crate::nodes::frame::UpdatePhase::Before,
+            Rc::as_ptr(&self.0) as *const u8 as usize,
+        );
+    }
+
+    /// The render [`render`](Self::render) does, without marking the frame:
+    /// for the passes that wrap a `PassNode` and render it themselves
+    /// (`SsaaPassNode`'s samples, the toon outline).
+    pub(crate) fn render_scene(
+        &self,
+        renderer: &mut Renderer,
+        scene: &mut Scene,
+        camera: &mut dyn RenderCamera,
+    ) {
+        self.0.render_with(renderer, scene, camera);
+    }
+}
+
+impl PassState {
     /// `PassNode.updateBefore( frame )`: size the target to the drawing buffer,
     /// then `renderer.setRenderTarget( this.renderTarget ); renderer.render(
     /// this.scene, this.camera )` with the previous target restored after.
-    pub fn render(
+    fn render_with(
         &self,
         renderer: &mut Renderer,
         scene: &mut Scene,
@@ -418,9 +511,9 @@ impl PassNode {
         renderer.set_render_target(Some(self.render_target.clone()));
         renderer.set_mrt(self.mrt.borrow().clone());
         renderer.auto_clear_depth = self.auto_clear_depth;
-        renderer.opaque = self.opaque;
-        renderer.transparent = self.transparent;
-        renderer.lighting_enabled = self.lighting_enabled;
+        renderer.opaque = self.opaque.get();
+        renderer.transparent = self.transparent.get();
+        renderer.lighting_enabled = self.lighting_enabled.get();
         renderer.camera_layers = *self.layers.borrow();
 
         renderer.render(scene, camera);
@@ -432,6 +525,25 @@ impl PassNode {
         renderer.transparent = previous_transparent;
         renderer.lighting_enabled = previous_lighting;
         renderer.camera_layers = previous_layers;
+    }
+}
+
+impl NodeUpdate for PassState {
+    /// `this.updateBeforeType = NodeUpdateType.FRAME`.
+    fn update_before_type(&self) -> NodeUpdateType {
+        NodeUpdateType::Frame
+    }
+
+    /// `PassNode.updateBefore( frame )`. A pass with no scene has nothing to
+    /// render, and does not count, so it is tried again at the next draw.
+    fn update_before(&self, renderer: &mut Renderer) -> bool {
+        let Some((scene, camera)) = self.scene.borrow().clone() else {
+            return false;
+        };
+        let mut scene = scene.borrow_mut();
+        let mut camera = camera.borrow_mut();
+        self.render_with(renderer, &mut scene, &mut *camera);
+        true
     }
 }
 

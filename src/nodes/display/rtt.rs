@@ -23,33 +23,50 @@
 //!   [`BloomNode`](super::BloomNode) target. Three's anamorphic dump has the
 //!   matching `depth24plus` beside the `rgba16float`.
 //!
-//! The one ownership divergence is the same one `PassNode`, `SsaaPassNode` and
-//! `BloomNode` record in `docs/postprocessing.md`: three.js fires
-//! `updateBefore()` from inside the render that samples the texture, so the
-//! RTT pass is *recorded* after the pass that reads it and *submitted* before
-//! it. The port has the application call [`RttNode::render`] explicitly,
-//! before the reader's own render, which gives the GPU the same submission
-//! order.
+//! Three fires `updateBefore()` (`NodeUpdateType.FRAME`) from inside the
+//! render that samples the texture, so the RTT pass is *recorded* after the
+//! pass that reads it and *submitted* before it. The port's renderer does the
+//! same (`docs/nodes.md` §57); [`RttNode::render`], the explicit call the
+//! port used to need, is deprecated.
 
 use crate::materials::MeshBasicNodeMaterial;
 use crate::math::Color;
 use crate::nodes::tsl::{texture_uv, uv};
-use crate::nodes::NodeRef;
+use std::cell::Cell;
+use std::rc::Rc;
+
+use crate::nodes::{NodeRef, NodeUpdate, NodeUpdateType};
 use crate::objects::QuadMesh;
 use crate::renderer::{RenderTarget, RenderTargetOptions, Renderer};
 use crate::textures::{Texture, TextureFilter, TextureType, Wrapping};
 
 /// `rtt( node, width, height, options )`.
-pub struct RttNode {
+///
+/// A handle: clones share one node, and the renderer reaches it through its
+/// texture, the way three's `RTTNode` *is* its texture node.
+#[derive(Clone)]
+pub struct RttNode(Rc<RttState>);
+
+/// The handle reads through to what it shares.
+impl std::ops::Deref for RttNode {
+    type Target = RttState;
+
+    fn deref(&self) -> &RttState {
+        &self.0
+    }
+}
+
+/// What an [`RttNode`] handle shares.
+pub struct RttState {
     /// `this.renderTarget`.
     render_target: RenderTarget,
     /// `this._quadMesh`.
     quad: QuadMesh,
     /// `this.width` / `this.height` — `None` is three's `null`, the
     /// `autoResize` case that follows the drawing buffer.
-    size: Option<(u32, u32)>,
+    size: Cell<Option<(u32, u32)>>,
     /// `this._resolutionScale`.
-    resolution_scale: f64,
+    resolution_scale: Cell<f64>,
 }
 
 /// `rtt( node )` — a half-float target the size of the drawing buffer.
@@ -98,19 +115,21 @@ impl RttNode {
         material.name = "RTT";
         material.fragment_node = Some(node);
 
-        Self {
+        let node = Self(Rc::new(RttState {
             render_target,
             quad: QuadMesh::new(material),
-            size: None,
-            resolution_scale: 1.0,
-        }
+            size: Cell::new(None),
+            resolution_scale: Cell::new(1.0),
+        }));
+        crate::nodes::frame::register_texture_update(node.render_target.texture().id(), &node.0);
+        node
     }
 
     /// `new RTTNode( node, width, height )` — a fixed-size target, which turns
     /// `autoResize` off.
     pub fn with_size(node: NodeRef, width: u32, height: u32) -> Self {
-        let mut node = Self::new(node);
-        node.size = Some((width, height));
+        let node = Self::new(node);
+        node.size.set(Some((width, height)));
         node.set_size(width, height);
         node
     }
@@ -130,29 +149,21 @@ impl RttNode {
 
     /// `rttNode.setResolutionScale( scale )`.
     pub fn set_resolution_scale(&mut self, resolution_scale: f64) {
-        self.resolution_scale = resolution_scale;
-        if let Some((width, height)) = self.size {
+        self.resolution_scale.set(resolution_scale);
+        if let Some((width, height)) = self.size.get() {
             self.set_size(width, height);
         }
     }
 
     /// `rttNode.getResolutionScale()`.
     pub fn resolution_scale(&self) -> f64 {
-        self.resolution_scale
-    }
-
-    /// `RTTNode.autoResize` — true while no explicit size was given.
-    pub fn auto_resize(&self) -> bool {
-        self.size.is_none()
+        self.resolution_scale.get()
     }
 
     /// `RTTNode.setSize( width, height )` — `Math.floor`, like every other
     /// resolution scale in the node system.
     pub fn set_size(&self, width: u32, height: u32) {
-        self.render_target.set_size(
-            (width as f64 * self.resolution_scale).floor() as u32,
-            (height as f64 * self.resolution_scale).floor() as u32,
-        );
+        self.0.set_size(width, height);
     }
 
     /// `renderTarget.texture`.
@@ -182,10 +193,43 @@ impl RttNode {
         &self.quad.material
     }
 
+    /// `RTTNode.autoResize` — true while no explicit size was given.
+    pub fn auto_resize(&self) -> bool {
+        self.size.get().is_none()
+    }
+
+    /// `RTTNode.updateBefore( frame )`, called by hand.
+    ///
+    /// The renderer now draws the quad itself, the first time in a frame a
+    /// draw samples the node. This does the same and marks the node done for
+    /// the frame, so that draw does not repeat it. `docs/nodes.md` §57.
+    #[deprecated(
+        since = "0.1.1",
+        note = "the renderer runs `updateBefore()` when a draw samples the node (docs/nodes.md §57)"
+    )]
+    pub fn render(&self, renderer: &mut Renderer) {
+        self.0.render_quad(renderer);
+        renderer.node_frame_mut().mark(
+            crate::nodes::frame::UpdatePhase::Before,
+            Rc::as_ptr(&self.0) as *const u8 as usize,
+        );
+    }
+}
+
+impl RttState {
+    /// `RTTNode.setSize( width, height )` — `Math.floor`, like every other
+    /// resolution scale in the node system.
+    fn set_size(&self, width: u32, height: u32) {
+        self.render_target.set_size(
+            (width as f64 * self.resolution_scale.get()).floor() as u32,
+            (height as f64 * self.resolution_scale.get()).floor() as u32,
+        );
+    }
+
     /// `RTTNode.updateBefore( frame )`: resize if `autoResize`, then draw the
     /// quad into the target with the renderer's state reset around it.
-    pub fn render(&self, renderer: &mut Renderer) {
-        if self.auto_resize() {
+    fn render_quad(&self, renderer: &mut Renderer) {
+        if self.size.get().is_none() {
             let (width, height) = renderer.drawing_buffer_size();
             self.set_size(width, height);
         }
@@ -208,6 +252,18 @@ impl RttNode {
         renderer.set_mrt(previous_mrt);
         renderer.set_clear_color(previous_clear_color, previous_clear_alpha);
         renderer.auto_clear = previous_auto_clear;
+    }
+}
+
+impl NodeUpdate for RttState {
+    /// `this.updateBeforeType = NodeUpdateType.FRAME`.
+    fn update_before_type(&self) -> NodeUpdateType {
+        NodeUpdateType::Frame
+    }
+
+    fn update_before(&self, renderer: &mut Renderer) -> bool {
+        self.render_quad(renderer);
+        true
     }
 }
 

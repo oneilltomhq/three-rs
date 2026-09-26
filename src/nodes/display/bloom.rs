@@ -35,7 +35,7 @@ use crate::nodes::tsl::{
     texture_sample, texture_uv, to_var, uniform_array_vec3, uniform_settable, uniform_value, uv,
     vec4, vec4_join,
 };
-use crate::nodes::NodeRef;
+use crate::nodes::{NodeRef, NodeUpdate, NodeUpdateType};
 use crate::objects::QuadMesh;
 use crate::renderer::{RenderTarget, RenderTargetOptions, Renderer};
 use crate::textures::{TextureFilter, TextureType};
@@ -170,7 +170,25 @@ struct BlurMip {
 }
 
 /// `bloom( inputNode, strength, radius, threshold )`.
-pub struct BloomNode {
+///
+/// A handle: clones share one node. The renderer runs its twelve quads from
+/// `updateBefore()` the first time in a frame that a draw samples
+/// [`node`](Self::node) (`docs/nodes.md` §57).
+#[derive(Clone)]
+pub struct BloomNode(Rc<BloomState>);
+
+/// The handle reads through to what it shares, `strength` / `radius` /
+/// `threshold` included.
+impl std::ops::Deref for BloomNode {
+    type Target = BloomState;
+
+    fn deref(&self) -> &BloomState {
+        &self.0
+    }
+}
+
+/// What a [`BloomNode`] handle shares.
+pub struct BloomState {
     /// `this._renderTargetBright`.
     bright: RenderTarget,
     /// `this._renderTargetsHorizontal` / `._renderTargetsVertical`.
@@ -192,7 +210,7 @@ pub struct BloomNode {
     pub radius: SettableValue,
     pub threshold: SettableValue,
     /// `this._resolutionScale`.
-    resolution_scale: f64,
+    resolution_scale: std::cell::Cell<f64>,
 }
 
 /// `bloom( node )` — `strength` 1, `radius` 0, `threshold` 0, the defaults
@@ -267,7 +285,7 @@ impl BloomNode {
 
         let node = to_var(None, texture_uv(&horizontal[0].texture(), uv()));
 
-        Self {
+        let bloom = Self(Rc::new(BloomState {
             bright,
             horizontal,
             vertical,
@@ -278,8 +296,12 @@ impl BloomNode {
             strength,
             radius,
             threshold,
-            resolution_scale: 0.5,
-        }
+            resolution_scale: std::cell::Cell::new(0.5),
+        }));
+        // `passTexture( this, … )`: the output texture node's pass is the
+        // bloom node, so a draw that samples it runs the bloom first.
+        crate::nodes::frame::register_texture_update(bloom.horizontal[0].texture().id(), &bloom.0);
+        bloom
     }
 
     /// `new RenderTarget( 1, 1, { depthBuffer: false, type: HalfFloatType } )`
@@ -407,17 +429,37 @@ impl BloomNode {
 
     /// `bloomNode.setResolutionScale( scale )`.
     pub fn set_resolution_scale(&mut self, resolution_scale: f64) {
-        self.resolution_scale = resolution_scale;
+        self.resolution_scale.set(resolution_scale);
     }
 
     /// `bloomNode.getResolutionScale()`.
     pub fn resolution_scale(&self) -> f64 {
-        self.resolution_scale
+        self.resolution_scale.get()
     }
 
+    /// `BloomNode.updateBefore( frame )`, called by hand.
+    ///
+    /// The renderer now runs the quads itself, the first time in a frame a
+    /// draw samples [`node`](Self::node). This does the same and marks the
+    /// node done for the frame, so that draw does not repeat it.
+    /// `docs/nodes.md` §57.
+    #[deprecated(
+        since = "0.1.1",
+        note = "the renderer runs `updateBefore()` when a draw samples the node (docs/nodes.md §57)"
+    )]
+    pub fn render(&self, renderer: &mut Renderer) {
+        self.0.render_quads(renderer);
+        renderer.node_frame_mut().mark(
+            crate::nodes::frame::UpdatePhase::Before,
+            Rc::as_ptr(&self.0) as *const u8 as usize,
+        );
+    }
+}
+
+impl BloomState {
     /// `BloomNode.setSize( width, height )`.
     pub fn set_size(&self, width: u32, height: u32) {
-        let sizes = mip_sizes(width, height, self.resolution_scale);
+        let sizes = mip_sizes(width, height, self.resolution_scale.get());
         let (resx, resy) = sizes[0];
         self.bright.set_size(resx, resy);
 
@@ -438,7 +480,7 @@ impl BloomNode {
     /// passes clears its target before the quad covers it. All twelve are
     /// single-attachment and none has a depth attachment, because every bloom
     /// target is `depthBuffer: false`.
-    pub fn render(&self, renderer: &mut Renderer) {
+    fn render_quads(&self, renderer: &mut Renderer) {
         // `_rendererState = RendererUtils.resetRendererState( renderer, … )`.
         let previous_target = renderer.render_target();
         let previous_mrt = renderer.mrt();
@@ -474,6 +516,18 @@ impl BloomNode {
         renderer.set_mrt(previous_mrt);
         renderer.set_clear_color(previous_clear_color, previous_clear_alpha);
         renderer.auto_clear = previous_auto_clear;
+    }
+}
+
+impl NodeUpdate for BloomState {
+    /// `this.updateBeforeType = NodeUpdateType.FRAME`.
+    fn update_before_type(&self) -> NodeUpdateType {
+        NodeUpdateType::Frame
+    }
+
+    fn update_before(&self, renderer: &mut Renderer) -> bool {
+        self.render_quads(renderer);
+        true
     }
 }
 
