@@ -1244,7 +1244,17 @@ fn setup_standard(
         .push(diffuse_contribution().assign(diffuse_color().rgb().mul(metalness_node.one_minus())));
 
     // `MeshPhysicalNodeMaterial.setupVariants()`, after
-    // `MeshStandardNodeMaterial`'s: clearcoat first, then anisotropy.
+    // `MeshStandardNodeMaterial`'s: diffuse roughness, clearcoat, sheen, then
+    // anisotropy.
+    //
+    // DIFFUSE ROUGHNESS — `useDiffuseRoughness` is `diffuseRoughness > 0`, and
+    // `DiffuseRoughness` is `materialDiffuseRoughness.clamp()`.
+    let use_diffuse_roughness =
+        material.kind == MaterialKind::Physical && material.diffuse_roughness > 0.0;
+    if use_diffuse_roughness {
+        fragment.push(diffuse_roughness().assign(material_diffuse_roughness().clamp(0.0, 1.0)));
+    }
+
     let use_clearcoat = material.kind == MaterialKind::Physical && material.clearcoat > 0.0;
     let use_anisotropy = material.kind == MaterialKind::Physical && material.anisotropy > 0.0;
 
@@ -1379,7 +1389,13 @@ fn setup_standard(
     };
 
     let outgoing = if scene_lighting && (environment.is_some() || !lights.is_empty()) {
-        let model = Physical::start(use_sheen, use_clearcoat, opaque_frame, fragment);
+        let model = Physical::start(
+            use_sheen,
+            use_clearcoat,
+            use_diffuse_roughness,
+            opaque_frame,
+            fragment,
+        );
 
         // `LightingContextNode`'s five accumulators. three.js declares each at
         // the point of its first use; hoisting the zeros here is the one

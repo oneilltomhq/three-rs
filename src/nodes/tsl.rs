@@ -1176,6 +1176,17 @@ pub fn material_sheen_roughness() -> NodeRef {
     )
 }
 
+/// `materialDiffuseRoughness` — `MaterialNode.DIFFUSE_ROUGHNESS` without a
+/// map, the raw uniform. `setupVariants()` clamps it into `DiffuseRoughness`.
+pub fn material_diffuse_roughness() -> NodeRef {
+    uniform(
+        UniformSource::MaterialDiffuseRoughness,
+        Type::F32,
+        UniformGroup::Object,
+        None,
+    )
+}
+
 /// `materialNormalScale` — a `vec2`.
 /// `materialAnisotropyVector` — `vec2( anisotropy * cos( anisotropyRotation ),
 /// anisotropy * sin( anisotropyRotation ) )`, which three keeps as one uniform
@@ -2614,6 +2625,8 @@ prop!(sheen, "Sheen", Type::Vec3);
 prop!(sheen_roughness, "SheenRoughness", Type::F32);
 prop!(sheen_specular_direct, "sheenSpecularDirect", Type::Vec3);
 prop!(sheen_specular_indirect, "sheenSpecularIndirect", Type::Vec3);
+// `MeshPhysicalNodeMaterial.setupVariants()`' diffuse-roughness property.
+prop!(diffuse_roughness, "DiffuseRoughness", Type::F32);
 prop!(
     single_scattering_dielectric,
     "singleScatteringDielectric",

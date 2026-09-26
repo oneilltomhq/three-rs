@@ -2984,6 +2984,7 @@ impl Renderer {
                 material_sheen: item.material.sheen,
                 material_sheen_color: item.material.sheen_color,
                 material_sheen_roughness: item.material.sheen_roughness,
+                material_diffuse_roughness: item.material.diffuse_roughness,
                 material_normal_scale: item.material.normal_scale,
                 material_anisotropy: item.material.anisotropy,
                 material_anisotropy_rotation: item.material.anisotropy_rotation,

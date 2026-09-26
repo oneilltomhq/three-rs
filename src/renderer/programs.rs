@@ -524,6 +524,8 @@ pub struct UniformContext<'a> {
     pub material_sheen: f64,
     pub material_sheen_color: Color,
     pub material_sheen_roughness: f64,
+    /// `MeshPhysicalMaterial.diffuseRoughness`.
+    pub material_diffuse_roughness: f64,
     pub material_normal_scale: Vector2,
     /// `MeshPhysicalMaterial.anisotropy` / `.anisotropyRotation` /
     /// `.clearcoat` / `.clearcoatRoughness` / `.clearcoatNormalScale`.
@@ -625,6 +627,7 @@ impl Default for UniformContext<'_> {
             material_sheen: 0.0,
             material_sheen_color: Color::new(0.0, 0.0, 0.0),
             material_sheen_roughness: 1.0,
+            material_diffuse_roughness: 0.0,
             material_normal_scale: Vector2::new(1.0, 1.0),
             material_anisotropy: 0.0,
             material_anisotropy_rotation: 0.0,
@@ -752,6 +755,9 @@ impl UniformContext<'_> {
                 ],
                 UniformSource::MaterialSheenRoughness => {
                     vec![self.material_sheen_roughness as f32]
+                }
+                UniformSource::MaterialDiffuseRoughness => {
+                    vec![self.material_diffuse_roughness as f32]
                 }
                 UniformSource::MaterialNormalScale => vec![
                     self.material_normal_scale.x as f32,
