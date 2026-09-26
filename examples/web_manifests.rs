@@ -258,6 +258,12 @@ mod webgpu_particles;
 #[path = "webgpu_shadowmap_opacity.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_shadowmap_opacity;
+#[path = "webgpu_texturegather.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_texturegather;
+#[path = "webgpu_texturegrad.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_texturegrad;
 
 #[path = "webgpu_instance_sprites.rs"]
 #[allow(dead_code)] // only `init()` is called here
@@ -430,6 +436,11 @@ const GRADED: &[(&str, fn())] = &[
     ("webgpu_shadowmap_opacity", || {
         drop(webgpu_shadowmap_opacity::init())
     }),
+    ("webgpu_texturegrad", || drop(webgpu_texturegrad::init())),
+    (
+        "webgpu_texturegather",
+        || drop(webgpu_texturegather::init()),
+    ),
 ];
 
 /// Where the committed manifests live, one `<example>.json` each.

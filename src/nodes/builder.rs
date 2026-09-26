@@ -796,6 +796,18 @@ impl NodeBuilder {
                     | SampleMode::LoadLayer(l)
                     | SampleMode::SampleLayer(l)
                     | SampleMode::Compare(l) => v.push(l.clone()),
+                    SampleMode::Grad(x, y) => {
+                        v.push(x.clone());
+                        v.push(y.clone());
+                    }
+                    SampleMode::Gather { component, offset } => {
+                        v.push(component.clone());
+                        v.extend(offset.clone());
+                    }
+                    SampleMode::GatherCompare { compare, offset } => {
+                        v.push(compare.clone());
+                        v.extend(offset.clone());
+                    }
                     _ => {}
                 }
                 v
@@ -1867,7 +1879,10 @@ impl NodeBuilder {
                 let (texture, uv, mode) = (texture.clone(), uv.clone(), mode.clone());
                 let mode_is_color = matches!(
                     mode,
-                    SampleMode::Sample | SampleMode::Grad | SampleMode::Level(_) | SampleMode::Load
+                    SampleMode::Sample
+                        | SampleMode::Grad(..)
+                        | SampleMode::Level(_)
+                        | SampleMode::Load
                 ) && matches!(*texture, TextureSource::Texture2D(_));
                 let (name, kind) = self.texture_slots(&texture);
                 let suv = self.generate(&uv);
@@ -1885,18 +1900,67 @@ impl NodeBuilder {
                     SampleMode::Sample => {
                         format!("textureSample( {name}, {name}_sampler, {suv} )")
                     }
-                    SampleMode::Grad => format!(
-                        "textureSampleGrad( {name}, {name}_sampler, {suv}, vec2<f32>( 0.0, 0.0 ), vec2<f32>( 0.0, 0.0 ) )"
-                    ),
+                    SampleMode::Grad(grad_x, grad_y) => {
+                        let sx = self.format(&grad_x, Type::Vec2);
+                        let sy = self.format(&grad_y, Type::Vec2);
+                        format!("textureSampleGrad( {name}, {name}_sampler, {suv}, {sx}, {sy} )")
+                    }
+                    // `generateTextureGather()`, with three's spacing: no
+                    // space before the closing parenthesis without an offset.
+                    SampleMode::Gather { component, offset } => {
+                        let scomponent = self.format(&component, Type::I32);
+                        match offset {
+                            Some(offset) => {
+                                let soffset = self.format(&offset, Type::IVec2);
+                                format!(
+                                    "textureGather( {scomponent}, {name}, {name}_sampler, {suv}, {soffset} )"
+                                )
+                            }
+                            None => format!(
+                                "textureGather( {scomponent}, {name}, {name}_sampler, {suv})"
+                            ),
+                        }
+                    }
+                    // `generateTextureGatherCompare()`, the same spacing.
+                    //
+                    // Quirk kept: `TextureNode.generate()` types a gather's
+                    // snippet from `texture.type`, and a `DepthTexture` is
+                    // `UnsignedIntType` by default, so three takes the result
+                    // for a `uvec4` and formats it to the node's `vec4` —
+                    // `vec4<f32>( textureGatherCompare( … ) )`, a no-op cast
+                    // in WGSL (`docs/nodes.md` §44).
+                    SampleMode::GatherCompare { compare, offset } => {
+                        let int_typed = match &*texture {
+                            TextureSource::Depth(t) | TextureSource::ShadowMap(t) => {
+                                t.texture_type() == crate::textures::TextureType::UnsignedInt
+                            }
+                            _ => false,
+                        };
+                        let scompare = self.format(&compare, Type::F32);
+                        let gather = match offset {
+                            Some(offset) => {
+                                let soffset = self.format(&offset, Type::IVec2);
+                                format!(
+                                    "textureGatherCompare( {name}, {name}_sampler, {suv}, {scompare}, {soffset} )"
+                                )
+                            }
+                            None => format!(
+                                "textureGatherCompare( {name}, {name}_sampler, {suv}, {scompare})"
+                            ),
+                        };
+                        if int_typed {
+                            format!("vec4<f32>( {gather} )")
+                        } else {
+                            gather
+                        }
+                    }
                     // `texture3D( … ).sample( uv ).r`: the texture node is
                     // built as a `float`, so the fetch itself is narrowed and
                     // the node's var is an `f32` — three's
                     // `nodeVar7 = textureSampleLevel( … ).x`.
                     SampleMode::Level(level) if node.ty().components() == 1 => {
                         let slevel = self.generate(&level);
-                        format!(
-                            "textureSampleLevel( {name}, {name}_sampler, {suv}, {slevel} ).x"
-                        )
+                        format!("textureSampleLevel( {name}, {name}_sampler, {suv}, {slevel} ).x")
                     }
                     SampleMode::Level(level) => {
                         let slevel = self.generate(&level);

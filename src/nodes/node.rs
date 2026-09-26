@@ -820,12 +820,26 @@ pub enum SampleMode {
     Sample,
     /// `textureSampleLevel( t, t_sampler, uv, level )`.
     Level(NodeRef),
-    /// `textureSampleGrad( t, t_sampler, uv, vec2( 0 ), vec2( 0 ) )` —
-    /// `textureNode.grad( vec2(), vec2() )`, which is how `PMREMUtils`'
-    /// `bilinearCubeUV` turns anisotropic filtering off on the cubeUV atlas.
-    /// The two gradients are always the zero constants three passes, so they
-    /// are baked rather than carried as nodes.
-    Grad,
+    /// `textureSampleGrad( t, t_sampler, uv, gradX, gradY )` —
+    /// `textureNode.grad( gradX, gradY )` (`generateTextureGrad()`), each
+    /// gradient built as a `vec2`.
+    Grad(NodeRef, NodeRef),
+    /// `textureGather( component, t, t_sampler, uv[, offset] )` —
+    /// `textureNode.gather( component )`, optionally `.offset( ivec2 )`
+    /// (`WGSLNodeBuilder.generateTextureGather()`): one channel of the four
+    /// texels a bilinear tap would read, from mip level 0.
+    Gather {
+        component: NodeRef,
+        offset: Option<NodeRef>,
+    },
+    /// `textureGatherCompare( t, t_sampler, uv, depth[, offset] )` —
+    /// `depthNode.gather().compare( depth )` on a depth texture with a
+    /// comparison sampler (`generateTextureGatherCompare()`): the four
+    /// texels' comparison results.
+    GatherCompare {
+        compare: NodeRef,
+        offset: Option<NodeRef>,
+    },
     /// The non-filterable path: `textureLoad` against `textureDimensions`,
     /// with no sampler binding at all. What Three emits for a depth texture.
     Load,
