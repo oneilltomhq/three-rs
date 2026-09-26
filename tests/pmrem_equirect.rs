@@ -21,12 +21,9 @@ use three_rs::{QuadMesh, Renderer, RendererParameters, Texture, TextureFilter, T
 
 const WIDTH: u32 = 1024;
 const HEIGHT: u32 = 512;
-/// `_setSize( 1024 / 4 )` ⇒ `lodMax = 8`, `cubeSize = 256`, atlas 768×1024.
+/// `_setSize( 1024 / 4 )` ⇒ a 256² cube with `maxLod = log2( 256 ) - 3 = 5`.
 const FACE: u32 = 256;
-const ATLAS_WIDTH: u32 = 768;
-const ATLAS_HEIGHT: u32 = 1024;
-/// `_lodMeshes.length` — `lodMax - LOD_MIN + 1 + EXTRA_LODS`.
-const LOD_COUNT: usize = 11;
+const MAX_LOD: u32 = 5;
 
 fn spot1lux() -> Texture {
     HdrLoader::new()
@@ -67,11 +64,11 @@ fn lit(pixels: &[f32], width: u32, rect: (u32, u32, u32, u32)) -> Vec<(u32, u32,
 }
 
 #[test]
-fn the_equirect_source_and_the_atlas_it_becomes() {
+fn the_equirect_source_and_the_cube_it_becomes() {
     let mut renderer = Renderer::new(RendererParameters { antialias: false }).unwrap();
 
     the_bright_texel_lands_on_the_flipped_row(&mut renderer);
-    the_atlas_lights_one_face_and_every_lod(&mut renderer);
+    the_pmrem_lights_one_face_and_every_lod(&mut renderer);
 }
 
 /// **The `flipY` gate.** `HDRLoader` sets `texData.flipY = true`, so the
@@ -131,63 +128,49 @@ fn the_bright_texel_lands_on_the_flipped_row(renderer: &mut Renderer) {
     assert_eq!(rgb[0], 26464.0);
 }
 
-/// **The atlas gate.** `fromEquirectangular` through the inherited GGX chain:
-/// a 768×1024 atlas, one delta direction, so
+/// **The cube gate.** `fromEquirectangular` into the mipmapped PMREM cube
+/// 2f80402 introduced: 256² faces, six levels, one delta direction, so
 ///
-/// * exactly one of the six mip-0 face tiles is lit and the other five are
-///   black — a permuted `FACE_LIB`, a smeared blit or a viewport in the wrong
-///   tile all break this, and none of them would stop the image rendering;
-/// * every one of the eleven LOD tiles is lit, which is the whole prefilter
-///   ladder having run through this entry point and not just the first pass.
+/// * exactly one of the six faces of level 0 is lit and the other five are
+///   black — level 0 is roughness 0, which samples the source cube's level 0
+///   directly, so a permuted face or a smeared copy breaks this, and none of
+///   them would stop the image rendering;
+/// * every level is lit, which is the whole prefilter (the GGX levels and the
+///   integration levels) having run through this entry point and not just
+///   the first pass.
 ///
 /// This is `webgpu_pmrem_cubemap`'s gate re-run through the new entry point;
-/// what it adds is that the equirect material really wrote the atlas, since a
-/// shader that sampled the source at the wrong uv would light a different face
-/// or none.
-fn the_atlas_lights_one_face_and_every_lod(renderer: &mut Renderer) {
+/// what it adds is that the equirect material really wrote the source cube,
+/// since a shader that sampled the map at the wrong uv would light a
+/// different face or none.
+fn the_pmrem_lights_one_face_and_every_lod(renderer: &mut Renderer) {
     let mut environment = PmremEnvironment::from_equirectangular(&spot1lux());
     environment.update(renderer).unwrap();
-    let target = environment.target().expect("update() built the atlas");
-    assert_eq!(target.size(), (ATLAS_WIDTH, ATLAS_HEIGHT));
+    let pmrem = environment.texture();
+    assert_eq!(pmrem.size(), (FACE, FACE));
+    assert_eq!(pmrem.mip_level_count(), MAX_LOD + 1);
 
-    let (width, _, pixels) = renderer.read_target_pixels_rgba16f(target).unwrap();
-
-    // Mip 0: the six faces, three across and two down, 256 each.
-    let faces: Vec<usize> = (0..6)
-        .map(|face| {
-            let (col, row) = (face % 3, face / 3);
-            lit(
-                &pixels,
-                width,
-                (col as u32 * FACE, row as u32 * FACE, FACE, FACE),
-            )
-            .len()
-        })
-        .collect();
-    assert_eq!(
-        faces.iter().filter(|n| **n > 0).count(),
-        1,
-        "one direction lights one face of mip 0; lit texels per face were {faces:?}"
-    );
-
-    // The eleven LOD tiles, from the generator's own geometry: the prefilter
-    // spreads the delta over the whole sphere, so every level is lit.
-    let sizes: Vec<usize> = three_rs::renderer::pmrem::create_planes(8)
-        .iter()
-        .map(|mesh| mesh.size)
-        .collect();
-    assert_eq!(sizes.len(), LOD_COUNT);
-    for (lod, size) in sizes.iter().enumerate() {
-        let (x, y, size) = three_rs::renderer::pmrem::tile_rect(8, FACE as usize, *size, lod);
-        let count = lit(
-            &pixels,
-            width,
-            (x as u32, y as u32, 3 * size as u32, 2 * size as u32),
-        )
-        .len();
+    for lod in 0..=MAX_LOD {
+        let size = FACE >> lod;
+        let faces: Vec<usize> = (0..6)
+            .map(|face| {
+                let (width, height, pixels) =
+                    renderer.read_cube_pixels_rgba16f(pmrem, face, lod).unwrap();
+                assert_eq!((width, height), (size, size), "lod {lod} face {face}");
+                lit(&pixels, width, (0, 0, width, height)).len()
+            })
+            .collect();
+        if lod == 0 {
+            assert_eq!(
+                faces.iter().filter(|n| **n > 0).count(),
+                1,
+                "one direction lights one face of level 0; lit texels per face were {faces:?}"
+            );
+        }
         assert!(
-            count > 0,
-            "LOD {lod} ({size}² faces at ( {x}, {y} )) is black, so its GGX step did not run"
+            faces.iter().any(|n| *n > 0),
+            "LOD {lod} ({size}² faces) is black, so its prefilter pass did not run"
         );
+        println!("LOD {lod} ({size}² faces): lit texels per face {faces:?}");
     }
 }

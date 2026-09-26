@@ -1,5 +1,7 @@
 # `webgpu_deferred`
 
+2026-09-25: regraded against three.js 5f610f5 (the cube PMREM of 2f80402, #146): 0 of 100000 pixels (was 54), with the background now through `CubeMapNode` as the page has it.
+
 Status: **green.** 54 of 100000 pixels against three.js r186's own
 `test/e2e/image.js`, threshold 0.1%. Intel Iris Xe, Mesa 25.3.6, wgpu 30.0.1 on
 Vulkan.

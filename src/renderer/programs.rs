@@ -779,14 +779,20 @@ impl UniformContext<'_> {
             };
 
             let offset = member.offset as usize;
-            // The one member whose bits are not an f32's: `ComputeNode`'s
-            // element count, `uniform( count, 'uint' )`. It rides
+            // The two members whose bits are not an f32's: `ComputeNode`'s
+            // element count, `uniform( count, 'uint' )`, and PMREM's
+            // `uniform( INTEGRATION_SIZE, 'int' )` loop bound. They ride
             // `UniformSource::Value` like every other baked value, so the type
-            // is what says how to write it. Exact for counts below 2^24, which
-            // is every count a `dispatchWorkgroups` limit of 65535 groups of 64
-            // can reach anyway.
+            // is what says how to write them. Exact for magnitudes below 2^24,
+            // which is every count a `dispatchWorkgroups` limit of 65535 groups
+            // of 64 can reach anyway.
             if member.ty == Type::U32 {
                 let raw: Vec<u32> = values.iter().map(|&v| v as u32).collect();
+                data[offset..offset + raw.len() * 4].copy_from_slice(bytemuck::cast_slice(&raw));
+                continue;
+            }
+            if member.ty == Type::I32 {
+                let raw: Vec<i32> = values.iter().map(|&v| v as i32).collect();
                 data[offset..offset + raw.len() * 4].copy_from_slice(bytemuck::cast_slice(&raw));
                 continue;
             }

@@ -24,14 +24,14 @@ pub enum Background {
     Node(crate::nodes::NodeRef),
     /// `scene.background = <the texture of a generated PMREM>`.
     ///
-    /// Upstream this is a plain `Texture` whose `mapping` is
-    /// `CubeUVReflectionMapping`; `NodeManager.getBackgroundNode()` turns it
-    /// into `pmremTexture( background )` and `Background.update()` wraps that
-    /// in the node branch's context — `getUV` is `backgroundRotation.mul(
+    /// Upstream this is the PMREM cube render target's texture, flagged
+    /// `isPMREMTexture`; `NodeManager.getBackgroundNode()` turns it into
+    /// `pmremTexture( background )` and `Background.update()` wraps that in
+    /// the node branch's context — `getUV` is `backgroundRotation.mul(
     /// normalWorldGeometry )` and `getTextureLevel` is `backgroundBlurriness`.
-    /// The port carries the handle rather than the texture, because the three
-    /// cubeUV uniforms a cubeUV read needs travel with it; the renderer builds
-    /// the node, so an application writes the one line the page does.
+    /// The port carries the handle rather than the texture, because the
+    /// `maxLod` uniform the read needs travels with it; the renderer builds the
+    /// node, so an application writes the one line the page does.
     Pmrem(crate::materials::environment::PmremHandle),
 }
 
@@ -72,8 +72,8 @@ pub struct Scene {
     /// `scene.environmentNode`, which `NodeMaterial.setupEnvironment()` falls
     /// back to when neither `builder.context.environment` nor the material's
     /// own `envNode` is set. The port carries the generated PMREM's handle for
-    /// the reason [`Background::Pmrem`] does: the three cubeUV shape uniforms a
-    /// cubeUV read needs travel with the texture.
+    /// the reason [`Background::Pmrem`] does: the `maxLod` uniform the read needs
+    /// travels with the texture.
     ///
     /// Assigning it after a material has drawn once needs
     /// [`MeshBasicNodeMaterial::set_needs_update`] on that material, exactly as

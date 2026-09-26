@@ -39,7 +39,8 @@ the examples and grader read from, and the optional d3-gallery checkout. The
 short version:
 
 ```sh
-git clone --branch r186 --depth 1 https://github.com/mrdoob/three.js ~/src/vendor/three.js
+git clone https://github.com/mrdoob/three.js ~/src/vendor/three.js
+git -C ~/src/vendor/three.js checkout 5f610f5   # the r187 tag, once upstream tags it
 (cd ~/src/vendor/three.js && npm ci)
 cargo test -p sdf-text --lib                # sdf-text unit tests; no GPU
 cargo test -p three-rs --lib                # three-rs unit tests; no GPU

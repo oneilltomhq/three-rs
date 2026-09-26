@@ -63,7 +63,7 @@ use three_rs::nodes::tsl::{
     position_view, roughness, vec4_join, OverrideNodes,
 };
 use three_rs::objects::Background;
-use three_rs::renderer::PassOptions;
+use three_rs::renderer::{cube_render_target, PassOptions};
 use three_rs::Timer;
 use three_rs::{
     Color, Group, Mesh, PassNode, PerspectiveCamera, PointLight, RenderPipeline, Renderer,
@@ -127,10 +127,17 @@ pub fn init() -> App {
         .unwrap();
 
     // `texture.mapping = THREE.EquirectangularReflectionMapping; scene.background
-    // = texture; scene.environment = texture`.
+    // = texture`: at `backgroundBlurriness` 0 an equirectangular background is
+    // not a PMREM (`NodeManager.updateBackground()` takes `pmremTexture` only
+    // for blurriness or `isPMREMTexture`), so `CubeMapNode` converts it into a
+    // cube once and the skybox samples that.
+    let background = cube_render_target::from_equirectangular_texture(&mut renderer, &texture)
+        .expect("the equirectangular background converts to a cube");
+    scene.background = Some(Background::CubeTexture(background));
+
+    // `scene.environment = texture`: the same map, PMREM-filtered.
     let mut environment = PmremEnvironment::from_equirectangular(&texture);
     environment.update(&mut renderer).unwrap();
-    scene.background = Some(Background::Pmrem(environment.handle()));
     scene.environment = Some(environment.handle());
 
     // `const teapotGeometry = new TeapotGeometry( 0.4, 18 ); … teapot.position.y

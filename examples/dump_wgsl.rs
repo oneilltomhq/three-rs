@@ -1439,11 +1439,11 @@ fn main() {
         },
     );
 
-    // `webgpu_pmrem_cubemap`: the two `PMREMGenerator` materials. Three's own
-    // dump of them is `m00`/`m01` (`PMREM_cubemap`) and `m02`/`m03`
-    // (`PMREM_ggx`) in the scout's `dump-pmrem_cubemap/`. The numbers baked
-    // into the GGX shader are the ones a 256² source cube produces: a 768×1024
-    // atlas and `lodMax = 8`.
+    // The `PMREMGenerator` materials of three.js 2f80402 on. Three's own dump
+    // of `PMREM_ggx` and `PMREM_integration` is `m03`/`m04` and `m05`/`m06` in
+    // `target/dumps/webgpu_pmrem_test/`; `PMREM_blur` is
+    // `webgpu_postprocessing_ca`'s. All three read the generator's source
+    // cube; the uniforms they are driven with change no code.
     let hdr_cube = CubeTexture::new(
         (0..6)
             .map(|_| Image::rgba16float(4, 4, &[0u16; 4 * 4 * 4]))
@@ -1454,20 +1454,13 @@ fn main() {
         &three_rs::renderer::pmrem::cubemap_material(&hdr_cube),
         SetupContext::default(),
     );
-    let (ggx, _ggx_uniforms) = three_rs::renderer::pmrem::ggx_material(8, 768.0, 1024.0);
-    show("pmrem_ggx", &ggx, SetupContext::default());
+    for (label, material) in three_rs::renderer::pmrem::dump_materials() {
+        show(label, &material, SetupContext::default());
+    }
 
-    // `fromScene( scene, 0.04 )`'s extra pass: `_blur` /
-    // `sphericalGaussianBlur`, which only a non-zero sigma reaches. Three's
-    // dump of it is `m08`/`m09` (`PMREM_blur`) in the scout's
-    // `dump-postprocessing_ca/`. Same atlas geometry as the GGX pass, so the
-    // same 768x1024.
-    let (blur, _blur_uniforms) = three_rs::renderer::pmrem::blur_material(8, 768.0, 1024.0);
-    show("pmrem_blur", &blur, SetupContext::default());
-
-    // `webgpu_pmrem_test`: the third `PMREMGenerator` material, the one that
-    // is the whole delta between the two examples. Three's dump of it is
-    // `m01`/`m02` in the scout's `dump-pmrem_test/`. The source is 1024×512,
+    // `webgpu_pmrem_test`: `PMREM_equirect`, the 4-tap equirect-to-cube
+    // material. Three's dump of it is `m00`/`m01` in
+    // `target/dumps/webgpu_pmrem_test/`. The source is 1024×512,
     // as `spot1Lux.hdr` decodes; the shader does not depend on the size, but
     // the material is built from a texture so the binding has one.
     let equirect = Texture::data_rgba16float(4, 2, &[0u16; 4 * 2 * 4]);
@@ -1541,18 +1534,6 @@ fn main() {
     show(
         "pmrem_test_background",
         &pmrem_background,
-        SetupContext::default(),
-    );
-
-    // `webgpu_furnace_test`: `fromScene`'s background box. Three's dump of it
-    // is `m00`/`m01` in the scout's `dump-furnace_test/` — a plain
-    // `MeshBasicNodeMaterial` with `BackSide` and depth off, whose colour is
-    // the env scene's `0xcccccc`. The colour is a uniform, so the WGSL does
-    // not depend on it; it is passed anyway so the section reads as the
-    // generator builds it.
-    show(
-        "furnace_background",
-        &three_rs::renderer::pmrem::background_material(Color::from_hex(0xcccccc)),
         SetupContext::default(),
     );
 
@@ -1961,7 +1942,7 @@ fn main() {
 ///   flow with `nodeVar3.xyz` / `nodeVar4.xyz` inlined wherever `positionView`
 ///   and `normalView` would have been — `overrideNodes()` hands the
 ///   replacement back with no `toVar()`, so there is no var of its own.
-///   `Roughness` is `min( ( max( …, 0.0525 ) + 0.0 ), 1.0 )`: the quad
+///   `Roughness` is `min( ( max( …, 0.045 ) + 0.0 ), 1.0 )`: the quad
 ///   geometry has no normal attribute, so `getGeometryRoughness()` is
 ///   `float( 0 )`.
 fn dump_deferred() {

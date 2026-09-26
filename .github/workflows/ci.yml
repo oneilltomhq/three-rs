@@ -14,6 +14,9 @@ env:
   # The default `src/testing.rs::vendor_dir` location, so tests that read it
   # need no env var of their own.
   THREE_JS_DIR: ${{ github.workspace }}/vendor/three.js
+  # The three.js commit the port is graded against: past r186, for the cube
+  # PMREM of 2f80402 (#146). It becomes the r187 tag once upstream tags it.
+  THREE_JS_REV: 5f610f516730eb11e0166d9fc21dfc34538dcdeb
 
 jobs:
   fmt:
@@ -96,8 +99,11 @@ jobs:
 
       # Three's screenshots, image.js, puppeteer-core, pngjs and the Chrome
       # three.js' own `npm ci` downloads for its e2e suite.
-      - name: Checkout three.js r186
-        run: git clone --branch r186 --depth 1 https://github.com/mrdoob/three.js "$THREE_JS_DIR"
+      - name: Checkout three.js at THREE_JS_REV
+        run: |
+          git init -q "$THREE_JS_DIR"
+          git -C "$THREE_JS_DIR" fetch -q --depth 1 https://github.com/mrdoob/three.js "$THREE_JS_REV"
+          git -C "$THREE_JS_DIR" checkout -q FETCH_HEAD
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -132,9 +138,11 @@ jobs:
       # tests/addons_orbit_controls.rs runs Three's own OrbitControls.js out of
       # it under node to compare against; everything else here is
       # self-contained.
-      - name: Checkout three.js r186 (for gltf_loader)
+      - name: Checkout three.js at THREE_JS_REV (for gltf_loader)
         run: |
-          git clone --branch r186 --depth 1 https://github.com/mrdoob/three.js "$THREE_JS_DIR"
+          git init -q "$THREE_JS_DIR"
+          git -C "$THREE_JS_DIR" fetch -q --depth 1 https://github.com/mrdoob/three.js "$THREE_JS_REV"
+          git -C "$THREE_JS_DIR" checkout -q FETCH_HEAD
 
       - name: Unit tests (no GPU)
         run: |
@@ -203,6 +211,7 @@ jobs:
             nodes_mx_noise
             nodes_range_buffers
             objects_group
+            pmrem
             scenes_scene
           )
           for t in "${tests[@]}"; do

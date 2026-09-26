@@ -6,7 +6,8 @@ image comparison against Three's reference screenshots.
 
 ## Sources
 
-- `~/src/vendor/three.js` @ 3d010ef. Port from `src/`; `renderers/webgl*`
+- `~/src/vendor/three.js` @ 5f610f5 (past r186 for the cube PMREM, #146;
+  the r187 tag once upstream tags it). Port from `src/`; `renderers/webgl*`
   is out of scope. Addons (`examples/jsm/`) only as a rung needs them.
 - `~/src/vendor/wgpu` @ v30.0.0-223. Vulkan backend, Intel Iris Xe, Mesa.
 

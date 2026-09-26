@@ -6,38 +6,37 @@
 //! downstream of those two is already in `PhysicalLightingModel`; without an
 //! environment they stay zero and the same arithmetic runs on zeros.
 
-use crate::nodes::pmrem_utils::{texture_cube_uv, CubeUvSize};
+use crate::nodes::node::Type;
+use crate::nodes::pmrem_utils::roughness_to_mip;
 use crate::nodes::tsl::{
-    bent_normal_view, camera_world_matrix, clearcoat_normal_view, clearcoat_roughness, float,
-    material_env_intensity, material_env_rotation, mix, normal_view, normal_world,
-    position_view_direction, reflect, roughness, transform_direction, vec3_join, vec4_join,
+    bent_normal_view, camera_world_matrix, clearcoat_normal_view, clearcoat_roughness,
+    cube_texture_level, float, material_env_intensity, material_env_rotation, mix, normal_view,
+    normal_world, position_view_direction, reflect, roughness, transform_direction, vec4_join,
 };
 use crate::nodes::NodeRef;
-use crate::textures::Texture;
+use crate::textures::CubeTexture;
 
-/// What a material needs to read a generated PMREM: the atlas and its three
-/// shape uniforms.
+/// What a material needs to read a generated PMREM: the cube and its `maxLod`
+/// uniform.
 ///
 /// This is the half of `PMREMNode` that has to travel with a material rather
 /// than with the renderer. [`PmremEnvironment::handle`] hands one out; it is a
-/// cheap clone, and the `Texture` inside is the same borrowed handle the
-/// environment repoints when it builds, so a handle taken before the PMREM
-/// exists still works afterwards.
+/// cheap clone of the cube the environment renders into, so a handle taken
+/// before the PMREM exists still works afterwards.
 ///
 /// [`PmremEnvironment::handle`]: crate::nodes::pmrem_node::PmremEnvironment::handle
 #[derive(Clone, Debug)]
 pub struct PmremHandle {
-    pub texture: Texture,
-    pub size: CubeUvSize,
+    pub texture: CubeTexture,
+    pub max_lod: NodeRef,
 }
 
 /// The handle is part of [`SetupContext`]'s derived hash — the render object's
-/// dynamic cache key — so it needs one, and neither `Texture` nor the three
-/// `NodeRef` uniforms in [`CubeUvSize`] derives `Hash`. What the *program*
-/// depends on is only that there **is** an environment and which texture it
-/// reads; the three cubeUV numbers are uniforms and change no code. So the
-/// texture's id is the whole key, which is also what makes two materials
-/// sharing one generated atlas share one program.
+/// dynamic cache key — so it needs one, and neither `CubeTexture` nor the
+/// `maxLod` uniform derives `Hash`. What the *program* depends on is only that
+/// there **is** an environment and which texture it reads; `maxLod` is a
+/// uniform and changes no code. So the texture's id is the whole key, which is
+/// also what makes two materials sharing one PMREM share one program.
 ///
 /// [`SetupContext`]: crate::materials::node_material::SetupContext
 impl std::hash::Hash for PmremHandle {
@@ -47,13 +46,28 @@ impl std::hash::Hash for PmremHandle {
 }
 
 impl PmremHandle {
-    /// `PMREMNode.setup()` — the rotated, Y-flipped sample.
+    /// `PMREMNode.setup()` — `this._texture.sample( materialEnvRotation.mul(
+    /// uvNode ) ).level( roughnessToMip( levelNode, this._maxLod ) ).rgb`.
+    ///
+    /// `materialEnvRotation` is a `mat4`, so a `vec3` direction is widened with
+    /// `w = 1` first; the background's `backgroundRotation * normal` is a
+    /// `vec4` already and goes in as it is, which is three's dump of both. The
+    /// cube read's `x` negation is `CubeTextureNode.setupUV()`'s. There is no
+    /// Y flip any more: the PMREM is rendered with the same face cameras every
+    /// other cube render target is.
     pub fn sample(&self, uv: NodeRef, level: NodeRef) -> NodeRef {
-        let uv = material_env_rotation().mul(vec4_join(vec![
-            vec3_join(vec![uv.x(), uv.y().negate(), uv.z()]),
-            float(1.0),
-        ]));
-        texture_cube_uv(&self.texture, uv, level, &self.size)
+        let uv = if uv.ty() == Type::Vec4 {
+            uv
+        } else {
+            vec4_join(vec![uv, float(1.0)])
+        };
+        let direction = material_env_rotation().mul(uv);
+        cube_texture_level(
+            &self.texture,
+            direction,
+            roughness_to_mip(level, self.max_lod.clone()),
+        )
+        .xyz()
     }
 }
 
@@ -104,7 +118,7 @@ pub fn setup(env: &PmremHandle, anisotropy: bool, clearcoat: bool, out: &mut Vec
     out.push(radiance_prop.assign(radiance_prop.add(radiance)));
 
     out.push(ibl_prop.assign(crate::nodes::tsl::vec3(0.0, 0.0, 0.0)));
-    // `.mul( Math.PI )`: `textureCubeUV` returns radiance, and the lighting
+    // `.mul( Math.PI )`: the PMREM holds radiance, and the lighting
     // model wants irradiance.
     let irradiance = env
         .sample(normal_world(), float(1.0))

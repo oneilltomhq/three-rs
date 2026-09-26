@@ -25,14 +25,14 @@
 // tools/web_gate.skip still run and are reported, but do not fail the gate.
 //
 // The assets the page would fetch from raw.githubusercontent.com at the
-// pinned r186 tag are answered from the local three.js checkout instead (the
-// same tag, so the same bytes the native ladder reads off disk): no network,
-// no rate limit.
+// pinned three.js commit are answered from the local three.js checkout
+// instead (the same commit, so the same bytes the native ladder reads off
+// disk): no network, no rate limit.
 //
-// Needs: web/build.sh run first; a three.js r186 checkout at $THREE_JS_DIR
-// (default ~/src/vendor/three.js) with `npm ci` done, for puppeteer-core,
-// pngjs, image.js, the screenshots and (unless --chrome or $CHROME says
-// otherwise) the Chrome puppeteer downloaded. Writes under --out (default
+// Needs: web/build.sh run first; a three.js checkout at that commit at
+// $THREE_JS_DIR (default ~/src/vendor/three.js) with `npm ci` done, for
+// puppeteer-core, pngjs, image.js, the screenshots and (unless --chrome or
+// $CHROME says otherwise) the Chrome puppeteer downloaded. Writes under --out (default
 // target/web-gate/): <example>/{actual.png,actual.jpg,expected.jpg,diff.jpg}
 // and summary.json. Exits non-zero if any example not in the skip list fails.
 //
@@ -50,8 +50,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const __dirname = path.dirname( fileURLToPath( import.meta.url ) );
 const repoRoot = path.resolve( __dirname, '..' );
 
-// The shell's own constants (web/src/shell.rs `ASSET_BASE`/`THREE_JS_TAG`).
-const ASSET_PREFIX = 'https://raw.githubusercontent.com/mrdoob/three.js/r186/';
+// The shell's own constants (web/src/shell.rs `ASSET_BASE`/`THREE_JS_REV`).
+const ASSET_PREFIX = 'https://raw.githubusercontent.com/mrdoob/three.js/5f610f516730eb11e0166d9fc21dfc34538dcdeb/';
 
 // Software WebGPU: Dawn on SwiftShader's Vulkan, which Chrome ships. Probed on
 // a Fedora desk (Chrome 151/152, Intel Iris Xe) and on GitHub's ubuntu-latest:

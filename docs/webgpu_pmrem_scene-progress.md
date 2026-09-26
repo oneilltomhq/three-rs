@@ -1,5 +1,7 @@
 # webgpu_pmrem_scene — done
 
+2026-09-25: regraded against three.js 5f610f5 (the cube PMREM of 2f80402, #146): 0 of 100000 pixels (was 0); the face gate now reads PMREM cube layers.
+
 **0 different pixels of 100000** against three's own `test/e2e/image.js` at
 three's own 0.1% threshold, first run, and the twenty-three rows that were
 already green are unchanged to the pixel.

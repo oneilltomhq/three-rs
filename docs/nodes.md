@@ -1191,125 +1191,118 @@ Statement for statement the two stages match
 
 ## 13. PMREM (`webgpu_pmrem_cubemap`, `webgpu_pmrem_test`, `webgpu_furnace_test`, `webgpu_pmrem_scene`)
 
-`PMREMGenerator` (`src/renderer/pmrem.rs`), the cube-UV read side
+`PMREMGenerator` (`src/renderer/pmrem.rs`), the read side
 (`src/nodes/pmrem_utils.rs`, `src/nodes/pmrem_node.rs`) and `EnvironmentNode`
-(`src/materials/environment.rs`). `fromCubemap` and `fromEquirectangular` are
-both ported and share everything but `_setSizeFromTexture` and the one-tap
-material that fills level 0 — that is three's own shape, `_fromTexture` with a
-`PmremSource` in place of the `texture.mapping` test. `fromScene` is ported too, in both of
-its arms: `webgpu_furnace_test` is the `useSolidColor` one — the background is
-a `Color`, so it is lifted off the scene, becomes the `BackgroundBox`'s colour
-and is drawn *once* over the whole atlas — and `webgpu_pmrem_scene` is the
-other, where the scene keeps its cube-texture background and its meshes and the
-six 90° cube-camera renders into viewport tiles of the atlas, with `auto_clear`
-off, are what fill level 0.
+(`src/materials/environment.rs`), following
+`src/renderers/common/extras/PMREMGenerator.js` as of three.js 2f80402
+(#34585), which replaced r186's cubeUV atlas with a mipmapped cube, and
+b745e6c (#34645), which simplified `roughnessToMip` to
+`maxLod * r * ( 2 - r )` on a clamped `r`. The port moved with it in #146 and
+the vendor pin moved to 5f610f5; the atlas, its `_sizeLods` planes, the
+ping-pong target and `textureCubeUV` are gone.
 
-`fromScene`'s second argument — the pre-blur radius — is ported too. Every
-`RoomEnvironment` page calls `fromScene( environment, 0.04 )`, and a non-zero
-sigma is the only thing that reaches `_blur`: two `sphericalGaussianBlur`
-passes of `min( sigma, PI ) / sqrt( 2 )` over level 0, ping-ponging atlas →
-ping-pong → atlas, *before* the GGX ladder starts. `BLUR_SAMPLES = 20`,
-`GOLDEN_ANGLE = 2.399963229728653`. `webgpu_furnace_test` and
-`webgpu_pmrem_scene` pass 0 and skip the whole arm, as three does.
+**The target.** A PMREM is a `HalfFloatType` cube with
+`LinearMipmapLinearFilter`, `max( 256, floorPowerOfTwo( size ) )` wide and
+`maxLod + 1` levels deep, `maxLod = log2( size ) - 3` — six levels at 256
+(`CubeTexture::pmrem_render_target`, `pmrem::allocate_target`). `fromCubemap`
+sizes it from the cube's face width (256 for an empty cube),
+`fromEquirectangular` from a quarter of the map's width, `fromScene` at 256;
+`PmremSource` stands in for the `texture.mapping` test. The source is copied
+(`PMREM_cubemap` or `PMREM_equirect`) or captured into a second, full-chain
+cube whose mips are then generated.
 
-`_blurPass`'s viewport arithmetic is deliberately not shared with
-`tile_rect`'s: three computes the row as `4 * ( cubeSize - outputSize )` there
-and by walking `_sizeLods` here, and the two agree only up to
-`lodOut == lodMax - LOD_MIN`. `blur_tile` keeps three's expression and
-`tests/pmrem_scene.rs::the_blur_viewport_is_threes` holds all eleven levels of
-it by hand.
+**The levels.** `_applyPMREM` fills level `lod` with roughness
+`lodToRoughness( lod, maxLod ) = 1 - sqrt( 1 - lod / maxLod )`. The last
+`INTEGRATION_LEVELS = 3` levels are `PMREM_integration`: a brute-force sum over
+three faces of the source's 16² level (`sourceLod = log2( size / 16 )`, an
+`int` loop bound of 16). The others are `PMREM_ggx`: `GGX_SAMPLES = 256` VNDF
+importance samples, each read at `max( log2( alpha2 * invQ ) + lodBias, 0 )`
+with `lodBias = log2( size ) + 0.5 * log2( 6 / ( 256 r^4 ) ) + 0.5`, and a
+straight read of level 0 below roughness 0.001. `tests/pmrem.rs` holds the
+level ladder (roughness, material, `lodBias` / `sourceLod`) for 256, 512 and
+1024 against values printed by node from three's own class, and
+`roughnessToMip` at eight points.
 
-**There are two `PMREMGenerator`s in r186 and they disagree.**
-`src/extras/PMREMGenerator.js` is the WebGL one;
-`src/renderers/common/extras/PMREMGenerator.js` is the WebGPU one, and it is
-what `three.webgpu.js` — and so the grader — is built from. They differ in
-`_sceneToCubeUV`'s `upSign` and `forwardSign`, in whether the background box is
-drawn once before the face loop or once per face inside it, and in whether tone
-mapping is forced off. The port follows the WebGPU one.
-`docs/webgpu_furnace_test-progress.md` has the table, and
-`tests/pmrem_scene.rs` holds it as literals, because a solid-colour furnace
-renders both identically.
+**The faces.** `_renderCube` draws a 5-unit `BoxGeometry` with `BackSide`, no
+blending and no depth, through a `CubeCamera( 1, 10 )` whose `fov` is −90
+(which flips both screen axes) and whose face table is WebGPU's
+(`cube_render_target::FACES`, shared with `CubeRenderTarget`). `fromScene`
+captures the scene itself through the same table with `near = 0.1`,
+`far = 100`, `autoClear` forced on and `scene.background` set to the clear
+colour for the capture when the scene has none; the solid-colour
+`BackgroundBox` arm of r186 is gone upstream and here. A non-zero `sigma` —
+every `RoomEnvironment` page passes 0.04 — blurs source → PMREM level 0 →
+source level 0 with `sphericalGaussianBlur` at `min( sigma, PI ) / sqrt( 2 )`
+(`BLUR_SAMPLES = 20`, `GOLDEN_ANGLE = 2.399963229728653`) before the source's
+mips are generated.
 
-The four shaders the two rungs add are generated by the node system and match
-three's dumps line for line, up to the classes §8 already lists (the header
-line, the session-global uniform/varying counters, uniform-struct field order,
-blank lines after a block): `PMREM_cubemap` against `dump-pmrem_cubemap/m01`,
-`PMREM_ggx` against its `m03`, the `Background.material` cube-UV read against
-its `m05`, and `PMREM_equirect` against `dump-pmrem_test/m02`. All four are in
-`examples/dump_wgsl.rs`, as `pmrem_cubemap`, `pmrem_ggx`, `pmrem_background`,
-`pmrem_equirect`, with `pmrem_test_background` and `pmrem_test_physical` for
-`webgpu_pmrem_test`'s own two and `furnace_background` / `furnace_physical`
-for `webgpu_furnace_test`'s, against `dump-furnace_test/m01` and `m05`.
-`fromScene` adds no shader of its own: `PMREM.Background` is a
-`MeshBasicNodeMaterial` with a colour and nothing else, and its non-solid arm
-reuses the ordinary `Background.material` and the scene's own materials
-(`dump-pmrem_scene/m01`–`m04` are `background_cube` and a plain basic material,
-both of them already on the ladder). The one module `webgpu_pmrem_scene` adds
-is the read side with **no lighting model in front of it**: `dump_wgsl`'s
-`pmrem_scene_colornode` against its `m07`/`m08`, which is
-`new MeshBasicNodeMaterial( { colorNode: pmremTexture( sceneRT.texture,
-normalWorld, uniform( .5 ) ) } )` and therefore `textureCubeUV` as the entire
-fragment shader — `roughnessToMip`, `getFace`, `getUV`, the two
-`textureSampleGrad` taps and the `mix`, with nothing else in the file. It
-matches statement for statement.
+**The read.** `pmremTexture( env, uv, level )` is
+`cubeTexture( env ).sample( materialEnvRotation * uv ).level(
+roughnessToMip( level, maxLod ) ).rgb` (`PmremHandle::sample`). The r186 read
+negated `y`; the cube read negates `x` like every other cube sample. The
+background takes the PMREM only at `backgroundBlurriness > 0` or for an
+`isPMREMTexture` — an equirectangular background at blurriness 0 goes through
+`CubeMapNode`, which is why `webgpu_deferred` now uses
+`cube_render_target::from_equirectangular_texture` for its background.
 
-`PMREM_equirect` is the whole delta between the two examples: `texture(
-envTexture, equirectUV( _outputDirection ), 0 )`, four lines of WGSL. Note
-what it does *not* carry — the environment rotation. `cubeTexture()` applies
-`materialEnvRotation` inside `CubeTextureNode.setupUV()`, so the cubemap
-material has it; a plain 2-D `texture()` node does not, and three's dump agrees.
-The explicit level `0` matters for the same reason: the six quads of a lod
-plane are a wildly non-uniform parameterisation of the sphere, so an implicit
-derivative sample would pick a different level per face.
+**The shaders.** Every PMREM program is generated by the node system and
+matches three's dump of `webgpu_pmrem_test` at 5f610f5 statement for
+statement, up to §8's classes and the divergences below: `PMREM_equirect`
+(`m01`), `PMREM_ggx` (`m04`), `PMREM_integration` (`m06`), the background
+(`m08`) and the lit sphere (`m10`). `dump_wgsl` prints `pmrem_cubemap`,
+`pmrem_equirect`, `pmrem_ggx`, `pmrem_integration`, `pmrem_blur` and the
+examples' own materials.
 
-Numeric gates sit under both images. `tests/pmrem.rs` (no GPU) has the GGX
-roughness ladder and its `mipInt`s, the atlas rectangles and
-`_generateCubeUVSize`, from three's own code driven directly — see the file's
-header. `tests/pmrem_equirect.rs` (GPU) adds the two that only the equirect
-path can fail: the bright texel of `spot1Lux.hdr` landing on the flipped row,
-and the atlas lighting exactly one mip-0 face and every one of the eleven LOD
-tiles. `tests/pmrem_scene.rs` adds the two `fromScene` can fail: the six cube
-bases and viewport tiles against three's tables, with no GPU, and the atlas of
-a constant environment staying that constant through all ten GGX steps to
-within 1% — the white-furnace identity one level below the one
-`webgpu_furnace_test`'s image tests.
-
-Those three gates all run on a *constant* environment, which is the one thing
-they cannot check: a permuted face, a rolled `up` or a tile written at the
-wrong offset produce the same uniform atlas. `assert_face_tiles` in
-`tests/e2e/main.rs` is where that is finally held, because
-`webgpu_pmrem_scene`'s environment scene has content. With `fov = 90`,
-`aspect = 1` and a 256² viewport each face tile is the *identity* map onto one
-of the six 1024² cube faces, and working the six out from
-`face_camera` + `Object3D.lookAt` + the `vec3( -dir.x, dir.yz )` of `m02` gives
-the permutation `nx, ny, pz, px, py, nz` — not the identity, because the cube
-convention swaps ±x and `forwardSign` points the "+y" tile's camera at −y
-(which `PMREMNode.setup`'s `normalWorld.y` negation undoes on the way out).
-The gate scores all 6 images × 8 dihedral orientations against 64² block means
-and requires the expected image, upright, to win; it does, by 22× to 43×. The
-centre of each tile is separately held against the colour of the one
-`MeshBasicMaterial` sphere that face looks at.
+**The gates.** `tests/pmrem.rs` (no GPU) is above. `tests/pmrem_scene.rs`
+captures a solid-colour scene with sigma 0 and 0.04 and requires every face of
+every level to stay that colour within 1% (it is within 0.06% and 0.22%): a
+constant convolved with a normalised kernel is the constant, so a lost energy
+term shows up there with no BSDF in the way. `tests/pmrem_equirect.rs` holds
+`spot1Lux.hdr`'s one bright texel on the flipped row and requires it to light
+exactly one face of level 0 and something on every level. Those run on
+environments a permuted or rolled face cannot fail, so `assert_face_tiles` in
+`tests/e2e/main.rs` reads each layer of `webgpu_pmrem_scene`'s PMREM back:
+layer *i* must be `images[ i ]` upright (the −90° `fov` table is exactly the
+inverse of the `vec3( -d.x, d.yz )` lookup; the test's doc comment works it
+through) and must be the best of all 6 images × 8 dihedral orientations by
+about 20× or more, and its centre must be the colour of the sphere that face's
+camera looks at.
 
 ### Divergences specific to this rung
 
-* **`ConvertNode` is not a `TempNode`.** Three's `vec3( direction_immutable )`
-  inside `bilinearCubeUV` re-expands at every use, so the rotated direction
-  appears twice in the generated body — once for `getFace`, once for `getUV`.
-  The port reproduces that on purpose (`.to( Type::Vec3 )` at the top of
-  `bilinear_cube_uv` and `texture_cube_uv`); the `needs_var()` reuse rule is
-  not applied to a cast. The same fact made `Node::Cast` narrowing go through
-  `wgsl::convert`, so a narrowing cast is the swizzle arm (`x.xyz`) and only a
-  same-width cast keeps the explicit constructor — which is what
-  `ConvertNode.generate()`'s `builder.format( snippet, from, to )` does.
-* **An inlined `Fn`'s result is varred explicitly.** Three's `flowShaderNode`
-  vars the result of an inlined function when it is used more than once; the
-  port applies its reuse rule to expression nodes but not to a `Block`, which
-  re-generates at every use. `ggx_convolution` therefore asks for the var by
-  hand (`to_var( None, importance_sample_ggx_vndf( … ) )`), as do the two
-  `bilinear_cube_uv` taps in `texture_cube_uv`. Without it the VNDF body is
-  inlined once per component.
+* **Each face is drawn into a 2-D target and copied into the cube.** Three
+  renders straight into a layer and mip of the cube render target
+  (`setRenderTarget( target, face, lod )`). The renderer has no layered
+  attachment, so `render_faces` draws each face into a half-float
+  `RenderTarget` of `size >> lod` and `copy_to_cube_layer` copies it into
+  ( layer, mip ). A copy of an equally sized half-float texture is exact.
+* **Materials bake their texture; nothing is repointed.** Three keeps one GGX,
+  one integration and one blur material and repoints `envMap.value` between
+  targets. A texture node here holds its texture, so the GGX and integration
+  materials are built against the source target and rebuilt only when it is
+  reallocated, and the blur has two materials, one per direction.
+* **No dead `reflectVector` lines.** Three's `cubeTexture( envMap )` in the GGX
+  and integration fragments starts from its default uv, so `m04` and `m06`
+  compute `reflectVector` / `normalView` and bind uniforms that nothing reads.
+  The port passes the direction it samples along and emits neither.
+* **Two `let`s are asked for by hand.** Three's `d` in `PMREM_integration`
+  and the four normalised taps of `PMREM_equirect` come out as `let`s because
+  of how its builder caches them; the port's reuse rule would var them, so
+  they are `to_const` explicitly.
+* **`int` uniforms are written as `i32` bits.** `uniform( 16, 'int' )` is the
+  first `int` value uniform on the ladder; it rides `UniformSource::Value`
+  like every baked value, and `programs.rs` writes it as an integer next to
+  the existing `u32` case. Written as an `f32` it read back as about 10⁹ and
+  the loop hung the device.
+* **Upstream changes past 2f80402 that are not ported here.** 92b71a5 drops
+  `materialEnvRotation` from `CubeTextureNode` (the port's cube background
+  still multiplies by it, the identity, so only the WGSL differs), 43feb74
+  emits `let` for cached temporaries where the port emits `var`, and 2d3ca24
+  (shared dielectric scattering) and 18e109a (the EON diffuse option) reshape
+  the lit sphere's `m10` without changing its arithmetic at the defaults.
+  None of them moves a pixel on the ladder.
 * **Three's `PI` literal, not `f64::consts::PI`.** `PMREMUtils.js` writes
-  `2.0 * 3.14159265359`, one digit short of the constant, and the difference is
+  `3.14159265359`, one digit short of the constant, and the difference is
   visible in the WGSL. Reproduced literally, with an `#[allow]` for clippy.
 * **`updateBefore` became `PmremEnvironment::update`.** In three a `PMREMNode`
   carries `NodeUpdateType.RENDER` and builds the PMREM from inside the node,
@@ -1317,75 +1310,32 @@ centre of each tile is separately held against the colour of the one
   back-reference to the renderer, and `Renderer` methods take `&mut self`, so
   the trigger moved out: the application calls
   `PmremEnvironment::update( &mut renderer )` before it renders. It is
-  idempotent, and the uniforms it writes are the same three cubeUV cells
-  three's node owns, so the generated WGSL is unaffected.
-* **`_uniformsMap` became a texture handle that gets repointed.** Three swaps
-  `ggxUniforms.envMap.value` between the atlas and the ping-pong target between
-  the two passes of a step. The port holds one borrowed `Texture`
-  (`own_gpu == false`) and calls `set_gpu()`; bind groups are built per draw,
-  so the swap lands on the next draw with no cache to invalidate.
-* **`mipInt` is computed in floating point.** `_lodMax - lodIn` is JS
-  arithmetic and goes negative for the extra LODs — −1 and −2 for a 256² source
-  — which a `usize` subtraction would not survive. `tests/pmrem.rs` pins both
-  negative values against three.
+  idempotent, and since 2f80402 the PMREM cube is allocated up front (its size
+  is known from the source), so the `maxLod` uniform the read needs is set
+  before anything samples it. A `PmremEnvironment` built from a scene has no
+  source and builds at construction, so its `update()` is free.
 * **`flipY` is a CPU row reversal, not two render passes.** `HDRLoader` sets
   `texData.flipY = true`, and three's WebGPU backend honours it for a
   buffer-sourced texture with `WebGPUTextureUtils._flipY()`: two extra render
-  passes that borrow the mipmap blit pipeline to bounce the source through a
-  scratch texture and back. That is why three's dump of `webgpu_pmrem_test`
-  submits 25 passes where the port submits 23. `upload_texture_2d` reverses the
-  rows in the staging copy instead. A flip is an exact texel permutation and
-  the blit samples texel centres of an equally sized target, so the two results
-  are bit-identical; the flip is gated on the flag, so a `flip_y == false`
-  texture is byte-for-byte what it was. What says so is
-  `tests/pmrem_equirect.rs`: one lit texel in a 1024×512 black field, sampled
-  at its own texel centre with nearest filtering, has to come back at row
-  `512 - 1 - 213 = 298`. A missing flip, an off-by-one flip or a row-stride bug
-  each move it somewhere provably wrong — and each of them would still render
-  a perfectly plausible shiny sphere.
-* **`scene.background = <a texture>` is a `Background::Pmrem` variant.**
-  Upstream the background is a `Texture` whose `mapping` is
-  `CubeUVReflectionMapping`, which `NodeManager.getBackgroundNode()` turns into
-  `pmremTexture( background )` and `Background.update()` wraps in a node
-  context supplying `getUV` (`backgroundRotation.mul( normalWorldGeometry )`)
-  and `getTextureLevel` (`backgroundBlurriness`). The port has no node context
-  and no mapping constant, so the variant carries a `PmremHandle` — which is
-  what the three cubeUV uniforms travel on — and the renderer builds the same
+  passes that bounce the source through a scratch texture. `upload_texture_2d`
+  reverses the rows in the staging copy instead. A flip is an exact texel
+  permutation, so the results are bit-identical; `tests/pmrem_equirect.rs`
+  holds it with one lit texel in a black field that has to come back at row
+  `512 - 1 - 213 = 298`.
+* **`scene.background = <a PMREM texture>` is a `Background::Pmrem` variant.**
+  Upstream the background is the PMREM's texture, flagged `isPMREMTexture`,
+  which `NodeManager.updateBackground()` turns into `pmremTexture( background )`
+  and `Background.update()` wraps in a node context supplying `getUV`
+  (`backgroundRotation.mul( normalWorldGeometry )`) and `getTextureLevel`
+  (`backgroundBlurriness`). The variant carries a `PmremHandle` — which is
+  what the `maxLod` uniform travels on — and the renderer builds the same
   graph with the two accessors passed as arguments
-  (`materials::background_pmrem_color_node`). The generated WGSL is three's
-  `m06` statement for statement.
-* **The lit material carries r186's `PhysicalLightingModel`, and it is now
-  gated end to end.** The earlier note here said the port still carried the
-  pre-r186 spelling; that was wrong. `furnace_physical` against
-  `dump-furnace_test/m05` matches term for term and in three's order: the DFG
-  LUT tap, the dielectric/metallic single- and multi-scattering pair with
-  Fdez-Agüera's `computeMultiscattering` and `Favg` as `* 0.047619`, the two
-  `mix( …, Metalness )`, `cosineWeightedIrradiance` and the AO node. What
-  remains is §8's classes — three vars every intermediate where the port
-  inlines (737 lines to 526 for the same arithmetic), three hoists
-  `let dfg = …` where the port re-spells `nodeVar2.xy`, the port hoists its
-  zero initialisers, and the port emits the ambient `indirectDiffuse()` block
-  before the environment block where three emits it after, which is
-  numerically identical because that block multiplies by `irradiance` and
-  `irradiance` is zero with no lights. A white furnace is the test that says
-  so: `webgpu_furnace_test` grades 0 of 100 000 on a scene built to turn an
-  energy error into a visible band.
+  (`materials::background_pmrem_color_node`).
 * **`fromScene` takes the renderer *and* the scene.** `PMREMGenerator` does not
-  hold a renderer in this port, and `_sceneToCubeUV` assigns
-  `scene.background = null` for the duration of a solid-colour background and
-  puts it back afterwards, so `from_scene( &mut renderer, &mut scene, … )` does
-  the same to the same field. `tests/pmrem_scene.rs` asserts the restore.
-* **A `PmremEnvironment` built from a scene has no source, so `update()` is a
-  no-op.** Three's `PMREMNode` rebuilds lazily under `NodeUpdateType.RENDER`;
-  three's *page* calls `fromScene` eagerly, in `createEnvironment()`, and there
-  is no texture to watch for a change. `PmremEnvironment::from_scene` builds at
-  construction and `update()` returns immediately, so the example's per-frame
-  call is free and the steady-frame assertion still runs over it.
-* **`_setViewport` is `RenderTarget::set_viewport`, in pixels from the top
-  left.** Three's WebGPU helper writes the target's `viewport` and `scissor`
-  directly; the port's target carries the same rectangle with the origin the
-  `webgpu_lines_fat` render-target seam settled on. `face_tile` is what pins
-  the arithmetic to `col * size, i > 2 ? size : 0`.
+  hold a renderer in this port, and `fromScene` assigns `scene.background` for
+  the capture when there is none and puts it back afterwards, so
+  `from_scene( &mut renderer, &mut scene, … )` does the same to the same field.
+  `tests/pmrem_scene.rs` asserts the restore.
 
 ## 14. The previous frame (`webgpu_postprocessing_difference`)
 
@@ -1894,7 +1844,7 @@ will exercise paths this one does not.
 `webgpu_postprocessing_ca` is the cheapest example that exercises
 `RoomEnvironment` as a capability: the page's whole lighting is
 `scene.environment = pmremGenerator.fromScene( new RoomEnvironment(), 0.04 )`,
-so every reflective shape in the graded frame is a readout of the PMREM atlas.
+so every reflective shape in the graded frame is a readout of the PMREM cube.
 Three programs come from the room itself (`room_box`, `room_boxes`,
 `room_panel` in `dump_wgsl`), two from the post chain (`ca_rtt_quad`,
 `ca_render_pipeline_quad`).
@@ -1959,8 +1909,8 @@ let env = material.pmrem_env.as_ref().or(ctx.environment.as_ref());
 ```
 
 Because it sits in `SetupContext`, which is the render object's *dynamic* cache
-key, `PmremHandle` grew a `Hash` keyed on the atlas texture's id alone — the
-three cubeUV numbers beside it are uniforms and change no code.
+key, `PmremHandle` grew a `Hash` keyed on the PMREM cube's id alone — the
+`maxLod` beside it is a uniform and changes no code.
 
 `dump_wgsl`'s `loader_gltf_helmet` section exists to prove the two paths are the
 same program: its fragment shader is byte-identical to
@@ -2558,7 +2508,7 @@ the eight lights' sphere meshes out of the resolve.
   resolve quad's geometry has `position` and `uv` only, so three's
   `builder.geometry.attributes.normal === undefined` branch returns a constant
   instead of the `dFdx`/`dFdy` term, and the dump shows
-  `Roughness = min( ( max( nodeVar4.w, 0.0525 ) + 0.0 ), 1.0 )`. The port
+  `Roughness = min( ( max( nodeVar4.w, 0.045 ) + 0.0 ), 1.0 )`. The port
   carries it as [`SetupContext::geometry_missing_normal`].
 * **`Color.setHSL()` defaults to the *working* colour space.** The eight light
   colours are `new THREE.Color().setHSL( i / 8, 1.0, 0.5 )`, and

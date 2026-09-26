@@ -34,9 +34,9 @@
 //!   `camera.position.set( - 1.8, 0.6, 2.7 )` in `init()` survives only as the
 //!   *direction* the helper keeps; the distance, the target, `near` and `far`
 //!   are all recomputed from the model's bounding box once it has loaded. The
-//!   function is transcribed below line for line, including its unused
-//!   `fitWidthDistance` and the `2 * atan( PI * fov / 360 )` that is not the
-//!   half-angle tangent anyone would write from scratch.
+//!   function is transcribed below line for line. Its fit distance is
+//!   `maxSize / ( 2 * tan( PI * fov / 360 ) )`, the half-angle tangent, since
+//!   three.js 2f80402; before that the page wrote `atan` there.
 //!
 //! # The model
 //!
@@ -96,10 +96,7 @@ fn fit_camera_to_selection(
     let center = bounds.get_center();
 
     let max_size = size.x.max(size.y).max(size.z);
-    let fit_height_distance = max_size / (2.0 * (std::f64::consts::PI * camera.fov / 360.0).atan());
-    // `const fitWidthDistance = fitHeightDistance / camera.aspect;`
-    // `const distance = fitOffset * Math.max( fitHeightDistance, fitWidthDistance );`
-    // are commented out upstream: only the height fit is used.
+    let fit_height_distance = max_size / (2.0 * (std::f64::consts::PI * camera.fov / 360.0).tan());
     let distance = fit_offset * fit_height_distance;
 
     let position = camera.node.borrow().position;
