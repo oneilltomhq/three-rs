@@ -475,7 +475,7 @@ fn setup_inner(
                 matrix.element(2).xyz(),
             ],
         );
-        let inv_t = transpose(inverse_mat3(m3));
+        let inv_t = transpose(inverse(m3));
         pre_vertex.push(normal_local().assign(inv_t.mul(normal_local()).normalize()));
     }
 
@@ -823,25 +823,6 @@ pub fn quad_vertex_node() -> NodeRef {
     let x = const_array(vec![-1.0, -1.0, 3.0]).element_node(vertex_index());
     let y = const_array(vec![3.0, -1.0, -1.0]).element_node(vertex_index());
     join(Type::Vec4, vec![x, y, float(0.0), float(1.0)])
-}
-
-/// `transpose( m )`.
-fn transpose(m: NodeRef) -> NodeRef {
-    math_call("transpose", m)
-}
-
-/// `WGSLNodeBuilder`'s `inverse( mat3 )` polyfill.
-fn inverse_mat3(m: NodeRef) -> NodeRef {
-    math_call("tsl_inverse_mat3", m)
-}
-
-fn math_call(name: &'static str, m: NodeRef) -> NodeRef {
-    let ty = m.ty();
-    crate::nodes::NodeRef::new(crate::nodes::Node::Math {
-        name,
-        args: vec![m],
-        ty,
-    })
 }
 
 /// `RangeNode` on an instanced mesh: one `vec4` per instance, from a uniform

@@ -208,11 +208,13 @@ jobs:
             math_vector2
             math_vector3
             math_vector4
+            nodes_fog
             nodes_instanced_attributes
             nodes_line2_world_units
             nodes_morph
             nodes_mx_noise
             nodes_range_buffers
+            nodes_tsl_batch
             objects_batched_mesh
             objects_group
             objects_instanced_mesh
@@ -223,6 +225,8 @@ jobs:
             objects_skinned_mesh
             objects_sprite
             pmrem
+            scenes_fog
+            scenes_fog_exp2
             scenes_scene
           )
           for t in "${tests[@]}"; do

@@ -58,8 +58,8 @@ pub use materials::{
 };
 pub use math::{Color, Euler, Matrix3, Matrix4, Quaternion, Vector2, Vector3};
 pub use objects::{
-    Background, Group, InstancedMesh, Line, LineSegments, Mesh, Payload, Points, QuadMesh, Scene,
-    Sprite,
+    Background, Fog, FogExp2, Group, InstancedMesh, Line, LineSegments, Mesh, Payload, Points,
+    QuadMesh, Scene, SceneFog, Sprite,
 };
 pub use renderer::{
     BuildCounts, ComputeCounts, DirectRenderPipeline, Info, MemoryCounts, PassNode, RenderCounts,
