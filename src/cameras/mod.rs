@@ -78,9 +78,19 @@ pub trait RenderCamera {
     fn sub_cameras(&self) -> &[PerspectiveCamera] {
         &[]
     }
+    /// The camera as a scene-graph object — `Camera extends Object3D` — for
+    /// what needs the object itself rather than a copy of its matrices
+    /// (`CameraHelper`'s `this.matrix = camera.matrixWorld`). `None` for a
+    /// camera the port keeps outside the graph (`OrthographicCamera`).
+    fn node(&self) -> Option<&crate::core::Node> {
+        None
+    }
 }
 
 impl RenderCamera for PerspectiveCamera {
+    fn node(&self) -> Option<&crate::core::Node> {
+        Some(&self.node)
+    }
     fn set_view_offset(
         &mut self,
         full_width: f64,

@@ -508,7 +508,11 @@ fn write_thumbnail(actual: &Path, out: &Path) -> Result<Thumb, String> {
 }
 
 /// When the newest build of the e2e test binary was linked, under
-/// `target/{debug,release}/deps/e2e-*`.
+/// `<target>/{debug,release}/deps/e2e-*`, where `<target>` is the target
+/// directory this binary itself was built into (`<target>/<profile>/examples/
+/// gallery`): a shared `target-dir` in `.cargo/config.toml` lands it outside
+/// the worktree, and a binary built by another worktree into that shared
+/// directory counts too, which is the conservative side.
 ///
 /// A frame older than that was rendered by code that has since been rebuilt,
 /// so it may not be what the tree renders now. That, not the render and not
@@ -518,9 +522,13 @@ fn write_thumbnail(actual: &Path, out: &Path) -> Result<Thumb, String> {
 /// from a rung's own earlier iterations, and the generator used to thumbnail
 /// all of it.
 fn newest_e2e_build(root: &Path) -> Option<SystemTime> {
+    let target = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.ancestors().nth(3).map(Path::to_path_buf))
+        .unwrap_or_else(|| root.join("target"));
     ["debug", "release"]
         .iter()
-        .filter_map(|profile| fs::read_dir(root.join("target").join(profile).join("deps")).ok())
+        .filter_map(|profile| fs::read_dir(target.join(profile).join("deps")).ok())
         .flatten()
         .flatten()
         .filter(|e| {

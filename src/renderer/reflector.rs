@@ -37,6 +37,8 @@ impl Renderer {
         // The program the pass will look up, so the lookup here is the same
         // cache entry: its output width is the scene pass's colour format's.
         let output_components = self.scene_pass_color_format().components();
+        // ... and its sample count, `builder.renderer.currentSamples`.
+        let sample_count = self.current_samples().max(1);
 
         // `nodeUpdateBeforeMap.renderId !== this.renderId`: once per render.
         let mut updated: HashSet<usize> = HashSet::new();
@@ -46,7 +48,7 @@ impl Renderer {
                 continue;
             };
 
-            let program = self.node_builder_state(item, output_components);
+            let program = self.node_builder_state(item, output_components, sample_count);
             let mut reflectors: Vec<Reflector> = Vec::new();
             for desc in program.groups.iter().flatten() {
                 if let BindingDesc::Texture {

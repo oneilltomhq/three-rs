@@ -41,15 +41,40 @@ enum Region {
     Loop,
     /// [`Region::Loop`] with every texture tap reduced to `tap( uv )`.
     LoopAnyTap,
+    /// The body of the named WGSL `fn`, through its `return` — for a node
+    /// that is one `Fn()` with a layout, where `main()` is only the call.
+    Function(&'static str),
 }
 
 fn region(wgsl: &str, which: Region) -> String {
+    if let Region::Function(name) = which {
+        let start = wgsl
+            .find(&format!("fn {name} ("))
+            .unwrap_or_else(|| panic!("no fn {name}"));
+        let body = &wgsl[start..];
+        let body = &body[body.find('{').expect("a body")..];
+        let mut depth = 0i32;
+        for (i, c) in body.char_indices() {
+            match c {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return body[..=i].to_string();
+                    }
+                }
+                _ => {}
+            }
+        }
+        panic!("fn {name} is not closed");
+    }
     let main = &wgsl[wgsl.find("@fragment").expect("a fragment entry point")..];
     let body = &main[main.find("// code").expect("a code section")..];
     let body = &body[..body.find("return output;").expect("a return")];
     match which {
         Region::Body => body.to_string(),
         Region::LoopAnyTap => any_tap(&region(wgsl, Region::Loop)),
+        Region::Function(_) => unreachable!(),
         Region::Loop => {
             let start = body.find("for (").expect("a loop");
             let mut depth = 0i32;
@@ -315,6 +340,11 @@ fn dot_screen_matches_three() {
 #[test]
 fn rgb_shift_matches_three() {
     check("rgb_shift", Region::Body);
+}
+
+#[test]
+fn fxaa_matches_three() {
+    check("fxaa", Region::Function("FxaaPixelShader"));
 }
 
 #[test]

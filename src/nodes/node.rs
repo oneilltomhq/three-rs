@@ -285,6 +285,8 @@ pub enum UniformSource {
     MaterialSheen,
     MaterialSheenColor,
     MaterialSheenRoughness,
+    /// `MeshPhysicalMaterial.diffuseRoughness`.
+    MaterialDiffuseRoughness,
     MaterialNormalScale,
     /// `MeshStandardMaterial.aoMapIntensity` — the scale in `materialAO`'s
     /// `tex.r.sub( 1 ).mul( aoMapIntensity ).add( 1 )`.
@@ -318,6 +320,51 @@ pub enum UniformSource {
     /// the callback receives the object itself and answers from whatever the
     /// application keyed to it. See `docs/nodes.md` §18.
     ObjectUpdate(ObjectUpdate),
+    /// A uniform that holds a *reference* to an application object and reads
+    /// it when the buffer is written: three's `uniform( skinnedMesh.bindMatrix
+    /// )` (the `Matrix4` itself, not a copy of its elements) and
+    /// `objectWorldMatrix( object3d )` (`Object3DNode` with an explicit object,
+    /// whose `OBJECT` update reads `object3d.matrixWorld`). Unlike
+    /// [`UniformSource::ObjectUpdate`] it does not need a render object, so a
+    /// compute kernel can read it: `computeSkinning()` and
+    /// `webgpu_skinning_points` are the first. See `docs/nodes.md` §44.
+    Live(LiveValue),
+}
+
+/// The reader behind [`UniformSource::Live`]. Compares and hashes by
+/// identity, like [`SettableValue`]: the value moves, the program does not.
+#[derive(Clone)]
+pub struct LiveValue(Rc<dyn Fn() -> Vec<f64>>);
+
+impl LiveValue {
+    pub fn new(read: impl Fn() -> Vec<f64> + 'static) -> Self {
+        Self(Rc::new(read))
+    }
+
+    /// The value now.
+    pub fn get(&self) -> Vec<f64> {
+        (self.0)()
+    }
+}
+
+impl std::fmt::Debug for LiveValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("LiveValue")
+            .field(&Rc::as_ptr(&self.0).cast::<u8>())
+            .finish()
+    }
+}
+
+impl PartialEq for LiveValue {
+    fn eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl std::hash::Hash for LiveValue {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        (Rc::as_ptr(&self.0).cast::<u8>() as usize).hash(state);
+    }
 }
 
 /// The callback behind [`UniformSource::ObjectUpdate`] — `Node.update( frame )`
@@ -464,6 +511,7 @@ impl UniformSource {
             | UniformSource::MaterialSheen
             | UniformSource::MaterialSheenColor
             | UniformSource::MaterialSheenRoughness
+            | UniformSource::MaterialDiffuseRoughness
             | UniformSource::MaterialNormalScale
             | UniformSource::MaterialAoMapIntensity
             | UniformSource::EnvRotationMatrix
@@ -473,7 +521,8 @@ impl UniformSource {
             | UniformSource::ObjectCenter
             | UniformSource::Value(_)
             | UniformSource::Settable(_)
-            | UniformSource::ObjectUpdate(_) => UpdateType::Object,
+            | UniformSource::ObjectUpdate(_)
+            | UniformSource::Live(_) => UpdateType::Object,
             _ => UpdateType::Render,
         }
     }
@@ -562,6 +611,23 @@ pub enum BufferSource {
         layout: Rc<StructLayout>,
         init: Rc<Vec<u32>>,
     },
+    /// `storage( attribute, type, count )` over an attribute that *has* a CPU
+    /// array — `computeSkinning()`'s `storage( new InstancedBufferAttribute(
+    /// position.array, 3 ), 'vec3' )`, or a `StorageInstancedBufferAttribute(
+    /// array, itemSize )`. Uploaded once, when the GPU buffer is made, then
+    /// left to the kernels. `init` is the array's bits already laid out at the
+    /// storage stride (a `vec3` padded to 16 bytes, as
+    /// `WebGPUAttributeUtils.createAttribute()` pads it).
+    ///
+    /// `read_only` is `.toReadOnly()`: `var<storage, read>` in a kernel too.
+    StorageData { init: Rc<Vec<u32>>, read_only: bool },
+    /// `buffer( skeleton.boneMatrices, 'mat4', bones )` — `computeSkinning()`'s
+    /// bone matrices: a plain uniform `BufferNode` over the skeleton's own
+    /// array rather than `SkinningNode`'s `referenceBuffer`, so it is resolved
+    /// from the skeleton it names and not from a render object. The
+    /// skeleton's `OnObjectUpdate` (`skeleton.update()`, once per frame) runs
+    /// when the buffer is written.
+    SkeletonBoneMatrices(SkeletonRef),
 }
 
 impl BufferSource {
@@ -570,7 +636,10 @@ impl BufferSource {
     pub fn is_storage(&self) -> bool {
         matches!(
             self,
-            BufferSource::Storage | BufferSource::AtomicStorage | BufferSource::Struct { .. }
+            BufferSource::Storage
+                | BufferSource::AtomicStorage
+                | BufferSource::Struct { .. }
+                | BufferSource::StorageData { .. }
         )
     }
 
@@ -585,6 +654,17 @@ impl BufferSource {
             }
             _ => (UniformGroup::Object, None),
         }
+    }
+}
+
+/// The skeleton behind [`BufferSource::SkeletonBoneMatrices`], compared by
+/// identity: one skeleton is one buffer however many kernels read it.
+#[derive(Clone)]
+pub struct SkeletonRef(pub Rc<RefCell<crate::objects::Skeleton>>);
+
+impl PartialEq for SkeletonRef {
+    fn eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
     }
 }
 
@@ -820,12 +900,30 @@ pub enum SampleMode {
     Sample,
     /// `textureSampleLevel( t, t_sampler, uv, level )`.
     Level(NodeRef),
-    /// `textureSampleGrad( t, t_sampler, uv, vec2( 0 ), vec2( 0 ) )` —
-    /// `textureNode.grad( vec2(), vec2() )`, which is how `PMREMUtils`'
-    /// `bilinearCubeUV` turns anisotropic filtering off on the cubeUV atlas.
-    /// The two gradients are always the zero constants three passes, so they
-    /// are baked rather than carried as nodes.
-    Grad,
+    /// `textureSampleBias( t, t_sampler, uv, bias )` — `textureNode.bias(
+    /// value )`. `FXAANode` samples its input at a bias of `-100`, pinning
+    /// every tap to the top mip.
+    Bias(NodeRef),
+    /// `textureSampleGrad( t, t_sampler, uv, gradX, gradY )` —
+    /// `textureNode.grad( gradX, gradY )` (`generateTextureGrad()`), each
+    /// gradient built as a `vec2`.
+    Grad(NodeRef, NodeRef),
+    /// `textureGather( component, t, t_sampler, uv[, offset] )` —
+    /// `textureNode.gather( component )`, optionally `.offset( ivec2 )`
+    /// (`WGSLNodeBuilder.generateTextureGather()`): one channel of the four
+    /// texels a bilinear tap would read, from mip level 0.
+    Gather {
+        component: NodeRef,
+        offset: Option<NodeRef>,
+    },
+    /// `textureGatherCompare( t, t_sampler, uv, depth[, offset] )` —
+    /// `depthNode.gather().compare( depth )` on a depth texture with a
+    /// comparison sampler (`generateTextureGatherCompare()`): the four
+    /// texels' comparison results.
+    GatherCompare {
+        compare: NodeRef,
+        offset: Option<NodeRef>,
+    },
     /// The non-filterable path: `textureLoad` against `textureDimensions`,
     /// with no sampler binding at all. What Three emits for a depth texture.
     Load,
@@ -945,8 +1043,103 @@ impl std::fmt::Debug for FnDef {
     }
 }
 
+/// A node type defined outside the crate: the port of `class MyNode extends
+/// Node` with a `setup( builder )` override, the shape every addon in
+/// `examples/jsm/tsl/` has.
+///
+/// **`setup` composes; it never emits.** It returns a graph of the existing
+/// [`Node`] variants, and the builder builds that graph in its place. It
+/// cannot write a WGSL statement of its own, declare a binding, or change how
+/// a variant is generated. Three's addons never override `generate` either:
+/// they override `setup` (and `updateBefore`, which is #162). A node that needs
+/// a statement shape nothing can compose into belongs in the crate as a
+/// variant, where the exhaustive `match` in the builder and the dump gates see
+/// it (#155 decision 2).
+///
+/// The builder calls `setup` once per build, the first time it reaches the
+/// node, and keeps the result as three keeps `nodeProperties.outputNode`: in
+/// the builder's per-build data, keyed on the node's identity and scoped by
+/// [`isolate`](crate::nodes::tsl::isolate). Two reaches of one
+/// `Node::Custom` share one expansion; two `Node::Custom`s over equal structs
+/// are two nodes. See `docs/nodes.md` §45.
+///
+/// ```ignore
+/// struct Double(NodeRef);
+///
+/// impl CustomNode for Double {
+///     fn type_name(&self) -> &'static str { "DoubleNode" }
+///     fn node_type(&self) -> Type { self.0.ty() }
+///     fn setup(&self, _: &NodeBuilder) -> NodeRef { self.0.clone().mul(2.0) }
+/// }
+///
+/// let doubled = custom(Double(uv().x()));
+/// ```
+pub trait CustomNode {
+    /// three's `static get type()`: the class name, `'RGBShiftNode'`. Only
+    /// `Debug` output and panic messages read it.
+    fn type_name(&self) -> &'static str;
+
+    /// `Node.getNodeType( builder )`: the WGSL type of the value `setup`
+    /// returns. The port needs it before the build, because the TSL methods
+    /// that wrap this node (`.mul()`, `.x()`, …) type their result eagerly.
+    fn node_type(&self) -> Type;
+
+    /// `Node.isCacheable( builder )`: whether a node reached more than once
+    /// is built into a var once and read from there. r187dev's `Node.build()`
+    /// does that for every cacheable node with a value (`cacheResult`), not
+    /// only for `TempNode`s, so the default is `true`, as three's is.
+    /// `false` builds the output again at every reach.
+    fn is_cacheable(&self) -> bool {
+        true
+    }
+
+    /// `Node.setup( builder )`: the graph this node stands for.
+    ///
+    /// `builder` is shared, not mutable: the only thing to ask it is
+    /// [`context`](crate::nodes::NodeBuilder::context), three's
+    /// `builder.context`, as installed by an enclosing
+    /// [`context`](crate::nodes::tsl::context) node. The TSL functions called
+    /// here see the same context through the crate's own accessors.
+    fn setup(&self, builder: &crate::nodes::NodeBuilder) -> NodeRef;
+}
+
+impl std::fmt::Debug for dyn CustomNode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.type_name())
+    }
+}
+
+/// `context( node, { … } )`'s value: the `builder.context` keys a
+/// [`Node::Context`] installs for its subgraph, merged over the ones already
+/// in force (`builder.addContext()`).
+///
+/// Three's values are arbitrary JS; the port's are nodes (`getViewZ: () =>
+/// scenePassViewZ` is `.set( "getViewZ", scene_pass_view_z )`), held in
+/// `BuildContext`'s string-keyed `extra` map, which is where #155 decision 6
+/// put addon keys. The typed core keys (`setupNormal`, the material side, …)
+/// are installed by the material's own setup and cannot be set from here.
+#[derive(Clone, Debug, Default)]
+pub struct ContextValue {
+    pub(crate) entries: Vec<(&'static str, NodeRef)>,
+}
+
+impl ContextValue {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// `{ …, key: value }`. A later `set` of the same key wins, as the later
+    /// of two properties does in a JS object literal.
+    pub fn set(mut self, key: &'static str, value: impl Into<NodeRef>) -> Self {
+        self.entries.retain(|(k, _)| *k != key);
+        self.entries.push((key, value.into()));
+        self
+    }
+}
+
 /// The node set. Closed on purpose: an exhaustive `match` in the builder is
 /// what tells the next rung it has added something the generator cannot emit.
+/// [`Node::Custom`] is the one opening, and it can only compose the others.
 #[derive(Debug)]
 pub enum Node {
     /// A literal. `values` holds one entry per component.
@@ -988,6 +1181,16 @@ pub enum Node {
         ty: Type,
     },
     Builtin(Builtin),
+    /// `ComputeNode` used as a value — `Fn( () => { …; return x } )().compute(
+    /// count )` set as a material's `positionNode`. Outside the compute stage
+    /// it generates `output` (`properties.outputComputeNode`); the kernel
+    /// itself runs from `updateBefore()` (`NodeUpdateType.FRAME`), which the
+    /// builder records in [`NodeProgram::computes`](crate::nodes::NodeProgram)
+    /// for the renderer to dispatch. See `docs/nodes.md` §44.
+    Compute {
+        flow: Rc<crate::nodes::ComputeFlow>,
+        output: NodeRef,
+    },
     Var(Rc<VarDef>),
     /// `VarNode` with `readOnly` set — `node.toConst()`. A WGSL `let`, so it is
     /// declared where it is assigned and, unlike a `var<private>`, cannot be
@@ -1202,6 +1405,23 @@ pub enum Node {
     Barrier {
         scope: &'static str,
     },
+    /// A node type defined outside the crate; see [`CustomNode`]. Built by
+    /// building what its `setup` returns.
+    Custom(Rc<dyn CustomNode>),
+    /// `ContextNode` — `node.context( { … } )`. Builds `node` with `value`'s
+    /// keys merged into `builder.context`, and restores the previous context
+    /// afterwards.
+    Context {
+        node: NodeRef,
+        value: Rc<ContextValue>,
+    },
+    /// `IsolateNode` — `isolate( node )`. Builds `node` in a `NodeCache` of
+    /// its own, whose parent is the cache in force where the isolate is
+    /// built: what `node`'s subgraph sets up, counts or declares for the first
+    /// time stays inside it.
+    Isolate {
+        node: NodeRef,
+    },
 }
 
 /// A handle on a node. Fluent TSL methods hang off this; see `tsl.rs`.
@@ -1267,6 +1487,9 @@ impl NodeRef {
             Node::Atomic { pointer, .. } => pointer.ty(),
             Node::Workgroup(def) => def.element_ty,
             Node::Barrier { .. } => Type::Void,
+            Node::Compute { output, .. } => output.ty(),
+            Node::Custom(custom) => custom.node_type(),
+            Node::Context { node, .. } | Node::Isolate { node } => node.ty(),
         }
     }
 }
@@ -1415,6 +1638,7 @@ impl std::hash::Hash for UniformSource {
             // Identity, never contents: the whole point is that the value
             // moves between draws while the program stays one program.
             UniformSource::Settable(cell) => cell.hash(state),
+            UniformSource::Live(value) => value.hash(state),
             _ => {}
         }
     }
@@ -1443,6 +1667,11 @@ impl std::hash::Hash for BufferSource {
                     member.ty.hash(state);
                     member.atomic.hash(state);
                 }
+            }
+            // The array is a value; `.toReadOnly()` is spelt into the WGSL.
+            BufferSource::StorageData { read_only, .. } => read_only.hash(state),
+            BufferSource::SkeletonBoneMatrices(skeleton) => {
+                (Rc::as_ptr(&skeleton.0) as *const u8 as usize).hash(state)
             }
             BufferSource::InstanceMatrix
             | BufferSource::InstanceColor
@@ -1519,6 +1748,15 @@ impl std::fmt::Debug for BufferSource {
             BufferSource::UniformArray(data) => f
                 .debug_tuple("UniformArray")
                 .field(&format_args!("{} floats", data.len()))
+                .finish(),
+            BufferSource::StorageData { init, read_only } => f
+                .debug_struct("StorageData")
+                .field("init", &format_args!("{} words", init.len()))
+                .field("read_only", read_only)
+                .finish(),
+            BufferSource::SkeletonBoneMatrices(skeleton) => f
+                .debug_tuple("SkeletonBoneMatrices")
+                .field(&format_args!("{} bones", skeleton.0.borrow().bones.len()))
                 .finish(),
         }
     }
