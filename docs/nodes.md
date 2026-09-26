@@ -3683,3 +3683,69 @@ left for when `context()` can install arbitrary keys.
 Nothing generated changed. `dump_wgsl`'s output is identical after each of
 the eight migrations, apart from the one `ObjectUpdate` pointer noted in §36.
 Every `tests/nodes_*` gate passes unchanged, and so does the full ladder.
+
+## 42. `FXAANode`, `textureSampleBias`, and a float `uniformArray` (`webgpu_postprocessing_fxaa`, `webgpu_postprocessing`)
+
+`fxaa( node )` is `examples/jsm/tsl/display/FXAANode.js`, ported line by
+line into `src/nodes/display/fxaa.rs`. Like `sobel()`, it takes the texture
+that `convertToTexture()` would have made. The page hands it the `RTTNode`
+of `renderOutput( scenePass )`, because FXAA works on sRGB values.
+
+**One real `fn`.** `ApplyFXAA` is the only `Fn` with a layout
+(`FxaaPixelShader( uv, texSize )`), so three's `main()` is a single call. The
+helpers are either plain arrow functions (`SampleLuminanceNeighborhood`,
+`DetermineEdge`, …) or `Fn`s without a layout (`Sample`, `SampleLuminance`,
+`SampleLuminanceOffset`), and both kinds inline at the call site. The port
+keeps them as Rust closures and functions, called in the same order as in
+the JS. Each helper that puts vars or `If`s on three's stack hands back its
+statements, and the caller splices them into the `If( ShouldSkipPixel( l
+).not() )` block in the order three pushes them. The eight neighbour taps
+come out in first-use order, not declaration order: `max( s, e, n, w, m )`
+builds the south tap first. That order falls out of the builder and needs no
+code of its own.
+
+**Checked against.** `tests/nodes_display_wgsl.rs` gains a
+`Region::Function( name )`, which takes the fingerprint over the body of a
+named WGSL `fn`, because `main()` here is only the call. With names
+normalised, the port's `FxaaPixelShader` matches three's `m05` statement for
+statement except for the divergence below.
+
+**`textureSampleBias`.** `textureNode.bias( -100 )` pins every tap to the top
+mip. This is `SampleMode::Bias` and `tsl::texture_bias( map, uv, bias )`. As
+with `texture_uv`, the uv is taken as given, with no uv matrix. WGSL allows
+`textureSampleBias` only under uniform control flow. Most of these taps sit
+inside `if`s and loops, which is why the module keeps three's `diagnostic(
+off, derivative_uniformity )`.
+
+**`uniformArray( [ floats ] )`.** `tsl::uniform_array_f32` pads each float
+to a `vec4`, and `UniformArray::element_x( index )` reads it back as
+`NodeBuffer_N.value[ i ].x`. The index is a node, either `uint( 0 )` or the
+loop's `i`, as in three.
+
+**`Loop( { start: 1, end: float( 6 ) } )`.** Three writes the header as
+`i < 6`, the bound's value in the index type, so the port passes
+`loop_range( "i", int( 1 ), int( 6 ), … )`.
+
+### 42.1 `webgpu_postprocessing` sits on three's own line
+
+This page builds nothing new. `dot_screen` and `rgb_shift` were already gated
+against its `m03` and `m05`, and the page wires them as `rgbShift( rtt(
+dotScreen( passTexture ) ) )`. The port's 800×500 frame is byte-identical to
+three's own frame on this machine (`tools/dump-webgpu.mjs`'
+`actual_full.png`). Both score **107** of 100000 pixels against
+`webgpu_postprocessing.jpg`, which is over the 100-pixel limit. The halftone
+multiplies the channel average by 10 before adding the dot pattern, so a
+difference of one LSB between two GPUs moves a dot's rim by a pixel. The 107
+pixels are exactly those single-pixel dot rims, scattered across the frame.
+Following `webgpu_instance_path`, the e2e test is `#[ignore]`d with the
+reason, and the page stays in the steady-frame strip.
+
+### 42.2 Divergences
+
+* **`max( pixelBlend, edgeBlend )` gets a var in each arm.** In the final
+  `If( edge.isHorizontal )` / `Else`, three inlines `finalBlend` into both
+  `addAssign`s. The port declares it as a var at the top of each arm first.
+  The port counts the one node's two uses, one per sibling arm, as two;
+  three does not. The value, the calls and the literals are the same, and
+  the frame is byte-identical to three's. The port's usage analysis is
+  shared by every rung, so this is recorded rather than changed.
