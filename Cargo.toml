@@ -49,6 +49,11 @@ bytemuck = { version = "1", features = ["derive"] }
 png = "0.17"
 serde_json = "1"
 zune-jpeg = { version = "0.5.15", default-features = false, features = ["std"] }
+# `EXT_texture_webp` (#179). Pure Rust (image-rs), no dependencies beyond two
+# tiny ones of its own, builds for wasm32. `tests/loaders_webp.rs` holds it to
+# Chromium's own libwebp decode of every WebP image in the three.js examples,
+# byte for byte: lossy, lossy with alpha and lossless.
+image-webp = "0.2.4"
 
 # Everything that only makes sense on a desktop.
 #
@@ -83,6 +88,13 @@ js-sys = "0.3"
 # no transitive dependencies of its own, and out of the library's dependency
 # set: nothing three-rs itself builds or publishes pulls it in.
 jpeg-encoder = { version = "0.7", default-features = false, features = ["std"] }
+
+# A debug build decodes a 4096² WebP in seconds rather than a quarter of one
+# at opt-level 3, which `tests/loaders_webp.rs` (64 images, most 2048²) and any
+# debug run of a WebP asset feel. Dependencies only; three-rs' own code keeps
+# the debug profile.
+[profile.dev.package.image-webp]
+opt-level = 3
 
 # No dev-dependency on the `sdf-text` member crate, on purpose: it depends on
 # three-rs, and a cycle here would either be stripped from the packaged

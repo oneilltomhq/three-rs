@@ -2725,3 +2725,36 @@ None new beyond the classes §8 already lists, and one fix that was a real bug:
 [`tsl::with_tangent_attribute`]: ../src/nodes/tsl.rs
 [`tsl::bent_normal_view`]: ../src/nodes/tsl.rs
 [`Scene::background_blurriness`]: ../src/objects/scene.rs
+
+## 28. WebP and AVIF glTF textures (issue #179)
+
+Three has no image decoders: `GLTFLoader` hands a texture's bytes to the
+browser's `createImageBitmap` (with `premultiplyAlpha: 'none'`,
+`colorSpaceConversion: 'none'`) and the renderer uploads the bitmap with
+`copyExternalImageToTexture`. The port decodes in Rust instead, in
+[`TextureLoader`](../src/loaders/texture_loader.rs), and a decoder is only
+taken when it gives the texels Chromium gives.
+
+**WebP** goes through `image-webp`. `tests/loaders_webp.rs` runs Chromium's own
+decode and upload (`tools/image_reference.mjs`, in the headless Chrome three's
+`npm ci` downloads) over every WebP image in the examples — 64 images in eight
+GLBs: lossy, lossy with an `ALPH` plane, and lossless — and requires every
+texel to be equal. They are, with no tolerance. `EXT_texture_webp` is in
+`SUPPORTED_EXTENSIONS`, and a texture carrying it samples the extension's
+`source`, never its own fallback `source`, as `GLTFTextureWebPExtension` does.
+
+### 28.1 Divergences
+
+* **AVIF is not decoded.** `EXT_texture_avif` is not in `SUPPORTED_EXTENSIONS`,
+  so a file that *requires* it (`AVIFTest/forest_house.glb`, the only one in
+  the examples) is refused with `UnsupportedRequiredExtension`, where Chrome
+  would decode it. A file that only *uses* it gets the texture's fallback
+  `source`, which is what three does in a browser without AVIF. An AVIF image
+  reached any other way is an error that names AVIF, not a JPEG error. No
+  pure-Rust AV1 decoder is fit yet: `rav1d` (and its `re_rav1d` fork) do not
+  compile for wasm32-unknown-unknown; `avif-rust` 0.0.7 compiles everywhere
+  but refuses 2 of forest_house's 12 images ("too many padding bits"), which
+  dav1d decodes; `rav1d-safe` and `zenavif` are AGPL; `avif-decode` is `rav1d`
+  underneath and needs Rust 1.98; `oxideav-av1` is a scaffold.
+* **An animated WebP gives its first frame**, which is what `createImageBitmap`
+  gives too; no three.js asset is animated, so this is untested.
