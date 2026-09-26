@@ -8,6 +8,7 @@ pub mod cube_render_target;
 mod direct_render_pipeline;
 mod info;
 mod mipmap;
+mod occlusion;
 mod pass;
 pub mod pmrem;
 /// Additive seam for the interactive viewer; see `present.rs`.
@@ -448,6 +449,10 @@ struct Draw {
     /// it (`drawIndirect` / `drawIndexedIndirect` at offset 0) and
     /// `instance_count`, `first` and `elements` are not used.
     indirect: Option<wgpu::Buffer>,
+    /// The render object's id, and its `occlusionTest` — what
+    /// `WebGPUBackend.draw()` compares to `lastOcclusionObject`.
+    object: Option<u32>,
+    occlusion_test: bool,
 }
 
 struct PassTarget {
@@ -696,6 +701,15 @@ pub struct Renderer {
     /// eight samples and its eight accumulation quads — belong to the frame
     /// they precede and do not advance it.
     frames: u64,
+    /// Every render context's occlusion queries and results — see
+    /// `occlusion.rs`.
+    occlusion: occlusion::Occlusion,
+    /// The render context of the scene pass about to be drawn, set by
+    /// `render()` just before `render_list()` and taken by the `draw()` that
+    /// draws it: three's `_currentRenderContext` as far as the occlusion
+    /// queries and `isOccluded()` read it. The shadow passes and the output
+    /// blit are other draws and never see it.
+    occlusion_context: Option<occlusion::ContextKey>,
     /// How many times `NodeBuilder::build` has run — the number a steady frame
     /// must leave unchanged. See `program_builds()`.
     program_builds: u64,
@@ -1098,6 +1112,8 @@ impl Renderer {
             programs: HashMap::new(),
             node_builder_states: HashMap::new(),
             frames: 0,
+            occlusion: occlusion::Occlusion::default(),
+            occlusion_context: None,
             program_builds: 0,
             default_material: MeshBasicNodeMaterial::new(),
             output_hook: None,
@@ -1394,6 +1410,17 @@ impl Renderer {
         // Before anything of this frame is looked up: return what the last
         // frame's scene no longer uses. See `sweep_caches`.
         self.begin_frame();
+
+        // `resolveOccludedAsync()`'s `await mapAsync()` resolving: in a
+        // browser the map's callback runs from the event loop between frames;
+        // natively it runs from a poll, so poll (without blocking) whenever a
+        // map is outstanding, and fold what landed into `occluded`.
+        if self.occlusion.has_pending() {
+            // A lost device surfaces on the next submit; here the poll only
+            // drives callbacks.
+            let _ = self.device.poll(wgpu::PollType::Poll);
+            self.occlusion.collect();
+        }
 
         // `DirectRenderPipeline`'s `getOutput` hook, which every material of
         // this render carries into its own setup. three.js makes the decision
@@ -1931,7 +1958,14 @@ impl Renderer {
             ..Default::default()
         };
 
+        self.occlusion_context = Some((
+            scene.node.borrow().id,
+            self.render_target
+                .as_ref()
+                .map(|target| target.texture().id()),
+        ));
         self.render_list(&items, camera_uniforms, clear);
+        self.occlusion_context = None;
     }
 
     /// `ShadowNode.updateShadow()` for every shadow-casting light in the list:
@@ -2763,6 +2797,14 @@ impl Renderer {
         let mut draws = Vec::with_capacity(items.len());
         let mut occurrences = Occurrences::default();
 
+        // `_currentRenderContext` for this pass, if it is a scene pass, and
+        // what `isOccluded()` answers during it. Cloned out so the bindings
+        // below can borrow `self` mutably; it is a handful of ids.
+        let occlusion_context = self.occlusion_context.take();
+        let occluded = occlusion_context
+            .and_then(|key| self.occlusion.occluded(key))
+            .cloned();
+
         // `RenderList.push()` routes `material.transmission > 0` into the
         // transparent list, and the first such draw is where
         // `ViewportTextureNode.updateBefore()` fires: the pass ends, the
@@ -2825,6 +2867,7 @@ impl Renderer {
 
             let uniforms = UniformContext {
                 object: object.as_deref(),
+                occluded: occluded.as_ref(),
                 model_world: item.model_world,
                 material_color: item.material.color,
                 material_opacity: item.material.opacity,
@@ -2963,8 +3006,27 @@ impl Renderer {
                 first,
                 elements,
                 indirect,
+                object: object.as_ref().map(|object| object.id),
+                occlusion_test: object.as_ref().is_some_and(|object| object.occlusion_test),
             });
         }
+
+        // `WebGPUBackend.beginRender()`: a query set when any draw of this
+        // scene pass has an `occlusionTest`. Only the opaque pass records
+        // into it when a transmissive split makes two passes: no page on the
+        // ladder puts an occlusion test on a pass that splits.
+        let query_objects = match occlusion_context {
+            Some(_) => occlusion::query_objects(
+                draws[..transmission_split.unwrap_or(draws.len())]
+                    .iter()
+                    .map(|draw| (draw.object, draw.occlusion_test)),
+            ),
+            None => Vec::new(),
+        };
+        let query_set = occlusion_context.and_then(|key| {
+            self.occlusion
+                .begin(&self.device, key, query_objects.len() as u32)
+        });
 
         // One pass, or two with the framebuffer copy between them.
         match transmission_split {
@@ -2974,7 +3036,11 @@ impl Renderer {
                         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                             label: Some("three-rs pass"),
                         });
-                self.record_pass(&mut encoder, &draws, target, clear);
+                self.record_pass(&mut encoder, &draws, target, clear, query_set.as_ref());
+                if let (Some(key), Some(set)) = (occlusion_context, &query_set) {
+                    self.occlusion
+                        .finish(&self.device, &mut encoder, key, set, query_objects);
+                }
                 self.queue.submit(Some(encoder.finish()));
             }
             Some(split) => {
@@ -2983,7 +3049,17 @@ impl Renderer {
                         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                             label: Some("three-rs pass"),
                         });
-                self.record_pass(&mut encoder, &draws[..split], target, clear);
+                self.record_pass(
+                    &mut encoder,
+                    &draws[..split],
+                    target,
+                    clear,
+                    query_set.as_ref(),
+                );
+                if let (Some(key), Some(set)) = (occlusion_context, &query_set) {
+                    self.occlusion
+                        .finish(&self.device, &mut encoder, key, set, query_objects);
+                }
                 self.queue.submit(Some(encoder.finish()));
 
                 // `ViewportTextureNode.updateBefore()`.
@@ -3001,7 +3077,13 @@ impl Renderer {
                         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                             label: Some("three-rs transmission pass"),
                         });
-                self.record_pass(&mut encoder, &draws[split..], target, ClearOps::default());
+                self.record_pass(
+                    &mut encoder,
+                    &draws[split..],
+                    target,
+                    ClearOps::default(),
+                    None,
+                );
                 self.queue.submit(Some(encoder.finish()));
             }
         }
@@ -3014,6 +3096,7 @@ impl Renderer {
         draws: &[Draw],
         target: &PassTarget,
         clear: ClearOps,
+        occlusion_query_set: Option<&wgpu::QuerySet>,
     ) {
         let load = match clear.color {
             Some(color) => wgpu::LoadOp::Clear(wgpu::Color {
@@ -3067,7 +3150,7 @@ impl Renderer {
                     stencil_ops: None,
                 }
             }),
-            occlusion_query_set: None,
+            occlusion_query_set,
             timestamp_writes: None,
             multiview_mask: None,
         });
@@ -3089,8 +3172,27 @@ impl Renderer {
             pass.set_scissor_rect(sc.x, sc.y, sc.width, sc.height);
         }
 
+        // `renderContextData.lastOcclusionObject` / `occlusionQueryIndex`,
+        // walked exactly as `occlusion::query_objects` counted them.
+        let mut last_object: Option<(Option<u32>, bool)> = None;
+        let mut query_index = 0;
+
         for draw in draws.iter() {
             let geometry = &self.geometries[&draw.geometry_id].gpu;
+
+            // `WebGPUBackend.draw()`'s occlusion branch.
+            if occlusion_query_set.is_some()
+                && last_object.map(|(object, _)| object) != Some(draw.object)
+            {
+                if let Some((_, true)) = last_object {
+                    pass.end_occlusion_query();
+                    query_index += 1;
+                }
+                if draw.occlusion_test {
+                    pass.begin_occlusion_query(query_index);
+                }
+                last_object = Some((draw.object, draw.occlusion_test));
+            }
 
             pass.set_pipeline(
                 self.pipelines
@@ -3153,6 +3255,12 @@ impl Renderer {
                     0..draw.instance_count,
                 ),
             }
+        }
+
+        // `WebGPUBackend.finishRender()`: the last object's query is still
+        // open.
+        if let Some((_, true)) = last_object {
+            pass.end_occlusion_query();
         }
     }
 
