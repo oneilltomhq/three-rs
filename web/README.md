@@ -100,7 +100,7 @@ rather than the hardware, so the desk and CI grade the same renderer;
 GPU instead.
 
 **The finding** (#128 asked whether the web gate can share the native
-references or needs its own): it shares them. On SwiftShader, all 40 graded
+references or needs its own): it shares them. On SwiftShader, all 40 then-graded
 examples pass Three's own screenshots at Three's own threshold, with no skip
 list: the worst is `webgpu_mrt` at 0.08% different pixels against a 0.1%
 limit, then `webgpu_deferred` at 0.06%; 29 of the 40 round to 0.00%.

@@ -2479,6 +2479,157 @@ statement — the `-1.9362 / 1.0678 / 0.4573 / 0.8469 / -0.6014 / 0.5538 / 0.467
 / 0.1255` fit, the `1 / π`, the `max( max( Sheen.x, Sheen.y ), Sheen.z )` — is
 term for term three's.
 
+## 26. `webgpu_loader_gltf_anisotropy` — anisotropy, a clearcoat, and a frame read back through glass
+
+The Anisotropy Barn Lamp is three glTF materials in one draw list, and each of
+them turns on a different branch of `PhysicalLightingModel`:
+
+| material | extensions | what it gates |
+| --- | --- | --- |
+| `lamp metal` | `KHR_materials_anisotropy`, `KHR_materials_clearcoat` | the bent normal and the coat |
+| `lamp filament` | `KHR_materials_emissive_strength` | `emissive * 25` |
+| `lamp glass` | `KHR_materials_transmission`, `KHR_materials_volume` | the second pass and `getIBLVolumeRefraction` |
+
+The page has **no lights at all**. Everything lit in the frame comes from the
+PMREM of `royal_esplanade_2k.hdr.jpg`, which is both `scene.environment` and —
+at `backgroundBlurriness = 0.5` — the background. That is what makes the rung
+worth grading and also what bounds it: see §26.5.
+
+### 26.1 `materialAnisotropyVector` and the bent normal
+
+`MeshPhysicalNodeMaterial.setupAnisotropy()` turns the scalar strength and
+rotation into a vector, optionally rotated again by the anisotropy texture's
+`rg`, and the lighting model normalises it:
+
+```
+anisotropyV = mat2( aV.x, aV.y, -aV.y, aV.x ) * normalize( anisotropyMap.rg * 2 - 1 )
+Anisotropy  = length( anisotropyV )        // If( Anisotropy == 0 ) { anisotropyV = vec2( 1, 0 ) } Else { anisotropyV /= Anisotropy }
+AlphaT      = mix( roughness², 1, Anisotropy² )
+AnisotropyT = TBNViewMatrix[ 0 ] * anisotropyV.x + TBNViewMatrix[ 1 ] * anisotropyV.y
+AnisotropyB = TBNViewMatrix[ 1 ] * anisotropyV.x - TBNViewMatrix[ 0 ] * anisotropyV.y
+```
+
+With no lights, `D_GGX_Anisotropic` and `V_GGX_SmithCorrelated_Anisotropic`
+are never reached — they live in `direct()`, and `direct()` is called once per
+light. The only thing anisotropy does to this frame is the **bent normal**,
+which is what `indirect()` hands to the radiance reflect vector:
+
+```
+bentNormalView = normalize( cross( cross( AnisotropyB, positionViewDirection ), AnisotropyB ) )
+```
+
+So the anisotropic streak on the lamp's shade is an environment reflection read
+along a normal that has been bent towards the anisotropy bitangent, not a
+specular lobe. §26.5 says what that leaves unverified.
+
+### 26.2 The tangent frame comes from the attribute, not from the uv derivative
+
+`AnisotropyT/B` are built from `TBNViewMatrix`, which with a `TANGENT`
+attribute present is `mat3( tangentView, bitangentView, normalView )` — three's
+`Tangent.js` and `Bitangent.js`, not the screen-space derivative frame a normal
+map would otherwise synthesise. `with_tangent_attribute()` is the switch; the
+shade carries `TANGENT`, so a wrong frame here shows as a streak pointing the
+wrong way rather than as an error. The `NORMAL_v_bitangentView` varying is the
+part that has to be named right for the dumps to line up.
+
+### 26.3 Transmission needs the frame behind the glass
+
+`getIBLVolumeRefraction` samples the *already drawn* opaque frame along the
+refracted ray. Three does this by splitting the frame in two, and the dump of
+`webgpu_loader_gltf_anisotropy` shows it exactly:
+
+* pass 0 draws the background, `lamp filament` and `lamp metal` into an MSAA
+  attachment that resolves into texture 0;
+* the resolved texture is copied into texture 349 (800×500, 10 mips,
+  `rgba16float`, single-sampled);
+* passes 81–89 blit the nine mip levels;
+* pass 90 draws `lamp glass` alone and reads texture 349;
+* pass 91 is the output colour transform.
+
+The port does the same in [`Renderer::draw`]: `transmission_split` is the index
+of the first item whose material has `transmission > 0`, the draws before it go
+in one pass, the encoder is submitted, `copy_framebuffer_to_opaque_frame()`
+copies and re-mips, and the draws from the split on go in a second pass that
+loads rather than clears. Three things fall out of that:
+
+* **The copy source is the resolve target, not the MSAA attachment.** A
+  multisampled texture cannot be sampled as a plain `texture_2d`, so
+  `PassTarget` gained `color_texture: Option<wgpu::Texture>` holding the
+  single-sample side. The MSAA attachment survives the first pass
+  (`StoreOp::Store`), so the second pass loads it and resolves once at the end.
+* **Bind groups may be built before the copy.** A bind group references the
+  texture object, not its contents; building every draw up front and copying in
+  between is correct, and it keeps one `Draw` list for both passes.
+* **No double pass.** `needsDoublePass()` is `hasTransmission && side ===
+  DoubleSide && forceSinglePass === false`. The lamp's glass is single-sided,
+  so `transparentDoublePass` is empty and the port does not implement it.
+
+`Renderer::opaque_frame_texture()` mirrors `viewportOpaqueMipTexture()`: a
+`FramebufferTexture` with `generateMipmaps: true` and
+`MinFilter::LinearMipmapLinear`, cached and reused while the size and format
+hold.
+
+### 26.4 A transmissive material sorts with the transparent list
+
+`RenderList.push()` reads
+
+```js
+if ( material.transparent === true || material.transmission > 0 || … )
+```
+
+— the transmission test is an **or**, not a refinement of `transparent`. The
+glTF sets no `alphaMode` on the glass, so `material.transparent` is `false` and
+the object would otherwise sort among the opaques. It cost 1411 px before the
+port matched it: the split landed ahead of `lamp filament`, the copy caught a
+frame with no filament in it, and the bulb came out an even milky white with
+the glow missing. §26.6 lists the pixel counts.
+
+### 26.5 What the frame cannot check
+
+* **The anisotropic GGX.** `D_GGX_Anisotropic` / `V_GGX_SmithCorrelated_Anisotropic`
+  are behind `direct()`, and this scene has no lights. They are deliberately
+  left out rather than written blind: nothing on this ladder would grade them,
+  and an unverified lobe in the lighting model is worse than a missing one.
+  The rung that adds a light to an anisotropic material adds them.
+* **`anisotropyMap`'s rotation.** The barn lamp's anisotropy texture is read and
+  its `rg` rotate the vector, but the strength-only path (no texture) is not
+  separately graded here.
+* **Double-pass transmission.** See §26.3.
+* **Dispersion, iridescence, sheen, retroreflection.** Other flags of the same
+  lighting model; none is in this glTF.
+
+### 26.6 What the pixels found
+
+| state | different pixels (of 100000) |
+| --- | --- |
+| glass opaque (no transmission at all) | ~2400 |
+| transmission, glass sorted among the opaques | 1411 |
+| transmission, glass in the transparent list | **27** |
+
+### 26.7 Divergences
+
+None new beyond the classes §8 already lists, and one fix that was a real bug:
+
+* **`refract`'s eta.** `MathNode.REFRACT` builds its third operand as a
+  `float`; the port was widening it to the input type and emitting
+  `refract( vec3, vec3, vec3<f32>( … ) )`, which naga rejects. Fixed in
+  `Node::Math`'s arm rather than worked around in the caller.
+* **Uniform slot numbering.** `lamp glass`'s object struct has the same members
+  in the same order and types as three's `m12`, but the `nodeUniformN` indices
+  differ (three's run `0–3, 5–14, 17, 19, 23, 24, 26, 27, 29`; the port's
+  `0–15, 19, …`) because the gaps are the texture uniforms, numbered by each
+  builder's own traversal. §8, "Generated names".
+* **The backdrop is a var on purpose.** Three keeps `getIBLVolumeRefraction`'s
+  result in `nodeVar42` and reads it twice — once for `DiffuseColor.w`, once
+  for `totalDiffuse`. The port does the same with an explicit `to_var`; without
+  it the whole inlined bicubic expression is emitted twice, which is correct
+  but doubles the fragment.
+* **`getVolumeTransmissionRay`, `applyIorToRoughness` and `volumeAttenuation`
+  are real `fn`s; `getTransmissionSample`, `getIBLVolumeRefraction` and
+  `textureBicubicLevel` are inlined.** That is three's own split: the first
+  three carry a `setLayout()`, the rest are plain `Fn()`. Reproduced
+  deliberately so the two dumps line up statement for statement.
+
 ## 27. `webgpu_deferred` — a G-buffer, a resolve quad and a shared depth buffer
 
 The page renders four times per frame:
@@ -2708,157 +2859,6 @@ stage (`m13`) is byte-identical apart from the var number.
 [`Texture::set_channel`]: ../src/textures/texture.rs
 [`tsl::uv1`]: ../src/nodes/tsl.rs
 [`materials::physical::brdf_sheen`]: ../src/materials/physical.rs
-
-## 26. `webgpu_loader_gltf_anisotropy` — anisotropy, a clearcoat, and a frame read back through glass
-
-The Anisotropy Barn Lamp is three glTF materials in one draw list, and each of
-them turns on a different branch of `PhysicalLightingModel`:
-
-| material | extensions | what it gates |
-| --- | --- | --- |
-| `lamp metal` | `KHR_materials_anisotropy`, `KHR_materials_clearcoat` | the bent normal and the coat |
-| `lamp filament` | `KHR_materials_emissive_strength` | `emissive * 25` |
-| `lamp glass` | `KHR_materials_transmission`, `KHR_materials_volume` | the second pass and `getIBLVolumeRefraction` |
-
-The page has **no lights at all**. Everything lit in the frame comes from the
-PMREM of `royal_esplanade_2k.hdr.jpg`, which is both `scene.environment` and —
-at `backgroundBlurriness = 0.5` — the background. That is what makes the rung
-worth grading and also what bounds it: see §26.5.
-
-### 26.1 `materialAnisotropyVector` and the bent normal
-
-`MeshPhysicalNodeMaterial.setupAnisotropy()` turns the scalar strength and
-rotation into a vector, optionally rotated again by the anisotropy texture's
-`rg`, and the lighting model normalises it:
-
-```
-anisotropyV = mat2( aV.x, aV.y, -aV.y, aV.x ) * normalize( anisotropyMap.rg * 2 - 1 )
-Anisotropy  = length( anisotropyV )        // If( Anisotropy == 0 ) { anisotropyV = vec2( 1, 0 ) } Else { anisotropyV /= Anisotropy }
-AlphaT      = mix( roughness², 1, Anisotropy² )
-AnisotropyT = TBNViewMatrix[ 0 ] * anisotropyV.x + TBNViewMatrix[ 1 ] * anisotropyV.y
-AnisotropyB = TBNViewMatrix[ 1 ] * anisotropyV.x - TBNViewMatrix[ 0 ] * anisotropyV.y
-```
-
-With no lights, `D_GGX_Anisotropic` and `V_GGX_SmithCorrelated_Anisotropic`
-are never reached — they live in `direct()`, and `direct()` is called once per
-light. The only thing anisotropy does to this frame is the **bent normal**,
-which is what `indirect()` hands to the radiance reflect vector:
-
-```
-bentNormalView = normalize( cross( cross( AnisotropyB, positionViewDirection ), AnisotropyB ) )
-```
-
-So the anisotropic streak on the lamp's shade is an environment reflection read
-along a normal that has been bent towards the anisotropy bitangent, not a
-specular lobe. §26.5 says what that leaves unverified.
-
-### 26.2 The tangent frame comes from the attribute, not from the uv derivative
-
-`AnisotropyT/B` are built from `TBNViewMatrix`, which with a `TANGENT`
-attribute present is `mat3( tangentView, bitangentView, normalView )` — three's
-`Tangent.js` and `Bitangent.js`, not the screen-space derivative frame a normal
-map would otherwise synthesise. `with_tangent_attribute()` is the switch; the
-shade carries `TANGENT`, so a wrong frame here shows as a streak pointing the
-wrong way rather than as an error. The `NORMAL_v_bitangentView` varying is the
-part that has to be named right for the dumps to line up.
-
-### 26.3 Transmission needs the frame behind the glass
-
-`getIBLVolumeRefraction` samples the *already drawn* opaque frame along the
-refracted ray. Three does this by splitting the frame in two, and the dump of
-`webgpu_loader_gltf_anisotropy` shows it exactly:
-
-* pass 0 draws the background, `lamp filament` and `lamp metal` into an MSAA
-  attachment that resolves into texture 0;
-* the resolved texture is copied into texture 349 (800×500, 10 mips,
-  `rgba16float`, single-sampled);
-* passes 81–89 blit the nine mip levels;
-* pass 90 draws `lamp glass` alone and reads texture 349;
-* pass 91 is the output colour transform.
-
-The port does the same in [`Renderer::draw`]: `transmission_split` is the index
-of the first item whose material has `transmission > 0`, the draws before it go
-in one pass, the encoder is submitted, `copy_framebuffer_to_opaque_frame()`
-copies and re-mips, and the draws from the split on go in a second pass that
-loads rather than clears. Three things fall out of that:
-
-* **The copy source is the resolve target, not the MSAA attachment.** A
-  multisampled texture cannot be sampled as a plain `texture_2d`, so
-  `PassTarget` gained `color_texture: Option<wgpu::Texture>` holding the
-  single-sample side. The MSAA attachment survives the first pass
-  (`StoreOp::Store`), so the second pass loads it and resolves once at the end.
-* **Bind groups may be built before the copy.** A bind group references the
-  texture object, not its contents; building every draw up front and copying in
-  between is correct, and it keeps one `Draw` list for both passes.
-* **No double pass.** `needsDoublePass()` is `hasTransmission && side ===
-  DoubleSide && forceSinglePass === false`. The lamp's glass is single-sided,
-  so `transparentDoublePass` is empty and the port does not implement it.
-
-`Renderer::opaque_frame_texture()` mirrors `viewportOpaqueMipTexture()`: a
-`FramebufferTexture` with `generateMipmaps: true` and
-`MinFilter::LinearMipmapLinear`, cached and reused while the size and format
-hold.
-
-### 26.4 A transmissive material sorts with the transparent list
-
-`RenderList.push()` reads
-
-```js
-if ( material.transparent === true || material.transmission > 0 || … )
-```
-
-— the transmission test is an **or**, not a refinement of `transparent`. The
-glTF sets no `alphaMode` on the glass, so `material.transparent` is `false` and
-the object would otherwise sort among the opaques. It cost 1411 px before the
-port matched it: the split landed ahead of `lamp filament`, the copy caught a
-frame with no filament in it, and the bulb came out an even milky white with
-the glow missing. §26.6 lists the pixel counts.
-
-### 26.5 What the frame cannot check
-
-* **The anisotropic GGX.** `D_GGX_Anisotropic` / `V_GGX_SmithCorrelated_Anisotropic`
-  are behind `direct()`, and this scene has no lights. They are deliberately
-  left out rather than written blind: nothing on this ladder would grade them,
-  and an unverified lobe in the lighting model is worse than a missing one.
-  The rung that adds a light to an anisotropic material adds them.
-* **`anisotropyMap`'s rotation.** The barn lamp's anisotropy texture is read and
-  its `rg` rotate the vector, but the strength-only path (no texture) is not
-  separately graded here.
-* **Double-pass transmission.** See §26.3.
-* **Dispersion, iridescence, sheen, retroreflection.** Other flags of the same
-  lighting model; none is in this glTF.
-
-### 26.6 What the pixels found
-
-| state | different pixels (of 100000) |
-| --- | --- |
-| glass opaque (no transmission at all) | ~2400 |
-| transmission, glass sorted among the opaques | 1411 |
-| transmission, glass in the transparent list | **27** |
-
-### 26.7 Divergences
-
-None new beyond the classes §8 already lists, and one fix that was a real bug:
-
-* **`refract`'s eta.** `MathNode.REFRACT` builds its third operand as a
-  `float`; the port was widening it to the input type and emitting
-  `refract( vec3, vec3, vec3<f32>( … ) )`, which naga rejects. Fixed in
-  `Node::Math`'s arm rather than worked around in the caller.
-* **Uniform slot numbering.** `lamp glass`'s object struct has the same members
-  in the same order and types as three's `m12`, but the `nodeUniformN` indices
-  differ (three's run `0–3, 5–14, 17, 19, 23, 24, 26, 27, 29`; the port's
-  `0–15, 19, …`) because the gaps are the texture uniforms, numbered by each
-  builder's own traversal. §8, "Generated names".
-* **The backdrop is a var on purpose.** Three keeps `getIBLVolumeRefraction`'s
-  result in `nodeVar42` and reads it twice — once for `DiffuseColor.w`, once
-  for `totalDiffuse`. The port does the same with an explicit `to_var`; without
-  it the whole inlined bicubic expression is emitted twice, which is correct
-  but doubles the fragment.
-* **`getVolumeTransmissionRay`, `applyIorToRoughness` and `volumeAttenuation`
-  are real `fn`s; `getTransmissionSample`, `getIBLVolumeRefraction` and
-  `textureBicubicLevel` are inlined.** That is three's own split: the first
-  three carry a `setLayout()`, the rest are plain `Fn()`. Reproduced
-  deliberately so the two dumps line up statement for statement.
 
 ## 28. `scene.fog` — `Fog`, `FogExp2` and their render-group uniforms
 

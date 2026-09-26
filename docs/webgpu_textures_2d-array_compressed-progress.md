@@ -31,7 +31,7 @@ Chrome scores 0 of 100000 on it.
 | `src/loaders/gltf_loader.rs` | `KHR_texture_basisu` |
 | `tools/ktx2_reference.mjs`, `tests/ktx2_loader.rs` | the oracle: three's loader under node, compared byte for byte |
 
-`docs/nodes.md` §28 has the divergences.
+`docs/nodes.md` §29 has the divergences.
 
 ## WGSL
 
