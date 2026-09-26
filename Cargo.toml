@@ -49,6 +49,13 @@ bytemuck = { version = "1", features = ["derive"] }
 png = "0.17"
 serde_json = "1"
 zune-jpeg = { version = "0.5.15", default-features = false, features = ["std"] }
+# `EXT_meshopt_compression` (issue #173). three.js ships meshoptimizer's
+# decoder only as WebAssembly, and the `meshopt` crate is C behind FFI, which
+# the wasm32 build cannot link; this is a pure-Rust port of it. Only its
+# vertex and index codecs are used (`src/loaders/meshopt.rs` says why the
+# filters are not); `experimental` is what exposes `decode_index_sequence`,
+# the `INDICES` mode.
+meshopt-rs = { version = "0.1.2", features = ["experimental"] }
 
 # Everything that only makes sense on a desktop.
 #

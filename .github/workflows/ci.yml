@@ -135,9 +135,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       # tests/gltf_loader.rs reads Three's sample glTF models here, and
-      # tests/addons_orbit_controls.rs runs Three's own OrbitControls.js out of
-      # it under node to compare against; everything else here is
-      # self-contained.
+      # tests/addons_orbit_controls.rs and tests/gltf_meshopt.rs run Three's
+      # own OrbitControls.js and GLTFLoader + MeshoptDecoder out of it under
+      # node to compare against; everything else here is self-contained.
       - name: Checkout three.js at THREE_JS_REV (for gltf_loader)
         run: |
           git init -q "$THREE_JS_DIR"
@@ -182,6 +182,7 @@ jobs:
             core_object3d
             geometries
             gltf_loader
+            gltf_meshopt
             math_box2
             math_box3
             math_color
