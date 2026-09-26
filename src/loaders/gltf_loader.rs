@@ -14,10 +14,15 @@
 //!
 //! `KHR_draco_mesh_compression` primitives are decoded by
 //! [`draco`](crate::loaders::draco), to the typed arrays `DRACOLoader`
-//! produces.
+//! produces. `EXT_meshopt_compression` bufferViews are decoded by
+//! [`meshopt`](crate::loaders::meshopt) when first read, as
+//! `GLTFMeshoptCompression.loadBufferView` does, and `KHR_mesh_quantization`
+//! needs nothing beyond the accessor reading above: every component type is
+//! read and `normalized` applied, and this crate widens attributes to `f32`
+//! anyway.
 //!
 //! Not ported (explicit TODOs): extensions other than those in
-//! `SUPPORTED_EXTENSIONS` (meshopt, `KHR_mesh_quantization`, …),
+//! `SUPPORTED_EXTENSIONS`,
 //! `CUBICSPLINE` interpolation (needs `GLTFCubicSplineInterpolant`), cameras,
 //! primitive-key geometry deduplication and the `groups` it implies, and
 //! `GLTFMeshStandardSGMaterial`.
@@ -25,7 +30,7 @@
 //! `KHR_texture_basisu` textures are transcoded by [`Ktx2Loader`]; see
 //! [`GLTFLoader::load_with_ktx2`] for which one.
 
-use std::cell::RefCell;
+use std::cell::{OnceCell, RefCell};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -38,6 +43,7 @@ use crate::error::{Error, GltfError};
 use crate::loaders::draco::{
     self, DracoArray, DracoArrayType, DracoAttribute, DracoPrimitive, Request as DracoRequest,
 };
+use crate::loaders::meshopt::{self, Filter as MeshoptFilter, Mode as MeshoptMode};
 use crate::loaders::{Ktx2Loader, TextureLoader};
 use crate::materials::{MeshBasicNodeMaterial, Side};
 use crate::math::{Color, Matrix4, Vector2};
@@ -410,6 +416,9 @@ pub struct GLTFLoader {
     glb_buffer: Option<Vec<u8>>,
     /// `buffers[ i ]`, resolved.
     buffers: Vec<Vec<u8>>,
+    /// `bufferViews[ i ]` decoded out of `EXT_meshopt_compression`, filled
+    /// the first time the view is read (three.js' `getDependency` cache).
+    meshopt_views: Vec<OnceCell<Vec<u8>>>,
     /// The directory the .gltf/.glb sits in, for relative URIs.
     base: PathBuf,
     /// `GLTFParser.nodeNamesUsed`.
@@ -461,8 +470,10 @@ impl GLTFLoader {
 
     /// Read the file and its buffers, without building anything.
     /// `check_extensions` is `check_required_extensions`, which only matters
-    /// to a build: [`GLTFLoader::draco_primitives`] reads geometry alone, so
-    /// an unread texture extension (WebP, AVIF, Basis) need not stop it.
+    /// to a build: [`GLTFLoader::draco_primitives`],
+    /// [`GLTFLoader::meshopt_buffer_views`] and [`GLTFLoader::accessors`] read
+    /// data alone, so an unread texture extension (WebP, AVIF) need not stop
+    /// them.
     fn open(path: &Path, check_extensions: bool) -> Result<Self, Error> {
         let data = crate::io::read(path)?;
         let base = path.parent().unwrap_or(Path::new(".")).to_path_buf();
@@ -495,10 +506,15 @@ impl GLTFLoader {
             check_required_extensions(&json)?;
         }
 
+        let view_count = json
+            .get("bufferViews")
+            .and_then(Value::as_array)
+            .map_or(0, Vec::len);
         let mut loader = Self {
             json,
             glb_buffer,
             buffers: Vec::new(),
+            meshopt_views: (0..view_count).map(|_| OnceCell::new()).collect(),
             base,
             node_names_used: HashMap::new(),
             ktx2_loader: Ktx2Loader::new(),
@@ -521,6 +537,14 @@ impl GLTFLoader {
 
         for buffer in &buffers {
             match buffer.get("uri").and_then(Value::as_str) {
+                // `EXT_meshopt_compression`'s fallback buffer: it has no data
+                // of its own, and three.js never loads it, because every view
+                // on it is compressed and read from the extension's buffer.
+                None if buffer.pointer("/extensions/EXT_meshopt_compression/fallback")
+                    == Some(&Value::Bool(true)) =>
+                {
+                    self.buffers.push(Vec::new());
+                }
                 None => {
                     // the GLB BIN chunk
                     let bin = self.glb_buffer.clone().ok_or(GltfError::NoBinChunk)?;
@@ -539,7 +563,8 @@ impl GLTFLoader {
         Ok(())
     }
 
-    /// `GLTFParser.loadBufferView`.
+    /// `GLTFParser.loadBufferView`, after `GLTFMeshoptCompression`'s
+    /// `loadBufferView` has had first refusal.
     fn buffer_view(&self, index: usize) -> Result<&[u8], Error> {
         let view =
             self.json
@@ -549,16 +574,139 @@ impl GLTFLoader {
                     index,
                 })?;
 
-        let buffer = json_usize(view, "buffer").unwrap_or(0);
-        let offset = json_usize(view, "byteOffset").unwrap_or(0);
-        let length = json_usize(view, "byteLength").unwrap_or(0);
+        if let Some(extension) = view.pointer("/extensions/EXT_meshopt_compression") {
+            return self.meshopt_buffer_view(index, extension);
+        }
 
+        self.buffer_range(
+            index,
+            json_usize(view, "buffer").unwrap_or(0),
+            json_usize(view, "byteOffset").unwrap_or(0),
+            json_usize(view, "byteLength").unwrap_or(0),
+        )
+    }
+
+    /// `byteLength` bytes of `buffers[ buffer ]` from `byteOffset`, for
+    /// bufferView `index`.
+    fn buffer_range(
+        &self,
+        index: usize,
+        buffer: usize,
+        offset: usize,
+        length: usize,
+    ) -> Result<&[u8], Error> {
         let buffer = self.buffers.get(buffer).ok_or(GltfError::MissingIndex {
             kind: "buffer",
             index: buffer,
         })?;
 
-        Ok(&buffer[offset..offset + length])
+        offset
+            .checked_add(length)
+            .and_then(|end| buffer.get(offset..end))
+            .ok_or_else(|| GltfError::BufferViewOutOfRange { index }.into())
+    }
+
+    /// `GLTFMeshoptCompression.loadBufferView`: `decodeGltfBuffer( count,
+    /// byteStride, source, mode, filter )` over the extension's own byte
+    /// range, decoded once and kept.
+    ///
+    /// three.js registers the plugin whatever `extensionsUsed` says, so the
+    /// extension on the bufferView is what decides, as it does there. It
+    /// falls back to the uncompressed view only when no decoder was set,
+    /// which cannot happen here.
+    fn meshopt_buffer_view(&self, index: usize, extension: &Value) -> Result<&[u8], Error> {
+        let cell = &self.meshopt_views[index];
+        if let Some(decoded) = cell.get() {
+            return Ok(decoded);
+        }
+
+        let error = |reason: String| -> Error {
+            GltfError::Meshopt {
+                buffer_view: index,
+                reason,
+            }
+            .into()
+        };
+        let field = |key: &'static str| {
+            json_usize(extension, key).ok_or(GltfError::MissingField {
+                what: match key {
+                    "buffer" => "EXT_meshopt_compression.buffer",
+                    "count" => "EXT_meshopt_compression.count",
+                    _ => "EXT_meshopt_compression.byteStride",
+                },
+            })
+        };
+
+        let source = self.buffer_range(
+            index,
+            field("buffer")?,
+            json_usize(extension, "byteOffset").unwrap_or(0),
+            json_usize(extension, "byteLength").unwrap_or(0),
+        )?;
+        let mode = extension.get("mode").and_then(Value::as_str).unwrap_or("");
+        let mode =
+            MeshoptMode::parse(mode).ok_or_else(|| error(format!("unknown mode {mode:?}")))?;
+        let filter = extension
+            .get("filter")
+            .and_then(Value::as_str)
+            .unwrap_or("NONE");
+        let filter = MeshoptFilter::parse(filter)
+            .ok_or_else(|| error(format!("unknown filter {filter:?}")))?;
+
+        let decoded = meshopt::decode_gltf_buffer(
+            field("count")?,
+            field("byteStride")?,
+            source,
+            mode,
+            filter,
+        )
+        .map_err(error)?;
+
+        Ok(cell.get_or_init(|| decoded))
+    }
+
+    /// Every `EXT_meshopt_compression` bufferView of a glTF, decoded, with
+    /// its index: the bytes `GLTFMeshoptCompression.loadBufferView` resolves
+    /// to in three.js.
+    ///
+    /// For comparing against three.js (`tests/gltf_meshopt.rs`); a load goes
+    /// through [`GLTFLoader::load`].
+    pub fn meshopt_buffer_views(path: impl AsRef<Path>) -> Result<Vec<(usize, Vec<u8>)>, Error> {
+        let loader = Self::open(path.as_ref(), false)?;
+        let mut out = Vec::new();
+
+        for (index, view) in loader
+            .json
+            .get("bufferViews")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            if view
+                .pointer("/extensions/EXT_meshopt_compression")
+                .is_some()
+            {
+                out.push((index, loader.buffer_view(index)?.to_vec()));
+            }
+        }
+
+        Ok(out)
+    }
+
+    /// Every accessor of a glTF, as [`GLTFLoader::accessor`] reads it.
+    ///
+    /// For comparing against three.js' `loadAccessor`
+    /// (`tests/gltf_meshopt.rs`); a load goes through [`GLTFLoader::load`].
+    pub fn accessors(path: impl AsRef<Path>) -> Result<Vec<(Vec<f64>, usize)>, Error> {
+        let loader = Self::open(path.as_ref(), false)?;
+        let count = loader
+            .json
+            .get("accessors")
+            .and_then(Value::as_array)
+            .map_or(0, Vec::len);
+
+        (0..count).map(|index| loader.accessor(index)).collect()
     }
 
     /// `bufferViews[ i ].byteStride`.
@@ -2202,10 +2350,10 @@ fn json_usize(value: &Value, key: &str) -> Option<usize> {
 
 /// The `extensionsUsed` names this loader reads, as `GLTFLoader.parse`'s
 /// `switch` and `GLTFParser`'s `extendMaterialParams` calls between them
-/// cover. Of the geometry-rewriting extensions only
-/// `KHR_draco_mesh_compression` is here; `EXT_meshopt_compression` and
-/// `KHR_mesh_quantization` are not read.
+/// cover. The geometry-rewriting extensions `KHR_draco_mesh_compression`,
+/// `EXT_meshopt_compression` and `KHR_mesh_quantization` are all here.
 const SUPPORTED_EXTENSIONS: &[&str] = &[
+    "EXT_meshopt_compression",
     "KHR_draco_mesh_compression",
     "KHR_materials_anisotropy",
     "KHR_materials_clearcoat",
@@ -2215,6 +2363,7 @@ const SUPPORTED_EXTENSIONS: &[&str] = &[
     "KHR_materials_specular",
     "KHR_materials_transmission",
     "KHR_materials_volume",
+    "KHR_mesh_quantization",
     "KHR_texture_basisu",
     "KHR_texture_transform",
 ];

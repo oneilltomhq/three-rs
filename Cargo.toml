@@ -68,6 +68,13 @@ draco-core = { version = "2.2.0", default-features = false, features = [
 ktx2 = "0.5"
 basisu = "0.1"
 ruzstd = { version = "0.7", default-features = false }
+# `EXT_meshopt_compression` (issue #173). three.js ships meshoptimizer's
+# decoder only as WebAssembly, and the `meshopt` crate is C behind FFI, which
+# the wasm32 build cannot link; this is a pure-Rust port of it. Only its
+# vertex and index codecs are used (`src/loaders/meshopt.rs` says why the
+# filters are not); `experimental` is what exposes `decode_index_sequence`,
+# the `INDICES` mode.
+meshopt-rs = { version = "0.1.2", features = ["experimental"] }
 
 # Everything that only makes sense on a desktop.
 #

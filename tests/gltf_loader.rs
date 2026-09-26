@@ -375,21 +375,22 @@ fn michelle_material() {
 /// error. three.js only warns (`'Unknown extension'`) and decodes nothing:
 /// before Draco was ported, `IridescentDishWithOlives.glb` loaded
 /// "successfully" that way into four zero-sized meshes. See the message of
-/// the commit that added this check. meshopt is still unread.
+/// the commit that added this check. The extension here is made up, so the
+/// test outlives every real one being ported.
 #[test]
 fn unread_required_extension_is_an_error() {
     let json = br#"{
         "asset": { "version": "2.0" },
-        "extensionsUsed": [ "EXT_meshopt_compression" ],
-        "extensionsRequired": [ "EXT_meshopt_compression" ]
+        "extensionsUsed": [ "EXT_not_ported_here" ],
+        "extensionsRequired": [ "EXT_not_ported_here" ]
     }"#;
     let Err(error) = GLTFLoader::parse(json, std::path::PathBuf::from(".")) else {
-        panic!("a meshopt-required asset must not load");
+        panic!("an asset requiring an unread extension must not load");
     };
 
     assert_eq!(
         error.to_string(),
-        "THREE.GLTFLoader: unknown required extension \"EXT_meshopt_compression\""
+        "THREE.GLTFLoader: unknown required extension \"EXT_not_ported_here\""
     );
 }
 

@@ -129,6 +129,11 @@ pub enum GltfError {
         primitive: usize,
         reason: String,
     },
+    /// A bufferView whose byte range runs past the end of its buffer.
+    BufferViewOutOfRange { index: usize },
+    /// An `EXT_meshopt_compression` bufferView that does not decode.
+    /// `reason` is the decoder's, or the extension rule it breaks.
+    Meshopt { buffer_view: usize, reason: String },
 }
 
 impl fmt::Display for Error {
@@ -208,6 +213,13 @@ impl fmt::Display for GltfError {
                 f,
                 "mesh {mesh} primitive {primitive}: THREE.DRACOLoader: {reason}"
             ),
+            Self::BufferViewOutOfRange { index } => {
+                write!(f, "bufferView {index} runs past the end of its buffer")
+            }
+            Self::Meshopt {
+                buffer_view,
+                reason,
+            } => write!(f, "bufferView {buffer_view}: MeshoptDecoder: {reason}"),
         }
     }
 }

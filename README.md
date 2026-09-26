@@ -52,7 +52,7 @@ Linux is the only backend that has been run.
   because the e2e harness pulls examples in with `#[path = "../../examples/…"]`,
   and an example in another crate would need its own test binary.
 - **Loaders.** glTF/GLB (all accessor types, skins, animations, KHR specular
-  and ior), textures (PNG, JPEG), cube textures.
+  and ior, `EXT_meshopt_compression` and `KHR_mesh_quantization`), textures (PNG, JPEG), cube textures.
 - **Animation.** Interpolants, keyframe tracks, clips, `PropertyMixer`,
   `AnimationAction` and `AnimationMixer`.
 - **Workspace crate.** `sdf-text`: signed-distance-field text rendering with

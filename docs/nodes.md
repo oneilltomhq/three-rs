@@ -576,6 +576,18 @@ differences, each verified to be pixel-neutral.
   `uv_grid_opengl.jpg` against the browser's own decode: 34030 of 4194304
   channels differ by 1, 4428 by 2, 16 by 3; worst per-texel RGB distance 3.46,
   against a comparator threshold of 44.
+* **meshopt filters follow the SIMD build, on purpose.** three.js'
+  `meshopt_decoder.module.js` runs meshoptimizer's WebAssembly SIMD filters
+  wherever SIMD validates (every current browser, and node). Those round
+  `x + 0x1.8p23` to nearest-even and keep the low bits of the float, where the
+  scalar C++ filters, and the `meshopt-rs` crate's copy of them, round half
+  away from zero, and the crate's quaternion filter also reads its components
+  unsigned. `src/loaders/meshopt.rs` ports the SIMD kernels operation for
+  operation; `tests/gltf_meshopt.rs` holds them to the WebAssembly bytes.
+* **Malformed `EXT_meshopt_compression` is an error.** A mode, filter and
+  `byteStride` the extension does not allow together is `GltfError::Meshopt`
+  up front; meshoptimizer only `assert`s them, and its release WebAssembly
+  build compiles the asserts out and decodes garbage.
 
 * **The skin matrix is CSEd.** `getSkinnedNormalAndTangent()` builds
   `bindMatrixInverse * skinMatrix * bindMatrix` once and reads three columns off

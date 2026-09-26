@@ -8,6 +8,7 @@ mod gltf_loader;
 mod hdr_cube_texture_loader;
 mod hdr_loader;
 mod ktx2_loader;
+pub mod meshopt;
 mod texture_loader;
 mod ultra_hdr_loader;
 
