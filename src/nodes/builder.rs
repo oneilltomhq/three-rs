@@ -414,6 +414,10 @@ pub(crate) struct BuildContext {
     /// `tangent` vec4 through `modelViewMatrix`; without it, from the screen
     /// derivatives of `TangentUtils.js`.
     pub(crate) has_tangent: bool,
+    /// `setupPositionView`: `NodeMaterial.setupPositionView()`'s result, which
+    /// `SpriteNodeMaterial` and `PointsNodeMaterial` override. `None` is the
+    /// base class' `modelViewMatrix.mul( positionLocal ).xyz`.
+    pub(crate) setup_position_view: Option<NodeRef>,
     /// Addon keys (`TRAANode`, `ClusteredLightsNode`, the light-data nodes).
     /// Nothing reads it yet; `context( node, { … } )` (#161) will.
     #[allow(dead_code)]
@@ -429,6 +433,7 @@ impl Default for BuildContext {
             flat_shading: false,
             material_side: crate::materials::Side::Front,
             has_tangent: false,
+            setup_position_view: None,
             extra: HashMap::new(),
         }
     }

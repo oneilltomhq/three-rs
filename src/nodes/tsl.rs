@@ -109,11 +109,6 @@ thread_local! {
     /// re-assign `normalView` from the geometric normal in every later one.
     static NORMAL_WORLD: RefCell<HashMap<NormalViewKey, NodeRef>> =
         RefCell::new(HashMap::new());
-    /// `builder.context.setupPositionView()` — `NodeMaterial.setup()` installs
-    /// it before either stage is flowed, and `SpriteNodeMaterial` overrides it
-    /// with the billboarded view position. `None` is the base class'
-    /// `modelViewMatrix.mul( positionLocal ).xyz`.
-    static POSITION_VIEW_VALUE: RefCell<Option<NodeRef>> = const { RefCell::new(None) };
     /// `positionView` / `modelViewProjection` per context value — three.js' own
     /// `Fn( … ).once()` cache is per build, so a second material in the same
     /// process must not inherit the first one's node.
@@ -192,16 +187,14 @@ fn negate_on_back_side(vector: NodeRef) -> NodeRef {
 /// **`vec4`** rather than the base class' `vec3`, which is why `v_positionView`
 /// is `vec4<f32>` in the galaxy dump.
 pub fn with_material_position_view<R>(value: Option<NodeRef>, f: impl FnOnce() -> R) -> R {
-    let previous = POSITION_VIEW_VALUE.with(|v| v.replace(value));
-    let out = f();
-    POSITION_VIEW_VALUE.with(|v| *v.borrow_mut() = previous);
-    out
+    let _position_view = push_context(|cx| cx.setup_position_view = value);
+    f()
 }
 
 /// `positionView` and `modelViewProjection`, built together because both hang
 /// off the same `builder.context` entry.
 fn position_view_pair() -> (NodeRef, NodeRef) {
-    let value = POSITION_VIEW_VALUE.with(|v| v.borrow().clone());
+    let value = current_context(|cx| cx.setup_position_view.clone());
     let key = value.as_ref().map(|v| v.key());
     if let Some(pair) = POSITION_VIEW.with(|m| m.borrow().get(&key).cloned()) {
         return pair;
