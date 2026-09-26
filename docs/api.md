@@ -229,7 +229,15 @@ three's own class for that kind lacks — `clearcoat` on a Standard material,
 three's behaviour: `NodeMaterial.setupEnvironment()`, which those kinds
 inherit, reads only `material.envNode` / `material.envMap`.
 
-## 8. The node enum opens through `Node::Custom`
+## 8. Render-pipeline hooks take the renderer and nothing else
+
+`RenderPipeline::on_before_render` and `on_after_render` take a
+`Box<dyn FnMut(&mut Renderer)>`. A hook that has to move a camera captures
+the camera itself, through `RenderCamera::set_view_offset` (issue #164). The
+hook signature does not pass one in, because three's callbacks take no
+arguments either. `docs/nodes.md` §37 has the ordering.
+
+## 9. The node enum opens through `Node::Custom`
 
 `nodes::Node` is a closed enum, and an exhaustive `match` over it in the
 builder is what tells a rung it has added something the generator cannot
@@ -244,7 +252,7 @@ crate, where the dump gates see it. `tsl::custom( node )` wraps one.
 `.context()` / `.isolate()` methods) are three's `ContextNode` and
 `IsolateNode`; `ContextValue` holds string-keyed node values, the addon half
 of `BuildContext` (#155 decision 6). `NodeBuilder::context( key )` is how a
-`setup` reads them. `docs/nodes.md` §39 has the semantics.
+`setup` reads them. `docs/nodes.md` §45 has the semantics.
 
 All of this shipped in 0.1.x (#155 decision 3). Strictly, three new variants
 on a public enum break a caller that matches on `Node` exhaustively; no

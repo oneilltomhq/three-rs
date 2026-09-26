@@ -60,6 +60,11 @@ pub struct Sprite {
     /// vertex shader through a `reference( 'center', 'vec2', object )` uniform,
     /// by `raycast()`, and by `Frustum.intersectsSprite()`.
     pub center: Vector2,
+    /// `Sprite.count` — the number of instances drawn, `1` by default. A
+    /// larger count draws the one quad that many times, and the material
+    /// tells the instances apart with `instanceIndex` or an instanced
+    /// attribute (`webgpu_instance_sprites`).
+    pub count: usize,
 }
 
 impl Sprite {
@@ -83,6 +88,7 @@ impl Sprite {
             geometry: GEOMETRY.with(Rc::clone),
             material: material.unwrap_or_else(MeshBasicNodeMaterial::sprite),
             center: Vector2::new(0.5, 0.5),
+            count: 1,
         }
     }
 

@@ -49,7 +49,7 @@
 //! what a fragment shader running over a full-screen quad has no useful
 //! version of. The port spells it the same way: [`context`] installs
 //! `getViewZ` and [`range_fog_factor`]'s `Fn()` body reads it when the
-//! builder expands it (`docs/nodes.md` §24.3, §39).
+//! builder expands it (`docs/nodes.md` §24.3, §45).
 //!
 //! [`context`]: three_rs::nodes::tsl::context
 //! [`range_fog_factor`]: three_rs::nodes::tsl::range_fog_factor
