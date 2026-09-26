@@ -395,6 +395,9 @@ pub(crate) struct BuildContext {
     /// `NodeBuilder.subBuildLayers`, one layer deep: `NORMAL` is the only name
     /// the ladder needs. Three keeps it on the builder beside `context`.
     pub(crate) sub_build: Option<&'static str>,
+    /// `overrideNodes`: what `material.contextNode = overrideNodes( … )`
+    /// installs for the whole of one material's setup (§27).
+    pub(crate) override_nodes: Option<super::tsl::OverrideNodes>,
     /// Addon keys (`TRAANode`, `ClusteredLightsNode`, the light-data nodes).
     /// Nothing reads it yet; `context( node, { … } )` (#161) will.
     #[allow(dead_code)]

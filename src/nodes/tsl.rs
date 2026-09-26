@@ -82,22 +82,17 @@ impl std::hash::Hash for OverrideNodes {
 /// `renderer.contextNode` / `material.contextNode` in three, which live for
 /// exactly that long.
 pub fn with_override_nodes<R>(overrides: Option<&OverrideNodes>, f: impl FnOnce() -> R) -> R {
-    let previous = OVERRIDE_NODES.with(|v| v.replace(overrides.cloned()));
-    let out = f();
-    OVERRIDE_NODES.with(|v| *v.borrow_mut() = previous);
-    out
+    let _overrides = push_context(|cx| cx.override_nodes = overrides.cloned());
+    f()
 }
 
 /// The override for one of the three accessors, or `None` outside an override
 /// context.
 fn override_node(pick: fn(&OverrideNodes) -> &Option<NodeRef>) -> Option<NodeRef> {
-    OVERRIDE_NODES.with(|v| v.borrow().as_ref().and_then(|o| pick(o).clone()))
+    current_context(|cx| cx.override_nodes.as_ref().and_then(|o| pick(o).clone()))
 }
 
 thread_local! {
-    /// `builder.context.overrideNodes` — the map `material.contextNode =
-    /// overrideNodes( … )` installs for the whole of one material's setup.
-    static OVERRIDE_NODES: RefCell<Option<OverrideNodes>> = const { RefCell::new(None) };
     /// `builder.context.setupNormal()` — `NodeMaterial.setupNormal()`'s result,
     /// i.e. the material's `normalNode`. `normal_view()` takes it as its value
     /// outside the `NORMAL` layer and `normalViewGeometry` inside it.
