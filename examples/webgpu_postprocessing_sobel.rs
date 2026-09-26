@@ -13,13 +13,16 @@
 //! operator reads nine taps of that. `outputColorTransform = false` keeps the
 //! pipeline's own quad from encoding it again.
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use three_rs::addons::controls::OrbitControls;
 use three_rs::loaders::GLTFLoader;
 use three_rs::materials::{render_output, ToneMapping};
 use three_rs::nodes::display::{convert_to_texture, sobel, RttNode, SobelOperatorNode};
 use three_rs::nodes::pmrem_node::PmremEnvironment;
 use three_rs::{
-    Color, MeshStandardNodeMaterial, PassNode, PerspectiveCamera, RenderPipeline, Renderer,
+    pass, Color, MeshStandardNodeMaterial, PassNode, PerspectiveCamera, RenderPipeline, Renderer,
     RendererParameters, RoomEnvironment, Scene,
 };
 
@@ -34,8 +37,10 @@ fn examples_dir() -> std::path::PathBuf {
 
 pub struct App {
     pub renderer: Renderer,
-    pub scene: Scene,
-    pub camera: PerspectiveCamera,
+    /// Shared with `scene_pass`, which renders it from `updateBefore()`.
+    pub scene: Rc<RefCell<Scene>>,
+    /// Shared with `scene_pass`.
+    pub camera: Rc<RefCell<PerspectiveCamera>>,
     /// The page's `controls`.
     pub controls: OrbitControls,
     pub scene_pass: PassNode,
@@ -95,7 +100,11 @@ pub fn init() -> App {
     let mut render_pipeline = RenderPipeline::new();
     render_pipeline.output_color_transform = false;
 
-    let scene_pass = PassNode::new();
+    // `pass( scene, camera )` — the pass holds both, and the renderer renders
+    // it the first time a draw samples its texture (`docs/nodes.md` §57).
+    let scene = Rc::new(RefCell::new(scene));
+    let camera = Rc::new(RefCell::new(camera));
+    let scene_pass = pass(scene.clone(), camera.clone());
 
     let sobel_input = convert_to_texture(render_output(scene_pass.node(), renderer.tone_mapping));
     let sobel = sobel(&sobel_input.texture());
@@ -114,14 +123,19 @@ pub fn init() -> App {
 }
 
 /// The page's `animate()` with `params.enabled` true: `controls.update()`,
-/// then `renderPipeline.render()`, whose three passes the port fires in turn
-/// (see `docs/postprocessing.md`).
+/// then `renderPipeline.render()`, whose output quad's draw runs the scene
+/// pass's and the RTT's `updateBefore()` first (`docs/nodes.md` §57).
+///
+/// `SobelOperatorNode` is not itself a `NodeUpdate` node — `sobel.update()`
+/// stays a hand call — so its `invSize` uniform, unlike the RTT's own resize,
+/// is not covered by that automatic pass. The RTT's target follows the
+/// drawing buffer regardless of when it is actually drawn, so this sizes it
+/// explicitly first rather than reading a texture that has not resized yet.
 pub fn animate(app: &mut App) {
-    app.controls.update(&mut app.camera, None);
+    app.controls.update(&mut app.camera.borrow_mut(), None);
 
-    app.scene_pass
-        .render(&mut app.renderer, &mut app.scene, &mut app.camera);
-    app.sobel_input.render(&mut app.renderer);
+    let (width, height) = app.renderer.drawing_buffer_size();
+    app.sobel_input.set_size(width, height);
     // `SobelOperatorNode.updateBefore()`, after the RTT has its size.
     app.sobel.update();
     app.render_pipeline.render(&mut app.renderer);
@@ -129,8 +143,9 @@ pub fn animate(app: &mut App) {
 
 /// The page's `onWindowResize()`.
 pub fn resize(app: &mut App, width: f64, height: f64) {
-    app.camera.aspect = width / height;
-    app.camera.update_projection_matrix();
+    let mut camera = app.camera.borrow_mut();
+    camera.aspect = width / height;
+    camera.update_projection_matrix();
     app.renderer.set_size(width, height);
 }
 
@@ -140,8 +155,10 @@ pub fn controls(app: &mut App) -> Option<&mut OrbitControls> {
 }
 
 /// The controls and the camera at once; see `webgpu_postprocessing_ca`.
-pub fn controls_and_camera(app: &mut App) -> Option<(&mut OrbitControls, &mut PerspectiveCamera)> {
-    Some((&mut app.controls, &mut app.camera))
+pub fn controls_and_camera(
+    app: &mut App,
+) -> Option<(&mut OrbitControls, std::cell::RefMut<'_, PerspectiveCamera>)> {
+    Some((&mut app.controls, app.camera.borrow_mut()))
 }
 
 fn main() {

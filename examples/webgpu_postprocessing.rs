@@ -19,6 +19,7 @@
 //! dot screen is drawn into an `RTTNode` first and the shift reads three taps
 //! of that; the `RenderPipeline`'s own quad then does the sRGB encode.
 
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use three_rs::addons::controls::OrbitControls;
@@ -27,8 +28,8 @@ use three_rs::nodes::display::{convert_to_texture, dot_screen, rgb_shift, RttNod
 use three_rs::nodes::tsl::float;
 use three_rs::testing::DeterministicRandom;
 use three_rs::{
-    AmbientLight, Color, DirectionalLight, Fog, Mesh, MeshPhongNodeMaterial, Object3D, PassNode,
-    PerspectiveCamera, RenderPipeline, Renderer, RendererParameters, Scene, Vector3,
+    pass, AmbientLight, Color, DirectionalLight, Fog, Mesh, MeshPhongNodeMaterial, Object3D,
+    PassNode, PerspectiveCamera, RenderPipeline, Renderer, RendererParameters, Scene, Vector3,
 };
 
 pub const INNER_WIDTH: f64 = 800.0;
@@ -42,8 +43,10 @@ pub const INSPECTOR_RANDOM_DRAWS: usize = 5;
 
 pub struct App {
     pub renderer: Renderer,
-    pub scene: Scene,
-    pub camera: PerspectiveCamera,
+    /// Shared with `scene_pass`, which renders it from `updateBefore()`.
+    pub scene: Rc<RefCell<Scene>>,
+    /// Shared with `scene_pass`.
+    pub camera: Rc<RefCell<PerspectiveCamera>>,
     /// The page's module-level `object`, parent of the hundred spheres.
     pub object: three_rs::Node,
     pub scene_pass: PassNode,
@@ -107,7 +110,11 @@ pub fn init() -> App {
 
     let mut render_pipeline = RenderPipeline::new();
 
-    let scene_pass = PassNode::new();
+    // `pass( scene, camera )` — the pass holds both, and the renderer renders
+    // it the first time a draw samples its texture (`docs/nodes.md` §57).
+    let scene = Rc::new(RefCell::new(scene));
+    let camera = Rc::new(RefCell::new(camera));
+    let scene_pass = pass(scene.clone(), camera.clone());
     // `.toInspector( 'Scene Color' )` only registers the node with the
     // inspector panel; the graph is the texture node itself.
     let scene_pass_color = scene_pass.texture_node("output");
@@ -137,19 +144,16 @@ pub fn animate(app: &mut App) {
         object.set_rotation(rotation.x + 0.005, rotation.y + 0.01, rotation.z);
     }
 
-    // `renderPipeline.render()`: the scene pass, the dot screen's RTT, then the
-    // output quad — see `docs/postprocessing.md` for why the port fires the
-    // nested passes explicitly.
-    app.scene_pass
-        .render(&mut app.renderer, &mut app.scene, &mut app.camera);
-    app.rgb_shift_input.render(&mut app.renderer);
+    // `renderPipeline.render()`: the output quad's draw runs the scene pass's
+    // and the dot screen's RTT's `updateBefore()` first (`docs/nodes.md` §57).
     app.render_pipeline.render(&mut app.renderer);
 }
 
 /// The page's `onWindowResize()`.
 pub fn resize(app: &mut App, width: f64, height: f64) {
-    app.camera.aspect = width / height;
-    app.camera.update_projection_matrix();
+    let mut camera = app.camera.borrow_mut();
+    camera.aspect = width / height;
+    camera.update_projection_matrix();
     app.renderer.set_size(width, height);
 }
 

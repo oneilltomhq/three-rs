@@ -22,6 +22,7 @@
 //! quad's own shader rather than in a second output pass. See
 //! `docs/postprocessing.md`.
 
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use three_rs::addons::controls::OrbitControls;
@@ -33,8 +34,8 @@ use three_rs::nodes::Type;
 use three_rs::testing::DeterministicRandom;
 use three_rs::Timer;
 use three_rs::{
-    Color, Group, HemisphereLight, InstancedMesh, MeshStandardNodeMaterial, Object3D, PassNode,
-    PerspectiveCamera, PointLight, RenderPipeline, Renderer, RendererParameters, Scene,
+    pass, Color, Group, HemisphereLight, InstancedMesh, MeshStandardNodeMaterial, Object3D,
+    PassNode, PerspectiveCamera, PointLight, RenderPipeline, Renderer, RendererParameters, Scene,
     ToneMapping, Vector2,
 };
 
@@ -48,8 +49,10 @@ const COUNT: usize = 100;
 
 pub struct App {
     pub renderer: Renderer,
-    pub scene: Scene,
-    pub camera: PerspectiveCamera,
+    /// Shared with `scene_pass`, which renders it from `updateBefore()`.
+    pub scene: Rc<RefCell<Scene>>,
+    /// Shared with `scene_pass`.
+    pub camera: Rc<RefCell<PerspectiveCamera>>,
     pub group: three_rs::Node,
     /// The page's module-level `timer`.
     pub timer: Timer,
@@ -135,7 +138,11 @@ pub fn init() -> App {
 
     // post processing
 
-    let scene_pass = PassNode::new();
+    // `pass( scene, camera )` — the pass holds both, and the renderer renders
+    // it the first time a draw samples its texture (`docs/nodes.md` §57).
+    let scene = Rc::new(RefCell::new(scene));
+    let camera = Rc::new(RefCell::new(camera));
+    let scene_pass = pass(scene.clone(), camera.clone());
 
     // `uniform( float( 0.9 ) )` and friends. `uniform( int( 32 ) )` is an
     // `int` *node* wrapped in a uniform, and `UniformNode` takes its type from
@@ -181,10 +188,8 @@ pub fn animate(app: &mut App) {
         group.set_rotation(rotation.x, rotation.y + delta * 0.1, rotation.z);
     }
 
-    // `PassNode.updateBefore()`, then the output quad — see
-    // `docs/postprocessing.md` for why the port fires the pass explicitly.
-    app.scene_pass
-        .render(&mut app.renderer, &mut app.scene, &mut app.camera);
+    // `renderPipeline.render()`: the output quad's draw runs the scene pass's
+    // `updateBefore()` first (`docs/nodes.md` §57).
     app.render_pipeline.render(&mut app.renderer);
 }
 
@@ -195,8 +200,9 @@ pub fn animate(app: &mut App) {
 /// owns its own reaction to a resized canvas instead of the host
 /// guessing at one.
 pub fn resize(app: &mut App, width: f64, height: f64) {
-    app.camera.aspect = width / height;
-    app.camera.update_projection_matrix();
+    let mut camera = app.camera.borrow_mut();
+    camera.aspect = width / height;
+    camera.update_projection_matrix();
     app.renderer.set_size(width, height);
 }
 

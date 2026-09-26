@@ -31,6 +31,7 @@
 //!   `| 0 − current |` against a texture nothing has ever drawn into. See
 //!   [`three_rs::PassNode::previous_texture_node`].
 
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use three_rs::addons::controls::OrbitControls;
@@ -40,8 +41,8 @@ use three_rs::nodes::tsl::{luminance, saturation};
 use three_rs::renderer::OUTPUT_ATTACHMENT;
 use three_rs::Timer;
 use three_rs::{
-    ColorSpace, Fog, Mesh, MeshBasicNodeMaterial, PassNode, PerspectiveCamera, RenderPipeline,
-    Renderer, RendererParameters, Scene, TextureLoader, ToneMapping,
+    pass, ColorSpace, Fog, Mesh, MeshBasicNodeMaterial, PassNode, PerspectiveCamera,
+    RenderPipeline, Renderer, RendererParameters, Scene, TextureLoader, ToneMapping,
 };
 
 pub const INNER_WIDTH: f64 = 800.0;
@@ -51,8 +52,10 @@ pub const DPR: f64 = 1.0;
 
 pub struct App {
     pub renderer: Renderer,
-    pub scene: Scene,
-    pub camera: PerspectiveCamera,
+    /// Shared with `scene_pass`, which renders it from `updateBefore()`.
+    pub scene: Rc<RefCell<Scene>>,
+    /// Shared with `scene_pass`.
+    pub camera: Rc<RefCell<PerspectiveCamera>>,
     /// The page's `controls`.
     pub controls: OrbitControls,
     pub mesh: three_rs::Node,
@@ -70,7 +73,7 @@ pub fn init() -> App {
 
     //
 
-    let mut camera = PerspectiveCamera::new(50.0, INNER_WIDTH / INNER_HEIGHT, 1.0, 100.0);
+    let camera = PerspectiveCamera::new(50.0, INNER_WIDTH / INNER_HEIGHT, 1.0, 100.0);
     camera.node.borrow_mut().position.set(1.0, 2.0, 3.0);
 
     let mut scene = Scene::new();
@@ -97,7 +100,11 @@ pub fn init() -> App {
 
     // post processing
 
-    let scene_pass = PassNode::new();
+    // `pass( scene, camera )` — the pass holds both, and the renderer renders
+    // it the first time a draw samples its texture (`docs/nodes.md` §57).
+    let scene = Rc::new(RefCell::new(scene));
+    let camera = Rc::new(RefCell::new(camera));
+    let scene_pass = pass(scene.clone(), camera.clone());
 
     let current_texture = scene_pass.texture_node(OUTPUT_ATTACHMENT);
     let previous_texture = scene_pass.previous_texture_node(OUTPUT_ATTACHMENT);
@@ -112,7 +119,7 @@ pub fn init() -> App {
     // `const controls = new OrbitControls( camera, renderer.domElement );` —
     // its `update()` points the camera at the target, the origin, and damping
     // leaves it there for the graded frame.
-    let mut controls = OrbitControls::new(&mut camera);
+    let mut controls = OrbitControls::new(&mut camera.borrow_mut());
     // The canvas the example renders at, standing in for the element's
     // `clientWidth` / `clientHeight`.
     controls.set_element_size(INNER_WIDTH, INNER_HEIGHT);
@@ -143,7 +150,7 @@ pub fn animate(app: &mut App) {
     app.timer.update();
 
     // `controls.update();`
-    let _ = app.controls.update(&mut app.camera, None);
+    let _ = app.controls.update(&mut app.camera.borrow_mut(), None);
 
     let delta = app.timer.get_delta();
     let speed = 0.0;
@@ -153,10 +160,8 @@ pub fn animate(app: &mut App) {
         mesh.set_rotation(rotation.x, rotation.y + delta * 5.0 * speed, rotation.z);
     }
 
-    // `PassNode.updateBefore()`, then the output quad — see
-    // `docs/postprocessing.md` for why the port fires the pass explicitly.
-    app.scene_pass
-        .render(&mut app.renderer, &mut app.scene, &mut app.camera);
+    // `renderPipeline.render()`: the output quad's draw runs the scene pass's
+    // `updateBefore()` first (`docs/nodes.md` §57).
     app.render_pipeline.render(&mut app.renderer);
 }
 
@@ -167,8 +172,9 @@ pub fn animate(app: &mut App) {
 /// owns its own reaction to a resized canvas instead of the host
 /// guessing at one.
 pub fn resize(app: &mut App, width: f64, height: f64) {
-    app.camera.aspect = width / height;
-    app.camera.update_projection_matrix();
+    let mut camera = app.camera.borrow_mut();
+    camera.aspect = width / height;
+    camera.update_projection_matrix();
     app.renderer.set_size(width, height);
 }
 
@@ -186,8 +192,10 @@ pub fn controls(app: &mut App) -> Option<&mut OrbitControls> {
 /// They are two fields of the same `App`, so borrowing both is sound — but
 /// only this module can say so; a host holding `&mut App` and calling
 /// [`controls`] and then reaching for the camera cannot. Hence the pair.
-pub fn controls_and_camera(app: &mut App) -> Option<(&mut OrbitControls, &mut PerspectiveCamera)> {
-    Some((&mut app.controls, &mut app.camera))
+pub fn controls_and_camera(
+    app: &mut App,
+) -> Option<(&mut OrbitControls, std::cell::RefMut<'_, PerspectiveCamera>)> {
+    Some((&mut app.controls, app.camera.borrow_mut()))
 }
 
 fn main() {

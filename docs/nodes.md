@@ -4777,6 +4777,16 @@ that still fires passes by hand gets the old frame, rendered once.
 `ToonOutlinePassNode` and `SsaaPassNode` are outside #162's list. Their
 examples still fire `render()` by hand, and the port has not moved them.
 
+`webgpu_custom_fog_background` still calls the deprecated forward, under
+`#[allow(deprecated)]`, for a reason that is a real gap. Its composite reads
+the pass's depth through `getViewZNode()`, and that depth is multisampled.
+Three sets `renderTarget.samples = renderer.samples` in `PassNode.setup()`,
+while the composite builds. The port sets it in the pass's render. When the
+pass renders from `updateBefore()`, the composite's bind-group layout has
+already been made for a single-sampled texture, and wgpu rejects the bind
+group. The fix is to move the sample count to where the builder first sees
+the pass's textures. That is left for a follow-up.
+
 ### 57.6 Gates
 
 * `nodes::frame` unit tests run two frames of two renders with two draws

@@ -11,9 +11,13 @@
 //! an orthographic camera.
 //!
 //! Three fires the `RTTNode` and the `GaussianBlurNode` from inside the plane
-//! material's build (`updateBefore`); the port has the page's `render()` call
-//! them first, in the order three's dump has their passes: `RTT`, then
-//! `Gaussian_blur_horizontal`, then `Gaussian_blur_vertical`, then the scene.
+//! material's build (`updateBefore`). The `RttNode` is now found through
+//! whatever draw samples its texture, so it needs no manual call
+//! (`docs/nodes.md` §57) — here that is `blur`'s own horizontal quad, drawn
+//! from [`GaussianBlurNode::render`], which is *not* one of the node types
+//! the renderer discovers on its own and so is still called by hand, in the
+//! order three's dump has the passes: `Gaussian_blur_horizontal`, then
+//! `Gaussian_blur_vertical`, then the scene.
 //!
 //! `renderer.inspector.createParameters()` builds a GUI over the two uniforms
 //! and `autoUpdate`. It draws no `Math.random()` and the graded frame is the
@@ -97,10 +101,11 @@ pub fn init() -> App {
     }
 }
 
-/// The page's `render()`, with the two `updateBefore()`s three fires from
-/// inside it made explicit.
+/// The page's `render()`. `blur.render()` draws its own two quads, the first
+/// of which samples `procedural_to_texture`'s texture and so renders it
+/// (`docs/nodes.md` §57); `GaussianBlurNode` itself is not one of the types
+/// the renderer discovers on its own, so it is still called by hand.
 pub fn animate(app: &mut App) {
-    app.procedural_to_texture.render(&mut app.renderer);
     app.blur.render(&mut app.renderer);
     app.renderer.render(&mut app.scene, &mut app.camera);
 }

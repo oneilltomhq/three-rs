@@ -48,6 +48,9 @@
 //! `requiredLimits: { maxColorAttachments: 5 }` is a WebGPU device request for
 //! a limit this port already gets from wgpu's default adapter limits (8).
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use three_rs::addons::controls::OrbitControls;
 use three_rs::loaders::{GLTFLoader, UltraHdrLoader};
 use three_rs::materials::{render_output, ToneMapping};
@@ -72,8 +75,10 @@ fn examples_dir() -> std::path::PathBuf {
 
 pub struct App {
     pub renderer: Renderer,
-    pub scene: Scene,
-    pub camera: PerspectiveCamera,
+    /// Shared with `scene_pass`, which renders it from `updateBefore()`.
+    pub scene: Rc<RefCell<Scene>>,
+    /// Shared with `scene_pass`.
+    pub camera: Rc<RefCell<PerspectiveCamera>>,
     /// The page's `controls`.
     pub controls: OrbitControls,
     pub environment: PmremEnvironment,
@@ -85,10 +90,10 @@ pub fn init() -> App {
     // `new THREE.PerspectiveCamera( 45, window.innerWidth / window.innerHeight,
     // 0.25, 20 )`, then `camera.position.set( - 1.8, 0.6, 2.7 )`. Unlike
     // `webgpu_loader_gltf`, nothing moves it afterwards.
-    let mut camera = PerspectiveCamera::new(45.0, INNER_WIDTH / INNER_HEIGHT, 0.25, 20.0);
+    let camera = PerspectiveCamera::new(45.0, INNER_WIDTH / INNER_HEIGHT, 0.25, 20.0);
     camera.node.borrow_mut().position.set(-1.8, 0.6, 2.7);
 
-    let mut scene = Scene::new();
+    let scene = Scene::new();
 
     // `new THREE.WebGPURenderer( { antialias: true, requiredLimits: {
     // maxColorAttachments: 5 } } )`. The page builds it after the loader call;
@@ -109,23 +114,27 @@ pub fn init() -> App {
     // texture` — the 512² cube the skybox samples.
     let background = cube_render_target::from_equirectangular_texture(&mut renderer, &texture)
         .expect("the equirectangular background converts to a cube");
-    scene.background = Some(Background::CubeTexture(background));
+
+    let scene = Rc::new(RefCell::new(scene));
+    let camera = Rc::new(RefCell::new(camera));
+
+    scene.borrow_mut().background = Some(Background::CubeTexture(background));
 
     // `scene.environment = texture`: the same map, PMREM-filtered, and the
     // only light in the scene.
     let mut environment = PmremEnvironment::from_equirectangular(&texture);
     environment.update(&mut renderer).unwrap();
-    scene.environment = Some(environment.handle());
+    scene.borrow_mut().environment = Some(environment.handle());
 
     // `new GLTFLoader().setPath( 'models/gltf/DamagedHelmet/glTF/' ).load(
     // 'DamagedHelmet.gltf', … )`.
     let gltf =
         GLTFLoader::load(examples_dir().join("models/gltf/DamagedHelmet/glTF/DamagedHelmet.gltf"))
             .expect("DamagedHelmet.gltf");
-    scene.add(&gltf.scene);
+    scene.borrow_mut().add(&gltf.scene);
 
     // `const controls = new OrbitControls( camera, renderer.domElement );`
-    let mut controls = OrbitControls::new(&mut camera);
+    let mut controls = OrbitControls::new(&mut camera.borrow_mut());
     // The renderer's canvas stands in for the element's `clientWidth` /
     // `clientHeight`.
     controls.set_element_size(INNER_WIDTH, INNER_HEIGHT);
@@ -135,18 +144,21 @@ pub fn init() -> App {
     // `controls.target.set( 0, 0, - 0.2 ); controls.update();` — the camera's
     // pose for the whole page.
     controls.target.set(0.0, 0.0, -0.2);
-    controls.update(&mut camera, None);
+    controls.update(&mut camera.borrow_mut(), None);
 
     // post processing
 
     // `pass( scene, camera, { minFilter: NearestFilter, magFilter:
     // NearestFilter } )` — the filters are what make all four attachments
-    // unfilterable, so the composite below reads them with `textureLoad`.
+    // unfilterable, so the composite below reads them with `textureLoad`. The
+    // pass holds the scene and camera, and the renderer renders it the first
+    // time a draw samples one of its textures (`docs/nodes.md` §57).
     let scene_pass = PassNode::new_with_options(PassOptions {
         min_filter: TextureFilter::Nearest,
         mag_filter: TextureFilter::Nearest,
         ..PassOptions::default()
     });
+    scene_pass.set_scene(scene.clone(), camera.clone());
 
     // `scenePass.setMRT( mrt( { output, normal: packNormalToRGB( normalView ),
     // diffuse: diffuseColor, emissive } ) )`. `normal` and `emissive` are
@@ -203,11 +215,10 @@ pub fn init() -> App {
     }
 }
 
-/// The page's `render()` — `renderPipeline.render()` alone upstream; see
-/// `docs/postprocessing.md` for why the pass is fired explicitly here.
+/// The page's `render()` — `renderPipeline.render()`, whose composite reads
+/// the scene pass's four textures and so runs its `updateBefore()` first
+/// (`docs/nodes.md` §57).
 pub fn animate(app: &mut App) {
-    app.scene_pass
-        .render(&mut app.renderer, &mut app.scene, &mut app.camera);
     app.render_pipeline.render(&mut app.renderer);
 }
 
@@ -218,8 +229,9 @@ pub fn animate(app: &mut App) {
 /// owns its own reaction to a resized canvas instead of the host
 /// guessing at one.
 pub fn resize(app: &mut App, width: f64, height: f64) {
-    app.camera.aspect = width / height;
-    app.camera.update_projection_matrix();
+    let mut camera = app.camera.borrow_mut();
+    camera.aspect = width / height;
+    camera.update_projection_matrix();
     app.renderer.set_size(width, height);
 }
 
@@ -237,8 +249,10 @@ pub fn controls(app: &mut App) -> Option<&mut OrbitControls> {
 /// They are two fields of the same `App`, so borrowing both is sound — but
 /// only this module can say so; a host holding `&mut App` and calling
 /// [`controls`] and then reaching for the camera cannot. Hence the pair.
-pub fn controls_and_camera(app: &mut App) -> Option<(&mut OrbitControls, &mut PerspectiveCamera)> {
-    Some((&mut app.controls, &mut app.camera))
+pub fn controls_and_camera(
+    app: &mut App,
+) -> Option<(&mut OrbitControls, std::cell::RefMut<'_, PerspectiveCamera>)> {
+    Some((&mut app.controls, app.camera.borrow_mut()))
 }
 
 fn main() {

@@ -27,6 +27,7 @@
 //!   tween. A texture is part of the port's graph, not a uniform, so the mix
 //!   texture stays the page's initial one, `textures[ 5 ]`.
 
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use three_rs::addons::controls::OrbitControls;
@@ -37,9 +38,9 @@ use three_rs::nodes::tsl::uniform_settable;
 use three_rs::nodes::Type;
 use three_rs::testing::DeterministicRandom;
 use three_rs::{
-    AmbientLight, BufferGeometry, Color, DirectionalLight, InstancedMesh, MeshPhongNodeMaterial,
-    Node, Object3D, PassNode, PerspectiveCamera, RenderPipeline, Renderer, RendererParameters,
-    Scene, TextureLoader, Timer, Vector3,
+    pass, AmbientLight, BufferGeometry, Color, DirectionalLight, InstancedMesh,
+    MeshPhongNodeMaterial, Node, Object3D, PassNode, PerspectiveCamera, RenderPipeline, Renderer,
+    RendererParameters, Scene, TextureLoader, Timer, Vector3,
 };
 
 pub const INNER_WIDTH: f64 = 800.0;
@@ -64,8 +65,11 @@ fn examples_dir() -> std::path::PathBuf {
 
 /// The page's `FXScene`.
 pub struct FxScene {
-    pub scene: Scene,
-    pub camera: PerspectiveCamera,
+    /// Shared with the scene's own pass, which renders it from
+    /// `updateBefore()`.
+    pub scene: Rc<RefCell<Scene>>,
+    /// Shared with the scene's own pass.
+    pub camera: Rc<RefCell<PerspectiveCamera>>,
     pub mesh: Node,
     rotation_speed: Vector3,
 }
@@ -97,8 +101,8 @@ impl FxScene {
         scene.add(&mesh);
 
         Self {
-            scene,
-            camera,
+            scene: Rc::new(RefCell::new(scene)),
+            camera: Rc::new(RefCell::new(camera)),
             mesh,
             rotation_speed,
         }
@@ -117,8 +121,9 @@ impl FxScene {
 
     /// `this.resize()`.
     fn resize(&mut self, width: f64, height: f64) {
-        self.camera.aspect = width / height;
-        self.camera.update_projection_matrix();
+        let mut camera = self.camera.borrow_mut();
+        camera.aspect = width / height;
+        camera.update_projection_matrix();
     }
 }
 
@@ -206,8 +211,11 @@ pub fn init() -> App {
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
 
-    let scene_pass_a = PassNode::new();
-    let scene_pass_b = PassNode::new();
+    // `pass( scene, camera )`: each scene's own pass holds it and its camera,
+    // and the renderer renders it the first time a draw samples its texture
+    // (`docs/nodes.md` §57).
+    let scene_pass_a = pass(fx_scene_a.scene.clone(), fx_scene_a.camera.clone());
+    let scene_pass_b = pass(fx_scene_b.scene.clone(), fx_scene_b.camera.clone());
 
     // `effectController._transition`, `.threshold`, `._useTexture`.
     let (transition_node, transition_uniform) = uniform_settable(Type::F32, vec![0.0]);
@@ -276,18 +284,15 @@ fn render(app: &mut App) {
     // Prevent render both scenes when it's not necessary
     if app.transition == 0.0 {
         let fx = &mut app.fx_scene_b;
-        app.renderer.render(&mut fx.scene, &mut fx.camera);
+        app.renderer
+            .render(&mut fx.scene.borrow_mut(), &mut *fx.camera.borrow_mut());
     } else if app.transition == 1.0 {
         let fx = &mut app.fx_scene_a;
-        app.renderer.render(&mut fx.scene, &mut fx.camera);
+        app.renderer
+            .render(&mut fx.scene.borrow_mut(), &mut *fx.camera.borrow_mut());
     } else {
-        // `renderPipeline.render()`: both passes, then the transition quad.
-        let a = &mut app.fx_scene_a;
-        app.scene_pass_a
-            .render(&mut app.renderer, &mut a.scene, &mut a.camera);
-        let b = &mut app.fx_scene_b;
-        app.scene_pass_b
-            .render(&mut app.renderer, &mut b.scene, &mut b.camera);
+        // `renderPipeline.render()`: the transition quad's draw runs both
+        // scene passes' `updateBefore()` first (`docs/nodes.md` §57).
         app.render_pipeline.render(&mut app.renderer);
     }
 }

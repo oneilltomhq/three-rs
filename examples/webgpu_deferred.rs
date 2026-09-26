@@ -48,6 +48,7 @@
 //! transparent `DoubleSide` material (the planes: a `BackSide` draw and then a
 //! `FrontSide` one, per object).
 
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use three_rs::addons::controls::OrbitControls;
@@ -66,7 +67,7 @@ use three_rs::objects::Background;
 use three_rs::renderer::{cube_render_target, PassOptions};
 use three_rs::Timer;
 use three_rs::{
-    Color, Group, Mesh, PassNode, PerspectiveCamera, PointLight, RenderPipeline, Renderer,
+    pass, Color, Group, Mesh, PassNode, PerspectiveCamera, PointLight, RenderPipeline, Renderer,
     RendererParameters, Scene,
 };
 
@@ -84,8 +85,10 @@ fn examples_dir() -> std::path::PathBuf {
 
 pub struct App {
     pub renderer: Renderer,
-    pub scene: Scene,
-    pub camera: PerspectiveCamera,
+    /// Shared with the three passes, which render it from `updateBefore()`.
+    pub scene: Rc<RefCell<Scene>>,
+    /// Shared with the three passes.
+    pub camera: Rc<RefCell<PerspectiveCamera>>,
     pub environment: PmremEnvironment,
     /// The page's `lightGroup`, turned by `render()`.
     pub light_group: three_rs::Node,
@@ -104,7 +107,7 @@ pub struct App {
 pub fn init() -> App {
     // `new THREE.PerspectiveCamera( 45, window.innerWidth / window.innerHeight,
     // 0.25, 20 ); camera.position.set( - 1.8, 0.6, 2.7 )`.
-    let mut camera = PerspectiveCamera::new(45.0, INNER_WIDTH / INNER_HEIGHT, 0.25, 20.0);
+    let camera = PerspectiveCamera::new(45.0, INNER_WIDTH / INNER_HEIGHT, 0.25, 20.0);
     camera.node.borrow_mut().position.set(-1.8, 0.6, 2.7);
 
     let mut scene = Scene::new();
@@ -218,11 +221,17 @@ pub fn init() -> App {
         pivot.add(&mesh);
     }
 
+    // `pass( scene, camera )`: the passes below hold both and the renderer
+    // renders each the first time a draw samples its texture, in whatever
+    // order that pulls them (`docs/nodes.md` §57).
+    let scene = Rc::new(RefCell::new(scene));
+    let camera = Rc::new(RefCell::new(camera));
+
     // opaque pass
 
     // `const opaquePass = pass( scene, camera ); opaquePass.transparent =
     // false; opaquePass.setLayers( new THREE.Layers() )`.
-    let mut opaque_pass = PassNode::new();
+    let mut opaque_pass = pass(scene.clone(), camera.clone());
     opaque_pass.set_transparent(false);
     opaque_pass.set_layers(Layers::new());
 
@@ -293,22 +302,24 @@ pub fn init() -> App {
     // scene graph rather than being rendered on its own.
     let resolve_mesh = Mesh::new(Rc::new(quad_geometry()), resolve_material);
     resolve_mesh.borrow_mut().layers.set(RESOLVE_LAYER);
-    scene.add(&resolve_mesh);
+    scene.borrow().add(&resolve_mesh);
 
     // `const resolvedPass = pass( scene, camera ); resolvedPass.setLayers(
     // resolveLayers ); resolvedPass.lighting = new THREE.Lighting()`.
-    let resolved_pass = PassNode::new();
+    let resolved_pass = pass(scene.clone(), camera.clone());
     resolved_pass.set_layers(resolve_layers);
 
     // transparent pass
 
     // `pass( scene, camera, { depthTexture: opaquePass.getTexture( 'depth' ),
-    // autoClearDepth: false } )`.
+    // autoClearDepth: false } )` — the opaque pass is the one registered as
+    // the depth texture's producer; this pass only reuses it.
     let mut transparent_pass = PassNode::new_with_options(PassOptions {
         depth_texture: Some(opaque_pass.depth_texture()),
         auto_clear_depth: false,
         ..PassOptions::default()
     });
+    transparent_pass.set_scene(scene.clone(), camera.clone());
     transparent_pass.set_layers(Layers::new());
     transparent_pass.set_opaque(false);
 
@@ -335,7 +346,7 @@ pub fn init() -> App {
     // The `update()` below has nothing to clamp — the distance is already
     // inside `[ minDistance, maxDistance ]` — so it only aims the camera at
     // the target.
-    let mut controls = OrbitControls::new(&mut camera);
+    let mut controls = OrbitControls::new(&mut camera.borrow_mut());
     // The canvas the example renders at, standing in for the element's
     // `clientWidth` / `clientHeight`.
     controls.set_element_size(INNER_WIDTH, INNER_HEIGHT);
@@ -343,7 +354,7 @@ pub fn init() -> App {
     controls.max_distance = 10.0;
     controls.target.set(0.0, 0.0, -0.2);
     // `controls.update();`
-    controls.update(&mut camera, None);
+    controls.update(&mut camera.borrow_mut(), None);
 
     App {
         renderer,
@@ -365,10 +376,10 @@ pub fn init() -> App {
 /// The page's `render()`. `params.animated` defaults to true, so the two
 /// groups turn by the timer's delta — which is zero on the graded frame,
 /// because `Timer`'s first `update()` after a pinned clock has nowhere to
-/// move from. `renderPipeline.render()` fires the three passes'
-/// `updateBefore()` on its way; see `docs/postprocessing.md` for why the port
-/// fires them explicitly, and note the order — the resolve pass and the
-/// transparent pass both read what the opaque pass just wrote.
+/// move from. `renderPipeline.render()`: the composite's draw runs the three
+/// passes' `updateBefore()` on its way (`docs/nodes.md` §57) — the resolve
+/// pass and the transparent pass both read what the opaque pass just wrote,
+/// which is why the renderer renders it first regardless of pull order.
 pub fn animate(app: &mut App) {
     app.timer.update();
 
@@ -387,12 +398,6 @@ pub fn animate(app: &mut App) {
     }
 
     app.environment.update(&mut app.renderer).unwrap();
-    app.opaque_pass
-        .render(&mut app.renderer, &mut app.scene, &mut app.camera);
-    app.resolved_pass
-        .render(&mut app.renderer, &mut app.scene, &mut app.camera);
-    app.transparent_pass
-        .render(&mut app.renderer, &mut app.scene, &mut app.camera);
     app.render_pipeline.render(&mut app.renderer);
 }
 
@@ -403,8 +408,9 @@ pub fn animate(app: &mut App) {
 /// owns its own reaction to a resized canvas instead of the host
 /// guessing at one.
 pub fn resize(app: &mut App, width: f64, height: f64) {
-    app.camera.aspect = width / height;
-    app.camera.update_projection_matrix();
+    let mut camera = app.camera.borrow_mut();
+    camera.aspect = width / height;
+    camera.update_projection_matrix();
     app.renderer.set_size(width, height);
 }
 
@@ -422,8 +428,10 @@ pub fn controls(app: &mut App) -> Option<&mut OrbitControls> {
 /// They are two fields of the same `App`, so borrowing both is sound — but
 /// only this module can say so; a host holding `&mut App` and calling
 /// [`controls`] and then reaching for the camera cannot. Hence the pair.
-pub fn controls_and_camera(app: &mut App) -> Option<(&mut OrbitControls, &mut PerspectiveCamera)> {
-    Some((&mut app.controls, &mut app.camera))
+pub fn controls_and_camera(
+    app: &mut App,
+) -> Option<(&mut OrbitControls, std::cell::RefMut<'_, PerspectiveCamera>)> {
+    Some((&mut app.controls, app.camera.borrow_mut()))
 }
 
 fn main() {

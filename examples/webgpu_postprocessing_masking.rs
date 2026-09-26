@@ -11,10 +11,10 @@
 //! listener never fires.
 //!
 //! Three discovers the frame's `pass()` nodes from the node graph and fires
-//! their `updateBefore()` from inside the quad's own render; the port calls
-//! `PassNode::render` explicitly just before `RenderPipeline::render`, which
-//! submits the same work in the same order. See `docs/postprocessing.md`.
+//! their `updateBefore()` from inside the quad's own render, the first time a
+//! draw samples its texture (`docs/nodes.md` §57).
 
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use three_rs::addons::controls::OrbitControls;
@@ -23,7 +23,7 @@ use three_rs::math::Color;
 use three_rs::nodes::tsl::texture;
 use three_rs::utils::now_ms;
 use three_rs::{
-    box_geometry, ColorSpace, Mesh, MinFilter, PassNode, PerspectiveCamera, RenderPipeline,
+    box_geometry, pass, ColorSpace, Mesh, MinFilter, PassNode, PerspectiveCamera, RenderPipeline,
     Renderer, RendererParameters, Scene,
 };
 
@@ -34,10 +34,12 @@ pub const DPR: f64 = 1.0;
 
 pub struct App {
     pub renderer: Renderer,
-    pub camera: PerspectiveCamera,
-    pub base_scene: Scene,
-    pub mask_scene1: Scene,
-    pub mask_scene2: Scene,
+    /// Shared with `base`, `mask1` and `mask2`, which render it from
+    /// `updateBefore()`.
+    pub camera: Rc<RefCell<PerspectiveCamera>>,
+    pub base_scene: Rc<RefCell<Scene>>,
+    pub mask_scene1: Rc<RefCell<Scene>>,
+    pub mask_scene2: Rc<RefCell<Scene>>,
     pub boxed: three_rs::Node,
     pub torus: three_rs::Node,
     pub base: PassNode,
@@ -96,9 +98,17 @@ pub fn init() -> App {
 
     // post processing
 
-    let base = PassNode::new();
-    let mask1 = PassNode::new();
-    let mask2 = PassNode::new();
+    // `pass( scene, camera )`: each pass holds its own scene and the shared
+    // camera, and the renderer renders it the first time a draw samples its
+    // texture (`docs/nodes.md` §57).
+    let base_scene = Rc::new(RefCell::new(base_scene));
+    let mask_scene1 = Rc::new(RefCell::new(mask_scene1));
+    let mask_scene2 = Rc::new(RefCell::new(mask_scene2));
+    let camera = Rc::new(RefCell::new(camera));
+
+    let base = pass(base_scene.clone(), camera.clone());
+    let mask1 = pass(mask_scene1.clone(), camera.clone());
+    let mask2 = pass(mask_scene2.clone(), camera.clone());
 
     let scene_mask1 = mask1.a();
     let scene_mask2 = mask2.a();
@@ -144,14 +154,8 @@ pub fn animate(app: &mut App) {
         torus.set_rotation(time, time / 2.0, 0.0);
     }
 
-    // `PassNode.updateBefore()` ×3, then the output quad.
-    app.base
-        .render(&mut app.renderer, &mut app.base_scene, &mut app.camera);
-    app.mask1
-        .render(&mut app.renderer, &mut app.mask_scene1, &mut app.camera);
-    app.mask2
-        .render(&mut app.renderer, &mut app.mask_scene2, &mut app.camera);
-
+    // `renderPipeline.render()`: the output quad's draw runs the three
+    // passes' `updateBefore()` first (`docs/nodes.md` §57).
     app.render_pipeline.render(&mut app.renderer);
 }
 
@@ -162,8 +166,9 @@ pub fn animate(app: &mut App) {
 /// owns its own reaction to a resized canvas instead of the host
 /// guessing at one.
 pub fn resize(app: &mut App, width: f64, height: f64) {
-    app.camera.aspect = width / height;
-    app.camera.update_projection_matrix();
+    let mut camera = app.camera.borrow_mut();
+    camera.aspect = width / height;
+    camera.update_projection_matrix();
     app.renderer.set_size(width, height);
 }
 
