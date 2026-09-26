@@ -402,6 +402,10 @@ pub(crate) struct BuildContext {
     /// `normalNode`. `normalView` takes it as its value outside the `NORMAL`
     /// layer and `normalViewGeometry` inside it.
     pub(crate) setup_normal: Option<NodeRef>,
+    /// `builder.isFlatShading()`: `material.flatShading && material.wireframe
+    /// === false`. `normalViewGeometry` reads it. A builder method in three,
+    /// kept here because it lives exactly as long as `setup_normal`.
+    pub(crate) flat_shading: bool,
     /// Addon keys (`TRAANode`, `ClusteredLightsNode`, the light-data nodes).
     /// Nothing reads it yet; `context( node, { … } )` (#161) will.
     #[allow(dead_code)]

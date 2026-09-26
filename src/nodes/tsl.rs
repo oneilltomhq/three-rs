@@ -93,10 +93,6 @@ fn override_node(pick: fn(&OverrideNodes) -> &Option<NodeRef>) -> Option<NodeRef
 }
 
 thread_local! {
-    /// `builder.isFlatShading()` — `material.flatShading && material.wireframe
-    /// === false`. `normalViewGeometry` reads it, so like `setup_normal` it is
-    /// installed for the whole of one material's setup.
-    static FLAT_SHADING: RefCell<bool> = const { RefCell::new(false) };
     /// `builder.material.side` — what `negateOnBackSide()` branches on, and so
     /// part of every cache key that reaches `normalView` or the tangent frame.
     static MATERIAL_SIDE: RefCell<Side> = const { RefCell::new(Side::Front) };
@@ -157,11 +153,12 @@ pub fn with_material_normal<R>(
     side: Side,
     f: impl FnOnce() -> R,
 ) -> R {
-    let _normal = push_context(|cx| cx.setup_normal = normal);
-    let previous_flat = FLAT_SHADING.with(|v| v.replace(flat_shading));
+    let _normal = push_context(|cx| {
+        cx.setup_normal = normal;
+        cx.flat_shading = flat_shading;
+    });
     let previous_side = MATERIAL_SIDE.with(|v| v.replace(side));
     let out = f();
-    FLAT_SHADING.with(|v| *v.borrow_mut() = previous_flat);
     MATERIAL_SIDE.with(|v| *v.borrow_mut() = previous_side);
     out
 }
@@ -2196,7 +2193,7 @@ pub fn normal_flat() -> NodeRef {
 /// transformNormalToView( normalLocal ).toVarying( 'v_normalViewGeometry'
 /// ).normalize() ).once()().toVar( 'normalViewGeometry' )`.
 pub fn normal_view_geometry() -> NodeRef {
-    let flat = FLAT_SHADING.with(|f| *f.borrow());
+    let flat = current_context(|cx| cx.flat_shading);
     if let Some(node) = NORMAL_VIEW_GEOMETRY.with(|m| m.borrow().get(&flat).cloned()) {
         return node;
     }
@@ -2239,7 +2236,7 @@ fn normal_key() -> NormalViewKey {
     (
         layer,
         value.as_ref().map(|v| v.key()),
-        FLAT_SHADING.with(|f| *f.borrow()),
+        current_context(|cx| cx.flat_shading),
         MATERIAL_SIDE.with(|s| *s.borrow()),
         HAS_TANGENT.with(|t| *t.borrow()),
         // An `overrideNodes( [ [ normalView, … ] ] )` material reads a wholly
@@ -2269,7 +2266,7 @@ pub fn normal_view() -> NodeRef {
         return node;
     }
     let key = normal_key();
-    let flat = FLAT_SHADING.with(|f| *f.borrow());
+    let flat = current_context(|cx| cx.flat_shading);
     if let Some(node) = NORMAL_VIEW.with(|m| m.borrow().get(&key).cloned()) {
         return node;
     }
@@ -2324,7 +2321,7 @@ fn tangent_frame() -> (NodeRef, NodeRef) {
 
     // `tangentView` / `bitangentView` go through `negateOnBackSide()` too,
     // unless the material is flat shaded.
-    let flat = FLAT_SHADING.with(|f| *f.borrow());
+    let flat = current_context(|cx| cx.flat_shading);
     let frame = |name, value| {
         if flat {
             value
@@ -2372,7 +2369,7 @@ fn tangent_attribute_frame() -> (NodeRef, NodeRef) {
     let tangent_geometry = attribute("tangent", Type::Vec4);
     let tangent_local = to_var(Some("tangentLocal"), tangent_geometry.clone().xyz());
 
-    let flat = FLAT_SHADING.with(|f| *f.borrow());
+    let flat = current_context(|cx| cx.flat_shading);
     let front_side = |value: NodeRef| {
         if flat {
             value
