@@ -141,6 +141,14 @@ impl Data3DTexture {
         self.1.get()
     }
 
+    /// The liveness handle the renderer's caches sweep on; see
+    /// [`TextureOwner`].
+    ///
+    /// [`TextureOwner`]: super::TextureOwner
+    pub(crate) fn owner(&self) -> super::TextureOwner {
+        Rc::downgrade(&self.0) as super::TextureOwner
+    }
+
     pub fn borrow(&self) -> Ref<'_, Data3DTextureInner> {
         self.0.borrow()
     }

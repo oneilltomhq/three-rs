@@ -273,4 +273,70 @@ impl SkinnedMesh {
 
         self.bounding_sphere = Some(bounding_sphere);
     }
+
+    /// `SkinnedMesh.getVertexPosition( index, target )` — `Mesh`'s morphed
+    /// position, then `applyBoneTransform()`.
+    pub fn get_vertex_position(&self, index: usize) -> Vector3 {
+        let mut target = crate::objects::mesh::vertex_position(
+            &self.mesh.geometry,
+            &self.morph_target_influences.borrow(),
+            index,
+        );
+        self.apply_bone_transform(index, &mut target);
+        target
+    }
+
+    /// `SkinnedMesh.raycast( raycaster, intersects )` — `Mesh.raycast()` over
+    /// the skinned mesh's *own* bounds, which follow the bones, with a plain
+    /// `ray.intersectsSphere()` test where `Mesh` checks `near` / `far`.
+    ///
+    /// A missing material is three's default `MeshBasicMaterial`, as for
+    /// [`Mesh::raycast`](crate::objects::Mesh::raycast).
+    pub fn raycast(
+        &mut self,
+        matrix_world: &Matrix4,
+        object: &crate::core::Node,
+        raycaster: &crate::core::Raycaster,
+        intersects: &mut Vec<crate::core::Intersection>,
+    ) {
+        // Test with the bounding sphere in world space.
+        if self.bounding_sphere.is_none() {
+            self.compute_bounding_sphere();
+        }
+        let Some(mut sphere) = self.bounding_sphere else {
+            return;
+        };
+        sphere.apply_matrix4(matrix_world);
+        if !raycaster.ray.intersects_sphere(&sphere) {
+            return;
+        }
+
+        // Convert the ray to the local space of the skinned mesh.
+        let mut inverse_matrix = *matrix_world;
+        inverse_matrix.invert();
+        let mut ray = raycaster.ray;
+        ray.apply_matrix4(&inverse_matrix);
+
+        // Test with the bounding box in local space.
+        if let Some(bounding_box) = &self.bounding_box {
+            if !ray.intersects_box(bounding_box) {
+                return;
+            }
+        }
+
+        let this = &*self;
+        let target = crate::objects::mesh::MeshRaycast {
+            geometry: &this.mesh.geometry,
+            side: this
+                .mesh
+                .material
+                .as_ref()
+                .map_or(crate::materials::Side::Front, |m| m.side),
+            matrix_world: *matrix_world,
+            draw_start: this.mesh.geometry.draw_range.start,
+            draw_count: this.mesh.geometry.draw_range.count,
+            vertex_position: &|index| this.get_vertex_position(index),
+        };
+        target.compute_intersections(raycaster, &ray, object, intersects);
+    }
 }

@@ -207,6 +207,6 @@ Three things the readback caught that nothing else would have:
   comes from the release e2e run rather than `viewer --headless --frames 40`.
 * **Sweeping the storage-buffer cache.** `Renderer` holds storage buffers by
   `BufferId` and never drops them; a `StorageArray` is application-owned and
-  lives as long as the app. Geometry and texture caches are swept (issue #58);
+  lives as long as the app. Geometry and texture caches are swept (issues #58, #158);
   this one would need the same treatment the first time a rung creates storage
   buffers per frame.

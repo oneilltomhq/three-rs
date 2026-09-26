@@ -36,7 +36,14 @@ pub enum Type {
     /// `vec4<u32>` — the `skinIndex` attribute, which three.js declares
     /// `attribute( 'skinIndex', 'uvec4' )` and uploads as a `Uint32Array`.
     UVec4,
+    /// `vec3<i32>` / `vec4<i32>` — TSL's `ivec3()` / `ivec4()`.
+    IVec3,
+    IVec4,
+    /// `vec2<bool>` / `vec3<bool>` / `vec4<bool>` — TSL's `bvec2()` … `bvec4()`,
+    /// and what a component-wise comparison of two vectors is.
+    BVec2,
     BVec3,
+    BVec4,
     /// `mat2` — `RotateNode`'s vec2 path emits `mat2x2<f32>( cos, sin, -sin, cos )`.
     Mat2,
     Mat3,
@@ -49,9 +56,9 @@ impl Type {
         match self {
             Type::Void => 0,
             Type::Bool | Type::F32 | Type::I32 | Type::U32 => 1,
-            Type::Vec2 | Type::UVec2 | Type::IVec2 => 2,
-            Type::Vec3 | Type::UVec3 | Type::BVec3 => 3,
-            Type::Vec4 | Type::UVec4 => 4,
+            Type::Vec2 | Type::UVec2 | Type::IVec2 | Type::BVec2 => 2,
+            Type::Vec3 | Type::UVec3 | Type::IVec3 | Type::BVec3 => 3,
+            Type::Vec4 | Type::UVec4 | Type::IVec4 | Type::BVec4 => 4,
             Type::Mat2 => 4,
             Type::Mat3 => 9,
             Type::Mat4 => 16,
@@ -62,8 +69,8 @@ impl Type {
     pub fn component_type(self) -> Type {
         match self {
             Type::UVec2 | Type::UVec3 | Type::UVec4 => Type::U32,
-            Type::IVec2 => Type::I32,
-            Type::BVec3 => Type::Bool,
+            Type::IVec2 | Type::IVec3 | Type::IVec4 => Type::I32,
+            Type::BVec2 | Type::BVec3 | Type::BVec4 => Type::Bool,
             Type::Vec2 | Type::Vec3 | Type::Vec4 | Type::Mat2 | Type::Mat3 | Type::Mat4 => {
                 Type::F32
             }
@@ -78,7 +85,11 @@ impl Type {
             (Type::U32, 2) => Type::UVec2,
             (Type::I32, 2) => Type::IVec2,
             (Type::U32, 3) => Type::UVec3,
+            (Type::I32, 3) => Type::IVec3,
+            (Type::I32, 4) => Type::IVec4,
+            (Type::Bool, 2) => Type::BVec2,
             (Type::Bool, 3) => Type::BVec3,
+            (Type::Bool, 4) => Type::BVec4,
             (Type::F32, 2) => Type::Vec2,
             (Type::F32, 3) => Type::Vec3,
             (Type::F32, 4) => Type::Vec4,
@@ -176,7 +187,22 @@ pub enum UniformSource {
     BackgroundRotation,
     BackgroundBlurriness,
     BackgroundIntensity,
+    /// `reference( 'color' | 'near' | 'far' | 'density', …, scene.fog )
+    /// .setGroup( renderGroup )` — the classic `scene.fog`'s parameters, which
+    /// `NodeManager.updateFog()` binds as render-group uniforms so that a fog
+    /// whose values change never rebuilds a program. The colour is in the
+    /// working space.
+    FogColor,
+    FogNear,
+    FogFar,
+    FogDensity,
     Time,
+    /// `deltaTime` — `TimerNode.DELTA`, `frame.deltaTime`: the seconds since
+    /// the previous `NodeFrame.update()`.
+    DeltaTime,
+    /// `frameId` — `TimerNode.FRAME`, `uniform( 0, 'uint' )` updated from
+    /// `frame.frameId`: the count of `NodeFrame.update()` calls.
+    FrameId,
     /// `viewportSize` — the render target's pixel dimensions.
     ViewportSize,
     /// `viewport` — `ScreenNode.VIEWPORT`, the whole rectangle as
@@ -245,6 +271,9 @@ pub enum UniformSource {
     /// 'mat4' )` — `SkinnedMesh`'s two bind matrices, in the object group.
     BindMatrix,
     BindMatrixInverse,
+    /// `reference( 'center', 'vec2', object )` — `Sprite.center`, read by
+    /// `SpriteNodeMaterial.setupPositionView()`, in the object group.
+    ObjectCenter,
     /// A plain `uniform( value )` the example supplies.
     Value(Vec<f64>),
     /// `uniform( value )` whose `.value` is written between draws — three.js'
@@ -375,6 +404,7 @@ impl UniformSource {
             | UniformSource::MorphBase
             | UniformSource::BindMatrix
             | UniformSource::BindMatrixInverse
+            | UniformSource::ObjectCenter
             | UniformSource::Value(_)
             | UniformSource::Settable(_)
             | UniformSource::ObjectUpdate(_) => UpdateType::Object,
@@ -593,6 +623,23 @@ impl StorageAccess {
     }
 }
 
+impl TextureSource {
+    /// The texture's liveness, for the renderer's view cache to sweep on; see
+    /// [`TextureOwner`](crate::textures::TextureOwner).
+    pub(crate) fn owner(&self) -> crate::textures::TextureOwner {
+        match self {
+            TextureSource::Texture2D(texture) => texture.owner(),
+            TextureSource::Depth(depth) | TextureSource::ShadowMap(depth) => depth.owner(),
+            TextureSource::Cube(cube) => cube.owner(),
+            TextureSource::DataArray(data) => data.owner(),
+            TextureSource::Data(data) => data.owner(),
+            TextureSource::CubeDepth(cube) => cube.owner(),
+            TextureSource::Texture3D(data) | TextureSource::Storage3D(data, _) => data.owner(),
+            TextureSource::Storage(texture, _) => texture.owner(),
+        }
+    }
+}
+
 /// How a `TextureNode` reads its texture — `WGSLNodeBuilder.generateTexture*`.
 #[derive(Clone, Debug)]
 pub enum SampleMode {
@@ -612,6 +659,10 @@ pub enum SampleMode {
     /// `textureLoad( t, coord, layer, u32( 0u ) )` on a 2-D-array texture —
     /// `textureLoad( … ).depth( layer )`, with no clamping and no sampler.
     LoadLayer(NodeRef),
+    /// `textureSample( t, t_sampler, uv, i32( layer ) )` on a 2-D-array
+    /// texture — `texture( map, uv ).depth( layer )`. Three builds the depth
+    /// node as `'int'`, so a float layer arrives truncated by `i32()`.
+    SampleLayer(NodeRef),
     /// `textureSampleCompare( t, t_sampler, uv, depth )` — the depth-compare
     /// read `ShadowFilterNode`'s `depthCompare` lowers to.
     Compare(NodeRef),
@@ -857,10 +908,13 @@ pub enum Node {
         start: Option<NodeRef>,
         count: NodeRef,
         /// The loop index, as it appears inside `body` (`Node::Param`). Its
-        /// type is the loop's `type`: `i32` for `Loop( count, … )`, `f32` for
-        /// `Loop( { type: 'float', … } )`.
+        /// type is `Loop( { type } )`: `i32`, or `f32` for `hashBlur`'s
+        /// `type: 'float'`, which also changes the step to `i += 1.`.
         index: NodeRef,
-        /// `Loop( { update } )` — `i += update` in place of `i ++`.
+        /// `Loop( { condition } )` — `"<"` unless the caller asked for
+        /// another comparison (`boxBlur`'s `"<="`).
+        condition: &'static str,
+        /// `Loop( { update } )` — `i += update` in place of the default step.
         update: Option<NodeRef>,
         body: Vec<NodeRef>,
     },
@@ -911,9 +965,15 @@ pub enum Node {
     Return {
         value: NodeRef,
     },
-    /// `x.not()` — `( ! x )`.
+    /// `x.not()` — `( ! x )`. A `bool`, or a `bvecN` for an `N`-vector
+    /// operand (`OperatorNode.getNodeType()`'s `'!'` arm).
     Not {
         node: NodeRef,
+    },
+    /// `x.bitNot()` — `( ~ x )`, typed `getIntegerType( typeA )`.
+    BitNot {
+        node: NodeRef,
+        ty: Type,
     },
     /// `cond.select( a, b )` — lowered to an `if`/`else` writing a result var,
     /// exactly as Three does.
@@ -978,7 +1038,8 @@ impl NodeRef {
             | Node::Break
             | Node::TextureStore { .. }
             | Node::Return { .. } => Type::Void,
-            Node::Not { .. } => Type::Bool,
+            Node::Not { node } => Type::vector_of(Type::Bool, node.ty().components().max(1)),
+            Node::BitNot { ty, .. } => *ty,
         }
     }
 }

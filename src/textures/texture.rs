@@ -9,7 +9,7 @@ use std::cell::{Ref, RefCell};
 use std::rc::Rc;
 
 use super::TextureId;
-use super::{ColorSpace, TextureFilter};
+use super::{ColorSpace, Image, TextureFilter};
 use crate::math::{Matrix3, Vector2};
 
 /// `three.js/src/constants.js` wrapping modes.
@@ -29,16 +29,28 @@ pub enum Wrapping {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum MinFilter {
     Nearest,
+    /// `NearestMipmapNearestFilter`.
+    NearestMipmapNearest,
+    /// `NearestMipmapLinearFilter`.
+    NearestMipmapLinear,
     Linear,
+    /// `LinearMipmapNearestFilter`.
+    LinearMipmapNearest,
     /// `LinearMipmapLinearFilter`, the `Texture` default.
     LinearMipmapLinear,
 }
 
 impl MinFilter {
+    /// `WebGPUTextureUtils._convertFilterMode()`: every `Nearest*` constant
+    /// is `'nearest'`, every `Linear*` one `'linear'`.
     pub fn min(self) -> TextureFilter {
         match self {
-            MinFilter::Nearest => TextureFilter::Nearest,
-            _ => TextureFilter::Linear,
+            MinFilter::Nearest
+            | MinFilter::NearestMipmapNearest
+            | MinFilter::NearestMipmapLinear => TextureFilter::Nearest,
+            MinFilter::Linear | MinFilter::LinearMipmapNearest | MinFilter::LinearMipmapLinear => {
+                TextureFilter::Linear
+            }
         }
     }
 
@@ -46,11 +58,19 @@ impl MinFilter {
     /// and everything else to `'nearest'`.
     pub fn mipmap(self) -> TextureFilter {
         match self {
-            MinFilter::LinearMipmapLinear => TextureFilter::Linear,
+            MinFilter::NearestMipmapLinear | MinFilter::LinearMipmapLinear => TextureFilter::Linear,
             _ => TextureFilter::Nearest,
         }
     }
 }
+
+/// One entry of `Texture.mipmaps`: a level the file (or the page) supplies
+/// rather than one the renderer generates. The same shape as a cube face,
+/// and the same type: `data` is the level's bytes in the texture's GPU
+/// format, every array layer of the level one after the other
+/// (`KTX2Loader`'s `concat( layerMips )`); for a block-compressed format
+/// these are whole blocks, rows of blocks top-down.
+pub type Mipmap = Image;
 
 pub struct TextureInner {
     pub width: u32,
@@ -60,6 +80,14 @@ pub struct TextureInner {
     pub color_space: ColorSpace,
     pub flip_y: bool,
     pub generate_mipmaps: bool,
+    /// `Texture.mipmaps` — levels supplied by the page or the file, level 0
+    /// first. When there are any they are the whole mip chain:
+    /// `Textures.getMipLevels()` takes its count from them and nothing is
+    /// generated on top (`webgpu_materials_texture_manualmipmap` paints each
+    /// level a different colour; a `CompressedTexture` or a KTX2 `DataTexture`
+    /// brings its own, and a block-compressed format could not be rendered
+    /// into anyway). Each level is in the texture's format, top row first.
+    pub mipmaps: Vec<Image>,
     pub wrap_s: Wrapping,
     pub wrap_t: Wrapping,
     pub mag_filter: TextureFilter,
@@ -87,6 +115,14 @@ pub struct TextureInner {
     /// `needsUpdate` is set to true". Part of the renderer's texture cache
     /// key, exactly as `Material.version` is part of the program cache key.
     pub version: u32,
+    /// `image.depth` of a `CompressedArrayTexture` — the layer count. Zero
+    /// for every 2-D texture, which is what marks this one as an array: it
+    /// is bound as `texture_2d_array<f32>` and sampled with a layer index.
+    pub depth: u32,
+    /// `Texture.premultiplyAlpha`. Only `KTX2Loader` sets it, from the DFD's
+    /// `KHR_DF_FLAG_ALPHA_PREMULTIPLIED`; it is recorded, not acted on — three's
+    /// WebGPU backend ignores it for compressed uploads as well.
+    pub premultiply_alpha: bool,
     /// `texture.isStorageTexture` — a [`Texture::storage`]: created with
     /// `STORAGE_BINDING`, never uploaded to, written by a compute kernel's
     /// `textureStore()`.
@@ -119,6 +155,7 @@ impl Texture {
                 color_space: ColorSpace::NoColorSpace,
                 flip_y: true,
                 generate_mipmaps: true,
+                mipmaps: Vec::new(),
                 wrap_s: Wrapping::ClampToEdge,
                 wrap_t: Wrapping::ClampToEdge,
                 mag_filter: TextureFilter::Linear,
@@ -134,6 +171,8 @@ impl Texture {
                 gpu: None,
                 format: wgpu::TextureFormat::Rgba8Unorm,
                 version: 0,
+                depth: 0,
+                premultiply_alpha: false,
                 is_storage: false,
             })),
             TextureId::next(),
@@ -338,6 +377,13 @@ impl Texture {
         self.1.get()
     }
 
+    /// The handle's liveness, without the handle; see [`TextureOwner`].
+    ///
+    /// [`TextureOwner`]: super::TextureOwner
+    pub(crate) fn owner(&self) -> super::TextureOwner {
+        Rc::downgrade(&self.0) as super::TextureOwner
+    }
+
     /// `Texture.clone()` — `new Texture().copy( this )`: a second texture over
     /// the same image, with its own id, its own uv transform and its own
     /// `channel`. `Texture`'s `Clone` impl is JS' assignment (a handle copy);
@@ -357,6 +403,8 @@ impl Texture {
                 color_space: inner.color_space,
                 flip_y: inner.flip_y,
                 generate_mipmaps: inner.generate_mipmaps,
+                // `Texture.copy()`: `this.mipmaps = source.mipmaps.slice( 0 )`.
+                mipmaps: inner.mipmaps.clone(),
                 wrap_s: inner.wrap_s,
                 wrap_t: inner.wrap_t,
                 mag_filter: inner.mag_filter,
@@ -372,6 +420,8 @@ impl Texture {
                 gpu: None,
                 format: inner.format,
                 version: inner.version,
+                depth: inner.depth,
+                premultiply_alpha: inner.premultiply_alpha,
                 is_storage: inner.is_storage,
             })),
             TextureId::next(),
@@ -398,12 +448,18 @@ impl Texture {
     /// transfer function is applied by the GPU on sample — the format becomes
     /// `rgba8unorm-srgb` and `WGSLNodeBuilder.needsToWorkingColorSpace()` stays
     /// false, so no colour-space node appears in the generated WGSL.
+    ///
+    /// `WebGPUTextureUtils.getFormat()` picks the `-srgb` twin of whatever
+    /// the format is — `rgba8unorm-srgb`, `bc7-rgba-unorm-srgb`,
+    /// `astc-4x4-unorm-srgb` — and leaves a format that has none (the float
+    /// formats, BC4/BC5/BC6H) alone, which is what wgpu's
+    /// `add_srgb_suffix` / `remove_srgb_suffix` do.
     pub fn set_color_space(&self, color_space: ColorSpace) {
         let mut inner = self.0.borrow_mut();
         inner.color_space = color_space;
         inner.format = match color_space {
-            ColorSpace::SRGB => wgpu::TextureFormat::Rgba8UnormSrgb,
-            ColorSpace::NoColorSpace => wgpu::TextureFormat::Rgba8Unorm,
+            ColorSpace::SRGB => inner.format.add_srgb_suffix(),
+            ColorSpace::NoColorSpace => inner.format.remove_srgb_suffix(),
         };
     }
 
@@ -420,6 +476,30 @@ impl Texture {
 
     pub fn set_generate_mipmaps(&self, generate_mipmaps: bool) {
         self.0.borrow_mut().generate_mipmaps = generate_mipmaps;
+    }
+
+    /// `texture.mipmaps[ i ] = image` for every level at once. The levels
+    /// must halve from the texture's own size down, as WebGPU's mip chain
+    /// does; the upload writes each into its level and generates none.
+    pub fn set_mipmaps(&self, mipmaps: Vec<Image>) {
+        let mut inner = self.0.borrow_mut();
+        for (level, image) in mipmaps.iter().enumerate() {
+            let expected = (
+                (inner.width >> level).max(1),
+                (inner.height >> level).max(1),
+            );
+            assert_eq!(
+                (image.width, image.height),
+                expected,
+                "three-rs: mipmap level {level} has the wrong size"
+            );
+        }
+        inner.mipmaps = mipmaps;
+    }
+
+    /// Whether the page supplied its own mip levels ([`Self::set_mipmaps`]).
+    pub fn has_mipmaps(&self) -> bool {
+        !self.0.borrow().mipmaps.is_empty()
     }
 
     pub fn set_min_filter(&self, min_filter: MinFilter) {
@@ -452,6 +532,10 @@ impl Texture {
 
     pub fn borrow(&self) -> Ref<'_, TextureInner> {
         self.0.borrow()
+    }
+
+    pub(crate) fn borrow_mut_inner(&self) -> std::cell::RefMut<'_, TextureInner> {
+        self.0.borrow_mut()
     }
 
     /// `texture.wrapS = texture.wrapT = wrapping`.
@@ -643,9 +727,15 @@ impl Texture {
         self.set_format(texture_type.color_gpu_format());
     }
 
-    /// `Texture.mipmapCount` — `floor( log2( max( w, h ) ) ) + 1`.
+    /// `Texture.mipmapCount` — `floor( log2( max( w, h ) ) ) + 1`, or the
+    /// length of `mipmaps` when the texture brings its own.
     pub fn mip_level_count(&self) -> u32 {
         let inner = self.0.borrow();
+        // `Textures.getMipLevels()`: `texture.mipmaps.length` when the page
+        // supplied levels, whatever `generateMipmaps` says.
+        if !inner.mipmaps.is_empty() {
+            return inner.mipmaps.len() as u32;
+        }
         if !inner.generate_mipmaps {
             return 1;
         }
@@ -666,6 +756,7 @@ impl std::fmt::Debug for TextureInner {
             .field("color_space", &self.color_space)
             .field("flip_y", &self.flip_y)
             .field("generate_mipmaps", &self.generate_mipmaps)
+            .field("mipmaps", &self.mipmaps.len())
             .field("wrap_s", &self.wrap_s)
             .field("wrap_t", &self.wrap_t)
             .field("mag_filter", &self.mag_filter)
@@ -679,6 +770,8 @@ impl std::fmt::Debug for TextureInner {
             .field("own_gpu", &self.own_gpu)
             .field("gpu", &self.gpu)
             .field("format", &self.format)
+            .field("depth", &self.depth)
+            .field("premultiply_alpha", &self.premultiply_alpha)
             .field("is_storage", &self.is_storage)
             .finish()
     }

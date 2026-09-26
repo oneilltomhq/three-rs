@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three-rs dump page - MeshStandardNodeMaterial under scene.fog (linear)</title>
+		<meta charset="utf-8">
+	</head>
+	<body>
+		<!--
+			Not a three.js example: a minimal page for tools/dump-webgpu.mjs --html,
+			so the WGSL of one fogged MeshStandardNodeMaterial can be dumped and
+			diffed against examples/dump_wgsl.rs (issue #140). One mesh, one
+			directional light, new THREE.Fog( 0x4080cc, 2, 6 ).
+		-->
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "../build/three.webgpu.js",
+					"three/webgpu": "../build/three.webgpu.js",
+					"three/tsl": "../build/three.tsl.js",
+					"three/addons/": "./jsm/"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			import * as THREE from 'three/webgpu';
+
+			const camera = new THREE.PerspectiveCamera( 50, window.innerWidth / window.innerHeight, 0.1, 100 );
+			camera.position.set( 0, 0, 4 );
+
+			const scene = new THREE.Scene();
+			scene.background = new THREE.Color( 0x4080cc );
+			scene.fog = new THREE.Fog( 0x4080cc, 2, 6 );
+
+			const light = new THREE.DirectionalLight( 0xffffff, 3 );
+			light.position.set( 1, 1, 1 );
+			scene.add( light );
+
+			const material = new THREE.MeshStandardNodeMaterial( { color: 0xff8040, roughness: 0.5, metalness: 0.2 } );
+			const mesh = new THREE.Mesh( new THREE.SphereGeometry( 1, 32, 16 ), material );
+			mesh.position.z = - 1;
+			scene.add( mesh );
+
+			const renderer = new THREE.WebGPURenderer();
+			renderer.setPixelRatio( window.devicePixelRatio );
+			renderer.setSize( window.innerWidth, window.innerHeight );
+			renderer.setAnimationLoop( () => renderer.render( scene, camera ) );
+			document.body.appendChild( renderer.domElement );
+
+		</script>
+	</body>
+</html>

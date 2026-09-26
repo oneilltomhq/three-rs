@@ -263,7 +263,7 @@ fn validate(wgsl: &str, what: &str) {
 
 /// `Storage3DTexture`, which no graded rung reaches yet (three's
 /// `webgpu_compute_texture_3d` also needs `CanvasTexture` and MaterialX noise,
-/// see `docs/nodes.md` §28): a kernel that `textureStore`s into it through a
+/// see `docs/nodes.md` §31): a kernel that `textureStore`s into it through a
 /// `vec3<u32>` coordinate, and a material that samples the same texture with
 /// `texture3D( t, null, 0 )`. Both modules must validate, the kernel's binding
 /// must be a write-only 3D storage texture of the texture's format, and the

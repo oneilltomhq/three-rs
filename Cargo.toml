@@ -49,6 +49,37 @@ bytemuck = { version = "1", features = ["derive"] }
 png = "0.17"
 serde_json = "1"
 zune-jpeg = { version = "0.5.15", default-features = false, features = ["std"] }
+# `KHR_draco_mesh_compression` (issue #139). three.js ships libdraco only as
+# an Emscripten build, so the bitstream is taken from this pure-Rust port of
+# it; `src/loaders/draco.rs` ports the DRACOLoader half on top. Decoder
+# features only: valence edgebreaker, pre-2.2 bitstreams and point clouds
+# are all things libdraco's decoder (and so DRACOLoader) accepts.
+draco-core = { version = "2.2.0", default-features = false, features = [
+    "decoder",
+    "edgebreaker_valence_decode",
+    "legacy_bitstream_decode",
+    "point_cloud_decode",
+] }
+# `KTX2Loader` (issue #172): `ktx2` reads the container, `basisu` is a pure
+# Rust port of the Basis Universal transcoder three.js runs as wasm, and
+# `ruzstd` inflates Zstandard-supercompressed levels of non-Basis files.
+# `ruzstd` is pinned to the 0.7 line `basisu` itself depends on, so the tree
+# carries one Zstandard decoder rather than two.
+ktx2 = "0.5"
+basisu = "0.1"
+ruzstd = { version = "0.7", default-features = false }
+# `EXT_meshopt_compression` (issue #173). three.js ships meshoptimizer's
+# decoder only as WebAssembly, and the `meshopt` crate is C behind FFI, which
+# the wasm32 build cannot link; this is a pure-Rust port of it. Only its
+# vertex and index codecs are used (`src/loaders/meshopt.rs` says why the
+# filters are not); `experimental` is what exposes `decode_index_sequence`,
+# the `INDICES` mode.
+meshopt-rs = { version = "0.1.2", features = ["experimental"] }
+# `EXT_texture_webp` (#179). Pure Rust (image-rs), no dependencies beyond two
+# tiny ones of its own, builds for wasm32. `tests/loaders_webp.rs` holds it to
+# Chromium's own libwebp decode of every WebP image in the three.js examples,
+# byte for byte: lossy, lossy with alpha and lossless.
+image-webp = "0.2.4"
 
 # Everything that only makes sense on a desktop.
 #
@@ -83,6 +114,13 @@ js-sys = "0.3"
 # no transitive dependencies of its own, and out of the library's dependency
 # set: nothing three-rs itself builds or publishes pulls it in.
 jpeg-encoder = { version = "0.7", default-features = false, features = ["std"] }
+
+# A debug build decodes a 4096² WebP in seconds rather than a quarter of one
+# at opt-level 3, which `tests/loaders_webp.rs` (64 images, most 2048²) and any
+# debug run of a WebP asset feel. Dependencies only; three-rs' own code keeps
+# the debug profile.
+[profile.dev.package.image-webp]
+opt-level = 3
 
 # No dev-dependency on the `sdf-text` member crate, on purpose: it depends on
 # three-rs, and a cycle here would either be stripped from the packaged

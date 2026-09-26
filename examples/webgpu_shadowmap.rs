@@ -23,16 +23,14 @@ use three_rs::addons::controls::OrbitControls;
 use three_rs::core::Node;
 use three_rs::geometries::{cylinder_geometry, plane_geometry, torus_knot_geometry};
 use three_rs::nodes::materialx::{mx_fractal_noise_float, mx_fractal_noise_vec3};
-use three_rs::nodes::tsl::{
-    block, fog, int, position_local, position_world, range_fog_factor, to_var,
-};
+use three_rs::nodes::tsl::{block, int, position_local, position_world, to_var};
 use three_rs::nodes::NodeRef;
 use three_rs::objects::Background;
 use three_rs::utils::now_ms;
 use three_rs::Timer;
 use three_rs::{
-    AmbientLight, Color, DirectionalLight, Group, Mesh, MeshPhongNodeMaterial, PerspectiveCamera,
-    Renderer, RendererParameters, Scene, SpotLight, ToneMapping,
+    AmbientLight, Color, DirectionalLight, Fog, Group, Mesh, MeshPhongNodeMaterial,
+    PerspectiveCamera, Renderer, RendererParameters, Scene, SpotLight, ToneMapping,
 };
 
 pub const INNER_WIDTH: f64 = 800.0;
@@ -84,10 +82,8 @@ pub fn init() -> App {
 
     let mut scene = Scene::new();
     scene.background = Some(Background::Node(Color::from_hex(0x222244).into()));
-    scene.fog_node = Some(fog(
-        Color::from_hex(0x222244),
-        range_fog_factor(50.0, 100.0),
-    ));
+    // `scene.fog = new THREE.Fog( 0x222244, 50, 100 )`.
+    scene.fog = Some(Fog::new(Color::from_hex(0x222244), 50.0, 100.0).into());
 
     // lights
 

@@ -322,6 +322,13 @@ impl CubeTexture {
         self.1.get()
     }
 
+    /// The handle's liveness, without the handle; see [`TextureOwner`].
+    ///
+    /// [`TextureOwner`]: super::TextureOwner
+    pub(crate) fn owner(&self) -> super::TextureOwner {
+        Rc::downgrade(&self.0) as super::TextureOwner
+    }
+
     /// The faces and the flags, as `Texture::borrow()` gives them — enough to
     /// assert the upload's stride, face order and row order without a GPU.
     pub fn borrow(&self) -> Ref<'_, CubeTextureInner> {

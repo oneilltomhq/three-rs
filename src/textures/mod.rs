@@ -2,6 +2,7 @@
 
 use std::cell::Cell;
 
+mod compressed_texture;
 mod cube_depth_texture;
 mod cube_texture;
 mod data3d_texture;
@@ -16,7 +17,7 @@ pub use data3d_texture::{Data3DTexture, Data3DTextureInner};
 pub use data_array_texture::{DataArrayTexture, DataArrayTextureInner};
 pub use data_texture::{DataTexture, DataTextureData, DataTextureInner};
 pub use depth_texture::{DepthTexture, DepthTextureInner, TextureFilter, TextureType};
-pub use texture::{MinFilter, Texture, TextureInner, Wrapping};
+pub use texture::{MinFilter, Mipmap, Texture, TextureInner, Wrapping};
 
 /// `Texture.id` — three.js' `_textureId ++`, shared by every texture class the
 /// port has, the way `Source`/`Texture` ids are one counter upstream.
@@ -29,6 +30,18 @@ pub use texture::{MinFilter, Texture, TextureInner, Wrapping};
 /// geometry cache. A never-reused counter cannot do that.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct TextureId(usize);
+
+/// A `Weak` on a texture handle's shared state, of whichever texture class:
+/// what the renderer keeps beside a GPU resource it made for that texture, so
+/// it can let the resource go once the consumer has dropped every handle.
+///
+/// three.js frees a texture's GPU side on `texture.dispose()`, whose `dispose`
+/// event `Textures` listens for. A handle here is an `Rc`, so the strong count
+/// reaching zero is the same signal with no event and no call (issue #158; the
+/// geometry cache's #58 is the same idea). Only
+/// [`strong_count`](std::rc::Weak::strong_count) is ever read, so the class is
+/// erased.
+pub(crate) type TextureOwner = std::rc::Weak<dyn std::any::Any>;
 
 impl TextureId {
     pub fn next() -> Self {
