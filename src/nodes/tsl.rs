@@ -385,6 +385,23 @@ pub fn uniform_object(
     )
 }
 
+/// [`uniform_object`] for a node whose `update( frame )` reads more than
+/// `frame.object` — `webgpu_occlusion`'s `OcclusionNode`, which asks
+/// `frame.renderer.isOccluded( testObject )`. See [`NodeFrame`].
+///
+/// [`NodeFrame`]: crate::nodes::NodeFrame
+pub fn uniform_frame(
+    ty: Type,
+    update: impl Fn(&crate::nodes::NodeFrame) -> Vec<f64> + 'static,
+) -> NodeRef {
+    uniform(
+        UniformSource::ObjectUpdate(crate::nodes::node::ObjectUpdate::with_frame(update)),
+        ty,
+        UniformGroup::Object,
+        None,
+    )
+}
+
 pub fn uniform(
     source: UniformSource,
     ty: Type,

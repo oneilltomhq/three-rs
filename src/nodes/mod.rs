@@ -22,6 +22,6 @@ pub use builder::{
 };
 pub use mrt::{mrt, MrtNode, MrtValue};
 pub use node::{
-    BufferSource, Node, NodeRef, StorageAccess, TextureSource, Type, UniformGroup, UniformSource,
-    UpdateType,
+    BufferSource, Node, NodeFrame, NodeRef, StorageAccess, TextureSource, Type, UniformGroup,
+    UniformSource, UpdateType,
 };
