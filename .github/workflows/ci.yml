@@ -206,12 +206,15 @@ jobs:
             math_vector2
             math_vector3
             math_vector4
+            nodes_fog
             nodes_instanced_attributes
             nodes_morph
             nodes_mx_noise
             nodes_range_buffers
             objects_group
             pmrem
+            scenes_fog
+            scenes_fog_exp2
             scenes_scene
           )
           for t in "${tests[@]}"; do

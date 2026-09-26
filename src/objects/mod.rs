@@ -2,6 +2,7 @@
 
 mod batched_mesh;
 mod bone;
+mod fog;
 mod group;
 mod instanced_mesh;
 mod line;
@@ -18,6 +19,7 @@ pub use batched_mesh::{
     SubDraw,
 };
 pub use bone::{is_bone, Bone};
+pub use fog::{Fog, FogExp2, SceneFog};
 pub use group::Group;
 pub use instanced_mesh::{InstancedBufferAttribute, InstancedMesh};
 pub use line::{Line, LineSegments};

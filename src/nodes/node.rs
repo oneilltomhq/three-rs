@@ -175,6 +175,15 @@ pub enum UniformSource {
     BackgroundRotation,
     BackgroundBlurriness,
     BackgroundIntensity,
+    /// `reference( 'color' | 'near' | 'far' | 'density', …, scene.fog )
+    /// .setGroup( renderGroup )` — the classic `scene.fog`'s parameters, which
+    /// `NodeManager.updateFog()` binds as render-group uniforms so that a fog
+    /// whose values change never rebuilds a program. The colour is in the
+    /// working space.
+    FogColor,
+    FogNear,
+    FogFar,
+    FogDensity,
     Time,
     /// `viewportSize` — the render target's pixel dimensions.
     ViewportSize,

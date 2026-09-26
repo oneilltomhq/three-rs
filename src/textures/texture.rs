@@ -9,7 +9,7 @@ use std::cell::{Ref, RefCell};
 use std::rc::Rc;
 
 use super::TextureId;
-use super::{ColorSpace, TextureFilter};
+use super::{ColorSpace, Image, TextureFilter};
 use crate::math::{Matrix3, Vector2};
 
 /// `three.js/src/constants.js` wrapping modes.
@@ -29,16 +29,28 @@ pub enum Wrapping {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum MinFilter {
     Nearest,
+    /// `NearestMipmapNearestFilter`.
+    NearestMipmapNearest,
+    /// `NearestMipmapLinearFilter`.
+    NearestMipmapLinear,
     Linear,
+    /// `LinearMipmapNearestFilter`.
+    LinearMipmapNearest,
     /// `LinearMipmapLinearFilter`, the `Texture` default.
     LinearMipmapLinear,
 }
 
 impl MinFilter {
+    /// `WebGPUTextureUtils._convertFilterMode()`: every `Nearest*` constant
+    /// is `'nearest'`, every `Linear*` one `'linear'`.
     pub fn min(self) -> TextureFilter {
         match self {
-            MinFilter::Nearest => TextureFilter::Nearest,
-            _ => TextureFilter::Linear,
+            MinFilter::Nearest
+            | MinFilter::NearestMipmapNearest
+            | MinFilter::NearestMipmapLinear => TextureFilter::Nearest,
+            MinFilter::Linear | MinFilter::LinearMipmapNearest | MinFilter::LinearMipmapLinear => {
+                TextureFilter::Linear
+            }
         }
     }
 
@@ -46,7 +58,7 @@ impl MinFilter {
     /// and everything else to `'nearest'`.
     pub fn mipmap(self) -> TextureFilter {
         match self {
-            MinFilter::LinearMipmapLinear => TextureFilter::Linear,
+            MinFilter::NearestMipmapLinear | MinFilter::LinearMipmapLinear => TextureFilter::Linear,
             _ => TextureFilter::Nearest,
         }
     }
@@ -60,6 +72,12 @@ pub struct TextureInner {
     pub color_space: ColorSpace,
     pub flip_y: bool,
     pub generate_mipmaps: bool,
+    /// `Texture.mipmaps` — levels supplied by the page, level 0 first. When
+    /// there are any they are the whole mip chain: `Textures.getMipLevels()`
+    /// takes its count from them and nothing is generated on top
+    /// (`webgpu_materials_texture_manualmipmap` paints each level a different
+    /// colour). Each is RGBA8 in the texture's format, top row first.
+    pub mipmaps: Vec<Image>,
     pub wrap_s: Wrapping,
     pub wrap_t: Wrapping,
     pub mag_filter: TextureFilter,
@@ -115,6 +133,7 @@ impl Texture {
                 color_space: ColorSpace::NoColorSpace,
                 flip_y: true,
                 generate_mipmaps: true,
+                mipmaps: Vec::new(),
                 wrap_s: Wrapping::ClampToEdge,
                 wrap_t: Wrapping::ClampToEdge,
                 mag_filter: TextureFilter::Linear,
@@ -326,6 +345,8 @@ impl Texture {
                 color_space: inner.color_space,
                 flip_y: inner.flip_y,
                 generate_mipmaps: inner.generate_mipmaps,
+                // `Texture.copy()`: `this.mipmaps = source.mipmaps.slice( 0 )`.
+                mipmaps: inner.mipmaps.clone(),
                 wrap_s: inner.wrap_s,
                 wrap_t: inner.wrap_t,
                 mag_filter: inner.mag_filter,
@@ -388,6 +409,30 @@ impl Texture {
 
     pub fn set_generate_mipmaps(&self, generate_mipmaps: bool) {
         self.0.borrow_mut().generate_mipmaps = generate_mipmaps;
+    }
+
+    /// `texture.mipmaps[ i ] = image` for every level at once. The levels
+    /// must halve from the texture's own size down, as WebGPU's mip chain
+    /// does; the upload writes each into its level and generates none.
+    pub fn set_mipmaps(&self, mipmaps: Vec<Image>) {
+        let mut inner = self.0.borrow_mut();
+        for (level, image) in mipmaps.iter().enumerate() {
+            let expected = (
+                (inner.width >> level).max(1),
+                (inner.height >> level).max(1),
+            );
+            assert_eq!(
+                (image.width, image.height),
+                expected,
+                "three-rs: mipmap level {level} has the wrong size"
+            );
+        }
+        inner.mipmaps = mipmaps;
+    }
+
+    /// Whether the page supplied its own mip levels ([`Self::set_mipmaps`]).
+    pub fn has_mipmaps(&self) -> bool {
+        !self.0.borrow().mipmaps.is_empty()
     }
 
     pub fn set_min_filter(&self, min_filter: MinFilter) {
@@ -614,6 +659,11 @@ impl Texture {
     /// `Texture.mipmapCount` — `floor( log2( max( w, h ) ) ) + 1`.
     pub fn mip_level_count(&self) -> u32 {
         let inner = self.0.borrow();
+        // `Textures.getMipLevels()`: `texture.mipmaps.length` when the page
+        // supplied levels, whatever `generateMipmaps` says.
+        if !inner.mipmaps.is_empty() {
+            return inner.mipmaps.len() as u32;
+        }
         if !inner.generate_mipmaps {
             return 1;
         }
@@ -634,6 +684,7 @@ impl std::fmt::Debug for TextureInner {
             .field("color_space", &self.color_space)
             .field("flip_y", &self.flip_y)
             .field("generate_mipmaps", &self.generate_mipmaps)
+            .field("mipmaps", &self.mipmaps.len())
             .field("wrap_s", &self.wrap_s)
             .field("wrap_t", &self.wrap_t)
             .field("mag_filter", &self.mag_filter)
