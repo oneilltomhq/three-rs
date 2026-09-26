@@ -210,6 +210,7 @@ jobs:
             nodes_morph
             nodes_mx_noise
             nodes_range_buffers
+            nodes_tsl_batch
             objects_group
             pmrem
             scenes_scene
