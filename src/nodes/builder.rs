@@ -373,6 +373,127 @@ impl NodeCache {
     }
 }
 
+// ---------------------------------------------------------------------------
+
+/// `builder.context`: the keys a node reads while its graph is being set up,
+/// and the only build-scoped state the TSL constructors in `tsl.rs` consult.
+///
+/// three.js keeps a plain object on the builder and `ContextNode` merges keys
+/// into it for one subgraph, restoring the previous object afterwards. The
+/// port does the same with a stack of these: [`push_context`] copies the top
+/// entry, lets the caller change the keys it installs, and the returned
+/// [`ContextGuard`] pops it again. Core keys are typed fields; `extra` holds
+/// the string-keyed ones addons add (#155 decision 6).
+///
+/// The stack is one `thread_local!` beside [`NodeBuilder`] rather than a field
+/// of it, because the port's `NodeMaterial.setup()` builds the flow *before*
+/// the builder exists (three calls it from inside `builder.build()`). It is
+/// empty between material setups; outside any push, reads see the default.
+/// See `docs/nodes.md` §38.
+#[derive(Clone)]
+pub(crate) struct BuildContext {
+    /// `NodeBuilder.subBuildLayers`, one layer deep: `NORMAL` is the only name
+    /// the ladder needs. Three keeps it on the builder beside `context`.
+    pub(crate) sub_build: Option<&'static str>,
+    /// `overrideNodes`: what `material.contextNode = overrideNodes( … )`
+    /// installs for the whole of one material's setup (§27).
+    pub(crate) override_nodes: Option<super::tsl::OverrideNodes>,
+    /// `setupNormal`: `NodeMaterial.setupNormal()`'s result, the material's
+    /// `normalNode`. `normalView` takes it as its value outside the `NORMAL`
+    /// layer and `normalViewGeometry` inside it.
+    pub(crate) setup_normal: Option<NodeRef>,
+    /// `builder.isFlatShading()`: `material.flatShading && material.wireframe
+    /// === false`. `normalViewGeometry` reads it. A builder method in three,
+    /// kept here because it lives exactly as long as `setup_normal`.
+    pub(crate) flat_shading: bool,
+    /// `builder.material.side`: what `negateOnBackSide()` branches on, and so
+    /// part of every cache key that reaches `normalView` or the tangent frame.
+    pub(crate) material_side: crate::materials::Side,
+    /// `builder.geometry.hasAttribute( 'tangent' )`: what `Tangent.js` and
+    /// `Bitangent.js` branch on. With the attribute the frame comes from the
+    /// `tangent` vec4 through `modelViewMatrix`; without it, from the screen
+    /// derivatives of `TangentUtils.js`.
+    pub(crate) has_tangent: bool,
+    /// `setupPositionView`: `NodeMaterial.setupPositionView()`'s result, which
+    /// `SpriteNodeMaterial` and `PointsNodeMaterial` override. `None` is the
+    /// base class' `modelViewMatrix.mul( positionLocal ).xyz`.
+    pub(crate) setup_position_view: Option<NodeRef>,
+    /// `setupClearcoatNormal`: `MeshPhysicalNodeMaterial.setup()`'s clearcoat
+    /// lobe normal, the clearcoat twin of `setup_normal`.
+    pub(crate) setup_clearcoat_normal: Option<NodeRef>,
+    /// Addon keys (`TRAANode`, `ClusteredLightsNode`, the light-data nodes).
+    /// Nothing reads it yet; `context( node, { … } )` (#161) will.
+    #[allow(dead_code)]
+    pub(crate) extra: HashMap<&'static str, NodeRef>,
+}
+
+impl Default for BuildContext {
+    fn default() -> Self {
+        Self {
+            sub_build: None,
+            override_nodes: None,
+            setup_normal: None,
+            flat_shading: false,
+            material_side: crate::materials::Side::Front,
+            has_tangent: false,
+            setup_position_view: None,
+            setup_clearcoat_normal: None,
+            extra: HashMap::new(),
+        }
+    }
+}
+
+thread_local! {
+    static BUILD_CONTEXT: std::cell::RefCell<Vec<BuildContext>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Pops the [`BuildContext`] [`push_context`] pushed when it goes out of
+/// scope, so an early return or a panic cannot leak one material's context
+/// into the next build.
+#[must_use = "the context is popped as soon as the guard is dropped"]
+pub(crate) struct ContextGuard {
+    depth: usize,
+}
+
+impl Drop for ContextGuard {
+    fn drop(&mut self) {
+        BUILD_CONTEXT.with(|stack| {
+            let mut stack = stack.borrow_mut();
+            debug_assert_eq!(
+                stack.len(),
+                self.depth,
+                "three-rs: BuildContext guards dropped out of order"
+            );
+            stack.pop();
+        });
+    }
+}
+
+/// `ContextNode`'s setup: a copy of the current context with `edit` applied,
+/// in force until the returned guard is dropped.
+pub(crate) fn push_context(edit: impl FnOnce(&mut BuildContext)) -> ContextGuard {
+    let mut cx = current_context(BuildContext::clone);
+    edit(&mut cx);
+    BUILD_CONTEXT.with(|stack| {
+        let mut stack = stack.borrow_mut();
+        stack.push(cx);
+        ContextGuard { depth: stack.len() }
+    })
+}
+
+/// Read the current context: the top of the stack, or the default one
+/// outside any push.
+pub(crate) fn current_context<R>(read: impl FnOnce(&BuildContext) -> R) -> R {
+    thread_local! {
+        static EMPTY: BuildContext = BuildContext::default();
+    }
+    BUILD_CONTEXT.with(|stack| match stack.borrow().last() {
+        Some(cx) => read(cx),
+        None => EMPTY.with(read),
+    })
+}
+
 #[derive(Default)]
 struct StageState {
     lines: Vec<String>,
@@ -2983,5 +3104,25 @@ impl NodeBuilder {
             Stage::Compute => unreachable!("three-rs: assemble_compute writes the compute entry"),
         }
         out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{current_context, push_context};
+
+    #[test]
+    fn build_context_nests_and_restores() {
+        assert_eq!(current_context(|cx| cx.sub_build), None);
+        {
+            let _outer = push_context(|cx| cx.sub_build = Some("NORMAL"));
+            assert_eq!(current_context(|cx| cx.sub_build), Some("NORMAL"));
+            {
+                let _inner = push_context(|cx| cx.sub_build = Some("VERTEX"));
+                assert_eq!(current_context(|cx| cx.sub_build), Some("VERTEX"));
+            }
+            assert_eq!(current_context(|cx| cx.sub_build), Some("NORMAL"));
+        }
+        assert_eq!(current_context(|cx| cx.sub_build), None);
     }
 }

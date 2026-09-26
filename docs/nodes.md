@@ -290,6 +290,10 @@ duration of that node's build. Two things follow from being inside a layer:
 
 ### What this port does
 
+> Since §38 the layer and `NORMAL_VALUE` are the `sub_build` and
+> `setup_normal` fields of one `BuildContext` stack; what follows is
+> otherwise unchanged.
+
 `src/nodes/tsl.rs` holds the layer and the context in two thread-locals,
 because our TSL functions are free functions rather than methods on a builder
 that is threaded through every call:
@@ -3622,3 +3626,60 @@ The groundwork TRAA (#165) needs, from #154 decisions 2 and 3. No rung.
 * **`SsaaPassNode` is unchanged.** It jitters once per sample inside its own
   `render`, not once per pipeline render, so the hooks do not fit it. It
   still reads `PerspectiveCamera.view` directly.
+
+## 38. `BuildContext`: one stack for `builder.context` (issue #160)
+
+Eight thread-locals in `tsl.rs` held `builder.context` one key at a time.
+Each had its own `with_…` function that swapped a value in and restored the
+old one afterwards. #155 §2 lists them: `SUB_BUILD`, `OVERRIDE_NODES`,
+`NORMAL_VALUE`, `FLAT_SHADING`, `MATERIAL_SIDE`, `HAS_TANGENT`,
+`POSITION_VIEW_VALUE` and `CLEARCOAT_NORMAL_VALUE`. They are now fields of
+one struct, `BuildContext` in `src/nodes/builder.rs`, kept on one stack.
+
+| was | `BuildContext` field | three |
+|---|---|---|
+| `SUB_BUILD` | `sub_build` | `builder.subBuildLayers` (one layer deep) |
+| `OVERRIDE_NODES` | `override_nodes` | `context.overrideNodes` (§27) |
+| `NORMAL_VALUE` | `setup_normal` | `context.setupNormal` (§7) |
+| `FLAT_SHADING` | `flat_shading` | `builder.isFlatShading()` |
+| `MATERIAL_SIDE` | `material_side` | `builder.material.side` |
+| `HAS_TANGENT` | `has_tangent` | `builder.geometry.hasAttribute( 'tangent' )` |
+| `POSITION_VIEW_VALUE` | `setup_position_view` | `context.setupPositionView` |
+| `CLEARCOAT_NORMAL_VALUE` | `setup_clearcoat_normal` | `context.setupClearcoatNormal` |
+
+Core keys are typed fields. Addon keys will go in `extra`, a
+`HashMap<&'static str, NodeRef>` (#155 decision 6), which nothing reads yet.
+Three of the fields are not `builder.context` keys in three: the layer, the
+flat-shading flag and the tangent flag live on the builder, its material and
+its geometry. They are here because they have the same lifetime and the same
+readers.
+
+`push_context( |cx| … )` is `ContextNode`'s setup. It copies the top entry,
+lets the caller change the keys it sets, pushes the copy and returns a
+`ContextGuard`, which pops it when dropped. `current_context( |cx| … )` reads
+the top entry, or the default one when nothing has been pushed. The `with_…`
+functions keep their signatures and are each a push and a call now. The
+change is that one stack holds all the keys, so a scope restores all of them
+in one pop, and #161's `context( node, { … } )` has a place to push to.
+
+**The stack is a thread-local beside the builder, not a field of it.** Three
+calls `NodeMaterial.setup()` from inside `builder.build()`, so the context
+object can live on the builder. The port builds the flow in
+`materials::setup()` first and creates the `NodeBuilder` afterwards
+(`Renderer::node_builder_state`), so there is no builder to hold it while the
+keys are being read. Merging the two phases is a bigger change than this
+issue. The stack is empty between material setups, and because the guard
+pops on drop, a panic inside one setup can no longer leave its keys
+installed for the next build on that thread.
+
+**Not moved.** The accessor memo maps (`NORMAL_VIEW`, `TANGENT_VIEW`,
+`NORMAL_WORLD`, `POSITION_VIEW`, `CLEARCOAT_NORMAL_VIEW`, …) and the
+singleton `Lazy` cells stay thread-locals. They are process-wide
+memoisation keyed on context values, not context: they give two builds with
+the same context the same node, as three's per-build `nodeData` gives one
+build one node. #155 proposes keying them on a hash of the context; that is
+left for when `context()` can install arbitrary keys.
+
+Nothing generated changed. `dump_wgsl`'s output is identical after each of
+the eight migrations, apart from the one `ObjectUpdate` pointer noted in §36.
+Every `tests/nodes_*` gate passes unchanged, and so does the full ladder.
