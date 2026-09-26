@@ -844,9 +844,15 @@ pub fn background_pmrem_color_node(pmrem: &crate::materials::environment::PmremH
 }
 
 /// `Background.update()`'s `isNode` branch:
-/// `vec4( backgroundNode ).mul( backgroundIntensity )`.
+/// `vec4( backgroundNode ).mul( backgroundIntensity )`. `vec4()` of a node
+/// that already is one is the node itself — `webgpu_equirectangular`'s
+/// `texture( map, equirectUV(), 0 )` — and of a colour it appends `1.0`.
 pub fn background_node_color_node(node: NodeRef) -> NodeRef {
-    vec4_join(vec![node, float(1.0)]).mul(background_intensity())
+    let color = match node.ty() {
+        Type::Vec4 => node,
+        _ => vec4_join(vec![node, float(1.0)]),
+    };
+    color.mul(background_intensity())
 }
 
 pub fn background_vertex_node() -> NodeRef {
