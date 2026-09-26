@@ -244,6 +244,13 @@ mod webgpu_modifier_curve;
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_particles;
 
+#[path = "webgpu_instance_sprites.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_instance_sprites;
+#[path = "webgpu_sprites.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_sprites;
+
 /// Every graded example, in the README's order, paired with a call of its
 /// `init()`.
 ///
@@ -394,6 +401,10 @@ const GRADED: &[(&str, fn())] = &[
     ("webgpu_clearcoat", || drop(webgpu_clearcoat::init())),
     ("webgpu_modifier_curve", || {
         drop(webgpu_modifier_curve::init())
+    }),
+    ("webgpu_sprites", || drop(webgpu_sprites::init())),
+    ("webgpu_instance_sprites", || {
+        drop(webgpu_instance_sprites::init())
     }),
 ];
 
