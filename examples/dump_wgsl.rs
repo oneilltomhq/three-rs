@@ -34,6 +34,10 @@ mod webgpu_compute_points;
 #[allow(dead_code)]
 mod webgpu_skinning_points;
 
+#[path = "webgpu_instance_points.rs"]
+#[allow(dead_code)]
+mod webgpu_instance_points;
+
 #[path = "webgpu_postprocessing_anamorphic.rs"]
 #[allow(dead_code)]
 mod webgpu_postprocessing_anamorphic;
@@ -2466,6 +2470,7 @@ fn dump_room_environment() {
 
     dump_camera_array();
     dump_skinning_points();
+    dump_instance_points();
 }
 
 /// Rung `webgpu_camera_array`: the cylinder's `MeshPhongNodeMaterial` drawn
@@ -2543,6 +2548,27 @@ fn dump_skinning_points() {
             ..SetupContext::default()
         },
     );
+}
+
+/// Rung `webgpu_instance_points`, against
+/// `target/dumps/webgpu_instance_points/m0{0,1,2}`: the size kernel writing a
+/// `StorageInstancedBufferAttribute`, and the `PointsNodeMaterial` on a
+/// `Sprite` that reads it back as an instanced `f32` attribute. The material
+/// has `alphaToCoverage` on and the frame is multisampled, so `shapeCircle()`
+/// takes its `fwidth` / `smoothstep` edge.
+fn dump_instance_points() {
+    let points = webgpu_instance_points::instanced_points();
+    show_compute("instance_points_compute_size", &points.compute_size);
+    three_rs::nodes::builder::with_alpha_to_coverage_samples(true, || {
+        show(
+            "instance_points_material",
+            &points.material,
+            SetupContext {
+                sprite: true,
+                ..SetupContext::default()
+            },
+        )
+    });
 }
 
 /// Issue #140: the classic `scene.fog`. One `MeshStandardNodeMaterial` lit by

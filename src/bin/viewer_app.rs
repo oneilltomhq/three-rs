@@ -240,7 +240,8 @@ Particles, webgpu_particles, "../../examples/webgpu_particles.rs";
 Clearcoat, webgpu_clearcoat, "../../examples/webgpu_clearcoat.rs";
 ModifierCurve, webgpu_modifier_curve, "../../examples/webgpu_modifier_curve.rs";
 CameraArray, webgpu_camera_array, "../../examples/webgpu_camera_array.rs";
-SkinningPoints, webgpu_skinning_points, "../../examples/webgpu_skinning_points.rs";}
+SkinningPoints, webgpu_skinning_points, "../../examples/webgpu_skinning_points.rs";
+InstancePoints, webgpu_instance_points, "../../examples/webgpu_instance_points.rs";}
 
 impl Which {
     /// The name with or without its `webgpu_` prefix, or its 1-based index in

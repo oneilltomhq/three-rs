@@ -282,6 +282,7 @@ Clearcoat, webgpu_clearcoat, "../../examples/webgpu_clearcoat.rs";
 ModifierCurve, webgpu_modifier_curve, "../../examples/webgpu_modifier_curve.rs";
 CameraArray, webgpu_camera_array, "../../examples/webgpu_camera_array.rs";
 SkinningPoints, webgpu_skinning_points, "../../examples/webgpu_skinning_points.rs";
+InstancePoints, webgpu_instance_points, "../../examples/webgpu_instance_points.rs";
 }
 
 /// Where an example's assets come from: three.js at the commit this port is

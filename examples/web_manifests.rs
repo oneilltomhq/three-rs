@@ -240,6 +240,9 @@ mod webgpu_camera_array;
 #[path = "webgpu_clearcoat.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_clearcoat;
+#[path = "webgpu_instance_points.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_instance_points;
 #[path = "webgpu_modifier_curve.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_modifier_curve;
@@ -404,6 +407,9 @@ const GRADED: &[(&str, fn())] = &[
     ("webgpu_camera_array", || drop(webgpu_camera_array::init())),
     ("webgpu_skinning_points", || {
         drop(webgpu_skinning_points::init())
+    }),
+    ("webgpu_instance_points", || {
+        drop(webgpu_instance_points::init())
     }),
 ];
 
