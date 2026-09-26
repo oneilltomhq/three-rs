@@ -235,7 +235,7 @@ inherit, reads only `material.envNode` / `material.envMap`.
 `Box<dyn FnMut(&mut Renderer)>`. A hook that has to move a camera captures
 the camera itself, through `RenderCamera::set_view_offset` (issue #164). The
 hook signature does not pass one in, because three's callbacks take no
-arguments either. `docs/nodes.md` §36 has the ordering.
+arguments either. `docs/nodes.md` §37 has the ordering.
 
 ## Where each decision came from
 
