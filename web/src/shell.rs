@@ -284,6 +284,7 @@ CameraArray, webgpu_camera_array, "../../examples/webgpu_camera_array.rs";
 Sprites, webgpu_sprites, "../../examples/webgpu_sprites.rs";
 InstanceSprites, webgpu_instance_sprites, "../../examples/webgpu_instance_sprites.rs";
 MaterialsToon, webgpu_materials_toon, "../../examples/webgpu_materials_toon.rs";
+Occlusion, webgpu_occlusion, "../../examples/webgpu_occlusion.rs";
 }
 
 /// Where an example's assets come from: three.js at the commit this port is

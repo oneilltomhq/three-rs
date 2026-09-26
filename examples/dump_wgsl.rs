@@ -2387,6 +2387,25 @@ fn dump_room_environment() {
         ..MeshBasicNodeMaterial::physical(Color::new(1.0, 1.0, 1.0), 0.1, 0.0)
     };
     show("clearcoat_golf", &golf, clearcoat_ctx());
+
+    // rung `webgpu_occlusion`: the plane (`m01`, `DoubleSide`, its `colorNode`
+    // the `OcclusionNode`'s per-object `vec3` uniform) and the sphere (`m02`),
+    // under one ambient and one directional light.
+    let occlusion_ctx = || SetupContext {
+        lights: vec![
+            LightDesc {
+                index: 0,
+                kind: LightKind::Ambient,
+                shadow_map: None,
+            },
+            LightDesc {
+                index: 1,
+                kind: LightKind::Directional,
+                shadow_map: None,
+            },
+        ],
+        ..SetupContext::default()
+    };
     // rung `webgpu_materials_toon`: three's `dump-materials_toon` m04/m05 (a
     // `MeshToonNodeMaterial` with a `RedFormat` gradient map, under the
     // page's ambient and point light) and m02/m03 (`toonOutlinePass`'s
@@ -2406,6 +2425,17 @@ fn dump_room_environment() {
         ],
         ..SetupContext::default()
     };
+    let mut occlusion_plane = MeshBasicNodeMaterial::phong(Color::from_hex(0x00ff00));
+    occlusion_plane.side = Side::Double;
+    occlusion_plane.color_node = Some(uniform_frame(three_rs::nodes::Type::Vec3, |_| {
+        vec![0.0, 0.0, 1.0]
+    }));
+    show("occlusion_plane", &occlusion_plane, occlusion_ctx());
+    show(
+        "occlusion_sphere",
+        &MeshBasicNodeMaterial::phong(Color::from_hex(0xffff00)),
+        occlusion_ctx(),
+    );
     let ramp = Texture::data_r8(3, 1, &[0, 85, 170]);
     let toon = MeshBasicNodeMaterial::toon(Color::new(0.5, 0.25, 0.25), Some(ramp));
     show("toon", &toon, toon_ctx);

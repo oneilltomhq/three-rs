@@ -246,6 +246,9 @@ mod webgpu_materials_toon;
 #[path = "webgpu_modifier_curve.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_modifier_curve;
+#[path = "webgpu_occlusion.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_occlusion;
 #[path = "webgpu_particles.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_particles;
@@ -416,6 +419,7 @@ const GRADED: &[(&str, fn())] = &[
     ("webgpu_materials_toon", || {
         drop(webgpu_materials_toon::init())
     }),
+    ("webgpu_occlusion", || drop(webgpu_occlusion::init())),
 ];
 
 /// Where the committed manifests live, one `<example>.json` each.
