@@ -241,6 +241,7 @@ jobs:
             nodes_range_buffers
             nodes_tsl_batch
             objects_batched_mesh
+            nodes_texture_wgsl
             objects_group
             objects_instanced_mesh
             objects_line

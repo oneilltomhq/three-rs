@@ -178,7 +178,29 @@ impl SamplerKey {
                 anisotropy_clamp: 1,
                 compare: Some(wgpu::CompareFunction::LessEqual),
             },
-            TextureSource::Depth(_) | TextureSource::DataArray(_) | TextureSource::Data(_) => {
+            // `Data3DTexture`: wrapS/T/R and the two filters, no anisotropy
+            // (`WebGPUTextureUtils.updateSampler()` only clamps it for a
+            // filtering 2-D sampler; the volume pages leave it at 1).
+            TextureSource::Texture3D(texture) => {
+                let inner = texture.borrow();
+                Self {
+                    address: [
+                        address(inner.wrap_s),
+                        address(inner.wrap_t),
+                        address(inner.wrap_r),
+                    ],
+                    mag_filter: filter(inner.mag_filter),
+                    min_filter: filter(inner.min_filter.min()),
+                    mipmap_filter: mipmap(inner.min_filter.mipmap()),
+                    anisotropy_clamp: 1,
+                    compare: None,
+                }
+            }
+            TextureSource::Depth(_)
+            | TextureSource::DataArray(_)
+            | TextureSource::Data(_)
+            | TextureSource::Storage(..)
+            | TextureSource::Storage3D(..) => {
                 panic!("three-rs: this texture is read with textureLoad, not sampled")
             }
         }

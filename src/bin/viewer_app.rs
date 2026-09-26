@@ -230,7 +230,9 @@ PostprocessingSobel, webgpu_postprocessing_sobel, "../../examples/webgpu_postpro
 PostprocessingTransition, webgpu_postprocessing_transition, "../../examples/webgpu_postprocessing_transition.rs";
 TslRagingSea, webgpu_tsl_raging_sea, "../../examples/webgpu_tsl_raging_sea.rs";
 TslAngularSlicing, webgpu_tsl_angular_slicing, "../../examples/webgpu_tsl_angular_slicing.rs";
-Textures2dArrayCompressed, webgpu_textures_2d_array_compressed, "../../examples/webgpu_textures_2d-array_compressed.rs", "webgpu_textures_2d-array_compressed";}
+Textures2dArrayCompressed, webgpu_textures_2d_array_compressed, "../../examples/webgpu_textures_2d-array_compressed.rs", "webgpu_textures_2d-array_compressed";
+ComputeTexture, webgpu_compute_texture, "../../examples/webgpu_compute_texture.rs";
+VolumePerlin, webgpu_volume_perlin, "../../examples/webgpu_volume_perlin.rs";}
 
 impl Which {
     /// The name with or without its `webgpu_` prefix, or its 1-based index in

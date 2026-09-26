@@ -328,7 +328,10 @@ pub struct NodeBuilder {
     attribute_varyings: HashMap<usize, NodeRef>,
     uniform_names: HashMap<usize, String>,
     /// texture key -> (name, kind, binding slots in the object group)
-    texture_names: HashMap<usize, (String, TextureKind, Vec<usize>)>,
+    /// Keyed on the texture id *and* whether the binding is a storage one:
+    /// a `StorageTexture` stored to by a kernel and sampled by a material is
+    /// two bindings of one texture, with two names.
+    texture_names: HashMap<(usize, bool), (String, TextureKind, Vec<usize>)>,
     /// Varyings the fragment stage asked for, in allocation order.
     varyings: Vec<(String, Type, bool)>,
     varying_slots: HashMap<usize, String>,
@@ -484,11 +487,16 @@ impl NodeBuilder {
                 v
             }
             Node::Loop {
-                start, count, body, ..
+                start,
+                count,
+                update,
+                body,
+                ..
             } => {
                 let mut v = Vec::new();
                 v.extend(start.iter().cloned());
                 v.push(count.clone());
+                v.extend(update.iter().cloned());
                 v.extend(body.iter().cloned());
                 v
             }
@@ -514,7 +522,8 @@ impl NodeBuilder {
                 v.extend(body.iter().cloned());
                 v
             }
-            Node::Discard => vec![],
+            Node::Discard | Node::Break => vec![],
+            Node::TextureStore { coord, value, .. } => vec![coord.clone(), value.clone()],
             Node::TextureSize { level, .. } => vec![level.clone()],
             Node::VaryingProperty { .. } => vec![],
             Node::Return { value } => vec![value.clone()],
@@ -705,15 +714,18 @@ impl NodeBuilder {
             ..
         } = &mut g.bindings[slot]
         {
-            let align = wgsl::align_of(u.ty);
+            // A `bool` has no host-shareable layout, so three declares the
+            // member with the shared node's input type, `u32`.
+            let member_ty = if u.ty == Type::Bool { Type::U32 } else { u.ty };
+            let align = wgsl::align_of(member_ty);
             let offset = size.div_ceil(align) * align;
             members.push(UniformMember {
                 name: name.clone(),
                 source: u.source.clone(),
-                ty: u.ty,
+                ty: member_ty,
                 offset,
             });
-            *size = offset + wgsl::size_of(u.ty);
+            *size = offset + wgsl::size_of(member_ty);
             visibility.add(stage);
         }
 
@@ -772,7 +784,36 @@ impl NodeBuilder {
                 },
             ),
             TextureSource::CubeDepth(t) => (t.id(), TextureKind::DepthCube),
+            TextureSource::Texture3D(t) => {
+                // The unfilterable 3D path (`textureLoad` against
+                // `textureDimensions`) is not ported: no page on the ladder
+                // samples a `NearestFilter` volume, and a sampler-less
+                // `textureSampleLevel` would be a compile error, not pixels.
+                assert!(
+                    !t.is_unfilterable(),
+                    "three-rs: texture3D() of an unfilterable (NearestFilter) \
+                     Data3DTexture is not ported; set LinearFilter on both filters"
+                );
+                (t.id(), TextureKind::Float3D)
+            }
+            TextureSource::Storage(t, access) => (
+                t.id(),
+                TextureKind::Storage {
+                    format: t.format(),
+                    access: *access,
+                    dim3: false,
+                },
+            ),
+            TextureSource::Storage3D(t, access) => (
+                t.id(),
+                TextureKind::Storage {
+                    format: t.format(),
+                    access: *access,
+                    dim3: true,
+                },
+            ),
         };
+        let key = (key, source.is_storage_binding());
 
         if let Some((name, kind, slots)) = self.texture_names.get(&key).cloned() {
             let g = self.groups.entry(UniformGroup::Object).or_default();
@@ -878,6 +919,9 @@ impl NodeBuilder {
     fn needs_var(&self, node: &NodeRef) -> bool {
         match &*node.0 {
             Node::Texture { .. } => true,
+            // `UniformNode.generate()`: a `bool` uniform is a `u32` in the
+            // buffer, converted once into a var — "cache to variable".
+            Node::Uniform(u) => u.ty == Type::Bool,
             Node::Op { .. } | Node::Math { .. } | Node::Join { .. } => self.usage_of(node) > 1,
             // A call to an `Fn()` with a layout is a real function call, and
             // `FunctionCallNode` is a `TempNode`: cached once when shared.
@@ -974,7 +1018,13 @@ impl NodeBuilder {
 
             Node::Uniform(u) => {
                 let u = u.clone();
-                self.uniform_snippet(&u, node.key())
+                let snippet = self.uniform_snippet(&u, node.key());
+                if u.ty == Type::Bool {
+                    // `builder.format( uniformName, 'uint', 'bool' )`, into
+                    // the var `needs_var` gives it.
+                    return format!("bool( {snippet} )");
+                }
+                snippet
             }
 
             Node::BufferElement { buffer, index } => {
@@ -1399,6 +1449,16 @@ impl NodeBuilder {
                     SampleMode::Grad => format!(
                         "textureSampleGrad( {name}, {name}_sampler, {suv}, vec2<f32>( 0.0, 0.0 ), vec2<f32>( 0.0, 0.0 ) )"
                     ),
+                    // `texture3D( … ).sample( uv ).r`: the texture node is
+                    // built as a `float`, so the fetch itself is narrowed and
+                    // the node's var is an `f32` — three's
+                    // `nodeVar7 = textureSampleLevel( … ).x`.
+                    SampleMode::Level(level) if node.ty().components() == 1 => {
+                        let slevel = self.generate(&level);
+                        format!(
+                            "textureSampleLevel( {name}, {name}_sampler, {suv}, {slevel} ).x"
+                        )
+                    }
                     SampleMode::Level(level) => {
                         let slevel = self.generate(&level);
                         format!("textureSampleLevel( {name}, {name}_sampler, {suv}, {slevel} )")
@@ -1461,7 +1521,49 @@ impl NodeBuilder {
                         };
                         wgsl::texture_load(&name, &suv, &dims)
                     }
+                    // `generateStorageTextureLoad()`: no level argument.
+                    SampleMode::StorageLoad => {
+                        let snippet = format!("textureLoad( {name}, {suv} )");
+                        if node.ty().components() == 1 {
+                            format!("{snippet}.x")
+                        } else {
+                            snippet
+                        }
+                    }
                 }
+            }
+
+            // `StorageTextureNode.generateStore()` →
+            // `WGSLNodeBuilder.generateTextureStore()`.
+            Node::TextureStore {
+                texture,
+                coord,
+                value,
+            } => {
+                let (texture, coord, value) = (texture.clone(), coord.clone(), value.clone());
+                let (name, kind) = self.texture_slots(&texture);
+                let dim3 = matches!(kind, TextureKind::Storage { dim3: true, .. });
+                let scoord = self.generate(&coord);
+                let svalue = self.format(&value, Type::Vec4);
+                // `uvNode.build( builder, 'uvec2' | 'uvec3' )`, whatever the
+                // coordinate's own type: `textureStore( t, vec2<u32>( a, b ),
+                // … )` for a `uvec2( a, b )`, `vec2<u32>( c )` for an `ivec2`
+                // held in `c`.
+                let coord_ty = if dim3 { "vec3<u32>" } else { "vec2<u32>" };
+                let scoord = match &*coord.0 {
+                    Node::Join { args, .. } => {
+                        let parts: Vec<String> = args.iter().map(|a| self.generate(a)).collect();
+                        format!("{coord_ty}( {} )", parts.join(", "))
+                    }
+                    _ => format!("{coord_ty}( {scoord} )"),
+                };
+                self.emit(format!("textureStore( {name}, {scoord}, {svalue} );"));
+                String::new()
+            }
+
+            Node::Break => {
+                self.emit("break;".to_string());
+                String::new()
             }
 
             Node::TextureSize { texture, level } => {
@@ -1617,13 +1719,15 @@ impl NodeBuilder {
                 count,
                 index,
                 condition,
+                update,
                 body,
             } => {
-                let (start, count, index, condition, body) = (
+                let (start, count, index, condition, update, body) = (
                     start.clone(),
                     count.clone(),
                     index.clone(),
                     *condition,
+                    update.clone(),
                     body.clone(),
                 );
                 // The start is generated before the end, which is the order
@@ -1643,15 +1747,21 @@ impl NodeBuilder {
                 // `LoopNode.generate()`'s default update: `++` / `--` for an
                 // integer index, `+= 1.` / `-= 1.` for anything else.
                 let rising = condition.contains('<');
-                let update = match (index_ty, rising) {
+                let default_update = match (index_ty, rising) {
                     (Type::I32 | Type::U32, true) => "++",
                     (Type::I32 | Type::U32, false) => "--",
                     (_, true) => "+= 1.",
                     (_, false) => "-= 1.",
                 };
+                // `Loop( { update } )` — `i += update` in place of the
+                // default, `RaymarchingBox`'s float march.
+                let step = match &update {
+                    Some(update) => format!("{name} += {}", self.generate(update)),
+                    None => format!("{name} {default_update}"),
+                };
                 self.emit(String::new());
                 self.emit(format!(
-                    "for ( var {name} : {ty} = {sstart}; {name} {condition} {scount}; {name} {update} ) {{"
+                    "for ( var {name} : {ty} = {sstart}; {name} {condition} {scount}; {step} ) {{"
                 ));
                 self.emit(String::new());
                 self.push_scope();
@@ -2243,7 +2353,7 @@ impl NodeBuilder {
                         let name = self.texture_name(source);
                         out.push_str(&format!(
                             "@binding( {binding} ) @group( {gi} ) var {name} : {};\n",
-                            kind.wgsl()
+                            kind.declaration(stage == Stage::Compute)
                         ));
                     }
                     _ => {}
@@ -2325,15 +2435,7 @@ impl NodeBuilder {
     }
 
     fn texture_name(&self, source: &TextureSource) -> String {
-        let key = match source {
-            TextureSource::Texture2D(t) => t.id(),
-            TextureSource::Depth(t) => t.id(),
-            TextureSource::ShadowMap(t) => t.id(),
-            TextureSource::Cube(t) => t.id(),
-            TextureSource::DataArray(t) => t.id(),
-            TextureSource::Data(t) => t.id(),
-            TextureSource::CubeDepth(t) => t.id(),
-        };
+        let key = (source.id(), source.is_storage_binding());
         self.texture_names[&key].0.clone()
     }
 

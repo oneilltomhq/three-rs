@@ -56,8 +56,8 @@ use crate::nodes::{BindingDesc, ComputeFlow, NodeBuilder, NodeProgram, Type};
 use crate::objects::{Background, InstancedBufferAttribute, QuadMesh, Scene, SceneFog, SubDraw};
 use crate::testing::DeterministicRandom;
 use crate::textures::{
-    CubeDepthTexture, CubeTexture, DataArrayTexture, DataTexture, DataTextureData, DepthTexture,
-    Texture, TextureFilter, TextureOwner, TextureType,
+    CubeDepthTexture, CubeTexture, Data3DTexture, DataArrayTexture, DataTexture, DataTextureData,
+    DepthTexture, Texture, TextureFilter, TextureOwner, TextureType,
 };
 
 /// How many **frames** a cache entry survives without being used, for the
@@ -392,6 +392,10 @@ struct MaterialStates {
 struct Texture2DEntry {
     gpu: wgpu::Texture,
     version: u32,
+    /// `textureData.needsMipmap` (`Bindings._update()`): a compute kernel
+    /// bound this `StorageTexture` for `textureStore` since its mip chain was
+    /// last built, so the next *sampled* binding regenerates it first.
+    needs_mipmap: bool,
     owner: TextureOwner,
 }
 
@@ -730,8 +734,9 @@ pub struct Renderer {
     /// `wgpu::Texture` that id has recently stood for; see
     /// [`Renderer::texture_view`]. Aged out by [`CACHE_GRACE_FRAMES`], and
     /// swept by liveness besides, so a cached view never keeps a dropped
-    /// texture's memory past the next render; see [`ViewEntry`].
-    views: HashMap<(usize, Option<wgpu::TextureViewDimension>), Vec<ViewEntry>>,
+    /// texture's memory past the next render; see [`ViewEntry`]. The `bool`
+    /// is the storage-binding view, one mip, of the same texture.
+    views: HashMap<(usize, Option<wgpu::TextureViewDimension>, bool), Vec<ViewEntry>>,
     /// Samplers, by descriptor, for the renderer's life; see [`SamplerKey`].
     samplers: HashMap<SamplerKey, Serial<wgpu::Sampler>>,
     /// Bind groups, by layout and the serials of what they bind; see
@@ -3026,8 +3031,11 @@ impl Renderer {
                         element_ty,
                         ..
                     } => Resource::Buffer(self.storage_buffer(*id, *count, *element_ty)),
-                    BindingDesc::Texture { .. } | BindingDesc::Sampler { .. } => {
-                        unreachable!("three-rs: a compute kernel binds no textures this rung")
+                    BindingDesc::Texture { source, kind, .. } => {
+                        Resource::View(self.texture_view(source, *kind))
+                    }
+                    BindingDesc::Sampler { source, .. } => {
+                        Resource::Sampler(self.texture_sampler(source))
                     }
                 });
             }
@@ -3837,15 +3845,35 @@ impl Renderer {
         source: &TextureSource,
         kind: TextureKind,
     ) -> Serial<wgpu::TextureView> {
+        // A storage binding views mip 0 alone — `WebGPUBindingUtils`
+        // `createBindGroup()` gives a storage texture `mipLevelCount: 1` at
+        // `binding.mipLevel`, which is 0 on every page the port grades — and
+        // is a different view from the sampled one of the same texture.
+        let storage = source.is_storage_binding();
         let (id, gpu, dimension) = match source {
             TextureSource::Texture2D(texture) => {
+                let gpu = self.ensure_texture_2d(texture);
+                self.update_storage_mipmaps(texture);
                 // A `CompressedArrayTexture` is a 2-D array however many
                 // layers it has; wgpu's default view of a one-layer texture
                 // would be `D2`, which a `texture_2d_array` binding rejects.
                 let dimension = texture
                     .is_array()
                     .then_some(wgpu::TextureViewDimension::D2Array);
-                (texture.id(), self.ensure_texture_2d(texture), dimension)
+                (texture.id(), gpu, dimension)
+            }
+            TextureSource::Storage(texture, _) => {
+                assert!(matches!(kind, TextureKind::Storage { dim3: false, .. }));
+                let gpu = self.ensure_texture_2d(texture);
+                // `if ( binding.store === true ) textureData.needsMipmap = true`.
+                if let Some(entry) = self.textures_2d.get_mut(&texture.id()) {
+                    entry.needs_mipmap = true;
+                }
+                (texture.id(), gpu, None)
+            }
+            TextureSource::Texture3D(data) | TextureSource::Storage3D(data, _) => {
+                let gpu = self.ensure_data3d_texture(data);
+                (data.id(), gpu, Some(wgpu::TextureViewDimension::D3))
             }
             TextureSource::Depth(depth) | TextureSource::ShadowMap(depth) => {
                 let gpu = depth
@@ -3885,7 +3913,7 @@ impl Renderer {
         };
 
         let frames = self.frames;
-        let key = (id, dimension);
+        let key = (id, dimension, storage);
         // Comparing the cached `wgpu::Texture` with the current one is an
         // identity test, not a key: the entry holds its texture alive, so no
         // other texture can be the same object while it is here.
@@ -3899,6 +3927,7 @@ impl Renderer {
         }
         let view = gpu.create_view(&wgpu::TextureViewDescriptor {
             dimension,
+            mip_level_count: storage.then_some(1),
             ..Default::default()
         });
         let view = self.serial(view);
@@ -3927,6 +3956,113 @@ impl Renderer {
         let sampler = self.serial(sampler);
         self.samplers.insert(key, sampler.clone());
         sampler
+    }
+
+    /// The sampled half of `Bindings._update()`'s storage-texture branch:
+    /// `if ( this.textures.needsMipmaps( texture ) && textureData.needsMipmap
+    /// === true ) backend.generateMipmaps( texture )`. A `StorageTexture` keeps
+    /// `generateMipmaps = true`, so the mips the kernel's `textureStore` left
+    /// stale are rebuilt from mip 0 before the first draw that samples them.
+    fn update_storage_mipmaps(&mut self, texture: &Texture) {
+        if !texture.is_storage() {
+            return;
+        }
+        let mips = texture.mip_level_count();
+        let Some(entry) = self.textures_2d.get_mut(&texture.id()) else {
+            return;
+        };
+        if !entry.needs_mipmap || mips <= 1 {
+            return;
+        }
+        entry.needs_mipmap = false;
+        let gpu = entry.gpu.clone();
+        self.generate_mipmaps(&gpu, texture.format(), mips, 1);
+    }
+
+    /// `WebGPUTextureUtils.createTexture()` + `updateTexture()` for a
+    /// `Data3DTexture` (`is3DTexture`, `dimension: '3d'`), or for a
+    /// `Storage3DTexture`, which is created empty with `STORAGE_BINDING` and
+    /// written by a kernel. One mip either way: `Data3DTexture` leaves
+    /// `generateMipmaps` false, `Storage3DTexture` sets `mipmapsAutoUpdate =
+    /// false`, and three's mipmap pass does not draw into 3-D textures.
+    fn ensure_data3d_texture(&mut self, texture: &Data3DTexture) -> wgpu::Texture {
+        let (width, height, depth) = texture.size();
+        let format = texture.format();
+        let storage = texture.is_storage();
+        if !texture.has_gpu() {
+            let mut usage = wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING;
+            if storage {
+                self.assert_storage_format(format);
+                usage |= wgpu::TextureUsages::STORAGE_BINDING;
+            }
+            let gpu = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("three-rs data 3d texture"),
+                size: wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: depth,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D3,
+                format,
+                usage,
+                view_formats: &[],
+            });
+            texture.set_gpu(gpu);
+        }
+
+        if texture.needs_upload() {
+            let bytes_per_texel = format
+                .block_copy_size(None)
+                .expect("three-rs: the 3D texture format has no single block size");
+            let gpu = texture.with_gpu(|gpu| gpu.clone());
+            let inner = texture.borrow();
+            let data = inner
+                .data
+                .as_ref()
+                .expect("three-rs: the Data3DTexture has no data");
+            self.queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &gpu,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                data,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(width * bytes_per_texel),
+                    rows_per_image: Some(height),
+                },
+                wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: depth,
+                },
+            );
+            drop(inner);
+            texture.mark_uploaded();
+            self.info.build.textures_uploaded += 1;
+        }
+
+        texture.with_gpu(|gpu| gpu.clone())
+    }
+
+    /// `WebGPUTextureUtils`' storage check: a storage texture must be in a
+    /// format the device can bind as `texture_storage_*`. The guaranteed set
+    /// is the WGSL storage texel formats; which formats beyond them are
+    /// storable depends on the backend — a browser's WebGPU and a native
+    /// Vulkan device differ — so this asks wgpu rather than assuming, and
+    /// fails before the validation error would arrive as a black frame.
+    fn assert_storage_format(&self, format: wgpu::TextureFormat) {
+        let features = format.guaranteed_format_features(self.device.features());
+        assert!(
+            features
+                .allowed_usages
+                .contains(wgpu::TextureUsages::STORAGE_BINDING),
+            "three-rs: {format:?} cannot be a storage texture on this device"
+        );
     }
 
     // -- resources -------------------------------------------------------
@@ -4095,6 +4231,7 @@ impl Renderer {
                 Texture2DEntry {
                     gpu: gpu.clone(),
                     version,
+                    needs_mipmap: false,
                     owner: texture.owner(),
                 },
             );
@@ -4142,6 +4279,15 @@ impl Renderer {
             usage |= wgpu::TextureUsages::RENDER_ATTACHMENT;
         }
 
+        // `StorageTexture`: created empty with `STORAGE_BINDING` added
+        // (`WebGPUTextureUtils.createTexture()`'s `isStorageTexture`), and
+        // never uploaded — a kernel's `textureStore` is what fills it.
+        let storage = texture.is_storage();
+        if storage {
+            self.assert_storage_format(format);
+            usage |= wgpu::TextureUsages::STORAGE_BINDING;
+        }
+
         let gpu = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("three-rs texture"),
             size: wgpu::Extent3d {
@@ -4157,12 +4303,14 @@ impl Renderer {
             view_formats: &[],
         });
 
-        self.upload_texture_2d(&gpu, texture);
+        if !storage {
+            self.upload_texture_2d(&gpu, texture);
 
-        // `Textures.updateTexture()` generates only when `texture.mipmaps` is
-        // empty: page-supplied levels are uploaded as they are.
-        if mip_level_count > 1 && !has_mipmaps {
-            self.generate_mipmaps(&gpu, format, mip_level_count, 1);
+            // `Textures.updateTexture()` generates only when `texture.mipmaps` is
+            // empty: page-supplied levels are uploaded as they are.
+            if mip_level_count > 1 && !has_mipmaps {
+                self.generate_mipmaps(&gpu, format, mip_level_count, 1);
+            }
         }
 
         texture.set_gpu(gpu.clone());
@@ -4171,6 +4319,7 @@ impl Renderer {
             Texture2DEntry {
                 gpu: gpu.clone(),
                 version,
+                needs_mipmap: false,
                 owner: texture.owner(),
             },
         );

@@ -18,4 +18,6 @@
 
 pub mod controls;
 pub mod geometry_utils;
+pub mod improved_noise;
 pub mod lines;
+pub mod raymarching;

@@ -5,7 +5,7 @@
 //! A module boundary rather than a trait: there is exactly one backend, and
 //! pretending otherwise would buy nothing but indirection.
 
-use super::node::Type;
+use super::node::{StorageAccess, Type};
 
 /// `WGSLNodeBuilder.getType()`.
 pub fn type_name(ty: Type) -> &'static str {
@@ -232,6 +232,20 @@ pub enum TextureKind {
     DepthCompare2D,
     Cube,
     DepthCube,
+    /// `texture_3d<f32>` — a filterable `Data3DTexture` / `Storage3DTexture`
+    /// read through `texture3D()`, with a sampler beside it.
+    Float3D,
+    /// `texture_storage_2d<format, access>` / `texture_storage_3d<…>` — a
+    /// `StorageTextureNode`. No sampler: `WGSLNodeBuilder` only adds one for
+    /// a texture node that is *not* a storage texture node.
+    ///
+    /// `access` is the node's own; the declaration forces `read` outside the
+    /// compute stage (`getStorageAccess()`), and the layout does the same.
+    Storage {
+        format: wgpu::TextureFormat,
+        access: StorageAccess,
+        dim3: bool,
+    },
 }
 
 impl TextureKind {
@@ -246,6 +260,36 @@ impl TextureKind {
             TextureKind::DepthMultisampled2D => "texture_depth_multisampled_2d",
             TextureKind::Cube => "texture_cube<f32>",
             TextureKind::DepthCube => "texture_depth_cube",
+            TextureKind::Float3D => "texture_3d<f32>",
+            TextureKind::Storage { .. } => {
+                panic!("three-rs: a storage texture's type depends on the stage; use declaration()")
+            }
+        }
+    }
+
+    /// The declared WGSL type in a stage: [`wgsl`](Self::wgsl), except for a
+    /// storage texture, whose access is the node's in the compute stage and
+    /// `read` everywhere else.
+    pub fn declaration(self, compute: bool) -> String {
+        match self {
+            TextureKind::Storage {
+                format,
+                access,
+                dim3,
+            } => {
+                let access = if compute {
+                    access
+                } else {
+                    StorageAccess::ReadOnly
+                };
+                format!(
+                    "texture_storage_{}<{}, {}>",
+                    if dim3 { "3d" } else { "2d" },
+                    storage_format(format),
+                    access.wgsl()
+                )
+            }
+            kind => kind.wgsl().to_string(),
         }
     }
 
@@ -267,12 +311,45 @@ impl TextureKind {
                 | TextureKind::Float2DArray
                 | TextureKind::FloatData2D
                 | TextureKind::Uint2D
+                | TextureKind::Storage { .. }
         )
     }
 
     /// A shadow map is read through a comparison sampler.
     pub fn is_comparison(self) -> bool {
         matches!(self, TextureKind::DepthCompare2D | TextureKind::DepthCube)
+    }
+}
+
+/// A storage texture's WGSL texel format — `getFormat( texture )`, which is
+/// the GPU format's own name, restricted to the formats WGSL can spell in a
+/// `texture_storage_*` declaration.
+///
+/// Which of these a *device* accepts as a storage binding is a separate,
+/// per-backend question (WebGPU guarantees `rgba8unorm` and `rgba16float`
+/// write-only everywhere, `r32float` read-write, and the rest vary); the
+/// renderer asks wgpu when it creates the texture.
+pub fn storage_format(format: wgpu::TextureFormat) -> &'static str {
+    use wgpu::TextureFormat as F;
+    match format {
+        F::Rgba8Unorm => "rgba8unorm",
+        F::Rgba8Snorm => "rgba8snorm",
+        F::Rgba8Uint => "rgba8uint",
+        F::Rgba8Sint => "rgba8sint",
+        F::Bgra8Unorm => "bgra8unorm",
+        F::Rgba16Uint => "rgba16uint",
+        F::Rgba16Sint => "rgba16sint",
+        F::Rgba16Float => "rgba16float",
+        F::R32Uint => "r32uint",
+        F::R32Sint => "r32sint",
+        F::R32Float => "r32float",
+        F::Rg32Uint => "rg32uint",
+        F::Rg32Sint => "rg32sint",
+        F::Rg32Float => "rg32float",
+        F::Rgba32Uint => "rgba32uint",
+        F::Rgba32Sint => "rgba32sint",
+        F::Rgba32Float => "rgba32float",
+        other => panic!("three-rs: {other:?} is not a WGSL storage texel format"),
     }
 }
 

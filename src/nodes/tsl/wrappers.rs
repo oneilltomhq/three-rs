@@ -653,6 +653,7 @@ pub fn tri_noise_3d(
                         count: float(3.0),
                         index,
                         condition: "<=",
+                        update: None,
                         body,
                     });
                     block(vec![p, z, rz.clone(), bp, looped], rz)

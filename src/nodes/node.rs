@@ -12,7 +12,8 @@ use std::rc::Rc;
 
 use crate::math::{Color, Matrix4, Vector2, Vector3};
 use crate::textures::{
-    CubeDepthTexture, CubeTexture, DataArrayTexture, DataTexture, DepthTexture, Texture,
+    CubeDepthTexture, CubeTexture, Data3DTexture, DataArrayTexture, DataTexture, DepthTexture,
+    Texture,
 };
 
 /// A WGSL value type. Three carries these as strings (`'vec3'`); the closed set
@@ -552,6 +553,74 @@ pub enum TextureSource {
     Data(DataTexture),
     /// A point light's shadow map — `cubeTexture( CubeDepthTexture )`.
     CubeDepth(CubeDepthTexture),
+    /// `texture3D( Data3DTexture | Storage3DTexture )` — a sampled
+    /// `texture_3d<f32>`.
+    Texture3D(Data3DTexture),
+    /// `storageTexture( StorageTexture )` — a `texture_storage_2d<format,
+    /// access>`, what `textureStore()` writes and `.load()` reads.
+    Storage(Texture, StorageAccess),
+    /// `storageTexture( Storage3DTexture )` — `texture_storage_3d`.
+    Storage3D(Data3DTexture, StorageAccess),
+}
+
+impl TextureSource {
+    /// The texture's id — `Texture.id`, whichever class it is.
+    pub fn id(&self) -> usize {
+        match self {
+            TextureSource::Texture2D(t) | TextureSource::Storage(t, _) => t.id(),
+            TextureSource::Depth(t) | TextureSource::ShadowMap(t) => t.id(),
+            TextureSource::Cube(t) => t.id(),
+            TextureSource::DataArray(t) => t.id(),
+            TextureSource::Data(t) => t.id(),
+            TextureSource::CubeDepth(t) => t.id(),
+            TextureSource::Texture3D(t) | TextureSource::Storage3D(t, _) => t.id(),
+        }
+    }
+
+    /// Bound as a storage texture rather than a sampled one. A texture a
+    /// kernel stores into and a material samples is two bindings of one
+    /// texture, so the builder keys its binding names on this as well as on
+    /// [`id`](Self::id).
+    pub fn is_storage_binding(&self) -> bool {
+        matches!(
+            self,
+            TextureSource::Storage(..) | TextureSource::Storage3D(..)
+        )
+    }
+}
+
+/// `NodeAccess` for a `StorageTextureNode` — the `access` of its
+/// `texture_storage_*` declaration.
+///
+/// `StorageTextureNode`'s default is `WRITE_ONLY`; `WGSLNodeBuilder
+/// .getStorageAccess()` forces `READ_ONLY` outside the compute stage, which the
+/// builder applies when it declares the binding.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum StorageAccess {
+    #[default]
+    WriteOnly,
+    ReadOnly,
+    ReadWrite,
+}
+
+impl StorageAccess {
+    /// `WGSLNodeBuilder`'s `accessNames`.
+    pub fn wgsl(self) -> &'static str {
+        match self {
+            StorageAccess::WriteOnly => "write",
+            StorageAccess::ReadOnly => "read",
+            StorageAccess::ReadWrite => "read_write",
+        }
+    }
+
+    /// The `wgpu` spelling, for the bind group layout.
+    pub fn wgpu(self) -> wgpu::StorageTextureAccess {
+        match self {
+            StorageAccess::WriteOnly => wgpu::StorageTextureAccess::WriteOnly,
+            StorageAccess::ReadOnly => wgpu::StorageTextureAccess::ReadOnly,
+            StorageAccess::ReadWrite => wgpu::StorageTextureAccess::ReadWrite,
+        }
+    }
 }
 
 impl TextureSource {
@@ -565,6 +634,8 @@ impl TextureSource {
             TextureSource::DataArray(data) => data.owner(),
             TextureSource::Data(data) => data.owner(),
             TextureSource::CubeDepth(cube) => cube.owner(),
+            TextureSource::Texture3D(data) | TextureSource::Storage3D(data, _) => data.owner(),
+            TextureSource::Storage(texture, _) => texture.owner(),
         }
     }
 }
@@ -601,6 +672,10 @@ pub enum SampleMode {
     /// how Three's `textureLoad( … ).x` on the `r32uint` indirect table lands
     /// in one `u32` property.
     LoadTexel,
+    /// `storageTexture( t ).load( coord )` — `textureLoad( t, coord )` on a
+    /// `texture_storage_*`, which takes no level argument
+    /// (`WGSLNodeBuilder.generateStorageTextureLoad()`).
+    StorageLoad,
 }
 
 /// A WGSL builtin input.
@@ -839,7 +914,22 @@ pub enum Node {
         /// `Loop( { condition } )` — `"<"` unless the caller asked for
         /// another comparison (`boxBlur`'s `"<="`).
         condition: &'static str,
+        /// `Loop( { update } )` — `i += update` in place of the default step.
+        update: Option<NodeRef>,
         body: Vec<NodeRef>,
+    },
+    /// `Break()` — a bare `break;` out of the innermost `Loop`.
+    Break,
+    /// `textureStore( storageTexture, coord, value )` — a statement.
+    ///
+    /// `StorageTextureNode.generateStore()` writes the coordinate as
+    /// `vec2<u32>( … )` (`vec3<u32>` for a 3D texture) around whatever the
+    /// caller passed, so a `uvec2` coordinate is wrapped once more, exactly as
+    /// three's dump shows.
+    TextureStore {
+        texture: Rc<TextureSource>,
+        coord: NodeRef,
+        value: NodeRef,
     },
     /// `If( cond, () => { … } )` as a bare statement (`setupDiscard`),
     /// optionally with the `.Else( … )` / `.ElseIf( … )` arm `StackNode` adds.
@@ -942,7 +1032,12 @@ impl NodeRef {
             Node::IfVar { result, .. } => result.ty(),
             Node::Select { ty, .. } => *ty,
             Node::Block { result, .. } => result.ty(),
-            Node::Loop { .. } | Node::If { .. } | Node::Discard | Node::Return { .. } => Type::Void,
+            Node::Loop { .. }
+            | Node::If { .. }
+            | Node::Discard
+            | Node::Break
+            | Node::TextureStore { .. }
+            | Node::Return { .. } => Type::Void,
             Node::Not { node } => Type::vector_of(Type::Bool, node.ty().components().max(1)),
             Node::BitNot { ty, .. } => *ty,
         }
@@ -1139,6 +1234,16 @@ impl std::hash::Hash for TextureSource {
             TextureSource::DataArray(texture) => texture.id().hash(state),
             TextureSource::Data(texture) => texture.id().hash(state),
             TextureSource::CubeDepth(texture) => texture.id().hash(state),
+            TextureSource::Texture3D(texture) => texture.id().hash(state),
+            // The access is part of the declaration, so it is part of the key.
+            TextureSource::Storage(texture, access) => {
+                texture.id().hash(state);
+                access.hash(state);
+            }
+            TextureSource::Storage3D(texture, access) => {
+                texture.id().hash(state);
+                access.hash(state);
+            }
         }
     }
 }
