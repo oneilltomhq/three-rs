@@ -1958,12 +1958,16 @@ impl Renderer {
             ..Default::default()
         };
 
-        self.occlusion_context = Some((
-            scene.node.borrow().id,
-            self.render_target
-                .as_ref()
-                .map(|target| target.texture().id()),
-        ));
+        // No context where the backend cannot record the queries: nothing is
+        // queried, and `isOccluded()` stays false.
+        self.occlusion_context = occlusion::supported(self.adapter_info.backend).then(|| {
+            (
+                scene.node.borrow().id,
+                self.render_target
+                    .as_ref()
+                    .map(|target| target.texture().id()),
+            )
+        });
         self.render_list(&items, camera_uniforms, clear);
         self.occlusion_context = None;
     }

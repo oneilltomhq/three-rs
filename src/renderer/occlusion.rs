@@ -24,6 +24,20 @@ use std::sync::Arc;
 /// ladder does that with an occlusion test.
 pub(super) type ContextKey = (u32, Option<usize>);
 
+/// Whether the backend records occlusion queries.
+///
+/// wgpu 30's browser WebGPU backend (`backend/webgpu.rs`, `begin_render_pass`)
+/// never copies `RenderPassDescriptor::occlusion_query_set` into the
+/// `GPURenderPassDescriptor` it hands the browser. The pass therefore has no
+/// set, and the first `beginOcclusionQuery()` invalidates the encoder:
+/// Chrome says "The occlusionQuerySet in RenderPassDescriptor is not set", and
+/// the frame is never submitted. There, no query is recorded and every
+/// `isOccluded()` answers false. That is also three's answer until the first
+/// query lands, so the first frame is the same either way.
+pub(super) fn supported(backend: wgpu::Backend) -> bool {
+    backend != wgpu::Backend::BrowserWebGpu
+}
+
 /// The map's states: waiting on `mapAsync`, mapped, failed.
 const WAITING: u8 = 0;
 const MAPPED: u8 = 1;

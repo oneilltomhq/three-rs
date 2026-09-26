@@ -48,6 +48,12 @@ The two materials' WGSL matches three's `m00`–`m02` structurally. The only
 differences are the ones §8 already lists: `nodeVar` against `nodeConst`,
 declaration order, and uniform numbering.
 
+**In the browser** (the web gate, Chrome on SwiftShader) the page passes at 0
+pixels but records no queries. wgpu 30's WebGPU backend drops the pass's
+`occlusion_query_set`, and Chrome then rejects the whole frame, so
+`occlusion::supported()` turns the queries off on that backend and the plane
+stays blue (§39).
+
 ## Why not `webgpu_reversed_depth_buffer`
 
 It was the first page asked for. It cannot be graded on this machine. **three.js

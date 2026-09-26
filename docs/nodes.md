@@ -3773,7 +3773,16 @@ for six frames once the sphere is moved in front of it.
 * **A transmissive split records queries only in its first pass.** When
   `ViewportTextureNode` splits the scene pass in two, three records into
   both. No page on the ladder puts an occlusion test on a split pass.
-* **Answers land on a poll, not on the event loop.** In a browser, wgpu's
-  callback fires between frames as three's promise does. Natively it fires on
-  the next `render()`'s non-blocking poll, which on this machine is always in
-  time for the next frame. That is the soonest three could have it too.
+* **Answers land on a poll, not on the event loop.** Natively the map
+  callback fires on the next `render()`'s non-blocking poll, which on this
+  machine is always in time for the next frame. That is the soonest three
+  could have it too.
+* **No queries in the browser.** wgpu 30's WebGPU backend never copies
+  `occlusion_query_set` into the `GPURenderPassDescriptor`, so the first
+  `beginOcclusionQuery()` invalidates the encoder ("The occlusionQuerySet in
+  RenderPassDescriptor is not set") and the frame is never submitted.
+  `occlusion::supported()` turns the queries off on
+  `Backend::BrowserWebGpu`, so `isOccluded()` is always false there. That is
+  three's answer until the first query lands, so the graded frame is the same.
+  In the browser, `webgpu_occlusion`'s plane stays blue. It comes back once
+  wgpu forwards the set.
