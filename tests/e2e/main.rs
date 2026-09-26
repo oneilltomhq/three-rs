@@ -258,6 +258,10 @@ mod webgpu_shadowmap_opacity;
 #[allow(dead_code)]
 mod webgpu_clearcoat;
 
+#[path = "../../examples/webgpu_layers.rs"]
+#[allow(dead_code)]
+mod webgpu_layers;
+
 #[path = "../../examples/webgpu_camera_array.rs"]
 #[allow(dead_code)]
 mod webgpu_camera_array;
@@ -2157,6 +2161,52 @@ fn webgpu_clearcoat() {
     });
 }
 
+/// Three instanced `Mesh`es of 2500 petals each, one per layer
+/// (`particles.layers.set( i )`), under a camera enabled on layers 0–2: a gate
+/// on `_projectObject`'s `layers.test( camera.layers )` and on `RotateNode`'s
+/// `vec3` branch, which turns each petal by its instanced rotation.
+#[test]
+fn webgpu_layers() {
+    let name = "webgpu_layers";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_layers::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_layers::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_layers::animate, |app| {
+        app.renderer.device()
+    });
+}
+
 /// Two hundred `Sprite`s sharing one `SpriteNodeMaterial`, each turned by its
 /// own `userData.rotation` through `userData( 'rotation', 'float' )`, under a
 /// `rangeFogFactor` fog node.
@@ -4030,6 +4080,7 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_tsl_angular_slicing);
     rung!(webgpu_fog_height);
     rung!(webgpu_shadowmap_opacity);
+    rung!(webgpu_layers);
 }
 
 // ---------------------------------------------------------------------------

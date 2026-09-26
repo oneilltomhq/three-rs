@@ -287,6 +287,7 @@ MaterialsToon, webgpu_materials_toon, "../../examples/webgpu_materials_toon.rs";
 Occlusion, webgpu_occlusion, "../../examples/webgpu_occlusion.rs";
 FogHeight, webgpu_fog_height, "../../examples/webgpu_fog_height.rs";
 ShadowmapOpacity, webgpu_shadowmap_opacity, "../../examples/webgpu_shadowmap_opacity.rs";
+Layers, webgpu_layers, "../../examples/webgpu_layers.rs";
 }
 
 /// Where an example's assets come from: three.js at the commit this port is

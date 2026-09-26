@@ -40,6 +40,10 @@ mod display_materials;
 #[allow(dead_code)]
 mod webgpu_instance_path;
 
+#[path = "webgpu_layers.rs"]
+#[allow(dead_code)]
+mod webgpu_layers;
+
 #[path = "webgpu_tsl_interoperability.rs"]
 #[allow(dead_code)]
 mod webgpu_tsl_interoperability;
@@ -2094,6 +2098,19 @@ fn main() {
     dump_deferred();
     dump_instance_path();
     dump_modifier_curve();
+    dump_layers();
+}
+
+/// Rung `webgpu_layers`: one of the three petal materials — a
+/// `MeshBasicNodeMaterial` with `map` / `alphaMap` / `alphaTest` and a
+/// `positionNode` through `RotateNode`'s `vec3` branch — against
+/// `target/dumps/webgpu_layers/m0{3,4}`. Eight petals are plenty; the count
+/// only sizes the instance buffers.
+fn dump_layers() {
+    let sprite = Texture::new(2, 2, Some(vec![0; 16]));
+    let mut random = three_rs::testing::DeterministicRandom::new();
+    let material = webgpu_layers::get_material(&mut random, 8, 0xD70654, Some(&sprite));
+    show("layers_petals", &material, SetupContext::default());
 }
 
 /// Rung `webgpu_modifier_curve`: the text's `Flow`-bent

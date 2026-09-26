@@ -186,6 +186,7 @@ same screenshots at the same threshold (see
 | webgpu_occlusion | 0 | 1.9 | 3 | 963 | yes |
 | webgpu_fog_height | 0 | 2.8 | 3 | 3185 | yes |
 | webgpu_shadowmap_opacity | 9 | 6.0 | 6 | 408644 | yes |
+| webgpu_layers | 76 (Three itself scores 76 against the same JPEG) | 8.5 | 5 | 16985 | yes |
 
 `webgpu_compute_points` is graded like the rest and its 4 pixels mean less
 than the rest: its frame is black apart from a 2x2 block at the centre, so

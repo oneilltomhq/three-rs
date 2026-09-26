@@ -243,6 +243,9 @@ mod webgpu_clearcoat;
 #[path = "webgpu_fog_height.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_fog_height;
+#[path = "webgpu_layers.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_layers;
 #[path = "webgpu_materials_toon.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_materials_toon;
@@ -430,6 +433,7 @@ const GRADED: &[(&str, fn())] = &[
     ("webgpu_shadowmap_opacity", || {
         drop(webgpu_shadowmap_opacity::init())
     }),
+    ("webgpu_layers", || drop(webgpu_layers::init())),
 ];
 
 /// Where the committed manifests live, one `<example>.json` each.
