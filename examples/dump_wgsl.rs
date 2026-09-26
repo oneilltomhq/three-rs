@@ -2036,6 +2036,7 @@ fn main() {
     dump_room_environment();
     dump_scene_fog();
     dump_shadowmap_opacity();
+    dump_diffuse_roughness();
     dump_chromatic_aberration();
 
     // #144's display nodes, each as the three.js page that dumps it builds it:
@@ -2721,4 +2722,32 @@ fn dump_shadowmap_opacity() {
         &out,
         SetupContext::default(),
     );
+}
+
+/// Rung `webgpu_loader_gltf_diffuse_roughness`: three's dump m18
+/// (`00_albedo_control_0.14`, a `MeshPhysicalMaterial` at `diffuseRoughness =
+/// 1`) — `DiffuseRoughness` and the two `EON_DirectionalAlbedo` if/else
+/// blocks. m20 (`01_diffuse_matte_0.00`, the extension at a factor of 0) is
+/// the plain physical shader, and m16 the plain standard one.
+fn dump_diffuse_roughness() {
+    let cube = CubeTexture::new(vec![
+        Image {
+            width: 1,
+            height: 1,
+            data: vec![0; 4],
+        };
+        6
+    ]);
+    let environment = PmremEnvironment::new(&cube);
+    let ctx = || SetupContext {
+        environment: Some(Environment::Pmrem(environment.handle())),
+        ..SetupContext::default()
+    };
+    let rough = MeshBasicNodeMaterial {
+        diffuse_roughness: 1.0,
+        ..MeshBasicNodeMaterial::physical(Color::new(0.12, 0.1, 0.09), 0.95, 0.0)
+    };
+    show("gltf_diffuse_roughness_on", &rough, ctx());
+    let matte = MeshBasicNodeMaterial::physical(Color::new(0.45, 0.28, 0.21), 0.95, 0.0);
+    show("gltf_diffuse_roughness_zero", &matte, ctx());
 }

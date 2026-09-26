@@ -4128,3 +4128,76 @@ needs the transmission pass's context. The graded pixels cover it.
 * **No `shadow.autoUpdate`.** The page renders the shadow map once
   (`autoUpdate = false`, `needsUpdate = true`). The port renders it every
   frame. Nothing in the scene moves, so every frame renders the same map.
+
+## 54. The EON diffuse lobe and `KHR_materials_diffuse_roughness` (`webgpu_loader_gltf_diffuse_roughness`)
+
+`MeshPhysicalMaterial.diffuseRoughness` turns the Lambert diffuse lobe into
+the Energy-preserving Oren-Nayar lobe (Portsmouth et al. 2025), as
+`BRDF_EON.js` implements it. `webgpu_loader_gltf_diffuse_roughness` loads
+Khronos' `DiffuseRoughnessParameterSweep.glb` under a PMREM of
+`RoomEnvironment`. It is a grid of spheres whose
+`KHR_materials_diffuse_roughness.diffuseRoughnessFactor` runs from 0 to 1.
+
+### 54.1 What three does, and what the port does
+
+* **`useDiffuseRoughness`.** `MeshPhysicalNodeMaterial` sets it when
+  `diffuseRoughness > 0` (or there is a `diffuseRoughnessMap`).
+  `setupVariants()` then writes the `DiffuseRoughness` property from the
+  clamped `materialDiffuseRoughness` uniform. The port writes it in the same
+  place, just before the clearcoat assignments, through
+  `tsl::diffuse_roughness()` and `tsl::material_diffuse_roughness()`
+  (`UniformSource::MaterialDiffuseRoughness`, object group).
+* **`PhysicalLightingModel`.** With the flag on, three changes three terms:
+  * `direct()` uses `BRDF_EON( lightDirection, diffuseColor, roughness )`
+    times `1 - metalness` in place of `BRDF_Lambert`.
+  * `indirectDiffuse()` scales irradiance by `EON_DirectionalAlbedo( ... )`
+    / π in place of `diffuseColor`.
+  * `indirectSpecular()` uses the same albedo where it would use
+    `diffuseContribution`.
+
+  `physical::Physical` gains a `diffuse_roughness` flag. It picks
+  `brdf_eon()` and `eon_diffuse_albedo()` at the same three points.
+* **The constants.** `FON_A = 1/2 - 2/(3π)`, `FON_AVG = 2/3 - 28/(15π)` and
+  the `1e-7` epsilon are written to the same digits as three's, so the dump
+  diffs clean.
+* **`rho ≤ ε` falls back to Lambert.** Three does this through a
+  `select()`, which the port writes as its usual if/else into a var.
+* **`GLTFLoader`.** `GLTFMaterialsDiffuseRoughnessExtension` reads
+  `diffuseRoughnessFactor` (default 0). Like the other physical extensions,
+  its presence promotes the material to `MeshPhysicalMaterial` whatever the
+  factor.
+
+### 54.2 The page's winding flip
+
+The page walks the scene and swaps index `i + 1` and `i + 2` of every
+triangle, because "the draft sample asset currently uses clockwise triangle
+winding". The port does the same with `Index::set_x` on a clone of each
+distinct geometry. It keys a map by pointer, so a geometry shared by several
+meshes is flipped once, as three's loop does through its `Set` of visited
+geometries.
+
+### 54.3 Checked against three's dump
+
+`dump_wgsl`'s `gltf_diffuse_roughness_on` was diffed against three's
+fragment shader for the sweep's material. The `DiffuseRoughness` assignment
+comes in the same place, the two EON `if/else` blocks (direct and
+directional albedo) have the same arithmetic and constants, and the
+uniform order is the same (`diffuseRoughness` is `nodeUniform9` in both).
+`gltf_diffuse_roughness_zero` is the Lambert shader, unchanged.
+
+### 54.4 Divergences
+
+* **`diffuseRoughnessMap` is not ported.** Nothing on the ladder has one.
+  The loader reads only the factor and says so in a comment.
+* **A hoisted temp.** In the `rho > ε` branch the port writes
+  `nodeVar7 = clamp(...); nodeVar6 = nodeVar7;` where three assigns
+  directly. The value is the same.
+* **`indirectDiffuse`'s `diffuse` is inlined.** Three makes it a `toVar()`.
+  This divergence was already there.
+* **The grader cannot see the lobe.** The page grades at 0 pixels with the
+  EON lobe switched off as well, because pixelmatch's 0.1 YIQ threshold is
+  wider than anything the lobe moves. With it on, the frame differs from the
+  Lambert frame by up to 15 levels in 255 over about 73000 pixels. Against
+  three's `expected.jpg`, the mean absolute error in the sphere grid is
+  1.35 levels with EON and 3.60 without. So the lobe is checked by the dump
+  and by that measurement, not by the pixel count.

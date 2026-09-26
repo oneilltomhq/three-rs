@@ -254,6 +254,10 @@ mod webgpu_fog_height;
 #[allow(dead_code)]
 mod webgpu_shadowmap_opacity;
 
+#[path = "../../examples/webgpu_loader_gltf_diffuse_roughness.rs"]
+#[allow(dead_code)]
+mod webgpu_loader_gltf_diffuse_roughness;
+
 #[path = "../../examples/webgpu_clearcoat.rs"]
 #[allow(dead_code)]
 mod webgpu_clearcoat;
@@ -2011,6 +2015,61 @@ fn webgpu_shadowmap_opacity() {
     steady_frame(name, &mut app, webgpu_shadowmap_opacity::animate, |app| {
         app.renderer.device()
     });
+}
+
+/// `KHR_materials_diffuse_roughness`: the EON rough-diffuse lobe of
+/// `PhysicalLightingModel`, lit only by a `RoomEnvironment` PMREM.
+///
+/// The parameter sweep puts a plain `MeshStandardMaterial` beside a
+/// `MeshPhysicalMaterial` at `diffuseRoughness = 1` over four albedos, and
+/// sweeps `diffuseRoughness` over `[ 0, 1 ]` at two specular roughnesses.
+/// With no lights the lobe shows through `EON_DirectionalAlbedo` in
+/// `indirectDiffuse()` and `indirectSpecular()`'s diffuse half, so a missing
+/// or misplaced term darkens or brightens whole columns. It is also the gate
+/// on the page's index-winding flip. See `docs/nodes.md` §54.
+#[test]
+fn webgpu_loader_gltf_diffuse_roughness() {
+    let name = "webgpu_loader_gltf_diffuse_roughness";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_loader_gltf_diffuse_roughness::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_loader_gltf_diffuse_roughness::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(
+        name,
+        &mut app,
+        webgpu_loader_gltf_diffuse_roughness::animate,
+        |app| app.renderer.device(),
+    );
 }
 
 /// The occlusion rung: a Phong plane whose `colorNode` is an
@@ -4030,6 +4089,7 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_tsl_angular_slicing);
     rung!(webgpu_fog_height);
     rung!(webgpu_shadowmap_opacity);
+    rung!(webgpu_loader_gltf_diffuse_roughness);
 }
 
 // ---------------------------------------------------------------------------

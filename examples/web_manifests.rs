@@ -259,6 +259,10 @@ mod webgpu_particles;
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_shadowmap_opacity;
 
+#[path = "webgpu_loader_gltf_diffuse_roughness.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_loader_gltf_diffuse_roughness;
+
 #[path = "webgpu_instance_sprites.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_instance_sprites;
@@ -429,6 +433,9 @@ const GRADED: &[(&str, fn())] = &[
     ("webgpu_fog_height", || drop(webgpu_fog_height::init())),
     ("webgpu_shadowmap_opacity", || {
         drop(webgpu_shadowmap_opacity::init())
+    }),
+    ("webgpu_loader_gltf_diffuse_roughness", || {
+        drop(webgpu_loader_gltf_diffuse_roughness::init())
     }),
 ];
 

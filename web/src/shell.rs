@@ -287,6 +287,7 @@ MaterialsToon, webgpu_materials_toon, "../../examples/webgpu_materials_toon.rs";
 Occlusion, webgpu_occlusion, "../../examples/webgpu_occlusion.rs";
 FogHeight, webgpu_fog_height, "../../examples/webgpu_fog_height.rs";
 ShadowmapOpacity, webgpu_shadowmap_opacity, "../../examples/webgpu_shadowmap_opacity.rs";
+LoaderGltfDiffuseRoughness, webgpu_loader_gltf_diffuse_roughness, "../../examples/webgpu_loader_gltf_diffuse_roughness.rs";
 }
 
 /// Where an example's assets come from: three.js at the commit this port is
