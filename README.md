@@ -144,7 +144,7 @@ same screenshots at the same threshold (see
 | webgpu_deferred | 0 | 2.8 | 25 | 26378 | yes |
 | webgpu_loader_gltf_anisotropy | 94 | 3.2 | 5 | 12188 | yes |
 | webgpu_procedural_texture | 0 | 3.2 | 5 | 6 | yes |
-| webgpu_postprocessing_sobel | 77 (against r186's screenshot, as CI grades; see #146) | 2.8 | 3 | 91218 | yes |
+| webgpu_postprocessing_sobel | 0 | 2.8 | 3 | 91218 | yes |
 | webgpu_postprocessing_transition | 0 | 1.4 | 2 | 40001 | yes |
 
 `webgpu_compute_points` is graded like the rest and its 4 pixels mean less

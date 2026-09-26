@@ -1,5 +1,7 @@
 # webgpu_postprocessing_sobel
 
+2026-09-26: regraded against three.js 5f610f5 (the cube PMREM of 2f80402, #146), now the pin CI grades against: 0 of 100000 pixels (was 77 against r186's screenshot, which the PMREM commits regenerated upstream).
+
 Issue #144. **PASS against r186's screenshot: 77 of 100000 pixels differ,
 limit 0.1%.**
 
