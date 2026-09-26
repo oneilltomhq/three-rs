@@ -47,7 +47,7 @@ key now comes from the stored material.
 
 ## Divergences
 
-See `docs/nodes.md` §28.5. The fog is the same constant `fog()` stand-in as
+See `docs/nodes.md` §32.5. The fog is the same constant `fog()` stand-in as
 `webgpu_shadowmap`. The `filterNode` hook is a closure over
 `ShadowFilterInputs` with `index` in place of `shadow`. There is no
 `material.shadowSide`.

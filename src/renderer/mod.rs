@@ -18,7 +18,7 @@ mod render_pipeline;
 mod render_target;
 mod ssaa_pass;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::{Rc, Weak};
 
 use bindings::{
@@ -56,11 +56,11 @@ use crate::nodes::tsl::FogNode;
 use crate::nodes::tsl::StorageArray;
 use crate::nodes::wgsl::TextureKind;
 use crate::nodes::{BindingDesc, ComputeFlow, NodeBuilder, NodeProgram, Type};
-use crate::objects::{Background, InstancedBufferAttribute, QuadMesh, Scene, SubDraw};
+use crate::objects::{Background, InstancedBufferAttribute, QuadMesh, Scene, SceneFog, SubDraw};
 use crate::testing::DeterministicRandom;
 use crate::textures::{
-    CubeDepthTexture, CubeTexture, DataArrayTexture, DataTexture, DataTextureData, DepthTexture,
-    Texture, TextureFilter, TextureType,
+    CubeDepthTexture, CubeTexture, Data3DTexture, DataArrayTexture, DataTexture, DataTextureData,
+    DepthTexture, Texture, TextureFilter, TextureOwner, TextureType,
 };
 
 /// How many **frames** a cache entry survives without being used, for the
@@ -80,6 +80,14 @@ use crate::textures::{
 /// draw that reads the `RenderPipeline` quad's material. Against a render
 /// clock that quad's program was evicted and rebuilt every frame.
 const CACHE_GRACE_FRAMES: u64 = 4;
+
+/// The `texture-compression-*` features WebGPU names — `-bc`, `-etc2` and
+/// `-astc` — which `WebGPUBackend` requests whenever the adapter has them.
+/// A host that builds its own device (`with_device`, `adopt_device`) passes
+/// these in its `required_features` to get compressed KTX2 textures.
+pub const COMPRESSION_FEATURES: wgpu::Features = wgpu::Features::TEXTURE_COMPRESSION_BC
+    .union(wgpu::Features::TEXTURE_COMPRESSION_ETC2)
+    .union(wgpu::Features::TEXTURE_COMPRESSION_ASTC);
 
 /// A cached GPU buffer that is filled exactly once — `range()`'s random draw,
 /// or one upload of an `InstancedBufferAttribute`'s array — with the same
@@ -109,10 +117,17 @@ struct SlotBuffer {
 /// One cached texture view, with the texture it views: the entry is good for
 /// as long as that is still the texture behind the id. See
 /// [`Renderer::texture_view`].
+///
+/// `owner` is the texture handle the view was made for. A view keeps its
+/// `wgpu::Texture` alive, so without it a render target the consumer dropped
+/// would hold its GPU memory through this cache — and through every bind group
+/// built from the view — until both aged out; with it, both go on the first
+/// render after the last handle does (issue #158).
 struct ViewEntry {
     texture: wgpu::Texture,
     view: Serial<wgpu::TextureView>,
     last_used: u64,
+    owner: TextureOwner,
 }
 
 /// One cached bind group; see [`BindGroupKey`].
@@ -294,6 +309,9 @@ struct Renderable {
     bind_matrix: Matrix4,
     bind_matrix_inverse: Matrix4,
     bone_matrices: Vec<f32>,
+    /// `Sprite.center` — `SpriteNodeMaterial`'s `reference( 'center', 'vec2',
+    /// object )`. `(0.5, 0.5)`, the sprite default, for everything else.
+    object_center: Vector2,
     /// `_getPrimitiveState()`'s object half — the topology this draw's pipeline
     /// is built with.
     primitive: Primitive,
@@ -369,9 +387,25 @@ struct MaterialStates {
 /// frame write the new bytes into this same `wgpu::Texture` rather than return
 /// stale pixels. Without it a changed image would either never reach the GPU or
 /// force a fresh allocation every frame.
+///
+/// `owner` is the liveness signal the cache sweep reads, as
+/// [`GeometryEntry::owner`] is for a geometry: once the consumer has dropped
+/// every handle to the texture, the entry and its `wgpu::Texture` go at the
+/// start of the next `render()` (issue #158).
 struct Texture2DEntry {
     gpu: wgpu::Texture,
     version: u32,
+    /// `textureData.needsMipmap` (`Bindings._update()`): a compute kernel
+    /// bound this `StorageTexture` for `textureStore` since its mip chain was
+    /// last built, so the next *sampled* binding regenerates it first.
+    needs_mipmap: bool,
+    owner: TextureOwner,
+}
+
+/// One uploaded `CubeTexture`, swept like a [`Texture2DEntry`].
+struct CubeTextureEntry {
+    gpu: wgpu::Texture,
+    owner: TextureOwner,
 }
 
 /// The [`BuildCounts`] field a newly created binding resource adds one to.
@@ -682,9 +716,10 @@ pub struct Renderer {
     /// [`GeometryEntry`].
     geometries: HashMap<usize, GeometryEntry>,
     /// `Textures`' GPU side, keyed by texture identity. The entry carries the
-    /// `Texture.version` it was uploaded at; see [`Texture2DEntry`].
+    /// `Texture.version` it was uploaded at; see [`Texture2DEntry`]. Swept by
+    /// liveness at the start of every `render()`, like `geometries`.
     textures_2d: HashMap<usize, Texture2DEntry>,
-    cube_textures: HashMap<usize, wgpu::Texture>,
+    cube_textures: HashMap<usize, CubeTextureEntry>,
     /// `WebGPUTexturePassUtils.transferPipelines`, keyed by texture format.
     mipmap_pipelines: HashMap<wgpu::TextureFormat, wgpu::RenderPipeline>,
     /// `BufferNode` / `InstanceBuffer` storage, keyed by the node's own
@@ -711,9 +746,11 @@ pub struct Renderer {
     slot_buffers: HashMap<SlotKey, SlotBuffer>,
     /// Texture views, by `TextureId` and view dimension, one entry per
     /// `wgpu::Texture` that id has recently stood for; see
-    /// [`Renderer::texture_view`]. Aged out by [`CACHE_GRACE_FRAMES`], which
-    /// also bounds how long a cached view keeps a dropped texture's memory.
-    views: HashMap<(usize, Option<wgpu::TextureViewDimension>), Vec<ViewEntry>>,
+    /// [`Renderer::texture_view`]. Aged out by [`CACHE_GRACE_FRAMES`], and
+    /// swept by liveness besides, so a cached view never keeps a dropped
+    /// texture's memory past the next render; see [`ViewEntry`]. The `bool`
+    /// is the storage-binding view, one mip, of the same texture.
+    views: HashMap<(usize, Option<wgpu::TextureViewDimension>, bool), Vec<ViewEntry>>,
     /// Samplers, by descriptor, for the renderer's life; see [`SamplerKey`].
     samplers: HashMap<SamplerKey, Serial<wgpu::Sampler>>,
     /// Bind groups, by layout and the serials of what they bind; see
@@ -771,6 +808,11 @@ pub struct Renderer {
     /// `NodeFrame.lastTime` — `undefined` until the first frame, which is what
     /// makes that frame's delta 0 whatever the clock says.
     node_frame_last_time: Option<f64>,
+    /// `NodeFrame.deltaTime` — the last update's step, what `deltaTime` reads.
+    delta_time: f64,
+    /// `NodeFrame.frameId` — incremented by every `NodeFrame.update()`, what
+    /// `frameId` reads.
+    frame_id: u32,
 
     /// The viewer's canvas → surface blit; see `present.rs`. Never touched by
     /// the e2e path.
@@ -946,18 +988,20 @@ impl Renderer {
         // (`ensure_texture_2d`), because a silently non-filterable float
         // texture is exactly the "silent wrong output" failure the handoff
         // warns about.
-        let float32_filterable = adapter
-            .features()
-            .contains(wgpu::Features::FLOAT32_FILTERABLE);
+        //
+        // The texture-compression features are `WebGPUBackend.init()`'s
+        // `requiredFeatures`: three asks for every `GPUFeatureName` the adapter
+        // has, and `KTX2Loader.detectSupport()` then reads them back off the
+        // device to pick a transcode target. Without them a Basis texture
+        // falls back to uncompressed RGBA — correct, four to eight times the
+        // memory, and not the texture three samples.
+        let wanted = wgpu::Features::FLOAT32_FILTERABLE | COMPRESSION_FEATURES;
+        let required_features = adapter.features() & wanted;
 
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("three-rs device"),
-                required_features: if float32_filterable {
-                    wgpu::Features::FLOAT32_FILTERABLE
-                } else {
-                    wgpu::Features::empty()
-                },
+                required_features,
                 required_limits: wgpu::Limits::default(),
                 experimental_features: wgpu::ExperimentalFeatures::disabled(),
                 memory_hints: wgpu::MemoryHints::MemoryUsage,
@@ -1090,6 +1134,8 @@ impl Renderer {
             fullscreen_pass: false,
             time: 0.0,
             node_frame_last_time: None,
+            delta_time: 0.0,
+            frame_id: 0,
             present: None,
             random: DeterministicRandom::new(),
             tone_mapping: ToneMapping::None,
@@ -1106,6 +1152,13 @@ impl Renderer {
 
     pub fn adapter_info(&self) -> &wgpu::AdapterInfo {
         &self.adapter_info
+    }
+
+    /// `renderer.hasFeature( name )`, for all of them at once: the features
+    /// the device was created with. `KTX2Loader::detect_support` reads the
+    /// texture-compression ones.
+    pub fn features(&self) -> wgpu::Features {
+        self.device.features()
     }
 
     pub fn set_pixel_ratio(&mut self, pixel_ratio: f64) {
@@ -1437,6 +1490,7 @@ impl Renderer {
                 morph_base: 1.0,
                 bind_matrix: Matrix4::identity(),
                 bind_matrix_inverse: Matrix4::identity(),
+                object_center: Vector2::new(0.5, 0.5),
                 bone_matrices: Vec::new(),
                 primitive: Primitive::TRIANGLES,
                 sub_draws: Vec::new(),
@@ -1482,6 +1536,19 @@ impl Renderer {
         let mut skeletons_updated: std::collections::HashSet<usize> =
             std::collections::HashSet::new();
 
+        // `NodeManager.getFogNode( scene )`, once per render: `scene.fogNode`
+        // if set, else the node `updateFog()` builds for `scene.fog` — which
+        // reads its parameters from the render group, filled in below.
+        let fog_node = scene
+            .fog_node
+            .clone()
+            .or_else(|| scene.fog.as_ref().map(SceneFog::node));
+        let (fog_color, fog_near, fog_far, fog_density) = match &scene.fog {
+            Some(SceneFog::Linear(fog)) => (fog.color, fog.near, fog.far, 0.00025),
+            Some(SceneFog::Exp2(fog)) => (fog.color, 1.0, 1000.0, fog.density),
+            None => (Color::new(1.0, 1.0, 1.0), 1.0, 1000.0, 0.00025),
+        };
+
         // `Renderer._renderObjects()` calls `object.onBeforeRender()` per
         // render item, immediately before that item's draw. The port builds
         // every `Renderable` first and records the pass afterwards, so the hook
@@ -1495,11 +1562,22 @@ impl Renderer {
             coordinate_system: camera.coordinate_system(),
             far: camera.far(),
         };
+        // `LineSegments2.onBeforeRender( renderer )`:
+        // `renderer.getViewport( _viewport )`, then `_resolution.set( _viewport.z,
+        // _viewport.w )` — the size its screen-space `raycast()` projects into.
+        let viewport = self.viewport();
         for item in render_list.items() {
             let matrix_world = item.matrix_world;
             let mut object = item.node.borrow_mut();
             if let Some(batched) = object.payload.batched_mesh_mut() {
                 batched.on_before_render(&matrix_world, &batch_camera);
+            }
+            if let Some(segments) = object
+                .payload
+                .mesh_mut()
+                .and_then(|mesh| mesh.line_segments.as_mut())
+            {
+                segments.resolution = crate::math::Vector2::new(viewport.z, viewport.w);
             }
         }
 
@@ -1695,6 +1773,7 @@ impl Renderer {
                     skin: skin.as_ref().map(|s| s.0),
                     batch: batch.clone(),
                     line_segments: object.payload.line_segments().cloned(),
+                    sprite: object.payload.is_sprite(),
                     mrt: mrt_context.clone(),
                     output: output_context.clone(),
                     // `VertexColorNode.generate()`'s
@@ -1710,7 +1789,10 @@ impl Renderer {
                     geometry_missing_normal: !geometry.has_attribute("normal"),
                     has_tangent_attribute: geometry.has_attribute("tangent"),
                 },
-                fog: scene.fog_node.clone(),
+                // `NodeManager.getFogNode( scene )`: `scene.fogNode ||
+                // this.get( scene ).fogNode` — an explicit fog node wins over
+                // the one `updateFog()` builds from `scene.fog`.
+                fog: fog_node.clone(),
                 model_world: item.matrix_world,
                 instance_matrix,
                 instance_color,
@@ -1719,6 +1801,10 @@ impl Renderer {
                 morph_base,
                 bind_matrix: skin.as_ref().map(|s| s.1).unwrap_or_else(Matrix4::identity),
                 bind_matrix_inverse: skin.as_ref().map(|s| s.2).unwrap_or_else(Matrix4::identity),
+                object_center: object
+                    .payload
+                    .sprite()
+                    .map_or(Vector2::new(0.5, 0.5), |sprite| sprite.center),
                 bone_matrices: skin.map(|s| s.3).unwrap_or_default(),
                 primitive,
                 sub_draws,
@@ -1817,10 +1903,16 @@ impl Renderer {
             camera_view: camera.matrix_world_inverse(),
             camera_world: camera.matrix_world(),
             time: self.time,
+            delta_time: self.delta_time,
+            frame_id: self.frame_id,
             lights: &lights,
             // `scene.backgroundBlurriness` — a render-group uniform, so it
             // rides the pass rather than the background draw.
             background_blurriness: scene.background_blurriness,
+            fog_color,
+            fog_near,
+            fog_far,
+            fog_density,
             ..Default::default()
         };
 
@@ -2025,6 +2117,7 @@ impl Renderer {
                         // material takes the plain MVP path, which the quad
                         // geometry is not in.
                         line_segments: None,
+                        sprite: false,
                         // A shadow pass renders into a depth-only target; MRT
                         // is a colour-attachment feature and three.js's
                         // `renderer._mrt` is null for it either way.
@@ -2046,6 +2139,7 @@ impl Renderer {
                     morph_base: 1.0,
                     bind_matrix: Matrix4::identity(),
                     bind_matrix_inverse: Matrix4::identity(),
+                    object_center: Vector2::new(0.5, 0.5),
                     bone_matrices: Vec::new(),
                     primitive,
                     sub_draws: Vec::new(),
@@ -2062,6 +2156,8 @@ impl Renderer {
                 camera_view: view,
                 camera_world: world,
                 time: self.time,
+                delta_time: self.delta_time,
+                frame_id: self.frame_id,
                 ..Default::default()
             };
 
@@ -2195,6 +2291,7 @@ impl Renderer {
                 bone_matrices: Vec::new(),
                 primitive: Primitive::TRIANGLES,
                 sub_draws: Vec::new(),
+                object_center: Vector2::new(0.5, 0.5),
             }];
             let uniforms = UniformContext {
                 lights: &lights,
@@ -2382,6 +2479,7 @@ impl Renderer {
                         // material takes the plain MVP path, which the quad
                         // geometry is not in.
                         line_segments: None,
+                        sprite: false,
                         // A shadow pass renders into a depth-only target; MRT
                         // is a colour-attachment feature and three.js's
                         // `renderer._mrt` is null for it either way.
@@ -2403,6 +2501,7 @@ impl Renderer {
                     morph_base: 1.0,
                     bind_matrix: Matrix4::identity(),
                     bind_matrix_inverse: Matrix4::identity(),
+                    object_center: Vector2::new(0.5, 0.5),
                     bone_matrices: Vec::new(),
                     primitive,
                     sub_draws: Vec::new(),
@@ -2457,6 +2556,8 @@ impl Renderer {
                 camera_view: face_camera.matrix_world_inverse,
                 camera_world: face_camera.node.borrow().matrix_world,
                 time: self.time,
+                delta_time: self.delta_time,
+                frame_id: self.frame_id,
                 ..Default::default()
             };
 
@@ -2543,6 +2644,7 @@ impl Renderer {
             morph_base: 1.0,
             bind_matrix: Matrix4::identity(),
             bind_matrix_inverse: Matrix4::identity(),
+            object_center: Vector2::new(0.5, 0.5),
             bone_matrices: Vec::new(),
             primitive: Primitive::TRIANGLES,
             sub_draws: Vec::new(),
@@ -2572,6 +2674,8 @@ impl Renderer {
             camera_view: self.quad_camera.matrix_world_inverse,
             camera_world: self.quad_camera.object.matrix_world,
             time: self.time,
+            delta_time: self.delta_time,
+            frame_id: self.frame_id,
             ..Default::default()
         }
     }
@@ -2688,6 +2792,7 @@ impl Renderer {
                 blend: item.material.blend_state(),
                 topology: item.primitive.topology,
                 strip_index_format: item.primitive.strip_index_format,
+                alpha_to_coverage: item.material.alpha_to_coverage && target.sample_count > 1,
             };
             let pipeline = PipelineKey {
                 program: program_key,
@@ -2716,6 +2821,7 @@ impl Renderer {
                 morph_influences: &item.morph_influences,
                 bind_matrix: item.bind_matrix,
                 bind_matrix_inverse: item.bind_matrix_inverse,
+                object_center: item.object_center,
                 bone_matrices: &item.bone_matrices,
                 material_metalness: item.material.metalness,
                 material_roughness: item.material.roughness,
@@ -3038,6 +3144,7 @@ impl Renderer {
             morph_base: 1.0,
             bind_matrix: Matrix4::identity(),
             bind_matrix_inverse: Matrix4::identity(),
+            object_center: Vector2::new(0.5, 0.5),
             bone_matrices: Vec::new(),
             primitive: Primitive::TRIANGLES,
             sub_draws: Vec::new(),
@@ -3153,8 +3260,11 @@ impl Renderer {
                         element_ty,
                         ..
                     } => Resource::Buffer(self.storage_buffer(*id, *count, *element_ty)),
-                    BindingDesc::Texture { .. } | BindingDesc::Sampler { .. } => {
-                        unreachable!("three-rs: a compute kernel binds no textures this rung")
+                    BindingDesc::Texture { source, kind, .. } => {
+                        Resource::View(self.texture_view(source, *kind))
+                    }
+                    BindingDesc::Sampler { source, .. } => {
+                        Resource::Sampler(self.texture_sampler(source))
                     }
                 });
             }
@@ -3972,9 +4082,35 @@ impl Renderer {
         source: &TextureSource,
         kind: TextureKind,
     ) -> Serial<wgpu::TextureView> {
+        // A storage binding views mip 0 alone — `WebGPUBindingUtils`
+        // `createBindGroup()` gives a storage texture `mipLevelCount: 1` at
+        // `binding.mipLevel`, which is 0 on every page the port grades — and
+        // is a different view from the sampled one of the same texture.
+        let storage = source.is_storage_binding();
         let (id, gpu, dimension) = match source {
             TextureSource::Texture2D(texture) => {
-                (texture.id(), self.ensure_texture_2d(texture), None)
+                let gpu = self.ensure_texture_2d(texture);
+                self.update_storage_mipmaps(texture);
+                // A `CompressedArrayTexture` is a 2-D array however many
+                // layers it has; wgpu's default view of a one-layer texture
+                // would be `D2`, which a `texture_2d_array` binding rejects.
+                let dimension = texture
+                    .is_array()
+                    .then_some(wgpu::TextureViewDimension::D2Array);
+                (texture.id(), gpu, dimension)
+            }
+            TextureSource::Storage(texture, _) => {
+                assert!(matches!(kind, TextureKind::Storage { dim3: false, .. }));
+                let gpu = self.ensure_texture_2d(texture);
+                // `if ( binding.store === true ) textureData.needsMipmap = true`.
+                if let Some(entry) = self.textures_2d.get_mut(&texture.id()) {
+                    entry.needs_mipmap = true;
+                }
+                (texture.id(), gpu, None)
+            }
+            TextureSource::Texture3D(data) | TextureSource::Storage3D(data, _) => {
+                let gpu = self.ensure_data3d_texture(data);
+                (data.id(), gpu, Some(wgpu::TextureViewDimension::D3))
             }
             TextureSource::Depth(depth) | TextureSource::ShadowMap(depth) => {
                 let gpu = depth
@@ -4014,7 +4150,7 @@ impl Renderer {
         };
 
         let frames = self.frames;
-        let key = (id, dimension);
+        let key = (id, dimension, storage);
         // Comparing the cached `wgpu::Texture` with the current one is an
         // identity test, not a key: the entry holds its texture alive, so no
         // other texture can be the same object while it is here.
@@ -4028,6 +4164,7 @@ impl Renderer {
         }
         let view = gpu.create_view(&wgpu::TextureViewDescriptor {
             dimension,
+            mip_level_count: storage.then_some(1),
             ..Default::default()
         });
         let view = self.serial(view);
@@ -4040,6 +4177,7 @@ impl Renderer {
             texture: gpu,
             view: view.clone(),
             last_used: frames,
+            owner: source.owner(),
         });
         view
     }
@@ -4055,6 +4193,113 @@ impl Renderer {
         let sampler = self.serial(sampler);
         self.samplers.insert(key, sampler.clone());
         sampler
+    }
+
+    /// The sampled half of `Bindings._update()`'s storage-texture branch:
+    /// `if ( this.textures.needsMipmaps( texture ) && textureData.needsMipmap
+    /// === true ) backend.generateMipmaps( texture )`. A `StorageTexture` keeps
+    /// `generateMipmaps = true`, so the mips the kernel's `textureStore` left
+    /// stale are rebuilt from mip 0 before the first draw that samples them.
+    fn update_storage_mipmaps(&mut self, texture: &Texture) {
+        if !texture.is_storage() {
+            return;
+        }
+        let mips = texture.mip_level_count();
+        let Some(entry) = self.textures_2d.get_mut(&texture.id()) else {
+            return;
+        };
+        if !entry.needs_mipmap || mips <= 1 {
+            return;
+        }
+        entry.needs_mipmap = false;
+        let gpu = entry.gpu.clone();
+        self.generate_mipmaps(&gpu, texture.format(), mips, 1);
+    }
+
+    /// `WebGPUTextureUtils.createTexture()` + `updateTexture()` for a
+    /// `Data3DTexture` (`is3DTexture`, `dimension: '3d'`), or for a
+    /// `Storage3DTexture`, which is created empty with `STORAGE_BINDING` and
+    /// written by a kernel. One mip either way: `Data3DTexture` leaves
+    /// `generateMipmaps` false, `Storage3DTexture` sets `mipmapsAutoUpdate =
+    /// false`, and three's mipmap pass does not draw into 3-D textures.
+    fn ensure_data3d_texture(&mut self, texture: &Data3DTexture) -> wgpu::Texture {
+        let (width, height, depth) = texture.size();
+        let format = texture.format();
+        let storage = texture.is_storage();
+        if !texture.has_gpu() {
+            let mut usage = wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING;
+            if storage {
+                self.assert_storage_format(format);
+                usage |= wgpu::TextureUsages::STORAGE_BINDING;
+            }
+            let gpu = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("three-rs data 3d texture"),
+                size: wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: depth,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D3,
+                format,
+                usage,
+                view_formats: &[],
+            });
+            texture.set_gpu(gpu);
+        }
+
+        if texture.needs_upload() {
+            let bytes_per_texel = format
+                .block_copy_size(None)
+                .expect("three-rs: the 3D texture format has no single block size");
+            let gpu = texture.with_gpu(|gpu| gpu.clone());
+            let inner = texture.borrow();
+            let data = inner
+                .data
+                .as_ref()
+                .expect("three-rs: the Data3DTexture has no data");
+            self.queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &gpu,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                data,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(width * bytes_per_texel),
+                    rows_per_image: Some(height),
+                },
+                wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: depth,
+                },
+            );
+            drop(inner);
+            texture.mark_uploaded();
+            self.info.build.textures_uploaded += 1;
+        }
+
+        texture.with_gpu(|gpu| gpu.clone())
+    }
+
+    /// `WebGPUTextureUtils`' storage check: a storage texture must be in a
+    /// format the device can bind as `texture_storage_*`. The guaranteed set
+    /// is the WGSL storage texel formats; which formats beyond them are
+    /// storable depends on the backend — a browser's WebGPU and a native
+    /// Vulkan device differ — so this asks wgpu rather than assuming, and
+    /// fails before the validation error would arrive as a black frame.
+    fn assert_storage_format(&self, format: wgpu::TextureFormat) {
+        let features = format.guaranteed_format_features(self.device.features());
+        assert!(
+            features
+                .allowed_usages
+                .contains(wgpu::TextureUsages::STORAGE_BINDING),
+            "three-rs: {format:?} cannot be a storage texture on this device"
+        );
     }
 
     // -- resources -------------------------------------------------------
@@ -4215,7 +4460,7 @@ impl Renderer {
             }
             let gpu = cached.gpu.clone();
             self.upload_texture_2d(&gpu, texture);
-            if mip_level_count > 1 {
+            if mip_level_count > 1 && !texture.has_mipmaps() {
                 self.generate_mipmaps(&gpu, format, mip_level_count, 1);
             }
             self.textures_2d.insert(
@@ -4223,6 +4468,8 @@ impl Renderer {
                 Texture2DEntry {
                     gpu: gpu.clone(),
                     version,
+                    needs_mipmap: false,
+                    owner: texture.owner(),
                 },
             );
             // One upload, the way a rewritten attribute is one buffer write;
@@ -4249,28 +4496,58 @@ impl Renderer {
                  which this adapter does not expose"
             );
         }
+        // BC / ETC2 / ASTC, and the 16-bit normalized formats a raw KTX2 file
+        // can carry. `Ktx2Loader::detect_support` only picks a compressed
+        // target the device has; a texture built by hand for another device
+        // fails here instead of as a wgpu validation error.
+        let missing = format.required_features() - self.device.features();
+        assert!(
+            missing.is_empty(),
+            "three-rs: {format:?} needs {missing:?}, which this device does not have \
+             (see Ktx2Loader::detect_support)"
+        );
+
+        // A texture that brings its own levels (`texture.mipmaps`) never has
+        // them generated, so it is never a render attachment — which a
+        // compressed or `rgb9e5ufloat` format could not be.
+        let has_mipmaps = texture.has_mipmaps();
+        let mut usage = wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING;
+        if !has_mipmaps {
+            usage |= wgpu::TextureUsages::RENDER_ATTACHMENT;
+        }
+
+        // `StorageTexture`: created empty with `STORAGE_BINDING` added
+        // (`WebGPUTextureUtils.createTexture()`'s `isStorageTexture`), and
+        // never uploaded — a kernel's `textureStore` is what fills it.
+        let storage = texture.is_storage();
+        if storage {
+            self.assert_storage_format(format);
+            usage |= wgpu::TextureUsages::STORAGE_BINDING;
+        }
 
         let gpu = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("three-rs texture"),
             size: wgpu::Extent3d {
                 width,
                 height,
-                depth_or_array_layers: 1,
+                depth_or_array_layers: texture.borrow().depth.max(1),
             },
             mip_level_count,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format,
-            usage: wgpu::TextureUsages::COPY_DST
-                | wgpu::TextureUsages::TEXTURE_BINDING
-                | wgpu::TextureUsages::RENDER_ATTACHMENT,
+            usage,
             view_formats: &[],
         });
 
-        self.upload_texture_2d(&gpu, texture);
+        if !storage {
+            self.upload_texture_2d(&gpu, texture);
 
-        if mip_level_count > 1 {
-            self.generate_mipmaps(&gpu, format, mip_level_count, 1);
+            // `Textures.updateTexture()` generates only when `texture.mipmaps` is
+            // empty: page-supplied levels are uploaded as they are.
+            if mip_level_count > 1 && !has_mipmaps {
+                self.generate_mipmaps(&gpu, format, mip_level_count, 1);
+            }
         }
 
         texture.set_gpu(gpu.clone());
@@ -4279,6 +4556,8 @@ impl Renderer {
             Texture2DEntry {
                 gpu: gpu.clone(),
                 version,
+                needs_mipmap: false,
+                owner: texture.owner(),
             },
         );
         self.info.build.textures_uploaded += 1;
@@ -4295,11 +4574,57 @@ impl Renderer {
         let format = texture.format();
 
         let inner = texture.borrow();
+
+        // Levels the texture brings with it are written as stored —
+        // `_copyCompressedBufferToTexture` for a block format ("can't flip
+        // compressed textures"), `_copyBufferToTexture` per level for a
+        // `DataTexture`, neither of which flips — unless this is an image
+        // texture whose `flipY` is set, which is `_copyImageToTexture`'s
+        // `{ flipY }` per level below.
+        let as_stored = format.block_dimensions() != (1, 1) || inner.depth > 0 || !inner.flip_y;
+        if !inner.mipmaps.is_empty() && as_stored {
+            drop(inner);
+            self.upload_mipmaps(gpu, texture);
+            return;
+        }
+
+        // `WebGPUTextureUtils.updateTexture()`: with `texture.mipmaps` set,
+        // each level is its own `_copyImageToTexture( mipmap, …, flipY, …, i )`
+        // and the image itself is not uploaded.
+        if !inner.mipmaps.is_empty() {
+            for (level, image) in inner.mipmaps.iter().enumerate() {
+                self.write_texture_level(
+                    gpu,
+                    format,
+                    level as u32,
+                    image.width,
+                    image.height,
+                    &image.data,
+                    inner.flip_y,
+                );
+            }
+            return;
+        }
+
         let data = inner
             .data
             .as_ref()
             .expect("three-rs: the texture has no image data");
+        self.write_texture_level(gpu, format, 0, width, height, data, inner.flip_y);
+    }
 
+    /// One level of [`upload_texture_2d`](Self::upload_texture_2d).
+    #[allow(clippy::too_many_arguments)]
+    fn write_texture_level(
+        &self,
+        gpu: &wgpu::Texture,
+        format: wgpu::TextureFormat,
+        mip_level: u32,
+        width: u32,
+        height: u32,
+        data: &[u8],
+        flip_y: bool,
+    ) {
         // The row stride comes from the format, not from a hardcoded
         // RGBA8: `r32float` is also 4 bytes per texel but for a different
         // reason, and the next wider float format would shear the upload.
@@ -4310,7 +4635,7 @@ impl Renderer {
         // `copyExternalImageToTexture( { flipY } )`: the source rows are
         // uploaded bottom-up. (three.js' `_flipY()` pass is only for the
         // `_copyBufferToTexture` path, and is the same flip.)
-        let rows: Vec<u8> = if inner.flip_y {
+        let rows: Vec<u8> = if flip_y {
             let stride = (width * bytes_per_texel) as usize;
             let mut flipped = Vec::with_capacity(data.len());
             for row in (0..height as usize).rev() {
@@ -4318,13 +4643,13 @@ impl Renderer {
             }
             flipped
         } else {
-            data.clone()
+            data.to_vec()
         };
 
         self.queue.write_texture(
             wgpu::TexelCopyTextureInfo {
                 texture: gpu,
-                mip_level: 0,
+                mip_level,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
@@ -4340,6 +4665,56 @@ impl Renderer {
                 depth_or_array_layers: 1,
             },
         );
+    }
+
+    /// `WebGPUTextureUtils._copyCompressedBufferToTexture( texture.mipmaps, … )`
+    /// (and `_copyBufferToTexture` per mip, for a `DataTexture` with
+    /// `mipmaps`): every level the texture carries, written as stored. Each
+    /// level's `data` holds all `depth` layers of it in turn. There is no
+    /// flip — "can't flip compressed textures" — and the row stride counts
+    /// blocks: `ceil( width / blockWidth ) * blockBytes`, three's
+    /// `bytesPerRow` for a block format. The copy extent is the level's size
+    /// rounded up to whole blocks, the "physical" size WebGPU requires.
+    fn upload_mipmaps(&self, gpu: &wgpu::Texture, texture: &Texture) {
+        let inner = texture.borrow();
+        let format = inner.format;
+        let layers = inner.depth.max(1);
+        let (block_width, block_height) = format.block_dimensions();
+        let block_bytes = format
+            .block_copy_size(None)
+            .expect("three-rs: the texture format has no single block size");
+
+        for (level, mip) in inner.mipmaps.iter().enumerate() {
+            let blocks_x = mip.width.div_ceil(block_width);
+            let blocks_y = mip.height.div_ceil(block_height);
+            let bytes_per_row = blocks_x * block_bytes;
+            assert_eq!(
+                mip.data.len(),
+                (bytes_per_row * blocks_y * layers) as usize,
+                "three-rs: mip {level} of a {}x{} {format:?} texture has the wrong size",
+                mip.width,
+                mip.height
+            );
+            self.queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: gpu,
+                    mip_level: level as u32,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                &mip.data,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(bytes_per_row),
+                    rows_per_image: Some(blocks_y),
+                },
+                wgpu::Extent3d {
+                    width: blocks_x * block_width,
+                    height: blocks_y * block_height,
+                    depth_or_array_layers: layers,
+                },
+            );
+        }
     }
 
     /// One face of a [`cube_render_target`] conversion or of a PMREM level: the
@@ -4409,8 +4784,8 @@ impl Renderer {
     /// and one `copyExternalImageToTexture` per face with `flipY: false`.
     fn ensure_cube_texture(&mut self, texture: &CubeTexture) -> wgpu::Texture {
         let id = texture.id();
-        if let Some(gpu) = self.cube_textures.get(&id) {
-            return gpu.clone();
+        if let Some(entry) = self.cube_textures.get(&id) {
+            return entry.gpu.clone();
         }
 
         let (width, height) = texture.size();
@@ -4482,7 +4857,13 @@ impl Renderer {
         }
 
         texture.inner().borrow_mut().gpu = Some(gpu.clone());
-        self.cube_textures.insert(id, gpu.clone());
+        self.cube_textures.insert(
+            id,
+            CubeTextureEntry {
+                gpu: gpu.clone(),
+                owner: texture.owner(),
+            },
+        );
         self.info.build.textures_uploaded += 1;
         self.info.memory.textures = self.textures_2d.len() + self.cube_textures.len();
         gpu
@@ -4766,8 +5147,9 @@ impl Renderer {
     /// `NodeManager` listen for. The port has no dispose event, and two kinds
     /// of key:
     ///
-    /// - a geometry is an `Rc`, so its strong count *is* the dispose event —
-    ///   exact, immediate, and it costs one `Weak` per entry;
+    /// - a geometry or a texture is an `Rc`, so its strong count *is* the
+    ///   dispose event — exact, immediate, and it costs one `Weak` per entry
+    ///   (issues #58 and #158);
     /// - a material is a value (the renderer only ever sees per-frame clones)
     ///   and a `BufferNode` lives inside a material's node graph, so neither
     ///   has a count to read. Those age out instead: an entry unused for
@@ -4809,8 +5191,10 @@ impl Renderer {
     /// about the TSL `time` node.
     fn update_node_frame(&mut self) {
         let now = crate::utils::now_ms();
+        self.frame_id = self.frame_id.wrapping_add(1);
         let last = *self.node_frame_last_time.get_or_insert(now);
-        self.time += (now - last) / 1000.0;
+        self.delta_time = (now - last) / 1000.0;
+        self.time += self.delta_time;
         self.node_frame_last_time = Some(now);
     }
 
@@ -4826,12 +5210,43 @@ impl Renderer {
         let frames = self.frames;
         self.slot_buffers
             .retain(|_, entry| bindings::is_fresh(entry.last_used, frames));
+
+        // Textures, by liveness (issue #158). After `node_builder_states`,
+        // because a material's built `NodeProgram` holds handles to the
+        // textures it samples: a texture whose last holder was a program
+        // evicted just above goes in this same sweep, not the next one.
+        //
+        // The `wgpu::Texture` is dropped, not `destroy()`ed. The views and bind
+        // groups made from it are swept below, so nothing of the renderer's
+        // keeps it; a handle the consumer took with `Texture::with_gpu` is
+        // theirs, and wgpu frees the memory when the last one goes.
+        self.textures_2d
+            .retain(|_, entry| entry.owner.strong_count() > 0);
+        self.cube_textures
+            .retain(|_, entry| entry.owner.strong_count() > 0);
+        self.info.memory.textures = self.textures_2d.len() + self.cube_textures.len();
+
+        // Views, by age and by liveness: a view of any texture class — a
+        // render target's attachments and depth texture included, which live
+        // on the target rather than in a renderer map — goes with its owner.
+        // A bind group holding a swept-for-liveness view goes with it, since
+        // it holds the texture too and can never be asked for again: its key
+        // names a view serial no lookup will return.
+        let mut orphaned = HashSet::new();
         self.views.retain(|_, entries| {
-            entries.retain(|entry| bindings::is_fresh(entry.last_used, frames));
+            entries.retain(|entry| {
+                if entry.owner.strong_count() == 0 {
+                    orphaned.insert(entry.view.serial);
+                    return false;
+                }
+                bindings::is_fresh(entry.last_used, frames)
+            });
             !entries.is_empty()
         });
-        self.bind_group_cache
-            .retain(|_, entry| bindings::is_fresh(entry.last_used, frames));
+        self.bind_group_cache.retain(|key, entry| {
+            bindings::is_fresh(entry.last_used, frames)
+                && (orphaned.is_empty() || !key.binds_any(&orphaned))
+        });
     }
 
     /// Entries in the uploaded-geometry cache. A consumer that churns geometry

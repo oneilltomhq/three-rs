@@ -263,11 +263,12 @@ correct form for each kind of key. It happens once, at the top of `render()`:
 |---|---|---|
 | `geometries` | `BufferGeometry.id` | a `Weak` beside the entry: strong count zero means the consumer dropped it |
 | morph textures | `BufferGeometry.id` | the same `Weak`, swept on the next `get_entry()` |
+| `textures_2d`, `cube_textures` | `TextureId` | a `Weak` on the texture handle beside the entry, as for geometries (issue #158) |
 | `node_builder_states` | `material.id` | unused for `CACHE_GRACE_RENDERS` (4) renders |
 | `buffers` (`range()`) | `BufferId` | unused for `CACHE_GRACE_RENDERS` renders |
 | `slot_buffers` (a draw's uniform groups, bone matrices, morph influences, instance data) | `DrawKey` (`Object3D.id`, `BufferGeometry.id`, `material.id`, variant, occurrence in the pass) + group + binding | unused for `CACHE_GRACE_FRAMES` frames |
-| `views` | `TextureId` + view dimension, one entry per `wgpu::Texture` behind the id | unused for `CACHE_GRACE_FRAMES` frames |
-| `bind_group_cache` | layout + the `Serial` of each bound resource | unused for `CACHE_GRACE_FRAMES` frames |
+| `views` | `TextureId` + view dimension, one entry per `wgpu::Texture` behind the id | a `Weak` on the texture handle, of any texture class; otherwise unused for `CACHE_GRACE_FRAMES` frames |
+| `bind_group_cache` | layout + the `Serial` of each bound resource | binds a view swept for its `Weak`; otherwise unused for `CACHE_GRACE_FRAMES` frames |
 
 The three binding caches (issue #137) are three.js' `Bindings`: a draw keeps
 one uniform buffer per group for its life and each frame writes its bytes into
@@ -282,8 +283,12 @@ draws of one pass must not share a buffer. Samplers are memoised by
 descriptor for the renderer's life (`SamplerKey`); they have no contents, and
 their number is bounded by the filter combinations in use.
 
-A geometry is an `Rc`, so its strong count *is* three.js' `dispose` event —
-exact and immediate, and it costs one `Weak` per entry. A material is a value
+A geometry or a texture is an `Rc`, so its strong count *is* three.js'
+`dispose` event — exact and immediate, and it costs one `Weak` per entry. The
+view cache reads the same `Weak` for every texture class, which is what frees
+a dropped render target's attachments: they live on the target, not in a
+renderer map, but a cached view and the bind groups built from it would
+otherwise hold them until both aged out. A material is a value
 here (the renderer only ever sees per-frame clones) and a `BufferNode` lives
 inside a material's node graph, so neither has a count to read; those age out
 instead. The window is four renders rather than one so that a consumer
@@ -297,10 +302,17 @@ other side.
 Two caches deliberately have no eviction: `programs` and `pipelines` are keyed
 by the *content* hash of the generated WGSL and the pipeline state, so distinct
 entries are distinct shaders, and their number is bounded by the material
-shapes the program uses, not by how many objects it creates. Uploaded textures
-are keyed by `TextureId` — correct, never stale — but are still not swept; a
-consumer that churns textures holds their GPU memory for the life of the
-renderer. That is the remaining leak, and a follow-up.
+shapes the program uses, not by how many objects it creates. (`samplers` and
+`storage_buffers` are not evicted either; their doc comments say why.)
+
+A texture's `Weak` fails only once nothing holds a handle, and a material's
+built program (`node_builder_states`) is one of the holders. So a texture
+dropped by a material that stays and is rebuilt (`set_needs_update`) goes on
+the render *after* the one that stops drawing it — the sweep runs before the
+draw, and the draw replaces the program — and a texture dropped along with its
+material goes in the same sweep that ages that material's programs out.
+`tests/renderer_textures.rs` pins the first case down for a 2D texture, a cube
+and a render target.
 
 ## Changing geometry
 
@@ -427,12 +439,20 @@ light's `irradiance` statements ahead of it, as the dump has them.
 
 ## What is not wired up yet
 
-- `SkinnedMesh` is still a sibling struct owning its own `Node` rather than a
-  `Payload` variant, so the walk does not draw it. Rung 10 adds
-  `Payload::SkinnedMesh` and moves `geometry`/`skeleton` into it.
-- No `LOD`, `Sprite`, `Points`, `BatchedMesh` or `BundleGroup` arm in
-  `project_object`, no multi-material `geometry.groups` arm, no clipping context
-  and no `transparentDoublePass` (transmission).
-- `PointLight` and `AmbientLight` exist (rungs 5 and 6). `DirectionalLight`,
-  `SpotLight` and `HemisphereLight` are further lighting rungs; so are shadows
-  (rung 7).
+Drawn by the walk today: `Mesh`, `InstancedMesh`, `SkinnedMesh`,
+`BatchedMesh`, `Line`/`LineSegments` (and the fat `Line2`/`LineSegments2`,
+which are meshes), `Points` and `Sprite`. `Sprite` is `Payload::Sprite`: one
+shared unit quad, a `SpriteNodeMaterial`, and `center` fed to the vertex stage
+as an object uniform; transparent sprites sort on their world position, as
+`_projectObject` does. Every light type is wired: `PointLight`,
+`AmbientLight`, `DirectionalLight`, `SpotLight` and `HemisphereLight`, with
+shadows for the point, spot and directional kinds.
+
+Still missing:
+
+- No `LOD` or `BundleGroup` arm in `project_object`.
+- No multi-material meshes: a mesh holds one material, so the
+  `geometry.groups` arm that picks `material[ group.materialIndex ]` is absent.
+- No clipping context (`ClippingGroup`, `material.clippingPlanes`).
+- Sprite fog reads the mesh `positionView` rather than the sprite's billboarded
+  one (see `tests/renderer_sprites.rs`); no graded rung has a fogged sprite.

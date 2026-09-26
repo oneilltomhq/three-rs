@@ -171,6 +171,13 @@ impl DepthTexture {
         self.1.get()
     }
 
+    /// The handle's liveness, without the handle; see [`TextureOwner`].
+    ///
+    /// [`TextureOwner`]: super::TextureOwner
+    pub(crate) fn owner(&self) -> super::TextureOwner {
+        Rc::downgrade(&self.0) as super::TextureOwner
+    }
+
     pub(crate) fn inner(&self) -> &RefCell<DepthTextureInner> {
         &self.0
     }

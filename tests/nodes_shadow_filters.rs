@@ -1,7 +1,7 @@
 //! The shadow filters, the `filterNode` / `shadowNode` hooks and the VSM
 //! blur passes (#168), pinned against lines of three.js' own WGSL for
 //! `webgpu_shadowmap_vsm` and `webgpu_shadowmap_pointlight` (dumped with
-//! `tools/dump-webgpu.mjs`, see `docs/dumping.md` and `docs/nodes.md` §28).
+//! `tools/dump-webgpu.mjs`, see `docs/dumping.md` and `docs/nodes.md` §32).
 //!
 //! Every line asserted verbatim below is copied from three's dump; the rest
 //! are structural checks on the filter choice. No GPU is needed.
