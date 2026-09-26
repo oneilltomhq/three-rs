@@ -818,7 +818,7 @@ fn fog_view_z() -> NodeRef {
 
 /// Port of `three.js/src/nodes/fog/Fog.js`' `rangeFogFactor( near, far )`:
 /// `smoothstep( near, far, viewZ.negate() )`, where `viewZ` is
-/// `builder.context.getViewZ` or `positionView.z` ([`fog_view_z`]). So
+/// `builder.context.getViewZ` or `positionView.z` (three's `getViewZNode`). So
 /// `range_fog_factor( 2.7, 4.0 ).context( ContextValue::new().set(
 /// "getViewZ", scene_pass_view_z ) )` is the page's own spelling
 /// (`docs/nodes.md` §45).
