@@ -149,6 +149,7 @@ impl BatchedMesh {
                 material: Some(material),
                 morph_target_influences: Vec::new(),
                 line_segments: None,
+                count: 1,
             },
             per_object_frustum_culled: true,
             sort_objects: true,

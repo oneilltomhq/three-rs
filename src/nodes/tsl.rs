@@ -686,6 +686,18 @@ pub fn rotate(position: impl Into<NodeRef>, rotation: impl Into<NodeRef>) -> Nod
     .mul(position)
 }
 
+/// `rotateUV( uv, rotation, center = vec2( 0.5 ) )`
+/// (`src/nodes/utils/UVUtils.js`): `rotate( uv.sub( center ), rotation
+/// ).add( center )`.
+pub fn rotate_uv(
+    uv: impl Into<NodeRef>,
+    rotation: impl Into<NodeRef>,
+    center: impl Into<NodeRef>,
+) -> NodeRef {
+    let center = center.into();
+    rotate(uv.into().sub(center.clone()), rotation).add(center)
+}
+
 /// `abs( x )`.
 pub fn abs(x: impl Into<NodeRef>) -> NodeRef {
     let x = x.into();
@@ -1702,6 +1714,32 @@ accessor!(
     /// `instanceIndex`.
     instance_index,
     NodeRef::new(Node::Builtin(Builtin::InstanceIndex))
+);
+accessor!(
+    /// `invocationLocalIndex` — `@builtin( local_invocation_index )`, compute
+    /// only; the entry point declares it only when a kernel reads it.
+    invocation_local_index,
+    NodeRef::new(Node::Builtin(Builtin::InvocationLocalIndex))
+);
+accessor!(
+    /// `workgroupId` — `@builtin( workgroup_id )`, compute only.
+    workgroup_id,
+    NodeRef::new(Node::Builtin(Builtin::WorkgroupId))
+);
+accessor!(
+    /// `localId` — `@builtin( local_invocation_id )`, compute only.
+    local_id,
+    NodeRef::new(Node::Builtin(Builtin::LocalId))
+);
+accessor!(
+    /// `globalId` — `@builtin( global_invocation_id )`, compute only.
+    global_id,
+    NodeRef::new(Node::Builtin(Builtin::GlobalId))
+);
+accessor!(
+    /// `numWorkgroups` — `@builtin( num_workgroups )`, compute only.
+    num_workgroups,
+    NodeRef::new(Node::Builtin(Builtin::NumWorkgroups))
 );
 accessor!(
     /// `frontFacing` — `@builtin( front_facing )`, fragment stage only.
@@ -2911,6 +2949,205 @@ impl StorageArray {
     pub fn element_ty(&self) -> Type {
         self.0.element_ty
     }
+}
+
+impl StorageArray {
+    /// `.toAtomic()` — the same buffer, its elements declared `atomic< T >`
+    /// (`StorageBufferNode.setAtomic( true )`), so they are read and written
+    /// only through the [atomic functions](atomic_add).
+    ///
+    /// Three flips a flag on the node it was called on; here the call hands
+    /// back the atomic view, which keeps the buffer's identity (and so its GPU
+    /// buffer) and replaces the plain one. Use one or the other in a program:
+    /// the declaration is per buffer.
+    pub fn to_atomic(&self) -> StorageArray {
+        assert!(
+            matches!(self.0.element_ty, Type::U32 | Type::I32),
+            "three-rs: an atomic storage array holds u32 or i32 (WGSL atomic<T>)"
+        );
+        StorageArray(Rc::new(BufferNode {
+            id: self.0.id,
+            source: BufferSource::AtomicStorage,
+            element_ty: self.0.element_ty,
+            count: self.0.count,
+        }))
+    }
+}
+
+pub use super::node::StructLayout;
+/// One member of [`struct_type`]'s object — `'uint'`, or `{ type: 'uint',
+/// atomic: true }` with [`atomic`](StructMember::atomic) set.
+pub use super::node::StructMember;
+
+/// `struct( { name: type, … }, 'Name' )` — `StructTypeNode`, a named WGSL
+/// struct laid out in the members' order.
+pub fn struct_type(name: &'static str, members: Vec<StructMember>) -> Rc<StructLayout> {
+    Rc::new(StructLayout { name, members })
+}
+
+impl StructMember {
+    /// `name: 'type'`.
+    pub fn new(name: &'static str, ty: Type) -> Self {
+        Self {
+            name,
+            ty,
+            atomic: false,
+        }
+    }
+
+    /// `name: { type, atomic: true }`.
+    pub fn atomic(name: &'static str, ty: Type) -> Self {
+        Self {
+            name,
+            ty,
+            atomic: true,
+        }
+    }
+}
+
+/// `storage( indirectAttribute, structType, count )` over an
+/// `IndirectStorageBufferAttribute`: a `StorageBufferNode` whose WGSL type is
+/// the struct itself. Held like a [`StorageArray`]; its identity is the
+/// attribute's, so the GPU buffer a kernel writes through it is the one
+/// `geometry.setIndirect()` draws from.
+#[derive(Clone)]
+pub struct StorageStruct(Rc<BufferNode>);
+
+/// `storage( attribute, struct( … ), attribute.count )`.
+///
+/// Three accepts any struct over any storage attribute; the port takes the
+/// one case the ladder has — a single struct, one `u32` per member, over an
+/// `IndirectStorageBufferAttribute` — and asserts the sizes agree.
+pub fn storage_struct(
+    attribute: &crate::core::IndirectStorageBufferAttribute,
+    layout: Rc<StructLayout>,
+) -> StorageStruct {
+    assert!(
+        layout
+            .members
+            .iter()
+            .all(|m| matches!(m.ty, Type::U32 | Type::I32 | Type::F32)),
+        "three-rs: storage_struct() lays out 4-byte scalar members only"
+    );
+    assert_eq!(
+        layout.members.len(),
+        attribute.array().len(),
+        "three-rs: struct {} does not cover the indirect attribute's words",
+        layout.name
+    );
+    StorageStruct(Rc::new(BufferNode {
+        id: attribute.id(),
+        source: BufferSource::Struct {
+            layout,
+            init: attribute.array(),
+        },
+        element_ty: Type::U32,
+        count: attribute.count(),
+    }))
+}
+
+impl StorageStruct {
+    /// `.get( 'member' )` — `MemberNode`: `NodeBuffer_N.member`.
+    pub fn get(&self, member: &str) -> NodeRef {
+        let BufferSource::Struct { layout, .. } = &self.0.source else {
+            unreachable!("three-rs: a StorageStruct is always a struct buffer")
+        };
+        NodeRef::new(Node::StructMember {
+            buffer: self.0.clone(),
+            member: layout.member(member),
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// atomics, workgroup memory and barriers (`src/nodes/gpgpu/`)
+// ---------------------------------------------------------------------------
+
+fn atomic_function(method: &'static str, pointer: NodeRef, value: Option<NodeRef>) -> NodeRef {
+    NodeRef::new(Node::Atomic {
+        method,
+        pointer,
+        value,
+    })
+}
+
+macro_rules! atomic_fns {
+    ($($(#[$m:meta])* $name:ident => $method:literal;)*) => {
+        $(
+            $(#[$m])*
+            pub fn $name(pointer: impl Into<NodeRef>, value: impl Into<NodeRef>) -> NodeRef {
+                atomic_function($method, pointer.into(), Some(value.into()))
+            }
+        )*
+    };
+}
+
+atomic_fns! {
+    /// `atomicStore( pointer, value )`.
+    atomic_store => "atomicStore";
+    /// `atomicAdd( pointer, value )` — returns the old value.
+    atomic_add => "atomicAdd";
+    /// `atomicSub( pointer, value )`.
+    atomic_sub => "atomicSub";
+    /// `atomicMax( pointer, value )`.
+    atomic_max => "atomicMax";
+    /// `atomicMin( pointer, value )`.
+    atomic_min => "atomicMin";
+    /// `atomicAnd( pointer, value )`.
+    atomic_and => "atomicAnd";
+    /// `atomicOr( pointer, value )`.
+    atomic_or => "atomicOr";
+    /// `atomicXor( pointer, value )`.
+    atomic_xor => "atomicXor";
+}
+
+/// `atomicLoad( pointer )`.
+pub fn atomic_load(pointer: impl Into<NodeRef>) -> NodeRef {
+    atomic_function("atomicLoad", pointer.into(), None)
+}
+
+/// `workgroupArray( type, count )` — see [`WorkgroupArrayDef`](super::node::WorkgroupArrayDef).
+#[derive(Clone)]
+pub struct WorkgroupArray(Rc<super::node::WorkgroupArrayDef>);
+
+/// `workgroupArray( type, count )`.
+pub fn workgroup_array(element_ty: Type, count: usize) -> WorkgroupArray {
+    WorkgroupArray(Rc::new(super::node::WorkgroupArrayDef {
+        element_ty,
+        count,
+        atomic: false,
+    }))
+}
+
+impl WorkgroupArray {
+    /// `.element( index )` — `WorkgroupArray_N[ index ]`.
+    pub fn element(&self, index: impl Into<NodeRef>) -> NodeRef {
+        NodeRef::new(Node::Element {
+            node: NodeRef::new(Node::Workgroup(self.0.clone())),
+            index: index.into(),
+            ty: self.0.element_ty,
+        })
+    }
+
+    /// `.toAtomic()` — `array< atomic<T>, N >`. Like
+    /// [`StorageArray::to_atomic`], a new handle rather than a flag: a
+    /// different array.
+    pub fn to_atomic(&self) -> WorkgroupArray {
+        WorkgroupArray(Rc::new(super::node::WorkgroupArrayDef {
+            atomic: true,
+            ..*self.0
+        }))
+    }
+}
+
+/// `workgroupBarrier()`.
+pub fn workgroup_barrier() -> NodeRef {
+    NodeRef::new(Node::Barrier { scope: "workgroup" })
+}
+
+/// `storageBarrier()`.
+pub fn storage_barrier() -> NodeRef {
+    NodeRef::new(Node::Barrier { scope: "storage" })
 }
 
 /// `uniformArray( values )` — a constant array in a uniform block, one

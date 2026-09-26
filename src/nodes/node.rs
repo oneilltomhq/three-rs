@@ -441,6 +441,92 @@ pub enum BufferSource {
     /// `WGSLNodeBuilder.getStorageAccess()` emits a runtime-sized array; the
     /// `count` on the [`BufferNode`] is only what the renderer allocates.
     Storage,
+    /// `instancedArray( count, 'uint' ).toAtomic()` — [`BufferSource::Storage`]
+    /// whose elements are declared `atomic< T >`
+    /// (`WGSLNodeBuilder.getUniforms()`'s `bufferNode.isAtomic` arm), so the
+    /// only way to touch one is an [`atomic function`](Node::Atomic).
+    AtomicStorage,
+    /// `storage( indirectAttribute, struct( … ), count )` — an
+    /// `IndirectStorageBufferAttribute` read and written through a named WGSL
+    /// struct (`StructTypeNode`). Declared as the struct itself rather than
+    /// wrapped in `{ value : array< … > }`, which is
+    /// `WGSLNodeBuilder.isCustomStruct()`'s single-struct case. `init` is the
+    /// attribute's `Uint32Array`, uploaded once when the GPU buffer is made;
+    /// see [`crate::core::IndirectStorageBufferAttribute`].
+    Struct {
+        layout: Rc<StructLayout>,
+        init: Rc<Vec<u32>>,
+    },
+}
+
+impl BufferSource {
+    /// A `var<storage>` binding rather than a `var<uniform>` one — every
+    /// `StorageBufferNode` shape the port has.
+    pub fn is_storage(&self) -> bool {
+        matches!(
+            self,
+            BufferSource::Storage | BufferSource::AtomicStorage | BufferSource::Struct { .. }
+        )
+    }
+}
+
+/// One member of a [`StructLayout`] — an entry of `struct( { … } )`'s object.
+#[derive(Clone, Debug, PartialEq)]
+pub struct StructMember {
+    pub name: &'static str,
+    pub ty: Type,
+    /// `{ type: 'uint', atomic: true }` — declared `atomic< u32 >`.
+    pub atomic: bool,
+}
+
+/// `struct( members, name )` — `StructTypeNode`: a named WGSL struct whose
+/// members keep their declaration order.
+#[derive(Clone, Debug, PartialEq)]
+pub struct StructLayout {
+    pub name: &'static str,
+    pub members: Vec<StructMember>,
+}
+
+impl StructLayout {
+    /// `struct DrawBuffer {\n\tvertexCount : u32,\n … };` —
+    /// `WGSLNodeBuilder.getStructMembers()`'s spelling, `atomic< u32 >` with
+    /// the spaces three puts inside it.
+    pub fn wgsl(&self) -> String {
+        let members: Vec<String> = self
+            .members
+            .iter()
+            .map(|m| {
+                let ty = crate::nodes::wgsl::type_name(m.ty);
+                if m.atomic {
+                    format!("\t{} : atomic< {ty} >", m.name)
+                } else {
+                    format!("\t{} : {ty}", m.name)
+                }
+            })
+            .collect();
+        format!("struct {} {{\n{}\n}};", self.name, members.join(",\n"))
+    }
+
+    /// The member's index, by name — `.get( name )`.
+    pub fn member(&self, name: &str) -> usize {
+        self.members
+            .iter()
+            .position(|m| m.name == name)
+            .unwrap_or_else(|| panic!("three-rs: struct {} has no member {name}", self.name))
+    }
+}
+
+/// `workgroupArray( type, count )` — `WorkgroupInfoNode`: a `var<workgroup>`
+/// array every invocation of one workgroup shares.
+///
+/// Its identity is the array: two `workgroupArray()` calls are two arrays,
+/// each named `WorkgroupArray_N` by the builder in first-use order.
+#[derive(Debug)]
+pub struct WorkgroupArrayDef {
+    pub element_ty: Type,
+    pub count: usize,
+    /// `.toAtomic()`.
+    pub atomic: bool,
 }
 
 /// The identity of one `BufferNode` / `InstanceBuffer`, from a never-reused
@@ -563,6 +649,18 @@ pub enum Builtin {
     FragCoord,
     /// `@builtin( front_facing )` — `FrontFacingNode`.
     FrontFacing,
+    /// `invocationLocalIndex` — `@builtin( local_invocation_index )`, which
+    /// `WGSLNodeBuilder.getInvocationLocalIndex()` adds to the compute entry
+    /// point's parameters only when a kernel reads it.
+    InvocationLocalIndex,
+    /// `workgroupId` / `localId` / `globalId` / `numWorkgroups` —
+    /// `ComputeBuiltinNode`. The compute entry point always declares these four
+    /// (`WGSLNodeBuilder.getAttributes( 'compute' )`), so reading one only names
+    /// the parameter.
+    WorkgroupId,
+    LocalId,
+    GlobalId,
+    NumWorkgroups,
 }
 
 impl Builtin {
@@ -572,12 +670,23 @@ impl Builtin {
             Builtin::InstanceIndex => "instanceIndex",
             Builtin::FragCoord => "fragCoord",
             Builtin::FrontFacing => "isFront",
+            Builtin::InvocationLocalIndex => "invocationLocalIndex",
+            Builtin::WorkgroupId => "workgroupId",
+            Builtin::LocalId => "localId",
+            Builtin::GlobalId => "globalId",
+            Builtin::NumWorkgroups => "numWorkgroups",
         }
     }
 
     pub fn ty(self) -> Type {
         match self {
-            Builtin::VertexIndex | Builtin::InstanceIndex => Type::U32,
+            Builtin::VertexIndex | Builtin::InstanceIndex | Builtin::InvocationLocalIndex => {
+                Type::U32
+            }
+            Builtin::WorkgroupId
+            | Builtin::LocalId
+            | Builtin::GlobalId
+            | Builtin::NumWorkgroups => Type::UVec3,
             Builtin::FragCoord => Type::Vec4,
             Builtin::FrontFacing => Type::Bool,
         }
@@ -833,6 +942,29 @@ pub enum Node {
         b: NodeRef,
         ty: Type,
     },
+    /// `storageStruct.get( 'member' )` — `MemberNode` on a
+    /// [`BufferSource::Struct`] storage buffer: `NodeBuffer_N.member`.
+    StructMember {
+        buffer: Rc<BufferNode>,
+        member: usize,
+    },
+    /// `AtomicFunctionNode` — `atomicStore( &pointer, value )` and the rest of
+    /// the family. `pointer` is a struct member or buffer element declared
+    /// `atomic< T >`. As a bare statement it is one `atomicX( … );` line; read
+    /// as a value as well, its result is held in a `let` first.
+    Atomic {
+        method: &'static str,
+        pointer: NodeRef,
+        value: Option<NodeRef>,
+    },
+    /// `WorkgroupInfoNode` — the array itself. Read through
+    /// [`Node::Element`], which is how `.element( i )` reaches it.
+    Workgroup(Rc<WorkgroupArrayDef>),
+    /// `BarrierNode` — `workgroupBarrier()` / `storageBarrier()` /
+    /// `textureBarrier()`, `scope` being the prefix.
+    Barrier {
+        scope: &'static str,
+    },
 }
 
 /// A handle on a node. Fluent TSL methods hang off this; see `tsl.rs`.
@@ -884,6 +1016,14 @@ impl NodeRef {
             Node::Block { result, .. } => result.ty(),
             Node::Loop { .. } | Node::If { .. } | Node::Discard | Node::Return { .. } => Type::Void,
             Node::Not { .. } => Type::Bool,
+            Node::StructMember { buffer, member } => match &buffer.source {
+                BufferSource::Struct { layout, .. } => layout.members[*member].ty,
+                _ => unreachable!("three-rs: a struct member is only built on a struct buffer"),
+            },
+            // `AtomicFunctionNode.getNodeType()` is the pointer's type.
+            Node::Atomic { pointer, .. } => pointer.ty(),
+            Node::Workgroup(def) => def.element_ty,
+            Node::Barrier { .. } => Type::Void,
         }
     }
 }
@@ -1050,11 +1190,22 @@ impl std::hash::Hash for BufferSource {
             BufferSource::Attribute(data) | BufferSource::UniformArray(data) => {
                 (Rc::as_ptr(data) as *const u8 as usize).hash(state)
             }
+            // The layout is spelled into the WGSL, which the key already
+            // hashes; the initial contents are a value and stay out.
+            BufferSource::Struct { layout, .. } => {
+                layout.name.hash(state);
+                for member in &layout.members {
+                    member.name.hash(state);
+                    member.ty.hash(state);
+                    member.atomic.hash(state);
+                }
+            }
             BufferSource::InstanceMatrix
             | BufferSource::InstanceColor
             | BufferSource::MorphInfluences
             | BufferSource::BoneMatrices
-            | BufferSource::Storage => {}
+            | BufferSource::Storage
+            | BufferSource::AtomicStorage => {}
         }
     }
 }
@@ -1090,6 +1241,12 @@ impl std::fmt::Debug for BufferSource {
             BufferSource::InstanceMatrix => f.write_str("InstanceMatrix"),
             BufferSource::InstanceColor => f.write_str("InstanceColor"),
             BufferSource::Storage => f.write_str("Storage"),
+            BufferSource::AtomicStorage => f.write_str("AtomicStorage"),
+            BufferSource::Struct { layout, init } => f
+                .debug_struct("Struct")
+                .field("layout", &layout.name)
+                .field("init", &format_args!("{} words", init.len()))
+                .finish(),
             BufferSource::Range { min, max } => f
                 .debug_struct("Range")
                 .field("min", min)

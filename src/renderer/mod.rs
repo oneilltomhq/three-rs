@@ -407,6 +407,10 @@ struct Draw {
     /// `drawRange.start` and the clamped element count.
     first: u32,
     elements: u32,
+    /// `geometry.indirect`'s GPU buffer: the draw's arguments are read from
+    /// it (`drawIndirect` / `drawIndexedIndirect` at offset 0) and
+    /// `instance_count`, `first` and `elements` are not used.
+    indirect: Option<wgpu::Buffer>,
 }
 
 struct PassTarget {
@@ -1521,7 +1525,9 @@ impl Renderer {
                     .unwrap_or(&self.default_material);
                 // `material.transparent === true && material.side ===
                 // DoubleSide && material.forceSinglePass === false`.
-                let split = material.transparent && material.side == Side::Double;
+                let split = material.transparent
+                    && material.side == Side::Double
+                    && !material.force_single_pass;
                 drop(object);
                 if split {
                     draws.push((item, Some(Side::Back)));
@@ -1565,7 +1571,11 @@ impl Renderer {
                 1.0
             };
 
-            let instance_count = object.instance_count();
+            // `RenderObject.getInstanceCount()`: an `InstancedBufferGeometry`'s
+            // `instanceCount` ahead of the object's own count.
+            let instance_count = geometry
+                .instance_count
+                .map_or_else(|| object.instance_count(), |count| count as u32);
             let instance_matrix = object.instance_matrix().cloned();
             let instance_color = object.instance_color().cloned();
 
@@ -1687,6 +1697,11 @@ impl Renderer {
                     // `builder.geometry.attributes.normal === undefined`.
                     geometry_missing_normal: !geometry.has_attribute("normal"),
                     has_tangent_attribute: geometry.has_attribute("tangent"),
+                    instanced_attributes: geometry
+                        .attributes()
+                        .filter(|(_, attribute)| attribute.is_instanced())
+                        .map(|(name, _)| name.to_string())
+                        .collect(),
                 },
                 fog: scene.fog_node.clone(),
                 model_world: item.matrix_world,
@@ -1971,6 +1986,7 @@ impl Renderer {
                         // no roughness, so the flag cannot reach any code.
                         geometry_missing_normal: false,
                         has_tangent_attribute: false,
+                        instanced_attributes: Vec::new(),
                     },
                     fog: None,
                     model_world: item.matrix_world,
@@ -2180,6 +2196,7 @@ impl Renderer {
                         // no roughness, so the flag cannot reach any code.
                         geometry_missing_normal: false,
                         has_tangent_attribute: false,
+                        instanced_attributes: Vec::new(),
                     },
                     fog: None,
                     model_world: item.matrix_world,
@@ -2595,6 +2612,12 @@ impl Renderer {
                 }
             }
 
+            // `WebGPUBackend.draw()`'s `if ( drawIndirect !== null )` arm.
+            let indirect = item
+                .geometry
+                .indirect()
+                .map(|attribute| self.indirect_buffer(attribute).gpu);
+
             draws.push(Draw {
                 geometry_id,
                 vertex_buffers,
@@ -2604,6 +2627,7 @@ impl Renderer {
                 sub_draws: item.sub_draws.clone(),
                 first,
                 elements,
+                indirect,
             });
         }
 
@@ -2766,6 +2790,20 @@ impl Renderer {
                 continue;
             }
 
+            // `renderObject.getIndirectOffset()` is 0 for every geometry
+            // that is not a `BatchedMesh`'s multi-draw, which is all of them
+            // here.
+            if let Some(indirect) = &draw.indirect {
+                match &geometry.index {
+                    Some((buffer, format, _)) => {
+                        pass.set_index_buffer(buffer.slice(..), *format);
+                        pass.draw_indexed_indirect(indirect, 0);
+                    }
+                    None => pass.draw_indirect(indirect, 0),
+                }
+                continue;
+            }
+
             match &geometry.index {
                 Some((buffer, format, _)) => {
                     pass.set_index_buffer(buffer.slice(..), *format);
@@ -2836,6 +2874,34 @@ impl Renderer {
     /// for the life of the renderer, matching three's
     /// `computeNode.onInitFunction = null` after the first call.
     pub fn compute(&mut self, flow: &ComputeFlow) -> Result<(), Error> {
+        self.compute_dispatch(flow, None)
+    }
+
+    /// `renderer.compute( computeNode, indirectAttribute )` — the same kernel
+    /// with its workgroup counts read from `dispatch[ 0..3 ]` on the GPU
+    /// (`WebGPUBackend.compute()`'s `dispatchWorkgroupsIndirect( buffer, 0 )`
+    /// when `dispatchSize.isIndirectStorageBufferAttribute`), so an earlier
+    /// kernel can decide how much work this one does.
+    ///
+    /// The bounds check `if ( instanceIndex >= count ) { return; }` is still
+    /// generated against the flow's own `count`, as it is in three.
+    pub fn compute_indirect(
+        &mut self,
+        flow: &ComputeFlow,
+        dispatch: &crate::core::IndirectStorageBufferAttribute,
+    ) -> Result<(), Error> {
+        assert!(
+            dispatch.array().len() >= 3,
+            "three-rs: an indirect dispatch reads three u32 workgroup counts"
+        );
+        self.compute_dispatch(flow, Some(dispatch))
+    }
+
+    fn compute_dispatch(
+        &mut self,
+        flow: &ComputeFlow,
+        indirect: Option<&crate::core::IndirectStorageBufferAttribute>,
+    ) -> Result<(), Error> {
         let key = compute_flow_key(flow);
         let program = match self.compute_programs.get(&key) {
             Some(program) => program.clone(),
@@ -2863,10 +2929,14 @@ impl Renderer {
             }
         }
 
+        // `time` is the render group's one uniform a kernel can read; it is
+        // the `NodeFrame`'s, which the last `render()` advanced.
         let uniforms = UniformContext {
+            time: self.time,
             ..Default::default()
         };
         let bind_groups = self.compute_bind_groups(program.cache_key, &program, &uniforms);
+        let indirect = indirect.map(|attribute| self.indirect_buffer(attribute).gpu);
 
         let mut encoder = self
             .device
@@ -2883,8 +2953,13 @@ impl Renderer {
             for (index, group) in bind_groups.iter().enumerate() {
                 pass.set_bind_group(index as u32, group, &[]);
             }
-            let [x, y, z] = program.dispatch;
-            pass.dispatch_workgroups(x, y, z);
+            match &indirect {
+                Some(buffer) => pass.dispatch_workgroups_indirect(buffer, 0),
+                None => {
+                    let [x, y, z] = program.dispatch;
+                    pass.dispatch_workgroups(x, y, z);
+                }
+            }
         }
         self.queue.submit(Some(encoder.finish()));
 
@@ -2923,8 +2998,11 @@ impl Renderer {
                         id,
                         count,
                         element_ty,
+                        source,
                         ..
-                    } => Resource::Buffer(self.storage_buffer(*id, *count, *element_ty)),
+                    } => {
+                        Resource::Buffer(self.storage_buffer_for(*id, source, *count, *element_ty))
+                    }
                     BindingDesc::Texture { .. } | BindingDesc::Sampler { .. } => {
                         unreachable!("three-rs: a compute kernel binds no textures this rung")
                     }
@@ -2955,8 +3033,38 @@ impl Renderer {
             "three-rs: read_storage_buffer does not unpick a padded element stride"
         );
         let buffer = self
-            .storage_buffer(array.id().get(), array.count(), array.element_ty())
+            .storage_buffer(
+                array.id().get(),
+                (array.count() * storage_stride(array.element_ty())) as u64,
+                None,
+            )
             .gpu;
+        let bytes = self.read_buffer(&buffer)?;
+        Ok(bytemuck::cast_slice(&bytes).to_vec())
+    }
+
+    /// [`read_storage_buffer`](Self::read_storage_buffer) for a `u32` /
+    /// `atomic<u32>` array, whose bits are not floats.
+    pub fn read_storage_buffer_u32(&mut self, array: &StorageArray) -> Result<Vec<u32>, Error> {
+        assert_eq!(
+            array.element_ty().component_type(),
+            Type::U32,
+            "three-rs: read_storage_buffer_u32 reads u32 arrays"
+        );
+        let buffer = self
+            .storage_buffer(
+                array.id().get(),
+                (array.count() * storage_stride(array.element_ty())) as u64,
+                None,
+            )
+            .gpu;
+        let bytes = self.read_buffer(&buffer)?;
+        Ok(bytemuck::cast_slice(&bytes).to_vec())
+    }
+
+    /// Copy a whole GPU buffer into a `MAP_READ` staging buffer and map it —
+    /// `getArrayBufferAsync()`, blocking.
+    fn read_buffer(&mut self, buffer: &wgpu::Buffer) -> Result<Vec<u8>, Error> {
         let size = buffer.size();
 
         let staging = self.device.create_buffer(&wgpu::BufferDescriptor {
@@ -2971,7 +3079,7 @@ impl Renderer {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("three-rs storage readback"),
             });
-        encoder.copy_buffer_to_buffer(&buffer, 0, &staging, 0, size);
+        encoder.copy_buffer_to_buffer(buffer, 0, &staging, 0, size);
         self.queue.submit(Some(encoder.finish()));
 
         let slice = staging.slice(..);
@@ -2988,8 +3096,7 @@ impl Renderer {
             })?
             .to_vec();
         staging.unmap();
-
-        Ok(bytemuck::cast_slice(&bytes).to_vec())
+        Ok(bytes)
     }
 
     pub fn read_canvas_pixels(&mut self) -> Result<(u32, u32, Vec<u8>), Error> {
@@ -3314,7 +3421,11 @@ impl Renderer {
         // `NodeMaterial.setup()` → `NodeBuilder.build()`: the WGSL and the
         // bindings the material declares.
         let flow = materials::setup(&item.material, &item.setup, item.fog.as_ref());
-        let node = Rc::new(NodeBuilder::new().build(&flow));
+        let node = Rc::new(
+            NodeBuilder::new()
+                .build(&flow)
+                .with_instanced_attributes(&item.setup.instanced_attributes),
+        );
         self.program_builds += 1;
         self.info.build.programs_compiled += 1;
         self.programs
@@ -3520,8 +3631,8 @@ impl Renderer {
                 wgpu::BufferUsages::UNIFORM,
             );
         }
-        if let BufferSource::Storage = source {
-            return self.storage_buffer(id, count, element_ty);
+        if source.is_storage() {
+            return self.storage_buffer_for(id, source, count, element_ty);
         }
         self.buffer_for(
             slot,
@@ -3542,27 +3653,79 @@ impl Renderer {
     /// `COPY_SRC` is only for [`read_storage_buffer`](Self::read_storage_buffer)
     /// — the gate that can see whether a compute pass did anything, which the
     /// graded image of `webgpu_compute_points` cannot.
+    ///
+    /// `INDIRECT` is on every storage buffer, not only on an
+    /// `IndirectStorageBufferAttribute`'s: the buffer a kernel writes is the
+    /// one `drawIndirect` / `dispatchWorkgroupsIndirect` then read, and it is
+    /// created by whichever of the two reaches it first.
     fn storage_buffer(
         &mut self,
         id: usize,
-        count: usize,
-        element_ty: Type,
+        size: u64,
+        init: Option<&[u32]>,
     ) -> Serial<wgpu::Buffer> {
         if let Some(buffer) = self.storage_buffers.get(&id) {
             return buffer.clone();
         }
-        let size = (count * storage_stride(element_ty)) as u64;
         let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("three-rs storage buffer"),
             size,
             usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::INDIRECT
                 | wgpu::BufferUsages::COPY_SRC
                 | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        if let Some(init) = init {
+            self.queue
+                .write_buffer(&buffer, 0, bytemuck::cast_slice(init));
+        }
         let buffer = self.serial(buffer);
         self.storage_buffers.insert(id, buffer.clone());
         buffer
+    }
+
+    /// [`storage_buffer`](Self::storage_buffer) for a `StorageBufferNode`'s
+    /// binding: an `instancedArray()` is zero-filled at `count` elements, a
+    /// struct view of an `IndirectStorageBufferAttribute` starts from the
+    /// attribute's own `Uint32Array`.
+    fn storage_buffer_for(
+        &mut self,
+        id: usize,
+        source: &BufferSource,
+        count: usize,
+        element_ty: Type,
+    ) -> Serial<wgpu::Buffer> {
+        match source {
+            BufferSource::Struct { init, .. } => {
+                self.storage_buffer(id, (init.len() * 4) as u64, Some(init))
+            }
+            _ => self.storage_buffer(id, (count * storage_stride(element_ty)) as u64, None),
+        }
+    }
+
+    /// The GPU buffer behind an `IndirectStorageBufferAttribute` — the same
+    /// buffer a `storage( attribute, … )` node binds, keyed on the attribute's
+    /// id, so a kernel that writes it and a draw that reads it meet.
+    fn indirect_buffer(
+        &mut self,
+        attribute: &crate::core::IndirectStorageBufferAttribute,
+    ) -> Serial<wgpu::Buffer> {
+        let init = attribute.array();
+        self.storage_buffer(attribute.id().get(), (init.len() * 4) as u64, Some(&init))
+    }
+
+    /// Read an `IndirectStorageBufferAttribute` back — three's
+    /// `renderer.getArrayBufferAsync( attribute )`, blocking. What the GPU
+    /// holds, not the array the attribute was created with: a kernel that
+    /// wrote the draw arguments is visible here.
+    pub fn read_indirect_buffer(
+        &mut self,
+        attribute: &crate::core::IndirectStorageBufferAttribute,
+    ) -> Result<Vec<u32>, Error> {
+        let buffer = self.indirect_buffer(attribute).gpu;
+        let bytes = self.read_buffer(&buffer)?;
+        Ok(bytemuck::cast_slice(&bytes).to_vec())
     }
 
     /// The vertex buffer behind an `InstancedBufferAttribute`. Same contents as
@@ -3610,7 +3773,11 @@ impl Renderer {
         usage: wgpu::BufferUsages,
     ) -> Serial<wgpu::Buffer> {
         match source {
-            BufferSource::MorphInfluences | BufferSource::BoneMatrices | BufferSource::Storage => {
+            BufferSource::MorphInfluences
+            | BufferSource::BoneMatrices
+            | BufferSource::Storage
+            | BufferSource::AtomicStorage
+            | BufferSource::Struct { .. } => {
                 unreachable!("three-rs: this buffer source is resolved by node_buffer")
             }
             BufferSource::InstanceMatrix => {

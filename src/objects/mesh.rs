@@ -30,6 +30,12 @@ pub struct Mesh {
     /// `docs/webgpu_lines_fat-progress.md` for the follow-up that moves them on
     /// to `BufferGeometry`.
     pub line_segments: Option<crate::nodes::lines::LineSegmentsAttributes>,
+    /// `Mesh.count` — how many instances one draw of this mesh makes, with no
+    /// instance matrix involved. `RenderObject.getInstanceCount()` reads it
+    /// when the geometry is not an `InstancedBufferGeometry`; a node reads
+    /// which instance it is through `instanceIndex`, which is how
+    /// `webgpu_particles` draws 2000 sprites from one `range()`-driven mesh.
+    pub count: usize,
 }
 
 impl Mesh {
@@ -62,6 +68,7 @@ impl Mesh {
             material: material.into(),
             morph_target_influences,
             line_segments: None,
+            count: 1,
         });
         object.into_node()
     }
@@ -82,6 +89,7 @@ impl Mesh {
             material,
             morph_target_influences,
             line_segments: None,
+            count: 1,
         }
     }
 

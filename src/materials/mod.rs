@@ -386,6 +386,10 @@ pub struct MeshBasicNodeMaterial {
     /// `Material.transparent` — which of the render list's two arrays the object
     /// goes into, and so whether it is sorted front-to-back or back-to-front.
     pub transparent: bool,
+    /// `Material.forceSinglePass` — a transparent `DoubleSide` material is
+    /// drawn once, both faces together, instead of as three's back-then-front
+    /// pair.
+    pub force_single_pass: bool,
     /// `Material.blending` — `NormalBlending` by default, which together with
     /// `transparent: false` is what keeps a pipeline blend-state-free.
     pub blending: Blending,
@@ -495,6 +499,7 @@ impl Default for MeshBasicNodeMaterial {
             side: Side::Front,
             visible: true,
             transparent: false,
+            force_single_pass: false,
             blending: Blending::Normal,
             premultiplied_alpha: false,
             alpha_to_coverage: false,

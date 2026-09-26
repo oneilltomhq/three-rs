@@ -540,6 +540,17 @@ const SPY_SCRIPT = String.raw`
 				return orig(indexCount, instanceCount, firstIndex, baseVertex, firstInstance);
 			};
 		}
+		// The indirect forms (issue #167): the arguments live in a GPU buffer,
+		// so the log names the buffer and the offset, not the counts.
+		for (const name of ['drawIndirect', 'drawIndexedIndirect', 'dispatchWorkgroupsIndirect']) {
+			if (encoder[name]) {
+				const orig = encoder[name].bind(encoder);
+				encoder[name] = function (buffer, offset) {
+					cmd(name, { buffer: refId(buffer), label: refLabel(buffer), offset });
+					return orig(buffer, offset);
+				};
+			}
+		}
 		if (encoder.dispatchWorkgroups) {
 			const orig = encoder.dispatchWorkgroups.bind(encoder);
 			encoder.dispatchWorkgroups = function (x, y, z) {

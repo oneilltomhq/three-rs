@@ -231,9 +231,31 @@ pub struct NodeProgram {
     /// Bind groups in `@group` order.
     pub groups: Vec<Vec<BindingDesc>>,
     pub cache_key: u64,
+    /// The geometry attributes that are `InstancedBufferAttribute`s, which
+    /// step once per instance. Not the builder's to know — three reads
+    /// `isInstancedBufferAttribute` off the geometry in
+    /// `WebGPUAttributeUtils.createShaderVertexBuffers()` — so the renderer
+    /// fills it from [`SetupContext::instanced_attributes`](crate::materials::SetupContext)
+    /// after the build, through [`with_instanced_attributes`](Self::with_instanced_attributes).
+    pub instanced_attributes: Vec<String>,
 }
 
 impl NodeProgram {
+    /// Mark `names` as per-instance geometry attributes, and fold them into
+    /// the cache key: the step mode is baked into the pipeline, so the same
+    /// WGSL over a per-vertex `offset` and a per-instance one is two programs.
+    pub fn with_instanced_attributes(mut self, names: &[String]) -> Self {
+        if names.is_empty() {
+            return self;
+        }
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        self.cache_key.hash(&mut hasher);
+        names.hash(&mut hasher);
+        self.cache_key = hasher.finish();
+        self.instanced_attributes = names.to_vec();
+        self
+    }
+
     /// `WebGPUAttributeUtils.createShaderVertexBuffers( renderObject )`: the
     /// attributes grouped into vertex buffers, in first-use order — geometry
     /// attributes one per buffer, instanced attributes one buffer per
@@ -247,7 +269,7 @@ impl NodeProgram {
                 AttributeSource::Geometry(name) => out.push(VertexBufferDesc {
                     source: VertexBufferSource::Geometry(name),
                     array_stride: (slot.ty.components() * 4) as u64,
-                    instanced: false,
+                    instanced: self.instanced_attributes.iter().any(|n| n == name),
                     attributes: vec![(location, slot.ty, 0)],
                 }),
                 AttributeSource::Instance { buffer, offset } => {
@@ -319,6 +341,19 @@ pub struct NodeBuilder {
     const_counter: usize,
     varying_counter: usize,
     buffer_counter: usize,
+    /// `WorkgroupArray_N` — one name per `workgroupArray()`, by identity, and
+    /// the `var<workgroup>` lines `WGSLNodeBuilder.getScopedArrays()` puts
+    /// under `// locals`, in first-use order.
+    workgroup_names: HashMap<usize, String>,
+    workgroup_locals: Vec<String>,
+    /// The key of the statement [`generate_statement`](Self::generate_statement)
+    /// is generating.
+    statement: Option<usize>,
+    /// Varyings the vertex stage has assigned to while they were still a
+    /// plain `var<private>` (`positionLocal.assign( positionNode )`). When the
+    /// fragment stage later asks for one, the varying carries that var's
+    /// current value, not a fresh read of its initial value.
+    reassigned_varyings: HashSet<usize>,
     /// `nodeAttributeN` counter and the names already handed out, keyed by
     /// `( instance buffer identity, offset )`.
     attribute_counter: usize,
@@ -358,6 +393,10 @@ impl NodeBuilder {
             const_counter: 0,
             varying_counter: 0,
             buffer_counter: 0,
+            workgroup_names: HashMap::new(),
+            workgroup_locals: Vec::new(),
+            statement: None,
+            reassigned_varyings: HashSet::new(),
             attribute_counter: 0,
             attribute_names: HashMap::new(),
             attribute_varyings: HashMap::new(),
@@ -511,6 +550,12 @@ impl NodeBuilder {
             Node::VaryingProperty { .. } => vec![],
             Node::Return { value } => vec![value.clone()],
             Node::Not { node } => vec![node.clone()],
+            Node::StructMember { .. } | Node::Workgroup(_) | Node::Barrier { .. } => vec![],
+            Node::Atomic { pointer, value, .. } => {
+                let mut v = vec![pointer.clone()];
+                v.extend(value.iter().cloned());
+                v
+            }
         }
     }
 
@@ -851,6 +896,14 @@ impl NodeBuilder {
 
     // -- generate --------------------------------------------------------
 
+    /// Generate one statement of a flow or a block. `StackNode` is the
+    /// parent the flow's statements share; [`Node::Atomic`] asks whether it is
+    /// one, which is `AtomicFunctionNode`'s `parents[ 0 ].isStackNode`.
+    fn generate_statement(&mut self, stmt: &NodeRef) -> String {
+        self.statement = Some(stmt.key());
+        self.generate(stmt)
+    }
+
     fn usage_of(&self, node: &NodeRef) -> u32 {
         *self.usage.get(&node.key()).unwrap_or(&1)
     }
@@ -1001,8 +1054,28 @@ impl NodeBuilder {
                     // `instanceIndex` is the module-scope `var<private>` the
                     // entry point fills from `globalId`, not a parameter —
                     // `WGSLNodeBuilder.getBuiltins( 'compute' )` never lists it.
+                    // `invocationLocalIndex` is the one compute builtin that
+                    // is declared only once a kernel asks for it.
+                    if *b == Builtin::InvocationLocalIndex {
+                        let s = &mut self.stages[Stage::Compute.index()];
+                        if !s.builtins.contains(b) {
+                            s.builtins.push(*b);
+                        }
+                    }
                     return b.name().to_string();
                 }
+                assert!(
+                    !matches!(
+                        b,
+                        Builtin::InvocationLocalIndex
+                            | Builtin::WorkgroupId
+                            | Builtin::LocalId
+                            | Builtin::GlobalId
+                            | Builtin::NumWorkgroups
+                    ),
+                    "three-rs: the compute builtin {} is only readable in a compute kernel",
+                    b.name()
+                );
                 // `IndexNode.generate()`
                 // (`src/nodes/core/IndexNode.js:96-112`): the vertex and
                 // instance indices are the raw builtin in the vertex and
@@ -1090,7 +1163,16 @@ impl NodeBuilder {
                         // The vertex-side chain is flowed into the vertex stage
                         // at the point the fragment stage asks for it.
                         self.stage = Stage::Vertex;
-                        let snippet = self.generate(&v.value);
+                        // Three's vertex stage writes every assignment to a
+                        // varying straight into `varyings.name`, so what
+                        // reaches the fragment stage is the last value
+                        // assigned (`webgpu_particles`' `positionLocal`, moved
+                        // by its `positionNode`). The port's vertex stage
+                        // holds that value in the private var until now.
+                        let snippet = match self.cache_get(node.key()) {
+                            Some(var) if self.reassigned_varyings.contains(&node.key()) => var,
+                            _ => self.generate(&v.value),
+                        };
                         self.emit(format!("varyings.{name} = {snippet};"));
                         self.stage = Stage::Fragment;
                         name
@@ -1106,6 +1188,9 @@ impl NodeBuilder {
                 // first assigns to it, and the temps the value needs are
                 // numbered after it.
                 let lhs = self.generate(&target);
+                if self.stage == Stage::Vertex && matches!(&*target.0, Node::Varying(_)) {
+                    self.reassigned_varyings.insert(target.key());
+                }
                 let snippet = self.format(&value, want);
                 // `AssignNode.needsSplitAssign()`: WGSL has no swizzle assign
                 // (`builder.isAvailable( 'swizzleAssign' )` is false), so a
@@ -1431,7 +1516,7 @@ impl NodeBuilder {
                 // everything ahead of the result var first, then the var's own
                 // initialiser, then the condition, then the block.
                 for stmt in &pre {
-                    self.generate(stmt);
+                    self.generate_statement(stmt);
                 }
                 let name = self.generate(&result);
                 let scond = self.generate(&cond);
@@ -1440,7 +1525,7 @@ impl NodeBuilder {
                 self.emit(String::new());
                 self.push_scope();
                 for stmt in &body {
-                    self.generate(stmt);
+                    self.generate_statement(stmt);
                 }
                 self.emit(String::new());
                 self.pop_scope();
@@ -1485,7 +1570,7 @@ impl NodeBuilder {
             Node::Block { statements, result } => {
                 let (statements, result) = (statements.clone(), result.clone());
                 for stmt in &statements {
-                    self.generate(stmt);
+                    self.generate_statement(stmt);
                 }
                 self.generate(&result)
             }
@@ -1517,7 +1602,7 @@ impl NodeBuilder {
                 self.emit(String::new());
                 self.push_scope();
                 for stmt in &body {
-                    self.generate(stmt);
+                    self.generate_statement(stmt);
                 }
                 self.pop_scope();
                 self.emit(String::new());
@@ -1540,7 +1625,7 @@ impl NodeBuilder {
                 self.emit(String::new());
                 self.push_scope();
                 for statement in &body {
-                    self.generate(statement);
+                    self.generate_statement(statement);
                 }
                 self.pop_scope();
                 self.emit(String::new());
@@ -1552,7 +1637,7 @@ impl NodeBuilder {
                     self.emit(String::new());
                     self.push_scope();
                     for statement in &else_body {
-                        self.generate(statement);
+                        self.generate_statement(statement);
                     }
                     self.pop_scope();
                     self.emit(String::new());
@@ -1580,6 +1665,103 @@ impl NodeBuilder {
                 let inner = inner.clone();
                 let snippet = self.generate(&inner);
                 format!("( ! {snippet} )")
+            }
+
+            // `MemberNode` over a custom-struct storage buffer:
+            // `WGSLNodeBuilder.getPropertyName()` returns the bare buffer name
+            // for `isCustomStruct()`, with no `.value`.
+            Node::StructMember { buffer, member } => {
+                let (buffer, member) = (buffer.clone(), *member);
+                assert_eq!(
+                    self.stage,
+                    Stage::Compute,
+                    "three-rs: a struct storage buffer is only ported for compute kernels"
+                );
+                let name = self.buffer_snippet(&buffer);
+                let BufferSource::Struct { layout, .. } = &buffer.source else {
+                    unreachable!("three-rs: a struct member is only built on a struct buffer")
+                };
+                format!("{name}.{}", layout.members[member].name)
+            }
+
+            // `AtomicFunctionNode.generate()`. `parents.length === 1 &&
+            // parents[ 0 ].isStackNode` — nothing but the flow reads it — is a
+            // bare call; anything else also reads the old value, which three
+            // holds in a `let` declared where the call is made.
+            Node::Atomic {
+                method,
+                pointer,
+                value,
+            } => {
+                let (method, pointer, value) = (*method, pointer.clone(), value.clone());
+                let is_statement = self.statement == Some(node.key());
+                assert_ne!(
+                    self.stage,
+                    Stage::Vertex,
+                    "three-rs: {method} is not supported in the vertex stage"
+                );
+                let ty = pointer.ty();
+                let mut params = vec![format!("&{}", self.generate(&pointer))];
+                if let Some(value) = &value {
+                    // `b.build( builder, inputType )` — a float into a `u32`
+                    // atomic is `u32( x )`, which `NodeBuilder.format()` spells
+                    // out even between two scalars.
+                    let snippet = self.format(value, ty);
+                    params.push(if value.ty().component_type() == ty.component_type() {
+                        snippet
+                    } else {
+                        format!("{}( {snippet} )", wgsl::type_name(ty))
+                    });
+                }
+                let call = format!("{method}( {} )", params.join(", "));
+                if is_statement && self.usage_of(node) <= 1 {
+                    self.emit(format!("{call};"));
+                    return String::new();
+                }
+                let name = self.declare_const(None);
+                // `generateLetStatement()` is `let ${ name }` in WGSL — no type.
+                self.emit(format!("let {name} = {call};"));
+                self.cache_put(node.key(), name.clone());
+                name
+            }
+
+            // `WorkgroupInfoNode.generate()` → `builder.getScopedArray()`.
+            Node::Workgroup(def) => {
+                let def = def.clone();
+                assert_eq!(
+                    self.stage,
+                    Stage::Compute,
+                    "three-rs: workgroupArray() can only be used in a compute kernel"
+                );
+                let key = Rc::as_ptr(&def) as *const u8 as usize;
+                if let Some(name) = self.workgroup_names.get(&key) {
+                    return name.clone();
+                }
+                let name = format!("WorkgroupArray_{}", self.workgroup_names.len());
+                let ty = wgsl::type_name(def.element_ty);
+                let ty = if def.atomic {
+                    format!("atomic<{ty}>")
+                } else {
+                    ty.to_string()
+                };
+                self.workgroup_locals.push(format!(
+                    "var<workgroup> {name}: array< {ty}, {} >;",
+                    def.count
+                ));
+                self.workgroup_names.insert(key, name.clone());
+                name
+            }
+
+            // `BarrierNode.generate()`: `addLineFlowCode( `${ scope }Barrier()` )`.
+            Node::Barrier { scope } => {
+                let scope = *scope;
+                assert_eq!(
+                    self.stage,
+                    Stage::Compute,
+                    "three-rs: {scope}Barrier() can only be used in a compute kernel"
+                );
+                self.emit(format!("{scope}Barrier();"));
+                String::new()
             }
         }
     }
@@ -1747,7 +1929,7 @@ impl NodeBuilder {
             self.analyze(stmt);
         }
         for stmt in &flow.statements {
-            self.generate(stmt);
+            self.generate_statement(stmt);
         }
 
         // `ComputeNode.setup()` builds its bounds check *after* the kernel body
@@ -1856,7 +2038,7 @@ impl NodeBuilder {
 
         self.stage = Stage::Vertex;
         for stmt in &flow.pre_vertex_statements {
-            self.generate(stmt);
+            self.generate_statement(stmt);
         }
 
         self.stage = Stage::Fragment;
@@ -1869,7 +2051,7 @@ impl NodeBuilder {
             self.emit(format!("output.depth = {snippet};"));
         }
         for stmt in &flow.fragment_statements {
-            self.generate(stmt);
+            self.generate_statement(stmt);
         }
         // `NodeMaterial.setup()` registers the `Output` property *before* the
         // output node's own flow runs, so `Output` is declared above the temps
@@ -1908,7 +2090,7 @@ impl NodeBuilder {
 
         self.stage = Stage::Vertex;
         for stmt in &flow.vertex_statements {
-            self.generate(stmt);
+            self.generate_statement(stmt);
         }
         let position = self.generate(&flow.position);
 
@@ -1974,6 +2156,7 @@ impl NodeBuilder {
             attributes,
             groups,
             cache_key,
+            instanced_attributes: Vec::new(),
         }
     }
 
@@ -2044,65 +2227,85 @@ impl NodeBuilder {
             }
         }
 
+        // `WGSLNodeBuilder.getUniforms()` collects `bufferSnippets` and
+        // `structSnippets` separately and writes every buffer before any
+        // uniform struct, whichever group each is in.
         for group in [UniformGroup::Render, UniformGroup::Object] {
             let Some(g) = self.groups.get(&group) else {
                 continue;
             };
             let gi = self.group_index(group);
             for (binding, desc) in g.bindings.iter().enumerate() {
-                match desc {
-                    BindingDesc::Buffer {
-                        name,
-                        element_ty,
-                        count,
-                        visibility,
-                        source,
-                        ..
-                    } => {
-                        if !Self::visible(*visibility, stage) {
-                            continue;
-                        }
-                        if let BufferSource::Storage = source {
-                            // `WGSLNodeBuilder.getStorageAccess()`: a runtime-
-                            // sized array, `read_write` in the compute stage
-                            // and forced to `read` everywhere else.
-                            let access = if visibility.compute {
-                                "read_write"
-                            } else {
-                                "read"
-                            };
-                            out.push_str(&format!(
-                                "\nstruct {name}Struct {{\n\tvalue : array< {} >\n}};\n@binding( {binding} ) @group( {gi} )\nvar<storage, {access}> {name} : {name}Struct;\n",
-                                wgsl::type_name(*element_ty)
-                            ));
-                            continue;
-                        }
-                        out.push_str(&format!(
-                            "\nstruct {name}Struct {{\n\tvalue : array< {}, {count} >\n}};\n@binding( {binding} ) @group( {gi} )\nvar<uniform> {name} : {name}Struct;\n",
-                            wgsl::type_name(*element_ty)
-                        ));
-                    }
-                    BindingDesc::Uniforms {
-                        members,
-                        visibility,
-                        ..
-                    } => {
-                        if !Self::visible(*visibility, stage) || members.is_empty() {
-                            continue;
-                        }
-                        let name = group.struct_name();
-                        out.push_str(&format!("\nstruct {name}Struct {{\n"));
-                        let decls: Vec<String> = members
-                            .iter()
-                            .map(|m| format!("\t{} : {}", m.name, wgsl::type_name(m.ty)))
-                            .collect();
-                        out.push_str(&decls.join(",\n"));
-                        out.push_str(&format!(
-                            "\n}};\n@binding( {binding} ) @group( {gi} )\nvar<uniform> {name} : {name}Struct;\n"
-                        ));
-                    }
-                    _ => {}
+                let BindingDesc::Buffer {
+                    name,
+                    element_ty,
+                    count,
+                    visibility,
+                    source,
+                    ..
+                } = desc
+                else {
+                    continue;
+                };
+                if !Self::visible(*visibility, stage) {
+                    continue;
                 }
+                // `WGSLNodeBuilder.getStorageAccess()`: `read_write` in the
+                // compute stage and forced to `read` everywhere else.
+                let access = if visibility.compute {
+                    "read_write"
+                } else {
+                    "read"
+                };
+                let element = wgsl::type_name(*element_ty);
+                match source {
+                    // `isCustomStruct()`: the struct itself, on one line.
+                    BufferSource::Struct { layout, .. } => out.push_str(&format!(
+                        "@binding( {binding} ) @group( {gi} ) var<storage, {access}> {name} : {};\n",
+                        layout.name
+                    )),
+                    // A runtime-sized array — no element count.
+                    BufferSource::Storage => out.push_str(&format!(
+                        "\nstruct {name}Struct {{\n\tvalue : array< {element} >\n}};\n@binding( {binding} ) @group( {gi} )\nvar<storage, {access}> {name} : {name}Struct;\n"
+                    )),
+                    // `bufferNode.isAtomic ? `atomic<${ bufferType }>``.
+                    BufferSource::AtomicStorage => out.push_str(&format!(
+                        "\nstruct {name}Struct {{\n\tvalue : array< atomic<{element}> >\n}};\n@binding( {binding} ) @group( {gi} )\nvar<storage, {access}> {name} : {name}Struct;\n"
+                    )),
+                    _ => out.push_str(&format!(
+                        "\nstruct {name}Struct {{\n\tvalue : array< {element}, {count} >\n}};\n@binding( {binding} ) @group( {gi} )\nvar<uniform> {name} : {name}Struct;\n"
+                    )),
+                }
+            }
+        }
+
+        for group in [UniformGroup::Render, UniformGroup::Object] {
+            let Some(g) = self.groups.get(&group) else {
+                continue;
+            };
+            let gi = self.group_index(group);
+            for (binding, desc) in g.bindings.iter().enumerate() {
+                let BindingDesc::Uniforms {
+                    members,
+                    visibility,
+                    ..
+                } = desc
+                else {
+                    continue;
+                };
+                if !Self::visible(*visibility, stage) || members.is_empty() {
+                    continue;
+                }
+                let name = group.struct_name();
+                out.push_str(&format!("\nstruct {name}Struct {{\n"));
+                let decls: Vec<String> = members
+                    .iter()
+                    .map(|m| format!("\t{} : {}", m.name, wgsl::type_name(m.ty)))
+                    .collect();
+                out.push_str(&decls.join(",\n"));
+                out.push_str(&format!(
+                    "\n}};\n@binding( {binding} ) @group( {gi} )\nvar<uniform> {name} : {name}Struct;\n"
+                ));
             }
         }
 
@@ -2144,17 +2347,49 @@ impl NodeBuilder {
         let mut out = String::from("// three-rs - Node System\n\n");
         out.push_str("// directives\n\n");
         out.push_str("// system\nvar<private> instanceIndex : u32;\n\n");
-        out.push_str("// locals\n\n\n// structs\n\n\n");
+        // `// locals\n${ scopedArrays }\n\n` and `// structs\n${ structs }\n\n`,
+        // `getStructs()` being `\n` + the structs + `\n` when there are any.
+        out.push_str(&format!(
+            "// locals\n{}\n\n",
+            self.workgroup_locals.join("\n")
+        ));
+        let mut structs: Vec<String> = Vec::new();
+        for group in [UniformGroup::Render, UniformGroup::Object] {
+            let Some(g) = self.groups.get(&group) else {
+                continue;
+            };
+            for desc in &g.bindings {
+                if let BindingDesc::Buffer {
+                    source: BufferSource::Struct { layout, .. },
+                    ..
+                } = desc
+                {
+                    let text = layout.wgsl();
+                    if !structs.contains(&text) {
+                        structs.push(text);
+                    }
+                }
+            }
+        }
+        let structs = if structs.is_empty() {
+            String::new()
+        } else {
+            format!("\n{}\n", structs.join("\n\n"))
+        };
+        out.push_str(&format!("// structs\n{structs}\n\n"));
 
         out.push_str("// uniforms\n");
         out.push_str(&self.uniform_declarations(Stage::Compute));
         out.push('\n');
 
-        out.push_str("// vars\n");
-        for (name, ty) in &s.decls {
-            out.push_str(&format!("var<private> {name} : {ty};\n"));
-        }
-        out.push('\n');
+        // `// vars\n${ vars }\n\n`, the declarations joined by `\n` — so a
+        // kernel with none still has the blank line.
+        let vars: Vec<String> = s
+            .decls
+            .iter()
+            .map(|(name, ty)| format!("var<private> {name} : {ty};"))
+            .collect();
+        out.push_str(&format!("// vars\n{}\n\n", vars.join("\n")));
 
         out.push_str("// codes\n");
         for code in &s.codes {
@@ -2164,9 +2399,17 @@ impl NodeBuilder {
         out.push_str("\n\n");
 
         let [wx, wy, wz] = workgroup_size;
+        // `getBuiltin( 'local_invocation_index', … )` registers the parameter
+        // while the flow is generated, i.e. before `getAttributes()` adds the
+        // four fixed ones — so it comes first.
+        let local_index = if s.builtins.contains(&Builtin::InvocationLocalIndex) {
+            "@builtin( local_invocation_index ) invocationLocalIndex : u32,\n\t"
+        } else {
+            ""
+        };
         out.push_str(&format!(
             "@compute @workgroup_size( {wx}, {wy}, {wz} )\n\
-             fn main( @builtin( global_invocation_id ) globalId : vec3<u32>,\n\
+             fn main( {local_index}@builtin( global_invocation_id ) globalId : vec3<u32>,\n\
              \t@builtin( workgroup_id ) workgroupId : vec3<u32>,\n\
              \t@builtin( local_invocation_id ) localId : vec3<u32>,\n\
              \t@builtin( num_workgroups ) numWorkgroups : vec3<u32> ) {{\n\n\
@@ -2249,11 +2492,14 @@ impl NodeBuilder {
             out.push_str("\t@builtin( position ) builtinClipSpace : vec4<f32>\n};\nvar<private> varyings : VaryingsStruct;\n\n");
         }
 
-        out.push_str("// vars\n");
-        for (name, ty) in &s.decls {
-            out.push_str(&format!("var<private> {name} : {ty};\n"));
-        }
-        out.push('\n');
+        // `// vars\n${ vars }\n\n`, the declarations joined by `\n` — so a
+        // kernel with none still has the blank line.
+        let vars: Vec<String> = s
+            .decls
+            .iter()
+            .map(|(name, ty)| format!("var<private> {name} : {ty};"))
+            .collect();
+        out.push_str(&format!("// vars\n{}\n\n", vars.join("\n")));
 
         out.push_str("// codes\n");
         for code in &s.codes {
@@ -2271,6 +2517,13 @@ impl NodeBuilder {
                 Builtin::InstanceIndex => "instance_index",
                 Builtin::FragCoord => "position",
                 Builtin::FrontFacing => "front_facing",
+                Builtin::InvocationLocalIndex
+                | Builtin::WorkgroupId
+                | Builtin::LocalId
+                | Builtin::GlobalId
+                | Builtin::NumWorkgroups => {
+                    unreachable!("three-rs: compute builtins never reach a render stage")
+                }
             };
             params.push(format!(
                 "@builtin( {builtin} ) {} : {}",

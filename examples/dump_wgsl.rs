@@ -183,6 +183,7 @@ fn main() {
             vertex_color_size: 0,
             geometry_missing_normal: false,
             has_tangent_attribute: false,
+            instanced_attributes: Vec::new(),
         },
     );
 
@@ -689,6 +690,7 @@ fn main() {
             // the attribute is read whole rather than widened from a `vec3`.
             vertex_color_size: 4,
             has_tangent_attribute: false,
+            instanced_attributes: Vec::new(),
             ..SetupContext::default()
         };
 
@@ -1717,6 +1719,7 @@ fn main() {
         SetupContext {
             environment: Some(environment.handle()),
             has_tangent_attribute: true,
+            instanced_attributes: Vec::new(),
             ..SetupContext::default()
         },
     );
