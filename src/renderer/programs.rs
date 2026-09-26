@@ -296,6 +296,37 @@ fn layout_entry(binding: u32, desc: &BindingDesc) -> wgpu::BindGroupLayoutEntry 
             },
             count: None,
         },
+        // `WebGPUBindingUtils.createBindingsLayout()`'s `storageTexture`
+        // branch: the texture's own format, the node's access in a compute
+        // stage and `read-only` in any other, and a 3D view for a
+        // `Storage3DTexture`.
+        BindingDesc::Texture {
+            kind:
+                TextureKind::Storage {
+                    format,
+                    access,
+                    dim3,
+                },
+            visibility,
+            ..
+        } => wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility: visibility.stages(),
+            ty: wgpu::BindingType::StorageTexture {
+                access: if visibility.compute {
+                    access.wgpu()
+                } else {
+                    wgpu::StorageTextureAccess::ReadOnly
+                },
+                format: *format,
+                view_dimension: if *dim3 {
+                    wgpu::TextureViewDimension::D3
+                } else {
+                    wgpu::TextureViewDimension::D2
+                },
+            },
+            count: None,
+        },
         BindingDesc::Texture {
             kind, visibility, ..
         } => wgpu::BindGroupLayoutEntry {
@@ -322,6 +353,7 @@ fn layout_entry(binding: u32, desc: &BindingDesc) -> wgpu::BindGroupLayoutEntry 
                 view_dimension: match kind {
                     TextureKind::Cube | TextureKind::DepthCube => wgpu::TextureViewDimension::Cube,
                     TextureKind::Float2DArray => wgpu::TextureViewDimension::D2Array,
+                    TextureKind::Float3D => wgpu::TextureViewDimension::D3,
                     _ => wgpu::TextureViewDimension::D2,
                 },
                 multisampled: matches!(kind, TextureKind::DepthMultisampled2D),

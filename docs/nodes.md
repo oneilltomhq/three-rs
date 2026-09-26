@@ -633,6 +633,28 @@ differences, each verified to be pixel-neutral.
   the whole fit. The port does the same, because the three calls are three
   separate `NodeRef`s and the builder promotes by `Rc` identity. Identical
   arithmetic, identical text apart from the temp numbers.
+* **Usage-promoted temps (§28).** Three at 5f610f5 turns a temp that is read
+  more than once into `let nodeConstN` without a `toConst()` in the source:
+  `webgpu_compute_texture`'s `posX`, `posY`, `x`, `y` and `v`,
+  `RaymarchingBox`'s hit-box temps and `webgpu_volume_perlin`'s
+  `surfacePos + 0.5`. The port's builder still promotes such a temp to a
+  `nodeVarN`, so both examples and `raymarching_box()` ask for `to_const`
+  where the dump has a `let`, with a comment at each. The material tail's
+  output value, `let nodeConstN = max( vec4<f32>( DiffuseColor.xyz,
+  DiffuseColor.w ), vec4<f32>( 0.0 ) )`, is shared by every rung and stays a
+  var here. Same single evaluation,
+  same value; `tests/nodes_texture_wgsl.rs` compares the sections up to it.
+* **Whitespace-only lines (§28).** Three leaves an indented blank line after
+  the last statement of every `If` body and an empty `// directives` block at
+  the top of a render stage. The port emits neither;
+  `tests/nodes_texture_wgsl.rs::canonical()` drops lines that are empty or
+  only whitespace on both sides.
+* **Two unread `vec3` privates in `webgpu_volume_perlin` (§28).** Three's
+  fragment declares two `var<private>` `vec3<f32>` temps (`nodeVar14`,
+  `nodeVar15` in the fixture) that no statement in the module reads or writes. Nothing in `RaymarchingBox`, the page's
+  `opaqueRaymarchingTexture` or `Texture3DNode.normal()` explains them —
+  unexplained, and the port does not declare them. The gate compares the
+  uniform block and the flow, not the `// vars` block.
 
 ### `LineBasicNodeMaterial` adds no divergence class
 
@@ -2725,3 +2747,151 @@ None new beyond the classes §8 already lists, and one fix that was a real bug:
 [`tsl::with_tangent_attribute`]: ../src/nodes/tsl.rs
 [`tsl::bent_normal_view`]: ../src/nodes/tsl.rs
 [`Scene::background_blurriness`]: ../src/objects/scene.rs
+
+## 28. `Data3DTexture` and storage textures — `webgpu_compute_texture`, `webgpu_volume_perlin`
+
+Issue #166. Two texture kinds and the node plumbing around them:
+
+* `Texture::storage( w, h )` is three's `StorageTexture`: no image, written by
+  a kernel through `textureStore()`, sampled afterwards like any texture.
+* `Data3DTexture` (`src/textures/data3d_texture.rs`) is three's
+  `Data3DTexture`, and `Data3DTexture::storage( w, h, d )` its
+  `Storage3DTexture`. They share a type because a `Storage3DTexture` *is* a
+  3-D texture with `isStorageTexture` set, and the renderer path is the same.
+
+`webgpu_compute_texture` grades the 2-D storage path and
+`webgpu_volume_perlin` the sampled 3-D path. `Storage3DTexture` has no graded
+rung (§28.6); `tests/nodes_texture_wgsl.rs` builds a kernel that writes one
+and a material that samples it, and validates both modules with naga.
+
+### 28.1 A storage binding is a different binding
+
+`storageTexture( t )` and `texture( t )` of the same texture are two bindings
+in three: `NodeStorageTexture` versus `NodeSampledTexture`, with different
+layout entries and, in `WebGPUBindingUtils`, different views. The port keys a
+texture binding by `(texture id, is_storage_binding)` in the builder and by
+`(texture id, view dimension, storage)` in the renderer's view cache, so a
+material that samples the texture a kernel writes gets its own view and
+sampler.
+
+The declaration is `texture_storage_2d<format, access>` (or `_3d`), with the
+format from the texture (`wgsl::storage_format()`, which panics on a format
+WGSL cannot store) and the access from the node. Outside a compute stage
+three's `getNodeAccess()` forces `read` whatever the node says, and so does
+the port (`TextureKind::declaration`), because a fragment or vertex stage cannot
+declare a writable storage texture without a feature the ladder does not ask
+for.
+
+`textureStore( t, uvec2( posX, posY ), value )` is a statement, not a value:
+`Node::TextureStore` pushes `textureStore( t, vec2<u32>( … ), … );` and
+returns nothing to its reader. The coordinate is converted to `vec2<u32>` /
+`vec3<u32>` as `generateTextureStore()` does.
+
+### 28.2 The storage view has one mip, and a store makes the chain stale
+
+A `StorageTexture` keeps `generateMipmaps = true`, so it is allocated with its
+full chain (a 512² texture has ten levels), but WebGPU only binds one level as
+a storage texture: `WebGPUBindingUtils` gives a storage binding a view with
+`mipLevelCount: 1`. The port does the same (`mip_level_count:
+storage.then_some(1)`).
+
+The kernel writes level 0 only. Three then rebuilds the chain from it:
+`Bindings._update()` marks a storage texture `needsMipmap` when it is bound
+for a store, and the next time the texture is bound as an ordinary sampled
+texture it generates the mips first. The port carries the same flag on its
+2-D texture entry (`needs_mipmap`), set when a `Storage` binding is built and
+cleared by `update_storage_mipmaps()` when a sampled binding next asks for the
+view. This is the whole of `webgpu_compute_texture`'s frame: the plane is
+minified, `LinearFilter` picks the nearest mip, and without the rebuild it
+reads a zero-filled level 1 (15876 of 100000 pixels, most of the plane black).
+
+A storage texture is created with `STORAGE_BINDING` added to its usages and is
+never uploaded, and it is checked against
+`format.guaranteed_format_features( device.features() )` before it is created
+(`assert_storage_format`), with a panic that names the format. That is the
+wasm32 concern the issue raises: Vulkan adapters report storage support for
+formats a browser's WebGPU does not guarantee (`r8unorm`, and `bgra8unorm`
+without a feature, among others), so a check against the adapter would pass
+on the desktop and fail as a validation error on the web. The guaranteed set
+is what wgpu promises on every backend, so a format that passes here passes
+in the browser too. Both rungs use `rgba8unorm`; the pingpong page's
+`rgba16float` is in the set as well.
+
+Compute bind groups now take textures and samplers as well as buffers, through
+the same `texture_view()` the render path uses.
+
+### 28.3 `Data3DTexture` and `texture3D()`
+
+`Data3DTexture` defaults to `NearestFilter` and `ClampToEdgeWrapping` on all
+three axes, as three's does, and uploads its bytes as one `D3` texture with
+`mipmaps` never generated (three's `generateMipmaps = false`). Its sampler key
+adds the `r` wrap.
+
+`texture3D( t, null, level )` is `Texture3DNode`: `sample( uv )` is
+`textureSampleLevel( t, s, uv, level )`, and `.r` on it builds the node as a
+`float`, which the builder writes as a `.x` on the sample, as three does.
+`normal( uv )` is `Texture3DNode.normal()`: the central difference over six
+taps at `±0.01`, emitted as three emits it — six nested `If`s, each tap a
+var, and a normalised difference. Three has a second path for an
+unfilterable volume (`textureLoad` against `textureDimensions`, no sampler);
+no page on the ladder samples a `NearestFilter` volume, so the builder asserts
+instead of porting it. A sampler-less `textureSampleLevel` would be a shader
+compile error, not a wrong picture, so the assertion is the honest failure.
+
+`webgpu_volume_perlin` sets `LinearFilter` on both filters, which makes it
+filterable: `texture_3d<f32>` with a filtering sampler.
+
+### 28.4 `Loop( { type: 'float' } )`, `Break()` and `bool` uniforms
+
+`RaymarchingBox` (`src/addons/raymarching.rs`) needs three things the node
+system did not have:
+
+* **a float loop with a step.** `loop_float( name, start, end, update, body )`
+  is `Loop( { type: 'float', start, end, update } )`: `for ( var i : f32 =
+  start; i < end; i += update )`. `update` is a node, here the step size var.
+* **`Break()`**, as `break_loop()`: a statement that emits `break;`.
+* **a `bool` uniform.** `uniform( true )` is `refine` in the page. WGSL has no
+  host-shareable `bool`, so three stores it as a `u32` member of the object
+  struct and reads it back as `bool( object.nodeUniformN )`, into a var at the
+  first read. The port does the same, and `programs.rs` writes the member
+  through its existing `u32` path, as `0` / `1`.
+
+`boolean( v )` is `bool( v )` of a literal, for the `false` / `true` the
+raymarcher assigns to its hit flag.
+
+### 28.5 What the WGSL gate compares
+
+`tests/nodes_texture_wgsl.rs` compares:
+
+* `webgpu_compute_texture`'s kernel as a whole module;
+* its material's uniform block and flow;
+* `webgpu_volume_perlin`'s fragment uniform block and flow (the slab test,
+  the float loop, the bisection with its two `select`s, `normal()`'s nested
+  `If`s, `break`);
+* the vertex stage's two ray varyings, by expression.
+
+Three §8 entries come from these dumps: "Usage-promoted temps",
+"Whitespace-only lines" and the two unread `vec3` privates. The same file pins
+`ImprovedNoise`'s volume: a checksum over all 2 097 152 bytes, computed by
+running the page's fill under Node against three's `ImprovedNoise.js`. That
+fill writes into a `Uint8Array`, whose `ToUint8` wraps rather than clamps, so a
+noise value of exactly 1 becomes 0, not 255. `volume_data()` wraps the same
+way (`trunc` then `rem_euclid( 256 )`).
+
+### 28.6 What was left out
+
+* **`webgpu_compute_texture_pingpong`.** Its first frame is a hash noise,
+  `fract( sin( dot( uv, seed ) ) * 43758.5453 )`, whose low bits are GPU `sin`
+  precision, not something the port controls. Its seed is `Math.random()`,
+  redrawn once a second from `performance.now()`. And it blurs between two
+  `HalfFloatType` storage textures, alternating which one `material.map`
+  shows. The frame the grader sees is not a function of the page's source, so
+  there is no rung to grade. The pieces it needs (a read-only storage binding
+  through `.load()`, an `rgba16float` storage format) are in the port.
+* **`webgpu_compute_texture_3d`.** It writes a `Storage3DTexture` from a
+  kernel, which is here and tested (§28), but it also needs `CanvasTexture`
+  for the sky's gradient and MaterialX's `mx_noise_vec3` with the time, which
+  are other issues. The storage-3D path has a WGSL and naga test but no
+  graded frame until that rung lands.
+* **The unfilterable 3-D sample** (§28.3) and **`RenderTarget3D`** and
+  **KTX2** volumes, the last two out of the issue's scope.

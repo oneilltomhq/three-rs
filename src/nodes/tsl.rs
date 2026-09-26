@@ -269,6 +269,11 @@ pub fn int(v: i64) -> NodeRef {
     constant(Type::I32, vec![v as f64])
 }
 
+/// `bool( v )` — a `true` / `false` literal.
+pub fn boolean(v: bool) -> NodeRef {
+    constant(Type::Bool, vec![f64::from(u8::from(v))])
+}
+
 /// `vec2( x, y )`.
 pub fn vec2(x: impl Into<f64>, y: impl Into<f64>) -> NodeRef {
     constant(Type::Vec2, vec![x.into(), y.into()])
@@ -2621,6 +2626,162 @@ pub fn texture(map: &Texture) -> NodeRef {
     )
 }
 
+/// `texture3D( texture, null, level )` — `Texture3DNode` with a level, which
+/// is how both volume pages read their volume: `textureSampleLevel` at a
+/// fixed level, never the implicit-derivative `textureSample` a raymarch loop
+/// could not use. The node is a handle for `.sample()` and `.normal()`, the
+/// two things a raymarcher calls on it.
+#[derive(Clone, Debug)]
+pub struct Texture3DNode {
+    source: Rc<TextureSource>,
+    level: NodeRef,
+}
+
+/// `texture3D( texture, null, level )`.
+pub fn texture_3d(texture: &crate::textures::Data3DTexture, level: NodeRef) -> Texture3DNode {
+    Texture3DNode {
+        source: Rc::new(TextureSource::Texture3D(texture.clone())),
+        level,
+    }
+}
+
+impl Texture3DNode {
+    /// `node.sample( uv )` — the `vec4` texel at `uv` in `[ 0, 1 ]³`.
+    pub fn sample(&self, uv: impl Into<NodeRef>) -> NodeRef {
+        NodeRef::new(Node::Texture {
+            texture: self.source.clone(),
+            uv: uv.into(),
+            mode: SampleMode::Level(self.level.clone()),
+            ty: Type::Vec4,
+        })
+    }
+
+    /// `node.sample( uv ).r`. Three builds the texture node itself as a
+    /// `float` when only `.r` is read, so its var is an `f32` holding
+    /// `textureSampleLevel( … ).x` rather than a `vec4` swizzled afterwards;
+    /// this is the node that reproduces that.
+    pub fn sample_r(&self, uv: impl Into<NodeRef>) -> NodeRef {
+        NodeRef::new(Node::Texture {
+            texture: self.source.clone(),
+            uv: uv.into(),
+            mode: SampleMode::Level(self.level.clone()),
+            ty: Type::F32,
+        })
+    }
+
+    /// `Texture3DNode.normal( uv )` — the volume's gradient at `uv` by central
+    /// differences of `.r`, 0.01 apart, and the inward axis on the six faces
+    /// of the unit cube. The `If().ElseIf()…Else()` chain nests exactly as
+    /// three's does.
+    pub fn normal(&self, uv: NodeRef) -> NodeRef {
+        let epsilon = 0.0001;
+        let ret = to_var(None, vec3(0.0, 0.0, 0.0));
+        let step = 0.01;
+        let x = self
+            .sample_r(uv.add(vec3(-step, 0.0, 0.0)))
+            .sub(self.sample_r(uv.add(vec3(step, 0.0, 0.0))));
+        let y = self
+            .sample_r(uv.add(vec3(0.0, -step, 0.0)))
+            .sub(self.sample_r(uv.add(vec3(0.0, step, 0.0))));
+        let z = self
+            .sample_r(uv.add(vec3(0.0, 0.0, -step)))
+            .sub(self.sample_r(uv.add(vec3(0.0, 0.0, step))));
+        let arms = [
+            (uv.x().less_than(epsilon), vec3(1.0, 0.0, 0.0)),
+            (uv.y().less_than(epsilon), vec3(0.0, 1.0, 0.0)),
+            (uv.z().less_than(epsilon), vec3(0.0, 0.0, 1.0)),
+            (uv.x().greater_than(1.0 - epsilon), vec3(-1.0, 0.0, 0.0)),
+            (uv.y().greater_than(1.0 - epsilon), vec3(0.0, -1.0, 0.0)),
+            (uv.z().greater_than(1.0 - epsilon), vec3(0.0, 0.0, -1.0)),
+        ];
+        let mut chain = vec![ret.assign(vec3_join(vec![x, y, z]))];
+        for (cond, axis) in arms.into_iter().rev() {
+            chain = vec![if_else(cond, vec![ret.assign(axis)], chain)];
+        }
+        let mut statements = vec![ret.clone()];
+        statements.extend(chain);
+        block(statements, ret.normalize())
+    }
+}
+
+/// `storageTexture( texture )` — a `StorageTextureNode`, write-only until
+/// [`set_access`](Self::set_access) says otherwise. It is the handle
+/// [`texture_store`] writes through and [`load`](Self::load) reads through;
+/// sampling the same texture in a material is `texture( texture )`, a
+/// different binding.
+#[derive(Clone, Debug)]
+pub struct StorageTextureNode {
+    source: Rc<TextureSource>,
+}
+
+/// `storageTexture( StorageTexture )`.
+pub fn storage_texture(texture: &Texture) -> StorageTextureNode {
+    assert!(
+        texture.is_storage(),
+        "three-rs: storageTexture() needs a Texture::storage()"
+    );
+    StorageTextureNode {
+        source: Rc::new(TextureSource::Storage(
+            texture.clone(),
+            crate::nodes::node::StorageAccess::WriteOnly,
+        )),
+    }
+}
+
+/// `storageTexture( Storage3DTexture )`.
+pub fn storage_texture_3d(texture: &crate::textures::Data3DTexture) -> StorageTextureNode {
+    assert!(
+        texture.is_storage(),
+        "three-rs: storageTexture() needs a Data3DTexture::storage()"
+    );
+    StorageTextureNode {
+        source: Rc::new(TextureSource::Storage3D(
+            texture.clone(),
+            crate::nodes::node::StorageAccess::WriteOnly,
+        )),
+    }
+}
+
+impl StorageTextureNode {
+    /// `.setAccess( NodeAccess.* )`.
+    pub fn set_access(self, access: crate::nodes::node::StorageAccess) -> Self {
+        let source = match &*self.source {
+            TextureSource::Storage(t, _) => TextureSource::Storage(t.clone(), access),
+            TextureSource::Storage3D(t, _) => TextureSource::Storage3D(t.clone(), access),
+            _ => unreachable!("three-rs: a StorageTextureNode holds a storage source"),
+        };
+        Self {
+            source: Rc::new(source),
+        }
+    }
+
+    /// `.load( coord )` — `textureLoad( t, coord )`, the texel at an integer
+    /// coordinate, with no level (`generateStorageTextureLoad()`).
+    pub fn load(&self, coord: impl Into<NodeRef>) -> NodeRef {
+        NodeRef::new(Node::Texture {
+            texture: self.source.clone(),
+            uv: coord.into(),
+            mode: SampleMode::StorageLoad,
+            ty: Type::Vec4,
+        })
+    }
+}
+
+/// `textureStore( storageTexture, coord, value )` — a statement. `coord` is a
+/// `uvec2` (a `uvec3` for a 3D texture) or anything that converts to one;
+/// `value` is widened to a `vec4`.
+pub fn texture_store(
+    texture: &StorageTextureNode,
+    coord: impl Into<NodeRef>,
+    value: impl Into<NodeRef>,
+) -> NodeRef {
+    NodeRef::new(Node::TextureStore {
+        texture: texture.source.clone(),
+        coord: coord.into(),
+        value: value.into(),
+    })
+}
+
 /// `WGSLNodeBuilder.generateTextureSample`'s choice for a colour texture:
 /// an unfilterable map ([`Texture::is_unfilterable`]) is bound with no
 /// sampler and read with `textureLoad`; everything else is `textureSample`.
@@ -3161,6 +3322,7 @@ pub fn loop_statement(count: usize, index: NodeRef, body: Vec<NodeRef>) -> NodeR
         start: None,
         index,
         count,
+        update: None,
         body,
     })
 }
@@ -3614,6 +3776,7 @@ pub fn loop_n(
         start: None,
         count,
         index,
+        update: None,
         body,
     })
 }
@@ -3640,8 +3803,38 @@ pub fn loop_range(
         start: Some(start),
         count: end,
         index,
+        update: None,
         body,
     })
+}
+
+/// `Loop( { type: 'float', start, end, update }, () => { … } )` — a float
+/// index stepped by `update`: `for ( var i : f32 = start; i < end; i +=
+/// update )`. `RaymarchingBox` is the one user.
+pub fn loop_float(
+    name: &'static str,
+    start: NodeRef,
+    end: NodeRef,
+    update: NodeRef,
+    body: impl FnOnce(&NodeRef) -> Vec<NodeRef>,
+) -> NodeRef {
+    let index = NodeRef::new(Node::Param {
+        name,
+        ty: Type::F32,
+    });
+    let body = body(&index);
+    NodeRef::new(Node::Loop {
+        start: Some(start),
+        count: end,
+        index,
+        update: Some(update),
+        body,
+    })
+}
+
+/// `Break()` — out of the innermost `Loop`.
+pub fn break_loop() -> NodeRef {
+    NodeRef::new(Node::Break)
 }
 
 /// `If( cond, () => { … } )`.

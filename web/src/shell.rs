@@ -251,6 +251,8 @@ CustomFogBackground, webgpu_custom_fog_background, "../../examples/webgpu_custom
 LoaderGltfSheen, webgpu_loader_gltf_sheen, "../../examples/webgpu_loader_gltf_sheen.rs";
 Deferred, webgpu_deferred, "../../examples/webgpu_deferred.rs";
 LoaderGltfAnisotropy, webgpu_loader_gltf_anisotropy, "../../examples/webgpu_loader_gltf_anisotropy.rs";
+ComputeTexture, webgpu_compute_texture, "../../examples/webgpu_compute_texture.rs";
+VolumePerlin, webgpu_volume_perlin, "../../examples/webgpu_volume_perlin.rs";
 }
 
 /// Where an example's assets come from: three.js at the commit this port is

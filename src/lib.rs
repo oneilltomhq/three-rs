@@ -64,5 +64,6 @@ pub use renderer::{
     RenderPipeline, RenderTarget, Renderer, RendererParameters, SsaaPassNode, BACKENDS,
 };
 pub use textures::{
-    ColorSpace, CubeTexture, DepthTexture, Mapping, MinFilter, Texture, TextureFilter, TextureType,
+    ColorSpace, CubeTexture, Data3DTexture, DepthTexture, Mapping, MinFilter, Texture,
+    TextureFilter, TextureType,
 };

@@ -185,6 +185,14 @@ mod webgpu_deferred;
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_loader_gltf_anisotropy;
 
+#[path = "webgpu_compute_texture.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_compute_texture;
+
+#[path = "webgpu_volume_perlin.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_volume_perlin;
+
 /// Every graded example, in the README's order, paired with a call of its
 /// `init()`.
 ///
@@ -287,6 +295,13 @@ const GRADED: &[(&str, fn())] = &[
     ("webgpu_loader_gltf_anisotropy", || {
         drop(webgpu_loader_gltf_anisotropy::init())
     }),
+    ("webgpu_compute_texture", || {
+        drop(webgpu_compute_texture::init())
+    }),
+    (
+        "webgpu_volume_perlin",
+        || drop(webgpu_volume_perlin::init()),
+    ),
 ];
 
 /// Where the committed manifests live, one `<example>.json` each.

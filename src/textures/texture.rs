@@ -87,6 +87,10 @@ pub struct TextureInner {
     /// `needsUpdate` is set to true". Part of the renderer's texture cache
     /// key, exactly as `Material.version` is part of the program cache key.
     pub version: u32,
+    /// `texture.isStorageTexture` — a [`Texture::storage`]: created with
+    /// `STORAGE_BINDING`, never uploaded to, written by a compute kernel's
+    /// `textureStore()`.
+    pub is_storage: bool,
 }
 
 /// Cloning is a handle copy, as in JS.
@@ -130,6 +134,7 @@ impl Texture {
                 gpu: None,
                 format: wgpu::TextureFormat::Rgba8Unorm,
                 version: 0,
+                is_storage: false,
             })),
             TextureId::next(),
         )
@@ -148,6 +153,32 @@ impl Texture {
             inner.format = format;
         }
         texture
+    }
+
+    /// `new StorageTexture( width, height )` (`renderers/common/StorageTexture.js`):
+    /// a `Texture` with no image, `LinearFilter` on both filters and
+    /// `isStorageTexture = true`. `generateMipmaps` keeps `Texture`'s `true`,
+    /// so the GPU texture has the full chain; three regenerates it after a
+    /// kernel has stored into level 0, before the next draw that samples it
+    /// (`Bindings._update()`'s `needsMipmap`), and so does the renderer here.
+    ///
+    /// `rgba8unorm` by default; `set_texture_type( TextureType::HalfFloat )`
+    /// makes it `rgba16float`, as `texture.type = HalfFloatType` does. Either
+    /// is a format WebGPU allows as a write-only storage texture on every
+    /// backend, which is what `webgpu_compute_texture*` bind it as.
+    pub fn storage(width: u32, height: u32) -> Self {
+        let texture = Self::new(width, height, None);
+        {
+            let mut inner = texture.0.borrow_mut();
+            inner.min_filter = MinFilter::Linear;
+            inner.is_storage = true;
+        }
+        texture
+    }
+
+    /// `texture.isStorageTexture`.
+    pub fn is_storage(&self) -> bool {
+        self.0.borrow().is_storage
     }
 
     /// `new ExternalTexture( sourceTexture )` — a `wgpu::Texture` the caller
@@ -341,6 +372,7 @@ impl Texture {
                 gpu: None,
                 format: inner.format,
                 version: inner.version,
+                is_storage: inner.is_storage,
             })),
             TextureId::next(),
         )
@@ -647,6 +679,7 @@ impl std::fmt::Debug for TextureInner {
             .field("own_gpu", &self.own_gpu)
             .field("gpu", &self.gpu)
             .field("format", &self.format)
+            .field("is_storage", &self.is_storage)
             .finish()
     }
 }
@@ -670,6 +703,19 @@ mod tests {
             height,
             Some(vec![0u8; (width * height * 4) as usize]),
         )
+    }
+
+    /// `StorageTexture`'s constructor: no image, `LinearFilter` on both, and
+    /// `Texture`'s `generateMipmaps = true` kept — a 512² one has ten levels.
+    #[test]
+    fn a_storage_texture_keeps_its_mip_chain() {
+        let texture = Texture::storage(512, 512);
+        assert!(texture.is_storage());
+        assert!(texture.borrow().data.is_none());
+        assert_eq!(texture.borrow().min_filter, MinFilter::Linear);
+        assert_eq!(texture.borrow().mag_filter, TextureFilter::Linear);
+        assert_eq!(texture.mip_level_count(), 10);
+        assert!(!texture.is_unfilterable());
     }
 
     #[test]

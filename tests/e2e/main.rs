@@ -226,6 +226,9 @@ mod webgpu_morphtargets;
 #[path = "../../examples/webgpu_compute_points.rs"]
 #[allow(dead_code)]
 mod webgpu_compute_points;
+#[path = "../../examples/webgpu_compute_texture.rs"]
+#[allow(dead_code)]
+mod webgpu_compute_texture;
 #[path = "../../examples/webgpu_lights_physical.rs"]
 #[allow(dead_code)]
 mod webgpu_lights_physical;
@@ -247,6 +250,9 @@ mod webgpu_tsl_galaxy;
 #[path = "../../examples/webgpu_tsl_interoperability.rs"]
 #[allow(dead_code)]
 mod webgpu_tsl_interoperability;
+#[path = "../../examples/webgpu_volume_perlin.rs"]
+#[allow(dead_code)]
+mod webgpu_volume_perlin;
 
 fn three_js_dir() -> PathBuf {
     three_rs::testing::three_js_dir()
@@ -1503,6 +1509,101 @@ fn webgpu_loader_gltf_anisotropy() {
     );
 }
 
+/// The gate on storage textures (issue #166): a kernel `textureStore`s the
+/// plasma into a 512² `StorageTexture` once, in `init()`, and the plane
+/// samples it through the mip chain the renderer rebuilds after the store. A
+/// store that never landed leaves the plane transparent black; mips left
+/// stale by the store leave it black at the minified sample — either is most
+/// of the plane's 250² pixels.
+#[test]
+fn webgpu_compute_texture() {
+    let name = "webgpu_compute_texture";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_compute_texture::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_compute_texture::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_compute_texture::animate, |app| {
+        app.renderer.device()
+    });
+}
+
+/// The gate on `Data3DTexture` and `texture3D` (issue #166): a 128³ `r8unorm`
+/// volume of `ImprovedNoise`, raymarched by `RaymarchingBox` with a bisection
+/// refinement and a central-difference normal. The iso-surface's shape is the
+/// noise and the threshold; its colour is the normal and the position, so a
+/// wrong texel order, filter or gradient moves most of the lit pixels.
+#[test]
+fn webgpu_volume_perlin() {
+    let name = "webgpu_volume_perlin";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_volume_perlin::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_volume_perlin::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_volume_perlin::animate, |app| {
+        app.renderer.device()
+    });
+}
+
 /// The gate on `pass.getViewZNode()`: the depth attachment of a **4×MSAA**
 /// pass, read back with `textureLoad( …, 0 )` through a
 /// `texture_depth_multisampled_2d` binding and converted with
@@ -2703,6 +2804,10 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_custom_fog_background);
     rung!(webgpu_deferred);
     rung!(webgpu_loader_gltf_anisotropy);
+    // The kernel runs once, in `init()`; the steady frames sample the stored
+    // texture and neither dispatch nor regenerate its mips again.
+    rung!(webgpu_compute_texture);
+    rung!(webgpu_volume_perlin);
 }
 
 // ---------------------------------------------------------------------------
