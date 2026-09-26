@@ -61,6 +61,13 @@ pub struct Object3D {
     /// shadow maps, which makes it a different program from the same material
     /// on a non-receiving object.
     pub receive_shadow: bool,
+    /// `object.occlusionTest` — not a declared `Object3D` property in three
+    /// but an ad-hoc one the renderer reads (`RenderList.push()`,
+    /// `WebGPUBackend.draw()`): when `true` the object's draws are wrapped in
+    /// an occlusion query, and `renderer.isOccluded( object )` answers from its
+    /// result. Being ad hoc, `Object3D.copy()` does not carry it, so neither
+    /// does [`Clone`].
+    pub occlusion_test: bool,
     /// `Object3D.isGroup`.
     pub is_group: bool,
     /// `Object3D.isScene`.
@@ -74,6 +81,11 @@ pub struct Object3D {
     pub up: Vector3,
     pub matrix: Matrix4,
     pub matrix_world: Matrix4,
+    /// `Object3D.userData` — the application's own data on the object, an
+    /// open JSON object as in three.js. The node system reads it through
+    /// [`user_data`](crate::nodes::tsl::user_data), once per draw, as
+    /// `UserDataNode` does.
+    pub user_data: serde_json::Map<String, serde_json::Value>,
     /// What three.js would get from subclassing: the `Mesh`/`InstancedMesh`
     /// state that makes this node drawable. See [`Payload`].
     pub payload: Payload,
@@ -98,6 +110,7 @@ impl Default for Object3D {
             is_light: false,
             cast_shadow: false,
             receive_shadow: false,
+            occlusion_test: false,
             is_group: false,
             is_scene: false,
             position: Vector3::ZERO,
@@ -108,6 +121,7 @@ impl Default for Object3D {
             up: Vector3::new(0.0, 1.0, 0.0),
             matrix: Matrix4::identity(),
             matrix_world: Matrix4::identity(),
+            user_data: serde_json::Map::new(),
             payload: Payload::None,
         }
     }
@@ -135,6 +149,7 @@ impl Clone for Object3D {
             is_light: self.is_light,
             cast_shadow: self.cast_shadow,
             receive_shadow: self.receive_shadow,
+            occlusion_test: false,
             is_group: self.is_group,
             is_scene: self.is_scene,
             position: self.position,
@@ -144,6 +159,8 @@ impl Clone for Object3D {
             up: self.up,
             matrix: self.matrix,
             matrix_world: self.matrix_world,
+            // `JSON.parse( JSON.stringify( source.userData ) )`: a deep copy.
+            user_data: self.user_data.clone(),
             payload: self.payload.clone(),
         }
     }

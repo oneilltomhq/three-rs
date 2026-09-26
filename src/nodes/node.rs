@@ -366,7 +366,8 @@ impl std::hash::Hash for LiveValue {
 }
 
 /// The callback behind [`UniformSource::ObjectUpdate`] — `Node.update( frame )`
-/// narrowed to the one thing an `OBJECT` update can read, `frame.object`.
+/// narrowed to what an `OBJECT` update can read: `frame.object`, and the one
+/// question a node on the ladder asks `frame.renderer`, `isOccluded()`.
 ///
 /// Two callbacks with the same behaviour are still two uniforms, so, like
 /// [`SettableValue`], this compares by identity: the program cache must not
@@ -374,18 +375,58 @@ impl std::hash::Hash for LiveValue {
 #[derive(Clone)]
 pub struct ObjectUpdate(Rc<ObjectUpdateFn>);
 
-/// The body of an [`ObjectUpdate`]: three's `update( frame )` with `frame`
-/// narrowed to its `object`.
-pub type ObjectUpdateFn = dyn Fn(&crate::core::Object3D) -> Vec<f64>;
+/// The body of an [`ObjectUpdate`]: three's `update( frame )`.
+pub type ObjectUpdateFn = dyn Fn(&NodeFrame) -> Vec<f64>;
+
+/// `NodeFrame` as a node's `update( frame )` sees it, narrowed to what the
+/// port's object-update uniforms read.
+///
+/// three hands the node the whole frame, renderer included; the port hands it
+/// the render object and the renderer's occlusion results for the render
+/// context being drawn, which is all `frame.renderer.isOccluded( object )`
+/// reads (`webgpu_occlusion`, `docs/nodes.md` §39).
+#[derive(Clone, Copy)]
+pub struct NodeFrame<'a> {
+    /// `frame.object` — the render object about to be drawn.
+    pub object: &'a crate::core::Object3D,
+    /// `renderContextData.occluded` for the current render context: the ids of
+    /// the objects whose last resolved occlusion query drew no samples. `None`
+    /// until a query has resolved, as three's is `undefined`.
+    pub(crate) occluded: Option<&'a std::collections::HashSet<u32>>,
+}
+
+impl<'a> NodeFrame<'a> {
+    /// A frame with no occlusion results, for a caller outside a render.
+    pub fn new(object: &'a crate::core::Object3D) -> Self {
+        Self {
+            object,
+            occluded: None,
+        }
+    }
+
+    /// `frame.renderer.isOccluded( object )`: whether the last occlusion query
+    /// the current render context resolved for `object` drew no samples.
+    /// Results arrive asynchronously, a frame or more after the draw, so this
+    /// is `false` until then, as it is in three.
+    pub fn is_occluded(&self, object: &crate::core::Object3D) -> bool {
+        self.occluded.is_some_and(|set| set.contains(&object.id))
+    }
+}
 
 impl ObjectUpdate {
     pub fn new(update: impl Fn(&crate::core::Object3D) -> Vec<f64> + 'static) -> Self {
+        Self(Rc::new(move |frame: &NodeFrame| update(frame.object)))
+    }
+
+    /// An update that reads more of the frame than its object — see
+    /// [`NodeFrame`].
+    pub fn with_frame(update: impl Fn(&NodeFrame) -> Vec<f64> + 'static) -> Self {
         Self(Rc::new(update))
     }
 
-    /// `node.update( { object } )` — the value for one render object.
-    pub fn value(&self, object: &crate::core::Object3D) -> Vec<f64> {
-        (self.0)(object)
+    /// `node.update( frame )` — the value for one render object.
+    pub fn value(&self, frame: &NodeFrame) -> Vec<f64> {
+        (self.0)(frame)
     }
 }
 
@@ -856,12 +897,26 @@ pub enum SampleMode {
     Sample,
     /// `textureSampleLevel( t, t_sampler, uv, level )`.
     Level(NodeRef),
-    /// `textureSampleGrad( t, t_sampler, uv, vec2( 0 ), vec2( 0 ) )` —
-    /// `textureNode.grad( vec2(), vec2() )`, which is how `PMREMUtils`'
-    /// `bilinearCubeUV` turns anisotropic filtering off on the cubeUV atlas.
-    /// The two gradients are always the zero constants three passes, so they
-    /// are baked rather than carried as nodes.
-    Grad,
+    /// `textureSampleGrad( t, t_sampler, uv, gradX, gradY )` —
+    /// `textureNode.grad( gradX, gradY )` (`generateTextureGrad()`), each
+    /// gradient built as a `vec2`.
+    Grad(NodeRef, NodeRef),
+    /// `textureGather( component, t, t_sampler, uv[, offset] )` —
+    /// `textureNode.gather( component )`, optionally `.offset( ivec2 )`
+    /// (`WGSLNodeBuilder.generateTextureGather()`): one channel of the four
+    /// texels a bilinear tap would read, from mip level 0.
+    Gather {
+        component: NodeRef,
+        offset: Option<NodeRef>,
+    },
+    /// `textureGatherCompare( t, t_sampler, uv, depth[, offset] )` —
+    /// `depthNode.gather().compare( depth )` on a depth texture with a
+    /// comparison sampler (`generateTextureGatherCompare()`): the four
+    /// texels' comparison results.
+    GatherCompare {
+        compare: NodeRef,
+        offset: Option<NodeRef>,
+    },
     /// The non-filterable path: `textureLoad` against `textureDimensions`,
     /// with no sampler binding at all. What Three emits for a depth texture.
     Load,

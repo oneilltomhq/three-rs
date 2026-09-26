@@ -240,6 +240,14 @@ Particles, webgpu_particles, "../../examples/webgpu_particles.rs";
 Clearcoat, webgpu_clearcoat, "../../examples/webgpu_clearcoat.rs";
 ModifierCurve, webgpu_modifier_curve, "../../examples/webgpu_modifier_curve.rs";
 CameraArray, webgpu_camera_array, "../../examples/webgpu_camera_array.rs";
+Sprites, webgpu_sprites, "../../examples/webgpu_sprites.rs";
+InstanceSprites, webgpu_instance_sprites, "../../examples/webgpu_instance_sprites.rs";
+MaterialsToon, webgpu_materials_toon, "../../examples/webgpu_materials_toon.rs";
+Occlusion, webgpu_occlusion, "../../examples/webgpu_occlusion.rs";
+FogHeight, webgpu_fog_height, "../../examples/webgpu_fog_height.rs";
+ShadowmapOpacity, webgpu_shadowmap_opacity, "../../examples/webgpu_shadowmap_opacity.rs";
+Texturegrad, webgpu_texturegrad, "../../examples/webgpu_texturegrad.rs";
+Texturegather, webgpu_texturegather, "../../examples/webgpu_texturegather.rs";
 SkinningPoints, webgpu_skinning_points, "../../examples/webgpu_skinning_points.rs";
 InstancePoints, webgpu_instance_points, "../../examples/webgpu_instance_points.rs";}
 

@@ -347,6 +347,52 @@ pub fn uniform_object(
     )
 }
 
+/// [`uniform_object`] for a node whose `update( frame )` reads more than
+/// `frame.object` — `webgpu_occlusion`'s `OcclusionNode`, which asks
+/// `frame.renderer.isOccluded( testObject )`. See [`NodeFrame`].
+///
+/// [`NodeFrame`]: crate::nodes::NodeFrame
+pub fn uniform_frame(
+    ty: Type,
+    update: impl Fn(&crate::nodes::NodeFrame) -> Vec<f64> + 'static,
+) -> NodeRef {
+    uniform(
+        UniformSource::ObjectUpdate(crate::nodes::node::ObjectUpdate::with_frame(update)),
+        ty,
+        UniformGroup::Object,
+        None,
+    )
+}
+
+/// `userData( name, inputType )` — `UserDataNode`, a `ReferenceNode` on the
+/// render object's own `userData`: an object-group `uniform()` whose value is
+/// `object.userData[ name ]`, re-read before every draw
+/// (`NodeUpdateType.OBJECT`), so every object sharing the material gets its
+/// own value out of one program. `webgpu_sprites` drives each sprite's
+/// `rotationNode` with it.
+///
+/// three's `ReferenceNode` walks a dotted `name` (`'a.b'`) and also accepts an
+/// explicit `userData` object in place of the render object's; the ladder uses
+/// neither, so the port takes a flat key on the render object. A number or a
+/// numeric array is read as the uniform's components; a missing key or any
+/// other value reads as zero, where three would write `undefined` and trip
+/// over it.
+pub fn user_data(name: &str, ty: Type) -> NodeRef {
+    let name = name.to_owned();
+    let length = ty.components();
+    uniform_object(ty, move |object| {
+        let mut values = match object.user_data.get(&name) {
+            Some(serde_json::Value::Number(n)) => vec![n.as_f64().unwrap_or(0.0)],
+            Some(serde_json::Value::Array(items)) => {
+                items.iter().map(|v| v.as_f64().unwrap_or(0.0)).collect()
+            }
+            _ => Vec::new(),
+        };
+        values.resize(length, 0.0);
+        values
+    })
+}
+
 pub fn uniform(
     source: UniformSource,
     ty: Type,
@@ -731,8 +777,37 @@ pub fn perspective_depth_to_view_z(
 
 /// Port of `three.js/src/nodes/fog/Fog.js`' `rangeFogFactor( near, far )`:
 /// `smoothstep( near, far, positionView.z.negate() )`.
+///
+/// Like three's, the factor reads `positionView` when the *material* is built,
+/// not when the fog is made: it is an inline `Fn()` whose body
+/// [`resolve_fog_factor`] runs inside the material's setup, so a
+/// `SpriteNodeMaterial` fogs by its billboarded `v_positionView`
+/// (`docs/nodes.md` §41).
 pub fn range_fog_factor(near: impl Into<NodeRef>, far: impl Into<NodeRef>) -> NodeRef {
-    range_fog_factor_with_view_z(near, far, position_view().z())
+    let (near, far) = (near.into(), far.into());
+    fog_factor_fn(move || {
+        range_fog_factor_with_view_z(near.clone(), far.clone(), position_view().z())
+    })
+}
+
+/// `Fog.js`' factors are `Fn()`s whose `getViewZNode( builder )` runs during
+/// the material's build, when `builder.context.setupPositionView` is the
+/// material's own. The port's graph is eager, so the body is held in an
+/// inline, argument-less call and run by [`resolve_fog_factor`] inside
+/// `NodeMaterial` setup's position-view scope. A factor that reaches the
+/// builder unresolved (used outside `scene.fogNode`) is inlined there, with the
+/// base class' `positionView`, which is what it read before.
+fn fog_factor_fn(body: impl Fn() -> NodeRef + 'static) -> NodeRef {
+    call(&inline_fn(0, Type::F32, move |_| body()), Vec::new())
+}
+
+/// Runs a fog factor's deferred body (see [`range_fog_factor`]) in the
+/// current material's context. Any other node is returned as it is.
+pub fn resolve_fog_factor(factor: &NodeRef) -> NodeRef {
+    match &*factor.0 {
+        Node::Call { def, args } if !def.layout && args.is_empty() => (def.body)(&[]),
+        _ => factor.clone(),
+    }
 }
 
 /// `rangeFogFactor( near, far ).context( { getViewZ: () => viewZ } )`.
@@ -759,8 +834,11 @@ pub fn range_fog_factor_with_view_z(
 /// turns it into a `let nodeConstN`; the port's builder does not promote a
 /// negation on usage (`docs/nodes.md` §8, "`toConst` on the shadow filter"), so
 /// the const is taken here by hand and the WGSL is the same.
+///
+/// Deferred to the material's build as [`range_fog_factor`] is.
 pub fn density_fog_factor(density: impl Into<NodeRef>) -> NodeRef {
-    density_fog_factor_with_view_z(density, position_view().z())
+    let density = density.into();
+    fog_factor_fn(move || density_fog_factor_with_view_z(density.clone(), position_view().z()))
 }
 
 /// [`density_fog_factor`] over an explicit view-space z, the
@@ -793,7 +871,14 @@ pub fn exponential_height_fog_factor(
     density: impl Into<NodeRef>,
     height: impl Into<NodeRef>,
 ) -> NodeRef {
-    exponential_height_fog_factor_with_view_z(density, height, position_view().z())
+    let (density, height) = (density.into(), height.into());
+    fog_factor_fn(move || {
+        exponential_height_fog_factor_with_view_z(
+            density.clone(),
+            height.clone(),
+            position_view().z(),
+        )
+    })
 }
 
 /// [`exponential_height_fog_factor`] over an explicit view-space z.
@@ -2697,6 +2782,21 @@ pub fn texture(map: &Texture) -> NodeRef {
     )
 }
 
+/// `texture( map ).context( { getUV: () => coord } )` — the map read at a
+/// coordinate the *context* supplies. `TextureNode.setup()` takes `getUV()`'s
+/// node in place of the default `uv()` and then still applies
+/// `getTransformedUV()`, so unlike [`texture_uv`] the tap goes through the
+/// map's `mat3x3` uv matrix — one shared per map, as [`texture`]'s is.
+/// `ToonLightingModel`'s gradient lookup is the caller.
+pub fn texture_with_uv(map: &Texture, coord: NodeRef) -> NodeRef {
+    texture_node(
+        TextureSource::Texture2D(map.clone()),
+        transformed_uv(coord, (0, map.id()), map.matrix()),
+        sample_mode_for(map),
+        texture_type_for(map),
+    )
+}
+
 /// `texture3D( texture, null, level )` — `Texture3DNode` with a level, which
 /// is how both volume pages read their volume: `textureSampleLevel` at a
 /// fixed level, never the implicit-derivative `textureSample` a raymarch loop
@@ -2955,14 +3055,53 @@ pub fn bump_map(map: &Texture, scale: NodeRef) -> NodeRef {
     })
 }
 
-/// `texture( map ).sample( uv ).grad( vec2(), vec2() )` — a tap with the
-/// gradients pinned to zero, which is how `PMREMUtils.bilinearCubeUV` turns
-/// anisotropic filtering off on the cubeUV atlas.
-pub fn texture_grad(map: &Texture, coord: NodeRef) -> NodeRef {
+/// `texture( map, uv ).grad( gradX, gradY )` — a 2-D tap with explicit
+/// screen-space gradients, `textureSampleGrad` (`webgpu_texturegrad`). The uv
+/// is taken as given, with no uv matrix, as for [`texture_uv`].
+pub fn texture_grad(map: &Texture, coord: NodeRef, grad_x: NodeRef, grad_y: NodeRef) -> NodeRef {
     texture_node(
         TextureSource::Texture2D(map.clone()),
         coord,
-        SampleMode::Grad,
+        SampleMode::Grad(grad_x, grad_y),
+        Type::Vec4,
+    )
+}
+
+/// `texture( map ).sample( uv ).offset( offset ).gather( component )` —
+/// `textureGather`: channel `component` of the four texels around `uv`, from
+/// mip level 0 (`webgpu_texturegather`). The uv is taken as given, as for
+/// [`texture_uv`]; `offset` is a texel offset, `None` for no `.offset()`.
+pub fn texture_gather(
+    map: &Texture,
+    coord: NodeRef,
+    component: NodeRef,
+    offset: Option<NodeRef>,
+) -> NodeRef {
+    texture_node(
+        TextureSource::Texture2D(map.clone()),
+        coord,
+        SampleMode::Gather { component, offset },
+        Type::Vec4,
+    )
+}
+
+/// `texture( depthTexture ).sample( uv ).offset( offset ).gather().compare( z )`
+/// — `textureGatherCompare` on a depth texture with a comparison sampler:
+/// the four texels' results, as a `vec4`.
+///
+/// The sampler is [`shadow_map_compare`]'s, `LessEqualCompare`: the one
+/// `compareFunction` a page on the ladder sets on its own `DepthTexture`, so
+/// the port's `DepthTexture` carries none (`docs/nodes.md` §44).
+pub fn depth_texture_gather_compare(
+    map: &DepthTexture,
+    coord: NodeRef,
+    compare: NodeRef,
+    offset: Option<NodeRef>,
+) -> NodeRef {
+    texture_node(
+        TextureSource::ShadowMap(map.clone()),
+        coord,
+        SampleMode::GatherCompare { compare, offset },
         Type::Vec4,
     )
 }
@@ -4545,6 +4684,115 @@ pub fn aces_filmic_tone_mapping(color: NodeRef, exposure: NodeRef) -> NodeRef {
                         .mul(c.add(float(0.432951)).mul(float(0.983729)))
                         .add(float(0.238081));
                     output.mul(a.div(b)).saturate()
+                },
+            )
+        })
+    });
+    call(&def, vec![color, exposure])
+}
+
+/// `agxToneMapping( color, exposure )` — `ToneMappingFunctions.js`' AgX,
+/// emitted as a real `fn`. `agxDefaultContrastApprox` has no layout upstream,
+/// so it inlines here too, with its three `toVar()`s.
+///
+/// The matrices are `mat3( vec3, vec3, vec3 )` — columns — and are written
+/// out column by column, as the WGSL prints them. The first and last are
+/// `LINEAR_SRGB_TO_LINEAR_REC2020` and its inverse from `ColorSpaceFunctions`.
+pub fn agx_tone_mapping(color: NodeRef, exposure: NodeRef) -> NodeRef {
+    thread_local! { static CELL: Lazy<Rc<FnDef>> = const { Lazy::new() }; }
+    let def = CELL.with(|c| {
+        c.get(|| {
+            shader_fn(
+                Some("agxToneMapping"),
+                vec![("color", Type::Vec3), ("exposure", Type::F32)],
+                Type::Vec3,
+                |args| {
+                    let (color, exposure) = (args[0].clone(), args[1].clone());
+                    let srgb_to_rec2020 = constant(
+                        Type::Mat3,
+                        vec![
+                            0.6274, 0.0691, 0.0164, //
+                            0.3293, 0.9195, 0.088, //
+                            0.0433, 0.0113, 0.8956,
+                        ],
+                    );
+                    let inset = constant(
+                        Type::Mat3,
+                        vec![
+                            0.856627153315983,
+                            0.137318972929847,
+                            0.11189821299995,
+                            0.0951212405381588,
+                            0.761241990602591,
+                            0.0767994186031903,
+                            0.0482516061458583,
+                            0.101439036467562,
+                            0.811302368396859,
+                        ],
+                    );
+                    let outset = constant(
+                        Type::Mat3,
+                        vec![
+                            1.1271005818144368,
+                            -0.1413297634984383,
+                            -0.14132976349843826,
+                            -0.11060664309660323,
+                            1.157823702216272,
+                            -0.11060664309660294,
+                            -0.016493938717834573,
+                            -0.016493938717834257,
+                            1.2519364065950405,
+                        ],
+                    );
+                    let rec2020_to_srgb = constant(
+                        Type::Mat3,
+                        vec![
+                            1.6605, -0.1246, -0.0182, //
+                            -0.5876, 1.1329, -0.1006, //
+                            -0.0728, -0.0083, 1.1187,
+                        ],
+                    );
+                    let min_ev = || float(-12.47393);
+                    let max_ev = float(4.026069);
+
+                    let colortone = to_var(None, color);
+                    // `agxDefaultContrastApprox( colortone )`, inlined.
+                    let x = to_var(None, colortone.clone());
+                    let x2 = to_var(None, x.clone().mul(x.clone()));
+                    let x4 = to_var(None, x2.clone().mul(x2.clone()));
+                    let contrast = float(15.5)
+                        .mul(x4.clone().mul(x2.clone()))
+                        .sub(float(40.14).mul(x4.clone().mul(x.clone())))
+                        .add(
+                            float(31.96)
+                                .mul(x4)
+                                .sub(float(6.868).mul(x2.clone().mul(x.clone())))
+                                .add(
+                                    float(0.4298)
+                                        .mul(x2)
+                                        .add(float(0.1191).mul(x).sub(float(0.00232))),
+                                ),
+                        );
+                    block(
+                        vec![
+                            colortone.assign(colortone.mul(exposure)),
+                            colortone.assign(srgb_to_rec2020.mul(colortone.clone())),
+                            colortone.assign(inset.mul(colortone.clone())),
+                            colortone.assign(max(colortone.clone(), float(1e-10))),
+                            colortone.assign(log2(colortone.clone())),
+                            colortone.assign(colortone.sub(min_ev()).div(max_ev.sub(min_ev()))),
+                            colortone.assign(colortone.clamp(0.0, 1.0)),
+                            colortone.assign(contrast),
+                            colortone.assign(outset.mul(colortone.clone())),
+                            colortone.assign(
+                                max(vec3(0.0, 0.0, 0.0), colortone.clone())
+                                    .pow(vec3(2.2, 2.2, 2.2)),
+                            ),
+                            colortone.assign(rec2020_to_srgb.mul(colortone.clone())),
+                            colortone.assign(colortone.clamp(0.0, 1.0)),
+                        ],
+                        colortone,
+                    )
                 },
             )
         })

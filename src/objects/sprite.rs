@@ -60,10 +60,10 @@ pub struct Sprite {
     /// vertex shader through a `reference( 'center', 'vec2', object )` uniform,
     /// by `raycast()`, and by `Frustum.intersectsSprite()`.
     pub center: Vector2,
-    /// `Sprite.count` — how many instances of the quad one draw call renders.
-    /// 1 unless a node material places the instances itself, as
-    /// `PointsNodeMaterial`'s `setupVertexSprite()` does off `instanceIndex`-
-    /// indexed storage.
+    /// `Sprite.count` — the number of instances drawn, `1` by default. A
+    /// larger count draws the one quad that many times, and the material
+    /// tells the instances apart with `instanceIndex` or an instanced
+    /// attribute (`webgpu_instance_sprites`).
     pub count: usize,
 }
 

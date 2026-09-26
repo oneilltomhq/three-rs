@@ -50,6 +50,41 @@ idempotent: re-running it with nothing new changes nothing, and it only ever
 rewrites what is between the two markers and the table's `browser` column, so
 a rung worker adding a row to the graded table will not collide with it.
 
+## Thumbnails are byte-deterministic
+
+A gallery run on a branch that renders nothing differently leaves
+`docs/gallery/` byte-identical, so a rung PR commits every thumbnail the
+generator writes and no others need reverting. Three things hold that:
+
+- **The render is deterministic.** On the Iris Xe the full ladder gives
+  bit-identical `actual.png` frames run to run, and debug and release builds
+  give the same frames (checked for #157: two debug ladders and a release
+  ladder, 56 of 56 frames equal).
+- **The encoding is deterministic.** The 2:1 box filter is integer
+  arithmetic, and `jpeg-encoder` is pure Rust, built without its `simd`
+  feature. `the_thumbnail_encoding_is_pinned` fixes the bytes a synthetic
+  frame encodes to; if an encoder bump or a change to the size, quality or
+  filter moves them, regenerate all of `docs/gallery/` from a fresh full
+  ladder in one commit and update the test's numbers. The generator encodes in
+  memory and does not touch a file that already holds the same bytes.
+- **Stale frames are not thumbnailed.** What made runs rewrite thumbnails
+  (#157) was neither of the above: `target/e2e/<name>/actual.png` is whatever
+  the last run of that rung left, perhaps from before a rebase or from a
+  rung's own earlier iterations, and the generator used to thumbnail all of
+  it. Two committed thumbnails (`webgpu_tsl_angular_slicing`,
+  `webgpu_textures_2d-array_compressed`) had come from such frames: not even
+  the commits that added them render those pixels. Now a frame older than the
+  newest e2e test binary (`target/{debug,release}/deps/e2e-*`) is left alone
+  and named on the way out; its committed thumbnail stays. So running only
+  your own rung and then the generator refreshes only your rung's picture.
+
+The README block has a test too: `the_readme_gallery_block_is_current` fails
+when the block is not exactly what `--readme-only` writes. Git merges two
+regenerations of the block line by line, and each grid line holds four
+examples, so a clean-looking merge once left one example in the grid six
+times. After a merge that touches the block, run
+`cargo run --release --example gallery -- --readme-only`.
+
 ## The `browser` column
 
 The graded table's last column says whether CI's `web-gate` job grades the
