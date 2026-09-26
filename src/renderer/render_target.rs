@@ -191,6 +191,7 @@ impl RenderTarget {
             },
         )
         .expect("three-rs: the source target's texture type is already a colour type");
+        clone.0.borrow().texture.set_format(inner.texture.format());
         if inner.depth_texture.is_some() {
             clone.set_depth_texture(DepthTexture::new());
         }
@@ -218,7 +219,7 @@ impl RenderTarget {
         let texture = color_attachment(
             inner.width,
             inner.height,
-            inner.texture_type.color_gpu_format(),
+            inner.texture.format(),
             inner.min_filter,
             inner.mag_filter,
         );
@@ -254,7 +255,7 @@ impl RenderTarget {
         let texture = color_attachment(
             inner.width,
             inner.height,
-            inner.texture_type.color_gpu_format(),
+            inner.texture.format(),
             inner.min_filter,
             inner.mag_filter,
         );
@@ -308,6 +309,24 @@ impl RenderTarget {
 
     pub fn depth_texture(&self) -> Option<DepthTexture> {
         self.0.borrow().depth_texture.clone()
+    }
+
+    /// `options.format = RGFormat` — a two-channel colour attachment, which
+    /// is what `ShadowNode` asks for its VSM blur targets
+    /// (`{ format: RGFormat, type: HalfFloatType }`). The fragment programs
+    /// drawn into it then write a `vec2` (`NodeBuilder.getOutputType()`).
+    ///
+    /// A setter rather than a [`RenderTargetOptions`] field, so that adding
+    /// the one format the ladder needs does not break every literal
+    /// construction of the options.
+    pub fn set_rg_format(&self) {
+        let inner = self.0.borrow();
+        let format = match inner.texture_type {
+            TextureType::HalfFloat => wgpu::TextureFormat::Rg16Float,
+            _ => wgpu::TextureFormat::Rg8Unorm,
+        };
+        inner.texture.set_format(format);
+        inner.texture.clear_gpu();
     }
 
     pub fn size(&self) -> (u32, u32) {
@@ -433,7 +452,7 @@ impl RenderTarget {
     }
 
     pub fn color_format(&self) -> wgpu::TextureFormat {
-        self.0.borrow().texture_type.color_gpu_format()
+        self.0.borrow().texture.format()
     }
 
     pub(crate) fn inner(&self) -> &RefCell<RenderTargetInner> {

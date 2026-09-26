@@ -274,6 +274,8 @@ TslAngularSlicing, webgpu_tsl_angular_slicing, "../../examples/webgpu_tsl_angula
 Textures2dArrayCompressed, webgpu_textures_2d_array_compressed, "../../examples/webgpu_textures_2d-array_compressed.rs", "webgpu_textures_2d-array_compressed";
 ComputeTexture, webgpu_compute_texture, "../../examples/webgpu_compute_texture.rs";
 VolumePerlin, webgpu_volume_perlin, "../../examples/webgpu_volume_perlin.rs";
+ShadowmapVsm, webgpu_shadowmap_vsm, "../../examples/webgpu_shadowmap_vsm.rs";
+ShadowmapPointlight, webgpu_shadowmap_pointlight, "../../examples/webgpu_shadowmap_pointlight.rs";
 }
 
 /// Where an example's assets come from: three.js at the commit this port is

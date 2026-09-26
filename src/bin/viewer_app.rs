@@ -232,7 +232,9 @@ TslRagingSea, webgpu_tsl_raging_sea, "../../examples/webgpu_tsl_raging_sea.rs";
 TslAngularSlicing, webgpu_tsl_angular_slicing, "../../examples/webgpu_tsl_angular_slicing.rs";
 Textures2dArrayCompressed, webgpu_textures_2d_array_compressed, "../../examples/webgpu_textures_2d-array_compressed.rs", "webgpu_textures_2d-array_compressed";
 ComputeTexture, webgpu_compute_texture, "../../examples/webgpu_compute_texture.rs";
-VolumePerlin, webgpu_volume_perlin, "../../examples/webgpu_volume_perlin.rs";}
+VolumePerlin, webgpu_volume_perlin, "../../examples/webgpu_volume_perlin.rs";
+ShadowmapVsm, webgpu_shadowmap_vsm, "../../examples/webgpu_shadowmap_vsm.rs";
+ShadowmapPointlight, webgpu_shadowmap_pointlight, "../../examples/webgpu_shadowmap_pointlight.rs";}
 
 impl Which {
     /// The name with or without its `webgpu_` prefix, or its 1-based index in

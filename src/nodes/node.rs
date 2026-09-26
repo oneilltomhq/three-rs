@@ -155,6 +155,8 @@ pub enum UniformSource {
     /// `materialColor` — `MeshBasicMaterial.color` in the working space.
     MaterialColor,
     MaterialOpacity,
+    /// `materialAlphaTest` — `Material.alphaTest`.
+    MaterialAlphaTest,
     MaterialReflectivity,
     /// `materialEnvIntensity` — `MeshStandardMaterial.envMapIntensity`, the
     /// scale `EnvironmentNode` puts on both IBL terms.
@@ -242,6 +244,9 @@ pub enum UniformSource {
     ShadowBias(usize),
     ShadowNormalBias(usize),
     ShadowRadius(usize),
+    /// `reference( 'blurSamples', 'float', shadow )` — the VSM blur passes'
+    /// tap count.
+    ShadowBlurSamples(usize),
     ShadowMapSize(usize),
     ShadowIntensity(usize),
     /// `materialLineWidth` — `MaterialNode.LINE_WIDTH`, i.e.
@@ -381,6 +386,7 @@ impl UniformSource {
             | UniformSource::ModelNormalMatrix
             | UniformSource::MaterialColor
             | UniformSource::MaterialOpacity
+            | UniformSource::MaterialAlphaTest
             | UniformSource::MaterialReflectivity
             | UniformSource::MaterialEnvIntensity
             | UniformSource::MaterialShininess
@@ -1173,6 +1179,7 @@ impl std::hash::Hash for UniformSource {
             | UniformSource::ShadowBias(i)
             | UniformSource::ShadowNormalBias(i)
             | UniformSource::ShadowRadius(i)
+            | UniformSource::ShadowBlurSamples(i)
             | UniformSource::ShadowMapSize(i)
             | UniformSource::ShadowIntensity(i) => i.hash(state),
             // A baked `uniform( value )`: two materials can generate identical

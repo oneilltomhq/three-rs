@@ -13,7 +13,8 @@ pub mod transmission;
 pub use node_material::{
     background_color_node, background_node_color_node, background_pmrem_color_node,
     background_vertex_node, instanced_range, output_fragment_node, quad_vertex_node, render_output,
-    setup, shadow_material, tone_mapping_node, MrtContext, OutputContext, SetupContext,
+    setup, shadow_material, shadow_material_for, tone_mapping_node, MrtContext, OutputContext,
+    SetupContext,
 };
 
 pub use blending::{
@@ -196,11 +197,19 @@ pub struct MeshBasicNodeMaterial {
     /// `NodeMaterial.alphaTestNode` — `diffuseColor.a.lessThanEqual( node
     /// ).discard()` at the end of `setupDiffuseColor()`.
     ///
-    /// three.js also has a scalar `Material.alphaTest` with a
-    /// `materialAlphaTest` uniform behind it; the port has only the node form,
-    /// because that is what `webgpu_materials` sets and a uniform nothing
-    /// writes is a trap rather than an API.
+    /// Takes precedence over [`alpha_test`](Self::alpha_test), as in three.
     pub alpha_test_node: Option<NodeRef>,
+    /// `Material.alphaTest` — when positive, `setupDiffuseColor()` discards
+    /// against the `materialAlphaTest` object uniform
+    /// (`webgpu_shadowmap_pointlight`'s spheres use 0.5). The shadow pass
+    /// copies it onto its override material, so cut-away texels cast no
+    /// shadow either.
+    pub alpha_test: f64,
+    /// `Material.alphaMap` — `materialOpacity` becomes `opacity * texture(
+    /// alphaMap )` (`MaterialNode.OPACITY`), a `vec4` product that the alpha
+    /// assign narrows back to its `.x`. Copied onto the shadow pass's
+    /// override material like [`alpha_test`](Self::alpha_test).
+    pub alpha_map: Option<Texture>,
     /// `NodeMaterial.emissiveNode` — `setupLighting()`'s EMISSIVE tail:
     /// `EmissiveColor = vec3( emissiveNode )` and `outgoingLight +=
     /// EmissiveColor`. On a Phong or Standard material the `materialEmissive`
@@ -485,6 +494,8 @@ impl Default for MeshBasicNodeMaterial {
             color_node: None,
             opacity_node: None,
             alpha_test_node: None,
+            alpha_test: 0.0,
+            alpha_map: None,
             emissive_node: None,
             scale_node: None,
             rotation_node: None,

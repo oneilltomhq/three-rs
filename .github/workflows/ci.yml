@@ -242,6 +242,7 @@ jobs:
             nodes_tsl_batch
             objects_batched_mesh
             nodes_texture_wgsl
+            nodes_shadow_filters
             objects_group
             objects_instanced_mesh
             objects_line

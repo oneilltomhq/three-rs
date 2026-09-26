@@ -169,15 +169,19 @@ impl SamplerKey {
                 }
             }
             // `compareFunction = LessEqualCompare` makes this a comparison
-            // sampler; `CubeDepthTexture`'s filters are `LinearFilter`.
-            TextureSource::CubeDepth(_) => Self {
-                address: [clamp; 3],
-                mag_filter: wgpu::FilterMode::Linear,
-                min_filter: wgpu::FilterMode::Linear,
-                mipmap_filter: wgpu::MipmapFilterMode::Nearest,
-                anisotropy_clamp: 1,
-                compare: Some(wgpu::CompareFunction::LessEqual),
-            },
+            // sampler; the filters are the shadow type's (`LinearFilter` for
+            // PCF, `NearestFilter` otherwise).
+            TextureSource::CubeDepth(cube) => {
+                let inner = cube.inner().borrow();
+                Self {
+                    address: [clamp; 3],
+                    mag_filter: filter(inner.mag_filter),
+                    min_filter: filter(inner.min_filter),
+                    mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+                    anisotropy_clamp: 1,
+                    compare: Some(wgpu::CompareFunction::LessEqual),
+                }
+            }
             // `Data3DTexture`: wrapS/T/R and the two filters, no anisotropy
             // (`WebGPUTextureUtils.updateSampler()` only clamps it for a
             // filtering 2-D sampler; the volume pages leave it at 1).

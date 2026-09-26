@@ -220,9 +220,16 @@ mod webgpu_tsl_raging_sea;
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_tsl_vfx_flames;
 
+#[path = "webgpu_shadowmap_vsm.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_shadowmap_vsm;
 #[path = "webgpu_volume_perlin.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_volume_perlin;
+
+#[path = "webgpu_shadowmap_pointlight.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_shadowmap_pointlight;
 
 /// Every graded example, in the README's order, paired with a call of its
 /// `init()`.
@@ -360,6 +367,13 @@ const GRADED: &[(&str, fn())] = &[
         "webgpu_volume_perlin",
         || drop(webgpu_volume_perlin::init()),
     ),
+    (
+        "webgpu_shadowmap_vsm",
+        || drop(webgpu_shadowmap_vsm::init()),
+    ),
+    ("webgpu_shadowmap_pointlight", || {
+        drop(webgpu_shadowmap_pointlight::init())
+    }),
 ];
 
 /// Where the committed manifests live, one `<example>.json` each.
