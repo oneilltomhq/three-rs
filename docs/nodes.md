@@ -2944,7 +2944,7 @@ it as `textureSample( t, s, uv, i32( layer ) )`, which is three's
   array with both filters set to `Nearest` reaches the assertion.
 
 [`Texture`]: ../src/textures/texture.rs
-## 28. WebP and AVIF glTF textures (issue #179)
+## 30. WebP and AVIF glTF textures (issue #179)
 
 Three has no image decoders: `GLTFLoader` hands a texture's bytes to the
 browser's `createImageBitmap` (with `premultiplyAlpha: 'none'`,
@@ -2961,7 +2961,7 @@ texel to be equal. They are, with no tolerance. `EXT_texture_webp` is in
 `SUPPORTED_EXTENSIONS`, and a texture carrying it samples the extension's
 `source`, never its own fallback `source`, as `GLTFTextureWebPExtension` does.
 
-### 28.1 Divergences
+### 30.1 Divergences
 
 * **AVIF is not decoded.** `EXT_texture_avif` is not in `SUPPORTED_EXTENSIONS`,
   so a file that *requires* it (`AVIFTest/forest_house.glb`, the only one in

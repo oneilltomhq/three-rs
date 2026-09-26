@@ -2373,8 +2373,8 @@ fn json_usize(value: &Value, key: &str) -> Option<usize> {
 /// `EXT_meshopt_compression` and `KHR_mesh_quantization` are all here.
 const SUPPORTED_EXTENSIONS: &[&str] = &[
     "EXT_meshopt_compression",
-    "KHR_draco_mesh_compression",
     "EXT_texture_webp",
+    "KHR_draco_mesh_compression",
     "KHR_materials_anisotropy",
     "KHR_materials_clearcoat",
     "KHR_materials_emissive_strength",
