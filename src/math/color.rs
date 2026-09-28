@@ -13,6 +13,7 @@ use super::{Matrix3, Vector3};
 
 /// `ColorManagement`'s two named spaces, as far as `Color` is concerned.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ColorSpace {
     /// `LinearSRGBColorSpace` — `ColorManagement.workingColorSpace`.
     LinearSRGB,
@@ -388,7 +389,7 @@ fn hue2rgb(p: f64, q: f64, t: f64) -> f64 {
 }
 
 /// `ColorManagement.SRGBToLinear()`.
-pub fn srgb_to_linear(c: f64) -> f64 {
+pub(crate) fn srgb_to_linear(c: f64) -> f64 {
     if c < 0.04045 {
         c * 0.0773993808
     } else {
@@ -397,7 +398,7 @@ pub fn srgb_to_linear(c: f64) -> f64 {
 }
 
 /// `ColorManagement.LinearToSRGB()`.
-pub fn linear_to_srgb(c: f64) -> f64 {
+pub(crate) fn linear_to_srgb(c: f64) -> f64 {
     if c < 0.0031308 {
         c * 12.92
     } else {

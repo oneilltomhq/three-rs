@@ -16,8 +16,7 @@ mod skinned_mesh;
 mod sprite;
 
 pub use batched_mesh::{
-    BatchCamera, BatchedMesh, CustomSort, GeometryInfo, InstanceInfo, MultiDrawItem, SortContext,
-    SubDraw,
+    BatchCamera, BatchedMesh, CustomSort, GeometryInfo, MultiDrawItem, SortContext, SubDraw,
 };
 pub use bone::{is_bone, Bone};
 pub use fog::{Fog, FogExp2, SceneFog};

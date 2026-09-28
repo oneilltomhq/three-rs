@@ -15,6 +15,7 @@ const ITERATIONS: usize = (BIT_MAX / BIN_BITS) as usize;
 /// ECMAScript `ToUint32`: truncate toward zero, then reduce modulo 2^32.
 /// `a >>> b` applies this to `a` before shifting, which is how a float depth
 /// scaled by `(2 ** 32 - 1) / camera.far` becomes a radix key.
+#[doc(hidden)]
 pub fn to_uint32(value: f64) -> u32 {
     if !value.is_finite() {
         return 0;

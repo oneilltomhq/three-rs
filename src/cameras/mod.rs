@@ -20,6 +20,7 @@ use crate::math::{Box3, CoordinateSystem, Matrix4, Vector3};
 /// `RefMut`. The viewer and the browser shell hand either kind to
 /// `OrbitControls`, which takes `&mut PerspectiveCamera`; this is what they
 /// hold in between.
+#[doc(hidden)]
 pub enum CameraMut<'a> {
     /// A camera that is a plain field of the example.
     Borrowed(&'a mut PerspectiveCamera),

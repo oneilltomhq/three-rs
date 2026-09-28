@@ -2,20 +2,21 @@
 //! subclasses, `CurvePath` / `Path` / `Shape` / `ShapePath`, `Earcut` and
 //! `ShapeUtils`, and `DataUtils`.
 
-pub mod bezier_curves;
-pub mod catmull_rom_curve3;
-pub mod curve;
-pub mod curve_path;
-pub mod data_utils;
+pub(crate) mod bezier_curves;
+pub(crate) mod catmull_rom_curve3;
+pub(crate) mod curve;
+pub(crate) mod curve_path;
+pub(crate) mod data_utils;
+#[doc(hidden)]
 pub mod earcut;
-pub mod ellipse_curve;
-pub mod interpolations;
-pub mod line_curve;
-pub mod path;
-pub mod shape;
-pub mod shape_path;
+pub(crate) mod ellipse_curve;
+pub(crate) mod interpolations;
+pub(crate) mod line_curve;
+pub(crate) mod path;
+pub(crate) mod shape;
+pub(crate) mod shape_path;
 pub mod shape_utils;
-pub mod spline_curve;
+pub(crate) mod spline_curve;
 
 pub use bezier_curves::{
     BezierVector, CubicBezierCurve, CubicBezierCurve3, QuadraticBezierCurve, QuadraticBezierCurve3,

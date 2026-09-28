@@ -13,6 +13,7 @@
 //! `s` retains the value computed against `v[0]`, and the following `k += 1`
 //! puts it back at slot 0.
 
+#[doc(hidden)]
 pub const INF: f64 = 1e20;
 
 /// One 1-D pass. `f` is the input row/column, `d` the squared-distance output;
@@ -57,7 +58,7 @@ pub fn edt_1d(f: &[f64], d: &mut [f64], v: &mut [usize], z: &mut [f64], n: usize
 }
 
 /// Columns first, then rows, in place. Scratch sized `max(w, h)` / `+1`.
-pub fn edt_2d(grid: &mut [f64], width: usize, height: usize) {
+pub(crate) fn edt_2d(grid: &mut [f64], width: usize, height: usize) {
     let max_dim = width.max(height);
     let mut f = vec![0.0f64; max_dim];
     let mut d = vec![0.0f64; max_dim];

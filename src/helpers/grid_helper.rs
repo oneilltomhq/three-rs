@@ -34,6 +34,7 @@ impl GridHelper {
 
     /// The constructor's two products, for a unit test that wants the buffers
     /// without a scene.
+    #[doc(hidden)]
     pub fn parts(
         size: f64,
         divisions: usize,

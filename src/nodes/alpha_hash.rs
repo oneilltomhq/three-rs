@@ -57,7 +57,7 @@ fn hash3d(value: NodeRef) -> NodeRef {
 /// `getAlphaHashThreshold( position )` — declared with `setLayout( { name:
 /// 'getAlphaHashThreshold', type: 'float', inputs: [ position: vec3 ] } )`,
 /// so it is a real WGSL `fn` and `hash2D` / `hash3D` inline into its body.
-pub fn get_alpha_hash_threshold(position: NodeRef) -> NodeRef {
+pub(crate) fn get_alpha_hash_threshold(position: NodeRef) -> NodeRef {
     thread_local! { static CELL: Lazy<Rc<FnDef>> = const { Lazy::new() }; }
     let def = CELL.with(|c| {
         c.get(|| {

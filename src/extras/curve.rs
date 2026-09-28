@@ -89,7 +89,7 @@ impl CurveVector for Vector3 {
 /// `Curve.getLengths( divisions )`'s computation, without the cache, so that
 /// an implementor that does cache ([`CurvePath`](super::CurvePath)) can
 /// override [`Curve::get_lengths`] and still call it.
-pub fn compute_lengths<C: Curve + ?Sized>(curve: &C, divisions: usize) -> Vec<f64> {
+pub(crate) fn compute_lengths<C: Curve + ?Sized>(curve: &C, divisions: usize) -> Vec<f64> {
     let mut cache = Vec::new();
     let mut last = curve.get_point(0.0);
     let mut sum = 0.0;

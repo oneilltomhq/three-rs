@@ -26,8 +26,6 @@
 //! Metric precedence uses JS `||`, so a **zero** value falls through
 //! (`sTypoLineGap == 0` → `hhea.lineGap` → `0`). That is deliberate.
 
-use std::collections::HashMap;
-
 use owned_ttf_parser::{AsFaceRef, Face, GlyphId, OwnedFace, Tag};
 
 use crate::error::Error;
@@ -321,7 +319,7 @@ impl VectorFont {
         self.kerning_by_gid(l, r)
     }
 
-    pub fn kerning_by_gid(&self, left: GlyphId, right: GlyphId) -> f64 {
+    pub(crate) fn kerning_by_gid(&self, left: GlyphId, right: GlyphId) -> f64 {
         let Some(subtables) = self.kern_subtables.as_ref() else {
             // GPOS absent: opentype.js reads `kerningPairs` (the legacy `kern`
             // table). Not implemented — see the crate README's skip register.
@@ -1167,30 +1165,5 @@ fn glyph_class(d: &[u8], glyph: GlyphId) -> u16 {
             0
         }
         _ => 0,
-    }
-}
-
-/// A per-`char` memo over `glyph_for_char`/`advance_width`/`bounding_box`,
-/// standing in for the JS `_glyphCache`. Kept separate from `VectorFont` so the
-/// font itself stays `Sync` and borrow-free.
-#[derive(Default)]
-pub struct GlyphCache {
-    advances: HashMap<char, f64>,
-    bboxes: HashMap<char, Option<BBox>>,
-}
-
-impl GlyphCache {
-    pub fn advance_width(&mut self, font: &VectorFont, ch: char) -> f64 {
-        *self
-            .advances
-            .entry(ch)
-            .or_insert_with(|| font.advance_width(ch))
-    }
-
-    pub fn bounding_box(&mut self, font: &VectorFont, ch: char) -> Option<BBox> {
-        *self
-            .bboxes
-            .entry(ch)
-            .or_insert_with(|| font.bounding_box(ch))
     }
 }

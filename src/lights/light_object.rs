@@ -14,6 +14,7 @@ use crate::objects::Payload;
 /// Which `Light` subclass this is. `LightsNode` sorts and sets up lights by
 /// type, and the node graph differs per type.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[non_exhaustive]
 pub enum LightKind {
     Ambient,
     Point,
@@ -88,26 +89,26 @@ impl LightObject {
 
     /// `light.color.clone().multiplyScalar( light.intensity )` —
     /// `AnalyticLightNode.update()`'s single `vec3` colour uniform.
-    pub fn color_intensity(&self) -> Color {
+    pub(crate) fn color_intensity(&self) -> Color {
         let c = self.light.color;
         let i = self.light.intensity;
         Color::new(c.r * i, c.g * i, c.b * i)
     }
 
     /// `cos( light.angle )` — `SpotLightNode.update()`.
-    pub fn cone_cos(&self) -> f64 {
+    pub(crate) fn cone_cos(&self) -> f64 {
         self.angle.cos()
     }
 
     /// `cos( light.angle * ( 1 - light.penumbra ) )`.
-    pub fn penumbra_cos(&self) -> f64 {
+    pub(crate) fn penumbra_cos(&self) -> f64 {
         (self.angle * (1.0 - self.penumbra)).cos()
     }
 
     /// The world-space position the lighting uniforms are built from
     /// (`Object3D.matrixWorld`'s translation). The matrix lives on the node, so
     /// the caller passes it in.
-    pub fn world_position(matrix_world: &Matrix4) -> Vector3 {
+    pub(crate) fn world_position(matrix_world: &Matrix4) -> Vector3 {
         let mut v = Vector3::default();
         v.set_from_matrix_position(matrix_world);
         v
@@ -115,7 +116,7 @@ impl LightObject {
 
     /// `HemisphereLightNode.update()`: the ground colour carries the intensity
     /// just as the sky colour does.
-    pub fn ground_color_intensity(&self) -> Color {
+    pub(crate) fn ground_color_intensity(&self) -> Color {
         let c = self.ground_color;
         let i = self.light.intensity;
         Color::new(c.r * i, c.g * i, c.b * i)
@@ -133,7 +134,7 @@ impl LightObject {
 
     /// `light.target.matrixWorld`'s translation, or the origin when the light
     /// has no target.
-    pub fn target_world_position(&self) -> Vector3 {
+    pub(crate) fn target_world_position(&self) -> Vector3 {
         match &self.target {
             Some(target) => {
                 let m = target.borrow().matrix_world;

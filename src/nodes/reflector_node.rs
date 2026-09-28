@@ -112,13 +112,13 @@ impl Reflector {
     }
 
     /// Identity, for the renderer's once-per-render bookkeeping.
-    pub fn key(&self) -> usize {
+    pub(crate) fn key(&self) -> usize {
         Rc::as_ptr(&self.0) as *const u8 as usize
     }
 
     /// The id of the texture the texture node was built over — the binding
     /// the renderer swaps for [`value`](Self::value).
-    pub fn default_texture_id(&self) -> usize {
+    pub(crate) fn default_texture_id(&self) -> usize {
         self.0.borrow().default_render_target.texture().id()
     }
 

@@ -75,8 +75,8 @@ impl std::hash::Hash for ShadowFilterMap {
 /// `{ depthTexture, bd3D, dp, shadow }` for a point light.
 ///
 /// `shadow` is `index`: every `reference( …, shadow )` uniform the filter
-/// reads is keyed on the light's index in the port ([`shadow_radius`],
-/// [`shadow_map_size`], …).
+/// reads is keyed on the light's index in the port (`shadow_radius`,
+/// `shadow_map_size`, …).
 pub struct ShadowFilterInputs {
     pub index: usize,
     pub map: ShadowFilterMap,
@@ -123,6 +123,7 @@ impl std::hash::Hash for ShadowFilterFn {
 /// Which filter a shadow is read through: the renderer's type, or the
 /// light's own `shadow.filterNode`.
 #[derive(Clone, Debug, Hash)]
+#[doc(hidden)]
 pub enum ShadowFilter {
     Basic,
     Pcf,
@@ -253,6 +254,7 @@ pub fn vsm_shadow_filter(inputs: &ShadowFilterInputs) -> NodeRef {
 /// `VSMPassVertical` — the first VSM blur: `blurSamples` depth taps down a
 /// column of the shadow map, `radius` texels apart at most, reduced to the
 /// mean and standard deviation the second pass blurs again.
+#[doc(hidden)]
 pub fn vsm_pass_vertical(index: usize, depth: &DepthTexture) -> NodeRef {
     vsm_pass(index, "meanVertical", "squareMeanVertical", |offset| {
         let uv = frag_coord()
@@ -268,6 +270,7 @@ pub fn vsm_pass_vertical(index: usize, depth: &DepthTexture) -> NodeRef {
 /// `VSMPassHorizontal` — the second VSM blur: `blurSamples` taps of the
 /// first pass's `( mean, stdDev )` along a row, recombined into a mean and a
 /// standard deviation (`E[x²] = σ² + μ²`).
+#[doc(hidden)]
 pub fn vsm_pass_horizontal(index: usize, vertical: &Texture) -> NodeRef {
     vsm_pass(index, "meanHorizontal", "squareMeanHorizontal", |offset| {
         let uv = frag_coord()

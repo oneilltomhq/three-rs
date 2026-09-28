@@ -315,7 +315,7 @@ fn get_transmission_sample(
 /// [`crate::materials::physical`] keeps the single definition of the DFG split
 /// sum; the two would otherwise be a cycle.
 #[allow(clippy::too_many_arguments)]
-pub fn ibl_volume_refraction(
+pub(crate) fn ibl_volume_refraction(
     map: &Texture,
     n: NodeRef,
     v: NodeRef,
@@ -391,6 +391,6 @@ pub fn ibl_volume_refraction(
 
 /// `n` and `v` as `PhysicalLightingModel.start()` builds them: the world normal
 /// and the world-space direction from the fragment to the camera.
-pub fn world_view_vector() -> NodeRef {
+pub(crate) fn world_view_vector() -> NodeRef {
     camera_position().sub(position_world()).normalize()
 }

@@ -14,6 +14,7 @@ use std::rc::Rc;
 
 /// `three.js/src/constants.js` colour spaces, as far as the port needs them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum ColorSpace {
     NoColorSpace,
     SRGB,
@@ -21,6 +22,7 @@ pub enum ColorSpace {
 
 /// `three.js/src/constants.js` texture mappings.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Mapping {
     CubeReflection,
     CubeRefraction,
@@ -96,7 +98,7 @@ pub struct CubeTextureInner {
     pub anisotropy: u16,
     pub mag_filter: TextureFilter,
     pub min_filter: MinFilter,
-    pub gpu: Option<wgpu::Texture>,
+    pub(crate) gpu: Option<wgpu::Texture>,
 }
 
 /// Cloning is a handle copy.
@@ -171,7 +173,7 @@ impl CubeTexture {
     ///   Each level is rendered, none is generated.
     /// * `None` is `_getSourceTarget()`'s `generateMipmaps: true`: the full
     ///   chain, box-filtered from level 0 once its six faces are drawn.
-    pub fn pmrem_render_target(size: u32, levels: Option<u32>) -> Self {
+    pub(crate) fn pmrem_render_target(size: u32, levels: Option<u32>) -> Self {
         let texture = Self::render_target(size, TextureType::HalfFloat);
         {
             let mut inner = texture.0.borrow_mut();

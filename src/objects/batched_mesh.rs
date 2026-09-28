@@ -32,14 +32,14 @@ pub struct GeometryInfo {
     /// The draw range: `indexStart` / `indexCount` for an indexed batch.
     pub start: usize,
     pub count: usize,
-    pub bounding_box: Option<Box3>,
-    pub bounding_sphere: Option<Sphere>,
-    pub active: bool,
+    pub(crate) bounding_box: Option<Box3>,
+    pub(crate) bounding_sphere: Option<Sphere>,
+    pub(crate) active: bool,
 }
 
 /// One entry of `_instanceInfo`.
 #[derive(Clone, Copy, Debug)]
-pub struct InstanceInfo {
+pub(crate) struct InstanceInfo {
     pub visible: bool,
     pub active: bool,
     pub geometry_index: usize,
@@ -72,6 +72,7 @@ pub type CustomSort = Rc<dyn Fn(&mut Vec<MultiDrawItem>, &SortContext)>;
 
 /// One `drawIndexed()` the backend issues for this batch.
 #[derive(Clone, Copy, Debug)]
+#[doc(hidden)]
 pub struct SubDraw {
     pub first_index: u32,
     pub index_count: u32,
@@ -198,6 +199,7 @@ impl BatchedMesh {
     }
 
     /// The three textures the node system binds.
+    #[doc(hidden)]
     pub fn batch_entry(&self) -> BatchEntry {
         BatchEntry {
             indirect: self.indirect_texture.clone(),
@@ -209,6 +211,7 @@ impl BatchedMesh {
     /// `_multiDrawCount` sub-ranges as `(firstIndex, indexCount, firstInstance)`
     /// — `WebGPUBackend.draw()`'s `object.isBatchedMesh` arm, which divides the
     /// byte start back out by `bytesPerElement`.
+    #[doc(hidden)]
     pub fn sub_draws(&self) -> Vec<SubDraw> {
         let bpe = self.multi_draw_bytes_per_element.max(1) as i32;
         (0..self.multi_draw_count)
@@ -627,12 +630,14 @@ impl BatchedMesh {
     }
 
     /// `_multiDrawCount` after the last `onBeforeRender()`.
+    #[doc(hidden)]
     pub fn multi_draw_count(&self) -> usize {
         self.multi_draw_count
     }
 
     /// The first `n` entries of `_indirectTexture` — the draw ordinal → instance
     /// id table, for tests.
+    #[doc(hidden)]
     pub fn indirect_prefix(&self, n: usize) -> Vec<u32> {
         self.indirect_texture.with_u32(|data| data[..n].to_vec())
     }

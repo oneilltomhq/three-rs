@@ -6,8 +6,8 @@
 //! `AnimationUtils.subclip` / `makeClipAdditive`.
 
 use serde_json::{json, Value};
-use three_rs::animation::animation_clip::AnimationBlendMode;
 use three_rs::animation::animation_utils::{make_clip_additive, subclip};
+use three_rs::animation::AnimationBlendMode;
 use three_rs::animation::{AnimationClip, KeyframeTrack};
 
 /// `new NumberKeyframeTrack( name, times, values )`, unwrapped.

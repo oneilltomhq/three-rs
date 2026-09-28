@@ -19,7 +19,7 @@ use crate::textures::{CubeDepthTexture, DepthTexture};
 
 /// `1 / π` — three.js' `RECIPROCAL_PI`, which prints as
 /// `0.3183098861837907` in the dumps.
-pub const RECIPROCAL_PI: f64 = std::f64::consts::FRAC_1_PI;
+pub(crate) const RECIPROCAL_PI: f64 = std::f64::consts::FRAC_1_PI;
 
 /// `getDistanceAttenuation( lightDistance, cutoffDistance, decayExponent )` —
 /// the whole thing, including the `if ( cutoffDistance > 0.0 ) { … } else { … }`
@@ -43,7 +43,7 @@ pub fn distance_attenuation(
 
 /// The `cutoffDistance > 0` branch: inverse-square falloff times the smooth
 /// window `clamp( 1 - ( d / cutoff )^4, 0, 1 )^2`.
-pub fn distance_attenuation_with_cutoff(
+pub(crate) fn distance_attenuation_with_cutoff(
     light_distance: NodeRef,
     cutoff_distance: NodeRef,
     decay: NodeRef,
@@ -58,7 +58,7 @@ pub fn distance_attenuation_with_cutoff(
 }
 
 /// `getDistanceAttenuation` with `cutoffDistance == 0`.
-pub fn distance_attenuation_no_cutoff(light_distance: NodeRef, decay: NodeRef) -> NodeRef {
+pub(crate) fn distance_attenuation_no_cutoff(light_distance: NodeRef, decay: NodeRef) -> NodeRef {
     float(1.0).div(max(light_distance.pow(decay), float(0.01)))
 }
 
@@ -77,7 +77,7 @@ pub fn f_schlick(f0: NodeRef, f90: NodeRef, dot_vh: NodeRef) -> NodeRef {
 
 /// `D_BlinnPhong( { shininess, dotNH } )` —
 /// `RECIPROCAL_PI * ( shininess * 0.5 + 1.0 ) * pow( dotNH, shininess )`.
-pub fn d_blinn_phong(shininess_value: NodeRef, dot_nh: NodeRef) -> NodeRef {
+pub(crate) fn d_blinn_phong(shininess_value: NodeRef, dot_nh: NodeRef) -> NodeRef {
     shininess_value
         .clone()
         .mul(0.5)
@@ -87,7 +87,7 @@ pub fn d_blinn_phong(shininess_value: NodeRef, dot_nh: NodeRef) -> NodeRef {
 }
 
 /// `BRDF_BlinnPhong( { lightDirection, specularColor, shininess } )`.
-pub fn brdf_blinn_phong(light_direction: NodeRef) -> NodeRef {
+pub(crate) fn brdf_blinn_phong(light_direction: NodeRef) -> NodeRef {
     let half_dir = light_direction.add(position_view_direction()).normalize();
     let dot_nh = normal_view().dot(half_dir.clone()).clamp(0.0, 1.0);
     let dot_vh = position_view_direction().dot(half_dir).clamp(0.0, 1.0);
@@ -103,6 +103,7 @@ pub fn brdf_blinn_phong(light_direction: NodeRef) -> NodeRef {
 /// `renderer.shadowMap.type` (or the light's `shadow.filterNode`) picks — or
 /// the light's own `shadow.shadowNode`.
 #[derive(Clone, Debug)]
+#[doc(hidden)]
 pub enum ShadowMap {
     /// A planar depth map through `PCFShadowFilter` — the default type.
     Planar(DepthTexture),
@@ -154,6 +155,7 @@ impl std::hash::Hash for ShadowMap {
 /// `Hash` is the light's share of the render object's dynamic cache key
 /// (`RenderObject.getDynamicCacheKey()` → `lightsNode.getCacheKey()`).
 #[derive(Clone, Debug, Hash)]
+#[doc(hidden)]
 pub struct LightDesc {
     /// The light's index in the renderer's light list, which is what every
     /// `UniformSource::Light*` / `Shadow*` variant keys on.
@@ -166,7 +168,7 @@ pub struct LightDesc {
 
 /// `ShadowBaseNode.setupShadowPosition()` (a statement, pushed here) followed
 /// by the shadow node itself — `ShadowNode` or `PointShadowNode` by map.
-pub fn shadow_node(
+pub(crate) fn shadow_node(
     index: usize,
     map: &ShadowMap,
     received_shadow_position: Option<&NodeRef>,
@@ -209,7 +211,7 @@ pub fn shadow_node(
 /// yields nothing; an analytic light yields `LightNode.setup()`'s
 /// `( lightDirection, lightColor )` pair — shadow factor included — for the
 /// model's `direct()`.
-pub fn setup_light(
+pub(crate) fn setup_light(
     light: &LightDesc,
     received_shadow_position: Option<&NodeRef>,
     out: &mut Vec<NodeRef>,
@@ -285,7 +287,7 @@ pub fn setup_light(
 /// `shadowPositionWorld` must already have been assigned — that is
 /// `ShadowBaseNode.setupShadowPosition()`, which the caller pushes because it is
 /// a statement rather than an expression.
-pub fn shadow_factor(index: usize, map: &DepthTexture) -> NodeRef {
+pub(crate) fn shadow_factor(index: usize, map: &DepthTexture) -> NodeRef {
     shadow_factor_filtered(
         index,
         &ShadowFilterMap::Depth(map.clone()),
@@ -294,7 +296,7 @@ pub fn shadow_factor(index: usize, map: &DepthTexture) -> NodeRef {
 }
 
 /// [`shadow_factor`] through a given filter and the texture it reads.
-pub fn shadow_factor_filtered(
+pub(crate) fn shadow_factor_filtered(
     index: usize,
     map: &ShadowFilterMap,
     filter: &ShadowFilter,
@@ -320,7 +322,7 @@ pub fn shadow_factor_filtered(
 /// (`vec4( lightColor, 1 ) * shadow`, and `( vec4( directDiffuse, 1 ) + … ).xyz`
 /// in the dump). The port takes the `.xyz` here, so the light colour stays a
 /// `vec3`; the three channels are the same numbers.
-pub fn shadow_factor_transmitted(
+pub(crate) fn shadow_factor_transmitted(
     index: usize,
     map: &ShadowFilterMap,
     filter: &ShadowFilter,
@@ -381,7 +383,7 @@ pub fn shadow_factor_transmitted(
 }
 
 /// `AmbientLightNode.setup()` — `irradiance += lightColor`, no attenuation.
-pub fn ambient_lights(indices: &[usize], out: &mut Vec<NodeRef>) {
+pub(crate) fn ambient_lights(indices: &[usize], out: &mut Vec<NodeRef>) {
     out.push(irradiance().assign(vec3(0.0, 0.0, 0.0)));
     for index in indices {
         out.push(irradiance().assign(irradiance().add(light_color_intensity(*index))));
@@ -397,7 +399,7 @@ pub fn ambient_lights(indices: &[usize], out: &mut Vec<NodeRef>) {
 /// `new PhongLightingModel( false )` — "( specular ) -> force lambert" — and
 /// the `if ( this.specular === true )` around the `directSpecular` accumulation
 /// is the whole difference between the two materials' direct term.
-pub fn direct_light(
+pub(crate) fn direct_light(
     light: &LightDesc,
     received_shadow_position: Option<&NodeRef>,
     specular: bool,

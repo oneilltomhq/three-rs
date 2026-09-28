@@ -190,7 +190,7 @@ impl LightShadow {
 
     /// `SpotLightShadow.updateMatrices()`'s projection half: the spot light's
     /// cone angle and cutoff distance drive the shadow camera.
-    pub fn update_spot_projection(&mut self, angle: f64, distance: f64) {
+    pub(crate) fn update_spot_projection(&mut self, angle: f64, distance: f64) {
         let fov = RAD2DEG * 2.0 * angle * self.focus;
         let aspect = (self.map_size.x / self.map_size.y) * self.aspect;
         let far = if distance != 0.0 {
@@ -213,7 +213,7 @@ impl LightShadow {
     /// `shadowMatrix.makeTranslation( - lightPositionWorld )` — the shadow
     /// coordinate is the light-to-fragment vector, and `far = light.distance ||
     /// camera.far` (the camera far plane the `viewZ` test reads).
-    pub fn update_point_matrices(&mut self, light_position_world: Vector3, distance: f64) {
+    pub(crate) fn update_point_matrices(&mut self, light_position_world: Vector3, distance: f64) {
         let far = if distance != 0.0 {
             distance
         } else {

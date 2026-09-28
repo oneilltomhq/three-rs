@@ -80,7 +80,7 @@ pub trait NodeUpdate {
 /// `updateAfterNodes`: the node, and `node.updateReference( frame )`, the
 /// identity its guard is kept under.
 #[derive(Clone)]
-pub struct UpdateNode {
+pub(crate) struct UpdateNode {
     pub(crate) reference: usize,
     pub(crate) node: Rc<dyn NodeUpdate>,
 }
@@ -100,11 +100,6 @@ impl UpdateNode {
     pub(crate) fn with_reference(reference: usize, node: Rc<dyn NodeUpdate>) -> Self {
         Self { reference, node }
     }
-
-    /// `updateReference()`.
-    pub fn reference(&self) -> usize {
-        self.reference
-    }
 }
 
 impl std::fmt::Debug for UpdateNode {
@@ -117,7 +112,7 @@ impl std::fmt::Debug for UpdateNode {
 
 /// Which of the three maps a guard lives in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum UpdatePhase {
+pub(crate) enum UpdatePhase {
     Before,
     Update,
     After,
@@ -136,7 +131,7 @@ struct Stamp {
 /// [`NodeFrameState::settle`] with what the method returned.
 #[must_use]
 #[derive(Debug)]
-pub struct Claim {
+pub(crate) struct Claim {
     phase: UpdatePhase,
     reference: usize,
     ty: NodeUpdateType,
@@ -230,7 +225,7 @@ impl NodeFrameState {
     /// runs: a pass's nested render that reaches the same node again finds
     /// its before-guard already taken, which is what stops a pass sampling
     /// itself from recursing. [`settle`](Self::settle) does the rest.
-    pub fn claim(
+    pub(crate) fn claim(
         &mut self,
         phase: UpdatePhase,
         reference: usize,
@@ -257,7 +252,7 @@ impl NodeFrameState {
     }
 
     /// The rest of a claimed phase, given what the method returned.
-    pub fn settle(&mut self, claim: Claim, counted: bool) {
+    pub(crate) fn settle(&mut self, claim: Claim, counted: bool) {
         let (frame_id, render_id) = (self.frame_id, self.render_id);
         let Some(stamp) = self.maps.get_mut(&(claim.phase, claim.reference)) else {
             return;
@@ -278,7 +273,7 @@ impl NodeFrameState {
     /// running it: what a deprecated explicit `render()` on a pass does, so
     /// that the draw that samples the pass later in the same frame does not
     /// render it a second time.
-    pub fn mark(&mut self, phase: UpdatePhase, reference: usize) {
+    pub(crate) fn mark(&mut self, phase: UpdatePhase, reference: usize) {
         let (frame_id, render_id) = (self.frame_id, self.render_id);
         let stamp = self.maps.entry((phase, reference)).or_default();
         stamp.frame_id = frame_id;

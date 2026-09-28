@@ -31,7 +31,7 @@ pub trait UvGenerator {
 
 /// three.js' `WorldUVGenerator`, the default.
 #[derive(Clone, Copy, Debug, Default)]
-pub struct WorldUvGenerator;
+pub(crate) struct WorldUvGenerator;
 
 impl UvGenerator for WorldUvGenerator {
     fn generate_top_uv(

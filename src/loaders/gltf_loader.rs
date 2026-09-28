@@ -54,7 +54,7 @@ use crate::textures::{ColorSpace, MinFilter, Texture, TextureFilter, Wrapping};
 
 /// `WEBGL_CONSTANTS` component types and `WEBGL_COMPONENT_TYPES`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ComponentType {
+pub(crate) enum ComponentType {
     /// `5120` — `Int8Array`.
     Byte,
     /// `5121` — `Uint8Array`.
@@ -161,7 +161,7 @@ fn path_property(path: &str) -> Option<&'static str> {
 }
 
 /// `PropertyBinding.sanitizeNodeName`.
-pub fn sanitize_node_name(name: &str) -> String {
+pub(crate) fn sanitize_node_name(name: &str) -> String {
     name.chars()
         .map(|c| if c.is_whitespace() { '_' } else { c })
         .filter(|c| !matches!(c, '[' | ']' | '.' | ':' | '/'))
@@ -684,6 +684,7 @@ impl GLTFLoader {
     ///
     /// For comparing against three.js (`tests/gltf_meshopt.rs`); a load goes
     /// through [`GLTFLoader::load`].
+    #[doc(hidden)]
     pub fn meshopt_buffer_views(path: impl AsRef<Path>) -> Result<Vec<(usize, Vec<u8>)>, Error> {
         let loader = Self::open(path.as_ref(), false)?;
         let mut out = Vec::new();
@@ -711,6 +712,7 @@ impl GLTFLoader {
     ///
     /// For comparing against three.js' `loadAccessor`
     /// (`tests/gltf_meshopt.rs`); a load goes through [`GLTFLoader::load`].
+    #[doc(hidden)]
     pub fn accessors(path: impl AsRef<Path>) -> Result<Vec<(Vec<f64>, usize)>, Error> {
         let loader = Self::open(path.as_ref(), false)?;
         let count = loader
@@ -731,7 +733,7 @@ impl GLTFLoader {
 
     /// `GLTFParser.loadAccessor`, as f64s: `itemSize`, `normalized`,
     /// `byteStride` (interleaved views included) and `sparse` all applied.
-    pub fn accessor(&self, index: usize) -> Result<(Vec<f64>, usize), Error> {
+    pub(crate) fn accessor(&self, index: usize) -> Result<(Vec<f64>, usize), Error> {
         let accessor = self
             .json
             .pointer(&format!("/accessors/{index}"))
@@ -843,7 +845,7 @@ impl GLTFLoader {
     }
 
     /// An accessor as a [`BufferAttribute`].
-    pub fn attribute(&self, index: usize) -> Result<BufferAttribute, Error> {
+    pub(crate) fn attribute(&self, index: usize) -> Result<BufferAttribute, Error> {
         let (values, item_size) = self.accessor(index)?;
         Ok(BufferAttribute::new(
             values.iter().map(|&v| v as f32).collect(),
@@ -1390,6 +1392,7 @@ impl GLTFLoader {
     ///
     /// For comparing against three.js (`tests/gltf_draco.rs`); a load goes
     /// through [`GLTFLoader::load`].
+    #[doc(hidden)]
     pub fn draco_primitives(
         path: impl AsRef<Path>,
     ) -> Result<Vec<(usize, usize, DracoPrimitive)>, Error> {

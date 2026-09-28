@@ -46,7 +46,7 @@ impl Line {
     /// `frustum.intersectsObject( line )`: the bounding sphere pushed through
     /// `matrixWorld`. Identical to `Mesh`', because `Frustum.intersectsObject()`
     /// only ever reads `geometry.boundingSphere`.
-    pub fn bounding_sphere_in(&self, matrix_world: &Matrix4) -> Option<Sphere> {
+    pub(crate) fn bounding_sphere_in(&self, matrix_world: &Matrix4) -> Option<Sphere> {
         let bounding_sphere = self.geometry.compute_bounding_sphere()?;
         let mut sphere = Sphere::new(bounding_sphere.center, bounding_sphere.radius);
         sphere.apply_matrix4(matrix_world);

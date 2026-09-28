@@ -189,6 +189,7 @@ impl RttNode {
     /// The quad's material, for `examples/dump_wgsl.rs` — the one caller that
     /// has to see a material three.js keeps private, because the generated
     /// WGSL is what the rung is graded on before a pixel is compared.
+    #[doc(hidden)]
     pub fn quad_material(&self) -> &MeshBasicNodeMaterial {
         &self.quad.material
     }

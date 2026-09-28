@@ -10,7 +10,7 @@ pub mod animation;
 pub mod cameras;
 pub mod core;
 pub mod environments;
-pub mod error;
+pub(crate) mod error;
 pub mod extras;
 pub mod geometries;
 pub mod helpers;

@@ -82,7 +82,10 @@ impl std::hash::Hash for OverrideNodes {
 /// Install an [`OverrideNodes`] for the duration of one material's setup —
 /// `renderer.contextNode` / `material.contextNode` in three, which live for
 /// exactly that long.
-pub fn with_override_nodes<R>(overrides: Option<&OverrideNodes>, f: impl FnOnce() -> R) -> R {
+pub(crate) fn with_override_nodes<R>(
+    overrides: Option<&OverrideNodes>,
+    f: impl FnOnce() -> R,
+) -> R {
     let _overrides = push_context(|cx| cx.override_nodes = overrides.cloned());
     f()
 }
@@ -166,7 +169,7 @@ fn in_sub_build<R>(layer: &'static str, f: impl FnOnce() -> R) -> R {
 /// Install the material's `normalNode` as `builder.context.setupNormal` for the
 /// duration of `f` — `NodeMaterial.setup()` does exactly this before flowing
 /// either stage. Returns what `f` returns.
-pub fn with_material_normal<R>(
+pub(crate) fn with_material_normal<R>(
     normal: Option<NodeRef>,
     flat_shading: bool,
     side: Side,
@@ -184,7 +187,7 @@ pub fn with_material_normal<R>(
 /// material's setup — installed at the top of `NodeMaterial.setup()`, because
 /// the material's own normal node is built before the flow starts and already
 /// reads the TBN frame.
-pub fn with_tangent_attribute<R>(has_tangent: bool, f: impl FnOnce() -> R) -> R {
+pub(crate) fn with_tangent_attribute<R>(has_tangent: bool, f: impl FnOnce() -> R) -> R {
     let _tangent = push_context(|cx| cx.has_tangent = has_tangent);
     f()
 }
@@ -195,7 +198,7 @@ pub fn with_tangent_attribute<R>(has_tangent: bool, f: impl FnOnce() -> R) -> R 
 /// in scope there; the port builds the node up front and so has to open the
 /// scope explicitly, or a `DoubleSide` material's TBN frame would be built
 /// front-sided and then cached.
-pub fn with_material_side<R>(side: Side, f: impl FnOnce() -> R) -> R {
+pub(crate) fn with_material_side<R>(side: Side, f: impl FnOnce() -> R) -> R {
     let _side = push_context(|cx| cx.material_side = side);
     f()
 }
@@ -218,7 +221,7 @@ fn negate_on_back_side(vector: NodeRef) -> NodeRef {
 /// `SpriteNodeMaterial` is the only override the ladder needs, and it returns a
 /// **`vec4`** rather than the base class' `vec3`, which is why `v_positionView`
 /// is `vec4<f32>` in the galaxy dump.
-pub fn with_material_position_view<R>(value: Option<NodeRef>, f: impl FnOnce() -> R) -> R {
+pub(crate) fn with_material_position_view<R>(value: Option<NodeRef>, f: impl FnOnce() -> R) -> R {
     let _position_view = push_context(|cx| cx.setup_position_view = value);
     f()
 }
@@ -861,7 +864,7 @@ fn fog_view_z() -> NodeRef {
 ///
 /// Like three's, the factor reads `positionView` when the *material* is built,
 /// not when the fog is made: it is an inline `Fn()` whose body
-/// [`resolve_fog_factor`] runs inside the material's setup, so a
+/// `resolve_fog_factor` runs inside the material's setup, so a
 /// `SpriteNodeMaterial` fogs by its billboarded `v_positionView`
 /// (`docs/nodes.md` §41).
 pub fn range_fog_factor(near: impl Into<NodeRef>, far: impl Into<NodeRef>) -> NodeRef {
@@ -883,7 +886,7 @@ fn fog_factor_fn(body: impl Fn() -> NodeRef + 'static) -> NodeRef {
 
 /// Runs a fog factor's deferred body (see [`range_fog_factor`]) in the
 /// current material's context. Any other node is returned as it is.
-pub fn resolve_fog_factor(factor: &NodeRef) -> NodeRef {
+pub(crate) fn resolve_fog_factor(factor: &NodeRef) -> NodeRef {
     resolve_fn_call(factor)
 }
 
@@ -899,7 +902,7 @@ pub fn resolve_fog_factor(factor: &NodeRef) -> NodeRef {
 /// ahead of it. Holding the body in an argument-less call and resolving it here,
 /// inside `NodeMaterial` setup, is the same deferral [`resolve_fog_factor`]
 /// already gives `scene.fogNode`.
-pub fn resolve_fn_call(node: &NodeRef) -> NodeRef {
+pub(crate) fn resolve_fn_call(node: &NodeRef) -> NodeRef {
     match &*node.0 {
         Node::Call { def, args } if !def.layout && args.is_empty() => (def.body)(&[]),
         _ => node.clone(),
@@ -1015,7 +1018,7 @@ impl std::hash::Hash for FogNode {
 /// `LightsNode`'s four render-group uniforms for the point light at `index` of
 /// the renderer's light list. Creating them here rather than inside
 /// `phong.rs` keeps every `UniformSource` in one module.
-pub fn light_color_intensity(index: usize) -> NodeRef {
+pub(crate) fn light_color_intensity(index: usize) -> NodeRef {
     uniform(
         UniformSource::LightColorIntensity(index),
         Type::Vec3,
@@ -1024,7 +1027,7 @@ pub fn light_color_intensity(index: usize) -> NodeRef {
     )
 }
 
-pub fn light_cutoff_distance(index: usize) -> NodeRef {
+pub(crate) fn light_cutoff_distance(index: usize) -> NodeRef {
     uniform(
         UniformSource::LightCutoffDistance(index),
         Type::F32,
@@ -1033,7 +1036,7 @@ pub fn light_cutoff_distance(index: usize) -> NodeRef {
     )
 }
 
-pub fn light_decay(index: usize) -> NodeRef {
+pub(crate) fn light_decay(index: usize) -> NodeRef {
     uniform(
         UniformSource::LightDecay(index),
         Type::F32,
@@ -1054,7 +1057,7 @@ pub fn light_view_position(index: usize) -> NodeRef {
 /// `HemisphereLightNode`'s two extra render-group uniforms: the ground colour
 /// (already multiplied by the light's intensity) and the light's **world**
 /// position, which `lightPosition( light )` resolves to.
-pub fn light_ground_color(index: usize) -> NodeRef {
+pub(crate) fn light_ground_color(index: usize) -> NodeRef {
     uniform(
         UniformSource::LightGroundColor(index),
         Type::Vec3,
@@ -1084,7 +1087,7 @@ pub fn light_target_position(index: usize) -> NodeRef {
 }
 
 /// `SpotLightNode.coneCosNode`.
-pub fn light_cone_cos(index: usize) -> NodeRef {
+pub(crate) fn light_cone_cos(index: usize) -> NodeRef {
     uniform(
         UniformSource::LightConeCos(index),
         Type::F32,
@@ -1094,7 +1097,7 @@ pub fn light_cone_cos(index: usize) -> NodeRef {
 }
 
 /// `SpotLightNode.penumbraCosNode`.
-pub fn light_penumbra_cos(index: usize) -> NodeRef {
+pub(crate) fn light_penumbra_cos(index: usize) -> NodeRef {
     uniform(
         UniformSource::LightPenumbraCos(index),
         Type::F32,
@@ -1115,7 +1118,7 @@ pub fn shadow_matrix(index: usize) -> NodeRef {
 
 /// `PointShadowNode`'s shadow camera clipping planes —
 /// `uniform( 'float' ).onRenderUpdate( () => shadow.camera.near / far )`.
-pub fn shadow_camera_near(index: usize) -> NodeRef {
+pub(crate) fn shadow_camera_near(index: usize) -> NodeRef {
     uniform(
         UniformSource::ShadowCameraNear(index),
         Type::F32,
@@ -1124,7 +1127,7 @@ pub fn shadow_camera_near(index: usize) -> NodeRef {
     )
 }
 
-pub fn shadow_camera_far(index: usize) -> NodeRef {
+pub(crate) fn shadow_camera_far(index: usize) -> NodeRef {
     uniform(
         UniformSource::ShadowCameraFar(index),
         Type::F32,
@@ -1134,7 +1137,7 @@ pub fn shadow_camera_far(index: usize) -> NodeRef {
 }
 
 /// `reference( 'bias', 'float', shadow )`.
-pub fn shadow_bias(index: usize) -> NodeRef {
+pub(crate) fn shadow_bias(index: usize) -> NodeRef {
     uniform(
         UniformSource::ShadowBias(index),
         Type::F32,
@@ -1144,7 +1147,7 @@ pub fn shadow_bias(index: usize) -> NodeRef {
 }
 
 /// `reference( 'normalBias', 'float', shadow )`.
-pub fn shadow_normal_bias(index: usize) -> NodeRef {
+pub(crate) fn shadow_normal_bias(index: usize) -> NodeRef {
     uniform(
         UniformSource::ShadowNormalBias(index),
         Type::F32,
@@ -1154,7 +1157,7 @@ pub fn shadow_normal_bias(index: usize) -> NodeRef {
 }
 
 /// `reference( 'radius', 'float', shadow )`.
-pub fn shadow_radius(index: usize) -> NodeRef {
+pub(crate) fn shadow_radius(index: usize) -> NodeRef {
     uniform(
         UniformSource::ShadowRadius(index),
         Type::F32,
@@ -1165,7 +1168,7 @@ pub fn shadow_radius(index: usize) -> NodeRef {
 
 /// `reference( 'blurSamples', 'float', shadow )` — read by the two VSM blur
 /// passes only.
-pub fn shadow_blur_samples(index: usize) -> NodeRef {
+pub(crate) fn shadow_blur_samples(index: usize) -> NodeRef {
     uniform(
         UniformSource::ShadowBlurSamples(index),
         Type::F32,
@@ -1175,7 +1178,7 @@ pub fn shadow_blur_samples(index: usize) -> NodeRef {
 }
 
 /// `reference( 'mapSize', 'vec2', shadow )`.
-pub fn shadow_map_size(index: usize) -> NodeRef {
+pub(crate) fn shadow_map_size(index: usize) -> NodeRef {
     uniform(
         UniformSource::ShadowMapSize(index),
         Type::Vec2,
@@ -1185,7 +1188,7 @@ pub fn shadow_map_size(index: usize) -> NodeRef {
 }
 
 /// `reference( 'intensity', 'float', shadow )`.
-pub fn shadow_intensity(index: usize) -> NodeRef {
+pub(crate) fn shadow_intensity(index: usize) -> NodeRef {
     uniform(
         UniformSource::ShadowIntensity(index),
         Type::F32,
@@ -1246,7 +1249,7 @@ pub fn material_sheen() -> NodeRef {
     )
 }
 
-pub fn material_sheen_color() -> NodeRef {
+pub(crate) fn material_sheen_color() -> NodeRef {
     uniform(
         UniformSource::MaterialSheenColor,
         Type::Vec3,
@@ -1351,7 +1354,7 @@ pub fn material_attenuation_color() -> NodeRef {
 }
 
 /// `materialClearcoatNormalScale`.
-pub fn material_clearcoat_normal_scale() -> NodeRef {
+pub(crate) fn material_clearcoat_normal_scale() -> NodeRef {
     uniform(
         UniformSource::MaterialClearcoatNormalScale,
         Type::Vec2,
@@ -1360,7 +1363,7 @@ pub fn material_clearcoat_normal_scale() -> NodeRef {
     )
 }
 
-pub fn material_normal_scale() -> NodeRef {
+pub(crate) fn material_normal_scale() -> NodeRef {
     uniform(
         UniformSource::MaterialNormalScale,
         Type::Vec2,
@@ -1379,7 +1382,7 @@ pub fn material_roughness() -> NodeRef {
 }
 
 /// `materialBumpScale`.
-pub fn material_bump_scale() -> NodeRef {
+pub(crate) fn material_bump_scale() -> NodeRef {
     uniform(
         UniformSource::MaterialBumpScale,
         Type::F32,
@@ -1875,6 +1878,15 @@ impl NodeRef {
 // ---------------------------------------------------------------------------
 
 macro_rules! accessor {
+    ($(#[$m:meta])* pub(crate) $name:ident, $body:expr) => {
+        $(#[$m])*
+        pub(crate) fn $name() -> NodeRef {
+            thread_local! {
+                static CELL: Lazy<NodeRef> = const { Lazy::new() };
+            }
+            CELL.with(|c| c.get(|| $body))
+        }
+    };
     ($(#[$m:meta])* $name:ident, $body:expr) => {
         $(#[$m])*
         pub fn $name() -> NodeRef {
@@ -1911,7 +1923,7 @@ accessor!(
 accessor!(
     /// `vertexColor()` over a three-component `color` attribute, widened to a
     /// `vec4` with an alpha of 1. See [`vertex_color`].
-    vertex_color_rgb,
+    pub(crate) vertex_color_rgb,
     to_varying(
         None,
         vec4_join(vec![attribute("color", Type::Vec3), float(1.0)])
@@ -1920,7 +1932,7 @@ accessor!(
 accessor!(
     /// `vertexColor()` over a four-component `color` attribute — three's
     /// `vertexAlphas`. See [`vertex_color`].
-    vertex_color_rgba,
+    pub(crate) vertex_color_rgba,
     to_varying(None, attribute("color", Type::Vec4))
 );
 
@@ -2135,7 +2147,7 @@ accessor!(
 );
 accessor!(
     /// `materialEmissiveIntensity`.
-    material_emissive_intensity,
+    pub(crate) material_emissive_intensity,
     uniform(
         UniformSource::MaterialEmissiveIntensity,
         Type::F32,
@@ -2146,7 +2158,7 @@ accessor!(
 accessor!(
     /// `materialAOMapIntensity` — the `getFloat( 'aoMapIntensity' )` inside
     /// `MaterialNode.AO`.
-    material_ao_map_intensity,
+    pub(crate) material_ao_map_intensity,
     uniform(
         UniformSource::MaterialAoMapIntensity,
         Type::F32,
@@ -2672,6 +2684,13 @@ pub fn diffuse_color() -> NodeRef {
 }
 
 macro_rules! prop {
+    ($(#[$meta:meta])* pub(crate) $name:ident, $wgsl:literal, $ty:expr) => {
+        $(#[$meta])*
+        pub(crate) fn $name() -> NodeRef {
+            thread_local! { static CELL: Lazy<NodeRef> = const { Lazy::new() }; }
+            CELL.with(|c| c.get(|| property($wgsl, $ty)))
+        }
+    };
     ($(#[$meta:meta])* $name:ident, $wgsl:literal, $ty:expr) => {
         $(#[$meta])*
         pub fn $name() -> NodeRef {
@@ -2682,9 +2701,9 @@ macro_rules! prop {
 }
 
 prop!(output_property, "Output", Type::Vec4);
-prop!(total_diffuse, "totalDiffuse", Type::Vec3);
-prop!(total_specular, "totalSpecular", Type::Vec3);
-prop!(outgoing_light, "outgoingLight", Type::Vec3);
+prop!(pub(crate) total_diffuse, "totalDiffuse", Type::Vec3);
+prop!(pub(crate) total_specular, "totalSpecular", Type::Vec3);
+prop!(pub(crate) outgoing_light, "outgoingLight", Type::Vec3);
 prop!(shininess, "Shininess", Type::F32);
 prop!(specular_color, "SpecularColor", Type::Vec3);
 prop!(emissive_color, "EmissiveColor", Type::Vec3);
@@ -2693,7 +2712,7 @@ prop!(emissive_color, "EmissiveColor", Type::Vec3);
 /// `materialAO` and the lighting model's own `ambientOcclusion` *var* then
 /// multiplies itself by. The two are different names in the WGSL and different
 /// things here; see [`ambient_occlusion`] for the var.
-pub fn ambient_occlusion_property() -> NodeRef {
+pub(crate) fn ambient_occlusion_property() -> NodeRef {
     thread_local! { static CELL: Lazy<NodeRef> = const { Lazy::new() }; }
     CELL.with(|c| c.get(|| property("AmbientOcclusion", Type::F32)))
 }
@@ -2705,6 +2724,12 @@ pub fn ambient_occlusion_property() -> NodeRef {
 /// dumps interleave `directSpecular = vec3<f32>( 0.0, 0.0, 0.0 )` with the
 /// light's own statements.
 macro_rules! lighting_var {
+    (pub(crate) $name:ident, $wgsl:literal, $init:expr) => {
+        pub(crate) fn $name() -> NodeRef {
+            thread_local! { static CELL: Lazy<NodeRef> = const { Lazy::new() }; }
+            CELL.with(|c| c.get(|| to_var_untagged($wgsl, $init)))
+        }
+    };
     ($name:ident, $wgsl:literal, $init:expr) => {
         pub fn $name() -> NodeRef {
             thread_local! { static CELL: Lazy<NodeRef> = const { Lazy::new() }; }
@@ -2713,10 +2738,10 @@ macro_rules! lighting_var {
     };
 }
 
-lighting_var!(direct_diffuse, "directDiffuse", vec3(0.0, 0.0, 0.0));
-lighting_var!(direct_specular, "directSpecular", vec3(0.0, 0.0, 0.0));
-lighting_var!(indirect_diffuse, "indirectDiffuse", vec3(0.0, 0.0, 0.0));
-lighting_var!(indirect_specular, "indirectSpecular", vec3(0.0, 0.0, 0.0));
+lighting_var!(pub(crate) direct_diffuse, "directDiffuse", vec3(0.0, 0.0, 0.0));
+lighting_var!(pub(crate) direct_specular, "directSpecular", vec3(0.0, 0.0, 0.0));
+lighting_var!(pub(crate) indirect_diffuse, "indirectDiffuse", vec3(0.0, 0.0, 0.0));
+lighting_var!(pub(crate) indirect_specular, "indirectSpecular", vec3(0.0, 0.0, 0.0));
 lighting_var!(irradiance, "irradiance", vec3(0.0, 0.0, 0.0));
 lighting_var!(ambient_occlusion, "ambientOcclusion", float(1.0));
 // `radiance` / `iblIrradiance` are `vec3().toVar()` on the lighting context
@@ -2726,8 +2751,8 @@ lighting_var!(ibl_irradiance, "iblIrradiance", vec3(0.0, 0.0, 0.0));
 
 // `PhysicalLightingModel`'s properties.
 prop!(metalness, "Metalness", Type::F32);
-prop!(single_scattering, "singleScattering", Type::Vec3);
-prop!(multi_scattering, "multiScattering", Type::Vec3);
+prop!(pub(crate) single_scattering, "singleScattering", Type::Vec3);
+prop!(pub(crate) multi_scattering, "multiScattering", Type::Vec3);
 prop!(roughness, "Roughness", Type::F32);
 prop!(specular_color_blended, "SpecularColorBlended", Type::Vec3);
 prop!(specular_f90, "SpecularF90", Type::F32);
@@ -2741,27 +2766,27 @@ prop!(diffuse_contribution, "DiffuseContribution", Type::Vec3);
 // WGSL.
 prop!(sheen, "Sheen", Type::Vec3);
 prop!(sheen_roughness, "SheenRoughness", Type::F32);
-prop!(sheen_specular_direct, "sheenSpecularDirect", Type::Vec3);
-prop!(sheen_specular_indirect, "sheenSpecularIndirect", Type::Vec3);
+prop!(pub(crate) sheen_specular_direct, "sheenSpecularDirect", Type::Vec3);
+prop!(pub(crate) sheen_specular_indirect, "sheenSpecularIndirect", Type::Vec3);
 // `MeshPhysicalNodeMaterial.setupVariants()`' diffuse-roughness property.
 prop!(diffuse_roughness, "DiffuseRoughness", Type::F32);
 prop!(
-    single_scattering_dielectric,
+    pub(crate) single_scattering_dielectric,
     "singleScatteringDielectric",
     Type::Vec3
 );
 prop!(
-    multi_scattering_dielectric,
+    pub(crate) multi_scattering_dielectric,
     "multiScatteringDielectric",
     Type::Vec3
 );
 prop!(
-    single_scattering_metallic,
+    pub(crate) single_scattering_metallic,
     "singleScatteringMetallic",
     Type::Vec3
 );
 prop!(
-    multi_scattering_metallic,
+    pub(crate) multi_scattering_metallic,
     "multiScatteringMetallic",
     Type::Vec3
 );
@@ -2783,14 +2808,14 @@ prop!(attenuation_color, "AttenuationColor", Type::Vec3);
 
 // `PhysicalLightingModel.start()`'s clearcoat accumulators — vars, like the
 // lighting context's, so their zeros land at the first read.
-lighting_var!(clearcoat_radiance, "clearcoatRadiance", vec3(0.0, 0.0, 0.0));
+lighting_var!(pub(crate) clearcoat_radiance, "clearcoatRadiance", vec3(0.0, 0.0, 0.0));
 lighting_var!(
-    clearcoat_specular_direct,
+    pub(crate) clearcoat_specular_direct,
     "clearcoatSpecularDirect",
     vec3(0.0, 0.0, 0.0)
 );
 lighting_var!(
-    clearcoat_specular_indirect,
+    pub(crate) clearcoat_specular_indirect,
     "clearcoatSpecularIndirect",
     vec3(0.0, 0.0, 0.0)
 );
@@ -2804,7 +2829,7 @@ thread_local! {
 
 /// Install the material's clearcoat normal node for the duration of `f` —
 /// `MeshPhysicalNodeMaterial.setup()`'s `builder.context.setupClearcoatNormal`.
-pub fn with_clearcoat_normal<R>(normal: Option<NodeRef>, f: impl FnOnce() -> R) -> R {
+pub(crate) fn with_clearcoat_normal<R>(normal: Option<NodeRef>, f: impl FnOnce() -> R) -> R {
     let _clearcoat = push_context(|cx| cx.setup_clearcoat_normal = normal);
     f()
 }
@@ -3355,7 +3380,7 @@ pub fn texture_sample(map: &Texture, coord: NodeRef) -> NodeRef {
 /// `texture( map, uv )` without the default UV.
 ///
 /// A map that is `NearestFilter` on both sides is *unfilterable*
-/// ([`Texture::is_unfilterable`]): three binds it with no sampler and every
+/// (`Texture::is_unfilterable`): three binds it with no sampler and every
 /// tap becomes a `textureLoad`, which is why `webgpu_mrt`'s composite shader
 /// has four bare `texture_2d<f32>` bindings and no `_sampler` beside any of
 /// them.
@@ -3947,7 +3972,7 @@ fn instanced_attribute(buffer: &Rc<InstanceBuffer>, offset: usize, ty: Type) -> 
 /// `instancedBufferAttribute( interleaved, 'vec4', 16, offset )` views joined
 /// back into a `mat4`. The second branch is what lets an `InstancedMesh` go
 /// past `maxUniformBufferBindingSize / 64` ≈ 1024 instances.
-pub fn instance_matrix(count: usize) -> NodeRef {
+pub(crate) fn instance_matrix(count: usize) -> NodeRef {
     let matrix_count = count.max(1);
     let uniform_buffer_size = matrix_count * 16 * 4;
 
@@ -4055,7 +4080,7 @@ impl RangeValue {
 
 /// `range( min, max )` — `RangeNode` on an `InstancedMesh` resolves to one
 /// `vec4` per instance, `lerp( min[c], max[c], Math.random() )` per component.
-/// The returned node is the raw `vec4`; [`instanced_range`] narrows it.
+/// The returned node is the raw `vec4`; `instanced_range` narrows it.
 pub fn range(min: [f64; 4], max: [f64; 4], count: usize, index: NodeRef) -> NodeRef {
     buffer_element(BufferSource::Range { min, max }, Type::Vec4, count, index)
 }
@@ -4070,7 +4095,7 @@ pub fn range(min: [f64; 4], max: [f64; 4], count: usize, index: NodeRef) -> Node
 /// Each call builds its own buffer node, so two `range( 0, 1 )` calls are two
 /// buffers with two different random fills — Three's behaviour, and the thing a
 /// value-keyed cache would silently collapse.
-pub fn instanced_range(
+pub(crate) fn instanced_range(
     min: impl Into<RangeValue>,
     max: impl Into<RangeValue>,
     count: usize,
@@ -4133,7 +4158,7 @@ pub fn loop_statement(count: usize, index: NodeRef, body: Vec<NodeRef>) -> NodeR
 }
 
 /// `If( cond, () => { … } )` with no `Else` — a statement.
-pub fn if_statement(cond: NodeRef, body: Vec<NodeRef>) -> NodeRef {
+pub(crate) fn if_statement(cond: NodeRef, body: Vec<NodeRef>) -> NodeRef {
     NodeRef::new(Node::If {
         cond,
         body,
@@ -4187,12 +4212,12 @@ pub fn texture_load_array(map: &DataArrayTexture, coord: NodeRef, layer: NodeRef
 
 /// `uniformArray( mesh.morphTargetInfluences, 'float' ).element( i )` — one
 /// `vec4` per morph target, the influence in `.x`.
-pub fn morph_influences(count: usize, index: NodeRef) -> NodeRef {
+pub(crate) fn morph_influences(count: usize, index: NodeRef) -> NodeRef {
     buffer_element(BufferSource::MorphInfluences, Type::Vec4, count, index)
 }
 
 /// `Morph.js`' `base = uniform( 1 )`, in the object group.
-pub fn morph_base() -> NodeRef {
+pub(crate) fn morph_base() -> NodeRef {
     uniform(
         UniformSource::MorphBase,
         Type::F32,
@@ -4339,7 +4364,12 @@ pub fn shader_fn(
 /// statements inside the block (the last of which assigns the result). The
 /// node's value is the result var, so a second reference reuses it rather than
 /// re-emitting the block.
-pub fn if_node(pre: Vec<NodeRef>, result: NodeRef, cond: NodeRef, body: Vec<NodeRef>) -> NodeRef {
+pub(crate) fn if_node(
+    pre: Vec<NodeRef>,
+    result: NodeRef,
+    cond: NodeRef,
+    body: Vec<NodeRef>,
+) -> NodeRef {
     NodeRef::new(Node::IfVar {
         pre,
         result,

@@ -99,6 +99,7 @@ impl AfterImageNode {
     }
 
     /// The `AfterImage` quad material, for `examples/dump_wgsl.rs`.
+    #[doc(hidden)]
     pub fn quad_material(&self) -> &MeshBasicNodeMaterial {
         &self.quad.material
     }

@@ -5,7 +5,7 @@
 //!
 //! # Which rasteriser is in use, and why
 //!
-//! **The exact analytic-area scanline filler in this module** ([`fill_analytic`]),
+//! **The exact analytic-area scanline filler in this module** (`fill_analytic`),
 //! i.e. the fallback the plan held in reserve (§2.3). tiny-skia was tried first
 //! and both were measured against the golden; neither reproduces Chromium
 //! bit-for-bit, and the analytic filler is the one that is *defensible* — it
@@ -235,7 +235,7 @@ fn flatten_cubic(
 /// x within the texel, measured from the texel's left edge. Accumulating
 /// `cover = Σ dy` and `area = Σ dy * mean_fx` per texel and then sweeping each
 /// row right-to-left therefore gives the exact integral for every texel at once.
-pub fn fill_analytic(contours: &[Contour], size: u32) -> Vec<u8> {
+pub(crate) fn fill_analytic(contours: &[Contour], size: u32) -> Vec<u8> {
     let n = size as usize;
     let mut out = vec![0u8; n * n];
     if contours.is_empty() {

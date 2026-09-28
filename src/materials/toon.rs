@@ -28,7 +28,7 @@ use super::phong::{brdf_lambert, setup_light, LightDesc};
 /// Without one it is the built-in two-step ramp, antialiased over one pixel
 /// by `fwidth`: `mix( vec3( 0.7 ), vec3( 1 ), smoothstep( 0.7 - fw.x, 0.7 +
 /// fw.x, coord.x ) )`.
-pub fn gradient_irradiance(
+pub(crate) fn gradient_irradiance(
     normal: NodeRef,
     light_direction: NodeRef,
     gradient_map: Option<&Texture>,
@@ -62,7 +62,7 @@ pub fn gradient_irradiance(
 /// ```
 ///
 /// No specular term at all, as in Lambert.
-pub fn direct_light(
+pub(crate) fn direct_light(
     light: &LightDesc,
     received_shadow_position: Option<&NodeRef>,
     gradient_map: Option<&Texture>,

@@ -74,7 +74,7 @@ fn srgb_to_linear_table() -> &'static [f64; 1024] {
 /// approximations introduced by precalculated SRGB_TO_LINEAR values") is a
 /// correction *for* this truncation, so dropping one without the other would
 /// move every texel.
-pub fn srgb_to_linear(value: f64) -> f64 {
+pub(crate) fn srgb_to_linear(value: f64) -> f64 {
     // 0.04045 * 255 = 10.31475
     if value < 10.31475 {
         // (1/255) * 0.0773993808
@@ -699,7 +699,7 @@ fn read_u32_le(bytes: &[u8], offset: usize) -> Option<u32> {
 /// The alpha channel is never written: the buffer starts filled with a literal
 /// 1 (`15360` is binary16 for 1.0) and only the three colour channels are
 /// touched, exactly as upstream's `for ( c = 0; c < 3; c ++ )`.
-pub fn apply_gain_map(
+pub(crate) fn apply_gain_map(
     metadata: &UltraHdrMetadata,
     sdr: &crate::textures::Image,
     gain_map: &crate::textures::Image,

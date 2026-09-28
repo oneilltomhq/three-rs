@@ -10,6 +10,7 @@ use crate::textures::CubeTexture;
 /// `CubeTexture`; `Background.update()` branches on which one it is — a colour
 /// becomes the clear value, anything else becomes the skybox mesh.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub enum Background {
     Color(Color),
     CubeTexture(CubeTexture),
@@ -57,7 +58,7 @@ impl From<CubeTexture> for Background {
 /// The `Object3D` half is a real scene-graph [`Node`], so the tree under a scene
 /// is the tree the renderer walks: `Group`s, lights and their children all
 /// nest, and `Renderer::render` collects drawables with
-/// [`crate::renderer::project_object`]. The fields below are what `Scene` adds
+/// `crate::renderer::project_object`. The fields below are what `Scene` adds
 /// to `Object3D`; they are not a `Payload` variant because nothing in the
 /// renderer's traversal branches on them.
 pub struct Scene {

@@ -41,7 +41,8 @@ impl Matrix4 {
     }
 
     /// The 16 elements narrowed to `f32`, ready for a uniform buffer.
-    pub fn to_f32_array(&self) -> [f32; 16] {
+    #[allow(clippy::wrong_self_convention)] // a 128-byte matrix is cheaper borrowed
+    pub(crate) fn to_f32_array(&self) -> [f32; 16] {
         let mut out = [0.0f32; 16];
         for (o, e) in out.iter_mut().zip(self.elements.iter()) {
             *o = *e as f32;

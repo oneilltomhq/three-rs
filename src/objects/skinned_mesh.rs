@@ -39,7 +39,7 @@ pub struct SkinnedMesh {
     ///
     /// In the default [`BindMode::Attached`] this is `matrixWorld⁻¹`, recomputed
     /// **every frame** by `Object3D.updateMatrixWorld()` — see
-    /// [`SkinnedMesh::update_bind_matrix_inverse`], which the tree walk calls
+    /// `SkinnedMesh::update_bind_matrix_inverse`, which the tree walk calls
     /// for this payload the way three.js' `SkinnedMesh.updateMatrixWorld()`
     /// override does. A stale or identity value here scales the skin by the
     /// node's own scale and is silent.
@@ -128,7 +128,7 @@ impl SkinnedMesh {
     /// (`Object3D.updateMatrixWorld`) runs it for every `SkinnedMesh` payload it
     /// passes, which is what keeps `bindMatrixInverse` in step with a moving or
     /// scaled parent without the caller having to remember.
-    pub fn update_bind_matrix_inverse(&mut self, matrix_world: &Matrix4) {
+    pub(crate) fn update_bind_matrix_inverse(&mut self, matrix_world: &Matrix4) {
         match self.bind_mode {
             BindMode::Attached => {
                 self.bind_matrix_inverse.copy(matrix_world);

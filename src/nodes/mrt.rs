@@ -34,7 +34,7 @@ use super::NodeRef;
 /// material's setup, where the thread-locals hold that material's state. See
 /// `docs/nodes.md` §23.
 #[derive(Clone)]
-pub enum MrtValue {
+pub(crate) enum MrtValue {
     /// A value that does not depend on the material, such as a uniform or a
     /// property read like `output` or `diffuseColor`.
     Node(NodeRef),
@@ -155,7 +155,8 @@ impl MrtNode {
     }
 
     /// The names this MRT writes, in insertion order.
-    pub fn names(&self) -> impl Iterator<Item = &str> {
+    #[cfg(test)]
+    fn names(&self) -> impl Iterator<Item = &str> {
         self.outputs.iter().map(|(n, _)| n.as_str())
     }
 
@@ -182,7 +183,7 @@ impl MrtNode {
     /// members array is trimmed to the last one that is — an
     /// `OutputStructNode` with a hole would generate a read of `undefined` in
     /// three.js too, so nothing is lost by not modelling it.
-    pub fn members(&self, attachments: &[String]) -> Vec<NodeRef> {
+    pub(crate) fn members(&self, attachments: &[String]) -> Vec<NodeRef> {
         let mut members: Vec<Option<NodeRef>> = vec![None; attachments.len()];
         for (name, value) in &self.outputs {
             if let Some(index) = attachments.iter().position(|a| a == name) {

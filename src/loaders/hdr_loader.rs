@@ -63,15 +63,6 @@ impl HdrData {
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
-
-    /// The channel values as the little-endian bytes a `write_texture` of an
-    /// `rgba16float` / `rgba32float` texture wants.
-    pub fn to_bytes(&self) -> Vec<u8> {
-        match self {
-            HdrData::HalfFloat(data) => data.iter().flat_map(|h| h.to_le_bytes()).collect(),
-            HdrData::Float(data) => data.iter().flat_map(|f| f.to_le_bytes()).collect(),
-        }
-    }
 }
 
 /// `new HDRLoader()`.
