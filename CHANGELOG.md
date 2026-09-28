@@ -44,7 +44,7 @@ outside consumers and batched together for the 0.2.0 release:
 - **A scene's or material's environment is an `Environment` enum** —
   `Environment::Pmrem(PmremHandle)` or `Environment::Node(EnvironmentNode)` —
   instead of a raw PMREM handle, so an environment can be a generated cube or
-  a graph of `pmremTexture()` reads. (#152)
+  a graph of `pmremTexture()` reads. (#208)
 
 Other changes:
 
@@ -58,7 +58,7 @@ Other changes:
   `KHR_draco_mesh_compression` via `draco-core` (#150), `KHR_texture_basisu`
   / KTX2 textures (#176), `EXT_meshopt_compression` (#182),
   `EXT_texture_webp` (#183, AVIF evaluated and left out), and
-  `KHR_materials_diffuse_transmission`/diffuse-roughness (#204). A required
+  `KHR_materials_diffuse_roughness` with the EON diffuse lobe (#204). A required
   extension the loader cannot read is now a load error rather than a
   silently wrong scene (#125), and every glTF texture reference is a
   `GltfTextureRef` carrying its own sampler and wrap state (#127).
@@ -115,7 +115,7 @@ Other changes:
   Pages (#131).
 - **Diagnostics.** `Renderer::info()` reports per-frame draw-call and
   triangle counts (#76).
-- 48 more three.js examples graded green since 0.1.2, for 58 in total — see
+- 69 more three.js examples graded green since 0.1.2, for 79 in total — see
   the README's gallery table for the full list.
 
 ### Fixed
