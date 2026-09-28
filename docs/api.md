@@ -91,7 +91,7 @@ not held is freed.
 - `three_rs::testing` is `#[doc(hidden)]`. It holds the harness helpers
   (`write_png`, `three_js_dir`) that the examples, the viewer, the e2e tests
   and consumers' own graders use, so it stays public but out of the docs.
-  The audit found no other accidental `pub`; the rest is the ported surface.
+  Decision 11 is the audit of everything else that was public.
 - Only things that touch the filesystem or the GPU return `Result`: the
   loaders, `Renderer::new`, `render()`. Constructors, geometry builders and
   the scene-graph methods stay infallible, as they are in three.js. Issue #9
@@ -258,8 +258,8 @@ All of this shipped in 0.1.x (#155 decision 3). Strictly, three new variants
 on a public enum break a caller that matches on `Node` exhaustively; no
 published consumer does, since they build graphs and hand them to the
 builder, so the change was taken as additive. 0.2.0 marks `Node`
-`#[non_exhaustive]`, so that later variants are additive by the rules and
-not only in practice. The pre-`context` spellings stay:
+`#[non_exhaustive]` (decision 11), so that later variants are additive by the
+rules and not only in practice. The pre-`context` spellings stay:
 `range_fog_factor_with_view_z` and `density_fog_factor_with_view_z` build the
 same WGSL as the `.context( { getViewZ } )` form.
 
@@ -281,7 +281,61 @@ derefs to its state. `controls_and_camera` hosts take the camera as
 `cameras::CameraMut`, because an example that shares its camera with a pass
 can lend it only as a `RefMut`.
 
+## 11. Public means three.js public, or documented here
+
+Settled for 0.2.0 by the audit #14 asked for, which walked every reachable
+public item in `three-rs`, `sdf-text` and `three-rs-controls` against three.js
+(or troika, for `sdf-text`) and against who outside the crate uses it. Each
+item landed in one of three places, by one rule each:
+
+- **Public**: a three.js class, its non-underscore methods and properties, an
+  exported TSL function or constant, or something a decision in this file
+  designs. This is kept even where nothing calls it yet, because the port
+  mirrors three.js' public API on purpose and the next rung will want it.
+- **`#[doc(hidden)]`**: not API, but the examples, the tests, the viewer, the
+  web shell or `dump_wgsl` genuinely reach it. These are three's private
+  members that the WGSL and pixel gates inspect (`quad_material`,
+  `NodeProgram::vertex_buffers`, `materials::setup` and its contexts), the
+  readbacks and cache counters the grader asserts on (`read_target_pixels`,
+  `material_cache_len`), and the oracle hooks the decoder tests compare with
+  three's own output (`GLTFLoader::accessors`, `loaders::meshopt`,
+  `loaders::draco`). Like `testing` (decision 4) they carry no compatibility
+  promise.
+- **`pub(crate)`**: everything else. Setup-context plumbing, per-light uniform
+  helpers keyed on the renderer's light index, render-list and render-state
+  internals, texture GPU handles, three's `_`-prefixed members, module-local
+  helpers three.js does not export. Items that turned out to be unused
+  anywhere were deleted rather than hidden.
+
+A `pub mod` whose every item is re-exported from its parent is private now
+(`animation::animation_action`, `extras::curve`, `math::interpolant`,
+`three_rs::error` and the like), so each type has one path. The long paths
+were only ever used by the QUnit ports, which now import the short ones.
+Modules that are namespaces in three.js (`extras::shape_utils`,
+`math::math_utils`) or that hold items not re-exported stay public.
+
+`#[non_exhaustive]` goes on the enums that mirror an open-ended three.js
+concept of which the port has only part: `nodes::Node` (decision 9) and its
+`Builtin`, `UniformSource`, `TextureSource` and `BufferSource`; `MaterialKind`,
+`Payload`, `LightKind`, `Background`, `ToneMapping`; the texture `TextureType`,
+`Mapping`, `ColorSpace` (both of them) and `DataTextureData`; KTX2's
+`EngineFormat`; `TrackInterpolant`, which has no Bézier arm yet; and
+`sdf_text::TextAlign`, which has no `justify`. Each one gains variants as rungs
+land, and a variant is additive only if callers were made to write the `_`
+arm first. Enums whose three.js set is closed and fully ported (`Blending`,
+`Side`, `Wrapping`, `ShadowMapType`, `EulerOrder`) stay exhaustive, because a
+caller matching them exhaustively is right to.
+
+The Rust API Guidelines checklist (#37, folded into #14) was the rubric, and
+only the items that cannot be fixed later without a break were acted on; the
+rest are follow-up issues. The `get_` prefixes (`get_world_position`,
+`get_size`) stay: they are three.js' `getX( target )` methods, which compute
+rather than return a field, so C-GETTER does not apply and decision 3's
+correspondence does.
+
 ## Where each decision came from
+
+Decision 11 is the last of issue #14 (with #37).
 
 Decision 10 is issue #162.
 
