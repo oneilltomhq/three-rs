@@ -26,8 +26,8 @@
 //! Three fires `updateBefore()` (`NodeUpdateType.FRAME`) from inside the
 //! render that samples the texture, so the RTT pass is *recorded* after the
 //! pass that reads it and *submitted* before it. The port's renderer does the
-//! same (`docs/nodes.md` §57); [`RttNode::render`], the explicit call the
-//! port used to need, is deprecated.
+//! same (`docs/nodes.md` §57); the explicit `render()` the port used to need
+//! was removed in 0.2.0 (`docs/api.md` decision 10).
 
 use crate::materials::MeshBasicNodeMaterial;
 use crate::math::Color;
@@ -196,20 +196,6 @@ impl RttNode {
     /// `RTTNode.autoResize` — true while no explicit size was given.
     pub fn auto_resize(&self) -> bool {
         self.size.get().is_none()
-    }
-
-    /// `RTTNode.updateBefore( frame )`, called by hand.
-    ///
-    /// The renderer now draws the quad itself, the first time in a frame a
-    /// draw samples the node. This does the same and marks the node done for
-    /// the frame, so that draw does not repeat it. `docs/nodes.md` §57.
-    #[deprecated(
-        since = "0.1.3",
-        note = "the renderer runs `updateBefore()` when a draw samples the node (docs/nodes.md §57)"
-    )]
-    pub fn render(&self, renderer: &mut Renderer) {
-        renderer.mark_update_before(Rc::as_ptr(&self.0) as *const u8 as usize);
-        self.0.render_quad(renderer);
     }
 }
 

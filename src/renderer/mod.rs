@@ -724,8 +724,8 @@ pub struct Renderer {
     render_target: Option<RenderTarget>,
     /// `Renderer._mrt` — the MRT configuration the *pass* sets, which
     /// `NodeMaterial.setup()` merges each material's own `mrtNode` over.
-    /// `PassNode::render` sets it from its own `set_mrt` and restores it after,
-    /// exactly as `PassNode.updateBefore()` does.
+    /// The pass's `updateBefore()` sets it from its own `set_mrt` and
+    /// restores it after, exactly as `PassNode.updateBefore()` does.
     mrt: Option<crate::nodes::MrtNode>,
     /// `Renderer._frameBufferTargets`: the internal render target the scene is
     /// drawn into whenever the output needs a colour-space conversion or tone
@@ -4304,6 +4304,13 @@ impl Renderer {
 
         warn_unsupported(item.key.id, &item.material, &item.setup);
 
+        // `PassNode.setup()`, generalized: sync every registered pass's
+        // render-target sample count with the renderer's before this build,
+        // the only place a program that binds a pass's depth texture is
+        // built (`docs/nodes.md` §57.5). A cache hit above skips this, so a
+        // steady frame still walks no registry.
+        crate::nodes::frame::sync_before_build(self.samples);
+
         let _samples = crate::nodes::builder::push_context(|cx| {
             cx.alpha_to_coverage_samples = alpha_to_coverage_samples;
         });
@@ -6168,19 +6175,6 @@ impl Renderer {
     fn end_frame(&mut self, (previous, to_screen): (u64, bool)) {
         self.call_depth -= 1;
         self.node_frame.end_render(previous, to_screen);
-    }
-
-    /// What a pass's deprecated explicit `render()` does before it renders:
-    /// open the frame the render belongs to, and take the pass's
-    /// update-before for that frame. Taking it first matters for a node
-    /// whose own draws sample its output texture (a bloom's blur reads the
-    /// target it also exposes), which would otherwise run the node again
-    /// from inside itself. The draw that samples the pass later in the frame
-    /// then finds it done (`docs/nodes.md` §57).
-    pub(crate) fn mark_update_before(&mut self, reference: usize) {
-        self.node_frame.open(crate::utils::now_ms());
-        self.node_frame
-            .mark(crate::nodes::frame::UpdatePhase::Before, reference);
     }
 
     /// Three's `NodeFrame`, as the renderer keeps it: `frameId`, `renderId`,
