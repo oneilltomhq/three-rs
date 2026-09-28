@@ -23,9 +23,9 @@ What is welcome, in rough order of how easy it is to merge:
   grader passes on it. Say which example in the issue and what you think
   it needs that is missing; the per-rung notes in `docs/*-progress.md`
   show the shape of the work.
-- **API changes.** Read `docs/api.md` first. Breaking changes are batched
-  for 0.2.0 and need an issue with the `api` label; a PR that changes a
-  public signature without one will be asked to open it.
+- **API changes.** Read `docs/api.md` first. Breaking changes batch into the
+  next minor release and need an issue with the `api` label; a PR that
+  changes a public signature without one will be asked to open it.
 
 Out of scope: the WebGL renderer (`renderers/webgl*` in Three), and
 anything that needs a backend or platform that cannot be graded. Other
@@ -42,6 +42,7 @@ short version:
 git clone https://github.com/mrdoob/three.js ~/src/vendor/three.js
 git -C ~/src/vendor/three.js checkout 5f610f5   # the r187 tag, once upstream tags it
 (cd ~/src/vendor/three.js && npm ci)
+export THREE_JS_DIR=~/src/vendor/three.js   # this is the default location
 cargo test -p sdf-text --lib                # sdf-text unit tests; no GPU
 cargo test -p three-rs --lib                # three-rs unit tests; no GPU
 cargo test --test e2e -- --nocapture        # the grader; needs a Vulkan device
@@ -73,8 +74,8 @@ screenshots that no runner here has yet:
   examples table in the README is the reference; if a number moves, the
   PR explains why.
 - If the change is user-visible, add a line under *Unreleased* in
-  `CHANGELOG.md` (once #19 lands; until then, the PR description carries
-  it).
+  `CHANGELOG.md`. Every PR appends to that section; a maintainer renames it
+  to a version at release time.
 
 Things the grader assumes and reviewers will look for:
 

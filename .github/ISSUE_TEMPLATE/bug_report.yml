@@ -1,0 +1,69 @@
+name: Bug report
+description: A wrong or crashing render, or a bug in a non-rendering part of the crate.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The most useful bug report for a renderer is the example, the GPU it ran
+        on, and a picture. A scene that renders wrong with no panic is the normal
+        failure mode here, so "it looks different" with a screenshot is a
+        complete report.
+  - type: input
+    id: example
+    attributes:
+      label: Example
+      description: >-
+        Which example shows the bug (e.g. `webgpu_materials_envmaps`), or the
+        name of your own program if it doesn't reproduce in an example.
+      placeholder: webgpu_materials_envmaps
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: >-
+        What you expected, what you got, and a screenshot or the diff strip
+        from `target/e2e/<example>/` if you have one.
+    validations:
+      required: true
+  - type: input
+    id: gpu
+    attributes:
+      label: GPU
+      description: The graphics card or adapter in use.
+    validations:
+      required: true
+  - type: input
+    id: driver
+    attributes:
+      label: Driver
+      description: Driver name and version (e.g. Mesa RADV, NVIDIA proprietary, ...).
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS
+      description: Operating system and version.
+    validations:
+      required: true
+  - type: textarea
+    id: adapter-info
+    attributes:
+      label: adapter_info() output
+      description: >-
+        The output of `renderer.adapter_info()` (printed by the viewer and by
+        most examples on startup), or `wgpu`'s own adapter listing if you
+        don't have that handy.
+      render: text
+    validations:
+      required: false
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Panic output, backend (Vulkan/other), and anything else that seems relevant.
+    validations:
+      required: false
