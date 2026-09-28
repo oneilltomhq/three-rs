@@ -35,8 +35,20 @@ pub struct FrenetFrames {
 
 /// What a curve's points are: `Vector2` for the 2D curves (`LineCurve`,
 /// `EllipseCurve`, `Path`, `Shape`, ...), `Vector3` for the 3D ones. The
+mod sealed {
+    pub trait Sealed {}
+    impl Sealed for crate::math::Vector2 {}
+    impl Sealed for crate::math::Vector3 {}
+}
+
 /// handful of vector operations the base class uses generically.
-pub trait CurveVector: Copy + Default + PartialEq + std::fmt::Debug + 'static {
+///
+/// Sealed: it is implemented for `Vector2` and `Vector3` only, which is what
+/// three.js' curves take, so a method can be added to it (or to
+/// `BezierVector` / `LineVector`, which require it) without a break.
+pub trait CurveVector:
+    sealed::Sealed + Copy + Default + PartialEq + std::fmt::Debug + 'static
+{
     /// `v.distanceTo( w )`.
     fn distance_to(&self, v: &Self) -> f64;
     /// `v.equals( w )`.
