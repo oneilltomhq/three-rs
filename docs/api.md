@@ -328,7 +328,12 @@ caller matching them exhaustively is right to.
 
 The Rust API Guidelines checklist (#37, folded into #14) was the rubric, and
 only the items that cannot be fixed later without a break were acted on; the
-rest are follow-up issues. The `get_` prefixes (`get_world_position`,
+rest are follow-up issues. One more was: `CurveVector` (and so `BezierVector`
+and `LineVector`) is sealed (C-SEALED). It is the bound the generic curves put
+on their point type, implemented for `Vector2` and `Vector3` as three.js'
+curves are, and sealing it is what lets it gain a method later. The traits
+users are meant to implement (`Curve`, `CustomNode`, `LightingModel`,
+`NodeUpdate`, `UvGenerator`, `BindingTarget`, `TargetResolver`) stay open. The `get_` prefixes (`get_world_position`,
 `get_size`) stay: they are three.js' `getX( target )` methods, which compute
 rather than return a field, so C-GETTER does not apply and decision 3's
 correspondence does.
