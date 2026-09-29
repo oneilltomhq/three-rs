@@ -27,7 +27,7 @@ use std::f64::consts::PI;
 
 use three_rs::addons::controls::OrbitControls;
 use three_rs::animation::AnimationMixer;
-use three_rs::loaders::GLTFLoader;
+use three_rs::loaders::GltfLoader;
 use three_rs::materials::PointsNodeMaterial;
 use three_rs::nodes::node::Type;
 use three_rs::nodes::skinning::compute_skinning;
@@ -104,32 +104,27 @@ pub fn kernels(child: &Node, count_of_points: usize) -> (ComputeFlow, StorageArr
 
     // `onInit( () => renderer.compute( updateSkinningPoints().compute(
     // countOfPoints ) ) )` — the same body as its own kernel.
-    let on_init = ComputeFlow {
-        statements: update_skinning_points(
+    let on_init = ComputeFlow::new(
+        update_skinning_points(
             child,
             &compute_skinning(child),
             &point_position_array,
             &point_speed_array,
         ),
-        count: count_of_points,
-        workgroup_size: [64, 1, 1],
-        name: None,
-        on_init: None,
-    };
+        count_of_points,
+    );
     // `Fn( () => { updateSkinningPoints(); return
     // pointPositionArray.toAttribute(); } )().compute( countOfPoints )`.
-    let update = ComputeFlow {
-        statements: update_skinning_points(
+    let mut update = ComputeFlow::new(
+        update_skinning_points(
             child,
             &compute_skinning(child),
             &point_position_array,
             &point_speed_array,
         ),
-        count: count_of_points,
-        workgroup_size: [64, 1, 1],
-        name: None,
-        on_init: Some(Box::new(on_init)),
-    };
+        count_of_points,
+    );
+    update.on_init = Some(Box::new(on_init));
     (update, point_position_array, point_speed_array)
 }
 
@@ -173,7 +168,7 @@ pub fn init() -> App {
 
     scene.add(&AmbientLight::new(Color::from_hex(0xffffff), 10.0));
 
-    let gltf = GLTFLoader::load(three.join("examples/models/gltf/Michelle.glb"))
+    let gltf = GltfLoader::load(three.join("examples/models/gltf/Michelle.glb"))
         .expect("three-rs: Michelle.glb loads");
     let object = gltf.scene.clone();
 
@@ -215,7 +210,9 @@ pub fn init() -> App {
     scene.add(&object);
 
     // renderer
-    let mut renderer = Renderer::new(RendererParameters { antialias: true }).unwrap();
+    let mut parameters = RendererParameters::default();
+    parameters.antialias = true;
+    let mut renderer = Renderer::new(parameters).unwrap();
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
 

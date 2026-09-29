@@ -77,7 +77,7 @@ pub fn init() -> App {
     let map = TextureLoader::new()
         .load(examples_dir().join("textures/sprites/snowflake1.png"))
         .unwrap();
-    map.set_color_space(three_rs::ColorSpace::SRGB);
+    map.set_color_space(three_rs::ColorSpace::Srgb);
 
     // material
 
@@ -86,7 +86,7 @@ pub fn init() -> App {
     material.map = Some(map.clone());
     material.alpha_map = Some(map);
     material.alpha_test = 0.1;
-    material.color.set_hsl(1.0, 0.3, 0.7, ColorSpace::SRGB);
+    material.color.set_hsl(1.0, 0.3, 0.7, ColorSpace::Srgb);
     material.position_node = Some(instanced_data_attribute(&positions, 3, 0, Type::Vec3));
     material.rotation_node = Some(time().add(instance_index()).sin());
     material.scale_node = Some(uniform_value(Type::F32, vec![15.0]));
@@ -105,7 +105,7 @@ pub fn init() -> App {
 
     //
 
-    let mut renderer = Renderer::new(RendererParameters { antialias: false }).unwrap();
+    let mut renderer = Renderer::new(RendererParameters::default()).unwrap();
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
 
@@ -165,7 +165,7 @@ pub fn animate_cpu_only(app: &mut App) {
         .expect("a Sprite's payload is a sprite")
         .material
         .color
-        .set_hsl(h, 0.5, 0.5, ColorSpace::LinearSRGB);
+        .set_hsl(h, 0.5, 0.5, ColorSpace::LinearSrgb);
 }
 
 fn main() {

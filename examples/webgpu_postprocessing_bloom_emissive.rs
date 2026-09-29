@@ -37,7 +37,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use three_rs::addons::controls::OrbitControls;
-use three_rs::loaders::{GLTFLoader, HdrLoader};
+use three_rs::loaders::{GltfLoader, HdrLoader};
 use three_rs::materials::Blending;
 use three_rs::nodes::display::{bloom, BloomNode};
 use three_rs::nodes::mrt;
@@ -83,7 +83,7 @@ pub fn init() -> App {
     // `renderer = new THREE.WebGPURenderer()` — `antialias` is not in the
     // parameter object, so it is false. The renderer is built before the two
     // environment conversions below because in this port they take it.
-    let mut renderer = Renderer::new(RendererParameters { antialias: false }).unwrap();
+    let mut renderer = Renderer::new(RendererParameters::default()).unwrap();
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
     renderer.tone_mapping = ToneMapping::AcesFilmic;
@@ -113,7 +113,7 @@ pub fn init() -> App {
     // 'DamagedHelmet.gltf', … )` — five external JPEG maps: albedo,
     // metalRoughness, normal, emissive and AO.
     let gltf =
-        GLTFLoader::load(examples_dir().join("models/gltf/DamagedHelmet/glTF/DamagedHelmet.gltf"))
+        GltfLoader::load(examples_dir().join("models/gltf/DamagedHelmet/glTF/DamagedHelmet.gltf"))
             .expect("DamagedHelmet.gltf");
     gltf.scene.traverse(&mut |node| {
         if let Some(material) = node

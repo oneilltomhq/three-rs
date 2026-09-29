@@ -202,7 +202,7 @@ fn front_and_behind() -> (Node, Node) {
 #[test]
 fn intersect_object_perspective_webgpu_coordinate_system() {
     let mut camera = PerspectiveCamera::new(90.0, 1.0, 0.1, 100.0);
-    camera.coordinate_system = three_rs::math::CoordinateSystem::WebGPU;
+    camera.coordinate_system = three_rs::math::CoordinateSystem::WebGpu;
     camera.update_projection_matrix();
 
     let (front, behind) = front_and_behind();
@@ -225,7 +225,7 @@ fn intersect_object_perspective_webgpu_coordinate_system() {
 #[test]
 fn intersect_object_orthographic_webgpu_coordinate_system() {
     let mut camera = OrthographicCamera::new(-1.0, 1.0, 1.0, -1.0, 0.1, 10.0);
-    camera.coordinate_system = three_rs::math::CoordinateSystem::WebGPU;
+    camera.coordinate_system = three_rs::math::CoordinateSystem::WebGpu;
     camera.update_projection_matrix();
 
     let (front, behind) = front_and_behind();

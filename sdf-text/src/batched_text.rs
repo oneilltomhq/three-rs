@@ -70,6 +70,7 @@ pub const GLYPH_QUAD_PAD: f64 = 0.12;
 /// register, so `options.font != null` is assumed and `_vectorMode` is always
 /// true.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct BatchedTextOptions {
     /// `options.outlineWidth ?? 0.03`, in SDF units.
     pub outline_width: f64,

@@ -43,7 +43,7 @@
 //! asset value, which `GLTFMaterialsSheenExtension` sets to 1.
 
 use three_rs::addons::controls::OrbitControls;
-use three_rs::loaders::{GLTFLoader, UltraHdrLoader};
+use three_rs::loaders::{GltfLoader, UltraHdrLoader};
 use three_rs::materials::ToneMapping;
 use three_rs::nodes::pmrem_node::PmremEnvironment;
 use three_rs::objects::Background;
@@ -81,7 +81,9 @@ pub fn init() -> App {
     // `renderer = new THREE.WebGPURenderer( { antialias: true } )`. The page
     // builds it after the loader call; here it is first, because the two
     // environment conversions below take it.
-    let mut renderer = Renderer::new(RendererParameters { antialias: true }).unwrap();
+    let mut parameters = RendererParameters::default();
+    parameters.antialias = true;
+    let mut renderer = Renderer::new(parameters).unwrap();
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
     renderer.tone_mapping = ToneMapping::AcesFilmic;
@@ -91,7 +93,7 @@ pub fn init() -> App {
     // The loader resolves synchronously here, so the callback's body is written
     // inline; `renderer.inspector.createParameters` and its one `sheen` slider
     // are the rest of it.
-    let gltf = GLTFLoader::load(examples_dir().join("models/gltf/SheenChair.glb"))
+    let gltf = GltfLoader::load(examples_dir().join("models/gltf/SheenChair.glb"))
         .expect("SheenChair.glb");
     scene.add(&gltf.scene);
 

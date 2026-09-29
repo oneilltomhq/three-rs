@@ -38,7 +38,7 @@
 //! [`Scene::background_blurriness`]: three_rs::Scene::background_blurriness
 
 use three_rs::addons::controls::OrbitControls;
-use three_rs::loaders::{GLTFLoader, UltraHdrLoader};
+use three_rs::loaders::{GltfLoader, UltraHdrLoader};
 use three_rs::materials::ToneMapping;
 use three_rs::nodes::pmrem_node::PmremEnvironment;
 use three_rs::objects::Background;
@@ -66,7 +66,9 @@ pub fn init() -> App {
     // `new THREE.WebGPURenderer( { antialias: true } )`, then the tone mapping
     // pair. The page builds the renderer first; the environment conversion
     // below needs it, so the order is the page's.
-    let mut renderer = Renderer::new(RendererParameters { antialias: true }).unwrap();
+    let mut parameters = RendererParameters::default();
+    parameters.antialias = true;
+    let mut renderer = Renderer::new(parameters).unwrap();
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
     renderer.tone_mapping = ToneMapping::AcesFilmic;
@@ -114,7 +116,7 @@ pub fn init() -> App {
 
     // `new GLTFLoader().setPath( 'models/gltf/' ).loadAsync(
     // 'AnisotropyBarnLamp.glb' )`, then `scene.add( gltf.scene )`.
-    let gltf = GLTFLoader::load(examples_dir().join("models/gltf/AnisotropyBarnLamp.glb"))
+    let gltf = GltfLoader::load(examples_dir().join("models/gltf/AnisotropyBarnLamp.glb"))
         .expect("AnisotropyBarnLamp.glb");
     scene.add(&gltf.scene);
 

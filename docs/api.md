@@ -75,12 +75,54 @@ not held is freed.
   `MeshPhongNodeMaterial { shininess: 80.0, ..MeshPhongNodeMaterial::phong(c) }`.
   The named constructors (`phong`, `standard`, `line`, `sprite`) carry the
   per-kind defaults, which is where three.js's subclasses live.
+- **Options structs are `#[non_exhaustive]`, built from `Default` or a
+  constructor.** A struct that stands for one of three.js's options objects
+  carries only the keys the ported pages read, so it gains a field whenever a
+  rung needs one more, and with struct literals each of those was a break for
+  every caller. That covers `PassOptions`, `RenderTargetOptions`,
+  `RendererParameters` (one field today; `new WebGPURenderer()` takes a dozen),
+  the blur `*Options`, `Billboarding`, `ExtrudeGeometryOptions`,
+  `TextGeometryOptions`, `ReflectorParameters`, `OverrideNodes`, `Ktx2Support`,
+  `RaycasterParams`, and sdf-text's `LayoutParams` and `BatchedTextOptions`.
+  The fields stay public and `Default` holds three's defaults, so a caller
+  writes `let mut options = PassOptions::default(); options.auto_clear_depth
+  = false;`, the JavaScript object with its keys set one per line. That is the
+  one form `#[non_exhaustive]` leaves open outside the crate: it forbids the
+  literal and the `..Default::default()` update alike. A constructor is added
+  only where a field has no default: `ComputeFlow::new( statements, count )`
+  is three's `.compute( count )`, and `MaterialFlow::new( output, position )`
+  the two nodes a hand-built flow must name. Structs callers only read — `Info`
+  and its four count blocks, sdf-text's `TextRenderInfo` — are
+  `#[non_exhaustive]` and nothing more. Materials keep the literal anyway.
+  They are the construction surface of every example, where
+  `..MeshPhongNodeMaterial::phong( c )` reads as the JavaScript does, and a
+  field added to one is a breaking change taken at a minor release; that is
+  the trade the bullet above made. Input events (`PointerEvent`, `WheelEvent`,
+  `KeyEvent`) are DOM values rather than options and are left as literals too.
 - **Lights, cameras and textures** take three.js's positional constructor
   arguments and expose the rest as fields or one-line setters, for the same
   reason.
 - **Rust names throughout**, with the three.js name in the doc comment. This
   is already how the crate is written (`set_rotation`,
   `matrix_world_needs_update`, `is_mesh()`); recorded so it is not reopened.
+  It covers casing too (C-CASE): an acronym in a type, variant or trait name
+  is one word, so three.js' `GLTFLoader`, `SRGBColorSpace` and
+  `WebGPUCoordinateSystem` are `GltfLoader`, `ColorSpace::Srgb` and
+  `CoordinateSystem::WebGpu`, as `HdrLoader`, `PmremGenerator`, `Ktx2Loader`,
+  `MrtNode` and `FxaaNode` already were. Three kinds of name are not acronyms
+  and keep their capitals: a dimension suffix (`Data3DTexture`,
+  `TextureSource::Texture2D`), which a digit already splits and which would
+  only get harder to read; an axis order (`EulerOrder::XYZ`), which is three
+  one-letter axis names, as in glam's `EulerRot::XYZ`; and the glam-style
+  vector types (`Type::UVec2`, `BVec3`), which are WGSL's `vec2<u32>` in the
+  spelling Rust graphics code already uses. Error strings that quote
+  three.js (`THREE.GLTFLoader: ...`) keep three's spelling.
+- **One `ColorSpace`.** three.js' colour spaces are string constants shared by
+  `ColorManagement`, `Color`, `Texture.colorSpace` and
+  `renderer.outputColorSpace`, so the port has one enum for all four:
+  `math::ColorSpace`, next to `ColorManagement`, re-exported at the crate root.
+  `NoColorSpace` is a variant, as `''` is a constant, rather than `None` in an
+  `Option`.
 - **`Scene` and the cameras own a `node` field** and are not `Node`s
   themselves. `Scene` adds `background`, `fog_node` and `override_material`;
   a camera adds its projection state. Both forward `add()`, `children()` and
@@ -300,7 +342,7 @@ item landed in one of three places, by one rule each:
   `NodeProgram::vertex_buffers`, `materials::setup` and its contexts), the
   readbacks and cache counters the grader asserts on (`read_target_pixels`,
   `material_cache_len`), and the oracle hooks the decoder tests compare with
-  three's own output (`GLTFLoader::accessors`, `loaders::meshopt`,
+  three's own output (`GltfLoader::accessors`, `loaders::meshopt`,
   `loaders::draco`). Like `testing` (decision 4) they carry no compatibility
   promise.
 - **`pub(crate)`**: everything else. Setup-context plumbing, per-light uniform
@@ -320,13 +362,15 @@ Modules that are namespaces in three.js (`extras::shape_utils`,
 concept of which the port has only part: `nodes::Node` (decision 9) and its
 `Builtin`, `UniformSource`, `TextureSource` and `BufferSource`; `MaterialKind`,
 `Payload`, `LightKind`, `Background`, `ToneMapping`; the texture `TextureType`,
-`Mapping`, `ColorSpace` (both of them) and `DataTextureData`; KTX2's
+`Mapping`, `ColorSpace` and `DataTextureData`; KTX2's
 `EngineFormat`; `TrackInterpolant`, which has no Bézier arm yet; and
 `sdf_text::TextAlign`, which has no `justify`. Each one gains variants as rungs
 land, and a variant is additive only if callers were made to write the `_`
 arm first. Enums whose three.js set is closed and fully ported (`Blending`,
 `Side`, `Wrapping`, `ShadowMapType`, `EulerOrder`) stay exhaustive, because a
-caller matching them exhaustively is right to.
+caller matching them exhaustively is right to. The same reasoning puts the
+attribute on the structs that stand for a partly ported options object or
+counts block; decision 3 says how those are built.
 
 The Rust API Guidelines checklist (#37, folded into #14) was the rubric, and
 only the items that cannot be fixed later without a break were acted on; the

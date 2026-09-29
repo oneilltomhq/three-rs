@@ -6,7 +6,7 @@
 //!
 //! `make_perspective`/`make_orthographic` take an explicit `CoordinateSystem`
 //! in the Rust port (three.js reads `this.coordinateSystem`, whose default is
-//! WebGL), so the tests pass `CoordinateSystem::WebGL` to reproduce three.js'
+//! WebGL), so the tests pass `CoordinateSystem::WebGl` to reproduce three.js'
 //! own expectations.
 
 mod support;
@@ -339,7 +339,7 @@ fn determinant_affine_projective() {
     // For non-affine (projective) matrices the bottom row is not [ 0, 0, 0, 1 ],
     // so the 3x3 result generally differs from the full 4x4 determinant.
     let mut a = Matrix4::identity();
-    a.make_perspective(-1.0, 1.0, 1.0, -1.0, 1.0, 100.0, CoordinateSystem::WebGL);
+    a.make_perspective(-1.0, 1.0, 1.0, -1.0, 1.0, 100.0, CoordinateSystem::WebGl);
     assert!((a.determinant_affine() - a.determinant()).abs() > EPS);
 }
 
@@ -397,7 +397,7 @@ fn invert() {
             -1.0,
             1.0,
             1000.0,
-            CoordinateSystem::WebGL,
+            CoordinateSystem::WebGl,
         ),
         *Matrix4::identity().make_perspective(
             -16.0,
@@ -406,7 +406,7 @@ fn invert() {
             -9.0,
             0.1,
             10000.0,
-            CoordinateSystem::WebGL,
+            CoordinateSystem::WebGl,
         ),
         *Matrix4::identity().make_translation(1.0, 2.0, 3.0),
     ];
@@ -615,7 +615,7 @@ fn compose_decompose() {
 #[test]
 fn make_perspective() {
     let mut a = Matrix4::identity();
-    a.make_perspective(-1.0, 1.0, -1.0, 1.0, 1.0, 100.0, CoordinateSystem::WebGL);
+    a.make_perspective(-1.0, 1.0, -1.0, 1.0, 1.0, 100.0, CoordinateSystem::WebGl);
     let expected = m4([
         1.0,
         0.0,
@@ -640,7 +640,7 @@ fn make_perspective() {
 #[test]
 fn make_orthographic() {
     let mut a = Matrix4::identity();
-    a.make_orthographic(-1.0, 1.0, -1.0, 1.0, 1.0, 100.0, CoordinateSystem::WebGL);
+    a.make_orthographic(-1.0, 1.0, -1.0, 1.0, 1.0, 100.0, CoordinateSystem::WebGl);
     let expected = m4([
         1.0,
         0.0,

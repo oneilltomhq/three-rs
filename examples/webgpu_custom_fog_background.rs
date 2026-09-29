@@ -58,7 +58,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use three_rs::addons::controls::OrbitControls;
-use three_rs::loaders::{GLTFLoader, UltraHdrLoader};
+use three_rs::loaders::{GltfLoader, UltraHdrLoader};
 use three_rs::materials::{tone_mapping_node, ToneMapping};
 use three_rs::nodes::pmrem_node::PmremEnvironment;
 use three_rs::nodes::tsl::{float, range_fog_factor};
@@ -100,7 +100,9 @@ pub fn init() -> App {
     // `new THREE.WebGPURenderer( { antialias: true } )`. The `antialias` is
     // what makes the pass target 4×MSAA and so its depth attachment
     // multisampled.
-    let mut renderer = Renderer::new(RendererParameters { antialias: true }).unwrap();
+    let mut parameters = RendererParameters::default();
+    parameters.antialias = true;
+    let mut renderer = Renderer::new(parameters).unwrap();
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
     // `renderer.toneMapping = THREE.NoToneMapping` — the composite tone maps
@@ -157,7 +159,7 @@ pub fn init() -> App {
     // `new GLTFLoader().setPath( 'models/gltf/DamagedHelmet/glTF/' ).load(
     // 'DamagedHelmet.gltf', gltf => scene.add( gltf.scene ) )`.
     let gltf =
-        GLTFLoader::load(examples_dir().join("models/gltf/DamagedHelmet/glTF/DamagedHelmet.gltf"))
+        GltfLoader::load(examples_dir().join("models/gltf/DamagedHelmet/glTF/DamagedHelmet.gltf"))
             .expect("DamagedHelmet.gltf");
     scene.borrow_mut().add(&gltf.scene);
 

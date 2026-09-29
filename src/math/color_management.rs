@@ -12,7 +12,7 @@
 //! `workingColorSpace: LinearSRGBColorSpace`), and the caller owns it.
 
 use super::color::{linear_to_srgb, srgb_to_linear};
-use super::{Color, ColorSpace, Matrix3};
+use super::{Color, Matrix3};
 
 /// `LINEAR_REC709_TO_XYZ`.
 pub fn linear_rec709_to_xyz() -> Matrix3 {
@@ -38,15 +38,51 @@ pub const REC709_PRIMARIES: [f64; 6] = [0.640, 0.330, 0.300, 0.600, 0.150, 0.060
 /// `REC709_LUMINANCE_COEFFICIENTS`.
 pub const REC709_LUMINANCE_COEFFICIENTS: [f64; 3] = [0.2126, 0.7152, 0.0722];
 
+/// The colour spaces `constants.js` names, as far as the port needs them.
+///
+/// three.js spells a colour space as a string constant, and one set of
+/// constants is shared by `ColorManagement`, `Color`'s `set*`/`get*`
+/// methods, `Texture.colorSpace` and `renderer.outputColorSpace`. This enum is
+/// that set, and the one type all four take.
+///
+/// `ColorManagement` defines the two spaces three.js registers by default:
+/// linear sRGB (the working space) and sRGB. Display P3 and the other spaces
+/// in `addons/math/ColorSpaces.js` are not ported, which is why the enum is
+/// `#[non_exhaustive]`. The KTX2 loader reports what a file declares in its
+/// own [`Ktx2ColorSpace`](crate::loaders::Ktx2ColorSpace), which does have P3.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum ColorSpace {
+    /// `NoColorSpace` (`''`): no colour space at all. `ColorManagement`
+    /// converts nothing to or from it, and a texture tagged with it is sampled
+    /// with no transfer function. It is `Texture.colorSpace`'s default.
+    NoColorSpace,
+    /// `SRGBColorSpace` (`'srgb'`): Rec. 709 primaries, sRGB transfer.
+    Srgb,
+    /// `LinearSRGBColorSpace` (`'srgb-linear'`): Rec. 709 primaries, linear
+    /// transfer. `ColorManagement.workingColorSpace`.
+    LinearSrgb,
+}
+
+impl ColorSpace {
+    /// `spaces[ colorSpace ].transfer`, with `NoColorSpace` answering
+    /// `LinearTransfer` as `ColorManagement.getTransfer()` does.
+    pub(crate) fn transfer(self) -> Transfer {
+        match self {
+            ColorSpace::Srgb => Transfer::Srgb,
+            ColorSpace::LinearSrgb | ColorSpace::NoColorSpace => Transfer::Linear,
+        }
+    }
+}
+
 /// The transfer functions `constants.js` names, i.e. `LinearTransfer` and
 /// `SRGBTransfer`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[allow(clippy::upper_case_acronyms)] // mirrors three.js's `SRGBTransfer`; public API, not renaming
 pub enum Transfer {
     /// `LinearTransfer`.
     Linear,
     /// `SRGBTransfer`.
-    SRGB,
+    Srgb,
 }
 
 /// `ColorManagement`.
@@ -62,31 +98,29 @@ impl Default for ColorManagement {
     fn default() -> Self {
         Self {
             enabled: true,
-            working_color_space: ColorSpace::LinearSRGB,
+            working_color_space: ColorSpace::LinearSrgb,
         }
     }
 }
 
 impl ColorManagement {
-    /// `ColorManagement.convert()`. `None` stands in for three.js' falsy /
-    /// `NoColorSpace` argument, for which `convert()` is a no-op.
+    /// `ColorManagement.convert()`. It is a no-op when either space is
+    /// [`ColorSpace::NoColorSpace`], three.js' falsy `''`.
     pub fn convert(
         &self,
         color: &mut Color,
-        source_color_space: Option<ColorSpace>,
-        target_color_space: Option<ColorSpace>,
+        source_color_space: ColorSpace,
+        target_color_space: ColorSpace,
     ) {
-        let (Some(source_color_space), Some(target_color_space)) =
-            (source_color_space, target_color_space)
-        else {
-            return;
-        };
-
-        if !self.enabled || source_color_space == target_color_space {
+        if !self.enabled
+            || source_color_space == target_color_space
+            || source_color_space == ColorSpace::NoColorSpace
+            || target_color_space == ColorSpace::NoColorSpace
+        {
             return;
         }
 
-        if Self::space_transfer(source_color_space) == Transfer::SRGB {
+        if Self::space_transfer(source_color_space) == Transfer::Srgb {
             color.r = srgb_to_linear(color.r);
             color.g = srgb_to_linear(color.g);
             color.b = srgb_to_linear(color.b);
@@ -97,7 +131,7 @@ impl ColorManagement {
             color.apply_matrix3(&Self::space_from_xyz(target_color_space));
         }
 
-        if Self::space_transfer(target_color_space) == Transfer::SRGB {
+        if Self::space_transfer(target_color_space) == Transfer::Srgb {
             color.r = linear_to_srgb(color.r);
             color.g = linear_to_srgb(color.g);
             color.b = linear_to_srgb(color.b);
@@ -105,36 +139,26 @@ impl ColorManagement {
     }
 
     /// `ColorManagement.workingToColorSpace()`.
-    pub fn working_to_color_space(
-        &self,
-        color: &mut Color,
-        target_color_space: Option<ColorSpace>,
-    ) {
-        self.convert(color, Some(self.working_color_space), target_color_space);
+    pub fn working_to_color_space(&self, color: &mut Color, target_color_space: ColorSpace) {
+        self.convert(color, self.working_color_space, target_color_space);
     }
 
     /// `ColorManagement.colorSpaceToWorking()`.
-    pub fn color_space_to_working(
-        &self,
-        color: &mut Color,
-        source_color_space: Option<ColorSpace>,
-    ) {
-        self.convert(color, source_color_space, Some(self.working_color_space));
+    pub fn color_space_to_working(&self, color: &mut Color, source_color_space: ColorSpace) {
+        self.convert(color, source_color_space, self.working_color_space);
     }
 
-    /// `ColorManagement.getPrimaries()`. `None` (`NoColorSpace`) has no
-    /// primaries, as in three.js where the lookup would throw.
+    /// `ColorManagement.getPrimaries()`. Both defined spaces have Rec. 709
+    /// primaries. `NoColorSpace` has none, and three.js' lookup would throw;
+    /// here it answers Rec. 709 too.
     pub fn get_primaries(&self, color_space: ColorSpace) -> [f64; 6] {
         Self::space_primaries(color_space)
     }
 
-    /// `ColorManagement.getTransfer()`: `None` is `NoColorSpace`, which three.js
-    /// answers with `LinearTransfer`.
-    pub fn get_transfer(&self, color_space: Option<ColorSpace>) -> Transfer {
-        match color_space {
-            None => Transfer::Linear,
-            Some(color_space) => Self::space_transfer(color_space),
-        }
+    /// `ColorManagement.getTransfer()`: `NoColorSpace` answers
+    /// `LinearTransfer`, as in three.js.
+    pub fn get_transfer(&self, color_space: ColorSpace) -> Transfer {
+        color_space.transfer()
     }
 
     /// `ColorManagement.getLuminanceCoefficients()`; `None` means the working
@@ -151,10 +175,7 @@ impl ColorManagement {
 
     /// `spaces[ colorSpace ].transfer`.
     fn space_transfer(color_space: ColorSpace) -> Transfer {
-        match color_space {
-            ColorSpace::LinearSRGB => Transfer::Linear,
-            ColorSpace::SRGB => Transfer::SRGB,
-        }
+        color_space.transfer()
     }
 
     /// `spaces[ colorSpace ].toXYZ`.

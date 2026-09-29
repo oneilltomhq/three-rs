@@ -27,8 +27,8 @@ mod vector4;
 
 pub use box2::Box2;
 pub use box3::Box3;
-pub use color::{Color, ColorSpace, Hsl};
-pub use color_management::ColorManagement;
+pub use color::{Color, Hsl};
+pub use color_management::{ColorManagement, ColorSpace};
 pub use cylindrical::Cylindrical;
 pub use euler::{Euler, EulerOrder};
 pub use frustum::Frustum;

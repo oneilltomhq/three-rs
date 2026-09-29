@@ -35,7 +35,7 @@ const COLOR: u32 = 0xcccccc;
 /// `Color::from_hex( 0xcccccc )`, the page's own constant through three's own
 /// sRGB → linear conversion.
 fn solid_colour_pmrem_is_that_colour(sigma: f64) {
-    let mut renderer = Renderer::new(RendererParameters { antialias: false }).unwrap();
+    let mut renderer = Renderer::new(RendererParameters::default()).unwrap();
 
     let mut scene = Scene::new();
     scene.background = Some(Background::Color(Color::from_hex(COLOR)));

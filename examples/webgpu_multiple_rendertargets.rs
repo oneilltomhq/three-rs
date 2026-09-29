@@ -63,7 +63,9 @@ pub struct App {
 }
 
 pub fn init() -> App {
-    let mut renderer = Renderer::new(RendererParameters { antialias: true }).unwrap();
+    let mut parameters = RendererParameters::default();
+    parameters.antialias = true;
+    let mut renderer = Renderer::new(parameters).unwrap();
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
 
@@ -72,14 +74,13 @@ pub fn init() -> App {
     // `new THREE.RenderTarget( w * dpr, h * dpr, { count: 2, minFilter:
     // NearestFilter, magFilter: NearestFilter } )`. The comment is the page's;
     // the type is the default `UnsignedByteType`, so both are `rgba8unorm`.
+    let mut options = RenderTargetOptions::default();
+    options.min_filter = TextureFilter::Nearest;
+    options.mag_filter = TextureFilter::Nearest;
     let render_target = RenderTarget::new_with_options(
         (INNER_WIDTH * DPR) as u32,
         (INNER_HEIGHT * DPR) as u32,
-        RenderTargetOptions {
-            min_filter: TextureFilter::Nearest,
-            mag_filter: TextureFilter::Nearest,
-            ..RenderTargetOptions::default()
-        },
+        options,
     )
     .unwrap();
     render_target.set_count(2);
@@ -100,7 +101,7 @@ pub fn init() -> App {
     let diffuse = TextureLoader::new()
         .load(examples_dir().join("textures/hardwood2_diffuse.jpg"))
         .unwrap();
-    diffuse.set_color_space(ColorSpace::SRGB);
+    diffuse.set_color_space(ColorSpace::Srgb);
     diffuse.set_wrapping(Wrapping::Repeat, Wrapping::Repeat);
 
     // `new THREE.NodeMaterial()`. With a `colorNode` and no lighting model

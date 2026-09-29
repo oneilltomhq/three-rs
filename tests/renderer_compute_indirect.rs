@@ -29,13 +29,7 @@ use three_rs::{Renderer, RendererParameters};
 mod example;
 
 fn kernel(statements: Vec<three_rs::nodes::NodeRef>, count: usize) -> ComputeFlow {
-    ComputeFlow {
-        statements,
-        count,
-        workgroup_size: [64, 1, 1],
-        name: None,
-        on_init: None,
-    }
+    ComputeFlow::new(statements, count)
 }
 
 /// The page's own frame loop, twice, with the draw buffer read between.
@@ -77,7 +71,7 @@ fn the_kernels_write_the_draw_arguments_the_next_frame_draws() {
 #[test]
 fn atomics_workgroup_memory_and_indirect_dispatch() {
     let mut renderer =
-        Renderer::new(RendererParameters { antialias: false }).expect("a wgpu adapter and device");
+        Renderer::new(RendererParameters::default()).expect("a wgpu adapter and device");
 
     // 256 invocations, one `atomicAdd( counter, 1 )` each, and an
     // `atomicMax` of the index: without atomics the adds race and lose.

@@ -1624,7 +1624,7 @@ fn assert_spheres(scene: &three_rs::Scene) {
         let material = object.material().expect("every sphere has a material");
         let color = material
             .color
-            .get_hex(three_rs::math::ColorSpace::LinearSRGB);
+            .get_hex(three_rs::math::ColorSpace::LinearSrgb);
         let want_color = want["color"].as_u64().expect("a number") as u32;
         assert_eq!(color, want_color, "sphere {i} color");
 
@@ -5442,7 +5442,7 @@ fn a_scene_mutation_uploads_exactly_what_changed() {
 
     let _gpu = gpu();
 
-    let mut renderer = Renderer::new(RendererParameters { antialias: false }).unwrap();
+    let mut renderer = Renderer::new(RendererParameters::default()).unwrap();
     renderer.set_pixel_ratio(1.0);
     renderer.set_size(64.0, 64.0);
     let camera = PerspectiveCamera::new(60.0, 1.0, 0.1, 100.0);
@@ -5555,7 +5555,7 @@ fn a_render_target_reads_back_the_same_pixels_as_the_canvas() {
     // `antialias: false` so the canvas is single-sample, as a default
     // `RenderTarget` is; an MSAA canvas against a single-sample target would be
     // comparing the resolve, not the readback.
-    let mut renderer = Renderer::new(RendererParameters { antialias: false }).unwrap();
+    let mut renderer = Renderer::new(RendererParameters::default()).unwrap();
     renderer.set_pixel_ratio(1.0);
     renderer.set_size(64.0, 64.0);
 
@@ -5620,7 +5620,7 @@ fn a_mutated_attribute_rewrites_one_buffer() {
 
     let _gpu = gpu();
 
-    let mut renderer = Renderer::new(RendererParameters { antialias: false }).unwrap();
+    let mut renderer = Renderer::new(RendererParameters::default()).unwrap();
     renderer.set_pixel_ratio(1.0);
     renderer.set_size(64.0, 64.0);
     let mut camera = PerspectiveCamera::new(60.0, 1.0, 0.1, 100.0);
@@ -5709,7 +5709,7 @@ fn a_mutated_uniform_reaches_the_pixels_through_the_kept_buffer() {
 
     let _gpu = gpu();
 
-    let mut renderer = Renderer::new(RendererParameters { antialias: false }).unwrap();
+    let mut renderer = Renderer::new(RendererParameters::default()).unwrap();
     renderer.set_pixel_ratio(1.0);
     renderer.set_size(64.0, 64.0);
     let mut camera = PerspectiveCamera::new(60.0, 1.0, 0.1, 100.0);
@@ -5845,7 +5845,7 @@ fn a_dropped_geometry_does_not_lend_its_buffers_to_the_next_one() {
     }
     drop(again);
 
-    let mut renderer = Renderer::new(RendererParameters { antialias: false }).unwrap();
+    let mut renderer = Renderer::new(RendererParameters::default()).unwrap();
     renderer.set_pixel_ratio(1.0);
     renderer.set_size(64.0, 64.0);
     let mut camera = PerspectiveCamera::new(60.0, 1.0, 0.1, 100.0);
@@ -5943,7 +5943,7 @@ fn churning_geometry_and_materials_does_not_grow_the_caches() {
 
     let _gpu = gpu();
 
-    let mut renderer = Renderer::new(RendererParameters { antialias: false }).unwrap();
+    let mut renderer = Renderer::new(RendererParameters::default()).unwrap();
     renderer.set_pixel_ratio(1.0);
     renderer.set_size(64.0, 64.0);
     let mut camera = PerspectiveCamera::new(60.0, 1.0, 0.1, 100.0);

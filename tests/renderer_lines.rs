@@ -74,7 +74,7 @@ fn render(build: impl FnOnce(&Scene)) -> Vec<u8> {
     build(&scene);
 
     let mut camera = pixel_camera();
-    let mut renderer = Renderer::new(RendererParameters { antialias: false }).unwrap();
+    let mut renderer = Renderer::new(RendererParameters::default()).unwrap();
     renderer.set_pixel_ratio(1.0);
     renderer.set_size(W as f64, H as f64);
     renderer.render(&mut scene, &mut camera);

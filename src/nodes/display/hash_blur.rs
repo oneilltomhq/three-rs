@@ -10,6 +10,7 @@ use crate::textures::Texture;
 
 /// `hashBlur( textureNode, bluramount, options )`' options.
 #[derive(Clone)]
+#[non_exhaustive]
 pub struct HashBlurOptions {
     /// `options.repeats` — the number of taps, `float( 45 )` by default.
     pub repeats: NodeRef,

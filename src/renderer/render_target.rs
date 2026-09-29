@@ -35,6 +35,7 @@ pub const OUTPUT_ATTACHMENT: &str = "output";
 
 /// `new RenderTarget( width, height, options )` — the options the port reads.
 #[derive(Clone, Copy, Debug)]
+#[non_exhaustive]
 pub struct RenderTargetOptions {
     pub texture_type: TextureType,
     /// `RenderTarget`'s default `samples` is 0; the renderer's `antialias`

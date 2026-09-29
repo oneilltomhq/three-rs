@@ -293,11 +293,11 @@ impl App {
             camera.node.add(legend.batched.node());
         }
 
+        let mut parameters = RendererParameters::default();
+        parameters.antialias = true;
         let renderer = match instance {
-            Some(instance) => {
-                Renderer::with_instance(RendererParameters { antialias: true }, instance)
-            }
-            None => Renderer::new(RendererParameters { antialias: true }),
+            Some(instance) => Renderer::with_instance(parameters, instance),
+            None => Renderer::new(parameters),
         }
         .expect("three-rs heli: cannot create the renderer");
 

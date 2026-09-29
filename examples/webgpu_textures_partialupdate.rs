@@ -70,7 +70,7 @@ pub fn init() -> App {
     let diffuse_map = three_rs::TextureLoader::new()
         .load(examples_dir().join("textures/carbon/Carbon.png"))
         .expect("Carbon.png");
-    diffuse_map.set_color_space(ColorSpace::SRGB);
+    diffuse_map.set_color_space(ColorSpace::Srgb);
     diffuse_map.set_min_filter(MinFilter::Linear);
     diffuse_map.set_generate_mipmaps(false);
 
@@ -85,11 +85,13 @@ pub fn init() -> App {
 
     let data = vec![0u8; (WIDTH * HEIGHT * 4) as usize];
     let data_texture = Texture::data_rgba8(WIDTH, HEIGHT, data.clone());
-    data_texture.set_color_space(ColorSpace::SRGB);
+    data_texture.set_color_space(ColorSpace::Srgb);
 
     //
 
-    let mut renderer = Renderer::new(RendererParameters { antialias: true }).unwrap();
+    let mut parameters = RendererParameters::default();
+    parameters.antialias = true;
+    let mut renderer = Renderer::new(parameters).unwrap();
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
 
@@ -149,7 +151,7 @@ fn update_data_texture(app: &mut App) {
     // sampler decodes once more. A page quirk, reproduced.
     app.color.set_hex(
         (app.random.next() * 0xffffff as f64) as u32,
-        three_rs::math::ColorSpace::SRGB,
+        three_rs::math::ColorSpace::Srgb,
     );
 
     let r = (app.color.r * 255.0).floor() as u8;

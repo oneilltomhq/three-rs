@@ -70,6 +70,7 @@ pub struct Threshold {
 /// three.js' object also has empty `Mesh`, `LOD` and `Sprite` entries, which
 /// nothing reads; they are left out rather than ported as unit structs.
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct RaycasterParams {
     /// `params.Line` — the world-space distance within which a ray hits a
     /// `Line` / `LineSegments`. Default 1.

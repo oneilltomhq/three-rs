@@ -113,7 +113,7 @@ pub fn material(path: &Path) -> MeshBasicNodeMaterial {
             0.75 + (random.next() * 0.25),
             1.0,
             0.4,
-            ColorSpace::LinearSRGB,
+            ColorSpace::LinearSrgb,
         );
 
         colors.extend([c.r as f32, c.g as f32, c.b as f32]);
@@ -196,7 +196,9 @@ pub fn init() -> App {
 
     //
 
-    let mut renderer = Renderer::new(RendererParameters { antialias: true }).unwrap();
+    let mut parameters = RendererParameters::default();
+    parameters.antialias = true;
+    let mut renderer = Renderer::new(parameters).unwrap();
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
     renderer.tone_mapping = ToneMapping::Neutral;

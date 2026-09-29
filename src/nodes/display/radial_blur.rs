@@ -16,6 +16,7 @@ use crate::textures::Texture;
 /// shader as `f32` — `uniform( int( 32 ) )` keeps the value, not the type, and
 /// the loop bound is `i32( object.nodeUniformN )`. So they are floats here too.
 #[derive(Clone)]
+#[non_exhaustive]
 pub struct RadialBlurOptions {
     /// `options.center` — the centre of the streaks, in screen uv.
     pub center: NodeRef,

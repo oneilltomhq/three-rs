@@ -33,15 +33,10 @@ fn roboto() -> VectorFont {
 }
 
 fn empty_batch() -> BatchedText {
-    let mut batch = BatchedText::new(
-        8,
-        256,
-        BatchedTextOptions {
-            outline_width: 0.0,
-            outline_color: None,
-            atlas_size: 256,
-        },
-    );
+    let mut options = BatchedTextOptions::default();
+    options.outline_width = 0.0;
+    options.atlas_size = 256;
+    let mut batch = BatchedText::new(8, 256, options);
     batch.set_font(Rc::new(roboto()));
     batch
 }
@@ -92,7 +87,7 @@ fn ink(pixels: &[u8]) -> usize {
 
 #[test]
 fn a_refilled_batch_draws_its_new_glyphs() {
-    let mut renderer = Renderer::new(RendererParameters { antialias: false }).unwrap();
+    let mut renderer = Renderer::new(RendererParameters::default()).unwrap();
     renderer.set_pixel_ratio(1.0);
     renderer.set_size(WIDTH, HEIGHT);
     let mut camera = OrthographicCamera::new(0.0, WIDTH, HEIGHT / 2.0, -HEIGHT / 2.0, -1.0, 1.0);

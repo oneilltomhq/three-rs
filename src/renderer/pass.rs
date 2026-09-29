@@ -123,6 +123,7 @@ pub fn pass(scene: SceneRef, camera: CameraRef) -> PassNode {
 /// `pass( scene, camera, options )`'s options object, as far as the ported
 /// pages use it.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct PassOptions {
     pub min_filter: TextureFilter,
     pub mag_filter: TextureFilter,

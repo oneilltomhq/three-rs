@@ -51,20 +51,10 @@ fn functions(src: &str) -> HashMap<String, String> {
 fn fragment_wgsl(noise: NodeRef) -> String {
     // `positionLocal` reaches the fragment stage as a varying, exactly as the
     // dumped `main( @location( 0 ) positionLocal : vec3<f32> )` shows.
-    let flow = MaterialFlow {
-        depth: None,
-        pre_vertex_statements: vec![],
-        fragment_statements: vec![three_rs::nodes::tsl::discard_if(
-            noise.greater_than(float(0.0)),
-        )],
-        emit_output_property: true,
-        output: vec4(0.0, 0.0, 0.0, 1.0),
-        output_assign: None,
-        output_node: None,
-        mrt: None,
-        vertex_statements: vec![],
-        position: vec4(0.0, 0.0, 0.0, 1.0),
-    };
+    let mut flow = MaterialFlow::new(vec4(0.0, 0.0, 0.0, 1.0), vec4(0.0, 0.0, 0.0, 1.0));
+    flow.fragment_statements = vec![three_rs::nodes::tsl::discard_if(
+        noise.greater_than(float(0.0)),
+    )];
     NodeBuilder::new().build(&flow).fragment_wgsl
 }
 

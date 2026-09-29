@@ -31,8 +31,8 @@
 use std::rc::Rc;
 
 use three_rs::geometries::plane_geometry;
+use three_rs::math::ColorSpace;
 use three_rs::nodes::tsl::texture;
-use three_rs::textures::ColorSpace;
 use three_rs::{
     Color, Mesh, MeshBasicNodeMaterial, OrthographicCamera, Renderer, RendererParameters, Scene,
     Texture,
@@ -173,7 +173,7 @@ fn adopted_device_external_texture_and_in_place_update() {
     .expect("no wgpu device");
 
     let mut renderer = Renderer::with_device(
-        RendererParameters { antialias: false },
+        RendererParameters::default(),
         adapter,
         device.clone(),
         queue.clone(),

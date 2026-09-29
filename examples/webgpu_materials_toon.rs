@@ -77,7 +77,9 @@ pub fn init() -> App {
 
     //
 
-    let mut renderer = Renderer::new(RendererParameters { antialias: true }).unwrap();
+    let mut parameters = RendererParameters::default();
+    parameters.antialias = true;
+    let mut renderer = Renderer::new(parameters).unwrap();
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
 
@@ -114,7 +116,7 @@ pub fn init() -> App {
                         alpha,
                         0.5,
                         gamma * 0.5 + 0.1,
-                        three_rs::math::ColorSpace::LinearSRGB,
+                        three_rs::math::ColorSpace::LinearSrgb,
                     )
                     .multiply_scalar(1.0 - beta * 0.2);
 

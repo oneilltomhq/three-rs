@@ -23,7 +23,7 @@
 //! the fragment shader are all zero, as in three's dump.
 
 use three_rs::addons::controls::OrbitControls;
-use three_rs::loaders::{GLTFLoader, Ktx2Loader};
+use three_rs::loaders::{GltfLoader, Ktx2Loader};
 use three_rs::materials::ToneMapping;
 use three_rs::math::Color;
 use three_rs::objects::Background;
@@ -66,7 +66,9 @@ pub fn init() -> App {
 
     //renderer
 
-    let mut renderer = Renderer::new(RendererParameters { antialias: true }).unwrap();
+    let mut parameters = RendererParameters::default();
+    parameters.antialias = true;
+    let mut renderer = Renderer::new(parameters).unwrap();
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
     renderer.tone_mapping = ToneMapping::Reinhard;
@@ -87,7 +89,7 @@ pub fn init() -> App {
     // MeshoptDecoder ); loader.load( 'models/gltf/coffeemat.glb', … )`. The
     // meshopt decoder is built into the port's loader; the load is
     // synchronous, so the callback's body follows inline.
-    let gltf = GLTFLoader::load_with_ktx2(
+    let gltf = GltfLoader::load_with_ktx2(
         examples_dir().join("models/gltf/coffeemat.glb"),
         &ktx2_loader,
     )

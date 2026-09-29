@@ -84,7 +84,9 @@ pub fn init() -> App {
     // teeth here: the fat line is nothing *but* edges, and a single-sampled
     // frame differs from three's along every one of them (1415 pixels, 14x the
     // budget, when this was first run with `antialias: false`).
-    let mut renderer = Renderer::new(RendererParameters { antialias: true }).unwrap();
+    let mut parameters = RendererParameters::default();
+    parameters.antialias = true;
+    let mut renderer = Renderer::new(parameters).unwrap();
     renderer.set_pixel_ratio(DPR);
     renderer.set_clear_color(Color::from_hex(0x000000), 1.0);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
@@ -135,7 +137,7 @@ pub fn init() -> App {
 
         // `lineColor.setHSL( t, 1.0, 0.5, THREE.SRGBColorSpace )` — the sRGB
         // overload, so the hsl triple is decoded into the working space.
-        line_color.set_hsl(t, 1.0, 0.5, ColorSpace::SRGB);
+        line_color.set_hsl(t, 1.0, 0.5, ColorSpace::Srgb);
         colors.push(line_color.r as f32);
         colors.push(line_color.g as f32);
         colors.push(line_color.b as f32);

@@ -52,13 +52,9 @@ fn extrude_geometry_instancing() {
 
 #[test]
 fn extrude_geometry_triangle() {
-    let g = extrude_geometry(
-        &[triangle_shape()],
-        &ExtrudeGeometryOptions {
-            bevel_enabled: false,
-            ..Default::default()
-        },
-    );
+    let mut options = ExtrudeGeometryOptions::default();
+    options.bevel_enabled = false;
+    let g = extrude_geometry(&[triangle_shape()], &options);
     run_std_geometry_tests("ExtrudeGeometry(triangle)", &g);
     // 2 lids of one triangle each, 3 side quads of two triangles each.
     assert_eq!(g.position().unwrap().count(), 2 * 3 + 3 * 6);

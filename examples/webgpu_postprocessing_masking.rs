@@ -79,7 +79,7 @@ pub fn init() -> App {
     let texture1 = loader
         .load(examples_dir().join("textures/758px-Canestra_di_frutta_(Caravaggio).jpg"))
         .unwrap();
-    texture1.set_color_space(ColorSpace::SRGB);
+    texture1.set_color_space(ColorSpace::Srgb);
     texture1.set_min_filter(MinFilter::Linear);
     texture1.set_generate_mipmaps(false);
     texture1.set_flip_y(false);
@@ -87,12 +87,12 @@ pub fn init() -> App {
     let texture2 = loader
         .load(examples_dir().join("textures/2294472375_24a3b8ef46_o.jpg"))
         .unwrap();
-    texture2.set_color_space(ColorSpace::SRGB);
+    texture2.set_color_space(ColorSpace::Srgb);
     texture2.set_flip_y(false);
 
     // renderer
 
-    let mut renderer = Renderer::new(RendererParameters { antialias: false }).unwrap();
+    let mut renderer = Renderer::new(RendererParameters::default()).unwrap();
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
 

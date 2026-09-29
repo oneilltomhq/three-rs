@@ -84,7 +84,7 @@ pub fn init() -> App {
     // `damp: uniform( 0.8, 'float' ).setName( 'damp' )`.
     let damp = uniform_value(Type::F32, vec![0.8]);
 
-    let mut renderer = Renderer::new(RendererParameters { antialias: false }).unwrap();
+    let mut renderer = Renderer::new(RendererParameters::default()).unwrap();
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
     // `renderer.inspector = new Inspector()`.
@@ -113,7 +113,7 @@ pub fn init() -> App {
         let vertex = get_random_point_on_sphere(&mut random, RADIUS);
         vertices.extend([vertex.x as f32, vertex.y as f32, vertex.z as f32]);
 
-        color.set_hsl(i as f64 / COUNT as f64, 0.7, 0.7, ColorSpace::SRGB);
+        color.set_hsl(i as f64 / COUNT as f64, 0.7, 0.7, ColorSpace::Srgb);
         colors.extend([color.r as f32, color.g as f32, color.b as f32]);
 
         time_offsets.push((i as f64 / COUNT as f64) as f32);

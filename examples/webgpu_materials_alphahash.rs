@@ -94,7 +94,7 @@ pub fn init() -> App {
                 // `color.setHex( Math.random() * 0xffffff )` — `setHex` floors
                 // its argument first, and reads it as sRGB.
                 let hex = (random.next() * 0xffffff as f64).floor() as u32;
-                color.set_hex(hex, ColorSpace::SRGB);
+                color.set_hex(hex, ColorSpace::Srgb);
 
                 mesh.borrow_mut().set_matrix_at(i, &matrix);
                 mesh.borrow_mut().set_color_at(i, &color);
@@ -108,7 +108,7 @@ pub fn init() -> App {
 
     //
 
-    let mut renderer = Renderer::new(RendererParameters { antialias: false }).unwrap();
+    let mut renderer = Renderer::new(RendererParameters::default()).unwrap();
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
 

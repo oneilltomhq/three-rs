@@ -108,7 +108,7 @@ pub fn instanced_points() -> InstancedPoints {
         let point = spline.get_point(t);
         positions.extend([point.x as f32, point.y as f32, point.z as f32]);
 
-        point_color.set_hsl(t, 1.0, 0.5, ColorSpace::SRGB);
+        point_color.set_hsl(t, 1.0, 0.5, ColorSpace::Srgb);
         colors.extend([
             point_color.r as f32,
             point_color.g as f32,
@@ -141,17 +141,14 @@ pub fn instanced_points() -> InstancedPoints {
             .add(1.0)
             .div(2.0);
 
-        ComputeFlow {
-            statements: vec![instance_size_storage.element(instance_index()).assign(
+        ComputeFlow::new(
+            vec![instance_size_storage.element(instance_index()).assign(
                 size_factor
                     .mul(max_width.sub(min_width.clone()))
                     .add(min_width.clone()),
             )],
-            count: divisions,
-            workgroup_size: [64, 1, 1],
-            name: None,
-            on_init: None,
-        }
+            divisions,
+        )
     };
 
     // Material / Sprites
@@ -208,7 +205,9 @@ pub fn init() -> App {
     scene.add(&instanced_points);
 
     // Renderer / Controls
-    let mut renderer = Renderer::new(RendererParameters { antialias: true }).unwrap();
+    let mut parameters = RendererParameters::default();
+    parameters.antialias = true;
+    let mut renderer = Renderer::new(parameters).unwrap();
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
 

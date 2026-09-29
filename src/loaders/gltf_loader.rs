@@ -30,7 +30,7 @@
 //! `GLTFMeshStandardSGMaterial`.
 //!
 //! `KHR_texture_basisu` textures are transcoded by [`Ktx2Loader`]; see
-//! [`GLTFLoader::load_with_ktx2`] for which one.
+//! [`GltfLoader::load_with_ktx2`] for which one.
 
 use std::cell::{OnceCell, RefCell};
 use std::collections::HashMap;
@@ -48,9 +48,10 @@ use crate::loaders::draco::{
 use crate::loaders::meshopt::{self, Filter as MeshoptFilter, Mode as MeshoptMode};
 use crate::loaders::{Ktx2Loader, TextureLoader};
 use crate::materials::{MeshBasicNodeMaterial, Side};
+use crate::math::ColorSpace;
 use crate::math::{Color, Matrix4, Vector2};
 use crate::objects::{Bone, Mesh, Skeleton, SkinnedMesh};
-use crate::textures::{ColorSpace, MinFilter, Texture, TextureFilter, Wrapping};
+use crate::textures::{MinFilter, Texture, TextureFilter, Wrapping};
 
 /// `WEBGL_CONSTANTS` component types and `WEBGL_COMPONENT_TYPES`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -423,7 +424,7 @@ impl Gltf {
 }
 
 /// Port of `GLTFLoader` + `GLTFParser`.
-pub struct GLTFLoader {
+pub struct GltfLoader {
     json: Value,
     /// The GLB `BIN` chunk, when there is one.
     glb_buffer: Option<Vec<u8>>,
@@ -440,7 +441,7 @@ pub struct GLTFLoader {
     ktx2_loader: Ktx2Loader,
 }
 
-impl GLTFLoader {
+impl GltfLoader {
     /// `loader.load( url )`, synchronously: read the file and parse it.
     pub fn load(path: impl AsRef<Path>) -> Result<Gltf, Error> {
         Self::open(path.as_ref(), true)?.build()
@@ -483,8 +484,8 @@ impl GLTFLoader {
 
     /// Read the file and its buffers, without building anything.
     /// `check_extensions` is `check_required_extensions`, which only matters
-    /// to a build: [`GLTFLoader::draco_primitives`],
-    /// [`GLTFLoader::meshopt_buffer_views`] and [`GLTFLoader::accessors`] read
+    /// to a build: [`GltfLoader::draco_primitives`],
+    /// [`GltfLoader::meshopt_buffer_views`] and [`GltfLoader::accessors`] read
     /// data alone, so an unread texture extension (WebP, AVIF) need not stop
     /// them.
     fn open(path: &Path, check_extensions: bool) -> Result<Self, Error> {
@@ -683,7 +684,7 @@ impl GLTFLoader {
     /// to in three.js.
     ///
     /// For comparing against three.js (`tests/gltf_meshopt.rs`); a load goes
-    /// through [`GLTFLoader::load`].
+    /// through [`GltfLoader::load`].
     #[doc(hidden)]
     pub fn meshopt_buffer_views(path: impl AsRef<Path>) -> Result<Vec<(usize, Vec<u8>)>, Error> {
         let loader = Self::open(path.as_ref(), false)?;
@@ -708,10 +709,10 @@ impl GLTFLoader {
         Ok(out)
     }
 
-    /// Every accessor of a glTF, as [`GLTFLoader::accessor`] reads it.
+    /// Every accessor of a glTF, as [`GltfLoader::accessor`] reads it.
     ///
     /// For comparing against three.js' `loadAccessor`
-    /// (`tests/gltf_meshopt.rs`); a load goes through [`GLTFLoader::load`].
+    /// (`tests/gltf_meshopt.rs`); a load goes through [`GltfLoader::load`].
     #[doc(hidden)]
     pub fn accessors(path: impl AsRef<Path>) -> Result<Vec<(Vec<f64>, usize)>, Error> {
         let loader = Self::open(path.as_ref(), false)?;
@@ -1391,7 +1392,7 @@ impl GLTFLoader {
     /// `f32`. Each comes with its mesh and primitive index.
     ///
     /// For comparing against three.js (`tests/gltf_draco.rs`); a load goes
-    /// through [`GLTFLoader::load`].
+    /// through [`GltfLoader::load`].
     #[doc(hidden)]
     pub fn draco_primitives(
         path: impl AsRef<Path>,
@@ -1884,7 +1885,7 @@ impl GLTFLoader {
             }
         }
 
-        if color_space == ColorSpace::SRGB {
+        if color_space == ColorSpace::Srgb {
             texture.set_color_space(color_space);
         }
 
@@ -2036,7 +2037,7 @@ impl GLTFLoader {
         }
 
         if let Some(map_def) = &material.base_color_texture {
-            out.map = self.assign_texture(cache, textures, images, map_def, ColorSpace::SRGB)?;
+            out.map = self.assign_texture(cache, textures, images, map_def, ColorSpace::Srgb)?;
         }
 
         // `metalnessMap` and `roughnessMap` are the same glTF texture: B is
@@ -2052,7 +2053,7 @@ impl GLTFLoader {
         // `emissive * emissiveIntensity` by `MaterialNode.EMISSIVE`.
         if let Some(map_def) = &material.emissive_texture {
             out.emissive_map =
-                self.assign_texture(cache, textures, images, map_def, ColorSpace::SRGB)?;
+                self.assign_texture(cache, textures, images, map_def, ColorSpace::Srgb)?;
         }
 
         // `occlusionTexture` → `aoMap`. `materialParams.aoMapIntensity =
@@ -2085,7 +2086,7 @@ impl GLTFLoader {
         out.specular_color = Color::new(sr, sg, sb);
         if let Some(map_def) = &material.specular_color_texture {
             out.specular_color_map =
-                self.assign_texture(cache, textures, images, map_def, ColorSpace::SRGB)?;
+                self.assign_texture(cache, textures, images, map_def, ColorSpace::Srgb)?;
         }
 
         // `GLTFMaterialsSheenExtension`. glTF has no sheen *intensity*, so the
@@ -2389,7 +2390,7 @@ fn decode_base64(input: &str) -> Result<Vec<u8>, Error> {
 }
 
 /// A decoded Draco attribute as this crate stores it: widened to `f32`, and
-/// a `normalized` one scaled into range the way [`GLTFLoader::accessor`]
+/// a `normalized` one scaled into range the way [`GltfLoader::accessor`]
 /// scales an uncompressed one. `skinIndex` stays integer, as it does there.
 fn draco_buffer_attribute(attribute: &DracoAttribute) -> BufferAttribute {
     let scale = if attribute.normalized {

@@ -29,7 +29,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use serde_json::Value;
-use three_rs::loaders::{GLTFLoader, TextureLoader};
+use three_rs::loaders::{GltfLoader, TextureLoader};
 use three_rs::textures::Texture;
 
 /// One WebP image cut out of a glTF asset.
@@ -342,7 +342,7 @@ fn every_webp_image_in_the_examples_decodes_as_chrome_does() {
         }
 
         let gltf =
-            GLTFLoader::load(&asset).unwrap_or_else(|error| panic!("{}: {error}", asset.display()));
+            GltfLoader::load(&asset).unwrap_or_else(|error| panic!("{}: {error}", asset.display()));
         for primitive in &gltf.primitives {
             let node = primitive.node.borrow();
             let Some(material) = node.mesh().and_then(|mesh| mesh.material.as_ref()) else {

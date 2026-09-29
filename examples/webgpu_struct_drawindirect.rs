@@ -43,9 +43,6 @@ pub const DPR: f64 = 1.0;
 /// `const instances = 100000;`
 pub const INSTANCES: usize = 100_000;
 
-/// `ComputeNode`'s default `workgroupSize = [ 64 ]`, padded.
-pub const WORKGROUP_SIZE: [u32; 3] = [64, 1, 1];
-
 /// The draw buffer and the two kernels that write it. Split out so the WGSL
 /// gate and the GPU test build exactly what the page runs.
 pub struct DrawKernels {
@@ -101,16 +98,13 @@ pub fn draw_kernels() -> DrawKernels {
                 float(100.0),
             ),
         );
-        ComputeFlow {
-            statements: vec![
+        ComputeFlow::new(
+            vec![
                 instance_count.clone(),
                 atomic_store(draw_storage.get("instanceCount"), instance_count),
             ],
-            count: INSTANCES,
-            workgroup_size: WORKGROUP_SIZE,
-            name: None,
-            on_init: None,
-        }
+            INSTANCES,
+        )
     };
 
     // ```js
@@ -123,19 +117,16 @@ pub fn draw_kernels() -> DrawKernels {
     //     drawInfo.get( 'offset' ).assign( 0 );
     // } )().compute( 1 );
     // ```
-    let init = ComputeFlow {
-        statements: vec![
+    let init = ComputeFlow::new(
+        vec![
             draw_storage.get("vertexCount").assign(uint(3)),
             atomic_store(draw_storage.get("instanceCount"), uint(0)),
             draw_storage.get("firstVertex").assign(uint(0)),
             draw_storage.get("firstInstance").assign(uint(0)),
             draw_storage.get("offset").assign(uint(0)),
         ],
-        count: 1,
-        workgroup_size: WORKGROUP_SIZE,
-        name: None,
-        on_init: None,
-    };
+        1,
+    );
 
     DrawKernels {
         draw_buffer,
@@ -277,7 +268,9 @@ pub struct App {
 }
 
 pub fn init() -> App {
-    let mut renderer = Renderer::new(RendererParameters { antialias: true }).unwrap();
+    let mut parameters = RendererParameters::default();
+    parameters.antialias = true;
+    let mut renderer = Renderer::new(parameters).unwrap();
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
     // `renderer.setClearColor( 0x000000 ); renderer.setClearAlpha( 0 );`

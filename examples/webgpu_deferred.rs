@@ -115,7 +115,7 @@ pub fn init() -> App {
     // `new THREE.WebGPURenderer()` — no `antialias`, so every pass target is
     // single-sampled and the shared depth attachment is a plain
     // `texture_depth_2d`.
-    let mut renderer = Renderer::new(RendererParameters { antialias: false }).unwrap();
+    let mut renderer = Renderer::new(RendererParameters::default()).unwrap();
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
     // `renderer.toneMapping = THREE.ACESFilmicToneMapping`.
@@ -174,7 +174,7 @@ pub fn init() -> App {
             i as f64 / num_lights as f64,
             1.0,
             0.5,
-            ColorSpace::LinearSRGB,
+            ColorSpace::LinearSrgb,
         );
 
         let light_mat = MeshStandardNodeMaterial::standard(color_hex, 1.0, 0.0);
@@ -290,11 +290,11 @@ pub fn init() -> App {
         float(1.0),
     ]));
     resolve_material.depth_node = Some(opaque_depth_node.clone());
-    resolve_material.context_overrides = Some(OverrideNodes {
-        position_view: Some(opaque_position_view.clone()),
-        position_view_direction: Some(opaque_position_view.negate().normalize()),
-        normal_view: Some(opaque_normal_view),
-    });
+    let mut overrides = OverrideNodes::default();
+    overrides.position_view = Some(opaque_position_view.clone());
+    overrides.position_view_direction = Some(opaque_position_view.negate().normalize());
+    overrides.normal_view = Some(opaque_normal_view);
+    resolve_material.context_overrides = Some(overrides);
 
     // `const resolveMesh = new THREE.QuadMesh( resolveMaterial );
     // resolveMesh.layers.set( RESOLVE_LAYER ); scene.add( resolveMesh )` —
@@ -314,11 +314,10 @@ pub fn init() -> App {
     // `pass( scene, camera, { depthTexture: opaquePass.getTexture( 'depth' ),
     // autoClearDepth: false } )` — the opaque pass is the one registered as
     // the depth texture's producer; this pass only reuses it.
-    let mut transparent_pass = PassNode::new_with_options(PassOptions {
-        depth_texture: Some(opaque_pass.depth_texture()),
-        auto_clear_depth: false,
-        ..PassOptions::default()
-    });
+    let mut options = PassOptions::default();
+    options.depth_texture = Some(opaque_pass.depth_texture());
+    options.auto_clear_depth = false;
+    let mut transparent_pass = PassNode::new_with_options(options);
     transparent_pass.set_scene(scene.clone(), camera.clone());
     transparent_pass.set_layers(Layers::new());
     transparent_pass.set_opaque(false);

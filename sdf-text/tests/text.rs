@@ -33,11 +33,10 @@ impl OpacitySink for RecordingBatch {
 
 #[test]
 fn layer5_one_glyph_per_character() {
-    let info = layout_text(LayoutParams {
-        text: "Hi!".to_string(),
-        font_size: 1.0,
-        ..Default::default()
-    });
+    let mut p = LayoutParams::default();
+    p.text = "Hi!".to_string();
+    p.font_size = 1.0;
+    let info = layout_text(p);
     assert_eq!(info.glyph_count, 3);
     assert_eq!(info.glyphs.len(), 3);
     assert_eq!(info.glyphs[0].ch, 'H');
@@ -46,11 +45,10 @@ fn layer5_one_glyph_per_character() {
 
 #[test]
 fn layer5_newlines_become_extra_lines() {
-    let info = layout_text(LayoutParams {
-        text: "ab\ncd".to_string(),
-        font_size: 1.0,
-        ..Default::default()
-    });
+    let mut p = LayoutParams::default();
+    p.text = "ab\ncd".to_string();
+    p.font_size = 1.0;
+    let info = layout_text(p);
     assert_eq!(info.glyph_count, 4);
     // And the second line is below the first, by one line advance.
     assert_eq!(info.line_height, 1.2);
@@ -60,12 +58,11 @@ fn layer5_newlines_become_extra_lines() {
 #[test]
 fn layer5_anchor_x_center_shifts_block_bounds_symmetrically() {
     let mk = |anchor: &str| {
-        layout_text(LayoutParams {
-            text: "ABC".to_string(),
-            font_size: 1.0,
-            anchor_x: Anchor::named(anchor),
-            ..Default::default()
-        })
+        let mut p = LayoutParams::default();
+        p.text = "ABC".to_string();
+        p.font_size = 1.0;
+        p.anchor_x = Anchor::named(anchor);
+        layout_text(p)
     };
     let left = mk("left");
     let center = mk("center");

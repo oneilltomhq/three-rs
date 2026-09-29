@@ -21,7 +21,7 @@ use std::f64::consts::PI;
 use std::rc::Rc;
 
 use three_rs::addons::controls::OrbitControls;
-use three_rs::loaders::GLTFLoader;
+use three_rs::loaders::GltfLoader;
 use three_rs::nodes::node::SettableValue;
 use three_rs::nodes::tsl::{
     block, call, float, frag_coord, inline_fn, mix, mod_, normal_world, output_property, rotate,
@@ -230,7 +230,9 @@ pub fn init() -> App {
 
     // renderer
 
-    let mut renderer = Renderer::new(RendererParameters { antialias: true }).unwrap();
+    let mut parameters = RendererParameters::default();
+    parameters.antialias = true;
+    let mut renderer = Renderer::new(parameters).unwrap();
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
     renderer.set_clear_color(Color::from_hex(0x000000), 1.0);
@@ -267,7 +269,7 @@ pub fn init() -> App {
     sphere.borrow_mut().position.x = -3.0;
     scene.add(&sphere);
 
-    let gltf = GLTFLoader::load(examples_dir().join("models/gltf/Michelle.glb"))
+    let gltf = GltfLoader::load(examples_dir().join("models/gltf/Michelle.glb"))
         .expect("three-rs: Michelle.glb loads");
     let model = gltf.scene.clone();
     {

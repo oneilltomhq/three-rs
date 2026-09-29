@@ -561,15 +561,10 @@ pub fn init() -> App {
         .map(|l| l.lines.iter().map(|s| s.chars().count()).sum::<usize>())
         .sum();
 
-    let mut batched = BatchedText::new(
-        labelled.len(),
-        glyph_total,
-        BatchedTextOptions {
-            outline_width: 0.2,
-            outline_color: Some(Color::from_hex(0xffffff)),
-            ..Default::default()
-        },
-    );
+    let mut options = BatchedTextOptions::default();
+    options.outline_width = 0.2;
+    options.outline_color = Some(Color::from_hex(0xffffff));
+    let mut batched = BatchedText::new(labelled.len(), glyph_total, options);
     batched.set_font(font.clone());
     batched.node().borrow_mut().frustum_culled = false;
     batched.node().borrow_mut().render_order = 1.0;
@@ -603,7 +598,9 @@ pub fn init() -> App {
         }
     }
 
-    let mut renderer = Renderer::new(RendererParameters { antialias: true }).unwrap();
+    let mut parameters = RendererParameters::default();
+    parameters.antialias = true;
+    let mut renderer = Renderer::new(parameters).unwrap();
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
 

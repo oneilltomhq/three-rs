@@ -56,7 +56,7 @@ pub fn init() -> App {
     let equirect_texture = TextureLoader::new()
         .load(examples_dir().join("textures/2294472375_24a3b8ef46_o.jpg"))
         .unwrap();
-    equirect_texture.set_color_space(ColorSpace::SRGB);
+    equirect_texture.set_color_space(ColorSpace::Srgb);
 
     let mut scene = Scene::new();
     // `scene.backgroundNode = texture( equirectTexture, equirectUV(), 0 )`.
@@ -67,7 +67,9 @@ pub fn init() -> App {
         float(0.0),
     )));
 
-    let mut renderer = Renderer::new(RendererParameters { antialias: true }).unwrap();
+    let mut parameters = RendererParameters::default();
+    parameters.antialias = true;
+    let mut renderer = Renderer::new(parameters).unwrap();
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
 

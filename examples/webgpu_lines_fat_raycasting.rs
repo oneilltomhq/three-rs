@@ -94,7 +94,9 @@ pub fn init() -> App {
 
     // `new THREE.WebGPURenderer( { antialias: true, alpha: true } )` — four
     // samples, which is also what lets `alphaToCoverage` reach the pipeline.
-    let mut renderer = Renderer::new(RendererParameters { antialias: true }).unwrap();
+    let mut parameters = RendererParameters::default();
+    parameters.antialias = true;
+    let mut renderer = Renderer::new(parameters).unwrap();
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
     renderer.set_clear_color(Color::from_hex(0x000000), 1.0);
@@ -147,7 +149,7 @@ pub fn init() -> App {
         let point = spline.get_point(t);
         positions.extend([point.x as f32, point.y as f32, point.z as f32]);
 
-        color.set_hsl(t, 1.0, 0.5, ColorSpace::SRGB);
+        color.set_hsl(t, 1.0, 0.5, ColorSpace::Srgb);
         colors.extend([color.r as f32, color.g as f32, color.b as f32]);
     }
 

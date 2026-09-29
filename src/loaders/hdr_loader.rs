@@ -23,6 +23,7 @@ use std::path::Path;
 
 use crate::error::Error;
 use crate::extras::to_half_float;
+use crate::math::ColorSpace;
 use crate::textures::{MinFilter, Texture, TextureFilter, TextureType};
 
 /// `HDRLoader.parse()`'s return value, less the fields that are constants
@@ -109,8 +110,8 @@ impl HdrLoader {
     /// `DataTextureLoader.load()` copies `texData`'s `minFilter`, `magFilter`,
     /// `generateMipmaps` and `flipY` onto the texture, so this is
     /// `LinearFilter` on both, no mip chain, and `flipY = true`.
-    /// The colour space is `LinearSRGBColorSpace`, which is the port's
-    /// [`ColorSpace::NoColorSpace`](crate::textures::ColorSpace::NoColorSpace):
+    /// The colour space is `LinearSRGBColorSpace`,
+    /// [`ColorSpace::LinearSrgb`](crate::math::ColorSpace::LinearSrgb):
     /// the working space carries no transfer function, so nothing is applied on
     /// sample and no colour-space node appears in the generated WGSL.
     pub fn load<P: AsRef<Path>>(&self, path: P) -> Result<Texture, Error> {
@@ -126,6 +127,7 @@ impl HdrLoader {
                 Texture::data_rgba32float(tex_data.width, tex_data.height, data)
             }
         };
+        texture.set_color_space(ColorSpace::LinearSrgb);
         texture.set_flip_y(true);
         texture.set_generate_mipmaps(false);
         texture.set_min_filter(MinFilter::Linear);

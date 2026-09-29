@@ -54,7 +54,7 @@ pub struct App {
 }
 
 pub fn init() -> App {
-    let mut renderer = Renderer::new(RendererParameters { antialias: false }).unwrap();
+    let mut renderer = Renderer::new(RendererParameters::default()).unwrap();
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
 
@@ -125,7 +125,7 @@ pub fn init() -> App {
         // `color.setHSL( h, 1.0, 0.3 )`: `setHSL`'s default colour space is the
         // *working* one, not sRGB, so the hsl triple lands in linear-sRGB with
         // no transfer function applied.
-        color.set_hsl(random.next(), 1.0, 0.3, ColorSpace::LinearSRGB);
+        color.set_hsl(random.next(), 1.0, 0.3, ColorSpace::LinearSrgb);
 
         mesh.borrow_mut().set_matrix_at(i, &dummy.matrix);
         mesh.borrow_mut().set_color_at(i, &color);

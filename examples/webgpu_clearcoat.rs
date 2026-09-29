@@ -87,7 +87,9 @@ pub fn init() -> App {
     // `renderer = new THREE.WebGPURenderer( { antialias: true } )`. The page
     // builds it after the loader call; here it is first, because the PMREM
     // below takes it.
-    let mut renderer = Renderer::new(RendererParameters { antialias: true }).unwrap();
+    let mut parameters = RendererParameters::default();
+    parameters.antialias = true;
+    let mut renderer = Renderer::new(parameters).unwrap();
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
     renderer.tone_mapping = ToneMapping::AcesFilmic;
@@ -110,7 +112,7 @@ pub fn init() -> App {
     let load = |path: &str| texture_loader.load(examples_dir().join(path)).unwrap();
 
     let diffuse = load("textures/carbon/Carbon.png");
-    diffuse.set_color_space(ColorSpace::SRGB);
+    diffuse.set_color_space(ColorSpace::Srgb);
     diffuse.set_wrapping(Wrapping::Repeat, Wrapping::Repeat);
     diffuse.set_repeat(10.0, 10.0);
 

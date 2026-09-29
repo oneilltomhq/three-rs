@@ -66,7 +66,7 @@ pub struct App {
 }
 
 pub fn init() -> App {
-    let mut renderer = Renderer::new(RendererParameters { antialias: false }).unwrap();
+    let mut renderer = Renderer::new(RendererParameters::default()).unwrap();
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
     renderer.tone_mapping = ToneMapping::Neutral;
@@ -89,7 +89,7 @@ pub fn init() -> App {
     let texture = TextureLoader::new()
         .load(three_rs::testing::three_js_dir().join("examples/textures/crate.gif"))
         .unwrap();
-    texture.set_color_space(ColorSpace::SRGB);
+    texture.set_color_space(ColorSpace::Srgb);
 
     let geometry = box_geometry_default();
     let mut material = MeshBasicNodeMaterial::new();
