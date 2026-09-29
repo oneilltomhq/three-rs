@@ -13,7 +13,9 @@ use crate::objects::Payload;
 /// `docs/scene-graph.md`.
 #[derive(Clone)]
 pub struct Mesh {
+    /// `Mesh.geometry`.
     pub geometry: Rc<BufferGeometry>,
+    /// `Mesh.material` when it is a single material.
     pub material: Option<MeshBasicNodeMaterial>,
     /// `Mesh.material` when it is an *array* — `Array.isArray( material )`.
     ///

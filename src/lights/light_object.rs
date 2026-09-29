@@ -16,17 +16,24 @@ use crate::objects::Payload;
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 #[non_exhaustive]
 pub enum LightKind {
+    /// `AmbientLight`.
     Ambient,
+    /// `PointLight`.
     Point,
+    /// `SpotLight`.
     Spot,
+    /// `DirectionalLight`.
     Directional,
+    /// `HemisphereLight`.
     Hemisphere,
 }
 
 /// `class <X>Light extends Light extends Object3D`, minus the `Object3D` half
 /// (which is the scene-graph [`Node`] carrying this as a [`Payload`]).
 pub struct LightObject {
+    /// The `color`/`intensity` state common to every light kind.
     pub light: Light,
+    /// Which `Light` subclass this is.
     pub kind: LightKind,
     /// `PointLight.distance` / `SpotLight.distance` — the cutoff distance, `0`
     /// meaning no cutoff. The shader calls it `cutoffDistance`.
@@ -159,6 +166,9 @@ fn into_node(object_type: &'static str, light: LightObject) -> Node {
 pub struct AmbientLight;
 
 impl AmbientLight {
+    /// `new AmbientLight( color, intensity )`, as a scene-graph [`Node`]. An
+    /// ambient light adds no shadow and no direction: `LightsNode` reads only
+    /// its colour and intensity.
     #[allow(clippy::new_ret_no_self)] // `new` mirrors three.js's constructor and returns a scene-graph `Node`, not `Self`; public API, not changing.
     pub fn new(color: Color, intensity: f64) -> Node {
         into_node(

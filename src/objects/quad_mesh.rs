@@ -7,11 +7,15 @@
 
 use crate::materials::MeshBasicNodeMaterial;
 
+/// `QuadMesh` — draws one oversized triangle covering the full screen, for a
+/// post-processing pass.
 pub struct QuadMesh {
+    /// The material the full-screen triangle is drawn with.
     pub material: MeshBasicNodeMaterial,
 }
 
 impl QuadMesh {
+    /// `new QuadMesh( material )`.
     pub fn new(material: MeshBasicNodeMaterial) -> Self {
         Self { material }
     }

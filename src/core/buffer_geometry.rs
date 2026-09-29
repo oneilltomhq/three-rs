@@ -96,6 +96,8 @@ impl Default for AttributeId {
     }
 }
 
+/// three.js' `BufferAttribute`: one named vertex attribute, stored as flat
+/// `f32` values, `item_size` of them per vertex.
 #[derive(Clone, Debug)]
 pub struct BufferAttribute {
     /// `BufferAttribute.id`. Read-only in spirit; see [`AttributeId`].
@@ -105,6 +107,7 @@ pub struct BufferAttribute {
     /// a plain `Vec` the only route to a changed vertex is a whole new
     /// geometry (issue #47).
     array: RefCell<Vec<f32>>,
+    /// `BufferAttribute.itemSize` — the number of values per vertex.
     pub item_size: usize,
     /// `BufferAttribute.version` — bumped by
     /// [`set_needs_update`](Self::set_needs_update), which is three.js'
@@ -129,6 +132,7 @@ pub struct BufferAttribute {
 }
 
 impl BufferAttribute {
+    /// `new BufferAttribute( array, itemSize )`.
     pub fn new(array: Vec<f32>, item_size: usize) -> Self {
         Self {
             id: AttributeId::next(),
@@ -195,6 +199,7 @@ impl BufferAttribute {
         self.version.set(self.version.get() + 1);
     }
 
+    /// `BufferAttribute.count` — the number of vertices, `array.length / item_size`.
     pub fn count(&self) -> usize {
         self.array.borrow().len() / self.item_size
     }
@@ -205,14 +210,17 @@ impl BufferAttribute {
         self.array.borrow()[index * self.item_size] as f64
     }
 
+    /// `BufferAttribute.getY()`.
     pub fn get_y(&self, index: usize) -> f64 {
         self.array.borrow()[index * self.item_size + 1] as f64
     }
 
+    /// `BufferAttribute.getZ()`.
     pub fn get_z(&self, index: usize) -> f64 {
         self.array.borrow()[index * self.item_size + 2] as f64
     }
 
+    /// `BufferAttribute.getW()`.
     pub fn get_w(&self, index: usize) -> f64 {
         self.array.borrow()[index * self.item_size + 3] as f64
     }
@@ -223,16 +231,19 @@ impl BufferAttribute {
         self
     }
 
+    /// `BufferAttribute.setY()`.
     pub fn set_y(&mut self, index: usize, y: f64) -> &mut Self {
         self.array.get_mut()[index * self.item_size + 1] = y as f32;
         self
     }
 
+    /// `BufferAttribute.setZ()`.
     pub fn set_z(&mut self, index: usize, z: f64) -> &mut Self {
         self.array.get_mut()[index * self.item_size + 2] = z as f32;
         self
     }
 
+    /// `BufferAttribute.setW()`.
     pub fn set_w(&mut self, index: usize, w: f64) -> &mut Self {
         self.array.get_mut()[index * self.item_size + 3] = w as f32;
         self
@@ -321,7 +332,9 @@ impl BufferAttribute {
 /// `Box3`, as far as `BufferGeometry.computeBoundingBox()` needs it.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BoundingBox {
+    /// `Box3.min`.
     pub min: Vector3,
+    /// `Box3.max`.
     pub max: Vector3,
 }
 
@@ -365,17 +378,25 @@ impl BoundingBox {
 /// `Sphere`, as far as `BufferGeometry.computeBoundingSphere()` needs it.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BoundingSphere {
+    /// `Sphere.center`.
     pub center: Vector3,
+    /// `Sphere.radius`.
     pub radius: f64,
 }
 
+/// `BufferGeometry.index`: the array type three.js picks for it, `Uint16Array`
+/// or `Uint32Array`, kept distinct because the renderer uploads them at
+/// different widths.
 #[derive(Clone, Debug)]
 pub enum Index {
+    /// A `Uint16Array` index — used while every value fits in 16 bits.
     U16(Vec<u16>),
+    /// A `Uint32Array` index.
     U32(Vec<u32>),
 }
 
 impl Index {
+    /// `index.count` — the number of indices.
     pub fn count(&self) -> usize {
         match self {
             Index::U16(v) => v.len(),
@@ -405,8 +426,11 @@ impl Index {
 /// One entry of `BufferGeometry.groups`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Group {
+    /// The first index (or vertex, for a non-indexed geometry) this group draws.
     pub start: usize,
+    /// How many indices (or vertices) this group draws.
     pub count: usize,
+    /// Which entry of the mesh's material array this group draws with.
     pub material_index: usize,
 }
 
@@ -414,7 +438,9 @@ pub struct Group {
 /// everything"), which has no `usize` spelling.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct DrawRange {
+    /// `drawRange.start`.
     pub start: usize,
+    /// `drawRange.count`; `None` is three.js' `Infinity`.
     pub count: Option<usize>,
 }
 
@@ -480,6 +506,7 @@ pub struct BufferGeometry {
     /// clone gets a new one, and why the renderer keys on it.
     pub id: GeometryId,
     attributes: Vec<(String, BufferAttribute)>,
+    /// `BufferGeometry.index`.
     pub index: Option<Index>,
     /// `BufferGeometry.morphAttributes` — per name, one attribute per morph
     /// target.
@@ -519,12 +546,11 @@ pub struct BufferGeometry {
 }
 
 impl BufferGeometry {
+    /// `new BufferGeometry()`.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// `BufferGeometry.id` — the renderer's cache key for this geometry's
-    /// uploaded buffers.
     /// `geometry.setIndirect( attribute )`: the draw's arguments come from
     /// this buffer on the GPU — `drawIndirect` for a non-indexed geometry,
     /// `drawIndexedIndirect` for an indexed one — so the vertex and instance
@@ -539,6 +565,8 @@ impl BufferGeometry {
         self.indirect.as_ref()
     }
 
+    /// `BufferGeometry.id` — the renderer's cache key for this geometry's
+    /// uploaded buffers.
     pub fn id(&self) -> usize {
         self.id.get()
     }

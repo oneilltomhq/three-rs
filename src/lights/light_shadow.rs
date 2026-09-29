@@ -13,11 +13,14 @@ use super::shadow_filter::ShadowFilterFn;
 #[derive(Clone)]
 #[allow(clippy::large_enum_variant)] // public API; boxing a variant would change every construction site (batched separately, see #9/#38/#39)
 pub enum ShadowCamera {
+    /// The spot- and point-light shadow camera.
     Perspective(PerspectiveCamera),
+    /// The directional-light shadow camera.
     Orthographic(OrthographicCamera),
 }
 
 impl ShadowCamera {
+    /// `shadow.camera.near`.
     pub fn near(&self) -> f64 {
         match self {
             ShadowCamera::Perspective(c) => c.near,
@@ -25,6 +28,7 @@ impl ShadowCamera {
         }
     }
 
+    /// `shadow.camera.near = near`.
     pub fn set_near(&mut self, near: f64) {
         match self {
             ShadowCamera::Perspective(c) => c.near = near,
@@ -32,6 +36,7 @@ impl ShadowCamera {
         }
     }
 
+    /// `shadow.camera.far`.
     pub fn far(&self) -> f64 {
         match self {
             ShadowCamera::Perspective(c) => c.far,
@@ -39,6 +44,7 @@ impl ShadowCamera {
         }
     }
 
+    /// `shadow.camera.far = far`.
     pub fn set_far(&mut self, far: f64) {
         match self {
             ShadowCamera::Perspective(c) => c.far = far,
@@ -69,6 +75,7 @@ impl ShadowCamera {
         matches!(self, ShadowCamera::Orthographic(_))
     }
 
+    /// `shadow.camera.projectionMatrix`.
     pub fn projection_matrix(&self) -> Matrix4 {
         match self {
             ShadowCamera::Perspective(c) => c.projection_matrix,
@@ -76,6 +83,7 @@ impl ShadowCamera {
         }
     }
 
+    /// `shadow.camera.matrixWorld`.
     pub fn matrix_world(&self) -> Matrix4 {
         match self {
             ShadowCamera::Perspective(c) => c.node.borrow().matrix_world,
@@ -83,6 +91,7 @@ impl ShadowCamera {
         }
     }
 
+    /// `shadow.camera.matrixWorldInverse`.
     pub fn matrix_world_inverse(&self) -> Matrix4 {
         match self {
             ShadowCamera::Perspective(c) => c.matrix_world_inverse,
@@ -90,6 +99,7 @@ impl ShadowCamera {
         }
     }
 
+    /// `shadow.camera.updateProjectionMatrix()`.
     pub fn update_projection_matrix(&mut self) {
         match self {
             ShadowCamera::Perspective(c) => c.update_projection_matrix(),
@@ -120,6 +130,8 @@ impl ShadowCamera {
 /// and in `updateMatrices`, so one struct with a camera enum covers both.
 #[derive(Clone)]
 pub struct LightShadow {
+    /// `this.camera` — a perspective camera for a spot or point light, an
+    /// orthographic one for a directional light.
     pub camera: ShadowCamera,
     /// `this.intensity`.
     pub intensity: f64,
