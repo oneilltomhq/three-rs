@@ -33,6 +33,7 @@ use crate::textures::Texture;
 /// program, its size does not.
 #[derive(Clone, Debug)]
 pub struct OpaqueFrame {
+    /// The mipped copy of the resolved opaque colour attachment.
     pub texture: Texture,
 }
 

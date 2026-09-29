@@ -173,6 +173,7 @@ impl LineSegmentsGeometry {
 pub struct LineGeometry(LineSegmentsGeometry);
 
 impl LineGeometry {
+    /// `new LineGeometry()`.
     pub fn new() -> Self {
         Self(LineSegmentsGeometry::new())
     }
@@ -192,6 +193,7 @@ impl LineGeometry {
         self
     }
 
+    /// The underlying, already-duplicated [`LineSegmentsGeometry`].
     pub fn as_segments(&self) -> &LineSegmentsGeometry {
         &self.0
     }
@@ -248,6 +250,8 @@ impl LineSegments2 {
 pub struct Line2;
 
 impl Line2 {
+    /// three.js' constructor, as a scene-graph [`Node`]. See
+    /// [`LineSegments2::new`] on the payload.
     #[allow(clippy::new_ret_no_self)] // mirrors three.js' constructor: it returns a scene-graph `Node`.
     pub fn new(geometry: &LineGeometry, material: MeshBasicNodeMaterial) -> Node {
         LineSegments2::from_parts("Line2", geometry.as_segments(), material)

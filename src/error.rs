@@ -23,44 +23,74 @@ use crate::animation::property_binding::ParseTrackNameError;
 pub enum Error {
     /// A file a loader was pointed at could not be read.
     Io {
+        /// The file that could not be read.
         path: PathBuf,
+        /// What the OS said.
         source: std::io::Error,
     },
     /// A JSON document could not be parsed. `path` is `None` when the caller
     /// handed the JSON over directly, as `BufferGeometryLoader::parse` does.
     Json {
+        /// The file the JSON was read from, when there was one.
         path: Option<PathBuf>,
+        /// What `serde_json` said.
         source: serde_json::Error,
     },
     /// An image file the decoder rejected.
-    Image { path: PathBuf, reason: String },
+    Image {
+        /// The image file.
+        path: PathBuf,
+        /// Why the decoder rejected it.
+        reason: String,
+    },
     /// A Radiance RGBE (`.hdr`) file the decoder rejected. `reason` is
     /// three.js' own `rgbe_error()` message, less its `THREE.HDRLoader: `
     /// prefix.
-    Rgbe { reason: String },
+    Rgbe {
+        /// The decoder's message.
+        reason: String,
+    },
     /// A KTX 2.0 file `KTX2Loader` rejected, or one it cannot transcode for
     /// this device. `reason` is three.js' own message, less its
     /// `THREE.KTX2Loader: ` prefix.
-    Ktx2 { reason: String },
+    Ktx2 {
+        /// The decoder's message.
+        reason: String,
+    },
     /// A file names a type, format or encoding this port does not implement.
     /// `what` says which field it was read from.
-    UnsupportedFormat { what: &'static str, value: String },
+    UnsupportedFormat {
+        /// The field the value was read from.
+        what: &'static str,
+        /// The unsupported value.
+        value: String,
+    },
     /// A texture type that is not a legal depth format (`gpu_format`) or not a
     /// legal colour format (`color_gpu_format`).
     UnsupportedTextureType {
+        /// Which check failed (`gpu_format` or `color_gpu_format`).
         what: &'static str,
+        /// The texture type that failed it.
         texture_type: crate::textures::TextureType,
     },
     /// A glTF asset the loader could not make sense of.
     Gltf(GltfError),
     /// `new KeyframeTrack()` with an empty `times` array.
-    NoKeyframes { track: String },
+    NoKeyframes {
+        /// The track's name.
+        track: String,
+    },
     /// A track type name that no `KeyframeTrack` subclass answers to.
-    UnsupportedTrackType { name: String },
+    UnsupportedTrackType {
+        /// The type name that was not recognized.
+        name: String,
+    },
     /// An interpolation mode this track's value type does not support, where
     /// the value type's own default does not support it either.
     UnsupportedInterpolation {
+        /// The track's value type (`"vector"`, `"quaternion"`, …).
         value_type: &'static str,
+        /// The track's name.
         track: String,
     },
     /// A track name `PropertyBinding` cannot parse.
@@ -70,7 +100,10 @@ pub enum Error {
     /// `wanted` is the `THREE_RS_ADAPTER_NAME` filter, when one was set and
     /// matched nothing; it is always `None` on wasm32, where the browser picks
     /// the adapter and there is nothing to filter.
-    NoAdapter { wanted: Option<String> },
+    NoAdapter {
+        /// The `THREE_RS_ADAPTER_NAME` filter that matched nothing, if one was set.
+        wanted: Option<String>,
+    },
     /// `Renderer::new()` on wasm32 with nothing handed to
     /// `renderer::adopt_device()` first. Device creation is asynchronous in a
     /// browser and the examples' `init()` is not, so the host must create the
@@ -81,13 +114,18 @@ pub enum Error {
     /// `adapter.request_device()` failed.
     Device(wgpu::RequestDeviceError),
     /// Reading pixels back off the GPU failed; `reason` is what wgpu said.
-    Readback { reason: String },
+    Readback {
+        /// What wgpu said.
+        reason: String,
+    },
     /// A material field that is set but that no part of the port reads for
     /// this kind of material — see
     /// [`MeshBasicNodeMaterial::check_supported`](crate::materials::MeshBasicNodeMaterial::check_supported)
     /// and the audit in `docs/api.md`. `field` is the three.js name.
     Unsupported {
+        /// The three.js field name.
         field: &'static str,
+        /// The material kind it was set on.
         kind: crate::materials::MaterialKind,
     },
 }
@@ -112,10 +150,18 @@ pub enum GltfError {
     NoBinChunk,
     /// A field a definition cannot be read without (`accessor.type`,
     /// `sampler.input`, …). `what` names it.
-    MissingField { what: &'static str },
+    MissingField {
+        /// The missing field's name.
+        what: &'static str,
+    },
     /// An index into one of the asset's arrays that is not there. `kind` is the
     /// array (`accessor`, `bufferView`, `buffer`, `mesh`).
-    MissingIndex { kind: &'static str, index: usize },
+    MissingIndex {
+        /// The array the index was into.
+        kind: &'static str,
+        /// The index that was not there.
+        index: usize,
+    },
     /// An accessor `componentType` the port does not read.
     UnsupportedComponentType(i64),
     /// An accessor `type` the port does not read.
@@ -133,15 +179,26 @@ pub enum GltfError {
     /// and `primitive` locate it; `reason` is the decoder's, or what
     /// `DRACOLoader` would have thrown on.
     Draco {
+        /// The mesh index.
         mesh: usize,
+        /// The primitive index within `mesh`.
         primitive: usize,
+        /// The decoder's message.
         reason: String,
     },
     /// A bufferView whose byte range runs past the end of its buffer.
-    BufferViewOutOfRange { index: usize },
+    BufferViewOutOfRange {
+        /// The bufferView's index.
+        index: usize,
+    },
     /// An `EXT_meshopt_compression` bufferView that does not decode.
     /// `reason` is the decoder's, or the extension rule it breaks.
-    Meshopt { buffer_view: usize, reason: String },
+    Meshopt {
+        /// The bufferView's index.
+        buffer_view: usize,
+        /// The decoder's message, or the extension rule that was broken.
+        reason: String,
+    },
 }
 
 impl fmt::Display for Error {

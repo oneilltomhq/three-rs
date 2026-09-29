@@ -27,7 +27,10 @@ use crate::textures::CubeTexture;
 /// [`PmremEnvironment::handle`]: crate::nodes::pmrem_node::PmremEnvironment::handle
 #[derive(Clone, Debug)]
 pub struct PmremHandle {
+    /// The generated PMREM cube.
     pub texture: CubeTexture,
+    /// The uniform holding the cube's maximum mip level, for
+    /// `roughness_to_mip`.
     pub max_lod: NodeRef,
 }
 

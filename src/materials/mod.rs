@@ -74,7 +74,9 @@ impl Clone for MaterialId {
 /// `three.js/src/constants.js` sides.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Side {
+    /// `FrontSide`.
     Front,
+    /// `BackSide`.
     Back,
     /// `DoubleSide` — `_getPrimitiveState()` leaves `cullMode` at `'none'`, so
     /// the front-face winding no longer matters. `BatchedText`'s material.
@@ -206,9 +208,14 @@ pub struct MeshBasicNodeMaterial {
     /// `Material.version` — "starts at 0 and counts how many times
     /// `needsUpdate` is set to true". Part of the program cache key.
     pub version: u32,
+    /// Which `NodeMaterial` subclass this stands in for — see [`MaterialKind`].
     pub kind: MaterialKind,
+    /// `Material.color` — `MeshBasicMaterial`'s diffuse colour.
     pub color: Color,
+    /// `Material.opacity`.
     pub opacity: f64,
+    /// `MeshBasicMaterial.reflectivity` — the mix factor `BasicEnvironmentNode`
+    /// blends the reflected environment colour in by.
     pub reflectivity: f64,
     /// `MeshBasicMaterial.envMap` — `setupEnvironment()` turns it into
     /// `BasicEnvironmentNode( cubeTexture( envMap ) )`.
@@ -221,6 +228,8 @@ pub struct MeshBasicNodeMaterial {
     /// owns the generated atlas; `scene.environment` reaches the same place by
     /// being copied onto every material that has none of its own.
     pub pmrem_env: Option<environment::PmremHandle>,
+    /// `NodeMaterial.colorNode` — replaces the `materialColor` uniform in
+    /// `setupDiffuseColor()`.
     pub color_node: Option<NodeRef>,
     /// `NodeMaterial.opacityNode` — replaces the `materialOpacity` uniform in
     /// `setupDiffuseColor()`, so `DiffuseColor.a` is multiplied by a node's
@@ -260,9 +269,16 @@ pub struct MeshBasicNodeMaterial {
     /// `.emissiveIntensity`. The dumps show all four reaching the shader as
     /// object-group uniforms on every Phong material, even the ones the example
     /// never sets.
+    /// `MeshPhongMaterial.specular` — the Blinn-Phong specular tint. Read by
+    /// [`Phong`](MaterialKind::Phong) only; [`Lambert`](MaterialKind::Lambert)
+    /// forces the specular lobe off.
     pub specular: Color,
+    /// `MeshPhongMaterial.shininess` — the Blinn-Phong specular exponent.
     pub shininess: f64,
+    /// `Material.emissive` — the uniform tail `NodeMaterial.setupLighting()`
+    /// adds to `outgoingLight` on a lit material.
     pub emissive: Color,
+    /// `Material.emissiveIntensity` — multiplies [`emissive`](Self::emissive).
     pub emissive_intensity: f64,
     /// `Material.flatShading` — `NodeMaterial.setupNormal()` picks `normalFlat`
     /// (the screen-space derivative frame) over the interpolated vertex normal,
@@ -308,7 +324,10 @@ pub struct MeshBasicNodeMaterial {
     /// its green channel and `metalnessMap` its blue, which is the glTF
     /// packing three.js follows.
     pub metalness: f64,
+    /// `MeshStandardMaterial.roughness`.
     pub roughness: f64,
+    /// `Material.map` — the base colour texture; multiplies
+    /// [`color`](Self::color).
     pub map: Option<Texture>,
     /// `Material.vertexColors` — `setupDiffuseColor()` multiplies the diffuse
     /// colour by `vertexColor()`, so one `LineSegments` (or one mesh) can carry
@@ -317,7 +336,11 @@ pub struct MeshBasicNodeMaterial {
     /// [`vertex_color`](crate::nodes::tsl::vertex_color) for the one divergence
     /// from three's node.
     pub vertex_colors: bool,
+    /// `MeshStandardMaterial.roughnessMap` — its green channel multiplies
+    /// [`roughness`](Self::roughness).
     pub roughness_map: Option<Texture>,
+    /// `MeshStandardMaterial.metalnessMap` — its blue channel multiplies
+    /// [`metalness`](Self::metalness).
     pub metalness_map: Option<Texture>,
     /// `MeshStandardMaterial.emissiveMap` — `MaterialNode.EMISSIVE`'s
     /// `emissiveNode.mul( texture )`, where `emissiveNode` is already
@@ -333,9 +356,13 @@ pub struct MeshBasicNodeMaterial {
     /// `tex.r.sub( 1 ).mul( aoMapIntensity ).add( 1 )`, assigned to the
     /// `AmbientOcclusion` property by `NodeMaterial.setupAmbientOcclusion()`.
     pub ao_map: Option<Texture>,
+    /// `MeshStandardMaterial.aoMapIntensity` — multiplies
+    /// [`ao_map`](Self::ao_map)'s contribution.
     pub ao_map_intensity: f64,
     /// `MeshStandardMaterial.bumpMap` / `.bumpScale` — `BumpMapNode`.
     pub bump_map: Option<Texture>,
+    /// `MeshStandardMaterial.bumpScale` — scales [`bump_map`](Self::bump_map)'s
+    /// derivative before it perturbs the normal.
     pub bump_scale: f64,
     /// `MeshPhysicalMaterial`'s own fields. Nothing on this rung sets them, but
     /// rung 10's glTF materials will: `KHR_materials_specular` is
@@ -343,6 +370,7 @@ pub struct MeshBasicNodeMaterial {
     /// F0. They are carried here so the material API does not have to change
     /// shape when `MaterialKind::Physical` arrives.
     pub clearcoat: f64,
+    /// `MeshPhysicalMaterial.clearcoatRoughness`.
     pub clearcoat_roughness: f64,
     /// `MeshPhysicalMaterial.clearcoatMap` — `MaterialNode.CLEARCOAT`
     /// multiplies `clearcoat` by the texel's red channel.
@@ -361,7 +389,9 @@ pub struct MeshBasicNodeMaterial {
     /// whole sheen half of `PhysicalLightingModel` on, so a sheen colour with a
     /// zero intensity generates exactly the shader it did before.
     pub sheen: f64,
+    /// `MeshPhysicalMaterial.sheenColor` — the sheen lobe's tint.
     pub sheen_color: Color,
+    /// `MeshPhysicalMaterial.sheenRoughness`.
     pub sheen_roughness: f64,
     /// `MeshPhysicalMaterial.diffuseRoughness` — `KHR_materials_diffuse_roughness`.
     /// `diffuse_roughness > 0` is `MeshPhysicalNodeMaterial.useDiffuseRoughness`,
@@ -369,8 +399,12 @@ pub struct MeshBasicNodeMaterial {
     /// the energy-preserving Oren–Nayar one (EON). `diffuseRoughnessMap` is
     /// not ported: no graded page carries one.
     pub diffuse_roughness: f64,
+    /// `MeshPhysicalMaterial.ior` — drives the dielectric F0 that
+    /// `setupSpecular()` derives before `specular_color` modulates it.
     pub ior: f64,
+    /// `MeshPhysicalMaterial.specularIntensity` — `KHR_materials_specular`.
     pub specular_intensity: f64,
+    /// `MeshPhysicalMaterial.specularColor` — `KHR_materials_specular`.
     pub specular_color: Color,
     /// `material.specularNode`.
     pub specular_node: Option<NodeRef>,
@@ -379,6 +413,8 @@ pub struct MeshBasicNodeMaterial {
     /// `tangent` attribute (`useDerivativeTangents`), which is where Michelle's
     /// `( 1, -1 )` comes from — it is not in the asset.
     pub normal_map: Option<Texture>,
+    /// `Material.normalScale` — scales [`normal_map`](Self::normal_map)'s `x`
+    /// and `y` before it perturbs the surface normal.
     pub normal_scale: crate::math::Vector2,
     /// `MeshPhysicalMaterial.specularColorMap` — multiplies `specularColor`.
     pub specular_color_map: Option<Texture>,
@@ -388,23 +424,34 @@ pub struct MeshBasicNodeMaterial {
     /// `vec2( anisotropy * cos( rotation ), anisotropy * sin( rotation ) )`,
     /// exactly as three's `MeshPhysicalNodeMaterial` builds it.
     pub anisotropy: f64,
+    /// `MeshPhysicalMaterial.anisotropyRotation`, in radians.
     pub anisotropy_rotation: f64,
+    /// `MeshPhysicalMaterial.anisotropyMap` — its red and green channels give
+    /// the per-texel anisotropy strength and rotation.
     pub anisotropy_map: Option<Texture>,
     /// `MeshPhysicalMaterial.clearcoatNormalMap` / `.clearcoatNormalScale`.
     /// The clearcoat lobe's own normal, through the same TBN sub-build the
     /// base normal map uses.
     pub clearcoat_normal_map: Option<Texture>,
+    /// `MeshPhysicalMaterial.clearcoatNormalScale` — scales
+    /// [`clearcoat_normal_map`](Self::clearcoat_normal_map)'s `x` and `y`.
     pub clearcoat_normal_scale: crate::math::Vector2,
     /// `MeshPhysicalMaterial.transmission` / `.thickness` /
     /// `.attenuationDistance` / `.attenuationColor` —
     /// `KHR_materials_transmission` and `KHR_materials_volume`. A non-zero
     /// `transmission` moves the object into the renderer's transmission pass.
     pub transmission: f64,
+    /// `MeshPhysicalMaterial.thickness` — `KHR_materials_volume`; the modelled
+    /// thickness of the transmissive medium.
     pub thickness: f64,
     /// `MeshPhysicalMaterial.thicknessMap` — `MaterialNode.THICKNESS`
     /// multiplies `thickness` by the texel's green channel.
     pub thickness_map: Option<Texture>,
+    /// `MeshPhysicalMaterial.attenuationDistance` — `KHR_materials_volume`;
+    /// the distance light travels through the medium before it is tinted by
+    /// [`attenuation_color`](Self::attenuation_color).
     pub attenuation_distance: f64,
+    /// `MeshPhysicalMaterial.attenuationColor` — `KHR_materials_volume`.
     pub attenuation_color: Color,
     /// `material.normalNode` — e.g. `normalMap( texture( map ) )`.
     pub normal_node: Option<NodeRef>,
@@ -418,6 +465,8 @@ pub struct MeshBasicNodeMaterial {
     pub position_node: Option<NodeRef>,
     /// `SpriteNodeMaterial.scaleNode` / `.rotationNode`.
     pub scale_node: Option<NodeRef>,
+    /// `SpriteNodeMaterial.rotationNode` — replaces the `materialRotation`
+    /// uniform.
     pub rotation_node: Option<NodeRef>,
     /// `PointsNodeMaterial.sizeNode` — the point size in pixels when the
     /// material draws a [`Sprite`](crate::objects::Sprite) (instanced quads)
@@ -458,6 +507,8 @@ pub struct MeshBasicNodeMaterial {
     /// `materialRoughness` uniforms (and their maps). `webgpu_deferred`'s
     /// resolve material reads both out of the G-buffer.
     pub metalness_node: Option<NodeRef>,
+    /// `MeshStandardNodeMaterial.roughnessNode` — see
+    /// [`metalness_node`](Self::metalness_node).
     pub roughness_node: Option<NodeRef>,
     /// `NodeMaterial.depthNode` — `setupDepth()`'s value, written to the
     /// fragment stage's `@builtin( frag_depth )` output. Set only when the
@@ -468,6 +519,7 @@ pub struct MeshBasicNodeMaterial {
     /// accessors `webgpu_deferred`'s resolve material reads out of the
     /// G-buffer instead of out of the geometry. See `docs/nodes.md` §27.
     pub context_overrides: Option<crate::nodes::tsl::OverrideNodes>,
+    /// `Material.side` — which face(s) are drawn.
     pub side: Side,
     /// `Material.visible` — `_projectObject()` skips an object whose material is
     /// not visible.
@@ -506,12 +558,19 @@ pub struct MeshBasicNodeMaterial {
     /// `*Alpha` overrides (`None` is Three's `null`), read only under
     /// `CustomBlending`.
     pub blend_src: BlendFactor,
+    /// `Material.blendDst`.
     pub blend_dst: BlendFactor,
+    /// `Material.blendEquation`.
     pub blend_equation: BlendEquation,
+    /// `Material.blendSrcAlpha`.
     pub blend_src_alpha: Option<BlendFactor>,
+    /// `Material.blendDstAlpha`.
     pub blend_dst_alpha: Option<BlendFactor>,
+    /// `Material.blendEquationAlpha`.
     pub blend_equation_alpha: Option<BlendEquation>,
+    /// `Material.depthTest`.
     pub depth_test: bool,
+    /// `Material.depthWrite`.
     pub depth_write: bool,
     /// `Material.depthFunc` — the depth compare while `depth_test` is on.
     pub depth_func: DepthFunc,
@@ -636,6 +695,8 @@ impl Default for MeshBasicNodeMaterial {
 }
 
 impl MeshBasicNodeMaterial {
+    /// `new MeshBasicMaterial()` — a white, opaque [`Basic`](MaterialKind::Basic)
+    /// material. Equivalent to [`Default::default`].
     pub fn new() -> Self {
         Self::default()
     }
@@ -900,8 +961,11 @@ pub type MeshToonNodeMaterial = MeshBasicNodeMaterial;
 pub type SpriteNodeMaterial = MeshBasicNodeMaterial;
 /// three.js' name for a `NodeMaterial` whose kind is `Points`.
 pub type PointsNodeMaterial = MeshBasicNodeMaterial;
-/// Likewise for `Standard` / `Physical` — one struct, one renderer list.
+/// three.js' name for a `NodeMaterial` whose kind is `Standard` — one struct,
+/// one renderer list.
 pub type MeshStandardNodeMaterial = MeshBasicNodeMaterial;
+/// three.js' name for a `NodeMaterial` whose kind is `Physical` — see
+/// [`MeshBasicNodeMaterial::physical`].
 pub type MeshPhysicalNodeMaterial = MeshBasicNodeMaterial;
 
 /// three.js' name for a `NodeMaterial` whose kind is `Normal` — see

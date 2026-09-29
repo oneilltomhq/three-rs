@@ -55,6 +55,7 @@ fn lerp(x: f64, y: f64, t: f64) -> f64 {
 pub struct ImprovedNoise;
 
 impl ImprovedNoise {
+    /// `new ImprovedNoise()`.
     pub fn new() -> Self {
         Self
     }
