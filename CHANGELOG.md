@@ -1,10 +1,15 @@
 # Changelog
 
-All notable changes to `three-rs` are documented here. `sdf-text`, the other
-crate in this workspace, has its own section below since it versions
-separately. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+All notable changes to `three-rs` are documented here. `sdf-text` and
+`three-rs-controls`, the other crates in this workspace, version separately and
+have their own sections after the release they ship with. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
+
+## [0.2.0] - 2026-09-29
+
+Ships with `sdf-text` 0.2.0 and the first release of `three-rs-controls`
+(0.1.0); their sections follow this one.
 
 ### Changed
 
@@ -59,7 +64,7 @@ outside consumers and batched together for the 0.2.0 release:
   position)`. `Info`, `RenderCounts`, `BuildCounts`, `MemoryCounts`,
   `ComputeCounts` and sdf-text's `TextRenderInfo` are `#[non_exhaustive]` too:
   read their fields, and destructure them with `..`. (`docs/api.md` decision
-  3)
+  3; #217)
 - **One `ColorSpace`.** `math::ColorSpace` and `textures::ColorSpace` are
   merged into `three_rs::math::ColorSpace` (also `three_rs::ColorSpace`),
   with the variants `NoColorSpace`, `Srgb` and `LinearSrgb`. Replace
@@ -69,7 +74,7 @@ outside consumers and batched together for the 0.2.0 release:
   `ColorSpace::NoColorSpace` where you passed `None`, and drop the `Some(..)`.
   The HDR, cube HDR, Ultra HDR and KTX2 loaders now tag linear textures
   `LinearSrgb` rather than `NoColorSpace`, as three.js does. Both sample the
-  same way.
+  same way. (#216)
 - **Acronyms in public names use Rust casing** (API Guidelines C-CASE), with
   the three.js name in the doc comment:
   `ColorSpace::SRGB` becomes `Srgb`, `ColorSpace::LinearSRGB` becomes `LinearSrgb`,
@@ -77,20 +82,29 @@ outside consumers and batched together for the 0.2.0 release:
   `CoordinateSystem::WebGL`/`WebGPU` become `WebGl`/`WebGpu`.
   Dimension suffixes (`Data3DTexture`), axis orders (`EulerOrder::XYZ`) and
   glam-style vector types (`Type::UVec2`) are unchanged; see
-  [`docs/api.md`](docs/api.md) decision 3.
+  [`docs/api.md`](docs/api.md) decision 3. (#216)
+- **The public surface was audited** (`docs/api.md` decision 11, #213).
+  About 290 items that were public only for the crate's own tests and
+  examples are now `pub(crate)`, 79 more are `#[doc(hidden)]` (the grader
+  readbacks, the `draco`/`meshopt` loader modules), and about 25 dead items
+  are gone, among them `Renderer::program_builds` and `ColorManagement`'s
+  deprecated helpers. Items re-exported one level up lost their long paths:
+  import them from the parent module. `CurveVector` is sealed. 18 enums are
+  `#[non_exhaustive]`, `nodes::Node` among them, so match them with a `_`
+  arm.
+- **`RenderCamera` is sealed**, matching `CurveVector`: it cannot be
+  implemented for a type outside this crate. Nothing that legitimately used
+  it as a trait object or bound needs to change. (#218)
+- **`NodeRef`, `RootId` and `ActionHandle` are opaque handles**: their tuple
+  field is private. `NodeRef::node()` (or `as_rc()` for the `Rc<Node>`
+  itself) replaces reading `.0`; `RootId::MIXER_ROOT` replaces
+  `RootId(0)`. `ActionHandle` and `RootId` are otherwise unchanged — get one
+  from the `AnimationMixer` that owns it. (#218)
 
 Other changes:
 
 - The `rust-version` in `Cargo.toml` is documented as 1.90, which is what the
   lockfile already needed. (#73)
-- **`RenderCamera` is sealed**, matching `CurveVector` (#213): it cannot be
-  implemented for a type outside this crate. Nothing that legitimately used
-  it as a trait object or bound needs to change. (#213 follow-up)
-- **`NodeRef`, `RootId` and `ActionHandle` are opaque handles**: their tuple
-  field is private. `NodeRef::node()` (or `as_rc()` for the `Rc<Node>`
-  itself) replaces reading `.0`; `RootId::MIXER_ROOT` replaces
-  `RootId(0)`. `ActionHandle` and `RootId` are otherwise unchanged — get one
-  from the `AnimationMixer` that owns it. (#213 follow-up)
 
 ### Added
 
@@ -156,6 +170,11 @@ Other changes:
   Pages (#131).
 - **Diagnostics.** `Renderer::info()` reports per-frame draw-call and
   triangle counts (#76).
+- **Documentation.** Every public item in `three-rs`, `sdf-text` and
+  `three-rs-controls` has a doc comment naming the three.js (or lib3) item it
+  ports, each crate has a crate-level overview with an example, and
+  `#![warn(missing_docs)]` keeps it that way (#215, #219–#225). A
+  `CHANGELOG.md`, a code of conduct and issue templates were added (#212).
 - 69 more three.js examples graded green since 0.1.2, for 79 in total — see
   the README's gallery table for the full list.
 
@@ -183,7 +202,10 @@ Other changes:
   examples and gates no longer live here. The SDF examples and gates moved
   into `sdf-text` in the same change. (#66)
 
-## sdf-text
+## sdf-text 0.2.0 - 2026-09-29
+
+Breaking, because of the `Result` and `Option` signatures below; it depends on
+`three-rs` 0.2.
 
 ### Changed
 
@@ -192,7 +214,7 @@ Other changes:
 - **`BatchedText::add_text` returns `Option<usize>`** (`None` at capacity)
   and **`Text::member_id` returns `Option<usize>`** (`None` when the member
   has not joined a batch), replacing the `-1`-sentinel `i64` both used to
-  return. (#213 follow-up)
+  return. (#218)
 
 ### Added
 
@@ -203,6 +225,14 @@ Other changes:
 - Batch members honour their own full `matrix_world`, and a batch's bounds
   come from its members rather than its node. (#75)
 - Roboto ships inside the package so the example runs standalone. (#75)
+
+## three-rs-controls 0.1.0 - 2026-09-29
+
+### Added
+
+- First release: `MapControls`, a map camera over a ground with curvature,
+  in the spirit of three.js' `MapControls` and damped the way camera-controls
+  damps, for `three-rs` 0.2. (#86, #92)
 
 ## [0.1.2] - 2026-09-13
 
@@ -231,7 +261,8 @@ _Ships alongside the 0.1.1 fix, both already on `main` before this tag._
   the `WebGPURenderer` port on wgpu with a TSL-generated node system, the
   core materials, lights and shadow maps, and the first graded examples.
 
-[Unreleased]: https://github.com/oneilltomhq/three-rs/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/oneilltomhq/three-rs/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/oneilltomhq/three-rs/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/oneilltomhq/three-rs/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/oneilltomhq/three-rs/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/oneilltomhq/three-rs/releases/tag/v0.1.0
