@@ -46,7 +46,7 @@ fn render(overlay: impl FnOnce(&mut MeshBasicNodeMaterial)) -> Vec<u8> {
     green.borrow_mut().position.set(2.0, 0.0, 0.01);
     scene.add(&green);
 
-    let mut renderer = Renderer::new(RendererParameters { antialias: false }).unwrap();
+    let mut renderer = Renderer::new(RendererParameters::default()).unwrap();
     renderer.set_pixel_ratio(1.0);
     renderer.set_size(WIDTH, HEIGHT);
     renderer.render(&mut scene, &mut camera);

@@ -75,6 +75,30 @@ not held is freed.
   `MeshPhongNodeMaterial { shininess: 80.0, ..MeshPhongNodeMaterial::phong(c) }`.
   The named constructors (`phong`, `standard`, `line`, `sprite`) carry the
   per-kind defaults, which is where three.js's subclasses live.
+- **Options structs are `#[non_exhaustive]`, built from `Default` or a
+  constructor.** A struct that stands for one of three.js's options objects
+  carries only the keys the ported pages read, so it gains a field whenever a
+  rung needs one more, and with struct literals each of those was a break for
+  every caller. That covers `PassOptions`, `RenderTargetOptions`,
+  `RendererParameters` (one field today; `new WebGPURenderer()` takes a dozen),
+  the blur `*Options`, `Billboarding`, `ExtrudeGeometryOptions`,
+  `TextGeometryOptions`, `ReflectorParameters`, `OverrideNodes`, `Ktx2Support`,
+  `RaycasterParams`, and sdf-text's `LayoutParams` and `BatchedTextOptions`.
+  The fields stay public and `Default` holds three's defaults, so a caller
+  writes `let mut options = PassOptions::default(); options.auto_clear_depth
+  = false;`, the JavaScript object with its keys set one per line. That is the
+  one form `#[non_exhaustive]` leaves open outside the crate: it forbids the
+  literal and the `..Default::default()` update alike. A constructor is added
+  only where a field has no default: `ComputeFlow::new( statements, count )`
+  is three's `.compute( count )`, and `MaterialFlow::new( output, position )`
+  the two nodes a hand-built flow must name. Structs callers only read — `Info`
+  and its four count blocks, sdf-text's `TextRenderInfo` — are
+  `#[non_exhaustive]` and nothing more. Materials keep the literal anyway.
+  They are the construction surface of every example, where
+  `..MeshPhongNodeMaterial::phong( c )` reads as the JavaScript does, and a
+  field added to one is a breaking change taken at a minor release; that is
+  the trade the bullet above made. Input events (`PointerEvent`, `WheelEvent`,
+  `KeyEvent`) are DOM values rather than options and are left as literals too.
 - **Lights, cameras and textures** take three.js's positional constructor
   arguments and expose the rest as fields or one-line setters, for the same
   reason.
@@ -324,7 +348,9 @@ concept of which the port has only part: `nodes::Node` (decision 9) and its
 land, and a variant is additive only if callers were made to write the `_`
 arm first. Enums whose three.js set is closed and fully ported (`Blending`,
 `Side`, `Wrapping`, `ShadowMapType`, `EulerOrder`) stay exhaustive, because a
-caller matching them exhaustively is right to.
+caller matching them exhaustively is right to. The same reasoning puts the
+attribute on the structs that stand for a partly ported options object or
+counts block; decision 3 says how those are built.
 
 The Rust API Guidelines checklist (#37, folded into #14) was the rubric, and
 only the items that cannot be fixed later without a break were acted on; the

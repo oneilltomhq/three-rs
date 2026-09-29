@@ -67,7 +67,7 @@ fn render(count: usize, range_colors: bool) -> Vec<u8> {
     }
     scene.add(&mesh);
 
-    let mut renderer = Renderer::new(RendererParameters { antialias: false }).unwrap();
+    let mut renderer = Renderer::new(RendererParameters::default()).unwrap();
     renderer.set_pixel_ratio(1.0);
     renderer.set_size(WIDTH, HEIGHT);
     renderer.render(&mut scene, &mut camera);

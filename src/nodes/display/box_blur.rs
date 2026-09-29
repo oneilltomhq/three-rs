@@ -10,6 +10,7 @@ use crate::textures::Texture;
 
 /// `boxBlur( textureNode, options )`' options.
 #[derive(Clone)]
+#[non_exhaustive]
 pub struct BoxBlurOptions {
     /// `options.size` — the kernel's half-width in taps, `int( 1 )` by
     /// default.

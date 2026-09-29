@@ -1130,6 +1130,8 @@ stage, a buffer the shader writes, and a frame made of four submits.
 number of invocations wanted, a workgroup size, an optional name, and an
 optional `on_init` — a second `ComputeFlow` the renderer runs exactly once,
 the first time it sees this one, which is three's `computeNode.onInit`.
+`ComputeFlow::new( statements, count )` is `.compute( count )` with three's
+default `[ 64 ]` workgroup; the other three are fields set afterwards.
 
 `NodeBuilder::build_compute()` mirrors `build()`: analyze, generate, assemble.
 Three things differ.

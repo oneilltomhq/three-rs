@@ -58,7 +58,7 @@ fn quad(color: u32, z: f64) -> Node {
 
 fn renderer() -> Renderer {
     let mut renderer =
-        Renderer::new(RendererParameters { antialias: false }).expect("a wgpu adapter and device");
+        Renderer::new(RendererParameters::default()).expect("a wgpu adapter and device");
     renderer.set_pixel_ratio(1.0);
     renderer.set_size(W as f64, H as f64);
     renderer

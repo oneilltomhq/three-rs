@@ -31,18 +31,10 @@ const SIZE: u32 = 8;
 /// HalfFloatType } )`, which is what `PMREMGenerator._allocateTargets()` makes
 /// (`depthBuffer: false`, `format: RGBAFormat`, `type: HalfFloatType`).
 fn half_float_target(width: u32, height: u32) -> RenderTarget {
-    RenderTarget::new_with_options(
-        width,
-        height,
-        RenderTargetOptions {
-            texture_type: TextureType::HalfFloat,
-            samples: 0,
-            depth_buffer: false,
-            min_filter: TextureFilter::Linear,
-            mag_filter: TextureFilter::Linear,
-        },
-    )
-    .expect("HalfFloatType is a colour type")
+    let mut options = RenderTargetOptions::default();
+    options.texture_type = TextureType::HalfFloat;
+    options.depth_buffer = false;
+    RenderTarget::new_with_options(width, height, options).expect("HalfFloatType is a colour type")
 }
 
 /// The `( r, g, b, a )` at `( x, y )` of a readback, `y` down from the top.
@@ -75,7 +67,7 @@ fn halves(values: [f64; 4]) -> [u16; 4] {
 
 #[test]
 fn half_float_targets_textures_and_the_viewport() {
-    let mut renderer = Renderer::new(RendererParameters { antialias: false }).unwrap();
+    let mut renderer = Renderer::new(RendererParameters::default()).unwrap();
 
     a_formatted_target_reads_back_as_halves(&mut renderer);
     the_viewport_clips_the_draw_to_the_top_right(&mut renderer);

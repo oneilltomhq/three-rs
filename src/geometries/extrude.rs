@@ -97,6 +97,7 @@ impl UvGenerator for WorldUvGenerator {
 /// The `options` object of `new ExtrudeGeometry( shapes, options )`, with
 /// three.js' defaults.
 #[derive(Clone)]
+#[non_exhaustive]
 pub struct ExtrudeGeometryOptions {
     /// `curveSegments`, default 12: points on the shape's curves.
     pub curve_segments: usize,

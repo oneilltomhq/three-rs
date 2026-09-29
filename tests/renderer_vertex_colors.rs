@@ -75,7 +75,7 @@ fn render(geometry: Rc<BufferGeometry>, material: MeshBasicNodeMaterial) -> Vec<
     scene.add(&LineSegments::new(geometry, material));
 
     let mut camera = OrthographicCamera::new(0.0, W as f64, H as f64, 0.0, -1.0, 1.0);
-    let mut renderer = Renderer::new(RendererParameters { antialias: false }).unwrap();
+    let mut renderer = Renderer::new(RendererParameters::default()).unwrap();
     renderer.set_pixel_ratio(1.0);
     renderer.set_size(W as f64, H as f64);
     renderer.render(&mut scene, &mut camera);

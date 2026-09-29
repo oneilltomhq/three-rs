@@ -298,10 +298,9 @@ fn flame_material(color_node: NodeRef) -> MeshBasicNodeMaterial {
     let mut material = MeshBasicNodeMaterial::sprite();
     material.side = Side::Double;
     material.color_node = Some(color_node);
-    material.vertex_node = Some(billboarding(Billboarding {
-        horizontal_rotation: true,
-        ..Billboarding::default()
-    }));
+    let mut options = Billboarding::default();
+    options.horizontal_rotation = true;
+    material.vertex_node = Some(billboarding(options));
     material
 }
 
@@ -353,7 +352,9 @@ pub fn init() -> App {
 
     // renderer
 
-    let mut renderer = Renderer::new(RendererParameters { antialias: true }).unwrap();
+    let mut parameters = RendererParameters::default();
+    parameters.antialias = true;
+    let mut renderer = Renderer::new(parameters).unwrap();
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
 

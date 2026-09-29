@@ -391,67 +391,54 @@ fn extrude_geometries() {
     );
 
     // The heart ExtrudeGeometry the issue names.
+    let mut options = ExtrudeGeometryOptions::default();
+    options.depth = 8.0;
+    options.bevel_enabled = true;
+    options.bevel_segments = 2;
+    options.steps = 2;
+    options.bevel_size = Some(1.0);
+    options.bevel_thickness = 1.0;
     assert_geometry(
-        &extrude_geometry(
-            &[heart_shape()],
-            &ExtrudeGeometryOptions {
-                depth: 8.0,
-                bevel_enabled: true,
-                bevel_segments: 2,
-                steps: 2,
-                bevel_size: Some(1.0),
-                bevel_thickness: 1.0,
-                ..Default::default()
-            },
-        ),
+        &extrude_geometry(&[heart_shape()], &options),
         &reference["extrude_heart"],
         "extrude_heart",
     );
 
+    let mut options = ExtrudeGeometryOptions::default();
+    options.curve_segments = 8;
+    options.depth = 2.0;
+    options.steps = 3;
+    options.bevel_offset = 0.05;
     assert_geometry(
-        &extrude_geometry(
-            &[holed_shape()],
-            &ExtrudeGeometryOptions {
-                curve_segments: 8,
-                depth: 2.0,
-                steps: 3,
-                bevel_offset: 0.05,
-                ..Default::default()
-            },
-        ),
+        &extrude_geometry(&[holed_shape()], &options),
         &reference["extrude_holed"],
         "extrude_holed",
     );
 
+    let mut options = ExtrudeGeometryOptions::default();
+    options.curve_segments = 5;
+    options.bevel_enabled = false;
     assert_geometry(
-        &extrude_geometry(
-            &[heart_shape(), holed_shape()],
-            &ExtrudeGeometryOptions {
-                curve_segments: 5,
-                bevel_enabled: false,
-                ..Default::default()
-            },
-        ),
+        &extrude_geometry(&[heart_shape(), holed_shape()], &options),
         &reference["extrude_flat"],
         "extrude_flat",
     );
 
+    let mut options = ExtrudeGeometryOptions::default();
+    options.curve_segments = 4;
+    options.steps = 20;
+    options.extrude_path = Some(Rc::new(knot_curve()));
     assert_geometry(
-        &extrude_geometry(
-            &[holed_shape()],
-            &ExtrudeGeometryOptions {
-                curve_segments: 4,
-                steps: 20,
-                extrude_path: Some(Rc::new(knot_curve())),
-                ..Default::default()
-            },
-        ),
+        &extrude_geometry(&[holed_shape()], &options),
         &reference["extrude_path"],
         "extrude_path",
     );
 
     let mut closed = knot_curve();
     closed.closed = true;
+    let mut options = ExtrudeGeometryOptions::default();
+    options.steps = 30;
+    options.extrude_path = Some(Rc::new(closed));
     assert_geometry(
         &extrude_geometry(
             &[Shape::from_points(&[
@@ -459,11 +446,7 @@ fn extrude_geometries() {
                 Vector2::new(-1.0, -1.0),
                 Vector2::new(1.0, -1.0),
             ])],
-            &ExtrudeGeometryOptions {
-                steps: 30,
-                extrude_path: Some(Rc::new(closed)),
-                ..Default::default()
-            },
+            &options,
         ),
         &reference["extrude_path_closed"],
         "extrude_path_closed",

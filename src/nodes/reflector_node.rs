@@ -38,6 +38,7 @@ use crate::textures::Texture;
 /// `reflector( parameters )`'s options. `generateMipmaps` and `depth` are not
 /// ported: no graded page sets them.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct ReflectorParameters {
     /// `target` — `new Object3D()` when `None`.
     pub target: Option<Node>,

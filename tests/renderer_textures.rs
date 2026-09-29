@@ -108,7 +108,7 @@ fn assert_swept(
 #[test]
 fn dropped_textures_leave_the_caches() {
     let mut renderer =
-        Renderer::new(RendererParameters { antialias: false }).expect("a wgpu adapter and device");
+        Renderer::new(RendererParameters::default()).expect("a wgpu adapter and device");
     renderer.set_pixel_ratio(1.0);
     renderer.set_size(SIZE as f64, SIZE as f64);
     let mut camera = camera();

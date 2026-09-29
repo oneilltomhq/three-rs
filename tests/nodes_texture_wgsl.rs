@@ -297,13 +297,7 @@ fn storage_3d_texture_is_written_and_sampled() {
         float(1.0),
     ]);
     let store = texture_store(&storage, vec3_join(vec![x, y, z]), value);
-    let kernel = NodeBuilder::new().build_compute(&ComputeFlow {
-        statements: vec![store],
-        count: 512,
-        workgroup_size: [64, 1, 1],
-        name: None,
-        on_init: None,
-    });
+    let kernel = NodeBuilder::new().build_compute(&ComputeFlow::new(vec![store], 512));
     validate(&kernel.wgsl, "storage 3D kernel");
     assert!(kernel
         .wgsl

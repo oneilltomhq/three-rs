@@ -33,9 +33,6 @@ pub const DPR: f64 = 1.0;
 pub const WIDTH: u32 = 512;
 pub const HEIGHT: u32 = 512;
 
-/// `ComputeNode`'s default `workgroupSize = [ 64 ]`, padded to three components.
-pub const WORKGROUP_SIZE: [u32; 3] = [64, 1, 1];
-
 /// `computeTexture( { storageTexture } ).compute( width * height )`. Split out
 /// so `tests/nodes_texture_wgsl.rs` builds exactly the kernel the example
 /// runs.
@@ -71,13 +68,7 @@ pub fn compute_texture(storage: &Texture) -> ComputeFlow {
     // `textureStore( storageTexture, indexUV, vec4( r, g, b, 1 ) ).toWriteOnly()`
     let store = texture_store(&storage, index_uv, vec4_join(vec![r, g, b, float(1.0)]));
 
-    ComputeFlow {
-        statements: vec![store],
-        count: (WIDTH * HEIGHT) as usize,
-        workgroup_size: WORKGROUP_SIZE,
-        name: None,
-        on_init: None,
-    }
+    ComputeFlow::new(vec![store], (WIDTH * HEIGHT) as usize)
 }
 
 /// `float( posX )` — a `u32` converted.
@@ -125,7 +116,9 @@ pub fn init() -> App {
     let plane = Mesh::new(Rc::new(plane_geometry(1.0, 1.0, 1, 1)), material);
     scene.add(&plane);
 
-    let mut renderer = Renderer::new(RendererParameters { antialias: true }).unwrap();
+    let mut parameters = RendererParameters::default();
+    parameters.antialias = true;
+    let mut renderer = Renderer::new(parameters).unwrap();
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
 

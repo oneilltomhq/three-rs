@@ -222,8 +222,8 @@ fn workgroup_sum() -> (ComputeFlow, three_rs::nodes::tsl::StorageArray) {
     let input = instanced_array(256, Type::U32);
     let sums = instanced_array(4, Type::U32);
     let shared = workgroup_array(Type::U32, 64);
-    let flow = ComputeFlow {
-        statements: vec![
+    let flow = ComputeFlow::new(
+        vec![
             shared
                 .element(invocation_local_index())
                 .assign(input.element(instance_index())),
@@ -231,11 +231,8 @@ fn workgroup_sum() -> (ComputeFlow, three_rs::nodes::tsl::StorageArray) {
             sums.element(workgroup_id().x())
                 .assign(shared.element(uint(0))),
         ],
-        count: 256,
-        workgroup_size: [64, 1, 1],
-        name: None,
-        on_init: None,
-    };
+        256,
+    );
     (flow, input)
 }
 
@@ -277,17 +274,14 @@ fn workgroup_memory_matches_three_spelling() {
 fn atomic_array_matches_three_spelling() {
     let counter = instanced_array(1, Type::U32).to_atomic();
     let out = instanced_array(64, Type::U32);
-    let flow = ComputeFlow {
-        statements: vec![
+    let flow = ComputeFlow::new(
+        vec![
             atomic_add(counter.element(uint(0)), uint(1)),
             out.element(instance_index())
                 .assign(atomic_load(counter.element(uint(0))).add(uint(0))),
         ],
-        count: 64,
-        workgroup_size: [64, 1, 1],
-        name: None,
-        on_init: None,
-    };
+        64,
+    );
     let wgsl = NodeBuilder::new().build_compute(&flow).wgsl;
     assert!(wgsl.contains("\tvalue : array< atomic<u32> >\n"), "{wgsl}");
     assert!(

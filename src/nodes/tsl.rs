@@ -61,6 +61,7 @@ type NormalViewKey = (
 /// are functions, so the map is a struct of the three the ladder needs and the
 /// accessors read it directly. See `docs/nodes.md` §27.
 #[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct OverrideNodes {
     pub position_view: Option<NodeRef>,
     pub position_view_direction: Option<NodeRef>,

@@ -12,6 +12,7 @@ use crate::loaders::{Font, TextDirection};
 /// `bevelSize` 8, `bevelEnabled` false — so [`TextGeometryOptions::new`]
 /// starts from those rather than from `ExtrudeGeometry`'s.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct TextGeometryOptions {
     /// `parameters.size`, `undefined` → `generateShapes`' default of 100.
     pub size: f64,

@@ -76,18 +76,13 @@ fn sample_atlas(data: &[f32], size: usize, u: f64, v: f64) -> f64 {
 #[test]
 fn one_glyph_quad_matches_the_atlas_sdf() {
     // --- the batch, on the CPU -------------------------------------------
-    let mut batch = BatchedText::new(
-        1,
-        8,
-        BatchedTextOptions {
-            // `outlineWidth = 0` collapses `outlineAlpha` onto `fillAlpha`, so
-            // `outlineOnly` is zero and `alpha` is the bare fill coverage. The
-            // outline band has its own gate below.
-            outline_width: 0.0,
-            outline_color: None,
-            atlas_size: ATLAS_SIZE,
-        },
-    );
+    // `outlineWidth = 0` collapses `outlineAlpha` onto `fillAlpha`, so
+    // `outlineOnly` is zero and `alpha` is the bare fill coverage. The
+    // outline band has its own gate below.
+    let mut options = BatchedTextOptions::default();
+    options.outline_width = 0.0;
+    options.atlas_size = ATLAS_SIZE;
+    let mut batch = BatchedText::new(1, 8, options);
     batch.set_font(Rc::new(roboto()));
 
     let mut text = Text::new();
@@ -123,7 +118,7 @@ fn one_glyph_quad_matches_the_atlas_sdf() {
     scene.add(batch.node());
     batch.node().update_matrix_world(true);
 
-    let mut renderer = Renderer::new(RendererParameters { antialias: false }).unwrap();
+    let mut renderer = Renderer::new(RendererParameters::default()).unwrap();
     renderer.set_pixel_ratio(1.0);
     renderer.set_size(WIDTH as f64, HEIGHT as f64);
     renderer.render(&mut scene, &mut camera);
@@ -284,17 +279,13 @@ fn one_glyph_quad_matches_the_atlas_sdf() {
 fn the_outline_band_is_the_halo_colour() {
     const OUTLINE: f64 = 0.1;
 
-    let mut batch = BatchedText::new(
-        1,
-        8,
-        BatchedTextOptions {
-            outline_width: OUTLINE,
-            // Pure red halo, pure green fill: two channels that cannot be
-            // confused with each other or with the black background.
-            outline_color: Some(Color::new(1.0, 0.0, 0.0)),
-            atlas_size: ATLAS_SIZE,
-        },
-    );
+    let mut options = BatchedTextOptions::default();
+    options.outline_width = OUTLINE;
+    // Pure red halo, pure green fill: two channels that cannot be
+    // confused with each other or with the black background.
+    options.outline_color = Some(Color::new(1.0, 0.0, 0.0));
+    options.atlas_size = ATLAS_SIZE;
+    let mut batch = BatchedText::new(1, 8, options);
     batch.set_font(Rc::new(roboto()));
 
     let mut text = Text::new();
@@ -320,7 +311,7 @@ fn the_outline_band_is_the_halo_colour() {
     scene.add(batch.node());
     batch.node().update_matrix_world(true);
 
-    let mut renderer = Renderer::new(RendererParameters { antialias: false }).unwrap();
+    let mut renderer = Renderer::new(RendererParameters::default()).unwrap();
     renderer.set_pixel_ratio(1.0);
     renderer.set_size(WIDTH as f64, HEIGHT as f64);
     renderer.render(&mut scene, &mut camera);
@@ -390,15 +381,10 @@ fn the_outline_band_is_the_halo_colour() {
 /// the quad pins both axes of the atlas sampling at once.
 #[test]
 fn the_atlas_v_flip_and_u_direction_are_right() {
-    let mut batch = BatchedText::new(
-        1,
-        8,
-        BatchedTextOptions {
-            outline_width: 0.0,
-            outline_color: None,
-            atlas_size: ATLAS_SIZE,
-        },
-    );
+    let mut options = BatchedTextOptions::default();
+    options.outline_width = 0.0;
+    options.atlas_size = ATLAS_SIZE;
+    let mut batch = BatchedText::new(1, 8, options);
     batch.set_font(Rc::new(roboto()));
 
     let mut text = Text::new();
@@ -420,7 +406,7 @@ fn the_atlas_v_flip_and_u_direction_are_right() {
     scene.add(batch.node());
     batch.node().update_matrix_world(true);
 
-    let mut renderer = Renderer::new(RendererParameters { antialias: false }).unwrap();
+    let mut renderer = Renderer::new(RendererParameters::default()).unwrap();
     renderer.set_pixel_ratio(1.0);
     renderer.set_size(WIDTH as f64, HEIGHT as f64);
     renderer.render(&mut scene, &mut camera);

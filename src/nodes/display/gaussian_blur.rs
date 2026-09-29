@@ -26,6 +26,7 @@ use crate::textures::{Texture, TextureFilter, TextureType};
 
 /// `gaussianBlur( node, directionNode, sigma, options )`' `options` object.
 #[derive(Clone, Copy, Debug)]
+#[non_exhaustive]
 pub struct GaussianBlurOptions {
     /// `options.premultipliedAlpha` — blur premultiplied colours and
     /// un-premultiply the sum, so transparent texels do not bleed their

@@ -167,7 +167,7 @@ pub fn init() -> App {
 
     // `new THREE.WebGPURenderer( { antialias: false } )`, sized to the whole
     // window rather than to half of it: see the module docs.
-    let mut renderer = Renderer::new(RendererParameters { antialias: false }).unwrap();
+    let mut renderer = Renderer::new(RendererParameters::default()).unwrap();
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
 

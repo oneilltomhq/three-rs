@@ -38,9 +38,6 @@ pub const DPR: f64 = 1.0;
 /// `const particleCount = 300000;`
 pub const PARTICLE_COUNT: usize = 300_000;
 
-/// `ComputeNode`'s default `workgroupSize = [ 64 ]`, padded to three components.
-pub const WORKGROUP_SIZE: [u32; 3] = [64, 1, 1];
-
 /// The page's two storage buffers and the two kernels over them. Split out so
 /// `tests/nodes_compute_wgsl.rs` and `tests/renderer_compute_points.rs` build
 /// exactly what the example runs.
@@ -73,16 +70,13 @@ pub fn particles() -> Particles {
         let angle = instance_index().to(Type::F32).mul(0.005).mul(two_pi());
         let angle = to_var(None, angle);
         let speed = to_var(None, instance_index().to(Type::F32).mul(1e-8).add(1e-7));
-        ComputeFlow {
-            statements: vec![velocity.element(instance_index()).assign(vec2_join(vec![
+        ComputeFlow::new(
+            vec![velocity.element(instance_index()).assign(vec2_join(vec![
                 angle.sin().mul(speed.clone()),
                 angle.cos().mul(speed),
             ]))],
-            count: PARTICLE_COUNT,
-            workgroup_size: WORKGROUP_SIZE,
-            name: None,
-            on_init: None,
-        }
+            PARTICLE_COUNT,
+        )
     };
 
     // ```js
@@ -118,8 +112,8 @@ pub fn particles() -> Particles {
             )
         };
 
-        ComputeFlow {
-            statements: vec![
+        let mut update = ComputeFlow::new(
+            vec![
                 position.clone(),
                 bounce("x"),
                 bounce("y"),
@@ -133,11 +127,11 @@ pub fn particles() -> Particles {
                         .select(vec2(0.0, 0.0), position),
                 ),
             ],
-            count: PARTICLE_COUNT,
-            workgroup_size: WORKGROUP_SIZE,
-            name: Some("Update Particles".to_string()),
-            on_init: Some(Box::new(precompute)),
-        }
+            PARTICLE_COUNT,
+        );
+        update.name = Some("Update Particles".to_string());
+        update.on_init = Some(Box::new(precompute));
+        update
     };
 
     Particles {
@@ -202,7 +196,9 @@ pub fn init() -> App {
     mesh.borrow_mut().payload.points_mut().unwrap().count = Some(PARTICLE_COUNT);
     scene.add(&mesh);
 
-    let mut renderer = Renderer::new(RendererParameters { antialias: true }).unwrap();
+    let mut parameters = RendererParameters::default();
+    parameters.antialias = true;
+    let mut renderer = Renderer::new(parameters).unwrap();
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
 

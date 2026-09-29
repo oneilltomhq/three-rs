@@ -552,11 +552,10 @@ fn khr_texture_basisu_goes_through_ktx2_loader() {
     assert_eq!(map.borrow().min_filter, MinFilter::LinearMipmapLinear);
 
     // A loader that has seen a BC-capable device: BC7.
-    let bc = Ktx2Loader::new().with_support(Ktx2Support {
-        bptc: true,
-        dxt: true,
-        ..Default::default()
-    });
+    let mut support = Ktx2Support::default();
+    support.bptc = true;
+    support.dxt = true;
+    let bc = Ktx2Loader::new().with_support(support);
     let gltf = GLTFLoader::parse_with_ktx2(json.as_bytes(), ktx2, &bc).unwrap();
     assert_eq!(
         map_of(&gltf).format(),

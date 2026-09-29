@@ -40,15 +40,10 @@ fn roboto() -> VectorFont {
 
 /// The batch node stays at the origin; its one member is at `( FAR_X, 0, 0 )`.
 fn batch_with_a_distant_member() -> BatchedText {
-    let mut batch = BatchedText::new(
-        4,
-        64,
-        BatchedTextOptions {
-            outline_width: 0.0,
-            outline_color: None,
-            atlas_size: 256,
-        },
-    );
+    let mut options = BatchedTextOptions::default();
+    options.outline_width = 0.0;
+    options.atlas_size = 256;
+    let mut batch = BatchedText::new(4, 64, options);
     batch.set_font(Rc::new(roboto()));
 
     let mut text = Text::new();
@@ -127,7 +122,7 @@ fn distant_members_still_render() {
     scene.add(batch.node());
     batch.node().update_matrix_world(true);
 
-    let mut renderer = Renderer::new(RendererParameters { antialias: false }).unwrap();
+    let mut renderer = Renderer::new(RendererParameters::default()).unwrap();
     renderer.set_pixel_ratio(1.0);
     renderer.set_size(WIDTH, HEIGHT);
     renderer.render(&mut scene, &mut camera);

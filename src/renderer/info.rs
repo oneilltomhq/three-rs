@@ -16,6 +16,7 @@ use wgpu::PrimitiveTopology;
 /// where one application frame is several `render()` calls; this port does the
 /// same. See [`Info::auto_reset`].
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Info {
     /// `info.autoReset`: reset [`render`](Self::render) and
     /// [`build`](Self::build) at the top of every [`Renderer::render`].
@@ -53,6 +54,7 @@ pub struct Info {
 ///
 /// [`Renderer::render`]: crate::Renderer::render
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ComputeCounts {
     /// `info.compute.calls`: `Renderer::compute()` calls since startup,
     /// `onInit`'s recursive call included — three counts it too.
@@ -61,6 +63,7 @@ pub struct ComputeCounts {
 
 /// `info.render`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct RenderCounts {
     /// Draw calls (`drawArrays` / `drawElements`; here `draw` /
     /// `draw_indexed`), instanced draws counting once.
@@ -74,6 +77,7 @@ pub struct RenderCounts {
 
 /// The per-frame build block: the work a steady frame must not do.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct BuildCounts {
     /// `NodeBuilder::build` calls — a material's WGSL generated, and compiled
     /// into a [`programs`](MemoryCounts::programs) entry if that WGSL is new.
@@ -108,6 +112,7 @@ pub struct BuildCounts {
 
 /// `info.memory` plus `info.programs.length`: resident counts, never reset.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct MemoryCounts {
     /// Entries in the uploaded-geometry cache, swept as the consumer drops
     /// geometries (issue #58).
