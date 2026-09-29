@@ -2,6 +2,15 @@
 //! field text rendered from real font outlines) plus its `src/sdf/edt.js`
 //! dependency.
 //!
+//! This is a `three-rs` addon, not a standalone text layout crate: steps 1–3
+//! of the port (font metrics and outlines, the raster + EDT + atlas, and
+//! layout — [`vector_font`], [`raster`], [`edt`], [`text_builder`]) are pure
+//! CPU code with no `three-rs` dependency, but [`BatchedText`] — steps 4–5 —
+//! depends on `three-rs` for the scene graph, the node material and the
+//! `R32Float` atlas texture: it is an `InstancedMesh` whose
+//! [`node()`](BatchedText::node) you add to a `three-rs` `Scene` like any
+//! other object, and which the `three-rs` renderer then draws.
+//!
 //! The port is graded against golden data dumped from the JavaScript; see
 //! `tests/golden/README.md` for the dump commands and `README.md` for the
 //! deviation and skip registers.
@@ -12,6 +21,26 @@
 //! for the scene graph, the node material and the `R32Float` atlas texture, so
 //! `cargo test -p sdf-text` covers it only where the packing can be checked on
 //! the CPU; the pixel gates live in `three-rs`' own `tests/`.
+//!
+//! # Example
+//!
+//! Batching needs no font to compile against — an empty [`Text`] lays out to
+//! nothing — so this shows the shape without pulling in a font file. `no_run`
+//! only because [`BatchedText::node`] is meant to be added to a real scene,
+//! which this snippet does not build.
+//!
+//! ```no_run
+//! use sdf_text::{BatchedText, BatchedTextOptions, Text};
+//! use three_rs::Scene;
+//!
+//! let mut batch = BatchedText::new(64, 1024, BatchedTextOptions::default());
+//! let member_id = batch.add_text(Text::new());
+//! batch.sync();
+//!
+//! let mut scene = Scene::new();
+//! scene.add(batch.node());
+//! # let _ = member_id;
+//! ```
 //!
 //! # Member transforms
 //!
