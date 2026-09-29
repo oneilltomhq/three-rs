@@ -50,6 +50,14 @@ Other changes:
 
 - The `rust-version` in `Cargo.toml` is documented as 1.90, which is what the
   lockfile already needed. (#73)
+- **`RenderCamera` is sealed**, matching `CurveVector` (#213): it cannot be
+  implemented for a type outside this crate. Nothing that legitimately used
+  it as a trait object or bound needs to change. (#213 follow-up)
+- **`NodeRef`, `RootId` and `ActionHandle` are opaque handles**: their tuple
+  field is private. `NodeRef::node()` (or `as_rc()` for the `Rc<Node>`
+  itself) replaces reading `.0`; `RootId::MIXER_ROOT` replaces
+  `RootId(0)`. `ActionHandle` and `RootId` are otherwise unchanged — get one
+  from the `AnimationMixer` that owns it. (#213 follow-up)
 
 ### Added
 
@@ -148,6 +156,10 @@ Other changes:
 
 - `sdf_text::Error`, a `#[non_exhaustive]` crate-level error enum, replaces
   the remaining panics on fallible paths, mirroring `three-rs::Error`.
+- **`BatchedText::add_text` returns `Option<usize>`** (`None` at capacity)
+  and **`Text::member_id` returns `Option<usize>`** (`None` when the member
+  has not joined a batch), replacing the `-1`-sentinel `i64` both used to
+  return. (#213 follow-up)
 
 ### Added
 

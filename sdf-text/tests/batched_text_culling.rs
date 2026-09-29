@@ -56,7 +56,9 @@ fn batch_with_a_distant_member() -> BatchedText {
     text.set_font_size(1.0);
     text.set_anchor_x(Anchor::named("center"));
     text.set_anchor_y(Anchor::named("middle"));
-    let id = batch.add_text(text) as usize;
+    let id = batch
+        .add_text(text)
+        .expect("capacity for this test's members");
     batch.set_color_at(id, Color::new(1.0, 1.0, 1.0));
     batch
         .member_node(id)

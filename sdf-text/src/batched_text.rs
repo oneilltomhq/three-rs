@@ -244,10 +244,11 @@ impl BatchedText {
         self.sync();
     }
 
-    /// `addText( text )` — the member id, or `-1` at capacity.
-    pub fn add_text(&mut self, mut text: Text) -> i64 {
+    /// `addText( text )` — the member id, or `None` at capacity (`-1` in the
+    /// JS).
+    pub fn add_text(&mut self, mut text: Text) -> Option<usize> {
         if self.member_count >= self.max_text_count {
-            return -1;
+            return None;
         }
         let id = self.member_count;
         self.member_count += 1;
@@ -262,7 +263,7 @@ impl BatchedText {
             glyph_start: 0,
             glyph_count: 0,
         });
-        id as i64
+        Some(id)
     }
 
     /// `removeText( text )`, by id: the slot is cleared, and `_memberCount`
