@@ -100,7 +100,9 @@ pub fn init() -> App {
     // `new THREE.WebGPURenderer( { antialias: true } )`. The `antialias` is
     // what makes the pass target 4×MSAA and so its depth attachment
     // multisampled.
-    let mut renderer = Renderer::new(RendererParameters { antialias: true }).unwrap();
+    let mut parameters = RendererParameters::default();
+    parameters.antialias = true;
+    let mut renderer = Renderer::new(parameters).unwrap();
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
     // `renderer.toneMapping = THREE.NoToneMapping` — the composite tone maps

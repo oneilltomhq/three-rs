@@ -32,18 +32,10 @@ fn spot1lux() -> Texture {
 }
 
 fn half_float_target(width: u32, height: u32) -> RenderTarget {
-    RenderTarget::new_with_options(
-        width,
-        height,
-        RenderTargetOptions {
-            texture_type: TextureType::HalfFloat,
-            samples: 0,
-            depth_buffer: false,
-            min_filter: TextureFilter::Linear,
-            mag_filter: TextureFilter::Linear,
-        },
-    )
-    .expect("HalfFloatType is a colour type")
+    let mut options = RenderTargetOptions::default();
+    options.texture_type = TextureType::HalfFloat;
+    options.depth_buffer = false;
+    RenderTarget::new_with_options(width, height, options).expect("HalfFloatType is a colour type")
 }
 
 /// The `( x, y )` and value of every texel whose rgb is not all zero, `y` down
@@ -65,7 +57,7 @@ fn lit(pixels: &[f32], width: u32, rect: (u32, u32, u32, u32)) -> Vec<(u32, u32,
 
 #[test]
 fn the_equirect_source_and_the_cube_it_becomes() {
-    let mut renderer = Renderer::new(RendererParameters { antialias: false }).unwrap();
+    let mut renderer = Renderer::new(RendererParameters::default()).unwrap();
 
     the_bright_texel_lands_on_the_flipped_row(&mut renderer);
     the_pmrem_lights_one_face_and_every_lod(&mut renderer);

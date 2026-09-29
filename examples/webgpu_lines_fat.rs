@@ -84,7 +84,9 @@ pub fn init() -> App {
     // teeth here: the fat line is nothing *but* edges, and a single-sampled
     // frame differs from three's along every one of them (1415 pixels, 14x the
     // budget, when this was first run with `antialias: false`).
-    let mut renderer = Renderer::new(RendererParameters { antialias: true }).unwrap();
+    let mut parameters = RendererParameters::default();
+    parameters.antialias = true;
+    let mut renderer = Renderer::new(parameters).unwrap();
     renderer.set_pixel_ratio(DPR);
     renderer.set_clear_color(Color::from_hex(0x000000), 1.0);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);

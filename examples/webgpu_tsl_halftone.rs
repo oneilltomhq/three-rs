@@ -230,7 +230,9 @@ pub fn init() -> App {
 
     // renderer
 
-    let mut renderer = Renderer::new(RendererParameters { antialias: true }).unwrap();
+    let mut parameters = RendererParameters::default();
+    parameters.antialias = true;
+    let mut renderer = Renderer::new(parameters).unwrap();
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
     renderer.set_clear_color(Color::from_hex(0x000000), 1.0);

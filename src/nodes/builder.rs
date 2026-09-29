@@ -194,9 +194,13 @@ pub struct VertexBufferDesc {
     pub attributes: Vec<(u32, Type, u64)>,
 }
 
-/// What the renderer needs in order to draw with a built material.
-#[derive(Clone)]
 /// One `ComputeNode` — `Fn( () => { … } )().compute( count, workgroupSize )`.
+///
+/// Built with [`ComputeFlow::new`], which takes the two things three's
+/// `.compute()` cannot default; the rest are fields to set afterwards
+/// (`docs/api.md` decision 3).
+#[derive(Clone)]
+#[non_exhaustive]
 pub struct ComputeFlow {
     /// The kernel body's statements, in order.
     pub statements: Vec<NodeRef>,
@@ -212,6 +216,21 @@ pub struct ComputeFlow {
     /// before the first dispatch of this one, in its own command encoder and
     /// its own submit.
     pub on_init: Option<Box<ComputeFlow>>,
+}
+
+impl ComputeFlow {
+    /// `Fn( () => { statements } )().compute( count )`: the kernel body and
+    /// the invocation count, with three's default `workgroupSize` of
+    /// `[ 64 ]`, no name and no `onInit`.
+    pub fn new(statements: Vec<NodeRef>, count: usize) -> Self {
+        Self {
+            statements,
+            count,
+            workgroup_size: [64, 1, 1],
+            name: None,
+            on_init: None,
+        }
+    }
 }
 
 impl std::fmt::Debug for ComputeFlow {
@@ -2732,6 +2751,11 @@ impl NodeBuilder {
 
 /// What a material's setup produced: the statements of each stage and the node
 /// each stage returns.
+///
+/// `materials::setup` builds one for every material. A test that drives
+/// [`NodeBuilder::build`] with a hand-made graph starts from
+/// [`MaterialFlow::new`] and sets the stages it needs.
+#[non_exhaustive]
 pub struct MaterialFlow {
     /// `context.position` — statements flowed into the vertex stage before
     /// either stage's own flow, which is where instancing, morphing and
@@ -2779,6 +2803,26 @@ pub struct MaterialFlow {
     pub vertex_statements: Vec<NodeRef>,
     /// The clip-space position the vertex stage writes.
     pub position: NodeRef,
+}
+
+impl MaterialFlow {
+    /// A flow that writes `output` from the fragment stage and `position`
+    /// from the vertex stage, with no statements of its own, no depth, MRT or
+    /// output node, and the `Output` property assigned.
+    pub fn new(output: NodeRef, position: NodeRef) -> Self {
+        Self {
+            pre_vertex_statements: Vec::new(),
+            depth: None,
+            fragment_statements: Vec::new(),
+            emit_output_property: true,
+            output,
+            output_assign: None,
+            output_node: None,
+            mrt: None,
+            vertex_statements: Vec::new(),
+            position,
+        }
+    }
 }
 
 impl NodeBuilder {

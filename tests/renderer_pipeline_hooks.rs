@@ -21,7 +21,7 @@ use three_rs::{OrthographicCamera, RenderCamera, RenderPipeline, Renderer, Rende
 #[test]
 fn hooks_run_in_order_around_the_draw() {
     let mut renderer =
-        Renderer::new(RendererParameters { antialias: false }).expect("a wgpu adapter and device");
+        Renderer::new(RendererParameters::default()).expect("a wgpu adapter and device");
     renderer.set_pixel_ratio(1.0);
     renderer.set_size(16.0, 16.0);
 

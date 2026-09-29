@@ -131,7 +131,7 @@ pub fn init() -> App {
     group.add(&mesh);
     scene.add(&group);
 
-    let mut renderer = Renderer::new(RendererParameters { antialias: false }).unwrap();
+    let mut renderer = Renderer::new(RendererParameters::default()).unwrap();
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
     renderer.tone_mapping = ToneMapping::Neutral;
@@ -149,13 +149,11 @@ pub fn init() -> App {
     // the JavaScript value it is given, which is a node — so three.js falls
     // back to `float` and the dump carries four `f32` object uniforms. The
     // loop bound is `i32( count )` in the shader, not an `i32` uniform.
-    let options = RadialBlurOptions {
-        weight: uniform_value(Type::F32, vec![0.9]),
-        decay: uniform_value(Type::F32, vec![0.95]),
-        exposure: uniform_value(Type::F32, vec![5.0]),
-        count: uniform_value(Type::F32, vec![32.0]),
-        ..Default::default()
-    };
+    let mut options = RadialBlurOptions::default();
+    options.weight = uniform_value(Type::F32, vec![0.9]);
+    options.decay = uniform_value(Type::F32, vec![0.95]);
+    options.exposure = uniform_value(Type::F32, vec![5.0]);
+    options.count = uniform_value(Type::F32, vec![32.0]);
 
     let blur_pass = radial_blur(&scene_pass.texture(), &options);
 

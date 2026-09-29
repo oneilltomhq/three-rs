@@ -135,7 +135,9 @@ pub fn init() -> App {
     // `renderer = new THREE.WebGPURenderer( { antialias: true } )`. The page
     // builds it after the loader call; here it is first, because the two
     // environment conversions below take it.
-    let mut renderer = Renderer::new(RendererParameters { antialias: true }).unwrap();
+    let mut parameters = RendererParameters::default();
+    parameters.antialias = true;
+    let mut renderer = Renderer::new(parameters).unwrap();
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
     renderer.tone_mapping = ToneMapping::AcesFilmic;

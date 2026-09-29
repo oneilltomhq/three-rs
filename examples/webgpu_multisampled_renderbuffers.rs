@@ -122,18 +122,18 @@ pub fn init() -> App {
 
     //
 
-    let mut renderer = Renderer::new(RendererParameters { antialias: true }).unwrap();
+    let mut parameters = RendererParameters::default();
+    parameters.antialias = true;
+    let mut renderer = Renderer::new(parameters).unwrap();
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
 
+    let mut options = RenderTargetOptions::default();
+    options.samples = if MULTISAMPLING { 4 } else { 1 };
     let render_target = RenderTarget::new_with_options(
         (INNER_WIDTH * DPR) as u32,
         (INNER_HEIGHT * DPR) as u32,
-        RenderTargetOptions {
-            samples: if MULTISAMPLING { 4 } else { 1 },
-            depth_buffer: true,
-            ..RenderTargetOptions::default()
-        },
+        options,
     )
     .expect("the default texture type is a colour type");
 

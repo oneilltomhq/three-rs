@@ -824,6 +824,7 @@ pub fn frame_id() -> NodeRef {
 /// defaults: `position: null, horizontal: true, vertical: false,
 /// horizontalRotation: false`.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct Billboarding {
     pub position: Option<NodeRef>,
     pub horizontal: bool,

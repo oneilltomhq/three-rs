@@ -191,10 +191,7 @@ fn the_precompute_runs_once() {
 #[test]
 fn without_the_precompute_nothing_moves() {
     let mut app = example::init();
-    let update = ComputeFlow {
-        on_init: None,
-        ..clone_flow(&app.particles.update)
-    };
+    let update = clone_flow(&app.particles.update);
     app.renderer.compute(&update).unwrap();
 
     let particle = app
@@ -208,15 +205,9 @@ fn without_the_precompute_nothing_moves() {
     assert_eq!(app.renderer.info().compute.calls, 1);
 }
 
-/// `ComputeFlow` is not `Clone` — it is the application's own graph, and
-/// cloning one would quietly give it a second cache key. This rebuilds the
-/// shallow parts for the negative control above.
+/// The update kernel without its `onInit`, for the negative control above.
 fn clone_flow(flow: &ComputeFlow) -> ComputeFlow {
-    ComputeFlow {
-        statements: flow.statements.clone(),
-        count: flow.count,
-        workgroup_size: flow.workgroup_size,
-        name: flow.name.clone(),
-        on_init: None,
-    }
+    let mut clone = flow.clone();
+    clone.on_init = None;
+    clone
 }

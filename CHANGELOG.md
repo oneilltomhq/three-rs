@@ -45,6 +45,21 @@ outside consumers and batched together for the 0.2.0 release:
   `Environment::Pmrem(PmremHandle)` or `Environment::Node(EnvironmentNode)` —
   instead of a raw PMREM handle, so an environment can be a generated cube or
   a graph of `pmremTexture()` reads. (#208)
+- **Options structs are `#[non_exhaustive]`**, so a field added later is not
+  a break: `PassOptions`, `RenderTargetOptions`, `RendererParameters`,
+  `GaussianBlurOptions`, `BoxBlurOptions`, `HashBlurOptions`,
+  `RadialBlurOptions`, `Billboarding`, `ExtrudeGeometryOptions`,
+  `TextGeometryOptions`, `ReflectorParameters`, `OverrideNodes`,
+  `Ktx2Support`, `RaycasterParams`, and sdf-text's `LayoutParams` and
+  `BatchedTextOptions`. Replace `RendererParameters { antialias: true }` (and
+  `S { a, ..S::default() }`) with `let mut p = RendererParameters::default();
+  p.antialias = true;`. `ComputeFlow` literals become `ComputeFlow::new(
+  statements, count)`, with `workgroup_size`, `name` and `on_init` set as
+  fields afterwards; `MaterialFlow` literals become `MaterialFlow::new(output,
+  position)`. `Info`, `RenderCounts`, `BuildCounts`, `MemoryCounts`,
+  `ComputeCounts` and sdf-text's `TextRenderInfo` are `#[non_exhaustive]` too:
+  read their fields, and destructure them with `..`. (`docs/api.md` decision
+  3)
 - **One `ColorSpace`.** `math::ColorSpace` and `textures::ColorSpace` are
   merged into `three_rs::math::ColorSpace` (also `three_rs::ColorSpace`),
   with the variants `NoColorSpace`, `Srgb` and `LinearSrgb`. Replace

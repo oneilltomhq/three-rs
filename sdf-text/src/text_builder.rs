@@ -194,6 +194,7 @@ pub enum TextAlign {
 /// The layout parameter block. [`Default`] is lib3's `LAYOUT_DEFAULTS`
 /// (`Text.js:8-20`) verbatim, including `max_width: Infinity`.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct LayoutParams {
     pub text: String,
     pub font_size: f64,
@@ -241,6 +242,7 @@ pub struct LaidOutGlyph {
 
 /// `TextRenderInfo` — what `BatchedText` consumes.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub struct TextRenderInfo {
     pub parameters: LayoutParams,
     /// `Float32Array(glyphCount * 4)`, anchored. The one place the JS truncates.

@@ -58,7 +58,9 @@ pub fn init() -> App {
     let aspect = INNER_WIDTH / INNER_HEIGHT;
 
     // `init()`.
-    let mut renderer = Renderer::new(RendererParameters { antialias: true }).unwrap();
+    let mut parameters = RendererParameters::default();
+    parameters.antialias = true;
+    let mut renderer = Renderer::new(parameters).unwrap();
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
     renderer.set_pixel_ratio(DPR);
     // `renderer.toneMapping` is left at `NoToneMapping` — this page sets none,

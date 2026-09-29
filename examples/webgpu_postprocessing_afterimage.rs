@@ -84,7 +84,7 @@ pub fn init() -> App {
     // `damp: uniform( 0.8, 'float' ).setName( 'damp' )`.
     let damp = uniform_value(Type::F32, vec![0.8]);
 
-    let mut renderer = Renderer::new(RendererParameters { antialias: false }).unwrap();
+    let mut renderer = Renderer::new(RendererParameters::default()).unwrap();
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
     // `renderer.inspector = new Inspector()`.

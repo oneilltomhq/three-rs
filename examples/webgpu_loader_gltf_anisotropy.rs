@@ -66,7 +66,9 @@ pub fn init() -> App {
     // `new THREE.WebGPURenderer( { antialias: true } )`, then the tone mapping
     // pair. The page builds the renderer first; the environment conversion
     // below needs it, so the order is the page's.
-    let mut renderer = Renderer::new(RendererParameters { antialias: true }).unwrap();
+    let mut parameters = RendererParameters::default();
+    parameters.antialias = true;
+    let mut renderer = Renderer::new(parameters).unwrap();
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
     renderer.tone_mapping = ToneMapping::AcesFilmic;

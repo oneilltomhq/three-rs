@@ -31,8 +31,7 @@ use three_rs::nodes::{mrt, Type};
 use three_rs::renderer::{RenderTarget, RenderTargetOptions};
 use three_rs::textures::TextureType;
 use three_rs::{
-    Color, Mesh, PerspectiveCamera, QuadMesh, Renderer, RendererParameters, Scene, TextureFilter,
-    Vector3,
+    Color, Mesh, PerspectiveCamera, QuadMesh, Renderer, RendererParameters, Scene, Vector3,
 };
 
 const SIZE: u32 = 8;
@@ -41,18 +40,9 @@ const SIZE: u32 = 8;
 /// pass of `webgpu_postprocessing_bloom_selective` is the only one of its
 /// fourteen passes that has one.
 fn pass_target() -> RenderTarget {
-    RenderTarget::new_with_options(
-        SIZE,
-        SIZE,
-        RenderTargetOptions {
-            texture_type: TextureType::HalfFloat,
-            samples: 0,
-            depth_buffer: true,
-            min_filter: TextureFilter::Linear,
-            mag_filter: TextureFilter::Linear,
-        },
-    )
-    .expect("HalfFloatType is a colour type")
+    let mut options = RenderTargetOptions::default();
+    options.texture_type = TextureType::HalfFloat;
+    RenderTarget::new_with_options(SIZE, SIZE, options).expect("HalfFloatType is a colour type")
 }
 
 fn texel(pixels: &[f32], x: u32, y: u32) -> [f32; 4] {
@@ -110,18 +100,11 @@ fn render_into(
 /// One colour attachment sampled into a fresh single-attachment target and read
 /// back — the only way to see attachment 1, and a proof that it binds.
 fn read_attachment(renderer: &mut Renderer, texture: &three_rs::Texture) -> Vec<f32> {
-    let probe = RenderTarget::new_with_options(
-        SIZE,
-        SIZE,
-        RenderTargetOptions {
-            texture_type: TextureType::HalfFloat,
-            samples: 0,
-            depth_buffer: false,
-            min_filter: TextureFilter::Linear,
-            mag_filter: TextureFilter::Linear,
-        },
-    )
-    .expect("HalfFloatType is a colour type");
+    let mut options = RenderTargetOptions::default();
+    options.texture_type = TextureType::HalfFloat;
+    options.depth_buffer = false;
+    let probe = RenderTarget::new_with_options(SIZE, SIZE, options)
+        .expect("HalfFloatType is a colour type");
 
     let mut material = MeshBasicNodeMaterial::new();
     material.fragment_node = Some(texture_uv(texture, uv()));
@@ -140,7 +123,7 @@ fn read_attachment(renderer: &mut Renderer, texture: &three_rs::Texture) -> Vec<
 
 #[test]
 fn mrt_writes_every_attachment() {
-    let mut renderer = Renderer::new(RendererParameters { antialias: false }).unwrap();
+    let mut renderer = Renderer::new(RendererParameters::default()).unwrap();
     renderer.set_pixel_ratio(1.0);
     renderer.set_size(SIZE as f64, SIZE as f64);
 

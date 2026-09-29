@@ -310,13 +310,11 @@ fn main() {
 
     // rung webgpu_postprocessing_radial_blur: the RenderPipeline quad.
     let pass_rt = Texture::render_target(800, 500, wgpu::TextureFormat::Rgba16Float);
-    let options = three_rs::nodes::display::RadialBlurOptions {
-        weight: uniform_value(three_rs::nodes::Type::F32, vec![0.9]),
-        decay: uniform_value(three_rs::nodes::Type::F32, vec![0.95]),
-        exposure: uniform_value(three_rs::nodes::Type::F32, vec![5.0]),
-        count: uniform_value(three_rs::nodes::Type::F32, vec![32.0]),
-        ..Default::default()
-    };
+    let mut options = three_rs::nodes::display::RadialBlurOptions::default();
+    options.weight = uniform_value(three_rs::nodes::Type::F32, vec![0.9]);
+    options.decay = uniform_value(three_rs::nodes::Type::F32, vec![0.95]);
+    options.exposure = uniform_value(three_rs::nodes::Type::F32, vec![5.0]);
+    options.count = uniform_value(three_rs::nodes::Type::F32, vec![32.0]);
     let mut radial = MeshBasicNodeMaterial::new();
     radial.fragment_node = Some(three_rs::materials::render_output(
         three_rs::nodes::display::radial_blur(&pass_rt, &options),
@@ -2249,11 +2247,11 @@ fn dump_deferred() {
         float(1.0),
     ]));
     resolve.depth_node = Some(depth_node);
-    resolve.context_overrides = Some(OverrideNodes {
-        position_view: Some(position_attachment.xyz()),
-        position_view_direction: Some(position_attachment.xyz().negate().normalize()),
-        normal_view: Some(normal_attachment.xyz()),
-    });
+    let mut overrides = OverrideNodes::default();
+    overrides.position_view = Some(position_attachment.xyz());
+    overrides.position_view_direction = Some(position_attachment.xyz().negate().normalize());
+    overrides.normal_view = Some(normal_attachment.xyz());
+    resolve.context_overrides = Some(overrides);
 
     let hdr_cube = CubeTexture::new(vec![
         Image {
@@ -2810,16 +2808,10 @@ fn dump_shadowmap_opacity() {
             ..SetupContext::default()
         },
     );
-    let g_buffer = three_rs::renderer::RenderTarget::new_with_options(
-        800,
-        500,
-        three_rs::renderer::RenderTargetOptions {
-            min_filter: three_rs::TextureFilter::Nearest,
-            mag_filter: three_rs::TextureFilter::Nearest,
-            ..three_rs::renderer::RenderTargetOptions::default()
-        },
-    )
-    .unwrap();
+    let mut options = three_rs::renderer::RenderTargetOptions::default();
+    options.min_filter = three_rs::TextureFilter::Nearest;
+    options.mag_filter = three_rs::TextureFilter::Nearest;
+    let g_buffer = three_rs::renderer::RenderTarget::new_with_options(800, 500, options).unwrap();
     g_buffer.set_count(2);
     g_buffer.set_texture_name(1, "normal");
     let attachments = g_buffer.textures();

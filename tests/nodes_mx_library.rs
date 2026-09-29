@@ -364,18 +364,10 @@ fn generated(cases: &[Case]) -> String {
             value.x()
         });
     }
-    let flow = MaterialFlow {
-        depth: None,
-        pre_vertex_statements: vec![],
-        fragment_statements: vec![],
-        emit_output_property: true,
-        output: vec4(0.0, 0.0, 0.0, 1.0).add(sum.mul(1e-3)),
-        output_assign: None,
-        output_node: None,
-        mrt: None,
-        vertex_statements: vec![],
-        position: vec4(0.0, 0.0, 0.0, 1.0),
-    };
+    let flow = MaterialFlow::new(
+        vec4(0.0, 0.0, 0.0, 1.0).add(sum.mul(1e-3)),
+        vec4(0.0, 0.0, 0.0, 1.0),
+    );
     NodeBuilder::new().build(&flow).fragment_wgsl
 }
 

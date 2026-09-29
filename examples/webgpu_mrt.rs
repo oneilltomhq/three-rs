@@ -98,7 +98,9 @@ pub fn init() -> App {
     // `new THREE.WebGPURenderer( { antialias: true, requiredLimits: {
     // maxColorAttachments: 5 } } )`. The page builds it after the loader call;
     // here it is first, because the two environment conversions below take it.
-    let mut renderer = Renderer::new(RendererParameters { antialias: true }).unwrap();
+    let mut parameters = RendererParameters::default();
+    parameters.antialias = true;
+    let mut renderer = Renderer::new(parameters).unwrap();
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
     renderer.tone_mapping = ToneMapping::AcesFilmic;
@@ -153,11 +155,10 @@ pub fn init() -> App {
     // unfilterable, so the composite below reads them with `textureLoad`. The
     // pass holds the scene and camera, and the renderer renders it the first
     // time a draw samples one of its textures (`docs/nodes.md` §57).
-    let scene_pass = PassNode::new_with_options(PassOptions {
-        min_filter: TextureFilter::Nearest,
-        mag_filter: TextureFilter::Nearest,
-        ..PassOptions::default()
-    });
+    let mut options = PassOptions::default();
+    options.min_filter = TextureFilter::Nearest;
+    options.mag_filter = TextureFilter::Nearest;
+    let scene_pass = PassNode::new_with_options(options);
     scene_pass.set_scene(scene.clone(), camera.clone());
 
     // `scenePass.setMRT( mrt( { output, normal: packNormalToRGB( normalView ),

@@ -926,7 +926,16 @@ pub struct Renderer {
 }
 
 /// `new WebGPURenderer( parameters )`.
+///
+/// `#[non_exhaustive]`, as every options struct is (`docs/api.md` decision 3):
+/// start from the default and set the keys the page sets.
+///
+/// ```
+/// let mut parameters = three_rs::RendererParameters::default();
+/// parameters.antialias = true;
+/// ```
 #[derive(Clone, Copy, Debug, Default)]
+#[non_exhaustive]
 pub struct RendererParameters {
     pub antialias: bool,
 }

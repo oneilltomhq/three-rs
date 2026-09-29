@@ -55,6 +55,7 @@ use crate::textures::{MinFilter, Mipmap, Texture, TextureFilter};
 /// `KTX2Loader.workerConfig` — which compressed families the device can
 /// sample, as `detectSupport()` found them.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Ktx2Support {
     pub astc: bool,
     pub etc1: bool,

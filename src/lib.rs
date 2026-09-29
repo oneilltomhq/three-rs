@@ -107,7 +107,7 @@
 //!     PerspectiveCamera, Renderer, RendererParameters, Scene,
 //! };
 //!
-//! let mut renderer = Renderer::new(RendererParameters { antialias: false })?;
+//! let mut renderer = Renderer::new(RendererParameters::default())?;
 //! renderer.set_size(800.0, 500.0);
 //!
 //! let mut scene = Scene::new();

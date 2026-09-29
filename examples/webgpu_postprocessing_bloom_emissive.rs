@@ -83,7 +83,7 @@ pub fn init() -> App {
     // `renderer = new THREE.WebGPURenderer()` — `antialias` is not in the
     // parameter object, so it is false. The renderer is built before the two
     // environment conversions below because in this port they take it.
-    let mut renderer = Renderer::new(RendererParameters { antialias: false }).unwrap();
+    let mut renderer = Renderer::new(RendererParameters::default()).unwrap();
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
     renderer.tone_mapping = ToneMapping::AcesFilmic;

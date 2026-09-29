@@ -173,7 +173,7 @@ fn adopted_device_external_texture_and_in_place_update() {
     .expect("no wgpu device");
 
     let mut renderer = Renderer::with_device(
-        RendererParameters { antialias: false },
+        RendererParameters::default(),
         adapter,
         device.clone(),
         queue.clone(),

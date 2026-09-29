@@ -131,17 +131,13 @@ pub fn display_quads() -> Vec<DisplayQuad> {
     // webgpu_postprocessing_dof_basic `m23`: `boxBlur( scenePassColor, {
     // size: blurSize, separation: blurSpread } )`. Only its loops are
     // compared: the rest of that module is the depth-of-field mix.
+    let mut options = BoxBlurOptions::default();
+    options.size = uniform_value(Type::F32, vec![2.0]);
+    options.separation = uniform_value(Type::F32, vec![4.0]);
     quads.push(quad(
         "box_blur",
         "webgpu_postprocessing_dof_basic_m23_box_blur.wgsl",
-        box_blur(
-            &input(),
-            BoxBlurOptions {
-                size: uniform_value(Type::F32, vec![2.0]),
-                separation: uniform_value(Type::F32, vec![4.0]),
-                premultiplied_alpha: false,
-            },
-        ),
+        box_blur(&input(), options),
     ));
 
     // webgpu_backdrop_area `m08`: `hashBlur( viewportSharedTexture(), .05 )`.

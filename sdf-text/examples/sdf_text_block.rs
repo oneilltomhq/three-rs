@@ -87,15 +87,9 @@ pub fn init() -> App {
     // `new BatchedText( 8, 2048, undefined, { font, outlineWidth: 0.04 } )`.
     // `outlineColor` is unset on this page, so it is the legacy same-colour
     // outline: the halo mix uniform stays 0 and `haloRGB` is `aColor`.
-    let mut batched = BatchedText::new(
-        8,
-        2048,
-        BatchedTextOptions {
-            outline_width: 0.04,
-            outline_color: None,
-            ..Default::default()
-        },
-    );
+    let mut options = BatchedTextOptions::default();
+    options.outline_width = 0.04;
+    let mut batched = BatchedText::new(8, 2048, options);
     batched.set_font(Rc::new(load_font()));
     scene.add(batched.node());
 
@@ -107,7 +101,9 @@ pub fn init() -> App {
     make_text(&mut batched, BIG_STR, 1.2, 0.0, -0.2, 0x7dd3fc);
     make_text(&mut batched, "Roboto", 0.6, 0.0, -2.6, 0xf472b6);
 
-    let mut renderer = Renderer::new(RendererParameters { antialias: true }).unwrap();
+    let mut parameters = RendererParameters::default();
+    parameters.antialias = true;
+    let mut renderer = Renderer::new(parameters).unwrap();
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
 

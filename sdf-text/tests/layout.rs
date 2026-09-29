@@ -138,58 +138,36 @@ fn layout_text_canvas_fallback_matches_the_golden() {
 #[test]
 fn unknown_anchor_keywords_fall_through_to_zero() {
     let font = roboto();
-    let base = LayoutParams {
-        text: "start-anchored".to_string(),
-        ..Default::default()
-    };
+    let mut base = LayoutParams::default();
+    base.text = "start-anchored".to_string();
 
-    let left = layout_text_vector(
-        LayoutParams {
-            anchor_x: Anchor::named("left"),
-            ..base.clone()
-        },
-        Some(&font),
-    );
+    let mut left_params = base.clone();
+    left_params.anchor_x = Anchor::named("left");
+    let left = layout_text_vector(left_params, Some(&font));
     // 'start' and 'end' are what d33 passes, and neither is a branch of
     // resolveAnchor — so both are left-anchored.
     for keyword in ["start", "end", "middle", "", "LEFT"] {
-        let got = layout_text_vector(
-            LayoutParams {
-                anchor_x: Anchor::named(keyword),
-                ..base.clone()
-            },
-            Some(&font),
-        );
+        let mut p = base.clone();
+        p.anchor_x = Anchor::named(keyword);
+        let got = layout_text_vector(p, Some(&font));
         assert_eq!(
             got.block_bounds, left.block_bounds,
             "anchorX {keyword:?} should behave as 'left'"
         );
     }
     // And a numeric anchor is a plain negated offset, not a keyword lookup.
-    let offset = layout_text_vector(
-        LayoutParams {
-            anchor_x: Anchor::Offset(0.25),
-            ..base.clone()
-        },
-        Some(&font),
-    );
+    let mut offset_params = base.clone();
+    offset_params.anchor_x = Anchor::Offset(0.25);
+    let offset = layout_text_vector(offset_params, Some(&font));
     assert_eq!(offset.block_bounds[0], left.block_bounds[0] - 0.25);
 
     // anchorY has its own keyword set: 'left' means nothing on that axis.
-    let y_nonsense = layout_text_vector(
-        LayoutParams {
-            anchor_y: Anchor::named("left"),
-            ..base.clone()
-        },
-        Some(&font),
-    );
-    let y_bottom = layout_text_vector(
-        LayoutParams {
-            anchor_y: Anchor::named("bottom"),
-            ..base.clone()
-        },
-        Some(&font),
-    );
+    let mut y_nonsense_params = base.clone();
+    y_nonsense_params.anchor_y = Anchor::named("left");
+    let y_nonsense = layout_text_vector(y_nonsense_params, Some(&font));
+    let mut y_bottom_params = base.clone();
+    y_bottom_params.anchor_y = Anchor::named("bottom");
+    let y_bottom = layout_text_vector(y_bottom_params, Some(&font));
     assert_eq!(y_nonsense.block_bounds, y_bottom.block_bounds);
 }
 
@@ -197,13 +175,11 @@ fn unknown_anchor_keywords_fall_through_to_zero() {
 fn letter_spacing_is_measured_between_but_advanced_after() {
     let font = roboto();
     let spacing = 0.1;
-    let params = LayoutParams {
-        text: "AB".to_string(),
-        letter_spacing: spacing,
-        max_width: 100.0,
-        text_align: TextAlign::Right,
-        ..Default::default()
-    };
+    let mut params = LayoutParams::default();
+    params.text = "AB".to_string();
+    params.letter_spacing = spacing;
+    params.max_width = 100.0;
+    params.text_align = TextAlign::Right;
     let got = layout_text_vector(params.clone(), Some(&font));
 
     // The measure pass counts one gap (between A and B); the pen loop adds one
@@ -215,13 +191,9 @@ fn letter_spacing_is_measured_between_but_advanced_after() {
     // … and the asymmetry is exactly one spacing: with spacing 0 the measured
     // width and the pen travel agree, so the right edge lands where the ink
     // ends. Compare the align offsets directly.
-    let zero = layout_text_vector(
-        LayoutParams {
-            letter_spacing: 0.0,
-            ..params.clone()
-        },
-        Some(&font),
-    );
+    let mut zero_params = params.clone();
+    zero_params.letter_spacing = 0.0;
+    let zero = layout_text_vector(zero_params, Some(&font));
     // Unanchored pen positions differ by the spacing on A's advance only, so the
     // measured line width differs by exactly `spacing`. Read that back from the
     // pre-anchor glyph boxes, which carry the align offset.
@@ -239,14 +211,10 @@ fn letter_spacing_is_measured_between_but_advanced_after() {
 #[test]
 fn lines_march_downward_in_y() {
     let font = roboto();
-    let got = layout_text_vector(
-        LayoutParams {
-            text: "one\ntwo".to_string(),
-            anchor_y: Anchor::named("bottom"),
-            ..Default::default()
-        },
-        Some(&font),
-    );
+    let mut p = LayoutParams::default();
+    p.text = "one\ntwo".to_string();
+    p.anchor_y = Anchor::named("bottom");
+    let got = layout_text_vector(p, Some(&font));
     // With anchorY 'bottom' the offset is just -blockMinY, so the *second* line
     // sits at the bottom: the first line's glyphs are the higher ones.
     let first_line_min_y = got.glyph_bounds[1];
@@ -267,13 +235,9 @@ fn kerning_moves_the_current_glyph_not_the_previous_advance() {
     let kern = font.kerning('A', 'V');
     assert!(kern < 0.0, "expected a negative A/V kern, got {kern}");
 
-    let got = layout_text_vector(
-        LayoutParams {
-            text: "AV".to_string(),
-            ..Default::default()
-        },
-        Some(&font),
-    );
+    let mut p = LayoutParams::default();
+    p.text = "AV".to_string();
+    let got = layout_text_vector(p, Some(&font));
     let scale = 1.0 / font.units_per_em;
     let a_adv = font.advance_width('A') * scale;
     let v_box = font.bounding_box('V').unwrap();
@@ -290,10 +254,9 @@ fn kerning_moves_the_current_glyph_not_the_previous_advance() {
 fn f32_truncation_happens_only_in_glyph_bounds() {
     // The golden's first canvas case carries 1.7999999999999998 in blockBounds
     // and 1.7999999523162842 — the f32 of the same number — in glyphBounds.
-    let got = layout_text(LayoutParams {
-        text: "Hi!".to_string(),
-        ..Default::default()
-    });
+    let mut p = LayoutParams::default();
+    p.text = "Hi!".to_string();
+    let got = layout_text(p);
     assert_eq!(got.block_bounds[2], 1.7999999999999998);
     assert_eq!(got.glyph_bounds[10], 1.7999999999999998f64 as f32);
     assert_ne!(got.block_bounds[2], got.glyph_bounds[10] as f64);
@@ -306,11 +269,10 @@ fn centring_the_fallback_layout_produces_nan_x() {
     // Infinity - Infinity = NaN, and offsetX is -Infinity — so every x comes out
     // NaN while the y column stays finite. Confirmed against the JS, which
     // serialises the same layout as [null, 0, null, 1, …].
-    let got = layout_text(LayoutParams {
-        text: "ABC".to_string(),
-        text_align: TextAlign::Center,
-        ..Default::default()
-    });
+    let mut p = LayoutParams::default();
+    p.text = "ABC".to_string();
+    p.text_align = TextAlign::Center;
+    let got = layout_text(p);
     for (i, v) in got.glyph_bounds.iter().enumerate() {
         if i % 2 == 0 {
             assert!(v.is_nan(), "glyphBounds[{i}] should be NaN, got {v}");
@@ -332,11 +294,10 @@ fn the_fallback_measure_is_64x_smaller_than_the_fallback_advance() {
     // font_size 1 an 11-character string measures 0.103 while occupying 6.6, so
     // a max_width of 2 does not wrap it. Verified against the JS, which also
     // returns one line of 11 glyphs here.
-    let got = layout_text(LayoutParams {
-        text: "aaa bbb ccc".to_string(),
-        max_width: 2.0,
-        ..Default::default()
-    });
+    let mut p = LayoutParams::default();
+    p.text = "aaa bbb ccc".to_string();
+    p.max_width = 2.0;
+    let got = layout_text(p);
     assert_eq!(got.glyph_count, 11);
     assert_eq!(got.block_bounds, [0.0, 0.0, 6.599999999999999, 1.0]);
 }
@@ -344,13 +305,9 @@ fn the_fallback_measure_is_64x_smaller_than_the_fallback_advance() {
 #[test]
 fn space_takes_the_no_ink_branch_in_the_vector_path() {
     let font = roboto();
-    let got = layout_text_vector(
-        LayoutParams {
-            text: " ".to_string(),
-            ..Default::default()
-        },
-        Some(&font),
-    );
+    let mut p = LayoutParams::default();
+    p.text = " ".to_string();
+    let got = layout_text_vector(p, Some(&font));
     let scale = 1.0 / font.units_per_em;
     assert_eq!(got.glyph_count, 1, "a space still gets a glyph entry");
     // Box is advance-wide and descender..ascender tall, not the (absent) ink box.
@@ -361,10 +318,8 @@ fn space_takes_the_no_ink_branch_in_the_vector_path() {
 
 #[test]
 fn no_font_gives_an_empty_layout() {
-    let params = LayoutParams {
-        text: "ignored".to_string(),
-        ..Default::default()
-    };
+    let mut params = LayoutParams::default();
+    params.text = "ignored".to_string();
     let got = layout_text_vector(params.clone(), None);
     assert_eq!(got, empty_render_info(params));
     assert_eq!(got.glyph_count, 0);
@@ -398,23 +353,15 @@ fn line_height_parses_like_parse_float() {
 
     // The vector path's "normal" is the font's own natural height, not 1.2 em.
     let font = roboto();
-    let natural = layout_text_vector(
-        LayoutParams {
-            text: "x".to_string(),
-            ..Default::default()
-        },
-        Some(&font),
-    );
+    let mut natural_params = LayoutParams::default();
+    natural_params.text = "x".to_string();
+    let natural = layout_text_vector(natural_params, Some(&font));
     assert_ne!(natural.line_height, 1.2);
-    let fixed = layout_text_vector(
-        LayoutParams {
-            text: "x".to_string(),
-            line_height: LineHeight::Factor(0.9),
-            font_size: 0.37,
-            ..Default::default()
-        },
-        Some(&font),
-    );
+    let mut fixed_params = LayoutParams::default();
+    fixed_params.text = "x".to_string();
+    fixed_params.line_height = LineHeight::Factor(0.9);
+    fixed_params.font_size = 0.37;
+    let fixed = layout_text_vector(fixed_params, Some(&font));
     assert_eq!(fixed.line_height, 0.9 * 0.37);
 }
 
@@ -422,14 +369,10 @@ fn line_height_parses_like_parse_float() {
 fn line_breaking_only_runs_for_a_finite_positive_max_width() {
     let font = roboto();
     let mk = |max_width: f64| {
-        layout_text_vector(
-            LayoutParams {
-                text: "aaa bbb ccc".to_string(),
-                max_width,
-                ..Default::default()
-            },
-            Some(&font),
-        )
+        let mut p = LayoutParams::default();
+        p.text = "aaa bbb ccc".to_string();
+        p.max_width = max_width;
+        layout_text_vector(p, Some(&font))
     };
     let unbroken = mk(f64::INFINITY);
     assert_eq!(mk(0.0).block_bounds, unbroken.block_bounds);
