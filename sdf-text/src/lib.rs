@@ -62,6 +62,7 @@
 //! [`BatchedText::set_matrix_at`], which updates the sphere as it goes), which
 //! is the same contract as the attribute packing.
 
+#![warn(missing_docs)]
 pub(crate) mod batched_text;
 pub mod edt;
 pub(crate) mod error;

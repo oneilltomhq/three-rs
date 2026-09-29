@@ -31,7 +31,8 @@ On a branch, from a clean tree, on a machine with a Vulkan device:
 cargo fmt --all --check
 cargo test -p sdf-text --lib
 cargo test -p three-rs --lib
-cargo test --workspace                       # the GPU renderer tests and the e2e grader
+cargo test --workspace --no-fail-fast        # the GPU renderer tests and the e2e grader;
+                                             # --no-fail-fast, or one failing target hides the rest (#227)
 cargo test -p sdf-text -- --test-threads=1   # the SDF text gates, on the GPU
 cargo doc --workspace --no-deps
 cargo publish --dry-run -p <crate>           # for each crate that ships, in the order in step 4

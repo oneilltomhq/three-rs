@@ -138,7 +138,7 @@ fn mrt_writes_every_attachment() {
 ///
 /// 0.75 is exactly representable in binary16 and is neither of the values a
 /// mistake would produce: 0 is the pass default winning the merge, and the
-/// clear is `( 0, 0, 0, 0 )`.
+/// clear is `( 0, 0, 0, 1 )`.
 fn the_material_mrt_beats_the_pass_default(renderer: &mut Renderer) {
     let target = pass_target();
     let bloom_texture = target.add_texture("bloomIntensity");
@@ -167,7 +167,9 @@ fn the_material_mrt_beats_the_pass_default(renderer: &mut Renderer) {
 
 /// The other half of the gate, and the one the whole ladder depends on: with no
 /// MRT set the fragment stage is the old `OutputStruct { color }` and the
-/// second attachment is never written, so it still reads as the clear.
+/// second attachment is never written, so it still reads as the clear: opaque
+/// black, because `WebGPUBackend.beginRender` gives the clear colour to
+/// attachment 0 only and `{ r: 0, g: 0, b: 0, a: 1 }` to the rest (#207).
 fn a_pass_with_no_mrt_writes_only_the_first_attachment(renderer: &mut Renderer) {
     let target = pass_target();
     let bloom_texture = target.add_texture("bloomIntensity");
@@ -187,7 +189,7 @@ fn a_pass_with_no_mrt_writes_only_the_first_attachment(renderer: &mut Renderer) 
     assert_eq!(centre(&colour), [0.25, 0.5, 0.75, 1.0]);
 
     let bloom = read_attachment(renderer, &bloom_texture);
-    assert_eq!(centre(&bloom), [0.0, 0.0, 0.0, 0.0]);
+    assert_eq!(centre(&bloom), [0.0, 0.0, 0.0, 1.0]);
 }
 
 /// `MRTNode.setup()` drops an output with no attachment of that name

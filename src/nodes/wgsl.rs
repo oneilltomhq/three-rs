@@ -166,8 +166,11 @@ pub(crate) fn convert(snippet: &str, from: Type, to: Type) -> String {
     }
 
     // A scalar splats — through its target component type when that differs:
-    // `vec3( 1u )` is `vec3<f32>( f32( 1u ) )`.
-    if from != component {
+    // `vec3( 1u )` is `vec3<f32>( f32( 1u ) )`. Only a real scalar: three's arm
+    // is guarded on `fromTypeLength === 1`, and a `void` (a `Loop` used as a
+    // value, whose snippet is empty) has length 0, so it is cast to nothing —
+    // `vec4<f32>(  )`, not `vec4<f32>( f32(  ) )`.
+    if from_len == 1 && from != component {
         return format!("{}( {}( {snippet} ) )", type_name(to), type_name(component));
     }
     format!("{}( {snippet} )", type_name(to))
