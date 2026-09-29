@@ -39,6 +39,7 @@ pub fn after_image(map: &Texture, damp: NodeRef) -> AfterImageNode {
 }
 
 impl AfterImageNode {
+    /// `new AfterImageNode( node, damp )`.
     pub fn new(map: &Texture, damp: NodeRef) -> Self {
         // `new RenderTarget( 1, 1, { depthBuffer: false } )`, whose type
         // `updateBefore()` sets to the input's — see `GaussianBlurNode::new`.

@@ -63,8 +63,11 @@ type NormalViewKey = (
 #[derive(Clone, Debug, Default)]
 #[non_exhaustive]
 pub struct OverrideNodes {
+    /// Replaces `positionView` for the material's whole setup.
     pub position_view: Option<NodeRef>,
+    /// Replaces `positionViewDirection` for the material's whole setup.
     pub position_view_direction: Option<NodeRef>,
+    /// Replaces `normalView` for the material's whole setup.
     pub normal_view: Option<NodeRef>,
 }
 
@@ -429,6 +432,9 @@ pub fn user_data(name: &str, ty: Type) -> NodeRef {
     })
 }
 
+/// `uniform( value, type )` — the low-level constructor every uniform
+/// accessor in this module builds on; `source` says where the renderer reads
+/// the value from.
 pub fn uniform(
     source: UniformSource,
     ty: Type,
@@ -1002,7 +1008,9 @@ pub fn fog(color: impl Into<NodeRef>, factor: impl Into<NodeRef>) -> FogNode {
 /// `scene.fogNode = fog( color, factor )`.
 #[derive(Clone)]
 pub struct FogNode {
+    /// The fog color the output is mixed towards.
     pub color: NodeRef,
+    /// How much fog to mix in, 0 (none) to 1 (fully fogged).
     pub factor: NodeRef,
 }
 
@@ -1046,6 +1054,8 @@ pub(crate) fn light_decay(index: usize) -> NodeRef {
     )
 }
 
+/// The point light at `index` of the renderer's light list's **view-space**
+/// position render-group uniform — `LightsNode`'s per-light view position.
 pub fn light_view_position(index: usize) -> NodeRef {
     uniform(
         UniformSource::LightViewPosition(index),
@@ -1219,6 +1229,7 @@ pub fn material_ior() -> NodeRef {
     )
 }
 
+/// `materialSpecularIntensity`.
 pub fn material_specular_intensity() -> NodeRef {
     uniform(
         UniformSource::MaterialSpecularIntensity,
@@ -1228,6 +1239,7 @@ pub fn material_specular_intensity() -> NodeRef {
     )
 }
 
+/// `materialSpecularColor`.
 pub fn material_specular_color() -> NodeRef {
     uniform(
         UniformSource::MaterialSpecularColor,
@@ -1373,6 +1385,7 @@ pub(crate) fn material_normal_scale() -> NodeRef {
     )
 }
 
+/// `materialRoughness`.
 pub fn material_roughness() -> NodeRef {
     uniform(
         UniformSource::MaterialRoughness,
@@ -1511,15 +1524,19 @@ fn swizzle(node: NodeRef, components: &'static str) -> NodeRef {
 
 impl NodeRef {
     // --- arithmetic ---
+    /// `a.add( b )` — `a + b`.
     pub fn add(&self, other: impl Into<NodeRef>) -> NodeRef {
         binary("+", self.clone(), other.into())
     }
+    /// `a.sub( b )` — `a - b`.
     pub fn sub(&self, other: impl Into<NodeRef>) -> NodeRef {
         binary("-", self.clone(), other.into())
     }
+    /// `a.mul( b )` — `a * b`.
     pub fn mul(&self, other: impl Into<NodeRef>) -> NodeRef {
         binary("*", self.clone(), other.into())
     }
+    /// `a.div( b )` — `a / b`.
     pub fn div(&self, other: impl Into<NodeRef>) -> NodeRef {
         binary("/", self.clone(), other.into())
     }
@@ -1528,27 +1545,35 @@ impl NodeRef {
     pub fn modulo(&self, other: impl Into<NodeRef>) -> NodeRef {
         binary("%", self.clone(), other.into())
     }
+    /// `a.equal( b )` — `a == b`.
     pub fn equal(&self, other: impl Into<NodeRef>) -> NodeRef {
         binary("==", self.clone(), other.into())
     }
+    /// `a.notEqual( b )` — `a != b`.
     pub fn not_equal(&self, other: impl Into<NodeRef>) -> NodeRef {
         binary("!=", self.clone(), other.into())
     }
+    /// `a.lessThanEqual( b )` — `a <= b`.
     pub fn less_than_equal(&self, other: impl Into<NodeRef>) -> NodeRef {
         binary("<=", self.clone(), other.into())
     }
+    /// `a.greaterThan( b )` — `a > b`.
     pub fn greater_than(&self, other: impl Into<NodeRef>) -> NodeRef {
         binary(">", self.clone(), other.into())
     }
+    /// `a.greaterThanEqual( b )` — `a >= b`.
     pub fn greater_than_equal(&self, other: impl Into<NodeRef>) -> NodeRef {
         binary(">=", self.clone(), other.into())
     }
+    /// `a.lessThan( b )` — `a < b`.
     pub fn less_than(&self, other: impl Into<NodeRef>) -> NodeRef {
         binary("<", self.clone(), other.into())
     }
+    /// `a.and( b )` — `a && b`.
     pub fn and(&self, other: impl Into<NodeRef>) -> NodeRef {
         binary("&&", self.clone(), other.into())
     }
+    /// `a.or( b )` — `a || b`.
     pub fn or(&self, other: impl Into<NodeRef>) -> NodeRef {
         binary("||", self.clone(), other.into())
     }
@@ -1557,18 +1582,23 @@ impl NodeRef {
         NodeRef::new(Node::Not { node: self.clone() })
     }
     // --- bitwise (the MaterialX integer hashes) ---
+    /// `a.shiftLeft( b )` — `a << b`.
     pub fn shift_left(&self, other: impl Into<NodeRef>) -> NodeRef {
         binary("<<", self.clone(), other.into())
     }
+    /// `a.shiftRight( b )` — `a >> b`.
     pub fn shift_right(&self, other: impl Into<NodeRef>) -> NodeRef {
         binary(">>", self.clone(), other.into())
     }
+    /// `a.bitAnd( b )` — `a & b`.
     pub fn bit_and(&self, other: impl Into<NodeRef>) -> NodeRef {
         binary("&", self.clone(), other.into())
     }
+    /// `a.bitOr( b )` — `a | b`.
     pub fn bit_or(&self, other: impl Into<NodeRef>) -> NodeRef {
         binary("|", self.clone(), other.into())
     }
+    /// `a.bitXor( b )` — `a ^ b`.
     pub fn bit_xor(&self, other: impl Into<NodeRef>) -> NodeRef {
         binary("^", self.clone(), other.into())
     }
@@ -1578,6 +1608,7 @@ impl NodeRef {
         binary("-", float(1.0), self.clone())
     }
 
+    /// `x.negate()` — `-x`.
     pub fn negate(&self) -> NodeRef {
         NodeRef::new(Node::Neg {
             node: self.clone(),
@@ -1586,12 +1617,15 @@ impl NodeRef {
     }
 
     // --- builtins ---
+    /// `x.normalize()` — `MathNode.NORMALIZE`.
     pub fn normalize(&self) -> NodeRef {
         math("normalize", vec![self.clone()], self.ty())
     }
+    /// `x.cos()` — `MathNode.COS`.
     pub fn cos(&self) -> NodeRef {
         math("cos", vec![self.clone()], self.ty())
     }
+    /// `x.sin()` — `MathNode.SIN`.
     pub fn sin(&self) -> NodeRef {
         math("sin", vec![self.clone()], self.ty())
     }
@@ -1604,15 +1638,19 @@ impl NodeRef {
     pub fn atan2(&self, x: impl Into<NodeRef>) -> NodeRef {
         math("atan2", vec![self.clone(), x.into()], self.ty())
     }
+    /// `x.floor()` — `MathNode.FLOOR`.
     pub fn floor(&self) -> NodeRef {
         math("floor", vec![self.clone()], self.ty())
     }
+    /// `x.fract()` — `MathNode.FRACT`.
     pub fn fract(&self) -> NodeRef {
         math("fract", vec![self.clone()], self.ty())
     }
+    /// `x.sqrt()` — `MathNode.SQRT`.
     pub fn sqrt(&self) -> NodeRef {
         math("sqrt", vec![self.clone()], self.ty())
     }
+    /// `x.abs()` — `MathNode.ABS`.
     pub fn abs(&self) -> NodeRef {
         math("abs", vec![self.clone()], self.ty())
     }
@@ -1632,6 +1670,7 @@ impl NodeRef {
         };
         math("clamp", vec![self.clone(), lo, hi], ty)
     }
+    /// `x.pow( y )` — `MathNode.POW`.
     pub fn pow(&self, other: impl Into<NodeRef>) -> NodeRef {
         math("pow", vec![self.clone(), other.into()], self.ty())
     }
@@ -1646,24 +1685,31 @@ impl NodeRef {
         float(1.0).div(self.clone())
     }
 
+    /// `x.exp2()` — see [`exp2`].
     pub fn exp2(&self) -> NodeRef {
         exp2(self.clone())
     }
+    /// `x.max( y )` — `MathNode.MAX`.
     pub fn max(&self, other: impl Into<NodeRef>) -> NodeRef {
         math("max", vec![self.clone(), other.into()], self.ty())
     }
+    /// `x.min( y )` — `MathNode.MIN`.
     pub fn min(&self, other: impl Into<NodeRef>) -> NodeRef {
         math("min", vec![self.clone(), other.into()], self.ty())
     }
+    /// `x.clamp( lo, hi )` — `MathNode.CLAMP`.
     pub fn clamp(&self, lo: impl Into<NodeRef>, hi: impl Into<NodeRef>) -> NodeRef {
         math("clamp", vec![self.clone(), lo.into(), hi.into()], self.ty())
     }
+    /// `a.dot( b )` — see [`dot`].
     pub fn dot(&self, other: impl Into<NodeRef>) -> NodeRef {
         dot(self.clone(), other)
     }
+    /// `a.cross( b )` — see [`cross`].
     pub fn cross(&self, other: impl Into<NodeRef>) -> NodeRef {
         cross(self.clone(), other)
     }
+    /// `adjustment.mix( a, b )` — see [`mix`].
     pub fn mix(&self, a: impl Into<NodeRef>, b: impl Into<NodeRef>) -> NodeRef {
         // `adjustment.mix( a, b )` in TSL means `mix( a, b, adjustment )`.
         mix(a, b, self.clone())
@@ -1676,42 +1722,55 @@ impl NodeRef {
         swizzle(self.clone(), components)
     }
 
+    /// `node.x` — the first component.
     pub fn x(&self) -> NodeRef {
         swizzle(self.clone(), "x")
     }
+    /// `node.y` — the second component.
     pub fn y(&self) -> NodeRef {
         swizzle(self.clone(), "y")
     }
+    /// `node.z` — the third component.
     pub fn z(&self) -> NodeRef {
         swizzle(self.clone(), "z")
     }
+    /// `node.w` — the fourth component.
     pub fn w(&self) -> NodeRef {
         swizzle(self.clone(), "w")
     }
+    /// `node.xy` — the first two components.
     pub fn xy(&self) -> NodeRef {
         swizzle(self.clone(), "xy")
     }
+    /// `node.yz` — the second and third components.
     pub fn yz(&self) -> NodeRef {
         swizzle(self.clone(), "yz")
     }
+    /// `node.zw` — the third and fourth components.
     pub fn zw(&self) -> NodeRef {
         swizzle(self.clone(), "zw")
     }
+    /// `node.zx` — the third and first components.
     pub fn zx(&self) -> NodeRef {
         swizzle(self.clone(), "zx")
     }
+    /// `node.xyz` — the first three components.
     pub fn xyz(&self) -> NodeRef {
         swizzle(self.clone(), "xyz")
     }
+    /// `node.xz` — the first and third components.
     pub fn xz(&self) -> NodeRef {
         swizzle(self.clone(), "xz")
     }
+    /// `node.zzz` — the third component broadcast to a `vec3`.
     pub fn zzz(&self) -> NodeRef {
         swizzle(self.clone(), "zzz")
     }
+    /// `node.rgb` — the first three components, spelled for a color.
     pub fn rgb(&self) -> NodeRef {
         swizzle(self.clone(), "xyz")
     }
+    /// `node.a` — the fourth component, spelled for a color's alpha.
     pub fn a(&self) -> NodeRef {
         swizzle(self.clone(), "w")
     }
@@ -1722,6 +1781,7 @@ impl NodeRef {
     }
 
     // --- conversion ---
+    /// `type( node )` — cast to another type, a no-op if `node` is already `ty`.
     pub fn to(&self, ty: Type) -> NodeRef {
         if self.ty() == ty {
             return self.clone();
@@ -1829,6 +1889,7 @@ impl NodeRef {
         }
     }
 
+    /// `node.toVar( name )` — see [`to_var`].
     pub fn to_var(&self, name: &'static str) -> NodeRef {
         to_var(Some(name), self.clone())
     }
@@ -1843,6 +1904,7 @@ impl NodeRef {
         isolate(self.clone())
     }
 
+    /// `node.toVarying( name )` — see [`to_varying`].
     pub fn to_varying(&self, name: &'static str) -> NodeRef {
         to_varying(Some(name), self.clone())
     }
@@ -2465,6 +2527,8 @@ fn normal_value() -> Option<NodeRef> {
     }
 }
 
+/// `normalView` — the surface normal in view space, honouring any override
+/// installed by [`OverrideNodes::normal_view`].
 pub fn normal_view() -> NodeRef {
     // `Node.getShared()`'s override branch: the replacement is returned *as it
     // is*, with no `toVar` of its own, which is why three's deferred resolve
@@ -2681,6 +2745,7 @@ accessor!(
 );
 
 // Properties the material setup assigns to explicitly.
+/// `diffuseColor` — the `DiffuseColor` property, `NodeMaterial::setup_diffuse_color()`'s output.
 pub fn diffuse_color() -> NodeRef {
     thread_local! { static CELL: Lazy<NodeRef> = const { Lazy::new() }; }
     CELL.with(|c| c.get(|| property("DiffuseColor", Type::Vec4)))
@@ -2703,13 +2768,21 @@ macro_rules! prop {
     };
 }
 
-prop!(output_property, "Output", Type::Vec4);
+prop!(
+    /// `output` — the fragment output color property, `Output`.
+    output_property, "Output", Type::Vec4);
 prop!(pub(crate) total_diffuse, "totalDiffuse", Type::Vec3);
 prop!(pub(crate) total_specular, "totalSpecular", Type::Vec3);
 prop!(pub(crate) outgoing_light, "outgoingLight", Type::Vec3);
-prop!(shininess, "Shininess", Type::F32);
-prop!(specular_color, "SpecularColor", Type::Vec3);
-prop!(emissive_color, "EmissiveColor", Type::Vec3);
+prop!(
+    /// `shininess` — `MeshPhongNodeMaterial`'s specular exponent property.
+    shininess, "Shininess", Type::F32);
+prop!(
+    /// `specularColor`.
+    specular_color, "SpecularColor", Type::Vec3);
+prop!(
+    /// `emissive` — the `EmissiveColor` property.
+    emissive_color, "EmissiveColor", Type::Vec3);
 /// `PropertyNode`'s `ambientOcclusion` — the **property** three names
 /// `AmbientOcclusion`, which `NodeMaterial.setupAmbientOcclusion()` writes from
 /// `materialAO` and the lighting model's own `ambientOcclusion` *var* then
@@ -2727,13 +2800,15 @@ pub(crate) fn ambient_occlusion_property() -> NodeRef {
 /// dumps interleave `directSpecular = vec3<f32>( 0.0, 0.0, 0.0 )` with the
 /// light's own statements.
 macro_rules! lighting_var {
-    (pub(crate) $name:ident, $wgsl:literal, $init:expr) => {
+    ($(#[$meta:meta])* pub(crate) $name:ident, $wgsl:literal, $init:expr) => {
+        $(#[$meta])*
         pub(crate) fn $name() -> NodeRef {
             thread_local! { static CELL: Lazy<NodeRef> = const { Lazy::new() }; }
             CELL.with(|c| c.get(|| to_var_untagged($wgsl, $init)))
         }
     };
-    ($name:ident, $wgsl:literal, $init:expr) => {
+    ($(#[$meta:meta])* $name:ident, $wgsl:literal, $init:expr) => {
+        $(#[$meta])*
         pub fn $name() -> NodeRef {
             thread_local! { static CELL: Lazy<NodeRef> = const { Lazy::new() }; }
             CELL.with(|c| c.get(|| to_var_untagged($wgsl, $init)))
@@ -2745,34 +2820,60 @@ lighting_var!(pub(crate) direct_diffuse, "directDiffuse", vec3(0.0, 0.0, 0.0));
 lighting_var!(pub(crate) direct_specular, "directSpecular", vec3(0.0, 0.0, 0.0));
 lighting_var!(pub(crate) indirect_diffuse, "indirectDiffuse", vec3(0.0, 0.0, 0.0));
 lighting_var!(pub(crate) indirect_specular, "indirectSpecular", vec3(0.0, 0.0, 0.0));
-lighting_var!(irradiance, "irradiance", vec3(0.0, 0.0, 0.0));
-lighting_var!(ambient_occlusion, "ambientOcclusion", float(1.0));
+lighting_var!(
+    /// `LightingContextNode.getContext()`'s `irradiance` accumulator.
+    irradiance, "irradiance", vec3(0.0, 0.0, 0.0));
+lighting_var!(
+    /// `LightingContextNode.getContext()`'s `ambientOcclusion` accumulator.
+    ambient_occlusion, "ambientOcclusion", float(1.0));
 // `radiance` / `iblIrradiance` are `vec3().toVar()` on the lighting context
 // too; nothing adds to them without an environment node.
-lighting_var!(radiance, "radiance", vec3(0.0, 0.0, 0.0));
-lighting_var!(ibl_irradiance, "iblIrradiance", vec3(0.0, 0.0, 0.0));
+lighting_var!(
+    /// `LightingContextNode.getContext()`'s `radiance` accumulator.
+    radiance, "radiance", vec3(0.0, 0.0, 0.0));
+lighting_var!(
+    /// `LightingContextNode.getContext()`'s `iblIrradiance` accumulator.
+    ibl_irradiance, "iblIrradiance", vec3(0.0, 0.0, 0.0));
 
 // `PhysicalLightingModel`'s properties.
-prop!(metalness, "Metalness", Type::F32);
+prop!(
+    /// `metalness` — the `Metalness` property.
+    metalness, "Metalness", Type::F32);
 prop!(pub(crate) single_scattering, "singleScattering", Type::Vec3);
 prop!(pub(crate) multi_scattering, "multiScattering", Type::Vec3);
-prop!(roughness, "Roughness", Type::F32);
-prop!(specular_color_blended, "SpecularColorBlended", Type::Vec3);
-prop!(specular_f90, "SpecularF90", Type::F32);
+prop!(
+    /// `roughness` — the `Roughness` property.
+    roughness, "Roughness", Type::F32);
+prop!(
+    /// `specularColorBlended`.
+    specular_color_blended, "SpecularColorBlended", Type::Vec3);
+prop!(
+    /// `specularF90`.
+    specular_f90, "SpecularF90", Type::F32);
 // `MeshPhysicalNodeMaterial.setupSpecular()`'s `ior` property.
-prop!(ior, "IOR", Type::F32);
-prop!(diffuse_contribution, "DiffuseContribution", Type::Vec3);
+prop!(
+    /// `ior` — the `IOR` property.
+    ior, "IOR", Type::F32);
+prop!(
+    /// `diffuseContribution`.
+    diffuse_contribution, "DiffuseContribution", Type::Vec3);
 // `MeshPhysicalNodeMaterial.setupVariants()`' sheen properties, and the two
 // accumulators `PhysicalLightingModel.start()` declares for them. The
 // accumulators are `vec3().toVar( 'sheenSpecularDirect' )` in three; they are
 // written before anything reads them either way, so a property is the same
 // WGSL.
-prop!(sheen, "Sheen", Type::Vec3);
-prop!(sheen_roughness, "SheenRoughness", Type::F32);
+prop!(
+    /// `sheen` — the `Sheen` property.
+    sheen, "Sheen", Type::Vec3);
+prop!(
+    /// `sheenRoughness`.
+    sheen_roughness, "SheenRoughness", Type::F32);
 prop!(pub(crate) sheen_specular_direct, "sheenSpecularDirect", Type::Vec3);
 prop!(pub(crate) sheen_specular_indirect, "sheenSpecularIndirect", Type::Vec3);
 // `MeshPhysicalNodeMaterial.setupVariants()`' diffuse-roughness property.
-prop!(diffuse_roughness, "DiffuseRoughness", Type::F32);
+prop!(
+    /// `diffuseRoughness`.
+    diffuse_roughness, "DiffuseRoughness", Type::F32);
 prop!(
     pub(crate) single_scattering_dielectric,
     "singleScatteringDielectric",
@@ -2796,18 +2897,38 @@ prop!(
 
 // `MeshPhysicalNodeMaterial.setupVariants()`' anisotropy and clearcoat
 // properties.
-prop!(anisotropy, "Anisotropy", Type::F32);
-prop!(alpha_t, "AlphaT", Type::F32);
-prop!(anisotropy_t, "AnisotropyT", Type::Vec3);
-prop!(anisotropy_b, "AnisotropyB", Type::Vec3);
-prop!(clearcoat, "Clearcoat", Type::F32);
-prop!(clearcoat_roughness, "ClearcoatRoughness", Type::F32);
+prop!(
+    /// `anisotropy` — the `Anisotropy` property.
+    anisotropy, "Anisotropy", Type::F32);
+prop!(
+    /// `alphaT`.
+    alpha_t, "AlphaT", Type::F32);
+prop!(
+    /// `anisotropyT`.
+    anisotropy_t, "AnisotropyT", Type::Vec3);
+prop!(
+    /// `anisotropyB`.
+    anisotropy_b, "AnisotropyB", Type::Vec3);
+prop!(
+    /// `clearcoat` — the `Clearcoat` property.
+    clearcoat, "Clearcoat", Type::F32);
+prop!(
+    /// `clearcoatRoughness`.
+    clearcoat_roughness, "ClearcoatRoughness", Type::F32);
 
 // ... and its transmission ones.
-prop!(transmission, "Transmission", Type::F32);
-prop!(thickness, "Thickness", Type::F32);
-prop!(attenuation_distance, "AttenuationDistance", Type::F32);
-prop!(attenuation_color, "AttenuationColor", Type::Vec3);
+prop!(
+    /// `transmission` — the `Transmission` property.
+    transmission, "Transmission", Type::F32);
+prop!(
+    /// `thickness` — the `Thickness` property.
+    thickness, "Thickness", Type::F32);
+prop!(
+    /// `attenuationDistance`.
+    attenuation_distance, "AttenuationDistance", Type::F32);
+prop!(
+    /// `attenuationColor`.
+    attenuation_color, "AttenuationColor", Type::Vec3);
 
 // `PhysicalLightingModel.start()`'s clearcoat accumulators — vars, like the
 // lighting context's, so their zeros land at the first read.
@@ -3537,6 +3658,7 @@ impl StorageArray {
         self.0.count
     }
 
+    /// The element type `instancedArray` was given.
     pub fn element_ty(&self) -> Type {
         self.0.element_ty
     }
@@ -4148,6 +4270,8 @@ pub fn loop_index() -> NodeRef {
     })
 }
 
+/// `Loop( count, ( { i } ) => { … } )` — a `for` loop from 0 to `count`,
+/// exclusive, with `index` (see [`loop_index`]) bound to the counter.
 pub fn loop_statement(count: usize, index: NodeRef, body: Vec<NodeRef>) -> NodeRef {
     let count = int(count as i64);
     NodeRef::new(Node::Loop {
@@ -4381,6 +4505,9 @@ pub(crate) fn if_node(
     })
 }
 
+/// `Fn( … )( args )` — a call to a [`FnDef`] built by [`inline_fn`] or
+/// [`shader_fn`], inlined into the current flow or emitted as a real `fn`,
+/// depending on the def's layout.
 pub fn call(def: &Rc<FnDef>, args: Vec<NodeRef>) -> NodeRef {
     NodeRef::new(Node::Call {
         def: def.clone(),

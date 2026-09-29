@@ -22,11 +22,15 @@ const MAX_TEXTURE_SIZE: usize = 4096;
 /// of the render object's cache key; `morphReference()` reads all four.
 #[derive(Clone, Debug)]
 pub struct MorphEntry {
+    /// The packed morph-attribute data, one row per target.
     pub texture: DataArrayTexture,
     /// `vertexDataCount` — 1 for position-only morphing.
     pub stride: usize,
+    /// The texture's width, in texels.
     pub width: usize,
+    /// The texture's height, in texels.
     pub height: usize,
+    /// The number of morph targets.
     pub count: usize,
 }
 

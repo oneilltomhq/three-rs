@@ -206,6 +206,7 @@ fn js_round(v: f64) -> f64 {
 /// The WGSL sample-type of a texture binding, as the bind-group layout needs it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum TextureKind {
+    /// `texture_2d<f32>` with a filtering sampler — the ordinary case.
     Float2D,
     /// `texture_2d_array<f32>` — the morph data texture, read with
     /// `textureLoad` only, so it needs no sampler.
@@ -220,6 +221,8 @@ pub enum TextureKind {
     /// `texture_2d<u32>` — a `RedIntegerFormat` / `UnsignedIntType`
     /// `DataTexture`, `BatchedMesh._indirectTexture`.
     Uint2D,
+    /// `texture_depth_2d`, read with `textureSample` — an ordinary, filterable
+    /// `DepthTexture`.
     Depth2D,
     /// `texture_depth_multisampled_2d` — the depth attachment of an MSAA
     /// render target, which WebGPU never resolves. `textureLoad` takes the
@@ -230,7 +233,9 @@ pub enum TextureKind {
     /// A depth texture bound for `textureSampleCompare`: the same
     /// `texture_depth_2d`, but with a `sampler_comparison` beside it.
     DepthCompare2D,
+    /// `texture_cube<f32>` — a `CubeTexture` read with `textureSample`.
     Cube,
+    /// `texture_depth_cube` — a `CubeDepthTexture` read with `textureSample`.
     DepthCube,
     /// `texture_3d<f32>` — a filterable `Data3DTexture` / `Storage3DTexture`
     /// read through `texture3D()`, with a sampler beside it.
@@ -242,8 +247,11 @@ pub enum TextureKind {
     /// `access` is the node's own; the declaration forces `read` outside the
     /// compute stage (`getStorageAccess()`), and the layout does the same.
     Storage {
+        /// The storage texture's texel format.
         format: wgpu::TextureFormat,
+        /// Read, write or read-write access, per the node's own declaration.
         access: StorageAccess,
+        /// `true` for `texture_storage_3d`, `false` for `texture_storage_2d`.
         dim3: bool,
     },
 }
