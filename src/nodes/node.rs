@@ -20,15 +20,25 @@ use crate::textures::{
 /// is the part of `NodeBuilder`'s type vocabulary the ladder has reached.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Type {
+    /// No value — a statement's type, or a `fn` with no return.
     Void,
+    /// `bool`.
     Bool,
+    /// `f32`.
     F32,
+    /// `i32`.
     I32,
+    /// `u32`.
     U32,
+    /// `vec2<f32>`.
     Vec2,
+    /// `vec3<f32>`.
     Vec3,
+    /// `vec4<f32>`.
     Vec4,
+    /// `vec2<u32>`.
     UVec2,
+    /// `vec2<i32>`.
     IVec2,
     /// `vec3<u32>` — MaterialX's `mx_hash_vec3` packs its three byte hashes
     /// into one.
@@ -38,15 +48,20 @@ pub enum Type {
     UVec4,
     /// `vec3<i32>` / `vec4<i32>` — TSL's `ivec3()` / `ivec4()`.
     IVec3,
+    /// `vec4<i32>` — TSL's `ivec4()`.
     IVec4,
     /// `vec2<bool>` / `vec3<bool>` / `vec4<bool>` — TSL's `bvec2()` … `bvec4()`,
     /// and what a component-wise comparison of two vectors is.
     BVec2,
+    /// `vec3<bool>`.
     BVec3,
+    /// `vec4<bool>`.
     BVec4,
     /// `mat2` — `RotateNode`'s vec2 path emits `mat2x2<f32>( cos, sin, -sin, cos )`.
     Mat2,
+    /// `mat3x3<f32>`.
     Mat3,
+    /// `mat4x4<f32>`.
     Mat4,
 }
 
@@ -98,6 +113,7 @@ impl Type {
         }
     }
 
+    /// Whether this is one of the matrix types.
     pub fn is_matrix(self) -> bool {
         matches!(self, Type::Mat2 | Type::Mat3 | Type::Mat4)
     }
@@ -112,10 +128,12 @@ impl Type {
 /// per sub-camera (`docs/nodes.md` §40).
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum UniformGroup {
+    /// `renderGroup` — per render call: camera, time, viewport.
     Render,
     /// `cameraIndex`'s group, which three sorts between the two others
     /// (`@group( 1 )` in `webgpu_camera_array`'s dump).
     CameraIndex,
+    /// `objectGroup` — per render object: model matrices, material values.
     Object,
 }
 
@@ -152,18 +170,23 @@ pub enum UpdateType {
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
 pub enum UniformSource {
+    /// `cameraProjectionMatrix` — `camera.projectionMatrix`.
     CameraProjectionMatrix,
+    /// `cameraViewMatrix` — `camera.matrixWorldInverse`.
     CameraViewMatrix,
     /// `cameraIndex` — `uniform( 0, 'uint' ).setName( 'u_cameraIndex' )`, the
     /// sub-camera an `ArrayCamera` draw is for. The backend binds one group
     /// per sub-camera rather than rewriting it, so the value written here is
     /// never read; see `Draw::sub_cameras` in the renderer.
     CameraIndex,
+    /// `cameraWorldMatrix` — `camera.matrixWorld`.
     CameraWorldMatrix,
     /// `cameraPosition` — `camera.matrixWorld`'s translation, which
     /// `getIBLVolumeRefraction` takes the world-space view vector from.
     CameraPosition,
+    /// `modelWorldMatrix` — `object.matrixWorld`.
     ModelWorldMatrix,
+    /// `modelNormalMatrix` — `object.normalMatrix`.
     ModelNormalMatrix,
     /// `cameraProjectionMatrixInverse` — `camera.projectionMatrixInverse`.
     /// `Line2NodeMaterial.setupPosition()` needs it to push a clip-space
@@ -174,9 +197,12 @@ pub enum UniformSource {
     ModelWorldMatrixInverse,
     /// `materialColor` — `MeshBasicMaterial.color` in the working space.
     MaterialColor,
+    /// `materialOpacity` — `Material.opacity`.
     MaterialOpacity,
     /// `materialAlphaTest` — `Material.alphaTest`.
     MaterialAlphaTest,
+    /// `materialReflectivity` — `MeshLambertMaterial.reflectivity` and
+    /// friends.
     MaterialReflectivity,
     /// `materialEnvIntensity` — `MeshStandardMaterial.envMapIntensity`, the
     /// scale `EnvironmentNode` puts on both IBL terms.
@@ -186,8 +212,11 @@ pub enum UniformSource {
     /// `MeshPhongMaterial.shininess` / `.specular` / `.emissive` /
     /// `.emissiveIntensity`.
     MaterialShininess,
+    /// `MeshPhongMaterial.specular`.
     MaterialSpecular,
+    /// `MeshPhongMaterial.emissive` / `MeshStandardMaterial.emissive`.
     MaterialEmissive,
+    /// `emissiveIntensity` — the scale on [`UniformSource::MaterialEmissive`].
     MaterialEmissiveIntensity,
     /// `materialAnisotropyVector` — `MeshPhysicalMaterial.anisotropy` and
     /// `.anisotropyRotation` as one `vec2( a * cos( r ), a * sin( r ) )`.
@@ -195,19 +224,27 @@ pub enum UniformSource {
     /// `MeshPhysicalMaterial.clearcoat` / `.clearcoatRoughness` /
     /// `.clearcoatNormalScale`.
     MaterialClearcoat,
+    /// `MeshPhysicalMaterial.clearcoatRoughness`.
     MaterialClearcoatRoughness,
+    /// `MeshPhysicalMaterial.clearcoatNormalScale`.
     MaterialClearcoatNormalScale,
     /// `MeshPhysicalMaterial.transmission` / `.thickness` /
     /// `.attenuationDistance` / `.attenuationColor` — `KHR_materials_transmission`
     /// and `KHR_materials_volume`.
     MaterialTransmission,
+    /// `MeshPhysicalMaterial.thickness`.
     MaterialThickness,
+    /// `MeshPhysicalMaterial.attenuationDistance`.
     MaterialAttenuationDistance,
+    /// `MeshPhysicalMaterial.attenuationColor`, in the working space.
     MaterialAttenuationColor,
     /// `materialEnvRotation` — the env map's rotation matrix.
     EnvRotationMatrix,
+    /// `backgroundRotation` — `scene.backgroundRotation`.
     BackgroundRotation,
+    /// `backgroundBlurriness` — `scene.backgroundBlurriness`.
     BackgroundBlurriness,
+    /// `backgroundIntensity` — `scene.backgroundIntensity`.
     BackgroundIntensity,
     /// `reference( 'color' | 'near' | 'far' | 'density', …, scene.fog )
     /// .setGroup( renderGroup )` — the classic `scene.fog`'s parameters, which
@@ -215,9 +252,13 @@ pub enum UniformSource {
     /// whose values change never rebuilds a program. The colour is in the
     /// working space.
     FogColor,
+    /// `scene.fog.near` — `Fog`'s linear near distance.
     FogNear,
+    /// `scene.fog.far` — `Fog`'s linear far distance.
     FogFar,
+    /// `scene.fog.density` — `FogExp2`'s density.
     FogDensity,
+    /// `time` — `TimerNode.GLOBAL`, seconds since the renderer started.
     Time,
     /// `deltaTime` — `TimerNode.DELTA`, `frame.deltaTime`: the seconds since
     /// the previous `NodeFrame.update()`.
@@ -240,8 +281,12 @@ pub enum UniformSource {
     /// `light.color * light.intensity` (linear), the cutoff distance, the decay
     /// exponent, and the light's position through the camera view matrix.
     LightColorIntensity(usize),
+    /// The cutoff distance — see [`UniformSource::LightColorIntensity`].
     LightCutoffDistance(usize),
+    /// The decay exponent — see [`UniformSource::LightColorIntensity`].
     LightDecay(usize),
+    /// The light's position through the camera view matrix — see
+    /// [`UniformSource::LightColorIntensity`].
     LightViewPosition(usize),
     /// `Morph.js`' `base = uniform( 1 )`, updated per object to
     /// `1 - Σ morphTargetInfluences` (or 1 when the targets are relative).
@@ -249,25 +294,34 @@ pub enum UniformSource {
     /// `lightPosition( light )` / `lightTargetPosition( light )` — the world
     /// positions `lightTargetDirection` differences.
     LightWorldPosition(usize),
+    /// `lightTargetPosition( light )` — see [`UniformSource::LightWorldPosition`].
     LightTargetPosition(usize),
     /// `HemisphereLightNode`: `light.groundColor * light.intensity` (linear).
     LightGroundColor(usize),
     /// `SpotLightNode`'s `coneCosNode` / `penumbraCosNode`.
     LightConeCos(usize),
+    /// `SpotLightNode.penumbraCosNode` — see [`UniformSource::LightConeCos`].
     LightPenumbraCos(usize),
     /// `ShadowNode`'s per-shadow references: `lightShadowMatrix( light )`, the
     /// shadow camera's near and far planes (`PointShadowNode`) and
     /// `reference( …, shadow )` for the five scalars.
     ShadowMatrix(usize),
+    /// The shadow camera's near plane — see [`UniformSource::ShadowMatrix`].
     ShadowCameraNear(usize),
+    /// The shadow camera's far plane — see [`UniformSource::ShadowMatrix`].
     ShadowCameraFar(usize),
+    /// `reference( 'bias', 'float', shadow )`.
     ShadowBias(usize),
+    /// `reference( 'normalBias', 'float', shadow )`.
     ShadowNormalBias(usize),
+    /// `reference( 'radius', 'float', shadow )` — the blur radius.
     ShadowRadius(usize),
     /// `reference( 'blurSamples', 'float', shadow )` — the VSM blur passes'
     /// tap count.
     ShadowBlurSamples(usize),
+    /// `reference( 'mapSize', 'vec2', shadow )` — the shadow map's resolution.
     ShadowMapSize(usize),
+    /// `reference( 'intensity', 'float', shadow )`.
     ShadowIntensity(usize),
     /// `materialLineWidth` — `MaterialNode.LINE_WIDTH`, i.e.
     /// `material.linewidth`. Only a fat-line material reads it; a hairline
@@ -275,19 +329,26 @@ pub enum UniformSource {
     MaterialLineWidth,
     /// `materialMetalness` / `materialRoughness` / `materialBumpScale`.
     MaterialMetalness,
+    /// `MeshStandardMaterial.roughness`.
     MaterialRoughness,
+    /// `MeshStandardMaterial.bumpScale`.
     MaterialBumpScale,
     /// `MeshPhysicalMaterial`'s `ior` / `specularIntensity` / `specularColor`,
     /// and `MeshStandardMaterial.normalScale`.
     MaterialIor,
+    /// `MeshPhysicalMaterial.specularIntensity`.
     MaterialSpecularIntensity,
+    /// `MeshPhysicalMaterial.specularColor`, in the working space.
     MaterialSpecularColor,
     /// `MeshPhysicalMaterial.sheen` / `.sheenColor` / `.sheenRoughness`.
     MaterialSheen,
+    /// `MeshPhysicalMaterial.sheenColor`, in the working space.
     MaterialSheenColor,
+    /// `MeshPhysicalMaterial.sheenRoughness`.
     MaterialSheenRoughness,
     /// `MeshPhysicalMaterial.diffuseRoughness`.
     MaterialDiffuseRoughness,
+    /// `MeshStandardMaterial.normalScale`.
     MaterialNormalScale,
     /// `MeshStandardMaterial.aoMapIntensity` — the scale in `materialAO`'s
     /// `tex.r.sub( 1 ).mul( aoMapIntensity ).add( 1 )`.
@@ -297,6 +358,7 @@ pub enum UniformSource {
     /// `reference( 'bindMatrix', 'mat4' )` / `reference( 'bindMatrixInverse',
     /// 'mat4' )` — `SkinnedMesh`'s two bind matrices, in the object group.
     BindMatrix,
+    /// `bindMatrixInverse` — see [`UniformSource::BindMatrix`].
     BindMatrixInverse,
     /// `reference( 'center', 'vec2', object )` — `Sprite.center`, read by
     /// `SpriteNodeMaterial.setupPositionView()`, in the object group.
@@ -457,6 +519,7 @@ impl std::hash::Hash for ObjectUpdate {
 pub struct SettableValue(Rc<RefCell<Vec<f64>>>);
 
 impl SettableValue {
+    /// Wraps a starting value.
     pub fn new(values: Vec<f64>) -> Self {
         Self(Rc::new(RefCell::new(values)))
     }
@@ -529,8 +592,11 @@ impl UniformSource {
 /// `UniformNode`.
 #[derive(Debug)]
 pub struct UniformNode {
+    /// Where the uniform's bytes come from.
     pub source: UniformSource,
+    /// The uniform's WGSL type.
     pub ty: Type,
+    /// Which uniform block the uniform is bound in.
     pub group: UniformGroup,
     /// Three names camera uniforms explicitly and numbers the rest
     /// `nodeUniformN`.
@@ -554,7 +620,12 @@ pub enum BufferSource {
     /// into all four components, a `Color` fills `xyz` and leaves `w` at 1, and
     /// any other vector takes `x`, `y`, `z || 0`, `w || 0` — so a `vec3` range
     /// has `w` **0** at both ends, not 1.
-    Range { min: [f64; 4], max: [f64; 4] },
+    Range {
+        /// The low end of the range, one component per channel.
+        min: [f64; 4],
+        /// The high end of the range, one component per channel.
+        max: [f64; 4],
+    },
     /// `Morph.js`' `uniformArray( mesh.morphTargetInfluences, 'float' )` — one
     /// `vec4` per morph target with the influence in `.x`.
     MorphInfluences,
@@ -607,7 +678,9 @@ pub enum BufferSource {
     /// attribute's `Uint32Array`, uploaded once when the GPU buffer is made;
     /// see [`crate::core::IndirectStorageBufferAttribute`].
     Struct {
+        /// The struct's name and member list.
         layout: Rc<StructLayout>,
+        /// The attribute's initial contents, uploaded once.
         init: Rc<Vec<u32>>,
     },
     /// `storage( attribute, type, count )` over an attribute that *has* a CPU
@@ -619,7 +692,12 @@ pub enum BufferSource {
     /// `WebGPUAttributeUtils.createAttribute()` pads it).
     ///
     /// `read_only` is `.toReadOnly()`: `var<storage, read>` in a kernel too.
-    StorageData { init: Rc<Vec<u32>>, read_only: bool },
+    StorageData {
+        /// The array's bits, already laid out at the storage stride.
+        init: Rc<Vec<u32>>,
+        /// `.toReadOnly()` — `var<storage, read>` rather than `read_write`.
+        read_only: bool,
+    },
     /// `buffer( skeleton.boneMatrices, 'mat4', bones )` — `computeSkinning()`'s
     /// bone matrices: a plain uniform `BufferNode` over the skeleton's own
     /// array rather than `SkinningNode`'s `referenceBuffer`, so it is resolved
@@ -670,7 +748,9 @@ impl PartialEq for SkeletonRef {
 /// One member of a [`StructLayout`] — an entry of `struct( { … } )`'s object.
 #[derive(Clone, Debug, PartialEq)]
 pub struct StructMember {
+    /// The member's name in WGSL.
     pub name: &'static str,
+    /// The member's WGSL type.
     pub ty: Type,
     /// `{ type: 'uint', atomic: true }` — declared `atomic< u32 >`.
     pub atomic: bool,
@@ -680,7 +760,9 @@ pub struct StructMember {
 /// members keep their declaration order.
 #[derive(Clone, Debug, PartialEq)]
 pub struct StructLayout {
+    /// The struct's name in WGSL.
     pub name: &'static str,
+    /// The struct's members, in declaration order.
     pub members: Vec<StructMember>,
 }
 
@@ -720,7 +802,9 @@ impl StructLayout {
 /// each named `WorkgroupArray_N` by the builder in first-use order.
 #[derive(Debug)]
 pub struct WorkgroupArrayDef {
+    /// The array's element type.
     pub element_ty: Type,
+    /// The number of elements.
     pub count: usize,
     /// `.toAtomic()`.
     pub atomic: bool,
@@ -770,6 +854,7 @@ impl BufferId {
 pub struct InstanceBuffer {
     /// This buffer's identity — see [`BufferId`].
     pub id: BufferId,
+    /// Where the buffer's contents come from.
     pub source: BufferSource,
     /// The instance count — `InstancedBufferAttribute.count`.
     pub count: usize,
@@ -784,8 +869,11 @@ pub struct InstanceBuffer {
 pub struct BufferNode {
     /// This buffer's identity — see [`BufferId`].
     pub id: BufferId,
+    /// Where the buffer's contents come from.
     pub source: BufferSource,
+    /// The type of one element.
     pub element_ty: Type,
+    /// The number of elements.
     pub count: usize,
 }
 
@@ -793,12 +881,15 @@ pub struct BufferNode {
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub enum TextureSource {
+    /// `texture( Texture )` — a sampled `texture_2d<f32>`.
     Texture2D(Texture),
+    /// `texture( DepthTexture )` — a sampled `texture_depth_2d`.
     Depth(DepthTexture),
     /// A `DepthTexture` with `compareFunction` set, bound as
     /// `texture_depth_2d` + `sampler_comparison` and read with
     /// `textureSampleCompare` — `ShadowNode`'s shadow map.
     ShadowMap(DepthTexture),
+    /// `cubeTexture( CubeTexture )` — a sampled `texture_cube<f32>`.
     Cube(CubeTexture),
     /// `DataArrayTexture` — the morph-target data texture.
     DataArray(DataArrayTexture),
@@ -850,9 +941,12 @@ impl TextureSource {
 /// builder applies when it declares the binding.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum StorageAccess {
+    /// `texture_storage_2d<format, write>` — `StorageTextureNode`'s default.
     #[default]
     WriteOnly,
+    /// `texture_storage_2d<format, read>` — forced outside the compute stage.
     ReadOnly,
+    /// `texture_storage_2d<format, read_write>`.
     ReadWrite,
 }
 
@@ -913,7 +1007,9 @@ pub enum SampleMode {
     /// (`WGSLNodeBuilder.generateTextureGather()`): one channel of the four
     /// texels a bilinear tap would read, from mip level 0.
     Gather {
+        /// Which channel to gather (0–3).
         component: NodeRef,
+        /// An optional texel offset — `.offset( ivec2 )`.
         offset: Option<NodeRef>,
     },
     /// `textureGatherCompare( t, t_sampler, uv, depth[, offset] )` —
@@ -921,7 +1017,9 @@ pub enum SampleMode {
     /// comparison sampler (`generateTextureGatherCompare()`): the four
     /// texels' comparison results.
     GatherCompare {
+        /// The depth value each of the four texels is compared against.
         compare: NodeRef,
+        /// An optional texel offset — `.offset( ivec2 )`.
         offset: Option<NodeRef>,
     },
     /// The non-filterable path: `textureLoad` against `textureDimensions`,
@@ -953,7 +1051,9 @@ pub enum SampleMode {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[non_exhaustive]
 pub enum Builtin {
+    /// `@builtin( vertex_index )`.
     VertexIndex,
+    /// `@builtin( instance_index )`.
     InstanceIndex,
     /// `@builtin( position )` in the fragment stage.
     FragCoord,
@@ -968,8 +1068,11 @@ pub enum Builtin {
     /// (`WGSLNodeBuilder.getAttributes( 'compute' )`), so reading one only names
     /// the parameter.
     WorkgroupId,
+    /// `@builtin( local_invocation_id )` — see [`Builtin::WorkgroupId`].
     LocalId,
+    /// `@builtin( global_invocation_id )` — see [`Builtin::WorkgroupId`].
     GlobalId,
+    /// `@builtin( num_workgroups )` — see [`Builtin::WorkgroupId`].
     NumWorkgroups,
 }
 
@@ -1010,7 +1113,9 @@ pub struct VarDef {
     /// sub-build layer prefixes the name with its own (`NORMAL_normalView`) —
     /// see `docs/nodes.md` §7.
     pub name: Option<String>,
+    /// The node whose value is cached.
     pub value: NodeRef,
+    /// The variable's WGSL type.
     pub ty: Type,
 }
 
@@ -1019,7 +1124,9 @@ pub struct VarDef {
 pub struct VaryingDef {
     /// `toVarying( 'name' )`; `None` numbers it `nodeVaryingN`.
     pub name: Option<&'static str>,
+    /// The node whose value is carried across stages.
     pub value: NodeRef,
+    /// The varying's WGSL type.
     pub ty: Type,
     /// u32 varyings need `@interpolate(flat, either)`.
     pub flat: bool,
@@ -1030,10 +1137,15 @@ pub struct VaryingDef {
 /// Three does for `saturation`/`hue`, and why their expressions appear
 /// expanded three times in the dumped shader.
 pub struct FnDef {
+    /// The `fn`'s name in WGSL when `layout` is set; `None` numbers it.
     pub name: Option<&'static str>,
+    /// The parameters' names and types, in declaration order.
     pub params: Vec<(&'static str, Type)>,
+    /// The return type.
     pub ret: Type,
+    /// Whether a real WGSL `fn` is emitted, rather than inlining the body.
     pub layout: bool,
+    /// Builds the call's result node from the argument nodes.
     #[allow(clippy::type_complexity)]
     pub body: Box<dyn Fn(&[NodeRef]) -> NodeRef>,
 }
@@ -1177,6 +1289,7 @@ pub struct ContextValue {
 }
 
 impl ContextValue {
+    /// An empty set of context entries.
     pub fn new() -> Self {
         Self::default()
     }
@@ -1198,12 +1311,16 @@ impl ContextValue {
 pub enum Node {
     /// A literal. `values` holds one entry per component.
     Const {
+        /// The literal's WGSL type.
         ty: Type,
+        /// One entry per component.
         values: Vec<f64>,
     },
     /// `array< f32, N >( … )` — `QuadMesh`'s `vertexNode`.
     ConstArray {
+        /// The array's element type.
         element_ty: Type,
+        /// The array's contents, one entry per component of each element.
         values: Vec<f64>,
     },
     /// The same literal array held in a `var<private> nodeVarN : array< T, N >`
@@ -1211,18 +1328,25 @@ pub enum Node {
     /// an `array()` that the flow reads more than once, which `BloomNode`'s
     /// composite does five times (`dump/m11`).
     ArrayVar {
+        /// The array's element type.
         element_ty: Type,
+        /// The array's contents, one entry per component of each element.
         values: Vec<f64>,
     },
+    /// `UniformNode`.
     Uniform(Rc<UniformNode>),
     /// `BufferNode` element access: `NodeBuffer_N.value[ index ]`.
     BufferElement {
+        /// The buffer being indexed.
         buffer: Rc<BufferNode>,
+        /// The element index.
         index: NodeRef,
     },
     /// A geometry attribute.
     Attribute {
+        /// The attribute's name in WGSL.
         name: &'static str,
+        /// The attribute's WGSL type.
         ty: Type,
     },
     /// `instancedBufferAttribute( buffer, type, stride, offset )`: a vertex
@@ -1230,10 +1354,14 @@ pub enum Node {
     /// from the start of the instance; the stride is the buffer's `item_size`,
     /// which is all three.js' own call sites use.
     InstancedAttribute {
+        /// The per-instance buffer.
         buffer: Rc<InstanceBuffer>,
+        /// The offset into one instance's data, in floats.
         offset: usize,
+        /// The attribute's WGSL type.
         ty: Type,
     },
+    /// A WGSL builtin input.
     Builtin(Builtin),
     /// `ComputeNode` used as a value — `Fn( () => { …; return x } )().compute(
     /// count )` set as a material's `positionNode`. Outside the compute stage
@@ -1243,80 +1371,116 @@ pub enum Node {
     /// [`NodeProgram::update_before`](crate::nodes::NodeProgram) for the
     /// renderer to dispatch. See `docs/nodes.md` §44 and §57.
     Compute {
+        /// The compute kernel's statements and dispatch size.
         flow: Rc<crate::nodes::ComputeFlow>,
+        /// The value read outside the compute stage.
         output: NodeRef,
     },
+    /// `VarNode` — a cached `var<private>`.
     Var(Rc<VarDef>),
     /// `VarNode` with `readOnly` set — `node.toConst()`. A WGSL `let`, so it is
     /// declared where it is assigned and, unlike a `var<private>`, cannot be
     /// written again.
     Let(Rc<VarDef>),
+    /// `VaryingNode`.
     Varying(Rc<VaryingDef>),
     /// A `var<private>` with a fixed name that the setup code assigns
     /// explicitly — `PropertyNode` (`DiffuseColor`, `Output`, …).
     Property {
+        /// The property's name in WGSL.
         name: &'static str,
+        /// The property's WGSL type.
         ty: Type,
     },
     /// A parameter of an emitted `fn` — a name that is already in scope.
     Param {
+        /// The parameter's name in WGSL.
         name: &'static str,
+        /// The parameter's WGSL type.
         ty: Type,
     },
     /// A statement: `target = value`.
     Assign {
+        /// The assignment's left-hand side.
         target: NodeRef,
+        /// The assignment's right-hand side.
         value: NodeRef,
     },
     /// `OperatorNode`.
     Op {
+        /// The WGSL operator, e.g. `"+"`.
         op: &'static str,
+        /// The left operand.
         a: NodeRef,
+        /// The right operand.
         b: NodeRef,
+        /// The result's WGSL type.
         ty: Type,
     },
     /// `MathNode` — a WGSL builtin call.
     Math {
+        /// The WGSL builtin's name, e.g. `"sin"`.
         name: &'static str,
+        /// The call's arguments.
         args: Vec<NodeRef>,
+        /// The result's WGSL type.
         ty: Type,
     },
     /// `SplitNode`.
     Swizzle {
+        /// The node being swizzled.
         node: NodeRef,
+        /// The swizzle mask, e.g. `"xyz"`.
         components: &'static str,
+        /// The result's WGSL type.
         ty: Type,
     },
     /// `ConvertNode` / a single-argument constructor: `vec4<f32>( x )`.
     Cast {
+        /// The node being converted.
         node: NodeRef,
+        /// The target WGSL type.
         ty: Type,
     },
     /// `OperatorNode` with one operand: `( - x )`.
     Neg {
+        /// The negated node.
         node: NodeRef,
+        /// The result's WGSL type.
         ty: Type,
     },
     /// `JoinNode` — `vec4<f32>( a, b, c, d )`.
     Join {
+        /// The joined components.
         args: Vec<NodeRef>,
+        /// The result's WGSL type.
         ty: Type,
     },
     /// `ArrayElementNode`: `m[ 3u ]`, `array< f32, 3 >( … )[ vertexIndex ]`.
     Element {
+        /// The array or vector being indexed.
         node: NodeRef,
+        /// The element index.
         index: NodeRef,
+        /// The element's WGSL type.
         ty: Type,
     },
+    /// `TextureNode` — a texture sample.
     Texture {
+        /// The texture being sampled.
         texture: Rc<TextureSource>,
+        /// The sample coordinate.
         uv: NodeRef,
+        /// How the texture is read.
         mode: SampleMode,
+        /// The result's WGSL type.
         ty: Type,
     },
     /// `TextureSizeNode` — `textureDimensions( t, level )`, a `vec2<u32>`.
     TextureSize {
+        /// The texture being measured.
         texture: Rc<TextureSource>,
+        /// The mip level.
         level: NodeRef,
     },
     /// `varyingProperty( type, name )` — a *named* varying assigned to by
@@ -1325,12 +1489,18 @@ pub enum Node {
     /// fragment stage never reads still appears in `VaryingsStruct`, exactly
     /// as `vBatchIndirectId` does in Three's dump.
     VaryingProperty {
+        /// The varying's name in WGSL.
         name: &'static str,
+        /// The varying's WGSL type.
         ty: Type,
+        /// Whether the varying needs `@interpolate(flat, either)`.
         flat: bool,
     },
+    /// A call into a [`Node::Code`] / inlined `Fn()`.
     Call {
+        /// The function being called.
         def: Rc<FnDef>,
+        /// The call's arguments.
         args: Vec<NodeRef>,
     },
     /// `CodeNode` itself — a `wgslFn()` as a node rather than as a call, which
@@ -1341,7 +1511,9 @@ pub enum Node {
     /// `FunctionCallNode` over a `wgslFn()` — a call into hand-written WGSL
     /// the node system copies through verbatim. See [`crate::nodes::code`].
     CodeCall {
+        /// The hand-written WGSL function being called.
         def: Rc<crate::nodes::code::CodeDef>,
+        /// The call's arguments.
         args: Vec<NodeRef>,
     },
     /// A sequence of statements followed by the value they produce — the shape
@@ -1349,7 +1521,9 @@ pub enum Node {
     /// for it: its `ShaderNode` call simply flows its body's statements into the
     /// current stage and returns the last expression, which is what this does.
     Block {
+        /// The statements built ahead of `result`.
         statements: Vec<NodeRef>,
+        /// The block's value.
         result: NodeRef,
     },
     /// `Loop( count, ( { i } ) => { … } )` — `for ( var i : i32 = 0; i < n; i ++ )`.
@@ -1360,6 +1534,8 @@ pub enum Node {
         /// `webgpu_postprocessing_anamorphic`'s negated half-sample count
         /// reaches the loop header as `i32( ( - nodeVar1 ) )`.
         start: Option<NodeRef>,
+        /// `Loop( { start, end }, … )`'s `end`, or `Loop( count, … )`'s
+        /// count — the loop's exclusive upper bound.
         count: NodeRef,
         /// The loop index, as it appears inside `body` (`Node::Param`). Its
         /// type is `Loop( { type } )`: `i32`, or `f32` for `hashBlur`'s
@@ -1370,6 +1546,7 @@ pub enum Node {
         condition: &'static str,
         /// `Loop( { update } )` — `i += update` in place of the default step.
         update: Option<NodeRef>,
+        /// The loop body's statements.
         body: Vec<NodeRef>,
     },
     /// `Break()` — a bare `break;` out of the innermost `Loop`.
@@ -1381,8 +1558,11 @@ pub enum Node {
     /// caller passed, so a `uvec2` coordinate is wrapped once more, exactly as
     /// three's dump shows.
     TextureStore {
+        /// The storage texture being written.
         texture: Rc<TextureSource>,
+        /// The texel coordinate.
         coord: NodeRef,
+        /// The value stored.
         value: NodeRef,
     },
     /// `If( cond, () => { … } )` as a bare statement (`setupDiscard`),
@@ -1393,7 +1573,9 @@ pub enum Node {
     /// `else_body: vec![ if_then( b, … ) ]` and generates as a nested
     /// `if`/`else`, which is exactly what three emits.
     If {
+        /// The branch condition.
         cond: NodeRef,
+        /// The `if` block's statements.
         body: Vec<NodeRef>,
         /// Empty for a one-armed `If`, in which case no `else` is emitted and
         /// the generated text is byte-identical to what it was before the arm
@@ -1406,9 +1588,13 @@ pub enum Node {
     /// itself and `body` the statements inside the block, the last of which
     /// assigns `result`. The node's value is the result var.
     IfVar {
+        /// The statements built ahead of `result`.
         pre: Vec<NodeRef>,
+        /// The initialised result variable.
         result: NodeRef,
+        /// The branch condition.
         cond: NodeRef,
+        /// The block's statements, the last of which assigns `result`.
         body: Vec<NodeRef>,
     },
     /// `Discard()` — a bare `discard;`.
@@ -1417,30 +1603,40 @@ pub enum Node {
     /// return x; } )` in a `Fn()` body compiles to (`neutralToneMapping`'s
     /// early out).
     Return {
+        /// The returned value.
         value: NodeRef,
     },
     /// `x.not()` — `( ! x )`. A `bool`, or a `bvecN` for an `N`-vector
     /// operand (`OperatorNode.getNodeType()`'s `'!'` arm).
     Not {
+        /// The negated node.
         node: NodeRef,
     },
     /// `x.bitNot()` — `( ~ x )`, typed `getIntegerType( typeA )`.
     BitNot {
+        /// The negated node.
         node: NodeRef,
+        /// The result's WGSL type.
         ty: Type,
     },
     /// `cond.select( a, b )` — lowered to an `if`/`else` writing a result var,
     /// exactly as Three does.
     Select {
+        /// The branch condition.
         cond: NodeRef,
+        /// The value when `cond` is true.
         a: NodeRef,
+        /// The value when `cond` is false.
         b: NodeRef,
+        /// The result's WGSL type.
         ty: Type,
     },
     /// `storageStruct.get( 'member' )` — `MemberNode` on a
     /// [`BufferSource::Struct`] storage buffer: `NodeBuffer_N.member`.
     StructMember {
+        /// The struct buffer.
         buffer: Rc<BufferNode>,
+        /// The member's index in the struct's layout.
         member: usize,
     },
     /// `AtomicFunctionNode` — `atomicStore( &pointer, value )` and the rest of
@@ -1448,8 +1644,11 @@ pub enum Node {
     /// `atomic< T >`. As a bare statement it is one `atomicX( … );` line; read
     /// as a value as well, its result is held in a `let` first.
     Atomic {
+        /// The WGSL atomic function's name, e.g. `"atomicAdd"`.
         method: &'static str,
+        /// The atomic value being operated on.
         pointer: NodeRef,
+        /// The operand, when the method takes one.
         value: Option<NodeRef>,
     },
     /// `WorkgroupInfoNode` — the array itself. Read through
@@ -1458,6 +1657,7 @@ pub enum Node {
     /// `BarrierNode` — `workgroupBarrier()` / `storageBarrier()` /
     /// `textureBarrier()`, `scope` being the prefix.
     Barrier {
+        /// The barrier's WGSL prefix, e.g. `"workgroup"`.
         scope: &'static str,
     },
     /// A node type defined outside the crate; see [`CustomNode`]. Built by
@@ -1467,7 +1667,9 @@ pub enum Node {
     /// keys merged into `builder.context`, and restores the previous context
     /// afterwards.
     Context {
+        /// The node built under the merged context.
         node: NodeRef,
+        /// The context entries merged in.
         value: Rc<ContextValue>,
     },
     /// `IsolateNode` — `isolate( node )`. Builds `node` in a `NodeCache` of
@@ -1475,6 +1677,7 @@ pub enum Node {
     /// built: what `node`'s subgraph sets up, counts or declares for the first
     /// time stays inside it.
     Isolate {
+        /// The node built in its own cache.
         node: NodeRef,
     },
 }
@@ -1484,6 +1687,7 @@ pub enum Node {
 pub struct NodeRef(Rc<Node>);
 
 impl NodeRef {
+    /// Wraps a node in a new handle.
     pub fn new(node: Node) -> Self {
         NodeRef(Rc::new(node))
     }
