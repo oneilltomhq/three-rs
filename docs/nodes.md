@@ -2225,8 +2225,8 @@ and no resolve. [`PassNode::view_z_node`] memoises the graph the way
 camera in `updateBefore()`. They are **object**-group uniforms of whatever
 material samples the pass, which is why the composite reads
 `object.nodeUniform1` / `object.nodeUniform2` and not the camera block. The port
-holds them as [`uniform_settable`] pairs and writes them at the top of
-`PassNode::render`, exactly where three does.
+holds them as [`uniform_settable`] pairs and writes them at the top of the
+pass's `updateBefore()`, exactly where three does.
 
 ### 24.2 `texture_depth_multisampled_2d`
 
@@ -2757,7 +2757,7 @@ const transparentPass = pass( scene, camera, { depthTexture: opaquePass.getTextu
 
 Two `PassNode`s, two render targets, one `DepthTexture`. The port's
 [`PassOptions::depth_texture`] hands the texture over and marks the borrower as
-not owning it, so `PassNode::render()` resizes through
+not owning it, so the pass's `updateBefore()` resizes through
 [`RenderTarget::set_size_keeping_depth`] and does not drop the shared depth
 allocation on a resize.
 
@@ -5458,34 +5458,42 @@ the camera as a `RefMut`. The viewer and the web shell take either kind
 through `cameras::CameraMut` and hand `OrbitControls` a
 `&mut PerspectiveCamera` as before.
 
-### 57.5 The deprecated explicit `render()`
+### 57.5 The explicit `render()` is removed
 
-`PassNode::render`, `RttNode::render` and `BloomNode::render` stay as
-`#[deprecated]` forwards (`docs/api.md` decision 10). A forward does two
-things:
-
-1. It opens the frame if none is open, and marks the node's update-before as
-   done for that frame, through `Renderer::mark_update_before`.
-2. It then renders unconditionally, as the old call did.
-
-The order matters. Marking after the render let a bloom's blur, which
-samples its own `horizontal[0]`, reach the bloom again from inside itself.
-The draw that samples the pass later in the frame finds it done, so a caller
-that still fires passes by hand gets the old frame, rendered once.
+`PassNode::render`, `RttNode::render` and `BloomNode::render` were
+`#[deprecated]` forwards for one release and are removed in 0.2.0
+(`docs/api.md` decision 10). Each forward did two things: opened the frame if
+none was open and marked the node's update-before done for it, through
+`Renderer::mark_update_before`, then rendered unconditionally, as the old
+call did. Marking before the render — not after — mattered for a bloom's
+blur, which samples its own `horizontal[0]` and would otherwise reach the
+bloom again from inside itself; the early mark let the draw that samples the
+pass later in the frame find it already done. `mark_update_before` and the
+`NodeFrameState::mark` primitive it used existed only to support the
+forward, and are removed with it.
 
 `GaussianBlurNode`, `AfterImageNode`, `PixelationPassNode`,
-`ToonOutlinePassNode` and `SsaaPassNode` are outside #162's list. Their
-examples still fire `render()` by hand, and the port has not moved them.
+`ToonOutlinePassNode` and `SsaaPassNode` are outside #162's list, and keep
+their own explicit `render()` — it is a different node's method, not one of
+the three this decision covers. `webgpu_postprocessing_afterimage` still
+fires `AfterImageNode::render()` by hand for that reason; only its scene
+pass moved to the renderer-owned path.
 
-`webgpu_custom_fog_background` still calls the deprecated forward, under
-`#[allow(deprecated)]`, for a reason that is a real gap. Its composite reads
-the pass's depth through `getViewZNode()`, and that depth is multisampled.
-Three sets `renderTarget.samples = renderer.samples` in `PassNode.setup()`,
-while the composite builds. The port sets it in the pass's render. When the
-pass renders from `updateBefore()`, the composite's bind-group layout has
-already been made for a single-sampled texture, and wgpu rejects the bind
-group. The fix is to move the sample count to where the builder first sees
-the pass's textures. That is left for a follow-up.
+`webgpu_custom_fog_background` used to need the deprecated forward for a
+real gap: its composite reads the pass's depth through `getViewZNode()`, and
+that depth is multisampled. Three sets `renderTarget.samples =
+renderer.samples` in `PassNode.setup()`, while the composite builds; the
+port used to set it only in the pass's render, so a pass rendering from
+`updateBefore()` found the composite's bind-group layout already made for a
+single-sampled texture, and wgpu rejected the bind group. The fix, landed
+with this removal: `NodeUpdate::sync_before_build`, a hook every registered
+pass/RTT/bloom node gets before `Renderer::node_builder_state` builds a
+material's program (the earliest point the builder can see a pass's
+textures, and the only point that runs before a draw's bindings are
+generated). `PassState::sync_before_build` sets `render_target.samples` from
+it, matching what three's `setup()` does during graph analysis;
+`nodes::frame::sync_before_build` walks the same `TEXTURE_UPDATES` registry
+`texture_update` reads, so it costs nothing on a cache hit.
 
 ### 57.6 Gates
 
