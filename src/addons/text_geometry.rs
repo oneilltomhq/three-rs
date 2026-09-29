@@ -16,7 +16,11 @@ use crate::loaders::{Font, TextDirection};
 pub struct TextGeometryOptions {
     /// `parameters.size`, `undefined` → `generateShapes`' default of 100.
     pub size: f64,
+    /// `parameters.direction` — `"ltr"` or `"rtl"`.
     pub direction: TextDirection,
+    /// The underlying `ExtrudeGeometry` options, with `TextGeometry`'s own
+    /// defaults for `depth`, `bevel_thickness`, `bevel_size` and
+    /// `bevel_enabled` — see the struct docs.
     pub extrude: ExtrudeGeometryOptions,
 }
 
@@ -27,6 +31,7 @@ impl Default for TextGeometryOptions {
 }
 
 impl TextGeometryOptions {
+    /// `TextGeometry`'s own defaults — see the struct docs.
     pub fn new() -> Self {
         Self {
             size: 100.0,

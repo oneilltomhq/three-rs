@@ -59,6 +59,8 @@ impl Renderer {
         &self.adapter
     }
 
+    /// The queue commands are submitted to, so the viewer can submit its own
+    /// alongside the renderer's.
     pub fn queue(&self) -> &wgpu::Queue {
         &self.queue
     }

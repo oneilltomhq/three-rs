@@ -31,6 +31,8 @@ use super::Renderer;
 /// node's identity, `outputColorTransform` and the renderer's tone mapping.
 type ContextKey = (usize, bool, ToneMapping);
 
+/// `new DirectRenderPipeline()` — the render path with no intermediate
+/// framebuffer; see the module docs.
 pub struct DirectRenderPipeline {
     /// `renderPipeline.outputNode`, defaulting to `output` — the material's
     /// own result, which makes the pipeline a no-op apart from where the
@@ -57,6 +59,7 @@ impl Default for DirectRenderPipeline {
 }
 
 impl DirectRenderPipeline {
+    /// `new DirectRenderPipeline()`.
     pub fn new() -> Self {
         Self {
             output_node: None,

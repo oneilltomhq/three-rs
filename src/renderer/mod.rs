@@ -640,6 +640,12 @@ impl Rect {
     }
 }
 
+/// three.js' `WebGPURenderer`.
+///
+/// Owns the device and queue, the scene's program and texture caches, and the
+/// state a frame's `render()` walks the scene with; see the module docs for
+/// the pipeline. Constructed with [`Renderer::new`], [`Renderer::with_instance`]
+/// or [`Renderer::with_device`] — see `docs/api.md` decision 6 on the last.
 pub struct Renderer {
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -937,6 +943,8 @@ pub struct Renderer {
 #[derive(Clone, Copy, Debug, Default)]
 #[non_exhaustive]
 pub struct RendererParameters {
+    /// `parameters.antialias` — MSAA on the swap chain / default render
+    /// target.
     pub antialias: bool,
 }
 
@@ -1233,6 +1241,7 @@ impl Renderer {
         }
     }
 
+    /// The adapter the renderer's device was created on.
     pub fn adapter_info(&self) -> &wgpu::AdapterInfo {
         &self.adapter_info
     }
@@ -1252,11 +1261,14 @@ impl Renderer {
         self.device.features()
     }
 
+    /// `renderer.setPixelRatio( pixelRatio )`.
     pub fn set_pixel_ratio(&mut self, pixel_ratio: f64) {
         self.pixel_ratio = pixel_ratio;
         self.canvas = None;
     }
 
+    /// `renderer.setSize( width, height )` — also resets the viewport and
+    /// scissor to the whole canvas, as `CanvasTarget.setSize()` does.
     pub fn set_size(&mut self, width: f64, height: f64) {
         self.width = width;
         self.height = height;
@@ -3919,6 +3931,9 @@ impl Renderer {
         Ok(bytes)
     }
 
+    /// Reads the canvas's colour attachment back as `(width, height, rgba8)`.
+    /// Blocks until the GPU is done, which native callers can afford and
+    /// wasm32 cannot — see [`read_canvas_pixels_async`](Self::read_canvas_pixels_async).
     pub fn read_canvas_pixels(&mut self) -> Result<(u32, u32, Vec<u8>), Error> {
         let (texture, width, height) = self.canvas_color();
         self.read_texture_pixels(&texture, width, height)

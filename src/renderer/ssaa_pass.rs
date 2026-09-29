@@ -151,6 +151,7 @@ impl Default for SsaaPassNode {
 }
 
 impl SsaaPassNode {
+    /// `new SSAAPassNode( scene, camera )`.
     pub fn new() -> Self {
         // `super( PassNode.COLOR, scene, camera, { samples: 0 } )`: the
         // accumulator is the ordinary pass target, except that `{ samples: 0 }`

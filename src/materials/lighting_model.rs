@@ -33,9 +33,13 @@ use crate::nodes::NodeRef;
 /// `indirectDiffuse` only in `totalDiffuse`'s line.
 #[derive(Clone, Debug)]
 pub struct ReflectedLight {
+    /// `directDiffuse` — the sum of every direct light's diffuse contribution.
     pub direct_diffuse: NodeRef,
+    /// `directSpecular` — the sum of every direct light's specular contribution.
     pub direct_specular: NodeRef,
+    /// `indirectDiffuse` — the ambient / hemisphere / environment diffuse term.
     pub indirect_diffuse: NodeRef,
+    /// `indirectSpecular` — the environment's specular (reflection) term.
     pub indirect_specular: NodeRef,
 }
 
@@ -56,10 +60,12 @@ impl ReflectedLight {
 /// `reflectedLight` by `LightsNode.setupDirectLight()`.
 #[derive(Clone, Debug)]
 pub struct DirectLightData {
+    /// The direction from the surface towards the light.
     pub light_direction: NodeRef,
     /// The light's colour times its intensity, shadow and distance / cone
     /// attenuation.
     pub light_color: NodeRef,
+    /// The accumulators this light's contribution is added to.
     pub reflected_light: ReflectedLight,
 }
 
@@ -70,6 +76,7 @@ pub struct DirectLightData {
 pub struct LightingBuilder<'a> {
     /// The statements this lighting pass appends, in order.
     pub stack: Vec<NodeRef>,
+    /// The four running accumulators every light's contribution is added to.
     pub reflected_light: ReflectedLight,
     lights: &'a [LightDesc],
     received_shadow_position: Option<&'a NodeRef>,

@@ -144,7 +144,9 @@ pub struct FlowUniforms {
     pub path_offset: SettableValue,
     /// `pathSegment` — fractional length of path.
     pub path_segment: SettableValue,
+    /// `spineOffset` — offset of spine along z-axis.
     pub spine_offset: SettableValue,
+    /// `spineLength` — length of spine.
     pub spine_length: SettableValue,
     /// `flow` — int.
     pub flow: SettableValue,

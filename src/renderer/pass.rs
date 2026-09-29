@@ -125,7 +125,9 @@ pub fn pass(scene: SceneRef, camera: CameraRef) -> PassNode {
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub struct PassOptions {
+    /// `options.minFilter` — the pass's colour texture's minification filter.
     pub min_filter: TextureFilter,
+    /// `options.magFilter` — the pass's colour texture's magnification filter.
     pub mag_filter: TextureFilter,
     /// `options.depthTexture` — `depthTexture = options.depthTexture || new
     /// DepthTexture()`. A pass given another pass's depth attachment renders

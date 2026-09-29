@@ -194,6 +194,7 @@ impl Default for PmremGenerator {
 }
 
 impl PmremGenerator {
+    /// `new PMREMGenerator( renderer )`.
     pub fn new() -> Self {
         Self {
             cube_size: 0,

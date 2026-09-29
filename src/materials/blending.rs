@@ -12,10 +12,16 @@
 pub enum Blending {
     /// `NoBlending` — the pipeline gets no blend state, whatever `transparent` is.
     No,
+    /// `NormalBlending` — three's default.
     #[default]
     Normal,
+    /// `AdditiveBlending`.
     Additive,
+    /// `SubtractiveBlending`. Ignored unless `premultipliedAlpha` is set;
+    /// see `WebGPUPipelineUtils._getBlending()`.
     Subtractive,
+    /// `MultiplyBlending`. Ignored unless `premultipliedAlpha` is set;
+    /// see `WebGPUPipelineUtils._getBlending()`.
     Multiply,
     /// `CustomBlending` — `blendSrc`/`blendDst`/`blendEquation` (and the three
     /// `*Alpha` overrides) are used verbatim.
@@ -25,30 +31,54 @@ pub enum Blending {
 /// `ZeroFactor` … `OneMinusConstantAlphaFactor`, used only by `CustomBlending`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum BlendFactor {
+    /// `ZeroFactor`.
     Zero,
+    /// `OneFactor`.
     One,
+    /// `SrcColorFactor`.
     SrcColor,
+    /// `OneMinusSrcColorFactor`.
     OneMinusSrcColor,
+    /// `SrcAlphaFactor`.
     SrcAlpha,
+    /// `OneMinusSrcAlphaFactor`.
     OneMinusSrcAlpha,
+    /// `DstColorFactor`.
     DstColor,
+    /// `OneMinusDstColorFactor`.
     OneMinusDstColor,
+    /// `DstAlphaFactor`.
     DstAlpha,
+    /// `OneMinusDstAlphaFactor`.
     OneMinusDstAlpha,
+    /// `SrcAlphaSaturateFactor`.
     SrcAlphaSaturate,
+    /// `ConstantColorFactor` — WebGPU has no separate constant-colour factor,
+    /// so this maps to the same `wgpu::BlendFactor::Constant` as
+    /// [`ConstantAlpha`](Self::ConstantAlpha).
     ConstantColor,
+    /// `OneMinusConstantColorFactor` — collapses with
+    /// [`OneMinusConstantAlpha`](Self::OneMinusConstantAlpha), for the same
+    /// reason as [`ConstantColor`](Self::ConstantColor).
     OneMinusConstantColor,
+    /// `ConstantAlphaFactor`.
     ConstantAlpha,
+    /// `OneMinusConstantAlphaFactor`.
     OneMinusConstantAlpha,
 }
 
 /// `AddEquation` … `MaxEquation`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum BlendEquation {
+    /// `AddEquation`.
     Add,
+    /// `SubtractEquation`.
     Subtract,
+    /// `ReverseSubtractEquation`.
     ReverseSubtract,
+    /// `MinEquation`.
     Min,
+    /// `MaxEquation`.
     Max,
 }
 

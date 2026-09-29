@@ -71,7 +71,9 @@ pub struct RenderCounts {
     /// Primitives, with the instance count multiplied in, as three.js counts
     /// them.
     pub triangles: u64,
+    /// Points drawn, instance count multiplied in.
     pub points: u64,
+    /// Line segments drawn, instance count multiplied in.
     pub lines: u64,
 }
 

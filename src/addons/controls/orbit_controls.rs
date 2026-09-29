@@ -28,7 +28,9 @@ pub enum MouseButton {
     /// [`PointerEvent`] carries.
     #[default]
     Left,
+    /// `event.button === 1`.
     Middle,
+    /// `event.button === 2`.
     Right,
     /// Any other button; `onMouseDown`'s `default: mouseAction = -1`, i.e. it
     /// does nothing.
@@ -38,8 +40,11 @@ pub enum MouseButton {
 /// `THREE.MOUSE` — what a button is bound to do.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum MouseAction {
+    /// `MOUSE.ROTATE`.
     Rotate,
+    /// `MOUSE.DOLLY`.
     Dolly,
+    /// `MOUSE.PAN`.
     Pan,
     /// `mouseButtons.X = null`, which `onMouseDown` reads as "no action".
     None,
@@ -48,8 +53,11 @@ pub enum MouseAction {
 /// `controls.mouseButtons`.
 #[derive(Clone, Copy, Debug)]
 pub struct MouseButtons {
+    /// `mouseButtons.LEFT`.
     pub left: MouseAction,
+    /// `mouseButtons.MIDDLE`.
     pub middle: MouseAction,
+    /// `mouseButtons.RIGHT`.
     pub right: MouseAction,
 }
 
@@ -81,11 +89,17 @@ pub struct PointerEvent {
     /// `event.pointerId`. A mouse always reports the same id; distinct ids are
     /// how the JS counts fingers.
     pub pointer_id: i32,
+    /// `event.button`.
     pub button: MouseButton,
+    /// `event.clientX`, element-relative — see the struct docs.
     pub client_x: f64,
+    /// `event.clientY`, element-relative — see the struct docs.
     pub client_y: f64,
+    /// `event.ctrlKey`.
     pub ctrl_key: bool,
+    /// `event.metaKey`.
     pub meta_key: bool,
+    /// `event.shiftKey`.
     pub shift_key: bool,
 }
 
@@ -104,9 +118,13 @@ pub enum WheelDelta {
 /// A DOM `WheelEvent`, as a value. See [`PointerEvent`] on the coordinates.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct WheelEvent {
+    /// `event.clientX`, element-relative — see [`PointerEvent`].
     pub client_x: f64,
+    /// `event.clientY`, element-relative — see [`PointerEvent`].
     pub client_y: f64,
+    /// `event.deltaY`.
     pub delta_y: f64,
+    /// `event.deltaMode`.
     pub delta_mode: WheelDelta,
     /// A trackpad pinch arrives as a ctrl-wheel; `_customWheelEvent`
     /// multiplies `deltaY` by 10 for it, unless Control is genuinely held.
@@ -117,18 +135,26 @@ pub struct WheelEvent {
 /// JS's `switch ( event.code )`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Key {
+    /// `"ArrowLeft"` — pan left.
     ArrowLeft,
+    /// `"ArrowUp"` — pan up, or (with Ctrl/Meta/Shift) rotate/dolly.
     ArrowUp,
+    /// `"ArrowRight"` — pan right.
     ArrowRight,
+    /// `"ArrowDown"` — pan down, or (with Ctrl/Meta/Shift) rotate/dolly.
     ArrowDown,
 }
 
 /// A DOM `keydown`, as a value.
 #[derive(Clone, Copy, Debug)]
 pub struct KeyEvent {
+    /// `event.code`, narrowed to the four keys `controls.keys` names.
     pub key: Key,
+    /// `event.ctrlKey`.
     pub ctrl_key: bool,
+    /// `event.metaKey`.
     pub meta_key: bool,
+    /// `event.shiftKey`.
     pub shift_key: bool,
 }
 
@@ -218,14 +244,17 @@ pub struct OrbitControls {
     /// Default 0.05.
     pub damping_factor: f64,
 
+    /// Enable dolly (mouse wheel zoom). Default `true`.
     pub enable_zoom: bool,
     /// Default 1.
     pub zoom_speed: f64,
+    /// Enable orbiting. Default `true`.
     pub enable_rotate: bool,
     /// Default 1.
     pub rotate_speed: f64,
     /// Default 1.
     pub key_rotate_speed: f64,
+    /// Enable panning. Default `true`.
     pub enable_pan: bool,
     /// Default 1.
     pub pan_speed: f64,

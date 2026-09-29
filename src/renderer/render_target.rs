@@ -37,13 +37,17 @@ pub const OUTPUT_ATTACHMENT: &str = "output";
 #[derive(Clone, Copy, Debug)]
 #[non_exhaustive]
 pub struct RenderTargetOptions {
+    /// `options.type` — the colour attachment's pixel format.
     pub texture_type: TextureType,
     /// `RenderTarget`'s default `samples` is 0; the renderer's `antialias`
     /// option does **not** propagate to user render targets, only to the
     /// internal framebuffer target.
     pub samples: u32,
+    /// `options.depthBuffer` — whether the target gets a depth attachment.
     pub depth_buffer: bool,
+    /// `options.minFilter` — the colour attachment's minification filter.
     pub min_filter: TextureFilter,
+    /// `options.magFilter` — the colour attachment's magnification filter.
     pub mag_filter: TextureFilter,
 }
 
@@ -350,12 +354,14 @@ impl RenderTarget {
         textures
     }
 
+    /// `renderTarget.depthTexture = texture`.
     pub fn set_depth_texture(&self, depth_texture: DepthTexture) {
         let mut inner = self.0.borrow_mut();
         depth_texture.set_multisample(inner.samples > 1);
         inner.depth_texture = Some(depth_texture);
     }
 
+    /// `renderTarget.depthTexture`.
     pub fn depth_texture(&self) -> Option<DepthTexture> {
         self.0.borrow().depth_texture.clone()
     }
@@ -378,6 +384,7 @@ impl RenderTarget {
         inner.texture.clear_gpu();
     }
 
+    /// `(renderTarget.width, renderTarget.height)`.
     pub fn size(&self) -> (u32, u32) {
         let inner = self.0.borrow();
         (inner.width, inner.height)
@@ -437,6 +444,7 @@ impl RenderTarget {
         self.0.borrow().texture.clone()
     }
 
+    /// `renderTarget.samples`.
     pub fn samples(&self) -> u32 {
         self.0.borrow().samples
     }

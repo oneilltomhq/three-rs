@@ -26,6 +26,8 @@ use super::Renderer;
 /// closes over `this`, which holds its camera).
 type RenderPipelineHook = Box<dyn FnMut(&mut Renderer)>;
 
+/// `new RenderPipeline()` — the quad that applies tone mapping and colour
+/// space conversion on the way to the canvas; see the module docs.
 pub struct RenderPipeline {
     /// `renderPipeline.outputNode`.
     pub output_node: Option<NodeRef>,
@@ -54,6 +56,7 @@ impl Default for RenderPipeline {
 }
 
 impl RenderPipeline {
+    /// `new RenderPipeline()`.
     pub fn new() -> Self {
         let mut material = MeshBasicNodeMaterial::new();
         material.name = "RenderPipeline";
