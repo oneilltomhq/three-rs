@@ -56,7 +56,7 @@ pub fn init() -> App {
     let equirect_texture = TextureLoader::new()
         .load(examples_dir().join("textures/2294472375_24a3b8ef46_o.jpg"))
         .unwrap();
-    equirect_texture.set_color_space(ColorSpace::SRGB);
+    equirect_texture.set_color_space(ColorSpace::Srgb);
 
     let mut scene = Scene::new();
     // `scene.backgroundNode = texture( equirectTexture, equirectUV(), 0 )`.

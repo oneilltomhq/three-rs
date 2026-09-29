@@ -14,7 +14,7 @@
 
 use three_rs::addons::controls::OrbitControls;
 use three_rs::core::Node;
-use three_rs::loaders::GLTFLoader;
+use three_rs::loaders::GltfLoader;
 use three_rs::materials::ToneMapping;
 use three_rs::nodes::tsl::{float, mix, vec3};
 use three_rs::nodes::NodeRef;
@@ -82,7 +82,7 @@ pub fn init() -> App {
 
     //
 
-    let gltf = GLTFLoader::load(examples_dir().join("models/gltf/DragonAttenuation.glb"))
+    let gltf = GltfLoader::load(examples_dir().join("models/gltf/DragonAttenuation.glb"))
         .expect("DragonAttenuation.glb");
     gltf.scene.borrow_mut().position.set(0.0, 0.0, -0.5);
 

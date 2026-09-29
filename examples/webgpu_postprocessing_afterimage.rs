@@ -110,7 +110,7 @@ pub fn init() -> App {
         let vertex = get_random_point_on_sphere(&mut random, RADIUS);
         vertices.extend([vertex.x as f32, vertex.y as f32, vertex.z as f32]);
 
-        color.set_hsl(i as f64 / COUNT as f64, 0.7, 0.7, ColorSpace::SRGB);
+        color.set_hsl(i as f64 / COUNT as f64, 0.7, 0.7, ColorSpace::Srgb);
         colors.extend([color.r as f32, color.g as f32, color.b as f32]);
 
         time_offsets.push((i as f64 / COUNT as f64) as f32);

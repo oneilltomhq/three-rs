@@ -37,7 +37,7 @@ impl OrthographicCamera {
             far,
             zoom: 1.0,
             view: None,
-            coordinate_system: CoordinateSystem::WebGPU,
+            coordinate_system: CoordinateSystem::WebGpu,
             projection_matrix: Matrix4::identity(),
             projection_matrix_inverse: Matrix4::identity(),
             matrix_world_inverse: Matrix4::identity(),

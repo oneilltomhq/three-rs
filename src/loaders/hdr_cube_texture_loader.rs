@@ -30,7 +30,8 @@ use std::path::{Path, PathBuf};
 
 use super::hdr_loader::{HdrData, HdrLoader};
 use crate::error::Error;
-use crate::textures::{ColorSpace, CubeTexture, Image, MinFilter, TextureFilter, TextureType};
+use crate::math::ColorSpace;
+use crate::textures::{CubeTexture, Image, MinFilter, TextureFilter, TextureType};
 
 /// `new HDRCubeTextureLoader()`.
 #[derive(Debug, Clone)]
@@ -76,7 +77,7 @@ impl HdrCubeTextureLoader {
     /// `CubeTextureLoader` already is.
     ///
     /// The texture comes back with `colorSpace = LinearSRGBColorSpace`
-    /// ([`ColorSpace::NoColorSpace`] — the working space, no transfer
+    /// ([`ColorSpace::LinearSrgb`] — the working space, no transfer
     /// function), `minFilter = magFilter = LinearFilter` and
     /// `generateMipmaps = false`. The mip policy matters downstream: PMREM
     /// builds its own mip pyramid inside a 2-D cubeUV atlas and never samples a
@@ -110,7 +111,7 @@ impl HdrCubeTextureLoader {
 
         let texture = CubeTexture::new(images);
         texture.set_texture_type(self.texture_type)?;
-        texture.set_color_space(ColorSpace::NoColorSpace);
+        texture.set_color_space(ColorSpace::LinearSrgb);
         texture.set_filters(MinFilter::Linear, TextureFilter::Linear);
         texture.set_generate_mipmaps(false);
         Ok(texture)

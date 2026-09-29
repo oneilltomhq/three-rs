@@ -100,7 +100,7 @@ pub fn init() -> App {
     let diffuse = TextureLoader::new()
         .load(examples_dir().join("textures/hardwood2_diffuse.jpg"))
         .unwrap();
-    diffuse.set_color_space(ColorSpace::SRGB);
+    diffuse.set_color_space(ColorSpace::Srgb);
     diffuse.set_wrapping(Wrapping::Repeat, Wrapping::Repeat);
 
     // `new THREE.NodeMaterial()`. With a `colorNode` and no lighting model

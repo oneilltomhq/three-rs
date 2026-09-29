@@ -55,7 +55,7 @@
 //! [`range_fog_factor`]: three_rs::nodes::tsl::range_fog_factor
 
 use three_rs::addons::controls::OrbitControls;
-use three_rs::loaders::{GLTFLoader, UltraHdrLoader};
+use three_rs::loaders::{GltfLoader, UltraHdrLoader};
 use three_rs::materials::{tone_mapping_node, ToneMapping};
 use three_rs::nodes::pmrem_node::PmremEnvironment;
 use three_rs::nodes::tsl::{float, range_fog_factor};
@@ -149,7 +149,7 @@ pub fn init() -> App {
     // `new GLTFLoader().setPath( 'models/gltf/DamagedHelmet/glTF/' ).load(
     // 'DamagedHelmet.gltf', gltf => scene.add( gltf.scene ) )`.
     let gltf =
-        GLTFLoader::load(examples_dir().join("models/gltf/DamagedHelmet/glTF/DamagedHelmet.gltf"))
+        GltfLoader::load(examples_dir().join("models/gltf/DamagedHelmet/glTF/DamagedHelmet.gltf"))
             .expect("DamagedHelmet.gltf");
     scene.add(&gltf.scene);
 

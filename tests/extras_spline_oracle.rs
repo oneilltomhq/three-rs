@@ -93,7 +93,7 @@ fn spline_oracle_positions_and_colors() {
         bits_eq(point.y, positions[i * 3 + 1], &format!("positions[{i}].y"));
         bits_eq(point.z, positions[i * 3 + 2], &format!("positions[{i}].z"));
 
-        color.set_hsl(t, 1.0, 0.5, ColorSpace::SRGB);
+        color.set_hsl(t, 1.0, 0.5, ColorSpace::Srgb);
         bits_eq(color.r, colors[i * 3], &format!("colors[{i}].r"));
         bits_eq(color.g, colors[i * 3 + 1], &format!("colors[{i}].g"));
         bits_eq(color.b, colors[i * 3 + 2], &format!("colors[{i}].b"));

@@ -27,7 +27,7 @@
 //! The page makes no draws from `Math.random()`.
 
 use three_rs::addons::controls::OrbitControls;
-use three_rs::loaders::{CubeTextureLoader, GLTFLoader, HdrCubeTextureLoader};
+use three_rs::loaders::{CubeTextureLoader, GltfLoader, HdrCubeTextureLoader};
 use three_rs::materials::environment::EnvironmentNode;
 use three_rs::materials::ToneMapping;
 use three_rs::nodes::pmrem_node::PmremEnvironment;
@@ -110,7 +110,7 @@ pub fn init() -> App {
     ));
 
     let gltf =
-        GLTFLoader::load(examples_dir().join("models/gltf/DamagedHelmet/glTF/DamagedHelmet.gltf"))
+        GltfLoader::load(examples_dir().join("models/gltf/DamagedHelmet/glTF/DamagedHelmet.gltf"))
             .expect("DamagedHelmet.gltf");
     scene.add(&gltf.scene);
 

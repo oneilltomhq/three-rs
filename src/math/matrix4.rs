@@ -8,13 +8,15 @@ use super::{Quaternion, Vector3};
 
 /// three.js' `WebGLCoordinateSystem` / `WebGPUCoordinateSystem`: clip space
 /// depth is -1..1 for the former and 0..1 for the latter. `Matrix4`'s
-/// projection builders default to `WebGL`; `WebGPURenderer` always passes
-/// `WebGPU`.
+/// projection builders default to `WebGl`; `WebGPURenderer` always passes
+/// `WebGpu`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum CoordinateSystem {
+    /// `WebGLCoordinateSystem`.
     #[default]
-    WebGL,
-    WebGPU,
+    WebGl,
+    /// `WebGPUCoordinateSystem`.
+    WebGpu,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -258,11 +260,11 @@ impl Matrix4 {
         let b = (top + bottom) / (top - bottom);
 
         let (c, d) = match coordinate_system {
-            CoordinateSystem::WebGL => (
+            CoordinateSystem::WebGl => (
                 -(far + near) / (far - near),
                 (-2.0 * far * near) / (far - near),
             ),
-            CoordinateSystem::WebGPU => (-far / (far - near), (-far * near) / (far - near)),
+            CoordinateSystem::WebGpu => (-far / (far - near), (-far * near) / (far - near)),
         };
 
         let te = &mut self.elements;
@@ -847,8 +849,8 @@ impl Matrix4 {
         let b = -(top + bottom) / (top - bottom);
 
         let (c, d) = match coordinate_system {
-            CoordinateSystem::WebGL => (-2.0 / (far - near), -(far + near) / (far - near)),
-            CoordinateSystem::WebGPU => (-1.0 / (far - near), -near / (far - near)),
+            CoordinateSystem::WebGl => (-2.0 / (far - near), -(far + near) / (far - near)),
+            CoordinateSystem::WebGpu => (-1.0 / (far - near), -near / (far - near)),
         };
 
         let te = &mut self.elements;

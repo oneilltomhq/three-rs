@@ -95,12 +95,12 @@ impl Frustum {
                 .normalize(); // far
 
             match coordinate_system {
-                CoordinateSystem::WebGL => {
+                CoordinateSystem::WebGl => {
                     planes[5]
                         .set_components(me3 + me2, me7 + me6, me11 + me10, me15 + me14)
                         .normalize(); // near
                 }
-                CoordinateSystem::WebGPU => {
+                CoordinateSystem::WebGpu => {
                     planes[5].set_components(me2, me6, me10, me14).normalize(); // near
                 }
             }

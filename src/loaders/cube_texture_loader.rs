@@ -8,7 +8,8 @@
 use std::path::{Path, PathBuf};
 
 use crate::error::Error;
-use crate::textures::{ColorSpace, CubeTexture, Image};
+use crate::math::ColorSpace;
+use crate::textures::{CubeTexture, Image};
 
 #[derive(Debug, Clone, Default)]
 pub struct CubeTextureLoader {
@@ -32,7 +33,7 @@ impl CubeTextureLoader {
     pub fn load<P: AsRef<Path>>(&self, urls: [P; 6]) -> Result<CubeTexture, Error> {
         let images = self.load_faces(&urls)?;
         let texture = CubeTexture::new(images);
-        texture.set_color_space(ColorSpace::SRGB);
+        texture.set_color_space(ColorSpace::Srgb);
         Ok(texture)
     }
 

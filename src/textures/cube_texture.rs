@@ -9,16 +9,9 @@ use std::cell::Ref;
 
 use super::texture::MinFilter;
 use super::{TextureFilter, TextureId, TextureType};
+use crate::math::ColorSpace;
 use std::cell::RefCell;
 use std::rc::Rc;
-
-/// `three.js/src/constants.js` colour spaces, as far as the port needs them.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[non_exhaustive]
-pub enum ColorSpace {
-    NoColorSpace,
-    SRGB,
-}
 
 /// `three.js/src/constants.js` texture mappings.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -286,8 +279,10 @@ impl CubeTexture {
         match self.texture_type() {
             TextureType::HalfFloat => wgpu::TextureFormat::Rgba16Float,
             _ => match self.color_space() {
-                ColorSpace::SRGB => wgpu::TextureFormat::Rgba8UnormSrgb,
-                ColorSpace::NoColorSpace => wgpu::TextureFormat::Rgba8Unorm,
+                ColorSpace::Srgb => wgpu::TextureFormat::Rgba8UnormSrgb,
+                ColorSpace::NoColorSpace | ColorSpace::LinearSrgb => {
+                    wgpu::TextureFormat::Rgba8Unorm
+                }
             },
         }
     }

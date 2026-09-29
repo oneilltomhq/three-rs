@@ -3,23 +3,14 @@
 //! three.js' colour management is on by default: a hex literal is interpreted
 //! as sRGB and stored in the working colour space (linear-sRGB), which is what
 //! the renderer then uses as a clear value. The working space here is always
-//! `LinearSRGBColorSpace` and the only other space is `SRGBColorSpace`, so the
-//! `ColorManagement.convert()` machinery collapses to the two transfer
-//! functions below (the primaries never differ).
+//! `LinearSRGBColorSpace` and the only other space with a transfer function is
+//! `SRGBColorSpace`, so the `ColorManagement.convert()` machinery collapses to
+//! the two transfer functions below (the primaries never differ, and
+//! `NoColorSpace` converts nothing).
 
 use super::math_utils::{clamp, euclidean_modulo, js_max, js_min, lerp};
 use super::vector3::js_round;
-use super::{Matrix3, Vector3};
-
-/// `ColorManagement`'s two named spaces, as far as `Color` is concerned.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum ColorSpace {
-    /// `LinearSRGBColorSpace` — `ColorManagement.workingColorSpace`.
-    LinearSRGB,
-    /// `SRGBColorSpace`.
-    SRGB,
-}
+use super::{ColorSpace, Matrix3, Vector3};
 
 /// The `{ h, s, l }` object `Color.getHSL()` fills in.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -54,7 +45,7 @@ impl Color {
     /// `new Color( hex )` — `setHex( hex, SRGBColorSpace )`.
     pub fn from_hex(hex: u32) -> Self {
         let mut c = Self::default();
-        c.set_hex(hex, ColorSpace::SRGB);
+        c.set_hex(hex, ColorSpace::Srgb);
         c
     }
 
@@ -212,7 +203,7 @@ impl Color {
 
     /// `Color.getStyle()`, `SRGBColorSpace`.
     pub fn get_style(&self) -> String {
-        let c = self.get_rgb(ColorSpace::SRGB);
+        let c = self.get_rgb(ColorSpace::Srgb);
 
         format!(
             "rgb({},{},{})",
@@ -224,8 +215,8 @@ impl Color {
 
     /// `Color.offsetHSL()`.
     pub fn offset_hsl(&mut self, h: f64, s: f64, l: f64) -> &mut Self {
-        let hsl = self.get_hsl(ColorSpace::LinearSRGB);
-        self.set_hsl(hsl.h + h, hsl.s + s, hsl.l + l, ColorSpace::LinearSRGB)
+        let hsl = self.get_hsl(ColorSpace::LinearSrgb);
+        self.set_hsl(hsl.h + h, hsl.s + s, hsl.l + l, ColorSpace::LinearSrgb)
     }
 
     /// `Color.add()`.
@@ -294,14 +285,14 @@ impl Color {
 
     /// `Color.lerpHSL()`.
     pub fn lerp_hsl(&mut self, color: &Self, alpha: f64) -> &mut Self {
-        let a = self.get_hsl(ColorSpace::LinearSRGB);
-        let b = color.get_hsl(ColorSpace::LinearSRGB);
+        let a = self.get_hsl(ColorSpace::LinearSrgb);
+        let b = color.get_hsl(ColorSpace::LinearSrgb);
 
         let h = lerp(a.h, b.h, alpha);
         let s = lerp(a.s, b.s, alpha);
         let l = lerp(a.l, b.l, alpha);
 
-        self.set_hsl(h, s, l, ColorSpace::LinearSRGB)
+        self.set_hsl(h, s, l, ColorSpace::LinearSrgb)
     }
 
     /// `Color.setFromVector3()`.
@@ -345,7 +336,7 @@ impl Color {
     /// `ColorManagement.colorSpaceToWorking()`: the working space is
     /// linear-sRGB, so only an sRGB source needs decoding.
     fn color_space_to_working(&mut self, source: ColorSpace) -> &mut Self {
-        if source == ColorSpace::SRGB {
+        if source == ColorSpace::Srgb {
             self.r = srgb_to_linear(self.r);
             self.g = srgb_to_linear(self.g);
             self.b = srgb_to_linear(self.b);
@@ -355,7 +346,7 @@ impl Color {
 
     /// `ColorManagement.workingToColorSpace()`.
     fn working_to_color_space(&mut self, target: ColorSpace) -> &mut Self {
-        if target == ColorSpace::SRGB {
+        if target == ColorSpace::Srgb {
             self.r = linear_to_srgb(self.r);
             self.g = linear_to_srgb(self.g);
             self.b = linear_to_srgb(self.b);

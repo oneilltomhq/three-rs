@@ -26,7 +26,7 @@ fn matrix_equals4(a: &Matrix4, b: &Matrix4, tolerance: f64) -> bool {
 /// set back.
 fn webgl_camera(fov: f64, aspect: f64, near: f64, far: f64) -> PerspectiveCamera {
     let mut cam = PerspectiveCamera::new(fov, aspect, near, far);
-    cam.coordinate_system = CoordinateSystem::WebGL;
+    cam.coordinate_system = CoordinateSystem::WebGl;
     cam.update_projection_matrix();
     cam
 }

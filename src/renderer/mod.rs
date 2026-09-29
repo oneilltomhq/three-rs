@@ -1205,7 +1205,7 @@ impl Renderer {
             background_geometry: None,
             quad_geometry: None,
             quad_camera: OrthographicCamera::new(-1.0, 1.0, 1.0, -1.0, 0.0, 1.0),
-            output_color_space: crate::math::ColorSpace::SRGB,
+            output_color_space: crate::math::ColorSpace::Srgb,
             neutral_output: false,
             tone_mapping_exposure: 1.0,
             fullscreen_pass: false,
@@ -6375,7 +6375,7 @@ impl Renderer {
     /// always false and the predicate is the second: the output space differs
     /// from the working space, and `neutral_output` has not zeroed both.
     fn needs_frame_buffer_target(&self) -> bool {
-        !self.neutral_output && self.output_color_space != crate::math::ColorSpace::LinearSRGB
+        !self.neutral_output && self.output_color_space != crate::math::ColorSpace::LinearSrgb
     }
 
     /// `renderer.outputColorSpace = …`. Setting it to the working space,

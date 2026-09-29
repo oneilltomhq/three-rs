@@ -81,6 +81,24 @@ not held is freed.
 - **Rust names throughout**, with the three.js name in the doc comment. This
   is already how the crate is written (`set_rotation`,
   `matrix_world_needs_update`, `is_mesh()`); recorded so it is not reopened.
+  It covers casing too (C-CASE): an acronym in a type, variant or trait name
+  is one word, so three.js' `GLTFLoader`, `SRGBColorSpace` and
+  `WebGPUCoordinateSystem` are `GltfLoader`, `ColorSpace::Srgb` and
+  `CoordinateSystem::WebGpu`, as `HdrLoader`, `PmremGenerator`, `Ktx2Loader`,
+  `MrtNode` and `FxaaNode` already were. Three kinds of name are not acronyms
+  and keep their capitals: a dimension suffix (`Data3DTexture`,
+  `TextureSource::Texture2D`), which a digit already splits and which would
+  only get harder to read; an axis order (`EulerOrder::XYZ`), which is three
+  one-letter axis names, as in glam's `EulerRot::XYZ`; and the glam-style
+  vector types (`Type::UVec2`, `BVec3`), which are WGSL's `vec2<u32>` in the
+  spelling Rust graphics code already uses. Error strings that quote
+  three.js (`THREE.GLTFLoader: ...`) keep three's spelling.
+- **One `ColorSpace`.** three.js' colour spaces are string constants shared by
+  `ColorManagement`, `Color`, `Texture.colorSpace` and
+  `renderer.outputColorSpace`, so the port has one enum for all four:
+  `math::ColorSpace`, next to `ColorManagement`, re-exported at the crate root.
+  `NoColorSpace` is a variant, as `''` is a constant, rather than `None` in an
+  `Option`.
 - **`Scene` and the cameras own a `node` field** and are not `Node`s
   themselves. `Scene` adds `background`, `fog_node` and `override_material`;
   a camera adds its projection state. Both forward `add()`, `children()` and
@@ -298,7 +316,7 @@ item landed in one of three places, by one rule each:
   `NodeProgram::vertex_buffers`, `materials::setup` and its contexts), the
   readbacks and cache counters the grader asserts on (`read_target_pixels`,
   `material_cache_len`), and the oracle hooks the decoder tests compare with
-  three's own output (`GLTFLoader::accessors`, `loaders::meshopt`,
+  three's own output (`GltfLoader::accessors`, `loaders::meshopt`,
   `loaders::draco`). Like `testing` (decision 4) they carry no compatibility
   promise.
 - **`pub(crate)`**: everything else. Setup-context plumbing, per-light uniform
@@ -318,7 +336,7 @@ Modules that are namespaces in three.js (`extras::shape_utils`,
 concept of which the port has only part: `nodes::Node` (decision 9) and its
 `Builtin`, `UniformSource`, `TextureSource` and `BufferSource`; `MaterialKind`,
 `Payload`, `LightKind`, `Background`, `ToneMapping`; the texture `TextureType`,
-`Mapping`, `ColorSpace` (both of them) and `DataTextureData`; KTX2's
+`Mapping`, `ColorSpace` and `DataTextureData`; KTX2's
 `EngineFormat`; `TrackInterpolant`, which has no Bézier arm yet; and
 `sdf_text::TextAlign`, which has no `justify`. Each one gains variants as rungs
 land, and a variant is additive only if callers were made to write the `_`

@@ -18,7 +18,7 @@ mod ultra_hdr_loader;
 pub use buffer_geometry_loader::BufferGeometryLoader;
 pub use cube_texture_loader::CubeTextureLoader;
 pub use font_loader::{Font, FontLoader, TextDirection};
-pub use gltf_loader::{GLTFLoader, Gltf, GltfImage, GltfMaterial, GltfPrimitive, GltfTexture};
+pub use gltf_loader::{Gltf, GltfImage, GltfLoader, GltfMaterial, GltfPrimitive, GltfTexture};
 pub use hdr_cube_texture_loader::HdrCubeTextureLoader;
 pub use hdr_loader::{HdrData, HdrLoader, HdrTexData};
 pub use ktx2_loader::{

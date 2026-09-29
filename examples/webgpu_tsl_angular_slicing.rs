@@ -34,7 +34,7 @@
 use std::rc::Rc;
 
 use three_rs::addons::controls::OrbitControls;
-use three_rs::loaders::{GLTFLoader, UltraHdrLoader};
+use three_rs::loaders::{GltfLoader, UltraHdrLoader};
 use three_rs::materials::{Side, ToneMapping};
 use three_rs::math::Vector3;
 use three_rs::nodes::pmrem_node::PmremEnvironment;
@@ -174,7 +174,7 @@ pub fn init() -> App {
 
     // model
 
-    let gltf = GLTFLoader::load(examples_dir().join("models/gltf/gears.glb")).expect("gears.glb");
+    let gltf = GltfLoader::load(examples_dir().join("models/gltf/gears.glb")).expect("gears.glb");
     gltf.scene.traverse(&mut |node| {
         let mut object = node.borrow_mut();
         if !object.is_mesh() {

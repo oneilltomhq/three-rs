@@ -25,7 +25,7 @@ use std::f64::consts::PI;
 
 use three_rs::addons::controls::OrbitControls;
 use three_rs::animation::AnimationMixer;
-use three_rs::loaders::GLTFLoader;
+use three_rs::loaders::GltfLoader;
 use three_rs::nodes::tsl::screen_uv;
 use three_rs::Timer;
 use three_rs::{
@@ -75,7 +75,7 @@ pub fn init() -> App {
     let ambient = AmbientLight::new(Color::from_hex(0x4466ff), 1.0);
     scene.add(&ambient);
 
-    let gltf = GLTFLoader::load(three.join("examples/models/gltf/Michelle.glb"))
+    let gltf = GltfLoader::load(three.join("examples/models/gltf/Michelle.glb"))
         .expect("three-rs: Michelle.glb loads");
 
     let mut mixer = AnimationMixer::new(Box::new(gltf.scene_resolver()));

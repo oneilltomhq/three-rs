@@ -9,7 +9,8 @@ use std::cell::{Ref, RefCell};
 use std::rc::Rc;
 
 use super::TextureId;
-use super::{ColorSpace, Image, TextureFilter};
+use super::{Image, TextureFilter};
+use crate::math::ColorSpace;
 use crate::math::{Matrix3, Vector2};
 
 /// `three.js/src/constants.js` wrapping modes.
@@ -238,8 +239,8 @@ impl Texture {
     /// there is no mip chain to filter between.
     ///
     /// `color_space` must agree with the wgpu format's transfer function —
-    /// an `*Srgb` format is [`ColorSpace::SRGB`] and everything else is
-    /// [`ColorSpace::NoColorSpace`] — because the GPU applies the transfer on
+    /// an `*Srgb` format is [`ColorSpace::Srgb`] and everything else is
+    /// [`ColorSpace::LinearSrgb`] or [`ColorSpace::NoColorSpace`] — because the GPU applies the transfer on
     /// sample and a mismatch is a silently wrong-looking frame rather than an
     /// error. It is asserted here.
     pub fn external(gpu: wgpu::Texture, color_space: ColorSpace) -> Self {
@@ -265,7 +266,7 @@ impl Texture {
         let format = gpu.format();
         assert_eq!(
             format.is_srgb(),
-            color_space == ColorSpace::SRGB,
+            color_space == ColorSpace::Srgb,
             "three-rs: {format:?} and {color_space:?} disagree about the transfer function"
         );
 
@@ -373,9 +374,9 @@ impl Texture {
     /// sets both filters back to `LinearFilter` and `flipY` to true, which
     /// [`HdrLoader::load`](crate::loaders::HdrLoader::load) does; the cube
     /// loader leaves `flipY` at the `DataTexture` default. The colour space
-    /// stays `NoColorSpace` — `LinearSRGBColorSpace` is the working space and
-    /// carries no transfer function, so `rgba16float` is the right format and
-    /// nothing is applied on sample.
+    /// is `NoColorSpace` here, and the loaders then set
+    /// `LinearSRGBColorSpace`. Neither carries a transfer function, so
+    /// `rgba16float` is the right format and nothing is applied on sample.
     ///
     /// `data` is one binary16 bit pattern per channel, four per texel, which is
     /// the `Uint16Array` upstream hands `write_texture` unchanged.
@@ -514,8 +515,8 @@ impl Texture {
         let mut inner = self.0.borrow_mut();
         inner.color_space = color_space;
         inner.format = match color_space {
-            ColorSpace::SRGB => inner.format.add_srgb_suffix(),
-            ColorSpace::NoColorSpace => inner.format.remove_srgb_suffix(),
+            ColorSpace::Srgb => inner.format.add_srgb_suffix(),
+            ColorSpace::NoColorSpace | ColorSpace::LinearSrgb => inner.format.remove_srgb_suffix(),
         };
     }
 
