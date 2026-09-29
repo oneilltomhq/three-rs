@@ -104,10 +104,12 @@ impl std::fmt::Debug for ReflectorBase {
 pub struct Reflector(Rc<RefCell<ReflectorBase>>);
 
 impl Reflector {
+    /// Borrows the shared [`ReflectorBase`].
     pub fn borrow(&self) -> std::cell::Ref<'_, ReflectorBase> {
         self.0.borrow()
     }
 
+    /// Mutably borrows the shared [`ReflectorBase`].
     pub fn borrow_mut(&self) -> std::cell::RefMut<'_, ReflectorBase> {
         self.0.borrow_mut()
     }

@@ -24,6 +24,7 @@ pub fn sobel(map: &Texture) -> SobelOperatorNode {
 }
 
 impl SobelOperatorNode {
+    /// `new SobelOperatorNode( node )`.
     pub fn new(map: &Texture) -> Self {
         let (texel, inv_size) = uniform_settable(Type::Vec2, vec![0.0, 0.0]);
         let uv_node = uv();

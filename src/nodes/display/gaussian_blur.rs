@@ -120,6 +120,7 @@ fn texture_type_of(map: &Texture) -> TextureType {
 }
 
 impl GaussianBlurNode {
+    /// `new GaussianBlurNode( node, directionNode, sigma )`.
     pub fn new(
         map: &Texture,
         direction: Option<NodeRef>,

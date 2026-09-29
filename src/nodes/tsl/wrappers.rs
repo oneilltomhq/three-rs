@@ -828,9 +828,13 @@ pub fn frame_id() -> NodeRef {
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub struct Billboarding {
+    /// The billboard's center; `None` derives it from `positionWorld`.
     pub position: Option<NodeRef>,
+    /// Whether to follow the camera rotation horizontally.
     pub horizontal: bool,
+    /// Whether to follow the camera rotation vertically.
     pub vertical: bool,
+    /// Whether to rotate around the Y axis to face the camera.
     pub horizontal_rotation: bool,
 }
 

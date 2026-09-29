@@ -39,8 +39,13 @@ use crate::nodes::NodeRef;
 /// same, and a different geometry cannot collide with it.
 #[derive(Clone, Debug)]
 pub struct LineSegmentsAttributes {
+    /// `instanceStart` / `instanceEnd`, interleaved: six floats per segment.
     pub positions: Rc<Vec<f32>>,
+    /// `instanceColorStart` / `instanceColorEnd`, if the geometry has
+    /// per-vertex colors.
     pub colors: Option<Rc<Vec<f32>>>,
+    /// `instanceDistanceStart` / `instanceDistanceEnd`, if
+    /// `compute_line_distances()` has been called.
     pub distances: Option<Rc<Vec<f32>>>,
     /// `LineSegments2._resolution` — the renderer's viewport size in logical
     /// pixels, written by `onBeforeRender()` every draw and read only by the

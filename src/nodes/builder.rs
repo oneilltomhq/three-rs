@@ -69,8 +69,11 @@ impl Stage {
 /// Which shader stages a binding has to be visible in.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Visibility {
+    /// Visible to the vertex stage.
     pub vertex: bool,
+    /// Visible to the fragment stage.
     pub fragment: bool,
+    /// Visible to a compute stage.
     pub compute: bool,
 }
 
@@ -101,9 +104,13 @@ impl Visibility {
 /// One member of a generated uniform struct.
 #[derive(Clone, Debug, Hash)]
 pub struct UniformMember {
+    /// The member's name in the generated struct.
     pub name: String,
+    /// Where the value comes from.
     pub source: UniformSource,
+    /// The member's WGSL type.
     pub ty: Type,
+    /// Byte offset within the struct.
     pub offset: u32,
 }
 
@@ -115,24 +122,40 @@ pub struct UniformMember {
 /// binding merely points at.
 #[derive(Clone, Debug, Hash)]
 pub enum BindingDesc {
+    /// A uniform struct binding.
     Uniforms {
+        /// Which group this uniform block belongs to (render or object).
         group: UniformGroup,
+        /// The struct's members, in declaration order.
         members: Vec<UniformMember>,
+        /// The struct's total size in bytes, rounded up to 16.
         size: u32,
+        /// How often the renderer refreshes this block's bytes.
         update: UpdateType,
+        /// Which shader stages read this binding.
         visibility: Visibility,
     },
+    /// A texture binding.
     Texture {
+        /// Where the texture's data comes from.
         source: TextureSource,
+        /// The texture's dimension, sample type and filterability.
         kind: TextureKind,
+        /// Which shader stages read this binding.
         visibility: Visibility,
     },
+    /// A sampler binding.
     Sampler {
+        /// The texture this sampler was created for.
         source: TextureSource,
+        /// The texture's dimension, sample type and filterability.
         kind: TextureKind,
+        /// Which shader stages read this binding.
         visibility: Visibility,
     },
+    /// A storage buffer binding — `BufferNode` (`range()`, `storage()`, …).
     Buffer {
+        /// The binding's name in the shader.
         name: String,
         /// The `BufferNode`'s own identity ([`BufferId`](crate::nodes::node::BufferId), a never-reused
         /// counter), which is what the renderer keys its GPU buffer on. Two
@@ -141,9 +164,13 @@ pub enum BindingDesc {
         /// value — and the identity outlives the node, so the renderer's cache
         /// cannot hand a new buffer a dead one's fill.
         id: usize,
+        /// Where the buffer's contents come from.
         source: BufferSource,
+        /// The type of one element.
         element_ty: Type,
+        /// The number of elements.
         count: usize,
+        /// Which shader stages read this binding.
         visibility: Visibility,
     },
 }
@@ -154,10 +181,13 @@ pub struct AttributeSlot {
     /// The name in the shader — a geometry attribute's own name, or
     /// `nodeAttributeN` for a generated one.
     pub name: String,
+    /// The attribute's WGSL type.
     pub ty: Type,
+    /// Where the attribute's data comes from.
     pub source: AttributeSource,
 }
 
+/// Where one [`AttributeSlot`]'s data comes from.
 #[derive(Clone, Debug)]
 pub enum AttributeSource {
     /// A named `BufferGeometry` attribute, stepping once per vertex.
@@ -165,7 +195,9 @@ pub enum AttributeSource {
     /// An `InstancedBufferAttribute` view: the shared per-instance buffer plus
     /// this attribute's offset within one instance, in floats.
     Instance {
+        /// The shared per-instance buffer.
         buffer: Rc<InstanceBuffer>,
+        /// This attribute's offset within one instance, in floats.
         offset: usize,
     },
 }
@@ -173,7 +205,9 @@ pub enum AttributeSource {
 /// Where one `GPUVertexBufferLayout` gets its bytes.
 #[derive(Clone, Debug)]
 pub enum VertexBufferSource {
+    /// A named `BufferGeometry` attribute.
     Geometry(&'static str),
+    /// A shared per-instance buffer.
     Instance(Rc<InstanceBuffer>),
 }
 
@@ -185,6 +219,7 @@ pub enum VertexBufferSource {
 /// 0/16/32/48 of a 64-byte stride.
 #[derive(Clone, Debug)]
 pub struct VertexBufferDesc {
+    /// Where this buffer's bytes come from.
     pub source: VertexBufferSource,
     /// `arrayStride`, in bytes.
     pub array_stride: u64,
@@ -263,17 +298,22 @@ impl NodeUpdate for ComputeFlow {
 
 /// The built compute shader and everything its pipeline and dispatch need.
 pub struct ComputeProgram {
+    /// The generated `@compute` entry point's WGSL source.
     pub wgsl: String,
     /// Bind groups in `@group` order.
     pub groups: Vec<Vec<BindingDesc>>,
+    /// `@workgroup_size`, padded to three components.
     pub workgroup_size: [u32; 3],
     /// The `dispatchWorkgroups` arguments.
     pub dispatch: [u32; 3],
     pub(crate) cache_key: u64,
 }
 
+/// The built vertex and fragment shaders and everything their pipeline needs.
 pub struct NodeProgram {
+    /// The generated `@vertex` entry point's WGSL source.
     pub vertex_wgsl: String,
+    /// The generated `@fragment` entry point's WGSL source.
     pub fragment_wgsl: String,
     /// Vertex attributes in `@location` order.
     pub attributes: Vec<AttributeSlot>,
@@ -604,6 +644,9 @@ struct GroupState {
     uniform_slot: Option<usize>,
 }
 
+/// `NodeBuilder` / `WGSLNodeBuilder`: builds a material's node graph into WGSL,
+/// tracking the two shader stages, slot allocation and the flow. See
+/// `docs/nodes.md` §3.
 pub struct NodeBuilder {
     stage: Stage,
     stages: [StageState; 3],
@@ -699,6 +742,7 @@ impl Default for NodeBuilder {
 }
 
 impl NodeBuilder {
+    /// A fresh builder, empty of any material's flow.
     pub fn new() -> Self {
         let mut b = NodeBuilder {
             stage: Stage::Fragment,
@@ -2978,6 +3022,8 @@ impl NodeBuilder {
         self
     }
 
+    /// `NodeBuilder.build()`: analyse both stages, generate fragment then
+    /// vertex, and assemble the vertex and fragment shader strings.
     pub fn build(mut self, flow: &MaterialFlow) -> NodeProgram {
         for stmt in &flow.pre_vertex_statements {
             self.analyze(stmt);

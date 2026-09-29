@@ -41,6 +41,8 @@ pub fn pixelation_pass(
 }
 
 impl PixelationPassNode {
+    /// `new PixelationPassNode( scene, camera, pixelSize, normalEdgeStrength,
+    /// depthEdgeStrength )`.
     pub fn new(
         pixel_size: u32,
         normal_edge_strength: NodeRef,

@@ -60,6 +60,7 @@ struct Edge {
 }
 
 impl FxaaNode {
+    /// `new FXAANode( node )`.
     pub fn new(map: &Texture) -> Self {
         let (inv_size_node, inv_size) = uniform_settable(Type::Vec2, vec![0.0, 0.0]);
 
