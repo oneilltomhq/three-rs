@@ -31,6 +31,7 @@
 //! controls.apply(&mut camera);
 //! ```
 
+#![warn(missing_docs)]
 mod ground;
 mod map_controls;
 mod smooth_damp;

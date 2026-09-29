@@ -128,6 +128,7 @@
 //! # Ok::<(), three_rs::Error>(())
 //! ```
 
+#![warn(missing_docs)]
 pub mod addons;
 pub mod animation;
 pub mod cameras;
