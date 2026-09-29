@@ -87,9 +87,14 @@ pub use vector_font_atlas::{GlyphMetrics, VectorFontAtlas};
 /// ported test layers 2–4 use these, so they are kept as their own namespace
 /// rather than being folded into either atlas.
 pub mod sdf_defaults {
+    /// Rasterised glyph size, px.
     pub const GLYPH_SIZE: u32 = 64;
+    /// SDF tile size, px.
     pub const SDF_SIZE: u32 = 32;
+    /// SDF padding within the tile, px.
     pub const SDF_PADDING: u32 = 4;
+    /// Encoded distance span, px.
     pub const MAX_DISTANCE: f64 = 8.0;
+    /// `computeSDF`'s coverage threshold, 0–255.
     pub const ALPHA_THRESHOLD: u8 = 128;
 }

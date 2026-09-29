@@ -17,7 +17,9 @@ pub enum Error {
     /// Font bytes `ttf-parser` could not read a face out of. `src` is the
     /// label the caller passed to [`crate::VectorFont::parse`].
     Parse {
+        /// The label the caller passed to [`crate::VectorFont::parse`].
         src: String,
+        /// The underlying `ttf-parser` failure.
         source: owned_ttf_parser::FaceParsingError,
     },
 }

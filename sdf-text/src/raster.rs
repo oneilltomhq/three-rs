@@ -87,10 +87,15 @@ use crate::vector_font::PathCommand;
 /// `mx = off_x + (x - min_x) * s`, `my = off_y + (y - min_y) * s`.
 #[derive(Clone, Copy, Debug)]
 pub struct Affine {
+    /// X translation applied after scaling.
     pub off_x: f64,
+    /// Y translation applied after scaling.
     pub off_y: f64,
+    /// Uniform scale.
     pub s: f64,
+    /// X origin subtracted before scaling.
     pub min_x: f64,
+    /// Y origin subtracted before scaling.
     pub min_y: f64,
 }
 

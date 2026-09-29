@@ -50,9 +50,12 @@ pub fn layout_defaults() -> LayoutParams {
 /// What `Text::set_opacity` writes through to — `BatchedText.setOpacityAt` in
 /// the JS.
 pub trait OpacitySink {
+    /// Writes one member's opacity into the batch's per-glyph attribute.
     fn set_opacity_at(&mut self, member_id: usize, opacity: f64);
 }
 
+/// A text member — a port of lib3's `Text`. See the module doc for how this
+/// differs from the JS `Object3D` subclass it ports.
 pub struct Text {
     /// Member colour, **linear**, default white. See the module doc.
     pub color: [f64; 3],
@@ -106,10 +109,12 @@ impl Text {
     // One pair each, all with the same shape: the setter compares first and only
     // dirties when the value actually changed.
 
+    /// The string to lay out.
     pub fn text(&self) -> &str {
         &self.params.text
     }
 
+    /// Sets the string to lay out — `text.text = value`.
     pub fn set_text(&mut self, value: impl Into<String>) {
         let value = value.into();
         if self.params.text != value {
@@ -118,10 +123,12 @@ impl Text {
         }
     }
 
+    /// Font size, world units.
     pub fn font_size(&self) -> f64 {
         self.params.font_size
     }
 
+    /// Sets the font size — `text.fontSize = value`.
     pub fn set_font_size(&mut self, value: f64) {
         if self.params.font_size != value {
             self.params.font_size = value;
@@ -129,10 +136,12 @@ impl Text {
         }
     }
 
+    /// CSS font family. Canvas layout only; vector layout never reads it.
     pub fn font_family(&self) -> &str {
         &self.params.font_family
     }
 
+    /// Sets the CSS font family — `text.fontFamily = value`.
     pub fn set_font_family(&mut self, value: impl Into<String>) {
         let value = value.into();
         if self.params.font_family != value {
@@ -141,10 +150,12 @@ impl Text {
         }
     }
 
+    /// CSS font weight. Canvas layout only.
     pub fn font_weight(&self) -> &str {
         &self.params.font_weight
     }
 
+    /// Sets the CSS font weight — `text.fontWeight = value`.
     pub fn set_font_weight(&mut self, value: impl Into<String>) {
         let value = value.into();
         if self.params.font_weight != value {
@@ -153,10 +164,12 @@ impl Text {
         }
     }
 
+    /// CSS font style. Canvas layout only.
     pub fn font_style(&self) -> &str {
         &self.params.font_style
     }
 
+    /// Sets the CSS font style — `text.fontStyle = value`.
     pub fn set_font_style(&mut self, value: impl Into<String>) {
         let value = value.into();
         if self.params.font_style != value {
@@ -165,10 +178,12 @@ impl Text {
         }
     }
 
+    /// Extra space added per glyph. See the module's asymmetric-spacing note.
     pub fn letter_spacing(&self) -> f64 {
         self.params.letter_spacing
     }
 
+    /// Sets the letter spacing — `text.letterSpacing = value`.
     pub fn set_letter_spacing(&mut self, value: f64) {
         if self.params.letter_spacing != value {
             self.params.letter_spacing = value;
@@ -176,10 +191,12 @@ impl Text {
         }
     }
 
+    /// Line height, as [`LineHeight`].
     pub fn line_height(&self) -> LineHeight {
         self.params.line_height
     }
 
+    /// Sets the line height — `text.lineHeight = value`.
     pub fn set_line_height(&mut self, value: LineHeight) {
         if self.params.line_height != value {
             self.params.line_height = value;
@@ -187,10 +204,12 @@ impl Text {
         }
     }
 
+    /// Horizontal anchor.
     pub fn anchor_x(&self) -> &Anchor {
         &self.params.anchor_x
     }
 
+    /// Sets the horizontal anchor — `text.anchorX = value`.
     pub fn set_anchor_x(&mut self, value: Anchor) {
         if self.params.anchor_x != value {
             self.params.anchor_x = value;
@@ -198,10 +217,12 @@ impl Text {
         }
     }
 
+    /// Vertical anchor.
     pub fn anchor_y(&self) -> &Anchor {
         &self.params.anchor_y
     }
 
+    /// Sets the vertical anchor — `text.anchorY = value`.
     pub fn set_anchor_y(&mut self, value: Anchor) {
         if self.params.anchor_y != value {
             self.params.anchor_y = value;
@@ -209,10 +230,12 @@ impl Text {
         }
     }
 
+    /// Multi-line alignment.
     pub fn text_align(&self) -> TextAlign {
         self.params.text_align
     }
 
+    /// Sets the text alignment — `text.textAlign = value`.
     pub fn set_text_align(&mut self, value: TextAlign) {
         if self.params.text_align != value {
             self.params.text_align = value;
@@ -220,10 +243,12 @@ impl Text {
         }
     }
 
+    /// Line-wrap width, world units. `f64::INFINITY` by default (no wrap).
     pub fn max_width(&self) -> f64 {
         self.params.max_width
     }
 
+    /// Sets the line-wrap width — `text.maxWidth = value`.
     pub fn set_max_width(&mut self, value: f64) {
         if self.params.max_width != value {
             self.params.max_width = value;
@@ -233,6 +258,7 @@ impl Text {
 
     // ── The rest of the surface ────────────────────────────────────────────
 
+    /// The most recent layout, or `None` before the first [`Text::sync`].
     pub fn text_render_info(&self) -> Option<&TextRenderInfo> {
         self.text_render_info.as_ref()
     }
@@ -297,10 +323,12 @@ impl Text {
         self.vector_mode = on;
     }
 
+    /// Whether vector-outline layout is on.
     pub fn vector_mode(&self) -> bool {
         self.vector_mode
     }
 
+    /// `_vectorFont`, set by the owning `BatchedText`.
     pub fn set_vector_font(&mut self, font: Option<Rc<VectorFont>>) {
         self.vector_font = font;
     }

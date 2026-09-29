@@ -101,6 +101,9 @@ struct Member {
     glyph_count: usize,
 }
 
+/// The instanced draw for a batch of [`Text`] members — a port of lib3's
+/// `BatchedText`. See the module doc for the shape of the instance data and
+/// where it deliberately diverges from the JS.
 pub struct BatchedText {
     node: Node,
     /// `this.atlas`.
@@ -210,6 +213,7 @@ impl BatchedText {
         self.member_count
     }
 
+    /// The glyph capacity this batch was created with.
     pub fn max_glyph_count(&self) -> usize {
         self.max_glyph_count
     }
@@ -232,6 +236,7 @@ impl BatchedText {
         }
     }
 
+    /// The font set by [`BatchedText::set_font`], if any.
     pub fn font(&self) -> Option<&Rc<VectorFont>> {
         self.font.as_ref()
     }
@@ -381,6 +386,7 @@ impl BatchedText {
         self.build_material();
     }
 
+    /// Outline/halo band width, in SDF units.
     pub fn outline_width(&self) -> f64 {
         self.outline_width
     }

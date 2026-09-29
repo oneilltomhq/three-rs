@@ -73,6 +73,7 @@ pub enum Anchor {
 }
 
 impl Anchor {
+    /// An [`Anchor::Named`] keyword.
     pub fn named(s: &str) -> Self {
         Anchor::Named(s.to_string())
     }
@@ -185,9 +186,12 @@ fn parse_float(s: &str) -> Option<f64> {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum TextAlign {
+    /// The default, and every unrecognised value.
     #[default]
     Left,
+    /// Centred lines.
     Center,
+    /// Right-aligned lines.
     Right,
 }
 
@@ -196,7 +200,9 @@ pub enum TextAlign {
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
 pub struct LayoutParams {
+    /// The string to lay out.
     pub text: String,
+    /// Font size, world units.
     pub font_size: f64,
     /// Canvas path only; the fallback branch never reads it.
     pub font_family: String,
@@ -204,11 +210,17 @@ pub struct LayoutParams {
     pub font_weight: String,
     /// Canvas path only.
     pub font_style: String,
+    /// Extra space added per glyph. See the module's asymmetric-spacing note.
     pub letter_spacing: f64,
+    /// Line height.
     pub line_height: LineHeight,
+    /// Horizontal anchor.
     pub anchor_x: Anchor,
+    /// Vertical anchor.
     pub anchor_y: Anchor,
+    /// Multi-line alignment.
     pub text_align: TextAlign,
+    /// Line-wrap width, world units.
     pub max_width: f64,
 }
 
@@ -235,6 +247,7 @@ impl Default for LayoutParams {
 /// which character each quad belongs to.
 #[derive(Clone, Debug, PartialEq)]
 pub struct LaidOutGlyph {
+    /// The character this glyph renders.
     pub ch: char,
     /// `[min_x, min_y, max_x, max_y]`, `f64`.
     pub bounds: [f64; 4],
@@ -244,17 +257,23 @@ pub struct LaidOutGlyph {
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
 pub struct TextRenderInfo {
+    /// The parameters this layout was produced from.
     pub parameters: LayoutParams,
     /// `Float32Array(glyphCount * 4)`, anchored. The one place the JS truncates.
     pub glyph_bounds: Vec<f32>,
+    /// One entry per laid-out glyph, in text order.
     pub glyphs: Vec<LaidOutGlyph>,
+    /// `glyphs.len()`.
     pub glyph_count: usize,
     /// `[min_x, min_y, max_x, max_y]`, anchored, `f64`.
     pub block_bounds: [f64; 4],
     /// The JS sets this to the same four numbers as `block_bounds`.
     pub visible_bounds: [f64; 4],
+    /// Resolved line height, world units.
     pub line_height: f64,
+    /// Ascender, world units.
     pub ascender: f64,
+    /// Descender, world units (negative).
     pub descender: f64,
 }
 
