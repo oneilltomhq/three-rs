@@ -184,7 +184,7 @@ pub use materials::{
     MeshPhysicalNodeMaterial, MeshStandardNodeMaterial, MeshToonNodeMaterial, PointsNodeMaterial,
     SpriteNodeMaterial, ToneMapping,
 };
-pub use math::{Color, Euler, Matrix3, Matrix4, Quaternion, Vector2, Vector3};
+pub use math::{Color, ColorSpace, Euler, Matrix3, Matrix4, Quaternion, Vector2, Vector3};
 pub use objects::{
     Background, Fog, FogExp2, Group, InstancedMesh, Line, LineSegments, Mesh, Payload, Points,
     QuadMesh, Scene, SceneFog, Sprite,
@@ -195,6 +195,6 @@ pub use renderer::{
     SsaaPassNode, BACKENDS,
 };
 pub use textures::{
-    ColorSpace, CubeTexture, Data3DTexture, DepthTexture, Mapping, MinFilter, Texture,
-    TextureFilter, TextureType,
+    CubeTexture, Data3DTexture, DepthTexture, Mapping, MinFilter, Texture, TextureFilter,
+    TextureType,
 };

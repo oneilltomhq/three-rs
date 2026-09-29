@@ -147,7 +147,7 @@ pub fn init() -> App {
         let point = spline.get_point(t);
         positions.extend([point.x as f32, point.y as f32, point.z as f32]);
 
-        color.set_hsl(t, 1.0, 0.5, ColorSpace::SRGB);
+        color.set_hsl(t, 1.0, 0.5, ColorSpace::Srgb);
         colors.extend([color.r as f32, color.g as f32, color.b as f32]);
     }
 

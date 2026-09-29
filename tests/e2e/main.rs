@@ -1624,7 +1624,7 @@ fn assert_spheres(scene: &three_rs::Scene) {
         let material = object.material().expect("every sphere has a material");
         let color = material
             .color
-            .get_hex(three_rs::math::ColorSpace::LinearSRGB);
+            .get_hex(three_rs::math::ColorSpace::LinearSrgb);
         let want_color = want["color"].as_u64().expect("a number") as u32;
         assert_eq!(color, want_color, "sphere {i} color");
 

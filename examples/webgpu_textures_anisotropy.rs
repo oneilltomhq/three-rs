@@ -98,7 +98,7 @@ pub fn init() -> App {
     let mut material1 = MeshPhongNodeMaterial::phong(Color::from_hex(0xffffff));
     material1.map = Some(texture1.clone());
 
-    texture1.set_color_space(ColorSpace::SRGB);
+    texture1.set_color_space(ColorSpace::Srgb);
     texture1.set_anisotropy(max_anisotropy);
     texture1.set_wrapping(Wrapping::Repeat, Wrapping::Repeat);
     texture1.set_repeat(512.0, 512.0);
@@ -107,7 +107,7 @@ pub fn init() -> App {
     let mut material2 = MeshPhongNodeMaterial::phong(Color::from_hex(0xffffff));
     material2.map = Some(texture2.clone());
 
-    texture2.set_color_space(ColorSpace::SRGB);
+    texture2.set_color_space(ColorSpace::Srgb);
     texture2.set_anisotropy(1);
     texture2.set_wrapping(Wrapping::Repeat, Wrapping::Repeat);
     texture2.set_repeat(512.0, 512.0);

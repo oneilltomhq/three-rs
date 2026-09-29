@@ -4,7 +4,7 @@
 //! Expected numbers come from three.js' own `GLTFLoader` in the vendor tree,
 //! run under node (see `handoff`/docs/gltf-progress.md for the script).
 
-use three_rs::loaders::GLTFLoader;
+use three_rs::loaders::GltfLoader;
 
 /// Three's own sample models, from the `THREE_JS_DIR` checkout.
 fn models() -> std::path::PathBuf {
@@ -20,7 +20,7 @@ fn names(gltf: &three_rs::loaders::Gltf) -> Vec<String> {
 
 #[test]
 fn michelle_tree() {
-    let gltf = GLTFLoader::load(models().join("Michelle.glb")).unwrap();
+    let gltf = GltfLoader::load(models().join("Michelle.glb")).unwrap();
     let names = names(&gltf);
 
     assert_eq!(names.len(), 68);
@@ -37,7 +37,7 @@ fn michelle_tree() {
 
 #[test]
 fn michelle_geometry() {
-    let gltf = GLTFLoader::load(models().join("Michelle.glb")).unwrap();
+    let gltf = GltfLoader::load(models().join("Michelle.glb")).unwrap();
     let node = gltf.skinned_meshes[0].borrow();
     let geometry = node.skinned_mesh().unwrap().geometry();
 
@@ -70,7 +70,7 @@ fn michelle_geometry() {
 
 #[test]
 fn michelle_bone_inverses() {
-    let gltf = GLTFLoader::load(models().join("Michelle.glb")).unwrap();
+    let gltf = GltfLoader::load(models().join("Michelle.glb")).unwrap();
     let skeleton = gltf.skins[0].borrow();
 
     let expected = [
@@ -99,7 +99,7 @@ fn michelle_bone_inverses() {
 
 #[test]
 fn michelle_animations() {
-    let gltf = GLTFLoader::load(models().join("Michelle.glb")).unwrap();
+    let gltf = GltfLoader::load(models().join("Michelle.glb")).unwrap();
 
     assert_eq!(gltf.animations.len(), 2);
     assert_eq!(gltf.animations[0].name, "SambaDance");
@@ -124,7 +124,7 @@ fn michelle_animations() {
 
 #[test]
 fn soldier_tree() {
-    let gltf = GLTFLoader::load(models().join("Soldier.glb")).unwrap();
+    let gltf = GltfLoader::load(models().join("Soldier.glb")).unwrap();
     let names = names(&gltf);
 
     assert_eq!(names.len(), 69);
@@ -160,7 +160,7 @@ fn soldier_tree() {
 fn michelle_mixer_at_zero() {
     use three_rs::animation::AnimationMixer;
 
-    let gltf = GLTFLoader::load(models().join("Michelle.glb")).unwrap();
+    let gltf = GltfLoader::load(models().join("Michelle.glb")).unwrap();
 
     let mut mixer = AnimationMixer::new(Box::new(gltf.scene_resolver()));
     let action = mixer.clip_action(&gltf.animations[0], None, None);
@@ -236,7 +236,7 @@ fn michelle_skinning_at_zero() {
     use three_rs::animation::AnimationMixer;
     use three_rs::math::Vector3;
 
-    let gltf = GLTFLoader::load(models().join("Michelle.glb")).unwrap();
+    let gltf = GltfLoader::load(models().join("Michelle.glb")).unwrap();
 
     let mut mixer = AnimationMixer::new(Box::new(gltf.scene_resolver()));
     let action = mixer.clip_action(&gltf.animations[0], None, None);
@@ -323,9 +323,10 @@ fn michelle_skinning_at_zero() {
 #[test]
 fn michelle_material() {
     use three_rs::materials::{MaterialKind, Side};
-    use three_rs::textures::{ColorSpace, Wrapping};
+    use three_rs::math::ColorSpace;
+    use three_rs::textures::Wrapping;
 
-    let gltf = GLTFLoader::load(models().join("Michelle.glb")).unwrap();
+    let gltf = GltfLoader::load(models().join("Michelle.glb")).unwrap();
 
     let node = gltf.skinned_meshes[0].borrow();
     let mesh = node.skinned_mesh().unwrap();
@@ -347,7 +348,7 @@ fn michelle_material() {
     let map = material.map.as_ref().expect("baseColorTexture");
     assert_eq!(map.size(), (512, 512));
     assert_eq!(map.data_len(), 512 * 512 * 4);
-    assert_eq!(map.color_space(), ColorSpace::SRGB);
+    assert_eq!(map.color_space(), ColorSpace::Srgb);
     assert!(!map.borrow().flip_y);
     assert_eq!(map.borrow().wrap_s, Wrapping::Repeat);
     assert_eq!(map.borrow().wrap_t, Wrapping::Repeat);
@@ -368,7 +369,7 @@ fn michelle_material() {
         .specular_color_map
         .as_ref()
         .expect("specularColorTexture");
-    assert_eq!(specular.color_space(), ColorSpace::SRGB);
+    assert_eq!(specular.color_space(), ColorSpace::Srgb);
 }
 
 /// An extension in `extensionsRequired` that the port does not read is an
@@ -384,7 +385,7 @@ fn unread_required_extension_is_an_error() {
         "extensionsUsed": [ "EXT_not_ported_here" ],
         "extensionsRequired": [ "EXT_not_ported_here" ]
     }"#;
-    let Err(error) = GLTFLoader::parse(json, std::path::PathBuf::from(".")) else {
+    let Err(error) = GltfLoader::parse(json, std::path::PathBuf::from(".")) else {
         panic!("an asset requiring an unread extension must not load");
     };
 
@@ -404,7 +405,7 @@ fn unread_required_extension_is_an_error() {
 fn anisotropy_and_clearcoat_maps_are_texture_refs() {
     // The asset the `webgpu_loader_gltf_anisotropy` rung draws: bare indices,
     // no `texCoord`, no transform.
-    let gltf = GLTFLoader::load(models().join("AnisotropyBarnLamp.glb")).unwrap();
+    let gltf = GltfLoader::load(models().join("AnisotropyBarnLamp.glb")).unwrap();
     let metal = &gltf.materials[0];
 
     let anisotropy = metal
@@ -463,7 +464,7 @@ fn anisotropy_and_clearcoat_maps_are_texture_refs() {
         } ]
     }"#;
 
-    let gltf = GLTFLoader::parse(json, std::path::PathBuf::from(".")).unwrap();
+    let gltf = GltfLoader::parse(json, std::path::PathBuf::from(".")).unwrap();
     let material = &gltf.materials[0];
 
     let anisotropy = material
@@ -506,7 +507,8 @@ fn anisotropy_and_clearcoat_maps_are_texture_refs() {
 #[test]
 fn khr_texture_basisu_goes_through_ktx2_loader() {
     use three_rs::loaders::{Ktx2Loader, Ktx2Support};
-    use three_rs::textures::{ColorSpace, MinFilter};
+    use three_rs::math::ColorSpace;
+    use three_rs::textures::MinFilter;
 
     let ktx2 = three_rs::testing::three_js_dir().join("examples/textures/ktx2");
     // One triangle: three `vec3<f32>`, base64.
@@ -541,11 +543,11 @@ fn khr_texture_basisu_goes_through_ktx2_loader() {
     };
 
     // The default loader: no `setKTX2Loader`, so the RGBA fallback.
-    let gltf = GLTFLoader::parse(json.as_bytes(), ktx2.clone()).unwrap();
+    let gltf = GltfLoader::parse(json.as_bytes(), ktx2.clone()).unwrap();
     let map = map_of(&gltf);
     assert_eq!(map.size(), (40, 40));
     assert_eq!(map.format(), wgpu::TextureFormat::Rgba8UnormSrgb);
-    assert_eq!(map.color_space(), ColorSpace::SRGB);
+    assert_eq!(map.color_space(), ColorSpace::Srgb);
     assert_eq!(map.mip_level_count(), 6, "the KTX2 mip chain is kept");
     assert!(!map.borrow().flip_y);
     // The glTF sampler's defaults win over the KTX2 texture's filters.
@@ -557,7 +559,7 @@ fn khr_texture_basisu_goes_through_ktx2_loader() {
         dxt: true,
         ..Default::default()
     });
-    let gltf = GLTFLoader::parse_with_ktx2(json.as_bytes(), ktx2, &bc).unwrap();
+    let gltf = GltfLoader::parse_with_ktx2(json.as_bytes(), ktx2, &bc).unwrap();
     assert_eq!(
         map_of(&gltf).format(),
         wgpu::TextureFormat::Bc7RgbaUnormSrgb

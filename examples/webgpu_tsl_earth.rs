@@ -176,11 +176,11 @@ pub fn init() -> App {
     let load = |path: &str| texture_loader.load(examples_dir().join(path)).unwrap();
 
     let day_texture = load("textures/planets/earth_day_4096.jpg");
-    day_texture.set_color_space(ColorSpace::SRGB);
+    day_texture.set_color_space(ColorSpace::Srgb);
     day_texture.set_anisotropy(8);
 
     let night_texture = load("textures/planets/earth_night_4096.jpg");
-    night_texture.set_color_space(ColorSpace::SRGB);
+    night_texture.set_color_space(ColorSpace::Srgb);
     night_texture.set_anisotropy(8);
 
     let bump_roughness_clouds_texture =

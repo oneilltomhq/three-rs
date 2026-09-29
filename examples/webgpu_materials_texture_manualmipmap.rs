@@ -133,7 +133,7 @@ pub fn init() -> App {
 
     let texture_canvas1 = Texture::new(128, 128, Some(mipmaps[0].data.clone()));
     texture_canvas1.set_mipmaps(mipmaps);
-    texture_canvas1.set_color_space(ColorSpace::SRGB);
+    texture_canvas1.set_color_space(ColorSpace::Srgb);
     texture_canvas1.set_repeat(1000.0, 1000.0);
     texture_canvas1.set_wrapping(
         three_rs::textures::Wrapping::Repeat,
@@ -181,8 +181,8 @@ pub fn init() -> App {
         .unwrap();
     let texture_painting2 = texture_painting1.clone_texture();
 
-    texture_painting1.set_color_space(ColorSpace::SRGB);
-    texture_painting2.set_color_space(ColorSpace::SRGB);
+    texture_painting1.set_color_space(ColorSpace::Srgb);
+    texture_painting2.set_color_space(ColorSpace::Srgb);
 
     texture_painting1.set_min_filter(MinFilter::Linear);
     texture_painting1.set_mag_filter(TextureFilter::Linear);

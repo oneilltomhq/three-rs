@@ -2977,7 +2977,7 @@ it as `textureSample( t, s, uv, i32( layer ) )`, which is three's
   `2d_etc1s` mips 0–3 under the `bc` profile without it). Every other path
   already matched.
 * **`GLTFLoader` without `setKTX2Loader`.** Three refuses a
-  `KHR_texture_basisu` texture unless a `KTX2Loader` was set. `GLTFLoader::load`
+  `KHR_texture_basisu` texture unless a `KTX2Loader` was set. `GltfLoader::load`
   / `parse` use `Ktx2Loader::new()` instead, which transcodes to uncompressed
   RGBA; `load_with_ktx2` / `parse_with_ktx2` take a loader that has run
   `detect_support`, which is three's call.
@@ -2989,8 +2989,8 @@ it as `textureSample( t, s, uv, i32( layer ) )`, which is three's
   renderer has no compressed-cube or 3-D upload path yet.
 * **Display P3 has no gamut conversion.** `parse_color_space` reports
   `display-p3` / `display-p3-linear` like three; `into_texture` maps it to
-  `SRGB` / `NoColorSpace` by transfer function only, since the port has no P3
-  working space. No graded page uses a P3 file.
+  `ColorSpace::Srgb` / `ColorSpace::LinearSrgb` by transfer function only,
+  since the port has no P3 working space. No graded page uses a P3 file.
 * **An unfilterable (`NearestFilter`) array texture is not supported.** Three
   would `textureLoad` it; the builder asserts instead. `KTX2Loader` only
   makes arrays of compressed (linear-filtered) textures, so only a hand-built

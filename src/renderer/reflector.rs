@@ -262,7 +262,7 @@ impl Renderer {
         projection_matrix.elements[6] = clip_plane.y;
         projection_matrix.elements[10] = clip_plane.z - clip_bias;
         projection_matrix.elements[14] = clip_plane.w;
-        debug_assert_eq!(camera.coordinate_system(), CoordinateSystem::WebGPU);
+        debug_assert_eq!(camera.coordinate_system(), CoordinateSystem::WebGpu);
 
         //
 

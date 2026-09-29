@@ -706,7 +706,7 @@ fn main() {
     // to the scene before the ambient light.
     {
         let three = three_rs::testing::three_js_dir();
-        let gltf = three_rs::loaders::GLTFLoader::load(
+        let gltf = three_rs::loaders::GltfLoader::load(
             three.join("examples/models/gltf/PrimaryIonDrive.glb"),
         )
         .expect("three-rs: PrimaryIonDrive.glb is in three.js' examples");

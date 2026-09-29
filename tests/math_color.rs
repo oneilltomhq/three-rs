@@ -4,8 +4,8 @@
 //! it to `false`, which makes `setHex`/`setRGB`/`getHex` skip the transfer
 //! function. The Rust port has no global: the colour space is an explicit
 //! argument, so `ColorManagement.enabled = false` maps to
-//! `ColorSpace::LinearSRGB` (identity) and `enabled = true` with an sRGB input
-//! maps to `ColorSpace::SRGB`.
+//! `ColorSpace::LinearSrgb` (identity) and `enabled = true` with an sRGB input
+//! maps to `ColorSpace::Srgb`.
 //!
 //! Skipped: `Color.NAMES`, `setColorName`, and all the `setStyle*` tests (the
 //! port has no CSS colour parser or named-colour table — nothing in the ladder
@@ -26,7 +26,7 @@ fn num_equal(a: f64, b: f64, what: &str) {
 
 fn hex_linear(hex: u32) -> Color {
     let mut c = Color::new(0.0, 0.0, 0.0);
-    c.set_hex(hex, ColorSpace::LinearSRGB);
+    c.set_hex(hex, ColorSpace::LinearSrgb);
     c
 }
 
@@ -50,7 +50,7 @@ fn set_scalar() {
 #[test]
 fn set_hex() {
     let c = hex_linear(0xFA8072);
-    assert_eq!(c.get_hex(ColorSpace::LinearSRGB), 0xFA8072);
+    assert_eq!(c.get_hex(ColorSpace::LinearSrgb), 0xFA8072);
     assert_eq!(c.r, 0xFA as f64 / 0xFF as f64);
     assert_eq!(c.g, 0x80 as f64 / 0xFF as f64);
     assert_eq!(c.b, 0x72 as f64 / 0xFF as f64);
@@ -60,10 +60,10 @@ fn set_hex() {
 fn set_rgb() {
     let mut c = Color::default();
 
-    c.set_rgb(0.3, 0.5, 0.7, ColorSpace::LinearSRGB);
+    c.set_rgb(0.3, 0.5, 0.7, ColorSpace::LinearSrgb);
     assert_eq!((c.r, c.g, c.b), (0.3, 0.5, 0.7), "srgb-linear");
 
-    c.set_rgb(0.3, 0.5, 0.7, ColorSpace::SRGB);
+    c.set_rgb(0.3, 0.5, 0.7, ColorSpace::Srgb);
     assert_eq!(
         (
             format!("{:.3}", c.r),
@@ -78,8 +78,8 @@ fn set_rgb() {
 #[test]
 fn set_hsl() {
     let mut c = Color::default();
-    c.set_hsl(0.75, 1.0, 0.25, ColorSpace::LinearSRGB);
-    let hsl = c.get_hsl(ColorSpace::LinearSRGB);
+    c.set_hsl(0.75, 1.0, 0.25, ColorSpace::LinearSrgb);
+    let hsl = c.get_hsl(ColorSpace::LinearSrgb);
 
     assert_eq!(hsl.h, 0.75);
     assert_eq!(hsl.s, 1.0);
@@ -101,7 +101,7 @@ fn copy() {
 fn copy_srgb_to_linear() {
     let mut c = Color::default();
     let mut c2 = Color::default();
-    c2.set_rgb(0.3, 0.5, 0.9, ColorSpace::LinearSRGB);
+    c2.set_rgb(0.3, 0.5, 0.9, ColorSpace::LinearSrgb);
     c.copy_srgb_to_linear(&c2);
     num_equal(c.r, 0.09, "Red");
     num_equal(c.g, 0.25, "Green");
@@ -112,7 +112,7 @@ fn copy_srgb_to_linear() {
 fn copy_linear_to_srgb() {
     let mut c = Color::default();
     let mut c2 = Color::default();
-    c2.set_rgb(0.09, 0.25, 0.81, ColorSpace::LinearSRGB);
+    c2.set_rgb(0.09, 0.25, 0.81, ColorSpace::LinearSrgb);
     c.copy_linear_to_srgb(&c2);
     num_equal(c.r, 0.3, "Red");
     num_equal(c.g, 0.5, "Green");
@@ -122,7 +122,7 @@ fn copy_linear_to_srgb() {
 #[test]
 fn convert_srgb_to_linear() {
     let mut c = Color::default();
-    c.set_rgb(0.3, 0.5, 0.9, ColorSpace::LinearSRGB);
+    c.set_rgb(0.3, 0.5, 0.9, ColorSpace::LinearSrgb);
     c.convert_srgb_to_linear();
     num_equal(c.r, 0.09, "Red");
     num_equal(c.g, 0.25, "Green");
@@ -132,7 +132,7 @@ fn convert_srgb_to_linear() {
 #[test]
 fn convert_linear_to_srgb() {
     let mut c = Color::default();
-    c.set_rgb(4.0, 9.0, 16.0, ColorSpace::LinearSRGB);
+    c.set_rgb(4.0, 9.0, 16.0, ColorSpace::LinearSrgb);
     c.convert_linear_to_srgb();
     num_equal(c.r, 1.82, "Red");
     num_equal(c.g, 2.58, "Green");
@@ -143,20 +143,20 @@ fn convert_linear_to_srgb() {
 fn get_hex() {
     // 'red'
     let c = hex_linear(0xFF0000);
-    assert_eq!(c.get_hex(ColorSpace::LinearSRGB), 0xFF0000);
+    assert_eq!(c.get_hex(ColorSpace::LinearSrgb), 0xFF0000);
 }
 
 #[test]
 fn get_hex_string() {
     // 'tomato'
     let c = hex_linear(0xFF6347);
-    assert_eq!(c.get_hex_string(ColorSpace::LinearSRGB), "ff6347");
+    assert_eq!(c.get_hex_string(ColorSpace::LinearSrgb), "ff6347");
 }
 
 #[test]
 fn get_hsl() {
     let c = hex_linear(0x80ffff);
-    let hsl = c.get_hsl(ColorSpace::LinearSRGB);
+    let hsl = c.get_hsl(ColorSpace::LinearSrgb);
 
     assert_eq!(hsl.h, 0.5, "hue");
     assert_eq!(hsl.s, 1.0, "saturation");
@@ -167,14 +167,14 @@ fn get_hsl() {
 fn get_rgb() {
     // 'plum' == 0xDDA0DD, authored in sRGB with colour management on
     let mut c = Color::default();
-    c.set_hex(0xDDA0DD, ColorSpace::SRGB);
+    c.set_hex(0xDDA0DD, ColorSpace::Srgb);
 
-    let t = c.get_rgb(ColorSpace::LinearSRGB);
+    let t = c.get_rgb(ColorSpace::LinearSrgb);
     assert_eq!(format!("{:.3}", t.r), "0.723", "r (srgb-linear)");
     assert_eq!(format!("{:.3}", t.g), "0.352", "g (srgb-linear)");
     assert_eq!(format!("{:.3}", t.b), "0.723", "b (srgb-linear)");
 
-    let t = c.get_rgb(ColorSpace::SRGB);
+    let t = c.get_rgb(ColorSpace::Srgb);
     assert_eq!(
         format!("{:.3}", t.r),
         format!("{:.3}", 221.0 / 255.0),
@@ -195,7 +195,7 @@ fn get_rgb() {
 #[test]
 fn get_style() {
     let mut c = Color::default();
-    c.set_hex(0xDDA0DD, ColorSpace::SRGB); // 'plum'
+    c.set_hex(0xDDA0DD, ColorSpace::Srgb); // 'plum'
     assert_eq!(c.get_style(), "rgb(221,160,221)", "style: srgb");
 }
 
@@ -203,7 +203,7 @@ fn get_style() {
 fn offset_hsl() {
     // 'hsl(120,50%,50%)' with colour management off
     let mut a = Color::default();
-    a.set_hsl(120.0 / 360.0, 0.5, 0.5, ColorSpace::LinearSRGB);
+    a.set_hsl(120.0 / 360.0, 0.5, 0.5, ColorSpace::LinearSrgb);
     let b = Color::new(0.36, 0.84, 0.648);
 
     a.offset_hsl(0.1, 0.1, 0.1);
@@ -251,13 +251,13 @@ fn sub() {
 
     a.sub(&b);
     assert_eq!(
-        a.get_hex(ColorSpace::LinearSRGB),
+        a.get_hex(ColorSpace::LinearSrgb),
         0xCC,
         "Difference too large"
     );
 
     a.sub(&c);
-    assert_eq!(a.get_hex(ColorSpace::LinearSRGB), 0x22, "Difference fine");
+    assert_eq!(a.get_hex(ColorSpace::LinearSrgb), 0x22, "Difference fine");
 }
 
 #[test]
@@ -283,7 +283,7 @@ fn multiply_scalar() {
 fn lerp() {
     let mut c = Color::default();
     let c2 = Color::default(); // white
-    c.set_rgb(0.0, 0.0, 0.0, ColorSpace::LinearSRGB);
+    c.set_rgb(0.0, 0.0, 0.0, ColorSpace::LinearSrgb);
     c.lerp(&c2, 0.2);
     assert_eq!((c.r, c.g, c.b), (0.2, 0.2, 0.2));
 }
@@ -344,15 +344,15 @@ fn copy_hex() {
     let mut c = Color::default();
     c.copy(&c2);
     assert_eq!(
-        c.get_hex(ColorSpace::LinearSRGB),
-        c2.get_hex(ColorSpace::LinearSRGB)
+        c.get_hex(ColorSpace::LinearSrgb),
+        c2.get_hex(ColorSpace::LinearSrgb)
     );
 }
 
 #[test]
 fn set_with_num() {
     let mut c = Color::default();
-    c.set_hex(0xFF0000, ColorSpace::LinearSRGB);
+    c.set_hex(0xFF0000, ColorSpace::LinearSrgb);
     assert_eq!((c.r, c.g, c.b), (1.0, 0.0, 0.0));
 }
 
@@ -360,6 +360,6 @@ fn set_with_num() {
 fn set_hsl_red() {
     // the 'hsl(360,100%,50%)' expectation, via set_hsl
     let mut c = Color::default();
-    c.set_hsl(1.0, 1.0, 0.5, ColorSpace::LinearSRGB);
+    c.set_hsl(1.0, 1.0, 0.5, ColorSpace::LinearSrgb);
     assert_eq!((c.r, c.g, c.b), (1.0, 0.0, 0.0));
 }

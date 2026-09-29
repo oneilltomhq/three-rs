@@ -49,7 +49,8 @@ use basisu::{DecodeFlags, SourceFormat, TargetFormat, Transcoder};
 use ktx2::{ColorPrimaries, Format, SupercompressionScheme, TransferFunction};
 
 use crate::error::Error;
-use crate::textures::{ColorSpace, MinFilter, Mipmap, Texture, TextureFilter};
+use crate::math::ColorSpace;
+use crate::textures::{MinFilter, Mipmap, Texture, TextureFilter};
 
 /// `KTX2Loader.workerConfig` — which compressed families the device can
 /// sample, as `detectSupport()` found them.
@@ -123,10 +124,14 @@ impl Ktx2Class {
 #[repr(u32)]
 #[non_exhaustive]
 pub enum EngineFormat {
-    RGB = 1022,
-    RGBA = 1023,
+    /// `RGBFormat`.
+    Rgb = 1022,
+    /// `RGBAFormat`.
+    Rgba = 1023,
+    /// `RedFormat`.
     Red = 1028,
-    RG = 1030,
+    /// `RGFormat`.
+    Rg = 1030,
     RgbS3tcDxt1 = 33776,
     RgbaS3tcDxt1 = 33777,
     RgbaS3tcDxt5 = 33779,
@@ -168,9 +173,9 @@ pub enum Ktx2ColorSpace {
     /// `NoColorSpace` — `''`.
     NoColorSpace,
     /// `SRGBColorSpace` — `'srgb'`.
-    SRGB,
+    Srgb,
     /// `LinearSRGBColorSpace` — `'srgb-linear'`.
-    LinearSRGB,
+    LinearSrgb,
     /// `DisplayP3ColorSpace` — `'display-p3'`.
     DisplayP3,
     /// `LinearDisplayP3ColorSpace` — `'display-p3-linear'`.
@@ -182,8 +187,8 @@ impl Ktx2ColorSpace {
     pub fn name(self) -> &'static str {
         match self {
             Ktx2ColorSpace::NoColorSpace => "",
-            Ktx2ColorSpace::SRGB => "srgb",
-            Ktx2ColorSpace::LinearSRGB => "srgb-linear",
+            Ktx2ColorSpace::Srgb => "srgb",
+            Ktx2ColorSpace::LinearSrgb => "srgb-linear",
             Ktx2ColorSpace::DisplayP3 => "display-p3",
             Ktx2ColorSpace::LinearDisplayP3 => "display-p3-linear",
         }
@@ -192,7 +197,7 @@ impl Ktx2ColorSpace {
     /// `ColorManagement.getTransfer( colorSpace ) === SRGBTransfer` — whether
     /// `getFormat()` picks the `-srgb` GPU format.
     pub(crate) fn is_srgb_transfer(self) -> bool {
-        matches!(self, Ktx2ColorSpace::SRGB | Ktx2ColorSpace::DisplayP3)
+        matches!(self, Ktx2ColorSpace::Srgb | Ktx2ColorSpace::DisplayP3)
     }
 }
 
@@ -487,7 +492,7 @@ const FORMAT_OPTIONS: &[FormatOption] = &[
         supported: None,
         basis_format: &[BasisFormat::Etc1s, BasisFormat::Uastc],
         transcoder_format: &[TargetFormat::Rgba32, TargetFormat::Rgba32],
-        engine_format: &[EngineFormat::RGBA, EngineFormat::RGBA],
+        engine_format: &[EngineFormat::Rgba, EngineFormat::Rgba],
         engine_type: EngineType::UnsignedByte,
         priority_etc1s: 100,
         priority_uastc: 100,
@@ -498,7 +503,7 @@ const FORMAT_OPTIONS: &[FormatOption] = &[
         supported: None,
         basis_format: &[BasisFormat::UastcHdr],
         transcoder_format: &[TargetFormat::RgbaHalf],
-        engine_format: &[EngineFormat::RGBA],
+        engine_format: &[EngineFormat::Rgba],
         engine_type: EngineType::HalfFloat,
         priority_etc1s: NEVER,
         priority_uastc: NEVER,
@@ -621,22 +626,22 @@ fn raw_format(format: Format) -> Option<(EngineFormat, EngineType)> {
     use EngineFormat as F;
     use EngineType as T;
     Some(match format {
-        Format::R32G32B32A32_SFLOAT => (F::RGBA, T::Float),
-        Format::R32G32_SFLOAT => (F::RG, T::Float),
+        Format::R32G32B32A32_SFLOAT => (F::Rgba, T::Float),
+        Format::R32G32_SFLOAT => (F::Rg, T::Float),
         Format::R32_SFLOAT => (F::Red, T::Float),
 
-        Format::R16G16B16A16_SFLOAT => (F::RGBA, T::HalfFloat),
-        Format::R16G16_SFLOAT => (F::RG, T::HalfFloat),
+        Format::R16G16B16A16_SFLOAT => (F::Rgba, T::HalfFloat),
+        Format::R16G16_SFLOAT => (F::Rg, T::HalfFloat),
         Format::R16_SFLOAT => (F::Red, T::HalfFloat),
 
-        Format::R16G16B16A16_UNORM => (F::RGBA, T::UnsignedShort),
+        Format::R16G16B16A16_UNORM => (F::Rgba, T::UnsignedShort),
 
-        Format::R8G8B8A8_SRGB | Format::R8G8B8A8_UNORM => (F::RGBA, T::UnsignedByte),
-        Format::R8G8_SRGB | Format::R8G8_UNORM => (F::RG, T::UnsignedByte),
+        Format::R8G8B8A8_SRGB | Format::R8G8B8A8_UNORM => (F::Rgba, T::UnsignedByte),
+        Format::R8G8_SRGB | Format::R8G8_UNORM => (F::Rg, T::UnsignedByte),
         Format::R8_SRGB | Format::R8_UNORM => (F::Red, T::UnsignedByte),
 
-        Format::E5B9G9R9_UFLOAT_PACK32 => (F::RGB, T::UnsignedInt5999),
-        Format::B10G11R11_UFLOAT_PACK32 => (F::RGB, T::UnsignedInt101111),
+        Format::E5B9G9R9_UFLOAT_PACK32 => (F::Rgb, T::UnsignedInt5999),
+        Format::B10G11R11_UFLOAT_PACK32 => (F::Rgb, T::UnsignedInt101111),
 
         Format::ETC2_R8G8B8A8_SRGB_BLOCK => (F::RgbaEtc2Eac, T::UnsignedByte),
         Format::ETC2_R8G8B8_SRGB_BLOCK => (F::RgbEtc2, T::UnsignedByte),
@@ -722,7 +727,7 @@ fn create_raw_texture(container: &ktx2::Reader<&[u8]>) -> Result<Ktx2Texture, Er
 
     let uncompressed = matches!(
         format,
-        EngineFormat::RGBA | EngineFormat::RGB | EngineFormat::RG | EngineFormat::Red
+        EngineFormat::Rgba | EngineFormat::Rgb | EngineFormat::Rg | EngineFormat::Red
     );
 
     let color_space = parse_color_space(container);
@@ -822,9 +827,9 @@ fn parse_color_space(container: &ktx2::Reader<&[u8]>) -> Ktx2ColorSpace {
     match container.color_primaries() {
         Some(ColorPrimaries::BT709) => {
             if srgb {
-                Ktx2ColorSpace::SRGB
+                Ktx2ColorSpace::Srgb
             } else {
-                Ktx2ColorSpace::LinearSRGB
+                Ktx2ColorSpace::LinearSrgb
             }
         }
         Some(ColorPrimaries::DISPLAYP3) => {
@@ -879,18 +884,18 @@ impl Ktx2Texture {
         use EngineFormat as F;
         use EngineType as T;
         Ok(match (self.format, self.texture_type) {
-            (F::RGBA, T::UnsignedByte) => pick(G::Rgba8Unorm, G::Rgba8UnormSrgb),
-            (F::RGBA, T::HalfFloat) => G::Rgba16Float,
-            (F::RGBA, T::Float) => G::Rgba32Float,
-            (F::RGBA, T::UnsignedShort) => G::Rgba16Unorm,
-            (F::RG, T::UnsignedByte) => G::Rg8Unorm,
-            (F::RG, T::HalfFloat) => G::Rg16Float,
-            (F::RG, T::Float) => G::Rg32Float,
+            (F::Rgba, T::UnsignedByte) => pick(G::Rgba8Unorm, G::Rgba8UnormSrgb),
+            (F::Rgba, T::HalfFloat) => G::Rgba16Float,
+            (F::Rgba, T::Float) => G::Rgba32Float,
+            (F::Rgba, T::UnsignedShort) => G::Rgba16Unorm,
+            (F::Rg, T::UnsignedByte) => G::Rg8Unorm,
+            (F::Rg, T::HalfFloat) => G::Rg16Float,
+            (F::Rg, T::Float) => G::Rg32Float,
             (F::Red, T::UnsignedByte) => G::R8Unorm,
             (F::Red, T::HalfFloat) => G::R16Float,
             (F::Red, T::Float) => G::R32Float,
-            (F::RGB, T::UnsignedInt5999) => G::Rgb9e5Ufloat,
-            (F::RGB, T::UnsignedInt101111) => G::Rg11b10Ufloat,
+            (F::Rgb, T::UnsignedInt5999) => G::Rgb9e5Ufloat,
+            (F::Rgb, T::UnsignedInt101111) => G::Rg11b10Ufloat,
 
             (F::RgbS3tcDxt1 | F::RgbaS3tcDxt1, _) => pick(G::Bc1RgbaUnorm, G::Bc1RgbaUnormSrgb),
             (F::RgbaS3tcDxt5, _) => pick(G::Bc3RgbaUnorm, G::Bc3RgbaUnormSrgb),
@@ -923,17 +928,16 @@ impl Ktx2Texture {
     /// The port's [`Texture`] for this result, carrying the same mipmaps,
     /// filters and colour space three's texture does.
     ///
-    /// `LinearSRGBColorSpace` becomes [`ColorSpace::NoColorSpace`]: the port's
-    /// colour spaces are about the transfer function only (the working space
-    /// is linear sRGB), and a linear texture is sampled with no transfer.
-    /// Display P3 is sampled with the sRGB transfer, as `getFormat()` does,
-    /// but no gamut conversion follows — the port has no P3 working space.
+    /// The sRGB spaces carry over as they are. [`ColorSpace`] has no Display
+    /// P3, so a P3 texture becomes the sRGB space with the same transfer
+    /// function: it is sampled with the sRGB transfer, as `getFormat()` does,
+    /// but no gamut conversion follows, since the port has no P3 working space.
     pub fn into_texture(self) -> Result<Texture, Error> {
         let format = self.gpu_format()?;
-        let color_space = if self.color_space.is_srgb_transfer() {
-            ColorSpace::SRGB
-        } else {
-            ColorSpace::NoColorSpace
+        let color_space = match self.color_space {
+            Ktx2ColorSpace::NoColorSpace => ColorSpace::NoColorSpace,
+            Ktx2ColorSpace::Srgb | Ktx2ColorSpace::DisplayP3 => ColorSpace::Srgb,
+            Ktx2ColorSpace::LinearSrgb | Ktx2ColorSpace::LinearDisplayP3 => ColorSpace::LinearSrgb,
         };
 
         let mut faces = self.faces;

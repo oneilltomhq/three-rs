@@ -5,10 +5,10 @@
 //! examples and prints every Draco primitive's attributes and index. Each
 //! test here decodes the same asset and asserts, per primitive:
 //!
-//! * [`GLTFLoader::draco_primitives`], the typed arrays as three.js has them:
+//! * [`GltfLoader::draco_primitives`], the typed arrays as three.js has them:
 //!   the same attribute names, typed-array types, `itemSize`s and
 //!   `normalized` flags, integers and the index exactly, floats to 1e-6;
-//! * [`GLTFLoader::load`], the geometry this crate draws: each attribute
+//! * [`GltfLoader::load`], the geometry this crate draws: each attribute
 //!   widened to `f32` (normalized ones scaled into range) matches, to 1e-6,
 //!   and the index is the same `Uint32Array`.
 //!
@@ -20,7 +20,7 @@ use std::process::Command;
 
 use three_rs::core::Index;
 use three_rs::loaders::draco::{DracoArray, DracoPrimitive};
-use three_rs::loaders::GLTFLoader;
+use three_rs::loaders::GltfLoader;
 
 const TOLERANCE: f64 = 1e-6;
 
@@ -235,7 +235,7 @@ fn check(name: &str) {
 
     // --- the typed arrays, as DRACOLoader hands them over -----------------
     let decoded: Vec<(usize, usize, DracoPrimitive)> =
-        GLTFLoader::draco_primitives(asset(name)).unwrap_or_else(|e| panic!("{name}: {e}"));
+        GltfLoader::draco_primitives(asset(name)).unwrap_or_else(|e| panic!("{name}: {e}"));
     assert_eq!(
         decoded.iter().map(|(m, p, _)| (*m, *p)).collect::<Vec<_>>(),
         expected
@@ -286,7 +286,7 @@ fn check(name: &str) {
     assert!(failures.is_empty(), "{name}:\n  {}", failures.join("\n  "));
 
     // --- the geometry the crate draws -------------------------------------
-    let gltf = match GLTFLoader::load(asset(name)) {
+    let gltf = match GltfLoader::load(asset(name)) {
         Ok(gltf) => gltf,
         // AVIF textures are not decoded (docs/nodes.md §30); the typed
         // arrays above are the Draco half of that asset.
