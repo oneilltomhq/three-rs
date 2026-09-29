@@ -1,7 +1,7 @@
-# fmt, clippy, build and the non-GPU tests on every push to main and every
-# PR. The e2e grader (tests/e2e) and anything that creates a `Renderer` need
-# a Vulkan device and stay a manual pre-merge gate (see CONTRIBUTING.md);
-# there is no self-hosted GPU runner yet.
+# fmt, clippy, build and the tests on every push to main and every PR. The
+# tests that create a `Renderer` run on lavapipe (software Vulkan); the e2e
+# grader (tests/e2e) needs real hardware and stays a manual pre-merge gate
+# (see CONTRIBUTING.md), as there is no self-hosted GPU runner yet.
 name: ci
 
 on:
@@ -177,106 +177,33 @@ jobs:
           cargo test -p three-rs --example gallery
           cargo test -p three-rs --example web_manifests
 
-      # Every other `tests/*.rs` file that does not create a `Renderer`.
-      # Excluded on purpose:
-      #   - renderer_blending, renderer_instanced, renderer_lines,
-      #     renderer_textures: build a `Renderer`, which needs a Vulkan
-      #     adapter.
-      - name: three-rs integration tests (no GPU)
-        run: |
-          tests=(
-            addons_lines_raycast
-            addons_orbit_controls
-            animation_animation_action
-            animation_animation_clip
-            animation_animation_mixer
-            animation_animation_object_group
-            animation_animation_utils
-            animation_keyframe_track
-            animation_property_binding
-            animation_property_mixer
-            cameras_orthographic_camera
-            cameras_perspective_camera
-            core_buffer_attribute
-            core_buffer_geometry
-            core_layers
-            core_object3d
-            core_raycaster
-            geometries
-            gltf_draco
-            extras_catmull_rom_curve3
-            extras_core
-            extras_curves
-            geometries
-            geometries_shape_oracle
-            gltf_loader
-            gltf_meshopt
-            ktx2_loader
-            loaders_webp
-            math_box2
-            math_box3
-            math_color
-            math_color_management
-            math_cylindrical
-            math_euler
-            math_frustum
-            math_interpolant
-            math_interpolants
-            math_line3
-            math_math_utils
-            math_matrix2
-            math_matrix3
-            math_matrix4
-            math_plane
-            math_quaternion
-            math_ray
-            math_sphere
-            math_spherical
-            math_spherical_harmonics3
-            math_triangle
-            math_vector2
-            math_vector3
-            math_vector4
-            nodes_fog
-            nodes_display_wgsl
-            nodes_custom
-            nodes_compute_indirect_wgsl
-            nodes_instanced_attributes
-            nodes_line2_world_units
-            nodes_morph
-            nodes_mx_library
-            nodes_mx_noise
-            nodes_range_buffers
-            nodes_tsl_batch
-            objects_batched_mesh
-            nodes_texture_wgsl
-            nodes_shadow_filters
-            objects_group
-            objects_instanced_mesh
-            objects_line
-            objects_line_segments
-            objects_mesh
-            objects_points
-            objects_skinned_mesh
-            objects_sprite
-            pmrem
-            scenes_fog
-            scenes_fog_exp2
-            scenes_scene
-          )
-          for t in "${tests[@]}"; do
-            cargo test -p three-rs --test "$t"
-          done
+      # Every integration test target in the workspace that `tests/gpu_only`
+      # does not list, so a new test runs here by default (#227). The listed
+      # ones create a `Renderer` and run in the `lavapipe` job below.
+      - name: Integration tests (no GPU)
+        run: tools/ci_tests.sh no-gpu
 
-      # sdf-text's own GPU gates (sdf_text_glyph, sdf_text_block,
-      # d33_treemap_labels) each build a `Renderer` too, so only these five
-      # `tests/*.rs` run here.
-      - name: sdf-text integration tests (no GPU)
+  # The integration tests that need a Vulkan adapter (`tests/gpu_only`), on
+  # lavapipe, Mesa's software Vulkan driver. It is a correctness gate, not the
+  # pixel ladder: the e2e grader stays on real hardware (#18).
+  lavapipe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install lavapipe
         run: |
-          tests=(atlas edt layout text vector_font)
-          for t in "${tests[@]}"; do
-            cargo test -p sdf-text --test "$t"
-          done
+          sudo apt-get update -q
+          sudo apt-get install -yq --no-install-recommends mesa-vulkan-drivers
+      # tests/pmrem_equirect.rs loads one of Three's example textures.
+      - name: Checkout three.js at THREE_JS_REV
+        run: |
+          git init -q "$THREE_JS_DIR"
+          git -C "$THREE_JS_DIR" fetch -q --depth 1 https://github.com/mrdoob/three.js "$THREE_JS_REV"
+          git -C "$THREE_JS_DIR" checkout -q FETCH_HEAD
+      - name: Integration tests (lavapipe)
+        run: tools/ci_tests.sh gpu
 
   msrv:
     runs-on: ubuntu-latest

@@ -1,0 +1,36 @@
+# The workspace's integration test targets that create a `Renderer` or a wgpu
+# device, and so need a Vulkan adapter: `<package>/<test target>`, one per line.
+#
+# tools/ci_tests.sh reads this list (#227). CI's `test` job runs every test
+# target NOT listed here, on a runner with no adapter, so a new test runs in CI
+# by default; a new GPU test fails that job with `NoAdapter` until it is added
+# here. CI's `lavapipe` job runs the targets listed here on Mesa's software
+# Vulkan, except those with a reason after the name, which the reason explains.
+# A name that is not a test target fails both jobs.
+
+three-rs/nodes_frame
+three-rs/pmrem_equirect
+three-rs/pmrem_scene
+three-rs/renderer_blending
+three-rs/renderer_compute_points
+three-rs/renderer_external_device
+three-rs/renderer_half_float_target
+three-rs/renderer_instanced
+three-rs/renderer_lines
+three-rs/renderer_material_map
+three-rs/renderer_mrt
+three-rs/renderer_occlusion
+three-rs/renderer_pipeline_hooks
+three-rs/renderer_points
+three-rs/renderer_sprites
+three-rs/renderer_textures
+three-rs/renderer_vertex_colors
+three-rs/renderer_viewport
+sdf-text/batched_text_culling
+sdf-text/batched_text_refill
+sdf-text/sdf_text_block
+sdf-text/sdf_text_glyph
+
+three-rs/renderer_compute_indirect  its indirect tally reads 0 about one run in three on lavapipe (#231)
+three-rs/e2e                        the pixel ladder, graded on real hardware; lavapipe's numbers against three's screenshots are #18
+sdf-text/d33_treemap_labels         326 of 100000 pixels off d33's own render on lavapipe (Mesa 25.3), over its 250 ceiling

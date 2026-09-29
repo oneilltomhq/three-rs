@@ -45,8 +45,14 @@ git -C ~/src/vendor/three.js checkout 5f610f5   # the r187 tag, once upstream ta
 export THREE_JS_DIR=~/src/vendor/three.js   # this is the default location
 cargo test -p sdf-text --lib                # sdf-text unit tests; no GPU
 cargo test -p three-rs --lib                # three-rs unit tests; no GPU
-cargo test --test e2e -- --nocapture        # the grader; needs a Vulkan device
+tools/ci_tests.sh no-gpu                    # every integration test that needs no GPU
+cargo test --workspace --no-fail-fast       # everything, the grader included; needs a Vulkan device
+cargo test --test e2e -- --nocapture        # the grader alone
 ```
+
+`tests/gpu_only` lists the integration tests that need a Vulkan adapter. A
+new test that creates a `Renderer` goes on it, or CI's no-GPU job fails with
+`NoAdapter`.
 
 The repository is laid out as a bare repo with one worktree per branch;
 `CLAUDE.md` describes it. That layout is the maintainer's habit, not a
@@ -56,10 +62,10 @@ requirement: a normal clone and a feature branch are fine for a PR.
 
 Run what applies. CI (`.github/workflows/ci.yml`) now enforces `cargo fmt
 --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, the
-build and the no-GPU tests on every push to `main` and every PR, so these are
-no longer just courtesy checks; the e2e grader remains the manual pre-merge
-gate described below, since it needs a real Vulkan adapter and Three's
-screenshots that no runner here has yet:
+build and the tests on every push to `main` and every PR, the ones in
+`tests/gpu_only` on lavapipe (software Vulkan), so these are no longer just
+courtesy checks; the e2e grader remains the manual pre-merge gate described
+below, since it needs a real Vulkan adapter that no runner here has yet:
 
 - `cargo fmt` on your new code. Do not reformat lines you did not otherwise
   change; it buries the diff.
@@ -67,10 +73,11 @@ screenshots that no runner here has yet:
   you.
 - The no-GPU tests above pass.
 - **If the change touches `src/renderer/`, `src/nodes/`, or a material,
-  rerun the whole ladder** (`cargo test --test e2e`) on a real GPU before
-  asking for review, and say in the PR that you did and what the numbers
-  were. Failures on this stack are silent wrong pixels, not errors, so a
-  green build proves nothing; the grader is the only judge. The graded
+  run `cargo test --workspace --no-fail-fast` on a real GPU before asking
+  for review**: the whole ladder and every GPU test, not the ladder alone.
+  Say in the PR that you did and what the ladder's numbers were. Failures
+  on this stack are silent wrong pixels, not errors, so a green build
+  proves nothing; the grader is the only judge. The graded
   examples table in the README is the reference; if a number moves, the
   PR explains why.
 - If the change is user-visible, add a line under *Unreleased* in
