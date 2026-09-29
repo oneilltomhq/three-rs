@@ -202,10 +202,10 @@ fn get_root() {
     let obj = stub_object3d();
     let anim_mixer = AnimationMixer::new(Box::new(obj));
     // Three compares the `Object3D` itself; roots are `RootId`s here and the
-    // mixer's own root is `RootId( 0 )`.
+    // mixer's own root is `RootId::MIXER_ROOT`.
     assert_eq!(
         anim_mixer.get_root(),
-        three_rs::animation::RootId(0),
+        three_rs::animation::RootId::MIXER_ROOT,
         "Get original root object"
     );
 }

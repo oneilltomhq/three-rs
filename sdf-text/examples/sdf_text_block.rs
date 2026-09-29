@@ -133,7 +133,9 @@ fn make_text(batched: &mut BatchedText, str: &str, font_size: f64, x: f64, y: f6
     text.set_font_size(font_size);
     text.set_anchor_x(Anchor::named("center"));
     text.set_anchor_y(Anchor::named("middle"));
-    let id = batched.add_text(text) as usize;
+    let id = batched
+        .add_text(text)
+        .expect("capacity for this example's members");
 
     // `t.color.set( hex )` — `THREE.Color.set` decodes sRGB, which is what
     // `Color::from_hex` does, and `Text::color` is documented as linear.

@@ -248,9 +248,10 @@ fn opacity_needs_both_a_batch_and_a_member_id() {
     let mut t = Text::new();
     t.set_opacity(0.5);
     assert_eq!(t.opacity(), 0.5);
-    assert_eq!(t.member_id(), -1);
+    assert_eq!(t.member_id(), None);
 
-    // Detached members have member_id -1, which the JS guards with `>= 0`.
+    // Detached members have no member_id, which the JS represents as `-1` and
+    // guards with `>= 0`.
     t.attach_to_batch(batch.clone(), 2);
     t.detach_from_batch();
     t.set_opacity(0.6);

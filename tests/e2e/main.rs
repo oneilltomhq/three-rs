@@ -1636,7 +1636,7 @@ fn assert_spheres(scene: &three_rs::Scene) {
             .expect("every sphere has an mrtNode")
             .get("bloomIntensity")
             .expect("the mrtNode has a bloomIntensity channel");
-        let value = match &*node.0 {
+        let value = match node.node() {
             three_rs::nodes::Node::Uniform(uniform) => match &uniform.source {
                 three_rs::nodes::UniformSource::Value(values) => values[0],
                 other => panic!("sphere {i} bloomIntensity is {other:?}, not a value uniform"),

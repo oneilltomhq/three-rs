@@ -1481,11 +1481,21 @@ pub enum Node {
 
 /// A handle on a node. Fluent TSL methods hang off this; see `tsl.rs`.
 #[derive(Clone, Debug)]
-pub struct NodeRef(pub Rc<Node>);
+pub struct NodeRef(Rc<Node>);
 
 impl NodeRef {
     pub fn new(node: Node) -> Self {
         NodeRef(Rc::new(node))
+    }
+
+    /// The `Rc<Node>` this handle wraps.
+    pub fn as_rc(&self) -> &Rc<Node> {
+        &self.0
+    }
+
+    /// The `Node` this handle wraps.
+    pub fn node(&self) -> &Node {
+        &self.0
     }
 
     /// The identity the builder keys its per-node state on.

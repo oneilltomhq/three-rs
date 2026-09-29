@@ -581,7 +581,9 @@ pub fn init() -> App {
         text.set_anchor_y(Anchor::named("top"));
         text.set_line_height(LineHeight::Factor(LINE));
 
-        let id = batched.add_text(text) as usize;
+        let id = batched
+            .add_text(text)
+            .expect("capacity for this example's members");
         // `label.color.set( 0x222222 )`
         batched.set_color_at(id, Color::from_hex(0x222222));
 

@@ -11,6 +11,13 @@ pub use perspective_camera::{CameraView, PerspectiveCamera};
 use crate::core::Layers;
 use crate::math::{Box3, CoordinateSystem, Matrix4, Vector3};
 
+mod sealed {
+    pub trait Sealed {}
+    impl Sealed for super::ArrayCamera {}
+    impl Sealed for super::OrthographicCamera {}
+    impl Sealed for super::PerspectiveCamera {}
+}
+
 /// A `&mut PerspectiveCamera` that is either plain or taken out of a
 /// `RefCell`.
 ///
@@ -74,7 +81,11 @@ impl<'a> From<std::cell::RefMut<'a, PerspectiveCamera>> for CameraMut<'a> {
 /// a new idea. It exists because lib3's SDF text page — and d33's, and three's
 /// own `QuadMesh` path — use an `OrthographicCamera`, and `render()` took a
 /// `&mut PerspectiveCamera` by name.
-pub trait RenderCamera {
+///
+/// Sealed: it is implemented for `ArrayCamera`, `OrthographicCamera` and
+/// `PerspectiveCamera` only, which is what three.js' render path takes, so a
+/// method can be added to it without a break.
+pub trait RenderCamera: sealed::Sealed {
     /// `camera.updateMatrixWorld()`, which also refreshes `matrixWorldInverse`.
     fn update_matrix_world(&mut self);
     /// `camera.projectionMatrix`.

@@ -53,7 +53,9 @@ fn fill(batch: &mut BatchedText, s: &str) {
     text.set_font_size(40.0);
     text.set_anchor_x(Anchor::named("left"));
     text.set_anchor_y(Anchor::named("middle"));
-    let id = batch.add_text(text) as usize;
+    let id = batch
+        .add_text(text)
+        .expect("capacity for this test's members");
     batch.set_color_at(id, Color::new(1.0, 1.0, 1.0));
     batch
         .member_node(id)

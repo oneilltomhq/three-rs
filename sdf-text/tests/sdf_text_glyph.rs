@@ -92,7 +92,7 @@ fn one_glyph_quad_matches_the_atlas_sdf() {
     // here rests on graded data, not on this port's rasteriser epsilon.
     text.set_font_size(4.0);
     let id = batch.add_text(text);
-    assert_eq!(id, 0);
+    assert_eq!(id, Some(0));
     batch.set_color_at(0, Color::new(1.0, 1.0, 1.0));
     batch.sync();
 

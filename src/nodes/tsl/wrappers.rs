@@ -79,11 +79,13 @@ fn convert_type(ty: Type, params: Vec<NodeRef>) -> NodeRef {
     if params.is_empty() {
         return constant(ty, vec![0.0; n]);
     }
-    let all_const = params.iter().all(|p| matches!(&*p.0, Node::Const { .. }));
+    let all_const = params
+        .iter()
+        .all(|p| matches!(p.node(), Node::Const { .. }));
     if all_const {
         let mut values: Vec<f64> = params
             .iter()
-            .flat_map(|p| match &*p.0 {
+            .flat_map(|p| match p.node() {
                 Node::Const { values, .. } => values.clone(),
                 _ => unreachable!(),
             })

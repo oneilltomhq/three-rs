@@ -61,8 +61,8 @@ pub struct Text {
     needs_sync: bool,
     text_render_info: Option<TextRenderInfo>,
     batched_text: Option<Rc<RefCell<dyn OpacitySink>>>,
-    /// `-1` until the member joins a batch, as in the JS.
-    member_id: i64,
+    /// `None` until the member joins a batch (`-1` in the JS).
+    member_id: Option<usize>,
 
     /// Vector-outline mode: layout uses real font metrics instead of canvas.
     /// Both this and the font are set by the owning `BatchedText`.
@@ -93,7 +93,7 @@ impl Text {
             needs_sync: true,
             text_render_info: None,
             batched_text: None,
-            member_id: -1,
+            member_id: None,
             vector_mode: false,
             vector_font: None,
             params: LayoutParams::default(),
@@ -267,10 +267,8 @@ impl Text {
             return;
         }
         self.opacity = value;
-        if let (Some(batch), true) = (self.batched_text.as_ref(), self.member_id >= 0) {
-            batch
-                .borrow_mut()
-                .set_opacity_at(self.member_id as usize, value);
+        if let (Some(batch), Some(member_id)) = (self.batched_text.as_ref(), self.member_id) {
+            batch.borrow_mut().set_opacity_at(member_id, value);
         }
     }
 
@@ -279,16 +277,17 @@ impl Text {
     #[doc(hidden)]
     pub fn attach_to_batch(&mut self, batch: Rc<RefCell<dyn OpacitySink>>, member_id: usize) {
         self.batched_text = Some(batch);
-        self.member_id = member_id as i64;
+        self.member_id = Some(member_id);
     }
 
     #[doc(hidden)]
     pub fn detach_from_batch(&mut self) {
         self.batched_text = None;
-        self.member_id = -1;
+        self.member_id = None;
     }
 
-    pub fn member_id(&self) -> i64 {
+    /// `None` when the member has not joined a batch (`-1` in the JS).
+    pub fn member_id(&self) -> Option<usize> {
         self.member_id
     }
 

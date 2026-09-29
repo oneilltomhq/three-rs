@@ -751,7 +751,7 @@ impl NodeBuilder {
         }
         // A `ComputeNode` outside the compute stage is its output and nothing
         // else, so it neither counts nor is counted.
-        if let Node::Compute { flow, output } = &*node.0 {
+        if let Node::Compute { flow, output } = node.node() {
             self.add_update_node(UpdateNode::new(flow.clone()));
             let output = output.clone();
             self.analyze(&output);
@@ -764,7 +764,7 @@ impl NodeBuilder {
         // becomes a var. `saturation()` read as a vec3 and again for its `.w`
         // by `renderOutput()` is that case
         // (`webgpu_postprocessing_difference`).
-        match &*node.0 {
+        match node.node() {
             Node::Call { def, args } if !def.layout => {
                 let (def, args) = (def.clone(), args.clone());
                 let body = self.call_body(node, &def, &args);
@@ -787,7 +787,7 @@ impl NodeBuilder {
         }
         // `ContextNode.analyze()`: counted like any node, and its node built
         // under its context the first time only.
-        let _context = match &*node.0 {
+        let _context = match node.node() {
             Node::Context { value, .. } => Some(push_context_value(value)),
             _ => None,
         };
@@ -847,7 +847,7 @@ impl NodeBuilder {
     }
 
     fn children(&mut self, node: &NodeRef) -> Vec<NodeRef> {
-        match &*node.0 {
+        match node.node() {
             Node::Const { .. }
             | Node::ConstArray { .. }
             | Node::ArrayVar { .. }
@@ -1421,7 +1421,7 @@ impl NodeBuilder {
     /// `TempNode.hasDependencies()` — a computed node used more than once gets
     /// a var. A texture read always does.
     fn needs_var(&self, node: &NodeRef) -> bool {
-        match &*node.0 {
+        match node.node() {
             Node::Texture { .. } => true,
             // `UniformNode.generate()`: a `bool` uniform is a `u32` in the
             // buffer, converted once into a var — "cache to variable".
@@ -1447,7 +1447,7 @@ impl NodeBuilder {
         }
         // `ComputeNode.generate()` outside the compute stage:
         // `outputComputeNode.build( builder, output )`.
-        if let Node::Compute { output, .. } = &*node.0 {
+        if let Node::Compute { output, .. } = node.node() {
             let output = output.clone();
             return self.generate(&output);
         }
@@ -1471,7 +1471,7 @@ impl NodeBuilder {
         // another scalar number type is regenerated as that type's literal
         // (`_regNum = /float|u?int/`), so `state.mul( 747796405 )` on a `u32`
         // is `747796405u`, not a conversion.
-        if let Node::Const { ty, values } = &*node.0 {
+        if let Node::Const { ty, values } = node.node() {
             let numeric = |t: Type| matches!(t, Type::F32 | Type::I32 | Type::U32);
             if numeric(*ty) && numeric(want) {
                 return wgsl::constant(want, values);
@@ -1491,7 +1491,7 @@ impl NodeBuilder {
     /// into the node itself, so a surviving multi-component `Swizzle` *is* the
     /// different-vector case.
     fn split_assign_target(&self, target: &NodeRef) -> Option<(NodeRef, &'static str)> {
-        match &*target.0 {
+        match target.node() {
             Node::Swizzle {
                 node, components, ..
             } if components.len() > 1 => Some((node.clone(), components)),
@@ -1500,7 +1500,7 @@ impl NodeBuilder {
     }
 
     fn generate_inner(&mut self, node: &NodeRef) -> String {
-        match &*node.0 {
+        match node.node() {
             Node::Const { ty, values } => wgsl::constant(*ty, values),
 
             Node::ConstArray { element_ty, values } => {
@@ -1750,7 +1750,7 @@ impl NodeBuilder {
                 // first assigns to it, and the temps the value needs are
                 // numbered after it.
                 let lhs = self.generate(&target);
-                if self.stage == Stage::Vertex && matches!(&*target.0, Node::Varying(_)) {
+                if self.stage == Stage::Vertex && matches!(target.node(), Node::Varying(_)) {
                     self.reassigned_varyings.insert(target.key());
                 }
                 let snippet = self.format(&value, want);
@@ -2170,7 +2170,7 @@ impl NodeBuilder {
                 // … )` for a `uvec2( a, b )`, `vec2<u32>( c )` for an `ivec2`
                 // held in `c`.
                 let coord_ty = if dim3 { "vec3<u32>" } else { "vec2<u32>" };
-                let scoord = match &*coord.0 {
+                let scoord = match coord.node() {
                     Node::Join { args, .. } => {
                         let parts: Vec<String> = args.iter().map(|a| self.generate(a)).collect();
                         format!("{coord_ty}( {} )", parts.join(", "))
@@ -2356,7 +2356,7 @@ impl NodeBuilder {
                     None => wgsl::constant(index_ty, &[0.0]),
                 };
                 let scount = self.loop_bound(&count, index_ty);
-                let name = match &*index.0 {
+                let name = match index.node() {
                     Node::Param { name, .. } => *name,
                     _ => "i",
                 };
@@ -2595,7 +2595,7 @@ impl NodeBuilder {
     /// `int` loop, `45` is `45.0` in a `float` one), anything else is
     /// converted (`i32( … )`, `f32( … )`).
     fn loop_bound(&mut self, bound: &NodeRef, ty: Type) -> String {
-        match &*bound.0 {
+        match bound.node() {
             Node::Const { values, .. } if values.len() == 1 => wgsl::constant(ty, values),
             // `LoopNode.generate()` builds a non-constant bound with
             // `.build( builder, type )`, whose same-length arm is `i32( … )`
@@ -2615,7 +2615,7 @@ impl NodeBuilder {
     /// port's trailing [`Node::Return`]) and nothing at all when it returned
     /// nothing — which still leaves that tab-indented line, empty.
     fn if_arm_tail(&mut self, arm: &[NodeRef]) {
-        if !matches!(arm.last().map(|n| &*n.0), Some(Node::Return { .. })) {
+        if !matches!(arm.last().map(|n| n.node()), Some(Node::Return { .. })) {
             self.emit_blank_tab();
         }
     }
@@ -2735,7 +2735,7 @@ impl NodeBuilder {
     /// `WGSLNodeBuilder.getPropertyName()` hands back the binding's name, plus
     /// `_sampler` for the sampler half.
     fn code_texture(&mut self, arg: &NodeRef) -> (String, crate::nodes::builder::TextureKind) {
-        match &*arg.0 {
+        match arg.node() {
             Node::Texture { texture, .. } => {
                 let texture = texture.clone();
                 self.texture_slots(&texture)
@@ -2959,7 +2959,7 @@ impl NodeBuilder {
     /// when `node` is the camera's view or projection uniform.
     fn array_camera_element(&self, node: &NodeRef) -> Option<NodeRef> {
         let nodes = self.array_cameras.as_ref()?;
-        match &*node.0 {
+        match node.node() {
             Node::Uniform(u) => match u.source {
                 UniformSource::CameraViewMatrix => Some(nodes.view.clone()),
                 UniformSource::CameraProjectionMatrix => Some(nodes.projection.clone()),

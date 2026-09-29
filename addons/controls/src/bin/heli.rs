@@ -177,7 +177,9 @@ impl Legend {
             t.set_anchor_x(Anchor::named("left"));
             t.set_anchor_y(Anchor::named(anchor_y));
             t.set_line_height(LineHeight::Factor(1.35));
-            let id = batched.add_text(t) as usize;
+            let id = batched
+                .add_text(t)
+                .expect("capacity for the legend's members");
             batched.set_color_at(id, Color::from_hex(colour));
             id
         };

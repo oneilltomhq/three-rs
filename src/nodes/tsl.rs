@@ -904,7 +904,7 @@ pub(crate) fn resolve_fog_factor(factor: &NodeRef) -> NodeRef {
 /// inside `NodeMaterial` setup, is the same deferral [`resolve_fog_factor`]
 /// already gives `scene.fogNode`.
 pub(crate) fn resolve_fn_call(node: &NodeRef) -> NodeRef {
-    match &*node.0 {
+    match node.node() {
         Node::Call { def, args } if !def.layout && args.is_empty() => (def.body)(&[]),
         _ => node.clone(),
     }
@@ -1759,7 +1759,9 @@ impl NodeRef {
             // Without the distinction a `vec2`'s `[ 0 ]` claims to be a
             // `vec2`, which `NodeBuilder.format()` then swizzles down —
             // `nodeVar1[ 0 ].x`, which three does not emit.
-            other if matches!(&*self.0, Node::ConstArray { .. } | Node::ArrayVar { .. }) => other,
+            other if matches!(self.node(), Node::ConstArray { .. } | Node::ArrayVar { .. }) => {
+                other
+            }
             other => other.component_type(),
         };
         NodeRef::new(Node::Element {

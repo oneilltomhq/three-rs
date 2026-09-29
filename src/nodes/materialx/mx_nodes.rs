@@ -524,7 +524,7 @@ pub fn mx_place2d(
         Place2dOrder::Trs => trs(),
         Place2dOrder::Node(order) => {
             // `float( int( 0 ) )` of a constant is folded to `0.0` by TSL.
-            let order = match &*order.0 {
+            let order = match order.node() {
                 Node::Const { values, .. } if values.len() == 1 => float(values[0]),
                 _ => order.to(Type::F32),
             };

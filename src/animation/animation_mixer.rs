@@ -66,13 +66,26 @@ use crate::animation::property_mixer::PropertyMixer;
 use crate::math::interpolant::InterpolantData;
 use crate::math::interpolants::{linear_interpolant, LinearInterpolant};
 
-/// A registered root object: `RootId( 0 )` is the mixer's own `_root`.
+/// A registered root object: `RootId( 0 )` is the mixer's own `_root`. Opaque:
+/// the only way to get one is [`AnimationMixer::add_root`] or
+/// [`AnimationMixer::get_root`] (or [`RootId::MIXER_ROOT`], the constant that
+/// last one always returns), so a `RootId` is always a slot the mixer
+/// actually registered.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct RootId(pub usize);
+pub struct RootId(usize);
 
-/// A handle to an [`AnimationAction`] owned by an [`AnimationMixer`].
+impl RootId {
+    /// `RootId( 0 )` — the mixer's own root, what [`AnimationMixer::get_root`]
+    /// returns.
+    pub const MIXER_ROOT: RootId = RootId(0);
+}
+
+/// A handle to an [`AnimationAction`] owned by an [`AnimationMixer`]. Opaque:
+/// the only way to get one is from the mixer itself (`clip_action`,
+/// `existing_action` and the like), so a handle is always a slot the mixer
+/// actually owns.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct ActionHandle(pub usize);
+pub struct ActionHandle(pub(crate) usize);
 
 /// A handle to one of the mixer's `_controlInterpolants`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

@@ -377,12 +377,20 @@ only the items that cannot be fixed later without a break were acted on; the
 rest are follow-up issues. One more was: `CurveVector` (and so `BezierVector`
 and `LineVector`) is sealed (C-SEALED). It is the bound the generic curves put
 on their point type, implemented for `Vector2` and `Vector3` as three.js'
-curves are, and sealing it is what lets it gain a method later. The traits
+curves are, and sealing it is what lets it gain a method later. `RenderCamera`
+is sealed the same way, for the same reason: it is the render path's slice of
+`Camera`, implemented for `ArrayCamera`, `OrthographicCamera` and
+`PerspectiveCamera` only, and the trait gains a method as the render path
+needs one rather than growing a new one beside it. The traits
 users are meant to implement (`Curve`, `CustomNode`, `LightingModel`,
 `NodeUpdate`, `UvGenerator`, `BindingTarget`, `TargetResolver`) stay open. The `get_` prefixes (`get_world_position`,
 `get_size`) stay: they are three.js' `getX( target )` methods, which compute
 rather than return a field, so C-GETTER does not apply and decision 3's
-correspondence does.
+correspondence does. Handles and ids into a crate-owned table
+(`NodeRef`, `RootId`, `ActionHandle`, `GeometryId`, `MaterialId`, ...) are
+opaque: their fields are private, so the only way to get one is the
+constructor or accessor the owning type hands out, and a caller can never
+forge one that names a slot the table never allocated.
 
 ## Where each decision came from
 
