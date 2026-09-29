@@ -3,9 +3,13 @@
 use super::math_utils::clamp;
 use super::{Matrix4, Vector3};
 
+/// Port of three.js' `Line3`: an analytical line segment in 3D space,
+/// represented by a `start` and `end` point.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Line3 {
+    /// Start of the line segment.
     pub start: Vector3,
+    /// End of the line segment.
     pub end: Vector3,
 }
 
@@ -19,6 +23,7 @@ impl Default for Line3 {
 }
 
 impl Line3 {
+    /// `new Line3()`.
     pub const fn new(start: Vector3, end: Vector3) -> Self {
         Self { start, end }
     }

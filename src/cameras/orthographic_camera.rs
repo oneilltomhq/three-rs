@@ -6,26 +6,46 @@ use crate::math::{Box3, CoordinateSystem, Matrix4, Vector3};
 
 use super::CameraView;
 
+/// three.js' `OrthographicCamera`: a camera whose projection keeps an
+/// object's size on screen constant regardless of its distance, unlike
+/// [`PerspectiveCamera`](super::PerspectiveCamera). It holds an [`Object3D`]
+/// by value rather than a [`Node`](crate::core::Node) — see
+/// `docs/scene-graph.md`, "What a node *is*".
 #[derive(Clone)]
 pub struct OrthographicCamera {
+    /// The transform half of the camera: three.js' `Camera extends Object3D`.
     pub object: Object3D,
+    /// The left plane of the camera's frustum.
     pub left: f64,
+    /// The right plane of the camera's frustum.
     pub right: f64,
+    /// The top plane of the camera's frustum.
     pub top: f64,
+    /// The bottom plane of the camera's frustum.
     pub bottom: f64,
+    /// The camera's near plane. Unlike a perspective camera's, `0.0` is a
+    /// valid value here.
     pub near: f64,
+    /// The camera's far plane, greater than [`near`](Self::near).
     pub far: f64,
+    /// The zoom factor of the camera.
     pub zoom: f64,
     /// `OrthographicCamera.view`, set by
     /// [`set_view_offset`](Self::set_view_offset).
     pub view: Option<CameraView>,
+    /// The coordinate system [`update_projection_matrix`](Self::update_projection_matrix)
+    /// builds the projection for.
     pub coordinate_system: CoordinateSystem,
+    /// `Camera.projectionMatrix`.
     pub projection_matrix: Matrix4,
+    /// `Camera.projectionMatrixInverse`.
     pub projection_matrix_inverse: Matrix4,
+    /// `Camera.matrixWorldInverse`.
     pub matrix_world_inverse: Matrix4,
 }
 
 impl OrthographicCamera {
+    /// `new OrthographicCamera( left, right, top, bottom, near, far )`.
     pub fn new(left: f64, right: f64, top: f64, bottom: f64, near: f64, far: f64) -> Self {
         let mut camera = Self {
             object: Object3D::default(),
@@ -217,6 +237,8 @@ impl OrthographicCamera {
         self.object.sync_rotation_from_quaternion();
     }
 
+    /// `Object3D.updateMatrixWorld()` on the camera's own node, then rebuilds
+    /// [`matrix_world_inverse`](Self::matrix_world_inverse) from it.
     pub fn update_matrix_world(&mut self) {
         self.object.update_matrix_world(None);
         self.matrix_world_inverse = self.object.matrix_world;

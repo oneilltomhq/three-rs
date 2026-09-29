@@ -24,7 +24,9 @@ use crate::objects::Payload;
 /// see `docs/scene-graph.md`.
 #[derive(Clone)]
 pub struct Line {
+    /// `Line.geometry`.
     pub geometry: Rc<BufferGeometry>,
+    /// `Line.material`.
     pub material: Option<MeshBasicNodeMaterial>,
     /// `LineSegments.isLineSegments`. The single bit that separates the two
     /// subclasses for everything this port does with them.

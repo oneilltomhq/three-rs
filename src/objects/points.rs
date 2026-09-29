@@ -19,7 +19,9 @@ use crate::objects::Payload;
 /// non-standard `count` the compute examples set.
 #[derive(Clone)]
 pub struct Points {
+    /// `Points.geometry`.
     pub geometry: Rc<BufferGeometry>,
+    /// `Points.material`.
     pub material: Option<MeshBasicNodeMaterial>,
     /// `mesh.count`, which is **not** a `Points` property in three.js. The
     /// renderer picks it up anyway: `RenderObject.getInstanceCount()`

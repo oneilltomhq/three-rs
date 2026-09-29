@@ -3,9 +3,13 @@
 use super::math_utils::js_max;
 use super::{Box3, Matrix4, Plane, Vector3};
 
+/// Port of `three.js/src/math/Sphere.js`'s `Sphere` class: an analytical 3D
+/// sphere defined by a center and radius, mainly used as a bounding sphere.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Sphere {
+    /// The center of the sphere.
     pub center: Vector3,
+    /// The radius of the sphere.
     pub radius: f64,
 }
 
@@ -20,8 +24,10 @@ impl Default for Sphere {
 }
 
 impl Sphere {
+    /// `Sphere.isSphere`.
     pub const IS_SPHERE: bool = true;
 
+    /// `new Sphere()`.
     pub const fn new(center: Vector3, radius: f64) -> Self {
         Self { center, radius }
     }

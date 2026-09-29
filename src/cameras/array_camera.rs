@@ -19,6 +19,8 @@ use crate::math::{CoordinateSystem, Matrix4};
 /// `isMultiViewCamera` (WebXR's `OVR_multiview2`) is not ported.
 #[derive(Clone)]
 pub struct ArrayCamera {
+    /// The base camera: `ArrayCamera extends PerspectiveCamera`, held by value
+    /// since Rust has no inheritance.
     pub camera: PerspectiveCamera,
     /// `camera.cameras`.
     pub cameras: Vec<PerspectiveCamera>,

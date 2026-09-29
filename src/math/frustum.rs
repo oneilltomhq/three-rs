@@ -3,8 +3,11 @@
 use super::{Box3, CoordinateSystem, Matrix4, Plane, Sphere, Vector3};
 use crate::core::Node;
 
+/// Port of three.js' `Frustum`: the six planes that bound a camera's field of
+/// view, used to cull objects that lie outside it before rendering.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Frustum {
+    /// The planes that enclose the frustum.
     pub planes: [Plane; 6],
 }
 
@@ -18,6 +21,7 @@ impl Default for Frustum {
 }
 
 impl Frustum {
+    /// `new Frustum()`.
     pub const fn new(p0: Plane, p1: Plane, p2: Plane, p3: Plane, p4: Plane, p5: Plane) -> Self {
         Self {
             planes: [p0, p1, p2, p3, p4, p5],

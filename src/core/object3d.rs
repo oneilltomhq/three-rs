@@ -23,6 +23,9 @@ fn next_id() -> u32 {
     })
 }
 
+/// three.js' `Object3D`: the transform and the drawable state every scene node
+/// carries. The parent/children tree lives on [`Node`], the handle that wraps
+/// this in an `Rc<RefCell<..>>` — see `docs/scene-graph.md`.
 #[derive(Debug)]
 pub struct Object3D {
     /// `Object3D.id` — a per-thread counter, three.js' `_object3DId ++`.
@@ -79,14 +82,21 @@ pub struct Object3D {
     pub is_group: bool,
     /// `Object3D.isScene`.
     pub is_scene: bool,
+    /// `Object3D.position`.
     pub position: Vector3,
     /// Kept in sync with `quaternion` by [`Object3D::set_rotation`], the same way
     /// three.js' `Euler`/`Quaternion` `onChange` callbacks keep them in sync.
     pub rotation: Euler,
+    /// `Object3D.quaternion`.
     pub quaternion: Quaternion,
+    /// `Object3D.scale`.
     pub scale: Vector3,
+    /// `Object3D.up`.
     pub up: Vector3,
+    /// `Object3D.matrix`, composed from `position`/`quaternion`/`scale` by
+    /// [`update_matrix`](Self::update_matrix).
     pub matrix: Matrix4,
+    /// `Object3D.matrixWorld`.
     pub matrix_world: Matrix4,
     /// `Object3D.userData` — the application's own data on the object, an
     /// open JSON object as in three.js. The node system reads it through
@@ -201,6 +211,7 @@ impl Object3D {
         self.payload.skinned_mesh()
     }
 
+    /// `object.isSkinnedMesh`'s `SkinnedMesh` state, mutably.
     pub fn skinned_mesh_mut(&mut self) -> Option<&mut crate::objects::SkinnedMesh> {
         self.payload.skinned_mesh_mut()
     }
@@ -230,6 +241,7 @@ impl Object3D {
         self.payload.line()
     }
 
+    /// `Line.geometry` / `Line.material`, mutably, when this node is a line.
     pub fn line_mut(&mut self) -> Option<&mut crate::objects::Line> {
         self.payload.line_mut()
     }
@@ -249,6 +261,7 @@ impl Object3D {
         self.payload.mesh()
     }
 
+    /// `Mesh.geometry` / `Mesh.material`, mutably, when this node is a mesh.
     pub fn mesh_mut(&mut self) -> Option<&mut Mesh> {
         self.payload.mesh_mut()
     }
@@ -259,6 +272,7 @@ impl Object3D {
         self.payload.light()
     }
 
+    /// The light state, mutably; see [`light`](Self::light).
     pub fn light_mut(&mut self) -> Option<&mut crate::lights::LightObject> {
         self.payload.light_mut()
     }

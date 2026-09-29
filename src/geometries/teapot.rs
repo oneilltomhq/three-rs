@@ -106,6 +106,7 @@ pub fn teapot_geometry(size: f64, segments: usize) -> BufferGeometry {
     teapot_geometry_full(size, segments, true, true, true, true, true)
 }
 
+/// `new TeapotGeometry( size, segments, bottom, lid, body, fitLid, blinn )`.
 #[allow(clippy::needless_range_loop)]
 pub fn teapot_geometry_full(
     size: f64,

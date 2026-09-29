@@ -15,25 +15,33 @@ use crate::objects::{Mesh, Payload};
 /// `new InstancedBufferAttribute( new Float32Array( count * 16 ), 16 )`.
 #[derive(Clone)]
 pub struct InstancedBufferAttribute {
+    /// The `Float32Array` — `count * item_size` values.
     pub array: Vec<f32>,
+    /// `BufferAttribute.itemSize`.
     pub item_size: usize,
 }
 
 impl InstancedBufferAttribute {
+    /// `new InstancedBufferAttribute( array, itemSize )`.
     pub fn new(array: Vec<f32>, item_size: usize) -> Self {
         Self { array, item_size }
     }
 
+    /// `BufferAttribute.count` — `array.length / itemSize`.
     pub fn count(&self) -> usize {
         self.array.len() / self.item_size
     }
 }
 
+/// `InstancedMesh extends Mesh`: one geometry and material, drawn `count`
+/// times with a per-instance transform (and optionally colour).
 #[derive(Clone)]
 pub struct InstancedMesh {
+    /// The `Mesh` half: geometry, material and morph state.
     pub mesh: Mesh,
     /// `InstancedMesh.count` — the number of instances the renderer draws.
     pub count: usize,
+    /// `InstancedMesh.instanceMatrix`.
     pub instance_matrix: InstancedBufferAttribute,
     /// `InstancedMesh.instanceColor`, `null` until `setColorAt()` is called.
     pub instance_color: Option<InstancedBufferAttribute>,

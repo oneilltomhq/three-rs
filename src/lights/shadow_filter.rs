@@ -25,11 +25,14 @@ use crate::textures::{CubeDepthTexture, DepthTexture, Texture};
 /// frame), which is what [`ShadowMapType::resolved`] does.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum ShadowMapType {
+    /// `BasicShadowMap` — one unfiltered hardware comparison sample.
     Basic,
+    /// `PCFShadowMap` — five Vogel-disk taps.
     #[default]
     Pcf,
     /// Deprecated in three.js' WebGPU renderer; resolves to [`Self::Pcf`].
     PcfSoft,
+    /// `VSMShadowMap` — a blurred variance shadow map.
     Vsm,
 }
 
@@ -53,8 +56,11 @@ impl ShadowMapType {
 ///   to point lights).
 #[derive(Clone, Debug)]
 pub enum ShadowFilterMap {
+    /// The `ShadowDepthTexture` itself, for `BasicShadowMap` / `PCFShadowMap`.
     Depth(DepthTexture),
+    /// The `VSMHorizontal` render target's RG moments, for `VSMShadowMap`.
     Moments(Texture),
+    /// The `CubeDepthTexture`, for a point light of any shadow type.
     Cube(CubeDepthTexture),
 }
 
@@ -78,7 +84,10 @@ impl std::hash::Hash for ShadowFilterMap {
 /// reads is keyed on the light's index in the port (`shadow_radius`,
 /// `shadow_map_size`, …).
 pub struct ShadowFilterInputs {
+    /// The light's index, used to key every `reference( …, shadow )` uniform
+    /// the filter reads (`shadow_radius`, `shadow_map_size`, …).
     pub index: usize,
+    /// The texture the filter samples.
     pub map: ShadowFilterMap,
     /// `shadowCoord` (a `vec3`: uv and the biased depth) for a planar
     /// shadow; `bd3D`, the unit light-to-fragment direction, for a point
@@ -99,10 +108,12 @@ pub struct ShadowFilterInputs {
 pub struct ShadowFilterFn(Rc<dyn Fn(&ShadowFilterInputs) -> NodeRef>);
 
 impl ShadowFilterFn {
+    /// Wraps `filter` as a `shadow.filterNode`.
     pub fn new(filter: impl Fn(&ShadowFilterInputs) -> NodeRef + 'static) -> Self {
         Self(Rc::new(filter))
     }
 
+    /// `filterFn( inputs )`.
     pub fn call(&self, inputs: &ShadowFilterInputs) -> NodeRef {
         (self.0)(inputs)
     }

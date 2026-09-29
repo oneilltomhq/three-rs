@@ -9,23 +9,40 @@
 use super::math_utils::clamp;
 use super::{Matrix4, Quaternion, Vector3};
 
+/// The axis order in which the three rotations of an [`Euler`] are applied.
+/// Corresponds to the order strings three.js uses (`'XYZ'`, `'YXZ'`, etc.);
+/// three.js also accepts an unrecognized order string by warning and leaving
+/// the angles unchanged; there is no such fallback here since the type
+/// system rules it out.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum EulerOrder {
     /// `Euler.DEFAULT_ORDER`.
     #[default]
     XYZ,
+    /// Y, then X, then Z.
     YXZ,
+    /// Z, then X, then Y.
     ZXY,
+    /// Z, then Y, then X.
     ZYX,
+    /// Y, then Z, then X.
     YZX,
+    /// X, then Z, then Y.
     XZY,
 }
 
+/// Port of three.js' `Euler`: a rotation expressed as three angles (radians)
+/// applied in a given [`EulerOrder`]. Unlike three.js, setting a field here
+/// does not fire an `onChange` callback; see the module docs above.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Euler {
+    /// The angle of the x axis in radians.
     pub x: f64,
+    /// The angle of the y axis in radians.
     pub y: f64,
+    /// The angle of the z axis in radians.
     pub z: f64,
+    /// The order in which the rotations are applied.
     pub order: EulerOrder,
 }
 

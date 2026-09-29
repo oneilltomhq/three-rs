@@ -12,7 +12,9 @@ use crate::textures::CubeTexture;
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub enum Background {
+    /// A flat clear colour.
     Color(Color),
+    /// A skybox drawn from a cube texture.
     CubeTexture(CubeTexture),
     /// `scene.backgroundNode = …` — `Background.update()`'s
     /// `background.isNode` branch, which draws the skybox sphere with
@@ -64,6 +66,7 @@ impl From<CubeTexture> for Background {
 pub struct Scene {
     /// The scene root. `node.borrow().is_scene` is true.
     pub node: Node,
+    /// `scene.background`.
     pub background: Option<Background>,
     /// `scene.backgroundBlurriness` — the roughness the background's PMREM is
     /// read at, in `[ 0, 1 ]`. Three reads it through `backgroundBlurriness`,
@@ -104,6 +107,8 @@ pub struct Scene {
     /// `scene.fogNode`. Read by `NodeMaterial`'s output flow on every material
     /// in the scene (rung 5).
     pub fog_node: Option<FogNode>,
+    /// `scene.overrideMaterial` — used to draw every object in the scene with
+    /// this material instead of its own.
     pub override_material: Option<MeshBasicNodeMaterial>,
 }
 
@@ -129,6 +134,7 @@ impl Default for Scene {
 }
 
 impl Scene {
+    /// `new Scene()`.
     pub fn new() -> Self {
         Self::default()
     }

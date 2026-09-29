@@ -29,6 +29,7 @@ use crate::objects::{
 #[derive(Clone, Default)]
 #[non_exhaustive]
 pub enum Payload {
+    /// A plain `Object3D`, a `Group` or a `Bone`: nothing to draw.
     #[default]
     None,
     /// `Mesh.geometry` / `Mesh.material`.
@@ -112,6 +113,7 @@ impl Payload {
         }
     }
 
+    /// The `SkinnedMesh` this node is, mutably, if it is one.
     pub fn skinned_mesh_mut(&mut self) -> Option<&mut SkinnedMesh> {
         match self {
             Payload::SkinnedMesh(skin) => Some(skin),
@@ -153,6 +155,7 @@ impl Payload {
         }
     }
 
+    /// The `Sprite` this node is, mutably, if it is one.
     pub fn sprite_mut(&mut self) -> Option<&mut Sprite> {
         match self {
             Payload::Sprite(sprite) => Some(sprite),
@@ -168,6 +171,7 @@ impl Payload {
         }
     }
 
+    /// The `Points` this node is, mutably, if it is one.
     pub fn points_mut(&mut self) -> Option<&mut Points> {
         match self {
             Payload::Points(points) => Some(points),
@@ -183,6 +187,7 @@ impl Payload {
         }
     }
 
+    /// The `Line` this node is, mutably, if it is one.
     pub fn line_mut(&mut self) -> Option<&mut Line> {
         match self {
             Payload::Line(line) => Some(line),
@@ -310,6 +315,7 @@ impl Payload {
         }
     }
 
+    /// The `Mesh` half, mutably, of whichever mesh-ish payload this is.
     pub fn mesh_mut(&mut self) -> Option<&mut Mesh> {
         match self {
             Payload::Mesh(mesh) => Some(mesh),
@@ -328,6 +334,7 @@ impl Payload {
         }
     }
 
+    /// The light this node is, mutably, if it is one.
     pub fn light_mut(&mut self) -> Option<&mut LightObject> {
         match self {
             Payload::Light(light) => Some(light),
@@ -340,6 +347,7 @@ impl Payload {
         matches!(self, Payload::BatchedMesh(_))
     }
 
+    /// The `BatchedMesh` this node is, if it is one.
     pub fn batched_mesh(&self) -> Option<&BatchedMesh> {
         match self {
             Payload::BatchedMesh(batched) => Some(batched),
@@ -347,6 +355,7 @@ impl Payload {
         }
     }
 
+    /// The `BatchedMesh` this node is, mutably, if it is one.
     pub fn batched_mesh_mut(&mut self) -> Option<&mut BatchedMesh> {
         match self {
             Payload::BatchedMesh(batched) => Some(batched),
@@ -354,6 +363,7 @@ impl Payload {
         }
     }
 
+    /// The `InstancedMesh` this node is, if it is one.
     pub fn instanced_mesh(&self) -> Option<&InstancedMesh> {
         match self {
             Payload::InstancedMesh(instanced) => Some(instanced),
@@ -361,6 +371,7 @@ impl Payload {
         }
     }
 
+    /// The `InstancedMesh` this node is, mutably, if it is one.
     pub fn instanced_mesh_mut(&mut self) -> Option<&mut InstancedMesh> {
         match self {
             Payload::InstancedMesh(instanced) => Some(instanced),

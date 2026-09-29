@@ -3,11 +3,18 @@
 use super::math_utils::{clamp, js_min};
 use super::{Euler, EulerOrder, Matrix4, Vector3};
 
+/// Port of three.js' `Quaternion`, used throughout three.js to represent
+/// rotations. Most methods here assume the quaternion is normalized (unit
+/// length); [`Quaternion::normalize`] restores that if it has drifted.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Quaternion {
+    /// The x value of this quaternion.
     pub x: f64,
+    /// The y value of this quaternion.
     pub y: f64,
+    /// The z value of this quaternion.
     pub z: f64,
+    /// The w value of this quaternion.
     pub w: f64,
 }
 
@@ -18,6 +25,14 @@ impl Default for Quaternion {
 }
 
 impl Quaternion {
+    /// `new Quaternion( x, y, z, w )`.
+    ///
+    /// ```
+    /// use three_rs::math::{Quaternion, Vector3};
+    ///
+    /// let mut q = Quaternion::default();
+    /// q.set_from_axis_angle(&Vector3::new(0.0, 1.0, 0.0), std::f64::consts::FRAC_PI_2);
+    /// ```
     pub const fn new(x: f64, y: f64, z: f64, w: f64) -> Self {
         Self { x, y, z, w }
     }
@@ -120,6 +135,7 @@ impl Quaternion {
         dst[dst_offset + 3] = w0 * w1 - x0 * x1 - y0 * y1 - z0 * z1;
     }
 
+    /// `Quaternion.set()`.
     pub fn set(&mut self, x: f64, y: f64, z: f64, w: f64) -> &mut Self {
         self.x = x;
         self.y = y;
@@ -312,14 +328,17 @@ impl Quaternion {
         self
     }
 
+    /// `Quaternion.dot()`.
     pub fn dot(&self, v: &Self) -> f64 {
         self.x * v.x + self.y * v.y + self.z * v.z + self.w * v.w
     }
 
+    /// `Quaternion.lengthSq()` — cheaper than [`Quaternion::length`] for comparisons.
     pub fn length_sq(&self) -> f64 {
         self.x * self.x + self.y * self.y + self.z * self.z + self.w * self.w
     }
 
+    /// `Quaternion.length()`.
     pub fn length(&self) -> f64 {
         (self.x * self.x + self.y * self.y + self.z * self.z + self.w * self.w).sqrt()
     }

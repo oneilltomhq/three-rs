@@ -17,6 +17,7 @@ pub fn lathe_geometry(points: &[(f64, f64)], segments: usize) -> BufferGeometry 
     lathe_geometry_full(points, segments, 0.0, std::f64::consts::PI * 2.0)
 }
 
+/// `new LatheGeometry( points, segments, phiStart, phiLength )`.
 pub fn lathe_geometry_full(
     points: &[(f64, f64)],
     segments: usize,

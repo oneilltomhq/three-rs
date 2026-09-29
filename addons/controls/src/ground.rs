@@ -66,6 +66,7 @@ impl Ground {
         }
     }
 
+    /// The current radius, in `[ MIN_RADIUS, MAX_RADIUS ]`.
     pub fn radius(&self) -> f64 {
         self.radius
     }

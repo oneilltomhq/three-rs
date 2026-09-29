@@ -39,15 +39,22 @@ pub const ALPHA_THRESHOLD: u8 = 128;
 /// Y-down box the ink occupies inside the tile.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct GlyphMetrics {
+    /// Tile's left edge, normalised to the atlas.
     pub u: f64,
+    /// Tile's top edge, normalised to the atlas.
     pub v: f64,
+    /// Tile width, normalised to the atlas.
     pub w: f64,
+    /// Tile height, normalised to the atlas.
     pub h: f64,
     /// `[x0, y0, x1, y1]` normalised to the raster, Y-down. All zeros for a
     /// blank or unmapped glyph.
     pub view_box: [f64; 4],
 }
 
+/// A port of lib3's `VectorFontAtlas.js`: the pixel data and per-glyph
+/// metrics of an SDF atlas rasterised from real font outlines. See the module
+/// doc for what this owns and what it leaves to the renderer.
 pub struct VectorFontAtlas {
     cols: u32,
     rows: u32,
@@ -73,22 +80,27 @@ impl VectorFontAtlas {
         }
     }
 
+    /// Tile size in texels ([`TILE`]).
     pub fn cell_size(&self) -> u32 {
         TILE
     }
 
+    /// Atlas side length in texels.
     pub fn atlas_size(&self) -> u32 {
         self.cols * TILE
     }
 
+    /// Tile columns across the atlas.
     pub fn cols(&self) -> u32 {
         self.cols
     }
 
+    /// Tile rows down the atlas.
     pub fn rows(&self) -> u32 {
         self.rows
     }
 
+    /// The raw `f32` pixel buffer, row-major over the whole atlas.
     pub fn atlas_data(&self) -> &[f32] {
         &self.atlas_data
     }
@@ -107,6 +119,7 @@ impl VectorFontAtlas {
         self.atlas_data.fill(0.0);
     }
 
+    /// Whether `ch` has already been rasterised into the atlas.
     pub fn has_glyph(&self, ch: char) -> bool {
         self.glyphs.contains_key(&ch)
     }

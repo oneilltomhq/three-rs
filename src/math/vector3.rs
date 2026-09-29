@@ -7,20 +7,28 @@
 use super::math_utils::{clamp, js_max, js_min};
 use super::{Color, Euler, Matrix3, Matrix4, Quaternion};
 
+/// Port of three.js' `Vector3`: an ordered triplet `(x, y, z)`, used for
+/// points, directions and anything else three.js models as three numbers.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Vector3 {
+    /// The x component.
     pub x: f64,
+    /// The y component.
     pub y: f64,
+    /// The z component.
     pub z: f64,
 }
 
 impl Vector3 {
+    /// `new Vector3( x, y, z )`.
     pub const fn new(x: f64, y: f64, z: f64) -> Self {
         Self { x, y, z }
     }
 
+    /// `(0, 0, 0)`.
     pub const ZERO: Self = Self::new(0.0, 0.0, 0.0);
 
+    /// `Vector3.set()`.
     pub fn set(&mut self, x: f64, y: f64, z: f64) -> &mut Self {
         self.x = x;
         self.y = y;
@@ -33,16 +41,19 @@ impl Vector3 {
         self.set(scalar, scalar, scalar)
     }
 
+    /// `Vector3.setX()`.
     pub fn set_x(&mut self, x: f64) -> &mut Self {
         self.x = x;
         self
     }
 
+    /// `Vector3.setY()`.
     pub fn set_y(&mut self, y: f64) -> &mut Self {
         self.y = y;
         self
     }
 
+    /// `Vector3.setZ()`.
     pub fn set_z(&mut self, z: f64) -> &mut Self {
         self.z = z;
         self
@@ -77,6 +88,7 @@ impl Vector3 {
         self
     }
 
+    /// `Vector3.add()`.
     pub fn add(&mut self, v: &Self) -> &mut Self {
         self.x += v.x;
         self.y += v.y;
@@ -92,6 +104,7 @@ impl Vector3 {
         self
     }
 
+    /// `Vector3.addVectors()`.
     pub fn add_vectors(&mut self, a: &Self, b: &Self) -> &mut Self {
         self.x = a.x + b.x;
         self.y = a.y + b.y;
@@ -123,6 +136,7 @@ impl Vector3 {
         self
     }
 
+    /// `Vector3.subVectors()`.
     pub fn sub_vectors(&mut self, a: &Self, b: &Self) -> &mut Self {
         self.x = a.x - b.x;
         self.y = a.y - b.y;
@@ -138,6 +152,7 @@ impl Vector3 {
         self
     }
 
+    /// `Vector3.multiplyScalar()`.
     pub fn multiply_scalar(&mut self, s: f64) -> &mut Self {
         self.x *= s;
         self.y *= s;
@@ -248,6 +263,7 @@ impl Vector3 {
         self
     }
 
+    /// `Vector3.divideScalar()`.
     pub fn divide_scalar(&mut self, s: f64) -> &mut Self {
         self.multiply_scalar(1.0 / s)
     }
@@ -332,14 +348,17 @@ impl Vector3 {
         self
     }
 
+    /// `Vector3.dot()`.
     pub fn dot(&self, v: &Self) -> f64 {
         self.x * v.x + self.y * v.y + self.z * v.z
     }
 
+    /// `Vector3.lengthSq()`.
     pub fn length_sq(&self) -> f64 {
         self.x * self.x + self.y * self.y + self.z * self.z
     }
 
+    /// `Vector3.length()`: the Euclidean length of this vector.
     pub fn length(&self) -> f64 {
         (self.x * self.x + self.y * self.y + self.z * self.z).sqrt()
     }
@@ -400,6 +419,7 @@ impl Vector3 {
         out
     }
 
+    /// `Vector3.crossVectors()`.
     pub fn cross_vectors(&mut self, a: &Self, b: &Self) -> &mut Self {
         let (ax, ay, az) = (a.x, a.y, a.z);
         let (bx, by, bz) = (b.x, b.y, b.z);

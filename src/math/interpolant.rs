@@ -27,7 +27,9 @@ pub enum Ending {
 /// `endingStart` / `endingEnd`, read through `getSettings_()`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct InterpolantSettings {
+    /// `endingStart`: the ending mode applied before the first sample.
     pub ending_start: Ending,
+    /// `endingEnd`: the ending mode applied after the last sample.
     pub ending_end: Ending,
 }
 
