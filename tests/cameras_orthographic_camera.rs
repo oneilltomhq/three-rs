@@ -23,7 +23,7 @@ fn webgl_camera(
     far: f64,
 ) -> OrthographicCamera {
     let mut cam = OrthographicCamera::new(left, right, top, bottom, near, far);
-    cam.coordinate_system = CoordinateSystem::WebGL;
+    cam.coordinate_system = CoordinateSystem::WebGl;
     cam.update_projection_matrix();
     cam
 }

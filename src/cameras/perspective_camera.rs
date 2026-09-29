@@ -68,7 +68,7 @@ impl PerspectiveCamera {
             film_gauge: 35.0,
             film_offset: 0.0,
             // `WebGPURenderer` sets `camera.coordinateSystem` to `WebGPUCoordinateSystem`.
-            coordinate_system: CoordinateSystem::WebGPU,
+            coordinate_system: CoordinateSystem::WebGpu,
             projection_matrix: Matrix4::identity(),
             projection_matrix_inverse: Matrix4::identity(),
             matrix_world_inverse: Matrix4::identity(),

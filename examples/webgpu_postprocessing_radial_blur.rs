@@ -122,7 +122,7 @@ pub fn init() -> App {
             0.55 + (i as f64 / COUNT as f64) * 0.15,
             1.0,
             0.2,
-            ColorSpace::LinearSRGB,
+            ColorSpace::LinearSrgb,
         );
 
         mesh.borrow_mut().set_color_at(i, &col);

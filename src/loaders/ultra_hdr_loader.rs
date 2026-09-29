@@ -45,6 +45,7 @@ use std::path::Path;
 
 use crate::error::Error;
 use crate::extras::to_half_float;
+use crate::math::ColorSpace;
 use crate::textures::{MinFilter, Texture, TextureFilter, TextureType, Wrapping};
 
 /// `SRGB_TO_LINEAR`, upstream's 1024-entry table over the *0-255-scaled*
@@ -214,8 +215,8 @@ impl UltraHdrLoader {
     /// Unlike the other data loaders this one does not go through
     /// `DataTextureLoader`: it constructs the `DataTexture` itself, with
     /// `UVMapping`, `ClampToEdgeWrapping` on both axes, `LinearFilter` /
-    /// `LinearMipMapLinearFilter`, `LinearSRGBColorSpace` — the port's
-    /// [`ColorSpace::NoColorSpace`](crate::textures::ColorSpace::NoColorSpace),
+    /// `LinearMipMapLinearFilter`, `LinearSRGBColorSpace` —
+    /// [`ColorSpace::LinearSrgb`](crate::math::ColorSpace::LinearSrgb),
     /// the working space, which carries no transfer function — and then
     /// `generateMipmaps = true` and `flipY = true`.
     ///
@@ -237,6 +238,7 @@ impl UltraHdrLoader {
             }
         };
         texture.set_wrapping(Wrapping::ClampToEdge, Wrapping::ClampToEdge);
+        texture.set_color_space(ColorSpace::LinearSrgb);
         texture.set_mag_filter(TextureFilter::Linear);
         texture.set_min_filter(MinFilter::LinearMipmapLinear);
         texture.set_generate_mipmaps(true);

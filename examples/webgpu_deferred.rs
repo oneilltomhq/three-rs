@@ -174,7 +174,7 @@ pub fn init() -> App {
             i as f64 / num_lights as f64,
             1.0,
             0.5,
-            ColorSpace::LinearSRGB,
+            ColorSpace::LinearSrgb,
         );
 
         let light_mat = MeshStandardNodeMaterial::standard(color_hex, 1.0, 0.0);

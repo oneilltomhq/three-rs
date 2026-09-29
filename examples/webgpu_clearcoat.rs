@@ -112,7 +112,7 @@ pub fn init() -> App {
     let load = |path: &str| texture_loader.load(examples_dir().join(path)).unwrap();
 
     let diffuse = load("textures/carbon/Carbon.png");
-    diffuse.set_color_space(ColorSpace::SRGB);
+    diffuse.set_color_space(ColorSpace::Srgb);
     diffuse.set_wrapping(Wrapping::Repeat, Wrapping::Repeat);
     diffuse.set_repeat(10.0, 10.0);
 

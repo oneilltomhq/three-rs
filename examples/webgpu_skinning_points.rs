@@ -27,7 +27,7 @@ use std::f64::consts::PI;
 
 use three_rs::addons::controls::OrbitControls;
 use three_rs::animation::AnimationMixer;
-use three_rs::loaders::GLTFLoader;
+use three_rs::loaders::GltfLoader;
 use three_rs::materials::PointsNodeMaterial;
 use three_rs::nodes::node::Type;
 use three_rs::nodes::skinning::compute_skinning;
@@ -168,7 +168,7 @@ pub fn init() -> App {
 
     scene.add(&AmbientLight::new(Color::from_hex(0xffffff), 10.0));
 
-    let gltf = GLTFLoader::load(three.join("examples/models/gltf/Michelle.glb"))
+    let gltf = GltfLoader::load(three.join("examples/models/gltf/Michelle.glb"))
         .expect("three-rs: Michelle.glb loads");
     let object = gltf.scene.clone();
 

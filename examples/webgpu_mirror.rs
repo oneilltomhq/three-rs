@@ -141,7 +141,7 @@ pub fn init() -> App {
     let decal_diffuse = texture_loader
         .load(examples_dir().join("textures/decal/decal-diffuse.png"))
         .unwrap();
-    decal_diffuse.set_color_space(ColorSpace::SRGB);
+    decal_diffuse.set_color_space(ColorSpace::Srgb);
 
     let decal_normal = texture_loader
         .load(examples_dir().join("textures/decal/decal-normal.jpg"))

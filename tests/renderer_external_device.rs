@@ -31,8 +31,8 @@
 use std::rc::Rc;
 
 use three_rs::geometries::plane_geometry;
+use three_rs::math::ColorSpace;
 use three_rs::nodes::tsl::texture;
-use three_rs::textures::ColorSpace;
 use three_rs::{
     Color, Mesh, MeshBasicNodeMaterial, OrthographicCamera, Renderer, RendererParameters, Scene,
     Texture,

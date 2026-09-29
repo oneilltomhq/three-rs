@@ -108,7 +108,7 @@ pub fn instanced_points() -> InstancedPoints {
         let point = spline.get_point(t);
         positions.extend([point.x as f32, point.y as f32, point.z as f32]);
 
-        point_color.set_hsl(t, 1.0, 0.5, ColorSpace::SRGB);
+        point_color.set_hsl(t, 1.0, 0.5, ColorSpace::Srgb);
         colors.extend([
             point_color.r as f32,
             point_color.g as f32,

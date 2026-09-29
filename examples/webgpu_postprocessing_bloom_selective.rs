@@ -85,7 +85,7 @@ pub fn init() -> App {
         // triple lands in linear-sRGB with no transfer function applied.
         let hue = random.next();
         let lightness = random.next() * 0.2 + 0.05;
-        color.set_hsl(hue, 0.7, lightness, ColorSpace::LinearSRGB);
+        color.set_hsl(hue, 0.7, lightness, ColorSpace::LinearSrgb);
 
         // `const bloomIntensity = Math.random() > 0.5 ? 1 : 0` — the coin flip
         // that decides which spheres glow.

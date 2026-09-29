@@ -21,7 +21,7 @@ use serde_json::Value;
 
 use three_rs::animation::{AnimationClip, AnimationMixer};
 use three_rs::core::{Index, Node};
-use three_rs::loaders::{GLTFLoader, Gltf};
+use three_rs::loaders::{Gltf, GltfLoader};
 use three_rs::materials::{MaterialKind, MeshBasicNodeMaterial, Side};
 
 const TOLERANCE: f64 = 1e-6;
@@ -35,7 +35,7 @@ fn oracle() -> Value {
 
 fn load() -> Gltf {
     let path = three_rs::testing::three_js_dir().join("examples/models/gltf/PrimaryIonDrive.glb");
-    GLTFLoader::load(path).expect("PrimaryIonDrive.glb loads")
+    GltfLoader::load(path).expect("PrimaryIonDrive.glb loads")
 }
 
 /// The scene in `traverse()` order, which is the order the oracle's `nodes` is

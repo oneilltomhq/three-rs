@@ -163,7 +163,7 @@ pub fn init() -> App {
     let sprite = TextureLoader::new()
         .load(examples_dir().join("textures/sprites/blossom.png"))
         .unwrap();
-    sprite.set_color_space(ColorSpace::SRGB);
+    sprite.set_color_space(ColorSpace::Srgb);
 
     let geometry = Rc::new(plane_geometry(0.25, 0.25, 1, 1));
 

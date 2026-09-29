@@ -60,6 +60,24 @@ outside consumers and batched together for the 0.2.0 release:
   `ComputeCounts` and sdf-text's `TextRenderInfo` are `#[non_exhaustive]` too:
   read their fields, and destructure them with `..`. (`docs/api.md` decision
   3)
+- **One `ColorSpace`.** `math::ColorSpace` and `textures::ColorSpace` are
+  merged into `three_rs::math::ColorSpace` (also `three_rs::ColorSpace`),
+  with the variants `NoColorSpace`, `Srgb` and `LinearSrgb`. Replace
+  `textures::ColorSpace` with `math::ColorSpace`. `ColorManagement::convert`,
+  `working_to_color_space`, `color_space_to_working` and `get_transfer` take a
+  `ColorSpace` instead of an `Option<ColorSpace>`: write
+  `ColorSpace::NoColorSpace` where you passed `None`, and drop the `Some(..)`.
+  The HDR, cube HDR, Ultra HDR and KTX2 loaders now tag linear textures
+  `LinearSrgb` rather than `NoColorSpace`, as three.js does. Both sample the
+  same way.
+- **Acronyms in public names use Rust casing** (API Guidelines C-CASE), with
+  the three.js name in the doc comment:
+  `ColorSpace::SRGB` becomes `Srgb`, `ColorSpace::LinearSRGB` becomes `LinearSrgb`,
+  `GLTFLoader` becomes `GltfLoader`, and
+  `CoordinateSystem::WebGL`/`WebGPU` become `WebGl`/`WebGpu`.
+  Dimension suffixes (`Data3DTexture`), axis orders (`EulerOrder::XYZ`) and
+  glam-style vector types (`Type::UVec2`) are unchanged; see
+  [`docs/api.md`](docs/api.md) decision 3.
 
 Other changes:
 
@@ -68,7 +86,7 @@ Other changes:
 
 ### Added
 
-- **glTF loading.** `GLTFLoader` for `.gltf`/`.glb` (#119), with
+- **glTF loading.** `GltfLoader` for `.gltf`/`.glb` (#119), with
   `KHR_materials_sheen` (#122), `KHR_materials_anisotropy` (#124),
   `KHR_draco_mesh_compression` via `draco-core` (#150), `KHR_texture_basisu`
   / KTX2 textures (#176), `EXT_meshopt_compression` (#182),

@@ -702,7 +702,7 @@ fn project_unproject() {
     // The expectations below are three.js', so the camera is put back on the
     // WebGL convention for them.
     let mut camera = PerspectiveCamera::new(75.0, 16.0 / 9.0, 0.1, 300.0);
-    camera.coordinate_system = CoordinateSystem::WebGL;
+    camera.coordinate_system = CoordinateSystem::WebGl;
     camera.update_projection_matrix();
     camera.update_matrix_world();
 

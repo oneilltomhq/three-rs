@@ -96,7 +96,7 @@ pub fn init() -> App {
     floor_map.set_wrapping(Wrapping::Repeat, Wrapping::Repeat);
     floor_map.set_anisotropy(4);
     floor_map.set_repeat(10.0, 24.0);
-    floor_map.set_color_space(ColorSpace::SRGB);
+    floor_map.set_color_space(ColorSpace::Srgb);
     floor_mat.map = Some(floor_map);
 
     let floor_bump = texture_loader
@@ -125,7 +125,7 @@ pub fn init() -> App {
     brick_map.set_wrapping(Wrapping::Repeat, Wrapping::Repeat);
     brick_map.set_anisotropy(4);
     brick_map.set_repeat(1.0, 1.0);
-    brick_map.set_color_space(ColorSpace::SRGB);
+    brick_map.set_color_space(ColorSpace::Srgb);
     cube_mat.map = Some(brick_map);
 
     let brick_bump = texture_loader
@@ -143,7 +143,7 @@ pub fn init() -> App {
         .load(examples_dir().join("textures/planets/earth_atmos_2048.jpg"))
         .unwrap();
     earth_map.set_anisotropy(4);
-    earth_map.set_color_space(ColorSpace::SRGB);
+    earth_map.set_color_space(ColorSpace::Srgb);
     ball_mat.map = Some(earth_map);
 
     // The page marks the metalness map sRGB too. Faithful port: reproduce it.
@@ -151,7 +151,7 @@ pub fn init() -> App {
         .load(examples_dir().join("textures/planets/earth_specular_2048.jpg"))
         .unwrap();
     earth_specular.set_anisotropy(4);
-    earth_specular.set_color_space(ColorSpace::SRGB);
+    earth_specular.set_color_space(ColorSpace::Srgb);
     ball_mat.metalness_map = Some(earth_specular);
 
     let floor_geometry = Rc::new(plane_geometry(20.0, 20.0, 1, 1));

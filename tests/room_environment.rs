@@ -94,7 +94,7 @@ fn the_room_is_three_s_room() {
         if let Some(light) = expected.get("light").filter(|v| !v.is_null()) {
             let payload = object.payload.light().expect("a PointLight payload");
             assert_eq!(
-                payload.light.color.get_hex(ColorSpace::SRGB),
+                payload.light.color.get_hex(ColorSpace::Srgb),
                 light["color"].as_u64().unwrap() as u32
             );
             assert_eq!(
@@ -124,12 +124,12 @@ fn the_room_is_three_s_room() {
                 other => panic!("unexpected material {other}"),
             }
             assert_eq!(
-                actual.color.get_hex(ColorSpace::SRGB),
+                actual.color.get_hex(ColorSpace::Srgb),
                 material["color"].as_u64().unwrap() as u32,
                 "{label}"
             );
             assert_eq!(
-                actual.emissive.get_hex(ColorSpace::SRGB),
+                actual.emissive.get_hex(ColorSpace::Srgb),
                 material["emissive"].as_u64().unwrap() as u32,
                 "{label}"
             );

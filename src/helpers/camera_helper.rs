@@ -176,8 +176,8 @@ impl CameraHelper {
         let (w, h) = (1.0, 1.0);
 
         let (near_z, far_z) = match camera.coordinate_system() {
-            CoordinateSystem::WebGL => (-1.0, 1.0),
-            CoordinateSystem::WebGPU => (0.0, 1.0),
+            CoordinateSystem::WebGl => (-1.0, 1.0),
+            CoordinateSystem::WebGpu => (0.0, 1.0),
         };
 
         let projection_matrix_inverse = camera.projection_matrix_inverse();

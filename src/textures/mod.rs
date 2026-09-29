@@ -12,7 +12,7 @@ mod depth_texture;
 mod texture;
 
 pub use cube_depth_texture::{CubeDepthTexture, CubeDepthTextureInner};
-pub use cube_texture::{ColorSpace, CubeTexture, CubeTextureInner, Image, Mapping};
+pub use cube_texture::{CubeTexture, CubeTextureInner, Image, Mapping};
 pub use data3d_texture::{Data3DTexture, Data3DTextureInner};
 pub use data_array_texture::{DataArrayTexture, DataArrayTextureInner};
 pub use data_texture::{DataTexture, DataTextureData, DataTextureInner};

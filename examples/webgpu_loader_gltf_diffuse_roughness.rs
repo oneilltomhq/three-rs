@@ -34,7 +34,7 @@ use std::rc::Rc;
 
 use three_rs::addons::controls::OrbitControls;
 use three_rs::core::BufferGeometry;
-use three_rs::loaders::GLTFLoader;
+use three_rs::loaders::GltfLoader;
 use three_rs::materials::ToneMapping;
 use three_rs::nodes::pmrem_node::PmremEnvironment;
 use three_rs::objects::Background;
@@ -93,7 +93,7 @@ pub fn init() -> App {
     // `await new GLTFLoader().setPath( 'models/gltf/' ).loadAsync(
     // 'DiffuseRoughnessParameterSweep.glb' )`.
     let gltf =
-        GLTFLoader::load(examples_dir().join("models/gltf/DiffuseRoughnessParameterSweep.glb"))
+        GltfLoader::load(examples_dir().join("models/gltf/DiffuseRoughnessParameterSweep.glb"))
             .expect("DiffuseRoughnessParameterSweep.glb");
 
     // "The draft sample asset currently uses clockwise triangle winding." The

@@ -116,7 +116,7 @@ pub fn init() -> App {
                         alpha,
                         0.5,
                         gamma * 0.5 + 0.1,
-                        three_rs::math::ColorSpace::LinearSRGB,
+                        three_rs::math::ColorSpace::LinearSrgb,
                     )
                     .multiply_scalar(1.0 - beta * 0.2);
 

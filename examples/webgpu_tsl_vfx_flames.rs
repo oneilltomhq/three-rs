@@ -100,7 +100,7 @@ pub fn gradient_texture() -> Texture {
         data.push(255);
     }
     let texture = Texture::new(WIDTH as u32, 1, Some(data));
-    texture.set_color_space(ColorSpace::SRGB);
+    texture.set_color_space(ColorSpace::Srgb);
     texture
 }
 

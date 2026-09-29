@@ -33,7 +33,7 @@ use std::rc::Rc;
 
 use three_rs::addons::controls::OrbitControls;
 use three_rs::animation::AnimationMixer;
-use three_rs::loaders::GLTFLoader;
+use three_rs::loaders::GltfLoader;
 use three_rs::nodes::display::{bloom, BloomNode};
 use three_rs::Timer;
 use three_rs::{
@@ -81,7 +81,7 @@ pub fn init() -> App {
     // single RAF fires only once the load has resolved, so the load is
     // synchronous here and the frame below is the page's first.
     let three = three_rs::testing::three_js_dir();
-    let gltf = GLTFLoader::load(three.join("examples/models/gltf/PrimaryIonDrive.glb"))
+    let gltf = GltfLoader::load(three.join("examples/models/gltf/PrimaryIonDrive.glb"))
         .expect("PrimaryIonDrive.glb");
 
     let model = gltf.scene.clone();

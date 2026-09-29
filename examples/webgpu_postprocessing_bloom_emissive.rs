@@ -37,7 +37,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use three_rs::addons::controls::OrbitControls;
-use three_rs::loaders::{GLTFLoader, HdrLoader};
+use three_rs::loaders::{GltfLoader, HdrLoader};
 use three_rs::materials::Blending;
 use three_rs::nodes::display::{bloom, BloomNode};
 use three_rs::nodes::mrt;
@@ -113,7 +113,7 @@ pub fn init() -> App {
     // 'DamagedHelmet.gltf', … )` — five external JPEG maps: albedo,
     // metalRoughness, normal, emissive and AO.
     let gltf =
-        GLTFLoader::load(examples_dir().join("models/gltf/DamagedHelmet/glTF/DamagedHelmet.gltf"))
+        GltfLoader::load(examples_dir().join("models/gltf/DamagedHelmet/glTF/DamagedHelmet.gltf"))
             .expect("DamagedHelmet.gltf");
     gltf.scene.traverse(&mut |node| {
         if let Some(material) = node

@@ -292,7 +292,7 @@ pub fn init() -> App {
     let mut renderer = Renderer::new(parameters).unwrap();
     renderer.set_pixel_ratio(DPR);
     renderer.set_size(INNER_WIDTH, INNER_HEIGHT);
-    renderer.set_output_color_space(ColorSpace::LinearSRGB);
+    renderer.set_output_color_space(ColorSpace::LinearSrgb);
 
     App {
         renderer,

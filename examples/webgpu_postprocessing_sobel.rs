@@ -17,7 +17,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use three_rs::addons::controls::OrbitControls;
-use three_rs::loaders::GLTFLoader;
+use three_rs::loaders::GltfLoader;
 use three_rs::materials::{render_output, ToneMapping};
 use three_rs::nodes::display::{convert_to_texture, sobel, RttNode, SobelOperatorNode};
 use three_rs::nodes::pmrem_node::PmremEnvironment;
@@ -62,7 +62,7 @@ pub fn init() -> App {
     // `gltf.scene.children[ 1 ]` — the dragon, the only node the page keeps —
     // with a default `MeshStandardNodeMaterial` in place of its transmissive
     // one.
-    let gltf = GLTFLoader::load(examples_dir().join("models/gltf/DragonAttenuation.glb"))
+    let gltf = GltfLoader::load(examples_dir().join("models/gltf/DragonAttenuation.glb"))
         .expect("DragonAttenuation.glb");
     let model = gltf.scene.children()[1].clone();
     model

@@ -89,7 +89,7 @@ pub fn init() -> App {
     let texture = TextureLoader::new()
         .load(three_rs::testing::three_js_dir().join("examples/textures/crate.gif"))
         .unwrap();
-    texture.set_color_space(ColorSpace::SRGB);
+    texture.set_color_space(ColorSpace::Srgb);
 
     let geometry = box_geometry_default();
     let mut material = MeshBasicNodeMaterial::new();

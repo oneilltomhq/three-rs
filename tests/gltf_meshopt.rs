@@ -8,10 +8,10 @@
 //!   (`coffeemat.glb`, `facecap.glb`; a grep of `examples/models` for
 //!   `EXT_meshopt_compression` finds no others). Each asserts
 //!   - every compressed bufferView decodes to the same bytes;
-//!   - every accessor, as [`GLTFLoader::accessors`] reads it, matches
+//!   - every accessor, as [`GltfLoader::accessors`] reads it, matches
 //!     `loadAccessor`'s typed array: integers exactly, and floats and
 //!     normalized values (which the port scales into range) to 1e-6;
-//!   - every primitive [`GLTFLoader::parse`] builds has the attributes,
+//!   - every primitive [`GltfLoader::parse`] builds has the attributes,
 //!     morph attributes and index `loadGeometries` builds, to 1e-6.
 //! * Sweeps of the codecs and filters over inputs the two assets do not
 //!   reach: every 8-bit octahedral `x, y`, random 16-bit octahedral,
@@ -34,7 +34,7 @@ use meshopt_rs::vertex::VertexEncodingVersion;
 use serde_json::Value;
 use three_rs::core::{BufferAttribute, Index};
 use three_rs::loaders::meshopt::{decode_gltf_buffer, Filter, Mode};
-use three_rs::loaders::GLTFLoader;
+use three_rs::loaders::GltfLoader;
 
 const TOLERANCE: f64 = 1e-6;
 
@@ -155,7 +155,7 @@ impl Typed {
     }
 
     /// What the port reads: `getNormalizedComponentScale` applied to a
-    /// normalized array, as [`GLTFLoader::accessor`] applies it.
+    /// normalized array, as [`GltfLoader::accessor`] applies it.
     fn widened(&self) -> Vec<f64> {
         let scale = match (self.normalized, self.type_name.as_str()) {
             (true, "Int8Array") => 1.0 / 127.0,
@@ -207,7 +207,7 @@ fn compare(what: &str, want: &[f64], got: &[f64], exact: bool) -> Option<String>
 }
 
 /// `path`'s GLB with `KHR_texture_basisu` dropped from
-/// `extensionsRequired`, so that [`GLTFLoader::parse`] builds it. Both meshopt
+/// `extensionsRequired`, so that [`GltfLoader::parse`] builds it. Both meshopt
 /// assets use KTX2 textures, which are issue #172; the reference stubs
 /// textures out too, and nothing geometric depends on them.
 fn without_basisu(path: &Path) -> Vec<u8> {
@@ -262,7 +262,7 @@ fn check(name: &str) {
         })
         .collect();
     assert!(!want.is_empty(), "{name}: no compressed bufferViews");
-    let got = GLTFLoader::meshopt_buffer_views(&path).unwrap_or_else(|e| panic!("{name}: {e}"));
+    let got = GltfLoader::meshopt_buffer_views(&path).unwrap_or_else(|e| panic!("{name}: {e}"));
     assert_eq!(
         got.iter().map(|(i, _)| *i).collect::<Vec<_>>(),
         want.iter().map(|(i, _)| *i).collect::<Vec<_>>(),
@@ -287,7 +287,7 @@ fn check(name: &str) {
         .iter()
         .map(Typed::from_json)
         .collect();
-    let got = GLTFLoader::accessors(&path).unwrap_or_else(|e| panic!("{name}: {e}"));
+    let got = GltfLoader::accessors(&path).unwrap_or_else(|e| panic!("{name}: {e}"));
     assert_eq!(got.len(), want.len(), "{name}: the accessor count");
     for (index, ((values, item_size), want)) in got.iter().zip(&want).enumerate() {
         let what = format!("{name} accessor {index} ({})", want.type_name);
@@ -296,7 +296,7 @@ fn check(name: &str) {
     }
 
     // --- the geometry the crate builds ------------------------------------
-    let gltf = GLTFLoader::parse(&without_basisu(&path), path.parent().unwrap().to_path_buf())
+    let gltf = GltfLoader::parse(&without_basisu(&path), path.parent().unwrap().to_path_buf())
         .unwrap_or_else(|e| panic!("{name}: {e}"));
 
     // `gltf.primitives` is in node order: each node with a mesh, that mesh's

@@ -28,13 +28,13 @@ fn one3() -> Vector3 {
 /// coordinate system.
 fn ortho() -> Matrix4 {
     let mut m = Matrix4::default();
-    m.make_orthographic(-1.0, 1.0, 1.0, -1.0, 1.0, 100.0, CoordinateSystem::WebGL);
+    m.make_orthographic(-1.0, 1.0, 1.0, -1.0, 1.0, 100.0, CoordinateSystem::WebGl);
     m
 }
 
 fn perspective() -> Matrix4 {
     let mut m = Matrix4::default();
-    m.make_perspective(-1.0, 1.0, 1.0, -1.0, 1.0, 100.0, CoordinateSystem::WebGL);
+    m.make_perspective(-1.0, 1.0, 1.0, -1.0, 1.0, 100.0, CoordinateSystem::WebGl);
     m
 }
 
@@ -42,7 +42,7 @@ fn perspective() -> Matrix4 {
 /// WebGL coordinate system and no reversed depth.
 fn from_projection_matrix(m: &Matrix4) -> Frustum {
     let mut a = Frustum::default();
-    a.set_from_projection_matrix(m, CoordinateSystem::WebGL, false);
+    a.set_from_projection_matrix(m, CoordinateSystem::WebGl, false);
     a
 }
 
