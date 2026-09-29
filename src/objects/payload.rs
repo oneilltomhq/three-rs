@@ -27,6 +27,7 @@ use crate::objects::{
 /// `None` is a plain `Object3D`, a `Group`, a `Bone` — anything the renderer
 /// walks through without drawing.
 #[derive(Clone, Default)]
+#[non_exhaustive]
 pub enum Payload {
     #[default]
     None,
@@ -238,7 +239,7 @@ impl Payload {
     /// `object.material` when it is an array (`Array.isArray( material )`):
     /// the [`Mesh::materials`] of a plain `Mesh`, empty for everything else
     /// and for a mesh with a single material.
-    pub fn material_array(&self) -> &[MeshBasicNodeMaterial] {
+    pub(crate) fn material_array(&self) -> &[MeshBasicNodeMaterial] {
         match self {
             Payload::Mesh(mesh) => &mesh.materials,
             _ => &[],
@@ -253,7 +254,7 @@ impl Payload {
     /// [`InstancedMesh::bounding_sphere`] is that field, and it is the only way
     /// an instanced draw whose instances are spread out is not culled as a
     /// point at its own origin.
-    pub fn bounding_sphere_in(&self, matrix_world: &Matrix4) -> Option<Sphere> {
+    pub(crate) fn bounding_sphere_in(&self, matrix_world: &Matrix4) -> Option<Sphere> {
         match self {
             Payload::Line(line) => line.bounding_sphere_in(matrix_world),
             Payload::Points(points) => points.bounding_sphere_in(matrix_world),
@@ -370,7 +371,7 @@ impl Payload {
     /// `RenderObject.getInstanceCount()` (`RenderObject.js:617-631`): the
     /// instanced geometry's count, else `object.count` when the object defines
     /// one, else 1. `Points.count` is the second arm — see [`Points::count`].
-    pub fn count(&self) -> u32 {
+    pub(crate) fn count(&self) -> u32 {
         match self {
             Payload::InstancedMesh(instanced) => instanced.count as u32,
             Payload::Points(points) => points.count.unwrap_or(1) as u32,

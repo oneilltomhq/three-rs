@@ -5,7 +5,7 @@
 //! port has one `KeyframeTrack` struct whose `value_type()` says which subclass
 //! it is, so those assertions become a `value_type()` check.
 
-use three_rs::animation::keyframe_track::{InterpolationMode, KeyframeTrack, TrackValueType};
+use three_rs::animation::{InterpolationMode, KeyframeTrack, TrackValueType};
 
 // KeyframeTrack, through `NumberKeyframeTrack` as Three's suite does.
 //

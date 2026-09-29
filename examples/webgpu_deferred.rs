@@ -57,7 +57,7 @@ use three_rs::geometries::{plane_geometry, quad_geometry, sphere_geometry, teapo
 use three_rs::loaders::UltraHdrLoader;
 use three_rs::materials::{MeshStandardNodeMaterial, Side, ToneMapping};
 use three_rs::math::ColorSpace;
-use three_rs::nodes::mrt::mrt;
+use three_rs::nodes::mrt;
 use three_rs::nodes::pmrem_node::PmremEnvironment;
 use three_rs::nodes::tsl::{
     diffuse_color, discard, float, if_then, metalness, normal_view, position_geometry,

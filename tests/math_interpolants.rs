@@ -6,10 +6,10 @@
 //! type-level fact in Rust (each of these is an `Interpolant<…>`), so they fold
 //! into the `instancing` tests.
 
-use three_rs::math::interpolant::{Interpolant, InterpolantData, Interpolation};
 use three_rs::math::{
     cubic_interpolant, discrete_interpolant, linear_interpolant, quaternion_linear_interpolant,
 };
+use three_rs::math::{Interpolant, InterpolantData, Interpolation};
 
 // LinearInterpolant
 

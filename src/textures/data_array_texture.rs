@@ -13,7 +13,7 @@ pub struct DataArrayTextureInner {
     pub height: u32,
     /// `image.depth` — the array layer count, i.e. the morph-target count.
     pub depth: u32,
-    pub gpu: Option<wgpu::Texture>,
+    pub(crate) gpu: Option<wgpu::Texture>,
 }
 
 /// Cloning is a handle copy, as in JS.
@@ -67,11 +67,11 @@ impl DataArrayTexture {
         (inner.width, inner.height, inner.depth)
     }
 
-    pub fn set_gpu(&self, gpu: wgpu::Texture) {
+    pub(crate) fn set_gpu(&self, gpu: wgpu::Texture) {
         self.0.borrow_mut().gpu = Some(gpu);
     }
 
-    pub fn has_gpu(&self) -> bool {
+    pub(crate) fn has_gpu(&self) -> bool {
         self.0.borrow().gpu.is_some()
     }
 

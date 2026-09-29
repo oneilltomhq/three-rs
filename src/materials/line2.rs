@@ -323,7 +323,7 @@ fn mvp_line(attributes: &LineSegmentsAttributes, world_units: bool) -> (Vec<Node
 /// only thing that lets the fat line reuse `modelViewProjection`. Do not
 /// simplify it: `v_positionView` and `v_modelViewProjection` still appear after
 /// it in three's dump, and so do they here.
-pub fn setup_position(attributes: &LineSegmentsAttributes, world_units: bool) -> NodeRef {
+pub(crate) fn setup_position(attributes: &LineSegmentsAttributes, world_units: bool) -> NodeRef {
     let (statements, clip) = mvp_line(attributes, world_units);
     let local = to_var(
         None,
@@ -468,7 +468,7 @@ fn alpha_line_world_units(alpha_to_coverage: bool) -> NodeRef {
 /// `geometry.hasAttribute( 'color' )` is false on a `LineSegmentsGeometry`
 /// (it carries `instanceColorStart` / `instanceColorEnd`), so the colour is
 /// selected per end here, in the *fragment* stage, through two varyings.
-pub fn setup_diffuse_color(
+pub(crate) fn setup_diffuse_color(
     alpha_to_coverage: bool,
     world_units: bool,
     vertex_colors: bool,

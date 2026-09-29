@@ -11,7 +11,7 @@ use crate::nodes::{BindingDesc, BufferSource, NodeProgram, Type, UniformMember, 
 
 /// Everything about a pass that the pipeline has to bake in, beyond the shader.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct RenderState {
+pub(crate) struct RenderState {
     pub color_format: wgpu::TextureFormat,
     /// How many colour attachments the pass has — `renderTarget.textures.length`,
     /// 1 for everything but an MRT pass. The fragment stage declares one
@@ -421,6 +421,7 @@ fn vertex_format(ty: Type) -> wgpu::VertexFormat {
 /// One light as the uniform writer sees it: three.js' `LightsNode` resolves a
 /// `PointLight` to exactly these four values per render.
 #[derive(Clone, Copy, Debug)]
+#[doc(hidden)]
 pub struct LightState {
     /// `light.color * light.intensity`, in the working colour space.
     pub color: Color,
@@ -487,6 +488,7 @@ impl Default for LightState {
 }
 
 #[derive(Clone, Copy, Debug)]
+#[doc(hidden)]
 pub struct UniformContext<'a> {
     /// `frame.object` — the render object this draw is for, for the one
     /// uniform source that reads it, [`UniformSource::ObjectUpdate`]. `None`

@@ -13,7 +13,7 @@
 //! Each segment is one instance of an eight-vertex quad that the vertex shader
 //! expands into a screen-space ribbon 5 pixels wide, with round caps cut by a
 //! `discard` in the fragment stage. See [`three_rs::addons::lines`] and
-//! [`three_rs::materials::line2`].
+//! [`three_rs::materials::Line2NodeMaterial`].
 //!
 //! **The inset.** The page renders the scene twice: once full-frame with the
 //! main camera, then again into a 125x125 box at the bottom left with a second

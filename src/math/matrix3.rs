@@ -258,7 +258,8 @@ impl Matrix3 {
 
     /// The nine elements narrowed to `f32`, laid out as three `vec4` columns —
     /// the std140/WGSL uniform layout of a `mat3x3<f32>`.
-    pub fn to_padded_f32_array(&self) -> [f32; 12] {
+    #[allow(clippy::wrong_self_convention)] // a 72-byte matrix is cheaper borrowed
+    pub(crate) fn to_padded_f32_array(&self) -> [f32; 12] {
         let e = &self.elements;
         [
             e[0] as f32,

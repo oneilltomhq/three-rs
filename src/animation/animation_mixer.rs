@@ -76,7 +76,7 @@ pub struct ActionHandle(pub usize);
 
 /// A handle to one of the mixer's `_controlInterpolants`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct ControlHandle(pub usize);
+pub(crate) struct ControlHandle(pub usize);
 
 /// The `[ active | inactive ]` pool of `PropertyMixer`s: Three's `_bindings`,
 /// `_nActiveBindings` and `_bindingsByRootAndName`.
@@ -104,7 +104,7 @@ impl BindingPool {
     }
 
     /// The `PropertyMixer` behind a handle, mutably.
-    pub fn get_mut(&mut self, handle: usize) -> Option<&mut PropertyMixer> {
+    pub(crate) fn get_mut(&mut self, handle: usize) -> Option<&mut PropertyMixer> {
         self.slots.get_mut(handle).and_then(|s| s.as_mut())
     }
 
@@ -179,7 +179,7 @@ impl BindingPool {
 /// The pool of weight / time-scale interpolants: `_controlInterpolants`,
 /// `_nActiveControlInterpolants`.
 #[derive(Default)]
-pub struct ControlPool {
+pub(crate) struct ControlPool {
     /// The interpolants themselves, by stable slot.
     slots: Vec<LinearInterpolant>,
     /// Per-slot `__cacheIndex`.

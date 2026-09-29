@@ -315,6 +315,7 @@ impl Flow {
 
     /// The half-float texels [`Flow::update_curve`] last wrote — the
     /// `splineTexture.image.data` `Uint16Array`.
+    #[doc(hidden)]
     pub fn spline_data(&self) -> &[u16] {
         &self.data
     }

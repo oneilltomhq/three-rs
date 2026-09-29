@@ -237,6 +237,7 @@ impl Text {
         self.text_render_info.as_ref()
     }
 
+    #[doc(hidden)]
     pub fn needs_sync(&self) -> bool {
         self.needs_sync
     }
@@ -244,11 +245,12 @@ impl Text {
     /// `text._needsSync = true` — the owning `BatchedText` sets this directly in
     /// `addText` and `resetAtlas`. Not a JS *method*: in JS `_needsSync` is just
     /// a field the batch reaches into, and Rust privacy needs a door for it.
-    pub fn mark_needs_sync(&mut self) {
+    pub(crate) fn mark_needs_sync(&mut self) {
         self.needs_sync = true;
     }
 
     /// How many layouts have actually run. Not in the JS — see the field doc.
+    #[doc(hidden)]
     pub fn layouts_performed(&self) -> u64 {
         self.layouts_performed
     }
@@ -274,11 +276,13 @@ impl Text {
 
     /// `_batchedText` / `_memberId`, set by the owning batch. Both are needed
     /// before `set_opacity` writes anything through.
+    #[doc(hidden)]
     pub fn attach_to_batch(&mut self, batch: Rc<RefCell<dyn OpacitySink>>, member_id: usize) {
         self.batched_text = Some(batch);
         self.member_id = member_id as i64;
     }
 
+    #[doc(hidden)]
     pub fn detach_from_batch(&mut self) {
         self.batched_text = None;
         self.member_id = -1;

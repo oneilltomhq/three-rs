@@ -14,6 +14,7 @@ use std::rc::Rc;
 /// needs: `FloatType` + `RGBAFormat` (`rgba32float`) and `UnsignedIntType` +
 /// `RedIntegerFormat` (`r32uint`).
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub enum DataTextureData {
     /// `Float32Array`, four channels per texel — `rgba32float`.
     F32(Vec<f32>),
@@ -29,7 +30,7 @@ pub struct DataTextureInner {
     /// re-uploads when this runs ahead of `uploaded`.
     pub version: u32,
     uploaded: u32,
-    pub gpu: Option<wgpu::Texture>,
+    pub(crate) gpu: Option<wgpu::Texture>,
 }
 
 /// Cloning is a handle copy, as in JS.
@@ -89,7 +90,7 @@ impl DataTexture {
 
     /// `texture.image.data` is an integer array — the binding is
     /// `texture_2d<u32>` rather than `texture_2d<f32>`.
-    pub fn is_uint(&self) -> bool {
+    pub(crate) fn is_uint(&self) -> bool {
         matches!(self.0.borrow().data, DataTextureData::U32(_))
     }
 
@@ -135,21 +136,21 @@ impl DataTexture {
         }
     }
 
-    pub fn set_gpu(&self, gpu: wgpu::Texture) {
+    pub(crate) fn set_gpu(&self, gpu: wgpu::Texture) {
         self.0.borrow_mut().gpu = Some(gpu);
     }
 
-    pub fn has_gpu(&self) -> bool {
+    pub(crate) fn has_gpu(&self) -> bool {
         self.0.borrow().gpu.is_some()
     }
 
     /// True when the CPU-side payload has moved on since the last upload.
-    pub fn needs_upload(&self) -> bool {
+    pub(crate) fn needs_upload(&self) -> bool {
         let inner = self.0.borrow();
         inner.gpu.is_none() || inner.uploaded != inner.version
     }
 
-    pub fn mark_uploaded(&self) {
+    pub(crate) fn mark_uploaded(&self) {
         let mut inner = self.0.borrow_mut();
         inner.uploaded = inner.version;
     }

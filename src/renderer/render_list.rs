@@ -22,7 +22,7 @@ use crate::objects::Payload;
 /// [`material`](Self::material) and [`group`](Self::group)), and the clipping
 /// context belongs to a feature this port has not reached.
 #[derive(Clone)]
-pub struct RenderItem {
+pub(crate) struct RenderItem {
     /// `renderItem.object`.
     pub node: Node,
     /// `renderItem.id` — `object.id`, the final sort tie-break.
@@ -83,7 +83,7 @@ fn compare(a: f64, b: f64) -> Ordering {
 /// `class RenderList`, minus the bundles, the transmissive double pass and the
 /// occlusion-query bookkeeping.
 #[derive(Default)]
-pub struct RenderList {
+pub(crate) struct RenderList {
     /// `RenderList.opaque`.
     pub opaque: Vec<RenderItem>,
     /// `RenderList.transparent`.
@@ -134,15 +134,11 @@ impl RenderList {
     pub fn len(&self) -> usize {
         self.opaque.len() + self.transparent.len()
     }
-
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
 }
 
 /// The camera state `_projectObject()` reads: `camera.layers` plus the
 /// projection used for the sort `z` and for frustum culling.
-pub struct ProjectCamera {
+pub(crate) struct ProjectCamera {
     /// `camera.layers`.
     pub layers: Layers,
     /// `_projScreenMatrix` — `projectionMatrix * matrixWorldInverse`.
@@ -228,7 +224,7 @@ impl ProjectCamera {
 /// deliberately asymmetric: `visible === false` returns immediately, so a hidden
 /// parent hides its whole subtree, while failing the `layers` test only skips
 /// *this* object's own render item — its children are still projected.
-pub fn project_object(
+pub(crate) fn project_object(
     object: &Node,
     camera: &ProjectCamera,
     group_order: f64,

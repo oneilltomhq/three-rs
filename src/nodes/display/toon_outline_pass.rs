@@ -108,6 +108,7 @@ impl ToonOutlinePassNode {
     /// The outline material every toon draw is preceded by — what
     /// `_getOutlineMaterial()` returns, for inspecting its program
     /// (`examples/dump_wgsl.rs`).
+    #[doc(hidden)]
     pub fn outline_material(&self) -> &MeshBasicNodeMaterial {
         &self.material
     }

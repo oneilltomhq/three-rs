@@ -450,9 +450,4 @@ impl Vector4 {
     pub fn to_array(&self) -> [f64; 4] {
         [self.x, self.y, self.z, self.w]
     }
-
-    /// The four components narrowed to `f32`, for a `vec4<f32>` uniform.
-    pub fn to_f32_array(&self) -> [f32; 4] {
-        [self.x as f32, self.y as f32, self.z as f32, self.w as f32]
-    }
 }

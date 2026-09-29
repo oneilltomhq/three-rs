@@ -4,7 +4,7 @@
 //! three.js 2f80402 it is a real cube render target: `rgba16float`, one mip
 //! level per prefiltered roughness, `log2( size ) - LOD_MIN + 1` levels in all
 //! (six for the usual 256² cube, down to 8²), read with a single
-//! `textureSampleLevel` at [`roughness_to_mip`]. Level `lod` holds the
+//! `textureSampleLevel` at `nodes::pmrem_utils::roughness_to_mip`. Level `lod` holds the
 //! environment convolved with the GGX lobe at [`lod_to_roughness`]`( lod )`.
 //!
 //! Every level is filled the same way, `_renderCube( target, lod, material )`:
@@ -17,7 +17,7 @@
 //! 2. for `fromScene` with `sigma > 0`, a spherical Gaussian blur from the
 //!    source into level 0 of the PMREM and back;
 //! 3. level by level, `PMREM_ggx` (filtered importance sampling of the
-//!    source's mips) or, for the last [`INTEGRATION_LEVELS`], `PMREM_integration`
+//!    source's mips) or, for the last `INTEGRATION_LEVELS`, `PMREM_integration`
 //!    (every texel of the source's 16² level, weighted).
 //!
 //! **What this port does differently.** Three renders into a cube face at a mip
@@ -26,8 +26,6 @@
 //! size and copied into its (layer, level) — the same exact, same-format copy
 //! `CubeRenderTarget.fromEquirectangularTexture` uses here, recorded in
 //! `docs/nodes.md` §13.
-//!
-//! [`roughness_to_mip`]: crate::nodes::pmrem_utils::roughness_to_mip
 
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -52,23 +50,24 @@ use super::cube_render_target::{FACES, FOV};
 use super::render_target::{RenderTarget, RenderTargetOptions};
 
 /// `MIN_SIZE` — the smallest cube a PMREM is generated at, whatever the source.
-pub const MIN_SIZE: u32 = 256;
+pub(crate) const MIN_SIZE: u32 = 256;
 /// `LOD_MIN` — the smallest level is `2 ^ LOD_MIN` = 8² a face.
-pub const LOD_MIN: u32 = 3;
+pub(crate) const LOD_MIN: u32 = 3;
 /// `BLUR_SAMPLES` — taps of the spherical Gaussian.
-pub const BLUR_SAMPLES: usize = 20;
+pub(crate) const BLUR_SAMPLES: usize = 20;
 /// `GGX_SAMPLES` — importance samples per texel of a `PMREM_ggx` level.
-pub const GGX_SAMPLES: usize = 256;
+pub(crate) const GGX_SAMPLES: usize = 256;
 /// `INTEGRATION_SIZE` — the face size of the source level `PMREM_integration`
 /// sums over.
+#[doc(hidden)]
 pub const INTEGRATION_SIZE: u32 = 16;
 /// `INTEGRATION_LEVELS` — how many of the roughest levels use
 /// `PMREM_integration` rather than `PMREM_ggx`.
-pub const INTEGRATION_LEVELS: u32 = 3;
+pub(crate) const INTEGRATION_LEVELS: u32 = 3;
 /// `fromScene`'s defaults.
-pub const SCENE_SIZE: u32 = 256;
-pub const SCENE_NEAR: f64 = 0.1;
-pub const SCENE_FAR: f64 = 100.0;
+pub(crate) const SCENE_SIZE: u32 = 256;
+pub(crate) const SCENE_NEAR: f64 = 0.1;
+pub(crate) const SCENE_FAR: f64 = 100.0;
 /// `new CubeCamera( 1, 10 )` — `_renderCube`'s camera.
 const CUBE_NEAR: f64 = 1.0;
 const CUBE_FAR: f64 = 10.0;
@@ -77,7 +76,7 @@ const CUBE_FAR: f64 = 10.0;
 /// `_textureToCubemap`; the port makes the two cases a type, because a
 /// `CubeTexture` and a `Texture` are different types here.
 #[derive(Clone, Debug)]
-pub enum PmremSource {
+pub(crate) enum PmremSource {
     /// `fromCubemap( cubemap )`.
     Cube(CubeTexture),
     /// `fromEquirectangular( equirectangular )` — a 2-D longitude/latitude map.
@@ -100,6 +99,7 @@ impl PmremSource {
 }
 
 /// `_setSize( cubeSize )` — `max( MIN_SIZE, floorPowerOfTwo( cubeSize ) )`.
+#[doc(hidden)]
 pub fn cube_size_for(requested: u32) -> u32 {
     let floor_pow2 = if requested == 0 {
         0
@@ -110,6 +110,7 @@ pub fn cube_size_for(requested: u32) -> u32 {
 }
 
 /// `_allocateTarget()`'s `maxLod = log2( size ) - LOD_MIN`.
+#[doc(hidden)]
 pub fn max_lod_for(size: u32) -> u32 {
     size.trailing_zeros().saturating_sub(LOD_MIN)
 }
@@ -128,6 +129,7 @@ pub fn lod_to_roughness(lod: u32, max_lod: u32) -> f64 {
 /// * roughness^4 ) ) + 0.5`, zero at roughness 0. It is the source mip whose
 /// texel solid angle matches one importance sample of the lobe, before the
 /// per-sample `log2( alpha2 * invQ )` term.
+#[doc(hidden)]
 pub fn lod_bias(size: u32, roughness: f64) -> f64 {
     if roughness > 0.0 {
         (size as f64).log2() + 0.5 * (6.0 / (GGX_SAMPLES as f64 * roughness.powi(4))).log2() + 0.5
@@ -138,12 +140,13 @@ pub fn lod_bias(size: u32, roughness: f64) -> f64 {
 
 /// Which material fills level `lod` of a PMREM with `max_lod + 1` levels:
 /// `lod > maxLod - INTEGRATION_LEVELS` takes `PMREM_integration`.
+#[doc(hidden)]
 pub fn uses_integration(lod: u32, max_lod: u32) -> bool {
     lod as i64 > max_lod as i64 - INTEGRATION_LEVELS as i64
 }
 
 /// `_allocateTarget()` — the PMREM cube for a (already `_setSize`d) `size`.
-pub fn allocate_target(size: u32) -> CubeTexture {
+pub(crate) fn allocate_target(size: u32) -> CubeTexture {
     CubeTexture::pmrem_render_target(size, Some(max_lod_for(size) + 1))
 }
 
@@ -202,11 +205,6 @@ impl PmremGenerator {
             ggx: None,
             integration: None,
         }
-    }
-
-    /// `this._cubeSize`, once an entry point has set it.
-    pub fn cube_size(&self) -> u32 {
-        self.cube_size
     }
 
     /// `_setSize( cubeSize )`.
@@ -418,7 +416,8 @@ impl PmremGenerator {
     }
 
     /// `_fromTexture( texture, renderTarget )`.
-    pub fn from_texture(
+    #[allow(clippy::wrong_self_convention)] // three's `_fromTexture`, kept by name
+    pub(crate) fn from_texture(
         &mut self,
         renderer: &mut super::Renderer,
         source: &PmremSource,
@@ -544,6 +543,7 @@ fn pmrem_material(name: &'static str, fragment_node: NodeRef) -> MeshBasicNodeMa
 }
 
 /// `_getCubemapMaterial()` — `envMap.sample( positionWorldDirection )`.
+#[doc(hidden)]
 pub fn cubemap_material(cubemap: &CubeTexture) -> MeshBasicNodeMaterial {
     pmrem_material(
         "PMREM_cubemap",
@@ -554,6 +554,7 @@ pub fn cubemap_material(cubemap: &CubeTexture) -> MeshBasicNodeMaterial {
 /// `_getEquirectMaterial()` — four taps of the equirect map a quarter of a
 /// pixel's footprint apart, averaged, so the minified map is box-filtered
 /// rather than point-sampled at level 0.
+#[doc(hidden)]
 pub fn equirect_material(map: &Texture) -> MeshBasicNodeMaterial {
     let direction = position_world_direction();
     let dx = to_const(None, dpdx(direction.clone()).mul(float(0.25)));
@@ -645,6 +646,7 @@ fn blur_material(env_map: &CubeTexture) -> (MeshBasicNodeMaterial, SettableValue
 
 /// The three generator materials over placeholder textures, for
 /// `examples/dump_wgsl.rs` to diff against three's `PMREM_*` modules.
+#[doc(hidden)]
 pub fn dump_materials() -> Vec<(&'static str, MeshBasicNodeMaterial)> {
     let source = CubeTexture::pmrem_render_target(MIN_SIZE, None);
     vec![

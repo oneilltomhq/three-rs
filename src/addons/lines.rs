@@ -260,7 +260,7 @@ impl Line2 {
 /// The segments are the instanced `instanceStart` / `instanceEnd` pairs, not
 /// the quad geometry, so the bounds tested first are
 /// `LineSegmentsGeometry`'s — the box and sphere of every endpoint.
-pub fn raycast(
+pub(crate) fn raycast(
     mesh: &Mesh,
     matrix_world: &Matrix4,
     object: &Node,

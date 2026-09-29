@@ -1,16 +1,16 @@
 //! Port of `three.js/src/nodes/` — the node system the WebGPU renderer builds
 //! every material through. See `docs/nodes.md`.
 
-pub mod alpha_hash;
+pub(crate) mod alpha_hash;
 pub mod batch;
 pub mod builder;
 pub mod code;
 pub mod display;
-pub mod frame;
+pub(crate) mod frame;
 pub mod lines;
 pub mod materialx;
 pub mod morph;
-pub mod mrt;
+pub(crate) mod mrt;
 pub mod node;
 pub mod pmrem_node;
 pub mod pmrem_utils;
@@ -20,11 +20,12 @@ pub mod tsl;
 pub mod wgsl;
 
 pub use builder::{
-    BindingDesc, ComputeFlow, ComputeProgram, MaterialFlow, NodeBuilder, NodeProgram, Stage,
+    BindingDesc, ComputeFlow, ComputeProgram, MaterialFlow, NodeBuilder, NodeProgram,
     UniformMember, Visibility,
 };
-pub use frame::{NodeFrameState, NodeUpdate, NodeUpdateType, UpdateNode};
-pub use mrt::{mrt, MrtNode, MrtValue};
+pub(crate) use frame::UpdateNode;
+pub use frame::{NodeFrameState, NodeUpdate, NodeUpdateType};
+pub use mrt::{mrt, MrtNode};
 pub use node::{
     BufferSource, ContextValue, CustomNode, Node, NodeFrame, NodeRef, StorageAccess, TextureSource,
     Type, UniformGroup, UniformSource, UpdateType,

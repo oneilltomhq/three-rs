@@ -1,6 +1,6 @@
 //! Port of `three.js/test/unit/src/math/Interpolant.tests.js`.
 
-use three_rs::math::interpolant::{Interpolant, InterpolantData, Interpolation};
+use three_rs::math::{Interpolant, InterpolantData, Interpolation};
 
 // Since this is an abstract base class, we have to make it concrete in order
 // to test its functionality...

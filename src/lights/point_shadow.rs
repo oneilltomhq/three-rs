@@ -17,7 +17,7 @@ use super::shadow_filter::{ShadowFilter, ShadowFilterInputs, ShadowFilterMap};
 /// The six cube faces as `renderShadow()` walks them, in the WebGPU
 /// coordinate system (the ±Y directions are swapped to match the sampling
 /// convention). Face order: +X, −X, +Y, −Y, +Z, −Z.
-pub const CUBE_DIRECTIONS: [Vector3; 6] = [
+pub(crate) const CUBE_DIRECTIONS: [Vector3; 6] = [
     Vector3 {
         x: 1.0,
         y: 0.0,
@@ -50,7 +50,7 @@ pub const CUBE_DIRECTIONS: [Vector3; 6] = [
     },
 ];
 
-pub const CUBE_UPS: [Vector3; 6] = [
+pub(crate) const CUBE_UPS: [Vector3; 6] = [
     Vector3 {
         x: 0.0,
         y: -1.0,
@@ -154,14 +154,14 @@ pub fn point_shadow_filter(inputs: &ShadowFilterInputs) -> NodeRef {
 /// `shadowPositionWorld` must already have been assigned — that is
 /// `ShadowBaseNode.setupShadowPosition()`, which the caller pushes because it
 /// is a statement rather than an expression (same seam as `shadow_factor`).
-pub fn point_shadow(index: usize, depth_texture: &CubeDepthTexture) -> NodeRef {
+pub(crate) fn point_shadow(index: usize, depth_texture: &CubeDepthTexture) -> NodeRef {
     point_shadow_filtered(index, depth_texture, &ShadowFilter::Pcf)
 }
 
 /// [`point_shadow`] through a given filter — `PointShadowNode.getShadowFilterFn(
 /// type )` (`BasicPointShadowFilter` for `BasicShadowMap`, `PointShadowFilter`
 /// otherwise, VSM included) or the light's own `shadow.filterNode`.
-pub fn point_shadow_filtered(
+pub(crate) fn point_shadow_filtered(
     index: usize,
     depth_texture: &CubeDepthTexture,
     filter: &ShadowFilter,

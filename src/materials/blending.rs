@@ -55,7 +55,7 @@ pub enum BlendEquation {
 /// `WebGPUPipelineUtils._getBlendFactor( blend )`. Note the two collapses Three
 /// documents: WebGPU has no dedicated constant-*alpha* factors, so
 /// `ConstantAlphaFactor` and `ConstantColorFactor` both become `Constant`.
-pub fn blend_factor(blend: BlendFactor) -> wgpu::BlendFactor {
+pub(crate) fn blend_factor(blend: BlendFactor) -> wgpu::BlendFactor {
     match blend {
         BlendFactor::Zero => wgpu::BlendFactor::Zero,
         BlendFactor::One => wgpu::BlendFactor::One,
@@ -76,7 +76,7 @@ pub fn blend_factor(blend: BlendFactor) -> wgpu::BlendFactor {
 }
 
 /// `WebGPUPipelineUtils._getBlendOperation( blendEquation )`.
-pub fn blend_operation(equation: BlendEquation) -> wgpu::BlendOperation {
+pub(crate) fn blend_operation(equation: BlendEquation) -> wgpu::BlendOperation {
     match equation {
         BlendEquation::Add => wgpu::BlendOperation::Add,
         BlendEquation::Subtract => wgpu::BlendOperation::Subtract,
@@ -91,7 +91,7 @@ pub fn blend_operation(equation: BlendEquation) -> wgpu::BlendOperation {
 /// without building one, and so a second material type plugs into the same
 /// code.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct BlendMode {
+pub(crate) struct BlendMode {
     pub blending: Blending,
     pub premultiplied_alpha: bool,
     /// `Material.blendSrc` / `.blendDst` / `.blendEquation`.
@@ -128,7 +128,7 @@ impl Default for BlendMode {
 ///
 /// This is why rungs 1–5 and 9, all opaque `NormalBlending` materials, emit no
 /// blend state at all.
-pub fn needs_blend_state(mode: &BlendMode, transparent: bool) -> bool {
+pub(crate) fn needs_blend_state(mode: &BlendMode, transparent: bool) -> bool {
     mode.blending != Blending::No && (mode.blending != Blending::Normal || transparent)
 }
 
@@ -140,7 +140,7 @@ pub fn needs_blend_state(mode: &BlendMode, transparent: bool) -> bool {
 /// `color !== undefined && alpha !== undefined` check, so the pipeline ends up
 /// with no blend state. `NoBlending` never reaches here (see
 /// [`needs_blend_state`]), and is `None` for the same reason.
-pub fn blending(mode: &BlendMode) -> Option<wgpu::BlendState> {
+pub(crate) fn blending(mode: &BlendMode) -> Option<wgpu::BlendState> {
     // The non-custom rows: `setBlend( srcRGB, dstRGB, srcAlpha, dstAlpha )`,
     // both operations always `Add`.
     let set_blend = |src_rgb, dst_rgb, src_alpha, dst_alpha| {

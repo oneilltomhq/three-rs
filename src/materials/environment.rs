@@ -137,6 +137,7 @@ impl std::hash::Hash for EnvironmentNode {
 /// What `EnvironmentNode` is built from: a generated PMREM
 /// (`pmremTexture( envMap )`) or a node graph over PMREMs.
 #[derive(Clone, Debug, Hash)]
+#[doc(hidden)]
 pub enum Environment {
     Pmrem(PmremHandle),
     Node(EnvironmentNode),
@@ -183,7 +184,7 @@ fn pow4(x: NodeRef) -> NodeRef {
 /// declared at their first use, which is here and not in `indirectSpecular` —
 /// so this function owns them, and `PhysicalLightingModel::indirect_specular`
 /// only writes them when there is no environment.
-pub fn setup(env: &Environment, anisotropy: bool, clearcoat: bool, out: &mut Vec<NodeRef>) {
+pub(crate) fn setup(env: &Environment, anisotropy: bool, clearcoat: bool, out: &mut Vec<NodeRef>) {
     let radiance_prop = crate::nodes::tsl::radiance();
     let ibl_prop = crate::nodes::tsl::ibl_irradiance();
 

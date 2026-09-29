@@ -264,7 +264,7 @@ impl Object3D {
     }
 
     /// `InstancedMesh.count`, else 1.
-    pub fn instance_count(&self) -> u32 {
+    pub(crate) fn instance_count(&self) -> u32 {
         self.payload.count()
     }
 
@@ -516,7 +516,7 @@ impl Object3D {
     /// `Object3D` held by value has no children to recurse into, so the caller
     /// — `Scene::update_matrix_world`, or `Node`'s tree methods — does
     /// that part).
-    pub fn update_matrix_world_forced(
+    pub(crate) fn update_matrix_world_forced(
         &mut self,
         parent_matrix_world: Option<&Matrix4>,
         force: bool,

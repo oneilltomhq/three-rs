@@ -59,7 +59,7 @@ impl Default for RenderTargetOptions {
 }
 
 #[derive(Debug)]
-pub struct RenderTargetInner {
+pub(crate) struct RenderTargetInner {
     pub width: u32,
     pub height: u32,
     pub samples: u32,
@@ -208,6 +208,7 @@ impl RenderTarget {
     /// The clone is a *fresh* texture, not a handle copy: each attachment needs
     /// its own GPU object, and its own identity so that `texture( … )` on it
     /// binds the right one.
+    #[doc(hidden)]
     pub fn add_texture(&self, name: &str) -> Texture {
         if name == OUTPUT_ATTACHMENT {
             return self.texture();
@@ -247,7 +248,7 @@ impl RenderTarget {
     /// ids across the swap, where three.js' change every frame.
     ///
     /// Idempotent, as `_previousTextures[ name ]` makes it.
-    pub fn add_previous_texture(&self, name: &str) -> Texture {
+    pub(crate) fn add_previous_texture(&self, name: &str) -> Texture {
         let mut inner = self.0.borrow_mut();
         if let Some((_, texture)) = inner.previous_textures.iter().find(|(n, _)| n == name) {
             return texture.clone();
@@ -267,7 +268,7 @@ impl RenderTarget {
 
     /// `PassNode.toggleTexture( name )` — see [`Self::add_previous_texture`].
     /// A no-op for a name that has no previous texture, exactly as three's is.
-    pub fn toggle_texture(&self, name: &str) {
+    pub(crate) fn toggle_texture(&self, name: &str) {
         let inner = self.0.borrow();
         let Some((_, previous)) = inner.previous_textures.iter().find(|(n, _)| n == name) else {
             return;
@@ -286,6 +287,7 @@ impl RenderTarget {
     /// `renderTarget.textures.map( texture => texture.name )` — what
     /// `MRTNode.setup()` resolves its output names against, so the position of
     /// a name here is the `@location` its value is written to.
+    #[doc(hidden)]
     pub fn attachment_names(&self) -> Vec<String> {
         let inner = self.0.borrow();
         let mut names = vec![OUTPUT_ATTACHMENT.to_string()];
@@ -389,7 +391,7 @@ impl RenderTarget {
     /// target — `pass( scene, camera, { depthTexture } )`. Dropping the shared
     /// texture's GPU handle here would throw away the depth the owning pass
     /// has already rendered, which is the whole point of sharing it.
-    pub fn set_size_keeping_depth(&self, width: u32, height: u32, shared_depth: bool) {
+    pub(crate) fn set_size_keeping_depth(&self, width: u32, height: u32, shared_depth: bool) {
         let mut inner = self.0.borrow_mut();
         if inner.width != width || inner.height != height {
             inner.width = width;
@@ -416,11 +418,11 @@ impl RenderTarget {
     }
 
     /// `_textures.get( renderTarget ).depthInitialized`.
-    pub fn depth_initialized(&self) -> bool {
+    pub(crate) fn depth_initialized(&self) -> bool {
         self.0.borrow().depth_initialized
     }
 
-    pub fn set_depth_initialized(&self, initialized: bool) {
+    pub(crate) fn set_depth_initialized(&self, initialized: bool) {
         self.0.borrow_mut().depth_initialized = initialized;
     }
 
@@ -495,10 +497,6 @@ impl RenderTarget {
     /// `renderTarget.scissorTest = value`.
     pub fn set_scissor_test(&self, scissor_test: bool) {
         self.0.borrow_mut().scissor_test = scissor_test;
-    }
-
-    pub fn color_format(&self) -> wgpu::TextureFormat {
-        self.0.borrow().texture.format()
     }
 
     pub(crate) fn inner(&self) -> &RefCell<RenderTargetInner> {

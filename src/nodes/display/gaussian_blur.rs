@@ -258,6 +258,7 @@ impl GaussianBlurNode {
     }
 
     /// The two quad materials, horizontal first — for `examples/dump_wgsl.rs`.
+    #[doc(hidden)]
     pub fn quad_materials(&self) -> Vec<&MeshBasicNodeMaterial> {
         vec![&self.horizontal_quad.material, &self.vertical_quad.material]
     }

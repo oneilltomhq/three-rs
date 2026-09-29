@@ -5,7 +5,7 @@
 //! per prefiltered roughness, so there is no atlas to address any more: every
 //! read here is a `cubeTexture( envMap ).sample( dir ).level( lod )`, and the
 //! only arithmetic left is which level a roughness lives at
-//! ([`roughness_to_mip`]) and the three prefilter kernels
+//! (`roughness_to_mip`) and the three prefilter kernels
 //! [`crate::renderer::pmrem`] renders with. The generated WGSL is diffed
 //! against Three's own dump (`examples/dump_wgsl`, the `pmrem_*` sections).
 
@@ -15,14 +15,14 @@ use crate::nodes::NodeRef;
 use crate::textures::CubeTexture;
 
 /// `GOLDEN_ANGLE` — the spiral step of the Gaussian blur kernel.
-pub const GOLDEN_ANGLE: f64 = 2.399963229728653;
+pub(crate) const GOLDEN_ANGLE: f64 = 2.399963229728653;
 
 /// `roughnessToMip( roughness, maxLod )` — the mip level of a PMREM that was
 /// prefiltered for `roughness`, the inverse of
 /// [`lod_to_roughness`](crate::renderer::pmrem::lod_to_roughness):
 /// `maxLod * r * ( 2 - r )` with `r` clamped to `[ 0, 1 ]` (Filament's
 /// `perceptualRoughnessToLod()`).
-pub fn roughness_to_mip(roughness: NodeRef, max_lod: NodeRef) -> NodeRef {
+pub(crate) fn roughness_to_mip(roughness: NodeRef, max_lod: NodeRef) -> NodeRef {
     let roughness = roughness.clamp(float(0.0), float(1.0));
     max_lod
         .mul(roughness.clone())
@@ -30,6 +30,7 @@ pub fn roughness_to_mip(roughness: NodeRef, max_lod: NodeRef) -> NodeRef {
 }
 
 /// The CPU twin of [`roughness_to_mip`], for tests.
+#[doc(hidden)]
 pub fn roughness_to_mip_value(roughness: f64, max_lod: f64) -> f64 {
     let r = roughness.clamp(0.0, 1.0);
     max_lod * r * (2.0 - r)
@@ -49,7 +50,7 @@ fn tangent_frame(n: &NodeRef) -> (NodeRef, NodeRef) {
 /// `sphericalGaussianBlur( { SAMPLES, sigma, direction, envMap } )` — a
 /// Gaussian blur using stratified inverse-CDF samples on a golden-angle
 /// spiral, every tap read at level 0 of the cube.
-pub fn spherical_gaussian_blur(
+pub(crate) fn spherical_gaussian_blur(
     samples: usize,
     sigma: NodeRef,
     direction: NodeRef,
@@ -170,7 +171,7 @@ fn hammersley(i: NodeRef, n: usize) -> NodeRef {
 /// sampling), `max( log2( alpha2 * invQ ) + lodBias, 0 )`.
 ///
 /// The fragment of `PMREM_ggx`.
-pub fn ggx_convolution(
+pub(crate) fn ggx_convolution(
     roughness: NodeRef,
     lod_bias: NodeRef,
     env_map: &CubeTexture,
@@ -295,7 +296,7 @@ pub fn ggx_convolution(
 ///
 /// `source_size` is an `int` uniform in three "so the loops aren't
 /// unrolled", and so here.
-pub fn ggx_integration(
+pub(crate) fn ggx_integration(
     roughness: NodeRef,
     source_lod: NodeRef,
     source_size: NodeRef,

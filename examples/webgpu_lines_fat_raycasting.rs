@@ -14,7 +14,7 @@
 //! from each pixel's view ray to the segment (`closestLineToLine`) and turns it
 //! into coverage with `fwidth`. `alphaToCoverage` is on, so that coverage goes
 //! to the multisample mask rather than a `discard`. See
-//! [`three_rs::materials::line2`].
+//! [`three_rs::materials::Line2NodeMaterial`].
 //!
 //! **The raycast.** `animate()` casts a ray from `pointer` every frame. The
 //! pointer starts at `( Infinity, Infinity )` and the harness never moves it,

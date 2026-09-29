@@ -719,7 +719,7 @@ impl BufferGeometry {
     /// `Box3.setFromBufferAttribute( position ).getCenter()` — the only part of
     /// the bounding sphere the render-list sort reads. Served from the same
     /// cache as [`compute_bounding_box`](Self::compute_bounding_box).
-    pub fn bounding_sphere_center(&self) -> Vector3 {
+    pub(crate) fn bounding_sphere_center(&self) -> Vector3 {
         match self.compute_bounding_box() {
             Some(box3) => box3.center(),
             None => Vector3::ZERO,
