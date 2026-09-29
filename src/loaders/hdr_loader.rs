@@ -31,7 +31,9 @@ use crate::textures::{MinFilter, Texture, TextureFilter, TextureType};
 /// `generateMipmaps: false`, `flipY: true`).
 #[derive(Debug, Clone)]
 pub struct HdrTexData {
+    /// The image width, in texels.
     pub width: u32,
+    /// The image height, in texels.
     pub height: u32,
     /// The header text, `\n`-terminated per line, as upstream's `header`.
     pub header: String,
@@ -39,6 +41,7 @@ pub struct HdrTexData {
     pub gamma: f64,
     /// `EXPOSURE=` in the header, 1.0 when absent.
     pub exposure: f64,
+    /// The decoded texels.
     pub data: HdrData,
 }
 
@@ -61,6 +64,7 @@ impl HdrData {
         }
     }
 
+    /// Whether there are no texels.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -100,6 +104,7 @@ impl HdrLoader {
         Ok(self)
     }
 
+    /// `loader.type` — `HalfFloatType` or `FloatType`.
     pub fn data_type(&self) -> TextureType {
         self.texture_type
     }

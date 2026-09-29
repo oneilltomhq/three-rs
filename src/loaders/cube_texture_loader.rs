@@ -11,6 +11,7 @@ use crate::error::Error;
 use crate::math::ColorSpace;
 use crate::textures::{CubeTexture, Image};
 
+/// three.js' `CubeTextureLoader`.
 #[derive(Debug, Clone, Default)]
 pub struct CubeTextureLoader {
     /// `Loader.path`, prefixed to every url.
@@ -18,6 +19,7 @@ pub struct CubeTextureLoader {
 }
 
 impl CubeTextureLoader {
+    /// A loader with an empty [`path`](Self::set_path).
     pub fn new() -> Self {
         Self::default()
     }

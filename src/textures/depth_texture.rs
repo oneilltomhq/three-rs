@@ -13,9 +13,13 @@ use std::rc::Rc;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum TextureType {
+    /// `UnsignedByteType`.
     UnsignedByte,
+    /// `HalfFloatType`.
     HalfFloat,
+    /// `UnsignedIntType`.
     UnsignedInt,
+    /// `FloatType`.
     Float,
 }
 
@@ -51,16 +55,24 @@ impl TextureType {
 /// `three.js/src/constants.js` texture filters.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum TextureFilter {
+    /// `NearestFilter`.
     Nearest,
+    /// `LinearFilter`.
     Linear,
 }
 
+/// The state behind a [`DepthTexture`] handle.
 #[derive(Debug)]
 pub struct DepthTextureInner {
+    /// `texture.type` — `UnsignedIntType` or `FloatType`.
     pub texture_type: TextureType,
+    /// `texture.magFilter`.
     pub mag_filter: TextureFilter,
+    /// `texture.minFilter`.
     pub min_filter: TextureFilter,
+    /// `texture.image.width`.
     pub width: u32,
+    /// `texture.image.height`.
     pub height: u32,
     /// The GPU texture, created by the renderer when the owning render target
     /// is first used.
@@ -72,6 +84,7 @@ pub struct DepthTextureInner {
     pub multisample: bool,
 }
 
+/// three.js' `DepthTexture`.
 #[derive(Clone)]
 pub struct DepthTexture(Rc<RefCell<DepthTextureInner>>, TextureId);
 
@@ -149,6 +162,7 @@ impl DepthTexture {
         Ok(())
     }
 
+    /// `texture.type`.
     pub fn texture_type(&self) -> TextureType {
         self.0.borrow().texture_type
     }
@@ -168,6 +182,7 @@ impl DepthTexture {
         }
     }
 
+    /// `texture.id` — unique per texture, stable for its lifetime.
     pub fn id(&self) -> usize {
         self.1.get()
     }

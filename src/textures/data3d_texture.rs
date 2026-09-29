@@ -21,9 +21,13 @@ use super::{MinFilter, TextureFilter, TextureId, Wrapping};
 use std::cell::{Ref, RefCell};
 use std::rc::Rc;
 
+/// The state behind a [`Data3DTexture`] handle.
 pub struct Data3DTextureInner {
+    /// `image.width`.
     pub width: u32,
+    /// `image.height`.
     pub height: u32,
+    /// `image.depth`.
     pub depth: u32,
     /// `image.data`, tightly packed texel rows, slice after slice — the
     /// `Uint8Array` of `webgpu_volume_perlin` for an `r8unorm` texture. `None`
@@ -32,10 +36,15 @@ pub struct Data3DTextureInner {
     /// `texture.format` + `texture.type`, spelled as the GPU format
     /// `WebGPUTextureUtils.getFormat()` would pick.
     pub format: wgpu::TextureFormat,
+    /// `texture.magFilter`.
     pub mag_filter: TextureFilter,
+    /// `texture.minFilter`.
     pub min_filter: MinFilter,
+    /// `texture.wrapS`.
     pub wrap_s: Wrapping,
+    /// `texture.wrapT`.
     pub wrap_t: Wrapping,
+    /// `texture.wrapR` — the third axis, unique to a volume texture.
     pub wrap_r: Wrapping,
     /// `texture.isStorageTexture` — created with `STORAGE_BINDING` and bound
     /// as `texture_storage_3d` by `storageTexture()` / `textureStore()`.
@@ -137,6 +146,7 @@ impl Data3DTexture {
         )
     }
 
+    /// `texture.id` — unique per texture, stable for its lifetime.
     pub fn id(&self) -> usize {
         self.1.get()
     }
@@ -149,15 +159,18 @@ impl Data3DTexture {
         Rc::downgrade(&self.0) as super::TextureOwner
     }
 
+    /// Borrows the texture's data, size, format and sampling state.
     pub fn borrow(&self) -> Ref<'_, Data3DTextureInner> {
         self.0.borrow()
     }
 
+    /// `( image.width, image.height, image.depth )`.
     pub fn size(&self) -> (u32, u32, u32) {
         let inner = self.0.borrow();
         (inner.width, inner.height, inner.depth)
     }
 
+    /// The GPU format `texture.format` / `texture.type` was translated to.
     pub fn format(&self) -> wgpu::TextureFormat {
         self.0.borrow().format
     }
@@ -172,18 +185,22 @@ impl Data3DTexture {
         inner.format = format;
     }
 
+    /// `texture.isStorageTexture`.
     pub fn is_storage(&self) -> bool {
         self.0.borrow().is_storage
     }
 
+    /// `texture.minFilter = value`.
     pub fn set_min_filter(&self, min_filter: MinFilter) {
         self.0.borrow_mut().min_filter = min_filter;
     }
 
+    /// `texture.magFilter = value`.
     pub fn set_mag_filter(&self, mag_filter: TextureFilter) {
         self.0.borrow_mut().mag_filter = mag_filter;
     }
 
+    /// `texture.wrapS = wrap_s; texture.wrapT = wrap_t; texture.wrapR = wrap_r`.
     pub fn set_wrapping(&self, wrap_s: Wrapping, wrap_t: Wrapping, wrap_r: Wrapping) {
         let mut inner = self.0.borrow_mut();
         inner.wrap_s = wrap_s;
@@ -228,6 +245,7 @@ impl Data3DTexture {
         inner.version += 1;
     }
 
+    /// `texture.version`.
     pub fn version(&self) -> u32 {
         self.0.borrow().version
     }
@@ -253,6 +271,8 @@ impl Data3DTexture {
         inner.uploaded = inner.version;
     }
 
+    /// Runs `f` with the uploaded GPU texture. Panics if the texture has not
+    /// been uploaded yet.
     pub fn with_gpu<R>(&self, f: impl FnOnce(&wgpu::Texture) -> R) -> R {
         let inner = self.0.borrow();
         f(inner

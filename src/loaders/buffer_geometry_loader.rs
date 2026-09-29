@@ -9,6 +9,7 @@ use std::path::Path;
 use crate::core::{BufferAttribute, BufferGeometry, Index};
 use crate::error::Error;
 
+/// three.js' `BufferGeometryLoader`.
 pub struct BufferGeometryLoader;
 
 impl Default for BufferGeometryLoader {
@@ -18,6 +19,7 @@ impl Default for BufferGeometryLoader {
 }
 
 impl BufferGeometryLoader {
+    /// A loader with no state — `new BufferGeometryLoader()`.
     pub fn new() -> Self {
         Self
     }

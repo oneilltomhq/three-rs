@@ -17,7 +17,9 @@ use std::rc::Rc;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Mapping {
+    /// `CubeReflectionMapping`.
     CubeReflection,
+    /// `CubeRefractionMapping`.
     CubeRefraction,
 }
 
@@ -31,8 +33,11 @@ pub enum Mapping {
 /// upload takes its stride from the format rather than assuming four bytes.
 #[derive(Clone)]
 pub struct Image {
+    /// The face width, in texels.
     pub width: u32,
+    /// The face height, in texels.
     pub height: u32,
+    /// The decoded texel bytes, in the owning texture's format.
     pub data: Vec<u8>,
 }
 
@@ -67,11 +72,14 @@ impl Image {
     }
 }
 
+/// The state behind a [`CubeTexture`] handle.
 #[derive(Debug)]
 pub struct CubeTextureInner {
     /// `CubeTexture.images`, in the order px, nx, py, ny, pz, nz.
     pub images: Vec<Image>,
+    /// `texture.mapping`.
     pub mapping: Mapping,
+    /// `texture.colorSpace`.
     pub color_space: ColorSpace,
     /// `Texture.type` — `UnsignedByteType` for a PNG cube, `HalfFloatType` for
     /// the one `HDRCubeTextureLoader` builds.
@@ -89,7 +97,9 @@ pub struct CubeTextureInner {
     pub generate_mipmaps: bool,
     /// `Texture.anisotropy`.
     pub anisotropy: u16,
+    /// `texture.magFilter`.
     pub mag_filter: TextureFilter,
+    /// `texture.minFilter`.
     pub min_filter: MinFilter,
     pub(crate) gpu: Option<wgpu::Texture>,
 }
@@ -190,14 +200,17 @@ impl CubeTexture {
         texture
     }
 
+    /// `texture.colorSpace = value`.
     pub fn set_color_space(&self, color_space: ColorSpace) {
         self.0.borrow_mut().color_space = color_space;
     }
 
+    /// `texture.colorSpace`.
     pub fn color_space(&self) -> ColorSpace {
         self.0.borrow().color_space
     }
 
+    /// `texture.mapping`.
     pub fn mapping(&self) -> Mapping {
         self.0.borrow().mapping
     }
@@ -215,10 +228,12 @@ impl CubeTexture {
         Ok(())
     }
 
+    /// `texture.type`.
     pub fn texture_type(&self) -> TextureType {
         self.0.borrow().texture_type
     }
 
+    /// `texture.generateMipmaps = value`.
     pub fn set_generate_mipmaps(&self, generate_mipmaps: bool) {
         self.0.borrow_mut().generate_mipmaps = generate_mipmaps;
     }
@@ -310,11 +325,13 @@ impl CubeTexture {
         size.log2().floor() as u32 + 1
     }
 
+    /// `( image.width, image.height )` of face 0.
     pub fn size(&self) -> (u32, u32) {
         let inner = self.0.borrow();
         (inner.images[0].width, inner.images[0].height)
     }
 
+    /// `texture.id` — unique per texture, stable for its lifetime.
     pub fn id(&self) -> usize {
         self.1.get()
     }

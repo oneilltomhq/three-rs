@@ -12,6 +12,7 @@ use std::rc::Rc;
 use super::TextureFilter;
 use super::TextureId;
 
+/// The state behind a [`CubeDepthTexture`] handle.
 #[derive(Debug)]
 pub struct CubeDepthTextureInner {
     /// `shadow.mapSize.width` — a cube face is square.
@@ -19,12 +20,15 @@ pub struct CubeDepthTextureInner {
     /// `depthTexture.minFilter` / `.magFilter`. `PCFShadowMap` with
     /// `textureSampleCompare` available means `LinearFilter`.
     pub mag_filter: TextureFilter,
+    /// `depthTexture.minFilter`.
     pub min_filter: TextureFilter,
     /// The GPU texture: a `depth24plus` 2D texture with six array layers,
     /// created by the renderer the first time the shadow is rendered.
     pub(crate) gpu: Option<wgpu::Texture>,
 }
 
+/// three.js' `CubeDepthTexture` — the six-face depth texture a point light's
+/// shadow renders into.
 #[derive(Clone)]
 pub struct CubeDepthTexture(Rc<RefCell<CubeDepthTextureInner>>, TextureId);
 
@@ -60,6 +64,7 @@ impl CubeDepthTexture {
         inner.mag_filter = mag_filter;
     }
 
+    /// `shadow.mapSize.width` — the size of a (square) face.
     pub fn size(&self) -> u32 {
         self.0.borrow().size
     }
@@ -70,6 +75,7 @@ impl CubeDepthTexture {
         wgpu::TextureFormat::Depth24Plus
     }
 
+    /// `texture.id` — unique per texture, stable for its lifetime.
     pub fn id(&self) -> usize {
         self.1.get()
     }

@@ -17,6 +17,7 @@ use std::path::Path;
 use crate::error::Error;
 use crate::textures::Texture;
 
+/// three.js' `TextureLoader`.
 pub struct TextureLoader;
 
 impl Default for TextureLoader {
@@ -26,6 +27,7 @@ impl Default for TextureLoader {
 }
 
 impl TextureLoader {
+    /// A loader with no state — `new TextureLoader()`.
     pub fn new() -> Self {
         Self
     }

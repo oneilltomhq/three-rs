@@ -173,22 +173,33 @@ pub(crate) fn sanitize_node_name(name: &str) -> String {
 /// types. Field names follow `materials[ i ]` in the glTF JSON.
 #[derive(Clone, Debug, Default)]
 pub struct GltfMaterial {
+    /// `materials[ i ].name`.
     pub name: String,
     /// `pbrMetallicRoughness.baseColorFactor`, defaulting to `[1,1,1,1]`.
     pub base_color_factor: [f64; 4],
     /// `pbrMetallicRoughness.baseColorTexture.index`.
     pub base_color_texture: Option<GltfTextureRef>,
+    /// `pbrMetallicRoughness.metallicFactor`, defaulting to 1.
     pub metallic_factor: f64,
+    /// `pbrMetallicRoughness.roughnessFactor`, defaulting to 1.
     pub roughness_factor: f64,
+    /// `pbrMetallicRoughness.metallicRoughnessTexture`.
     pub metallic_roughness_texture: Option<GltfTextureRef>,
+    /// `normalTexture`.
     pub normal_texture: Option<GltfTextureRef>,
+    /// `normalTexture.scale`, defaulting to 1.
     pub normal_scale: f64,
+    /// `occlusionTexture`.
     pub occlusion_texture: Option<GltfTextureRef>,
+    /// `emissiveTexture`.
     pub emissive_texture: Option<GltfTextureRef>,
+    /// `emissiveFactor`, defaulting to `[0,0,0]`.
     pub emissive_factor: [f64; 3],
     /// `'OPAQUE'` / `'MASK'` / `'BLEND'`.
     pub alpha_mode: String,
+    /// `alphaCutoff`, defaulting to 0.5.
     pub alpha_cutoff: f64,
+    /// `doubleSided`.
     pub double_sided: bool,
     /// Extension names present on this material, so the rung worker can see what
     /// it is missing.
@@ -219,17 +230,24 @@ pub struct GltfMaterial {
     /// `KHR_materials_anisotropy`: `anisotropyStrength` (default 0),
     /// `anisotropyRotation` (default 0, radians) and `anisotropyTexture`.
     pub anisotropy_strength: Option<f64>,
+    /// `KHR_materials_anisotropy.anisotropyRotation`, radians, default 0.
     pub anisotropy_rotation: f64,
+    /// `KHR_materials_anisotropy.anisotropyTexture`.
     pub anisotropy_texture: Option<GltfTextureRef>,
     /// `KHR_materials_clearcoat`: `clearcoatFactor` (default 0),
     /// `clearcoatRoughnessFactor` (default 0), `clearcoatTexture`,
     /// `clearcoatRoughnessTexture` and `clearcoatNormalTexture` with its
     /// `scale`.
     pub clearcoat_factor: Option<f64>,
+    /// `KHR_materials_clearcoat.clearcoatRoughnessFactor`, default 0.
     pub clearcoat_roughness_factor: f64,
+    /// `KHR_materials_clearcoat.clearcoatTexture`.
     pub clearcoat_texture: Option<GltfTextureRef>,
+    /// `KHR_materials_clearcoat.clearcoatRoughnessTexture`.
     pub clearcoat_roughness_texture: Option<GltfTextureRef>,
+    /// `KHR_materials_clearcoat.clearcoatNormalTexture`.
     pub clearcoat_normal_texture: Option<GltfTextureRef>,
+    /// `KHR_materials_clearcoat.clearcoatNormalTexture.scale`, default 1.
     pub clearcoat_normal_scale: f64,
     /// `KHR_materials_transmission.transmissionFactor` (default 0).
     pub transmission_factor: Option<f64>,
@@ -239,7 +257,9 @@ pub struct GltfMaterial {
     pub thickness_factor: Option<f64>,
     /// `KHR_materials_volume.thicknessTexture`, a data map (G = thickness).
     pub thickness_texture: Option<GltfTextureRef>,
+    /// `KHR_materials_volume.attenuationDistance`, default `Infinity`.
     pub attenuation_distance: f64,
+    /// `KHR_materials_volume.attenuationColor`, default white.
     pub attenuation_color: [f64; 3],
 }
 
@@ -329,6 +349,7 @@ struct MaterialVariant {
 /// record carries the bytes and where they came from.
 #[derive(Clone, Debug)]
 pub struct GltfImage {
+    /// `images[ i ].name`.
     pub name: String,
     /// `images[ i ].mimeType`, when the glTF says.
     pub mime_type: Option<String>,
@@ -344,6 +365,8 @@ pub struct GltfTexture {
     /// The image the texture samples: `extensions.EXT_texture_webp.source`
     /// when the texture has one, `source` otherwise.
     pub source: Option<usize>,
+    /// `textures[ i ].sampler` — index into `samplers`, `None` for the glTF
+    /// default sampler.
     pub sampler: Option<usize>,
     /// `extensions.KHR_texture_basisu.source` — a KTX 2.0 image that, when
     /// present, takes the place of `source` (which is then a PNG/JPEG
@@ -355,7 +378,10 @@ pub struct GltfTexture {
 /// hangs off — the node itself when the mesh has one primitive, a child named
 /// `<name>_<i>` when three.js splits it.
 pub struct GltfPrimitive {
+    /// The scene-graph node this primitive hangs off.
     pub node: Node,
+    /// The primitive's geometry — `BufferGeometryLoader`'s attributes and
+    /// index, per `primitive.attributes` / `.indices`.
     pub geometry: Rc<BufferGeometry>,
     /// Index into [`Gltf::materials`].
     pub material: Option<usize>,
@@ -387,8 +413,11 @@ pub struct Gltf {
     /// [`Payload::SkinnedMesh`](crate::objects::Payload::SkinnedMesh), so
     /// adding `gltf.scene` to a scene is enough for the renderer to draw them.
     pub skinned_meshes: Vec<Node>,
+    /// `gltf.parser.json.materials`.
     pub materials: Vec<GltfMaterial>,
+    /// `gltf.parser.json.textures`.
     pub textures: Vec<GltfTexture>,
+    /// `gltf.parser.json.images`.
     pub images: Vec<GltfImage>,
     /// `gltf.asset`.
     pub asset: Value,

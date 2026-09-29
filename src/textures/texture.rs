@@ -29,11 +29,13 @@ pub enum Wrapping {
 /// `Texture.minFilter` — the mip-aware half of the filter pair.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum MinFilter {
+    /// `NearestFilter`.
     Nearest,
     /// `NearestMipmapNearestFilter`.
     NearestMipmapNearest,
     /// `NearestMipmapLinearFilter`.
     NearestMipmapLinear,
+    /// `LinearFilter`.
     Linear,
     /// `LinearMipmapNearestFilter`.
     LinearMipmapNearest,
@@ -73,13 +75,19 @@ impl MinFilter {
 /// these are whole blocks, rows of blocks top-down.
 pub type Mipmap = Image;
 
+/// The state behind a [`Texture`] handle.
 pub struct TextureInner {
+    /// `texture.image.width`.
     pub width: u32,
+    /// `texture.image.height`.
     pub height: u32,
     /// RGBA8 rows, top-down as decoded. `None` for a render-target texture.
     pub data: Option<Vec<u8>>,
+    /// `texture.colorSpace`.
     pub color_space: ColorSpace,
+    /// `texture.flipY`.
     pub flip_y: bool,
+    /// `texture.generateMipmaps`.
     pub generate_mipmaps: bool,
     /// `Texture.mipmaps` — levels supplied by the page or the file, level 0
     /// first. When there are any they are the whole mip chain:
@@ -89,16 +97,24 @@ pub struct TextureInner {
     /// brings its own, and a block-compressed format could not be rendered
     /// into anyway). Each level is in the texture's format, top row first.
     pub mipmaps: Vec<Image>,
+    /// `texture.wrapS`.
     pub wrap_s: Wrapping,
+    /// `texture.wrapT`.
     pub wrap_t: Wrapping,
+    /// `texture.magFilter`.
     pub mag_filter: TextureFilter,
+    /// `texture.minFilter`.
     pub min_filter: MinFilter,
+    /// `texture.anisotropy`.
     pub anisotropy: u16,
     /// `Texture.offset` / `.repeat` / `.center` / `.rotation` —
     /// `updateMatrix()`'s inputs.
     pub offset: Vector2,
+    /// `texture.repeat`.
     pub repeat: Vector2,
+    /// `texture.center`.
     pub center: Vector2,
+    /// `texture.rotation`.
     pub rotation: f64,
     /// `Texture.matrix`, kept in step with the four above — unless
     /// [`Texture::set_matrix`] has overridden it.
@@ -424,6 +440,7 @@ impl Texture {
         texture
     }
 
+    /// `texture.id` — unique per texture, stable for its lifetime.
     pub fn id(&self) -> usize {
         self.1.get()
     }
@@ -520,6 +537,7 @@ impl Texture {
         };
     }
 
+    /// `texture.colorSpace`.
     pub fn color_space(&self) -> ColorSpace {
         self.0.borrow().color_space
     }
@@ -531,6 +549,7 @@ impl Texture {
         self.0.borrow_mut().flip_y = flip_y;
     }
 
+    /// `texture.generateMipmaps = value`.
     pub fn set_generate_mipmaps(&self, generate_mipmaps: bool) {
         self.0.borrow_mut().generate_mipmaps = generate_mipmaps;
     }
@@ -559,10 +578,12 @@ impl Texture {
         !self.0.borrow().mipmaps.is_empty()
     }
 
+    /// `texture.minFilter = value`.
     pub fn set_min_filter(&self, min_filter: MinFilter) {
         self.0.borrow_mut().min_filter = min_filter;
     }
 
+    /// `texture.magFilter = value`.
     pub fn set_mag_filter(&self, mag_filter: TextureFilter) {
         self.0.borrow_mut().mag_filter = mag_filter;
     }
@@ -587,6 +608,7 @@ impl Texture {
         inner.min_filter == MinFilter::Nearest && inner.mag_filter == TextureFilter::Nearest
     }
 
+    /// Borrows the texture's full state.
     pub fn borrow(&self) -> Ref<'_, TextureInner> {
         self.0.borrow()
     }
@@ -656,11 +678,13 @@ impl Texture {
         self.0.borrow().matrix
     }
 
+    /// `( texture.image.width, texture.image.height )`.
     pub fn size(&self) -> (u32, u32) {
         let inner = self.0.borrow();
         (inner.width, inner.height)
     }
 
+    /// `texture.image.width = width; texture.image.height = height`.
     pub fn set_size(&self, width: u32, height: u32) {
         let mut inner = self.0.borrow_mut();
         inner.width = width;
@@ -759,15 +783,20 @@ impl Texture {
         std::mem::swap(&mut self.0.borrow_mut().gpu, &mut other.0.borrow_mut().gpu);
     }
 
+    /// Runs `f` with the uploaded GPU texture. Panics if the texture has not
+    /// been uploaded yet.
     pub fn with_gpu<R>(&self, f: impl FnOnce(&wgpu::Texture) -> R) -> R {
         let inner = self.0.borrow();
         f(inner.gpu.as_ref().expect("three-rs: texture not uploaded"))
     }
 
+    /// The GPU format this texture uploads as, or renders into.
     pub fn format(&self) -> wgpu::TextureFormat {
         self.0.borrow().format
     }
 
+    /// Sets the GPU format to use if the renderer has to create the texture —
+    /// a render target's attachment.
     pub fn set_format(&self, format: wgpu::TextureFormat) {
         self.0.borrow_mut().format = format;
     }
