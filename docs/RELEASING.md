@@ -52,8 +52,7 @@ One commit per release, on a branch, merged to `main` like any other change:
   dependency on `three-rs` if step 1 said so. `cargo build` refreshes
   `Cargo.lock`; commit that too.
 - `CHANGELOG.md`: rename *Unreleased* to the version and date, and open a
-  fresh *Unreleased* above it (#19; until the file exists, the tag message
-  in step 5 is the changelog).
+  fresh *Unreleased* above it.
 - The README's status line and graded table, if either changed.
 
 Subject: `three-rs 0.1.2: <what it is, in one line>`, as the previous

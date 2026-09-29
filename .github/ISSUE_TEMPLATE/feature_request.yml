@@ -1,0 +1,33 @@
+name: Feature request
+description: A capability, API, or improvement that isn't tied to porting a specific three.js example.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For porting a specific three.js `webgpu_*` example, use the "Port an
+        example" template instead — it captures the gap in a more useful shape.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What's missing
+      description: What you're trying to do, and what stops you today.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed shape
+      description: >-
+        What you think the API or behavior should look like. If this changes
+        a public signature, see `docs/api.md` and CONTRIBUTING.md's note on
+        API changes first.
+    validations:
+      required: false
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any workaround you're using now, or other approaches you thought about.
+    validations:
+      required: false
