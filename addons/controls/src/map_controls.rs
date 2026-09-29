@@ -141,10 +141,15 @@ const SOLVE_ITERATIONS: usize = 24;
 /// the tilt away from that normal, `0` being straight down. There is no roll.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Pose {
+    /// Ground coordinate east of the origin, of the orbit target.
     pub u: f64,
+    /// Ground coordinate north of the origin, of the orbit target.
     pub v: f64,
+    /// Distance from the target, world units.
     pub distance: f64,
+    /// Radians about the ground normal at the target; `0` is south, looking north.
     pub azimuth: f64,
+    /// Radians of tilt from the ground normal; `0` is straight down.
     pub polar: f64,
 }
 
@@ -165,8 +170,10 @@ impl Pose {
 /// Free movement, or the overview the pane set is fitted into.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum Mode {
+    /// Ordinary drag/orbit/dolly movement.
     #[default]
     Free,
+    /// Fitted to a set of [`Pane`]s, `Tab` cycling in and out of it.
     Overview,
 }
 
@@ -178,9 +185,13 @@ pub enum Mode {
 /// height along `north`, so its top edge is the northern one.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Pane {
+    /// Ground coordinate east of the origin, of the pane's centre.
     pub u: f64,
+    /// Ground coordinate north of the origin, of the pane's centre.
     pub v: f64,
+    /// Extent along the frame's `east`.
     pub width: f64,
+    /// Extent along the frame's `north`.
     pub height: f64,
 }
 
@@ -241,10 +252,12 @@ impl MapControls {
         }
     }
 
+    /// The current [`Damping`] smooth times.
     pub fn damping(&self) -> Damping {
         self.damping
     }
 
+    /// Replaces the [`Damping`] smooth times.
     pub fn set_damping(&mut self, damping: Damping) {
         self.damping = damping;
     }
@@ -259,14 +272,17 @@ impl MapControls {
         self.target_radius
     }
 
+    /// The [`Pose`] the inputs are steering toward.
     pub fn target(&self) -> Pose {
         self.target
     }
 
+    /// The [`Pose`] [`MapControls::update`] has damped its way to so far.
     pub fn current(&self) -> Pose {
         self.current
     }
 
+    /// Whether the controls are in free movement or the overview.
     pub fn mode(&self) -> Mode {
         self.mode
     }
@@ -286,6 +302,7 @@ impl MapControls {
         self.dragging = dragging;
     }
 
+    /// Whether a mouse button is currently held.
     pub fn dragging(&self) -> bool {
         self.dragging
     }

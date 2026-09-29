@@ -37,30 +37,47 @@ use crate::error::Error;
 /// when the path is stroked), so the rasteriser never sees one.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum PathCommand {
+    /// Starts a new subpath at `(x, y)`.
     MoveTo {
+        /// X in font units.
         x: f64,
+        /// Y in font units.
         y: f64,
     },
+    /// A straight segment to `(x, y)`.
     LineTo {
+        /// X in font units.
         x: f64,
+        /// Y in font units.
         y: f64,
     },
     /// Quadratic: one control point.
     QuadTo {
+        /// Control point X.
         x1: f64,
+        /// Control point Y.
         y1: f64,
+        /// Endpoint X.
         x: f64,
+        /// Endpoint Y.
         y: f64,
     },
     /// Cubic: two control points. TrueType never produces these; CFF does.
     CurveTo {
+        /// First control point X.
         x1: f64,
+        /// First control point Y.
         y1: f64,
+        /// Second control point X.
         x2: f64,
+        /// Second control point Y.
         y2: f64,
+        /// Endpoint X.
         x: f64,
+        /// Endpoint Y.
         y: f64,
     },
+    /// Closes the current subpath.
     Close,
 }
 
@@ -80,9 +97,13 @@ impl PathCommand {
 /// An axis-aligned box, matching opentype's `BoundingBox` field names.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BBox {
+    /// Left edge.
     pub x1: f64,
+    /// Bottom edge (Y-up) or top edge (Y-down), matching the path it was measured on.
     pub y1: f64,
+    /// Right edge.
     pub x2: f64,
+    /// Top edge (Y-up) or bottom edge (Y-down), matching the path it was measured on.
     pub y2: f64,
 }
 
@@ -95,15 +116,24 @@ struct GlyfPoint {
     last_of_contour: bool,
 }
 
+/// A parsed font with the metrics and kerning `sdf-text` needs — a port of
+/// lib3's `VectorFont`. See the module doc for what diverges from a plain
+/// `ttf-parser` reading.
 pub struct VectorFont {
     face: OwnedFace,
     /// Source URL/label, for cache keying. Mirrors `VectorFont.src`.
     pub src: String,
+    /// Font units per em.
     pub units_per_em: f64,
+    /// Typographic ascender, font units.
     pub ascender: f64,
+    /// Typographic descender, font units (negative).
     pub descender: f64,
+    /// Typographic line gap, font units.
     pub line_gap: f64,
+    /// Cap height, font units, or 0 if the font has none.
     pub cap_height: f64,
+    /// X-height, font units, or 0 if the font has none.
     pub x_height: f64,
     /// GPOS type-2 lookup subtable offsets reachable from the default script's
     /// `kern` feature, in lookup-then-subtable order. Absolute offsets into the
@@ -195,10 +225,13 @@ impl VectorFont {
         self.face.as_face_ref()
     }
 
+    /// Whether the font has a `GPOS` table at all — the condition under which
+    /// opentype.js never falls back to `kern`.
     pub fn has_gpos(&self) -> bool {
         self.kern_subtables.is_some()
     }
 
+    /// Whether the font has a legacy `kern` table.
     pub fn has_kern(&self) -> bool {
         self.face()
             .raw_face()
