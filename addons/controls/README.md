@@ -24,6 +24,28 @@ three.js'. Its constants are not camera-controls' defaults, which read as hefty;
   one. Every field is damped with `smooth_damp`; `Damping` holds the smooth
   times, for an app that wants a different feel.
 
+## Usage
+
+```rust,no_run
+use three_rs::cameras::PerspectiveCamera;
+use three_rs_controls::{Ground, MapControls, Pose};
+
+let mut controls = MapControls::new(
+    Ground::new(1e7),
+    Pose {
+        u: 0.0,
+        v: 0.0,
+        distance: 160.0,
+        azimuth: 0.0,
+        polar: 0.0,
+    },
+);
+
+let mut camera = PerspectiveCamera::new(60.0, 16.0 / 9.0, 1.0, 50_000.0);
+controls.update(1.0 / 60.0);
+controls.apply(&mut camera);
+```
+
 ```
 cargo test -p three-rs-controls --lib             # no GPU
 cargo run --release -p three-rs-controls --bin heli

@@ -2,6 +2,28 @@
 
 A Rust port of lib3's `src/sdf-text/` module — signed-distance-field text
 rasterised from real font outlines — plus the `src/sdf/edt.js` it depends on.
+It renders through [three-rs](https://github.com/oneilltomhq/three-rs), the
+crate this one is an addon to.
+
+```rust,no_run
+use std::rc::Rc;
+
+use sdf_text::{BatchedText, BatchedTextOptions, Text, VectorFont};
+
+let font_bytes = std::fs::read("Roboto-Regular.ttf")?;
+let font = Rc::new(VectorFont::parse(font_bytes, "Roboto-Regular.ttf")?);
+
+let mut batched = BatchedText::new(16, 4096, BatchedTextOptions::default());
+batched.set_font(font);
+
+let mut text = Text::new();
+text.set_text("Hello, three-rs");
+text.set_font_size(0.5);
+batched.add_text(text);
+
+batched.sync();
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
 
 This crate covers **steps 1–6 of the port ladder**. Steps 1–3 — font metrics and
 outlines, the raster → EDT → atlas pipeline, and layout — are pure arithmetic and
