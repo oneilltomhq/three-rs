@@ -62,6 +62,7 @@ impl RaycasterCamera {
 /// One `{ threshold }` entry of `Raycaster.params`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Threshold {
+    /// The distance within which a ray counts as a hit.
     pub threshold: f64,
 }
 
@@ -100,7 +101,9 @@ impl Default for RaycasterParams {
 pub struct Face {
     /// Vertex indices of the triangle.
     pub a: usize,
+    /// The triangle's second vertex index.
     pub b: usize,
+    /// The triangle's third vertex index.
     pub c: usize,
     /// `Triangle.getNormal()` of the (morphed, skinned) triangle, in object
     /// space.

@@ -99,7 +99,9 @@ impl Default for FogExp2 {
 /// What `scene.fog` may hold: a [`Fog`] or a [`FogExp2`].
 #[derive(Clone, Debug, PartialEq)]
 pub enum SceneFog {
+    /// Linear fog, `Fog`.
     Linear(Fog),
+    /// Exponential squared fog, `FogExp2`.
     Exp2(FogExp2),
 }
 

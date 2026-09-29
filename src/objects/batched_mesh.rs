@@ -22,15 +22,21 @@ use crate::textures::DataTexture;
 /// One entry of `_geometryInfo`.
 #[derive(Clone, Debug)]
 pub struct GeometryInfo {
+    /// The first vertex of this geometry's range in the packed buffer.
     pub vertex_start: usize,
+    /// How many vertices of the geometry were actually written.
     pub vertex_count: usize,
+    /// How many vertices the range reserves, which may exceed `vertex_count`.
     pub reserved_vertex_count: usize,
     /// `-1` when the batch geometry is not indexed.
     pub index_start: isize,
+    /// How many indices of the geometry were actually written.
     pub index_count: usize,
+    /// How many indices the range reserves, which may exceed `index_count`.
     pub reserved_index_count: usize,
     /// The draw range: `indexStart` / `indexCount` for an indexed batch.
     pub start: usize,
+    /// The draw range's count.
     pub count: usize,
     pub(crate) bounding_box: Option<Box3>,
     pub(crate) bounding_sphere: Option<Sphere>,
@@ -48,9 +54,13 @@ pub(crate) struct InstanceInfo {
 /// One entry of `MultiDrawRenderList.list`.
 #[derive(Clone, Copy, Debug)]
 pub struct MultiDrawItem {
+    /// The draw range's start.
     pub start: usize,
+    /// The draw range's count.
     pub count: usize,
+    /// The sort depth, camera-space.
     pub z: f64,
+    /// The instance id this draw item belongs to.
     pub index: usize,
 }
 
@@ -83,19 +93,29 @@ pub struct SubDraw {
 /// The camera state `onBeforeRender()` needs.
 #[derive(Clone, Copy, Debug)]
 pub struct BatchCamera {
+    /// `camera.projectionMatrix`.
     pub projection_matrix: Matrix4,
+    /// `camera.matrixWorldInverse`.
     pub matrix_world_inverse: Matrix4,
+    /// `camera.matrixWorld`.
     pub matrix_world: Matrix4,
+    /// `camera.coordinateSystem`.
     pub coordinate_system: CoordinateSystem,
+    /// `camera.far`.
     pub far: f64,
 }
 
 /// `BatchedMesh extends Mesh`.
 #[derive(Clone)]
 pub struct BatchedMesh {
+    /// The `Mesh` half: geometry, material and morph state.
     pub mesh: Mesh,
+    /// `_perObjectFrustumCulled` — whether each instance is culled by its own
+    /// bounding sphere.
     pub per_object_frustum_culled: bool,
+    /// `_sortObjects` — whether instances are depth-sorted before drawing.
     pub sort_objects: bool,
+    /// `customSort`, set by [`set_custom_sort`](Self::set_custom_sort).
     pub custom_sort: Option<CustomSort>,
 
     instance_info: Vec<InstanceInfo>,
@@ -178,14 +198,17 @@ impl BatchedMesh {
         object.into_node()
     }
 
+    /// `maxInstanceCount`.
     pub fn max_instance_count(&self) -> usize {
         self.max_instance_count
     }
 
+    /// `instanceCount` — the number of active instances.
     pub fn instance_count(&self) -> usize {
         self.instance_info.iter().filter(|i| i.active).count()
     }
 
+    /// The packed geometry every instance draws a range of.
     pub fn geometry(&self) -> &Rc<BufferGeometry> {
         &self.mesh.geometry
     }

@@ -27,6 +27,7 @@ pub struct IndirectStorageBufferAttribute {
 }
 
 impl IndirectStorageBufferAttribute {
+    /// `new IndirectStorageBufferAttribute( array, itemSize )`.
     pub fn new(array: Vec<u32>, item_size: usize) -> Self {
         Self {
             id: BufferId::next(),

@@ -22,6 +22,7 @@ impl Default for Layers {
 }
 
 impl Layers {
+    /// `new Layers()` — see the `Default` impl.
     pub fn new() -> Self {
         Self::default()
     }

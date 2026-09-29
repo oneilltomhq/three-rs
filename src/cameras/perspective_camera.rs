@@ -10,35 +10,58 @@ use crate::math::{CoordinateSystem, Matrix4, Vector2, Vector3, Vector4, DEG2RAD,
 /// [`OrthographicCamera::set_view_offset`](super::OrthographicCamera::set_view_offset).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct CameraView {
+    /// Whether the offset is applied; [`clear_view_offset`](super::PerspectiveCamera::clear_view_offset) clears this and leaves the rest.
     pub enabled: bool,
+    /// The full width of the multiview setup.
     pub full_width: f64,
+    /// The full height of the multiview setup.
     pub full_height: f64,
+    /// The horizontal offset of this sub-camera within the full frame.
     pub offset_x: f64,
+    /// The vertical offset of this sub-camera within the full frame.
     pub offset_y: f64,
+    /// The width of this sub-camera's window.
     pub width: f64,
+    /// The height of this sub-camera's window.
     pub height: f64,
 }
 
+/// three.js' `PerspectiveCamera`: a camera whose projection matches how the
+/// human eye and most cameras see, with distant objects appearing smaller.
 #[derive(Clone)]
 pub struct PerspectiveCamera {
     /// The camera's own scene-graph node. `Camera` is an `Object3D` in three.js
     /// and examples nest it (`scene.add( camera )`, `camera.add( light )`), so it
     /// owns a [`Node`] rather than a bare `Object3D`.
     pub node: Node,
+    /// The vertical field of view, from bottom to top of view, in degrees.
     pub fov: f64,
+    /// The aspect ratio, usually the canvas width divided by its height.
     pub aspect: f64,
+    /// The camera's near plane. Unlike [`OrthographicCamera`](super::OrthographicCamera)'s, `0.0` is not valid here.
     pub near: f64,
+    /// The camera's far plane, greater than [`near`](Self::near).
     pub far: f64,
+    /// The zoom factor of the camera.
     pub zoom: f64,
     /// Object distance used for stereoscopy and depth-of-field effects. Does not
     /// influence the projection matrix.
     pub focus: f64,
+    /// `Camera.view`, set by [`set_view_offset`](Self::set_view_offset).
     pub view: Option<CameraView>,
+    /// Film size used for the larger axis, in millimetres. Only matters when
+    /// [`film_offset`](Self::film_offset) is nonzero.
     pub film_gauge: f64,
+    /// Horizontal off-centre offset, in the same unit as [`film_gauge`](Self::film_gauge).
     pub film_offset: f64,
+    /// The coordinate system [`update_projection_matrix`](Self::update_projection_matrix)
+    /// builds the projection for.
     pub coordinate_system: CoordinateSystem,
+    /// `Camera.projectionMatrix`.
     pub projection_matrix: Matrix4,
+    /// `Camera.projectionMatrixInverse`.
     pub projection_matrix_inverse: Matrix4,
+    /// `Camera.matrixWorldInverse`.
     pub matrix_world_inverse: Matrix4,
     /// `camera.viewport` — not a `Camera` field in three.js until an
     /// application sets one: an [`ArrayCamera`](super::ArrayCamera)'s
@@ -48,6 +71,7 @@ pub struct PerspectiveCamera {
 }
 
 impl PerspectiveCamera {
+    /// `new PerspectiveCamera( fov, aspect, near, far )`.
     pub fn new(fov: f64, aspect: f64, near: f64, far: f64) -> Self {
         // `Camera.isCamera` — `Object3D.lookAt()` branches on it.
         let object = Object3D {
