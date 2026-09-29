@@ -4,8 +4,10 @@
 
 use super::{Matrix4, Vector3};
 
+/// Port of three.js' `Matrix3`: a 3x3 matrix.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Matrix3 {
+    /// A column-major list of matrix values.
     pub elements: [f64; 9],
 }
 
@@ -16,6 +18,7 @@ impl Default for Matrix3 {
 }
 
 impl Matrix3 {
+    /// The identity matrix.
     pub const fn identity() -> Self {
         Self {
             elements: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],

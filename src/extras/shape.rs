@@ -41,7 +41,9 @@ delegate_curve_path!(Shape, path, Vector2, "Shape");
 /// `{ shape, holes }`.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ShapePoints {
+    /// The points of the shape's own outline.
     pub shape: Vec<Vector2>,
+    /// The points of each hole's outline, one `Vec` per hole.
     pub holes: Vec<Vec<Vector2>>,
 }
 

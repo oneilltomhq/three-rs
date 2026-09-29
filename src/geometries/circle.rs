@@ -9,6 +9,7 @@ pub fn circle_geometry(radius: f64, segments: usize) -> BufferGeometry {
     circle_geometry_full(radius, segments, 0.0, std::f64::consts::PI * 2.0)
 }
 
+/// `new CircleGeometry( radius, segments, thetaStart, thetaLength )`.
 pub fn circle_geometry_full(
     radius: f64,
     segments: usize,

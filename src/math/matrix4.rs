@@ -19,8 +19,10 @@ pub enum CoordinateSystem {
     WebGpu,
 }
 
+/// Port of three.js' `Matrix4`: a 4x4 matrix.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Matrix4 {
+    /// A column-major list of matrix values.
     pub elements: [f64; 16],
 }
 
@@ -31,6 +33,7 @@ impl Default for Matrix4 {
 }
 
 impl Matrix4 {
+    /// The identity matrix.
     pub const fn identity() -> Self {
         Self {
             elements: [

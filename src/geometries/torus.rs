@@ -22,6 +22,7 @@ pub fn torus_geometry(
     )
 }
 
+/// `new TorusGeometry( radius, tube, radialSegments, tubularSegments, arc, thetaStart, thetaLength )`.
 pub fn torus_geometry_full(
     radius: f64,
     tube: f64,

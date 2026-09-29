@@ -22,6 +22,11 @@ pub fn cone_geometry(
     )
 }
 
+/// `new ConeGeometry( radius, height, radialSegments, heightSegments, openEnded, thetaStart, thetaLength )`.
+///
+/// three.js implements `ConeGeometry` as a `CylinderGeometry` with a zero top
+/// radius; here that is [`cylinder_geometry_full`] called with `radiusTop` of
+/// `0.0`.
 pub fn cone_geometry_full(
     radius: f64,
     height: f64,

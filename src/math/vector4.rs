@@ -4,11 +4,18 @@ use super::math_utils::{clamp, js_max, js_min};
 use super::vector3::js_round;
 use super::{Matrix4, Quaternion};
 
+/// three.js' `Vector4`: an ordered quadruplet `(x, y, z, w)`, used for points
+/// and directions in 4D space, homogeneous coordinates, and quaternion-like
+/// axis/angle packing.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Vector4 {
+    /// The x component.
     pub x: f64,
+    /// The y component.
     pub y: f64,
+    /// The z component.
     pub z: f64,
+    /// The w component.
     pub w: f64,
 }
 
@@ -20,6 +27,7 @@ impl Default for Vector4 {
 }
 
 impl Vector4 {
+    /// Constructs a new vector with the given components.
     pub const fn new(x: f64, y: f64, z: f64, w: f64) -> Self {
         Self { x, y, z, w }
     }
@@ -34,6 +42,7 @@ impl Vector4 {
         self.w
     }
 
+    /// Sets the vector components.
     pub fn set(&mut self, x: f64, y: f64, z: f64, w: f64) -> &mut Self {
         self.x = x;
         self.y = y;
@@ -42,30 +51,36 @@ impl Vector4 {
         self
     }
 
+    /// `Vector4.setScalar()`.
     pub fn set_scalar(&mut self, scalar: f64) -> &mut Self {
         self.set(scalar, scalar, scalar, scalar)
     }
 
+    /// Sets the x component.
     pub fn set_x(&mut self, x: f64) -> &mut Self {
         self.x = x;
         self
     }
 
+    /// Sets the y component.
     pub fn set_y(&mut self, y: f64) -> &mut Self {
         self.y = y;
         self
     }
 
+    /// Sets the z component.
     pub fn set_z(&mut self, z: f64) -> &mut Self {
         self.z = z;
         self
     }
 
+    /// Sets the w component.
     pub fn set_w(&mut self, w: f64) -> &mut Self {
         self.w = w;
         self
     }
 
+    /// `Vector4.setComponent()`; panics where three.js throws.
     pub fn set_component(&mut self, index: usize, value: f64) -> &mut Self {
         match index {
             0 => self.x = value,
@@ -77,6 +92,7 @@ impl Vector4 {
         self
     }
 
+    /// `Vector4.getComponent()`.
     pub fn get_component(&self, index: usize) -> f64 {
         match index {
             0 => self.x,
@@ -87,6 +103,9 @@ impl Vector4 {
         }
     }
 
+    /// `Vector4.copy()`: unlike three.js, which defaults a missing `v.w` to 1
+    /// (it also accepts a `Vector3`), this always copies `v.w` since `v` is
+    /// statically a [`Vector4`].
     pub fn copy(&mut self, v: &Self) -> &mut Self {
         self.x = v.x;
         self.y = v.y;
@@ -95,6 +114,7 @@ impl Vector4 {
         self
     }
 
+    /// Adds the given vector to this one.
     pub fn add(&mut self, v: &Self) -> &mut Self {
         self.x += v.x;
         self.y += v.y;
@@ -103,6 +123,7 @@ impl Vector4 {
         self
     }
 
+    /// `Vector4.addScalar()`.
     pub fn add_scalar(&mut self, s: f64) -> &mut Self {
         self.x += s;
         self.y += s;
@@ -111,6 +132,7 @@ impl Vector4 {
         self
     }
 
+    /// Adds `a` and `b`, storing the result in this vector.
     pub fn add_vectors(&mut self, a: &Self, b: &Self) -> &mut Self {
         self.x = a.x + b.x;
         self.y = a.y + b.y;
@@ -119,6 +141,7 @@ impl Vector4 {
         self
     }
 
+    /// `Vector4.addScaledVector()`.
     pub fn add_scaled_vector(&mut self, v: &Self, s: f64) -> &mut Self {
         self.x += v.x * s;
         self.y += v.y * s;
@@ -127,6 +150,7 @@ impl Vector4 {
         self
     }
 
+    /// Subtracts the given vector from this one.
     pub fn sub(&mut self, v: &Self) -> &mut Self {
         self.x -= v.x;
         self.y -= v.y;
@@ -135,6 +159,7 @@ impl Vector4 {
         self
     }
 
+    /// `Vector4.subScalar()`.
     pub fn sub_scalar(&mut self, s: f64) -> &mut Self {
         self.x -= s;
         self.y -= s;
@@ -143,6 +168,7 @@ impl Vector4 {
         self
     }
 
+    /// Subtracts `b` from `a`, storing the result in this vector.
     pub fn sub_vectors(&mut self, a: &Self, b: &Self) -> &mut Self {
         self.x = a.x - b.x;
         self.y = a.y - b.y;
@@ -151,6 +177,7 @@ impl Vector4 {
         self
     }
 
+    /// Multiplies this vector by the given vector, component-wise.
     pub fn multiply(&mut self, v: &Self) -> &mut Self {
         self.x *= v.x;
         self.y *= v.y;
@@ -159,6 +186,7 @@ impl Vector4 {
         self
     }
 
+    /// Multiplies each component of this vector by the given scalar.
     pub fn multiply_scalar(&mut self, scalar: f64) -> &mut Self {
         self.x *= scalar;
         self.y *= scalar;
@@ -180,6 +208,7 @@ impl Vector4 {
         self
     }
 
+    /// Divides this vector by the given vector, component-wise.
     pub fn divide(&mut self, v: &Self) -> &mut Self {
         self.x /= v.x;
         self.y /= v.y;
@@ -188,6 +217,7 @@ impl Vector4 {
         self
     }
 
+    /// `Vector4.divideScalar()`.
     pub fn divide_scalar(&mut self, scalar: f64) -> &mut Self {
         self.multiply_scalar(1.0 / scalar)
     }
@@ -316,6 +346,7 @@ impl Vector4 {
         self
     }
 
+    /// `Vector4.min()`.
     pub fn min(&mut self, v: &Self) -> &mut Self {
         self.x = js_min(self.x, v.x);
         self.y = js_min(self.y, v.y);
@@ -324,6 +355,7 @@ impl Vector4 {
         self
     }
 
+    /// `Vector4.max()`.
     pub fn max(&mut self, v: &Self) -> &mut Self {
         self.x = js_max(self.x, v.x);
         self.y = js_max(self.y, v.y);
@@ -332,6 +364,7 @@ impl Vector4 {
         self
     }
 
+    /// `Vector4.clamp()`.
     pub fn clamp(&mut self, min: &Self, max: &Self) -> &mut Self {
         self.x = clamp(self.x, min.x, max.x);
         self.y = clamp(self.y, min.y, max.y);
@@ -340,6 +373,7 @@ impl Vector4 {
         self
     }
 
+    /// `Vector4.clampScalar()`.
     pub fn clamp_scalar(&mut self, min_val: f64, max_val: f64) -> &mut Self {
         self.x = clamp(self.x, min_val, max_val);
         self.y = clamp(self.y, min_val, max_val);
@@ -348,12 +382,14 @@ impl Vector4 {
         self
     }
 
+    /// `Vector4.clampLength()`.
     pub fn clamp_length(&mut self, min: f64, max: f64) -> &mut Self {
         let length = self.length();
         self.divide_scalar(if length == 0.0 { 1.0 } else { length })
             .multiply_scalar(clamp(length, min, max))
     }
 
+    /// `Vector4.floor()`.
     pub fn floor(&mut self) -> &mut Self {
         self.x = self.x.floor();
         self.y = self.y.floor();
@@ -362,6 +398,7 @@ impl Vector4 {
         self
     }
 
+    /// `Vector4.ceil()`.
     pub fn ceil(&mut self) -> &mut Self {
         self.x = self.x.ceil();
         self.y = self.y.ceil();
@@ -370,6 +407,8 @@ impl Vector4 {
         self
     }
 
+    /// `Vector4.round()` — `Math.round`, which rounds half *up* (toward
+    /// +Infinity), not half away from zero the way Rust's `f64::round` does.
     pub fn round(&mut self) -> &mut Self {
         self.x = js_round(self.x);
         self.y = js_round(self.y);
@@ -378,6 +417,7 @@ impl Vector4 {
         self
     }
 
+    /// `Vector4.roundToZero()` — `Math.trunc`.
     pub fn round_to_zero(&mut self) -> &mut Self {
         self.x = self.x.trunc();
         self.y = self.y.trunc();
@@ -386,6 +426,7 @@ impl Vector4 {
         self
     }
 
+    /// `Vector4.negate()`.
     pub fn negate(&mut self) -> &mut Self {
         self.x = -self.x;
         self.y = -self.y;
@@ -394,31 +435,39 @@ impl Vector4 {
         self
     }
 
+    /// `Vector4.dot()`.
     pub fn dot(&self, v: &Self) -> f64 {
         self.x * v.x + self.y * v.y + self.z * v.z + self.w * v.w
     }
 
+    /// `Vector4.lengthSq()`.
     pub fn length_sq(&self) -> f64 {
         self.x * self.x + self.y * self.y + self.z * self.z + self.w * self.w
     }
 
+    /// `Vector4.length()`: the Euclidean length from `(0, 0, 0, 0)`.
     pub fn length(&self) -> f64 {
         (self.x * self.x + self.y * self.y + self.z * self.z + self.w * self.w).sqrt()
     }
 
+    /// `Vector4.manhattanLength()`.
     pub fn manhattan_length(&self) -> f64 {
         self.x.abs() + self.y.abs() + self.z.abs() + self.w.abs()
     }
 
+    /// `Vector4.normalize()`: divides by the length, or by 1 when the length
+    /// is 0.
     pub fn normalize(&mut self) -> &mut Self {
         let l = self.length();
         self.divide_scalar(if l == 0.0 { 1.0 } else { l })
     }
 
+    /// `Vector4.setLength()`.
     pub fn set_length(&mut self, length: f64) -> &mut Self {
         self.normalize().multiply_scalar(length)
     }
 
+    /// `Vector4.lerp()`.
     pub fn lerp(&mut self, v: &Self, alpha: f64) -> &mut Self {
         self.x += (v.x - self.x) * alpha;
         self.y += (v.y - self.y) * alpha;
@@ -427,6 +476,7 @@ impl Vector4 {
         self
     }
 
+    /// `Vector4.lerpVectors()`.
     pub fn lerp_vectors(&mut self, v1: &Self, v2: &Self, alpha: f64) -> &mut Self {
         self.x = v1.x + (v2.x - v1.x) * alpha;
         self.y = v1.y + (v2.y - v1.y) * alpha;
@@ -435,10 +485,12 @@ impl Vector4 {
         self
     }
 
+    /// `Vector4.equals()`.
     pub fn equals(&self, v: &Self) -> bool {
         v.x == self.x && v.y == self.y && v.z == self.z && v.w == self.w
     }
 
+    /// `Vector4.fromArray()`.
     pub fn from_array(&mut self, array: &[f64], offset: usize) -> &mut Self {
         self.x = array[offset];
         self.y = array[offset + 1];
@@ -447,6 +499,7 @@ impl Vector4 {
         self
     }
 
+    /// `Vector4.toArray()`.
     pub fn to_array(&self) -> [f64; 4] {
         [self.x, self.y, self.z, self.w]
     }
