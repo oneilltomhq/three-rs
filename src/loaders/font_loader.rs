@@ -20,6 +20,7 @@ impl Default for FontLoader {
 }
 
 impl FontLoader {
+    /// A loader with no state — `new FontLoader()`.
     pub fn new() -> Self {
         Self
     }
@@ -46,19 +47,24 @@ impl FontLoader {
 /// `Font` — the parsed typeface.json, kept as the JSON value `this.data` is.
 #[derive(Clone, Debug)]
 pub struct Font {
+    /// The typeface.json document — `this.data`.
     pub data: serde_json::Value,
 }
 
 /// `generateShapes`' `direction`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum TextDirection {
+    /// `'ltr'` — left to right.
     #[default]
     Ltr,
+    /// `'rtl'` — right to left.
     Rtl,
+    /// `'tb'` — top to bottom.
     Tb,
 }
 
 impl Font {
+    /// Wraps an already-parsed typeface.json document.
     pub fn new(data: serde_json::Value) -> Self {
         Self { data }
     }

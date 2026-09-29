@@ -5,11 +5,14 @@ use super::TextureId;
 use std::cell::{Ref, RefCell};
 use std::rc::Rc;
 
+/// The state behind a [`DataArrayTexture`] handle.
 pub struct DataArrayTextureInner {
     /// `new Float32Array( width * height * 4 * depth )` — one RGBA texel per
     /// vertex datum, layer-major.
     pub data: Vec<f32>,
+    /// `image.width`.
     pub width: u32,
+    /// `image.height`.
     pub height: u32,
     /// `image.depth` — the array layer count, i.e. the morph-target count.
     pub depth: u32,
@@ -47,6 +50,7 @@ impl DataArrayTexture {
         )
     }
 
+    /// `texture.id` — unique per texture, stable for its lifetime.
     pub fn id(&self) -> usize {
         self.1.get()
     }
@@ -58,10 +62,12 @@ impl DataArrayTexture {
         Rc::downgrade(&self.0) as super::TextureOwner
     }
 
+    /// Borrows the texture's data, width, height and depth.
     pub fn borrow(&self) -> Ref<'_, DataArrayTextureInner> {
         self.0.borrow()
     }
 
+    /// `( image.width, image.height, image.depth )`.
     pub fn size(&self) -> (u32, u32, u32) {
         let inner = self.0.borrow();
         (inner.width, inner.height, inner.depth)
@@ -75,6 +81,8 @@ impl DataArrayTexture {
         self.0.borrow().gpu.is_some()
     }
 
+    /// Runs `f` with the uploaded GPU texture. Panics if the texture has not
+    /// been uploaded yet.
     pub fn with_gpu<R>(&self, f: impl FnOnce(&wgpu::Texture) -> R) -> R {
         let inner = self.0.borrow();
         f(inner

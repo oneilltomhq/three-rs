@@ -22,9 +22,13 @@ pub enum DataTextureData {
     U32(Vec<u32>),
 }
 
+/// The state behind a [`DataTexture`] handle.
 pub struct DataTextureInner {
+    /// `texture.image.data`.
     pub data: DataTextureData,
+    /// `texture.image.width`.
     pub width: u32,
+    /// `texture.image.height`.
     pub height: u32,
     /// `texture.version`, bumped by `needsUpdate = true`. The renderer
     /// re-uploads when this runs ahead of `uploaded`.
@@ -68,6 +72,7 @@ impl DataTexture {
         )
     }
 
+    /// `texture.id` — unique per texture, stable for its lifetime.
     pub fn id(&self) -> usize {
         self.1.get()
     }
@@ -79,10 +84,12 @@ impl DataTexture {
         Rc::downgrade(&self.0) as super::TextureOwner
     }
 
+    /// Borrows the texture's data, width and height.
     pub fn borrow(&self) -> Ref<'_, DataTextureInner> {
         self.0.borrow()
     }
 
+    /// `( texture.image.width, texture.image.height )`.
     pub fn size(&self) -> (u32, u32) {
         let inner = self.0.borrow();
         (inner.width, inner.height)
@@ -128,6 +135,7 @@ impl DataTexture {
         }
     }
 
+    /// Read the uint payload.
     pub fn with_u32<R>(&self, f: impl FnOnce(&[u32]) -> R) -> R {
         let inner = self.0.borrow();
         match &inner.data {
@@ -155,6 +163,8 @@ impl DataTexture {
         inner.uploaded = inner.version;
     }
 
+    /// Runs `f` with the uploaded GPU texture. Panics if the texture has not
+    /// been uploaded yet.
     pub fn with_gpu<R>(&self, f: impl FnOnce(&wgpu::Texture) -> R) -> R {
         let inner = self.0.borrow();
         f(inner

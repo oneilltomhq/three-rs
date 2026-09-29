@@ -57,11 +57,20 @@ use crate::textures::{MinFilter, Mipmap, Texture, TextureFilter};
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct Ktx2Support {
+    /// `texture-compression-astc`.
     pub astc: bool,
+    /// `WEBGL_compressed_texture_etc1` — never true on WebGPU (see
+    /// [`Ktx2Support::from_features`]).
     pub etc1: bool,
+    /// `texture-compression-etc2`.
     pub etc2: bool,
+    /// `WEBGL_compressed_texture_s3tc` — never true on WebGPU; DXT is reached
+    /// through `bptc` instead (see [`Ktx2Support::from_features`]).
     pub dxt: bool,
+    /// `texture-compression-bc`.
     pub bptc: bool,
+    /// `WEBGL_compressed_texture_pvrtc` — never true on WebGPU (see
+    /// [`Ktx2Support::from_features`]).
     pub pvrtc: bool,
 }
 
@@ -98,10 +107,15 @@ pub struct Ktx2Loader {
 /// Which texture class three's loader constructs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Ktx2Class {
+    /// `CompressedTexture`.
     CompressedTexture,
+    /// `CompressedArrayTexture`.
     CompressedArrayTexture,
+    /// `CompressedCubeTexture`.
     CompressedCubeTexture,
+    /// `DataTexture`.
     DataTexture,
+    /// `Data3DTexture`.
     Data3DTexture,
 }
 
@@ -133,26 +147,47 @@ pub enum EngineFormat {
     Red = 1028,
     /// `RGFormat`.
     Rg = 1030,
+    /// `RGB_S3TC_DXT1_Format`.
     RgbS3tcDxt1 = 33776,
+    /// `RGBA_S3TC_DXT1_Format`.
     RgbaS3tcDxt1 = 33777,
+    /// `RGBA_S3TC_DXT5_Format`.
     RgbaS3tcDxt5 = 33779,
+    /// `RGB_PVRTC_4BPPV1_Format`.
     RgbPvrtc4bppV1 = 35840,
+    /// `RGBA_PVRTC_4BPPV1_Format`.
     RgbaPvrtc4bppV1 = 35842,
+    /// `RGBA_PVRTC_2BPPV1_Format`.
     RgbaPvrtc2bppV1 = 35843,
+    /// `RGB_ETC1_Format`.
     RgbEtc1 = 36196,
+    /// `RED_RGTC1_Format`.
     RedRgtc1 = 36283,
+    /// `SIGNED_RED_RGTC1_Format`.
     SignedRedRgtc1 = 36284,
+    /// `RED_GREEN_RGTC2_Format`.
     RedGreenRgtc2 = 36285,
+    /// `SIGNED_RED_GREEN_RGTC2_Format`.
     SignedRedGreenRgtc2 = 36286,
+    /// `RGBA_BPTC_Format`.
     RgbaBptc = 36492,
+    /// `RGB_BPTC_UNSIGNED_Format`.
     RgbBptcUnsigned = 36495,
+    /// `R11_EAC_Format`.
     R11Eac = 37488,
+    /// `SIGNED_R11_EAC_Format`.
     SignedR11Eac = 37489,
+    /// `RG11_EAC_Format`.
     Rg11Eac = 37490,
+    /// `SIGNED_RG11_EAC_Format`.
     SignedRg11Eac = 37491,
+    /// `RGB_ETC2_Format`.
     RgbEtc2 = 37492,
+    /// `RGBA_ETC2_EAC_Format`.
     RgbaEtc2Eac = 37496,
+    /// `RGBA_ASTC_4x4_Format`.
     RgbaAstc4x4 = 37808,
+    /// `RGBA_ASTC_6x6_Format`.
     RgbaAstc6x6 = 37812,
 }
 
@@ -160,11 +195,17 @@ pub enum EngineFormat {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u32)]
 pub enum EngineType {
+    /// `UnsignedByteType`.
     UnsignedByte = 1009,
+    /// `UnsignedShortType`.
     UnsignedShort = 1012,
+    /// `FloatType`.
     Float = 1015,
+    /// `HalfFloatType`.
     HalfFloat = 1016,
+    /// `UnsignedInt101111Type`.
     UnsignedInt101111 = 35899,
+    /// `UnsignedInt5999Type`.
     UnsignedInt5999 = 35902,
 }
 
@@ -206,18 +247,27 @@ impl Ktx2ColorSpace {
 /// data.
 #[derive(Clone, Debug)]
 pub struct Ktx2Texture {
+    /// `texture.constructor.name`.
     pub class: Ktx2Class,
+    /// `texture.format`.
     pub format: EngineFormat,
+    /// `texture.type`.
     pub texture_type: EngineType,
+    /// `texture.colorSpace`.
     pub color_space: Ktx2ColorSpace,
+    /// `texture.premultiplyAlpha`.
     pub premultiply_alpha: bool,
+    /// `texture.minFilter`.
     pub min_filter: MinFilter,
+    /// `texture.magFilter`.
     pub mag_filter: TextureFilter,
+    /// `texture.generateMipmaps`.
     pub generate_mipmaps: bool,
     /// `texture.normalized` — true only for `R16G16B16A16_UNORM`.
     pub normalized: bool,
     /// `image.width` / `image.height` (face 0's, for a cube).
     pub width: u32,
+    /// `image.height` (face 0's, for a cube).
     pub height: u32,
     /// `image.depth`: the layer count of a `CompressedArrayTexture`, the
     /// depth of a `Data3DTexture`, 0 otherwise.
@@ -248,6 +298,7 @@ impl Ktx2Loader {
         self
     }
 
+    /// The compressed-texture families this loader was configured to use.
     pub fn support(&self) -> Ktx2Support {
         self.config
     }

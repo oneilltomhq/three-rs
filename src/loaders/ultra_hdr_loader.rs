@@ -106,12 +106,22 @@ pub struct UltraHdrMetadata {
     /// `hdrgm:BaseRenditionIsHDR` / the ISO "backward direction" flag. Parsed
     /// and carried; neither upstream nor this port acts on it.
     pub base_rendition_is_hdr: bool,
+    /// `hdrgm:GainMapMin` — log2 stops, the gain applied where the gain map
+    /// reads 0.
     pub gain_map_min: f64,
+    /// `hdrgm:GainMapMax` — log2 stops, the gain applied where the gain map
+    /// reads 1.
     pub gain_map_max: f64,
+    /// `hdrgm:Gamma` — the exponent the gain map is raised to before
+    /// interpolating between `gain_map_min` and `gain_map_max`.
     pub gamma: f64,
+    /// `hdrgm:OffsetSDR`, rescaled to the 0-255 SDR axis.
     pub offset_sdr: f64,
+    /// `hdrgm:OffsetHDR`, rescaled to the 0-255 SDR axis.
     pub offset_hdr: f64,
+    /// `hdrgm:HDRCapacityMin` — log2 stops.
     pub hdr_capacity_min: f64,
+    /// `hdrgm:HDRCapacityMax` — log2 stops.
     pub hdr_capacity_max: f64,
 }
 
@@ -138,12 +148,15 @@ impl Default for UltraHdrMetadata {
 /// RGBAFormat`).
 #[derive(Debug, Clone)]
 pub struct UltraHdrTexData {
+    /// The reconstructed image width, in texels.
     pub width: u32,
+    /// The reconstructed image height, in texels.
     pub height: u32,
     /// The gain-map parameters the pixels were reconstructed with. Upstream
     /// keeps this to itself; it is public here because it is the only thing
     /// about the file a unit test can assert without a GPU.
     pub metadata: UltraHdrMetadata,
+    /// The decoded texels.
     pub data: UltraHdrData,
 }
 
@@ -166,6 +179,7 @@ impl UltraHdrData {
         }
     }
 
+    /// Whether there are no texels.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -205,6 +219,7 @@ impl UltraHdrLoader {
         Ok(self)
     }
 
+    /// `loader.type` — `HalfFloatType` or `FloatType`.
     pub fn data_type(&self) -> TextureType {
         self.texture_type
     }
