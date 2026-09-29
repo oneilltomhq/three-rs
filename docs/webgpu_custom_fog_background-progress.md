@@ -119,8 +119,13 @@ by the grader:
   `multisampled: true` plus `textureLoad( …, 0 )` is what three does.
 * **Reading `renderer.samples()` inside `PassNode::new()`.** The pass has no
   renderer at construction, the way three's does not either — `PassNode.setup()`
-  assigns `renderTarget.samples` on the first build. The port assigns it in
-  `PassNode::render()`, which is the same moment relative to the first draw.
+  assigns `renderTarget.samples` on the first build. The port assigned it in
+  `PassNode::render()` at the time, the same moment relative to the first
+  draw; that method is gone since 0.2.0 (`docs/api.md` decision 10), and this
+  page is why removing it needed `NodeUpdate::sync_before_build`
+  (`docs/nodes.md` §57.5) rather than just deleting the forward — the
+  renderer-driven path alone built the composite's bind-group layout before
+  a pass rendered from `updateBefore()` ever set the sample count.
 * **A `Scene::fog` route.** `scene.fog = new THREE.Fog( 0x4080cc, 2.7, 4 )` is
   what the page's comment says the composite is *equivalent to*, and the port
   has that path (`fog()` / `FogNode`). It is not the same frame: material fog is

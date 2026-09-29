@@ -15,6 +15,7 @@
 //! still zero and the composite is `max( scene, 0 )`: the trail only appears
 //! from the second frame on, which the steady-frame test renders.
 
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use three_rs::addons::controls::OrbitControls;
@@ -28,8 +29,8 @@ use three_rs::nodes::tsl::{
 use three_rs::nodes::{NodeRef, Type};
 use three_rs::testing::DeterministicRandom;
 use three_rs::{
-    Color, Node, PassNode, PerspectiveCamera, RenderPipeline, Renderer, RendererParameters, Scene,
-    Sprite, TextureLoader, Vector3,
+    pass, Color, Node, PassNode, PerspectiveCamera, RenderPipeline, Renderer, RendererParameters,
+    Scene, Sprite, TextureLoader, Vector3,
 };
 
 pub const INNER_WIDTH: f64 = 800.0;
@@ -49,8 +50,10 @@ pub const COUNT: usize = 50000;
 
 pub struct App {
     pub renderer: Renderer,
-    pub scene: Scene,
-    pub camera: PerspectiveCamera,
+    /// Shared with `scene_pass`, which renders it from `updateBefore()`.
+    pub scene: Rc<RefCell<Scene>>,
+    /// Shared with `scene_pass`.
+    pub camera: Rc<RefCell<PerspectiveCamera>>,
     pub particles: Node,
     pub scene_pass: PassNode,
     pub after_image_pass: AfterImageNode,
@@ -166,7 +169,12 @@ pub fn init() -> App {
 
     let mut render_pipeline = RenderPipeline::new();
 
-    let scene_pass = PassNode::new();
+    // `pass( scene, camera )`: the pass holds both and the renderer renders
+    // it from `updateBefore()`, the first time a draw in the frame samples
+    // its texture — here, the after-image composite's own draw.
+    let scene = Rc::new(RefCell::new(scene));
+    let camera = Rc::new(RefCell::new(camera));
+    let scene_pass = pass(scene.clone(), camera.clone());
 
     // `afterImage( scenePass, params.damp )` — `convertToTexture( scenePass )`
     // is the pass' own output texture.
@@ -190,10 +198,13 @@ pub fn init() -> App {
 /// harness's frozen clock (`time` is 0): `renderPipeline.render()`, whose
 /// scene pass and after-image composite the port fires in turn (see
 /// `docs/postprocessing.md`).
-/// The scene pass is still rendered by hand: `AfterImageNode` is not yet on
-/// the renderer-owned update path (`docs/nodes.md` §57), so the frame's order
-/// is kept explicit here.
-#[allow(deprecated)]
+///
+/// The scene pass holds its scene and camera (`pass( scene, camera )`), so
+/// the renderer runs it from `updateBefore()` the first time a draw samples
+/// its texture — here, the after-image composite's own quad (`docs/nodes.md`
+/// §57). `AfterImageNode` itself is still fired by hand: it is not on the
+/// renderer-owned update path (outside #162's list), so its `render()` stays
+/// explicit.
 pub fn animate(app: &mut App) {
     // `animate( time )` is handed the RAF timestamp, `performance.now()`.
     let time = three_rs::utils::now_ms();
@@ -203,16 +214,15 @@ pub fn animate(app: &mut App) {
         particles.set_rotation(rotation.x, rotation.y, time * 0.001);
     }
 
-    app.scene_pass
-        .render(&mut app.renderer, &mut app.scene, &mut app.camera);
     app.after_image_pass.render(&mut app.renderer);
     app.render_pipeline.render(&mut app.renderer);
 }
 
 /// The page's `onWindowResize()`.
 pub fn resize(app: &mut App, width: f64, height: f64) {
-    app.camera.aspect = width / height;
-    app.camera.update_projection_matrix();
+    let mut camera = app.camera.borrow_mut();
+    camera.aspect = width / height;
+    camera.update_projection_matrix();
     app.renderer.set_size(width, height);
 }
 
