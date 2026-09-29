@@ -47,8 +47,9 @@ use super::Renderer;
 ///
 /// The scene and camera are shared handles, given by [`pass`] or
 /// [`PassNode::set_scene`]: the node holds them across frames, as three's
-/// `this.scene` / `this.camera` do. A pass without them renders only when
-/// [`render`](PassNode::render) is called, which is deprecated.
+/// `this.scene` / `this.camera` do. A pass without them never renders; the
+/// explicit `render()` that used to cover that case was removed in 0.2.0
+/// (`docs/api.md` decision 10).
 #[derive(Clone)]
 pub struct PassNode(Rc<PassState>);
 
@@ -431,31 +432,10 @@ impl PassNode {
         &self.render_target
     }
 
-    /// `PassNode.updateBefore( frame )`, called by hand.
-    ///
-    /// The renderer now renders the pass itself, the first time a draw in a
-    /// frame samples it, when the pass was given its scene and camera
-    /// ([`pass`], [`set_scene`](Self::set_scene)). This does the same render
-    /// and marks the pass done for the frame, so a draw later in the same
-    /// frame does not render it again. `docs/nodes.md` §57.
-    #[deprecated(
-        since = "0.1.3",
-        note = "give the pass its scene and camera with `pass( scene, camera )` or \
-                `set_scene`; the renderer renders it from `updateBefore()` (docs/nodes.md §57)"
-    )]
-    pub fn render(
-        &self,
-        renderer: &mut Renderer,
-        scene: &mut Scene,
-        camera: &mut dyn RenderCamera,
-    ) {
-        renderer.mark_update_before(Rc::as_ptr(&self.0) as *const u8 as usize);
-        self.render_scene(renderer, scene, camera);
-    }
-
-    /// The render [`render`](Self::render) does, without marking the frame:
-    /// for the passes that wrap a `PassNode` and render it themselves
-    /// (`SsaaPassNode`'s samples, the toon outline).
+    /// The render a pass's explicit `render()` used to do, before it was
+    /// removed in 0.2.0 (`docs/api.md` decision 10): for the passes that
+    /// wrap a `PassNode` and render it themselves (`SsaaPassNode`'s samples,
+    /// the toon outline).
     pub(crate) fn render_scene(
         &self,
         renderer: &mut Renderer,
@@ -558,6 +538,17 @@ impl NodeUpdate for PassState {
             renderer.render_shared(&scene.borrow(), &camera)
         });
         true
+    }
+
+    /// `PassNode.setup()`: `renderTarget.samples = renderer.samples`, ahead
+    /// of the pass's own render. A material that binds this pass's depth
+    /// texture (`getViewZNode()`) is built on the same call that discovers
+    /// the binding (`docs/nodes.md` §57.5), so the multisample flag the
+    /// builder reads has to be right before `updateBefore()` ever runs, not
+    /// after — this is what three's `setup()` does during graph analysis
+    /// and `render_with` alone cannot reproduce.
+    fn sync_before_build(&self, samples: u32) {
+        self.render_target.set_samples(samples);
     }
 }
 

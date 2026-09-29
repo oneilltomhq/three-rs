@@ -6,8 +6,8 @@
 //! Three subclasses `PassNode` and swaps the renderer's render-object function
 //! around `super.updateBefore()`; the port wraps a
 //! [`PassNode`](crate::renderer::PassNode) and sets the renderer's
-//! `toon_outline` hook around [`PassNode::render`] instead, which the render
-//! loop reads per draw exactly where three calls the function. See
+//! `toon_outline` hook around [`ToonOutlinePassNode::render`] instead, which
+//! the render loop reads per draw exactly where three calls the function. See
 //! `docs/nodes.md` §42.
 
 use std::rc::Rc;

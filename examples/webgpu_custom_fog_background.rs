@@ -54,6 +54,9 @@
 //! [`context`]: three_rs::nodes::tsl::context
 //! [`range_fog_factor`]: three_rs::nodes::tsl::range_fog_factor
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use three_rs::addons::controls::OrbitControls;
 use three_rs::loaders::{GltfLoader, UltraHdrLoader};
 use three_rs::materials::{tone_mapping_node, ToneMapping};
@@ -61,7 +64,7 @@ use three_rs::nodes::pmrem_node::PmremEnvironment;
 use three_rs::nodes::tsl::{float, range_fog_factor};
 use three_rs::nodes::ContextValue;
 use three_rs::{
-    Color, PassNode, PerspectiveCamera, RenderPipeline, Renderer, RendererParameters, Scene,
+    pass, Color, PassNode, PerspectiveCamera, RenderPipeline, Renderer, RendererParameters, Scene,
 };
 
 pub const INNER_WIDTH: f64 = 800.0;
@@ -75,8 +78,10 @@ fn examples_dir() -> std::path::PathBuf {
 
 pub struct App {
     pub renderer: Renderer,
-    pub scene: Scene,
-    pub camera: PerspectiveCamera,
+    /// Shared with `scene_pass`, which renders it from `updateBefore()`.
+    pub scene: Rc<RefCell<Scene>>,
+    /// Shared with `scene_pass`.
+    pub camera: Rc<RefCell<PerspectiveCamera>>,
     pub environment: PmremEnvironment,
     pub scene_pass: PassNode,
     pub render_pipeline: RenderPipeline,
@@ -87,10 +92,10 @@ pub struct App {
 pub fn init() -> App {
     // `new THREE.PerspectiveCamera( 45, window.innerWidth / window.innerHeight,
     // 0.25, 20 ); camera.position.set( - 1.8, 0.6, 2.7 )`.
-    let mut camera = PerspectiveCamera::new(45.0, INNER_WIDTH / INNER_HEIGHT, 0.25, 20.0);
+    let camera = PerspectiveCamera::new(45.0, INNER_WIDTH / INNER_HEIGHT, 0.25, 20.0);
     camera.node.borrow_mut().position.set(-1.8, 0.6, 2.7);
 
-    let mut scene = Scene::new();
+    let scene = Scene::new();
 
     // `new THREE.WebGPURenderer( { antialias: true } )`. The `antialias` is
     // what makes the pass target 4×MSAA and so its depth attachment
@@ -104,8 +109,11 @@ pub fn init() -> App {
 
     // post processing
 
-    // `const scenePass = pass( scene, camera )`.
-    let scene_pass = PassNode::new();
+    // `const scenePass = pass( scene, camera )`: the pass holds both and the
+    // renderer renders it from `updateBefore()`.
+    let scene = Rc::new(RefCell::new(scene));
+    let camera = Rc::new(RefCell::new(camera));
+    let scene_pass = pass(scene.clone(), camera.clone());
     // `const scenePassViewZ = scenePass.getViewZNode()`.
     let scene_pass_view_z = scene_pass.view_z_node("depth");
 
@@ -144,20 +152,20 @@ pub fn init() -> App {
     // never sets `scene.background`, so no cube conversion and no skybox.
     let mut environment = PmremEnvironment::from_equirectangular(&texture);
     environment.update(&mut renderer).unwrap();
-    scene.environment = Some(environment.handle());
+    scene.borrow_mut().environment = Some(environment.handle());
 
     // `new GLTFLoader().setPath( 'models/gltf/DamagedHelmet/glTF/' ).load(
     // 'DamagedHelmet.gltf', gltf => scene.add( gltf.scene ) )`.
     let gltf =
         GltfLoader::load(examples_dir().join("models/gltf/DamagedHelmet/glTF/DamagedHelmet.gltf"))
             .expect("DamagedHelmet.gltf");
-    scene.add(&gltf.scene);
+    scene.borrow_mut().add(&gltf.scene);
 
     // `const controls = new OrbitControls( camera, renderer.domElement );`
     // The one `update()` below has nothing to clamp — the distance is already
     // inside `[ minDistance, maxDistance ]` — so all it does is aim the camera
     // at the target.
-    let mut controls = OrbitControls::new(&mut camera);
+    let mut controls = OrbitControls::new(&mut camera.borrow_mut());
     // The canvas the example renders at, standing in for the element's
     // `clientWidth` / `clientHeight`.
     controls.set_element_size(INNER_WIDTH, INNER_HEIGHT);
@@ -165,7 +173,7 @@ pub fn init() -> App {
     controls.max_distance = 5.0;
     controls.target.set(0.0, -0.1, -0.2);
     // `controls.update();`
-    controls.update(&mut camera, None);
+    controls.update(&mut camera.borrow_mut(), None);
 
     App {
         renderer,
@@ -181,17 +189,11 @@ pub fn init() -> App {
 /// The page's `animate()`: `renderPipeline.render()`, which fires the scene
 /// pass's `updateBefore()` on its way.
 ///
-/// This page still fires the pass by hand, through the deprecated forward.
-/// The composite reads the pass's multisampled depth (`getViewZNode()`).
-/// Three's `PassNode.setup()` sets `renderTarget.samples` while the
-/// composite builds; the port sets it when the pass renders. From
-/// `updateBefore()` that is after the composite's bind-group layout was made
-/// for a single-sampled depth. `docs/nodes.md` §57.5.
-#[allow(deprecated)]
+/// The scene pass holds its scene and camera (`pass( scene, camera )`), so
+/// the renderer runs it from `updateBefore()` the first time a draw samples
+/// its texture — here, the composite quad's own draw (`docs/nodes.md` §57).
 pub fn animate(app: &mut App) {
     app.environment.update(&mut app.renderer).unwrap();
-    app.scene_pass
-        .render(&mut app.renderer, &mut app.scene, &mut app.camera);
     app.render_pipeline.render(&mut app.renderer);
 }
 
@@ -202,8 +204,9 @@ pub fn animate(app: &mut App) {
 /// owns its own reaction to a resized canvas instead of the host
 /// guessing at one.
 pub fn resize(app: &mut App, width: f64, height: f64) {
-    app.camera.aspect = width / height;
-    app.camera.update_projection_matrix();
+    let mut camera = app.camera.borrow_mut();
+    camera.aspect = width / height;
+    camera.update_projection_matrix();
     app.renderer.set_size(width, height);
 }
 
@@ -221,8 +224,10 @@ pub fn controls(app: &mut App) -> Option<&mut OrbitControls> {
 /// They are two fields of the same `App`, so borrowing both is sound — but
 /// only this module can say so; a host holding `&mut App` and calling
 /// [`controls`] and then reaching for the camera cannot. Hence the pair.
-pub fn controls_and_camera(app: &mut App) -> Option<(&mut OrbitControls, &mut PerspectiveCamera)> {
-    Some((&mut app.controls, &mut app.camera))
+pub fn controls_and_camera(
+    app: &mut App,
+) -> Option<(&mut OrbitControls, std::cell::RefMut<'_, PerspectiveCamera>)> {
+    Some((&mut app.controls, app.camera.borrow_mut()))
 }
 
 fn main() {

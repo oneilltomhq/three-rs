@@ -74,6 +74,18 @@ pub trait NodeUpdate {
     fn update_after(&self, _renderer: &mut Renderer) -> bool {
         true
     }
+    /// Three's `PassNode.setup()` sets `renderTarget.samples = renderer.samples`
+    /// while the graph that reaches the pass is analyzed — before any pass
+    /// renders. That is what lets a composite bind the pass's depth texture
+    /// as `texture_depth_multisampled_2d` on the very build that discovers
+    /// it. The port has no per-node `setup()` hook (`docs/nodes.md` §57.2),
+    /// so [`sync_before_build`](Self::sync_before_build) stands in for it: it
+    /// runs on every node with a live texture registration, right before
+    /// [`Renderer`] builds a material's program,
+    /// which is the earliest point the builder can see a pass's textures.
+    /// [`PassNode`](crate::PassNode) is the only node that overrides it
+    /// (`docs/nodes.md` §57.5); the default is a no-op.
+    fn sync_before_build(&self, _samples: u32) {}
 }
 
 /// One entry of three's `updateBeforeNodes` / `updateNodes` /
@@ -269,18 +281,6 @@ impl NodeFrameState {
         }
     }
 
-    /// Record `reference`'s phase as done for this frame and render, without
-    /// running it: what a deprecated explicit `render()` on a pass does, so
-    /// that the draw that samples the pass later in the same frame does not
-    /// render it a second time.
-    pub(crate) fn mark(&mut self, phase: UpdatePhase, reference: usize) {
-        let (frame_id, render_id) = (self.frame_id, self.render_id);
-        let stamp = self.maps.entry((phase, reference)).or_default();
-        stamp.frame_id = frame_id;
-        stamp.render_id = render_id;
-        stamp.touched = frame_id;
-    }
-
     /// Drop the stamps no node has touched for `grace` frames, so a consumer
     /// that makes new passes every frame does not grow the maps.
     pub(crate) fn sweep(&mut self, grace: u64) {
@@ -322,6 +322,21 @@ pub(crate) fn texture_update(texture_id: usize) -> Option<UpdateNode> {
         let (reference, weak) = map.borrow().get(&texture_id)?.clone();
         Some(UpdateNode::with_reference(reference, weak.upgrade()?))
     })
+}
+
+/// [`NodeUpdate::sync_before_build`] on every live registered node, ahead of
+/// a material build. Cheap and idempotent (`RenderTarget::set_samples`
+/// returns early once a target is already at `samples`), so calling it on
+/// every cache miss — the only time a build runs — costs nothing on a
+/// steady frame.
+pub(crate) fn sync_before_build(samples: u32) {
+    TEXTURE_UPDATES.with(|map| {
+        for (_, weak) in map.borrow().values() {
+            if let Some(node) = weak.upgrade() {
+                node.sync_before_build(samples);
+            }
+        }
+    });
 }
 
 #[cfg(test)]
@@ -438,17 +453,7 @@ mod tests {
         assert!(frame
             .claim(UpdatePhase::After, 8, NodeUpdateType::Frame)
             .is_some());
-
-        // `mark` is a run that already happened.
-        frame.mark(UpdatePhase::Before, 9);
-        assert!(frame
-            .claim(UpdatePhase::Before, 9, NodeUpdateType::Frame)
-            .is_none());
         frame.end_render(previous, true);
-        let _ = frame.begin_render(0.0);
-        assert!(frame
-            .claim(UpdatePhase::Before, 9, NodeUpdateType::Frame)
-            .is_some());
     }
 
     /// A render nested inside another gets its own id and hands the outer

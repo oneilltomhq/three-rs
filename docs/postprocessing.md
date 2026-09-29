@@ -67,7 +67,8 @@ The port did this by hand until #162: the application called
 `PassNode::render` before `RenderPipeline::render`. Now the pass holds its
 scene and camera (`pass( scene, camera )`, as `Rc<RefCell<…>>`), and the
 renderer fires it from the quad's draw behind the `FRAME` guard, as three
-does (`docs/nodes.md` §57). The explicit `render` is a deprecated forward.
+does (`docs/nodes.md` §57). The explicit `render` was a deprecated forward
+for one release and is removed in 0.2.0 (`docs/api.md` decision 10).
 
 ## `RenderPipeline`
 
@@ -283,8 +284,8 @@ material.mrt_node = Some(mrt(vec![("bloomIntensity", uniform_value(Type::F32, ve
 ```
 
 * **The pass** holds the default. `PassNode::set_mrt` is
-  `passNode.setMRT()`; `PassNode::render` hands it to the renderer for the
-  duration of its own render and restores the previous one, as
+  `passNode.setMRT()`; the pass's `updateBefore()` hands it to the renderer
+  for the duration of its own render and restores the previous one, as
   `PassNode.updateBefore()` does. `Renderer::set_mrt` / `mrt()` are
   `Renderer.setMRT()` / `getMRT()`.
 * **The material** overrides it. `NodeMaterial.setup()` merges the two with
@@ -581,8 +582,8 @@ example's `animate()` is `renderPipeline.render()` alone. The output quad's
 draw pulls the anamorphic chain: `bright_pass` pulls `scene_pass` in turn.
 That submits `scene_pass`, `bright_pass`, the bloom, and the output quad, in
 three's submit order. `webgpu_postprocessing_ca` is the same: the scene pass,
-the RTT pass, the pipeline. `RttNode::render` remains as a deprecated
-forward.
+the RTT pass, the pipeline. `RttNode::render`, the explicit forward this
+relied on before #162, was removed in 0.2.0 (`docs/api.md` decision 10).
 
 ### `fullscreenPass` and `currentSamples`
 
@@ -628,10 +629,10 @@ frame is black with it.
 `Renderer` carries `fullscreen_pass`, set and restored around `render_quad()`
 and around `render_output()`'s quad. The `PassNode`'s own scene render is
 unaffected: it binds a render target, so it takes the first branch and keeps
-`renderTarget.samples`, which `PassNode::render` has just set to
-`renderer.samples()`. That is where this page's antialiasing actually happens —
-the scene is drawn 4x into the pass target and resolved before bloom ever
-samples it.
+`renderTarget.samples`, which the pass's `sync_before_build` and its own
+`updateBefore()` both keep at `renderer.samples()` (`docs/nodes.md` §57.5).
+That is where this page's antialiasing actually happens — the scene is drawn
+4x into the pass target and resolved before bloom ever samples it.
 
 ## The display nodes of #144
 
@@ -657,7 +658,7 @@ The nodes follow the shapes above:
 - `PixelationPassNode` wraps a `PassNode` rather than subclassing one. The
   wrapped pass renders nearest-filtered at `floor( drawingBuffer / pixelSize )`,
   through `PassNode`'s new size divisor, with an `{ output, normal }` MRT.
-  `PassNode::render` now takes any `RenderCamera` because that page's camera
+  `pass( scene, camera )` takes any `RenderCamera` because that page's camera
   is orthographic.
 
 Divergences, each noted where it lives:

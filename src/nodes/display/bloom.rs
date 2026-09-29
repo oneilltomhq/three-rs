@@ -11,7 +11,8 @@
 //! `SsaaPassNode` already record in `docs/postprocessing.md`:
 //!
 //! * three.js fires `updateBefore()` from inside the `RenderPipeline` quad's
-//!   render; the port has the application call [`BloomNode::render`] first.
+//!   render; the renderer now fires it the same way, the first time in a
+//!   frame a draw samples the bloom's `horizontal[0]` (`docs/nodes.md` §57).
 //! * `BloomNode.setup()` builds the quad materials lazily, inside the outer
 //!   build, so that `context( builder.getSharedContext() )` keeps their
 //!   uniforms out of the outer graph's numbering. The port builds each quad
@@ -411,12 +412,12 @@ impl BloomNode {
         self.node.clone()
     }
 
-    /// The twelve quad materials, in the order [`render`](Self::render) draws
-    /// them: the high pass, then each mip's horizontal and vertical blur, then
-    /// the composite. Only `examples/dump_wgsl.rs` wants them — it is the one
-    /// caller that has to see a material three.js keeps private, because the
-    /// generated WGSL of all thirteen modules is what the rung is graded on
-    /// before a single pixel is compared.
+    /// The twelve quad materials, in the order the bloom's `updateBefore()`
+    /// draws them: the high pass, then each mip's horizontal and vertical
+    /// blur, then the composite. Only `examples/dump_wgsl.rs` wants them — it
+    /// is the one caller that has to see a material three.js keeps private,
+    /// because the generated WGSL of all thirteen modules is what the rung is
+    /// graded on before a single pixel is compared.
     #[doc(hidden)]
     pub fn quad_materials(&self) -> Vec<&MeshBasicNodeMaterial> {
         let mut materials = vec![&self.high_pass.material];
@@ -436,21 +437,6 @@ impl BloomNode {
     /// `bloomNode.getResolutionScale()`.
     pub fn resolution_scale(&self) -> f64 {
         self.resolution_scale.get()
-    }
-
-    /// `BloomNode.updateBefore( frame )`, called by hand.
-    ///
-    /// The renderer now runs the quads itself, the first time in a frame a
-    /// draw samples [`node`](Self::node). This does the same and marks the
-    /// node done for the frame, so that draw does not repeat it.
-    /// `docs/nodes.md` §57.
-    #[deprecated(
-        since = "0.1.3",
-        note = "the renderer runs `updateBefore()` when a draw samples the node (docs/nodes.md §57)"
-    )]
-    pub fn render(&self, renderer: &mut Renderer) {
-        renderer.mark_update_before(Rc::as_ptr(&self.0) as *const u8 as usize);
-        self.0.render_quads(renderer);
     }
 }
 
