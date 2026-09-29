@@ -28,7 +28,7 @@ use crate::objects::Skeleton;
 /// `Versioning.MatrixWorldNeedsUpdate` (every `Object3D` has
 /// `matrixWorldNeedsUpdate`, which is the flag Three's setter raises).
 #[derive(Clone, Debug)]
-pub enum NodeProperty {
+pub(crate) enum NodeProperty {
     /// `.position`.
     Position,
     /// `.quaternion`.
@@ -41,7 +41,7 @@ pub enum NodeProperty {
 }
 
 /// One resolved `Object3D` property.
-pub struct NodeTarget {
+pub(crate) struct NodeTarget {
     node: Node,
     property: NodeProperty,
 }

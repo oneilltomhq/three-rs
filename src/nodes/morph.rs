@@ -55,6 +55,7 @@ thread_local! {
 }
 
 /// `getEntry( geometry )`. `None` when the geometry has no morph attributes.
+#[doc(hidden)]
 pub fn get_entry(geometry: &Rc<BufferGeometry>) -> Option<MorphEntry> {
     let morph_targets = geometry.get_morph_attribute("position")?;
     let morph_targets_count = morph_targets.len();

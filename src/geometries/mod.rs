@@ -26,7 +26,6 @@ pub use cone::{cone_geometry, cone_geometry_full};
 pub use cylinder::{cylinder_geometry, cylinder_geometry_full};
 pub use extrude::{
     extrude_geometry, extrude_geometry_default_shape, ExtrudeGeometryOptions, UvGenerator,
-    WorldUvGenerator,
 };
 pub use lathe::{lathe_default_points, lathe_geometry, lathe_geometry_full};
 pub use plane::plane_geometry;

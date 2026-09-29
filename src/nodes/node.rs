@@ -122,13 +122,13 @@ pub enum UniformGroup {
 impl UniformGroup {
     /// The order the groups take their `@group( n )` indices in, each one
     /// only when it has a binding.
-    pub const ORDER: [UniformGroup; 3] = [
+    pub(crate) const ORDER: [UniformGroup; 3] = [
         UniformGroup::Render,
         UniformGroup::CameraIndex,
         UniformGroup::Object,
     ];
 
-    pub fn struct_name(self) -> &'static str {
+    pub(crate) fn struct_name(self) -> &'static str {
         match self {
             UniformGroup::Render => "render",
             UniformGroup::CameraIndex => "cameraIndex",
@@ -150,6 +150,7 @@ pub enum UpdateType {
 /// graph only names them. This is the whole of `NodeUpdateType` /
 /// `UniformNode.update()` for the ladder so far.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum UniformSource {
     CameraProjectionMatrix,
     CameraViewMatrix,
@@ -337,12 +338,12 @@ pub enum UniformSource {
 pub struct LiveValue(Rc<dyn Fn() -> Vec<f64>>);
 
 impl LiveValue {
-    pub fn new(read: impl Fn() -> Vec<f64> + 'static) -> Self {
+    pub(crate) fn new(read: impl Fn() -> Vec<f64> + 'static) -> Self {
         Self(Rc::new(read))
     }
 
     /// The value now.
-    pub fn get(&self) -> Vec<f64> {
+    pub(crate) fn get(&self) -> Vec<f64> {
         (self.0)()
     }
 }
@@ -378,7 +379,7 @@ impl std::hash::Hash for LiveValue {
 pub struct ObjectUpdate(Rc<ObjectUpdateFn>);
 
 /// The body of an [`ObjectUpdate`]: three's `update( frame )`.
-pub type ObjectUpdateFn = dyn Fn(&NodeFrame) -> Vec<f64>;
+pub(crate) type ObjectUpdateFn = dyn Fn(&NodeFrame) -> Vec<f64>;
 
 /// `NodeFrame` as a node's `update( frame )` sees it, narrowed to what the
 /// port's object-update uniforms read.
@@ -403,14 +404,6 @@ pub struct NodeFrame<'a> {
 }
 
 impl<'a> NodeFrame<'a> {
-    /// A frame with no occlusion results, for a caller outside a render.
-    pub fn new(object: &'a crate::core::Object3D) -> Self {
-        Self {
-            object,
-            occluded: None,
-        }
-    }
-
     /// `frame.renderer.isOccluded( object )`: whether the last occlusion query
     /// the current render context resolved for `object` drew no samples.
     /// Results arrive asynchronously, a frame or more after the draw, so this
@@ -421,18 +414,18 @@ impl<'a> NodeFrame<'a> {
 }
 
 impl ObjectUpdate {
-    pub fn new(update: impl Fn(&crate::core::Object3D) -> Vec<f64> + 'static) -> Self {
+    pub(crate) fn new(update: impl Fn(&crate::core::Object3D) -> Vec<f64> + 'static) -> Self {
         Self(Rc::new(move |frame: &NodeFrame| update(frame.object)))
     }
 
     /// An update that reads more of the frame than its object — see
     /// [`NodeFrame`].
-    pub fn with_frame(update: impl Fn(&NodeFrame) -> Vec<f64> + 'static) -> Self {
+    pub(crate) fn with_frame(update: impl Fn(&NodeFrame) -> Vec<f64> + 'static) -> Self {
         Self(Rc::new(update))
     }
 
     /// `node.update( frame )` — the value for one render object.
-    pub fn value(&self, frame: &NodeFrame) -> Vec<f64> {
+    pub(crate) fn value(&self, frame: &NodeFrame) -> Vec<f64> {
         (self.0)(frame)
     }
 }
@@ -492,7 +485,7 @@ impl std::hash::Hash for SettableValue {
 }
 
 impl UniformSource {
-    pub fn update_type(&self) -> UpdateType {
+    pub(crate) fn update_type(&self) -> UpdateType {
         match self {
             UniformSource::ModelWorldMatrix
             | UniformSource::ModelNormalMatrix
@@ -546,6 +539,7 @@ pub struct UniformNode {
 
 /// Where an array-typed uniform buffer's contents come from — `BufferNode`.
 #[derive(Clone, PartialEq)]
+#[non_exhaustive]
 pub enum BufferSource {
     /// `InstancedMesh.instanceMatrix`.
     InstanceMatrix,
@@ -638,7 +632,7 @@ pub enum BufferSource {
 impl BufferSource {
     /// A `var<storage>` binding rather than a `var<uniform>` one — every
     /// `StorageBufferNode` shape the port has.
-    pub fn is_storage(&self) -> bool {
+    pub(crate) fn is_storage(&self) -> bool {
         matches!(
             self,
             BufferSource::Storage
@@ -651,7 +645,7 @@ impl BufferSource {
     /// The group the binding joins and the name three gives it: the two
     /// camera arrays are `renderGroup` buffers named by `setName()`, and
     /// everything else is an object-group `NodeBuffer_N` (`None`).
-    pub fn group_and_name(&self) -> (UniformGroup, Option<&'static str>) {
+    pub(crate) fn group_and_name(&self) -> (UniformGroup, Option<&'static str>) {
         match self {
             BufferSource::CameraViewMatrices => (UniformGroup::Render, Some("cameraViewMatrices")),
             BufferSource::CameraProjectionMatrices => {
@@ -665,7 +659,7 @@ impl BufferSource {
 /// The skeleton behind [`BufferSource::SkeletonBoneMatrices`], compared by
 /// identity: one skeleton is one buffer however many kernels read it.
 #[derive(Clone)]
-pub struct SkeletonRef(pub Rc<RefCell<crate::objects::Skeleton>>);
+pub struct SkeletonRef(pub(crate) Rc<RefCell<crate::objects::Skeleton>>);
 
 impl PartialEq for SkeletonRef {
     fn eq(&self, other: &Self) -> bool {
@@ -694,7 +688,7 @@ impl StructLayout {
     /// `struct DrawBuffer {\n\tvertexCount : u32,\n … };` —
     /// `WGSLNodeBuilder.getStructMembers()`'s spelling, `atomic< u32 >` with
     /// the spaces three puts inside it.
-    pub fn wgsl(&self) -> String {
+    pub(crate) fn wgsl(&self) -> String {
         let members: Vec<String> = self
             .members
             .iter()
@@ -711,7 +705,7 @@ impl StructLayout {
     }
 
     /// The member's index, by name — `.get( name )`.
-    pub fn member(&self, name: &str) -> usize {
+    pub(crate) fn member(&self, name: &str) -> usize {
         self.members
             .iter()
             .position(|m| m.name == name)
@@ -745,7 +739,7 @@ pub struct WorkgroupArrayDef {
 pub struct BufferId(usize);
 
 impl BufferId {
-    pub fn next() -> Self {
+    pub(crate) fn next() -> Self {
         thread_local! {
             static BUFFER_ID: Cell<usize> = const { Cell::new(0) };
         }
@@ -797,6 +791,7 @@ pub struct BufferNode {
 
 /// The texture a `TextureNode` / `CubeTextureNode` samples.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub enum TextureSource {
     Texture2D(Texture),
     Depth(DepthTexture),
@@ -823,7 +818,7 @@ pub enum TextureSource {
 
 impl TextureSource {
     /// The texture's id — `Texture.id`, whichever class it is.
-    pub fn id(&self) -> usize {
+    pub(crate) fn id(&self) -> usize {
         match self {
             TextureSource::Texture2D(t) | TextureSource::Storage(t, _) => t.id(),
             TextureSource::Depth(t) | TextureSource::ShadowMap(t) => t.id(),
@@ -839,7 +834,7 @@ impl TextureSource {
     /// kernel stores into and a material samples is two bindings of one
     /// texture, so the builder keys its binding names on this as well as on
     /// [`id`](Self::id).
-    pub fn is_storage_binding(&self) -> bool {
+    pub(crate) fn is_storage_binding(&self) -> bool {
         matches!(
             self,
             TextureSource::Storage(..) | TextureSource::Storage3D(..)
@@ -863,7 +858,7 @@ pub enum StorageAccess {
 
 impl StorageAccess {
     /// `WGSLNodeBuilder`'s `accessNames`.
-    pub fn wgsl(self) -> &'static str {
+    pub(crate) fn wgsl(self) -> &'static str {
         match self {
             StorageAccess::WriteOnly => "write",
             StorageAccess::ReadOnly => "read",
@@ -872,7 +867,7 @@ impl StorageAccess {
     }
 
     /// The `wgpu` spelling, for the bind group layout.
-    pub fn wgpu(self) -> wgpu::StorageTextureAccess {
+    pub(crate) fn wgpu(self) -> wgpu::StorageTextureAccess {
         match self {
             StorageAccess::WriteOnly => wgpu::StorageTextureAccess::WriteOnly,
             StorageAccess::ReadOnly => wgpu::StorageTextureAccess::ReadOnly,
@@ -956,6 +951,7 @@ pub enum SampleMode {
 
 /// A WGSL builtin input.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[non_exhaustive]
 pub enum Builtin {
     VertexIndex,
     InstanceIndex,
@@ -978,7 +974,7 @@ pub enum Builtin {
 }
 
 impl Builtin {
-    pub fn name(self) -> &'static str {
+    pub(crate) fn name(self) -> &'static str {
         match self {
             Builtin::VertexIndex => "vertexIndex",
             Builtin::InstanceIndex => "instanceIndex",
@@ -992,7 +988,7 @@ impl Builtin {
         }
     }
 
-    pub fn ty(self) -> Type {
+    pub(crate) fn ty(self) -> Type {
         match self {
             Builtin::VertexIndex | Builtin::InstanceIndex | Builtin::InvocationLocalIndex => {
                 Type::U32
@@ -1198,6 +1194,7 @@ impl ContextValue {
 /// what tells the next rung it has added something the generator cannot emit.
 /// [`Node::Custom`] is the one opening, and it can only compose the others.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum Node {
     /// A literal. `values` holds one entry per component.
     Const {
@@ -1627,7 +1624,7 @@ impl From<Matrix4> for NodeRef {
 /// module-level node objects, and their object identity is what makes the
 /// builder emit one `var` shared by every reference; `thread_local!` + `Rc`
 /// clone reproduces that.
-pub struct Lazy<T: 'static> {
+pub(crate) struct Lazy<T: 'static> {
     cell: RefCell<Option<T>>,
 }
 

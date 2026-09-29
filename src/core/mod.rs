@@ -3,7 +3,7 @@
 mod buffer_geometry;
 mod indirect_storage_buffer_attribute;
 mod layers;
-pub mod node;
+pub(crate) mod node;
 mod object3d;
 mod raycaster;
 mod timer;

@@ -43,7 +43,7 @@ pub struct Data3DTextureInner {
     /// `texture.version`, bumped by `needsUpdate = true`.
     pub version: u32,
     uploaded: u32,
-    pub gpu: Option<wgpu::Texture>,
+    pub(crate) gpu: Option<wgpu::Texture>,
 }
 
 /// Cloning is a handle copy, as in JS.
@@ -194,7 +194,7 @@ impl Data3DTexture {
     /// `WGSLNodeBuilder.isUnfilterable()` for this texture: `NearestFilter` on
     /// both filters (the `Data3DTexture` default), or a format the GPU cannot
     /// filter.
-    pub fn is_unfilterable(&self) -> bool {
+    pub(crate) fn is_unfilterable(&self) -> bool {
         let inner = self.0.borrow();
         let nearest =
             inner.mag_filter == TextureFilter::Nearest && inner.min_filter == MinFilter::Nearest;
@@ -232,23 +232,23 @@ impl Data3DTexture {
         self.0.borrow().version
     }
 
-    pub fn set_gpu(&self, gpu: wgpu::Texture) {
+    pub(crate) fn set_gpu(&self, gpu: wgpu::Texture) {
         self.0.borrow_mut().gpu = Some(gpu);
     }
 
-    pub fn has_gpu(&self) -> bool {
+    pub(crate) fn has_gpu(&self) -> bool {
         self.0.borrow().gpu.is_some()
     }
 
     /// True when the GPU texture is missing, or — for a data texture — the
     /// bytes have moved on since the last upload. A storage texture is never
     /// uploaded to, so once it exists it is current.
-    pub fn needs_upload(&self) -> bool {
+    pub(crate) fn needs_upload(&self) -> bool {
         let inner = self.0.borrow();
         inner.gpu.is_none() || (!inner.is_storage && inner.uploaded != inner.version)
     }
 
-    pub fn mark_uploaded(&self) {
+    pub(crate) fn mark_uploaded(&self) {
         let mut inner = self.0.borrow_mut();
         inner.uploaded = inner.version;
     }

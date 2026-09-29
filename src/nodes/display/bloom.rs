@@ -418,6 +418,7 @@ impl BloomNode {
     /// is the one caller that has to see a material three.js keeps private,
     /// because the generated WGSL of all thirteen modules is what the rung is
     /// graded on before a single pixel is compared.
+    #[doc(hidden)]
     pub fn quad_materials(&self) -> Vec<&MeshBasicNodeMaterial> {
         let mut materials = vec![&self.high_pass.material];
         for mip in &self.blur {

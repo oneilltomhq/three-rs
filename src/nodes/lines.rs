@@ -54,7 +54,7 @@ pub struct LineSegmentsAttributes {
 impl LineSegmentsAttributes {
     /// The number of segments — `InstancedInterleavedBuffer.count`, i.e. the
     /// draw's `instanceCount`.
-    pub fn instance_count(&self) -> usize {
+    pub(crate) fn instance_count(&self) -> usize {
         self.positions.len() / 6
     }
 
@@ -66,25 +66,13 @@ impl LineSegmentsAttributes {
     /// groups instanced attributes by the buffer's `Rc` identity: two separate
     /// `instanced_data_attribute` calls over the same array would be two
     /// vertex buffers, and three's dump has one.
-    pub fn start_end(&self) -> (NodeRef, NodeRef) {
+    pub(crate) fn start_end(&self) -> (NodeRef, NodeRef) {
         Self::pair(&self.positions)
     }
 
     /// `attribute( 'instanceColorStart' )` / `attribute( 'instanceColorEnd' )`.
-    pub fn color_start_end(&self) -> Option<(NodeRef, NodeRef)> {
+    pub(crate) fn color_start_end(&self) -> Option<(NodeRef, NodeRef)> {
         self.colors.as_ref().map(Self::pair)
-    }
-
-    /// `attribute( 'instanceDistanceStart' )` / `…End` — two floats per
-    /// segment rather than two `vec3`s.
-    pub fn distance_start_end(&self) -> Option<(NodeRef, NodeRef)> {
-        self.distances.as_ref().map(|data| {
-            let buffer = instanced_data_buffer(data, 2);
-            (
-                instanced_buffer_attribute(&buffer, 0, Type::F32),
-                instanced_buffer_attribute(&buffer, 1, Type::F32),
-            )
-        })
     }
 
     fn pair(data: &Rc<Vec<f32>>) -> (NodeRef, NodeRef) {

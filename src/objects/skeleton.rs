@@ -2,7 +2,7 @@
 //!
 //! `boneTexture` is the renderer's business (Three allocates a `DataTexture`
 //! from `boneMatrices` in `Skeleton.computeBoneTexture`), so it is left as the
-//! [`Skeleton::bone_matrices`] hook plus [`Skeleton::bone_texture_size`]; the
+//! [`Skeleton::bone_matrices`] hook; the
 //! renderer fills it in at rung 10.
 
 use crate::core::Node;
@@ -131,14 +131,5 @@ impl Skeleton {
             .iter()
             .find(|bone| bone.borrow().name == name)
             .cloned()
-    }
-
-    /// `Skeleton.computeBoneTexture()`'s size computation: the square power-of-two
-    /// RGBA texture that holds `bones.length * 4` pixels. The texture itself is
-    /// the renderer's; this is the hook it needs.
-    pub fn bone_texture_size(&self) -> usize {
-        let mut size = (self.bones.len() as f64 * 4.0).sqrt().ceil();
-        size = (size / 4.0).ceil() * 4.0;
-        size.max(4.0) as usize
     }
 }

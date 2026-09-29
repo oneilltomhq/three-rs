@@ -15,8 +15,8 @@ use std::rc::Rc;
 use three_rs::animation::animation_object_group::{
     AnimationObjectGroup, BindingsForPath, GroupMember, MemberRef,
 };
-use three_rs::animation::binding_target::{BindingTarget, BufferTarget, TargetResolver};
 use three_rs::animation::property_binding::{parse_track_name, ParsedTrackName};
+use three_rs::animation::{BindingTarget, BufferTarget, TargetResolver};
 
 /// Stand-in for `new Object3D()`: identity plus a resolver.
 struct Stub {

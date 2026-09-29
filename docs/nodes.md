@@ -4729,8 +4729,8 @@ true` takes `shapeCircle()`'s smoothed edge and turns on the pipeline's
 alpha-to-coverage (the frame is multisampled). `vertexColors: true` has no
 effect, because the sprite quad has no `color` attribute and three checks
 `geometry.hasAttribute( 'color' )`. The example leaves it off and says so.
-`nodes::builder::with_alpha_to_coverage_samples()` is the public seam
-`dump_wgsl` uses to build the smoothed branch without a renderer.
+The smoothed branch is built only under a renderer, from the frame's
+sample count.
 
 ## 51. `alphaHash` and multi-material groups (`webgpu_materials_alphahash`, `webgpu_materials_arrays`)
 

@@ -107,8 +107,8 @@ pub struct TextureInner {
     /// texture reference's `texCoord`.
     pub channel: usize,
     /// `false` for `renderTarget.texture` — the renderer owns the GPU texture.
-    pub own_gpu: bool,
-    pub gpu: Option<wgpu::Texture>,
+    pub(crate) own_gpu: bool,
+    pub(crate) gpu: Option<wgpu::Texture>,
     /// The format to use if the renderer has to create it (render targets).
     pub format: wgpu::TextureFormat,
     /// `Texture.version` — "starts at 0 and counts how many times
@@ -318,7 +318,7 @@ impl Texture {
     ///
     /// Unlike [`data_r32float`](Self::data_r32float) this keeps all of
     /// `DataTexture`'s own defaults: `NearestFilter` on both sides, which makes
-    /// the map unfilterable ([`is_unfilterable`](Self::is_unfilterable)), so
+    /// the map unfilterable (`is_unfilterable`), so
     /// three binds it with no sampler and reads it with `textureLoad`. That is
     /// what gives a toon ramp its hard steps.
     pub fn data_r8(width: u32, height: u32, data: &[u8]) -> Self {
@@ -554,7 +554,7 @@ impl Texture {
     }
 
     /// Whether the page supplied its own mip levels ([`Self::set_mipmaps`]).
-    pub fn has_mipmaps(&self) -> bool {
+    pub(crate) fn has_mipmaps(&self) -> bool {
         !self.0.borrow().mipmaps.is_empty()
     }
 
@@ -581,7 +581,7 @@ impl Texture {
     /// Three compares against `NearestFilter` exactly, so
     /// `NearestMipmapNearest` and the rest stay filterable; `MinFilter::min()`
     /// would collapse them, which is why this reads the variant.
-    pub fn is_unfilterable(&self) -> bool {
+    pub(crate) fn is_unfilterable(&self) -> bool {
         let inner = self.0.borrow();
         inner.min_filter == MinFilter::Nearest && inner.mag_filter == TextureFilter::Nearest
     }
@@ -734,15 +734,15 @@ impl Texture {
         self.0.borrow().version
     }
 
-    pub fn set_gpu(&self, gpu: wgpu::Texture) {
+    pub(crate) fn set_gpu(&self, gpu: wgpu::Texture) {
         self.0.borrow_mut().gpu = Some(gpu);
     }
 
-    pub fn clear_gpu(&self) {
+    pub(crate) fn clear_gpu(&self) {
         self.0.borrow_mut().gpu = None;
     }
 
-    pub fn has_gpu(&self) -> bool {
+    pub(crate) fn has_gpu(&self) -> bool {
         self.0.borrow().gpu.is_some()
     }
 

@@ -10,11 +10,11 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use three_rs::animation::animation_clip::{AnimationBlendMode, AnimationClip};
-use three_rs::animation::animation_mixer::AnimationMixer;
-use three_rs::animation::binding_target::{BindingTarget, TargetResolver};
-use three_rs::animation::keyframe_track::KeyframeTrack;
 use three_rs::animation::property_binding::ParsedTrackName;
+use three_rs::animation::AnimationMixer;
+use three_rs::animation::KeyframeTrack;
+use three_rs::animation::{AnimationBlendMode, AnimationClip};
+use three_rs::animation::{BindingTarget, TargetResolver};
 
 mod support;
 use support::{EPS, X, Y, Z};
@@ -205,7 +205,7 @@ fn get_root() {
     // mixer's own root is `RootId( 0 )`.
     assert_eq!(
         anim_mixer.get_root(),
-        three_rs::animation::animation_mixer::RootId(0),
+        three_rs::animation::RootId(0),
         "Get original root object"
     );
 }

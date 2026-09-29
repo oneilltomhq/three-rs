@@ -155,18 +155,13 @@ impl<I: Interpolation> Interpolant<I> {
             .unwrap_or_else(|| self.interpolation.default_settings())
     }
 
-    /// The current `_cachedIndex`, exposed because `PropertyMixer` and the
-    /// interpolant tests reason about it.
-    pub fn cached_index(&self) -> usize {
-        self.cached_index
-    }
-
     /// `resultBuffer` after the last `evaluate()`.
     pub fn result_buffer(&self) -> &[f64] {
         &self.data.result_buffer
     }
 
     /// `copySampleValue_( index )`, through the strategy.
+    #[doc(hidden)]
     pub fn copy_sample_value(&mut self, index: usize) -> &[f64] {
         self.interpolation.copy_sample_value(&mut self.data, index);
         &self.data.result_buffer

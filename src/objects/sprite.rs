@@ -95,7 +95,7 @@ impl Sprite {
     /// The sphere `Frustum.intersectsSprite( sprite )` tests: radius
     /// `√½` — the quad's half diagonal — grown by how far `center` is from the
     /// middle, at the object's origin, pushed through `matrixWorld`.
-    pub fn bounding_sphere_in(&self, matrix_world: &Matrix4) -> Sphere {
+    pub(crate) fn bounding_sphere_in(&self, matrix_world: &Matrix4) -> Sphere {
         let default_center = Vector2::new(0.5, 0.5);
         let offset = default_center.distance_to(&self.center);
 

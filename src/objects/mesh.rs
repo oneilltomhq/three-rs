@@ -129,7 +129,7 @@ impl Mesh {
     /// `Mesh.intersectsFrustum( frustum )` needs the world matrix, which lives on
     /// the node; this is the geometry half, i.e. the bounding sphere three.js
     /// lazily computes in `_projectObject`.
-    pub fn bounding_sphere_in(&self, matrix_world: &Matrix4) -> Option<crate::math::Sphere> {
+    pub(crate) fn bounding_sphere_in(&self, matrix_world: &Matrix4) -> Option<crate::math::Sphere> {
         let bounding_sphere = self.geometry.compute_bounding_sphere()?;
         let mut sphere = crate::math::Sphere::new(bounding_sphere.center, bounding_sphere.radius);
         sphere.apply_matrix4(matrix_world);

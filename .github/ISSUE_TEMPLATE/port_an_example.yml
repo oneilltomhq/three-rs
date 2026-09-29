@@ -1,0 +1,35 @@
+name: Port an example
+description: Port a specific three.js webgpu_* example ("a rung") until Three's own grader passes on it.
+labels: ["rung"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        See CONTRIBUTING.md's "Before you start" section: a rung in progress is
+        easy to duplicate, so opening this before you start saves a review that
+        ends in "someone is already on this".
+  - type: input
+    id: example
+    attributes:
+      label: three.js example name
+      description: The example's file name under three.js's `examples/webgpu_*`.
+      placeholder: webgpu_materials_envmaps
+    validations:
+      required: true
+  - type: textarea
+    id: missing
+    attributes:
+      label: What it needs that's missing
+      description: >-
+        Which node types, loaders, renderer features, or addons this example
+        needs that the port doesn't have yet. The per-rung notes in
+        `docs/*-progress.md` show the shape this usually takes.
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else
+      description: Known quirks, divergences from three.js you expect to hit, or related issues.
+    validations:
+      required: false

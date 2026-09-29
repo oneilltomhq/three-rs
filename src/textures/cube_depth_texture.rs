@@ -22,7 +22,7 @@ pub struct CubeDepthTextureInner {
     pub min_filter: TextureFilter,
     /// The GPU texture: a `depth24plus` 2D texture with six array layers,
     /// created by the renderer the first time the shadow is rendered.
-    pub gpu: Option<wgpu::Texture>,
+    pub(crate) gpu: Option<wgpu::Texture>,
 }
 
 #[derive(Clone)]
@@ -66,7 +66,7 @@ impl CubeDepthTexture {
 
     /// `WebGPUTextureUtils.getFormat()` for a `DepthTexture` of
     /// `UnsignedIntType`, which is what the dumped shadow pipeline uses.
-    pub fn gpu_format(&self) -> wgpu::TextureFormat {
+    pub(crate) fn gpu_format(&self) -> wgpu::TextureFormat {
         wgpu::TextureFormat::Depth24Plus
     }
 

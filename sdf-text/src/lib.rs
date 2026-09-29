@@ -33,9 +33,9 @@
 //! [`BatchedText::set_matrix_at`], which updates the sphere as it goes), which
 //! is the same contract as the attribute packing.
 
-pub mod batched_text;
+pub(crate) mod batched_text;
 pub mod edt;
-pub mod error;
+pub(crate) mod error;
 pub mod raster;
 pub mod text;
 pub mod text_builder;
@@ -43,7 +43,7 @@ pub mod vector_font;
 pub mod vector_font_atlas;
 
 pub use batched_text::{BatchedText, BatchedTextOptions, GLYPH_QUAD_PAD};
-pub use edt::{compute_sdf, compute_sdf_default, edt_1d, edt_2d};
+pub use edt::{compute_sdf, compute_sdf_default, edt_1d};
 pub use error::Error;
 pub use text::{OpacitySink, Text};
 pub use text_builder::{

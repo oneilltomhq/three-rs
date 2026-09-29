@@ -304,9 +304,4 @@ impl Vector2 {
 
         self
     }
-
-    /// The two components narrowed to `f32`, for a `vec2<f32>` uniform.
-    pub fn to_f32_array(&self) -> [f32; 2] {
-        [self.x as f32, self.y as f32]
-    }
 }

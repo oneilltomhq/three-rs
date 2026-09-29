@@ -191,7 +191,7 @@ impl AnimationAction {
     }
 
     /// `reset()`.
-    pub fn reset_(&mut self, control: &mut ControlPool) -> &mut Self {
+    pub(crate) fn reset_(&mut self, control: &mut ControlPool) -> &mut Self {
         self.paused = false;
         self.enabled = true;
 
@@ -209,20 +209,24 @@ impl AnimationAction {
     }
 
     /// `startAt( time )`.
-    pub fn start_at_(&mut self, time: f64) -> &mut Self {
+    pub(crate) fn start_at_(&mut self, time: f64) -> &mut Self {
         self.start_time = Some(time);
         self
     }
 
     /// `setLoop( mode, repetitions )`.
-    pub fn set_loop_(&mut self, mode: LoopMode, repetitions: f64) -> &mut Self {
+    pub(crate) fn set_loop_(&mut self, mode: LoopMode, repetitions: f64) -> &mut Self {
         self.loop_mode = mode;
         self.repetitions = repetitions;
         self
     }
 
     /// `setEffectiveWeight( weight )`.
-    pub fn set_effective_weight_(&mut self, weight: f64, control: &mut ControlPool) -> &mut Self {
+    pub(crate) fn set_effective_weight_(
+        &mut self,
+        weight: f64,
+        control: &mut ControlPool,
+    ) -> &mut Self {
         self.weight = weight;
 
         // note: same logic as when updated at runtime
@@ -237,17 +241,27 @@ impl AnimationAction {
     }
 
     /// `fadeIn( duration )`.
-    pub fn fade_in_(&mut self, duration: f64, now: f64, control: &mut ControlPool) -> &mut Self {
+    pub(crate) fn fade_in_(
+        &mut self,
+        duration: f64,
+        now: f64,
+        control: &mut ControlPool,
+    ) -> &mut Self {
         self.schedule_fading_(duration, 0.0, 1.0, now, control)
     }
 
     /// `fadeOut( duration )`.
-    pub fn fade_out_(&mut self, duration: f64, now: f64, control: &mut ControlPool) -> &mut Self {
+    pub(crate) fn fade_out_(
+        &mut self,
+        duration: f64,
+        now: f64,
+        control: &mut ControlPool,
+    ) -> &mut Self {
         self.schedule_fading_(duration, 1.0, 0.0, now, control)
     }
 
     /// `stopFading()`.
-    pub fn stop_fading_(&mut self, control: &mut ControlPool) -> &mut Self {
+    pub(crate) fn stop_fading_(&mut self, control: &mut ControlPool) -> &mut Self {
         if let Some(handle) = self.weight_interpolant.take() {
             control.take_back_control_interpolant(handle);
         }
@@ -255,7 +269,7 @@ impl AnimationAction {
     }
 
     /// `setEffectiveTimeScale( timeScale )`.
-    pub fn set_effective_time_scale_(
+    pub(crate) fn set_effective_time_scale_(
         &mut self,
         time_scale: f64,
         control: &mut ControlPool,
@@ -272,14 +286,14 @@ impl AnimationAction {
     }
 
     /// `setDuration( duration )`.
-    pub fn set_duration_(&mut self, duration: f64, control: &mut ControlPool) -> &mut Self {
+    pub(crate) fn set_duration_(&mut self, duration: f64, control: &mut ControlPool) -> &mut Self {
         self.time_scale = self.clip.duration / duration;
         self.stop_warping_(control)
     }
 
     /// `syncWith( action )`, with the other action's `time` / `timeScale` read
     /// out by the mixer (the arena cannot hand out two `&mut` actions).
-    pub fn sync_with_(
+    pub(crate) fn sync_with_(
         &mut self,
         other_time: f64,
         other_time_scale: f64,
@@ -291,13 +305,18 @@ impl AnimationAction {
     }
 
     /// `halt( duration )`.
-    pub fn halt_(&mut self, duration: f64, now: f64, control: &mut ControlPool) -> &mut Self {
+    pub(crate) fn halt_(
+        &mut self,
+        duration: f64,
+        now: f64,
+        control: &mut ControlPool,
+    ) -> &mut Self {
         let from = self.effective_time_scale;
         self.warp_(from, 0.0, duration, now, control)
     }
 
     /// `warp( startTimeScale, endTimeScale, duration )`.
-    pub fn warp_(
+    pub(crate) fn warp_(
         &mut self,
         start_time_scale: f64,
         end_time_scale: f64,
@@ -326,7 +345,7 @@ impl AnimationAction {
     }
 
     /// `stopWarping()`.
-    pub fn stop_warping_(&mut self, control: &mut ControlPool) -> &mut Self {
+    pub(crate) fn stop_warping_(&mut self, control: &mut ControlPool) -> &mut Self {
         if let Some(handle) = self.time_scale_interpolant.take() {
             control.take_back_control_interpolant(handle);
         }

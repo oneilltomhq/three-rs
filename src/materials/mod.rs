@@ -1,15 +1,15 @@
 //! Ports of `three.js/src/materials/nodes` — under `WebGPURenderer` every
 //! material is a `NodeMaterial`, so this is the only material path.
 
-pub mod blending;
+pub(crate) mod blending;
 mod dfg_lut;
 pub mod environment;
 pub mod lighting_model;
-pub mod line2;
+pub(crate) mod line2;
 mod node_material;
 pub mod phong;
 pub mod physical;
-pub mod toon;
+pub(crate) mod toon;
 pub mod transmission;
 
 pub use node_material::{
@@ -19,9 +19,8 @@ pub use node_material::{
     tone_mapping_node, MrtContext, OutputContext, SetupContext,
 };
 
-pub use blending::{
-    blend_factor, blend_operation, BlendEquation, BlendFactor, BlendMode, Blending,
-};
+pub(crate) use blending::BlendMode;
+pub use blending::{BlendEquation, BlendFactor, Blending};
 
 use std::cell::Cell;
 
@@ -108,6 +107,7 @@ pub enum DepthFunc {
 
 /// `three.js/src/constants.js` tone-mapping modes — the ones the port needs.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum ToneMapping {
     /// `NoToneMapping`.
     #[default]
@@ -129,6 +129,7 @@ pub enum ToneMapping {
 /// one function with a `match`, so a new lighting model cannot be silently
 /// skipped in one of the setup steps.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum MaterialKind {
     /// `MeshBasicNodeMaterial` — `BasicLightingModel`, `lights = false`.
     #[default]
@@ -165,12 +166,12 @@ pub enum MaterialKind {
     /// `Line2NodeMaterial` — the fat line. `BasicLightingModel` like `Basic`,
     /// plus an overridden `setupPosition()` (the screen-space quad) and
     /// `setupDiffuseColor()` (round-cap coverage, per-end instance colour).
-    /// See [`crate::materials::line2`].
+    /// See `crate::materials::line2`.
     Line2,
     /// `MeshToonNodeMaterial` — `ToonLightingModel`: the Lambert flow with
     /// the direct light's `dotNL` replaced by a lookup in
     /// [`gradient_map`](MeshBasicNodeMaterial::gradient_map) (or a fixed
-    /// two-step ramp without one). See [`crate::materials::toon`].
+    /// two-step ramp without one). See `crate::materials::toon`.
     Toon,
 }
 
@@ -240,7 +241,7 @@ pub struct MeshBasicNodeMaterial {
     pub alpha_test: f64,
     /// `Material.alphaHash` — when set, `setupDiffuseColor()` discards the
     /// fragments whose alpha is below `getAlphaHashThreshold( positionLocal )`
-    /// (see [`crate::nodes::alpha_hash`]), the stochastic stand-in for
+    /// (see `crate::nodes::alpha_hash`), the stochastic stand-in for
     /// blending that `webgpu_materials_alphahash` renders.
     pub alpha_hash: bool,
     /// `Material.alphaMap` — `materialOpacity` becomes `opacity * texture(
@@ -693,7 +694,7 @@ impl MeshBasicNodeMaterial {
 
     /// The blending fields `WebGPUPipelineUtils._getBlending()` reads, gathered
     /// into the struct the table takes.
-    pub fn blend_mode(&self) -> BlendMode {
+    pub(crate) fn blend_mode(&self) -> BlendMode {
         BlendMode {
             blending: self.blending,
             premultiplied_alpha: self.premultiplied_alpha,
@@ -709,7 +710,7 @@ impl MeshBasicNodeMaterial {
     /// `WebGPUPipelineUtils.createRenderPipeline()`'s `materialBlending`: the
     /// blend state of the colour target, or `None` when the gate says the
     /// pipeline gets none at all.
-    pub fn blend_state(&self) -> Option<wgpu::BlendState> {
+    pub(crate) fn blend_state(&self) -> Option<wgpu::BlendState> {
         let mode = self.blend_mode();
         if blending::needs_blend_state(&mode, self.transparent) {
             blending::blending(&mode)
@@ -721,7 +722,7 @@ impl MeshBasicNodeMaterial {
     /// `NodeBuilder.isOpaque()` — `transparent === false && blending ===
     /// NormalBlending && alphaToCoverage === false`. What decides whether
     /// `setupDiffuseColor()` ends with `diffuseColor.a = 1.0`.
-    pub fn is_opaque(&self) -> bool {
+    pub(crate) fn is_opaque(&self) -> bool {
         !self.transparent && self.blending == Blending::Normal && !self.alpha_to_coverage
     }
 
@@ -743,7 +744,7 @@ impl MeshBasicNodeMaterial {
     /// (`src/materials/nodes/PointsNodeMaterial.js`), so it inherits
     /// `transparent = true` — which puts a `Points` object in the *transparent*
     /// render list, gives its pipeline a `NormalBlending` blend state, and
-    /// takes it out of [`is_opaque`](Self::is_opaque) so the fragment flow
+    /// takes it out of `is_opaque` so the fragment flow
     /// keeps its per-fragment alpha. `alphaToCoverage` stays **off**: three.js'
     /// own dump of this pipeline has `alphaToCoverageEnabled: false`.
     pub fn points() -> Self {
@@ -787,7 +788,7 @@ impl MeshBasicNodeMaterial {
     /// `this.blending = NoBlending` — three sets it in the constructor because
     /// the material writes its own coverage through the `discard` and must not
     /// have the result blended a second time. That default has teeth here: it
-    /// makes [`is_opaque`](Self::is_opaque) false, so the fragment flow does
+    /// makes `is_opaque` false, so the fragment flow does
     /// **not** emit `DiffuseColor.w = 1.0` (`docs/nodes.md` §8).
     ///
     /// `this._useAlphaToCoverage = true` is the constructor's other default,

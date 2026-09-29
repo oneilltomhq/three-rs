@@ -32,13 +32,14 @@ pub use info::{BuildCounts, ComputeCounts, Info, MemoryCounts, RenderCounts};
 use mipmap::{create_mipmap_pipeline, MipmapShader};
 pub use pass::{pass, CameraRef, PassNode, PassOptions, SceneRef, DEPTH_ATTACHMENT};
 pub use pmrem::PmremGenerator;
+pub(crate) use programs::RenderState;
 use programs::{
     ComputeProgramGpu, ExtraColorTarget, PipelineKey, Program, MAX_EXTRA_COLOR_ATTACHMENTS,
 };
-pub use programs::{LightState, RenderState, UniformContext};
-pub use render_list::{project_object, ProjectCamera, RenderItem, RenderList};
+pub use programs::{LightState, UniformContext};
+pub(crate) use render_list::{project_object, ProjectCamera, RenderItem, RenderList};
 pub use render_pipeline::RenderPipeline;
-pub use render_target::{RenderTarget, RenderTargetInner, RenderTargetOptions, OUTPUT_ATTACHMENT};
+pub use render_target::{RenderTarget, RenderTargetOptions, OUTPUT_ATTACHMENT};
 pub use ssaa_pass::SsaaPassNode;
 
 use crate::cameras::{OrthographicCamera, PerspectiveCamera, RenderCamera};
@@ -714,7 +715,7 @@ pub struct Renderer {
     /// `PassNode.updateBefore()`'s `camera.layers.mask = this._layers.mask` —
     /// the layer mask `_projectObject()` tests against for the duration of one
     /// pass. `None` leaves the camera's own mask alone.
-    pub camera_layers: Option<Layers>,
+    pub(crate) camera_layers: Option<Layers>,
 
     /// `Renderer.sortObjects`. With it off, `_projectObject()` leaves each render
     /// item's `z` alone and the lists keep traversal order.
@@ -780,9 +781,6 @@ pub struct Renderer {
     texture_overrides: Vec<(usize, Texture)>,
     /// `ReflectorNode.js`' module-level `_inReflector`.
     in_reflector: bool,
-    /// How many times `NodeBuilder::build` has run — the number a steady frame
-    /// must leave unchanged. See `program_builds()`.
-    program_builds: u64,
     /// `new Mesh( geometry )`'s implicit `MeshBasicMaterial`, and the shadow
     /// pass's source for a mesh with no material of its own. One instance so
     /// it has one `material.id` for the program cache.
@@ -1174,7 +1172,6 @@ impl Renderer {
             occlusion_context: None,
             texture_overrides: Vec::new(),
             in_reflector: false,
-            program_builds: 0,
             default_material: MeshBasicNodeMaterial::new(),
             output_hook: None,
             background_material: {
@@ -1331,6 +1328,7 @@ impl Renderer {
     ///
     /// Native only — a browser host has no second instance to move to.
     #[cfg(not(target_arch = "wasm32"))]
+    #[doc(hidden)]
     pub fn rebuilt_on(&self, instance: wgpu::Instance) -> Result<Self, Error> {
         let mut renderer = Self::with_instance(
             RendererParameters {
@@ -1355,6 +1353,7 @@ impl Renderer {
     /// later reads. `webgpu_tsl_galaxy` makes five: `new Inspector()` builds
     /// five `List`s and each one's constructor calls `Math.random()`
     /// (`examples/jsm/inspector/ui/List.js:11`).
+    #[doc(hidden)]
     pub fn skip_random_draws(&mut self, n: usize) {
         self.random.skip(n);
     }
@@ -2871,7 +2870,7 @@ impl Renderer {
     ///
     /// Public so a caller can inspect what a frame would draw — the e2e harness
     /// and the lights work of later rungs both want the list without the draw.
-    pub fn project_scene(&self, scene: &Scene, camera: &dyn RenderCamera) -> RenderList {
+    pub(crate) fn project_scene(&self, scene: &Scene, camera: &dyn RenderCamera) -> RenderList {
         let mut render_list = RenderList::new();
         // `PassNode.updateBefore()` writes `camera.layers.mask` and restores it
         // after its render. The port keeps the override on the renderer and
@@ -3835,6 +3834,7 @@ impl Renderer {
     /// Returns the buffer's raw f32 components, `element_ty.components()` per
     /// element. A `vec3` array is **not** tightly packed — see
     /// `storage_stride` — and is not read back this way.
+    #[doc(hidden)]
     pub fn read_storage_buffer(&mut self, array: &StorageArray) -> Result<Vec<f32>, Error> {
         let components = array.element_ty().components();
         assert_eq!(
@@ -3855,6 +3855,7 @@ impl Renderer {
 
     /// [`read_storage_buffer`](Self::read_storage_buffer) for a `u32` /
     /// `atomic<u32>` array, whose bits are not floats.
+    #[doc(hidden)]
     pub fn read_storage_buffer_u32(&mut self, array: &StorageArray) -> Result<Vec<u32>, Error> {
         assert_eq!(
             array.element_ty().component_type(),
@@ -3979,6 +3980,7 @@ impl Renderer {
     ///
     /// The target's textures are created if the renderer has not drawn to it
     /// yet, in which case the pixels are whatever the GPU left there.
+    #[doc(hidden)]
     pub fn read_target_pixels(
         &mut self,
         render_target: &RenderTarget,
@@ -4057,6 +4059,7 @@ impl Renderer {
     /// back as plausible-looking garbage. The conversion is
     /// [`from_half_float`](crate::extras::from_half_float), which is exact, so
     /// what comes back is the texel the GPU wrote and not a re-rounding of it.
+    #[doc(hidden)]
     pub fn read_target_pixels_rgba16f(
         &mut self,
         render_target: &RenderTarget,
@@ -4132,6 +4135,7 @@ impl Renderer {
     /// or its source target — decoded to `f32`, four channels a texel,
     /// top-down, as [`read_target_pixels_rgba16f`](Self::read_target_pixels_rgba16f)
     /// gives a 2-D target.
+    #[doc(hidden)]
     pub fn read_cube_pixels_rgba16f(
         &mut self,
         cube: &CubeTexture,
@@ -4324,7 +4328,6 @@ impl Renderer {
                 .build(&flow)
                 .with_instanced_attributes(&item.setup.instanced_attributes),
         );
-        self.program_builds += 1;
         self.info.build.programs_compiled += 1;
         self.programs
             .entry(node.cache_key)
@@ -4332,13 +4335,6 @@ impl Renderer {
         self.info.memory.programs = self.programs.len();
         states.by_dynamic_key.insert(dynamic_key, node.clone());
         node
-    }
-
-    /// How many times the node builder has generated a program since the
-    /// renderer was created — `renderer.info`'s nearest equivalent. A frame of
-    /// an unchanged scene leaves it where it was; the e2e harness asserts so.
-    pub fn program_builds(&self) -> u64 {
-        self.program_builds
     }
 
     /// `renderer.info`: what the last frame drew and built, and what the
@@ -6276,16 +6272,19 @@ impl Renderer {
 
     /// Entries in the uploaded-geometry cache. A consumer that churns geometry
     /// should see this hold steady, not climb; the e2e suite asserts so.
+    #[doc(hidden)]
     pub fn geometry_cache_len(&self) -> usize {
         self.geometries.len()
     }
 
     /// Entries in `NodeManager.nodeBuilderCache` — one per live `material.id`.
+    #[doc(hidden)]
     pub fn material_cache_len(&self) -> usize {
         self.node_builder_states.len()
     }
 
     /// Entries in the `range()` / instance-buffer cache.
+    #[doc(hidden)]
     pub fn buffer_cache_len(&self) -> usize {
         self.buffers.len()
     }
@@ -6294,6 +6293,7 @@ impl Renderer {
     /// (uniform groups, bone matrices, instance data), texture views, and bind
     /// groups (issue #137). Like the caches above, these should hold steady
     /// under churn rather than climb.
+    #[doc(hidden)]
     pub fn binding_cache_lens(&self) -> (usize, usize, usize) {
         (
             self.slot_buffers.len(),
@@ -6384,7 +6384,7 @@ impl Renderer {
     /// and `renderer.outputColorSpace`: with both neutral,
     /// `needsFrameBufferTarget` is false, so the quad renders into the canvas
     /// and the colour transform comes from the quad's own `fragmentNode`.
-    pub fn with_neutral_output<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
+    pub(crate) fn with_neutral_output<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
         let previous = std::mem::replace(&mut self.neutral_output, true);
         let result = f(self);
         self.neutral_output = previous;
@@ -7092,6 +7092,7 @@ fn attribute_bytes(attribute: &crate::core::BufferAttribute) -> Vec<u8> {
     }
 }
 
+#[doc(hidden)]
 pub fn fill_range(
     random: &mut DeterministicRandom,
     min: [f64; 4],

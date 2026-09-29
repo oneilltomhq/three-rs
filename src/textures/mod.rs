@@ -29,7 +29,7 @@ pub use texture::{MinFilter, Mipmap, Texture, TextureInner, Wrapping};
 /// served the dead one's pixels, the same freed-address bug as issue #58's
 /// geometry cache. A never-reused counter cannot do that.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct TextureId(usize);
+pub(crate) struct TextureId(usize);
 
 /// A `Weak` on a texture handle's shared state, of whichever texture class:
 /// what the renderer keeps beside a GPU resource it made for that texture, so

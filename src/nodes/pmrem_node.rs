@@ -142,11 +142,6 @@ impl PmremEnvironment {
         }
     }
 
-    /// Whether [`update`](Self::update) has run.
-    pub fn is_ready(&self) -> bool {
-        self.built
-    }
-
     /// The PMREM cube, for a test that reads it back.
     pub fn texture(&self) -> &CubeTexture {
         &self.texture

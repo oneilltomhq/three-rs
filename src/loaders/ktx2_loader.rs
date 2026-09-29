@@ -121,6 +121,7 @@ impl Ktx2Class {
 /// what three's texture holds.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u32)]
+#[non_exhaustive]
 pub enum EngineFormat {
     RGB = 1022,
     RGBA = 1023,
@@ -190,7 +191,7 @@ impl Ktx2ColorSpace {
 
     /// `ColorManagement.getTransfer( colorSpace ) === SRGBTransfer` — whether
     /// `getFormat()` picks the `-srgb` GPU format.
-    pub fn is_srgb_transfer(self) -> bool {
+    pub(crate) fn is_srgb_transfer(self) -> bool {
         matches!(self, Ktx2ColorSpace::SRGB | Ktx2ColorSpace::DisplayP3)
     }
 }
@@ -857,7 +858,7 @@ impl Ktx2Texture {
     /// then creates an LDR `astc-4x4-unorm` texture for them — WebGPU has no
     /// HDR ASTC at all. The port does the same rather than invent an HDR
     /// path; no file in the three.js checkout is one.
-    pub fn gpu_format(&self) -> Result<wgpu::TextureFormat, Error> {
+    pub(crate) fn gpu_format(&self) -> Result<wgpu::TextureFormat, Error> {
         use wgpu::{AstcBlock, AstcChannel, TextureFormat as G};
         let srgb = self.color_space.is_srgb_transfer();
         let pick = |linear: G, srgb_format: G| if srgb { srgb_format } else { linear };

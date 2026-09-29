@@ -16,7 +16,7 @@ pub struct CubicInterpolation {
     weight_next: f64,
     offset_next: usize,
     /// `DefaultSettings_`.
-    pub default_settings: InterpolantSettings,
+    pub(crate) default_settings: InterpolantSettings,
 }
 
 impl Default for CubicInterpolation {

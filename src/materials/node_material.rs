@@ -23,6 +23,7 @@ use crate::nodes::{MaterialFlow, NodeRef};
 /// is not on the material is here, so the derived hash is complete by
 /// construction: a field added to this struct is in the key.
 #[derive(Clone, Debug, Default, Hash)]
+#[doc(hidden)]
 pub struct SetupContext {
     /// `scene.environmentNode` — the scene-level environment map, which
     /// `NodeMaterial.setupEnvironment()` falls back to when the material has
@@ -143,6 +144,7 @@ pub struct SetupContext {
 /// construction, which is what keeps a material drawn with the hook and the
 /// same material drawn without it on two different programs.
 #[derive(Clone, Debug)]
+#[doc(hidden)]
 pub struct OutputContext {
     pub node: NodeRef,
 }
@@ -157,6 +159,7 @@ impl std::hash::Hash for OutputContext {
 /// (`renderer.getMRT()`) and `renderTarget.textures.map( t => t.name )`, which
 /// is what `MRTNode.setup()` resolves its output names against.
 #[derive(Clone, Debug, Default, Hash)]
+#[doc(hidden)]
 pub struct MrtContext {
     pub node: crate::nodes::MrtNode,
     pub attachments: Vec<String>,
@@ -168,6 +171,7 @@ pub struct MrtContext {
 /// three.js mutates one shared `ShadowMaterial` per light in place; the port
 /// builds a fresh material per object instead, which is the same thing because
 /// the program is keyed on the generated WGSL.
+#[doc(hidden)]
 pub fn shadow_material(source: &MeshBasicNodeMaterial) -> MeshBasicNodeMaterial {
     shadow_material_for(source, crate::lights::ShadowMapType::Pcf)
 }
@@ -186,6 +190,7 @@ pub fn shadow_material(source: &MeshBasicNodeMaterial) -> MeshBasicNodeMaterial 
 /// — VSM draws the faces the material itself draws, where every other type
 /// draws the opposite ones. (The port has no `material.shadowSide`; it is
 /// always `null` on the ladder.)
+#[doc(hidden)]
 pub fn shadow_material_for(
     source: &MeshBasicNodeMaterial,
     shadow_type: crate::lights::ShadowMapType,
@@ -404,6 +409,7 @@ fn to_float(node: NodeRef) -> NodeRef {
 }
 
 /// `NodeMaterial.setup()`.
+#[doc(hidden)]
 pub fn setup(
     material: &MeshBasicNodeMaterial,
     ctx: &SetupContext,
@@ -922,6 +928,7 @@ fn setup_position_view_points(material: &MeshBasicNodeMaterial) -> NodeRef {
 /// `Background.update()`'s skybox material: the cube map sampled along
 /// `normalWorldGeometry` with the background rotation and LOD, on a sphere
 /// pinned to the far plane.
+#[doc(hidden)]
 pub fn background_color_node(map: &crate::textures::CubeTexture) -> NodeRef {
     let dir = material_env_rotation()
         .mul(background_rotation().mul(vec4_join(vec![normal_world_geometry(), float(1.0)])));
@@ -941,6 +948,7 @@ pub fn background_color_node(map: &crate::textures::CubeTexture) -> NodeRef {
 /// `materialEnvRotation` multiplies as it is — three's own dump reads
 /// `object.nodeUniform1 * ( render.nodeUniform2 * vec4( normalWorldGeometry,
 /// 1.0 ) )` off exactly that.
+#[doc(hidden)]
 pub fn background_pmrem_color_node(pmrem: &crate::materials::environment::PmremHandle) -> NodeRef {
     let uv = background_rotation().mul(vec4_join(vec![normal_world_geometry(), float(1.0)]));
     background_node_color_node(pmrem.sample(uv, background_blurriness()))
@@ -957,6 +965,7 @@ pub fn background_pmrem_color_node(pmrem: &crate::materials::environment::PmremH
 /// each; the port builds it once and shares it, which is the same value.
 ///
 /// [`EnvironmentNode::with_texture_level`]: crate::materials::environment::EnvironmentNode::with_texture_level
+#[doc(hidden)]
 pub fn background_environment_color_node(
     node: &crate::materials::environment::EnvironmentNode,
 ) -> NodeRef {
@@ -968,6 +977,7 @@ pub fn background_environment_color_node(
 /// `vec4( backgroundNode ).mul( backgroundIntensity )`. `vec4()` of a node
 /// that already is one is the node itself — `webgpu_equirectangular`'s
 /// `texture( map, equirectUV(), 0 )` — and of a colour it appends `1.0`.
+#[doc(hidden)]
 pub fn background_node_color_node(node: NodeRef) -> NodeRef {
     let color = match node.ty() {
         Type::Vec4 => node,
@@ -976,6 +986,7 @@ pub fn background_node_color_node(node: NodeRef) -> NodeRef {
     color.mul(background_intensity())
 }
 
+#[doc(hidden)]
 pub fn background_vertex_node() -> NodeRef {
     let is_ortho = camera_projection_matrix()
         .element(3)
@@ -993,6 +1004,7 @@ pub fn background_vertex_node() -> NodeRef {
 
 /// `QuadMesh.render()`'s temporary `vertexNode`: a full-screen triangle driven
 /// entirely by `vertexIndex`.
+#[doc(hidden)]
 pub fn quad_vertex_node() -> NodeRef {
     let x = const_array(vec![-1.0, -1.0, 3.0]).element_node(vertex_index());
     let y = const_array(vec![3.0, -1.0, -1.0]).element_node(vertex_index());
@@ -1012,6 +1024,7 @@ pub fn instanced_range(
 
 /// `Renderer._renderOutput()`'s material: the framebuffer texture sampled at
 /// the fragment coordinate, through `renderOutput()`.
+#[doc(hidden)]
 pub fn output_fragment_node(
     framebuffer: &crate::textures::Texture,
     tone_mapping: ToneMapping,

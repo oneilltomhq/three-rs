@@ -30,7 +30,7 @@
 //!   that: any string that is not one of the six recognised keywords is a no-op
 //!   offset. The `start-anchored` case in the golden exists to pin it.
 //! - **`letter_spacing` is applied asymmetrically.** The measure pass
-//!   ([`vec_measure_run`]) adds it only *between* glyphs, `len - 1` times; the
+//!   (`vec_measure_run`) adds it only *between* glyphs, `len - 1` times; the
 //!   pen loop adds it *after* every glyph, `len` times. So a line's measured
 //!   width is one `letter_spacing` shorter than the pen actually travels, which
 //!   shifts `text_align: center` by half a spacing and `right` by a whole one.
@@ -57,6 +57,7 @@ use crate::vector_font::VectorFont;
 /// Canvas metrics below ~6 px are unreliable, so the JS measures at this size
 /// and scales. It survives into the fallback branch as the source of the
 /// `0.6 em` advance (`MEASURE_FONT_PX * 0.6 * scale`).
+#[doc(hidden)]
 pub const MEASURE_FONT_PX: f64 = 64.0;
 
 /// `anchorX` / `anchorY`. The JS takes `number | string`; a number is negated
@@ -182,6 +183,7 @@ fn parse_float(s: &str) -> Option<f64> {
 /// otherwise, so every other value — `'left'`, `'justify'`, a typo — is
 /// [`TextAlign::Left`].
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum TextAlign {
     #[default]
     Left,
@@ -502,7 +504,7 @@ fn vec_line_advance(line_height: LineHeight, font: &VectorFont, font_size: f64) 
 /// the kerning) added only *between* glyphs. The pen loop in
 /// [`layout_text_vector`] adds the spacing after *every* glyph instead; that
 /// asymmetry is the JS's and is preserved.
-pub fn vec_measure_run(font: &VectorFont, s: &str, letter_spacing: f64, scale: f64) -> f64 {
+pub(crate) fn vec_measure_run(font: &VectorFont, s: &str, letter_spacing: f64, scale: f64) -> f64 {
     let chars: Vec<char> = s.chars().collect();
     let mut w = 0.0;
     for i in 0..chars.len() {

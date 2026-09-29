@@ -11,6 +11,7 @@ use std::rc::Rc;
 
 /// `three.js/src/constants.js` texture types, as far as the port needs them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum TextureType {
     UnsignedByte,
     HalfFloat,
@@ -20,12 +21,12 @@ pub enum TextureType {
 
 impl TextureType {
     /// Whether this type can back a render target's colour attachment.
-    pub fn is_color(self) -> bool {
+    pub(crate) fn is_color(self) -> bool {
         matches!(self, TextureType::UnsignedByte | TextureType::HalfFloat)
     }
 
     /// Whether this type can back a depth attachment.
-    pub fn is_depth(self) -> bool {
+    pub(crate) fn is_depth(self) -> bool {
         matches!(self, TextureType::UnsignedInt | TextureType::Float)
     }
 
@@ -63,7 +64,7 @@ pub struct DepthTextureInner {
     pub height: u32,
     /// The GPU texture, created by the renderer when the owning render target
     /// is first used.
-    pub gpu: Option<wgpu::Texture>,
+    pub(crate) gpu: Option<wgpu::Texture>,
     /// `texture.isMultisampleRenderTargetTexture` — set when the owning render
     /// target's `samples` is raised above 1, which is what makes the node
     /// builder declare the binding `texture_depth_multisampled_2d` and the

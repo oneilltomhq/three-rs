@@ -219,7 +219,7 @@ pub struct Composite<M: GroupMember> {
 impl<M: GroupMember> Composite<M> {
     /// `new Composite( targetGroup, path, optionalParsedPath )`, after the group
     /// has handed out the row for that path.
-    pub fn new(bindings: BindingsForPath<M>, n_cached_objects: Rc<Cell<usize>>) -> Self {
+    pub(crate) fn new(bindings: BindingsForPath<M>, n_cached_objects: Rc<Cell<usize>>) -> Self {
         Self {
             bindings,
             n_cached_objects,
@@ -363,7 +363,7 @@ impl<M: GroupMember> AnimationObjectGroup<M> {
     }
 
     /// The shared `nCachedObjects_` cell, as `Composite` holds it.
-    pub fn n_cached_objects_handle(&self) -> Rc<Cell<usize>> {
+    pub(crate) fn n_cached_objects_handle(&self) -> Rc<Cell<usize>> {
         Rc::clone(&self.n_cached_objects)
     }
 
@@ -643,6 +643,7 @@ impl<M: GroupMember> AnimationObjectGroup<M> {
     /// `subscribe_( path, parsedPath )`: the bindings row for `path`, kept up to
     /// date by `add` / `remove` / `uncache` until `unsubscribe_`.
     #[allow(non_snake_case)]
+    #[doc(hidden)]
     pub fn subscribe_(&mut self, path: &str, parsed_path: &ParsedTrackName) -> BindingsForPath<M> {
         if let Some(&index) = self.bindings_indices_by_path.get(path) {
             return Rc::clone(&self.bindings[index]);
@@ -679,6 +680,7 @@ impl<M: GroupMember> AnimationObjectGroup<M> {
     /// `unsubscribe_( path )`: forget a property path and stop updating the row
     /// previously obtained with [`Self::subscribe_`].
     #[allow(non_snake_case)]
+    #[doc(hidden)]
     pub fn unsubscribe_(&mut self, path: &str) {
         let Some(index) = self.bindings_indices_by_path.remove(path) else {
             return;

@@ -251,7 +251,7 @@ impl PassNode {
 
     /// The pass's depth attachment, sampled at `coord` — the tap
     /// `getTextureNode( 'depth' ).sample( coord )` makes.
-    pub fn depth_texture_node_at(&self, coord: NodeRef) -> NodeRef {
+    pub(crate) fn depth_texture_node_at(&self, coord: NodeRef) -> NodeRef {
         crate::nodes::tsl::pass_depth_texture_uv(&self.depth_texture(), coord)
     }
 

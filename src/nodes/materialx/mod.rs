@@ -1,8 +1,9 @@
 //! Port of `three.js/src/nodes/materialx/` — the MaterialX node library three
 //! ships auto-converted from MaterialX's own GLSL.
 //!
-//! [`mx_nodes`] is the public surface (`MaterialXNodes.js`, which is what TSL
-//! re-exports); the other modules hold the converted functions behind it.
+//! `mx_nodes`, re-exported here, is the public surface (`MaterialXNodes.js`,
+//! which is what TSL re-exports); the other modules hold the converted
+//! functions behind it.
 
 /// A converted `Fn().setLayout()`: its `fn` is built once per thread and
 /// emitted once per shader.
@@ -27,7 +28,7 @@ macro_rules! mx_inline {
 
 mod mx_color;
 mod mx_core;
-pub mod mx_nodes;
+pub(crate) mod mx_nodes;
 mod mx_noise;
 
 pub use mx_nodes::*;

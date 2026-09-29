@@ -18,7 +18,7 @@ use crate::nodes::tsl::*;
 use crate::nodes::NodeRef;
 
 /// `1 / π`.
-pub const RECIPROCAL_PI: f64 = std::f64::consts::FRAC_1_PI;
+pub(crate) const RECIPROCAL_PI: f64 = std::f64::consts::FRAC_1_PI;
 
 // ---------------------------------------------------------------------------
 // material functions
@@ -129,7 +129,7 @@ pub fn brdf_ggx(light_direction: NodeRef, f0: NodeRef, f90: NodeRef) -> NodeRef 
 /// `BRDF_GGX( { lightDirection, f0, f90, roughness, normalView } )` — the
 /// same lobe about another surface: the clearcoat layer calls it with
 /// `clearcoatRoughness` and `clearcoatNormalView`.
-pub fn brdf_ggx_on(
+pub(crate) fn brdf_ggx_on(
     light_direction: NodeRef,
     f0: NodeRef,
     f90: NodeRef,
@@ -912,7 +912,7 @@ pub fn brdf_lambert(diffuse: NodeRef) -> NodeRef {
 /// One light of `LightsNode`'s list through `PhysicalLightingModel`: the
 /// ambient and hemisphere lights add to `irradiance`, the analytic ones go
 /// through `direct()` with `LightNode.setup()`'s direction/colour pair.
-pub fn direct_light(
+pub(crate) fn direct_light(
     model: &Physical,
     light: &LightDesc,
     received_shadow_position: Option<&NodeRef>,

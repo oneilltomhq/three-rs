@@ -15,12 +15,12 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use three_rs::animation::animation_action::LoopMode;
-use three_rs::animation::animation_clip::{AnimationBlendMode, AnimationClip};
-use three_rs::animation::animation_mixer::{ActionHandle, AnimationMixer};
-use three_rs::animation::binding_target::{BindingTarget, TargetResolver};
-use three_rs::animation::keyframe_track::KeyframeTrack;
 use three_rs::animation::property_binding::ParsedTrackName;
+use three_rs::animation::KeyframeTrack;
+use three_rs::animation::LoopMode;
+use three_rs::animation::{ActionHandle, AnimationMixer};
+use three_rs::animation::{AnimationBlendMode, AnimationClip};
+use three_rs::animation::{BindingTarget, TargetResolver};
 
 // ---------------------------------------------------------------- the stub root
 

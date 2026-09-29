@@ -74,7 +74,7 @@ impl DracoArray {
 /// The element type `GLTFLoader` asks `DRACOLoader` for, by glTF
 /// `componentType` (`WEBGL_COMPONENT_TYPES`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum DracoArrayType {
+pub(crate) enum DracoArrayType {
     I8,
     U8,
     I16,

@@ -27,10 +27,17 @@ exclude = [
     "rung0/**",
     # Per-rung progress notes and the WGSL dumps they refer to.
     "docs/*-progress.md",
-    "docs/lines/*.wgsl",
+    "docs/lines/**",
+    "docs/rung*/**",
     # The gallery thumbnails. The README's grid points at raw.githubusercontent
     # URLs (so crates.io renders it), so the bytes need not ship in the crate.
     "docs/gallery/**",
+    # A session handoff note; not part of the crate's documentation.
+    "HANDOFF.md",
+    # Node scripts that dump three.js' own WGSL/GPU descriptors for grading
+    # against, plus their static fixture pages. They need a three.js checkout
+    # and npm, not something a published crate can use.
+    "tools/**",
     # The browser shell (issue #128). A workspace member, not part of this
     # crate: a bin crate that includes the examples as modules and is only ever
     # built for wasm32.

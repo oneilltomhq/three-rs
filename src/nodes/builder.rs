@@ -29,7 +29,7 @@ use super::wgsl::{self, TextureKind};
 /// sets it from the device it opened. The default is WebGPU's guaranteed
 /// minimum, 64 KiB — the value Chrome reports on the grader's adapter, and the
 /// one three.js' own dumps were taken with.
-pub const DEFAULT_UNIFORM_BUFFER_LIMIT: usize = 65536;
+pub(crate) const DEFAULT_UNIFORM_BUFFER_LIMIT: usize = 65536;
 
 std::thread_local! {
     static UNIFORM_BUFFER_LIMIT: std::cell::Cell<usize> =
@@ -37,17 +37,17 @@ std::thread_local! {
 }
 
 /// `builder.getUniformBufferLimit()`.
-pub fn uniform_buffer_limit() -> usize {
+pub(crate) fn uniform_buffer_limit() -> usize {
     UNIFORM_BUFFER_LIMIT.with(|l| l.get())
 }
 
 /// Set by `Renderer::new()` from `device.limits().max_uniform_buffer_binding_size`.
-pub fn set_uniform_buffer_limit(bytes: usize) {
+pub(crate) fn set_uniform_buffer_limit(bytes: usize) {
     UNIFORM_BUFFER_LIMIT.with(|l| l.set(bytes));
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub enum Stage {
+pub(crate) enum Stage {
     Fragment,
     Vertex,
     /// `'compute'`. Not one of `defaultShaderStages`: a compute shader is built
@@ -83,7 +83,7 @@ impl Visibility {
         }
     }
 
-    pub fn stages(self) -> wgpu::ShaderStages {
+    pub(crate) fn stages(self) -> wgpu::ShaderStages {
         let mut s = wgpu::ShaderStages::NONE;
         if self.vertex {
             s |= wgpu::ShaderStages::VERTEX;
@@ -250,7 +250,7 @@ pub struct ComputeProgram {
     pub workgroup_size: [u32; 3],
     /// The `dispatchWorkgroups` arguments.
     pub dispatch: [u32; 3],
-    pub cache_key: u64,
+    pub(crate) cache_key: u64,
 }
 
 pub struct NodeProgram {
@@ -260,14 +260,14 @@ pub struct NodeProgram {
     pub attributes: Vec<AttributeSlot>,
     /// Bind groups in `@group` order.
     pub groups: Vec<Vec<BindingDesc>>,
-    pub cache_key: u64,
+    pub(crate) cache_key: u64,
     /// The geometry attributes that are `InstancedBufferAttribute`s, which
     /// step once per instance. Not the builder's to know — three reads
     /// `isInstancedBufferAttribute` off the geometry in
     /// `WebGPUAttributeUtils.createShaderVertexBuffers()` — so the renderer
     /// fills it from [`SetupContext::instanced_attributes`](crate::materials::SetupContext)
     /// after the build, through [`with_instanced_attributes`](Self::with_instanced_attributes).
-    pub instanced_attributes: Vec<String>,
+    pub(crate) instanced_attributes: Vec<String>,
     /// `nodeBuilderState.updateBeforeNodes`: every node the material reaches
     /// that has an `updateBefore()`, in the order the build met them. A
     /// `ComputeNode` read as a value (`renderer.compute( this )`, once per
@@ -275,17 +275,18 @@ pub struct NodeProgram {
     /// it), a [`CustomNode`] with an update type.
     /// Kept with the program, so a steady frame reads the list and walks no
     /// graph. See `docs/nodes.md` §57.
-    pub update_before: Vec<UpdateNode>,
+    pub(crate) update_before: Vec<UpdateNode>,
     /// `nodeBuilderState.updateNodes`.
-    pub update: Vec<UpdateNode>,
+    pub(crate) update: Vec<UpdateNode>,
     /// `nodeBuilderState.updateAfterNodes`.
-    pub update_after: Vec<UpdateNode>,
+    pub(crate) update_after: Vec<UpdateNode>,
 }
 
 impl NodeProgram {
     /// Mark `names` as per-instance geometry attributes, and fold them into
     /// the cache key: the step mode is baked into the pipeline, so the same
     /// WGSL over a per-vertex `offset` and a per-instance one is two programs.
+    #[doc(hidden)]
     pub fn with_instanced_attributes(mut self, names: &[String]) -> Self {
         if names.is_empty() {
             return self;
@@ -302,6 +303,7 @@ impl NodeProgram {
     /// attributes grouped into vertex buffers, in first-use order — geometry
     /// attributes one per buffer, instanced attributes one buffer per
     /// `InstanceBuffer`.
+    #[doc(hidden)]
     pub fn vertex_buffers(&self) -> Vec<VertexBufferDesc> {
         let mut out: Vec<VertexBufferDesc> = Vec::new();
 
@@ -530,15 +532,6 @@ pub(crate) fn push_context(edit: impl FnOnce(&mut BuildContext)) -> ContextGuard
     })
 }
 
-/// `material.alphaToCoverage && renderer.currentSamples > 0` for every build
-/// inside `f` — what `shapeCircle()` branches on. The renderer sets it around
-/// each material build from the target it draws into; a tool that builds
-/// programs without a renderer (`examples/dump_wgsl.rs`) sets it itself.
-pub fn with_alpha_to_coverage_samples<R>(on: bool, f: impl FnOnce() -> R) -> R {
-    let _guard = push_context(|cx| cx.alpha_to_coverage_samples = on);
-    f()
-}
-
 /// `ContextNode`'s `builder.addContext( value )`: [`push_context`] with
 /// `value`'s keys merged over the current ones.
 fn push_context_value(value: &ContextValue) -> ContextGuard {
@@ -732,7 +725,7 @@ impl NodeBuilder {
 
     /// `Node.analyze()`: count reaches, recursing only the first time a node is
     /// seen. The `usageCount > 1` test is what promotes a `TempNode` to a var.
-    pub fn analyze(&mut self, node: &NodeRef) {
+    pub(crate) fn analyze(&mut self, node: &NodeRef) {
         if let Some(element) = self.array_camera_element(node) {
             self.analyze(&element);
             return;
@@ -1429,7 +1422,7 @@ impl NodeBuilder {
         }
     }
 
-    pub fn generate(&mut self, node: &NodeRef) -> String {
+    pub(crate) fn generate(&mut self, node: &NodeRef) -> String {
         if let Some(element) = self.array_camera_element(node) {
             return self.generate(&element);
         }
@@ -2773,7 +2766,7 @@ pub struct MaterialFlow {
     pub output_node: Option<NodeRef>,
     /// `MRTNode.members` — the values written to the fragment stage's several
     /// colour attachments, already laid out by attachment index (see
-    /// [`MrtNode::members`](crate::nodes::MrtNode::members)).
+    /// `MrtNode::members`).
     ///
     /// `None` is the single-attachment shape every rung before
     /// `webgpu_postprocessing_bloom_selective` has: `struct OutputStruct {
@@ -2884,6 +2877,7 @@ impl NodeBuilder {
     /// — `uniform( 0, 'uint' ).setName( 'u_cameraIndex' ).setGroup(
     /// sharedUniformGroup( 'cameraIndex' ) ).toVarying( 'v_cameraIndex' )`,
     /// which is flat because it is a `u32`. `docs/nodes.md` §40.
+    #[doc(hidden)]
     pub fn with_array_cameras(mut self, count: usize) -> Self {
         if count == 0 {
             return self;
@@ -2931,6 +2925,7 @@ impl NodeBuilder {
         }
     }
 
+    #[doc(hidden)]
     pub fn with_output_components(mut self, components: u32) -> Self {
         self.output_type = match components {
             2 => Type::Vec2,

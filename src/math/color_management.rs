@@ -38,9 +38,6 @@ pub const REC709_PRIMARIES: [f64; 6] = [0.640, 0.330, 0.300, 0.600, 0.150, 0.060
 /// `REC709_LUMINANCE_COEFFICIENTS`.
 pub const REC709_LUMINANCE_COEFFICIENTS: [f64; 3] = [0.2126, 0.7152, 0.0722];
 
-/// `D65`: the reference white `[ x y ]`.
-pub const D65: [f64; 2] = [0.3127, 0.3290];
-
 /// The transfer functions `constants.js` names, i.e. `LinearTransfer` and
 /// `SRGBTransfer`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -125,26 +122,6 @@ impl ColorManagement {
         self.convert(color, source_color_space, Some(self.working_color_space));
     }
 
-    /// `ColorManagement.fromWorkingColorSpace()` — deprecated in r177, renamed
-    /// to `workingToColorSpace()`.
-    pub fn from_working_color_space(
-        &self,
-        color: &mut Color,
-        target_color_space: Option<ColorSpace>,
-    ) {
-        self.working_to_color_space(color, target_color_space);
-    }
-
-    /// `ColorManagement.toWorkingColorSpace()` — deprecated in r177, renamed
-    /// to `colorSpaceToWorking()`.
-    pub fn to_working_color_space(
-        &self,
-        color: &mut Color,
-        source_color_space: Option<ColorSpace>,
-    ) {
-        self.color_space_to_working(color, source_color_space);
-    }
-
     /// `ColorManagement.getPrimaries()`. `None` (`NoColorSpace`) has no
     /// primaries, as in three.js where the lookup would throw.
     pub fn get_primaries(&self, color_space: ColorSpace) -> [f64; 6] {
@@ -167,35 +144,6 @@ impl ColorManagement {
         REC709_LUMINANCE_COEFFICIENTS
     }
 
-    /// `ColorManagement._getMatrix()`.
-    pub fn get_matrix(
-        &self,
-        source_color_space: ColorSpace,
-        target_color_space: ColorSpace,
-    ) -> Matrix3 {
-        let mut target_matrix = Matrix3::identity();
-        target_matrix
-            .copy(&Self::space_to_xyz(source_color_space))
-            .multiply(&Self::space_from_xyz(target_color_space));
-        target_matrix
-    }
-
-    /// `ColorManagement._getDrawingBufferColorSpace()`.
-    pub fn get_drawing_buffer_color_space(&self, _color_space: ColorSpace) -> ColorSpace {
-        // `outputColorSpaceConfig.drawingBufferColorSpace` is `SRGBColorSpace`
-        // for both spaces three.js defines.
-        ColorSpace::SRGB
-    }
-
-    /// `ColorManagement._getUnpackColorSpace()`; only `LinearSRGBColorSpace`
-    /// carries a `workingColorSpaceConfig` in three.js.
-    pub fn get_unpack_color_space(&self, color_space: Option<ColorSpace>) -> Option<ColorSpace> {
-        match color_space.unwrap_or(self.working_color_space) {
-            ColorSpace::LinearSRGB => Some(ColorSpace::SRGB),
-            ColorSpace::SRGB => None,
-        }
-    }
-
     /// `spaces[ colorSpace ].primaries`.
     fn space_primaries(_color_space: ColorSpace) -> [f64; 6] {
         REC709_PRIMARIES
@@ -207,11 +155,6 @@ impl ColorManagement {
             ColorSpace::LinearSRGB => Transfer::Linear,
             ColorSpace::SRGB => Transfer::SRGB,
         }
-    }
-
-    /// `spaces[ colorSpace ].whitePoint`.
-    pub fn get_white_point(&self, _color_space: ColorSpace) -> [f64; 2] {
-        D65
     }
 
     /// `spaces[ colorSpace ].toXYZ`.

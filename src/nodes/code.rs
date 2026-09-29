@@ -15,7 +15,7 @@ use super::node::{NodeRef, Type};
 
 /// What one declared parameter of a `wgslFn` binds to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ParamKind {
+pub(crate) enum ParamKind {
     /// An ordinary value: the argument is generated and padded to this type.
     Value(Type),
     /// `texture_2d<f32>` and friends: the argument must be a texture node, and
@@ -35,9 +35,9 @@ pub struct CodeDef {
     /// the source's own block, verbatim.
     pub code: String,
     /// The declared parameters, in declaration order.
-    pub params: Vec<(String, ParamKind)>,
+    pub(crate) params: Vec<(String, ParamKind)>,
     /// The return type. `void` is not modelled: nothing in the rung uses it.
-    pub ret: Type,
+    pub(crate) ret: Type,
     /// `CodeNode.includes` — the nodes three builds *before* this one, so
     /// whatever they declare is in scope for the hand-written body. Two kinds
     /// reach it: another `wgslFn` this one calls, which lands in `// codes`

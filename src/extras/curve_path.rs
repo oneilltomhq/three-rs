@@ -21,7 +21,7 @@ pub type CurveRef<P> = Rc<dyn Curve<Point = P>>;
 /// `CurvePath.getPoint( t )` is built on `getLength()`, which sums every
 /// sub-curve's length, and the inherited `getPointAt( u )` maps `u` through
 /// `getLengths()`, which calls `getPoint` 201 times. Uncached that is
-/// quadratic, so unlike the leaf curves (see [`super::curve`]) this keeps
+/// quadratic, so unlike the leaf curves (see `super::curve`) this keeps
 /// both of three.js' caches, with three.js' own invalidation rules:
 ///
 /// * `cacheLengths` (the per-curve running sums, `getCurveLengths()`) is

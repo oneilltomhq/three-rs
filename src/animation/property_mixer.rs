@@ -24,7 +24,7 @@ use crate::math::Quaternion;
 /// `_mixBufferRegionAdditive`, `_setIdentity`) this mixer uses — the
 /// `switch ( typeName )` in the JS constructor.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum MixKind {
+pub(crate) enum MixKind {
     /// `'quaternion'`: `_slerp` / `_slerpAdditive` /
     /// `_setAdditiveIdentityQuaternion`, and the extra `work` buffer region.
     Quaternion,

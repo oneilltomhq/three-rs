@@ -156,6 +156,7 @@ impl SceneFog {
     /// cloned, which keeps its identity (and so the program cache key) stable
     /// across frames and across fog objects of the same kind, as three's does
     /// across frames.
+    #[doc(hidden)]
     pub fn node(&self) -> FogNode {
         thread_local! {
             static LINEAR: FogNode = fog(

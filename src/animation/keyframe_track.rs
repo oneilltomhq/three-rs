@@ -127,6 +127,7 @@ impl TrackValueType {
 /// The interpolant a track's `createInterpolant` produced: one variant per
 /// `InterpolantFactoryMethod*`, since `Interpolant<I>` is generic over its
 /// strategy.
+#[non_exhaustive]
 pub enum TrackInterpolant {
     /// `InterpolantFactoryMethodDiscrete`.
     Discrete(Interpolant<DiscreteInterpolation>),
