@@ -2,9 +2,14 @@
 
 use super::{Box3, Line3, Matrix3, Matrix4, Sphere, Vector3};
 
+/// Port of three.js' `Plane`: an infinite plane in
+/// [Hessian normal form](https://mathworld.wolfram.com/HessianNormalForm.html),
+/// represented by a unit-length normal and a signed constant.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Plane {
+    /// A unit length vector defining the normal of the plane.
     pub normal: Vector3,
+    /// The signed distance from the origin to the plane.
     pub constant: f64,
 }
 
@@ -19,8 +24,10 @@ impl Default for Plane {
 }
 
 impl Plane {
+    /// `Plane.isPlane`; always `true`, used for type testing.
     pub const IS_PLANE: bool = true;
 
+    /// `new Plane()`.
     pub const fn new(normal: Vector3, constant: f64) -> Self {
         Self { normal, constant }
     }

@@ -2,9 +2,13 @@
 
 use super::{Box3, Matrix4, Plane, Sphere, Vector3};
 
+/// Port of three.js' `Ray`: an infinite ray from an `origin` along a
+/// `direction`, used by [`Raycaster`](crate::core::Raycaster) for picking.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Ray {
+    /// The origin of the ray.
     pub origin: Vector3,
+    /// The (normalized) direction of the ray.
     pub direction: Vector3,
 }
 
@@ -19,6 +23,7 @@ impl Default for Ray {
 }
 
 impl Ray {
+    /// `new Ray()`.
     pub const fn new(origin: Vector3, direction: Vector3) -> Self {
         Self { origin, direction }
     }

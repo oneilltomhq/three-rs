@@ -21,6 +21,7 @@ pub fn sphere_geometry(
     )
 }
 
+/// `new SphereGeometry( radius, widthSegments, heightSegments, phiStart, phiLength, thetaStart, thetaLength )`.
 pub fn sphere_geometry_full(
     radius: f64,
     width_segments: usize,

@@ -5,8 +5,11 @@ use super::Vector3;
 /// Represents points in 3D space as cylindrical coordinates.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Cylindrical {
+    /// The distance from the origin to a point in the x-z plane.
     pub radius: f64,
+    /// A counterclockwise angle in the x-z plane measured in radians from the positive z-axis.
     pub theta: f64,
+    /// The height above the x-z plane.
     pub y: f64,
 }
 
@@ -18,6 +21,7 @@ impl Default for Cylindrical {
 }
 
 impl Cylindrical {
+    /// `new Cylindrical( radius, theta, y )`.
     pub const fn new(radius: f64, theta: f64, y: f64) -> Self {
         Self { radius, theta, y }
     }

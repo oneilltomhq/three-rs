@@ -21,6 +21,7 @@ pub fn ring_geometry(
     )
 }
 
+/// `new RingGeometry( innerRadius, outerRadius, thetaSegments, phiSegments, thetaStart, thetaLength )`.
 pub fn ring_geometry_full(
     inner_radius: f64,
     outer_radius: f64,

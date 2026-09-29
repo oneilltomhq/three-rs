@@ -15,15 +15,23 @@ use super::{ColorSpace, Matrix3, Vector3};
 /// The `{ h, s, l }` object `Color.getHSL()` fills in.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Hsl {
+    /// Hue, in 0..1.
     pub h: f64,
+    /// Saturation, in 0..1.
     pub s: f64,
+    /// Lightness, in 0..1.
     pub l: f64,
 }
 
+/// Port of `three.js/src/math/Color.js`'s `Color` class: an RGB color, stored
+/// in the working color space (linear-sRGB).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Color {
+    /// The red channel.
     pub r: f64,
+    /// The green channel.
     pub g: f64,
+    /// The blue channel.
     pub b: f64,
 }
 

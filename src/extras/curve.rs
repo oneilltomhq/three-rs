@@ -28,8 +28,11 @@ use crate::math::{Matrix4, Vector2, Vector3};
 /// `{ tangents, normals, binormals }`.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct FrenetFrames {
+    /// The tangent vector at each sampled point.
     pub tangents: Vec<Vector3>,
+    /// The normal vector at each sampled point.
     pub normals: Vec<Vector3>,
+    /// The binormal vector at each sampled point.
     pub binormals: Vec<Vector3>,
 }
 

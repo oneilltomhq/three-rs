@@ -4,14 +4,20 @@ use crate::core::BufferAttribute;
 
 use super::{Box3, Plane, Vector3, Vector4};
 
+/// Port of `three.js/src/math/Triangle.js`'s `Triangle` class: a geometric
+/// triangle defined by three corner vectors.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Triangle {
+    /// The first corner of the triangle.
     pub a: Vector3,
+    /// The second corner of the triangle.
     pub b: Vector3,
+    /// The third corner of the triangle.
     pub c: Vector3,
 }
 
 impl Triangle {
+    /// `new Triangle()`.
     pub const fn new(a: Vector3, b: Vector3, c: Vector3) -> Self {
         Self { a, b, c }
     }

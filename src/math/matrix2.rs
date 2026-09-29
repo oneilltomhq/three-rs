@@ -6,6 +6,7 @@
 //! `Matrix2::new( 11.0, 12.0, 21.0, 22.0 )` gives
 //! `elements == [ 11.0, 21.0, 12.0, 22.0 ]`.
 
+/// Port of three.js' `Matrix2`: a 2x2 matrix.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Matrix2 {
     /// A column-major list of matrix values.

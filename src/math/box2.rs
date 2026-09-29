@@ -2,9 +2,13 @@
 
 use super::Vector2;
 
+/// Port of `three.js/src/math/Box2.js`'s `Box2` class: an axis-aligned
+/// bounding box (AABB) in 2D space.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Box2 {
+    /// The lower boundary of the box.
     pub min: Vector2,
+    /// The upper boundary of the box.
     pub max: Vector2,
 }
 
@@ -19,8 +23,10 @@ impl Default for Box2 {
 }
 
 impl Box2 {
+    /// `Box2.isBox2`.
     pub const IS_BOX2: bool = true;
 
+    /// `new Box2()`.
     pub const fn new(min: Vector2, max: Vector2) -> Self {
         Self { min, max }
     }

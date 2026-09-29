@@ -5,9 +5,13 @@ use crate::core::{BufferAttribute, Node};
 use super::math_utils::{js_max, js_min};
 use super::{Matrix4, Plane, Sphere, Triangle, Vector3};
 
+/// Port of `three.js/src/math/Box3.js`'s `Box3` class: an axis-aligned
+/// bounding box (AABB) in 3D space.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Box3 {
+    /// The lower boundary of the box.
     pub min: Vector3,
+    /// The upper boundary of the box.
     pub max: Vector3,
 }
 
@@ -23,8 +27,10 @@ impl Default for Box3 {
 }
 
 impl Box3 {
+    /// `Box3.isBox3`.
     pub const IS_BOX3: bool = true;
 
+    /// `new Box3()`.
     pub const fn new(min: Vector3, max: Vector3) -> Self {
         Self { min, max }
     }

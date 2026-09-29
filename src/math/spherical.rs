@@ -6,8 +6,11 @@ use super::Vector3;
 /// Represents points in 3D space as spherical coordinates.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Spherical {
+    /// The radius, or the Euclidean distance (straight-line distance) from the point to the origin.
     pub radius: f64,
+    /// The polar angle in radians from the y (up) axis.
     pub phi: f64,
+    /// The equator/azimuthal angle in radians around the y (up) axis.
     pub theta: f64,
 }
 
@@ -19,6 +22,7 @@ impl Default for Spherical {
 }
 
 impl Spherical {
+    /// `new Spherical( radius, phi, theta )`.
     pub const fn new(radius: f64, phi: f64, theta: f64) -> Self {
         Self { radius, phi, theta }
     }
