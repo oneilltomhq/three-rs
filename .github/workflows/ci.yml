@@ -205,6 +205,14 @@ jobs:
       - name: Integration tests (lavapipe)
         run: tools/ci_tests.sh gpu
 
+  # RustSec advisories, dependency licences and sources; the rules are in
+  # deny.toml (#28).
+  deny:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+
   msrv:
     runs-on: ubuntu-latest
     steps:

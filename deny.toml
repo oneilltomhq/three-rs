@@ -1,0 +1,39 @@
+# cargo-deny, run by CI's `deny` job (#28): RustSec advisories, dependency
+# licences, and dependencies from anywhere but crates.io. Run it locally with
+# `cargo deny check` (`cargo install --locked cargo-deny`).
+
+[graph]
+all-features = true
+
+[advisories]
+# Unmaintained crates are reported but do not fail the build; vulnerabilities
+# and yanked versions do.
+unmaintained = "workspace"
+yanked = "deny"
+
+[licenses]
+# Permissive licences only, all compatible with shipping three-rs under MIT.
+allow = [
+    "0BSD",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "MIT",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+confidence-threshold = 0.9
+
+[bans]
+# Duplicate versions come from upstream (winit, wgpu-hal, objc2 on other
+# platforms); they are listed in the job log but do not fail it.
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
