@@ -58,7 +58,7 @@ use crate::nodes::node::{BufferSource, TextureSource};
 use crate::nodes::tsl::FogNode;
 use crate::nodes::tsl::StorageArray;
 use crate::nodes::wgsl::TextureKind;
-use crate::nodes::{BindingDesc, ComputeFlow, NodeBuilder, NodeProgram, Type};
+use crate::nodes::{BindingDesc, ComputeFlow, NodeBuilder, NodeProgram, NodeRef, Type};
 use crate::objects::{Background, InstancedBufferAttribute, QuadMesh, Scene, SceneFog, SubDraw};
 use crate::testing::DeterministicRandom;
 use crate::textures::{
@@ -852,9 +852,12 @@ pub struct Renderer {
     bind_group_cache: HashMap<BindGroupKey, BindGroupEntry>,
     /// The counter [`Serial`]s are numbered from.
     serials: Serials,
-    /// Built `ComputeProgram`s, keyed by the structure of the `ComputeFlow`
-    /// they came from, so a per-frame `compute()` call builds nothing.
-    compute_programs: HashMap<u64, Rc<crate::nodes::ComputeProgram>>,
+    /// Built `ComputeProgram`s, keyed by [`compute_flow_key`] — the identity
+    /// of the `ComputeFlow`'s statement nodes — so a per-frame `compute()`
+    /// call builds nothing. Each entry holds those statements alive: the key
+    /// is their addresses, and a dropped kernel's address handed to a new
+    /// kernel's node would otherwise find the old kernel's program (#231).
+    compute_programs: HashMap<u64, (Vec<NodeRef>, Rc<crate::nodes::ComputeProgram>)>,
     /// Compiled compute pipelines, keyed by `ComputeProgram::cache_key`. A
     /// compute pipeline has no pass state, so this is both levels of the render
     /// path's program/pipeline caches at once.
@@ -3718,11 +3721,12 @@ impl Renderer {
     ) -> Result<(), Error> {
         let key = compute_flow_key(flow);
         let program = match self.compute_programs.get(&key) {
-            Some(program) => program.clone(),
+            Some((_, program)) => program.clone(),
             None => {
                 self.info.build.programs_compiled += 1;
                 let program = Rc::new(NodeBuilder::new().build_compute(flow));
-                self.compute_programs.insert(key, program.clone());
+                self.compute_programs
+                    .insert(key, (flow.statements.clone(), program.clone()));
                 program
             }
         };
@@ -7159,6 +7163,10 @@ fn storage_stride(element_ty: Type) -> usize {
 /// plus everything the generated shader and the dispatch depend on. Node
 /// identity is enough because a `ComputeFlow` is built once and then called
 /// every frame — the same shape as the material path keying on `MaterialKey`.
+///
+/// Identity is an address, so it is only unique while the node is alive —
+/// which is why `compute_programs` keeps the statements of every flow it
+/// has keyed.
 fn compute_flow_key(flow: &ComputeFlow) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
