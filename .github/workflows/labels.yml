@@ -1,0 +1,23 @@
+# Applies .github/labels.yml to the repository's labels (#32). Creates and
+# updates only: a label removed from the file is left in place, since
+# deleting it would strip it from every issue that carries it.
+name: labels
+
+on:
+  push:
+    branches: [main]
+    paths: [.github/labels.yml, .github/workflows/labels.yml]
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EndBug/label-sync@v2
+        with:
+          config-file: .github/labels.yml
+          delete-other-labels: false

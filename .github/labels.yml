@@ -1,0 +1,79 @@
+# The repository's labels, applied by .github/workflows/labels.yml on every
+# push to main that changes this file (#32). The sync creates and updates
+# labels but never deletes one, so a label dropped from here keeps its
+# issues until someone deletes it by hand. What each label is for, from a
+# contributor's side, is in CONTRIBUTING.md under "Labels".
+
+# Kind
+- name: bug
+  color: d73a4a
+  description: Something renders or behaves wrong
+- name: enhancement
+  color: a2eeef
+  description: New capability or ported feature
+- name: rung
+  color: 1d76db
+  description: Porting one three.js example until the grader passes
+- name: api
+  color: 5319e7
+  description: Public API shape, naming, or breaking change
+- name: design
+  color: 0e8a16
+  description: design note ending in decisions
+- name: documentation
+  color: 0075ca
+  description: Docs, doc comments, README
+- name: ci
+  color: fbca04
+  description: Build, lint, test automation
+- name: accessibility
+  color: f143ab
+  description: Barrier affecting people with disabilities
+
+# Area
+- name: area/renderer
+  color: c5def5
+  description: src/renderer, the wgpu backend
+- name: area/materials
+  color: c5def5
+  description: Materials, lights, shadows
+- name: area/nodes
+  color: c5def5
+  description: TSL nodes and the WGSL NodeBuilder
+- name: area/loaders
+  color: c5def5
+  description: glTF, textures
+- name: area/math
+  color: c5def5
+  description: math and core
+- name: area/sdf-text
+  color: c5def5
+  description: The sdf-text crate
+
+# Status
+- name: release-blocker
+  color: b60205
+  description: Must close before the next crates.io release
+- name: good first issue
+  color: 7057ff
+  description: Good for newcomers
+- name: help wanted
+  color: "008672"
+  description: Extra attention is needed
+- name: question
+  color: d876e3
+  description: Further information is requested
+- name: duplicate
+  color: cfd3d7
+  description: This issue or pull request already exists
+- name: invalid
+  color: e4e669
+  description: This doesn't seem right
+- name: wontfix
+  color: ffffff
+  description: This will not be worked on
+
+# History
+- name: wave-2
+  color: 1d76db
+  description: "Second Opus build wave: design-pass builds, textures, compute, shadows, shapes, loaders"

@@ -99,6 +99,26 @@ Things the grader assumes and reviewers will look for:
   divergence list. Both already happen; the notes are what stop the next
   person "fixing" them.
 
+## Labels
+
+Labels are declared in `.github/labels.yml` and applied from there on
+merge, so a new label is a PR against that file. Pick one kind and any
+areas that apply; a maintainer adds status labels.
+
+- **Kind:** `bug` (renders or behaves wrong), `enhancement` (a new
+  capability or ported feature), `rung` (one Three example until the
+  grader passes), `api` (public API shape or a breaking change), `design`
+  (a design note that ends in decisions), `documentation`, `ci`,
+  `accessibility`.
+- **Area:** `area/renderer`, `area/materials`, `area/nodes`,
+  `area/loaders`, `area/math`, `area/sdf-text`, for the part of the tree
+  the work lands in.
+- **Status:** `release-blocker` (must close before the next crates.io
+  release), `good first issue`, `help wanted`, and the closing ones:
+  `duplicate`, `invalid`, `wontfix`, `question`.
+- `wave-2` marks the issues from the second build wave, and new issues
+  don't get it.
+
 ## Commits and merging
 
 Subjects are `area: what it does`, lower case after the colon, no trailing
