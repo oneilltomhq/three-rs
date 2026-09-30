@@ -409,5 +409,5 @@ where it deliberately was not.
 
 ## License
 
-MIT. See `LICENSE`, which also carries the three.js (MIT) notice this port
-derives from.
+MIT, in `LICENSE`. The portions translated from three.js are under three.js'
+own MIT licence, in `LICENSE-three.js`.
