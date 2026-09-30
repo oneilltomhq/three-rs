@@ -363,7 +363,8 @@ Each e2e test writes `actual.png`, the reference, and a diff strip under
 `target/e2e/<example>/`. The grader is unmodified; `rung0/grader-flags.patch`
 is only needed to run Three's *own* Chrome-based e2e suite on Linux with a
 real Vulkan adapter, which is how the reference numbers were calibrated
-(`rung0/RUNG0.md`).
+(`rung0/RUNG0.md`). `docs/grader.md` says what the grader reproduces and
+what a pass means.
 
 One more checkout is optional:
 

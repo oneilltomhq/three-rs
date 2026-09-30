@@ -84,7 +84,8 @@ below, since it needs a real Vulkan adapter that no runner here has yet:
   `CHANGELOG.md`. Every PR appends to that section; a maintainer renames it
   to a version at release time.
 
-Things the grader assumes and reviewers will look for:
+Things the grader assumes and reviewers will look for (`docs/grader.md` has
+the grader itself):
 
 - The grader is Three's own `test/e2e/image.js`, unmodified, with Three's
   threshold. Do not loosen it, do not write a second comparator.
