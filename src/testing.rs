@@ -158,8 +158,8 @@ pub fn vendor_dir(_env_var: &str, name: &str) -> std::path::PathBuf {
     std::path::PathBuf::from("/vendor").join(name)
 }
 
-/// The three.js checkout (`THREE_JS_DIR`), expected at tag r186 with
-/// `handoff/rung0/grader-flags.patch` applied for the e2e tests.
+/// The three.js checkout (`THREE_JS_DIR`), at the commit CI pins
+/// (`THREE_JS_REV` in `.github/workflows/ci.yml`). See `docs/grader.md`.
 pub fn three_js_dir() -> std::path::PathBuf {
     vendor_dir("THREE_JS_DIR", "three.js")
 }

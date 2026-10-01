@@ -68,7 +68,7 @@ machine that took the screenshot, in the normal panel's first four rows and
 the fourth row of the other two. The labels under the panels, which are HTML
 text, match. Grading the page would take a loosened threshold, which the rules
 forbid, so it joins `webgpu_instance_path` and `webgpu_camera` (see
-`docs/webgpu_modifier_curve-progress.md` and HANDOFF.md's rung 0).
+`docs/webgpu_modifier_curve-progress.md` and `docs/grader.md`'s calibration).
 
 No port of the page was attempted, because nothing could grade it. Here is
 where the port stands against three's `reversedDepthBuffer`:

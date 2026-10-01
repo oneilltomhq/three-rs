@@ -32,8 +32,6 @@ exclude = [
     # The gallery thumbnails. The README's grid points at raw.githubusercontent
     # URLs (so crates.io renders it), so the bytes need not ship in the crate.
     "docs/gallery/**",
-    # A session handoff note; not part of the crate's documentation.
-    "HANDOFF.md",
     # Node scripts that dump three.js' own WGSL/GPU descriptors for grading
     # against, plus their static fixture pages. They need a three.js checkout
     # and npm, not something a published crate can use.
