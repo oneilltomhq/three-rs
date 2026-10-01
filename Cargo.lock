@@ -123,7 +123,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "36056503b9996959defdfcf058811637fdf68a2e35a48ee8e39c89a787fe9cdc"
 dependencies = [
  "portable-atomic",
- "ruzstd",
+ "ruzstd 0.7.3",
 ]
 
 [[package]]
@@ -1510,6 +1510,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fad02996bfc73da3e301efe90b1837be9ed8f4a462b6ed410aa35d00381de89f"
 
 [[package]]
+name = "ruzstd"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a252f5e20f038fe7b4ea53e073e65398d652c864cc162fc77c56c2f13717b888"
+
+[[package]]
 name = "same-file"
 version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1783,7 +1789,7 @@ dependencies = [
  "meshopt-rs",
  "png",
  "pollster",
- "ruzstd",
+ "ruzstd 0.9.0",
  "serde_json",
  "web-sys",
  "wgpu",
