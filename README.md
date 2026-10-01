@@ -262,6 +262,15 @@ see `CONTRIBUTING.md`.)
 Requires a Rust toolchain (1.90 or newer) and a Vulkan driver. `wgpu` comes
 from crates.io, pinned to `30.0.1` in `Cargo.toml`; nothing else is unusual.
 
+### wgpu versions
+
+wgpu types are part of the public API (a caller-owned `Device` and `Queue`,
+external textures), so an application that uses wgpu directly must use the
+same wgpu major version as three-rs, or it builds two copies that cannot
+exchange values. Each three-rs minor release tracks one wgpu major: 0.1 and
+0.2 are on wgpu 30. Moving to a new wgpu major is a breaking change, so it
+comes in the next minor release (0.2 to 0.3), never in a patch release.
+
 ```sh
 cargo build --release
 cargo test -p sdf-text --lib                # sdf-text unit tests; no GPU
@@ -409,5 +418,5 @@ where it deliberately was not.
 
 ## License
 
-MIT. See `LICENSE`, which also carries the three.js (MIT) notice this port
-derives from.
+MIT, in `LICENSE`. The portions translated from three.js are under three.js'
+own MIT licence, in `LICENSE-three.js`.

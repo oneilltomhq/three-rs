@@ -1,0 +1,19 @@
+# Weekly version updates for Cargo and GitHub Actions (#22). Security updates
+# for vulnerable dependencies come separately, from the repository's
+# Dependabot security updates setting.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      # wgpu and naga move together and a major bump is a deliberate
+      # three-rs minor release (README, "wgpu versions"), so they get a
+      # PR of their own rather than one per crate.
+      wgpu:
+        patterns: ["wgpu", "wgpu-*", "naga"]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
