@@ -182,6 +182,29 @@ fn atomics_workgroup_memory_and_indirect_dispatch() {
     assert_eq!(read(&mut renderer, &tally), vec![128]);
 }
 
+/// Kernels built, run and dropped one after another: a new kernel's nodes
+/// can be allocated where a dropped one's were freed, and the program cache,
+/// keyed on node addresses, must not take the address for the kernel (#231).
+/// Before the fix one of the first few iterations always ran an earlier
+/// kernel's program, which wrote that kernel's buffer and left this one's at
+/// zero — the same collision that made the indirect `tally` above read 0.
+#[test]
+fn a_kernel_built_where_a_dropped_one_was_runs_its_own_program() {
+    let mut renderer =
+        Renderer::new(RendererParameters::default()).expect("a wgpu adapter and device");
+    for i in 0..100u32 {
+        let out = instanced_array(1, Type::U32);
+        renderer
+            .compute(&kernel(vec![out.element(uint(0)).assign(uint(i + 1))], 1))
+            .unwrap();
+        assert_eq!(
+            renderer.read_storage_buffer_u32(&out).unwrap(),
+            vec![i + 1],
+            "kernel {i}"
+        );
+    }
+}
+
 #[path = "../examples/webgpu_particles.rs"]
 #[allow(dead_code)]
 mod particles;

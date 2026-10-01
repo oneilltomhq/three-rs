@@ -12,6 +12,7 @@ three-rs/nodes_frame
 three-rs/pmrem_equirect
 three-rs/pmrem_scene
 three-rs/renderer_blending
+three-rs/renderer_compute_indirect
 three-rs/renderer_compute_points
 three-rs/renderer_external_device
 three-rs/renderer_half_float_target
@@ -31,6 +32,5 @@ sdf-text/batched_text_refill
 sdf-text/sdf_text_block
 sdf-text/sdf_text_glyph
 
-three-rs/renderer_compute_indirect  its indirect tally reads 0 about one run in three on lavapipe (#231)
 three-rs/e2e                        the pixel ladder, graded on real hardware; lavapipe's numbers against three's screenshots are #18
 sdf-text/d33_treemap_labels         326 of 100000 pixels off d33's own render on lavapipe (Mesa 25.3), over its 250 ceiling
