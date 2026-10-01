@@ -216,7 +216,7 @@ So the key is **material identity × material version × the scene-dependent
 part**. A miss runs `materials::setup()` and `NodeBuilder::build`; a hit hands
 back the material's own `NodeProgram`, whose binding descriptions the draw
 resolves its resources from. `renderer.info().build.programs_compiled` counts
-the misses, and the e2e harness (`steady_frame_builds_nothing`) renders every graded rung
+the misses, and the e2e harness (`steady_frame_builds_nothing`) renders most graded rungs
 three times and asserts the third frame adds none.
 
 Materials are values, so identity is a counter the way `_materialId` is — and

@@ -402,10 +402,12 @@ rung0/          how the grader was calibrated
 tools/          dump-webgpu.mjs, the rung dump hook (see docs/dumping.md)
 ```
 
-`docs/nodes.md` and `docs/scene-graph.md` are the two to read first: how the
-node system maps onto Three's, and how the `Rc<RefCell<Object3D>>` scene graph
-replaces Three's prototype tree. `docs/dumping.md` says how a rung captures
-the WGSL and GPU descriptors it ports against.
+`ARCHITECTURE.md` is the map: one frame through the code, and which note
+explains each part. Of the notes, `docs/nodes.md` and `docs/scene-graph.md`
+are the two to read first: how the node system maps onto Three's, and how the
+`Rc<RefCell<Object3D>>` scene graph replaces Three's prototype tree.
+`docs/dumping.md` says how a rung captures the WGSL and GPU descriptors it
+ports against.
 
 ## How it was built
 
