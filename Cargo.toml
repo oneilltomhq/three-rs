@@ -51,7 +51,7 @@ exclude = [
 # webgpu` (issue #128).
 wgpu = { version = "30.0.1", default-features = false, features = ["std", "wgsl"] }
 bytemuck = { version = "1", features = ["derive"] }
-png = "0.17"
+png = "0.18"
 serde_json = "1"
 zune-jpeg = { version = "0.5.15", default-features = false, features = ["std"] }
 # `KHR_draco_mesh_compression` (issue #139). three.js ships libdraco only as
