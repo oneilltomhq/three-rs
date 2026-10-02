@@ -1,7 +1,8 @@
 # Contributing
 
 Thanks for looking. This page is the process; the README says what the
-project is and how to build it, `docs/api.md` records the API decisions that
+project is and how to build it, `ARCHITECTURE.md` is a map of the code,
+`docs/api.md` records the API decisions that
 are settled, and `docs/nodes.md` and `docs/scene-graph.md` explain the two
 designs everything else hangs off.
 
