@@ -14,12 +14,13 @@ reference, and a doc comment here only repeats it where the port differs.
 Under three.js' `WebGPURenderer`, every material is a `NodeMaterial`, and its
 WGSL is generated from a node graph rather than written by hand. The port
 works the same way, and that is what keeps the grader honest: every example
-reaches the GPU by the same route, so a green rung can't be a hand-tuned
-shader. The exceptions are the mipmap shader in
-`src/renderer/shaders/mipmap.wgsl`, which three.js hand-writes too; the
-viewer's surface blit in `src/renderer/present.rs`, which is outside the
-port; and user code passed through `wgslFn()` (`src/nodes/code.rs`), which
-is verbatim by design.
+reaches the GPU by the same route, so a green rung is the node system's
+output, not a shader tuned to the frame. Three things are hand-written WGSL:
+the mipmap shader in `src/renderer/shaders/mipmap.wgsl`, which three.js
+hand-writes too; the viewer's surface blit in `src/renderer/present.rs`,
+which is outside the port; and user code passed through `wgslFn()`
+(`src/nodes/code.rs`), which is verbatim by design and which two graded
+rungs use, exactly as their three.js pages do.
 
 ## One frame
 
@@ -29,9 +30,9 @@ is verbatim by design.
 1. **Scene graph.** A scene object is a `core::Node`, a newtype over
    `Rc<RefCell<Object3D>>` (`src/core/node.rs`). It shares its name with the
    shader-graph `nodes::Node` of step 4 and nothing else; which one a
-   sentence means is clear from its module. `update_matrix_world()` walks it as
-   three.js does. Why `Rc<RefCell>` and not an arena:
-   [`docs/scene-graph.md`](docs/scene-graph.md).
+   sentence means is clear from its module. Whether that stays so is #250.
+   `update_matrix_world()` walks it as three.js does. Why `Rc<RefCell>` and
+   not an arena: [`docs/scene-graph.md`](docs/scene-graph.md).
 2. **Projection.** `src/renderer/render_list.rs` walks the tree into sorted
    opaque and transparent lists (`projectObject` and `RenderList`); `render()`
    then puts the skybox on the front. The list is the GPU-free part of the
@@ -63,8 +64,13 @@ is verbatim by design.
 ## Renders inside a render
 
 A lot of what an example draws is a nested `render()`. Shadow maps are drawn
-by `render()` itself; the rest are fired from a node's `updateBefore()`
-before the draw that samples it. Each of these lives with the renderer:
+by `render()` itself. Passes render from their node's `updateBefore()`, as
+in three.js. The mirror is `updateBefore()` in three.js too, but the port
+records a pass only after building every item, so it runs the reflectors in
+a walk over the items in draw order before the pass; the module header in
+`reflector.rs` has the reasoning. PMREM is not fired by a node at all: the
+example calls `PmremEnvironment::from_scene()` or `update()` itself. Each of
+these lives with the renderer:
 
 - shadow maps: `render_shadows()` in `mod.rs`
 - the mirror: `src/renderer/reflector.rs`
@@ -78,16 +84,28 @@ Compute kernels are a third route through the same builder:
 
 ## Identity and caching
 
-A shader-graph node is an immutable `Rc<nodes::Node>`, handled as a
-`NodeRef`, and its identity is its address (`src/nodes/node.rs`). The
-per-build state three.js hangs on a node lives in the builder, keyed by that
-address, and dies with the build. An address is not an identity once the
-build is over: a freed one is reused, and a cache keyed by it hands the next
-owner stale GPU objects (#58). So the renderer's caches key on counters that
-are never reused (`Material.id`, `Texture.id`, …) and are swept at the top of
-`render()`, by weak count or by frames since last use. The exception is the
-compute-program cache, which still keys on addresses and holds the nodes to
-keep them unique; it needs eviction (#237).
+A shader-graph node is an `Rc<nodes::Node>`, handled as a `NodeRef`, and
+its identity is its address (`src/nodes/node.rs`). The graph's shape is
+fixed once built; what a node *holds* can move, through a `uniform()`'s
+settable value, a skeleton, or a texture node's value that a reflector swaps
+mid-frame. The per-build state three.js hangs on a node lives in the
+builder, keyed by that address, and dies with the build; per-frame state
+(`updateBefore` guards) lives in the node frame and is swept each frame. An
+address is not an identity once the build is over: a freed one is reused,
+and a cache keyed by it hands the next owner stale GPU objects (#58). So the
+renderer's caches key on counters that are never reused (`Material.id`,
+`Texture.id`, …). The counters are thread-local, which is enough because
+the renderer and everything it caches are `Rc`-based and live on one thread.
+
+Most of those caches are swept at the top of `render()`: geometries and
+textures by weak count, the rest by frames since last use, with a grace
+window of `CACHE_GRACE_FRAMES` (four). A scene drawn less often than that
+is rebuilt each time it is drawn; whether that stays the contract is #249.
+Three caches are not swept. `storage_buffers` is permanent on purpose: a
+compute kernel's buffer *is* the simulation state. `programs` (compiled
+shader modules, layouts, pipelines, keyed by content hash) and the
+compute-program cache (keyed by address, holding the nodes to keep them
+unique) never evict, which is #237.
 
 `renderer.info()` counts what each frame built. The e2e harness checks it two
 ways (`tests/e2e/main.rs`). `steady_frame_builds_nothing` renders most graded
