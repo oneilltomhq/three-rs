@@ -1,5 +1,5 @@
-//! `material.vertexColors` on a line material: one `LineSegments` carrying a
-//! hue per vertex instead of one hue per draw call (issue #46).
+//! `material.vertexColors` on a line material: one `LineSegments` or `Line`
+//! carrying a hue per vertex instead of one hue per draw call (issue #46).
 //!
 //! `MeshBasicNodeMaterial::line( colour )` puts the colour on the material, so
 //! "one hue per branch" used to mean one `LineSegments` per hue — O(branches)
@@ -24,8 +24,8 @@ use std::rc::Rc;
 
 use three_rs::core::{BufferAttribute, BufferGeometry};
 use three_rs::{
-    Color, LineSegments, MeshBasicNodeMaterial, OrthographicCamera, Renderer, RendererParameters,
-    Scene,
+    Color, Line, LineSegments, MeshBasicNodeMaterial, OrthographicCamera, Renderer,
+    RendererParameters, Scene,
 };
 
 const W: usize = 64;
@@ -70,9 +70,14 @@ fn two_segments(colors: Vec<f32>) -> Rc<BufferGeometry> {
 
 /// Render one `LineSegments` on a black background and read the canvas back.
 fn render(geometry: Rc<BufferGeometry>, material: MeshBasicNodeMaterial) -> Vec<u8> {
+    render_node(LineSegments::new(geometry, material))
+}
+
+/// Render one line object on a black background and read the canvas back.
+fn render_node(line: three_rs::Node) -> Vec<u8> {
     let mut scene = Scene::new();
     scene.set_background(Color::from_hex(0x000000));
-    scene.add(&LineSegments::new(geometry, material));
+    scene.add(&line);
 
     let mut camera = OrthographicCamera::new(0.0, W as f64, H as f64, 0.0, -1.0, 1.0);
     let mut renderer = Renderer::new(RendererParameters::default()).unwrap();
@@ -161,5 +166,55 @@ fn the_material_colour_multiplies_the_vertex_colour() {
         middle(&pixels, Y_GREEN),
         [0, 0, 0],
         "a green vertex through a red material has nothing left"
+    );
+}
+
+/// The same through a `Line` — a `line-strip` rather than a `line-list`, which
+/// is its own pipeline topology. The strip runs along the red row, up the
+/// right-hand column and back along the green row; the vertical leg, which
+/// blends red into green, is at `X1` and never crosses the sampled column.
+#[test]
+fn a_line_strip_carries_a_colour_per_vertex() {
+    let (x0, x1) = (X0 as f32, X1 as f32);
+    let (red, green) = (Y_RED as f32, Y_GREEN as f32);
+    let mut geometry = BufferGeometry::new();
+    geometry.set_attribute(
+        "position",
+        BufferAttribute::new(
+            vec![
+                x0, red, 0.0, //
+                x1, red, 0.0, //
+                x1, green, 0.0, //
+                x0, green, 0.0,
+            ],
+            3,
+        ),
+    );
+    geometry.set_attribute(
+        "color",
+        BufferAttribute::new(
+            vec![
+                1.0, 0.0, 0.0, //
+                1.0, 0.0, 0.0, //
+                0.0, 0.0, 1.0, //
+                0.0, 0.0, 1.0,
+            ],
+            3,
+        ),
+    );
+
+    let mut material = MeshBasicNodeMaterial::line(Color::from_hex(0xffffff));
+    material.vertex_colors = true;
+
+    let pixels = render_node(Line::new(Rc::new(geometry), material));
+    assert_eq!(
+        middle(&pixels, Y_RED),
+        [255, 0, 0],
+        "the strip's first leg should be red"
+    );
+    assert_eq!(
+        middle(&pixels, Y_GREEN),
+        [0, 0, 255],
+        "the strip's last leg should be blue"
     );
 }
