@@ -1131,14 +1131,15 @@ impl Renderer {
     /// `new WebGPURenderer( parameters )`, plus the `init()` three.js does
     /// lazily: picking an adapter and creating a device, either of which the
     /// machine can refuse.
+    ///
+    /// Natively every `Renderer::new` in a process shares one instance and one
+    /// adapter, picked by the first call (so `THREE_RS_ADAPTER_NAME` is read
+    /// once); each renderer still gets its own device. See `shared_adapter`
+    /// for why.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn new(parameters: RendererParameters) -> Result<Self, Error> {
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: BACKENDS,
-            ..wgpu::InstanceDescriptor::new_without_display_handle()
-        });
-
-        Self::with_instance(parameters, instance)
+        let adapter = shared_adapter()?;
+        pollster::block_on(Self::with_adapter_async(parameters, adapter))
     }
 
     /// `new WebGPURenderer( parameters )` in a browser: the device the host
@@ -1189,7 +1190,16 @@ impl Renderer {
         instance: wgpu::Instance,
     ) -> Result<Self, Error> {
         let adapter = pick_adapter(&instance).await?;
+        Self::with_adapter_async(parameters, adapter).await
+    }
 
+    /// Request a device on an adapter already picked, and build the renderer
+    /// on it: the half of [`Renderer::with_instance_async`] that
+    /// [`Renderer::new`] shares with it.
+    async fn with_adapter_async(
+        parameters: RendererParameters,
+        adapter: wgpu::Adapter,
+    ) -> Result<Self, Error> {
         // `FLOAT32_FILTERABLE` is what lets an `r32float` texture be sampled
         // through a filtering sampler — the SDF atlas is
         // `DataTexture( Float32Array, RedFormat, FloatType )` with
@@ -7550,6 +7560,51 @@ fn write_face(
             depth_or_array_layers: 1,
         },
     );
+}
+
+/// The one instance and adapter every native [`Renderer::new`] in the process
+/// uses, created and enumerated on first use.
+///
+/// One per renderer would be the natural reading of three.js, and it is what
+/// this did until it segfaulted ~1 run in 7 under a multi-threaded
+/// `cargo test` (#258). The fault is in the Vulkan loader, not here: before
+/// Vulkan-Loader 1.4.350 (KhronosGroup/Vulkan-Loader#1863, fixed by #1866),
+/// `vkEnumeratePhysicalDevices` ends in `unload_drivers_without_physical_devices`,
+/// which frees and unlinks driver entries from its instance while holding only
+/// `loader_lock`; meanwhile `vkSetDebugUtilsObjectNameEXT` — which wgpu calls
+/// for every labelled object whenever `InstanceFlags::DEBUG` is on, i.e. in
+/// every debug build — walks *every* instance's driver list in
+/// `loader_get_icd_and_device` under a different lock. So renderer A naming a
+/// buffer while renderer B, on its own fresh instance, enumerates adapters reads
+/// freed memory. Fedora 43 ships 1.4.341.
+///
+/// Enumerating once per process means the drivers without devices are dropped
+/// once, before any device exists, and nothing ever frees a driver entry
+/// another thread can be walking. It is also cheaper: a fresh instance loads
+/// every ICD and layer again. What remains on the old loader is
+/// `vkDestroyDevice` racing the same walk, whose window is a few
+/// instructions; a loader at or past 1.4.350 closes both.
+///
+/// A failure is cached too: an adapter that was not there at the first
+/// `Renderer::new` is not expected to appear later in the same process.
+#[cfg(not(target_arch = "wasm32"))]
+fn shared_adapter() -> Result<wgpu::Adapter, Error> {
+    static ADAPTER: std::sync::OnceLock<Result<wgpu::Adapter, Option<String>>> =
+        std::sync::OnceLock::new();
+
+    ADAPTER
+        .get_or_init(|| {
+            let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+                backends: BACKENDS,
+                ..wgpu::InstanceDescriptor::new_without_display_handle()
+            });
+            pollster::block_on(pick_adapter(&instance)).map_err(|error| match error {
+                Error::NoAdapter { wanted } => wanted,
+                other => unreachable!("pick_adapter fails only with NoAdapter, not {other}"),
+            })
+        })
+        .clone()
+        .map_err(|wanted| Error::NoAdapter { wanted })
 }
 
 /// The browser has no adapter enumeration: `wgpu::Instance::enumerate_adapters`
