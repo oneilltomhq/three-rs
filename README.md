@@ -20,6 +20,10 @@ below pass the grader; the vast majority of Three's 600-odd examples have not be
 attempted. The API follows Three's object model but is not stable. Vulkan on
 Linux is the only backend that has been run.
 
+[`docs/parity.md`](docs/parity.md) judges every three.js export, row by row,
+as present, partial or absent in the port, with the test or graded example
+that verifies each present row.
+
 ## What is ported
 
 - **Math and core.** Vector/Matrix/Quaternion/Euler/Color and the geometric
@@ -56,12 +60,13 @@ Linux is the only backend that has been run.
   is one — and that stays the preferred shape; these live in the root crate
   because the e2e harness pulls examples in with `#[path = "../../examples/…"]`,
   and an example in another crate would need its own test binary.
-- **Loaders.** glTF/GLB (all accessor types, skins, animations, KHR specular
-  and ior, `EXT_meshopt_compression` and `KHR_mesh_quantization`), textures (PNG, JPEG), cube textures.
-  and ior, `EXT_texture_webp`), textures (PNG, JPEG, GIF, WebP; not AVIF),
-  cube textures.
-  and ior), textures (PNG, JPEG), cube textures, typeface.json fonts
-  (`FontLoader`).
+- **Loaders.** glTF/GLB (all accessor types, skins, animations, `KHR_mesh_quantization`,
+  `KHR_draco_mesh_compression`, `EXT_meshopt_compression`, `KHR_texture_basisu`,
+  `KHR_texture_transform`, `EXT_texture_webp` / `EXT_texture_avif`, and the
+  `KHR_materials_*` extensions: specular, ior, clearcoat, sheen, transmission,
+  volume, anisotropy, diffuse roughness, emissive strength), textures (PNG,
+  JPEG, GIF, WebP, AVIF), cube textures, KTX2, HDR and Ultra HDR, `BufferGeometryLoader`,
+  typeface.json fonts (`FontLoader`).
 - **Animation.** Interpolants, keyframe tracks, clips, `PropertyMixer`,
   `AnimationAction` and `AnimationMixer`.
 - **Workspace crate.** `sdf-text`: signed-distance-field text rendering with
