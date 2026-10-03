@@ -16,12 +16,12 @@
 //! ([`NodeProgram::reads_velocity`](crate::nodes::NodeProgram)), so a frame
 //! that draws nothing into a `velocity` attachment never touches the store:
 //!
-//! * **before the draw's bindings are written** ([`VelocityState::update`]):
+//! * **before the draw's bindings are written** (`VelocityState::update`):
 //!   the object's stored matrix becomes `previousModelWorldMatrix` (seeded with
 //!   the current one the first time the object is seen), and — once per
 //!   `frameId` per camera — the camera's current view and projection rotate
 //!   into its previous ones. On a camera's first frame previous = current.
-//! * **after the draw** ([`VelocityState::update_after`]): the object's current
+//! * **after the draw** (`VelocityState::update_after`): the object's current
 //!   `matrixWorld` is stored for the next frame.
 //!
 //! So on the first frame everything is at rest: velocity is zero wherever
@@ -29,7 +29,7 @@
 //! frame.
 //!
 //! Skinned meshes keep a second history, last frame's bone matrices
-//! ([`VelocityState::rotate_bones`] / [`VelocityState::previous_bones`]): see
+//! (`VelocityState::rotate_bones` / `VelocityState::previous_bones`): see
 //! [`crate::nodes::skinning`].
 
 use std::cell::RefCell;

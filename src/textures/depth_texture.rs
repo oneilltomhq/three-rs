@@ -83,7 +83,7 @@ pub struct DepthTextureInner {
     /// bind-group layout entry `multisampled: true`.
     pub multisample: bool,
     /// Whether the GPU texture is also a copy source and destination — see
-    /// [`DepthTexture::set_copyable`].
+    /// `DepthTexture::set_copyable`.
     pub copyable: bool,
 }
 
