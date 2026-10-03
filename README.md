@@ -15,8 +15,9 @@ from Three's node graph (TSL) by a port of Three's `NodeBuilder`, the way
 correctness is judged by Three's own examples and reference screenshots, not
 by scenes written for the port.
 
-**Status: early, working, incomplete.** The `webgpu_*` examples in the gallery
-below pass the grader; the vast majority of Three's 600-odd examples have not been
+**Status: 85 of 231 three.js WebGPU pages graded.** Early, working, incomplete.
+The `webgpu_*` examples in the gallery below pass the grader; the rest of
+Three's 231 `webgpu_*` pages (and its 600-odd examples overall) have not been
 attempted. The API follows Three's object model but is not stable. Vulkan on
 Linux is the only backend that has been run.
 
@@ -319,7 +320,7 @@ cargo run --release --bin viewer -- 8                        # the same, by key
 cargo run --release --bin viewer -- shadowmap --headless --frames 40
 ```
 
-Opens the named example in a window (winit, tested on Wayland). All 58 graded
+Opens the named example in a window (winit, tested on Wayland). All 85 graded
 examples are there, and so is the ungraded `webgpu_postprocessing_traa`. Each one animates, orbits, dollies and pans through
 its *own* `animate()`, `resize()` and `OrbitControls` — the viewer drives the
 example, it does not restate it. `--list` prints the examples with their keys,
@@ -350,7 +351,7 @@ workspace crates that depend on `three-rs` and are not ports of anything in
 three.js' `src/`.
 
 `three_rs::addons::controls::OrbitControls` is the exception to that rule, and
-it is in the root crate rather than a workspace one: 38 of the 58 graded pages
+it is in the root crate rather than a workspace one: 58 of the 85 graded pages
 create an `OrbitControls`, and an example pulled in by `#[path]` cannot reach a
 crate that depends on `three-rs`. It is a port of
 `examples/jsm/controls/OrbitControls.js` — the same state, the same defaults,
