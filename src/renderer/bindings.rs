@@ -75,13 +75,8 @@ pub(super) enum SlotOwner {
     CameraIndex(u32),
 }
 
-/// The group a vertex buffer's [`SlotKey`] is filed under — no bind group
-/// has this index, so an instance matrix bound as a vertex buffer and the
-/// same matrix bound as a uniform are two buffers, as their usages require.
-pub(super) const VERTEX_SLOTS: u32 = u32::MAX;
-
 /// One persistent per-draw buffer: the owner, the bind group and the binding
-/// within it (or [`VERTEX_SLOTS`] and the vertex buffer slot).
+/// within it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) struct SlotKey {
     pub owner: SlotOwner,

@@ -25,7 +25,7 @@ use std::rc::{Rc, Weak};
 
 use bindings::{
     BindGroupKey, DrawKey, LayoutKey, Occurrences, Resource, SamplerKey, Serial, Serials, SlotKey,
-    SlotOwner, VERTEX_SLOTS,
+    SlotOwner,
 };
 pub use cube_render_target::CubeRenderTarget;
 pub use direct_render_pipeline::DirectRenderPipeline;
@@ -60,7 +60,9 @@ use crate::nodes::tsl::FogNode;
 use crate::nodes::tsl::StorageArray;
 use crate::nodes::wgsl::TextureKind;
 use crate::nodes::{BindingDesc, ComputeFlow, NodeBuilder, NodeProgram, Type};
-use crate::objects::{Background, InstancedBufferAttribute, QuadMesh, Scene, SceneFog, SubDraw};
+use crate::objects::{
+    Background, InstanceData, InstancedBufferAttribute, QuadMesh, Scene, SceneFog, SubDraw,
+};
 use crate::testing::DeterministicRandom;
 use crate::textures::{
     CubeDepthTexture, CubeTexture, Data3DTexture, DataArrayTexture, DataTexture, DataTextureData,
@@ -112,8 +114,21 @@ struct BufferEntry {
     data: Option<Rc<Vec<f32>>>,
 }
 
+/// An `InstancedBufferAttribute`'s GPU buffer — `instanceMatrix`,
+/// `instanceColor` — with the attribute version it last wrote, keyed on the
+/// attribute's id and the buffer usage. three.js' `Attributes` entry: written
+/// again only when `attribute.version` moves, and then into the same buffer
+/// unless the array outgrew it (issue #89). Aged out by
+/// [`CACHE_GRACE_FRAMES`], like [`BufferEntry`]: the attribute is the
+/// application's and the renderer only ever sees a snapshot of it.
+struct AttributeBuffer {
+    buffer: Serial<wgpu::Buffer>,
+    version: u32,
+    last_used: u64,
+}
+
 /// One draw's persistent buffer for one binding — a uniform group, its bone
-/// matrices, its instance matrix — keyed by [`SlotKey`]. three.js'
+/// matrices — keyed by [`SlotKey`]. three.js'
 /// `UniformBuffer`: allocated once, and each frame's bytes are
 /// `queue.write_buffer`n into it; re-created only when a rebuilt program needs
 /// it bigger (issue #137).
@@ -326,11 +341,11 @@ struct Renderable {
     /// is what three.js' own `fog = false` on those materials amounts to.
     fog: Option<FogNode>,
     model_world: Matrix4,
-    instance_matrix: Option<InstancedBufferAttribute>,
+    instance_matrix: Option<InstanceData>,
     /// `InstancedMesh.instanceColor` — the three floats per instance
     /// `setColorAt()` wrote. Carried per draw beside the matrices so two
     /// objects sharing one material cannot share one colour buffer.
-    instance_color: Option<InstancedBufferAttribute>,
+    instance_color: Option<InstanceData>,
     instance_count: u32,
     /// `Mesh.morphTargetInfluences`, and `Morph.js`' `base` uniform, which is
     /// `1 - Σ influences` for non-relative morph targets.
@@ -901,6 +916,10 @@ pub struct Renderer {
     /// by [`CACHE_GRACE_FRAMES`]; the node itself is a material's, not the
     /// renderer's, so there is no strong count to read.
     buffers: HashMap<usize, BufferEntry>,
+    /// `InstancedBufferAttribute` buffers, keyed by `( attribute id, usage )`;
+    /// see [`AttributeBuffer`]. One attribute is one buffer however many draws
+    /// bind it: the shadow pass and the scene pass share it.
+    attribute_buffers: HashMap<(usize, wgpu::BufferUsages), AttributeBuffer>,
     /// `instancedArray()` storage, keyed by `BufferId`. Unlike [`buffers`] this
     /// is **never** aged out and never re-uploaded: the buffer *is* the state —
     /// a compute pass writes it and the next frame reads what it wrote — so
@@ -911,8 +930,8 @@ pub struct Renderer {
     ///
     /// [`buffers`]: Self::buffers
     storage_buffers: HashMap<usize, Serial<wgpu::Buffer>>,
-    /// Each draw's uniform groups, bone matrices, morph influences and
-    /// instance data, one persistent buffer per (draw, group, binding) that
+    /// Each draw's uniform groups, bone matrices and morph influences, one
+    /// persistent buffer per (draw, group, binding) that
     /// every frame writes into rather than re-creating. Keyed on ids, see
     /// [`DrawKey`]; aged out by [`CACHE_GRACE_FRAMES`], since a draw's object
     /// and material have no liveness signal the renderer can read.
@@ -1309,6 +1328,7 @@ impl Renderer {
             cube_textures: HashMap::new(),
             mipmap_pipelines: HashMap::new(),
             buffers: HashMap::new(),
+            attribute_buffers: HashMap::new(),
             storage_buffers: HashMap::new(),
             slot_buffers: HashMap::new(),
             views: HashMap::new(),
@@ -1951,8 +1971,12 @@ impl Renderer {
             let instance_count = geometry
                 .instance_count
                 .map_or_else(|| object.instance_count(), |count| count as u32);
-            let instance_matrix = object.instance_matrix().cloned();
-            let instance_color = object.instance_color().cloned();
+            let instance_matrix = object
+                .instance_matrix()
+                .map(InstancedBufferAttribute::snapshot);
+            let instance_color = object
+                .instance_color()
+                .map(InstancedBufferAttribute::snapshot);
 
             // `SkinningNode`'s `OnObjectUpdate`: `skeleton.update()` runs once
             // per frame per *skeleton*, however many meshes share it, and it
@@ -2232,6 +2256,7 @@ impl Renderer {
                     shadow_blur_samples: shadow.map_or(8.0, |s| s.blur_samples as f64),
                     shadow_map_size: shadow.map_or(Vector2::new(512.0, 512.0), |s| s.map_size),
                     shadow_intensity: shadow.map_or(1.0, |s| s.intensity),
+                    sh: light.sh_intensity(),
                 }
             })
             .collect();
@@ -2460,8 +2485,12 @@ impl Renderer {
                 // The shadow material is never `wireframe`, so neither is the
                 // draw.
                 let primitive = Primitive::of(&object, &geometry, false);
-                let instance_matrix = object.instance_matrix().cloned();
-                let instance_color = object.instance_color().cloned();
+                let instance_matrix = object
+                    .instance_matrix()
+                    .map(InstancedBufferAttribute::snapshot);
+                let instance_color = object
+                    .instance_color()
+                    .map(InstancedBufferAttribute::snapshot);
                 let instance_count = object.instance_count();
 
                 items.push(Renderable {
@@ -2845,8 +2874,12 @@ impl Renderer {
                 // The shadow material is never `wireframe`, so neither is the
                 // draw.
                 let primitive = Primitive::of(&object, &geometry, false);
-                let instance_matrix = object.instance_matrix().cloned();
-                let instance_color = object.instance_color().cloned();
+                let instance_matrix = object
+                    .instance_matrix()
+                    .map(InstancedBufferAttribute::snapshot);
+                let instance_color = object
+                    .instance_color()
+                    .map(InstancedBufferAttribute::snapshot);
                 let instance_count = object.instance_count();
                 items.push(Renderable {
                     object: Some(item.node.clone()),
@@ -3317,21 +3350,13 @@ impl Renderer {
             let vertex_buffers = node
                 .vertex_buffers()
                 .iter()
-                .enumerate()
-                .map(|(slot, desc)| match &desc.source {
+                .map(|desc| match &desc.source {
                     VertexBufferSource::Geometry(name) => {
                         self.geometries[&geometry_id].gpu.attribute(name).clone()
                     }
-                    VertexBufferSource::Instance(buffer) => self.instance_buffer(
-                        SlotKey {
-                            owner,
-                            group: VERTEX_SLOTS,
-                            binding: slot as u32,
-                        },
-                        buffer,
-                        &item.instance_matrix,
-                        &item.instance_color,
-                    ),
+                    VertexBufferSource::Instance(buffer) => {
+                        self.instance_buffer(buffer, &item.instance_matrix, &item.instance_color)
+                    }
                 })
                 .collect();
 
@@ -4282,11 +4307,51 @@ impl Renderer {
         layer: u32,
         mip_level: u32,
     ) -> Result<(u32, u32, Vec<f32>), Error> {
+        let (width, height, bytes) = self.read_cube_bytes(cube, layer, mip_level, |format| {
+            format == wgpu::TextureFormat::Rgba16Float
+        })?;
+        let pixels = bytes
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|half| crate::extras::from_half_float(u16::from_le_bytes(*half)))
+            .collect();
+        Ok((width, height, pixels))
+    }
+
+    /// One face of one mip level of an `UnsignedByteType` [`CubeTexture`] as
+    /// the RGBA8 bytes the GPU holds, top-down — what
+    /// `readRenderTargetPixelsAsync( cubeTarget, 0, 0, w, w, 0, faceIndex )`
+    /// resolves to. An sRGB target's bytes come back still encoded, as
+    /// three's do; `LightProbeGenerator.fromCubeRenderTarget()` decodes them.
+    pub fn read_cube_pixels_rgba8(
+        &mut self,
+        cube: &CubeTexture,
+        layer: u32,
+        mip_level: u32,
+    ) -> Result<(u32, u32, Vec<u8>), Error> {
+        self.read_cube_bytes(cube, layer, mip_level, |format| {
+            matches!(
+                format,
+                wgpu::TextureFormat::Rgba8Unorm | wgpu::TextureFormat::Rgba8UnormSrgb
+            )
+        })
+    }
+
+    /// The copy both cube readbacks share: `layer` of `mip_level`, in the
+    /// texture's own format, which `accepts` must allow.
+    fn read_cube_bytes(
+        &mut self,
+        cube: &CubeTexture,
+        layer: u32,
+        mip_level: u32,
+        accepts: impl Fn(wgpu::TextureFormat) -> bool,
+    ) -> Result<(u32, u32, Vec<u8>), Error> {
         let texture = self.ensure_cube_texture(cube);
         let format = texture.format();
-        if format != wgpu::TextureFormat::Rgba16Float {
+        if !accepts(format) {
             return Err(Error::Readback {
-                reason: format!("{format:?} is not rgba16float"),
+                reason: format!("{format:?} is not the format this readback decodes"),
             });
         }
         let size = texture.width() >> mip_level;
@@ -4298,14 +4363,7 @@ impl Renderer {
             .map_err(|e| Error::Readback {
                 reason: e.to_string(),
             })?;
-        let (width, height, bytes) = readback.finish()?;
-        let pixels = bytes
-            .as_chunks::<2>()
-            .0
-            .iter()
-            .map(|half| crate::extras::from_half_float(u16::from_le_bytes(*half)))
-            .collect();
-        Ok((width, height, pixels))
+        readback.finish()
     }
 
     /// The first half of every readback: a `MAP_READ` buffer, the copy of
@@ -4513,8 +4571,8 @@ impl Renderer {
         owner: SlotOwner,
         node: &NodeProgram,
         uniforms: &UniformContext,
-        instance_matrix: &Option<InstancedBufferAttribute>,
-        instance_color: &Option<InstancedBufferAttribute>,
+        instance_matrix: &Option<InstanceData>,
+        instance_color: &Option<InstanceData>,
     ) -> Vec<wgpu::BindGroup> {
         let mut out = Vec::with_capacity(node.groups.len());
 
@@ -4718,13 +4776,13 @@ impl Renderer {
         source: &BufferSource,
         count: usize,
         element_ty: Type,
-        instance_matrix: &Option<InstancedBufferAttribute>,
-        instance_color: &Option<InstancedBufferAttribute>,
+        instance_matrix: &Option<InstanceData>,
+        instance_color: &Option<InstanceData>,
         uniforms: &UniformContext,
     ) -> Serial<wgpu::Buffer> {
         // `skeleton.update()` rewrites `boneMatrices` every frame, so the bone
-        // buffer is re-written per draw like the instance matrix: kept on the
-        // draw's slot, never on the node's identity.
+        // buffer is re-written per draw: kept on the draw's slot, never on the
+        // node's identity.
         // `Camera.js`' `uniformArray()`s of an `ArrayCamera`'s matrices, which
         // the render group re-uploads every render.
         if let BufferSource::CameraViewMatrices | BufferSource::CameraProjectionMatrices = source {
@@ -4756,10 +4814,34 @@ impl Renderer {
         if let BufferSource::SkeletonBoneMatrices(skeleton) = source {
             return self.skeleton_bone_buffer(slot, skeleton, count);
         }
+        // `LightProbeNode.lightProbe` — the probe's coefficients times its
+        // intensity, which `LightProbeNode.update()` copies in every frame.
+        if let BufferSource::LightProbe(index) = source {
+            let sh = uniforms.lights.get(*index).map_or([[0.0; 4]; 9], |l| l.sh);
+            return self.slot_buffer(
+                slot,
+                "three-rs lightProbe",
+                bytemuck::cast_slice(&sh),
+                wgpu::BufferUsages::UNIFORM,
+            );
+        }
+        // A `uniformArray()` over an array the application changes, read now.
+        if let BufferSource::Live(value) = source {
+            let mut data = vec![0f32; count * 4];
+            for (out, v) in data.iter_mut().zip(value.get()) {
+                *out = v as f32;
+            }
+            return self.slot_buffer(
+                slot,
+                "three-rs live uniformArray",
+                bytemuck::cast_slice(&data),
+                wgpu::BufferUsages::UNIFORM,
+            );
+        }
         if let BufferSource::MorphInfluences = source {
             // `uniformArray( influences, 'float' )`: one `vec4` per target with
             // the influence in `.x`, so 16 bytes each — not 4. Re-written per
-            // draw like the instance matrix: the influences change per frame.
+            // draw: the influences change per frame.
             let mut data = vec![0f32; count * 4];
             for (i, influence) in uniforms.morph_influences.iter().enumerate().take(count) {
                 data[i * 4] = *influence as f32;
@@ -4775,7 +4857,6 @@ impl Renderer {
             return self.storage_buffer_for(id, source, count, element_ty);
         }
         self.buffer_for(
-            slot,
             id,
             source,
             count,
@@ -4879,10 +4960,9 @@ impl Renderer {
     /// branch was taken.
     fn instance_buffer(
         &mut self,
-        slot: SlotKey,
         buffer: &Rc<crate::nodes::node::InstanceBuffer>,
-        instance_matrix: &Option<InstancedBufferAttribute>,
-        instance_color: &Option<InstancedBufferAttribute>,
+        instance_matrix: &Option<InstanceData>,
+        instance_color: &Option<InstanceData>,
     ) -> wgpu::Buffer {
         let id = buffer.id.get();
         // `bufferNode.toAttribute()`: the storage buffer a kernel writes,
@@ -4899,7 +4979,6 @@ impl Renderer {
                 .gpu;
         }
         self.buffer_for(
-            slot,
             id,
             &buffer.source,
             buffer.count,
@@ -4913,24 +4992,22 @@ impl Renderer {
     /// `range()` is filled from the page's `Math.random` exactly once, because
     /// `RangeNode.setup()` runs once — so the buffer is cached on the node's own
     /// identity, never on its min/max/count, which two `range( 0, 1 )` calls
-    /// share. The instance matrix and colours are re-written per draw instead,
-    /// into the draw's own persistent `slot`: their contents change with the
-    /// scene, and three.js re-uploads on `instanceMatrix.version`, which the
-    /// port's `InstancedBufferAttribute` does not have yet (issue #89).
-    // Eight arguments: `node_buffer`'s seven plus the slot, see there.
-    #[allow(clippy::too_many_arguments)]
+    /// share. The instance matrix and colours are cached on their attribute's
+    /// id instead and re-written when its version moves; see
+    /// [`attribute_buffer`](Self::attribute_buffer).
     fn buffer_for(
         &mut self,
-        slot: SlotKey,
         id: usize,
         source: &BufferSource,
         count: usize,
-        instance_matrix: &Option<InstancedBufferAttribute>,
-        instance_color: &Option<InstancedBufferAttribute>,
+        instance_matrix: &Option<InstanceData>,
+        instance_color: &Option<InstanceData>,
         usage: wgpu::BufferUsages,
     ) -> Serial<wgpu::Buffer> {
         match source {
             BufferSource::MorphInfluences
+            | BufferSource::LightProbe(_)
+            | BufferSource::Live(_)
             | BufferSource::BoneMatrices
             | BufferSource::CameraViewMatrices
             | BufferSource::CameraProjectionMatrices
@@ -4945,23 +5022,13 @@ impl Renderer {
                 let attribute = instance_matrix
                     .as_ref()
                     .expect("three-rs: instanceMatrix needs an InstancedMesh");
-                self.slot_buffer(
-                    slot,
-                    "three-rs instanceMatrix",
-                    bytemuck::cast_slice(&attribute.array),
-                    usage,
-                )
+                self.attribute_buffer("three-rs instanceMatrix", attribute, usage)
             }
             BufferSource::InstanceColor => {
                 let attribute = instance_color
                     .as_ref()
                     .expect("three-rs: instanceColor needs an InstancedMesh with setColorAt");
-                self.slot_buffer(
-                    slot,
-                    "three-rs instanceColor",
-                    bytemuck::cast_slice(&attribute.array),
-                    usage,
-                )
+                self.attribute_buffer("three-rs instanceColor", attribute, usage)
             }
             BufferSource::UniformArray(data) => {
                 // `uniformArray( values )`: the values never change (three
@@ -6391,6 +6458,8 @@ impl Renderer {
         self.node_builder_states
             .retain(|_, states| states.last_used >= cutoff);
         self.buffers.retain(|_, entry| entry.last_used >= cutoff);
+        self.attribute_buffers
+            .retain(|_, entry| entry.last_used >= cutoff);
         let frames = self.node_frame.frame_id;
         self.slot_buffers
             .retain(|_, entry| bindings::is_fresh(entry.last_used, frames));
@@ -6530,14 +6599,15 @@ impl Renderer {
         )
     }
 
-    /// Entries in the `range()` / instance-buffer cache.
+    /// Entries in the `range()` / instance-buffer caches: the node buffers and
+    /// the `InstancedBufferAttribute` buffers, both aged out by use.
     #[doc(hidden)]
     pub fn buffer_cache_len(&self) -> usize {
-        self.buffers.len()
+        self.buffers.len() + self.attribute_buffers.len()
     }
 
     /// Entries in the per-draw binding caches: persistent draw buffers
-    /// (uniform groups, bone matrices, instance data), texture views, and bind
+    /// (uniform groups, bone matrices, morph influences), texture views, and bind
     /// groups (issue #137). Like the caches above, these should hold steady
     /// under churn rather than climb.
     #[doc(hidden)]
@@ -6579,6 +6649,50 @@ impl Renderer {
             SlotBuffer {
                 buffer: buffer.clone(),
                 usage,
+                last_used: frames,
+            },
+        );
+        buffer
+    }
+
+    /// The GPU buffer behind an `InstancedBufferAttribute`, as three.js'
+    /// `Attributes.update()` keeps it: created and filled the first time the
+    /// attribute is drawn, written again only when its version has moved since,
+    /// and then into the buffer it already has unless the array outgrew it
+    /// (issue #89). Each fill counts one `buffers_written`, and a steady frame
+    /// counts none.
+    ///
+    /// The whole array is written, not only `InstancedMesh.count` instances of
+    /// it: the shader's uniform array is sized to the array, and three.js writes
+    /// the whole `Float32Array` too. The draw is `count` instances.
+    fn attribute_buffer(
+        &mut self,
+        label: &str,
+        attribute: &InstanceData,
+        usage: wgpu::BufferUsages,
+    ) -> Serial<wgpu::Buffer> {
+        let frames = self.node_frame.frame_id;
+        let bytes: &[u8] = bytemuck::cast_slice(attribute.array.as_slice());
+        if let Some(entry) = self.attribute_buffers.get_mut(&(attribute.id, usage)) {
+            entry.last_used = frames;
+            if entry.version == attribute.version {
+                return entry.buffer.clone();
+            }
+            if entry.buffer.gpu.size() >= bytes.len() as u64 {
+                self.queue.write_buffer(&entry.buffer.gpu, 0, bytes);
+                entry.version = attribute.version;
+                self.info.build.buffers_written += 1;
+                return entry.buffer.clone();
+            }
+        }
+        let buffer = self.create_buffer_init(label, bytes, usage);
+        let buffer = self.serial(buffer);
+        self.info.build.buffers_written += 1;
+        self.attribute_buffers.insert(
+            (attribute.id, usage),
+            AttributeBuffer {
+                buffer: buffer.clone(),
+                version: attribute.version,
                 last_used: frames,
             },
         );

@@ -195,8 +195,10 @@ bind-group layouts and the vertex layout *shape* and not a single binding
 description. Vertex buffers come from `NodeProgram::vertex_buffers()`
 (`docs/nodes.md` §9.2), which is also what the pipeline's vertex layouts were
 built from, so a bound buffer and its layout cannot disagree. Per-node GPU
-buffers are cached by node identity and uploaded once; the instance matrix is
-the exception, re-uploaded each frame because its contents change.
+buffers are cached by node identity and uploaded once. An `InstancedMesh`'s
+`instanceMatrix` and `instanceColor` are cached on the attribute's id and
+re-written, into the same buffer, only when the attribute's version has moved,
+as three.js' `Attributes.update()` does (issue #89).
 
 ### Program cache
 
@@ -266,7 +268,8 @@ correct form for each kind of key. It happens once, at the top of `render()`:
 | `textures_2d`, `cube_textures` | `TextureId` | a `Weak` on the texture handle beside the entry, as for geometries (issue #158) |
 | `node_builder_states` | `material.id` | unused for `CACHE_GRACE_RENDERS` (4) renders |
 | `buffers` (`range()`) | `BufferId` | unused for `CACHE_GRACE_RENDERS` renders |
-| `slot_buffers` (a draw's uniform groups, bone matrices, morph influences, instance data) | `DrawKey` (`Object3D.id`, `BufferGeometry.id`, `material.id`, variant, occurrence in the pass) + group + binding | unused for `CACHE_GRACE_FRAMES` frames |
+| `attribute_buffers` (`instanceMatrix`, `instanceColor`) | attribute id + buffer usage; rewritten when the attribute's version moves | unused for `CACHE_GRACE_FRAMES` frames |
+| `slot_buffers` (a draw's uniform groups, bone matrices, morph influences) | `DrawKey` (`Object3D.id`, `BufferGeometry.id`, `material.id`, variant, occurrence in the pass) + group + binding | unused for `CACHE_GRACE_FRAMES` frames |
 | `views` | `TextureId` + view dimension, one entry per `wgpu::Texture` behind the id | a `Weak` on the texture handle, of any texture class; otherwise unused for `CACHE_GRACE_FRAMES` frames |
 | `bind_group_cache` | layout + the `Serial` of each bound resource | binds a view swept for its `Weak`, or was made against an evicted program's layout; otherwise unused for `CACHE_GRACE_FRAMES` frames |
 | `programs` | content hash of the generated WGSL and bindings | no surviving `node_builder_states` entry names it, and none has for `CACHE_GRACE_FRAMES` frames (issue #237) |
