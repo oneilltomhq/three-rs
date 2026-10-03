@@ -28,13 +28,14 @@ have their own sections after the release they ship with. The format follows [Ke
   scalar edge against a vector emits `step( vec3<f32>( 0.5 ), x )`.
 - `hashBlur`'s WGSL gate compares three's loop exactly. It now blurs
   `viewportSharedTexture()`, as `webgpu_backdrop_area` does.
+- **`SpotLight::new` and `DirectionalLight::new` start the light at
+  `DEFAULT_UP`, (0, 1, 0)**, as three's constructors do. They used to leave
+  it at the origin. A light whose position the application never sets now
+  shines down from one unit up, as in three; a scene that relied on the old
+  origin should set the position itself.
 
 ### Fixed
 
-- `SpotLight::new` and `DirectionalLight::new` put the light at
-  `DEFAULT_UP`, (0, 1, 0), as three's constructors do. They used to leave it
-  at the origin. A light whose position the application never sets now
-  points down from one unit up, as in three.
 - A lit `MeshBasicNodeMaterial` zeroes `indirectDiffuse` before it adds to
   it, as `BasicLightingModel` does.
 
