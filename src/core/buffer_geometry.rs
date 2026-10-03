@@ -57,11 +57,10 @@ impl Default for GeometryId {
 /// `BufferAttribute.id` — three.js' `_id ++` on the attribute class. The same
 /// never-reused counter shape as [`GeometryId`], for the same reason.
 ///
-/// Nothing keys a GPU resource on it yet: the renderer uploads and caches a
-/// whole geometry at a time, so [`GeometryId`] is the cache unit. It is here
-/// because three.js has it, and because a per-attribute upload path (the
-/// `needs_update` follow-up in `docs/scene-graph.md`) would need exactly this
-/// identity to key on.
+/// The renderer uploads and caches a geometry's attributes a whole geometry
+/// at a time, so for them [`GeometryId`] is the cache unit. An
+/// `InstancedMesh`'s `InstancedBufferAttribute`s are cached one by one, on
+/// this id (issue #89).
 #[derive(Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct AttributeId(usize);
 
