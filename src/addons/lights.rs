@@ -70,6 +70,43 @@ impl Projection {
 
 /// `convertColorToLinear( color, colorSpace )`. Every colour space the port
 /// has is one three handles, so there is no warning arm.
+/// One face of a rendered cube into `projection`:
+/// `fromCubeRenderTarget()`'s inner loop, with its WebGPU face table
+/// (`flip = 1`, `renderer.coordinateSystem` is WebGPU's).
+fn project_rendered_face(
+    projection: &mut Projection,
+    face_index: u32,
+    image_width: usize, // assumed to be square
+    data: &[f32],
+    color_space: ColorSpace,
+) {
+    let flip = 1.0;
+    let pixel_size = 2.0 / image_width as f64;
+
+    for (pixel_index, texel) in data.as_chunks::<4>().0.iter().enumerate() {
+        // pixel color
+        let mut color = Color::new(texel[0] as f64, texel[1] as f64, texel[2] as f64);
+
+        // convert to linear color space
+        convert_color_to_linear(&mut color, color_space);
+
+        // pixel coordinate on unit cube
+        let col = (1.0 - ((pixel_index % image_width) as f64 + 0.5) * pixel_size) * flip;
+        let row = 1.0 - ((pixel_index / image_width) as f64 + 0.5) * pixel_size;
+
+        let coord = match face_index {
+            0 => Vector3::new(-flip, row, col * flip),
+            1 => Vector3::new(flip, row, -col * flip),
+            2 => Vector3::new(col, 1.0, -row),
+            3 => Vector3::new(col, -1.0, row),
+            4 => Vector3::new(col, row, 1.0),
+            _ => Vector3::new(-col, row, -1.0),
+        };
+
+        projection.add(coord, color);
+    }
+}
+
 fn convert_color_to_linear(color: &mut Color, color_space: ColorSpace) {
     match color_space {
         ColorSpace::Srgb => {
@@ -158,7 +195,10 @@ impl LightProbeGenerator {
     /// `LightProbeGenerator.fromCubeRenderTarget( renderer, cubeRenderTarget
     /// )` — the same projection over a cube the GPU rendered, read back one
     /// face at a time (`readRenderTargetPixelsAsync( target, 0, 0, w, w, 0,
-    /// faceIndex )`; blocking here, as every readback in the port is).
+    /// faceIndex )`), awaited as three's is: in a browser a readback is a
+    /// promise, and this is the one `webgpu_lightprobe_cubecamera` awaits in
+    /// its `init()`. Native callers that can block have
+    /// [`from_cube_render_target`](Self::from_cube_render_target).
     ///
     /// The face table is three's WebGPU one (`flip = 1`): a render target's
     /// faces come back in the orientation the cube camera drew them, which is
@@ -174,11 +214,10 @@ impl LightProbeGenerator {
     /// Whatever the readback reports: [`Error::Readback`] for a format it
     /// cannot read (a `FloatType` target, which the port's cube targets never
     /// are).
-    pub fn from_cube_render_target(
+    pub async fn from_cube_render_target_async(
         renderer: &mut Renderer,
         cube_render_target: &CubeTexture,
     ) -> Result<Node, Error> {
-        let flip = 1.0; // `renderer.coordinateSystem` is WebGPU's
         let texture_type = cube_render_target.texture_type();
         let color_space = cube_render_target.color_space();
 
@@ -186,41 +225,45 @@ impl LightProbeGenerator {
         for face_index in 0..6u32 {
             let (image_width, _, data): (u32, u32, Vec<f32>) = match texture_type {
                 TextureType::HalfFloat => {
-                    renderer.read_cube_pixels_rgba16f(cube_render_target, face_index, 0)?
+                    renderer
+                        .read_cube_pixels_rgba16f_async(cube_render_target, face_index, 0)
+                        .await?
                 }
                 _ => {
-                    let (w, h, bytes) =
-                        renderer.read_cube_pixels_rgba8(cube_render_target, face_index, 0)?;
+                    let (w, h, bytes) = renderer
+                        .read_cube_pixels_rgba8_async(cube_render_target, face_index, 0)
+                        .await?;
                     (w, h, bytes.iter().map(|&b| b as f32 / 255.0).collect())
                 }
             };
-            let image_width = image_width as usize; // assumed to be square
-            let pixel_size = 2.0 / image_width as f64;
-
-            for (pixel_index, texel) in data.as_chunks::<4>().0.iter().enumerate() {
-                // pixel color
-                let mut color = Color::new(texel[0] as f64, texel[1] as f64, texel[2] as f64);
-
-                // convert to linear color space
-                convert_color_to_linear(&mut color, color_space);
-
-                // pixel coordinate on unit cube
-                let col = (1.0 - ((pixel_index % image_width) as f64 + 0.5) * pixel_size) * flip;
-                let row = 1.0 - ((pixel_index / image_width) as f64 + 0.5) * pixel_size;
-
-                let coord = match face_index {
-                    0 => Vector3::new(-flip, row, col * flip),
-                    1 => Vector3::new(flip, row, -col * flip),
-                    2 => Vector3::new(col, 1.0, -row),
-                    3 => Vector3::new(col, -1.0, row),
-                    4 => Vector3::new(col, row, 1.0),
-                    _ => Vector3::new(-col, row, -1.0),
-                };
-
-                projection.add(coord, color);
-            }
+            project_rendered_face(
+                &mut projection,
+                face_index,
+                image_width as usize,
+                &data,
+                color_space,
+            );
         }
 
         Ok(LightProbe::new(projection.finish(), 1.0))
+    }
+
+    /// [`from_cube_render_target_async`](Self::from_cube_render_target_async)
+    /// for a caller that can block: native code, where every readback is over
+    /// by the time its future is first polled, so blocking on it is free. Not
+    /// built for wasm32, where blocking on a promise would spin forever.
+    ///
+    /// # Errors
+    ///
+    /// As [`from_cube_render_target_async`](Self::from_cube_render_target_async).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn from_cube_render_target(
+        renderer: &mut Renderer,
+        cube_render_target: &CubeTexture,
+    ) -> Result<Node, Error> {
+        pollster::block_on(Self::from_cube_render_target_async(
+            renderer,
+            cube_render_target,
+        ))
     }
 }

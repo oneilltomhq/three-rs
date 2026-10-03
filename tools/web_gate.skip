@@ -2,4 +2,3 @@
 # line: `<example>  <reason>`. The reason becomes the README's `browser` cell,
 # `no (<reason>)`, through `cargo run --example gallery`. See web/README.md.
 
-webgpu_lightprobe_cubecamera  fromCubeRenderTarget's readback blocks, which the browser cannot

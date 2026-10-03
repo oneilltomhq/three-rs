@@ -83,6 +83,19 @@ macro_rules! example_name {
     };
 }
 
+/// The example's `init()`, driven to completion when it is `async` — a row
+/// that ends in `await`, for a page whose `init()` awaits something. Native
+/// code can block, and the futures a port's `init()` awaits (a readback) are
+/// already finished natively, so blocking on them is free.
+macro_rules! example_init {
+    ($module:ident) => {
+        $module::init()
+    };
+    ($module:ident await) => {
+        pollster::block_on($module::init())
+    };
+}
+
 /// Declares the viewer's whole knowledge of the examples: one line per
 /// example, giving its enum name, its module and the file to include.
 ///
@@ -93,7 +106,7 @@ macro_rules! example_name {
 /// each example's `animate()` and carried a table of their camera targets and
 /// renderer options, and each of those was a place to get an example wrong.
 macro_rules! examples {
-    ( $( $variant:ident , $module:ident , $path:literal $( , $name:literal )? ; )* ) => {
+    ( $( $variant:ident , $module:ident , $path:literal $( , $name:literal )? $( , $aw:ident )? ; )* ) => {
         $(
             #[path = $path]
             #[allow(dead_code)] // each module's `main()` is unused here
@@ -131,7 +144,7 @@ macro_rules! examples {
             /// Builds the example's scene through its own `init()`.
             fn build_raw(which: Which) -> Self {
                 match which {
-                    $( Which::$variant => Example::$variant($module::init()), )*
+                    $( Which::$variant => Example::$variant(example_init!($module $( $aw )?)), )*
                 }
             }
 
@@ -266,7 +279,7 @@ Mirror, webgpu_mirror, "../../examples/webgpu_mirror.rs";
 TslHalftone, webgpu_tsl_halftone, "../../examples/webgpu_tsl_halftone.rs";
 TslEarth, webgpu_tsl_earth, "../../examples/webgpu_tsl_earth.rs";
 Lightprobe, webgpu_lightprobe, "../../examples/webgpu_lightprobe.rs";
-LightprobeCubecamera, webgpu_lightprobe_cubecamera, "../../examples/webgpu_lightprobe_cubecamera.rs";
+LightprobeCubecamera, webgpu_lightprobe_cubecamera, "../../examples/webgpu_lightprobe_cubecamera.rs", await;
 Sky, webgpu_sky, "../../examples/webgpu_sky.rs";}
 
 impl Which {

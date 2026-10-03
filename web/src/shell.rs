@@ -11,15 +11,18 @@
 //!
 //! 1. create a wgpu instance on [`three_rs::BACKENDS`], which is
 //!    `BROWSER_WEBGPU` here, and a surface on the page's `<canvas>`;
-//! 2. `request_adapter` and `request_device`, both awaited — this is the
-//!    asynchrony that cannot happen inside a synchronous `init()`;
+//! 2. `request_adapter` and `request_device`, both awaited — asynchrony that
+//!    cannot happen inside an example's `init()`, which is synchronous on
+//!    every page whose own `init()` is;
 //! 3. hand the three handles to [`three_rs::renderer::adopt_device`], so that
 //!    the `Renderer::new` inside the example's `init()` finds them;
 //! 4. fetch every asset the example's manifest names from a pinned three.js
 //!    commit on raw.githubusercontent.com, and
 //!    [`three_rs::io::preload`] each one under the path the example will ask
 //!    for;
-//! 5. call `init()`, then `animate()` once, then blit the renderer's canvas
+//! 5. call `init()` — awaited, for a page whose `init()` awaits something of
+//!    its own, a readback say (`examples!` marks such a row with a trailing
+//!    `await`) — then `animate()` once, then blit the renderer's canvas
 //!    texture onto the surface — the *graded* frame, 800x500, with the clock
 //!    pinned to 0;
 //! 6. unpin onto the page's own clock, size the canvas to the window, attach
@@ -103,6 +106,18 @@ macro_rules! example_name {
     };
 }
 
+/// The example's `init()`, awaited when it is `async` — a row that ends in
+/// `await`, for a page whose own `init()` awaits something (issue #261:
+/// `webgpu_lightprobe_cubecamera`'s six-face readback, a promise here).
+macro_rules! example_init {
+    ($module:ident) => {
+        $module::init()
+    };
+    ($module:ident await) => {
+        $module::init().await
+    };
+}
+
 /// Every graded example, in the README's order, as modules plus the two enums
 /// and the dispatch over them.
 ///
@@ -113,7 +128,7 @@ macro_rules! example_name {
 /// the list is the README's; a name here with no committed manifest fails to
 /// compile at the `include_str!` below.
 macro_rules! examples {
-    ( $( $variant:ident , $module:ident , $path:literal $( , $name:literal )? ; )* ) => {
+    ( $( $variant:ident , $module:ident , $path:literal $( , $name:literal )? $( , $aw:ident )? ; )* ) => {
         $(
             #[path = $path]
             #[allow(dead_code)] // the example's own `main()` is unused here
@@ -172,9 +187,9 @@ macro_rules! examples {
                 }
             }
 
-            fn init(self) -> Example {
+            async fn init(self) -> Example {
                 match self {
-                    $( Self::$variant => Example::$variant($module::init()), )*
+                    $( Self::$variant => Example::$variant(example_init!($module $( $aw )?)), )*
                 }
             }
         }
@@ -306,7 +321,7 @@ Mirror, webgpu_mirror, "../../examples/webgpu_mirror.rs";
 TslHalftone, webgpu_tsl_halftone, "../../examples/webgpu_tsl_halftone.rs";
 TslEarth, webgpu_tsl_earth, "../../examples/webgpu_tsl_earth.rs";
 Lightprobe, webgpu_lightprobe, "../../examples/webgpu_lightprobe.rs";
-LightprobeCubecamera, webgpu_lightprobe_cubecamera, "../../examples/webgpu_lightprobe_cubecamera.rs";
+LightprobeCubecamera, webgpu_lightprobe_cubecamera, "../../examples/webgpu_lightprobe_cubecamera.rs", await;
 Sky, webgpu_sky, "../../examples/webgpu_sky.rs";
 }
 
@@ -651,8 +666,8 @@ async fn run() -> Result<(), String> {
         &surface_configuration(format, pixel_width, pixel_height),
     );
 
-    // Everything the example's synchronous `init()` will need, in place before
-    // it runs: the device it will "create", and the bytes it will "read". The
+    // Everything the example's `init()` will need, in place before it runs:
+    // the device it will "create", and the bytes it will "read". The
     // device is cloned first because reconfiguring the surface on every window
     // resize needs one and `adopt_device` takes ownership.
     let page_device = device.clone();
@@ -663,7 +678,7 @@ async fn run() -> Result<(), String> {
     // pinned to 0, exactly as `tests/e2e/main.rs` runs it.
     report(&format!("{name}: rendering…"));
     three_rs::testing::pin_time(Some(0.0));
-    let mut example = which.init();
+    let mut example = which.init().await;
     example.animate();
     present(example.renderer(), &surface, format)?;
     report(&format!(

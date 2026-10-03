@@ -38,9 +38,8 @@ the render-target face table fails it.
   cube's layer. three binds the layer as the attachment. `activeMipmapLevel`
   is always 0, and the cube camera's `layers` are not copied onto its
   children.
-- **Not in the browser.** `fromCubeRenderTarget()` is async in three. The
-  port's readback blocks, and the web shell's `init()` is synchronous, so in
-  the browser the readback returns an error and the page stops.
-  `tools/web_gate.skip` lists it, which gives the README's `no` in the
-  `browser` column. The fix is a shell hook that can await between `init()`
-  and the graded frame. It is not part of this rung.
+- **In the browser too.** `fromCubeRenderTarget()` is async in three, and so
+  is the port's `from_cube_render_target_async()`: the example's `init()`
+  awaits it, the web shell awaits `init()` (the row's trailing `await`), and
+  the native callers block on it for free. Issue #261 was the synchronous
+  shell that kept this rung in `tools/web_gate.skip`.

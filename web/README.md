@@ -130,7 +130,10 @@ README's set of graded examples.
 1. it has to be in the README's "Examples graded green" table;
 2. add it to `GRADED` in `examples/web_manifests.rs` and re-run the generator;
 3. add a row to the `examples!` table in `web/src/shell.rs` and a name to the
-   `EXAMPLES` array in `web/index.html`.
+   `EXAMPLES` array in `web/index.html`. A page whose `init()` is `async` —
+   it awaits a readback, as `webgpu_lightprobe_cubecamera` does — ends its
+   row in `await`, and the shell awaits it before the graded frame; the
+   viewer's table in `src/bin/viewer_app.rs` takes the same mark and blocks.
 
 Steps 2 and 3 are hand-maintained lists because a `#[path]` attribute takes a
 string literal and cannot be generated from one; the `#[test]`s in step 2 fail

@@ -3084,7 +3084,8 @@ fn webgpu_lightprobe_cubecamera() {
     let out = out_dir(name);
     let _gpu = gpu();
 
-    let mut app = webgpu_lightprobe_cubecamera::init();
+    // The page awaits `fromCubeRenderTarget()`; natively the await is free.
+    let mut app = pollster::block_on(webgpu_lightprobe_cubecamera::init());
     println!("adapter: {:?}", app.renderer.adapter_info());
 
     webgpu_lightprobe_cubecamera::animate(&mut app);
@@ -5409,7 +5410,12 @@ fn steady_frame_builds_nothing() {
         // `$steady_from`: the first frame index held to zero. 1 for every
         // rung but one; see `webgpu_postprocessing_difference` below.
         ($module:ident, $textures:expr, $steady_from:expr) => {{
-            let mut app = $module::init();
+            rung!($module, $textures, $steady_from, $module::init())
+        }};
+        // `$init`: the app, for a page whose `init()` is `async` and has to
+        // be blocked on (`webgpu_lightprobe_cubecamera`).
+        ($module:ident, $textures:expr, $steady_from:expr, $init:expr) => {{
+            let mut app = $init;
 
             // `[ "", "" ]`: nothing is done to the scene between the three
             // frames, which is what makes frames two and three steady.
@@ -5569,7 +5575,12 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_lightprobe);
     // The cube is captured once in `init()`; a frame is the helper and the
     // background.
-    rung!(webgpu_lightprobe_cubecamera);
+    rung!(
+        webgpu_lightprobe_cubecamera,
+        0,
+        1,
+        pollster::block_on(webgpu_lightprobe_cubecamera::init())
+    );
 }
 
 // ---------------------------------------------------------------------------

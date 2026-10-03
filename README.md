@@ -222,7 +222,7 @@ same screenshots at the same threshold (see
 | webgpu_tsl_halftone | 93 (Three itself scores 93 against the same JPEG) | 3.1 | 4 | 44363 | yes |
 | webgpu_tsl_earth | 0 | 2.6 | 3 | 16129 | yes |
 | webgpu_lightprobe | 2 | 1.3 | 4 | 6913 | yes |
-| webgpu_lightprobe_cubecamera | 0 | 1.6 | 3 | 2945 | no (fromCubeRenderTarget's readback blocks, which the browser cannot) |
+| webgpu_lightprobe_cubecamera | 0 | 1.6 | 3 | 2945 | yes |
 | webgpu_sky | 0 | 5.8 | 3 | 3981 | yes |
 
 `webgpu_compute_points` is graded like the rest and its 4 pixels mean less

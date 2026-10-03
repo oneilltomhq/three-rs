@@ -4062,7 +4062,31 @@ impl Renderer {
         {
             let (texture, width, height) = self.canvas_color();
             let readback = self.submit_readback(&texture, width, height)?;
-            let slice = readback.buffer.slice(..);
+            self.await_readback(readback).await
+        }
+    }
+
+    /// The second half of a readback for a caller that cannot block: map the
+    /// buffer, await the map, strip the padding. In the browser the map is
+    /// `mapAsync()`'s promise, resolved on the page's event loop; natively it
+    /// is the same `device.poll()` wait the blocking readbacks make, already
+    /// over when the future is first polled.
+    async fn await_readback(
+        &self,
+        readback: PendingReadback,
+    ) -> Result<(u32, u32, Vec<u8>), Error> {
+        let slice = readback.buffer.slice(..);
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            slice.map_async(wgpu::MapMode::Read, |_| {});
+            self.device
+                .poll(wgpu::PollType::wait_indefinitely())
+                .map_err(|e| Error::Readback {
+                    reason: e.to_string(),
+                })?;
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
             let mapped = MapFuture::default();
             let done = mapped.state.clone();
             slice.map_async(wgpu::MapMode::Read, move |result| {
@@ -4075,8 +4099,8 @@ impl Renderer {
             mapped.await.map_err(|e| Error::Readback {
                 reason: e.to_string(),
             })?;
-            readback.finish()
         }
+        readback.finish()
     }
 
     /// The canvas' colour texture and its size, created first if nothing has
@@ -4276,13 +4300,24 @@ impl Renderer {
         let (width, height, bytes) = self.read_cube_bytes(cube, layer, mip_level, |format| {
             format == wgpu::TextureFormat::Rgba16Float
         })?;
-        let pixels = bytes
-            .as_chunks::<2>()
-            .0
-            .iter()
-            .map(|half| crate::extras::from_half_float(u16::from_le_bytes(*half)))
-            .collect();
-        Ok((width, height, pixels))
+        Ok((width, height, decode_rgba16f(&bytes)))
+    }
+
+    /// [`read_cube_pixels_rgba16f`](Self::read_cube_pixels_rgba16f) for a
+    /// caller that cannot block — see
+    /// [`read_canvas_pixels_async`](Self::read_canvas_pixels_async).
+    #[doc(hidden)]
+    pub async fn read_cube_pixels_rgba16f_async(
+        &mut self,
+        cube: &CubeTexture,
+        layer: u32,
+        mip_level: u32,
+    ) -> Result<(u32, u32, Vec<f32>), Error> {
+        let readback = self.submit_cube_readback(cube, layer, mip_level, |format| {
+            format == wgpu::TextureFormat::Rgba16Float
+        })?;
+        let (width, height, bytes) = self.await_readback(readback).await?;
+        Ok((width, height, decode_rgba16f(&bytes)))
     }
 
     /// One face of one mip level of an `UnsignedByteType` [`CubeTexture`] as
@@ -4304,6 +4339,27 @@ impl Renderer {
         })
     }
 
+    /// [`read_cube_pixels_rgba8`](Self::read_cube_pixels_rgba8) for a caller
+    /// that cannot block — see
+    /// [`read_canvas_pixels_async`](Self::read_canvas_pixels_async). This is
+    /// the readback `LightProbeGenerator.fromCubeRenderTarget()` awaits, the
+    /// one that lets `webgpu_lightprobe_cubecamera` build its probe in a
+    /// browser (issue #261).
+    pub async fn read_cube_pixels_rgba8_async(
+        &mut self,
+        cube: &CubeTexture,
+        layer: u32,
+        mip_level: u32,
+    ) -> Result<(u32, u32, Vec<u8>), Error> {
+        let readback = self.submit_cube_readback(cube, layer, mip_level, |format| {
+            matches!(
+                format,
+                wgpu::TextureFormat::Rgba8Unorm | wgpu::TextureFormat::Rgba8UnormSrgb
+            )
+        })?;
+        self.await_readback(readback).await
+    }
+
     /// The copy both cube readbacks share: `layer` of `mip_level`, in the
     /// texture's own format, which `accepts` must allow.
     fn read_cube_bytes(
@@ -4313,15 +4369,7 @@ impl Renderer {
         mip_level: u32,
         accepts: impl Fn(wgpu::TextureFormat) -> bool,
     ) -> Result<(u32, u32, Vec<u8>), Error> {
-        let texture = self.ensure_cube_texture(cube);
-        let format = texture.format();
-        if !accepts(format) {
-            return Err(Error::Readback {
-                reason: format!("{format:?} is not the format this readback decodes"),
-            });
-        }
-        let size = texture.width() >> mip_level;
-        let readback = self.submit_readback_at(&texture, mip_level, layer, size, size)?;
+        let readback = self.submit_cube_readback(cube, layer, mip_level, accepts)?;
         let slice = readback.buffer.slice(..);
         slice.map_async(wgpu::MapMode::Read, |_| {});
         self.device
@@ -4330,6 +4378,26 @@ impl Renderer {
                 reason: e.to_string(),
             })?;
         readback.finish()
+    }
+
+    /// The first half of a cube readback: `layer` of `mip_level` of `cube`,
+    /// submitted, once `accepts` has allowed the texture's format.
+    fn submit_cube_readback(
+        &mut self,
+        cube: &CubeTexture,
+        layer: u32,
+        mip_level: u32,
+        accepts: impl Fn(wgpu::TextureFormat) -> bool,
+    ) -> Result<PendingReadback, Error> {
+        let texture = self.ensure_cube_texture(cube);
+        let format = texture.format();
+        if !accepts(format) {
+            return Err(Error::Readback {
+                reason: format!("{format:?} is not the format this readback decodes"),
+            });
+        }
+        let size = texture.width() >> mip_level;
+        self.submit_readback_at(&texture, mip_level, layer, size, size)
     }
 
     /// The first half of every readback: a `MAP_READ` buffer, the copy of
@@ -7193,6 +7261,16 @@ impl Renderer {
             }
         }
     }
+}
+
+/// `rgba16float` texels, as the GPU holds them, decoded to `f32`.
+fn decode_rgba16f(bytes: &[u8]) -> Vec<f32> {
+    bytes
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|half| crate::extras::from_half_float(u16::from_le_bytes(*half)))
+        .collect()
 }
 
 /// A submitted texture-to-buffer copy, waiting for its buffer to be mapped.
