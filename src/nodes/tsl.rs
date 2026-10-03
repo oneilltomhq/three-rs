@@ -4639,6 +4639,48 @@ pub fn hue(color: NodeRef, adjustment: NodeRef) -> NodeRef {
     call(&def, vec![color, adjustment])
 }
 
+/// `grayscale( color )` — `ColorAdjustment.js`: `luminance( color.rgb )`.
+/// A `Fn()` with no layout, so inlined.
+pub fn grayscale(color: NodeRef) -> NodeRef {
+    luminance(color.rgb())
+}
+
+/// `posterize( source, steps )` — `ColorAdjustment.js`:
+/// `source.mul( steps ).floor().div( steps )`. A `Fn()` with no layout, so
+/// inlined, and of `source`'s type.
+pub fn posterize(source: NodeRef, steps: impl Into<NodeRef>) -> NodeRef {
+    let steps = steps.into();
+    source.mul(steps.clone()).floor().div(steps)
+}
+
+/// `blendOverlay( base, blend )` — `BlendModes.js`, a `vec3` `Fn()` with a
+/// layout: `mix( base * 2 * blend, 1 - ( 1 - base ) * 2 * ( 1 - blend ),
+/// step( 0.5, base ) )`.
+pub fn blend_overlay(base: NodeRef, blend: NodeRef) -> NodeRef {
+    thread_local! { static CELL: Lazy<Rc<FnDef>> = const { Lazy::new() }; }
+    let def = CELL.with(|c| {
+        c.get(|| {
+            shader_fn(
+                Some("blendOverlay"),
+                vec![("base", Type::Vec3), ("blend", Type::Vec3)],
+                Type::Vec3,
+                |args| {
+                    let (base, blend) = (args[0].clone(), args[1].clone());
+                    mix(
+                        base.mul(float(2.0)).mul(blend.clone()),
+                        base.one_minus()
+                            .mul(float(2.0))
+                            .mul(blend.one_minus())
+                            .one_minus(),
+                        step(float(0.5), base),
+                    )
+                },
+            )
+        })
+    });
+    call(&def, vec![base, blend])
+}
+
 /// `oscSine( t )` — `Oscillators.js`: `t.add( 0.75 ).mul( PI2 ).sin().mul( 0.5 ).add( 0.5 )`.
 pub fn osc_sine(t: NodeRef) -> NodeRef {
     t.add(float(0.75))
@@ -4965,9 +5007,14 @@ pub fn wgsl_select(f: NodeRef, t: NodeRef, cond: NodeRef) -> NodeRef {
 
 /// `step( edge, x )`.
 pub fn step(edge: impl Into<NodeRef>, x: impl Into<NodeRef>) -> NodeRef {
-    let x = x.into();
-    let ty = x.ty();
-    math("step", vec![edge.into(), x], ty)
+    let (edge, x) = (edge.into(), x.into());
+    // `MathNode.getNodeType()`: the wider of the two operands.
+    let ty = if edge.ty().components() > x.ty().components() {
+        edge.ty()
+    } else {
+        x.ty()
+    };
+    math("step", vec![edge, x], ty)
 }
 
 /// `uint( x )`.
