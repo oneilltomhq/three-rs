@@ -49,7 +49,7 @@ arithmetic, so the test allows a few such pixels instead of asserting none.
 
 ## What is left out
 
-`docs/nodes.md` §60.3 lists them: orthographic cameras, logarithmic or
+`docs/nodes.md` §63.3 lists them: orthographic cameras, logarithmic or
 reversed depth, a beauty that is an `RTTNode`, a non-global `velocity`, and
 the tuning properties, which are constants at three's defaults.
 

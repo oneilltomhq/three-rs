@@ -2045,6 +2045,7 @@ fn main() {
     dump_shadowmap_opacity();
     dump_tsl_halftone();
     dump_tsl_earth();
+    dump_sky();
     dump_materials_alphahash();
     dump_diffuse_roughness();
     dump_cubemap_mix();
@@ -3050,4 +3051,12 @@ fn dump_tsl_earth() {
         },
     );
     show("tsl_earth_atmosphere", &atmosphere, SetupContext::default());
+}
+
+/// `webgpu_sky`: `SkyMesh`'s `vertexNode` and `colorNode` against three's
+/// `m00` / `m01`. `tests/nodes_sky_wgsl.rs` gates the same two stages.
+fn dump_sky() {
+    let sky = three_rs::addons::objects::SkyMesh::new();
+    let material = sky.mesh.borrow().mesh().unwrap().material.clone().unwrap();
+    show("sky", &material, SetupContext::default());
 }

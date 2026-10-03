@@ -89,17 +89,21 @@ pub struct BuildCounts {
     /// Geometries uploaded to the GPU (`Geometries.get()`'s misses).
     pub geometries_uploaded: u64,
     /// Attribute and index buffers written as part of those uploads — four for
-    /// a geometry with position, normal, uv and an index. Per-draw data that
-    /// the scene changes every frame (an `InstancedMesh`'s matrix, morph
-    /// influences) is written into a buffer the draw already has, which is
-    /// not a build and is not counted here or anywhere.
+    /// a geometry with position, normal, uv and an index — plus one for each
+    /// `InstancedBufferAttribute` (an `InstancedMesh`'s `instanceMatrix` or
+    /// `instanceColor`) written because it is new or its version moved
+    /// (issue #89). Per-draw uniforms (morph influences, bone matrices) are
+    /// written into a buffer the draw already has, which is not a build and is
+    /// not counted here or anywhere.
     pub buffers_written: u64,
     /// Textures uploaded: 2D, cube and the morph data-array textures.
     pub textures_uploaded: u64,
     /// GPU buffers created for bindings: a draw's uniform groups, bone
-    /// matrices, morph influences and instance data the first time it is
-    /// drawn, a `range()` / `uniformArray()` / instanced-attribute buffer, an
-    /// `instancedArray()`'s storage (issue #137).
+    /// matrices and morph influences the first time it is drawn, an
+    /// `InstancedBufferAttribute`'s buffer the first time it is drawn or when
+    /// it outgrows the one it has, a `range()` / `uniformArray()` /
+    /// instanced-attribute buffer, an `instancedArray()`'s storage
+    /// (issue #137).
     pub buffers_created: u64,
     /// Texture views created for bindings — one per texture and view
     /// dimension, and again when a render target is re-allocated.
@@ -124,8 +128,10 @@ pub struct MemoryCounts {
     /// data-array texture live on the texture rather than in a renderer map,
     /// so they upload but do not land here; they are freed with their owner.
     pub textures: usize,
-    /// Distinct compiled programs — `renderer.info.programs.length`. Two
-    /// materials that generate the same WGSL share one.
+    /// Distinct compiled programs — `renderer.info.programs.length`: render
+    /// programs plus compute pipelines. Two materials that generate the same
+    /// WGSL share one. A program goes once nothing has named it for a few
+    /// frames (issue #237), so this falls as well as rises.
     pub programs: usize,
 }
 

@@ -16,6 +16,12 @@
 //! frames. So: render "AAAAAA" from a fresh batch, refill the same batch with
 //! "BBBBBB" and render again, and compare that frame against "BBBBBB" from a
 //! batch that was never filled with anything else.
+//!
+//! Then once more with the member moved: the glyphs' instance matrices are an
+//! `InstancedBufferAttribute` the renderer re-writes only when its version
+//! moves (#89), so a refill that places the same glyphs elsewhere must bump
+//! that version through `sync()`'s `setMatrixAt` calls, or the batch draws
+//! at the old place.
 
 use std::rc::Rc;
 
@@ -41,10 +47,9 @@ fn empty_batch() -> BatchedText {
     batch
 }
 
-/// Empty the batch and give it one member reading `s`, at the same place every
-/// time — the same glyph count either way, so the refill lands on the cached
-/// program's key.
-fn fill(batch: &mut BatchedText, s: &str) {
+/// Empty the batch and give it one member reading `s` at `x` — the same glyph
+/// count every time, so the refill lands on the cached program's key.
+fn fill(batch: &mut BatchedText, s: &str, x: f64) {
     for id in (0..batch.member_count()).rev() {
         batch.remove_text(id);
     }
@@ -62,7 +67,7 @@ fn fill(batch: &mut BatchedText, s: &str) {
         .expect("the member was just added")
         .borrow_mut()
         .position
-        .set(4.0, 0.0, 0.0);
+        .set(x, 0.0, 0.0);
     batch.sync();
 }
 
@@ -94,13 +99,13 @@ fn a_refilled_batch_draws_its_new_glyphs() {
     camera.update_projection_matrix();
 
     let mut batch = empty_batch();
-    fill(&mut batch, "AAAAAA");
+    fill(&mut batch, "AAAAAA", 4.0);
     let first = frame(&mut renderer, &mut camera, &batch);
-    fill(&mut batch, "BBBBBB");
+    fill(&mut batch, "BBBBBB", 4.0);
     let refilled = frame(&mut renderer, &mut camera, &batch);
 
     let mut fresh = empty_batch();
-    fill(&mut fresh, "BBBBBB");
+    fill(&mut fresh, "BBBBBB", 4.0);
     let expected = frame(&mut renderer, &mut camera, &fresh);
 
     // The premise: the two strings look different, and both drew something.
@@ -127,5 +132,26 @@ fn a_refilled_batch_draws_its_new_glyphs() {
         "the refilled batch ({} ink) differs from a fresh \"BBBBBB\" ({} ink)",
         ink(&refilled),
         ink(&expected)
+    );
+
+    // The same glyphs, moved: only the instance matrices differ from the
+    // frame before.
+    fill(&mut batch, "BBBBBB", 60.0);
+    let moved = frame(&mut renderer, &mut camera, &batch);
+
+    let mut fresh_moved = empty_batch();
+    fill(&mut fresh_moved, "BBBBBB", 60.0);
+    let expected_moved = frame(&mut renderer, &mut camera, &fresh_moved);
+
+    assert_ne!(
+        expected_moved, expected,
+        "\"BBBBBB\" at x = 60 should not look like it does at x = 4"
+    );
+    assert_eq!(
+        moved,
+        expected_moved,
+        "the batch refilled at a new place ({} ink) differs from a fresh one there ({} ink)",
+        ink(&moved),
+        ink(&expected_moved)
     );
 }

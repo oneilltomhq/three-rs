@@ -101,11 +101,15 @@ Most of those caches are swept at the top of `render()`: geometries and
 textures by weak count, the rest by frames since last use, with a grace
 window of `CACHE_GRACE_FRAMES` (four). A scene drawn less often than that
 is rebuilt each time it is drawn; whether that stays the contract is #249.
-Three caches are not swept. `storage_buffers` is permanent on purpose: a
-compute kernel's buffer *is* the simulation state. `programs` (compiled
-shader modules, layouts, pipelines, keyed by content hash) and the
-compute-program cache (keyed by address, holding the nodes to keep them
-unique) never evict, which is #237.
+The compiled programs follow what names them. `programs` (shader modules
+and layouts, keyed by content hash) is named only by the built states the
+material cache holds, so a program goes, with its `pipelines`, once no
+surviving state has named it for the same grace window. The compute-program
+cache is keyed by the address of the kernel's statement nodes and holds a
+`Weak` on each, so an entry is a hit only for those very nodes and dies with
+the kernel; its compiled pipelines go once no live entry names them and they
+have not been dispatched within the window. Only `storage_buffers` is
+permanent, on purpose: a compute kernel's buffer *is* the simulation state.
 
 `renderer.info()` counts what each frame built. The e2e harness checks it two
 ways (`tests/e2e/main.rs`). `steady_frame_builds_nothing` renders most graded

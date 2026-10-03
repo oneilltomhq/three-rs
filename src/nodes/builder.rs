@@ -910,6 +910,7 @@ impl NodeBuilder {
             Node::Compute { output, .. } => vec![output.clone()],
             Node::BufferElement { index, .. } => vec![index.clone()],
             Node::Var(v) => vec![v.value.clone()],
+            Node::VarIntent(v) => vec![v.value.clone()],
             Node::Let(v) => vec![v.value.clone()],
             Node::Varying(v) => vec![v.value.clone()],
             Node::Assign { target, value } => vec![value.clone(), target.clone()],
@@ -1181,6 +1182,23 @@ impl NodeBuilder {
             s.decls.push((name.clone(), ty));
         }
         name
+    }
+
+    /// The name of a [`Node::VarIntent`]: a `nodeVarN` like
+    /// [`declare_var`](Self::declare_var)'s, but declared by the statement that
+    /// assigns it, so neither the stage's `// vars` block nor a function's
+    /// locals list gets an entry.
+    fn local_var_name(&mut self, name: Option<&str>) -> String {
+        if let Some(n) = name {
+            return n.to_string();
+        }
+        let counter = match self.fn_scopes.last_mut() {
+            Some(scope) => &mut scope.var_counter,
+            None => &mut self.var_counter,
+        };
+        let n = format!("nodeVar{counter}");
+        *counter += 1;
+        n
     }
 
     /// `NodeBuilder.getVarFromNode()`'s `readOnly` half — the `nodeConstN`
@@ -1711,6 +1729,20 @@ impl NodeBuilder {
                 let snippet = self.generate(&v.value);
                 let name = self.declare_var(v.name.as_deref(), v.ty);
                 self.emit(format!("{name} = {snippet};"));
+                self.cache_put(CacheKey::node(node), name.clone());
+                name
+            }
+
+            // `VarNode.generate()`'s `nodeVar.local` branch:
+            // `generateVarStatement()` in front of the first assignment, and no
+            // entry in `vars`. Counted on the same `nodeVarN` counter as a
+            // hoisted var, as three's `_var` counter is.
+            Node::VarIntent(v) => {
+                let v = v.clone();
+                let snippet = self.generate(&v.value);
+                let name = self.local_var_name(v.name.as_deref());
+                let ty = wgsl::type_name(v.ty);
+                self.emit(format!("var {name} : {ty} = {snippet};"));
                 self.cache_put(CacheKey::node(node), name.clone());
                 name
             }

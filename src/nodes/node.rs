@@ -725,6 +725,19 @@ pub enum BufferSource {
     /// skeleton's `OnObjectUpdate` (`skeleton.update()`, once per frame) runs
     /// when the buffer is written.
     SkeletonBoneMatrices(SkeletonRef),
+    /// `LightProbeNode.lightProbe` — `uniformArray( 9 × Vector3 )` holding the
+    /// probe at this index of the renderer's light list, each coefficient
+    /// already multiplied by `light.intensity` (`LightProbeNode.update()`).
+    /// One `vec4` per coefficient, rewritten per draw like
+    /// [`BufferSource::MorphInfluences`], because the probe can change between
+    /// frames while the program does not.
+    LightProbe(usize),
+    /// `uniformArray( values )` over an array the application keeps changing
+    /// — `LightProbeHelper`'s `uniformArray( lightProbe.sh.coefficients )`,
+    /// which shares the probe's own `Vector3`s. The reader returns the
+    /// elements already padded to four floats each; the buffer is rewritten
+    /// per draw. Compares by identity, as [`UniformSource::Live`] does.
+    Live(LiveValue),
 }
 
 impl BufferSource {
@@ -1398,6 +1411,12 @@ pub enum Node {
     },
     /// `VarNode` — a cached `var<private>`.
     Var(Rc<VarDef>),
+    /// `VarNode` with `intent` set, as it ends up when something assigns to
+    /// it — see [`to_var_intent`](crate::nodes::tsl::to_var_intent). A WGSL
+    /// function-scope `var`, declared with its value where it is first
+    /// built (`var nodeVar0 : vec3<f32> = …;`) instead of hoisted into the
+    /// `// vars` block.
+    VarIntent(Rc<VarDef>),
     /// `VarNode` with `readOnly` set — `node.toConst()`. A WGSL `let`, so it is
     /// declared where it is assigned and, unlike a `var<private>`, cannot be
     /// written again.
@@ -1763,6 +1782,7 @@ impl NodeRef {
             Node::InstancedAttribute { ty, .. } => *ty,
             Node::Builtin(b) => b.ty(),
             Node::Var(v) => v.ty,
+            Node::VarIntent(v) => v.ty,
             Node::Let(v) => v.ty,
             Node::Varying(v) => v.ty,
             Node::TextureSize { .. } => Type::UVec2,
@@ -1988,6 +2008,8 @@ impl std::hash::Hash for BufferSource {
             BufferSource::SkeletonBoneMatrices(skeleton) => {
                 (Rc::as_ptr(&skeleton.0) as *const u8 as usize).hash(state)
             }
+            BufferSource::LightProbe(index) => index.hash(state),
+            BufferSource::Live(value) => value.hash(state),
             BufferSource::InstanceMatrix
             | BufferSource::InstanceColor
             | BufferSource::MorphInfluences
@@ -2075,6 +2097,8 @@ impl std::fmt::Debug for BufferSource {
                 .debug_tuple("SkeletonBoneMatrices")
                 .field(&format_args!("{} bones", skeleton.0.borrow().bones.len()))
                 .finish(),
+            BufferSource::LightProbe(index) => f.debug_tuple("LightProbe").field(index).finish(),
+            BufferSource::Live(value) => f.debug_tuple("Live").field(value).finish(),
         }
     }
 }

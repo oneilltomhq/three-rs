@@ -8,6 +8,35 @@ have their own sections after the release they ship with. The format follows [Ke
 
 ### Added
 
+- **`SkyMesh`** (`addons::objects`), a port of `examples/jsm/objects/SkyMesh.js`.
+  It is the Preetham daylight model with a sun disc and an fbm cloud layer.
+  Every uniform is a public `SettableValue`. `webgpu_sky` is graded green at 0
+  of 100000 pixels, and its WGSL is gated against three's dump in
+  `tests/nodes_sky_wgsl.rs`.
+- **`CubeCamera`** and **`CubeRenderTarget`**: `new CubeCamera( near, far,
+  renderTarget )` and `update( renderer, scene )` render the scene into a
+  cube's six faces. `activeMipmapLevel` is not ported.
+- **`tsl::to_var_intent()`**, the assigned form of three's `toVarIntent()`.
+  It is a function-scope `var` declared where it is first built. See
+  `docs/nodes.md` §59.
+- **`LightProbe`**, a light holding nine spherical-harmonic coefficients
+  (`SphericalHarmonics3`) that adds `getShIrradianceAt( normalWorld )` to a
+  lit material's irradiance and nothing to its radiance, through the same
+  `setupLight` funnel as the other lights, so Standard, Physical, Phong,
+  Lambert, Toon and custom lighting models all take it. The coefficients ride
+  a per-draw uniform array premultiplied by the intensity, so changing them
+  rebuilds nothing. `tsl::get_sh_irradiance_at` is the TSL function.
+- **`addons::lights::LightProbeGenerator`**: `from_cube_texture` projects an
+  RGBA8 `CubeTexture`'s decoded faces on the CPU, `from_cube_render_target`
+  reads a rendered cube back (RGBA8 or half float) and projects that. Both
+  are checked against three's own `LightProbeGenerator.js`, the first under
+  node (`tools/light_probe_generator_reference.mjs`), the second against the
+  first on the same environment.
+- **`addons::helpers::LightProbeHelper`**, a sphere showing a probe's
+  irradiance over π.
+- Rungs `webgpu_lightprobe` and `webgpu_lightprobe_cubecamera`. The second
+  is native only for now: its readback blocks, which the browser cannot do,
+  so `tools/web_gate.skip` (new) lists it.
 - **`velocity`** (`nodes::velocity`): the screen-space motion since the last
   frame, as an MRT member, with three's previous-frame model, view and
   projection matrices. The history lives in the renderer's `NodeFrameState`.
@@ -31,11 +60,24 @@ have their own sections after the release they ship with. The format follows [Ke
   `get_view_position`. Also `Renderer::init_render_target` and
   `RenderPipeline::claim_view_offset`. (#165)
 
+### Changed
+
+- **`InstancedBufferAttribute.array` is private**, read through `array()` and
+  written through `array_mut()`, which bumps the new `version()`;
+  `set_needs_update()` and `id()` join them. `set_matrix_at` / `set_color_at`
+  bump the version when they change a value. (#89)
+
 ### Fixed
 
-- **Hemisphere lights under Phong, Lambert and Toon materials.** With no
-  `AmbientLight` in the scene, a reset meant for ambient light wiped their
-  contribution. (#163)
+- A `HemisphereLight` with no `AmbientLight` beside it no longer has its
+  irradiance overwritten with zero before the Phong, Lambert and Toon models
+  read it.
+- An `InstancedMesh`'s `instanceMatrix` and `instanceColor` are no longer
+  written to the GPU on every draw: each attribute keeps one buffer and is
+  re-written only when its version moves, and each write counts in
+  `info.build.buffers_written`. The render list no longer copies the arrays
+  each frame either. A still 131072-instance mesh goes from about 25 ms a
+  frame to about 3 ms (`benches/instanced_mesh.rs`). (#89)
 - **Skinned shadow casters** are skinned in directional and spot shadow maps.
   Point-light shadows of skinned meshes are still unskinned. (#163)
 

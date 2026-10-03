@@ -188,6 +188,10 @@ mod webgpu_postprocessing_afterimage;
 #[path = "../../examples/webgpu_tsl_earth.rs"]
 #[allow(dead_code)]
 mod webgpu_tsl_earth;
+
+#[path = "../../examples/webgpu_sky.rs"]
+#[allow(dead_code)]
+mod webgpu_sky;
 #[path = "../../examples/webgpu_tsl_halftone.rs"]
 #[allow(dead_code)]
 mod webgpu_tsl_halftone;
@@ -442,6 +446,14 @@ mod webgpu_texturegather;
 #[path = "../../examples/webgpu_texturegrad.rs"]
 #[allow(dead_code)]
 mod webgpu_texturegrad;
+
+#[path = "../../examples/webgpu_lightprobe.rs"]
+#[allow(dead_code)]
+mod webgpu_lightprobe;
+
+#[path = "../../examples/webgpu_lightprobe_cubecamera.rs"]
+#[allow(dead_code)]
+mod webgpu_lightprobe_cubecamera;
 
 fn three_js_dir() -> PathBuf {
     three_rs::testing::three_js_dir()
@@ -3072,6 +3084,102 @@ fn webgpu_mirror() {
     });
 }
 
+/// `LightProbe`: a white, roughness-0 standard sphere lit by the
+/// spherical-harmonic irradiance `LightProbeGenerator.fromCubeTexture()`
+/// projects out of the pisa cube, one directional light and the cube's
+/// PMREM; `LightProbeHelper` draws the probe's irradiance on the small sphere
+/// to the left.
+#[test]
+fn webgpu_lightprobe() {
+    let name = "webgpu_lightprobe";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_lightprobe::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_lightprobe::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_lightprobe::animate, |app| {
+        app.renderer.device()
+    });
+}
+
+/// `LightProbe` from a `CubeCamera`: the background rendered into a 256²
+/// RGBA8 cube at the origin, read back and projected by
+/// `LightProbeGenerator.fromCubeRenderTarget()`, and drawn by a radius-5
+/// `LightProbeHelper`.
+#[test]
+fn webgpu_lightprobe_cubecamera() {
+    let name = "webgpu_lightprobe_cubecamera";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_lightprobe_cubecamera::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_lightprobe_cubecamera::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(
+        name,
+        &mut app,
+        webgpu_lightprobe_cubecamera::animate,
+        |app| app.renderer.device(),
+    );
+}
+
 /// `MeshToonNodeMaterial` through `toonOutlinePass()`: 216 toon spheres, each
 /// with a `RedFormat` `DataTexture` gradient ramp read by `textureLoad`,
 /// every one drawn twice — its back-side outline first — under an ambient
@@ -3754,6 +3862,58 @@ fn webgpu_equirectangular() {
         out.display()
     );
     steady_frame(name, &mut app, webgpu_equirectangular::animate, |app| {
+        app.renderer.device()
+    });
+}
+
+/// `SkyMesh`: the Preetham sky with the sun disc and the fbm cloud layer on a
+/// box scaled to 450 000, and a sphere reflecting it through a `CubeCamera`
+/// that renders the scene into a 256² half-float cube every frame. Rendering
+/// into the cube skips tone mapping, so the sphere's reflection and the sky
+/// behind it reach ACES Filmic at exposure 0.05 together. Time is pinned, so
+/// the clouds have neither drifted nor evolved.
+#[test]
+fn webgpu_sky() {
+    let name = "webgpu_sky";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_sky::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_sky::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    // The draw calls and triangles the README's graded table records.
+    let info = app.renderer.info();
+    println!("{name}: info {info:?}");
+
+    steady_frame(name, &mut app, webgpu_sky::animate, |app| {
         app.renderer.device()
     });
 }
@@ -5458,10 +5618,18 @@ fn steady_frame_builds_nothing() {
     // and bind groups that pairing needs. Frame three must create nothing.
     rung!(webgpu_postprocessing_afterimage, 0, 2);
     rung!(webgpu_tsl_halftone);
+    rung!(webgpu_sky);
     rung!(webgpu_tsl_earth);
     rung!(webgpu_mirror);
     rung!(webgpu_multiple_rendertargets);
     rung!(webgpu_multiple_rendertargets_readback);
+    // The PMREM is built in `init()` and the probe's coefficients ride a
+    // per-draw slot buffer, rewritten in place, so a steady frame creates
+    // nothing.
+    rung!(webgpu_lightprobe);
+    // The cube is captured once in `init()`; a frame is the helper and the
+    // background.
+    rung!(webgpu_lightprobe_cubecamera);
 }
 
 // ---------------------------------------------------------------------------

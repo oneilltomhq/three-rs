@@ -75,13 +75,8 @@ pub(super) enum SlotOwner {
     CameraIndex(u32),
 }
 
-/// The group a vertex buffer's [`SlotKey`] is filed under — no bind group
-/// has this index, so an instance matrix bound as a vertex buffer and the
-/// same matrix bound as a uniform are two buffers, as their usages require.
-pub(super) const VERTEX_SLOTS: u32 = u32::MAX;
-
 /// One persistent per-draw buffer: the owner, the bind group and the binding
-/// within it (or [`VERTEX_SLOTS`] and the vertex buffer slot).
+/// within it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) struct SlotKey {
     pub owner: SlotOwner,
@@ -307,8 +302,10 @@ impl Resource {
 
 /// Whose pipeline layout a bind group is made against: a render program's
 /// (`Program`, by the program cache key) or a compute kernel's. Neither cache
-/// is ever evicted or overwritten, so a key names one layout for the
-/// renderer's life.
+/// is ever overwritten, so a key names one layout for as long as its program
+/// is cached; the sweep that evicts a program drops every group made against
+/// its layout in the same pass (issue #237), since building the same WGSL
+/// again gives the same key a new layout.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) enum LayoutKey {
     Render(u64),
@@ -339,6 +336,11 @@ impl BindGroupKey {
             group,
             resources: serials.collect(),
         }
+    }
+
+    /// The layout this group was made against.
+    pub fn layout(&self) -> LayoutKey {
+        self.layout
     }
 
     /// Whether any of this group's resources is one of `serials`.

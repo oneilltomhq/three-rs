@@ -102,6 +102,13 @@ not held is freed.
 - **Lights, cameras and textures** take three.js's positional constructor
   arguments and expose the rest as fields or one-line setters, for the same
   reason.
+  `LightProbe::new( sh, intensity )` returns a `Node`, as every other light
+  does, and keeps its coefficients in the light's `sh` field. The addons that
+  three.js writes as classes with static methods (`LightProbeGenerator`) are
+  unit structs with associated functions, so the call reads
+  `LightProbeGenerator::from_cube_texture( &cube )`. `CubeCamera` follows the
+  cameras: it owns a `node` and its `render_target`, and its `update()` takes
+  the renderer and the scene, as three's `update( renderer, scene )` does.
 - **Rust names throughout**, with the three.js name in the doc comment. This
   is already how the crate is written (`set_rotation`,
   `matrix_world_needs_update`, `is_mesh()`); recorded so it is not reopened.
@@ -227,6 +234,17 @@ textures.
   keeps the three.js correspondence. `set_data` panics on the wrong byte count
   and on a texture the renderer does not own.
 
+- **`InstancedBufferAttribute::array()` / `array_mut()` / `set_needs_update()`
+  / `version()`** — `attribute.needsUpdate = true`, for `instanceMatrix` and
+  `instanceColor` (#89). The renderer keeps one GPU buffer per attribute and
+  writes it only when the version moves, so the array is no longer a public
+  field: a write that bypassed the version would be a stale frame. The same
+  reasoning as `set_data` puts the bump in the writers: `array_mut()` always
+  bumps, and `set_matrix_at` / `set_color_at` bump when the value they write
+  differs from the one there, so an animation loop that re-sets unchanged
+  matrices uploads nothing. three.js' `setMatrixAt` needs the flag;
+  here it does not.
+
 ## 7. A material field the port does not read says so
 
 `MeshBasicNodeMaterial` is one struct for every kind (decision 3), so a field
@@ -261,9 +279,10 @@ Loud:
 | `anisotropy` | Physical, lit by a point, spot or directional light | The anisotropic `BRDF_GGX` (`V_GGX_SmithCorrelated_Anisotropic`, `D_GGX_Anisotropic`) is not ported, so the direct highlight would be the isotropic one. The indirect bent normal is ported, which is why an unlit anisotropic page such as `webgpu_loader_gltf_anisotropy` is quiet. |
 
 Not fields, so nothing to be loud about: three.js properties the struct does
-not have at all — `wireframe`, the `stencil*` family, `clippingPlanes`,
-`sheenColorMap` / `sheenRoughnessMap`, `iridescence*`, `alphaTest` (the
-scalar; `alpha_test_node` is the port's form), `polygonOffset*`, `dithering`.
+not have at all — the `stencil*` family, `clippingPlanes`,
+`sheenColorMap` / `sheenRoughnessMap`, `iridescence*`, `polygonOffset*`,
+`dithering`. (`wireframe` and the scalar `alpha_test` are fields and are
+honoured; `alpha_test_node` is the node form of the latter.)
 Setting one is a compile error, which is louder than a log line. A field
 three's own class for that kind lacks — `clearcoat` on a Standard material,
 `shininess` on a Physical one — is ignored by three too and is not listed.
@@ -298,7 +317,7 @@ Three calls `velocity.setProjectionMatrix( m )` on the `VelocityNode`
 singleton. Here the velocity history belongs to the renderer's
 `NodeFrameState` (#154, decision 1), and `velocity()` builds a fresh node
 each call. So the setter is `Renderer::set_velocity_projection_matrix(
-Option<Matrix4> )`, where `None` is three's `null`. `docs/nodes.md` §59 has
+Option<Matrix4> )`, where `None` is three's `null`. `docs/nodes.md` §62 has
 the store.
 
 ## 9. The node enum opens through `Node::Custom`

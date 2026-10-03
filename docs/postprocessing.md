@@ -653,7 +653,7 @@ creates `bloomIntensity` (above), and the renderer gives it the pass target's
 
 - **The previous frame.** `velocity` needs last frame's model, view and
   projection matrices, and a skinned mesh needs last frame's bones. The
-  renderer keeps them, and `docs/nodes.md` §59 describes how. The pass's MRT
+  renderer keeps them, and `docs/nodes.md` §62 describes how. The pass's MRT
   is what turns on the skinned path. `PassNode`'s render sets the renderer's
   MRT before it draws the scene, so `needsPreviousData()` sees `velocity`
   while the pass is drawing. The output quad has no velocity and pays
@@ -696,7 +696,7 @@ The port's nodes have no handle on the pipeline while they build, so the
 caller hands it over. Without `attach` the camera never moves, the history
 never gains new samples, and the output is the scene with a one-frame delay
 through the resolve. `docs/api.md` §8 has the reasoning, and
-`docs/nodes.md` §60 the frame order and where the history lives.
+`docs/nodes.md` §63 the frame order and where the history lives.
 
 The camera has to be the pass's camera, and a `PerspectiveCamera`. Each
 frame, TRAA renders its resolve quad and makes two GPU copies, one of colour

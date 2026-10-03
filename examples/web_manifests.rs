@@ -303,9 +303,18 @@ mod webgpu_loader_gltf_diffuse_roughness;
 #[path = "webgpu_cubemap_mix.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_cubemap_mix;
+#[path = "webgpu_lightprobe.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_lightprobe;
+#[path = "webgpu_lightprobe_cubecamera.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_lightprobe_cubecamera;
 #[path = "webgpu_postprocessing_motion_blur.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_postprocessing_motion_blur;
+#[path = "webgpu_sky.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_sky;
 #[path = "webgpu_tsl_earth.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_tsl_earth;
@@ -527,6 +536,11 @@ const GRADED: &[(&str, fn())] = &[
     ("webgpu_mirror", || drop(webgpu_mirror::init())),
     ("webgpu_tsl_halftone", || drop(webgpu_tsl_halftone::init())),
     ("webgpu_tsl_earth", || drop(webgpu_tsl_earth::init())),
+    ("webgpu_lightprobe", || drop(webgpu_lightprobe::init())),
+    ("webgpu_lightprobe_cubecamera", || {
+        drop(webgpu_lightprobe_cubecamera::init())
+    }),
+    ("webgpu_sky", || drop(webgpu_sky::init())),
     ("webgpu_postprocessing_motion_blur", || {
         drop(webgpu_postprocessing_motion_blur::init())
     }),

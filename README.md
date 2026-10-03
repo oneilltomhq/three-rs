@@ -20,6 +20,10 @@ below pass the grader; the vast majority of Three's 600-odd examples have not be
 attempted. The API follows Three's object model but is not stable. Vulkan on
 Linux is the only backend that has been run.
 
+[`docs/parity.md`](docs/parity.md) judges every three.js export, row by row,
+as present, partial or absent in the port, with the test or graded example
+that verifies each present row.
+
 ## What is ported
 
 - **Math and core.** Vector/Matrix/Quaternion/Euler/Color and the geometric
@@ -40,30 +44,34 @@ Linux is the only backend that has been run.
 - **Materials.** `MeshBasic`, `MeshPhong`, `MeshStandard` (physical lighting
   model with DFG LUT), `Sprite`, `LineBasic`, and the shadow-pass material.
   Bump maps, env maps, blending modes, tone mapping.
-- **Lights and shadows.** Ambient, Hemisphere, Point, Spot, Directional;
+- **Lights and shadows.** Ambient, Hemisphere, Point, Spot, Directional and
+  `LightProbe` (nine spherical-harmonic coefficients, irradiance only);
   planar and cube shadow maps with Three's Vogel-disk filter.
 - **Renderer.** Render lists, instancing, morph targets, render targets,
   MSAA, the linear-to-sRGB output pass, `PassNode` post-processing, mipmaps,
-  cube textures, line topology, viewport / scissor / `clearDepth` and
-  `autoClear`. `velocity` as an MRT output, with three's previous-frame
-  matrices and skinned `positionPrevious`, and temporal reprojection
-  anti-aliasing (`traa`) on top of it.
+  cube textures, `CubeCamera` / `CubeRenderTarget`, line topology, viewport /
+  scissor / `clearDepth` and `autoClear`. `velocity` as an MRT output, with
+  three's previous-frame matrices and skinned `positionPrevious`, and temporal
+  reprojection anti-aliasing (`traa`) on top of it.
 - **Addons.** `src/addons/` holds the `three/addons/…` tier that the graded
   examples import: `lines` (`LineSegmentsGeometry`, `LineGeometry`,
   `LineSegments2`, `Line2` — fat lines, with `Line2NodeMaterial` in core beside
   them, as three.js ships it), `geometry_utils`, `text_geometry`
-  (`TextGeometry`), `curve_modifier_gpu` (`Flow`), and `controls::OrbitControls`,
+  (`TextGeometry`), `curve_modifier_gpu` (`Flow`), `lights`
+  (`LightProbeGenerator`), `helpers` (`LightProbeHelper`), `objects::SkyMesh`
+  (the Preetham sky with sun disc and clouds), and `controls::OrbitControls`,
   a port of the JS class graded against the JS class itself. An addon that
   needs nothing from core would be a workspace crate instead — `addons/controls`
   is one — and that stays the preferred shape; these live in the root crate
   because the e2e harness pulls examples in with `#[path = "../../examples/…"]`,
   and an example in another crate would need its own test binary.
-- **Loaders.** glTF/GLB (all accessor types, skins, animations, KHR specular
-  and ior, `EXT_meshopt_compression` and `KHR_mesh_quantization`), textures (PNG, JPEG), cube textures.
-  and ior, `EXT_texture_webp`), textures (PNG, JPEG, GIF, WebP; not AVIF),
-  cube textures.
-  and ior), textures (PNG, JPEG), cube textures, typeface.json fonts
-  (`FontLoader`).
+- **Loaders.** glTF/GLB (all accessor types, skins, animations, `KHR_mesh_quantization`,
+  `KHR_draco_mesh_compression`, `EXT_meshopt_compression`, `KHR_texture_basisu`,
+  `KHR_texture_transform`, `EXT_texture_webp` / `EXT_texture_avif`, and the
+  `KHR_materials_*` extensions: specular, ior, clearcoat, sheen, transmission,
+  volume, anisotropy, diffuse roughness, emissive strength), textures (PNG,
+  JPEG, GIF, WebP, AVIF), cube textures, KTX2, HDR and Ultra HDR, `BufferGeometryLoader`,
+  typeface.json fonts (`FontLoader`).
 - **Animation.** Interpolants, keyframe tracks, clips, `PropertyMixer`,
   `AnimationAction` and `AnimationMixer`.
 - **Workspace crate.** `sdf-text`: signed-distance-field text rendering with
@@ -117,6 +125,8 @@ Linux is the only backend that has been run.
 | [`webgpu_instance_points`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_instance_points.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_instance_points-progress.md) | [`webgpu_textures_partialupdate`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_textures_partialupdate.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_textures_partialupdate-progress.md) | [`webgpu_layers`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_layers.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_layers-progress.md) | [`webgpu_loader_gltf_diffuse_roughness`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_loader_gltf_diffuse_roughness.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_loader_gltf_diffuse_roughness-progress.md) |
 | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_cubemap_mix.jpg" alt="webgpu_cubemap_mix" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_cubemap_mix) | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_mirror.jpg" alt="webgpu_mirror" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_mirror) | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_tsl_halftone.jpg" alt="webgpu_tsl_halftone" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_tsl_halftone) | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_tsl_earth.jpg" alt="webgpu_tsl_earth" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_tsl_earth) |
 | [`webgpu_cubemap_mix`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_cubemap_mix.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_cubemap_mix-progress.md) | [`webgpu_mirror`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_mirror.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_mirror-progress.md) | [`webgpu_tsl_halftone`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_tsl_halftone.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_tsl_halftone-progress.md) | [`webgpu_tsl_earth`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_tsl_earth.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_tsl_earth-progress.md) |
+| [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_lightprobe.jpg" alt="webgpu_lightprobe" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_lightprobe) | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_lightprobe_cubecamera.jpg" alt="webgpu_lightprobe_cubecamera" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_lightprobe_cubecamera) | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_sky.jpg" alt="webgpu_sky" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_sky) |  |
+| [`webgpu_lightprobe`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_lightprobe.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_lightprobe-progress.md) | [`webgpu_lightprobe_cubecamera`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_lightprobe_cubecamera.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_lightprobe_cubecamera-progress.md) | [`webgpu_sky`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_sky.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_sky-progress.md) |  |
 | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_postprocessing_motion_blur.jpg" alt="webgpu_postprocessing_motion_blur" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_postprocessing_motion_blur) |  |  |  |
 | [`webgpu_postprocessing_motion_blur`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_motion_blur.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_motion_blur-progress.md) |  |  |  |
 
@@ -215,6 +225,9 @@ same screenshots at the same threshold (see
 | webgpu_mirror | 22 | 6.4 | 40 | 6269 | yes |
 | webgpu_tsl_halftone | 93 (Three itself scores 93 against the same JPEG) | 3.1 | 4 | 44363 | yes |
 | webgpu_tsl_earth | 0 | 2.6 | 3 | 16129 | yes |
+| webgpu_lightprobe | 2 | 1.3 | 4 | 6913 | yes |
+| webgpu_lightprobe_cubecamera | 0 | 1.6 | 3 | 2945 | no (fromCubeRenderTarget's readback blocks, which the browser cannot) |
+| webgpu_sky | 0 | 5.8 | 3 | 3981 | yes |
 | webgpu_postprocessing_motion_blur | 5 | 6.2 | 9 | 100553 | yes |
 
 `webgpu_compute_points` is graded like the rest and its 4 pixels mean less

@@ -139,6 +139,12 @@ opt-level = 3
 name = "viewer"
 path = "src/bin/viewer.rs"
 
+# A plain timing loop, not a libtest harness: it needs a GPU adapter, so it is
+# run by hand (`cargo bench --bench instanced_mesh`), never by CI (#89).
+[[bench]]
+name = "instanced_mesh"
+harness = false
+
 [[example]]
 name = "webgpu_depth_texture"
 path = "examples/webgpu_depth_texture.rs"

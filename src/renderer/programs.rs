@@ -460,6 +460,10 @@ pub struct LightState {
     pub shadow_map_size: Vector2,
     /// `light.shadow.intensity`.
     pub shadow_intensity: f64,
+    /// `LightProbeNode.update()`'s array: `light.sh.coefficients[ i ] *
+    /// light.intensity`, each padded to a `vec4` as `uniformArray()` pads it.
+    /// Zero for every light that is not a probe.
+    pub sh: [[f32; 4]; 9],
 }
 
 impl Default for LightState {
@@ -483,6 +487,7 @@ impl Default for LightState {
             shadow_blur_samples: 8.0,
             shadow_map_size: Vector2::new(512.0, 512.0),
             shadow_intensity: 1.0,
+            sh: [[0.0; 4]; 9],
         }
     }
 }

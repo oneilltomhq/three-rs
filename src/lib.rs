@@ -157,7 +157,7 @@ pub mod testing;
 pub mod textures;
 pub mod utils;
 
-pub use cameras::{ArrayCamera, OrthographicCamera, PerspectiveCamera, RenderCamera};
+pub use cameras::{ArrayCamera, CubeCamera, OrthographicCamera, PerspectiveCamera, RenderCamera};
 pub use core::{BufferGeometry, Intersection, Node, Object3D, Raycaster, Timer};
 pub use environments::RoomEnvironment;
 pub use error::{Error, GltfError};
@@ -172,8 +172,8 @@ pub use geometries::{
 };
 pub use helpers::{CameraHelper, GridHelper};
 pub use lights::{
-    AmbientLight, DirectionalLight, HemisphereLight, Light, LightKind, LightObject, LightShadow,
-    PointLight, ShadowCamera, SpotLight,
+    AmbientLight, DirectionalLight, HemisphereLight, Light, LightKind, LightObject, LightProbe,
+    LightShadow, PointLight, ShadowCamera, SpotLight,
 };
 pub use loaders::{
     BufferGeometryLoader, CubeTextureLoader, HdrCubeTextureLoader, HdrLoader, Ktx2Loader,
@@ -191,9 +191,9 @@ pub use objects::{
     QuadMesh, Scene, SceneFog, Sprite,
 };
 pub use renderer::{
-    pass, BuildCounts, CameraRef, ComputeCounts, DirectRenderPipeline, Info, MemoryCounts,
-    PassNode, RenderCounts, RenderPipeline, RenderTarget, Renderer, RendererParameters, SceneRef,
-    SsaaPassNode, BACKENDS,
+    pass, BuildCounts, CameraRef, ComputeCounts, CubeRenderTarget, DirectRenderPipeline, Info,
+    MemoryCounts, PassNode, RenderCounts, RenderPipeline, RenderTarget, Renderer,
+    RendererParameters, SceneRef, SsaaPassNode, BACKENDS,
 };
 pub use textures::{
     CubeTexture, Data3DTexture, DepthTexture, Mapping, MinFilter, Texture, TextureFilter,
