@@ -5,8 +5,9 @@
 
 use three_rs::materials::{quad_vertex_node, render_output, MeshBasicNodeMaterial};
 use three_rs::nodes::display::{
-    after_image, box_blur, dot_screen, fxaa, gaussian_blur, hash_blur, motion_blur,
-    pixelation_pass, rgb_shift, sobel, traa, BoxBlurOptions, GaussianBlurOptions, HashBlurOptions,
+    after_image, box_blur, dot_screen, fxaa, gaussian_blur, hash_blur_with, motion_blur,
+    pixelation_pass, rgb_shift, sobel, traa, viewport_shared_texture_at, BoxBlurOptions,
+    GaussianBlurOptions, HashBlurOptions,
 };
 use three_rs::nodes::tsl::{distance, float, screen_uv, texture_uv, uniform_value, uv, vec4_join};
 use three_rs::nodes::Type;
@@ -141,11 +142,17 @@ pub fn display_quads() -> Vec<DisplayQuad> {
     ));
 
     // webgpu_backdrop_area `m08`: `hashBlur( viewportSharedTexture(), .05 )`.
-    // Again only the loop is compared; the tap there is a viewport texture.
+    // Again only the loop is compared: three dumps it inside the backdrop
+    // material, `hashBlur`'s tap is the viewport texture's nearest load.
     quads.push(quad(
         "hash_blur",
         "webgpu_backdrop_area_m08_hash_blur.wgsl",
-        hash_blur(&input(), float(0.05), HashBlurOptions::default()),
+        hash_blur_with(
+            viewport_shared_texture_at,
+            screen_uv(),
+            float(0.05),
+            HashBlurOptions::default(),
+        ),
     ));
 
     // webgpu_postprocessing_motion_blur `m14`: the page's whole output node,

@@ -4033,9 +4033,10 @@ for six frames once the sphere is moved in front of it.
   `RenderList.occlusionQueryCount`, which counts runs in push order, and then
   indexes it in the sorted draw order, which can have more runs. The port
   counts in draw order, so the index cannot overrun the set.
-* **A transmissive split records queries only in its first pass.** When
-  `ViewportTextureNode` splits the scene pass in two, three records into
-  both. No page on the ladder puts an occlusion test on a split pass.
+* **A split pass records queries only in its first segment.** When a
+  framebuffer copy (transmission's, or a viewport node's, §61) splits the
+  scene pass, three records into every part. No page on the ladder puts an
+  occlusion test on a split pass.
 * **Answers land on a poll, not on the event loop.** Natively the map
   callback fires on the next `render()`'s non-blocking poll, which on this
   machine is always in time for the next frame. That is the soonest three
@@ -5680,6 +5681,139 @@ of §59.3 into a `CubeRenderTarget`, and
   no per-object render hook.
 - Several probes are summed in light-list order, which is scene traversal
   order, as in three. Neither page has more than one probe.
+## 61. Screen reads: the viewport texture nodes and the framebuffer copy (issue #169)
+
+### 61.1 What three does
+
+`ViewportTextureNode` is a texture read whose `updateBefore()` (update type
+`RENDER`) calls `renderer.copyFramebufferToTexture( texture )`. The node
+system runs `updateBefore()` from `renderObject()`, just before the first
+draw of an object whose material reads the node. `WebGPUBackend
+.copyFramebufferToTexture()` ends the open render pass, copies the colour
+(or depth) attachment into the texture, and begins a new pass that loads
+what is there. The reading object therefore sees everything drawn before it
+in the opaque-then-transparent list, and nothing after.
+
+* `viewportSharedTexture()` (`ViewportSharedTextureNode`) is one
+  `FramebufferTexture` shared by every such node, `NearestFilter`.
+* `viewportTexture()` has a `FramebufferTexture` of its own,
+  `LinearMipmapLinearFilter`.
+* `viewportDepthTexture()` (`ViewportDepthTextureNode`) is one shared
+  `DepthTexture`, `_sharedDepthbuffer`.
+* `viewportLinearDepth` is `viewportDepthTexture()` turned into an
+  orthographic depth with `cameraNear` and `cameraFar`.
+* `viewportSafeUV( uv )` (`ViewportUtils`) falls back to `screenUV` where
+  the scene depth at `uv` is in front of the fragment, so a refraction
+  offset does not pick up an object that sits in front of the refractor.
+* `screenSize` and `screenCoordinate` are `ScreenNode`'s `SIZE` and
+  `COORDINATE` scopes.
+
+A material with `backdropNode` set goes into the transparent list. On a lit
+material `LightsNode.setup()` replaces `totalDiffuse` with
+`backdropAlpha ? mix( direct + indirect, backdrop, backdropAlpha ) :
+backdrop`. On an unlit one `setupLighting()`'s `backdropNode` arm does the
+same with the diffuse colour.
+
+### 61.2 The port
+
+`src/nodes/display/viewport_texture.rs` has the nodes and
+`src/renderer/screen_reads.rs` has the copy. `screen_size` and
+`screen_coordinate` are in `tsl.rs` next to `viewport_size`, and
+`camera_near` and `camera_far` are render-group uniforms.
+
+The port's `Renderer::draw` builds every draw of a pass before it records
+any of them, so it cannot end a pass from inside a draw. Instead, a
+viewport node's `update_before` makes a **request**: "copy the colour (or
+depth) attachment into this texture before draw `n`", where `n` is the
+index of the draw being built. `draw` then records the pass in segments.
+It records the draws up to the first request and submits. It runs the
+copies requested at that index, then records the next segment with
+`LoadOp::Load` on colour and depth. It repeats until the draws run out.
+The copy therefore lands where three's does, in three's opaque/transparent
+order.
+
+Transmission's `viewportOpaqueMipTexture()` copy, which the port already
+had as a split of its own, is now one more request
+(`FramebufferCopy::OpaqueFrame`) in the same sorted list. A transmissive
+page with a backdrop sphere gets both copies at their own indices.
+
+**A pass that reads nothing records one segment**, exactly as before. No
+request means no split, no extra submit and no extra texture. The
+steady-frame strip and every rung that does not read the screen are
+unchanged.
+
+The request allocates (or resizes) the destination texture, not the copy.
+The reading draw's bind group is made right after the request returns, and
+it has to name the texture the copy will fill.
+
+### 61.3 The textures
+
+* `viewport_shared_texture` binds a thread-local `FramebufferTexture`,
+  `NearestFilter`, so it is unfilterable and the tap is a `textureLoad` at
+  `uv * textureDimensions`. That matches three's WGSL.
+* `viewport_texture` has a texture of its own with a sampler, read with
+  `textureSample`. `generateMipmaps` stays false, so it has one level, as
+  in three.
+* `viewport_depth_texture` binds a thread-local `DepthTexture` as
+  `texture_depth_2d`, read with `textureLoad`.
+
+The guard is per node, as in three. Each `viewportSharedTexture()` call is
+its own node, so `webgpu_backdrop`'s eight spheres copy the frame eight
+times, and each sphere sees the spheres drawn before it.
+
+### 61.4 `backdropNode`
+
+`MeshBasicNodeMaterial` has `backdrop_node` and `backdrop_alpha_node`, and
+the other node materials read them too. A backdrop material goes in the
+transparent list (`in_transparent_list`). The blend is `backdrop_blend()` in
+`node_material.rs`. On Physical, transmission's own backdrop still wins, as
+`PhysicalLightingModel.start()` overwrites `context.backdrop`.
+
+`MeshBasicNodeMaterial.lights` is true in three, so a backdrop on a Basic
+material in a lit scene goes through `BasicLightingModel`. The port's Basic
+path is lit when an `env_map` is set, or when a backdrop is set and the
+scene has lights. That path now starts with three's
+`indirectDiffuse = vec4( 0 ).xyz` store.
+
+### 61.5 Divergences
+
+* **One texture per node, not per render target.** Three keeps a texture
+  per target the node is drawn into (`getTextureForReference`). The port
+  resizes the node's one texture to whichever pass copies into it. A node
+  read in two passes of different sizes in one frame reallocates twice a
+  frame. A request keeps the `wgpu::Texture` it allocated, so the second
+  resize cannot redirect the first copy.
+* **A shared texture outlives its renderer.** The shared colour and depth
+  textures are thread-locals, so a second renderer on the same thread sees
+  the first one's GPU texture on the handle. Each renderer keeps the
+  textures it made (`screen_reads::Destinations`, three's per-renderer
+  `backend.get( texture )`), and it reuses the handle's texture only when it
+  made it. The steady-frame strip, which renders every rung on one thread,
+  is the gate.
+* **No depth copy under MSAA.** WebGPU copies only between textures of
+  equal sample count, and the destination is bound as a single-sampled
+  `texture_depth_2d`. Under MSAA the depth copy is skipped, and the reading
+  draw sees the depth texture's previous contents. No page on the ladder
+  reads depth under MSAA.
+* **Occlusion queries go only in the first segment** (§39,
+  last bullet). No page on the ladder puts an occlusion test on a pass that
+  splits.
+
+### 61.6 Gates
+
+* `tests/nodes_display_wgsl.rs`' `refraction_backdrop_matches_three`
+  compares `webgpu_refraction`'s refractor fragment against three's `m06`.
+* `hash_blur_loop_matches_three` (#148) now blurs
+  `viewportSharedTexture()` at `screenUV`, as `webgpu_backdrop_area` does.
+  The `textureLoad`-to-tap normalisation is gone, and the loop is compared
+  exactly.
+* `webgpu_backdrop` is graded green at 23 pixels, the same as three's own
+  frame, and is pixel-identical to it.
+* `webgpu_refraction` is ported but `#[ignore]`d: three itself scores 344
+  against its own JPEG on this machine, over the limit. The port scores
+  336, and 13 pixels differ by more than 2 from three's frame.
+* The full ladder keeps every other pixel count. Every rung that reads
+  nothing keeps its steady frame, because its pass is still one segment.
 ## 62. `VelocityNode` and the previous frame (`webgpu_postprocessing_motion_blur`, issue #163)
 
 ### 62.1 What three does

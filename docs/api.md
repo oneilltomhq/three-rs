@@ -268,6 +268,7 @@ Implemented by the audit:
 | `clearcoat_map`, `clearcoat_roughness_map` (new) | `MaterialNode.CLEARCOAT` (× `.r`) and `.CLEARCOAT_ROUGHNESS` (× `.g`); `GLTFLoader` fills them from `clearcoatTexture` / `clearcoatRoughnessTexture`. |
 | `clearcoat`, `clearcoat_roughness`, `clearcoat_normal_map` under a direct light | the direct clearcoat lobe in `PhysicalLightingModel.direct()`. The indirect lobe was already there; with a light in the scene the coat had no highlight. |
 | `clearcoat_normal_scale` on a glTF primitive with no tangents | the derivative-tangent `.y` flip three applies to it as well as to `normalScale`. |
+| `backdrop_node`, `backdrop_alpha_node` (new, #169) | `LightsNode.setup()`'s blend into `totalDiffuse` on Basic, Phong, Lambert, Toon, Standard, Physical and a custom `lighting_model`, and `setupLighting()`'s backdrop arm on an unlit material. A backdrop also puts the material in the transparent list. |
 
 Loud:
 
@@ -276,6 +277,7 @@ Loud:
 | `env_map` | anything but Basic | The Basic flow's `BasicEnvironmentNode` is the only reader. Phong and Lambert wrap the same node in their own lighting model, which is not ported; a PBR material takes a PMREM through `pmrem_env` (or `scene.environment`) rather than a raw cube. |
 | `pmrem_env` | anything but Standard / Physical | Only `PhysicalLightingModel` reads a PMREM. |
 | `ao_map` | anything but Standard / Physical | `setupAmbientOcclusion()` is wired into the PBR flow only; Basic and Phong's indirect term does not multiply by it. |
+| `backdrop_node` | Normal | `MeshNormalNodeMaterial`'s flow packs the normal straight into the output, with no lighting step for the blend to sit in. |
 | `anisotropy` | Physical, lit by a point, spot or directional light | The anisotropic `BRDF_GGX` (`V_GGX_SmithCorrelated_Anisotropic`, `D_GGX_Anisotropic`) is not ported, so the direct highlight would be the isotropic one. The indirect bent normal is ported, which is why an unlit anisotropic page such as `webgpu_loader_gltf_anisotropy` is quiet. |
 
 Not fields, so nothing to be loud about: three.js properties the struct does

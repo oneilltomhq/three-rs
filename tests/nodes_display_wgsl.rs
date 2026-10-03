@@ -17,18 +17,17 @@
 //!   coefficients and constants are the same numbers;
 //! - the control flow: `if`, `else` and loop headers, with names removed;
 //! - for whole-body quads, the texture and sampler binding types.
-//!
-//! One normalisation, for `hashBlur` only: three dumps it over
-//! `viewportSharedTexture()`, which the port does not have, so its taps are a
-//! nearest `textureLoad` where the port's are a `textureSample`. There both
-//! spellings are reduced to `tap( uv )` before the fingerprint is taken, so
-//! the uv — which is where the node's hash and circle are — is still compared.
 
 #[path = "display/materials.rs"]
 mod materials;
+#[path = "../examples/webgpu_refraction.rs"]
+#[allow(dead_code)]
+mod webgpu_refraction;
 
 use std::collections::BTreeMap;
 
+use three_rs::lights::LightKind;
+use three_rs::materials::phong::LightDesc;
 use three_rs::materials::{setup, SetupContext};
 use three_rs::nodes::NodeBuilder;
 
@@ -39,8 +38,6 @@ enum Region {
     Body,
     /// The first loop in `main()` through the statement after it.
     Loop,
-    /// [`Region::Loop`] with every texture tap reduced to `tap( uv )`.
-    LoopAnyTap,
     /// The body of the named WGSL `fn`, through its `return` — for a node
     /// that is one `Fn()` with a layout, where `main()` is only the call.
     Function(&'static str),
@@ -73,7 +70,6 @@ fn region(wgsl: &str, which: Region) -> String {
     let body = &body[..body.find("return output;").expect("a return")];
     match which {
         Region::Body => body.to_string(),
-        Region::LoopAnyTap => any_tap(&region(wgsl, Region::Loop)),
         Region::Function(_) => unreachable!(),
         Region::Loop => {
             let start = body.find("for (").expect("a loop");
@@ -98,73 +94,6 @@ fn region(wgsl: &str, which: Region) -> String {
             body[start..end + next].to_string()
         }
     }
-}
-
-/// The argument list of the call whose `(` is at `open`: the top-level
-/// arguments, and the index just past the closing `)`.
-fn call_args(text: &str, open: usize) -> (Vec<String>, usize) {
-    let mut depth = 0;
-    let mut args = Vec::new();
-    let mut start = open + 1;
-    for (i, c) in text[open..].char_indices() {
-        let at = open + i;
-        match c {
-            '(' => depth += 1,
-            ')' => {
-                depth -= 1;
-                if depth == 0 {
-                    args.push(text[start..at].trim().to_string());
-                    return (args, at + 1);
-                }
-            }
-            ',' if depth == 1 => {
-                args.push(text[start..at].trim().to_string());
-                start = at + 1;
-            }
-            _ => {}
-        }
-    }
-    panic!("unbalanced call at {open}");
-}
-
-/// `textureSample( t, s, uv )` and three's nearest `textureLoad( t,
-/// vec2<u32>( clamp( floor( tsl_coord_clampS_clampT_2d( uv ) * … ) ) ), u32( 0 )
-/// )` both become `tap( uv )`, and the dimensions vars the load declares go.
-fn any_tap(text: &str) -> String {
-    let text: String = text
-        .lines()
-        .filter(|line| !line.contains("= textureDimensions("))
-        .collect::<Vec<_>>()
-        .join("\n");
-    let mut out = String::new();
-    let mut rest = text.as_str();
-    loop {
-        let sample = rest.find("textureSample(");
-        let load = rest.find("textureLoad(");
-        let (at, is_load) = match (sample, load) {
-            (Some(s), Some(l)) if l < s => (l, true),
-            (Some(s), _) => (s, false),
-            (None, Some(l)) => (l, true),
-            (None, None) => break,
-        };
-        out.push_str(&rest[..at]);
-        let open = at + rest[at..].find('(').unwrap();
-        let (args, end) = call_args(rest, open);
-        let uv = if is_load {
-            let coord = &args[1];
-            let wrap = coord
-                .find("tsl_coord_clampS_clampT_2d(")
-                .expect("a nearest load's wrapped coordinate");
-            let wrap_open = wrap + coord[wrap..].find('(').unwrap();
-            call_args(coord, wrap_open).0.remove(0)
-        } else {
-            args[2].clone()
-        };
-        out.push_str(&format!("tap( {} )", any_tap(&uv)));
-        rest = &rest[end..];
-    }
-    out.push_str(rest);
-    out
 }
 
 fn is_ident_char(c: char) -> bool {
@@ -362,9 +291,37 @@ fn box_blur_loops_match_three() {
     check("box_blur", Region::Loop);
 }
 
+/// Not a display node but the screen reads they share (#169): the
+/// refractor's `backdropNode` — `viewportSharedTexture( viewportSafeUV(
+/// screenUV + offset ) )`, with `viewportSafeUV`'s depth load and
+/// `linearDepth` compare — blended in by `LightsNode` under the page's four
+/// point lights.
+#[test]
+fn refraction_backdrop_matches_three() {
+    let floor_normal = three_rs::Texture::new(2, 2, Some(vec![0; 16]));
+    let material = webgpu_refraction::refractor_material(&floor_normal);
+    let ctx = SetupContext {
+        lights: (0..4)
+            .map(|index| LightDesc {
+                index,
+                kind: LightKind::Point,
+                shadow_map: None,
+            })
+            .collect(),
+        ..SetupContext::default()
+    };
+    let program = NodeBuilder::new().build(&setup(&material, &ctx, None));
+    let ours = fingerprint(&program.fragment_wgsl, Region::Body);
+    let three = fingerprint(
+        &fixture("webgpu_refraction_m06_refractor.wgsl"),
+        Region::Body,
+    );
+    assert_eq!(ours, three, "\n{}", program.fragment_wgsl);
+}
+
 #[test]
 fn hash_blur_loop_matches_three() {
-    check("hash_blur", Region::LoopAnyTap);
+    check("hash_blur", Region::Loop);
 }
 
 #[test]

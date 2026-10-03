@@ -276,6 +276,11 @@ pub enum UniformSource {
     /// `screenDPR` — `uniform( 1 ).onRenderUpdate( ( { renderer } ) =>
     /// renderer.getPixelRatio() )`.
     ScreenDpr,
+    /// `cameraNear` — `uniform( 'float' ).setName( 'cameraNear' )
+    /// .setGroup( renderGroup ).onRenderUpdate( ( { camera } ) => camera.near )`.
+    CameraNear,
+    /// `cameraFar` — as [`UniformSource::CameraNear`], from `camera.far`.
+    CameraFar,
     /// `LightsNode`'s per-light members, by index into the renderer's light
     /// list for the pass. The dumps put all four in the **render** group:
     /// `light.color * light.intensity` (linear), the cutoff distance, the decay

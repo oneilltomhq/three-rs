@@ -28,6 +28,7 @@ mod sobel;
 mod toon_outline_pass;
 mod traa;
 mod transition;
+mod viewport_texture;
 
 pub use after_image::{after_image, AfterImageNode};
 pub use bloom::{bloom, luminosity_high_pass, BloomNode, HighPassInput};
@@ -46,3 +47,7 @@ pub use sobel::{sobel, SobelOperatorNode};
 pub use toon_outline_pass::{toon_outline_pass, ToonOutlinePassNode};
 pub use traa::{traa, TraaNode};
 pub use transition::transition;
+pub use viewport_texture::{
+    viewport_depth_texture, viewport_depth_texture_at, viewport_linear_depth, viewport_safe_uv,
+    viewport_shared_texture, viewport_shared_texture_at, viewport_texture, viewport_texture_at,
+};
