@@ -1,0 +1,5 @@
+# Examples the web gate still runs and reports but does not fail on, one per
+# line: `<example>  <reason>`. The reason becomes the README's `browser` cell,
+# `no (<reason>)`, through `cargo run --example gallery`. See web/README.md.
+
+webgpu_lightprobe_cubecamera  fromCubeRenderTarget's readback blocks, which the browser cannot

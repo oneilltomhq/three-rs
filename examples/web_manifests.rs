@@ -303,6 +303,12 @@ mod webgpu_loader_gltf_diffuse_roughness;
 #[path = "webgpu_cubemap_mix.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_cubemap_mix;
+#[path = "webgpu_lightprobe.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_lightprobe;
+#[path = "webgpu_lightprobe_cubecamera.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_lightprobe_cubecamera;
 #[path = "webgpu_tsl_earth.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_tsl_earth;
@@ -524,6 +530,10 @@ const GRADED: &[(&str, fn())] = &[
     ("webgpu_mirror", || drop(webgpu_mirror::init())),
     ("webgpu_tsl_halftone", || drop(webgpu_tsl_halftone::init())),
     ("webgpu_tsl_earth", || drop(webgpu_tsl_earth::init())),
+    ("webgpu_lightprobe", || drop(webgpu_lightprobe::init())),
+    ("webgpu_lightprobe_cubecamera", || {
+        drop(webgpu_lightprobe_cubecamera::init())
+    }),
 ];
 
 /// Where the committed manifests live, one `<example>.json` each.
