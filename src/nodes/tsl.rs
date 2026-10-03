@@ -4067,6 +4067,22 @@ impl UniformArray {
     }
 }
 
+/// `uniformArray( array )` over a `Vector3` array the application keeps
+/// changing — `LightProbeHelper`'s `uniformArray( lightProbe.sh.coefficients
+/// )`. `read` returns the elements already padded, four floats each, and is
+/// called every draw; `count` is the element count the WGSL declares.
+pub(crate) fn uniform_array_live(
+    count: usize,
+    read: impl Fn() -> Vec<f64> + 'static,
+) -> UniformArray {
+    UniformArray(Rc::new(BufferNode {
+        id: crate::nodes::node::BufferId::next(),
+        source: BufferSource::Live(crate::nodes::node::LiveValue::new(read)),
+        element_ty: Type::Vec4,
+        count,
+    }))
+}
+
 /// `LightProbeNode.lightProbe` — the nine coefficients, times the light's
 /// intensity, of the probe at `index` of the renderer's light list.
 pub(crate) fn light_probe_sh(index: usize) -> UniformArray {

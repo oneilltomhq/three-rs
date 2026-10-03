@@ -4171,11 +4171,51 @@ impl Renderer {
         layer: u32,
         mip_level: u32,
     ) -> Result<(u32, u32, Vec<f32>), Error> {
+        let (width, height, bytes) = self.read_cube_bytes(cube, layer, mip_level, |format| {
+            format == wgpu::TextureFormat::Rgba16Float
+        })?;
+        let pixels = bytes
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|half| crate::extras::from_half_float(u16::from_le_bytes(*half)))
+            .collect();
+        Ok((width, height, pixels))
+    }
+
+    /// One face of one mip level of an `UnsignedByteType` [`CubeTexture`] as
+    /// the RGBA8 bytes the GPU holds, top-down — what
+    /// `readRenderTargetPixelsAsync( cubeTarget, 0, 0, w, w, 0, faceIndex )`
+    /// resolves to. An sRGB target's bytes come back still encoded, as
+    /// three's do; `LightProbeGenerator.fromCubeRenderTarget()` decodes them.
+    pub fn read_cube_pixels_rgba8(
+        &mut self,
+        cube: &CubeTexture,
+        layer: u32,
+        mip_level: u32,
+    ) -> Result<(u32, u32, Vec<u8>), Error> {
+        self.read_cube_bytes(cube, layer, mip_level, |format| {
+            matches!(
+                format,
+                wgpu::TextureFormat::Rgba8Unorm | wgpu::TextureFormat::Rgba8UnormSrgb
+            )
+        })
+    }
+
+    /// The copy both cube readbacks share: `layer` of `mip_level`, in the
+    /// texture's own format, which `accepts` must allow.
+    fn read_cube_bytes(
+        &mut self,
+        cube: &CubeTexture,
+        layer: u32,
+        mip_level: u32,
+        accepts: impl Fn(wgpu::TextureFormat) -> bool,
+    ) -> Result<(u32, u32, Vec<u8>), Error> {
         let texture = self.ensure_cube_texture(cube);
         let format = texture.format();
-        if format != wgpu::TextureFormat::Rgba16Float {
+        if !accepts(format) {
             return Err(Error::Readback {
-                reason: format!("{format:?} is not rgba16float"),
+                reason: format!("{format:?} is not the format this readback decodes"),
             });
         }
         let size = texture.width() >> mip_level;
@@ -4187,14 +4227,7 @@ impl Renderer {
             .map_err(|e| Error::Readback {
                 reason: e.to_string(),
             })?;
-        let (width, height, bytes) = readback.finish()?;
-        let pixels = bytes
-            .as_chunks::<2>()
-            .0
-            .iter()
-            .map(|half| crate::extras::from_half_float(u16::from_le_bytes(*half)))
-            .collect();
-        Ok((width, height, pixels))
+        readback.finish()
     }
 
     /// The first half of every readback: a `MAP_READ` buffer, the copy of
