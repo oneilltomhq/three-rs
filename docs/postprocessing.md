@@ -634,6 +634,39 @@ unaffected: it binds a render target, so it takes the first branch and keeps
 That is where this page's antialiasing actually happens — the scene is drawn
 4x into the pass target and resolved before bloom ever samples it.
 
+## Velocity and motion blur (`webgpu_postprocessing_motion_blur`)
+
+`velocity` is one more MRT member, which is where three puts it too:
+
+```rust
+scene_pass.set_mrt(mrt(vec![
+    ("output", output_property()),
+    ("velocity", velocity()),
+]));
+let vel = scene_pass.texture_node("velocity").mul(blur_amount);
+let m_blur = motion_blur(&scene_pass.texture(), vel, 16);
+```
+
+Nothing about the attachment is new. `PassNode` creates it by name, as it
+creates `bloomIntensity` (above), and the renderer gives it the pass target's
+`rgba16float`. Two things are new:
+
+- **The previous frame.** `velocity` needs last frame's model, view and
+  projection matrices, and a skinned mesh needs last frame's bones. The
+  renderer keeps them, and `docs/nodes.md` §59 describes how. The pass's MRT
+  is what turns on the skinned path. `PassNode`'s render sets the renderer's
+  MRT before it draws the scene, so `needsPreviousData()` sees `velocity`
+  while the pass is drawing. The output quad has no velocity and pays
+  nothing.
+- **`motion_blur( input, velocity, numSamples )`** is `MotionBlur.js`. It
+  takes a centre tap, then `numSamples` taps from `uv - velocity / 2` to
+  `uv + velocity / 2`, and divides by `numSamples`. As in three, the centre
+  tap is not in the count. A still pixel therefore comes out 17/16 as bright
+  at 16 samples. The port keeps that for parity.
+
+The rung's graded frame is the page's first, so its velocity is zero. The
+rung shows that this composes. `tests/velocity_frames.rs` shows the motion.
+
 ## The display nodes of #144
 
 `src/nodes/display/` now also has these ports of

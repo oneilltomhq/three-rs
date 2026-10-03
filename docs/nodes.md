@@ -5507,3 +5507,78 @@ it, matching what three's `setup()` does during graph analysis;
   frames.
 * The full ladder keeps every pixel count. The converted examples render
   their passes from the output quad's draw.
+
+## 59. `VelocityNode` and the previous frame (`webgpu_postprocessing_motion_blur`, issue #163)
+
+### 59.1 What three does
+
+`velocity` is a `vec2`: this frame's NDC position minus last frame's.
+
+- **Uniforms.** It owns four:
+  - `previousModelWorldMatrix`, in the object group;
+  - `currentProjectionMatrix`, `previousProjectionMatrix` and
+    `previousCameraViewMatrix`, in the render group.
+- **`update()`.** This is an `OBJECT` update. It copies the object's stored
+  matrix into the uniform. Once per `frameId` per camera, it rotates the
+  camera's current view and projection into the previous ones.
+- **`updateAfter()`.** Also `OBJECT`. It stores `object.matrixWorld`.
+- **Storage.** A module `WeakMap`. First sight seeds previous with current,
+  so a first frame has no motion.
+- **`setProjectionMatrix( m )`.** It substitutes the projection that
+  `currentProjectionMatrix` records. TRAA uses it to keep its jitter out of
+  the velocity.
+
+The previous clip position goes through `positionPrevious`, a varying that
+starts as `positionGeometry`. When `builder.needsPreviousData()` is true,
+meaning the renderer's MRT has `velocity`, `SkinningNode` reassigns it,
+before the current skinning. It skins with `previousBoneMatrices`, a second
+storage buffer that `SkinningNode.update()` fills from last frame's
+`skeleton.boneMatrices` before it updates the skeleton.
+
+### 59.2 The port
+
+The shader half, `nodes::velocity::velocity()`, builds three's `setup()`
+graph. Its four matrices are new `UniformSource`s that the renderer fills.
+They are not `ObjectUpdate` closures, because the values come from state the
+renderer owns.
+
+The bookkeeping half is `VelocityState`, a field of the renderer's
+`NodeFrameState` (§57). This is #154's decision 1, option C. It keeps three
+maps, each keyed by id:
+
+- object → last `matrixWorld`;
+- camera → `{ frameId, previous and current view and projection }`;
+- skeleton → last bone matrices.
+
+`Renderer::draw()` runs `update` before it writes the draw's bindings, and
+`update_after` after it records the draw. Both run only when the program's
+`reads_velocity` is set. The builder sets that flag when the program binds
+any of the four uniforms. A frame with no velocity in it never touches the
+store, and `steady_frame_builds_nothing` holds.
+
+The camera history rolls when its `frameId` changes. A frame ends at a render
+to the screen (§57.3). A test or tool that renders only into targets
+therefore stays inside one frame, and its camera never rolls. The object
+history has no such guard: as in three, it moves on every draw that reads
+velocity.
+
+**Skinning.** `SkinEntry` has a `previous` flag, part of the program key. The
+main pass sets it when the renderer's MRT has `velocity`. With the flag set,
+`skinning()` declares a `BufferSource::PreviousBoneMatrices` buffer and skins
+`positionPrevious` with it. That code comes first, so the buffer takes the
+lower binding, as in three's dump. `update_skeleton` calls
+`VelocityState::rotate_bones` just before `skeleton.update()`, inside the
+`FRAME` claim. It stores the bones the skeleton is about to overwrite.
+`previous_bones` returns them, and seeds itself from the updated bones on
+first sight.
+
+**The override.** `Renderer::set_velocity_projection_matrix( Option<Matrix4> )`
+is `velocity.setProjectionMatrix()`. It sits on the renderer because the
+store does.
+
+### 59.3 Not ported
+
+- `positionPrevious` for instancing, batching and `Line2`.
+- The bone-texture path.
+- `useVelocity` on shadow casters. `docs/webgpu_postprocessing_motion_blur-progress.md`
+  explains why no pixel depends on it.

@@ -6,6 +6,27 @@ have their own sections after the release they ship with. The format follows [Ke
 
 ## [Unreleased]
 
+### Added
+
+- **`velocity`** (`nodes::velocity`): the screen-space motion since the last
+  frame, as an MRT member, with three's previous-frame model, view and
+  projection matrices. The history lives in the renderer's `NodeFrameState`.
+  Skinned meshes skin `positionPrevious` with last frame's bones when the MRT
+  has `velocity`. `Renderer::set_velocity_projection_matrix()` is
+  `velocity.setProjectionMatrix()`. (#163)
+- **`motion_blur`** (`nodes::display`), `MotionBlur.js`. (#163)
+- **`webgpu_postprocessing_motion_blur`** is graded: 5 of 100000 pixels. Its
+  graded frame has zero velocity, so it proves the page builds and composes.
+  `tests/velocity_frames.rs` checks the motion on the GPU. (#163)
+
+### Fixed
+
+- **Hemisphere lights under Phong, Lambert and Toon materials.** With no
+  `AmbientLight` in the scene, a reset meant for ambient light wiped their
+  contribution. (#163)
+- **Skinned shadow casters** are skinned in directional and spot shadow maps.
+  Point-light shadows of skinned meshes are still unskinned. (#163)
+
 ## [0.2.0] - 2026-09-29
 
 Ships with `sdf-text` 0.2.0 and the first release of `three-rs-controls`

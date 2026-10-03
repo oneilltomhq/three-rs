@@ -279,6 +279,15 @@ the camera itself, through `RenderCamera::set_view_offset` (issue #164). The
 hook signature does not pass one in, because three's callbacks take no
 arguments either. `docs/nodes.md` §37 has the ordering.
 
+### Velocity's projection override is on the renderer
+
+Three calls `velocity.setProjectionMatrix( m )` on the `VelocityNode`
+singleton. Here the velocity history belongs to the renderer's
+`NodeFrameState` (#154, decision 1), and `velocity()` builds a fresh node
+each call. So the setter is `Renderer::set_velocity_projection_matrix(
+Option<Matrix4> )`, where `None` is three's `null`. `docs/nodes.md` §59 has
+the store.
+
 ## 9. The node enum opens through `Node::Custom`
 
 `nodes::Node` is a closed enum, and an exhaustive `match` over it in the
