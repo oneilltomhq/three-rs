@@ -5764,6 +5764,63 @@ impl Renderer {
         }
     }
 
+    /// `renderer.initRenderTarget( renderTarget )`: create the target's GPU
+    /// textures now rather than at its first draw, so a copy can land in
+    /// them first.
+    pub fn init_render_target(&mut self, render_target: &RenderTarget) {
+        self.prepare_render_target(render_target);
+    }
+
+    /// `renderer.copyTextureToTexture( source, destination )` between two
+    /// render-target colour textures of the same size and format — what
+    /// `TRAANode` keeps its history with. Both must have their GPU textures
+    /// (a draw into them, or [`init_render_target`](Self::init_render_target)),
+    /// and the destination must be a
+    /// [copy destination](RenderTarget::set_copy_destination).
+    pub(crate) fn copy_render_texture(&mut self, source: &Texture, destination: &Texture) {
+        let size = source.size();
+        let source = source.with_gpu(|gpu| gpu.clone());
+        let destination = destination.with_gpu(|gpu| gpu.clone());
+        self.copy_whole_texture(&source, &destination, size, "three-rs texture copy");
+    }
+
+    /// `renderer.copyTextureToTexture( depthTexture, depthTexture )`: the
+    /// whole depth texture, which WebGPU requires of a depth copy. Both must
+    /// be [copyable](DepthTexture::set_copyable), single-sample and allocated.
+    pub(crate) fn copy_depth_texture(&mut self, source: &DepthTexture, destination: &DepthTexture) {
+        let (source, destination) = (
+            source.inner().borrow().gpu.clone(),
+            destination.inner().borrow().gpu.clone(),
+        );
+        let (Some(source), Some(destination)) = (source, destination) else {
+            return;
+        };
+        let size = (source.width(), source.height());
+        self.copy_whole_texture(&source, &destination, size, "three-rs depth copy");
+    }
+
+    fn copy_whole_texture(
+        &mut self,
+        source: &wgpu::Texture,
+        destination: &wgpu::Texture,
+        (width, height): (u32, u32),
+        label: &'static str,
+    ) {
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(label) });
+        encoder.copy_texture_to_texture(
+            source.as_image_copy(),
+            destination.as_image_copy(),
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+        self.queue.submit([encoder.finish()]);
+    }
+
     /// One face of a [`cube_render_target`] conversion or of a PMREM level: the
     /// 2-D target the face was drawn into, copied into array layer `layer`,
     /// mip level `mip`, of the cube's GPU texture.
@@ -6907,7 +6964,12 @@ impl Renderer {
                     format,
                     usage: wgpu::TextureUsages::RENDER_ATTACHMENT
                         | wgpu::TextureUsages::TEXTURE_BINDING
-                        | wgpu::TextureUsages::COPY_SRC,
+                        | wgpu::TextureUsages::COPY_SRC
+                        | if inner.copy_destination {
+                            wgpu::TextureUsages::COPY_DST
+                        } else {
+                            wgpu::TextureUsages::empty()
+                        },
                     view_formats: &[],
                 }));
         }
@@ -7009,7 +7071,12 @@ impl Renderer {
                     dimension: wgpu::TextureDimension::D2,
                     format,
                     usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                        | wgpu::TextureUsages::TEXTURE_BINDING,
+                        | wgpu::TextureUsages::TEXTURE_BINDING
+                        | if depth.copyable {
+                            wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::COPY_DST
+                        } else {
+                            wgpu::TextureUsages::empty()
+                        },
                     view_formats: &[],
                 }));
             }

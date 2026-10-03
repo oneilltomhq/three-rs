@@ -115,6 +115,9 @@ pub(crate) struct RenderTargetInner {
     /// yet rendered into this target's depth attachment. See
     /// `Renderer::render`'s manual first clear.
     pub depth_initialized: bool,
+    /// Whether the colour texture is also a copy destination
+    /// (`COPY_DST`) — see [`RenderTarget::set_copy_destination`].
+    pub copy_destination: bool,
 }
 
 /// Cloning is a handle copy, matching JS object identity.
@@ -168,6 +171,7 @@ impl RenderTarget {
             scissor: Vector4::new(0.0, 0.0, width as f64, height as f64),
             scissor_test: false,
             depth_initialized: false,
+            copy_destination: false,
         }))))
     }
 
@@ -359,6 +363,20 @@ impl RenderTarget {
         let mut inner = self.0.borrow_mut();
         depth_texture.set_multisample(inner.samples > 1);
         inner.depth_texture = Some(depth_texture);
+    }
+
+    /// Let the colour texture be the destination of a texture copy —
+    /// `renderer.copyTextureToTexture( …, renderTarget.texture )`, which
+    /// `TRAANode` updates its history with. WebGPU fixes a texture's usage at
+    /// creation, and three's backend gives every render target `COPY_DST`;
+    /// the port asks only where a copy lands, so no other target's texture
+    /// changes. Drops the GPU texture if it was created without the flag.
+    pub(crate) fn set_copy_destination(&self) {
+        let mut inner = self.0.borrow_mut();
+        if !inner.copy_destination {
+            inner.copy_destination = true;
+            inner.texture.clear_gpu();
+        }
     }
 
     /// `renderTarget.depthTexture`.
