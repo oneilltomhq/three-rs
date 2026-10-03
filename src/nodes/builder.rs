@@ -1408,6 +1408,84 @@ impl NodeBuilder {
         (name, kind)
     }
 
+    /// A depth texture is bound without a sampler (`isUnfilterable()`, read
+    /// with `textureLoad`), but `textureGather` on it needs one —
+    /// three's `generateTextureGather()` binds a `non-filtering` sampler
+    /// next to it. Adds that sampler the first time the texture is
+    /// gathered, whether or not it was already bound sampler-less.
+    fn ensure_depth_sampler(&mut self, source: &Rc<TextureSource>) {
+        let TextureSource::Depth(t) = &**source else {
+            return;
+        };
+        let key = (t.id(), source.is_storage_binding());
+        let Some((name, kind, mut slots)) = self.texture_names.get(&key).cloned() else {
+            return;
+        };
+        let g = self.groups.entry(UniformGroup::Object).or_default();
+        if slots
+            .iter()
+            .any(|slot| matches!(g.bindings[*slot], BindingDesc::Sampler { .. }))
+        {
+            return;
+        }
+        let mut visibility = Visibility::default();
+        visibility.add(self.stage);
+        slots.push(g.bindings.len());
+        g.bindings.push(BindingDesc::Sampler {
+            source: (**source).clone(),
+            kind,
+            visibility,
+        });
+        self.texture_names.insert(key, (name, kind, slots));
+    }
+
+    /// `generateWrapFunction( texture )`: adds the `tsl_coord_<S>S_<T>T_2d`
+    /// function for the texture's wrapping pair, and the per-axis polyfill
+    /// each half of it calls, and returns its name. A depth texture is
+    /// clamped on both axes, as is every colour texture the `Texture` default
+    /// leaves alone.
+    ///
+    /// Out of line: `generate()`'s frame is what bounds the node depth a
+    /// debug build can walk (`tests/nodes_mx_library.rs` sits near it).
+    #[inline(never)]
+    fn wrap_function(&mut self, texture: &TextureSource) -> String {
+        let (wrap_s, wrap_t) = match texture {
+            TextureSource::Texture2D(t) => t.wrapping(),
+            _ => (
+                crate::textures::Wrapping::ClampToEdge,
+                crate::textures::Wrapping::ClampToEdge,
+            ),
+        };
+        for wrap in [wrap_s, wrap_t] {
+            let (axis_name, axis_code) = wgsl::wrap_axis_polyfill(wrap);
+            self.add_code(axis_name, axis_code);
+        }
+        let wrap_fn = wgsl::wrap_function_name(wrap_s, wrap_t);
+        self.add_code(&wrap_fn, &wgsl::wrap_function(wrap_s, wrap_t));
+        wrap_fn
+    }
+
+    /// `generateTextureGather()` on a depth texture: `textureGather` with
+    /// the texture's non-filtering sampler, no component, and three's
+    /// `UnsignedIntType` cast around it. Out of line for the same reason as
+    /// [`Self::wrap_function`].
+    #[inline(never)]
+    fn depth_gather(&mut self, texture: &Rc<TextureSource>, name: &str, suv: &str) -> String {
+        let int_typed = match &**texture {
+            TextureSource::Depth(t) => {
+                t.texture_type() == crate::textures::TextureType::UnsignedInt
+            }
+            _ => false,
+        };
+        self.ensure_depth_sampler(texture);
+        let gather = format!("textureGather( {name}, {name}_sampler, {suv})");
+        if int_typed {
+            format!("vec4<f32>( {gather} )")
+        } else {
+            gather
+        }
+    }
+
     fn buffer_snippet(&mut self, buffer: &Rc<BufferNode>) -> String {
         let stage = self.stage;
         let buffer_id = buffer.id.get();
@@ -2112,6 +2190,12 @@ impl NodeBuilder {
                     }
                     // `generateTextureGather()`, with three's spacing: no
                     // space before the closing parenthesis without an offset.
+                    // A depth texture has one channel, so WGSL's
+                    // `textureGather` takes no component, and three's
+                    // `UnsignedIntType` cast wraps it (see `GatherCompare`).
+                    SampleMode::Gather { .. } if matches!(*texture, TextureSource::Depth(_)) => {
+                        self.depth_gather(&texture, &name, &suv)
+                    }
                     SampleMode::Gather { component, offset } => {
                         let scomponent = self.format(&component, Type::I32);
                         match offset {
@@ -2214,7 +2298,12 @@ impl NodeBuilder {
                         }
                     }
                     SampleMode::Load => {
-                        self.add_code("tsl_coord_clampS_clampT_2d", wgsl::CLAMP_WRAP_SNIPPET);
+                        // `generateWrapFunction( texture )`: one
+                        // `tsl_coord_<S>S_<T>T_2d` per wrapping pair, each
+                        // built from a per-axis polyfill. A depth texture is
+                        // clamped on both axes, as is every colour texture
+                        // the `Texture` default leaves alone.
+                        let wrap_fn = self.wrap_function(&texture);
                         // `WGSLNodeBuilder.generateTextureDimension()` keeps
                         // one dimensions var per texture in `builder.cache`,
                         // so a second tap in the same scope (or one nested in
@@ -2230,7 +2319,7 @@ impl NodeBuilder {
                                 dims
                             }
                         };
-                        wgsl::texture_load(&name, &suv, &dims)
+                        wgsl::texture_load(&name, &suv, &dims, &wrap_fn)
                     }
                     // `generateStorageTextureLoad()`: no level argument.
                     SampleMode::StorageLoad => {

@@ -359,10 +359,59 @@ pub(crate) fn storage_format(format: wgpu::TextureFormat) -> &'static str {
     }
 }
 
-/// `WGSLNodeBuilder.generateWrapFunction()` for the default
-/// `ClampToEdgeWrapping` on both axes, plus the helper it calls. Three emits
-/// these as code snippets too — they are not built out of nodes.
-pub(crate) const CLAMP_WRAP_SNIPPET: &str = "fn tsl_clampWrapping_float( coord: f32 ) -> f32 { return clamp( coord, 0.0, 1.0 ); }\nfn tsl_coord_clampS_clampT_2d( coord : vec2f ) -> vec2f {\n\n\treturn vec2f(\n\t\ttsl_clampWrapping_float( coord.x ),\n\t\ttsl_clampWrapping_float( coord.y )\n\t);\n\n}\n";
+/// `WGSLNodeBuilder`'s `wgslPolyfill.<wrap>Wrapping_float` — the per-axis
+/// helper `generateWrapFunction()` includes, keyed by its name.
+pub(crate) fn wrap_axis_polyfill(wrap: crate::textures::Wrapping) -> (&'static str, &'static str) {
+    use crate::textures::Wrapping;
+    match wrap {
+        Wrapping::Repeat => (
+            "tsl_repeatWrapping_float",
+            "fn tsl_repeatWrapping_float( coord: f32 ) -> f32 { return fract( coord ); }\n",
+        ),
+        Wrapping::MirroredRepeat => (
+            "tsl_mirrorWrapping_float",
+            "fn tsl_mirrorWrapping_float( coord: f32 ) -> f32 { let mirrored = fract( coord * 0.5 ) * 2.0; return 1.0 - abs( 1.0 - mirrored ); }\n",
+        ),
+        Wrapping::ClampToEdge => (
+            "tsl_clampWrapping_float",
+            "fn tsl_clampWrapping_float( coord: f32 ) -> f32 { return clamp( coord, 0.0, 1.0 ); }\n",
+        ),
+    }
+}
+
+/// `wrapNames[ wrapping ]` in `generateWrapFunction()`.
+fn wrap_name(wrap: crate::textures::Wrapping) -> &'static str {
+    use crate::textures::Wrapping;
+    match wrap {
+        Wrapping::Repeat => "repeat",
+        Wrapping::MirroredRepeat => "mirror",
+        Wrapping::ClampToEdge => "clamp",
+    }
+}
+
+/// `tsl_coord_<S>S_<T>T_2d` — the name of the wrap function for a wrapping
+/// pair.
+pub(crate) fn wrap_function_name(
+    wrap_s: crate::textures::Wrapping,
+    wrap_t: crate::textures::Wrapping,
+) -> String {
+    format!("tsl_coord_{}S_{}T_2d", wrap_name(wrap_s), wrap_name(wrap_t))
+}
+
+/// `WGSLNodeBuilder.generateWrapFunction()`'s body for a 2-D texture: the
+/// per-axis helpers applied to `coord.x` and `coord.y`. Three emits it as a
+/// code snippet too — it is not built out of nodes.
+pub(crate) fn wrap_function(
+    wrap_s: crate::textures::Wrapping,
+    wrap_t: crate::textures::Wrapping,
+) -> String {
+    format!(
+        "fn {}( coord : vec2f ) -> vec2f {{\n\n\treturn vec2f(\n\t\t{}( coord.x ),\n\t\t{}( coord.y )\n\t);\n\n}}\n",
+        wrap_function_name(wrap_s, wrap_t),
+        wrap_axis_polyfill(wrap_s).0,
+        wrap_axis_polyfill(wrap_t).0,
+    )
+}
 
 /// `WGSLNodeBuilder`'s `wgslPolyfill` entry for a `tsl_*` method name, if
 /// it has one: the helper a `MathNode` / `OperatorNode` lowering calls.
@@ -409,9 +458,9 @@ pub(crate) const INVERSE_MAT3_SNIPPET: &str = "fn tsl_inverse_mat3( m : mat3x3<f
 
 /// `WGSLNodeBuilder.generateTextureLoad()` for the non-filterable path: the
 /// texel coordinate is the clamped UV scaled by `textureDimensions`.
-pub(crate) fn texture_load(texture: &str, uv: &str, dims: &str) -> String {
+pub(crate) fn texture_load(texture: &str, uv: &str, dims: &str, wrap_fn: &str) -> String {
     format!(
-        "textureLoad( {texture}, vec2<u32>( clamp( floor( tsl_coord_clampS_clampT_2d( {uv} ) * \
+        "textureLoad( {texture}, vec2<u32>( clamp( floor( {wrap_fn}( {uv} ) * \
          vec2<f32>( {dims} ) ), vec2<f32>( 0 ), vec2<f32>( {dims} - vec2<u32>( 1, 1 ) ) ) ), \
          u32( 0 ) )"
     )

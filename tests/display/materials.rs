@@ -5,7 +5,7 @@
 
 use three_rs::materials::{quad_vertex_node, render_output, MeshBasicNodeMaterial};
 use three_rs::nodes::display::{
-    after_image, box_blur, dot_screen, fxaa, gaussian_blur, hash_blur_with, motion_blur,
+    after_image, ao, box_blur, dot_screen, fxaa, gaussian_blur, hash_blur_with, motion_blur,
     pixelation_pass, rgb_shift, sobel, traa, viewport_shared_texture_at, BoxBlurOptions,
     GaussianBlurOptions, HashBlurOptions,
 };
@@ -193,6 +193,24 @@ pub fn display_quads() -> Vec<DisplayQuad> {
         label: "traa",
         fixture: "webgpu_postprocessing_traa_m05_traa_resolve.wgsl",
         material: resolve,
+    });
+
+    // webgpu_postprocessing_ao `m18`: `ao( prePassDepth, prePassNormal,
+    // camera )`'s quad, `GTAO`, at the page's 16 samples (three slices of
+    // six steps). The depth and normal are the pre-pass's attachments.
+    let gtao = ao(
+        &DepthTexture::new(),
+        &input(),
+        std::rc::Rc::new(std::cell::RefCell::new(three_rs::PerspectiveCamera::new(
+            45.0, 1.0, 0.1, 50.0,
+        ))),
+    );
+    let mut gtao_quad = gtao.quad_material();
+    gtao_quad.vertex_node = Some(quad_vertex_node());
+    quads.push(DisplayQuad {
+        label: "gtao",
+        fixture: "webgpu_postprocessing_ao_m18_gtao.wgsl",
+        material: gtao_quad,
     });
 
     quads
