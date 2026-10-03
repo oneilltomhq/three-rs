@@ -37,12 +37,49 @@ have their own sections after the release they ship with. The format follows [Ke
 - Rungs `webgpu_lightprobe` and `webgpu_lightprobe_cubecamera`. The second
   is native only for now: its readback blocks, which the browser cannot do,
   so `tools/web_gate.skip` (new) lists it.
+- **Screen reads** (#169): `viewportSharedTexture`, `viewportTexture`,
+  `viewportDepthTexture`, `viewportLinearDepth` and `viewportSafeUV`, the
+  `screenSize` and `screenCoordinate` scopes, and the `cameraNear` and
+  `cameraFar` uniforms. The renderer copies the framebuffer before the first
+  draw that reads it, in three's opaque/transparent order. A pass that reads
+  nothing is recorded as before. See `docs/nodes.md` §61.
+- **`backdropNode` and `backdropAlphaNode`** on node materials, a custom
+  `lighting_model` included. A backdrop material goes in the transparent
+  list. On a Normal material the field is loud (`docs/api.md` decision 7).
+- TSL `grayscale`, `posterize` and `blendOverlay`.
+- `webgpu_backdrop`, graded green (23 pixels, the same as three's own frame).
+  `webgpu_refraction` is ported, but not graded on this machine, because
+  three.js itself fails its reference there.
+
+### Changed
+
+- **`InstancedBufferAttribute.array` is private**, read through `array()` and
+  written through `array_mut()`, which bumps the new `version()`;
+  `set_needs_update()` and `id()` join them. `set_matrix_at` / `set_color_at`
+  bump the version when they change a value. (#89)
+- `step()` builds both operands at the wider type, as `MathNode` does, so a
+  scalar edge against a vector emits `step( vec3<f32>( 0.5 ), x )`.
+- `hashBlur`'s WGSL gate compares three's loop exactly. It now blurs
+  `viewportSharedTexture()`, as `webgpu_backdrop_area` does.
+- **`SpotLight::new` and `DirectionalLight::new` start the light at
+  `DEFAULT_UP`, (0, 1, 0)**, as three's constructors do. They used to leave
+  it at the origin. A light whose position the application never sets now
+  shines down from one unit up, as in three; a scene that relied on the old
+  origin should set the position itself.
 
 ### Fixed
 
 - A `HemisphereLight` with no `AmbientLight` beside it no longer has its
   irradiance overwritten with zero before the Phong, Lambert and Toon models
   read it.
+- An `InstancedMesh`'s `instanceMatrix` and `instanceColor` are no longer
+  written to the GPU on every draw: each attribute keeps one buffer and is
+  re-written only when its version moves, and each write counts in
+  `info.build.buffers_written`. The render list no longer copies the arrays
+  each frame either. A still 131072-instance mesh goes from about 25 ms a
+  frame to about 3 ms (`benches/instanced_mesh.rs`). (#89)
+- A lit `MeshBasicNodeMaterial` zeroes `indirectDiffuse` before it adds to
+  it, as `BasicLightingModel` does.
 
 ## [0.2.0] - 2026-09-29
 

@@ -135,12 +135,14 @@ pub trait LightingModel: Debug {
 
 /// `LightsNode.setup()` with a `lightingModel` in the context: `start()`,
 /// the `totalDiffuse` / `totalSpecular` / `outgoingLight` tail, `finish()`.
-/// Returns the `outgoingLight` property. The port has no backdrop on this
-/// path, so `totalDiffuse` is always `directDiffuse + indirectDiffuse`.
+/// Returns the `outgoingLight` property. `backdrop` is the material's
+/// `backdropNode` blend over `directDiffuse + indirectDiffuse`, the identity
+/// without one.
 pub(crate) fn lights_node(
     model: &dyn LightingModel,
     lights: &[LightDesc],
     received_shadow_position: Option<&NodeRef>,
+    backdrop: &dyn Fn(NodeRef) -> NodeRef,
     out: &mut Vec<NodeRef>,
 ) -> NodeRef {
     let mut builder = LightingBuilder {
@@ -158,7 +160,7 @@ pub(crate) fn lights_node(
         indirect_diffuse,
         indirect_specular,
     } = builder.reflected_light.clone();
-    builder.push(total_diffuse().assign(direct_diffuse.add(indirect_diffuse)));
+    builder.push(total_diffuse().assign(backdrop(direct_diffuse.add(indirect_diffuse))));
     builder.push(total_specular().assign(direct_specular.add(indirect_specular)));
     builder.push(outgoing_light().assign(total_diffuse().add(total_specular())));
 

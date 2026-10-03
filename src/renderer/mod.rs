@@ -18,6 +18,7 @@ mod reflector;
 mod render_list;
 mod render_pipeline;
 mod render_target;
+mod screen_reads;
 mod ssaa_pass;
 
 use std::collections::{HashMap, HashSet};
@@ -25,7 +26,7 @@ use std::rc::{Rc, Weak};
 
 use bindings::{
     BindGroupKey, DrawKey, LayoutKey, Occurrences, Resource, SamplerKey, Serial, Serials, SlotKey,
-    SlotOwner, VERTEX_SLOTS,
+    SlotOwner,
 };
 pub use cube_render_target::CubeRenderTarget;
 pub use direct_render_pipeline::DirectRenderPipeline;
@@ -60,7 +61,9 @@ use crate::nodes::tsl::FogNode;
 use crate::nodes::tsl::StorageArray;
 use crate::nodes::wgsl::TextureKind;
 use crate::nodes::{BindingDesc, ComputeFlow, NodeBuilder, NodeProgram, Type};
-use crate::objects::{Background, InstancedBufferAttribute, QuadMesh, Scene, SceneFog, SubDraw};
+use crate::objects::{
+    Background, InstanceData, InstancedBufferAttribute, QuadMesh, Scene, SceneFog, SubDraw,
+};
 use crate::testing::DeterministicRandom;
 use crate::textures::{
     CubeDepthTexture, CubeTexture, Data3DTexture, DataArrayTexture, DataTexture, DataTextureData,
@@ -112,8 +115,21 @@ struct BufferEntry {
     data: Option<Rc<Vec<f32>>>,
 }
 
+/// An `InstancedBufferAttribute`'s GPU buffer — `instanceMatrix`,
+/// `instanceColor` — with the attribute version it last wrote, keyed on the
+/// attribute's id and the buffer usage. three.js' `Attributes` entry: written
+/// again only when `attribute.version` moves, and then into the same buffer
+/// unless the array outgrew it (issue #89). Aged out by
+/// [`CACHE_GRACE_FRAMES`], like [`BufferEntry`]: the attribute is the
+/// application's and the renderer only ever sees a snapshot of it.
+struct AttributeBuffer {
+    buffer: Serial<wgpu::Buffer>,
+    version: u32,
+    last_used: u64,
+}
+
 /// One draw's persistent buffer for one binding — a uniform group, its bone
-/// matrices, its instance matrix — keyed by [`SlotKey`]. three.js'
+/// matrices — keyed by [`SlotKey`]. three.js'
 /// `UniformBuffer`: allocated once, and each frame's bytes are
 /// `queue.write_buffer`n into it; re-created only when a rebuilt program needs
 /// it bigger (issue #137).
@@ -326,11 +342,11 @@ struct Renderable {
     /// is what three.js' own `fog = false` on those materials amounts to.
     fog: Option<FogNode>,
     model_world: Matrix4,
-    instance_matrix: Option<InstancedBufferAttribute>,
+    instance_matrix: Option<InstanceData>,
     /// `InstancedMesh.instanceColor` — the three floats per instance
     /// `setColorAt()` wrote. Carried per draw beside the matrices so two
     /// objects sharing one material cannot share one colour buffer.
-    instance_color: Option<InstancedBufferAttribute>,
+    instance_color: Option<InstanceData>,
     instance_count: u32,
     /// `Mesh.morphTargetInfluences`, and `Morph.js`' `base` uniform, which is
     /// `1 - Σ influences` for non-relative morph targets.
@@ -606,6 +622,10 @@ struct PassTarget {
     /// out of it, which an MSAA texture cannot be.
     color_texture: Option<wgpu::Texture>,
     depth: Option<wgpu::TextureView>,
+    /// The depth attachment's texture, which `viewportDepthTexture()`'s
+    /// `copyFramebufferToTexture()` copies out of. `None` where there is no
+    /// depth buffer, and on the cube shadow faces, which nothing reads back.
+    depth_texture: Option<wgpu::Texture>,
     color_format: wgpu::TextureFormat,
     depth_format: Option<wgpu::TextureFormat>,
     sample_count: u32,
@@ -820,6 +840,13 @@ pub struct Renderer {
     /// as it stood after the last opaque draw. One per renderer, resized with
     /// the drawing buffer, and only ever created when something transmits.
     opaque_frame: Option<Texture>,
+    /// The pass [`Self::draw`] is building, while it builds it: where the
+    /// viewport nodes' `copyFramebufferToTexture()` requests go. Saved and
+    /// restored around each `draw`, so a nested render's copies stay its own.
+    screen_reads: Option<screen_reads::ScreenReads>,
+    /// The copy destinations this renderer allocated; see
+    /// [`screen_reads::Destinations`].
+    screen_read_textures: screen_reads::Destinations,
 
     /// `Renderer._outputBufferType`, `HalfFloatType` by default.
     output_buffer_type: TextureType,
@@ -901,6 +928,10 @@ pub struct Renderer {
     /// by [`CACHE_GRACE_FRAMES`]; the node itself is a material's, not the
     /// renderer's, so there is no strong count to read.
     buffers: HashMap<usize, BufferEntry>,
+    /// `InstancedBufferAttribute` buffers, keyed by `( attribute id, usage )`;
+    /// see [`AttributeBuffer`]. One attribute is one buffer however many draws
+    /// bind it: the shadow pass and the scene pass share it.
+    attribute_buffers: HashMap<(usize, wgpu::BufferUsages), AttributeBuffer>,
     /// `instancedArray()` storage, keyed by `BufferId`. Unlike [`buffers`] this
     /// is **never** aged out and never re-uploaded: the buffer *is* the state —
     /// a compute pass writes it and the next frame reads what it wrote — so
@@ -911,8 +942,8 @@ pub struct Renderer {
     ///
     /// [`buffers`]: Self::buffers
     storage_buffers: HashMap<usize, Serial<wgpu::Buffer>>,
-    /// Each draw's uniform groups, bone matrices, morph influences and
-    /// instance data, one persistent buffer per (draw, group, binding) that
+    /// Each draw's uniform groups, bone matrices and morph influences, one
+    /// persistent buffer per (draw, group, binding) that
     /// every frame writes into rather than re-creating. Keyed on ids, see
     /// [`DrawKey`]; aged out by [`CACHE_GRACE_FRAMES`], since a draw's object
     /// and material have no liveness signal the renderer can read.
@@ -1096,14 +1127,15 @@ impl Renderer {
     /// `new WebGPURenderer( parameters )`, plus the `init()` three.js does
     /// lazily: picking an adapter and creating a device, either of which the
     /// machine can refuse.
+    ///
+    /// Natively every `Renderer::new` in a process shares one instance and one
+    /// adapter, picked by the first call (so `THREE_RS_ADAPTER_NAME` is read
+    /// once); each renderer still gets its own device. See `shared_adapter`
+    /// for why.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn new(parameters: RendererParameters) -> Result<Self, Error> {
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: BACKENDS,
-            ..wgpu::InstanceDescriptor::new_without_display_handle()
-        });
-
-        Self::with_instance(parameters, instance)
+        let adapter = shared_adapter()?;
+        pollster::block_on(Self::with_adapter_async(parameters, adapter))
     }
 
     /// `new WebGPURenderer( parameters )` in a browser: the device the host
@@ -1154,7 +1186,16 @@ impl Renderer {
         instance: wgpu::Instance,
     ) -> Result<Self, Error> {
         let adapter = pick_adapter(&instance).await?;
+        Self::with_adapter_async(parameters, adapter).await
+    }
 
+    /// Request a device on an adapter already picked, and build the renderer
+    /// on it: the half of [`Renderer::with_instance_async`] that
+    /// [`Renderer::new`] shares with it.
+    async fn with_adapter_async(
+        parameters: RendererParameters,
+        adapter: wgpu::Adapter,
+    ) -> Result<Self, Error> {
         // `FLOAT32_FILTERABLE` is what lets an `r32float` texture be sampled
         // through a filtering sampler — the SDF atlas is
         // `DataTexture( Float32Array, RedFormat, FloatType )` with
@@ -1267,6 +1308,8 @@ impl Renderer {
             mrt: None,
             frame_buffer_target: None,
             opaque_frame: None,
+            screen_reads: None,
+            screen_read_textures: screen_reads::Destinations::default(),
             output_buffer_type: TextureType::HalfFloat,
             mipmap_shader,
             programs: HashMap::new(),
@@ -1299,6 +1342,7 @@ impl Renderer {
             cube_textures: HashMap::new(),
             mipmap_pipelines: HashMap::new(),
             buffers: HashMap::new(),
+            attribute_buffers: HashMap::new(),
             storage_buffers: HashMap::new(),
             slot_buffers: HashMap::new(),
             views: HashMap::new(),
@@ -1941,8 +1985,12 @@ impl Renderer {
             let instance_count = geometry
                 .instance_count
                 .map_or_else(|| object.instance_count(), |count| count as u32);
-            let instance_matrix = object.instance_matrix().cloned();
-            let instance_color = object.instance_color().cloned();
+            let instance_matrix = object
+                .instance_matrix()
+                .map(InstancedBufferAttribute::snapshot);
+            let instance_color = object
+                .instance_color()
+                .map(InstancedBufferAttribute::snapshot);
 
             // `SkinningNode`'s `OnObjectUpdate`: `skeleton.update()` runs once
             // per frame per *skeleton*, however many meshes share it, and it
@@ -2251,6 +2299,8 @@ impl Renderer {
             camera_view_matrices: &camera_view_matrices,
             camera_projection_matrices: &camera_projection_matrices,
             camera_viewports: &camera_viewports,
+            camera_near: camera.near(),
+            camera_far: camera.far(),
             time: self.node_frame.time,
             delta_time: self.node_frame.delta_time,
             frame_id: self.node_frame.frame_id as u32,
@@ -2451,8 +2501,12 @@ impl Renderer {
                 // The shadow material is never `wireframe`, so neither is the
                 // draw.
                 let primitive = Primitive::of(&object, &geometry, false);
-                let instance_matrix = object.instance_matrix().cloned();
-                let instance_color = object.instance_color().cloned();
+                let instance_matrix = object
+                    .instance_matrix()
+                    .map(InstancedBufferAttribute::snapshot);
+                let instance_color = object
+                    .instance_color()
+                    .map(InstancedBufferAttribute::snapshot);
                 let instance_count = object.instance_count();
 
                 items.push(Renderable {
@@ -2836,8 +2890,12 @@ impl Renderer {
                 // The shadow material is never `wireframe`, so neither is the
                 // draw.
                 let primitive = Primitive::of(&object, &geometry, false);
-                let instance_matrix = object.instance_matrix().cloned();
-                let instance_color = object.instance_color().cloned();
+                let instance_matrix = object
+                    .instance_matrix()
+                    .map(InstancedBufferAttribute::snapshot);
+                let instance_color = object
+                    .instance_color()
+                    .map(InstancedBufferAttribute::snapshot);
                 let instance_count = object.instance_count();
                 items.push(Renderable {
                     object: Some(item.node.clone()),
@@ -2923,6 +2981,7 @@ impl Renderer {
                 resolve: None,
                 color_texture: None,
                 depth: Some(depth_view),
+                depth_texture: None,
                 color_format: wgpu::TextureFormat::Rgba8Unorm,
                 depth_format: Some(depth_texture.gpu_format()),
                 sample_count: 1,
@@ -3166,7 +3225,15 @@ impl Renderer {
             })
             .flatten();
 
+        // The copy requests this pass's draws make; see `screen_reads.rs`.
+        let outer_screen_reads = self
+            .screen_reads
+            .replace(screen_reads::ScreenReads::new(target));
+
         for item in items {
+            if let Some(reads) = self.screen_reads.as_mut() {
+                reads.draw_index = draws.len();
+            }
             let geometry_id = item.geometry.id();
             self.ensure_geometry(&item.geometry);
             if item.primitive.wireframe {
@@ -3308,21 +3375,13 @@ impl Renderer {
             let vertex_buffers = node
                 .vertex_buffers()
                 .iter()
-                .enumerate()
-                .map(|(slot, desc)| match &desc.source {
+                .map(|desc| match &desc.source {
                     VertexBufferSource::Geometry(name) => {
                         self.geometries[&geometry_id].gpu.attribute(name).clone()
                     }
-                    VertexBufferSource::Instance(buffer) => self.instance_buffer(
-                        SlotKey {
-                            owner,
-                            group: VERTEX_SLOTS,
-                            binding: slot as u32,
-                        },
-                        buffer,
-                        &item.instance_matrix,
-                        &item.instance_color,
-                    ),
+                    VertexBufferSource::Instance(buffer) => {
+                        self.instance_buffer(buffer, &item.instance_matrix, &item.instance_color)
+                    }
                 })
                 .collect();
 
@@ -3413,13 +3472,26 @@ impl Renderer {
             }
         }
 
+        // Every framebuffer copy, by the index of the draw it goes before:
+        // the transmission pass's first, then the viewport nodes' in the
+        // order they asked. A stable sort keeps that order within an index.
+        let screen_reads = std::mem::replace(&mut self.screen_reads, outer_screen_reads)
+            .expect("three-rs: draw() installed its screen reads above");
+        let mut copies: Vec<(usize, screen_reads::FramebufferCopy)> = transmission_split
+            .map(|split| (split, screen_reads::FramebufferCopy::OpaqueFrame))
+            .into_iter()
+            .chain(screen_reads.copies)
+            .collect();
+        copies.sort_by_key(|(index, _)| *index);
+        let first_copy = copies.first().map_or(draws.len(), |(index, _)| *index);
+
         // `WebGPUBackend.beginRender()`: a query set when any draw of this
-        // scene pass has an `occlusionTest`. Only the opaque pass records
-        // into it when a transmissive split makes two passes: no page on the
+        // scene pass has an `occlusionTest`. Only the first segment records
+        // into it when a framebuffer copy splits the pass: no page on the
         // ladder puts an occlusion test on a pass that splits.
         let query_objects = match occlusion_context {
             Some(_) => occlusion::query_objects(
-                draws[..transmission_split.unwrap_or(draws.len())]
+                draws[..first_copy]
                     .iter()
                     .map(|draw| (draw.object, draw.occlusion_test)),
             ),
@@ -3430,64 +3502,55 @@ impl Renderer {
                 .begin(&self.device, key, query_objects.len() as u32)
         });
 
-        // One pass, or two with the framebuffer copy between them.
-        match transmission_split {
-            None => {
-                let mut encoder =
-                    self.device
-                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                            label: Some("three-rs pass"),
-                        });
-                self.record_pass(&mut encoder, &draws, target, clear, query_set.as_ref());
-                if let (Some(key), Some(set)) = (occlusion_context, &query_set) {
-                    self.occlusion
-                        .finish(&self.device, &mut encoder, key, set, query_objects);
-                }
-                self.queue.submit(Some(encoder.finish()));
-            }
-            Some(split) => {
-                let mut encoder =
-                    self.device
-                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                            label: Some("three-rs pass"),
-                        });
-                self.record_pass(
-                    &mut encoder,
-                    &draws[..split],
-                    target,
-                    clear,
-                    query_set.as_ref(),
-                );
-                if let (Some(key), Some(set)) = (occlusion_context, &query_set) {
-                    self.occlusion
-                        .finish(&self.device, &mut encoder, key, set, query_objects);
-                }
-                self.queue.submit(Some(encoder.finish()));
+        // The first segment: up to the first copy, or the whole pass — every
+        // pass that reads nothing back, byte for byte what it always was.
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("three-rs pass"),
+            });
+        self.record_pass(
+            &mut encoder,
+            &draws[..first_copy],
+            target,
+            clear,
+            query_set.as_ref(),
+        );
+        if let (Some(key), Some(set)) = (occlusion_context, &query_set) {
+            self.occlusion
+                .finish(&self.device, &mut encoder, key, set, query_objects);
+        }
+        self.queue.submit(Some(encoder.finish()));
 
-                // `ViewportTextureNode.updateBefore()`.
-                let source = target
-                    .color_texture
-                    .clone()
-                    .expect("three-rs: a split pass only happens on a target with a copy source");
-                self.copy_framebuffer_to_opaque_frame(&source);
+        // Then, at each index a copy asked for, `WebGPUBackend
+        // .copyFramebufferToTexture()`: the pass has ended (the submit
+        // above), the attachments are copied, and the next segment loads
+        // them — the depth buffer and the colour the earlier draws left are
+        // exactly what the later draws test against and blend into.
+        let mut rest = copies.as_slice();
+        while let Some(&(start, _)) = rest.first() {
+            let boundary = rest.iter().take_while(|(index, _)| *index == start).count();
+            let (here, after) = rest.split_at(boundary);
+            rest = after;
+            self.run_framebuffer_copies(target, here.iter().map(|(_, copy)| copy));
 
-                // The second pass loads: the depth buffer and the colour the
-                // opaque draws left are exactly what the transmissive draws
-                // blend into.
-                let mut encoder =
-                    self.device
-                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                            label: Some("three-rs transmission pass"),
-                        });
-                self.record_pass(
-                    &mut encoder,
-                    &draws[split..],
-                    target,
-                    ClearOps::default(),
-                    None,
-                );
-                self.queue.submit(Some(encoder.finish()));
+            let end = rest.first().map_or(draws.len(), |(index, _)| *index);
+            if end == start {
+                continue;
             }
+            let mut encoder = self
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("three-rs pass after copyFramebufferToTexture"),
+                });
+            self.record_pass(
+                &mut encoder,
+                &draws[start..end],
+                target,
+                ClearOps::default(),
+                None,
+            );
+            self.queue.submit(Some(encoder.finish()));
         }
     }
 
@@ -4605,8 +4668,8 @@ impl Renderer {
         owner: SlotOwner,
         node: &NodeProgram,
         uniforms: &UniformContext,
-        instance_matrix: &Option<InstancedBufferAttribute>,
-        instance_color: &Option<InstancedBufferAttribute>,
+        instance_matrix: &Option<InstanceData>,
+        instance_color: &Option<InstanceData>,
     ) -> Vec<wgpu::BindGroup> {
         let mut out = Vec::with_capacity(node.groups.len());
 
@@ -4810,13 +4873,13 @@ impl Renderer {
         source: &BufferSource,
         count: usize,
         element_ty: Type,
-        instance_matrix: &Option<InstancedBufferAttribute>,
-        instance_color: &Option<InstancedBufferAttribute>,
+        instance_matrix: &Option<InstanceData>,
+        instance_color: &Option<InstanceData>,
         uniforms: &UniformContext,
     ) -> Serial<wgpu::Buffer> {
         // `skeleton.update()` rewrites `boneMatrices` every frame, so the bone
-        // buffer is re-written per draw like the instance matrix: kept on the
-        // draw's slot, never on the node's identity.
+        // buffer is re-written per draw: kept on the draw's slot, never on the
+        // node's identity.
         // `Camera.js`' `uniformArray()`s of an `ArrayCamera`'s matrices, which
         // the render group re-uploads every render.
         if let BufferSource::CameraViewMatrices | BufferSource::CameraProjectionMatrices = source {
@@ -4875,7 +4938,7 @@ impl Renderer {
         if let BufferSource::MorphInfluences = source {
             // `uniformArray( influences, 'float' )`: one `vec4` per target with
             // the influence in `.x`, so 16 bytes each — not 4. Re-written per
-            // draw like the instance matrix: the influences change per frame.
+            // draw: the influences change per frame.
             let mut data = vec![0f32; count * 4];
             for (i, influence) in uniforms.morph_influences.iter().enumerate().take(count) {
                 data[i * 4] = *influence as f32;
@@ -4891,7 +4954,6 @@ impl Renderer {
             return self.storage_buffer_for(id, source, count, element_ty);
         }
         self.buffer_for(
-            slot,
             id,
             source,
             count,
@@ -4995,10 +5057,9 @@ impl Renderer {
     /// branch was taken.
     fn instance_buffer(
         &mut self,
-        slot: SlotKey,
         buffer: &Rc<crate::nodes::node::InstanceBuffer>,
-        instance_matrix: &Option<InstancedBufferAttribute>,
-        instance_color: &Option<InstancedBufferAttribute>,
+        instance_matrix: &Option<InstanceData>,
+        instance_color: &Option<InstanceData>,
     ) -> wgpu::Buffer {
         let id = buffer.id.get();
         // `bufferNode.toAttribute()`: the storage buffer a kernel writes,
@@ -5015,7 +5076,6 @@ impl Renderer {
                 .gpu;
         }
         self.buffer_for(
-            slot,
             id,
             &buffer.source,
             buffer.count,
@@ -5029,20 +5089,16 @@ impl Renderer {
     /// `range()` is filled from the page's `Math.random` exactly once, because
     /// `RangeNode.setup()` runs once — so the buffer is cached on the node's own
     /// identity, never on its min/max/count, which two `range( 0, 1 )` calls
-    /// share. The instance matrix and colours are re-written per draw instead,
-    /// into the draw's own persistent `slot`: their contents change with the
-    /// scene, and three.js re-uploads on `instanceMatrix.version`, which the
-    /// port's `InstancedBufferAttribute` does not have yet (issue #89).
-    // Eight arguments: `node_buffer`'s seven plus the slot, see there.
-    #[allow(clippy::too_many_arguments)]
+    /// share. The instance matrix and colours are cached on their attribute's
+    /// id instead and re-written when its version moves; see
+    /// [`attribute_buffer`](Self::attribute_buffer).
     fn buffer_for(
         &mut self,
-        slot: SlotKey,
         id: usize,
         source: &BufferSource,
         count: usize,
-        instance_matrix: &Option<InstancedBufferAttribute>,
-        instance_color: &Option<InstancedBufferAttribute>,
+        instance_matrix: &Option<InstanceData>,
+        instance_color: &Option<InstanceData>,
         usage: wgpu::BufferUsages,
     ) -> Serial<wgpu::Buffer> {
         match source {
@@ -5063,23 +5119,13 @@ impl Renderer {
                 let attribute = instance_matrix
                     .as_ref()
                     .expect("three-rs: instanceMatrix needs an InstancedMesh");
-                self.slot_buffer(
-                    slot,
-                    "three-rs instanceMatrix",
-                    bytemuck::cast_slice(&attribute.array),
-                    usage,
-                )
+                self.attribute_buffer("three-rs instanceMatrix", attribute, usage)
             }
             BufferSource::InstanceColor => {
                 let attribute = instance_color
                     .as_ref()
                     .expect("three-rs: instanceColor needs an InstancedMesh with setColorAt");
-                self.slot_buffer(
-                    slot,
-                    "three-rs instanceColor",
-                    bytemuck::cast_slice(&attribute.array),
-                    usage,
-                )
+                self.attribute_buffer("three-rs instanceColor", attribute, usage)
             }
             BufferSource::UniformArray(data) => {
                 // `uniformArray( values )`: the values never change (three
@@ -6509,6 +6555,8 @@ impl Renderer {
         self.node_builder_states
             .retain(|_, states| states.last_used >= cutoff);
         self.buffers.retain(|_, entry| entry.last_used >= cutoff);
+        self.attribute_buffers
+            .retain(|_, entry| entry.last_used >= cutoff);
         let frames = self.node_frame.frame_id;
         self.slot_buffers
             .retain(|_, entry| bindings::is_fresh(entry.last_used, frames));
@@ -6648,14 +6696,15 @@ impl Renderer {
         )
     }
 
-    /// Entries in the `range()` / instance-buffer cache.
+    /// Entries in the `range()` / instance-buffer caches: the node buffers and
+    /// the `InstancedBufferAttribute` buffers, both aged out by use.
     #[doc(hidden)]
     pub fn buffer_cache_len(&self) -> usize {
-        self.buffers.len()
+        self.buffers.len() + self.attribute_buffers.len()
     }
 
     /// Entries in the per-draw binding caches: persistent draw buffers
-    /// (uniform groups, bone matrices, instance data), texture views, and bind
+    /// (uniform groups, bone matrices, morph influences), texture views, and bind
     /// groups (issue #137). Like the caches above, these should hold steady
     /// under churn rather than climb.
     #[doc(hidden)]
@@ -6697,6 +6746,50 @@ impl Renderer {
             SlotBuffer {
                 buffer: buffer.clone(),
                 usage,
+                last_used: frames,
+            },
+        );
+        buffer
+    }
+
+    /// The GPU buffer behind an `InstancedBufferAttribute`, as three.js'
+    /// `Attributes.update()` keeps it: created and filled the first time the
+    /// attribute is drawn, written again only when its version has moved since,
+    /// and then into the buffer it already has unless the array outgrew it
+    /// (issue #89). Each fill counts one `buffers_written`, and a steady frame
+    /// counts none.
+    ///
+    /// The whole array is written, not only `InstancedMesh.count` instances of
+    /// it: the shader's uniform array is sized to the array, and three.js writes
+    /// the whole `Float32Array` too. The draw is `count` instances.
+    fn attribute_buffer(
+        &mut self,
+        label: &str,
+        attribute: &InstanceData,
+        usage: wgpu::BufferUsages,
+    ) -> Serial<wgpu::Buffer> {
+        let frames = self.node_frame.frame_id;
+        let bytes: &[u8] = bytemuck::cast_slice(attribute.array.as_slice());
+        if let Some(entry) = self.attribute_buffers.get_mut(&(attribute.id, usage)) {
+            entry.last_used = frames;
+            if entry.version == attribute.version {
+                return entry.buffer.clone();
+            }
+            if entry.buffer.gpu.size() >= bytes.len() as u64 {
+                self.queue.write_buffer(&entry.buffer.gpu, 0, bytes);
+                entry.version = attribute.version;
+                self.info.build.buffers_written += 1;
+                return entry.buffer.clone();
+            }
+        }
+        let buffer = self.create_buffer_init(label, bytes, usage);
+        let buffer = self.serial(buffer);
+        self.info.build.buffers_written += 1;
+        self.attribute_buffers.insert(
+            (attribute.id, usage),
+            AttributeBuffer {
+                buffer: buffer.clone(),
+                version: attribute.version,
                 last_used: frames,
             },
         );
@@ -6951,25 +7044,24 @@ impl Renderer {
             })
             .collect();
 
-        let (depth, depth_format) = match (&inner.depth_texture, &inner.depth) {
+        let (depth_texture, depth_format) = match (&inner.depth_texture, &inner.depth) {
             (Some(depth_texture), _) => (
                 Some(
                     depth_texture
                         .inner()
                         .borrow()
                         .gpu
-                        .as_ref()
-                        .expect("three-rs: prepare_render_target() created the depth texture")
-                        .create_view(&Default::default()),
+                        .clone()
+                        .expect("three-rs: prepare_render_target() created the depth texture"),
                 ),
                 Some(depth_texture.gpu_format()),
             ),
-            (None, Some(depth)) => (
-                Some(depth.create_view(&Default::default())),
-                Some(CANVAS_DEPTH_FORMAT),
-            ),
+            (None, Some(depth)) => (Some(depth.clone()), Some(CANVAS_DEPTH_FORMAT)),
             (None, None) => (None, None),
         };
+        let depth = depth_texture
+            .as_ref()
+            .map(|texture| texture.create_view(&Default::default()));
 
         PassTarget {
             color,
@@ -6978,6 +7070,7 @@ impl Renderer {
             resolve,
             color_texture: Some(inner.texture.with_gpu(|gpu| gpu.clone())),
             depth,
+            depth_texture,
             color_format,
             depth_format,
             sample_count: inner.samples.max(1),
@@ -7027,6 +7120,7 @@ impl Renderer {
             resolve,
             color_texture: Some(canvas.color.clone()),
             depth: depth.clone(),
+            depth_texture: canvas.depth.clone(),
             color_format: CANVAS_FORMAT,
             depth_format: depth.map(|_| CANVAS_DEPTH_FORMAT),
             sample_count: canvas.sample_count,
@@ -7123,7 +7217,8 @@ impl Renderer {
             sample_count,
             dimension: wgpu::TextureDimension::D2,
             format: CANVAS_DEPTH_FORMAT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            // `COPY_SRC` for `viewportDepthTexture()`'s copy.
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
             view_formats: &[],
         })
     }
@@ -7255,7 +7350,8 @@ impl Renderer {
                     dimension: wgpu::TextureDimension::D2,
                     format,
                     usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                        | wgpu::TextureUsages::TEXTURE_BINDING,
+                        | wgpu::TextureUsages::TEXTURE_BINDING
+                        | wgpu::TextureUsages::COPY_SRC,
                     view_formats: &[],
                 }));
             }
@@ -7384,6 +7480,51 @@ fn write_face(
             depth_or_array_layers: 1,
         },
     );
+}
+
+/// The one instance and adapter every native [`Renderer::new`] in the process
+/// uses, created and enumerated on first use.
+///
+/// One per renderer would be the natural reading of three.js, and it is what
+/// this did until it segfaulted ~1 run in 7 under a multi-threaded
+/// `cargo test` (#258). The fault is in the Vulkan loader, not here: before
+/// Vulkan-Loader 1.4.350 (KhronosGroup/Vulkan-Loader#1863, fixed by #1866),
+/// `vkEnumeratePhysicalDevices` ends in `unload_drivers_without_physical_devices`,
+/// which frees and unlinks driver entries from its instance while holding only
+/// `loader_lock`; meanwhile `vkSetDebugUtilsObjectNameEXT` — which wgpu calls
+/// for every labelled object whenever `InstanceFlags::DEBUG` is on, i.e. in
+/// every debug build — walks *every* instance's driver list in
+/// `loader_get_icd_and_device` under a different lock. So renderer A naming a
+/// buffer while renderer B, on its own fresh instance, enumerates adapters reads
+/// freed memory. Fedora 43 ships 1.4.341.
+///
+/// Enumerating once per process means the drivers without devices are dropped
+/// once, before any device exists, and nothing ever frees a driver entry
+/// another thread can be walking. It is also cheaper: a fresh instance loads
+/// every ICD and layer again. What remains on the old loader is
+/// `vkDestroyDevice` racing the same walk, whose window is a few
+/// instructions; a loader at or past 1.4.350 closes both.
+///
+/// A failure is cached too: an adapter that was not there at the first
+/// `Renderer::new` is not expected to appear later in the same process.
+#[cfg(not(target_arch = "wasm32"))]
+fn shared_adapter() -> Result<wgpu::Adapter, Error> {
+    static ADAPTER: std::sync::OnceLock<Result<wgpu::Adapter, Option<String>>> =
+        std::sync::OnceLock::new();
+
+    ADAPTER
+        .get_or_init(|| {
+            let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+                backends: BACKENDS,
+                ..wgpu::InstanceDescriptor::new_without_display_handle()
+            });
+            pollster::block_on(pick_adapter(&instance)).map_err(|error| match error {
+                Error::NoAdapter { wanted } => wanted,
+                other => unreachable!("pick_adapter fails only with NoAdapter, not {other}"),
+            })
+        })
+        .clone()
+        .map_err(|wanted| Error::NoAdapter { wanted })
 }
 
 /// The browser has no adapter enumeration: `wgpu::Instance::enumerate_adapters`

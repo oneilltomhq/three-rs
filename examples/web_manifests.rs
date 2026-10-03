@@ -300,6 +300,9 @@ mod webgpu_textures_partialupdate;
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_loader_gltf_diffuse_roughness;
 
+#[path = "webgpu_backdrop.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_backdrop;
 #[path = "webgpu_cubemap_mix.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_cubemap_mix;
@@ -538,6 +541,7 @@ const GRADED: &[(&str, fn())] = &[
         drop(webgpu_lightprobe_cubecamera::init())
     }),
     ("webgpu_sky", || drop(webgpu_sky::init())),
+    ("webgpu_backdrop", || drop(webgpu_backdrop::init())),
 ];
 
 /// Where the committed manifests live, one `<example>.json` each.

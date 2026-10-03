@@ -493,6 +493,19 @@ pub struct MeshBasicNodeMaterial {
     /// property, so the custom node can read `DiffuseColor`, `Output` and the
     /// normal accessors.
     pub output_node: Option<NodeRef>,
+    /// `NodeMaterial.backdropNode` — what the diffuse light is replaced
+    /// with: `LightsNode.setup()` assigns it to `totalDiffuse` on a lit
+    /// material, `setupLighting()` makes it the outgoing light on an unlit
+    /// one. Usually a [`viewport_shared_texture`] tap — the scene behind the
+    /// object, read back. A material with one goes in the transparent list
+    /// whatever [`transparent`](Self::transparent) says, so that it draws
+    /// after what it reads.
+    ///
+    /// [`viewport_shared_texture`]: crate::nodes::display::viewport_shared_texture
+    pub backdrop_node: Option<NodeRef>,
+    /// `NodeMaterial.backdropAlphaNode` — blend [`backdrop_node`](Self::backdrop_node)
+    /// over the lit diffuse by this much instead of replacing it.
+    pub backdrop_alpha_node: Option<NodeRef>,
     /// `NodeMaterial.mrtNode` — the material's own MRT overrides, merged over
     /// the renderer's (the pass's) by `NodeMaterial.setup()`. Read only when a
     /// render target with more than one colour attachment is bound, which is
@@ -670,6 +683,8 @@ impl Default for MeshBasicNodeMaterial {
             context_overrides: None,
             fragment_node: None,
             output_node: None,
+            backdrop_node: None,
+            backdrop_alpha_node: None,
             mrt_node: None,
             side: Side::Front,
             visible: true,
@@ -728,6 +743,12 @@ impl MeshBasicNodeMaterial {
         if self.ao_map.is_some() && !pbr {
             fields.push("aoMap");
         }
+        // `MeshNormalNodeMaterial`'s flow packs the normal straight into the
+        // output, with no `setupLighting()` step for the backdrop arm to sit
+        // in. Every other kind blends it into `totalDiffuse`.
+        if self.backdrop_node.is_some() && self.kind == Normal {
+            fields.push("backdropNode");
+        }
         fields
     }
 
@@ -778,6 +799,13 @@ impl MeshBasicNodeMaterial {
         } else {
             None
         }
+    }
+
+    /// `RenderList.push()`'s choice of list: `transparent === true ||
+    /// transmission > 0 || backdropNode` — a material that reads the frame
+    /// has to be drawn after it.
+    pub(crate) fn in_transparent_list(&self) -> bool {
+        self.transparent || self.transmission > 0.0 || self.backdrop_node.is_some()
     }
 
     /// `NodeBuilder.isOpaque()` — `transparent === false && blending ===

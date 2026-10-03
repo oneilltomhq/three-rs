@@ -5,10 +5,11 @@
 
 use three_rs::materials::{quad_vertex_node, render_output, MeshBasicNodeMaterial};
 use three_rs::nodes::display::{
-    after_image, box_blur, dot_screen, fxaa, gaussian_blur, hash_blur, pixelation_pass, rgb_shift,
-    sobel, BoxBlurOptions, GaussianBlurOptions, HashBlurOptions,
+    after_image, box_blur, dot_screen, fxaa, gaussian_blur, hash_blur_with, pixelation_pass,
+    rgb_shift, sobel, viewport_shared_texture_at, BoxBlurOptions, GaussianBlurOptions,
+    HashBlurOptions,
 };
-use three_rs::nodes::tsl::{float, texture_uv, uniform_value, uv};
+use three_rs::nodes::tsl::{float, screen_uv, texture_uv, uniform_value, uv};
 use three_rs::nodes::Type;
 use three_rs::textures::Texture;
 use three_rs::ToneMapping;
@@ -141,11 +142,17 @@ pub fn display_quads() -> Vec<DisplayQuad> {
     ));
 
     // webgpu_backdrop_area `m08`: `hashBlur( viewportSharedTexture(), .05 )`.
-    // Again only the loop is compared; the tap there is a viewport texture.
+    // Again only the loop is compared: three dumps it inside the backdrop
+    // material, `hashBlur`'s tap is the viewport texture's nearest load.
     quads.push(quad(
         "hash_blur",
         "webgpu_backdrop_area_m08_hash_blur.wgsl",
-        hash_blur(&input(), float(0.05), HashBlurOptions::default()),
+        hash_blur_with(
+            viewport_shared_texture_at,
+            screen_uv(),
+            float(0.05),
+            HashBlurOptions::default(),
+        ),
     ));
 
     quads

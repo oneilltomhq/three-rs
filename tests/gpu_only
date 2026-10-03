@@ -17,6 +17,7 @@ three-rs/renderer_compute_points
 three-rs/renderer_cube_camera
 three-rs/renderer_external_device
 three-rs/renderer_half_float_target
+three-rs/renderer_instance_buffers
 three-rs/renderer_instanced
 three-rs/renderer_lines
 three-rs/renderer_material_map

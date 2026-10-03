@@ -323,6 +323,7 @@ TslEarth, webgpu_tsl_earth, "../../examples/webgpu_tsl_earth.rs";
 Lightprobe, webgpu_lightprobe, "../../examples/webgpu_lightprobe.rs";
 LightprobeCubecamera, webgpu_lightprobe_cubecamera, "../../examples/webgpu_lightprobe_cubecamera.rs", await;
 Sky, webgpu_sky, "../../examples/webgpu_sky.rs";
+Backdrop, webgpu_backdrop, "../../examples/webgpu_backdrop.rs";
 }
 
 /// Where an example's assets come from: three.js at the commit this port is

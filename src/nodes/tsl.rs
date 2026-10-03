@@ -874,6 +874,39 @@ pub fn perspective_depth_to_view_z(
         .div(far.clone().sub(near).mul(depth).sub(far))
 }
 
+/// `viewZToOrthographicDepth( viewZ, near, far )` — `ViewportDepthNode.js`:
+/// `( viewZ + near ) / ( near - far )`, the view-space z mapped to `[0,1]`
+/// between the clip planes.
+pub fn view_z_to_orthographic_depth(
+    view_z: impl Into<NodeRef>,
+    near: impl Into<NodeRef>,
+    far: impl Into<NodeRef>,
+) -> NodeRef {
+    let (near, far) = (near.into(), far.into());
+    view_z.into().add(near.clone()).div(near.sub(far))
+}
+
+/// `linearDepth()` — `ViewportDepthNode.LINEAR_DEPTH` with no value: the
+/// fragment's own depth, `viewZToOrthographicDepth( positionView.z,
+/// cameraNear, cameraFar )`.
+pub fn linear_depth() -> NodeRef {
+    view_z_to_orthographic_depth(position_view().z(), camera_near(), camera_far())
+}
+
+/// `linearDepth( value )` — a depth-buffer value made linear:
+/// `viewZToOrthographicDepth( perspectiveDepthToViewZ( value, cameraNear,
+/// cameraFar ), cameraNear, cameraFar )`.
+///
+/// **Divergence**: three picks the formula from `camera.isPerspectiveCamera`
+/// at build time and passes the value through untouched for an orthographic
+/// camera. The port's builder does not see the camera, so this is the
+/// perspective formula always; every page that reads it renders through a
+/// `PerspectiveCamera`.
+pub fn linear_depth_of(value: impl Into<NodeRef>) -> NodeRef {
+    let view_z = perspective_depth_to_view_z(value, camera_near(), camera_far());
+    view_z_to_orthographic_depth(view_z, camera_near(), camera_far())
+}
+
 /// `Fog.js`' `getViewZNode( builder )`: `builder.context.getViewZ` if an
 /// enclosing [`context`] installed one, else `positionView.z`. Read inside a
 /// fog factor's deferred body (see [`fog_factor_fn`]), so `positionView` is
@@ -2339,6 +2372,42 @@ accessor!(
     uniform(UniformSource::ScreenDpr, Type::F32, UniformGroup::Render, None)
 );
 accessor!(
+    /// `screenSize` — `ScreenNode.SIZE`, the bound target's dimensions in
+    /// physical pixels. The same node as [`viewport_size`]: three's
+    /// `viewportSize` is the viewport rectangle's `.zw`, and the two only
+    /// differ under a viewport smaller than the target, which no page that
+    /// reads either sets.
+    screen_size,
+    viewport_size()
+);
+accessor!(
+    /// `screenCoordinate` — `ScreenNode.COORDINATE`, the fragment's position
+    /// in physical pixels: `fragCoord.xy`, y down, as WebGPU has it.
+    screen_coordinate,
+    frag_coord().xy()
+);
+accessor!(
+    /// `cameraNear` — `uniform( 'float' ).setName( 'cameraNear' )`, in the
+    /// render group: the rendering camera's `near`.
+    camera_near,
+    uniform(
+        UniformSource::CameraNear,
+        Type::F32,
+        UniformGroup::Render,
+        Some("cameraNear")
+    )
+);
+accessor!(
+    /// `cameraFar` — as [`camera_near`], from `camera.far`.
+    camera_far,
+    uniform(
+        UniformSource::CameraFar,
+        Type::F32,
+        UniformGroup::Render,
+        Some("cameraFar")
+    )
+);
+accessor!(
     /// `cameraProjectionMatrixInverse`. Named, like the other camera matrices:
     /// `uniform( camera.projectionMatrixInverse ).setName(
     /// 'cameraProjectionMatrixInverse' )`.
@@ -3025,7 +3094,12 @@ pub fn bent_normal_view() -> NodeRef {
 // textures
 // ---------------------------------------------------------------------------
 
-fn texture_node(source: TextureSource, uv: NodeRef, mode: SampleMode, ty: Type) -> NodeRef {
+pub(crate) fn texture_node(
+    source: TextureSource,
+    uv: NodeRef,
+    mode: SampleMode,
+    ty: Type,
+) -> NodeRef {
     NodeRef::new(Node::Texture {
         texture: Rc::new(source),
         uv,
@@ -4661,6 +4735,48 @@ pub fn hue(color: NodeRef, adjustment: NodeRef) -> NodeRef {
     call(&def, vec![color, adjustment])
 }
 
+/// `grayscale( color )` — `ColorAdjustment.js`: `luminance( color.rgb )`.
+/// A `Fn()` with no layout, so inlined.
+pub fn grayscale(color: NodeRef) -> NodeRef {
+    luminance(color.rgb())
+}
+
+/// `posterize( source, steps )` — `ColorAdjustment.js`:
+/// `source.mul( steps ).floor().div( steps )`. A `Fn()` with no layout, so
+/// inlined, and of `source`'s type.
+pub fn posterize(source: NodeRef, steps: impl Into<NodeRef>) -> NodeRef {
+    let steps = steps.into();
+    source.mul(steps.clone()).floor().div(steps)
+}
+
+/// `blendOverlay( base, blend )` — `BlendModes.js`, a `vec3` `Fn()` with a
+/// layout: `mix( base * 2 * blend, 1 - ( 1 - base ) * 2 * ( 1 - blend ),
+/// step( 0.5, base ) )`.
+pub fn blend_overlay(base: NodeRef, blend: NodeRef) -> NodeRef {
+    thread_local! { static CELL: Lazy<Rc<FnDef>> = const { Lazy::new() }; }
+    let def = CELL.with(|c| {
+        c.get(|| {
+            shader_fn(
+                Some("blendOverlay"),
+                vec![("base", Type::Vec3), ("blend", Type::Vec3)],
+                Type::Vec3,
+                |args| {
+                    let (base, blend) = (args[0].clone(), args[1].clone());
+                    mix(
+                        base.mul(float(2.0)).mul(blend.clone()),
+                        base.one_minus()
+                            .mul(float(2.0))
+                            .mul(blend.one_minus())
+                            .one_minus(),
+                        step(float(0.5), base),
+                    )
+                },
+            )
+        })
+    });
+    call(&def, vec![base, blend])
+}
+
 /// `oscSine( t )` — `Oscillators.js`: `t.add( 0.75 ).mul( PI2 ).sin().mul( 0.5 ).add( 0.5 )`.
 pub fn osc_sine(t: NodeRef) -> NodeRef {
     t.add(float(0.75))
@@ -4987,9 +5103,14 @@ pub fn wgsl_select(f: NodeRef, t: NodeRef, cond: NodeRef) -> NodeRef {
 
 /// `step( edge, x )`.
 pub fn step(edge: impl Into<NodeRef>, x: impl Into<NodeRef>) -> NodeRef {
-    let x = x.into();
-    let ty = x.ty();
-    math("step", vec![edge.into(), x], ty)
+    let (edge, x) = (edge.into(), x.into());
+    // `MathNode.getNodeType()`: the wider of the two operands.
+    let ty = if edge.ty().components() > x.ty().components() {
+        edge.ty()
+    } else {
+        x.ty()
+    };
+    math("step", vec![edge, x], ty)
 }
 
 /// `uint( x )`.
