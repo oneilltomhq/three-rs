@@ -23,7 +23,9 @@
 //! copy into a texture the earlier draws do not read.
 
 use super::{PassTarget, Renderer};
-use crate::textures::{DepthTexture, Texture, TextureType};
+use std::collections::HashMap;
+
+use crate::textures::{DepthTexture, Texture, TextureOwner, TextureType};
 
 /// What [`Renderer::draw`] knows about the pass it is building, for the copy
 /// requests made while it builds.
@@ -45,6 +47,34 @@ pub(super) struct ScreenReads {
     pub(super) draw_index: usize,
     /// The requests, in the order they were made.
     pub(super) copies: Vec<(usize, FramebufferCopy)>,
+}
+
+/// The `wgpu::Texture` this renderer allocated for each copy destination,
+/// by texture id: the port's half of three's per-renderer `backend.get(
+/// texture )`.
+///
+/// A texture handle carries one GPU texture, but the shared textures behind
+/// `viewportSharedTexture()` and `viewportDepthTexture()` are thread-locals
+/// that outlive any one renderer. The texture a handle carries may have been
+/// made on another renderer's device, so it is reused only when it is the
+/// one this renderer made. Otherwise the request makes a new one. Two live
+/// renderers that read the same shared texture each re-point the handle at
+/// their own before they bind it.
+#[derive(Default)]
+pub(super) struct Destinations(HashMap<(bool, usize), (TextureOwner, wgpu::Texture)>);
+
+impl Destinations {
+    /// Whether `gpu` is the texture this renderer made for `key`.
+    fn owns(&self, key: (bool, usize), gpu: &wgpu::Texture) -> bool {
+        self.0.get(&key).is_some_and(|(_, made)| made == gpu)
+    }
+
+    /// Record `gpu` as this renderer's texture for `key`, and forget the
+    /// textures of handles that have since been dropped.
+    fn insert(&mut self, key: (bool, usize), owner: TextureOwner, gpu: wgpu::Texture) {
+        self.0.retain(|_, (owner, _)| owner.strong_count() > 0);
+        self.0.insert(key, (owner, gpu));
+    }
 }
 
 /// One copy between two segments of a pass.
@@ -88,7 +118,8 @@ impl Renderer {
         let current = texture
             .has_gpu()
             .then(|| texture.with_gpu(|gpu| gpu.clone()))
-            .filter(|gpu| gpu.width() == width && gpu.height() == height && gpu.format() == format);
+            .filter(|gpu| gpu.width() == width && gpu.height() == height && gpu.format() == format)
+            .filter(|gpu| self.screen_read_textures.owns((false, texture.id()), gpu));
         let gpu = match current {
             Some(gpu) => gpu,
             None => {
@@ -111,6 +142,11 @@ impl Renderer {
                 texture.set_size(width, height);
                 texture.set_format(format);
                 texture.set_gpu(gpu.clone());
+                self.screen_read_textures.insert(
+                    (false, texture.id()),
+                    texture.owner(),
+                    gpu.clone(),
+                );
                 gpu
             }
         };
@@ -138,10 +174,13 @@ impl Renderer {
             None => (1, 1, wgpu::TextureFormat::Depth24Plus, false),
         };
 
-        let current =
-            depth.inner().borrow().gpu.clone().filter(|gpu| {
-                gpu.width() == width && gpu.height() == height && gpu.format() == format
-            });
+        let current = depth
+            .inner()
+            .borrow()
+            .gpu
+            .clone()
+            .filter(|gpu| gpu.width() == width && gpu.height() == height && gpu.format() == format)
+            .filter(|gpu| self.screen_read_textures.owns((true, depth.id()), gpu));
         let gpu = match current {
             Some(gpu) => gpu,
             None => {
@@ -172,6 +211,9 @@ impl Renderer {
                 inner.width = width;
                 inner.height = height;
                 inner.gpu = Some(gpu.clone());
+                drop(inner);
+                self.screen_read_textures
+                    .insert((true, depth.id()), depth.owner(), gpu.clone());
                 gpu
             }
         };

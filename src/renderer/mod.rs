@@ -752,6 +752,9 @@ pub struct Renderer {
     /// viewport nodes' `copyFramebufferToTexture()` requests go. Saved and
     /// restored around each `draw`, so a nested render's copies stay its own.
     screen_reads: Option<screen_reads::ScreenReads>,
+    /// The copy destinations this renderer allocated; see
+    /// [`screen_reads::Destinations`].
+    screen_read_textures: screen_reads::Destinations,
 
     /// `Renderer._outputBufferType`, `HalfFloatType` by default.
     output_buffer_type: TextureType,
@@ -1192,6 +1195,7 @@ impl Renderer {
             frame_buffer_target: None,
             opaque_frame: None,
             screen_reads: None,
+            screen_read_textures: screen_reads::Destinations::default(),
             output_buffer_type: TextureType::HalfFloat,
             mipmap_shader,
             programs: HashMap::new(),
