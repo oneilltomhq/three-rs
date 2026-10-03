@@ -1,10 +1,12 @@
 //! Ports of `three.js/src/cameras`.
 
 mod array_camera;
+mod cube_camera;
 mod orthographic_camera;
 mod perspective_camera;
 
 pub use array_camera::ArrayCamera;
+pub use cube_camera::CubeCamera;
 pub use orthographic_camera::OrthographicCamera;
 pub use perspective_camera::{CameraView, PerspectiveCamera};
 

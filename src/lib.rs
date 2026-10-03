@@ -157,7 +157,7 @@ pub mod testing;
 pub mod textures;
 pub mod utils;
 
-pub use cameras::{ArrayCamera, OrthographicCamera, PerspectiveCamera, RenderCamera};
+pub use cameras::{ArrayCamera, CubeCamera, OrthographicCamera, PerspectiveCamera, RenderCamera};
 pub use core::{BufferGeometry, Intersection, Node, Object3D, Raycaster, Timer};
 pub use environments::RoomEnvironment;
 pub use error::{Error, GltfError};
