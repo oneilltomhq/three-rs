@@ -36,7 +36,7 @@ The probe's line in the sphere's fragment (`m10`) is now a unit test.
 | `tools/light_probe_generator_reference.mjs` | three's own generator under node, as the oracle for the unit test |
 | `tests/` | `addons_light_probe_generator.rs` (the SH projection against three, to 1e-9), `nodes_light_probe.rs` (the WGSL against three's dump) |
 
-`docs/nodes.md` §59 is the long form.
+`docs/nodes.md` §60 is the long form.
 
 ## What the pixels found, and what they could not
 
@@ -72,7 +72,7 @@ The 2 remaining pixels were not chased.
   for the PNG and JPEG cubes the addon accepts. A cube that is not
   `UnsignedByteType` returns an `Err`.
 - `LightProbe::copy()` copies the `Light` half, not the transform (see
-  §59's divergences).
+  §60's divergences).
 - `LightProbeHelper::update()` is the position and scale half of three's
   `onBeforeRender()`, and the page calls it every frame. The `sh` and
   `intensity` uniforms are already read live.

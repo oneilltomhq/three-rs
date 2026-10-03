@@ -124,8 +124,10 @@ pub struct MemoryCounts {
     /// data-array texture live on the texture rather than in a renderer map,
     /// so they upload but do not land here; they are freed with their owner.
     pub textures: usize,
-    /// Distinct compiled programs — `renderer.info.programs.length`. Two
-    /// materials that generate the same WGSL share one.
+    /// Distinct compiled programs — `renderer.info.programs.length`: render
+    /// programs plus compute pipelines. Two materials that generate the same
+    /// WGSL share one. A program goes once nothing has named it for a few
+    /// frames (issue #237), so this falls as well as rises.
     pub programs: usize,
 }
 

@@ -27,6 +27,7 @@ use bindings::{
     BindGroupKey, DrawKey, LayoutKey, Occurrences, Resource, SamplerKey, Serial, Serials, SlotKey,
     SlotOwner, VERTEX_SLOTS,
 };
+pub use cube_render_target::CubeRenderTarget;
 pub use direct_render_pipeline::DirectRenderPipeline;
 pub use info::{BuildCounts, ComputeCounts, Info, MemoryCounts, RenderCounts};
 use mipmap::{create_mipmap_pipeline, MipmapShader};
@@ -58,7 +59,7 @@ use crate::nodes::node::{BufferSource, TextureSource};
 use crate::nodes::tsl::FogNode;
 use crate::nodes::tsl::StorageArray;
 use crate::nodes::wgsl::TextureKind;
-use crate::nodes::{BindingDesc, ComputeFlow, NodeBuilder, NodeProgram, NodeRef, Type};
+use crate::nodes::{BindingDesc, ComputeFlow, NodeBuilder, NodeProgram, Type};
 use crate::objects::{Background, InstancedBufferAttribute, QuadMesh, Scene, SceneFog, SubDraw};
 use crate::testing::DeterministicRandom;
 use crate::textures::{
@@ -82,6 +83,11 @@ use crate::textures::{
 /// `webgpu_postprocessing_ssaa` renders its scene eight times before the one
 /// draw that reads the `RenderPipeline` quad's material. Against a render
 /// clock that quad's program was evicted and rebuilt every frame.
+///
+/// The compiled-program caches (`programs`, `compute_pipelines`) use the same
+/// window one step removed: an entry goes once nothing names it *and* nothing
+/// has named or dispatched it for this many frames. See
+/// [`Renderer::sweep_programs`].
 const CACHE_GRACE_FRAMES: u64 = 4;
 
 /// The `texture-compression-*` features WebGPU names — `-bc`, `-etc2` and
@@ -403,6 +409,77 @@ const VARIANT_BACK_SIDE: u64 = 4;
 /// `ToonOutlinePassNode._getOutlineMaterial( source )`.
 const VARIANT_TOON_OUTLINE: u64 = 6;
 const VARIANT_FRONT_SIDE: u64 = 5;
+
+/// One entry of `Renderer::programs`: the compiled program, and the last
+/// frame a material state named it.
+struct ProgramEntry {
+    program: Program,
+    /// `Renderer::frames` when a build last produced this program's key, or
+    /// when a material whose version moved stopped naming it. A program no
+    /// state names survives [`CACHE_GRACE_FRAMES`] frames past this, so a
+    /// material toggled between two graphs does not recompile either one.
+    last_named: u64,
+}
+
+/// One entry of `Renderer::compute_pipelines`: the compiled kernel, and the
+/// last frame it was dispatched.
+struct ComputePipelineEntry {
+    gpu: ComputeProgramGpu,
+    /// `Renderer::frames` at the last dispatch. A pipeline no live
+    /// `compute_programs` entry names survives [`CACHE_GRACE_FRAMES`] frames
+    /// past this, so a caller that builds the same kernel afresh every frame
+    /// still builds its pipeline once.
+    last_used: u64,
+}
+
+/// One entry of `Renderer::compute_programs`: a `ComputeFlow`'s built
+/// program, and a `Weak` on each of the flow's statement nodes.
+///
+/// three.js keys its compute pipelines on the `ComputeNode` through a
+/// `WeakMap`, so an entry dies with its kernel. The key here is the
+/// statements' addresses ([`compute_flow_key`]); the `Weak`s are what make
+/// that safe without keeping the kernel alive. A `Weak` keeps its node's
+/// allocation (not the node) reserved, so no new node can be given a cached
+/// address while the entry exists, and a lookup checks the entry's nodes are
+/// the flow's own besides.
+struct ComputeEntry {
+    statements: Vec<Weak<crate::nodes::node::Node>>,
+    program: Rc<crate::nodes::ComputeProgram>,
+}
+
+impl ComputeEntry {
+    fn new(flow: &ComputeFlow, program: Rc<crate::nodes::ComputeProgram>) -> Self {
+        Self {
+            statements: flow
+                .statements
+                .iter()
+                .map(|stmt| Rc::downgrade(stmt.as_rc()))
+                .collect(),
+            program,
+        }
+    }
+
+    /// Whether this entry was built for `flow`'s very statement nodes: every
+    /// `Weak` still upgrades and points at the node in the same position.
+    /// Anything else — a dropped kernel, or a hash that merely collides — is a
+    /// miss.
+    fn is_for(&self, flow: &ComputeFlow) -> bool {
+        self.statements.len() == flow.statements.len()
+            && self
+                .statements
+                .iter()
+                .zip(&flow.statements)
+                .all(|(weak, stmt)| {
+                    weak.strong_count() > 0 && std::ptr::eq(weak.as_ptr(), Rc::as_ptr(stmt.as_rc()))
+                })
+    }
+
+    /// Whether every statement node is still alive. A dead entry can never be
+    /// hit again, and is swept.
+    fn is_live(&self) -> bool {
+        self.statements.iter().all(|weak| weak.strong_count() > 0)
+    }
+}
 
 /// One material's built programs — `NodeManager.nodeBuilderCache`'s entries
 /// for one `material.id`, at one `material.version`. The per-draw resolution
@@ -750,7 +827,11 @@ pub struct Renderer {
     mipmap_shader: MipmapShader,
     /// Compiled programs, keyed by the node builder's cache key — one per
     /// distinct generated WGSL + binding shape, shared across materials.
-    programs: HashMap<u64, Program>,
+    /// Swept with `node_builder_states`, which is all that names a key: a
+    /// program goes once no surviving state names it and none has for
+    /// [`CACHE_GRACE_FRAMES`] frames, taking its `pipelines` with it. See
+    /// [`Renderer::sweep_programs`].
+    programs: HashMap<u64, ProgramEntry>,
     /// `NodeManager.nodeBuilderCache`: a material's built `NodeProgram`s, by
     /// `material.id`. A steady frame is served from here without touching the
     /// node builder; see `node_builder_state()`.
@@ -854,14 +935,18 @@ pub struct Renderer {
     serials: Serials,
     /// Built `ComputeProgram`s, keyed by [`compute_flow_key`] — the identity
     /// of the `ComputeFlow`'s statement nodes — so a per-frame `compute()`
-    /// call builds nothing. Each entry holds those statements alive: the key
-    /// is their addresses, and a dropped kernel's address handed to a new
-    /// kernel's node would otherwise find the old kernel's program (#231).
-    compute_programs: HashMap<u64, (Vec<NodeRef>, Rc<crate::nodes::ComputeProgram>)>,
+    /// call builds nothing. Each entry holds a `Weak` on those statements, not
+    /// the statements: it is a hit only for the very nodes it was built from,
+    /// and it dies with its kernel (#231, #237). Dead entries are swept at
+    /// the start of every frame and on any `compute()` that misses, so a
+    /// caller that builds a fresh kernel every frame does not grow the map.
+    compute_programs: HashMap<u64, ComputeEntry>,
     /// Compiled compute pipelines, keyed by `ComputeProgram::cache_key`. A
     /// compute pipeline has no pass state, so this is both levels of the render
-    /// path's program/pipeline caches at once.
-    compute_pipelines: HashMap<u64, ComputeProgramGpu>,
+    /// path's program/pipeline caches at once. Swept like `programs`: an entry
+    /// goes once no live `compute_programs` entry names it and it has not been
+    /// dispatched for [`CACHE_GRACE_FRAMES`] frames.
+    compute_pipelines: HashMap<u64, ComputePipelineEntry>,
     /// `Background`'s `SphereGeometry( 1, 32, 32 )` skybox mesh geometry.
     background_geometry: Option<Rc<BufferGeometry>>,
     /// `QuadMesh`'s shared `QuadGeometry`.
@@ -3722,23 +3807,40 @@ impl Renderer {
     ) -> Result<(), Error> {
         let key = compute_flow_key(flow);
         let program = match self.compute_programs.get(&key) {
-            Some((_, program)) => program.clone(),
-            None => {
+            Some(entry) if entry.is_for(flow) => entry.program.clone(),
+            _ => {
+                // A miss is a build, so the walk is noise beside it; it is
+                // what bounds the map for a caller that dispatches kernels
+                // and never renders, which never reaches `sweep_caches()`.
+                self.compute_programs.retain(|_, entry| entry.is_live());
                 self.info.build.programs_compiled += 1;
                 let program = Rc::new(NodeBuilder::new().build_compute(flow));
                 self.compute_programs
-                    .insert(key, (flow.statements.clone(), program.clone()));
+                    .insert(key, ComputeEntry::new(flow, program.clone()));
                 program
             }
         };
 
-        let fresh = !self.compute_pipelines.contains_key(&program.cache_key);
-        if fresh {
-            self.info.build.pipelines_built += 1;
-            self.info.memory.programs += 1;
-            let gpu = ComputeProgramGpu::new(&self.device, &program);
-            self.compute_pipelines.insert(program.cache_key, gpu);
-        }
+        let frames = self.node_frame.frame_id;
+        let fresh = match self.compute_pipelines.get_mut(&program.cache_key) {
+            Some(entry) => {
+                entry.last_used = frames;
+                false
+            }
+            None => {
+                self.info.build.pipelines_built += 1;
+                let gpu = ComputeProgramGpu::new(&self.device, &program);
+                self.compute_pipelines.insert(
+                    program.cache_key,
+                    ComputePipelineEntry {
+                        gpu,
+                        last_used: frames,
+                    },
+                );
+                self.count_programs();
+                true
+            }
+        };
 
         // `if ( computeNode.onInitFunction !== null )` — before this kernel's
         // own dispatch, and in its own submit.
@@ -3763,7 +3865,7 @@ impl Renderer {
                 label: Some("three-rs compute"),
             });
         {
-            let gpu = &self.compute_pipelines[&program.cache_key];
+            let gpu = &self.compute_pipelines[&program.cache_key].gpu;
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("three-rs compute pass"),
                 timestamp_writes: None,
@@ -4361,6 +4463,13 @@ impl Renderer {
             });
         states.last_used = frames;
         if states.version != item.key.version {
+            // The programs this state named start their grace window now;
+            // see `ProgramEntry::last_named`.
+            for node in states.by_dynamic_key.values() {
+                if let Some(entry) = self.programs.get_mut(&node.cache_key) {
+                    entry.last_named = frames;
+                }
+            }
             states.by_dynamic_key.clear();
             states.version = item.key.version;
         }
@@ -4393,10 +4502,20 @@ impl Renderer {
         self.info.build.programs_compiled += 1;
         self.programs
             .entry(node.cache_key)
-            .or_insert_with(|| Program::new(&self.device, &node));
-        self.info.memory.programs = self.programs.len();
+            .and_modify(|entry| entry.last_named = frames)
+            .or_insert_with(|| ProgramEntry {
+                program: Program::new(&self.device, &node),
+                last_named: frames,
+            });
         states.by_dynamic_key.insert(dynamic_key, node.clone());
+        self.count_programs();
         node
+    }
+
+    /// `info.memory.programs`: the compiled render programs and compute
+    /// pipelines both, kept in step with every insert and sweep.
+    fn count_programs(&mut self) {
+        self.info.memory.programs = self.programs.len() + self.compute_pipelines.len();
     }
 
     /// `renderer.info`: what the last frame drew and built, and what the
@@ -4574,11 +4693,11 @@ impl Renderer {
         let (label, layout) = match layout {
             LayoutKey::Render(program) => (
                 "three-rs bind group",
-                &self.programs[&program].layouts[group],
+                &self.programs[&program].program.layouts[group],
             ),
             LayoutKey::Compute(program) => (
                 "three-rs compute bind group",
-                &self.compute_pipelines[&program].layouts[group],
+                &self.compute_pipelines[&program].gpu.layouts[group],
             ),
         };
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -6001,7 +6120,9 @@ impl Renderer {
 
     fn ensure_pipeline(&mut self, key: PipelineKey) {
         if !self.pipelines.contains_key(&key) {
-            let pipeline = self.programs[&key.program].create_pipeline(&self.device, key.state);
+            let pipeline = self.programs[&key.program]
+                .program
+                .create_pipeline(&self.device, key.state);
             self.pipelines.insert(key, pipeline);
             self.info.build.pipelines_built += 1;
         }
@@ -6235,6 +6356,10 @@ impl Renderer {
     ///   has a count to read. Those age out instead: an entry unused for
     ///   [`CACHE_GRACE_FRAMES`] frames goes.
     ///
+    /// The compiled programs follow what names them: a render program the
+    /// surviving material states, a compute pipeline the kernels still alive
+    /// (issue #237; see [`sweep_programs`](Self::sweep_programs)).
+    ///
     /// Correctness never rests on this sweep — ids are never reused, so a
     /// stale entry can only ever be found by the object that put it there
     /// (issue #58). It is here so a consumer that rebuilds geometry or
@@ -6320,6 +6445,18 @@ impl Renderer {
         self.slot_buffers
             .retain(|_, entry| bindings::is_fresh(entry.last_used, frames));
 
+        // Compiled programs, by what still names them (issue #237). Only at
+        // the start of an outermost render: a nested render — a pass drawn
+        // from inside a draw's `updateBefore` — runs while the outer render
+        // holds a program key between `node_builder_state()` and
+        // `ensure_pipeline()`, and `Draw`s holding `PipelineKey`s it has yet
+        // to encode. Nothing holds a key across the outermost render's start.
+        let dropped_layouts = if self.call_depth == 1 {
+            self.sweep_programs(frames)
+        } else {
+            HashSet::new()
+        };
+
         // Textures, by liveness (issue #158). After `node_builder_states`,
         // because a material's built `NodeProgram` holds handles to the
         // textures it samples: a texture whose last holder was a program
@@ -6352,10 +6489,68 @@ impl Renderer {
             });
             !entries.is_empty()
         });
+        // And a bind group made against a dropped program's layout: the same
+        // WGSL built again is the same key but a new layout, which a group
+        // made against the old one does not belong to.
         self.bind_group_cache.retain(|key, entry| {
             bindings::is_fresh(entry.last_used, frames)
                 && (orphaned.is_empty() || !key.binds_any(&orphaned))
+                && (dropped_layouts.is_empty() || !dropped_layouts.contains(&key.layout()))
         });
+    }
+
+    /// The program half of [`sweep_caches`](Self::sweep_caches); returns the
+    /// layouts of every program it dropped.
+    ///
+    /// A render program is named by the `NodeProgram`s in
+    /// `node_builder_states`, just swept by age, and by nothing else that
+    /// outlives a render. It goes once no state names it and none has for
+    /// [`CACHE_GRACE_FRAMES`] frames (`ProgramEntry::last_named`): a state
+    /// swept by age has not drawn for that long anyway, and a material whose
+    /// version moved — a graph edit — lets its old programs go after the same
+    /// window, so a material toggled between two graphs keeps both. Its
+    /// `pipelines`, which index into `programs`, go with it.
+    ///
+    /// A compute pipeline is named by the `compute_programs` entries whose
+    /// kernel is still alive, and goes once none does and it has not been
+    /// dispatched for the same window.
+    fn sweep_programs(&mut self, frames: u64) -> HashSet<LayoutKey> {
+        let mut dropped = HashSet::new();
+
+        let named: HashSet<u64> = self
+            .node_builder_states
+            .values()
+            .flat_map(|states| states.by_dynamic_key.values().map(|node| node.cache_key))
+            .collect();
+        self.programs.retain(|key, entry| {
+            let keep = named.contains(key) || bindings::is_fresh(entry.last_named, frames);
+            if !keep {
+                dropped.insert(LayoutKey::Render(*key));
+            }
+            keep
+        });
+        if !dropped.is_empty() {
+            let programs = &self.programs;
+            self.pipelines
+                .retain(|key, _| programs.contains_key(&key.program));
+        }
+
+        self.compute_programs.retain(|_, entry| entry.is_live());
+        let named: HashSet<u64> = self
+            .compute_programs
+            .values()
+            .map(|entry| entry.program.cache_key)
+            .collect();
+        self.compute_pipelines.retain(|key, entry| {
+            let keep = named.contains(key) || bindings::is_fresh(entry.last_used, frames);
+            if !keep {
+                dropped.insert(LayoutKey::Compute(*key));
+            }
+            keep
+        });
+
+        self.count_programs();
+        dropped
     }
 
     /// Entries in the uploaded-geometry cache. A consumer that churns geometry
@@ -6369,6 +6564,20 @@ impl Renderer {
     #[doc(hidden)]
     pub fn material_cache_len(&self) -> usize {
         self.node_builder_states.len()
+    }
+
+    /// Entries in the compiled-program caches: render programs, render
+    /// pipelines, built compute programs and compute pipelines (issue #237).
+    /// A consumer that keeps producing new material variants or new kernels
+    /// should see these hold steady, not climb.
+    #[doc(hidden)]
+    pub fn program_cache_lens(&self) -> (usize, usize, usize, usize) {
+        (
+            self.programs.len(),
+            self.pipelines.len(),
+            self.compute_programs.len(),
+            self.compute_pipelines.len(),
+        )
     }
 
     /// Entries in the `range()` / instance-buffer cache.
@@ -7224,9 +7433,12 @@ fn storage_stride(element_ty: Type) -> usize {
 /// identity is enough because a `ComputeFlow` is built once and then called
 /// every frame — the same shape as the material path keying on `MaterialKey`.
 ///
-/// Identity is an address, so it is only unique while the node is alive —
-/// which is why `compute_programs` keeps the statements of every flow it
-/// has keyed.
+/// Identity is an address, so it is only unique while the node's allocation
+/// is — which is why a `compute_programs` entry holds a `Weak` on each
+/// statement, which keeps the allocation reserved without keeping the node
+/// alive, and is a hit only when those `Weak`s point at the flow's own nodes
+/// (`ComputeEntry::is_for`). A flow whose nodes are dropped leaves a dead
+/// entry, which the next sweep removes.
 fn compute_flow_key(flow: &ComputeFlow) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();

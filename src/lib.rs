@@ -191,9 +191,9 @@ pub use objects::{
     QuadMesh, Scene, SceneFog, Sprite,
 };
 pub use renderer::{
-    pass, BuildCounts, CameraRef, ComputeCounts, DirectRenderPipeline, Info, MemoryCounts,
-    PassNode, RenderCounts, RenderPipeline, RenderTarget, Renderer, RendererParameters, SceneRef,
-    SsaaPassNode, BACKENDS,
+    pass, BuildCounts, CameraRef, ComputeCounts, CubeRenderTarget, DirectRenderPipeline, Info,
+    MemoryCounts, PassNode, RenderCounts, RenderPipeline, RenderTarget, Renderer,
+    RendererParameters, SceneRef, SsaaPassNode, BACKENDS,
 };
 pub use textures::{
     CubeTexture, Data3DTexture, DepthTexture, Mapping, MinFilter, Texture, TextureFilter,

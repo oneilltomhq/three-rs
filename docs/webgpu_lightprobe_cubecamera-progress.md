@@ -19,7 +19,7 @@ draws the result.
 | `src/renderer/mod.rs` | one face of a cube read back as bytes (`RGBA8` or `RGBA16F`) |
 | `tests/renderer_cube_camera.rs` | GPU: the probe from a captured cube agrees with the probe from the same cube's PNGs |
 
-`docs/nodes.md` §59.3 and §59.4 are the long form, `webgpu_lightprobe`'s note
+`docs/nodes.md` §60.3 and §60.4 are the long form, `webgpu_lightprobe`'s note
 covers the probe itself.
 
 ## What the pixels could not see

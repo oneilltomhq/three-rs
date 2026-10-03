@@ -266,7 +266,8 @@ Mirror, webgpu_mirror, "../../examples/webgpu_mirror.rs";
 TslHalftone, webgpu_tsl_halftone, "../../examples/webgpu_tsl_halftone.rs";
 TslEarth, webgpu_tsl_earth, "../../examples/webgpu_tsl_earth.rs";
 Lightprobe, webgpu_lightprobe, "../../examples/webgpu_lightprobe.rs";
-LightprobeCubecamera, webgpu_lightprobe_cubecamera, "../../examples/webgpu_lightprobe_cubecamera.rs";}
+LightprobeCubecamera, webgpu_lightprobe_cubecamera, "../../examples/webgpu_lightprobe_cubecamera.rs";
+Sky, webgpu_sky, "../../examples/webgpu_sky.rs";}
 
 impl Which {
     /// The name with or without its `webgpu_` prefix, or its 1-based index in

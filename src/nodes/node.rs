@@ -1391,6 +1391,12 @@ pub enum Node {
     },
     /// `VarNode` — a cached `var<private>`.
     Var(Rc<VarDef>),
+    /// `VarNode` with `intent` set, as it ends up when something assigns to
+    /// it — see [`to_var_intent`](crate::nodes::tsl::to_var_intent). A WGSL
+    /// function-scope `var`, declared with its value where it is first
+    /// built (`var nodeVar0 : vec3<f32> = …;`) instead of hoisted into the
+    /// `// vars` block.
+    VarIntent(Rc<VarDef>),
     /// `VarNode` with `readOnly` set — `node.toConst()`. A WGSL `let`, so it is
     /// declared where it is assigned and, unlike a `var<private>`, cannot be
     /// written again.
@@ -1732,6 +1738,7 @@ impl NodeRef {
             Node::InstancedAttribute { ty, .. } => *ty,
             Node::Builtin(b) => b.ty(),
             Node::Var(v) => v.ty,
+            Node::VarIntent(v) => v.ty,
             Node::Let(v) => v.ty,
             Node::Varying(v) => v.ty,
             Node::TextureSize { .. } => Type::UVec2,

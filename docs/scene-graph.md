@@ -268,7 +268,11 @@ correct form for each kind of key. It happens once, at the top of `render()`:
 | `buffers` (`range()`) | `BufferId` | unused for `CACHE_GRACE_RENDERS` renders |
 | `slot_buffers` (a draw's uniform groups, bone matrices, morph influences, instance data) | `DrawKey` (`Object3D.id`, `BufferGeometry.id`, `material.id`, variant, occurrence in the pass) + group + binding | unused for `CACHE_GRACE_FRAMES` frames |
 | `views` | `TextureId` + view dimension, one entry per `wgpu::Texture` behind the id | a `Weak` on the texture handle, of any texture class; otherwise unused for `CACHE_GRACE_FRAMES` frames |
-| `bind_group_cache` | layout + the `Serial` of each bound resource | binds a view swept for its `Weak`; otherwise unused for `CACHE_GRACE_FRAMES` frames |
+| `bind_group_cache` | layout + the `Serial` of each bound resource | binds a view swept for its `Weak`, or was made against an evicted program's layout; otherwise unused for `CACHE_GRACE_FRAMES` frames |
+| `programs` | content hash of the generated WGSL and bindings | no surviving `node_builder_states` entry names it, and none has for `CACHE_GRACE_FRAMES` frames (issue #237) |
+| `pipelines` | program key + pass state | its program is evicted |
+| `compute_programs` | the `ComputeFlow`'s statement-node addresses | a `Weak` on each statement: any one dead means the kernel was dropped |
+| `compute_pipelines` | content hash of the kernel's WGSL and bindings | no live `compute_programs` entry names it, and it has not been dispatched for `CACHE_GRACE_FRAMES` frames |
 
 The three binding caches (issue #137) are three.js' `Bindings`: a draw keeps
 one uniform buffer per group for its life and each frame writes its bytes into
@@ -299,11 +303,28 @@ a steady frame evicts nothing and still builds nothing — which
 `churning_geometry_and_materials_does_not_grow_the_caches` checks from the
 other side.
 
-Two caches deliberately have no eviction: `programs` and `pipelines` are keyed
-by the *content* hash of the generated WGSL and the pipeline state, so distinct
-entries are distinct shaders, and their number is bounded by the material
-shapes the program uses, not by how many objects it creates. (`samplers` and
-`storage_buffers` are not evicted either; their doc comments say why.)
+`programs` and `pipelines` are keyed by the *content* hash of the generated
+WGSL and the pipeline state, so distinct entries are distinct shaders and
+there is no stale-identity hazard, only growth: a consumer that keeps editing
+a material's graph would otherwise keep every program it ever compiled. The
+material states are all that name a program, so a program goes once none has
+named it for the grace window, and the window runs from the frame a material
+whose version moved let go of it — a material toggled between two graphs keeps
+both. The sweep runs only at the top of an outermost `render()`; a nested
+render (a pass drawn from a draw's `updateBefore`) runs while the outer one
+holds program and pipeline keys it has yet to use.
+
+The compute-program cache is keyed by address — the statement nodes of a
+`ComputeFlow`, where three.js keys on the `ComputeNode` through a `WeakMap`.
+Each entry holds a `Weak` on each statement: the `Weak`
+keeps the node's allocation reserved, so no new node lands at a cached address
+while the entry lives (#231), without keeping the kernel alive, and a lookup
+is a hit only when the `Weak`s point at the flow's own nodes. A dropped kernel
+leaves a dead entry, swept at the next `render()` or the next `compute()` that
+misses. Its compiled pipeline is content-keyed like a render program's and
+outlives it by the grace window, so a caller that builds the same kernel
+afresh every frame still builds its pipeline once. (`samplers` and
+`storage_buffers` are not evicted; their doc comments say why.)
 
 A texture's `Weak` fails only once nothing holds a handle, and a material's
 built program (`node_builder_states`) is one of the holders. So a texture

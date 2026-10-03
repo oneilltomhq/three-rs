@@ -188,6 +188,10 @@ mod webgpu_postprocessing_afterimage;
 #[path = "../../examples/webgpu_tsl_earth.rs"]
 #[allow(dead_code)]
 mod webgpu_tsl_earth;
+
+#[path = "../../examples/webgpu_sky.rs"]
+#[allow(dead_code)]
+mod webgpu_sky;
 #[path = "../../examples/webgpu_tsl_halftone.rs"]
 #[allow(dead_code)]
 mod webgpu_tsl_halftone;
@@ -3805,6 +3809,58 @@ fn webgpu_equirectangular() {
     });
 }
 
+/// `SkyMesh`: the Preetham sky with the sun disc and the fbm cloud layer on a
+/// box scaled to 450 000, and a sphere reflecting it through a `CubeCamera`
+/// that renders the scene into a 256² half-float cube every frame. Rendering
+/// into the cube skips tone mapping, so the sphere's reflection and the sky
+/// behind it reach ACES Filmic at exposure 0.05 together. Time is pinned, so
+/// the clouds have neither drifted nor evolved.
+#[test]
+fn webgpu_sky() {
+    let name = "webgpu_sky";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_sky::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_sky::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    // The draw calls and triangles the README's graded table records.
+    let info = app.renderer.info();
+    println!("{name}: info {info:?}");
+
+    steady_frame(name, &mut app, webgpu_sky::animate, |app| {
+        app.renderer.device()
+    });
+}
+
 /// Issue #139's rung: `gears.glb` is three Draco-compressed meshes, and the
 /// outer hull's `maskNode` cuts an angular wedge out of it — in the shadow
 /// pass too — while its `outputNode` paints the exposed back faces a flat
@@ -5502,6 +5558,7 @@ fn steady_frame_builds_nothing() {
     // and bind groups that pairing needs. Frame three must create nothing.
     rung!(webgpu_postprocessing_afterimage, 0, 2);
     rung!(webgpu_tsl_halftone);
+    rung!(webgpu_sky);
     rung!(webgpu_tsl_earth);
     rung!(webgpu_mirror);
     rung!(webgpu_multiple_rendertargets);

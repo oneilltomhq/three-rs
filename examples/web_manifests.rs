@@ -309,6 +309,9 @@ mod webgpu_lightprobe;
 #[path = "webgpu_lightprobe_cubecamera.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_lightprobe_cubecamera;
+#[path = "webgpu_sky.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_sky;
 #[path = "webgpu_tsl_earth.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_tsl_earth;
@@ -534,6 +537,7 @@ const GRADED: &[(&str, fn())] = &[
     ("webgpu_lightprobe_cubecamera", || {
         drop(webgpu_lightprobe_cubecamera::init())
     }),
+    ("webgpu_sky", || drop(webgpu_sky::init())),
 ];
 
 /// Where the committed manifests live, one `<example>.json` each.

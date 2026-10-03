@@ -5508,7 +5508,78 @@ it, matching what three's `setup()` does during graph analysis;
 * The full ladder keeps every pixel count. The converted examples render
   their passes from the output quad's draw.
 
-## 59. `LightProbeNode` and `getShIrradianceAt()` (`webgpu_lightprobe`, `webgpu_lightprobe_cubecamera`)
+## 59. `SkyMesh`, `toVarIntent()` and `CubeCamera` (`webgpu_sky`)
+
+`webgpu_sky` scales a `SkyMesh` to 450 000 and reflects it in a sphere
+through a `CubeCamera` that re-renders the scene into a 256² half-float
+`CubeRenderTarget` every frame, with the sphere hidden. `SkyMesh`
+(`addons::objects`) is `examples/jsm/objects/SkyMesh.js` node for node. Its
+`vertexNode` writes four varyings and pins the box to the far plane, and its
+`colorNode` does the Preetham in-scattering, the sun disc and, under an
+`If`, a cloud layer. The cloud layer is four octaves of gradient noise from
+three inline `Fn()`s, which the port writes as Rust functions that build the
+same nodes at each call site. `tests/nodes_sky_wgsl.rs` gates both stages
+against three's dump.
+
+### 59.1 `Node::VarIntent`
+
+`pow()`, `mix()` and the other `nodeProxyIntent` functions wrap their result
+in `toVarIntent()`. Three's intent var is transparent until an assignment
+targets it. Then `VarNode.generate()` takes its `nodeVar.local` branch: a
+function-scope `var nodeVarN : T = …;` written where the var is first built,
+with no entry in `// vars`. `SkyMesh`'s `Lin` is a `pow()` that the page then
+`mulAssign`s, so three's fragment has `var nodeVar0 : vec3<f32> = pow( … );`.
+
+The port decides at construction, not at build. `tsl::to_var_intent()`
+builds `Node::VarIntent`, which is always the assigned form. A caller uses
+it only where the JS assigns to the result of one of those functions.
+Everywhere else the plain node is already three's output. The var counts on
+the same `nodeVarN` counter as a hoisted var, as three's `_var` counter
+does.
+
+### 59.2 `showSunDisc` is a `bool`
+
+Upstream declares `this.showSunDisc = uniform( 1 )`. A `UniformNode` takes its
+type from its value when the material is first built, and the page assigns
+`true` before that happens. So three's dump stores it as `nodeUniformN : u32`,
+reads it as `nodeVarN = bool( … )` (§31.4) and multiplies it in as
+`f32( nodeVarN )`. The port's uniform types are fixed at construction, so
+`SkyMesh::show_sun_disc` is a `bool` uniform from the start. That is the type
+the one page that sets it gives it. Any non-zero value is `true`.
+
+### 59.3 `CubeCamera` and `CubeRenderTarget`
+
+`CubeRenderTarget::new( size, type )` is the cube texture plus one 2-D
+face target with depth. `CubeCamera::new( near, far, renderTarget )` adds six
+`PerspectiveCamera( -90, 1, near, far )` children in WebGPU's face
+orientation (`coordinateSystem` is fixed, so the constructor sets the
+orientation once). `update( renderer, scene )` renders each face into the face
+target and copies it into its layer. That is the path
+`fromEquirectangularTexture()` already used internally. It regenerates
+mipmaps when the cube has them and restores the renderer's target.
+`activeMipmapLevel` is not ported. As in three, nothing rendered into a
+target is tone mapped, so the cube holds linear radiance. The sphere's
+`MeshBasicNodeMaterial( { envMap } )` samples it directly (no PMREM), and the
+sphere and the sky reach ACES Filmic together on the canvas pass.
+
+### 59.4 Divergences
+
+All of these are existing §8 classes, applied in the fixture test.
+
+* **Varying names.** Upstream's four `varyingProperty()`s are unnamed, so three
+  numbers them `nodeVarying5`–`8`. The port's `varyingProperty` takes a name,
+  and `SkyMesh` passes upstream's JS identifiers (`vSunDirection`, `vSunE`,
+  `vBetaR`, `vBetaM`). The fixture test maps one set to the other.
+* **Usage-promoted temps.** Three emits `let nodeConstN` for every temp read
+  twice: the sun direction in the vertex stage, and in the fragment the view
+  direction, `cosTheta`, both phase terms, `g2`, the zenith angle, its
+  inverse, `Fex`, `L0`, the sun disc colour, the horizon fade, the
+  `floor`/`fract`/fade of each `noise()` call, and the region noise's
+  argument. The port asks for each with `to_const`, with a comment.
+* **`VERTEX_` sub-builds** and **render-struct member order**, as in every
+  rung. The fixture test undoes the first on three's side and compares the
+  uniform structs by membership.
+## 60. `LightProbeNode` and `getShIrradianceAt()` (`webgpu_lightprobe`, `webgpu_lightprobe_cubecamera`)
 
 A `LightProbe` is a light that only adds irradiance. three's
 `LightProbeNode.setup()` is one line:
@@ -5522,7 +5593,7 @@ where `this.lightProbe` is a `uniformArray()` of nine `vec3`s, laid out as
 array every frame. Like an ambient or hemisphere light, it never reaches the
 lighting model's `direct()`, so it has no shadow, direction or position.
 
-### 59.1 Where it enters
+### 60.1 Where it enters
 
 Every lighting model reads its lights through `phong::setup_light`, which
 ports `LightsNode.setupLightsNode()`'s per-light step. `LightKind::Probe`
@@ -5549,7 +5620,7 @@ are folded the way JavaScript folds them, so the WGSL line matches three's
 `tests/nodes_light_probe.rs` asserts that line and checks that it comes after
 `irradiance = vec3( 0 )` and after `normalWorld`, never before.
 
-### 59.2 A Phong-family fix that came with it
+### 60.2 A Phong-family fix that came with it
 
 `setup_phong` used to emit `irradiance = vec3( 0 )` after the light loop
 unless the scene had an ambient light. For an ambient light it hoists the
@@ -5563,7 +5634,7 @@ irradiance-only light (ambient, hemisphere, probe) is present.
 test. No graded rung lit a Phong material that way, which is why the ladder
 never saw it.
 
-### 59.3 `LightProbeGenerator`
+### 60.3 `LightProbeGenerator`
 
 The addon lives in `src/addons/lights.rs`. Both entry points share one loop
 (`Projection`). It weights each texel by its solid angle, projects the
@@ -5591,24 +5662,11 @@ on the cube.
   `from_cube_texture()` on the same cube, coefficient by coefficient, to 1%
   of the DC term. A sign or axis swapped in the face table fails it.
 
-### 59.4 `CubeCamera`
+### 60.4 `CubeCamera`
 
-`src/cameras/cube_camera.rs` follows three's `CubeCamera`: an `Object3D`
-with six `PerspectiveCamera( -90, 1, near, far )` children, oriented by
-`cube_render_target::FACES`, the WebGPU coordinate-system table in
-`updateCoordinateSystem()`. `update( renderer, scene )` renders each face and
-then generates the cube's mipmaps if it has any. Three things differ from
-three:
-
-- three binds the cube target and sets `activeCubeFace`, so each face renders
-  into its layer. The port renders each face into a 2-D target of the same
-  size and type, then copies it into the layer with `copy_to_cube_layer`.
-  This is one more texture copy per face. The pixels are the same.
-- `activeMipmapLevel` is always 0. Nothing in the ported pages renders a cube
-  camera into a mip.
-- three copies the cube camera's `layers` onto each child camera. The port's
-  cameras have no per-camera layer test in the render path yet (§50), so it
-  does not.
+`webgpu_lightprobe_cubecamera` captures the background with the `CubeCamera`
+of §59.3 into a `CubeRenderTarget`, and
+`LightProbeGenerator::from_cube_render_target` reads that target's cube back.
 
 ### Divergences specific to these rungs
 

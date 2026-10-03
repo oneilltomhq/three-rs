@@ -17,7 +17,9 @@
 use three_rs::addons::lights::LightProbeGenerator;
 use three_rs::math::SphericalHarmonics3;
 use three_rs::textures::TextureType;
-use three_rs::{CubeCamera, CubeTexture, CubeTextureLoader, Renderer, RendererParameters, Scene};
+use three_rs::{
+    CubeCamera, CubeRenderTarget, CubeTextureLoader, Renderer, RendererParameters, Scene,
+};
 
 fn sh(probe: &three_rs::Node) -> SphericalHarmonics3 {
     probe.borrow().light().expect("a LightProbe").sh
@@ -43,12 +45,12 @@ fn cube_camera_capture_projects_like_the_cube_it_captured() {
     let mut cube_camera = CubeCamera::new(
         1.0,
         1000.0,
-        CubeTexture::render_target(256, TextureType::UnsignedByte),
+        CubeRenderTarget::new(256, TextureType::UnsignedByte).unwrap(),
     );
-    cube_camera.update(&mut renderer, &mut scene).unwrap();
+    cube_camera.update(&mut renderer, &mut scene);
     let got = sh(&LightProbeGenerator::from_cube_render_target(
         &mut renderer,
-        &cube_camera.render_target,
+        &cube_camera.render_target.texture,
     )
     .unwrap());
 

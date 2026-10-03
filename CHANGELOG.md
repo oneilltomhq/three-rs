@@ -8,6 +8,17 @@ have their own sections after the release they ship with. The format follows [Ke
 
 ### Added
 
+- **`SkyMesh`** (`addons::objects`), a port of `examples/jsm/objects/SkyMesh.js`.
+  It is the Preetham daylight model with a sun disc and an fbm cloud layer.
+  Every uniform is a public `SettableValue`. `webgpu_sky` is graded green at 0
+  of 100000 pixels, and its WGSL is gated against three's dump in
+  `tests/nodes_sky_wgsl.rs`.
+- **`CubeCamera`** and **`CubeRenderTarget`**: `new CubeCamera( near, far,
+  renderTarget )` and `update( renderer, scene )` render the scene into a
+  cube's six faces. `activeMipmapLevel` is not ported.
+- **`tsl::to_var_intent()`**, the assigned form of three's `toVarIntent()`.
+  It is a function-scope `var` declared where it is first built. See
+  `docs/nodes.md` §59.
 - **`LightProbe`**, a light holding nine spherical-harmonic coefficients
   (`SphericalHarmonics3`) that adds `getShIrradianceAt( normalWorld )` to a
   lit material's irradiance and nothing to its radiance, through the same
@@ -22,8 +33,7 @@ have their own sections after the release they ship with. The format follows [Ke
   node (`tools/light_probe_generator_reference.mjs`), the second against the
   first on the same environment.
 - **`addons::helpers::LightProbeHelper`**, a sphere showing a probe's
-  irradiance over π, and **`CubeCamera`**, six face cameras rendering a scene
-  into a `CubeTexture::render_target`.
+  irradiance over π.
 - Rungs `webgpu_lightprobe` and `webgpu_lightprobe_cubecamera`. The second
   is native only for now: its readback blocks, which the browser cannot do,
   so `tools/web_gate.skip` (new) lists it.
