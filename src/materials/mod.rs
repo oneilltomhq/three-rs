@@ -16,7 +16,7 @@ pub use node_material::{
     background_color_node, background_environment_color_node, background_node_color_node,
     background_pmrem_color_node, background_vertex_node, instanced_range, output_fragment_node,
     quad_vertex_node, render_output, setup, shadow_material, shadow_material_for,
-    tone_mapping_node, MrtContext, OutputContext, SetupContext,
+    tone_mapping_node, AoContext, MrtContext, OutputContext, SetupContext,
 };
 
 pub(crate) use blending::BlendMode;
@@ -355,6 +355,8 @@ pub struct MeshBasicNodeMaterial {
     /// `MeshStandardMaterial.aoMap` / `.aoMapIntensity` — `materialAO`,
     /// `tex.r.sub( 1 ).mul( aoMapIntensity ).add( 1 )`, assigned to the
     /// `AmbientOcclusion` property by `NodeMaterial.setupAmbientOcclusion()`.
+    /// Read by every lit mesh kind (Basic, Lambert, Phong, Toon, Standard,
+    /// Physical), as three's `aoMap` is.
     pub ao_map: Option<Texture>,
     /// `MeshStandardMaterial.aoMapIntensity` — multiplies
     /// [`ao_map`](Self::ao_map)'s contribution.
@@ -738,10 +740,6 @@ impl MeshBasicNodeMaterial {
         // A PMREM environment is only read by `PhysicalLightingModel`.
         if self.pmrem_env.is_some() && !pbr {
             fields.push("envMap (PMREM)");
-        }
-        // `setupAmbientOcclusion()` is only wired into the Standard flow.
-        if self.ao_map.is_some() && !pbr {
-            fields.push("aoMap");
         }
         // `MeshNormalNodeMaterial`'s flow packs the normal straight into the
         // output, with no `setupLighting()` step for the backdrop arm to sit

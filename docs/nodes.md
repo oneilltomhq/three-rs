@@ -5985,6 +5985,114 @@ arithmetic, and `tests/traa_frames.rs` allows for it.
 - Logarithmic and reversed depth buffers.
 - A beauty node that is an `RTTNode` rather than a pass attachment.
 - A `velocity` other than the global one (`builder.context.velocity`).
-- `useSubpixelCorrection = false`, `depthThreshold`, `edgeDepthDiff` and
-  `maxVelocityLength` as settable properties. They are constants at three's
-  defaults.
+- `depthThreshold`, `edgeDepthDiff` and `maxVelocityLength` as settable
+  properties. They are constants at three's defaults.
+  `useSubpixelCorrection` is `TraaNode::set_use_subpixel_correction`, which
+  rebuilds the resolve material (`webgpu_postprocessing_ao` turns it off).
+
+## 64. `GTAONode` and `builtinAOContext` (`webgpu_postprocessing_ao`)
+
+### 64.1 What three does
+
+`ao( depthNode, normalNode, camera )` is a `TempNode` with
+`updateBeforeType = FRAME`. It owns one `RedFormat` target with no depth
+buffer, and its texture node is `passTexture( this, target.texture )`.
+
+- **The shader.** For every pixel it unprojects the scene depth to a view
+  position, reads the view normal, and for each of a few slices through the
+  hemisphere (three below 30 samples, five above) marches `ceil( samples /
+  slices )` steps outwards along the screen on both sides, keeping the
+  highest horizon the depth buffer puts in the way. A step whose depth
+  difference exceeds `thickness` is ignored. The visible arc of each slice,
+  integrated in closed form and weighted by the normal's projection into
+  the slice, is summed, divided by the slice count, clamped and raised to
+  `scale`. A 5×5 magic-square noise texture rotates the slices per pixel
+  and offsets the first step. Depth 1 (no geometry) discards, so the
+  target keeps its white clear.
+- **Temporal filtering.** With `useTemporalFiltering`, the rotation cycles
+  through six angles and the offset through four values per frame
+  (`_temporalRotations`, `_spatialOffsets`), so a TRAA after it averages
+  the pattern out.
+- **Resolution scale.** Below 1 the target is the drawing buffer scaled and
+  rounded, and the centre depth is the minimum of a `textureGather` instead
+  of a point read, so the rounding does not band.
+- **`updateBefore()`.** Writes the temporal uniforms from the frame id,
+  rebuilds the material when `samples` has changed (the loops are
+  unrolled with the count baked in), resizes the target, clears to white
+  and renders the quad.
+- **`builtinAOContext( aoNode )`.** A `context` node with a `getAO` hook.
+  `NodeMaterial.setupAmbientOcclusion()` calls it with the material's own
+  `aoNode` (`materialAO` with an `aoMap`, else null). The hook returns the
+  input unchanged for a transparent material, otherwise the product, or
+  `aoNode` alone. The result is assigned to `AmbientOcclusion`, which
+  makes `setupMaterialLightings()` push an `AONode`: every lighting model
+  multiplies its `ambientOcclusion` var by it before `indirect()`.
+
+### 64.2 The port
+
+`nodes::display::ao` builds the same graph, gated against three's dump of
+this page's `GTAO` material: `gtao_matches_three` checks the body and the
+bindings, `gtao_screen_position_from_clip_matches_three` the one `Fn()`
+with a layout (`tests/nodes_display_wgsl.rs`, fixture
+`webgpu_postprocessing_ao_m18_gtao.wgsl`). The graph needed:
+
+- **A depth gather.** `tsl::depth_texture_gather` is `texture( depth
+  ).gather().sample( uv )`: `textureGather` on a depth texture with a
+  non-comparison sampler, as a `vec4`. A depth texture is otherwise bound
+  without a sampler (three's `isUnfilterable()`), so the builder adds a
+  `non-filtering` sampler binding next to it the first time it is gathered
+  (`NodeBuilder::ensure_depth_sampler`), and `SamplerKey::of` gives a
+  `TextureSource::Depth` a nearest, clamped, non-comparison sampler. This
+  is the one sampler a depth texture ever gets.
+- **Texture wrapping on loads.** The noise texture is `NearestFilter` /
+  `RepeatWrapping`, so three reads it with `textureLoad` through its
+  `tsl_coord_repeatS_repeatT_2d` wrap function. The builder now generates
+  three's per-axis wrap polyfills (`tsl_repeatWrapping_float`,
+  `tsl_mirrorWrapping_float`, `tsl_clampWrapping_float`) and the pair
+  function from the texture's `wrapping()`, instead of always clamping.
+- **Helpers.** `get_screen_position_from_clip` (a WGSL function, as in
+  three), `unpack_rgb_to_normal`, and `Renderer::frame_id` for the temporal
+  uniforms.
+- **The magic square.** `generate_magic_square( 5 )` is three's siamese
+  construction; a unit test holds it to three's numbers.
+
+`GtaoState` implements `NodeUpdate` and is registered as the updater of the
+AO texture, as `passTexture` makes it one in three. At the top of
+`update_before()` it asks for the pre-pass through `frame::texture_update(
+normal )`, as §63 does for the beauty, with `Renderer.context_ao` lifted
+around that render: the pre-pass is rendered from inside the pass whose
+context this node is, and would otherwise inherit it and bind the AO target
+it feeds (three's binds the placeholder, or last frame's AO, and never reads
+it). Only the normal texture's pass is lifted, so depth and normals are
+expected to come from the same pass. The target is `rgba8unorm`, not
+`RedFormat`, which the port does not have; the quad's float broadcasts into
+it and the consumer reads `.x`.
+
+**`builtinAOContext`.** The context travels as `SetupContext
+.ambient_occlusion: Option<AoContext>`, so it is part of every program's
+key. `PassNode::set_context_ao( node )` installs it for the pass's render,
+nested the way three merges `getFlowContextData()`: a pass's hook wins over
+an outer one, and an outer one survives a pass that sets none.
+`setup_ambient_occlusion` applies the hook's body itself (a transparent
+material ignores it; an `aoMap` multiplies) and returns whether it assigned,
+which is what pushes the `AONode` multiply into the lighting chain. Basic,
+Lambert, Phong, Toon, Standard and Physical read it, as their `aoMap` does;
+an occluded material runs the lighting chain even with no light and no
+environment, because the `AONode` is one of the `materialLightings`.
+
+**What is checked.** `tests/gtao_frames.rs`, on the GPU: the sky keeps the
+white clear, the open floor is unoccluded, the foot of a box on the floor
+is dark, half resolution (the gather path) and a rebuilt sample count still
+put the contact dark, nothing is NaN, and the AO context darkens a Standard
+material's beauty at the contact and nowhere else.
+
+### 64.3 Not ported
+
+- `normalNode = null`, where three reconstructs the normal from depth
+  (`getNormalFromDepth`). The page feeds the pre-pass's packed normals.
+- A logarithmic depth buffer.
+- `distanceExponent` and `distanceFallOff`, which three declares and never
+  reads.
+- `SSAONode`, the page's other `aoType`, and its `aoOnly` view.
+- `scenePass.options.samples`. The pass takes the renderer's sample count,
+  which is 0 here.

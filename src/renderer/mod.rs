@@ -813,6 +813,13 @@ pub struct Renderer {
     /// carries only the flag, because nothing on the ladder uses a `Lighting`
     /// for anything else.
     pub lighting_enabled: bool,
+    /// `renderer.contextNode`'s `getAO` — the ambient-occlusion node of the
+    /// pass being rendered, which `PassNode.updateBefore()` merges into the
+    /// renderer's context for the duration of its render
+    /// (`passNode.contextNode = builtinAOContext( ao )`). Every scene draw
+    /// built while it is set carries it in its `SetupContext`. `None` outside
+    /// such a pass.
+    pub(crate) context_ao: Option<crate::nodes::NodeRef>,
     /// `renderer.setRenderObjectFunction()` as `ToonOutlinePassNode` sets it
     /// for the duration of its own render: the outline material every
     /// `MeshToonNodeMaterial` draw is preceded by. `None` is three's default
@@ -1304,6 +1311,7 @@ impl Renderer {
             opaque: true,
             transparent: true,
             lighting_enabled: true,
+            context_ao: None,
             toon_outline: None,
             camera_layers: None,
             sort_objects: true,
@@ -2107,6 +2115,13 @@ impl Renderer {
                     // disabled builds its materials with no lights *and* no
                     // environment (see `SetupContext::lighting_disabled`).
                     lighting_disabled: !self.lighting_enabled,
+                    // `builder.context.getAO` from the pass's
+                    // `builtinAOContext`; `setupAmbientOcclusion()` applies
+                    // it (and skips transparent materials).
+                    ambient_occlusion: self
+                        .context_ao
+                        .clone()
+                        .map(|node| materials::AoContext { node }),
                     viewport_opaque_mip: item_opaque_frame,
                     // `InstanceNode.setup()` branches on
                     // `instanceMatrix.count * 16 * 4` against
@@ -2578,6 +2593,10 @@ impl Renderer {
                         // The shadow pass draws into the shadow map, which is
                         // `renderer.isOutputTarget === false`: no hook.
                         output: None,
+                        // No `builtinAOContext` on a depth-only draw: the
+                        // shadow material is never lit, so three's dead
+                        // `AmbientOcclusion` assignment would change nothing.
+                        ambient_occlusion: None,
                         lights: Vec::new(),
                         // The shadow pass does not carry morph targets yet:
                         // nothing in the ladder both morphs and casts a shadow.
@@ -2968,6 +2987,10 @@ impl Renderer {
                         // The shadow pass draws into the shadow map, which is
                         // `renderer.isOutputTarget === false`: no hook.
                         output: None,
+                        // No `builtinAOContext` on a depth-only draw: the
+                        // shadow material is never lit, so three's dead
+                        // `AmbientOcclusion` assignment would change nothing.
+                        ambient_occlusion: None,
                         lights: Vec::new(),
                         morph: None,
                         skin: None,

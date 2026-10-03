@@ -348,3 +348,13 @@ fn traa_clip_aabb_matches_three() {
 fn traa_flicker_reduction_matches_three() {
     check("traa", Region::Function("flickerReduction"));
 }
+
+#[test]
+fn gtao_matches_three() {
+    check("gtao", Region::Body);
+}
+
+#[test]
+fn gtao_screen_position_from_clip_matches_three() {
+    check("gtao", Region::Function("getScreenPositionFromClip"));
+}
