@@ -667,6 +667,48 @@ creates `bloomIntensity` (above), and the renderer gives it the pass target's
 The rung's graded frame is the page's first, so its velocity is zero. The
 rung shows that this composes. `tests/velocity_frames.rs` shows the motion.
 
+## Temporal anti-aliasing (`webgpu_postprocessing_traa`)
+
+TRAA reads the scene pass's colour, depth and `velocity`, and it needs the
+pipeline as well as the pass:
+
+```rust
+let scene_pass = pass(scene.clone(), camera.clone());
+scene_pass.set_mrt(mrt(vec![
+    ("output", output_property()),
+    ("velocity", velocity()),
+]));
+let _ = scene_pass.texture_node("velocity"); // adds and links the attachment
+
+let traa_node = traa(
+    &scene_pass.texture(),
+    &scene_pass.depth_texture(),
+    &scene_pass.texture_named("velocity"),
+    camera.clone(),
+);
+traa_node.attach(&mut render_pipeline);
+render_pipeline.output_node = Some(traa_node.node());
+```
+
+`attach` is the one step three does not have. Three's `TRAANode.setup()`
+installs the jitter on the pipeline itself, through `OnBeforeRenderPipeline`.
+The port's nodes have no handle on the pipeline while they build, so the
+caller hands it over. Without `attach` the camera never moves, the history
+never gains new samples, and the output is the scene with a one-frame delay
+through the resolve. `docs/api.md` §8 has the reasoning, and
+`docs/nodes.md` §60 the frame order and where the history lives.
+
+The camera has to be the pass's camera, and a `PerspectiveCamera`. Each
+frame, TRAA renders its resolve quad and makes two GPU copies, one of colour
+and one of depth, into the history. It allocates nothing per frame.
+
+**There is no rung.** three lists `webgpu_postprocessing_traa` in its own e2e
+exception list (`test/e2e/puppeteer.js`, under "Black screen"), so its page
+is not graded upstream. The port is gated on the resolve shader against
+three's dump, and on `tests/traa_frames.rs`, which checks over sixteen frames
+that the silhouette blends while the inside and the background hold. The
+example is in the native viewer (`viewer traa`).
+
 ## The display nodes of #144
 
 `src/nodes/display/` now also has these ports of

@@ -116,6 +116,20 @@ one. The table's row order is the rung order, and the gallery keeps it. An
 example in the table with no `target/e2e/<name>/actual.png` is named on the way
 out and left out of the grid; run the ladder to include it.
 
+## Ported but ungradeable
+
+A page that three's own e2e harness skips has no reference that upstream
+holds itself to. Those pages are the ones listed in `test/e2e/puppeteer.js`'s
+exception list. Such a page is not a row in "Examples graded green", so it
+gets no thumbnail here and no build in the browser shell, whose manifests are
+exactly the graded set. The README lists it instead in a two-column table
+under the graded one: the example, and why it has no grade. The generator and
+its tests read only five- and six-cell rows, so they skip that table.
+
+| example | reason |
+|---|---|
+| `webgpu_postprocessing_traa` | three's exception list, "Black screen". Gated on its resolve shader and on `tests/traa_frames.rs` |
+
 ## Reference images stay out of the tree
 
 Three's reference screenshots are not ours to redistribute, so nothing derived

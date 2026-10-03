@@ -46,7 +46,8 @@ Linux is the only backend that has been run.
   MSAA, the linear-to-sRGB output pass, `PassNode` post-processing, mipmaps,
   cube textures, line topology, viewport / scissor / `clearDepth` and
   `autoClear`. `velocity` as an MRT output, with three's previous-frame
-  matrices and skinned `positionPrevious`.
+  matrices and skinned `positionPrevious`, and temporal reprojection
+  anti-aliasing (`traa`) on top of it.
 - **Addons.** `src/addons/` holds the `three/addons/…` tier that the graded
   examples import: `lines` (`LineSegmentsGeometry`, `LineGeometry`,
   `LineSegments2`, `Line2` — fat lines, with `Line2NodeMaterial` in core beside
@@ -233,6 +234,14 @@ a moment later (`tests/renderer_compute_indirect.rs`); the notes say what each
 asserts. The triangle counts are the CPU-side counts `renderer.info()` records
 for an indirect draw, as three's does, not what the GPU was told to draw.
 
+Some pages are ported but cannot be graded, because three's own e2e harness
+skips them. They are in the native viewer, not in the gallery or the
+browser shell:
+
+| example | why it has no grade |
+|---|---|
+| [`webgpu_postprocessing_traa`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_traa.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_traa-progress.md) | in three's e2e exception list (`test/e2e/puppeteer.js`, "Black screen"). It is gated instead on its resolve shader against three's dump and on `tests/traa_frames.rs` |
+
 Measured on Intel Iris Xe, Mesa 25.3.6, Fedora 43, against three.js 5f610f5
 (past r186, for the cube PMREM of 2f80402; the pin becomes the r187 tag once
 upstream tags it).
@@ -297,7 +306,7 @@ cargo run --release --bin viewer -- shadowmap --headless --frames 40
 ```
 
 Opens the named example in a window (winit, tested on Wayland). All 58 graded
-examples are there, and each one animates, orbits, dollies and pans through
+examples are there, and so is the ungraded `webgpu_postprocessing_traa`. Each one animates, orbits, dollies and pans through
 its *own* `animate()`, `resize()` and `OrbitControls` — the viewer drives the
 example, it does not restate it. `--list` prints the examples with their keys,
 and a key stands in for the name on the command line; in the window, `[` and

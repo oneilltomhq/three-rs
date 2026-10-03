@@ -279,6 +279,19 @@ the camera itself, through `RenderCamera::set_view_offset` (issue #164). The
 hook signature does not pass one in, because three's callbacks take no
 arguments either. `docs/nodes.md` §37 has the ordering.
 
+### TRAA's jitter is attached by the caller
+
+Three's `TRAANode.setup()` reaches the pipeline through
+`builder.context.renderPipeline`. It registers its jitter hooks there,
+guarded by `renderPipelineState.viewOffsetOwner`. The port's nodes have no
+pipeline handle while they build, and adding one to every node build would
+put a `&mut RenderPipeline` in a path that only TRAA needs. So
+`TraaNode::attach( &mut RenderPipeline )` installs the two hooks, and
+`RenderPipeline::claim_view_offset()` is `viewOffsetOwner`. It returns true
+once per pipeline, so a second TRAA node does not jitter again. Forgetting
+`attach` costs anti-aliasing, not correctness: the output is the resolved
+scene without jitter.
+
 ### Velocity's projection override is on the renderer
 
 Three calls `velocity.setProjectionMatrix( m )` on the `VelocityNode`

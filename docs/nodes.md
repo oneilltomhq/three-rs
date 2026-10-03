@@ -5582,3 +5582,103 @@ store does.
 - The bone-texture path.
 - `useVelocity` on shadow casters. `docs/webgpu_postprocessing_motion_blur-progress.md`
   explains why no pixel depends on it.
+
+## 60. `TRAANode` (`webgpu_postprocessing_traa`, issue #165)
+
+### 60.1 What three does
+
+`traa( beauty, depth, velocity, camera )` is a `TempNode` with
+`updateBeforeType = FRAME`. It owns two half-float targets: the history,
+which also carries a `DepthTexture`, and the resolve target. Its texture node
+is `passTexture( this, resolve.texture )`.
+
+- **Jitter.** `setup()` adds an `OnBeforeRenderPipeline` callback and an
+  `OnAfterRenderPipeline` callback. They are guarded by
+  `renderPipelineState.viewOffsetOwner`, so a pipeline with two TRAA nodes
+  jitters only once. The before callback saves the unjittered projection into
+  `velocity.setProjectionMatrix()`, then calls `camera.setViewOffset()` with
+  the next of 32 Halton (2, 3) offsets, minus 0.5. The after callback clears
+  both and advances the index.
+- **`updateBefore()`.** It rolls `_previousCameraWorldMatrix` and
+  `_previousCameraProjectionMatrixInverse` from last frame's values, then
+  writes this frame's near/far, world, inverse world and inverse projection.
+  On a size change it seeds the history by copying the beauty. It renders the
+  resolve quad, copies the resolve into the history, and copies the scene's
+  depth into the history's depth when the sizes match.
+- **The resolve.** It finds the closest and farthest depth in the 3×3
+  neighbourhood, and reads the velocity at the closest texel. It reprojects
+  the history along that velocity. Disocclusion is a depth test of the
+  reprojected history depth, rebuilt through the previous camera, and edges
+  are exempt from it. It clips the history to the neighbourhood's mean ± γσ,
+  then blends the result with a luminance-weighted (flicker-reducing) weight.
+  That weight is 5% plus a sub-pixel term, rising with motion.
+
+### 60.2 The port
+
+`nodes::display::traa` builds the same graph, gated against three's dump. The
+gate covers the resolve body and its three helper functions,
+`subpixelCorrection`, `clipAABB` and `flickerReduction`
+(`tests/nodes_display_wgsl.rs`). The graph needed four new pieces:
+
+- **Struct values.** `Node::StructNew` is three's `struct( … )( values )`.
+  `Node::StructGet` is `.get( name )`. `sampleCurrentDepth` returns its three
+  results this way, as `StructType0`.
+- **Texel loads.** `texture_load`, `texture_load_offset` and
+  `depth_texture_load` are `textureLoad` at an integer coordinate. On a depth
+  texture the result is a bare `f32`, with no `.x`.
+- **`all( bvec )`.** The builder passes its argument unformatted, the way it
+  already passes the arguments of `dpdx` and `inverseSqrt`, so a `bvec2` is
+  not cut to its `.x`.
+- **Helpers.** `view_z_to_perspective_depth` and `get_view_position`.
+
+`TraaState` implements `NodeUpdate` and is registered as the updater of the
+resolve texture, as `passTexture` makes it one in three. The jitter cannot be
+installed from inside the node, because the port has no `setup()`-time handle
+on the pipeline. So `TraaNode::attach( &mut RenderPipeline )` installs the two
+hooks, behind `RenderPipeline::claim_view_offset()`, which is
+`viewOffsetOwner`. `docs/api.md` §8 has the reason.
+
+**Where the previous frame lives.** There are two histories:
+
+- **The velocity attachment's.** This is the global `velocity`'s camera and
+  object history in the renderer's `NodeFrameState` (§59). TRAA only holds
+  the projection still, through `Renderer::set_velocity_projection_matrix`,
+  for the length of the pipeline's render.
+- **TRAA's own camera matrices.** These are `SettableValue` uniforms on
+  `TraaState`. They roll at the top of `update_before()`, once per frame and
+  before the new values are written, which is where three rolls them. The
+  history colour and depth are GPU copies at the bottom of the same call,
+  after the resolve has read them.
+
+**Order within a frame.** In three, the scene pass is earlier in the frame's
+update-before list than TRAA, because `setup()` builds the inputs first.
+The port asks for the pass explicitly at the top of `update_before()`, through
+`frame::texture_update( beauty )`. The frame guard turns the pass's own later
+call into a no-op.
+
+**Copies need usages.** WebGPU fixes a texture's usage at creation. Three's
+backend gives every render target `COPY_DST`. Here, to keep every other
+rung's textures exactly as they were, a render target opts in with
+`set_copy_destination()` (the history only), and a depth texture with
+`set_copyable()`, which adds `COPY_SRC | COPY_DST` (the pass's depth and the
+history's). Both are `pub(crate)`. `Renderer::copy_render_texture` and
+`copy_depth_texture` are whole-texture `copy_texture_to_texture` calls.
+`Renderer::init_render_target` is three's `initRenderTarget`. It allocates
+the targets after a resize so the restart copy has somewhere to land.
+
+**The first frame is not quite unblended.** With the history seeded from the
+beauty, the history and the current colour are equal everywhere. Variance
+clipping still moves the history into the neighbourhood's mean ± σ. At a
+one-pixel tip of a silhouette, that range does not reach the tip's own
+colour, so the tip is blended on the first frame too. This is three's
+arithmetic, and `tests/traa_frames.rs` allows for it.
+
+### 60.3 Not ported
+
+- An orthographic camera (`viewZToOrthographicDepth`).
+- Logarithmic and reversed depth buffers.
+- A beauty node that is an `RTTNode` rather than a pass attachment.
+- A `velocity` other than the global one (`builder.context.velocity`).
+- `useSubpixelCorrection = false`, `depthThreshold`, `edgeDepthDiff` and
+  `maxVelocityLength` as settable properties. They are constants at three's
+  defaults.

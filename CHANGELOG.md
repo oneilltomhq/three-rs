@@ -18,6 +18,18 @@ have their own sections after the release they ship with. The format follows [Ke
 - **`webgpu_postprocessing_motion_blur`** is graded: 5 of 100000 pixels. Its
   graded frame has zero velocity, so it proves the page builds and composes.
   `tests/velocity_frames.rs` checks the motion on the GPU. (#163)
+- **`traa`** (`nodes::display`), `TRAANode.js` with `TAAUtils.js`:
+  temporal reprojection anti-aliasing. `TraaNode::attach()` installs its
+  camera jitter on a `RenderPipeline`, where three's `setup()` does it
+  itself. Three's resolve dump gates the shader; three lists the page in its
+  e2e exception list, so it has no graded rung. `tests/traa_frames.rs` checks
+  it over sixteen frames. (#165)
+- **`webgpu_postprocessing_traa`** in the native viewer. (#165)
+- **Node graph pieces** used by TRAA: struct values (`struct_new`,
+  `struct_get`), `texture_load`, `texture_load_offset`,
+  `depth_texture_load`, `all`, `view_z_to_perspective_depth` and
+  `get_view_position`. Also `Renderer::init_render_target` and
+  `RenderPipeline::claim_view_offset`. (#165)
 
 ### Fixed
 
