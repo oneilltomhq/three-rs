@@ -265,7 +265,8 @@ CubemapMix, webgpu_cubemap_mix, "../../examples/webgpu_cubemap_mix.rs";
 Mirror, webgpu_mirror, "../../examples/webgpu_mirror.rs";
 TslHalftone, webgpu_tsl_halftone, "../../examples/webgpu_tsl_halftone.rs";
 TslEarth, webgpu_tsl_earth, "../../examples/webgpu_tsl_earth.rs";
-PostprocessingMotionBlur, webgpu_postprocessing_motion_blur, "../../examples/webgpu_postprocessing_motion_blur.rs";}
+PostprocessingMotionBlur, webgpu_postprocessing_motion_blur, "../../examples/webgpu_postprocessing_motion_blur.rs";
+PostprocessingTraa, webgpu_postprocessing_traa, "../../examples/webgpu_postprocessing_traa.rs";}
 
 impl Which {
     /// The name with or without its `webgpu_` prefix, or its 1-based index in
