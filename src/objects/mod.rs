@@ -21,6 +21,7 @@ pub use batched_mesh::{
 pub use bone::{is_bone, Bone};
 pub use fog::{Fog, FogExp2, SceneFog};
 pub use group::Group;
+pub(crate) use instanced_mesh::InstanceData;
 pub use instanced_mesh::{InstancedBufferAttribute, InstancedMesh};
 pub use line::{Line, LineSegments};
 pub use mesh::Mesh;

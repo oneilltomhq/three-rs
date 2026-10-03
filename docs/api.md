@@ -227,6 +227,17 @@ textures.
   keeps the three.js correspondence. `set_data` panics on the wrong byte count
   and on a texture the renderer does not own.
 
+- **`InstancedBufferAttribute::array()` / `array_mut()` / `set_needs_update()`
+  / `version()`** — `attribute.needsUpdate = true`, for `instanceMatrix` and
+  `instanceColor` (#89). The renderer keeps one GPU buffer per attribute and
+  writes it only when the version moves, so the array is no longer a public
+  field: a write that bypassed the version would be a stale frame. The same
+  reasoning as `set_data` puts the bump in the writers: `array_mut()` always
+  bumps, and `set_matrix_at` / `set_color_at` bump when the value they write
+  differs from the one there, so an animation loop that re-sets unchanged
+  matrices uploads nothing. three.js' `setMatrixAt` needs the flag;
+  here it does not.
+
 ## 7. A material field the port does not read says so
 
 `MeshBasicNodeMaterial` is one struct for every kind (decision 3), so a field

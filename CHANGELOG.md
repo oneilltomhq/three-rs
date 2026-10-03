@@ -20,6 +20,22 @@ have their own sections after the release they ship with. The format follows [Ke
   It is a function-scope `var` declared where it is first built. See
   `docs/nodes.md` §59.
 
+### Changed
+
+- **`InstancedBufferAttribute.array` is private**, read through `array()` and
+  written through `array_mut()`, which bumps the new `version()`;
+  `set_needs_update()` and `id()` join them. `set_matrix_at` / `set_color_at`
+  bump the version when they change a value. (#89)
+
+### Fixed
+
+- An `InstancedMesh`'s `instanceMatrix` and `instanceColor` are no longer
+  written to the GPU on every draw: each attribute keeps one buffer and is
+  re-written only when its version moves, and each write counts in
+  `info.build.buffers_written`. The render list no longer copies the arrays
+  each frame either. A still 131072-instance mesh goes from about 25 ms a
+  frame to about 3 ms (`benches/instanced_mesh.rs`). (#89)
+
 ## [0.2.0] - 2026-09-29
 
 Ships with `sdf-text` 0.2.0 and the first release of `three-rs-controls`
