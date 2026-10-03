@@ -634,6 +634,81 @@ unaffected: it binds a render target, so it takes the first branch and keeps
 That is where this page's antialiasing actually happens — the scene is drawn
 4x into the pass target and resolved before bloom ever samples it.
 
+## Velocity and motion blur (`webgpu_postprocessing_motion_blur`)
+
+`velocity` is one more MRT member, which is where three puts it too:
+
+```rust
+scene_pass.set_mrt(mrt(vec![
+    ("output", output_property()),
+    ("velocity", velocity()),
+]));
+let vel = scene_pass.texture_node("velocity").mul(blur_amount);
+let m_blur = motion_blur(&scene_pass.texture(), vel, 16);
+```
+
+Nothing about the attachment is new. `PassNode` creates it by name, as it
+creates `bloomIntensity` (above), and the renderer gives it the pass target's
+`rgba16float`. Two things are new:
+
+- **The previous frame.** `velocity` needs last frame's model, view and
+  projection matrices, and a skinned mesh needs last frame's bones. The
+  renderer keeps them, and `docs/nodes.md` §62 describes how. The pass's MRT
+  is what turns on the skinned path. `PassNode`'s render sets the renderer's
+  MRT before it draws the scene, so `needsPreviousData()` sees `velocity`
+  while the pass is drawing. The output quad has no velocity and pays
+  nothing.
+- **`motion_blur( input, velocity, numSamples )`** is `MotionBlur.js`. It
+  takes a centre tap, then `numSamples` taps from `uv - velocity / 2` to
+  `uv + velocity / 2`, and divides by `numSamples`. As in three, the centre
+  tap is not in the count. A still pixel therefore comes out 17/16 as bright
+  at 16 samples. The port keeps that for parity.
+
+The rung's graded frame is the page's first, so its velocity is zero. The
+rung shows that this composes. `tests/velocity_frames.rs` shows the motion.
+
+## Temporal anti-aliasing (`webgpu_postprocessing_traa`)
+
+TRAA reads the scene pass's colour, depth and `velocity`, and it needs the
+pipeline as well as the pass:
+
+```rust
+let scene_pass = pass(scene.clone(), camera.clone());
+scene_pass.set_mrt(mrt(vec![
+    ("output", output_property()),
+    ("velocity", velocity()),
+]));
+let _ = scene_pass.texture_node("velocity"); // adds and links the attachment
+
+let traa_node = traa(
+    &scene_pass.texture(),
+    &scene_pass.depth_texture(),
+    &scene_pass.texture_named("velocity"),
+    camera.clone(),
+);
+traa_node.attach(&mut render_pipeline);
+render_pipeline.output_node = Some(traa_node.node());
+```
+
+`attach` is the one step three does not have. Three's `TRAANode.setup()`
+installs the jitter on the pipeline itself, through `OnBeforeRenderPipeline`.
+The port's nodes have no handle on the pipeline while they build, so the
+caller hands it over. Without `attach` the camera never moves, the history
+never gains new samples, and the output is the scene with a one-frame delay
+through the resolve. `docs/api.md` §8 has the reasoning, and
+`docs/nodes.md` §63 the frame order and where the history lives.
+
+The camera has to be the pass's camera, and a `PerspectiveCamera`. Each
+frame, TRAA renders its resolve quad and makes two GPU copies, one of colour
+and one of depth, into the history. It allocates nothing per frame.
+
+**There is no rung.** three lists `webgpu_postprocessing_traa` in its own e2e
+exception list (`test/e2e/puppeteer.js`, under "Black screen"), so its page
+is not graded upstream. The port is gated on the resolve shader against
+three's dump, and on `tests/traa_frames.rs`, which checks over sixteen frames
+that the silhouette blends while the inside and the background hold. The
+example is in the native viewer (`viewer traa`).
+
 ## The display nodes of #144
 
 `src/nodes/display/` now also has these ports of

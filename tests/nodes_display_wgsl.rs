@@ -323,3 +323,28 @@ fn refraction_backdrop_matches_three() {
 fn hash_blur_loop_matches_three() {
     check("hash_blur", Region::Loop);
 }
+
+#[test]
+fn motion_blur_matches_three() {
+    check("motion_blur", Region::Body);
+}
+
+#[test]
+fn traa_resolve_matches_three() {
+    check("traa", Region::Body);
+}
+
+#[test]
+fn traa_subpixel_correction_matches_three() {
+    check("traa", Region::Function("subpixelCorrection"));
+}
+
+#[test]
+fn traa_clip_aabb_matches_three() {
+    check("traa", Region::Function("clipAABB"));
+}
+
+#[test]
+fn traa_flicker_reduction_matches_three() {
+    check("traa", Region::Function("flickerReduction"));
+}

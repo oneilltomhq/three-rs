@@ -358,6 +358,10 @@ struct Renderable {
     bind_matrix: Matrix4,
     bind_matrix_inverse: Matrix4,
     bone_matrices: Vec<f32>,
+    /// The same skeleton's bones as they were before this frame's
+    /// `skeleton.update()` — `getPreviousSkinnedPosition()`'s buffer. Filled
+    /// only when the pass's MRT has a `velocity` output; empty otherwise.
+    previous_bone_matrices: Vec<f32>,
     /// `Sprite.center` — `SpriteNodeMaterial`'s `reference( 'center', 'vec2',
     /// object )`. `(0.5, 0.5)`, the sprite default, for everything else.
     object_center: Vector2,
@@ -1528,6 +1532,15 @@ impl Renderer {
         self.mrt.clone()
     }
 
+    /// `velocity.setProjectionMatrix( projectionMatrix )`: the projection the
+    /// `velocity` node records as "current" in place of the camera's own, or
+    /// the camera's again with `None`. TRAA sets it to the unjittered
+    /// projection, so the jitter does not read as motion. The node is a
+    /// singleton in three, so its state lives on the renderer here.
+    pub fn set_velocity_projection_matrix(&mut self, projection: Option<Matrix4>) {
+        self.node_frame.velocity.set_projection_matrix(projection);
+    }
+
     /// `renderer.setClearColor( color, alpha )`. The colour is already in the
     /// working colour space — `Color.set( hex )` does the sRGB → linear
     /// conversion on the CPU, so [`Color::from_hex`] is the whole of the
@@ -1728,6 +1741,10 @@ impl Renderer {
         // null )`, so it is a property of the *pass*, not of the object:
         // resolved once here, from the MRT the caller set and the attachment
         // names of the target being rendered into.
+        // `NodeBuilder.needsPreviousData()`: `renderer.getMRT()` has a
+        // `velocity` output. (Three also honours a per-object `useVelocity`
+        // flag, which the port has no field for.)
+        let needs_previous_data = self.mrt.as_ref().is_some_and(|mrt| mrt.has("velocity"));
         let mrt_context = match (&self.render_target, &self.mrt) {
             (Some(render_target), Some(node)) => Some(MrtContext {
                 node: node.clone(),
@@ -1806,6 +1823,7 @@ impl Renderer {
                 bind_matrix_inverse: Matrix4::identity(),
                 object_center: Vector2::new(0.5, 0.5),
                 bone_matrices: Vec::new(),
+                previous_bone_matrices: Vec::new(),
                 primitive: Primitive::TRIANGLES,
                 sub_draws: Vec::new(),
                 texture_overrides: Vec::new(),
@@ -2004,15 +2022,21 @@ impl Renderer {
                 update_skeleton(&mut self.node_frame, skeleton);
             }
             let skin = object.payload.skinned_mesh().and_then(|mesh| {
-                let skeleton = skeleton.as_ref()?;
-                let skeleton = skeleton.borrow();
+                let skeleton_rc = skeleton.as_ref()?;
+                // `builder.needsPreviousData()`: last frame's bones, for a
+                // skinned `positionPrevious`, only under a `velocity` MRT.
+                let previous_bones = needs_previous_data
+                    .then(|| self.node_frame.velocity.previous_bones(skeleton_rc));
+                let skeleton = skeleton_rc.borrow();
                 Some((
                     crate::nodes::skinning::SkinEntry {
                         bones: skeleton.bones.len(),
+                        previous: previous_bones.is_some(),
                     },
                     mesh.bind_matrix,
                     mesh.bind_matrix_inverse,
                     skeleton.bone_matrices.clone(),
+                    previous_bones.unwrap_or_default(),
                 ))
             });
 
@@ -2149,6 +2173,7 @@ impl Renderer {
                     .payload
                     .sprite()
                     .map_or(Vector2::new(0.5, 0.5), |sprite| sprite.center),
+                previous_bone_matrices: skin.as_ref().map(|s| s.4.clone()).unwrap_or_default(),
                 bone_matrices: skin.map(|s| s.3).unwrap_or_default(),
                 primitive,
                 sub_draws,
@@ -2292,6 +2317,7 @@ impl Renderer {
             .collect();
 
         let camera_uniforms = UniformContext {
+            camera_id: camera.id(),
             camera_projection: camera.projection_matrix(),
             camera_projection_inverse: camera.projection_matrix_inverse(),
             camera_view: camera.matrix_world_inverse(),
@@ -2509,6 +2535,32 @@ impl Renderer {
                     .map(InstancedBufferAttribute::snapshot);
                 let instance_count = object.instance_count();
 
+                // The shadow pass is `renderer.render()` with an
+                // `overrideMaterial`, and `NodeMaterial.setupPosition()` still
+                // runs `skinning( object )` for a skinned caster: its shadow is
+                // the posed mesh, not the bind pose. This pass runs ahead of the
+                // main item loop, so the skeleton is brought up to date here;
+                // the main loop's call is then a claimed no-op.
+                let skeleton = object
+                    .payload
+                    .skinned_mesh()
+                    .and_then(|mesh| mesh.skeleton.clone());
+                if let Some(skeleton) = &skeleton {
+                    update_skeleton(&mut self.node_frame, skeleton);
+                }
+                let skin = object.payload.skinned_mesh().and_then(|mesh| {
+                    let skeleton = skeleton.as_ref()?.borrow();
+                    Some((
+                        crate::nodes::skinning::SkinEntry {
+                            bones: skeleton.bones.len(),
+                            previous: false,
+                        },
+                        mesh.bind_matrix,
+                        mesh.bind_matrix_inverse,
+                        skeleton.bone_matrices.clone(),
+                    ))
+                });
+
                 items.push(Renderable {
                     object: Some(item.node.clone()),
                     geometry: geometry.clone(),
@@ -2530,7 +2582,7 @@ impl Renderer {
                         // The shadow pass does not carry morph targets yet:
                         // nothing in the ladder both morphs and casts a shadow.
                         morph: None,
-                        skin: None,
+                        skin: skin.as_ref().map(|s| s.0),
                         batch: None,
                         // A fat line does not cast a shadow: three's shadow
                         // material takes the plain MVP path, which the quad
@@ -2557,10 +2609,11 @@ impl Renderer {
                     instance_count,
                     morph_influences: Vec::new(),
                     morph_base: 1.0,
-                    bind_matrix: Matrix4::identity(),
-                    bind_matrix_inverse: Matrix4::identity(),
+                    bind_matrix: skin.as_ref().map_or(Matrix4::identity(), |s| s.1),
+                    bind_matrix_inverse: skin.as_ref().map_or(Matrix4::identity(), |s| s.2),
                     object_center: Vector2::new(0.5, 0.5),
-                    bone_matrices: Vec::new(),
+                    bone_matrices: skin.map(|s| s.3).unwrap_or_default(),
+                    previous_bone_matrices: Vec::new(),
                     primitive,
                     sub_draws: Vec::new(),
                     texture_overrides: Vec::new(),
@@ -2722,6 +2775,7 @@ impl Renderer {
                 bind_matrix: Matrix4::identity(),
                 bind_matrix_inverse: Matrix4::identity(),
                 bone_matrices: Vec::new(),
+                previous_bone_matrices: Vec::new(),
                 primitive: Primitive::TRIANGLES,
                 sub_draws: Vec::new(),
                 texture_overrides: Vec::new(),
@@ -2947,6 +3001,7 @@ impl Renderer {
                     bind_matrix_inverse: Matrix4::identity(),
                     object_center: Vector2::new(0.5, 0.5),
                     bone_matrices: Vec::new(),
+                    previous_bone_matrices: Vec::new(),
                     primitive,
                     sub_draws: Vec::new(),
                     texture_overrides: Vec::new(),
@@ -3098,6 +3153,7 @@ impl Renderer {
             bind_matrix_inverse: Matrix4::identity(),
             object_center: Vector2::new(0.5, 0.5),
             bone_matrices: Vec::new(),
+            previous_bone_matrices: Vec::new(),
             primitive: Primitive::TRIANGLES,
             sub_draws: Vec::new(),
             texture_overrides: Vec::new(),
@@ -3297,7 +3353,26 @@ impl Renderer {
             // of three's `nodeFrame.updateBefore*`/`update*` window.
             let object = item.object.as_ref().map(|node| node.borrow());
 
+            // `VelocityNode.update()`: last frame's model, view and projection
+            // matrices, rolled per camera per frame. Only for a program that
+            // reads them — every other draw skips the bookkeeping entirely.
+            let velocity = if node.reads_velocity {
+                let frame_id = self.node_frame.frame_id;
+                self.node_frame.velocity.update(
+                    frame_id,
+                    item.object.as_ref(),
+                    item.model_world,
+                    camera_uniforms.camera_id,
+                    camera_uniforms.camera_projection,
+                    camera_uniforms.camera_view,
+                )
+            } else {
+                Default::default()
+            };
+
             let uniforms = UniformContext {
+                velocity,
+                previous_bone_matrices: &item.previous_bone_matrices,
                 object: object.as_deref(),
                 occluded: occluded.as_ref(),
                 model_world: item.model_world,
@@ -3371,6 +3446,13 @@ impl Renderer {
                 &item.instance_color,
             );
             self.texture_overrides.clear();
+            // `VelocityNode.updateAfter()`: this draw's world matrix is the
+            // next frame's previous one.
+            if node.reads_velocity {
+                self.node_frame
+                    .velocity
+                    .update_after(item.object.as_ref(), item.model_world);
+            }
 
             let vertex_buffers = node
                 .vertex_buffers()
@@ -3790,6 +3872,7 @@ impl Renderer {
             bind_matrix_inverse: Matrix4::identity(),
             object_center: Vector2::new(0.5, 0.5),
             bone_matrices: Vec::new(),
+            previous_bone_matrices: Vec::new(),
             primitive: Primitive::TRIANGLES,
             sub_draws: Vec::new(),
             texture_overrides: Vec::new(),
@@ -4897,13 +4980,20 @@ impl Renderer {
                 wgpu::BufferUsages::UNIFORM,
             );
         }
-        if let BufferSource::BoneMatrices = source {
+        if let BufferSource::BoneMatrices | BufferSource::PreviousBoneMatrices = source {
+            let (matrices, label) = match source {
+                BufferSource::BoneMatrices => (uniforms.bone_matrices, "three-rs boneMatrices"),
+                _ => (
+                    uniforms.previous_bone_matrices,
+                    "three-rs previousBoneMatrices",
+                ),
+            };
             let mut data = vec![0f32; count * 16];
-            let n = data.len().min(uniforms.bone_matrices.len());
-            data[..n].copy_from_slice(&uniforms.bone_matrices[..n]);
+            let n = data.len().min(matrices.len());
+            data[..n].copy_from_slice(&matrices[..n]);
             return self.slot_buffer(
                 slot,
-                "three-rs boneMatrices",
+                label,
                 bytemuck::cast_slice(&data),
                 wgpu::BufferUsages::UNIFORM,
             );
@@ -5106,6 +5196,7 @@ impl Renderer {
             | BufferSource::LightProbe(_)
             | BufferSource::Live(_)
             | BufferSource::BoneMatrices
+            | BufferSource::PreviousBoneMatrices
             | BufferSource::CameraViewMatrices
             | BufferSource::CameraProjectionMatrices
             | BufferSource::Storage
@@ -5964,6 +6055,63 @@ impl Renderer {
         if mips > 1 && dst_texture.borrow().generate_mipmaps {
             self.generate_mipmaps(&destination, destination.format(), mips, 1);
         }
+    }
+
+    /// `renderer.initRenderTarget( renderTarget )`: create the target's GPU
+    /// textures now rather than at its first draw, so a copy can land in
+    /// them first.
+    pub fn init_render_target(&mut self, render_target: &RenderTarget) {
+        self.prepare_render_target(render_target);
+    }
+
+    /// `renderer.copyTextureToTexture( source, destination )` between two
+    /// render-target colour textures of the same size and format — what
+    /// `TRAANode` keeps its history with. Both must have their GPU textures
+    /// (a draw into them, or [`init_render_target`](Self::init_render_target)),
+    /// and the destination must be a
+    /// [copy destination](RenderTarget::set_copy_destination).
+    pub(crate) fn copy_render_texture(&mut self, source: &Texture, destination: &Texture) {
+        let size = source.size();
+        let source = source.with_gpu(|gpu| gpu.clone());
+        let destination = destination.with_gpu(|gpu| gpu.clone());
+        self.copy_whole_texture(&source, &destination, size, "three-rs texture copy");
+    }
+
+    /// `renderer.copyTextureToTexture( depthTexture, depthTexture )`: the
+    /// whole depth texture, which WebGPU requires of a depth copy. Both must
+    /// be [copyable](DepthTexture::set_copyable), single-sample and allocated.
+    pub(crate) fn copy_depth_texture(&mut self, source: &DepthTexture, destination: &DepthTexture) {
+        let (source, destination) = (
+            source.inner().borrow().gpu.clone(),
+            destination.inner().borrow().gpu.clone(),
+        );
+        let (Some(source), Some(destination)) = (source, destination) else {
+            return;
+        };
+        let size = (source.width(), source.height());
+        self.copy_whole_texture(&source, &destination, size, "three-rs depth copy");
+    }
+
+    fn copy_whole_texture(
+        &mut self,
+        source: &wgpu::Texture,
+        destination: &wgpu::Texture,
+        (width, height): (u32, u32),
+        label: &'static str,
+    ) {
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(label) });
+        encoder.copy_texture_to_texture(
+            source.as_image_copy(),
+            destination.as_image_copy(),
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+        self.queue.submit([encoder.finish()]);
     }
 
     /// One face of a [`cube_render_target`] conversion or of a PMREM level: the
@@ -7248,7 +7396,12 @@ impl Renderer {
                     format,
                     usage: wgpu::TextureUsages::RENDER_ATTACHMENT
                         | wgpu::TextureUsages::TEXTURE_BINDING
-                        | wgpu::TextureUsages::COPY_SRC,
+                        | wgpu::TextureUsages::COPY_SRC
+                        | if inner.copy_destination {
+                            wgpu::TextureUsages::COPY_DST
+                        } else {
+                            wgpu::TextureUsages::empty()
+                        },
                     view_formats: &[],
                 }));
         }
@@ -7351,7 +7504,12 @@ impl Renderer {
                     format,
                     usage: wgpu::TextureUsages::RENDER_ATTACHMENT
                         | wgpu::TextureUsages::TEXTURE_BINDING
-                        | wgpu::TextureUsages::COPY_SRC,
+                        | wgpu::TextureUsages::COPY_SRC
+                        | if depth.copyable {
+                            wgpu::TextureUsages::COPY_DST
+                        } else {
+                            wgpu::TextureUsages::empty()
+                        },
                     view_formats: &[],
                 }));
             }
@@ -7741,6 +7899,9 @@ fn update_skeleton(
         key,
         crate::nodes::NodeUpdateType::Frame,
     ) {
+        // `skeletonData.previousBoneMatrices.set( skeleton.boneMatrices )`,
+        // for a skeleton a velocity draw has asked for; a no-op otherwise.
+        node_frame.velocity.rotate_bones(skeleton);
         skeleton.borrow_mut().update();
         node_frame.settle(claim, true);
     }

@@ -19,12 +19,14 @@ mod dot_screen;
 mod fxaa;
 mod gaussian_blur;
 mod hash_blur;
+mod motion_blur;
 mod pixelation_pass;
 mod radial_blur;
 mod rgb_shift;
 mod rtt;
 mod sobel;
 mod toon_outline_pass;
+mod traa;
 mod transition;
 mod viewport_texture;
 
@@ -36,12 +38,14 @@ pub use dot_screen::dot_screen;
 pub use fxaa::{fxaa, FxaaNode};
 pub use gaussian_blur::{gaussian_blur, GaussianBlurNode, GaussianBlurOptions};
 pub use hash_blur::{hash_blur, hash_blur_with, HashBlurOptions};
+pub use motion_blur::motion_blur;
 pub use pixelation_pass::{pixelation_pass, PixelationPassNode};
 pub use radial_blur::{radial_blur, RadialBlurOptions};
 pub use rgb_shift::rgb_shift;
 pub use rtt::{convert_to_texture, rtt, RttNode};
 pub use sobel::{sobel, SobelOperatorNode};
 pub use toon_outline_pass::{toon_outline_pass, ToonOutlinePassNode};
+pub use traa::{traa, TraaNode};
 pub use transition::transition;
 pub use viewport_texture::{
     viewport_depth_texture, viewport_depth_texture_at, viewport_linear_depth, viewport_safe_uv,

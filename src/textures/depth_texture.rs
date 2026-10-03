@@ -82,6 +82,9 @@ pub struct DepthTextureInner {
     /// builder declare the binding `texture_depth_multisampled_2d` and the
     /// bind-group layout entry `multisampled: true`.
     pub multisample: bool,
+    /// Whether the GPU texture is also a copy source and destination — see
+    /// `DepthTexture::set_copyable`.
+    pub copyable: bool,
 }
 
 /// three.js' `DepthTexture`.
@@ -115,6 +118,7 @@ impl DepthTexture {
                 height: 0,
                 gpu: None,
                 multisample: false,
+                copyable: false,
             })),
             TextureId::next(),
         )
@@ -137,6 +141,19 @@ impl DepthTexture {
         let mut inner = self.0.borrow_mut();
         if inner.multisample != multisample {
             inner.multisample = multisample;
+            inner.gpu = None;
+        }
+    }
+
+    /// Let this depth texture be copied from and into
+    /// (`COPY_SRC | COPY_DST`): `TRAANode` copies the scene pass's depth into
+    /// its history's every frame. Off by default, so the usage of every other
+    /// depth attachment is what it was. Drops the GPU texture if it was
+    /// created without the flags.
+    pub(crate) fn set_copyable(&self) {
+        let mut inner = self.0.borrow_mut();
+        if !inner.copyable {
+            inner.copyable = true;
             inner.gpu = None;
         }
     }

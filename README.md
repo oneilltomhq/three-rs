@@ -50,7 +50,9 @@ that verifies each present row.
 - **Renderer.** Render lists, instancing, morph targets, render targets,
   MSAA, the linear-to-sRGB output pass, `PassNode` post-processing, mipmaps,
   cube textures, `CubeCamera` / `CubeRenderTarget`, line topology, viewport /
-  scissor / `clearDepth` and `autoClear`.
+  scissor / `clearDepth` and `autoClear`. `velocity` as an MRT output, with
+  three's previous-frame matrices and skinned `positionPrevious`, and temporal
+  reprojection anti-aliasing (`traa`) on top of it.
 - **Addons.** `src/addons/` holds the `three/addons/…` tier that the graded
   examples import: `lines` (`LineSegmentsGeometry`, `LineGeometry`,
   `LineSegments2`, `Line2` — fat lines, with `Line2NodeMaterial` in core beside
@@ -125,6 +127,8 @@ that verifies each present row.
 | [`webgpu_cubemap_mix`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_cubemap_mix.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_cubemap_mix-progress.md) | [`webgpu_mirror`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_mirror.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_mirror-progress.md) | [`webgpu_tsl_halftone`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_tsl_halftone.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_tsl_halftone-progress.md) | [`webgpu_tsl_earth`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_tsl_earth.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_tsl_earth-progress.md) |
 | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_lightprobe.jpg" alt="webgpu_lightprobe" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_lightprobe) | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_lightprobe_cubecamera.jpg" alt="webgpu_lightprobe_cubecamera" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_lightprobe_cubecamera) | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_sky.jpg" alt="webgpu_sky" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_sky) | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_backdrop.jpg" alt="webgpu_backdrop" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_backdrop) |
 | [`webgpu_lightprobe`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_lightprobe.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_lightprobe-progress.md) | [`webgpu_lightprobe_cubecamera`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_lightprobe_cubecamera.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_lightprobe_cubecamera-progress.md) | [`webgpu_sky`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_sky.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_sky-progress.md) | [`webgpu_backdrop`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_backdrop.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_backdrop-progress.md) |
+| [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_postprocessing_motion_blur.jpg" alt="webgpu_postprocessing_motion_blur" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_postprocessing_motion_blur) |  |  |  |
+| [`webgpu_postprocessing_motion_blur`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_motion_blur.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_motion_blur-progress.md) |  |  |  |
 
 <sub>Our own rendered frames, one per graded example. Each thumbnail opens the example running in your browser on WebGPU ([all of them](https://oneilltomhq.github.io/three-rs/)); the caption links the ported source. See [`docs/gallery.md`](https://github.com/oneilltomhq/three-rs/blob/main/docs/gallery.md).</sub>
 <!-- gallery:end -->
@@ -225,6 +229,7 @@ same screenshots at the same threshold (see
 | webgpu_lightprobe_cubecamera | 0 | 1.6 | 3 | 2945 | yes |
 | webgpu_sky | 0 | 5.8 | 3 | 3981 | yes |
 | webgpu_backdrop | 23 (Three itself scores 23 against the same JPEG) | 6.1 | 11 | 37771 | yes |
+| webgpu_postprocessing_motion_blur | 5 | 6.2 | 9 | 100553 | yes |
 
 `webgpu_compute_points` is graded like the rest and its 4 pixels mean less
 than the rest: its frame is black apart from a 2x2 block at the centre, so
@@ -242,6 +247,14 @@ is the grid. Both are gated on their shaders against three's own dump
 a moment later (`tests/renderer_compute_indirect.rs`); the notes say what each
 asserts. The triangle counts are the CPU-side counts `renderer.info()` records
 for an indirect draw, as three's does, not what the GPU was told to draw.
+
+Some pages are ported but cannot be graded, because three's own e2e harness
+skips them. They are in the native viewer, not in the gallery or the
+browser shell:
+
+| example | why it has no grade |
+|---|---|
+| [`webgpu_postprocessing_traa`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_traa.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_traa-progress.md) | in three's e2e exception list (`test/e2e/puppeteer.js`, "Black screen"). It is gated instead on its resolve shader against three's dump and on `tests/traa_frames.rs` |
 
 Measured on Intel Iris Xe, Mesa 25.3.6, Fedora 43, against three.js 5f610f5
 (past r186, for the cube PMREM of 2f80402; the pin becomes the r187 tag once
@@ -307,7 +320,7 @@ cargo run --release --bin viewer -- shadowmap --headless --frames 40
 ```
 
 Opens the named example in a window (winit, tested on Wayland). All 58 graded
-examples are there, and each one animates, orbits, dollies and pans through
+examples are there, and so is the ungraded `webgpu_postprocessing_traa`. Each one animates, orbits, dollies and pans through
 its *own* `animate()`, `resize()` and `OrbitControls` — the viewer drives the
 example, it does not restate it. `--list` prints the examples with their keys,
 and a key stands in for the name on the command line; in the window, `[` and

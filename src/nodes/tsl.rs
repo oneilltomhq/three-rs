@@ -615,6 +615,11 @@ fn math(name: &'static str, args: Vec<NodeRef>, ty: Type) -> NodeRef {
     NodeRef::new(Node::Math { name, args, ty })
 }
 
+/// `all( x )` — whether every component of a boolean vector is true.
+pub fn all(x: impl Into<NodeRef>) -> NodeRef {
+    math("all", vec![x.into()], Type::Bool)
+}
+
 /// `mix( a, b, t )`.
 pub fn mix(a: impl Into<NodeRef>, b: impl Into<NodeRef>, t: impl Into<NodeRef>) -> NodeRef {
     let (a, b, t) = (a.into(), b.into(), t.into());
@@ -872,6 +877,37 @@ pub fn perspective_depth_to_view_z(
     near.clone()
         .mul(far.clone())
         .div(far.clone().sub(near).mul(depth).sub(far))
+}
+
+/// Port of `ViewportDepthNode.js`' `viewZToPerspectiveDepth( viewZ, near,
+/// far )` with `reversedDepthBuffer` off: `( near + viewZ ) * far / ( ( far -
+/// near ) * viewZ )`.
+pub fn view_z_to_perspective_depth(
+    view_z: impl Into<NodeRef>,
+    near: impl Into<NodeRef>,
+    far: impl Into<NodeRef>,
+) -> NodeRef {
+    let (view_z, near, far) = (view_z.into(), near.into(), far.into());
+    near.clone()
+        .add(view_z.clone())
+        .mul(far.clone())
+        .div(far.sub(near).mul(view_z))
+}
+
+/// Port of `PostProcessingUtils.js`' `getViewPosition( screenPosition,
+/// depth, projectionMatrixInverse )` for the WebGPU coordinate system: the
+/// view-space position a screen uv and its depth unproject to.
+pub fn get_view_position(
+    screen_position: NodeRef,
+    depth: NodeRef,
+    projection_matrix_inverse: NodeRef,
+) -> NodeRef {
+    let screen_position = vec2_join(vec![screen_position.x(), screen_position.y().one_minus()])
+        .mul(2.0)
+        .sub(1.0);
+    let clip_space_position = vec4_join(vec![vec3_join(vec![screen_position, depth]), float(1.0)]);
+    let view_space_position = projection_matrix_inverse.mul(clip_space_position);
+    view_space_position.xyz().div(view_space_position.w())
 }
 
 /// `viewZToOrthographicDepth( viewZ, near, far )` — `ViewportDepthNode.js`:
@@ -2463,6 +2499,17 @@ accessor!(
     to_varying(Some("positionLocal"), position_geometry())
 );
 accessor!(
+    /// `positionPrevious` — `positionGeometry.toVarying( 'positionPrevious' )`:
+    /// the vertex's local position *last frame*, for
+    /// [`velocity`](crate::nodes::velocity::velocity). Skinning reassigns it
+    /// to the position under last frame's bones when the pass's MRT has a
+    /// `velocity` output (`builder.needsPreviousData()`); everything else
+    /// leaves it the geometry's position, which is right for a rigid mesh —
+    /// its motion is all in the previous model matrix.
+    position_previous,
+    to_varying(Some("positionPrevious"), position_geometry())
+);
+accessor!(
     /// `normalLocal`.
     normal_local,
     to_var(Some("normalLocal"), normal_geometry())
@@ -3933,6 +3980,35 @@ pub fn struct_type(name: &'static str, members: Vec<StructMember>) -> Rc<StructL
     Rc::new(StructLayout { name, members })
 }
 
+/// `structType( values )` — `StructNode`: a value of `layout`, one value per
+/// member in member order. See [`Node::StructNew`].
+pub fn struct_new(layout: &Rc<StructLayout>, values: Vec<NodeRef>) -> NodeRef {
+    assert_eq!(
+        values.len(),
+        layout.members.len(),
+        "three-rs: a struct value takes one value per member"
+    );
+    NodeRef::new(Node::StructNew {
+        layout: layout.clone(),
+        values,
+    })
+}
+
+/// `structNode.get( name )` — one member of a value of `layout`: a
+/// [`struct_new`], or a [`block`] whose result is one.
+pub fn struct_get(value: &NodeRef, layout: &Rc<StructLayout>, name: &str) -> NodeRef {
+    let member = layout
+        .members
+        .iter()
+        .position(|m| m.name == name)
+        .unwrap_or_else(|| panic!("three-rs: struct {} has no member {name}", layout.name));
+    NodeRef::new(Node::StructGet {
+        value: value.clone(),
+        layout: layout.clone(),
+        member,
+    })
+}
+
 impl StructMember {
     /// `name: 'type'`.
     pub fn new(name: &'static str, ty: Type) -> Self {
@@ -4488,6 +4564,41 @@ pub fn texture_load_texel(map: &DataTexture, coord: NodeRef, ty: Type) -> NodeRe
         coord,
         SampleMode::LoadTexel,
         ty,
+    )
+}
+
+/// `textureNode.load( coord )` on a colour texture — `textureLoad( t,
+/// vec2<i32>( coord ), u32( 0u ) )`, the unfiltered, unclamped texel fetch.
+/// `TRAANode` reads the velocity attachment this way.
+pub fn texture_load(map: &Texture, coord: NodeRef) -> NodeRef {
+    texture_node(
+        TextureSource::Texture2D(map.clone()),
+        coord.to(Type::IVec2),
+        SampleMode::LoadTexel,
+        texture_type_for(map),
+    )
+}
+
+/// `textureNode.load( coord ).offset( offset )` — [`texture_load`] at
+/// `ivec2( coord ) + offset`, as three spells it:
+/// `textureLoad( t, vec2<i32>( coord ) + vec2<i32>( -1, 1 ), u32( 0u ) )`.
+pub fn texture_load_offset(map: &Texture, coord: NodeRef, offset: NodeRef) -> NodeRef {
+    texture_node(
+        TextureSource::Texture2D(map.clone()),
+        coord.to(Type::IVec2).add(offset),
+        SampleMode::LoadTexel,
+        texture_type_for(map),
+    )
+}
+
+/// `depthTextureNode.load( coord ).r` — the depth at an integer texel,
+/// `textureLoad( depth, vec2<i32>( coord ), u32( 0u ) )`, an `f32`.
+pub fn depth_texture_load(map: &DepthTexture, coord: NodeRef) -> NodeRef {
+    texture_node(
+        TextureSource::Depth(map.clone()),
+        coord.to(Type::IVec2),
+        SampleMode::LoadTexel,
+        Type::F32,
     )
 }
 

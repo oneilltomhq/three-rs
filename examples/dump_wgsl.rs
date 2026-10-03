@@ -1407,7 +1407,10 @@ fn main() {
         "skinning_body",
         &body,
         SetupContext {
-            skin: Some(three_rs::nodes::skinning::SkinEntry { bones: 65 }),
+            skin: Some(three_rs::nodes::skinning::SkinEntry {
+                bones: 65,
+                previous: false,
+            }),
             lights: vec![
                 LightDesc {
                     index: 0,
@@ -3066,7 +3069,10 @@ fn dump_tsl_halftone() {
         "tsl_halftone_body",
         &body,
         SetupContext {
-            skin: Some(three_rs::nodes::skinning::SkinEntry { bones: 65 }),
+            skin: Some(three_rs::nodes::skinning::SkinEntry {
+                bones: 65,
+                previous: false,
+            }),
             lights: lights(),
             ..SetupContext::default()
         },

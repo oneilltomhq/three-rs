@@ -312,6 +312,9 @@ mod webgpu_lightprobe;
 #[path = "webgpu_lightprobe_cubecamera.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_lightprobe_cubecamera;
+#[path = "webgpu_postprocessing_motion_blur.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_postprocessing_motion_blur;
 #[path = "webgpu_sky.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_sky;
@@ -542,6 +545,9 @@ const GRADED: &[(&str, fn())] = &[
     }),
     ("webgpu_sky", || drop(webgpu_sky::init())),
     ("webgpu_backdrop", || drop(webgpu_backdrop::init())),
+    ("webgpu_postprocessing_motion_blur", || {
+        drop(webgpu_postprocessing_motion_blur::init())
+    }),
 ];
 
 /// Where the committed manifests live, one `<example>.json` each.

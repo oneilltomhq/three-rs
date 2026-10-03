@@ -368,6 +368,20 @@ pub enum UniformSource {
     /// `reference( 'center', 'vec2', object )` — `Sprite.center`, read by
     /// `SpriteNodeMaterial.setupPositionView()`, in the object group.
     ObjectCenter,
+    /// `VelocityNode.previousModelWorldMatrix` — the object's `matrixWorld`
+    /// as the last velocity draw of it left it (`getPreviousMatrix( object
+    /// )`), in the object group. See [`crate::nodes::velocity`].
+    PreviousModelWorldMatrix,
+    /// `VelocityNode.currentProjectionMatrix` — the camera's projection, or
+    /// the unjittered one `setProjectionMatrix()` handed the node, in the
+    /// render group.
+    VelocityProjectionMatrix,
+    /// `VelocityNode.previousProjectionMatrix` — last frame's
+    /// `currentProjectionMatrix` for this camera.
+    PreviousProjectionMatrix,
+    /// `VelocityNode.previousCameraViewMatrix` — last frame's
+    /// `camera.matrixWorldInverse` for this camera.
+    PreviousCameraViewMatrix,
     /// A plain `uniform( value )` the example supplies.
     Value(Vec<f64>),
     /// `uniform( value )` whose `.value` is written between draws — three.js'
@@ -585,6 +599,7 @@ impl UniformSource {
             | UniformSource::BindMatrix
             | UniformSource::BindMatrixInverse
             | UniformSource::ObjectCenter
+            | UniformSource::PreviousModelWorldMatrix
             | UniformSource::Value(_)
             | UniformSource::Settable(_)
             | UniformSource::ObjectUpdate(_)
@@ -651,6 +666,11 @@ pub enum BufferSource {
     /// The same for `cameraProjectionMatrices` — the sub-cameras'
     /// `projectionMatrix`.
     CameraProjectionMatrices,
+    /// `buffer( previousBoneMatrices, 'mat4', bones )` — `Skinning.js`'
+    /// `getPreviousSkinnedPosition()`: the skeleton's bone matrices as they
+    /// were before this frame's `skeleton.update()`, for the
+    /// `positionPrevious` of a draw into a `velocity` MRT.
+    PreviousBoneMatrices,
     /// `referenceBuffer( 'skeleton.boneMatrices', 'mat4', bones )` — the
     /// skeleton's bone matrices as one `array< mat4x4<f32>, N >`. Three falls
     /// back to a bone *texture* when `bones * 64` passes the uniform buffer
@@ -1704,6 +1724,30 @@ pub enum Node {
         /// The node built in its own cache.
         node: NodeRef,
     },
+    /// `structType( values )` — `StructNode`: a value of a [`struct_type`]
+    /// (`StructTypeNode`) built from one value per member, in member order.
+    /// Always held in a var of the struct's type, which is where three's
+    /// `StructNode` lands too (`nodeVar31 = StructType0( … )` in the TRAA
+    /// dump); its [`ty`](NodeRef::ty) is [`Type::Void`] because the port's
+    /// `Type` has no struct case, and only [`Node::StructGet`] reads it.
+    ///
+    /// [`struct_type`]: crate::nodes::tsl::struct_type
+    StructNew {
+        /// The struct's layout.
+        layout: Rc<StructLayout>,
+        /// One value per member.
+        values: Vec<NodeRef>,
+    },
+    /// `structNode.get( name )` — `MemberNode` over a [`Node::StructNew`]
+    /// (or over a block or `Fn()` whose result is one): `{ var }.{ member }`.
+    StructGet {
+        /// The struct value read.
+        value: NodeRef,
+        /// Its layout.
+        layout: Rc<StructLayout>,
+        /// The member's index in the layout.
+        member: usize,
+    },
 }
 
 /// A handle on a node. Fluent TSL methods hang off this; see `tsl.rs`.
@@ -1784,6 +1828,8 @@ impl NodeRef {
             Node::Compute { output, .. } => output.ty(),
             Node::Custom(custom) => custom.node_type(),
             Node::Context { node, .. } | Node::Isolate { node } => node.ty(),
+            Node::StructNew { .. } => Type::Void,
+            Node::StructGet { layout, member, .. } => layout.members[*member].ty,
         }
     }
 }
@@ -1973,6 +2019,7 @@ impl std::hash::Hash for BufferSource {
             | BufferSource::InstanceColor
             | BufferSource::MorphInfluences
             | BufferSource::BoneMatrices
+            | BufferSource::PreviousBoneMatrices
             | BufferSource::CameraViewMatrices
             | BufferSource::CameraProjectionMatrices
             | BufferSource::Storage
@@ -2035,6 +2082,7 @@ impl std::fmt::Debug for BufferSource {
                 .finish(),
             BufferSource::MorphInfluences => f.write_str("MorphInfluences"),
             BufferSource::BoneMatrices => f.write_str("BoneMatrices"),
+            BufferSource::PreviousBoneMatrices => f.write_str("PreviousBoneMatrices"),
             BufferSource::CameraViewMatrices => f.write_str("CameraViewMatrices"),
             BufferSource::CameraProjectionMatrices => f.write_str("CameraProjectionMatrices"),
             BufferSource::Attribute(data) => f

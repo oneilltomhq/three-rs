@@ -24,16 +24,20 @@ use crate::nodes::NodeRef;
 pub struct SkinEntry {
     /// `skeleton.bones.length`.
     pub bones: usize,
+    /// `builder.needsPreviousData()`: the renderer's MRT has a `velocity`
+    /// output, so `positionPrevious` is skinned with last frame's bones as
+    /// well. Part of the key, because it adds a binding.
+    pub previous: bool,
 }
 
 /// `referenceBuffer( 'skeleton.boneMatrices', 'mat4', skeleton.bones.length )`.
 ///
 /// One buffer node, `element()`ed eight times — four in the position and four
 /// in the normal — so the generated shader has exactly one binding.
-fn bone_matrices(entry: &SkinEntry) -> Rc<BufferNode> {
+fn bone_matrices(entry: &SkinEntry, source: BufferSource) -> Rc<BufferNode> {
     Rc::new(BufferNode {
         id: BufferId::next(),
-        source: BufferSource::BoneMatrices,
+        source,
         element_ty: Type::Mat4,
         count: entry.bones.max(1),
     })
@@ -66,7 +70,40 @@ pub fn skinning(entry: &SkinEntry) -> Vec<NodeRef> {
         None,
     );
 
-    let buffer = bone_matrices(entry);
+    let mut statements = Vec::new();
+
+    // --- getPreviousSkinnedPosition()
+    //
+    // `positionPrevious.assign( getSkinnedPosition( previousBoneMatricesNode,
+    // positionPrevious ) )`, ahead of the current skinning as in
+    // `SkinningNode.setup()`. Its buffer is created first, so its binding
+    // comes first too.
+    if entry.previous {
+        let previous = bone_matrices(entry, BufferSource::PreviousBoneMatrices);
+        let mats = [
+            bone(&previous, skin_index.x()),
+            bone(&previous, skin_index.y()),
+            bone(&previous, skin_index.z()),
+            bone(&previous, skin_index.w()),
+        ];
+        let weights = [
+            skin_weight.x(),
+            skin_weight.y(),
+            skin_weight.z(),
+            skin_weight.w(),
+        ];
+        let skin_vertex = to_var(
+            None,
+            bind_matrix.mul(vec4_join(vec![position_previous(), float(1.0)])),
+        );
+        let skinned = (0..4)
+            .map(|i| mats[i].mul(weights[i].clone()).mul(skin_vertex.clone()))
+            .reduce(|a, b| a.add(b))
+            .expect("three-rs: four bone terms");
+        statements.push(position_previous().assign(bind_matrix_inverse.mul(skinned).xyz()));
+    }
+
+    let buffer = bone_matrices(entry, BufferSource::BoneMatrices);
     let mats = [
         bone(&buffer, skin_index.x()),
         bone(&buffer, skin_index.y()),
@@ -79,8 +116,6 @@ pub fn skinning(entry: &SkinEntry) -> Vec<NodeRef> {
         skin_weight.z(),
         skin_weight.w(),
     ];
-
-    let mut statements = Vec::new();
 
     // --- getSkinnedPosition()
     //

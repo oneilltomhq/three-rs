@@ -50,6 +50,28 @@ have their own sections after the release they ship with. The format follows [Ke
 - `webgpu_backdrop`, graded green (23 pixels, the same as three's own frame).
   `webgpu_refraction` is ported, but not graded on this machine, because
   three.js itself fails its reference there.
+- **`velocity`** (`nodes::velocity`): the screen-space motion since the last
+  frame, as an MRT member, with three's previous-frame model, view and
+  projection matrices. The history lives in the renderer's `NodeFrameState`.
+  Skinned meshes skin `positionPrevious` with last frame's bones when the MRT
+  has `velocity`. `Renderer::set_velocity_projection_matrix()` is
+  `velocity.setProjectionMatrix()`. (#163)
+- **`motion_blur`** (`nodes::display`), `MotionBlur.js`. (#163)
+- **`webgpu_postprocessing_motion_blur`** is graded: 5 of 100000 pixels. Its
+  graded frame has zero velocity, so it proves the page builds and composes.
+  `tests/velocity_frames.rs` checks the motion on the GPU. (#163)
+- **`traa`** (`nodes::display`), `TRAANode.js` with `TAAUtils.js`:
+  temporal reprojection anti-aliasing. `TraaNode::attach()` installs its
+  camera jitter on a `RenderPipeline`, where three's `setup()` does it
+  itself. Three's resolve dump gates the shader; three lists the page in its
+  e2e exception list, so it has no graded rung. `tests/traa_frames.rs` checks
+  it over sixteen frames. (#165)
+- **`webgpu_postprocessing_traa`** in the native viewer. (#165)
+- **Node graph pieces** used by TRAA: struct values (`struct_new`,
+  `struct_get`), `texture_load`, `texture_load_offset`,
+  `depth_texture_load`, `all`, `view_z_to_perspective_depth` and
+  `get_view_position`. Also `Renderer::init_render_target` and
+  `RenderPipeline::claim_view_offset`. (#165)
 
 ### Changed
 
@@ -80,6 +102,8 @@ have their own sections after the release they ship with. The format follows [Ke
   frame to about 3 ms (`benches/instanced_mesh.rs`). (#89)
 - A lit `MeshBasicNodeMaterial` zeroes `indirectDiffuse` before it adds to
   it, as `BasicLightingModel` does.
+- **Skinned shadow casters** are skinned in directional and spot shadow maps.
+  Point-light shadows of skinned meshes are still unskinned. (#163)
 
 ## [0.2.0] - 2026-09-29
 

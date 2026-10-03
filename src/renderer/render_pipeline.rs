@@ -47,6 +47,10 @@ pub struct RenderPipeline {
     before_render: Vec<RenderPipelineHook>,
     /// `_contextData.onAfterPipelineCallbacks`.
     after_render: Vec<RenderPipelineHook>,
+    /// `renderPipelineState.viewOffsetOwner !== undefined` — whether a node
+    /// already jitters this pipeline's camera. See
+    /// [`claim_view_offset`](Self::claim_view_offset).
+    view_offset_owned: bool,
 }
 
 impl Default for RenderPipeline {
@@ -67,6 +71,7 @@ impl RenderPipeline {
             built_for: None,
             before_render: Vec::new(),
             after_render: Vec::new(),
+            view_offset_owned: false,
         }
     }
 
@@ -90,6 +95,15 @@ impl RenderPipeline {
     /// colour space are restored. Hooks run in the order they were added.
     pub fn on_after_render(&mut self, hook: RenderPipelineHook) {
         self.after_render.push(hook);
+    }
+
+    /// `TRAANode.setup()`'s guard: `if ( renderPipelineState.viewOffsetOwner
+    /// === undefined ) renderPipelineState.viewOffsetOwner = this`. True for
+    /// the first caller, which then owns the camera's view offset and installs
+    /// the hooks that set and clear it; false for every later one, so two
+    /// TRAA nodes in one pipeline jitter the camera once per frame, not twice.
+    pub fn claim_view_offset(&mut self) -> bool {
+        !std::mem::replace(&mut self.view_offset_owned, true)
     }
 
     /// `RenderPipeline.render()`.

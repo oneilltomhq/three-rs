@@ -5,13 +5,13 @@
 
 use three_rs::materials::{quad_vertex_node, render_output, MeshBasicNodeMaterial};
 use three_rs::nodes::display::{
-    after_image, box_blur, dot_screen, fxaa, gaussian_blur, hash_blur_with, pixelation_pass,
-    rgb_shift, sobel, viewport_shared_texture_at, BoxBlurOptions, GaussianBlurOptions,
-    HashBlurOptions,
+    after_image, box_blur, dot_screen, fxaa, gaussian_blur, hash_blur_with, motion_blur,
+    pixelation_pass, rgb_shift, sobel, traa, viewport_shared_texture_at, BoxBlurOptions,
+    GaussianBlurOptions, HashBlurOptions,
 };
-use three_rs::nodes::tsl::{float, screen_uv, texture_uv, uniform_value, uv};
+use three_rs::nodes::tsl::{distance, float, screen_uv, texture_uv, uniform_value, uv, vec4_join};
 use three_rs::nodes::Type;
-use three_rs::textures::Texture;
+use three_rs::textures::{DepthTexture, Texture};
 use three_rs::ToneMapping;
 
 /// One quad: the name the gate reports it by, the three.js dump file it is
@@ -154,6 +154,46 @@ pub fn display_quads() -> Vec<DisplayQuad> {
             HashBlurOptions::default(),
         ),
     ));
+
+    // webgpu_postprocessing_motion_blur `m14`: the page's whole output node,
+    // `motionBlur( beauty, velocity.mul( blurAmount ) )` under a vignette, as
+    // the `RenderPipeline`'s output with the sRGB output transform. The two
+    // inputs are the scene pass's `output` and `velocity` attachments.
+    let beauty = input();
+    let velocity = texture_uv(&input(), uv()).mul(uniform_value(Type::F32, vec![1.0]));
+    let m_blur = motion_blur(&beauty, velocity, 16);
+    let vignette = distance(screen_uv(), float(0.5))
+        .remap(0.6, 1.0, 0.0, 1.0)
+        .mul(2.0)
+        .clamp(0.0, 1.0)
+        .one_minus();
+    quads.push(quad(
+        "motion_blur",
+        "webgpu_postprocessing_motion_blur_m14_motion_blur.wgsl",
+        render_output(
+            vec4_join(vec![m_blur.mul(vignette).xyz(), m_blur.w()]),
+            ToneMapping::None,
+        ),
+    ));
+
+    // webgpu_postprocessing_traa `m05`: `traa( scenePass.getTextureNode(
+    // 'output' ), …( 'depth' ), …( 'velocity' ), camera )`'s resolve quad,
+    // `TRAA.resolve`, whose `colorNode` is the whole resolve.
+    let traa = traa(
+        &input(),
+        &DepthTexture::new(),
+        &input(),
+        std::rc::Rc::new(std::cell::RefCell::new(three_rs::PerspectiveCamera::new(
+            70.0, 1.0, 0.1, 10.0,
+        ))),
+    );
+    let mut resolve = traa.quad_material().clone();
+    resolve.vertex_node = Some(quad_vertex_node());
+    quads.push(DisplayQuad {
+        label: "traa",
+        fixture: "webgpu_postprocessing_traa_m05_traa_resolve.wgsl",
+        material: resolve,
+    });
 
     quads
 }

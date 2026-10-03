@@ -339,6 +339,12 @@ pub struct NodeProgram {
     pub(crate) update: Vec<UpdateNode>,
     /// `nodeBuilderState.updateAfterNodes`.
     pub(crate) update_after: Vec<UpdateNode>,
+    /// Whether the program binds any of `VelocityNode`'s uniforms or the
+    /// previous bone matrices — three's `velocity` being among the
+    /// `updateNodes` / `updateAfterNodes`. The renderer moves the velocity
+    /// history only for such a draw, so a frame with no `velocity` output does
+    /// no previous-frame bookkeeping at all.
+    pub(crate) reads_velocity: bool,
 }
 
 impl NodeProgram {
@@ -1021,6 +1027,8 @@ impl NodeBuilder {
                 vec![self.custom_output(node, &custom)]
             }
             Node::Context { node, .. } | Node::Isolate { node } => vec![node.clone()],
+            Node::StructNew { values, .. } => values.clone(),
+            Node::StructGet { value, .. } => vec![value.clone()],
             Node::Atomic { pointer, value, .. } => {
                 let mut v = vec![pointer.clone()];
                 v.extend(value.iter().cloned());
@@ -1945,7 +1953,7 @@ impl NodeBuilder {
                         "dot" => self.format(a, input_ty),
                         "cross" | "reflect" | "normalize" | "transpose" | "tsl_inverse_mat2"
                         | "tsl_inverse_mat3" | "tsl_inverse_mat4" | "determinant" | "length"
-                        | "dpdx" | "- dpdy" | "inverseSqrt" => self.generate(a),
+                        | "dpdx" | "- dpdy" | "inverseSqrt" | "all" => self.generate(a),
                         // `select( f, t, cond )`'s condition is a bool, and the
                         // MaterialX helpers pass their own already-typed
                         // operands; nothing here is widened.
@@ -2185,6 +2193,13 @@ impl NodeBuilder {
                     SampleMode::Compare(depth) => {
                         let sdepth = self.generate(&depth);
                         format!("textureSampleCompare( {name}, {name}_sampler, {suv}, {sdepth} )")
+                    }
+                    // A depth texture's `textureLoad` is already the `f32`:
+                    // `TAAUtils.sampleCurrentDepth()`'s `depthNode.load(
+                    // neighbor ).r` is three's bare
+                    // `textureLoad( depth, vec2<i32>( n ), u32( 0u ) )`.
+                    SampleMode::LoadTexel if matches!(*texture, TextureSource::Depth(_)) => {
+                        wgsl::texture_load_texel(&name, &suv)
                     }
                     SampleMode::LoadTexel => {
                         let snippet = wgsl::texture_load_texel(&name, &suv);
@@ -2529,6 +2544,34 @@ impl NodeBuilder {
                 let inner = inner.clone();
                 let snippet = self.generate(&inner);
                 format!("( ! {snippet} )")
+            }
+
+            // `StructNode.generate()`: the struct's declaration, then its
+            // value in a var of the struct's type — three's
+            // `nodeVar31 = StructType0( closest, texel, farthest );`.
+            Node::StructNew { layout, values } => {
+                let (layout, values) = (layout.clone(), values.clone());
+                self.add_code(layout.name, &layout.wgsl());
+                let args: Vec<String> = values
+                    .iter()
+                    .zip(&layout.members)
+                    .map(|(value, member)| self.format(value, member.ty))
+                    .collect();
+                let name = self.declare_var_typed(None, layout.name.to_string());
+                self.emit(format!("{name} = {}( {} );", layout.name, args.join(", ")));
+                self.cache_put(CacheKey::node(node), name.clone());
+                name
+            }
+
+            // `MemberNode` over a `StructNode`.
+            Node::StructGet {
+                value,
+                layout,
+                member,
+            } => {
+                let (value, field) = (value.clone(), layout.members[*member].name);
+                let snippet = self.generate(&value);
+                format!("{snippet}.{field}")
             }
 
             // `MemberNode` over a custom-struct storage buffer:
@@ -3226,6 +3269,21 @@ impl NodeBuilder {
             }
         }
         let [update_before, update, update_after] = std::mem::take(&mut self.update_nodes);
+        let reads_velocity = groups.iter().flatten().any(|binding| match binding {
+            BindingDesc::Uniforms { members, .. } => members.iter().any(|member| {
+                matches!(
+                    member.source,
+                    UniformSource::PreviousModelWorldMatrix
+                        | UniformSource::VelocityProjectionMatrix
+                        | UniformSource::PreviousProjectionMatrix
+                        | UniformSource::PreviousCameraViewMatrix
+                )
+            }),
+            BindingDesc::Buffer { source, .. } => {
+                matches!(source, BufferSource::PreviousBoneMatrices)
+            }
+            _ => false,
+        });
 
         NodeProgram {
             vertex_wgsl,
@@ -3237,6 +3295,7 @@ impl NodeBuilder {
             update_before,
             update,
             update_after,
+            reads_velocity,
         }
     }
 
