@@ -21,6 +21,7 @@ pub mod curve_modifier_gpu;
 pub mod geometry_utils;
 pub mod improved_noise;
 pub mod lines;
+pub mod objects;
 pub mod raymarching;
 pub mod text_geometry;
 pub mod textures;

@@ -27,6 +27,7 @@ use bindings::{
     BindGroupKey, DrawKey, LayoutKey, Occurrences, Resource, SamplerKey, Serial, Serials, SlotKey,
     SlotOwner, VERTEX_SLOTS,
 };
+pub use cube_render_target::CubeRenderTarget;
 pub use direct_render_pipeline::DirectRenderPipeline;
 pub use info::{BuildCounts, ComputeCounts, Info, MemoryCounts, RenderCounts};
 use mipmap::{create_mipmap_pipeline, MipmapShader};

@@ -6,6 +6,20 @@ have their own sections after the release they ship with. The format follows [Ke
 
 ## [Unreleased]
 
+### Added
+
+- **`SkyMesh`** (`addons::objects`), a port of `examples/jsm/objects/SkyMesh.js`.
+  It is the Preetham daylight model with a sun disc and an fbm cloud layer.
+  Every uniform is a public `SettableValue`. `webgpu_sky` is graded green at 0
+  of 100000 pixels, and its WGSL is gated against three's dump in
+  `tests/nodes_sky_wgsl.rs`.
+- **`CubeCamera`** and **`CubeRenderTarget`**: `new CubeCamera( near, far,
+  renderTarget )` and `update( renderer, scene )` render the scene into a
+  cube's six faces. `activeMipmapLevel` is not ported.
+- **`tsl::to_var_intent()`**, the assigned form of three's `toVarIntent()`.
+  It is a function-scope `var` declared where it is first built. See
+  `docs/nodes.md` §59.
+
 ## [0.2.0] - 2026-09-29
 
 Ships with `sdf-text` 0.2.0 and the first release of `three-rs-controls`

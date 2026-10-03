@@ -5507,3 +5507,75 @@ it, matching what three's `setup()` does during graph analysis;
   frames.
 * The full ladder keeps every pixel count. The converted examples render
   their passes from the output quad's draw.
+
+## 59. `SkyMesh`, `toVarIntent()` and `CubeCamera` (`webgpu_sky`)
+
+`webgpu_sky` scales a `SkyMesh` to 450 000 and reflects it in a sphere
+through a `CubeCamera` that re-renders the scene into a 256² half-float
+`CubeRenderTarget` every frame, with the sphere hidden. `SkyMesh`
+(`addons::objects`) is `examples/jsm/objects/SkyMesh.js` node for node. Its
+`vertexNode` writes four varyings and pins the box to the far plane, and its
+`colorNode` does the Preetham in-scattering, the sun disc and, under an
+`If`, a cloud layer. The cloud layer is four octaves of gradient noise from
+three inline `Fn()`s, which the port writes as Rust functions that build the
+same nodes at each call site. `tests/nodes_sky_wgsl.rs` gates both stages
+against three's dump.
+
+### 59.1 `Node::VarIntent`
+
+`pow()`, `mix()` and the other `nodeProxyIntent` functions wrap their result
+in `toVarIntent()`. Three's intent var is transparent until an assignment
+targets it. Then `VarNode.generate()` takes its `nodeVar.local` branch: a
+function-scope `var nodeVarN : T = …;` written where the var is first built,
+with no entry in `// vars`. `SkyMesh`'s `Lin` is a `pow()` that the page then
+`mulAssign`s, so three's fragment has `var nodeVar0 : vec3<f32> = pow( … );`.
+
+The port decides at construction, not at build. `tsl::to_var_intent()`
+builds `Node::VarIntent`, which is always the assigned form. A caller uses
+it only where the JS assigns to the result of one of those functions.
+Everywhere else the plain node is already three's output. The var counts on
+the same `nodeVarN` counter as a hoisted var, as three's `_var` counter
+does.
+
+### 59.2 `showSunDisc` is a `bool`
+
+Upstream declares `this.showSunDisc = uniform( 1 )`. A `UniformNode` takes its
+type from its value when the material is first built, and the page assigns
+`true` before that happens. So three's dump stores it as `nodeUniformN : u32`,
+reads it as `nodeVarN = bool( … )` (§31.4) and multiplies it in as
+`f32( nodeVarN )`. The port's uniform types are fixed at construction, so
+`SkyMesh::show_sun_disc` is a `bool` uniform from the start. That is the type
+the one page that sets it gives it. Any non-zero value is `true`.
+
+### 59.3 `CubeCamera` and `CubeRenderTarget`
+
+`CubeRenderTarget::new( size, type )` is the cube texture plus one 2-D
+face target with depth. `CubeCamera::new( near, far, renderTarget )` adds six
+`PerspectiveCamera( -90, 1, near, far )` children in WebGPU's face
+orientation (`coordinateSystem` is fixed, so the constructor sets the
+orientation once). `update( renderer, scene )` renders each face into the face
+target and copies it into its layer. That is the path
+`fromEquirectangularTexture()` already used internally. It regenerates
+mipmaps when the cube has them and restores the renderer's target.
+`activeMipmapLevel` is not ported. As in three, nothing rendered into a
+target is tone mapped, so the cube holds linear radiance. The sphere's
+`MeshBasicNodeMaterial( { envMap } )` samples it directly (no PMREM), and the
+sphere and the sky reach ACES Filmic together on the canvas pass.
+
+### 59.4 Divergences
+
+All of these are existing §8 classes, applied in the fixture test.
+
+* **Varying names.** Upstream's four `varyingProperty()`s are unnamed, so three
+  numbers them `nodeVarying5`–`8`. The port's `varyingProperty` takes a name,
+  and `SkyMesh` passes upstream's JS identifiers (`vSunDirection`, `vSunE`,
+  `vBetaR`, `vBetaM`). The fixture test maps one set to the other.
+* **Usage-promoted temps.** Three emits `let nodeConstN` for every temp read
+  twice: the sun direction in the vertex stage, and in the fragment the view
+  direction, `cosTheta`, both phase terms, `g2`, the zenith angle, its
+  inverse, `Fex`, `L0`, the sun disc colour, the horizon fade, the
+  `floor`/`fract`/fade of each `noise()` call, and the region noise's
+  argument. The port asks for each with `to_const`, with a comment.
+* **`VERTEX_` sub-builds** and **render-struct member order**, as in every
+  rung. The fixture test undoes the first on three's side and compares the
+  uniform structs by membership.
