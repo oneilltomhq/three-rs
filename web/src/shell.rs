@@ -305,6 +305,7 @@ CubemapMix, webgpu_cubemap_mix, "../../examples/webgpu_cubemap_mix.rs";
 Mirror, webgpu_mirror, "../../examples/webgpu_mirror.rs";
 TslHalftone, webgpu_tsl_halftone, "../../examples/webgpu_tsl_halftone.rs";
 TslEarth, webgpu_tsl_earth, "../../examples/webgpu_tsl_earth.rs";
+PostprocessingMotionBlur, webgpu_postprocessing_motion_blur, "../../examples/webgpu_postprocessing_motion_blur.rs";
 }
 
 /// Where an example's assets come from: three.js at the commit this port is

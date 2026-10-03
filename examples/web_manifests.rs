@@ -303,6 +303,9 @@ mod webgpu_loader_gltf_diffuse_roughness;
 #[path = "webgpu_cubemap_mix.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_cubemap_mix;
+#[path = "webgpu_postprocessing_motion_blur.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_postprocessing_motion_blur;
 #[path = "webgpu_tsl_earth.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_tsl_earth;
@@ -524,6 +527,9 @@ const GRADED: &[(&str, fn())] = &[
     ("webgpu_mirror", || drop(webgpu_mirror::init())),
     ("webgpu_tsl_halftone", || drop(webgpu_tsl_halftone::init())),
     ("webgpu_tsl_earth", || drop(webgpu_tsl_earth::init())),
+    ("webgpu_postprocessing_motion_blur", || {
+        drop(webgpu_postprocessing_motion_blur::init())
+    }),
 ];
 
 /// Where the committed manifests live, one `<example>.json` each.

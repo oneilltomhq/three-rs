@@ -45,7 +45,8 @@ Linux is the only backend that has been run.
 - **Renderer.** Render lists, instancing, morph targets, render targets,
   MSAA, the linear-to-sRGB output pass, `PassNode` post-processing, mipmaps,
   cube textures, line topology, viewport / scissor / `clearDepth` and
-  `autoClear`.
+  `autoClear`. `velocity` as an MRT output, with three's previous-frame
+  matrices and skinned `positionPrevious`.
 - **Addons.** `src/addons/` holds the `three/addons/…` tier that the graded
   examples import: `lines` (`LineSegmentsGeometry`, `LineGeometry`,
   `LineSegments2`, `Line2` — fat lines, with `Line2NodeMaterial` in core beside
@@ -115,6 +116,8 @@ Linux is the only backend that has been run.
 | [`webgpu_instance_points`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_instance_points.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_instance_points-progress.md) | [`webgpu_textures_partialupdate`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_textures_partialupdate.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_textures_partialupdate-progress.md) | [`webgpu_layers`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_layers.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_layers-progress.md) | [`webgpu_loader_gltf_diffuse_roughness`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_loader_gltf_diffuse_roughness.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_loader_gltf_diffuse_roughness-progress.md) |
 | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_cubemap_mix.jpg" alt="webgpu_cubemap_mix" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_cubemap_mix) | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_mirror.jpg" alt="webgpu_mirror" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_mirror) | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_tsl_halftone.jpg" alt="webgpu_tsl_halftone" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_tsl_halftone) | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_tsl_earth.jpg" alt="webgpu_tsl_earth" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_tsl_earth) |
 | [`webgpu_cubemap_mix`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_cubemap_mix.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_cubemap_mix-progress.md) | [`webgpu_mirror`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_mirror.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_mirror-progress.md) | [`webgpu_tsl_halftone`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_tsl_halftone.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_tsl_halftone-progress.md) | [`webgpu_tsl_earth`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_tsl_earth.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_tsl_earth-progress.md) |
+| [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_postprocessing_motion_blur.jpg" alt="webgpu_postprocessing_motion_blur" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_postprocessing_motion_blur) |  |  |  |
+| [`webgpu_postprocessing_motion_blur`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_motion_blur.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_motion_blur-progress.md) |  |  |  |
 
 <sub>Our own rendered frames, one per graded example. Each thumbnail opens the example running in your browser on WebGPU ([all of them](https://oneilltomhq.github.io/three-rs/)); the caption links the ported source. See [`docs/gallery.md`](https://github.com/oneilltomhq/three-rs/blob/main/docs/gallery.md).</sub>
 <!-- gallery:end -->
@@ -211,6 +214,7 @@ same screenshots at the same threshold (see
 | webgpu_mirror | 22 | 6.4 | 40 | 6269 | yes |
 | webgpu_tsl_halftone | 93 (Three itself scores 93 against the same JPEG) | 3.1 | 4 | 44363 | yes |
 | webgpu_tsl_earth | 0 | 2.6 | 3 | 16129 | yes |
+| webgpu_postprocessing_motion_blur | 5 | 6.2 | 9 | 100553 | yes |
 
 `webgpu_compute_points` is graded like the rest and its 4 pixels mean less
 than the rest: its frame is black apart from a 2x2 block at the centre, so
