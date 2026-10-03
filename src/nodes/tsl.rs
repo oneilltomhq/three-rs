@@ -2373,6 +2373,17 @@ accessor!(
     to_varying(Some("positionLocal"), position_geometry())
 );
 accessor!(
+    /// `positionPrevious` — `positionGeometry.toVarying( 'positionPrevious' )`:
+    /// the vertex's local position *last frame*, for
+    /// [`velocity`](crate::nodes::velocity::velocity). Skinning reassigns it
+    /// to the position under last frame's bones when the pass's MRT has a
+    /// `velocity` output (`builder.needsPreviousData()`); everything else
+    /// leaves it the geometry's position, which is right for a rigid mesh —
+    /// its motion is all in the previous model matrix.
+    position_previous,
+    to_varying(Some("positionPrevious"), position_geometry())
+);
+accessor!(
     /// `normalLocal`.
     normal_local,
     to_var(Some("normalLocal"), normal_geometry())

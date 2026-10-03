@@ -17,6 +17,7 @@ pub mod pmrem_utils;
 pub mod reflector_node;
 pub mod skinning;
 pub mod tsl;
+pub mod velocity;
 pub mod wgsl;
 
 pub use builder::{

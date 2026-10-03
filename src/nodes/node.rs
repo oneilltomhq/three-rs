@@ -363,6 +363,20 @@ pub enum UniformSource {
     /// `reference( 'center', 'vec2', object )` — `Sprite.center`, read by
     /// `SpriteNodeMaterial.setupPositionView()`, in the object group.
     ObjectCenter,
+    /// `VelocityNode.previousModelWorldMatrix` — the object's `matrixWorld`
+    /// as the last velocity draw of it left it (`getPreviousMatrix( object
+    /// )`), in the object group. See [`crate::nodes::velocity`].
+    PreviousModelWorldMatrix,
+    /// `VelocityNode.currentProjectionMatrix` — the camera's projection, or
+    /// the unjittered one `setProjectionMatrix()` handed the node, in the
+    /// render group.
+    VelocityProjectionMatrix,
+    /// `VelocityNode.previousProjectionMatrix` — last frame's
+    /// `currentProjectionMatrix` for this camera.
+    PreviousProjectionMatrix,
+    /// `VelocityNode.previousCameraViewMatrix` — last frame's
+    /// `camera.matrixWorldInverse` for this camera.
+    PreviousCameraViewMatrix,
     /// A plain `uniform( value )` the example supplies.
     Value(Vec<f64>),
     /// `uniform( value )` whose `.value` is written between draws — three.js'
@@ -580,6 +594,7 @@ impl UniformSource {
             | UniformSource::BindMatrix
             | UniformSource::BindMatrixInverse
             | UniformSource::ObjectCenter
+            | UniformSource::PreviousModelWorldMatrix
             | UniformSource::Value(_)
             | UniformSource::Settable(_)
             | UniformSource::ObjectUpdate(_)
@@ -646,6 +661,11 @@ pub enum BufferSource {
     /// The same for `cameraProjectionMatrices` — the sub-cameras'
     /// `projectionMatrix`.
     CameraProjectionMatrices,
+    /// `buffer( previousBoneMatrices, 'mat4', bones )` — `Skinning.js`'
+    /// `getPreviousSkinnedPosition()`: the skeleton's bone matrices as they
+    /// were before this frame's `skeleton.update()`, for the
+    /// `positionPrevious` of a draw into a `velocity` MRT.
+    PreviousBoneMatrices,
     /// `referenceBuffer( 'skeleton.boneMatrices', 'mat4', bones )` — the
     /// skeleton's bone matrices as one `array< mat4x4<f32>, N >`. Three falls
     /// back to a bone *texture* when `bones * 64` passes the uniform buffer
@@ -1946,6 +1966,7 @@ impl std::hash::Hash for BufferSource {
             | BufferSource::InstanceColor
             | BufferSource::MorphInfluences
             | BufferSource::BoneMatrices
+            | BufferSource::PreviousBoneMatrices
             | BufferSource::CameraViewMatrices
             | BufferSource::CameraProjectionMatrices
             | BufferSource::Storage
@@ -2008,6 +2029,7 @@ impl std::fmt::Debug for BufferSource {
                 .finish(),
             BufferSource::MorphInfluences => f.write_str("MorphInfluences"),
             BufferSource::BoneMatrices => f.write_str("BoneMatrices"),
+            BufferSource::PreviousBoneMatrices => f.write_str("PreviousBoneMatrices"),
             BufferSource::CameraViewMatrices => f.write_str("CameraViewMatrices"),
             BufferSource::CameraProjectionMatrices => f.write_str("CameraProjectionMatrices"),
             BufferSource::Attribute(data) => f

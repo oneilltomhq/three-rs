@@ -175,6 +175,11 @@ pub struct NodeFrameState {
     /// `updateBeforeMap` / `updateMap` / `updateAfterMap`, keyed on the
     /// update reference.
     maps: HashMap<(UpdatePhase, usize), Stamp>,
+    /// `VelocityNode`'s and `Skinning.js`' previous-frame data: each object's
+    /// last `matrixWorld`, each camera's last view and projection, each
+    /// skeleton's last bones. Empty — and never walked — until a draw binds a
+    /// velocity uniform. See [`crate::nodes::velocity`].
+    pub(crate) velocity: crate::nodes::velocity::VelocityState,
 }
 
 impl NodeFrameState {
@@ -286,6 +291,7 @@ impl NodeFrameState {
     pub(crate) fn sweep(&mut self, grace: u64) {
         let cutoff = self.frame_id.saturating_sub(grace);
         self.maps.retain(|_, stamp| stamp.touched >= cutoff);
+        self.velocity.sweep(self.frame_id, grace);
     }
 }
 

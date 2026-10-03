@@ -27,6 +27,7 @@ three-rs/renderer_sprites
 three-rs/renderer_textures
 three-rs/renderer_vertex_colors
 three-rs/renderer_viewport
+three-rs/velocity_frames
 sdf-text/batched_text_culling
 sdf-text/batched_text_refill
 sdf-text/sdf_text_block

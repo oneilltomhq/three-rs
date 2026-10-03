@@ -339,6 +339,12 @@ pub struct NodeProgram {
     pub(crate) update: Vec<UpdateNode>,
     /// `nodeBuilderState.updateAfterNodes`.
     pub(crate) update_after: Vec<UpdateNode>,
+    /// Whether the program binds any of `VelocityNode`'s uniforms or the
+    /// previous bone matrices — three's `velocity` being among the
+    /// `updateNodes` / `updateAfterNodes`. The renderer moves the velocity
+    /// history only for such a draw, so a frame with no `velocity` output does
+    /// no previous-frame bookkeeping at all.
+    pub(crate) reads_velocity: bool,
 }
 
 impl NodeProgram {
@@ -3189,6 +3195,21 @@ impl NodeBuilder {
             }
         }
         let [update_before, update, update_after] = std::mem::take(&mut self.update_nodes);
+        let reads_velocity = groups.iter().flatten().any(|binding| match binding {
+            BindingDesc::Uniforms { members, .. } => members.iter().any(|member| {
+                matches!(
+                    member.source,
+                    UniformSource::PreviousModelWorldMatrix
+                        | UniformSource::VelocityProjectionMatrix
+                        | UniformSource::PreviousProjectionMatrix
+                        | UniformSource::PreviousCameraViewMatrix
+                )
+            }),
+            BindingDesc::Buffer { source, .. } => {
+                matches!(source, BufferSource::PreviousBoneMatrices)
+            }
+            _ => false,
+        });
 
         NodeProgram {
             vertex_wgsl,
@@ -3200,6 +3221,7 @@ impl NodeBuilder {
             update_before,
             update,
             update_after,
+            reads_velocity,
         }
     }
 

@@ -590,6 +590,17 @@ pub struct UniformContext<'a> {
     /// `skeleton.boneMatrices` — the flat `mat4` array the bone buffer holds,
     /// already updated for this frame.
     pub bone_matrices: &'a [f32],
+    /// `previousBoneMatrices` — the same skeleton's bones before this frame's
+    /// update, for a draw whose `positionPrevious` is skinned. Empty
+    /// otherwise.
+    pub previous_bone_matrices: &'a [f32],
+    /// `VelocityNode`'s four matrices for this draw, from
+    /// [`VelocityState::update`](crate::nodes::velocity::VelocityState).
+    /// Identity — and never read — for a program that binds none of them.
+    pub velocity: crate::nodes::velocity::VelocityUniforms,
+    /// The camera the pass draws through (`camera.id`), which keys its
+    /// velocity history. 0 for the renderer's own quads.
+    pub camera_id: u32,
     /// An `ArrayCamera`'s sub-cameras' `matrixWorldInverse` and
     /// `projectionMatrix`, sixteen floats each in `camera.cameras` order —
     /// what `cameraViewMatrices` / `cameraProjectionMatrices` hold. Empty
@@ -671,6 +682,9 @@ impl Default for UniformContext<'_> {
             bind_matrix_inverse: Matrix4::identity(),
             object_center: Vector2::new(0.5, 0.5),
             bone_matrices: &[],
+            previous_bone_matrices: &[],
+            velocity: Default::default(),
+            camera_id: 0,
             object: None,
             occluded: None,
         }
@@ -852,6 +866,20 @@ impl UniformContext<'_> {
                 }
                 UniformSource::ObjectCenter => {
                     vec![self.object_center.x as f32, self.object_center.y as f32]
+                }
+                UniformSource::PreviousModelWorldMatrix => self
+                    .velocity
+                    .previous_model_world
+                    .to_f32_array()
+                    .to_vec(),
+                UniformSource::VelocityProjectionMatrix => {
+                    self.velocity.current_projection.to_f32_array().to_vec()
+                }
+                UniformSource::PreviousProjectionMatrix => {
+                    self.velocity.previous_projection.to_f32_array().to_vec()
+                }
+                UniformSource::PreviousCameraViewMatrix => {
+                    self.velocity.previous_camera_view.to_f32_array().to_vec()
                 }
                 UniformSource::LightTargetPosition(i) => {
                     let p = self.lights[*i].target_position;
