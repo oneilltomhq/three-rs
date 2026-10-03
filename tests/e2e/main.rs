@@ -189,6 +189,10 @@ mod webgpu_postprocessing_afterimage;
 #[allow(dead_code)]
 mod webgpu_refraction;
 
+#[path = "../../examples/webgpu_backdrop.rs"]
+#[allow(dead_code)]
+mod webgpu_backdrop;
+
 #[path = "../../examples/webgpu_tsl_earth.rs"]
 #[allow(dead_code)]
 mod webgpu_tsl_earth;
@@ -5146,6 +5150,52 @@ fn webgpu_lights_physical() {
     });
 }
 
+/// `backdropNode` over `viewportSharedTexture()`: eight transparent spheres
+/// around a skinned Michelle, each filtering the frame drawn before it. Every
+/// sphere's `viewportSharedTexture()` is its own node, so the renderer copies
+/// the colour attachment before each of them (#169).
+#[test]
+fn webgpu_backdrop() {
+    let name = "webgpu_backdrop";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_backdrop::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_backdrop::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_backdrop::animate, |app| {
+        app.renderer.device()
+    });
+}
+
 #[test]
 fn webgpu_skinning() {
     let name = "webgpu_skinning";
@@ -5459,6 +5509,7 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_tsl_earth);
     rung!(webgpu_mirror);
     rung!(webgpu_refraction);
+    rung!(webgpu_backdrop);
     rung!(webgpu_multiple_rendertargets);
     rung!(webgpu_multiple_rendertargets_readback);
 }

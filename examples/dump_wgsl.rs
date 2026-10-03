@@ -45,6 +45,10 @@ mod webgpu_instance_path;
 #[allow(dead_code)]
 mod webgpu_refraction;
 
+#[path = "webgpu_backdrop.rs"]
+#[allow(dead_code)]
+mod webgpu_backdrop;
+
 #[path = "webgpu_tsl_earth.rs"]
 #[allow(dead_code)]
 mod webgpu_tsl_earth;
@@ -2109,6 +2113,7 @@ fn main() {
     dump_instance_path();
     dump_modifier_curve();
     dump_refraction();
+    dump_backdrop();
 }
 
 /// Rung `webgpu_refraction`: the refractor's `MeshBasicNodeMaterial` with a
@@ -2131,6 +2136,25 @@ fn dump_refraction() {
             ..SetupContext::default()
         },
     );
+}
+
+/// Rung `webgpu_backdrop`: the eight portal spheres'
+/// `MeshStandardNodeMaterial`s, each with a `backdropNode` over
+/// `viewportSharedTexture()`, under the page's one spot light, against
+/// `dump-backdrop/m06`…`m17`.
+fn dump_backdrop() {
+    let spot = || SetupContext {
+        lights: vec![LightDesc {
+            index: 0,
+            kind: LightKind::Spot,
+            shadow_map: None,
+        }],
+        ..SetupContext::default()
+    };
+    for (index, (backdrop, alpha)) in webgpu_backdrop::backdrops().into_iter().enumerate() {
+        let material = webgpu_backdrop::backdrop_material(backdrop, alpha);
+        show(&format!("backdrop_sphere_{index}"), &material, spot());
+    }
 }
 
 /// Rung `webgpu_modifier_curve`: the text's `Flow`-bent
