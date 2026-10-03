@@ -743,6 +743,12 @@ impl MeshBasicNodeMaterial {
         if self.ao_map.is_some() && !pbr {
             fields.push("aoMap");
         }
+        // `MeshNormalNodeMaterial`'s flow packs the normal straight into the
+        // output, with no `setupLighting()` step for the backdrop arm to sit
+        // in. Every other kind blends it into `totalDiffuse`.
+        if self.backdrop_node.is_some() && self.kind == Normal {
+            fields.push("backdropNode");
+        }
         fields
     }
 

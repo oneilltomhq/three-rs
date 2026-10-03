@@ -626,6 +626,7 @@ fn setup_inner(
                 model.as_ref(),
                 &lights,
                 material.received_shadow_position_node.as_ref(),
+                &|base| backdrop_blend(material, base),
                 &mut fragment,
             )
         } else if material.env_map.is_some() || (material.backdrop_node.is_some() && basic_lit) {
@@ -1216,8 +1217,6 @@ fn setup_phong(
     vec4_join(vec![outgoing.add(emissive_color()), diffuse_color().w()]).max(float(0.0))
 }
 
-/// `LightsNode`'s list as one material sees it: the scene's lights, or the
-/// selective subset the material's `lights( [ … ] )` node names.
 /// `material.backdropNode` over `base`: `LightsNode.setup()`'s blend into
 /// `totalDiffuse` on a lit material, and `setupLighting()`'s `else if (
 /// backdropNode !== null )` arm on an unlit one —
@@ -1242,6 +1241,8 @@ fn backdrop_blend(material: &MeshBasicNodeMaterial, base: NodeRef) -> NodeRef {
     to_vec3(blended)
 }
 
+/// `LightsNode`'s list as one material sees it: the scene's lights, or the
+/// selective subset the material's `lights( [ … ] )` node names.
 fn material_lights(material: &MeshBasicNodeMaterial, ctx: &SetupContext) -> Vec<LightDesc> {
     match &material.lights_node {
         Some(subset) => ctx
