@@ -95,7 +95,7 @@ image-webp = "0.2.4"
 # `winit` is the viewer binary alone, which is compiled away on wasm32.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 wgpu = { version = "30.0.1", default-features = false, features = ["vulkan"] }
-pollster = "0.4"
+pollster = "1.0"
 winit = "0.30.8"
 
 # `webgpu` is wgpu's `navigator.gpu` backend: it talks to the browser's own
