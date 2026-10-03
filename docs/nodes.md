@@ -5611,6 +5611,13 @@ scene has lights. That path now starts with three's
   read in two passes of different sizes in one frame reallocates twice a
   frame. A request keeps the `wgpu::Texture` it allocated, so the second
   resize cannot redirect the first copy.
+* **A shared texture outlives its renderer.** The shared colour and depth
+  textures are thread-locals, so a second renderer on the same thread sees
+  the first one's GPU texture on the handle. Each renderer keeps the
+  textures it made (`screen_reads::Destinations`, three's per-renderer
+  `backend.get( texture )`), and it reuses the handle's texture only when it
+  made it. The steady-frame strip, which renders every rung on one thread,
+  is the gate.
 * **No depth copy under MSAA.** WebGPU copies only between textures of
   equal sample count, and the destination is bound as a single-sampled
   `texture_depth_2d`. Under MSAA the depth copy is skipped, and the reading
