@@ -20,8 +20,10 @@
 //! * [`viewport_texture`] — a `FramebufferTexture` of the node's own with
 //!   `minFilter = LinearMipmapLinearFilter`: a sampler and `textureSample`.
 //!   `generateMipmaps` stays false, so the copy has one level.
-//! * [`viewport_depth_texture`] — a `DepthTexture` of the node's own, bound
-//!   `texture_depth_2d` and read with `textureLoad`.
+//! * [`viewport_depth_texture`] — one `DepthTexture` shared by every such
+//!   node (`_sharedDepthbuffer`), bound `texture_depth_2d` and read with
+//!   `textureLoad`. Like the shared colour texture, each node copies on its
+//!   own guard.
 //!
 //! **Divergence**: three keeps one texture per render target the node is
 //! drawn into (`getTextureForReference`); the port keeps one per node and
@@ -41,6 +43,9 @@ thread_local! {
     /// `_sharedFramebuffer` — `ViewportSharedTextureNode`'s module-level
     /// `FramebufferTexture`, made by the first node that asks.
     static SHARED_FRAMEBUFFER: RefCell<Option<Texture>> = const { RefCell::new(None) };
+    /// `_sharedDepthbuffer` — `ViewportDepthTextureNode`'s module-level
+    /// `DepthTexture`, made by the first node that asks.
+    static SHARED_DEPTHBUFFER: RefCell<Option<DepthTexture>> = const { RefCell::new(None) };
 }
 
 /// `new FramebufferTexture()`: no image, no mipmaps, `NearestFilter` both
@@ -173,7 +178,12 @@ pub fn viewport_depth_texture() -> NodeRef {
 pub fn viewport_depth_texture_at(uv: impl Into<NodeRef>) -> NodeRef {
     custom(ViewportTextureNode {
         name: "ViewportDepthTextureNode",
-        framebuffer: Framebuffer::Depth(DepthTexture::new()),
+        framebuffer: Framebuffer::Depth(SHARED_DEPTHBUFFER.with(|shared| {
+            shared
+                .borrow_mut()
+                .get_or_insert_with(DepthTexture::new)
+                .clone()
+        })),
         uv: uv.into(),
     })
 }
