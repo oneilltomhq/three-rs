@@ -227,12 +227,19 @@ impl SpotLight {
     /// `new SpotLight( color, intensity )` — `distance 0`, `angle π/3`,
     /// `penumbra 0`, `decay 2`, a target at the origin and a
     /// `SpotLightShadow`.
+    ///
+    /// Like `HemisphereLight`, the constructor sets `this.position.copy(
+    /// Object3D.DEFAULT_UP )`. A page that never moves the light sees it:
+    /// `webgpu_backdrop` hangs its spot light on the camera, so the light
+    /// sits one unit above the eye and the highlights sit high on the spheres.
     #[allow(clippy::new_ret_no_self)] // `new` mirrors three.js's constructor and returns a scene-graph `Node`, not `Self`; public API, not changing.
     pub fn new(color: Color, intensity: f64) -> Node {
         let mut light = LightObject::base(LightKind::Spot, color, intensity);
         light.target = Some(Object3D::new_node());
         light.shadow = Some(Box::new(LightShadow::spot()));
-        into_node("SpotLight", light)
+        let node = into_node("SpotLight", light);
+        node.borrow_mut().position.set(0.0, 1.0, 0.0);
+        node
     }
 }
 
@@ -240,13 +247,16 @@ impl SpotLight {
 pub struct DirectionalLight;
 
 impl DirectionalLight {
-    /// `new DirectionalLight( color, intensity )` — a target at the origin and
-    /// a `DirectionalLightShadow`.
+    /// `new DirectionalLight( color, intensity )` — a target at the origin,
+    /// a `DirectionalLightShadow`, and `this.position.copy(
+    /// Object3D.DEFAULT_UP )`, so an unmoved light shines straight down.
     #[allow(clippy::new_ret_no_self)] // `new` mirrors three.js's constructor and returns a scene-graph `Node`, not `Self`; public API, not changing.
     pub fn new(color: Color, intensity: f64) -> Node {
         let mut light = LightObject::base(LightKind::Directional, color, intensity);
         light.target = Some(Object3D::new_node());
         light.shadow = Some(Box::new(LightShadow::directional()));
-        into_node("DirectionalLight", light)
+        let node = into_node("DirectionalLight", light);
+        node.borrow_mut().position.set(0.0, 1.0, 0.0);
+        node
     }
 }
