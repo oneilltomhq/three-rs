@@ -632,6 +632,7 @@ fn setup_inner(
             // `BasicLightingModel`: `indirect()` makes the diffuse colour
             // the indirect light, and `LightsNode.setup()` sums it — or
             // blends a `backdropNode` over it.
+            fragment.push(indirect_diffuse().assign(vec4(0.0, 0.0, 0.0, 0.0).xyz()));
             fragment.push(
                 indirect_diffuse().assign(
                     vec4_join(vec![indirect_diffuse(), float(1.0)])
