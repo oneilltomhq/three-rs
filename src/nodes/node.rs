@@ -1700,6 +1700,30 @@ pub enum Node {
         /// The node built in its own cache.
         node: NodeRef,
     },
+    /// `structType( values )` — `StructNode`: a value of a [`struct_type`]
+    /// (`StructTypeNode`) built from one value per member, in member order.
+    /// Always held in a var of the struct's type, which is where three's
+    /// `StructNode` lands too (`nodeVar31 = StructType0( … )` in the TRAA
+    /// dump); its [`ty`](NodeRef::ty) is [`Type::Void`] because the port's
+    /// `Type` has no struct case, and only [`Node::StructGet`] reads it.
+    ///
+    /// [`struct_type`]: crate::nodes::tsl::struct_type
+    StructNew {
+        /// The struct's layout.
+        layout: Rc<StructLayout>,
+        /// One value per member.
+        values: Vec<NodeRef>,
+    },
+    /// `structNode.get( name )` — `MemberNode` over a [`Node::StructNew`]
+    /// (or over a block or `Fn()` whose result is one): `{ var }.{ member }`.
+    StructGet {
+        /// The struct value read.
+        value: NodeRef,
+        /// Its layout.
+        layout: Rc<StructLayout>,
+        /// The member's index in the layout.
+        member: usize,
+    },
 }
 
 /// A handle on a node. Fluent TSL methods hang off this; see `tsl.rs`.
@@ -1779,6 +1803,8 @@ impl NodeRef {
             Node::Compute { output, .. } => output.ty(),
             Node::Custom(custom) => custom.node_type(),
             Node::Context { node, .. } | Node::Isolate { node } => node.ty(),
+            Node::StructNew { .. } => Type::Void,
+            Node::StructGet { layout, member, .. } => layout.members[*member].ty,
         }
     }
 }
