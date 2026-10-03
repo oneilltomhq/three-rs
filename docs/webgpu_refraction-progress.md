@@ -40,7 +40,7 @@ by 1 or 2 are the same rounding spread over the plane.
 | `examples/` | `webgpu_refraction.rs`; `dump_wgsl`'s `dump_refraction()` |
 | `tests/nodes_display_wgsl.rs` | `refraction_backdrop_matches_three`: the refractor's fragment body against three's `m06` |
 
-`docs/nodes.md` §58 is the long form.
+`docs/nodes.md` §61 is the long form.
 
 ## The dump
 

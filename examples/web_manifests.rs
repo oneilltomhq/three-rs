@@ -306,6 +306,9 @@ mod webgpu_backdrop;
 #[path = "webgpu_cubemap_mix.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_cubemap_mix;
+#[path = "webgpu_sky.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_sky;
 #[path = "webgpu_tsl_earth.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_tsl_earth;
@@ -527,6 +530,7 @@ const GRADED: &[(&str, fn())] = &[
     ("webgpu_mirror", || drop(webgpu_mirror::init())),
     ("webgpu_tsl_halftone", || drop(webgpu_tsl_halftone::init())),
     ("webgpu_tsl_earth", || drop(webgpu_tsl_earth::init())),
+    ("webgpu_sky", || drop(webgpu_sky::init())),
     ("webgpu_backdrop", || drop(webgpu_backdrop::init())),
 ];
 

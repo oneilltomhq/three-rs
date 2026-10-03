@@ -676,4 +676,4 @@ Divergences, each noted where it lives:
 - `hashBlur` over `viewportSharedTexture()` (`webgpu_backdrop_area`) passes
   the viewport texture tap to `hash_blur_with`, and its WGSL gate compares
   three's loop exactly. The texture and the copy behind it are in
-  `docs/nodes.md` §58.
+  `docs/nodes.md` §61.

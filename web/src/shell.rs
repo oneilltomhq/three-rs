@@ -305,6 +305,7 @@ CubemapMix, webgpu_cubemap_mix, "../../examples/webgpu_cubemap_mix.rs";
 Mirror, webgpu_mirror, "../../examples/webgpu_mirror.rs";
 TslHalftone, webgpu_tsl_halftone, "../../examples/webgpu_tsl_halftone.rs";
 TslEarth, webgpu_tsl_earth, "../../examples/webgpu_tsl_earth.rs";
+Sky, webgpu_sky, "../../examples/webgpu_sky.rs";
 Backdrop, webgpu_backdrop, "../../examples/webgpu_backdrop.rs";
 }
 

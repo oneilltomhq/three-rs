@@ -472,6 +472,27 @@ pub fn to_const(name: Option<&'static str>, value: NodeRef) -> NodeRef {
     })))
 }
 
+/// `node.toVarIntent()` — what `pow()`, `mix()` and the other
+/// `nodeProxyIntent` functions wrap their result in — for a node that is then
+/// assigned to.
+///
+/// Three's intent var is transparent until an `assign()` targets it: built as
+/// a value it is its inner node, and built as an assignment target it becomes
+/// a function-scope `var nodeVarN : T = …;` (`NodeVar.local`). The port
+/// decides at construction rather than at build, so this is the second form
+/// only, and a caller uses it where the JS goes on to `.mulAssign()` (or any
+/// other assign) the result of one of those functions — `SkyMesh`'s
+/// `Lin.mulAssign( … )` is the first. Everywhere else the plain node already
+/// is three's output.
+pub fn to_var_intent(value: NodeRef) -> NodeRef {
+    let ty = value.ty();
+    NodeRef::new(Node::VarIntent(Rc::new(VarDef {
+        name: None,
+        value,
+        ty,
+    })))
+}
+
 /// `toVar( name )` for a var that keeps its name inside a sub-build layer.
 /// Three prefixes only the nodes a layer is *tagged on* — the accessors that
 /// declare the layer and their ancestors — so a var built inside one of those

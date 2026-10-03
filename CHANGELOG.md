@@ -8,12 +8,23 @@ have their own sections after the release they ship with. The format follows [Ke
 
 ### Added
 
+- **`SkyMesh`** (`addons::objects`), a port of `examples/jsm/objects/SkyMesh.js`.
+  It is the Preetham daylight model with a sun disc and an fbm cloud layer.
+  Every uniform is a public `SettableValue`. `webgpu_sky` is graded green at 0
+  of 100000 pixels, and its WGSL is gated against three's dump in
+  `tests/nodes_sky_wgsl.rs`.
+- **`CubeCamera`** and **`CubeRenderTarget`**: `new CubeCamera( near, far,
+  renderTarget )` and `update( renderer, scene )` render the scene into a
+  cube's six faces. `activeMipmapLevel` is not ported.
+- **`tsl::to_var_intent()`**, the assigned form of three's `toVarIntent()`.
+  It is a function-scope `var` declared where it is first built. See
+  `docs/nodes.md` §59.
 - **Screen reads** (#169): `viewportSharedTexture`, `viewportTexture`,
   `viewportDepthTexture`, `viewportLinearDepth` and `viewportSafeUV`, the
   `screenSize` and `screenCoordinate` scopes, and the `cameraNear` and
   `cameraFar` uniforms. The renderer copies the framebuffer before the first
   draw that reads it, in three's opaque/transparent order. A pass that reads
-  nothing is recorded as before. See `docs/nodes.md` §58.
+  nothing is recorded as before. See `docs/nodes.md` §61.
 - **`backdropNode` and `backdropAlphaNode`** on node materials, a custom
   `lighting_model` included. A backdrop material goes in the transparent
   list. On a Normal material the field is loud (`docs/api.md` decision 7).

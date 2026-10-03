@@ -4034,7 +4034,7 @@ for six frames once the sphere is moved in front of it.
   indexes it in the sorted draw order, which can have more runs. The port
   counts in draw order, so the index cannot overrun the set.
 * **A split pass records queries only in its first segment.** When a
-  framebuffer copy (transmission's, or a viewport node's, §58) splits the
+  framebuffer copy (transmission's, or a viewport node's, §61) splits the
   scene pass, three records into every part. No page on the ladder puts an
   occlusion test on a split pass.
 * **Answers land on a poll, not on the event loop.** Natively the map
@@ -5509,9 +5509,80 @@ it, matching what three's `setup()` does during graph analysis;
 * The full ladder keeps every pixel count. The converted examples render
   their passes from the output quad's draw.
 
-## 58. Screen reads: the viewport texture nodes and the framebuffer copy (issue #169)
+## 59. `SkyMesh`, `toVarIntent()` and `CubeCamera` (`webgpu_sky`)
 
-### 58.1 What three does
+`webgpu_sky` scales a `SkyMesh` to 450 000 and reflects it in a sphere
+through a `CubeCamera` that re-renders the scene into a 256² half-float
+`CubeRenderTarget` every frame, with the sphere hidden. `SkyMesh`
+(`addons::objects`) is `examples/jsm/objects/SkyMesh.js` node for node. Its
+`vertexNode` writes four varyings and pins the box to the far plane, and its
+`colorNode` does the Preetham in-scattering, the sun disc and, under an
+`If`, a cloud layer. The cloud layer is four octaves of gradient noise from
+three inline `Fn()`s, which the port writes as Rust functions that build the
+same nodes at each call site. `tests/nodes_sky_wgsl.rs` gates both stages
+against three's dump.
+
+### 59.1 `Node::VarIntent`
+
+`pow()`, `mix()` and the other `nodeProxyIntent` functions wrap their result
+in `toVarIntent()`. Three's intent var is transparent until an assignment
+targets it. Then `VarNode.generate()` takes its `nodeVar.local` branch: a
+function-scope `var nodeVarN : T = …;` written where the var is first built,
+with no entry in `// vars`. `SkyMesh`'s `Lin` is a `pow()` that the page then
+`mulAssign`s, so three's fragment has `var nodeVar0 : vec3<f32> = pow( … );`.
+
+The port decides at construction, not at build. `tsl::to_var_intent()`
+builds `Node::VarIntent`, which is always the assigned form. A caller uses
+it only where the JS assigns to the result of one of those functions.
+Everywhere else the plain node is already three's output. The var counts on
+the same `nodeVarN` counter as a hoisted var, as three's `_var` counter
+does.
+
+### 59.2 `showSunDisc` is a `bool`
+
+Upstream declares `this.showSunDisc = uniform( 1 )`. A `UniformNode` takes its
+type from its value when the material is first built, and the page assigns
+`true` before that happens. So three's dump stores it as `nodeUniformN : u32`,
+reads it as `nodeVarN = bool( … )` (§31.4) and multiplies it in as
+`f32( nodeVarN )`. The port's uniform types are fixed at construction, so
+`SkyMesh::show_sun_disc` is a `bool` uniform from the start. That is the type
+the one page that sets it gives it. Any non-zero value is `true`.
+
+### 59.3 `CubeCamera` and `CubeRenderTarget`
+
+`CubeRenderTarget::new( size, type )` is the cube texture plus one 2-D
+face target with depth. `CubeCamera::new( near, far, renderTarget )` adds six
+`PerspectiveCamera( -90, 1, near, far )` children in WebGPU's face
+orientation (`coordinateSystem` is fixed, so the constructor sets the
+orientation once). `update( renderer, scene )` renders each face into the face
+target and copies it into its layer. That is the path
+`fromEquirectangularTexture()` already used internally. It regenerates
+mipmaps when the cube has them and restores the renderer's target.
+`activeMipmapLevel` is not ported. As in three, nothing rendered into a
+target is tone mapped, so the cube holds linear radiance. The sphere's
+`MeshBasicNodeMaterial( { envMap } )` samples it directly (no PMREM), and the
+sphere and the sky reach ACES Filmic together on the canvas pass.
+
+### 59.4 Divergences
+
+All of these are existing §8 classes, applied in the fixture test.
+
+* **Varying names.** Upstream's four `varyingProperty()`s are unnamed, so three
+  numbers them `nodeVarying5`–`8`. The port's `varyingProperty` takes a name,
+  and `SkyMesh` passes upstream's JS identifiers (`vSunDirection`, `vSunE`,
+  `vBetaR`, `vBetaM`). The fixture test maps one set to the other.
+* **Usage-promoted temps.** Three emits `let nodeConstN` for every temp read
+  twice: the sun direction in the vertex stage, and in the fragment the view
+  direction, `cosTheta`, both phase terms, `g2`, the zenith angle, its
+  inverse, `Fex`, `L0`, the sun disc colour, the horizon fade, the
+  `floor`/`fract`/fade of each `noise()` call, and the region noise's
+  argument. The port asks for each with `to_const`, with a comment.
+* **`VERTEX_` sub-builds** and **render-struct member order**, as in every
+  rung. The fixture test undoes the first on three's side and compares the
+  uniform structs by membership.
+## 61. Screen reads: the viewport texture nodes and the framebuffer copy (issue #169)
+
+### 61.1 What three does
 
 `ViewportTextureNode` is a texture read whose `updateBefore()` (update type
 `RENDER`) calls `renderer.copyFramebufferToTexture( texture )`. The node
@@ -5542,7 +5613,7 @@ material `LightsNode.setup()` replaces `totalDiffuse` with
 backdrop`. On an unlit one `setupLighting()`'s `backdropNode` arm does the
 same with the diffuse colour.
 
-### 58.2 The port
+### 61.2 The port
 
 `src/nodes/display/viewport_texture.rs` has the nodes and
 `src/renderer/screen_reads.rs` has the copy. `screen_size` and
@@ -5574,7 +5645,7 @@ The request allocates (or resizes) the destination texture, not the copy.
 The reading draw's bind group is made right after the request returns, and
 it has to name the texture the copy will fill.
 
-### 58.3 The textures
+### 61.3 The textures
 
 * `viewport_shared_texture` binds a thread-local `FramebufferTexture`,
   `NearestFilter`, so it is unfilterable and the tap is a `textureLoad` at
@@ -5589,7 +5660,7 @@ The guard is per node, as in three. Each `viewportSharedTexture()` call is
 its own node, so `webgpu_backdrop`'s eight spheres copy the frame eight
 times, and each sphere sees the spheres drawn before it.
 
-### 58.4 `backdropNode`
+### 61.4 `backdropNode`
 
 `MeshBasicNodeMaterial` has `backdrop_node` and `backdrop_alpha_node`, and
 the other node materials read them too. A backdrop material goes in the
@@ -5603,7 +5674,7 @@ path is lit when an `env_map` is set, or when a backdrop is set and the
 scene has lights. That path now starts with three's
 `indirectDiffuse = vec4( 0 ).xyz` store.
 
-### 58.5 Divergences
+### 61.5 Divergences
 
 * **One texture per node, not per render target.** Three keeps a texture
   per target the node is drawn into (`getTextureForReference`). The port
@@ -5627,7 +5698,7 @@ scene has lights. That path now starts with three's
   last bullet). No page on the ladder puts an occlusion test on a pass that
   splits.
 
-### 58.6 Gates
+### 61.6 Gates
 
 * `tests/nodes_display_wgsl.rs`' `refraction_backdrop_matches_three`
   compares `webgpu_refraction`'s refractor fragment against three's `m06`.

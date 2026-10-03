@@ -20,7 +20,7 @@ in at alpha 0, showing only the lit sphere), and Michelle is not posterized.
 ## What was added
 
 * **The framebuffer copy and the viewport nodes**, shared with
-  `webgpu_refraction`: see `docs/nodes.md` §58. Every sphere's
+  `webgpu_refraction`: see `docs/nodes.md` §61. Every sphere's
   `viewportSharedTexture()` is its own node, so the renderer copies the frame
   eight times, once before each sphere, in the transparent list's
   back-to-front order. Each sphere sees the spheres drawn before it, as in
