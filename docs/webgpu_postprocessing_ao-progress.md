@@ -11,7 +11,9 @@ graded against a reference upstream does not grade itself against.
 
 - **The shader.** The `GTAO` quad material, compared with three's dump of
   this page: `gtao_matches_three` checks the fragment body and its bindings
-  (including the `non-filtering` sampler the depth gather binds), and
+  (including the sampler the depth gather binds; that it is a
+  non-filtering one is the layout's doing, in `programs.rs`, which the
+  dump does not show), and
   `gtao_screen_position_from_clip_matches_three` checks the one `Fn()` with
   a layout (`tests/nodes_display_wgsl.rs`, fixture
   `webgpu_postprocessing_ao_m18_gtao.wgsl`).

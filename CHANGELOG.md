@@ -27,7 +27,7 @@ have their own sections after the release they ship with. The format follows [Ke
 - **`tsl::depth_texture_gather`** (`texture( depth ).gather()`), with the
   non-filtering sampler binding a gathered depth texture needs;
   `tsl::get_screen_position_from_clip`; `tsl::unpack_rgb_to_normal`;
-  `Renderer::frame_id`; `TraaNode::set_use_subpixel_correction`.
+  `TraaNode::set_use_subpixel_correction`.
 - **Texture wrapping on `textureLoad`**: an unfilterable (`NearestFilter`)
   texture is read through three's `tsl_coord_<S>S_<T>T_2d` wrap function
   built from its `wrapS` / `wrapT`, instead of always clamping.

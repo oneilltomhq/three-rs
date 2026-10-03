@@ -187,7 +187,7 @@ pub fn display_quads() -> Vec<DisplayQuad> {
             70.0, 1.0, 0.1, 10.0,
         ))),
     );
-    let mut resolve = traa.quad_material().clone();
+    let mut resolve = traa.quad_material();
     resolve.vertex_node = Some(quad_vertex_node());
     quads.push(DisplayQuad {
         label: "traa",

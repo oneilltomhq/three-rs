@@ -6059,7 +6059,12 @@ with a layout (`tests/nodes_display_wgsl.rs`, fixture
 `GtaoState` implements `NodeUpdate` and is registered as the updater of the
 AO texture, as `passTexture` makes it one in three. At the top of
 `update_before()` it asks for the pre-pass through `frame::texture_update(
-normal )`, as §63 does for the beauty. The target is `rgba8unorm`, not
+normal )`, as §63 does for the beauty, with `Renderer.context_ao` lifted
+around that render: the pre-pass is rendered from inside the pass whose
+context this node is, and would otherwise inherit it and bind the AO target
+it feeds (three's binds the placeholder, or last frame's AO, and never reads
+it). Only the normal texture's pass is lifted, so depth and normals are
+expected to come from the same pass. The target is `rgba8unorm`, not
 `RedFormat`, which the port does not have; the quad's float broadcasts into
 it and the consumer reads `.x`.
 

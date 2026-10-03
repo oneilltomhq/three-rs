@@ -603,9 +603,13 @@ impl NodeUpdate for GtaoState {
         // The AO is asked for from inside a pass whose `builtinAOContext` is
         // this node, and a nested pass inherits the outer context (§64). The
         // pre-pass feeds this node, so it cannot also read it: its target is
-        // not rendered, or even allocated, yet. Three's pre-pass would bind
-        // the 1×1 placeholder and never read it; the port lifts the context
-        // for the pre-pass's render instead.
+        // not rendered, or even allocated, yet. Three's pre-pass binds the
+        // 1×1 placeholder on the first frame and last frame's AO after that,
+        // and never reads either since its MRT `output` overrides the
+        // lighting; the port lifts the context for the pre-pass's render
+        // instead. Only the normal texture's pass is lifted: a depth texture
+        // from another pass would be updated later, with the context set,
+        // so depth and normals are expected to come from the same pass.
         if let Some(pass) = crate::nodes::frame::texture_update(self.normal.id()) {
             let outer_ao = renderer.context_ao.take();
             renderer.update_before_node(&pass);
@@ -614,7 +618,7 @@ impl NodeUpdate for GtaoState {
 
         // Update the temporal uniforms.
         if self.use_temporal_filtering.get() {
-            let frame_id = renderer.frame_id() as usize;
+            let frame_id = renderer.node_frame().frame_id as usize;
             self.temporal_direction
                 .set(vec![TEMPORAL_ROTATIONS[frame_id % 6] / 360.0]);
             self.temporal_offset
@@ -651,8 +655,9 @@ impl NodeUpdate for GtaoState {
         self.resolution_scale_uniform.set(vec![scale]);
         self.resolution
             .set(vec![f64::from(width), f64::from(height)]);
+        let (width, height) = (width.max(1), height.max(1));
         if self.target.size() != (width, height) {
-            self.target.set_size(width.max(1), height.max(1));
+            self.target.set_size(width, height);
         }
 
         // `_rendererState = RendererUtils.resetRendererState( renderer, … )`.

@@ -1468,12 +1468,6 @@ impl Renderer {
         self.scissor_test
     }
 
-    /// `frame.frameId` — how many frames have been opened; what a node's
-    /// `updateBefore( frame )` reads to vary per frame.
-    pub fn frame_id(&self) -> u64 {
-        self.node_frame.frame_id
-    }
-
     /// `Renderer.getDrawingBufferSize()`.
     pub fn drawing_buffer_size(&self) -> (u32, u32) {
         (
