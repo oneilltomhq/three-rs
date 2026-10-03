@@ -4,8 +4,8 @@ Status: **green.** 23 of 100000 pixels against three.js 5f610f5's own
 `test/e2e/image.js`, threshold 0.1%. Three's own frame for the page scores the
 same 23 against the same JPEG. The port's frame is pixel-identical to three's
 (`tools/dump-webgpu.mjs`' `actual_full.png`, max channel difference 0). Intel
-Iris Xe, Mesa 25.3.6, wgpu on Vulkan. Steady frame STEADY_MS ms, CALLS draw
-calls, TRIS triangles.
+Iris Xe, Mesa 25.3.6, wgpu on Vulkan. Steady frame 6.1 ms, 11 draw calls,
+37771 triangles.
 
 Michelle dances inside a ring of eight spheres. Each sphere is a transparent
 `MeshBasicNodeMaterial` whose `backdropNode` reads the frame behind it
