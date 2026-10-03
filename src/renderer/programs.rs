@@ -568,6 +568,9 @@ pub struct UniformContext<'a> {
     pub viewport: Vector4,
     /// `screenDPR` — `renderer.getPixelRatio()`.
     pub screen_dpr: f64,
+    /// `cameraNear` / `cameraFar` — the rendering camera's clip planes.
+    pub camera_near: f64,
+    pub camera_far: f64,
     pub time: f64,
     /// `NodeFrame.deltaTime` / `NodeFrame.frameId`.
     pub delta_time: f64,
@@ -657,6 +660,8 @@ impl Default for UniformContext<'_> {
             viewport_size: Vector2::new(0.0, 0.0),
             viewport: Vector4::new(0.0, 0.0, 0.0, 0.0),
             screen_dpr: 1.0,
+            camera_near: 0.1,
+            camera_far: 2000.0,
             camera_view_matrices: &[],
             camera_projection_matrices: &[],
             camera_viewports: &[],
@@ -825,6 +830,8 @@ impl UniformContext<'_> {
                     self.viewport.w as f32,
                 ],
                 UniformSource::ScreenDpr => vec![self.screen_dpr as f32],
+                UniformSource::CameraNear => vec![self.camera_near as f32],
+                UniformSource::CameraFar => vec![self.camera_far as f32],
                 UniformSource::LightColorIntensity(i) => {
                     let light = &self.lights[*i];
                     vec![

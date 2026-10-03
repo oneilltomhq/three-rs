@@ -18,6 +18,7 @@ mod reflector;
 mod render_list;
 mod render_pipeline;
 mod render_target;
+mod screen_reads;
 mod ssaa_pass;
 
 use std::collections::{HashMap, HashSet};
@@ -529,6 +530,10 @@ struct PassTarget {
     /// out of it, which an MSAA texture cannot be.
     color_texture: Option<wgpu::Texture>,
     depth: Option<wgpu::TextureView>,
+    /// The depth attachment's texture, which `viewportDepthTexture()`'s
+    /// `copyFramebufferToTexture()` copies out of. `None` where there is no
+    /// depth buffer, and on the cube shadow faces, which nothing reads back.
+    depth_texture: Option<wgpu::Texture>,
     color_format: wgpu::TextureFormat,
     depth_format: Option<wgpu::TextureFormat>,
     sample_count: u32,
@@ -743,6 +748,10 @@ pub struct Renderer {
     /// as it stood after the last opaque draw. One per renderer, resized with
     /// the drawing buffer, and only ever created when something transmits.
     opaque_frame: Option<Texture>,
+    /// The pass [`Self::draw`] is building, while it builds it: where the
+    /// viewport nodes' `copyFramebufferToTexture()` requests go. Saved and
+    /// restored around each `draw`, so a nested render's copies stay its own.
+    screen_reads: Option<screen_reads::ScreenReads>,
 
     /// `Renderer._outputBufferType`, `HalfFloatType` by default.
     output_buffer_type: TextureType,
@@ -1182,6 +1191,7 @@ impl Renderer {
             mrt: None,
             frame_buffer_target: None,
             opaque_frame: None,
+            screen_reads: None,
             output_buffer_type: TextureType::HalfFloat,
             mipmap_shader,
             programs: HashMap::new(),
@@ -2165,6 +2175,8 @@ impl Renderer {
             camera_view_matrices: &camera_view_matrices,
             camera_projection_matrices: &camera_projection_matrices,
             camera_viewports: &camera_viewports,
+            camera_near: camera.near(),
+            camera_far: camera.far(),
             time: self.node_frame.time,
             delta_time: self.node_frame.delta_time,
             frame_id: self.node_frame.frame_id as u32,
@@ -2837,6 +2849,7 @@ impl Renderer {
                 resolve: None,
                 color_texture: None,
                 depth: Some(depth_view),
+                depth_texture: None,
                 color_format: wgpu::TextureFormat::Rgba8Unorm,
                 depth_format: Some(depth_texture.gpu_format()),
                 sample_count: 1,
@@ -3080,7 +3093,15 @@ impl Renderer {
             })
             .flatten();
 
+        // The copy requests this pass's draws make; see `screen_reads.rs`.
+        let outer_screen_reads = self
+            .screen_reads
+            .replace(screen_reads::ScreenReads::new(target));
+
         for item in items {
+            if let Some(reads) = self.screen_reads.as_mut() {
+                reads.draw_index = draws.len();
+            }
             let geometry_id = item.geometry.id();
             self.ensure_geometry(&item.geometry);
             if item.primitive.wireframe {
@@ -3327,13 +3348,26 @@ impl Renderer {
             }
         }
 
+        // Every framebuffer copy, by the index of the draw it goes before:
+        // the transmission pass's first, then the viewport nodes' in the
+        // order they asked. A stable sort keeps that order within an index.
+        let screen_reads = std::mem::replace(&mut self.screen_reads, outer_screen_reads)
+            .expect("three-rs: draw() installed its screen reads above");
+        let mut copies: Vec<(usize, screen_reads::FramebufferCopy)> = transmission_split
+            .map(|split| (split, screen_reads::FramebufferCopy::OpaqueFrame))
+            .into_iter()
+            .chain(screen_reads.copies)
+            .collect();
+        copies.sort_by_key(|(index, _)| *index);
+        let first_copy = copies.first().map_or(draws.len(), |(index, _)| *index);
+
         // `WebGPUBackend.beginRender()`: a query set when any draw of this
-        // scene pass has an `occlusionTest`. Only the opaque pass records
-        // into it when a transmissive split makes two passes: no page on the
+        // scene pass has an `occlusionTest`. Only the first segment records
+        // into it when a framebuffer copy splits the pass: no page on the
         // ladder puts an occlusion test on a pass that splits.
         let query_objects = match occlusion_context {
             Some(_) => occlusion::query_objects(
-                draws[..transmission_split.unwrap_or(draws.len())]
+                draws[..first_copy]
                     .iter()
                     .map(|draw| (draw.object, draw.occlusion_test)),
             ),
@@ -3344,64 +3378,55 @@ impl Renderer {
                 .begin(&self.device, key, query_objects.len() as u32)
         });
 
-        // One pass, or two with the framebuffer copy between them.
-        match transmission_split {
-            None => {
-                let mut encoder =
-                    self.device
-                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                            label: Some("three-rs pass"),
-                        });
-                self.record_pass(&mut encoder, &draws, target, clear, query_set.as_ref());
-                if let (Some(key), Some(set)) = (occlusion_context, &query_set) {
-                    self.occlusion
-                        .finish(&self.device, &mut encoder, key, set, query_objects);
-                }
-                self.queue.submit(Some(encoder.finish()));
-            }
-            Some(split) => {
-                let mut encoder =
-                    self.device
-                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                            label: Some("three-rs pass"),
-                        });
-                self.record_pass(
-                    &mut encoder,
-                    &draws[..split],
-                    target,
-                    clear,
-                    query_set.as_ref(),
-                );
-                if let (Some(key), Some(set)) = (occlusion_context, &query_set) {
-                    self.occlusion
-                        .finish(&self.device, &mut encoder, key, set, query_objects);
-                }
-                self.queue.submit(Some(encoder.finish()));
+        // The first segment: up to the first copy, or the whole pass — every
+        // pass that reads nothing back, byte for byte what it always was.
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("three-rs pass"),
+            });
+        self.record_pass(
+            &mut encoder,
+            &draws[..first_copy],
+            target,
+            clear,
+            query_set.as_ref(),
+        );
+        if let (Some(key), Some(set)) = (occlusion_context, &query_set) {
+            self.occlusion
+                .finish(&self.device, &mut encoder, key, set, query_objects);
+        }
+        self.queue.submit(Some(encoder.finish()));
 
-                // `ViewportTextureNode.updateBefore()`.
-                let source = target
-                    .color_texture
-                    .clone()
-                    .expect("three-rs: a split pass only happens on a target with a copy source");
-                self.copy_framebuffer_to_opaque_frame(&source);
+        // Then, at each index a copy asked for, `WebGPUBackend
+        // .copyFramebufferToTexture()`: the pass has ended (the submit
+        // above), the attachments are copied, and the next segment loads
+        // them — the depth buffer and the colour the earlier draws left are
+        // exactly what the later draws test against and blend into.
+        let mut rest = copies.as_slice();
+        while let Some(&(start, _)) = rest.first() {
+            let boundary = rest.iter().take_while(|(index, _)| *index == start).count();
+            let (here, after) = rest.split_at(boundary);
+            rest = after;
+            self.run_framebuffer_copies(target, here.iter().map(|(_, copy)| copy));
 
-                // The second pass loads: the depth buffer and the colour the
-                // opaque draws left are exactly what the transmissive draws
-                // blend into.
-                let mut encoder =
-                    self.device
-                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                            label: Some("three-rs transmission pass"),
-                        });
-                self.record_pass(
-                    &mut encoder,
-                    &draws[split..],
-                    target,
-                    ClearOps::default(),
-                    None,
-                );
-                self.queue.submit(Some(encoder.finish()));
+            let end = rest.first().map_or(draws.len(), |(index, _)| *index);
+            if end == start {
+                continue;
             }
+            let mut encoder = self
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("three-rs pass after copyFramebufferToTexture"),
+                });
+            self.record_pass(
+                &mut encoder,
+                &draws[start..end],
+                target,
+                ClearOps::default(),
+                None,
+            );
+            self.queue.submit(Some(encoder.finish()));
         }
     }
 
@@ -6614,25 +6639,24 @@ impl Renderer {
             })
             .collect();
 
-        let (depth, depth_format) = match (&inner.depth_texture, &inner.depth) {
+        let (depth_texture, depth_format) = match (&inner.depth_texture, &inner.depth) {
             (Some(depth_texture), _) => (
                 Some(
                     depth_texture
                         .inner()
                         .borrow()
                         .gpu
-                        .as_ref()
-                        .expect("three-rs: prepare_render_target() created the depth texture")
-                        .create_view(&Default::default()),
+                        .clone()
+                        .expect("three-rs: prepare_render_target() created the depth texture"),
                 ),
                 Some(depth_texture.gpu_format()),
             ),
-            (None, Some(depth)) => (
-                Some(depth.create_view(&Default::default())),
-                Some(CANVAS_DEPTH_FORMAT),
-            ),
+            (None, Some(depth)) => (Some(depth.clone()), Some(CANVAS_DEPTH_FORMAT)),
             (None, None) => (None, None),
         };
+        let depth = depth_texture
+            .as_ref()
+            .map(|texture| texture.create_view(&Default::default()));
 
         PassTarget {
             color,
@@ -6641,6 +6665,7 @@ impl Renderer {
             resolve,
             color_texture: Some(inner.texture.with_gpu(|gpu| gpu.clone())),
             depth,
+            depth_texture,
             color_format,
             depth_format,
             sample_count: inner.samples.max(1),
@@ -6690,6 +6715,7 @@ impl Renderer {
             resolve,
             color_texture: Some(canvas.color.clone()),
             depth: depth.clone(),
+            depth_texture: canvas.depth.clone(),
             color_format: CANVAS_FORMAT,
             depth_format: depth.map(|_| CANVAS_DEPTH_FORMAT),
             sample_count: canvas.sample_count,
@@ -6786,7 +6812,8 @@ impl Renderer {
             sample_count,
             dimension: wgpu::TextureDimension::D2,
             format: CANVAS_DEPTH_FORMAT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            // `COPY_SRC` for `viewportDepthTexture()`'s copy.
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
             view_formats: &[],
         })
     }
@@ -6918,7 +6945,8 @@ impl Renderer {
                     dimension: wgpu::TextureDimension::D2,
                     format,
                     usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                        | wgpu::TextureUsages::TEXTURE_BINDING,
+                        | wgpu::TextureUsages::TEXTURE_BINDING
+                        | wgpu::TextureUsages::COPY_SRC,
                     view_formats: &[],
                 }));
             }
