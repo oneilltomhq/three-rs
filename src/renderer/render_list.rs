@@ -373,7 +373,7 @@ fn project_drawable(
                             matrix_world: o.matrix_world,
                             group: Some(*group),
                         },
-                        material.transparent || material.transmission > 0.0,
+                        material.in_transparent_list(),
                     )
                 })
             })
@@ -389,15 +389,13 @@ fn project_drawable(
     // its own is drawn with `scene.overrideMaterial`, which three.js substitutes
     // later (in `_renderObjects`), after the list is built — so a missing
     // material is not a reason to skip the object here.
-    // `material.transparent === true || material.transmission > 0`: a
+    // `material.transparent === true || material.transmission > 0` (or a
+    // `backdropNode`, see `in_transparent_list`): a
     // transmissive material goes in the transparent list whatever its
     // `transparent` flag says, because it has to be drawn after the frame it
     // reads. The barn lamp's glass is one — the glTF sets no `alphaMode`.
     let (visible, transparent) = match o.material() {
-        Some(material) => (
-            material.visible,
-            material.transparent || material.transmission > 0.0,
-        ),
+        Some(material) => (material.visible, material.in_transparent_list()),
         None => (true, false),
     };
 

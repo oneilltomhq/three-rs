@@ -613,15 +613,27 @@ fn setup_inner(
             (lights && !list.is_empty()).then_some((model, list))
         });
 
+        // `MeshBasicNodeMaterial.lights` is true in three, so a backdrop
+        // takes the `LightsNode` path whenever the scene has a light. The
+        // port's basic material defaults `lights` off and only takes that
+        // path for a backdrop or an environment map — for anything else the
+        // `BasicLightingModel` sum is `DiffuseColor.rgb` again, and the
+        // ladder's basic dumps were matched without it.
+        let basic_lit = !ctx.lighting_disabled && !material_lights(material, ctx).is_empty();
+
         let outgoing = if let Some((model, lights)) = custom_lighting {
             crate::materials::lighting_model::lights_node(
                 model.as_ref(),
                 &lights,
                 material.received_shadow_position_node.as_ref(),
+                &|base| backdrop_blend(material, base),
                 &mut fragment,
             )
-        } else if let Some(env_map) = &material.env_map {
-            // `BasicLightingModel` with an indirect environment contribution.
+        } else if material.env_map.is_some() || (material.backdrop_node.is_some() && basic_lit) {
+            // `BasicLightingModel`: `indirect()` makes the diffuse colour
+            // the indirect light, and `LightsNode.setup()` sums it — or
+            // blends a `backdropNode` over it.
+            fragment.push(indirect_diffuse().assign(vec4(0.0, 0.0, 0.0, 0.0).xyz()));
             fragment.push(
                 indirect_diffuse().assign(
                     vec4_join(vec![indirect_diffuse(), float(1.0)])
@@ -631,24 +643,31 @@ fn setup_inner(
             );
             fragment.push(indirect_diffuse().assign(indirect_diffuse().mul(ambient_occlusion())));
             fragment.push(indirect_diffuse().assign(indirect_diffuse().mul(diffuse_color().xyz())));
-            fragment.push(total_diffuse().assign(direct_diffuse().add(indirect_diffuse())));
+            fragment.push(total_diffuse().assign(backdrop_blend(
+                material,
+                direct_diffuse().add(indirect_diffuse()),
+            )));
             fragment.push(total_specular().assign(direct_specular().add(indirect_specular())));
             fragment.push(outgoing_light().assign(total_diffuse().add(total_specular())));
 
             // `MeshBasicNodeMaterial.setupEnvironment()` →
             // `BasicEnvironmentNode( cubeTexture( envMap ) )`, sampled along the
             // reflect vector and blended in by `reflectivity`.
-            let dir = material_env_rotation().mul(vec4_join(vec![reflect_vector(), float(1.0)]));
-            let env = cube_texture(env_map, dir);
-            fragment.push(outgoing_light().assign(mix(
-                outgoing_light(),
-                outgoing_light().mul(env.xyz()),
-                float(1.0).mul(material_reflectivity()),
-            )));
+            if let Some(env_map) = &material.env_map {
+                let dir =
+                    material_env_rotation().mul(vec4_join(vec![reflect_vector(), float(1.0)]));
+                let env = cube_texture(env_map, dir);
+                fragment.push(outgoing_light().assign(mix(
+                    outgoing_light(),
+                    outgoing_light().mul(env.xyz()),
+                    float(1.0).mul(material_reflectivity()),
+                )));
+            }
             outgoing_light()
         } else {
-            // `setupOutgoingLight()` with `lights === false`.
-            diffuse_color().xyz()
+            // `setupOutgoingLight()` with no lights: `diffuseColor.rgb`, or
+            // `setupLighting()`'s `else if ( backdropNode !== null )` arm.
+            backdrop_blend(material, diffuse_color().xyz())
         };
 
         // `setupLighting()`'s EMISSIVE tail. `MeshBasicMaterial` has no
@@ -1186,7 +1205,10 @@ fn setup_phong(
             ),
         );
         fragment.push(indirect_diffuse().assign(indirect_diffuse().mul(ambient_occlusion())));
-        fragment.push(total_diffuse().assign(direct_diffuse().add(indirect_diffuse())));
+        fragment.push(total_diffuse().assign(backdrop_blend(
+            material,
+            direct_diffuse().add(indirect_diffuse()),
+        )));
         if !specular {
             // Lambert reads both specular accumulators for the first time
             // here, so this is where three declares them.
@@ -1203,6 +1225,30 @@ fn setup_phong(
 
     // `Output = max( vec4( outgoingLight + EmissiveColor, DiffuseColor.w ), 0 )`.
     vec4_join(vec![outgoing.add(emissive_color()), diffuse_color().w()]).max(float(0.0))
+}
+
+/// `material.backdropNode` over `base`: `LightsNode.setup()`'s blend into
+/// `totalDiffuse` on a lit material, and `setupLighting()`'s `else if (
+/// backdropNode !== null )` arm on an unlit one —
+/// `vec3( backdropAlpha ? mix( base, backdrop, backdropAlpha ) : backdrop )`.
+/// `base` unchanged without a backdrop.
+///
+/// A `vec4` backdrop (a viewport texture tap) makes the `mix` a `vec4` one,
+/// over `vec4( base, 1 )`, as three's type promotion has it.
+fn backdrop_blend(material: &MeshBasicNodeMaterial, base: NodeRef) -> NodeRef {
+    let Some(backdrop) = &material.backdrop_node else {
+        return base;
+    };
+    let blended = match &material.backdrop_alpha_node {
+        Some(alpha) if backdrop.ty().components() == 4 => mix(
+            vec4_join(vec![base, float(1.0)]),
+            backdrop.clone(),
+            alpha.clone(),
+        ),
+        Some(alpha) => mix(base, backdrop.clone(), alpha.clone()),
+        None => backdrop.clone(),
+    };
+    to_vec3(blended)
 }
 
 /// `LightsNode`'s list as one material sees it: the scene's lights, or the
@@ -1555,9 +1601,15 @@ fn setup_standard(
         model.indirect_specular(environment.is_some(), fragment);
         model.ambient_occlusion(material.ao_map.is_some(), fragment);
 
-        fragment.push(
-            total_diffuse().assign(model.total_diffuse(direct_diffuse().add(indirect_diffuse()))),
-        );
+        // Transmission's own backdrop wins over `material.backdropNode`:
+        // `PhysicalLightingModel.start()` overwrites `context.backdrop`.
+        let direct_plus_indirect = direct_diffuse().add(indirect_diffuse());
+        let total = if model.backdrop.is_some() {
+            model.total_diffuse(direct_plus_indirect)
+        } else {
+            backdrop_blend(material, direct_plus_indirect)
+        };
+        fragment.push(total_diffuse().assign(total));
         fragment.push(total_specular().assign(direct_specular().add(indirect_specular())));
         fragment.push(outgoing_light().assign(total_diffuse().add(total_specular())));
         // `LightingModel.finish()`, which `NodeMaterial.setupLighting()` runs

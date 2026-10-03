@@ -1949,7 +1949,12 @@ impl NodeBuilder {
                         // `select( f, t, cond )`'s condition is a bool, and the
                         // MaterialX helpers pass their own already-typed
                         // operands; nothing here is widened.
-                        "select" | "step" | "fract" | "sqrt" | "abs" => self.generate(a),
+                        "select" | "fract" | "sqrt" | "abs" => self.generate(a),
+                        // `MathNode.generate()` builds both of `step`'s
+                        // operands at the input type, so a scalar edge
+                        // widens: `step( vec3<f32>( 0.5 ), base )` in
+                        // `blendOverlay` — WGSL has no mixed overload.
+                        "step" => self.format(a, input_ty),
                         // `BitcastNode` builds its operand as it stands; the
                         // result type is the cast's, not the input's.
                         n if n.starts_with("bitcast<") => self.generate(a),

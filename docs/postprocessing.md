@@ -673,6 +673,7 @@ Divergences, each noted where it lives:
 - `AfterImageNode` keeps last frame's output with the render target's
   previous-texture swap from `webgpu_postprocessing_difference`. It does not
   copy.
-- `hashBlur` over `viewportSharedTexture()` (`webgpu_backdrop_area`) needs a
-  viewport texture the port does not have yet. `hash_blur_with` takes any tap,
-  so that page can pass one once the texture exists.
+- `hashBlur` over `viewportSharedTexture()` (`webgpu_backdrop_area`) passes
+  the viewport texture tap to `hash_blur_with`, and its WGSL gate compares
+  three's loop exactly. The texture and the copy behind it are in
+  `docs/nodes.md` §61.
