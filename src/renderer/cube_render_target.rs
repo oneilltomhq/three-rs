@@ -1,6 +1,6 @@
-//! Port of `three.js/src/renderers/common/CubeRenderTarget.js` —
-//! `fromEquirectangularTexture()` only, which is the one arm this ladder
-//! reaches.
+//! Port of `three.js/src/renderers/common/CubeRenderTarget.js`: the target
+//! itself, which [`CubeCamera`](crate::cameras::CubeCamera) renders into, and
+//! `fromEquirectangularTexture()`.
 //!
 //! `CubeMapNode.updateBefore()` takes it whenever a material's or a scene's
 //! environment is a `Texture` with `EquirectangularReflectionMapping`: the
@@ -52,6 +52,55 @@ pub(crate) const FACES: [([f64; 3], [f64; 3]); 6] = [
 /// cube face needs under WebGPU's top-left texture origin, expressed as a
 /// frustum with `top < bottom`.
 pub(crate) const FOV: f64 = -90.0;
+
+/// `new CubeRenderTarget( size, { type } )` — the cube a
+/// [`CubeCamera`](crate::cameras::CubeCamera) draws its six faces into.
+///
+/// `texture` is three's `cubeRenderTarget.texture`: a [`CubeTexture`] with
+/// no mipmaps and `LinearFilter` both ways, the defaults three's descriptor
+/// dump of `webgpu_sky` shows (`mipLevelCount: 1`). It is what a material's
+/// `envMap` takes.
+///
+/// Three renders each face straight into a layer of the cube; the port has no
+/// layered colour attachment, so the target also owns one 2-D render target
+/// of the same size and type, with a depth buffer (`depthBuffer` defaults to
+/// `true`), which each face is drawn into and then copied out of — see the
+/// module comment.
+#[derive(Clone, Debug)]
+pub struct CubeRenderTarget {
+    /// `cubeRenderTarget.texture`.
+    pub texture: CubeTexture,
+    pub(crate) face: RenderTarget,
+}
+
+impl CubeRenderTarget {
+    /// `new CubeRenderTarget( size, { type: textureType } )`.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::UnsupportedTextureType`] if `texture_type` is not a colour
+    /// type.
+    pub fn new(size: u32, texture_type: TextureType) -> Result<Self, Error> {
+        let texture = CubeTexture::render_target(size, texture_type);
+        let face = RenderTarget::new_with_options(
+            size,
+            size,
+            RenderTargetOptions {
+                texture_type,
+                samples: 0,
+                depth_buffer: true,
+                min_filter: TextureFilter::Linear,
+                mag_filter: TextureFilter::Linear,
+            },
+        )?;
+        Ok(Self { texture, face })
+    }
+
+    /// `cubeRenderTarget.width` — the side of every face.
+    pub fn size(&self) -> u32 {
+        self.texture.size().0
+    }
+}
 
 /// `new CubeRenderTarget( texture.image.height ).fromEquirectangularTexture(
 /// renderer, texture )`.
