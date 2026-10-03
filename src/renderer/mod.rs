@@ -58,7 +58,7 @@ use crate::nodes::node::{BufferSource, TextureSource};
 use crate::nodes::tsl::FogNode;
 use crate::nodes::tsl::StorageArray;
 use crate::nodes::wgsl::TextureKind;
-use crate::nodes::{BindingDesc, ComputeFlow, NodeBuilder, NodeProgram, NodeRef, Type};
+use crate::nodes::{BindingDesc, ComputeFlow, NodeBuilder, NodeProgram, Type};
 use crate::objects::{
     Background, InstanceData, InstancedBufferAttribute, QuadMesh, Scene, SceneFog, SubDraw,
 };
