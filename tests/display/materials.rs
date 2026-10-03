@@ -6,11 +6,11 @@
 use three_rs::materials::{quad_vertex_node, render_output, MeshBasicNodeMaterial};
 use three_rs::nodes::display::{
     after_image, box_blur, dot_screen, fxaa, gaussian_blur, hash_blur, motion_blur,
-    pixelation_pass, rgb_shift, sobel, BoxBlurOptions, GaussianBlurOptions, HashBlurOptions,
+    pixelation_pass, rgb_shift, sobel, traa, BoxBlurOptions, GaussianBlurOptions, HashBlurOptions,
 };
 use three_rs::nodes::tsl::{distance, float, screen_uv, texture_uv, uniform_value, uv, vec4_join};
 use three_rs::nodes::Type;
-use three_rs::textures::Texture;
+use three_rs::textures::{DepthTexture, Texture};
 use three_rs::ToneMapping;
 
 /// One quad: the name the gate reports it by, the three.js dump file it is
@@ -168,6 +168,25 @@ pub fn display_quads() -> Vec<DisplayQuad> {
             ToneMapping::None,
         ),
     ));
+
+    // webgpu_postprocessing_traa `m05`: `traa( scenePass.getTextureNode(
+    // 'output' ), …( 'depth' ), …( 'velocity' ), camera )`'s resolve quad,
+    // `TRAA.resolve`, whose `colorNode` is the whole resolve.
+    let traa = traa(
+        &input(),
+        &DepthTexture::new(),
+        &input(),
+        std::rc::Rc::new(std::cell::RefCell::new(three_rs::PerspectiveCamera::new(
+            70.0, 1.0, 0.1, 10.0,
+        ))),
+    );
+    let mut resolve = traa.quad_material().clone();
+    resolve.vertex_node = Some(quad_vertex_node());
+    quads.push(DisplayQuad {
+        label: "traa",
+        fixture: "webgpu_postprocessing_traa_m05_traa_resolve.wgsl",
+        material: resolve,
+    });
 
     quads
 }
