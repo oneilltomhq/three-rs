@@ -185,6 +185,10 @@ mod webgpu_postprocessing_sobel;
 #[allow(dead_code)]
 mod webgpu_postprocessing_afterimage;
 
+#[path = "../../examples/webgpu_refraction.rs"]
+#[allow(dead_code)]
+mod webgpu_refraction;
+
 #[path = "../../examples/webgpu_tsl_earth.rs"]
 #[allow(dead_code)]
 mod webgpu_tsl_earth;
@@ -1436,6 +1440,60 @@ fn webgpu_tsl_earth() {
         out.display()
     );
     steady_frame(name, &mut app, webgpu_tsl_earth::animate, |app| {
+        app.renderer.device()
+    });
+}
+
+/// `viewportSharedTexture()` / `viewportSafeUV()` as a `backdropNode`: a
+/// transparent plane across a Phong box that shows the frame behind it,
+/// offset by a normal map, except where the offset would pull in what is in
+/// front of it. The renderer copies the colour and depth attachments between
+/// the opaque walls and the plane (#169).
+///
+/// Not graded: three.js itself scores 0.344% (344 pixels) against its own
+/// `webgpu_refraction.jpg` on this machine, over the 0.1% limit; the port
+/// scores 336. Against three's own frame here (`tools/dump-webgpu.mjs`'
+/// `actual_full.png`) 13 pixels differ by more than 2 of 255. See
+/// `docs/webgpu_refraction-progress.md`.
+#[test]
+#[ignore = "three.js itself fails its own reference for this page on this machine"]
+fn webgpu_refraction() {
+    let name = "webgpu_refraction";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_refraction::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_refraction::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_refraction::animate, |app| {
         app.renderer.device()
     });
 }
@@ -5400,6 +5458,7 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_tsl_halftone);
     rung!(webgpu_tsl_earth);
     rung!(webgpu_mirror);
+    rung!(webgpu_refraction);
     rung!(webgpu_multiple_rendertargets);
     rung!(webgpu_multiple_rendertargets_readback);
 }

@@ -20,9 +20,14 @@
 
 #[path = "display/materials.rs"]
 mod materials;
+#[path = "../examples/webgpu_refraction.rs"]
+#[allow(dead_code)]
+mod webgpu_refraction;
 
 use std::collections::BTreeMap;
 
+use three_rs::lights::LightKind;
+use three_rs::materials::phong::LightDesc;
 use three_rs::materials::{setup, SetupContext};
 use three_rs::nodes::NodeBuilder;
 
@@ -284,6 +289,34 @@ fn pixelation_matches_three() {
 #[test]
 fn box_blur_loops_match_three() {
     check("box_blur", Region::Loop);
+}
+
+/// Not a display node but the screen reads they share (#169): the
+/// refractor's `backdropNode` — `viewportSharedTexture( viewportSafeUV(
+/// screenUV + offset ) )`, with `viewportSafeUV`'s depth load and
+/// `linearDepth` compare — blended in by `LightsNode` under the page's four
+/// point lights.
+#[test]
+fn refraction_backdrop_matches_three() {
+    let floor_normal = three_rs::Texture::new(2, 2, Some(vec![0; 16]));
+    let material = webgpu_refraction::refractor_material(&floor_normal);
+    let ctx = SetupContext {
+        lights: (0..4)
+            .map(|index| LightDesc {
+                index,
+                kind: LightKind::Point,
+                shadow_map: None,
+            })
+            .collect(),
+        ..SetupContext::default()
+    };
+    let program = NodeBuilder::new().build(&setup(&material, &ctx, None));
+    let ours = fingerprint(&program.fragment_wgsl, Region::Body);
+    let three = fingerprint(
+        &fixture("webgpu_refraction_m06_refractor.wgsl"),
+        Region::Body,
+    );
+    assert_eq!(ours, three, "\n{}", program.fragment_wgsl);
 }
 
 #[test]

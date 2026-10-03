@@ -41,6 +41,10 @@ mod display_materials;
 #[allow(dead_code)]
 mod webgpu_instance_path;
 
+#[path = "webgpu_refraction.rs"]
+#[allow(dead_code)]
+mod webgpu_refraction;
+
 #[path = "webgpu_tsl_earth.rs"]
 #[allow(dead_code)]
 mod webgpu_tsl_earth;
@@ -2104,6 +2108,29 @@ fn main() {
     dump_deferred();
     dump_instance_path();
     dump_modifier_curve();
+    dump_refraction();
+}
+
+/// Rung `webgpu_refraction`: the refractor's `MeshBasicNodeMaterial` with a
+/// `backdropNode` of `viewportSharedTexture( viewportSafeUV( … ) )`, under
+/// the page's four point lights, against `dump-refraction/m06`.
+fn dump_refraction() {
+    let floor_normal = Texture::new(2, 2, Some(vec![0; 16]));
+    let material = webgpu_refraction::refractor_material(&floor_normal);
+    show(
+        "refraction_refractor",
+        &material,
+        SetupContext {
+            lights: (0..4)
+                .map(|index| LightDesc {
+                    index,
+                    kind: LightKind::Point,
+                    shadow_map: None,
+                })
+                .collect(),
+            ..SetupContext::default()
+        },
+    );
 }
 
 /// Rung `webgpu_modifier_curve`: the text's `Flow`-bent
