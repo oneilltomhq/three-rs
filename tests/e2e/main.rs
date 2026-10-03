@@ -1903,6 +1903,10 @@ fn webgpu_postprocessing_motion_blur() {
         result.num_different_pixels,
         out.display()
     );
+    // The draw calls and triangles the README's graded table records.
+    let info = app.renderer.info();
+    println!("{name}: info {info:?}");
+
     steady_frame(
         name,
         &mut app,

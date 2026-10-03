@@ -5,7 +5,8 @@
 //! `WeakMap`, which holds each object's previous `matrixWorld` and each
 //! camera's previous view and projection — is [`VelocityState`], which lives in
 //! the renderer-owned [`NodeFrameState`](crate::nodes::NodeFrameState)
-//! (decision 1 of issue #154: the frame owns the history, not the node).
+//! (issue #154, decision 1, option C: the frame owns the history, not the
+//! node).
 //!
 //! # When the history moves
 //!
