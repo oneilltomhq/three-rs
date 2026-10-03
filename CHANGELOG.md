@@ -19,6 +19,24 @@ have their own sections after the release they ship with. The format follows [Ke
 - **`tsl::to_var_intent()`**, the assigned form of three's `toVarIntent()`.
   It is a function-scope `var` declared where it is first built. See
   `docs/nodes.md` §59.
+- **`LightProbe`**, a light holding nine spherical-harmonic coefficients
+  (`SphericalHarmonics3`) that adds `getShIrradianceAt( normalWorld )` to a
+  lit material's irradiance and nothing to its radiance, through the same
+  `setupLight` funnel as the other lights, so Standard, Physical, Phong,
+  Lambert, Toon and custom lighting models all take it. The coefficients ride
+  a per-draw uniform array premultiplied by the intensity, so changing them
+  rebuilds nothing. `tsl::get_sh_irradiance_at` is the TSL function.
+- **`addons::lights::LightProbeGenerator`**: `from_cube_texture` projects an
+  RGBA8 `CubeTexture`'s decoded faces on the CPU, `from_cube_render_target`
+  reads a rendered cube back (RGBA8 or half float) and projects that. Both
+  are checked against three's own `LightProbeGenerator.js`, the first under
+  node (`tools/light_probe_generator_reference.mjs`), the second against the
+  first on the same environment.
+- **`addons::helpers::LightProbeHelper`**, a sphere showing a probe's
+  irradiance over π.
+- Rungs `webgpu_lightprobe` and `webgpu_lightprobe_cubecamera`. The second
+  is native only for now: its readback blocks, which the browser cannot do,
+  so `tools/web_gate.skip` (new) lists it.
 - **Screen reads** (#169): `viewportSharedTexture`, `viewportTexture`,
   `viewportDepthTexture`, `viewportLinearDepth` and `viewportSafeUV`, the
   `screenSize` and `screenCoordinate` scopes, and the `cameraNear` and
@@ -35,6 +53,10 @@ have their own sections after the release they ship with. The format follows [Ke
 
 ### Changed
 
+- **`InstancedBufferAttribute.array` is private**, read through `array()` and
+  written through `array_mut()`, which bumps the new `version()`;
+  `set_needs_update()` and `id()` join them. `set_matrix_at` / `set_color_at`
+  bump the version when they change a value. (#89)
 - `step()` builds both operands at the wider type, as `MathNode` does, so a
   scalar edge against a vector emits `step( vec3<f32>( 0.5 ), x )`.
 - `hashBlur`'s WGSL gate compares three's loop exactly. It now blurs
@@ -47,6 +69,15 @@ have their own sections after the release they ship with. The format follows [Ke
 
 ### Fixed
 
+- A `HemisphereLight` with no `AmbientLight` beside it no longer has its
+  irradiance overwritten with zero before the Phong, Lambert and Toon models
+  read it.
+- An `InstancedMesh`'s `instanceMatrix` and `instanceColor` are no longer
+  written to the GPU on every draw: each attribute keeps one buffer and is
+  re-written only when its version moves, and each write counts in
+  `info.build.buffers_written`. The render list no longer copies the arrays
+  each frame either. A still 131072-instance mesh goes from about 25 ms a
+  frame to about 3 ms (`benches/instanced_mesh.rs`). (#89)
 - A lit `MeshBasicNodeMaterial` zeroes `indirectDiffuse` before it adds to
   it, as `BasicLightingModel` does.
 

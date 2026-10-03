@@ -66,8 +66,8 @@ impl CubeCamera {
     /// `cubeCamera.update( renderer, scene )` — render `scene` once per face
     /// into the render target's cube.
     ///
-    /// The renderer's current render target is restored afterwards, as three
-    /// restores it. Each face is drawn into the target's 2-D face buffer and
+    /// The renderer's current render target and MRT are restored afterwards,
+    /// as three restores them (`setMRT( null )` for the capture). Each face is drawn into the target's 2-D face buffer and
     /// copied into its layer (`renderer.setRenderTarget( renderTarget, i )`
     /// in three); the cube carries no mipmaps unless it was made with them,
     /// and then they are regenerated after the last face, which is when
@@ -79,6 +79,8 @@ impl CubeCamera {
         }
 
         let current_render_target = renderer.render_target();
+        let current_mrt = renderer.mrt();
+        renderer.set_mrt(None);
         renderer.set_render_target(Some(self.render_target.face.clone()));
 
         for (layer, camera) in self.cameras.iter_mut().enumerate() {
@@ -97,5 +99,6 @@ impl CubeCamera {
         }
 
         renderer.set_render_target(current_render_target);
+        renderer.set_mrt(current_mrt);
     }
 }

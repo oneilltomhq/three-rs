@@ -1,14 +1,14 @@
 //! The `Payload::Light` half of every light: what `AmbientLight`,
-//! `PointLight`, `SpotLight`, `DirectionalLight` and `HemisphereLight` add to
-//! `Object3D`.
+//! `PointLight`, `SpotLight`, `DirectionalLight`, `HemisphereLight` and
+//! `LightProbe` add to `Object3D`.
 //!
-//! One struct covers all five because the renderer's light list is uniform —
+//! One struct covers all six because the renderer's light list is uniform —
 //! `LightsNode.setupLights()` switches on the light's type, which `kind`
 //! records.
 
 use super::{Light, LightShadow};
 use crate::core::{Node, Object3D};
-use crate::math::{Color, Matrix4, Vector3};
+use crate::math::{Color, Matrix4, SphericalHarmonics3, Vector3};
 use crate::objects::Payload;
 
 /// Which `Light` subclass this is. `LightsNode` sorts and sets up lights by
@@ -26,6 +26,9 @@ pub enum LightKind {
     Directional,
     /// `HemisphereLight`.
     Hemisphere,
+    /// `LightProbe` — irradiance from nine spherical-harmonic coefficients,
+    /// added to `irradiance` like an ambient light and never a direct term.
+    Probe,
 }
 
 /// `class <X>Light extends Light extends Object3D`, minus the `Object3D` half
@@ -46,6 +49,9 @@ pub struct LightObject {
     pub penumbra: f64,
     /// `HemisphereLight.groundColor`.
     pub ground_color: Color,
+    /// `LightProbe.sh` — the probe's irradiance as order-2 spherical
+    /// harmonics. All zero, and unread, on every other kind.
+    pub sh: SphericalHarmonics3,
     /// `SpotLight.target` / `DirectionalLight.target` — an `Object3D` at the
     /// origin by default, never added to the scene, so its `matrixWorld` is
     /// just its local matrix.
@@ -71,6 +77,7 @@ impl Clone for LightObject {
             angle: self.angle,
             penumbra: self.penumbra,
             ground_color: self.ground_color,
+            sh: self.sh,
             target: self.target.as_ref().map(|t| t.borrow().clone().into_node()),
             cast_shadow: self.cast_shadow,
             shadow: self.shadow.clone(),
@@ -88,6 +95,7 @@ impl LightObject {
             angle: std::f64::consts::FRAC_PI_3,
             penumbra: 0.0,
             ground_color: Color::new(0.0, 0.0, 0.0),
+            sh: SphericalHarmonics3::default(),
             target: None,
             cast_shadow: false,
             shadow: None,
@@ -100,6 +108,15 @@ impl LightObject {
         let c = self.light.color;
         let i = self.light.intensity;
         Color::new(c.r * i, c.g * i, c.b * i)
+    }
+
+    /// `LightProbeNode.update()`: each coefficient times the intensity,
+    /// padded to the `vec4` a `uniformArray()` element occupies.
+    pub(crate) fn sh_intensity(&self) -> [[f32; 4]; 9] {
+        let i = self.light.intensity;
+        self.sh
+            .coefficients
+            .map(|c| [(c.x * i) as f32, (c.y * i) as f32, (c.z * i) as f32, 0.0])
     }
 
     /// `cos( light.angle )` — `SpotLightNode.update()`.
@@ -258,5 +275,52 @@ impl DirectionalLight {
         let node = into_node("DirectionalLight", light);
         node.borrow_mut().position.set(0.0, 1.0, 0.0);
         node
+    }
+}
+
+/// `class LightProbe extends Light`.
+///
+/// A probe holds the irradiance of an environment as nine spherical-harmonic
+/// coefficients (see [`SphericalHarmonics3`]) and lights a material by
+/// `LightProbeNode`: `irradiance += getShIrradianceAt( normalWorld, sh *
+/// intensity )`. It has no direction, no shadow, and its position is not
+/// read by the lighting — only `LightProbeHelper` honours it.
+pub struct LightProbe;
+
+impl LightProbe {
+    /// `new LightProbe( sh = new SphericalHarmonics3(), intensity = 1 )`. The
+    /// colour is `Light`'s default, white; `LightProbeNode` never reads it.
+    #[allow(clippy::new_ret_no_self)] // `new` mirrors three.js's constructor and returns a scene-graph `Node`, not `Self`; public API, not changing.
+    pub fn new(sh: SphericalHarmonics3, intensity: f64) -> Node {
+        let mut light = LightObject::base(LightKind::Probe, Color::default(), intensity);
+        light.sh = sh;
+        into_node("LightProbe", light)
+    }
+
+    /// `lightProbe.copy( source )`'s `Light` half: the colour, the intensity
+    /// and `sh.copy( source.sh )`.
+    ///
+    /// Three's `copy()` also runs `Object3D.copy()`, which the port has no
+    /// general form of; `webgpu_lightprobe` copies a probe straight from
+    /// `LightProbeGenerator`, which sits at the origin untransformed, and then
+    /// sets the position itself, so the transform is left as it is here.
+    ///
+    /// # Panics
+    ///
+    /// If either node is not a light.
+    pub fn copy(target: &Node, source: &Node) {
+        let (light, sh) = {
+            let source = source.borrow();
+            let source = source
+                .light()
+                .expect("three-rs: LightProbe::copy reads a light");
+            (source.light.clone(), source.sh)
+        };
+        let mut target = target.borrow_mut();
+        let target = target
+            .light_mut()
+            .expect("three-rs: LightProbe::copy writes a light");
+        target.light = light;
+        target.sh = sh;
     }
 }

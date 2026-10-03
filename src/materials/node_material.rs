@@ -1147,9 +1147,19 @@ fn setup_phong(
 
         // `AmbientLightNode` sorts first in `LightsNode`'s list, and its
         // `irradiance.addAssign()` is what forces `irradiance = vec3( 0 )` up
-        // here rather than down in the indirect tail.
+        // here rather than down in the indirect tail. A hemisphere light or a
+        // probe adds to `irradiance` from inside the loop, so it needs the
+        // zero up here too — after the loop it would wipe what they added.
+        let irradiance_lights = lights.iter().any(|light| {
+            matches!(
+                light.kind,
+                LightKind::Ambient | LightKind::Hemisphere | LightKind::Probe
+            )
+        });
         if !ambient.is_empty() {
             phong::ambient_lights(&ambient, fragment);
+        } else if irradiance_lights {
+            fragment.push(irradiance().assign(vec3(0.0, 0.0, 0.0)));
         }
 
         fragment.push(direct_diffuse().assign(vec3(0.0, 0.0, 0.0)));
@@ -1181,7 +1191,7 @@ fn setup_phong(
 
         // The tail every lit material shares.
         fragment.push(indirect_diffuse().assign(vec3(0.0, 0.0, 0.0)));
-        if ambient.is_empty() {
+        if !irradiance_lights {
             fragment.push(irradiance().assign(vec3(0.0, 0.0, 0.0)));
         }
         fragment.push(

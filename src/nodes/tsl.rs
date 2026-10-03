@@ -4162,6 +4162,81 @@ impl UniformArray {
     }
 }
 
+/// `uniformArray( array )` over a `Vector3` array the application keeps
+/// changing — `LightProbeHelper`'s `uniformArray( lightProbe.sh.coefficients
+/// )`. `read` returns the elements already padded, four floats each, and is
+/// called every draw; `count` is the element count the WGSL declares.
+pub(crate) fn uniform_array_live(
+    count: usize,
+    read: impl Fn() -> Vec<f64> + 'static,
+) -> UniformArray {
+    UniformArray(Rc::new(BufferNode {
+        id: crate::nodes::node::BufferId::next(),
+        source: BufferSource::Live(crate::nodes::node::LiveValue::new(read)),
+        element_ty: Type::Vec4,
+        count,
+    }))
+}
+
+/// `LightProbeNode.lightProbe` — the nine coefficients, times the light's
+/// intensity, of the probe at `index` of the renderer's light list.
+pub(crate) fn light_probe_sh(index: usize) -> UniformArray {
+    UniformArray(Rc::new(BufferNode {
+        id: crate::nodes::node::BufferId::next(),
+        source: BufferSource::LightProbe(index),
+        element_ty: Type::Vec4,
+        count: 9,
+    }))
+}
+
+/// `getShIrradianceAt( normal, shCoefficients )` — the irradiance an order-2
+/// spherical-harmonic environment delivers to a surface facing `normal`,
+/// which is assumed unit length.
+///
+/// Ramamoorthi and Hanrahan's quadratic form, "An Efficient Representation
+/// for Irradiance Environment Maps", equation 13: the Lambert cosine lobe is
+/// already folded into the constants (`0.886227 = π · 0.282095`,
+/// `1.023328 = 2π/3 · 0.488603`, …), so the sum is irradiance, not radiance
+/// — the same as [`SphericalHarmonics3::get_irradiance_at`](crate::math::SphericalHarmonics3::get_irradiance_at)
+/// on the CPU. The products are built in three's order, `c · k · x · y`, and
+/// the `2.0 * …` constants are folded the way JavaScript folds them, so the
+/// WGSL is three's character for character.
+pub fn get_sh_irradiance_at(normal: NodeRef, sh: &UniformArray) -> NodeRef {
+    let (x, y, z) = (normal.x(), normal.y(), normal.z());
+
+    // band 0
+    let mut result = sh.element(0).mul(0.886227);
+
+    // band 1
+    result = result.add(sh.element(1).mul(2.0 * 0.511664).mul(y.clone()));
+    result = result.add(sh.element(2).mul(2.0 * 0.511664).mul(z.clone()));
+    result = result.add(sh.element(3).mul(2.0 * 0.511664).mul(x.clone()));
+
+    // band 2
+    result = result.add(
+        sh.element(4)
+            .mul(2.0 * 0.429043)
+            .mul(x.clone())
+            .mul(y.clone()),
+    );
+    result = result.add(
+        sh.element(5)
+            .mul(2.0 * 0.429043)
+            .mul(y.clone())
+            .mul(z.clone()),
+    );
+    result = result.add(
+        sh.element(6)
+            .mul(z.mul(z.clone()).mul(0.743125).sub(0.247708)),
+    );
+    result = result.add(sh.element(7).mul(2.0 * 0.429043).mul(x.clone()).mul(z));
+    result.add(
+        sh.element(8)
+            .mul(0.429043)
+            .mul(x.mul(x.clone()).sub(y.mul(y.clone()))),
+    )
+}
+
 fn buffer_element(source: BufferSource, element_ty: Type, count: usize, index: NodeRef) -> NodeRef {
     NodeRef::new(Node::BufferElement {
         buffer: Rc::new(BufferNode {
