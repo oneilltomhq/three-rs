@@ -172,8 +172,8 @@ pub use geometries::{
 };
 pub use helpers::{CameraHelper, GridHelper};
 pub use lights::{
-    AmbientLight, DirectionalLight, HemisphereLight, Light, LightKind, LightObject, LightShadow,
-    PointLight, ShadowCamera, SpotLight,
+    AmbientLight, DirectionalLight, HemisphereLight, Light, LightKind, LightObject, LightProbe,
+    LightShadow, PointLight, ShadowCamera, SpotLight,
 };
 pub use loaders::{
     BufferGeometryLoader, CubeTextureLoader, HdrCubeTextureLoader, HdrLoader, Ktx2Loader,

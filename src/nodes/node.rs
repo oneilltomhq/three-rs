@@ -705,6 +705,19 @@ pub enum BufferSource {
     /// skeleton's `OnObjectUpdate` (`skeleton.update()`, once per frame) runs
     /// when the buffer is written.
     SkeletonBoneMatrices(SkeletonRef),
+    /// `LightProbeNode.lightProbe` — `uniformArray( 9 × Vector3 )` holding the
+    /// probe at this index of the renderer's light list, each coefficient
+    /// already multiplied by `light.intensity` (`LightProbeNode.update()`).
+    /// One `vec4` per coefficient, rewritten per draw like
+    /// [`BufferSource::MorphInfluences`], because the probe can change between
+    /// frames while the program does not.
+    LightProbe(usize),
+    /// `uniformArray( values )` over an array the application keeps changing
+    /// — `LightProbeHelper`'s `uniformArray( lightProbe.sh.coefficients )`,
+    /// which shares the probe's own `Vector3`s. The reader returns the
+    /// elements already padded to four floats each; the buffer is rewritten
+    /// per draw. Compares by identity, as [`UniformSource::Live`] does.
+    Live(LiveValue),
 }
 
 impl BufferSource {
@@ -1942,6 +1955,8 @@ impl std::hash::Hash for BufferSource {
             BufferSource::SkeletonBoneMatrices(skeleton) => {
                 (Rc::as_ptr(&skeleton.0) as *const u8 as usize).hash(state)
             }
+            BufferSource::LightProbe(index) => index.hash(state),
+            BufferSource::Live(value) => value.hash(state),
             BufferSource::InstanceMatrix
             | BufferSource::InstanceColor
             | BufferSource::MorphInfluences
@@ -2027,6 +2042,8 @@ impl std::fmt::Debug for BufferSource {
                 .debug_tuple("SkeletonBoneMatrices")
                 .field(&format_args!("{} bones", skeleton.0.borrow().bones.len()))
                 .finish(),
+            BufferSource::LightProbe(index) => f.debug_tuple("LightProbe").field(index).finish(),
+            BufferSource::Live(value) => f.debug_tuple("Live").field(value).finish(),
         }
     }
 }

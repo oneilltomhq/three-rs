@@ -2137,6 +2137,7 @@ impl Renderer {
                     shadow_blur_samples: shadow.map_or(8.0, |s| s.blur_samples as f64),
                     shadow_map_size: shadow.map_or(Vector2::new(512.0, 512.0), |s| s.map_size),
                     shadow_intensity: shadow.map_or(1.0, |s| s.intensity),
+                    sh: light.sh_intensity(),
                 }
             })
             .collect();
@@ -4627,6 +4628,30 @@ impl Renderer {
         if let BufferSource::SkeletonBoneMatrices(skeleton) = source {
             return self.skeleton_bone_buffer(slot, skeleton, count);
         }
+        // `LightProbeNode.lightProbe` — the probe's coefficients times its
+        // intensity, which `LightProbeNode.update()` copies in every frame.
+        if let BufferSource::LightProbe(index) = source {
+            let sh = uniforms.lights.get(*index).map_or([[0.0; 4]; 9], |l| l.sh);
+            return self.slot_buffer(
+                slot,
+                "three-rs lightProbe",
+                bytemuck::cast_slice(&sh),
+                wgpu::BufferUsages::UNIFORM,
+            );
+        }
+        // A `uniformArray()` over an array the application changes, read now.
+        if let BufferSource::Live(value) = source {
+            let mut data = vec![0f32; count * 4];
+            for (out, v) in data.iter_mut().zip(value.get()) {
+                *out = v as f32;
+            }
+            return self.slot_buffer(
+                slot,
+                "three-rs live uniformArray",
+                bytemuck::cast_slice(&data),
+                wgpu::BufferUsages::UNIFORM,
+            );
+        }
         if let BufferSource::MorphInfluences = source {
             // `uniformArray( influences, 'float' )`: one `vec4` per target with
             // the influence in `.x`, so 16 bytes each — not 4. Re-written per
@@ -4802,6 +4827,8 @@ impl Renderer {
     ) -> Serial<wgpu::Buffer> {
         match source {
             BufferSource::MorphInfluences
+            | BufferSource::LightProbe(_)
+            | BufferSource::Live(_)
             | BufferSource::BoneMatrices
             | BufferSource::CameraViewMatrices
             | BufferSource::CameraProjectionMatrices
