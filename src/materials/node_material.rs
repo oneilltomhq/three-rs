@@ -1138,7 +1138,9 @@ fn setup_phong(
             fragment.push(direct_specular().assign(vec3(0.0, 0.0, 0.0)));
         }
         for light in &lights {
-            if light.kind == LightKind::Ambient {
+            // A hemisphere light is indirect: it adds to `irradiance` in the
+            // tail below, after every direct light, as three's dump has it.
+            if matches!(light.kind, LightKind::Ambient | LightKind::Hemisphere) {
                 continue;
             }
             // `ToonLightingModel` is Lambert with its own `direct()`; the
@@ -1161,9 +1163,30 @@ fn setup_phong(
         }
 
         // The tail every lit material shares.
-        fragment.push(indirect_diffuse().assign(vec3(0.0, 0.0, 0.0)));
-        if ambient.is_empty() {
-            fragment.push(irradiance().assign(vec3(0.0, 0.0, 0.0)));
+        //
+        // `HemisphereLightNode`'s `irradiance.addAssign()` is the first read
+        // of `irradiance` when no ambient light declared it, so the zero and
+        // the sky/ground mixes come ahead of `indirectDiffuse`'s zero. With no
+        // hemisphere light the first read is the `indirectDiffuse` sum, and
+        // the zero follows `indirectDiffuse`'s.
+        let hemispheres: Vec<&LightDesc> = lights
+            .iter()
+            .filter(|light| light.kind == LightKind::Hemisphere)
+            .collect();
+        if hemispheres.is_empty() {
+            fragment.push(indirect_diffuse().assign(vec3(0.0, 0.0, 0.0)));
+            if ambient.is_empty() {
+                fragment.push(irradiance().assign(vec3(0.0, 0.0, 0.0)));
+            }
+        } else {
+            if ambient.is_empty() {
+                fragment.push(irradiance().assign(vec3(0.0, 0.0, 0.0)));
+            }
+            for light in hemispheres {
+                let none = phong::setup_light(light, None, fragment);
+                debug_assert!(none.is_none(), "three-rs: a hemisphere light is indirect");
+            }
+            fragment.push(indirect_diffuse().assign(vec3(0.0, 0.0, 0.0)));
         }
         fragment.push(
             indirect_diffuse().assign(
