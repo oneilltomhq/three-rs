@@ -40,7 +40,7 @@ use three_rs::materials::Side;
 use three_rs::nodes::display::motion_blur;
 use three_rs::nodes::mrt;
 use three_rs::nodes::tsl::{
-    distance, output_property, screen_uv, texture_uv, uniform_value, uv, vec2, vec4_join,
+    distance, float, output_property, screen_uv, texture_uv, uniform_value, uv, vec4_join,
 };
 use three_rs::nodes::velocity::velocity;
 use three_rs::nodes::{NodeRef, Type};
@@ -240,7 +240,7 @@ pub fn init() -> App {
     let m_blur = motion_blur(&beauty, vel, 16);
 
     // `screenUV.distance( .5 )`: the scalar is splatted to a `vec2`.
-    let vignette = distance(screen_uv(), vec2(0.5, 0.5))
+    let vignette = distance(screen_uv(), float(0.5))
         .remap(0.6, 1.0, 0.0, 1.0)
         .mul(2.0)
         .clamp(0.0, 1.0)

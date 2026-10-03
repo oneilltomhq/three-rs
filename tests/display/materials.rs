@@ -5,10 +5,10 @@
 
 use three_rs::materials::{quad_vertex_node, render_output, MeshBasicNodeMaterial};
 use three_rs::nodes::display::{
-    after_image, box_blur, dot_screen, fxaa, gaussian_blur, hash_blur, pixelation_pass, rgb_shift,
-    sobel, BoxBlurOptions, GaussianBlurOptions, HashBlurOptions,
+    after_image, box_blur, dot_screen, fxaa, gaussian_blur, hash_blur, motion_blur,
+    pixelation_pass, rgb_shift, sobel, BoxBlurOptions, GaussianBlurOptions, HashBlurOptions,
 };
-use three_rs::nodes::tsl::{float, texture_uv, uniform_value, uv};
+use three_rs::nodes::tsl::{distance, float, screen_uv, texture_uv, uniform_value, uv, vec4_join};
 use three_rs::nodes::Type;
 use three_rs::textures::Texture;
 use three_rs::ToneMapping;
@@ -146,6 +146,27 @@ pub fn display_quads() -> Vec<DisplayQuad> {
         "hash_blur",
         "webgpu_backdrop_area_m08_hash_blur.wgsl",
         hash_blur(&input(), float(0.05), HashBlurOptions::default()),
+    ));
+
+    // webgpu_postprocessing_motion_blur `m14`: the page's whole output node,
+    // `motionBlur( beauty, velocity.mul( blurAmount ) )` under a vignette, as
+    // the `RenderPipeline`'s output with the sRGB output transform. The two
+    // inputs are the scene pass's `output` and `velocity` attachments.
+    let beauty = input();
+    let velocity = texture_uv(&input(), uv()).mul(uniform_value(Type::F32, vec![1.0]));
+    let m_blur = motion_blur(&beauty, velocity, 16);
+    let vignette = distance(screen_uv(), float(0.5))
+        .remap(0.6, 1.0, 0.0, 1.0)
+        .mul(2.0)
+        .clamp(0.0, 1.0)
+        .one_minus();
+    quads.push(quad(
+        "motion_blur",
+        "webgpu_postprocessing_motion_blur_m14_motion_blur.wgsl",
+        render_output(
+            vec4_join(vec![m_blur.mul(vignette).xyz(), m_blur.w()]),
+            ToneMapping::None,
+        ),
     ));
 
     quads

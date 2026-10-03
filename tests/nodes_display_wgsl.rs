@@ -366,3 +366,8 @@ fn box_blur_loops_match_three() {
 fn hash_blur_loop_matches_three() {
     check("hash_blur", Region::LoopAnyTap);
 }
+
+#[test]
+fn motion_blur_matches_three() {
+    check("motion_blur", Region::Body);
+}
