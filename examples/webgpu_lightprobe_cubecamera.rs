@@ -11,7 +11,11 @@
 //! `CubeTextureLoader.load()` is asynchronous on the page, and so are
 //! `renderer.init()` and `fromCubeRenderTarget()`, but the harness only fires
 //! once the network is idle and the page has rendered, so the probe and its
-//! helper are in place for the graded frame; here it all runs inline.
+//! helper are in place for the graded frame. Here the loader and the renderer
+//! are inline and the probe is the one `await` the page keeps: `init()` is
+//! `async`, and the native callers (`main()`, the rung, the viewer) block on
+//! it, which costs them nothing because a native readback is finished by the
+//! time its future is first polled.
 //!
 //! # The light probe
 //!
@@ -22,13 +26,12 @@
 //! sphere of radius 5 at the origin, draws the probe's irradiance over π; it is
 //! the only thing in the scene the probe lights.
 //!
-//! # Not in the browser
+//! # In the browser
 //!
-//! The readback blocks, as every readback in the port does. The web shell's
-//! `init()` is synchronous, and a browser cannot block on `mapAsync()`, so
-//! the readback returns an error there and the page stops before its first
-//! frame. `tools/web_gate.skip` lists it until the shell can await something
-//! between `init()` and the graded frame.
+//! A browser cannot block on `mapAsync()`, so the web shell awaits this
+//! `init()` (its `examples!` row ends in `await`), and the six-face readback
+//! resolves on the page's event loop before the graded frame is drawn
+//! (issue #261).
 
 use three_rs::addons::controls::OrbitControls;
 use three_rs::addons::helpers::LightProbeHelper;
@@ -63,7 +66,7 @@ fn examples_dir() -> std::path::PathBuf {
     three_rs::testing::three_js_dir().join("examples")
 }
 
-pub fn init() -> App {
+pub async fn init() -> App {
     // renderer
     let mut parameters = RendererParameters::default();
     parameters.antialias = true;
@@ -104,10 +107,11 @@ pub fn init() -> App {
 
     cube_camera.update(&mut renderer, &mut scene);
 
-    let probe = LightProbeGenerator::from_cube_render_target(
+    let probe = LightProbeGenerator::from_cube_render_target_async(
         &mut renderer,
         &cube_camera.render_target.texture,
     )
+    .await
     .unwrap();
 
     LightProbe::copy(&light_probe, &probe);
@@ -152,12 +156,15 @@ pub fn controls_and_camera(app: &mut App) -> Option<(&mut OrbitControls, &mut Pe
     Some((&mut app.controls, &mut app.camera))
 }
 
+// Native only: the web shell includes this file as a module and awaits
+// `init()` itself, and `pollster` is not among its dependencies.
+#[cfg(not(target_arch = "wasm32"))]
 fn main() {
     // Pin both clocks to zero, as three.js' `test/e2e/deterministic-injection.js`
     // does to the page, so that the frame this writes is the frame the rung
     // grades no matter how long `init()` took.
     three_rs::testing::pin_time(Some(0.0));
-    let mut app = init();
+    let mut app = pollster::block_on(init());
     println!("adapter: {:?}", app.renderer.adapter_info());
     animate(&mut app);
 
