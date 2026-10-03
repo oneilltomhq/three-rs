@@ -2246,6 +2246,7 @@ impl Renderer {
                     shadow_blur_samples: shadow.map_or(8.0, |s| s.blur_samples as f64),
                     shadow_map_size: shadow.map_or(Vector2::new(512.0, 512.0), |s| s.map_size),
                     shadow_intensity: shadow.map_or(1.0, |s| s.intensity),
+                    sh: light.sh_intensity(),
                 }
             })
             .collect();
@@ -4296,11 +4297,51 @@ impl Renderer {
         layer: u32,
         mip_level: u32,
     ) -> Result<(u32, u32, Vec<f32>), Error> {
+        let (width, height, bytes) = self.read_cube_bytes(cube, layer, mip_level, |format| {
+            format == wgpu::TextureFormat::Rgba16Float
+        })?;
+        let pixels = bytes
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|half| crate::extras::from_half_float(u16::from_le_bytes(*half)))
+            .collect();
+        Ok((width, height, pixels))
+    }
+
+    /// One face of one mip level of an `UnsignedByteType` [`CubeTexture`] as
+    /// the RGBA8 bytes the GPU holds, top-down — what
+    /// `readRenderTargetPixelsAsync( cubeTarget, 0, 0, w, w, 0, faceIndex )`
+    /// resolves to. An sRGB target's bytes come back still encoded, as
+    /// three's do; `LightProbeGenerator.fromCubeRenderTarget()` decodes them.
+    pub fn read_cube_pixels_rgba8(
+        &mut self,
+        cube: &CubeTexture,
+        layer: u32,
+        mip_level: u32,
+    ) -> Result<(u32, u32, Vec<u8>), Error> {
+        self.read_cube_bytes(cube, layer, mip_level, |format| {
+            matches!(
+                format,
+                wgpu::TextureFormat::Rgba8Unorm | wgpu::TextureFormat::Rgba8UnormSrgb
+            )
+        })
+    }
+
+    /// The copy both cube readbacks share: `layer` of `mip_level`, in the
+    /// texture's own format, which `accepts` must allow.
+    fn read_cube_bytes(
+        &mut self,
+        cube: &CubeTexture,
+        layer: u32,
+        mip_level: u32,
+        accepts: impl Fn(wgpu::TextureFormat) -> bool,
+    ) -> Result<(u32, u32, Vec<u8>), Error> {
         let texture = self.ensure_cube_texture(cube);
         let format = texture.format();
-        if format != wgpu::TextureFormat::Rgba16Float {
+        if !accepts(format) {
             return Err(Error::Readback {
-                reason: format!("{format:?} is not rgba16float"),
+                reason: format!("{format:?} is not the format this readback decodes"),
             });
         }
         let size = texture.width() >> mip_level;
@@ -4312,14 +4353,7 @@ impl Renderer {
             .map_err(|e| Error::Readback {
                 reason: e.to_string(),
             })?;
-        let (width, height, bytes) = readback.finish()?;
-        let pixels = bytes
-            .as_chunks::<2>()
-            .0
-            .iter()
-            .map(|half| crate::extras::from_half_float(u16::from_le_bytes(*half)))
-            .collect();
-        Ok((width, height, pixels))
+        readback.finish()
     }
 
     /// The first half of every readback: a `MAP_READ` buffer, the copy of
@@ -4770,6 +4804,30 @@ impl Renderer {
         if let BufferSource::SkeletonBoneMatrices(skeleton) = source {
             return self.skeleton_bone_buffer(slot, skeleton, count);
         }
+        // `LightProbeNode.lightProbe` — the probe's coefficients times its
+        // intensity, which `LightProbeNode.update()` copies in every frame.
+        if let BufferSource::LightProbe(index) = source {
+            let sh = uniforms.lights.get(*index).map_or([[0.0; 4]; 9], |l| l.sh);
+            return self.slot_buffer(
+                slot,
+                "three-rs lightProbe",
+                bytemuck::cast_slice(&sh),
+                wgpu::BufferUsages::UNIFORM,
+            );
+        }
+        // A `uniformArray()` over an array the application changes, read now.
+        if let BufferSource::Live(value) = source {
+            let mut data = vec![0f32; count * 4];
+            for (out, v) in data.iter_mut().zip(value.get()) {
+                *out = v as f32;
+            }
+            return self.slot_buffer(
+                slot,
+                "three-rs live uniformArray",
+                bytemuck::cast_slice(&data),
+                wgpu::BufferUsages::UNIFORM,
+            );
+        }
         if let BufferSource::MorphInfluences = source {
             // `uniformArray( influences, 'float' )`: one `vec4` per target with
             // the influence in `.x`, so 16 bytes each — not 4. Re-written per
@@ -4938,6 +4996,8 @@ impl Renderer {
     ) -> Serial<wgpu::Buffer> {
         match source {
             BufferSource::MorphInfluences
+            | BufferSource::LightProbe(_)
+            | BufferSource::Live(_)
             | BufferSource::BoneMatrices
             | BufferSource::CameraViewMatrices
             | BufferSource::CameraProjectionMatrices

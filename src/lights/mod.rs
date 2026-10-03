@@ -1,4 +1,4 @@
-//! Ports of `three.js/src/lights`: `Light`, the five light types this port
+//! Ports of `three.js/src/lights`: `Light`, the six light types this port
 //! uses, the `LightShadow` family and `PointShadowNode`.
 
 mod light;
@@ -9,7 +9,8 @@ mod shadow_filter;
 
 pub use light::Light;
 pub use light_object::{
-    AmbientLight, DirectionalLight, HemisphereLight, LightKind, LightObject, PointLight, SpotLight,
+    AmbientLight, DirectionalLight, HemisphereLight, LightKind, LightObject, LightProbe,
+    PointLight, SpotLight,
 };
 pub use light_shadow::{LightShadow, ShadowCamera};
 pub use point_shadow::{basic_point_shadow_filter, point_shadow_filter};

@@ -207,8 +207,8 @@ pub(crate) fn shadow_node(
 }
 
 /// `LightsNode.setupLightsNode()`'s per-light half that every lighting model
-/// shares: an ambient or hemisphere light adds straight to `irradiance` and
-/// yields nothing; an analytic light yields `LightNode.setup()`'s
+/// shares: an ambient, hemisphere or probe light adds straight to
+/// `irradiance` and yields nothing; an analytic light yields `LightNode.setup()`'s
 /// `( lightDirection, lightColor )` pair — shadow factor included — for the
 /// model's `direct()`.
 pub(crate) fn setup_light(
@@ -238,6 +238,14 @@ pub(crate) fn setup_light(
             out.push(irradiance().assign(irradiance().add(value)));
             return None;
         }
+        // `LightProbeNode.setup()` — `irradiance += getShIrradianceAt(
+        // normalWorld, lightProbe )`, the coefficients already scaled by the
+        // intensity on the CPU.
+        LightKind::Probe => {
+            let value = get_sh_irradiance_at(normal_world(), &light_probe_sh(index));
+            out.push(irradiance().assign(irradiance().add(value)));
+            return None;
+        }
         _ => {}
     }
 
@@ -249,8 +257,8 @@ pub(crate) fn setup_light(
     }
 
     Some(match light.kind {
-        LightKind::Ambient | LightKind::Hemisphere => {
-            unreachable!("three-rs: the ambient and hemisphere lights are summed elsewhere")
+        LightKind::Ambient | LightKind::Hemisphere | LightKind::Probe => {
+            unreachable!("three-rs: the irradiance-only lights are summed above")
         }
         LightKind::Point => {
             let l_vector = light_view_position(index).sub(position_view());

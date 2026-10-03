@@ -102,6 +102,13 @@ not held is freed.
 - **Lights, cameras and textures** take three.js's positional constructor
   arguments and expose the rest as fields or one-line setters, for the same
   reason.
+  `LightProbe::new( sh, intensity )` returns a `Node`, as every other light
+  does, and keeps its coefficients in the light's `sh` field. The addons that
+  three.js writes as classes with static methods (`LightProbeGenerator`) are
+  unit structs with associated functions, so the call reads
+  `LightProbeGenerator::from_cube_texture( &cube )`. `CubeCamera` follows the
+  cameras: it owns a `node` and its `render_target`, and its `update()` takes
+  the renderer and the scene, as three's `update( renderer, scene )` does.
 - **Rust names throughout**, with the three.js name in the doc comment. This
   is already how the crate is written (`set_rotation`,
   `matrix_world_needs_update`, `is_mesh()`); recorded so it is not reopened.

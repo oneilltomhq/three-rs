@@ -19,6 +19,30 @@ have their own sections after the release they ship with. The format follows [Ke
 - **`tsl::to_var_intent()`**, the assigned form of three's `toVarIntent()`.
   It is a function-scope `var` declared where it is first built. See
   `docs/nodes.md` §59.
+- **`LightProbe`**, a light holding nine spherical-harmonic coefficients
+  (`SphericalHarmonics3`) that adds `getShIrradianceAt( normalWorld )` to a
+  lit material's irradiance and nothing to its radiance, through the same
+  `setupLight` funnel as the other lights, so Standard, Physical, Phong,
+  Lambert, Toon and custom lighting models all take it. The coefficients ride
+  a per-draw uniform array premultiplied by the intensity, so changing them
+  rebuilds nothing. `tsl::get_sh_irradiance_at` is the TSL function.
+- **`addons::lights::LightProbeGenerator`**: `from_cube_texture` projects an
+  RGBA8 `CubeTexture`'s decoded faces on the CPU, `from_cube_render_target`
+  reads a rendered cube back (RGBA8 or half float) and projects that. Both
+  are checked against three's own `LightProbeGenerator.js`, the first under
+  node (`tools/light_probe_generator_reference.mjs`), the second against the
+  first on the same environment.
+- **`addons::helpers::LightProbeHelper`**, a sphere showing a probe's
+  irradiance over π.
+- Rungs `webgpu_lightprobe` and `webgpu_lightprobe_cubecamera`. The second
+  is native only for now: its readback blocks, which the browser cannot do,
+  so `tools/web_gate.skip` (new) lists it.
+
+### Fixed
+
+- A `HemisphereLight` with no `AmbientLight` beside it no longer has its
+  irradiance overwritten with zero before the Phong, Lambert and Toon models
+  read it.
 
 ### Changed
 
