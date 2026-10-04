@@ -6219,15 +6219,12 @@ With a zero-alpha clear, the blend leaves a line pixel's alpha at its blend
 weight. `renderOutput`'s unpremultiply then lifts that pixel back to the
 line's full colour, and the anti-aliasing is undone.
 
-**State save and restore.** Both nodes save and then restore these:
-
-- the render target and its mip level;
-- the MRT;
-- the clear colour and alpha;
-- `auto_clear`.
-
-Three's `RendererUtils.resetRendererState()` / `restoreRendererState()` do
-the same. SMAA resizes its three targets to `drawing_buffer_size()` every
+**State save and restore.** Both nodes render inside the renderer's
+`reset_state()` scope (`src/renderer/renderer_state.rs`, #252), which is
+three's `RendererUtils.resetRendererState()`: it saves the renderer's whole
+per-render state, then clears the MRT and the render-object function, sets
+an opaque black clear colour and turns `auto_clear` on. Dropping the scope
+is `restoreRendererState()`. SMAA resizes its three targets to `drawing_buffer_size()` every
 frame. That is a no-op once the size is current.
 
 **SMAA's lookup textures.** `SMAANode.js` embeds them as base64 PNGs.
@@ -7980,9 +7977,6 @@ same order in `f64`. Changing `algorithm` or `colorMode` writes the two
 - `material.contextNode = context( builder.getSharedContext() )` on the
   composite quads. The port's quad materials build in their own context, as
   every other display node's do.
-- The full `resetRendererState()`. The port saves and restores only what a
-  stereo pass changes: the render target, MRT, render-object function, clear
-  colour and alpha, and `autoClear`.
 - `dispose()`. The targets and materials are dropped with the node.
 
 ## 82. `OITPassNode` (`webgpu_oit`)

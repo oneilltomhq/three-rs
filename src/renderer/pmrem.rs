@@ -274,8 +274,7 @@ impl PmremGenerator {
         // `CubeCamera.update()` renders with the MRT the frame had; the
         // PMREM passes are one attachment, so it is cleared for them the way
         // `fromEquirectangularTexture` clears it.
-        let previous_mrt = renderer.mrt();
-        let previous_target = renderer.render_target();
+        let mut renderer = renderer.save_state();
         renderer.set_mrt(None);
         renderer.set_render_target(Some(face_target.clone()));
 
@@ -295,8 +294,6 @@ impl PmremGenerator {
             renderer.copy_to_cube_layer(&face_target, target, layer as u32, lod);
         }
 
-        renderer.set_render_target(previous_target);
-        renderer.set_mrt(previous_mrt);
         Ok(())
     }
 
@@ -345,22 +342,18 @@ impl PmremGenerator {
         let pmrem = render_target.unwrap_or_else(|| allocate_target(self.cube_size));
         let source = self.source_target(true);
 
-        let auto_clear = (
-            renderer.auto_clear,
-            renderer.auto_clear_color,
-            renderer.auto_clear_depth,
-        );
-        renderer.auto_clear = true;
-        renderer.auto_clear_color = true;
-        renderer.auto_clear_depth = true;
+        let mut capture = renderer.save_state();
+        capture.auto_clear = true;
+        capture.auto_clear_color = true;
+        capture.auto_clear_depth = true;
 
         let background = scene.background.clone();
         if background.is_none() {
-            scene.background = Some(Background::Color(renderer.clear_color()));
+            scene.background = Some(Background::Color(capture.clear_color()));
         }
 
         let result = self.render_faces(
-            renderer,
+            &mut capture,
             scene,
             &source,
             0,
@@ -370,11 +363,7 @@ impl PmremGenerator {
             true,
         );
 
-        (
-            renderer.auto_clear,
-            renderer.auto_clear_color,
-            renderer.auto_clear_depth,
-        ) = auto_clear;
+        drop(capture);
         scene.background = background;
         result?;
 

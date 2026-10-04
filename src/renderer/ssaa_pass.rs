@@ -225,8 +225,10 @@ impl SsaaPassNode {
         self.pass.render_target().set_size(width, height);
         self.sample_render_target.set_size(width, height);
 
-        let previous_target = renderer.render_target();
-        let previous_auto_clear = renderer.auto_clear;
+        // `currentRenderTarget`, `currentAutoClear`: the scope puts them
+        // back when it ends. The clear colour is read here for the first
+        // sample's `setClearColor( currentClearColor, currentClearAlpha )`.
+        let mut renderer = renderer.save_state();
         let previous_clear_color = renderer.clear_color();
         let previous_clear_alpha = renderer.clear_alpha();
 
@@ -312,9 +314,6 @@ impl SsaaPassNode {
         if original.is_none() {
             camera.clear_view_offset();
         }
-
-        renderer.set_render_target(previous_target);
-        renderer.auto_clear = previous_auto_clear;
     }
 }
 

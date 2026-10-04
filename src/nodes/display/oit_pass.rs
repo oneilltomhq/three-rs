@@ -321,8 +321,9 @@ impl NodeUpdate for OitState {
     /// `OITPassNode.updateBefore( frame )`.
     ///
     /// The size, near/far, layers, target, MRT and auto-clear save/restore
-    /// around both renders is [`PassNode`]'s own (`render_with`), which also
-    /// restores everything the OIT half changes.
+    /// around both renders is [`PassNode`]'s own (`render_with`), whose
+    /// renderer-state scope also restores everything the OIT half changes,
+    /// the render-object selection included.
     fn update_before(&self, renderer: &mut Renderer) -> bool {
         let (near, far) = {
             let camera = self.camera.borrow();
@@ -341,7 +342,7 @@ impl NodeUpdate for OitState {
 
             // "default pass: opaque objects and transparent objects that do
             // not qualify for OIT"
-            let previous = renderer.oit.replace(OitRenderObjects::Default);
+            renderer.oit = Some(OitRenderObjects::Default);
             renderer.render_shared(&self.scene.borrow(), &self.camera);
 
             // "OIT pass: accumulate the weighted colors and the revealage of
@@ -365,14 +366,13 @@ impl NodeUpdate for OitState {
 
             renderer.render_shared(&self.scene.borrow(), &self.camera);
 
-            // `RendererUtils.restoreSceneState()`; the renderer's target, MRT
-            // and flags are restored by `render_with`.
+            // `RendererUtils.restoreSceneState()`; the renderer's target, MRT,
+            // flags and render objects are restored by `render_with`.
             {
                 let mut scene = self.scene.borrow_mut();
                 scene.background = background;
                 scene.override_material = override_material;
             }
-            renderer.oit = previous;
         });
         true
     }

@@ -18,6 +18,7 @@ mod reflector;
 mod render_list;
 mod render_pipeline;
 mod render_target;
+mod renderer_state;
 mod screen_reads;
 mod ssaa_pass;
 
@@ -429,6 +430,14 @@ const VARIANT_FRONT_SIDE: u64 = 5;
 /// draw's) for a material a [`RenderObjectFunction`] derived.
 const VARIANT_RENDER_OBJECT_FUNCTION: u64 = 7;
 
+/// How a render entry point holds its camera: [`Renderer::render`] and
+/// [`Renderer::render_nested`] own a mutable borrow, a pass's
+/// [`Renderer::render_shared`] a `RefCell` an outer render may already hold.
+enum SceneCamera<'a> {
+    Exclusive(&'a mut dyn RenderCamera),
+    Shared(&'a std::cell::RefCell<dyn RenderCamera>),
+}
+
 /// The two render-object functions `OutlineNode.updateBefore()` installs
 /// around its scene renders, together with the
 /// `resetRendererAndSceneState()` they run under (`docs/nodes.md` §72):
@@ -449,6 +458,7 @@ const VARIANT_RENDER_OBJECT_FUNCTION: u64 = 7;
 /// render. The shadow maps are not rendered either: three renders them from
 /// `ShadowNode.updateBefore()`, which only a lit material's program reaches,
 /// and both outline materials are unlit.
+#[derive(Clone)]
 pub(crate) struct OutlineSelection {
     /// `this._selectionCache`, by `Object3D.id`.
     pub(crate) selected: Rc<HashSet<u32>>,
@@ -1100,7 +1110,8 @@ pub struct Renderer {
     neutral_output: bool,
 
     /// `RenderContext.fullscreenPass` — set for the duration of a
-    /// [`Renderer::render_quad`]. `Renderer.currentSamples` reads it: a quad
+    /// [`Renderer::render_quad`], and cleared for a scene render nested in
+    /// one, by [`Renderer::with_fullscreen_pass`]. `Renderer.currentSamples` reads it: a quad
     /// drawn straight to the canvas is never multisampled, however the
     /// renderer's `antialias` option was set, because its one oversized
     /// triangle has no edge inside the viewport to antialias.
@@ -1806,29 +1817,7 @@ impl Renderer {
     /// — `&mut PerspectiveCamera` still coerces at the call site, so every
     /// existing caller is unchanged.
     pub fn render(&mut self, scene: &mut Scene, camera: &mut dyn RenderCamera) {
-        // `Renderer.render()`: `if ( this.info.autoReset === true )
-        // this.info.reset()`. A frame that is several renders turns
-        // `auto_reset` off and resets once itself; see [`Info::auto_reset`].
-        // A render nested in another's draw — a pass rendering from
-        // `updateBefore()` — is part of that render and does not reset it.
-        if self.info.auto_reset && self.call_depth == 0 {
-            self.info.reset();
-        }
-
-        // Before anything of this frame is looked up: return what the last
-        // frame's scene no longer uses. See `sweep_caches`.
-        let render = self.begin_frame();
-        // `renderContext.fullscreenPass = scene.isQuadMesh === true`: a scene
-        // render nested in a quad's draw is not a fullscreen pass.
-        let previous_fullscreen_pass = std::mem::replace(&mut self.fullscreen_pass, false);
-        self.poll_occlusion();
-        // `scene.updateMatrixWorld()` then `camera.updateMatrixWorld()`, both
-        // honouring `matrixAutoUpdate` / `matrixWorldAutoUpdate`.
-        scene.update_matrix_world();
-        camera.update_matrix_world();
-        self.render_scene(scene, camera);
-        self.fullscreen_pass = previous_fullscreen_pass;
-        self.end_frame(render);
+        self.render_with_camera(scene, SceneCamera::Exclusive(camera));
     }
 
     /// [`render`](Self::render) for a pass that holds its scene and camera in
@@ -1844,19 +1833,7 @@ impl Renderer {
         scene: &Scene,
         camera: &std::cell::RefCell<dyn RenderCamera>,
     ) {
-        if self.info.auto_reset && self.call_depth == 0 {
-            self.info.reset();
-        }
-        let render = self.begin_frame();
-        let previous_fullscreen_pass = std::mem::replace(&mut self.fullscreen_pass, false);
-        self.poll_occlusion();
-        scene.update_matrix_world();
-        if let Ok(mut camera) = camera.try_borrow_mut() {
-            camera.update_matrix_world();
-        }
-        self.render_scene(scene, &*camera.borrow());
-        self.fullscreen_pass = previous_fullscreen_pass;
-        self.end_frame(render);
+        self.render_with_camera(scene, SceneCamera::Shared(camera));
     }
 
     /// [`render`](Self::render) for a reflector's nested render
@@ -1865,16 +1842,46 @@ impl Renderer {
     /// reflector's own virtual camera. Part of the outer frame, as a pass's
     /// nested render is (`docs/nodes.md` §55 and §57).
     pub(crate) fn render_nested(&mut self, scene: &Scene, camera: &mut dyn RenderCamera) {
+        self.render_with_camera(scene, SceneCamera::Exclusive(camera));
+    }
+
+    /// The one body of [`render`](Self::render),
+    /// [`render_shared`](Self::render_shared) and
+    /// [`render_nested`](Self::render_nested), which differ only in how they
+    /// hold the camera.
+    fn render_with_camera(&mut self, scene: &Scene, camera: SceneCamera<'_>) {
+        // `Renderer.render()`: `if ( this.info.autoReset === true )
+        // this.info.reset()`. A frame that is several renders turns
+        // `auto_reset` off and resets once itself; see [`Info::auto_reset`].
+        // A render nested in another's draw — a pass rendering from
+        // `updateBefore()` — is part of that render and does not reset it.
         if self.info.auto_reset && self.call_depth == 0 {
             self.info.reset();
         }
+
+        // Before anything of this frame is looked up: return what the last
+        // frame's scene no longer uses. See `sweep_caches`.
         let render = self.begin_frame();
-        let previous_fullscreen_pass = std::mem::replace(&mut self.fullscreen_pass, false);
-        self.poll_occlusion();
-        scene.update_matrix_world();
-        camera.update_matrix_world();
-        self.render_scene(scene, camera);
-        self.fullscreen_pass = previous_fullscreen_pass;
+        // `renderContext.fullscreenPass = scene.isQuadMesh === true`: a scene
+        // render nested in a quad's draw is not a fullscreen pass.
+        self.with_fullscreen_pass(false, |renderer| {
+            renderer.poll_occlusion();
+            // `scene.updateMatrixWorld()` then `camera.updateMatrixWorld()`,
+            // both honouring `matrixAutoUpdate` / `matrixWorldAutoUpdate`.
+            scene.update_matrix_world();
+            match camera {
+                SceneCamera::Exclusive(camera) => {
+                    camera.update_matrix_world();
+                    renderer.render_scene(scene, camera);
+                }
+                SceneCamera::Shared(camera) => {
+                    if let Ok(mut camera) = camera.try_borrow_mut() {
+                        camera.update_matrix_world();
+                    }
+                    renderer.render_scene(scene, &*camera.borrow());
+                }
+            }
+        });
         self.end_frame(render);
     }
 
@@ -3020,57 +3027,58 @@ impl Renderer {
         lights[index].shadow_blur_samples = shadow.blur_samples as f64;
         lights[index].shadow_map_size = shadow.map_size;
 
-        let previous_fullscreen_pass = std::mem::replace(&mut self.fullscreen_pass, true);
-        for (target, key, material) in steps {
-            let mut material = material;
-            material.vertex_node = Some(materials::quad_vertex_node());
-            let items = [Renderable {
-                object: None,
-                fog: None,
-                geometry: self.quad_geometry(),
-                material,
-                key,
-                // `QuadMesh` draws through its own
-                // `OrthographicCamera( - 1, 1, 1, - 1, 0, 1 )`.
-                setup: SetupContext {
-                    orthographic: true,
-                    ..SetupContext::default()
-                },
-                model_world: Matrix4::identity(),
-                instance_matrix: None,
-                instance_color: None,
-                instance_count: 1,
-                morph_influences: Vec::new(),
-                morph_base: 1.0,
-                bind_matrix: Matrix4::identity(),
-                bind_matrix_inverse: Matrix4::identity(),
-                bone_matrices: Vec::new(),
-                previous_bone_matrices: Vec::new(),
-                primitive: Primitive::TRIANGLES,
-                sub_draws: Vec::new(),
-                texture_overrides: Vec::new(),
-                group: None,
-                object_center: Vector2::new(0.5, 0.5),
-            }];
-            let uniforms = UniformContext {
-                lights: &lights,
-                ..self.quad_camera_uniforms()
-            };
-            let pass_target = self.render_target_pass(&target);
-            // `resetRendererAndSceneState()` left `setClearColor( 0x000000, 0
-            // )` in place; the full-screen triangle overwrites every texel.
-            self.draw(
-                &items,
-                uniforms,
-                &pass_target,
-                ClearOps {
-                    color: Some([0.0, 0.0, 0.0, 0.0]),
-                    depth: false,
-                    stencil: false,
-                },
-            );
-        }
-        self.fullscreen_pass = previous_fullscreen_pass;
+        // `QuadMesh.render()`: each blur is a fullscreen pass.
+        self.with_fullscreen_pass(true, |renderer| {
+            for (target, key, material) in steps {
+                let mut material = material;
+                material.vertex_node = Some(materials::quad_vertex_node());
+                let items = [Renderable {
+                    object: None,
+                    fog: None,
+                    geometry: renderer.quad_geometry(),
+                    material,
+                    key,
+                    // `QuadMesh` draws through its own
+                    // `OrthographicCamera( - 1, 1, 1, - 1, 0, 1 )`.
+                    setup: SetupContext {
+                        orthographic: true,
+                        ..SetupContext::default()
+                    },
+                    model_world: Matrix4::identity(),
+                    instance_matrix: None,
+                    instance_color: None,
+                    instance_count: 1,
+                    morph_influences: Vec::new(),
+                    morph_base: 1.0,
+                    bind_matrix: Matrix4::identity(),
+                    bind_matrix_inverse: Matrix4::identity(),
+                    bone_matrices: Vec::new(),
+                    previous_bone_matrices: Vec::new(),
+                    primitive: Primitive::TRIANGLES,
+                    sub_draws: Vec::new(),
+                    texture_overrides: Vec::new(),
+                    group: None,
+                    object_center: Vector2::new(0.5, 0.5),
+                }];
+                let uniforms = UniformContext {
+                    lights: &lights,
+                    ..renderer.quad_camera_uniforms()
+                };
+                let pass_target = renderer.render_target_pass(&target);
+                // `resetRendererAndSceneState()` left `setClearColor( 0x000000, 0
+                // )` in place; the full-screen triangle overwrites every texel.
+                renderer.draw(
+                    &items,
+                    uniforms,
+                    &pass_target,
+                    ClearOps {
+                        color: Some([0.0, 0.0, 0.0, 0.0]),
+                        depth: false,
+                        stencil: false,
+                    },
+                );
+            }
+        });
         moments
     }
 
@@ -3421,8 +3429,12 @@ impl Renderer {
     fn render_quad_mesh(&mut self, quad: &QuadMesh) {
         // `Renderer._renderScene()`: `renderContext.fullscreenPass =
         // scene.isQuadMesh === true`.
-        let previous_fullscreen_pass = std::mem::replace(&mut self.fullscreen_pass, true);
+        self.with_fullscreen_pass(true, |renderer| renderer.draw_quad_mesh(quad));
+    }
 
+    /// [`render_quad_mesh`](Self::render_quad_mesh) inside its fullscreen
+    /// pass.
+    fn draw_quad_mesh(&mut self, quad: &QuadMesh) {
         let key = MaterialKey::of(&quad.material).variant(VARIANT_QUAD);
         let mut material = quad.material.clone();
         material.vertex_node = Some(materials::quad_vertex_node());
@@ -3471,7 +3483,6 @@ impl Renderer {
             ClearOps::default()
         };
         self.render_list(&items, camera_uniforms, clear);
-        self.fullscreen_pass = previous_fullscreen_pass;
     }
 
     fn quad_camera_uniforms(&self) -> UniformContext<'static> {

@@ -36,7 +36,6 @@
 use std::rc::Rc;
 
 use crate::materials::MeshBasicNodeMaterial;
-use crate::math::Color;
 use crate::nodes::frame::register_texture_update;
 use crate::nodes::node::{SettableValue, Type};
 use crate::nodes::tsl::{
@@ -223,14 +222,7 @@ impl NodeUpdate for BilateralBlurState {
         }
 
         // `RendererUtils.resetRendererState( renderer, _rendererState )`.
-        let previous_target = renderer.render_target();
-        let previous_mrt = renderer.mrt();
-        let previous_auto_clear = renderer.auto_clear;
-        let previous_clear_color = renderer.clear_color();
-        let previous_clear_alpha = renderer.clear_alpha();
-        renderer.set_mrt(None);
-        renderer.set_clear_color(Color::new(0.0, 0.0, 0.0), 1.0);
-        renderer.auto_clear = true;
+        let mut renderer = renderer.reset_state();
 
         let (width, height) = self.map.size();
         self.set_size(width, height);
@@ -242,10 +234,7 @@ impl NodeUpdate for BilateralBlurState {
         renderer.render_quad(&self.vertical_quad);
 
         // `RendererUtils.restoreRendererState( renderer, _rendererState )`.
-        renderer.set_render_target(previous_target);
-        renderer.set_mrt(previous_mrt);
-        renderer.set_clear_color(previous_clear_color, previous_clear_alpha);
-        renderer.auto_clear = previous_auto_clear;
+        drop(renderer);
         true
     }
 }

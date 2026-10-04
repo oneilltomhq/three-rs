@@ -604,6 +604,17 @@ have their own sections after the release they ship with. The format follows [Ke
   tail invocations index past `count`, and a kernel must guard its own
   accesses, e.g. `If( instanceIndex < count )` around the stores after the
   barrier. See `docs/nodes.md` §84.6.
+- **Nested renders save and restore the renderer's state in one place**
+  (#252). `RendererUtils.saveRendererState()` / `resetRendererState()` /
+  `restoreRendererState()` are one crate-private value in
+  `src/renderer/renderer_state.rs`, used through a scope that restores on
+  every exit, a panic included. `PassNode`, the display effects (bloom,
+  SMAA, TRAA, SSR, GTAO, outline, stereo and the rest), SSAA, PMREM, the
+  cube captures and the reflector all use it, where each kept its own
+  hand-rolled subset before. Sites calling `resetRendererState()` now also
+  clear the render-object function and restore everything three's list
+  holds, as three does; no ladder frame changes. `Renderer::render`,
+  `render_shared` and `render_nested` share one body.
 
 ### Fixed
 

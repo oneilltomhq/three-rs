@@ -352,41 +352,32 @@ impl NodeUpdate for DofState {
 
         // `_rendererState = RendererUtils.resetRendererState( renderer, … )`,
         // then `renderer.setClearColor( 0x000000, 0 )`.
-        let previous_target = renderer.render_target();
-        let previous_mrt = renderer.mrt();
-        let previous_auto_clear = renderer.auto_clear;
-        let previous_clear_color = renderer.clear_color();
-        let previous_clear_alpha = renderer.clear_alpha();
-        renderer.set_mrt(None);
-        renderer.auto_clear = true;
+        let mut renderer = renderer.reset_state();
         renderer.set_clear_color(Color::new(0.0, 0.0, 0.0), 0.0);
 
         // coc
-        Self::draw(renderer, &self.coc, &self.coc_quad);
+        Self::draw(&mut renderer, &self.coc, &self.coc_quad);
 
         // blur near field to avoid visible aliased edges when the near field
         // is blended with the background. Three's Gaussian runs from the
         // `updateBefore()` of the node the CoC-blur material reaches; the port
         // runs it here, just before that material is drawn.
-        self.coc_blur.render(renderer);
-        Self::draw(renderer, &self.coc_blurred, &self.coc_blurred_quad);
+        self.coc_blur.render(&mut renderer);
+        Self::draw(&mut renderer, &self.coc_blurred, &self.coc_blurred_quad);
 
         // blur64 near, blur16 near
-        Self::draw(renderer, &self.blur64, &self.blur64_near_quad);
-        Self::draw(renderer, &self.blur16_near, &self.blur16_quad);
+        Self::draw(&mut renderer, &self.blur64, &self.blur64_near_quad);
+        Self::draw(&mut renderer, &self.blur16_near, &self.blur16_quad);
 
         // blur64 far, blur16 far
-        Self::draw(renderer, &self.blur64, &self.blur64_far_quad);
-        Self::draw(renderer, &self.blur16_far, &self.blur16_quad);
+        Self::draw(&mut renderer, &self.blur64, &self.blur64_far_quad);
+        Self::draw(&mut renderer, &self.blur16_far, &self.blur16_quad);
 
         // composite
-        Self::draw(renderer, &self.composite, &self.composite_quad);
+        Self::draw(&mut renderer, &self.composite, &self.composite_quad);
 
         // `RendererUtils.restoreRendererState( renderer, _rendererState )`.
-        renderer.set_render_target(previous_target);
-        renderer.set_mrt(previous_mrt);
-        renderer.set_clear_color(previous_clear_color, previous_clear_alpha);
-        renderer.auto_clear = previous_auto_clear;
+        drop(renderer);
         true
     }
 }
