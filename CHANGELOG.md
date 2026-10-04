@@ -8,6 +8,24 @@ have their own sections after the release they ship with. The format follows [Ke
 
 ### Added
 
+- **TSL sweep 1**: the last absent `three/tsl` math names and nine texture
+  utilities (`texture_bicubic_level` is now public), each gated against three's own WGSL dump in
+  `tests/nodes_tsl_batch.rs`.
+  - Packing: `pack_snorm_2x16`, `pack_unorm_2x16`, `pack_half_2x16`,
+    `pack_snorm_4x8`, `pack_unorm_4x8` and the five matching `unpack_*`,
+    which print WGSL's `pack2x16snorm` family.
+  - Packed 4x8 integers: `pack_4x_i8`, `pack_4x_u8`, `pack_4x_i8_clamp`,
+    `pack_4x_u8_clamp`, `unpack_4x_i8`, `unpack_4x_u8`, `dot_4u8_packed` and
+    `dot_4i8_packed`. These print the native builtins. Three's emulation for
+    devices without `packed_4x8_integer_dot_product` is not ported.
+  - `any` (function and method), `transform_normal_by_view_matrix`,
+    `transform_normal_by_inverse_view_matrix`, and the deprecated spellings
+    `faceforward` and `inversesqrt`. `all` already existed; it is now gated.
+  - Textures: `equirect_direction`, `matcap_uv`, `max_mip_level`,
+    `spritesheet_uv`, `triplanar_textures`, `texture_bicubic`,
+    `texture_bicubic_level`, `texture_3d_load` and `texture_3d_level`. The
+    functions that take a texture node in three take the `Texture` here,
+    as `triplanar_texture` already did.
 - **`SkyMesh`** (`addons::objects`), a port of `examples/jsm/objects/SkyMesh.js`.
   It is the Preetham daylight model with a sun disc and an fbm cloud layer.
   Every uniform is a public `SettableValue`. `webgpu_sky` is graded green at 0

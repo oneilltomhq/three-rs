@@ -1569,6 +1569,32 @@ impl NodeBuilder {
         }
     }
 
+    /// The packing builtins, kept out of [`Self::generate_inner`]'s frame (it
+    /// bounds node depth in debug builds).
+    ///
+    /// - `PackFloatNode` / `UnpackFloatNode`: `` `${ method }(${ snippet })` ``,
+    ///   the operand at its own type and no padding inside the parentheses.
+    /// - `Packed4x8IntegerNode`: `` `${ method }( ${ params } )` ``, each
+    ///   operand built at `getInputType()` — `ivec4` for `pack4xI8[Clamp]`,
+    ///   `uvec4` for `pack4xU8[Clamp]`, `uint` for the rest.
+    #[inline(never)]
+    fn generate_packing(&mut self, name: &str, args: &[NodeRef]) -> Option<String> {
+        let input = match name {
+            "pack2x16snorm" | "pack2x16unorm" | "pack2x16float" | "pack4x8snorm"
+            | "pack4x8unorm" | "unpack2x16snorm" | "unpack2x16unorm" | "unpack2x16float"
+            | "unpack4x8snorm" | "unpack4x8unorm" => {
+                let snippet = self.generate(&args[0]);
+                return Some(format!("{name}({snippet})"));
+            }
+            "pack4xI8" | "pack4xI8Clamp" => Type::IVec4,
+            "pack4xU8" | "pack4xU8Clamp" => Type::UVec4,
+            "unpack4xI8" | "unpack4xU8" | "dot4U8Packed" | "dot4I8Packed" => Type::U32,
+            _ => return None,
+        };
+        let parts: Vec<String> = args.iter().map(|a| self.format(a, input)).collect();
+        Some(format!("{name}( {} )", parts.join(", ")))
+    }
+
     fn generate_inner(&mut self, node: &NodeRef) -> String {
         match node.node() {
             Node::Const { ty, values } => wgsl::constant(*ty, values),
@@ -1918,6 +1944,9 @@ impl NodeBuilder {
             }
 
             Node::Math { name, args, ty } => {
+                if let Some(snippet) = self.generate_packing(name, args) {
+                    return snippet;
+                }
                 let (name, args, ty) = (*name, args.clone(), *ty);
                 // `WGSLNodeBuilder`'s `wgslPolyfill` table: a method that
                 // lowers to a `tsl_*` helper brings the helper's code with it.
@@ -1953,7 +1982,7 @@ impl NodeBuilder {
                         "dot" => self.format(a, input_ty),
                         "cross" | "reflect" | "normalize" | "transpose" | "tsl_inverse_mat2"
                         | "tsl_inverse_mat3" | "tsl_inverse_mat4" | "determinant" | "length"
-                        | "dpdx" | "- dpdy" | "inverseSqrt" | "all" => self.generate(a),
+                        | "dpdx" | "- dpdy" | "inverseSqrt" | "all" | "any" => self.generate(a),
                         // `select( f, t, cond )`'s condition is a bool, and the
                         // MaterialX helpers pass their own already-typed
                         // operands; nothing here is widened.
