@@ -539,6 +539,13 @@ pub(crate) struct BuildContext {
     /// nodes'): what `context( node, { … } )` installs, and what a
     /// [`CustomNode`] reads through [`NodeBuilder::context`].
     pub(crate) extra: HashMap<&'static str, NodeRef>,
+    /// `uniformFlow`: [`uniform_flow`](super::tsl::uniform_flow)'s key. A
+    /// two-branch `select()` built under it is WGSL's `select()`.
+    pub(crate) uniform_flow: bool,
+    /// `nodeName`: [`set_name`](super::tsl::set_name)'s key. The first
+    /// uniform built under it clears it, and takes the name unless it has
+    /// one of its own.
+    pub(crate) node_name: Option<&'static str>,
 }
 
 impl Default for BuildContext {
@@ -554,6 +561,8 @@ impl Default for BuildContext {
             setup_clearcoat_normal: None,
             alpha_to_coverage_samples: false,
             extra: HashMap::new(),
+            uniform_flow: false,
+            node_name: None,
         }
     }
 }
@@ -604,7 +613,30 @@ fn push_context_value(value: &ContextValue) -> ContextGuard {
         for (key, node) in &value.entries {
             cx.extra.insert(key, node.clone());
         }
+        if let Some(on) = value.uniform_flow {
+            cx.uniform_flow = on;
+        }
+        if let Some(name) = value.node_name {
+            cx.node_name = Some(name);
+        }
     })
+}
+
+/// `builder.context.uniformFlow`. Out of line: `current_context`'s empty
+/// fallback would otherwise put a whole [`BuildContext`] in
+/// `generate_inner`'s frame.
+#[inline(never)]
+fn in_uniform_flow() -> bool {
+    current_context(|cx| cx.uniform_flow)
+}
+
+/// `UniformNode.generate()`'s `delete builder.context.nodeName`: the name an
+/// enclosing [`set_name`](super::tsl::set_name) installed, cleared from the
+/// context in force so the next uniform under it is unnamed again. An outer
+/// context keeps its own copy, as three's does once the `ContextNode`
+/// restores it.
+fn take_context_node_name() -> Option<&'static str> {
+    BUILD_CONTEXT.with(|stack| stack.borrow_mut().last_mut()?.node_name.take())
 }
 
 /// Read the current context: the top of the stack, or the default one
@@ -1048,7 +1080,10 @@ impl NodeBuilder {
                 let custom = custom.clone();
                 vec![self.custom_output(node, &custom)]
             }
-            Node::Context { node, .. } | Node::Isolate { node } => vec![node.clone()],
+            Node::Context { node, .. } | Node::Isolate { node } | Node::Debug { node, .. } => {
+                vec![node.clone()]
+            }
+            Node::Expression { .. } => vec![],
             Node::StructNew { values, .. } => values.clone(),
             Node::StructGet { value, .. } => vec![value.clone()],
             Node::Atomic { pointer, value, .. } => {
@@ -1255,12 +1290,15 @@ impl NodeBuilder {
 
     fn uniform_snippet(&mut self, u: &Rc<UniformNode>, key: usize) -> String {
         let stage = self.stage;
+        // `this.name || builder.context.nodeName`, and the context's name is
+        // consumed whether or not this uniform was new.
+        let context_name = take_context_node_name();
         if let Some(name) = self.uniform_names.get(&key).cloned() {
             self.touch_uniform_group(u.group, stage);
             return format!("{}.{}", u.group.struct_name(), name);
         }
 
-        let name = match u.name {
+        let name = match u.name.get().or(context_name) {
             Some(n) => n.to_string(),
             None => {
                 let n = format!("nodeUniform{}", self.uniform_counter);
@@ -1594,6 +1632,107 @@ impl NodeBuilder {
             } if components.len() > 1 => Some((node.clone(), components)),
             _ => None,
         }
+    }
+
+    /// `ConditionalNode.generate()` under `builder.context.uniformFlow`, kept
+    /// out of [`Self::generate_inner`]'s frame (it bounds node depth in debug
+    /// builds).
+    ///
+    /// Three allocates the result property before it reads the context, so
+    /// the var is declared and never assigned; the condition is built, then
+    /// both branches, and the value is `getTernary()`: `select( else, if,
+    /// cond )`, unconditionally evaluating both. Three leaves a second read to
+    /// `Node.build()`'s `cacheResult`, a `let` holding the `select`; the port
+    /// holds it in a var (`docs/nodes.md` §8).
+    #[inline(never)]
+    fn generate_uniform_flow_select(&mut self, node: &NodeRef) -> String {
+        let Node::Select { cond, a, b, ty } = node.node() else {
+            unreachable!()
+        };
+        let (cond, a, b, ty) = (cond.clone(), a.clone(), b.clone(), *ty);
+        self.declare_var(None, ty);
+        let scond = self.generate(&cond);
+        let sa = self.format(&a, ty);
+        let sb = self.format(&b, ty);
+        let select = format!("select( {sb}, {sa}, {scond} )");
+        if self.usage_of(node) > 1 {
+            let name = self.declare_var(None, ty);
+            self.emit(format!("{name} = {select};"));
+            self.cache_put(CacheKey::node(node), name.clone());
+            return name;
+        }
+        select
+    }
+
+    /// `ExpressionNode.generate()`: a value is the snippet itself; `void` is
+    /// `addLineFlowCode( snippet )`, which ends the line with a `;` unless it
+    /// already has one.
+    #[inline(never)]
+    fn generate_expression(&mut self, node: &NodeRef) -> String {
+        let Node::Expression { snippet, ty } = node.node() else {
+            unreachable!()
+        };
+        let (snippet, ty) = (snippet.clone(), *ty);
+        if ty != Type::Void {
+            return snippet.to_string();
+        }
+        // `addLineFlowCode( '' )` adds nothing.
+        if snippet.is_empty() {
+            return String::new();
+        }
+        let line = if snippet.trim_end().ends_with(';') {
+            snippet.to_string()
+        } else {
+            format!("{snippet};")
+        };
+        self.emit(line);
+        String::new()
+    }
+
+    /// `DebugNode.generate()`: `node`'s snippet, handed to the callback, or
+    /// with no callback logged after the flow so far in three's format. The
+    /// snippet is kept like any generate-once node's, so a second read in the
+    /// same scope neither calls the callback nor logs again.
+    #[inline(never)]
+    fn generate_debug(&mut self, node: &NodeRef) -> String {
+        let Node::Debug {
+            node: inner,
+            callback,
+        } = node.node()
+        else {
+            unreachable!()
+        };
+        let (inner, callback) = (inner.clone(), callback.clone());
+        let snippet = self.generate(&inner);
+        let stage = match self.stage {
+            Stage::Vertex => "vertex",
+            Stage::Fragment => "fragment",
+            Stage::Compute => "compute",
+        };
+        let lines = match self.fn_scopes.last() {
+            Some(scope) => &scope.lines,
+            None => &self.stages[self.stage.index()].lines,
+        };
+        let flow = lines
+            .iter()
+            .map(|l| l.strip_prefix('\t').unwrap_or(l))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let info = crate::nodes::node::DebugInfo {
+            stage,
+            flow: &flow,
+            snippet: &snippet,
+        };
+        match callback {
+            Some(callback) => (callback.0)(&info),
+            None => {
+                let title = format!("--- TSL debug - {stage} shader ---");
+                let border = "-".repeat(title.len());
+                eprintln!("// #{title}#\n{flow}\n/* ... */ {snippet} /* ... */\n// #{border}#");
+            }
+        }
+        self.cache_put(CacheKey::node(node), snippet.clone());
+        snippet
     }
 
     /// The packing builtins, kept out of [`Self::generate_inner`]'s frame (it
@@ -2453,6 +2592,8 @@ impl NodeBuilder {
                 name
             }
 
+            Node::Select { .. } if in_uniform_flow() => self.generate_uniform_flow_select(node),
+
             Node::Select { cond, a, b, ty } => {
                 let (cond, a, b, ty) = (cond.clone(), a.clone(), b.clone(), *ty);
                 // `ConditionalNode.generate()` builds its result property
@@ -2740,6 +2881,10 @@ impl NodeBuilder {
                 let output = self.custom_output(node, &custom);
                 self.generate(&output)
             }
+
+            Node::Expression { .. } => self.generate_expression(node),
+
+            Node::Debug { .. } => self.generate_debug(node),
 
             // `ContextNode.generate()`.
             Node::Context { node: inner, value } => {
@@ -3140,7 +3285,7 @@ impl NodeBuilder {
                 source: UniformSource::CameraIndex,
                 ty: Type::U32,
                 group: UniformGroup::CameraIndex,
-                name: Some("u_cameraIndex"),
+                name: std::cell::Cell::new(Some("u_cameraIndex")),
             }))),
             ty: Type::U32,
             flat: true,

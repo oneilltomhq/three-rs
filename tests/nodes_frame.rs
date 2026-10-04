@@ -17,7 +17,10 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use three_rs::nodes::tsl::{custom, vec4};
+use three_rs::nodes::tsl::{
+    custom, on_after_object_update, on_before_frame_update, on_before_material_update,
+    on_before_object_update, on_frame_update, on_material_update, on_object_update, vec4,
+};
 use three_rs::nodes::{CustomNode, NodeBuilder, NodeRef, NodeUpdateType, Type};
 use three_rs::{
     box_geometry, Mesh, MeshBasicNodeMaterial, PerspectiveCamera, RenderTarget, Renderer,
@@ -125,4 +128,81 @@ fn two_frames_run_each_phase_behind_its_guard() {
     };
     let expected: Vec<_> = [frame(first_frame), frame(first_frame + 1)].concat();
     assert_eq!(*log.borrow(), expected);
+}
+
+/// The `On*Update` hooks (`EventNode.js`), attached with `bypass()` to one
+/// colour shared by two meshes and rendered as above: two frames of two
+/// renders of two draws. An `OBJECT` hook runs at every draw, a `RENDER`
+/// (material) one once per render, a `FRAME` one once per frame.
+#[test]
+fn event_hooks_run_at_their_phase() {
+    let mut renderer =
+        Renderer::new(RendererParameters::default()).expect("a wgpu adapter and device");
+    renderer.set_pixel_ratio(1.0);
+    renderer.set_size(16.0, 16.0);
+
+    let log: Log = Rc::default();
+    let hook = |tag: &'static str| {
+        let log = log.clone();
+        move |renderer: &mut Renderer| {
+            log.borrow_mut().push((tag, renderer.node_frame().frame_id));
+        }
+    };
+    let color = vec4(1.0, 0.5, 0.25, 1.0)
+        .bypass(on_before_frame_update(hook("before frame")))
+        .bypass(on_before_material_update(hook("before material")))
+        .bypass(on_before_object_update(hook("before object")))
+        .bypass(on_frame_update(hook("frame")))
+        .bypass(on_material_update(hook("material")))
+        .bypass(on_object_update(hook("object")))
+        .bypass(on_after_object_update(hook("after object")));
+
+    let mut scene = Scene::new();
+    let geometry = Rc::new(box_geometry(1.0, 1.0, 1.0, 1, 1, 1));
+    for x in [-0.75, 0.75] {
+        let mut material = MeshBasicNodeMaterial::new();
+        material.color_node = Some(color.clone());
+        let mesh = Mesh::new(geometry.clone(), material);
+        mesh.borrow_mut().position.x = x;
+        scene.add(&mesh);
+    }
+
+    let mut camera = PerspectiveCamera::new(50.0, 1.0, 0.1, 10.0);
+    camera.node.borrow_mut().position.z = 4.0;
+
+    let target = RenderTarget::new(16, 16);
+    let first_frame = renderer.node_frame().frame_id + 1;
+
+    for _ in 0..2 {
+        renderer.set_render_target(Some(target.clone()));
+        renderer.render(&mut scene, &mut camera);
+        renderer.set_render_target(None);
+        renderer.render(&mut scene, &mut camera);
+    }
+
+    let log = log.borrow();
+    let count = |tag: &str| log.iter().filter(|(t, _)| *t == tag).count();
+    // 2 frames x 2 renders x 2 draws.
+    assert_eq!(count("before object"), 8, "{log:?}");
+    assert_eq!(count("object"), 8, "{log:?}");
+    assert_eq!(count("after object"), 8, "{log:?}");
+    // 2 frames x 2 renders.
+    assert_eq!(count("before material"), 4, "{log:?}");
+    assert_eq!(count("material"), 4, "{log:?}");
+    // 2 frames.
+    assert_eq!(count("before frame"), 2, "{log:?}");
+    assert_eq!(count("frame"), 2, "{log:?}");
+    // The first draw runs the before phase, then the update phase, then the
+    // after phase, as `_renderObjectDirect()` does.
+    let first: Vec<_> = log.iter().take(7).map(|(t, f)| (*t, *f)).collect();
+    let phase = |t: &str| match t {
+        "before frame" | "before material" | "before object" => 0,
+        "frame" | "material" | "object" => 1,
+        _ => 2,
+    };
+    assert!(
+        first.windows(2).all(|w| phase(w[0].0) <= phase(w[1].0)),
+        "{first:?}"
+    );
+    assert!(first.iter().all(|(_, f)| *f == first_frame), "{first:?}");
 }

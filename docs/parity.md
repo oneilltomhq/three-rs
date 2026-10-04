@@ -21,13 +21,13 @@ This matrix judges every exported name in three.js revision 5f610f5 (r187) — `
 | textures | 18 | 8 | 4 | 1 | 5 | 62% |
 | loaders | 20 | 2 | 2 | 12 | 4 | 12% |
 | renderers | 39 | 9 | 9 | 3 | 18 | 43% |
-| nodes | 141 | 96 | 27 | 13 | 5 | 71% |
-| tsl | 683 | 502 | 36 | 126 | 19 | 76% |
+| nodes | 141 | 99 | 27 | 10 | 5 | 73% |
+| tsl | 683 | 523 | 47 | 88 | 25 | 79% |
 | addons/controls | 9 | 1 | 3 | 5 | 0 | 11% |
 | addons/loaders | 71 | 6 | 2 | 63 | 0 | 8% |
 | addons/postprocessing | 30 | 0 | 0 | 0 | 30 | — |
 | addons/other | 102 | 11 | 4 | 64 | 23 | 14% |
-| **total** | **1315** | **752** | **118** | **328** | **117** | **63%** |
+| **total** | **1315** | **776** | **129** | **287** | **123** | **65%** |
 
 TSL by family:
 
@@ -37,12 +37,12 @@ TSL by family:
 | operators | 68 | 51 | 1 | 2 | 14 |
 | conditionals/flow | 13 | 8 | 1 | 4 | 0 |
 | textures | 23 | 17 | 1 | 5 | 0 |
-| lighting/material | 121 | 85 | 9 | 27 | 0 |
+| lighting/material | 121 | 92 | 10 | 19 | 0 |
 | accessors | 95 | 76 | 8 | 10 | 1 |
 | display/postprocessing | 75 | 61 | 7 | 7 | 0 |
 | compute/storage | 53 | 19 | 3 | 31 | 0 |
 | materialx | 49 | 48 | 0 | 1 | 0 |
-| utils | 77 | 29 | 5 | 39 | 4 |
+| utils | 77 | 43 | 15 | 9 | 10 |
 
 Graded examples: 87 (the README gallery plus `webgpu_textures_2d-array_compressed`, which has a live `rung!` but a hyphen in its name). 10 more are ported but `#[ignore]`d because three.js fails its own reference on this machine; a row whose only check is one of those is Partial.
 
@@ -346,7 +346,7 @@ Graded examples: 87 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `Data3DTexture` | Present | Data3DTexture (src/textures/data3d_texture.rs:60) | webgpu_volume_perlin |  |
 | `CompressedTexture` | Present | Texture::compressed (src/textures/compressed_texture.rs:33) | tests/ktx2_loader.rs; webgpu_loader_gltf_compressed |  |
 | `CompressedArrayTexture` | Present | Texture::compressed_array (src/textures/compressed_texture.rs:58) | tests/ktx2_loader.rs; webgpu_textures_2d-array_compressed |  |
-| `CompressedCubeTexture` | Partial | Ktx2Class::CompressedCubeTexture (src/loaders/ktx2_loader.rs:115) | tests/ktx2_loader.rs | parsed only; into_texture errors, no upload path (docs/nodes.md:2988) |
+| `CompressedCubeTexture` | Partial | Ktx2Class::CompressedCubeTexture (src/loaders/ktx2_loader.rs:115) | tests/ktx2_loader.rs | parsed only; into_texture errors, no upload path (docs/nodes.md:2990) |
 | `CubeTexture` | Present | CubeTexture (src/textures/cube_texture.rs:109) | webgpu_cubemap_mix, webgpu_materials_envmaps |  |
 | `CanvasTexture` | N.A. | — | — | DOM canvas; no definition (FlakesTexture builds a Texture) |
 | `HTMLTexture` | N.A. | — | — | DOM element |
@@ -432,7 +432,7 @@ Graded examples: 87 (the README gallery plus `webgpu_textures_2d-array_compresse
 
 ## nodes
 
-141 rows: 96 Present, 27 Partial, 13 Absent, 5 N.A.
+141 rows: 99 Present, 27 Partial, 10 Absent, 5 N.A.
 
 | three.js name | verdict | three-rs symbol | verified by | note |
 |---|---|---|---|---|
@@ -443,7 +443,7 @@ Graded examples: 87 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `ArrayNode` | Partial | const_array / Node::ConstArray (src/nodes/tsl.rs:323) | webgpu_depth_texture; webgpu_postprocessing_godrays (graded, vec2 elements via const_array_of) | float or vector literals only; no array(type,count) or arrays of nodes |
 | `AssignNode` | Present | Node::Assign (src/nodes/node.rs:1403) | webgpu_compute_points |  |
 | `AttributeNode` | Present | Node::Attribute (src/nodes/node.rs:1346), attribute (src/nodes/tsl.rs:345) | all *_wgsl gates |  |
-| `BypassNode` | Absent | — | — | no bypass() |
+| `BypassNode` | Present | bypass (src/nodes/tsl/utils.rs:63) | tests/nodes_tsl_batch.rs | a statement-then-value `Node::Block` |
 | `ConstNode` | Present | Node::Const (src/nodes/node.rs:1313) | all *_wgsl gates |  |
 | `ContextNode` | Present | Node::Context (src/nodes/node.rs:1669), context (src/nodes/tsl.rs:145) | tests/nodes_custom.rs |  |
 | `IndexNode` | Partial | Builtin::VertexIndex/InstanceIndex (src/nodes/node.rs:1053) | webgpu_compute_points | no drawIndex or subgroup indices |
@@ -474,7 +474,7 @@ Graded examples: 87 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `SubBuildNode` | Present | in_sub_build (src/nodes/tsl.rs:168) | webgpu_materials |  |
 | `TempNode` | Partial | increase_usage (src/nodes/builder.rs:845) | all *_wgsl gates | r187 let nodeConstN temp rule not followed #156 |
 | `UniformGroupNode` | Present | UniformGroup (src/nodes/node.rs:130) | all *_wgsl gates |  |
-| `UniformNode` | Present | UniformNode (src/nodes/node.rs:594), uniform (src/nodes/tsl.rs:438) | all *_wgsl gates |  |
+| `UniformNode` | Present | UniformNode (src/nodes/node.rs:673), uniform (src/nodes/tsl.rs:456) | all *_wgsl gates, tests/nodes_tsl_batch.rs | `setName()`/`label()` rename in place through `NodeRef::set_name`/`label` |
 | `VarNode` | Present | Node::Var/Let (src/nodes/node.rs:1380,1384), to_var (src/nodes/tsl.rs:454) | all *_wgsl gates |  |
 | `VaryingNode` | Present | Node::Varying (src/nodes/node.rs:1386), to_varying (src/nodes/tsl.rs:489) | tests/nodes_wgsl_varying.rs |  |
 | `BufferAttributeNode` | Partial | instanced_buffer_attribute (src/nodes/tsl.rs:4395), to_attribute (3758) | tests/nodes_instanced_attributes.rs | no plain/dynamic bufferAttribute() |
@@ -502,7 +502,7 @@ Graded examples: 87 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `VelocityNode` | Present | velocity (src/nodes/velocity.rs:64) | webgpu_postprocessing_motion_blur (graded); tests/velocity_frames.rs | previous model, camera and bone matrices tracked per frame; issue 163 closed |
 | `VertexColorNode` | Present | vertex_color (src/nodes/tsl.rs:2020) | webgpu_lines_fat, tests/renderer_vertex_colors.rs | no white fallback (deliberate, docs/nodes.md s8) |
 | `CodeNode` | Present | Node::Code (src/nodes/node.rs:1510), wgsl_fn (src/nodes/code.rs:59) | webgpu_tsl_interoperability |  |
-| `ExpressionNode` | Partial | Node::Discard/Return/Break (src/nodes/node.rs:1601,1605,1553) | webgpu_compute_points | no expression(snippet); no Continue |
+| `ExpressionNode` | Present | Node::Expression (src/nodes/node.rs:1850), expression (src/nodes/tsl/utils.rs:113) | tests/nodes_tsl_batch.rs | `discard`/`return`/`break` keep their own variants |
 | `FunctionCallNode` | Present | Node::CodeCall (src/nodes/node.rs:1513), call_wgsl (src/nodes/tsl.rs:4443) | webgpu_tsl_interoperability |  |
 | `FunctionNode` | Present | emit_code_fn (src/nodes/builder.rs:2766) | webgpu_tsl_interoperability |  |
 | `BumpMapNode` | Present | bump_map (src/nodes/tsl.rs:3312) | webgpu_tsl_earth, webgpu_lights_physical |  |
@@ -559,8 +559,8 @@ Graded examples: 87 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `ArrayElementNode` | Present | Node::Element (src/nodes/node.rs:1460), element (src/nodes/tsl.rs:1796) | webgpu_compute_points |  |
 | `ConvertNode` | Present | Node::Cast (src/nodes/node.rs:1439), convert_type (src/nodes/tsl/wrappers.rs:77) | all *_wgsl gates |  |
 | `CubeMapNode` | Present | from_equirectangular_texture (src/renderer/cube_render_target.rs:61) | webgpu_materials_envmaps |  |
-| `DebugNode` | Absent | — | — | no debug() |
-| `EventNode` | Partial | NodeUpdate trait (src/nodes/frame.rs:51), on_before_render (src/renderer/render_pipeline.rs:84) | tests/renderer_pipeline_hooks.rs | no OnObjectUpdate/OnMaterialUpdate/OnFrameUpdate TSL |
+| `DebugNode` | Present | Node::Debug (src/nodes/node.rs:1858), debug (src/nodes/tsl/utils.rs:125) | tests/nodes_tsl_batch.rs |  |
+| `EventNode` | Partial | EventNode / on_*_update (src/nodes/tsl/utils.rs:263), on_before_render (src/renderer/render_pipeline.rs:89) | tests/nodes_frame.rs, tests/renderer_pipeline_hooks.rs | callbacks get the Renderer, not the NodeFrame; the render-pipeline events are pipeline methods |
 | `FlipNode` | Present | flip_y (src/nodes/tsl.rs:1859) | webgpu_materials |  |
 | `FunctionOverloadingNode` | Partial | by_position (src/nodes/mx_noise.rs:833) | tests/nodes_mx_noise.rs | internal MaterialX use only; no overloadingFn() |
 | `JoinNode` | Present | Node::Join (src/nodes/node.rs:1453), vec4 (src/nodes/tsl.rs:298) | all *_wgsl gates |  |
@@ -570,7 +570,7 @@ Graded examples: 87 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `ReflectorNode` | Present | ReflectorNode (src/nodes/reflector_node.rs:183) | webgpu_mirror |  |
 | `RotateNode` | Present | rotate (src/nodes/tsl.rs:733) | tests/nodes_tsl_batch.rs, webgpu_layers |  |
 | `RTTNode` | Present | rtt (src/nodes/display/rtt.rs:73) | webgpu_procedural_texture |  |
-| `SampleNode` | Absent | — | — | no sample() |
+| `SampleNode` | Partial | SampleNode, sample (src/nodes/tsl/utils.rs:146,202) | tests/nodes_tsl_batch.rs | `convert_to_texture` draws it into an RTT where three returns it unchanged (docs/nodes.md §70.4) |
 | `SetNode` | Partial | set_z (src/nodes/tsl.rs:1779) | webgpu_depth_texture | only .set_z; no general set() |
 | `SplitNode` | Present | Node::Swizzle (src/nodes/node.rs:1430) | all *_wgsl gates |  |
 | `StorageArrayElementNode` | Present | StorageArray.element (src/nodes/tsl.rs:3644) | webgpu_compute_points |  |
@@ -1134,11 +1134,11 @@ Partial: `textureLoad`.
 
 ### lighting/material
 
-85 of 121 applicable present (9 Partial, 27 Absent, 0 N.A.).
+92 of 121 applicable present (10 Partial, 19 Absent, 0 N.A.).
 
-Missing (Absent): `iridescence`, `iridescenceIOR`, `iridescenceThickness`, `dashSize`, `gapSize`, `dispersion`, `retroreflectivity`, `materialAnisotropy`, `materialIridescence`, `materialIridescenceIOR`, `materialIridescenceThickness`, `materialLineScale`, `materialLineDashSize`, `materialLineGapSize`, `materialLineDashOffset`, `materialDispersion`, `materialRetroreflectivity`, `materialReference`, `lights`, `lightingContext`, `shadow`, `D_GGX_Anisotropic`, `Schlick_to_F0`, `V_GGX_SmithCorrelated_Anisotropic`, `LTC_Evaluate`, `LTC_Evaluate_Volume`, `LTC_Uv`.
+Missing (Absent): `iridescence`, `iridescenceIOR`, `iridescenceThickness`, `dashSize`, `gapSize`, `dispersion`, `retroreflectivity`, `materialIridescence`, `materialIridescenceIOR`, `materialIridescenceThickness`, `materialLineScale`, `materialLineDashSize`, `materialLineGapSize`, `materialLineDashOffset`, `materialDispersion`, `materialRetroreflectivity`, `materialReference`, `lightingContext`, `shadow`.
 
-Partial: `transmission`, `thickness`, `attenuationDistance`, `pointShadow`, `BRDF_GGX`, `D_GGX`, `DFGLUT`, `EnvironmentBRDF`, `V_GGX_SmithCorrelated`.
+Partial: `transmission`, `thickness`, `attenuationDistance`, `lights`, `pointShadow`, `BRDF_GGX`, `D_GGX`, `DFGLUT`, `EnvironmentBRDF`, `V_GGX_SmithCorrelated`.
 
 | three.js name | verdict | three-rs symbol | verified by | note |
 |---|---|---|---|---|
@@ -1154,9 +1154,9 @@ Partial: `transmission`, `thickness`, `attenuationDistance`, `pointShadow`, `BRD
 | `clearcoatRoughness` | Present | clearcoat_roughness (src/nodes/tsl.rs:2915) | webgpu_clearcoat (graded) |  |
 | `sheen` | Present | sheen (src/nodes/tsl.rs:2865) | webgpu_loader_gltf_sheen (graded) |  |
 | `sheenRoughness` | Present | sheen_roughness (src/nodes/tsl.rs:2868) | webgpu_loader_gltf_sheen (graded) |  |
-| `iridescence` | Absent | — | — | issue 229; no definition on main; code on branch rung-gltf-iridescence |
-| `iridescenceIOR` | Absent | — | — | issue 229; no definition on main; code on branch rung-gltf-iridescence |
-| `iridescenceThickness` | Absent | — | — | issue 229; no definition on main; code on branch rung-gltf-iridescence |
+| `iridescence` | Absent | — | — | needs the iridescence feature: the iridescence fields, evalIridescence and Schlick_to_F0 in PhysicalLightingModel.start(), and BRDF_GGX's USE_IRIDESCENCE mix (issue 229; code on branch rung-gltf-iridescence) |
+| `iridescenceIOR` | Absent | — | — | needs the iridescence feature: the iridescence fields, evalIridescence and Schlick_to_F0 in PhysicalLightingModel.start(), and BRDF_GGX's USE_IRIDESCENCE mix (issue 229; code on branch rung-gltf-iridescence) |
+| `iridescenceThickness` | Absent | — | — | needs the iridescence feature: the iridescence fields, evalIridescence and Schlick_to_F0 in PhysicalLightingModel.start(), and BRDF_GGX's USE_IRIDESCENCE mix (issue 229; code on branch rung-gltf-iridescence) |
 | `alphaT` | Present | alpha_t (src/nodes/tsl.rs:2903) | indirect: used by src/materials/node_material.rs |  |
 | `anisotropy` | Present | anisotropy (src/nodes/tsl.rs:2900) | webgpu_loader_gltf_anisotropy (graded) | IBL only; direct anisotropic BRDF not ported |
 | `anisotropyT` | Present | anisotropy_t (src/nodes/tsl.rs:2906) | indirect: used by src/materials/node_material.rs |  |
@@ -1166,16 +1166,16 @@ Partial: `transmission`, `thickness`, `attenuationDistance`, `pointShadow`, `BRD
 | `specularF90` | Present | specular_f90 (src/nodes/tsl.rs:2850) | indirect: used by src/materials/physical.rs |  |
 | `shininess` | Present | shininess (src/nodes/tsl.rs:2777) | webgpu_lights_phong (graded) |  |
 | `output` | Present | output_property (src/nodes/tsl.rs:2771) | tests/renderer_mrt.rs, webgpu_mrt (graded) |  |
-| `dashSize` | Absent | — | — | no dashed line material (docs/lines-progress.md:100); comment only: src/materials/line2.rs |
-| `gapSize` | Absent | — | — | no dashed line material (docs/lines-progress.md:100); comment only: src/materials/line2.rs |
+| `dashSize` | Absent | — | — | needs LineDashedNodeMaterial and its lineDistance attribute (docs/lines-progress.md:100), or the useDash branch of Line2 and its instanceDistanceStart / instanceDistanceEnd attributes (src/materials/line2.rs:23) |
+| `gapSize` | Absent | — | — | needs LineDashedNodeMaterial and its lineDistance attribute (docs/lines-progress.md:100), or the useDash branch of Line2 and its instanceDistanceStart / instanceDistanceEnd attributes (src/materials/line2.rs:23) |
 | `pointWidth` | Present | point_width (src/nodes/tsl.rs:3699) | tests/nodes_tsl_batch.rs (point_width_matches) |  |
 | `ior` | Present | ior (src/nodes/tsl.rs:2854) | webgpu_furnace_test (graded) |  |
 | `transmission` | Partial | transmission (src/nodes/tsl.rs:2920) | webgpu_materials_transmission (0.198% off) | no graded rung; issue 228 |
 | `thickness` | Partial | thickness (src/nodes/tsl.rs:2923) | webgpu_materials_transmission (0.198% off) | no graded rung; issue 228 |
 | `attenuationDistance` | Partial | attenuation_distance (src/nodes/tsl.rs:2926) | webgpu_materials_transmission (0.198% off) | no graded rung; issue 228 |
 | `attenuationColor` | Present | attenuation_color (src/nodes/tsl.rs:2929) | webgpu_shadowmap_opacity (graded) |  |
-| `dispersion` | Absent | — | — | comment only: src/materials/physical.rs |
-| `retroreflectivity` | Absent | — | — |  |
+| `dispersion` | Absent | — | — | needs a dispersion material field and the dispersion loop of getIBLVolumeRefraction, left out of src/materials/transmission.rs:15 |
+| `retroreflectivity` | Absent | — | — | needs a retroreflectivity material field and the retroreflective lobe of PhysicalLightingModel.direct() (three r187 PhysicalLightingModel.js:689) |
 | `ambientOcclusion` | Present | ambient_occlusion (src/nodes/tsl.rs:2826) | indirect: used by src/materials/physical.rs |  |
 | `materialAlphaTest` | Present | material_alpha_test (src/nodes/tsl.rs:2161) | indirect: used by src/renderer/mod.rs |  |
 | `materialColor` | Present | material_color (src/nodes/tsl.rs:2141) | indirect: used by src/renderer/mod.rs |  |
@@ -1197,23 +1197,23 @@ Partial: `transmission`, `thickness`, `attenuationDistance`, `pointShadow`, `BRD
 | `materialRotation` | Present | material_rotation (src/nodes/tsl.rs:2171) | indirect: used by src/renderer/mod.rs |  |
 | `materialSheen` | Present | material_sheen (src/nodes/tsl.rs:1256) | indirect: used by src/renderer/mod.rs |  |
 | `materialSheenRoughness` | Present | material_sheen_roughness (src/nodes/tsl.rs:1276) | indirect: used by src/renderer/mod.rs |  |
-| `materialAnisotropy` | Absent | — | — | comment only: src/materials/node_material.rs |
-| `materialIridescence` | Absent | — | — | issue 229; no definition on main; code on branch rung-gltf-iridescence |
-| `materialIridescenceIOR` | Absent | — | — | issue 229; no definition on main; code on branch rung-gltf-iridescence |
-| `materialIridescenceThickness` | Absent | — | — | issue 229; no definition on main; code on branch rung-gltf-iridescence |
+| `materialAnisotropy` | Present | material_anisotropy (src/nodes/tsl/lighting.rs:39) | tests/nodes_tsl_batch.rs (material_anisotropy_matches, material_anisotropy_map_matches); webgpu_loader_gltf_anisotropy (graded) | takes the material; the physical setup reads its vector from it |
+| `materialIridescence` | Absent | — | — | needs the iridescence feature: the iridescence fields, evalIridescence and Schlick_to_F0 in PhysicalLightingModel.start(), and BRDF_GGX's USE_IRIDESCENCE mix (issue 229; code on branch rung-gltf-iridescence) |
+| `materialIridescenceIOR` | Absent | — | — | needs the iridescence feature: the iridescence fields, evalIridescence and Schlick_to_F0 in PhysicalLightingModel.start(), and BRDF_GGX's USE_IRIDESCENCE mix (issue 229; code on branch rung-gltf-iridescence) |
+| `materialIridescenceThickness` | Absent | — | — | needs the iridescence feature: the iridescence fields, evalIridescence and Schlick_to_F0 in PhysicalLightingModel.start(), and BRDF_GGX's USE_IRIDESCENCE mix (issue 229; code on branch rung-gltf-iridescence) |
 | `materialTransmission` | Present | material_transmission (src/nodes/tsl.rs:1330) | indirect: used by src/renderer/mod.rs |  |
 | `materialThickness` | Present | material_thickness (src/nodes/tsl.rs:1340) | indirect: used by src/renderer/mod.rs |  |
 | `materialIOR` | Present | material_ior (src/nodes/tsl.rs:1223) | indirect: used by src/renderer/mod.rs |  |
 | `materialAttenuationDistance` | Present | material_attenuation_distance (src/nodes/tsl.rs:1350) | indirect: used by src/renderer/mod.rs |  |
 | `materialAttenuationColor` | Present | material_attenuation_color (src/nodes/tsl.rs:1360) | indirect: used by src/renderer/mod.rs |  |
-| `materialLineScale` | Absent | — | — | no dashed line material (docs/lines-progress.md:100) |
-| `materialLineDashSize` | Absent | — | — | no dashed line material (docs/lines-progress.md:100) |
-| `materialLineGapSize` | Absent | — | — | no dashed line material (docs/lines-progress.md:100) |
+| `materialLineScale` | Absent | — | — | needs LineDashedNodeMaterial and its lineDistance attribute (docs/lines-progress.md:100), or the useDash branch of Line2 and its instanceDistanceStart / instanceDistanceEnd attributes (src/materials/line2.rs:23) |
+| `materialLineDashSize` | Absent | — | — | needs LineDashedNodeMaterial and its lineDistance attribute (docs/lines-progress.md:100), or the useDash branch of Line2 and its instanceDistanceStart / instanceDistanceEnd attributes (src/materials/line2.rs:23) |
+| `materialLineGapSize` | Absent | — | — | needs LineDashedNodeMaterial and its lineDistance attribute (docs/lines-progress.md:100), or the useDash branch of Line2 and its instanceDistanceStart / instanceDistanceEnd attributes (src/materials/line2.rs:23) |
 | `materialLineWidth` | Present | material_line_width (src/nodes/tsl.rs:2343) | examples/dump_wgsl.rs (manual WGSL diff) |  |
-| `materialLineDashOffset` | Absent | — | — | no dashed line material (docs/lines-progress.md:100) |
+| `materialLineDashOffset` | Absent | — | — | needs LineDashedNodeMaterial and its lineDistance attribute (docs/lines-progress.md:100), or the useDash branch of Line2 and its instanceDistanceStart / instanceDistanceEnd attributes (src/materials/line2.rs:23) |
 | `materialPointSize` | Present | material_point_size (src/nodes/tsl.rs:2613) | tests/nodes_tsl_batch.rs (material_point_size_matches) | the points flow sizes by sizeNode, not this uniform |
-| `materialDispersion` | Absent | — | — |  |
-| `materialRetroreflectivity` | Absent | — | — |  |
+| `materialDispersion` | Absent | — | — | needs a dispersion material field and the dispersion loop of getIBLVolumeRefraction, left out of src/materials/transmission.rs:15 |
+| `materialRetroreflectivity` | Absent | — | — | needs a retroreflectivity material field and the retroreflective lobe of PhysicalLightingModel.direct() (three r187 PhysicalLightingModel.js:689) |
 | `materialLightMap` | Present | material_light_map (src/nodes/tsl.rs:2683) | tests/nodes_tsl_batch.rs (material_defaults_match, material_maps_match) | takes the material; no material flow applies lightMap |
 | `materialAO` | Present | material_ao (src/nodes/tsl.rs:2692) | tests/nodes_tsl_batch.rs (material_defaults_match, material_maps_match) | takes the material |
 | `materialAnisotropyVector` | Present | material_anisotropy_vector (src/nodes/tsl.rs:1300) | indirect: used by src/materials/node_material.rs |  |
@@ -1231,7 +1231,7 @@ Partial: `transmission`, `thickness`, `attenuationDistance`, `pointShadow`, `BRD
 | `lightTargetPosition` | Present | light_target_position (src/nodes/tsl.rs:1091) | indirect: used by src/nodes/tsl.rs |  |
 | `lightViewPosition` | Present | light_view_position (src/nodes/tsl.rs:1059) | indirect: used by src/materials/phong.rs |  |
 | `lightTargetDirection` | Present | light_target_direction (src/nodes/tsl.rs:4926) | indirect: used by src/materials/phong.rs |  |
-| `lights` | Absent | — | — | comment only: src/error.rs |
+| `lights` | Partial | lights (src/nodes/tsl/lighting.rs:503) | webgpu_lights_selective (graded) | light indices for MeshBasicNodeMaterial::lights_node (src/materials/mod.rs:310), not a LightsNode a graph can use |
 | `lightingContext` | Absent | — | — | Not ported: no context node to wrap with. The port drives a LightingModel from the material flow (MeshBasicNodeMaterial::lighting_model, lighting_model::lights_node) |
 | `shadowPositionWorld` | Present | shadow_position_world (src/nodes/tsl.rs:4908) | indirect: used by src/lights/point_shadow.rs |  |
 | `BasicPointShadowFilter` | Present | basic_point_shadow_filter (src/lights/point_shadow.rs:88) | indirect: used by src/lights/shadow_filter.rs |  |
@@ -1239,7 +1239,7 @@ Partial: `transmission`, `thickness`, `attenuationDistance`, `pointShadow`, `BRD
 | `pointShadow` | Partial | point_shadow (src/lights/point_shadow.rs:157, pub(crate)) | webgpu_shadowmap_pointlight graded via renderer | internal only |
 | `directPointLight` | Present | direct_point_light (src/nodes/tsl.rs:1458) | tests/nodes_tsl_batch.rs (direct_point_light_matches) | returns the (lightDirection, lightColor) pair |
 | `getDistanceAttenuation` | Present | distance_attenuation (src/materials/phong.rs:29) | indirect: used by src/materials/phong.rs |  |
-| `shadow` | Absent | — | — | comment only: src/core/object3d.rs |
+| `shadow` | Absent | — | — | Not ported: needs node-owned shadow maps. Three's ShadowNode renders its own map in updateBefore; the port's are owned by the renderer per light (ShadowMap, src/materials/phong.rs:107) |
 | `BasicShadowFilter` | Present | basic_shadow_filter (src/lights/shadow_filter.rs:186) | indirect: used by src/lights/mod.rs |  |
 | `PCFShadowFilter` | Present | pcf_shadow_filter (src/lights/shadow_filter.rs:194) | indirect: used by src/lights/mod.rs |  |
 | `VSMShadowFilter` | Present | vsm_shadow_filter (src/lights/shadow_filter.rs:227) | indirect: used by src/lights/mod.rs |  |
@@ -1249,16 +1249,16 @@ Partial: `transmission`, `thickness`, `attenuationDistance`, `pointShadow`, `BRD
 | `BRDF_Lambert` | Present | brdf_lambert (src/materials/phong.rs:66) | indirect: used by src/materials/toon.rs |  |
 | `BRDF_Sheen` | Present | brdf_sheen (src/materials/physical.rs:228) | indirect: used by src/materials/physical.rs |  |
 | `D_GGX` | Partial | d_ggx (src/materials/physical.rs:102) | — | internal only (not public) |
-| `D_GGX_Anisotropic` | Absent | — | — | anisotropic BRDF_GGX not ported (src/renderer/mod.rs:7186) |
+| `D_GGX_Anisotropic` | Present | d_ggx_anisotropic (src/nodes/tsl/lighting.rs:69) | tests/nodes_tsl_batch.rs (anisotropic_ggx_matches) | standalone: BRDF_GGX's anisotropic branch is not wired (docs/nodes.md §26.5) |
 | `DFGLUT` | Partial | dfg_lut (src/materials/dfg_lut.rs:47) | — | internal only (not public) |
 | `EnvironmentBRDF` | Partial | Physical::environment_brdf (src/materials/physical.rs:569) | — | internal only (not public) |
 | `F_Schlick` | Present | f_schlick (src/materials/phong.rs:72) | indirect: used by src/materials/physical.rs |  |
-| `Schlick_to_F0` | Absent | — | — | issue 229; no definition on main; code on branch rung-gltf-iridescence |
+| `Schlick_to_F0` | Present | schlick_to_f0 (src/nodes/tsl/lighting.rs:188) | tests/nodes_tsl_batch.rs (schlick_to_f0_matches) | standalone: its callers in three are in PhysicalLightingModel.start()'s iridescence block (issue 229) |
 | `V_GGX_SmithCorrelated` | Partial | v_ggx_smith_correlated (src/materials/physical.rs:63) | — | internal only (not public) |
-| `V_GGX_SmithCorrelated_Anisotropic` | Absent | — | — | anisotropic BRDF_GGX not ported (src/renderer/mod.rs:7186) |
-| `LTC_Evaluate` | Absent | — | — | no RectAreaLight (docs/nodes.md:3745) |
-| `LTC_Evaluate_Volume` | Absent | — | — | no RectAreaLight (docs/nodes.md:3745) |
-| `LTC_Uv` | Absent | — | — | no RectAreaLight (docs/nodes.md:3745) |
+| `V_GGX_SmithCorrelated_Anisotropic` | Present | v_ggx_smith_correlated_anisotropic (src/nodes/tsl/lighting.rs:123) | tests/nodes_tsl_batch.rs (anisotropic_ggx_matches) | standalone: BRDF_GGX's anisotropic branch is not wired (docs/nodes.md §26.5) |
+| `LTC_Evaluate` | Present | ltc_evaluate (src/nodes/tsl/lighting.rs:379) | tests/nodes_tsl_batch.rs (ltc_matches) | standalone: no RectAreaLight (docs/nodes.md:3747) |
+| `LTC_Evaluate_Volume` | Present | ltc_evaluate_volume (src/nodes/tsl/lighting.rs:442) | tests/nodes_tsl_batch.rs (ltc_matches) | standalone: no RectAreaLight (docs/nodes.md:3747) |
+| `LTC_Uv` | Present | ltc_uv (src/nodes/tsl/lighting.rs:221) | tests/nodes_tsl_batch.rs (ltc_matches) | standalone: no RectAreaLight (docs/nodes.md:3747) |
 | `getGeometryRoughness` | Present | geometry_roughness (src/materials/physical.rs:35) | indirect: used by src/materials/physical.rs |  |
 | `getParallaxCorrectNormal` | Present | get_parallax_correct_normal (src/nodes/tsl.rs:1008) | tests/nodes_tsl_batch.rs (parallax_correct_normal_matches) |  |
 | `getRoughness` | Present | get_roughness (src/materials/physical.rs:51) | indirect: used by src/materials/node_material.rs |  |
@@ -1386,7 +1386,7 @@ Partial: `colorSpaceToWorking`, `negateOnBackSide`, `viewportTexture`, `viewport
 | `viewportSafeUV` | Present | viewport_safe_uv (src/nodes/display/viewport_texture.rs:200) | webgpu_backdrop (graded) |  |
 | `reflector` | Present | reflector (src/nodes/reflector_node.rs:217) | webgpu_mirror (graded) |  |
 | `rtt` | Present | rtt (src/nodes/display/rtt.rs:73) | webgpu_postprocessing_anamorphic (graded) |  |
-| `convertToTexture` | Present | convert_to_texture (src/nodes/display/rtt.rs:86) | webgpu_postprocessing_ca (graded) |  |
+| `convertToTexture` | Present | convert_to_texture (src/nodes/display/rtt.rs:91) | webgpu_postprocessing_ca (graded) | a SampleNode is not passed through; see the `SampleNode` row |
 | `getViewPosition` | Present | get_view_position (src/nodes/tsl.rs:900) | indirect: used by src/nodes/display/traa.rs (tests/nodes_display_wgsl.rs traa gates) |  |
 | `getScreenPosition` | Present | get_screen_position (src/nodes/tsl.rs:933) | tests/nodes_tsl_batch.rs (screen_position_matches) |  |
 | `getScreenPositionFromClip` | Absent | — | — |  |
@@ -1582,11 +1582,11 @@ Partial: none.
 
 ### utils
 
-29 of 73 applicable present (5 Partial, 39 Absent, 4 N.A.).
+43 of 67 applicable present (15 Partial, 9 Absent, 10 N.A.).
 
-Missing (Absent): `defaultShaderStages`, `defaultBuildStages`, `shaderStages`, `vectorComponents`, `bypass`, `uniformFlow`, `setName`, `builtinShadowContext`, `builtinAOContext`, `builtinGIContext`, `label`, `overrideNodes`, `subgroupIndex`, `invocationSubgroupIndex`, `drawIndex`, `uniformGroup`, `sharedUniformGroup`, `frameGroup`, `objectGroup`, `vertexStage`, `unpackRGBToNormal`, `unpackNormal`, `directionToColor`, `colorToDirection`, `replaceDefaultUV`, `sample`, `OnObjectUpdate`, `OnMaterialUpdate`, `OnFrameUpdate`, `OnAfterObjectUpdate`, `OnBeforeObjectUpdate`, `OnBeforeMaterialUpdate`, `OnBeforeFrameUpdate`, `OnBeforeRenderPipeline`, `OnAfterRenderPipeline`, `expression`, `debug`, `addNodeElement`, `wgsl`.
+Missing (Absent): `builtinShadowContext`, `builtinAOContext`, `builtinGIContext`, `subgroupIndex`, `invocationSubgroupIndex`, `uniformGroup`, `sharedUniformGroup`, `frameGroup`, `replaceDefaultUV`.
 
-Partial: `NodeShaderStage`, `cache`, `overrideNode`, `renderGroup`, `subBuild`.
+Partial: `NodeShaderStage`, `cache`, `overrideNode`, `overrideNodes`, `sample`, `OnObjectUpdate`, `OnMaterialUpdate`, `OnFrameUpdate`, `OnAfterObjectUpdate`, `OnBeforeObjectUpdate`, `OnBeforeMaterialUpdate`, `OnBeforeFrameUpdate`, `OnBeforeRenderPipeline`, `OnAfterRenderPipeline`, `subBuild`.
 
 | three.js name | verdict | three-rs symbol | verified by | note |
 |---|---|---|---|---|
@@ -1594,50 +1594,50 @@ Partial: `NodeShaderStage`, `cache`, `overrideNode`, `renderGroup`, `subBuild`.
 | `NodeUpdateType` | Present | NodeUpdateType (src/nodes/frame.rs:30) | tests/nodes_frame.rs |  |
 | `NodeType` | Present | Type enum (src/nodes/node.rs:22) | tests/nodes_custom.rs | closed enum, not strings |
 | `NodeAccess` | Present | StorageAccess (src/nodes/node.rs:943) | tests/nodes_compute_indirect_wgsl.rs | renamed |
-| `defaultShaderStages` | Absent | — | — | comment only: src/nodes/builder.rs |
-| `defaultBuildStages` | Absent | — | — |  |
-| `shaderStages` | Absent | — | — |  |
-| `vectorComponents` | Absent | — | — |  |
+| `defaultShaderStages` | N.A. | — | — | JS metadata constant (`[ 'fragment', 'vertex' ]`); the port's stages are the closed `Stage` enum |
+| `defaultBuildStages` | N.A. | — | — | JS metadata constant; the port's stages are the closed `Stage` enum |
+| `shaderStages` | N.A. | — | — | JS metadata constant; the port's stages are the closed `Stage` enum |
+| `vectorComponents` | N.A. | — | — | JS metadata constant (`[ 'x', 'y', 'z', 'w' ]`); swizzles are typed methods |
 | `attribute` | Present | attribute (src/nodes/tsl.rs:345) | tests/nodes_wgsl_varying.rs, webgpu_struct_drawindirect (graded) |  |
-| `bypass` | Absent | — | — |  |
+| `bypass` | Present | bypass, NodeRef::bypass (src/nodes/tsl/utils.rs:63,381) | tests/nodes_tsl_batch.rs |  |
 | `isolate` | Present | isolate (src/nodes/tsl.rs:158) | tests/nodes_custom.rs |  |
 | `cache` | Partial | NodeBuilder::cache (src/nodes/builder.rs:1121) | — | internal only (not public) |
 | `context` | Present | context (src/nodes/tsl.rs:145) | tests/nodes_custom.rs, webgpu_custom_fog_background (graded) |  |
-| `uniformFlow` | Absent | — | — | comment only: src/nodes/materialx/mx_noise.rs |
-| `setName` | Absent | — | — | comment only: src/nodes/builder.rs |
-| `builtinShadowContext` | Absent | — | — |  |
-| `builtinAOContext` | Absent | — | — |  |
-| `builtinGIContext` | Absent | — | — |  |
-| `label` | Absent | — | — | comment only: src/bin/viewer_app.rs |
+| `uniformFlow` | Present | uniform_flow, NodeRef::uniform_flow (src/nodes/tsl/utils.rs:29,386) | tests/nodes_tsl_batch.rs, tests/nodes_mx_library.rs | context key read by `select()`; MaterialX's `mx_select`/`mx_negate_if` use it |
+| `setName` | Present | set_name, NodeRef::set_name (src/nodes/tsl/utils.rs:44,395) | tests/nodes_tsl_batch.rs | the free function is the context key read by `uniform()`; the method renames a uniform in place, as `UniformNode.setName()` does; the key is not read by instanced attributes (docs/nodes.md §70.1) |
+| `builtinShadowContext` | Absent | — | — | needs a `getShadow` hook in the lighting context; the AO/GI context plumbing is in PR #267, so not forked here |
+| `builtinAOContext` | Absent | — | — | needs a `getAO` hook that the lighting models call on their ambient occlusion; that plumbing is in PR #267 |
+| `builtinGIContext` | Absent | — | — | as `builtinShadowContext`: waits for the AO context plumbing in PR #267 |
+| `label` | Present | label, NodeRef::label (src/nodes/tsl/utils.rs:51,402) | tests/nodes_tsl_batch.rs | deprecated (r179) alias of setName, with its two forms; `#[deprecated]` here too |
 | `overrideNode` | Partial | override_node (src/nodes/tsl.rs:99) | — | internal only (not public) |
-| `overrideNodes` | Absent | — | — | comment only: src/materials/node_material.rs |
+| `overrideNodes` | Partial | OverrideNodes (src/nodes/tsl.rs:67), Material::context_overrides | webgpu_deferred | a struct of the three accessors the ladder overrides, not an arbitrary node map |
 | `vertexIndex` | Present | vertex_index (src/nodes/tsl.rs:2026) | indirect: used by src/nodes/morph.rs |  |
 | `instanceIndex` | Present | instance_index (src/nodes/tsl.rs:2031) | tests/nodes_compute_indirect_wgsl.rs, webgpu_compute_points (graded) |  |
-| `subgroupIndex` | Absent | — | — |  |
-| `invocationSubgroupIndex` | Absent | — | — |  |
+| `subgroupIndex` | Absent | — | — | needs `enable subgroups;` and wgpu's SUBGROUP feature, which the renderer does not request; the subgroup family is Absent together |
+| `invocationSubgroupIndex` | Absent | — | — | as `subgroupIndex` |
 | `invocationLocalIndex` | Present | invocation_local_index (src/nodes/tsl.rs:2036) | tests/nodes_compute_indirect_wgsl.rs |  |
-| `drawIndex` | Absent | — | — |  |
+| `drawIndex` | N.A. | — | — | WebGL-only: three's `WGSLNodeBuilder.getDrawIndex()` returns `null` |
 | `struct` | Present | struct_type (src/nodes/tsl.rs:3837) | webgpu_struct_drawindirect (graded) |  |
-| `uniformGroup` | Absent | — | — |  |
-| `sharedUniformGroup` | Absent | — | — | comment only: src/nodes/builder.rs |
-| `frameGroup` | Absent | — | — |  |
-| `renderGroup` | Partial | BufferSource::group_and_name (src/nodes/node.rs:726) | — | internal only (not public) |
-| `objectGroup` | Absent | — | — | comment only: src/nodes/node.rs |
+| `uniformGroup` | Absent | — | — | UniformGroup is a closed enum mapped onto fixed bind groups; named user groups need renderer bind-group work |
+| `sharedUniformGroup` | Absent | — | — | as `uniformGroup`; only the internal `cameraIndex` shared group exists (UniformGroup::CameraIndex) |
+| `frameGroup` | Absent | — | — | as `uniformGroup`: no per-frame bind group; frame values live in the render group |
+| `renderGroup` | Present | UniformGroup::Render (src/nodes/node.rs:132) | tests/nodes_tsl_batch.rs, tests/nodes_fog.rs | an enum variant passed to `uniform()`, not a node |
+| `objectGroup` | Present | UniformGroup::Object (src/nodes/node.rs:137) | tests/nodes_tsl_batch.rs | an enum variant passed to `uniform()`, not a node |
 | `uniform` | Present | uniform_value (src/nodes/tsl.rs:350) | tests/nodes_custom.rs, webgpu_compute_points (graded) |  |
 | `varying` | Present | NodeRef::to_varying (src/nodes/tsl.rs) | tests/nodes_wgsl_varying.rs | method form |
-| `vertexStage` | Absent | — | — |  |
+| `vertexStage` | Present | vertex_stage, NodeRef::to_vertex_stage (src/nodes/tsl/utils.rs:69,407) | tests/nodes_tsl_batch.rs |  |
 | `oscSine` | Present | osc_sine (src/nodes/tsl.rs:4569) | tests/nodes_tsl_batch.rs, webgpu_cubemap_mix (graded) |  |
 | `oscSquare` | Present | osc_square (src/nodes/tsl/wrappers.rs:684) | tests/nodes_tsl_batch.rs |  |
 | `oscTriangle` | Present | osc_triangle (src/nodes/tsl/wrappers.rs:679) | tests/nodes_tsl_batch.rs |  |
 | `oscSawtooth` | Present | osc_sawtooth (src/nodes/tsl/wrappers.rs:689) | tests/nodes_tsl_batch.rs |  |
 | `packNormalToRGB` | Present | pack_normal_to_rgb (src/nodes/tsl.rs:4660) | webgpu_mesh_batch (graded) |  |
-| `unpackRGBToNormal` | Absent | — | — |  |
-| `unpackNormal` | Absent | — | — |  |
-| `directionToColor` | Absent | — | — | deprecated r185 alias of packNormalToRGB |
-| `colorToDirection` | Absent | — | — | deprecated r185 alias of unpackRGBToNormal |
+| `unpackRGBToNormal` | Present | unpack_rgb_to_normal (src/nodes/tsl/utils.rs:94) | tests/nodes_tsl_batch.rs | gated against the `colorToDirection` dump, which calls it |
+| `unpackNormal` | Present | unpack_normal (src/nodes/tsl/utils.rs:79) | tests/nodes_tsl_batch.rs |  |
+| `directionToColor` | Present | direction_to_color (src/nodes/tsl/utils.rs:88) | tests/nodes_tsl_batch.rs | deprecated r185 alias of packNormalToRGB; `#[deprecated]` here too |
+| `colorToDirection` | Present | color_to_direction (src/nodes/tsl/utils.rs:101) | tests/nodes_tsl_batch.rs | deprecated r185 alias of unpackRGBToNormal; `#[deprecated]` here too |
 | `remap` | Present | remap (src/nodes/tsl/wrappers.rs:734) | tests/nodes_tsl_batch.rs, webgpu_tsl_earth (graded) |  |
 | `remapClamp` | Present | remap_clamp (src/nodes/tsl/wrappers.rs:753) | tests/nodes_tsl_batch.rs, webgpu_tsl_halftone (graded) |  |
-| `replaceDefaultUV` | Absent | — | — |  |
+| `replaceDefaultUV` | Absent | — | — | `texture()` fixes its uv when it is called; texture_uv covers a per-call uv, but deferring every texture's default uv to a context is not done |
 | `rotateUV` | Present | rotate_uv (src/nodes/tsl/wrappers.rs:695) | tests/nodes_tsl_batch.rs |  |
 | `spherizeUV` | Present | spherize_uv (src/nodes/tsl/wrappers.rs:712) | tests/nodes_tsl_batch.rs, webgpu_tsl_vfx_flames (graded) |  |
 | `billboarding` | Present | billboarding (src/nodes/tsl/wrappers.rs:860) | webgpu_tsl_vfx_flames (graded) |  |
@@ -1645,24 +1645,24 @@ Partial: `NodeShaderStage`, `cache`, `overrideNode`, `renderGroup`, `subBuild`.
 | `time` | Present | time (src/nodes/tsl.rs:2294) | tests/nodes_custom.rs, webgpu_cubemap_mix (graded) |  |
 | `deltaTime` | Present | delta_time (src/nodes/tsl/wrappers.rs:791) | tests/nodes_tsl_batch.rs |  |
 | `frameId` | Present | frame_id (src/nodes/tsl/wrappers.rs:807) | tests/nodes_frame.rs |  |
-| `sample` | Absent | — | — | no SampleNode callback form; PmremHandle::sample etc. are texture methods (false positive) |
-| `OnObjectUpdate` | Absent | — | — | comment only: src/nodes/node.rs |
-| `OnMaterialUpdate` | Absent | — | — |  |
-| `OnFrameUpdate` | Absent | — | — |  |
-| `OnAfterObjectUpdate` | Absent | — | — |  |
-| `OnBeforeObjectUpdate` | Absent | — | — |  |
-| `OnBeforeMaterialUpdate` | Absent | — | — |  |
-| `OnBeforeFrameUpdate` | Absent | — | — |  |
-| `OnBeforeRenderPipeline` | Absent | — | — | comment only: src/cameras/mod.rs |
-| `OnAfterRenderPipeline` | Absent | — | — | comment only: src/renderer/render_pipeline.rs |
-| `expression` | Absent | — | — | comment only: src/lights/point_shadow.rs |
-| `debug` | Absent | — | — | comment only: src/bin/viewer_app.rs |
+| `sample` | Partial | sample, SampleNode (src/nodes/tsl/utils.rs:202,146) | tests/nodes_tsl_batch.rs | `convert_to_texture` does not pass a SampleNode through: it takes a NodeRef and always draws an RTT (docs/nodes.md §70.4); three's unused `uv` argument is dropped |
+| `OnObjectUpdate` | Partial | on_object_update (src/nodes/tsl/utils.rs:328) | tests/nodes_frame.rs | callback gets the Renderer, not three's NodeFrame with object and material; attach with `.bypass()` |
+| `OnMaterialUpdate` | Partial | on_material_update (src/nodes/tsl/utils.rs:334) | tests/nodes_frame.rs | callback gets the Renderer, not three's NodeFrame with object and material; attach with `.bypass()` |
+| `OnFrameUpdate` | Partial | on_frame_update (src/nodes/tsl/utils.rs:339) | tests/nodes_frame.rs | callback gets the Renderer, not three's NodeFrame with object and material; attach with `.bypass()` |
+| `OnAfterObjectUpdate` | Partial | on_after_object_update (src/nodes/tsl/utils.rs:345) | tests/nodes_frame.rs | callback gets the Renderer, not three's NodeFrame with object and material; attach with `.bypass()` |
+| `OnBeforeObjectUpdate` | Partial | on_before_object_update (src/nodes/tsl/utils.rs:351) | tests/nodes_frame.rs | callback gets the Renderer, not three's NodeFrame with object and material; attach with `.bypass()` |
+| `OnBeforeMaterialUpdate` | Partial | on_before_material_update (src/nodes/tsl/utils.rs:356) | tests/nodes_frame.rs | callback gets the Renderer, not three's NodeFrame with object and material; attach with `.bypass()` |
+| `OnBeforeFrameUpdate` | Partial | on_before_frame_update (src/nodes/tsl/utils.rs:361) | tests/nodes_frame.rs | callback gets the Renderer, not three's NodeFrame with object and material; attach with `.bypass()` |
+| `OnBeforeRenderPipeline` | Partial | RenderPipeline::on_before_render (src/renderer/render_pipeline.rs:89) | tests/renderer_pipeline_hooks.rs | a method on the pipeline, not a node collected from its output graph |
+| `OnAfterRenderPipeline` | Partial | RenderPipeline::on_after_render (src/renderer/render_pipeline.rs:96) | tests/renderer_pipeline_hooks.rs | as `OnBeforeRenderPipeline` |
+| `expression` | Present | expression (src/nodes/tsl/utils.rs:113), Node::Expression | tests/nodes_tsl_batch.rs |  |
+| `debug` | Present | debug, NodeRef::debug (src/nodes/tsl/utils.rs:125,412), DebugCallback | tests/nodes_tsl_batch.rs | no callback logs to stderr in three's format; the callback gets stage, flow and snippet; no `.toStack()`, so a debug fires only if its result is read |
 | `subBuild` | Partial | in_sub_build (src/nodes/tsl.rs:168) | — | internal only (not public) |
 | `inspect` | N.A. | — | — | DOM inspector; InspectorNode.js |
-| `addNodeElement` | Absent | — | — |  |
+| `addNodeElement` | N.A. | — | — | removed API: three's export only warns |
 | `code` | Present | code (src/nodes/tsl.rs:4430) | tests/nodes_custom.rs, webgpu_materials (graded) |  |
 | `js` | N.A. | — | — | JS codegen; CodeNode.js |
-| `wgsl` | Absent | — | — | code() covers raw WGSL; TextureKind::declaration hit is a false positive |
+| `wgsl` | Present | wgsl (src/nodes/tsl/utils.rs:225) | tests/nodes_tsl_batch.rs | raw code for a wgslFn's includes |
 | `glsl` | N.A. | — | — | WebGL-only; CodeNode.js |
 | `glslFn` | N.A. | — | — | WebGL-only; FunctionNode.js |
 | `wgslFn` | Present | wgsl_fn (src/nodes/code.rs:59) | tests/nodes_wgsl_varying.rs, webgpu_materials (graded) |  |
