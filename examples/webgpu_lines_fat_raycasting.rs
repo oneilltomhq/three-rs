@@ -258,15 +258,12 @@ pub fn animate(app: &mut App) {
 
         // `color.fromBufferAttribute( instanceColorStart, faceIndex )`.
         let mut color = Color::default();
-        if let (Some(index), Some(colors)) = (
-            hit.face_index,
-            obj.borrow()
-                .payload
-                .line_segments()
-                .and_then(|segments| segments.colors.clone()),
-        ) {
-            let start = &colors[index * 6..index * 6 + 3];
-            color = Color::new(start[0] as f64, start[1] as f64, start[2] as f64);
+        if let Some(index) = hit.face_index {
+            let object = obj.borrow();
+            let geometry = object.payload.geometry();
+            if let Some(start) = geometry.and_then(|g| g.get_attribute("instanceColorStart")) {
+                color = Color::new(start.get_x(index), start.get_y(index), start.get_z(index));
+            }
         }
 
         set_sphere_color(&app.sphere_inter, &color, 0.3);

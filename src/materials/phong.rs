@@ -416,8 +416,8 @@ pub(crate) fn shadow_factor_transmitted(
 }
 
 /// `AmbientLightNode.setup()` — `irradiance += lightColor`, no attenuation.
+/// The first one's assign emits `irradiance`'s zero initialiser above it.
 pub(crate) fn ambient_lights(indices: &[usize], out: &mut Vec<NodeRef>) {
-    out.push(irradiance().assign(vec3(0.0, 0.0, 0.0)));
     for index in indices {
         out.push(irradiance().assign(irradiance().add(light_color_intensity(*index))));
     }

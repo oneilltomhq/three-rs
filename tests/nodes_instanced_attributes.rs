@@ -57,7 +57,7 @@ fn instanced_buffers(program: &NodeProgram) -> Vec<(u64, Vec<u64>)> {
                 desc.array_stride,
                 desc.attributes
                     .iter()
-                    .map(|(_, _, offset)| *offset)
+                    .map(|(_, _, offset, _)| *offset)
                     .collect(),
             )
         })

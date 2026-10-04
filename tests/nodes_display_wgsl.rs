@@ -522,22 +522,154 @@ fn sss_shadow_context_matches_three() {
     };
     let fog = SceneFog::Linear(Fog::new(Color::from_hex(0xa0a0a0), 10.0, 50.0)).node();
     let program = NodeBuilder::new().build(&setup(&material, &ctx, Some(&fog)));
-    // The port's Phong flow emits each accumulator's zero twice in a row:
-    // `irradiance`, `directDiffuse`, `directSpecular` and `indirectDiffuse =
-    // vec3<f32>( 0.0, 0.0, 0.0 );`, once from the var's lazy initialiser and
-    // once from the flow's explicit zero assign (`src/materials/
-    // node_material.rs`). three's dump has each once. It happens on main too,
-    // with or without the shadow context: issue #281. Only an adjacent repeat
-    // of the same line is dropped, so a missing or extra light term still
-    // shows.
-    let mut lines: Vec<&str> = program.fragment_wgsl.lines().collect();
-    lines.dedup();
-    let ours = fingerprint(&lines.join("\n"), Region::Body);
-    let three = fingerprint(
-        &fixture("webgpu_postprocessing_sss_m12_ground.wgsl"),
-        Region::Body,
-    );
+    let three_wgsl = fixture("webgpu_postprocessing_sss_m12_ground.wgsl");
+    let ours = fingerprint(&program.fragment_wgsl, Region::Body);
+    let three = fingerprint(&three_wgsl, Region::Body);
     assert_eq!(ours, three, "\n{}", program.fragment_wgsl);
+    // Issue #281: each accumulator's zero once, as three has it — not the
+    // var's lazy initialiser followed by an explicit zero assign. The
+    // fingerprint counts the literals, but this says which line is wrong.
+    assert_eq!(
+        accumulator_zeros(&program.fragment_wgsl),
+        accumulator_zeros(&three_wgsl),
+        "\n{}",
+        program.fragment_wgsl
+    );
+    // And each where three has it: the statement right after the zero is
+    // the one that first uses the accumulator, as in the dump.
+    let after_zero = |wgsl: &str| -> Vec<String> {
+        let body = region(wgsl, Region::Body);
+        let lines: Vec<&str> = body.lines().map(str::trim).collect();
+        lines
+            .windows(2)
+            .filter(|w| w[0].ends_with("= vec3<f32>( 0.0, 0.0, 0.0 );"))
+            .map(|w| {
+                let next = w[1].split(" = ").next().unwrap_or("");
+                format!("{} -> {}", w[0].split(" = ").next().unwrap_or(""), next)
+            })
+            .collect()
+    };
+    let ours = after_zero(&program.fragment_wgsl);
+    let ours: Vec<String> = ours.iter().map(|l| without_counter(l)).collect();
+    let three: Vec<String> = after_zero(&three_wgsl)
+        .iter()
+        .map(|l| without_counter(l))
+        .collect();
+    assert_eq!(ours, three, "\n{}", program.fragment_wgsl);
+}
+
+/// `let nodeConst3` / `nodeVar3` with the counter dropped: the two builders
+/// number their temps differently.
+fn without_counter(line: &str) -> String {
+    line.trim_end_matches(|c: char| c.is_ascii_digit())
+        .replace("let nodeConst", "nodeVar")
+}
+
+/// `LightingContextNode`'s accumulators (and the physical model's own vec3
+/// vars), each with how many `name = vec3<f32>( 0.0, 0.0, 0.0 );` lines
+/// `main()` has for it — the zero three emits once, where the var is first
+/// used.
+fn accumulator_zeros(wgsl: &str) -> BTreeMap<&'static str, usize> {
+    const NAMES: [&str; 12] = [
+        "irradiance",
+        "directDiffuse",
+        "directSpecular",
+        "indirectDiffuse",
+        "indirectSpecular",
+        "radiance",
+        "iblIrradiance",
+        "clearcoatRadiance",
+        "clearcoatSpecularDirect",
+        "clearcoatSpecularIndirect",
+        "sheenSpecularDirect",
+        "sheenSpecularIndirect",
+    ];
+    let body = region(wgsl, Region::Body);
+    NAMES
+        .iter()
+        .map(|name| {
+            let zero = format!("{name} = vec3<f32>( 0.0, 0.0, 0.0 );");
+            (*name, body.lines().filter(|l| l.trim() == zero).count())
+        })
+        .filter(|(_, n)| *n > 0)
+        .collect()
+}
+
+/// Issue #281 across the lit flows: Phong (with an ambient light, with a
+/// hemisphere light, with neither), Lambert, Toon, Standard and a clearcoated
+/// Physical each zero an accumulator once. The fingerprint gates above only see the Phong ground
+/// of `webgpu_postprocessing_sss`; this covers the other branches of
+/// `setup_phong` and the physical flow, none of which a fixture isolates.
+#[test]
+fn lit_accumulators_are_zeroed_once() {
+    use three_rs::{Color, MeshPhongNodeMaterial};
+
+    let light = |index, kind| LightDesc {
+        index,
+        kind,
+        shadow_map: None,
+    };
+    let scenes = [
+        (
+            "ambient",
+            vec![
+                light(0, LightKind::Ambient),
+                light(1, LightKind::Directional),
+            ],
+        ),
+        (
+            "hemisphere",
+            vec![light(0, LightKind::Hemisphere), light(1, LightKind::Point)],
+        ),
+        (
+            "direct only",
+            vec![light(0, LightKind::Directional), light(1, LightKind::Spot)],
+        ),
+        ("no lights", vec![]),
+    ];
+    let materials = [
+        (
+            "phong",
+            MeshPhongNodeMaterial::phong(Color::from_hex(0xcbcbcb)),
+        ),
+        (
+            "lambert",
+            MeshPhongNodeMaterial::lambert(Color::from_hex(0xcbcbcb)),
+        ),
+        (
+            "toon",
+            MeshPhongNodeMaterial::toon(Color::from_hex(0xcbcbcb), None),
+        ),
+        (
+            "standard",
+            MeshPhongNodeMaterial::standard(Color::from_hex(0xcbcbcb), 0.5, 0.5),
+        ),
+        ("clearcoat", {
+            let mut m = MeshPhongNodeMaterial::physical(Color::from_hex(0xcbcbcb), 0.5, 0.5);
+            m.clearcoat = 1.0;
+            m
+        }),
+    ];
+    for (material_name, material) in &materials {
+        for (scene, lights) in &scenes {
+            let ctx = SetupContext {
+                lights: lights.clone(),
+                ..SetupContext::default()
+            };
+            let program = NodeBuilder::new().build(&setup(material, &ctx, None));
+            let zeros = accumulator_zeros(&program.fragment_wgsl);
+            // The physical flow's own zeros are in what is checked.
+            if *material_name == "clearcoat" && !lights.is_empty() {
+                assert!(zeros.contains_key("clearcoatRadiance"), "{zeros:?}");
+                assert!(zeros.contains_key("radiance"), "{zeros:?}");
+            }
+            assert!(
+                zeros.values().all(|n| *n == 1),
+                "{material_name}, {scene}: {zeros:?}\n{}",
+                program.fragment_wgsl
+            );
+        }
+    }
 }
 
 #[test]

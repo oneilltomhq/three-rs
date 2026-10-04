@@ -19,6 +19,7 @@
 
 use std::collections::HashMap;
 
+use three_rs::core::BufferAttribute;
 use three_rs::materials::{setup, SetupContext};
 use three_rs::nodes::tsl::{
     atomic_add, atomic_load, instance_index, instanced_array, invocation_local_index, uint,
@@ -200,14 +201,24 @@ fn render_material_reads_the_instanced_attributes() {
         "{fragment}"
     );
 
-    // With the attributes marked per-instance, only `position` steps per
-    // vertex.
-    let program = program.with_instanced_attributes(&[
-        "offset".to_string(),
-        "color".to_string(),
-        "orientationStart".to_string(),
-        "orientationEnd".to_string(),
-    ]);
+    // With the attributes per-instance on the geometry, only `position`
+    // steps per vertex.
+    let mut geometry = three_rs::core::BufferGeometry::new();
+    geometry.set_attribute("position", BufferAttribute::new(vec![0.0; 9], 3));
+    geometry.set_attribute("offset", BufferAttribute::new_instanced(vec![0.0; 3], 3));
+    geometry.set_attribute("color", BufferAttribute::new_instanced(vec![0.0; 4], 4));
+    for name in ["orientationStart", "orientationEnd"] {
+        geometry.set_attribute(name, BufferAttribute::new_instanced(vec![0.0; 4], 4));
+    }
+    let ctx = SetupContext {
+        geometry_attributes: geometry.attribute_descs(),
+        ..SetupContext::default()
+    };
+    let program = NodeBuilder::new().build(&setup(&material, &ctx, None));
+    assert_eq!(
+        program.vertex_wgsl, *vertex,
+        "the step mode is not in the WGSL"
+    );
     let steps: Vec<bool> = program
         .vertex_buffers()
         .iter()
