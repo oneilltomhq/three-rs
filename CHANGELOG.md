@@ -570,6 +570,15 @@ have their own sections after the release they ship with. The format follows [Ke
 
 ### Fixed
 
+- A map's filters and wrap modes changed after the first draw rebuild the
+  program (#276). Three's WebGPU backend folds every texture property's
+  `magFilter`, `minFilter`, `wrapS` and `wrapT` into the material cache key;
+  the port keyed programs on the material's id and version only, so switching
+  a map to `Nearest` (unfilterable: `textureLoad`, no sampler) or changing an
+  unfilterable map's `wrap_s` (its `tsl_coord_*` wrap function) kept the stale
+  program. The sampler state is now read off the material's textures into the
+  dynamic half of the key at every draw. `tests/texture_sampler_rebuild.rs`
+  covers it.
 - A depth-stencil texture is sampled through a depth-only view. With
   `RendererParameters::stencil` on, `viewportDepthTexture()`'s copy of the
   `depth24plus-stencil8` canvas depth failed bind-group validation, because
