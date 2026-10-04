@@ -47,22 +47,24 @@ const fixture = process.argv[ 3 ] || path.join( here, '../tests/fixtures/fly_con
 const buildUrl = pathToFileURL( path.join( threeDir, 'build/three.module.js' ) ).href;
 const THREE = await import( buildUrl );
 
+// The fixture is three.js at the pinned commit (5f610f5); another revision's
+// output is not a fixture.
+if ( THREE.REVISION !== '187dev' ) throw new Error( `expected three.js r187dev, ${ threeDir } is r${ THREE.REVISION }` );
+
 const source = fs
 	.readFileSync( path.join( threeDir, 'examples/jsm/controls/FlyControls.js' ), 'utf8' )
 	.replace( /from 'three'/g, `from '${ buildUrl }'` );
 
-const temporary = path.join(
-	fs.mkdtempSync( path.join( os.tmpdir(), 'three-rs-fly-' ) ),
-	'FlyControls.js'
-);
-fs.writeFileSync( temporary, source );
+const temporary = fs.mkdtempSync( path.join( os.tmpdir(), 'three-rs-fly-' ) );
+fs.writeFileSync( path.join( temporary, 'FlyControls.js' ), source );
 
-const { FlyControls } = await import( pathToFileURL( temporary ).href );
+const { FlyControls } = await import( pathToFileURL( path.join( temporary, 'FlyControls.js' ) ).href );
+fs.rmSync( temporary, { recursive: true, force: true } );
 
 globalThis.document = { isStubDocument: true };
 
-const ELEMENT_WIDTH = 800;
-const ELEMENT_HEIGHT = 500;
+const ELEMENT_WIDTH = 640;
+const ELEMENT_HEIGHT = 360;
 const OFFSET_LEFT = 30;
 const OFFSET_TOP = 20;
 
@@ -223,7 +225,7 @@ const scenarios = {};
 	frames( controls, changes, c, steps, 4 );
 
 	controls._onPointerCancel( pointer( 2, 150, 420 ) );
-	controls._onPointerMove( pointer( 0, 400, 250 ) ); // dead centre: no turn
+	controls._onPointerMove( pointer( 0, 320, 180 ) ); // dead centre: no turn
 	frames( controls, changes, c, steps, 3 );
 
 	scenarios.pointer_steer = steps;

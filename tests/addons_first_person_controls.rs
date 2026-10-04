@@ -197,6 +197,32 @@ fn auto_forward_height() -> Vec<Step> {
     controls.pointer_up(MouseButton::Left);
     frames(&mut controls, &mut c, &mut steps, 4, DT);
 
+    // A right drag moves back at movementSpeed, not the height-scaled
+    // forwardSpeed.
+    controls.pointer_down(MouseButton::Right, 400.0, 250.0);
+    controls.pointer_move(430.0, 260.0);
+    frames(&mut controls, &mut c, &mut steps, 6, DT);
+    controls.pointer_up(MouseButton::Right);
+
+    // W drives at forwardSpeed; with R it climbs past heightMax, where
+    // forwardSpeed stops growing.
+    controls.key_down(KeyCode::KeyW);
+    frames(&mut controls, &mut c, &mut steps, 4, DT);
+
+    controls.key_down(KeyCode::KeyR);
+    frames(&mut controls, &mut c, &mut steps, 24, 0.1);
+    assert!(steps.iter().any(|s| s.position[1] > controls.height_max));
+
+    // F, and autoForward along the downward look, drop it below heightMin.
+    controls.key_up(KeyCode::KeyW);
+    controls.key_up(KeyCode::KeyR);
+    controls.key_down(KeyCode::KeyF);
+    frames(&mut controls, &mut c, &mut steps, 12, 0.1);
+    assert!(steps.iter().any(|s| s.position[1] < controls.height_min));
+
+    controls.key_up(KeyCode::KeyF);
+    frames(&mut controls, &mut c, &mut steps, 4, DT);
+
     steps
 }
 
@@ -294,6 +320,16 @@ fn parse(text: &str, origin: &str) -> serde_json::Map<String, serde_json::Value>
         .clone()
 }
 
+/// Under `CI` a missing checkout or node is a failure, as in
+/// `tests/loaders_webp.rs`; locally it is a skip.
+fn skip(reason: &str) -> Option<serde_json::Map<String, serde_json::Value>> {
+    if std::env::var_os("CI").is_some() {
+        panic!("the three.js re-run cannot run: {reason}");
+    }
+    eprintln!("not re-running three.js: {reason}");
+    None
+}
+
 /// Runs the reference script into a scratch file, or says why it cannot.
 fn live_reference() -> Option<serde_json::Map<String, serde_json::Value>> {
     let three = three_rs::testing::three_js_dir();
@@ -301,11 +337,10 @@ fn live_reference() -> Option<serde_json::Map<String, serde_json::Value>> {
         .join("examples/jsm/controls/FirstPersonControls.js")
         .exists()
     {
-        eprintln!(
-            "not re-running three.js: no checkout at {} (set THREE_JS_DIR)",
+        return skip(&format!(
+            "no checkout at {} (set THREE_JS_DIR)",
             three.display()
-        );
-        return None;
+        ));
     }
 
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -317,10 +352,7 @@ fn live_reference() -> Option<serde_json::Map<String, serde_json::Value>> {
         .output()
     {
         Ok(output) => output,
-        Err(error) => {
-            eprintln!("not re-running three.js: cannot run node ({error})");
-            return None;
-        }
+        Err(error) => return skip(&format!("cannot run node ({error})")),
     };
     assert!(
         output.status.success(),

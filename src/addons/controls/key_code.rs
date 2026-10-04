@@ -10,7 +10,10 @@
 ///
 /// Every other code is [`KeyCode::Other`], which both classes ignore, as their
 /// `switch` statements do.
+///
+/// Non-exhaustive: a later port that binds another key adds a variant.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[non_exhaustive]
 pub enum KeyCode {
     /// `"ArrowUp"`.
     ArrowUp,

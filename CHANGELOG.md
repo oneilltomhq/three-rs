@@ -9,8 +9,8 @@ have their own sections after the release they ship with. The format follows [Ke
 ### Added
 
 - **`FirstPersonControls`** and **`FlyControls`** (`addons::controls`), ports
-  of r187's `examples/jsm/controls/FirstPersonControls.js` and
-  `FlyControls.js` with the same fields, defaults and `update( delta )`. Input
+  of `examples/jsm/controls/FirstPersonControls.js` and `FlyControls.js` as
+  of the pinned 5f610f5 (r187dev), with the same fields, defaults and `update( delta )`. Input
   arrives as method calls (`pointer_down`, `pointer_move`, `key_down` with a
   new `KeyCode`, …) rather than DOM listeners, the camera is passed to
   `update` as a `&Node`, and Fly's `change` event is `update`'s return value.

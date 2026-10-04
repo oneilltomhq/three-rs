@@ -8,16 +8,20 @@ use crate::math::{Spherical, Vector3};
 /// Walk and look around: WASD / arrows move in the ground plane, R / F move
 /// up and down, and a drag turns the view, easing in and out.
 ///
-/// A port of r187's `examples/jsm/controls/FirstPersonControls.js`: the same
-/// fields with the same defaults, and the same `update( delta )` — the
-/// world-axis key velocity from the camera's yaw, the look-direction pointer
-/// velocity, the shared `dampingFactor` lerp on both, the latitude clamp to
-/// ±85° and the spherical `lookAt` the camera ends each frame with.
+/// A port of `examples/jsm/controls/FirstPersonControls.js` as of the pinned
+/// 5f610f5 (r187dev): the same fields with the same defaults, and the same
+/// `update( delta )` — the world-axis key velocity from the camera's yaw, the
+/// look-direction pointer velocity, the shared `dampingFactor` lerp on both,
+/// the latitude clamp to ±85° and the spherical `lookAt` the camera ends each
+/// frame with.
 ///
-/// r187 rewrote the class: the look velocity is now the pointer's offset from
-/// where the drag *started* (not from the element's centre), so the element's
-/// size is no longer read anywhere and there is no `activeLook` or
-/// `handleResize()`. This port follows r187.
+/// The damped, world-axis version landed in r186: #33874 added the eased
+/// velocities and separate key / pointer move sources, f88964a made the keys
+/// world-axis aligned, and #34485 restored R / F. Already before that, the
+/// look came from the pointer's offset from where the drag *started* (not
+/// from the element's centre), so the element's size is not read anywhere and
+/// there is no `activeLook`; `handleResize()` has been a deprecated no-op
+/// since r184.
 ///
 /// # Input, as calls
 ///
@@ -45,7 +49,7 @@ use crate::math::{Spherical, Vector3};
 ///
 /// - The `Controls` base class's `connect()` / `disconnect()` / `dispose()`,
 ///   and the `contextmenu` suppression: they are DOM listener bookkeeping.
-/// - `handleResize()`, a deprecated no-op in r187.
+/// - `handleResize()`, a deprecated no-op since r184.
 pub struct FirstPersonControls {
     /// `controls.enabled` (from the `Controls` base class). When `false`,
     /// [`update`](Self::update) does nothing; input is still recorded, as in
@@ -282,7 +286,7 @@ impl FirstPersonControls {
         self.lon += self.lon_velocity * delta;
         self.lat += self.lat_velocity * delta;
 
-        self.lat = (-85.0_f64).max(85.0_f64.min(self.lat));
+        self.lat = clamp(self.lat, -85.0, 85.0);
 
         let mut phi = deg_to_rad(90.0 - self.lat);
         let theta = deg_to_rad(self.lon);

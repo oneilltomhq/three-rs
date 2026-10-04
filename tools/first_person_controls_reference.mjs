@@ -42,17 +42,19 @@ const fixture = process.argv[ 3 ] || path.join( here, '../tests/fixtures/first_p
 const buildUrl = pathToFileURL( path.join( threeDir, 'build/three.module.js' ) ).href;
 const THREE = await import( buildUrl );
 
+// The fixture is three.js at the pinned commit (5f610f5); another revision's
+// output is not a fixture.
+if ( THREE.REVISION !== '187dev' ) throw new Error( `expected three.js r187dev, ${ threeDir } is r${ THREE.REVISION }` );
+
 const source = fs
 	.readFileSync( path.join( threeDir, 'examples/jsm/controls/FirstPersonControls.js' ), 'utf8' )
 	.replace( /from 'three'/g, `from '${ buildUrl }'` );
 
-const temporary = path.join(
-	fs.mkdtempSync( path.join( os.tmpdir(), 'three-rs-first-person-' ) ),
-	'FirstPersonControls.js'
-);
-fs.writeFileSync( temporary, source );
+const temporary = fs.mkdtempSync( path.join( os.tmpdir(), 'three-rs-first-person-' ) );
+fs.writeFileSync( path.join( temporary, 'FirstPersonControls.js' ), source );
 
-const { FirstPersonControls } = await import( pathToFileURL( temporary ).href );
+const { FirstPersonControls } = await import( pathToFileURL( path.join( temporary, 'FirstPersonControls.js' ) ).href );
+fs.rmSync( temporary, { recursive: true, force: true } );
 
 globalThis.document = { isStubDocument: true };
 
@@ -226,7 +228,9 @@ const scenarios = {};
 }
 
 // 4. autoForward with heightSpeed and no vertical look; a forward key held
-// while clicking means the click only looks; a heavier damping factor.
+// while clicking means the click only looks; a heavier damping factor. Then
+// a right drag, W, and a climb past heightMax and a drop below heightMin, so
+// both speeds and both ends of the height clamp are exercised.
 {
 
 	const c = camera();
@@ -255,6 +259,30 @@ const scenarios = {};
 	frames( controls, c, steps, 4 );
 
 	controls._onPointerUp( pointer( 0, 330, 300 ) );
+	frames( controls, c, steps, 4 );
+
+	// A right drag moves back at movementSpeed, not the height-scaled
+	// forwardSpeed.
+	controls._onPointerDown( pointer( 2, 400, 250 ) );
+	controls._onPointerMove( pointer( 2, 430, 260 ) );
+	frames( controls, c, steps, 6 );
+	controls._onPointerUp( pointer( 2, 430, 260 ) );
+
+	// W drives at forwardSpeed; with R it climbs past heightMax, where
+	// forwardSpeed stops growing.
+	controls._onKeyDown( key( 'KeyW' ) );
+	frames( controls, c, steps, 4 );
+
+	controls._onKeyDown( key( 'KeyR' ) );
+	frames( controls, c, steps, 24, 0.1 );
+
+	// F, and autoForward along the downward look, drop it below heightMin.
+	controls._onKeyUp( key( 'KeyW' ) );
+	controls._onKeyUp( key( 'KeyR' ) );
+	controls._onKeyDown( key( 'KeyF' ) );
+	frames( controls, c, steps, 12, 0.1 );
+
+	controls._onKeyUp( key( 'KeyF' ) );
 	frames( controls, c, steps, 4 );
 
 	scenarios.auto_forward_height = steps;

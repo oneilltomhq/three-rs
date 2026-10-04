@@ -32,8 +32,8 @@ const FIXTURE: &str = "tests/fixtures/fly_controls.json";
 /// The reference script's element: its size, and the page offset the script
 /// adds to every pointer position (and the port, which takes element-relative
 /// positions, never sees).
-const ELEMENT_WIDTH: f64 = 800.0;
-const ELEMENT_HEIGHT: f64 = 500.0;
+const ELEMENT_WIDTH: f64 = 640.0;
+const ELEMENT_HEIGHT: f64 = 360.0;
 
 #[derive(Debug, Clone, Copy)]
 struct Step {
@@ -177,7 +177,7 @@ fn pointer_steer() -> Vec<Step> {
     frames(&mut controls, &mut c, &mut steps, 4, DT);
 
     controls.pointer_cancel();
-    controls.pointer_move(400.0, 250.0); // dead centre: no turn
+    controls.pointer_move(320.0, 180.0); // dead centre: no turn
     frames(&mut controls, &mut c, &mut steps, 3, DT);
 
     steps
@@ -271,15 +271,24 @@ fn parse(text: &str, origin: &str) -> serde_json::Map<String, serde_json::Value>
         .clone()
 }
 
+/// Under `CI` a missing checkout or node is a failure, as in
+/// `tests/loaders_webp.rs`; locally it is a skip.
+fn skip(reason: &str) -> Option<serde_json::Map<String, serde_json::Value>> {
+    if std::env::var_os("CI").is_some() {
+        panic!("the three.js re-run cannot run: {reason}");
+    }
+    eprintln!("not re-running three.js: {reason}");
+    None
+}
+
 /// Runs the reference script into a scratch file, or says why it cannot.
 fn live_reference() -> Option<serde_json::Map<String, serde_json::Value>> {
     let three = three_rs::testing::three_js_dir();
     if !three.join("examples/jsm/controls/FlyControls.js").exists() {
-        eprintln!(
-            "not re-running three.js: no checkout at {} (set THREE_JS_DIR)",
+        return skip(&format!(
+            "no checkout at {} (set THREE_JS_DIR)",
             three.display()
-        );
-        return None;
+        ));
     }
 
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -291,10 +300,7 @@ fn live_reference() -> Option<serde_json::Map<String, serde_json::Value>> {
         .output()
     {
         Ok(output) => output,
-        Err(error) => {
-            eprintln!("not re-running three.js: cannot run node ({error})");
-            return None;
-        }
+        Err(error) => return skip(&format!("cannot run node ({error})")),
     };
     assert!(
         output.status.success(),

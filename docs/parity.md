@@ -586,8 +586,8 @@ Graded examples: 85 (the README gallery plus `webgpu_textures_2d-array_compresse
 |---|---|---|---|---|
 | `ArcballControls` | Absent | — | — |  |
 | `DragControls` | Absent | — | — |  |
-| `FirstPersonControls` | Present | addons::controls::FirstPersonControls (src/addons/controls/first_person_controls.rs:49) | tests/addons_first_person_controls.rs (three's class under node, 7 scenarios, 1e-9) | DOM listener bookkeeping (connect/disconnect/dispose, contextmenu) replaced by input methods; see docs/controls.md |
-| `FlyControls` | Partial | addons::controls::FlyControls (src/addons/controls/fly_controls.rs:87) | tests/addons_fly_controls.rs (three's class under node, 5 scenarios, 1e-9) | no change event (update() returns its condition); DOM listener bookkeeping replaced by input methods |
+| `FirstPersonControls` | Present | addons::controls::FirstPersonControls (src/addons/controls/first_person_controls.rs:53) | tests/addons_first_person_controls.rs (three's class under node, 7 scenarios, 1e-9) | DOM listener bookkeeping (connect/disconnect/dispose, contextmenu) replaced by input methods; see docs/controls.md |
+| `FlyControls` | Partial | addons::controls::FlyControls (src/addons/controls/fly_controls.rs:88) | tests/addons_fly_controls.rs (three's class under node, 5 scenarios, 1e-9) | no change event (update() returns its condition); DOM listener bookkeeping replaced by input methods; the `domElement === document` branch of _getContainerDimensions (window.innerWidth/innerHeight, zero offset) dropped, the host passes the size via set_element_size |
 | `MapControls` | Partial | three_rs_controls::MapControls (addons/controls/src/map_controls.rs:216) | addons/controls unit tests | own ground-grab design, not a port; JS preset (OrbitControls screenSpacePanning=false, LEFT=PAN) not provided |
 | `OrbitControls` | Partial | addons::controls::OrbitControls (src/addons/controls/orbit_controls.rs:209) | tests/addons_orbit_controls.rs; webgpu_loader_gltf et al. | no touch gestures, no OrthographicCamera branch, no change/start/end events |
 | `PointerLockControls` | Absent | — | — |  |

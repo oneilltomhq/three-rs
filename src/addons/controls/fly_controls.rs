@@ -49,11 +49,12 @@ pub struct MoveState {
 /// axes, the arrows pitch and yaw, Q / E roll, and the pointer steers by its
 /// offset from the element's centre.
 ///
-/// A port of r187's `examples/jsm/controls/FlyControls.js`: the same fields
-/// with the same defaults, the same `_moveState`, `_updateMovementVector()` /
-/// `_updateRotationVector()`, and the same `update( delta )` — three
-/// `translateX/Y/Z` calls, then a post-multiplied, normalised small-angle
-/// quaternion, then the `_EPS` change detection that decides its return value.
+/// A port of `examples/jsm/controls/FlyControls.js` as of the pinned 5f610f5
+/// (r187dev): the same fields with the same defaults, the same `_moveState`,
+/// `_updateMovementVector()` / `_updateRotationVector()`, and the same
+/// `update( delta )` — three `translateX/Y/Z` calls, then a post-multiplied,
+/// normalised small-angle quaternion, then the `_EPS` change detection that
+/// decides its return value.
 ///
 /// # Input, as calls
 ///
@@ -100,8 +101,10 @@ pub struct FlyControls {
     /// `false`.
     pub auto_forward: bool,
     /// `movementSpeedMultiplier`: Shift sets it to 0.1 and releasing Shift
-    /// back to 1, but r187's `update()` never reads it, so neither does this.
-    /// Kept so a host that reads it sees what the JS would.
+    /// sets it to 1, but `update()` never reads it, so neither does this. The
+    /// JS constructor never assigns it, so there it is `undefined` until Shift
+    /// is first pressed; here it starts at 1, the value releasing Shift
+    /// leaves, since an `f64` has no `undefined`.
     pub movement_speed_multiplier: f64,
 
     /// `_moveState`. Call [`update_movement_vector`](Self::update_movement_vector)
@@ -131,7 +134,7 @@ impl FlyControls {
     /// `new FlyControls( object )`. The JS constructor does not read the
     /// object, so this does not take it.
     ///
-    /// The element size starts at 800x500, the frame the grader uses; call
+    /// The element size starts at 800x500; call
     /// [`set_element_size`](Self::set_element_size) with the real one.
     pub fn new() -> Self {
         Self {
@@ -157,6 +160,10 @@ impl FlyControls {
     }
 
     /// The element's `offsetWidth` and `offsetHeight`.
+    ///
+    /// Each is clamped to at least 1. The JS divides by half of each, so a
+    /// zero-sized (hidden or collapsed) element would turn the pointer's
+    /// steer into `±Infinity` or `NaN` there; here it stays finite.
     pub fn set_element_size(&mut self, width: f64, height: f64) {
         self.element_width = width.max(1.0);
         self.element_height = height.max(1.0);

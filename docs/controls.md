@@ -29,15 +29,24 @@ a map camera over a ground that is not a port; see the README's "Addons".
   only need an `Object3D` and take a `&Node` (`&camera.node`).
 - **Events are return values.** There is no `EventDispatcher`. Where the JS
   dispatches `change`, `update` returns the condition it dispatches on.
+- **Keys.** FirstPerson and Fly share `KeyCode`; OrbitControls keeps its own
+  four-arrow `Key` (inside a `KeyEvent` with modifiers). The split is
+  deliberate, and Orbit's API is left as it is.
 
 ## FirstPersonControls
 
-`examples/jsm/controls/FirstPersonControls.js` as of r187, which rewrote the
-class: movement and look are velocities eased by `dampingFactor`, the look
+`examples/jsm/controls/FirstPersonControls.js` as of the pinned 5f610f5
+(r187dev); the damped, world-axis version landed in r186 (#33874, f88964a,
+#34485). Movement and look are velocities eased by `dampingFactor`, the look
 velocity comes from the drag's offset from where it *started*, keys move along
 world axes from the camera's yaw, and the pointer moves along the look
-direction. The element's size is no longer read, and `activeLook` and
-`handleResize()` are gone; the port follows r187.
+direction. The element's size is not read, there is no `activeLook`, and
+`handleResize()` has been a deprecated no-op since r184.
+
+Routing: the JS captures the pointer on `pointerdown` and listens for
+`pointermove` / `pointerup` on the element's `ownerDocument`, so the host
+should keep sending moves and ups after the pointer leaves the element (until
+the button is released), not only while it is over it.
 
 | JS | port |
 |---|---|
@@ -74,6 +83,11 @@ directly can rebuild the two vectors the way the handlers do.
 Shift sets `movement_speed_multiplier` to 0.1 as in the JS, and, as in the JS,
 nothing reads it.
 
+Routing: the JS listens only on the element itself (no pointer capture, no
+`ownerDocument`), so the host sends input only while the pointer is over it.
+`onPointerDown` reads `event.button` for touch as well, where browsers report
+0, so send a touch press as `MouseButton::Left`.
+
 ## The gate
 
 Each port is checked against three's own class, run under node:
@@ -95,5 +109,7 @@ scenarios, replays them through the port, and compares every number.
 The FirstPerson and Fly fixtures are committed, so their tests compare
 everywhere, node or not. Where a checkout and node are present, each test also
 reruns its script into a scratch file and compares the port against that, so
-a fixture that no longer matches the pinned three.js fails. After changing a
+a fixture that no longer matches the pinned three.js fails; with `CI` set, a
+missing checkout or node fails the test instead of skipping it, and the
+scripts refuse a checkout whose `REVISION` is not the pinned one. After changing a
 script, regenerate its fixture with `node tools/<name>_reference.mjs`.
