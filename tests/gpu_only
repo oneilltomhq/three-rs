@@ -37,6 +37,7 @@ three-rs/renderer_viewport
 three-rs/retro_frames
 three-rs/stereo_frames
 three-rs/ssgi_frames
+three-rs/ssr_stochastic_frames
 three-rs/sss_frames
 three-rs/sharpen_frames
 three-rs/traa_frames
