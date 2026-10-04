@@ -945,6 +945,31 @@ pub fn get_view_position(
     view_space_position.xyz().div(view_space_position.w())
 }
 
+/// `getScreenPositionFromClip( clipPosition )` — `PostProcessingUtils.js`: a
+/// clip-space position's screen uv, y down. A `Fn()` with a layout, so it
+/// is a WGSL function.
+pub fn get_screen_position_from_clip(clip_position: NodeRef) -> NodeRef {
+    thread_local! { static CELL: Lazy<Rc<FnDef>> = const { Lazy::new() }; }
+    let def = CELL.with(|c| {
+        c.get(|| {
+            shader_fn(
+                Some("getScreenPositionFromClip"),
+                vec![("clipPosition", Type::Vec4)],
+                Type::Vec2,
+                |args| {
+                    let clip = &args[0];
+                    let screen = to_var(None, clip.xy().div(clip.w()).mul(0.5).add(0.5));
+                    block(
+                        vec![screen.clone()],
+                        vec2_join(vec![screen.x(), screen.y().one_minus()]),
+                    )
+                },
+            )
+        })
+    });
+    call(&def, vec![clip_position])
+}
+
 /// `getScreenPosition( viewPosition, projectionMatrix )` —
 /// `PostProcessingUtils.js`: the screen uv a view-space position projects
 /// to, `y` flipped (three flips it unconditionally, on every backend). The
@@ -4367,6 +4392,26 @@ pub fn depth_texture_gather_compare(
         TextureSource::ShadowMap(map.clone()),
         coord,
         SampleMode::GatherCompare { compare, offset },
+        Type::Vec4,
+    )
+}
+
+/// `texture( depthTexture ).gather().sample( uv )` — `textureGather` on a
+/// depth texture with its ordinary (non-comparison) sampler: the four depths
+/// around `uv`, as a `vec4`. `GTAONode` reads the centre depth this way to
+/// sidestep the nearest-texel rounding of a half-resolution pass.
+///
+/// A depth texture has one channel, so WGSL's `textureGather` takes no
+/// component; the `vec4<f32>( … )` cast around it is the same
+/// `UnsignedIntType` quirk as [`depth_texture_gather_compare`]'s.
+pub fn depth_texture_gather(map: &DepthTexture, coord: NodeRef) -> NodeRef {
+    texture_node(
+        TextureSource::Depth(map.clone()),
+        coord,
+        SampleMode::Gather {
+            component: int(0),
+            offset: None,
+        },
         Type::Vec4,
     )
 }

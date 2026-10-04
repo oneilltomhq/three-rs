@@ -8,6 +8,29 @@ have their own sections after the release they ship with. The format follows [Ke
 
 ### Added
 
+- **`nodes::display::ao`** (`GtaoNode`), a port of `GTAONode.js`: ground
+  truth ambient occlusion from a depth and a packed-normal pre-pass, with
+  `radius`, `thickness` and `scale` as `SettableValue`s and `set_samples`,
+  `set_resolution_scale` and `set_use_temporal_filtering` as three's
+  properties. Its shader is gated against three's dump in
+  `tests/nodes_display_wgsl.rs`, its frames in `tests/gtao_frames.rs`. See
+  `docs/nodes.md` §64.
+- **`builtinAOContext`**: `PassNode::set_context_ao( node )` multiplies an
+  occlusion into every non-transparent material the pass draws, through the
+  same `AmbientOcclusion` property an `aoMap` writes
+  (`SetupContext::ambient_occlusion`). Basic, Lambert, Phong, Toon, Standard
+  and Physical read it.
+- **`webgpu_postprocessing_ao`**, the page: a normal + velocity pre-pass,
+  GTAO at half resolution with temporal filtering, and TRAA resolving it.
+  It is in three's e2e exception list, so it is in the native viewer and
+  not graded.
+- **`tsl::depth_texture_gather`** (`texture( depth ).gather()`), with the
+  non-filtering sampler binding a gathered depth texture needs;
+  `tsl::get_screen_position_from_clip`;
+  `TraaNode::set_use_subpixel_correction`.
+- **Texture wrapping on `textureLoad`**: an unfilterable (`NearestFilter`)
+  texture is read through three's `tsl_coord_<S>S_<T>T_2d` wrap function
+  built from its `wrapS` / `wrapT`, instead of always clamping.
 - **`TransformControls`** (`addons::controls`), a port of
   `examples/jsm/controls/TransformControls.js` as of the pinned 5f610f5
   (r187dev): the translate, rotate and scale gizmo with the same picker,

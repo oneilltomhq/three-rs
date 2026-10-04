@@ -22,12 +22,12 @@ This matrix judges every exported name in three.js revision 5f610f5 (r187) — `
 | loaders | 20 | 2 | 2 | 12 | 4 | 12% |
 | renderers | 39 | 9 | 9 | 3 | 18 | 43% |
 | nodes | 141 | 100 | 27 | 9 | 5 | 74% |
-| tsl | 683 | 552 | 51 | 55 | 25 | 84% |
+| tsl | 683 | 553 | 51 | 54 | 25 | 84% |
 | addons/controls | 11 | 1 | 6 | 4 | 0 | 9% |
 | addons/loaders | 71 | 6 | 2 | 63 | 0 | 8% |
 | addons/postprocessing | 30 | 0 | 0 | 0 | 30 | — |
 | addons/other | 102 | 11 | 4 | 64 | 23 | 14% |
-| **total** | **1317** | **806** | **136** | **252** | **123** | **68%** |
+| **total** | **1317** | **807** | **136** | **251** | **123** | **68%** |
 
 TSL by family:
 
@@ -42,7 +42,7 @@ TSL by family:
 | display/postprocessing | 75 | 61 | 7 | 7 | 0 |
 | compute/storage | 53 | 46 | 7 | 0 | 0 |
 | materialx | 49 | 48 | 0 | 1 | 0 |
-| utils | 77 | 45 | 15 | 7 | 10 |
+| utils | 77 | 46 | 15 | 6 | 10 |
 
 Graded examples: 87 (the README gallery plus `webgpu_textures_2d-array_compressed`, which has a live `rung!` but a hyphen in its name). 10 more are ported but `#[ignore]`d because three.js fails its own reference on this machine; a row whose only check is one of those is Partial.
 
@@ -689,7 +689,7 @@ Graded examples: 87 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `EffectComposer` | N.A. | — | — | WebGL composer; EffectComposer -> RenderPipeline (core): Present; RenderPipeline (src/renderer/render_pipeline.rs:31); webgpu_postprocessing_masking |
 | `FXAAPass` | N.A. | — | — | WebGL composer; FXAAPass -> FXAANode fxaa(): Present; fxaa (src/nodes/display/fxaa.rs:26); webgpu_postprocessing_fxaa |
 | `FilmPass` | N.A. | — | — | WebGL composer; FilmPass -> FilmNode film(): Absent |
-| `GTAOPass` | N.A. | — | — | WebGL composer; GTAOPass -> GTAONode ao(): Absent |
+| `GTAOPass` | N.A. | — | — | WebGL composer; GTAOPass -> GTAONode ao(): Present; GtaoNode (src/nodes/display/gtao.rs:70); webgpu_postprocessing_ao (ungraded) |
 | `GlitchPass` | N.A. | — | — | WebGL composer; GlitchPass -> no TSL counterpart: Absent |
 | `HalftonePass` | N.A. | — | — | WebGL composer; HalftonePass -> no TSL node (inline TSL in webgpu_tsl_halftone, graded); webgpu_tsl_halftone |
 | `LUTPass` | N.A. | — | — | WebGL composer; LUTPass -> Lut3DNode lut3D(): Absent |
@@ -700,7 +700,7 @@ Graded examples: 87 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `RenderPass` | N.A. | — | — | WebGL composer; RenderPass -> pass(scene,camera) (core): Present; pass (src/renderer/pass.rs:117); webgpu_postprocessing_masking |
 | `RenderPixelatedPass` | N.A. | — | — | WebGL composer; RenderPixelatedPass -> PixelationPassNode pixelationPass(): Present (WGSL gate only, no graded rung); pixelation_pass (src/nodes/display/pixelation_pass.rs:35); tests/nodes_display_wgsl.rs |
 | `RenderTransitionPass` | N.A. | — | — | WebGL composer; RenderTransitionPass -> TransitionNode transition(): Present; transition (src/nodes/display/transition.rs:17); webgpu_postprocessing_transition |
-| `SAOPass` | N.A. | — | — | WebGL composer; SAOPass -> SSAONode/GTAONode: Absent |
+| `SAOPass` | N.A. | — | — | WebGL composer; SAOPass -> SSAONode: Absent; GTAONode ao(): Present |
 | `SMAAPass` | N.A. | — | — | WebGL composer; SMAAPass -> SMAANode smaa(): Absent |
 | `SSAARenderPass` | N.A. | — | — | WebGL composer; SSAARenderPass -> SSAAPassNode ssaaPass(): Present; SsaaPassNode (src/renderer/ssaa_pass.rs:130); webgpu_postprocessing_ssaa |
 | `SSAOPass` | N.A. | — | — | WebGL composer; SSAOPass -> SSAONode ssao(): Absent |
@@ -822,7 +822,7 @@ Graded examples: 87 (the README gallery plus `webgpu_textures_2d-array_compresse
 
 ### Supplementary: `examples/jsm/tsl/display/*.js`
 
-These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) and are not counted above. 19 Present, 1 Partial, 28 Absent.
+These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) and are not counted above. 20 Present, 1 Partial, 27 Absent.
 
 | file | status | three-rs port and check |
 |---|---|---|
@@ -844,7 +844,7 @@ These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) an
 | `FXAANode.js` | Present | fxaa; webgpu_postprocessing_fxaa |
 | `GaussianBlurNode.js` | Present | gaussian_blur; tests/nodes_display_wgsl.rs; webgpu_procedural_texture |
 | `GodraysNode.js` | Partial | godrays/GodraysNode (src/nodes/display/godrays.rs:74); tests/nodes_display_wgsl.rs; webgpu_postprocessing_godrays (graded); point lights only: the DirectionalLight branch, log depth and dispose() are not ported |
-| `GTAONode.js` | Absent | — |
+| `GTAONode.js` | Present | gtao/GtaoNode, ao() (src/nodes/display/gtao.rs:61,70); tests/nodes_display_wgsl.rs (body and getScreenPositionFromClip gates), tests/gtao_frames.rs; webgpu_postprocessing_ao (ported, ungraded: on three's e2e exception list) |
 | `hashBlur.js` | Present | hash_blur; tests/nodes_display_wgsl.rs (loop gated against three's webgpu_backdrop_area dump, taps through viewportSharedTexture) |
 | `ImportanceSampledEnvironment.js` | Absent | — |
 | `LensflareNode.js` | Present | lensflare/LensflareNode (src/nodes/display/lensflare.rs:84); tests/nodes_display_wgsl.rs; webgpu_postprocessing_lensflare (graded); takes a texture: the caller writes convertToTexture()'s rtt(); no dispose() |
@@ -1582,9 +1582,9 @@ Partial: none.
 
 ### utils
 
-45 of 67 applicable present (15 Partial, 7 Absent, 10 N.A.).
+46 of 67 applicable present (15 Partial, 6 Absent, 10 N.A.).
 
-Missing (Absent): `builtinShadowContext`, `builtinAOContext`, `builtinGIContext`, `uniformGroup`, `sharedUniformGroup`, `frameGroup`, `replaceDefaultUV`.
+Missing (Absent): `builtinShadowContext`, `builtinGIContext`, `uniformGroup`, `sharedUniformGroup`, `frameGroup`, `replaceDefaultUV`.
 
 Partial: `NodeShaderStage`, `cache`, `overrideNode`, `overrideNodes`, `sample`, `OnObjectUpdate`, `OnMaterialUpdate`, `OnFrameUpdate`, `OnAfterObjectUpdate`, `OnBeforeObjectUpdate`, `OnBeforeMaterialUpdate`, `OnBeforeFrameUpdate`, `OnBeforeRenderPipeline`, `OnAfterRenderPipeline`, `subBuild`.
 
@@ -1605,9 +1605,9 @@ Partial: `NodeShaderStage`, `cache`, `overrideNode`, `overrideNodes`, `sample`, 
 | `context` | Present | context (src/nodes/tsl.rs:145) | tests/nodes_custom.rs, webgpu_custom_fog_background (graded) |  |
 | `uniformFlow` | Present | uniform_flow, NodeRef::uniform_flow (src/nodes/tsl/utils.rs:29,386) | tests/nodes_tsl_batch.rs, tests/nodes_mx_library.rs | context key read by `select()`; MaterialX's `mx_select`/`mx_negate_if` use it |
 | `setName` | Present | set_name, NodeRef::set_name (src/nodes/tsl/utils.rs:44,395) | tests/nodes_tsl_batch.rs | the free function is the context key read by `uniform()`; the method renames a uniform in place, as `UniformNode.setName()` does; the key is not read by instanced attributes (docs/nodes.md §70.1) |
-| `builtinShadowContext` | Absent | — | — | needs a `getShadow` hook in the lighting context; the AO/GI context plumbing is in PR #267, so not forked here |
-| `builtinAOContext` | Absent | — | — | needs a `getAO` hook that the lighting models call on their ambient occlusion; that plumbing is in PR #267 |
-| `builtinGIContext` | Absent | — | — | as `builtinShadowContext`: waits for the AO context plumbing in PR #267 |
+| `builtinShadowContext` | Absent | — | — | needs a `getShadow` hook in the lighting context, alongside the AO one `PassNode::set_context_ao` plumbs |
+| `builtinAOContext` | Present | PassNode::set_context_ao (src/renderer/pass.rs), SetupContext::ambient_occlusion | tests/gtao_frames.rs; webgpu_postprocessing_ao (ungraded) | the pass multiplies the occlusion into every non-transparent material it draws; Basic, Lambert, Phong, Toon, Standard and Physical read it |
+| `builtinGIContext` | Absent | — | — | as `builtinShadowContext`: a `getGI` hook next to the AO one |
 | `label` | Present | label, NodeRef::label (src/nodes/tsl/utils.rs:51,402) | tests/nodes_tsl_batch.rs | deprecated (r179) alias of setName, with its two forms; `#[deprecated]` here too |
 | `overrideNode` | Partial | override_node (src/nodes/tsl.rs:99) | — | internal only (not public) |
 | `overrideNodes` | Partial | OverrideNodes (src/nodes/tsl.rs:67), Material::context_overrides | webgpu_deferred | a struct of the three accessors the ladder overrides, not an arbitrary node map |
@@ -1674,7 +1674,7 @@ Every graded example passes, so graded examples cannot rank the gaps. The rankin
 
 The first refresh of this matrix closed the previous top five. Velocity and TRAA (`velocity`, `positionPrevious`, `VelocityNode`, `TRAANode`, `MotionBlur`), the screen reads (`viewportSharedTexture`, `viewportTexture`, `viewportDepthTexture`, `viewportLinearDepth`, `linearDepth`, `viewportSafeUV`), `SkyMesh`, `CubeCamera` with a layered `CubeRenderTarget`, and the light probes (`LightProbe`, `LightProbeGenerator`, `LightProbeNode`, `LightProbeHelperGPU`, `getShIrradianceAt`) are Present. So is `transformNormalToView` (6 pages), with the rest of the accessors batch; `webgpu_tsl_raging_sea` now calls it. Of the screen reads only the shared copy has a graded page behind it; `viewportTexture`, `viewportDepthTexture`, `viewportLinearDepth` and `linearDepth` are defined but no gate or graded example renders them yet, so they stay Partial until a depth-reading page is ported.
 
-1. **The screen-space effect nodes** (`GTAONode`, `SSRNode`, `SSGINode`, `SSSNode`, `DenoiseNode`, `DepthOfFieldNode`; `ao()` 2 pages, `ssr()` 2, `ssgi()` 2, `sss()` 1, `dof()` 1, `denoise` 6). Each needs a velocity target and a temporal resolve, and both now exist; these pages are the direct payoff of the velocity work. Porting them also gives the depth reads (`viewportDepthTexture`, `linearDepth`, `getViewPosition`) their first graded consumer.
+1. **The screen-space effect nodes** (`SSRNode`, `SSGINode`, `SSSNode`, `DenoiseNode`, `DepthOfFieldNode`; `ssr()` 2 pages, `ssgi()` 2, `sss()` 1, `dof()` 1, `denoise` 6). `GTAONode` and `builtinAOContext` are Present now (`webgpu_postprocessing_ao`, ungraded: it is on three's e2e exception list). Each of the rest needs a velocity target and a temporal resolve, and both now exist; these pages are the direct payoff of the velocity work. Porting them also gives the depth reads (`viewportDepthTexture`, `linearDepth`, `getViewPosition`) their first graded consumer.
 2. **EventDispatcher** (issues 153, 159). 8 pages subscribe to `change` or `finished` events. In ordinary use these are render-on-demand behind OrbitControls and chaining animation clips when one ends, and neither works in the port today. `AnimationMixer` and `AnimationAction` fire nothing.
 3. **The TransformControls pages** (`webgpu_modifier_curve`, `webgpu_shadowmap_progressive`, `webgpu_tsl_compute_attractors_particles`). `FirstPersonControls` (8 pages), `FlyControls` (1) and now `TransformControls` are ported and gated against three's classes (`docs/controls.md`). What is left is wiring the gizmo into the pages: `webgpu_modifier_curve`'s port still leaves it out, and the viewer's controls hook is typed for `OrbitControls`.
 4. **`WaterMesh`** (2 pages) and the remaining display files (`OutlineNode`, `SMAANode`, `Lut3DNode`, `FilmNode`, 1 to 2 pages each). Small, self-contained, and each unlocks one page.

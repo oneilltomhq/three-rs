@@ -350,6 +350,16 @@ fn traa_flicker_reduction_matches_three() {
 }
 
 #[test]
+fn gtao_matches_three() {
+    check("gtao", Region::Body);
+}
+
+#[test]
+fn gtao_screen_position_from_clip_matches_three() {
+    check("gtao", Region::Function("getScreenPositionFromClip"));
+}
+
+#[test]
 fn godrays_matches_three() {
     check("godrays", Region::Body);
 }

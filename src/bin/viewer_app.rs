@@ -284,6 +284,7 @@ Sky, webgpu_sky, "../../examples/webgpu_sky.rs";
 Backdrop, webgpu_backdrop, "../../examples/webgpu_backdrop.rs";
 PostprocessingMotionBlur, webgpu_postprocessing_motion_blur, "../../examples/webgpu_postprocessing_motion_blur.rs";
 PostprocessingTraa, webgpu_postprocessing_traa, "../../examples/webgpu_postprocessing_traa.rs";
+PostprocessingAo, webgpu_postprocessing_ao, "../../examples/webgpu_postprocessing_ao.rs";
 PostprocessingGodrays, webgpu_postprocessing_godrays, "../../examples/webgpu_postprocessing_godrays.rs";
 PostprocessingLensflare, webgpu_postprocessing_lensflare, "../../examples/webgpu_postprocessing_lensflare.rs";}
 

@@ -114,6 +114,8 @@ pub struct PassState {
     opaque: Cell<bool>,
     transparent: Cell<bool>,
     lighting_enabled: Cell<bool>,
+    /// `PassNode.contextNode`'s `getAO`, from `builtinAOContext( ao )`.
+    context_ao: RefCell<Option<NodeRef>>,
     /// `this.scene` / `this.camera`.
     scene: RefCell<Option<(SceneRef, CameraRef)>>,
 }
@@ -238,6 +240,7 @@ impl PassNode {
             opaque: Cell::new(true),
             transparent: Cell::new(true),
             lighting_enabled: Cell::new(true),
+            context_ao: RefCell::new(None),
             scene: RefCell::new(None),
         }));
         // `PassTextureNode.passNode`: a draw that binds one of the pass's
@@ -299,6 +302,23 @@ impl PassNode {
     /// — the pass renders every material with an empty light list.
     pub fn set_lighting_enabled(&mut self, enabled: bool) {
         self.0.lighting_enabled.set(enabled);
+    }
+
+    /// `passNode.contextNode = builtinAOContext( ao )` — every
+    /// non-transparent material this pass draws multiplies `ao` (a `float`
+    /// node, typically another pass's texture read at `screenUV`) into its
+    /// `AmbientOcclusion`, on top of its own `aoMap` when it has one. The
+    /// lighting models then occlude their indirect light by it, exactly as
+    /// they would by an `aoMap`.
+    ///
+    /// `webgpu_postprocessing_ao`:
+    /// `scenePass.contextNode = builtinAOContext( aoPass.getTextureNode()
+    /// .sample( screenUV ).r )`.
+    ///
+    /// The node is part of each material's program key, so replacing it
+    /// builds new programs; keep one node for the pass's lifetime.
+    pub fn set_context_ao(&self, ao: NodeRef) {
+        *self.0.context_ao.borrow_mut() = Some(ao);
     }
 
     /// `passNode.getTexture( 'depth' )` — the pass's own depth attachment.
@@ -537,6 +557,7 @@ impl PassState {
         let previous_opaque = renderer.opaque;
         let previous_transparent = renderer.transparent;
         let previous_lighting = renderer.lighting_enabled;
+        let previous_context_ao = renderer.context_ao.take();
         let previous_layers = renderer.camera_layers;
 
         renderer.set_render_target(Some(self.render_target.clone()));
@@ -545,6 +566,15 @@ impl PassState {
         renderer.opaque = self.opaque.get();
         renderer.transparent = self.transparent.get();
         renderer.lighting_enabled = self.lighting_enabled.get();
+        // `renderer.contextNode = context( { ...renderer.contextNode
+        // .getFlowContextData(), ...this.contextNode.getFlowContextData() } )`
+        // — the pass's `getAO` wins over an outer one, and an outer one
+        // survives a pass that sets none.
+        renderer.context_ao = self
+            .context_ao
+            .borrow()
+            .clone()
+            .or_else(|| previous_context_ao.clone());
         renderer.camera_layers = *self.layers.borrow();
 
         render(renderer);
@@ -555,6 +585,7 @@ impl PassState {
         renderer.opaque = previous_opaque;
         renderer.transparent = previous_transparent;
         renderer.lighting_enabled = previous_lighting;
+        renderer.context_ao = previous_context_ao;
         renderer.camera_layers = previous_layers;
     }
 }
