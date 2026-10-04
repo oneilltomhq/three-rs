@@ -197,6 +197,9 @@ mod webgpu_backdrop;
 #[allow(dead_code)]
 mod webgpu_tsl_earth;
 
+#[path = "../../examples/webgpu_ocean.rs"]
+#[allow(dead_code)]
+mod webgpu_ocean;
 #[path = "../../examples/webgpu_sky.rs"]
 #[allow(dead_code)]
 mod webgpu_sky;
@@ -234,6 +237,22 @@ mod webgpu_postprocessing_bloom_emissive;
 #[path = "../../examples/webgpu_postprocessing_motion_blur.rs"]
 #[allow(dead_code)]
 mod webgpu_postprocessing_motion_blur;
+
+#[path = "../../examples/webgpu_postprocessing_dof_basic.rs"]
+#[allow(dead_code)]
+mod webgpu_postprocessing_dof_basic;
+
+#[path = "../../examples/webgpu_postprocessing_ssr.rs"]
+#[allow(dead_code)]
+mod webgpu_postprocessing_ssr;
+
+#[path = "../../examples/webgpu_postprocessing_smaa.rs"]
+#[allow(dead_code)]
+mod webgpu_postprocessing_smaa;
+
+#[path = "../../examples/webgpu_postprocessing_pixel.rs"]
+#[allow(dead_code)]
+mod webgpu_postprocessing_pixel;
 
 #[path = "../../examples/webgpu_pmrem_cubemap.rs"]
 #[allow(dead_code)]
@@ -466,6 +485,14 @@ mod webgpu_lightprobe_cubecamera;
 #[path = "../../examples/webgpu_postprocessing_3dlut.rs"]
 #[allow(dead_code)]
 mod webgpu_postprocessing_3dlut;
+
+#[path = "../../examples/webgpu_postprocessing_godrays.rs"]
+#[allow(dead_code)]
+mod webgpu_postprocessing_godrays;
+
+#[path = "../../examples/webgpu_postprocessing_lensflare.rs"]
+#[allow(dead_code)]
+mod webgpu_postprocessing_lensflare;
 
 #[path = "../../examples/webgpu_postprocessing_outline.rs"]
 #[allow(dead_code)]
@@ -2091,6 +2118,232 @@ fn webgpu_postprocessing_motion_blur() {
         name,
         &mut app,
         webgpu_postprocessing_motion_blur::animate,
+        |app| app.renderer.device(),
+    );
+}
+
+#[test]
+fn webgpu_postprocessing_dof_basic() {
+    let name = "webgpu_postprocessing_dof_basic";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_postprocessing_dof_basic::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_postprocessing_dof_basic::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    // The draw calls and triangles the README's graded table records.
+    let info = app.renderer.info();
+    println!("{name}: info {info:?}");
+
+    steady_frame(
+        name,
+        &mut app,
+        webgpu_postprocessing_dof_basic::animate,
+        |app| app.renderer.device(),
+    );
+}
+
+#[test]
+fn webgpu_postprocessing_ssr() {
+    let name = "webgpu_postprocessing_ssr";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_postprocessing_ssr::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_postprocessing_ssr::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    // The draw calls and triangles the README's graded table records.
+    let info = app.renderer.info();
+    println!("{name}: info {info:?}");
+
+    // SSR must be visible in the graded frame, not merely harmless: the same
+    // frame at `intensity` 0 differs from it in 21527 of the 400000 pixels in
+    // some channel by more than 32 levels (17373 in the progress doc's hand
+    // count) — the reflections in the brass and red casing and on the disc.
+    // Require a safe fraction of that.
+    app.ssr_pass.intensity().set(vec![0.0]);
+    webgpu_postprocessing_ssr::animate(&mut app);
+    let (_, _, without_ssr) = app.renderer.read_canvas_pixels().unwrap();
+    app.ssr_pass.intensity().set(vec![1.0]);
+    let changed = pixels
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .zip(without_ssr.as_chunks::<4>().0)
+        .filter(|(a, b)| a.iter().zip(*b).any(|(x, y)| x.abs_diff(*y) > 32))
+        .count();
+    println!("{name}: SSR changes {changed} pixels by more than 32 levels");
+    assert!(
+        changed > 5000,
+        "{name}: SSR at intensity 1 changes only {changed} pixels by more than 32 levels \
+         against intensity 0; it was 21527 when this check was written"
+    );
+
+    steady_frame(name, &mut app, webgpu_postprocessing_ssr::animate, |app| {
+        app.renderer.device()
+    });
+}
+
+/// Two spinning boxes, one white wireframe and one brick-textured, through a
+/// scene pass and `SMAANode`'s edge, weight and blend passes, with the lookup
+/// textures decoded from three's base64 PNGs.
+///
+/// Not graded: three.js itself scores 0.258% (258 pixels) against its own
+/// `webgpu_postprocessing_smaa.jpg` on this machine, over the 0.1% limit,
+/// all of it along the boxes' diagonal wireframe lines; the port scores the
+/// same 258, and against three's own frame here (`tools/dump-webgpu.mjs`'
+/// `actual_full.png`) no graded pixel differs. See
+/// `docs/webgpu_postprocessing_smaa-progress.md`.
+#[test]
+#[ignore = "three.js itself fails its own reference for this page on this machine"]
+fn webgpu_postprocessing_smaa() {
+    let name = "webgpu_postprocessing_smaa";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_postprocessing_smaa::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_postprocessing_smaa::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_postprocessing_smaa::animate, |app| {
+        app.renderer.device()
+    });
+}
+
+/// Two checkered boxes and a crystal on a checkered plane with
+/// `BasicShadowMap` shadows, through `PixelationPassNode` at a sixth of the
+/// drawing buffer with its depth- and normal-edge outlines.
+///
+/// Not graded: three.js itself scores 0.405% (405 pixels) against its own
+/// `webgpu_postprocessing_pixel.jpg` on this machine, over the 0.1% limit;
+/// the port scores the same 405, and its frame is pixel-identical to three's
+/// (`tools/dump-webgpu.mjs`' `actual_full.png`, max channel difference 0).
+/// See `docs/webgpu_postprocessing_pixel-progress.md`.
+#[test]
+#[ignore = "three.js itself fails its own reference for this page on this machine"]
+fn webgpu_postprocessing_pixel() {
+    let name = "webgpu_postprocessing_pixel";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_postprocessing_pixel::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_postprocessing_pixel::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(
+        name,
+        &mut app,
+        webgpu_postprocessing_pixel::animate,
         |app| app.renderer.device(),
     );
 }
@@ -4087,6 +4340,91 @@ fn webgpu_sky() {
     });
 }
 
+/// `WaterMesh`: a 10 000-unit plane whose planar mirror, rendered at half
+/// resolution, is distorted by four scrolling taps of `waternormals.jpg` and
+/// Fresnel-mixed with the water colour and a sun highlight. The sky is a
+/// `SkyMesh` with the sun 2° up, and the roughness-0 cube is lit only by a
+/// PMREM of that sky. The scene pass gets a faint bloom before ACES Filmic at
+/// exposure 0.1. Time is pinned, so the normal map has not scrolled and the
+/// cube sits at `y = 5` unrotated.
+#[test]
+fn webgpu_ocean() {
+    let name = "webgpu_ocean";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_ocean::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    // `updateSun()` moved the sky through `sceneEnv` and back, so it is the
+    // scene's last child, after the cube, and `sceneEnv` is empty again.
+    {
+        let scene = app.scene.borrow();
+        let root = scene.node.borrow();
+        assert_eq!(root.children.len(), 3, "water, cube, sky");
+        assert!(three_rs::Node::ptr_eq(&root.children[2], &app.sky.mesh));
+    }
+    assert!(app.scene_env.node.borrow().children.is_empty());
+
+    // The mirror's target is added to the water inside the material's `Fn()`,
+    // i.e. at first build: not at construction, but during the first frame.
+    assert!(
+        app.water.mesh.borrow().children.is_empty(),
+        "the target is added at first render, not at construction"
+    );
+
+    webgpu_ocean::animate(&mut app);
+
+    {
+        let target = app.water.mirror_sampler.target();
+        let water = app.water.mesh.borrow();
+        assert_eq!(water.children.len(), 1, "the mirror's target");
+        assert!(three_rs::Node::ptr_eq(&water.children[0], &target));
+    }
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    // The draw calls and triangles the README's graded table records.
+    let info = app.renderer.info();
+    println!("{name}: info {info:?}");
+
+    steady_frame(name, &mut app, webgpu_ocean::animate, |app| {
+        app.renderer.device()
+    });
+
+    // From the second frame on the target sits where the water puts it.
+    let target = app.water.mirror_sampler.target();
+    assert_eq!(
+        target.borrow().matrix_world.elements,
+        app.water.mesh.borrow().matrix_world.elements,
+        "the target follows the water"
+    );
+}
+
 /// Issue #139's rung: `gears.glb` is three Draco-compressed meshes, and the
 /// outer hull's `maskNode` cuts an angular wedge out of it — in the shadow
 /// pass too — while its `outputNode` paints the exposed back faces a flat
@@ -5646,6 +5984,118 @@ fn webgpu_instance_points() {
     });
 }
 
+/// A point light's cube shadow map ray-marched at half resolution
+/// (`GodraysNode`), blurred edge-aware (`BilateralBlurNode`) and blended over
+/// the beauty pass (`depthAwareBlend`). The graded frame is the first, so the
+/// whole chain has to size its targets on it: the blur and the march each
+/// run their input's update first.
+#[test]
+fn webgpu_postprocessing_godrays() {
+    let name = "webgpu_postprocessing_godrays";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_postprocessing_godrays::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_postprocessing_godrays::animate(&mut app);
+
+    // `Math.round( 0.5 * 800 )` x `Math.round( 0.5 * 500 )`: the march is
+    // drawn at half the drawing buffer, and the blur at the march's size.
+    assert_eq!(app.godrays_pass.texture().size(), (400, 250));
+    assert_eq!(app.blur_pass.texture().size(), (400, 250));
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+    let info = app.renderer.info();
+    println!("{name}: info {info:?}");
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(
+        name,
+        &mut app,
+        webgpu_postprocessing_godrays::animate,
+        |app| app.renderer.device(),
+    );
+}
+
+/// An MRT scene pass whose emissive attachment is bloomed, mirrored into
+/// ghosts (`LensflareNode`) at a quarter of the drawing buffer and
+/// Gaussian-blurred, then summed with the colour and the bloom under ACES.
+#[test]
+fn webgpu_postprocessing_lensflare() {
+    let name = "webgpu_postprocessing_lensflare";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_postprocessing_lensflare::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_postprocessing_lensflare::animate(&mut app);
+
+    // `Math.round( 800 / 4 )` x `Math.round( 500 / 4 )`, and the blur reads
+    // the flare's full-size `rtt()`.
+    assert_eq!(app.flare_pass.texture().size(), (200, 125));
+    assert_eq!(app.blur_pass.texture().size(), (800, 500));
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+    let info = app.renderer.info();
+    println!("{name}: info {info:?}");
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(
+        name,
+        &mut app,
+        webgpu_postprocessing_lensflare::animate,
+        |app| app.renderer.device(),
+    );
+}
+
 /// Issue #56's "done when", as issue #67's counts: a steady frame builds and
 /// uploads *nothing*. Every graded rung is rendered three times; the first
 /// frame builds its programs and uploads its geometries and textures, and by
@@ -5761,6 +6211,19 @@ fn steady_frame_builds_nothing() {
     // The velocity history is per object and per camera, filled on the first
     // frame; the steady frames roll it over and build nothing.
     rung!(webgpu_postprocessing_motion_blur);
+    // The PMREM is built in `init()`; the steady frames are the scene pass,
+    // the box-blurred mix and the FXAA quad.
+    rung!(webgpu_postprocessing_dof_basic);
+    // SSR's blur mip chain and SMAA's three targets are sized on the first
+    // frame; the steady frames reuse them, and the two lookup textures are
+    // uploaded once.
+    rung!(webgpu_postprocessing_ssr);
+    // SMAA's three targets are sized on the first frame and its lookup
+    // textures uploaded once; the boxes only turn.
+    rung!(webgpu_postprocessing_smaa);
+    // The pixelation pass's target is sized on the first frame; the crystal's
+    // bob, spin and emissive pulse are transforms and a uniform.
+    rung!(webgpu_postprocessing_pixel);
     rung!(webgpu_lights_phong);
     rung!(webgpu_lights_selective);
     rung!(webgpu_morphtargets);
@@ -5839,6 +6302,7 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_postprocessing_afterimage, 0, 2);
     rung!(webgpu_tsl_halftone);
     rung!(webgpu_sky);
+    rung!(webgpu_ocean);
     rung!(webgpu_tsl_earth);
     rung!(webgpu_mirror);
     rung!(webgpu_refraction);
@@ -5857,6 +6321,10 @@ fn steady_frame_builds_nothing() {
         1,
         pollster::block_on(webgpu_lightprobe_cubecamera::init())
     );
+    // Every target the chain draws into is sized on the first frame; the
+    // steady frames resize nothing and build nothing.
+    rung!(webgpu_postprocessing_godrays);
+    rung!(webgpu_postprocessing_lensflare);
     // The nine tables are parsed in `init()` and only the graded one is ever
     // uploaded, on frame one; `animate()` rewrites the size and intensity
     // uniforms in place and keeps the one `Lut3DNode`.

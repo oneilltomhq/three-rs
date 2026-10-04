@@ -118,6 +118,9 @@ pub(crate) struct RenderTargetInner {
     /// Whether the colour texture is also a copy destination
     /// (`COPY_DST`) — see [`RenderTarget::set_copy_destination`].
     pub copy_destination: bool,
+    /// The colour texture's mip level count — see
+    /// [`RenderTarget::set_mip_level_count`].
+    pub mip_level_count: u32,
 }
 
 /// Cloning is a handle copy, matching JS object identity.
@@ -172,6 +175,7 @@ impl RenderTarget {
             scissor_test: false,
             depth_initialized: false,
             copy_destination: false,
+            mip_level_count: 1,
         }))))
     }
 
@@ -397,6 +401,57 @@ impl RenderTarget {
         let format = match inner.texture_type {
             TextureType::HalfFloat => wgpu::TextureFormat::Rg16Float,
             _ => wgpu::TextureFormat::Rg8Unorm,
+        };
+        inner.texture.set_format(format);
+        inner.texture.clear_gpu();
+    }
+
+    /// `renderTarget.texture.mipmaps.push( {}, … )` — `count` levels in the
+    /// colour texture instead of one, each to be drawn into on its own with
+    /// [`Renderer::set_render_target_level`](super::Renderer::set_render_target_level).
+    ///
+    /// `Textures.getMipLevels()` takes `texture.mipmaps.length` as the level
+    /// count whenever it is non-zero, which is how `SSRNode` gives its blur
+    /// target five levels without generating any: nothing fills them but the
+    /// node's own passes. Drops the GPU texture so it is recreated.
+    pub fn set_mip_level_count(&self, count: u32) {
+        let mut inner = self.0.borrow_mut();
+        let count = count.max(1);
+        if inner.mip_level_count != count {
+            inner.mip_level_count = count;
+            inner.texture.clear_gpu();
+        }
+    }
+
+    /// The colour texture's mip level count, 1 unless
+    /// [`set_mip_level_count`](Self::set_mip_level_count) said otherwise.
+    pub fn mip_level_count(&self) -> u32 {
+        self.0.borrow().mip_level_count
+    }
+
+    /// `options.format = RedFormat` — a one-channel colour attachment:
+    /// `DepthOfFieldNode`'s CoC targets (`{ format: RedFormat, type:
+    /// HalfFloatType }`). The fragment programs drawn into it write an `f32`
+    /// (`NodeBuilder.getOutputType()`), and a texture node sampling it is a
+    /// `float` node, so every tap reads `.x`.
+    ///
+    /// Call it before [`set_count`](Self::set_count): the extra attachments
+    /// take the first one's format when they are made.
+    ///
+    /// The match is spelled out rather than defaulting to `R8Unorm`, so a
+    /// type with no red format here can never be quantised to eight bits:
+    /// `FloatType` / `UnsignedIntType` colour targets are refused by
+    /// [`RenderTarget::new_with_options`], as they are for `RGBAFormat`, so
+    /// they cannot reach this setter.
+    pub fn set_red_format(&self) {
+        let inner = self.0.borrow();
+        let format = match inner.texture_type {
+            TextureType::UnsignedByte => wgpu::TextureFormat::R8Unorm,
+            TextureType::HalfFloat => wgpu::TextureFormat::R16Float,
+            other => panic!(
+                "three-rs: a RedFormat render target needs an UnsignedByteType \
+                 or HalfFloatType colour attachment, got {other:?}"
+            ),
         };
         inner.texture.set_format(format);
         inner.texture.clear_gpu();

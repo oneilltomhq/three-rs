@@ -284,6 +284,18 @@ Sky, webgpu_sky, "../../examples/webgpu_sky.rs";
 Backdrop, webgpu_backdrop, "../../examples/webgpu_backdrop.rs";
 PostprocessingMotionBlur, webgpu_postprocessing_motion_blur, "../../examples/webgpu_postprocessing_motion_blur.rs";
 PostprocessingTraa, webgpu_postprocessing_traa, "../../examples/webgpu_postprocessing_traa.rs";
+Ocean, webgpu_ocean, "../../examples/webgpu_ocean.rs";
+Water, webgpu_water, "../../examples/webgpu_water.rs";
+PostprocessingAo, webgpu_postprocessing_ao, "../../examples/webgpu_postprocessing_ao.rs";
+PostprocessingGodrays, webgpu_postprocessing_godrays, "../../examples/webgpu_postprocessing_godrays.rs";
+PostprocessingLensflare, webgpu_postprocessing_lensflare, "../../examples/webgpu_postprocessing_lensflare.rs";
+PostprocessingDofBasic, webgpu_postprocessing_dof_basic, "../../examples/webgpu_postprocessing_dof_basic.rs";
+PostprocessingDof, webgpu_postprocessing_dof, "../../examples/webgpu_postprocessing_dof.rs";
+PostprocessingSsr, webgpu_postprocessing_ssr, "../../examples/webgpu_postprocessing_ssr.rs";
+PostprocessingSmaa, webgpu_postprocessing_smaa, "../../examples/webgpu_postprocessing_smaa.rs";
+PostprocessingPixel, webgpu_postprocessing_pixel, "../../examples/webgpu_postprocessing_pixel.rs";
+PostprocessingSsgi, webgpu_postprocessing_ssgi, "../../examples/webgpu_postprocessing_ssgi.rs";
+PostprocessingSss, webgpu_postprocessing_sss, "../../examples/webgpu_postprocessing_sss.rs";
 Postprocessing3dlut, webgpu_postprocessing_3dlut, "../../examples/webgpu_postprocessing_3dlut.rs";
 PostprocessingOutline, webgpu_postprocessing_outline, "../../examples/webgpu_postprocessing_outline.rs";}
 

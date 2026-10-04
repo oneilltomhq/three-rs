@@ -28,10 +28,53 @@
 				xor, bitNot, increment, decrement, incrementBefore, decrementBefore, countOneBits, countTrailingZeros, countLeadingZeros,
 				floatBitsToInt, floatBitsToUint, intBitsToFloat, uintBitsToFloat,
 				oscTriangle, oscSquare, oscSawtooth, oscSine, rotateUV, spherizeUV, remap, remapClamp, deltaTime, frameId, time,
-				modelWorldMatrix, uniform, mod, smoothstep, step, positionLocal } = T;
+				modelWorldMatrix, uniform, mod, smoothstep, step, positionLocal,
+				packSnorm2x16, packUnorm2x16, packHalf2x16, packSnorm4x8, packUnorm4x8, unpackSnorm2x16, unpackUnorm2x16, unpackHalf2x16, unpackSnorm4x8, unpackUnorm4x8,
+				pack4xI8, pack4xU8, pack4xI8Clamp, pack4xU8Clamp, unpack4xI8, unpack4xU8, dot4U8Packed, dot4I8Packed, all, any,
+				transformNormalByViewMatrix, transformNormalByInverseViewMatrix, faceforward, inversesqrt, cameraViewMatrix,
+				equirectDirection, matcapUV, maxMipLevel, spritesheetUV, triplanarTextures, textureBicubic, texture3DLoad, texture3DLevel,
+				texture, positionWorld, normalWorld,
+				bitangentGeometry, bitangentLocal, bitangentWorld, tangentWorld, parallaxDirection, parallaxUV, cameraNormalMatrix, cameraNear, cameraFar,
+				modelDirection, modelPosition, modelScale, modelViewPosition, modelRadius, objectDirection, objectPosition, objectScale, objectViewPosition, objectRadius,
+				mediumpModelViewMatrix, highpModelViewMatrix, highpModelNormalViewMatrix, transformNormal, transformNormalToView, modelNormalMatrix, normalLocal,
+				reflectView, refractView, refractVector, clipSpace,
+				positionView, viewZToReversedOrthographicDepth, orthographicDepthToViewZ, viewZToReversedPerspectiveDepth, viewZToLogarithmicDepth, logarithmicDepthToViewZ,
+				blendBurn, blendDodge, blendScreen, blendColor, vibrance, cdl, cineonToneMapping, directionToFaceDirection,
+				getScreenPosition, getNormalFromDepth, cameraProjectionMatrix, cameraProjectionMatrixInverse, viewportCoordinate, viewportUV, screenSize, depthPass,
+				materialNormal, materialClearcoatNormal, materialSpecularStrength, materialLightMap, materialAO, materialPointSize, pointWidth,
+				lightProjectionUV, directPointLight, getParallaxCorrectNormal,
+				bypass, uniformFlow, setName, label, select, vertexStage, unpackNormal, colorToDirection, directionToColor,
+				expression, debug, sample, wgsl, wgslFn, OnObjectUpdate, OnBeforeFrameUpdate,
+				instancedArray, attributeArray, storageElement, atomicFunc, textureBarrier, workgroupBarrier, storageTexture3D, textureStore, instanceIndex, invocationLocalIndex,
+				subgroupSize, subgroupIndex, invocationSubgroupIndex, subgroupElect, subgroupBallot, subgroupAdd, subgroupInclusiveAdd, subgroupExclusiveAdd,
+				subgroupMul, subgroupInclusiveMul, subgroupExclusiveMul, subgroupAnd, subgroupOr, subgroupXor, subgroupMin, subgroupMax, subgroupAll, subgroupAny,
+				subgroupBroadcastFirst, subgroupBroadcast, subgroupShuffle, subgroupShuffleXor, subgroupShuffleUp, subgroupShuffleDown, quadSwapX, quadSwapY, quadSwapDiagonal,
+				materialAnisotropy, D_GGX_Anisotropic, V_GGX_SmithCorrelated_Anisotropic, Schlick_to_F0, LTC_Uv, LTC_Evaluate, LTC_Evaluate_Volume } = T;
+
+			const map = new THREE.DataTexture( new Uint8Array( 4 * 16 * 16 ), 16, 16 );
+			map.minFilter = THREE.LinearMipmapLinearFilter;
+			map.magFilter = THREE.LinearFilter;
+			map.generateMipmaps = true;
+			map.needsUpdate = true;
+			const volume = new THREE.Data3DTexture( new Uint8Array( 8 * 8 * 8 ), 8, 8, 8 );
+			volume.format = THREE.RedFormat;
+			volume.minFilter = THREE.LinearFilter;
+			volume.magFilter = THREE.LinearFilter;
+			volume.needsUpdate = true;
+
+			const tangentPlane = new THREE.PlaneGeometry( 0.5, 0.5 );
+			tangentPlane.computeTangents();
+			const target = new THREE.Object3D();
+			target.position.set( 1, 2, 3 );
+			const depthMap = new THREE.DepthTexture( 16, 16 );
+			const spot = new THREE.SpotLight( 0xffffff, 1 );
+			const passScene = new THREE.Scene();
+			passScene.add( new THREE.Mesh( new THREE.PlaneGeometry( 1, 1 ), new THREE.MeshBasicNodeMaterial() ) );
+			const passCamera = new THREE.PerspectiveCamera( 50, 1, 0.1, 100 );
+			passCamera.position.set( 0, 0, 5 );
 
 			const probes = [];
-			const probe = ( name, build ) => probes.push( [ name, build ] );
+			const probe = ( name, build, geometry = null, configure = null ) => probes.push( [ name, build, geometry, configure ] );
 
 			const x = () => uv().x;
 			const y = () => uv().y;
@@ -74,6 +117,172 @@
 			probe( 'timer', () => vec4( deltaTime, float( frameId ), time, 1 ) );
 			probe( 'mod', () => vec4( uv().mod( 0.5 ), x().mod( 0.25 ), float( int( x().mul( 10 ) ).mod( 3 ) ) ).add( vec4( vec3( uv(), 1 ).mod( vec3( 0.5 ) ), 1 ) ).add( vec4( uv(), 0, 1 ).mod( 1 ) ) );
 			probe( 'element_forms', () => vec4( x().smoothstep( 0.2, 0.8 ), y().step( 0.5 ), smoothstep( 0, 1, uv() ) ) );
+			probe( 'pack_float', () => vec4( float( packSnorm2x16( uv() ) ), float( packUnorm2x16( uv() ) ), float( packHalf2x16( uv() ) ), float( packSnorm4x8( vec4( uv(), 0, 1 ) ) ).add( float( packUnorm4x8( vec4( uv(), 0, 1 ) ) ) ) ) );
+			probe( 'unpack_float', () => vec4( unpackSnorm2x16( uint( x().mul( 1000 ) ) ), unpackUnorm2x16( uint( y().mul( 1000 ) ) ) ).add( vec4( unpackHalf2x16( uint( x().mul( 100 ) ) ), 0, 1 ) ).add( unpackSnorm4x8( uint( y().mul( 100 ) ) ) ).add( unpackUnorm4x8( uint( x().mul( 10 ) ) ) ) );
+			probe( 'pack_4x8', () => vec4( float( pack4xI8( ivec4( int( x().mul( 10 ) ), - 2, 3, - 4 ) ) ), float( pack4xU8( uvec4( uint( y().mul( 10 ) ), 2, 3, 4 ) ) ), float( pack4xI8Clamp( ivec4( int( x().mul( 300 ) ), - 200, 3, 4 ) ) ), float( pack4xU8Clamp( uvec4( uint( y().mul( 300 ) ), 2, 3, 4 ) ) ) ) );
+			probe( 'unpack_4x8', () => vec4( unpack4xI8( uint( x().mul( 1000 ) ) ) ).add( vec4( unpack4xU8( uint( y().mul( 1000 ) ) ) ) ).add( vec4( float( dot4U8Packed( uint( x().mul( 100 ) ), uint( y().mul( 100 ) ) ) ), float( dot4I8Packed( uint( x().mul( 50 ) ), uint( y().mul( 50 ) ) ) ), 0, 1 ) ) );
+			probe( 'all_any', () => vec4( float( all( bvec2( x().greaterThan( 0.5 ), y().greaterThan( 0.5 ) ) ) ), float( any( bvec3( x().lessThan( 0.25 ), y().lessThan( 0.25 ), false ) ) ), float( uv().greaterThan( vec2( 0.5 ) ).all() ), float( uv().lessThan( vec2( 0.5 ) ).any() ) ) );
+			probe( 'transform_normal', () => vec4( transformNormalByViewMatrix( vec3( uv(), 1 ), cameraViewMatrix ), 1 ).add( vec4( transformNormalByInverseViewMatrix( vec3( y(), x(), 1 ), cameraViewMatrix ), 0 ) ) );
+			probe( 'deprecated_aliases', () => vec4( faceforward( vec3( uv(), 1 ), vec3( 0, 0, 1 ), vec3( y(), x(), 0.5 ) ), inversesqrt( x().add( 1 ) ) ) );
+			probe( 'equirect_direction', () => vec4( equirectDirection( uv() ), 1 ).add( vec4( equirectDirection(), 0 ) ) );
+			probe( 'matcap_uv', () => vec4( matcapUV, 0, 1 ) );
+			probe( 'max_mip_level', () => vec4( maxMipLevel( texture( map ) ), 0, 0, 1 ) );
+			probe( 'spritesheet_uv', () => vec4( spritesheetUV( vec2( 6, 4 ), uv(), time ), spritesheetUV( vec2( 3, 3 ) ) ) );
+			probe( 'triplanar_textures', () => triplanarTextures( texture( map ), null, null, float( 2 ), positionWorld, normalWorld ) );
+			probe( 'texture_bicubic', () => textureBicubic( texture( map, uv() ), float( 0.5 ) ) );
+			probe( 'texture_3d', () => vec4( texture3DLoad( volume, ivec3( int( x().mul( 8 ) ), int( y().mul( 8 ) ), 2 ) ).x, texture3DLevel( volume, vec3( uv(), 0.5 ), float( 1 ) ).x, 0, 1 ) );
+
+			probe( 'bitangent_geometry', () => vec4( bitangentGeometry, 1 ), tangentPlane );
+			probe( 'bitangent_local', () => vec4( bitangentLocal, 1 ), tangentPlane );
+			probe( 'bitangent_world', () => vec4( bitangentWorld.add( tangentWorld ), 1 ), tangentPlane );
+			probe( 'tangent_world_frame', () => vec4( tangentWorld, 1 ) );
+			probe( 'parallax', () => vec4( parallaxUV( uv(), float( 0.1 ) ).xy, parallaxDirection.z, 1 ) );
+			probe( 'camera_near_far', () => vec4( cameraNear, cameraFar, cameraNormalMatrix.mul( vec3( uv(), 1 ) ).xy ) );
+			probe( 'model_scopes', () => vec4( modelDirection.add( modelPosition ).add( modelScale ).add( modelViewPosition ), modelRadius ) );
+			probe( 'object_scopes', () => vec4( objectDirection( target ).add( objectPosition( target ) ).add( objectScale( target ) ).add( objectViewPosition( target ) ), objectRadius( target ).add( 1 ) ) );
+			probe( 'model_view_precision', () => vec4( mediumpModelViewMatrix.mul( vec4( positionLocal, 1 ) ).xyz.add( highpModelViewMatrix.mul( vec4( positionLocal, 1 ) ).xyz ).add( highpModelNormalViewMatrix.mul( normalLocal ) ), 1 ) );
+			probe( 'transform_normal_matrix', () => vec4( transformNormal( vec3( uv(), 1 ) ).add( transformNormal( vec3( y(), x(), 1 ), cameraViewMatrix ) ).add( vec3( x(), 1, y() ).transformNormal( modelNormalMatrix ) ), 1 ) );
+			probe( 'transform_normal_to_view', () => vec4( transformNormalToView( vec3( uv(), 1 ) ), 1 ) );
+			probe( 'reflect_refract', () => vec4( reflectView.add( refractView ).add( refractVector ), 1 ) );
+			probe( 'clip_space', () => clipSpace.div( clipSpace.w ) );
+
+			probe( 'depth_conversions', () => vec4( viewZToReversedOrthographicDepth( positionView.z, cameraNear, cameraFar ), orthographicDepthToViewZ( x(), cameraNear, cameraFar ), viewZToReversedPerspectiveDepth( positionView.z, cameraNear, cameraFar ), 1 ) );
+			probe( 'logarithmic_depth', () => vec4( viewZToLogarithmicDepth( positionView.z, cameraNear, cameraFar ), logarithmicDepthToViewZ( x(), cameraNear, cameraFar ), 0, 1 ) );
+			probe( 'blend_modes', () => {
+				const a = vec3( uv(), 0.5 );
+				const b = vec3( y(), 0.25, x() );
+				return vec4( blendBurn( a, b ).add( blendDodge( a, b ) ).add( blendScreen( a, b ) ), 1 ).add( blendColor( vec4( a, x() ), vec4( b, y() ) ) );
+			} );
+			probe( 'vibrance', () => vec4( vibrance( vec3( uv(), 0.5 ), x() ).add( vibrance( vec3( y(), x(), 0.25 ) ) ), 1 ) );
+			probe( 'cdl', () => cdl( vec4( uv(), 0.5, 1 ), vec3( 1.1, 1.0, 0.9 ), vec3( 0.1 ), vec3( 1.2 ), float( 0.9 ) ).add( cdl( vec4( y(), x(), 0.25, 1 ) ) ) );
+			probe( 'cineon_tone_mapping', () => vec4( cineonToneMapping( vec3( uv(), 0.5 ), float( 1.2 ) ), 1 ) );
+			probe( 'direction_to_face_direction', () => vec4( directionToFaceDirection( vec3( uv(), 1 ) ), 1 ), null, ( m ) => { m.side = THREE.DoubleSide; } );
+			probe( 'direction_to_face_direction_front', () => vec4( directionToFaceDirection( vec3( uv(), 1 ) ), 1 ), null, ( m ) => { m.side = THREE.FrontSide; } );
+			probe( 'direction_to_face_direction_back', () => vec4( directionToFaceDirection( vec3( uv(), 1 ) ), 1 ), null, ( m ) => { m.side = THREE.BackSide; } );
+			probe( 'screen_position', () => vec4( getScreenPosition( positionView, cameraProjectionMatrix ), 0, 1 ) );
+			probe( 'normal_from_depth', () => vec4( getNormalFromDepth( uv(), depthMap, cameraProjectionMatrixInverse ), 1 ) );
+			probe( 'viewport_coords', () => vec4( viewportUV, viewportCoordinate.div( screenSize ) ) );
+			probe( 'material_defaults', () => vec4( materialNormal.add( materialClearcoatNormal ).add( materialLightMap ), materialAO.add( materialSpecularStrength ) ) );
+			probe( 'material_point_size', () => vec4( materialPointSize, 0.5, 0.25, 1 ), null, ( m ) => { m.size = 2; } );
+			probe( 'point_width', () => vec4( pointWidth, 0, 0, 1 ) );
+			probe( 'material_maps', () => vec4( materialLightMap, materialAO.add( materialSpecularStrength ) ), null, ( m ) => { m.aoMap = map; m.specularMap = map; m.lightMap = map; } );
+			probe( 'material_normal_maps', () => vec4( materialNormal.add( materialClearcoatNormal ), 1 ), null, ( m ) => { m.normalMap = map; m.normalMapType = THREE.TangentSpaceNormalMap; m.normalScale = new THREE.Vector2( 1, 1 ); m.clearcoatNormalMap = map; m.clearcoatNormalScale = new THREE.Vector2( 1, 1 ); } );
+			probe( 'material_normal_map', () => vec4( materialNormal, 1 ), null, ( m ) => { m.normalMap = map; m.normalMapType = THREE.TangentSpaceNormalMap; m.normalScale = new THREE.Vector2( 0.5, 2 ); } );
+			probe( 'material_normal_bump', () => vec4( materialNormal, 1 ), null, ( m ) => { m.bumpMap = map; m.bumpScale = 2; } );
+			probe( 'material_normal_flat', () => vec4( materialNormal.add( materialClearcoatNormal ), 1 ), null, ( m ) => { m.flatShading = true; } );
+			probe( 'light_projection_uv', () => vec4( lightProjectionUV( spot ).add( lightProjectionUV( spot, vec4( positionView, 1 ) ) ), 1 ) );
+			probe( 'direct_point_light', () => {
+				const { lightDirection, lightColor } = directPointLight( { color: vec3( 1, 0.5, 0.25 ), lightVector: vec3( uv(), 1 ), cutoffDistance: x(), decayExponent: float( 2 ) } );
+				return vec4( lightDirection.add( lightColor ), 1 );
+			} );
+			probe( 'parallax_correct_normal', () => vec4( getParallaxCorrectNormal( normalWorld, vec3( 200, 100, 100 ), vec3( 0, - 50, 0 ) ), 1 ) );
+			probe( 'depth_pass', () => vec4( vec3( depthPass( passScene, passCamera ) ), 1 ) );
+
+			probe( 'bypass', () => vec4( bypass( x().mul( 2 ), expression( 'let first = 1.0', 'void' ) ), y().bypass( expression( 'let second = 2.0', 'void' ) ), 0, 1 ) );
+			probe( 'uniform_flow', () => vec4( uniformFlow( select( x().greaterThan( 0.5 ), x().mul( 2 ), y() ) ), 0, 0, 1 ) );
+			probe( 'set_name', () => vec4( setName( uniform( 0.5 ), 'myValue' ), label( uniform( 0.25 ), 'otherValue' ), uniform( 0.75 ), 1 ) );
+			probe( 'vertex_stage', () => vec4( vertexStage( positionLocal.mul( 2 ) ), 1 ) );
+			probe( 'unpack_normal', () => vec4( unpackNormal( uv().sub( 0.5 ) ), 1 ) );
+			probe( 'color_direction', () => vec4( colorToDirection( vec3( uv(), 0.5 ) ).add( directionToColor( vec3( y(), x(), 1 ) ) ), 1 ) );
+			probe( 'expression', () => vec4( expression( 'sin( 1.0 )', 'float' ).add( x() ), expression( 'vec2<f32>( 0.25, 0.5 )', 'vec2' ), 1 ) );
+			probe( 'debug', () => vec4( debug( x().mul( 2 ) ), debug( y().add( 1 ), () => {} ), 0, 1 ) );
+			probe( 'sample', () => {
+				const s = sample( ( coord ) => vec4( coord.mul( 2 ), 0, 1 ) );
+				return s.add( s.sample( vec2( y(), x() ) ) );
+			} );
+			probe( 'wgsl', () => vec4( wgslFn( 'fn useHelper( a : f32 ) -> f32 { return helperTwice( a ); }', [ wgsl( 'fn helperTwice( a : f32 ) -> f32 { return a * 2.0; }' ) ] )( { a: x() } ), 0, 0, 1 ) );
+			probe( 'event_nodes', () => vec4( x().bypass( OnObjectUpdate( () => {} ) ).bypass( OnBeforeFrameUpdate( () => {} ) ), 0, 0, 1 ) );
+
+			probe( 'material_anisotropy', () => vec4( materialAnisotropy, 0, 1 ) );
+			probe( 'material_anisotropy_map', () => vec4( materialAnisotropy, 0, 1 ), null, ( m ) => { m.anisotropyMap = map; } );
+			probe( 'anisotropic_ggx', () => vec4(
+				D_GGX_Anisotropic( { alphaT: x(), alphaB: y(), dotNH: x().mul( 0.5 ), dotTH: y().mul( 0.25 ), dotBH: x().mul( y() ) } ),
+				V_GGX_SmithCorrelated_Anisotropic( { alphaT: x(), alphaB: y(), dotTV: float( 0.5 ), dotBV: float( 0.25 ), dotTL: x().mul( 0.5 ), dotBL: y().mul( 0.5 ), dotNV: x(), dotNL: y() } ),
+				0, 1 ) );
+			probe( 'schlick_to_f0', () => vec4( Schlick_to_F0( { f: vec3( uv(), 0.5 ), f90: float( 1 ), dotVH: x() } ), 1 ) );
+			probe( 'ltc', () => {
+				const N = vec3( 0, 0, 1 );
+				const V = vec3( uv(), 1 ).normalize();
+				const P = vec3( uv(), 0 );
+				const p0 = vec3( - 1, - 1, 2 );
+				const p1 = vec3( 1, - 1, 2 );
+				const p2 = vec3( 1, 1, 2 );
+				const p3 = vec3( - 1, 1, 2 );
+				const mInv = mat3( modelWorldMatrix );
+				return vec4( LTC_Evaluate( { N, V, P, mInv, p0, p1, p2, p3 } ).add( LTC_Evaluate_Volume( { P, p0, p1, p2, p3 } ) ), 1 ).add( vec4( LTC_Uv( { N, V, roughness: x() } ), 0, 0 ) );
+			} );
+
+			// Subgroup functions in a fragment shader (`enable subgroups;` under
+			// `// directives`), and a per-vertex `attributeArray` read through
+			// `.toAttribute()`.
+			probe( 'subgroup_fragment', () => vec4( subgroupAdd( x() ), quadSwapX( y() ), quadSwapDiagonal( x() ), 1 ) );
+			probe( 'attribute_array', () => vec4( attributeArray( 4, 'vec3' ).toAttribute(), 1 ) );
+
+			// Compute probes: each is `Fn( build )().compute( count ).setName( name )`,
+			// dispatched once after `renderer.init()`; the dump names its module
+			// `compute_<name>`. The subgroup kernels open with a barrier, as
+			// `webgpu_compute_reduce`'s do: it drops the bounds check, which would
+			// leave the subgroup calls in non-uniform control flow.
+			const computeProbes = [];
+			function computeProbe( name, build, count = 64 ) {
+
+				computeProbes.push( [ name, build, count ] );
+
+			}
+
+			const v = () => float( instanceIndex );
+			const volume3D = new THREE.Storage3DTexture( 4, 4, 4 );
+
+			computeProbe( 'subgroup_arith', () => {
+				workgroupBarrier();
+				const out = instancedArray( 64, 'float' );
+				out.element( instanceIndex ).assign( subgroupAdd( v() ).add( subgroupInclusiveAdd( v() ) ).add( subgroupExclusiveAdd( v() ) )
+					.add( subgroupMul( v() ) ).add( subgroupInclusiveMul( v() ) ).add( subgroupExclusiveMul( v() ) )
+					.add( subgroupMin( v() ) ).add( subgroupMax( v() ) ) );
+			} );
+			computeProbe( 'subgroup_bits', () => {
+				workgroupBarrier();
+				const out = instancedArray( 64, 'uint' );
+				out.element( instanceIndex ).assign( subgroupAnd( instanceIndex ).add( subgroupOr( instanceIndex ) ).add( subgroupXor( instanceIndex ) )
+					.add( uint( subgroupAll( instanceIndex.lessThan( 32 ) ) ) ).add( uint( subgroupAny( instanceIndex.equal( 3 ) ) ) )
+					.add( uint( subgroupElect() ) ).add( subgroupBallot( instanceIndex.greaterThan( 7 ) ).x ) );
+			} );
+			computeProbe( 'subgroup_shuffle', () => {
+				workgroupBarrier();
+				const out = instancedArray( 64, 'float' );
+				out.element( instanceIndex ).assign( subgroupBroadcastFirst( v() ).add( subgroupBroadcast( v(), 3 ) )
+					.add( subgroupShuffle( v(), int( instanceIndex.bitXor( 1 ) ) ) ).add( subgroupShuffleXor( v(), 2 ) )
+					.add( subgroupShuffleUp( v(), 1 ) ).add( subgroupShuffleDown( v(), 1 ) ) );
+			} );
+			computeProbe( 'subgroup_quad', () => {
+				workgroupBarrier();
+				const out = instancedArray( 64, 'float' );
+				out.element( instanceIndex ).assign( quadSwapX( v() ).add( quadSwapY( v() ) ).add( quadSwapDiagonal( v() ) ) );
+			} );
+			computeProbe( 'subgroup_builtins', () => {
+				const out = instancedArray( 64, 'uint' );
+				out.element( instanceIndex ).assign( subgroupSize.add( subgroupIndex ).add( invocationSubgroupIndex ).add( invocationLocalIndex ) );
+			} );
+			computeProbe( 'storage_element', () => {
+				const out = instancedArray( 64, 'float' );
+				storageElement( out, instanceIndex ).assign( v().mul( 2 ) );
+			} );
+			computeProbe( 'atomic_func', () => {
+				const counters = instancedArray( 2, 'uint' ).toAtomic();
+				atomicFunc( 'atomicAdd', counters.element( 0 ), uint( 1 ) );
+				atomicFunc( 'atomicMax', counters.element( 1 ), instanceIndex );
+			} );
+			computeProbe( 'texture_barrier', () => {
+				textureStore( storageTexture3D( volume3D ), uvec3( instanceIndex.mod( 4 ), instanceIndex.div( 4 ).mod( 4 ), instanceIndex.div( 16 ) ), vec4( 1, 0, 0, 1 ) );
+				textureBarrier();
+			} );
+			computeProbe( 'storage_texture_3d', () => {
+				textureStore( storageTexture3D( volume3D ), uvec3( instanceIndex.mod( 4 ), instanceIndex.div( 4 ).mod( 4 ), instanceIndex.div( 16 ) ), vec4( v().div( 64 ), 0, 0, 1 ) );
+			} );
+			computeProbe( 'attribute_array_compute', () => {
+				const out = attributeArray( 64, 'vec3' );
+				out.element( instanceIndex ).assign( vec3( v(), 0, 1 ) );
+			} );
 
 			init();
 
@@ -86,15 +295,17 @@
 
 				const geometry = new THREE.PlaneGeometry( 0.5, 0.5 );
 
-				probes.forEach( ( [ name, build ], index ) => {
+				probes.forEach( ( [ name, build, probeGeometry, configure ], index ) => {
 
 					const material = new THREE.MeshBasicNodeMaterial();
 					material.name = name;
+					if ( configure ) configure( material );
 					material.fragmentNode = build();
-					const mesh = new THREE.Mesh( geometry, material );
+					const mesh = new THREE.Mesh( probeGeometry || geometry, material );
 					mesh.position.x = ( index % 6 ) - 2.5;
 					mesh.position.y = Math.floor( index / 6 ) - 2;
 					mesh.renderOrder = index;
+					mesh.frustumCulled = false;
 					scene.add( mesh );
 
 				} );
@@ -104,6 +315,7 @@
 				renderer.setSize( window.innerWidth, window.innerHeight );
 				document.body.appendChild( renderer.domElement );
 				await renderer.init();
+				computeProbes.forEach( ( [ name, build, count ] ) => renderer.compute( Fn( build )().compute( count ).setName( name ) ) );
 				renderer.setAnimationLoop( () => renderer.render( scene, camera ) );
 
 			}

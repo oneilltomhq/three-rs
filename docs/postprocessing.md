@@ -709,6 +709,136 @@ three's dump, and on `tests/traa_frames.rs`, which checks over sixteen frames
 that the silhouette blends while the inside and the background hold. The
 example is in the native viewer (`viewer traa`).
 
+## Screen-space shadows (`webgpu_postprocessing_sss`)
+
+SSS marches from each pixel towards one light through a depth pre-pass, for
+the contact shadows a shadow map is too coarse to resolve. The scene pass
+multiplies the result into that light's colour:
+
+```rust
+let mut pre_pass = pass(scene.clone(), camera.clone());
+pre_pass.set_transparent(false);
+pre_pass.set_mrt(mrt(vec![("output", velocity())]));
+let _ = pre_pass.texture_node("depth");
+
+let scene_pass = pass(scene.clone(), camera.clone());
+
+let sss_node = sss(&pre_pass.depth_texture(), camera.clone(), &dir_light);
+sss_node.max_distance.set(vec![0.2]);
+sss_node.set_use_temporal_filtering(true);
+
+// `scenePass.contextNode = builtinShadowContext( sss.r, dirLight )`.
+scene_pass.set_context_shadow(sss_node.sample(screen_uv()).x(), &dir_light);
+```
+
+The page then resolves the scene pass with TRAA, reading the pre-pass's
+depth and velocity. The SSS node renders the pre-pass itself before its own
+quad. The context reaches only the draws where `dir_light`'s shadow map
+applies: the light casts shadows, the object receives them, and
+`renderer.shadow_map_enabled` is on. Anywhere else the SSS has nothing to
+multiply into, as in three. `clear_context_shadow()` is the page's "Scene
+with Shadow Maps" mode. The target is `rgba8unorm`, not three's
+`RedFormat`, so the sample is read with `.x()`. `docs/nodes.md` §71 has the
+rest.
+
+**There is no rung.** three lists `webgpu_postprocessing_sss` in its e2e
+exception list ("Black screen"). The port is gated on the SSS quad and the
+ground's shadow context against three's dump, and on
+`tests/sss_frames.rs`, which renders a box on a floor with the light
+behind it. The example is in the native viewer (`viewer postprocessing_sss`).
+## Screen space global illumination (`webgpu_postprocessing_ssgi`)
+
+`ssgi()` reads the scene pass's colour, depth and packed normals. It writes
+two textures, an AO and a one-bounce GI, and the page composites them before
+TRAA:
+
+```rust
+let scene_pass = pass(scene.clone(), camera.clone());
+let mut scene_mrt = mrt(vec![
+    ("output", output_property()),
+    ("diffuseColor", diffuse_color()),
+]);
+scene_mrt.set_deferred("normal", || pack_normal_to_rgb(normal_view()));
+scene_mrt.set("velocity", velocity());
+scene_pass.set_mrt(scene_mrt);
+let color = scene_pass.texture_node("output");
+let diffuse = scene_pass.texture_node("diffuseColor");
+let _ = scene_pass.texture_node("normal");
+let _ = scene_pass.texture_node("velocity");
+
+let gi_pass = ssgi(
+    &scene_pass.texture(),
+    &scene_pass.depth_texture(),
+    &scene_pass.texture_named("normal"), // packed; ssgi() unpacks it
+    camera.clone(),
+);
+gi_pass.slice_count.set(vec![2.0]);
+gi_pass.step_count.set(vec![8.0]);
+
+let composite = convert_to_texture(vec4_join(vec![
+    color.xyz().mul(gi_pass.ao_node()).add(diffuse.xyz().mul(gi_pass.gi_node())),
+    color.w(),
+]));
+let traa_node = traa(
+    &composite.texture(),
+    &scene_pass.depth_texture(),
+    &scene_pass.texture_named("velocity"),
+    camera.clone(),
+);
+traa_node.attach(&mut render_pipeline);
+render_pipeline.output_node = Some(traa_node.node());
+```
+
+Every option of three's node is a public `SettableValue` on `SsgiNode`, so
+the GUI's sliders are uniform writes. `set_use_temporal_filtering( false )`
+holds the slice rotation and step offset still. The rotating slices are
+meant to be resolved by TRAA, so when the page's checkbox turns temporal
+filtering off, the page also drops TRAA and outputs the composite directly.
+
+Each frame the node draws one quad into one two-attachment target. The AO
+attachment is `R8Unorm`. The GI attachment is `Rg11b10Ufloat`. On an
+adapter that cannot render it the node logs three's error and the effect
+fails, as three's does: wgpu rejects the attachment. It allocates
+nothing per frame. `docs/nodes.md` §69 has the divergences, and §66 the
+`output_struct()` node it writes its two attachments with.
+
+**There is no rung.** three lists `webgpu_postprocessing_ssgi` in its own e2e
+exception list (`test/e2e/puppeteer.js`, under "Black screen"). The port is
+gated on its SSGI, composite and TRAA resolve shaders against three's dump of
+the page, and on `tests/ssgi_frames.rs`. That test checks the AO darkening
+and the colour bleeding at a wall's foot, the temporal rotation, and that the
+options are live. The example is in the native viewer (`viewer ssgi`).
+
+## Depth of field
+
+```rust
+let dof_pass = dof(
+    &scene_pass.texture(),
+    scene_pass.view_z_node("depth"),
+    focus_distance, // uniform( 500 )
+    focal_length,   // uniform( 200 )
+    bokeh_scale,    // uniform( 10 )
+);
+render_pipeline.output_node = Some(dof_pass.node());
+```
+
+`DepthOfFieldNode` owns six targets and draws nine quads per frame, run from
+the first draw that samples `dof_pass.node()`, as TRAA's resolve is. It needs
+nothing from the caller beyond the call. `docs/nodes.md` §66 has the passes
+and the four graph pieces it brought: `outputStruct()`, red targets,
+`uniformArray( Vector2[] )`, and a Gaussian through the CoC texture's uv
+matrix.
+
+**There is no rung for it**, for TRAA's reason: three lists
+`webgpu_postprocessing_dof` in its e2e exception list. All seven distinct quad
+shaders are gated against three's dump instead (`dof_*` in
+`tests/nodes_display_wgsl.rs`), and the page is in the native viewer
+(`viewer postprocessing_dof`).
+
+`webgpu_postprocessing_dof_basic` is graded, but it does not use this node.
+Its depth of field is a `boxBlur` of the pass, mixed in by
+`smoothstep( min, max, | viewZ - focus.z | )`.
+
 ## Selection outlines (`webgpu_postprocessing_outline`)
 
 `outline()` takes the scene and camera itself, because it renders them
@@ -786,7 +916,8 @@ See `docs/nodes.md` §73.
 
 `tests/nodes_display_wgsl.rs` gates each against three's dump of a page that
 uses it. `webgpu_procedural_texture`, `webgpu_postprocessing_sobel` and
-`webgpu_postprocessing_transition` are the graded rungs.
+`webgpu_postprocessing_transition` are the graded rungs, and
+`webgpu_postprocessing_dof_basic` grades `boxBlur`.
 
 The nodes follow the shapes above:
 
@@ -817,3 +948,39 @@ Divergences, each noted where it lives:
   the viewport texture tap to `hash_blur_with`, and its WGSL gate compares
   three's loop exactly. The texture and the copy behind it are in
   `docs/nodes.md` §61.
+
+## Light shafts and lens flares (`webgpu_postprocessing_godrays`, `webgpu_postprocessing_lensflare`)
+
+`godrays`, `bilateral_blur`, `depth_aware_blend` and `lensflare` are the next
+display nodes. Like `TraaNode`, each one that owns a target registers its own
+update-before with the renderer, so the pipeline runs it and the example does
+not:
+
+```rust
+let godrays_pass = godrays(&scene_pass_depth, camera.clone(), &point_light);
+let blur_pass = bilateral_blur(&godrays_pass.texture(), None, 4, 0.1);
+render_pipeline.output_node = Some(depth_aware_blend(
+    &scene_pass_color,
+    &blur_pass.texture(),
+    &scene_pass_depth,
+    &camera,
+    options,
+));
+```
+
+Three things are new here:
+
+- **The pass's depth is read by an effect.** `godrays` reconstructs world
+  positions from `scene_pass.depth_texture()`. It runs the pass's
+  update-before first, so the depth it marches is this frame's.
+- **An effect reads a shadow map.** `godrays` samples the point light's cube
+  shadow through `LightShadow::point_depth_texture()`. The renderer draws the
+  shadow into that same texture.
+- **A hand-fired node sizes itself from its input.** The lens-flare page
+  still calls `blur_pass.render()` itself, as `GaussianBlurNode` requires.
+  `render()` now runs the input's update-before first, through
+  `Renderer::update_texture_source`. So the first frame's blur is not sized
+  from a 1×1 `rtt()`.
+
+`docs/nodes.md` §74 and §75 have the shaders, the gates and what is not
+ported.

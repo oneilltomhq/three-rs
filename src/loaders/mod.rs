@@ -17,7 +17,7 @@ mod lut_text;
 #[doc(hidden)]
 pub mod meshopt;
 mod obj_loader;
-mod texture_loader;
+pub(crate) mod texture_loader;
 mod ultra_hdr_loader;
 
 pub use buffer_geometry_loader::BufferGeometryLoader;

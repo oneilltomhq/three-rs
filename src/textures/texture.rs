@@ -617,6 +617,12 @@ impl Texture {
         self.0.borrow_mut()
     }
 
+    /// `( texture.wrapS, texture.wrapT )`.
+    pub fn wrapping(&self) -> (Wrapping, Wrapping) {
+        let inner = self.0.borrow();
+        (inner.wrap_s, inner.wrap_t)
+    }
+
     /// `texture.wrapS = texture.wrapT = wrapping`.
     pub fn set_wrapping(&self, wrap_s: Wrapping, wrap_t: Wrapping) {
         let mut inner = self.0.borrow_mut();
