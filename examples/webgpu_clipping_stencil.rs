@@ -28,6 +28,11 @@
 //!   above, so it changes nothing here.
 //! - The three `PlaneHelper`s are not built: they are `visible = false`
 //!   until the GUI's `displayHelper` turns them on.
+//! - `Plane` is `Copy`, so each `ClippingGroup` holds its own copy of the
+//!   page's `planes[ i ]`, where three's groups share the one `Plane` object
+//!   (a GUI slider moving `plane.constant` moves the cap clips and the knot's
+//!   cut together); a port that moved a plane would update every group
+//!   holding it. The GUI is never touched here, so the frame is the same.
 //!
 //! The GUI (`animate`, `planeX` / `planeY` / `planeZ`) sits at its defaults,
 //! `renderer.inspector` does not touch the frame, and the `resize` listener
