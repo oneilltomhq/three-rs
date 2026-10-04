@@ -8442,3 +8442,80 @@ image against hand-computed values from three's arithmetic. They cover:
   (`nodeVar50 = nodeVar49`) before reading members. The port reads them off
   the struct var `ggx_reflection_sample` builds, because a struct-typed
   `to_var` is not supported. The fingerprint is the same.
+
+## 86. `SharpenNode` (`webgpu_postprocessing_ssr_denoise`)
+
+### 86.1 What three does
+
+`sharpen( node, sharpness = 0.2, denoise = false )` is a `SharpenNode` over
+`convertToTexture( node )`. It is a plain `Node` with
+`updateBeforeType = FRAME`, not a `TempNode`. It owns one half-float target
+with no depth buffer, and its texture node is
+`passTexture( this, target.texture )`. `updateBefore()` sizes the target to
+the drawing buffer, then draws one quad, `Sharpen_RCAS`, into it with the
+renderer's state reset around the draw.
+
+The quad is AMD FidelityFX FSR 1's RCAS, as one inline `Fn()` with no layout:
+
+- **The cross.** It finds the integer texel
+  `ivec2( int( floor( uv · textureSize ) ) )` and `textureLoad`s it and its
+  four edge neighbours.
+- **The lobe.** It is negative, `max( -0.1875, min( max( lobeRGB ), 0 ) )`.
+  The limiters are `min( ring, centre ) / ( 4 · max( ring ) )` and
+  `( 1 - max( ring, centre ) ) / ( 4 · min( ring ) - 4 )`, so the result
+  cannot leave the range of the ring and the centre. The lobe is then scaled
+  by `con = exp2( -sharpness )`, so `sharpness` is in stops. 0 is the
+  strongest setting, and each unit halves it. Three's doc comment says that
+  2 is "no sharpening", but 2 is a quarter of the strength of 0.
+- **Denoise.** `nzFactor` is `1 - 0.5 · saturate( |ring luma mean - centre
+  luma| / luma range )`. `denoise.equal( true ).select( lobe · nzFactor,
+  lobe )` applies it. The flag is `nodeObject( false )`, a constant, so the
+  shader branches on `false == true`.
+- **The resolve.** It is `( lobe · Σ ring + centre ) / ( 4 · lobe + 1 )`,
+  and the centre's alpha is kept.
+
+A number for `sharpness` is `nodeObject( 0.2 )`, a constant. The dump folds
+it into the shader as `const nodeConst1 = exp2( ( - 0.2 ) )`, so a page that
+passes a number has no uniform for it.
+
+### 86.2 The port
+
+`nodes::display::sharpen( node, sharpness, denoise )` wraps `node` in
+`convert_to_texture` and keeps that `RttNode` alive in the node's state.
+`SharpenNode::new( &Texture, sharpness, denoise )` is the constructor over a
+texture already in hand, which is the case where three's `convertToTexture()`
+passes a pass texture through. `sharpness` is `impl Into<NodeRef>`, which is
+three's `(number|Node<float>)`. A Rust number is a constant, as in three. A
+`uniform_settable` node is a value written between frames.
+`tests/sharpen_frames.rs` drives it that way. `denoise` is a `bool`, which is
+the constant three makes of it. `SharpenState` implements `NodeUpdate` and is
+registered as the updater of the target's texture, as `TraaState` is (§63).
+`set_size` is there, though `update_before` resizes every frame as three
+does.
+
+No graded page reaches it yet. `webgpu_postprocessing_ssr_denoise` calls it
+once, as `sharpen( traa( … ), 0 )`, behind SSR, a denoiser and TRAA.
+`tools/dump-pages/sharpen.html` isolates both variants:
+`sharpen( scenePass, 0.2 )`, then `sharpen( a, 0.5, true )` over the `RTT` that
+three's `convertToTexture()` makes of the first. The dump's `m03` and `m06`
+are the fixtures of `sharpen_rcas_matches_three` and
+`sharpen_rcas_denoise_matches_three`.
+
+The port's WGSL is three's line for line, with two cosmetic differences:
+
+- Three's `toConst()`s join the `Fn`'s stack where they are made. So
+  `rcas()` lists them in a `block` in the JS order, which declares `con`
+  second, `RCAS_LIMIT` after the ring's min and max, and so on. Without the
+  block, the port would declare each one at its first read, inside the
+  `select`'s two arms, and the centre tap would be read three times.
+- Three declares the two all-constant values, `exp2( -0.2 )` and `0.1875`,
+  as `const`. The port declares them as `let`. The five lumas are `nodeVar`s
+  where three has `let nodeConst`s, which is the usual single-assignment
+  difference (§8).
+
+`tests/sharpen_frames.rs` sharpens a soft grey edge read straight to the
+canvas. At sharpness 30 the output is the input. At 0 the foot of the edge
+darkens and its shoulder lightens, and the flat regions do not move. At 1
+the edge moves less in total than at 0. With `denoise`, no pixel moves
+further than without it. After a resize the target follows the drawing
+buffer.

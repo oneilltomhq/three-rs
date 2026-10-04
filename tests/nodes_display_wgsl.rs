@@ -1218,3 +1218,13 @@ fn env_sample_mis_equirect_dir_pdf_matches_three() {
 fn env_sample_mis_power_heuristic_matches_three() {
     check("env_sample_mis", Region::Function("misPowerHeuristic"));
 }
+
+#[test]
+fn sharpen_rcas_matches_three() {
+    check("sharpen_rcas", Region::Body);
+}
+
+#[test]
+fn sharpen_rcas_denoise_matches_three() {
+    check("sharpen_rcas_denoise", Region::Body);
+}

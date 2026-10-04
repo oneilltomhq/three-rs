@@ -441,6 +441,15 @@ have their own sections after the release they ship with. The format follows [Ke
   three's `scene.backgroundIntensity` and `scene.environmentIntensity`.
 - **`tsl::const_array_of`**, a literal array of vectors, and
   `UniformArray::element_xyz`.
+- **`sharpen()` / `SharpenNode`** (`nodes::display`), a port of
+  `examples/jsm/tsl/display/SharpenNode.js`: AMD FidelityFX FSR 1's RCAS,
+  a contrast-limited five-tap sharpen drawn once a frame into a half-float
+  target, with optional noise attenuation. `sharpness` is a number (a
+  constant, as in three) or any float node, such as a `uniform_settable`.
+  Both variants' WGSL is gated against three's dump of
+  `tools/dump-pages/sharpen.html` in `tests/nodes_display_wgsl.rs`, and
+  `tests/sharpen_frames.rs` checks on the GPU that it steepens a soft edge
+  without moving flat regions. See `docs/nodes.md` §86.
 
 ### Changed
 

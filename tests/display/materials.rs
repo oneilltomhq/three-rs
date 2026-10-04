@@ -16,7 +16,7 @@ use three_rs::nodes::display::{
     pixelation_pass, retro_pass, rgb_shift, rtt, scanlines, sepia, smaa, sobel, ssgi, ssr, sss,
     traa, viewport_shared_texture_at, BoxBlurOptions, DepthAwareBlendOptions, EnvironmentLobe,
     GaussianBlurOptions, HashBlurOptions, ImportanceSampledEnvironment, LensflareParams,
-    OutlineParams, RetroPassOptions, SsrOptions,
+    OutlineParams, RetroPassOptions, SharpenNode, SsrOptions,
 };
 use three_rs::nodes::tsl::{
     bind_analytic_noise, d_gtr, distance, equirect_dir_pdf, equirect_uv_to_dir, f_schlick, float,
@@ -802,6 +802,28 @@ pub fn display_quads() -> Vec<DisplayQuad> {
         ),
     ));
 
+    // `tools/dump-pages/sharpen.html` `m03` and `m06`: `sharpen( scenePass,
+    // 0.2 )`'s RCAS quad, then `sharpen( a, 0.5, true )`'s over the `RTT`
+    // three's `convertToTexture()` makes of the first.
+    for (label, fixture, sharpness, denoise) in [
+        ("sharpen_rcas", "sharpen_m03_rcas.wgsl", 0.2, false),
+        (
+            "sharpen_rcas_denoise",
+            "sharpen_m06_rcas_denoise.wgsl",
+            0.5,
+            true,
+        ),
+    ] {
+        let mut material = SharpenNode::new(&input(), float(sharpness), denoise)
+            .quad_material()
+            .clone();
+        material.vertex_node = Some(quad_vertex_node());
+        quads.push(DisplayQuad {
+            label,
+            fixture,
+            material,
+        });
+    }
     specular_helpers_quads(&mut quads);
 
     quads
