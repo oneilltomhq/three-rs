@@ -14,7 +14,7 @@ use three_rs::nodes::display::{
     circle, color_bleeding, depth_aware_blend, dof, dot_screen, film, fxaa, gaussian_blur, godrays,
     hash_blur_with, lensflare, lut_3d, motion_blur, outline, parallax_barrier_pass,
     pixelation_pass, recurrent_denoise, retro_pass, rgb_shift, rtt, scanlines, sepia, smaa, sobel,
-    ssgi, ssr, sss, temporal_reproject, traa, viewport_shared_texture_at, BoxBlurOptions,
+    ssgi, ssr, sss, taau, temporal_reproject, traa, viewport_shared_texture_at, BoxBlurOptions,
     DenoiseAlphaSource, DenoiseMode, DepthAwareBlendOptions, EnvironmentLobe, GaussianBlurOptions,
     HashBlurOptions, ImportanceSampledEnvironment, LensflareParams, OutlineParams,
     RecurrentDenoiseOptions, RetroPassOptions, SampleFn, SharpenNode, SsrOptions,
@@ -209,6 +209,34 @@ pub fn display_quads() -> Vec<DisplayQuad> {
     quads.push(DisplayQuad {
         label: "traa",
         fixture: "webgpu_postprocessing_traa_m05_traa_resolve.wgsl",
+        material: resolve,
+    });
+
+    // webgpu_upscaling_taau `m36` and `m38`: `taau( scenePass.getTextureNode(
+    // 'output' ), …( 'depth' ), …( 'velocity' ), camera )`'s two quads. The
+    // seed, `TAAU.seed`, writes the bilinear beauty and a zero lock; the
+    // resolve, `TAAU.resolve`, is the whole reconstruction. Both write
+    // `outputStruct( colorOutput, lockOutput )`.
+    let taau = taau(
+        &input(),
+        &DepthTexture::new(),
+        &input(),
+        std::rc::Rc::new(std::cell::RefCell::new(three_rs::PerspectiveCamera::new(
+            25.0, 1.0, 0.1, 100.0,
+        ))),
+    );
+    let mut seed = taau.seed_material();
+    seed.vertex_node = Some(quad_vertex_node());
+    quads.push(DisplayQuad {
+        label: "taau_seed",
+        fixture: "webgpu_upscaling_taau_m36_taau_seed.wgsl",
+        material: seed,
+    });
+    let mut resolve = taau.quad_material();
+    resolve.vertex_node = Some(quad_vertex_node());
+    quads.push(DisplayQuad {
+        label: "taau_resolve",
+        fixture: "webgpu_upscaling_taau_m38_taau_resolve.wgsl",
         material: resolve,
     });
 
