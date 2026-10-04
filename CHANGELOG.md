@@ -8,6 +8,18 @@ have their own sections after the release they ship with. The format follows [Ke
 
 ### Added
 
+- **`FirstPersonControls`** and **`FlyControls`** (`addons::controls`), ports
+  of `examples/jsm/controls/FirstPersonControls.js` and `FlyControls.js` as
+  of the pinned 5f610f5 (r187dev), with the same fields, defaults and `update( delta )`. Input
+  arrives as method calls (`pointer_down`, `pointer_move`, `key_down` with a
+  new `KeyCode`, …) rather than DOM listeners, the camera is passed to
+  `update` as a `&Node`, and Fly's `change` event is `update`'s return value.
+  `tools/first_person_controls_reference.mjs` and
+  `tools/fly_controls_reference.mjs` run three's own classes under node over
+  scripted input and write `tests/fixtures/first_person_controls.json` and
+  `fly_controls.json`; `tests/addons_first_person_controls.rs` and
+  `tests/addons_fly_controls.rs` replay the scripts and match every camera
+  position and quaternion to 1e-9. See `docs/controls.md`.
 - **TSL sweep 1**: the last absent `three/tsl` math names and nine texture
   utilities (`texture_bicubic_level` is now public), each gated against three's own WGSL dump in
   `tests/nodes_tsl_batch.rs`.
