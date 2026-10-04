@@ -17,9 +17,11 @@
 //! `passTexture( this, this._renderTargetBlend.texture )`.
 //!
 //! The area and search textures are the two base64 PNGs `SMAANode.js`
-//! embeds, decoded once at build time into `smaa_area.png` (160×560 RGB) and
-//! `smaa_search.png` (66×33 grey) next to this file and expanded to RGBA8 the
-//! way the browser's image decode does. The search texture is
+//! embeds. `smaa_area.png` (160×560 RGB) and `smaa_search.png` (66×33 grey)
+//! next to this file are those payloads base64-decoded, byte for byte; they
+//! are compiled in with `include_bytes!` and decoded to pixels at runtime,
+//! on first use, then expanded to RGBA8 the way the browser's image decode
+//! does. The search texture is
 //! `NearestFilter` on both filters, so — as in three — it is unfilterable
 //! and every tap is a clamped `textureLoad`.
 //!

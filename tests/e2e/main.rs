@@ -2042,6 +2042,29 @@ fn webgpu_postprocessing_ssr() {
     let info = app.renderer.info();
     println!("{name}: info {info:?}");
 
+    // SSR must be visible in the graded frame, not merely harmless: the same
+    // frame at `intensity` 0 differs from it in 21527 of the 400000 pixels in
+    // some channel by more than 32 levels (17373 in the progress doc's hand
+    // count) — the reflections in the brass and red casing and on the disc.
+    // Require a safe fraction of that.
+    app.ssr_pass.intensity().set(vec![0.0]);
+    webgpu_postprocessing_ssr::animate(&mut app);
+    let (_, _, without_ssr) = app.renderer.read_canvas_pixels().unwrap();
+    app.ssr_pass.intensity().set(vec![1.0]);
+    let changed = pixels
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .zip(without_ssr.as_chunks::<4>().0)
+        .filter(|(a, b)| a.iter().zip(*b).any(|(x, y)| x.abs_diff(*y) > 32))
+        .count();
+    println!("{name}: SSR changes {changed} pixels by more than 32 levels");
+    assert!(
+        changed > 5000,
+        "{name}: SSR at intensity 1 changes only {changed} pixels by more than 32 levels \
+         against intensity 0; it was 21527 when this check was written"
+    );
+
     steady_frame(name, &mut app, webgpu_postprocessing_ssr::animate, |app| {
         app.renderer.device()
     });

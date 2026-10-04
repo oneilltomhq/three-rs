@@ -398,6 +398,12 @@ impl SsrState {
             .set(vec![width as f64, height as f64]);
         self.ssr_target.set_size(width, height);
         self.blur_target.set_size(width, height);
+        // A full chain at this size is `floor(log2(max(w, h))) + 1` levels;
+        // asking WebGPU for more than that fails texture creation, so a window
+        // under 16 pixels on its long side gets fewer than [`BLUR_MIPS`].
+        let full_chain = width.max(height).max(1).ilog2() + 1;
+        self.blur_target
+            .set_mip_level_count(BLUR_MIPS.min(full_chain));
     }
 }
 
@@ -451,7 +457,7 @@ impl NodeUpdate for SsrState {
         // blur: mip 0 is the unblurred copy, every level after it spreads
         // the taps one texel further.
         if self.blurred {
-            for i in 0..BLUR_MIPS {
+            for i in 0..self.blur_target.mip_level_count() {
                 self.blur_spread.1.set(vec![i as f64]);
                 renderer.set_render_target_level(Some(self.blur_target.clone()), i);
                 if i == 0 {

@@ -1536,8 +1536,14 @@ impl Renderer {
     /// `Renderer._renderScene()` shifts the viewport, the scissor and the
     /// context size right by the level, and `WebGPUBackend` views the texture
     /// at `baseMipLevel: activeMipmapLevel, mipLevelCount: 1`. The target needs
-    /// that many levels ([`RenderTarget::set_mip_level_count`]) and, at a
-    /// level above 0, no depth attachment, whose size would not match.
+    /// that many levels ([`RenderTarget::set_mip_level_count`]).
+    ///
+    /// Three's `Textures.updateRenderTarget()` gives each level of a target
+    /// with a depth buffer its own depth texture (`depthTextureMips[ level ]`,
+    /// `size >> level` pixels). three-rs does not port that, nor per-level
+    /// MSAA or extra MRT attachments: at a level above 0 the target must be
+    /// colour-only (`depth_buffer: false`, no depth texture, `samples <= 1`,
+    /// one attachment), and the render pass panics otherwise.
     pub fn set_render_target_level(
         &mut self,
         render_target: Option<RenderTarget>,
@@ -7214,7 +7220,28 @@ impl Renderer {
         let color_format = inner.texture.format();
         // `WebGPUBackend.beginRender()`: a level above 0 is drawn through a
         // one-level view of the colour texture.
-        let level = self.active_mipmap_level.min(inner.mip_level_count - 1);
+        let level = self.active_mipmap_level;
+        debug_assert!(
+            level < inner.mip_level_count,
+            "three-rs: active mipmap level {level} is past the render target's {} level(s); \
+             call RenderTarget::set_mip_level_count() first",
+            inner.mip_level_count,
+        );
+        let level = level.min(inner.mip_level_count - 1);
+        // Three's `Textures.updateRenderTarget()` gives each level its own
+        // depth texture (`depthTextureMips[ level ]`, sized `size >> level`);
+        // that is not ported, and neither is a per-level MSAA texture or
+        // per-level extra MRT attachments, so a level above 0 is colour-only.
+        assert!(
+            level == 0
+                || (!inner.depth_buffer
+                    && inner.depth_texture.is_none()
+                    && inner.samples <= 1
+                    && inner.extra_textures.is_empty()),
+            "three-rs: drawing into mip level {level} of a render target needs it to have no \
+             depth buffer, no depth texture, no MSAA (samples <= 1) and no extra MRT \
+             attachments; per-level depth and MSAA textures are not ported",
+        );
         let single = inner.texture.with_gpu(|gpu| {
             gpu.create_view(&wgpu::TextureViewDescriptor {
                 base_mip_level: level,
