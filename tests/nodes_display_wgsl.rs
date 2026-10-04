@@ -396,11 +396,14 @@ fn sss_shadow_context_matches_three() {
     };
     let fog = SceneFog::Linear(Fog::new(Color::from_hex(0xa0a0a0), 10.0, 50.0)).node();
     let program = NodeBuilder::new().build(&setup(&material, &ctx, Some(&fog)));
-    // The port's Phong flow zeroes each lighting accumulator twice in a row
-    // (`irradiance = vec3<f32>( 0.0, 0.0, 0.0 );` and so on), on main and
-    // with or without the shadow context; `tests/nodes_light_probe.rs`
-    // allows for it too. Only an adjacent repeat of the same statement is
-    // dropped, so a missing or extra light term still shows.
+    // The port's Phong flow emits each accumulator's zero twice in a row:
+    // `irradiance`, `directDiffuse`, `directSpecular` and `indirectDiffuse =
+    // vec3<f32>( 0.0, 0.0, 0.0 );`, once from the var's lazy initialiser and
+    // once from the flow's explicit zero assign (`src/materials/
+    // node_material.rs`). three's dump has each once. It happens on main too,
+    // with or without the shadow context: issue #281. Only an adjacent repeat
+    // of the same line is dropped, so a missing or extra light term still
+    // shows.
     let mut lines: Vec<&str> = program.fragment_wgsl.lines().collect();
     lines.dedup();
     let ours = fingerprint(&lines.join("\n"), Region::Body);

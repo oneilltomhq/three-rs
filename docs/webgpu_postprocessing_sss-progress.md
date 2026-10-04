@@ -31,9 +31,11 @@ covers the context's multiply, and the statue takes it through the same
 `setup_light` path.
 
 The ground gate drops adjacent repeated lines from the port's WGSL before
-fingerprinting. The port's Phong flow zeroes each lighting accumulator twice
-in a row. This happens on `main` too, with or without the context, and
-`tests/nodes_light_probe.rs` allows for it as well.
+fingerprinting. The port's Phong flow emits the zero of `irradiance`,
+`directDiffuse`, `directSpecular` and `indirectDiffuse` twice in a row, once
+from each var's lazy initialiser and once from the flow's explicit assign.
+This happens on `main` too, with or without the context; it is issue #281,
+and the dedup goes when that is fixed.
 
 ## What else is checked
 
@@ -44,6 +46,10 @@ in a row. This happens on `main` too, with or without the context, and
   - a band of floor in front of the box is black at `shadowIntensity` 1 and
     mid-grey at 0.5, with no pixel below that (no NaN);
   - a sub-pixel `maxDistance` occludes nothing;
+  - a `thickness` of 0.0001 takes the box's face for a surface the rays
+    pass behind, so the band goes;
+  - `quality` 1 occludes more than three's 0.5, and 0.1 less than half as
+    much;
   - temporal filtering and half resolution keep the band;
   - with the shadow context, a Phong floor's beauty is unchanged wherever
     the SSS is white and darker in the band;
@@ -65,3 +71,16 @@ example's module docs cover what the page does differently:
 The page is not in the browser shell, and it has no web manifest. The shell
 builds only the README's graded examples, and the web gate grades every one
 it builds (see `web/README.md`, "Adding an example").
+
+## Merge note
+
+`gtao-denoise` (#267) adds `builtinAOContext` as `PassNode::set_context_ao`,
+the AO twin of this branch's `set_context_shadow`: a `PassState` field that
+the pass hands to a `Renderer` field for the length of its render. The two
+branches touch the same places in `src/renderer/pass.rs` (the `PassState`
+fields, their initialisers, the setters and the save/restore around the
+render) and `src/renderer/mod.rs` (the `Renderer` fields and their
+initialisers), and both append a section at the end of `docs/nodes.md`
+(§64 there, §71 here). Whichever lands second should keep both contexts side
+by side; neither replaces the other. `docs/nodes.md` §71.2 and `sss.rs` cite
+only TRAA and `main` until then.

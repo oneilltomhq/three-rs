@@ -22,12 +22,12 @@ This matrix judges every exported name in three.js revision 5f610f5 (r187) — `
 | loaders | 20 | 2 | 2 | 12 | 4 | 12% |
 | renderers | 39 | 9 | 9 | 3 | 18 | 43% |
 | nodes | 141 | 91 | 28 | 17 | 5 | 67% |
-| tsl | 683 | 407 | 40 | 217 | 19 | 61% |
+| tsl | 683 | 408 | 40 | 216 | 19 | 61% |
 | addons/controls | 9 | 0 | 2 | 7 | 0 | 0% |
 | addons/loaders | 71 | 6 | 2 | 63 | 0 | 8% |
 | addons/postprocessing | 30 | 0 | 0 | 0 | 30 | — |
 | addons/other | 102 | 11 | 4 | 64 | 23 | 14% |
-| **total** | **1315** | **651** | **122** | **425** | **117** | **54%** |
+| **total** | **1315** | **652** | **122** | **424** | **117** | **54%** |
 
 TSL by family:
 
@@ -42,7 +42,7 @@ TSL by family:
 | display/postprocessing | 75 | 40 | 8 | 27 | 0 |
 | compute/storage | 53 | 19 | 3 | 31 | 0 |
 | materialx | 49 | 48 | 0 | 1 | 0 |
-| utils | 77 | 29 | 5 | 39 | 4 |
+| utils | 77 | 30 | 5 | 38 | 4 |
 
 Graded examples: 85 (the README gallery plus `webgpu_textures_2d-array_compressed`, which has a live `rung!` but a hyphen in its name). 10 more are ported but `#[ignore]`d because three.js fails its own reference on this machine; a row whose only check is one of those is Partial.
 
@@ -820,7 +820,7 @@ Graded examples: 85 (the README gallery plus `webgpu_textures_2d-array_compresse
 
 ### Supplementary: `examples/jsm/tsl/display/*.js`
 
-These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) and are not counted above. 16 Present, 32 Absent.
+These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) and are not counted above. 16 Present, 1 Partial, 31 Absent.
 
 | file | status | three-rs port and check |
 |---|---|---|
@@ -865,7 +865,7 @@ These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) an
 | `SSAONode.js` | Absent | — |
 | `SSGINode.js` | Absent | — |
 | `SSRNode.js` | Absent | — |
-| `SSSNode.js` | Present | sss/SssNode; tests/nodes_display_wgsl.rs (SSS quad and ground shadow-context gates), tests/sss_frames.rs; webgpu_postprocessing_sss (ported, ungraded: three's own e2e exception list). No orthographic camera, no logarithmic depth |
+| `SSSNode.js` | Partial | sss/SssNode; tests/nodes_display_wgsl.rs (SSS quad and ground shadow-context gates), tests/sss_frames.rs; webgpu_postprocessing_sss (ported, ungraded: three's own e2e exception list). No orthographic camera, no logarithmic depth |
 | `StereoCompositePassNode.js` | Absent | — |
 | `StereoPassNode.js` | Absent | — |
 | `TAAUNode.js` | Absent | — |
@@ -1584,9 +1584,9 @@ Partial: none.
 
 ### utils
 
-29 of 73 applicable present (5 Partial, 39 Absent, 4 N.A.).
+30 of 73 applicable present (5 Partial, 38 Absent, 4 N.A.).
 
-Missing (Absent): `defaultShaderStages`, `defaultBuildStages`, `shaderStages`, `vectorComponents`, `bypass`, `uniformFlow`, `setName`, `builtinShadowContext`, `builtinAOContext`, `builtinGIContext`, `label`, `overrideNodes`, `subgroupIndex`, `invocationSubgroupIndex`, `drawIndex`, `uniformGroup`, `sharedUniformGroup`, `frameGroup`, `objectGroup`, `vertexStage`, `unpackRGBToNormal`, `unpackNormal`, `directionToColor`, `colorToDirection`, `replaceDefaultUV`, `sample`, `OnObjectUpdate`, `OnMaterialUpdate`, `OnFrameUpdate`, `OnAfterObjectUpdate`, `OnBeforeObjectUpdate`, `OnBeforeMaterialUpdate`, `OnBeforeFrameUpdate`, `OnBeforeRenderPipeline`, `OnAfterRenderPipeline`, `expression`, `debug`, `addNodeElement`, `wgsl`.
+Missing (Absent): `defaultShaderStages`, `defaultBuildStages`, `shaderStages`, `vectorComponents`, `bypass`, `uniformFlow`, `setName`, `builtinAOContext`, `builtinGIContext`, `label`, `overrideNodes`, `subgroupIndex`, `invocationSubgroupIndex`, `drawIndex`, `uniformGroup`, `sharedUniformGroup`, `frameGroup`, `objectGroup`, `vertexStage`, `unpackRGBToNormal`, `unpackNormal`, `directionToColor`, `colorToDirection`, `replaceDefaultUV`, `sample`, `OnObjectUpdate`, `OnMaterialUpdate`, `OnFrameUpdate`, `OnAfterObjectUpdate`, `OnBeforeObjectUpdate`, `OnBeforeMaterialUpdate`, `OnBeforeFrameUpdate`, `OnBeforeRenderPipeline`, `OnAfterRenderPipeline`, `expression`, `debug`, `addNodeElement`, `wgsl`.
 
 Partial: `NodeShaderStage`, `cache`, `overrideNode`, `renderGroup`, `subBuild`.
 
@@ -1607,7 +1607,7 @@ Partial: `NodeShaderStage`, `cache`, `overrideNode`, `renderGroup`, `subBuild`.
 | `context` | Present | context (src/nodes/tsl.rs:145) | tests/nodes_custom.rs, webgpu_custom_fog_background (graded) |  |
 | `uniformFlow` | Absent | — | — | comment only: src/nodes/materialx/mx_noise.rs |
 | `setName` | Absent | — | — | comment only: src/nodes/builder.rs |
-| `builtinShadowContext` | Absent | — | — |  |
+| `builtinShadowContext` | Present | PassNode::set_context_shadow (src/renderer/pass.rs:321) | tests/nodes_display_wgsl.rs (sss_shadow_context_matches_three), tests/sss_frames.rs | a pass's context, not a general context node; the shadow node rides in the light's ShadowMap |
 | `builtinAOContext` | Absent | — | — |  |
 | `builtinGIContext` | Absent | — | — |  |
 | `label` | Absent | — | — | comment only: src/bin/viewer_app.rs |
@@ -1685,5 +1685,5 @@ The first refresh of this matrix closed the previous top five. Velocity and TRAA
 **Runners-up, and why they rank lower:**
 - RectAreaLight and LTC (3 pages).
 - Clipping planes (2 pages, but common in CAD-style viewers).
-- The TSL long tail: 217 absent `three/tsl` names, most of them unused by any r187 page. They port cheaply in batches against WGSL dump gates.
+- The TSL long tail: 216 absent `three/tsl` names, most of them unused by any r187 page. They port cheaply in batches against WGSL dump gates.
 - One Partial matters more than its page count suggests: `GLTFLoader` has no `KHR_lights_punctual` and no cameras. No r187 page needs them, but arbitrary glTF assets from users will.

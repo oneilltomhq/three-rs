@@ -18,6 +18,10 @@
 //!   `shadowIntensity` 0.5 no pixel may be below mid-grey);
 //! * a `maxDistance` shorter than a pixel marches no step at all, so
 //!   nothing is occluded;
+//! * a `thickness` smaller than a step's overshoot takes the box's face to
+//!   be a thin surface the ray passes behind, so the band goes;
+//! * a finer `quality` occludes more and a coarser one less, and setting
+//!   both back gives the first frame back;
 //! * temporal filtering and `resolutionScale = 0.5` still put the band in
 //!   front of the box;
 //! * with `builtinShadowContext`, the beauty of a Phong floor lit by the
@@ -214,6 +218,59 @@ fn sss_shadows_the_floor_in_front_of_the_box() {
     );
     sss_node.max_distance.set(vec![1.0]);
 
+    // `thickness`: a surface occludes only while it sits in front of the
+    // ray by less than `thickness`; one further in front is taken to be
+    // thin, with the ray passing behind it. The box's face is a unit deep,
+    // but the first step that lands on it is already behind it by up to one
+    // step's worth of view depth, about 0.01 here (at `thickness = 0.01`
+    // most of the band is already gone). At 0.0001 the face is in front of
+    // every step by more than `thickness`, so the band goes: the contact
+    // block must read as open floor (the same 225 as the open-floor check)
+    // and fewer than one in twenty of the baseline's occluded pixels may
+    // remain (0 on the machine this was written on).
+    sss_node.thickness.set(vec![0.0001]);
+    let thin = frame(&mut pipeline, &mut renderer);
+    let contact_thin = mean(&thin, contact.0, contact.1, 1);
+    let occluded_thin = count_below(&thin, 128);
+    println!("thickness 0.0001: contact {contact_thin:.1}, {occluded_thin} occluded");
+    assert!(
+        contact_thin > 225.0,
+        "a face further in front of the ray than `thickness` does not occlude ({contact_thin:.1})"
+    );
+    assert!(
+        occluded_thin * 20 < occluded,
+        "a sub-step `thickness` leaves almost nothing occluded ({occluded_thin} of {occluded})"
+    );
+    sss_node.thickness.set(vec![0.1]);
+
+    // `quality`: the march takes one step per `1 / quality` pixels, and how
+    // far a step overshoots the face scales with its length, so the finer
+    // the march the more rays land within `thickness` of the face. From
+    // three's 0.5, 1 must occlude more pixels (about a quarter more here)
+    // and 0.1 fewer than half as many (about a fifth here).
+    sss_node.quality.set(vec![1.0]);
+    let fine = frame(&mut pipeline, &mut renderer);
+    let occluded_fine = count_below(&fine, 128);
+    sss_node.quality.set(vec![0.1]);
+    let coarse = frame(&mut pipeline, &mut renderer);
+    let occluded_coarse = count_below(&coarse, 128);
+    println!("quality 1: {occluded_fine} occluded; quality 0.1: {occluded_coarse} occluded");
+    assert!(
+        occluded_fine > occluded,
+        "a finer march occludes more ({occluded_fine} vs {occluded})"
+    );
+    assert!(
+        occluded_coarse * 2 < occluded,
+        "a coarser march occludes less ({occluded_coarse} vs {occluded})"
+    );
+    // Both are uniforms, so setting them back gives the first frame back.
+    sss_node.quality.set(vec![0.5]);
+    let restored = frame(&mut pipeline, &mut renderer);
+    assert!(
+        restored == full,
+        "restoring `thickness` and `quality` restores the frame"
+    );
+
     // Temporal filtering: the ray offset moves every frame, the band stays
     // in front of the box.
     sss_node.set_use_temporal_filtering(true);
@@ -262,8 +319,11 @@ fn sss_shadows_the_floor_in_front_of_the_box() {
     plain.output_node = Some(plain_pass.texture_node("output"));
     let without = frame(&mut plain, &mut renderer);
 
+    // One context node for the pass's lifetime, as `set_context_shadow`
+    // advises: it is part of the receivers' program key.
+    let context = sss_node.sample(screen_uv()).x();
     let shadowed_pass = pass(setup.scene.clone(), setup.camera.clone());
-    shadowed_pass.set_context_shadow(sss_node.sample(screen_uv()).x(), &setup.light);
+    shadowed_pass.set_context_shadow(context.clone(), &setup.light);
     let mut shadowed = RenderPipeline::new();
     shadowed.output_node = Some(shadowed_pass.texture_node("output"));
     let with = frame(&mut shadowed, &mut renderer);
@@ -300,7 +360,7 @@ fn sss_shadows_the_floor_in_front_of_the_box() {
     // context to multiply into.
     setup.floor.borrow_mut().receive_shadow = false;
     let unreceived_without = frame(&mut plain, &mut renderer);
-    shadowed_pass.set_context_shadow(sss_node.sample(screen_uv()).x(), &setup.light);
+    shadowed_pass.set_context_shadow(context, &setup.light);
     let unreceived_with = frame(&mut shadowed, &mut renderer);
     let unreceived_contact = mean(&unreceived_with, contact.0, contact.1, 1);
     println!("without receiveShadow: contact {unreceived_contact:.1}");

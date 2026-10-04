@@ -5993,18 +5993,21 @@ arithmetic, and `tests/traa_frames.rs` allows for it.
 
 ### 71.1 What three does
 
-`sss( depthNode, camera, mainLight )` is a `TempNode` with
-`updateBeforeType = FRAME`. It owns one `RedFormat` / `UnsignedByteType`
+`sss( depthNode, camera, mainLight )` is a plain `Node` (it `extends Node`)
+with `updateBeforeType = FRAME`. It owns one `RedFormat` / `UnsignedByteType`
 render target, sized `round( resolutionScale × drawing-buffer size )`, and
 its texture node is `passTexture( this, target.texture )`.
 
-- **`updateBefore()`.** It sets the target's size and the camera uniforms
-  (view, projection, inverse projection, near and far), and copies the
-  light's and its target's world positions into `lightPosition` and
-  `lightTargetPosition`. With temporal filtering it sets `temporalOffset`
-  to `_spatialOffsets[ frameId % 4 ]` (0, 0.5, 0.25, 0.75) and stores
-  `frame.frameId` in `this._frameId`; without it, both are 0. It then draws
-  the quad into the target, cleared to white.
+- **`updateBefore()`.** It does four things: it sets the target's size,
+  sets `temporalOffset` to `_spatialOffsets[ frameId % 4 ]` (0, 0.5, 0.25,
+  0.75) and stores `frame.frameId` in `this._frameId` under temporal
+  filtering (both 0 without it), and draws the quad into the target,
+  cleared to white. Nothing else is written there. The camera's view,
+  projection and inverse projection are `uniform( camera.matrix… )`, which
+  read the camera's own matrices; near and far are `reference()` nodes on
+  the camera; and the light's and its target's positions come from
+  `lightPosition( light )` and `lightTargetPosition( light )`, which are
+  render-group uniforms with their own `onRenderUpdate`.
 - **The quad.** For each pixel with depth below 1 it rebuilds the view
   position and marches from it towards the light. The ray runs from
   `fragCoord` to the screen position of `rayStart + lightDirection ×
@@ -6016,9 +6019,16 @@ its texture node is `passTexture( this, target.texture )`.
   The output is `1 − occlusion`.
 - **The frame id is a literal.** The constructor makes `_frameId` a uniform,
   but `updateBefore()` replaces the property with a plain number before the
-  quad's `Fn()` first runs. So the shader holds `rand( uv + vec2( N ) )`
-  for the frame the material was built on (`vec2( 2.0 )` in the page's
-  dump), and the material is never rebuilt.
+  quad's `Fn()` runs. So the shader holds `rand( uv + vec2( N ) )` for the
+  frame the material was last built on (`vec2( 2.0 )` in the page's dump).
+- **The quad is rebuilt.** `setup()` runs again in every builder that sets
+  up a material reading the SSS texture: `PassTextureNode.setup()` puts the
+  `SSSNode` in that builder's node properties. Each run assigns a fresh
+  `fragmentNode = sss()` and sets `needsUpdate`, so the quad's cache key
+  changes and the next `updateBefore()` rebuilds it with that frame's id.
+  On the page that happens in the first frame (the statue's and the
+  ground's scene materials), again when the glTF arrives, and again when
+  the GUI's output switch makes a scene material set up again.
 - **`builtinShadowContext( shadow, light )`.** This is a context whose
   `getShadow( lightNode )` returns `lightNode.shadowColorNode.mul( shadow )`
   for that light alone. `AnalyticLightNode.setupShadow()` calls it only
@@ -6038,21 +6048,28 @@ fixture `webgpu_postprocessing_sss_m08_sss.wgsl`). `maxDistance`,
 three's two properties.
 
 **The frame id.** `SssState` builds the quad material on its first
-`update_before()`, with the frame id three would have baked: the frame's id
-under temporal filtering, else 0. It keeps that material for good, as three
-does. `SssNode::quad_material( frame_id )` (hidden from the docs) is what
-the gate builds, with three's 2.
+`update_before()`, with the frame id three would have baked then: the
+frame's id under temporal filtering, else 0. It keeps that material, so it
+bakes the first frame's id for good. Three rebuilds the quad whenever a
+consumer material sets up again (§71.1) and so re-bakes a later frame's id;
+the difference is the phase of the `rand()` noise only. Turning temporal
+filtering on or off later changes the `temporalOffset` uniform in both,
+which is the same. `SssNode::quad_material( frame_id )` (hidden from the
+docs) is what the gate builds, with three's 2.
 
 **Order within a frame.** `update_before()` asks for the pre-pass first,
-through `frame::texture_update( depth )`, as GTAO and TRAA do. While it does
-so it lifts the renderer's shadow context, so the pre-pass never draws with
-the context of the pass that triggered it.
+through `frame::texture_update( depth )`, as TRAA does. While it does so it
+lifts the renderer's shadow context, so the pre-pass never draws with the
+context of the pass that triggered it.
 
 **The shadow context.** `PassNode::set_context_shadow( shadow, &light )` is
 `scenePass.contextNode = builtinShadowContext( shadow, light )`, and
 `clear_context_shadow()` sets it back to `null`. The pass hands the context
-to the renderer for the length of its render, as `set_context_ao` does
-(§64). The renderer finds the light's index in the render list by node
+to the renderer for the length of its render. (PR #267, `gtao-denoise`,
+adds `builtinAOContext` as `set_context_ao` with the same shape: a pass
+field handed to the renderer for its render. The two will conflict where
+they meet in `src/renderer/pass.rs`, `src/renderer/mod.rs` and this file.)
+The renderer finds the light's index in the render list by node
 identity. For every draw where that light's shadow map applies, it wraps the
 map in `ShadowMap::Context { map, shadow }`. `setup_light` then multiplies
 the light's colour by the map's factor and by `shadow`, which is three's
@@ -6080,5 +6097,12 @@ against fixture `webgpu_postprocessing_sss_m12_ground.wgsl`.
 - A logarithmic depth buffer (`sampleDepth`'s `logarithmicDepthToViewZ` →
   `viewZToPerspectiveDepth`).
 - `this._material.contextNode = context( builder.getSharedContext() )`. The
-  quad builds with an empty context, which is what the shared context of an
-  output-node build amounts to.
+  quad builds with an empty context. On the page `setup()` runs in the scene
+  materials' builders, where the SSS read sits inside `getShadow`, and
+  `getSharedContext()` strips the material and the `getShadow`, `getAO`,
+  `getGI`, `getUV` and `getOutput` hooks from that context. Nothing left in
+  it is read by the quad's fragment graph, so the result is still
+  effectively empty.
+- `resetRendererState()`'s `setRenderObjectFunction( null )`, as in
+  `rtt.rs` and `after_image.rs`: `Renderer::render_quad` never goes through
+  the render-object function.

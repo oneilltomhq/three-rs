@@ -20,16 +20,27 @@
 //! of the SSS texture, the way `passTexture( this, … )` makes it one in
 //! three).
 //!
-//! **The frame id is baked into the shader, as in three.** The constructor
-//! makes `_frameId` a uniform, but `updateBefore()` then overwrites the
-//! property with the plain number `frame.frameId` (or `0` without temporal
-//! filtering), and the `Fn()` body that reads it runs only when the quad
-//! material is first built, which is after that assignment. So three's
+//! **The frame id is baked into the shader.** The constructor makes
+//! `_frameId` a uniform, but `updateBefore()` then overwrites the property
+//! with the plain number `frame.frameId` (or `0` without temporal
+//! filtering), and the `Fn()` body that reads it runs when the quad
+//! material is built, which is after that assignment. So three's
 //! `rand( uv.add( this._frameId ) )` is `rand( uv + vec2( N ) )` for the
-//! frame the material was built on (`2.0` in the page's dump), and the
-//! material is never rebuilt after it. The port builds the quad material on
-//! the first [`NodeUpdate::update_before`] for the same reason, with the
-//! same frame id, and keeps it.
+//! frame the material was last built on (`2.0` in the page's dump).
+//!
+//! Three rebuilds that material more often than the port does. `setup()`
+//! runs again in every builder that sets up a material reading the SSS
+//! texture (`PassTextureNode.setup()` puts the `SSSNode` in that builder's
+//! node properties), and each run assigns a fresh `fragmentNode = sss()` and
+//! sets `needsUpdate`, so the next `updateBefore()` rebuilds the quad with
+//! the frame id of that frame. On the page that is the first frame (the
+//! statue's and the ground's scene materials), again when the glTF arrives,
+//! and again whenever the GUI's output switch makes a scene material set up
+//! again. The port builds the quad material once, on the first
+//! [`NodeUpdate::update_before`], and keeps it, so it bakes the first
+//! frame's id. Only the phase of the `rand()` noise differs; turning
+//! temporal filtering on or off later changes the `temporalOffset` uniform
+//! in both, which is the same.
 //!
 //! Not ported, and absent from the API rather than ignored:
 //!
@@ -39,8 +50,17 @@
 //!   `viewZToPerspectiveDepth` in `sampleDepth`), which the port's renderer
 //!   does not have;
 //! * `this._material.contextNode = context( builder.getSharedContext() )`:
-//!   the quad builds with an empty context, which is what the shared context
-//!   of an output-node build amounts to.
+//!   the quad builds with an empty context. On the page `setup()` runs in
+//!   the scene materials' builders, where the SSS read sits inside the
+//!   `getShadow` hook, and `getSharedContext()` strips the material and
+//!   the `getShadow` / `getAO` / `getGI` / `getUV` / `getOutput` hooks from
+//!   that context; nothing left in it is read by the quad's fragment graph,
+//!   so the result is still effectively empty.
+//!
+//! `RendererUtils.resetRendererState()`'s `setRenderObjectFunction( null )`
+//! is not mirrored around the quad's render, as in `rtt.rs` and
+//! `after_image.rs`: [`Renderer::render_quad`] never goes through the
+//! render-object function.
 //!
 //! Divergences: three's target is `RedFormat`; the port has no one-channel
 //! render target, so the quad writes its float into an `rgba8unorm` target
@@ -285,17 +305,21 @@ impl SssNode {
     }
 
     /// `sssNode.useTemporalFiltering = value` — offset the rays' first step
-    /// per frame, for a TRAA to average. Off by default. As in three, the
-    /// frame id the shader's `rand()` adds is the one of the frame the
-    /// material was built on, so turning this on after the first frame
-    /// changes the offset only.
+    /// per frame, for a TRAA to average. Off by default. Turning it on or off
+    /// later changes only the `temporalOffset` uniform, as in three. The
+    /// frame id the shader's `rand()` adds is baked into the quad material;
+    /// three re-bakes it whenever a consumer material sets up again and the
+    /// port keeps the first frame's, which shifts only the noise's phase
+    /// (see the module docs).
     pub fn set_use_temporal_filtering(&self, on: bool) {
         self.state.use_temporal_filtering.set(on);
     }
 
     /// The `SSS` quad material as it is built on a frame with id
-    /// `frame_id` (`0` without temporal filtering), for
-    /// `examples/dump_wgsl.rs` and the dump gate.
+    /// `frame_id` (`0` without temporal filtering). Its caller is
+    /// `tests/display/materials.rs`, the display-quad list that the dump gate
+    /// (`tests/nodes_display_wgsl.rs`) and `examples/dump_wgsl.rs` both
+    /// include.
     #[doc(hidden)]
     pub fn quad_material(&self, frame_id: u64) -> MeshBasicNodeMaterial {
         material(&self.state.depth, &self.state.uniforms, frame_id)
@@ -500,8 +524,7 @@ impl NodeUpdate for SssState {
         // The SSS is asked for from inside a pass whose
         // `builtinShadowContext` reads it, and a nested pass inherits the
         // outer context. The pre-pass feeds this node, so it cannot also
-        // read it; the port lifts the context for the pre-pass's render, as
-        // `GTAONode`'s port does for its AO context. (Three's pre-pass would
+        // read it; the port lifts the context for the pre-pass's render. (Three's pre-pass would
         // bind the 1×1 placeholder on the first frame and last frame's SSS
         // after that, into an MRT whose `output` is the velocity, so nothing
         // it writes reads it either.)
@@ -559,8 +582,9 @@ impl NodeUpdate for SssState {
                 .set(vec![target.x, target.y, target.z]);
         }
 
-        // `setup()` runs once; its `Fn()` body reads `this._frameId` when
-        // the material is first built — see the module docs.
+        // Built once, on the first frame; three rebuilds it whenever a
+        // consumer material sets up again, re-baking `this._frameId` — see
+        // the module docs.
         let mut quad = self.quad.borrow_mut();
         let quad = quad
             .get_or_insert_with(|| QuadMesh::new(material(&self.depth, &self.uniforms, frame_id)));
