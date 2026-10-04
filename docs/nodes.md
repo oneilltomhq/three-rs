@@ -554,10 +554,16 @@ differences, each verified to be pixel-neutral.
   `nodeVarN` shifts down. (Named MRT members whose value is a property read —
   `webgpu_postprocessing_bloom_selective`'s — get no var in either, which is
   why this only shows up here.)
-* **Hoisted accumulator zeros.** `LightingContextNode`'s five accumulators
-  (`directDiffuse`, `directSpecular`, `irradiance`, `indirectDiffuse`,
-  `indirectSpecular`) are zeroed together before the light loop rather than each
-  at its first use. Nothing reads one before it is written either way.
+* **Hoisted accumulator zeros.** In the physical flow, `LightingContextNode`'s
+  five accumulators (`directDiffuse`, `directSpecular`, `irradiance`,
+  `indirectDiffuse`, `indirectSpecular`) are zeroed together before the light
+  loop rather than each at its first use. Nothing reads one before it is
+  written either way. Each zero is emitted once: the accumulator is a var
+  whose initialiser is the zero, and the flow pushes the var itself as the
+  statement. It used to push `assign( vec3( 0 ) )`, which emitted the
+  initialiser and then the same zero again (issue #281). The Phong, Lambert
+  and Toon flow hoists nothing: each zero lands right above the statement
+  that first uses it, as in three's dumps.
 * **`clearcoatNormalView` assigned before the light loop (§34).** Three
   assigns the var at its first read, inside `direct()` after `irradiance`; the
   port assigns it where the normal is set up, ahead of the loop, and emits the
@@ -5310,7 +5316,7 @@ the port's body closes over `output_property()`. It is the same node.
   three's, statement for statement. The lighting has the same terms in a
   different order. Three emits the DFG lookup and the dielectric scattering
   first and zero-initialises each accumulator where it is first used. The
-  port zero-initialises them all up front (twice) and emits the directional
+  port zero-initialises them all up front (twice, until issue #281) and emits the directional
   light before the DFG. Three also writes `normalView` through
   `NORMAL_normalView = normalViewGeometry` where the port assigns it directly.
   The rest is spelling: `fragCoord` is the first fragment parameter rather
