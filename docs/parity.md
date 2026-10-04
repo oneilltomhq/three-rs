@@ -750,7 +750,7 @@ Graded examples: 90 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `Water` | N.A. | — | — | WebGL-only; WaterMesh is the WebGPU counterpart (Present) |
 | `Water2` | N.A. | — | — | WebGL-only; Water2Mesh counterpart Absent |
 | `Water2Mesh` | Absent | — | — | not ported with WaterMesh: `WaterNode`'s flow-map `updateBefore` and the `webgpu_water` page (Draco pool, UltraHDR, MRT bloom, FXAA) are a rung of their own, and three's e2e skips that page |
-| `WaterMesh` | Present | WaterMesh (src/addons/objects/water_mesh.rs:111) | webgpu_ocean (graded); tests/nodes_water_wgsl.rs | the mirror is created at construction rather than at first build; its target is still added at first build, as upstream (docs/nodes.md §76) |
+| `WaterMesh` | Present | WaterMesh (src/addons/objects/water_mesh.rs:119) | webgpu_ocean (graded); tests/nodes_water_wgsl.rs | the mirror is created at construction rather than at first build; its target is still added at first build, as upstream (docs/nodes.md §76) |
 | `BufferGeometryUtils` | Absent | — | — |  |
 | `CameraUtils` | Absent | — | — |  |
 | `ColorUtils` | Absent | — | — |  |
