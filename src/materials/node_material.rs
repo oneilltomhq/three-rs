@@ -127,6 +127,48 @@ pub struct SetupContext {
     /// camera matrix arrays and moves the object group to `@group( 2 )`, so
     /// it is part of the program's cache key. `docs/nodes.md` §40.
     pub array_cameras: usize,
+    /// `builder.camera.isOrthographicCamera` — the camera the pass is drawn
+    /// through (the shadow camera for a shadow pass). `positionViewDirection`
+    /// is the constant `vec3( 0, 0, 1 )` under an orthographic camera and the
+    /// normalized `-positionView` otherwise, so it changes the generated WGSL
+    /// of every lit material and is part of the program's cache key, beside
+    /// `array_cameras`.
+    pub orthographic: bool,
+    /// `builder.context.getAO` — the pass's `builtinAOContext( aoNode )`,
+    /// which every non-transparent material drawn by that pass multiplies into
+    /// its `AmbientOcclusion`. See [`AoContext`].
+    pub ambient_occlusion: Option<AoContext>,
+}
+
+/// `builtinAOContext( aoNode )` — the `getAO` hook a pass installs on the
+/// renderer's context node (`passNode.contextNode = builtinAOContext( ao )`).
+///
+/// three.js passes a closure:
+///
+/// ```js
+/// getAO: ( inputNode, { material } ) => {
+///     if ( material.transparent === true ) return inputNode;
+///     return inputNode !== null ? inputNode.mul( aoNode ) : aoNode;
+/// }
+/// ```
+///
+/// where `inputNode` is the material's own `aoNode` (`materialAO` with an
+/// `aoMap`, otherwise `null`). The closure's body is fixed, so what travels
+/// here is only `aoNode`; `NodeMaterial.setupAmbientOcclusion()`'s port
+/// applies the closure itself.
+///
+/// It is part of `SetupContext`, so it is part of the program's cache key by
+/// construction, keyed on the node's identity exactly like [`OutputContext`].
+#[derive(Clone, Debug)]
+#[doc(hidden)]
+pub struct AoContext {
+    pub node: NodeRef,
+}
+
+impl std::hash::Hash for AoContext {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.node.key().hash(state);
+    }
 }
 
 /// `context.getOutput( materialOutputNode, builder )`.
@@ -439,8 +481,12 @@ pub fn setup(
 ) -> MaterialFlow {
     // `builder.geometry.hasAttribute( 'tangent' )` — installed first, because
     // the material's normal node below already reads the TBN frame.
-    with_tangent_attribute(ctx.has_tangent_attribute, || {
-        setup_tangent(material, ctx, fog)
+    // `builder.camera.isOrthographicCamera`, which `positionViewDirection`
+    // branches on, is in scope for the whole build in three.
+    crate::nodes::tsl::with_orthographic_camera(ctx.orthographic, || {
+        with_tangent_attribute(ctx.has_tangent_attribute, || {
+            setup_tangent(material, ctx, fog)
+        })
     })
 }
 
@@ -619,9 +665,16 @@ fn setup_inner(
             pack_normal_to_rgb(normal_view()),
             opacity,
         ]))));
+        // `setupAmbientOcclusion()` still runs; nothing lit reads it.
+        setup_ambient_occlusion(material, ctx, &mut fragment);
         vec4_join(vec![diffuse_color().xyz(), diffuse_color().w()]).max(float(0.0))
     } else {
         setup_diffuse_color(material, ctx, &mut fragment);
+        // `setupAmbientOcclusion()` runs for every material without a
+        // `fragmentNode`; only `MeshBasicNodeMaterial` (whose `lights` is true
+        // in three) then reads it, through `BasicLightingModel.indirect()`.
+        let has_ao = setup_ambient_occlusion(material, ctx, &mut fragment);
+        let basic_ao = has_ao && material.kind == MaterialKind::Basic && !ctx.lighting_disabled;
 
         // `NodeMaterial.setupLighting()` for a material with no lighting model
         // of its own: `lights = this.lights || this.lightsNode !== null`, and
@@ -651,10 +704,17 @@ fn setup_inner(
                 &|base| backdrop_blend(material, base),
                 &mut fragment,
             )
-        } else if material.env_map.is_some() || (material.backdrop_node.is_some() && basic_lit) {
+        } else if material.env_map.is_some()
+            || basic_ao
+            || (material.backdrop_node.is_some() && basic_lit)
+        {
             // `BasicLightingModel`: `indirect()` makes the diffuse colour
             // the indirect light, and `LightsNode.setup()` sums it — or
-            // blends a `backdropNode` over it.
+            // blends a `backdropNode` over it. The `AONode` is a material
+            // lighting, so it alone is enough to take this path.
+            if basic_ao {
+                ao_lighting_node(&mut fragment);
+            }
             fragment.push(indirect_diffuse().assign(vec4(0.0, 0.0, 0.0, 0.0).xyz()));
             fragment.push(
                 indirect_diffuse().assign(
@@ -783,6 +843,19 @@ fn setup_inner(
         .output_node
         .as_ref()
         .map(crate::nodes::tsl::resolve_fn_call);
+    // `material.outputNode = outputStruct( … )`: the struct *is* the fragment
+    // stage's result, written member by member as an MRT's is, but with each
+    // member's own type: each member carries it (see `MaterialFlow::mrt`).
+    let (mrt, material_output) = match material_output {
+        Some(node) => match node.node() {
+            crate::nodes::Node::OutputStruct { members } => (
+                Some(members.iter().map(|m| (m.clone(), m.ty())).collect()),
+                None,
+            ),
+            _ => (mrt, Some(node)),
+        },
+        None => (mrt, None),
+    };
     let (output_assign, output_node) = match &ctx.output {
         Some(context) => (
             Some(material_output.unwrap_or_else(|| output.clone())),
@@ -809,6 +882,7 @@ fn setup_inner(
         emit_output_property: material.fragment_node.is_none(),
         vertex_statements: Vec::new(),
         position,
+        geometry_has_tangent: ctx.has_tangent_attribute,
     }
 }
 
@@ -1119,6 +1193,10 @@ pub fn tone_mapping_node(mode: ToneMapping, exposure: NodeRef, color: NodeRef) -
             agx_tone_mapping(color.clone().rgb(), exposure),
             color.a(),
         ]),
+        ToneMapping::Cineon => vec4_join(vec![
+            cineon_tone_mapping(color.clone().rgb(), exposure),
+            color.a(),
+        ]),
     }
 }
 
@@ -1145,6 +1223,9 @@ fn setup_phong(
     fragment: &mut Vec<NodeRef>,
 ) -> NodeRef {
     setup_diffuse_color(material, ctx, fragment);
+    // `setupAmbientOcclusion()`, between `setupDiffuseColor()` and
+    // `setupVariants()`.
+    let has_ao = setup_ambient_occlusion(material, ctx, fragment);
 
     // setupVariants: `PhongLightingModel` reads these three properties.
     if specular {
@@ -1209,6 +1290,13 @@ fn setup_phong(
                     fragment,
                 );
             }
+        }
+
+        // `AONode`, after the scene's lights and before `indirect()`. A pass
+        // with lighting disabled collects no `materialLightings`, so no
+        // `AONode` either.
+        if has_ao && !ctx.lighting_disabled {
+            ao_lighting_node(fragment);
         }
 
         // The tail every lit material shares.
@@ -1288,26 +1376,55 @@ fn material_lights(material: &MeshBasicNodeMaterial, ctx: &SetupContext) -> Vec<
 }
 
 /// `NodeMaterial.setupAmbientOcclusion()` — `AmbientOcclusion.assign( aoNode )`
-/// when, and only when, the material has an `aoMap`.
+/// when the material has an `aoMap`, the pass has a `builtinAOContext`, or
+/// both. Returns whether it assigned, which is three's
+/// `builder.context.ambientOcclusion` being set — what makes
+/// `setupMaterialLightings()` push the `AONode` the lighting models multiply
+/// their `ambientOcclusion` var by.
 ///
 /// `materialAO` is `texture( aoMap ).r.sub( 1 ).mul( aoMapIntensity ).add( 1 )`.
-/// Nothing is emitted without the map: three leaves `aoNode` null, so the
+/// The context's `getAO( materialAO )` then hands back `materialAO` untouched
+/// for a transparent material, and otherwise `materialAO.mul( ao )`, or `ao`
+/// alone without a map. The node goes in as it is: the var in
+/// `webgpu_postprocessing_ao`'s dump (`nodeVar0 = textureSample( … ).x;
+/// AmbientOcclusion = nodeVar0;`) is `TextureNode.generate()`'s own, which
+/// caches every tap, and the `.x` sits inside it because the GTAO target is
+/// `RedFormat` and so the texture node is a `float`.
+///
+/// Nothing is emitted without either: three leaves `aoNode` null, so the
 /// property is never declared and the lighting model's own `ambientOcclusion`
 /// var stays a bare `1`.
-fn setup_ambient_occlusion(material: &MeshBasicNodeMaterial, fragment: &mut Vec<NodeRef>) {
-    let Some(map) = &material.ao_map else {
-        return;
+fn setup_ambient_occlusion(
+    material: &MeshBasicNodeMaterial,
+    ctx: &SetupContext,
+    fragment: &mut Vec<NodeRef>,
+) -> bool {
+    let map_ao = material.ao_map.as_ref().map(|_| material_ao(material));
+    // `builtinAOContext`'s `getAO`: `if ( material.transparent === true )
+    // return inputNode;`.
+    let context_ao = ctx
+        .ambient_occlusion
+        .as_ref()
+        .filter(|_| !material.transparent)
+        .map(|ao| ao.node.clone());
+    let ao_node = match (map_ao, context_ao) {
+        (Some(map_ao), Some(context_ao)) => map_ao.mul(context_ao),
+        (Some(ao), None) | (None, Some(ao)) => ao,
+        (None, None) => return false,
     };
 
-    fragment.push(
-        ambient_occlusion_property().assign(
-            texture(map)
-                .x()
-                .sub(float(1.0))
-                .mul(material_ao_map_intensity())
-                .add(float(1.0)),
-        ),
-    );
+    fragment.push(ambient_occlusion_property().assign(ao_node));
+    true
+}
+
+/// `AONode( context.ambientOcclusion )` — the last of
+/// `setupMaterialLightings()`' lighting nodes, built after the scene's lights
+/// and the environment and before the lighting model's `indirect()`:
+/// `ambientOcclusion.mulAssign( AmbientOcclusion )`. The var's `float( 1 )`
+/// initialiser is emitted here, at its first read.
+fn ao_lighting_node(fragment: &mut Vec<NodeRef>) {
+    fragment
+        .push(ambient_occlusion().assign(ambient_occlusion().mul(ambient_occlusion_property())));
 }
 
 /// `MaterialNode.EMISSIVE` — `emissive * emissiveIntensity`, times the
@@ -1350,7 +1467,7 @@ fn setup_standard(
 
     // --- setupAmbientOcclusion, between `setupDiffuseColor` and
     // `setupVariants` exactly as `NodeMaterial.setup()` orders them.
-    setup_ambient_occlusion(material, fragment);
+    let has_ao = setup_ambient_occlusion(material, ctx, fragment);
 
     // --- setupVariants. `metalnessNode` is reached twice — once for the
     // `Metalness` property and once for `DiffuseContribution` — so the node is
@@ -1472,30 +1589,8 @@ fn setup_standard(
     }
 
     if use_anisotropy {
-        // `materialAnisotropy` — `MaterialNode.ANISOTROPY`. With a map the
-        // vector is the map's polar direction rotated by the material's, scaled
-        // by the map's blue channel; without one it is the uniform itself.
-        let anisotropy_v = match &material.anisotropy_map {
-            Some(map) => {
-                let polar = texture(map);
-                let v = material_anisotropy_vector();
-                let rotation = join(
-                    Type::Mat2,
-                    vec![v.clone().x(), v.clone().y(), v.clone().y().negate(), v.x()],
-                );
-                rotation.mul(
-                    polar
-                        .clone()
-                        .xy()
-                        .mul(2.0)
-                        .sub(vec2(1.0, 1.0))
-                        .normalize()
-                        .mul(polar.z()),
-                )
-            }
-            None => material_anisotropy_vector(),
-        };
-        let anisotropy_v = to_var(None, anisotropy_v);
+        // `materialAnisotropy` — `MaterialNode.ANISOTROPY`.
+        let anisotropy_v = to_var(None, material_anisotropy(material));
 
         fragment.push(anisotropy().assign(length(anisotropy_v.clone())));
         fragment.push(if_else(
@@ -1540,7 +1635,12 @@ fn setup_standard(
         None
     };
     if opaque_frame.is_some() {
-        fragment.push(transmission().assign(material_transmission()));
+        // `MaterialNode.TRANSMISSION`: the factor times the map's red channel.
+        let transmission_value = match &material.transmission_map {
+            Some(map) => material_transmission().mul(texture(map).x()),
+            None => material_transmission(),
+        };
+        fragment.push(transmission().assign(transmission_value));
         // `MaterialNode.THICKNESS`: the factor times the map's green channel.
         let thickness_value = match &material.thickness_map {
             Some(map) => material_thickness().mul(texture(map).y()),
@@ -1575,7 +1675,9 @@ fn setup_standard(
         Vec::new()
     };
 
-    let outgoing = if scene_lighting && (environment.is_some() || !lights.is_empty()) {
+    // The `AONode` is one of the `materialLightings` too, so an occluded
+    // material runs the chain even with no light and no environment.
+    let outgoing = if scene_lighting && (environment.is_some() || has_ao || !lights.is_empty()) {
         let model = Physical::start(
             use_sheen,
             use_clearcoat,
@@ -1611,17 +1713,13 @@ fn setup_standard(
             environment::setup(environment, use_anisotropy, use_clearcoat, fragment);
         }
         // `AONode( context.ambientOcclusion )`, the last entry
-        // `setupLightsNode()` pushes: `ambientOcclusion.mulAssign( aoNode )`,
-        // where `aoNode` is the `AmbientOcclusion` property
-        // `setup_ambient_occlusion` wrote above. The var's `float( 1 )`
-        // initialiser is emitted here, at its first read.
-        if material.ao_map.is_some() {
-            fragment.push(
-                ambient_occlusion().assign(ambient_occlusion().mul(ambient_occlusion_property())),
-            );
+        // `setupLightsNode()` pushes, reading the `AmbientOcclusion` property
+        // `setup_ambient_occlusion` wrote above.
+        if has_ao {
+            ao_lighting_node(fragment);
         }
         model.indirect_specular(environment.is_some(), fragment);
-        model.ambient_occlusion(material.ao_map.is_some(), fragment);
+        model.ambient_occlusion(has_ao, fragment);
 
         // Transmission's own backdrop wins over `material.backdropNode`:
         // `PhysicalLightingModel.start()` overwrites `context.backdrop`.
@@ -1644,4 +1742,187 @@ fn setup_standard(
     };
 
     vec4_join(vec![outgoing.add(emissive_color()), diffuse_color().w()]).max(float(0.0))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::math::Color;
+    use crate::nodes::NodeBuilder;
+    use crate::renderer::RenderTarget;
+    use crate::textures::Texture;
+
+    /// `webgpu_postprocessing_ao`'s context:
+    /// `builtinAOContext( aoPass.getTextureNode().sample( screenUV ).r )`,
+    /// over a `RedFormat` target as `GTAONode`'s is.
+    fn ao_context() -> AoContext {
+        let target = RenderTarget::new(16, 16);
+        target.texture().set_format(wgpu::TextureFormat::R8Unorm);
+        AoContext {
+            node: texture_uv(&target.texture(), screen_uv()).x(),
+        }
+    }
+
+    fn lit(ambient_occlusion: Option<AoContext>) -> SetupContext {
+        SetupContext {
+            lights: vec![LightDesc {
+                index: 0,
+                kind: LightKind::Directional,
+                shadow_map: None,
+            }],
+            ambient_occlusion,
+            ..SetupContext::default()
+        }
+    }
+
+    fn fragment(material: &MeshBasicNodeMaterial, ctx: &SetupContext) -> String {
+        NodeBuilder::new()
+            .build(&setup(material, ctx, None))
+            .fragment_wgsl
+    }
+
+    fn standard() -> MeshBasicNodeMaterial {
+        MeshBasicNodeMaterial::standard(Color::from_hex(0xe0d8d0), 0.9, 0.0)
+    }
+
+    const AO_LIGHTING: &str = "ambientOcclusion = ( ambientOcclusion * AmbientOcclusion );";
+
+    /// The trimmed body lines of `wgsl`, for order checks.
+    fn lines(wgsl: &str) -> Vec<&str> {
+        wgsl.lines().map(str::trim).collect()
+    }
+
+    fn position(lines: &[&str], needle: &str) -> usize {
+        lines
+            .iter()
+            .position(|line| line.contains(needle))
+            .unwrap_or_else(|| panic!("no line contains {needle:?}"))
+    }
+
+    #[test]
+    fn builtin_ao_context_occludes_a_standard_material() {
+        let wgsl = fragment(&standard(), &lit(Some(ao_context())));
+        let body = lines(&wgsl);
+
+        // `setupAmbientOcclusion()` right after `setupDiffuseColor()`: the
+        // tap, cached in the texture node's var, then the property — the
+        // dump's `nodeVar0 = textureSample( … ).x; AmbientOcclusion =
+        // nodeVar0;`. (Where the `.x` lands depends on the texture node's
+        // type for a one-channel format, which is not this flow's business.)
+        let alpha = position(&body, "DiffuseColor.w = 1.0;");
+        let tap = position(&body, "( fragCoord.xy / render.");
+        assert!(
+            body[tap].starts_with("nodeVar0 = textureSample( "),
+            "{wgsl}"
+        );
+        assert_eq!(tap, alpha + 1, "{wgsl}");
+        assert!(
+            body[tap + 1].starts_with("AmbientOcclusion = nodeVar0"),
+            "{wgsl}"
+        );
+
+        // `AONode`: the lighting var's initialiser, then the multiply, ahead of
+        // the lighting model's occlusion of the indirect terms.
+        let ao = position(&body, AO_LIGHTING);
+        assert_eq!(body[ao - 1], "ambientOcclusion = 1.0;", "{wgsl}");
+        let indirect = position(
+            &body,
+            "indirectDiffuse = ( indirectDiffuse * vec3<f32>( ambientOcclusion ) );",
+        );
+        assert!(ao < indirect, "{wgsl}");
+        assert_eq!(wgsl.matches("ambientOcclusion = 1.0;").count(), 1, "{wgsl}");
+    }
+
+    #[test]
+    fn builtin_ao_context_skips_transparent_materials() {
+        let mut material = standard();
+        material.transparent = true;
+        let wgsl = fragment(&material, &lit(Some(ao_context())));
+        assert!(!wgsl.contains("AmbientOcclusion = "), "{wgsl}");
+        assert!(!wgsl.contains(AO_LIGHTING), "{wgsl}");
+        assert!(!wgsl.contains("fragCoord.xy / render."), "{wgsl}");
+        // The same program as with no context at all.
+        assert_eq!(wgsl, fragment(&material, &lit(None)));
+    }
+
+    #[test]
+    fn builtin_ao_context_multiplies_into_an_ao_map() {
+        let mut material = standard();
+        material.ao_map = Some(Texture::new(4, 4, None));
+
+        // `aoMap` alone: `materialAO`, no context tap.
+        let map_only = fragment(&material, &lit(None));
+        assert!(
+            map_only.contains("AmbientOcclusion = ( ( ( nodeVar0.x - 1.0 ) * object."),
+            "{map_only}"
+        );
+        assert!(map_only.contains(AO_LIGHTING), "{map_only}");
+        assert!(!map_only.contains("fragCoord.xy / render."), "{map_only}");
+
+        // Both: `materialAO.mul( ao )`.
+        let both = fragment(&material, &lit(Some(ao_context())));
+        let line = lines(&both)
+            .into_iter()
+            .find(|line| line.starts_with("AmbientOcclusion = "))
+            .expect("AmbientOcclusion is assigned")
+            .to_owned();
+        assert!(
+            line.contains("* object.") && line.contains(") * nodeVar"),
+            "{line}"
+        );
+        assert!(both.contains(AO_LIGHTING), "{both}");
+
+        // A transparent material keeps its map and drops the context.
+        material.transparent = true;
+        let transparent = fragment(&material, &lit(Some(ao_context())));
+        assert_eq!(transparent, fragment(&material, &lit(None)));
+    }
+
+    #[test]
+    fn builtin_ao_context_occludes_phong_and_basic() {
+        let phong = MeshBasicNodeMaterial::phong(Color::from_hex(0x808080));
+        let wgsl = fragment(&phong, &lit(Some(ao_context())));
+        let body = lines(&wgsl);
+        let ao = position(&body, AO_LIGHTING);
+        let indirect = position(
+            &body,
+            "indirectDiffuse = ( indirectDiffuse * vec3<f32>( ambientOcclusion ) );",
+        );
+        assert!(
+            position(&body, "AmbientOcclusion = nodeVar") < ao && ao < indirect,
+            "{wgsl}"
+        );
+
+        // `MeshBasicNodeMaterial`: the `AONode` alone takes the
+        // `BasicLightingModel` path, whose indirect light is the diffuse
+        // colour times the occlusion.
+        let basic = MeshBasicNodeMaterial::new();
+        let wgsl = fragment(
+            &basic,
+            &SetupContext {
+                ambient_occlusion: Some(ao_context()),
+                ..SetupContext::default()
+            },
+        );
+        assert!(wgsl.contains(AO_LIGHTING), "{wgsl}");
+        assert!(
+            wgsl.contains("indirectDiffuse = ( indirectDiffuse * vec3<f32>( ambientOcclusion ) );"),
+            "{wgsl}"
+        );
+        assert!(!fragment(&basic, &SetupContext::default()).contains("ambientOcclusion"));
+    }
+
+    #[test]
+    fn builtin_ao_context_is_part_of_the_cache_key() {
+        use std::hash::{BuildHasher, RandomState};
+        let hasher = RandomState::new();
+        let ao = ao_context();
+        let with = hasher.hash_one(lit(Some(ao.clone())));
+        assert_eq!(with, hasher.hash_one(lit(Some(ao.clone()))));
+        assert_ne!(with, hasher.hash_one(lit(None)));
+        // `ao` stays alive to here: the key is the node's address, and a
+        // fresh node allocated after `ao` was dropped can reuse it.
+        assert_ne!(with, hasher.hash_one(lit(Some(ao_context()))));
+        drop(ao);
+    }
 }

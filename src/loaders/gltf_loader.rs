@@ -191,6 +191,9 @@ pub struct GltfMaterial {
     pub normal_scale: f64,
     /// `occlusionTexture`.
     pub occlusion_texture: Option<GltfTextureRef>,
+    /// `occlusionTexture.strength`, `None` when absent (three then leaves
+    /// `aoMapIntensity` at the material's default of 1).
+    pub occlusion_strength: Option<f64>,
     /// `emissiveTexture`.
     pub emissive_texture: Option<GltfTextureRef>,
     /// `emissiveFactor`, defaulting to `[0,0,0]`.
@@ -251,6 +254,9 @@ pub struct GltfMaterial {
     pub clearcoat_normal_scale: f64,
     /// `KHR_materials_transmission.transmissionFactor` (default 0).
     pub transmission_factor: Option<f64>,
+    /// `KHR_materials_transmission.transmissionTexture`, a data map (R =
+    /// transmission).
+    pub transmission_texture: Option<GltfTextureRef>,
     /// `KHR_materials_volume`: `thicknessFactor` (default 0),
     /// `attenuationDistance` (default `Infinity`) and `attenuationColor`
     /// (default white).
@@ -1521,6 +1527,9 @@ impl GltfLoader {
                     .and_then(Value::as_f64)
                     .unwrap_or(1.0),
                 occlusion_texture: GltfTextureRef::parse(material_def.get("occlusionTexture")),
+                occlusion_strength: material_def
+                    .pointer("/occlusionTexture/strength")
+                    .and_then(Value::as_f64),
                 emissive_texture: GltfTextureRef::parse(material_def.get("emissiveTexture")),
                 emissive_factor,
                 alpha_mode: material_def
@@ -1657,6 +1666,10 @@ impl GltfLoader {
                             .and_then(Value::as_f64)
                             .unwrap_or(0.0)
                     }),
+                transmission_texture: GltfTextureRef::parse(
+                    material_def
+                        .pointer("/extensions/KHR_materials_transmission/transmissionTexture"),
+                ),
                 // `GLTFMaterialsVolume.extendMaterialParams`
                 thickness_factor: material_def
                     .pointer("/extensions/KHR_materials_volume")
@@ -2039,19 +2052,17 @@ impl GltfLoader {
         // `alphaMode`. `BLEND` is the pair three.js writes together — a
         // transparent material that does *not* write depth, which is what puts
         // `HoloFillDark` in the render list's transparent half and lets the
-        // opaque geometry behind it through.
-        //
-        // `MASK` is deliberately not wired: it is `materialParams.alphaTest =
-        // alphaCutoff`, and this crate has only `alphaTestNode` (see
-        // `MeshBasicNodeMaterial::alpha_test_node`), whose WGSL is a literal
-        // where three's is the `materialAlphaTest` uniform. Nothing on the
-        // ladder is `MASK`; guessing the shader here would be a silent
-        // divergence rather than an API.
+        // opaque geometry behind it through. `MASK` is `materialParams.alphaTest
+        // = alphaCutoff`, the `materialAlphaTest` discard (`bath_day.glb`'s
+        // foliage and rug fringe).
         if material.alpha_mode == "BLEND" {
             out.transparent = true;
             out.depth_write = false;
         } else {
             out.transparent = false;
+            if material.alpha_mode == "MASK" {
+                out.alpha_test = material.alpha_cutoff;
+            }
         }
 
         // `materialParams.emissive = new Color().setRGB( ..., LinearSRGBColorSpace )`
@@ -2085,10 +2096,9 @@ impl GltfLoader {
                 self.assign_texture(cache, textures, images, map_def, ColorSpace::Srgb)?;
         }
 
-        // `occlusionTexture` → `aoMap`. `materialParams.aoMapIntensity =
-        // occlusionTexture.strength` is not wired: glTF's `strength` defaults
-        // to 1 and DamagedHelmet leaves it there; `aoMapIntensity` is a
-        // material field either way.
+        // `occlusionTexture` → `aoMap`, and `materialParams.aoMapIntensity =
+        // occlusionTexture.strength` when the strength is given: `pool.glb`'s
+        // `SPWallsFloorStairs` sets it to 0, which turns the map off.
         //
         // `occlusionTexture.texCoord` is 1 on every `SheenChair.glb` material,
         // so the `aoMap` here really is sampled along `uv1` —
@@ -2097,6 +2107,9 @@ impl GltfLoader {
         if let Some(map_def) = &material.occlusion_texture {
             out.ao_map =
                 self.assign_texture(cache, textures, images, map_def, ColorSpace::NoColorSpace)?;
+            if let Some(strength) = material.occlusion_strength {
+                out.ao_map_intensity = strength;
+            }
         }
 
         if let Some(map_def) = &material.normal_texture {
@@ -2172,6 +2185,10 @@ impl GltfLoader {
         // `GLTFMaterialsTransmission` / `GLTFMaterialsVolume`.
         if let Some(factor) = material.transmission_factor {
             out.transmission = factor;
+        }
+        if let Some(map_def) = &material.transmission_texture {
+            out.transmission_map =
+                self.assign_texture(cache, textures, images, map_def, ColorSpace::NoColorSpace)?;
         }
         if let Some(factor) = material.thickness_factor {
             out.thickness = factor;
