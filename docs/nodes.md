@@ -5989,7 +5989,7 @@ arithmetic, and `tests/traa_frames.rs` allows for it.
   `maxVelocityLength` as settable properties. They are constants at three's
   defaults.
 
-Sections 64 to 66 and 69 to 73 are reserved for the display-node ports on
+Sections 64 to 66, 69 and 71 to 73 are reserved for the display-node ports on
 sibling branches. They are numbered as those branches land.
 
 ## 67. TSL sweep 2: the accessors batch
@@ -6266,6 +6266,102 @@ comment naming the section it relies on:
 - **`ToneMapping::Cineon`**: the node's `main` passes `color.rgb` of a
   `vec4` where the standalone probe passes a `vec3`. The gate checks that the
   call is present and compares the emitted `fn` with three's.
+
+## 70. TSL sweep 4: the utils batch
+
+The utils names are thin, but four of them change how the builder reads a
+node, so they get a note here. Every shader-emitting name is gated against
+three's dump in `tests/nodes_tsl_batch.rs`.
+
+### 70.1 Two new context keys
+
+`ContextValue` gains two typed keys next to its node map. `push_context_value`
+copies them onto the build context, so they hold for the subgraph under the
+`context()` node, in analyse and generate alike.
+
+- **`uniformFlow`.** A two-branch `select()` built under it is WGSL's
+  `select( else, if, cond )`, not an `if`/`else` that writes a var. Both
+  branches are evaluated. `ConditionalNode.generate()` declares its result
+  var before it reads the context, so three emits a `var nodeVarN` that is
+  never assigned. The port declares one too. That keeps every later var's
+  number the same as three's. MaterialX's `mx_select` and `mx_negate_if` used
+  to fake that declaration with a named `property()`. They now use
+  `uniform_flow()`, and `tests/nodes_mx_library.rs` is unchanged byte for
+  byte.
+- **`nodeName`.** `UniformNode.generate()` reads
+  `this.name || builder.context.nodeName`, then deletes the key. In the port
+  `uniform_snippet` takes the key from the top of the context stack on every
+  uniform it builds. A uniform with its own name still clears it. So in
+  `set_name( a.add( b ), 'n' )` only `a` is named, as in three. An outer
+  context keeps its own copy.
+  - Three also consumes the key in `BufferAttributeNode.generate()`. There it
+    names the attribute, and in the fragment stage its varying
+    `<name>Varying`. The port's `Node::InstancedAttribute` does not read the
+    key. So under `set_name` an instanced attribute keeps its
+    `nodeAttributeN` name, and the name is left for the next uniform built
+    in the same context. No gate covers that case, so it is recorded here
+    rather than ported.
+  - Three has two `setName`s. The free function is this context. The method
+    on a `UniformNode` (also `ReferenceNode`) is the class's own `setName()`,
+    which sets `this.name` in place and returns the node. On a uniform,
+    `uniform( … ).setName( 'a' ).setName( 'b' )` is therefore named `b`.
+    `NodeRef::set_name` (and `label`) does the same on a `Node::Uniform`.
+    `UniformNode::name` is a `Cell`, so the rename reaches every reference to
+    the node, as in three. On any other node the method is the context. That
+    includes the port's buffer nodes, which three's `BufferNode` would rename
+    in place: the port names those from their `BufferSource`.
+
+### 70.2 `expression` and `debug`
+
+`Node::Expression` is three's `ExpressionNode`.
+
+- A typed expression is its snippet, verbatim, at every read.
+- A `void` expression is a flow line. It gets a `;` unless it already ends in
+  one, and an empty snippet adds nothing.
+
+`Node::Debug` generates its node and passes the snippet through. It hands
+three things to the callback: the stage, the current scope's flow so far, and
+the snippet. Three hands over the builder instead. With no callback it prints
+three's `// #--- TSL debug … ---#` block to stderr. The snippet is cached, so
+a second read reports nothing. Three's `debug()` also calls `.toStack()`, so
+inside a `Fn()` a bare `debug( x )` fires even when nothing reads it. The port
+has no implicit stack: a `debug( x )` fires only if its result is read.
+
+### 70.3 `bypass` and the event hooks
+
+`bypass( output, call )` is a `Node::Block`: one statement, then the value. Like
+three's `BypassNode`, a second read is the cached output, not a second run of
+the call.
+
+The `on_*_update` hooks are a crate-private `EventNode` `CustomNode`.
+
+- It is `void` and its setup is an empty expression, so it emits no WGSL.
+- Its three update types follow `EventNode.js`.
+- Reaching it registers it in the program's update lists, like any updating
+  custom node (§57).
+
+Three's `createEvent()` calls `.toStack()`, which does nothing outside a
+`Fn()`. The port has no implicit stack, so a hook is attached with
+`.bypass( on_object_update( … ) )`.
+
+The callback receives the `Renderer`, what every port update hook receives.
+Three's receives the `NodeFrame`. The port's `NodeFrame` does not carry the
+current object and material, so the rows are Partial.
+
+### 70.4 `sample`
+
+`SampleNode` keeps the callback. In a graph it is a non-cacheable
+`CustomNode` whose setup is `callback( uv() )`. The callback also runs once
+when the node is made, because the port types nodes eagerly. Three's
+`sample( callback, uv )` stores `uv` and never reads it, so the port drops the
+argument.
+
+Three's `convertToTexture( node )` returns a `SampleNode` unchanged. The
+port's `convert_to_texture` takes a `NodeRef` and returns an `RttNode`, so a
+`SampleNode` passed to it is drawn into a render target at `uv()` and
+sampled from there. That costs an extra pass and resolves the callback at the
+target's size. A caller holding a `SampleNode` can call its `sample( uv )`
+instead. The `sample` and `SampleNode` rows are Partial for this.
 ## 74. `GodraysNode`, `bilateralBlur()` and `depthAwareBlend()` (`webgpu_postprocessing_godrays`)
 
 ### 74.1 What three does

@@ -28,6 +28,6 @@ pub(crate) use frame::UpdateNode;
 pub use frame::{NodeFrameState, NodeUpdate, NodeUpdateType};
 pub use mrt::{get_texture_index, mrt, MrtNode};
 pub use node::{
-    BufferSource, ContextValue, CustomNode, Node, NodeFrame, NodeRef, Object3DScope, StorageAccess,
-    TextureSource, Type, UniformGroup, UniformSource, UpdateType,
+    BufferSource, ContextValue, CustomNode, DebugCallback, DebugInfo, Node, NodeFrame, NodeRef,
+    Object3DScope, StorageAccess, TextureSource, Type, UniformGroup, UniformSource, UpdateType,
 };
