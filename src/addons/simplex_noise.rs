@@ -171,13 +171,21 @@ impl SimplexNoise {
             (0, 1, 0, 1, 1, 0)
         };
         let d0 = [x0, y0, z0];
-        let d1 = [x0 - i1 as f64 + g3, y0 - j1 as f64 + g3, z0 - k1 as f64 + g3];
+        let d1 = [
+            x0 - i1 as f64 + g3,
+            y0 - j1 as f64 + g3,
+            z0 - k1 as f64 + g3,
+        ];
         let d2 = [
             x0 - i2 as f64 + 2.0 * g3,
             y0 - j2 as f64 + 2.0 * g3,
             z0 - k2 as f64 + 2.0 * g3,
         ];
-        let d3 = [x0 - 1.0 + 3.0 * g3, y0 - 1.0 + 3.0 * g3, z0 - 1.0 + 3.0 * g3];
+        let d3 = [
+            x0 - 1.0 + 3.0 * g3,
+            y0 - 1.0 + 3.0 * g3,
+            z0 - 1.0 + 3.0 * g3,
+        ];
         let ii = (i as i64) & 255;
         let jj = (j as i64) & 255;
         let kk = (k as i64) & 255;

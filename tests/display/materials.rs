@@ -11,8 +11,8 @@ use three_rs::materials::{quad_vertex_node, render_output, MeshBasicNodeMaterial
 use three_rs::nodes::display::convert_to_texture;
 use three_rs::nodes::display::{
     after_image, anaglyph_pass, ao, barrel_uv, bayer_dither, bilateral_blur, bleach, box_blur,
-    circle, color_bleeding, denoise, depth_aware_blend, dof, dot_screen, film, fxaa, gaussian_blur, godrays,
-    hash_blur_with, lensflare, lut_3d, motion_blur, outline, parallax_barrier_pass,
+    circle, color_bleeding, denoise, depth_aware_blend, dof, dot_screen, film, fxaa, gaussian_blur,
+    godrays, hash_blur_with, lensflare, lut_3d, motion_blur, outline, parallax_barrier_pass,
     pixelation_pass, recurrent_denoise, retro_pass, rgb_shift, rtt, scanlines, sepia, smaa, sobel,
     ssao, ssgi, ssr, sss, temporal_reproject, traa, viewport_shared_texture_at, BoxBlurOptions,
     DenoiseAlphaSource, DenoiseMode, DepthAwareBlendOptions, EnvironmentLobe, GaussianBlurOptions,
@@ -25,7 +25,8 @@ use three_rs::nodes::tsl::{
     geometry_term, get_specular_dominant_factor, ggx_reflection_sample, ggx_reflection_struct, int,
     mis_power_heuristic, osc_sine, pass_depth_texture, perspective_depth_to_view_z, posterize,
     replace_default_uv, screen_size, screen_uv, smith_g, struct_get, texture_3d_sampled,
-    texture_uv, time, uniform_value, unpack_rgb_to_normal, uv, vec2, vec2_join, vec3, vec3_join, vec4_join,
+    texture_uv, time, uniform_value, unpack_rgb_to_normal, uv, vec2, vec2_join, vec3, vec3_join,
+    vec4_join,
 };
 use three_rs::nodes::Type;
 use three_rs::textures::{DepthTexture, MinFilter, Texture, TextureFilter};
@@ -1196,7 +1197,11 @@ fn denoise_ssao_quads(quads: &mut Vec<DisplayQuad>) {
     };
 
     let with_normals = denoise(&input(), &depth, Some(normal), &camera);
-    quads.push(quad("denoise", "denoise_m03_denoise.wgsl", with_normals.node()));
+    quads.push(quad(
+        "denoise",
+        "denoise_m03_denoise.wgsl",
+        with_normals.node(),
+    ));
     let from_depth = denoise(&input(), &depth, None, &camera);
     quads.push(quad(
         "denoise_from_depth",
@@ -1210,7 +1215,11 @@ fn denoise_ssao_quads(quads: &mut Vec<DisplayQuad>) {
     let ao = ssao(&depth, pre_pass_normal, &camera);
     for (label, fixture, mut material) in [
         ("ssao", "ssao_m03_ssao.wgsl", ao.quad_material()),
-        ("ssao_blur", "ssao_m04_ssao_blur.wgsl", ao.blur_quad_material()),
+        (
+            "ssao_blur",
+            "ssao_m04_ssao_blur.wgsl",
+            ao.blur_quad_material(),
+        ),
     ] {
         material.vertex_node = Some(quad_vertex_node());
         quads.push(DisplayQuad {

@@ -34,10 +34,10 @@ use crate::math::Color;
 use crate::nodes::frame::register_texture_update;
 use crate::nodes::node::{LiveValue, SettableValue, Type, UniformGroup, UniformSource};
 use crate::nodes::tsl::{
-    block, depth_aware_blur, discard, dot, float, get_screen_position_from_clip,
-    get_view_position, if_then, int, interleaved_gradient_noise, loop_options, max,
-    pass_depth_texture_uv, pi2, screen_coordinate, texture_uv, texture_with_uv, to_var, uniform,
-    uniform_settable, uv, vec4_join, vogel_disk_sample,
+    block, depth_aware_blur, discard, dot, float, get_screen_position_from_clip, get_view_position,
+    if_then, int, interleaved_gradient_noise, loop_options, max, pass_depth_texture_uv, pi2,
+    screen_coordinate, texture_uv, texture_with_uv, to_var, uniform, uniform_settable, uv,
+    vec4_join, vogel_disk_sample,
 };
 use crate::nodes::{NodeRef, NodeUpdate, NodeUpdateType};
 use crate::objects::QuadMesh;
@@ -305,7 +305,8 @@ fn ao_node(depth: &DepthTexture, normal: &SampleFn, u: &Uniforms) -> NodeRef {
     let occlusion = to_var(None, float(0.0));
 
     let taps = loop_options("i", Type::I32, int(0), samples.clone(), "<", |i| {
-        let offset = vogel_disk_sample(i.clone(), samples.clone(), phi.clone()).mul(u.radius.clone());
+        let offset =
+            vogel_disk_sample(i.clone(), samples.clone(), phi.clone()).mul(u.radius.clone());
         let clip_offset = u
             .projection
             .mul(vec4_join(vec![offset, float(0.0), float(0.0)]));

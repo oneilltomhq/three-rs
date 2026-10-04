@@ -27,8 +27,7 @@ use three_rs::geometries::plane_geometry;
 use three_rs::nodes::display::{denoise, SampleFn};
 use three_rs::nodes::mrt;
 use three_rs::nodes::tsl::{
-    float, floor, mod_float, normal_view, output_property, screen_coordinate, texture_uv,
-    vec3_join,
+    float, floor, mod_float, normal_view, output_property, screen_coordinate, texture_uv, vec3_join,
 };
 use three_rs::{
     pass, Color, Mesh, MeshBasicNodeMaterial, PerspectiveCamera, RenderPipeline, Renderer,
@@ -112,7 +111,10 @@ fn denoise_flattens_noise_and_keeps_edges() {
     );
     let raw_noise = region(&raw, 4, edge - 8);
     let raw_var = variance(&raw_noise);
-    assert!(raw_var > 300.0, "the raw checkerboard is noisy ({raw_var:.1})");
+    assert!(
+        raw_var > 300.0,
+        "the raw checkerboard is noisy ({raw_var:.1})"
+    );
 
     let normal_tex = scene_pass.texture_named("normal");
     let normal: SampleFn = Rc::new(move |coord| texture_uv(&normal_tex, coord));

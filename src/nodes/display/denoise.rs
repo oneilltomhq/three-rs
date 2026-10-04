@@ -26,7 +26,9 @@ use std::rc::{Rc, Weak};
 
 use crate::addons::simplex_noise::SimplexNoise;
 use crate::cameras::PerspectiveCamera;
-use crate::nodes::node::{LiveValue, SettableValue, TextureSource, Type, UniformGroup, UniformSource};
+use crate::nodes::node::{
+    LiveValue, SettableValue, TextureSource, Type, UniformGroup, UniformSource,
+};
 use crate::nodes::tsl::{
     abs, block, dot, float, get_normal_from_depth, get_view_position, if_else, if_then, int,
     loop_options, luminance, mat2_join, max, pass_depth_texture_uv, pi, property, texture_sample,
@@ -236,7 +238,10 @@ fn denoise_sample(
     );
     let depth_diff = to_var(
         None,
-        abs(dot(view_position.sub(view_pos.clone()), view_normal.clone())),
+        abs(dot(
+            view_position.sub(view_pos.clone()),
+            view_normal.clone(),
+        )),
     );
     let depth_similarity = max(float(1.0).sub(depth_diff.div(u.depth_phi.clone())), 0.0);
     let w = luma_similarity
@@ -294,11 +299,7 @@ fn denoise_else(
     let center = vec3_join(vec![texel.rgb()]);
     let view_position = to_const(
         None,
-        get_view_position(
-            uv_node.clone(),
-            depth.clone(),
-            u.projection_inverse.clone(),
-        ),
+        get_view_position(uv_node.clone(), depth.clone(), u.projection_inverse.clone()),
     );
 
     let noise_resolution = texture_size(TextureSource::Texture2D(s.noise.clone()), int(0));
@@ -360,8 +361,8 @@ pub fn generate_denoise_samples(
 ) -> Vec<[f64; 3]> {
     (0..num_samples)
         .map(|i| {
-            let angle = 2.0 * std::f64::consts::PI * num_rings as f64 * i as f64
-                / num_samples as f64;
+            let angle =
+                2.0 * std::f64::consts::PI * num_rings as f64 * i as f64 / num_samples as f64;
             let radius = (i as f64 / (num_samples - 1) as f64).powf(radius_exponent);
             [angle.cos(), angle.sin(), radius]
         })
