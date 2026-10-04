@@ -70,6 +70,10 @@ pub(crate) struct RenderTargetInner {
     pub samples: u32,
     pub texture_type: TextureType,
     pub depth_buffer: bool,
+    /// `renderTarget.stencilBuffer` — set only on the renderer's own
+    /// framebuffer target, from `renderer.stencil`; the auto-allocated depth
+    /// buffer then has a stencil aspect.
+    pub stencil_buffer: bool,
     pub min_filter: TextureFilter,
     pub mag_filter: TextureFilter,
     /// A `DepthTexture` the application attached, which it can then sample.
@@ -155,6 +159,7 @@ impl RenderTarget {
             samples: options.samples,
             texture_type: options.texture_type,
             depth_buffer: options.depth_buffer,
+            stencil_buffer: false,
             min_filter: options.min_filter,
             mag_filter: options.mag_filter,
             depth_texture: None,

@@ -37,6 +37,18 @@ pub(crate) struct RenderState {
     pub depth_write: bool,
     /// `Material.depthFunc`, read only while `depth_test` is on.
     pub depth_func: DepthFunc,
+    /// `Material.colorWrite` — every attachment's write mask, all channels or
+    /// none.
+    pub color_write: bool,
+    /// The stencil half of `depthStencil`, set only on a pass whose depth
+    /// format has a stencil aspect (`renderObject.context.stencil`): the
+    /// material's face while `stencilWrite` is on (`None` is WebGPU's default
+    /// face), used for front and back alike.
+    pub stencil_face: Option<wgpu::StencilFaceState>,
+    /// `Material.stencilFuncMask` on a stencil pass, 0 otherwise.
+    pub stencil_read_mask: u32,
+    /// `Material.stencilWriteMask` on a stencil pass, 0 otherwise.
+    pub stencil_write_mask: u32,
     /// `Material.alphaToCoverage`; the pipeline enables it only on a
     /// multisampled target, as `createRenderPipeline()` does.
     pub alpha_to_coverage: bool,
@@ -217,7 +229,12 @@ impl Program {
                     // `undefined` for an opaque `NormalBlending` material, which
                     // is every rung up to 9; see `materials::blending`.
                     blend: extra.map_or(state.blend, |extra| extra.blend),
-                    write_mask: wgpu::ColorWrites::ALL,
+                    // `_getColorWriteMask()`, the same on every attachment.
+                    write_mask: if state.color_write {
+                        wgpu::ColorWrites::ALL
+                    } else {
+                        wgpu::ColorWrites::empty()
+                    },
                 })
             })
             .collect();
@@ -279,7 +296,15 @@ impl Program {
                 } else {
                     wgpu::CompareFunction::Always
                 }),
-                stencil: wgpu::StencilState::default(),
+                stencil: {
+                    let face = state.stencil_face.unwrap_or(wgpu::StencilFaceState::IGNORE);
+                    wgpu::StencilState {
+                        front: face,
+                        back: face,
+                        read_mask: state.stencil_read_mask,
+                        write_mask: state.stencil_write_mask,
+                    }
+                },
                 bias: wgpu::DepthBiasState::default(),
             }),
             multisample: wgpu::MultisampleState {
