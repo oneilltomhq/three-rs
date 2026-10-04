@@ -350,6 +350,165 @@ fn traa_flicker_reduction_matches_three() {
 }
 
 #[test]
+fn gtao_matches_three() {
+    check("gtao", Region::Body);
+}
+
+#[test]
+fn gtao_screen_position_from_clip_matches_three() {
+    check("gtao", Region::Function("getScreenPositionFromClip"));
+}
+
+#[test]
+fn godrays_matches_three() {
+    check("godrays", Region::Body);
+}
+
+#[test]
+fn bilateral_blur_horizontal_matches_three() {
+    check("bilateral_blur_horizontal", Region::Body);
+}
+
+#[test]
+fn bilateral_blur_vertical_matches_three() {
+    check("bilateral_blur_vertical", Region::Body);
+}
+
+#[test]
+fn depth_aware_blend_matches_three() {
+    check("depth_aware_blend", Region::Body);
+}
+
+#[test]
+fn rtt_matches_three() {
+    check("rtt", Region::Body);
+}
+
+#[test]
+fn lensflare_matches_three() {
+    check("lensflare", Region::Body);
+}
+
+#[test]
+fn lensflare_gaussian_blur_horizontal_matches_three() {
+    check("lensflare_gaussian_blur_horizontal", Region::Body);
+}
+
+#[test]
+fn lensflare_gaussian_blur_vertical_matches_three() {
+    check("lensflare_gaussian_blur_vertical", Region::Body);
+}
+
+#[test]
+fn lensflare_composite_matches_three() {
+    check("lensflare_composite", Region::Body);
+}
+
+#[test]
+fn dof_coc_matches_three() {
+    check("dof_coc", Region::Body);
+}
+
+#[test]
+fn dof_coc_gaussian_horizontal_matches_three() {
+    check("dof_coc_gaussian_horizontal", Region::Body);
+}
+
+#[test]
+fn dof_coc_gaussian_vertical_matches_three() {
+    check("dof_coc_gaussian_vertical", Region::Body);
+}
+
+#[test]
+fn dof_coc_blurred_matches_three() {
+    check("dof_coc_blurred", Region::Body);
+}
+
+#[test]
+fn dof_blur64_matches_three() {
+    check("dof_blur64", Region::Body);
+}
+
+#[test]
+fn dof_blur16_matches_three() {
+    check("dof_blur16", Region::Body);
+}
+
+#[test]
+fn dof_composite_matches_three() {
+    check("dof_composite", Region::Body);
+}
+
+/// The fragment WGSL the port builds for the display quad `label`.
+fn quad_wgsl(label: &str) -> String {
+    let quads = materials::display_quads();
+    let quad = quads
+        .iter()
+        .find(|quad| quad.label == label)
+        .unwrap_or_else(|| panic!("no display quad {label}"));
+    let flow = setup(&quad.material, &SetupContext::default(), None);
+    NodeBuilder::new().build(&flow).fragment_wgsl
+}
+
+/// What the `dof_*` fingerprints cannot see: member types, swizzles and
+/// constructors. The CoC pass's `outputStruct( near, far )` declares two
+/// `f32` members, as three's `m04` does, and assigns each from a scalar.
+/// No `dof_*` quad swizzles an already-scalar CoC read a second time.
+#[test]
+fn dof_coc_writes_two_f32_members() {
+    let wgsl = quad_wgsl("dof_coc");
+    for member in ["@location( 0 ) m0 : f32,", "@location( 1 ) m1 : f32,"] {
+        assert!(wgsl.contains(member), "no `{member}` in\n{wgsl}");
+    }
+    assert!(!wgsl.contains("vec4<f32>,\n\t@location"), "{wgsl}");
+    let body = region(&wgsl, Region::Body);
+    for line in body
+        .lines()
+        .filter(|l| l.trim_start().starts_with("output.m"))
+    {
+        assert!(
+            !line.contains("vec4<f32>(") && !line.trim_end().ends_with(".x;"),
+            "a CoC member is not assigned a bare scalar: `{line}`\n{wgsl}"
+        );
+    }
+    for label in [
+        "dof_coc",
+        "dof_coc_gaussian_horizontal",
+        "dof_coc_gaussian_vertical",
+        "dof_coc_blurred",
+        "dof_blur64",
+        "dof_blur16",
+        "dof_composite",
+    ] {
+        let wgsl = quad_wgsl(label);
+        assert!(
+            !wgsl.contains(".x.x"),
+            "{label}: a scalar read swizzled twice\n{wgsl}"
+        );
+        assert!(
+            !wgsl.contains(").x ).x"),
+            "{label}: a scalar read swizzled twice\n{wgsl}"
+        );
+    }
+}
+
+/// The composite starts from three's `vec4( 0, 0, 0, 1 )` and mixes the far
+/// and then the near field into its `.xyz` (`m12`).
+#[test]
+fn dof_composite_builds_its_vec4() {
+    let wgsl = quad_wgsl("dof_composite");
+    let body = region(&wgsl, Region::Body);
+    assert!(
+        body.contains("vec4<f32>( 0.0, 0.0, 0.0, 1.0 )"),
+        "no vec4( 0, 0, 0, 1 ) in the composite\n{wgsl}"
+    );
+    assert_eq!(body.matches("mix(").count(), 2, "{wgsl}");
+    for line in body.lines().filter(|l| l.contains("mix(")) {
+        assert_eq!(line.matches(".xyz").count(), 2, "`{line}`\n{wgsl}");
+    }
+}
+
+#[test]
 fn ssr_matches_three() {
     check("ssr", Region::Body);
 }

@@ -32,7 +32,7 @@ pub use cube_render_target::CubeRenderTarget;
 pub use direct_render_pipeline::DirectRenderPipeline;
 pub use info::{BuildCounts, ComputeCounts, Info, MemoryCounts, RenderCounts};
 use mipmap::{create_mipmap_pipeline, MipmapShader};
-pub use pass::{pass, CameraRef, PassNode, PassOptions, SceneRef, DEPTH_ATTACHMENT};
+pub use pass::{depth_pass, pass, CameraRef, PassNode, PassOptions, SceneRef, DEPTH_ATTACHMENT};
 pub use pmrem::PmremGenerator;
 pub(crate) use programs::RenderState;
 use programs::{
@@ -100,6 +100,17 @@ const CACHE_GRACE_FRAMES: u64 = 4;
 pub const COMPRESSION_FEATURES: wgpu::Features = wgpu::Features::TEXTURE_COMPRESSION_BC
     .union(wgpu::Features::TEXTURE_COMPRESSION_ETC2)
     .union(wgpu::Features::TEXTURE_COMPRESSION_ASTC);
+
+/// WebGPU's `subgroups` feature, which `WebGPUBackend` requests whenever the
+/// adapter has it and the subgroup TSL functions (`subgroupAdd` and the rest,
+/// `subgroupSize`, `subgroupIndex`) need. A host that builds its own device
+/// (`with_device`, `adopt_device`) passes it in its `required_features` to run
+/// those kernels; without it [`Renderer::compute`] skips them.
+///
+/// wgpu 30 counts it as native-only: its WebGPU backend has no mapping for
+/// `subgroups` (`FEATURES_MAPPING` in `wgpu/src/backend/webgpu.rs`), so a web
+/// build never sees or requests it.
+pub const SUBGROUP_FEATURES: wgpu::Features = wgpu::Features::SUBGROUP;
 
 /// A cached GPU buffer that is filled exactly once — `range()`'s random draw,
 /// or one upload of an `InstancedBufferAttribute`'s array — with the same
@@ -813,6 +824,13 @@ pub struct Renderer {
     /// carries only the flag, because nothing on the ladder uses a `Lighting`
     /// for anything else.
     pub lighting_enabled: bool,
+    /// `renderer.contextNode`'s `getAO` — the ambient-occlusion node of the
+    /// pass being rendered, which `PassNode.updateBefore()` merges into the
+    /// renderer's context for the duration of its render
+    /// (`passNode.contextNode = builtinAOContext( ao )`). Every scene draw
+    /// built while it is set carries it in its `SetupContext`. `None` outside
+    /// such a pass.
+    pub(crate) context_ao: Option<crate::nodes::NodeRef>,
     /// `renderer.setRenderObjectFunction()` as `ToonOutlinePassNode` sets it
     /// for the duration of its own render: the outline material every
     /// `MeshToonNodeMaterial` draw is preceded by. `None` is three's default
@@ -1220,7 +1238,12 @@ impl Renderer {
         // device to pick a transcode target. Without them a Basis texture
         // falls back to uncompressed RGBA — correct, four to eight times the
         // memory, and not the texture three samples.
-        let wanted = wgpu::Features::FLOAT32_FILTERABLE | COMPRESSION_FEATURES;
+        //
+        // `SUBGROUP` is WebGPU's `subgroups`, which three requests the same
+        // way and which the subgroup TSL functions need
+        // (`WGSLNodeBuilder.enableSubGroups()`). An adapter without it only
+        // costs those kernels: `compute()` logs three's error and skips them.
+        let wanted = wgpu::Features::FLOAT32_FILTERABLE | COMPRESSION_FEATURES | SUBGROUP_FEATURES;
         let required_features = adapter.features() & wanted;
 
         let (device, queue) = adapter
@@ -1307,6 +1330,7 @@ impl Renderer {
             opaque: true,
             transparent: true,
             lighting_enabled: true,
+            context_ao: None,
             toon_outline: None,
             camera_layers: None,
             sort_objects: true,
@@ -2139,6 +2163,13 @@ impl Renderer {
                     // disabled builds its materials with no lights *and* no
                     // environment (see `SetupContext::lighting_disabled`).
                     lighting_disabled: !self.lighting_enabled,
+                    // `builder.context.getAO` from the pass's
+                    // `builtinAOContext`; `setupAmbientOcclusion()` applies
+                    // it (and skips transparent materials).
+                    ambient_occlusion: self
+                        .context_ao
+                        .clone()
+                        .map(|node| materials::AoContext { node }),
                     viewport_opaque_mip: item_opaque_frame,
                     // `InstanceNode.setup()` branches on
                     // `instanceMatrix.count * 16 * 4` against
@@ -2295,40 +2326,13 @@ impl Renderer {
         // `RenderList.lightsArray` — scene-traversal order, which is the order
         // `LightsNode.setLights()` receives and which `UniformSource::Light*( i )`
         // indexes.
+        let camera_view = camera.matrix_world_inverse();
+        let shadow_map_enabled = self.shadow_map_enabled;
         let lights: Vec<LightState> = render_list
             .lights
             .iter()
             .map(|node| {
-                let object = node.borrow();
-                let light = object
-                    .light()
-                    .expect("three-rs: the light list only holds lights");
-
-                let mut view_position = LightObject::world_position(&object.matrix_world);
-                view_position.apply_matrix4(&camera.matrix_world_inverse());
-
-                let shadow = light.shadow.as_deref();
-                LightState {
-                    color: light.color_intensity(),
-                    view_position,
-                    distance: light.distance,
-                    decay: light.decay,
-                    world_position: LightObject::world_position(&object.matrix_world),
-                    target_position: light.target_world_position(),
-                    ground_color: light.ground_color_intensity(),
-                    cone_cos: light.cone_cos(),
-                    penumbra_cos: light.penumbra_cos(),
-                    shadow_matrix: shadow.map_or_else(Matrix4::identity, |s| s.matrix),
-                    shadow_camera_near: shadow.map_or(0.5, |s| s.camera.near()),
-                    shadow_camera_far: shadow.map_or(500.0, |s| s.camera.far()),
-                    shadow_bias: shadow.map_or(0.0, |s| s.bias),
-                    shadow_normal_bias: shadow.map_or(0.0, |s| s.normal_bias),
-                    shadow_radius: shadow.map_or(1.0, |s| s.radius),
-                    shadow_blur_samples: shadow.map_or(8.0, |s| s.blur_samples as f64),
-                    shadow_map_size: shadow.map_or(Vector2::new(512.0, 512.0), |s| s.map_size),
-                    shadow_intensity: shadow.map_or(1.0, |s| s.intensity),
-                    sh: light.sh_intensity(),
-                }
+                gather_light_state(&mut node.borrow_mut(), &camera_view, shadow_map_enabled)
             })
             .collect();
 
@@ -2349,6 +2353,7 @@ impl Renderer {
             .collect();
 
         let camera_uniforms = UniformContext {
+            env_rotation: scene_env_rotation(scene),
             camera_id: camera.id(),
             camera_projection: camera.projection_matrix(),
             camera_projection_inverse: camera.projection_matrix_inverse(),
@@ -2366,9 +2371,9 @@ impl Renderer {
             // `scene.backgroundBlurriness` — a render-group uniform, so it
             // rides the pass rather than the background draw.
             background_blurriness: scene.background_blurriness,
-            // `materialEnvIntensity`'s `scene.environmentIntensity` half; a
-            // draw whose material has its own environment overrides it.
-            material_env_intensity: scene.environment_intensity,
+            // `scene.backgroundIntensity`, the same: a render-group uniform.
+            background_intensity: scene.background_intensity,
+            scene_environment_intensity: scene.environment_intensity,
             fog_color,
             fog_near,
             fog_far,
@@ -2613,6 +2618,10 @@ impl Renderer {
                         // The shadow pass draws into the shadow map, which is
                         // `renderer.isOutputTarget === false`: no hook.
                         output: None,
+                        // No `builtinAOContext` on a depth-only draw: the
+                        // shadow material is never lit, so three's dead
+                        // `AmbientOcclusion` assignment would change nothing.
+                        ambient_occlusion: None,
                         lights: Vec::new(),
                         // The shadow pass does not carry morph targets yet:
                         // nothing in the ladder both morphs and casts a shadow.
@@ -2634,7 +2643,10 @@ impl Renderer {
                         // A shadow material is `MeshBasicNodeMaterial`: it has
                         // no roughness, so the flag cannot reach any code.
                         geometry_missing_normal: false,
-                        has_tangent_attribute: false,
+                        // What `AttributeNode` checks: a cast-shadow or
+                        // position node that reads `tangent` gets the
+                        // attribute, or a zero on a geometry without one.
+                        has_tangent_attribute: geometry.has_attribute("tangent"),
                         instanced_attributes: Vec::new(),
                     },
                     fog: None,
@@ -2852,7 +2864,7 @@ impl Renderer {
         // `PointLightShadow.updateMatrices( light )`: `far = light.distance ||
         // camera.far`, `shadowMatrix.makeTranslation( - lightPositionWorld )`.
         let shadow_type = self.shadow_map_type.resolved();
-        let (light_world_position, near, far, size, filter_node) = {
+        let (light_world_position, near, far, light_depth_texture, filter_node) = {
             let mut object = node.borrow_mut();
             let light_world_position = LightObject::world_position(&object.matrix_world);
             let light = object
@@ -2868,56 +2880,62 @@ impl Renderer {
                 light_world_position,
                 shadow.camera.near(),
                 shadow.camera.far(),
-                shadow.map_size.x as u32,
+                // `shadow.map.depthTexture` — the light's own handle, which a
+                // display node (`GodraysNode`) may already hold.
+                shadow.point_depth_texture(),
                 shadow.filter_node.clone(),
             )
         };
 
         // `PointShadowNode.setupRenderTarget()`: a cube render target whose
-        // depth attachment is the `CubeDepthTexture` the shader samples.
-        let (depth_texture, color) = self
+        // depth attachment is the `CubeDepthTexture` the shader samples. The
+        // cached entry is reused only while it is still the light's texture.
+        let cached = self
             .cube_shadow_targets
             .get(&index)
-            .cloned()
-            .unwrap_or_else(|| {
-                let depth_texture = CubeDepthTexture::new(size);
-                let gpu = self.device.create_texture(&wgpu::TextureDescriptor {
-                    label: Some("three-rs point shadow depth"),
-                    size: wgpu::Extent3d {
-                        width: size,
-                        height: size,
-                        depth_or_array_layers: 6,
-                    },
-                    mip_level_count: 1,
-                    sample_count: 1,
-                    dimension: wgpu::TextureDimension::D2,
-                    format: depth_texture.gpu_format(),
-                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                        | wgpu::TextureUsages::TEXTURE_BINDING,
-                    view_formats: &[],
-                });
-                depth_texture.inner().borrow_mut().gpu = Some(gpu);
-                // The colour attachment of the cube render target. Nothing
-                // ever samples it — the shadow material writes black — but
-                // the pass needs a target.
-                let color = self.device.create_texture(&wgpu::TextureDescriptor {
-                    label: Some("three-rs point shadow map"),
-                    size: wgpu::Extent3d {
-                        width: size,
-                        height: size,
-                        depth_or_array_layers: 6,
-                    },
-                    mip_level_count: 1,
-                    sample_count: 1,
-                    dimension: wgpu::TextureDimension::D2,
-                    format: wgpu::TextureFormat::Rgba8Unorm,
-                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                    view_formats: &[],
-                });
-                let entry = (depth_texture, color);
-                self.cube_shadow_targets.insert(index, entry.clone());
-                entry
+            .filter(|(depth_texture, _)| depth_texture.id() == light_depth_texture.id())
+            .cloned();
+        let (depth_texture, color) = cached.unwrap_or_else(|| {
+            let depth_texture = light_depth_texture;
+            let size = depth_texture.size();
+            let gpu = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("three-rs point shadow depth"),
+                size: wgpu::Extent3d {
+                    width: size,
+                    height: size,
+                    depth_or_array_layers: 6,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: depth_texture.gpu_format(),
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
             });
+            depth_texture.inner().borrow_mut().gpu = Some(gpu);
+            // The colour attachment of the cube render target. Nothing
+            // ever samples it — the shadow material writes black — but
+            // the pass needs a target.
+            let color = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("three-rs point shadow map"),
+                size: wgpu::Extent3d {
+                    width: size,
+                    height: size,
+                    depth_or_array_layers: 6,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8Unorm,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                view_formats: &[],
+            });
+            let entry = (depth_texture, color);
+            self.cube_shadow_targets.insert(index, entry.clone());
+            entry
+        });
+        let size = depth_texture.size();
         // `ShadowNode.setupShadow()`, which `PointShadowNode` inherits:
         // `LinearFilter` for `PCFShadowMap`, `NearestFilter` otherwise.
         let cube_filter = if shadow_type == ShadowMapType::Pcf {
@@ -3003,6 +3021,10 @@ impl Renderer {
                         // The shadow pass draws into the shadow map, which is
                         // `renderer.isOutputTarget === false`: no hook.
                         output: None,
+                        // No `builtinAOContext` on a depth-only draw: the
+                        // shadow material is never lit, so three's dead
+                        // `AmbientOcclusion` assignment would change nothing.
+                        ambient_occlusion: None,
                         lights: Vec::new(),
                         morph: None,
                         skin: None,
@@ -3022,7 +3044,10 @@ impl Renderer {
                         // A shadow material is `MeshBasicNodeMaterial`: it has
                         // no roughness, so the flag cannot reach any code.
                         geometry_missing_normal: false,
-                        has_tangent_attribute: false,
+                        // What `AttributeNode` checks: a cast-shadow or
+                        // position node that reads `tangent` gets the
+                        // attribute, or a zero on a geometry without one.
+                        has_tangent_attribute: geometry.has_attribute("tangent"),
                         instanced_attributes: Vec::new(),
                     },
                     fog: None,
@@ -3339,6 +3364,9 @@ impl Renderer {
                 target.color_format.components(),
                 target.sample_count,
             );
+            if self.subgroups_unsupported(node.subgroups) {
+                continue;
+            }
             let program_key = node.cache_key;
 
             // `nodes.updateBefore( renderObject )`: a `ComputeNode` the
@@ -3416,6 +3444,7 @@ impl Renderer {
                 material_alpha_test: item.material.alpha_test,
                 material_rotation: item.material.rotation,
                 material_reflectivity: item.material.reflectivity,
+                material_refraction_ratio: item.material.refraction_ratio,
                 material_shininess: item.material.shininess,
                 material_specular: item.material.specular,
                 material_emissive: item.material.emissive,
@@ -3447,13 +3476,25 @@ impl Renderer {
                 material_attenuation_distance: item.material.attenuation_distance,
                 material_attenuation_color: item.material.attenuation_color,
                 material_ao_map_intensity: item.material.ao_map_intensity,
-                // `material.envMap ? material.envMapIntensity :
-                // scene.environmentIntensity` — the port's materials have no
-                // `envMapIntensity`, so their own environment reads at 1.
-                material_env_intensity: if item.material.pmrem_env.is_some() {
-                    1.0
+                // `materialEnvRotation`: the scene's rotation reaches only the
+                // materials that read the scene environment; an own `envMap`
+                // uses `material.envMapRotation`, which is always zero here.
+                env_rotation: if item.material.env_map.is_some() {
+                    Matrix4::identity()
                 } else {
-                    camera_uniforms.material_env_intensity
+                    camera_uniforms.env_rotation
+                },
+                material_light_map_intensity: item.material.light_map_intensity,
+                material_point_size: item.material.size,
+                // `EnvironmentNode.setup()`: `material.envMap ? reference(
+                // 'envMapIntensity', … material ) : reference(
+                // 'environmentIntensity', … scene )`. The port's envMap is
+                // `pmrem_env`, whose intensity stays 1; the scene's
+                // environment is the draw's `setup.environment`.
+                material_env_intensity: if item.setup.environment.is_some() {
+                    camera_uniforms.scene_environment_intensity
+                } else {
+                    1.0
                 },
                 tone_mapping_exposure: self.tone_mapping_exposure,
                 material_line_width: item.material.linewidth,
@@ -3976,7 +4017,8 @@ impl Renderer {
     /// kernel can decide how much work this one does.
     ///
     /// The bounds check `if ( instanceIndex >= count ) { return; }` is still
-    /// generated against the flow's own `count`, as it is in three.
+    /// generated against the flow's own `count`, as it is in three, unless
+    /// the kernel has a barrier (`docs/nodes.md` §84.6).
     pub fn compute_indirect(
         &mut self,
         flow: &ComputeFlow,
@@ -3987,6 +4029,28 @@ impl Renderer {
             "three-rs: an indirect dispatch reads three u32 workgroup counts"
         );
         self.compute_dispatch(flow, Some(dispatch))
+    }
+
+    /// `WGSLNodeBuilder.enableSubGroups()` on a device without
+    /// [`SUBGROUP_FEATURES`]: three logs this, per build, and goes on to a
+    /// module the browser then rejects. wgpu would panic on the module
+    /// instead, so the port logs once per thread (across every renderer on
+    /// it) and the caller skips the kernel or the draw (`docs/nodes.md`
+    /// §84.3). `true` when the program needs subgroups and the device lacks
+    /// them.
+    fn subgroups_unsupported(&self, subgroups: bool) -> bool {
+        if !subgroups || self.device.features().contains(SUBGROUP_FEATURES) {
+            return false;
+        }
+        thread_local! {
+            static WARNED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+        }
+        if !WARNED.with(|warned| warned.replace(true)) {
+            eprintln!(
+                "three-rs: WGSLNodeBuilder: The 'subgroups' feature is not supported by the current device."
+            );
+        }
+        true
     }
 
     fn compute_dispatch(
@@ -4009,6 +4073,10 @@ impl Renderer {
                 program
             }
         };
+
+        if self.subgroups_unsupported(program.subgroups) {
+            return Ok(());
+        }
 
         let frames = self.node_frame.frame_id;
         let fresh = match self.compute_pipelines.get_mut(&program.cache_key) {
@@ -4757,13 +4825,19 @@ impl Renderer {
                 .with_instanced_attributes(&item.setup.instanced_attributes),
         );
         self.info.build.programs_compiled += 1;
-        self.programs
-            .entry(node.cache_key)
-            .and_modify(|entry| entry.last_named = frames)
-            .or_insert_with(|| ProgramEntry {
-                program: Program::new(&self.device, &node),
-                last_named: frames,
-            });
+        // A material that needs subgroups on a device without them has no
+        // `Program` — its module would not validate — and the pass skips
+        // its draws (`subgroups_unsupported()`). The state is still kept, so
+        // the build and the warning happen once.
+        if !(node.subgroups && !self.device.features().contains(SUBGROUP_FEATURES)) {
+            self.programs
+                .entry(node.cache_key)
+                .and_modify(|entry| entry.last_named = frames)
+                .or_insert_with(|| ProgramEntry {
+                    program: Program::new(&self.device, &node),
+                    last_named: frames,
+                });
+        }
         states.by_dynamic_key.insert(dynamic_key, node.clone());
         self.count_programs();
         node
@@ -6697,6 +6771,18 @@ impl Renderer {
         &self.node_frame
     }
 
+    /// Run the update-before of whatever node renders `texture_id` — a pass,
+    /// an `RttNode`, another display node — opening the frame first if no
+    /// render has yet. For a node drawn by hand, outside any render, that
+    /// sizes its targets from its input: three's frame has rendered that input
+    /// by then, and the port's first frame has not.
+    pub(crate) fn update_texture_source(&mut self, texture_id: usize) {
+        self.node_frame.open(crate::utils::now_ms());
+        if let Some(entry) = crate::nodes::frame::texture_update(texture_id) {
+            self.update_before_node(&entry);
+        }
+    }
+
     /// `NodeFrame.updateBeforeNode( node )`.
     pub(crate) fn update_before_node(&mut self, entry: &crate::nodes::UpdateNode) {
         use crate::nodes::frame::UpdatePhase;
@@ -7960,23 +8046,99 @@ fn warn_unsupported(id: usize, material: &MeshBasicNodeMaterial, setup: &SetupCo
             fields.push("size without sizeNode (PointsNodeMaterial on a Sprite)");
         }
     }
+    let label = format!(
+        "{:?}{}",
+        material.kind,
+        if material.name.is_empty() {
+            String::new()
+        } else {
+            format!(" \"{}\"", material.name)
+        }
+    );
     WARNED.with(|warned| {
         let mut warned = warned.borrow_mut();
         for field in fields {
             if warned.insert((id, field)) {
                 eprintln!(
-                    "three-rs: material {id} ({:?}{}): {} is set but not supported, and is ignored",
-                    material.kind,
-                    if material.name.is_empty() {
-                        String::new()
-                    } else {
-                        format!(" \"{}\"", material.name)
-                    },
-                    field,
+                    "three-rs: material {id} ({label}): {field} is set but not supported, and is ignored",
+                );
+            }
+        }
+        // Read by an accessor (`materialLightMap` / `materialSpecularStrength`)
+        // but not by the material's own lighting flow.
+        for field in material.accessor_only_fields() {
+            if warned.insert((id, field)) {
+                eprintln!(
+                    "three-rs: material {id} ({label}): {field} is set, but the built-in lighting flow does not apply it; only the materialLightMap / materialSpecularStrength accessors read it",
                 );
             }
         }
     });
+}
+
+/// One light's [`LightState`] for the render: `LightsNode.setupLights()`'s
+/// colour and view-space position, plus every per-light uniform the light's
+/// nodes read.
+///
+/// `light.shadow.matrix` is refreshed here for a light whose shadow is not
+/// rendered — `castShadow` off, or `renderer.shadowMap.enabled` off — as
+/// `lightShadowMatrix()`'s `onRenderUpdate` (`Lights.js`) does with
+/// `light.shadow.updateMatrices( light )`, so a
+/// [`light_projection_uv`](crate::nodes::tsl::light_projection_uv) on a light
+/// that casts nothing still projects through its current pose. A rendered
+/// shadow's matrices are already updated by `render_shadows()`. Three's
+/// coordinate-system check has nothing to do: the port only has WebGPU's.
+/// Three's `PointLightShadow` has no `updateMatrices()` of its own, so a
+/// point light takes `LightShadow`'s (looking at the origin, where three
+/// would throw on the missing `light.target`).
+fn gather_light_state(
+    object: &mut crate::core::Object3D,
+    camera_view: &Matrix4,
+    shadow_map_enabled: bool,
+) -> LightState {
+    let world_position = LightObject::world_position(&object.matrix_world);
+    let shadow_rendered = object.cast_shadow && shadow_map_enabled;
+    let light = object
+        .light_mut()
+        .expect("three-rs: the light list only holds lights");
+
+    if !shadow_rendered {
+        let (kind, angle, distance) = (light.kind, light.angle, light.distance);
+        let target_position = light.target_world_position();
+        if let Some(shadow) = light.shadow.as_deref_mut() {
+            // `SpotLightShadow.updateMatrices()`'s projection half.
+            if kind == LightKind::Spot {
+                shadow.update_spot_projection(angle, distance);
+            }
+            shadow.update_matrices(world_position, target_position);
+        }
+    }
+
+    let mut view_position = world_position;
+    view_position.apply_matrix4(camera_view);
+
+    let shadow = light.shadow.as_deref();
+    LightState {
+        color: light.color_intensity(),
+        view_position,
+        distance: light.distance,
+        decay: light.decay,
+        world_position,
+        target_position: light.target_world_position(),
+        ground_color: light.ground_color_intensity(),
+        cone_cos: light.cone_cos(),
+        penumbra_cos: light.penumbra_cos(),
+        shadow_matrix: shadow.map_or_else(Matrix4::identity, |s| s.matrix),
+        shadow_camera_near: shadow.map_or(0.5, |s| s.camera.near()),
+        shadow_camera_far: shadow.map_or(500.0, |s| s.camera.far()),
+        shadow_bias: shadow.map_or(0.0, |s| s.bias),
+        shadow_normal_bias: shadow.map_or(0.0, |s| s.normal_bias),
+        shadow_radius: shadow.map_or(1.0, |s| s.radius),
+        shadow_blur_samples: shadow.map_or(8.0, |s| s.blur_samples as f64),
+        shadow_map_size: shadow.map_or(Vector2::new(512.0, 512.0), |s| s.map_size),
+        shadow_intensity: shadow.map_or(1.0, |s| s.intensity),
+        sh: light.sh_intensity(),
+    }
 }
 
 /// `SkinningNode.update( frame )`: `if ( _frameId.get( skeleton ) ===
@@ -8000,5 +8162,101 @@ fn update_skeleton(
         node_frame.velocity.rotate_bones(skeleton);
         skeleton.borrow_mut().update();
         node_frame.settle(claim, true);
+    }
+}
+
+/// The scene half of three's `materialEnvRotation`:
+/// `makeRotationFromEuler( scene.environmentRotation ).transpose()` while the
+/// scene has an environment (a PMREM or an `environmentNode`), identity
+/// otherwise.
+fn scene_env_rotation(scene: &Scene) -> Matrix4 {
+    let mut m = Matrix4::identity();
+    if scene.environment.is_some() || scene.environment_node.is_some() {
+        m.make_rotation_from_euler(&scene.environment_rotation)
+            .transpose();
+    }
+    m
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lights::SpotLight;
+    use crate::math::Vector3;
+    use crate::nodes::{UniformMember, UniformSource};
+
+    /// The `ShadowMatrix( 0 )` uniform's bytes for one gathered light.
+    fn shadow_matrix_uniform(light: LightState) -> Vec<u8> {
+        let lights = [light];
+        let context = UniformContext {
+            lights: &lights,
+            ..Default::default()
+        };
+        let member = UniformMember {
+            name: "shadowMatrix".into(),
+            source: UniformSource::ShadowMatrix(0),
+            ty: Type::Mat4,
+            offset: 0,
+        };
+        context.bytes(&[member], 64)
+    }
+
+    fn expected_spot_matrix(position: Vector3, angle: f64, distance: f64) -> Vec<u8> {
+        let mut shadow = LightShadow::spot();
+        shadow.update_spot_projection(angle, distance);
+        shadow.update_matrices(position, Vector3::new(0.0, 0.0, 0.0));
+        bytemuck::cast_slice(&shadow.matrix.to_f32_array()).to_vec()
+    }
+
+    /// `lightShadowMatrix()`'s `onRenderUpdate`: a light that casts no
+    /// shadow still gets `light.shadow.updateMatrices( light )`, so the
+    /// uniform tracks the light as it moves rather than holding whatever
+    /// the matrix last was.
+    #[test]
+    fn shadow_matrix_follows_a_light_that_casts_no_shadow() {
+        let node = SpotLight::new(Color::new(1.0, 1.0, 1.0), 1.0);
+        node.borrow_mut().position.set(3.0, 4.0, 5.0);
+        node.update_matrix_world(true);
+        assert!(!node.borrow().cast_shadow);
+        let angle = node.borrow().light().unwrap().angle;
+
+        let first = gather_light_state(&mut node.borrow_mut(), &Matrix4::identity(), true);
+        let first = shadow_matrix_uniform(first);
+        assert_eq!(
+            first,
+            expected_spot_matrix(Vector3::new(3.0, 4.0, 5.0), angle, 0.0)
+        );
+        let identity: Vec<u8> = bytemuck::cast_slice(&Matrix4::identity().to_f32_array()).to_vec();
+        assert_ne!(first, identity);
+
+        node.borrow_mut().position.set(-2.0, 6.0, 1.0);
+        node.update_matrix_world(true);
+        let moved = gather_light_state(&mut node.borrow_mut(), &Matrix4::identity(), true);
+        assert_eq!(
+            shadow_matrix_uniform(moved),
+            expected_spot_matrix(Vector3::new(-2.0, 6.0, 1.0), angle, 0.0)
+        );
+    }
+
+    /// The same refresh when the light casts but `shadowMap.enabled` is off,
+    /// and none when the shadow is rendered: `render_shadows()` owns the
+    /// matrix then.
+    #[test]
+    fn shadow_matrix_refresh_depends_on_the_shadow_being_rendered() {
+        let node = SpotLight::new(Color::new(1.0, 1.0, 1.0), 1.0);
+        node.borrow_mut().position.set(3.0, 4.0, 5.0);
+        node.borrow_mut().cast_shadow = true;
+        node.update_matrix_world(true);
+        let angle = node.borrow().light().unwrap().angle;
+
+        let rendered = gather_light_state(&mut node.borrow_mut(), &Matrix4::identity(), true);
+        let identity: Vec<u8> = bytemuck::cast_slice(&Matrix4::identity().to_f32_array()).to_vec();
+        assert_eq!(shadow_matrix_uniform(rendered), identity);
+
+        let disabled = gather_light_state(&mut node.borrow_mut(), &Matrix4::identity(), false);
+        assert_eq!(
+            shadow_matrix_uniform(disabled),
+            expected_spot_matrix(Vector3::new(3.0, 4.0, 5.0), angle, 0.0)
+        );
     }
 }

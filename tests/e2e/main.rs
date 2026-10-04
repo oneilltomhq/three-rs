@@ -235,6 +235,10 @@ mod webgpu_postprocessing_bloom_emissive;
 #[allow(dead_code)]
 mod webgpu_postprocessing_motion_blur;
 
+#[path = "../../examples/webgpu_postprocessing_dof_basic.rs"]
+#[allow(dead_code)]
+mod webgpu_postprocessing_dof_basic;
+
 #[path = "../../examples/webgpu_postprocessing_ssr.rs"]
 #[allow(dead_code)]
 mod webgpu_postprocessing_ssr;
@@ -466,6 +470,14 @@ mod webgpu_lightprobe;
 #[path = "../../examples/webgpu_lightprobe_cubecamera.rs"]
 #[allow(dead_code)]
 mod webgpu_lightprobe_cubecamera;
+
+#[path = "../../examples/webgpu_postprocessing_godrays.rs"]
+#[allow(dead_code)]
+mod webgpu_postprocessing_godrays;
+
+#[path = "../../examples/webgpu_postprocessing_lensflare.rs"]
+#[allow(dead_code)]
+mod webgpu_postprocessing_lensflare;
 
 fn three_js_dir() -> PathBuf {
     three_rs::testing::three_js_dir()
@@ -1989,6 +2001,55 @@ fn webgpu_postprocessing_motion_blur() {
         name,
         &mut app,
         webgpu_postprocessing_motion_blur::animate,
+        |app| app.renderer.device(),
+    );
+}
+
+#[test]
+fn webgpu_postprocessing_dof_basic() {
+    let name = "webgpu_postprocessing_dof_basic";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_postprocessing_dof_basic::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_postprocessing_dof_basic::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    // The draw calls and triangles the README's graded table records.
+    let info = app.renderer.info();
+    println!("{name}: info {info:?}");
+
+    steady_frame(
+        name,
+        &mut app,
+        webgpu_postprocessing_dof_basic::animate,
         |app| app.renderer.device(),
     );
 }
@@ -5613,6 +5674,118 @@ fn webgpu_instance_points() {
     });
 }
 
+/// A point light's cube shadow map ray-marched at half resolution
+/// (`GodraysNode`), blurred edge-aware (`BilateralBlurNode`) and blended over
+/// the beauty pass (`depthAwareBlend`). The graded frame is the first, so the
+/// whole chain has to size its targets on it: the blur and the march each
+/// run their input's update first.
+#[test]
+fn webgpu_postprocessing_godrays() {
+    let name = "webgpu_postprocessing_godrays";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_postprocessing_godrays::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_postprocessing_godrays::animate(&mut app);
+
+    // `Math.round( 0.5 * 800 )` x `Math.round( 0.5 * 500 )`: the march is
+    // drawn at half the drawing buffer, and the blur at the march's size.
+    assert_eq!(app.godrays_pass.texture().size(), (400, 250));
+    assert_eq!(app.blur_pass.texture().size(), (400, 250));
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+    let info = app.renderer.info();
+    println!("{name}: info {info:?}");
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(
+        name,
+        &mut app,
+        webgpu_postprocessing_godrays::animate,
+        |app| app.renderer.device(),
+    );
+}
+
+/// An MRT scene pass whose emissive attachment is bloomed, mirrored into
+/// ghosts (`LensflareNode`) at a quarter of the drawing buffer and
+/// Gaussian-blurred, then summed with the colour and the bloom under ACES.
+#[test]
+fn webgpu_postprocessing_lensflare() {
+    let name = "webgpu_postprocessing_lensflare";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_postprocessing_lensflare::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_postprocessing_lensflare::animate(&mut app);
+
+    // `Math.round( 800 / 4 )` x `Math.round( 500 / 4 )`, and the blur reads
+    // the flare's full-size `rtt()`.
+    assert_eq!(app.flare_pass.texture().size(), (200, 125));
+    assert_eq!(app.blur_pass.texture().size(), (800, 500));
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+    let info = app.renderer.info();
+    println!("{name}: info {info:?}");
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(
+        name,
+        &mut app,
+        webgpu_postprocessing_lensflare::animate,
+        |app| app.renderer.device(),
+    );
+}
+
 /// Issue #56's "done when", as issue #67's counts: a steady frame builds and
 /// uploads *nothing*. Every graded rung is rendered three times; the first
 /// frame builds its programs and uploads its geometries and textures, and by
@@ -5728,6 +5901,9 @@ fn steady_frame_builds_nothing() {
     // The velocity history is per object and per camera, filled on the first
     // frame; the steady frames roll it over and build nothing.
     rung!(webgpu_postprocessing_motion_blur);
+    // The PMREM is built in `init()`; the steady frames are the scene pass,
+    // the box-blurred mix and the FXAA quad.
+    rung!(webgpu_postprocessing_dof_basic);
     // SSR's blur mip chain and SMAA's three targets are sized on the first
     // frame; the steady frames reuse them, and the two lookup textures are
     // uploaded once.
@@ -5828,6 +6004,10 @@ fn steady_frame_builds_nothing() {
         1,
         pollster::block_on(webgpu_lightprobe_cubecamera::init())
     );
+    // Every target the chain draws into is sized on the first frame; the
+    // steady frames resize nothing and build nothing.
+    rung!(webgpu_postprocessing_godrays);
+    rung!(webgpu_postprocessing_lensflare);
 }
 
 // ---------------------------------------------------------------------------

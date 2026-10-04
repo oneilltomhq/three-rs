@@ -127,8 +127,15 @@ pub(crate) struct TraaState {
     history: RenderTarget,
     /// `this._resolveRenderTarget`.
     resolve: RenderTarget,
-    /// `_quadMesh` with `this._resolveMaterial`.
-    quad: QuadMesh,
+    /// `_quadMesh` with `this._resolveMaterial`, rebuilt when
+    /// `useSubpixelCorrection` changes.
+    quad: RefCell<QuadMesh>,
+    /// `this.useSubpixelCorrection`.
+    use_subpixel_correction: Cell<bool>,
+    /// `this.velocityNode`'s texture, kept for a rebuild.
+    velocity: Texture,
+    /// The node halves of the four uniforms, kept for a rebuild.
+    uniform_nodes: UniformNodes,
     /// `this._textureNode` — `passTexture( this, resolve.texture )`.
     node: NodeRef,
     /// `this._jitterIndex`.
@@ -188,26 +195,13 @@ impl TraaNode {
         let (previous_projection_inverse, previous_projection_inverse_value) =
             uniform_settable(Type::Mat4, identity);
 
-        let fragment = resolve_node(&ResolveInputs {
-            beauty,
-            depth,
-            velocity,
-            history: &history.texture(),
-            // `this._previousDepthNode` starts as `texture( new DepthTexture(
-            // 1, 1 ) )` and is pointed at the history depth after the first
-            // copy. Before that copy the history depth is a fresh,
-            // zero-initialised texture, which reads the same as the 1×1 dummy,
-            // so the port points at it from the start.
-            previous_depth: &history.depth_texture().expect("three-rs: set just above"),
+        let uniform_nodes = UniformNodes {
             near_far,
             world_inverse,
             previous_world,
             previous_projection_inverse,
-        });
-
-        let mut material = MeshBasicNodeMaterial::new();
-        material.name = "TRAA.resolve";
-        material.color_node = Some(fragment);
+        };
+        let material = resolve_material(beauty, depth, velocity, &history, &uniform_nodes, true);
 
         let node = to_var(None, texture_uv(&resolve.texture(), uv()));
 
@@ -217,7 +211,10 @@ impl TraaNode {
             camera,
             history,
             resolve,
-            quad: QuadMesh::new(material),
+            quad: RefCell::new(QuadMesh::new(material)),
+            use_subpixel_correction: Cell::new(true),
+            velocity: velocity.clone(),
+            uniform_nodes,
             node,
             jitter_index: Cell::new(0),
             near_far: near_far_value,
@@ -240,8 +237,27 @@ impl TraaNode {
     /// The `TRAA.resolve` quad material, for `examples/dump_wgsl.rs` and the
     /// dump gate.
     #[doc(hidden)]
-    pub fn quad_material(&self) -> &MeshBasicNodeMaterial {
-        &self.0.quad.material
+    pub fn quad_material(&self) -> MeshBasicNodeMaterial {
+        self.0.quad.borrow().material.clone()
+    }
+
+    /// `traaNode.useSubpixelCorrection = value` — whether the minimum
+    /// weight of the current frame rises with how sub-pixel the velocity
+    /// is. On by default; `webgpu_postprocessing_ao` turns it off. Three
+    /// reads the flag in `setup()`, so the resolve shader is rebuilt here.
+    pub fn set_use_subpixel_correction(&self, on: bool) {
+        let state = &self.0;
+        if state.use_subpixel_correction.replace(on) == on {
+            return;
+        }
+        state.quad.borrow_mut().material = resolve_material(
+            &state.beauty,
+            &state.depth,
+            &state.velocity,
+            &state.history,
+            &state.uniform_nodes,
+            on,
+        );
     }
 
     /// The `OnBeforeRenderPipeline` / `OnAfterRenderPipeline` half of
@@ -355,7 +371,7 @@ impl NodeUpdate for TraaState {
 
         // Resolve.
         renderer.set_render_target(Some(self.resolve.clone()));
-        renderer.render_quad(&self.quad);
+        renderer.render_quad(&self.quad.borrow());
         renderer.set_render_target(None);
 
         // Update the history.
@@ -380,6 +396,50 @@ impl NodeUpdate for TraaState {
     }
 }
 
+/// The node halves of `this._cameraNearFar`, `this._cameraWorldMatrixInverse`,
+/// `this._previousCameraWorldMatrix` and
+/// `this._previousCameraProjectionMatrixInverse`.
+struct UniformNodes {
+    near_far: NodeRef,
+    world_inverse: NodeRef,
+    previous_world: NodeRef,
+    previous_projection_inverse: NodeRef,
+}
+
+/// `this._resolveMaterial` with `setup()`'s `colorNode`.
+fn resolve_material(
+    beauty: &Texture,
+    depth: &DepthTexture,
+    velocity: &Texture,
+    history: &RenderTarget,
+    uniforms: &UniformNodes,
+    use_subpixel_correction: bool,
+) -> MeshBasicNodeMaterial {
+    let fragment = resolve_node(&ResolveInputs {
+        beauty,
+        depth,
+        velocity,
+        history: &history.texture(),
+        // `this._previousDepthNode` starts as `texture( new DepthTexture(
+        // 1, 1 ) )` and is pointed at the history depth after the first
+        // copy. Before that copy the history depth is a fresh,
+        // zero-initialised texture, which reads the same as the 1×1 dummy,
+        // so the port points at it from the start.
+        previous_depth: &history
+            .depth_texture()
+            .expect("three-rs: the history target carries a DepthTexture"),
+        near_far: uniforms.near_far.clone(),
+        world_inverse: uniforms.world_inverse.clone(),
+        previous_world: uniforms.previous_world.clone(),
+        previous_projection_inverse: uniforms.previous_projection_inverse.clone(),
+        use_subpixel_correction,
+    });
+    let mut material = MeshBasicNodeMaterial::new();
+    material.name = "TRAA.resolve";
+    material.color_node = Some(fragment);
+    material
+}
+
 /// What `resolve()` closes over.
 struct ResolveInputs<'a> {
     beauty: &'a Texture,
@@ -391,6 +451,7 @@ struct ResolveInputs<'a> {
     world_inverse: NodeRef,
     previous_world: NodeRef,
     previous_projection_inverse: NodeRef,
+    use_subpixel_correction: bool,
 }
 
 /// `TRAANode.setup()`'s `resolve` `Fn()`, the resolve material's
@@ -446,17 +507,19 @@ fn resolve_node(inputs: &ResolveInputs) -> NodeRef {
         .saturate();
     // A minimum weight.
     let current_weight = to_var(None, float(0.05));
-    let statements = vec![
-        current_weight.clone(),
+    let mut statements = vec![current_weight.clone()];
+    if inputs.use_subpixel_correction {
         // `useSubpixelCorrection`: raise the minimum weight towards the
         // current frame the more sub-pixel the velocity is.
-        current_weight
-            .add_assign(call(&subpixel_correction(), vec![offset_uv, texture_size]).mul(0.25)),
-        current_weight.assign(has_valid_history.select(
-            current_weight.add(motion_factor.clone()).saturate(),
-            float(1.0),
-        )),
-    ];
+        statements.push(
+            current_weight
+                .add_assign(call(&subpixel_correction(), vec![offset_uv, texture_size]).mul(0.25)),
+        );
+    }
+    statements.push(current_weight.assign(has_valid_history.select(
+        current_weight.add(motion_factor.clone()).saturate(),
+        float(1.0),
+    )));
 
     // Neighbourhood clipping, by variance. A reasonable gamma range is
     // [0.75, 2].
