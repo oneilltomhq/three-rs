@@ -27,6 +27,16 @@ have their own sections after the release they ship with. The format follows [Ke
 - **`webgpu_clipping`** and **`webgpu_clipping_stencil`**, graded green at 17
   and 0 of 100000 pixels, in the steady-frame strip, the native viewer and
   the browser shell.
+- **The core helpers** (`helpers`, #300): `AxesHelper`, `ArrowHelper`,
+  `BoxHelper`, `Box3Helper`, `PlaneHelper`, `PolarGridHelper`,
+  `DirectionalLightHelper`, `HemisphereLightHelper`, `PointLightHelper`,
+  `SpotLightHelper` and `SkeletonHelper`, ports of `src/helpers/`. Each
+  keeps three's geometry, material, flags and child transforms, and
+  `tests/helpers_core.rs` compares all of them node for node against
+  three's own classes under node (`tools/helpers_reference.mjs`, 24
+  scenarios). `Box3Helper`, `PlaneHelper` and `SkeletonHelper`'s
+  `updateMatrixWorld` overrides are an explicit `update_matrix_world(force)`
+  the caller runs each frame; see the `helpers` module docs.
 - **`ssr()`'s stochastic path** (`nodes::display`): `SsrOptions` gains
   `stochastic`, `reflect_non_metals`, `environment`,
   `env_importance_sampling`, `diffuse` and `binary_refine`, and `SsrNode`

@@ -15,7 +15,7 @@ This matrix judges every exported name in three.js revision 5f610f5 (r187) — `
 | scenes | 3 | 3 | 0 | 0 | 0 | 100% |
 | objects | 14 | 12 | 0 | 1 | 1 | 92% |
 | lights | 11 | 7 | 1 | 3 | 0 | 64% |
-| helpers | 13 | 1 | 1 | 11 | 0 | 8% |
+| helpers | 13 | 9 | 4 | 0 | 0 | 69% |
 | audio | 5 | 0 | 0 | 0 | 5 | — |
 | materials | 36 | 4 | 19 | 11 | 2 | 12% |
 | textures | 18 | 8 | 4 | 1 | 5 | 62% |
@@ -27,7 +27,7 @@ This matrix judges every exported name in three.js revision 5f610f5 (r187) — `
 | addons/loaders | 71 | 9 | 3 | 59 | 0 | 13% |
 | addons/postprocessing | 30 | 0 | 0 | 0 | 30 | — |
 | addons/other | 102 | 14 | 4 | 61 | 23 | 18% |
-| **total** | **1317** | **823** | **137** | **234** | **123** | **69%** |
+| **total** | **1317** | **831** | **140** | **223** | **123** | **70%** |
 
 TSL by family:
 
@@ -259,23 +259,23 @@ Graded examples: 96 (the README gallery plus `webgpu_textures_2d-array_compresse
 
 ## helpers
 
-13 rows: 1 Present, 1 Partial, 11 Absent, 0 N.A.
+13 rows: 9 Present, 4 Partial, 0 Absent, 0 N.A.
 
 | three.js name | verdict | three-rs symbol | verified by | note |
 |---|---|---|---|---|
-| `SpotLightHelper` | Absent | — | — | not ported |
-| `SkeletonHelper` | Absent | — | — | not ported |
-| `PointLightHelper` | Absent | — | — | not ported |
-| `HemisphereLightHelper` | Absent | — | — | not ported |
+| `SpotLightHelper` | Present | SpotLightHelper (src/helpers/spot_light_helper.rs:27) | tests/helpers_core.rs (three's class under node via tools/helpers_reference.mjs, 2 scenarios, 1e-9, geometry 1e-6 relative; node for node); tests/helpers.rs | `toneMapped: false` dropped (no tone-mapping switch on the port's materials); dispose() not ported (freed on drop) |
+| `SkeletonHelper` | Partial | SkeletonHelper (src/helpers/skeleton_helper.rs:35) | tests/helpers_core.rs (three's class under node via tools/helpers_reference.mjs, 3 scenarios, 1e-9, geometry 1e-6 relative; node for node); tests/helpers.rs | updateMatrixWorld override is an explicit `update_matrix_world(force)` the caller runs each frame (after the graph update, before render); three's renderer runs it for you, so a scene that only adds the helper and renders draws it with its construction-time vertices, not the bones' current pose; `toneMapped: false` dropped (no tone-mapping switch on the port's materials); dispose() not ported (freed on drop) |
+| `PointLightHelper` | Present | PointLightHelper (src/helpers/point_light_helper.rs:25) | tests/helpers_core.rs (three's class under node via tools/helpers_reference.mjs, 2 scenarios, 1e-9, geometry 1e-6 relative; node for node); tests/helpers.rs | `toneMapped: false` dropped (no tone-mapping switch on the port's materials); dispose() not ported (freed on drop) |
+| `HemisphereLightHelper` | Present | HemisphereLightHelper (src/helpers/hemisphere_light_helper.rs:26) | tests/helpers_core.rs (three's class under node via tools/helpers_reference.mjs, 2 scenarios, 1e-9, geometry 1e-6 relative; node for node); tests/helpers.rs | three's `this.material` is the octahedron's own material, reached here through `mesh`: one object on both sides, so a different access path, not a behaviour gap; `toneMapped: false` dropped (no tone-mapping switch on the port's materials); dispose() not ported (freed on drop) |
 | `GridHelper` | Present | GridHelper (src/helpers/grid_helper.rs:22) | tests/scene_webgpu_materials.rs; webgpu_materials, webgpu_particles |  |
-| `PolarGridHelper` | Absent | — | — | not ported |
-| `DirectionalLightHelper` | Absent | — | — | not ported |
+| `PolarGridHelper` | Present | PolarGridHelper (src/helpers/polar_grid_helper.rs:22) | tests/helpers_core.rs (three's class under node via tools/helpers_reference.mjs, 3 scenarios, 1e-9, geometry 1e-6 relative; node for node); tests/helpers.rs | `toneMapped: false` dropped (no tone-mapping switch on the port's materials); dispose() not ported (freed on drop) |
+| `DirectionalLightHelper` | Present | DirectionalLightHelper (src/helpers/directional_light_helper.rs:25) | tests/helpers_core.rs (three's class under node via tools/helpers_reference.mjs, 2 scenarios, 1e-9, geometry 1e-6 relative; node for node); tests/helpers.rs | three's one material shared by both lines is a clone per line; update() writes both, so it differs only when a caller mutates one line's material directly; `toneMapped: false` dropped (no tone-mapping switch on the port's materials); dispose() not ported (freed on drop) |
 | `CameraHelper` | Partial | CameraHelper (src/helpers/camera_helper.rs:27) | webgpu_camera (#[ignore]d, ungraded) | no graded check: webgpu_camera is ignored because three fails its own reference here |
-| `BoxHelper` | Absent | — | — | not ported |
-| `Box3Helper` | Absent | — | — | not ported |
-| `PlaneHelper` | Absent | — | — | not ported |
-| `ArrowHelper` | Absent | — | — | not ported |
-| `AxesHelper` | Absent | — | — | not ported |
+| `BoxHelper` | Present | BoxHelper (src/helpers/box_helper.rs:31) | tests/helpers_core.rs (three's class under node via tools/helpers_reference.mjs, 2 scenarios, 1e-9, geometry 1e-6 relative; node for node); tests/helpers.rs | copy() not ported (the port has no Object3D.copy to extend); `toneMapped: false` dropped (no tone-mapping switch on the port's materials); dispose() not ported (freed on drop) |
+| `Box3Helper` | Partial | Box3Helper (src/helpers/box3_helper.rs:32) | tests/helpers_core.rs (three's class under node via tools/helpers_reference.mjs, 1 scenario, 1e-9, geometry 1e-6 relative; node for node); tests/helpers.rs | updateMatrixWorld override is an explicit `update_matrix_world(force)` the caller runs each frame (after the graph update, before render); three's renderer runs it for you, so a scene that only adds the helper and renders draws it as a unit box at the origin, not around its box; `toneMapped: false` dropped (no tone-mapping switch on the port's materials); dispose() not ported (freed on drop) |
+| `PlaneHelper` | Partial | PlaneHelper (src/helpers/plane_helper.rs:29) | tests/helpers_core.rs (three's class under node via tools/helpers_reference.mjs, 1 scenario, 1e-9, geometry 1e-6 relative; node for node); tests/helpers.rs | updateMatrixWorld override is an explicit `update_matrix_world(force)` the caller runs each frame (after the graph update, before render); three's renderer runs it for you, so a scene that only adds the helper and renders draws it without its plane's orientation, offset and size; `toneMapped: false` dropped (no tone-mapping switch on the port's materials); dispose() not ported (freed on drop) |
+| `ArrowHelper` | Present | ArrowHelper (src/helpers/arrow_helper.rs:40) | tests/helpers_core.rs (three's class under node via tools/helpers_reference.mjs, 4 scenarios, 1e-9, geometry 1e-6 relative; node for node); tests/helpers.rs | copy() not ported (the port has no Object3D.copy to extend); `toneMapped: false` dropped (no tone-mapping switch on the port's materials); dispose() not ported (freed on drop) |
+| `AxesHelper` | Present | AxesHelper (src/helpers/axes_helper.rs:17) | tests/helpers_core.rs (three's class under node via tools/helpers_reference.mjs, 2 scenarios, 1e-9, geometry 1e-6 relative; node for node); tests/helpers.rs | `toneMapped: false` dropped (no tone-mapping switch on the port's materials); dispose() not ported (freed on drop) |
 
 ## audio
 
