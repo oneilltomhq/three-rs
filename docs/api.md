@@ -301,8 +301,8 @@ Loud:
 | `anisotropy` | Physical, lit by a point, spot or directional light | The anisotropic `BRDF_GGX` (`V_GGX_SmithCorrelated_Anisotropic`, `D_GGX_Anisotropic`) is not ported, so the direct highlight would be the isotropic one. The indirect bent normal is ported, which is why an unlit anisotropic page such as `webgpu_loader_gltf_anisotropy` is quiet. |
 
 Not fields, so nothing to be loud about: three.js properties the struct does
-not have at all — the `stencil*` family, `clippingPlanes`,
-`sheenColorMap` / `sheenRoughnessMap`, `iridescence*`, `polygonOffset*`,
+not have at all — `clippingPlanes` (`WebGLRenderer`-only in three; planes
+come from a `ClippingGroup`), `sheenColorMap` / `sheenRoughnessMap`, `iridescence*`, `polygonOffset*`,
 `dithering`. (`wireframe` and the scalar `alpha_test` are fields and are
 honoured; `alpha_test_node` is the node form of the latter.)
 Setting one is a compile error, which is louder than a log line. A field

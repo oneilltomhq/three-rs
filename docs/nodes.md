@@ -259,7 +259,8 @@ new material, is wrong.
 | post-processing `pass()` (rung 9, done — see `docs/postprocessing.md`) | `PassNode` is a `Texture` whose source is a `RenderTarget` the renderer renders first; `TextureSource` already has that variant shape. |
 | ~~compute (rung 12)~~ | Done — see §11. `Stage::Compute` is reachable, `BufferSource::Storage` declares `var<storage>` and `build_compute()` emits the `@compute` entry point. |
 | ~~`SpriteNodeMaterial` (rung 13)~~ | Done — see §10. `position_view()` is context-driven the way `normal_view()` is, and `MaterialKind::Sprite` supplies the billboarded `vec4`. |
-| MRT, clipping planes, vertex colours, fog, alpha test | all are single branches in `NodeMaterial`'s setup flow, omitted because no rung 1–4 material sets them. |
+| ~~clipping planes~~ | Done (#295) — `src/nodes/clipping.rs`. A `ClippingGroup`'s planes reach each draw as a `ClippingContext` (the `SetupContext`'s `clipping`), and `NodeMaterial.setupClipping()` / `setupHardwareClipping()` push `clipping()`, `clippingAlpha()` (alpha-to-coverage with MSAA) or `hardwareClipping()` (`clip_distances`, when the adapter has `wgpu::Features::CLIP_DISTANCES`; otherwise the fragment discards). Gated against three's WGSL by `tests/nodes_clipping_wgsl.rs`; the plane buffers' binding numbers are the one divergence, in §8. `material.clippingPlanes` is `WebGLRenderer`-only in three and is not ported. |
+| MRT, vertex colours, fog, alpha test | all are single branches in `NodeMaterial`'s setup flow, omitted because no rung 1–4 material sets them. |
 
 ## 7. Sub-builds, and `normalMap` as the value of `normalView`
 
@@ -642,6 +643,17 @@ differences, each verified to be pixel-neutral.
   uniform buffer at binding 0 and the three data textures at 1–3; the port
   emits the textures first and the buffer last. Same class as "Instance buffer
   binding indices": the layout and the shader come from the same descriptors.
+* **Clipping-plane buffer binding indices (#295).** Three's render group
+  numbers its bindings in the order they are created, fragment stage first: the
+  fragment stage's plane `NodeBuffer`s sit ahead of the `render` struct, while
+  the vertex stage's hardware-clipping buffer follows it (the knot in
+  `tests/fixtures/webgpu_clipping/` has its fragment planes at binding 0,
+  `render` at 1 and the vertex `clip_distances` planes at 2). The port's
+  `render` struct is always binding 0 and every plane buffer follows. Same
+  class as "Instance buffer binding indices": the layout and the shader come
+  from the same descriptors.
+  `tests/nodes_clipping_wgsl.rs` compares with the group-0 binding numbers
+  canonicalised.
 * **The indirect-diffuse block is emitted before the environment's (§25).**
   `PhysicalLightingModel.indirectDiffuse()` reads `irradiance`, and three runs
   it after `EnvironmentNode` has written `radiance` / `iblIrradiance`; this port

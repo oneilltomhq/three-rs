@@ -106,6 +106,55 @@ pub enum DepthFunc {
     NotEqual,
 }
 
+/// `three.js/src/constants.js` stencil functions — `Material.stencilFunc`,
+/// which `WebGPUPipelineUtils._getStencilCompare()` maps one-to-one onto a
+/// WebGPU compare function while `stencil_write` is on.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum StencilFunc {
+    /// `NeverStencilFunc`.
+    Never,
+    /// `LessStencilFunc`.
+    Less,
+    /// `EqualStencilFunc`.
+    Equal,
+    /// `LessEqualStencilFunc`.
+    LessEqual,
+    /// `GreaterStencilFunc`.
+    Greater,
+    /// `NotEqualStencilFunc`.
+    NotEqual,
+    /// `GreaterEqualStencilFunc`.
+    GreaterEqual,
+    /// `AlwaysStencilFunc` — three's default.
+    #[default]
+    Always,
+}
+
+/// `three.js/src/constants.js` stencil operations — `Material.stencilFail`,
+/// `.stencilZFail` and `.stencilZPass`, as `_getStencilOperation()` maps them.
+/// `Increment` and `Decrement` clamp, as WebGPU's `increment-clamp` and
+/// `decrement-clamp` do.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum StencilOp {
+    /// `ZeroStencilOp`.
+    Zero,
+    /// `KeepStencilOp` — three's default.
+    #[default]
+    Keep,
+    /// `ReplaceStencilOp` — writes `stencil_ref`.
+    Replace,
+    /// `IncrementStencilOp` (clamped).
+    Increment,
+    /// `DecrementStencilOp` (clamped).
+    Decrement,
+    /// `IncrementWrapStencilOp`.
+    IncrementWrap,
+    /// `DecrementWrapStencilOp`.
+    DecrementWrap,
+    /// `InvertStencilOp`.
+    Invert,
+}
+
 /// `three.js/src/constants.js` tone-mapping modes — the ones the port needs.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 #[non_exhaustive]
@@ -200,8 +249,9 @@ pub enum MaterialKind {
 ///   `specular`, `shininess`, `emissive`, `emissive_intensity`, `metalness`,
 ///   `roughness`, `bump_scale`, `rotation`, `reflectivity`, `refraction_ratio` — is uploaded every
 ///   frame and needs nothing, as in three.js.
-/// - `side`, `depth_test`, `depth_write` and the blend factors are pipeline
-///   state, keyed per draw, and need nothing either.
+/// - `side`, `depth_test`, `depth_write`, `color_write`, the `stencil_*`
+///   fields and the blend factors are pipeline state, keyed per draw, and need
+///   nothing either.
 #[derive(Clone, Debug)]
 pub struct MeshBasicNodeMaterial {
     /// `Material.id`. Read-only in spirit; see [`MaterialId`] for why a clone
@@ -634,6 +684,32 @@ pub struct MeshBasicNodeMaterial {
     pub depth_write: bool,
     /// `Material.depthFunc` — the depth compare while `depth_test` is on.
     pub depth_func: DepthFunc,
+    /// `Material.colorWrite` — `false` masks every colour channel
+    /// (`GPUColorWrite.NONE`), as the stencil-writing caps in
+    /// `webgpu_clipping_stencil` do. Pipeline state.
+    pub color_write: bool,
+    /// `Material.stencilWrite` — turns the stencil test and the `stencil_*`
+    /// operations on. Without it the pipeline keeps WebGPU's default stencil
+    /// face state, as `_getStencilState()` does. Takes effect only on a
+    /// renderer created with
+    /// [`RendererParameters::stencil`](crate::renderer::RendererParameters::stencil),
+    /// whose depth buffer has a stencil aspect. Pipeline state.
+    pub stencil_write: bool,
+    /// `Material.stencilWriteMask` — the pipeline's `stencilWriteMask`.
+    pub stencil_write_mask: u32,
+    /// `Material.stencilFunc` — the stencil compare.
+    pub stencil_func: StencilFunc,
+    /// `Material.stencilRef` — `setStencilReference()` for each draw.
+    pub stencil_ref: u32,
+    /// `Material.stencilFuncMask` — the pipeline's `stencilReadMask`.
+    pub stencil_func_mask: u32,
+    /// `Material.stencilFail` — the op when the stencil test fails.
+    pub stencil_fail: StencilOp,
+    /// `Material.stencilZFail` — the op when the stencil test passes and the
+    /// depth test fails.
+    pub stencil_z_fail: StencilOp,
+    /// `Material.stencilZPass` — the op when both tests pass.
+    pub stencil_z_pass: StencilOp,
     /// `Background`'s material samples the cube map through the background
     /// uniforms rather than an env map.
     pub name: &'static str,
@@ -758,6 +834,15 @@ impl Default for MeshBasicNodeMaterial {
             depth_test: true,
             depth_write: true,
             depth_func: DepthFunc::LessEqual,
+            color_write: true,
+            stencil_write: false,
+            stencil_write_mask: 0xff,
+            stencil_func: StencilFunc::Always,
+            stencil_ref: 0,
+            stencil_func_mask: 0xff,
+            stencil_fail: StencilOp::Keep,
+            stencil_z_fail: StencilOp::Keep,
+            stencil_z_pass: StencilOp::Keep,
             name: "",
         }
     }
@@ -871,6 +956,40 @@ impl MeshBasicNodeMaterial {
         } else {
             None
         }
+    }
+
+    /// `_getStencilState()`'s face — the same on both sides, as
+    /// `gl.stencilOp()` is — or `None` (WebGPU's default face) while
+    /// `stencil_write` is off, as `createRenderPipeline()` leaves it.
+    pub(crate) fn stencil_face(&self) -> Option<wgpu::StencilFaceState> {
+        if !self.stencil_write {
+            return None;
+        }
+        let op = |op: StencilOp| match op {
+            StencilOp::Zero => wgpu::StencilOperation::Zero,
+            StencilOp::Keep => wgpu::StencilOperation::Keep,
+            StencilOp::Replace => wgpu::StencilOperation::Replace,
+            StencilOp::Increment => wgpu::StencilOperation::IncrementClamp,
+            StencilOp::Decrement => wgpu::StencilOperation::DecrementClamp,
+            StencilOp::IncrementWrap => wgpu::StencilOperation::IncrementWrap,
+            StencilOp::DecrementWrap => wgpu::StencilOperation::DecrementWrap,
+            StencilOp::Invert => wgpu::StencilOperation::Invert,
+        };
+        Some(wgpu::StencilFaceState {
+            compare: match self.stencil_func {
+                StencilFunc::Never => wgpu::CompareFunction::Never,
+                StencilFunc::Less => wgpu::CompareFunction::Less,
+                StencilFunc::Equal => wgpu::CompareFunction::Equal,
+                StencilFunc::LessEqual => wgpu::CompareFunction::LessEqual,
+                StencilFunc::Greater => wgpu::CompareFunction::Greater,
+                StencilFunc::NotEqual => wgpu::CompareFunction::NotEqual,
+                StencilFunc::GreaterEqual => wgpu::CompareFunction::GreaterEqual,
+                StencilFunc::Always => wgpu::CompareFunction::Always,
+            },
+            fail_op: op(self.stencil_fail),
+            depth_fail_op: op(self.stencil_z_fail),
+            pass_op: op(self.stencil_z_pass),
+        })
     }
 
     /// `RenderList.push()`'s choice of list: `transparent === true ||

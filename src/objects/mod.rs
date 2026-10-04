@@ -2,6 +2,7 @@
 
 mod batched_mesh;
 mod bone;
+mod clipping_group;
 mod fog;
 mod group;
 mod instanced_mesh;
@@ -19,6 +20,7 @@ pub use batched_mesh::{
     BatchCamera, BatchedMesh, CustomSort, GeometryInfo, MultiDrawItem, SortContext, SubDraw,
 };
 pub use bone::{is_bone, Bone};
+pub use clipping_group::ClippingGroup;
 pub use fog::{Fog, FogExp2, SceneFog};
 pub use group::Group;
 pub(crate) use instanced_mesh::InstanceData;

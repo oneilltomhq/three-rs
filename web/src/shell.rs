@@ -334,6 +334,8 @@ PostprocessingSsr, webgpu_postprocessing_ssr, "../../examples/webgpu_postprocess
 Postprocessing3dlut, webgpu_postprocessing_3dlut, "../../examples/webgpu_postprocessing_3dlut.rs";
 PostprocessingOutline, webgpu_postprocessing_outline, "../../examples/webgpu_postprocessing_outline.rs";
 Oit, webgpu_oit, "../../examples/webgpu_oit.rs";
+Clipping, webgpu_clipping, "../../examples/webgpu_clipping.rs";
+ClippingStencil, webgpu_clipping_stencil, "../../examples/webgpu_clipping_stencil.rs";
 }
 
 /// Where an example's assets come from: three.js at the commit this port is

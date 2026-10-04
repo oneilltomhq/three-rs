@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three-rs dump page - ClippingGroup without clip-distances</title>
+		<meta charset="utf-8">
+	</head>
+	<body>
+		<!--
+			Not a three.js example: a minimal page for tools/dump-webgpu.mjs --html,
+			so the WGSL of ClippingNode's two fragment paths can be dumped on a
+			device without the 'clip-distances' feature (issue #295). The page
+			strips the feature from requestDevice(), so the union planes discard
+			in the fragment stage instead of becoming clip distances.
+
+			One union plane on the outer group and two intersection planes on a
+			nested clipIntersection group, over two MeshBasicNodeMaterials: the
+			first takes clipping() (the discard path), the second has
+			alphaToCoverage under MSAA and takes clippingAlpha().
+		-->
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "../build/three.webgpu.js",
+					"three/webgpu": "../build/three.webgpu.js",
+					"three/tsl": "../build/three.tsl.js",
+					"three/addons/": "./jsm/"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			import * as THREE from 'three/webgpu';
+
+			const requestDevice = GPUAdapter.prototype.requestDevice;
+			GPUAdapter.prototype.requestDevice = function ( descriptor ) {
+				if ( descriptor && descriptor.requiredFeatures ) {
+					descriptor = { ...descriptor, requiredFeatures: descriptor.requiredFeatures.filter( ( f ) => f !== 'clip-distances' ) };
+				}
+				return requestDevice.call( this, descriptor );
+			};
+
+			const camera = new THREE.PerspectiveCamera( 50, window.innerWidth / window.innerHeight, 0.1, 100 );
+			camera.position.set( 0, 0, 4 );
+
+			const scene = new THREE.Scene();
+			scene.background = new THREE.Color( 0x4080cc );
+
+			const outer = new THREE.ClippingGroup();
+			outer.clippingPlanes = [ new THREE.Plane( new THREE.Vector3( - 1, 0, 0 ), 0.5 ) ];
+			scene.add( outer );
+
+			const inner = new THREE.ClippingGroup();
+			inner.clippingPlanes = [
+				new THREE.Plane( new THREE.Vector3( 0, - 1, 0 ), 0.2 ),
+				new THREE.Plane( new THREE.Vector3( 0, 0, - 1 ), 0.1 )
+			];
+			inner.clipIntersection = true;
+			outer.add( inner );
+
+			const geometry = new THREE.SphereGeometry( 0.8, 32, 16 );
+
+			const discard = new THREE.Mesh( geometry, new THREE.MeshBasicNodeMaterial( { color: 0xff8040 } ) );
+			discard.position.x = - 1;
+			inner.add( discard );
+
+			const alpha = new THREE.Mesh( geometry, new THREE.MeshBasicNodeMaterial( { color: 0x40ff80, alphaToCoverage: true } ) );
+			alpha.position.x = 1;
+			inner.add( alpha );
+
+			const renderer = new THREE.WebGPURenderer( { antialias: true } );
+			renderer.setPixelRatio( window.devicePixelRatio );
+			renderer.setSize( window.innerWidth, window.innerHeight );
+			renderer.setAnimationLoop( () => renderer.render( scene, camera ) );
+			document.body.appendChild( renderer.domElement );
+
+		</script>
+	</body>
+</html>

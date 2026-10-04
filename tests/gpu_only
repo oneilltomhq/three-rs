@@ -35,6 +35,7 @@ three-rs/renderer_textures
 three-rs/renderer_typed_attributes
 three-rs/renderer_vertex_colors
 three-rs/renderer_viewport
+three-rs/renderer_viewport_depth
 three-rs/retro_frames
 three-rs/stereo_frames
 three-rs/recurrent_denoise_frames

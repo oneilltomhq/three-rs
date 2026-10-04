@@ -189,8 +189,8 @@ pub use materials::{
 };
 pub use math::{Color, ColorSpace, Euler, Matrix3, Matrix4, Quaternion, Vector2, Vector3};
 pub use objects::{
-    Background, Fog, FogExp2, Group, InstancedMesh, Line, LineSegments, Mesh, Payload, Points,
-    QuadMesh, Scene, SceneFog, Sprite,
+    Background, ClippingGroup, Fog, FogExp2, Group, InstancedMesh, Line, LineSegments, Mesh,
+    Payload, Points, QuadMesh, Scene, SceneFog, Sprite,
 };
 pub use renderer::{
     depth_pass, pass, BuildCounts, CameraRef, ComputeCounts, CubeRenderTarget,
