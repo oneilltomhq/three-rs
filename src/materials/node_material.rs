@@ -1878,8 +1878,11 @@ mod tests {
         let hasher = RandomState::new();
         let ao = ao_context();
         let with = hasher.hash_one(lit(Some(ao.clone())));
-        assert_eq!(with, hasher.hash_one(lit(Some(ao))));
+        assert_eq!(with, hasher.hash_one(lit(Some(ao.clone()))));
         assert_ne!(with, hasher.hash_one(lit(None)));
+        // `ao` stays alive to here: the key is the node's address, and a
+        // fresh node allocated after `ao` was dropped can reuse it.
         assert_ne!(with, hasher.hash_one(lit(Some(ao_context()))));
+        drop(ao);
     }
 }
