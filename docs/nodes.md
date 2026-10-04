@@ -725,6 +725,14 @@ differences, each verified to be pixel-neutral.
   says `three-rs`.
   `tests/nodes_compute_indirect_wgsl.rs::canonical()` drops it, as
   `tests/nodes_compute_wgsl.rs` drops r186's.
+* **`screenUV` read more than once is a var.** Three's `ScreenNode` is not
+  cacheable (`isCacheable()` returns `false`), so each read writes
+  `( fragCoord.xy / render.nodeUniformN )` inline. The port's `screen_uv()`
+  is an operator node, and a second read promotes it to a `nodeVarN`
+  assigned once. The value is the same. `Water2Mesh` reads it three times
+  (§83.2); `tests/nodes_water_wgsl.rs` puts the expression back at each read
+  before comparing (`inline_screen_uv`). Issue #287 tracks making it
+  non-cacheable, as three's is.
 
 ### `LineBasicNodeMaterial` adds no divergence class
 
@@ -923,6 +931,7 @@ more (`docs/webgpu_tsl_raging_sea-progress.md`):
   three's `varyings.positionLocal = ( varyings.positionLocal + … )` in
   place: the text differs, but the value the fragment reads is the same. A
   varying that was only read keeps its old form.
+
 ### Shadow filters add no new class
 
 The VSM and point-light-alpha modules differ from three's dumps only in the
@@ -6321,8 +6330,7 @@ things that are not nodes:
 - Changing `focusDistance`, `focalLength` or `bokehScale` from a GUI. They
   are ordinary uniforms, so a host can set them, but no page here does.
 
-Sections 72, 73, 77 and 79 to 83 are reserved for the ports on
-sibling branches. They are numbered as those branches land.
+Sections 72, 73, 77 and 79 to 82 are reserved for the ports on sibling branches. They are numbered as those branches land.
 
 ## 67. TSL sweep 2: the accessors batch
 
@@ -7179,10 +7187,8 @@ has no `onChange` into the quaternion, so the page goes through
 
 ### 76.4 Not ported
 
-- `Water2Mesh` and `webgpu_water`. `WaterNode`'s flow-map `updateBefore`
-  accumulates `deltaTime`, the refraction reads `viewportSharedTexture`, and
-  the page needs a Draco glTF, an Ultra HDR environment, an MRT bloom and
-  FXAA. That is a rung of its own, and three's own e2e skips the page.
+- `Water2Mesh` and `webgpu_water` were not part of this section. They are
+  ported in §83.
 - `water.resolutionScale` as a field read at first build (§76.1).
 - `waterNormals: null`. A `texture( null )` tap has nothing to sample, so
   `WaterMeshOptions::new` requires the map.
@@ -7313,6 +7319,133 @@ parameters are called `v1` and `v2`. The two renamings now share
 The `ltc` probe evaluates the quad `( ±1, ±1, 2 )` with
 `mInv = mat3( modelWorldMatrix )`. The matrix only needs to be some mat3 that
 three cannot fold into a constant.
+
+## 83. `Water2Mesh` (`webgpu_water`)
+
+`Water2Mesh` (`addons::objects`) is `examples/jsm/objects/Water2Mesh.js`.
+Upstream exports its `Mesh` subclass as `WaterMesh`, and the crate already
+has a `WaterMesh` (§76), so the port takes the file's name, as three's own
+docs do for the module. A `transparent` `MeshBasicNodeMaterial` (upstream's
+bare `NodeMaterial`) has as its `colorNode` the private `WaterNode`. Two
+normal maps are scrolled along a flow, either `flowDirection` or a flow
+map's `rg * 2 - 1`. They are cross-faded on a half cycle so that neither
+visibly resets. A Schlick Fresnel term then mixes a refraction with a planar
+reflection, and the result is tinted by `color`. The six uniforms are public
+`SettableValue`s on the struct, and `flowConfig` is one of them.
+
+### 83.1 `WaterNode`
+
+`WaterNode` is a `CustomNode` with `updateBeforeType = RENDER`. Its
+`updateBefore( frame )` is `updateFlow( frame.deltaTime )`, which the port
+also exposes as `Water2Mesh::update_flow`. `flowConfig.x` advances by
+`flowSpeed * delta`, and `.y` stays half a cycle (0.075) ahead of it. When
+`.x` reaches the cycle (0.15), both reset. When `.y` reaches it, `.y` wraps.
+`.z` is the half cycle. The renderer's `NodeFrame` (§57) reports a
+`deltaTime` of 0 on the first frame, so the graded frame has `flowConfig =
+( 0, 0.075, 0.075 )` in both three and the port.
+`tests/water2_frames.rs` steps the flow through a wrap and a reset with
+pinned time.
+
+The refraction is not a second render. It is `viewportSharedTexture(
+viewportSafeUV( screenUV + offset ) )`, the pass drawn so far (§61). The
+renderer splits the pass and copies the framebuffer just before the water's
+draw, which is why the page gives the water `renderOrder = Infinity`.
+`viewportSafeUV` falls back to the unoffset `screenUV` where the offset uv
+lands on something nearer than the water.
+
+The reflection is `reflector()`, offset by the same `normal.xz * 0.05`.
+Upstream calls `this.waterBody.add( reflectionSampler.target )` inside
+`setup()`, at the first build. As in §76.1, the port builds the graph at
+construction and keeps the add's timing with `add_target_on_setup`. On the
+first frame the target's world matrix is the identity, and the reflector
+mirrors about `z = 0`. In `webgpu_water` that plane is culled, so three's
+dump of the graded frame has no reflector pass, the reflection is black, and
+the water is the tinted refraction. The port's first frame is the same.
+
+### 83.2 WGSL
+
+`tests/nodes_water_wgsl.rs` compares both branches of `WaterNode` with
+three's dumps, which are committed verbatim:
+
+* the `flowDirection` branch, `m18` / `m19` of `webgpu_water`, in
+  `tests/fixtures/webgpu_water/water.*.wgsl`;
+* the flow-map branch, which no example builds. It is `m03` / `m04` of
+  `tools/dump-pages/water2_flow_map.html`, in
+  `tests/fixtures/webgpu_water/water_flow_map.*.wgsl`.
+
+The vertex stage matches statement for statement after the `VERTEX_`
+sub-build is undone. The fragment matches from `// flow` to the opacity
+multiply. Its uniform structs match by membership. Its texture and sampler
+bindings match by their sorted types; their binding indices are not compared.
+Every difference is an existing class:
+
+* **`screenUV`** is read three times: by the refraction uv, by
+  `viewportSafeUV`'s fallback, and by the reflector's `flipX()`. The port
+  assigns it to a var once (§8). The test inlines it.
+* **`screenUV.flipX()`** is parenthesised (§55.3).
+* **The output clamp** is three's `let` and the port's `var` (§8). It is
+  checked only for being present.
+
+`webgpu_water`'s scene pass has an MRT, so the dump's tail also writes
+`output.m0` / `output.m1`. The gate builds the material without one. That
+changes nothing before the tail.
+
+### 83.3 The page
+
+`examples/webgpu_water.rs` follows the page. Its post-processing is an MRT
+scene pass of `output` and `emissive`, then `bloom( emissive, 2 )` added to
+the beauty, then `renderOutput()`, then `fxaa()`. The other shaders on the
+page (the standard and physical materials, bloom, FXAA, the background and
+the PMREM) are existing crate code. The new tests gate none of them except
+the `Clutter` material's transmission term, below.
+
+There are three ordering differences:
+
+* The Ultra HDR environment is loaded synchronously, before the first frame.
+  Upstream's `load()` callback can land after it.
+* The renderer is created at the top of `init()`, not after the floors,
+  because the background cube and the PMREM need it.
+* The first render adds the mirror's target, as above.
+
+The pool (`models/gltf/pool.glb`) needed two glTF loader fixes:
+
+* **`transmissionTexture`.** The `Clutter` material is `transmission: 1`
+  times a texture whose red channel is 0 almost everywhere. Only the light
+  beams and circles transmit. The loader now reads the texture into the
+  material's new `transmission_map`, and the node material multiplies its
+  red channel into `transmission` as three's `transmissionMap` does.
+  `tests/nodes_water_wgsl.rs` (`clutter_transmission_map_matches_three`)
+  gates that term, the map's sample and `Transmission = ( <factor> *
+  <sample>.x );`, line for line against three's `m17`, the `Clutter`
+  material in the transmission pass. That dump is committed verbatim as
+  `tests/fixtures/webgpu_water/clutter.fragment.wgsl`. The rest of the
+  material is not gated: a full-fixture gate would need the page's lights
+  and environment.
+* **`occlusionTexture.strength`.** `SPWallsFloorStairs` sets it to 0, which
+  three applies as `aoMapIntensity = 0`. The loader ignored it, so the AO map
+  darkened the pool's interior and, through the refraction, the water. The
+  water's mean colour was (18, 20, 19) against three's (62, 70, 63).
+  `ao_map_intensity` now takes the strength.
+
+Three's e2e skips the page (`'webgpu_water', // 1 min` in its exception
+list), so it has no rung. Its first frame, scored informally with
+`three_rs::testing::compare` (three's comparator, 0.1 % threshold), differs
+from `examples/screenshots/webgpu_water.jpg` in 6 pixels (0.006 %). It
+differs from a local dump of three's page in 0 pixels.
+
+### 83.4 Not ported
+
+- The page's `Inspector` panel. Its four controls are methods on the
+  example: `set_color`, `set_scale`, `set_flow_x` and `set_flow_y`.
+- Rebuilds. Three re-runs `setup()` on every material rebuild, which makes a
+  new `reflector()` and adds another target. The port keeps one reflector
+  for life.
+- Swappable maps. Three's `normalMap0`, `normalMap1` and `flowMap` are
+  `TextureNode`s whose `.value` can be replaced. The port stores `Texture`s.
+- Missing normal maps. `Water2MeshOptions::new` requires both.
+- `color` as a number or a CSS string. The option is a `Color`;
+  `Color::from_hex` converts the page's `'#99e0ff'`.
+- The `isWater` flag.
 
 ## 84. TSL sweep 6: the compute, storage and subgroup batch
 

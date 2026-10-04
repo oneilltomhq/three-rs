@@ -58,7 +58,7 @@ The mirror is `webgpu_mirror`'s `reflector()`.
 
 ## What is not ported
 
-- `Water2Mesh` and `webgpu_water`. See §76.4.
+- `Water2Mesh` and `webgpu_water` are a separate port: `docs/webgpu_water-progress.md` and §83.
 - `renderer.inspector` and its parameters panel draw nothing into the
   canvas. `Parameters` holds the GUI's values (elevation, azimuth, exposure),
   and `update_sun()` is its callback.
