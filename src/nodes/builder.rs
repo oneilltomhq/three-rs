@@ -1885,6 +1885,816 @@ impl NodeBuilder {
         }
     }
 
+    #[inline(never)]
+    fn generate_texture(&mut self, node: &NodeRef) -> String {
+        let Node::Texture {
+            texture, uv, mode, ..
+        } = node.node()
+        else {
+            unreachable!()
+        };
+        let (texture, uv, mode) = (texture.clone(), uv.clone(), mode.clone());
+        let mode_is_color = matches!(
+            mode,
+            SampleMode::Sample
+                | SampleMode::Grad(..)
+                | SampleMode::Level(_)
+                | SampleMode::Bias(_)
+                | SampleMode::Load
+        ) && matches!(*texture, TextureSource::Texture2D(_));
+        let (name, kind) = self.texture_slots(&texture);
+        let suv = self.generate(&uv);
+        // `TextureNode.generate()` builds the snippet as a `vec4` and
+        // `format()`s it to the node type: an RG map's `vec2` node
+        // gets `.xy` on the fetch itself.
+        let narrow = |s: String| {
+            if node.ty() == Type::Vec2 {
+                format!("{s}.xy")
+            } else {
+                s
+            }
+        };
+        let snippet = match mode {
+            SampleMode::Sample => {
+                format!("textureSample( {name}, {name}_sampler, {suv} )")
+            }
+            SampleMode::Grad(grad_x, grad_y) => {
+                let sx = self.format(&grad_x, Type::Vec2);
+                let sy = self.format(&grad_y, Type::Vec2);
+                format!("textureSampleGrad( {name}, {name}_sampler, {suv}, {sx}, {sy} )")
+            }
+            // `generateTextureGather()`, with three's spacing: no
+            // space before the closing parenthesis without an offset.
+            SampleMode::Gather { component, offset } => {
+                let scomponent = self.format(&component, Type::I32);
+                match offset {
+                    Some(offset) => {
+                        let soffset = self.format(&offset, Type::IVec2);
+                        format!(
+                            "textureGather( {scomponent}, {name}, {name}_sampler, {suv}, {soffset} )"
+                        )
+                    }
+                    None => format!("textureGather( {scomponent}, {name}, {name}_sampler, {suv})"),
+                }
+            }
+            // `generateTextureGatherCompare()`, the same spacing.
+            //
+            // Quirk kept: `TextureNode.generate()` types a gather's
+            // snippet from `texture.type`, and a `DepthTexture` is
+            // `UnsignedIntType` by default, so three takes the result
+            // for a `uvec4` and formats it to the node's `vec4` —
+            // `vec4<f32>( textureGatherCompare( … ) )`, a no-op cast
+            // in WGSL (`docs/nodes.md` §44).
+            SampleMode::GatherCompare { compare, offset } => {
+                let int_typed = match &*texture {
+                    TextureSource::Depth(t) | TextureSource::ShadowMap(t) => {
+                        t.texture_type() == crate::textures::TextureType::UnsignedInt
+                    }
+                    _ => false,
+                };
+                let scompare = self.format(&compare, Type::F32);
+                let gather = match offset {
+                    Some(offset) => {
+                        let soffset = self.format(&offset, Type::IVec2);
+                        format!(
+                            "textureGatherCompare( {name}, {name}_sampler, {suv}, {scompare}, {soffset} )"
+                        )
+                    }
+                    None => {
+                        format!("textureGatherCompare( {name}, {name}_sampler, {suv}, {scompare})")
+                    }
+                };
+                if int_typed {
+                    format!("vec4<f32>( {gather} )")
+                } else {
+                    gather
+                }
+            }
+            // `texture3D( … ).sample( uv ).r`: the texture node is
+            // built as a `float`, so the fetch itself is narrowed and
+            // the node's var is an `f32` — three's
+            // `nodeVar7 = textureSampleLevel( … ).x`.
+            SampleMode::Level(level) if node.ty().components() == 1 => {
+                let slevel = self.generate(&level);
+                format!("textureSampleLevel( {name}, {name}_sampler, {suv}, {slevel} ).x")
+            }
+            SampleMode::Level(level) => {
+                let slevel = self.generate(&level);
+                format!("textureSampleLevel( {name}, {name}_sampler, {suv}, {slevel} )")
+            }
+            SampleMode::Bias(bias) => {
+                let sbias = self.generate(&bias);
+                format!("textureSampleBias( {name}, {name}_sampler, {suv}, {sbias} )")
+            }
+            SampleMode::LoadLayer(layer) => {
+                let slayer = self.generate(&layer);
+                wgsl::texture_load_layer(&name, &suv, &slayer)
+            }
+            SampleMode::SampleLayer(layer) => {
+                let slayer = self.generate(&layer);
+                // `depthNode.build( builder, 'int' )`: a float layer
+                // is cast, an int one passes through.
+                let slayer = if layer.ty() == Type::I32 {
+                    slayer
+                } else {
+                    format!("i32( {slayer} )")
+                };
+                format!("textureSample( {name}, {name}_sampler, {suv}, {slayer} )")
+            }
+            SampleMode::Compare(depth) => {
+                let sdepth = self.generate(&depth);
+                format!("textureSampleCompare( {name}, {name}_sampler, {suv}, {sdepth} )")
+            }
+            // A depth texture's `textureLoad` is already the `f32`:
+            // `TAAUtils.sampleCurrentDepth()`'s `depthNode.load(
+            // neighbor ).r` is three's bare
+            // `textureLoad( depth, vec2<i32>( n ), u32( 0u ) )`.
+            SampleMode::LoadTexel if matches!(*texture, TextureSource::Depth(_)) => {
+                wgsl::texture_load_texel(&name, &suv)
+            }
+            SampleMode::LoadTexel => {
+                let snippet = wgsl::texture_load_texel(&name, &suv);
+                // `textureLoad( t, coord ).x` on the `r32uint`
+                // indirect table: Three splits the `uvec4` and caches
+                // the scalar, so the swizzle rides along with the
+                // fetch rather than becoming a second property.
+                if node.ty().components() == 1 {
+                    format!("{snippet}.x")
+                } else {
+                    snippet
+                }
+            }
+            SampleMode::Load => {
+                self.add_code("tsl_coord_clampS_clampT_2d", wgsl::CLAMP_WRAP_SNIPPET);
+                // `WGSLNodeBuilder.generateTextureDimension()` keeps
+                // one dimensions var per texture in `builder.cache`,
+                // so a second tap in the same scope (or one nested in
+                // it) reuses it, and a sibling `if` declares its own.
+                let dims_key = CacheKey::TextureDimensions(name.clone());
+                let dims = match self.cache_get(dims_key.clone()) {
+                    Some(dims) => dims,
+                    None => {
+                        let dims = self.declare_var(None, Type::UVec2);
+                        let dims_expr = wgsl::texture_dimensions(&name, kind);
+                        self.emit(format!("{dims} = {dims_expr};"));
+                        self.cache_put(dims_key, dims.clone());
+                        dims
+                    }
+                };
+                wgsl::texture_load(&name, &suv, &dims)
+            }
+            // `generateStorageTextureLoad()`: no level argument.
+            SampleMode::StorageLoad => {
+                let snippet = format!("textureLoad( {name}, {suv} )");
+                if node.ty().components() == 1 {
+                    format!("{snippet}.x")
+                } else {
+                    snippet
+                }
+            }
+        };
+        if mode_is_color {
+            narrow(snippet)
+        } else {
+            snippet
+        }
+    }
+
+    #[inline(never)]
+    fn generate_varying(&mut self, node: &NodeRef) -> String {
+        let Node::Varying(v) = node.node() else {
+            unreachable!()
+        };
+        let v = v.clone();
+        if let Some(name) = self.varying_slots.get(&node.key()).cloned() {
+            // A varying is read through the `varyings` struct in the
+            // vertex stage and as a `main` parameter in the fragment
+            // stage — `NodeBuilder.getPropertyName()`'s two cases.
+            return match self.stage {
+                Stage::Vertex => format!("varyings.{name}"),
+                Stage::Fragment => name,
+                Stage::Compute => unreachable!("three-rs: compute has no varyings"),
+            };
+        }
+        match self.stage {
+            Stage::Compute => unreachable!("three-rs: compute has no varyings"),
+            Stage::Vertex => {
+                // Not requested by the fragment stage: a plain private
+                // var in the vertex shader, which is exactly what
+                // three.js emits for `v_normalViewGeometry` on the
+                // background material.
+                let snippet = self.generate(&v.value);
+                let name = self.declare_var(v.name, v.ty);
+                self.emit(format!("{name} = {snippet};"));
+                self.cache_put(CacheKey::node(node), name.clone());
+                name
+            }
+            Stage::Fragment => {
+                let name = match v.name {
+                    Some(n) => n.to_string(),
+                    None => {
+                        let n = format!("nodeVarying{}", self.varying_counter);
+                        self.varying_counter += 1;
+                        n
+                    }
+                };
+                self.varyings.push((name.clone(), v.ty, v.flat));
+                self.varying_slots.insert(node.key(), name.clone());
+                // The vertex-side chain is flowed into the vertex stage
+                // at the point the fragment stage asks for it.
+                //
+                // When the vertex stage already holds it as a private
+                // var — `positionLocal` read, and reassigned, by the
+                // `context.position` statements flowed before either
+                // stage (`material.positionNode`, instancing,
+                // skinning) — the varying carries that var's current
+                // value. In three.js the varying *is* the variable
+                // (`varyings.positionLocal = ( varyings.positionLocal
+                // + … )`), so the fragment stage sees the reassigned
+                // value, not the attribute; see `docs/nodes.md` §8.
+                self.stage = Stage::Vertex;
+                // Three's vertex stage writes every assignment to a
+                // varying straight into `varyings.name`, so what
+                // reaches the fragment stage is the last value
+                // assigned (`webgpu_particles`' `positionLocal`, moved
+                // by its `positionNode`). The port's vertex stage
+                // holds that value in the private var until now.
+                let reassigned = self.reassigned_varyings.contains(&node.key());
+                let snippet = match self.cache_get(CacheKey::node(node)) {
+                    Some(var) if reassigned => var,
+                    _ => self.generate(&v.value),
+                };
+                self.emit(format!("varyings.{name} = {snippet};"));
+                self.stage = Stage::Fragment;
+                name
+            }
+        }
+    }
+
+    #[inline(never)]
+    fn generate_loop(&mut self, node: &NodeRef) -> String {
+        let Node::Loop {
+            start,
+            count,
+            index,
+            condition,
+            update,
+            body,
+        } = node.node()
+        else {
+            unreachable!()
+        };
+        let (start, count, index, condition, update, body) = (
+            start.clone(),
+            count.clone(),
+            index.clone(),
+            *condition,
+            update.clone(),
+            body.clone(),
+        );
+        // The start is generated before the end, which is the order
+        // three.js' `LoopNode` builds them in and so the order their
+        // vars and uniforms are numbered in.
+        let index_ty = index.ty();
+        let sstart = match &start {
+            Some(start) => self.loop_bound(start, index_ty),
+            None => wgsl::constant(index_ty, &[0.0]),
+        };
+        let scount = self.loop_bound(&count, index_ty);
+        let name = match index.node() {
+            Node::Param { name, .. } => *name,
+            _ => "i",
+        };
+        let ty = wgsl::type_name(index_ty);
+        // `LoopNode.generate()`'s default update: `++` / `--` for an
+        // integer index, `+= 1.` / `-= 1.` for anything else.
+        let rising = condition.contains('<');
+        let default_update = match (index_ty, rising) {
+            (Type::I32 | Type::U32, true) => "++",
+            (Type::I32 | Type::U32, false) => "--",
+            (_, true) => "+= 1.",
+            (_, false) => "-= 1.",
+        };
+        // `Loop( { update } )` — `i += update` in place of the
+        // default, `RaymarchingBox`'s float march.
+        let step = match &update {
+            Some(update) => format!("{name} += {}", self.generate(update)),
+            None => format!("{name} {default_update}"),
+        };
+        self.emit(String::new());
+        self.emit(format!(
+            "for ( var {name} : {ty} = {sstart}; {name} {condition} {scount}; {step} ) {{"
+        ));
+        self.emit(String::new());
+        self.push_scope();
+        for stmt in &body {
+            self.generate_statement(stmt);
+        }
+        self.pop_scope();
+        self.emit(String::new());
+        self.emit("}".to_string());
+        self.emit(String::new());
+        String::new()
+    }
+
+    #[inline(never)]
+    fn generate_math(&mut self, node: &NodeRef) -> String {
+        let Node::Math { name, args, ty } = node.node() else {
+            unreachable!()
+        };
+        if let Some(snippet) = self.generate_packing(name, args) {
+            return snippet;
+        }
+        let (name, args, ty) = (*name, args.clone(), *ty);
+        // `WGSLNodeBuilder`'s `wgslPolyfill` table: a method that
+        // lowers to a `tsl_*` helper brings the helper's code with it.
+        if let Some(snippet) = wgsl::polyfill(name) {
+            self.add_code(name, snippet);
+        }
+        // `mix`'s interpolant and `cross`/`reflect`'s operands keep
+        // their own types; everything else is widened to the result
+        // type, as `MathNode.generate()` does.
+        // `MathNode.getInputType()`: a method whose result is narrower
+        // than its operands widens its operands to the wider *operand*,
+        // not to the result type. `distance` returns an `f32` from two
+        // vectors, so `format( a, ty )` would swizzle them down; `dot`
+        // is the same, and `luminance( vec4 )` is the case that makes
+        // it load-bearing (`webgpu_postprocessing_difference`): three
+        // widens the `vec3` coefficients to `vec4( vec3( … ), 1.0 )`,
+        // so the alpha difference is weighted 1.0 and not dropped.
+        let input_ty = args
+            .iter()
+            .map(|a| a.ty())
+            .max_by_key(|t| t.components())
+            .unwrap_or(ty);
+        let parts: Vec<String> = args
+            .iter()
+            .enumerate()
+            .map(|(i, a)| match name {
+                "distance" => self.format(a, input_ty),
+                "mix" if i == 2 => self.generate(a),
+                // `MathNode.REFRACT`: I and N take the input type, eta
+                // is built as a `float`.
+                "refract" if i == 2 => self.format(a, Type::F32),
+                "refract" => self.format(a, input_ty),
+                "dot" => self.format(a, input_ty),
+                "cross" | "reflect" | "normalize" | "transpose" | "tsl_inverse_mat2"
+                | "tsl_inverse_mat3" | "tsl_inverse_mat4" | "determinant" | "length" | "dpdx"
+                | "- dpdy" | "inverseSqrt" | "all" | "any" => self.generate(a),
+                // `select( f, t, cond )`'s condition is a bool, and the
+                // MaterialX helpers pass their own already-typed
+                // operands; nothing here is widened.
+                "select" | "fract" | "sqrt" | "abs" => self.generate(a),
+                // `MathNode.generate()` builds both of `step`'s
+                // operands at the input type, so a scalar edge
+                // widens: `step( vec3<f32>( 0.5 ), base )` in
+                // `blendOverlay` — WGSL has no mixed overload.
+                "step" => self.format(a, input_ty),
+                // `BitcastNode` builds its operand as it stands; the
+                // result type is the cast's, not the input's.
+                n if n.starts_with("bitcast<") => self.generate(a),
+                _ => self.format(a, ty),
+            })
+            .collect();
+        format!("{name}( {} )", parts.join(", "))
+    }
+
+    #[inline(never)]
+    fn generate_op(&mut self, node: &NodeRef) -> String {
+        let Node::Op { op, a, b, ty } = node.node() else {
+            unreachable!()
+        };
+        let (op, a, b, ty) = (*op, a.clone(), b.clone(), *ty);
+        // A comparison's operands are formatted to the wider
+        // *operand* type (`OperatorNode.getNodeType()`'s
+        // `typeA`/`typeB`), not to its `bool` result; the component
+        // type is the operand's, so a `u32` comparison stays `u32`.
+        let want = if ty.component_type() == Type::Bool {
+            let (ta, tb) = (a.ty(), b.ty());
+            if ta.components() > 1 {
+                ta
+            } else if tb.components() > 1 {
+                tb
+            } else if ta != tb {
+                Type::F32
+            } else {
+                ta
+            }
+        } else {
+            ty
+        };
+        // `OperatorNode.generate()`'s two matrix-and-scalar arms
+        // (`OperatorNode.js:360`). A matrix times a float is emitted
+        // with the *float first* — `( skinWeight.x * boneMat )`, not
+        // `( boneMat * skinWeight.x )` — and a float times a matrix is
+        // emitted with no enclosing parens at all. Neither operand is
+        // widened to the result type in either case. Both quirks are
+        // visible in Three's skinning dump, which multiplies the same
+        // pair both ways round in the two statements it emits.
+        if a.ty().is_matrix() && b.ty() == Type::F32 {
+            let sa = self.generate(&a);
+            let sb = self.generate(&b);
+            format!("( {sb} {op} {sa} )")
+        } else if a.ty() == Type::F32 && b.ty().is_matrix() {
+            let sa = self.generate(&a);
+            let sb = self.generate(&b);
+            format!("{sa} {op} {sb}")
+        } else if op == ">>" || op == "<<" {
+            // `OperatorNode`: a shift's amount is `changeComponentType(
+            // typeB, 'uint' )`, the value is the result type.
+            let sa = self.format(&a, want);
+            let amount = Type::vector_of(Type::U32, b.ty().components().max(1));
+            let sb = self.format(&b, amount);
+            format!("( {sa} {op} {sb} )")
+        } else {
+            let sa = if a.ty().is_matrix() {
+                self.generate(&a)
+            } else {
+                self.format(&a, want)
+            };
+            let sb = if b.ty().is_matrix() {
+                self.generate(&b)
+            } else {
+                self.format(&b, want)
+            };
+            format!("( {sa} {op} {sb} )")
+        }
+    }
+
+    #[inline(never)]
+    fn generate_builtin(&mut self, node: &NodeRef) -> String {
+        let Node::Builtin(b) = node.node() else {
+            unreachable!()
+        };
+        // `FrontFacingNode.generate()`: outside the fragment stage
+        // there is no face, and three writes the literal `true`. The
+        // vertex stage reaches it when a double-sided material with a
+        // `tangent` attribute builds `bitangentView` there, whose
+        // `negateOnBackSide()` then multiplies by `f32( true ) * 2 - 1`.
+        if *b == Builtin::FrontFacing && self.stage != Stage::Fragment {
+            return "true".to_string();
+        }
+        if self.stage == Stage::Compute {
+            return self.generate_compute_builtin(*b);
+        }
+        // `ComputeBuiltinNode.generate()` outside the compute stage:
+        // a warning and `generateConst( 'uint' )`.
+        if *b == Builtin::SubgroupSize {
+            eprintln!(
+                "three-rs: TSL: Compute built-in value \"subgroupSize\" can not be accessed in the {} stage",
+                if self.stage == Stage::Vertex { "vertex" } else { "fragment" }
+            );
+            return wgsl::constant(Type::U32, &[0.0]);
+        }
+        assert!(
+            !matches!(
+                b,
+                Builtin::InvocationLocalIndex
+                    | Builtin::WorkgroupId
+                    | Builtin::LocalId
+                    | Builtin::GlobalId
+                    | Builtin::NumWorkgroups
+                    | Builtin::InvocationSubgroupIndex
+                    | Builtin::SubgroupIndex
+            ),
+            "three-rs: the compute builtin {} is only readable in a compute kernel",
+            b.name()
+        );
+        // `IndexNode.generate()`
+        // (`src/nodes/core/IndexNode.js:96-112`): the vertex and
+        // instance indices are the raw builtin in the vertex and
+        // compute stages and `varying( this )` anywhere else. WGSL has
+        // no `instance_index` in a fragment entry point at all, so this
+        // is not cosmetic — reading `instanceIndex` in a fragment flow
+        // without it does not compile.
+        if self.stage == Stage::Fragment
+            && matches!(b, Builtin::InstanceIndex | Builtin::VertexIndex)
+        {
+            return self.attribute_varying(node);
+        }
+        let s = &mut self.stages[self.stage.index()];
+        if !s.builtins.contains(b) {
+            s.builtins.push(*b);
+        }
+        b.name().to_string()
+    }
+
+    #[inline(never)]
+    fn generate_select(&mut self, node: &NodeRef) -> String {
+        let Node::Select { cond, a, b, ty } = node.node() else {
+            unreachable!()
+        };
+        let (cond, a, b, ty) = (cond.clone(), a.clone(), b.clone(), *ty);
+        // `ConditionalNode.generate()` builds its result property
+        // *before* the condition, so the result takes the lower
+        // `nodeVarN` number when the condition itself needs vars.
+        let result = self.declare_var(None, ty);
+        let scond = self.generate(&cond);
+        self.emit(String::new());
+        self.emit(format!("if ( {scond} ) {{"));
+        self.emit(String::new());
+        self.push_scope();
+        let sa = self.format(&a, ty);
+        self.emit(format!("{result} = {sa};"));
+        self.pop_scope();
+        self.emit(String::new());
+        self.emit("} else {".to_string());
+        self.emit(String::new());
+        self.push_scope();
+        let sb = self.format(&b, ty);
+        self.emit(format!("{result} = {sb};"));
+        self.pop_scope();
+        self.emit(String::new());
+        self.emit("}".to_string());
+        self.emit(String::new());
+        // `ConditionalNode.generate()` remembers its result property in
+        // `nodeData`, so a second reference reuses the branch rather
+        // than emitting the whole if/else again.
+        self.cache_put(CacheKey::node(node), result.clone());
+        result
+    }
+
+    #[inline(never)]
+    fn generate_swizzle(&mut self, node: &NodeRef) -> String {
+        let Node::Swizzle {
+            node: inner,
+            components,
+            ..
+        } = node.node()
+        else {
+            unreachable!()
+        };
+        let (inner, components) = (inner.clone(), *components);
+        // `SplitNode.generate()`: `if ( componentsLength >=
+        // nodeTypeLength ) … node.build( builder, type )` — a
+        // component past the end of the source *expands* the source
+        // rather than swizzling out of bounds. `renderOutput()` asking
+        // a vec3 `outputNode` for its alpha is that case, and it is
+        // not cosmetic: `vec3.w` is not WGSL
+        // (`webgpu_postprocessing_difference`).
+        // `SplitNode.getVectorLength()`.
+        let reach = components
+            .bytes()
+            .map(|c| "xyzw".find(c as char).unwrap_or(0) + 1)
+            .chain(std::iter::once(components.len()))
+            .max()
+            .unwrap_or(1);
+        let from = inner.ty();
+        let snippet = if reach > from.components() {
+            let wider = Type::vector_of(from.component_type(), reach);
+            self.format(&inner, wider)
+        } else {
+            self.generate(&inner)
+        };
+        format!("{snippet}.{components}")
+    }
+
+    #[inline(never)]
+    fn generate_if(&mut self, node: &NodeRef) -> String {
+        let Node::If {
+            cond,
+            body,
+            else_body,
+        } = node.node()
+        else {
+            unreachable!()
+        };
+        let (cond, body, else_body) = (cond.clone(), body.clone(), else_body.clone());
+        let scond = self.generate(&cond);
+        self.emit(String::new());
+        self.emit(format!("if ( {scond} ) {{"));
+        self.emit(String::new());
+        self.push_scope();
+        for statement in &body {
+            self.generate_statement(statement);
+        }
+        self.if_arm_tail(&body);
+        self.pop_scope();
+        self.emit(String::new());
+        // A one-armed `If` emits exactly what it always did; the
+        // `else` is additive, and takes `Node::Select`'s spacing,
+        // which is the same `StackNode` text.
+        if !else_body.is_empty() {
+            self.emit("} else {".to_string());
+            self.emit(String::new());
+            self.push_scope();
+            for statement in &else_body {
+                self.generate_statement(statement);
+            }
+            self.if_arm_tail(&else_body);
+            self.pop_scope();
+            self.emit(String::new());
+        }
+        self.emit("}".to_string());
+        self.emit(String::new());
+        String::new()
+    }
+
+    #[inline(never)]
+    fn generate_atomic(&mut self, node: &NodeRef) -> String {
+        let Node::Atomic {
+            method,
+            pointer,
+            value,
+        } = node.node()
+        else {
+            unreachable!()
+        };
+        let (method, pointer, value) = (*method, pointer.clone(), value.clone());
+        let is_statement = self.statement == Some(node.key());
+        assert_ne!(
+            self.stage,
+            Stage::Vertex,
+            "three-rs: {method} is not supported in the vertex stage"
+        );
+        let ty = pointer.ty();
+        let mut params = vec![format!("&{}", self.generate(&pointer))];
+        if let Some(value) = &value {
+            // `b.build( builder, inputType )` — a float into a `u32`
+            // atomic is `u32( x )`, the same-width conversion
+            // `wgsl::convert` writes out.
+            params.push(self.format(value, ty));
+        }
+        let call = format!("{method}( {} )", params.join(", "));
+        if is_statement && self.usage_of(node) <= 1 {
+            self.emit(format!("{call};"));
+            return String::new();
+        }
+        let name = self.declare_const(None);
+        // `generateLetStatement()` is `let ${ name }` in WGSL — no type.
+        self.emit(format!("let {name} = {call};"));
+        self.cache_put(CacheKey::node(node), name.clone());
+        name
+    }
+
+    #[inline(never)]
+    fn generate_assign(&mut self, node: &NodeRef) -> String {
+        let Node::Assign { target, value } = node.node() else {
+            unreachable!()
+        };
+        let (target, value) = (target.clone(), value.clone());
+        let want = target.ty();
+        // `AssignNode.generate()` generates the target first: a var's
+        // lazy initialiser therefore lands above the statement that
+        // first assigns to it, and the temps the value needs are
+        // numbered after it.
+        let lhs = self.generate(&target);
+        if self.stage == Stage::Vertex && matches!(target.node(), Node::Varying(_)) {
+            self.reassigned_varyings.insert(target.key());
+        }
+        let snippet = self.format(&value, want);
+        // `AssignNode.needsSplitAssign()`: WGSL has no swizzle assign
+        // (`builder.isAvailable( 'swizzleAssign' )` is false), so a
+        // multi-component swizzle target that is not the whole vector
+        // goes through a temp and one statement per component —
+        // `diffuseColor.rgb.mulAssign( … )` on a `vec4` is
+        // `nodeVarN = ( DiffuseColor.xyz * … ); DiffuseColor.x =
+        // nodeVarN[ 0 ]; …`. A target that *is* the whole vector
+        // (`positionLocal.xyz` on a `vec3`) keeps the plain form.
+        if let Some((root, components)) = self.split_assign_target(&target) {
+            let temp = self.declare_var(None, want);
+            self.emit(format!("{temp} = {snippet};"));
+            let root = self.generate(&root);
+            for (i, component) in components.chars().enumerate() {
+                self.emit(format!("{root}.{component} = {temp}[ {i} ];"));
+            }
+            return lhs;
+        }
+        self.emit(format!("{lhs} = {snippet};"));
+        lhs
+    }
+
+    #[inline(never)]
+    fn generate_ifvar(&mut self, node: &NodeRef) -> String {
+        let Node::IfVar {
+            pre,
+            result,
+            cond,
+            body,
+        } = node.node()
+        else {
+            unreachable!()
+        };
+        let (pre, result, cond, body) = (pre.clone(), result.clone(), cond.clone(), body.clone());
+        // `If()` is a statement list, not an expression: three.js emits
+        // everything ahead of the result var first, then the var's own
+        // initialiser, then the condition, then the block.
+        for stmt in &pre {
+            self.generate_statement(stmt);
+        }
+        let name = self.generate(&result);
+        let scond = self.generate(&cond);
+        self.emit(String::new());
+        self.emit(format!("if ( {scond} ) {{"));
+        self.emit(String::new());
+        self.push_scope();
+        for stmt in &body {
+            self.generate_statement(stmt);
+        }
+        self.emit(String::new());
+        self.pop_scope();
+        self.emit(String::new());
+        self.emit("}".to_string());
+        self.emit(String::new());
+        self.cache_put(CacheKey::node(node), name.clone());
+        name
+    }
+
+    #[inline(never)]
+    fn generate_cast(&mut self, node: &NodeRef) -> String {
+        let Node::Cast { node: inner, ty } = node.node() else {
+            unreachable!()
+        };
+        let (inner, ty) = (inner.clone(), *ty);
+        let from = inner.ty();
+        let snippet = self.generate(&inner);
+        if ty == from {
+            // `ConvertNode` to the type it already has — see
+            // `materialx::mx_nodes::convert`. `format()` returns the
+            // snippet untouched.
+            return snippet;
+        }
+        // `NodeBuilder.format()`'s two matrix narrowings.
+        if from == Type::Mat4 && ty == Type::Mat3 {
+            return format!(
+                "{}( {snippet}[ 0 ].xyz, {snippet}[ 1 ].xyz, {snippet}[ 2 ].xyz )",
+                wgsl::type_name(ty)
+            );
+        }
+        if from == Type::Mat3 && ty == Type::Mat2 {
+            return format!(
+                "{}( {snippet}[ 0 ].xy, {snippet}[ 1 ].xy )",
+                wgsl::type_name(ty)
+            );
+        }
+        if ty.components() == from.components() {
+            format!("{}( {snippet} )", wgsl::type_name(ty))
+        } else {
+            wgsl::convert(&snippet, from, ty)
+        }
+    }
+
+    #[inline(never)]
+    fn generate_workgroup(&mut self, node: &NodeRef) -> String {
+        let Node::Workgroup(def) = node.node() else {
+            unreachable!()
+        };
+        let def = def.clone();
+        assert_eq!(
+            self.stage,
+            Stage::Compute,
+            "three-rs: workgroupArray() can only be used in a compute kernel"
+        );
+        let key = Rc::as_ptr(&def) as *const u8 as usize;
+        if let Some(name) = self.workgroup_names.get(&key) {
+            return name.clone();
+        }
+        let name = format!("WorkgroupArray_{}", self.workgroup_names.len());
+        let ty = wgsl::type_name(def.element_ty);
+        let ty = if def.atomic {
+            format!("atomic<{ty}>")
+        } else {
+            ty.to_string()
+        };
+        self.workgroup_locals.push(format!(
+            "var<workgroup> {name}: array< {ty}, {} >;",
+            def.count
+        ));
+        self.workgroup_names.insert(key, name.clone());
+        name
+    }
+
+    #[inline(never)]
+    fn generate_texturestore(&mut self, node: &NodeRef) -> String {
+        let Node::TextureStore {
+            texture,
+            coord,
+            value,
+        } = node.node()
+        else {
+            unreachable!()
+        };
+        let (texture, coord, value) = (texture.clone(), coord.clone(), value.clone());
+        let (name, kind) = self.texture_slots(&texture);
+        let dim3 = matches!(kind, TextureKind::Storage { dim3: true, .. });
+        let scoord = self.generate(&coord);
+        let svalue = self.format(&value, Type::Vec4);
+        // `uvNode.build( builder, 'uvec2' | 'uvec3' )`, whatever the
+        // coordinate's own type: `textureStore( t, vec2<u32>( a, b ),
+        // … )` for a `uvec2( a, b )`, `vec2<u32>( c )` for an `ivec2`
+        // held in `c`.
+        let coord_ty = if dim3 { "vec3<u32>" } else { "vec2<u32>" };
+        let scoord = match coord.node() {
+            Node::Join { args, .. } => {
+                let parts: Vec<String> = args.iter().map(|a| self.generate(a)).collect();
+                format!("{coord_ty}( {} )", parts.join(", "))
+            }
+            _ => format!("{coord_ty}( {scoord} )"),
+        };
+        self.emit(format!("textureStore( {name}, {scoord}, {svalue} );"));
+        String::new()
+    }
+
     fn generate_inner(&mut self, node: &NodeRef) -> String {
         match node.node() {
             Node::Const { ty, values } => wgsl::constant(*ty, values),
@@ -1997,59 +2807,7 @@ impl NodeBuilder {
                 name
             }
 
-            Node::Builtin(b) => {
-                // `FrontFacingNode.generate()`: outside the fragment stage
-                // there is no face, and three writes the literal `true`. The
-                // vertex stage reaches it when a double-sided material with a
-                // `tangent` attribute builds `bitangentView` there, whose
-                // `negateOnBackSide()` then multiplies by `f32( true ) * 2 - 1`.
-                if *b == Builtin::FrontFacing && self.stage != Stage::Fragment {
-                    return "true".to_string();
-                }
-                if self.stage == Stage::Compute {
-                    return self.generate_compute_builtin(*b);
-                }
-                // `ComputeBuiltinNode.generate()` outside the compute stage:
-                // a warning and `generateConst( 'uint' )`.
-                if *b == Builtin::SubgroupSize {
-                    eprintln!(
-                        "three-rs: TSL: Compute built-in value \"subgroupSize\" can not be accessed in the {} stage",
-                        if self.stage == Stage::Vertex { "vertex" } else { "fragment" }
-                    );
-                    return wgsl::constant(Type::U32, &[0.0]);
-                }
-                assert!(
-                    !matches!(
-                        b,
-                        Builtin::InvocationLocalIndex
-                            | Builtin::WorkgroupId
-                            | Builtin::LocalId
-                            | Builtin::GlobalId
-                            | Builtin::NumWorkgroups
-                            | Builtin::InvocationSubgroupIndex
-                            | Builtin::SubgroupIndex
-                    ),
-                    "three-rs: the compute builtin {} is only readable in a compute kernel",
-                    b.name()
-                );
-                // `IndexNode.generate()`
-                // (`src/nodes/core/IndexNode.js:96-112`): the vertex and
-                // instance indices are the raw builtin in the vertex and
-                // compute stages and `varying( this )` anywhere else. WGSL has
-                // no `instance_index` in a fragment entry point at all, so this
-                // is not cosmetic — reading `instanceIndex` in a fragment flow
-                // without it does not compile.
-                if self.stage == Stage::Fragment
-                    && matches!(b, Builtin::InstanceIndex | Builtin::VertexIndex)
-                {
-                    return self.attribute_varying(node);
-                }
-                let s = &mut self.stages[self.stage.index()];
-                if !s.builtins.contains(b) {
-                    s.builtins.push(*b);
-                }
-                b.name().to_string()
-            }
+            Node::Builtin(_) => self.generate_builtin(node),
 
             Node::Property { name, ty } => {
                 let ty = *ty;
@@ -2094,251 +2852,15 @@ impl NodeBuilder {
                 name
             }
 
-            Node::Varying(v) => {
-                let v = v.clone();
-                if let Some(name) = self.varying_slots.get(&node.key()).cloned() {
-                    // A varying is read through the `varyings` struct in the
-                    // vertex stage and as a `main` parameter in the fragment
-                    // stage — `NodeBuilder.getPropertyName()`'s two cases.
-                    return match self.stage {
-                        Stage::Vertex => format!("varyings.{name}"),
-                        Stage::Fragment => name,
-                        Stage::Compute => unreachable!("three-rs: compute has no varyings"),
-                    };
-                }
-                match self.stage {
-                    Stage::Compute => unreachable!("three-rs: compute has no varyings"),
-                    Stage::Vertex => {
-                        // Not requested by the fragment stage: a plain private
-                        // var in the vertex shader, which is exactly what
-                        // three.js emits for `v_normalViewGeometry` on the
-                        // background material.
-                        let snippet = self.generate(&v.value);
-                        let name = self.declare_var(v.name, v.ty);
-                        self.emit(format!("{name} = {snippet};"));
-                        self.cache_put(CacheKey::node(node), name.clone());
-                        name
-                    }
-                    Stage::Fragment => {
-                        let name = match v.name {
-                            Some(n) => n.to_string(),
-                            None => {
-                                let n = format!("nodeVarying{}", self.varying_counter);
-                                self.varying_counter += 1;
-                                n
-                            }
-                        };
-                        self.varyings.push((name.clone(), v.ty, v.flat));
-                        self.varying_slots.insert(node.key(), name.clone());
-                        // The vertex-side chain is flowed into the vertex stage
-                        // at the point the fragment stage asks for it.
-                        //
-                        // When the vertex stage already holds it as a private
-                        // var — `positionLocal` read, and reassigned, by the
-                        // `context.position` statements flowed before either
-                        // stage (`material.positionNode`, instancing,
-                        // skinning) — the varying carries that var's current
-                        // value. In three.js the varying *is* the variable
-                        // (`varyings.positionLocal = ( varyings.positionLocal
-                        // + … )`), so the fragment stage sees the reassigned
-                        // value, not the attribute; see `docs/nodes.md` §8.
-                        self.stage = Stage::Vertex;
-                        // Three's vertex stage writes every assignment to a
-                        // varying straight into `varyings.name`, so what
-                        // reaches the fragment stage is the last value
-                        // assigned (`webgpu_particles`' `positionLocal`, moved
-                        // by its `positionNode`). The port's vertex stage
-                        // holds that value in the private var until now.
-                        let reassigned = self.reassigned_varyings.contains(&node.key());
-                        let snippet = match self.cache_get(CacheKey::node(node)) {
-                            Some(var) if reassigned => var,
-                            _ => self.generate(&v.value),
-                        };
-                        self.emit(format!("varyings.{name} = {snippet};"));
-                        self.stage = Stage::Fragment;
-                        name
-                    }
-                }
-            }
+            Node::Varying(_) => self.generate_varying(node),
 
-            Node::Assign { target, value } => {
-                let (target, value) = (target.clone(), value.clone());
-                let want = target.ty();
-                // `AssignNode.generate()` generates the target first: a var's
-                // lazy initialiser therefore lands above the statement that
-                // first assigns to it, and the temps the value needs are
-                // numbered after it.
-                let lhs = self.generate(&target);
-                if self.stage == Stage::Vertex && matches!(target.node(), Node::Varying(_)) {
-                    self.reassigned_varyings.insert(target.key());
-                }
-                let snippet = self.format(&value, want);
-                // `AssignNode.needsSplitAssign()`: WGSL has no swizzle assign
-                // (`builder.isAvailable( 'swizzleAssign' )` is false), so a
-                // multi-component swizzle target that is not the whole vector
-                // goes through a temp and one statement per component —
-                // `diffuseColor.rgb.mulAssign( … )` on a `vec4` is
-                // `nodeVarN = ( DiffuseColor.xyz * … ); DiffuseColor.x =
-                // nodeVarN[ 0 ]; …`. A target that *is* the whole vector
-                // (`positionLocal.xyz` on a `vec3`) keeps the plain form.
-                if let Some((root, components)) = self.split_assign_target(&target) {
-                    let temp = self.declare_var(None, want);
-                    self.emit(format!("{temp} = {snippet};"));
-                    let root = self.generate(&root);
-                    for (i, component) in components.chars().enumerate() {
-                        self.emit(format!("{root}.{component} = {temp}[ {i} ];"));
-                    }
-                    return lhs;
-                }
-                self.emit(format!("{lhs} = {snippet};"));
-                lhs
-            }
+            Node::Assign { .. } => self.generate_assign(node),
 
-            Node::Op { op, a, b, ty } => {
-                let (op, a, b, ty) = (*op, a.clone(), b.clone(), *ty);
-                // A comparison's operands are formatted to the wider
-                // *operand* type (`OperatorNode.getNodeType()`'s
-                // `typeA`/`typeB`), not to its `bool` result; the component
-                // type is the operand's, so a `u32` comparison stays `u32`.
-                let want = if ty.component_type() == Type::Bool {
-                    let (ta, tb) = (a.ty(), b.ty());
-                    if ta.components() > 1 {
-                        ta
-                    } else if tb.components() > 1 {
-                        tb
-                    } else if ta != tb {
-                        Type::F32
-                    } else {
-                        ta
-                    }
-                } else {
-                    ty
-                };
-                // `OperatorNode.generate()`'s two matrix-and-scalar arms
-                // (`OperatorNode.js:360`). A matrix times a float is emitted
-                // with the *float first* — `( skinWeight.x * boneMat )`, not
-                // `( boneMat * skinWeight.x )` — and a float times a matrix is
-                // emitted with no enclosing parens at all. Neither operand is
-                // widened to the result type in either case. Both quirks are
-                // visible in Three's skinning dump, which multiplies the same
-                // pair both ways round in the two statements it emits.
-                if a.ty().is_matrix() && b.ty() == Type::F32 {
-                    let sa = self.generate(&a);
-                    let sb = self.generate(&b);
-                    format!("( {sb} {op} {sa} )")
-                } else if a.ty() == Type::F32 && b.ty().is_matrix() {
-                    let sa = self.generate(&a);
-                    let sb = self.generate(&b);
-                    format!("{sa} {op} {sb}")
-                } else if op == ">>" || op == "<<" {
-                    // `OperatorNode`: a shift's amount is `changeComponentType(
-                    // typeB, 'uint' )`, the value is the result type.
-                    let sa = self.format(&a, want);
-                    let amount = Type::vector_of(Type::U32, b.ty().components().max(1));
-                    let sb = self.format(&b, amount);
-                    format!("( {sa} {op} {sb} )")
-                } else {
-                    let sa = if a.ty().is_matrix() {
-                        self.generate(&a)
-                    } else {
-                        self.format(&a, want)
-                    };
-                    let sb = if b.ty().is_matrix() {
-                        self.generate(&b)
-                    } else {
-                        self.format(&b, want)
-                    };
-                    format!("( {sa} {op} {sb} )")
-                }
-            }
+            Node::Op { .. } => self.generate_op(node),
 
-            Node::Math { name, args, ty } => {
-                if let Some(snippet) = self.generate_packing(name, args) {
-                    return snippet;
-                }
-                let (name, args, ty) = (*name, args.clone(), *ty);
-                // `WGSLNodeBuilder`'s `wgslPolyfill` table: a method that
-                // lowers to a `tsl_*` helper brings the helper's code with it.
-                if let Some(snippet) = wgsl::polyfill(name) {
-                    self.add_code(name, snippet);
-                }
-                // `mix`'s interpolant and `cross`/`reflect`'s operands keep
-                // their own types; everything else is widened to the result
-                // type, as `MathNode.generate()` does.
-                // `MathNode.getInputType()`: a method whose result is narrower
-                // than its operands widens its operands to the wider *operand*,
-                // not to the result type. `distance` returns an `f32` from two
-                // vectors, so `format( a, ty )` would swizzle them down; `dot`
-                // is the same, and `luminance( vec4 )` is the case that makes
-                // it load-bearing (`webgpu_postprocessing_difference`): three
-                // widens the `vec3` coefficients to `vec4( vec3( … ), 1.0 )`,
-                // so the alpha difference is weighted 1.0 and not dropped.
-                let input_ty = args
-                    .iter()
-                    .map(|a| a.ty())
-                    .max_by_key(|t| t.components())
-                    .unwrap_or(ty);
-                let parts: Vec<String> = args
-                    .iter()
-                    .enumerate()
-                    .map(|(i, a)| match name {
-                        "distance" => self.format(a, input_ty),
-                        "mix" if i == 2 => self.generate(a),
-                        // `MathNode.REFRACT`: I and N take the input type, eta
-                        // is built as a `float`.
-                        "refract" if i == 2 => self.format(a, Type::F32),
-                        "refract" => self.format(a, input_ty),
-                        "dot" => self.format(a, input_ty),
-                        "cross" | "reflect" | "normalize" | "transpose" | "tsl_inverse_mat2"
-                        | "tsl_inverse_mat3" | "tsl_inverse_mat4" | "determinant" | "length"
-                        | "dpdx" | "- dpdy" | "inverseSqrt" | "all" | "any" => self.generate(a),
-                        // `select( f, t, cond )`'s condition is a bool, and the
-                        // MaterialX helpers pass their own already-typed
-                        // operands; nothing here is widened.
-                        "select" | "fract" | "sqrt" | "abs" => self.generate(a),
-                        // `MathNode.generate()` builds both of `step`'s
-                        // operands at the input type, so a scalar edge
-                        // widens: `step( vec3<f32>( 0.5 ), base )` in
-                        // `blendOverlay` — WGSL has no mixed overload.
-                        "step" => self.format(a, input_ty),
-                        // `BitcastNode` builds its operand as it stands; the
-                        // result type is the cast's, not the input's.
-                        n if n.starts_with("bitcast<") => self.generate(a),
-                        _ => self.format(a, ty),
-                    })
-                    .collect();
-                format!("{name}( {} )", parts.join(", "))
-            }
+            Node::Math { .. } => self.generate_math(node),
 
-            Node::Swizzle {
-                node: inner,
-                components,
-                ..
-            } => {
-                let (inner, components) = (inner.clone(), *components);
-                // `SplitNode.generate()`: `if ( componentsLength >=
-                // nodeTypeLength ) … node.build( builder, type )` — a
-                // component past the end of the source *expands* the source
-                // rather than swizzling out of bounds. `renderOutput()` asking
-                // a vec3 `outputNode` for its alpha is that case, and it is
-                // not cosmetic: `vec3.w` is not WGSL
-                // (`webgpu_postprocessing_difference`).
-                // `SplitNode.getVectorLength()`.
-                let reach = components
-                    .bytes()
-                    .map(|c| "xyzw".find(c as char).unwrap_or(0) + 1)
-                    .chain(std::iter::once(components.len()))
-                    .max()
-                    .unwrap_or(1);
-                let from = inner.ty();
-                let snippet = if reach > from.components() {
-                    let wider = Type::vector_of(from.component_type(), reach);
-                    self.format(&inner, wider)
-                } else {
-                    self.generate(&inner)
-                };
-                format!("{snippet}.{components}")
-            }
+            Node::Swizzle { .. } => self.generate_swizzle(node),
 
             // `ConvertNode.generate()` is `builder.format( snippet, from, to )`.
             // Widening goes through the shared ladder, so `vec3( vec2 )` is
@@ -2347,35 +2869,7 @@ impl NodeBuilder {
             // its `.xyz` in `PMREMUtils.bilinearCubeUV`. A same-width cast
             // keeps the explicit constructor the port has always emitted (see
             // `wgsl::convert`).
-            Node::Cast { node: inner, ty } => {
-                let (inner, ty) = (inner.clone(), *ty);
-                let from = inner.ty();
-                let snippet = self.generate(&inner);
-                if ty == from {
-                    // `ConvertNode` to the type it already has — see
-                    // `materialx::mx_nodes::convert`. `format()` returns the
-                    // snippet untouched.
-                    return snippet;
-                }
-                // `NodeBuilder.format()`'s two matrix narrowings.
-                if from == Type::Mat4 && ty == Type::Mat3 {
-                    return format!(
-                        "{}( {snippet}[ 0 ].xyz, {snippet}[ 1 ].xyz, {snippet}[ 2 ].xyz )",
-                        wgsl::type_name(ty)
-                    );
-                }
-                if from == Type::Mat3 && ty == Type::Mat2 {
-                    return format!(
-                        "{}( {snippet}[ 0 ].xy, {snippet}[ 1 ].xy )",
-                        wgsl::type_name(ty)
-                    );
-                }
-                if ty.components() == from.components() {
-                    format!("{}( {snippet} )", wgsl::type_name(ty))
-                } else {
-                    wgsl::convert(&snippet, from, ty)
-                }
-            }
+            Node::Cast { .. } => self.generate_cast(node),
 
             Node::Neg { node: inner, .. } => {
                 let inner = inner.clone();
@@ -2415,205 +2909,11 @@ impl NodeBuilder {
                 format!("{snippet}[ {idx} ]")
             }
 
-            Node::Texture {
-                texture, uv, mode, ..
-            } => {
-                let (texture, uv, mode) = (texture.clone(), uv.clone(), mode.clone());
-                let mode_is_color = matches!(
-                    mode,
-                    SampleMode::Sample
-                        | SampleMode::Grad(..)
-                        | SampleMode::Level(_)
-                        | SampleMode::Bias(_)
-                        | SampleMode::Load
-                ) && matches!(*texture, TextureSource::Texture2D(_));
-                let (name, kind) = self.texture_slots(&texture);
-                let suv = self.generate(&uv);
-                // `TextureNode.generate()` builds the snippet as a `vec4` and
-                // `format()`s it to the node type: an RG map's `vec2` node
-                // gets `.xy` on the fetch itself.
-                let narrow = |s: String| {
-                    if node.ty() == Type::Vec2 {
-                        format!("{s}.xy")
-                    } else {
-                        s
-                    }
-                };
-                let snippet = match mode {
-                    SampleMode::Sample => {
-                        format!("textureSample( {name}, {name}_sampler, {suv} )")
-                    }
-                    SampleMode::Grad(grad_x, grad_y) => {
-                        let sx = self.format(&grad_x, Type::Vec2);
-                        let sy = self.format(&grad_y, Type::Vec2);
-                        format!("textureSampleGrad( {name}, {name}_sampler, {suv}, {sx}, {sy} )")
-                    }
-                    // `generateTextureGather()`, with three's spacing: no
-                    // space before the closing parenthesis without an offset.
-                    SampleMode::Gather { component, offset } => {
-                        let scomponent = self.format(&component, Type::I32);
-                        match offset {
-                            Some(offset) => {
-                                let soffset = self.format(&offset, Type::IVec2);
-                                format!(
-                                    "textureGather( {scomponent}, {name}, {name}_sampler, {suv}, {soffset} )"
-                                )
-                            }
-                            None => format!(
-                                "textureGather( {scomponent}, {name}, {name}_sampler, {suv})"
-                            ),
-                        }
-                    }
-                    // `generateTextureGatherCompare()`, the same spacing.
-                    //
-                    // Quirk kept: `TextureNode.generate()` types a gather's
-                    // snippet from `texture.type`, and a `DepthTexture` is
-                    // `UnsignedIntType` by default, so three takes the result
-                    // for a `uvec4` and formats it to the node's `vec4` —
-                    // `vec4<f32>( textureGatherCompare( … ) )`, a no-op cast
-                    // in WGSL (`docs/nodes.md` §44).
-                    SampleMode::GatherCompare { compare, offset } => {
-                        let int_typed = match &*texture {
-                            TextureSource::Depth(t) | TextureSource::ShadowMap(t) => {
-                                t.texture_type() == crate::textures::TextureType::UnsignedInt
-                            }
-                            _ => false,
-                        };
-                        let scompare = self.format(&compare, Type::F32);
-                        let gather = match offset {
-                            Some(offset) => {
-                                let soffset = self.format(&offset, Type::IVec2);
-                                format!(
-                                    "textureGatherCompare( {name}, {name}_sampler, {suv}, {scompare}, {soffset} )"
-                                )
-                            }
-                            None => format!(
-                                "textureGatherCompare( {name}, {name}_sampler, {suv}, {scompare})"
-                            ),
-                        };
-                        if int_typed {
-                            format!("vec4<f32>( {gather} )")
-                        } else {
-                            gather
-                        }
-                    }
-                    // `texture3D( … ).sample( uv ).r`: the texture node is
-                    // built as a `float`, so the fetch itself is narrowed and
-                    // the node's var is an `f32` — three's
-                    // `nodeVar7 = textureSampleLevel( … ).x`.
-                    SampleMode::Level(level) if node.ty().components() == 1 => {
-                        let slevel = self.generate(&level);
-                        format!("textureSampleLevel( {name}, {name}_sampler, {suv}, {slevel} ).x")
-                    }
-                    SampleMode::Level(level) => {
-                        let slevel = self.generate(&level);
-                        format!("textureSampleLevel( {name}, {name}_sampler, {suv}, {slevel} )")
-                    }
-                    SampleMode::Bias(bias) => {
-                        let sbias = self.generate(&bias);
-                        format!("textureSampleBias( {name}, {name}_sampler, {suv}, {sbias} )")
-                    }
-                    SampleMode::LoadLayer(layer) => {
-                        let slayer = self.generate(&layer);
-                        wgsl::texture_load_layer(&name, &suv, &slayer)
-                    }
-                    SampleMode::SampleLayer(layer) => {
-                        let slayer = self.generate(&layer);
-                        // `depthNode.build( builder, 'int' )`: a float layer
-                        // is cast, an int one passes through.
-                        let slayer = if layer.ty() == Type::I32 {
-                            slayer
-                        } else {
-                            format!("i32( {slayer} )")
-                        };
-                        format!("textureSample( {name}, {name}_sampler, {suv}, {slayer} )")
-                    }
-                    SampleMode::Compare(depth) => {
-                        let sdepth = self.generate(&depth);
-                        format!("textureSampleCompare( {name}, {name}_sampler, {suv}, {sdepth} )")
-                    }
-                    // A depth texture's `textureLoad` is already the `f32`:
-                    // `TAAUtils.sampleCurrentDepth()`'s `depthNode.load(
-                    // neighbor ).r` is three's bare
-                    // `textureLoad( depth, vec2<i32>( n ), u32( 0u ) )`.
-                    SampleMode::LoadTexel if matches!(*texture, TextureSource::Depth(_)) => {
-                        wgsl::texture_load_texel(&name, &suv)
-                    }
-                    SampleMode::LoadTexel => {
-                        let snippet = wgsl::texture_load_texel(&name, &suv);
-                        // `textureLoad( t, coord ).x` on the `r32uint`
-                        // indirect table: Three splits the `uvec4` and caches
-                        // the scalar, so the swizzle rides along with the
-                        // fetch rather than becoming a second property.
-                        if node.ty().components() == 1 {
-                            format!("{snippet}.x")
-                        } else {
-                            snippet
-                        }
-                    }
-                    SampleMode::Load => {
-                        self.add_code("tsl_coord_clampS_clampT_2d", wgsl::CLAMP_WRAP_SNIPPET);
-                        // `WGSLNodeBuilder.generateTextureDimension()` keeps
-                        // one dimensions var per texture in `builder.cache`,
-                        // so a second tap in the same scope (or one nested in
-                        // it) reuses it, and a sibling `if` declares its own.
-                        let dims_key = CacheKey::TextureDimensions(name.clone());
-                        let dims = match self.cache_get(dims_key.clone()) {
-                            Some(dims) => dims,
-                            None => {
-                                let dims = self.declare_var(None, Type::UVec2);
-                                let dims_expr = wgsl::texture_dimensions(&name, kind);
-                                self.emit(format!("{dims} = {dims_expr};"));
-                                self.cache_put(dims_key, dims.clone());
-                                dims
-                            }
-                        };
-                        wgsl::texture_load(&name, &suv, &dims)
-                    }
-                    // `generateStorageTextureLoad()`: no level argument.
-                    SampleMode::StorageLoad => {
-                        let snippet = format!("textureLoad( {name}, {suv} )");
-                        if node.ty().components() == 1 {
-                            format!("{snippet}.x")
-                        } else {
-                            snippet
-                        }
-                    }
-                };
-                if mode_is_color {
-                    narrow(snippet)
-                } else {
-                    snippet
-                }
-            }
+            Node::Texture { .. } => self.generate_texture(node),
 
             // `StorageTextureNode.generateStore()` →
             // `WGSLNodeBuilder.generateTextureStore()`.
-            Node::TextureStore {
-                texture,
-                coord,
-                value,
-            } => {
-                let (texture, coord, value) = (texture.clone(), coord.clone(), value.clone());
-                let (name, kind) = self.texture_slots(&texture);
-                let dim3 = matches!(kind, TextureKind::Storage { dim3: true, .. });
-                let scoord = self.generate(&coord);
-                let svalue = self.format(&value, Type::Vec4);
-                // `uvNode.build( builder, 'uvec2' | 'uvec3' )`, whatever the
-                // coordinate's own type: `textureStore( t, vec2<u32>( a, b ),
-                // … )` for a `uvec2( a, b )`, `vec2<u32>( c )` for an `ivec2`
-                // held in `c`.
-                let coord_ty = if dim3 { "vec3<u32>" } else { "vec2<u32>" };
-                let scoord = match coord.node() {
-                    Node::Join { args, .. } => {
-                        let parts: Vec<String> = args.iter().map(|a| self.generate(a)).collect();
-                        format!("{coord_ty}( {} )", parts.join(", "))
-                    }
-                    _ => format!("{coord_ty}( {scoord} )"),
-                };
-                self.emit(format!("textureStore( {name}, {scoord}, {svalue} );"));
-                String::new()
-            }
+            Node::TextureStore { .. } => self.generate_texturestore(node),
 
             Node::Break => {
                 self.emit("break;".to_string());
@@ -2684,70 +2984,11 @@ impl NodeBuilder {
                 format!("{}( {} )", def.name, parts.join(", "))
             }
 
-            Node::IfVar {
-                pre,
-                result,
-                cond,
-                body,
-            } => {
-                let (pre, result, cond, body) =
-                    (pre.clone(), result.clone(), cond.clone(), body.clone());
-                // `If()` is a statement list, not an expression: three.js emits
-                // everything ahead of the result var first, then the var's own
-                // initialiser, then the condition, then the block.
-                for stmt in &pre {
-                    self.generate_statement(stmt);
-                }
-                let name = self.generate(&result);
-                let scond = self.generate(&cond);
-                self.emit(String::new());
-                self.emit(format!("if ( {scond} ) {{"));
-                self.emit(String::new());
-                self.push_scope();
-                for stmt in &body {
-                    self.generate_statement(stmt);
-                }
-                self.emit(String::new());
-                self.pop_scope();
-                self.emit(String::new());
-                self.emit("}".to_string());
-                self.emit(String::new());
-                self.cache_put(CacheKey::node(node), name.clone());
-                name
-            }
+            Node::IfVar { .. } => self.generate_ifvar(node),
 
             Node::Select { .. } if in_uniform_flow() => self.generate_uniform_flow_select(node),
 
-            Node::Select { cond, a, b, ty } => {
-                let (cond, a, b, ty) = (cond.clone(), a.clone(), b.clone(), *ty);
-                // `ConditionalNode.generate()` builds its result property
-                // *before* the condition, so the result takes the lower
-                // `nodeVarN` number when the condition itself needs vars.
-                let result = self.declare_var(None, ty);
-                let scond = self.generate(&cond);
-                self.emit(String::new());
-                self.emit(format!("if ( {scond} ) {{"));
-                self.emit(String::new());
-                self.push_scope();
-                let sa = self.format(&a, ty);
-                self.emit(format!("{result} = {sa};"));
-                self.pop_scope();
-                self.emit(String::new());
-                self.emit("} else {".to_string());
-                self.emit(String::new());
-                self.push_scope();
-                let sb = self.format(&b, ty);
-                self.emit(format!("{result} = {sb};"));
-                self.pop_scope();
-                self.emit(String::new());
-                self.emit("}".to_string());
-                self.emit(String::new());
-                // `ConditionalNode.generate()` remembers its result property in
-                // `nodeData`, so a second reference reuses the branch rather
-                // than emitting the whole if/else again.
-                self.cache_put(CacheKey::node(node), result.clone());
-                result
-            }
+            Node::Select { .. } => self.generate_select(node),
 
             // A block is an inline `Fn()` call. Three builds its stack once
             // and leaves the result snippet in `builder.cache`, so a block
@@ -2767,104 +3008,11 @@ impl NodeBuilder {
                 snippet
             }
 
-            Node::Loop {
-                start,
-                count,
-                index,
-                condition,
-                update,
-                body,
-            } => {
-                let (start, count, index, condition, update, body) = (
-                    start.clone(),
-                    count.clone(),
-                    index.clone(),
-                    *condition,
-                    update.clone(),
-                    body.clone(),
-                );
-                // The start is generated before the end, which is the order
-                // three.js' `LoopNode` builds them in and so the order their
-                // vars and uniforms are numbered in.
-                let index_ty = index.ty();
-                let sstart = match &start {
-                    Some(start) => self.loop_bound(start, index_ty),
-                    None => wgsl::constant(index_ty, &[0.0]),
-                };
-                let scount = self.loop_bound(&count, index_ty);
-                let name = match index.node() {
-                    Node::Param { name, .. } => *name,
-                    _ => "i",
-                };
-                let ty = wgsl::type_name(index_ty);
-                // `LoopNode.generate()`'s default update: `++` / `--` for an
-                // integer index, `+= 1.` / `-= 1.` for anything else.
-                let rising = condition.contains('<');
-                let default_update = match (index_ty, rising) {
-                    (Type::I32 | Type::U32, true) => "++",
-                    (Type::I32 | Type::U32, false) => "--",
-                    (_, true) => "+= 1.",
-                    (_, false) => "-= 1.",
-                };
-                // `Loop( { update } )` — `i += update` in place of the
-                // default, `RaymarchingBox`'s float march.
-                let step = match &update {
-                    Some(update) => format!("{name} += {}", self.generate(update)),
-                    None => format!("{name} {default_update}"),
-                };
-                self.emit(String::new());
-                self.emit(format!(
-                    "for ( var {name} : {ty} = {sstart}; {name} {condition} {scount}; {step} ) {{"
-                ));
-                self.emit(String::new());
-                self.push_scope();
-                for stmt in &body {
-                    self.generate_statement(stmt);
-                }
-                self.pop_scope();
-                self.emit(String::new());
-                self.emit("}".to_string());
-                self.emit(String::new());
-                String::new()
-            }
+            Node::Loop { .. } => self.generate_loop(node),
 
             // `If( cond, … )` as a statement: no result property, unlike
             // `Node::Select`.
-            Node::If {
-                cond,
-                body,
-                else_body,
-            } => {
-                let (cond, body, else_body) = (cond.clone(), body.clone(), else_body.clone());
-                let scond = self.generate(&cond);
-                self.emit(String::new());
-                self.emit(format!("if ( {scond} ) {{"));
-                self.emit(String::new());
-                self.push_scope();
-                for statement in &body {
-                    self.generate_statement(statement);
-                }
-                self.if_arm_tail(&body);
-                self.pop_scope();
-                self.emit(String::new());
-                // A one-armed `If` emits exactly what it always did; the
-                // `else` is additive, and takes `Node::Select`'s spacing,
-                // which is the same `StackNode` text.
-                if !else_body.is_empty() {
-                    self.emit("} else {".to_string());
-                    self.emit(String::new());
-                    self.push_scope();
-                    for statement in &else_body {
-                        self.generate_statement(statement);
-                    }
-                    self.if_arm_tail(&else_body);
-                    self.pop_scope();
-                    self.emit(String::new());
-                }
-                self.emit("}".to_string());
-                self.emit(String::new());
-                String::new()
-            }
+            Node::If { .. } => self.generate_if(node),
 
             Node::Discard => {
                 self.emit("discard;".to_string());
@@ -2935,64 +3083,10 @@ impl NodeBuilder {
             // parents[ 0 ].isStackNode` — nothing but the flow reads it — is a
             // bare call; anything else also reads the old value, which three
             // holds in a `let` declared where the call is made.
-            Node::Atomic {
-                method,
-                pointer,
-                value,
-            } => {
-                let (method, pointer, value) = (*method, pointer.clone(), value.clone());
-                let is_statement = self.statement == Some(node.key());
-                assert_ne!(
-                    self.stage,
-                    Stage::Vertex,
-                    "three-rs: {method} is not supported in the vertex stage"
-                );
-                let ty = pointer.ty();
-                let mut params = vec![format!("&{}", self.generate(&pointer))];
-                if let Some(value) = &value {
-                    // `b.build( builder, inputType )` — a float into a `u32`
-                    // atomic is `u32( x )`, the same-width conversion
-                    // `wgsl::convert` writes out.
-                    params.push(self.format(value, ty));
-                }
-                let call = format!("{method}( {} )", params.join(", "));
-                if is_statement && self.usage_of(node) <= 1 {
-                    self.emit(format!("{call};"));
-                    return String::new();
-                }
-                let name = self.declare_const(None);
-                // `generateLetStatement()` is `let ${ name }` in WGSL — no type.
-                self.emit(format!("let {name} = {call};"));
-                self.cache_put(CacheKey::node(node), name.clone());
-                name
-            }
+            Node::Atomic { .. } => self.generate_atomic(node),
 
             // `WorkgroupInfoNode.generate()` → `builder.getScopedArray()`.
-            Node::Workgroup(def) => {
-                let def = def.clone();
-                assert_eq!(
-                    self.stage,
-                    Stage::Compute,
-                    "three-rs: workgroupArray() can only be used in a compute kernel"
-                );
-                let key = Rc::as_ptr(&def) as *const u8 as usize;
-                if let Some(name) = self.workgroup_names.get(&key) {
-                    return name.clone();
-                }
-                let name = format!("WorkgroupArray_{}", self.workgroup_names.len());
-                let ty = wgsl::type_name(def.element_ty);
-                let ty = if def.atomic {
-                    format!("atomic<{ty}>")
-                } else {
-                    ty.to_string()
-                };
-                self.workgroup_locals.push(format!(
-                    "var<workgroup> {name}: array< {ty}, {} >;",
-                    def.count
-                ));
-                self.workgroup_names.insert(key, name.clone());
-                name
-            }
+            Node::Workgroup(_) => self.generate_workgroup(node),
 
             // Resolved in `generate()` before it gets here.
             Node::Compute { .. } => unreachable!("three-rs: a ComputeNode generates its output"),
