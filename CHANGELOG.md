@@ -8,6 +8,18 @@ have their own sections after the release they ship with. The format follows [Ke
 
 ### Added
 
+- **`temporal_reproject`** (`nodes::display`), a port of
+  `examples/jsm/tsl/display/TemporalReprojectNode.js`, the temporal stage of
+  `webgpu_postprocessing_ssr_denoise`'s denoiser. It reprojects a history
+  along the velocity attachment with a depth- and normal-weighted 4-tap
+  fetch, clips it to the neighbourhood's YCoCg variance box, and writes
+  `1 / frameCount` in alpha. It covers both modes (`Specular` adds the
+  parallax hit-point history), `accumulate`, `set_history_texture()`, and
+  the `max_frames`, `hit_point_reprojection`, `clamp_intensity` and
+  `flicker_suppression` uniforms as `SettableValue`s. The seed quad and both
+  resolve quads are gated against three's dump in
+  `tests/nodes_display_wgsl.rs`, and `tests/temporal_reproject_frames.rs`
+  checks the history on the GPU. See `docs/nodes.md` §87.
 - **`WaterMesh`** (`addons::objects`), a port of
   `examples/jsm/objects/WaterMesh.js`: a planar `reflector()` distorted by
   four scrolling taps of a normal map, with a sun highlight and a Fresnel mix
