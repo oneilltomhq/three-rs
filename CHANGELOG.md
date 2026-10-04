@@ -72,6 +72,26 @@ have their own sections after the release they ship with. The format follows [Ke
   `depth_texture_load`, `all`, `view_z_to_perspective_depth` and
   `get_view_position`. Also `Renderer::init_render_target` and
   `RenderPipeline::claim_view_offset`. (#165)
+- **`retro_pass`** (`nodes::display`), `RetroPassNode.js`: a scene pass at a
+  quarter of the canvas, nearest-filtered, that draws classic materials with
+  snapped vertices, level-0 textures and optional affine mapping. A node
+  material is drawn as itself, as in three. See `docs/nodes.md` §79.
+- **The CRT effects** of `CRT.js` (`barrel_uv`, `barrel_mask`,
+  `color_bleeding`, `scanlines`, `vignette`), `circle` from `Shape.js`, and
+  `bayer_dither` from `Bayer.js`.
+- **`film`, `sepia` and `bleach`**, from `FilmNode.js`, `Sepia.js` and
+  `BleachBypass.js`. No three page uses them, so they are gated against
+  `tools/dump-pages/film_sepia_bleach.html`. See `docs/nodes.md` §80.
+- **`tsl::replace_default_uv`** and **`MeshBasicNodeMaterial::context_node`**.
+  `texture()` now takes its uv from a `getUV` in the build context, and a
+  `getTextureLevel` makes it sample at that level.
+- **`PassNode::set_resolution_scale`** and a crate-private per-draw
+  render-object function on `PassNode`.
+- **glTF `KHR_materials_unlit`**: such a material loads as a basic material.
+- **`webgpu_postprocessing_retro`** in the native viewer. three.js misses its
+  own reference for the page on this machine (1503 of 100000 pixels), so its
+  e2e rung is ignored. Three's dump gates its two post-processing shaders,
+  and `tests/retro_frames.rs` checks the pass on the GPU.
 
 ### Changed
 
@@ -104,6 +124,12 @@ have their own sections after the release they ship with. The format follows [Ke
   it, as `BasicLightingModel` does.
 - **Skinned shadow casters** are skinned in directional and spot shadow maps.
   Point-light shadows of skinned meshes are still unskinned. (#163)
+- A texture sampled outside the fragment stage, such as in a `positionNode`,
+  emits `textureSampleLevel( …, 0 )`, as three does. It used to emit
+  `textureSample`, which WGSL rejects in a vertex shader.
+- A background that is an inline `Fn()` call is built inside the skybox
+  material, as three builds every `Fn` body. So `normalWorld` in it is the
+  back-side normal.
 
 ## [0.2.0] - 2026-09-29
 

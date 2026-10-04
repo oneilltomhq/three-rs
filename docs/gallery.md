@@ -120,8 +120,10 @@ out and left out of the grid; run the ladder to include it.
 
 A page that three's own e2e harness skips has no reference that upstream
 holds itself to. Those pages are the ones listed in `test/e2e/puppeteer.js`'s
-exception list. Such a page is not a row in "Examples graded green", so it
-gets no thumbnail here and no build in the browser shell, whose manifests are
+exception list. Nor does a page that three.js itself renders more than the
+limit away from its own reference on this machine, since a port that matched
+three would fail the same way. Such a page is not a row in "Examples graded
+green", so it gets no thumbnail here and no build in the browser shell, whose manifests are
 exactly the graded set. The README lists it instead in a two-column table
 under the graded one: the example, and why it has no grade. The generator and
 its tests read only five- and six-cell rows, so they skip that table.
@@ -129,6 +131,7 @@ its tests read only five- and six-cell rows, so they skip that table.
 | example | reason |
 |---|---|
 | `webgpu_postprocessing_traa` | three's exception list, "Black screen". Gated on its resolve shader and on `tests/traa_frames.rs` |
+| `webgpu_postprocessing_retro` | three.js misses its own reference here (1503 of 100000 pixels, limit 0.1%); the port scores the same. Gated on its two post-processing shaders and on `tests/retro_frames.rs` |
 
 ## Reference images stay out of the tree
 

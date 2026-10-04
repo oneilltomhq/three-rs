@@ -53,7 +53,9 @@ that verifies each present row.
   cube textures, `CubeCamera` / `CubeRenderTarget`, line topology, viewport /
   scissor / `clearDepth` and `autoClear`. `velocity` as an MRT output, with
   three's previous-frame matrices and skinned `positionPrevious`, and temporal
-  reprojection anti-aliasing (`traa`) on top of it.
+  reprojection anti-aliasing (`traa`) on top of it. A `PassNode` can draw
+  its scene at a fraction of the canvas and swap each draw's material, which
+  is how `retroPass` draws a scene the way a PS1 did.
 - **Addons.** `src/addons/` holds the `three/addons/…` tier that the graded
   examples import: `lines` (`LineSegmentsGeometry`, `LineGeometry`,
   `LineSegments2`, `Line2` — fat lines, with `Line2NodeMaterial` in core beside
@@ -70,8 +72,8 @@ that verifies each present row.
   `KHR_draco_mesh_compression`, `EXT_meshopt_compression`, `KHR_texture_basisu`,
   `KHR_texture_transform`, `EXT_texture_webp` / `EXT_texture_avif`, and the
   `KHR_materials_*` extensions: specular, ior, clearcoat, sheen, transmission,
-  volume, anisotropy, diffuse roughness, emissive strength), textures (PNG,
-  JPEG, GIF, WebP, AVIF), cube textures, KTX2, HDR and Ultra HDR, `BufferGeometryLoader`,
+  volume, anisotropy, diffuse roughness, emissive strength, unlit), textures
+  (PNG, JPEG, GIF, WebP, AVIF), cube textures, KTX2, HDR and Ultra HDR, `BufferGeometryLoader`,
   typeface.json fonts (`FontLoader`).
 - **Animation.** Interpolants, keyframe tracks, clips, `PropertyMixer`,
   `AnimationAction` and `AnimationMixer`.
@@ -249,13 +251,15 @@ a moment later (`tests/renderer_compute_indirect.rs`); the notes say what each
 asserts. The triangle counts are the CPU-side counts `renderer.info()` records
 for an indirect draw, as three's does, not what the GPU was told to draw.
 
-Some pages are ported but cannot be graded, because three's own e2e harness
-skips them. They are in the native viewer, not in the gallery or the
-browser shell:
+Some pages are ported but cannot be graded. Either three's own e2e harness
+skips them, or three.js itself misses its own reference screenshot on this
+machine, so a matching port would miss it too. They are in the native
+viewer, not in the gallery or the browser shell:
 
 | example | why it has no grade |
 |---|---|
 | [`webgpu_postprocessing_traa`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_traa.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_traa-progress.md) | in three's e2e exception list (`test/e2e/puppeteer.js`, "Black screen"). It is gated instead on its resolve shader against three's dump and on `tests/traa_frames.rs` |
+| [`webgpu_postprocessing_retro`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_retro.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_retro-progress.md) | three.js scores 1.5% against its own reference here, over the 0.1% limit, and the port scores the same 1503 pixels. It is gated instead on its two post-processing shaders against three's dump and on `tests/retro_frames.rs` |
 
 Measured on Intel Iris Xe, Mesa 25.3.6, Fedora 43, against three.js 5f610f5
 (past r186, for the cube PMREM of 2f80402; the pin becomes the r187 tag once
@@ -321,8 +325,9 @@ cargo run --release --bin viewer -- shadowmap --headless --frames 40
 ```
 
 Opens the named example in a window (winit, tested on Wayland). All 85 graded
-examples are there, and so is the ungraded `webgpu_postprocessing_traa`. Each one animates, orbits, dollies and pans through
-its *own* `animate()`, `resize()` and `OrbitControls` — the viewer drives the
+examples are there, and so are the ungraded `webgpu_postprocessing_traa` and
+`webgpu_postprocessing_retro`. Each one animates, orbits, dollies and pans
+through its *own* `animate()`, `resize()` and `OrbitControls` — the viewer drives the
 example, it does not restate it. `--list` prints the examples with their keys,
 and a key stands in for the name on the command line; in the window, `[` and
 `]` step to the previous and next example, because 56 of them do not fit in

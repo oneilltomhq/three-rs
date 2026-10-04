@@ -348,3 +348,28 @@ fn traa_clip_aabb_matches_three() {
 fn traa_flicker_reduction_matches_three() {
     check("traa", Region::Function("flickerReduction"));
 }
+
+#[test]
+fn retro_barrel_matches_three() {
+    check("retro_barrel", Region::Body);
+}
+
+#[test]
+fn retro_crt_matches_three() {
+    check("retro_crt", Region::Body);
+}
+
+#[test]
+fn bleach_bypass_matches_three() {
+    check("bleach_bypass", Region::Body);
+}
+
+#[test]
+fn sepia_matches_three() {
+    check("sepia", Region::Body);
+}
+
+#[test]
+fn film_matches_three() {
+    check("film", Region::Body);
+}

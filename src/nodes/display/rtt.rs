@@ -87,6 +87,47 @@ pub fn convert_to_texture(node: NodeRef) -> RttNode {
     rtt(node)
 }
 
+/// A node that holds an [`RttNode`] for as long as the graph holds it.
+///
+/// The renderer reaches an `RttNode` through its texture, and only for as
+/// long as the node is alive (the registry is weak, so a dropped pass stops
+/// being drawn). Three's graph keeps the `RTTNode` because the node *is* the
+/// texture tap; the port's tap only names the texture. An inline effect that
+/// makes an `rtt()` of its own and returns a plain [`NodeRef`] —
+/// [`color_bleeding`](super::color_bleeding) — wraps its result in this, so
+/// the quad keeps being drawn while anything still reads the result.
+///
+/// Its `setup` is the wrapped node, and it is cacheable as every node is, so
+/// a result read more than once lands in one var. That is the WGSL three
+/// emits for `colorBleeding`: the `Fn` call's `vec3` is a `nodeConst` that
+/// `bayerDither` reads three times.
+struct Owned {
+    node: NodeRef,
+    _owner: RttNode,
+}
+
+impl crate::nodes::CustomNode for Owned {
+    fn type_name(&self) -> &'static str {
+        "RTTNode"
+    }
+
+    fn node_type(&self) -> crate::nodes::Type {
+        self.node.ty()
+    }
+
+    fn setup(&self, _builder: &crate::nodes::NodeBuilder) -> NodeRef {
+        self.node.clone()
+    }
+}
+
+/// `node`, holding `owner` alive; see [`Owned`].
+pub(crate) fn owned_by(node: NodeRef, owner: RttNode) -> NodeRef {
+    crate::nodes::tsl::custom(Owned {
+        node,
+        _owner: owner,
+    })
+}
+
 impl RttNode {
     /// `new RTTNode( node )`.
     pub fn new(node: NodeRef) -> Self {

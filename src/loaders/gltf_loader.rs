@@ -21,6 +21,12 @@
 //! read and `normalized` applied, and this crate widens attributes to `f32`
 //! anyway.
 //!
+//! A material with `KHR_materials_unlit` is a basic material, as
+//! `GLTFMaterialsUnlitExtension` makes it a `MeshBasicMaterial`. It reads
+//! `baseColorFactor`, `baseColorTexture` (as an sRGB `map`), `doubleSided` and
+//! `alphaMode`, and nothing else. `webgpu_postprocessing_retro`'s
+//! `coffeeMug.glb` is one.
+//!
 //! Not ported (explicit TODOs): extensions other than those in
 //! `SUPPORTED_EXTENSIONS`,
 //! Not ported (explicit TODOs): extensions (`KHR_*`, Draco, meshopt,
@@ -1962,7 +1968,15 @@ impl GltfLoader {
             return Ok(Some(cached.clone()));
         }
 
-        let mut material = self.build_material(texture_cache, def, textures, images)?;
+        let unlit = def
+            .extensions
+            .iter()
+            .any(|name| name == "KHR_materials_unlit");
+        let mut material = if unlit {
+            self.build_unlit_material(texture_cache, def, textures, images)?
+        } else {
+            self.build_material(texture_cache, def, textures, images)?
+        };
 
         if variant.use_vertex_colors {
             material.vertex_colors = true;
@@ -1970,7 +1984,10 @@ impl GltfLoader {
         if variant.use_flat_shading {
             material.flat_shading = true;
         }
-        if variant.use_derivative_tangents {
+        // `if ( material.normalScale && useDerivativeTangents )` —
+        // `MeshBasicMaterial` has no `normalScale`, so an unlit material keeps
+        // its field as it is.
+        if variant.use_derivative_tangents && !unlit {
             // mrdoob/three.js#11438: the derivative TBN frame `setupNormal()`
             // falls back to has the opposite handedness. three flips the scale
             // whenever the material *has* a `normalScale` — which every
@@ -1988,6 +2005,49 @@ impl GltfLoader {
         material_cache.insert(variant, material.clone());
 
         Ok(Some(material))
+    }
+
+    /// `GLTFParser.loadMaterial` for a material with `KHR_materials_unlit`:
+    /// `GLTFMaterialsUnlitExtension.getMaterialType()` is `MeshBasicMaterial`,
+    /// and its `extendParams()` reads only `baseColorFactor` (white and opaque
+    /// when absent) and `baseColorTexture`, as an sRGB `map`.
+    ///
+    /// `loadMaterial()`'s shared tail still applies: `doubleSided` and
+    /// `alphaMode`. Its normal, occlusion and emissive arms are each guarded
+    /// by `materialType !== MeshBasicMaterial`, so an unlit material reads
+    /// none of them, and it reads none of the PBR extensions either.
+    fn build_unlit_material(
+        &self,
+        cache: &mut HashMap<usize, Texture>,
+        material: &GltfMaterial,
+        textures: &[GltfTexture],
+        images: &[GltfImage],
+    ) -> Result<MeshBasicNodeMaterial, Error> {
+        let mut out = MeshBasicNodeMaterial::new();
+        // `materialParams.color.setRGB( …, LinearSRGBColorSpace )` and
+        // `materialParams.opacity = array[ 3 ]`. `base_color_factor` already
+        // defaults to `[ 1, 1, 1, 1 ]`, the extension's own `new Color( 1, 1,
+        // 1 )` and `opacity = 1`.
+        let [r, g, b, a] = material.base_color_factor;
+        out.color = Color::new(r, g, b);
+        out.opacity = a;
+        out.side = if material.double_sided {
+            Side::Double
+        } else {
+            Side::Front
+        };
+        // `alphaMode`, as in `build_material` (and `MASK` unwired for the
+        // same reason).
+        if material.alpha_mode == "BLEND" {
+            out.transparent = true;
+            out.depth_write = false;
+        } else {
+            out.transparent = false;
+        }
+        if let Some(map_def) = &material.base_color_texture {
+            out.map = self.assign_texture(cache, textures, images, map_def, ColorSpace::Srgb)?;
+        }
+        Ok(out)
     }
 
     /// `GLTFParser.loadMaterial`, for the two material types this crate has:
@@ -2470,6 +2530,7 @@ const SUPPORTED_EXTENSIONS: &[&str] = &[
     "KHR_materials_sheen",
     "KHR_materials_specular",
     "KHR_materials_transmission",
+    "KHR_materials_unlit",
     "KHR_materials_volume",
     "KHR_mesh_quantization",
     "KHR_texture_basisu",

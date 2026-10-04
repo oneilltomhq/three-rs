@@ -599,7 +599,7 @@ pub(crate) fn push_context(edit: impl FnOnce(&mut BuildContext)) -> ContextGuard
 
 /// `ContextNode`'s `builder.addContext( value )`: [`push_context`] with
 /// `value`'s keys merged over the current ones.
-fn push_context_value(value: &ContextValue) -> ContextGuard {
+pub(crate) fn push_context_value(value: &ContextValue) -> ContextGuard {
     push_context(|cx| {
         for (key, node) in &value.entries {
             cx.extra.insert(key, node.clone());
@@ -2102,6 +2102,12 @@ impl NodeBuilder {
                     }
                 };
                 let snippet = match mode {
+                    // `_generateTextureSample()`: outside the fragment stage
+                    // there are no implicit derivatives, so a plain sample is
+                    // `generateTextureSampleLevel()` at a literal level `0`.
+                    SampleMode::Sample if self.stage != Stage::Fragment => {
+                        format!("textureSampleLevel( {name}, {name}_sampler, {suv}, 0 )")
+                    }
                     SampleMode::Sample => {
                         format!("textureSample( {name}, {name}_sampler, {suv} )")
                     }

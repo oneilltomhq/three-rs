@@ -149,6 +149,23 @@ pub fn context(node: impl Into<NodeRef>, value: ContextValue) -> NodeRef {
     })
 }
 
+/// `replaceDefaultUV( callback, node )` — `ContextNode.js`: `node` built with
+/// `getUV` in the context, so that every texture tap in it that has no uv of
+/// its own reads `uv` instead of `uv()`.
+///
+/// The taps that honour it are the ones whose uv is decided when they are
+/// built, not when they are made: a [`CustomNode`] that asks
+/// `builder.context( "getUV" )` — the
+/// [`RetroPassNode`](crate::nodes::display::RetroPassNode)'s texture, which is
+/// what `webgpu_postprocessing_retro` wraps — and a [`texture`] call made
+/// inside one's `setup`. A tap already made, `pass( … )`'s among them, has its
+/// uv. Three's `callback` may be a function of the texture node; the port
+/// takes the uv itself, which is what `() => uv` amounts to. See
+/// `docs/nodes.md` §79.
+pub fn replace_default_uv(uv: impl Into<NodeRef>, node: impl Into<NodeRef>) -> NodeRef {
+    context(node, ContextValue::new().set("getUV", uv))
+}
+
 /// `isolate( node )` — `IsolateNode.js`: `node` is built in a `NodeCache` of
 /// its own whose parent is the current one. A node that the subgraph reaches
 /// for the first time is counted, set up and declared there, so the same node
@@ -3195,11 +3212,32 @@ fn default_uv(map: &Texture) -> NodeRef {
 }
 
 /// `texture( map )`.
+///
+/// `TextureNode.setup()` asks the builder context before it falls back to
+/// the default uv: `builder.context.getUV( this )` replaces `uv()` (and the
+/// map's uv matrix is still applied after it), and
+/// `builder.context.getTextureLevel( this )` gives the tap a level, which
+/// makes a filtered `textureSample` a `textureSampleLevel`. Both keys are
+/// read from the context in force when the tap is made — a material's
+/// [`context_node`](crate::materials::MeshBasicNodeMaterial::context_node)
+/// during its setup, or a [`context`] around an inline body. An unfilterable
+/// map keeps its `textureLoad`, which already reads level 0.
 pub fn texture(map: &Texture) -> NodeRef {
+    let (get_uv, level) = current_context(|cx| {
+        (
+            cx.extra.get("getUV").cloned(),
+            cx.extra.get("getTextureLevel").cloned(),
+        )
+    });
+    let uv = get_uv.unwrap_or_else(|| default_uv(map));
+    let mode = match (sample_mode_for(map), level) {
+        (SampleMode::Sample, Some(level)) => SampleMode::Level(level),
+        (mode, _) => mode,
+    };
     texture_node(
         TextureSource::Texture2D(map.clone()),
-        transformed_uv(default_uv(map), (0, map.id()), map.matrix()),
-        sample_mode_for(map),
+        transformed_uv(uv, (0, map.id()), map.matrix()),
+        mode,
         texture_type_for(map),
     )
 }

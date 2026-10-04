@@ -284,7 +284,9 @@ fn setup_diffuse_color(
     fragment: &mut Vec<NodeRef>,
 ) {
     let color = match &material.color_node {
-        Some(node) => to_vec4(node.clone()),
+        // A deferred `Fn()` colour runs here, in this material's context
+        // (see `resolve_fn_call`).
+        Some(node) => to_vec4(resolve_fn_call(node)),
         // `materialColor` is a vec3 (times `map` when there is one) and stays
         // one until `diffuseColor.assign()` widens it, which is what puts the
         // `vec4<f32>( … , 1.0 )` on the outside of the instance-colour product
@@ -440,6 +442,12 @@ fn setup_tangent(
     // lighting flow reaches resolves to the G-buffer texture instead of to the
     // geometry. See `docs/nodes.md` §27.
     crate::nodes::tsl::with_override_nodes(material.context_overrides.as_ref(), || {
+        // `material.contextNode = context( { … } )`: its keys are in force for
+        // the material's whole setup, so every map tap made below sees them.
+        let _context = material
+            .context_node
+            .as_ref()
+            .map(crate::nodes::builder::push_context_value);
         setup_overridden(material, ctx, fog)
     })
 }
@@ -996,8 +1004,26 @@ pub fn background_environment_color_node(
 /// `vec4( backgroundNode ).mul( backgroundIntensity )`. `vec4()` of a node
 /// that already is one is the node itself — `webgpu_equirectangular`'s
 /// `texture( map, equirectUV(), 0 )` — and of a colour it appends `1.0`.
+///
+/// A background node held in an argument-less inline `Fn()` call (see
+/// `tsl::resolve_fn_call`) stays deferred: the whole colour is wrapped in a
+/// call of its own, which `setup_diffuse_color` runs inside the skybox
+/// material's build. three.js runs every `Fn` body there, so `normalWorld` in
+/// `webgpu_postprocessing_retro`'s sky reads the `BackSide` material's
+/// negated `normalView`; built eagerly, it would read the front-sided one.
 #[doc(hidden)]
 pub fn background_node_color_node(node: NodeRef) -> NodeRef {
+    if let crate::nodes::Node::Call { def, args } = node.node() {
+        if !def.layout && args.is_empty() {
+            let deferred = node.clone();
+            return call(
+                &inline_fn(0, Type::Vec4, move |_| {
+                    background_node_color_node(resolve_fn_call(&deferred))
+                }),
+                Vec::new(),
+            );
+        }
+    }
     let color = match node.ty() {
         Type::Vec4 => node,
         _ => vec4_join(vec![node, float(1.0)]),
