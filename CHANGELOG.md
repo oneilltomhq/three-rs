@@ -89,6 +89,16 @@ have their own sections after the release they ship with. The format follows [Ke
   resolve quads are gated against three's dump in
   `tests/nodes_display_wgsl.rs`, and `tests/temporal_reproject_frames.rs`
   checks the history on the GPU. See `docs/nodes.md` §87.
+- **`taau`** (`nodes::display`), a port of
+  `examples/jsm/tsl/display/TAAUNode.js`: temporal anti-aliased upsampling
+  of a reduced-resolution scene pass to the drawing buffer's size, with the
+  page **`webgpu_upscaling_taau`** in the native viewer. The page is
+  ungraded: three.js misses its own reference on this machine (540 of
+  100000 pixels), and the port scores 539, so its e2e rung is ignored. The
+  seed and resolve quads are gated against three's dump, and
+  `tests/taau_frames.rs` checks the node on the GPU. The `TAAUtils.js`
+  helpers it shares with `traa` now live in one crate-private module. See
+  `docs/nodes.md` §90.
 - **`ImportanceSampledEnvironment`** and **`EnvMapCdfGenerator`**
   (`nodes::display`), with the SpecularHelpers microfacet helpers
   (`d_gtr`, `ggx_reflection_sample`, `mis_power_heuristic`, …) and

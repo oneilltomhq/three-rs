@@ -379,6 +379,26 @@ fn traa_flicker_reduction_matches_three() {
 }
 
 #[test]
+fn taau_seed_matches_three() {
+    check("taau_seed", Region::Body);
+}
+
+#[test]
+fn taau_resolve_matches_three() {
+    check("taau_resolve", Region::Body);
+}
+
+#[test]
+fn taau_clip_aabb_matches_three() {
+    check("taau_resolve", Region::Function("clipAABB"));
+}
+
+#[test]
+fn taau_flicker_reduction_matches_three() {
+    check("taau_resolve", Region::Function("flickerReduction"));
+}
+
+#[test]
 fn anaglyph_matches_three() {
     check("anaglyph", Region::Body);
 }

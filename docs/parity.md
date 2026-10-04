@@ -44,11 +44,11 @@ TSL by family:
 | materialx | 49 | 48 | 0 | 1 | 0 |
 | utils | 77 | 47 | 16 | 4 | 10 |
 
-Graded examples: 96 (the rows of the README's graded table, `webgpu_textures_2d-array_compressed` among them; its `rung!` spells the name with an underscore). 13 more are ported but `#[ignore]`d because three.js fails its own reference on this machine; a row whose only check is one of those is Partial.
+Graded examples: 96 (the rows of the README's graded table, `webgpu_textures_2d-array_compressed` among them; its `rung!` spells the name with an underscore). 14 more are ported but `#[ignore]`d because three.js fails its own reference on this machine; a row whose only check is one of those is Partial.
 
 ### Pages
 
-three ships 231 `webgpu_*` pages at 5f610f5. The README headline counts graded pages out of the gradeable ones, and the two tables below are what takes a page out of that denominator or keeps it out of the graded count (#293). A page is **N.A.** when no frame of it can be diffed against three's reference on a headless, session-less, media-less grading machine; the pieces of an N.A. page that are portable are judged as rows above, and the page itself is not a port target. A page is **ignored** when it is ported and its e2e test exists but is `#[ignore]`d because three.js itself fails its own reference screenshot on the grading machine (Intel Iris Xe, Mesa 25.3, Vulkan), so a pass or fail of the port says nothing. Of the 17 pages #293 lists, 16 are N.A. and one (`webgpu_sandbox`) turns out to be an ordinary scene and stays gradeable; 13 pages are ignored; 94 of the 215 gradeable pages are graded.
+three ships 231 `webgpu_*` pages at 5f610f5. The README headline counts graded pages out of the gradeable ones, and the two tables below are what takes a page out of that denominator or keeps it out of the graded count (#293). A page is **N.A.** when no frame of it can be diffed against three's reference on a headless, session-less, media-less grading machine; the pieces of an N.A. page that are portable are judged as rows above, and the page itself is not a port target. A page is **ignored** when it is ported and its e2e test exists but is `#[ignore]`d because three.js itself fails its own reference screenshot on the grading machine (Intel Iris Xe, Mesa 25.3, Vulkan), so a pass or fail of the port says nothing. Of the 17 pages #293 lists, 16 are N.A. and one (`webgpu_sandbox`) turns out to be an ordinary scene and stays gradeable; 14 pages are ignored; 94 of the 215 gradeable pages are graded.
 
 Three's own `test/e2e/puppeteer.js` still screenshots 13 of the 17 (it excepts only the three TSL editors and `webgpu_compute_audio`), so most have a reference JPEG; the third column says what that JPEG is a picture of and why diffing the port against it would not verify the page.
 
@@ -88,6 +88,7 @@ Ported, `#[ignore]`d. Each row gives three's own score against its reference JPE
 | `webgpu_multisampled_renderbuffers` | 2405 | 2405 | identical (0) | the wireframe `line-list` coverage on the reference GPU | local frame |
 | `webgpu_camera` | 922 | 922 | identical (0) | wireframe lines and the `CameraHelper` lines on the reference GPU | local frame |
 | `webgpu_textures_anisotropy` | 9234 | 9234 | identical (0) | the reference's minified texels come from another GPU's anisotropic sampler, in both halves | local frame |
+| `webgpu_upscaling_taau` | 540 | 539 | 25 over 2 of 255 (max 12) | the model's thin wires, poles and rails, drawn at half resolution, rasterise differently on the reference GPU; the diff sits along their edges | local frame (25 pixels is under the limit) |
 | `webgpu_lights_custom` | 416 | 416 | identical (0) | 500000 one-pixel MSAA points; three's frame matches the reference under SwiftShader, so the reference is SwiftShader's coverage | local frame |
 
 ## math
@@ -866,7 +867,7 @@ Ported, `#[ignore]`d. Each row gives three's own score against its reference JPE
 
 ### Supplementary: `examples/jsm/tsl/display/*.js`
 
-These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) and are not counted above. 39 Present, 4 Partial, 5 Absent.
+These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) and are not counted above. 40 Present, 4 Partial, 4 Absent.
 
 | file | status | three-rs port and check |
 |---|---|---|
@@ -904,7 +905,7 @@ These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) an
 | `RGBShiftNode.js` | Present | rgb_shift; tests/nodes_display_wgsl.rs; webgpu_postprocessing (ported, ungraded) |
 | `Sepia.js` | Present | sepia (src/nodes/display/sepia.rs:13); tests/nodes_display_wgsl.rs (film_sepia_bleach dump, m05; no webgpu page uses it) |
 | `Shape.js` | Present | circle (src/nodes/display/shape.rs:18; not core shapeCircle); tests/nodes_display_wgsl.rs (webgpu_postprocessing_retro m08 and m10, inside vignette and the bleed amount) |
-| `SharpenNode.js` | Present | sharpen/SharpenNode (src/nodes/display/sharpen.rs:54,62); tests/nodes_display_wgsl.rs (sharpen_rcas and sharpen_rcas_denoise gates, tools/dump-pages/sharpen.html m03 and m06), tests/sharpen_frames.rs; webgpu_postprocessing_ssr_denoise (ported, ungraded: three's own e2e exception list; ssr_denoise_page_sharpen gate); contextNode and dispose() are not ported |
+| `SharpenNode.js` | Present | sharpen/SharpenNode (src/nodes/display/sharpen.rs:54,62); tests/nodes_display_wgsl.rs (sharpen_rcas and sharpen_rcas_denoise gates, tools/dump-pages/sharpen.html m03 and m06), tests/sharpen_frames.rs; webgpu_upscaling_taau (ported, ungraded: three.js fails its own reference on this machine; three's m40 there is byte-identical to the sharpen_rcas fixture); webgpu_postprocessing_ssr_denoise (ported, ungraded: three's own e2e exception list; ssr_denoise_page_sharpen gate); contextNode and dispose() are not ported |
 | `SMAANode.js` | Present | smaa/SmaaNode (src/nodes/display/smaa.rs:72,77); tests/nodes_display_wgsl.rs (smaa_edges, smaa_weights and smaa_blend gates); webgpu_postprocessing_ssr (graded); webgpu_postprocessing_smaa (ported, ungraded: three.js fails its own reference on this machine) |
 | `SobelOperatorNode.js` | Present | sobel; webgpu_postprocessing_sobel |
 | `SSAAPassNode.js` | Present | SsaaPassNode (src/renderer/ssaa_pass.rs:130); webgpu_postprocessing_ssaa |
@@ -914,8 +915,8 @@ These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) an
 | `SSSNode.js` | Partial | sss/SssNode (src/nodes/display/sss.rs:102,111); tests/nodes_display_wgsl.rs (SSS quad and ground shadow-context gates), tests/sss_frames.rs; webgpu_postprocessing_sss (ported, ungraded: three's own e2e exception list). No orthographic camera, no logarithmic depth, no `RedFormat` target |
 | `StereoCompositePassNode.js` | Present | CompositeState (crate-private base of the two composite passes); tests/stereo_frames.rs; no `contextNode`, partial renderer-state save |
 | `StereoPassNode.js` | Present | stereo_pass/StereoPassNode; tests/stereo_frames.rs; webgpu_display_stereo (graded) |
-| `TAAUNode.js` | Absent | — |
-| `TemporalReprojectNode.js` | Present | temporal_reproject/TemporalReprojectNode (src/nodes/display/temporal_reproject.rs:131,143); tests/nodes_display_wgsl.rs (temporal_reproject seed, resolve, resolve_specular and layout-fn gates), tests/temporal_reproject_frames.rs; webgpu_postprocessing_ssr_denoise (ported, ungraded: three's own e2e exception list; tests/ssr_denoise_frames.rs); its struct-typed var declares the struct, not `void` (docs/nodes.md §89.2); orthographic cameras and log depth are not ported |
+| `TAAUNode.js` | Present | taau/TaauNode (src/nodes/display/taau.rs:106,116), with the `TAAUtils.js` helpers it shares with TRAANode in src/nodes/display/taa_utils.rs; tests/nodes_display_wgsl.rs (taau_seed, taau_resolve, taau_clip_aabb and taau_flicker_reduction gates, webgpu_upscaling_taau m36 and m38), tests/taau_frames.rs; webgpu_upscaling_taau (ported, ungraded: three.js fails its own reference on this machine). Orthographic cameras, log and reversed depth, an RTT beauty input and a non-global velocity are not ported |
+| `TemporalReprojectNode.js` | Present | temporal_reproject/TemporalReprojectNode (src/nodes/display/temporal_reproject.rs:131,143); tests/nodes_display_wgsl.rs (temporal_reproject seed, resolve, resolve_specular and layout-fn gates), tests/temporal_reproject_frames.rs; webgpu_postprocessing_ssr_denoise (pending); orthographic cameras and log depth are not ported |
 | `TRAANode.js` | Present | traa/TraaNode; tests/nodes_display_wgsl.rs (resolve, subpixel correction, clip AABB, flicker reduction gates), tests/traa_frames.rs; webgpu_postprocessing_traa (ported, ungraded: three's own e2e exception list) |
 | `TransitionNode.js` | Present | transition; webgpu_postprocessing_transition |
 
@@ -1721,7 +1722,7 @@ The first refresh of this matrix closed the previous top five. Velocity and TRAA
 1. **The screen-space effect nodes** (`DenoiseNode`; `denoise` 6 pages). `SSRNode` is Present (`webgpu_postprocessing_ssr`, graded). `GTAONode` and `builtinAOContext` are Present now (`webgpu_postprocessing_ao`, ungraded: it is on three's e2e exception list), and so are `DepthOfFieldNode` (`webgpu_postprocessing_dof`), `SSGINode` (`webgpu_postprocessing_ssgi`) `SSSNode` with `builtinShadowContext` (`webgpu_postprocessing_sss`), and the denoised SSR chain of `SharpenNode`, `TemporalReprojectNode` and `RecurrentDenoiseNode` (`webgpu_postprocessing_ssr_denoise`), all ungraded for the same reason. What is left needs a velocity target and a temporal resolve, and both now exist; these pages are the direct payoff of the velocity work. Porting them also gives the depth reads (`viewportDepthTexture`, `linearDepth`, `getViewPosition`) their first graded consumer.
 2. **EventDispatcher** (issues 153, 159). 8 pages subscribe to `change` or `finished` events. In ordinary use these are render-on-demand behind OrbitControls and chaining animation clips when one ends, and neither works in the port today. `AnimationMixer` and `AnimationAction` fire nothing.
 3. **The TransformControls pages** (`webgpu_modifier_curve`, `webgpu_shadowmap_progressive`, `webgpu_tsl_compute_attractors_particles`). `FirstPersonControls` (8 pages), `FlyControls` (1) and now `TransformControls` are ported and gated against three's classes (`docs/controls.md`). What is left is wiring the gizmo into the pages: `webgpu_modifier_curve`'s port still leaves it out, and the viewer's controls hook is typed for `OrbitControls`.
-4. The remaining display files (`DenoiseNode`, `depthAwareBlur`, `FSR1Node`, `SSAONode`, `TAAUNode`, 0 to 2 pages each). Small and self-contained; most unlock one page.
+4. The remaining display files (`DenoiseNode`, `depthAwareBlur`, `FSR1Node`, `SSAONode`, 0 to 2 pages each). Small and self-contained; most unlock one page.
 
 **Runners-up, and why they rank lower:**
 - RectAreaLight and LTC (3 pages).
