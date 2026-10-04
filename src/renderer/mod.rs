@@ -101,6 +101,17 @@ pub const COMPRESSION_FEATURES: wgpu::Features = wgpu::Features::TEXTURE_COMPRES
     .union(wgpu::Features::TEXTURE_COMPRESSION_ETC2)
     .union(wgpu::Features::TEXTURE_COMPRESSION_ASTC);
 
+/// WebGPU's `subgroups` feature, which `WebGPUBackend` requests whenever the
+/// adapter has it and the subgroup TSL functions (`subgroupAdd` and the rest,
+/// `subgroupSize`, `subgroupIndex`) need. A host that builds its own device
+/// (`with_device`, `adopt_device`) passes it in its `required_features` to run
+/// those kernels; without it [`Renderer::compute`] skips them.
+///
+/// wgpu 30 counts it as native-only: its WebGPU backend has no mapping for
+/// `subgroups` (`FEATURES_MAPPING` in `wgpu/src/backend/webgpu.rs`), so a web
+/// build never sees or requests it.
+pub const SUBGROUP_FEATURES: wgpu::Features = wgpu::Features::SUBGROUP;
+
 /// A cached GPU buffer that is filled exactly once — `range()`'s random draw,
 /// or one upload of an `InstancedBufferAttribute`'s array — with the same
 /// `render()`-clock stamp the material states carry.
@@ -1217,7 +1228,12 @@ impl Renderer {
         // device to pick a transcode target. Without them a Basis texture
         // falls back to uncompressed RGBA — correct, four to eight times the
         // memory, and not the texture three samples.
-        let wanted = wgpu::Features::FLOAT32_FILTERABLE | COMPRESSION_FEATURES;
+        //
+        // `SUBGROUP` is WebGPU's `subgroups`, which three requests the same
+        // way and which the subgroup TSL functions need
+        // (`WGSLNodeBuilder.enableSubGroups()`). An adapter without it only
+        // costs those kernels: `compute()` logs three's error and skips them.
+        let wanted = wgpu::Features::FLOAT32_FILTERABLE | COMPRESSION_FEATURES | SUBGROUP_FEATURES;
         let required_features = adapter.features() & wanted;
 
         let (device, queue) = adapter
@@ -3948,6 +3964,21 @@ impl Renderer {
                 program
             }
         };
+
+        // `WGSLNodeBuilder.enableSubGroups()`: three logs this and goes on to
+        // a module the browser then rejects. wgpu would panic on the module
+        // instead, so the port logs once and dispatches nothing.
+        if program.subgroups && !self.device.features().contains(SUBGROUP_FEATURES) {
+            thread_local! {
+                static WARNED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+            }
+            if !WARNED.with(|warned| warned.replace(true)) {
+                eprintln!(
+                    "three-rs: WGSLNodeBuilder: The 'subgroups' feature is not supported by the current device."
+                );
+            }
+            return Ok(());
+        }
 
         let frames = self.node_frame.frame_id;
         let fresh = match self.compute_pipelines.get_mut(&program.cache_key) {

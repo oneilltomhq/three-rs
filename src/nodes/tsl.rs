@@ -28,9 +28,11 @@ use crate::textures::{
 
 pub use super::node::TextureSource;
 
+mod gpgpu;
 mod lighting;
 mod utils;
 mod wrappers;
+pub use gpgpu::*;
 pub use lighting::*;
 pub use utils::*;
 pub use wrappers::*;
@@ -2429,6 +2431,32 @@ accessor!(
     NodeRef::new(Node::Builtin(Builtin::NumWorkgroups))
 );
 accessor!(
+    /// `subgroupSize` — `@builtin( subgroup_size )`, the number of invocations
+    /// in a subgroup (`src/nodes/gpgpu/ComputeBuiltinNode.js:232`). Compute
+    /// only, as in three; read in another stage it is three's warning and
+    /// `0u`. A kernel that reads it gets `enable subgroups;` and needs a device
+    /// with `wgpu::Features::SUBGROUP` — see [`subgroup_add`].
+    subgroup_size,
+    NodeRef::new(Node::Builtin(Builtin::SubgroupSize))
+);
+accessor!(
+    /// `subgroupIndex` — `@builtin( subgroup_id )`, the index of the
+    /// invocation's subgroup within its workgroup
+    /// (`src/nodes/core/IndexNode.js:184`). Compute only: three reads it as an
+    /// attribute builtin in the vertex stage and through a varying in the
+    /// fragment stage, neither of which WGSL allows, so the port refuses both.
+    subgroup_index,
+    NodeRef::new(Node::Builtin(Builtin::SubgroupIndex))
+);
+accessor!(
+    /// `invocationSubgroupIndex` — `@builtin( subgroup_invocation_id )`, the
+    /// invocation's lane within its subgroup
+    /// (`src/nodes/core/IndexNode.js:206`). Compute only, like
+    /// [`subgroup_index`].
+    invocation_subgroup_index,
+    NodeRef::new(Node::Builtin(Builtin::InvocationSubgroupIndex))
+);
+accessor!(
     /// `frontFacing` — `@builtin( front_facing )`, fragment stage only.
     front_facing,
     NodeRef::new(Node::Builtin(Builtin::FrontFacing))
@@ -4102,7 +4130,10 @@ pub fn storage_texture(texture: &Texture) -> StorageTextureNode {
     }
 }
 
-/// `storageTexture( Storage3DTexture )`.
+/// `storageTexture3D( Storage3DTexture )`
+/// (`src/nodes/accessors/StorageTexture3DNode.js:100`), the one-argument form;
+/// the coordinate and value are [`texture_store`]'s, as for
+/// [`storage_texture`].
 pub fn storage_texture_3d(texture: &crate::textures::Data3DTexture) -> StorageTextureNode {
     assert!(
         texture.is_storage(),
@@ -4777,17 +4808,42 @@ pub fn cube_texture_level(map: &CubeTexture, dir: NodeRef, level: NodeRef) -> No
 /// `instancedArray( n, ty )` calls are two buffers, exactly as two
 /// `StorageBufferNode`s are in three.js, and the renderer keys the GPU buffer
 /// on it.
+///
+/// The second field is `false` only for [`attribute_array`]: the attribute
+/// three puts behind the storage node is a plain `StorageBufferAttribute`, so
+/// [`to_attribute`](StorageArray::to_attribute) steps once per vertex.
 #[derive(Clone)]
-pub struct StorageArray(Rc<BufferNode>);
+pub struct StorageArray(Rc<BufferNode>, bool);
 
 /// `instancedArray( count, type )`.
 pub fn instanced_array(count: usize, element_ty: Type) -> StorageArray {
-    StorageArray(Rc::new(BufferNode {
-        id: crate::nodes::node::BufferId::next(),
-        source: BufferSource::Storage,
-        element_ty,
-        count,
-    }))
+    StorageArray(
+        Rc::new(BufferNode {
+            id: crate::nodes::node::BufferId::next(),
+            source: BufferSource::Storage,
+            element_ty,
+            count,
+        }),
+        true,
+    )
+}
+
+/// `attributeArray( count, type )` (`src/nodes/accessors/Arrays.js:15`) —
+/// [`instanced_array`] over a `StorageBufferAttribute` instead of a
+/// `StorageInstancedBufferAttribute`. A kernel sees the same storage buffer;
+/// the one difference is [`to_attribute`](StorageArray::to_attribute), which
+/// reads it once per vertex rather than once per instance. Struct element
+/// types (`type.isStructTypeNode`) are not ported, as for `instanced_array`.
+pub fn attribute_array(count: usize, element_ty: Type) -> StorageArray {
+    StorageArray(instanced_array(count, element_ty).0, false)
+}
+
+/// `storageElement( storageBufferNode, indexNode )` — a
+/// `StorageArrayElementNode` (`src/nodes/utils/StorageArrayElementNode.js:143`),
+/// which is what `.element( index )` builds in three; see
+/// [`StorageArray::element`].
+pub fn storage_element(storage: &StorageArray, index: impl Into<NodeRef>) -> NodeRef {
+    storage.element(index)
 }
 
 impl StorageArray {
@@ -4829,12 +4885,15 @@ impl StorageArray {
             matches!(self.0.element_ty, Type::U32 | Type::I32),
             "three-rs: an atomic storage array holds u32 or i32 (WGSL atomic<T>)"
         );
-        StorageArray(Rc::new(BufferNode {
-            id: self.0.id,
-            source: BufferSource::AtomicStorage,
-            element_ty: self.0.element_ty,
-            count: self.0.count,
-        }))
+        StorageArray(
+            Rc::new(BufferNode {
+                id: self.0.id,
+                source: BufferSource::AtomicStorage,
+                element_ty: self.0.element_ty,
+                count: self.0.count,
+            }),
+            self.1,
+        )
     }
 }
 
@@ -4864,15 +4923,18 @@ pub fn storage_data(words: &[u32], element_ty: Type) -> StorageArray {
     for (i, element) in words.chunks_exact(item_size).enumerate() {
         init[i * stride..i * stride + item_size].copy_from_slice(element);
     }
-    StorageArray(Rc::new(BufferNode {
-        id: crate::nodes::node::BufferId::next(),
-        source: BufferSource::StorageData {
-            init: Rc::new(init),
-            read_only: false,
-        },
-        element_ty,
-        count,
-    }))
+    StorageArray(
+        Rc::new(BufferNode {
+            id: crate::nodes::node::BufferId::next(),
+            source: BufferSource::StorageData {
+                init: Rc::new(init),
+                read_only: false,
+            },
+            element_ty,
+            count,
+        }),
+        true,
+    )
 }
 
 /// [`storage_data`] over a float array.
@@ -4892,26 +4954,31 @@ impl StorageArray {
             },
             _ => panic!("three-rs: to_read_only() is ported for storage over a CPU array"),
         };
-        StorageArray(Rc::new(BufferNode {
-            id: self.0.id,
-            source,
-            element_ty: self.0.element_ty,
-            count: self.0.count,
-        }))
+        StorageArray(
+            Rc::new(BufferNode {
+                id: self.0.id,
+                source,
+                element_ty: self.0.element_ty,
+                count: self.0.count,
+            }),
+            self.1,
+        )
     }
 
     /// `.toAttribute()` — `bufferAttribute( storageAttribute, type )`: the
-    /// storage buffer read as a vertex attribute. It is an
-    /// `InstancedBufferAttribute` (`StorageInstancedBufferAttribute`), so it
-    /// steps once per instance, and it is the *same* GPU buffer the kernels
-    /// write — the vertex buffer shares the storage node's id. The stride is
-    /// the padded storage stride: a `vec3` array is read 16 bytes apart.
+    /// storage buffer read as a vertex attribute. For [`instanced_array`] it
+    /// is an `InstancedBufferAttribute` (`StorageInstancedBufferAttribute`),
+    /// so it steps once per instance; for [`attribute_array`] it steps once
+    /// per vertex. Either way it is the *same* GPU buffer the kernels write —
+    /// the vertex buffer shares the storage node's id. The stride is the
+    /// padded storage stride: a `vec3` array is read 16 bytes apart.
     pub fn to_attribute(&self) -> NodeRef {
         let buffer = Rc::new(InstanceBuffer {
             id: self.0.id,
             source: self.0.source.clone(),
             count: self.0.count,
             item_size: storage_item_size(self.0.element_ty),
+            per_vertex: !self.1,
         });
         instanced_attribute(&buffer, 0, self.0.element_ty)
     }
@@ -5160,10 +5227,20 @@ impl StorageStruct {
 // atomics, workgroup memory and barriers (`src/nodes/gpgpu/`)
 // ---------------------------------------------------------------------------
 
-fn atomic_function(method: &'static str, pointer: NodeRef, value: Option<NodeRef>) -> NodeRef {
+/// `atomicFunc( method, pointerNode, valueNode )` — an `AtomicFunctionNode`
+/// for any WGSL atomic builtin (`src/nodes/gpgpu/AtomicFunctionNode.js:228`):
+/// `method` is its name (`"atomicAdd"`, three's
+/// `AtomicFunctionNode.ATOMIC_ADD`), `value` its operand, `None` for
+/// `atomicLoad`. Three's `.toStack()` is the caller putting the node in the
+/// kernel's statements, as for every function below.
+pub fn atomic_func(
+    method: &'static str,
+    pointer: impl Into<NodeRef>,
+    value: Option<NodeRef>,
+) -> NodeRef {
     NodeRef::new(Node::Atomic {
         method,
-        pointer,
+        pointer: pointer.into(),
         value,
     })
 }
@@ -5173,7 +5250,7 @@ macro_rules! atomic_fns {
         $(
             $(#[$m])*
             pub fn $name(pointer: impl Into<NodeRef>, value: impl Into<NodeRef>) -> NodeRef {
-                atomic_function($method, pointer.into(), Some(value.into()))
+                atomic_func($method, pointer, Some(value.into()))
             }
         )*
     };
@@ -5200,7 +5277,7 @@ atomic_fns! {
 
 /// `atomicLoad( pointer )`.
 pub fn atomic_load(pointer: impl Into<NodeRef>) -> NodeRef {
-    atomic_function("atomicLoad", pointer.into(), None)
+    atomic_func("atomicLoad", pointer, None)
 }
 
 /// `workgroupArray( type, count )` — see [`WorkgroupArrayDef`](super::node::WorkgroupArrayDef).
@@ -5245,6 +5322,12 @@ pub fn workgroup_barrier() -> NodeRef {
 /// `storageBarrier()`.
 pub fn storage_barrier() -> NodeRef {
     NodeRef::new(Node::Barrier { scope: "storage" })
+}
+
+/// `textureBarrier()` — `barrier( 'texture' ).toStack()`
+/// (`src/nodes/gpgpu/BarrierNode.js:112`): `textureBarrier();`, compute only.
+pub fn texture_barrier() -> NodeRef {
+    NodeRef::new(Node::Barrier { scope: "texture" })
 }
 
 /// `uniformArray( values )` — a constant array in a uniform block, one
@@ -5434,6 +5517,7 @@ pub(crate) fn instance_matrix(count: usize) -> NodeRef {
         source: BufferSource::InstanceMatrix,
         count: matrix_count,
         item_size: 16,
+        per_vertex: false,
     });
     join(
         Type::Mat4,
@@ -5455,6 +5539,7 @@ pub fn instance_color(count: usize) -> NodeRef {
         source: BufferSource::InstanceColor,
         count: count.max(1),
         item_size: 3,
+        per_vertex: false,
     });
     to_varying(
         Some("vInstanceColor"),
@@ -5567,6 +5652,7 @@ pub(crate) fn instanced_range(
             },
             count,
             item_size: 4,
+            per_vertex: false,
         });
         instanced_attribute(&buffer, 0, Type::Vec4)
     };
@@ -5741,6 +5827,7 @@ pub fn instanced_data_buffer(data: &Rc<Vec<f32>>, item_size: usize) -> Rc<Instan
         source: BufferSource::Attribute(data.clone()),
         count,
         item_size,
+        per_vertex: false,
     })
 }
 

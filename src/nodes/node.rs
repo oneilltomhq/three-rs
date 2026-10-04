@@ -961,6 +961,10 @@ pub struct InstanceBuffer {
     /// interleaved instance matrix (`new InstancedInterleavedBuffer( array, 16,
     /// 1 )`), 4 for a `range()`.
     pub item_size: usize,
+    /// The buffer steps once per *vertex*: `attributeArray()`'s
+    /// `StorageBufferAttribute` read through `.toAttribute()`, which is not an
+    /// `InstancedBufferAttribute`. `false` for everything else here.
+    pub per_vertex: bool,
 }
 
 /// `BufferNode` — `buffer( array, type, count )`.
@@ -1173,6 +1177,22 @@ pub enum Builtin {
     GlobalId,
     /// `@builtin( num_workgroups )` — see [`Builtin::WorkgroupId`].
     NumWorkgroups,
+    /// `subgroupSize` — `@builtin( subgroup_size )`. Three's
+    /// `computeBuiltin( 'subgroupSize', 'uint' )` only writes the name: the
+    /// parameter is the one `WGSLNodeBuilder.getAttributes( 'compute' )`
+    /// appends after the four above when the device has `subgroups`. The port
+    /// declares it, and `enable subgroups;`, when a kernel reads it or calls a
+    /// subgroup function (`docs/nodes.md` §84).
+    SubgroupSize,
+    /// `invocationSubgroupIndex` — `@builtin( subgroup_invocation_id )`,
+    /// registered by `WGSLNodeBuilder.getInvocationSubgroupIndex()` when the
+    /// flow reads it, so it comes before the four fixed parameters, like
+    /// [`Builtin::InvocationLocalIndex`].
+    InvocationSubgroupIndex,
+    /// `subgroupIndex` — `@builtin( subgroup_id )`, registered by
+    /// `WGSLNodeBuilder.getSubgroupIndex()`; see
+    /// [`Builtin::InvocationSubgroupIndex`].
+    SubgroupIndex,
 }
 
 impl Builtin {
@@ -1187,14 +1207,20 @@ impl Builtin {
             Builtin::LocalId => "localId",
             Builtin::GlobalId => "globalId",
             Builtin::NumWorkgroups => "numWorkgroups",
+            Builtin::SubgroupSize => "subgroupSize",
+            Builtin::InvocationSubgroupIndex => "invocationSubgroupIndex",
+            Builtin::SubgroupIndex => "subgroupIndex",
         }
     }
 
     pub(crate) fn ty(self) -> Type {
         match self {
-            Builtin::VertexIndex | Builtin::InstanceIndex | Builtin::InvocationLocalIndex => {
-                Type::U32
-            }
+            Builtin::VertexIndex
+            | Builtin::InstanceIndex
+            | Builtin::InvocationLocalIndex
+            | Builtin::SubgroupSize
+            | Builtin::InvocationSubgroupIndex
+            | Builtin::SubgroupIndex => Type::U32,
             Builtin::WorkgroupId
             | Builtin::LocalId
             | Builtin::GlobalId
@@ -1202,6 +1228,35 @@ impl Builtin {
             Builtin::FragCoord => Type::Vec4,
             Builtin::FrontFacing => Type::Bool,
         }
+    }
+}
+
+/// `SubgroupFunctionNode.getInputType()`: the longer of the two inputs'
+/// types, a matrix counting as length 0, and `b`'s on a tie.
+pub(crate) fn subgroup_input_type(a: Option<&NodeRef>, b: Option<&NodeRef>) -> Type {
+    let length = |node: Option<&NodeRef>| match node.map(NodeRef::ty) {
+        Some(ty) if ty.is_matrix() => 0,
+        Some(ty) => ty.components(),
+        None => 0,
+    };
+    if length(a) > length(b) {
+        a.map(NodeRef::ty)
+    } else {
+        b.map(NodeRef::ty)
+    }
+    // Three returns `bType`, `null` for a one-input function whose input is a
+    // matrix; the port's `Type` has no null, and a matrix is its own type.
+    .or_else(|| a.map(NodeRef::ty))
+    .unwrap_or(Type::Void)
+}
+
+/// `SubgroupFunctionNode.generateNodeType()`: `subgroupElect` is a `bool`,
+/// `subgroupBallot` a `uvec4`, everything else its input type.
+fn subgroup_type(method: &str, a: Option<&NodeRef>, b: Option<&NodeRef>) -> Type {
+    match method {
+        "subgroupElect" => Type::Bool,
+        "subgroupBallot" => Type::UVec4,
+        _ => subgroup_input_type(a, b),
     }
 }
 
@@ -1824,6 +1879,19 @@ pub enum Node {
         /// The barrier's WGSL prefix, e.g. `"workgroup"`.
         scope: &'static str,
     },
+    /// `SubgroupFunctionNode` — `subgroupAdd( e )`, `subgroupShuffle( e, id )`,
+    /// `quadSwapX( e )` and the rest of the family
+    /// (`src/nodes/gpgpu/SubgroupFunctionNode.js`). Reaching one enables
+    /// `subgroups` in the stage that builds it.
+    Subgroup {
+        /// The WGSL builtin's name, e.g. `"subgroupAdd"` — three's
+        /// `SubgroupFunctionNode.SUBGROUP_ADD` and friends.
+        method: &'static str,
+        /// `aNode`; `None` only for `subgroupElect()`.
+        a: Option<NodeRef>,
+        /// `bNode`: the lane id, shuffle mask or delta of the two-input forms.
+        b: Option<NodeRef>,
+    },
     /// A node type defined outside the crate; see [`CustomNode`]. Built by
     /// building what its `setup` returns.
     Custom(Rc<dyn CustomNode>),
@@ -1963,6 +2031,7 @@ impl NodeRef {
             Node::Atomic { pointer, .. } => pointer.ty(),
             Node::Workgroup(def) => def.element_ty,
             Node::Barrier { .. } => Type::Void,
+            Node::Subgroup { method, a, b } => subgroup_type(method, a.as_ref(), b.as_ref()),
             Node::Compute { output, .. } => output.ty(),
             Node::Custom(custom) => custom.node_type(),
             Node::Context { node, .. } | Node::Isolate { node } | Node::Debug { node, .. } => {

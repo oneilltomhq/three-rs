@@ -306,6 +306,10 @@ pub struct ComputeProgram {
     pub workgroup_size: [u32; 3],
     /// The `dispatchWorkgroups` arguments.
     pub dispatch: [u32; 3],
+    /// The kernel reads a subgroup builtin or calls a subgroup function, so
+    /// its WGSL has `enable subgroups;` and it needs a device with
+    /// `wgpu::Features::SUBGROUP` (`WGSLNodeBuilder.enableSubGroups()`).
+    pub subgroups: bool,
     pub(crate) cache_key: u64,
 }
 
@@ -395,7 +399,7 @@ impl NodeProgram {
                         None => out.push(VertexBufferDesc {
                             source: VertexBufferSource::Instance(buffer.clone()),
                             array_stride: (buffer.item_size * 4) as u64,
-                            instanced: true,
+                            instanced: !buffer.per_vertex,
                             attributes: vec![entry],
                         }),
                     }
@@ -659,6 +663,15 @@ struct StageState {
     declared: HashSet<String>,
     attributes: Vec<AttributeSlot>,
     builtins: Vec<Builtin>,
+    /// `WGSLNodeBuilder.enableSubGroups()` has run for this stage: its
+    /// `// directives` block holds `enable subgroups;`, and a compute entry
+    /// point takes `@builtin( subgroup_size )`.
+    subgroups: bool,
+    /// `BarrierNode.setup()` has run for this stage: it sets the builder's
+    /// `allowEarlyReturns` and `allowGlobalVariables` to `false`, so a
+    /// compute kernel with a barrier has no bounds check and declares its
+    /// vars inside `main` rather than as module-scope `var<private>`s.
+    barrier: bool,
     codes: Vec<String>,
     code_names: HashSet<String>,
     /// The stage's [`NodeCache`], a child per open block.
@@ -778,6 +791,16 @@ struct ArrayCameraNodes {
 impl Default for NodeBuilder {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// `WGSLNodeBuilder.getDirectives( shaderStage )`: one `enable X;` line per
+/// directive the stage enabled. `subgroups` is the only one the port has.
+fn directives(s: &StageState) -> &'static str {
+    if s.subgroups {
+        "enable subgroups;"
+    } else {
+        ""
     }
 }
 
@@ -1077,6 +1100,7 @@ impl NodeBuilder {
                 v.extend(value.iter().cloned());
                 v
             }
+            Node::Subgroup { a, b, .. } => a.iter().chain(b.iter()).cloned().collect(),
         }
     }
 
@@ -1742,6 +1766,100 @@ impl NodeBuilder {
         Some(format!("{name}( {} )", parts.join(", ")))
     }
 
+    /// A builtin read in a compute kernel, kept out of
+    /// [`Self::generate_inner`]'s frame.
+    ///
+    /// `instanceIndex` is the module-scope `var<private>` the entry point
+    /// fills from `globalId`, not a parameter — `WGSLNodeBuilder.getBuiltins(
+    /// 'compute' )` never lists it. `invocationLocalIndex`,
+    /// `invocationSubgroupIndex` and `subgroupIndex` are `IndexNode`s, whose
+    /// `getBuiltin()` registers the parameter when the flow reads them, so
+    /// they are declared in that order before the four fixed ones.
+    /// `subgroupSize` is a `ComputeBuiltinNode` that only writes its name; the
+    /// parameter is the one `getAttributes( 'compute' )` appends last.
+    #[inline(never)]
+    fn generate_compute_builtin(&mut self, b: Builtin) -> String {
+        let s = &mut self.stages[Stage::Compute.index()];
+        if matches!(
+            b,
+            Builtin::InvocationLocalIndex
+                | Builtin::InvocationSubgroupIndex
+                | Builtin::SubgroupIndex
+        ) && !s.builtins.contains(&b)
+        {
+            s.builtins.push(b);
+        }
+        // `getSubgroupIndex()` / `getInvocationSubgroupIndex()` call
+        // `enableSubGroups()`; three's `subgroupSize` relies on
+        // `getAttributes()` having enabled them for every kernel.
+        if matches!(
+            b,
+            Builtin::SubgroupSize | Builtin::InvocationSubgroupIndex | Builtin::SubgroupIndex
+        ) {
+            s.subgroups = true;
+        }
+        b.name().to_string()
+    }
+
+    /// `SubgroupFunctionNode.setup()` and `.generate()`
+    /// (`src/nodes/gpgpu/SubgroupFunctionNode.js`).
+    ///
+    /// `setup()` enables `subgroups` in the stage that builds the node. The
+    /// parameters are built as three builds them: `subgroupBroadcast`,
+    /// `subgroupShuffle` and `quadBroadcast` take `a` at the node's type and
+    /// `b` as an `int` when it is a `float` (a lane id given as a JS number)
+    /// and at the node's type otherwise; the shuffles by mask or delta take `b`
+    /// as a `uint`; the rest take both at `getInputType()`. The call is
+    /// `` `${ method }( ${ params } )` ``, or `subgroupElect()`.
+    #[inline(never)]
+    fn generate_subgroup(&mut self, node: &NodeRef) -> String {
+        let Node::Subgroup { method, a, b } = node.node() else {
+            unreachable!()
+        };
+        let (method, a, b) = (*method, a.clone(), b.clone());
+        assert_ne!(
+            self.stage,
+            Stage::Vertex,
+            "three-rs: TSL: \"{method}\" is not supported in the vertex shader stage."
+        );
+        self.stages[self.stage.index()].subgroups = true;
+        let ty = node.ty();
+        let input = crate::nodes::node::subgroup_input_type(a.as_ref(), b.as_ref());
+        let mut params: Vec<String> = Vec::new();
+        match method {
+            "subgroupBroadcast" | "subgroupShuffle" | "quadBroadcast" => {
+                let (a, b) = (
+                    a.expect("three-rs: a subgroup function's first input"),
+                    b.unwrap_or_else(|| panic!("three-rs: {method}() takes a lane id")),
+                );
+                params.push(self.format(&a, ty));
+                let b_ty = if b.ty() == Type::F32 { Type::I32 } else { ty };
+                params.push(self.format(&b, b_ty));
+            }
+            "subgroupShuffleXor" | "subgroupShuffleDown" | "subgroupShuffleUp" => {
+                let (a, b) = (
+                    a.expect("three-rs: a subgroup function's first input"),
+                    b.unwrap_or_else(|| panic!("three-rs: {method}() takes a mask or delta")),
+                );
+                params.push(self.format(&a, ty));
+                params.push(self.format(&b, Type::U32));
+            }
+            _ => {
+                if let Some(a) = &a {
+                    params.push(self.format(a, input));
+                }
+                if let Some(b) = &b {
+                    params.push(self.format(b, input));
+                }
+            }
+        }
+        if params.is_empty() {
+            format!("{method}()")
+        } else {
+            format!("{method}( {} )", params.join(", "))
+        }
+    }
+
     fn generate_inner(&mut self, node: &NodeRef) -> String {
         match node.node() {
             Node::Const { ty, values } => wgsl::constant(*ty, values),
@@ -1853,18 +1971,16 @@ impl NodeBuilder {
                     return "true".to_string();
                 }
                 if self.stage == Stage::Compute {
-                    // `instanceIndex` is the module-scope `var<private>` the
-                    // entry point fills from `globalId`, not a parameter —
-                    // `WGSLNodeBuilder.getBuiltins( 'compute' )` never lists it.
-                    // `invocationLocalIndex` is the one compute builtin that
-                    // is declared only once a kernel asks for it.
-                    if *b == Builtin::InvocationLocalIndex {
-                        let s = &mut self.stages[Stage::Compute.index()];
-                        if !s.builtins.contains(b) {
-                            s.builtins.push(*b);
-                        }
-                    }
-                    return b.name().to_string();
+                    return self.generate_compute_builtin(*b);
+                }
+                // `ComputeBuiltinNode.generate()` outside the compute stage:
+                // a warning and `generateConst( 'uint' )`.
+                if *b == Builtin::SubgroupSize {
+                    eprintln!(
+                        "three-rs: TSL: Compute built-in value \"subgroupSize\" can not be accessed in the {} stage",
+                        if self.stage == Stage::Vertex { "vertex" } else { "fragment" }
+                    );
+                    return wgsl::constant(Type::U32, &[0.0]);
                 }
                 assert!(
                     !matches!(
@@ -1874,6 +1990,8 @@ impl NodeBuilder {
                             | Builtin::LocalId
                             | Builtin::GlobalId
                             | Builtin::NumWorkgroups
+                            | Builtin::InvocationSubgroupIndex
+                            | Builtin::SubgroupIndex
                     ),
                     "three-rs: the compute builtin {} is only readable in a compute kernel",
                     b.name()
@@ -2883,6 +3001,8 @@ impl NodeBuilder {
                 snippet
             }
 
+            Node::Subgroup { .. } => self.generate_subgroup(node),
+
             Node::Barrier { scope } => {
                 let scope = *scope;
                 assert_eq!(
@@ -2890,6 +3010,7 @@ impl NodeBuilder {
                     Stage::Compute,
                     "three-rs: {scope}Barrier() can only be used in a compute kernel"
                 );
+                self.stages[Stage::Compute.index()].barrier = true;
                 self.emit(format!("{scope}Barrier();"));
                 String::new()
             }
@@ -3166,11 +3287,17 @@ impl NodeBuilder {
         // it needs takes the **last** `nodeUniformN` number — while the line it
         // generates is the **first** in the flow. Both halves of that are
         // visible in three's dump and both are reproduced here.
-        let guard = {
+        //
+        // A barrier turns `allowEarlyReturns` off (`BarrierNode.setup()`): the
+        // check would leave the barrier in non-uniform control flow, so three
+        // builds neither the line nor its uniform.
+        let guard = if self.stages[Stage::Compute.index()].barrier {
+            None
+        } else {
             let count = super::tsl::uniform_value(Type::U32, vec![flow.count as f64]);
             let cond = super::tsl::instance_index().greater_than_equal(count);
             let snippet = self.generate(&cond);
-            format!("\tif {snippet} {{ return; }}")
+            Some(format!("\tif {snippet} {{ return; }}"))
         };
 
         let mut prefix = Vec::new();
@@ -3180,8 +3307,10 @@ impl NodeBuilder {
             prefix.push(String::new());
             prefix.push(format!("\t// flow -> {name}"));
         }
-        prefix.push(guard);
-        prefix.push(String::new());
+        if let Some(guard) = guard {
+            prefix.push(guard);
+            prefix.push(String::new());
+        }
         let state = &mut self.stages[Stage::Compute.index()];
         prefix.append(&mut state.lines);
         state.lines = prefix;
@@ -3223,6 +3352,7 @@ impl NodeBuilder {
             groups,
             workgroup_size: flow.workgroup_size,
             dispatch,
+            subgroups: self.stages[Stage::Compute.index()].subgroups,
             cache_key,
         }
     }
@@ -3454,6 +3584,7 @@ impl NodeBuilder {
                 AttributeSource::Geometry(name) => name.hash(&mut hasher),
                 AttributeSource::Instance { buffer, offset } => {
                     buffer.item_size.hash(&mut hasher);
+                    buffer.per_vertex.hash(&mut hasher);
                     offset.hash(&mut hasher);
                 }
             }
@@ -3676,16 +3807,22 @@ impl NodeBuilder {
     /// `WGSLNodeBuilder`'s compute template
     /// (`src/renderers/webgpu/nodes/WGSLNodeBuilder.js` `_getWGSLComputeCode`).
     ///
-    /// Two deliberate omissions, both listed in `docs/nodes.md` §8: three emits
+    /// One deliberate divergence, listed in `docs/nodes.md` §8: three emits
     /// `enable subgroups;` under `// directives` and a
-    /// `@builtin( subgroup_size ) subgroupSize : u32` parameter, for the
-    /// subgroup TSL functions this port does not have. `enable subgroups;` is
-    /// not in the WGSL spec wgpu implements, so keeping it would refuse to
-    /// compile; the parameter goes with it.
+    /// `@builtin( subgroup_size ) subgroupSize : u32` parameter in every
+    /// kernel when the device has `subgroups`; the port emits both only for a
+    /// kernel that reads a subgroup builtin or calls a subgroup function
+    /// (`docs/nodes.md` §84), so a kernel without them runs on any adapter.
     fn assemble_compute(&self, workgroup_size: [u32; 3]) -> String {
         let s = &self.stages[Stage::Compute.index()];
         let mut out = String::from("// three-rs - Node System\n\n");
-        out.push_str("// directives\n\n");
+        // Three's `// directives\n${ directives }\n\n`, less the line it
+        // spends on `enable subgroups;` in a kernel that has none.
+        if s.subgroups {
+            out.push_str(&format!("// directives\n{}\n\n", directives(s)));
+        } else {
+            out.push_str("// directives\n\n");
+        }
         out.push_str("// system\nvar<private> instanceIndex : u32;\n\n");
         // `// locals\n${ scopedArrays }\n\n` and `// structs\n${ structs }\n\n`,
         // `getStructs()` being `\n` + the structs + `\n` when there are any.
@@ -3723,13 +3860,28 @@ impl NodeBuilder {
         out.push('\n');
 
         // `// vars\n${ vars }\n\n`, the declarations joined by `\n` — so a
-        // kernel with none still has the blank line.
-        let vars: Vec<String> = s
-            .decls
-            .iter()
-            .map(|(name, ty)| format!("var<private> {name} : {ty};"))
-            .collect();
-        out.push_str(&format!("// vars\n{}\n\n", vars.join("\n")));
+        // kernel with none still has the blank line. With
+        // `allowGlobalVariables` off (a barrier) the module-scope block is
+        // empty and `getVars( 'compute', false )` writes them under
+        // `// local vars` instead: `\n\t` + `var name : T;` joined by `\n\t`
+        // + `\n`.
+        let local_vars = if s.barrier {
+            let vars: Vec<String> = s
+                .decls
+                .iter()
+                .map(|(name, ty)| format!("var {name} : {ty};"))
+                .collect();
+            out.push_str("// vars\n\n\n");
+            format!("\n\t{}\n", vars.join("\n\t"))
+        } else {
+            let vars: Vec<String> = s
+                .decls
+                .iter()
+                .map(|(name, ty)| format!("var<private> {name} : {ty};"))
+                .collect();
+            out.push_str(&format!("// vars\n{}\n\n", vars.join("\n")));
+            String::new()
+        };
 
         out.push_str("// codes\n");
         for code in &s.codes {
@@ -3739,21 +3891,33 @@ impl NodeBuilder {
         out.push_str("\n\n");
 
         let [wx, wy, wz] = workgroup_size;
-        // `getBuiltin( 'local_invocation_index', … )` registers the parameter
-        // while the flow is generated, i.e. before `getAttributes()` adds the
-        // four fixed ones — so it comes first.
-        let local_index = if s.builtins.contains(&Builtin::InvocationLocalIndex) {
-            "@builtin( local_invocation_index ) invocationLocalIndex : u32,\n\t"
+        // `getBuiltin( 'local_invocation_index', … )` and the two subgroup
+        // indices register their parameter while the flow is generated, i.e.
+        // before `getAttributes()` adds the four fixed ones — so they come
+        // first, in the order the flow read them. `subgroup_size` is the one
+        // `getAttributes()` appends after those four.
+        let mut leading = String::new();
+        for b in &s.builtins {
+            let builtin = match b {
+                Builtin::InvocationLocalIndex => "local_invocation_index",
+                Builtin::InvocationSubgroupIndex => "subgroup_invocation_id",
+                Builtin::SubgroupIndex => "subgroup_id",
+                _ => unreachable!("three-rs: only the index builtins are registered by the flow"),
+            };
+            leading.push_str(&format!("@builtin( {builtin} ) {} : u32,\n\t", b.name()));
+        }
+        let subgroup_size = if s.subgroups {
+            ",\n\t@builtin( subgroup_size ) subgroupSize : u32"
         } else {
             ""
         };
         out.push_str(&format!(
             "@compute @workgroup_size( {wx}, {wy}, {wz} )\n\
-             fn main( {local_index}@builtin( global_invocation_id ) globalId : vec3<u32>,\n\
+             fn main( {leading}@builtin( global_invocation_id ) globalId : vec3<u32>,\n\
              \t@builtin( workgroup_id ) workgroupId : vec3<u32>,\n\
              \t@builtin( local_invocation_id ) localId : vec3<u32>,\n\
-             \t@builtin( num_workgroups ) numWorkgroups : vec3<u32> ) {{\n\n\
-             \t// local vars\n\t\n\n\
+             \t@builtin( num_workgroups ) numWorkgroups : vec3<u32>{subgroup_size} ) {{\n\n\
+             \t// local vars\n\t{local_vars}\n\n\
              \t// system\n\
              \tinstanceIndex = globalId.x\n\
              \t\t+ globalId.y * ( {wx} * numWorkgroups.x )\n\
@@ -3789,6 +3953,11 @@ impl NodeBuilder {
 
         if stage == Stage::Fragment {
             out.push_str("// global\ndiagnostic( off, derivative_uniformity );\n\n\n");
+            // Three's `// directives` block, which the port writes only when
+            // it has something in it.
+            if s.subgroups {
+                out.push_str(&format!("// directives\n{}\n\n", directives(s)));
+            }
             match mrt_members {
                 Some(count) => {
                     out.push_str("// structs\n\nstruct OutputType {\n");
@@ -3804,7 +3973,10 @@ impl NodeBuilder {
                 None => out.push_str(&format!("// structs\n\nstruct OutputStruct {{\n\t@location( 0 ) color: {}\n}};\nvar<private> output : OutputStruct;\n\n", wgsl::type_name(self.output_type))),
             }
         } else {
-            out.push_str("// directives\n\n\n// structs\n\n\n");
+            out.push_str(&format!(
+                "// directives\n{}\n\n// structs\n\n\n",
+                directives(s)
+            ));
         }
 
         out.push_str("// uniforms\n");
@@ -3861,7 +4033,10 @@ impl NodeBuilder {
                 | Builtin::WorkgroupId
                 | Builtin::LocalId
                 | Builtin::GlobalId
-                | Builtin::NumWorkgroups => {
+                | Builtin::NumWorkgroups
+                | Builtin::SubgroupSize
+                | Builtin::InvocationSubgroupIndex
+                | Builtin::SubgroupIndex => {
                     unreachable!("three-rs: compute builtins never reach a render stage")
                 }
             };
