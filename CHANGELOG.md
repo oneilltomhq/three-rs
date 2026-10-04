@@ -31,6 +31,20 @@ have their own sections after the release they ship with. The format follows [Ke
 - **Texture wrapping on `textureLoad`**: an unfilterable (`NearestFilter`)
   texture is read through three's `tsl_coord_<S>S_<T>T_2d` wrap function
   built from its `wrapS` / `wrapT`, instead of always clamping.
+- **`TransformControls`** (`addons::controls`), a port of
+  `examples/jsm/controls/TransformControls.js` as of the pinned 5f610f5
+  (r187dev): the translate, rotate and scale gizmo with the same picker,
+  gizmo and helper graph, the same drag math, snaps and limits, and
+  perspective and orthographic cameras. Pointer input arrives as method calls
+  (`on_pointer_down`, `pointer_hover`, …), events are returned as
+  `Vec<TransformControlsEvent>`, and the host calls `update(camera)` where
+  three's renderer runs the helper's matrix update. `toneMapped: false` is
+  dropped, and `enabled`, `show*` and `min*`/`max*` are plain fields that send
+  no events. `tools/transform_controls_reference.mjs` runs three's class under
+  node through 17 scenarios and writes `tests/fixtures/transform_controls.json`;
+  `tests/addons_transform_controls.rs` replays them and matches every event,
+  transform, handle state and working vector to 1e-9, and compares the gizmo
+  graph node for node. See `docs/controls.md`.
 - **`FirstPersonControls`** and **`FlyControls`** (`addons::controls`), ports
   of `examples/jsm/controls/FirstPersonControls.js` and `FlyControls.js` as
   of the pinned 5f610f5 (r187dev), with the same fields, defaults and `update( delta )`. Input
@@ -122,6 +136,40 @@ have their own sections after the release they ship with. The format follows [Ke
     `size` (default 1). The material flows do not apply `light_map` or
     `specular_map`; the renderer warns once per material that only the
     accessors read them, and `check_supported()` does not fail on them.
+- **TSL sweep 4**: the `three/tsl` utils names. Each one that emits WGSL is
+  gated against three's own dump in `tests/nodes_tsl_batch.rs`. See
+  `docs/nodes.md` §70.
+  - Context: `uniform_flow` makes a two-branch `select()` print WGSL's
+    `select()`. `set_name` names the first uniform built under it, unless
+    that uniform has a name of its own; either way the name is used up.
+    `label` is three's deprecated alias of `set_name`. MaterialX's
+    `mx_select` and `mx_negate_if` now use `uniform_flow`, with
+    byte-identical output.
+  - The method `NodeRef::set_name` (and `label`) on a uniform renames it in
+    place and returns it, as three's `UniformNode.setName()` does.
+    `UniformNode::name` is now a `Cell`.
+  - `bypass`, `vertex_stage` (method `to_vertex_stage`), `unpack_normal`,
+    `unpack_rgb_to_normal`, `expression( snippet, type )`, `debug` with an
+    optional `DebugCallback`, `sample` with its `SampleNode` handle, and raw
+    `wgsl( code, includes )` for a `wgsl_fn`'s includes. `direction_to_color`
+    and `color_to_direction` are ported as three's deprecated aliases.
+  - Event hooks: `on_object_update`, `on_material_update`, `on_frame_update`,
+    `on_after_object_update`, `on_before_object_update`,
+    `on_before_material_update` and `on_before_frame_update`. Each is a
+    `void` node attached with `.bypass()`. Its callback runs in three's update
+    phase and receives the `Renderer`.
+- **TSL sweep 5**: lighting and material `three/tsl` names, in
+  `nodes::tsl`. Each one that emits WGSL is gated against three's own dump in
+  `tests/nodes_tsl_batch.rs`. See `docs/nodes.md` §78.
+  - `material_anisotropy( material )`. The physical material's anisotropy
+    setup now reads it, and its WGSL is unchanged.
+  - `d_ggx_anisotropic`, `v_ggx_smith_correlated_anisotropic` and
+    `schlick_to_f0`. These are standalone: the physical lighting still
+    evaluates only the isotropic lobe.
+  - `ltc_uv`, `ltc_evaluate` and `ltc_evaluate_volume`. These are standalone
+    too, because there is no `RectAreaLight`.
+  - `lights( indices )` builds `MeshBasicNodeMaterial::lights_node`.
+    `webgpu_lights_selective` uses it.
 - **`SkyMesh`** (`addons::objects`), a port of `examples/jsm/objects/SkyMesh.js`.
   It is the Preetham daylight model with a sun disc and an fbm cloud layer.
   Every uniform is a public `SettableValue`. `webgpu_sky` is graded green at 0

@@ -28,7 +28,11 @@ use crate::textures::{
 
 pub use super::node::TextureSource;
 
+mod lighting;
+mod utils;
 mod wrappers;
+pub use lighting::*;
+pub use utils::*;
 pub use wrappers::*;
 
 // ---------------------------------------------------------------------------
@@ -474,7 +478,7 @@ pub fn uniform(
         source,
         ty,
         group,
-        name,
+        name: std::cell::Cell::new(name),
     })))
 }
 

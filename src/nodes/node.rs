@@ -678,8 +678,10 @@ pub struct UniformNode {
     /// Which uniform block the uniform is bound in.
     pub group: UniformGroup,
     /// Three names camera uniforms explicitly and numbers the rest
-    /// `nodeUniformN`.
-    pub name: Option<&'static str>,
+    /// `nodeUniformN`. A `Cell` because three's `UniformNode.setName()`
+    /// renames the node in place, so every reference to it sees the new name
+    /// ([`NodeRef::set_name`] on a uniform).
+    pub name: std::cell::Cell<Option<&'static str>>,
 }
 
 /// Where an array-typed uniform buffer's contents come from — `BufferNode`.
@@ -1383,6 +1385,12 @@ impl std::fmt::Debug for dyn CustomNode {
 #[derive(Clone, Debug, Default)]
 pub struct ContextValue {
     pub(crate) entries: Vec<(&'static str, NodeRef)>,
+    /// `{ uniformFlow: … }`, which is not a node: see
+    /// [`uniform_flow`](Self::uniform_flow).
+    pub(crate) uniform_flow: Option<bool>,
+    /// `{ nodeName: … }`, which is not a node: see
+    /// [`node_name`](Self::node_name).
+    pub(crate) node_name: Option<&'static str>,
 }
 
 impl ContextValue {
@@ -1397,6 +1405,59 @@ impl ContextValue {
         self.entries.retain(|(k, _)| *k != key);
         self.entries.push((key, value.into()));
         self
+    }
+
+    /// `{ …, uniformFlow: on }` — what [`uniform_flow`] installs. Under it a
+    /// `select()` with both branches is WGSL's `select( f, t, cond )` rather
+    /// than an `if`/`else` over a var (`ConditionalNode.generate()`), so it
+    /// stays in uniform control flow.
+    ///
+    /// [`uniform_flow`]: crate::nodes::tsl::uniform_flow
+    pub fn uniform_flow(mut self, on: bool) -> Self {
+        self.uniform_flow = Some(on);
+        self
+    }
+
+    /// `{ …, nodeName: name }` — what [`set_name`] installs. The first
+    /// `uniform()` built inside clears it, and takes the name unless it has
+    /// one of its own.
+    ///
+    /// [`set_name`]: crate::nodes::tsl::set_name
+    pub fn node_name(mut self, name: &'static str) -> Self {
+        self.node_name = Some(name);
+        self
+    }
+}
+
+/// What [`debug`](crate::nodes::tsl::debug)'s callback is handed: three's
+/// `callback( builder, snippet )`, with the two things of the builder a
+/// debugging callback reads.
+#[derive(Clone, Copy, Debug)]
+pub struct DebugInfo<'a> {
+    /// `builder.shaderStage`: `"vertex"`, `"fragment"` or `"compute"`.
+    pub stage: &'static str,
+    /// `builder.flow.code`: the statements emitted so far in the current
+    /// scope (the stage's `main`, or the `Fn()` being built), one per line,
+    /// with one level of indentation removed.
+    pub flow: &'a str,
+    /// The debugged node's snippet, which is also the debug node's own.
+    pub snippet: &'a str,
+}
+
+/// A [`debug`](crate::nodes::tsl::debug) callback.
+#[derive(Clone)]
+pub struct DebugCallback(pub(crate) Rc<dyn Fn(&DebugInfo<'_>)>);
+
+impl DebugCallback {
+    /// Wrap `callback`.
+    pub fn new(callback: impl Fn(&DebugInfo<'_>) + 'static) -> Self {
+        Self(Rc::new(callback))
+    }
+}
+
+impl std::fmt::Debug for DebugCallback {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("DebugCallback")
     }
 }
 
@@ -1783,6 +1844,24 @@ pub enum Node {
         /// The node built in its own cache.
         node: NodeRef,
     },
+    /// `ExpressionNode` — `expression( snippet, type )`: raw WGSL. A value
+    /// type prints `snippet` where the node is read; `void` writes it to the
+    /// flow as a statement. Not cacheable: each read prints it again.
+    Expression {
+        /// The WGSL, verbatim.
+        snippet: Rc<str>,
+        /// Its type, `Void` for a statement.
+        ty: Type,
+    },
+    /// `DebugNode` — `debug( node, callback )`: `node`'s snippet, passed
+    /// through after `callback` (or a log of the flow so far) has seen it.
+    Debug {
+        /// The node debugged.
+        node: NodeRef,
+        /// `null` logs the stage's flow code to stderr, as three's `log()`
+        /// does to the console.
+        callback: Option<DebugCallback>,
+    },
     /// `structType( values )` — `StructNode`: a value of a [`struct_type`]
     /// (`StructTypeNode`) built from one value per member, in member order.
     /// Always held in a var of the struct's type, which is where three's
@@ -1886,7 +1965,10 @@ impl NodeRef {
             Node::Barrier { .. } => Type::Void,
             Node::Compute { output, .. } => output.ty(),
             Node::Custom(custom) => custom.node_type(),
-            Node::Context { node, .. } | Node::Isolate { node } => node.ty(),
+            Node::Context { node, .. } | Node::Isolate { node } | Node::Debug { node, .. } => {
+                node.ty()
+            }
+            Node::Expression { ty, .. } => *ty,
             Node::StructNew { .. } => Type::Void,
             Node::StructGet { layout, member, .. } => layout.members[*member].ty,
         }

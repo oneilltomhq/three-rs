@@ -42,7 +42,10 @@
 				blendBurn, blendDodge, blendScreen, blendColor, vibrance, cdl, cineonToneMapping, directionToFaceDirection,
 				getScreenPosition, getNormalFromDepth, cameraProjectionMatrix, cameraProjectionMatrixInverse, viewportCoordinate, viewportUV, screenSize, depthPass,
 				materialNormal, materialClearcoatNormal, materialSpecularStrength, materialLightMap, materialAO, materialPointSize, pointWidth,
-				lightProjectionUV, directPointLight, getParallaxCorrectNormal } = T;
+				lightProjectionUV, directPointLight, getParallaxCorrectNormal,
+				bypass, uniformFlow, setName, label, select, vertexStage, unpackNormal, colorToDirection, directionToColor,
+				expression, debug, sample, wgsl, wgslFn, OnObjectUpdate, OnBeforeFrameUpdate,
+				materialAnisotropy, D_GGX_Anisotropic, V_GGX_SmithCorrelated_Anisotropic, Schlick_to_F0, LTC_Uv, LTC_Evaluate, LTC_Evaluate_Volume } = T;
 
 			const map = new THREE.DataTexture( new Uint8Array( 4 * 16 * 16 ), 16, 16 );
 			map.minFilter = THREE.LinearMipmapLinearFilter;
@@ -170,6 +173,40 @@
 			} );
 			probe( 'parallax_correct_normal', () => vec4( getParallaxCorrectNormal( normalWorld, vec3( 200, 100, 100 ), vec3( 0, - 50, 0 ) ), 1 ) );
 			probe( 'depth_pass', () => vec4( vec3( depthPass( passScene, passCamera ) ), 1 ) );
+
+			probe( 'bypass', () => vec4( bypass( x().mul( 2 ), expression( 'let first = 1.0', 'void' ) ), y().bypass( expression( 'let second = 2.0', 'void' ) ), 0, 1 ) );
+			probe( 'uniform_flow', () => vec4( uniformFlow( select( x().greaterThan( 0.5 ), x().mul( 2 ), y() ) ), 0, 0, 1 ) );
+			probe( 'set_name', () => vec4( setName( uniform( 0.5 ), 'myValue' ), label( uniform( 0.25 ), 'otherValue' ), uniform( 0.75 ), 1 ) );
+			probe( 'vertex_stage', () => vec4( vertexStage( positionLocal.mul( 2 ) ), 1 ) );
+			probe( 'unpack_normal', () => vec4( unpackNormal( uv().sub( 0.5 ) ), 1 ) );
+			probe( 'color_direction', () => vec4( colorToDirection( vec3( uv(), 0.5 ) ).add( directionToColor( vec3( y(), x(), 1 ) ) ), 1 ) );
+			probe( 'expression', () => vec4( expression( 'sin( 1.0 )', 'float' ).add( x() ), expression( 'vec2<f32>( 0.25, 0.5 )', 'vec2' ), 1 ) );
+			probe( 'debug', () => vec4( debug( x().mul( 2 ) ), debug( y().add( 1 ), () => {} ), 0, 1 ) );
+			probe( 'sample', () => {
+				const s = sample( ( coord ) => vec4( coord.mul( 2 ), 0, 1 ) );
+				return s.add( s.sample( vec2( y(), x() ) ) );
+			} );
+			probe( 'wgsl', () => vec4( wgslFn( 'fn useHelper( a : f32 ) -> f32 { return helperTwice( a ); }', [ wgsl( 'fn helperTwice( a : f32 ) -> f32 { return a * 2.0; }' ) ] )( { a: x() } ), 0, 0, 1 ) );
+			probe( 'event_nodes', () => vec4( x().bypass( OnObjectUpdate( () => {} ) ).bypass( OnBeforeFrameUpdate( () => {} ) ), 0, 0, 1 ) );
+
+			probe( 'material_anisotropy', () => vec4( materialAnisotropy, 0, 1 ) );
+			probe( 'material_anisotropy_map', () => vec4( materialAnisotropy, 0, 1 ), null, ( m ) => { m.anisotropyMap = map; } );
+			probe( 'anisotropic_ggx', () => vec4(
+				D_GGX_Anisotropic( { alphaT: x(), alphaB: y(), dotNH: x().mul( 0.5 ), dotTH: y().mul( 0.25 ), dotBH: x().mul( y() ) } ),
+				V_GGX_SmithCorrelated_Anisotropic( { alphaT: x(), alphaB: y(), dotTV: float( 0.5 ), dotBV: float( 0.25 ), dotTL: x().mul( 0.5 ), dotBL: y().mul( 0.5 ), dotNV: x(), dotNL: y() } ),
+				0, 1 ) );
+			probe( 'schlick_to_f0', () => vec4( Schlick_to_F0( { f: vec3( uv(), 0.5 ), f90: float( 1 ), dotVH: x() } ), 1 ) );
+			probe( 'ltc', () => {
+				const N = vec3( 0, 0, 1 );
+				const V = vec3( uv(), 1 ).normalize();
+				const P = vec3( uv(), 0 );
+				const p0 = vec3( - 1, - 1, 2 );
+				const p1 = vec3( 1, - 1, 2 );
+				const p2 = vec3( 1, 1, 2 );
+				const p3 = vec3( - 1, 1, 2 );
+				const mInv = mat3( modelWorldMatrix );
+				return vec4( LTC_Evaluate( { N, V, P, mInv, p0, p1, p2, p3 } ).add( LTC_Evaluate_Volume( { P, p0, p1, p2, p3 } ) ), 1 ).add( vec4( LTC_Uv( { N, V, roughness: x() } ), 0, 0 ) );
+			} );
 
 			init();
 

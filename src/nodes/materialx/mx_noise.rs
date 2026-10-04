@@ -20,16 +20,16 @@
 //! The other conversion artefact is `mx_select` / `mx_negate_if`: both return
 //! `select( … ).uniformFlow()`, and `ConditionalNode.generate()` allocates its
 //! result property *before* it notices the uniform-flow context, so the
-//! function declares one `var` it never assigns. `unassigned_var()` reproduces
-//! that dangling declaration.
+//! function declares one `var` it never assigns. The port's
+//! [`uniform_flow`](crate::nodes::tsl::uniform_flow) does the same, so the
+//! bodies below are the converted source's own `select( … ).uniformFlow()`.
 
 use std::rc::Rc;
 
 use crate::nodes::node::{FnDef, Lazy, NodeRef, Type};
 use crate::nodes::tsl::{
     block, call, float, if_else, if_else_if, if_then, inline_fn, int, join, loop_n, loop_options,
-    property, return_statement, shader_fn, to_var, uint, vec2, vec2_join, vec3, vec3_join,
-    vec4_join, wgsl_select,
+    return_statement, shader_fn, to_var, uint, vec2, vec2_join, vec3, vec3_join, vec4_join,
 };
 
 // ---------------------------------------------------------------------------
@@ -49,14 +49,6 @@ fn reverse_vars(params: &[NodeRef]) -> (Vec<NodeRef>, Vec<NodeRef>) {
     (statements, vars)
 }
 
-/// `ConditionalNode.generate()`'s `nodeProperty`, allocated unconditionally and
-/// then left unassigned on the `uniformFlow` path — a bare `var nodeVarN : T;`.
-/// The port numbers `nodeVarN` from a counter that `property()` does not touch,
-/// so the name is spelled out at the one position it can occupy.
-fn unassigned_var(name: &'static str, ty: Type) -> NodeRef {
-    property(name, ty)
-}
-
 // ---------------------------------------------------------------------------
 // scalar helpers
 // ---------------------------------------------------------------------------
@@ -67,9 +59,11 @@ mx_fn!(
     vec![("b", Type::Bool), ("t", Type::F32), ("f", Type::F32)],
     Type::F32,
     |params| {
-        let (mut stmts, v) = reverse_vars(params);
-        stmts.push(unassigned_var("nodeVar3", Type::F32));
-        block(stmts, wgsl_select(v[2].clone(), v[1].clone(), v[0].clone()))
+        let (stmts, v) = reverse_vars(params);
+        block(
+            stmts,
+            v[0].select(v[1].clone(), v[2].clone()).uniform_flow(),
+        )
     }
 );
 
@@ -79,10 +73,9 @@ mx_fn!(
     vec![("val", Type::F32), ("b", Type::Bool)],
     Type::F32,
     |params| {
-        let (mut stmts, v) = reverse_vars(params);
-        stmts.push(unassigned_var("nodeVar2", Type::F32));
+        let (stmts, v) = reverse_vars(params);
         let (val, b) = (v[0].clone(), v[1].clone());
-        block(stmts, wgsl_select(val.clone(), val.negate(), b))
+        block(stmts, b.select(val.negate(), val).uniform_flow())
     }
 );
 

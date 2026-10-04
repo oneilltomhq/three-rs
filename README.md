@@ -61,7 +61,8 @@ that verifies each present row.
   (`TextGeometry`), `curve_modifier_gpu` (`Flow`), `lights`
   (`LightProbeGenerator`), `helpers` (`LightProbeHelper`), `objects::SkyMesh`
   (the Preetham sky with sun disc and clouds), and `controls`
-  (`OrbitControls`, `FirstPersonControls`, `FlyControls`), ports of the JS
+  (`OrbitControls`, `FirstPersonControls`, `FlyControls`,
+  `TransformControls`), ports of the JS
   classes graded against the JS classes themselves. An addon that
   needs nothing from core would be a workspace crate instead — `addons/controls`
   is one — and that stays the preferred shape; these live in the root crate
@@ -365,9 +366,10 @@ controls serve a winit window, a DOM canvas and a test. It is graded the way
 everything else here is, against the original: `tools/orbit_controls_reference.mjs`
 runs the JS class under node over twelve scripted scenarios and prints the
 camera it ends with, and `tests/addons_orbit_controls.rs` replays the same
-scenarios and asserts every number to 1e-9. `FirstPersonControls` and
-`FlyControls` sit beside it in the same module and are graded the same way;
-`docs/controls.md` describes all three.
+scenarios and asserts every number to 1e-9. `FirstPersonControls`,
+`FlyControls` and `TransformControls` (the translate/rotate/scale gizmo) sit
+beside it in the same module and are graded the same way;
+`docs/controls.md` describes all four.
 
 `addons/controls/` is a different addon: `three-rs-controls`, a `MapControls` in the spirit of
 three.js' addon of that name, over a `Ground` — a sphere whose north pole is the
