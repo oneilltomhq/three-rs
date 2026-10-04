@@ -6197,9 +6197,8 @@ things that are not nodes:
 - Changing `focusDistance`, `focalLength` or `bokehScale` from a GUI. They
   are ordinary uniforms, so a host can set them, but no page here does.
 
-Sections 65, 69, 71 to 73, 76, 77 and 79 to 83 are reserved for the
-display-node ports on sibling branches. They are numbered as those branches
-land.
+Sections 65, 69, 71 to 73, 76, 77 and 79 to 83 are reserved for the ports
+on sibling branches. They are numbered as those branches land.
 
 ## 67. TSL sweep 2: the accessors batch
 
