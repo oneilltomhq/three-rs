@@ -8,6 +8,16 @@ have their own sections after the release they ship with. The format follows [Ke
 
 ### Added
 
+- **`ImportanceSampledEnvironment`** and **`EnvMapCdfGenerator`**
+  (`nodes::display`), with the SpecularHelpers microfacet helpers
+  (`d_gtr`, `ggx_reflection_sample`, `mis_power_heuristic`, …) and
+  `bind_analytic_noise` in `nodes::tsl`. These port
+  `examples/jsm/tsl/display/ImportanceSampledEnvironment.js`,
+  `tsl/utils/SpecularHelpers.js` and `tsl/utils/RNoise.js`: the CPU
+  luminance CDF tables and the reflect, BRDF and MIS environment lookups the
+  SSR-denoise stack shares. The WGSL is gated against three's dump of
+  `tools/dump-pages/specular_helpers.html` in `tests/nodes_display_wgsl.rs`,
+  and the CDF tables by a hand-computed 4×2 unit test.
 - **`WaterMesh`** (`addons::objects`), a port of
   `examples/jsm/objects/WaterMesh.js`: a planar `reflector()` distorted by
   four scrolling taps of a normal map, with a sun highlight and a Fresnel mix
