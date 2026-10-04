@@ -78,8 +78,7 @@ impl CubeCamera {
             self.node.update_matrix_world(false);
         }
 
-        let current_render_target = renderer.render_target();
-        let current_mrt = renderer.mrt();
+        let mut renderer = renderer.save_state();
         renderer.set_mrt(None);
         renderer.set_render_target(Some(self.render_target.face.clone()));
 
@@ -97,8 +96,5 @@ impl CubeCamera {
         if mips > 1 {
             renderer.generate_cube_mipmaps(&self.render_target.texture);
         }
-
-        renderer.set_render_target(current_render_target);
-        renderer.set_mrt(current_mrt);
     }
 }

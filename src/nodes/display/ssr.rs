@@ -783,13 +783,7 @@ impl NodeUpdate for SsrState {
         }
 
         // `_rendererState = RendererUtils.resetRendererState( renderer, … )`.
-        let previous_target = renderer.render_target();
-        let previous_level = renderer.active_mipmap_level();
-        let previous_mrt = renderer.mrt();
-        let previous_auto_clear = renderer.auto_clear;
-        let previous_clear_color = renderer.clear_color();
-        let previous_clear_alpha = renderer.clear_alpha();
-        renderer.auto_clear = true;
+        let mut renderer = renderer.reset_state();
 
         let (width, height) = renderer.drawing_buffer_size();
         self.set_size(width, height);
@@ -823,10 +817,7 @@ impl NodeUpdate for SsrState {
         }
 
         // `RendererUtils.restoreRendererState( renderer, _rendererState )`.
-        renderer.set_render_target_level(previous_target, previous_level);
-        renderer.set_mrt(previous_mrt);
-        renderer.set_clear_color(previous_clear_color, previous_clear_alpha);
-        renderer.auto_clear = previous_auto_clear;
+        drop(renderer);
         true
     }
 }

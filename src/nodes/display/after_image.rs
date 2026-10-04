@@ -14,7 +14,6 @@
 //! order.
 
 use crate::materials::MeshBasicNodeMaterial;
-use crate::math::Color;
 use crate::nodes::tsl::{block, float, max, sign, texture_uv, to_const, to_var, uv};
 use crate::nodes::NodeRef;
 use crate::objects::QuadMesh;
@@ -113,14 +112,7 @@ impl AfterImageNode {
     /// it, the previous texture holds last frame's composite, which is what
     /// three's `_oldRT` holds at the same moment.
     pub fn render(&self, renderer: &mut Renderer) {
-        let previous_target = renderer.render_target();
-        let previous_mrt = renderer.mrt();
-        let previous_auto_clear = renderer.auto_clear;
-        let previous_clear_color = renderer.clear_color();
-        let previous_clear_alpha = renderer.clear_alpha();
-        renderer.set_mrt(None);
-        renderer.set_clear_color(Color::new(0.0, 0.0, 0.0), 1.0);
-        renderer.auto_clear = true;
+        let mut renderer = renderer.reset_state();
 
         let (width, height) = renderer.drawing_buffer_size();
         self.target.set_size(width, height);
@@ -129,9 +121,6 @@ impl AfterImageNode {
         renderer.set_render_target(Some(self.target.clone()));
         renderer.render_quad(&self.quad);
 
-        renderer.set_render_target(previous_target);
-        renderer.set_mrt(previous_mrt);
-        renderer.set_clear_color(previous_clear_color, previous_clear_alpha);
-        renderer.auto_clear = previous_auto_clear;
+        drop(renderer);
     }
 }

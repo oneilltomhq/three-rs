@@ -653,6 +653,17 @@ have their own sections after the release they ship with. The format follows [Ke
   tail invocations index past `count`, and a kernel must guard its own
   accesses, e.g. `If( instanceIndex < count )` around the stores after the
   barrier. See `docs/nodes.md` §84.6.
+- **Nested renders save and restore the renderer's state in one place**
+  (#252). `RendererUtils.saveRendererState()` / `resetRendererState()` /
+  `restoreRendererState()` are one crate-private value in
+  `src/renderer/renderer_state.rs`, used through a scope that restores on
+  every exit, a panic included. `PassNode`, the display effects (bloom,
+  SMAA, TRAA, SSR, GTAO, outline, stereo and the rest), SSAA, PMREM, the
+  cube captures and the reflector all use it, where each kept its own
+  hand-rolled subset before. Sites calling `resetRendererState()` now also
+  clear the render-object function and restore everything three's list
+  holds, as three does; no ladder frame changes. `Renderer::render`,
+  `render_shared` and `render_nested` share one body.
 
 ### Fixed
 
@@ -666,6 +677,9 @@ have their own sections after the release they ship with. The format follows [Ke
   `FramebufferTexture`. `textureBicubicLevel` reads level 0 at an explicit
   level wherever the LOD is below 1, so the filter there is the mag filter
   (`docs/nodes.md` §96.4).
+- `ssaaPass` renders its samples with the pass's own MRT and puts the
+  frame's MRT back afterwards (#252), as `SSAAPassNode.updateBefore()` does.
+  It used to render under whatever MRT the caller had set.
 - A map's filters and wrap modes changed after the first draw rebuild the
   program (#276). Three's WebGPU backend folds every texture property's
   `magFilter`, `minFilter`, `wrapS` and `wrapT` into the material cache key;
