@@ -468,6 +468,44 @@ pub fn transform_normal_by_view_matrix(
     view_matrix.into().mul(n).xyz().normalize()
 }
 
+/// `transformNormal( normal, matrix )` — `Normal.js`: `mat3( matrix )
+/// .inverse().transpose().mul( normal ).normalize()`, the normal through the
+/// inverse transpose of `matrix`'s upper 3×3.
+///
+/// Three's `matrix` defaults to `modelWorldMatrix`. Rust has no default
+/// arguments, so three's one-argument `transformNormal( normal )` is
+/// `transform_normal( normal, model_world_matrix() )` here.
+pub fn transform_normal(normal: impl Into<NodeRef>, matrix: impl Into<NodeRef>) -> NodeRef {
+    matrix
+        .into()
+        .to_mat3()
+        .inverse()
+        .transpose()
+        .mul(normal.into())
+        .normalize()
+}
+
+/// `transformNormalToView( normal )` — `Normal.js`: `normal` from local to
+/// view space, `modelNormalMatrix.mul( normal ).transformNormalByViewMatrix(
+/// cameraViewMatrix )`.
+///
+/// Three takes `normal.transformNormalByViewMatrix( modelNormalViewMatrix )`
+/// instead when `builder.context.modelNormalViewMatrix` is set, which only
+/// `renderer.highPrecision` does. The port reads the same key from the build
+/// context in force when this is called — nothing in the crate sets it.
+pub fn transform_normal_to_view(normal: impl Into<NodeRef>) -> NodeRef {
+    let normal = normal.into();
+    let matrix =
+        crate::nodes::builder::current_context(|cx| cx.extra.get("modelNormalViewMatrix").cloned());
+    match matrix {
+        Some(matrix) => transform_normal_by_view_matrix(normal, matrix),
+        None => transform_normal_by_view_matrix(
+            super::model_normal_matrix().mul(normal),
+            camera_view_matrix(),
+        ),
+    }
+}
+
 /// `transformNormalByInverseViewMatrix( normal, viewMatrix )` —
 /// `MathNode.js`: `normalize( vec4( vec3( normal ), 0.0 ).mul( viewMatrix
 /// ).xyz )`. Post-multiplying by an orthonormal view matrix is
@@ -1290,6 +1328,12 @@ impl NodeRef {
     /// `n.transformNormalByViewMatrix( viewMatrix )`.
     pub fn transform_normal_by_view_matrix(&self, view_matrix: impl Into<NodeRef>) -> NodeRef {
         transform_normal_by_view_matrix(self, view_matrix)
+    }
+    /// `n.transformNormal( matrix )` — see [`transform_normal`]. Three's
+    /// `matrix` defaults to `modelWorldMatrix`; pass `model_world_matrix()`
+    /// for its no-argument form.
+    pub fn transform_normal(&self, matrix: impl Into<NodeRef>) -> NodeRef {
+        transform_normal(self, matrix)
     }
     /// `n.transformNormalByInverseViewMatrix( viewMatrix )`.
     pub fn transform_normal_by_inverse_view_matrix(

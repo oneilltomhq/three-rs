@@ -38,6 +38,32 @@ have their own sections after the release they ship with. The format follows [Ke
     `texture_bicubic_level`, `texture_3d_load` and `texture_3d_level`. The
     functions that take a texture node in three take the `Texture` here,
     as `triplanar_texture` already did.
+- **TSL sweep 2**: thirty-one `three/tsl` accessors, each gated against three's
+  own WGSL dump in `tests/nodes_tsl_batch.rs`. See `docs/nodes.md` §67.
+  - Tangent frame: `bitangent_geometry`, `bitangent_local`, `bitangent_world`,
+    `tangent_world`, and `tangent_geometry` and `tangent_local`, now public.
+    Also `parallax_direction` and `parallax_uv`.
+  - Camera: `camera_normal_matrix`. `camera_near` and `camera_far` already
+    existed and are now gated.
+  - Model and object: `model_direction`, `model_position`, `model_scale`,
+    `model_view_position` and `model_radius`, plus the `object_*` forms of
+    each, which take the target `&Node`. Also `mediump_model_view_matrix`,
+    `highp_model_view_matrix` and `highp_model_normal_view_matrix`.
+  - `transform_normal` (function and method), `transform_normal_to_view`,
+    `reflect_view`, `refract_view`, `refract_vector` and `clip_space`.
+  - `material_refraction_ratio`, with a new
+    `MeshBasicNodeMaterial::refraction_ratio`: 0.98 from `new`, `lambert`
+    and `phong`, whose three.js materials have `refractionRatio`, and 0
+    from the other constructors.
+  - `reflect_vector` is now cached per normal, like `refract_vector`.
+  - `object_direction` refreshes the target's world matrix and negates a
+    camera's direction, as `getWorldDirection()` does.
+  - A geometry without a `tangent` attribute no longer fails to draw when
+    the material reads the tangent in the vertex stage. The attribute
+    becomes three's `vec4( 0, 0, 0, 1 )` constant, with three's warning.
+  - `clip_space` warns and yields `vec4()` outside the fragment stage.
+  - `webgpu_tsl_raging_sea` uses the crate's `transform_normal_to_view` in
+    place of its local helper.
 - **`SkyMesh`** (`addons::objects`), a port of `examples/jsm/objects/SkyMesh.js`.
   It is the Preetham daylight model with a sun disc and an fbm cloud layer.
   Every uniform is a public `SettableValue`. `webgpu_sky` is graded green at 0

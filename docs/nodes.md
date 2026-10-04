@@ -5989,9 +5989,145 @@ arithmetic, and `tests/traa_frames.rs` allows for it.
   `maxVelocityLength` as settable properties. They are constants at three's
   defaults.
 
-Sections 64 to 73 are reserved for the display-node ports on sibling
-branches. They are numbered as those branches land.
+Sections 64 to 66 and 68 to 73 are reserved for the display-node ports on
+sibling branches. They are numbered as those branches land.
 
+## 67. TSL sweep 2: the accessors batch
+
+Thirty-one `three/tsl` accessors, each gated against three's dump in
+`tests/nodes_tsl_batch.rs`: the bitangents, `tangentWorld`, the parallax
+pair, `cameraNormalMatrix`, the `model*` and `object*` scopes, the precision
+variants of `modelViewMatrix`, `transformNormal`, `transformNormalToView`,
+`reflectView`, `refractView`, `refractVector`, `clipSpace` and
+`materialRefractionRatio`. Most are one-line graphs over existing nodes. This
+section covers the parts that touch the builder or the uniforms.
+
+### 67.1 Singletons are built outside any layer
+
+An `accessor!` body now runs with `sub_build` cleared. So do the singleton
+cells that cannot be `accessor!`s (`position_view_direction`, which
+`overrideNodes` can replace, and the shared `v_tangentView` varying in the
+tangent frame), and `normal_flat` is now an `accessor!`. `clip_space` holds
+nothing that can take a prefix.
+
+Three decides a layer prefix at build time, not when the node is made. A
+`Fn` declared `.once( [ layers ] )` (`positionView` is `.once( [ 'POSITION',
+'VERTEX' ] )`, the normal accessors `.once( [ 'NORMAL', 'VERTEX' ] )`) adds
+its layers to the node data of every node on `builder.chaining`, the
+ancestors being built at that moment. A module-level constant is therefore
+prefixed in a build when its own graph reaches such a `Fn` inside an open
+layer, and unprefixed when it does not, whichever build asked for it first.
+
+The port fixes a var's name when the node is constructed, from the layer
+open at that moment, and a singleton is constructed once per thread. Before
+this change, a singleton first asked for inside `in_sub_build( "VERTEX", … )`
+kept that prefix for the rest of the thread, in every later build. Building
+singletons outside any layer gives the unprefixed name, which is what three
+prints for every singleton the gates reach. A singleton whose graph reaches a
+layered `Fn` and is itself asked for inside that layer would be prefixed in
+three and is not here; none of the current gates has one. `tangentWorld` is
+the first accessor whose varying is built inside the vertex layer and reads
+a singleton there.
+
+The keyed accessors (`tangent_world`, the bitangents, `parallax_direction`,
+`reflect_view`, `refract_view`, `refract_vector`) are cached on
+`normal_key()`, like `normal_view`, because they read the layer-dependent
+normal and tangent.
+
+### 67.2 The tangent frame in the vertex layer
+
+`getTangentFrame` takes the attribute branch when `builder.subBuildFn ===
+'VERTEX'` as well as when the geometry has a tangent. A varying's value is
+built in the vertex layer, so `tangentWorld`'s varying always reads the
+`tangent` attribute. `tangent_frame()` now checks the layer as well as
+`has_tangent`.
+
+On a geometry without a `tangent` attribute, three's `AttributeNode` warns
+and generates a constant of the attribute's type in place of the vertex
+input: `vec4<f32>( 0.0, 0.0, 0.0, 1.0 )`, a default `Vector4`. The port does
+the same. `MaterialFlow::geometry_has_tangent` carries the geometry's answer
+into the build (from `SetupContext::has_tangent_attribute`), and the builder
+replaces the `tangent` attribute with `wgsl::default_constant` and prints the
+warning. It declares no `@location` the geometry cannot feed, so the draw
+does not fail on a missing vertex buffer. The decision has to wait for the
+build because `tangent_geometry()` is one node shared by every material.
+
+**Limitation.** Three builds *every* varying's value with `subBuildFn` set
+to `'VERTEX'`, so any layered accessor reached inside any `toVarying()`
+takes the vertex layer: its vars get the `VERTEX_` prefix and
+`getTangentFrame` takes the attribute branch. The port opens the layer only
+where a node asks for it at construction (`tangent_world`, through
+`in_sub_build( "VERTEX", … )`). The builder cannot open it when it generates
+a varying, because the nodes under the varying were made, and named, before
+the build. A user varying over a layered accessor therefore builds that
+accessor in the main layer. Its WGSL computes the same values, with
+unprefixed names, unless the accessor is the tangent frame on a geometry
+without tangents, where three's vertex-layer branch reads the attribute
+fallback and the port's takes the derivative branch, which needs fragment
+derivatives.
+
+`getBitangent` is `.once( [ 'NORMAL' ] )` in three, so within one layer every
+bitangent shares the first result, whatever normal and tangent it was given.
+Three's `bitangentGeometry` and `bitangentWorld` in one shader therefore print
+the same expression. The port builds each bitangent from its own inputs, and
+each is gated in a probe of its own.
+
+### 67.3 New uniform sources
+
+- **`UniformSource::Object3D { scope, object }`** is `Object3DNode`: an
+  unnamed uniform in the object group. `scope` is direction, position,
+  scale, view position or radius. `object: None` is the drawn mesh (the
+  `model*` accessors). `Some(live)` reads the target's `matrixWorld` (the
+  `object*` functions, which take `&Node`). For `Direction` the live value is
+  the direction itself, from `getWorldDirection()`: the read refreshes the
+  target's world matrix first, and a camera's direction is negated, as
+  `Camera.getWorldDirection()` does. `Radius` multiplies the bounding
+  sphere of the *drawn* object's geometry by the target's largest scale,
+  as `frame.object.geometry` does in three.
+- **`CameraNormalMatrix`** writes the identity. `WebGPURenderer` never sets
+  `camera.normalMatrix`, so three's uniform is the identity too.
+- **`HighpModelViewMatrix`** and **`HighpModelNormalViewMatrix`** are
+  `cameraViewMatrix × matrixWorld`, and its normal matrix, multiplied on the
+  CPU per object.
+- **`MaterialRefractionRatio`** reads
+  `MeshBasicNodeMaterial::refraction_ratio`. It is 0.98 on the Basic,
+  Lambert and Phong constructors, whose three.js materials have
+  `refractionRatio`, and 0 on every other constructor. Three's uniform is one
+  shared `uniform( 0 )` whose update skips `undefined`, so a material without
+  the property reads 0 until a Basic, Lambert or Phong draw writes it, and
+  the last value written after that. The port writes the field on every
+  draw, so a Standard material always reads 0.
+
+None of these has an ArrayCamera element, which matches
+`camera_world_matrix`.
+
+### 67.4 `clipSpace`
+
+Three's `clipSpace` reads `builder.context.clipSpace`, which `NodeMaterial`
+sets to the vertex position node (`vertexNode || mvp`). `NodeBuilder::build`
+pushes the flow's position under the `"clipSpace"` context key. `clip_space()`
+is a `CustomNode` that reads the key at build time, inside a `v_clipSpace`
+varying.
+
+Like three's `Fn`, it is fragment-only. Set up outside the fragment stage
+it warns once (`` `clipSpace` is only available in fragment stage. ``) and
+yields `vec4()`, where reading the varying would feed the vertex output into
+itself. The test needs the stage during setup, and setup runs in the
+analyze pass, so `NodeBuilder::build` now analyzes the vertex flows with the
+stage set to vertex. Before, every flow was analyzed as fragment, and
+nothing read the stage there.
+
+### 67.5 Smaller differences
+
+- `mediump_model_view_matrix()` builds a fresh product on every call, where
+  three's is one shared node. The vertex stage always reaches it through
+  `modelViewMatrix`. The port counts uses across both stages, so a shared node
+  read once in a fragment would become a var there.
+- `transform_normal_to_view()` checks the context for a
+  `modelNormalViewMatrix` when it is called. Three checks when the node is
+  built. Only `renderer.highPrecision` sets that key in three.
+- Three's unnamed uniforms are numbered across both stages. The gates
+  renumber them in order of first use (`renumber_uniforms`).
 ## 74. `GodraysNode`, `bilateralBlur()` and `depthAwareBlend()` (`webgpu_postprocessing_godrays`)
 
 ### 74.1 What three does
