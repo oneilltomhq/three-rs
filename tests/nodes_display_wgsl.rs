@@ -1360,3 +1360,23 @@ fn recurrent_denoise_specular_dominant_direction_matches_three() {
         Region::Function("getSpecularDominantDirection"),
     );
 }
+
+#[test]
+fn denoise_matches_three() {
+    check("denoise", Region::Body);
+}
+
+#[test]
+fn denoise_from_depth_matches_three() {
+    check("denoise_from_depth", Region::Body);
+}
+
+#[test]
+fn ssao_matches_three() {
+    check("ssao", Region::Body);
+}
+
+#[test]
+fn ssao_blur_matches_three() {
+    check("ssao_blur", Region::Body);
+}

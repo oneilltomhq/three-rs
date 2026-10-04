@@ -28,12 +28,14 @@ use crate::textures::{
 
 pub use super::node::TextureSource;
 
+mod depth_aware_blur;
 mod gpgpu;
 mod lighting;
 mod rnoise;
 mod specular_helpers;
 mod utils;
 mod wrappers;
+pub use depth_aware_blur::depth_aware_blur;
 pub use gpgpu::*;
 pub use lighting::*;
 pub use rnoise::*;

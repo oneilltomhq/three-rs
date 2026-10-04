@@ -11,10 +11,10 @@ use three_rs::materials::{quad_vertex_node, render_output, MeshBasicNodeMaterial
 use three_rs::nodes::display::convert_to_texture;
 use three_rs::nodes::display::{
     after_image, anaglyph_pass, ao, barrel_uv, bayer_dither, bilateral_blur, bleach, box_blur,
-    circle, color_bleeding, depth_aware_blend, dof, dot_screen, film, fxaa, gaussian_blur, godrays,
+    circle, color_bleeding, denoise, depth_aware_blend, dof, dot_screen, film, fxaa, gaussian_blur, godrays,
     hash_blur_with, lensflare, lut_3d, motion_blur, outline, parallax_barrier_pass,
     pixelation_pass, recurrent_denoise, retro_pass, rgb_shift, rtt, scanlines, sepia, smaa, sobel,
-    ssgi, ssr, sss, temporal_reproject, traa, viewport_shared_texture_at, BoxBlurOptions,
+    ssao, ssgi, ssr, sss, temporal_reproject, traa, viewport_shared_texture_at, BoxBlurOptions,
     DenoiseAlphaSource, DenoiseMode, DepthAwareBlendOptions, EnvironmentLobe, GaussianBlurOptions,
     HashBlurOptions, ImportanceSampledEnvironment, LensflareParams, OutlineParams,
     RecurrentDenoiseOptions, RetroPassOptions, SampleFn, SharpenNode, SsrOptions,
@@ -25,7 +25,7 @@ use three_rs::nodes::tsl::{
     geometry_term, get_specular_dominant_factor, ggx_reflection_sample, ggx_reflection_struct, int,
     mis_power_heuristic, osc_sine, pass_depth_texture, perspective_depth_to_view_z, posterize,
     replace_default_uv, screen_size, screen_uv, smith_g, struct_get, texture_3d_sampled,
-    texture_uv, time, uniform_value, uv, vec2, vec2_join, vec3, vec3_join, vec4_join,
+    texture_uv, time, uniform_value, unpack_rgb_to_normal, uv, vec2, vec2_join, vec3, vec3_join, vec4_join,
 };
 use three_rs::nodes::Type;
 use three_rs::textures::{DepthTexture, MinFilter, Texture, TextureFilter};
@@ -968,6 +968,7 @@ pub fn display_quads() -> Vec<DisplayQuad> {
     }
     recurrent_denoise_quads(&mut quads);
     specular_helpers_quads(&mut quads);
+    denoise_ssao_quads(&mut quads);
 
     quads
 }
@@ -1177,4 +1178,45 @@ fn environment_quads(quads: &mut Vec<DisplayQuad>) {
             float(1.0),
         ]),
     ));
+}
+
+/// `tools/dump-pages/denoise.html` `m03` and `m05`: `denoise()` over the
+/// scene pass's `output` with its MRT `normal`, then again over that result
+/// with `normalNode = null` (normals from `getNormalFromDepth`); and
+/// `tools/dump-pages/ssao.html` `m03` / `m04`: `ssao( prePassDepth,
+/// prePassNormal, camera )`'s `SSAO.AO` and `SSAO.Blur` quads, the normal
+/// unpacked from the pre-pass's packed `output` as the AO page does.
+fn denoise_ssao_quads(quads: &mut Vec<DisplayQuad>) {
+    let camera = Rc::new(RefCell::new(PerspectiveCamera::new(50.0, 1.0, 0.1, 100.0)));
+    let depth = DepthTexture::new();
+    let normal_tex = input();
+    let normal: SampleFn = {
+        let normal_tex = normal_tex.clone();
+        Rc::new(move |coord| texture_uv(&normal_tex, coord))
+    };
+
+    let with_normals = denoise(&input(), &depth, Some(normal), &camera);
+    quads.push(quad("denoise", "denoise_m03_denoise.wgsl", with_normals.node()));
+    let from_depth = denoise(&input(), &depth, None, &camera);
+    quads.push(quad(
+        "denoise_from_depth",
+        "denoise_m05_denoise_from_depth.wgsl",
+        from_depth.node(),
+    ));
+
+    let packed = input();
+    let pre_pass_normal: SampleFn =
+        Rc::new(move |coord| unpack_rgb_to_normal(texture_uv(&packed, coord)));
+    let ao = ssao(&depth, pre_pass_normal, &camera);
+    for (label, fixture, mut material) in [
+        ("ssao", "ssao_m03_ssao.wgsl", ao.quad_material()),
+        ("ssao_blur", "ssao_m04_ssao_blur.wgsl", ao.blur_quad_material()),
+    ] {
+        material.vertex_node = Some(quad_vertex_node());
+        quads.push(DisplayQuad {
+            label,
+            fixture,
+            material,
+        });
+    }
 }

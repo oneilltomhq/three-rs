@@ -3196,7 +3196,13 @@ impl NodeBuilder {
             } => {
                 let (inner, index) = (inner.clone(), index.clone());
                 let snippet = self.generate(&inner);
-                let idx = self.generate(&index);
+                // `ArrayElementNode.generate()` builds a non-integer index as
+                // `'uint'`, so a float index comes out as `u32( … )`.
+                let idx = if index.ty() == Type::F32 {
+                    self.format(&index, Type::U32)
+                } else {
+                    self.generate(&index)
+                };
                 format!("{snippet}[ {idx} ]")
             }
 
