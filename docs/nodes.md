@@ -8900,3 +8900,104 @@ the following:
 - Over thirteen frames of fresh noise the variance keeps dropping
   (4.1, 1.1, 0.6, 0.35), and no texel is NaN.
 - A resize restarts the target at the new size.
+
+## 90. `TAAUNode` (`webgpu_upscaling_taau`)
+
+### 90.1 What three does
+
+`taau( beauty, depth, velocity, camera )` is TRAA's upsampling sibling. It is
+a `TempNode` with `updateBeforeType = FRAME`, and its inputs come from a
+scene pass drawn at a fraction of the canvas (the page uses
+`setResolutionScale( 0.5 )`). Its output is always the drawing buffer's size.
+
+- **Targets.** The history is a half-float target with two attachments,
+  `TAAUNode.history.color` and `TAAUNode.history.lock`. The resolve target
+  has one. A third, input-sized target exists only for its `DepthTexture`,
+  the previous frame's depth.
+- **Jitter.** The same 32 Halton (2, 3) offsets as TRAA, minus 0.5, through
+  `camera.setViewOffset()` at the *input* size, behind the pipeline's
+  `viewOffsetOwner`. The callbacks are registered from `setup()`, which runs
+  inside the first `renderPipeline.render()`, after that frame's before
+  callbacks. So the first frame is unjittered, but its after callback runs
+  and advances the index to 1.
+- **`updateBefore()`.** It rolls the previous camera matrices, writes this
+  frame's, and on a size change seeds the history with `TAAU.seed`: the
+  beauty sampled bilinearly at output UVs into colour, and 0 into lock. It
+  renders `TAAU.resolve` into the resolve target, copies that into the
+  history's colour, and copies the scene depth into the previous-depth
+  target.
+- **The resolve.** Each output pixel finds its closest input texel,
+  `round( pIn - ( 0.5 + jitter ) )`. It reconstructs the current frame from
+  the 3×3 texels around it with `exp( d² · -2.29 )` weights (a Gaussian fit
+  to Blackman-Harris) and gathers their mean and variance on the way. It
+  reads the velocity at the closest-depth texel of the 3×3 depth
+  neighbourhood and reprojects the history along it. The history is
+  disoccluded when the reprojected previous depth is more than
+  `depthThreshold` behind, except on an edge. It is clipped to the mean ±
+  γσ, with γ narrowing from 1 to 0.5 as motion grows. A *lock* keeps
+  thin, high-contrast features unclipped. It is the larger of a
+  `smoothstep` thin-feature term, zeroed off-screen or where the depth
+  changed, and the history lock times 0.5 (0 on a disocclusion). The blend
+  weight is 2.5% plus a motion term, or 1 with no valid history, through
+  TRAA's `flickerReduction`.
+
+Both materials write `outputStruct( color, lock )`. Into the
+one-attachment resolve target the lock output goes nowhere, so the history
+lock is only ever the seed's 0, and `lockNode.r` reads 0. On the first frame
+the previous depth is unwritten (0) and the previous matrices are the
+identity, so the background is disoccluded and takes the reconstruction,
+and the model mostly keeps the bilinear seed. That is the frame the e2e
+harness grades.
+
+### 90.2 The port
+
+`nodes::display::taau` builds the same graph, and `TaauState` implements
+`NodeUpdate` as the updater of the resolve texture, as `TraaState` does
+(§63). `TaauNode::attach( &mut RenderPipeline )` installs the jitter hooks
+behind `RenderPipeline::claim_view_offset()`. The before hook skips its
+first call, so the first frame is three's unjittered one. The materials
+write the same two outputs into the same targets: wgpu accepts a fragment
+stage with an output that has no attachment, and the dropped lock is what
+three renders. `update_before()` follows three's order, after asking for the
+scene pass first as TRAA does.
+
+**`TAAUtils.js`.** The helpers TRAA and TAAU share, `sampleCurrentDepth`,
+`samplePreviousDepth`, `clipAABB`, `flickerReduction` and the Halton
+offsets, now live in `src/nodes/display/taa_utils.rs`, a crate-private
+module both nodes import. TRAA's gates passed unchanged after the move.
+
+**The gates** (`tests/nodes_display_wgsl.rs`) are against three's dump of the
+page: `taau_seed_matches_three` (`m36`), `taau_resolve_matches_three`
+(`m38`, the whole body), and `taau_clip_aabb_matches_three` and
+`taau_flicker_reduction_matches_three`, which hold the resolve's two layout
+functions to three's. The page's RCAS quad (`m40`) is byte-identical to the
+existing `sharpen_rcas` fixture (§86), so it is not gated twice. The
+remaining differences are cosmetic:
+
+- Three's `toConst()`s print as `let nodeConstN`. The port prints the same
+  values as `nodeVarN` assignments, the usual single-assignment difference
+  (§8).
+- Three casts the closest tap to `vec2<i32>` once, as `nodeConst3`. The port
+  writes `vec2<i32>( nodeVar5 )` at each of the nine taps. The input size is
+  a `to_const` placed after the four accumulators, so `textureDimensions`
+  appears twice, as in three, and not at every use.
+
+**The page.** `examples/webgpu_upscaling_taau.rs` passes
+`sharpen( taauNode.getTextureNode(), 0.2 )` as a
+`SharpenNode::new( &taau.texture(), float( 0.2 ), false )`. Three's 0.2 is
+a number, and so a constant in the shader, and `sharpen()` would put an
+`RTTNode` around a texture node that three's `convertToTexture()` passes
+through. Three replaces `scene` after `renderer.init()`, and the model's
+load callback adds it to the new scene. The port builds only that scene.
+
+**Over frames,** `tests/taau_frames.rs` draws a white box at half of a
+48×48 canvas:
+
+- The output is canvas-sized while the pass is half-size.
+- The first frame matches a plain bilinear resolve of the same pass, except
+  for at most 16 pixels within 3 px of the silhouette.
+- A static scene converges, and its blended pixels stay on the silhouette.
+- A box that moves leaves no ghost in the region it vacated.
+
+Not ported: orthographic cameras, logarithmic and reversed depth, an
+`RTTNode` beauty and a velocity other than the global one.
