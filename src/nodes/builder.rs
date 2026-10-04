@@ -2713,14 +2713,19 @@ impl NodeBuilder {
             }
             // `OutputStructNode.generate()`: one `output.mN = <member>` line
             // per member, each built as its own type, pushed onto the flow.
-            Node::OutputStruct { members } => {
-                for (index, member) in members.clone().iter().enumerate() {
-                    let snippet = self.format(member, member.ty());
-                    self.emit(format!("output.m{index} = {snippet};"));
-                }
-                String::new()
-            }
+            Node::OutputStruct { members } => self.generate_output_struct(members),
         }
+    }
+
+    /// The `Node::OutputStruct` arm of [`Self::generate`], out of line so its
+    /// locals stay out of the recursive frame every node pays for.
+    #[inline(never)]
+    fn generate_output_struct(&mut self, members: &[NodeRef]) -> String {
+        for (index, member) in members.iter().enumerate() {
+            let snippet = self.format(member, member.ty());
+            self.emit(format!("output.m{index} = {snippet};"));
+        }
+        String::new()
     }
 
     /// A `Loop` bound, which `LoopNode.generate()` builds as the loop's own
