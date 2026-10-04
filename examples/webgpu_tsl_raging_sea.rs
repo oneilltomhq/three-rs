@@ -22,8 +22,8 @@ use three_rs::materials::MeshBasicNodeMaterial;
 use three_rs::nodes::materialx::mx_noise_float;
 use three_rs::nodes::node::FnDef;
 use three_rs::nodes::tsl::{
-    block, call, camera_view_matrix, float, inline_fn, loop_options, model_normal_matrix,
-    position_local, time, to_var, transform_direction, uniform_value, vec3_join,
+    block, call, float, inline_fn, loop_options, position_local, time, to_var,
+    transform_normal_to_view, uniform_value, vec3_join,
 };
 use three_rs::nodes::{NodeRef, Type};
 use three_rs::{
@@ -66,14 +66,6 @@ fn remap(node: NodeRef, in_low: NodeRef, in_high: NodeRef) -> NodeRef {
         .div(in_high.sub(in_low))
         .mul(out_high.sub(out_low.clone()))
         .add(out_low)
-}
-
-/// `transformNormalToView( normal )` — `Normal.js`, without a
-/// `modelNormalViewMatrix` in the context:
-/// `modelNormalMatrix.mul( normal ).transformNormalByViewMatrix(
-/// cameraViewMatrix )`, which prints as three's `transformDirection`.
-fn transform_normal_to_view(normal: NodeRef) -> NodeRef {
-    transform_direction(camera_view_matrix(), model_normal_matrix().mul(normal))
 }
 
 /// The page's uniforms, in declaration order.

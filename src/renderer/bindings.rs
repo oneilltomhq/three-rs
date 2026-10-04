@@ -221,8 +221,19 @@ impl SamplerKey {
                     compare: None,
                 }
             }
-            TextureSource::Depth(_)
-            | TextureSource::DataArray(_)
+            // A depth texture is read with `textureLoad`; the one sampler it
+            // ever gets is `textureGather`'s `non-filtering` one
+            // (`generateTextureGather()`), which `updateSampler()` builds
+            // from the texture's `NearestFilter`s and clamped wrapping.
+            TextureSource::Depth(_) => Self {
+                address: [clamp; 3],
+                mag_filter: wgpu::FilterMode::Nearest,
+                min_filter: wgpu::FilterMode::Nearest,
+                mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+                anisotropy_clamp: 1,
+                compare: None,
+            },
+            TextureSource::DataArray(_)
             | TextureSource::Data(_)
             | TextureSource::Storage(..)
             | TextureSource::Storage3D(..) => {

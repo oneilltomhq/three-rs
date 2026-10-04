@@ -432,6 +432,221 @@ pub fn sinc(x: impl Into<NodeRef>, k: impl Into<NodeRef>) -> NodeRef {
     arg.sin().div(arg)
 }
 
+/// `faceforward( N, I, Nref )` — `MathNode.js`' `faceforward = faceForward`,
+/// the deprecated GLSL spelling of [`face_forward`]. Three keeps it as a
+/// plain alias with no warning, and so does this.
+pub fn faceforward(
+    n: impl Into<NodeRef>,
+    i: impl Into<NodeRef>,
+    nref: impl Into<NodeRef>,
+) -> NodeRef {
+    face_forward(n, i, nref)
+}
+
+/// `inversesqrt( x )` — `MathNode.js`' `inversesqrt = inverseSqrt`, the
+/// deprecated GLSL spelling of [`super::inverse_sqrt`]. A plain alias, as in
+/// three.
+pub fn inversesqrt(x: impl Into<NodeRef>) -> NodeRef {
+    super::inverse_sqrt(x)
+}
+
+/// `any( x )` — `MathNode.ANY`: whether any component of a boolean vector is
+/// true. The `all` counterpart is [`super::all`].
+pub fn any(x: impl Into<NodeRef>) -> NodeRef {
+    math("any", vec![x.into()], Type::Bool)
+}
+
+/// `transformNormalByViewMatrix( normal, viewMatrix )` — `MathNode.js`:
+/// `normalize( mul( viewMatrix, vec4( vec3( normal ), 0.0 ) ).xyz )`. The
+/// view matrix's upper 3×3 is taken as orthonormal, so no normal matrix is
+/// involved.
+pub fn transform_normal_by_view_matrix(
+    normal: impl Into<NodeRef>,
+    view_matrix: impl Into<NodeRef>,
+) -> NodeRef {
+    let n = join(Type::Vec4, vec![normal.into().to_vec3(), float(0.0)]);
+    view_matrix.into().mul(n).xyz().normalize()
+}
+
+/// `transformNormal( normal, matrix )` — `Normal.js`: `mat3( matrix )
+/// .inverse().transpose().mul( normal ).normalize()`, the normal through the
+/// inverse transpose of `matrix`'s upper 3×3.
+///
+/// Three's `matrix` defaults to `modelWorldMatrix`. Rust has no default
+/// arguments, so three's one-argument `transformNormal( normal )` is
+/// `transform_normal( normal, model_world_matrix() )` here.
+pub fn transform_normal(normal: impl Into<NodeRef>, matrix: impl Into<NodeRef>) -> NodeRef {
+    matrix
+        .into()
+        .to_mat3()
+        .inverse()
+        .transpose()
+        .mul(normal.into())
+        .normalize()
+}
+
+/// `transformNormalToView( normal )` — `Normal.js`: `normal` from local to
+/// view space, `modelNormalMatrix.mul( normal ).transformNormalByViewMatrix(
+/// cameraViewMatrix )`.
+///
+/// Three takes `normal.transformNormalByViewMatrix( modelNormalViewMatrix )`
+/// instead when `builder.context.modelNormalViewMatrix` is set, which only
+/// `renderer.highPrecision` does. The port reads the same key from the build
+/// context in force when this is called — nothing in the crate sets it.
+pub fn transform_normal_to_view(normal: impl Into<NodeRef>) -> NodeRef {
+    let normal = normal.into();
+    let matrix =
+        crate::nodes::builder::current_context(|cx| cx.extra.get("modelNormalViewMatrix").cloned());
+    match matrix {
+        Some(matrix) => transform_normal_by_view_matrix(normal, matrix),
+        None => transform_normal_by_view_matrix(
+            super::model_normal_matrix().mul(normal),
+            camera_view_matrix(),
+        ),
+    }
+}
+
+/// `transformNormalByInverseViewMatrix( normal, viewMatrix )` —
+/// `MathNode.js`: `normalize( vec4( vec3( normal ), 0.0 ).mul( viewMatrix
+/// ).xyz )`. Post-multiplying by an orthonormal view matrix is
+/// pre-multiplying by its inverse.
+pub fn transform_normal_by_inverse_view_matrix(
+    normal: impl Into<NodeRef>,
+    view_matrix: impl Into<NodeRef>,
+) -> NodeRef {
+    let n = join(Type::Vec4, vec![normal.into().to_vec3(), float(0.0)]);
+    n.mul(view_matrix.into()).xyz().normalize()
+}
+
+// ---------------------------------------------------------------------------
+// packing (`math/PackFloatNode.js`, `math/UnpackFloatNode.js`,
+// `math/Packed4x8IntegerNode.js`)
+// ---------------------------------------------------------------------------
+
+/// `PackFloatNode` / `UnpackFloatNode`: one call to the WGSL builtin
+/// `WGSLNodeBuilder.getFloatPackingMethod()` names, its operand built at its
+/// own type and written with no padding inside the parentheses, as three's
+/// template does (`pack2x16snorm(v)`).
+fn float_packing(builtin: &'static str, x: impl Into<NodeRef>, ty: Type) -> NodeRef {
+    math(builtin, vec![x.into()], ty)
+}
+
+/// `packSnorm2x16( v )` — `PackFloatNode( 'snorm' )`: a `vec2` in `[ -1, 1 ]`
+/// to a `u32`, WGSL's `pack2x16snorm`.
+pub fn pack_snorm_2x16(v: impl Into<NodeRef>) -> NodeRef {
+    float_packing("pack2x16snorm", v, Type::U32)
+}
+
+/// `packUnorm2x16( v )` — `PackFloatNode( 'unorm' )`, WGSL's `pack2x16unorm`.
+pub fn pack_unorm_2x16(v: impl Into<NodeRef>) -> NodeRef {
+    float_packing("pack2x16unorm", v, Type::U32)
+}
+
+/// `packHalf2x16( v )` — `PackFloatNode( 'float16' )`, WGSL's
+/// `pack2x16float`.
+pub fn pack_half_2x16(v: impl Into<NodeRef>) -> NodeRef {
+    float_packing("pack2x16float", v, Type::U32)
+}
+
+/// `packSnorm4x8( v )` — `PackFloatNode( 'snorm', { layout: '4x8' } )`, WGSL's
+/// `pack4x8snorm`.
+pub fn pack_snorm_4x8(v: impl Into<NodeRef>) -> NodeRef {
+    float_packing("pack4x8snorm", v, Type::U32)
+}
+
+/// `packUnorm4x8( v )` — `PackFloatNode( 'unorm', { layout: '4x8' } )`, WGSL's
+/// `pack4x8unorm`.
+pub fn pack_unorm_4x8(v: impl Into<NodeRef>) -> NodeRef {
+    float_packing("pack4x8unorm", v, Type::U32)
+}
+
+/// `unpackSnorm2x16( u )` — `UnpackFloatNode( 'snorm' )`, a `vec2`; WGSL's
+/// `unpack2x16snorm`.
+pub fn unpack_snorm_2x16(u: impl Into<NodeRef>) -> NodeRef {
+    float_packing("unpack2x16snorm", u, Type::Vec2)
+}
+
+/// `unpackUnorm2x16( u )` — `UnpackFloatNode( 'unorm' )`, WGSL's
+/// `unpack2x16unorm`.
+pub fn unpack_unorm_2x16(u: impl Into<NodeRef>) -> NodeRef {
+    float_packing("unpack2x16unorm", u, Type::Vec2)
+}
+
+/// `unpackHalf2x16( u )` — `UnpackFloatNode( 'float16' )`, WGSL's
+/// `unpack2x16float`.
+pub fn unpack_half_2x16(u: impl Into<NodeRef>) -> NodeRef {
+    float_packing("unpack2x16float", u, Type::Vec2)
+}
+
+/// `unpackSnorm4x8( u )` — `UnpackFloatNode( 'snorm', { layout: '4x8' } )`, a
+/// `vec4`; WGSL's `unpack4x8snorm`.
+pub fn unpack_snorm_4x8(u: impl Into<NodeRef>) -> NodeRef {
+    float_packing("unpack4x8snorm", u, Type::Vec4)
+}
+
+/// `unpackUnorm4x8( u )` — `UnpackFloatNode( 'unorm', { layout: '4x8' } )`,
+/// WGSL's `unpack4x8unorm`.
+pub fn unpack_unorm_4x8(u: impl Into<NodeRef>) -> NodeRef {
+    float_packing("unpack4x8unorm", u, Type::Vec4)
+}
+
+/// `Packed4x8IntegerNode`: the WGSL builtin of the same name, operands built
+/// at `getInputType()` — `ivec4` for the signed packs, `uvec4` for the
+/// unsigned ones, `uint` for everything that reads a packed word.
+///
+/// Three emulates these with `tsl_packed4x8_*` functions when
+/// `navigator.gpu.wgslLanguageFeatures` lacks `packed_4x8_integer_dot_product`;
+/// the Chrome the fixtures are dumped from has it, so three's WGSL — and this
+/// — is the native builtin, which naga also implements. The emulation is not
+/// ported: there is no browser to ask.
+fn packed_4x8(method: &'static str, args: Vec<NodeRef>, ty: Type) -> NodeRef {
+    math(method, args, ty)
+}
+
+/// `dot4U8Packed( a, b )` — the dot product of two words' four unsigned
+/// bytes, a `u32`.
+pub fn dot_4u8_packed(a: impl Into<NodeRef>, b: impl Into<NodeRef>) -> NodeRef {
+    packed_4x8("dot4U8Packed", vec![a.into(), b.into()], Type::U32)
+}
+
+/// `dot4I8Packed( a, b )` — the dot product of two words' four signed bytes,
+/// an `i32`.
+pub fn dot_4i8_packed(a: impl Into<NodeRef>, b: impl Into<NodeRef>) -> NodeRef {
+    packed_4x8("dot4I8Packed", vec![a.into(), b.into()], Type::I32)
+}
+
+/// `pack4xI8( v )` — the low byte of each `ivec4` component into one `u32`.
+pub fn pack_4x_i8(v: impl Into<NodeRef>) -> NodeRef {
+    packed_4x8("pack4xI8", vec![v.into()], Type::U32)
+}
+
+/// `pack4xU8( v )` — the low byte of each `uvec4` component into one `u32`.
+pub fn pack_4x_u8(v: impl Into<NodeRef>) -> NodeRef {
+    packed_4x8("pack4xU8", vec![v.into()], Type::U32)
+}
+
+/// `pack4xI8Clamp( v )` — [`pack_4x_i8`] after clamping each component to
+/// `[ -128, 127 ]`.
+pub fn pack_4x_i8_clamp(v: impl Into<NodeRef>) -> NodeRef {
+    packed_4x8("pack4xI8Clamp", vec![v.into()], Type::U32)
+}
+
+/// `pack4xU8Clamp( v )` — [`pack_4x_u8`] after clamping each component to
+/// `[ 0, 255 ]`.
+pub fn pack_4x_u8_clamp(v: impl Into<NodeRef>) -> NodeRef {
+    packed_4x8("pack4xU8Clamp", vec![v.into()], Type::U32)
+}
+
+/// `unpack4xI8( u )` — a word's four bytes, sign-extended, as an `ivec4`.
+pub fn unpack_4x_i8(u: impl Into<NodeRef>) -> NodeRef {
+    packed_4x8("unpack4xI8", vec![u.into()], Type::IVec4)
+}
+
+/// `unpack4xU8( u )` — a word's four bytes, zero-extended, as a `uvec4`.
+pub fn unpack_4x_u8(u: impl Into<NodeRef>) -> NodeRef {
+    packed_4x8("unpack4xU8", vec![u.into()], Type::UVec4)
+}
+
 // ---------------------------------------------------------------------------
 // bits and integers (`math/OperatorNode.js`, `math/BitcastNode.js`)
 // ---------------------------------------------------------------------------
@@ -1101,6 +1316,31 @@ impl NodeRef {
     /// `n.faceForward( i, nref )`.
     pub fn face_forward(&self, i: impl Into<NodeRef>, nref: impl Into<NodeRef>) -> NodeRef {
         face_forward(self, i, nref)
+    }
+    /// `b.all()` — `MathNode.ALL`, see [`super::all`].
+    pub fn all(&self) -> NodeRef {
+        super::all(self)
+    }
+    /// `b.any()` — `MathNode.ANY`, see [`any`].
+    pub fn any(&self) -> NodeRef {
+        any(self)
+    }
+    /// `n.transformNormalByViewMatrix( viewMatrix )`.
+    pub fn transform_normal_by_view_matrix(&self, view_matrix: impl Into<NodeRef>) -> NodeRef {
+        transform_normal_by_view_matrix(self, view_matrix)
+    }
+    /// `n.transformNormal( matrix )` — see [`transform_normal`]. Three's
+    /// `matrix` defaults to `modelWorldMatrix`; pass `model_world_matrix()`
+    /// for its no-argument form.
+    pub fn transform_normal(&self, matrix: impl Into<NodeRef>) -> NodeRef {
+        transform_normal(self, matrix)
+    }
+    /// `n.transformNormalByInverseViewMatrix( viewMatrix )`.
+    pub fn transform_normal_by_inverse_view_matrix(
+        &self,
+        view_matrix: impl Into<NodeRef>,
+    ) -> NodeRef {
+        transform_normal_by_inverse_view_matrix(self, view_matrix)
     }
     /// `a.xor( b )`.
     pub fn xor(&self, b: impl Into<NodeRef>) -> NodeRef {
