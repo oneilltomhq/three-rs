@@ -287,6 +287,7 @@ in the gallery or the browser shell:
 | [`webgpu_postprocessing_ao`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_ao.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_ao-progress.md) | in the same exception list. It is gated instead on its GTAO shader against three's dump and on `tests/gtao_frames.rs` |
 | [`webgpu_postprocessing_dof`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_dof.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_dof-progress.md) | in three's e2e exception list (`test/e2e/puppeteer.js`, "Black screen"). It is gated instead on each of `DepthOfFieldNode`'s seven distinct quad shaders against three's dump (`dof_*` in `tests/nodes_display_wgsl.rs`) |
 | [`webgpu_postprocessing_retro`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_retro.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_retro-progress.md) | three.js scores 1.5% against its own reference here, over the 0.1% limit, and the port scores the same 1503 pixels. It is gated instead on its two post-processing shaders against three's dump and on `tests/retro_frames.rs` |
+| [`webgpu_postprocessing_ssr_denoise`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_ssr_denoise.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_ssr_denoise-progress.md) | in three's e2e exception list (`test/e2e/puppeteer.js`, "Need more time to render"). It is gated instead on its scene material, SSR, denoise, grading and sharpen shaders against three's dump and on `tests/ssr_denoise_frames.rs` |
 
 Measured on Intel Iris Xe, Mesa 25.3.6, Fedora 43, against three.js 5f610f5
 (past r186, for the cube PMREM of 2f80402; the pin becomes the r187 tag once
@@ -355,7 +356,8 @@ Opens the named example in a window (winit, tested on Wayland). All 94 graded
 examples are there, and so are the ungraded `webgpu_postprocessing_traa`, `webgpu_water`,
 `webgpu_postprocessing_sss`, `webgpu_postprocessing_ssgi`,
 `webgpu_postprocessing_ao`,
-`webgpu_postprocessing_dof`, `webgpu_postprocessing_smaa`,
+`webgpu_postprocessing_dof`, `webgpu_postprocessing_ssr_denoise`,
+`webgpu_postprocessing_smaa`,
 `webgpu_postprocessing_pixel` and `webgpu_postprocessing_retro`. The last three
 are ported but their e2e tests are `#[ignore]`d, because three itself fails
 their references on this machine; their

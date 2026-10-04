@@ -8,6 +8,19 @@ have their own sections after the release they ship with. The format follows [Ke
 
 ### Added
 
+- **`webgpu_postprocessing_ssr_denoise`** (ungraded: three's own e2e
+  exception list): the stochastic `ssr()`, `temporal_reproject()` and
+  `recurrent_denoise()` in a history loop, added to the beauty, graded and
+  resolved by `traa()` and `sharpen()`. `MeshBasicNodeMaterial` gains
+  `environment_specular`, the page's `indirectSpecular` patch, and
+  `nodes::tsl` gains `material_metalness_value()` /
+  `material_roughness_value()`, the map-resolved values the page writes to
+  its MRT. The floor material and the SSR, denoise, grading and sharpen
+  quads are gated against three's dump of the page, and
+  `tests/ssr_denoise_frames.rs` checks the chain converges in place. Also
+  fixed on the way: the recurrent denoiser allocates its target before its
+  input reads it, a struct-typed var declares its struct, and
+  `saturation()` shares its `.rgb` as three does (docs/nodes.md §89).
 - **`ssr()`'s stochastic path** (`nodes::display`): `SsrOptions` gains
   `stochastic`, `reflect_non_metals`, `environment`,
   `env_importance_sampling`, `diffuse` and `binary_refine`, and `SsrNode`
