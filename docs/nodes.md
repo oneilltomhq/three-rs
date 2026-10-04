@@ -5988,3 +5988,97 @@ arithmetic, and `tests/traa_frames.rs` allows for it.
 - `useSubpixelCorrection = false`, `depthThreshold`, `edgeDepthDiff` and
   `maxVelocityLength` as settable properties. They are constants at three's
   defaults.
+
+## 71. `SSSNode` and `builtinShadowContext` (`webgpu_postprocessing_sss`)
+
+### 71.1 What three does
+
+`sss( depthNode, camera, mainLight )` is a `TempNode` with
+`updateBeforeType = FRAME`. It owns one `RedFormat` / `UnsignedByteType`
+render target, sized `round( resolutionScale × drawing-buffer size )`, and
+its texture node is `passTexture( this, target.texture )`.
+
+- **`updateBefore()`.** It sets the target's size and the camera uniforms
+  (view, projection, inverse projection, near and far), and copies the
+  light's and its target's world positions into `lightPosition` and
+  `lightTargetPosition`. With temporal filtering it sets `temporalOffset`
+  to `_spatialOffsets[ frameId % 4 ]` (0, 0.5, 0.25, 0.75) and stores
+  `frame.frameId` in `this._frameId`; without it, both are 0. It then draws
+  the quad into the target, cleared to white.
+- **The quad.** For each pixel with depth below 1 it rebuilds the view
+  position and marches from it towards the light. The ray runs from
+  `fragCoord` to the screen position of `rayStart + lightDirection ×
+  maxDistance`, one step per `1 / quality` pixels along the longer axis.
+  Each step is offset by interleaved gradient noise, `temporalOffset` and
+  `rand( uv + frameId )`. At each step it compares the ray's view depth
+  with the depth buffer's. A surface in front of the ray by less than
+  `thickness` sets the occlusion to `shadowIntensity` and ends the loop.
+  The output is `1 − occlusion`.
+- **The frame id is a literal.** The constructor makes `_frameId` a uniform,
+  but `updateBefore()` replaces the property with a plain number before the
+  quad's `Fn()` first runs. So the shader holds `rand( uv + vec2( N ) )`
+  for the frame the material was built on (`vec2( 2.0 )` in the page's
+  dump), and the material is never rebuilt.
+- **`builtinShadowContext( shadow, light )`.** This is a context whose
+  `getShadow( lightNode )` returns `lightNode.shadowColorNode.mul( shadow )`
+  for that light alone. `AnalyticLightNode.setupShadow()` calls it only
+  where a shadow map applies: the light casts, the object receives and the
+  renderer's shadow map is on. The page sets the context as
+  `scenePass.contextNode`, so every receiver in the scene pass multiplies
+  the directional light's colour by its shadow-map factor and then by the
+  SSS sample.
+
+### 71.2 The port
+
+`nodes::display::sss` builds the same graph. Its fragment body is gated
+against three's dump by `sss_matches_three` (`tests/nodes_display_wgsl.rs`,
+fixture `webgpu_postprocessing_sss_m08_sss.wgsl`). `maxDistance`,
+`thickness`, `shadowIntensity` and `quality` are public `SettableValue`s.
+`set_resolution_scale` and `set_use_temporal_filtering` stand in for
+three's two properties.
+
+**The frame id.** `SssState` builds the quad material on its first
+`update_before()`, with the frame id three would have baked: the frame's id
+under temporal filtering, else 0. It keeps that material for good, as three
+does. `SssNode::quad_material( frame_id )` (hidden from the docs) is what
+the gate builds, with three's 2.
+
+**Order within a frame.** `update_before()` asks for the pre-pass first,
+through `frame::texture_update( depth )`, as GTAO and TRAA do. While it does
+so it lifts the renderer's shadow context, so the pre-pass never draws with
+the context of the pass that triggered it.
+
+**The shadow context.** `PassNode::set_context_shadow( shadow, &light )` is
+`scenePass.contextNode = builtinShadowContext( shadow, light )`, and
+`clear_context_shadow()` sets it back to `null`. The pass hands the context
+to the renderer for the length of its render, as `set_context_ao` does
+(§64). The renderer finds the light's index in the render list by node
+identity. For every draw where that light's shadow map applies, it wraps the
+map in `ShadowMap::Context { map, shadow }`. `setup_light` then multiplies
+the light's colour by the map's factor and by `shadow`, which is three's
+`( color × shadowFactor ) × shadow`. The context rides in `ShadowMap` rather
+than in a new `SetupContext` field. It is part of `ShadowMap`'s hash, so it
+is part of the program key, and a draw without a shadow map never sees it,
+which is the same condition three's `setupShadow()` applies.
+`sss_shadow_context_matches_three` gates the page's ground material (Phong,
+hemisphere and directional light, PCF shadow map, linear fog, context)
+against fixture `webgpu_postprocessing_sss_m12_ground.wgsl`.
+
+**Divergences.**
+
+- **No `RedFormat`.** The port has no one-channel render target, so the
+  target is `rgba8unorm` and the quad's `OutputStruct` member is a `vec4`
+  splat of three's `f32`. Consumers read `.x`, where three reads `.r`. The
+  gate's fingerprint does not see the output type.
+- **`getScreenPosition`** (`PostProcessingUtils.js`) is a private helper in
+  `sss.rs` and not a public `tsl` function.
+
+### 71.3 Not ported
+
+- An `OrthographicCamera`. The node takes a `PerspectiveCamera`, so
+  `getViewZ`'s orthographic branch never applies.
+- A logarithmic depth buffer (`sampleDepth`'s `logarithmicDepthToViewZ` →
+  `viewZToPerspectiveDepth`).
+- `this._material.contextNode = context( builder.getSharedContext() )`. The
+  quad builds with an empty context, which is what the shared context of an
+  output-node build amounts to.

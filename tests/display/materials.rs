@@ -6,7 +6,7 @@
 use three_rs::materials::{quad_vertex_node, render_output, MeshBasicNodeMaterial};
 use three_rs::nodes::display::{
     after_image, box_blur, dot_screen, fxaa, gaussian_blur, hash_blur_with, motion_blur,
-    pixelation_pass, rgb_shift, sobel, traa, viewport_shared_texture_at, BoxBlurOptions,
+    pixelation_pass, rgb_shift, sobel, sss, traa, viewport_shared_texture_at, BoxBlurOptions,
     GaussianBlurOptions, HashBlurOptions,
 };
 use three_rs::nodes::tsl::{distance, float, screen_uv, texture_uv, uniform_value, uv, vec4_join};
@@ -193,6 +193,25 @@ pub fn display_quads() -> Vec<DisplayQuad> {
         label: "traa",
         fixture: "webgpu_postprocessing_traa_m05_traa_resolve.wgsl",
         material: resolve,
+    });
+
+    // webgpu_postprocessing_sss `m08`: `sss( prePassDepth, camera, dirLight
+    // )`'s quad, `SSS`. The page turns temporal filtering on before its first
+    // frame, and three bakes the frame id the material is built on into the
+    // shader: 2 in the dump.
+    let sss_node = sss(
+        &DepthTexture::new(),
+        std::rc::Rc::new(std::cell::RefCell::new(three_rs::PerspectiveCamera::new(
+            45.0, 1.0, 0.1, 100.0,
+        ))),
+        &three_rs::DirectionalLight::new(three_rs::Color::from_hex(0xffffff), 3.0),
+    );
+    let mut sss_quad = sss_node.quad_material(2);
+    sss_quad.vertex_node = Some(quad_vertex_node());
+    quads.push(DisplayQuad {
+        label: "sss",
+        fixture: "webgpu_postprocessing_sss_m08_sss.wgsl",
+        material: sss_quad,
     });
 
     quads

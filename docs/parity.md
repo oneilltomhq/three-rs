@@ -865,7 +865,7 @@ These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) an
 | `SSAONode.js` | Absent | — |
 | `SSGINode.js` | Absent | — |
 | `SSRNode.js` | Absent | — |
-| `SSSNode.js` | Absent | — |
+| `SSSNode.js` | Present | sss/SssNode; tests/nodes_display_wgsl.rs (SSS quad and ground shadow-context gates), tests/sss_frames.rs; webgpu_postprocessing_sss (ported, ungraded: three's own e2e exception list). No orthographic camera, no logarithmic depth |
 | `StereoCompositePassNode.js` | Absent | — |
 | `StereoPassNode.js` | Absent | — |
 | `TAAUNode.js` | Absent | — |

@@ -8,6 +8,22 @@ have their own sections after the release they ship with. The format follows [Ke
 
 ### Added
 
+- **`nodes::display::sss`** (`SssNode`), a port of `SSSNode.js`. It casts
+  screen-space shadows by marching a ray from each pixel towards one light
+  through a depth pre-pass. `maxDistance`, `thickness`, `shadowIntensity` and
+  `quality` are `SettableValue`s, and `set_resolution_scale` and
+  `set_use_temporal_filtering` stand in for three's properties. Its shader is
+  gated against three's dump in `tests/nodes_display_wgsl.rs`, and its frames
+  in `tests/sss_frames.rs`. See `docs/nodes.md` §71.
+- **`builtinShadowContext`**: `PassNode::set_context_shadow( shadow, &light )`
+  multiplies `shadow` into that light's colour, after its shadow-map factor,
+  for every draw the pass makes where the light's shadow map applies.
+  `clear_context_shadow()` removes it. The page's ground material, with the
+  context, is gated against three's dump.
+- **`webgpu_postprocessing_sss`**, the page: a depth and velocity pre-pass,
+  SSS from the directional light with temporal filtering, and TRAA resolving
+  the scene pass. It is in three's e2e exception list, so it is in the native
+  viewer and not graded.
 - **`SkyMesh`** (`addons::objects`), a port of `examples/jsm/objects/SkyMesh.js`.
   It is the Preetham daylight model with a sun disc and an fbm cloud layer.
   Every uniform is a public `SettableValue`. `webgpu_sky` is graded green at 0

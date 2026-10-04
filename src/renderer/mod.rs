@@ -813,6 +813,12 @@ pub struct Renderer {
     /// carries only the flag, because nothing on the ladder uses a `Lighting`
     /// for anything else.
     pub lighting_enabled: bool,
+    /// `renderer.contextNode`'s `getShadow` — the `builtinShadowContext` of
+    /// the pass being rendered, which `PassNode.updateBefore()` merges into
+    /// the renderer's context for the duration of its render. Every scene
+    /// draw that receives the named light's shadow carries it in that
+    /// light's [`ShadowMap`]. `None` outside such a pass.
+    pub(crate) context_shadow: Option<pass::ShadowContext>,
     /// `renderer.setRenderObjectFunction()` as `ToonOutlinePassNode` sets it
     /// for the duration of its own render: the outline material every
     /// `MeshToonNodeMaterial` draw is preceded by. `None` is three's default
@@ -1304,6 +1310,7 @@ impl Renderer {
             opaque: true,
             transparent: true,
             lighting_enabled: true,
+            context_shadow: None,
             toon_outline: None,
             camera_layers: None,
             sort_objects: true,
@@ -1867,6 +1874,17 @@ impl Renderer {
             })
             .collect();
 
+        // `builtinShadowContext( shadow, light )` of the pass being rendered,
+        // resolved to the light's index in the list: its `getShadow` hook
+        // matches the light by identity.
+        let context_shadow = self.context_shadow.as_ref().and_then(|context| {
+            render_list
+                .lights
+                .iter()
+                .position(|light| Node::ptr_eq(light, &context.light))
+                .map(|index| (index, context.shadow.clone()))
+        });
+
         // `NodeManager.getFogNode( scene )`, once per render: `scene.fogNode`
         // if set, else the node `updateFog()` builds for `scene.fog` — which
         // reads its parameters from the render group, filled in below.
@@ -2129,7 +2147,19 @@ impl Renderer {
                                 && object.receive_shadow
                                 && self.shadow_map_enabled)
                                 .then(|| self.shadow_maps.get(&index).cloned())
-                                .flatten(),
+                                .flatten()
+                                // `AnalyticLightNode.setupShadow()`'s
+                                // `builder.context.getShadow( this, builder )`,
+                                // which runs only where the shadow does.
+                                .map(|map| match &context_shadow {
+                                    Some((light, shadow)) if *light == index => {
+                                        ShadowMap::Context {
+                                            map: Box::new(map),
+                                            shadow: shadow.clone(),
+                                        }
+                                    }
+                                    _ => map,
+                                }),
                         })
                         .collect(),
                     morph: morph.clone(),
