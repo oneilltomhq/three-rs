@@ -43,6 +43,7 @@ three-rs/sss_frames
 three-rs/sharpen_frames
 three-rs/traa_frames
 three-rs/temporal_reproject_frames
+three-rs/ssr_denoise_frames
 three-rs/gtao_frames
 three-rs/velocity_frames
 three-rs/water2_frames

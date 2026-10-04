@@ -1195,6 +1195,118 @@ fn temporal_reproject_resolve_specular_matches_three() {
 }
 
 #[test]
+fn ssr_denoise_page_ssr_matches_three() {
+    check("ssr_denoise_page_ssr", Region::Body);
+}
+
+#[test]
+fn ssr_denoise_page_denoise_matches_three() {
+    check("ssr_denoise_page_denoise", Region::Body);
+}
+
+#[test]
+fn ssr_denoise_page_grading_matches_three() {
+    check("ssr_denoise_page_grading", Region::Body);
+}
+
+#[test]
+fn ssr_denoise_page_sharpen_matches_three() {
+    check("ssr_denoise_page_sharpen", Region::Body);
+}
+
+/// webgpu_postprocessing_ssr_denoise `m14`: the dungeon's `Floor_Stone`, a
+/// glTF `MeshStandardMaterial` with one ORM texture behind its `aoMap`,
+/// `metalnessMap` and `roughnessMap`, drawn into the page's scene pass: the
+/// directional light's PCF shadow, the PMREM environment, the `output` /
+/// `normal` / `velocity` / `diffuseColor` MRT whose two deferred members read
+/// the map-folded metalness and roughness, and the page's lighting patch
+/// (`environment_specular` false), whose `vec3( 0 )` stands where `radiance`
+/// would in the indirect specular term.
+#[test]
+fn ssr_denoise_page_floor_matches_three() {
+    use three_rs::materials::phong::ShadowMap;
+    use three_rs::materials::{environment::Environment, MrtContext};
+    use three_rs::nodes::mrt;
+    use three_rs::nodes::pmrem_node::PmremEnvironment;
+    use three_rs::nodes::tsl::{
+        diffuse_color, material_metalness_value, material_roughness_value, normal_view,
+        output_property, pack_normal_to_rgb, vec4_join,
+    };
+    use three_rs::nodes::velocity::velocity;
+    use three_rs::textures::DepthTexture;
+
+    let orm = three_rs::Texture::new(2, 2, Some(vec![0; 16]));
+    let mut floor =
+        three_rs::MeshBasicNodeMaterial::standard(three_rs::Color::from_hex(0xffffff), 0.3, 1.0);
+    floor.ao_map = Some(orm.clone());
+    floor.metalness_map = Some(orm.clone());
+    floor.roughness_map = Some(orm);
+    floor.emissive = three_rs::Color::from_hex(0x000000);
+    floor.environment_specular = false;
+    floor.side = three_rs::materials::Side::Double;
+
+    let mut scene_mrt = mrt(vec![("output", output_property())]);
+    scene_mrt.set_deferred("diffuseColor", || {
+        vec4_join(vec![diffuse_color().rgb(), material_metalness_value()])
+    });
+    scene_mrt.set_deferred("normal", || {
+        vec4_join(vec![
+            pack_normal_to_rgb(normal_view()).rgb(),
+            material_roughness_value(),
+        ])
+    });
+    scene_mrt.set("velocity", velocity());
+    let environment =
+        PmremEnvironment::from_equirectangular(&three_rs::Texture::new(2, 1, Some(vec![0; 8])));
+    let ctx = SetupContext {
+        lights: vec![LightDesc {
+            index: 0,
+            kind: LightKind::Directional,
+            shadow_map: Some(ShadowMap::Planar(DepthTexture::new())),
+        }],
+        mrt: Some(MrtContext {
+            node: scene_mrt,
+            attachments: ["output", "normal", "velocity", "diffuseColor"]
+                .map(String::from)
+                .to_vec(),
+            output_types: Vec::new(),
+        }),
+        environment: Some(Environment::Pmrem(environment.handle())),
+        ..SetupContext::default()
+    };
+    let program = NodeBuilder::new().build(&setup(&floor, &ctx, None));
+    let three = fixture("webgpu_postprocessing_ssr_denoise_m14_floor_stone.wgsl");
+    // Not the whole body: the port's standard lighting differs from the dump
+    // in the ways `docs/nodes.md` §8 lists, none of them this page's. What
+    // the page changes is gated: the map-folded metalness and roughness the
+    // MRT re-reads, spelled out at each read; the patched indirect specular
+    // term; and the tail, `Output` and the four MRT members.
+    for which in [
+        Region::Statement("Roughness ="),
+        Region::Statement("mix( singleScatteringDielectric, singleScatteringMetallic, Metalness )"),
+        OIT_TAIL,
+    ] {
+        let ours = fingerprint(&program.fragment_wgsl, which);
+        assert_eq!(
+            ours,
+            fingerprint(&three, which),
+            "\n{}",
+            program.fragment_wgsl
+        );
+    }
+    // A fingerprint cannot tell `Metalness = nodeVarN` from the product
+    // spelled out; these lines can.
+    check_three_lines(
+        &program.fragment_wgsl,
+        "webgpu_postprocessing_ssr_denoise_m14_floor_stone.wgsl",
+        &[
+            "\tMetalness = ( object.nodeUniform5 * nodeVar1.z );",
+            "\tDiffuseContribution = ( DiffuseColor.xyz * vec3<f32>( ( 1.0 - ( object.nodeUniform5 * nodeVar1.z ) ) ) );",
+        ],
+    );
+}
+
+#[test]
 fn temporal_reproject_layout_fns_match_three() {
     for name in [
         "beautyTexelFromScreen",
