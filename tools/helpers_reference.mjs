@@ -43,6 +43,11 @@ function material( m ) {
 	if ( ! m ) return null;
 
 	return {
+		// `LineBasicMaterial` or `MeshBasicMaterial`: the test derives the
+		// port's side of this from the material's kind and the field that
+		// tells its constructors apart.
+		type: m.type,
+		side: m.side,
 		color: [ m.color.r, m.color.g, m.color.b ],
 		opacity: m.opacity,
 		transparent: m.transparent,

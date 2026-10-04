@@ -13,8 +13,11 @@
 //! [`Option`]s that take three's default when `None`.
 //!
 //! Each helper keeps three's geometry (attribute names, vertex order, index),
-//! its material kind and flags (`vertexColors`, `depthTest`, `depthWrite`,
-//! `transparent`, `fog`), its `type` string, and its child transforms; the
+//! its material class (`LineBasicMaterial` is
+//! [`MeshBasicNodeMaterial::line`], `MeshBasicMaterial`
+//! [`MeshBasicNodeMaterial::new`]), side, colour and flags (`vertexColors`,
+//! `depthTest`, `depthWrite`, `transparent`, `fog`, `wireframe`), its `type`
+//! string, and its child transforms; the
 //! `helpers_core` gate compares all of these node for node against the
 //! pinned checkout.
 //!
@@ -43,6 +46,8 @@
 //!   is a clone per child here; `update()` writes both.
 //!
 //! [`Node`]: crate::core::Node
+//! [`MeshBasicNodeMaterial::line`]: crate::materials::MeshBasicNodeMaterial::line
+//! [`MeshBasicNodeMaterial::new`]: crate::materials::MeshBasicNodeMaterial::new
 //! [`Node::update_matrix_world`]: crate::core::Node::update_matrix_world
 //! [`Renderer::render`]: crate::Renderer::render
 //! [`Scene::update_matrix_world`]: crate::objects::Scene::update_matrix_world

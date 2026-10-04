@@ -3,8 +3,9 @@
 //! and prints what each builds; this test builds the same helpers with the
 //! same inputs and compares the two node for node: type, visibility,
 //! `matrixAutoUpdate`, position, quaternion, scale, local and world matrices,
-//! every geometry attribute and the index, and the material's colour and
-//! flags.
+//! every geometry attribute and the index, and the material's type
+//! (`LineBasicMaterial` or `MeshBasicMaterial`; see `material_type`), side,
+//! colour and flags.
 //!
 //! The reference is computed live, not checked in, so the comparison is
 //! always against three.js itself. A missing `node` or checkout fails the test
@@ -35,7 +36,7 @@ use three_rs::helpers::{
     PlaneHelper, PointLightHelper, PolarGridHelper, SkeletonHelper, SpotLightHelper,
 };
 use three_rs::lights::{DirectionalLight, HemisphereLight, PointLight, SpotLight};
-use three_rs::materials::MeshBasicNodeMaterial;
+use three_rs::materials::{MaterialKind, MeshBasicNodeMaterial, Side};
 use three_rs::math::{Box3, Color, Plane, Vector3};
 use three_rs::objects::{Bone, Group, Mesh};
 use three_rs::testing::three_js_dir;
@@ -77,6 +78,29 @@ fn color(c: Color) -> Value {
     floats([c.r, c.g, c.b])
 }
 
+/// Three's `material.type` for a port material. `LineBasicNodeMaterial` is an
+/// alias of `MeshBasicNodeMaterial` with no kind of its own (both are
+/// `MaterialKind::Basic`); what tells `::line()` from `::new()` is
+/// `refraction_ratio`, 0 where three's class has no `refractionRatio`
+/// (`LineBasicMaterial`) and `MeshBasicMaterial`'s 0.98 otherwise. Any other
+/// combination is named by its parts, so it fails the comparison.
+fn material_type(m: &MeshBasicNodeMaterial) -> String {
+    match (m.kind, m.refraction_ratio) {
+        (MaterialKind::Basic, ratio) if ratio == 0.0 => "LineBasicMaterial".to_owned(),
+        (MaterialKind::Basic, ratio) if ratio == 0.98 => "MeshBasicMaterial".to_owned(),
+        (kind, ratio) => format!("{kind:?} with refraction_ratio {ratio}"),
+    }
+}
+
+/// Three's `FrontSide`, `BackSide` and `DoubleSide` constants.
+fn side(side: Side) -> Value {
+    json!(match side {
+        Side::Front => 0,
+        Side::Back => 1,
+        Side::Double => 2,
+    })
+}
+
 /// `dump( object )` in the script, without `material.toneMapped`.
 fn dump(node: &Node) -> Value {
     let object = node.borrow();
@@ -104,6 +128,8 @@ fn dump(node: &Node) -> Value {
 
     let material = object.material().map_or(Value::Null, |m| {
         json!({
+            "type": material_type(m),
+            "side": side(m.side),
             "color": color(m.color),
             "opacity": m.opacity,
             "transparent": m.transparent,
