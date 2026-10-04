@@ -618,6 +618,9 @@ have their own sections after the release they ship with. The format follows [Ke
 
 ### Fixed
 
+- `ssaaPass` renders its samples with the pass's own MRT and puts the
+  frame's MRT back afterwards (#252), as `SSAAPassNode.updateBefore()` does.
+  It used to render under whatever MRT the caller had set.
 - A map's filters and wrap modes changed after the first draw rebuild the
   program (#276). Three's WebGPU backend folds every texture property's
   `magFilter`, `minFilter`, `wrapS` and `wrapT` into the material cache key;
