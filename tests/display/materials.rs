@@ -579,7 +579,7 @@ pub fn display_quads() -> Vec<DisplayQuad> {
         (
             "ssr",
             "webgpu_postprocessing_ssr_m21_ssr.wgsl",
-            ssr_node.quad_material().clone(),
+            ssr_node.quad_material(),
         ),
         (
             "ssr_copy",
@@ -608,6 +608,93 @@ pub fn display_quads() -> Vec<DisplayQuad> {
         "webgpu_postprocessing_ssr_m26_ssr_resolve.wgsl",
         texture_uv(&scene_color, uv()).add(vec4_join(vec![ssr_node.node().rgb(), float(1.0)])),
     ));
+
+    // tools/dump-pages/ssr_stochastic.html `m10`, `m14`, `m16`: three
+    // `SSRNode.SSR` passes over the page's MRT, with `sceneNormal` its
+    // `sample( ( uv ) => unpackRGBToNormal( normal.sample( uv ).rgb ) )`,
+    // `metalnessNode: diffuseColor.a` and `roughnessNode: normal.a`.
+    let normal = input();
+    let diffuse = input();
+    let hdr = equirect_hdr();
+    let sampled_normal = {
+        let normal = normal.clone();
+        move || -> three_rs::nodes::display::SampleFn {
+            let normal = normal.clone();
+            Rc::new(move |coord| texture_uv(&normal, coord).rgb().mul(2.0).sub(1.0))
+        }
+    };
+    let sampled_diffuse = || -> three_rs::nodes::display::SampleFn {
+        let diffuse = diffuse.clone();
+        Rc::new(move |coord| texture_uv(&diffuse, coord))
+    };
+    let options = || {
+        SsrOptions::new(
+            texture_uv(&diffuse, uv()).w(),
+            Some(texture_uv(&normal, uv()).w()),
+        )
+    };
+    let camera = || Rc::new(RefCell::new(PerspectiveCamera::new(50.0, 1.6, 0.1, 50.0)));
+    // A: `{ stochastic: true, diffuseNode, environmentNode: hdr,
+    // envImportanceSampling: false, binaryRefine: false }`.
+    let ssr_a = ssr(
+        &scene_color,
+        &DepthTexture::new(),
+        sampled_normal(),
+        options()
+            .with_stochastic(true)
+            .with_diffuse(sampled_diffuse())
+            .with_environment(&hdr),
+        camera(),
+    );
+    // B: the page's `envImportanceSampling: true, binaryRefine: true`, its
+    // `stepExponent = 3`, and `setHistory( A's target, velocity )`.
+    let ssr_b = ssr(
+        &scene_color,
+        &DepthTexture::new(),
+        sampled_normal(),
+        options()
+            .with_stochastic(true)
+            .with_diffuse(sampled_diffuse())
+            .with_environment(&hdr)
+            .with_env_importance_sampling(true)
+            .with_binary_refine(true),
+        camera(),
+    );
+    ssr_b.set_step_exponent(3.0);
+    ssr_b.set_history(&ssr_a.render_target().texture(), &input());
+    // C: `{ stochastic: false, reflectNonMetals: true }`.
+    let ssr_c = ssr(
+        &scene_color,
+        &DepthTexture::new(),
+        sampled_normal(),
+        options().with_reflect_non_metals(true),
+        camera(),
+    );
+    for (label, fixture, node) in [
+        (
+            "ssr_stochastic",
+            "ssr_stochastic_m10_ssr_stochastic.wgsl",
+            &ssr_a,
+        ),
+        (
+            "ssr_stochastic_refine",
+            "ssr_stochastic_m14_ssr_stochastic_refine.wgsl",
+            &ssr_b,
+        ),
+        (
+            "ssr_reflect_non_metals",
+            "ssr_stochastic_m16_ssr_reflect_non_metals.wgsl",
+            &ssr_c,
+        ),
+    ] {
+        let mut material = node.quad_material();
+        material.vertex_node = Some(quad_vertex_node());
+        quads.push(DisplayQuad {
+            label,
+            fixture,
+            material,
+        });
+    }
 
     // webgpu_postprocessing_ssr `m28`, `m30`, `m32`: `smaa( … )`'s edges,
     // weights and blend passes over the page's `RTT`.
@@ -885,9 +972,9 @@ fn specular_helpers_quads(quads: &mut Vec<DisplayQuad>) {
     environment_quads(quads);
 }
 
-/// Quads D–F of `specular_helpers.html`: an 8×4 float equirect with a hot
-/// texel at ( 2, 2 ), looked up through `ImportanceSampledEnvironment`.
-fn environment_quads(quads: &mut Vec<DisplayQuad>) {
+/// The 8×4 float equirect HDR of `tools/dump-pages/specular_helpers.html`
+/// and `ssr_stochastic.html`: a gradient with one hot texel at (2, 2).
+fn equirect_hdr() -> Texture {
     let (width, height) = (8, 4);
     let mut pixels = Vec::with_capacity(width * height * 4);
     for y in 0..height {
@@ -907,6 +994,13 @@ fn environment_quads(quads: &mut Vec<DisplayQuad>) {
     // `textureLoad`.
     hdr.set_min_filter(MinFilter::Nearest);
     hdr.set_mag_filter(TextureFilter::Nearest);
+    hdr
+}
+
+/// Quads D–F of `specular_helpers.html`: an 8×4 float equirect with a hot
+/// texel at ( 2, 2 ), looked up through `ImportanceSampledEnvironment`.
+fn environment_quads(quads: &mut Vec<DisplayQuad>) {
+    let hdr = equirect_hdr();
     let camera_world_matrix = uniform_value(Type::Mat4, Matrix4::identity().elements.to_vec());
     let view_reflect_dir = || vec3_join(vec![uv().sub(0.5), float(-1.0)]).normalize();
     let lobe = || EnvironmentLobe {
