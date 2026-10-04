@@ -16,10 +16,10 @@
 //!
 //! [`BufferAttribute`] stays a single type. Its storage is a [`TypedArray`]
 //! enum with one variant per JavaScript array three uses on an attribute:
-//! `F32(Vec<f32>)`, `F16(Vec<u16>)` (IEEE binary16 bits; `half::f16` for the
-//! conversions, already in the lock file through naga), `I8`, `U8`,
-//! `U8Clamped`, `I16`, `U16`, `I32`, `U32`. `normalized` is a field beside it,
-//! as in three.
+//! `F32(Vec<f32>)`, `F16(Vec<u16>)` (IEEE binary16 bits, converted with
+//! [`crate::extras::from_half_float`] / [`crate::extras::to_half_float`],
+//! three's `DataUtils`), `I8`, `U8`, `U8Clamped`, `I16`, `U16`, `I32`, `U32`.
+//! `normalized` is a field beside it, as in three.
 //!
 //! Why not `BufferAttribute<T: Element>`: `BufferGeometry` stores attributes
 //! heterogeneously and `get_attribute(name)` returns one by name, so the store
@@ -57,10 +57,29 @@
 //! The format is `WebGPUAttributeUtils._getVertexFormat()` after
 //! `createAttribute()` has had its way with the array, in this order:
 //!
-//! * `F32` → `Float32xN`; `I32`/`U32` → `Sint32xN`/`Uint32xN`, `N` 1..4.
+//! * `F32` → `Float32xN`; `I32`/`U32` → `Sint32xN`/`Uint32xN`, `N` 1..4. At
+//!   `itemSize === 1` three's map ignores `normalized`, so a normalized
+//!   `Int32Array`/`Uint32Array` of item size 1 is `sint32`/`uint32` while
+//!   `getTypeFromAttribute()` declares it `f32` (decision 4) — a pairing
+//!   WebGPU rejects at pipeline creation. The port reproduces both halves.
 //! * `F16` → `Float16xN` with `N` padded to 2 or 4 (a 16-bit stride must be a
-//!   multiple of 4 bytes). `itemSize === 1` has no `Float16` entry in three's
-//!   item-size-1 map and errors; the port panics with the same message.
+//!   multiple of 4 bytes), and never widened. This is a deliberate
+//!   divergence: three stores a `Float16BufferAttribute` in a `Uint16Array`,
+//!   so a non-normalized, non-interleaved one goes through the widening below
+//!   into a `Uint32Array`, and `_getVertexFormat` then pairs the `float16`
+//!   prefix (picked by attribute class) with a 4-byte element and asks for
+//!   `float16x3` for item size 3 — not a WebGPU format. The port keeps the
+//!   binary16 bits and pads, which is what the class asks for.
+//!   `itemSize === 1` has no `Float16` entry in three's item-size-1 map and
+//!   errors.
+//! * Every row three has no format for — `F16` at item size 1, a normalized
+//!   32-bit array above item size 1, the 8- and 16-bit item-size-1 rows
+//!   below — panics in [`ArrayKind::vertex_format`] with three's message.
+//!   That is a deliberate divergence too: three only logs `error(
+//!   'WebGPUAttributeUtils: Vertex format not supported yet.' )` and returns
+//!   `undefined`, and the draw then fails as a WebGPU validation error on the
+//!   pipeline, away from the attribute that caused it. Failing at the table
+//!   names the array kind, item size and flags.
 //! * 8- and 16-bit **non-normalized, non-interleaved**: `createAttribute()`
 //!   rebuilds the array as `Int32Array`/`Uint32Array` and assigns it back, so
 //!   `_getVertexFormat` then sees a 32-bit array → `Sint32xN`/`Uint32xN`. The
@@ -93,8 +112,10 @@
 //! does the builder has to know the geometry's attributes, so
 //! `SetupContext` grows `geometry_attributes: Vec<AttributeDesc>` — one entry
 //! per `geometry.attributes` in insertion order with `name`, element kind,
-//! `item_size`, `normalized`, step mode, and for an interleaved attribute the
-//! buffer's id, stride and offset. It is hashed into the program cache key
+//! `item_size`, `normalized`, step mode, and for an interleaved attribute a
+//! geometry-local group index (the position of the first view of the same
+//! buffer, so two geometries laid out alike share a program), stride and
+//! offset. It is hashed into the program cache key
 //! (as `instanced_attributes` is now, which it replaces: "instanced" is a bit
 //! on the descriptor). `vertex_color_size` and `has_tangent_attribute` could
 //! be derived from it; leave them alone in this PR, the diff is wide enough.
@@ -102,8 +123,9 @@
 //! `NodeProgram::vertex_buffers()` builds one `VertexBufferDesc` per geometry
 //! attribute buffer: non-interleaved attributes one buffer each, interleaved
 //! attributes sharing an `InterleavedBuffer` one buffer with several entries —
-//! the grouping it already does for `InstanceBuffer`, keyed on the interleaved
-//! buffer's id instead of an `Rc` pointer. `programs::vertex_format(Type)`
+//! the grouping it already does for `InstanceBuffer`, keyed on that group
+//! index (the renderer keys the GPU buffer itself on the interleaved buffer's
+//! id, decision 5). `programs::vertex_format(Type)`
 //! goes; the format rides on the slot from the descriptor.
 //!
 //! ## 5. An interleaved buffer is one GPU buffer; its attributes are views
@@ -131,7 +153,10 @@
 //! `LineSegmentsGeometry` is the first consumer: `set_positions` builds an
 //! `InterleavedBuffer::new_instanced(array, 6, 1)` and sets `instanceStart`
 //! and `instanceEnd` as interleaved views at offsets 0 and 3 on the geometry,
-//! as `LineSegmentsGeometry.js` does; colours and distances likewise.
+//! as `LineSegmentsGeometry.js` does; `set_colors` likewise builds
+//! `instanceColorStart` / `instanceColorEnd`. The dash distances
+//! (`computeLineDistances()`'s `instanceDistanceStart` / `instanceDistanceEnd`)
+//! are not ported, with the rest of `_useDash`.
 //! `Line2NodeMaterial` then reads them with plain `attribute("instanceStart")`
 //! and `SetupContext::line_segments`, `nodes::lines::LineSegmentsAttributes`
 //! and the Line2 use of `Node::InstancedAttribute` go. `instance_count` on the
@@ -281,7 +306,10 @@ impl ArrayKind {
     /// of an 8- or 16-bit array that is normalized or interleaved (or of
     /// `F16`), a normalized `F32`/`I32`/`U32`/`F16` with item size above 1,
     /// and any `U8Clamped` that reaches the table unwidened — which is every
-    /// one, since `Uint8ClampedArray` is in neither prefix map.
+    /// one, since `Uint8ClampedArray` is in neither prefix map. Three logs
+    /// and returns `undefined` here instead, leaving the failure to pipeline
+    /// validation; panicking is a deliberate divergence (decision 3 in the
+    /// module docs).
     pub fn vertex_format(
         self,
         item_size: usize,
