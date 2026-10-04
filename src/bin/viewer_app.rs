@@ -284,7 +284,9 @@ Sky, webgpu_sky, "../../examples/webgpu_sky.rs";
 Backdrop, webgpu_backdrop, "../../examples/webgpu_backdrop.rs";
 PostprocessingMotionBlur, webgpu_postprocessing_motion_blur, "../../examples/webgpu_postprocessing_motion_blur.rs";
 PostprocessingTraa, webgpu_postprocessing_traa, "../../examples/webgpu_postprocessing_traa.rs";
-PostprocessingSsr, webgpu_postprocessing_ssr, "../../examples/webgpu_postprocessing_ssr.rs";}
+PostprocessingSsr, webgpu_postprocessing_ssr, "../../examples/webgpu_postprocessing_ssr.rs";
+PostprocessingSmaa, webgpu_postprocessing_smaa, "../../examples/webgpu_postprocessing_smaa.rs";
+PostprocessingPixel, webgpu_postprocessing_pixel, "../../examples/webgpu_postprocessing_pixel.rs";}
 
 impl Which {
     /// The name with or without its `webgpu_` prefix, or its 1-based index in

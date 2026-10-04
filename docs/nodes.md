@@ -2167,6 +2167,12 @@ The port's three pieces:
   one.
 * `NodeBuilder`'s texture slots bind it as `TextureKind::FloatData2D`, which is
   the `non-filtering` sample type with no companion sampler.
+* The uv goes through `generateWrapFunction()`'s
+  `tsl_coord_<s>S_<t>T_2d`, named after the texture's `wrap_s` / `wrap_t`
+  (`repeat`, `clamp`, `mirror`) and calling three's `tsl_*Wrapping_float`
+  helpers (`wgsl::wrap_function_2d`). A repeated `NearestFilter` map, like
+  `webgpu_postprocessing_pixel`'s checker, tiles instead of smearing its
+  edge texels.
 
 `PassNode::new_with_options( PassOptions { min_filter, mag_filter } )` is how the
 filters reach the pass's attachments; `PassNode::new()` delegates to it with
@@ -6055,9 +6061,18 @@ The port needed these new pieces:
   the existing `material_env_intensity` uniform. A material's own
   `envMap` is not scaled by it, as in three.
 
-**Order within a frame.** Both nodes run their input's updater at the top of
-`update_before()`, as `TraaNode` does (§63). Three's `setup()` produces the
-same order. The frame claim turns the input's own later run into a no-op.
+**Order within a frame.** SSR runs its input's updater at the top of
+`update_before()`, as `TraaNode` does (§63). The frame claim turns the
+input's own later run into a no-op.
+
+SMAA runs it after `resetRendererState()`, just before the edges quad. That
+is where three's lazily updated input pass first renders: when the quad that
+samples it draws. The scene pass therefore clears to the reset's opaque
+black, not the renderer's default clear alpha of 0. This matters for
+`webgpu_postprocessing_smaa`: its wireframe lines cross an empty background.
+With a zero-alpha clear, the blend leaves a line pixel's alpha at its blend
+weight. `renderOutput`'s unpremultiply then lifts that pixel back to the
+line's full colour, and the anti-aliasing is undone.
 
 **State save and restore.** Both nodes save and then restore these:
 

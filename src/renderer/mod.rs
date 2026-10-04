@@ -1419,6 +1419,12 @@ impl Renderer {
         self.canvas = None;
     }
 
+    /// `renderer.getSize( target )`: the canvas size in logical pixels, as
+    /// [`set_size`](Self::set_size) last set it.
+    pub fn size(&self) -> (f64, f64) {
+        (self.width, self.height)
+    }
+
     /// `renderer.setViewport( x, y, width, height )` — the rectangle of the
     /// canvas that `render()` draws into, in **logical** pixels (the pixel
     /// ratio is applied for you, exactly as three.js does).

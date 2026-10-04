@@ -82,6 +82,13 @@ have their own sections after the release they ship with. The format follows [Ke
 - **`webgpu_postprocessing_ssr`** is graded: 4 of 100000 pixels, with the
   reflections in the graded frame. Its six fragment shaders are gated against
   three's dumps.
+- `webgpu_postprocessing_smaa` and `webgpu_postprocessing_pixel` are ported
+  and in the native viewer, but not graded on this machine, because three.js
+  itself fails their references there (258 and 405 pixels). The port scores
+  258 and 417. Against three's own frames it differs in 0 and 12 graded
+  pixels.
+- **`Renderer::size()`**, three's `renderer.getSize()`: the canvas size in
+  logical pixels.
 - **Rendering into a mip level**: `RenderTarget::set_mip_level_count()`,
   `Renderer::set_render_target_level()` (three's `setRenderTarget( rt, 0,
   level )`) and `Renderer::active_mipmap_level()`.
@@ -106,6 +113,16 @@ have their own sections after the release they ship with. The format follows [Ke
 
 ### Fixed
 
+- An unfilterable (`NearestFilter`) texture's `textureLoad` wraps its uv by
+  the texture's `wrap_s` / `wrap_t`, through three's
+  `tsl_coord_<s>S_<t>T_2d` and its `repeat`, `clamp` and `mirror` helpers.
+  Before, it always clamped, so a repeated nearest-filtered map smeared its
+  edge texels.
+- `smaa()` renders its input inside the reset renderer state, as three's
+  lazily updated input does. A scene pass behind it now clears to opaque
+  black instead of the renderer's clear alpha, so an anti-aliased line over
+  an empty background is no longer brightened back by `renderOutput`'s
+  unpremultiply.
 - A `HemisphereLight` with no `AmbientLight` beside it no longer has its
   irradiance overwritten with zero before the Phong, Lambert and Toon models
   read it.

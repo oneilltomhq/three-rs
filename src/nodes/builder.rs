@@ -21,6 +21,7 @@ use super::node::{
     VaryingDef,
 };
 use super::wgsl::{self, TextureKind};
+use crate::textures::Wrapping;
 
 /// `WebGPUCapabilities.getUniformBufferLimit()` —
 /// `device.limits.maxUniformBufferBindingSize`. A thread-local because the
@@ -1297,6 +1298,28 @@ impl NodeBuilder {
         }
     }
 
+    /// `generateWrapFunction( texture )`: declares the texture's
+    /// `tsl_coord_*_2d` wrap function and its helpers, and returns its name.
+    /// Only a map carries wrap modes here; depth, data and pass textures keep
+    /// three's default `ClampToEdgeWrapping`. Out of line, like the other
+    /// texture helpers, to keep `generate()`'s debug-build frame small.
+    #[inline(never)]
+    fn wrap_function(&mut self, texture: &TextureSource) -> String {
+        let (wrap_s, wrap_t) = match texture {
+            TextureSource::Texture2D(t) => {
+                let inner = t.borrow();
+                (inner.wrap_s, inner.wrap_t)
+            }
+            _ => (Wrapping::ClampToEdge, Wrapping::ClampToEdge),
+        };
+        let (wrap, includes, code) = wgsl::wrap_function_2d(wrap_s, wrap_t);
+        for (include, include_code) in includes {
+            self.add_code(include, include_code);
+        }
+        self.add_code(&wrap, &code);
+        wrap
+    }
+
     fn texture_slots(&mut self, source: &Rc<TextureSource>) -> (String, TextureKind) {
         let stage = self.stage;
         let (key, kind) = match &**source {
@@ -2214,7 +2237,7 @@ impl NodeBuilder {
                         }
                     }
                     SampleMode::Load => {
-                        self.add_code("tsl_coord_clampS_clampT_2d", wgsl::CLAMP_WRAP_SNIPPET);
+                        let wrap = self.wrap_function(&texture);
                         // `WGSLNodeBuilder.generateTextureDimension()` keeps
                         // one dimensions var per texture in `builder.cache`,
                         // so a second tap in the same scope (or one nested in
@@ -2230,7 +2253,7 @@ impl NodeBuilder {
                                 dims
                             }
                         };
-                        wgsl::texture_load(&name, &suv, &dims)
+                        wgsl::texture_load(&name, &wrap, &suv, &dims)
                     }
                     // `generateStorageTextureLoad()`: no level argument.
                     SampleMode::StorageLoad => {
