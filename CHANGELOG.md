@@ -570,6 +570,16 @@ have their own sections after the release they ship with. The format follows [Ke
 
 ### Fixed
 
+- Phong, Lambert and Toon materials zero each lighting accumulator
+  (`irradiance`, `directDiffuse`, `directSpecular`, `indirectDiffuse`, and
+  Lambert's specular pair) once, right above its first use, as three's dumps
+  do (#281). Each accumulator is a var with a zero initialiser, and the flow
+  also assigned the same zero explicitly, so the WGSL had every zero twice in
+  a row. The physical flow keeps its hoisted zeros but emits each once,
+  `clearcoat*`, `radiance` and `iblIrradiance` included.
+  `sss_shadow_context_matches_three` no longer drops repeated lines; it
+  checks the zero count and position against the dump, and
+  `lit_accumulators_are_zeroed_once` covers the other lit flows.
 - A depth-stencil texture is sampled through a depth-only view. With
   `RendererParameters::stencil` on, `viewportDepthTexture()`'s copy of the
   `depth24plus-stencil8` canvas depth failed bind-group validation, because
