@@ -8,6 +8,22 @@ have their own sections after the release they ship with. The format follows [Ke
 
 ### Added
 
+- **Typed `BufferAttribute`s** (#294): an attribute's array is a `TypedArray`
+  of any of three's nine kinds (`Int8` to `Float64`, plus `Float16`), with a
+  `normalized` flag, `get`/`set` accessors that decode and encode like
+  three's, and `InterleavedBuffer` / `InterleavedBufferAttribute` views over
+  a shared stride. The vertex-input `format()` follows three's table
+  (`tests/core_vertex_format.rs`, 144 rows), non-normalized 8/16-bit
+  attributes are widened to 32-bit on upload as `createAttribute()` does,
+  and the renderer's program key carries the geometry's attribute layout.
+  `StorageBufferAttribute` backs `storage()` over a typed array.
+  `BufferGeometryLoader` reads typed and interleaved attributes;
+  `LineSegmentsGeometry` carries three's interleaved instanced views, so
+  Line2's vertex inputs match three's fat-lines WGSL. Skinning, `BatchedMesh`
+  and `computeVertexNormals()` read and write through the typed accessors.
+  WGSL dumps are gated in `tests/nodes_typed_attributes.rs`, the GPU path in
+  `tests/renderer_typed_attributes.rs`. See the module doc of
+  `core::buffer_attribute` for the design note.
 - **`WaterMesh`** (`addons::objects`), a port of
   `examples/jsm/objects/WaterMesh.js`: a planar `reflector()` distorted by
   four scrolling taps of a normal map, with a sun highlight and a Fresnel mix
