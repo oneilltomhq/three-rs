@@ -1,6 +1,6 @@
 # three.js → three-rs parity
 
-This matrix judges every exported name in three.js revision 5f610f5 (r187) — `src/`, the TSL exports and `examples/jsm` addons, 1315 rows — against three-rs `main` at 22d8630. A row counts as **Present** only when a QUnit port, a bit-exact oracle (the WGSL gates that diff generated shaders against three's own dumps count) or a graded e2e example verifies it, **Partial** when it exists but has a named gap or its only check is an ungraded example (a TSL function called by material or renderer code that graded examples render counts as verified), **Absent** when there is no definition (a name in a comment or TODO counts as Absent), and **N.A.** when it cannot apply to a native WebGPU port; coverage percentages leave N.A. rows out.
+This matrix judges every exported name in three.js revision 5f610f5 (r187) — `src/`, the TSL exports and `examples/jsm` addons, 1317 rows — against three-rs `main` at 22d8630. A row counts as **Present** only when a QUnit port, a bit-exact oracle (the WGSL gates that diff generated shaders against three's own dumps count) or a graded e2e example verifies it, **Partial** when it exists but has a named gap or its only check is an ungraded example (a TSL function called by material or renderer code that graded examples render counts as verified), **Absent** when there is no definition (a name in a comment or TODO counts as Absent), and **N.A.** when it cannot apply to a native WebGPU port; coverage percentages leave N.A. rows out.
 
 ## Summary
 
@@ -23,11 +23,11 @@ This matrix judges every exported name in three.js revision 5f610f5 (r187) — `
 | renderers | 39 | 9 | 9 | 3 | 18 | 43% |
 | nodes | 141 | 100 | 27 | 9 | 5 | 74% |
 | tsl | 683 | 552 | 51 | 55 | 25 | 84% |
-| addons/controls | 9 | 1 | 3 | 5 | 0 | 11% |
+| addons/controls | 11 | 1 | 6 | 4 | 0 | 9% |
 | addons/loaders | 71 | 6 | 2 | 63 | 0 | 8% |
 | addons/postprocessing | 30 | 0 | 0 | 0 | 30 | — |
 | addons/other | 102 | 11 | 4 | 64 | 23 | 14% |
-| **total** | **1315** | **806** | **133** | **253** | **123** | **68%** |
+| **total** | **1317** | **806** | **136** | **252** | **123** | **68%** |
 
 TSL by family:
 
@@ -167,7 +167,7 @@ Graded examples: 87 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `ShapePath` | Present | ShapePath (src/extras/shape_path.rs:25) | tests/extras_core.rs |  |
 | `CurvePath` | Present | CurvePath (src/extras/curve_path.rs:35) | tests/extras_core.rs |  |
 | `Curve` | Present | Curve trait (src/extras/curve.rs:126) | tests/extras_curves.rs, tests/extras_core.rs |  |
-| `Controls` | Absent | — | — | no shared Controls base (connect/disconnect/update); no base type; OrbitControls, FirstPersonControls and FlyControls (src/addons/controls/) each stand alone |
+| `Controls` | Absent | — | — | no shared Controls base (connect/disconnect/update); no base type; OrbitControls, FirstPersonControls, FlyControls and TransformControls (src/addons/controls/) each stand alone |
 | `DataUtils` | Present | to_half_float/from_half_float (src/extras/data_utils.rs:71) | tests/hdr_loader.rs (bit-exact vs three) |  |
 | `ImageUtils` | N.A. | — | — | DOM canvas |
 | `ShapeUtils` | Present | area/is_clock_wise/triangulate_shape (src/extras/shape_utils.rs:8) | tests/extras_core.rs, tests/geometries_shape_oracle.rs |  |
@@ -580,7 +580,7 @@ Graded examples: 87 (the README gallery plus `webgpu_textures_2d-array_compresse
 
 ## addons/controls
 
-9 rows: 1 Present, 3 Partial, 5 Absent, 0 N.A.
+11 rows: 1 Present, 6 Partial, 4 Absent, 0 N.A.
 
 | three.js name | verdict | three-rs symbol | verified by | note |
 |---|---|---|---|---|
@@ -592,7 +592,9 @@ Graded examples: 87 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `OrbitControls` | Partial | addons::controls::OrbitControls (src/addons/controls/orbit_controls.rs:209) | tests/addons_orbit_controls.rs; webgpu_loader_gltf et al. | no touch gestures, no OrthographicCamera branch, no change/start/end events |
 | `PointerLockControls` | Absent | — | — |  |
 | `TrackballControls` | Absent | — | — |  |
-| `TransformControls` | Absent | — | — | comment only: examples/webgpu_modifier_curve.rs:20 ("Not ported") |
+| `TransformControls` | Partial | addons::controls::TransformControls (src/addons/controls/transform_controls.rs:1151) | tests/addons_transform_controls.rs (three's class under node, 18 scenarios, 1e-9; gizmo graph compared node for node) | drag math and gizmo/picker/helper graph match three; `toneMapped: false` dropped (no tone-mapping switch on the port's materials); `enabled`, `show*`, `min*`/`max*` are plain fields that dispatch no `-changed`/`change`; events returned as values, DOM listeners replaced by input methods, the host calls update(camera) where three's renderer runs the helper's updateMatrixWorld; see docs/controls.md |
+| `TransformControlsGizmo` | Partial | built by addons::controls::TransformControls, the first child of get_helper() (private `Gizmo`, src/addons/controls/transform_controls.rs:502) | tests/addons_transform_controls.rs (the_gizmo_graph_is_three_js_graph: groups and handles node for node; per-frame placement, visibility and highlight in the 18 scenarios) | not a public type; its updateMatrixWorld override is part of TransformControls::update(camera); `toneMapped: false` dropped (no tone-mapping switch on the port's materials) |
+| `TransformControlsPlane` | Partial | built by addons::controls::TransformControls, the second child of get_helper() (src/addons/controls/transform_controls.rs:1273) | tests/addons_transform_controls.rs (the_gizmo_graph_is_three_js_graph for its material and geometry; its orientation after every scenario step, its world matrix on marked steps) | not a public type; its updateMatrixWorld override is part of TransformControls::update(camera); `toneMapped: false` dropped |
 
 ## addons/loaders
 
@@ -1674,7 +1676,7 @@ The first refresh of this matrix closed the previous top five. Velocity and TRAA
 
 1. **The screen-space effect nodes** (`GTAONode`, `SSRNode`, `SSGINode`, `SSSNode`, `DenoiseNode`, `DepthOfFieldNode`; `ao()` 2 pages, `ssr()` 2, `ssgi()` 2, `sss()` 1, `dof()` 1, `denoise` 6). Each needs a velocity target and a temporal resolve, and both now exist; these pages are the direct payoff of the velocity work. Porting them also gives the depth reads (`viewportDepthTexture`, `linearDepth`, `getViewPosition`) their first graded consumer.
 2. **EventDispatcher** (issues 153, 159). 8 pages subscribe to `change` or `finished` events. In ordinary use these are render-on-demand behind OrbitControls and chaining animation clips when one ends, and neither works in the port today. `AnimationMixer` and `AnimationAction` fire nothing.
-3. **Controls** (`TransformControls`, 3 pages). `FirstPersonControls` (8 pages) and `FlyControls` (1) are now ported and gated against three's classes (`docs/controls.md`); `TransformControls` is the remaining one, and it is bigger: a gizmo with its own scene, raycasting and materials.
+3. **The TransformControls pages** (`webgpu_modifier_curve`, `webgpu_shadowmap_progressive`, `webgpu_tsl_compute_attractors_particles`). `FirstPersonControls` (8 pages), `FlyControls` (1) and now `TransformControls` are ported and gated against three's classes (`docs/controls.md`). What is left is wiring the gizmo into the pages: `webgpu_modifier_curve`'s port still leaves it out, and the viewer's controls hook is typed for `OrbitControls`.
 4. **`WaterMesh`** (2 pages) and the remaining display files (`OutlineNode`, `SMAANode`, `Lut3DNode`, `FilmNode`, 1 to 2 pages each). Small, self-contained, and each unlocks one page.
 
 **Runners-up, and why they rank lower:**
