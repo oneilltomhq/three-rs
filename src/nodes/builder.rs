@@ -1642,12 +1642,6 @@ impl NodeBuilder {
         name
     }
 
-    /// `AttributeNode.generate()`: an attribute read in the fragment stage is
-    /// not an attribute there at all — three.js wraps it in `varying( this )`
-    /// and the vertex stage writes it through. This is what carries a whole
-    /// instanced `vec4` into the fragment flow (`varyings.nodeVaryingN =
-    /// nodeAttributeN`) instead of passing the instance index down and indexing
-    /// a uniform buffer.
     /// `AttributeNode.generate()` in the vertex stage: declare the input in
     /// the attribute's own type (`getTypeFromAttribute()`) and convert it to
     /// the node's with `builder.format()`. An attribute the renderer described
@@ -1703,6 +1697,12 @@ impl NodeBuilder {
         wgsl::convert(name, slot_ty, ty)
     }
 
+    /// `AttributeNode.generate()`: an attribute read in the fragment stage is
+    /// not an attribute there at all — three.js wraps it in `varying( this )`
+    /// and the vertex stage writes it through. This is what carries a whole
+    /// instanced `vec4` into the fragment flow (`varyings.nodeVaryingN =
+    /// nodeAttributeN`) instead of passing the instance index down and indexing
+    /// a uniform buffer.
     fn attribute_varying(&mut self, node: &NodeRef) -> String {
         let varying = match self.attribute_varyings.get(&node.key()) {
             Some(varying) => varying.clone(),
