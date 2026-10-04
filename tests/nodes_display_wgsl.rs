@@ -1147,3 +1147,13 @@ fn film_matches_three() {
 fn film_no_intensity_matches_three() {
     check("film_no_intensity", Region::Body);
 }
+
+#[test]
+fn sharpen_rcas_matches_three() {
+    check("sharpen_rcas", Region::Body);
+}
+
+#[test]
+fn sharpen_rcas_denoise_matches_three() {
+    check("sharpen_rcas_denoise", Region::Body);
+}
