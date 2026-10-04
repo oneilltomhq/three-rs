@@ -2054,6 +2054,7 @@ fn main() {
     dump_tsl_halftone();
     dump_tsl_earth();
     dump_sky();
+    dump_water();
     dump_materials_alphahash();
     dump_diffuse_roughness();
     dump_cubemap_mix();
@@ -3110,4 +3111,23 @@ fn dump_sky() {
     let sky = three_rs::addons::objects::SkyMesh::new();
     let material = sky.mesh.borrow().mesh().unwrap().material.clone().unwrap();
     show("sky", &material, SetupContext::default());
+}
+
+/// `webgpu_ocean`: `WaterMesh`'s material against three's `m09` / `m10`.
+/// `tests/nodes_water_wgsl.rs` gates the same two stages.
+fn dump_water() {
+    let normals = three_rs::Texture::new(4, 4, Some(vec![0; 64]));
+    let water = three_rs::addons::objects::WaterMesh::new(
+        std::rc::Rc::new(three_rs::geometries::plane_geometry(10000.0, 10000.0, 1, 1)),
+        three_rs::addons::objects::WaterMeshOptions::new(normals),
+    );
+    let material = water
+        .mesh
+        .borrow()
+        .mesh()
+        .unwrap()
+        .material
+        .clone()
+        .unwrap();
+    show("water", &material, SetupContext::default());
 }
