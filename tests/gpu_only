@@ -8,12 +8,15 @@
 # Vulkan, except those with a reason after the name, which the reason explains.
 # A name that is not a test target fails both jobs.
 
+three-rs/lut_3d_frames
 three-rs/nodes_frame
+three-rs/outline_frames
 three-rs/pmrem_equirect
 three-rs/pmrem_scene
 three-rs/renderer_blending
 three-rs/renderer_compute_indirect
 three-rs/renderer_compute_points
+three-rs/renderer_compute_subgroups
 three-rs/renderer_cube_camera
 three-rs/renderer_external_device
 three-rs/renderer_half_float_target
@@ -31,8 +34,12 @@ three-rs/renderer_textures
 three-rs/renderer_vertex_colors
 three-rs/renderer_viewport
 three-rs/stereo_frames
+three-rs/ssgi_frames
+three-rs/sss_frames
 three-rs/traa_frames
+three-rs/gtao_frames
 three-rs/velocity_frames
+three-rs/water2_frames
 sdf-text/batched_text_culling
 sdf-text/batched_text_refill
 sdf-text/sdf_text_block

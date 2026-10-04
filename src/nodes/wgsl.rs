@@ -6,6 +6,7 @@
 //! pretending otherwise would buy nothing but indirection.
 
 use super::node::{StorageAccess, Type};
+use crate::textures::Wrapping;
 
 /// `WGSLNodeBuilder.getType()`.
 pub(crate) fn type_name(ty: Type) -> &'static str {
@@ -201,6 +202,18 @@ pub(crate) fn constant(ty: Type, values: &[f64]) -> String {
     }
 }
 
+/// `NodeBuilder.generateConst( type )` with no value: the default of the
+/// math class three reaches for, which is zero except for `Vector4`'s `w` of
+/// 1 — so `vec4<f32>( 0.0, 0.0, 0.0, 1.0 )` — and an empty constructor for a
+/// `mat3` or `mat4`.
+pub(crate) fn default_constant(ty: Type) -> String {
+    match ty {
+        Type::Mat3 | Type::Mat4 => format!("{}()", type_name(ty)),
+        Type::Vec4 | Type::UVec4 | Type::IVec4 | Type::BVec4 => constant(ty, &[0.0, 0.0, 0.0, 1.0]),
+        _ => constant(ty, &vec![0.0; ty.components()]),
+    }
+}
+
 /// JS `Math.round()`: halves round towards +∞ (`Math.round( -2.5 )` is -2).
 fn js_round(v: f64) -> f64 {
     (v + 0.5).floor()
@@ -359,10 +372,48 @@ pub(crate) fn storage_format(format: wgpu::TextureFormat) -> &'static str {
     }
 }
 
-/// `WGSLNodeBuilder.generateWrapFunction()` for the default
-/// `ClampToEdgeWrapping` on both axes, plus the helper it calls. Three emits
-/// these as code snippets too — they are not built out of nodes.
-pub(crate) const CLAMP_WRAP_SNIPPET: &str = "fn tsl_clampWrapping_float( coord: f32 ) -> f32 { return clamp( coord, 0.0, 1.0 ); }\nfn tsl_coord_clampS_clampT_2d( coord : vec2f ) -> vec2f {\n\n\treturn vec2f(\n\t\ttsl_clampWrapping_float( coord.x ),\n\t\ttsl_clampWrapping_float( coord.y )\n\t);\n\n}\n";
+/// `WGSLNodeBuilder.generateWrapFunction()` for a 2D texture: the
+/// `tsl_coord_<s>S_<t>T_2d` function an unfilterable map's `textureLoad`
+/// wraps its uv in, and the per-axis `wgslPolyfill` helpers it calls, in the
+/// order three includes them (each `( name, code )`; a repeated helper is
+/// one include). Three emits these as code snippets too — they are not built
+/// out of nodes.
+pub(crate) fn wrap_function_2d(
+    wrap_s: Wrapping,
+    wrap_t: Wrapping,
+) -> (String, Vec<(&'static str, &'static str)>, String) {
+    // `wrapNames` and `addWrapSnippet()`.
+    let axis = |wrap: Wrapping| {
+        match wrap {
+        Wrapping::Repeat => (
+            "repeat",
+            "tsl_repeatWrapping_float",
+            "fn tsl_repeatWrapping_float( coord: f32 ) -> f32 { return fract( coord ); }",
+        ),
+        Wrapping::ClampToEdge => (
+            "clamp",
+            "tsl_clampWrapping_float",
+            "fn tsl_clampWrapping_float( coord: f32 ) -> f32 { return clamp( coord, 0.0, 1.0 ); }",
+        ),
+        Wrapping::MirroredRepeat => (
+            "mirror",
+            "tsl_mirrorWrapping_float",
+            "fn tsl_mirrorWrapping_float( coord: f32 ) -> f32 { let mirrored = fract( coord * 0.5 ) * 2.0; return 1.0 - abs( 1.0 - mirrored ); }",
+        ),
+    }
+    };
+    let (s_name, s_fn, s_code) = axis(wrap_s);
+    let (t_name, t_fn, t_code) = axis(wrap_t);
+    let name = format!("tsl_coord_{s_name}S_{t_name}T_2d");
+    let mut includes = vec![(s_fn, s_code)];
+    if t_fn != s_fn {
+        includes.push((t_fn, t_code));
+    }
+    let code = format!(
+        "fn {name}( coord : vec2f ) -> vec2f {{\n\n\treturn vec2f(\n\t\t{s_fn}( coord.x ),\n\t\t{t_fn}( coord.y )\n\t);\n\n}}\n"
+    );
+    (name, includes, code)
+}
 
 /// `WGSLNodeBuilder`'s `wgslPolyfill` entry for a `tsl_*` method name, if
 /// it has one: the helper a `MathNode` / `OperatorNode` lowering calls.
@@ -408,10 +459,11 @@ pub(crate) const MOD_FLOAT_SNIPPET: &str =
 pub(crate) const INVERSE_MAT3_SNIPPET: &str = "fn tsl_inverse_mat3( m : mat3x3<f32> ) -> mat3x3<f32> {\n\n\tlet a00 = m[ 0 ][ 0 ]; let a01 = m[ 0 ][ 1 ]; let a02 = m[ 0 ][ 2 ];\n\tlet a10 = m[ 1 ][ 0 ]; let a11 = m[ 1 ][ 1 ]; let a12 = m[ 1 ][ 2 ];\n\tlet a20 = m[ 2 ][ 0 ]; let a21 = m[ 2 ][ 1 ]; let a22 = m[ 2 ][ 2 ];\n\n\tlet b01 = a22 * a11 - a12 * a21;\n\tlet b11 = - a22 * a10 + a12 * a20;\n\tlet b21 = a21 * a10 - a11 * a20;\n\n\tlet det = a00 * b01 + a01 * b11 + a02 * b21;\n\n\treturn mat3x3<f32>(\n\t\tb01, ( - a22 * a01 + a02 * a21 ), ( a12 * a01 - a02 * a11 ),\n\t\tb11, ( a22 * a00 - a02 * a20 ), ( - a12 * a00 + a02 * a10 ),\n\t\tb21, ( - a21 * a00 + a01 * a20 ), ( a11 * a00 - a01 * a10 )\n\t) * ( 1.0 / det );\n\n}\n";
 
 /// `WGSLNodeBuilder.generateTextureLoad()` for the non-filterable path: the
-/// texel coordinate is the clamped UV scaled by `textureDimensions`.
-pub(crate) fn texture_load(texture: &str, uv: &str, dims: &str) -> String {
+/// texel coordinate is the UV through the texture's wrap function
+/// ([`wrap_function_2d`]), scaled by `textureDimensions` and clamped.
+pub(crate) fn texture_load(texture: &str, wrap: &str, uv: &str, dims: &str) -> String {
     format!(
-        "textureLoad( {texture}, vec2<u32>( clamp( floor( tsl_coord_clampS_clampT_2d( {uv} ) * \
+        "textureLoad( {texture}, vec2<u32>( clamp( floor( {wrap}( {uv} ) * \
          vec2<f32>( {dims} ) ), vec2<f32>( 0 ), vec2<f32>( {dims} - vec2<u32>( 1, 1 ) ) ) ), \
          u32( 0 ) )"
     )
