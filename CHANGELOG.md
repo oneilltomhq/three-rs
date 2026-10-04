@@ -8,6 +8,18 @@ have their own sections after the release they ship with. The format follows [Ke
 
 ### Added
 
+- **`FirstPersonControls`** and **`FlyControls`** (`addons::controls`), ports
+  of r187's `examples/jsm/controls/FirstPersonControls.js` and
+  `FlyControls.js` with the same fields, defaults and `update( delta )`. Input
+  arrives as method calls (`pointer_down`, `pointer_move`, `key_down` with a
+  new `KeyCode`, …) rather than DOM listeners, the camera is passed to
+  `update` as a `&Node`, and Fly's `change` event is `update`'s return value.
+  `tools/first_person_controls_reference.mjs` and
+  `tools/fly_controls_reference.mjs` run three's own classes under node over
+  scripted input and write `tests/fixtures/first_person_controls.json` and
+  `fly_controls.json`; `tests/addons_first_person_controls.rs` and
+  `tests/addons_fly_controls.rs` replay the scripts and match every camera
+  position and quaternion to 1e-9. See `docs/controls.md`.
 - **`SkyMesh`** (`addons::objects`), a port of `examples/jsm/objects/SkyMesh.js`.
   It is the Preetham daylight model with a sun disc and an fbm cloud layer.
   Every uniform is a public `SettableValue`. `webgpu_sky` is graded green at 0
