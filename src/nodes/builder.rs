@@ -545,6 +545,14 @@ pub(crate) struct BuildContext {
     /// `setupClearcoatNormal`: `MeshPhysicalNodeMaterial.setup()`'s clearcoat
     /// lobe normal, the clearcoat twin of `setup_normal`.
     pub(crate) setup_clearcoat_normal: Option<NodeRef>,
+    /// `materialMetalness` / `materialRoughness` as `MaterialNode.setup()`
+    /// resolves them against `builder.material`: the uniform times the map's
+    /// channel when the material has one. One node per material setup, so
+    /// every reader shares the map's texture read, as three's node cache
+    /// shares it.
+    pub(crate) material_metalness: Option<NodeRef>,
+    /// See `material_metalness`.
+    pub(crate) material_roughness: Option<NodeRef>,
     /// `material.alphaToCoverage && renderer.currentSamples > 0`: what
     /// `shapeCircle()` branches on. Three reads both inside the `Fn` body at
     /// build time; the renderer pushes their conjunction around the build and
@@ -575,6 +583,8 @@ impl Default for BuildContext {
             orthographic_camera: false,
             setup_position_view: None,
             setup_clearcoat_normal: None,
+            material_metalness: None,
+            material_roughness: None,
             alpha_to_coverage_samples: false,
             extra: HashMap::new(),
             uniform_flow: false,
@@ -2597,6 +2607,11 @@ impl NodeBuilder {
         } else {
             self.generate(&inner)
         };
+        // "unnecessary swizzle": only `saturation()`'s cached `.rgb` of a
+        // `vec3` survives construction with the whole vector's components.
+        if components.len() == from.components() && "xyzw".starts_with(components) {
+            return snippet;
+        }
         format!("{snippet}.{components}")
     }
 
@@ -2993,7 +3008,13 @@ impl NodeBuilder {
                 let v = v.clone();
                 let snippet = self.generate(&v.value);
                 let name = self.local_var_name(v.name.as_deref());
-                let ty = wgsl::type_name(v.ty);
+                // A struct value's var is declared as the struct, as a hoisted
+                // var is: `TemporalReprojectNode`'s specular neighbourhood is
+                // `var nodeVar39 : StructType2 = nodeVar37;`.
+                let ty = match struct_layout_of(&v.value) {
+                    Some(layout) if v.ty == Type::Void => layout.name.to_string(),
+                    _ => wgsl::type_name(v.ty).to_string(),
+                };
                 self.emit(format!("var {name} : {ty} = {snippet};"));
                 self.cache_put(CacheKey::node(node), name.clone());
                 name

@@ -1827,6 +1827,43 @@ pub fn material_roughness() -> NodeRef {
     )
 }
 
+/// `materialMetalness` as `MaterialNode.setup()` builds it for the material
+/// being set up: `material.metalness`, times `metalnessMap.b` when the
+/// material has a map (glTF packs metalness in blue).
+///
+/// [`material_metalness`] is the uniform alone. This is the node three's
+/// `materialMetalness` stands for in a graph, and the one a deferred MRT
+/// output reads, as `webgpu_postprocessing_ssr_denoise`'s `vec4(
+/// diffuseColor.rgb, materialMetalness )` does. Within one material setup
+/// every call returns the same node, which the material's own `Metalness`
+/// also reads, so the map is sampled once. Outside a material setup it is
+/// the uniform.
+pub fn material_metalness_value() -> NodeRef {
+    current_context(|cx| cx.material_metalness.clone()).unwrap_or_else(material_metalness)
+}
+
+/// `materialRoughness` as `MaterialNode.setup()` builds it for the material
+/// being set up: `material.roughness`, times `roughnessMap.g` when the
+/// material has a map. The unclamped value, before `getRoughness()` adds the
+/// geometry term; see [`material_metalness_value`] for when to use it.
+pub fn material_roughness_value() -> NodeRef {
+    current_context(|cx| cx.material_roughness.clone()).unwrap_or_else(material_roughness)
+}
+
+/// Install the material's `materialMetalness` / `materialRoughness` nodes for
+/// the duration of `f`.
+pub(crate) fn with_material_values<R>(
+    metalness: NodeRef,
+    roughness: NodeRef,
+    f: impl FnOnce() -> R,
+) -> R {
+    let _values = push_context(|cx| {
+        cx.material_metalness = Some(metalness);
+        cx.material_roughness = Some(roughness);
+    });
+    f()
+}
+
 /// `materialBumpScale`.
 pub(crate) fn material_bump_scale() -> NodeRef {
     uniform(
@@ -1960,6 +1997,24 @@ fn swizzle(node: NodeRef, components: &'static str) -> NodeRef {
     NodeRef::new(Node::Swizzle {
         node,
         components,
+        ty,
+    })
+}
+
+/// `node.rgb` as three's swizzle getter builds it: a `SplitNode` cached on
+/// its node, kept even when it names the whole vector. [`swizzle`] collapses
+/// that case into the node itself, which is the same WGSL at one read but not
+/// at two: the shared `SplitNode` is what is counted twice, and as it is no
+/// `TempNode` neither it nor its node becomes a var. The builder drops the
+/// unnecessary suffix when it generates it (`SplitNode.generate()`).
+fn cached_rgb(node: NodeRef) -> NodeRef {
+    if node.ty().components() != 3 {
+        return swizzle(node, "xyz");
+    }
+    let ty = Type::vector_of(node.ty().component_type(), 3);
+    NodeRef::new(Node::Swizzle {
+        node,
+        components: "xyz",
         ty,
     })
 }
@@ -6230,15 +6285,20 @@ pub fn luminance(color: NodeRef) -> NodeRef {
 
 /// `saturation( color, adjustment )` — ported verbatim from
 /// `ColorAdjustment.js`: `adjustment.mix( luminance( color.rgb ), color.rgb ).max( 0.0 )`.
+///
+/// Both reads of `color.rgb` are one node: three's swizzle getter caches the
+/// `SplitNode` on its node (`this._cache[ property ]`), and a `SplitNode` is
+/// no `TempNode`, so the shared swizzle is counted twice but `color` only
+/// once and stays inline, even when `color` is already a `vec3` — `webgpu_postprocessing_ssr_denoise`'s grading
+/// spells its contrast expression out at both reads.
 pub fn saturation(color: NodeRef, adjustment: NodeRef) -> NodeRef {
     thread_local! { static CELL: Lazy<Rc<FnDef>> = const { Lazy::new() }; }
     let def = CELL.with(|c| {
         c.get(|| {
             inline_fn(2, Type::Vec3, |args| {
                 let (color, adjustment) = (args[0].clone(), args[1].clone());
-                adjustment
-                    .mix(luminance(color.rgb()), color.rgb())
-                    .max(float(0.0))
+                let rgb = cached_rgb(color);
+                adjustment.mix(luminance(rgb.clone()), rgb).max(float(0.0))
             })
         })
     });
