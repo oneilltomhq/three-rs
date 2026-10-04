@@ -69,20 +69,21 @@ the page.
   updater at the top of `update_before()`, as `TraaNode` does, so that their
   inputs are current. Three gets the same order from `setup()`.
 - **The GUI is not ported.** Its defaults are applied through the page's own
-  `updateParameters()`. `binaryRefine`, `enabled` and the model `roughness`
-  slider stay at their starting values.
+  `updateParameters()`. `enabled` and the model `roughness` slider stay at
+  their starting values.
 
 ## Not ported
 
-From `SSRNode`, all of these options are left at their defaults by the page:
+From `SSRNode`, all of these are left at their defaults by the page:
 
-- `stochastic`, the second-generation path, with its GGX sampling, noise and
-  environment fallback;
-- `reflectNonMetals`, `binaryRefine` and `screenEdgeFadeBlack`;
-- `setHistory()` (multi-bounce) and `diffuseNode`;
 - a `resolutionScale` other than 1;
 - an orthographic camera;
 - a logarithmic depth buffer.
+
+`SSRNode`'s stochastic path, `reflectNonMetals`, `binaryRefine`,
+`screenEdgeFadeBlack`, `setHistory()` and `diffuseNode` are ported since,
+for `webgpu_postprocessing_ssr_denoise` (`docs/nodes.md` §65.3); this page
+leaves them at their defaults.
 
 From `SMAANode`: `SMAANode.js` has no options to leave out.
 

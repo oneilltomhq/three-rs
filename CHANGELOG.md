@@ -18,6 +18,39 @@ have their own sections after the release they ship with. The format follows [Ke
   scenarios). `Box3Helper`, `PlaneHelper` and `SkeletonHelper`'s
   `updateMatrixWorld` overrides are an explicit `update_matrix_world(force)`
   the caller runs each frame; see the `helpers` module docs.
+- **`ssr()`'s stochastic path** (`nodes::display`): `SsrOptions` gains
+  `stochastic`, `reflect_non_metals`, `environment`,
+  `env_importance_sampling`, `diffuse` and `binary_refine`, and `SsrNode`
+  gains `set_env_map`, `set_history`, `render_target` and the mirror-bias,
+  screen-edge-fade and environment-intensity uniforms. This ports the rest
+  of `examples/jsm/tsl/display/SSRNode.js`: GGX-sampled rays jittered by a
+  per-frame noise index, binary refinement, the environment fallback on a
+  miss and the multi-bounce history. The three SSR quads of
+  `tools/dump-pages/ssr_stochastic.html` are gated against three's dump in
+  `tests/nodes_display_wgsl.rs`, and `tests/ssr_stochastic_frames.rs` checks
+  a mirror floor's reflection. See `docs/nodes.md` §65.3.
+- **`temporal_reproject`** (`nodes::display`), a port of
+  `examples/jsm/tsl/display/TemporalReprojectNode.js`, the temporal stage of
+  `webgpu_postprocessing_ssr_denoise`'s denoiser. It reprojects a history
+  along the velocity attachment with a depth- and normal-weighted 4-tap
+  fetch, clips it to the neighbourhood's YCoCg variance box, and writes
+  `1 / frameCount` in alpha. It covers both modes (`Specular` adds the
+  parallax hit-point history), `accumulate`, `set_history_texture()`, and
+  the `max_frames`, `hit_point_reprojection`, `clamp_intensity` and
+  `flicker_suppression` uniforms as `SettableValue`s. The seed quad and both
+  resolve quads are gated against three's dump in
+  `tests/nodes_display_wgsl.rs`, and `tests/temporal_reproject_frames.rs`
+  checks the history on the GPU. See `docs/nodes.md` §87.
+- **`ImportanceSampledEnvironment`** and **`EnvMapCdfGenerator`**
+  (`nodes::display`), with the SpecularHelpers microfacet helpers
+  (`d_gtr`, `ggx_reflection_sample`, `mis_power_heuristic`, …) and
+  `bind_analytic_noise` in `nodes::tsl`. These port
+  `examples/jsm/tsl/display/ImportanceSampledEnvironment.js`,
+  `tsl/utils/SpecularHelpers.js` and `tsl/utils/RNoise.js`: the CPU
+  luminance CDF tables and the reflect, BRDF and MIS environment lookups the
+  SSR-denoise stack shares. The WGSL is gated against three's dump of
+  `tools/dump-pages/specular_helpers.html` in `tests/nodes_display_wgsl.rs`,
+  and the CDF tables by a hand-computed 4×2 unit test.
 - **`WaterMesh`** (`addons::objects`), a port of
   `examples/jsm/objects/WaterMesh.js`: a planar `reflector()` distorted by
   four scrolling taps of a normal map, with a sun highlight and a Fresnel mix
@@ -441,6 +474,28 @@ have their own sections after the release they ship with. The format follows [Ke
   three's `scene.backgroundIntensity` and `scene.environmentIntensity`.
 - **`tsl::const_array_of`**, a literal array of vectors, and
   `UniformArray::element_xyz`.
+- **`sharpen()` / `SharpenNode`** (`nodes::display`), a port of
+  `examples/jsm/tsl/display/SharpenNode.js`: AMD FidelityFX FSR 1's RCAS,
+  a contrast-limited five-tap sharpen drawn once a frame into a half-float
+  target, with optional noise attenuation. `sharpness` is a number (a
+  constant, as in three) or any float node, such as a `uniform_settable`.
+  Both variants' WGSL is gated against three's dump of
+  `tools/dump-pages/sharpen.html` in `tests/nodes_display_wgsl.rs`, and
+  `tests/sharpen_frames.rs` checks on the GPU that it steepens a soft edge
+  without moving flat regions. See `docs/nodes.md` §86.
+- **`recurrent_denoise()` / `RecurrentDenoiseNode`** (`nodes::display`), a
+  port of `examples/jsm/tsl/display/RecurrentDenoiseNode.js`: the
+  edge-aware eight-tap Vogel-disk denoiser of the SSR-denoise stack, in
+  `'diffuse'` or `'specular'` mode, with luma, plane, lobe-normal, albedo,
+  roughness and ray-length or AO edge stopping, and an optional Karis
+  temporal blend that writes the frame weight to alpha. Every three uniform
+  is a public `SettableValue`; `set_alpha_source` rebuilds the shader. Both
+  of `tools/dump-pages/recurrent_denoise.html`'s quads (diffuse with AO,
+  and the page's specular configuration) are gated against three's dump in
+  `tests/nodes_display_wgsl.rs`, with function gates for the layouted
+  helpers, and `tests/recurrent_denoise_frames.rs` checks on the GPU that it
+  cuts a noisy face's variance without moving its mean or its silhouette,
+  and keeps cutting it as frames accumulate. See `docs/nodes.md` §88.
 
 ### Changed
 
