@@ -709,6 +709,43 @@ three's dump, and on `tests/traa_frames.rs`, which checks over sixteen frames
 that the silhouette blends while the inside and the background hold. The
 example is in the native viewer (`viewer traa`).
 
+## Screen-space shadows (`webgpu_postprocessing_sss`)
+
+SSS marches from each pixel towards one light through a depth pre-pass, for
+the contact shadows a shadow map is too coarse to resolve. The scene pass
+multiplies the result into that light's colour:
+
+```rust
+let mut pre_pass = pass(scene.clone(), camera.clone());
+pre_pass.set_transparent(false);
+pre_pass.set_mrt(mrt(vec![("output", velocity())]));
+let _ = pre_pass.texture_node("depth");
+
+let scene_pass = pass(scene.clone(), camera.clone());
+
+let sss_node = sss(&pre_pass.depth_texture(), camera.clone(), &dir_light);
+sss_node.max_distance.set(vec![0.2]);
+sss_node.set_use_temporal_filtering(true);
+
+// `scenePass.contextNode = builtinShadowContext( sss.r, dirLight )`.
+scene_pass.set_context_shadow(sss_node.sample(screen_uv()).x(), &dir_light);
+```
+
+The page then resolves the scene pass with TRAA, reading the pre-pass's
+depth and velocity. The SSS node renders the pre-pass itself before its own
+quad. The context reaches only the draws where `dir_light`'s shadow map
+applies: the light casts shadows, the object receives them, and
+`renderer.shadow_map_enabled` is on. Anywhere else the SSS has nothing to
+multiply into, as in three. `clear_context_shadow()` is the page's "Scene
+with Shadow Maps" mode. The target is `rgba8unorm`, not three's
+`RedFormat`, so the sample is read with `.x()`. `docs/nodes.md` §71 has the
+rest.
+
+**There is no rung.** three lists `webgpu_postprocessing_sss` in its e2e
+exception list ("Black screen"). The port is gated on the SSS quad and the
+ground's shadow context against three's dump, and on
+`tests/sss_frames.rs`, which renders a box on a floor with the light
+behind it. The example is in the native viewer (`viewer postprocessing_sss`).
 ## Screen space global illumination (`webgpu_postprocessing_ssgi`)
 
 `ssgi()` reads the scene pass's colour, depth and packed normals. It writes

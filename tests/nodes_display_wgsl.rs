@@ -350,6 +350,71 @@ fn traa_flicker_reduction_matches_three() {
 }
 
 #[test]
+fn sss_matches_three() {
+    check("sss", Region::Body);
+}
+
+/// The page's ground in the scene pass: a Phong floor under a hemisphere
+/// light and the shadow-casting directional light, in linear fog, with
+/// `builtinShadowContext( sss.r, dirLight )` multiplied into the directional
+/// light's colour after its shadow-map factor.
+#[test]
+fn sss_shadow_context_matches_three() {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    use three_rs::materials::phong::ShadowMap;
+    use three_rs::nodes::display::sss;
+    use three_rs::nodes::tsl::screen_uv;
+    use three_rs::textures::DepthTexture;
+    use three_rs::{Color, Fog, MeshPhongNodeMaterial, PerspectiveCamera, SceneFog};
+
+    let mut material = MeshPhongNodeMaterial::phong(Color::from_hex(0xcbcbcb));
+    material.depth_write = false;
+    let light = three_rs::DirectionalLight::new(Color::from_hex(0xffffff), 3.0);
+    let sss_node = sss(
+        &DepthTexture::new(),
+        Rc::new(RefCell::new(PerspectiveCamera::new(45.0, 1.0, 0.1, 100.0))),
+        &light,
+    );
+    let ctx = SetupContext {
+        lights: vec![
+            LightDesc {
+                index: 0,
+                kind: LightKind::Hemisphere,
+                shadow_map: None,
+            },
+            LightDesc {
+                index: 1,
+                kind: LightKind::Directional,
+                shadow_map: Some(ShadowMap::Context {
+                    map: Box::new(ShadowMap::Planar(DepthTexture::new())),
+                    shadow: sss_node.sample(screen_uv()).x(),
+                }),
+            },
+        ],
+        ..SetupContext::default()
+    };
+    let fog = SceneFog::Linear(Fog::new(Color::from_hex(0xa0a0a0), 10.0, 50.0)).node();
+    let program = NodeBuilder::new().build(&setup(&material, &ctx, Some(&fog)));
+    // The port's Phong flow emits each accumulator's zero twice in a row:
+    // `irradiance`, `directDiffuse`, `directSpecular` and `indirectDiffuse =
+    // vec3<f32>( 0.0, 0.0, 0.0 );`, once from the var's lazy initialiser and
+    // once from the flow's explicit zero assign (`src/materials/
+    // node_material.rs`). three's dump has each once. It happens on main too,
+    // with or without the shadow context: issue #281. Only an adjacent repeat
+    // of the same line is dropped, so a missing or extra light term still
+    // shows.
+    let mut lines: Vec<&str> = program.fragment_wgsl.lines().collect();
+    lines.dedup();
+    let ours = fingerprint(&lines.join("\n"), Region::Body);
+    let three = fingerprint(
+        &fixture("webgpu_postprocessing_sss_m12_ground.wgsl"),
+        Region::Body,
+    );
+    assert_eq!(ours, three, "\n{}", program.fragment_wgsl);
+}
+
+#[test]
 fn gtao_matches_three() {
     check("gtao", Region::Body);
 }
