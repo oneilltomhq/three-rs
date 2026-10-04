@@ -34,6 +34,7 @@ three-rs/renderer_sprites
 three-rs/renderer_textures
 three-rs/renderer_vertex_colors
 three-rs/renderer_viewport
+three-rs/renderer_viewport_depth
 three-rs/stereo_frames
 three-rs/ssgi_frames
 three-rs/sss_frames
