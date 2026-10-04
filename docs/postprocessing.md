@@ -709,6 +709,69 @@ three's dump, and on `tests/traa_frames.rs`, which checks over sixteen frames
 that the silhouette blends while the inside and the background hold. The
 example is in the native viewer (`viewer traa`).
 
+## Screen space global illumination (`webgpu_postprocessing_ssgi`)
+
+`ssgi()` reads the scene pass's colour, depth and packed normals. It writes
+two textures, an AO and a one-bounce GI, and the page composites them before
+TRAA:
+
+```rust
+let scene_pass = pass(scene.clone(), camera.clone());
+let mut scene_mrt = mrt(vec![
+    ("output", output_property()),
+    ("diffuseColor", diffuse_color()),
+]);
+scene_mrt.set_deferred("normal", || pack_normal_to_rgb(normal_view()));
+scene_mrt.set("velocity", velocity());
+scene_pass.set_mrt(scene_mrt);
+let color = scene_pass.texture_node("output");
+let diffuse = scene_pass.texture_node("diffuseColor");
+let _ = scene_pass.texture_node("normal");
+let _ = scene_pass.texture_node("velocity");
+
+let gi_pass = ssgi(
+    &scene_pass.texture(),
+    &scene_pass.depth_texture(),
+    &scene_pass.texture_named("normal"), // packed; ssgi() unpacks it
+    camera.clone(),
+);
+gi_pass.slice_count.set(vec![2.0]);
+gi_pass.step_count.set(vec![8.0]);
+
+let composite = convert_to_texture(vec4_join(vec![
+    color.xyz().mul(gi_pass.ao_node()).add(diffuse.xyz().mul(gi_pass.gi_node())),
+    color.w(),
+]));
+let traa_node = traa(
+    &composite.texture(),
+    &scene_pass.depth_texture(),
+    &scene_pass.texture_named("velocity"),
+    camera.clone(),
+);
+traa_node.attach(&mut render_pipeline);
+render_pipeline.output_node = Some(traa_node.node());
+```
+
+Every option of three's node is a public `SettableValue` on `SsgiNode`, so
+the GUI's sliders are uniform writes. `set_use_temporal_filtering( false )`
+holds the slice rotation and step offset still. The rotating slices are
+meant to be resolved by TRAA, so when the page's checkbox turns temporal
+filtering off, the page also drops TRAA and outputs the composite directly.
+
+Each frame the node draws one quad into one two-attachment target. The AO
+attachment is `R8Unorm`. The GI attachment is `Rg11b10Ufloat`. On an
+adapter that cannot render it the node logs three's error and the effect
+fails, as three's does: wgpu rejects the attachment. It allocates
+nothing per frame. `docs/nodes.md` §69 has the divergences, and §66 the
+`output_struct()` node it writes its two attachments with.
+
+**There is no rung.** three lists `webgpu_postprocessing_ssgi` in its own e2e
+exception list (`test/e2e/puppeteer.js`, under "Black screen"). The port is
+gated on its SSGI, composite and TRAA resolve shaders against three's dump of
+the page, and on `tests/ssgi_frames.rs`. That test checks the AO darkening
+and the colour bleeding at a wall's foot, the temporal rotation, and that the
+options are live. The example is in the native viewer (`viewer ssgi`).
+
 ## Depth of field
 
 ```rust

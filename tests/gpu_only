@@ -31,6 +31,7 @@ three-rs/renderer_sprites
 three-rs/renderer_textures
 three-rs/renderer_vertex_colors
 three-rs/renderer_viewport
+three-rs/ssgi_frames
 three-rs/traa_frames
 three-rs/gtao_frames
 three-rs/velocity_frames

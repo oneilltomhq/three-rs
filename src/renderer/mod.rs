@@ -1239,11 +1239,17 @@ impl Renderer {
         // falls back to uncompressed RGBA — correct, four to eight times the
         // memory, and not the texture three samples.
         //
+        // `RG11B10UFLOAT_RENDERABLE` is WebGPU's `rg11b10ufloat-renderable`,
+        // which `SSGINode` renders its GI attachment into (and checks for).
+        //
         // `SUBGROUP` is WebGPU's `subgroups`, which three requests the same
         // way and which the subgroup TSL functions need
         // (`WGSLNodeBuilder.enableSubGroups()`). An adapter without it only
         // costs those kernels: `compute()` logs three's error and skips them.
-        let wanted = wgpu::Features::FLOAT32_FILTERABLE | COMPRESSION_FEATURES | SUBGROUP_FEATURES;
+        let wanted = wgpu::Features::FLOAT32_FILTERABLE
+            | wgpu::Features::RG11B10UFLOAT_RENDERABLE
+            | COMPRESSION_FEATURES
+            | SUBGROUP_FEATURES;
         let required_features = adapter.features() & wanted;
 
         let (device, queue) = adapter

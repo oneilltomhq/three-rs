@@ -291,7 +291,8 @@ PostprocessingDofBasic, webgpu_postprocessing_dof_basic, "../../examples/webgpu_
 PostprocessingDof, webgpu_postprocessing_dof, "../../examples/webgpu_postprocessing_dof.rs";
 PostprocessingSsr, webgpu_postprocessing_ssr, "../../examples/webgpu_postprocessing_ssr.rs";
 PostprocessingSmaa, webgpu_postprocessing_smaa, "../../examples/webgpu_postprocessing_smaa.rs";
-PostprocessingPixel, webgpu_postprocessing_pixel, "../../examples/webgpu_postprocessing_pixel.rs";}
+PostprocessingPixel, webgpu_postprocessing_pixel, "../../examples/webgpu_postprocessing_pixel.rs";
+PostprocessingSsgi, webgpu_postprocessing_ssgi, "../../examples/webgpu_postprocessing_ssgi.rs";}
 
 impl Which {
     /// The name with or without its `webgpu_` prefix, or its 1-based index in

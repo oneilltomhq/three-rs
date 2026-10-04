@@ -264,6 +264,7 @@ browser shell:
 | example | why it has no grade |
 |---|---|
 | [`webgpu_postprocessing_traa`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_traa.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_traa-progress.md) | in three's e2e exception list (`test/e2e/puppeteer.js`, "Black screen"). It is gated instead on its resolve shader against three's dump and on `tests/traa_frames.rs` |
+| [`webgpu_postprocessing_ssgi`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_ssgi.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_ssgi-progress.md) | in three's e2e exception list (`test/e2e/puppeteer.js`, "Black screen"). It is gated instead on its SSGI, composite and TRAA shaders against three's dump and on `tests/ssgi_frames.rs` |
 | [`webgpu_postprocessing_ao`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_ao.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_ao-progress.md) | in the same exception list. It is gated instead on its GTAO shader against three's dump and on `tests/gtao_frames.rs` |
 | [`webgpu_postprocessing_dof`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_dof.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_dof-progress.md) | in three's e2e exception list (`test/e2e/puppeteer.js`, "Black screen"). It is gated instead on each of `DepthOfFieldNode`'s seven distinct quad shaders against three's dump (`dof_*` in `tests/nodes_display_wgsl.rs`) |
 
@@ -332,8 +333,9 @@ cargo run --release --bin viewer -- shadowmap --headless --frames 40
 
 Opens the named example in a window (winit, tested on Wayland). All 89 graded
 examples are there, and so are the ungraded `webgpu_postprocessing_traa`,
-`webgpu_postprocessing_ao`, `webgpu_postprocessing_dof`,
-`webgpu_postprocessing_smaa` and `webgpu_postprocessing_pixel`. The last two
+`webgpu_postprocessing_ssgi`, `webgpu_postprocessing_ao`,
+`webgpu_postprocessing_dof`, `webgpu_postprocessing_smaa` and
+`webgpu_postprocessing_pixel`. The last two
 are ported but their e2e tests are `#[ignore]`d, because three itself fails
 their references on this machine; their
 [smaa](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_smaa-progress.md)

@@ -822,7 +822,7 @@ Graded examples: 89 (the README gallery plus `webgpu_textures_2d-array_compresse
 
 ### Supplementary: `examples/jsm/tsl/display/*.js`
 
-These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) and are not counted above. 23 Present, 1 Partial, 24 Absent.
+These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) and are not counted above. 24 Present, 1 Partial, 23 Absent.
 
 | file | status | three-rs port and check |
 |---|---|---|
@@ -865,7 +865,7 @@ These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) an
 | `SobelOperatorNode.js` | Present | sobel; webgpu_postprocessing_sobel |
 | `SSAAPassNode.js` | Present | SsaaPassNode (src/renderer/ssaa_pass.rs:130); webgpu_postprocessing_ssaa |
 | `SSAONode.js` | Absent | — |
-| `SSGINode.js` | Absent | — |
+| `SSGINode.js` | Present | ssgi/SsgiNode (src/nodes/display/ssgi.rs:87,97); tests/nodes_display_wgsl.rs (SSGI body, spatialOffsets, GTAOFastAcos, the page's composite and TRAA resolve gates), tests/ssgi_frames.rs; webgpu_postprocessing_ssgi (ported, ungraded: three's own e2e exception list). An arbitrary `normalNode`, `normalNode = null` (getNormalFromDepth), log depth, the `SSGI.AO` name, `contextNode` and `dispose()` are not ported |
 | `SSRNode.js` | Present | ssr/SsrNode (src/nodes/display/ssr.rs:94,105); tests/nodes_display_wgsl.rs (ssr, ssr_copy, ssr_blur and ssr_resolve gates); webgpu_postprocessing_ssr (graded); stochastic, binaryRefine, reflectNonMetals, screenEdgeFadeBlack, setHistory(), resolutionScale ≠ 1, orthographic cameras and log depth are not ported |
 | `SSSNode.js` | Absent | — |
 | `StereoCompositePassNode.js` | Absent | — |
@@ -1674,7 +1674,7 @@ Every graded example passes, so graded examples cannot rank the gaps. The rankin
 
 The first refresh of this matrix closed the previous top five. Velocity and TRAA (`velocity`, `positionPrevious`, `VelocityNode`, `TRAANode`, `MotionBlur`), the screen reads (`viewportSharedTexture`, `viewportTexture`, `viewportDepthTexture`, `viewportLinearDepth`, `linearDepth`, `viewportSafeUV`), `SkyMesh`, `CubeCamera` with a layered `CubeRenderTarget`, and the light probes (`LightProbe`, `LightProbeGenerator`, `LightProbeNode`, `LightProbeHelperGPU`, `getShIrradianceAt`) are Present. So is `transformNormalToView` (6 pages), with the rest of the accessors batch; `webgpu_tsl_raging_sea` now calls it. Of the screen reads only the shared copy has a graded page behind it; `viewportTexture`, `viewportDepthTexture`, `viewportLinearDepth` and `linearDepth` are defined but no gate or graded example renders them yet, so they stay Partial until a depth-reading page is ported.
 
-1. **The screen-space effect nodes** (`SSGINode`, `SSSNode`, `DenoiseNode`; `ssgi()` 2 pages, `sss()` 1, `denoise` 6). `SSRNode` is Present (`webgpu_postprocessing_ssr`, graded). `GTAONode` and `builtinAOContext` are Present now (`webgpu_postprocessing_ao`, ungraded: it is on three's e2e exception list), and so is `DepthOfFieldNode` (`webgpu_postprocessing_dof`, ungraded for the same reason). Each of the rest needs a velocity target and a temporal resolve, and both now exist; these pages are the direct payoff of the velocity work. Porting them also gives the depth reads (`viewportDepthTexture`, `linearDepth`, `getViewPosition`) their first graded consumer.
+1. **The screen-space effect nodes** (`SSSNode`, `DenoiseNode`; `sss()` 1 page, `denoise` 6). `SSRNode` is Present (`webgpu_postprocessing_ssr`, graded). `GTAONode` and `builtinAOContext` are Present now (`webgpu_postprocessing_ao`, ungraded: it is on three's e2e exception list), and so are `DepthOfFieldNode` (`webgpu_postprocessing_dof`) and `SSGINode` (`webgpu_postprocessing_ssgi`), both ungraded for the same reason. Each of the rest needs a velocity target and a temporal resolve, and both now exist; these pages are the direct payoff of the velocity work. Porting them also gives the depth reads (`viewportDepthTexture`, `linearDepth`, `getViewPosition`) their first graded consumer.
 2. **EventDispatcher** (issues 153, 159). 8 pages subscribe to `change` or `finished` events. In ordinary use these are render-on-demand behind OrbitControls and chaining animation clips when one ends, and neither works in the port today. `AnimationMixer` and `AnimationAction` fire nothing.
 3. **The TransformControls pages** (`webgpu_modifier_curve`, `webgpu_shadowmap_progressive`, `webgpu_tsl_compute_attractors_particles`). `FirstPersonControls` (8 pages), `FlyControls` (1) and now `TransformControls` are ported and gated against three's classes (`docs/controls.md`). What is left is wiring the gizmo into the pages: `webgpu_modifier_curve`'s port still leaves it out, and the viewer's controls hook is typed for `OrbitControls`.
 4. **`WaterMesh`** (2 pages) and the remaining display files (`OutlineNode`, `Lut3DNode`, `FilmNode`, 1 to 2 pages each). Small, self-contained, and each unlocks one page.

@@ -8,6 +8,20 @@ have their own sections after the release they ship with. The format follows [Ke
 
 ### Added
 
+- **`ssgi()` / `SsgiNode`** (`nodes::display`), a port of
+  `examples/jsm/tsl/display/SSGINode.js`. It is screen space global
+  illumination with a visibility bitmask, and writes an AO and a one-bounce
+  GI texture. Every option is a public `SettableValue`, and
+  `set_use_temporal_filtering()` is three's property. The SSGI shader, the
+  page's composite and its TRAA resolve are gated against three's dump in
+  `tests/nodes_display_wgsl.rs`, and `tests/ssgi_frames.rs` checks the
+  frames, the three boolean options included. `webgpu_postprocessing_ssgi`
+  is ported, ungraded because three's e2e harness skips it, and in the
+  viewer. An arbitrary `normalNode`, `normalNode = null`, a logarithmic
+  depth buffer, the `SSGI.AO` name, `contextNode` and `dispose()` are not
+  ported. Without `RG11B10UFLOAT_RENDERABLE` the effect fails, as three's
+  does.
+- The renderer requests `RG11B10UFLOAT_RENDERABLE` when the adapter has it.
 - **`nodes::display::ao`** (`GtaoNode`), a port of `GTAONode.js`: ground
   truth ambient occlusion from a depth and a packed-normal pre-pass, with
   `radius`, `thickness` and `scale` as `SettableValue`s and `set_samples`,

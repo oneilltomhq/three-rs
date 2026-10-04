@@ -4,10 +4,11 @@
 //! `examples/dump_wgsl.rs`, which prints them.
 
 use three_rs::materials::{quad_vertex_node, render_output, MeshBasicNodeMaterial};
+use three_rs::nodes::display::convert_to_texture;
 use three_rs::nodes::display::{
     after_image, ao, bilateral_blur, box_blur, depth_aware_blend, dof, dot_screen, fxaa,
     gaussian_blur, godrays, hash_blur_with, lensflare, motion_blur, pixelation_pass, rgb_shift,
-    rtt, smaa, sobel, ssr, traa, viewport_shared_texture_at, BoxBlurOptions,
+    rtt, smaa, sobel, ssgi, ssr, traa, viewport_shared_texture_at, BoxBlurOptions,
     DepthAwareBlendOptions, GaussianBlurOptions, HashBlurOptions, LensflareParams, SsrOptions,
 };
 use three_rs::nodes::tsl::{
@@ -484,6 +485,58 @@ pub fn display_quads() -> Vec<DisplayQuad> {
             material,
         });
     }
+
+    // webgpu_postprocessing_ssgi `m07`: `ssgi( scenePassColor,
+    // scenePassDepth, sceneNormal, camera )` with `sliceCount = 2` and
+    // `stepCount = 8` (uniforms, so the shader is the default's), whose
+    // `colorNode` is the `gi` `Fn()` and whose `outputNode` is
+    // `outputStruct( aoField, giField )`.
+    let camera = std::rc::Rc::new(std::cell::RefCell::new(three_rs::PerspectiveCamera::new(
+        40.0, 1.0, 0.1, 100.0,
+    )));
+    let scene_color = input();
+    let scene_diffuse = input();
+    let ssgi_node = ssgi(&scene_color, &DepthTexture::new(), &input(), camera.clone());
+    let mut gi = ssgi_node.quad_material();
+    gi.vertex_node = Some(quad_vertex_node());
+    quads.push(DisplayQuad {
+        label: "ssgi",
+        fixture: "webgpu_postprocessing_ssgi_m07_ssgi.wgsl",
+        material: gi,
+    });
+
+    // `m09`: the `RTT` quad `traa()`'s `convertToTexture()` wraps the page's
+    // composite in — `vec4( add( scenePassColor.rgb.mul( ao ),
+    // scenePassDiffuse.rgb.mul( gi.rgb ) ), scenePassColor.a )`.
+    let color = texture_uv(&scene_color, uv());
+    let composite = vec4_join(vec![
+        color.xyz().mul(ssgi_node.ao_node()).add(
+            texture_uv(&scene_diffuse, uv())
+                .xyz()
+                .mul(ssgi_node.gi_node()),
+        ),
+        color.w(),
+    ]);
+    let rtt = convert_to_texture(composite);
+    let mut composite = rtt.quad_material().clone();
+    composite.vertex_node = Some(quad_vertex_node());
+    quads.push(DisplayQuad {
+        label: "ssgi_composite",
+        fixture: "webgpu_postprocessing_ssgi_m09_rtt.wgsl",
+        material: composite,
+    });
+
+    // `m11`: the page's `TRAA.resolve`, the same material as the TRAA
+    // page's — checked against this page's dump too.
+    let ssgi_traa =
+        three_rs::nodes::display::traa(&rtt.texture(), &DepthTexture::new(), &input(), camera);
+    let mut resolve = ssgi_traa.quad_material().clone();
+    resolve.vertex_node = Some(quad_vertex_node());
+    quads.push(DisplayQuad {
+        label: "ssgi_traa",
+        fixture: "webgpu_postprocessing_ssgi_m11_traa_resolve.wgsl",
+        material: resolve,
+    });
 
     quads
 }
