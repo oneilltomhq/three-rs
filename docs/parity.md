@@ -44,7 +44,51 @@ TSL by family:
 | materialx | 49 | 48 | 0 | 1 | 0 |
 | utils | 77 | 47 | 16 | 4 | 10 |
 
-Graded examples: 96 (the README gallery plus `webgpu_textures_2d-array_compressed`, which has a live `rung!` but a hyphen in its name). 13 more are ported but `#[ignore]`d because three.js fails its own reference on this machine; a row whose only check is one of those is Partial.
+Graded examples: 96 (the rows of the README's graded table, `webgpu_textures_2d-array_compressed` among them; its `rung!` spells the name with an underscore). 13 more are ported but `#[ignore]`d because three.js fails its own reference on this machine; a row whose only check is one of those is Partial.
+
+### Pages
+
+three ships 231 `webgpu_*` pages at 5f610f5. The README headline counts graded pages out of the gradeable ones, and the two tables below are what takes a page out of that denominator or keeps it out of the graded count (#293). A page is **N.A.** when no frame of it can be diffed against three's reference on a headless, session-less, media-less grading machine; the pieces of an N.A. page that are portable are judged as rows above, and the page itself is not a port target. A page is **ignored** when it is ported and its e2e test exists but is `#[ignore]`d because three.js itself fails its own reference screenshot on the grading machine (Intel Iris Xe, Mesa 25.3, Vulkan), so a pass or fail of the port says nothing. Of the 17 pages #293 lists, 16 are N.A. and one (`webgpu_sandbox`) turns out to be an ordinary scene and stays gradeable; 13 pages are ignored; 94 of the 215 gradeable pages are graded.
+
+Three's own `test/e2e/puppeteer.js` still screenshots 13 of the 17 (it excepts only the three TSL editors and `webgpu_compute_audio`), so most have a reference JPEG; the third column says what that JPEG is a picture of and why diffing the port against it would not verify the page.
+
+| page | verdict | why | what three's reference shows | portable pieces |
+|---|---|---|---|---|
+| `webgpu_xr_cubes` | N.A. | needs an immersive XR session (`renderer.xr`, `XRButton`); the page's content is the session's stereo layers and the controller input | the desktop fallback frame: the cube field through a mono camera, no XR | none beyond what the graded cube and instancing pages cover |
+| `webgpu_xr_native_layers` | N.A. | needs a session with `XRWebGLBinding` layers (`renderer.xr`, `VRButton`); the quad, cylinder and equirect layers only exist inside it | the desktop fallback frame without the layers | none; native layers are an XR-only API |
+| `webgpu_xr_rollercoaster` | N.A. | needs a session (`renderer.xr`, `VRButton`); the ride advances on `performance.now()` inside the animation loop | the desktop fallback frame at whatever time the screenshot landed | the `RollerCoaster` geometries are one addon row (Absent) |
+| `webgpu_xr_shadows` | N.A. | needs a session (`renderer.xr`, `VRButton`); the controllers cast the shadows | the desktop fallback frame | shadow maps are graded by the `webgpu_shadowmap*` pages |
+| `webgpu_tsl_editor` | N.A. | a Monaco editor page: the output is the DOM editor and its compiled-shader text, not a renderer frame; three excepts it from its own e2e | not graded by three | the TSL transpiler addon has no row yet; the WGSL text itself is what the port's dump gates compare |
+| `webgpu_tsl_transpiler` | N.A. | a Monaco editor page: GLSL in, TSL out, no renderer frame; three excepts it | not graded by three | the transpiler addon has no row yet |
+| `webgpu_tsl_graph` | N.A. | an `Inspector` TSL-graph panel (`three/addons/inspector`) over a glTF scene, with the panel in the viewport; three excepts it | not graded by three | the scene itself is the ordinary glTF + HDR path the graded loader pages cover; the inspector is DOM |
+| `webgpu_sandbox` | gradeable | #293 lists it among the tooling UIs, but it is a plain scene: a `MeshBasicNodeMaterial` box with a UV texture mixed with `checker()` on a `time`-scrolled UV, a sphere displaced by a texture, a `DataTexture` plane, a KTX2 plane with `oscSine()` emissive and alpha test, a random point cloud and a vertex-coloured line; three grades it, and every ingredient is ported and graded elsewhere | the scene at the harness's frozen time | — (grade it; its random points need the harness's seeded `Math.random`, which the other random-scene rungs already reproduce) |
+| `webgpu_test_memory` | N.A. | a leak test: every frame creates, renders and disposes random spheres and lights, and the point is `renderer.info.memory` after N frames, not any one frame | one frame of random spheres | the `Renderer` row's `info` counters |
+| `webgpu_performance` | N.A. | a frame-time benchmark of `compileAsync` over many materials; the frame is a normal scene but what the page measures is wall-clock | the scene after compilation | `compileAsync` belongs to the `Renderer` row; the materials are graded elsewhere |
+| `webgpu_performance_renderbundle` | N.A. | a benchmark of `BundleGroup` render bundles against plain draws over thousands of random meshes, measured in ms per frame; the frame is the same either way, so a diff would verify the random scene, not the bundle | the random mesh cloud, in one of the two modes | the `BundleGroup` row (Absent) |
+| `webgpu_compile_async` | N.A. | a wall-clock comparison of `compileAsync` against synchronous compilation, written to the DOM on a `setTimeout`; the frame is a plain scene | the scene after compilation | `compileAsync` belongs to the `Renderer` row |
+| `webgpu_video_frame` | N.A. | needs `VideoFrame` objects from WebCodecs on a playing `<video>`; the grading machine has no media pipeline and the port has no decoder | the first decoded video frame | `VideoFrameTexture` is an N.A. texture row; the sampling path is the ordinary 2D texture path |
+| `webgpu_video_panorama` | N.A. | a playing `<video>` on a sphere; the reference frame is whichever frame the browser had decoded when the screenshot landed | one decoded frame of the panorama video | `VideoTexture` is an N.A. texture row; equirect sampling is graded by `webgpu_equirectangular` |
+| `webgpu_multiple_canvas` | N.A. | one renderer drawing into a scrolled list of `<canvas>` elements through `CanvasTarget` and `renderer.setCanvasTarget()`; the output is DOM layout, and each canvas is a separate swap chain | the list of per-canvas views at their page positions | the `CanvasTarget` row (Partial: private) |
+| `webgpu_multiple_elements` | N.A. | one page-sized renderer with `setScissor`/`setViewport` per `<div>` from `getBoundingClientRect`; the output is DOM layout | the scrolled list of per-element views | `setScissor`/`setViewport` are exercised by `webgpu_camera` (ignored, below) |
+| `webgpu_compute_audio` | N.A. | needs an `AudioContext` and a decoded sound buffer; the compute shader processes samples and the frame is a waveform of them; three excepts it from its own e2e | not graded by three | compute storage rows; the `webgpu_compute_*` pages grade the compute path |
+
+Ported, `#[ignore]`d. Each row gives three's own score against its reference JPEG on the grading machine, the port's score against the same JPEG, and the port's frame against three's own frame here (`tools/dump-webgpu.mjs`' `actual_full.png`, max channel difference, pixels over 2 of 255). The limit is 0.1%, 100 of 100000 pixels. #293 offers three resolutions: a looser per-page threshold with the reason recorded; a reference re-captured where three passes; or a decision that the page cannot grade here. Each e2e doc comment and `docs/<page>-progress.md` records that loosening the threshold is forbidden by the ladder's rules, so that resolution is proposed for none of them. What the twelve pixel-identical pages need is a reference that is three's own frame on the grading GPU: the dumper already writes that frame, and a `rung!` variant that grades against `target/dump-webgpu/<page>/actual_full.png` at the same 0.1% when it exists, and skips with a reason when it does not, would turn the "ignored" verdict into "graded against three's local frame". That harness change is the proposed resolution below wherever the table says *local frame*; it is a follow-up, not part of this classification.
+
+| page | three vs its reference | port vs reference | port vs three's local frame | failure mode | proposed resolution |
+|---|---|---|---|---|---|
+| `webgpu_instance_path` | 314 | 314 | identical (0) | the reference GPU's rasterisation of the path's thin triangles | local frame |
+| `webgpu_postprocessing_afterimage` | 521 | 521 | identical (0) | 50000 one-pixel additive sprites; the reference's coverage differs | local frame |
+| `webgpu_postprocessing_retro` | 1503 | 1503 | 4243 over 2 of 255 (max 49), all on the JPEG-textured mug and table | the mug's JPEG texture is decoded by a different decoder than the browser's; the retro quantisation amplifies the last-bit differences | cannot grade here until the texture is fed as PNG to both sides; keep ignored |
+| `webgpu_refraction` | 344 | 336 | 13 over 2 of 255 | the reference GPU's resolve of the normal-mapped backdrop edges | local frame (13 pixels is under the limit) |
+| `webgpu_postprocessing` | 107 | 107 | identical (0) | 7 pixels over the limit on bloom edges | local frame |
+| `webgpu_postprocessing_smaa` | 258 | 258 | identical (0) | the boxes' diagonal wireframe lines rasterise differently from the reference GPU | local frame |
+| `webgpu_postprocessing_pixel` | 405 | 405 | identical (0) | `BasicShadowMap` and the pixelation edges on the reference GPU | local frame |
+| `webgpu_materials_alphahash` | 3782 | 3782 | identical (0) | `fract(10000 * sin(...))` hashed alpha turns a last-bit `sin` difference into a different grain | local frame |
+| `webgpu_materials_arrays` | 251 | 251 | identical (0) | MSAA-resolved silhouette edges | local frame |
+| `webgpu_multisampled_renderbuffers` | 2405 | 2405 | identical (0) | the wireframe `line-list` coverage on the reference GPU | local frame |
+| `webgpu_camera` | 922 | 922 | identical (0) | wireframe lines and the `CameraHelper` lines on the reference GPU | local frame |
+| `webgpu_textures_anisotropy` | 9234 | 9234 | identical (0) | the reference's minified texels come from another GPU's anisotropic sampler, in both halves | local frame |
+| `webgpu_lights_custom` | 416 | 416 | identical (0) | 500000 one-pixel MSAA points; three's frame matches the reference under SwiftShader, so the reference is SwiftShader's coverage | local frame |
 
 ## math
 

@@ -15,9 +15,13 @@ from Three's node graph (TSL) by a port of Three's `NodeBuilder`, the way
 correctness is judged by Three's own examples and reference screenshots, not
 by scenes written for the port.
 
-**Status: 96 of 231 three.js WebGPU pages graded.** Early, working, incomplete.
-The `webgpu_*` examples in the gallery below pass the grader; the rest of
-Three's 231 `webgpu_*` pages (and its 600-odd examples overall) have not been
+**Status: 96 of 215 gradeable three.js WebGPU pages graded (16 N.A.).** Early,
+working, incomplete. Three ships 231 `webgpu_*` pages; 16 cannot grade against
+a reference frame (XR sessions, editor UIs, benchmarks, video and DOM layout:
+the page table in [`docs/parity.md`](docs/parity.md) says which and why), 13
+more are ported but ignored because Three fails its own reference on the
+grading machine, and the `webgpu_*` examples in the gallery below pass the
+grader. The rest (and Three's 600-odd examples overall) have not been
 attempted. The API follows Three's object model but is not stable. Vulkan on
 Linux is the only backend that has been run.
 
