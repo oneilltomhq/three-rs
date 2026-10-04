@@ -205,6 +205,10 @@ mod webgpu_deferred;
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_loader_gltf_anisotropy;
 
+#[path = "webgpu_loader_gltf_iridescence.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_loader_gltf_iridescence;
+
 #[path = "webgpu_compute_texture.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_compute_texture;
@@ -607,6 +611,9 @@ const GRADED: &[(&str, fn())] = &[
     ("webgpu_clipping", || drop(webgpu_clipping::init())),
     ("webgpu_clipping_stencil", || {
         drop(webgpu_clipping_stencil::init())
+    }),
+    ("webgpu_loader_gltf_iridescence", || {
+        drop(webgpu_loader_gltf_iridescence::init())
     }),
 ];
 
