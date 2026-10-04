@@ -3585,8 +3585,9 @@ dump apart from `var` placement: the port declares `worldPos` inside the
   The caller's curve is left unchanged afterwards, where three's keeps 512.
 * **A glyph the font lacks, with no `?` to fall back on, is skipped.** three
   logs and then throws on `ret.offsetX`.
-* **No `TransformControls`.** `webgpu_modifier_curve`'s handles cannot be
-  dragged. The graded frame never shows the gizmo.
+* **No `TransformControls` on the page.** `webgpu_modifier_curve`'s handles
+  cannot be dragged: `addons::controls::TransformControls` exists but the page
+  does not wire it up yet. The graded frame never shows the gizmo.
 
 ## 36. `NodeCache`: one parent-chained cache for per-build data (issue #156)
 

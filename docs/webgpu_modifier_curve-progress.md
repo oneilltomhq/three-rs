@@ -73,7 +73,9 @@ scores 3.
 
 * **`TransformControls` and the `Raycaster`.** The page creates the gizmo only
   on a `pointerdown` that hits a handle, so neither draws on the graded frame.
-  The handles cannot be dragged in the viewer or the browser shell.
+  The handles cannot be dragged in the viewer or the browser shell:
+  `addons::controls::TransformControls` exists, but the page does not wire it
+  up yet.
 * **A generic `Flow` over an `Object3D` tree.** `docs/nodes.md` §35 has the
   details.
 

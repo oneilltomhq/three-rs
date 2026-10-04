@@ -8,6 +8,20 @@ have their own sections after the release they ship with. The format follows [Ke
 
 ### Added
 
+- **`TransformControls`** (`addons::controls`), a port of
+  `examples/jsm/controls/TransformControls.js` as of the pinned 5f610f5
+  (r187dev): the translate, rotate and scale gizmo with the same picker,
+  gizmo and helper graph, the same drag math, snaps and limits, and
+  perspective and orthographic cameras. Pointer input arrives as method calls
+  (`on_pointer_down`, `pointer_hover`, …), events are returned as
+  `Vec<TransformControlsEvent>`, and the host calls `update(camera)` where
+  three's renderer runs the helper's matrix update. `toneMapped: false` is
+  dropped, and `enabled`, `show*` and `min*`/`max*` are plain fields that send
+  no events. `tools/transform_controls_reference.mjs` runs three's class under
+  node through 17 scenarios and writes `tests/fixtures/transform_controls.json`;
+  `tests/addons_transform_controls.rs` replays them and matches every event,
+  transform, handle state and working vector to 1e-9, and compares the gizmo
+  graph node for node. See `docs/controls.md`.
 - **`FirstPersonControls`** and **`FlyControls`** (`addons::controls`), ports
   of `examples/jsm/controls/FirstPersonControls.js` and `FlyControls.js` as
   of the pinned 5f610f5 (r187dev), with the same fields, defaults and `update( delta )`. Input
