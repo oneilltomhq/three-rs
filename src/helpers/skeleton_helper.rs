@@ -116,8 +116,17 @@ impl SkeletonHelper {
                     continue;
                 };
 
-                array[j * 3..j * 3 + 3].copy_from_slice(&local(&bone.borrow().matrix_world));
-                array[j * 3 + 3..j * 3 + 6].copy_from_slice(&local(&parent.borrow().matrix_world));
+                // The pairs are re-derived from the bones' current parents, so
+                // a bone re-parented under another bone since construction
+                // asks for a segment the buffer was never sized for. Three's
+                // `position.setXYZ( j, … )` past the end of the
+                // `Float32Array` writes nothing; so does this. `j` only grows,
+                // so every later pair is out of range too.
+                let Some(pair) = array.get_mut(j * 3..j * 3 + 6) else {
+                    break;
+                };
+                pair[..3].copy_from_slice(&local(&bone.borrow().matrix_world));
+                pair[3..].copy_from_slice(&local(&parent.borrow().matrix_world));
 
                 j += 2;
             }

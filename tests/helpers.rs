@@ -17,7 +17,7 @@
 
 use std::rc::Rc;
 
-use three_rs::core::Node;
+use three_rs::core::{Node, Object3D};
 use three_rs::geometries::{box_geometry_default, sphere_geometry};
 use three_rs::helpers::{
     ArrowHelper, AxesHelper, Box3Helper, BoxHelper, CameraHelper, DirectionalLightHelper,
@@ -203,6 +203,52 @@ fn skeleton_helper() {
     assert_eq!(object_type(&object.node), "SkeletonHelper");
     const { assert!(SkeletonHelper::IS_SKELETON_HELPER) };
     assert_eq!(object.bones.len(), 1, "a lone bone is its own bone list");
+}
+
+/// Not in three's suite. The helper sizes its buffer for the bones whose
+/// parent is a bone at construction, but `updateMatrixWorld` re-derives the
+/// pairs from the current parents: a bone moved under another bone since asks
+/// for a segment past the end. Three's `position.setXYZ( j, … )` there writes
+/// nothing to the `Float32Array`; the port must do the same, not panic.
+#[test]
+fn skeleton_helper_bone_reparented_after_construction() {
+    let b0 = Bone::new();
+    let b1 = Bone::new();
+    b1.borrow_mut().position.set(0.0, 1.0, 0.0);
+    b0.add(&b1);
+    let holder = Object3D::new_node();
+    b0.add(&holder);
+    let b2 = Bone::new();
+    b2.borrow_mut().position.set(0.0, 2.0, 0.0);
+    holder.add(&b2);
+
+    let helper = SkeletonHelper::new(&b0);
+    assert_eq!(helper.bones.len(), 3, "b0, b1 and b2, depth first");
+
+    let positions = || -> Vec<f32> {
+        let object = helper.node.borrow();
+        let geometry = object.geometry().expect("the helper has a geometry");
+        geometry
+            .get_attribute("position")
+            .map(|position| position.array().to_vec())
+            .expect("the helper has a position attribute")
+    };
+    assert_eq!(
+        positions().len(),
+        6,
+        "one segment: b2's parent is not a bone"
+    );
+
+    // Now b2's parent is a bone: two pairs, room for one.
+    b1.add(&b2);
+    b0.update_matrix_world(false);
+    helper.update_matrix_world(false);
+
+    assert_eq!(
+        positions(),
+        [0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+        "the first segment is written (b1, then b0) and the second dropped"
+    );
 }
 
 #[test]
