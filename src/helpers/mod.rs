@@ -32,6 +32,8 @@
 //!   and nothing in the port has a `dispose` to call.
 //! - **`copy()`** on `ArrowHelper` and `BoxHelper` is not ported, as the port
 //!   has no `Object3D.copy` to extend.
+//! - A material three shares between two children (`DirectionalLightHelper`)
+//!   is a clone per child here; `update()` writes both.
 //!
 //! [`Node`]: crate::core::Node
 //! [`Node::update_matrix_world`]: crate::core::Node::update_matrix_world
@@ -41,15 +43,23 @@ mod axes_helper;
 mod box3_helper;
 mod box_helper;
 mod camera_helper;
+mod directional_light_helper;
 mod grid_helper;
+mod hemisphere_light_helper;
 mod plane_helper;
+mod point_light_helper;
 mod polar_grid_helper;
+mod spot_light_helper;
 
 pub use arrow_helper::ArrowHelper;
 pub use axes_helper::AxesHelper;
 pub use box3_helper::Box3Helper;
 pub use box_helper::BoxHelper;
 pub use camera_helper::CameraHelper;
+pub use directional_light_helper::DirectionalLightHelper;
 pub use grid_helper::GridHelper;
+pub use hemisphere_light_helper::HemisphereLightHelper;
 pub use plane_helper::PlaneHelper;
+pub use point_light_helper::PointLightHelper;
 pub use polar_grid_helper::PolarGridHelper;
+pub use spot_light_helper::SpotLightHelper;
