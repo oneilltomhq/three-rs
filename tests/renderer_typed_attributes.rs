@@ -165,8 +165,13 @@ fn a_uint16_storage_attribute_is_widened_on_upload() {
 
     let mut scene = Scene::new();
     scene.set_background(Color::from_hex(0x000000));
-    for (slot, color) in [&green, &blue].into_iter().enumerate() {
-        scene.add(&Mesh::new(quad(slot, color.clone().into()), material()));
+    let geometries: Vec<Rc<BufferGeometry>> = [&green, &blue]
+        .into_iter()
+        .enumerate()
+        .map(|(slot, color)| quad(slot, color.clone().into()))
+        .collect();
+    for geometry in &geometries {
+        scene.add(&Mesh::new(geometry.clone(), material()));
     }
     let mut camera = OrthographicCamera::new(0.0, W as f64, H as f64, 0.0, -1.0, 1.0);
     let mut renderer = Renderer::new(RendererParameters::default()).unwrap();
@@ -196,4 +201,27 @@ fn a_uint16_storage_attribute_is_widened_on_upload() {
         .read_storage_buffer_u32(&storage(&blue, Type::UVec3, 4))
         .unwrap();
     assert_eq!(words, [0, 0, 1, 0].repeat(4));
+
+    // A frame with nothing changed writes nothing (`info().build` is per
+    // frame).
+    renderer.render(&mut scene, &mut camera);
+    assert_eq!(renderer.info().build.buffers_written, 0);
+
+    // `attribute.needsUpdate = true` writes the array over the buffer, once.
+    let color = geometries[0].get_attribute("color").unwrap();
+    *color.data_mut() = TypedArray::U16([1, 0, 0, 1].repeat(4));
+    color.set_needs_update();
+    renderer.render(&mut scene, &mut camera);
+    assert_eq!(renderer.info().build.buffers_written, 1);
+    let (_, _, pixels) = renderer.read_canvas_pixels().unwrap();
+    assert_eq!(
+        middle(&pixels, 0),
+        [255, 0, 0],
+        "the new contents are drawn"
+    );
+    assert_eq!(
+        middle(&pixels, 1),
+        [0, 0, 255],
+        "the neighbour is untouched"
+    );
 }

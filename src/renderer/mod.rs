@@ -192,7 +192,9 @@ struct GeometryGpu {
     /// `attribute.version` against `bufferAttribute.version` of
     /// `WebGPUAttributeUtils.updateAttribute()`; a geometry seen with a later
     /// version has that one buffer re-written ([`Renderer::refresh_geometry`]).
-    /// A storage attribute is not here: its buffer is the storage buffer.
+    /// A storage attribute's entry is the storage buffer itself, recorded by
+    /// [`Renderer::geometry_vertex_buffer`] the first time a draw reads it
+    /// (whoever made the buffer) and re-written there when its version moves.
     buffers: Vec<(BufferKey, wgpu::Buffer, u32)>,
     index: Option<(wgpu::Buffer, wgpu::IndexFormat, u32)>,
     /// `Geometries.wireframes.get( geometry )` — the `getWireframeIndex()`
@@ -6851,21 +6853,62 @@ impl Renderer {
         let attribute = geometry
             .get_attribute(name)
             .unwrap_or_else(|| panic!("three-rs: the geometry has no {name} attribute"));
-        match attribute.buffer_key() {
-            BufferKey::Storage(id) => {
-                let storage = attribute
-                    .storage_buffer()
-                    .expect("three-rs: a storage key has a storage attribute");
+        let key = attribute.buffer_key();
+        let BufferKey::Storage(id) = key else {
+            return self.geometries[&geometry_id]
+                .gpu
+                .buffer(key)
+                .unwrap_or_else(|| panic!("three-rs: the geometry has no {name} attribute"))
+                .clone();
+        };
+
+        // Keyed on the storage id and the attribute's version, as
+        // `refresh_geometry` keys its own buffers: the initial contents are
+        // built only when the buffer is first made or the version moved.
+        let version = attribute.version();
+        let gpu = &self.geometries[&geometry_id].gpu;
+        let slot = gpu.buffers.iter().position(|(k, _, _)| *k == key);
+        if let Some(slot) = slot {
+            if gpu.buffers[slot].2 == version {
+                return gpu.buffers[slot].1.clone();
+            }
+        }
+        let storage = attribute
+            .storage_buffer()
+            .expect("three-rs: a storage key has a storage attribute");
+        let buffer = match self.storage_buffers.get(&id.get()) {
+            Some(buffer) => {
+                let buffer = buffer.gpu.clone();
+                if slot.is_some() {
+                    // `updateAttribute()`: `needsUpdate` on the attribute
+                    // writes its array over what the GPU holds, kernel
+                    // output included. A buffer cannot grow, so a longer
+                    // array is cut to it.
+                    let init = storage.init_words(attribute.normalized);
+                    let bytes: &[u8] = bytemuck::cast_slice(&init);
+                    let len = bytes.len().min(buffer.size() as usize);
+                    self.queue.write_buffer(&buffer, 0, &bytes[..len]);
+                    self.info.build.buffers_written += 1;
+                }
+                buffer
+            }
+            // Neither a kernel nor an earlier draw has made it yet.
+            None => {
                 let init = storage.init_words(attribute.normalized);
                 self.storage_buffer(id.get(), (init.len() * 4) as u64, Some(&init))
                     .gpu
             }
-            key => self.geometries[&geometry_id]
-                .gpu
-                .buffer(key)
-                .unwrap_or_else(|| panic!("three-rs: the geometry has no {name} attribute"))
-                .clone(),
+        };
+        let gpu = &mut self
+            .geometries
+            .get_mut(&geometry_id)
+            .expect("three-rs: the entry was read above")
+            .gpu;
+        match slot {
+            Some(slot) => gpu.buffers[slot].2 = version,
+            None => gpu.buffers.push((key, buffer.clone(), version)),
         }
+        buffer
     }
 
     /// Dropped at the start of every `render()`: everything the renderer is
