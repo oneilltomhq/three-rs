@@ -197,6 +197,9 @@ mod webgpu_backdrop;
 #[allow(dead_code)]
 mod webgpu_tsl_earth;
 
+#[path = "../../examples/webgpu_ocean.rs"]
+#[allow(dead_code)]
+mod webgpu_ocean;
 #[path = "../../examples/webgpu_sky.rs"]
 #[allow(dead_code)]
 mod webgpu_sky;
@@ -4231,6 +4234,91 @@ fn webgpu_sky() {
     });
 }
 
+/// `WaterMesh`: a 10 000-unit plane whose planar mirror, rendered at half
+/// resolution, is distorted by four scrolling taps of `waternormals.jpg` and
+/// Fresnel-mixed with the water colour and a sun highlight. The sky is a
+/// `SkyMesh` with the sun 2° up, and the roughness-0 cube is lit only by a
+/// PMREM of that sky. The scene pass gets a faint bloom before ACES Filmic at
+/// exposure 0.1. Time is pinned, so the normal map has not scrolled and the
+/// cube sits at `y = 5` unrotated.
+#[test]
+fn webgpu_ocean() {
+    let name = "webgpu_ocean";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_ocean::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    // `updateSun()` moved the sky through `sceneEnv` and back, so it is the
+    // scene's last child, after the cube, and `sceneEnv` is empty again.
+    {
+        let scene = app.scene.borrow();
+        let root = scene.node.borrow();
+        assert_eq!(root.children.len(), 3, "water, cube, sky");
+        assert!(three_rs::Node::ptr_eq(&root.children[2], &app.sky.mesh));
+    }
+    assert!(app.scene_env.node.borrow().children.is_empty());
+
+    // The mirror's target is added to the water inside the material's `Fn()`,
+    // i.e. at first build: not at construction, but during the first frame.
+    assert!(
+        app.water.mesh.borrow().children.is_empty(),
+        "the target is added at first render, not at construction"
+    );
+
+    webgpu_ocean::animate(&mut app);
+
+    {
+        let target = app.water.mirror_sampler.target();
+        let water = app.water.mesh.borrow();
+        assert_eq!(water.children.len(), 1, "the mirror's target");
+        assert!(three_rs::Node::ptr_eq(&water.children[0], &target));
+    }
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    // The draw calls and triangles the README's graded table records.
+    let info = app.renderer.info();
+    println!("{name}: info {info:?}");
+
+    steady_frame(name, &mut app, webgpu_ocean::animate, |app| {
+        app.renderer.device()
+    });
+
+    // From the second frame on the target sits where the water puts it.
+    let target = app.water.mirror_sampler.target();
+    assert_eq!(
+        target.borrow().matrix_world.elements,
+        app.water.mesh.borrow().matrix_world.elements,
+        "the target follows the water"
+    );
+}
+
 /// Issue #139's rung: `gears.glb` is three Draco-compressed meshes, and the
 /// outer hull's `maskNode` cuts an angular wedge out of it — in the shadow
 /// pass too — while its `outputNode` paints the exposed back faces a flat
@@ -6108,6 +6196,7 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_postprocessing_afterimage, 0, 2);
     rung!(webgpu_tsl_halftone);
     rung!(webgpu_sky);
+    rung!(webgpu_ocean);
     rung!(webgpu_tsl_earth);
     rung!(webgpu_mirror);
     rung!(webgpu_refraction);

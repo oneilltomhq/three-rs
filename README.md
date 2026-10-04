@@ -15,7 +15,7 @@ from Three's node graph (TSL) by a port of Three's `NodeBuilder`, the way
 correctness is judged by Three's own examples and reference screenshots, not
 by scenes written for the port.
 
-**Status: 89 of 231 three.js WebGPU pages graded.** Early, working, incomplete.
+**Status: 90 of 231 three.js WebGPU pages graded.** Early, working, incomplete.
 The `webgpu_*` examples in the gallery below pass the grader; the rest of
 Three's 231 `webgpu_*` pages (and its 600-odd examples overall) have not been
 attempted. The API follows Three's object model but is not stable. Vulkan on
@@ -60,7 +60,8 @@ that verifies each present row.
   them, as three.js ships it), `geometry_utils`, `text_geometry`
   (`TextGeometry`), `curve_modifier_gpu` (`Flow`), `lights`
   (`LightProbeGenerator`), `helpers` (`LightProbeHelper`), `objects::SkyMesh`
-  (the Preetham sky with sun disc and clouds), and `controls`
+  (the Preetham sky with sun disc and clouds), `objects::WaterMesh` (a
+  reflective water surface over `reflector()`), and `controls`
   (`OrbitControls`, `FirstPersonControls`, `FlyControls`,
   `TransformControls`), ports of the JS
   classes graded against the JS classes themselves. An addon that
@@ -130,10 +131,10 @@ that verifies each present row.
 | [`webgpu_cubemap_mix`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_cubemap_mix.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_cubemap_mix-progress.md) | [`webgpu_mirror`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_mirror.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_mirror-progress.md) | [`webgpu_tsl_halftone`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_tsl_halftone.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_tsl_halftone-progress.md) | [`webgpu_tsl_earth`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_tsl_earth.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_tsl_earth-progress.md) |
 | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_lightprobe.jpg" alt="webgpu_lightprobe" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_lightprobe) | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_lightprobe_cubecamera.jpg" alt="webgpu_lightprobe_cubecamera" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_lightprobe_cubecamera) | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_sky.jpg" alt="webgpu_sky" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_sky) | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_backdrop.jpg" alt="webgpu_backdrop" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_backdrop) |
 | [`webgpu_lightprobe`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_lightprobe.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_lightprobe-progress.md) | [`webgpu_lightprobe_cubecamera`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_lightprobe_cubecamera.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_lightprobe_cubecamera-progress.md) | [`webgpu_sky`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_sky.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_sky-progress.md) | [`webgpu_backdrop`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_backdrop.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_backdrop-progress.md) |
-| [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_postprocessing_motion_blur.jpg" alt="webgpu_postprocessing_motion_blur" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_postprocessing_motion_blur) | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_postprocessing_godrays.jpg" alt="webgpu_postprocessing_godrays" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_postprocessing_godrays) | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_postprocessing_lensflare.jpg" alt="webgpu_postprocessing_lensflare" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_postprocessing_lensflare) | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_postprocessing_dof_basic.jpg" alt="webgpu_postprocessing_dof_basic" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_postprocessing_dof_basic) |
-| [`webgpu_postprocessing_motion_blur`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_motion_blur.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_motion_blur-progress.md) | [`webgpu_postprocessing_godrays`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_godrays.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_godrays-progress.md) | [`webgpu_postprocessing_lensflare`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_lensflare.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_lensflare-progress.md) | [`webgpu_postprocessing_dof_basic`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_dof_basic.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_dof_basic-progress.md) |
-| [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_postprocessing_ssr.jpg" alt="webgpu_postprocessing_ssr" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_postprocessing_ssr) |  |  |  |
-| [`webgpu_postprocessing_ssr`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_ssr.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_ssr-progress.md) |  |  |  |
+| [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_postprocessing_motion_blur.jpg" alt="webgpu_postprocessing_motion_blur" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_postprocessing_motion_blur) | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_ocean.jpg" alt="webgpu_ocean" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_ocean) | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_postprocessing_godrays.jpg" alt="webgpu_postprocessing_godrays" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_postprocessing_godrays) | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_postprocessing_lensflare.jpg" alt="webgpu_postprocessing_lensflare" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_postprocessing_lensflare) |
+| [`webgpu_postprocessing_motion_blur`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_motion_blur.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_motion_blur-progress.md) | [`webgpu_ocean`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_ocean.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_ocean-progress.md) | [`webgpu_postprocessing_godrays`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_godrays.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_godrays-progress.md) | [`webgpu_postprocessing_lensflare`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_lensflare.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_lensflare-progress.md) |
+| [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_postprocessing_dof_basic.jpg" alt="webgpu_postprocessing_dof_basic" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_postprocessing_dof_basic) | [<img src="https://raw.githubusercontent.com/oneilltomhq/three-rs/main/docs/gallery/webgpu_postprocessing_ssr.jpg" alt="webgpu_postprocessing_ssr" width="200">](https://oneilltomhq.github.io/three-rs/?example=webgpu_postprocessing_ssr) |  |  |
+| [`webgpu_postprocessing_dof_basic`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_dof_basic.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_dof_basic-progress.md) | [`webgpu_postprocessing_ssr`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_ssr.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_ssr-progress.md) |  |  |
 
 <sub>Our own rendered frames, one per graded example. Each thumbnail opens the example running in your browser on WebGPU ([all of them](https://oneilltomhq.github.io/three-rs/)); the caption links the ported source. See [`docs/gallery.md`](https://github.com/oneilltomhq/three-rs/blob/main/docs/gallery.md).</sub>
 <!-- gallery:end -->
@@ -235,6 +236,7 @@ same screenshots at the same threshold (see
 | webgpu_sky | 0 | 5.8 | 3 | 3981 | yes |
 | webgpu_backdrop | 23 (Three itself scores 23 against the same JPEG) | 6.1 | 11 | 37771 | yes |
 | webgpu_postprocessing_motion_blur | 5 | 6.2 | 9 | 100553 | yes |
+| webgpu_ocean | 0 | 4.5 | 19 | 75 | yes |
 | webgpu_postprocessing_godrays | 3 | 12.1 | 54 | 9234 | yes |
 | webgpu_postprocessing_lensflare | 0 | 3.3 | 29 | 55534 | yes |
 | webgpu_postprocessing_dof_basic | 36 | 7.1 | 42 | 33694 | yes |
@@ -332,7 +334,7 @@ cargo run --release --bin viewer -- 8                        # the same, by key
 cargo run --release --bin viewer -- shadowmap --headless --frames 40
 ```
 
-Opens the named example in a window (winit, tested on Wayland). All 89 graded
+Opens the named example in a window (winit, tested on Wayland). All 90 graded
 examples are there, and so are the ungraded `webgpu_postprocessing_traa`,
 `webgpu_postprocessing_sss`, `webgpu_postprocessing_ssgi`,
 `webgpu_postprocessing_ao`,
@@ -372,7 +374,7 @@ workspace crates that depend on `three-rs` and are not ports of anything in
 three.js' `src/`.
 
 `three_rs::addons::controls::OrbitControls` is the exception to that rule, and
-it is in the root crate rather than a workspace one: 62 of the 89 graded pages
+it is in the root crate rather than a workspace one: 63 of the 90 graded pages
 create an `OrbitControls`, and an example pulled in by `#[path]` cannot reach a
 crate that depends on `three-rs`. It is a port of
 `examples/jsm/controls/OrbitControls.js` — the same state, the same defaults,

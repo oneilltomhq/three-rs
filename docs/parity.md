@@ -26,8 +26,8 @@ This matrix judges every exported name in three.js revision 5f610f5 (r187) — `
 | addons/controls | 11 | 1 | 6 | 4 | 0 | 9% |
 | addons/loaders | 71 | 6 | 2 | 63 | 0 | 8% |
 | addons/postprocessing | 30 | 0 | 0 | 0 | 30 | — |
-| addons/other | 102 | 11 | 4 | 64 | 23 | 14% |
-| **total** | **1317** | **810** | **136** | **248** | **123** | **68%** |
+| addons/other | 102 | 12 | 4 | 63 | 23 | 15% |
+| **total** | **1317** | **811** | **136** | **247** | **123** | **68%** |
 
 TSL by family:
 
@@ -44,7 +44,7 @@ TSL by family:
 | materialx | 49 | 48 | 0 | 1 | 0 |
 | utils | 77 | 47 | 15 | 5 | 10 |
 
-Graded examples: 89 (the README gallery plus `webgpu_textures_2d-array_compressed`, which has a live `rung!` but a hyphen in its name). 10 more are ported but `#[ignore]`d because three.js fails its own reference on this machine; a row whose only check is one of those is Partial.
+Graded examples: 90 (the README gallery plus `webgpu_textures_2d-array_compressed`, which has a live `rung!` but a hyphen in its name). 10 more are ported but `#[ignore]`d because three.js fails its own reference on this machine; a row whose only check is one of those is Partial.
 
 ## math
 
@@ -567,7 +567,7 @@ Graded examples: 89 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `LoopNode` | Present | Node::Loop (src/nodes/node.rs:1530), loop_index (src/nodes/tsl.rs:4266) | webgpu_volume_perlin, webgpu_tsl_raging_sea |  |
 | `MaxMipLevelNode` | Present | max_mip_level (src/nodes/tsl.rs:4432) | tests/nodes_tsl_batch.rs | a live object uniform, read when the buffer is written |
 | `MemberNode` | Present | Node::StructMember (src/nodes/node.rs:1636), .get (src/nodes/tsl.rs:3904) | webgpu_struct_drawindirect |  |
-| `ReflectorNode` | Present | ReflectorNode (src/nodes/reflector_node.rs:183) | webgpu_mirror |  |
+| `ReflectorNode` | Present | ReflectorNode (src/nodes/reflector_node.rs:186) | webgpu_mirror, webgpu_ocean |  |
 | `RotateNode` | Present | rotate (src/nodes/tsl.rs:733) | tests/nodes_tsl_batch.rs, webgpu_layers |  |
 | `RTTNode` | Present | rtt (src/nodes/display/rtt.rs:73) | webgpu_procedural_texture |  |
 | `SampleNode` | Partial | SampleNode, sample (src/nodes/tsl/utils.rs:146,202) | tests/nodes_tsl_batch.rs | `convert_to_texture` draws it into an RTT where three returns it unchanged (docs/nodes.md §70.4) |
@@ -713,7 +713,7 @@ Graded examples: 89 (the README gallery plus `webgpu_textures_2d-array_compresse
 
 ## addons/other
 
-102 rows: 11 Present, 4 Partial, 64 Absent, 23 N.A.
+102 rows: 12 Present, 4 Partial, 63 Absent, 23 N.A.
 
 | three.js name | verdict | three-rs symbol | verified by | note |
 |---|---|---|---|---|
@@ -741,16 +741,16 @@ Graded examples: 89 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `Lensflare` | N.A. | — | — | WebGL-only; LensflareMesh counterpart Absent |
 | `LensflareMesh` | Absent | — | — |  |
 | `MarchingCubes` | Absent | — | — |  |
-| `Reflector` | N.A. | — | — | WebGL-only; TSL reflector() Present; counterpart reflector() / ReflectorNode (src/nodes/reflector_node.rs:183); webgpu_mirror |
+| `Reflector` | N.A. | — | — | WebGL-only; TSL reflector() Present; counterpart reflector() / ReflectorNode (src/nodes/reflector_node.rs:186); webgpu_mirror |
 | `ReflectorForSSRPass` | N.A. | — | — | WebGL-only (SSRPass helper) |
 | `Refractor` | N.A. | — | — | WebGL-only |
 | `ShadowMesh` | Absent | — | — |  |
 | `Sky` | N.A. | — | — | WebGL-only; SkyMesh is the WebGPU counterpart (Present) |
 | `SkyMesh` | Present | SkyMesh (src/addons/objects/sky_mesh.rs:44) | webgpu_sky (graded); tests/nodes_sky_wgsl.rs |  |
-| `Water` | N.A. | — | — | WebGL-only; WaterMesh counterpart Absent |
+| `Water` | N.A. | — | — | WebGL-only; WaterMesh is the WebGPU counterpart (Present) |
 | `Water2` | N.A. | — | — | WebGL-only; Water2Mesh counterpart Absent |
-| `Water2Mesh` | Absent | — | — |  |
-| `WaterMesh` | Absent | — | — |  |
+| `Water2Mesh` | Absent | — | — | not ported with WaterMesh: `WaterNode`'s flow-map `updateBefore` and the `webgpu_water` page (Draco pool, UltraHDR, MRT bloom, FXAA) are a rung of their own, and three's e2e skips that page |
+| `WaterMesh` | Present | WaterMesh (src/addons/objects/water_mesh.rs:119) | webgpu_ocean (graded); tests/nodes_water_wgsl.rs | the mirror is created at construction rather than at first build; its target is still added at first build, as upstream (docs/nodes.md §76) |
 | `BufferGeometryUtils` | Absent | — | — |  |
 | `CameraUtils` | Absent | — | — |  |
 | `ColorUtils` | Absent | — | — |  |
@@ -1386,7 +1386,7 @@ Partial: `colorSpaceToWorking`, `negateOnBackSide`, `viewportTexture`, `viewport
 | `getTextureIndex` | Present | get_texture_index (src/nodes/mrt.rs:209) | tests/nodes_tsl_batch.rs (get_texture_index_finds_attachments) | CPU helper over attachment names; Option for -1 |
 | `mrt` | Present | mrt (src/nodes/mrt.rs:79) | tests/renderer_mrt.rs, webgpu_deferred (graded) |  |
 | `viewportSafeUV` | Present | viewport_safe_uv (src/nodes/display/viewport_texture.rs:200) | webgpu_backdrop (graded) |  |
-| `reflector` | Present | reflector (src/nodes/reflector_node.rs:217) | webgpu_mirror (graded) |  |
+| `reflector` | Present | reflector (src/nodes/reflector_node.rs:233) | webgpu_mirror, webgpu_ocean (graded) |  |
 | `rtt` | Present | rtt (src/nodes/display/rtt.rs:73) | webgpu_postprocessing_anamorphic (graded) |  |
 | `convertToTexture` | Present | convert_to_texture (src/nodes/display/rtt.rs:91) | webgpu_postprocessing_ca (graded) | a SampleNode is not passed through; see the `SampleNode` row |
 | `getViewPosition` | Present | get_view_position (src/nodes/tsl.rs:900) | indirect: used by src/nodes/display/traa.rs (tests/nodes_display_wgsl.rs traa gates) |  |
@@ -1677,7 +1677,7 @@ The first refresh of this matrix closed the previous top five. Velocity and TRAA
 1. **The screen-space effect nodes** (`DenoiseNode`; `denoise` 6 pages). `SSRNode` is Present (`webgpu_postprocessing_ssr`, graded). `GTAONode` and `builtinAOContext` are Present now (`webgpu_postprocessing_ao`, ungraded: it is on three's e2e exception list), and so are `DepthOfFieldNode` (`webgpu_postprocessing_dof`), `SSGINode` (`webgpu_postprocessing_ssgi`) and `SSSNode` with `builtinShadowContext` (`webgpu_postprocessing_sss`), all ungraded for the same reason. What is left needs a velocity target and a temporal resolve, and both now exist; these pages are the direct payoff of the velocity work. Porting them also gives the depth reads (`viewportDepthTexture`, `linearDepth`, `getViewPosition`) their first graded consumer.
 2. **EventDispatcher** (issues 153, 159). 8 pages subscribe to `change` or `finished` events. In ordinary use these are render-on-demand behind OrbitControls and chaining animation clips when one ends, and neither works in the port today. `AnimationMixer` and `AnimationAction` fire nothing.
 3. **The TransformControls pages** (`webgpu_modifier_curve`, `webgpu_shadowmap_progressive`, `webgpu_tsl_compute_attractors_particles`). `FirstPersonControls` (8 pages), `FlyControls` (1) and now `TransformControls` are ported and gated against three's classes (`docs/controls.md`). What is left is wiring the gizmo into the pages: `webgpu_modifier_curve`'s port still leaves it out, and the viewer's controls hook is typed for `OrbitControls`.
-4. **`WaterMesh`** (2 pages) and the remaining display files (`OutlineNode`, `Lut3DNode`, `FilmNode`, 1 to 2 pages each). Small, self-contained, and each unlocks one page.
+4. **`Water2Mesh`** (1 page, `webgpu_water`; `WaterMesh` is Present, `webgpu_ocean` graded) and the remaining display files (`OutlineNode`, `Lut3DNode`, `FilmNode`, 1 to 2 pages each). Small, self-contained, and each unlocks one page.
 
 **Runners-up, and why they rank lower:**
 - RectAreaLight and LTC (3 pages).

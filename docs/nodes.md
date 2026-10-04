@@ -6321,7 +6321,7 @@ things that are not nodes:
 - Changing `focusDistance`, `focalLength` or `bokehScale` from a GUI. They
   are ordinary uniforms, so a host can set them, but no page here does.
 
-Sections 72, 73, 76, 77 and 79 to 83 are reserved for the ports on
+Sections 72, 73, 77 and 79 to 83 are reserved for the ports on
 sibling branches. They are numbered as those branches land.
 
 ## 67. TSL sweep 2: the accessors batch
@@ -7103,6 +7103,99 @@ Faithful quirks:
 - WGSL: `rtt_matches_three`, `lensflare_matches_three`,
   `lensflare_gaussian_blur_{horizontal,vertical}_matches_three` and
   `lensflare_composite_matches_three`.
+## 76. `WaterMesh` (`webgpu_ocean`)
+
+`WaterMesh` (`addons::objects`) is `examples/jsm/objects/WaterMesh.js` node
+for node. A `MeshBasicNodeMaterial` (upstream's bare `NodeMaterial`, unlit and
+with no `colorNode` of its own) is made `transparent`, with `opacityNode` the
+`alpha` uniform. `receivedShadowPositionNode` is `positionWorld` plus the
+distortion. Its `colorNode` mixes, by a Schlick Fresnel term, the sun's
+diffuse light plus the water colour's scatter with a planar reflection
+(`reflector()`) plus the sun's specular highlight. The reflection is read at
+`screenUV.flipX()`, offset by the distortion. The surface normal comes from
+the inline `getNoise()`, which is four taps of one normal map at different
+scales, each scrolling with `time` at its own rate. The port writes it as a
+Rust function that builds the same nodes. The six uniforms are public
+`SettableValue`s on the struct, which also holds the mesh's scene node.
+`tests/nodes_water_wgsl.rs` gates both stages against three's dump of the
+page (`m09`, `m10`, committed verbatim as `tests/fixtures/webgpu_ocean/`).
+
+### 76.1 When the mirror's target joins the mesh
+
+Upstream builds the whole `colorNode` inside a `Fn( () => { … } )()`. That
+body runs when the material is first built, during the first render. The
+first render runs after `scene.updateMatrixWorld()`, and it creates the
+`reflector()`, sets its `resolutionScale` and calls
+`this.add( mirrorSampler.target )`. On the first frame, then, the target has
+never had its world matrix updated. `ReflectorBaseNode.updateBefore()` reads
+an identity `matrixWorld` and mirrors the scene in the plane `z = 0`, facing
++Z, which is a vertical wall through the origin, not the water. In three's
+graded frame of `webgpu_ocean` (its first) the water is accordingly dark,
+with no sun glint and no reflected cube. A probe of three's page that
+renders a second frame after `nodeFrame.update()` shows the bright,
+reflecting water every later frame has.
+
+The port has no build-time hook on a material's graph. `WaterMesh::new`
+therefore creates the reflector and sets its resolution scale at
+construction. Setting `water.resolutionScale` after construction is ignored
+here, while three would honour it up to the first render. The add keeps its
+timing: `ReflectorNode::add_target_on_setup( object )` records the parent
+weakly. `Renderer::update_reflectors` (§55.2) adds the target to it just
+before the reflector's first `updateBefore()`, after this frame's world
+matrices were computed. The first frame mirrors about `z = 0` exactly as
+three's does, and the next frame's `updateMatrixWorld()` places the target
+on the water. Adding the target at construction instead gave the correct
+mirror on frame 1 and graded 19.9 % different.
+
+### 76.2 WGSL
+
+Both stages match three's statement for statement through the opacity
+multiply. Every difference is an existing class, and the fixture test
+applies it:
+
+* **`screenUV.flipX()`** is parenthesised, `( 1.0 - nodeVarN.x )` (§55.3).
+* **Usage-promoted temps.** Three emits `let nodeConstN` for each temp read
+  twice: `getNoise`'s argument, the surface normal, `worldToEye` and
+  `eyeDirection`. The port asks for each with `to_const`. The material
+  tail's output clamp is three's `let` and the port's `var` (§8). The test
+  checks only that it is present.
+* **`getNoise`'s four `toVar()`s** are `to_var`s declared in a `block`
+  before any tap reads them, in upstream's order.
+* **`noise.xzy.mul( 1.5, 1.0, 1.5 )`** is `OperatorNode`'s variadic `mul`,
+  three scalar multiplications, not a multiplication by a `vec3`. Three
+  emits it that way, and so does the port.
+* **The `VERTEX_` sub-build** and the **render-struct member order**, as in
+  every rung.
+
+### 76.3 The page
+
+`webgpu_ocean` calls `updateSun()` from `renderer.init().then(…)`. The port
+runs it at the end of `init()`. `updateSun()` moves the sky into a scene of
+its own for `PMREMGenerator.fromScene()` and back, so the sky ends up after
+the cube among the scene's children. The e2e rung asserts that order. The
+page sets `water.rotation.x` and the cube's `rotation`. The port's `rotation`
+has no `onChange` into the quaternion, so the page goes through
+`set_rotation`.
+
+### 76.4 Not ported
+
+- `Water2Mesh` and `webgpu_water`. `WaterNode`'s flow-map `updateBefore`
+  accumulates `deltaTime`, the refraction reads `viewportSharedTexture`, and
+  the page needs a Draco glTF, an Ultra HDR environment, an MRT bloom and
+  FXAA. That is a rung of its own, and three's own e2e skips the page.
+- `water.resolutionScale` as a field read at first build (§76.1).
+- `waterNormals: null`. A `texture( null )` tap has nothing to sample, so
+  `WaterMeshOptions::new` requires the map.
+- Rebuilds. Three re-runs the `colorNode` `Fn()` on every material rebuild,
+  making a new `reflector()` and adding another target to the water (the old
+  one stays a child; the rebuild frame mirrors `z = 0` again). The port keeps
+  one reflector for life.
+- A swappable `waterNormals`. Three's is a `TextureNode` whose `.value` can be
+  replaced; the port stores a `Texture`, so the image can change but not the
+  texture.
+- The `isWaterMesh` flag (`SkyMesh`'s is not ported either).
+- The page's `Inspector` panel.
+
 ## 78. TSL sweep 5: the lighting and material batch
 
 Eight names from the lighting and material family. Seven of them are

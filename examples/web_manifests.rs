@@ -312,6 +312,9 @@ mod webgpu_lightprobe;
 #[path = "webgpu_lightprobe_cubecamera.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_lightprobe_cubecamera;
+#[path = "webgpu_ocean.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_ocean;
 #[path = "webgpu_postprocessing_dof_basic.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_postprocessing_dof_basic;
@@ -560,6 +563,7 @@ const GRADED: &[(&str, fn())] = &[
     ("webgpu_postprocessing_motion_blur", || {
         drop(webgpu_postprocessing_motion_blur::init())
     }),
+    ("webgpu_ocean", || drop(webgpu_ocean::init())),
     ("webgpu_postprocessing_godrays", || {
         drop(webgpu_postprocessing_godrays::init())
     }),
