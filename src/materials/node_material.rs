@@ -566,9 +566,31 @@ fn setup_overridden(
             .as_ref()
             .map(|map| normal_map_scaled(texture(map), material_clearcoat_normal_scale()))
     });
+    // `materialMetalness` / `materialRoughness`, one node each for the whole
+    // setup — the material's own `Metalness` / `Roughness` and a deferred MRT
+    // output share the map read, as three's cached `MaterialNode`s do.
+    // glTF packing: metalness in blue, roughness in green.
+    //
+    // The `MaterialNode` is a `ReferenceNode`, not a `TempNode`: reached
+    // three times (`Metalness`, `DiffuseContribution`, the MRT member) it is
+    // what is counted, its product only once, so three spells the product out
+    // at each read over the one texture var. An empty context is the port's
+    // counted-but-never-a-var wrapper (`webgpu_postprocessing_ssr_denoise`'s
+    // `Floor_Stone`).
+    let reference = |node: NodeRef| context(node, crate::nodes::node::ContextValue::new());
+    let metalness_value = match &material.metalness_map {
+        Some(map) => reference(material_metalness().mul(texture(map).z())),
+        None => material_metalness(),
+    };
+    let roughness_value = match &material.roughness_map {
+        Some(map) => reference(material_roughness().mul(texture(map).y())),
+        None => material_roughness(),
+    };
     with_material_normal(normal, material.flat_shading, material.side, || {
         with_clearcoat_normal(clearcoat_normal, || {
-            with_material_position_view(position_view, || setup_inner(material, ctx, fog))
+            with_material_values(metalness_value, roughness_value, || {
+                with_material_position_view(position_view, || setup_inner(material, ctx, fog))
+            })
         })
     })
 }
@@ -1529,18 +1551,15 @@ fn setup_standard(
     // The `float()` matters when the node is wider than a float, as a bare
     // `texture( map )` is: `DiffuseContribution` then takes `1 - map.x` on
     // every channel, not `1 - map.rgb` (`webgpu_lights_selective`, §46).
-    let metalness_node = match (&material.metalness_node, &material.metalness_map) {
-        (Some(node), _) => node.to_float(),
-        // glTF packing: metalness in blue, roughness in green.
-        (None, Some(map)) => material_metalness().mul(texture(map).z()),
-        (None, None) => material_metalness(),
+    let metalness_node = match &material.metalness_node {
+        Some(node) => node.to_float(),
+        None => material_metalness_value(),
     };
     fragment.push(metalness().assign(metalness_node.clone()));
 
-    let roughness_node = match (&material.roughness_node, &material.roughness_map) {
-        (Some(node), _) => node.to_float(),
-        (None, Some(map)) => material_roughness().mul(texture(map).y()),
-        (None, None) => material_roughness(),
+    let roughness_node = match &material.roughness_node {
+        Some(node) => node.to_float(),
+        None => material_roughness_value(),
     };
     fragment.push(roughness().assign(physical::get_roughness(
         roughness_node,
@@ -1773,7 +1792,11 @@ fn setup_standard(
         if has_ao {
             ao_lighting_node(fragment);
         }
-        model.indirect_specular(environment.is_some(), fragment);
+        model.indirect_specular(
+            environment.is_some(),
+            material.environment_specular,
+            fragment,
+        );
         model.ambient_occlusion(has_ao, fragment);
 
         // Transmission's own backdrop wins over `material.backdropNode`:

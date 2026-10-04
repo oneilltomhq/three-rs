@@ -8907,6 +8907,131 @@ the following:
   (4.1, 1.1, 0.6, 0.35), and no texel is NaN.
 - A resize restarts the target at the new size.
 
+## 89. `webgpu_postprocessing_ssr_denoise`, the denoised SSR chain
+
+### 89.1 What three does
+
+The page draws the Warkarma dungeon, lit by a shadowed sun and the quarry
+HDR (background, environment, and the SSR's fallback for rays that leave the
+screen). `scenePass` writes a four-attachment MRT: `output`, `diffuseColor`
+as `vec4( diffuseColor.rgb, materialMetalness )`, `normal` as
+`vec4( packNormalToRGB( normalView ).rgb, materialRoughness )`, and
+`velocity`. The two packed attachments are 8-bit. The five nodes of §85-§88
+and §65.3 then feed each other:
+
+- **`ssr()`**, stochastic, with `diffuse`, the HDR as `environment`,
+  importance sampling off and the ray-length alpha. It reads the depth, the
+  unpacked normal and `metalRoughness` from the two alphas (§65.3).
+- **`temporalReproject()`** in `'specular'` mode, without `accumulate`,
+  reprojects the history onto the SSR's frame (§87).
+- **`recurrentDenoise()`** in `'specular'` mode with `accumulate`,
+  `alphaSource = 'raylength'` and the raw SSR as `raw`, filters the
+  reprojection (§88).
+- **The history loop.** `ssrNode.setHistory( denoiseNode, velocity )` and
+  `temporalReprojectNode.historyTexture = denoiseNode` close it: the
+  denoiser's output is the next frame's reprojection history and the SSR's
+  multi-bounce input. Every node of the loop is a frame-level
+  `updateBefore`, scheduled by the one that reads it, so a frame runs SSR,
+  then the reprojection, then the denoiser, which is read by the output.
+- **The output.** `vec4( denoise.rgb, ssr.a.greaterThan( 0 ).toVar() )` is
+  added to the beauty, and `applyPostProcessing()` runs
+  `sharpen( traa( applyGrading( source ), depth, velocity, camera ), 0 )`.
+  `applyGrading` is AgX through `renderOutput()`, contrast about mid-grey,
+  `saturation()` and gamma. TRAA's setup runs before the reprojection's, so
+  TRAA owns the camera's view offset.
+
+**The lighting patch.** The page replaces
+`PhysicalLightingModel.prototype.indirectSpecular` with a wrapper that sets
+`builder.context.radiance = vec3( 0 )` and, on a clearcoat model,
+`clearcoatRadiance.assign( vec3( 0 ) )`, then calls the original. The
+environment still supplies the diffuse irradiance; the specular comes from
+SSR alone. `EnvironmentNode` still samples the radiance, which is dead code
+in the dump.
+
+### 89.2 The port
+
+`examples/webgpu_postprocessing_ssr_denoise.rs` follows `init()` in order.
+The MRT's two per-material members are deferred (§23) and read
+`material_metalness_value()` / `material_roughness_value()`, which are new.
+They return the node `MaterialNode.setup()` builds for the material being
+set up (the uniform times the map's channel), installed once per setup, so
+the material's own `Metalness` / `Roughness` and the MRT share one map
+read. The node is wrapped in an empty `context()`: three's `MaterialNode` is
+a `ReferenceNode`, counted at every read but never a var, so three spells
+`object.nodeUniform5 * nodeVar1.z` out in `Metalness`, in
+`DiffuseContribution` and in the MRT, over the one texture var.
+
+The lighting patch is `MeshBasicNodeMaterial::environment_specular`, true by
+default. `Physical::indirect_specular` reads it: false puts the constant in
+place of `radiance` in the specular term, assigns the clearcoat radiance
+zero on a clearcoat model, and skips the `radiance` zero-init when there is
+no environment (the var is then never read). It is a program input. The
+page's glTF callback sets it on every material it touches, which scopes
+three's prototype-wide patch to the scene's materials.
+
+The chain is wired as on the page. TRAA's beauty is a texture in the port,
+so `convert_to_texture( applyGrading( … ) )` is explicit. `traa_node.attach`
+runs before `temporal_reproject_node.attach`, so the reprojection's
+view-offset hooks stand down and its velocity reads TRAA's jitter.
+
+Three fixes the chain needed:
+
+- **The denoiser's target is allocated before its input's pass runs.** On
+  this page that pass reads the target as its history. Three's
+  `Textures.updateTexture()` allocates a render-target texture the first
+  time a binding reads it; `RecurrentDenoiseState` now calls
+  `init_render_target` on a restart, before scheduling the input. The
+  clear stays where three has it.
+- **A struct-typed `VarIntent` declares its struct.** The reprojection's
+  specular neighbourhood is a struct, and was declared `var nodeVarN :
+  void`.
+- **`saturation()` shares one `.rgb`.** Three's swizzle getter caches its
+  `SplitNode`, which is no `TempNode`, so in the grading pass the swizzle is
+  counted twice and the contrast expression it reads is spelled out at both
+  reads. The port's `swizzle()` collapses a whole-vector swizzle into its
+  node, which would be counted twice and hoisted; `saturation()` now builds
+  a non-collapsing swizzle, and the builder drops its suffix on generation,
+  as `SplitNode.generate()` drops an unnecessary one.
+
+The gates (`tests/nodes_display_wgsl.rs`, fixtures
+`webgpu_postprocessing_ssr_denoise_m*.wgsl`):
+
+- `ssr_denoise_page_floor_matches_three` (`m14`, `Floor_Stone`): the
+  `Roughness` statement, the metallic/dielectric mix and the MRT tail, plus
+  the exact `Metalness` and `DiffuseContribution` lines. The rest of the
+  body carries two §8 differences of every physical material with an
+  environment, so it is not compared: the doubled accumulator zeros (issue
+  #281), and a separate single/multi-scattering block for the irradiance's
+  indirect diffuse.
+- `ssr_denoise_page_ssr_matches_three` (`m20`),
+  `ssr_denoise_page_denoise_matches_three` (`m22`),
+  `ssr_denoise_page_grading_matches_three` (`m24`) and
+  `ssr_denoise_page_sharpen_matches_three` (`m29`, sharpness 0): the
+  fragment bodies.
+
+The TRAA resolve and the RTT copy are the shaders of
+`webgpu_postprocessing_traa_m05` and `webgpu_postprocessing_lensflare_m24`;
+the reprojection's resolve is gated by
+`temporal_reproject_resolve_specular_matches_three`.
+
+What is gated off or not ported:
+
+- `directionalLight.shadow.autoUpdate = false`: the shadow map is redrawn
+  every frame, to the same result.
+- The page's first TRAA/sharpen pair, which `updateOutputNode()` replaces
+  before it renders, is built once. The model and HDR load synchronously.
+- The GUI, the compare modes and the outputs other than `Combined`.
+- The UV transforms are one per texture, where three has one per map slot,
+  so uniform names differ.
+
+`tests/ssr_denoise_frames.rs` runs the whole chain at 64×64 over a white
+unlit box on a rough metal floor with the patched lighting, so the only
+light on the floor is the box's reflection. The first frame is finite in
+the SSR and denoise targets, the mirror image is lit and the far floor dark.
+Over sixteen frames the reflection holds still (centroid within a pixel,
+the lit count within 10 %, the mean within a dozen levels) while the
+denoised floor's per-pixel variance over a window of four frames falls
+below half its first value. A resize restarts the targets at the new size.
 ## 90. `TAAUNode` (`webgpu_upscaling_taau`)
 
 ### 90.1 What three does

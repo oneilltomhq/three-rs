@@ -501,6 +501,17 @@ impl NodeUpdate for RecurrentDenoiseState {
             .1
             .set(vec![renderer.node_frame().frame_id as f64]);
 
+        // The target's texture is allocated before the input's pass runs.
+        // On `webgpu_postprocessing_ssr_denoise` that pass (the reprojection,
+        // and the SSR behind it) reads this target as its history; three's
+        // `Textures.updateTexture()` allocates a render-target texture the
+        // first time a binding reads it, zero-filled, where this renderer
+        // needs it allocated up front. The clear below is still where three
+        // has it.
+        if needs_restart {
+            renderer.init_render_target(&self.target);
+        }
+
         // The input's pass first: the quad is drawn here, not through the
         // pipeline's output graph, so nothing else schedules it.
         if let Some(pass) = crate::nodes::frame::texture_update(self.input.id()) {
