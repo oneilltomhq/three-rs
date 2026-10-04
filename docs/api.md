@@ -277,6 +277,20 @@ the program, and `MeshBasicNodeMaterial::check_supported()` returns
 `Err(Error::Unsupported { field, kind })` for an application that would rather
 fail before its first frame. `unsupported_fields()` lists them all.
 
+The single source for what each kind reads is `MaterialKind::table()` in
+`src/materials/fields.rs`: an exhaustive `match` that gives every kind its
+fragment flow, the fields that flow reads, the fields it is loud about, and
+the rules only a draw can judge. `materials::setup()` picks the flow and gates
+the Basic environment map and the Physical extensions on it;
+`unsupported_fields()` is the loud list filtered by what the material sets;
+the renderer's warning adds the draw rules and the accessor-only maps under
+one registry. A no-GPU test in the same file builds every kind with each field
+set and checks that the program shows the field exactly when the table says
+the kind reads it. The tables below summarise it; where they disagree, the
+code wins. Before the table the flow was an `if`/`else` chain whose last arm
+caught every kind it did not name, so Sprite, Points and Line2 were warned
+that they ignore `env_map` and then sampled it (#253).
+
 Implemented by the audit:
 
 | Field | What reads it now |
@@ -296,13 +310,24 @@ Loud:
 |---|---|---|
 | `env_map` | anything but Basic | The Basic flow's `BasicEnvironmentNode` is the only reader. Phong and Lambert wrap the same node in their own lighting model, which is not ported; a PBR material takes a PMREM through `pmrem_env` (or `scene.environment`) rather than a raw cube. |
 | `pmrem_env` | anything but Standard / Physical | Only `PhysicalLightingModel` reads a PMREM. |
-| `ao_map` | anything but Standard / Physical | `setupAmbientOcclusion()` is wired into the PBR flow only; Basic and Phong's indirect term does not multiply by it. |
 | `backdrop_node` | Normal | `MeshNormalNodeMaterial`'s flow packs the normal straight into the output, with no lighting step for the blend to sit in. |
-| `anisotropy` | Physical, lit by a point, spot or directional light | The anisotropic `BRDF_GGX` (`V_GGX_SmithCorrelated_Anisotropic`, `D_GGX_Anisotropic`) is not ported, so the direct highlight would be the isotropic one. The indirect bent normal is ported, which is why an unlit anisotropic page such as `webgpu_loader_gltf_anisotropy` is quiet. |
+| `anisotropy` | Physical, lit by a point, spot or directional light (a draw rule) | The anisotropic `BRDF_GGX` (`V_GGX_SmithCorrelated_Anisotropic`, `D_GGX_Anisotropic`) is not ported, so the direct highlight would be the isotropic one. The indirect bent normal is ported, which is why an unlit anisotropic page such as `webgpu_loader_gltf_anisotropy` is quiet. |
+| `size_attenuation`, `size` without `size_node` | Points, drawn on a `Sprite` (a draw rule) | `PointsNodeMaterial.setupVertexSprite()` is ported for a `sizeNode` without size attenuation only. |
+
+`light_map` and Phong's `specular_map` are read only by an accessor
+(`material_light_map`, `material_specular_strength`) in a node the
+application builds, not by any kind's own flow. The renderer says so once per
+material; `check_supported()` passes them.
+
+The table also records one known gap the other way. Three's
+`MeshBasicNodeMaterial.setupNormal()` returns the geometry normal, so a Basic
+material's normal and bump maps and `normal_node` never reach its env-map
+reflect vector; the port's Basic flow reads the material normal there, so
+they do. Basic's row declares them, with the deviation noted beside it.
 
 Not fields, so nothing to be loud about: three.js properties the struct does
 not have at all — `clippingPlanes` (`WebGLRenderer`-only in three; planes
-come from a `ClippingGroup`), `sheenColorMap` / `sheenRoughnessMap`, `iridescence*`, `polygonOffset*`,
+come from a `ClippingGroup`), `sheenColorMap` / `sheenRoughnessMap`, `polygonOffset*`,
 `dithering`. (`wireframe` and the scalar `alpha_test` are fields and are
 honoured; `alpha_test_node` is the node form of the latter.)
 Setting one is a compile error, which is louder than a log line. A field

@@ -3,6 +3,7 @@
 //! statements the builder flows into the two shader stages.
 
 use super::environment;
+use super::fields::{Field, Flow};
 use super::phong::{self, LightDesc};
 use super::physical::{self, Physical};
 use super::toon;
@@ -692,139 +693,17 @@ fn setup_inner(
     // --- the fragment flow
     let output = if let Some(fragment_node) = &material.fragment_node {
         fragment_node.clone()
-    } else if material.kind == MaterialKind::Phong {
-        setup_phong(material, ctx, true, clip_alpha, &mut fragment)
-    } else if material.kind == MaterialKind::Lambert || material.kind == MaterialKind::Toon {
-        setup_phong(material, ctx, false, clip_alpha, &mut fragment)
-    } else if material.kind == MaterialKind::Standard || material.kind == MaterialKind::Physical {
-        setup_standard(material, ctx, clip_alpha, &mut fragment)
-    } else if material.kind == MaterialKind::Normal {
-        // `MeshNormalNodeMaterial.setupDiffuseColor()` replaces the base
-        // implementation outright: no `colorNode`, no vertex colours, no alpha
-        // test, and no `builder.isOpaque()` clamp — the opacity node (or the
-        // `materialOpacity` uniform) lands directly in the `vec4`'s `w`.
-        //
-        // "By convention, a normal packed to RGB is in sRGB color space", so
-        // the packed value is decoded into the working space on the way in;
-        // that is where `sRGBTransferEOTF` comes from, and it is the only
-        // material on the ladder that emits the EOTF rather than the OETF.
-        let opacity = match &material.opacity_node {
-            Some(node) => to_float(node.clone()),
-            None => material_opacity_for(material),
-        };
-        fragment.push(diffuse_color().assign(srgb_to_working(vec4_join(vec![
-            pack_normal_to_rgb(normal_view()),
-            opacity,
-        ]))));
-        // `setupAmbientOcclusion()` still runs; nothing lit reads it.
-        setup_ambient_occlusion(material, ctx, &mut fragment);
-        fragment.extend(clip_alpha);
-        vec4_join(vec![diffuse_color().xyz(), diffuse_color().w()]).max(float(0.0))
     } else {
-        setup_diffuse_color(material, ctx, &mut fragment);
-        // `setupAmbientOcclusion()` runs for every material without a
-        // `fragmentNode`; only `MeshBasicNodeMaterial` (whose `lights` is true
-        // in three) then reads it, through `BasicLightingModel.indirect()`.
-        let has_ao = setup_ambient_occlusion(material, ctx, &mut fragment);
-        let basic_ao = has_ao && material.kind == MaterialKind::Basic && !ctx.lighting_disabled;
-
-        // `NodeMaterial.setupLighting()` for a material with no lighting model
-        // of its own: `lights = this.lights || this.lightsNode !== null`, and
-        // the `LightsNode` runs only `if ( lightsNode.getScope().hasLights )`.
-        // The model then comes from the `lightsNode.context( { lightingModel
-        // } )` the example wrapped the lights in.
-        let custom_lighting = material.lighting_model.as_ref().and_then(|model| {
-            let lights =
-                (material.lights && !ctx.lighting_disabled) || material.lights_node.is_some();
-            let list = material_lights(material, ctx);
-            (lights && !list.is_empty()).then_some((model, list))
-        });
-
-        // `MeshBasicNodeMaterial.lights` is true in three, so a backdrop
-        // takes the `LightsNode` path whenever the scene has a light. The
-        // port's basic material defaults `lights` off and only takes that
-        // path for a backdrop or an environment map — for anything else the
-        // `BasicLightingModel` sum is `DiffuseColor.rgb` again, and the
-        // ladder's basic dumps were matched without it.
-        let basic_lit = !ctx.lighting_disabled && !material_lights(material, ctx).is_empty();
-
-        let outgoing = if let Some((model, lights)) = custom_lighting {
-            crate::materials::lighting_model::lights_node(
-                model.as_ref(),
-                &lights,
-                material.received_shadow_position_node.as_ref(),
-                &|base| backdrop_blend(material, base),
-                &mut fragment,
-            )
-        } else if material.env_map.is_some()
-            || basic_ao
-            || (material.backdrop_node.is_some() && basic_lit)
-        {
-            // `BasicLightingModel`: `indirect()` makes the diffuse colour
-            // the indirect light, and `LightsNode.setup()` sums it — or
-            // blends a `backdropNode` over it. The `AONode` is a material
-            // lighting, so it alone is enough to take this path.
-            if basic_ao {
-                ao_lighting_node(&mut fragment);
+        // The kind's flow, from its row of the per-kind table — an exhaustive
+        // `match`, so a new kind has to say which flow it takes.
+        match material.kind.table().flow {
+            Flow::Phong { specular } => {
+                setup_phong(material, ctx, specular, clip_alpha, &mut fragment)
             }
-            fragment.push(indirect_diffuse().assign(vec4(0.0, 0.0, 0.0, 0.0).xyz()));
-            fragment.push(
-                indirect_diffuse().assign(
-                    vec4_join(vec![indirect_diffuse(), float(1.0)])
-                        .add(vec4(1.0, 1.0, 1.0, 0.0))
-                        .xyz(),
-                ),
-            );
-            fragment.push(indirect_diffuse().assign(indirect_diffuse().mul(ambient_occlusion())));
-            fragment.push(indirect_diffuse().assign(indirect_diffuse().mul(diffuse_color().xyz())));
-            fragment.push(total_diffuse().assign(backdrop_blend(
-                material,
-                direct_diffuse().add(indirect_diffuse()),
-            )));
-            fragment.push(total_specular().assign(direct_specular().add(indirect_specular())));
-            fragment.push(outgoing_light().assign(total_diffuse().add(total_specular())));
-
-            // `MeshBasicNodeMaterial.setupEnvironment()` →
-            // `BasicEnvironmentNode( cubeTexture( envMap ) )`, sampled along the
-            // reflect vector and blended in by `reflectivity`.
-            if let Some(env_map) = &material.env_map {
-                let dir =
-                    material_env_rotation().mul(vec4_join(vec![reflect_vector(), float(1.0)]));
-                let env = cube_texture(env_map, dir);
-                fragment.push(outgoing_light().assign(mix(
-                    outgoing_light(),
-                    outgoing_light().mul(env.xyz()),
-                    float(1.0).mul(material_reflectivity()),
-                )));
-            }
-            outgoing_light()
-        } else {
-            // `setupOutgoingLight()` with no lights: `diffuseColor.rgb`, or
-            // `setupLighting()`'s `else if ( backdropNode !== null )` arm.
-            backdrop_blend(material, diffuse_color().xyz())
-        };
-
-        // `setupLighting()`'s EMISSIVE tail. `MeshBasicMaterial` has no
-        // `emissive` colour, so an unlit material reaches it only through
-        // `emissiveNode`: `EmissiveColor = vec3( emissiveNode )`, then
-        // `outgoingLight = outgoingLight + EmissiveColor`.
-        let outgoing = match &material.emissive_node {
-            Some(node) => {
-                fragment.push(emissive_color().assign(to_vec3(node.clone())));
-                outgoing.add(emissive_color())
-            }
-            None => outgoing,
-        };
-
-        // `clippingAlpha()`, after `setupLighting()`. Three's `LightsNode`
-        // builds lazily, so its statements follow these; the port's lit
-        // paths above have already pushed theirs. They read only the
-        // diffuse colour's `rgb`, and the alpha these write is read by the
-        // output below, so the order changes nothing the shader computes.
-        fragment.extend(clip_alpha);
-
-        // `basicOutput = vec4( outgoingLight, diffuseColor.a ).max( 0 )`.
-        vec4_join(vec![outgoing, diffuse_color().w()]).max(float(0.0))
+            Flow::Physical => setup_standard(material, ctx, clip_alpha, &mut fragment),
+            Flow::Normal => setup_normal_flow(material, ctx, clip_alpha, &mut fragment),
+            Flow::Unlit => setup_unlit_flow(material, ctx, clip_alpha, &mut fragment),
+        }
     };
 
     // `NodeMaterial.setupOutput()`: `scene.fogNode` mixes over the colour only,
@@ -1281,6 +1160,157 @@ pub fn tone_mapping_node(mode: ToneMapping, exposure: NodeRef, color: NodeRef) -
     }
 }
 
+/// `MeshNormalNodeMaterial`'s fragment flow ([`Flow::Normal`]).
+#[inline(never)]
+fn setup_normal_flow(
+    material: &MeshBasicNodeMaterial,
+    ctx: &SetupContext,
+    clip_alpha: Vec<NodeRef>,
+    fragment: &mut Vec<NodeRef>,
+) -> NodeRef {
+    // `MeshNormalNodeMaterial.setupDiffuseColor()` replaces the base
+    // implementation outright: no `colorNode`, no vertex colours, no alpha
+    // test, and no `builder.isOpaque()` clamp — the opacity node (or the
+    // `materialOpacity` uniform) lands directly in the `vec4`'s `w`.
+    //
+    // "By convention, a normal packed to RGB is in sRGB color space", so
+    // the packed value is decoded into the working space on the way in;
+    // that is where `sRGBTransferEOTF` comes from, and it is the only
+    // material on the ladder that emits the EOTF rather than the OETF.
+    let opacity = match &material.opacity_node {
+        Some(node) => to_float(node.clone()),
+        None => material_opacity_for(material),
+    };
+    fragment.push(diffuse_color().assign(srgb_to_working(vec4_join(vec![
+        pack_normal_to_rgb(normal_view()),
+        opacity,
+    ]))));
+    // `setupAmbientOcclusion()` still runs; nothing lit reads it.
+    setup_ambient_occlusion(material, ctx, fragment);
+    fragment.extend(clip_alpha);
+    vec4_join(vec![diffuse_color().xyz(), diffuse_color().w()]).max(float(0.0))
+}
+
+/// The fragment flow of a kind with no lighting model of its own
+/// ([`Flow::Unlit`]): Basic, Sprite, Points and Line2.
+#[inline(never)]
+fn setup_unlit_flow(
+    material: &MeshBasicNodeMaterial,
+    ctx: &SetupContext,
+    clip_alpha: Vec<NodeRef>,
+    fragment: &mut Vec<NodeRef>,
+) -> NodeRef {
+    setup_diffuse_color(material, ctx, fragment);
+    // `setupAmbientOcclusion()` runs for every material without a
+    // `fragmentNode`; only `MeshBasicNodeMaterial` (whose `lights` is true
+    // in three) then reads it, through `BasicLightingModel.indirect()`.
+    let has_ao = setup_ambient_occlusion(material, ctx, fragment);
+    let basic_ao = has_ao && material.kind == MaterialKind::Basic && !ctx.lighting_disabled;
+    // Only `MeshBasicNodeMaterial.setupEnvironment()` wraps the env map in
+    // a `BasicEnvironmentNode`. `SpriteNodeMaterial`, `PointsNodeMaterial`
+    // and `Line2NodeMaterial` also reach this flow but override no
+    // `setupEnvironment()`, and `NodeMaterial.lights` is false for them,
+    // so three never samples their `envMap` (#253).
+    let basic_env_map = material
+        .env_map
+        .as_ref()
+        .filter(|_| material.kind.table().reads(Field::EnvMap));
+
+    // `NodeMaterial.setupLighting()` for a material with no lighting model
+    // of its own: `lights = this.lights || this.lightsNode !== null`, and
+    // the `LightsNode` runs only `if ( lightsNode.getScope().hasLights )`.
+    // The model then comes from the `lightsNode.context( { lightingModel
+    // } )` the example wrapped the lights in.
+    let custom_lighting = material.lighting_model.as_ref().and_then(|model| {
+        let lights = (material.lights && !ctx.lighting_disabled) || material.lights_node.is_some();
+        let list = material_lights(material, ctx);
+        (lights && !list.is_empty()).then_some((model, list))
+    });
+
+    // `MeshBasicNodeMaterial.lights` is true in three, so a backdrop
+    // takes the `LightsNode` path whenever the scene has a light. The
+    // port's basic material defaults `lights` off and only takes that
+    // path for a backdrop or an environment map — for anything else the
+    // `BasicLightingModel` sum is `DiffuseColor.rgb` again, and the
+    // ladder's basic dumps were matched without it.
+    let basic_lit = !ctx.lighting_disabled && !material_lights(material, ctx).is_empty();
+
+    let outgoing = if let Some((model, lights)) = custom_lighting {
+        crate::materials::lighting_model::lights_node(
+            model.as_ref(),
+            &lights,
+            material.received_shadow_position_node.as_ref(),
+            &|base| backdrop_blend(material, base),
+            fragment,
+        )
+    } else if basic_env_map.is_some() || basic_ao || (material.backdrop_node.is_some() && basic_lit)
+    {
+        // `BasicLightingModel`: `indirect()` makes the diffuse colour
+        // the indirect light, and `LightsNode.setup()` sums it — or
+        // blends a `backdropNode` over it. The `AONode` is a material
+        // lighting, so it alone is enough to take this path.
+        if basic_ao {
+            ao_lighting_node(fragment);
+        }
+        fragment.push(indirect_diffuse().assign(vec4(0.0, 0.0, 0.0, 0.0).xyz()));
+        fragment.push(
+            indirect_diffuse().assign(
+                vec4_join(vec![indirect_diffuse(), float(1.0)])
+                    .add(vec4(1.0, 1.0, 1.0, 0.0))
+                    .xyz(),
+            ),
+        );
+        fragment.push(indirect_diffuse().assign(indirect_diffuse().mul(ambient_occlusion())));
+        fragment.push(indirect_diffuse().assign(indirect_diffuse().mul(diffuse_color().xyz())));
+        fragment.push(total_diffuse().assign(backdrop_blend(
+            material,
+            direct_diffuse().add(indirect_diffuse()),
+        )));
+        fragment.push(total_specular().assign(direct_specular().add(indirect_specular())));
+        fragment.push(outgoing_light().assign(total_diffuse().add(total_specular())));
+
+        // `MeshBasicNodeMaterial.setupEnvironment()` →
+        // `BasicEnvironmentNode( cubeTexture( envMap ) )`, sampled along the
+        // reflect vector and blended in by `reflectivity`.
+        if let Some(env_map) = basic_env_map {
+            let dir = material_env_rotation().mul(vec4_join(vec![reflect_vector(), float(1.0)]));
+            let env = cube_texture(env_map, dir);
+            fragment.push(outgoing_light().assign(mix(
+                outgoing_light(),
+                outgoing_light().mul(env.xyz()),
+                float(1.0).mul(material_reflectivity()),
+            )));
+        }
+        outgoing_light()
+    } else {
+        // `setupOutgoingLight()` with no lights: `diffuseColor.rgb`, or
+        // `setupLighting()`'s `else if ( backdropNode !== null )` arm.
+        backdrop_blend(material, diffuse_color().xyz())
+    };
+
+    // `setupLighting()`'s EMISSIVE tail. `MeshBasicMaterial` has no
+    // `emissive` colour, so an unlit material reaches it only through
+    // `emissiveNode`: `EmissiveColor = vec3( emissiveNode )`, then
+    // `outgoingLight = outgoingLight + EmissiveColor`.
+    let outgoing = match &material.emissive_node {
+        Some(node) => {
+            fragment.push(emissive_color().assign(to_vec3(node.clone())));
+            outgoing.add(emissive_color())
+        }
+        None => outgoing,
+    };
+
+    // `clippingAlpha()`, after `setupLighting()`. Three's `LightsNode`
+    // builds lazily, so its statements follow these; the port's lit
+    // paths above have already pushed theirs. They read only the
+    // diffuse colour's `rgb`, and the alpha these write is read by the
+    // output below, so the order changes nothing the shader computes.
+    fragment.extend(clip_alpha);
+
+    // `basicOutput = vec4( outgoingLight, diffuseColor.a ).max( 0 )`.
+    vec4_join(vec![outgoing, diffuse_color().w()]).max(float(0.0))
+}
+
 /// `MeshPhongNodeMaterial`'s fragment flow: `setupDiffuseColor`,
 /// `setupVariants` (shininess / specular / emissive), then either the
 /// `LightsNode` loop with `PhongLightingModel` or, when `lights === false`,
@@ -1566,7 +1596,8 @@ fn setup_standard(
         !ctx.geometry_missing_normal,
     )));
 
-    if material.kind == MaterialKind::Physical {
+    let table = material.kind.table();
+    if table.reads(Field::Ior) {
         // `MeshPhysicalNodeMaterial.setupSpecular()`: F0 from the index of
         // refraction rather than the dielectric constant 0.04, tinted by
         // `specularColor` (times `specularColorMap`) and scaled by
@@ -1620,13 +1651,13 @@ fn setup_standard(
     // DIFFUSE ROUGHNESS — `useDiffuseRoughness` is `diffuseRoughness > 0`, and
     // `DiffuseRoughness` is `materialDiffuseRoughness.clamp()`.
     let use_diffuse_roughness =
-        material.kind == MaterialKind::Physical && material.diffuse_roughness > 0.0;
+        table.reads(Field::DiffuseRoughness) && material.diffuse_roughness > 0.0;
     if use_diffuse_roughness {
         fragment.push(diffuse_roughness().assign(material_diffuse_roughness().clamp(0.0, 1.0)));
     }
 
-    let use_clearcoat = material.kind == MaterialKind::Physical && material.clearcoat > 0.0;
-    let use_anisotropy = material.kind == MaterialKind::Physical && material.anisotropy > 0.0;
+    let use_clearcoat = table.reads(Field::Clearcoat) && material.clearcoat > 0.0;
+    let use_anisotropy = table.reads(Field::Anisotropy) && material.anisotropy > 0.0;
 
     if use_clearcoat {
         // `MaterialNode.CLEARCOAT` / `.CLEARCOAT_ROUGHNESS`: the factor
@@ -1651,7 +1682,7 @@ fn setup_standard(
     // sheen )` with the multiply left in the shader, and
     // `MaterialNode.SHEEN_ROUGHNESS` clamps to `[ 0.0001, 1 ]` so `1 / alpha`
     // in `D_Charlie` cannot divide by zero.
-    let use_sheen = material.kind == MaterialKind::Physical && material.sheen > 0.0;
+    let use_sheen = table.reads(Field::Sheen) && material.sheen > 0.0;
     if use_sheen {
         fragment.push(sheen().assign(material_sheen_color().mul(material_sheen())));
         fragment.push(sheen_roughness().assign(material_sheen_roughness().clamp(0.0001, 1.0)));
@@ -1662,7 +1693,7 @@ fn setup_standard(
     // map it is the *maximum* of `iridescenceThicknessRange` alone (the
     // minimum is not even referenced), and with a map it interpolates between
     // the two by the map's green channel.
-    let use_iridescence = material.kind == MaterialKind::Physical && material.iridescence > 0.0;
+    let use_iridescence = table.reads(Field::Iridescence) && material.iridescence > 0.0;
     if use_iridescence {
         fragment.push(iridescence().assign(material_iridescence()));
         fragment.push(iridescence_ior().assign(material_iridescence_ior()));
@@ -1721,7 +1752,7 @@ fn setup_standard(
     // TRANSMISSION. `useTransmission` is `transmission > 0`; the volume
     // fields ride with it whether or not `KHR_materials_volume` set them,
     // because three assigns all four unconditionally inside the branch.
-    let opaque_frame = if material.kind == MaterialKind::Physical && material.transmission > 0.0 {
+    let opaque_frame = if table.reads(Field::Transmission) && material.transmission > 0.0 {
         ctx.viewport_opaque_mip.as_ref()
     } else {
         None
@@ -2026,5 +2057,57 @@ mod tests {
         // fresh node allocated after `ao` was dropped can reuse it.
         assert_ne!(with, hasher.hash_one(lit(Some(ao_context()))));
         drop(ao);
+    }
+    /// A plain `envMap` is sampled only by `MeshBasicNodeMaterial`: Sprite,
+    /// Points and Line2 reach the same unlit flow but three never wraps their
+    /// `envMap` in a `BasicEnvironmentNode`, so with `env_map` set they bind
+    /// no cube texture and sample nothing along the reflect vector (#253).
+    #[test]
+    fn env_map_is_sampled_by_basic_only() {
+        use crate::nodes::builder::BindingDesc;
+        use crate::nodes::node::TextureSource;
+        use crate::textures::{CubeTexture, Image};
+        let cube = CubeTexture::new(
+            (0..6)
+                .map(|_| Image::rgba8(1, 1, vec![255, 255, 255, 255]))
+                .collect(),
+        );
+        let binds_cube = |material: &MeshBasicNodeMaterial| {
+            let program =
+                NodeBuilder::new().build(&setup(material, &SetupContext::default(), None));
+            let bound = program.groups.iter().flatten().any(|binding| {
+                matches!(
+                    binding,
+                    BindingDesc::Texture {
+                        source: TextureSource::Cube(_),
+                        ..
+                    }
+                )
+            });
+            (bound, program.fragment_wgsl)
+        };
+
+        let mut basic = MeshBasicNodeMaterial::new();
+        basic.env_map = Some(cube.clone());
+        let (bound, wgsl) = binds_cube(&basic);
+        assert!(bound && wgsl.contains("texture_cube"), "{wgsl}");
+
+        for mut material in [
+            MeshBasicNodeMaterial::sprite(),
+            MeshBasicNodeMaterial::points(),
+            MeshBasicNodeMaterial::line2(Color::from_hex(0xffffff)),
+        ] {
+            material.env_map = Some(cube.clone());
+            let kind = material.kind;
+            let (bound, wgsl) = binds_cube(&material);
+            assert!(!bound, "{kind:?} binds the env map");
+            assert!(!wgsl.contains("texture_cube"), "{kind:?}:\n{wgsl}");
+            assert!(!wgsl.contains("Reflectivity"), "{kind:?}:\n{wgsl}");
+            // Still warned about, as before.
+            assert_eq!(material.unsupported_fields(), ["envMap"]);
+            // The same program as with no env map at all.
+            material.env_map = None;
+            assert_eq!(wgsl, binds_cube(&material).1, "{kind:?}");
+        }
     }
 }

@@ -4,6 +4,7 @@
 pub(crate) mod blending;
 mod dfg_lut;
 pub mod environment;
+pub(crate) mod fields;
 pub mod lighting_model;
 pub(crate) mod line2;
 mod node_material;
@@ -905,30 +906,19 @@ impl MeshBasicNodeMaterial {
     /// logs each one once per material when it builds the program; call
     /// [`check_supported`](Self::check_supported) to fail on them instead.
     ///
-    /// A field three's own class for that kind lacks (a `clearcoat` on a
-    /// Standard material, say) is not listed: three ignores it too.
+    /// The list is the kind's declared loud fields (the per-kind table in
+    /// `src/materials/fields.rs`, which the flow dispatch in [`setup`] reads
+    /// too) that this material sets, in the table's order. A field three's
+    /// own class for that kind lacks (a `clearcoat` on a Standard material,
+    /// say) is not listed: three ignores it too.
     pub fn unsupported_fields(&self) -> Vec<&'static str> {
-        use MaterialKind::*;
-        let mut fields = Vec::new();
-        let pbr = matches!(self.kind, Standard | Physical);
-        // `MeshPhongMaterial.envMap` / `MeshLambertMaterial.envMap` (the
-        // `combine` blend) and a plain cube `envMap` on a PBR material, which
-        // three would PMREM on the fly: only the Basic path samples it; a PBR
-        // material takes `pmrem_env` instead.
-        if self.env_map.is_some() && self.kind != Basic {
-            fields.push("envMap");
-        }
-        // A PMREM environment is only read by `PhysicalLightingModel`.
-        if self.pmrem_env.is_some() && !pbr {
-            fields.push("envMap (PMREM)");
-        }
-        // `MeshNormalNodeMaterial`'s flow packs the normal straight into the
-        // output, with no `setupLighting()` step for the backdrop arm to sit
-        // in. Every other kind blends it into `totalDiffuse`.
-        if self.backdrop_node.is_some() && self.kind == Normal {
-            fields.push("backdropNode");
-        }
-        fields
+        self.kind
+            .table()
+            .loud
+            .iter()
+            .filter(|field| field.is_set(self))
+            .map(|field| field.name())
+            .collect()
     }
 
     /// The maps set on this material that the built-in lighting flow does not
@@ -943,14 +933,11 @@ impl MeshBasicNodeMaterial {
     /// [`check_supported`](Self::check_supported) passes them; the renderer
     /// still says once per material that the flow leaves them out.
     pub(crate) fn accessor_only_fields(&self) -> Vec<&'static str> {
-        let mut fields = Vec::new();
-        if self.light_map.is_some() {
-            fields.push("lightMap");
-        }
-        if self.specular_map.is_some() {
-            fields.push("specularMap");
-        }
-        fields
+        fields::ACCESSOR_ONLY
+            .iter()
+            .filter(|field| field.is_set(self))
+            .map(|field| field.name())
+            .collect()
     }
 
     /// `Err(Error::Unsupported)` for the first of
