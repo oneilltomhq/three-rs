@@ -1611,6 +1611,14 @@ fn swizzle(node: NodeRef, components: &'static str) -> NodeRef {
     if components == whole(node.ty()) {
         return node;
     }
+    // `SplitNode.generate()` on a `float` / `int` / `uint`: "ignore
+    // .components if .node returns float/integer" — the scalar is built at
+    // the swizzle's own type, which `builder.format()` widens by splatting
+    // (`vec3<f32>( s )`). `.y` on a scalar is the scalar itself.
+    if node.ty().components() == 1 {
+        let ty = Type::vector_of(node.ty().component_type(), components.len());
+        return node.to(ty);
+    }
     let ty = Type::vector_of(node.ty().component_type(), components.len());
     NodeRef::new(Node::Swizzle {
         node,
@@ -3387,12 +3395,39 @@ pub fn texture_store(
 /// caches `textureSample( … ).xy` in a `vec2<f32>` var rather than keeping
 /// the whole `vec4`; a `RedFormat` map (`DepthOfFieldNode`'s CoC targets, a
 /// toon gradient ramp) is a `float` node read as `textureSample( … ).x`.
+///
+/// A [`Texture`] carries only its wgpu format, not three's `format` / `type`
+/// pair, so the decision is made from the wgpu format with three's mapping
+/// spelled out: a depth format is `float` (`isDepthTexture`,
+/// `DepthFormat`, `DepthStencilFormat`); every block-compressed format is
+/// `vec4`, because three names them by their own compressed formats
+/// (`RED_RGTC1_Format`, `R11_EAC_Format`, …) and never `RedFormat` /
+/// `RGFormat`, even though BC4 / BC5 / EAC are one- or two-channel in wgpu;
+/// and an integer format takes three's `uint` / `int` component type
+/// (`UnsignedIntType` / `IntType`).
 fn texture_type_for(map: &Texture) -> Type {
-    match map.format().components() {
-        1 => Type::F32,
-        2 => Type::Vec2,
-        _ => Type::Vec4,
+    texture_type_for_format(map.format())
+}
+
+fn texture_type_for_format(format: wgpu::TextureFormat) -> Type {
+    use wgpu::TextureSampleType as S;
+    if format.has_depth_aspect() {
+        return Type::F32;
     }
+    if format.is_compressed() {
+        return Type::Vec4;
+    }
+    let component = match format.sample_type(None, None) {
+        Some(S::Uint) => Type::U32,
+        Some(S::Sint) => Type::I32,
+        _ => Type::F32,
+    };
+    let length = match format.components() {
+        1 => 1,
+        2 => 2,
+        _ => 4,
+    };
+    Type::vector_of(component, length)
 }
 
 /// `WGSLNodeBuilder.generateTextureSample`'s choice for a colour texture:
@@ -5563,4 +5598,50 @@ pub fn neutral_tone_mapping(color: NodeRef, exposure: NodeRef) -> NodeRef {
         })
     });
     call(&def, vec![color, exposure])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn texture_type_follows_threes_format_mapping() {
+        use wgpu::TextureFormat as F;
+        let cases = [
+            (F::R8Unorm, Type::F32),
+            (F::R16Float, Type::F32),
+            (F::R32Float, Type::F32),
+            (F::R32Uint, Type::U32),
+            (F::R32Sint, Type::I32),
+            (F::Rg16Float, Type::Vec2),
+            (F::Rg32Uint, Type::UVec2),
+            (F::Rgba8Unorm, Type::Vec4),
+            (F::Rgba16Uint, Type::UVec4),
+            (F::Depth32Float, Type::F32),
+            (F::Depth24PlusStencil8, Type::F32),
+            // One- and two-channel in wgpu, `vec4` in three.
+            (F::Bc4RUnorm, Type::Vec4),
+            (F::Bc4RSnorm, Type::Vec4),
+            (F::Bc5RgUnorm, Type::Vec4),
+            (F::EacR11Unorm, Type::Vec4),
+            (F::EacR11Snorm, Type::Vec4),
+            (F::EacRg11Unorm, Type::Vec4),
+        ];
+        for (format, ty) in cases {
+            assert_eq!(texture_type_for_format(format), ty, "{format:?}");
+        }
+    }
+
+    #[test]
+    fn a_swizzle_of_a_scalar_splats_it() {
+        let s = float(0.5);
+        // `.x` / `.y` on a float is the float: three ignores the components.
+        assert!(matches!(s.x().node(), Node::Const { .. }));
+        assert_eq!(s.y().ty(), Type::F32);
+        assert!(matches!(s.y().node(), Node::Const { .. }));
+        // `.xyz` is the float widened to a vec3 — a cast, never `s.xyz`.
+        let v = s.xyz();
+        assert_eq!(v.ty(), Type::Vec3);
+        assert!(matches!(v.node(), Node::Cast { ty: Type::Vec3, .. }));
+    }
 }

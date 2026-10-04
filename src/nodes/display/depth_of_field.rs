@@ -59,6 +59,11 @@ use super::gaussian_blur::{GaussianBlurNode, GaussianBlurOptions};
 /// `focus_distance` is the distance along the camera's look direction that is
 /// sharp, `focal_length` how far from it a surface goes fully out of focus,
 /// both in world units, and `bokeh_scale` an artistic size factor.
+///
+/// **Divergence, API shape:** three's `dof()` defaults `focusDistance`,
+/// `focalLength` and `bokehScale` to `1` each; Rust has no default
+/// arguments, so the port takes all three. Pass `float( 1.0 )` for three's
+/// default.
 pub fn dof(
     map: &Texture,
     view_z: NodeRef,
@@ -288,7 +293,7 @@ impl DepthOfFieldNode {
 
     /// The quad materials in draw order — CoC, the near field's Gaussian
     /// (horizontal, vertical), CoC blur, blur64 near, blur64 far, blur16,
-    /// composite — for `examples/dump_wgsl.rs` and the dump gate.
+    /// composite — for the dump gate (`tests/nodes_display_wgsl.rs`).
     #[doc(hidden)]
     pub fn quad_materials(&self) -> Vec<&MeshBasicNodeMaterial> {
         let s = &self.0;

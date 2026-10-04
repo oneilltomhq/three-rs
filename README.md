@@ -257,7 +257,7 @@ browser shell:
 | example | why it has no grade |
 |---|---|
 | [`webgpu_postprocessing_traa`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_traa.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_traa-progress.md) | in three's e2e exception list (`test/e2e/puppeteer.js`, "Black screen"). It is gated instead on its resolve shader against three's dump and on `tests/traa_frames.rs` |
-| [`webgpu_postprocessing_dof`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_dof.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_dof-progress.md) | in three's e2e exception list (`test/e2e/puppeteer.js`, "Black screen"). It is gated instead on each of `DepthOfFieldNode`'s six quads against three's dump (`dof_*` in `tests/nodes_display_wgsl.rs`) |
+| [`webgpu_postprocessing_dof`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_dof.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_dof-progress.md) | in three's e2e exception list (`test/e2e/puppeteer.js`, "Black screen"). It is gated instead on each of `DepthOfFieldNode`'s seven distinct quad shaders against three's dump (`dof_*` in `tests/nodes_display_wgsl.rs`) |
 
 Measured on Intel Iris Xe, Mesa 25.3.6, Fedora 43, against three.js 5f610f5
 (past r186, for the cube PMREM of 2f80402; the pin becomes the r187 tag once

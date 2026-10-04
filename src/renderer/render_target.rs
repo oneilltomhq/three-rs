@@ -410,11 +410,21 @@ impl RenderTarget {
     ///
     /// Call it before [`set_count`](Self::set_count): the extra attachments
     /// take the first one's format when they are made.
+    ///
+    /// The match is spelled out rather than defaulting to `R8Unorm`, so a
+    /// type with no red format here can never be quantised to eight bits:
+    /// `FloatType` / `UnsignedIntType` colour targets are refused by
+    /// [`RenderTarget::new_with_options`], as they are for `RGBAFormat`, so
+    /// they cannot reach this setter.
     pub fn set_red_format(&self) {
         let inner = self.0.borrow();
         let format = match inner.texture_type {
+            TextureType::UnsignedByte => wgpu::TextureFormat::R8Unorm,
             TextureType::HalfFloat => wgpu::TextureFormat::R16Float,
-            _ => wgpu::TextureFormat::R8Unorm,
+            other => panic!(
+                "three-rs: a RedFormat render target needs an UnsignedByteType \
+                 or HalfFloatType colour attachment, got {other:?}"
+            ),
         };
         inner.texture.set_format(format);
         inner.texture.clear_gpu();

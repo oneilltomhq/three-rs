@@ -730,7 +730,7 @@ and the four graph pieces it brought: `outputStruct()`, red targets,
 matrix.
 
 **There is no rung for it**, for TRAA's reason: three lists
-`webgpu_postprocessing_dof` in its e2e exception list. All six distinct quad
+`webgpu_postprocessing_dof` in its e2e exception list. All seven distinct quad
 shaders are gated against three's dump instead (`dof_*` in
 `tests/nodes_display_wgsl.rs`), and the page is in the native viewer
 (`viewer postprocessing_dof`).

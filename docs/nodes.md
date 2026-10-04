@@ -5993,8 +5993,10 @@ arithmetic, and `tests/traa_frames.rs` allows for it.
 
 ### 66.1 What three does
 
-`dof( textureNode, viewZNode, focusDistance, focalLength, bokehScale )` is a
-`TempNode` with `updateBeforeType = FRAME`. It owns six render targets:
+`dof( textureNode, viewZNode, focusDistance, focalLength, bokehScale )`
+(each of the last three defaulting to `1`) is a plain `Node` (`extends
+Node`, `super( 'vec4' )`) with `updateBeforeType = FRAME`. It owns six
+render targets:
 
 - `_CoCRT`: full size, two `RedFormat` half-float attachments, the near and
   far circle of confusion;
@@ -6002,7 +6004,8 @@ arithmetic, and `tests/traa_frames.rs` allows for it.
 - `_blur64RT`, `_blur16NearRT`, `_blur16FarRT`: half size, RGBA half float;
 - `_compositeRT`: full size.
 
-Its texture node is `passTexture( this, _compositeRT.texture )`.
+Its texture node is `texture( this._compositeRT.texture )`, a plain texture
+node rather than a `passTexture()`.
 `updateBefore()` clears to transparent black and draws nine quads:
 
 1. the CoC, whose `outputNode` is `outputStruct( near, far )`;
@@ -6020,8 +6023,8 @@ goes to the 16-point kernel. They ride `uniformArray( Vector2[] )`.
 
 ### 66.2 The port
 
-`nodes::display::dof` builds the same nine draws. Each of the six distinct
-quad shaders is gated against three's dump (`dof_*` in
+`nodes::display::dof` builds the same nine draws, from seven distinct quad
+shaders (blur64 and blur16 each serve both fields). All seven are gated against three's dump (`dof_*` in
 `tests/nodes_display_wgsl.rs`). `DofState` implements `NodeUpdate` and is
 registered as the updater of the composite texture, as TRAA's state is
 (§63.2). It asks for the input's pass first.

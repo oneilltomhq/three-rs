@@ -26,7 +26,7 @@ This matrix judges every exported name in three.js revision 5f610f5 (r187) — `
 | addons/controls | 9 | 0 | 2 | 7 | 0 | 0% |
 | addons/loaders | 71 | 6 | 2 | 63 | 0 | 8% |
 | addons/postprocessing | 30 | 0 | 0 | 0 | 30 | — |
-| addons/other | 102 | 12 | 4 | 63 | 23 | 15% |
+| addons/other | 102 | 11 | 4 | 64 | 23 | 14% |
 | **total** | **1315** | **652** | **122** | **424** | **117** | **54%** |
 
 TSL by family:
@@ -711,7 +711,7 @@ Graded examples: 86 (the README gallery plus `webgpu_textures_2d-array_compresse
 
 ## addons/other
 
-102 rows: 12 Present, 4 Partial, 63 Absent, 23 N.A.
+102 rows: 11 Present, 4 Partial, 64 Absent, 23 N.A.
 
 | three.js name | verdict | three-rs symbol | verified by | note |
 |---|---|---|---|---|
@@ -820,7 +820,7 @@ Graded examples: 86 (the README gallery plus `webgpu_textures_2d-array_compresse
 
 ### Supplementary: `examples/jsm/tsl/display/*.js`
 
-These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) and are not counted above. 16 Present, 32 Absent.
+These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) and are not counted above. 17 Present, 31 Absent.
 
 | file | status | three-rs port and check |
 |---|---|---|
@@ -835,7 +835,7 @@ These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) an
 | `DenoiseNode.js` | Absent | — |
 | `depthAwareBlend.js` | Absent | — |
 | `depthAwareBlur.js` | Absent | — |
-| `DepthOfFieldNode.js` | Present | dof/DepthOfFieldNode; tests/nodes_display_wgsl.rs (`dof_*`: all six quads); webgpu_postprocessing_dof (ported, ungraded: three's own e2e exception list) |
+| `DepthOfFieldNode.js` | Present | dof/DepthOfFieldNode; tests/nodes_display_wgsl.rs (`dof_*`: all seven distinct quad shaders); webgpu_postprocessing_dof (ported, ungraded: three's own e2e exception list) |
 | `DotScreenNode.js` | Present | dot_screen; tests/nodes_display_wgsl.rs; webgpu_postprocessing (ported, ungraded) |
 | `FilmNode.js` | Absent | — |
 | `FSR1Node.js` | Absent | — |

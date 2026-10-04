@@ -202,7 +202,9 @@ pub fn display_quads() -> Vec<DisplayQuad> {
     // uniform( 500 ), uniform( 200 ), uniform( 10 ) )`'s quads, in draw order
     // (`m04`, the near field's `gaussianBlur( _CoCTextureNode, 1, 2 )`
     // horizontal pass `m06` — `float` taps through the CoC texture's uv
-    // matrix, summed into a `vec4` splat — then `m08`, `m10`, `m11`, `m12`;
+    // matrix, summed into a `vec4` splat — and its vertical pass `m07`, which
+    // reads the horizontal pass's RGBA target: `vec4` taps, no uv matrix, a
+    // `( 0, 1 )` direction; then `m08`, `m10`, `m11`, `m12`;
     // `m10` is the blur64 module both fields share). The viewZ is the scene pass's
     // `perspectiveDepthToViewZ( depth, near, far )`.
     let view_z = perspective_depth_to_view_z(
@@ -223,6 +225,11 @@ pub fn display_quads() -> Vec<DisplayQuad> {
             "dof_coc_gaussian_horizontal",
             "webgpu_postprocessing_dof_m06_coc_gaussian_horizontal.wgsl",
             1,
+        ),
+        (
+            "dof_coc_gaussian_vertical",
+            "webgpu_postprocessing_dof_m07_coc_gaussian_vertical.wgsl",
+            2,
         ),
         (
             "dof_coc_blurred",

@@ -73,7 +73,7 @@ have their own sections after the release they ship with. The format follows [Ke
   `get_view_position`. Also `Renderer::init_render_target` and
   `RenderPipeline::claim_view_offset`. (#165)
 - **`dof`** (`nodes::display`), `DepthOfFieldNode.js`: bokeh depth of field
-  in nine full-screen draws. All six distinct quad shaders are gated against
+  in nine full-screen draws. All seven distinct quad shaders are gated against
   three's dump (`dof_*` in `tests/nodes_display_wgsl.rs`). three lists the
   page in its e2e exception list, so it has no graded rung.
   `webgpu_postprocessing_dof` is in the native viewer. See `docs/nodes.md`
