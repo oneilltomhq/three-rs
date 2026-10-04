@@ -558,6 +558,10 @@ pub struct UniformContext<'a> {
     pub material_env_intensity: f64,
     /// `MeshStandardMaterial.aoMapIntensity`.
     pub material_ao_map_intensity: f64,
+    /// `material.lightMapIntensity`.
+    pub material_light_map_intensity: f64,
+    /// `PointsMaterial.size`.
+    pub material_point_size: f64,
     pub background_rotation: Matrix4,
     pub background_blurriness: f64,
     pub background_intensity: f64,
@@ -669,6 +673,8 @@ impl Default for UniformContext<'_> {
             env_rotation: Matrix4::identity(),
             material_env_intensity: 1.0,
             material_ao_map_intensity: 1.0,
+            material_light_map_intensity: 1.0,
+            material_point_size: 1.0,
             background_rotation: Matrix4::identity(),
             background_blurriness: 0.0,
             background_intensity: 1.0,
@@ -825,6 +831,10 @@ impl UniformContext<'_> {
                 UniformSource::MaterialAoMapIntensity => {
                     vec![self.material_ao_map_intensity as f32]
                 }
+                UniformSource::MaterialLightMapIntensity => {
+                    vec![self.material_light_map_intensity as f32]
+                }
+                UniformSource::MaterialPointSize => vec![self.material_point_size as f32],
                 UniformSource::MaterialShininess => vec![self.material_shininess as f32],
                 UniformSource::MaterialSpecular => vec![
                     self.material_specular.r as f32,

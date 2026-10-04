@@ -363,6 +363,18 @@ pub struct MeshBasicNodeMaterial {
     /// `MeshStandardMaterial.aoMapIntensity` — multiplies
     /// [`ao_map`](Self::ao_map)'s contribution.
     pub ao_map_intensity: f64,
+    /// `MeshStandardMaterial.lightMap` — read by
+    /// [`material_light_map`](crate::nodes::tsl::material_light_map) only:
+    /// three's `setupLightMap()` (an `IrradianceNode` in the lights list) is
+    /// not ported, so the material's own flow does not apply it.
+    pub light_map: Option<Texture>,
+    /// `MeshStandardMaterial.lightMapIntensity` — the
+    /// `materialLightMap` scale.
+    pub light_map_intensity: f64,
+    /// `MeshPhongMaterial.specularMap` — read by
+    /// [`material_specular_strength`](crate::nodes::tsl::material_specular_strength)
+    /// only; the Phong flow does not apply it.
+    pub specular_map: Option<Texture>,
     /// `MeshStandardMaterial.bumpMap` / `.bumpScale` — `BumpMapNode`.
     pub bump_map: Option<Texture>,
     /// `MeshStandardMaterial.bumpScale` — scales [`bump_map`](Self::bump_map)'s
@@ -476,6 +488,10 @@ pub struct MeshBasicNodeMaterial {
     /// material draws a [`Sprite`](crate::objects::Sprite) (instanced quads)
     /// rather than `Points`. Read by `setupVertexSprite()` only.
     pub size_node: Option<NodeRef>,
+    /// `PointsMaterial.size` — the `materialPointSize` uniform. Read by
+    /// [`material_point_size`](crate::nodes::tsl::material_point_size) only;
+    /// the points flow sizes a sprite by [`size_node`](Self::size_node).
+    pub size: f64,
     /// `SpriteMaterial.rotation` — the `materialRotation` uniform.
     pub rotation: f64,
     /// `LineBasicMaterial.linewidth` — the `materialLineWidth` uniform.
@@ -633,6 +649,9 @@ impl Default for MeshBasicNodeMaterial {
             gradient_map: None,
             ao_map: None,
             ao_map_intensity: 1.0,
+            light_map: None,
+            light_map_intensity: 1.0,
+            specular_map: None,
             bump_map: None,
             bump_scale: 1.0,
             // `MeshPhysicalMaterial` defaults.
@@ -677,6 +696,7 @@ impl Default for MeshBasicNodeMaterial {
             emissive_node: None,
             scale_node: None,
             size_node: None,
+            size: 1.0,
             rotation_node: None,
             rotation: 0.0,
             linewidth: 1.0,
@@ -747,6 +767,15 @@ impl MeshBasicNodeMaterial {
         // `setupAmbientOcclusion()` is only wired into the Standard flow.
         if self.ao_map.is_some() && !pbr {
             fields.push("aoMap");
+        }
+        // `setupLightMap()` and Phong's `specularMap` are not wired into any
+        // flow; the maps reach a shader only through `materialLightMap` /
+        // `materialSpecularStrength` in a node the application builds.
+        if self.light_map.is_some() {
+            fields.push("lightMap");
+        }
+        if self.specular_map.is_some() {
+            fields.push("specularMap");
         }
         // `MeshNormalNodeMaterial`'s flow packs the normal straight into the
         // output, with no `setupLighting()` step for the backdrop arm to sit

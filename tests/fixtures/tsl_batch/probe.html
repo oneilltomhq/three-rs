@@ -37,7 +37,12 @@
 				bitangentGeometry, bitangentLocal, bitangentWorld, tangentWorld, parallaxDirection, parallaxUV, cameraNormalMatrix, cameraNear, cameraFar,
 				modelDirection, modelPosition, modelScale, modelViewPosition, modelRadius, objectDirection, objectPosition, objectScale, objectViewPosition, objectRadius,
 				mediumpModelViewMatrix, highpModelViewMatrix, highpModelNormalViewMatrix, transformNormal, transformNormalToView, modelNormalMatrix, normalLocal,
-				reflectView, refractView, refractVector, clipSpace } = T;
+				reflectView, refractView, refractVector, clipSpace,
+				positionView, viewZToReversedOrthographicDepth, orthographicDepthToViewZ, viewZToReversedPerspectiveDepth, viewZToLogarithmicDepth, logarithmicDepthToViewZ,
+				blendBurn, blendDodge, blendScreen, blendColor, vibrance, cdl, cineonToneMapping, directionToFaceDirection,
+				getScreenPosition, getNormalFromDepth, cameraProjectionMatrix, cameraProjectionMatrixInverse, viewportCoordinate, viewportUV, screenSize, depthPass,
+				materialNormal, materialClearcoatNormal, materialSpecularStrength, materialLightMap, materialAO, materialPointSize, pointWidth,
+				lightProjectionUV, directPointLight, getParallaxCorrectNormal } = T;
 
 			const map = new THREE.DataTexture( new Uint8Array( 4 * 16 * 16 ), 16, 16 );
 			map.minFilter = THREE.LinearMipmapLinearFilter;
@@ -54,9 +59,15 @@
 			tangentPlane.computeTangents();
 			const target = new THREE.Object3D();
 			target.position.set( 1, 2, 3 );
+			const depthMap = new THREE.DepthTexture( 16, 16 );
+			const spot = new THREE.SpotLight( 0xffffff, 1 );
+			const passScene = new THREE.Scene();
+			passScene.add( new THREE.Mesh( new THREE.PlaneGeometry( 1, 1 ), new THREE.MeshBasicNodeMaterial() ) );
+			const passCamera = new THREE.PerspectiveCamera( 50, 1, 0.1, 100 );
+			passCamera.position.set( 0, 0, 5 );
 
 			const probes = [];
-			const probe = ( name, build, geometry = null ) => probes.push( [ name, build, geometry ] );
+			const probe = ( name, build, geometry = null, configure = null ) => probes.push( [ name, build, geometry, configure ] );
 
 			const x = () => uv().x;
 			const y = () => uv().y;
@@ -128,6 +139,33 @@
 			probe( 'reflect_refract', () => vec4( reflectView.add( refractView ).add( refractVector ), 1 ) );
 			probe( 'clip_space', () => clipSpace.div( clipSpace.w ) );
 
+			probe( 'depth_conversions', () => vec4( viewZToReversedOrthographicDepth( positionView.z, cameraNear, cameraFar ), orthographicDepthToViewZ( x(), cameraNear, cameraFar ), viewZToReversedPerspectiveDepth( positionView.z, cameraNear, cameraFar ), 1 ) );
+			probe( 'logarithmic_depth', () => vec4( viewZToLogarithmicDepth( positionView.z, cameraNear, cameraFar ), logarithmicDepthToViewZ( x(), cameraNear, cameraFar ), 0, 1 ) );
+			probe( 'blend_modes', () => {
+				const a = vec3( uv(), 0.5 );
+				const b = vec3( y(), 0.25, x() );
+				return vec4( blendBurn( a, b ).add( blendDodge( a, b ) ).add( blendScreen( a, b ) ), 1 ).add( blendColor( vec4( a, x() ), vec4( b, y() ) ) );
+			} );
+			probe( 'vibrance', () => vec4( vibrance( vec3( uv(), 0.5 ), x() ).add( vibrance( vec3( y(), x(), 0.25 ) ) ), 1 ) );
+			probe( 'cdl', () => cdl( vec4( uv(), 0.5, 1 ), vec3( 1.1, 1.0, 0.9 ), vec3( 0.1 ), vec3( 1.2 ), float( 0.9 ) ).add( cdl( vec4( y(), x(), 0.25, 1 ) ) ) );
+			probe( 'cineon_tone_mapping', () => vec4( cineonToneMapping( vec3( uv(), 0.5 ), float( 1.2 ) ), 1 ) );
+			probe( 'direction_to_face_direction', () => vec4( directionToFaceDirection( vec3( uv(), 1 ) ), 1 ), null, ( m ) => { m.side = THREE.DoubleSide; } );
+			probe( 'screen_position', () => vec4( getScreenPosition( positionView, cameraProjectionMatrix ), 0, 1 ) );
+			probe( 'normal_from_depth', () => vec4( getNormalFromDepth( uv(), depthMap, cameraProjectionMatrixInverse ), 1 ) );
+			probe( 'viewport_coords', () => vec4( viewportUV, viewportCoordinate.div( screenSize ) ) );
+			probe( 'material_defaults', () => vec4( materialNormal.add( materialClearcoatNormal ).add( materialLightMap ), materialAO.add( materialSpecularStrength ) ) );
+			probe( 'material_point_size', () => vec4( materialPointSize, 0.5, 0.25, 1 ), null, ( m ) => { m.size = 2; } );
+			probe( 'point_width', () => vec4( pointWidth, 0, 0, 1 ) );
+			probe( 'material_maps', () => vec4( materialLightMap, materialAO.add( materialSpecularStrength ) ), null, ( m ) => { m.aoMap = map; m.specularMap = map; m.lightMap = map; } );
+			probe( 'material_normal_maps', () => vec4( materialNormal.add( materialClearcoatNormal ), 1 ), null, ( m ) => { m.normalMap = map; m.normalMapType = THREE.TangentSpaceNormalMap; m.normalScale = new THREE.Vector2( 1, 1 ); m.clearcoatNormalMap = map; m.clearcoatNormalScale = new THREE.Vector2( 1, 1 ); } );
+			probe( 'light_projection_uv', () => vec4( lightProjectionUV( spot ).add( lightProjectionUV( spot, vec4( positionView, 1 ) ) ), 1 ) );
+			probe( 'direct_point_light', () => {
+				const { lightDirection, lightColor } = directPointLight( { color: vec3( 1, 0.5, 0.25 ), lightVector: vec3( uv(), 1 ), cutoffDistance: x(), decayExponent: float( 2 ) } );
+				return vec4( lightDirection.add( lightColor ), 1 );
+			} );
+			probe( 'parallax_correct_normal', () => vec4( getParallaxCorrectNormal( normalWorld, vec3( 200, 100, 100 ), vec3( 0, - 50, 0 ) ), 1 ) );
+			probe( 'depth_pass', () => vec4( vec3( depthPass( passScene, passCamera ) ), 1 ) );
+
 			init();
 
 			async function init() {
@@ -139,10 +177,11 @@
 
 				const geometry = new THREE.PlaneGeometry( 0.5, 0.5 );
 
-				probes.forEach( ( [ name, build, probeGeometry ], index ) => {
+				probes.forEach( ( [ name, build, probeGeometry, configure ], index ) => {
 
 					const material = new THREE.MeshBasicNodeMaterial();
 					material.name = name;
+					if ( configure ) configure( material );
 					material.fragmentNode = build();
 					const mesh = new THREE.Mesh( probeGeometry || geometry, material );
 					mesh.position.x = ( index % 6 ) - 2.5;

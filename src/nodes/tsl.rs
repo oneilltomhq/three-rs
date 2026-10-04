@@ -20,7 +20,7 @@ use super::node::{
     LiveValue, Node, NodeRef, Object3DScope, SampleMode, SettableValue, Type, UniformGroup,
     UniformNode, UniformSource, VarDef, VaryingDef,
 };
-use crate::materials::Side;
+use crate::materials::{MeshBasicNodeMaterial, Side};
 use crate::math::{Color, Matrix3};
 use crate::textures::{
     CubeDepthTexture, CubeTexture, DataArrayTexture, DataTexture, DepthTexture, Texture,
@@ -214,6 +214,21 @@ pub(crate) fn with_material_side<R>(side: Side, f: impl FnOnce() -> R) -> R {
 /// dump multiplies three vectors by the same `( f32( isFront ) * 2 - 1 )`.
 fn negate_on_back_side(vector: NodeRef) -> NodeRef {
     match current_context(|cx| cx.material_side) {
+        Side::Front => vector,
+        Side::Back => vector.mul(float(-1.0)),
+        Side::Double => vector.mul(face_direction()),
+    }
+}
+
+/// `directionToFaceDirection( vector )` — `FrontFacingNode.js`, the r185
+/// deprecated name of `negateOnBackSide()`: `vector` as is for a front-sided
+/// material, negated for a back-sided one, and scaled by `faceDirection` for
+/// a double-sided one.
+///
+/// Three reads `builder.material.side` while it builds; the port builds the
+/// node before any material is in scope, so the caller passes the side.
+pub fn direction_to_face_direction(vector: NodeRef, side: Side) -> NodeRef {
+    match side {
         Side::Front => vector,
         Side::Back => vector.mul(float(-1.0)),
         Side::Double => vector.mul(face_direction()),
@@ -910,6 +925,130 @@ pub fn get_view_position(
     view_space_position.xyz().div(view_space_position.w())
 }
 
+/// `getScreenPosition( viewPosition, projectionMatrix )` —
+/// `PostProcessingUtils.js`: the screen uv a view-space position projects
+/// to, `y` flipped for WebGPU. The uv before the flip is a `toVar()`.
+pub fn get_screen_position(view_position: NodeRef, projection_matrix: NodeRef) -> NodeRef {
+    let sample_clip_pos = projection_matrix.mul(vec4_join(vec![view_position, float(1.0)]));
+    let sample_uv = to_var(
+        None,
+        sample_clip_pos
+            .xy()
+            .div(sample_clip_pos.w())
+            .mul(0.5)
+            .add(0.5),
+    );
+    vec2_join(vec![sample_uv.x(), sample_uv.y().one_minus()])
+}
+
+/// `getNormalFromDepth( uv, depthTexture, projectionMatrixInverse )` —
+/// `PostProcessingUtils.js`: a view-space normal reconstructed from a depth
+/// texture, each axis' derivative taken from whichever neighbour pair is the
+/// more continuous (the 2-tap extrapolation test of
+/// `https://atyuwen.github.io/posts/normal-reconstruction/`).
+pub fn get_normal_from_depth(
+    uv: NodeRef,
+    depth_texture: &DepthTexture,
+    projection_matrix_inverse: NodeRef,
+) -> NodeRef {
+    let size = texture_size(TextureSource::Depth(depth_texture.clone()), int(0));
+    let p = to_var(None, uv.clone().mul(size.clone()).to(Type::IVec2));
+    let load = |coord: NodeRef| to_var(None, depth_texture_load(depth_texture, coord));
+    let c0 = load(p.clone());
+    let l2 = load(p.clone().sub(ivec2(2, 0)));
+    let l1 = load(p.clone().sub(ivec2(1, 0)));
+    let r1 = load(p.clone().add(ivec2(1, 0)));
+    let r2 = load(p.clone().add(ivec2(2, 0)));
+    let b2 = load(p.clone().add(ivec2(0, 2)));
+    let b1 = load(p.clone().add(ivec2(0, 1)));
+    let t1 = load(p.clone().sub(ivec2(0, 1)));
+    let t2 = load(p.sub(ivec2(0, 2)));
+    let delta = |near: &NodeRef, far: NodeRef| {
+        to_var(
+            None,
+            abs(float(2.0).mul(near.clone()).sub(far).sub(c0.clone())),
+        )
+    };
+    let dl = delta(&l1, l2.clone());
+    let dr = delta(&r1, r2.clone());
+    let db = delta(&b1, b2.clone());
+    let dt = delta(&t1, t2.clone());
+    let ce = to_var(
+        None,
+        get_view_position(uv.clone(), c0.clone(), projection_matrix_inverse.clone()),
+    );
+    let at = |coord: NodeRef, depth: NodeRef| {
+        get_view_position(coord, depth, projection_matrix_inverse.clone())
+    };
+    let texel_x = || vec2_join(vec![float(1.0).div(size.x()), float(0.0)]);
+    let texel_y = || vec2_join(vec![float(0.0), float(1.0).div(size.y())]);
+    let dpdx = dl.clone().less_than(dr.clone()).select(
+        ce.clone().sub(at(uv.clone().sub(texel_x()), l1.clone())),
+        ce.clone()
+            .negate()
+            .add(at(uv.clone().add(texel_x()), r1.clone())),
+    );
+    let dpdy = db.clone().less_than(dt.clone()).select(
+        ce.clone().sub(at(uv.clone().add(texel_y()), b1.clone())),
+        ce.clone().negate().add(at(uv.sub(texel_y()), t1.clone())),
+    );
+    // The `toVar()`s are declared in the JS order, not at first read.
+    block(
+        vec![p, c0, l2, l1, r1, r2, b2, b1, t1, t2, dl, dr, db, dt, ce],
+        cross(dpdx, dpdy).normalize(),
+    )
+}
+
+/// `getParallaxCorrectNormal( normal, cubeSize, cubePos )` —
+/// `getParallaxCorrectNormal.js`, box-projected cube mapping: `normal` bent
+/// so that a cube map captured at `cubePos` reads as the inside of a box of
+/// `cubeSize` around it, from `positionWorld`.
+pub fn get_parallax_correct_normal(
+    normal: NodeRef,
+    cube_size: NodeRef,
+    cube_pos: NodeRef,
+) -> NodeRef {
+    let n_dir = to_var(None, normal.normalize());
+    let toward = |half: f64| {
+        to_var(
+            None,
+            cube_size
+                .clone()
+                .mul(half)
+                .add(cube_pos.clone())
+                .sub(position_world())
+                .div(n_dir.clone()),
+        )
+    };
+    let rbmax = toward(0.5);
+    let rbmin = toward(-0.5);
+    let rbminmax = to_var(None, vec3(0.0, 0.0, 0.0));
+    let axis = |c: &'static str| {
+        rbminmax.swizzle(c).assign(
+            n_dir
+                .swizzle(c)
+                .greater_than(float(0.0))
+                .select(rbmax.swizzle(c), rbmin.swizzle(c)),
+        )
+    };
+    let correction = to_var(None, rbminmax.x().min(rbminmax.y()).min(rbminmax.z()));
+    let box_intersection = to_var(
+        None,
+        position_world().add(n_dir.clone().mul(correction.clone())),
+    );
+    // The `toVar()`s are declared in the JS order, not at first read.
+    let axes = vec![axis("x"), axis("y"), axis("z")];
+    let mut statements = vec![
+        n_dir.clone(),
+        rbmax.clone(),
+        rbmin.clone(),
+        rbminmax.clone(),
+    ];
+    statements.extend(axes);
+    statements.extend([correction, box_intersection.clone()]);
+    block(statements, box_intersection.sub(cube_pos))
+}
+
 /// `viewZToOrthographicDepth( viewZ, near, far )` — `ViewportDepthNode.js`:
 /// `( viewZ + near ) / ( near - far )`, the view-space z mapped to `[0,1]`
 /// between the clip planes.
@@ -920,6 +1059,70 @@ pub fn view_z_to_orthographic_depth(
 ) -> NodeRef {
     let (near, far) = (near.into(), far.into());
     view_z.into().add(near.clone()).div(near.sub(far))
+}
+
+/// `viewZToReversedOrthographicDepth( viewZ, near, far )` —
+/// `ViewportDepthNode.js`: `( viewZ + far ) / ( far - near )`, the
+/// orthographic depth for a reversed depth buffer.
+pub fn view_z_to_reversed_orthographic_depth(
+    view_z: impl Into<NodeRef>,
+    near: impl Into<NodeRef>,
+    far: impl Into<NodeRef>,
+) -> NodeRef {
+    let (near, far) = (near.into(), far.into());
+    view_z.into().add(far.clone()).div(far.sub(near))
+}
+
+/// `orthographicDepthToViewZ( depth, near, far )` — `ViewportDepthNode.js`
+/// with `reversedDepthBuffer` off: `( near - far ) * depth - near`.
+pub fn orthographic_depth_to_view_z(
+    depth: impl Into<NodeRef>,
+    near: impl Into<NodeRef>,
+    far: impl Into<NodeRef>,
+) -> NodeRef {
+    let near = near.into();
+    near.clone().sub(far.into()).mul(depth.into()).sub(near)
+}
+
+/// `viewZToReversedPerspectiveDepth( viewZ, near, far )` —
+/// `ViewportDepthNode.js`: `near * ( viewZ + far ) / ( viewZ * ( near - far
+/// ) )`.
+pub fn view_z_to_reversed_perspective_depth(
+    view_z: impl Into<NodeRef>,
+    near: impl Into<NodeRef>,
+    far: impl Into<NodeRef>,
+) -> NodeRef {
+    let (view_z, near, far) = (view_z.into(), near.into(), far.into());
+    near.clone()
+        .mul(view_z.clone().add(far.clone()))
+        .div(view_z.mul(near.sub(far)))
+}
+
+/// `viewZToLogarithmicDepth( viewZ, near, far )` — `ViewportDepthNode.js`:
+/// Ulrich's logarithmic depth with `K = 1`, `log2( -viewZ / near ) / log2(
+/// far / near )`, `near` clamped to `1e-6` in a `toVar()`.
+pub fn view_z_to_logarithmic_depth(
+    view_z: impl Into<NodeRef>,
+    near: impl Into<NodeRef>,
+    far: impl Into<NodeRef>,
+) -> NodeRef {
+    let near = to_var(None, near.into().max(1e-6));
+    let numerator = log2(view_z.into().negate().div(near.clone()));
+    let denominator = log2(far.into().div(near));
+    numerator.div(denominator)
+}
+
+/// `logarithmicDepthToViewZ( depth, near, far )` — `ViewportDepthNode.js`:
+/// the inverse of [`view_z_to_logarithmic_depth`], `-( e ^ ( depth * log(
+/// far / near ) ) * near )`.
+pub fn logarithmic_depth_to_view_z(
+    depth: impl Into<NodeRef>,
+    near: impl Into<NodeRef>,
+    far: impl Into<NodeRef>,
+) -> NodeRef {
+    let near = near.into();
+    let exponent = depth.into().mul(log(far.into().div(near.clone())));
+    float(std::f64::consts::E).pow(exponent).mul(near).negate()
 }
 
 /// `linearDepth()` — `ViewportDepthNode.LINEAR_DEPTH` with no value: the
@@ -1208,13 +1411,69 @@ pub(crate) fn light_penumbra_cos(index: usize) -> NodeRef {
 }
 
 /// `lightShadowMatrix( light )`.
+///
+/// One node per light, as three caches it in `light.userData.shadowMatrix`:
+/// two reads of the same light's matrix in one shader share a uniform.
 pub fn shadow_matrix(index: usize) -> NodeRef {
-    uniform(
-        UniformSource::ShadowMatrix(index),
-        Type::Mat4,
-        UniformGroup::Render,
-        None,
-    )
+    thread_local! {
+        static CACHE: RefCell<HashMap<usize, NodeRef>> = RefCell::new(HashMap::new());
+    }
+    CACHE.with(|c| {
+        c.borrow_mut()
+            .entry(index)
+            .or_insert_with(|| {
+                outside_sub_build(|| {
+                    uniform(
+                        UniformSource::ShadowMatrix(index),
+                        Type::Mat4,
+                        UniformGroup::Render,
+                        None,
+                    )
+                })
+            })
+            .clone()
+    })
+}
+
+/// `lightProjectionUV( light, position )` — `Lights.js`: `position` through
+/// the light's shadow matrix, perspective-divided. Three's `position`
+/// defaults to `positionWorld`; pass it. The light is named by its index,
+/// as for [`shadow_matrix`].
+pub fn light_projection_uv(light: usize, position: NodeRef) -> NodeRef {
+    let position = if position.ty() == Type::Vec3 {
+        vec4_join(vec![position, float(1.0)])
+    } else {
+        position
+    };
+    let spot_light_coord = shadow_matrix(light).mul(position);
+    spot_light_coord.xyz().div(spot_light_coord.w())
+}
+
+/// `directPointLight( { color, lightVector, cutoffDistance, decayExponent } )`
+/// — `PointLightNode.js`: the `( lightDirection, lightColor )` pair a point
+/// light contributes, `lightColor` attenuated by
+/// `getDistanceAttenuation()`.
+pub fn direct_point_light(
+    color: NodeRef,
+    light_vector: NodeRef,
+    cutoff_distance: NodeRef,
+    decay_exponent: NodeRef,
+) -> (NodeRef, NodeRef) {
+    use crate::materials::phong::{
+        distance_attenuation_no_cutoff, distance_attenuation_with_cutoff,
+    };
+    // `getDistanceAttenuation` is an `If`/`Else`; three re-emits the
+    // `length()` in each branch, so each branch gets its own node here
+    // (one shared node would be hoisted into a var per scope).
+    let attenuation = cutoff_distance.greater_than(0.0).select(
+        distance_attenuation_with_cutoff(
+            length(light_vector.clone()),
+            cutoff_distance,
+            decay_exponent.clone(),
+        ),
+        distance_attenuation_no_cutoff(length(light_vector.clone()), decay_exponent),
+    );
+    (light_vector.normalize(), color.mul(attenuation))
 }
 
 /// `PointShadowNode`'s shadow camera clipping planes —
@@ -1559,15 +1818,17 @@ pub fn normal_map(node: impl Into<NodeRef>) -> NodeRef {
 /// no-scale [`normal_map`] reads it once and does not.
 pub fn normal_map_scaled(node: impl Into<NodeRef>, scale: NodeRef) -> NodeRef {
     let texel = node.into();
-    in_sub_build("NORMAL", || {
-        let unpacked = to_var(None, texel.mul(2.0).sub(1.0));
-        tbn_view_matrix()
-            .mul(vec3_join(vec![
-                unpacked.xy().mul(scale.clone()),
-                unpacked.z(),
-            ]))
-            .normalize()
-    })
+    in_sub_build("NORMAL", || normal_map_scaled_unlayered(texel, scale))
+}
+
+/// [`normal_map_scaled`] outside the `NORMAL` layer — `NormalMapNode` as it
+/// builds in a graph `setupNormal()` does not wrap, such as a
+/// `fragmentNode`'s [`material_normal`].
+fn normal_map_scaled_unlayered(texel: NodeRef, scale: NodeRef) -> NodeRef {
+    let unpacked = to_var(None, texel.mul(2.0).sub(1.0));
+    tbn_view_matrix()
+        .mul(vec3_join(vec![unpacked.xy().mul(scale), unpacked.z()]))
+        .normalize()
 }
 
 /// `sqrt( x )`.
@@ -2334,6 +2595,92 @@ accessor!(
     )
 );
 accessor!(
+    /// `materialLightMapIntensity` — the `getFloat( 'lightMapIntensity' )`
+    /// inside `MaterialNode.LIGHT_MAP`.
+    pub(crate) material_light_map_intensity,
+    uniform(
+        UniformSource::MaterialLightMapIntensity,
+        Type::F32,
+        UniformGroup::Object,
+        None
+    )
+);
+accessor!(
+    /// `materialPointSize` — `PointsMaterial.size`, read from
+    /// [`MeshBasicNodeMaterial::size`].
+    material_point_size,
+    uniform(
+        UniformSource::MaterialPointSize,
+        Type::F32,
+        UniformGroup::Object,
+        None
+    )
+);
+
+// `MaterialNode`'s map-dependent scopes. Three resolves them against
+// `builder.material` while the graph builds; the port builds a graph before
+// it knows its material, so these take the material and read its maps then.
+// Build the node from the material it is set on.
+
+/// `materialNormal` — `MaterialNode.NORMAL`: the material's `normalMap`
+/// (scaled by `normalScale`), else its `bumpMap`, else `normalView`.
+///
+/// Built as three builds it in a `fragmentNode`: outside the `NORMAL`
+/// sub-build `setupNormal()` opens, so the TBN frame's vars are unprefixed.
+pub fn material_normal(material: &MeshBasicNodeMaterial) -> NodeRef {
+    with_material_side(material.side, || {
+        match (&material.normal_map, &material.bump_map) {
+            (Some(map), _) => normal_map_scaled_unlayered(texture(map), material_normal_scale()),
+            (None, Some(bump)) => {
+                bump_map_unlayered(|texture| texture(bump).x(), material_bump_scale())
+            }
+            (None, None) => normal_view(),
+        }
+    })
+}
+
+/// `materialClearcoatNormal` — `MaterialNode.CLEARCOAT_NORMAL`: the
+/// material's `clearcoatNormalMap` (scaled by `clearcoatNormalScale`), else
+/// `normalView`.
+pub fn material_clearcoat_normal(material: &MeshBasicNodeMaterial) -> NodeRef {
+    with_material_side(material.side, || match &material.clearcoat_normal_map {
+        Some(map) => normal_map_scaled_unlayered(texture(map), material_clearcoat_normal_scale()),
+        None => normal_view(),
+    })
+}
+
+/// `materialSpecularStrength` — `MaterialNode.SPECULAR_STRENGTH`: the
+/// `specularMap`'s red channel, else `1`.
+pub fn material_specular_strength(material: &MeshBasicNodeMaterial) -> NodeRef {
+    match &material.specular_map {
+        Some(map) => texture(map).x(),
+        None => float(1.0),
+    }
+}
+
+/// `materialLightMap` — `MaterialNode.LIGHT_MAP`: the `lightMap`'s colour
+/// times `lightMapIntensity`, else black.
+pub fn material_light_map(material: &MeshBasicNodeMaterial) -> NodeRef {
+    match &material.light_map {
+        Some(map) => texture(map).rgb().mul(material_light_map_intensity()),
+        None => vec3(0.0, 0.0, 0.0),
+    }
+}
+
+/// `materialAO` — `MaterialNode.AO`: `( aoMap.r - 1 ) * aoMapIntensity + 1`,
+/// else `1`.
+pub fn material_ao(material: &MeshBasicNodeMaterial) -> NodeRef {
+    match &material.ao_map {
+        Some(map) => texture(map)
+            .x()
+            .sub(float(1.0))
+            .mul(material_ao_map_intensity())
+            .add(float(1.0)),
+        None => float(1.0),
+    }
+}
+
+accessor!(
     /// `materialEnvIntensity` — `MeshStandardMaterial.envMapIntensity`.
     material_env_intensity,
     uniform(
@@ -2446,6 +2793,21 @@ accessor!(
     /// in physical pixels: `fragCoord.xy`, y down, as WebGPU has it.
     screen_coordinate,
     frag_coord().xy()
+);
+accessor!(
+    /// `viewportCoordinate` — `ScreenNode.js`: `screenCoordinate.sub(
+    /// viewport.xy )`, the fragment's position in physical pixels relative
+    /// to the viewport rectangle's corner.
+    viewport_coordinate,
+    screen_coordinate().sub(viewport().xy())
+);
+accessor!(
+    /// `viewportUV` — `ScreenNode.js`: `viewportCoordinate.div( viewportSize
+    /// )`, normalised into `[0,1]` over the viewport rectangle. Three's
+    /// `viewportSize` is `viewport.zw`, which is what this divides by
+    /// (the port's [`viewport_size`] is the target's size).
+    viewport_uv,
+    viewport_coordinate().div(viewport().zw())
 );
 accessor!(
     /// `cameraNear` — `uniform( 'float' ).setName( 'cameraNear' )`, in the
@@ -3260,6 +3622,10 @@ prop!(
 prop!(
     /// `emissive` — the `EmissiveColor` property.
     emissive_color, "EmissiveColor", Type::Vec3);
+prop!(
+    /// `pointWidth` — `PropertyNode.js`' `float` property `pointWidth`, a
+    /// `var<private>` a graph assigns and reads; nothing in three writes it.
+    point_width, "pointWidth", Type::F32);
 /// `PropertyNode`'s `ambientOcclusion` — the **property** three names
 /// `AmbientOcclusion`, which `NodeMaterial.setupAmbientOcclusion()` writes from
 /// `materialAO` and the lighting model's own `ambientOcclusion` *var* then
@@ -3798,7 +4164,16 @@ pub fn bump_map_with(
     height: impl Fn(&dyn Fn(&Texture) -> NodeRef) -> NodeRef,
     scale: NodeRef,
 ) -> NodeRef {
-    in_sub_build("NORMAL", || {
+    in_sub_build("NORMAL", || bump_map_unlayered(height, scale))
+}
+
+/// [`bump_map_with`] outside the `NORMAL` layer — see
+/// [`normal_map_scaled_unlayered`].
+fn bump_map_unlayered(
+    height: impl Fn(&dyn Fn(&Texture) -> NodeRef) -> NodeRef,
+    scale: NodeRef,
+) -> NodeRef {
+    {
         let tap = |coord: NodeRef| {
             height(&|map: &Texture| {
                 texture_uv(
@@ -3825,7 +4200,7 @@ pub fn bump_map_with(
         let f_det = v_sigma_x.dot(r1.clone()).mul(face_direction());
         let v_grad = sign(f_det.clone()).mul(dhdxy.clone().x().mul(r1).add(dhdxy.y().mul(r2)));
         abs(f_det).mul(surf_norm).sub(v_grad).normalize()
-    })
+    }
 }
 
 /// `texture( map, uv ).grad( gradX, gradY )` — a 2-D tap with explicit
@@ -5502,6 +5877,152 @@ pub fn blend_overlay(base: NodeRef, blend: NodeRef) -> NodeRef {
     call(&def, vec![base, blend])
 }
 
+/// `blendBurn( base, blend )` — `BlendModes.js`, a `vec3` `Fn()` with a
+/// layout: `1 - min( 1, ( 1 - base ) / blend )`, darkening `base` by
+/// `blend`.
+pub fn blend_burn(base: NodeRef, blend: NodeRef) -> NodeRef {
+    thread_local! { static CELL: Lazy<Rc<FnDef>> = const { Lazy::new() }; }
+    let def = CELL.with(|c| {
+        c.get(|| {
+            shader_fn(
+                Some("blendBurn"),
+                vec![("base", Type::Vec3), ("blend", Type::Vec3)],
+                Type::Vec3,
+                |args| {
+                    let (base, blend) = (args[0].clone(), args[1].clone());
+                    math(
+                        "min",
+                        vec![float(1.0), base.one_minus().div(blend)],
+                        Type::Vec3,
+                    )
+                    .one_minus()
+                },
+            )
+        })
+    });
+    call(&def, vec![base, blend])
+}
+
+/// `blendDodge( base, blend )` — `BlendModes.js`, a `vec3` `Fn()` with a
+/// layout: `min( base / ( 1 - blend ), 1 )`, lightening `base` by `blend`.
+pub fn blend_dodge(base: NodeRef, blend: NodeRef) -> NodeRef {
+    thread_local! { static CELL: Lazy<Rc<FnDef>> = const { Lazy::new() }; }
+    let def = CELL.with(|c| {
+        c.get(|| {
+            shader_fn(
+                Some("blendDodge"),
+                vec![("base", Type::Vec3), ("blend", Type::Vec3)],
+                Type::Vec3,
+                |args| {
+                    let (base, blend) = (args[0].clone(), args[1].clone());
+                    base.div(blend.one_minus()).min(float(1.0))
+                },
+            )
+        })
+    });
+    call(&def, vec![base, blend])
+}
+
+/// `blendScreen( base, blend )` — `BlendModes.js`, a `vec3` `Fn()` with a
+/// layout: `1 - ( 1 - base ) * ( 1 - blend )`.
+pub fn blend_screen(base: NodeRef, blend: NodeRef) -> NodeRef {
+    thread_local! { static CELL: Lazy<Rc<FnDef>> = const { Lazy::new() }; }
+    let def = CELL.with(|c| {
+        c.get(|| {
+            shader_fn(
+                Some("blendScreen"),
+                vec![("base", Type::Vec3), ("blend", Type::Vec3)],
+                Type::Vec3,
+                |args| {
+                    let (base, blend) = (args[0].clone(), args[1].clone());
+                    base.one_minus().mul(blend.one_minus()).one_minus()
+                },
+            )
+        })
+    });
+    call(&def, vec![base, blend])
+}
+
+/// `blendColor( base, blend )` — `BlendModes.js`, a `vec4` `Fn()` with a
+/// layout: `blend` over `base` as `THREE.NormalBlending` does, both with
+/// non-premultiplied alpha.
+pub fn blend_color(base: NodeRef, blend: NodeRef) -> NodeRef {
+    thread_local! { static CELL: Lazy<Rc<FnDef>> = const { Lazy::new() }; }
+    let def = CELL.with(|c| {
+        c.get(|| {
+            shader_fn(
+                Some("blendColor"),
+                vec![("base", Type::Vec4), ("blend", Type::Vec4)],
+                Type::Vec4,
+                |args| {
+                    let (base, blend) = (args[0].clone(), args[1].clone());
+                    let out_alpha = blend.a().add(base.a().mul(blend.a().one_minus()));
+                    vec4_join(vec![
+                        blend
+                            .rgb()
+                            .mul(blend.a())
+                            .add(base.rgb().mul(base.a()).mul(blend.a().one_minus()))
+                            .div(out_alpha.clone()),
+                        out_alpha,
+                    ])
+                },
+            )
+        })
+    });
+    call(&def, vec![base, blend])
+}
+
+/// `vibrance( color, adjustment )` — `ColorAdjustment.js`, a `Fn()` with no
+/// layout, so inlined: saturation that leaves already-saturated colours
+/// alone. Three's `adjustment` defaults to `float( 0 )`; pass it.
+pub fn vibrance(color: NodeRef, adjustment: impl Into<NodeRef>) -> NodeRef {
+    let average = color.x().add(color.y()).add(color.z()).div(float(3.0));
+    let mx = color.x().max(color.y().max(color.z()));
+    let amt = mx
+        .clone()
+        .sub(average)
+        .mul(adjustment.into())
+        .mul(float(-3.0));
+    mix(color.rgb(), mx, amt).max(float(0.0))
+}
+
+/// `cdl( color, slope, offset, power, saturation, luminanceCoefficients )` —
+/// `ColorAdjustment.js`, the ASC Color Decision List v1.2 grade, a `Fn()`
+/// with no layout, so inlined. Three's defaults are `slope = vec3( 1 )`,
+/// `offset = vec3( 0 )`, `power = vec3( 1 )`, `saturation = float( 1 )` and
+/// the Rec. 709 coefficients `vec3( 0.2126, 0.7152, 0.0722 )`; pass them.
+pub fn cdl(
+    color: NodeRef,
+    slope: NodeRef,
+    offset: NodeRef,
+    power: NodeRef,
+    saturation: impl Into<NodeRef>,
+    luminance_coefficients: NodeRef,
+) -> NodeRef {
+    let luma = color.rgb().dot(luminance_coefficients);
+    let v = to_var_intent(color.rgb().mul(slope).add(offset).max(float(0.0)));
+    // Three's `pv = v.pow( power )` is one node read in three `If` scopes, and
+    // its builder re-emits it in each; a fresh `pow` per channel does the
+    // same here, where one shared node would be promoted to a var per scope.
+    let channel = |c: &'static str| {
+        if_then(
+            v.swizzle(c).greater_than(0.0),
+            vec![v.swizzle(c).assign(v.clone().pow(power.clone()).swizzle(c))],
+        )
+    };
+    let statements = vec![
+        channel("x"),
+        channel("y"),
+        channel("z"),
+        v.assign(
+            luma.clone()
+                .add(v.clone().sub(luma).mul(saturation.into()))
+                .max(float(0.0)),
+        ),
+    ];
+    block(statements, vec4_join(vec![v.rgb(), color.a()]))
+}
+
 /// `oscSine( t )` — `Oscillators.js`: `t.add( 0.75 ).mul( PI2 ).sin().mul( 0.5 ).add( 0.5 )`.
 pub fn osc_sine(t: NodeRef) -> NodeRef {
     t.add(float(0.75))
@@ -5552,6 +6073,37 @@ pub fn linear_tone_mapping(color: NodeRef, exposure: NodeRef) -> NodeRef {
                         .clone()
                         .mul(args[1].clone())
                         .clamp(float(0.0), float(1.0))
+                },
+            )
+        })
+    });
+    call(&def, vec![color, exposure])
+}
+
+/// `cineonToneMapping` — `ToneMappingFunctions.js`, emitted as a real `fn`:
+/// Hejl and Burgess-Dawson's filmic operator, gamma 2.2 baked in.
+pub fn cineon_tone_mapping(color: NodeRef, exposure: NodeRef) -> NodeRef {
+    thread_local! { static CELL: Lazy<Rc<FnDef>> = const { Lazy::new() }; }
+    let def = CELL.with(|c| {
+        c.get(|| {
+            shader_fn(
+                Some("cineonToneMapping"),
+                vec![("color", Type::Vec3), ("exposure", Type::F32)],
+                Type::Vec3,
+                |args| {
+                    let color = args[0]
+                        .clone()
+                        .mul(args[1].clone())
+                        .sub(float(0.004))
+                        .max(float(0.0));
+                    let a = color
+                        .clone()
+                        .mul(color.clone().mul(float(6.2)).add(float(0.5)));
+                    let b = color
+                        .clone()
+                        .mul(color.mul(float(6.2)).add(float(1.7)))
+                        .add(float(0.06));
+                    a.div(b).pow(float(2.2))
                 },
             )
         })

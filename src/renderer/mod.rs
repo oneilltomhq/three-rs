@@ -32,7 +32,7 @@ pub use cube_render_target::CubeRenderTarget;
 pub use direct_render_pipeline::DirectRenderPipeline;
 pub use info::{BuildCounts, ComputeCounts, Info, MemoryCounts, RenderCounts};
 use mipmap::{create_mipmap_pipeline, MipmapShader};
-pub use pass::{pass, CameraRef, PassNode, PassOptions, SceneRef, DEPTH_ATTACHMENT};
+pub use pass::{depth_pass, pass, CameraRef, PassNode, PassOptions, SceneRef, DEPTH_ATTACHMENT};
 pub use pmrem::PmremGenerator;
 pub(crate) use programs::RenderState;
 use programs::{
@@ -3413,6 +3413,8 @@ impl Renderer {
                 material_attenuation_distance: item.material.attenuation_distance,
                 material_attenuation_color: item.material.attenuation_color,
                 material_ao_map_intensity: item.material.ao_map_intensity,
+                material_light_map_intensity: item.material.light_map_intensity,
+                material_point_size: item.material.size,
                 tone_mapping_exposure: self.tone_mapping_exposure,
                 material_line_width: item.material.linewidth,
                 // `ScreenNode.update()`: `SIZE` is the bound target's
