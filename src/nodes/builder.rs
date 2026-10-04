@@ -3134,6 +3134,10 @@ impl NodeBuilder {
     /// `NodeBuilder.build()`: analyse both stages, generate fragment then
     /// vertex, and assemble the vertex and fragment shader strings.
     pub fn build(mut self, flow: &MaterialFlow) -> NodeProgram {
+        // `builder.context.clipSpace = vertexNode` — what `clipSpace` reads.
+        let _clip_space = push_context(|cx| {
+            cx.extra.insert("clipSpace", flow.position.clone());
+        });
         for stmt in &flow.pre_vertex_statements {
             self.analyze(stmt);
         }

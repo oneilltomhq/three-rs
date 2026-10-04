@@ -3381,6 +3381,7 @@ impl Renderer {
                 material_alpha_test: item.material.alpha_test,
                 material_rotation: item.material.rotation,
                 material_reflectivity: item.material.reflectivity,
+                material_refraction_ratio: item.material.refraction_ratio,
                 material_shininess: item.material.shininess,
                 material_specular: item.material.specular,
                 material_emissive: item.material.emissive,

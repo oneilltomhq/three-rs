@@ -532,7 +532,7 @@ fn all_any() {
 }
 
 #[test]
-fn transform_normal() {
+fn transform_normal_by_view_matrices() {
     assert_body(
         "transform_normal",
         vec4_join(vec![
@@ -612,6 +612,42 @@ fn assert_canonical(name: &str, node: NodeRef) {
     assert_eq!(
         canonical(&ours),
         canonical(&fixture(name)),
+        "{name}: main differs\n--- port ---\n{ours}"
+    );
+}
+
+/// `nodeUniformN` renamed `uK` in order of first appearance.
+///
+/// Three numbers its unnamed uniforms across both stages, so a fragment's
+/// object uniforms start wherever the vertex stage's left off (and skip the
+/// vertex-only ones); the port's numbering differs while every uniform, its
+/// group and its type match.
+fn renumber_uniforms(text: &str) -> String {
+    let mut names: Vec<String> = Vec::new();
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(at) = rest.find("nodeUniform") {
+        out.push_str(&rest[..at]);
+        let tail = &rest[at + "nodeUniform".len()..];
+        let digits = tail.bytes().take_while(u8::is_ascii_digit).count();
+        let name = &rest[at..at + "nodeUniform".len() + digits];
+        let k = names.iter().position(|n| n == name).unwrap_or_else(|| {
+            names.push(name.to_string());
+            names.len() - 1
+        });
+        out.push_str(&format!("u{k}"));
+        rest = &tail[digits..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// [`assert_canonical`] with [`renumber_uniforms`] on both sides.
+fn assert_renumbered(name: &str, node: NodeRef, theirs: &str) {
+    let ours = fragment(node);
+    assert_eq!(
+        renumber_uniforms(&canonical(&ours)),
+        renumber_uniforms(&canonical(theirs)),
         "{name}: main differs\n--- port ---\n{ours}"
     );
 }
@@ -719,4 +755,163 @@ fn texture_3d_load_and_level() {
     // One binding and one sampler serve both taps.
     assert_eq!(wgsl.matches("texture_3d<f32>").count(), 1, "{wgsl}");
     assert_eq!(wgsl.matches(": sampler").count(), 1, "{wgsl}");
+}
+
+#[test]
+fn bitangent_geometry_matches() {
+    assert_body(
+        "bitangent_geometry",
+        vec4_join(vec![bitangent_geometry(), float(1.0)]),
+    );
+}
+
+#[test]
+fn bitangent_local_matches() {
+    assert_body(
+        "bitangent_local",
+        vec4_join(vec![bitangent_local(), float(1.0)]),
+    );
+}
+
+#[test]
+fn bitangent_world_matches() {
+    assert_body(
+        "bitangent_world",
+        vec4_join(vec![bitangent_world().add(tangent_world()), float(1.0)]),
+    );
+}
+
+#[test]
+fn tangent_world_matches() {
+    assert_body(
+        "tangent_world_frame",
+        vec4_join(vec![tangent_world(), float(1.0)]),
+    );
+}
+
+#[test]
+fn parallax_matches() {
+    // Three splats the shared `scale` var for `tangentViewFrame` but writes it
+    // bare in `bitangentViewFrame`; the port splats both. `vec3 * f32` and
+    // `vec3 * vec3( f32 )` are the same value.
+    let theirs = fixture("parallax").replace(
+        "bitangentViewFrame = ( nodeConst5 * nodeVar0 );",
+        "bitangentViewFrame = ( nodeConst5 * vec3<f32>( nodeVar0 ) );",
+    );
+    assert_renumbered(
+        "parallax",
+        vec4_join(vec![
+            parallax_uv(uv(), float(0.1)).xy(),
+            parallax_direction().z(),
+            float(1.0),
+        ]),
+        &theirs,
+    );
+}
+
+#[test]
+fn camera_near_far_and_normal_matrix_match() {
+    assert_body(
+        "camera_near_far",
+        vec4_join(vec![
+            camera_near(),
+            camera_far(),
+            camera_normal_matrix()
+                .mul(vec3_join(vec![uv(), float(1.0)]))
+                .xy(),
+        ]),
+    );
+}
+
+#[test]
+fn model_scopes_match() {
+    assert_body(
+        "model_scopes",
+        vec4_join(vec![
+            model_direction()
+                .add(model_position())
+                .add(model_scale())
+                .add(model_view_position()),
+            model_radius(),
+        ]),
+    );
+}
+
+#[test]
+fn object_scopes_match() {
+    let target = three_rs::core::Object3D::new_node();
+    target.borrow_mut().position.set(1.0, 2.0, 3.0);
+    assert_body(
+        "object_scopes",
+        vec4_join(vec![
+            object_direction(&target)
+                .add(object_position(&target))
+                .add(object_scale(&target))
+                .add(object_view_position(&target)),
+            object_radius(&target).add(1.0),
+        ]),
+    );
+}
+
+#[test]
+fn model_view_precision_matches() {
+    let local = || vec4_join(vec![position_local(), float(1.0)]);
+    assert_renumbered(
+        "model_view_precision",
+        vec4_join(vec![
+            mediump_model_view_matrix()
+                .mul(local())
+                .xyz()
+                .add(highp_model_view_matrix().mul(local()).xyz())
+                .add(highp_model_normal_view_matrix().mul(normal_local())),
+            float(1.0),
+        ]),
+        &fixture("model_view_precision"),
+    );
+}
+
+#[test]
+fn transform_normal_matches() {
+    assert_renumbered(
+        "transform_normal_matrix",
+        vec4_join(vec![
+            transform_normal(vec3_join(vec![uv(), float(1.0)]), model_world_matrix())
+                .add(transform_normal(
+                    vec3_join(vec![y(), x(), float(1.0)]),
+                    camera_view_matrix(),
+                ))
+                .add(vec3_join(vec![x(), float(1.0), y()]).transform_normal(model_normal_matrix())),
+            float(1.0),
+        ]),
+        &fixture("transform_normal_matrix"),
+    );
+}
+
+#[test]
+fn transform_normal_to_view_matches() {
+    assert_renumbered(
+        "transform_normal_to_view",
+        vec4_join(vec![
+            transform_normal_to_view(vec3_join(vec![uv(), float(1.0)])),
+            float(1.0),
+        ]),
+        &fixture("transform_normal_to_view"),
+    );
+}
+
+#[test]
+fn reflect_refract_match() {
+    assert_renumbered(
+        "reflect_refract",
+        vec4_join(vec![
+            reflect_view().add(refract_view()).add(refract_vector()),
+            float(1.0),
+        ]),
+        &fixture("reflect_refract"),
+    );
+}
+
+#[test]
+fn clip_space_matches() {
+    assert_body("clip_space", clip_space().div(clip_space().w()));
 }

@@ -411,6 +411,54 @@ pub enum UniformSource {
     /// compute kernel can read it: `computeSkinning()` and
     /// `webgpu_skinning_points` are the first. See `docs/nodes.md` §44.
     Live(LiveValue),
+    /// `cameraNormalMatrix` — `uniform( camera.normalMatrix )`. Nothing in
+    /// `WebGPURenderer` ever writes a camera's `normalMatrix` (only
+    /// `WebGLRenderer` updates it, and only for the objects it draws), so
+    /// three uploads the identity it was constructed with, and so does this.
+    CameraNormalMatrix,
+    /// `materialRefractionRatio` — `uniform( 0 ).onObjectUpdate( ( { material
+    /// } ) => material.refractionRatio )`.
+    MaterialRefractionRatio,
+    /// `highpModelViewMatrix` — `uniform( 'mat4' ).onObjectUpdate( … )`:
+    /// `camera.matrixWorldInverse * object.matrixWorld`, multiplied on the CPU
+    /// in double precision.
+    HighpModelViewMatrix,
+    /// `highpModelNormalViewMatrix` — the normal matrix of
+    /// [`UniformSource::HighpModelViewMatrix`]'s product, per object.
+    HighpModelNormalViewMatrix,
+    /// `Object3DNode`'s vector and scalar scopes: [`Object3DScope`] of the
+    /// object drawn (`ModelNode`, `object` `None`) or of an explicit one
+    /// (`objectPosition( object3d )` and friends), whose `matrixWorld` the
+    /// [`LiveValue`] reads when the buffer is written.
+    Object3D {
+        /// Which value of the object.
+        scope: Object3DScope,
+        /// The explicit object's `matrixWorld`, or `None` for the object the
+        /// draw is for.
+        object: Option<LiveValue>,
+    },
+}
+
+/// `Object3DNode`'s scopes other than `WORLD_MATRIX`, which has a uniform
+/// source of its own ([`UniformSource::ModelWorldMatrix`], or
+/// [`UniformSource::Live`] for an explicit object).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum Object3DScope {
+    /// `POSITION` — `setFromMatrixPosition( matrixWorld )`, a `vec3`.
+    Position,
+    /// `SCALE` — `setFromMatrixScale( matrixWorld )`, a `vec3`.
+    Scale,
+    /// `DIRECTION` — `getWorldDirection()`, the normalised `+z` column of
+    /// `matrixWorld`, a `vec3`.
+    Direction,
+    /// `VIEW_POSITION` — the world position through the rendering camera's
+    /// `matrixWorldInverse`, a `vec3`.
+    ViewPosition,
+    /// `RADIUS` — the bounding sphere of the *drawn* object's geometry,
+    /// through the scoped object's `matrixWorld`, a `float`. three reads
+    /// `frame.object.geometry` even for an explicit object, and so does this.
+    Radius,
 }
 
 /// The reader behind [`UniformSource::Live`]. Compares and hashes by

@@ -196,7 +196,7 @@ pub enum MaterialKind {
 ///   `material.needsUpdate = true`. Without it the old program keeps drawing.
 /// - a field the program reads as a **uniform** — `color`, `opacity`,
 ///   `specular`, `shininess`, `emissive`, `emissive_intensity`, `metalness`,
-///   `roughness`, `bump_scale`, `rotation`, `reflectivity` — is uploaded every
+///   `roughness`, `bump_scale`, `rotation`, `reflectivity`, `refraction_ratio` — is uploaded every
 ///   frame and needs nothing, as in three.js.
 /// - `side`, `depth_test`, `depth_write` and the blend factors are pipeline
 ///   state, keyed per draw, and need nothing either.
@@ -217,6 +217,10 @@ pub struct MeshBasicNodeMaterial {
     /// `MeshBasicMaterial.reflectivity` — the mix factor `BasicEnvironmentNode`
     /// blends the reflected environment colour in by.
     pub reflectivity: f64,
+    /// `MeshBasicMaterial.refractionRatio` — the index ratio
+    /// [`refract_view`](crate::nodes::tsl::refract_view) bends the view ray by
+    /// (`materialRefractionRatio`).
+    pub refraction_ratio: f64,
     /// `MeshBasicMaterial.envMap` — `setupEnvironment()` turns it into
     /// `BasicEnvironmentNode( cubeTexture( envMap ) )`.
     pub env_map: Option<CubeTexture>,
@@ -661,6 +665,7 @@ impl Default for MeshBasicNodeMaterial {
             normal_node: None,
             position_node: None,
             reflectivity: 1.0,
+            refraction_ratio: 0.98,
             env_map: None,
             pmrem_env: None,
             color_node: None,

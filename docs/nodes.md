@@ -5988,3 +5988,82 @@ arithmetic, and `tests/traa_frames.rs` allows for it.
 - `useSubpixelCorrection = false`, `depthThreshold`, `edgeDepthDiff` and
   `maxVelocityLength` as settable properties. They are constants at three's
   defaults.
+
+## 67. TSL sweep 2: the accessors batch
+
+Thirty `three/tsl` accessors, each gated against three's dump in
+`tests/nodes_tsl_batch.rs`: the bitangents, `tangentWorld`, the parallax
+pair, `cameraNormalMatrix`, the `model*` and `object*` scopes, the precision
+variants of `modelViewMatrix`, `transformNormal`, `transformNormalToView`,
+`reflectView`, `refractView`, `refractVector`, `clipSpace` and
+`materialRefractionRatio`. Most are one-line graphs over existing nodes. This
+section covers the parts that touch the builder or the uniforms.
+
+### 67.1 Singletons are built outside any layer
+
+An `accessor!` body now runs with `sub_build` cleared. Three's module-level
+constants are created at import, outside every `subBuild`, so a `toVar` or
+`toVarying` inside one never takes a `NORMAL_` or `VERTEX_` prefix. The port
+creates a singleton the first time it is asked for. Before this change, a
+singleton first asked for inside `in_sub_build( "VERTEX", … )` kept that
+prefix for the rest of the thread. `tangentWorld` is the first accessor whose
+varying is built inside the vertex layer and reads a singleton there.
+
+The keyed accessors (`tangent_world`, the bitangents, `parallax_direction`,
+`reflect_view`, `refract_view`, `refract_vector`) are cached on
+`normal_key()`, like `normal_view`, because they read the layer-dependent
+normal and tangent.
+
+### 67.2 The tangent frame in the vertex layer
+
+`getTangentFrame` takes the attribute branch when `builder.subBuildFn ===
+'VERTEX'` as well as when the geometry has a tangent. A varying's value is
+built in the vertex layer, so `tangentWorld`'s varying always reads the
+`tangent` attribute, and on a geometry without one that attribute is zero.
+`tangent_frame()` now checks the layer as well as `has_tangent`.
+
+`getBitangent` is `.once( [ 'NORMAL' ] )` in three, so within one layer every
+bitangent shares the first result, whatever normal and tangent it was given.
+Three's `bitangentGeometry` and `bitangentWorld` in one shader therefore print
+the same expression. The port builds each bitangent from its own inputs, and
+each is gated in a probe of its own.
+
+### 67.3 New uniform sources
+
+- **`UniformSource::Object3D { scope, object }`** is `Object3DNode`: an
+  unnamed uniform in the object group. `scope` is direction, position,
+  scale, view position or radius. `object: None` is the drawn mesh (the
+  `model*` accessors). `Some(live)` reads the target's `matrixWorld` (the
+  `object*` functions, which take `&Node`). `Radius` multiplies the bounding
+  sphere of the *drawn* object's geometry by the target's largest scale,
+  as `frame.object.geometry` does in three.
+- **`CameraNormalMatrix`** writes the identity. `WebGPURenderer` never sets
+  `camera.normalMatrix`, so three's uniform is the identity too.
+- **`HighpModelViewMatrix`** and **`HighpModelNormalViewMatrix`** are
+  `cameraViewMatrix × matrixWorld`, and its normal matrix, multiplied on the
+  CPU per object.
+- **`MaterialRefractionRatio`** reads `Material::refraction_ratio`, which
+  defaults to 0.98, as three's does.
+
+None of these has an ArrayCamera element, which matches
+`camera_world_matrix`.
+
+### 67.4 `clipSpace`
+
+Three's `clipSpace` reads `builder.context.clipSpace`, which `NodeMaterial`
+sets to the vertex position node (`vertexNode || mvp`). `NodeBuilder::build`
+pushes the flow's position under the `"clipSpace"` context key. `clip_space()`
+is a `CustomNode` that reads the key at build time, inside a `v_clipSpace`
+varying. Like three's, it is meant for the fragment stage.
+
+### 67.5 Smaller differences
+
+- `mediump_model_view_matrix()` builds a fresh product on every call, where
+  three's is one shared node. The vertex stage always reaches it through
+  `modelViewMatrix`. The port counts uses across both stages, so a shared node
+  read once in a fragment would become a var there.
+- `transform_normal_to_view()` checks the context for a
+  `modelNormalViewMatrix` when it is called. Three checks when the node is
+  built. Only `renderer.highPrecision` sets that key in three.
+- Three's unnamed uniforms are numbered across both stages. The gates
+  renumber them in order of first use (`renumber_uniforms`).

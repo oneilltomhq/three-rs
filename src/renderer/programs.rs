@@ -519,6 +519,8 @@ pub struct UniformContext<'a> {
     /// `material.linewidth`.
     pub material_line_width: f64,
     pub material_reflectivity: f64,
+    /// `material.refractionRatio` — `materialRefractionRatio`.
+    pub material_refraction_ratio: f64,
     pub material_shininess: f64,
     pub material_specular: Color,
     pub material_emissive: Color,
@@ -633,6 +635,7 @@ impl Default for UniformContext<'_> {
             material_rotation: 0.0,
             material_line_width: 1.0,
             material_reflectivity: 1.0,
+            material_refraction_ratio: 0.98,
             material_shininess: 30.0,
             material_specular: Color::new(
                 0x11 as f64 / 255.0,
@@ -702,6 +705,61 @@ impl Default for UniformContext<'_> {
 }
 
 impl UniformContext<'_> {
+    /// `Object3DNode.update()` for the vector and scalar scopes: of the drawn
+    /// object's `matrixWorld`, or of `object`'s when the node names one.
+    fn object_3d(
+        &self,
+        scope: crate::nodes::Object3DScope,
+        object: Option<&crate::nodes::node::LiveValue>,
+    ) -> Vec<f32> {
+        use crate::nodes::Object3DScope;
+        let world = match object {
+            Some(read) => {
+                let mut world = Matrix4::identity();
+                world.elements.copy_from_slice(&read.get()[..16]);
+                world
+            }
+            None => self.model_world,
+        };
+        let vector = |v: Vector3| vec![v.x as f32, v.y as f32, v.z as f32];
+        match scope {
+            Object3DScope::Position => {
+                let mut v = Vector3::new(0.0, 0.0, 0.0);
+                v.set_from_matrix_position(&world);
+                vector(v)
+            }
+            Object3DScope::Scale => {
+                let mut v = Vector3::new(0.0, 0.0, 0.0);
+                v.set_from_matrix_scale(&world);
+                vector(v)
+            }
+            // `Object3D.getWorldDirection()`: the normalised third column.
+            Object3DScope::Direction => {
+                let e = &world.elements;
+                let mut v = Vector3::new(e[8], e[9], e[10]);
+                v.normalize();
+                vector(v)
+            }
+            Object3DScope::ViewPosition => {
+                let mut v = Vector3::new(0.0, 0.0, 0.0);
+                v.set_from_matrix_position(&world);
+                v.apply_matrix4(&self.camera_view);
+                vector(v)
+            }
+            // `frame.object.geometry`'s bounding sphere, through the scoped
+            // object's `matrixWorld`; `Sphere.applyMatrix4()` scales the radius
+            // by the matrix's largest axis scale. 0 for a draw with no geometry.
+            Object3DScope::Radius => {
+                let radius = self
+                    .object
+                    .and_then(|object| object.geometry())
+                    .and_then(|geometry| geometry.compute_bounding_sphere())
+                    .map_or(0.0, |sphere| sphere.radius * world.get_max_scale_on_axis());
+                vec![radius as f32]
+            }
+        }
+    }
+
     /// `Bindings.updateBinding()`: the bytes of one generated uniform struct,
     /// each member written at the offset the builder gave it.
     pub fn bytes(&self, members: &[UniformMember], size: u32) -> Vec<u8> {
@@ -746,6 +804,23 @@ impl UniformContext<'_> {
                 UniformSource::MaterialAlphaTest => vec![self.material_alpha_test as f32],
                 UniformSource::MaterialRotation => vec![self.material_rotation as f32],
                 UniformSource::MaterialReflectivity => vec![self.material_reflectivity as f32],
+                UniformSource::MaterialRefractionRatio => {
+                    vec![self.material_refraction_ratio as f32]
+                }
+                UniformSource::CameraNormalMatrix => Matrix3::identity().to_padded_f32_array().to_vec(),
+                UniformSource::HighpModelViewMatrix => {
+                    let mut model_view = Matrix4::identity();
+                    model_view.multiply_matrices(&self.camera_view, &self.model_world);
+                    model_view.to_f32_array().to_vec()
+                }
+                UniformSource::HighpModelNormalViewMatrix => {
+                    let mut model_view = Matrix4::identity();
+                    model_view.multiply_matrices(&self.camera_view, &self.model_world);
+                    let mut normal_matrix = Matrix3::identity();
+                    normal_matrix.get_normal_matrix(&model_view);
+                    normal_matrix.to_padded_f32_array().to_vec()
+                }
+                UniformSource::Object3D { scope, object } => self.object_3d(*scope, object.as_ref()),
                 UniformSource::MaterialEnvIntensity => vec![self.material_env_intensity as f32],
                 UniformSource::MaterialAoMapIntensity => {
                     vec![self.material_ao_map_intensity as f32]
