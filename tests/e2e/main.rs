@@ -2129,10 +2129,9 @@ fn webgpu_postprocessing_smaa() {
 ///
 /// Not graded: three.js itself scores 0.405% (405 pixels) against its own
 /// `webgpu_postprocessing_pixel.jpg` on this machine, over the 0.1% limit;
-/// the port scores 417. Against three's own frame here
-/// (`tools/dump-webgpu.mjs`' `actual_full.png`) 12 graded pixels differ, on
-/// the lit facets of the crystal. See
-/// `docs/webgpu_postprocessing_pixel-progress.md`.
+/// the port scores the same 405, and its frame is pixel-identical to three's
+/// (`tools/dump-webgpu.mjs`' `actual_full.png`, max channel difference 0).
+/// See `docs/webgpu_postprocessing_pixel-progress.md`.
 #[test]
 #[ignore = "three.js itself fails its own reference for this page on this machine"]
 fn webgpu_postprocessing_pixel() {

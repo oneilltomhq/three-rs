@@ -85,8 +85,8 @@ have their own sections after the release they ship with. The format follows [Ke
 - `webgpu_postprocessing_smaa` and `webgpu_postprocessing_pixel` are ported
   and in the native viewer, but not graded on this machine, because three.js
   itself fails their references there (258 and 405 pixels). The port scores
-  258 and 417. Against three's own frames it differs in 0 and 12 graded
-  pixels.
+  the same 258 and 405, and differs from three's own frames in no graded
+  pixel.
 - **`Renderer::size()`**, three's `renderer.getSize()`: the canvas size in
   logical pixels.
 - **Rendering into a mip level**: `RenderTarget::set_mip_level_count()`,
@@ -113,6 +113,10 @@ have their own sections after the release they ship with. The format follows [Ke
 
 ### Fixed
 
+- `positionViewDirection` is `vec3( 0, 0, 1 )` under an orthographic
+  camera, as three's is. It was always the perspective
+  `normalize( -positionView )`, which moved Phong and physical specular
+  highlights under an `OrthographicCamera`.
 - An unfilterable (`NearestFilter`) texture's `textureLoad` wraps its uv by
   the texture's `wrap_s` / `wrap_t`, through three's
   `tsl_coord_<s>S_<t>T_2d` and its `repeat`, `clamp` and `mirror` helpers.
