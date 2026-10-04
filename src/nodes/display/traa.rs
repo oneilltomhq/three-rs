@@ -1,6 +1,6 @@
 //! Port of `three.js/examples/jsm/tsl/display/TRAANode.js` — temporal
-//! reprojection anti-aliasing — and of the four helpers in
-//! `examples/jsm/tsl/utils/TAAUtils.js` it is built from.
+//! reprojection anti-aliasing. The helpers it shares with `TAAUNode`
+//! (`examples/jsm/tsl/utils/TAAUtils.js`) live in `taa_utils.rs`.
 //!
 //! Every frame the camera is jittered by a sub-pixel Halton offset, the scene
 //! is rendered once, and a resolve quad blends the new frame into a history
@@ -49,17 +49,21 @@ use crate::cameras::{PerspectiveCamera, RenderCamera};
 use crate::materials::MeshBasicNodeMaterial;
 use crate::math::{Color, Matrix4};
 use crate::nodes::frame::register_texture_update;
-use crate::nodes::node::{SettableValue, StructLayout, StructMember, TextureSource, Type};
+use crate::nodes::node::{SettableValue, TextureSource, Type};
 use crate::nodes::tsl::{
-    all, block, call, depth_texture_load, depth_texture_sample, float, get_view_position, if_then,
-    int, ivec2, length, luminance, max, mix, shader_fn, struct_get, struct_new, struct_type,
-    texture_load, texture_load_offset, texture_sample, texture_size, texture_uv, to_const, to_var,
-    uniform_settable, uv, vec2, vec4_join, view_z_to_perspective_depth,
+    all, block, call, float, int, ivec2, length, max, mix, shader_fn, struct_get, texture_load,
+    texture_load_offset, texture_sample, texture_size, texture_uv, to_var, uniform_settable, uv,
+    vec2,
 };
 use crate::nodes::{NodeRef, NodeUpdate, NodeUpdateType};
 use crate::objects::QuadMesh;
 use crate::renderer::{RenderPipeline, RenderTarget, RenderTargetOptions, Renderer};
 use crate::textures::{DepthTexture, Texture, TextureFilter, TextureType};
+
+use super::taa_utils::{
+    clip_aabb, current_depth_struct, flicker_reduction, halton_offsets, mat4_values,
+    sample_current_depth, sample_previous_depth, JITTER_COUNT,
+};
 
 /// `TRAANode.depthThreshold`: how far the current depth may sit in front of
 /// the reprojected one before the history counts as disoccluded.
@@ -70,30 +74,6 @@ const EDGE_DEPTH_DIFF: f64 = 0.001;
 /// `TRAANode.maxVelocityLength`, in pixels: the motion at which the current
 /// frame's weight saturates.
 const MAX_VELOCITY_LENGTH: f64 = 128.0;
-/// `_haltonOffsets.length`.
-const JITTER_COUNT: usize = 32;
-
-/// `computeHaltonOffsets( 32 )` — `[ halton( i + 1, 2 ), halton( i + 1, 3 ) ]`.
-fn halton_offsets() -> [(f64, f64); JITTER_COUNT] {
-    std::array::from_fn(|i| (halton(i as u32 + 1, 2), halton(i as u32 + 1, 3)))
-}
-
-/// `TAAUtils.js`' `halton( index, base )`, in the same operation order so the
-/// doubles are the same bits.
-fn halton(mut index: u32, base: u32) -> f64 {
-    let mut fraction = 1.0;
-    let mut result = 0.0;
-    while index > 0 {
-        fraction /= base as f64;
-        result += fraction * (index % base) as f64;
-        index /= base;
-    }
-    result
-}
-
-fn mat4_values(m: &Matrix4) -> Vec<f64> {
-    m.elements.to_vec()
-}
 
 /// `traa( beautyNode, depthNode, velocityNode, camera )`.
 ///
@@ -542,87 +522,6 @@ fn resolve_node(inputs: &ResolveInputs) -> NodeRef {
     )
 }
 
-/// `struct( { closestDepth: 'float', closestPositionTexel: 'vec2',
-/// farthestDepth: 'float' } )` — `currentDepthStruct`. Three names an
-/// anonymous struct after its order of creation, and on the TRAA page it is
-/// the first: `StructType0`.
-fn current_depth_struct() -> Rc<StructLayout> {
-    struct_type(
-        "StructType0",
-        vec![
-            StructMember::new("closestDepth", Type::F32),
-            StructMember::new("closestPositionTexel", Type::Vec2),
-            StructMember::new("farthestDepth", Type::F32),
-        ],
-    )
-}
-
-/// `TAAUtils.sampleCurrentDepth( depthNode, positionTexel, cameraNearFar )`:
-/// the closest and farthest depth of the 3×3 neighbourhood, and where the
-/// closest one is. Three unrolls the two JS loops, x outer.
-fn sample_current_depth(
-    depth: &DepthTexture,
-    position_texel: &NodeRef,
-    layout: &Rc<StructLayout>,
-) -> NodeRef {
-    let closest_depth = to_var(None, float(2.0));
-    let closest_position_texel = to_var(None, vec2(0.0, 0.0));
-    let farthest_depth = to_var(None, float(-1.0));
-    let mut statements = vec![
-        closest_depth.clone(),
-        closest_position_texel.clone(),
-        farthest_depth.clone(),
-    ];
-    for x in -1..=1 {
-        for y in -1..=1 {
-            let neighbor = to_var(None, position_texel.add(vec2(x as f64, y as f64)));
-            let depth = to_var(None, depth_texture_load(depth, neighbor.clone()));
-            statements.push(neighbor.clone());
-            statements.push(depth.clone());
-            statements.push(if_then(
-                depth.less_than(closest_depth.clone()),
-                vec![
-                    closest_depth.assign(depth.clone()),
-                    closest_position_texel.assign(neighbor),
-                ],
-            ));
-            statements.push(if_then(
-                depth.greater_than(farthest_depth.clone()),
-                vec![farthest_depth.assign(depth)],
-            ));
-        }
-    }
-    block(
-        statements,
-        struct_new(
-            layout,
-            vec![closest_depth, closest_position_texel, farthest_depth],
-        ),
-    )
-}
-
-/// `TAAUtils.samplePreviousDepth()` for a perspective camera: the history
-/// depth at `uv`, reconstructed to a world position with the previous
-/// camera, and projected back to a perspective depth with the current one.
-fn sample_previous_depth(
-    previous_depth: &DepthTexture,
-    uv: &NodeRef,
-    previous_projection_inverse: &NodeRef,
-    previous_world: &NodeRef,
-    world_inverse: &NodeRef,
-    near_far: &NodeRef,
-) -> NodeRef {
-    let depth = depth_texture_sample(previous_depth, uv.clone());
-    let position_view = get_view_position(uv.clone(), depth, previous_projection_inverse.clone());
-    let position_world = previous_world
-        .mul(vec4_join(vec![position_view, float(1.0)]))
-        .xyz();
-    let view_z = world_inverse
-        .mul(vec4_join(vec![position_world, float(1.0)]))
-        .z();
-    view_z_to_perspective_depth(view_z, near_far.x(), near_far.y())
-}
-
 /// The `varianceClipping` `Fn()`: the mean and standard deviation of the 3×3
 /// neighbourhood (taps clamped at zero so a NaN cannot spread), scaled by
 /// `gamma`, and the history clipped to that box.
@@ -687,93 +586,4 @@ fn subpixel_correction() -> Rc<crate::nodes::node::FnDef> {
             weight.x().mul(weight.y()).one_minus().div(0.75)
         },
     )
-}
-
-/// `TAAUtils.clipAABB( currentColor, historyColor, minColor, maxColor )`.
-fn clip_aabb() -> Rc<crate::nodes::node::FnDef> {
-    shader_fn(
-        Some("clipAABB"),
-        vec![
-            ("currentColor", Type::Vec4),
-            ("historyColor", Type::Vec4),
-            ("minColor", Type::Vec4),
-            ("maxColor", Type::Vec4),
-        ],
-        Type::Vec4,
-        |args| {
-            let (current_color, history_color, min_color, max_color) =
-                (&args[0], &args[1], &args[2], &args[3]);
-            let p_clip = to_const(None, max_color.rgb().add(min_color.rgb()).mul(0.5));
-            let e_clip = to_const(
-                None,
-                max_color.rgb().sub(min_color.rgb()).mul(0.5).add(1e-7),
-            );
-            let v_clip = to_const(
-                None,
-                history_color.sub(vec4_join(vec![p_clip.clone(), current_color.w()])),
-            );
-            let v_unit = to_const(None, v_clip.xyz().div(e_clip));
-            let abs_unit = to_const(None, v_unit.abs());
-            let max_unit = to_const(None, max(max(abs_unit.x(), abs_unit.y()), abs_unit.z()));
-            max_unit.greater_than(1.0).select(
-                vec4_join(vec![p_clip, current_color.w()]).add(v_clip.div(max_unit.clone())),
-                history_color.clone(),
-            )
-        },
-    )
-}
-
-/// `TAAUtils.flickerReduction( currentColor, historyColor, currentWeight )`:
-/// blend in a tone-compressed space, each side weighted down by its
-/// luminance.
-fn flicker_reduction() -> Rc<crate::nodes::node::FnDef> {
-    shader_fn(
-        Some("flickerReduction"),
-        vec![
-            ("currentColor", Type::Vec4),
-            ("historyColor", Type::Vec4),
-            ("currentWeight", Type::F32),
-        ],
-        Type::Vec4,
-        |args| {
-            let (current_color, history_color, current_weight) = (&args[0], &args[1], &args[2]);
-            let compress = |color: &NodeRef| {
-                to_const(
-                    None,
-                    color.mul(float(1.0).div(max(max(color.x(), color.y()), color.z()).add(1.0))),
-                )
-            };
-            let compressed_current = compress(current_color);
-            let compressed_history = compress(history_color);
-
-            let luminance_current = to_const(None, luminance(compressed_current.rgb()));
-            let luminance_history = to_const(None, luminance(compressed_history.rgb()));
-
-            let weight_current = to_const(None, current_weight.div(luminance_current.add(1.0)));
-            let weight_history = to_const(
-                None,
-                current_weight.one_minus().div(luminance_history.add(1.0)),
-            );
-
-            current_color
-                .mul(weight_current.clone())
-                .add(history_color.mul(weight_history.clone()))
-                .div(max(weight_current.add(weight_history), 0.00001))
-        },
-    )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// `computeHaltonOffsets( 32 )`'s first entries, as JS computes them.
-    #[test]
-    fn halton_offsets_match_three() {
-        let offsets = halton_offsets();
-        assert_eq!(offsets[0], (0.5, 1.0 / 3.0));
-        assert_eq!(offsets[1], (0.25, 2.0 / 3.0));
-        assert_eq!(offsets[2], (0.75, 1.0 / 9.0));
-        assert_eq!(offsets[31].0, 1.0 / 64.0);
-    }
 }

@@ -19,6 +19,17 @@ have their own sections after the release they ship with. The format follows [Ke
   page, `tests/gltf_loader.rs`'s `iridescence_lamp_materials` and the e2e
   rung. The page's auto-rotating camera turns three times before the
   screenshot, as three's does (docs/nodes.md §95).
+- **`webgpu_loader_gltf_transmission`** (graded, 6 of 100000 pixels; #230):
+  `IridescentDishWithOlives.glb` under the blurred `royal_esplanade` PMREM,
+  ported forward from `rung-gltf-transmission` now that the Draco decoder
+  has landed. The ladder's first graded frame of two stacked transmissive
+  materials over one opaque copy, a `thicknessTexture`, a
+  `specularColorTexture`, glTF `COLOR_0`, an `AnimationMixer` on a
+  non-skinned node and an auto-rotating `OrbitControls` updated with no
+  delta. The gold leaf's `alphaMode: MASK` is gated against three's dump of
+  the page as the `materialAlphaTest` uniform
+  (`gltf_transmission_gold_leaf_alpha_test_matches_three`;
+  docs/nodes.md §94).
 - **`webgpu_postprocessing_ssr_denoise`** (ungraded: three's own e2e
   exception list): the stochastic `ssr()`, `temporal_reproject()` and
   `recurrent_denoise()` in a history loop, added to the beauty, graded and
@@ -100,6 +111,16 @@ have their own sections after the release they ship with. The format follows [Ke
   resolve quads are gated against three's dump in
   `tests/nodes_display_wgsl.rs`, and `tests/temporal_reproject_frames.rs`
   checks the history on the GPU. See `docs/nodes.md` §87.
+- **`taau`** (`nodes::display`), a port of
+  `examples/jsm/tsl/display/TAAUNode.js`: temporal anti-aliased upsampling
+  of a reduced-resolution scene pass to the drawing buffer's size, with the
+  page **`webgpu_upscaling_taau`** in the native viewer. The page is
+  ungraded: three.js misses its own reference on this machine (540 of
+  100000 pixels), and the port scores 539, so its e2e rung is ignored. The
+  seed and resolve quads are gated against three's dump, and
+  `tests/taau_frames.rs` checks the node on the GPU. The `TAAUtils.js`
+  helpers it shares with `traa` now live in one crate-private module. See
+  `docs/nodes.md` §90.
 - **`ImportanceSampledEnvironment`** and **`EnvMapCdfGenerator`**
   (`nodes::display`), with the SpecularHelpers microfacet helpers
   (`d_gtr`, `ggx_reflection_sample`, `mis_power_heuristic`, …) and
@@ -555,6 +576,42 @@ have their own sections after the release they ship with. The format follows [Ke
   helpers, and `tests/recurrent_denoise_frames.rs` checks on the GPU that it
   cuts a noisy face's variance without moving its mean or its silhouette,
   and keeps cutting it as frames accumulate. See `docs/nodes.md` §88.
+- **`denoise()` / `DenoiseNode`** (`nodes::display`), a port of
+  `examples/jsm/tsl/display/DenoiseNode.js`: the single-pass 16-tap
+  Poisson-disk denoiser with luma, depth-plane and normal edge stopping,
+  rotated per pixel by a 64x64 simplex-noise texture; the normal input is
+  optional (`None` reconstructs it from depth). With it,
+  **`addons::simplex_noise::SimplexNoise`**, a port of
+  `examples/jsm/math/SimplexNoise.js` (2D, 3D and 4D) with a unit test
+  against three's JS. Both of `tools/dump-pages/denoise.html`'s quads are
+  gated against three's dump in `tests/nodes_display_wgsl.rs`, and
+  `tests/denoise_frames.rs` checks on the GPU that it flattens a
+  pixel-scale checkerboard while keeping a depth edge sharp. See
+  `docs/nodes.md` §92.
+- **`ssao()` / `SsaoNode`** (`nodes::display`) and
+  **`tsl::depth_aware_blur`**, ports of
+  `examples/jsm/tsl/display/SSAONode.js` and `depthAwareBlur.js`:
+  Vogel-disk SSAO with one depth tap per sample, drawn into its own target
+  at `resolutionScale` and cleaned by a separable five-tap blur weighted by
+  view-Z difference (`blurEnabled`, `blurSharpness`). The AO and blur quads
+  are gated against three's dump of `tools/dump-pages/ssao.html` in
+  `tests/nodes_display_wgsl.rs`, and `tests/ssao_frames.rs` checks on the
+  GPU that a box's crease is darker than open floor and that the blur cuts
+  the pixel-to-pixel noise. See `docs/nodes.md` §93.
+- **`fsr1()` / `Fsr1Node`** (`nodes::display`), a port of
+  `examples/jsm/tsl/display/FSR1Node.js`: AMD FidelityFX Super Resolution
+  1.0. It draws two half-float passes a frame at the drawing-buffer size.
+  EASU is edge-adaptive Lanczos2 upsampling over a 12-texel footprint, and
+  RCAS is `SharpenNode`'s sharpen over the result. The EASU and RCAS WGSL
+  is gated against three's dump of `webgpu_upscaling_fsr1` in
+  `tests/nodes_display_wgsl.rs`. `tests/fsr1_frames.rs` checks on the GPU
+  that a half-resolution pass comes out at canvas size, with flat regions
+  unchanged and an edge steeper than bilinear's. See `docs/nodes.md` §91.
+- **`webgpu_upscaling_fsr1`**, ported but not graded: three.js scores 703 of
+  100000 pixels against its own reference on this machine, over the 0.1%
+  limit, and the port scores 698. Its e2e rung is `#[ignore]`d. It is in
+  the steady-frame strip and the native viewer, but not the gallery or the
+  browser shell.
 
 ### Changed
 

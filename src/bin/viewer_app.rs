@@ -238,6 +238,7 @@ CustomFogBackground, webgpu_custom_fog_background, "../../examples/webgpu_custom
 LoaderGltfSheen, webgpu_loader_gltf_sheen, "../../examples/webgpu_loader_gltf_sheen.rs";
 Deferred, webgpu_deferred, "../../examples/webgpu_deferred.rs";
 LoaderGltfAnisotropy, webgpu_loader_gltf_anisotropy, "../../examples/webgpu_loader_gltf_anisotropy.rs";
+LoaderGltfTransmission, webgpu_loader_gltf_transmission, "../../examples/webgpu_loader_gltf_transmission.rs";
 MaterialsTextureManualmipmap, webgpu_materials_texture_manualmipmap, "../../examples/webgpu_materials_texture_manualmipmap.rs";
 TslVfxFlames, webgpu_tsl_vfx_flames, "../../examples/webgpu_tsl_vfx_flames.rs";
 ProceduralTexture, webgpu_procedural_texture, "../../examples/webgpu_procedural_texture.rs";
@@ -302,9 +303,11 @@ PostprocessingOutline, webgpu_postprocessing_outline, "../../examples/webgpu_pos
 Oit, webgpu_oit, "../../examples/webgpu_oit.rs";
 PostprocessingRetro, webgpu_postprocessing_retro, "../../examples/webgpu_postprocessing_retro.rs";
 PostprocessingSsrDenoise, webgpu_postprocessing_ssr_denoise, "../../examples/webgpu_postprocessing_ssr_denoise.rs";
+UpscalingFsr1, webgpu_upscaling_fsr1, "../../examples/webgpu_upscaling_fsr1.rs";
 Clipping, webgpu_clipping, "../../examples/webgpu_clipping.rs";
 ClippingStencil, webgpu_clipping_stencil, "../../examples/webgpu_clipping_stencil.rs";
-LoaderGltfIridescence, webgpu_loader_gltf_iridescence, "../../examples/webgpu_loader_gltf_iridescence.rs";}
+LoaderGltfIridescence, webgpu_loader_gltf_iridescence, "../../examples/webgpu_loader_gltf_iridescence.rs";
+UpscalingTaau, webgpu_upscaling_taau, "../../examples/webgpu_upscaling_taau.rs";}
 
 impl Which {
     /// The name with or without its `webgpu_` prefix, or its 1-based index in
