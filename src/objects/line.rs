@@ -14,7 +14,7 @@
 
 use std::rc::Rc;
 
-use crate::core::{BufferGeometry, Intersection, Node, Object3D, Raycaster};
+use crate::core::{BufferGeometry, Intersection, Node, Object3D, Raycaster, TypedArray};
 use crate::materials::MeshBasicNodeMaterial;
 use crate::math::{Matrix4, Ray, Sphere, Vector3};
 use crate::objects::Payload;
@@ -134,25 +134,50 @@ impl Line {
     }
 
     /// Rewrite the line's `position` attribute and mark it for re-upload —
-    /// `positions` is the flat `[ x, y, z, x, y, z, ... ]` the attribute holds.
+    /// `positions` is the flat `[ x, y, z, x, y, z, ... ]` of values, `item_size`
+    /// per vertex.
     ///
-    /// The convenience form of `attribute.array_mut()` then
+    /// The convenience form of `setXYZ()` per vertex then
     /// [`set_needs_update`](crate::core::BufferAttribute::set_needs_update),
     /// which is what a consumer moving one wall of a diagram wants instead of
     /// rebuilding the scene (issue #47). The next render re-writes that one
     /// buffer; the geometry keeps its id and its other buffers.
     ///
-    /// Panics if the geometry has no `position` attribute.
+    /// Any array kind takes the values as `setXYZ()` would (normalized and
+    /// narrowed); an own `Float32Array` is copied straight in. An attribute
+    /// with its own array takes a new length (its array is rebuilt in the same
+    /// kind); an interleaved one keeps its count.
+    ///
+    /// # Panics
+    ///
+    /// If the geometry has no `position` attribute, or it is interleaved and
+    /// `positions` is longer than its items.
     pub fn set_positions(&self, positions: &[f32]) {
         let attribute = self
             .geometry
             .get_attribute("position")
             .expect("three-rs: the line geometry has a position attribute");
 
-        let mut array = attribute.array_mut();
-        array.clear();
-        array.extend_from_slice(positions);
-        drop(array);
+        let interleaved = attribute.is_interleaved();
+        let mut data = attribute.data_mut();
+        match data.as_f32_mut() {
+            Some(array) if !interleaved => {
+                array.clear();
+                array.extend_from_slice(positions);
+            }
+            _ => {
+                if !interleaved && data.len() != positions.len() {
+                    *data = TypedArray::zeros(data.kind(), positions.len());
+                }
+                drop(data);
+                let item_size = attribute.item_size;
+                for (i, item) in positions.chunks(item_size).enumerate() {
+                    for (c, value) in item.iter().enumerate() {
+                        attribute.store(i, c, f64::from(*value));
+                    }
+                }
+            }
+        }
 
         attribute.set_needs_update();
     }

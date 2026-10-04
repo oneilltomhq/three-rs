@@ -1342,7 +1342,10 @@ impl BufferAttribute {
         self
     }
 
-    fn store(&self, index: usize, component: usize, value: f64) {
+    /// [`set_component`](Self::set_component) through `&self`, for crate
+    /// code holding the attribute behind a shared geometry (the array is in
+    /// a `RefCell`). Does not bump the version.
+    pub(crate) fn store(&self, index: usize, component: usize, value: f64) {
         let (stride, offset) = self.layout();
         let mut array = self.cell().borrow_mut();
         let kind = array.kind();
