@@ -19,6 +19,221 @@ have their own sections after the release they ship with. The format follows [Ke
   an object just before the reflector's first update, which is when three
   runs an `add()` written inside a material's `Fn()`. See `docs/nodes.md`
   §76.
+- **`nodes::display::sss`** (`SssNode`), a port of `SSSNode.js`. It casts
+  screen-space shadows by marching a ray from each pixel towards one light
+  through a depth pre-pass. `maxDistance`, `thickness`, `shadowIntensity` and
+  `quality` are `SettableValue`s, and `set_resolution_scale` and
+  `set_use_temporal_filtering` stand in for three's properties. Its shader is
+  gated against three's dump in `tests/nodes_display_wgsl.rs`, and its frames
+  in `tests/sss_frames.rs`. See `docs/nodes.md` §71.
+- **`builtinShadowContext`**: `PassNode::set_context_shadow( shadow, &light )`
+  multiplies `shadow` into that light's colour, after its shadow-map factor,
+  for every draw the pass makes where the light's shadow map applies.
+  `clear_context_shadow()` removes it. The page's ground material, with the
+  context, is gated against three's dump.
+- **`webgpu_postprocessing_sss`**, the page: a depth and velocity pre-pass,
+  SSS from the directional light with temporal filtering, and TRAA resolving
+  the scene pass. It is in three's e2e exception list, so it is in the native
+  viewer and not graded.
+- **`ssgi()` / `SsgiNode`** (`nodes::display`), a port of
+  `examples/jsm/tsl/display/SSGINode.js`. It is screen space global
+  illumination with a visibility bitmask, and writes an AO and a one-bounce
+  GI texture. Every option is a public `SettableValue`, and
+  `set_use_temporal_filtering()` is three's property. The SSGI shader, the
+  page's composite and its TRAA resolve are gated against three's dump in
+  `tests/nodes_display_wgsl.rs`, and `tests/ssgi_frames.rs` checks the
+  frames, the three boolean options included. `webgpu_postprocessing_ssgi`
+  is ported, ungraded because three's e2e harness skips it, and in the
+  viewer. An arbitrary `normalNode`, `normalNode = null`, a logarithmic
+  depth buffer, the `SSGI.AO` name, `contextNode` and `dispose()` are not
+  ported. Without `RG11B10UFLOAT_RENDERABLE` the effect fails, as three's
+  does.
+- The renderer requests `RG11B10UFLOAT_RENDERABLE` when the adapter has it.
+- **`nodes::display::ao`** (`GtaoNode`), a port of `GTAONode.js`: ground
+  truth ambient occlusion from a depth and a packed-normal pre-pass, with
+  `radius`, `thickness` and `scale` as `SettableValue`s and `set_samples`,
+  `set_resolution_scale` and `set_use_temporal_filtering` as three's
+  properties. Its shader is gated against three's dump in
+  `tests/nodes_display_wgsl.rs`, its frames in `tests/gtao_frames.rs`. See
+  `docs/nodes.md` §64.
+- **`builtinAOContext`**: `PassNode::set_context_ao( node )` multiplies an
+  occlusion into every non-transparent material the pass draws, through the
+  same `AmbientOcclusion` property an `aoMap` writes
+  (`SetupContext::ambient_occlusion`). Basic, Lambert, Phong, Toon, Standard
+  and Physical read it.
+- **`webgpu_postprocessing_ao`**, the page: a normal + velocity pre-pass,
+  GTAO at half resolution with temporal filtering, and TRAA resolving it.
+  It is in three's e2e exception list, so it is in the native viewer and
+  not graded.
+- **`tsl::depth_texture_gather`** (`texture( depth ).gather()`), with the
+  non-filtering sampler binding a gathered depth texture needs;
+  `tsl::get_screen_position_from_clip`;
+  `TraaNode::set_use_subpixel_correction`.
+- **Texture wrapping on `textureLoad`**: an unfilterable (`NearestFilter`)
+  texture is read through three's `tsl_coord_<S>S_<T>T_2d` wrap function
+  built from its `wrapS` / `wrapT`, instead of always clamping.
+- **`TransformControls`** (`addons::controls`), a port of
+  `examples/jsm/controls/TransformControls.js` as of the pinned 5f610f5
+  (r187dev): the translate, rotate and scale gizmo with the same picker,
+  gizmo and helper graph, the same drag math, snaps and limits, and
+  perspective and orthographic cameras. Pointer input arrives as method calls
+  (`on_pointer_down`, `pointer_hover`, …), events are returned as
+  `Vec<TransformControlsEvent>`, and the host calls `update(camera)` where
+  three's renderer runs the helper's matrix update. `toneMapped: false` is
+  dropped, and `enabled`, `show*` and `min*`/`max*` are plain fields that send
+  no events. `tools/transform_controls_reference.mjs` runs three's class under
+  node through 17 scenarios and writes `tests/fixtures/transform_controls.json`;
+  `tests/addons_transform_controls.rs` replays them and matches every event,
+  transform, handle state and working vector to 1e-9, and compares the gizmo
+  graph node for node. See `docs/controls.md`.
+- **`FirstPersonControls`** and **`FlyControls`** (`addons::controls`), ports
+  of `examples/jsm/controls/FirstPersonControls.js` and `FlyControls.js` as
+  of the pinned 5f610f5 (r187dev), with the same fields, defaults and `update( delta )`. Input
+  arrives as method calls (`pointer_down`, `pointer_move`, `key_down` with a
+  new `KeyCode`, …) rather than DOM listeners, the camera is passed to
+  `update` as a `&Node`, and Fly's `change` event is `update`'s return value.
+  `tools/first_person_controls_reference.mjs` and
+  `tools/fly_controls_reference.mjs` run three's own classes under node over
+  scripted input and write `tests/fixtures/first_person_controls.json` and
+  `fly_controls.json`; `tests/addons_first_person_controls.rs` and
+  `tests/addons_fly_controls.rs` replay the scripts and match every camera
+  position and quaternion to 1e-9. See `docs/controls.md`.
+- **TSL sweep 1**: the last absent `three/tsl` math names and nine texture
+  utilities (`texture_bicubic_level` is now public), each gated against three's own WGSL dump in
+  `tests/nodes_tsl_batch.rs`.
+  - Packing: `pack_snorm_2x16`, `pack_unorm_2x16`, `pack_half_2x16`,
+    `pack_snorm_4x8`, `pack_unorm_4x8` and the five matching `unpack_*`,
+    which print WGSL's `pack2x16snorm` family.
+  - Packed 4x8 integers: `pack_4x_i8`, `pack_4x_u8`, `pack_4x_i8_clamp`,
+    `pack_4x_u8_clamp`, `unpack_4x_i8`, `unpack_4x_u8`, `dot_4u8_packed` and
+    `dot_4i8_packed`. These print the native builtins. Three's emulation for
+    devices without `packed_4x8_integer_dot_product` is not ported.
+  - `any` (function and method), `transform_normal_by_view_matrix`,
+    `transform_normal_by_inverse_view_matrix`, and the deprecated spellings
+    `faceforward` and `inversesqrt`. `all` already existed; it is now gated.
+  - Textures: `equirect_direction`, `matcap_uv`, `max_mip_level`,
+    `spritesheet_uv`, `triplanar_textures`, `texture_bicubic`,
+    `texture_bicubic_level`, `texture_3d_load` and `texture_3d_level`. The
+    functions that take a texture node in three take the `Texture` here,
+    as `triplanar_texture` already did.
+- **TSL sweep 2**: thirty-one `three/tsl` accessors, each gated against three's
+  own WGSL dump in `tests/nodes_tsl_batch.rs`. See `docs/nodes.md` §67.
+  - Tangent frame: `bitangent_geometry`, `bitangent_local`, `bitangent_world`,
+    `tangent_world`, and `tangent_geometry` and `tangent_local`, now public.
+    Also `parallax_direction` and `parallax_uv`.
+  - Camera: `camera_normal_matrix`. `camera_near` and `camera_far` already
+    existed and are now gated.
+  - Model and object: `model_direction`, `model_position`, `model_scale`,
+    `model_view_position` and `model_radius`, plus the `object_*` forms of
+    each, which take the target `&Node`. Also `mediump_model_view_matrix`,
+    `highp_model_view_matrix` and `highp_model_normal_view_matrix`.
+  - `transform_normal` (function and method), `transform_normal_to_view`,
+    `reflect_view`, `refract_view`, `refract_vector` and `clip_space`.
+  - `material_refraction_ratio`, with a new
+    `MeshBasicNodeMaterial::refraction_ratio`: 0.98 from `new`, `lambert`
+    and `phong`, whose three.js materials have `refractionRatio`, and 0
+    from the other constructors.
+  - `reflect_vector` is now cached per normal, like `refract_vector`.
+  - `object_direction` refreshes the target's world matrix and negates a
+    camera's direction, as `getWorldDirection()` does.
+  - A geometry without a `tangent` attribute no longer fails to draw when
+    the material reads the tangent in the vertex stage. The attribute
+    becomes three's `vec4( 0, 0, 0, 1 )` constant, with three's warning.
+  - `clip_space` warns and yields `vec4()` outside the fragment stage.
+  - `webgpu_tsl_raging_sea` uses the crate's `transform_normal_to_view` in
+    place of its local helper.
+- **TSL sweep 3**: twenty-nine display, lighting and material `three/tsl` names.
+  Every shader-building addition is gated against three's own WGSL dump in
+  `tests/nodes_tsl_batch.rs`; `get_texture_index`, a CPU helper, is
+  unit-tested only. Divergences are recorded in `docs/nodes.md` §68.
+  - Depth: `view_z_to_reversed_orthographic_depth`,
+    `orthographic_depth_to_view_z`, `view_z_to_reversed_perspective_depth`,
+    `view_z_to_logarithmic_depth` and `logarithmic_depth_to_view_z`.
+  - Colour: `blend_burn`, `blend_dodge`, `blend_screen`, `blend_color`,
+    `vibrance`, `cdl` and `cineon_tone_mapping`. `ToneMapping::Cineon`
+    selects it as a material or pass tone mapping, as `CineonToneMapping`
+    does.
+  - Screen: `get_screen_position`, `get_normal_from_depth`,
+    `viewport_coordinate` and `viewport_uv`. `screen_size` already existed
+    and is now gated. `direction_to_face_direction`, three's deprecated alias
+    of `negateOnBackSide`, takes the material side as a parameter.
+  - Passes: `depth_pass( scene, camera )`, whose node is the scene's linear
+    depth (`PassNode::a` follows it), and `PassNode::linear_depth_node`.
+    `nodes::get_texture_index` is the MRT name lookup; it takes attachment
+    names and returns an `Option`.
+  - Lighting: `light_projection_uv`, `direct_point_light` (returns the
+    `( lightDirection, lightColor )` pair) and `get_parallax_correct_normal`.
+    `shadow_matrix( i )` now returns one shared node per light, as three's
+    `lightShadowMatrix` does. The renderer now refreshes `light.shadow.matrix`
+    every render for a light whose shadow is not rendered (`cast_shadow` or
+    `shadow_map_enabled` off), as `lightShadowMatrix`'s render update does,
+    so `light_projection_uv` follows a light that casts nothing.
+  - Material: `material_normal`, `material_clearcoat_normal`,
+    `material_specular_strength`, `material_light_map` and `material_ao`.
+    Each takes the material it reads the maps from; `material_normal` and
+    `material_clearcoat_normal` also read its `side` and `flat_shading`. Also
+    `material_point_size` and `point_width`. New `MeshBasicNodeMaterial` fields:
+    `light_map`, `light_map_intensity` (default 1), `specular_map` and
+    `size` (default 1). The material flows do not apply `light_map` or
+    `specular_map`; the renderer warns once per material that only the
+    accessors read them, and `check_supported()` does not fail on them.
+- **TSL sweep 4**: the `three/tsl` utils names. Each one that emits WGSL is
+  gated against three's own dump in `tests/nodes_tsl_batch.rs`. See
+  `docs/nodes.md` §70.
+  - Context: `uniform_flow` makes a two-branch `select()` print WGSL's
+    `select()`. `set_name` names the first uniform built under it, unless
+    that uniform has a name of its own; either way the name is used up.
+    `label` is three's deprecated alias of `set_name`. MaterialX's
+    `mx_select` and `mx_negate_if` now use `uniform_flow`, with
+    byte-identical output.
+  - The method `NodeRef::set_name` (and `label`) on a uniform renames it in
+    place and returns it, as three's `UniformNode.setName()` does.
+    `UniformNode::name` is now a `Cell`.
+  - `bypass`, `vertex_stage` (method `to_vertex_stage`), `unpack_normal`,
+    `unpack_rgb_to_normal`, `expression( snippet, type )`, `debug` with an
+    optional `DebugCallback`, `sample` with its `SampleNode` handle, and raw
+    `wgsl( code, includes )` for a `wgsl_fn`'s includes. `direction_to_color`
+    and `color_to_direction` are ported as three's deprecated aliases.
+  - Event hooks: `on_object_update`, `on_material_update`, `on_frame_update`,
+    `on_after_object_update`, `on_before_object_update`,
+    `on_before_material_update` and `on_before_frame_update`. Each is a
+    `void` node attached with `.bypass()`. Its callback runs in three's update
+    phase and receives the `Renderer`.
+- **TSL sweep 5**: lighting and material `three/tsl` names, in
+  `nodes::tsl`. Each one that emits WGSL is gated against three's own dump in
+  `tests/nodes_tsl_batch.rs`. See `docs/nodes.md` §78.
+  - `material_anisotropy( material )`. The physical material's anisotropy
+    setup now reads it, and its WGSL is unchanged.
+  - `d_ggx_anisotropic`, `v_ggx_smith_correlated_anisotropic` and
+    `schlick_to_f0`. These are standalone: the physical lighting still
+    evaluates only the isotropic lobe.
+  - `ltc_uv`, `ltc_evaluate` and `ltc_evaluate_volume`. These are standalone
+    too, because there is no `RectAreaLight`.
+  - `lights( indices )` builds `MeshBasicNodeMaterial::lights_node`.
+    `webgpu_lights_selective` uses it.
+- **TSL sweep 6**: the compute, storage and subgroup `three/tsl` names, in
+  `nodes::tsl`, each gated against three's own dump in
+  `tests/nodes_tsl_batch.rs`. See `docs/nodes.md` §84.
+  - The subgroup family: `subgroup_add`, `subgroup_mul`, `subgroup_and`,
+    `subgroup_or`, `subgroup_xor`, `subgroup_min` and `subgroup_max` with
+    their inclusive and exclusive scans where three has them, `subgroup_all`,
+    `subgroup_any`, `subgroup_ballot`, `subgroup_elect`,
+    `subgroup_broadcast_first`, `subgroup_broadcast`, `subgroup_shuffle`
+    and its `_xor`/`_up`/`_down` forms, `quad_swap_x`/`_y`/`_diagonal` and
+    `quad_broadcast`. Also the builtins `subgroup_size`, `subgroup_index` and
+    `invocation_subgroup_index`. A stage that uses any of them gets
+    `enable subgroups;`. The renderer requests `wgpu::Features::SUBGROUP`
+    when the adapter has it. Without the feature, a subgroup kernel or a
+    material whose fragment stage uses subgroups logs three's message and is
+    skipped.
+  - Known gaps: naga 30 cannot parse `subgroup_elect`, and accepts only `u32`
+    ids for `subgroup_broadcast`, `subgroup_shuffle` and `quad_broadcast`.
+    Three cannot build `quadBroadcast` at all; the port takes the id it
+    needs.
+  - `attribute_array`: the `StorageArray` whose `to_attribute()` steps once
+    per vertex rather than once per instance.
+  - `storage_element`, `atomic_func` (public now, under three's name) and
+    `texture_barrier`. `storage_texture_3d` is now gated.
 - **`SkyMesh`** (`addons::objects`), a port of `examples/jsm/objects/SkyMesh.js`.
   It is the Preetham daylight model with a sun disc and an fbm cloud layer.
   Every uniform is a public `SettableValue`. `webgpu_sky` is graded green at 0
@@ -83,6 +298,60 @@ have their own sections after the release they ship with. The format follows [Ke
   `depth_texture_load`, `all`, `view_z_to_perspective_depth` and
   `get_view_position`. Also `Renderer::init_render_target` and
   `RenderPipeline::claim_view_offset`. (#165)
+- **`ssr`** (`nodes::display`), `SSRNode.js`: screen-space reflections, a
+  march through the depth buffer with roughness taken from a blurred mip
+  chain. `stochastic`, `binaryRefine`, `reflectNonMetals`,
+  `screenEdgeFadeBlack`, multi-bounce history and orthographic cameras are
+  not ported. See `docs/nodes.md` §65.
+- **`smaa`** (`nodes::display`), `SMAANode.js`: SMAA 1x with colour edge
+  detection, with three's area and search textures.
+- **`webgpu_postprocessing_ssr`** is graded: 4 of 100000 pixels, with the
+  reflections in the graded frame. Its six fragment shaders are gated against
+  three's dumps.
+- `webgpu_postprocessing_smaa` and `webgpu_postprocessing_pixel` are ported
+  and in the native viewer, but not graded on this machine, because three.js
+  itself fails their references there (258 and 405 pixels). The port scores
+  the same 258 and 405, and differs from three's own frames in no graded
+  pixel.
+- **`Renderer::size()`**, three's `renderer.getSize()`: the canvas size in
+  logical pixels.
+- **Rendering into a mip level**: `RenderTarget::set_mip_level_count()`,
+  `Renderer::set_render_target_level()` (three's `setRenderTarget( rt, 0,
+  level )`) and `Renderer::active_mipmap_level()`.
+- TSL `continue_loop()` (`Continue()`) and `get_screen_position()`.
+- **`dof`** (`nodes::display`), `DepthOfFieldNode.js`: bokeh depth of field
+  in nine full-screen draws. All seven distinct quad shaders are gated against
+  three's dump (`dof_*` in `tests/nodes_display_wgsl.rs`). three lists the
+  page in its e2e exception list, so it has no graded rung.
+  `webgpu_postprocessing_dof` is in the native viewer. See `docs/nodes.md`
+  §66.
+- **`webgpu_postprocessing_dof_basic`** is graded: 36 of 100000 pixels. It
+  is the page's own `boxBlur` + `smoothstep` mix, not `DepthOfFieldNode`.
+- **`tsl::output_struct()`**, `outputStruct()` as a material's `outputNode`.
+  Each member keeps its own type, where an `mrt()` member is a `vec4`.
+- **Red render targets**: `RenderTarget::set_red_format()`. A texture node
+  over a one-channel map is now a `float` node read as `.x`, as three's
+  `getTextureType()` makes it.
+- **`tsl::uniform_array_vec2()`** and `UniformArray::element_xy()`.
+- **`Scene::environment_rotation`**, `scene.environmentRotation`, applied
+  through `materialEnvRotation`.
+- **`godrays`**, **`bilateral_blur`** and **`depth_aware_blend`**
+  (`nodes::display`), ports of `GodraysNode.js`, `BilateralBlurNode.js` and
+  `depthAwareBlend.js`. The godrays node ray-marches a point light's cube
+  shadow map. The `DirectionalLight` branch is not ported. Three's dump
+  gates all three shaders. `webgpu_postprocessing_godrays` is graded green
+  at 3 of 100000 pixels. See `docs/nodes.md` §74.
+- **`lensflare`** (`nodes::display`), a port of `LensflareNode.js`.
+  `webgpu_postprocessing_lensflare` is graded green at 0 of 100000 pixels.
+  Each quad the page adds is gated against three's dump. See `docs/nodes.md`
+  §75.
+- **`LightShadow::point_depth_texture()`**, three's
+  `light.shadow.map.depthTexture` for a point light. The renderer draws the
+  light's shadow into the texture it returns.
+- **`Scene::background_intensity`** and **`Scene::environment_intensity`**,
+  three's `scene.backgroundIntensity` and `scene.environmentIntensity`.
+- **`tsl::const_array_of`**, a literal array of vectors, and
+  `UniformArray::element_xyz`.
 
 ### Changed
 
@@ -99,9 +368,36 @@ have their own sections after the release they ship with. The format follows [Ke
   it at the origin. A light whose position the application never sets now
   shines down from one unit up, as in three; a scene that relied on the old
   origin should set the position itself.
+- **A compute kernel with a barrier has no bounds check, and its vars are
+  local to `main`**, as `BarrierNode.setup()` makes them in three. Before,
+  `workgroup_barrier()` and `storage_barrier()` kernels kept the
+  `if ( instanceIndex >= count ) { return; }` guard and module-scope
+  `var<private>`s. Without the guard, every invocation of the last workgroup
+  runs, as in three: the dispatch is still `ceil( count / workgroup )`, so
+  tail invocations index past `count`, and a kernel must guard its own
+  accesses, e.g. `If( instanceIndex < count )` around the stores after the
+  barrier. See `docs/nodes.md` §84.6.
 
 ### Fixed
 
+- `positionViewDirection` is `vec3( 0, 0, 1 )` under an orthographic
+  camera, as three's is. It was always the perspective
+  `normalize( -positionView )`, which moved Phong and physical specular
+  highlights under an `OrthographicCamera`.
+- `smaa()` renders its input inside the reset renderer state, as three's
+  lazily updated input does. A scene pass behind it now clears to opaque
+  black instead of the renderer's clear alpha, so an anti-aliased line over
+  an empty background is no longer brightened back by `renderOutput`'s
+  unpremultiply.
+- glTF `alphaMode: MASK` now sets `alpha_test = alphaCutoff`. Before, masked
+  cut-outs drew as solid quads.
+- A `negate()` read more than once becomes a shared `var`, as three's
+  `MathNode` does. It used to be inlined at every read.
+- A `Fn()` block read twice counts its result twice, so the result is
+  promoted to a `var` where three promotes it.
+- `GaussianBlurNode::render()` runs its input's update-before first. On the
+  first frame, a blur over an `rtt()` or another display node used to size
+  its targets from a 1×1 input.
 - A `HemisphereLight` with no `AmbientLight` beside it no longer has its
   irradiance overwritten with zero before the Phong, Lambert and Toon models
   read it.
