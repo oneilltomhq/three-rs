@@ -9132,6 +9132,299 @@ load callback adds it to the new scene. The port builds only that scene.
 
 Not ported: orthographic cameras, logarithmic and reversed depth, an
 `RTTNode` beauty and a velocity other than the global one.
+## 91. `FSR1Node` (`webgpu_upscaling_fsr1`)
+
+### 91.1 What three does
+
+`fsr1( node, sharpness = 0.2, denoise = false )` is an `FSR1Node` over
+`convertToTexture( node )`. It is AMD FidelityFX Super Resolution 1.0, a
+spatial upscaler. Like `SharpenNode` (§86) it is a plain `Node` with
+`updateBeforeType = FRAME`. It owns two half-float targets with no depth
+buffer, `_easuRT` and `_rcasRT`, and its texture node is
+`passTexture( this, _rcasRT.texture )`. `updateBefore()` sizes both targets
+to the drawing buffer, then draws two quads with one `QuadMesh`, with the
+renderer's state reset around the draws. The input's size is whatever the
+input texture is. On the page that is a scene pass at
+`setResolutionScale( 0.5 )`, half the canvas. `setSize( width, height )`
+sizes the output.
+
+- **`FSR1_EASU`** (edge-adaptive spatial upsampling) maps the output pixel
+  into the input, finds the texel `fp = floor( pp )` and its fraction, and
+  `textureLoad`s a 12-texel footprint around it: the 4×4 square without its
+  corners. Two arrow helpers, which join the `Fn`'s stack as they run, do
+  the work:
+  - `_accumulateEdge` runs once per bilinear quadrant, `(b,e,f,g,j)`,
+    `(c,f,g,h,k)`, `(f,i,j,k,n)` and `(g,j,k,l,o)`, weighted by the
+    fraction. It takes the luma `r · 0.5 + g + b · 0.5` and adds an edge
+    direction into `dir` and a squared, normalised edge length into `len`.
+  - The direction is then normalised, with `select`s guarding a zero
+    direction below `1 / 32768`. `len` is halved and squared, and that
+    shapes an approximate Lanczos2 kernel into an ellipse along the edge
+    (`stretch`, `len2`, `lob = 0.5 + ( 1/4 - 0.04 - 0.5 ) · len`,
+    `clp = 1 / lob`).
+  - `_accumulateTap` runs once per texel and adds `colour · w` into `aC` and
+    `w` into `aW`.
+
+  The result is `aC / aW`, clamped to the min and max of the four nearest
+  texels, so the negative lobe cannot ring.
+- **`FSR1_RCAS`** is `SharpenNode`'s quad (§86.1) over the EASU target,
+  with the same lobe, limiters, `con = exp2( -sharpness )` and denoise
+  branch. One difference is in the texel lookup. It reads the size as
+  `vec2( textureSize( … ) )`, which is used twice, so three's usage cache
+  declares it once, as `let nodeConst0 = vec2<f32>( textureDimensions( … ) )`.
+  `SharpenNode` reads `textureSize( … ).x` and `.y` on integers.
+
+`sharpness` and `denoise` are `nodeObject()`s. A number for `sharpness` is a
+constant folded into the shader, as in `SharpenNode`, and `denoise` changes
+only the literal in `false == true`, not the graph.
+
+### 91.2 The port
+
+`nodes::display::fsr1( node, sharpness, denoise )` wraps `node` in
+`convert_to_texture` and keeps the `RttNode` alive. `Fsr1Node::new( &Texture,
+sharpness, denoise )` is the constructor over a texture already in hand,
+which is the case where three's `convertToTexture()` passes a pass texture
+through. The page and `tests/fsr1_frames.rs` use it on
+`scene_pass.texture()`. `sharpness` is a float node, and
+`Fsr1Node::DEFAULT_SHARPNESS` is three's 0.2. `denoise` is a `bool`.
+`Fsr1State` implements `NodeUpdate` and is registered as the updater of the
+RCAS texture (§63, §86.2). `update_before` sizes both targets and draws both
+quads, as three's does. `node()`, `texture()`, `easu_texture()` and
+`set_size()` are three's texture node, the two targets' textures and
+`setSize`.
+
+The RCAS quad is `sharpen.rs`' `rcas()`, which takes a flag for the `vec2`
+size form. Under that flag, `rcas()` makes the converted size a `toConst()`
+listed first in its block. The port's conversion is not a cached node, so
+without the `toConst()` it would inline `textureDimensions` twice. With it,
+the port declares the same `let nodeConst0` three's cache does.
+
+EASU is three's `Fn` statement for statement:
+
+- `accumulate_edge` and `accumulate_tap` push their `toConst()`s and
+  `addAssign()`s into the caller's statement list in the JS order.
+- `easu()` lists the taps, the four quadrants, the kernel and the twelve
+  accumulations in three's order in one `block`.
+- The `select`s assign into `dir.x` and `dir`, as three's `.assign()` and
+  `.mulAssign()` do.
+
+The page's dump gives the two fixtures. Module `m36` is
+`fsr1_easu_matches_three` and `m38` is `fsr1_rcas_matches_three`. Since
+`denoise` does not change the graph, there is no denoise dump. Against the
+dump the WGSL differs only cosmetically:
+
+- The twelve EASU lumas and the five RCAS lumas are `nodeVar`s where three
+  has `let nodeConst`s, which is the usual single-assignment difference
+  (§8).
+- RCAS's `exp2( -0.2 )` and `0.1875` are `let` where three has `const`, as
+  in §86.2.
+
+`tests/fsr1_frames.rs` draws a hard vertical edge with a half-resolution
+scene pass and reads the result straight to the canvas. It checks that:
+
+- both targets are at canvas size and the pass is at half of it;
+- away from the edge the two greys come through unchanged;
+- the steepest step per row is steeper than a bilinear upscale of the same
+  pass texture: 3086 summed over 28 rows, against bilinear's 1764 and EASU
+  alone's 2606;
+- EASU alone, at sharpness 30, stays inside the edge's range;
+- after a resize both targets follow the drawing buffer;
+- the free `fsr1()` of a plain colour gives back that colour.
+
+`webgpu_upscaling_fsr1` is ungraded. three.js scores 703 of 100000 pixels
+against its own reference on this machine, twice, which is over the 0.1%
+limit. The port's rung is ignored, and it scores 698.
+
+Not ported: `material.contextNode = context( builder.getSharedContext() )`.
+Both quad materials are built in the constructor, as `RttNode`'s is.
+## 92. `DenoiseNode`
+
+### 92.1 What three does
+
+`denoise( node, depthNode, normalNode, camera )` is a `DenoiseNode` over
+`convertToTexture( node )`. It is a plain `Node` with
+`updateBeforeType = FRAME`, and `updateBefore()` only copies the input
+texture's size into the `_resolution` uniform. Its output is inline: the
+node is the denoised colour, built in `setup()` from three plain `Fn`s
+(`denoiseSample`, `denoise` and `output`), so nothing becomes a WGSL
+function.
+
+- **The centre.** `output` reads the depth, the view normal and the texel.
+  The sky (`depth >= 1`) and pixels without a normal (`dot( n, n ) == 0`)
+  pass the texel through. The rest go to the `Else` branch, which writes an
+  unnamed `property( 'vec4' )`.
+- **The rotation.** A 64×64 RGBA `DataTexture` of simplex noise
+  (`generateDefaultNoise()`, built with `math/SimplexNoise.js` seeded by
+  `Math.random`, nearest filtering, repeat wrapping) is tiled over the
+  screen. One channel of it gives the angle of a `mat2` rotation:
+  `noiseTexel.element( index.mod( 4 ).mul( 2 ).mul( PI ) )`. The index is a
+  float, so `ArrayElementNode` builds it as `u32( … )`. That puts the
+  channel at 0, 6, 12 or 18, so any `index` other than a multiple of 4 reads
+  past the end of a `vec4`. The default `index` is 0, which reads `.x`.
+- **The taps.** Sixteen sample vectors come from
+  `generateDenoiseSamples( 16, 2, 1 )`, a two-ring spiral, in a
+  `uniformArray`. Each tap is rotated, scaled by `radius` and divided by
+  the resolution. Its weight is the product of three similarities: luma,
+  `max( 1 - |Δluma| / lumaPhi, 0 )`; depth plane,
+  `max( 1 - |dot( Δview, n )| / depthPhi, 0 )`; and normal,
+  `pow( max( dot( n, nᵢ ), 0 ), normalPhi )`. The weighted colours and
+  weights are summed, the sum is divided by the total weight when it is
+  positive, and the centre's alpha is kept.
+- **No normal.** With `normalNode = null`, `getNormalFromDepth` rebuilds the
+  normal from four neighbouring depth taps.
+
+All four phis and `radius` default to 5. No r187 page calls `denoise()`.
+`webgpu_postprocessing_ssr_denoise` uses `recurrentDenoise` (§88).
+
+### 92.2 The port
+
+`nodes::display::denoise( &input, &depth, normal, &camera )` returns a
+`DenoiseNode`. `input` is a texture already in hand: a pass attachment, or
+the texture of the `convert_to_texture` that three's `denoise()` wraps
+around a node. `normal` is an `Option<SampleFn>`, and `None` takes the
+`getNormalFromDepth` path. `lumaPhi`, `depthPhi`, `normalPhi`, `radius` and
+`index` are public `SettableValue`s.
+
+Two Live uniforms take the place of `updateBefore()`. `_resolution` is read
+from the input texture's size at upload time. The projection inverse
+follows the camera by reference. So the node needs no `NodeUpdate`.
+
+The noise texture is `generate_default_noise( 64 )`, built with
+`addons::simplex_noise::SimplexNoise`. The port puts `SimplexNoise` next to
+`ImprovedNoise` in `src/addons/`, where the parity table lists it. It is a
+line-for-line port of three's 2D, 3D and 4D noise. Its unit test checks the
+permutation table and twelve values against three's JS fed the same
+Park–Miller sequence. Three seeds it from `Math.random`, so its noise
+texture changes on every load. The port seeds it from
+`testing::DeterministicRandom`, the sequence the harness pins
+`Math.random` to. The gates compare WGSL only.
+
+`tools/dump-pages/denoise.html` draws a scene pass with
+`mrt( { output, normal: normalView } )` and two quads:
+`denoise( output, depth, normal, camera )`, and the same with `null`
+chained after it through `convertToTexture()`. The dump's `m03` and `m05`
+are the fixtures of `denoise_matches_three` and
+`denoise_from_depth_matches_three`.
+
+To match the `u32( … )` around the element index, the builder now formats a
+float `Element` index as `u32`, as `ArrayElementNode.generate()` does. It
+had emitted the float bare. No other gate had a float index.
+
+The fingerprints match. The cosmetic differences are:
+
+- three's unnamed `property( 'vec4' )` is a `nodeVar`, and the port's
+  `property` needs a name, so it is `denoiseResult`;
+- the port declares `vec3<f32>( nodeVar.xyz )` where three folds the
+  redundant `vec3( texel.rgb )` to `nodeVar.xyz`;
+- the usual `let nodeConst` versus `nodeVar` single-assignment difference
+  (§8).
+
+`tests/denoise_frames.rs` uses a plane painted with a one-pixel
+checkerboard of two greys, and a nearer white plane over the right half.
+The variance of the checkerboard drops from about 650 to about 6, and its
+mean moves by two levels. The white plane stays white next to the edge, and
+the checkerboard beside it is not pulled towards white. All of this holds
+with and without a normal input. The test sets `depthPhi = 0.1`: at
+three's default of 5, a 0.8-unit step in depth still keeps 84% of a tap's
+weight.
+
+## 93. `SSAONode` and `depthAwareBlur` (`webgpu_postprocessing_ao`, SSAO mode)
+
+### 93.1 What three does
+
+`ssao( depthNode, normalNode, camera )` is an `SSAONode`. It is a plain
+`Node` with `updateBeforeType = FRAME`, two `RedFormat` targets
+(`_aoRenderTarget` and `_blurRenderTarget`, sized
+`max( 1, round( resolutionScale · drawingBuffer ) )`, with
+`resolutionScale = 0.5` by default), and two materials.
+
+- **`SSAO.AO`** is one plain `Fn`. It reads the depth into a var and
+  discards the sky. It then makes vars of the view position, the normalised
+  view normal, `phi = interleavedGradientNoise( screenCoordinate ) · 2π`,
+  and the fragment's clip position. Then comes
+  `Loop( { start: int( 0 ), end: samples, type: 'int' } )`, whose end is the
+  `samples` uniform itself, so changing it rebuilds nothing. Each sample
+  takes `vogelDiskSample( i, samples, phi ) · radius` in the view plane,
+  adds its projection to the clip position, finds the screen uv with
+  `getScreenPositionFromClip`, and reads one depth there. Occlusion
+  accumulates `max( cos θ - bias, 0 ) · radius / ( radius + dist )`. The
+  output is `clamp( 1 - occlusion / samples · intensity, 0, 1 )`, a float.
+- **`SSAO.Blur`** is `depthAwareBlur( _blurInput, depth, _blurDirection,
+  camera, blurSharpness, radius )`. That is a five-tap loop from `int( -2 )`
+  to `int( 3 )`, with weight `exp( -½ i² ) · exp( -|viewZᵢ - viewZ| /
+  radius · sharpness )`. `viewZ` comes from `perspectiveDepthToViewZ`, or
+  from `logarithmicDepthToViewZ` with a logarithmic depth buffer. Near and
+  far are `reference( 'near' / 'far', camera )`. The result is
+  `sum / max( weightSum, 0.0001 )`.
+- **`updateBefore()`** resets the renderer state, sizes both targets, clears
+  to white and draws the AO. With `blurEnabled` it then draws the blur
+  twice: horizontally from the AO target into the blur target, and
+  vertically back into the AO target. Between the draws it swaps
+  `_blurInput.value` and `_blurDirection`. So `getTextureNode()` is always
+  the AO target's texture, blurred or not.
+
+Defaults: radius 0.5, intensity 1, bias 0.025, samples 16, blurSharpness 2.
+`webgpu_postprocessing_ao` uses it when the GUI's `aoType` is `SSAO`, at
+resolution scale 1 with MSAA and no TRAA.
+
+### 93.2 The port
+
+`nodes::display::ssao( &depth, normal, &camera )` returns an `SsaoNode`, and
+`nodes::tsl::depth_aware_blur( input, &depth, direction, &camera,
+sharpness, radius )` is the blur. `normal` is a `SampleFn`, which is three's
+`sample( uv => … )`. The five uniforms are public `SettableValue`s. The
+`samples` uniform is the loop's end, as in three. `set_resolution_scale`
+and `set_blur_enabled` stand in for the two plain fields.
+
+`SsaoState` implements `NodeUpdate` and is registered as the updater of the
+AO texture, as `TraaState` is (§63). Its `update_before` runs the
+pre-pass first, with the AO context lifted as in `GtaoState`. The normal
+is a sampler, not a texture, so it finds the pass through the depth
+attachment the pass owns. The draws then follow three's order. Near and
+far, the projection matrix and its inverse are Live uniforms that read the
+camera by reference.
+
+Three swaps one blur material's input texture between the two draws. The
+port has two blur materials, one per input texture, each with its own
+direction uniform. They build the same WGSL.
+
+`tools/dump-pages/ssao.html` draws a pre-pass and `ssao()`. The dump's
+`m03` (`SSAO.AO`) and `m04` (`SSAO.Blur`) are the fixtures of
+`ssao_matches_three` and `ssao_blur_matches_three`. With `blurEnabled =
+false` the blur material is skipped, and no graph changes. The
+fingerprints match. The differences are:
+
+- **The targets.** The port has no `RedFormat`, so both targets are
+  `rgba8unorm`, read through `.x`, as `GtaoNode`'s are. Three's AO output
+  is `@location( 0 ) color: f32` with `output.color = clamp( … )`. The
+  port's is a `vec4<f32>`, with `output.color = vec4<f32>( clamp( … ) )`.
+  For the same reason, three's blur reads `textureSample( … ).x` into a
+  float var, and the port reads the `vec4` and takes `.x` where it is used.
+- **The blur's order.** Three's `weight` is built first at the
+  `sum.addAssign( input.r · weight )`, after the input sample, so its
+  `let nodeConst` follows the sample. The port declares `fi`, `sampleUv`
+  and `weight` as statements of the loop body, so `weight` comes before
+  the sample, and the uniforms are numbered in that order.
+- **Single assignment.** The usual `let nodeConst` versus `nodeVar`
+  difference (§8) applies.
+
+Not ported: the logarithmic-depth branches of both files (the port has no
+logarithmic depth buffer), `contextNode`, and `dispose()`.
+
+The page's SSAO mode is not wired into `examples/webgpu_postprocessing_ao.rs`.
+It needs the scene pass to render with 4 MSAA samples, which three sets as
+`scenePass.options.samples`. The port's `PassNode` takes the renderer's
+sample count and has no per-pass one, so the mode waits for that.
+
+`tests/ssao_frames.rs` uses the white box on a white floor of
+`gtao_frames`, at resolution scale 1:
+
+- The sky keeps the white clear.
+- No pixel is NaN.
+- The crease at the box's foot is darker than the open floor (209 against
+  255), both raw and blurred.
+- The blur cuts the mean squared difference between neighbouring pixels
+  from 11.5 to 4.3.
 
 ## 96. `webgpu_materials_transmission` — an alpha map, and two transmission copies
 

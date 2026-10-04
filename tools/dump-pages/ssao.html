@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three-rs dump page - ssao() and its depth-aware blur</title>
+		<meta charset="utf-8">
+	</head>
+	<body>
+		<!--
+			Not a three.js example: a minimal page for tools/dump-webgpu.mjs --html,
+			so the WGSL of SSAONode.js and depthAwareBlur.js can be dumped and gated
+			in tests/nodes_display_wgsl.rs. The only webgpu_* example that calls
+			ssao() is webgpu_postprocessing_ao.html, and only after its GUI switches
+			the AO type from GTAO to SSAO, so its dump never has the module; this
+			page builds the node the way that page's SSAO branch does: a pre-pass
+			writing packNormalToRGB( normalView ) into an 8-bit target, the normal
+			node a sample() that unpacks it, and the pre-pass depth.
+
+			SSAONode draws two quads of its own in updateBefore(), into RedFormat
+			targets, and hands the graph passTexture( this, aoTarget.texture ):
+
+			  SSAO.AO    the raw occlusion            -> AO quad
+			  SSAO.Blur  depthAwareBlur(), drawn twice (horizontal, then vertical)
+			             with one material, so one module
+			  RenderPipeline output: vec4( vec3( ao.sample( screenUV ).r ), 1 )
+
+			blurEnabled = false only skips the two blur draws in updateBefore();
+			the materials, and so the modules, are the same either way.
+		-->
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "../build/three.webgpu.js",
+					"three/webgpu": "../build/three.webgpu.js",
+					"three/tsl": "../build/three.tsl.js",
+					"three/addons/": "./jsm/"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			import * as THREE from 'three/webgpu';
+			import { pass, mrt, normalView, packNormalToRGB, unpackRGBToNormal, sample, screenUV, vec3, vec4 } from 'three/tsl';
+			import { ssao } from 'three/addons/tsl/display/SSAONode.js';
+
+			const camera = new THREE.PerspectiveCamera( 50, window.innerWidth / window.innerHeight, 0.1, 100 );
+			camera.position.set( 0, 1.5, 4 );
+			camera.lookAt( 0, 0, 0 );
+
+			const scene = new THREE.Scene();
+			scene.background = new THREE.Color( 0x335577 );
+
+			const box = new THREE.Mesh( new THREE.BoxGeometry( 1.5, 1.5, 1.5 ), new THREE.MeshBasicNodeMaterial( { color: 0xff8844 } ) );
+			box.rotation.set( 0, 0.6, 0 );
+			box.position.y = - 0.25;
+			scene.add( box );
+
+			const floor = new THREE.Mesh( new THREE.PlaneGeometry( 8, 8 ), new THREE.MeshBasicNodeMaterial( { color: 0x888888 } ) );
+			floor.rotation.x = - Math.PI / 2;
+			floor.position.y = - 1;
+			scene.add( floor );
+
+			const renderer = new THREE.WebGPURenderer();
+			renderer.setPixelRatio( window.devicePixelRatio );
+			renderer.setSize( window.innerWidth, window.innerHeight );
+			document.body.appendChild( renderer.domElement );
+
+			const prePass = pass( scene, camera );
+			prePass.setMRT( mrt( {
+				output: packNormalToRGB( normalView )
+			} ) );
+
+			const prePassNormal = sample( ( uv ) => {
+
+				return unpackRGBToNormal( prePass.getTextureNode().sample( uv ) );
+
+			} );
+
+			const prePassDepth = prePass.getTextureNode( 'depth' );
+
+			prePass.getTexture( 'output' ).type = THREE.UnsignedByteType;
+
+			const aoPass = ssao( prePassDepth, prePassNormal, camera );
+
+			const renderPipeline = new THREE.RenderPipeline( renderer );
+			renderPipeline.outputNode = vec4( vec3( aoPass.getTextureNode().sample( screenUV ).r ), 1 );
+
+			renderer.setAnimationLoop( () => renderPipeline.render() );
+
+		</script>
+	</body>
+</html>

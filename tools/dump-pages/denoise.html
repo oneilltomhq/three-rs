@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three-rs dump page - denoise() with and without a normal node as two quads</title>
+		<meta charset="utf-8">
+	</head>
+	<body>
+		<!--
+			Not a three.js example: a minimal page for tools/dump-webgpu.mjs --html,
+			so the WGSL of DenoiseNode.js can be dumped and gated in
+			tests/nodes_display_wgsl.rs. No webgpu_* example of r187 calls denoise()
+			(webgpu_postprocessing_ssr_denoise.html uses recurrentDenoise()), so this
+			page is its only dump.
+
+			denoise() is a plain Node whose setup() returns its Fn() call, so it is
+			inlined into whatever material reads it. Each call is wrapped in
+			convertToTexture(), which renders it on an RTT quad of its own; the
+			second reads the first's texture, and the RenderPipeline's output is a
+			copy of the second:
+
+			  denoise( scenePassColor, depth, normal, camera )  -> RTT quad 1
+			  denoise( rtt1, depth, null, camera )             -> RTT quad 2
+			                                                      (normals from
+			                                                      getNormalFromDepth)
+			  RenderPipeline output                            -> copy quad
+
+			The scene pass writes the view normal unpacked, as the node's own
+			docs suggest: mrt( { output, normal: normalView } ).
+		-->
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "../build/three.webgpu.js",
+					"three/webgpu": "../build/three.webgpu.js",
+					"three/tsl": "../build/three.tsl.js",
+					"three/addons/": "./jsm/"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			import * as THREE from 'three/webgpu';
+			import { pass, mrt, output, normalView, convertToTexture } from 'three/tsl';
+			import { denoise } from 'three/addons/tsl/display/DenoiseNode.js';
+
+			const camera = new THREE.PerspectiveCamera( 50, window.innerWidth / window.innerHeight, 0.1, 100 );
+			camera.position.set( 0, 1.5, 4 );
+			camera.lookAt( 0, 0, 0 );
+
+			const scene = new THREE.Scene();
+			scene.background = new THREE.Color( 0x335577 );
+
+			scene.add( new THREE.HemisphereLight( 0xffffff, 0x444444, 2 ) );
+
+			const box = new THREE.Mesh( new THREE.BoxGeometry( 1.5, 1.5, 1.5 ), new THREE.MeshStandardNodeMaterial( { color: 0xff8844 } ) );
+			box.rotation.set( 0.4, 0.6, 0 );
+			scene.add( box );
+
+			const floor = new THREE.Mesh( new THREE.PlaneGeometry( 8, 8 ), new THREE.MeshStandardNodeMaterial( { color: 0x888888 } ) );
+			floor.rotation.x = - Math.PI / 2;
+			floor.position.y = - 1;
+			scene.add( floor );
+
+			const renderer = new THREE.WebGPURenderer();
+			renderer.setPixelRatio( window.devicePixelRatio );
+			renderer.setSize( window.innerWidth, window.innerHeight );
+			document.body.appendChild( renderer.domElement );
+
+			const scenePass = pass( scene, camera );
+			scenePass.setMRT( mrt( {
+				output: output,
+				normal: normalView
+			} ) );
+
+			const scenePassColor = scenePass.getTextureNode( 'output' );
+			const scenePassNormal = scenePass.getTextureNode( 'normal' );
+			const scenePassDepth = scenePass.getTextureNode( 'depth' );
+
+			const withNormals = convertToTexture( denoise( scenePassColor, scenePassDepth, scenePassNormal, camera ) );
+			const fromDepth = convertToTexture( denoise( withNormals, scenePassDepth, null, camera ) );
+
+			const renderPipeline = new THREE.RenderPipeline( renderer );
+			renderPipeline.outputNode = fromDepth;
+
+			renderer.setAnimationLoop( () => renderPipeline.render() );
+
+		</script>
+	</body>
+</html>
