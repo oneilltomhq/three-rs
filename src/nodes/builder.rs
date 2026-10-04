@@ -533,6 +533,10 @@ pub(crate) struct BuildContext {
     /// `tangent` vec4 through `modelViewMatrix`; without it, from the screen
     /// derivatives of `TangentUtils.js`.
     pub(crate) has_tangent: bool,
+    /// `builder.camera.isOrthographicCamera`: what `positionViewDirection`
+    /// branches on. The renderer keys the program on it through
+    /// `SetupContext::orthographic`.
+    pub(crate) orthographic_camera: bool,
     /// `setupPositionView`: `NodeMaterial.setupPositionView()`'s result, which
     /// `SpriteNodeMaterial` and `PointsNodeMaterial` override. `None` is the
     /// base class' `modelViewMatrix.mul( positionLocal ).xyz`.
@@ -567,6 +571,7 @@ impl Default for BuildContext {
             flat_shading: false,
             material_side: crate::materials::Side::Front,
             has_tangent: false,
+            orthographic_camera: false,
             setup_position_view: None,
             setup_clearcoat_normal: None,
             alpha_to_coverage_samples: false,
@@ -1547,12 +1552,11 @@ impl NodeBuilder {
                 crate::textures::Wrapping::ClampToEdge,
             ),
         };
-        for wrap in [wrap_s, wrap_t] {
-            let (axis_name, axis_code) = wgsl::wrap_axis_polyfill(wrap);
-            self.add_code(axis_name, axis_code);
+        let (wrap_fn, includes, code) = wgsl::wrap_function_2d(wrap_s, wrap_t);
+        for (include, include_code) in includes {
+            self.add_code(include, include_code);
         }
-        let wrap_fn = wgsl::wrap_function_name(wrap_s, wrap_t);
-        self.add_code(&wrap_fn, &wgsl::wrap_function(wrap_s, wrap_t));
+        self.add_code(&wrap_fn, &code);
         wrap_fn
     }
 
@@ -2129,7 +2133,7 @@ impl NodeBuilder {
                         dims
                     }
                 };
-                wgsl::texture_load(&name, &suv, &dims, &wrap_fn)
+                wgsl::texture_load(&name, &wrap_fn, &suv, &dims)
             }
             // `generateStorageTextureLoad()`: no level argument.
             SampleMode::StorageLoad => {

@@ -245,12 +245,6 @@ impl NodeUpdate for SmaaState {
 
     /// `SMAANode.updateBefore( frame )`.
     fn update_before(&self, renderer: &mut Renderer) -> bool {
-        // The input first: three's `setup()` builds it before the node, so it
-        // is earlier in the frame's update-before list.
-        if let Some(input) = crate::nodes::frame::texture_update(self.input.id()) {
-            renderer.update_before_node(&input);
-        }
-
         // `_rendererState = RendererUtils.resetRendererState( renderer, … )`.
         let previous_target = renderer.render_target();
         let previous_level = renderer.active_mipmap_level();
@@ -264,6 +258,16 @@ impl NodeUpdate for SmaaState {
 
         let (width, height) = renderer.drawing_buffer_size();
         self.set_size(width, height);
+
+        // The input renders inside the reset state, not before it: in three,
+        // the pass behind `textureNode` updates when the edges quad that
+        // samples it is drawn. So a scene pass clears to the reset's alpha 1,
+        // not the renderer's default 0, and an anti-aliased wireframe line
+        // over an empty background stays opaque instead of fading to the
+        // blend weight that `renderOutput`'s unpremultiply then cancels.
+        if let Some(input) = crate::nodes::frame::texture_update(self.input.id()) {
+            renderer.update_before_node(&input);
+        }
 
         renderer.set_render_target(Some(self.edges_target.clone()));
         renderer.render_quad(&self.edges_quad);

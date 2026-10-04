@@ -267,6 +267,13 @@ have their own sections after the release they ship with. The format follows [Ke
 - **`webgpu_postprocessing_ssr`** is graded: 4 of 100000 pixels, with the
   reflections in the graded frame. Its six fragment shaders are gated against
   three's dumps.
+- `webgpu_postprocessing_smaa` and `webgpu_postprocessing_pixel` are ported
+  and in the native viewer, but not graded on this machine, because three.js
+  itself fails their references there (258 and 405 pixels). The port scores
+  the same 258 and 405, and differs from three's own frames in no graded
+  pixel.
+- **`Renderer::size()`**, three's `renderer.getSize()`: the canvas size in
+  logical pixels.
 - **Rendering into a mip level**: `RenderTarget::set_mip_level_count()`,
   `Renderer::set_render_target_level()` (three's `setRenderTarget( rt, 0,
   level )`) and `Renderer::active_mipmap_level()`.
@@ -332,6 +339,15 @@ have their own sections after the release they ship with. The format follows [Ke
 
 ### Fixed
 
+- `positionViewDirection` is `vec3( 0, 0, 1 )` under an orthographic
+  camera, as three's is. It was always the perspective
+  `normalize( -positionView )`, which moved Phong and physical specular
+  highlights under an `OrthographicCamera`.
+- `smaa()` renders its input inside the reset renderer state, as three's
+  lazily updated input does. A scene pass behind it now clears to opaque
+  black instead of the renderer's clear alpha, so an anti-aliased line over
+  an empty background is no longer brightened back by `renderOutput`'s
+  unpremultiply.
 - glTF `alphaMode: MASK` now sets `alpha_test = alphaCutoff`. Before, masked
   cut-outs drew as solid quads.
 - A `negate()` read more than once becomes a shared `var`, as three's

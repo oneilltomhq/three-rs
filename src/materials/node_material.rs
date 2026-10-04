@@ -127,6 +127,13 @@ pub struct SetupContext {
     /// camera matrix arrays and moves the object group to `@group( 2 )`, so
     /// it is part of the program's cache key. `docs/nodes.md` §40.
     pub array_cameras: usize,
+    /// `builder.camera.isOrthographicCamera` — the camera the pass is drawn
+    /// through (the shadow camera for a shadow pass). `positionViewDirection`
+    /// is the constant `vec3( 0, 0, 1 )` under an orthographic camera and the
+    /// normalized `-positionView` otherwise, so it changes the generated WGSL
+    /// of every lit material and is part of the program's cache key, beside
+    /// `array_cameras`.
+    pub orthographic: bool,
     /// `builder.context.getAO` — the pass's `builtinAOContext( aoNode )`,
     /// which every non-transparent material drawn by that pass multiplies into
     /// its `AmbientOcclusion`. See [`AoContext`].
@@ -452,8 +459,12 @@ pub fn setup(
 ) -> MaterialFlow {
     // `builder.geometry.hasAttribute( 'tangent' )` — installed first, because
     // the material's normal node below already reads the TBN frame.
-    with_tangent_attribute(ctx.has_tangent_attribute, || {
-        setup_tangent(material, ctx, fog)
+    // `builder.camera.isOrthographicCamera`, which `positionViewDirection`
+    // branches on, is in scope for the whole build in three.
+    crate::nodes::tsl::with_orthographic_camera(ctx.orthographic, || {
+        with_tangent_attribute(ctx.has_tangent_attribute, || {
+            setup_tangent(material, ctx, fog)
+        })
     })
 }
 

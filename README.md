@@ -332,7 +332,13 @@ cargo run --release --bin viewer -- shadowmap --headless --frames 40
 
 Opens the named example in a window (winit, tested on Wayland). All 89 graded
 examples are there, and so are the ungraded `webgpu_postprocessing_traa`,
-`webgpu_postprocessing_ao` and `webgpu_postprocessing_dof`. Each one animates, orbits, dollies and pans through
+`webgpu_postprocessing_ao`, `webgpu_postprocessing_dof`,
+`webgpu_postprocessing_smaa` and `webgpu_postprocessing_pixel`. The last two
+are ported but their e2e tests are `#[ignore]`d, because three itself fails
+their references on this machine; their
+[smaa](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_smaa-progress.md)
+and [pixel](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_pixel-progress.md)
+notes have the numbers. Each one animates, orbits, dollies and pans through
 its *own* `animate()`, `resize()` and `OrbitControls` — the viewer drives the
 example, it does not restate it. `--list` prints the examples with their keys,
 and a key stands in for the name on the command line; in the window, `[` and

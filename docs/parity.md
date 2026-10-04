@@ -698,10 +698,10 @@ Graded examples: 89 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `OutputPass` | N.A. | — | — | WebGL composer; OutputPass -> renderOutput() (core): Present; render_output (src/materials/node_material.rs:1040); webgpu_postprocessing_bloom_emissive |
 | `Pass` | N.A. | — | — | WebGL composer; Pass -> PassNode/TempNode (core): Present; PassNode (src/renderer/pass.rs:54); webgpu_postprocessing_masking |
 | `RenderPass` | N.A. | — | — | WebGL composer; RenderPass -> pass(scene,camera) (core): Present; pass (src/renderer/pass.rs:117); webgpu_postprocessing_masking |
-| `RenderPixelatedPass` | N.A. | — | — | WebGL composer; RenderPixelatedPass -> PixelationPassNode pixelationPass(): Present (WGSL gate only, no graded rung); pixelation_pass (src/nodes/display/pixelation_pass.rs:35); tests/nodes_display_wgsl.rs |
+| `RenderPixelatedPass` | N.A. | — | — | WebGL composer; RenderPixelatedPass -> PixelationPassNode pixelationPass(): Present; pixelation_pass (src/nodes/display/pixelation_pass.rs:35); tests/nodes_display_wgsl.rs; webgpu_postprocessing_pixel (ported, ungraded) |
 | `RenderTransitionPass` | N.A. | — | — | WebGL composer; RenderTransitionPass -> TransitionNode transition(): Present; transition (src/nodes/display/transition.rs:17); webgpu_postprocessing_transition |
 | `SAOPass` | N.A. | — | — | WebGL composer; SAOPass -> SSAONode: Absent; GTAONode ao(): Present |
-| `SMAAPass` | N.A. | — | — | WebGL composer; SMAAPass -> SMAANode smaa(): Present; smaa (src/nodes/display/smaa.rs:72); webgpu_postprocessing_ssr |
+| `SMAAPass` | N.A. | — | — | WebGL composer; SMAAPass -> SMAANode smaa(): Present; smaa (src/nodes/display/smaa.rs:72); webgpu_postprocessing_ssr; webgpu_postprocessing_smaa (ported, ungraded) |
 | `SSAARenderPass` | N.A. | — | — | WebGL composer; SSAARenderPass -> SSAAPassNode ssaaPass(): Present; SsaaPassNode (src/renderer/ssaa_pass.rs:130); webgpu_postprocessing_ssaa |
 | `SSAOPass` | N.A. | — | — | WebGL composer; SSAOPass -> SSAONode ssao(): Absent |
 | `SSRPass` | N.A. | — | — | WebGL composer; SSRPass -> SSRNode ssr(): Present; ssr (src/nodes/display/ssr.rs:94); webgpu_postprocessing_ssr |
@@ -853,7 +853,7 @@ These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) an
 | `OITPassNode.js` | Absent | — |
 | `OutlineNode.js` | Absent | — |
 | `ParallaxBarrierPassNode.js` | Absent | — |
-| `PixelationPassNode.js` | Present | pixelation_pass; tests/nodes_display_wgsl.rs (WGSL gate only, no graded rung) |
+| `PixelationPassNode.js` | Present | pixelation_pass/PixelationPassNode (src/nodes/display/pixelation_pass.rs:35,24); tests/nodes_display_wgsl.rs; webgpu_postprocessing_pixel (ported, ungraded: three.js fails its own reference on this machine) |
 | `radialBlur.js` | Present | radial_blur; webgpu_postprocessing_radial_blur |
 | `RecurrentDenoiseNode.js` | Absent | — |
 | `RetroPassNode.js` | Absent | — |
@@ -861,7 +861,7 @@ These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) an
 | `Sepia.js` | Absent | — |
 | `Shape.js` | Absent | (circle(); core shapeCircle exists in src/nodes/tsl.rs:3813, a different function) |
 | `SharpenNode.js` | Absent | — |
-| `SMAANode.js` | Present | smaa/SmaaNode (src/nodes/display/smaa.rs:72,77); tests/nodes_display_wgsl.rs (smaa_edges, smaa_weights and smaa_blend gates); webgpu_postprocessing_ssr (graded) |
+| `SMAANode.js` | Present | smaa/SmaaNode (src/nodes/display/smaa.rs:72,77); tests/nodes_display_wgsl.rs (smaa_edges, smaa_weights and smaa_blend gates); webgpu_postprocessing_ssr (graded); webgpu_postprocessing_smaa (ported, ungraded: three.js fails its own reference on this machine) |
 | `SobelOperatorNode.js` | Present | sobel; webgpu_postprocessing_sobel |
 | `SSAAPassNode.js` | Present | SsaaPassNode (src/renderer/ssaa_pass.rs:130); webgpu_postprocessing_ssaa |
 | `SSAONode.js` | Absent | — |
@@ -1352,7 +1352,7 @@ Partial: `tangentViewFrame`, `bitangentViewFrame`, `builtin`, `cameraViewport`, 
 | `positionWorld` | Present | position_world (src/nodes/tsl.rs:2396) | webgpu_materials (graded) |  |
 | `positionWorldDirection` | Present | position_world_direction (src/nodes/tsl.rs:2407) | webgpu_equirectangular (graded) |  |
 | `positionView` | Present | position_view (src/nodes/tsl.rs:2390) | webgpu_deferred (graded) |  |
-| `positionViewDirection` | Present | position_view_direction (src/nodes/tsl.rs:3155) | webgpu_deferred (graded) |  |
+| `positionViewDirection` | Present | position_view_direction (src/nodes/tsl.rs:3255) | webgpu_deferred (graded); webgpu_postprocessing_pixel (orthographic, ungraded) |  |
 | `reference` | Absent | — | — | uniform_object / uniform_settable / user_data cover the use; shadow_normal_bias hit is a false positive |
 | `referenceBuffer` | Partial | bone_matrices (src/nodes/skinning.rs:33, internal) | — | internal only; skinning |
 | `reflectView` | Present | reflect_view (src/nodes/tsl.rs:3606) | tests/nodes_tsl_batch.rs (reflect_refract_match) |  |

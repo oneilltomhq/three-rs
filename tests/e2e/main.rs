@@ -243,6 +243,14 @@ mod webgpu_postprocessing_dof_basic;
 #[allow(dead_code)]
 mod webgpu_postprocessing_ssr;
 
+#[path = "../../examples/webgpu_postprocessing_smaa.rs"]
+#[allow(dead_code)]
+mod webgpu_postprocessing_smaa;
+
+#[path = "../../examples/webgpu_postprocessing_pixel.rs"]
+#[allow(dead_code)]
+mod webgpu_postprocessing_pixel;
+
 #[path = "../../examples/webgpu_pmrem_cubemap.rs"]
 #[allow(dead_code)]
 mod webgpu_pmrem_cubemap;
@@ -2121,6 +2129,114 @@ fn webgpu_postprocessing_ssr() {
     steady_frame(name, &mut app, webgpu_postprocessing_ssr::animate, |app| {
         app.renderer.device()
     });
+}
+
+/// Two spinning boxes, one white wireframe and one brick-textured, through a
+/// scene pass and `SMAANode`'s edge, weight and blend passes, with the lookup
+/// textures decoded from three's base64 PNGs.
+///
+/// Not graded: three.js itself scores 0.258% (258 pixels) against its own
+/// `webgpu_postprocessing_smaa.jpg` on this machine, over the 0.1% limit,
+/// all of it along the boxes' diagonal wireframe lines; the port scores the
+/// same 258, and against three's own frame here (`tools/dump-webgpu.mjs`'
+/// `actual_full.png`) no graded pixel differs. See
+/// `docs/webgpu_postprocessing_smaa-progress.md`.
+#[test]
+#[ignore = "three.js itself fails its own reference for this page on this machine"]
+fn webgpu_postprocessing_smaa() {
+    let name = "webgpu_postprocessing_smaa";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_postprocessing_smaa::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_postprocessing_smaa::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_postprocessing_smaa::animate, |app| {
+        app.renderer.device()
+    });
+}
+
+/// Two checkered boxes and a crystal on a checkered plane with
+/// `BasicShadowMap` shadows, through `PixelationPassNode` at a sixth of the
+/// drawing buffer with its depth- and normal-edge outlines.
+///
+/// Not graded: three.js itself scores 0.405% (405 pixels) against its own
+/// `webgpu_postprocessing_pixel.jpg` on this machine, over the 0.1% limit;
+/// the port scores the same 405, and its frame is pixel-identical to three's
+/// (`tools/dump-webgpu.mjs`' `actual_full.png`, max channel difference 0).
+/// See `docs/webgpu_postprocessing_pixel-progress.md`.
+#[test]
+#[ignore = "three.js itself fails its own reference for this page on this machine"]
+fn webgpu_postprocessing_pixel() {
+    let name = "webgpu_postprocessing_pixel";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_postprocessing_pixel::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_postprocessing_pixel::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(
+        name,
+        &mut app,
+        webgpu_postprocessing_pixel::animate,
+        |app| app.renderer.device(),
+    );
 }
 
 #[test]
@@ -5908,6 +6024,12 @@ fn steady_frame_builds_nothing() {
     // frame; the steady frames reuse them, and the two lookup textures are
     // uploaded once.
     rung!(webgpu_postprocessing_ssr);
+    // SMAA's three targets are sized on the first frame and its lookup
+    // textures uploaded once; the boxes only turn.
+    rung!(webgpu_postprocessing_smaa);
+    // The pixelation pass's target is sized on the first frame; the crystal's
+    // bob, spin and emissive pulse are transforms and a uniform.
+    rung!(webgpu_postprocessing_pixel);
     rung!(webgpu_lights_phong);
     rung!(webgpu_lights_selective);
     rung!(webgpu_morphtargets);
