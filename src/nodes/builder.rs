@@ -542,8 +542,9 @@ pub(crate) struct BuildContext {
     /// `uniformFlow`: [`uniform_flow`](super::tsl::uniform_flow)'s key. A
     /// two-branch `select()` built under it is WGSL's `select()`.
     pub(crate) uniform_flow: bool,
-    /// `nodeName`: [`set_name`](super::tsl::set_name)'s key, taken by the
-    /// first unnamed uniform built under it.
+    /// `nodeName`: [`set_name`](super::tsl::set_name)'s key. The first
+    /// uniform built under it clears it, and takes the name unless it has
+    /// one of its own.
     pub(crate) node_name: Option<&'static str>,
 }
 
@@ -1283,7 +1284,7 @@ impl NodeBuilder {
             return format!("{}.{}", u.group.struct_name(), name);
         }
 
-        let name = match u.name.or(context_name) {
+        let name = match u.name.get().or(context_name) {
             Some(n) => n.to_string(),
             None => {
                 let n = format!("nodeUniform{}", self.uniform_counter);
@@ -3254,7 +3255,7 @@ impl NodeBuilder {
                 source: UniformSource::CameraIndex,
                 ty: Type::U32,
                 group: UniformGroup::CameraIndex,
-                name: Some("u_cameraIndex"),
+                name: std::cell::Cell::new(Some("u_cameraIndex")),
             }))),
             ty: Type::U32,
             flat: true,

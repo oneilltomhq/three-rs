@@ -6285,12 +6285,28 @@ copies them onto the build context, so they hold for the subgraph under the
   to fake that declaration with a named `property()`. They now use
   `uniform_flow()`, and `tests/nodes_mx_library.rs` is unchanged byte for
   byte.
-- **`nodeName`.** `UniformNode.getUniformName()` reads
+- **`nodeName`.** `UniformNode.generate()` reads
   `this.name || builder.context.nodeName`, then deletes the key. In the port
   `uniform_snippet` takes the key from the top of the context stack on every
   uniform it builds. A uniform with its own name still clears it. So in
   `set_name( a.add( b ), 'n' )` only `a` is named, as in three. An outer
   context keeps its own copy.
+  - Three also consumes the key in `BufferAttributeNode.generate()`. There it
+    names the attribute, and in the fragment stage its varying
+    `<name>Varying`. The port's `Node::InstancedAttribute` does not read the
+    key. So under `set_name` an instanced attribute keeps its
+    `nodeAttributeN` name, and the name is left for the next uniform built
+    in the same context. No gate covers that case, so it is recorded here
+    rather than ported.
+  - Three has two `setName`s. The free function is this context. The method
+    on a `UniformNode` (also `ReferenceNode`) is the class's own `setName()`,
+    which sets `this.name` in place and returns the node. On a uniform,
+    `uniform( … ).setName( 'a' ).setName( 'b' )` is therefore named `b`.
+    `NodeRef::set_name` (and `label`) does the same on a `Node::Uniform`.
+    `UniformNode::name` is a `Cell`, so the rename reaches every reference to
+    the node, as in three. On any other node the method is the context. That
+    includes the port's buffer nodes, which three's `BufferNode` would rename
+    in place: the port names those from their `BufferSource`.
 
 ### 70.2 `expression` and `debug`
 
@@ -6304,7 +6320,9 @@ copies them onto the build context, so they hold for the subgraph under the
 three things to the callback: the stage, the current scope's flow so far, and
 the snippet. Three hands over the builder instead. With no callback it prints
 three's `// #--- TSL debug … ---#` block to stderr. The snippet is cached, so
-a second read reports nothing.
+a second read reports nothing. Three's `debug()` also calls `.toStack()`, so
+inside a `Fn()` a bare `debug( x )` fires even when nothing reads it. The port
+has no implicit stack: a `debug( x )` fires only if its result is read.
 
 ### 70.3 `bypass` and the event hooks
 
@@ -6334,3 +6352,10 @@ current object and material, so the rows are Partial.
 when the node is made, because the port types nodes eagerly. Three's
 `sample( callback, uv )` stores `uv` and never reads it, so the port drops the
 argument.
+
+Three's `convertToTexture( node )` returns a `SampleNode` unchanged. The
+port's `convert_to_texture` takes a `NodeRef` and returns an `RttNode`, so a
+`SampleNode` passed to it is drawn into a render target at `uv()` and
+sampled from there. That costs an extra pass and resolves the callback at the
+target's size. A caller holding a `SampleNode` can call its `sample( uv )`
+instead. The `sample` and `SampleNode` rows are Partial for this.

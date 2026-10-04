@@ -1797,7 +1797,8 @@ fn set_name_names_only_the_first_uniform() {
     ]));
     assert!(ours.contains("object.first"), "{ours}");
     assert!(ours.contains("object.nodeUniform0"), "{ours}");
-    // A uniform with a name of its own keeps it.
+    // Under the free function, a context, a uniform with a name of its own
+    // keeps it: `this.name || builder.context.nodeName`.
     let named = uniform(
         three_rs::nodes::UniformSource::Value(vec![0.5]),
         Type::F32,
@@ -1805,13 +1806,48 @@ fn set_name_names_only_the_first_uniform() {
         Some("own"),
     );
     let ours = fragment(vec4_join(vec![
-        named.set_name("ignored"),
+        set_name(named, "ignored"),
         float(0.0),
         float(0.0),
         float(1.0),
     ]));
     assert!(ours.contains("object.own"), "{ours}");
     assert!(!ours.contains("ignored"), "{ours}");
+}
+
+#[test]
+#[allow(deprecated)]
+fn set_name_method_renames_a_uniform_in_place() {
+    // Three's `UniformNode.setName()` sets `this.name` and returns the node,
+    // so `uniform( … ).setName( 'own' ).setName( 'second' )` is `second`, and
+    // an earlier reference to the node sees the rename too.
+    let original = uniform(
+        three_rs::nodes::UniformSource::Value(vec![0.5]),
+        Type::F32,
+        three_rs::nodes::UniformGroup::Render,
+        Some("own"),
+    );
+    let renamed = original.set_name("first").label("second");
+    let ours = fragment(vec4_join(vec![original, renamed, float(0.0), float(1.0)]));
+    assert!(ours.contains("render.second"), "{ours}");
+    assert_eq!(ours.matches("second : f32,").count(), 1, "{ours}");
+    for stale in ["own : f32", "first : f32", "render.own", "render.first"] {
+        assert!(!ours.contains(stale), "{stale}\n{ours}");
+    }
+}
+
+#[test]
+fn unpack_rgb_to_normal_matches() {
+    // Three's deprecated `colorToDirection` returns `unpackRGBToNormal( node )`,
+    // so its dump is this name's dump too.
+    assert_body(
+        "color_direction",
+        vec4_join(vec![
+            unpack_rgb_to_normal(vec3_join(vec![uv(), float(0.5)]))
+                .add(pack_normal_to_rgb(vec3_join(vec![y(), x(), float(1.0)]))),
+            float(1.0),
+        ]),
+    );
 }
 
 #[test]

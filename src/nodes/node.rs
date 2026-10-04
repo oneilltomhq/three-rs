@@ -678,8 +678,10 @@ pub struct UniformNode {
     /// Which uniform block the uniform is bound in.
     pub group: UniformGroup,
     /// Three names camera uniforms explicitly and numbers the rest
-    /// `nodeUniformN`.
-    pub name: Option<&'static str>,
+    /// `nodeUniformN`. A `Cell` because three's `UniformNode.setName()`
+    /// renames the node in place, so every reference to it sees the new name
+    /// ([`NodeRef::set_name`] on a uniform).
+    pub name: std::cell::Cell<Option<&'static str>>,
 }
 
 /// Where an array-typed uniform buffer's contents come from — `BufferNode`.
@@ -1416,8 +1418,9 @@ impl ContextValue {
         self
     }
 
-    /// `{ …, nodeName: name }` — what [`set_name`] installs: the name the
-    /// first unnamed `uniform()` built inside takes, which then clears it.
+    /// `{ …, nodeName: name }` — what [`set_name`] installs. The first
+    /// `uniform()` built inside clears it, and takes the name unless it has
+    /// one of its own.
     ///
     /// [`set_name`]: crate::nodes::tsl::set_name
     pub fn node_name(mut self, name: &'static str) -> Self {

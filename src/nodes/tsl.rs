@@ -463,7 +463,7 @@ pub fn uniform(
         source,
         ty,
         group,
-        name,
+        name: std::cell::Cell::new(name),
     })))
 }
 

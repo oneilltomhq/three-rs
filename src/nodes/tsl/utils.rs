@@ -31,10 +31,16 @@ pub fn uniform_flow(node: impl Into<NodeRef>) -> NodeRef {
 }
 
 /// `setName( node, name )` — `context( node, { nodeName: name } )`. The first
-/// `uniform()` built inside without a name of its own takes `name`
-/// (`UniformNode.getUniformName()`), and the build consumes the key, as
-/// three's `delete builder.context.nodeName` does: any later uniform in the
-/// same context is numbered as usual.
+/// `uniform()` built inside takes `name` unless it has a name of its own
+/// (`this.name || builder.context.nodeName` in `UniformNode.generate()`).
+/// Either way the build consumes the key, as three's `delete
+/// builder.context.nodeName` does, so any later uniform in the same context
+/// is numbered as usual. Three also reads the key in
+/// `BufferAttributeNode.generate()`; the port's instanced attributes do not
+/// (`docs/nodes.md` §70.1).
+///
+/// This is the free function. The method [`NodeRef::set_name`] on a uniform is
+/// three's `UniformNode.setName()`, which renames in place instead.
 pub fn set_name(node: impl Into<NodeRef>, name: &'static str) -> NodeRef {
     context(node, ContextValue::default().node_name(name))
 }
@@ -83,11 +89,17 @@ pub fn direction_to_color(node: impl Into<NodeRef>) -> NodeRef {
     pack_normal_to_rgb(node.into())
 }
 
+/// `unpackRGBToNormal( node )` — `node * 2 - 1`, the inverse of
+/// [`pack_normal_to_rgb`]: a colour back to the unit direction it stores.
+pub fn unpack_rgb_to_normal(node: impl Into<NodeRef>) -> NodeRef {
+    node.into().mul(2.0).sub(1.0)
+}
+
 /// `colorToDirection( node )` — deprecated in three (r185) for
-/// `unpackRGBToNormal()`: `node * 2 - 1`.
+/// [`unpack_rgb_to_normal`], which it calls.
 #[deprecated(note = "three.js r185 renamed `colorToDirection()` to `unpackRGBToNormal()`")]
 pub fn color_to_direction(node: impl Into<NodeRef>) -> NodeRef {
-    node.into().mul(2.0).sub(1.0)
+    unpack_rgb_to_normal(node)
 }
 
 // ---------------------------------------------------------------------------
@@ -354,6 +366,16 @@ pub fn on_before_frame_update(callback: impl Fn(&mut Renderer) + 'static) -> Nod
 // method chaining
 // ---------------------------------------------------------------------------
 
+/// The method form of `setName`: `UniformNode.setName()` on a uniform, the
+/// `ContextNode.js` chaining on anything else.
+fn rename_or_set_name(node: &NodeRef, name: &'static str) -> NodeRef {
+    if let Node::Uniform(u) = node.node() {
+        u.name.set(Some(name));
+        return node.clone();
+    }
+    set_name(node, name)
+}
+
 impl NodeRef {
     /// `node.bypass( call )` — see [`bypass`].
     pub fn bypass(&self, call: impl Into<NodeRef>) -> NodeRef {
@@ -365,16 +387,20 @@ impl NodeRef {
         uniform_flow(self)
     }
 
-    /// `node.setName( name )` — see [`set_name`].
+    /// `node.setName( name )`. Three has two: on a uniform it is
+    /// `UniformNode.setName()`, which renames the node in place and returns
+    /// it, so every reference to the uniform takes `name` and a second
+    /// `setName` wins over the first. On any other node it is the method
+    /// chaining of the free [`set_name`], a context.
     pub fn set_name(&self, name: &'static str) -> NodeRef {
-        set_name(self, name)
+        rename_or_set_name(self, name)
     }
 
     /// `node.label( name )` — deprecated in three for
-    /// [`set_name`](Self::set_name).
+    /// [`set_name`](Self::set_name), with the same two forms.
     #[deprecated(note = "three.js r179 renamed `label()` to `setName()`; use `set_name`")]
     pub fn label(&self, name: &'static str) -> NodeRef {
-        set_name(self, name)
+        rename_or_set_name(self, name)
     }
 
     /// `node.toVertexStage()` — see [`vertex_stage`].
