@@ -968,12 +968,6 @@ pub fn get_screen_position_from_clip(clip_position: NodeRef) -> NodeRef {
     call(&def, vec![clip_position])
 }
 
-/// `unpackRGBToNormal( rgb )` — `Packing.js`: `rgb.mul( 2.0 ).sub( 1.0 )`,
-/// the inverse of [`pack_normal_to_rgb`].
-pub fn unpack_rgb_to_normal(rgb: impl Into<NodeRef>) -> NodeRef {
-    rgb.into().mul(2.0).sub(1.0)
-}
-
 /// `getScreenPosition( viewPosition, projectionMatrix )` —
 /// `PostProcessingUtils.js`: the screen uv a view-space position projects
 /// to, `y` flipped (three flips it unconditionally, on every backend). The
