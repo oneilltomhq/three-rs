@@ -35,13 +35,25 @@ impl Default for BoxBlurOptions {
 /// `boxBlur( textureNode, options )` — the average of the `( 2 size + 1 )²`
 /// taps round the fragment, `separation` texels apart.
 pub fn box_blur(map: &Texture, options: BoxBlurOptions) -> NodeRef {
+    box_blur_with(map, options, &|uv| texture_uv(map, uv))
+}
+
+/// [`box_blur`] with the tap supplied: `textureNode.sample( uv )` for a
+/// texture node that is not a pass's. `SSRNode` blurs `texture(
+/// renderTarget.texture )`, whose taps carry the map's `mat3x3` uv matrix
+/// ([`texture_sample`](crate::nodes::tsl::texture_sample)).
+pub(crate) fn box_blur_with(
+    map: &Texture,
+    options: BoxBlurOptions,
+    sample: &dyn Fn(NodeRef) -> NodeRef,
+) -> NodeRef {
     let BoxBlurOptions {
         size,
         separation,
         premultiplied_alpha,
     } = options;
     let tap = |uv: NodeRef| {
-        let sample = texture_uv(map, uv);
+        let sample = sample(uv);
         if premultiplied_alpha {
             premultiply_alpha(sample)
         } else {
@@ -58,8 +70,16 @@ pub fn box_blur(map: &Texture, options: BoxBlurOptions) -> NodeRef {
 
     // `Loop( { start: size.negate(), end: size, name: 'i', condition: '<=' } )`
     // — the bounds are cast to the `int` index, as three's `LoopNode` does.
+    // A literal end is built in that type directly (`ConstNode` generates
+    // `1`, not `i32( 1.0 )`), so a JS-number `size` such as `SSRNode`'s
+    // `blurQuality` writes `i <= 1`.
     let start = size.negate().to(Type::I32);
-    let end = size.to(Type::I32);
+    let end = match size.node() {
+        crate::nodes::node::Node::Const { values, .. } if values.len() == 1 => {
+            int(values[0] as i64)
+        }
+        _ => size.to(Type::I32),
+    };
     let outer = loop_options("i", Type::I32, start.clone(), end.clone(), "<=", |i| {
         vec![loop_options("j", Type::I32, start, end, "<=", |j| {
             let uvs = target_uv.clone().add(

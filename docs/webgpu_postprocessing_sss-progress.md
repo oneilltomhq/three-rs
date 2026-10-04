@@ -74,13 +74,9 @@ it builds (see `web/README.md`, "Adding an example").
 
 ## Merge note
 
-`gtao-denoise` (#267) adds `builtinAOContext` as `PassNode::set_context_ao`,
+`gtao-denoise` (#267) added `builtinAOContext` as `PassNode::set_context_ao`,
 the AO twin of this branch's `set_context_shadow`: a `PassState` field that
-the pass hands to a `Renderer` field for the length of its render. The two
-branches touch the same places in `src/renderer/pass.rs` (the `PassState`
-fields, their initialisers, the setters and the save/restore around the
-render) and `src/renderer/mod.rs` (the `Renderer` fields and their
-initialisers), and both append a section at the end of `docs/nodes.md`
-(§64 there, §71 here). Whichever lands second should keep both contexts side
-by side; neither replaces the other. `docs/nodes.md` §71.2 and `sss.rs` cite
-only TRAA and `main` until then.
+the pass hands to a `Renderer` field for the length of its render. It landed
+on `main` first, and the merge of `main` into this branch keeps both contexts
+side by side in `src/renderer/pass.rs` and `src/renderer/mod.rs`; neither
+replaces the other. `docs/nodes.md` has GTAO at §64 and SSS at §71.

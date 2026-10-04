@@ -12,7 +12,7 @@ mod hdr_loader;
 mod ktx2_loader;
 #[doc(hidden)]
 pub mod meshopt;
-mod texture_loader;
+pub(crate) mod texture_loader;
 mod ultra_hdr_loader;
 
 pub use buffer_geometry_loader::BufferGeometryLoader;
