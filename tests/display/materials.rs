@@ -195,5 +195,20 @@ pub fn display_quads() -> Vec<DisplayQuad> {
         material: resolve,
     });
 
+    // webgpu_oit `m06`: `oitPass( scene, camera )` as the `RenderPipeline`'s
+    // output, so under `renderOutput()` with no tone mapping — the composite
+    // of the beauty, `accum` and `revealage` textures.
+    let oit = three_rs::nodes::display::oit_pass(
+        std::rc::Rc::new(std::cell::RefCell::new(three_rs::Scene::new())),
+        std::rc::Rc::new(std::cell::RefCell::new(three_rs::PerspectiveCamera::new(
+            45.0, 1.6, 0.1, 100.0,
+        ))),
+    );
+    quads.push(quad(
+        "oit_composite",
+        "webgpu_oit_m06_composite.wgsl",
+        render_output(oit.node(), ToneMapping::None),
+    ));
+
     quads
 }

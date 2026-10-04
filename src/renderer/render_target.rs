@@ -79,6 +79,14 @@ pub(crate) struct RenderTargetInner {
     /// `renderTarget.textures[ 0 ]`, whose `name` three.js leaves empty and
     /// `PassNode` treats as [`OUTPUT_ATTACHMENT`].
     pub texture: Texture,
+    /// `renderTarget.textures[ 0 ].name` when something other than
+    /// [`OUTPUT_ATTACHMENT`] — `OITPassNode` names its accumulation target's
+    /// first attachment `accum`. `None` everywhere else. It is what
+    /// [`RenderTarget::attachment_names`] reports and so what an MRT output
+    /// resolves against; [`RenderTarget::add_texture`] and the previous-texture
+    /// toggle still answer to `output`, which is the only name a `PassNode`'s
+    /// own target ever gives attachment 0.
+    pub texture_name: Option<String>,
     /// `renderTarget.textures` past the first: the extra MRT colour
     /// attachments, in the order `PassNode.getTexture( name )` pushed them,
     /// which is the order their `@location`s are assigned in.
@@ -162,6 +170,7 @@ impl RenderTarget {
                 options.min_filter,
                 options.mag_filter,
             ),
+            texture_name: None,
             extra_textures: Vec::new(),
             previous_textures: Vec::new(),
             msaa: None,
@@ -201,6 +210,7 @@ impl RenderTarget {
         )
         .expect("three-rs: the source target's texture type is already a colour type");
         clone.0.borrow().texture.set_format(inner.texture.format());
+        clone.0.borrow_mut().texture_name = inner.texture_name.clone();
         if inner.depth_texture.is_some() {
             clone.set_depth_texture(DepthTexture::new());
         }
@@ -299,7 +309,10 @@ impl RenderTarget {
     #[doc(hidden)]
     pub fn attachment_names(&self) -> Vec<String> {
         let inner = self.0.borrow();
-        let mut names = vec![OUTPUT_ATTACHMENT.to_string()];
+        let mut names = vec![inner
+            .texture_name
+            .clone()
+            .unwrap_or_else(|| OUTPUT_ATTACHMENT.to_string())];
         names.extend(inner.extra_textures.iter().map(|(n, _)| n.clone()));
         names
     }
@@ -331,18 +344,17 @@ impl RenderTarget {
     /// `renderTarget.textures[ index ].name = name` — what the attachment
     /// answers to in `mrt( { name: … } )` and in [`Self::add_texture`].
     ///
-    /// Attachment 0 is always [`OUTPUT_ATTACHMENT`] in this port (the name
-    /// lives on the target, not the texture), so naming it anything else
-    /// panics rather than silently leaving `mrt( { output } )` unwritten.
+    /// Attachment 0 answers to [`OUTPUT_ATTACHMENT`] until it is named
+    /// otherwise — three leaves `textures[ 0 ].name` empty and `PassNode`
+    /// treats it as `output`, while `OITPassNode` names its accumulation
+    /// target's first attachment `accum`. The name lives on the target, not
+    /// the texture.
     pub fn set_texture_name(&self, index: usize, name: &str) {
+        let mut inner = self.0.borrow_mut();
         if index == 0 {
-            assert_eq!(
-                name, OUTPUT_ATTACHMENT,
-                "three-rs: renderTarget.textures[ 0 ] is always named `{OUTPUT_ATTACHMENT}` here"
-            );
+            inner.texture_name = (name != OUTPUT_ATTACHMENT).then(|| name.to_string());
             return;
         }
-        let mut inner = self.0.borrow_mut();
         let entry = inner
             .extra_textures
             .get_mut(index - 1)

@@ -5988,3 +5988,119 @@ arithmetic, and `tests/traa_frames.rs` allows for it.
 - `useSubpixelCorrection = false`, `depthThreshold`, `edgeDepthDiff` and
   `maxVelocityLength` as settable properties. They are constants at three's
   defaults.
+
+## 82. `OITPassNode` (`webgpu_oit`)
+
+§64–§81 are the display pages landing alongside this one.
+
+`oit_pass( scene, camera )` ports `examples/jsm/tsl/display/OITPassNode.js`,
+McGuire and Bavoil's weighted blended order-independent transparency. The
+code is `src/nodes/display/oit_pass.rs` and the page is
+`examples/webgpu_oit.rs`. Three subclasses `PassNode`. The port wraps one
+and renders through its `render_with`, so the default pass saves and restores
+exactly what `PassNode.updateBefore()` does. Inside it come two renders:
+
+1. **The default pass**, into the pass's own target. It draws everything
+   `isOITCapable()` rejects.
+2. **The OIT pass**, into a second target with `count: 2` that shares the
+   pass's depth texture. It draws only what qualifies, with `depthWrite` off,
+   `autoClearDepth` off, `opaque` off and the scene's background taken away.
+   The MRT is `accum: vec4( output.rgb * alpha, alpha ) * weight` into
+   `rgba16float` with `One` / `One`, and `revealage: alpha` into `r8unorm`
+   with `Zero` / `OneMinusSrcColor`. They clear to `( 0, 0, 0, 0 )` and
+   `( 1, 1, 1, 1 )`. The default weight is equation (9): `alpha * clamp(
+   0.03 / ( ( -z / 200 )^4 + 1e-5 ), 1e-2, 3e3 )`.
+
+The node's value is the composite `vec4( mix( accum.rgb / max( accum.a, 1e-5
+), beauty.rgb, revealage.r ), beauty.a )`.
+
+### 82.1 What the renderer gained
+
+- **The render-object function.** Three swaps
+  `renderer.setRenderObjectFunction()` for each render. The port has no
+  render-object hook, so it sets `Renderer.oit` (`OitRenderObjects::Default`
+  or `Accumulate`). The render loop filters its draws by it *before* a
+  `DoubleSide` material is split into its back and front halves, which is
+  where three calls the function, so both halves go or neither does.
+  `Accumulate` also forces `depth_write = false` on the draw's material copy.
+- **MRT blend modes are `BlendMode`s.** `MRTNode.setBlendMode()` takes a full
+  `BlendMode` in three. `BlendMode` is now public, with `BlendMode::new()` and
+  `From<Blending>`, and `MrtNode::set_blend_mode` takes either one.
+- **Attachment 0 under an MRT.** It goes through `getBlendMode(
+  textures[ 0 ].name )`, as in three. A target's first attachment answers to
+  `output` unless `RenderTarget::set_texture_name( 0, … )` names it
+  otherwise; the OIT target names it `accum`. An unset `output` keeps the
+  material's blending (three's `MaterialBlending` seed), and any other unset
+  name gets none (`_noBlending`).
+- **Per-attachment clear colours.** `MrtNode::set_clear_color` is
+  `setClearColor()`. The render pass clears each attachment to the MRT's
+  value for its name, and otherwise to the old defaults: the renderer's
+  clear colour for attachment 0, `( 0, 0, 0, 1 )` for the rest.
+- **Typed MRT members.** `getOutputType( index )` gives a member the
+  attachment's channel count. The `r8unorm` `revealage` is an `f32`
+  `@location( 1 )` in three's dump (`output.m1 = Output.w;`), and now in the
+  port too. `MrtContext.output_types` carries the types from the renderer to
+  the builder.
+
+### 82.2 Against three's dump
+
+The page dumps seven modules (`m00`–`m06`) and four render pipelines. The
+port builds the same four: the opaque knot, the OIT front and back sides (the
+same blend states, `depthWriteEnabled: false`) and the composite.
+
+- **The composite is built at each read, not into a var.** `renderOutput()`
+  reads the pass node as `.rgb` and `.a`. Three's `PassNode.isCacheable()` is
+  `false`, so the join comes out inline twice, `max` and `mix` included. The
+  port returns the composite through a `CustomNode` whose `is_cacheable()` is
+  `false` for the same reason. The bare join would be counted twice and
+  hoisted into a `nodeVar`.
+- **The lit materials.** `m01`, `m03` and `m04` are ordinary
+  `MeshStandardMaterial`s above `outgoingLight`. They differ there only in
+  ways §8 already lists (hoisted accumulator zeros, named lighting temps,
+  where the indirect-diffuse block sits). The gates compare from
+  `outgoingLight` on, which is the `Output` and both MRT members. The one
+  OIT-specific line above it, the back side's `normalViewGeometry * -1.0`, is
+  compared on its own. The `accum` member is written straight into
+  `output.m0` rather than through `let nodeConst16`, per §8's "MRT member
+  values are not promoted to a var".
+
+### 82.3 The first frame
+
+The OIT target is a render target of its own. On its first render,
+`Renderer._renderScene()`'s "make sure a new render target has correct
+default depth values" clears the depth it shares with the pass, just as on
+`webgpu_deferred` (§27). So on the graded first frame the knot does not hide
+the transparent planes and spheres. Three's reference shows the same, and
+the port reproduces it. From the second frame on, the transparents are
+depth-tested against the opaque depth. `tests/oit_frames.rs` asserts both.
+
+### 82.4 Gates
+
+- The `webgpu_oit` e2e rung: 0 of 100000 pixels. It also has a
+  `steady_frame_builds_nothing` entry.
+- `tests/nodes_display_wgsl.rs`:
+  - `oit_composite_matches_three` against `m06`;
+  - `oit_default_pass_matches_three` against `m01`;
+  - `oit_accumulate_matches_three` against `m03`;
+  - `oit_accumulate_back_side_matches_three` against `m04`.
+- `tests/oit_frames.rs` uses two overlapping half-transparent quads and an
+  opaque one, with `renderOrder` forcing each draw order in turn:
+  - the overlap is the order-free average in the painter's-wrong order;
+  - the OIT frame is byte-identical in both orders;
+  - a plain `pass()` of the same scene changes with the order.
+
+### 82.5 Not ported
+
+- The WebGL backend's `renderTarget.samples = 0` branch of `setup()`. Only
+  the WebGPU branch exists here: the OIT target takes the pass target's
+  sample count.
+- `isOITCapable()`'s `transmissionNode` clause, because the port's materials
+  have no `transmissionNode`.
+- `PassNode`'s `autoClear` / `autoClearColor` / `autoClearStencil` copies.
+  The port's `PassNode` carries `autoClearDepth` only. Three's defaults, all
+  `true`, are what the renderer already has.
+- `setMRT()` on the OIT pass node, which three applies to the default pass
+  only.
+- `dispose()`. The targets are freed when the last handle drops.
+- The page's Inspector GUI. The example keeps `oit` and `opacity` as fields,
+  with `set_oit()` and `set_opacity()`.

@@ -2922,7 +2922,11 @@ pub struct MaterialFlow {
     /// fragment stage to `OutputStructNode`'s `struct OutputType { @location(
     /// i ) mi }` and one `output.mi = …` per member, in the flow rather than in
     /// the result section — which is what three.js's own dump shows.
-    pub mrt: Option<Vec<NodeRef>>,
+    ///
+    /// Each member carries the type `MRTNode.setup()` converts it to
+    /// (`builder.getOutputType( index )`): `vec4` for an `RGBAFormat`
+    /// attachment, `f32` for `OITPassNode`'s `RedFormat` revealage.
+    pub mrt: Option<Vec<(NodeRef, Type)>>,
     /// Vertex-stage statements, run before the position node.
     pub vertex_statements: Vec<NodeRef>,
     /// The clip-space position the vertex stage writes.
@@ -3133,7 +3137,7 @@ impl NodeBuilder {
         if let Some(node) = &flow.output_node {
             self.analyze(node);
         }
-        for member in flow.mrt.iter().flatten() {
+        for (member, _) in flow.mrt.iter().flatten() {
             self.analyze(member);
         }
         for stmt in &flow.vertex_statements {
@@ -3189,8 +3193,8 @@ impl NodeBuilder {
         // member, pushed onto the *flow* — the entry point's result section is
         // then empty and only `return output;` is left.
         if let Some(members) = &flow.mrt {
-            for (index, member) in members.iter().enumerate() {
-                let snippet = self.format(member, Type::Vec4);
+            for (index, (member, ty)) in members.iter().enumerate() {
+                let snippet = self.format(member, *ty);
                 self.emit(format!("output.m{index} = {snippet};"));
             }
         }
@@ -3204,7 +3208,10 @@ impl NodeBuilder {
         let fragment_wgsl = self.assemble_with_mrt(
             Stage::Fragment,
             &color,
-            flow.mrt.as_ref().map(|members| members.len()),
+            flow.mrt
+                .as_ref()
+                .map(|members| members.iter().map(|(_, ty)| *ty).collect::<Vec<_>>())
+                .as_deref(),
             flow.depth.is_some(),
         );
         let vertex_wgsl = self.assemble(Stage::Vertex, &position);
@@ -3561,16 +3568,16 @@ impl NodeBuilder {
         self.assemble_with_mrt(stage, result, None, false)
     }
 
-    /// `mrt_members` is `Some(n)` for a fragment stage with an
-    /// `OutputStructNode` result: the struct is `OutputType` with `n`
-    /// `@location( i ) mi : vec4<f32>` members, and the entry point's result
-    /// section is empty because `generate()` already wrote the assignments into
-    /// the flow.
+    /// `mrt_members` is `Some(types)` for a fragment stage with an
+    /// `OutputStructNode` result: the struct is `OutputType` with one
+    /// `@location( i ) mi : <type>` member per entry, and the entry point's
+    /// result section is empty because `generate()` already wrote the
+    /// assignments into the flow.
     fn assemble_with_mrt(
         &self,
         stage: Stage,
         result: &str,
-        mrt_members: Option<usize>,
+        mrt_members: Option<&[Type]>,
         depth: bool,
     ) -> String {
         let s = &self.stages[stage.index()];
@@ -3579,10 +3586,11 @@ impl NodeBuilder {
         if stage == Stage::Fragment {
             out.push_str("// global\ndiagnostic( off, derivative_uniformity );\n\n\n");
             match mrt_members {
-                Some(count) => {
+                Some(types) => {
                     out.push_str("// structs\n\nstruct OutputType {\n");
-                    for index in 0..count {
-                        out.push_str(&format!("\t@location( {index} ) m{index} : vec4<f32>,\n"));
+                    for (index, ty) in types.iter().enumerate() {
+                        let ty = wgsl::type_name(*ty);
+                        out.push_str(&format!("\t@location( {index} ) m{index} : {ty},\n"));
                     }
                     out.push_str("\t\n};\nvar<private> output : OutputType;\n\n");
                 }

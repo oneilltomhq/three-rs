@@ -9,6 +9,7 @@
 # A name that is not a test target fails both jobs.
 
 three-rs/nodes_frame
+three-rs/oit_frames
 three-rs/pmrem_equirect
 three-rs/pmrem_scene
 three-rs/renderer_blending

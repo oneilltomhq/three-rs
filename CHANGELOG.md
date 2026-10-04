@@ -72,8 +72,28 @@ have their own sections after the release they ship with. The format follows [Ke
   `depth_texture_load`, `all`, `view_z_to_perspective_depth` and
   `get_view_position`. Also `Renderer::init_render_target` and
   `RenderPipeline::claim_view_offset`. (#165)
+- **`oit_pass`** (`nodes::display`), `OITPassNode.js`: weighted blended
+  order-independent transparency. Transparent `NormalBlending` materials
+  accumulate into an `rgba16float` / `r8unorm` pair that shares the pass's
+  depth, and the composite does not depend on draw order.
+  `webgpu_oit` is graded at 0 of 100000 pixels. Its shaders are gated against
+  three's dump and `tests/oit_frames.rs` checks order independence on the
+  GPU. See `docs/nodes.md` §82.
+- **`BlendMode` is public** (`materials`), with `BlendMode::new( blending )`
+  and `From<Blending>`. `MrtNode::set_clear_color` / `clear_color` are three's
+  `setClearColor` / `getClearColor`: a per-attachment clear value.
+- **`RenderTarget::set_texture_name( 0, name )`** names the first
+  attachment, which used to answer only to `output` and panic otherwise.
 
 ### Changed
+
+- **`MrtNode::set_blend_mode` takes `impl Into<BlendMode>`** rather than a
+  `Blending`, and returns `&mut Self` so calls chain. `blend_mode()` returns
+  a `BlendMode`. A bare `Blending` still converts. Under an MRT, a target's
+  first attachment now follows `getBlendMode( texture.name )` as in three:
+  the material's blending only when it is named `output`, and no blending
+  for any other unset name. Members take their attachment's channel count as
+  their type, so a one-channel attachment gets an `f32` output.
 
 - **`InstancedBufferAttribute.array` is private**, read through `array()` and
   written through `array_mut()`, which bumps the new `version()`;

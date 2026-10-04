@@ -193,6 +193,10 @@ mod webgpu_refraction;
 #[allow(dead_code)]
 mod webgpu_backdrop;
 
+#[path = "../../examples/webgpu_oit.rs"]
+#[allow(dead_code)]
+mod webgpu_oit;
+
 #[path = "../../examples/webgpu_tsl_earth.rs"]
 #[allow(dead_code)]
 mod webgpu_tsl_earth;
@@ -1987,6 +1991,55 @@ fn webgpu_postprocessing_motion_blur() {
         webgpu_postprocessing_motion_blur::animate,
         |app| app.renderer.device(),
     );
+}
+
+/// `OITPassNode`: the opaque knot through the pass's own target, the seven
+/// transparent meshes accumulated into `accum` / `revealage` over the shared
+/// depth and composited over it. On the graded frame the OIT target is new,
+/// so its depth is cleared and the knot does not occlude the transparents —
+/// three's frame shows the same (`docs/webgpu_oit-progress.md`).
+/// `tests/oit_frames.rs` checks the order independence itself.
+#[test]
+fn webgpu_oit() {
+    let name = "webgpu_oit";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_oit::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_oit::animate(&mut app);
+    println!("{name}: info {:?}", app.renderer.info());
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_oit::animate, |app| {
+        app.renderer.device()
+    });
 }
 
 #[test]
@@ -5737,6 +5790,7 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_mirror);
     rung!(webgpu_refraction);
     rung!(webgpu_backdrop);
+    rung!(webgpu_oit);
     rung!(webgpu_multiple_rendertargets);
     rung!(webgpu_multiple_rendertargets_readback);
     // The PMREM is built in `init()` and the probe's coefficients ride a

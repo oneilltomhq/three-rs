@@ -460,7 +460,8 @@ impl PassState {
     /// `render` is the `renderer.render( this.scene, this.camera )` call, so
     /// that a pass holding its scene in a `RefCell` can render it through a
     /// shared borrow (see [`update_before`](NodeUpdate::update_before)).
-    fn render_with(
+    /// `OITPassNode` renders twice inside it.
+    pub(crate) fn render_with(
         &self,
         renderer: &mut Renderer,
         near: f64,

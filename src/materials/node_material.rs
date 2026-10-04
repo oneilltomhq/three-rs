@@ -163,6 +163,10 @@ impl std::hash::Hash for OutputContext {
 pub struct MrtContext {
     pub node: crate::nodes::MrtNode,
     pub attachments: Vec<String>,
+    /// `builder.getOutputType( index )` per attachment — the type
+    /// `MRTNode.setup()` converts that member to. Empty is `vec4` for every
+    /// attachment, which is every `RGBAFormat` target.
+    pub output_types: Vec<crate::nodes::Type>,
 }
 
 /// `Renderer._getShadowNodes( material )` composed with
@@ -730,7 +734,7 @@ fn setup_inner(
             Some(material_mrt) => context.node.merge(material_mrt),
             None => context.node.clone(),
         };
-        merged.members(&context.attachments)
+        merged.members(&context.attachments, &context.output_types)
     });
 
     // --- the vertex flow

@@ -441,6 +441,7 @@ fn main() {
                     ("bloomIntensity", float(0.0)),
                 ]),
                 attachments: vec!["output".to_string(), "bloomIntensity".to_string()],
+                output_types: Vec::new(),
             }),
             ..SetupContext::default()
         },
@@ -1753,6 +1754,7 @@ fn main() {
             ),
         ]),
         attachments: vec!["output".to_string(), "emissive".to_string()],
+        output_types: Vec::new(),
     };
 
     // `CubeRenderTarget.fromEquirectangularTexture`'s box material: an unnamed
@@ -1957,6 +1959,7 @@ fn main() {
             "diffuse".to_string(),
             "emissive".to_string(),
         ],
+        output_types: Vec::new(),
     };
     show(
         "mrt_background",
@@ -2258,6 +2261,7 @@ fn dump_deferred() {
             "position".to_string(),
             "normal".to_string(),
         ],
+        output_types: Vec::new(),
     };
 
     // `new THREE.MeshStandardMaterial( { color: 0x333333, roughness: 0.2,
@@ -2859,6 +2863,7 @@ fn dump_shadowmap_opacity() {
                     node
                 },
                 attachments: vec!["output".to_string(), "normal".to_string()],
+                output_types: Vec::new(),
             }),
             ..SetupContext::default()
         },
