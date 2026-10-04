@@ -833,12 +833,16 @@ impl NodeBuilder {
             _ => {}
         }
         if self.increase_usage(node) > 1 {
-            // A block is an inline `Fn()` call, and three's analyze stage
-            // builds a call's `outputNode` at every reach — its stack only
-            // once. So a block read twice counts its result twice, and a
-            // computed result becomes a var instead of being spelled out at
-            // each read (`depthAwareBlend()` under `renderOutput()`, which
-            // reads its colour's `.xyz` and `.w`).
+            // A block is an inline `Fn()` call. In three's analyze stage
+            // `StackNode.build()` runs at every reach and builds every
+            // statement and then the `outputNode` each time, so all of them
+            // are counted again. The port re-counts only `result`: a block
+            // read twice counts its result twice, and a computed result
+            // becomes a var instead of being spelled out at each read
+            // (`depthAwareBlend()` under `renderOutput()`, which reads its
+            // colour's `.xyz` and `.w`). Re-counting the statements as well
+            // would change no WGSL: they are void statements and vars, whose
+            // promotion does not depend on a second count.
             if let Node::Block { result, .. } = node.node() {
                 let result = result.clone();
                 self.analyze(&result);

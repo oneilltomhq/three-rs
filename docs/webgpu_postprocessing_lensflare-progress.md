@@ -45,8 +45,8 @@ uniforms that read them already existed but always held 1. The scene now
 carries both. `materialEnvIntensity` takes the scene's value only on a draw
 whose environment is the scene's, as in `EnvironmentNode.setup()`.
 
-**The hand-drawn blur sized itself from a 1×1 input.** `blurPass.render()`
-runs before the pipeline. On the first frame, its input (`rtt( flarePass )`)
+**The hand-drawn blur sized itself from a 1×1 input.** The port's
+`blur_pass.render()` runs before the pipeline. On the first frame, its input (`rtt( flarePass )`)
 had not been drawn yet. `GaussianBlurNode::render()` now calls
 `Renderer::update_texture_source( map )` first, which runs whatever node
 renders the input.
@@ -60,6 +60,10 @@ renders the input.
 - `scene.background` and `scene.environment` from the raw equirectangular
   map are written out: the background's cube conversion and the
   environment's PMREM, as in `webgpu_postprocessing_bloom_emissive`.
+- `animate()` calls `blur_pass.render()` before `render_pipeline.render()`.
+  Three's `render()` calls only `renderPipeline.render()`; the port's
+  `GaussianBlurNode` is not one of the nodes the renderer runs on its own, so
+  the page draws it by hand.
 - The page's GUI is not ported. The values it drives are public on `App`.
 
 ## Left out

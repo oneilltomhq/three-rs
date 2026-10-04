@@ -27,14 +27,20 @@
 //!   [`TraaNode`](super::TraaNode) does, so the depth it marches is this
 //!   frame's.
 //! * The shadow map is [`LightShadow::point_depth_texture`](crate::lights::LightShadow::point_depth_texture),
-//!   which the renderer draws the light's shadow into — three reads
-//!   `light.shadow.map.depthTexture` during `setup()`, after the first shadow
-//!   render made it.
+//!   which the renderer draws the light's shadow into. Three reads
+//!   `light.shadow.map.depthTexture` during `setup()`; `shadow.map` was
+//!   assigned by `ShadowNode.setupShadow()` when the first material the light
+//!   shines on was built, not by a shadow render.
+//! * `setSize()` clamps each side to at least one texel. Three's
+//!   `Math.round( resolutionScale * size )` has no clamp, so a scale that
+//!   rounds to 0 asks for an empty target; `BilateralBlurNode` does clamp.
 //!
 //! Not ported: the `DirectionalLight` branch (a frustum from the shadow
 //! camera's matrices and a 2-D shadow-map compare) — the constructor panics
 //! on anything but a point light, where three throws for anything but a point
-//! or directional one — a logarithmic depth buffer, and `dispose()`.
+//! or directional one — a logarithmic depth buffer, `dispose()`, and the
+//! shared `builder.getSharedContext()` the material is given, which the
+//! port's per-material builds have no use for.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -329,7 +335,8 @@ impl GodraysNode {
 }
 
 impl GodraysState {
-    /// `Math.round( resolutionScale * size )`, clamped to one texel.
+    /// `Math.round( resolutionScale * size )`, clamped to one texel — three
+    /// does not clamp (see the module's divergences).
     fn set_size(&self, width: u32, height: u32) {
         let scale = |size: u32| ((self.resolution_scale * size as f64).round() as u32).max(1);
         self.target.set_size(scale(width), scale(height));

@@ -22,10 +22,16 @@
 //!   input's target would otherwise still be 1×1.
 //! * **The input is a texture**, as for [`gaussian_blur`](super::gaussian_blur):
 //!   the caller does three's `convertToTexture()`.
+//! * **`sigma` is a whole number.** Three's `sigma` is any number, and the
+//!   kernel is `sigma * 2 + 3` taps, so a fractional sigma gives a fractional
+//!   loop bound. The port takes a `u32`; the one page that uses the blur
+//!   takes the default, 4.
 //!
-//! Not ported: `dispose()`, and the texture-type copy `updateBefore()` does
+//! Not ported: `dispose()`, the texture-type copy `updateBefore()` does
 //! every frame (`_horizontalRT.texture.type = map.type`), which the port does
-//! once, at construction, as `GaussianBlurNode` does.
+//! once, at construction, as `GaussianBlurNode` does, and the shared
+//! `builder.getSharedContext()` the material is given, which the port's
+//! per-material builds have no use for.
 
 use std::rc::Rc;
 

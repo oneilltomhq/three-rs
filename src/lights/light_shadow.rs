@@ -129,7 +129,6 @@ impl ShadowCamera {
 /// `class LightShadow`, plus the `SpotLightShadow`/`DirectionalLightShadow`
 /// fields (`focus`, `aspect`) — the two subclasses differ only in their camera
 /// and in `updateMatrices`, so one struct with a camera enum covers both.
-#[derive(Clone)]
 pub struct LightShadow {
     /// `this.camera` — a perspective camera for a spot or point light, an
     /// orthographic one for a directional light.
@@ -165,6 +164,30 @@ pub struct LightShadow {
     /// shadow render, whichever comes first, so a node built before the first
     /// frame (`GodraysNode`) and the renderer name the same texture.
     pub(crate) point_depth_texture: Option<CubeDepthTexture>,
+}
+
+/// Field for field, except the point light's cube depth texture, which the
+/// clone starts without. Three's `LightShadow.copy()` never copies `map`, so a
+/// copied shadow renders into a map of its own; a derived `Clone` would share
+/// the `CubeDepthTexture` handle and have two lights draw into one texture.
+impl Clone for LightShadow {
+    fn clone(&self) -> Self {
+        Self {
+            camera: self.camera.clone(),
+            intensity: self.intensity,
+            bias: self.bias,
+            normal_bias: self.normal_bias,
+            radius: self.radius,
+            blur_samples: self.blur_samples,
+            map_size: self.map_size,
+            matrix: self.matrix,
+            focus: self.focus,
+            aspect: self.aspect,
+            filter_node: self.filter_node.clone(),
+            shadow_node: self.shadow_node.clone(),
+            point_depth_texture: None,
+        }
+    }
 }
 
 impl LightShadow {
@@ -292,5 +315,19 @@ impl LightShadow {
         shadow_matrix.multiply(&proj_screen_matrix);
 
         self.matrix = shadow_matrix;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clone_does_not_share_the_point_depth_texture() {
+        let mut shadow = LightShadow::point();
+        shadow.point_depth_texture();
+        let copy = shadow.clone();
+        assert!(shadow.point_depth_texture.is_some());
+        assert!(copy.point_depth_texture.is_none());
     }
 }

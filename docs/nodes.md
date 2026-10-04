@@ -5996,8 +5996,8 @@ branches. They are numbered as those branches land.
 
 ### 74.1 What three does
 
-`godrays( depthNode, camera, light )` is a `TempNode` with
-`updateBeforeType = FRAME`. It owns one render target at half the drawing
+`godrays( depthNode, camera, light )` is a `Node` with
+`updateBeforeType = FRAME`, as is `BilateralBlurNode`. It owns one render target at half the drawing
 buffer, and its texture node is `passTexture( this, target.texture )`.
 
 - **The march.** Per pixel, the quad rebuilds the world position from the
@@ -6029,9 +6029,10 @@ of the page (`tests/nodes_display_wgsl.rs`, fixtures `m09`, `m11` and `m13`).
 The two blur directions share fixture `m11`, because three compiles one
 program for both.
 
-- **The shadow map.** In three, `GodraysNode.setup()` runs after the first
-  shadow render and reads the depth texture that render made. The port
-  builds display nodes before any frame. So `LightShadow::point_depth_texture()`
+- **The shadow map.** In three, `GodraysNode.setup()` reads
+  `light.shadow.map.depthTexture`. `shadow.map` was assigned by
+  `ShadowNode.setupShadow()` when the first material the light shines on was
+  built. The port builds display nodes before any frame. So `LightShadow::point_depth_texture()`
   makes the light's `CubeDepthTexture` on first ask, and the renderer's point
   shadow draws into that same texture. `render_point_shadow` now keeps a
   cached cube target only while its depth texture is still the light's.
@@ -6042,16 +6043,22 @@ program for both.
 - **Bilateral blur is two materials.** The port's texture nodes are
   immutable, so the swap is two materials with fixed `passDirection`
   uniforms. Both compile to the one program three builds.
+- **Sizes.** `GodraysNode.setSize()` clamps each side to at least one texel.
+  Three's has no clamp, though `BilateralBlurNode`'s does.
+- **`sigma` is a `u32`.** Three's `sigma` is any number, and a fractional
+  one gives a fractional loop bound (`sigma * 2 + 3`). The page uses the
+  default, 4.
 - **Builder.** Two `analyze` fixes were needed for the WGSL to match three's
   var promotions:
   - `Node::Neg` is shared like any other math node once it is read twice.
     Three's `negate()` is a `MathNode`. The ray-plane `t` in the march is read
     three times, and inlining it tripled the `dot`s.
   - A `Block` reached a second time re-counts its result. A block is an
-    inline `Fn()` call, and three's analyze stage builds a call's
-    `outputNode` at every reach but its stack only once. Under
-    `renderOutput()`, `depthAwareBlend()`'s final `mix` is read twice and
-    becomes a var in three.
+    inline `Fn()` call. In three's analyze stage `StackNode.build()` runs at
+    every reach and re-builds every statement and then the `outputNode`. The
+    port re-counts only the result; for void statements and vars a second
+    count changes no WGSL. Under `renderOutput()`, `depthAwareBlend()`'s
+    final `mix` is read twice and becomes a var in three.
 - **TSL additions.** `const_array_of( Type, values )` is a literal array of
   vectors, used for the Poisson disk. The builder's `ConstArray` arm now writes
   a vector element as a typed constant. `UniformArray::element_xyz` is a
@@ -6072,6 +6079,8 @@ Faithful quirks, kept because the WGSL is three's:
   anything but a point light.
 - A logarithmic depth buffer.
 - `dispose()` on all three.
+- The shared `builder.getSharedContext()` the godrays and blur materials are
+  given.
 - The per-frame texture-type copy in `BilateralBlurNode.updateBefore()`. It is
   done once, at construction.
 - An orthographic camera and a `baseNode` with its own `uvNode` in
@@ -6091,7 +6100,7 @@ Faithful quirks, kept because the WGSL is three's:
 ### 75.1 What three does
 
 `lensflare( node, { ghostTint, threshold, ghostSamples, ghostSpacing,
-ghostAttenuationFactor, downSampleRatio } )` is a `TempNode` with
+ghostAttenuationFactor, downSampleRatio } )` is a `Node` with
 `updateBeforeType = FRAME`. Its target is a quarter of the drawing buffer by
 default. Its quad samples the input `ghostSamples` times, along the vector
 from the flipped uv to the screen centre. It keeps what is above `threshold`,

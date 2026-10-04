@@ -56,10 +56,14 @@ port counted the block once and wrote the `mix` twice.
 
 - `bilateralBlur` is two materials with fixed directions, not one material
   with a swapped texture. Both compile to three's single program.
-- `GodraysNode` and `BilateralBlurNode` run their input's update-before
-  first, so the first frame has this frame's depth and sizes.
 - The page's GUI is not ported. Every value it drives is a public uniform on
   `App`, and `output_raw` is the graph the blur toggle swaps in.
+
+Note: `GodraysNode` and `BilateralBlurNode` run their input's update-before
+first, so the first frame has this frame's depth and sizes. That order is
+three's too: `addSequentialNode` registers a node's children before the node.
+Only the mechanism differs: the port's nodes call the input's update through
+`frame::texture_update` themselves.
 
 ## Left out
 
