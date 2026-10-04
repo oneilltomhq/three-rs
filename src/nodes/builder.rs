@@ -1642,13 +1642,43 @@ impl NodeBuilder {
         name
     }
 
+    /// `AttributeNode.generate()`'s `hasGeometryAttribute()` miss: three warns
+    /// `Vertex attribute "name" not found on geometry.` and returns
+    /// `builder.generateConst( nodeType )` — a typed zero (`vec4` is
+    /// `( 0, 0, 0, 1 )`, `Vector4`'s default), in either stage, and no slot.
+    ///
+    /// The geometry is known when the renderer handed its attributes over
+    /// (`geometry_attributes` non-empty); a flow built with none — a
+    /// hand-built program — declares whatever it reads, as before typed
+    /// attributes (see [`geometry_attribute`](Self::geometry_attribute)).
+    /// `tangent` also has its own flag, [`MaterialFlow::geometry_has_tangent`].
+    /// The crate has no logger, so the warning goes to stderr like its others.
+    /// A helper so the `format!` stays out of `generate`'s frame.
+    #[inline(never)]
+    fn missing_attribute(&self, name: &str, ty: Type) -> Option<String> {
+        let known = !self.geometry_attributes.is_empty();
+        let missing = (name == "tangent" && !self.geometry_has_tangent)
+            || (known
+                && !self
+                    .geometry_attributes
+                    .iter()
+                    .any(|desc| desc.name == name));
+        if !missing {
+            return None;
+        }
+        eprintln!("three-rs: AttributeNode: Vertex attribute \"{name}\" not found on geometry.");
+        Some(wgsl::default_constant(ty))
+    }
+
     /// `AttributeNode.generate()` in the vertex stage: declare the input in
     /// the attribute's own type (`getTypeFromAttribute()`) and convert it to
     /// the node's with `builder.format()`. An attribute the renderer described
-    /// no geometry entry for (a hand-built program, or a name the geometry
-    /// lacks) is declared in the node's type over a 32-bit format of its own,
-    /// as before typed attributes. A helper rather than inline in `generate`'s
-    /// match, to keep that frame small (the `nodes_mx_library` stack canary).
+    /// no geometry entry for (a hand-built program, whose flow carries no
+    /// geometry attributes at all — a geometry that lacks the name is
+    /// [`missing_attribute`](Self::missing_attribute)'s) is declared in the
+    /// node's type over a 32-bit format of its own, as before typed
+    /// attributes. A helper rather than inline in `generate`'s match, to keep
+    /// that frame small (the `nodes_mx_library` stack canary).
     #[inline(never)]
     fn geometry_attribute(&mut self, name: &'static str, ty: Type) -> String {
         let desc = self
@@ -2934,13 +2964,8 @@ impl NodeBuilder {
             }
 
             Node::Attribute { name, ty } => {
-                // `AttributeNode.generate()`'s `hasGeometryAttribute()` miss:
-                // a warning and a typed zero, in either stage, and no slot.
-                if *name == "tangent" && !self.geometry_has_tangent {
-                    eprintln!(
-                        "three-rs: AttributeNode: Vertex attribute \"tangent\" not found on geometry."
-                    );
-                    return wgsl::default_constant(*ty);
+                if let Some(constant) = self.missing_attribute(name, *ty) {
+                    return constant;
                 }
                 if self.stage == Stage::Fragment {
                     return self.attribute_varying(node);

@@ -160,3 +160,44 @@ fn compute_skinning_reads_a_normalized_uint16_skin_weight() {
 
     let _ = compute_skinning(&mesh);
 }
+
+/// `AttributeNode.generate()` warns and returns `generateConst( nodeType )`
+/// for a name the geometry lacks: no vertex input, no buffer, and a typed
+/// constant (`vec4` gets w = 1) where the read would have been.
+#[test]
+fn a_missing_attribute_reads_as_a_typed_constant() {
+    let mut geometry = BufferGeometry::new();
+    geometry.set_attribute(
+        "position",
+        BufferAttribute::new(vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0], 3),
+    );
+    let mut material = MeshBasicNodeMaterial::new();
+    material.color_node = Some(attribute("absent", Type::Vec4).xyz());
+    let flow = setup(
+        &material,
+        &SetupContext {
+            geometry_attributes: geometry.attribute_descs(),
+            ..SetupContext::default()
+        },
+        None,
+    );
+    let program = NodeBuilder::new().build(&flow);
+    assert!(
+        !program.vertex_wgsl.contains("absent"),
+        "{}",
+        program.vertex_wgsl
+    );
+    assert!(
+        !program.fragment_wgsl.contains("absent"),
+        "{}",
+        program.fragment_wgsl
+    );
+    assert!(
+        program
+            .fragment_wgsl
+            .contains("vec4<f32>( 0.0, 0.0, 0.0, 1.0 )"),
+        "{}",
+        program.fragment_wgsl
+    );
+    assert_eq!(program.attributes.len(), 1, "only position is an input");
+}
