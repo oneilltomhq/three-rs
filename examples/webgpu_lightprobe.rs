@@ -21,7 +21,9 @@
 //! `irradiance` — the only diffuse light the sphere gets besides the
 //! directional light, since a roughness-0 envMap contributes almost nothing
 //! diffuse. The helper on the left draws that irradiance over π on a unit
-//! sphere at the probe's position, which the lighting itself ignores.
+//! sphere at the probe's position, which the lighting itself ignores. It
+//! follows the probe through `LightProbeHelper.onBeforeRender()`, the
+//! `on_before_render` hook the renderer calls before each draw of it.
 //!
 //! # The PMREM
 //!
@@ -166,8 +168,6 @@ pub fn init() -> App {
 /// The page's `animate()`.
 pub fn animate(app: &mut App) {
     app.environment.update(&mut app.renderer).unwrap();
-    // `LightProbeHelper.onBeforeRender()`'s transform half.
-    app.helper.update();
     app.renderer.render(&mut app.scene, &mut app.camera);
 }
 

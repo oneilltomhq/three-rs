@@ -7,7 +7,7 @@ This matrix judges every exported name in three.js revision 5f610f5 (r187) — `
 | area | rows | Present | Partial | Absent | N.A. | Present of applicable |
 |---|---|---|---|---|---|---|
 | math | 29 | 26 | 2 | 1 | 0 | 90% |
-| core | 29 | 11 | 7 | 8 | 3 | 42% |
+| core | 29 | 11 | 8 | 7 | 3 | 42% |
 | geometries | 21 | 19 | 0 | 2 | 0 | 90% |
 | extras | 21 | 17 | 0 | 2 | 2 | 89% |
 | animation | 14 | 13 | 1 | 0 | 0 | 93% |
@@ -27,7 +27,7 @@ This matrix judges every exported name in three.js revision 5f610f5 (r187) — `
 | addons/loaders | 71 | 9 | 3 | 59 | 0 | 13% |
 | addons/postprocessing | 30 | 0 | 0 | 0 | 30 | — |
 | addons/other | 102 | 15 | 4 | 60 | 23 | 19% |
-| **total** | **1317** | **840** | **138** | **216** | **123** | **70%** |
+| **total** | **1317** | **840** | **139** | **215** | **123** | **70%** |
 
 TSL by family:
 
@@ -155,10 +155,10 @@ Ported, `#[ignore]`d. Each row gives three's own score against its reference JPE
 | `InterleavedBuffer` | Absent | — | — | geometry has no interleaved buffers; comment only: src/objects/sprite.rs:24 |
 | `InstancedBufferAttribute` | Present | BufferAttribute::new_instanced (src/core/buffer_geometry.rs:149) + objects::InstancedBufferAttribute (src/objects/instanced_mesh.rs:17) | webgpu_struct_drawindirect, webgpu_instance_mesh |  |
 | `GLBufferAttribute` | N.A. | — | — | WebGL-only |
-| `Object3D` | Present | Object3D (src/core/object3d.rs:30) + scene-graph Node (src/core/node.rs:28) | tests/core_object3d.rs | QUnit hierarchy tests skipped |
+| `Object3D` | Present | Object3D (src/core/object3d.rs:30) + scene-graph Node (src/core/node.rs:28) | tests/core_object3d.rs | toJSON/clone/copy QUnit cases skipped |
 | `Raycaster` | Present | Raycaster (src/core/raycaster.rs:179) | tests/core_raycaster.rs; webgpu_lines_fat_raycasting | no reversed-depth cases |
 | `Layers` | Present | Layers (src/core/layers.rs:12) | tests/core_layers.rs; webgpu_layers |  |
-| `EventDispatcher` | Absent | — | — | #153 #159; comment only: src/animation/animation_action.rs:28, docs/scene-graph.md:76 |
+| `EventDispatcher` | Partial | typed per dispatcher: SceneEvent + Node::add_event_listener (src/core/events.rs) | tests/core_event_dispatcher.rs, tests/core_object3d.rs | no string-keyed dispatcher by design (docs/api.md decision 12); the mixer's `loop`/`finished` and the controls' `change` are not dispatched (#153) |
 | `Clock` | Absent | — | — | deprecated r183; Timer ported instead |
 | `Timer` | Present | Timer (src/core/timer.rs:26) | webgpu_shadowmap, webgpu_deferred, webgpu_loader_gltf | no connect()/page-visibility (DOM) |
 | `RendererUtils` | Absent | — | — | state save/restore inlined privately; no public API; comment only: src/nodes/display/bloom.rs:468, src/nodes/display/rtt.rs:221 |
@@ -1721,7 +1721,7 @@ Every graded example passes, so graded examples cannot rank the gaps. The rankin
 The first refresh of this matrix closed the previous top five. Velocity and TRAA (`velocity`, `positionPrevious`, `VelocityNode`, `TRAANode`, `MotionBlur`), the screen reads (`viewportSharedTexture`, `viewportTexture`, `viewportDepthTexture`, `viewportLinearDepth`, `linearDepth`, `viewportSafeUV`), `SkyMesh`, `CubeCamera` with a layered `CubeRenderTarget`, and the light probes (`LightProbe`, `LightProbeGenerator`, `LightProbeNode`, `LightProbeHelperGPU`, `getShIrradianceAt`) are Present. So is `transformNormalToView` (6 pages), with the rest of the accessors batch; `webgpu_tsl_raging_sea` now calls it. Of the screen reads only the shared copy has a graded page behind it; `viewportTexture`, `viewportDepthTexture`, `viewportLinearDepth` and `linearDepth` are defined but no gate or graded example renders them yet, so they stay Partial until a depth-reading page is ported.
 
 1. **The screen-space effect nodes** (`denoise` 6 pages). `DenoiseNode` and `SSAONode` are Present (no graded page). `SSRNode` is Present (`webgpu_postprocessing_ssr`, graded). `GTAONode` and `builtinAOContext` are Present now (`webgpu_postprocessing_ao`, ungraded: it is on three's e2e exception list), and so are `DepthOfFieldNode` (`webgpu_postprocessing_dof`), `SSGINode` (`webgpu_postprocessing_ssgi`) and `SSSNode` with `builtinShadowContext` (`webgpu_postprocessing_sss`), all ungraded for the same reason. What is left needs a velocity target and a temporal resolve, and both now exist; these pages are the direct payoff of the velocity work. Porting them also gives the depth reads (`viewportDepthTexture`, `linearDepth`, `getViewPosition`) their first graded consumer.
-2. **EventDispatcher** (issues 153, 159). 8 pages subscribe to `change` or `finished` events. In ordinary use these are render-on-demand behind OrbitControls and chaining animation clips when one ends, and neither works in the port today. `AnimationMixer` and `AnimationAction` fire nothing.
+2. **EventDispatcher** (issues 153, 159). 8 pages subscribe to `change` or `finished` events. In ordinary use these are render-on-demand behind OrbitControls and chaining animation clips when one ends, and neither works in the port today. The scene graph's `added`/`removed`/`childadded`/`childremoved` are a typed `SceneEvent` now (#159), but `AnimationMixer` and `AnimationAction` still fire nothing.
 3. **The TransformControls pages** (`webgpu_modifier_curve`, `webgpu_shadowmap_progressive`, `webgpu_tsl_compute_attractors_particles`). `FirstPersonControls` (8 pages), `FlyControls` (1) and now `TransformControls` are ported and gated against three's classes (`docs/controls.md`). What is left is wiring the gizmo into the pages: `webgpu_modifier_curve`'s port still leaves it out, and the viewer's controls hook is typed for `OrbitControls`.
 4. The display files are all ported now; what remains in that list is Partial only (`CRT.js`, `GodraysNode.js`, `RetroPassNode.js`, `SSSNode.js`), each a documented gap rather than a missing port.
 

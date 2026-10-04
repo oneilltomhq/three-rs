@@ -170,6 +170,14 @@ pub(crate) struct RenderTargetInner {
 pub struct RenderTarget(Rc<RefCell<RenderTargetInner>>);
 
 impl RenderTarget {
+    /// `renderTarget.dispose()` — drops this handle, and nothing more: the
+    /// attachments live on the target, so they go with its last handle, and
+    /// the renderer lets go of the views it cached for them at the top of the
+    /// next render (`docs/scene-graph.md`, "Identity and eviction"). Dropping
+    /// the handle does the same; this exists so three.js code ports line for
+    /// line.
+    pub fn dispose(self) {}
+
     /// `new RenderTarget( width, height )` — the default options' texture type
     /// is `UnsignedByteType`, so this one cannot fail.
     pub fn new(width: u32, height: u32) -> Self {

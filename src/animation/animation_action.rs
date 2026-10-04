@@ -25,9 +25,9 @@
 //!   settings live on the action and are pushed into each interpolant's
 //!   `data.settings` right before it is evaluated.
 //! - Events are dropped: Three's `_updateTime` dispatches `'loop'` and
-//!   `'finished'` on the mixer. There is no `EventDispatcher` port in this
-//!   crate, so the state changes happen (`paused` / `enabled` / clamped `time`)
-//!   and the notification does not.
+//!   `'finished'` on the mixer. The mixer has no events yet (`docs/api.md`
+//!   decision 12), so the state changes happen (`paused` / `enabled` /
+//!   clamped `time`) and the notification does not.
 
 use crate::animation::animation_clip::{AnimationBlendMode, AnimationClip};
 use crate::animation::animation_mixer::{BindingPool, ControlHandle, ControlPool, RootId};

@@ -160,6 +160,13 @@ impl std::fmt::Debug for Texture {
 }
 
 impl Texture {
+    /// `texture.dispose()` — drops this handle, and nothing more: a texture
+    /// handle is an `Rc`, so the renderer frees the GPU side once every handle
+    /// is gone, at the top of the next render (`docs/scene-graph.md`,
+    /// "Identity and eviction"). Dropping the handle does the same; this
+    /// exists so three.js code ports line for line.
+    pub fn dispose(self) {}
+
     /// `new Texture()` defaults: `ClampToEdgeWrapping`, `LinearFilter`,
     /// `LinearMipmapLinearFilter`, `RGBAFormat`, `UnsignedByteType`,
     /// `NoColorSpace`, `flipY = true`, `generateMipmaps = true`, anisotropy 1.

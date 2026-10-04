@@ -132,8 +132,6 @@ pub async fn init() -> App {
 
 /// The page's `render()`.
 pub fn animate(app: &mut App) {
-    // `LightProbeHelper.onBeforeRender()`'s transform half.
-    app.helper.update();
     app.renderer.render(&mut app.scene, &mut app.camera);
 }
 

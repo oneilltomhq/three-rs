@@ -8,6 +8,34 @@ have their own sections after the release they ship with. The format follows [Ke
 
 ### Added
 
+- **Scene-graph events** (#159, #153 option C): `SceneEvent` (`Added`,
+  `Removed`, `ChildAdded(child)`, `ChildRemoved(child)`), `SceneEventType`,
+  and `Node::add_event_listener` / `has_event_listener` /
+  `remove_event_listener` / `dispatch_event`, with an opaque
+  `ListenerHandle` standing for the listener. `Node::add`, `remove` (and so
+  `clear` and `remove_from_parent`) and `attach` dispatch at three's points
+  and in three's order. Dispatch copies the list first, so a listener may
+  remove itself. `tests/core_event_dispatcher.rs` ports
+  `EventDispatcher.tests.js`; `tests/core_object3d.rs` checks the dispatch
+  from the tree methods. No string-keyed dispatcher: `docs/api.md`
+  decision 12 says why.
+- **`on_before_render` / `on_after_render`** (#159): `Option<Box<dyn ...>>`
+  fields on `Object3D` (`ObjectRenderHook`: `FnMut(&Node, &Renderer,
+  &Scene, &dyn RenderCamera, Option<&Group>)`) and on `Scene`
+  (`SceneRenderHook`: `Fn(&Renderer, &Scene, &dyn RenderCamera,
+  Option<&RenderTarget>)`), with `set_on_before_render` /
+  `set_on_after_render` setters. The renderer calls them in
+  `_renderScene()`'s order on every scene render (`docs/api.md` decision
+  12); `tests/renderer_render_hooks.rs` (GPU) checks the order and the
+  arguments. `LightProbeHelper` now installs three's `onBeforeRender()` as
+  its hook, so `webgpu_lightprobe` and `webgpu_lightprobe_cubecamera` no
+  longer call `helper.update()` each frame (pixel counts unchanged).
+- **`dispose()`** (#159): documented no-op aliases for `Drop` on `Texture`,
+  `CubeTexture`, `DataTexture`, `Data3DTexture`, `DataArrayTexture`,
+  `DepthTexture`, `CubeDepthTexture`, `RenderTarget`, `CubeRenderTarget`,
+  `MeshBasicNodeMaterial` (`dispose(self)`) and `BufferGeometry`
+  (`dispose(self: Rc<Self>)`), so three.js code ports line for line.
+
 - **`KHR_materials_iridescence` and `webgpu_loader_gltf_iridescence`**
   (graded, 0 pixels; #229): the thin-film half of `PhysicalLightingModel`
   (`evalIridescence` as a WGSL `fn` with its early return and `m <= 2` loop,
@@ -620,6 +648,16 @@ have their own sections after the release they ship with. The format follows [Ke
 
 ### Changed
 
+- **`Object3D` has three more public fields**, `listeners`,
+  `on_before_render` and `on_after_render` (#159). A struct literal that
+  ends in `..Default::default()` still builds; one that names every field
+  does not. `Object3D`'s `Debug` is written by hand now and prints whether
+  each hook is set; `Clone` copies neither the listeners nor the hooks, as
+  three's `copy()` does not. `Scene` gains `on_before_render` and
+  `on_after_render`.
+- `LightProbeHelper` has a private field, so it can no longer be built
+  with a struct literal; `LightProbeHelper::new` is the constructor, as
+  before (#159).
 - Which fields each material kind reads is declared once, in
   `MaterialKind::table()` (`src/materials/fields.rs`): an exhaustive `match`
   that gives each kind its fragment flow, the fields it reads, the fields it

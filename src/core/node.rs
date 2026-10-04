@@ -8,7 +8,7 @@ use std::cell::RefCell;
 use std::ops::Deref;
 use std::rc::{Rc, Weak};
 
-use crate::core::Object3D;
+use crate::core::{ListenerHandle, Object3D, SceneEvent, SceneEventType};
 use crate::math::{Matrix4, Quaternion, Vector3};
 
 /// One node of the scene graph: three.js' `Object3D` *reference*, a newtype over
@@ -111,6 +111,9 @@ impl Node {
         object.borrow_mut().parent = Some(self.downgrade());
         self.borrow_mut().children.push(object.clone());
 
+        object.dispatch_event(&SceneEvent::Added);
+        self.dispatch_event(&SceneEvent::ChildAdded(object.clone()));
+
         self
     }
 
@@ -125,6 +128,9 @@ impl Node {
         if let Some(index) = index {
             object.borrow_mut().parent = None;
             self.borrow_mut().children.remove(index);
+
+            object.dispatch_event(&SceneEvent::Removed);
+            self.dispatch_event(&SceneEvent::ChildRemoved(object.clone()));
         }
 
         self
@@ -171,7 +177,58 @@ impl Node {
 
         object.update_world_matrix(false, true);
 
+        object.dispatch_event(&SceneEvent::Added);
+        self.dispatch_event(&SceneEvent::ChildAdded(object.clone()));
+
         self
+    }
+
+    /// `EventDispatcher.addEventListener( type, listener )`: `listener` is
+    /// called with every event of type `ty` dispatched on this object, and
+    /// with the object itself (three's `event.target`). The returned handle
+    /// stands for the listener in [`remove_event_listener`] and
+    /// [`has_event_listener`].
+    ///
+    /// [`remove_event_listener`]: Self::remove_event_listener
+    /// [`has_event_listener`]: Self::has_event_listener
+    pub fn add_event_listener(
+        &self,
+        ty: SceneEventType,
+        listener: impl Fn(&SceneEvent, &Node) + 'static,
+    ) -> ListenerHandle {
+        self.borrow_mut().listeners.add(ty, Rc::new(listener))
+    }
+
+    /// `EventDispatcher.hasEventListener( type, listener )`.
+    pub fn has_event_listener(&self, ty: SceneEventType, handle: ListenerHandle) -> bool {
+        self.borrow().listeners.has(ty, handle)
+    }
+
+    /// `EventDispatcher.removeEventListener( type, listener )`. A handle that
+    /// is not registered for `ty` is ignored, as three ignores an unknown
+    /// listener. Safe to call from inside a listener, on itself or any other:
+    /// a dispatch already under way still calls every listener it started
+    /// with.
+    pub fn remove_event_listener(&self, ty: SceneEventType, handle: ListenerHandle) {
+        self.borrow_mut().listeners.remove(ty, handle);
+    }
+
+    /// `EventDispatcher.dispatchEvent( event )`: calls every listener of the
+    /// event's type, in the order they were added, with this node as the
+    /// target. The list is copied first and no borrow of the object is held
+    /// during the calls, so a listener may borrow the node, change the tree
+    /// (which dispatches again) or add and remove listeners.
+    pub fn dispatch_event(&self, event: &SceneEvent) {
+        let listeners = {
+            let object = self.borrow();
+            if object.listeners.is_empty() {
+                return;
+            }
+            object.listeners.snapshot(event.event_type())
+        };
+        for listener in listeners {
+            listener(event, self);
+        }
     }
 
     /// `Object3D.getObjectById( id )`.

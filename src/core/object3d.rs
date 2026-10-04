@@ -6,7 +6,7 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use crate::core::node::{Node, WeakNode};
-use crate::core::Layers;
+use crate::core::{Layers, ObjectRenderHook, SceneEventListeners};
 use crate::math::{Euler, Matrix4, Quaternion, Vector3};
 use crate::objects::{InstancedBufferAttribute, Mesh, Payload};
 
@@ -26,7 +26,9 @@ fn next_id() -> u32 {
 /// three.js' `Object3D`: the transform and the drawable state every scene node
 /// carries. The parent/children tree lives on [`Node`], the handle that wraps
 /// this in an `Rc<RefCell<..>>` — see `docs/scene-graph.md`.
-#[derive(Debug)]
+///
+/// `Debug` is written out by hand because the render hooks are closures: it
+/// prints whether each is set.
 pub struct Object3D {
     /// `Object3D.id` — a per-thread counter, three.js' `_object3DId ++`.
     pub id: u32,
@@ -106,6 +108,60 @@ pub struct Object3D {
     /// What three.js would get from subclassing: the `Mesh`/`InstancedMesh`
     /// state that makes this node drawable. See [`Payload`].
     pub payload: Payload,
+    /// `object._listeners` — the [`SceneEvent`](crate::core::SceneEvent)
+    /// listeners, added and dispatched through
+    /// [`Node::add_event_listener`] and its siblings.
+    pub listeners: SceneEventListeners,
+    /// `object.onBeforeRender( renderer, scene, camera, geometry, material,
+    /// group )` — called by the renderer once per draw of this object in a
+    /// scene render, after the scene's matrices are updated and before
+    /// anything of the pass is drawn. `None` is three's empty default. See
+    /// [`ObjectRenderHook`] for the arguments and `docs/api.md` decision 12
+    /// for where the port calls it.
+    pub on_before_render: Option<ObjectRenderHook>,
+    /// `object.onAfterRender( renderer, scene, camera, geometry, material,
+    /// group )` — called once per draw of this object after the scene's pass
+    /// (and its output pass, if any) has been recorded.
+    pub on_after_render: Option<ObjectRenderHook>,
+}
+
+impl std::fmt::Debug for Object3D {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Object3D")
+            .field("id", &self.id)
+            .field("name", &self.name)
+            .field("object_type", &self.object_type)
+            .field("parent", &self.parent)
+            .field("children", &self.children)
+            .field("visible", &self.visible)
+            .field("layers", &self.layers)
+            .field("render_order", &self.render_order)
+            .field("frustum_culled", &self.frustum_culled)
+            .field("matrix_auto_update", &self.matrix_auto_update)
+            .field("matrix_world_auto_update", &self.matrix_world_auto_update)
+            .field("matrix_world_needs_update", &self.matrix_world_needs_update)
+            .field("matrix_alias", &self.matrix_alias)
+            .field("is_camera", &self.is_camera)
+            .field("is_light", &self.is_light)
+            .field("cast_shadow", &self.cast_shadow)
+            .field("receive_shadow", &self.receive_shadow)
+            .field("occlusion_test", &self.occlusion_test)
+            .field("is_group", &self.is_group)
+            .field("is_scene", &self.is_scene)
+            .field("position", &self.position)
+            .field("rotation", &self.rotation)
+            .field("quaternion", &self.quaternion)
+            .field("scale", &self.scale)
+            .field("up", &self.up)
+            .field("matrix", &self.matrix)
+            .field("matrix_world", &self.matrix_world)
+            .field("user_data", &self.user_data)
+            .field("payload", &self.payload)
+            .field("listeners", &self.listeners)
+            .field("on_before_render", &self.on_before_render.is_some())
+            .field("on_after_render", &self.on_after_render.is_some())
+            .finish()
+    }
 }
 
 impl Default for Object3D {
@@ -141,13 +197,18 @@ impl Default for Object3D {
             matrix_world: Matrix4::identity(),
             user_data: serde_json::Map::new(),
             payload: Payload::None,
+            listeners: SceneEventListeners::default(),
+            on_before_render: None,
+            on_after_render: None,
         }
     }
 }
 
 /// `Object3D.copy( source, recursive = false )`, minus the tree: a clone gets a
 /// fresh `id` and no parent or children, because a `Clone` that shared the
-/// `Rc`s would give two objects the same child list.
+/// `Rc`s would give two objects the same child list. Nor does it get the
+/// listeners or the render hooks: `copy()` does not copy `_listeners`, and a
+/// boxed closure cannot be cloned.
 impl Clone for Object3D {
     fn clone(&self) -> Self {
         Self {
@@ -181,6 +242,9 @@ impl Clone for Object3D {
             // `JSON.parse( JSON.stringify( source.userData ) )`: a deep copy.
             user_data: self.user_data.clone(),
             payload: self.payload.clone(),
+            listeners: SceneEventListeners::default(),
+            on_before_render: None,
+            on_after_render: None,
         }
     }
 }
@@ -194,6 +258,39 @@ impl Object3D {
     /// This object, moved into a scene-graph [`Node`].
     pub fn into_node(self) -> Node {
         Node::new(self)
+    }
+
+    /// `object.onBeforeRender = function ( renderer, scene, camera, geometry,
+    /// material, group ) { ... }` — sets
+    /// [`on_before_render`](Self::on_before_render). Assigning the field
+    /// works too; this spares spelling out the closure's argument types.
+    pub fn set_on_before_render(
+        &mut self,
+        hook: impl FnMut(
+                &Node,
+                &crate::renderer::Renderer,
+                &crate::objects::Scene,
+                &dyn crate::cameras::RenderCamera,
+                Option<&crate::core::Group>,
+            ) + 'static,
+    ) {
+        self.on_before_render = Some(Box::new(hook));
+    }
+
+    /// `object.onAfterRender = function ( ... ) { ... }` — sets
+    /// [`on_after_render`](Self::on_after_render), as
+    /// [`set_on_before_render`](Self::set_on_before_render) does.
+    pub fn set_on_after_render(
+        &mut self,
+        hook: impl FnMut(
+                &Node,
+                &crate::renderer::Renderer,
+                &crate::objects::Scene,
+                &dyn crate::cameras::RenderCamera,
+                Option<&crate::core::Group>,
+            ) + 'static,
+    ) {
+        self.on_after_render = Some(Box::new(hook));
     }
 
     /// `object.isMesh` — see [`Payload::is_mesh`].

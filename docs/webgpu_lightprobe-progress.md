@@ -73,6 +73,8 @@ The 2 remaining pixels were not chased.
   `UnsignedByteType` returns an `Err`.
 - `LightProbe::copy()` copies the `Light` half, not the transform (see
   §60's divergences).
-- `LightProbeHelper::update()` is the position and scale half of three's
-  `onBeforeRender()`, and the page calls it every frame. The `sh` and
+- The position and scale half of three's `onBeforeRender()` is the
+  `on_before_render` hook `LightProbeHelper::new` installs, which the
+  renderer calls before each draw of the helper (#159; the page called
+  `LightProbeHelper::update()` every frame before that). The `sh` and
   `intensity` uniforms are already read live.

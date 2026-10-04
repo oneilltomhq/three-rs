@@ -74,6 +74,13 @@ pub struct CubeRenderTarget {
 }
 
 impl CubeRenderTarget {
+    /// `cubeRenderTarget.dispose()` — drops the target and, with it, its
+    /// handles on the cube texture and the face target; the GPU side goes
+    /// with the last handle, as for [`RenderTarget::dispose`]. Dropping the
+    /// target does the same; this exists so three.js code ports line for
+    /// line.
+    pub fn dispose(self) {}
+
     /// `new CubeRenderTarget( size, { type: textureType } )`.
     ///
     /// # Errors

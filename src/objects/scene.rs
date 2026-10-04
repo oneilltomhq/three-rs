@@ -1,6 +1,6 @@
 //! Port of `three.js/src/scenes/Scene.js` (rung 2 subset).
 
-use crate::core::{Node, Object3D};
+use crate::core::{Node, Object3D, SceneRenderHook};
 use crate::materials::MeshBasicNodeMaterial;
 use crate::math::{Color, Matrix4};
 use crate::nodes::tsl::FogNode;
@@ -127,6 +127,18 @@ pub struct Scene {
     /// `scene.overrideMaterial` — used to draw every object in the scene with
     /// this material instead of its own.
     pub override_material: Option<MeshBasicNodeMaterial>,
+    /// `scene.onBeforeRender( renderer, scene, camera, renderTarget )` —
+    /// called at the start of every render of this scene, after its matrices
+    /// and the camera's are updated and before the scene is projected. Not the
+    /// `on_before_render` of [`Scene::node`]'s `Object3D`: three calls an
+    /// object's hook per draw, and the scene root is not drawn, so the
+    /// renderer never calls that one. See [`SceneRenderHook`].
+    pub on_before_render: Option<SceneRenderHook>,
+    /// `scene.onAfterRender( renderer, scene, camera, renderTarget )` —
+    /// called at the end of every render of this scene, after its pass (and
+    /// its output pass, if any) has been recorded and every object's
+    /// `on_after_render` has run.
+    pub on_after_render: Option<SceneRenderHook>,
 }
 
 impl Default for Scene {
@@ -149,6 +161,8 @@ impl Default for Scene {
             fog: None,
             fog_node: None,
             override_material: None,
+            on_before_render: None,
+            on_after_render: None,
         }
     }
 }
@@ -162,6 +176,37 @@ impl Scene {
     /// `Scene.matrixWorld`.
     pub fn matrix_world(&self) -> Matrix4 {
         self.node.borrow().matrix_world
+    }
+
+    /// `scene.onBeforeRender = function ( renderer, scene, camera,
+    /// renderTarget ) { ... }` — sets [`Scene::on_before_render`]. Assigning
+    /// the field works too; this spares spelling out the closure's argument
+    /// types.
+    pub fn set_on_before_render(
+        &mut self,
+        hook: impl Fn(
+                &crate::renderer::Renderer,
+                &Scene,
+                &dyn crate::cameras::RenderCamera,
+                Option<&crate::renderer::RenderTarget>,
+            ) + 'static,
+    ) {
+        self.on_before_render = Some(Box::new(hook));
+    }
+
+    /// `scene.onAfterRender = function ( ... ) { ... }` — sets
+    /// [`Scene::on_after_render`], as
+    /// [`set_on_before_render`](Self::set_on_before_render) does.
+    pub fn set_on_after_render(
+        &mut self,
+        hook: impl Fn(
+                &crate::renderer::Renderer,
+                &Scene,
+                &dyn crate::cameras::RenderCamera,
+                Option<&crate::renderer::RenderTarget>,
+            ) + 'static,
+    ) {
+        self.on_after_render = Some(Box::new(hook));
     }
 
     /// `scene.background = value`.
