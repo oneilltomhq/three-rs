@@ -82,3 +82,40 @@ fn raycast() {
     assert!((hits[1].point.x - 1.0).abs() < 1e-12 && (hits[1].point.y - 0.2).abs() < 1e-12);
     assert_eq!(hits[1].index, Some(1));
 }
+
+/// `Line::set_positions` writes through the typed setters, so a position
+/// that is not a `Float32Array` takes the values (normalized and narrowed,
+/// as `setXYZ()` stores them) and keeps its kind, and a new length rebuilds
+/// the array in that kind.
+#[test]
+fn set_positions_writes_any_array_kind() {
+    use three_rs::core::{BufferAttribute, TypedArray};
+
+    let mut geometry = BufferGeometry::new();
+    geometry.set_attribute("position", BufferAttribute::int16(vec![0; 6], 3, true));
+    let geometry = Rc::new(geometry);
+    let node = Line::new(
+        geometry.clone(),
+        MeshBasicNodeMaterial::line(Default::default()),
+    );
+    let position = geometry.get_attribute("position").unwrap();
+    let version = position.version();
+
+    node.borrow()
+        .line()
+        .unwrap()
+        .set_positions(&[1.0, -1.0, 0.5, 0.0, 0.25, -0.5]);
+    assert_eq!(
+        *position.data(),
+        TypedArray::I16(vec![32767, -32767, 16384, 0, 8192, -16383])
+    );
+    assert_eq!(position.version(), version + 1);
+
+    node.borrow()
+        .line()
+        .unwrap()
+        .set_positions(&[1.0, 1.0, 1.0, 0.0, 0.0, 0.0, -1.0, -1.0, -1.0]);
+    assert_eq!(position.count(), 3);
+    assert_eq!(position.data().kind(), three_rs::core::ArrayKind::I16);
+    assert_eq!(position.get_x(2), -1.0);
+}

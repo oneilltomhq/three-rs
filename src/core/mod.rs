@@ -1,5 +1,6 @@
 //! Ports of `three.js/src/core`.
 
+mod buffer_attribute;
 mod buffer_geometry;
 mod indirect_storage_buffer_attribute;
 mod layers;
@@ -8,9 +9,13 @@ mod object3d;
 mod raycaster;
 mod timer;
 
+pub(crate) use buffer_attribute::BufferKey;
+pub use buffer_attribute::{
+    ArrayKind, AttributeDesc, AttributeId, AttributeLayout, BufferAttribute, InterleavedBuffer,
+    StorageBufferAttribute, StorageContents, TypedArray,
+};
 pub use buffer_geometry::{
-    AttributeId, BoundingBox, BoundingSphere, BufferAttribute, BufferGeometry, DrawRange,
-    GeometryId, Group, Index,
+    BoundingBox, BoundingSphere, BufferGeometry, DrawRange, GeometryId, Group, Index,
 };
 pub use indirect_storage_buffer_attribute::IndirectStorageBufferAttribute;
 pub use layers::Layers;

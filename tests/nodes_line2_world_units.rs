@@ -43,7 +43,7 @@ fn program() -> NodeProgram {
     let flow = setup(
         &material,
         &SetupContext {
-            line_segments: Some(geometry.attributes()),
+            geometry_attributes: geometry.geometry().attribute_descs(),
             ..SetupContext::default()
         },
         None,
@@ -168,4 +168,24 @@ fn vertex_world_writes_match_three() {
         writes(VERTEX),
         "worldStart / worldEnd / worldPos writes",
     );
+}
+
+/// The vertex entry point's inputs: `position` plus the two interleaved
+/// pairs `LineSegmentsGeometry` sets — `instanceStart` / `instanceEnd` and
+/// `instanceColorStart` / `instanceColorEnd` — at the same locations and in
+/// the same types as three's.
+#[test]
+fn vertex_inputs_match_three() {
+    let program = program();
+    let signature = |wgsl: &str| -> String {
+        let start = wgsl.find("fn main(").expect("a vertex main");
+        let end = start + wgsl[start..].find('{').expect("a body");
+        wgsl[start..end]
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    let three = signature(VERTEX);
+    assert_eq!(three.matches("@location").count(), 5, "{three}");
+    assert_eq!(signature(&program.vertex_wgsl), three);
 }

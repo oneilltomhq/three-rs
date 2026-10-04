@@ -130,11 +130,12 @@ impl Triangle {
         barycoord: &Vector3,
     ) -> Vector4 {
         let item_size = attr.item_size.min(4);
-        let array = attr.array();
+        // `Vector4.fromBufferAttribute()`: `getX..getW`, so a typed or
+        // normalized attribute reads as three's does.
         let read = |index: usize| {
             let mut v = Vector4::new(0.0, 0.0, 0.0, 0.0);
             for component in 0..item_size {
-                v.set_component(component, array[index * attr.item_size + component] as f64);
+                v.set_component(component, attr.get_component(index, component));
             }
             v
         };
