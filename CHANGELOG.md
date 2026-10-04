@@ -8,6 +8,17 @@ have their own sections after the release they ship with. The format follows [Ke
 
 ### Added
 
+- **`KHR_materials_iridescence` and `webgpu_loader_gltf_iridescence`**
+  (graded, 0 pixels; #229): the thin-film half of `PhysicalLightingModel`
+  (`evalIridescence` as a WGSL `fn` with its early return and `m <= 2` loop,
+  `evalSensitivity`, `Fresnel0ToIor` / `IorToFresnel0`, the iridescent F0s
+  `computeMultiscattering` blends towards, and `BRDF_GGX`'s
+  `USE_IRIDESCENCE` mix), the `iridescence*` material fields and their
+  `materialIridescence*` / `Iridescence*` TSL nodes, and the glTF extension.
+  Gated by `gltf_iridescence_lamp_matches_three` against three's dump of the
+  page, `tests/gltf_loader.rs`'s `iridescence_lamp_materials` and the e2e
+  rung. The page's auto-rotating camera turns three times before the
+  screenshot, as three's does (docs/nodes.md §95).
 - **`webgpu_postprocessing_ssr_denoise`** (ungraded: three's own e2e
   exception list): the stochastic `ssr()`, `temporal_reproject()` and
   `recurrent_denoise()` in a history loop, added to the beauty, graded and
