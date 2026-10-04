@@ -752,3 +752,39 @@ Divergences, each noted where it lives:
   the viewport texture tap to `hash_blur_with`, and its WGSL gate compares
   three's loop exactly. The texture and the copy behind it are in
   `docs/nodes.md` §61.
+
+## Light shafts and lens flares (`webgpu_postprocessing_godrays`, `webgpu_postprocessing_lensflare`)
+
+`godrays`, `bilateral_blur`, `depth_aware_blend` and `lensflare` are the next
+display nodes. Like `TraaNode`, each one that owns a target registers its own
+update-before with the renderer, so the pipeline runs it and the example does
+not:
+
+```rust
+let godrays_pass = godrays(&scene_pass_depth, camera.clone(), &point_light);
+let blur_pass = bilateral_blur(&godrays_pass.texture(), None, 4, 0.1);
+render_pipeline.output_node = Some(depth_aware_blend(
+    &scene_pass_color,
+    &blur_pass.texture(),
+    &scene_pass_depth,
+    &camera,
+    options,
+));
+```
+
+Three things are new here:
+
+- **The pass's depth is read by an effect.** `godrays` reconstructs world
+  positions from `scene_pass.depth_texture()`. It runs the pass's
+  update-before first, so the depth it marches is this frame's.
+- **An effect reads a shadow map.** `godrays` samples the point light's cube
+  shadow through `LightShadow::point_depth_texture()`. The renderer draws the
+  shadow into that same texture.
+- **A hand-fired node sizes itself from its input.** The lens-flare page
+  still calls `blur_pass.render()` itself, as `GaussianBlurNode` requires.
+  `render()` now runs the input's update-before first, through
+  `Renderer::update_texture_source`. So the first frame's blur is not sized
+  from a 1×1 `rtt()`.
+
+`docs/nodes.md` §74 and §75 have the shaders, the gates and what is not
+ported.

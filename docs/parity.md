@@ -21,30 +21,30 @@ This matrix judges every exported name in three.js revision 5f610f5 (r187) — `
 | textures | 18 | 8 | 4 | 1 | 5 | 62% |
 | loaders | 20 | 2 | 2 | 12 | 4 | 12% |
 | renderers | 39 | 9 | 9 | 3 | 18 | 43% |
-| nodes | 141 | 91 | 28 | 17 | 5 | 67% |
-| tsl | 683 | 407 | 40 | 217 | 19 | 61% |
-| addons/controls | 9 | 0 | 2 | 7 | 0 | 0% |
+| nodes | 141 | 96 | 27 | 13 | 5 | 71% |
+| tsl | 683 | 502 | 36 | 126 | 19 | 76% |
+| addons/controls | 9 | 1 | 3 | 5 | 0 | 11% |
 | addons/loaders | 71 | 6 | 2 | 63 | 0 | 8% |
 | addons/postprocessing | 30 | 0 | 0 | 0 | 30 | — |
 | addons/other | 102 | 11 | 4 | 64 | 23 | 14% |
-| **total** | **1315** | **651** | **122** | **425** | **117** | **54%** |
+| **total** | **1315** | **752** | **118** | **328** | **117** | **63%** |
 
 TSL by family:
 
 | family | rows | Present | Partial | Absent | N.A. |
 |---|---|---|---|---|---|
-| math | 109 | 84 | 1 | 24 | 0 |
+| math | 109 | 108 | 1 | 0 | 0 |
 | operators | 68 | 51 | 1 | 2 | 14 |
 | conditionals/flow | 13 | 8 | 1 | 4 | 0 |
-| textures | 23 | 8 | 2 | 13 | 0 |
-| lighting/material | 121 | 74 | 9 | 38 | 0 |
-| accessors | 95 | 46 | 10 | 38 | 1 |
-| display/postprocessing | 75 | 40 | 8 | 27 | 0 |
+| textures | 23 | 17 | 1 | 5 | 0 |
+| lighting/material | 121 | 85 | 9 | 27 | 0 |
+| accessors | 95 | 76 | 8 | 10 | 1 |
+| display/postprocessing | 75 | 61 | 7 | 7 | 0 |
 | compute/storage | 53 | 19 | 3 | 31 | 0 |
 | materialx | 49 | 48 | 0 | 1 | 0 |
 | utils | 77 | 29 | 5 | 39 | 4 |
 
-Graded examples: 85 (the README gallery plus `webgpu_textures_2d-array_compressed`, which has a live `rung!` but a hyphen in its name). 10 more are ported but `#[ignore]`d because three.js fails its own reference on this machine; a row whose only check is one of those is Partial.
+Graded examples: 87 (the README gallery plus `webgpu_textures_2d-array_compressed`, which has a live `rung!` but a hyphen in its name). 10 more are ported but `#[ignore]`d because three.js fails its own reference on this machine; a row whose only check is one of those is Partial.
 
 ## math
 
@@ -167,7 +167,7 @@ Graded examples: 85 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `ShapePath` | Present | ShapePath (src/extras/shape_path.rs:25) | tests/extras_core.rs |  |
 | `CurvePath` | Present | CurvePath (src/extras/curve_path.rs:35) | tests/extras_core.rs |  |
 | `Curve` | Present | Curve trait (src/extras/curve.rs:126) | tests/extras_curves.rs, tests/extras_core.rs |  |
-| `Controls` | Absent | — | — | no shared Controls base (connect/disconnect/update); no base type; OrbitControls (src/addons/controls/orbit_controls.rs:209) stands alone |
+| `Controls` | Absent | — | — | no shared Controls base (connect/disconnect/update); no base type; OrbitControls, FirstPersonControls and FlyControls (src/addons/controls/) each stand alone |
 | `DataUtils` | Present | to_half_float/from_half_float (src/extras/data_utils.rs:71) | tests/hdr_loader.rs (bit-exact vs three) |  |
 | `ImageUtils` | N.A. | — | — | DOM canvas |
 | `ShapeUtils` | Present | area/is_clock_wise/triangulate_shape (src/extras/shape_utils.rs:8) | tests/extras_core.rs, tests/geometries_shape_oracle.rs |  |
@@ -432,7 +432,7 @@ Graded examples: 85 (the README gallery plus `webgpu_textures_2d-array_compresse
 
 ## nodes
 
-141 rows: 91 Present, 28 Partial, 17 Absent, 5 N.A.
+141 rows: 96 Present, 27 Partial, 13 Absent, 5 N.A.
 
 | three.js name | verdict | three-rs symbol | verified by | note |
 |---|---|---|---|---|
@@ -440,7 +440,7 @@ Graded examples: 85 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `NodeUpdateType` | Present | NodeUpdateType (src/nodes/frame.rs:30) | tests/nodes_frame.rs |  |
 | `NodeType` | Present | Type (src/nodes/node.rs:22) | all *_wgsl gates |  |
 | `NodeAccess` | Present | StorageAccess (src/nodes/node.rs:943) | webgpu_compute_texture |  |
-| `ArrayNode` | Partial | const_array / Node::ConstArray (src/nodes/tsl.rs:323) | webgpu_depth_texture | f64 literals only; no array(type,count) or arrays of nodes |
+| `ArrayNode` | Partial | const_array / Node::ConstArray (src/nodes/tsl.rs:323) | webgpu_depth_texture; webgpu_postprocessing_godrays (graded, vec2 elements via const_array_of) | float or vector literals only; no array(type,count) or arrays of nodes |
 | `AssignNode` | Present | Node::Assign (src/nodes/node.rs:1403) | webgpu_compute_points |  |
 | `AttributeNode` | Present | Node::Attribute (src/nodes/node.rs:1346), attribute (src/nodes/tsl.rs:345) | all *_wgsl gates |  |
 | `BypassNode` | Absent | — | — | no bypass() |
@@ -482,7 +482,7 @@ Graded examples: 85 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `BuiltinNode` | Partial | enum Builtin (src/nodes/node.rs:1053) | tests/nodes_compute_wgsl.rs | closed enum; no generic builtin(name) |
 | `ClippingNode` | Absent | — | — | no clippingPlanes; docs/nodes.md s6 deferred |
 | `CubeTextureNode` | Present | cube_texture (src/nodes/tsl.rs:3581) | webgpu_materials_envmaps |  |
-| `MaterialNode` | Partial | material_color etc. (src/nodes/tsl.rs:2143) | webgpu_lights_physical | no iridescence/lightMap/dash accessors |
+| `MaterialNode` | Partial | material_color etc. (src/nodes/tsl.rs:2143) | webgpu_lights_physical | no iridescence/dash accessors |
 | `MaterialReferenceNode` | Partial | UniformSource::Material* (src/nodes/node.rs:172) | webgpu_lights_physical | fixed sources; no materialReference(name) |
 | `ModelNode` | Partial | model_world_matrix etc. (src/nodes/tsl.rs:2123,2133,2335) | all *_wgsl gates | no modelPosition/Scale/Direction/ViewPosition/Radius |
 | `Object3DNode` | Partial | object_world_matrix (src/nodes/tsl.rs:3789) | webgpu_skinning_points | only objectWorldMatrix |
@@ -511,8 +511,8 @@ Graded examples: 85 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `NormalMapNode` | Partial | normal_map (src/nodes/tsl.rs:1456) | webgpu_lights_phong, webgpu_clearcoat | tangent space only; no object-space normal map |
 | `PassNode` | Present | pass / PassNode (src/renderer/pass.rs:117,54) | webgpu_postprocessing_bloom |  |
 | `RenderOutputNode` | Present | render_output (src/materials/node_material.rs:1040) | tests/nodes_custom.rs |  |
-| `ScreenNode` | Partial | screen_uv, viewport_size (src/nodes/tsl.rs:2362,2301) | webgpu_mrt, webgpu_tsl_halftone | no viewportUV/viewportCoordinate |
-| `ToneMappingNode` | Partial | tone_mapping_node (src/materials/node_material.rs:1058) | tests/nodes_custom.rs, webgpu_custom_fog_background | no Cineon or Custom tone mapping |
+| `ScreenNode` | Present | screen_uv, viewport_size, viewport_coordinate, viewport_uv (src/nodes/tsl.rs) | webgpu_mrt, webgpu_tsl_halftone; tests/nodes_tsl_batch.rs (viewport_coords_match) |  |
+| `ToneMappingNode` | Partial | tone_mapping_node (src/materials/node_material.rs:1078) | tests/nodes_custom.rs, tests/nodes_tsl_batch.rs (cineon_tone_mapping_node_matches), webgpu_custom_fog_background | no Custom tone mapping |
 | `ToonOutlinePassNode` | Present | toon_outline_pass (src/nodes/display/toon_outline_pass.rs:40) | webgpu_materials_toon |  |
 | `ViewportDepthNode` | Partial | perspective_depth_to_view_z (src/nodes/tsl.rs:845) | webgpu_depth_texture | no viewportDepth/linearDepth #169 |
 | `ViewportDepthTextureNode` | Partial | viewport_depth_texture (src/nodes/display/viewport_texture.rs:173) | — | defined; no gate or graded example reads the depth copy yet |
@@ -551,9 +551,9 @@ Graded examples: 85 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `ConditionalNode` | Present | Node::Select/IfVar (src/nodes/node.rs:1624,1590), select (src/nodes/tsl.rs:1835) | webgpu_compute_points |  |
 | `MathNode` | Present | Node::Math (src/nodes/node.rs:1421) | all *_wgsl gates |  |
 | `OperatorNode` | Present | Node::Op (src/nodes/node.rs:1410) | all *_wgsl gates |  |
-| `PackFloatNode` | Absent | — | — | no pack2x16 etc. |
-| `Packed4x8IntegerNode` | Absent | — | — | no pack4x8 integer ops |
-| `UnpackFloatNode` | Absent | — | — | no unpack2x16 etc. |
+| `PackFloatNode` | Present | pack_snorm_2x16 … unpack_unorm_4x8 (src/nodes/tsl/wrappers.rs:589), generate_packing (src/nodes/builder.rs) | tests/nodes_tsl_batch.rs |  |
+| `Packed4x8IntegerNode` | Present | pack_4x_i8 … dot_4i8_packed (src/nodes/tsl/wrappers.rs:614), generate_packing (src/nodes/builder.rs) | tests/nodes_tsl_batch.rs | native builtins only; the no-feature emulation is not ported |
+| `UnpackFloatNode` | Present | unpack_snorm_2x16 … unpack_unorm_4x8 (src/nodes/tsl/wrappers.rs:589), generate_packing (src/nodes/builder.rs) | tests/nodes_tsl_batch.rs |  |
 | `GLSLNodeParser` | N.A. | — | — | GLSL-only |
 | `PMREMNode` | Present | pmrem_texture (src/nodes/pmrem_node.rs:157) | tests/pmrem*.rs, webgpu_pmrem_scene |  |
 | `ArrayElementNode` | Present | Node::Element (src/nodes/node.rs:1460), element (src/nodes/tsl.rs:1796) | webgpu_compute_points |  |
@@ -565,7 +565,7 @@ Graded examples: 85 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `FunctionOverloadingNode` | Partial | by_position (src/nodes/mx_noise.rs:833) | tests/nodes_mx_noise.rs | internal MaterialX use only; no overloadingFn() |
 | `JoinNode` | Present | Node::Join (src/nodes/node.rs:1453), vec4 (src/nodes/tsl.rs:298) | all *_wgsl gates |  |
 | `LoopNode` | Present | Node::Loop (src/nodes/node.rs:1530), loop_index (src/nodes/tsl.rs:4266) | webgpu_volume_perlin, webgpu_tsl_raging_sea |  |
-| `MaxMipLevelNode` | Absent | — | — | no maxMipLevel() |
+| `MaxMipLevelNode` | Present | max_mip_level (src/nodes/tsl.rs:4432) | tests/nodes_tsl_batch.rs | a live object uniform, read when the buffer is written |
 | `MemberNode` | Present | Node::StructMember (src/nodes/node.rs:1636), .get (src/nodes/tsl.rs:3904) | webgpu_struct_drawindirect |  |
 | `ReflectorNode` | Present | ReflectorNode (src/nodes/reflector_node.rs:183) | webgpu_mirror |  |
 | `RotateNode` | Present | rotate (src/nodes/tsl.rs:733) | tests/nodes_tsl_batch.rs, webgpu_layers |  |
@@ -580,14 +580,14 @@ Graded examples: 85 (the README gallery plus `webgpu_textures_2d-array_compresse
 
 ## addons/controls
 
-9 rows: 0 Present, 2 Partial, 7 Absent, 0 N.A.
+9 rows: 1 Present, 3 Partial, 5 Absent, 0 N.A.
 
 | three.js name | verdict | three-rs symbol | verified by | note |
 |---|---|---|---|---|
 | `ArcballControls` | Absent | — | — |  |
 | `DragControls` | Absent | — | — |  |
-| `FirstPersonControls` | Absent | — | — |  |
-| `FlyControls` | Absent | — | — |  |
+| `FirstPersonControls` | Present | addons::controls::FirstPersonControls (src/addons/controls/first_person_controls.rs:53) | tests/addons_first_person_controls.rs (three's class under node, 7 scenarios, 1e-9) | DOM listener bookkeeping (connect/disconnect/dispose, contextmenu) replaced by input methods; see docs/controls.md |
+| `FlyControls` | Partial | addons::controls::FlyControls (src/addons/controls/fly_controls.rs:88) | tests/addons_fly_controls.rs (three's class under node, 5 scenarios, 1e-9) | no change event (update() returns its condition); DOM listener bookkeeping replaced by input methods; the `domElement === document` branch of _getContainerDimensions (window.innerWidth/innerHeight, zero offset) dropped, the host passes the size via set_element_size |
 | `MapControls` | Partial | three_rs_controls::MapControls (addons/controls/src/map_controls.rs:216) | addons/controls unit tests | own ground-grab design, not a port; JS preset (OrbitControls screenSpacePanning=false, LEFT=PAN) not provided |
 | `OrbitControls` | Partial | addons::controls::OrbitControls (src/addons/controls/orbit_controls.rs:209) | tests/addons_orbit_controls.rs; webgpu_loader_gltf et al. | no touch gestures, no OrthographicCamera branch, no change/start/end events |
 | `PointerLockControls` | Absent | — | — |  |
@@ -820,20 +820,20 @@ Graded examples: 85 (the README gallery plus `webgpu_textures_2d-array_compresse
 
 ### Supplementary: `examples/jsm/tsl/display/*.js`
 
-These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) and are not counted above. 16 Present, 32 Absent.
+These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) and are not counted above. 19 Present, 1 Partial, 28 Absent.
 
 | file | status | three-rs port and check |
 |---|---|---|
 | `AfterImageNode.js` | Present | after_image; tests/nodes_display_wgsl.rs; webgpu_postprocessing_afterimage (ported, ungraded) |
 | `AnaglyphPassNode.js` | Absent | — |
-| `BilateralBlurNode.js` | Absent | — |
+| `BilateralBlurNode.js` | Present | bilateral_blur/BilateralBlurNode (src/nodes/display/bilateral_blur.rs:50); tests/nodes_display_wgsl.rs (horizontal and vertical gates); webgpu_postprocessing_godrays (graded); two materials instead of one with a swapped texture; no dispose() |
 | `BleachBypass.js` | Absent | — |
 | `BloomNode.js` | Present | bloom/BloomNode; webgpu_postprocessing_bloom, _bloom_emissive, _bloom_selective, _anamorphic |
 | `boxBlur.js` | Present | box_blur; tests/nodes_display_wgsl.rs (WGSL gate only, no graded rung) |
 | `ChromaticAberrationNode.js` | Present | chromatic_aberration; webgpu_postprocessing_ca |
 | `CRT.js` | Absent | — |
 | `DenoiseNode.js` | Absent | — |
-| `depthAwareBlend.js` | Absent | — |
+| `depthAwareBlend.js` | Present | depth_aware_blend (src/nodes/display/depth_aware_blend.rs:96); tests/nodes_display_wgsl.rs; webgpu_postprocessing_godrays (graded); perspective camera only, as in three; a baseNode with its own uvNode is not ported |
 | `depthAwareBlur.js` | Absent | — |
 | `DepthOfFieldNode.js` | Absent | — |
 | `DotScreenNode.js` | Present | dot_screen; tests/nodes_display_wgsl.rs; webgpu_postprocessing (ported, ungraded) |
@@ -841,11 +841,11 @@ These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) an
 | `FSR1Node.js` | Absent | — |
 | `FXAANode.js` | Present | fxaa; webgpu_postprocessing_fxaa |
 | `GaussianBlurNode.js` | Present | gaussian_blur; tests/nodes_display_wgsl.rs; webgpu_procedural_texture |
-| `GodraysNode.js` | Absent | — |
+| `GodraysNode.js` | Partial | godrays/GodraysNode (src/nodes/display/godrays.rs:74); tests/nodes_display_wgsl.rs; webgpu_postprocessing_godrays (graded); point lights only: the DirectionalLight branch, log depth and dispose() are not ported |
 | `GTAONode.js` | Absent | — |
 | `hashBlur.js` | Present | hash_blur; tests/nodes_display_wgsl.rs (loop gated against three's webgpu_backdrop_area dump, taps through viewportSharedTexture) |
 | `ImportanceSampledEnvironment.js` | Absent | — |
-| `LensflareNode.js` | Absent | — |
+| `LensflareNode.js` | Present | lensflare/LensflareNode (src/nodes/display/lensflare.rs:84); tests/nodes_display_wgsl.rs; webgpu_postprocessing_lensflare (graded); takes a texture: the caller writes convertToTexture()'s rtt(); no dispose() |
 | `Lut3DNode.js` | Absent | — |
 | `MotionBlur.js` | Present | motion_blur; tests/nodes_display_wgsl.rs; webgpu_postprocessing_motion_blur (graded) |
 | `OITPassNode.js` | Absent | — |
@@ -879,9 +879,7 @@ These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) an
 
 ### math
 
-84 of 109 applicable present (1 Partial, 24 Absent, 0 N.A.).
-
-Missing (Absent): `packSnorm2x16`, `packUnorm2x16`, `packHalf2x16`, `packSnorm4x8`, `packUnorm4x8`, `dot4U8Packed`, `dot4I8Packed`, `pack4xI8`, `pack4xU8`, `pack4xI8Clamp`, `pack4xU8Clamp`, `unpack4xI8`, `unpack4xU8`, `unpackSnorm2x16`, `unpackUnorm2x16`, `unpackHalf2x16`, `unpackSnorm4x8`, `unpackUnorm4x8`, `all`, `any`, `transformNormalByViewMatrix`, `transformNormalByInverseViewMatrix`, `faceforward`, `inversesqrt`.
+108 of 109 applicable present (1 Partial, 0 Absent, 0 N.A.).
 
 Partial: `bitcast`.
 
@@ -900,24 +898,24 @@ Partial: `bitcast`.
 | `gain` | Present | gain (src/nodes/tsl/wrappers.rs:408) | tests/nodes_tsl_batch.rs |  |
 | `pcurve` | Present | pcurve (src/nodes/tsl/wrappers.rs:418) | tests/nodes_tsl_batch.rs |  |
 | `sinc` | Present | sinc (src/nodes/tsl/wrappers.rs:428) | tests/nodes_tsl_batch.rs |  |
-| `packSnorm2x16` | Absent | — | — |  |
-| `packUnorm2x16` | Absent | — | — |  |
-| `packHalf2x16` | Absent | — | — |  |
-| `packSnorm4x8` | Absent | — | — |  |
-| `packUnorm4x8` | Absent | — | — |  |
-| `dot4U8Packed` | Absent | — | — |  |
-| `dot4I8Packed` | Absent | — | — |  |
-| `pack4xI8` | Absent | — | — |  |
-| `pack4xU8` | Absent | — | — |  |
-| `pack4xI8Clamp` | Absent | — | — |  |
-| `pack4xU8Clamp` | Absent | — | — |  |
-| `unpack4xI8` | Absent | — | — |  |
-| `unpack4xU8` | Absent | — | — |  |
-| `unpackSnorm2x16` | Absent | — | — |  |
-| `unpackUnorm2x16` | Absent | — | — |  |
-| `unpackHalf2x16` | Absent | — | — |  |
-| `unpackSnorm4x8` | Absent | — | — |  |
-| `unpackUnorm4x8` | Absent | — | — |  |
+| `packSnorm2x16` | Present | pack_snorm_2x16 (src/nodes/tsl/wrappers.rs:536) | tests/nodes_tsl_batch.rs |  |
+| `packUnorm2x16` | Present | pack_unorm_2x16 (src/nodes/tsl/wrappers.rs:541) | tests/nodes_tsl_batch.rs |  |
+| `packHalf2x16` | Present | pack_half_2x16 (src/nodes/tsl/wrappers.rs:547) | tests/nodes_tsl_batch.rs |  |
+| `packSnorm4x8` | Present | pack_snorm_4x8 (src/nodes/tsl/wrappers.rs:553) | tests/nodes_tsl_batch.rs |  |
+| `packUnorm4x8` | Present | pack_unorm_4x8 (src/nodes/tsl/wrappers.rs:559) | tests/nodes_tsl_batch.rs |  |
+| `dot4U8Packed` | Present | dot_4u8_packed (src/nodes/tsl/wrappers.rs:608) | tests/nodes_tsl_batch.rs | native builtin only; the no-feature emulation is not ported |
+| `dot4I8Packed` | Present | dot_4i8_packed (src/nodes/tsl/wrappers.rs:614) | tests/nodes_tsl_batch.rs | native builtin only; the no-feature emulation is not ported |
+| `pack4xI8` | Present | pack_4x_i8 (src/nodes/tsl/wrappers.rs:619) | tests/nodes_tsl_batch.rs | native builtin only |
+| `pack4xU8` | Present | pack_4x_u8 (src/nodes/tsl/wrappers.rs:624) | tests/nodes_tsl_batch.rs | native builtin only |
+| `pack4xI8Clamp` | Present | pack_4x_i8_clamp (src/nodes/tsl/wrappers.rs:630) | tests/nodes_tsl_batch.rs | native builtin only |
+| `pack4xU8Clamp` | Present | pack_4x_u8_clamp (src/nodes/tsl/wrappers.rs:636) | tests/nodes_tsl_batch.rs | native builtin only |
+| `unpack4xI8` | Present | unpack_4x_i8 (src/nodes/tsl/wrappers.rs:641) | tests/nodes_tsl_batch.rs | native builtin only |
+| `unpack4xU8` | Present | unpack_4x_u8 (src/nodes/tsl/wrappers.rs:646) | tests/nodes_tsl_batch.rs | native builtin only |
+| `unpackSnorm2x16` | Present | unpack_snorm_2x16 (src/nodes/tsl/wrappers.rs:565) | tests/nodes_tsl_batch.rs |  |
+| `unpackUnorm2x16` | Present | unpack_unorm_2x16 (src/nodes/tsl/wrappers.rs:571) | tests/nodes_tsl_batch.rs |  |
+| `unpackHalf2x16` | Present | unpack_half_2x16 (src/nodes/tsl/wrappers.rs:577) | tests/nodes_tsl_batch.rs |  |
+| `unpackSnorm4x8` | Present | unpack_snorm_4x8 (src/nodes/tsl/wrappers.rs:583) | tests/nodes_tsl_batch.rs |  |
+| `unpackUnorm4x8` | Present | unpack_unorm_4x8 (src/nodes/tsl/wrappers.rs:589) | tests/nodes_tsl_batch.rs |  |
 | `triNoise3D` | Present | tri_noise_3d (src/nodes/tsl/wrappers.rs:615) | tests/nodes_tsl_batch.rs |  |
 | `EPSILON` | Present | epsilon (src/nodes/tsl/wrappers.rs:225) | tests/nodes_tsl_batch.rs |  |
 | `INFINITY` | Present | infinity (src/nodes/tsl/wrappers.rs:231) | tests/nodes_tsl_batch.rs |  |
@@ -925,8 +923,8 @@ Partial: `bitcast`.
 | `PI2` | Present | pi2 (src/nodes/tsl/wrappers.rs:215) | tests/nodes_tsl_batch.rs |  |
 | `TWO_PI` | Present | two_pi (src/nodes/tsl.rs:713) | webgpu_compute_points (graded) |  |
 | `HALF_PI` | Present | half_pi (src/nodes/tsl/wrappers.rs:220) | tests/nodes_tsl_batch.rs |  |
-| `all` | Absent | — | — | comment only: src/lib.rs |
-| `any` | Absent | — | — | reflector_node.rs:173 any() is a registry check (false positive) |
+| `all` | Present | all (src/nodes/tsl.rs:619) | tests/nodes_tsl_batch.rs |  |
+| `any` | Present | any (src/nodes/tsl/wrappers.rs:455) | tests/nodes_tsl_batch.rs |  |
 | `radians` | Present | radians (src/nodes/tsl/wrappers.rs:301) | tests/nodes_tsl_batch.rs |  |
 | `degrees` | Present | degrees (src/nodes/tsl/wrappers.rs:297) | tests/nodes_tsl_batch.rs |  |
 | `exp` | Present | exp (src/nodes/tsl.rs:684) | tests/nodes_fog.rs, webgpu_skinning_points (graded) |  |
@@ -978,8 +976,8 @@ Partial: `bitcast`.
 | `pow3` | Present | .pow3() (src/nodes/tsl.rs:1679) | tests/nodes_tsl_batch.rs, webgpu_tsl_galaxy (graded) |  |
 | `pow4` | Present | pow4 (src/nodes/tsl/wrappers.rs:364) | tests/nodes_tsl_batch.rs |  |
 | `transformDirection` | Present | transform_direction (src/nodes/tsl.rs:4918) | webgpu_tsl_raging_sea (graded) |  |
-| `transformNormalByViewMatrix` | Absent | — | — |  |
-| `transformNormalByInverseViewMatrix` | Absent | — | — |  |
+| `transformNormalByViewMatrix` | Present | transform_normal_by_view_matrix (src/nodes/tsl/wrappers.rs:463) | tests/nodes_tsl_batch.rs |  |
+| `transformNormalByInverseViewMatrix` | Present | transform_normal_by_inverse_view_matrix (src/nodes/tsl/wrappers.rs:513) | tests/nodes_tsl_batch.rs |  |
 | `cbrt` | Present | cbrt (src/nodes/tsl/wrappers.rs:376) | tests/nodes_tsl_batch.rs |  |
 | `lengthSq` | Present | length_sq (src/nodes/tsl/wrappers.rs:382) | tests/nodes_tsl_batch.rs |  |
 | `mix` | Present | mix (src/nodes/tsl.rs:598) | tests/nodes_custom.rs, webgpu_cubemap_mix (graded) |  |
@@ -992,8 +990,8 @@ Partial: `bitcast`.
 | `mixElement` | Present | NodeRef::mix (src/nodes/tsl.rs:1713) | webgpu_cubemap_mix (graded) | method form |
 | `smoothstepElement` | Present | NodeRef::smoothstep (src/nodes/tsl/wrappers.rs:1154) | tests/nodes_tsl_batch.rs | method form |
 | `stepElement` | Present | NodeRef::step (src/nodes/tsl/wrappers.rs:1160) | tests/nodes_tsl_batch.rs | method form |
-| `faceforward` | Absent | — | — | deprecated alias of faceForward (MathNode.js:1161) |
-| `inversesqrt` | Absent | — | — | deprecated alias of inverseSqrt (MathNode.js:1162) |
+| `faceforward` | Present | faceforward (src/nodes/tsl/wrappers.rs:438) | tests/nodes_tsl_batch.rs | deprecated alias of faceForward |
+| `inversesqrt` | Present | inversesqrt (src/nodes/tsl/wrappers.rs:449) | tests/nodes_tsl_batch.rs | deprecated alias of inverseSqrt |
 | `checker` | Present | checker (src/nodes/tsl.rs:835) | webgpu_lights_phong (graded) |  |
 | `shapeCircle` | Present | shape_circle (src/nodes/tsl.rs:3813) | webgpu_instance_points (graded) |  |
 
@@ -1102,26 +1100,26 @@ Partial: `overloadingFn`.
 
 ### textures
 
-8 of 23 applicable present (2 Partial, 13 Absent, 0 N.A.).
+17 of 23 applicable present (1 Partial, 5 Absent, 0 N.A.).
 
-Missing (Absent): `equirectDirection`, `matcapUV`, `maxMipLevel`, `spritesheetUV`, `triplanarTextures`, `cubeTextureBase`, `uniformCubeTexture`, `textureBicubic`, `uniformTexture`, `sampler`, `samplerComparison`, `texture3DLoad`, `texture3DLevel`.
+Missing (Absent): `cubeTextureBase`, `uniformCubeTexture`, `uniformTexture`, `sampler`, `samplerComparison`.
 
-Partial: `textureBicubicLevel`, `textureLoad`.
+Partial: `textureLoad`.
 
 | three.js name | verdict | three-rs symbol | verified by | note |
 |---|---|---|---|---|
 | `equirectUV` | Present | equirect_uv (src/nodes/tsl.rs:3464) | webgpu_equirectangular (graded) |  |
-| `equirectDirection` | Absent | — | — |  |
-| `matcapUV` | Absent | — | — |  |
-| `maxMipLevel` | Absent | — | — |  |
-| `spritesheetUV` | Absent | — | — |  |
-| `triplanarTextures` | Absent | — | — |  |
+| `equirectDirection` | Present | equirect_direction (src/nodes/tsl.rs:4394) | tests/nodes_tsl_batch.rs |  |
+| `matcapUV` | Present | matcap_uv (src/nodes/tsl.rs:4413) | tests/nodes_tsl_batch.rs |  |
+| `maxMipLevel` | Present | max_mip_level (src/nodes/tsl.rs:4432) | tests/nodes_tsl_batch.rs | takes the Texture, not a texture node |
+| `spritesheetUV` | Present | spritesheet_uv (src/nodes/tsl.rs:4449) | tests/nodes_tsl_batch.rs |  |
+| `triplanarTextures` | Present | triplanar_textures (src/nodes/tsl.rs:4471) | tests/nodes_tsl_batch.rs | takes Textures, not texture nodes |
 | `triplanarTexture` | Present | triplanar_texture (src/nodes/tsl.rs:3279) | webgpu_materials (graded) |  |
 | `cubeTextureBase` | Absent | — | — |  |
 | `cubeTexture` | Present | cube_texture (src/nodes/tsl.rs:3581) | tests/renderer_textures.rs, webgpu_instance_uniform (graded) |  |
 | `uniformCubeTexture` | Absent | — | — |  |
-| `textureBicubicLevel` | Partial | texture_bicubic_level (src/materials/transmission.rs:268, internal) | — | internal only (transmission) |
-| `textureBicubic` | Absent | — | — |  |
+| `textureBicubicLevel` | Present | texture_bicubic_level (src/nodes/tsl.rs:4511) | tests/nodes_tsl_batch.rs | takes the Texture and uv, not a texture node |
+| `textureBicubic` | Present | texture_bicubic (src/nodes/tsl.rs:4502) | tests/nodes_tsl_batch.rs | takes the Texture and uv, not a texture node |
 | `texture` | Present | texture (src/nodes/tsl.rs:3056) | tests/nodes_texture_wgsl.rs, webgpu_materials (graded) |  |
 | `uniformTexture` | Absent | — | — |  |
 | `textureLoad` | Partial | texture_load_texel (src/nodes/tsl.rs:4315), texture_load_array (:4331) | webgpu_mesh_batch (graded) | DataTexture/DataArrayTexture only; no general texture(map).load() |
@@ -1130,15 +1128,15 @@ Partial: `textureBicubicLevel`, `textureLoad`.
 | `samplerComparison` | Absent | — | — | comment only: src/nodes/builder.rs |
 | `textureSize` | Present | texture_size (src/nodes/tsl.rs:4303) | indirect: used by src/nodes/display/box_blur.rs |  |
 | `texture3D` | Present | texture_3d (src/nodes/tsl.rs:3092) | tests/nodes_texture_wgsl.rs, webgpu_volume_perlin (graded) |  |
-| `texture3DLoad` | Absent | — | — |  |
-| `texture3DLevel` | Absent | — | — |  |
+| `texture3DLoad` | Present | texture_3d_load (src/nodes/tsl.rs:4601) | tests/nodes_tsl_batch.rs | filterable volumes only, as texture3D; mip 0 only, no level argument |
+| `texture3DLevel` | Present | texture_3d_level (src/nodes/tsl.rs:4613) | tests/nodes_tsl_batch.rs |  |
 | `pmremTexture` | Present | PmremEnvironment::new (src/nodes/pmrem_node.rs:64) | tests/nodes_compute_indirect_wgsl.rs, webgpu_clearcoat (graded) |  |
 
 ### lighting/material
 
-74 of 121 applicable present (9 Partial, 38 Absent, 0 N.A.).
+85 of 121 applicable present (9 Partial, 27 Absent, 0 N.A.).
 
-Missing (Absent): `iridescence`, `iridescenceIOR`, `iridescenceThickness`, `dashSize`, `gapSize`, `pointWidth`, `dispersion`, `retroreflectivity`, `materialSpecularStrength`, `materialNormal`, `materialClearcoatNormal`, `materialAnisotropy`, `materialIridescence`, `materialIridescenceIOR`, `materialIridescenceThickness`, `materialLineScale`, `materialLineDashSize`, `materialLineGapSize`, `materialLineDashOffset`, `materialPointSize`, `materialDispersion`, `materialRetroreflectivity`, `materialLightMap`, `materialAO`, `materialRefractionRatio`, `materialReference`, `lightProjectionUV`, `lights`, `lightingContext`, `directPointLight`, `shadow`, `D_GGX_Anisotropic`, `Schlick_to_F0`, `V_GGX_SmithCorrelated_Anisotropic`, `LTC_Evaluate`, `LTC_Evaluate_Volume`, `LTC_Uv`, `getParallaxCorrectNormal`, `getShIrradianceAt`.
+Missing (Absent): `iridescence`, `iridescenceIOR`, `iridescenceThickness`, `dashSize`, `gapSize`, `dispersion`, `retroreflectivity`, `materialAnisotropy`, `materialIridescence`, `materialIridescenceIOR`, `materialIridescenceThickness`, `materialLineScale`, `materialLineDashSize`, `materialLineGapSize`, `materialLineDashOffset`, `materialDispersion`, `materialRetroreflectivity`, `materialReference`, `lights`, `lightingContext`, `shadow`, `D_GGX_Anisotropic`, `Schlick_to_F0`, `V_GGX_SmithCorrelated_Anisotropic`, `LTC_Evaluate`, `LTC_Evaluate_Volume`, `LTC_Uv`.
 
 Partial: `transmission`, `thickness`, `attenuationDistance`, `pointShadow`, `BRDF_GGX`, `D_GGX`, `DFGLUT`, `EnvironmentBRDF`, `V_GGX_SmithCorrelated`.
 
@@ -1170,7 +1168,7 @@ Partial: `transmission`, `thickness`, `attenuationDistance`, `pointShadow`, `BRD
 | `output` | Present | output_property (src/nodes/tsl.rs:2771) | tests/renderer_mrt.rs, webgpu_mrt (graded) |  |
 | `dashSize` | Absent | — | — | no dashed line material (docs/lines-progress.md:100); comment only: src/materials/line2.rs |
 | `gapSize` | Absent | — | — | no dashed line material (docs/lines-progress.md:100); comment only: src/materials/line2.rs |
-| `pointWidth` | Absent | — | — |  |
+| `pointWidth` | Present | point_width (src/nodes/tsl.rs:3699) | tests/nodes_tsl_batch.rs (point_width_matches) |  |
 | `ior` | Present | ior (src/nodes/tsl.rs:2854) | webgpu_furnace_test (graded) |  |
 | `transmission` | Partial | transmission (src/nodes/tsl.rs:2920) | webgpu_materials_transmission (0.198% off) | no graded rung; issue 228 |
 | `thickness` | Partial | thickness (src/nodes/tsl.rs:2923) | webgpu_materials_transmission (0.198% off) | no graded rung; issue 228 |
@@ -1187,15 +1185,15 @@ Partial: `transmission`, `thickness`, `attenuationDistance`, `pointShadow`, `BRD
 | `materialSpecular` | Present | material_specular (src/nodes/tsl.rs:2193) | indirect: used by src/renderer/mod.rs |  |
 | `materialSpecularIntensity` | Present | material_specular_intensity (src/nodes/tsl.rs:1233) | indirect: used by src/renderer/mod.rs |  |
 | `materialSpecularColor` | Present | material_specular_color (src/nodes/tsl.rs:1243) | indirect: used by src/renderer/mod.rs |  |
-| `materialSpecularStrength` | Absent | — | — |  |
+| `materialSpecularStrength` | Present | material_specular_strength (src/nodes/tsl.rs:2674) | tests/nodes_tsl_batch.rs (material_defaults_match, material_maps_match) | takes the material; no material flow applies specularMap |
 | `materialReflectivity` | Present | material_reflectivity (src/nodes/tsl.rs:2244) | indirect: used by src/renderer/mod.rs |  |
 | `materialRoughness` | Present | material_roughness (src/nodes/tsl.rs:1389) | indirect: used by src/renderer/mod.rs |  |
 | `materialDiffuseRoughness` | Present | material_diffuse_roughness (src/nodes/tsl.rs:1287) | indirect: used by src/renderer/mod.rs |  |
 | `materialMetalness` | Present | material_metalness (src/nodes/tsl.rs:1212) | indirect: used by src/renderer/mod.rs |  |
-| `materialNormal` | Absent | — | — |  |
+| `materialNormal` | Present | material_normal (src/nodes/tsl.rs:2650) | tests/nodes_tsl_batch.rs (material_defaults_match, material_normal_maps_match, material_normal_map_matches, material_normal_bump_matches, material_normal_flat_matches) | takes the material and reads its side and flatShading, not a tangent attribute; built outside the NORMAL sub-build, as in a fragmentNode (docs/nodes.md §68.4) |
 | `materialClearcoat` | Present | material_clearcoat (src/nodes/tsl.rs:1310) | indirect: used by src/renderer/mod.rs |  |
 | `materialClearcoatRoughness` | Present | material_clearcoat_roughness (src/nodes/tsl.rs:1320) | indirect: used by src/renderer/mod.rs |  |
-| `materialClearcoatNormal` | Absent | — | — |  |
+| `materialClearcoatNormal` | Present | material_clearcoat_normal (src/nodes/tsl.rs:2665) | tests/nodes_tsl_batch.rs (material_defaults_match, material_normal_maps_match, material_normal_flat_matches) | takes the material and reads its side and flatShading (docs/nodes.md §68.4) |
 | `materialRotation` | Present | material_rotation (src/nodes/tsl.rs:2171) | indirect: used by src/renderer/mod.rs |  |
 | `materialSheen` | Present | material_sheen (src/nodes/tsl.rs:1256) | indirect: used by src/renderer/mod.rs |  |
 | `materialSheenRoughness` | Present | material_sheen_roughness (src/nodes/tsl.rs:1276) | indirect: used by src/renderer/mod.rs |  |
@@ -1213,13 +1211,13 @@ Partial: `transmission`, `thickness`, `attenuationDistance`, `pointShadow`, `BRD
 | `materialLineGapSize` | Absent | — | — | no dashed line material (docs/lines-progress.md:100) |
 | `materialLineWidth` | Present | material_line_width (src/nodes/tsl.rs:2343) | examples/dump_wgsl.rs (manual WGSL diff) |  |
 | `materialLineDashOffset` | Absent | — | — | no dashed line material (docs/lines-progress.md:100) |
-| `materialPointSize` | Absent | — | — | comment only: src/materials/node_material.rs |
+| `materialPointSize` | Present | material_point_size (src/nodes/tsl.rs:2613) | tests/nodes_tsl_batch.rs (material_point_size_matches) | the points flow sizes by sizeNode, not this uniform |
 | `materialDispersion` | Absent | — | — |  |
 | `materialRetroreflectivity` | Absent | — | — |  |
-| `materialLightMap` | Absent | — | — |  |
-| `materialAO` | Absent | — | — | comment only: src/materials/node_material.rs |
+| `materialLightMap` | Present | material_light_map (src/nodes/tsl.rs:2683) | tests/nodes_tsl_batch.rs (material_defaults_match, material_maps_match) | takes the material; no material flow applies lightMap |
+| `materialAO` | Present | material_ao (src/nodes/tsl.rs:2692) | tests/nodes_tsl_batch.rs (material_defaults_match, material_maps_match) | takes the material |
 | `materialAnisotropyVector` | Present | material_anisotropy_vector (src/nodes/tsl.rs:1300) | indirect: used by src/materials/node_material.rs |  |
-| `materialRefractionRatio` | Absent | — | — |  |
+| `materialRefractionRatio` | Present | material_refraction_ratio (src/nodes/tsl.rs:2728) | tests/nodes_tsl_batch.rs (reflect_refract_match), tests/nodes_accessor_uniforms.rs | `MeshBasicNodeMaterial::refraction_ratio`: 0.98 for Basic, Lambert and Phong, 0 for the other constructors (docs/nodes.md §67.3) |
 | `materialEnvIntensity` | Present | material_env_intensity (src/nodes/tsl.rs:2234) | indirect: used by src/renderer/programs.rs |  |
 | `materialEnvRotation` | Present | material_env_rotation (src/nodes/tsl.rs:2254) | webgpu_instance_uniform (graded) |  |
 | `materialReference` | Absent | — | — | comment only: src/materials/toon.rs |
@@ -1227,19 +1225,19 @@ Partial: `transmission`, `thickness`, `attenuationDistance`, `pointShadow`, `BRD
 | `densityFogFactor` | Present | density_fog_factor (src/nodes/tsl.rs:943) | indirect: used by src/objects/fog.rs |  |
 | `exponentialHeightFogFactor` | Present | exponential_height_fog_factor (src/nodes/tsl.rs:974) | webgpu_fog_height (graded) |  |
 | `fog` | Present | fog (src/nodes/tsl.rs:1001) | tests/nodes_custom.rs, webgpu_fog_height (graded) |  |
-| `lightShadowMatrix` | Present | shadow_matrix (src/nodes/tsl.rs:1121) | indirect: used by src/lights/light_shadow.rs |  |
-| `lightProjectionUV` | Absent | — | — |  |
+| `lightShadowMatrix` | Present | shadow_matrix (src/nodes/tsl.rs:1419) | tests/nodes_tsl_batch.rs (light_projection_uv_matches); src/renderer/mod.rs unit tests (shadow_matrix_follows_a_light_that_casts_no_shadow, shadow_matrix_refresh_depends_on_the_shadow_being_rendered) | one node per light; refreshed for a light whose shadow is not rendered (docs/nodes.md §68.1–68.2) |
+| `lightProjectionUV` | Present | light_projection_uv (src/nodes/tsl.rs:1444) | tests/nodes_tsl_batch.rs (light_projection_uv_matches) | the light by index; position explicit |
 | `lightPosition` | Present | light_world_position (src/nodes/tsl.rs:1081) | webgpu_lights_phong (graded) |  |
 | `lightTargetPosition` | Present | light_target_position (src/nodes/tsl.rs:1091) | indirect: used by src/nodes/tsl.rs |  |
 | `lightViewPosition` | Present | light_view_position (src/nodes/tsl.rs:1059) | indirect: used by src/materials/phong.rs |  |
 | `lightTargetDirection` | Present | light_target_direction (src/nodes/tsl.rs:4926) | indirect: used by src/materials/phong.rs |  |
 | `lights` | Absent | — | — | comment only: src/error.rs |
-| `lightingContext` | Absent | — | — |  |
+| `lightingContext` | Absent | — | — | Not ported: no context node to wrap with. The port drives a LightingModel from the material flow (MeshBasicNodeMaterial::lighting_model, lighting_model::lights_node) |
 | `shadowPositionWorld` | Present | shadow_position_world (src/nodes/tsl.rs:4908) | indirect: used by src/lights/point_shadow.rs |  |
 | `BasicPointShadowFilter` | Present | basic_point_shadow_filter (src/lights/point_shadow.rs:88) | indirect: used by src/lights/shadow_filter.rs |  |
 | `PointShadowFilter` | Present | point_shadow_filter (src/lights/point_shadow.rs:107) | indirect: used by src/lights/shadow_filter.rs |  |
 | `pointShadow` | Partial | point_shadow (src/lights/point_shadow.rs:157, pub(crate)) | webgpu_shadowmap_pointlight graded via renderer | internal only |
-| `directPointLight` | Absent | — | — |  |
+| `directPointLight` | Present | direct_point_light (src/nodes/tsl.rs:1458) | tests/nodes_tsl_batch.rs (direct_point_light_matches) | returns the (lightDirection, lightColor) pair |
 | `getDistanceAttenuation` | Present | distance_attenuation (src/materials/phong.rs:29) | indirect: used by src/materials/phong.rs |  |
 | `shadow` | Absent | — | — | comment only: src/core/object3d.rs |
 | `BasicShadowFilter` | Present | basic_shadow_filter (src/lights/shadow_filter.rs:186) | indirect: used by src/lights/mod.rs |  |
@@ -1262,17 +1260,17 @@ Partial: `transmission`, `thickness`, `attenuationDistance`, `pointShadow`, `BRD
 | `LTC_Evaluate_Volume` | Absent | — | — | no RectAreaLight (docs/nodes.md:3745) |
 | `LTC_Uv` | Absent | — | — | no RectAreaLight (docs/nodes.md:3745) |
 | `getGeometryRoughness` | Present | geometry_roughness (src/materials/physical.rs:35) | indirect: used by src/materials/physical.rs |  |
-| `getParallaxCorrectNormal` | Absent | — | — |  |
+| `getParallaxCorrectNormal` | Present | get_parallax_correct_normal (src/nodes/tsl.rs:1008) | tests/nodes_tsl_batch.rs (parallax_correct_normal_matches) |  |
 | `getRoughness` | Present | get_roughness (src/materials/physical.rs:51) | indirect: used by src/materials/node_material.rs |  |
 | `getShIrradianceAt` | Present | get_sh_irradiance_at (src/nodes/tsl.rs:4280) | webgpu_lightprobe (graded); tests/nodes_light_probe.rs |  |
 
 ### accessors
 
-46 of 94 applicable present (10 Partial, 38 Absent, 1 N.A.).
+76 of 94 applicable present (8 Partial, 10 Absent, 1 N.A.).
 
-Missing (Absent): `bufferAttribute`, `dynamicBufferAttribute`, `instancedDynamicBufferAttribute`, `parallaxDirection`, `parallaxUV`, `bitangentGeometry`, `bitangentLocal`, `bitangentWorld`, `clipping`, `clippingAlpha`, `hardwareClipping`, `buffer`, `cameraIndex`, `cameraNear`, `cameraFar`, `cameraNormalMatrix`, `rendererReference`, `modelDirection`, `modelPosition`, `modelScale`, `modelViewPosition`, `modelRadius`, `mediumpModelViewMatrix`, `highpModelViewMatrix`, `highpModelNormalViewMatrix`, `transformNormal`, `transformNormalToView`, `objectDirection`, `objectPosition`, `objectScale`, `objectViewPosition`, `objectRadius`, `clipSpace`, `positionPrevious`, `reference`, `reflectView`, `refractView`, `refractVector`, `tangentWorld`, `velocity`.
+Missing (Absent): `bufferAttribute`, `dynamicBufferAttribute`, `instancedDynamicBufferAttribute`, `clipping`, `clippingAlpha`, `hardwareClipping`, `buffer`, `cameraIndex`, `rendererReference`, `reference`.
 
-Partial: `tangentViewFrame`, `bitangentViewFrame`, `builtin`, `cameraViewport`, `instance`, `instancedMesh`, `batchIndirectIndex`, `referenceBuffer`, `tangentGeometry`, `tangentLocal`.
+Partial: `tangentViewFrame`, `bitangentViewFrame`, `builtin`, `cameraViewport`, `instance`, `instancedMesh`, `batchIndirectIndex`, `referenceBuffer`.
 
 | three.js name | verdict | three-rs symbol | verified by | note |
 |---|---|---|---|---|
@@ -1281,29 +1279,29 @@ Partial: `tangentViewFrame`, `bitangentViewFrame`, `builtin`, `cameraViewport`, 
 | `instancedBufferAttribute` | Present | instanced_buffer_attribute (src/nodes/tsl.rs:4395) | indirect: used by src/nodes/lines.rs |  |
 | `instancedDynamicBufferAttribute` | Absent | — | — |  |
 | `TBNViewMatrix` | Present | tbn_view_matrix (src/nodes/tsl.rs:1427) | indirect: used by src/materials/node_material.rs |  |
-| `parallaxDirection` | Absent | — | — |  |
-| `parallaxUV` | Absent | — | — |  |
+| `parallaxDirection` | Present | parallax_direction (src/nodes/tsl.rs:3555) | tests/nodes_tsl_batch.rs (parallax_matches) |  |
+| `parallaxUV` | Present | parallax_uv (src/nodes/tsl.rs:3565) | tests/nodes_tsl_batch.rs (parallax_matches) | returns a vec3, as three's does |
 | `bentNormalView` | Present | bent_normal_view (src/nodes/tsl.rs:2990) | indirect: used by src/materials/environment.rs |  |
 | `uniformArray` | Present | uniform_array_f32 (src/nodes/tsl.rs:4036) | indirect: used by src/nodes/display/fxaa.rs |  |
-| `bitangentGeometry` | Absent | — | — |  |
-| `bitangentLocal` | Absent | — | — |  |
-| `bitangentView` | Present | bitangent_view (src/nodes/tsl.rs:2694) | indirect: used by src/nodes/tsl.rs |  |
-| `bitangentWorld` | Absent | — | — |  |
+| `bitangentGeometry` | Present | bitangent_geometry (src/nodes/tsl.rs:3500) | tests/nodes_tsl_batch.rs (bitangent_geometry_matches) | three `.once( [ 'NORMAL' ] )`s `getBitangent`, so every bitangent in one shader shares the first one built; the port builds each from its own normal and tangent |
+| `bitangentLocal` | Present | bitangent_local (src/nodes/tsl.rs:3518) | tests/nodes_tsl_batch.rs (bitangent_local_matches) | see bitangentGeometry |
+| `bitangentView` | Present | bitangent_view (src/nodes/tsl.rs:3424) | indirect: used by src/nodes/tsl.rs |  |
+| `bitangentWorld` | Present | bitangent_world (src/nodes/tsl.rs:3536) | tests/nodes_tsl_batch.rs (bitangent_world_matches) | see bitangentGeometry |
 | `clipping` | Absent | — | — | deferred (docs/nodes.md §6) |
 | `clippingAlpha` | Absent | — | — | deferred (docs/nodes.md §6) |
 | `hardwareClipping` | Absent | — | — | deferred (docs/nodes.md §6) |
-| `tangentViewFrame` | Partial | inline in tangent_attribute_frame (src/nodes/tsl.rs:2640, internal) | — | internal only |
-| `bitangentViewFrame` | Partial | inline in tangent_attribute_frame (src/nodes/tsl.rs:2640, internal) | — | internal only |
+| `tangentViewFrame` | Partial | inline in tangent_attribute_frame (src/nodes/tsl.rs:2983, internal) | — | internal only |
+| `bitangentViewFrame` | Partial | inline in tangent_attribute_frame (src/nodes/tsl.rs:2983, internal) | — | internal only |
 | `buffer` | Absent | — | — |  |
 | `builtin` | Partial | Builtin enum (src/nodes/node.rs) | — | closed enum; no arbitrary builtin(name) |
 | `cameraIndex` | Absent | — | — | UniformGroup::CameraIndex only (internal) |
-| `cameraNear` | Absent | — | — | internal pass uniforms only (src/renderer/pass.rs) |
-| `cameraFar` | Absent | — | — | internal pass uniforms only (src/renderer/pass.rs) |
+| `cameraNear` | Present | camera_near (src/nodes/tsl.rs:2453) | tests/nodes_tsl_batch.rs (camera_near_far_and_normal_matrix_match) |  |
+| `cameraFar` | Present | camera_far (src/nodes/tsl.rs:2463) | tests/nodes_tsl_batch.rs (camera_near_far_and_normal_matrix_match) |  |
 | `cameraProjectionMatrix` | Present | camera_projection_matrix (src/nodes/tsl.rs:2079) | webgpu_materials (graded) |  |
 | `cameraProjectionMatrixInverse` | Present | camera_projection_matrix_inverse (src/nodes/tsl.rs:2320) | examples/dump_wgsl.rs (manual WGSL diff) |  |
 | `cameraViewMatrix` | Present | camera_view_matrix (src/nodes/tsl.rs:2089) | webgpu_tsl_raging_sea (graded) |  |
 | `cameraWorldMatrix` | Present | camera_world_matrix (src/nodes/tsl.rs:2099) | examples/dump_wgsl.rs (manual WGSL diff) |  |
-| `cameraNormalMatrix` | Absent | — | — |  |
+| `cameraNormalMatrix` | Present | camera_normal_matrix (src/nodes/tsl.rs:2480) | tests/nodes_tsl_batch.rs (camera_near_far_and_normal_matrix_match) | identity, as WebGPURenderer writes it; no ArrayCamera element |
 | `cameraPosition` | Present | camera_position (src/nodes/tsl.rs:2109) | webgpu_tsl_earth (graded) |  |
 | `cameraViewport` | Partial | camera_viewport (src/materials/transmission.rs:164, internal) | — | internal only |
 | `vertexColor` | Present | vertex_color (src/nodes/tsl.rs:2020) | indirect: used by src/materials/node_material.rs |  |
@@ -1315,84 +1313,84 @@ Partial: `tangentViewFrame`, `bitangentViewFrame`, `builtin`, `cameraViewport`, 
 | `batch` | Present | batch (src/nodes/batch.rs:63) | examples/dump_wgsl.rs (manual WGSL diff) |  |
 | `rendererReference` | Absent | — | — |  |
 | `morphReference` | Present | morph_reference (src/nodes/morph.rs:162) | indirect: used by src/materials/node_material.rs |  |
-| `modelDirection` | Absent | — | — |  |
+| `modelDirection` | Present | model_direction (src/nodes/tsl.rs:2630) | tests/nodes_tsl_batch.rs (model_scopes_match) |  |
 | `modelWorldMatrix` | Present | model_world_matrix (src/nodes/tsl.rs:2121) | tests/nodes_tsl_batch.rs |  |
-| `modelPosition` | Absent | — | — |  |
-| `modelScale` | Absent | — | — |  |
-| `modelViewPosition` | Absent | — | — |  |
-| `modelRadius` | Absent | — | — |  |
+| `modelPosition` | Present | model_position (src/nodes/tsl.rs:2636) | tests/nodes_tsl_batch.rs (model_scopes_match) |  |
+| `modelScale` | Present | model_scale (src/nodes/tsl.rs:2642) | tests/nodes_tsl_batch.rs (model_scopes_match) |  |
+| `modelViewPosition` | Present | model_view_position (src/nodes/tsl.rs:2648) | tests/nodes_tsl_batch.rs (model_scopes_match) |  |
+| `modelRadius` | Present | model_radius (src/nodes/tsl.rs:2654) | tests/nodes_tsl_batch.rs (model_scopes_match) |  |
 | `modelNormalMatrix` | Present | model_normal_matrix (src/nodes/tsl.rs:2131) | webgpu_tsl_raging_sea (graded) |  |
 | `modelWorldMatrixInverse` | Present | model_world_matrix_inverse (src/nodes/tsl.rs:2332) | examples/dump_wgsl.rs (manual WGSL diff) |  |
 | `modelViewMatrix` | Present | model_view_matrix (src/nodes/tsl.rs:2380) | examples/dump_wgsl.rs (manual WGSL diff) |  |
-| `mediumpModelViewMatrix` | Absent | — | — |  |
-| `highpModelViewMatrix` | Absent | — | — |  |
-| `highpModelNormalViewMatrix` | Absent | — | — |  |
+| `mediumpModelViewMatrix` | Present | mediump_model_view_matrix (src/nodes/tsl.rs:2573) | tests/nodes_tsl_batch.rs (model_view_precision_matches) | a fresh product per call (the port counts uses across both stages) |
+| `highpModelViewMatrix` | Present | highp_model_view_matrix (src/nodes/tsl.rs:2585) | tests/nodes_tsl_batch.rs (model_view_precision_matches) | no ArrayCamera element |
+| `highpModelNormalViewMatrix` | Present | highp_model_normal_view_matrix (src/nodes/tsl.rs:2601) | tests/nodes_tsl_batch.rs (model_view_precision_matches) | no ArrayCamera element |
 | `modelViewProjection` | Present | model_view_projection (src/nodes/tsl.rs:2729) | indirect: used by src/materials/node_material.rs |  |
 | `normalGeometry` | Present | normal_geometry (src/nodes/tsl.rs:1971) | indirect: used by src/nodes/tsl.rs |  |
 | `normalLocal` | Present | normal_local (src/nodes/tsl.rs:2375) | webgpu_materials (graded) |  |
-| `normalFlat` | Present | normal_flat (src/nodes/tsl.rs:2450) | indirect: used by src/nodes/tsl.rs |  |
+| `normalFlat` | Present | normal_flat (src/nodes/tsl.rs:3177) | indirect: used by src/nodes/tsl.rs |  |
 | `normalViewGeometry` | Present | normal_view_geometry (src/nodes/tsl.rs:2465) | indirect: used by src/materials/physical.rs |  |
 | `normalWorldGeometry` | Present | normal_world_geometry (src/nodes/tsl.rs:2713) | webgpu_pmrem_cubemap (graded) |  |
 | `normalView` | Present | normal_view (src/nodes/tsl.rs:2532) | webgpu_deferred (graded) |  |
 | `normalWorld` | Present | normal_world (src/nodes/tsl.rs:2698) | tests/renderer_textures.rs, webgpu_instance_mesh (graded) |  |
 | `clearcoatNormalView` | Present | clearcoat_normal_view (src/nodes/tsl.rs:2968) | indirect: used by src/materials/environment.rs |  |
-| `transformNormal` | Absent | — | — |  |
-| `transformNormalToView` | Absent | — | — | webgpu_tsl_raging_sea.rs:75 defines a local helper |
-| `objectDirection` | Absent | — | — |  |
+| `transformNormal` | Present | transform_normal (src/nodes/tsl/wrappers.rs:478) | tests/nodes_tsl_batch.rs (transform_normal_matches) | also `NodeRef::transform_normal` |
+| `transformNormalToView` | Present | transform_normal_to_view (src/nodes/tsl/wrappers.rs:496) | tests/nodes_tsl_batch.rs (transform_normal_to_view_matches; webgpu_tsl_raging_sea (graded)) | reads `modelNormalViewMatrix` from the context at construction |
+| `objectDirection` | Present | object_direction (src/nodes/tsl.rs:4950) | tests/nodes_tsl_batch.rs (object_scopes_match) | takes `&Node`; refreshes the world matrix and negates for a camera, as getWorldDirection() |
 | `objectWorldMatrix` | Present | object_world_matrix (src/nodes/tsl.rs:3789) | webgpu_skinning_points (graded) |  |
-| `objectPosition` | Absent | — | — |  |
-| `objectScale` | Absent | — | — |  |
-| `objectViewPosition` | Absent | — | — |  |
-| `objectRadius` | Absent | — | — |  |
+| `objectPosition` | Present | object_position (src/nodes/tsl.rs:4967) | tests/nodes_tsl_batch.rs (object_scopes_match) | takes `&Node` |
+| `objectScale` | Present | object_scale (src/nodes/tsl.rs:4976) | tests/nodes_tsl_batch.rs (object_scopes_match) | takes `&Node` |
+| `objectViewPosition` | Present | object_view_position (src/nodes/tsl.rs:4985) | tests/nodes_tsl_batch.rs (object_scopes_match) | takes `&Node` |
+| `objectRadius` | Present | object_radius (src/nodes/tsl.rs:4996) | tests/nodes_tsl_batch.rs (object_scopes_match) | takes `&Node`; the drawn object's geometry, the target's matrixWorld, as three |
 | `pointUV` | N.A. | — | — | GLSL-only; PointUVNode.js |
-| `clipSpace` | Absent | — | — |  |
+| `clipSpace` | Present | clip_space (src/nodes/tsl.rs:3056) | tests/nodes_tsl_batch.rs (clip_space_matches) | fragment stage only; reads the `clipSpace` build-context key (docs/nodes.md §67) |
 | `positionGeometry` | Present | position_geometry (src/nodes/tsl.rs:1966) | webgpu_deferred (graded) |  |
 | `positionLocal` | Present | position_local (src/nodes/tsl.rs:2366) | tests/nodes_mx_library.rs, webgpu_layers (graded) |  |
-| `positionPrevious` | Present | position_previous (src/nodes/tsl.rs:2509) | webgpu_postprocessing_motion_blur (graded); tests/velocity_frames.rs | skinning reassigns it under last frame's bones when the MRT has a velocity output |
+| `positionPrevious` | Present | position_previous (src/nodes/tsl.rs:2933) | webgpu_postprocessing_motion_blur (graded); tests/velocity_frames.rs | skinning reassigns it under last frame's bones when the MRT has a velocity output |
 | `positionWorld` | Present | position_world (src/nodes/tsl.rs:2396) | webgpu_materials (graded) |  |
 | `positionWorldDirection` | Present | position_world_direction (src/nodes/tsl.rs:2407) | webgpu_equirectangular (graded) |  |
 | `positionView` | Present | position_view (src/nodes/tsl.rs:2390) | webgpu_deferred (graded) |  |
-| `positionViewDirection` | Present | position_view_direction (src/nodes/tsl.rs:2433) | webgpu_deferred (graded) |  |
+| `positionViewDirection` | Present | position_view_direction (src/nodes/tsl.rs:3155) | webgpu_deferred (graded) |  |
 | `reference` | Absent | — | — | uniform_object / uniform_settable / user_data cover the use; shadow_normal_bias hit is a false positive |
 | `referenceBuffer` | Partial | bone_matrices (src/nodes/skinning.rs:33, internal) | — | internal only; skinning |
-| `reflectView` | Absent | — | — |  |
-| `refractView` | Absent | — | — |  |
-| `reflectVector` | Present | reflect_vector (src/nodes/tsl.rs:2732) | webgpu_instance_uniform (graded) |  |
-| `refractVector` | Absent | — | — |  |
+| `reflectView` | Present | reflect_view (src/nodes/tsl.rs:3606) | tests/nodes_tsl_batch.rs (reflect_refract_match) |  |
+| `refractView` | Present | refract_view (src/nodes/tsl.rs:3617) | tests/nodes_tsl_batch.rs (reflect_refract_match) |  |
+| `reflectVector` | Present | reflect_vector (src/nodes/tsl.rs:3632) | webgpu_instance_uniform (graded) |  |
+| `refractVector` | Present | refract_vector (src/nodes/tsl.rs:3645) | tests/nodes_tsl_batch.rs (reflect_refract_match) |  |
 | `skinning` | Present | skinning (src/nodes/skinning.rs:50) | webgpu_skinning_points (graded) |  |
 | `computeSkinning` | Present | compute_skinning (src/nodes/skinning.rs:156) | webgpu_skinning_points (graded) |  |
 | `backgroundBlurriness` | Present | background_blurriness (src/nodes/tsl.rs:2274) | webgpu_loader_gltf_anisotropy (graded) |  |
 | `backgroundIntensity` | Present | background_intensity (src/nodes/tsl.rs:2284) | indirect: used by src/renderer/programs.rs |  |
 | `backgroundRotation` | Present | background_rotation (src/nodes/tsl.rs:2264) | indirect: used by src/renderer/programs.rs |  |
-| `tangentGeometry` | Partial | inline in tangent_attribute_frame (src/nodes/tsl.rs:2640, internal) | — | internal only |
-| `tangentLocal` | Partial | inline in tangent_attribute_frame (src/nodes/tsl.rs:2640, internal) | — | internal only |
-| `tangentView` | Present | tangent_view (src/nodes/tsl.rs:2689) | indirect: used by src/nodes/tsl.rs |  |
-| `tangentWorld` | Absent | — | — |  |
+| `tangentGeometry` | Present | tangent_geometry (src/nodes/tsl.rs:3431) | tests/nodes_tsl_batch.rs (bitangent_geometry_matches) |  |
+| `tangentLocal` | Present | tangent_local (src/nodes/tsl.rs:3436) | tests/nodes_tsl_batch.rs (bitangent_local_matches) |  |
+| `tangentView` | Present | tangent_view (src/nodes/tsl.rs:3419) | indirect: used by src/nodes/tsl.rs |  |
+| `tangentWorld` | Present | tangent_world (src/nodes/tsl.rs:3464) | tests/nodes_tsl_batch.rs (tangent_world_matches, bitangent_world_matches) |  |
 | `uv` | Present | uv (src/nodes/tsl.rs) | tests/nodes_custom.rs, webgpu_tsl_earth (graded) |  |
 | `userData` | Present | user_data (src/nodes/tsl.rs:419) | webgpu_sprites (graded) |  |
 | `velocity` | Present | velocity (src/nodes/velocity.rs:64) | webgpu_postprocessing_motion_blur (graded); tests/velocity_frames.rs | issue 163 closed |
 
 ### display/postprocessing
 
-40 of 75 applicable present (8 Partial, 27 Absent, 0 N.A.).
+61 of 75 applicable present (7 Partial, 7 Absent, 0 N.A.).
 
-Missing (Absent): `outputStruct`, `getTextureIndex`, `viewportSafeUV`, `getViewPosition`, `getScreenPosition`, `getScreenPositionFromClip`, `getNormalFromDepth`, `workingToColorSpace`, `convertColorSpace`, `blendBurn`, `blendDodge`, `blendScreen`, `blendOverlay`, `blendColor`, `grayscale`, `vibrance`, `cdl`, `posterize`, `directionToFaceDirection`, `screenSize`, `viewportCoordinate`, `viewportUV`, `viewportTexture`, `viewportMipTexture`, `viewportOpaqueMipTexture`, `viewportSharedTexture`, `viewportDepthTexture`, `viewZToOrthographicDepth`, `viewZToReversedOrthographicDepth`, `orthographicDepthToViewZ`, `viewZToPerspectiveDepth`, `viewZToReversedPerspectiveDepth`, `viewZToLogarithmicDepth`, `logarithmicDepthToViewZ`, `depth`, `linearDepth`, `viewportLinearDepth`, `depthPass`, `cineonToneMapping`.
+Missing (Absent): `outputStruct`, `getScreenPositionFromClip`, `workingToColorSpace`, `convertColorSpace`, `viewportMipTexture`, `viewportOpaqueMipTexture`, `depth`.
 
-Partial: `colorSpaceToWorking`, `negateOnBackSide`, `passTexture`.
+Partial: `colorSpaceToWorking`, `negateOnBackSide`, `viewportTexture`, `viewportDepthTexture`, `linearDepth`, `viewportLinearDepth`, `passTexture`.
 
 | three.js name | verdict | three-rs symbol | verified by | note |
 |---|---|---|---|---|
 | `outputStruct` | Absent | — | — |  |
-| `getTextureIndex` | Absent | — | — |  |
+| `getTextureIndex` | Present | get_texture_index (src/nodes/mrt.rs:209) | tests/nodes_tsl_batch.rs (get_texture_index_finds_attachments) | CPU helper over attachment names; Option for -1 |
 | `mrt` | Present | mrt (src/nodes/mrt.rs:79) | tests/renderer_mrt.rs, webgpu_deferred (graded) |  |
 | `viewportSafeUV` | Present | viewport_safe_uv (src/nodes/display/viewport_texture.rs:200) | webgpu_backdrop (graded) |  |
 | `reflector` | Present | reflector (src/nodes/reflector_node.rs:217) | webgpu_mirror (graded) |  |
 | `rtt` | Present | rtt (src/nodes/display/rtt.rs:73) | webgpu_postprocessing_anamorphic (graded) |  |
 | `convertToTexture` | Present | convert_to_texture (src/nodes/display/rtt.rs:86) | webgpu_postprocessing_ca (graded) |  |
 | `getViewPosition` | Present | get_view_position (src/nodes/tsl.rs:900) | indirect: used by src/nodes/display/traa.rs (tests/nodes_display_wgsl.rs traa gates) |  |
-| `getScreenPosition` | Absent | — | — |  |
+| `getScreenPosition` | Present | get_screen_position (src/nodes/tsl.rs:933) | tests/nodes_tsl_batch.rs (screen_position_matches) |  |
 | `getScreenPositionFromClip` | Absent | — | — |  |
-| `getNormalFromDepth` | Absent | — | — |  |
+| `getNormalFromDepth` | Present | get_normal_from_depth (src/nodes/tsl.rs:951) | tests/nodes_tsl_batch.rs (normal_from_depth_matches) | takes the DepthTexture |
 | `interleavedGradientNoise` | Present | interleaved_gradient_noise (src/nodes/tsl.rs:4945) | indirect: used by src/nodes/display/radial_blur.rs |  |
 | `vogelDiskSample` | Present | vogel_disk_sample (src/nodes/tsl.rs:4966) | indirect: used by src/lights/point_shadow.rs |  |
 | `workingToColorSpace` | Absent | — | — | CPU-side ColorManagement only; comment only: src/math/color_management.rs |
@@ -1401,59 +1399,59 @@ Partial: `colorSpaceToWorking`, `negateOnBackSide`, `passTexture`.
 | `toneMapping` | Present | tone_mapping_node (src/materials/node_material.rs:1058) | tests/nodes_custom.rs, webgpu_custom_fog_background (graded) |  |
 | `toneMappingExposure` | Present | tone_mapping_exposure (src/nodes/tsl.rs:1409) | webgpu_clearcoat (graded) |  |
 | `renderOutput` | Present | render_output (src/materials/node_material.rs:1040) | tests/nodes_custom.rs, webgpu_mrt (graded) |  |
-| `blendBurn` | Absent | — | — |  |
-| `blendDodge` | Absent | — | — |  |
-| `blendScreen` | Absent | — | — |  |
+| `blendBurn` | Present | blend_burn (src/nodes/tsl.rs:5963) | tests/nodes_tsl_batch.rs (blend_modes_match) |  |
+| `blendDodge` | Present | blend_dodge (src/nodes/tsl.rs:5988) | tests/nodes_tsl_batch.rs (blend_modes_match) |  |
+| `blendScreen` | Present | blend_screen (src/nodes/tsl.rs:6008) | tests/nodes_tsl_batch.rs (blend_modes_match) |  |
 | `blendOverlay` | Present | blend_overlay (src/nodes/tsl.rs:4866) | webgpu_backdrop (graded) |  |
-| `blendColor` | Absent | — | — |  |
+| `blendColor` | Present | blend_color (src/nodes/tsl.rs:6029) | tests/nodes_tsl_batch.rs (blend_modes_match) |  |
 | `bumpMap` | Present | bump_map_with (src/nodes/tsl.rs:3329) | webgpu_tsl_earth (graded) |  |
 | `grayscale` | Present | grayscale (src/nodes/tsl.rs:4851) | webgpu_backdrop, webgpu_tsl_vfx_flames (graded) |  |
 | `saturation` | Present | saturation (src/nodes/tsl.rs:4529) | webgpu_postprocessing_difference (graded) |  |
-| `vibrance` | Absent | — | — |  |
+| `vibrance` | Present | vibrance (src/nodes/tsl.rs:6058) | tests/nodes_tsl_batch.rs (vibrance_matches) |  |
 | `hue` | Present | hue (src/nodes/tsl.rs:4545) | webgpu_postprocessing_bloom_selective (graded) |  |
 | `luminance` | Present | luminance (src/nodes/tsl.rs:4523) | tests/nodes_dot_widening.rs, webgpu_postprocessing_difference (graded) |  |
-| `cdl` | Absent | — | — |  |
+| `cdl` | Present | cdl (src/nodes/tsl.rs:6074) | tests/nodes_tsl_batch.rs (cdl_matches) | every argument explicit; three's defaults are slope/power 1, offset 0, saturation 1, Rec. 709 luminance |
 | `posterize` | Present | posterize (src/nodes/tsl.rs:4858) | webgpu_backdrop (graded) |  |
 | `frontFacing` | Present | front_facing (src/nodes/tsl.rs:2062) | webgpu_tsl_angular_slicing (graded) |  |
 | `faceDirection` | Present | face_direction (src/nodes/tsl.rs:2067) | indirect: used by src/nodes/tsl.rs |  |
 | `negateOnBackSide` | Partial | negate_on_back_side (src/nodes/tsl.rs:215, internal) | — | internal only |
-| `directionToFaceDirection` | Absent | — | — |  |
+| `directionToFaceDirection` | Present | direction_to_face_direction (src/nodes/tsl.rs:231) | tests/nodes_tsl_batch.rs (direction_to_face_direction_matches, direction_to_face_direction_single_sided_matches) | takes the material side, which three reads from the builder (docs/nodes.md §68.3) |
 | `normalMap` | Present | normal_map_scaled (src/nodes/tsl.rs:1470) | indirect: used by src/materials/node_material.rs |  |
 | `premultiplyAlpha` | Present | premultiply_alpha (src/nodes/tsl.rs:4689) | indirect: used by src/nodes/display/gaussian_blur.rs |  |
 | `unpremultiplyAlpha` | Present | unpremultiply_alpha (src/nodes/tsl.rs:4703) | examples/dump_wgsl.rs (manual WGSL diff) |  |
 | `screenDPR` | Present | screen_dpr (src/nodes/tsl.rs:2315) | examples/dump_wgsl.rs (manual WGSL diff) |  |
 | `screenUV` | Present | screen_uv (src/nodes/tsl.rs:2354) | webgpu_layers (graded) |  |
-| `screenSize` | Absent | — | — | comment only: src/materials/transmission.rs |
+| `screenSize` | Present | screen_size (src/nodes/tsl.rs:2808) | tests/nodes_tsl_batch.rs (viewport_coords_match) |  |
 | `screenCoordinate` | Present | frag_coord (src/nodes/tsl.rs:2073) | webgpu_tsl_halftone (graded) |  |
 | `viewport` | Present | viewport (src/nodes/tsl.rs:2309) | tests/renderer_half_float_target.rs, webgpu_postprocessing_anamorphic (graded) |  |
 | `viewportSize` | Present | viewport_size (src/nodes/tsl.rs:2299) | webgpu_tsl_halftone (graded) |  |
-| `viewportCoordinate` | Absent | — | — |  |
-| `viewportUV` | Absent | — | — |  |
+| `viewportCoordinate` | Present | viewport_coordinate (src/nodes/tsl.rs:2821) | tests/nodes_tsl_batch.rs (viewport_coords_match) |  |
+| `viewportUV` | Present | viewport_uv (src/nodes/tsl.rs:2829) | tests/nodes_tsl_batch.rs (viewport_coords_match) |  |
 | `viewportTexture` | Partial | viewport_texture (src/nodes/display/viewport_texture.rs:153) | — | defined; no gate or graded example reads the per-draw copy yet |
 | `viewportMipTexture` | Absent | — | — | issue 169 |
 | `viewportOpaqueMipTexture` | Absent | — | — | issue 169; transmission uses an internal opaque frame texture; comment only: src/materials/node_material.rs |
 | `viewportSharedTexture` | Present | viewport_shared_texture (src/nodes/display/viewport_texture.rs:132) | webgpu_backdrop (graded); tests/nodes_display_wgsl.rs refraction_backdrop_matches_three | issue 169 closed |
 | `viewportDepthTexture` | Partial | viewport_depth_texture (src/nodes/display/viewport_texture.rs:173) | — | defined; no gate or graded example reads it yet |
-| `viewZToOrthographicDepth` | Partial | view_z_to_orthographic_depth (src/nodes/tsl.rs:916) | — | only caller is linear_depth, itself unverified |
-| `viewZToReversedOrthographicDepth` | Absent | — | — |  |
-| `orthographicDepthToViewZ` | Absent | — | — |  |
+| `viewZToOrthographicDepth` | Present | view_z_to_orthographic_depth (src/nodes/tsl.rs:1057) | tests/nodes_tsl_batch.rs (depth_pass_matches) | through PassNode::linear_depth_node |
+| `viewZToReversedOrthographicDepth` | Present | view_z_to_reversed_orthographic_depth (src/nodes/tsl.rs:1069) | tests/nodes_tsl_batch.rs (depth_conversions_match) |  |
+| `orthographicDepthToViewZ` | Present | orthographic_depth_to_view_z (src/nodes/tsl.rs:1080) | tests/nodes_tsl_batch.rs (depth_conversions_match) |  |
 | `viewZToPerspectiveDepth` | Present | view_z_to_perspective_depth (src/nodes/tsl.rs:885) | indirect: used by src/nodes/display/traa.rs (tests/nodes_display_wgsl.rs traa gates) |  |
-| `viewZToReversedPerspectiveDepth` | Absent | — | — |  |
+| `viewZToReversedPerspectiveDepth` | Present | view_z_to_reversed_perspective_depth (src/nodes/tsl.rs:1092) | tests/nodes_tsl_batch.rs (depth_conversions_match) |  |
 | `perspectiveDepthToViewZ` | Present | perspective_depth_to_view_z (src/nodes/tsl.rs:845) | indirect: used by src/renderer/pass.rs |  |
-| `viewZToLogarithmicDepth` | Absent | — | — |  |
-| `logarithmicDepthToViewZ` | Absent | — | — |  |
+| `viewZToLogarithmicDepth` | Present | view_z_to_logarithmic_depth (src/nodes/tsl.rs:1106) | tests/nodes_tsl_batch.rs (logarithmic_depth_matches) |  |
+| `logarithmicDepthToViewZ` | Present | logarithmic_depth_to_view_z (src/nodes/tsl.rs:1120) | tests/nodes_tsl_batch.rs (logarithmic_depth_matches) |  |
 | `depth` | Absent | — | — | comment only: src/error.rs |
 | `linearDepth` | Partial | linear_depth, linear_depth_of (src/nodes/tsl.rs:928,941) | — | defined; no gate or graded example renders it yet |
 | `viewportLinearDepth` | Partial | viewport_linear_depth (src/nodes/display/viewport_texture.rs:193) | — | defined; no gate or graded example renders it yet |
 | `toonOutlinePass` | Present | toon_outline_pass (src/nodes/display/toon_outline_pass.rs:40) | webgpu_materials_toon (graded) |  |
 | `pass` | Present | pass (src/renderer/pass.rs:117) | tests/nodes_custom.rs, webgpu_custom_fog_background (graded) |  |
 | `passTexture` | Partial | PassNode::texture_node (src/renderer/pass.rs:355) | webgpu_mrt (graded) | method form; no free passTexture(pass, texture) |
-| `depthPass` | Absent | — | — |  |
+| `depthPass` | Present | depth_pass (src/renderer/pass.rs:133), PassNode::linear_depth_node | tests/nodes_tsl_batch.rs (depth_pass_matches) | no options argument (docs/nodes.md §68.5) |
 | `sRGBTransferEOTF` | Present | srgb_transfer_eotf (src/nodes/tsl.rs:4627) | indirect: used by src/nodes/tsl.rs |  |
 | `sRGBTransferOETF` | Present | srgb_transfer_oetf (src/nodes/tsl.rs:4578) | indirect: used by src/materials/node_material.rs |  |
 | `linearToneMapping` | Present | linear_tone_mapping (src/nodes/tsl.rs:4605) | indirect: used by src/materials/node_material.rs |  |
 | `reinhardToneMapping` | Present | reinhard_tone_mapping (src/nodes/tsl.rs:4665) | indirect: used by src/materials/node_material.rs |  |
-| `cineonToneMapping` | Absent | — | — |  |
+| `cineonToneMapping` | Present | cineon_tone_mapping (src/nodes/tsl.rs:6165) | tests/nodes_tsl_batch.rs (cineon_tone_mapping_matches) |  |
 | `acesFilmicToneMapping` | Present | aces_filmic_tone_mapping (src/nodes/tsl.rs:5001) | indirect: used by src/materials/node_material.rs |  |
 | `agxToneMapping` | Present | agx_tone_mapping (src/nodes/tsl.rs:5053) | indirect: used by src/materials/node_material.rs |  |
 | `neutralToneMapping` | Present | neutral_tone_mapping (src/nodes/tsl.rs:5160) | indirect: used by src/materials/node_material.rs |  |
@@ -1674,16 +1672,15 @@ Partial: `NodeShaderStage`, `cache`, `overrideNode`, `renderGroup`, `subBuild`.
 
 Every graded example passes, so graded examples cannot rank the gaps. The ranking below uses need instead: how many of three.js r187's 231 `examples/webgpu_*.html` pages call each absent piece, counted by grep, plus how often it turns up in ordinary scenes.
 
-The first refresh of this matrix closed the previous top five. Velocity and TRAA (`velocity`, `positionPrevious`, `VelocityNode`, `TRAANode`, `MotionBlur`), the screen reads (`viewportSharedTexture`, `viewportTexture`, `viewportDepthTexture`, `viewportLinearDepth`, `linearDepth`, `viewportSafeUV`), `SkyMesh`, `CubeCamera` with a layered `CubeRenderTarget`, and the light probes (`LightProbe`, `LightProbeGenerator`, `LightProbeNode`, `LightProbeHelperGPU`, `getShIrradianceAt`) are Present. Of the screen reads only the shared copy has a graded page behind it; `viewportTexture`, `viewportDepthTexture`, `viewportLinearDepth` and `linearDepth` are defined but no gate or graded example renders them yet, so they stay Partial until a depth-reading page is ported.
+The first refresh of this matrix closed the previous top five. Velocity and TRAA (`velocity`, `positionPrevious`, `VelocityNode`, `TRAANode`, `MotionBlur`), the screen reads (`viewportSharedTexture`, `viewportTexture`, `viewportDepthTexture`, `viewportLinearDepth`, `linearDepth`, `viewportSafeUV`), `SkyMesh`, `CubeCamera` with a layered `CubeRenderTarget`, and the light probes (`LightProbe`, `LightProbeGenerator`, `LightProbeNode`, `LightProbeHelperGPU`, `getShIrradianceAt`) are Present. So is `transformNormalToView` (6 pages), with the rest of the accessors batch; `webgpu_tsl_raging_sea` now calls it. Of the screen reads only the shared copy has a graded page behind it; `viewportTexture`, `viewportDepthTexture`, `viewportLinearDepth` and `linearDepth` are defined but no gate or graded example renders them yet, so they stay Partial until a depth-reading page is ported.
 
 1. **The screen-space effect nodes** (`GTAONode`, `SSRNode`, `SSGINode`, `SSSNode`, `DenoiseNode`, `DepthOfFieldNode`; `ao()` 2 pages, `ssr()` 2, `ssgi()` 2, `sss()` 1, `dof()` 1, `denoise` 6). Each needs a velocity target and a temporal resolve, and both now exist; these pages are the direct payoff of the velocity work. Porting them also gives the depth reads (`viewportDepthTexture`, `linearDepth`, `getViewPosition`) their first graded consumer.
 2. **EventDispatcher** (issues 153, 159). 8 pages subscribe to `change` or `finished` events. In ordinary use these are render-on-demand behind OrbitControls and chaining animation clips when one ends, and neither works in the port today. `AnimationMixer` and `AnimationAction` fire nothing.
-3. **Controls** (`FirstPersonControls` 8 pages, `TransformControls` 3, `FlyControls` 1). Input handling that the application owns, but 12 pages cannot be ported without them, and `addons/controls` already gives a pattern to follow.
-4. **`transformNormalToView`** (6 pages). One line; the port's `webgpu_tsl_raging_sea` already writes it inline.
-5. **`WaterMesh`** (2 pages) and the remaining display files (`OutlineNode`, `SMAANode`, `Lut3DNode`, `FilmNode`, `LensflareNode`, 1 to 2 pages each). Small, self-contained, and each unlocks one page.
+3. **Controls** (`TransformControls`, 3 pages). `FirstPersonControls` (8 pages) and `FlyControls` (1) are now ported and gated against three's classes (`docs/controls.md`); `TransformControls` is the remaining one, and it is bigger: a gizmo with its own scene, raycasting and materials.
+4. **`WaterMesh`** (2 pages) and the remaining display files (`OutlineNode`, `SMAANode`, `Lut3DNode`, `FilmNode`, 1 to 2 pages each). Small, self-contained, and each unlocks one page.
 
 **Runners-up, and why they rank lower:**
 - RectAreaLight and LTC (3 pages).
 - Clipping planes (2 pages, but common in CAD-style viewers).
-- The TSL long tail: 217 absent `three/tsl` names, most of them unused by any r187 page. They port cheaply in batches against WGSL dump gates.
+- The TSL long tail: 156 absent `three/tsl` names, most of them unused by any r187 page. They port cheaply in batches against WGSL dump gates.
 - One Partial matters more than its page count suggests: `GLTFLoader` has no `KHR_lights_punctual` and no cameras. No r187 page needs them, but arbitrary glTF assets from users will.

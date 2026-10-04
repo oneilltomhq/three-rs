@@ -836,6 +836,7 @@ fn setup_inner(
         emit_output_property: material.fragment_node.is_none(),
         vertex_statements: Vec::new(),
         position,
+        geometry_has_tangent: ctx.has_tangent_attribute,
     }
 }
 
@@ -1146,6 +1147,10 @@ pub fn tone_mapping_node(mode: ToneMapping, exposure: NodeRef, color: NodeRef) -
             agx_tone_mapping(color.clone().rgb(), exposure),
             color.a(),
         ]),
+        ToneMapping::Cineon => vec4_join(vec![
+            cineon_tone_mapping(color.clone().rgb(), exposure),
+            color.a(),
+        ]),
     }
 }
 
@@ -1348,13 +1353,7 @@ fn setup_ambient_occlusion(
     ctx: &SetupContext,
     fragment: &mut Vec<NodeRef>,
 ) -> bool {
-    let material_ao = material.ao_map.as_ref().map(|map| {
-        texture(map)
-            .x()
-            .sub(float(1.0))
-            .mul(material_ao_map_intensity())
-            .add(float(1.0))
-    });
+    let map_ao = material.ao_map.as_ref().map(|_| material_ao(material));
     // `builtinAOContext`'s `getAO`: `if ( material.transparent === true )
     // return inputNode;`.
     let context_ao = ctx
@@ -1362,8 +1361,8 @@ fn setup_ambient_occlusion(
         .as_ref()
         .filter(|_| !material.transparent)
         .map(|ao| ao.node.clone());
-    let ao_node = match (material_ao, context_ao) {
-        (Some(material_ao), Some(context_ao)) => material_ao.mul(context_ao),
+    let ao_node = match (map_ao, context_ao) {
+        (Some(map_ao), Some(context_ao)) => map_ao.mul(context_ao),
         (Some(ao), None) | (None, Some(ao)) => ao,
         (None, None) => return false,
     };

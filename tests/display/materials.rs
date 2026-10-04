@@ -5,14 +5,17 @@
 
 use three_rs::materials::{quad_vertex_node, render_output, MeshBasicNodeMaterial};
 use three_rs::nodes::display::{
-    after_image, ao, box_blur, dot_screen, fxaa, gaussian_blur, hash_blur_with, motion_blur,
-    pixelation_pass, rgb_shift, sobel, traa, viewport_shared_texture_at, BoxBlurOptions,
-    GaussianBlurOptions, HashBlurOptions,
+    after_image, ao, bilateral_blur, box_blur, depth_aware_blend, dot_screen, fxaa, gaussian_blur,
+    godrays, hash_blur_with, lensflare, motion_blur, pixelation_pass, rgb_shift, rtt, sobel, traa,
+    viewport_shared_texture_at, BoxBlurOptions, DepthAwareBlendOptions, GaussianBlurOptions,
+    HashBlurOptions, LensflareParams,
 };
-use three_rs::nodes::tsl::{distance, float, screen_uv, texture_uv, uniform_value, uv, vec4_join};
+use three_rs::nodes::tsl::{
+    distance, float, screen_uv, texture_uv, uniform_value, uv, vec2, vec4_join,
+};
 use three_rs::nodes::Type;
 use three_rs::textures::{DepthTexture, Texture};
-use three_rs::ToneMapping;
+use three_rs::{Color, PerspectiveCamera, PointLight, ToneMapping};
 
 /// One quad: the name the gate reports it by, the three.js dump file it is
 /// checked against, and the material.
@@ -212,6 +215,134 @@ pub fn display_quads() -> Vec<DisplayQuad> {
         fixture: "webgpu_postprocessing_ao_m18_gtao.wgsl",
         material: gtao_quad,
     });
+
+    // webgpu_postprocessing_godrays `m09`: `godrays( scenePassDepth, camera,
+    // pointLight )`'s raymarch quad, over the shadow-casting point light's
+    // cube depth map.
+    let camera = std::rc::Rc::new(std::cell::RefCell::new(PerspectiveCamera::new(
+        60.0, 1.6, 0.1, 1000.0,
+    )));
+    let point_light = PointLight::new(Color::from_hex(0xf6287d), 10000.0, 0.0);
+    point_light.borrow_mut().cast_shadow = true;
+    let scene_depth = DepthTexture::new();
+    let godrays_pass = godrays(&scene_depth, camera.clone(), &point_light);
+    let mut raymarch = godrays_pass.quad_material().clone();
+    raymarch.vertex_node = Some(quad_vertex_node());
+    quads.push(DisplayQuad {
+        label: "godrays",
+        fixture: "webgpu_postprocessing_godrays_m09_godrays.wgsl",
+        material: raymarch,
+    });
+
+    // …`m11`: `bilateralBlur( godraysPassColor, 4, 0.1 )`. Three caches one
+    // module for both directions — the direction is a uniform — so `m11` is
+    // the horizontal and vertical pass alike.
+    let bilateral = bilateral_blur(&godrays_pass.texture(), None, 4, 0.1);
+    for (label, material) in ["bilateral_blur_horizontal", "bilateral_blur_vertical"]
+        .into_iter()
+        .zip(bilateral.quad_materials())
+    {
+        let mut material = material.clone();
+        material.vertex_node = Some(quad_vertex_node());
+        quads.push(DisplayQuad {
+            label,
+            fixture: "webgpu_postprocessing_godrays_m11_bilateral_blur.wgsl",
+            material,
+        });
+    }
+
+    // …`m13`: the `RenderPipeline`'s output, `depthAwareBlend(
+    // scenePassColor, blurPassColor, scenePassDepth, camera, { blendColor,
+    // edgeRadius, edgeStrength } )` under `renderOutput()` with no tone
+    // mapping.
+    let mut options = DepthAwareBlendOptions::default();
+    options.blend_color = uniform_value(Type::Vec3, vec![1.0, 0.0, 0.5]);
+    options.edge_radius = uniform_value(Type::F32, vec![2.0]);
+    options.edge_strength = uniform_value(Type::F32, vec![2.0]);
+    quads.push(quad(
+        "depth_aware_blend",
+        "webgpu_postprocessing_godrays_m13_depth_aware_blend.wgsl",
+        render_output(
+            depth_aware_blend(
+                &input(),
+                &bilateral.texture(),
+                &scene_depth,
+                &camera,
+                options,
+            ),
+            ToneMapping::None,
+        ),
+    ));
+
+    // webgpu_postprocessing_lensflare `m24`: `convertToTexture( bloomPass )`,
+    // the `RTTNode` quad — the input sampled and written out as it is.
+    let bloom_texture = rtt(texture_uv(&input(), uv()));
+    let mut copy = bloom_texture.quad_material().clone();
+    copy.vertex_node = Some(quad_vertex_node());
+    quads.push(DisplayQuad {
+        label: "rtt",
+        fixture: "webgpu_postprocessing_lensflare_m24_rtt.wgsl",
+        material: copy,
+    });
+
+    // …`m25`: `lensflare( bloomPass, { threshold, ghostAttenuationFactor,
+    // ghostSpacing } )`, the three overridden params uniforms.
+    let mut params = LensflareParams::default();
+    params.threshold = uniform_value(Type::F32, vec![0.5]);
+    params.ghost_attenuation_factor = uniform_value(Type::F32, vec![25.0]);
+    params.ghost_spacing = uniform_value(Type::F32, vec![0.25]);
+    let flare = lensflare(&bloom_texture.texture(), params);
+    let mut ghosts = flare.quad_material().clone();
+    ghosts.vertex_node = Some(quad_vertex_node());
+    quads.push(DisplayQuad {
+        label: "lensflare",
+        fixture: "webgpu_postprocessing_lensflare_m25_lensflare.wgsl",
+        material: ghosts,
+    });
+
+    // …`m26`/`m27`: `gaussianBlur( flarePass, 8 )` — the plain number `8`,
+    // which `vec2( directionNode )` makes the constant `vec2( 8, 8 )`, and the
+    // default sigma of 4, so not the procedural_texture modules.
+    let flare_blur = gaussian_blur(
+        &input(),
+        Some(vec2(8.0, 8.0)),
+        4,
+        GaussianBlurOptions::default(),
+    );
+    for ((label, fixture), material) in [
+        (
+            "lensflare_gaussian_blur_horizontal",
+            "webgpu_postprocessing_lensflare_m26_gaussian_blur_horizontal.wgsl",
+        ),
+        (
+            "lensflare_gaussian_blur_vertical",
+            "webgpu_postprocessing_lensflare_m27_gaussian_blur_vertical.wgsl",
+        ),
+    ]
+    .into_iter()
+    .zip(flare_blur.quad_materials())
+    {
+        let mut material = material.clone();
+        material.vertex_node = Some(quad_vertex_node());
+        quads.push(DisplayQuad {
+            label,
+            fixture,
+            material,
+        });
+    }
+
+    // …`m29`: the `RenderPipeline`'s output, `outputPass.add( bloomPass
+    // ).add( blurPass )` under `renderOutput()` with ACES filmic.
+    quads.push(quad(
+        "lensflare_composite",
+        "webgpu_postprocessing_lensflare_m29_composite.wgsl",
+        render_output(
+            texture_uv(&input(), uv())
+                .add(texture_uv(&input(), uv()))
+                .add(texture_uv(&input(), uv())),
+            ToneMapping::AcesFilmic,
+        ),
+    ));
 
     quads
 }
