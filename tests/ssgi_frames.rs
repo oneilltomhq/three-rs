@@ -23,6 +23,11 @@
 //!   floor is would show it);
 //! * with temporal filtering (three's default) the slices turn per frame,
 //!   so two frames differ; without it they are the same;
+//! * `useLinearThickness`, `useScreenSpaceSampling = false` and
+//!   `backfaceLighting = 1` each move the frame the way the shader says
+//!   they should: more AO, the open floor reaching the wall, and the floor
+//!   lighting itself through its backfacing samples (the reasons are at the
+//!   assertions);
 //! * `giIntensity = 0` is a uniform, not a rebuild: the next frame's GI is
 //!   black wherever there is geometry.
 //!
@@ -219,6 +224,89 @@ fn ssgi_occludes_and_bounces_the_wall() {
         second.iter().all(|p| p[0] > 0),
         "no NaN under temporal filtering"
     );
+
+    // The three boolean-ish options, each against the same deterministic
+    // baseline (temporal filtering off again, everything else at the
+    // defaults plus the page's slices and steps).
+    gi_pass.set_use_temporal_filtering(false);
+    let geometry: Vec<usize> = (0..beauty.len())
+        .filter(|&i| beauty[i] != [0, 0, 0])
+        .collect();
+    let ao_sum = |ao: &[[u8; 3]]| -> f64 { geometry.iter().map(|&i| f64::from(ao[i][0])).sum() };
+    let base_ao = frame(&mut ao_view, &mut renderer);
+    let base_gi = frame(&mut gi_view, &mut renderer);
+
+    // `useLinearThickness`: the thickness is scaled by `clamp( -z / far ) *
+    // 100`, which is 12 or more for this scene (|z| from about 2.5 to 20,
+    // `far` 20), so every sample is treated as at least twelve times
+    // thicker. Its back horizon moves away from the front one, the occluded
+    // arc widens, more bits are set and the AO darkens. (Not per pixel
+    // without exception: the arc's start is truncated to a bit, so on the
+    // right-hand march a lower start can drop the top bit.)
+    gi_pass.use_linear_thickness.set(vec![1.0]);
+    let ao_linear = frame(&mut ao_view, &mut renderer);
+    gi_pass.use_linear_thickness.set(vec![0.0]);
+    let darker = geometry
+        .iter()
+        .filter(|&&i| ao_linear[i][0] < base_ao[i][0])
+        .count();
+    let brighter = geometry
+        .iter()
+        .filter(|&&i| ao_linear[i][0] > base_ao[i][0])
+        .count();
+    println!(
+        "linear thickness: AO sum {:.0} against {:.0}, {darker} pixels darker, {brighter} brighter",
+        ao_sum(&ao_linear),
+        ao_sum(&base_ao)
+    );
+    assert!(
+        ao_sum(&ao_linear) < ao_sum(&base_ao) && darker > 100 && brighter * 10 < darker,
+        "thicker samples occlude more ({darker} darker, {brighter} brighter)"
+    );
+
+    // `useScreenSpaceSampling = false`: the step radius becomes `radius *
+    // halfProjScale / -z` (about 100 pixels here at |z| about 4) instead of
+    // `radius * width / 32` (24 pixels), so the march reaches about four
+    // times as far. The open floor, which the screen-space march does not
+    // carry to the wall, now gathers its red.
+    gi_pass.use_screen_space_sampling.set(vec![0.0]);
+    let gi_world = frame(&mut gi_view, &mut renderer);
+    gi_pass.use_screen_space_sampling.set(vec![1.0]);
+    let (open_red, open_red_world) = (mean(&base_gi, open, 0), mean(&gi_world, open, 0));
+    println!("world-space sampling: open floor red {open_red_world:.1} against {open_red:.1}");
+    assert!(
+        open_red_world > open_red + 40.0,
+        "the longer march reaches the wall from the open floor ({open_red_world:.1} against {open_red:.1})"
+    );
+
+    // `backfaceLighting = 1`: a sample whose normal faces away from the
+    // shading point (and towards the camera) now gives `|n·l|` instead of
+    // nothing, and every other term is unchanged, so GI only grows. On this
+    // scene the flat white floor shows it most: some of its own samples are
+    // reconstructed a little off its plane (depth precision), pass the
+    // `n·l > 0.001` gate and face away. With the option off they add
+    // nothing (the open floor's green is about 0); on, the floor lights
+    // itself (about 60).
+    gi_pass.backface_lighting.set(vec![1.0]);
+    let gi_backface = frame(&mut gi_view, &mut renderer);
+    gi_pass.backface_lighting.set(vec![0.0]);
+    let (open_green, open_green_backface) = (mean(&base_gi, open, 1), mean(&gi_backface, open, 1));
+    let gi_sum = |gi: &[[u8; 3]]| -> f64 {
+        geometry
+            .iter()
+            .map(|&i| gi[i].iter().map(|&c| f64::from(c)).sum::<f64>())
+            .sum()
+    };
+    println!(
+        "backface lighting: open floor green {open_green_backface:.1} against {open_green:.1}, GI sum {:.0} against {:.0}",
+        gi_sum(&gi_backface),
+        gi_sum(&base_gi)
+    );
+    assert!(
+        open_green < 5.0 && open_green_backface > open_green + 20.0,
+        "the floor's backfacing samples light it ({open_green_backface:.1} against {open_green:.1})"
+    );
+    assert!(gi_sum(&gi_backface) > gi_sum(&base_gi), "GI only grows");
 
     // `giIntensity = 0`: a uniform write, seen on the next frame.
     gi_pass.gi_intensity.set(vec![0.0]);

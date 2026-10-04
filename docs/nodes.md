@@ -5993,8 +5993,8 @@ arithmetic, and `tests/traa_frames.rs` allows for it.
 
 ### 69.1 What three does
 
-`ssgi( beauty, depth, normal, camera )` is a `TempNode` with
-`updateBeforeType = FRAME`. It is screen space global illumination with a
+`ssgi( beauty, depth, normal, camera )` is a plain `Node` (not a
+`TempNode`) with `updateBeforeType = FRAME`. It is screen space global illumination with a
 visibility bitmask, after SSRT3. It owns one render target with two
 attachments and no depth buffer: `textures[ 0 ]` is the AO (`RedFormat`,
 `UnsignedByteType`) and `textures[ 1 ]` the GI (`RGBFormat`,
@@ -6021,7 +6021,10 @@ attachments and no depth buffer: `textures[ 0 ]` is the AO (`RedFormat`,
   `frameId % 4`; without it both are 1. It clears to white and renders the
   quad.
 - **`setup()`.** It logs an error when the device lacks
-  `rg11b10ufloat-renderable`, and carries on.
+  `rg11b10ufloat-renderable`, and carries on, so the GI attachment cannot be
+  rendered and the effect fails. It returns the AO node as its own value and
+  sets the material's `contextNode` to `context(
+  builder.getSharedContext() )`.
 
 ### 69.2 The port
 
@@ -6047,7 +6050,10 @@ written the natural way:
   computes `clamp( dot( … ), 0, 1 )` in place.
 
 The port builds each from the same nodes three does, so the call and literal
-multisets match.
+multisets match. `ssgi_shapes_match_three` checks what the fingerprint
+cannot: the `OutputType` member types, where the two `.yx` swizzles sit, and
+the swizzle, operator, integer-literal and if/else-select multisets. It is
+not a text diff, which the port's `nodeVar` spills would swamp.
 
 `SsgiState` implements `NodeUpdate` and is registered as the updater of both
 textures, as `passTexture( this, … )` makes it one in three. As with TRAA
@@ -6067,8 +6073,12 @@ object-group uniform, so the port writes it each frame rather than using
 
 **The GI attachment's format.** The renderer now asks for
 `RG11B10UFLOAT_RENDERABLE` when the adapter has it. If it does not, the port
-logs three's error once, as three does, and then falls back to
-`Rgba16Float`. Three draws into an attachment the device cannot render.
+logs three's error once and keeps the format, as three does, and the effect
+fails as three's does. wgpu rejects the `rg11b10ufloat` render attachment as
+a validation error, which its default handler raises as a panic. There is no
+fallback format: the fragment stage writes a `vec3<f32>` to the attachment,
+and wgpu rejects a four-channel target such as `rgba16float` for a
+three-component output.
 
 **The normal input.** The page passes `sample( uv => unpackRGBToNormal(
 scenePassNormal.sample( uv ) ) )`. `ssgi()` takes the packed normal texture
@@ -6081,9 +6091,20 @@ quad discards.
 
 ### 69.3 Not ported
 
+- An arbitrary `normalNode`. `ssgi()` takes a packed normal texture and
+  unpacks it with `* 2 - 1` itself (the page's `unpackRGBToNormal`); three
+  samples whatever node it is given and normalizes it.
 - `normalNode = null`, which rebuilds the normal from depth through
   `getNormalFromDepth`.
 - A logarithmic depth buffer (`logarithmicDepthToViewZ`).
-- `resolutionScale`. r187's `SSGINode` has none: its target is always the
-  drawing buffer's size.
+- The AO texture's name, `SSGI.AO`. The render target always names
+  attachment 0 `output` (`render_target.rs`).
+- `setup()` returning the AO node as the node's value. `SsgiNode` is not a
+  node; `ao_node()` and `gi_node()` are its outputs.
+- `dispose()`. The target and quad are freed when the last `Rc` drops.
+- `contextNode = context( builder.getSharedContext() )` on the quad's
+  material.
 - The page's GUI. Its settings (two slices, eight steps) are set in code.
+
+r187's `SSGINode` has no `resolutionScale`: its target is always the
+drawing buffer's size, and so is the port's.

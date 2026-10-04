@@ -759,8 +759,9 @@ meant to be resolved by TRAA, so when the page's checkbox turns temporal
 filtering off, the page also drops TRAA and outputs the composite directly.
 
 Each frame the node draws one quad into one two-attachment target. The AO
-attachment is `R8Unorm`. The GI attachment is `Rg11b10Ufloat`, and
-`Rgba16Float` on an adapter that cannot render the former. It allocates
+attachment is `R8Unorm`. The GI attachment is `Rg11b10Ufloat`. On an
+adapter that cannot render it the node logs three's error and the effect
+fails, as three's does: wgpu rejects the attachment. It allocates
 nothing per frame. `docs/nodes.md` §69 has the new `output_struct()` node it
 needed and the divergences.
 

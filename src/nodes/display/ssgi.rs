@@ -21,14 +21,31 @@
 //!
 //! The GI attachment is `rg11b10ufloat`, as three's `RGBFormat` /
 //! `UnsignedInt101111Type` is, and is only renderable with the device feature
-//! of that name. Three logs an error without it and draws anyway; the port
-//! logs the same error and falls back to `rgba16float`, so the effect still
-//! runs.
+//! of that name. Without it three logs an error and the effect fails; so does
+//! the port. It logs the same error and leaves the format alone, so wgpu
+//! rejects the attachment (`RENDER_ATTACHMENT` on a format the device cannot
+//! render) as a validation error, which wgpu's default handler raises as a
+//! panic. There is no fallback: the fragment stage writes a `vec3<f32>`, and
+//! wgpu rejects a four-channel target such as `rgba16float` for it.
 //!
-//! Not ported: `normalNode = null` (`getNormalFromDepth`; the page feeds the
-//! scene pass's packed normals, which [`ssgi`] unpacks itself), a logarithmic
-//! depth buffer, and a `resolutionScale` (r187's node has none — the target
-//! is always the drawing buffer's size).
+//! Not ported:
+//! - an arbitrary `normalNode`. [`ssgi`] takes the scene pass's packed
+//!   normal texture and unpacks it with `* 2 - 1` itself, which is what the
+//!   page's `sample( uv => unpackRGBToNormal( … ) )` does;
+//! - `normalNode = null`, which rebuilds the normal from depth through
+//!   `getNormalFromDepth`;
+//! - a logarithmic depth buffer;
+//! - the AO texture's name `SSGI.AO`: the render target names attachment 0
+//!   `output`, whatever it is given;
+//! - `setup()` returning the AO node as the node's own value. [`SsgiNode`]
+//!   is not a node; [`SsgiNode::ao_node`] and [`SsgiNode::gi_node`] are the
+//!   outputs;
+//! - `dispose()`: the target and quad are freed when the last `Rc` drops;
+//! - `contextNode = context( builder.getSharedContext() )` on the quad's
+//!   material.
+//!
+//! r187's node has no `resolutionScale`; the target is always the drawing
+//! buffer's size, here as in three.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -896,9 +913,11 @@ impl NodeUpdate for SsgiState {
             renderer.update_before_node(&pass);
         }
 
-        // `setup()`'s feature check, once: three logs and draws into an
-        // attachment the device cannot render; the port logs and falls back
-        // to a format it can.
+        // `setup()`'s feature check, once. Like three it only logs: the GI
+        // attachment stays `rg11b10ufloat`, and wgpu rejects it on the render
+        // below. A wider format is no way out, since the fragment stage
+        // writes a `vec3<f32>` to it and wgpu rejects four-channel targets
+        // for a three-component output.
         if !self.format_checked.replace(true)
             && !renderer
                 .features()
@@ -908,7 +927,6 @@ impl NodeUpdate for SsgiState {
                 "THREE.SSGINode: The device does not support the \"rg11b10ufloat-renderable\" \
                  feature which is required for SSGI."
             );
-            self.target.textures()[1].set_format(wgpu::TextureFormat::Rgba16Float);
         }
 
         // `this.setSize( renderer.getDrawingBufferSize() )`.

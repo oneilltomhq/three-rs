@@ -354,6 +354,230 @@ fn ssgi_matches_three() {
     check("ssgi", Region::Body);
 }
 
+/// `nodeVarN` / `nodeConstN` replaced by `_`: the names the two builders
+/// pick for themselves, which differ (the port declares a `var` where three
+/// writes a `let`).
+fn anonymise(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(at) = ["nodeVar", "nodeConst"]
+        .iter()
+        .filter_map(|prefix| rest.find(prefix))
+        .min()
+    {
+        let before_ok = rest[..at]
+            .chars()
+            .next_back()
+            .is_none_or(|c| !is_ident_char(c));
+        let len = rest[at..]
+            .find(|c: char| !is_ident_char(c))
+            .unwrap_or(rest.len() - at);
+        let name = &rest[at..at + len];
+        out.push_str(&rest[..at]);
+        if before_ok && is_generated_name(name) {
+            out.push('_');
+        } else {
+            out.push_str(name);
+        }
+        rest = &rest[at + len..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// The lines of a `struct name { … };` block, trimmed.
+fn struct_members(wgsl: &str, name: &str) -> Vec<String> {
+    let start = wgsl
+        .find(&format!("struct {name} {{"))
+        .unwrap_or_else(|| panic!("no struct {name}"));
+    let block = &wgsl[start..];
+    let block = &block[block.find('{').unwrap() + 1..block.find("};").unwrap()];
+    block
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(|line| line.trim_end_matches(',').to_string())
+        .collect()
+}
+
+/// What `fingerprint` leaves out, for the SSGI body: the swizzles, the
+/// binary and unary operators and the integer literals as multisets, every
+/// one-statement `if`/`else` (a lowered `select`) with its condition and both
+/// branches in order, and each `.yx` with the expression it swizzles and the
+/// blocks it sits in.
+#[derive(Debug, PartialEq, Default)]
+struct Shapes {
+    swizzles: BTreeMap<String, usize>,
+    operators: BTreeMap<String, usize>,
+    integers: BTreeMap<String, usize>,
+    selects: Vec<[String; 3]>,
+    yx: Vec<(String, String)>,
+}
+
+/// The binary and unary operators three's printer writes between spaces.
+const OPERATORS: [&str; 20] = [
+    "+", "-", "*", "/", "%", "<", ">", "<=", ">=", "==", "!=", "&&", "||", "&", "|", "^", "<<",
+    ">>", "!", "~",
+];
+
+fn shapes(wgsl: &str) -> Shapes {
+    let text = region(wgsl, Region::Body);
+    // The material's tail is not the SSGI node's: three's `Output` is an
+    // `f32` (`max( … ).x`) where the port's is the `vec4` every material
+    // declares, a known difference (docs/nodes.md §69).
+    let lines: Vec<&str> = text
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with("Output ="))
+        .collect();
+    let mut shapes = Shapes::default();
+
+    for line in &lines {
+        let chars: Vec<char> = line.chars().collect();
+        let mut i = 0;
+        while i < chars.len() {
+            let c = chars[i];
+            // `.xyz` after a name or a `)`: a swizzle (`object.nodeUniformN`
+            // and `output.mN` are member reads, not all-component letters).
+            if c == '.' && i > 0 && (is_ident_char(chars[i - 1]) || chars[i - 1] == ')') {
+                let start = i + 1;
+                let mut end = start;
+                while end < chars.len() && is_ident_char(chars[end]) {
+                    end += 1;
+                }
+                let member: String = chars[start..end].iter().collect();
+                let swizzle = (1..=4).contains(&member.len())
+                    && (member.chars().all(|c| "xyzw".contains(c))
+                        || member.chars().all(|c| "rgba".contains(c)));
+                if swizzle {
+                    *shapes.swizzles.entry(member).or_default() += 1;
+                }
+                i = end;
+                continue;
+            }
+            // An integer literal: digits not part of a name or a float.
+            if c.is_ascii_digit()
+                && (i == 0 || !(is_ident_char(chars[i - 1]) || chars[i - 1] == '.'))
+            {
+                let start = i;
+                while i < chars.len() && chars[i].is_ascii_digit() {
+                    i += 1;
+                }
+                if i < chars.len() && chars[i] == 'u' {
+                    i += 1;
+                }
+                let float = i < chars.len() && (chars[i] == '.' || chars[i] == 'e');
+                if !float && (i == chars.len() || !is_ident_char(chars[i])) {
+                    let literal: String = chars[start..i].iter().collect();
+                    *shapes.integers.entry(literal).or_default() += 1;
+                }
+                continue;
+            }
+            i += 1;
+        }
+        // Both builders put a space either side of a binary operator and
+        // after the `(` before a unary one.
+        for token in line.split(' ') {
+            if OPERATORS.contains(&token) {
+                *shapes.operators.entry(token.to_string()).or_default() += 1;
+            }
+        }
+    }
+
+    // `if ( c ) {` / `a = x;` / `} else {` / `a = y;` / `}`: three's `If`
+    // lowering of a `select`, so swapped branches show.
+    for window in lines.windows(5) {
+        if window[0].starts_with("if (")
+            && window[2] == "} else {"
+            && window[4] == "}"
+            && window[1].contains(" = ")
+            && window[3].contains(" = ")
+        {
+            let rhs = |line: &str| anonymise(line.split_once(" = ").unwrap().1);
+            shapes
+                .selects
+                .push([anonymise(window[0]), rhs(window[1]), rhs(window[3])]);
+        }
+    }
+
+    // Each `.yx`: what it swizzles, with a spilled variable (`a = clamp( … );
+    // b = a.yx;`) resolved to the expression it holds, and the enclosing
+    // block headers, so the swizzle cannot move to the other branch.
+    let mut blocks: Vec<String> = Vec::new();
+    for (index, line) in lines.iter().enumerate() {
+        if line.starts_with('}') {
+            blocks.pop();
+        }
+        if line.ends_with('{') {
+            blocks.push(anonymise(line));
+        }
+        if let Some(rhs) = line
+            .strip_suffix(".yx;")
+            .and_then(|line| line.split_once(" = "))
+            .map(|(_, rhs)| rhs)
+        {
+            let mut operand = rhs.trim_start_matches("let ").to_string();
+            if is_generated_name(&operand) {
+                let assignment = format!("{operand} = ");
+                let held = lines[..index]
+                    .iter()
+                    .rev()
+                    .find_map(|line| line.trim_start_matches("let ").strip_prefix(&assignment))
+                    .unwrap_or_else(|| panic!("{operand} is never assigned"));
+                operand = held.trim_end_matches(';').to_string();
+            }
+            shapes.yx.push((blocks.join(" / "), anonymise(&operand)));
+        } else {
+            assert!(
+                !line.contains(".yx"),
+                "a `.yx` inside an expression: {line}"
+            );
+        }
+    }
+    shapes
+}
+
+/// What [`check`]'s fingerprint does not see in the SSGI body: the
+/// `OutputType` members' types, the uniform block's members, swizzles (the
+/// horizon pair's `.yx`), operators, integer literals and the order of
+/// select branches.
+#[test]
+fn ssgi_shapes_match_three() {
+    let quads = materials::display_quads();
+    let quad = quads.iter().find(|quad| quad.label == "ssgi").unwrap();
+    let flow = setup(&quad.material, &SetupContext::default(), None);
+    let ours = NodeBuilder::new().build(&flow).fragment_wgsl;
+    let three = fixture(quad.fixture);
+
+    // `outputStruct( aoField, giField )`: an `f32` and a `vec3`, not two
+    // `vec4`s as an `mrt()` would make them.
+    let members = struct_members(&ours, "OutputType");
+    assert_eq!(
+        members,
+        ["@location( 0 ) m0 : f32", "@location( 1 ) m1 : vec3<f32>"],
+        "\n{ours}"
+    );
+    assert_eq!(members, struct_members(&three, "OutputType"));
+    assert_eq!(
+        struct_members(&ours, "objectStruct"),
+        struct_members(&three, "objectStruct"),
+        "the uniform block's members and types"
+    );
+
+    let (ours_shapes, three_shapes) = (shapes(&ours), shapes(&three));
+    // `directionIsRight.select( frontBackHorizon.yx, frontBackHorizon.xy )`,
+    // once per `horizonSampling` call: in the `true` branch of `if ( true )`
+    // and of `if ( false )`.
+    assert_eq!(three_shapes.yx.len(), 2);
+    assert!(three_shapes.yx[0].0.ends_with("if ( true ) {"));
+    assert!(three_shapes.yx[1].0.ends_with("if ( false ) {"));
+    assert!(three_shapes.yx[0].1.starts_with("clamp( "));
+    // Not vacuous: the dump's lowered selects and its integer literals.
+    assert_eq!(three_shapes.selects.len(), 16);
+    assert_eq!(three_shapes.integers.get("4294967295u"), Some(&2));
+    assert_eq!(ours_shapes, three_shapes, "\n{ours}");
+}
+
 #[test]
 fn ssgi_spatial_offsets_matches_three() {
     check("ssgi", Region::Function("spatialOffsets"));

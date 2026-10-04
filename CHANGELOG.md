@@ -15,9 +15,12 @@ have their own sections after the release they ship with. The format follows [Ke
   `set_use_temporal_filtering()` is three's property. The SSGI shader, the
   page's composite and its TRAA resolve are gated against three's dump in
   `tests/nodes_display_wgsl.rs`, and `tests/ssgi_frames.rs` checks the
-  frames. `webgpu_postprocessing_ssgi` is ported, ungraded because three's
-  e2e harness skips it, and in the viewer. `normalNode = null` and a
-  logarithmic depth buffer are not ported.
+  frames, the three boolean options included. `webgpu_postprocessing_ssgi`
+  is ported, ungraded because three's e2e harness skips it, and in the
+  viewer. An arbitrary `normalNode`, `normalNode = null`, a logarithmic
+  depth buffer, the `SSGI.AO` name, `contextNode` and `dispose()` are not
+  ported. Without `RG11B10UFLOAT_RENDERABLE` the effect fails, as three's
+  does.
 - **`tsl::output_struct()`**, three's `outputStruct()`. As a material's
   `output_node` it writes each member to its own colour attachment as its
   own type. See `docs/nodes.md` §69.
