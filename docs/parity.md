@@ -822,7 +822,7 @@ Graded examples: 94 (the README gallery plus `webgpu_textures_2d-array_compresse
 
 ### Supplementary: `examples/jsm/tsl/display/*.js`
 
-These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) and are not counted above. 35 Present, 4 Partial, 9 Absent.
+These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) and are not counted above. 36 Present, 4 Partial, 8 Absent.
 
 | file | status | three-rs port and check |
 |---|---|---|
@@ -860,7 +860,7 @@ These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) an
 | `RGBShiftNode.js` | Present | rgb_shift; tests/nodes_display_wgsl.rs; webgpu_postprocessing (ported, ungraded) |
 | `Sepia.js` | Present | sepia (src/nodes/display/sepia.rs:13); tests/nodes_display_wgsl.rs (film_sepia_bleach dump, m05; no webgpu page uses it) |
 | `Shape.js` | Present | circle (src/nodes/display/shape.rs:18; not core shapeCircle); tests/nodes_display_wgsl.rs (webgpu_postprocessing_retro m08 and m10, inside vignette and the bleed amount) |
-| `SharpenNode.js` | Absent | — |
+| `SharpenNode.js` | Present | sharpen/SharpenNode (src/nodes/display/sharpen.rs:54,62); tests/nodes_display_wgsl.rs (sharpen_rcas and sharpen_rcas_denoise gates, tools/dump-pages/sharpen.html m03 and m06), tests/sharpen_frames.rs; webgpu_postprocessing_ssr_denoise (pending: the page's other nodes are not ported yet); contextNode and dispose() are not ported |
 | `SMAANode.js` | Present | smaa/SmaaNode (src/nodes/display/smaa.rs:72,77); tests/nodes_display_wgsl.rs (smaa_edges, smaa_weights and smaa_blend gates); webgpu_postprocessing_ssr (graded); webgpu_postprocessing_smaa (ported, ungraded: three.js fails its own reference on this machine) |
 | `SobelOperatorNode.js` | Present | sobel; webgpu_postprocessing_sobel |
 | `SSAAPassNode.js` | Present | SsaaPassNode (src/renderer/ssaa_pass.rs:130); webgpu_postprocessing_ssaa |
@@ -1677,7 +1677,7 @@ The first refresh of this matrix closed the previous top five. Velocity and TRAA
 1. **The screen-space effect nodes** (`DenoiseNode`; `denoise` 6 pages). `SSRNode` is Present (`webgpu_postprocessing_ssr`, graded). `GTAONode` and `builtinAOContext` are Present now (`webgpu_postprocessing_ao`, ungraded: it is on three's e2e exception list), and so are `DepthOfFieldNode` (`webgpu_postprocessing_dof`), `SSGINode` (`webgpu_postprocessing_ssgi`) and `SSSNode` with `builtinShadowContext` (`webgpu_postprocessing_sss`), all ungraded for the same reason. What is left needs a velocity target and a temporal resolve, and both now exist; these pages are the direct payoff of the velocity work. Porting them also gives the depth reads (`viewportDepthTexture`, `linearDepth`, `getViewPosition`) their first graded consumer.
 2. **EventDispatcher** (issues 153, 159). 8 pages subscribe to `change` or `finished` events. In ordinary use these are render-on-demand behind OrbitControls and chaining animation clips when one ends, and neither works in the port today. `AnimationMixer` and `AnimationAction` fire nothing.
 3. **The TransformControls pages** (`webgpu_modifier_curve`, `webgpu_shadowmap_progressive`, `webgpu_tsl_compute_attractors_particles`). `FirstPersonControls` (8 pages), `FlyControls` (1) and now `TransformControls` are ported and gated against three's classes (`docs/controls.md`). What is left is wiring the gizmo into the pages: `webgpu_modifier_curve`'s port still leaves it out, and the viewer's controls hook is typed for `OrbitControls`.
-4. The remaining display files (`DenoiseNode`, `depthAwareBlur`, `FSR1Node`, `ImportanceSampledEnvironment`, `RecurrentDenoiseNode`, `SharpenNode`, `SSAONode`, `TAAUNode`, `TemporalReprojectNode`, 0 to 2 pages each). Small and self-contained; most unlock one page.
+4. The remaining display files (`DenoiseNode`, `depthAwareBlur`, `FSR1Node`, `ImportanceSampledEnvironment`, `RecurrentDenoiseNode`, `SSAONode`, `TAAUNode`, `TemporalReprojectNode`, 0 to 2 pages each). Small and self-contained; most unlock one page.
 
 **Runners-up, and why they rank lower:**
 - RectAreaLight and LTC (3 pages).
