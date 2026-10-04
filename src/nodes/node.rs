@@ -1595,6 +1595,9 @@ pub enum Node {
     },
     /// `Break()` — a bare `break;` out of the innermost `Loop`.
     Break,
+    /// `Continue()` — a bare `continue;` to the next iteration of the
+    /// innermost `Loop`.
+    Continue,
     /// `textureStore( storageTexture, coord, value )` — a statement.
     ///
     /// `StorageTextureNode.generateStore()` writes the coordinate as
@@ -1813,6 +1816,7 @@ impl NodeRef {
             | Node::If { .. }
             | Node::Discard
             | Node::Break
+            | Node::Continue
             | Node::TextureStore { .. }
             | Node::Return { .. } => Type::Void,
             Node::Not { node } => Type::vector_of(Type::Bool, node.ty().components().max(1)),

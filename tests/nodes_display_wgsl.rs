@@ -348,3 +348,33 @@ fn traa_clip_aabb_matches_three() {
 fn traa_flicker_reduction_matches_three() {
     check("traa", Region::Function("flickerReduction"));
 }
+
+#[test]
+fn ssr_matches_three() {
+    check("ssr", Region::Body);
+}
+
+#[test]
+fn ssr_copy_matches_three() {
+    check("ssr_copy", Region::Body);
+}
+
+#[test]
+fn ssr_blur_matches_three() {
+    check("ssr_blur", Region::Body);
+}
+
+#[test]
+fn smaa_edges_matches_three() {
+    check("smaa_edges", Region::Body);
+}
+
+#[test]
+fn smaa_weights_matches_three() {
+    check("smaa_weights", Region::Body);
+}
+
+#[test]
+fn smaa_blend_matches_three() {
+    check("smaa_blend", Region::Body);
+}

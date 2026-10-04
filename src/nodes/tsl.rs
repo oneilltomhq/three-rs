@@ -910,6 +910,23 @@ pub fn get_view_position(
     view_space_position.xyz().div(view_space_position.w())
 }
 
+/// Port of `PostProcessingUtils.js`' `getScreenPosition( viewPosition,
+/// projectionMatrix )` for the WebGPU coordinate system: the screen uv a
+/// view-space position projects to, `y` flipped so `( 0, 0 )` is the top
+/// left. The inverse of [`get_view_position`].
+pub fn get_screen_position(view_position: NodeRef, projection_matrix: NodeRef) -> NodeRef {
+    let sample_clip_pos = projection_matrix.mul(vec4_join(vec![view_position, float(1.0)]));
+    let sample_uv = to_var(
+        None,
+        sample_clip_pos
+            .xy()
+            .div(sample_clip_pos.w())
+            .mul(0.5)
+            .add(0.5),
+    );
+    vec2_join(vec![sample_uv.x(), sample_uv.y().one_minus()])
+}
+
 /// `viewZToOrthographicDepth( viewZ, near, far )` — `ViewportDepthNode.js`:
 /// `( viewZ + near ) / ( near - far )`, the view-space z mapped to `[0,1]`
 /// between the clip planes.
@@ -5153,6 +5170,11 @@ pub fn loop_float(
 /// `Break()` — out of the innermost `Loop`.
 pub fn break_loop() -> NodeRef {
     NodeRef::new(Node::Break)
+}
+
+/// `Continue()` — on to the next iteration of the innermost `Loop`.
+pub fn continue_loop() -> NodeRef {
+    NodeRef::new(Node::Continue)
 }
 
 /// `If( cond, () => { … } )`.

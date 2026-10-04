@@ -98,6 +98,11 @@ pub struct Scene {
     ///
     /// [`MeshBasicNodeMaterial::set_needs_update`]: crate::materials::MeshBasicNodeMaterial::set_needs_update
     pub environment_node: Option<crate::materials::environment::EnvironmentNode>,
+    /// `scene.environmentIntensity` — the factor `materialEnvIntensity`
+    /// applies to the scene environment's radiance and irradiance for every
+    /// material without an environment of its own. A uniform, so changing it
+    /// rebuilds nothing.
+    pub environment_intensity: f64,
     /// `scene.fog` — a classic [`Fog`](super::Fog) or
     /// [`FogExp2`](super::FogExp2). The renderer turns it into a fog node
     /// whose parameters are render-group uniforms (`NodeManager.updateFog()`),
@@ -126,6 +131,7 @@ impl Default for Scene {
             background_blurriness: 0.0,
             environment: None,
             environment_node: None,
+            environment_intensity: 1.0,
             fog: None,
             fog_node: None,
             override_material: None,

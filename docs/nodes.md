@@ -5988,3 +5988,106 @@ arithmetic, and `tests/traa_frames.rs` allows for it.
 - `useSubpixelCorrection = false`, `depthThreshold`, `edgeDepthDiff` and
   `maxVelocityLength` as settable properties. They are constants at three's
   defaults.
+
+## 65. `SSRNode` and `SMAANode` (`webgpu_postprocessing_ssr`)
+
+§64 is reserved for the GTAO and denoise nodes, whose branch is not merged.
+
+### 65.1 What three does
+
+`ssr( colorNode, depthNode, normalNode, { metalnessNode, roughnessNode },
+camera )` is a `TempNode` with `updateBeforeType = FRAME`. Its
+`updateBefore()` draws up to three quads:
+
+1. **`SSRNode.SSR`** draws into a half-float target. For each metallic pixel
+   it reflects the view ray about the normal, clips the ray to the near plane
+   and to `maxDistance`, and projects both ends to screen space. It then
+   steps along the longer screen axis. The step count is
+   `totalStep · quality`, with `Continue()` past pixels it has already
+   visited and `Break()` on a hit. A hit is a view-space distance from the
+   ray to the sampled surface below `thickness`, with the sampled normal
+   facing the ray. The output is the hit's colour, scaled by `intensity`,
+   metalness, a distance attenuation and a Fresnel-like term. Its alpha is
+   the ray length.
+2. **`SSRNode.Copy`** copies that target into mip 0 of the blur target.
+3. **`SSRNode.Blur`** box-blurs the SSR target into mips 1–4. The tap spacing
+   is the mip index, and the blur size is `blurQuality`, a build-time
+   constant.
+
+Passes 2 and 3 run only when `roughnessNode` is set. The texture node then
+samples the blur target at level `roughness² · 4`.
+
+`smaa( textureNode )` is iryoku's SMAA 1x: colour edge detection, then the
+blending weights from four 8-step searches and a 160×560 area texture, then
+the neighbourhood blend. Each runs into its own half-float target at the
+size of the drawing buffer.
+
+### 65.2 The port
+
+`nodes::display::{ssr, smaa}` build the same graphs. The six fragment
+shaders are gated against three's dumps (`tests/nodes_display_wgsl.rs`,
+fixtures `webgpu_postprocessing_ssr_m21` … `m32`). Each long `Fn` in three
+(the march, `SMAASearchXLeft` … `SMAAArea`) is a `#[inline(never)]` Rust
+helper returning a `block`, not one large closure.
+
+The port needed these new pieces:
+
+- **`Node::Continue`** and `tsl::continue_loop()`, three's `Continue()`.
+  The builder emits `continue;` exactly where `Break` emits `break;`.
+- **`tsl::get_screen_position( viewPosition, projectionMatrix )`.**
+- **Rendering into one mip of a render target.**
+  - `RenderTarget::set_mip_level_count( n )` allocates the chain. It is the
+    port of `blurRenderTarget.texture.mipmaps.push( {}, … )`.
+  - `Renderer::set_render_target_level( rt, level )` is
+    `setRenderTarget( rt, 0, level )`. The pass draws into a one-level view
+    of that mip, and the viewport and scissor are scaled down to it.
+  - `active_mipmap_level()` reads the level back, so a node can save it and
+    restore it.
+  - Sampling the target with `texture_level` reads across the whole chain.
+- **`box_blur_with( map, options, sample )`.** SSR's blur pass is
+  `boxBlur( ssrTexture, { size, separation } )`, with taps at
+  `textureSample` level 0. The new variant takes the sample function. When
+  `size` is a constant, the loop bound is now an integer literal
+  (`i <= 1`), as three emits it, not `i32( 1.0 )`. The `dof_basic` box-blur
+  gate, whose size is a uniform, is unaffected.
+- **`Scene::environment_intensity`**, three's `scene.environmentIntensity`.
+  It scales the scene environment's PMREM radiance and irradiance through
+  the existing `material_env_intensity` uniform. A material's own
+  `envMap` is not scaled by it, as in three.
+
+**Order within a frame.** Both nodes run their input's updater at the top of
+`update_before()`, as `TraaNode` does (§63). Three's `setup()` produces the
+same order. The frame claim turns the input's own later run into a no-op.
+
+**State save and restore.** Both nodes save and then restore these:
+
+- the render target and its mip level;
+- the MRT;
+- the clear colour and alpha;
+- `auto_clear`.
+
+Three's `RendererUtils.resetRendererState()` / `restoreRendererState()` do
+the same. SMAA resizes its three targets to `drawing_buffer_size()` every
+frame. That is a no-op once the size is current.
+
+**SMAA's lookup textures.** `SMAANode.js` embeds them as base64 PNGs. The
+port decodes them once into `src/nodes/display/smaa_area.png` and
+`smaa_search.png`, includes them with `include_bytes!`, and decodes them at
+first use with the crate's PNG decoder.
+
+- The area texture is linear-filtered, with no mips.
+- The search texture is `NearestFilter`, so its taps are `textureLoad`, as
+  in three's dump.
+
+### 65.3 Not ported
+
+All of these are options the page leaves at their defaults:
+
+- `stochastic`;
+- `reflectNonMetals`, `binaryRefine` and `screenEdgeFadeBlack`;
+- `setHistory()` and `diffuseNode`;
+- `resolutionScale ≠ 1`;
+- an orthographic camera;
+- a logarithmic depth buffer.
+
+`docs/webgpu_postprocessing_ssr-progress.md` has the rung.

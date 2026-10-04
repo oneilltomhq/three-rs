@@ -1014,7 +1014,7 @@ impl NodeBuilder {
                 v.extend(body.iter().cloned());
                 v
             }
-            Node::Discard | Node::Break => vec![],
+            Node::Discard | Node::Break | Node::Continue => vec![],
             Node::TextureStore { coord, value, .. } => vec![coord.clone(), value.clone()],
             Node::TextureSize { level, .. } => vec![level.clone()],
             Node::VaryingProperty { .. } => vec![],
@@ -2279,6 +2279,11 @@ impl NodeBuilder {
 
             Node::Break => {
                 self.emit("break;".to_string());
+                String::new()
+            }
+
+            Node::Continue => {
+                self.emit("continue;".to_string());
                 String::new()
             }
 
