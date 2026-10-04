@@ -140,6 +140,9 @@ mod webgpu_postprocessing_bloom;
 #[path = "webgpu_materials_envmaps.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_materials_envmaps;
+#[path = "webgpu_materials_transmission.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_materials_transmission;
 
 #[path = "webgpu_materials_cubemap_mipmaps.rs"]
 #[allow(dead_code)] // only `init()` is called here
@@ -607,6 +610,9 @@ const GRADED: &[(&str, fn())] = &[
     ("webgpu_clipping", || drop(webgpu_clipping::init())),
     ("webgpu_clipping_stencil", || {
         drop(webgpu_clipping_stencil::init())
+    }),
+    ("webgpu_materials_transmission", || {
+        drop(webgpu_materials_transmission::init())
     }),
 ];
 

@@ -304,6 +304,7 @@ PostprocessingRetro, webgpu_postprocessing_retro, "../../examples/webgpu_postpro
 PostprocessingSsrDenoise, webgpu_postprocessing_ssr_denoise, "../../examples/webgpu_postprocessing_ssr_denoise.rs";
 Clipping, webgpu_clipping, "../../examples/webgpu_clipping.rs";
 ClippingStencil, webgpu_clipping_stencil, "../../examples/webgpu_clipping_stencil.rs";
+MaterialsTransmission, webgpu_materials_transmission, "../../examples/webgpu_materials_transmission.rs";
 UpscalingTaau, webgpu_upscaling_taau, "../../examples/webgpu_upscaling_taau.rs";}
 
 impl Which {
