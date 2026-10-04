@@ -5,6 +5,7 @@
 use crate::cameras::{OrthographicCamera, PerspectiveCamera};
 use crate::math::{Matrix4, Vector2, Vector3, RAD2DEG};
 use crate::nodes::NodeRef;
+use crate::textures::CubeDepthTexture;
 
 use super::shadow_filter::ShadowFilterFn;
 
@@ -158,6 +159,12 @@ pub struct LightShadow {
     /// `this.shadowNode` — a node used as the light's whole shadow factor
     /// instead of a `ShadowNode`; no shadow map is rendered for the light.
     pub shadow_node: Option<NodeRef>,
+    /// `this.map.depthTexture` of a point light's shadow — the
+    /// `CubeDepthTexture` the renderer draws the six faces into. Made on first
+    /// ask, by [`LightShadow::point_depth_texture`] or by the renderer's first
+    /// shadow render, whichever comes first, so a node built before the first
+    /// frame (`GodraysNode`) and the renderer name the same texture.
+    pub(crate) point_depth_texture: Option<CubeDepthTexture>,
 }
 
 impl LightShadow {
@@ -197,7 +204,24 @@ impl LightShadow {
             aspect: 1.0,
             filter_node: None,
             shadow_node: None,
+            point_depth_texture: None,
         }
+    }
+
+    /// `light.shadow.map.depthTexture` for a point light: the cube depth
+    /// texture its shadow renders into, made now — `mapSize.width` texels a
+    /// face — if nothing has asked for it yet.
+    ///
+    /// Three's `shadow.map` is created by the shadow node's first setup, and
+    /// `GodraysNode.setup()` reads it then. The port's display nodes are built
+    /// before any frame, so they take the handle here instead and the renderer
+    /// draws into whichever texture this returned. A `mapSize` changed after
+    /// the first call does not resize it.
+    pub fn point_depth_texture(&mut self) -> CubeDepthTexture {
+        let size = self.map_size.x as u32;
+        self.point_depth_texture
+            .get_or_insert_with(|| CubeDepthTexture::new(size))
+            .clone()
     }
 
     /// `SpotLightShadow.updateMatrices()`'s projection half: the spot light's
