@@ -554,10 +554,16 @@ differences, each verified to be pixel-neutral.
   `nodeVarN` shifts down. (Named MRT members whose value is a property read —
   `webgpu_postprocessing_bloom_selective`'s — get no var in either, which is
   why this only shows up here.)
-* **Hoisted accumulator zeros.** `LightingContextNode`'s five accumulators
-  (`directDiffuse`, `directSpecular`, `irradiance`, `indirectDiffuse`,
-  `indirectSpecular`) are zeroed together before the light loop rather than each
-  at its first use. Nothing reads one before it is written either way.
+* **Hoisted accumulator zeros.** In the physical flow, `LightingContextNode`'s
+  five accumulators (`directDiffuse`, `directSpecular`, `irradiance`,
+  `indirectDiffuse`, `indirectSpecular`) are zeroed together before the light
+  loop rather than each at its first use. Nothing reads one before it is
+  written either way. Each zero is emitted once: the accumulator is a var
+  whose initialiser is the zero, and the flow pushes the var itself as the
+  statement. It used to push `assign( vec3( 0 ) )`, which emitted the
+  initialiser and then the same zero again (issue #281). The Phong, Lambert
+  and Toon flow hoists nothing: each zero lands right above the statement
+  that first uses it, as in three's dumps.
 * **`clearcoatNormalView` assigned before the light loop (§34).** Three
   assigns the var at its first read, inside `direct()` after `irradiance`; the
   port assigns it where the normal is set up, ahead of the loop, and emits the
@@ -5310,7 +5316,7 @@ the port's body closes over `output_property()`. It is the same node.
   three's, statement for statement. The lighting has the same terms in a
   different order. Three emits the DFG lookup and the dielectric scattering
   first and zero-initialises each accumulator where it is first used. The
-  port zero-initialises them all up front (twice) and emits the directional
+  port zero-initialises them all up front (twice, until issue #281) and emits the directional
   light before the DFG. Three also writes `normalView` through
   `NORMAL_normalView = normalViewGeometry` where the port assigns it directly.
   The rest is spelling: `fragCoord` is the first fragment parameter rather
@@ -8901,6 +8907,231 @@ the following:
   (4.1, 1.1, 0.6, 0.35), and no texel is NaN.
 - A resize restarts the target at the new size.
 
+## 89. `webgpu_postprocessing_ssr_denoise`, the denoised SSR chain
+
+### 89.1 What three does
+
+The page draws the Warkarma dungeon, lit by a shadowed sun and the quarry
+HDR (background, environment, and the SSR's fallback for rays that leave the
+screen). `scenePass` writes a four-attachment MRT: `output`, `diffuseColor`
+as `vec4( diffuseColor.rgb, materialMetalness )`, `normal` as
+`vec4( packNormalToRGB( normalView ).rgb, materialRoughness )`, and
+`velocity`. The two packed attachments are 8-bit. The five nodes of §85-§88
+and §65.3 then feed each other:
+
+- **`ssr()`**, stochastic, with `diffuse`, the HDR as `environment`,
+  importance sampling off and the ray-length alpha. It reads the depth, the
+  unpacked normal and `metalRoughness` from the two alphas (§65.3).
+- **`temporalReproject()`** in `'specular'` mode, without `accumulate`,
+  reprojects the history onto the SSR's frame (§87).
+- **`recurrentDenoise()`** in `'specular'` mode with `accumulate`,
+  `alphaSource = 'raylength'` and the raw SSR as `raw`, filters the
+  reprojection (§88).
+- **The history loop.** `ssrNode.setHistory( denoiseNode, velocity )` and
+  `temporalReprojectNode.historyTexture = denoiseNode` close it: the
+  denoiser's output is the next frame's reprojection history and the SSR's
+  multi-bounce input. Every node of the loop is a frame-level
+  `updateBefore`, scheduled by the one that reads it, so a frame runs SSR,
+  then the reprojection, then the denoiser, which is read by the output.
+- **The output.** `vec4( denoise.rgb, ssr.a.greaterThan( 0 ).toVar() )` is
+  added to the beauty, and `applyPostProcessing()` runs
+  `sharpen( traa( applyGrading( source ), depth, velocity, camera ), 0 )`.
+  `applyGrading` is AgX through `renderOutput()`, contrast about mid-grey,
+  `saturation()` and gamma. TRAA's setup runs before the reprojection's, so
+  TRAA owns the camera's view offset.
+
+**The lighting patch.** The page replaces
+`PhysicalLightingModel.prototype.indirectSpecular` with a wrapper that sets
+`builder.context.radiance = vec3( 0 )` and, on a clearcoat model,
+`clearcoatRadiance.assign( vec3( 0 ) )`, then calls the original. The
+environment still supplies the diffuse irradiance; the specular comes from
+SSR alone. `EnvironmentNode` still samples the radiance, which is dead code
+in the dump.
+
+### 89.2 The port
+
+`examples/webgpu_postprocessing_ssr_denoise.rs` follows `init()` in order.
+The MRT's two per-material members are deferred (§23) and read
+`material_metalness_value()` / `material_roughness_value()`, which are new.
+They return the node `MaterialNode.setup()` builds for the material being
+set up (the uniform times the map's channel), installed once per setup, so
+the material's own `Metalness` / `Roughness` and the MRT share one map
+read. The node is wrapped in an empty `context()`: three's `MaterialNode` is
+a `ReferenceNode`, counted at every read but never a var, so three spells
+`object.nodeUniform5 * nodeVar1.z` out in `Metalness`, in
+`DiffuseContribution` and in the MRT, over the one texture var.
+
+The lighting patch is `MeshBasicNodeMaterial::environment_specular`, true by
+default. `Physical::indirect_specular` reads it: false puts the constant in
+place of `radiance` in the specular term, assigns the clearcoat radiance
+zero on a clearcoat model, and skips the `radiance` zero-init when there is
+no environment (the var is then never read). It is a program input. The
+page's glTF callback sets it on every material it touches, which scopes
+three's prototype-wide patch to the scene's materials.
+
+The chain is wired as on the page. TRAA's beauty is a texture in the port,
+so `convert_to_texture( applyGrading( … ) )` is explicit. `traa_node.attach`
+runs before `temporal_reproject_node.attach`, so the reprojection's
+view-offset hooks stand down and its velocity reads TRAA's jitter.
+
+Three fixes the chain needed:
+
+- **The denoiser's target is allocated before its input's pass runs.** On
+  this page that pass reads the target as its history. Three's
+  `Textures.updateTexture()` allocates a render-target texture the first
+  time a binding reads it; `RecurrentDenoiseState` now calls
+  `init_render_target` on a restart, before scheduling the input. The
+  clear stays where three has it.
+- **A struct-typed `VarIntent` declares its struct.** The reprojection's
+  specular neighbourhood is a struct, and was declared `var nodeVarN :
+  void`.
+- **`saturation()` shares one `.rgb`.** Three's swizzle getter caches its
+  `SplitNode`, which is no `TempNode`, so in the grading pass the swizzle is
+  counted twice and the contrast expression it reads is spelled out at both
+  reads. The port's `swizzle()` collapses a whole-vector swizzle into its
+  node, which would be counted twice and hoisted; `saturation()` now builds
+  a non-collapsing swizzle, and the builder drops its suffix on generation,
+  as `SplitNode.generate()` drops an unnecessary one.
+
+The gates (`tests/nodes_display_wgsl.rs`, fixtures
+`webgpu_postprocessing_ssr_denoise_m*.wgsl`):
+
+- `ssr_denoise_page_floor_matches_three` (`m14`, `Floor_Stone`): the
+  `Roughness` statement, the metallic/dielectric mix and the MRT tail, plus
+  the exact `Metalness` and `DiffuseContribution` lines. The rest of the
+  body carries two §8 differences of every physical material with an
+  environment, so it is not compared: the doubled accumulator zeros (issue
+  #281), and a separate single/multi-scattering block for the irradiance's
+  indirect diffuse.
+- `ssr_denoise_page_ssr_matches_three` (`m20`),
+  `ssr_denoise_page_denoise_matches_three` (`m22`),
+  `ssr_denoise_page_grading_matches_three` (`m24`) and
+  `ssr_denoise_page_sharpen_matches_three` (`m29`, sharpness 0): the
+  fragment bodies.
+
+The TRAA resolve and the RTT copy are the shaders of
+`webgpu_postprocessing_traa_m05` and `webgpu_postprocessing_lensflare_m24`;
+the reprojection's resolve is gated by
+`temporal_reproject_resolve_specular_matches_three`.
+
+What is gated off or not ported:
+
+- `directionalLight.shadow.autoUpdate = false`: the shadow map is redrawn
+  every frame, to the same result.
+- The page's first TRAA/sharpen pair, which `updateOutputNode()` replaces
+  before it renders, is built once. The model and HDR load synchronously.
+- The GUI, the compare modes and the outputs other than `Combined`.
+- The UV transforms are one per texture, where three has one per map slot,
+  so uniform names differ.
+
+`tests/ssr_denoise_frames.rs` runs the whole chain at 64×64 over a white
+unlit box on a rough metal floor with the patched lighting, so the only
+light on the floor is the box's reflection. The first frame is finite in
+the SSR and denoise targets, the mirror image is lit and the far floor dark.
+Over sixteen frames the reflection holds still (centroid within a pixel,
+the lit count within 10 %, the mean within a dozen levels) while the
+denoised floor's per-pixel variance over a window of four frames falls
+below half its first value. A resize restarts the targets at the new size.
+## 90. `TAAUNode` (`webgpu_upscaling_taau`)
+
+### 90.1 What three does
+
+`taau( beauty, depth, velocity, camera )` is TRAA's upsampling sibling. It is
+a `TempNode` with `updateBeforeType = FRAME`, and its inputs come from a
+scene pass drawn at a fraction of the canvas (the page uses
+`setResolutionScale( 0.5 )`). Its output is always the drawing buffer's size.
+
+- **Targets.** The history is a half-float target with two attachments,
+  `TAAUNode.history.color` and `TAAUNode.history.lock`. The resolve target
+  has one. A third, input-sized target exists only for its `DepthTexture`,
+  the previous frame's depth.
+- **Jitter.** The same 32 Halton (2, 3) offsets as TRAA, minus 0.5, through
+  `camera.setViewOffset()` at the *input* size, behind the pipeline's
+  `viewOffsetOwner`. The callbacks are registered from `setup()`, which runs
+  inside the first `renderPipeline.render()`, after that frame's before
+  callbacks. So the first frame is unjittered, but its after callback runs
+  and advances the index to 1.
+- **`updateBefore()`.** It rolls the previous camera matrices, writes this
+  frame's, and on a size change seeds the history with `TAAU.seed`: the
+  beauty sampled bilinearly at output UVs into colour, and 0 into lock. It
+  renders `TAAU.resolve` into the resolve target, copies that into the
+  history's colour, and copies the scene depth into the previous-depth
+  target.
+- **The resolve.** Each output pixel finds its closest input texel,
+  `round( pIn - ( 0.5 + jitter ) )`. It reconstructs the current frame from
+  the 3×3 texels around it with `exp( d² · -2.29 )` weights (a Gaussian fit
+  to Blackman-Harris) and gathers their mean and variance on the way. It
+  reads the velocity at the closest-depth texel of the 3×3 depth
+  neighbourhood and reprojects the history along it. The history is
+  disoccluded when the reprojected previous depth is more than
+  `depthThreshold` behind, except on an edge. It is clipped to the mean ±
+  γσ, with γ narrowing from 1 to 0.5 as motion grows. A *lock* keeps
+  thin, high-contrast features unclipped. It is the larger of a
+  `smoothstep` thin-feature term, zeroed off-screen or where the depth
+  changed, and the history lock times 0.5 (0 on a disocclusion). The blend
+  weight is 2.5% plus a motion term, or 1 with no valid history, through
+  TRAA's `flickerReduction`.
+
+Both materials write `outputStruct( color, lock )`. Into the
+one-attachment resolve target the lock output goes nowhere, so the history
+lock is only ever the seed's 0, and `lockNode.r` reads 0. On the first frame
+the previous depth is unwritten (0) and the previous matrices are the
+identity, so the background is disoccluded and takes the reconstruction,
+and the model mostly keeps the bilinear seed. That is the frame the e2e
+harness grades.
+
+### 90.2 The port
+
+`nodes::display::taau` builds the same graph, and `TaauState` implements
+`NodeUpdate` as the updater of the resolve texture, as `TraaState` does
+(§63). `TaauNode::attach( &mut RenderPipeline )` installs the jitter hooks
+behind `RenderPipeline::claim_view_offset()`. The before hook skips its
+first call, so the first frame is three's unjittered one. The materials
+write the same two outputs into the same targets: wgpu accepts a fragment
+stage with an output that has no attachment, and the dropped lock is what
+three renders. `update_before()` follows three's order, after asking for the
+scene pass first as TRAA does.
+
+**`TAAUtils.js`.** The helpers TRAA and TAAU share, `sampleCurrentDepth`,
+`samplePreviousDepth`, `clipAABB`, `flickerReduction` and the Halton
+offsets, now live in `src/nodes/display/taa_utils.rs`, a crate-private
+module both nodes import. TRAA's gates passed unchanged after the move.
+
+**The gates** (`tests/nodes_display_wgsl.rs`) are against three's dump of the
+page: `taau_seed_matches_three` (`m36`), `taau_resolve_matches_three`
+(`m38`, the whole body), and `taau_clip_aabb_matches_three` and
+`taau_flicker_reduction_matches_three`, which hold the resolve's two layout
+functions to three's. The page's RCAS quad (`m40`) is byte-identical to the
+existing `sharpen_rcas` fixture (§86), so it is not gated twice. The
+remaining differences are cosmetic:
+
+- Three's `toConst()`s print as `let nodeConstN`. The port prints the same
+  values as `nodeVarN` assignments, the usual single-assignment difference
+  (§8).
+- Three casts the closest tap to `vec2<i32>` once, as `nodeConst3`. The port
+  writes `vec2<i32>( nodeVar5 )` at each of the nine taps. The input size is
+  a `to_const` placed after the four accumulators, so `textureDimensions`
+  appears twice, as in three, and not at every use.
+
+**The page.** `examples/webgpu_upscaling_taau.rs` passes
+`sharpen( taauNode.getTextureNode(), 0.2 )` as a
+`SharpenNode::new( &taau.texture(), float( 0.2 ), false )`. Three's 0.2 is
+a number, and so a constant in the shader, and `sharpen()` would put an
+`RTTNode` around a texture node that three's `convertToTexture()` passes
+through. Three replaces `scene` after `renderer.init()`, and the model's
+load callback adds it to the new scene. The port builds only that scene.
+
+**Over frames,** `tests/taau_frames.rs` draws a white box at half of a
+48×48 canvas:
+
+- The output is canvas-sized while the pass is half-size.
+- The first frame matches a plain bilinear resolve of the same pass, except
+  for at most 16 pixels within 3 px of the silhouette.
+- A static scene converges, and its blended pixels stay on the silhouette.
+- A box that moves leaves no ghost in the region it vacated.
+
+Not ported: orthographic cameras, logarithmic and reversed depth, an
+`RTTNode` beauty and a velocity other than the global one.
 ## 91. `FSR1Node` (`webgpu_upscaling_fsr1`)
 
 ### 91.1 What three does

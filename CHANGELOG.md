@@ -8,6 +8,19 @@ have their own sections after the release they ship with. The format follows [Ke
 
 ### Added
 
+- **`webgpu_postprocessing_ssr_denoise`** (ungraded: three's own e2e
+  exception list): the stochastic `ssr()`, `temporal_reproject()` and
+  `recurrent_denoise()` in a history loop, added to the beauty, graded and
+  resolved by `traa()` and `sharpen()`. `MeshBasicNodeMaterial` gains
+  `environment_specular`, the page's `indirectSpecular` patch, and
+  `nodes::tsl` gains `material_metalness_value()` /
+  `material_roughness_value()`, the map-resolved values the page writes to
+  its MRT. The floor material and the SSR, denoise, grading and sharpen
+  quads are gated against three's dump of the page, and
+  `tests/ssr_denoise_frames.rs` checks the chain converges in place. Also
+  fixed on the way: the recurrent denoiser allocates its target before its
+  input reads it, a struct-typed var declares its struct, and
+  `saturation()` shares its `.rgb` as three does (docs/nodes.md §89).
 - **Typed `BufferAttribute`s** (#294): an attribute's array is a `TypedArray`
   of any of three's nine kinds (`Int8` to `Float64`, plus `Float16`), with a
   `normalized` flag, `get`/`set` accessors that decode and encode like
@@ -76,6 +89,16 @@ have their own sections after the release they ship with. The format follows [Ke
   resolve quads are gated against three's dump in
   `tests/nodes_display_wgsl.rs`, and `tests/temporal_reproject_frames.rs`
   checks the history on the GPU. See `docs/nodes.md` §87.
+- **`taau`** (`nodes::display`), a port of
+  `examples/jsm/tsl/display/TAAUNode.js`: temporal anti-aliased upsampling
+  of a reduced-resolution scene pass to the drawing buffer's size, with the
+  page **`webgpu_upscaling_taau`** in the native viewer. The page is
+  ungraded: three.js misses its own reference on this machine (540 of
+  100000 pixels), and the port scores 539, so its e2e rung is ignored. The
+  seed and resolve quads are gated against three's dump, and
+  `tests/taau_frames.rs` checks the node on the GPU. The `TAAUtils.js`
+  helpers it shares with `traa` now live in one crate-private module. See
+  `docs/nodes.md` §90.
 - **`ImportanceSampledEnvironment`** and **`EnvMapCdfGenerator`**
   (`nodes::display`), with the SpecularHelpers microfacet helpers
   (`d_gtr`, `ggx_reflection_sample`, `mis_power_heuristic`, …) and
@@ -584,6 +607,25 @@ have their own sections after the release they ship with. The format follows [Ke
 
 ### Fixed
 
+- A map's filters and wrap modes changed after the first draw rebuild the
+  program (#276). Three's WebGPU backend folds every texture property's
+  `magFilter`, `minFilter`, `wrapS` and `wrapT` into the material cache key;
+  the port keyed programs on the material's id and version only, so switching
+  a map to `Nearest` (unfilterable: `textureLoad`, no sampler) or changing an
+  unfilterable map's `wrap_s` (its `tsl_coord_*` wrap function) kept the stale
+  program. The sampler state is now read off the material's textures into the
+  dynamic half of the key at every draw. `tests/texture_sampler_rebuild.rs`
+  covers it.
+- Phong, Lambert and Toon materials zero each lighting accumulator
+  (`irradiance`, `directDiffuse`, `directSpecular`, `indirectDiffuse`, and
+  Lambert's specular pair) once, right above its first use, as three's dumps
+  do (#281). Each accumulator is a var with a zero initialiser, and the flow
+  also assigned the same zero explicitly, so the WGSL had every zero twice in
+  a row. The physical flow keeps its hoisted zeros but emits each once,
+  `clearcoat*`, `radiance` and `iblIrradiance` included.
+  `sss_shadow_context_matches_three` no longer drops repeated lines; it
+  checks the zero count and position against the dump, and
+  `lit_accumulators_are_zeroed_once` covers the other lit flows.
 - A depth-stencil texture is sampled through a depth-only view. With
   `RendererParameters::stencil` on, `viewportDepthTexture()`'s copy of the
   `depth24plus-stencil8` canvas depth failed bind-group validation, because

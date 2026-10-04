@@ -566,9 +566,31 @@ fn setup_overridden(
             .as_ref()
             .map(|map| normal_map_scaled(texture(map), material_clearcoat_normal_scale()))
     });
+    // `materialMetalness` / `materialRoughness`, one node each for the whole
+    // setup — the material's own `Metalness` / `Roughness` and a deferred MRT
+    // output share the map read, as three's cached `MaterialNode`s do.
+    // glTF packing: metalness in blue, roughness in green.
+    //
+    // The `MaterialNode` is a `ReferenceNode`, not a `TempNode`: reached
+    // three times (`Metalness`, `DiffuseContribution`, the MRT member) it is
+    // what is counted, its product only once, so three spells the product out
+    // at each read over the one texture var. An empty context is the port's
+    // counted-but-never-a-var wrapper (`webgpu_postprocessing_ssr_denoise`'s
+    // `Floor_Stone`).
+    let reference = |node: NodeRef| context(node, crate::nodes::node::ContextValue::new());
+    let metalness_value = match &material.metalness_map {
+        Some(map) => reference(material_metalness().mul(texture(map).z())),
+        None => material_metalness(),
+    };
+    let roughness_value = match &material.roughness_map {
+        Some(map) => reference(material_roughness().mul(texture(map).y())),
+        None => material_roughness(),
+    };
     with_material_normal(normal, material.flat_shading, material.side, || {
         with_clearcoat_normal(clearcoat_normal, || {
-            with_material_position_view(position_view, || setup_inner(material, ctx, fog))
+            with_material_values(metalness_value, roughness_value, || {
+                with_material_position_view(position_view, || setup_inner(material, ctx, fog))
+            })
         })
     })
 }
@@ -1311,27 +1333,23 @@ fn setup_phong(
             .map(|light| light.index)
             .collect();
 
-        // `AmbientLightNode` sorts first in `LightsNode`'s list, and its
-        // `irradiance.addAssign()` is what forces `irradiance = vec3( 0 )` up
-        // here rather than down in the indirect tail. A hemisphere light or a
-        // probe adds to `irradiance` from inside the loop, so it needs the
-        // zero up here too — after the loop it would wipe what they added.
-        let irradiance_lights = lights.iter().any(|light| {
-            matches!(
-                light.kind,
-                LightKind::Ambient | LightKind::Hemisphere | LightKind::Probe
-            )
-        });
+        // No accumulator is zeroed explicitly. Each is a var with a `vec3( 0
+        // )` initialiser (`LightingContextNode.getContext()`'s `vec3().toVar(
+        // name )`), and an assign generates its target first, so the zero
+        // lands right above the statement that first touches it — as three
+        // has it, and only once (issue #281). That keeps the order the dumps
+        // show: `AmbientLightNode` sorts first in `LightsNode`'s list, so its
+        // `irradiance.addAssign()` puts `irradiance = vec3( 0 )` ahead of the
+        // loop; a hemisphere light or a probe adding to `irradiance` from
+        // inside the loop puts it there too, never after what they added;
+        // with none of them it lands in the indirect tail. `directDiffuse`
+        // lands in the first direct light, `directSpecular` after that
+        // light's diffuse term, and Lambert's `directSpecular` /
+        // `indirectSpecular` in `totalSpecular`'s line.
         if !ambient.is_empty() {
             phong::ambient_lights(&ambient, fragment);
-        } else if irradiance_lights {
-            fragment.push(irradiance().assign(vec3(0.0, 0.0, 0.0)));
         }
 
-        fragment.push(direct_diffuse().assign(vec3(0.0, 0.0, 0.0)));
-        if specular {
-            fragment.push(direct_specular().assign(vec3(0.0, 0.0, 0.0)));
-        }
         for light in &lights {
             if light.kind == LightKind::Ambient {
                 continue;
@@ -1363,10 +1381,6 @@ fn setup_phong(
         }
 
         // The tail every lit material shares.
-        fragment.push(indirect_diffuse().assign(vec3(0.0, 0.0, 0.0)));
-        if !irradiance_lights {
-            fragment.push(irradiance().assign(vec3(0.0, 0.0, 0.0)));
-        }
         fragment.push(
             indirect_diffuse().assign(
                 vec4_join(vec![indirect_diffuse(), float(1.0)])
@@ -1382,12 +1396,6 @@ fn setup_phong(
             material,
             direct_diffuse().add(indirect_diffuse()),
         )));
-        if !specular {
-            // Lambert reads both specular accumulators for the first time
-            // here, so this is where three declares them.
-            fragment.push(direct_specular().assign(vec3(0.0, 0.0, 0.0)));
-            fragment.push(indirect_specular().assign(vec3(0.0, 0.0, 0.0)));
-        }
         fragment.push(total_specular().assign(direct_specular().add(indirect_specular())));
         fragment.push(outgoing_light().assign(total_diffuse().add(total_specular())));
         outgoing_light()
@@ -1543,18 +1551,15 @@ fn setup_standard(
     // The `float()` matters when the node is wider than a float, as a bare
     // `texture( map )` is: `DiffuseContribution` then takes `1 - map.x` on
     // every channel, not `1 - map.rgb` (`webgpu_lights_selective`, §46).
-    let metalness_node = match (&material.metalness_node, &material.metalness_map) {
-        (Some(node), _) => node.to_float(),
-        // glTF packing: metalness in blue, roughness in green.
-        (None, Some(map)) => material_metalness().mul(texture(map).z()),
-        (None, None) => material_metalness(),
+    let metalness_node = match &material.metalness_node {
+        Some(node) => node.to_float(),
+        None => material_metalness_value(),
     };
     fragment.push(metalness().assign(metalness_node.clone()));
 
-    let roughness_node = match (&material.roughness_node, &material.roughness_map) {
-        (Some(node), _) => node.to_float(),
-        (None, Some(map)) => material_roughness().mul(texture(map).y()),
-        (None, None) => material_roughness(),
+    let roughness_node = match &material.roughness_node {
+        Some(node) => node.to_float(),
+        None => material_roughness_value(),
     };
     fragment.push(roughness().assign(physical::get_roughness(
         roughness_node,
@@ -1755,12 +1760,15 @@ fn setup_standard(
         // `LightingContextNode`'s five accumulators. three.js declares each at
         // the point of its first use; hoisting the zeros here is the one
         // reordering in this flow (see `docs/nodes.md` §8) and reads nothing
-        // before it is written either way.
-        fragment.push(direct_diffuse().assign(vec3(0.0, 0.0, 0.0)));
-        fragment.push(direct_specular().assign(vec3(0.0, 0.0, 0.0)));
-        fragment.push(irradiance().assign(vec3(0.0, 0.0, 0.0)));
-        fragment.push(indirect_diffuse().assign(vec3(0.0, 0.0, 0.0)));
-        fragment.push(indirect_specular().assign(vec3(0.0, 0.0, 0.0)));
+        // before it is written either way. Each is a var whose initialiser is
+        // the zero, so the var itself, as a statement, is the whole of it: an
+        // `assign( vec3( 0 ) )` would emit the initialiser and then the same
+        // zero again (issue #281).
+        fragment.push(direct_diffuse());
+        fragment.push(direct_specular());
+        fragment.push(irradiance());
+        fragment.push(indirect_diffuse());
+        fragment.push(indirect_specular());
 
         for light in &lights {
             physical::direct_light(
@@ -1784,7 +1792,11 @@ fn setup_standard(
         if has_ao {
             ao_lighting_node(fragment);
         }
-        model.indirect_specular(environment.is_some(), fragment);
+        model.indirect_specular(
+            environment.is_some(),
+            material.environment_specular,
+            fragment,
+        );
         model.ambient_occlusion(has_ao, fragment);
 
         // Transmission's own backdrop wins over `material.backdropNode`:

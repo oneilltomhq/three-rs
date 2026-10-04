@@ -433,6 +433,10 @@ mod webgpu_tsl_vfx_flames;
 #[allow(dead_code)]
 mod webgpu_tsl_raging_sea;
 
+#[path = "../../examples/webgpu_upscaling_taau.rs"]
+#[allow(dead_code)]
+mod webgpu_upscaling_taau;
+
 #[path = "../../examples/webgpu_volume_perlin.rs"]
 #[allow(dead_code)]
 mod webgpu_volume_perlin;
@@ -1586,6 +1590,57 @@ fn webgpu_postprocessing_retro() {
         webgpu_postprocessing_retro::animate,
         |app| app.renderer.device(),
     );
+}
+
+/// Littlest Tokyo drawn at half resolution and upsampled by `taau()`, then
+/// sharpened by RCAS.
+///
+/// Ignored: three.js itself scores 540 of 100000 pixels (0.5%) against its
+/// own `webgpu_upscaling_taau.jpg` on this machine, over the 0.1% limit, and
+/// the port scores 539. Against three's own frame here
+/// (`tools/dump-webgpu.mjs`' `actual_full.png`, 800×500) 25 pixels differ by
+/// more than 2 of 255 (max 12). See `docs/webgpu_upscaling_taau-progress.md`.
+#[test]
+#[ignore = "three.js itself fails its own reference for this page on this machine"]
+fn webgpu_upscaling_taau() {
+    let name = "webgpu_upscaling_taau";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_upscaling_taau::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_upscaling_taau::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    steady_frame(name, &mut app, webgpu_upscaling_taau::animate, |app| {
+        app.renderer.device()
+    });
 }
 
 /// Littlest Tokyo drawn at half resolution and upscaled by `fsr1()`.
@@ -6539,6 +6594,12 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_mirror);
     rung!(webgpu_refraction);
     rung!(webgpu_postprocessing_retro);
+    // Frame one resolves against TAAU's 1×1 previous-depth target, which is
+    // then resized to the pass's depth and copied into, as three's
+    // `updateBefore()` does. Frame two is the first to bind the resized
+    // texture, and makes its one view and the resolve's one bind group.
+    // Frame three must create nothing.
+    rung!(webgpu_upscaling_taau, 0, 2);
     rung!(webgpu_upscaling_fsr1);
     rung!(webgpu_backdrop);
     rung!(webgpu_oit);

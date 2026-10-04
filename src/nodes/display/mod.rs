@@ -53,6 +53,8 @@ mod ssr;
 mod sss;
 mod stereo_composite_pass;
 mod stereo_pass;
+mod taa_utils;
+mod taau;
 mod temporal_reproject;
 mod toon_outline_pass;
 mod traa;
@@ -107,6 +109,7 @@ pub use ssgi::{ssgi, SsgiNode};
 pub use ssr::{ssr, SampleFn, SsrNode, SsrOptions};
 pub use sss::{sss, SssNode};
 pub use stereo_pass::{stereo_pass, StereoPassNode};
+pub use taau::{taau, TaauNode};
 pub use temporal_reproject::{
     temporal_reproject, TemporalReprojectMode, TemporalReprojectNode, TemporalReprojectOptions,
 };
