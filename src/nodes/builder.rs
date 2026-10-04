@@ -195,7 +195,7 @@ pub struct AttributeSlot {
 
 /// A geometry attribute's place in its vertex buffer —
 /// `createShaderVertexBuffers()`'s per-attribute layout, from the
-/// [`AttributeDesc`](crate::core::AttributeDesc) the renderer handed over.
+/// [`AttributeDesc`] the renderer handed over.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct GeometrySlot {
     /// The attribute's name on the geometry.

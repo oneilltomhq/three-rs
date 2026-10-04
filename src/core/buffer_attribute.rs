@@ -1120,8 +1120,8 @@ impl BufferAttribute {
 
     /// `new Float16BufferAttribute( array, itemSize, normalized )` — `array`
     /// is binary16 bits, as three's `Uint16Array` is. Build it from floats
-    /// with [`to_half_float`](crate::extras::to_half_float), or with
-    /// [`set_x`](Self::set_x) and friends, which convert.
+    /// with [`to_half_float`], or with [`set_x`](Self::set_x) and friends,
+    /// which convert.
     pub fn float16(array: Vec<u16>, item_size: usize, normalized: bool) -> Self {
         Self::from_typed(TypedArray::F16(array), item_size, normalized)
     }
