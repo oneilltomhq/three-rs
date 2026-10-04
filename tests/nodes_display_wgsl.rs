@@ -701,6 +701,37 @@ fn ssr_resolve_matches_three() {
     check("ssr_resolve", Region::Body);
 }
 
+/// `tools/dump-pages/ssr_stochastic.html` A: the stochastic path — GGX
+/// sample, jittered march, edge fade toward the BRDF-sampled environment
+/// and the miss fallback.
+#[test]
+fn ssr_stochastic_matches_three() {
+    check("ssr_stochastic", Region::Body);
+}
+
+/// `computeScreenBorderFactor`, the stochastic path's edge fade, a `Fn`
+/// with a layout.
+#[test]
+fn ssr_screen_border_factor_matches_three() {
+    check(
+        "ssr_stochastic",
+        Region::Function("computeScreenBorderFactor"),
+    );
+}
+
+/// B: the page's `envImportanceSampling` and `binaryRefine`, `stepExponent
+/// = 3` and a history (multi-bounce reprojection).
+#[test]
+fn ssr_stochastic_refine_matches_three() {
+    check("ssr_stochastic_refine", Region::Body);
+}
+
+/// C: the mirror path with `reflectNonMetals` — no metalness discard.
+#[test]
+fn ssr_reflect_non_metals_matches_three() {
+    check("ssr_reflect_non_metals", Region::Body);
+}
+
 #[test]
 fn smaa_edges_matches_three() {
     check("smaa_edges", Region::Body);

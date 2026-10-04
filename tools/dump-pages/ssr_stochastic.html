@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three-rs dump page - SSRNode's stochastic path and reflectNonMetals as three SSR quads</title>
+		<meta charset="utf-8">
+	</head>
+	<body>
+		<!--
+			Not a three.js example: a minimal page for tools/dump-webgpu.mjs --html,
+			so the WGSL of SSRNode.js's stochastic (GGX-sampled) path can be dumped
+			and gated in tests/nodes_display_wgsl.rs. The page that uses it,
+			webgpu_postprocessing_ssr_denoise.html, loads a glTF dungeon and an
+			HDR file and feeds SSR into a temporal reprojection and a recurrent
+			denoiser; this page keeps its scene pass (the same MRT, with the
+			normal and diffuseColor attachments as UnsignedByteType) over a few
+			MeshStandardNodeMaterial boxes, and replaces the HDR file with an
+			8x4 float DataTexture equirect built here, used both as
+			scene.environment and as the SSR environmentNode.
+
+			Each SSR node draws its own SSRNode.SSR quad in updateBefore(), and
+			convertToTexture() wraps each node's output in an RTT quad of its own:
+
+			  A  ssr( color, depth, normal, { stochastic: true, diffuseNode,
+			     metalnessNode, roughnessNode, environmentNode,
+			     envImportanceSampling: false, binaryRefine: false } ) - the
+			     page's own options
+			  B  the same with envImportanceSampling: true, binaryRefine: true,
+			     stepExponent = 3 (the page's applyParams() value) and
+			     setHistory( A's render target texture, velocity ), standing in
+			     for the page's setHistory( denoiseNode, scenePassVelocity )
+			  C  stochastic: false, reflectNonMetals: true, with the same
+			     metalness and roughness (so it also draws the copy and the
+			     blur levels)
+
+			The RenderPipeline's output adds the three RTTs to the beauty pass;
+			that module, the RTT copies, the blur passes and the scene's own
+			materials are not gated.
+		-->
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "../build/three.webgpu.js",
+					"three/webgpu": "../build/three.webgpu.js",
+					"three/tsl": "../build/three.tsl.js",
+					"three/addons/": "./jsm/"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			import * as THREE from 'three/webgpu';
+			import { pass, mrt, output, normalView, materialMetalness, materialRoughness, sample, packNormalToRGB, unpackRGBToNormal, velocity, diffuseColor, vec4, convertToTexture } from 'three/tsl';
+			import { ssr } from 'three/addons/tsl/display/SSRNode.js';
+
+			const camera = new THREE.PerspectiveCamera( 35, window.innerWidth / window.innerHeight, 0.1, 8 );
+			camera.position.set( 0, 1.2, 3.5 );
+			camera.lookAt( 0, 0.3, 0 );
+
+			const scene = new THREE.Scene();
+
+			// 8x4 equirect HDR: a bright warm patch on a dim blue-grey sky.
+			const width = 8, height = 4;
+			const pixels = new Float32Array( width * height * 4 );
+			for ( let y = 0; y < height; y ++ ) {
+
+				for ( let x = 0; x < width; x ++ ) {
+
+					const i = 4 * ( y * width + x );
+					const hot = ( x === 2 && y === 2 ) ? 20 : 0;
+					pixels[ i + 0 ] = 0.2 + 0.05 * x + hot;
+					pixels[ i + 1 ] = 0.3 + 0.1 * y + hot * 0.8;
+					pixels[ i + 2 ] = 0.5 + hot * 0.4;
+					pixels[ i + 3 ] = 1;
+
+				}
+
+			}
+
+			const hdr = new THREE.DataTexture( pixels, width, height, THREE.RGBAFormat, THREE.FloatType );
+			hdr.mapping = THREE.EquirectangularReflectionMapping;
+			hdr.needsUpdate = true;
+			scene.environment = hdr;
+
+			const floor = new THREE.Mesh( new THREE.BoxGeometry( 4, 0.1, 4 ), new THREE.MeshStandardNodeMaterial( { color: 0x888888, metalness: 1, roughness: 0.2 } ) );
+			floor.position.y = - 0.05;
+			scene.add( floor );
+
+			const boxA = new THREE.Mesh( new THREE.BoxGeometry( 0.6, 0.6, 0.6 ), new THREE.MeshStandardNodeMaterial( { color: 0xff8844, metalness: 0, roughness: 0.5 } ) );
+			boxA.position.set( - 0.6, 0.3, 0 );
+			scene.add( boxA );
+
+			const boxB = new THREE.Mesh( new THREE.BoxGeometry( 0.5, 0.9, 0.5 ), new THREE.MeshStandardNodeMaterial( { color: 0x44aaff, metalness: 0.8, roughness: 0.3 } ) );
+			boxB.position.set( 0.6, 0.45, - 0.3 );
+			scene.add( boxB );
+
+			const light = new THREE.DirectionalLight( 0xffffff, 3 );
+			light.position.set( 2, 3, 2 );
+			scene.add( light );
+
+			const renderer = new THREE.WebGPURenderer();
+			renderer.setPixelRatio( window.devicePixelRatio );
+			renderer.setSize( window.innerWidth, window.innerHeight );
+			document.body.appendChild( renderer.domElement );
+
+			const scenePass = pass( scene, camera );
+			scenePass.setMRT( mrt( {
+				output: output,
+				diffuseColor: vec4( diffuseColor.rgb, materialMetalness ),
+				normal: vec4( packNormalToRGB( normalView ).rgb, materialRoughness ),
+				velocity: velocity
+			} ) );
+
+			const scenePassColor = scenePass.getTextureNode( 'output' );
+			const scenePassNormal = scenePass.getTextureNode( 'normal' );
+			const scenePassDepth = scenePass.getTextureNode( 'depth' );
+			const scenePassVelocity = scenePass.getTextureNode( 'velocity' );
+			const scenePassDiffuseColor = scenePass.getTextureNode( 'diffuseColor' );
+
+			scenePass.getTexture( 'normal' ).type = THREE.UnsignedByteType;
+			scenePass.getTexture( 'diffuseColor' ).type = THREE.UnsignedByteType;
+
+			const sceneNormal = sample( ( uv ) => unpackRGBToNormal( scenePassNormal.sample( uv ).rgb ) );
+
+			// A: the page's options.
+			const ssrA = ssr( scenePassColor, scenePassDepth, sceneNormal, {
+				stochastic: true,
+				diffuseNode: scenePassDiffuseColor,
+				metalnessNode: scenePassDiffuseColor.a,
+				roughnessNode: scenePassNormal.a,
+				environmentNode: hdr,
+				envImportanceSampling: false,
+				binaryRefine: false
+			} );
+
+			// B: importance sampling, binary refinement, stepExponent 3 and a history.
+			const ssrB = ssr( scenePassColor, scenePassDepth, sceneNormal, {
+				stochastic: true,
+				diffuseNode: scenePassDiffuseColor,
+				metalnessNode: scenePassDiffuseColor.a,
+				roughnessNode: scenePassNormal.a,
+				environmentNode: hdr,
+				envImportanceSampling: true,
+				binaryRefine: true
+			} );
+			ssrB.stepExponent = 3;
+			ssrB.setHistory( ssrA.getRenderTarget().texture, scenePassVelocity );
+
+			// C: the mirror path, reflecting dielectrics too.
+			const ssrC = ssr( scenePassColor, scenePassDepth, sceneNormal, {
+				stochastic: false,
+				reflectNonMetals: true,
+				metalnessNode: scenePassDiffuseColor.a,
+				roughnessNode: scenePassNormal.a
+			} );
+
+			const quadA = convertToTexture( ssrA );
+			const quadB = convertToTexture( ssrB );
+			const quadC = convertToTexture( ssrC );
+
+			const renderPipeline = new THREE.RenderPipeline( renderer );
+			renderPipeline.outputNode = scenePassColor.add( quadA ).add( quadB ).add( quadC );
+
+			renderer.setAnimationLoop( () => renderPipeline.render() );
+
+		</script>
+	</body>
+</html>
