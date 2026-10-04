@@ -727,6 +727,15 @@ fn setup_inner(
         // in three) then reads it, through `BasicLightingModel.indirect()`.
         let has_ao = setup_ambient_occlusion(material, ctx, &mut fragment);
         let basic_ao = has_ao && material.kind == MaterialKind::Basic && !ctx.lighting_disabled;
+        // Only `MeshBasicNodeMaterial.setupEnvironment()` wraps the env map in
+        // a `BasicEnvironmentNode`. `SpriteNodeMaterial`, `PointsNodeMaterial`
+        // and `Line2NodeMaterial` also reach this flow but override no
+        // `setupEnvironment()`, and `NodeMaterial.lights` is false for them,
+        // so three never samples their `envMap` (#253).
+        let basic_env_map = material
+            .env_map
+            .as_ref()
+            .filter(|_| material.kind == MaterialKind::Basic);
 
         // `NodeMaterial.setupLighting()` for a material with no lighting model
         // of its own: `lights = this.lights || this.lightsNode !== null`, and
@@ -756,7 +765,7 @@ fn setup_inner(
                 &|base| backdrop_blend(material, base),
                 &mut fragment,
             )
-        } else if material.env_map.is_some()
+        } else if basic_env_map.is_some()
             || basic_ao
             || (material.backdrop_node.is_some() && basic_lit)
         {
@@ -787,7 +796,7 @@ fn setup_inner(
             // `MeshBasicNodeMaterial.setupEnvironment()` →
             // `BasicEnvironmentNode( cubeTexture( envMap ) )`, sampled along the
             // reflect vector and blended in by `reflectivity`.
-            if let Some(env_map) = &material.env_map {
+            if let Some(env_map) = basic_env_map {
                 let dir =
                     material_env_rotation().mul(vec4_join(vec![reflect_vector(), float(1.0)]));
                 let env = cube_texture(env_map, dir);
@@ -2026,5 +2035,57 @@ mod tests {
         // fresh node allocated after `ao` was dropped can reuse it.
         assert_ne!(with, hasher.hash_one(lit(Some(ao_context()))));
         drop(ao);
+    }
+    /// A plain `envMap` is sampled only by `MeshBasicNodeMaterial`: Sprite,
+    /// Points and Line2 reach the same unlit flow but three never wraps their
+    /// `envMap` in a `BasicEnvironmentNode`, so with `env_map` set they bind
+    /// no cube texture and sample nothing along the reflect vector (#253).
+    #[test]
+    fn env_map_is_sampled_by_basic_only() {
+        use crate::nodes::builder::BindingDesc;
+        use crate::nodes::node::TextureSource;
+        use crate::textures::{CubeTexture, Image};
+        let cube = CubeTexture::new(
+            (0..6)
+                .map(|_| Image::rgba8(1, 1, vec![255, 255, 255, 255]))
+                .collect(),
+        );
+        let binds_cube = |material: &MeshBasicNodeMaterial| {
+            let program =
+                NodeBuilder::new().build(&setup(material, &SetupContext::default(), None));
+            let bound = program.groups.iter().flatten().any(|binding| {
+                matches!(
+                    binding,
+                    BindingDesc::Texture {
+                        source: TextureSource::Cube(_),
+                        ..
+                    }
+                )
+            });
+            (bound, program.fragment_wgsl)
+        };
+
+        let mut basic = MeshBasicNodeMaterial::new();
+        basic.env_map = Some(cube.clone());
+        let (bound, wgsl) = binds_cube(&basic);
+        assert!(bound && wgsl.contains("texture_cube"), "{wgsl}");
+
+        for mut material in [
+            MeshBasicNodeMaterial::sprite(),
+            MeshBasicNodeMaterial::points(),
+            MeshBasicNodeMaterial::line2(Color::from_hex(0xffffff)),
+        ] {
+            material.env_map = Some(cube.clone());
+            let kind = material.kind;
+            let (bound, wgsl) = binds_cube(&material);
+            assert!(!bound, "{kind:?} binds the env map");
+            assert!(!wgsl.contains("texture_cube"), "{kind:?}:\n{wgsl}");
+            assert!(!wgsl.contains("Reflectivity"), "{kind:?}:\n{wgsl}");
+            // Still warned about, as before.
+            assert_eq!(material.unsupported_fields(), ["envMap"]);
+            // The same program as with no env map at all.
+            material.env_map = None;
+            assert_eq!(wgsl, binds_cube(&material).1, "{kind:?}");
+        }
     }
 }

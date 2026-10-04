@@ -714,6 +714,11 @@ have their own sections after the release they ship with. The format follows [Ke
 - A background that is an inline `Fn()` call is built inside the skybox
   material, as three builds every `Fn` body. So `normalWorld` in it is the
   back-side normal.
+- A Sprite, Points or Line2 material with `env_map` set no longer samples
+  it (#253). Only `MeshBasicNodeMaterial.setupEnvironment()` wraps the env
+  map in a `BasicEnvironmentNode` in three; the port's unlit flow sampled it
+  for every kind that reached it, while `unsupported_fields()` warned that
+  those kinds ignore it. The warning stays; the sample is gone.
 
 ## [0.2.0] - 2026-09-29
 
