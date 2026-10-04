@@ -2,7 +2,7 @@
 //! `examples/jsm/controls/TransformControls.js` itself.
 //!
 //! `tools/transform_controls_reference.mjs` runs the JS class under node
-//! through seventeen scripted scenarios and writes each one's setup, actions
+//! through eighteen scripted scenarios and writes each one's setup, actions
 //! and results to `tests/fixtures/transform_controls.json`: after every
 //! step, the events dispatched, the object's transform, `axis`, `mode`,
 //! `dragging`, `rotationAngle`, which handles of the current mode are visible
@@ -23,11 +23,13 @@
 //!
 //! - The `console.error` for an attached object with no parent (three then
 //!   throws in `pointerDown`, so it cannot be scripted past).
-//! - `pointerMove` with no plane hit: the plane is 100 000 units wide and
-//!   double-sided, so every scripted ray hits it.
-//! - Rotating with an `axis` left over from another mode (an `XY` hovered in
-//!   translate, then `setMode('rotate')` and a drag), which neither sets the
-//!   angle nor the axis.
+//!
+//! Two that look unreachable are scripted: `pointerMove` with no plane hit
+//! (`translate_world`, a ray above the horizon mid-way through an `XZ` drag,
+//! when the plane is horizontal and finite), and rotating with an `axis` left
+//! over from translate (`rotate_stale_axis`, an `XY` hovered there, then
+//! `setMode('rotate')` and a drag, which applies the stale `rotationAxis` and
+//! `rotationAngle`).
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -501,10 +503,32 @@ fn replay(
     }
 }
 
+/// A scenario's perspective camera, placed as three placed it.
+fn perspective_camera(setup: &Value) -> PerspectiveCamera {
+    let c = &setup["camera"];
+    let element = nums(&setup["element"]);
+    let p = nums(&c["position"]);
+    let q = nums(&c["quaternion"]);
+    let mut camera = PerspectiveCamera::new(
+        num(&c["fov"]),
+        element[0] / element[1],
+        num(&c["near"]),
+        num(&c["far"]),
+    );
+    camera.zoom = num(&c["zoom"]);
+    camera.update_projection_matrix();
+    {
+        let mut o = camera.node.borrow_mut();
+        o.position = Vector3::new(p[0], p[1], p[2]);
+        o.quaternion = Quaternion::new(q[0], q[1], q[2], q[3]);
+    }
+    camera.update_matrix_world();
+    camera
+}
+
 fn run_scenario(scenario: &Value, origin: &str, failures: &mut Vec<String>) {
     let setup = &scenario["setup"];
     let c = &setup["camera"];
-    let element = nums(&setup["element"]);
     let p = nums(&c["position"]);
     let q = nums(&c["quaternion"]);
     let (position, quaternion) = (
@@ -513,20 +537,7 @@ fn run_scenario(scenario: &Value, origin: &str, failures: &mut Vec<String>) {
     );
     match c["type"].as_str() {
         Some("perspective") => {
-            let mut camera = PerspectiveCamera::new(
-                num(&c["fov"]),
-                element[0] / element[1],
-                num(&c["near"]),
-                num(&c["far"]),
-            );
-            camera.zoom = num(&c["zoom"]);
-            camera.update_projection_matrix();
-            {
-                let mut o = camera.node.borrow_mut();
-                o.position = position;
-                o.quaternion = quaternion;
-            }
-            camera.update_matrix_world();
+            let mut camera = perspective_camera(setup);
             replay(scenario, &mut camera, origin, failures);
         }
         Some("orthographic") => {
@@ -557,7 +568,7 @@ fn assert_matches(origin: &str, reference: &Value) {
     let scenarios = reference["scenarios"].as_array().expect("scenarios");
     assert_eq!(
         scenarios.len(),
-        17,
+        18,
         "{origin} has {} scenarios",
         scenarios.len()
     );
@@ -733,11 +744,7 @@ fn the_gizmo_graph_is_three_js_graph() {
         check.equal("name", want["name"].as_str(), Some(n.name.as_str()));
         // Three tags exactly the helper groups' handles `'helper'`; the port
         // keeps the tag with the handle, from the same maps.
-        check.equal(
-            "tag",
-            want["tag"].as_str(),
-            group.starts_with("helper").then_some("helper"),
-        );
+        check.equal("tag", Some(want["tag"].as_str()), controls.handle_tag(node));
         check.equal(
             "renderOrder",
             want["renderOrder"].as_str(),
@@ -851,6 +858,76 @@ fn compare_geometry(check: &mut Check, want: &Value, object: &Object3D) {
             ));
         }
     }
+}
+
+/// `translate_world` replayed through its first drag's first move: an `X`
+/// drag in progress, with the object already moved.
+fn mid_drag() -> (World, PerspectiveCamera, Vec<Value>) {
+    let reference = committed();
+    let scenario = reference["scenarios"]
+        .as_array()
+        .expect("scenarios")
+        .iter()
+        .find(|s| s["name"] == "translate_world")
+        .expect("the translate_world scenario")
+        .clone();
+    let mut camera = perspective_camera(&scenario["setup"]);
+    let mut world = World::new(&scenario["setup"]);
+    world.render(&mut camera);
+    let steps = scenario["steps"].as_array().expect("steps").clone();
+    let down = steps
+        .iter()
+        .position(|s| s["do"]["op"] == "down")
+        .expect("a down");
+    for step in &steps[..=down + 1] {
+        world.act(&step["do"], &mut camera);
+        world.render(&mut camera);
+    }
+    assert!(world.controls.dragging(), "the drag is in progress");
+    (world, camera, steps[down + 2..].to_vec())
+}
+
+/// `reset()` after `detach()` mid-drag, where three throws on
+/// `this.object.position` before dispatching anything: the port sends
+/// nothing and changes nothing, `pointStart` included.
+#[test]
+fn reset_after_detach_mid_drag_does_nothing() {
+    let (mut world, _camera, _) = mid_drag();
+    let moved = world.object.borrow().position;
+    let point_start = world.controls.point_start();
+    assert_ne!(
+        point_start,
+        world.controls.point_end(),
+        "the drag has moved"
+    );
+    world.controls.detach();
+    assert!(
+        world.controls.dragging(),
+        "detach() leaves dragging, as in three"
+    );
+    assert_eq!(world.controls.reset(), Vec::new(), "reset() events");
+    assert_eq!(world.object.borrow().position, moved, "the object moved");
+    assert_eq!(world.controls.point_start(), point_start, "pointStart");
+}
+
+/// `disconnect()` removes the drag listener: a later move neither moves the
+/// object nor sends `objectChange`, and, as three's `disconnect()` touches no
+/// state, the drag stays `dragging` with its `axis` until an up.
+#[test]
+fn disconnect_stops_a_drag_from_outside() {
+    let (mut world, mut camera, rest) = mid_drag();
+    let next = rest
+        .iter()
+        .find(|s| s["do"]["op"] == "move")
+        .expect("another move");
+    let moved = world.object.borrow().position;
+    let axis = world.controls.axis();
+    world.controls.disconnect();
+    let events = world.act(&next["do"], &mut camera).expect("events");
+    assert_eq!(events, Vec::<String>::new(), "events after disconnect()");
+    assert_eq!(world.object.borrow().position, moved, "the object moved");
+    assert!(world.controls.dragging(), "dragging after disconnect()");
+    assert_eq!(world.controls.axis(), axis, "axis after disconnect()");
 }
 
 #[test]

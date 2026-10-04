@@ -1120,8 +1120,12 @@ fn set_property<T: PartialEq>(
 ///
 /// # What is left out, and what differs
 ///
-/// - `connect()`, `disconnect()`, `dispose()`, `setPointerCapture` and
-///   `touchAction` are listener and DOM bookkeeping.
+/// - No listeners: `connect()`, `dispose()`, `setPointerCapture` and
+///   `touchAction` are listener and DOM bookkeeping, and are left out.
+///   [`disconnect`](Self::disconnect) is kept for the one listener whose
+///   removal the port can see, the drag one: it stops moves from dragging, so
+///   a host can end a drag from outside. As in three, it leaves `dragging`
+///   and `axis` as they are.
 /// - `getRaycaster()` returns this instance's raycaster. Three's is one
 ///   module-level `Raycaster` all instances share.
 /// - Three shares one material between handles (one `matInvisible` for every
@@ -1140,6 +1144,9 @@ fn set_property<T: PartialEq>(
 ///   and so does this; three's `pointerDown` then throws on
 ///   `object.parent.updateMatrixWorld()`, where this skips the call.
 /// - `setColors()` takes [`Color`]s, not any `Color.set()` argument.
+/// - [`reset`](Self::reset) after [`detach`](Self::detach) mid-drag: three
+///   throws on `this.object.position` before dispatching anything; this
+///   returns no events and changes nothing, `pointStart` included.
 #[derive(Debug)]
 pub struct TransformControls {
     /// `enabled`. Off, the handlers and [`reset`](Self::reset) do nothing and
@@ -1347,6 +1354,26 @@ impl TransformControls {
         &mut self.raycaster
     }
 
+    /// The `tag` three gives the handle `node`: `Some(Some("helper"))` for a
+    /// helper group's handle, `Some(None)` for any other handle (three's
+    /// `undefined`), and `None` if `node` is not one of the gizmo's handles.
+    ///
+    /// A test hook, so the graph test can hold the port's tags to three's;
+    /// the port keeps the tag beside the handle rather than on the
+    /// [`Node`], and nothing outside reads it.
+    #[doc(hidden)]
+    pub fn handle_tag(&self, node: &Node) -> Option<Option<&'static str>> {
+        let gizmo = &self.gizmo;
+        gizmo
+            .gizmo
+            .iter()
+            .chain(&gizmo.picker)
+            .chain(&gizmo.helper)
+            .flat_map(|group| &group.handles)
+            .find(|handle| Node::ptr_eq(&handle.node, node))
+            .map(|handle| handle.helper.then_some("helper"))
+    }
+
     /// `object`: the attached object.
     pub fn object(&self) -> Option<&Node> {
         self.object.as_ref()
@@ -1479,23 +1506,28 @@ impl TransformControls {
     }
 
     /// `reset()`: mid-drag, put the object back where the drag began.
+    ///
+    /// After [`detach`](Self::detach) mid-drag, `dragging` is still `true`
+    /// and three throws on `this.object.position` before dispatching
+    /// anything; this returns no events and changes nothing.
     pub fn reset(&mut self) -> Vec<TransformControlsEvent> {
         let mut events = Vec::new();
-        if !self.enabled {
+        if !self.enabled || !self.dragging {
             return events;
         }
-        if self.dragging {
-            if let Some(object) = &self.object {
-                let mut o = object.borrow_mut();
-                o.position = self.position_start;
-                o.quaternion = self.quaternion_start;
-                o.sync_rotation_from_quaternion();
-                o.scale = self.scale_start;
-            }
-            events.push(TransformControlsEvent::Change);
-            events.push(TransformControlsEvent::ObjectChange);
-            self.point_start = self.point_end;
+        let Some(object) = &self.object else {
+            return events;
+        };
+        {
+            let mut o = object.borrow_mut();
+            o.position = self.position_start;
+            o.quaternion = self.quaternion_start;
+            o.sync_rotation_from_quaternion();
+            o.scale = self.scale_start;
         }
+        events.push(TransformControlsEvent::Change);
+        events.push(TransformControlsEvent::ObjectChange);
+        self.point_start = self.point_end;
         events
     }
 
@@ -1637,6 +1669,19 @@ impl TransformControls {
             events.extend(self.pointer_move(Some(&pointer), camera));
         }
         events
+    }
+
+    /// `disconnect()`: drop the drag listener, so that
+    /// [`on_pointer_move`](Self::on_pointer_move) only hovers until the next
+    /// [`on_pointer_down`](Self::on_pointer_down).
+    ///
+    /// Three's `disconnect()` removes all four listeners and touches no
+    /// state: a drag in progress keeps `dragging` and `axis` (and sends no
+    /// `mouseUp`) until a later `pointerUp`. The other three listeners are the
+    /// host's own calls here, so stopping them is the host's; what this
+    /// mirrors is that a move after `disconnect()` no longer drags.
+    pub fn disconnect(&mut self) {
+        self.moving = false;
     }
 
     /// The `pointerup` handler.

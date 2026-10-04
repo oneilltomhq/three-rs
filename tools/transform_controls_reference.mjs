@@ -311,6 +311,7 @@ async function scenario( name, setup, body ) {
 
 	const t = {
 		controls,
+		steps,
 		// Element pixels of the first of `candidates`, points in the space
 		// of the picker handle called `name`, at which a hover would pick
 		// that handle; so a scripted drag starts on the handle it names.
@@ -501,7 +502,20 @@ scenarios.push( await scenario( 'translate_world', {}, ( t ) => {
 	t.drag( t.at( 'Z', [ 0, 0, 0.45 ] ), [ [ - 25, 30 ] ] );
 	t.drag( t.at( 'XY', ...XY ), [ [ 15, - 12 ], [ 40, 25 ] ] );
 	t.drag( t.at( 'YZ', ...YZ ), [ [ - 20, - 15 ] ] );
-	t.drag( t.at( 'XZ', ...XZ ), [ [ 35, 20 ] ] );
+	// Mid-drag, a ray above the horizon: the plane is horizontal and finite,
+	// so pointerMove finds no hit and returns before any event or movement.
+	const xz = t.at( 'XZ', ...XZ );
+	t.move( xz );
+	t.down( xz );
+	t.move( [ xz[ 0 ] + 35, xz[ 1 ] + 20 ] );
+	const above = new THREE.Raycaster();
+	above.setFromCamera( new THREE.Vector2( 0, 5 ), t.controls.camera );
+	if ( above.intersectObject( t.controls._plane, true ).length !== 0 ) throw new Error( 'the ray above the horizon hits the plane' );
+	const before = v3( t.controls.object.position );
+	t.api( 'move', { x: 0, y: 5, button: - 1 } );
+	if ( t.steps.at( - 1 ).events.length !== 0 || v3( t.controls.object.position ).some( ( v, i ) => v !== before[ i ] ) ) throw new Error( 'a missed plane moved the object or sent events' );
+	t.move( [ xz[ 0 ] + 45, xz[ 1 ] + 28 ] );
+	t.up( [ xz[ 0 ] + 45, xz[ 1 ] + 28 ] );
 	t.drag( t.at( 'XYZ', [ 0, 0, 0 ] ), [ [ - 25, - 30 ] ] );
 
 } ) );
@@ -592,6 +606,26 @@ scenarios.push( await scenario( 'rotate_local', { object: turned, objectParent: 
 	t.drag( t.at( 'XYZE', [ 0, 0, 0 ] ), [ [ - 20, 25 ] ] );
 	t.set( 'space', 'world' );
 	t.drag( t.at( 'Z', ...ringZ ), [ [ 15, 20 ] ] );
+
+} ) );
+
+// An axis left over from translate: `XY` hovered there, then setMode('rotate')
+// and a drag. No rotate branch matches `XY`, so the drag applies whatever
+// rotationAxis and rotationAngle the last rotate drag left, and in world space
+// turns rotationAxis by the parent's inverse again on every move.
+scenarios.push( await scenario( 'rotate_stale_axis', { object: turned, objectParent: parent }, ( t ) => {
+
+	t.set( 'mode', 'rotate' );
+	t.render();
+	t.drag( t.at( 'Y', ...ringY ), [ [ - 25, 12 ] ] );
+	t.set( 'mode', 'translate' );
+	t.move( t.at( 'XY', ...XY ) );
+	t.set( 'mode', 'rotate' );
+	if ( t.controls.axis !== 'XY' ) throw new Error( `expected a stale XY axis, got ${ t.controls.axis }` );
+	t.api( 'down', null );
+	t.api( 'move', { x: 0.1, y: 0.05, button: - 1 }, { full: true } );
+	t.api( 'move', { x: 0.15, y: 0.1, button: - 1 }, { full: true } );
+	t.api( 'up', null );
 
 } ) );
 

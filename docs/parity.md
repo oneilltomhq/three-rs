@@ -1,6 +1,6 @@
 # three.js → three-rs parity
 
-This matrix judges every exported name in three.js revision 5f610f5 (r187) — `src/`, the TSL exports and `examples/jsm` addons, 1315 rows — against three-rs `main` at 22d8630. A row counts as **Present** only when a QUnit port, a bit-exact oracle (the WGSL gates that diff generated shaders against three's own dumps count) or a graded e2e example verifies it, **Partial** when it exists but has a named gap or its only check is an ungraded example (a TSL function called by material or renderer code that graded examples render counts as verified), **Absent** when there is no definition (a name in a comment or TODO counts as Absent), and **N.A.** when it cannot apply to a native WebGPU port; coverage percentages leave N.A. rows out.
+This matrix judges every exported name in three.js revision 5f610f5 (r187) — `src/`, the TSL exports and `examples/jsm` addons, 1317 rows — against three-rs `main` at 22d8630. A row counts as **Present** only when a QUnit port, a bit-exact oracle (the WGSL gates that diff generated shaders against three's own dumps count) or a graded e2e example verifies it, **Partial** when it exists but has a named gap or its only check is an ungraded example (a TSL function called by material or renderer code that graded examples render counts as verified), **Absent** when there is no definition (a name in a comment or TODO counts as Absent), and **N.A.** when it cannot apply to a native WebGPU port; coverage percentages leave N.A. rows out.
 
 ## Summary
 
@@ -23,11 +23,11 @@ This matrix judges every exported name in three.js revision 5f610f5 (r187) — `
 | renderers | 39 | 9 | 9 | 3 | 18 | 43% |
 | nodes | 141 | 91 | 28 | 17 | 5 | 67% |
 | tsl | 683 | 407 | 40 | 217 | 19 | 61% |
-| addons/controls | 9 | 1 | 4 | 4 | 0 | 11% |
+| addons/controls | 11 | 1 | 6 | 4 | 0 | 9% |
 | addons/loaders | 71 | 6 | 2 | 63 | 0 | 8% |
 | addons/postprocessing | 30 | 0 | 0 | 0 | 30 | — |
 | addons/other | 102 | 11 | 4 | 64 | 23 | 14% |
-| **total** | **1315** | **652** | **124** | **422** | **117** | **54%** |
+| **total** | **1317** | **652** | **126** | **422** | **117** | **54%** |
 
 TSL by family:
 
@@ -580,7 +580,7 @@ Graded examples: 85 (the README gallery plus `webgpu_textures_2d-array_compresse
 
 ## addons/controls
 
-9 rows: 1 Present, 4 Partial, 4 Absent, 0 N.A.
+11 rows: 1 Present, 6 Partial, 4 Absent, 0 N.A.
 
 | three.js name | verdict | three-rs symbol | verified by | note |
 |---|---|---|---|---|
@@ -592,7 +592,9 @@ Graded examples: 85 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `OrbitControls` | Partial | addons::controls::OrbitControls (src/addons/controls/orbit_controls.rs:209) | tests/addons_orbit_controls.rs; webgpu_loader_gltf et al. | no touch gestures, no OrthographicCamera branch, no change/start/end events |
 | `PointerLockControls` | Absent | — | — |  |
 | `TrackballControls` | Absent | — | — |  |
-| `TransformControls` | Partial | addons::controls::TransformControls (src/addons/controls/transform_controls.rs:1144) | tests/addons_transform_controls.rs (three's class under node, 17 scenarios, 1e-9; gizmo graph compared node for node) | drag math and gizmo/picker/helper graph match three; `toneMapped: false` dropped (no tone-mapping switch on the port's materials); `enabled`, `show*`, `min*`/`max*` are plain fields that dispatch no `-changed`/`change`; events returned as values, DOM listeners replaced by input methods, the host calls update(camera) where three's renderer runs the helper's updateMatrixWorld; see docs/controls.md |
+| `TransformControls` | Partial | addons::controls::TransformControls (src/addons/controls/transform_controls.rs:1151) | tests/addons_transform_controls.rs (three's class under node, 18 scenarios, 1e-9; gizmo graph compared node for node) | drag math and gizmo/picker/helper graph match three; `toneMapped: false` dropped (no tone-mapping switch on the port's materials); `enabled`, `show*`, `min*`/`max*` are plain fields that dispatch no `-changed`/`change`; events returned as values, DOM listeners replaced by input methods, the host calls update(camera) where three's renderer runs the helper's updateMatrixWorld; see docs/controls.md |
+| `TransformControlsGizmo` | Partial | built by addons::controls::TransformControls, the first child of get_helper() (private `Gizmo`, src/addons/controls/transform_controls.rs:502) | tests/addons_transform_controls.rs (the_gizmo_graph_is_three_js_graph: groups and handles node for node; per-frame placement, visibility and highlight in the 18 scenarios) | not a public type; its updateMatrixWorld override is part of TransformControls::update(camera); `toneMapped: false` dropped (no tone-mapping switch on the port's materials) |
+| `TransformControlsPlane` | Partial | built by addons::controls::TransformControls, the second child of get_helper() (src/addons/controls/transform_controls.rs:1273) | tests/addons_transform_controls.rs (the_gizmo_graph_is_three_js_graph for its material and geometry; its orientation after every scenario step, its world matrix on marked steps) | not a public type; its updateMatrixWorld override is part of TransformControls::update(camera); `toneMapped: false` dropped |
 
 ## addons/loaders
 

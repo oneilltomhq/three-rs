@@ -108,6 +108,7 @@ scale rounded to 0 back into the snap, and the substring tests on axis names.
 | `new TransformControls( camera, el )` | `TransformControls::new()` plus `set_element_size(w, h)` |
 | `getHelper()` | `get_helper() -> &Node` |
 | `attach( object )` / `detach()` / `reset()` | the same, each returning its events |
+| `disconnect()` | `disconnect()`: stops moves from dragging |
 | `setMode` / `setSpace` / `setSize` / `setTranslationSnap` / `setRotationSnap` / `setScaleSnap` | `set_mode(Mode)`, `set_space(Space)`, `set_size`, `set_*_snap(Option<f64>)` |
 | `setColors( x, y, z, active )` | `set_colors(Color, Color, Color, Color)` |
 | `getRaycaster()` | `get_raycaster()` |
@@ -149,9 +150,24 @@ Differences, all in the struct's doc comment:
   port gives every handle its own. Picker colours differ, but pickers are
   never drawn.
 - **Per-instance working state.** The module-level `_dirVector` and raycaster
-  belong to each instance.
-- **No listeners.** `connect()`, `disconnect()`, `dispose()` and pointer
-  capture are the host's.
+  belong to each instance, so `get_raycaster()` returns this instance's
+  raycaster where three's `getRaycaster()` returns the one all instances
+  share.
+- **No `camera` property.** The methods that read the camera take it as an
+  argument, so there is no `camera` field and no `camera-changed` event.
+- **`set_colors` takes `Color`s**, not any argument `Color.set()` accepts.
+- **An object with no parent.** Three's root override logs a
+  `console.error` and carries on, and so does the port; three's
+  `pointerDown` then throws on `object.parent.updateMatrixWorld()`, where the
+  port skips that call.
+- **`reset()` after `detach()` mid-drag.** `dragging` is still true, so three
+  throws on `this.object.position` before dispatching anything; the port
+  returns no events and changes nothing.
+- **No listeners.** `connect()`, `dispose()` and pointer capture are the
+  host's: it decides which `on_pointer_*` calls to make. `disconnect()` is
+  kept for the one removal the port can see, the drag listener's: after it,
+  `on_pointer_move` no longer drags, so a host can stop a drag from outside.
+  As in three, `dragging` and `axis` stay as they are until the next up.
 
 ## The gate
 
