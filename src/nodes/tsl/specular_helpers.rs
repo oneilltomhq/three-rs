@@ -84,7 +84,7 @@ fn sample_ggx_vndf_body(args: &[NodeRef]) -> NodeRef {
     );
     let b = to_var(None, wi_std.z().mul(k.clone()));
     // Sample the bounded spherical cap.
-    let phi = to_var(None, float(6.283185307179586).mul(r1));
+    let phi = to_var(None, float(std::f64::consts::TAU).mul(r1));
     let z = to_var(
         None,
         r2.one_minus().mul(float(1.0).add(b.clone())).sub(b.clone()),
