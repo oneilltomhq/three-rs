@@ -372,6 +372,35 @@ fn michelle_material() {
     assert_eq!(specular.color_space(), ColorSpace::Srgb);
 }
 
+/// `coffeeMug.glb`'s one material carries `KHR_materials_unlit`, so
+/// `GLTFMaterialsUnlitExtension` makes it a `MeshBasicMaterial`: its
+/// `baseColorTexture` is an sRGB `map`, `doubleSided` is kept, and its
+/// `metallicFactor` / `roughnessFactor` are not read.
+#[test]
+fn coffee_mug_unlit_material() {
+    use three_rs::materials::{MaterialKind, Side};
+    use three_rs::math::ColorSpace;
+
+    let gltf = GltfLoader::load(models().join("coffeeMug.glb")).unwrap();
+
+    let node = gltf.primitives[0].node.borrow();
+    let mesh = node.mesh().expect("the mug is a mesh");
+    let material = mesh.material.as_ref().expect("the mug has a material");
+
+    assert_eq!(material.kind, MaterialKind::Basic);
+    assert_eq!(material.side, Side::Double);
+    assert_eq!(material.opacity, 1.0);
+    assert!(!material.transparent);
+    assert_eq!(
+        (material.color.r, material.color.g, material.color.b),
+        (1.0, 1.0, 1.0)
+    );
+    let map = material.map.as_ref().expect("baseColorTexture");
+    assert_eq!(map.color_space(), ColorSpace::Srgb);
+    assert!(material.normal_map.is_none());
+    assert!(material.metalness_map.is_none());
+}
+
 /// An extension in `extensionsRequired` that the port does not read is an
 /// error. three.js only warns (`'Unknown extension'`) and decodes nothing:
 /// before Draco was ported, `IridescentDishWithOlives.glb` loaded

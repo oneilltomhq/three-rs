@@ -6331,7 +6331,7 @@ things that are not nodes:
 - Changing `focusDistance`, `focalLength` or `bokehScale` from a GUI. They
   are ordinary uniforms, so a host can set them, but no page here does.
 
-Sections 77, 79 and 80 are reserved for the ports on sibling branches. They are numbered as those branches land.
+Section 77 is reserved for a port on a sibling branch. It is numbered as that branch lands.
 
 ## 67. TSL sweep 2: the accessors batch
 
@@ -7527,6 +7527,210 @@ parameters are called `v1` and `v2`. The two renamings now share
 The `ltc` probe evaluates the quad `( ±1, ±1, 2 )` with
 `mInv = mat3( modelWorldMatrix )`. The matrix only needs to be some mat3 that
 three cannot fold into a constant.
+
+## 79. `RetroPassNode`, `CRT.js`, `Shape.js` and `bayerDither` (`webgpu_postprocessing_retro`)
+
+### 79.1 What three does
+
+`retroPass( scene, camera, { affineDistortion, filterTextures } )` is a
+`PassNode.COLOR` subclass. The constructor calls `setResolutionScale( .25 )`
+and sets `NearestFilter` on both sides of the target. It also sets the target
+to `UnsignedByteType`, but `PassNode.setup()` overwrites that with the
+renderer's output type, so the dump binds an `rgba16float` texture.
+
+**The render-object function.** `updateBefore()` swaps the renderer's
+render-object function for the length of `super.updateBefore()`, then puts
+the old one back. For each draw, the function derives a retro material from
+the draw's own, cached on the source's `version`:
+
+- The retro material is a `MeshBasicNodeMaterial` for a basic source and a
+  `MeshPhongNodeMaterial` for anything else.
+- Its `vertexNode` is the module-level `_clipSpaceRetro`. That node computes
+  the clip position, snaps `xy / 2w` to the `screenSize` grid, and writes two
+  varyings, `_affineUv = uv() · w` and `_w = w`.
+- Its `colorNode` is the source's, or `materialColor`. A standard source with
+  an `envMap` (or `scene.environment`) mixes in a `CubeMapNode` reflection by
+  metalness.
+- Its `contextNode` is a `context( { getUV, getTextureLevel } )`.
+  - `getUV` exists only with `affineDistortion`. It returns
+    `affineDistortion.mix( uv(), _affineUv / _w )`, or `reflectVector` for a
+    cube texture.
+  - `getTextureLevel` returns `uint( 0 )` unless `filterTextures` is set.
+  - `TextureNode.setup()` asks both keys when its uv or level is unset.
+- Last, `for ( const property in material )` copies every property of the
+  source that the retro material also has. A classic material
+  (`GLTFLoader`'s, say) has none of `NodeMaterial`'s slots, so the retro
+  nodes stay. A node material has all of them, null ones included, so it
+  overwrites them and is drawn as itself, as a basic or Phong material.
+
+On the page, three's dump shows the effect of that copy. The mug
+(`coffeeMug.glb`, a `KHR_materials_unlit` material, so a `MeshBasicMaterial`)
+is snapped and sampled at level 0 (`m03`/`m04`). The smoke, a
+`MeshBasicNodeMaterial`, is neither (`m05`/`m06`).
+
+**The pass's texture.** It is a `PassTextureNode`. Its uv comes from
+`builder.context.getUV` when there is one, which is what
+`replaceDefaultUV( barrelUV( curvature ), retroPass )` relies on. It is
+nearest-filtered, so the tap is a `textureLoad`.
+
+**The CRT stack.** `CRT.js` has `barrelUV`, `barrelMask`, `colorBleeding`,
+`scanlines` and `vignette`. `Shape.js` has `circle`. `Bayer.js` has
+`bayerDither`. Every one is a `Fn()` with no layout, so it is inlined.
+`colorBleeding` calls `convertToTexture( color )` and makes three taps of the
+result. The page chains:
+
+1. `colorBleeding( replaceDefaultUV( barrelUV( curvature ), retroPass ),
+   amount )`
+2. `bayerDither`
+3. `posterize`
+4. `vignette`
+5. `scanlines`
+
+The bleed `amount` grows toward the screen's edge through `circle()`.
+
+**The sky.** The page's background is an inline `Fn` of `normalWorld`.
+Three runs every `Fn` body inside the material that uses it, and the
+background's material is `BackSide`. So `normalWorld` there is the negated
+`normalView`.
+
+### 79.2 The port
+
+`nodes::display::retro_pass` wraps a `PassNode`. `crt`, `shape` and `bayer`
+are plain functions returning the graph. The pass's texture
+(`RetroTextureNode`) and the CRT output are gated against three's dump of
+the page: `retro_barrel_matches_three` (`m08`) and `retro_crt_matches_three`
+(`m10`) in `tests/nodes_display_wgsl.rs`. `tests/retro_frames.rs` checks the
+pass's own frames on the GPU. The port needed these pieces:
+
+- **A render-object function.** `renderer::RenderObjectFunction` is a
+  `pub(crate)` trait. It has `material( source, background ) -> material`
+  and a `variant()` that tags the derived material's program key, hashed
+  with `VARIANT_RENDER_OBJECT_FUNCTION`. `PassNode` holds an optional one.
+  It installs it on the renderer around its own render and restores the
+  previous one afterwards, as `updateBefore()` does. The render loop asks the
+  function once per draw, the skybox included, exactly where three calls it.
+- **`PassNode::set_resolution_scale`.** The target is
+  `floor( size · scale )`, at least one texel, because wgpu rejects a
+  zero-sized texture.
+- **Which material a draw gets.** Three decides with a for-in copy. The port
+  has one material struct for both kinds, so `is_node_material` decides by
+  the node slots: a source with none set is classic. A classic source is
+  cloned and given the retro `vertex_node`, `color_node` and `context_node`,
+  as Basic or as Phong. A node source is cloned as it is. The one case this
+  gets wrong is a node material with no slot set at all, say a bare
+  `MeshBasicNodeMaterial::new()`. Three's for-in copies its null
+  `vertexNode`, `colorNode` and `contextNode` over the retro ones, so three
+  draws it as itself, unsnapped and at the map's own level. The port cannot
+  tell it from a classic material, so it snaps it.
+- **`context_node` on a material.** `MeshBasicNodeMaterial::context_node` is
+  `NodeMaterial.contextNode`. `NodeMaterial` setup pushes its keys for the
+  whole build, through `push_context_value`. `tsl::texture()` reads `getUV`
+  and `getTextureLevel` from the context in force when the tap is made.
+  `getUV` replaces the default uv, and the map's uv transform still applies
+  after it. `getTextureLevel` turns a filtered `Sample` into
+  `Level( float( 0 ) )`. An unfilterable map keeps its `textureLoad`.
+- **`replace_default_uv( uv, node )`.** This is `replaceDefaultUV` as a
+  `context( node, { getUV: uv } )`. `RetroTextureNode` is a `CustomNode` that
+  reads `getUV` at build time, so the wrapper reaches it. A tap already made
+  keeps its own uv.
+- **`_clipSpaceRetro`.** Three makes it once, at module level. The port makes
+  it once per thread, so every retro material shares the same two varyings.
+- **A deferred background `Fn`.** `background_node_color_node` sees an
+  argument-less, non-layout call. It wraps it in a call of its own, which
+  `setup_diffuse_color` resolves through `resolve_fn_call` inside the skybox
+  build. This is the deferral `resolve_fog_factor` already gives
+  `scene.fogNode`. Without it, the sky's `normalWorld` would read the
+  front-sided normal and the gradient would be upside down.
+- **Samples outside the fragment stage.** The smoke's `positionNode` taps the
+  Perlin texture in the vertex shader. WGSL has no `textureSample` there, so
+  the builder emits `textureSampleLevel( …, 0 )`, three's
+  `generateTextureSampleLevel()` at a literal level 0. The hunk is the same
+  as on the `display-pages-1` branch.
+- **`colorBleeding`'s RTT.** The effect makes an `rtt()` and returns a plain
+  `NodeRef`. The renderer reaches an `RttNode` only while it is alive, so the
+  result is wrapped in `Owned` (`rtt.rs`), which holds the `RttNode`. `Owned`
+  is cacheable like any node, so the bleed's `vec3` lands in one `var` read
+  three times by `bayerDither`, as three's `nodeConst` does.
+- **The mug.** `GltfLoader` now honours `KHR_materials_unlit`: such a
+  material is a Basic one with `baseColorFactor`, an sRGB `baseColorTexture`,
+  `doubleSided` and `alphaMode`, and nothing else
+  (`tests/gltf_loader.rs`, `coffee_mug_unlit_material`).
+
+**One shader difference left.** The retro mug and smoke are Basic materials.
+Three's Basic flow emits its lighting terms
+(`indirectDiffuse = 1 · AO · diffuseColor`) and the port's Basic flow does
+not. The result is the same colour.
+
+**The page is ungraded.** three.js fails its own reference for the page on
+this machine. `docs/webgpu_postprocessing_retro-progress.md` has the scores.
+
+### 79.3 Not ported
+
+- The `MeshStandardMaterial` + `envMap` / `scene.environment` branch, which
+  mixes a `CubeMapNode` reflection into `colorNode` by metalness. The page
+  takes it only for the Damaged Helmet, which is reachable only from the GUI.
+  A standard source is drawn as a Phong one without the reflection.
+- `getUV`'s cube-texture case (`reflectVector`), and three's callback form of
+  `replaceDefaultUV`. The port takes the uv itself, which is what
+  `() => uv` amounts to.
+- The per-material cache and `dispose()`. The port derives the material per
+  draw (a clone) and keys its programs on the source's, so a changed source,
+  or a changed `set_filter_textures`, is picked up on the next frame without
+  one.
+- The background draw keeps its Basic material. Three's background is a
+  plain `NodeMaterial`, so its retro material is a Phong one with
+  `lights = false` and every node copied over. That draws the diffuse colour
+  plus a black emissive, which is the background colour unchanged (`m01`).
+- Sprite, points, fat-line and normal materials are drawn as themselves.
+  Three would hand them to a Phong material, which the port's flows for those
+  kinds cannot express.
+- `bayer16( uv )`, `Bayer.js`'s texture lookup, which decodes an embedded
+  PNG. No ported page uses it.
+- `barrelMask` is ported but has no gate. The page does not call it, so
+  there is no dump.
+- Parameter defaults. Three's functions default most arguments (`intensity
+  = 0.3`, `coord = uv()`, …). The port takes every argument explicitly, and
+  each function's documentation gives three's default.
+- The page's GUI, its model switch and the Damaged Helmet with its
+  `venice_sunset_1k.hdr` environment.
+
+## 80. `FilmNode`, `Sepia.js` and `BleachBypass.js`
+
+### 80.1 What three does
+
+- `film( inputNode, intensityNode = null, uvNode = null )` is a `FilmNode`.
+  Its `setup()` returns an inline `Fn()` call. It adds
+  `rgb · clamp( rand( fract( uv + time ) ) + 0.1, 0, 1 )` to the colour.
+  With an intensity it returns `mix( input, grain, intensity )`, so 0 is the
+  input unchanged. Alpha is kept.
+- `sepia( color )` is an inline `Fn()`. Its three dot products give the
+  classic sepia matrix, and it keeps alpha.
+- `bleach( color, opacity = 1 )` is an inline `Fn()`. It is an overlay of the
+  colour with its own luminance, picking the multiply or screen half by
+  `min( 1, max( 0, 10 · ( lum - 0.45 ) ) )`. The overlay is mixed in by
+  `color.a · opacity` through an `addAssign`, so the result is a `var`.
+
+### 80.2 The port
+
+All three are plain functions in `nodes::display` that return the graph:
+`film( input, intensity, uv )` with `Option`s for the two nullable
+arguments, `sepia( color )` and `bleach( color, opacity )`.
+
+No `webgpu_*` page uses any of them, so there is no example dump to gate
+against. `tools/dump-pages/film_sepia_bleach.html` is a minimal page for
+`tools/dump-webgpu.mjs --html`. It runs `bleach( scenePass, uniform( 0.8 ) )`,
+`sepia()` and `film()` with no intensity each through `convertToTexture()`,
+then `film( …, uniform( 0.5 ) )` as the `RenderPipeline`'s output, so each
+effect has a quad of its own. The dump's `m03`, `m05`, `m07` and `m09` are
+the fixtures of `bleach_bypass_matches_three`, `sepia_matches_three`,
+`film_no_intensity_matches_three` and `film_matches_three` in
+`tests/nodes_display_wgsl.rs`.
+
+### 80.3 Not ported
+
+- `FilmNode` as a node class with settable `intensityNode` / `uvNode`. The
+  port builds the graph once from its arguments.
+- `bleach`'s `opacity = 1` default. The port takes it explicitly.
 
 ## 81. The stereo display passes (`webgpu_display_stereo`)
 
