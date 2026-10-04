@@ -20,8 +20,9 @@
 
 use three_rs::materials::{setup, MeshBasicNodeMaterial, SetupContext};
 use three_rs::math::Matrix2;
+use three_rs::nodes::builder::VertexBufferSource;
 use three_rs::nodes::tsl::*;
-use three_rs::nodes::{NodeBuilder, NodeProgram, NodeRef, Type};
+use three_rs::nodes::{ComputeFlow, ComputeProgram, NodeBuilder, NodeProgram, NodeRef, Type};
 
 /// The program for a `MeshBasicNodeMaterial` whose `fragmentNode` is `node`,
 /// set up for a geometry with or without a `tangent` attribute.
@@ -2102,4 +2103,524 @@ fn ltc_matches() {
         "--- port ---\n{ours}"
     );
     assert_renumbered("ltc", node, &theirs);
+}
+
+// Sweep 6 (`docs/nodes.md` §84): the compute, storage and subgroup probes.
+//
+// Each is one `computeProbe( name, build )` of the probe page,
+// `Fn( build )().compute( 64 ).setName( name )`, and
+// `tests/fixtures/tsl_batch/<name>.compute.wgsl` is three's dumped module
+// for it. Unlike the fragment probes these compare the whole module, through
+// [`canonical_compute`].
+
+fn compute_fixture(name: &str) -> String {
+    fixture(&format!("{name}.compute"))
+}
+
+/// The only differences between a kernel of the port's and three's dump of
+/// it, each a divergence in `docs/nodes.md` §8 / §84: the banner, the numbers
+/// of names that come from counters three ran for the whole page, and — for a
+/// kernel with no subgroup node — the `enable subgroups;` line and
+/// `@builtin( subgroup_size )` parameter three writes into every kernel on a
+/// device that has the feature (`strip_subgroups`).
+fn canonical_compute(wgsl: &str, strip_subgroups: bool) -> String {
+    let mut out = wgsl.replace(
+        "// Three.js r187dev - Node System",
+        "// three-rs - Node System",
+    );
+    if strip_subgroups {
+        out = out.replace("enable subgroups;\n", "");
+        out = out.replace(
+            ",\n\t@builtin( subgroup_size ) subgroupSize : u32 ) {",
+            " ) {",
+        );
+    }
+    // Longest prefix first: `nodeVarying` must not be renumbered as `nodeVar`.
+    for prefix in [
+        "NodeBuffer_",
+        "WorkgroupArray_",
+        "nodeUniform",
+        "nodeVarying",
+        "nodeVar",
+        "nodeConst",
+    ] {
+        let mut seen: std::collections::HashMap<String, usize> = Default::default();
+        let mut result = String::with_capacity(out.len());
+        let mut rest = out.as_str();
+        while let Some(at) = rest.find(prefix) {
+            result.push_str(&rest[..at]);
+            let after = &rest[at + prefix.len()..];
+            let digits: String = after.chars().take_while(char::is_ascii_digit).collect();
+            if digits.is_empty() {
+                result.push_str(prefix);
+                rest = after;
+                continue;
+            }
+            let next = seen.len();
+            let n = *seen.entry(digits.clone()).or_insert(next);
+            result.push_str(&format!("{prefix}{n}"));
+            rest = &after[digits.len()..];
+        }
+        result.push_str(rest);
+        out = result;
+    }
+    out
+}
+
+/// naga's verdict on a module the port generated, with the subgroup
+/// capability on. naga 30 does not implement the `enable subgroups;`
+/// directive, so the renderer drops that line before handing it over
+/// (`src/renderer/programs.rs` `wgsl_source`); the same is done here.
+#[track_caller]
+fn validate(wgsl: &str, what: &str) {
+    use wgpu::naga;
+    let source = wgsl.replacen("enable subgroups;\n", "", 1);
+    let module = naga::front::wgsl::parse_str(&source)
+        .unwrap_or_else(|e| panic!("{what}: {}\n{source}", e.emit_to_string(&source)));
+    naga::valid::Validator::new(
+        naga::valid::ValidationFlags::all(),
+        naga::valid::Capabilities::SUBGROUP,
+    )
+    .validate(&module)
+    .unwrap_or_else(|e| panic!("{what}: {e:?}\n{source}"));
+}
+
+/// `Fn( () => statements )().compute( 64 ).setName( name )`.
+fn kernel(name: &str, statements: Vec<NodeRef>) -> ComputeProgram {
+    let mut flow = ComputeFlow::new(statements, 64);
+    flow.name = Some(name.to_string());
+    NodeBuilder::new().build_compute(&flow)
+}
+
+/// Asserts the port's kernel is three's module, that it does or does not use
+/// subgroups, and that naga accepts it.
+#[track_caller]
+fn assert_kernel(name: &str, statements: Vec<NodeRef>, subgroups: bool) -> ComputeProgram {
+    let program = assert_kernel_text(name, statements, subgroups);
+    validate(&program.wgsl, name);
+    program
+}
+
+/// [`assert_kernel`] without naga, for the kernels whose three spelling naga
+/// 30 refuses (see each caller).
+#[track_caller]
+fn assert_kernel_text(name: &str, statements: Vec<NodeRef>, subgroups: bool) -> ComputeProgram {
+    let program = kernel(name, statements);
+    assert_eq!(program.subgroups, subgroups, "{name}: subgroups");
+    let ours = canonical_compute(&program.wgsl, false);
+    let theirs = canonical_compute(&compute_fixture(name), !subgroups);
+    if ours != theirs {
+        let mut report = String::new();
+        for (i, (left, right)) in ours.lines().zip(theirs.lines()).enumerate() {
+            if left != right {
+                report.push_str(&format!(
+                    "line {}:\n  port : {left:?}\n  three: {right:?}\n",
+                    i + 1
+                ));
+            }
+        }
+        if ours.lines().count() != theirs.lines().count() {
+            report.push_str(&format!(
+                "line counts differ: port {} three {}\n",
+                ours.lines().count(),
+                theirs.lines().count()
+            ));
+        }
+        panic!(
+            "{name}: kernel differs from three's\n{}\n{report}",
+            program.wgsl
+        );
+    }
+    program
+}
+
+/// The page's `v()`: `float( instanceIndex )`, a fresh node per call.
+fn v() -> NodeRef {
+    instance_index().to(Type::F32)
+}
+
+/// `subgroupAdd`, the two scans of it, the same three of `subgroupMul`, and
+/// `subgroupMin` / `subgroupMax`, behind a `workgroupBarrier()`.
+#[test]
+fn subgroup_arith_matches_three() {
+    let out = instanced_array(64, Type::F32);
+    assert_kernel(
+        "subgroup_arith",
+        vec![
+            workgroup_barrier(),
+            out.element(instance_index()).assign(
+                subgroup_add(v())
+                    .add(subgroup_inclusive_add(v()))
+                    .add(subgroup_exclusive_add(v()))
+                    .add(subgroup_mul(v()))
+                    .add(subgroup_inclusive_mul(v()))
+                    .add(subgroup_exclusive_mul(v()))
+                    .add(subgroup_min(v()))
+                    .add(subgroup_max(v())),
+            ),
+        ],
+        true,
+    );
+}
+
+/// The bitwise reductions on a `uint`, the two votes on a comparison
+/// (three's JS-number operand turns `instanceIndex` into an `f32`),
+/// `subgroupElect()` as a `bool` and `subgroupBallot()` as a `vec4<u32>`.
+///
+/// naga 30 reserves `subgroupElect` but its WGSL front end has no lowering
+/// for it (`naga-30.0.1/src/front/wgsl/lower/mod.rs`, no arm beside
+/// `subgroupBallot`'s), so the module is checked against three's text and
+/// naga sees it without the `subgroupElect()` term.
+#[test]
+fn subgroup_bits_matches_three() {
+    let elect_free = instanced_array(64, Type::U32);
+    validate(
+        &kernel(
+            "subgroup_bits",
+            vec![
+                workgroup_barrier(),
+                elect_free.element(instance_index()).assign(
+                    subgroup_and(instance_index())
+                        .add(subgroup_or(instance_index()))
+                        .add(subgroup_xor(instance_index()))
+                        .add(subgroup_all(instance_index().less_than(32.0)).to(Type::U32))
+                        .add(subgroup_any(instance_index().equal(3.0)).to(Type::U32))
+                        .add(subgroup_ballot(instance_index().greater_than(7.0)).x()),
+                ),
+            ],
+        )
+        .wgsl,
+        "subgroup_bits without subgroupElect",
+    );
+    let out = instanced_array(64, Type::U32);
+    assert_kernel_text(
+        "subgroup_bits",
+        vec![
+            workgroup_barrier(),
+            out.element(instance_index()).assign(
+                subgroup_and(instance_index())
+                    .add(subgroup_or(instance_index()))
+                    .add(subgroup_xor(instance_index()))
+                    .add(subgroup_all(instance_index().less_than(32.0)).to(Type::U32))
+                    .add(subgroup_any(instance_index().equal(3.0)).to(Type::U32))
+                    .add(subgroup_elect().to(Type::U32))
+                    .add(subgroup_ballot(instance_index().greater_than(7.0)).x()),
+            ),
+        ],
+        true,
+    );
+}
+
+/// The broadcasts and shuffles: a JS-number lane id is built as an `int`,
+/// `subgroupShuffle`'s type is its id's on a tie (`getInputType()` prefers
+/// `b`), so the `float` value goes in as `i32( … )`, and the masks and deltas
+/// are `uint`s.
+///
+/// WGSL takes an `i32` or a `u32` lane id; naga 30's validator only a `u32`
+/// (`naga-30.0.1/src/valid/function.rs` `validate_subgroup_gather`), so
+/// three's spelling is checked as text and naga sees the same calls with
+/// `uint` ids.
+#[test]
+fn subgroup_shuffle_matches_three() {
+    let with_uint_ids = instanced_array(64, Type::F32);
+    let program = kernel(
+        "subgroup_shuffle",
+        vec![
+            workgroup_barrier(),
+            with_uint_ids.element(instance_index()).assign(
+                subgroup_broadcast_first(v())
+                    .add(subgroup_broadcast(v(), uint(3)).to(Type::F32))
+                    .add(subgroup_shuffle(v(), instance_index().bit_xor(uint(1))).to(Type::F32))
+                    .add(subgroup_shuffle_xor(v(), 2.0))
+                    .add(subgroup_shuffle_up(v(), 1.0))
+                    .add(subgroup_shuffle_down(v(), 1.0)),
+            ),
+        ],
+    );
+    assert!(
+        program
+            .wgsl
+            .contains("subgroupBroadcast( u32( f32( instanceIndex ) ), 3u )"),
+        "{}",
+        program.wgsl
+    );
+    validate(&program.wgsl, "subgroup_shuffle with uint ids");
+    let out = instanced_array(64, Type::F32);
+    assert_kernel_text(
+        "subgroup_shuffle",
+        vec![
+            workgroup_barrier(),
+            out.element(instance_index()).assign(
+                subgroup_broadcast_first(v())
+                    .add(subgroup_broadcast(v(), 3.0))
+                    .add(subgroup_shuffle(
+                        v(),
+                        instance_index().bit_xor(1.0).to(Type::I32),
+                    ))
+                    .add(subgroup_shuffle_xor(v(), 2.0))
+                    .add(subgroup_shuffle_up(v(), 1.0))
+                    .add(subgroup_shuffle_down(v(), 1.0)),
+            ),
+        ],
+        true,
+    );
+}
+
+/// `quadSwapX` / `quadSwapY` / `quadSwapDiagonal` in a kernel.
+#[test]
+fn subgroup_quad_matches_three() {
+    let out = instanced_array(64, Type::F32);
+    assert_kernel(
+        "subgroup_quad",
+        vec![
+            workgroup_barrier(),
+            out.element(instance_index()).assign(
+                quad_swap_x(v())
+                    .add(quad_swap_y(v()))
+                    .add(quad_swap_diagonal(v())),
+            ),
+        ],
+        true,
+    );
+}
+
+/// `subgroupSize`, `subgroupIndex`, `invocationSubgroupIndex` and
+/// `invocationLocalIndex`: the three index builtins become leading
+/// parameters in the order the flow reads them, `subgroup_size` the last one,
+/// and with no barrier the bounds check stays.
+#[test]
+fn subgroup_builtins_matches_three() {
+    let out = instanced_array(64, Type::U32);
+    assert_kernel(
+        "subgroup_builtins",
+        vec![out.element(instance_index()).assign(
+            subgroup_size()
+                .add(subgroup_index())
+                .add(invocation_subgroup_index())
+                .add(invocation_local_index()),
+        )],
+        true,
+    );
+}
+
+/// `storageElement( buffer, index )` is `buffer.element( index )`.
+#[test]
+fn storage_element_matches_three() {
+    let out = instanced_array(64, Type::F32);
+    assert_kernel(
+        "storage_element",
+        vec![storage_element(&out, instance_index()).assign(v().mul(2.0))],
+        false,
+    );
+}
+
+/// `atomicFunc( method, pointer, value )`, the statement form.
+#[test]
+fn atomic_func_matches_three() {
+    let counters = instanced_array(2, Type::U32).to_atomic();
+    assert_kernel(
+        "atomic_func",
+        vec![
+            atomic_func("atomicAdd", counters.element(uint(0)), Some(uint(1))),
+            atomic_func(
+                "atomicMax",
+                counters.element(uint(1)),
+                Some(instance_index()),
+            ),
+        ],
+        false,
+    );
+}
+
+/// The page's `Storage3DTexture( 4, 4, 4 )` store coordinate.
+fn volume_coord() -> NodeRef {
+    let i = instance_index;
+    vec3_join(vec![
+        i().modulo(uint(4)),
+        i().div(uint(4)).modulo(uint(4)),
+        i().div(uint(16)),
+    ])
+}
+
+/// `textureBarrier()` after a `textureStore`: like every barrier it turns
+/// off the bounds check and moves the vars into `main`
+/// (`BarrierNode.setup()`), so there is no count uniform.
+#[test]
+fn texture_barrier_matches_three() {
+    let volume = three_rs::Data3DTexture::storage(4, 4, 4);
+    let storage = storage_texture_3d(&volume);
+    let program = assert_kernel(
+        "texture_barrier",
+        vec![
+            texture_store(&storage, volume_coord(), vec4(1.0, 0.0, 0.0, 1.0)),
+            texture_barrier(),
+        ],
+        false,
+    );
+    assert!(!program.wgsl.contains("return;"), "{}", program.wgsl);
+}
+
+/// `textureStore( storageTexture3D( t ), uvec3, value )`.
+#[test]
+fn storage_texture_3d_matches_three() {
+    let volume = three_rs::Data3DTexture::storage(4, 4, 4);
+    let storage = storage_texture_3d(&volume);
+    assert_kernel(
+        "storage_texture_3d",
+        vec![texture_store(
+            &storage,
+            volume_coord(),
+            vec4_join(vec![v().div(64.0), float(0.0), float(0.0), float(1.0)]),
+        )],
+        false,
+    );
+}
+
+/// `attributeArray( 64, 'vec3' )` written by a kernel: the same storage
+/// buffer `instancedArray` declares.
+#[test]
+fn attribute_array_compute_matches_three() {
+    let out = attribute_array(64, Type::Vec3);
+    assert_kernel(
+        "attribute_array_compute",
+        vec![out
+            .element(instance_index())
+            .assign(vec3_join(vec![v(), float(0.0), float(1.0)]))],
+        false,
+    );
+}
+
+/// `attributeArray( 4, 'vec3' ).toAttribute()` read by a material: three's
+/// fragment and vertex `main`, and the vertex buffer stepping per *vertex* —
+/// the one thing that separates it from `instancedArray`. Three's pipeline
+/// for this probe (`renderPipeline_attribute_array` in the dump's
+/// `dump.json`) has `stepMode: 'vertex'` and `arrayStride: 16` on that buffer.
+#[test]
+fn attribute_array_steps_per_vertex() {
+    let node = vec4_join(vec![
+        attribute_array(4, Type::Vec3).to_attribute(),
+        float(1.0),
+    ]);
+    let program = program_for(node, false);
+    assert_body_of("attribute_array", program.fragment_wgsl.clone());
+    let ours = &program.vertex_wgsl;
+    let theirs = fixture("attribute_array.vertex");
+    let (ours_n, theirs_n) = (normalise(ours), normalise(&theirs));
+    assert!(
+        theirs_n.contains("varyings.nodeVarying = nodeAttribute0;"),
+        "the test's expectation is not in three's dump"
+    );
+    assert!(
+        ours_n.contains("varyings.nodeVarying = nodeAttribute0;"),
+        "{ours}"
+    );
+    // Three declares `position` at location 0 and the attribute at 1; the
+    // port numbers attributes in first-use order (`docs/nodes.md` §8).
+    assert!(ours_n.contains("nodeAttribute0 : vec3<f32>"), "{ours}");
+    let storage_buffer = |program: &NodeProgram| {
+        program
+            .vertex_buffers()
+            .into_iter()
+            .find(|b| matches!(b.source, VertexBufferSource::Instance(_)))
+            .expect("the storage buffer's vertex buffer")
+    };
+    let attribute = storage_buffer(&program);
+    assert!(!attribute.instanced, "attributeArray steps per vertex");
+    assert_eq!(attribute.array_stride, 16);
+
+    // The same buffer through `instancedArray` steps per instance.
+    let node = vec4_join(vec![
+        instanced_array(4, Type::Vec3).to_attribute(),
+        float(1.0),
+    ]);
+    assert!(storage_buffer(&program_for(node, false)).instanced);
+}
+
+/// Subgroup functions in a fragment shader: `enable subgroups;` under
+/// `// directives`, between `// global` and `// structs` as three writes it,
+/// and the calls on the `uv()` varying.
+#[test]
+fn subgroup_fragment_matches_three() {
+    let node = vec4_join(vec![
+        subgroup_add(x()),
+        quad_swap_x(y()),
+        quad_swap_diagonal(x()),
+        float(1.0),
+    ]);
+    let program = program_for(node, false);
+    // The renderer's feature guard reads this (`docs/nodes.md` §84.3).
+    assert!(program.subgroups);
+    assert!(!program_for(vec4_join(vec![x(), y(), x(), float(1.0)]), false).subgroups);
+    let ours = program.fragment_wgsl;
+    assert_body_of("subgroup_fragment", ours.clone());
+    let header = "// global\ndiagnostic( off, derivative_uniformity );\n\n\n// directives\nenable subgroups;\n\n// structs\n";
+    assert!(fixture("subgroup_fragment").contains(header));
+    assert!(ours.contains(header), "{ours}");
+    validate(&ours, "subgroup_fragment");
+}
+
+/// `quadBroadcast( e, id )` has no probe: three declares it with
+/// `setParameterLength( 1 )`, so the lane id is dropped with a warning and
+/// `generate()` then throws reading the missing input — three cannot build
+/// it. The port takes both arguments and builds them as `subgroupBroadcast`
+/// does: a JS-number id as an `int` (which naga 30 refuses, see
+/// [`subgroup_shuffle_matches_three`]), a `uint` id as the value's type.
+#[test]
+fn quad_broadcast_validates() {
+    let out = instanced_array(64, Type::F32);
+    let program = kernel(
+        "quad_broadcast",
+        vec![
+            workgroup_barrier(),
+            out.element(instance_index())
+                .assign(quad_broadcast(v(), 1.0)),
+        ],
+    );
+    assert!(program.subgroups);
+    assert!(
+        program
+            .wgsl
+            .contains("quadBroadcast( f32( instanceIndex ), 1 )"),
+        "{}",
+        program.wgsl
+    );
+    let out = instanced_array(64, Type::U32);
+    let program = kernel(
+        "quad_broadcast",
+        vec![
+            workgroup_barrier(),
+            out.element(instance_index())
+                .assign(quad_broadcast(instance_index(), uint(1))),
+        ],
+    );
+    assert!(
+        program.wgsl.contains("quadBroadcast( instanceIndex, 1u )"),
+        "{}",
+        program.wgsl
+    );
+    validate(&program.wgsl, "quad_broadcast");
+}
+
+/// A kernel without subgroup nodes has neither the directive nor the
+/// parameter, so it runs on an adapter without the feature.
+#[test]
+fn plain_kernel_does_not_enable_subgroups() {
+    let out = instanced_array(64, Type::F32);
+    let program = kernel("plain", vec![out.element(instance_index()).assign(v())]);
+    assert!(!program.subgroups);
+    assert!(!program.wgsl.contains("subgroup"), "{}", program.wgsl);
+}
+
+/// `subgroupSize` outside a kernel: `ComputeBuiltinNode` warns and writes
+/// `generateConst( 'uint' )`.
+#[test]
+fn subgroup_size_outside_compute_is_zero() {
+    let ours = fragment(vec4_join(vec![
+        subgroup_size().to(Type::F32),
+        float(0.0),
+        float(0.0),
+        float(1.0),
+    ]));
+    assert!(ours.contains("f32( 0u )"), "{ours}");
+    assert!(!ours.contains("enable subgroups;"), "{ours}");
 }

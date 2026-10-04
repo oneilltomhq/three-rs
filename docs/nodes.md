@@ -359,16 +359,18 @@ it, which is what `getSubBuildProperty()` does.
 Textual identity is not a goal; these are the deliberate or unexplained
 differences, each verified to be pixel-neutral.
 
-* **`enable subgroups;` and `@builtin( subgroup_size )`.** Three's compute
-  template emits the directive and threads a `subgroupSize : u32` parameter
-  into every `@compute` entry point, whether or not the kernel uses either;
-  `webgpu_compute_points` uses neither. This port emits neither, because
+* **`enable subgroups;` and `@builtin( subgroup_size )`.** On a device that
+  has the `subgroups` feature (`renderer.hasFeature( 'subgroups' )`,
+  `WGSLNodeBuilder.js:1907`), three's compute template emits the directive
+  and threads a `subgroupSize : u32` parameter into every `@compute` entry
+  point, whether or not the kernel uses either; `webgpu_compute_points` uses
+  neither. This port emits neither in a kernel that uses neither, because
   `enable subgroups;` is a WebGPU feature request that fails to compile on an
   adapter without the feature, and an unused entry-point parameter is the only
-  thing it would buy. If a rung ever ports `subgroupAdd` and friends, the
-  directive comes back conditional on the flow reading them — which is what
-  three.js should be doing. `tests/nodes_compute_wgsl.rs::canonical()` strips
-  both before diffing.
+  thing it would buy. Since the subgroup sweep (§84) both come back, in
+  three's text, for a stage that reads a subgroup builtin or calls a subgroup
+  function, which is what three.js should be doing.
+  `tests/nodes_compute_wgsl.rs::canonical()` strips both before diffing.
 * **One storage binding, not two.** Three allocates a fresh `NodeStorageBuffer`
   per stage (`sharedNodeData` is declared but never written for storage
   buffers), so the *same* particle buffer appears twice in the points
@@ -6765,3 +6767,203 @@ parameters are called `v1` and `v2`. The two renamings now share
 The `ltc` probe evaluates the quad `( ±1, ±1, 2 )` with
 `mInv = mat3( modelWorldMatrix )`. The matrix only needs to be some mat3 that
 three cannot fold into a constant.
+
+## 84. TSL sweep 6: the compute, storage and subgroup batch
+
+The sweep ports the compute/storage rows that were still Absent, the
+subgroup family, the two subgroup indices from the utils family, and
+`attributeArray`. Every function is gated in `tests/nodes_tsl_batch.rs`
+against a kernel or material that `tests/fixtures/tsl_batch/probe.html`
+builds with three, dumped by `tools/dump-webgpu.mjs`. The compute probes go
+through `renderer.compute( Fn( build )().compute( count ).setName( name ) )`
+after `renderer.init()`, so they are dumped as
+`m00N_compute_compute_<name>.wgsl`. Their fixtures are named
+`<name>.compute.wgsl`.
+
+### 84.1 The subgroup family
+
+`SubgroupFunctionNode` is `Node::Subgroup { method, a, b }`, and
+`src/nodes/tsl/gpgpu.rs` holds one function per export. The reductions and
+scans are `subgroupAdd`/`Mul`/`And`/`Or`/`Xor`/`Min`/`Max` and their
+`Inclusive`/`Exclusive` forms. The votes are `subgroupAll`, `subgroupAny`
+and `subgroupBallot`, and there is `subgroupElect`. The broadcasts and
+shuffles are `subgroupBroadcastFirst`, `subgroupBroadcast`,
+`subgroupShuffle` and `subgroupShuffleXor`/`Up`/`Down`. The quad
+operations are `quadSwapX`/`Y`/`Diagonal` and `quadBroadcast`.
+
+The types follow `generateNodeType()` and `getInputType()`:
+
+- `subgroupElect` is a `bool`.
+- `subgroupBallot` is a `vec4<u32>`.
+- Every other function takes the longer of its inputs' types. A matrix
+  counts as length 0, and `b` wins a tie.
+
+The parameters follow `generate()`:
+
+- `subgroupBroadcast`, `subgroupShuffle` and `quadBroadcast` build `a` at
+  the node's type. They build `b` as an `int` when it is a `float` (a lane
+  id given as a JS number), and at the node's type otherwise.
+- The mask and delta shuffles build `b` as a `uint`.
+- The rest build both inputs at the input type.
+
+A subgroup function in the vertex stage is an error. Three logs it and
+goes on building; the port panics (`assert_ne!` in `generate_subgroup`).
+
+Three exports these functions through `nodeProxyIntent`. As everywhere in
+the port, the plain node is three's output.
+
+### 84.2 `enable subgroups;` and the subgroup builtins
+
+Building a subgroup function, or reading `subgroupSize`, `subgroupIndex` or
+`invocationSubgroupIndex`, enables `subgroups` in that stage. This is
+`enableSubGroups()`. The stage's `// directives` block then holds
+`enable subgroups;`.
+
+A compute entry point also takes the subgroup builtins three registers
+through `getBuiltin( …, 'attribute' )`, ahead of its four fixed parameters.
+It ends with `@builtin( subgroup_size ) subgroupSize : u32`, which three's
+`getAttributes( 'compute' )` appends.
+
+The §8 divergence still stands, but it is narrower now. Three emits the
+directive and `subgroupSize` in every kernel on a device that has
+`subgroups`. The port emits them only in a stage that uses them, so a
+kernel without them still runs on any adapter. For a kernel that does use
+them, the text is three's. `canonical_compute` strips the directive and the
+parameter from three's side only for the probes that use neither.
+
+Natively, `wgsl_source` (`src/renderer/programs.rs`) drops the
+`enable subgroups;` line before naga sees it. naga 30 parses the directive
+but refuses it as unimplemented, and gates the subgroup operations on
+`Capabilities::SUBGROUP` instead.
+
+The fragment stage has three's header:
+`// global` / `diagnostic( off, derivative_uniformity );`, followed by the
+`// directives` block.
+
+`subgroupIndex` and `invocationSubgroupIndex` are compute-only. Three would
+read them in the vertex stage as an attribute builtin, and in the fragment
+stage through a varying. WGSL allows neither, so the port asserts instead.
+`subgroupSize` read outside compute gives three's warning and `0u`.
+
+### 84.3 The device feature
+
+`Renderer::new` requests `wgpu::Features::SUBGROUP` when the adapter has it.
+When the adapter lacks it, the device is still created; only subgroup
+kernels are affected. `compute()` checks `ComputeProgram::subgroups`
+against the device. Without the feature it logs three's
+`The 'subgroups' feature is not supported by the current device.` once, and
+dispatches nothing.
+
+Three logs the same line, then hands the browser a module the browser
+rejects. wgpu would panic on that module instead.
+
+The warning is logged once per thread, across every renderer on it; three
+logs it on every build that enables subgroups.
+
+A material is guarded the same way. A fragment stage that builds a subgroup
+function (`subgroup_fragment_matches_three`) sets `NodeProgram::subgroups`.
+Without the feature, the renderer builds the program but creates no
+pipeline for it, logs the same line, and skips the material's draws. naga
+would otherwise fail to validate the module, with the directive stripped and
+no `Capabilities::SUBGROUP`, and with no error scope wgpu's default handler
+would panic. In a browser the material would be rejected.
+
+The web build never has the feature: wgpu 30.0.1's WebGPU backend has no
+`subgroups` entry in `FEATURES_MAPPING` (`src/backend/webgpu.rs:768`). So a
+subgroup kernel or material is skipped there, with the message.
+
+`tests/renderer_compute_subgroups.rs` (in `tests/gpu_only`) dispatches 256
+invocations in workgroups of 128, each storing `subgroupAdd( 1u )` and
+`subgroupSize`. It asserts:
+
+- The size is a power of two in 1..=128, so every subgroup is full.
+- Every invocation sees the same size.
+- Every sum equals the size.
+
+On an adapter without the feature, the test prints why and returns.
+
+### 84.4 What naga 30 cannot run
+
+The port's WGSL for these calls matches three's dump. naga 30 cannot run
+three of them natively:
+
+- **`subgroupElect()`.** naga's WGSL front end lists it as a keyword
+  (`naga-30.0.1/src/keywords/wgsl.rs:430`), but `lower/mod.rs` has no arm
+  for it. The `subgroupBallot` arm is at `:3675`. So a kernel that calls it
+  fails to parse. The `subgroup_bits` gate checks the text against three's,
+  then validates the same kernel without `subgroupElect` through naga.
+- **`subgroupBroadcast`, `subgroupShuffle` and `quadBroadcast` ids.** WGSL
+  takes an `i32` or a `u32` id. naga's `validate_subgroup_gather`
+  (`src/valid/function.rs:718`) accepts only `u32`. Three's rules build the
+  id as an `int`, or at the input type, where the id wins a tie. So any
+  scalar `e` with a `u32` id validates, at the cost of converting `e` to
+  `u32`; a vector `e` fails. `subgroup_shuffle_matches_three` checks three's
+  `int` ids as text, then validates a `u32` variant.
+  `subgroupBroadcast` and `quadBroadcast` also need a constant id. Three's
+  `int`-from-number rule gives them one.
+
+These three rows are Partial. The other subgroup functions pass naga with
+`Capabilities::SUBGROUP`.
+
+### 84.5 `quadBroadcast`'s arity
+
+At 5f610f5 three declares `quadBroadcast` with `setParameterLength( 1 )`.
+`quadBroadcast( e, id )` logs "parameter length exceeds limit" and drops
+`id`. `generate()` then reads `getNodeType()` off the missing `bNode` and
+throws. So three cannot build it, and there is no fixture.
+
+The port takes the `id` that WGSL's `quadBroadcast` needs. It generates
+what three's `QUAD_BROADCAST` arm was written to produce, and the
+`quad_broadcast_validates` test validates that through naga.
+
+### 84.6 `BarrierNode.setup()`
+
+The subgroup probes start with `workgroupBarrier()`. Tint rejects a
+subgroup call in non-uniform control flow, and the kernel's
+`if ( instanceIndex >= count ) { return; }` guard makes everything after it
+non-uniform. `webgpu_compute_reduce` calls a barrier first for the same
+reason.
+
+`BarrierNode.setup()` (`src/nodes/gpgpu/BarrierNode.js:37`) sets the
+builder's `allowEarlyReturns` and `allowGlobalVariables` to `false`, and the
+port now does the same. A compute kernel with any barrier:
+
+- has no bounds check and no count uniform; and
+- declares its vars inside `main` under `// local vars`, as
+  `var nodeVarN : T;`, instead of as module `var<private>`s.
+
+This brings the existing `workgroupBarrier`/`storageBarrier` kernels closer
+to three, and no earlier gate changed.
+
+As in three, the dispatch is still `ceil( count / workgroupSize )`
+workgroups, so a barrier kernel whose count is not a multiple of its
+workgroup size runs the tail invocations, and they index past `count`. The
+kernel must guard its own accesses, e.g. `If( instanceIndex < count )`
+around the stores after the barrier. `barrier_runs_the_tail` in
+`tests/renderer_compute_subgroups.rs` pins this: 100 invocations in
+workgroups of 64 run 128 times, and the guarded stores stay in range.
+
+`textureBarrier()` is `barrier( 'texture' )` and is gated by its own probe.
+
+### 84.7 The storage rows
+
+- **`storageElement( storage, index )`** is `StorageArray::element`, which
+  is what three's `.element()` builds.
+- **`atomicFunc( method, pointer, value )`** is the general constructor the
+  `atomicAdd` family already used. It was private before as
+  `atomic_function`; now it is public under three's name.
+- **`storageTexture3D( texture )`** is the existing `storage_texture_3d`,
+  now gated through a `textureStore` probe. It has the one-argument form
+  only, like `storage_texture`; the coordinate and value are
+  `texture_store`'s.
+- **`attributeArray( count, type )`** is `instancedArray` over a plain
+  `StorageBufferAttribute`. A kernel sees the same storage buffer. The
+  difference is `toAttribute()`, which steps once per vertex: the
+  `InstanceBuffer` now carries `per_vertex`, and `vertex_buffers()` gives it
+  `VertexStepMode::Vertex`. The stride is the padded storage stride, which
+  is 16 for a `vec3`.
+
+  `attribute_array_steps_per_vertex` checks the fragment body against
+  three's and the step mode against an `instancedArray` twin. The attribute's
+  `@location` is still the port's first-use order (§8): it is 0, where three
+  puts it at 1 after `position`.

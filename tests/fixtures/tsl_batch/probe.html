@@ -45,6 +45,10 @@
 				lightProjectionUV, directPointLight, getParallaxCorrectNormal,
 				bypass, uniformFlow, setName, label, select, vertexStage, unpackNormal, colorToDirection, directionToColor,
 				expression, debug, sample, wgsl, wgslFn, OnObjectUpdate, OnBeforeFrameUpdate,
+				instancedArray, attributeArray, storageElement, atomicFunc, textureBarrier, workgroupBarrier, storageTexture3D, textureStore, instanceIndex, invocationLocalIndex,
+				subgroupSize, subgroupIndex, invocationSubgroupIndex, subgroupElect, subgroupBallot, subgroupAdd, subgroupInclusiveAdd, subgroupExclusiveAdd,
+				subgroupMul, subgroupInclusiveMul, subgroupExclusiveMul, subgroupAnd, subgroupOr, subgroupXor, subgroupMin, subgroupMax, subgroupAll, subgroupAny,
+				subgroupBroadcastFirst, subgroupBroadcast, subgroupShuffle, subgroupShuffleXor, subgroupShuffleUp, subgroupShuffleDown, quadSwapX, quadSwapY, quadSwapDiagonal,
 				materialAnisotropy, D_GGX_Anisotropic, V_GGX_SmithCorrelated_Anisotropic, Schlick_to_F0, LTC_Uv, LTC_Evaluate, LTC_Evaluate_Volume } = T;
 
 			const map = new THREE.DataTexture( new Uint8Array( 4 * 16 * 16 ), 16, 16 );
@@ -208,6 +212,78 @@
 				return vec4( LTC_Evaluate( { N, V, P, mInv, p0, p1, p2, p3 } ).add( LTC_Evaluate_Volume( { P, p0, p1, p2, p3 } ) ), 1 ).add( vec4( LTC_Uv( { N, V, roughness: x() } ), 0, 0 ) );
 			} );
 
+			// Subgroup functions in a fragment shader (`enable subgroups;` under
+			// `// directives`), and a per-vertex `attributeArray` read through
+			// `.toAttribute()`.
+			probe( 'subgroup_fragment', () => vec4( subgroupAdd( x() ), quadSwapX( y() ), quadSwapDiagonal( x() ), 1 ) );
+			probe( 'attribute_array', () => vec4( attributeArray( 4, 'vec3' ).toAttribute(), 1 ) );
+
+			// Compute probes: each is `Fn( build )().compute( count ).setName( name )`,
+			// dispatched once after `renderer.init()`; the dump names its module
+			// `compute_<name>`. The subgroup kernels open with a barrier, as
+			// `webgpu_compute_reduce`'s do: it drops the bounds check, which would
+			// leave the subgroup calls in non-uniform control flow.
+			const computeProbes = [];
+			function computeProbe( name, build, count = 64 ) {
+
+				computeProbes.push( [ name, build, count ] );
+
+			}
+
+			const v = () => float( instanceIndex );
+			const volume3D = new THREE.Storage3DTexture( 4, 4, 4 );
+
+			computeProbe( 'subgroup_arith', () => {
+				workgroupBarrier();
+				const out = instancedArray( 64, 'float' );
+				out.element( instanceIndex ).assign( subgroupAdd( v() ).add( subgroupInclusiveAdd( v() ) ).add( subgroupExclusiveAdd( v() ) )
+					.add( subgroupMul( v() ) ).add( subgroupInclusiveMul( v() ) ).add( subgroupExclusiveMul( v() ) )
+					.add( subgroupMin( v() ) ).add( subgroupMax( v() ) ) );
+			} );
+			computeProbe( 'subgroup_bits', () => {
+				workgroupBarrier();
+				const out = instancedArray( 64, 'uint' );
+				out.element( instanceIndex ).assign( subgroupAnd( instanceIndex ).add( subgroupOr( instanceIndex ) ).add( subgroupXor( instanceIndex ) )
+					.add( uint( subgroupAll( instanceIndex.lessThan( 32 ) ) ) ).add( uint( subgroupAny( instanceIndex.equal( 3 ) ) ) )
+					.add( uint( subgroupElect() ) ).add( subgroupBallot( instanceIndex.greaterThan( 7 ) ).x ) );
+			} );
+			computeProbe( 'subgroup_shuffle', () => {
+				workgroupBarrier();
+				const out = instancedArray( 64, 'float' );
+				out.element( instanceIndex ).assign( subgroupBroadcastFirst( v() ).add( subgroupBroadcast( v(), 3 ) )
+					.add( subgroupShuffle( v(), int( instanceIndex.bitXor( 1 ) ) ) ).add( subgroupShuffleXor( v(), 2 ) )
+					.add( subgroupShuffleUp( v(), 1 ) ).add( subgroupShuffleDown( v(), 1 ) ) );
+			} );
+			computeProbe( 'subgroup_quad', () => {
+				workgroupBarrier();
+				const out = instancedArray( 64, 'float' );
+				out.element( instanceIndex ).assign( quadSwapX( v() ).add( quadSwapY( v() ) ).add( quadSwapDiagonal( v() ) ) );
+			} );
+			computeProbe( 'subgroup_builtins', () => {
+				const out = instancedArray( 64, 'uint' );
+				out.element( instanceIndex ).assign( subgroupSize.add( subgroupIndex ).add( invocationSubgroupIndex ).add( invocationLocalIndex ) );
+			} );
+			computeProbe( 'storage_element', () => {
+				const out = instancedArray( 64, 'float' );
+				storageElement( out, instanceIndex ).assign( v().mul( 2 ) );
+			} );
+			computeProbe( 'atomic_func', () => {
+				const counters = instancedArray( 2, 'uint' ).toAtomic();
+				atomicFunc( 'atomicAdd', counters.element( 0 ), uint( 1 ) );
+				atomicFunc( 'atomicMax', counters.element( 1 ), instanceIndex );
+			} );
+			computeProbe( 'texture_barrier', () => {
+				textureStore( storageTexture3D( volume3D ), uvec3( instanceIndex.mod( 4 ), instanceIndex.div( 4 ).mod( 4 ), instanceIndex.div( 16 ) ), vec4( 1, 0, 0, 1 ) );
+				textureBarrier();
+			} );
+			computeProbe( 'storage_texture_3d', () => {
+				textureStore( storageTexture3D( volume3D ), uvec3( instanceIndex.mod( 4 ), instanceIndex.div( 4 ).mod( 4 ), instanceIndex.div( 16 ) ), vec4( v().div( 64 ), 0, 0, 1 ) );
+			} );
+			computeProbe( 'attribute_array_compute', () => {
+				const out = attributeArray( 64, 'vec3' );
+				out.element( instanceIndex ).assign( vec3( v(), 0, 1 ) );
+			} );
+
 			init();
 
 			async function init() {
@@ -239,6 +315,7 @@
 				renderer.setSize( window.innerWidth, window.innerHeight );
 				document.body.appendChild( renderer.domElement );
 				await renderer.init();
+				computeProbes.forEach( ( [ name, build, count ] ) => renderer.compute( Fn( build )().compute( count ).setName( name ) ) );
 				renderer.setAnimationLoop( () => renderer.render( scene, camera ) );
 
 			}

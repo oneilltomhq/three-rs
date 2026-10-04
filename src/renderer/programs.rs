@@ -99,15 +99,31 @@ struct VertexLayout {
     attributes: Vec<wgpu::VertexAttribute>,
 }
 
+/// A generated module as the device is given it.
+///
+/// The builder writes three's `enable subgroups;` when a stage uses the
+/// subgroup functions, and a browser requires it. naga 30 parses the
+/// directive but refuses it as not yet implemented
+/// (`front/wgsl/parse/directive/enable_extension.rs`), and gates the
+/// subgroup builtins on the device's `SUBGROUP` capability instead — so a
+/// native build drops the line, and only that line, before naga sees it.
+fn wgsl_source(wgsl: &str) -> wgpu::ShaderSource<'static> {
+    #[cfg(not(target_arch = "wasm32"))]
+    let wgsl = wgsl.replacen("enable subgroups;\n", "", 1);
+    #[cfg(target_arch = "wasm32")]
+    let wgsl = wgsl.to_string();
+    wgpu::ShaderSource::Wgsl(wgsl.into())
+}
+
 impl Program {
     pub fn new(device: &wgpu::Device, node: &NodeProgram) -> Self {
         let vertex_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("three-rs vertex"),
-            source: wgpu::ShaderSource::Wgsl(node.vertex_wgsl.clone().into()),
+            source: wgsl_source(&node.vertex_wgsl),
         });
         let fragment_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("three-rs fragment"),
-            source: wgpu::ShaderSource::Wgsl(node.fragment_wgsl.clone().into()),
+            source: wgsl_source(&node.fragment_wgsl),
         });
 
         let layouts: Vec<wgpu::BindGroupLayout> = node
@@ -1090,7 +1106,7 @@ impl ComputeProgramGpu {
     pub fn new(device: &wgpu::Device, program: &crate::nodes::ComputeProgram) -> Self {
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("three-rs compute"),
-            source: wgpu::ShaderSource::Wgsl(program.wgsl.clone().into()),
+            source: wgsl_source(&program.wgsl),
         });
 
         let layouts: Vec<wgpu::BindGroupLayout> = program

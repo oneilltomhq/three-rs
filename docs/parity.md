@@ -21,13 +21,13 @@ This matrix judges every exported name in three.js revision 5f610f5 (r187) — `
 | textures | 18 | 8 | 4 | 1 | 5 | 62% |
 | loaders | 20 | 2 | 2 | 12 | 4 | 12% |
 | renderers | 39 | 9 | 9 | 3 | 18 | 43% |
-| nodes | 141 | 99 | 27 | 10 | 5 | 73% |
-| tsl | 683 | 523 | 47 | 88 | 25 | 79% |
+| nodes | 141 | 100 | 27 | 9 | 5 | 74% |
+| tsl | 683 | 553 | 51 | 54 | 25 | 84% |
 | addons/controls | 11 | 1 | 6 | 4 | 0 | 9% |
 | addons/loaders | 71 | 6 | 2 | 63 | 0 | 8% |
 | addons/postprocessing | 30 | 0 | 0 | 0 | 30 | — |
 | addons/other | 102 | 11 | 4 | 64 | 23 | 14% |
-| **total** | **1317** | **776** | **132** | **286** | **123** | **65%** |
+| **total** | **1317** | **807** | **136** | **251** | **123** | **68%** |
 
 TSL by family:
 
@@ -40,9 +40,9 @@ TSL by family:
 | lighting/material | 121 | 92 | 10 | 19 | 0 |
 | accessors | 95 | 76 | 8 | 10 | 1 |
 | display/postprocessing | 75 | 61 | 7 | 7 | 0 |
-| compute/storage | 53 | 19 | 3 | 31 | 0 |
+| compute/storage | 53 | 46 | 7 | 0 | 0 |
 | materialx | 49 | 48 | 0 | 1 | 0 |
-| utils | 77 | 43 | 15 | 9 | 10 |
+| utils | 77 | 46 | 15 | 6 | 10 |
 
 Graded examples: 87 (the README gallery plus `webgpu_textures_2d-array_compressed`, which has a live `rung!` but a hyphen in its name). 10 more are ported but `#[ignore]`d because three.js fails its own reference on this machine; a row whose only check is one of those is Partial.
 
@@ -432,7 +432,7 @@ Graded examples: 87 (the README gallery plus `webgpu_textures_2d-array_compresse
 
 ## nodes
 
-141 rows: 99 Present, 27 Partial, 10 Absent, 5 N.A.
+141 rows: 100 Present, 27 Partial, 9 Absent, 5 N.A.
 
 | three.js name | verdict | three-rs symbol | verified by | note |
 |---|---|---|---|---|
@@ -446,7 +446,7 @@ Graded examples: 87 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `BypassNode` | Present | bypass (src/nodes/tsl/utils.rs:63) | tests/nodes_tsl_batch.rs | a statement-then-value `Node::Block` |
 | `ConstNode` | Present | Node::Const (src/nodes/node.rs:1313) | all *_wgsl gates |  |
 | `ContextNode` | Present | Node::Context (src/nodes/node.rs:1669), context (src/nodes/tsl.rs:145) | tests/nodes_custom.rs |  |
-| `IndexNode` | Partial | Builtin::VertexIndex/InstanceIndex (src/nodes/node.rs:1053) | webgpu_compute_points | no drawIndex or subgroup indices |
+| `IndexNode` | Present | Builtin::VertexIndex/InstanceIndex/InvocationLocalIndex/SubgroupIndex/InvocationSubgroupIndex (src/nodes/node.rs:1156) | webgpu_compute_points, tests/nodes_tsl_batch.rs | drawIndex is WebGL-only (three's WGSL builder returns `null`); the subgroup indices are compute only (docs/nodes.md §84.2) |
 | `InputNode` | Present | Node::Const/Uniform (src/nodes/node.rs:1313,1337) | all *_wgsl gates | role only (no base class) |
 | `InspectorNode` | N.A. | — | — | DOM inspector |
 | `IsolateNode` | Present | Node::Isolate (src/nodes/node.rs:1679), isolate (src/nodes/tsl.rs:158) | tests/nodes_custom.rs |  |
@@ -479,7 +479,7 @@ Graded examples: 87 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `VaryingNode` | Present | Node::Varying (src/nodes/node.rs:1386), to_varying (src/nodes/tsl.rs:489) | tests/nodes_wgsl_varying.rs |  |
 | `BufferAttributeNode` | Partial | instanced_buffer_attribute (src/nodes/tsl.rs:4395), to_attribute (3758) | tests/nodes_instanced_attributes.rs | no plain/dynamic bufferAttribute() |
 | `BufferNode` | Present | BufferNode (src/nodes/node.rs:869) | webgpu_skinning |  |
-| `BuiltinNode` | Partial | enum Builtin (src/nodes/node.rs:1053) | tests/nodes_compute_wgsl.rs | closed enum; no generic builtin(name) |
+| `BuiltinNode` | Partial | enum Builtin (src/nodes/node.rs:1156) | tests/nodes_compute_wgsl.rs | closed enum; no generic builtin(name) |
 | `ClippingNode` | Absent | — | — | no clippingPlanes; docs/nodes.md s6 deferred |
 | `CubeTextureNode` | Present | cube_texture (src/nodes/tsl.rs:3581) | webgpu_materials_envmaps |  |
 | `MaterialNode` | Partial | material_color etc. (src/nodes/tsl.rs:2143) | webgpu_lights_physical | no iridescence/dash accessors |
@@ -492,7 +492,7 @@ Graded examples: 87 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `ReferenceNode` | Partial | user_data (src/nodes/tsl.rs:419) | webgpu_sprites | no reference()/referenceBuffer() |
 | `RendererReferenceNode` | Partial | tone_mapping_exposure (src/nodes/tsl.rs:1409) | tests/nodes_custom.rs | fixed exposure only; no rendererReference(name) |
 | `StorageBufferNode` | Present | instanced_array (src/nodes/tsl.rs:3633) | webgpu_compute_points, webgpu_particles |  |
-| `StorageTexture3DNode` | Present | storage_texture_3d (src/nodes/tsl.rs:3183) | tests/nodes_texture_wgsl.rs |  |
+| `StorageTexture3DNode` | Present | storage_texture_3d (src/nodes/tsl.rs:4137) | tests/nodes_texture_wgsl.rs, tests/nodes_tsl_batch.rs |  |
 | `StorageTextureNode` | Present | StorageTextureNode (src/nodes/tsl.rs:3164) | webgpu_compute_texture |  |
 | `Texture3DNode` | Present | Texture3DNode (src/nodes/tsl.rs:3086) | webgpu_volume_perlin, tests/nodes_texture_wgsl.rs |  |
 | `TextureNode` | Present | Node::Texture (src/nodes/node.rs:1469), texture (src/nodes/tsl.rs:3056) | all *_wgsl gates |  |
@@ -520,10 +520,10 @@ Graded examples: 87 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `ViewportTextureNode` | Present | ViewportTextureNode (src/nodes/display/viewport_texture.rs:70) | webgpu_backdrop (graded) | one node type behind viewportTexture, viewportSharedTexture and viewportDepthTexture; transmission's viewportOpaqueMipTexture stays separate |
 | `RangeNode` | Present | instanced_range (src/materials/node_material.rs:1017) | tests/nodes_range_buffers.rs, webgpu_instance_mesh |  |
 | `AtomicFunctionNode` | Present | Node::Atomic (src/nodes/node.rs:1646), atomic_add (src/nodes/tsl.rs:3942) | webgpu_struct_drawindirect, tests/nodes_compute_wgsl.rs |  |
-| `BarrierNode` | Present | Node::Barrier (src/nodes/node.rs:1659), workgroup_barrier (src/nodes/tsl.rs:3997) | tests/nodes_compute_indirect_wgsl.rs |  |
-| `ComputeBuiltinNode` | Present | Builtin::WorkgroupId/LocalId/GlobalId/NumWorkgroups (src/nodes/node.rs:1053) | tests/nodes_compute_wgsl.rs |  |
+| `BarrierNode` | Present | Node::Barrier (src/nodes/node.rs:1878), workgroup_barrier, texture_barrier (src/nodes/tsl.rs:5318,5329) | tests/nodes_compute_indirect_wgsl.rs, tests/nodes_tsl_batch.rs | `setup()`'s `allowEarlyReturns`/`allowGlobalVariables = false` ported: no bounds check, vars local to `main` (docs/nodes.md §84.6) |
+| `ComputeBuiltinNode` | Present | Builtin::WorkgroupId/LocalId/GlobalId/NumWorkgroups/SubgroupSize (src/nodes/node.rs:1156) | tests/nodes_compute_wgsl.rs, tests/nodes_tsl_batch.rs |  |
 | `ComputeNode` | Present | compute_node (src/nodes/tsl.rs:3778) | webgpu_compute_points |  |
-| `SubgroupFunctionNode` | Absent | — | — | no subgroup ops; comment only: src/nodes/builder.rs:3375 |
+| `SubgroupFunctionNode` | Partial | Node::Subgroup (src/nodes/node.rs:1886), src/nodes/tsl/gpgpu.rs | tests/nodes_tsl_batch.rs, tests/renderer_compute_subgroups.rs | every method ported and its WGSL gated; naga 30 cannot run `subgroupElect` or a non-`u32` broadcast/shuffle id (docs/nodes.md §84.4) |
 | `WorkgroupInfoNode` | Present | Node::Workgroup (src/nodes/node.rs:1656), workgroup_array (src/nodes/tsl.rs:3967) | tests/nodes_compute_indirect_wgsl.rs |  |
 | `AmbientLightNode` | Present | ambient_lights (src/materials/phong.rs:386,223) | webgpu_materials_toon |  |
 | `AnalyticLightNode` | Present | setup_light (src/materials/phong.rs:214) | webgpu_lights_phong |  |
@@ -689,7 +689,7 @@ Graded examples: 87 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `EffectComposer` | N.A. | — | — | WebGL composer; EffectComposer -> RenderPipeline (core): Present; RenderPipeline (src/renderer/render_pipeline.rs:31); webgpu_postprocessing_masking |
 | `FXAAPass` | N.A. | — | — | WebGL composer; FXAAPass -> FXAANode fxaa(): Present; fxaa (src/nodes/display/fxaa.rs:26); webgpu_postprocessing_fxaa |
 | `FilmPass` | N.A. | — | — | WebGL composer; FilmPass -> FilmNode film(): Absent |
-| `GTAOPass` | N.A. | — | — | WebGL composer; GTAOPass -> GTAONode ao(): Absent |
+| `GTAOPass` | N.A. | — | — | WebGL composer; GTAOPass -> GTAONode ao(): Present; GtaoNode (src/nodes/display/gtao.rs:70); webgpu_postprocessing_ao (ungraded) |
 | `GlitchPass` | N.A. | — | — | WebGL composer; GlitchPass -> no TSL counterpart: Absent |
 | `HalftonePass` | N.A. | — | — | WebGL composer; HalftonePass -> no TSL node (inline TSL in webgpu_tsl_halftone, graded); webgpu_tsl_halftone |
 | `LUTPass` | N.A. | — | — | WebGL composer; LUTPass -> Lut3DNode lut3D(): Absent |
@@ -700,7 +700,7 @@ Graded examples: 87 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `RenderPass` | N.A. | — | — | WebGL composer; RenderPass -> pass(scene,camera) (core): Present; pass (src/renderer/pass.rs:117); webgpu_postprocessing_masking |
 | `RenderPixelatedPass` | N.A. | — | — | WebGL composer; RenderPixelatedPass -> PixelationPassNode pixelationPass(): Present (WGSL gate only, no graded rung); pixelation_pass (src/nodes/display/pixelation_pass.rs:35); tests/nodes_display_wgsl.rs |
 | `RenderTransitionPass` | N.A. | — | — | WebGL composer; RenderTransitionPass -> TransitionNode transition(): Present; transition (src/nodes/display/transition.rs:17); webgpu_postprocessing_transition |
-| `SAOPass` | N.A. | — | — | WebGL composer; SAOPass -> SSAONode/GTAONode: Absent |
+| `SAOPass` | N.A. | — | — | WebGL composer; SAOPass -> SSAONode: Absent; GTAONode ao(): Present |
 | `SMAAPass` | N.A. | — | — | WebGL composer; SMAAPass -> SMAANode smaa(): Absent |
 | `SSAARenderPass` | N.A. | — | — | WebGL composer; SSAARenderPass -> SSAAPassNode ssaaPass(): Present; SsaaPassNode (src/renderer/ssaa_pass.rs:130); webgpu_postprocessing_ssaa |
 | `SSAOPass` | N.A. | — | — | WebGL composer; SSAOPass -> SSAONode ssao(): Absent |
@@ -822,7 +822,7 @@ Graded examples: 87 (the README gallery plus `webgpu_textures_2d-array_compresse
 
 ### Supplementary: `examples/jsm/tsl/display/*.js`
 
-These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) and are not counted above. 19 Present, 1 Partial, 28 Absent.
+These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) and are not counted above. 20 Present, 1 Partial, 27 Absent.
 
 | file | status | three-rs port and check |
 |---|---|---|
@@ -844,7 +844,7 @@ These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) an
 | `FXAANode.js` | Present | fxaa; webgpu_postprocessing_fxaa |
 | `GaussianBlurNode.js` | Present | gaussian_blur; tests/nodes_display_wgsl.rs; webgpu_procedural_texture |
 | `GodraysNode.js` | Partial | godrays/GodraysNode (src/nodes/display/godrays.rs:74); tests/nodes_display_wgsl.rs; webgpu_postprocessing_godrays (graded); point lights only: the DirectionalLight branch, log depth and dispose() are not ported |
-| `GTAONode.js` | Absent | — |
+| `GTAONode.js` | Present | gtao/GtaoNode, ao() (src/nodes/display/gtao.rs:61,70); tests/nodes_display_wgsl.rs (body and getScreenPositionFromClip gates), tests/gtao_frames.rs; webgpu_postprocessing_ao (ported, ungraded: on three's e2e exception list) |
 | `hashBlur.js` | Present | hash_blur; tests/nodes_display_wgsl.rs (loop gated against three's webgpu_backdrop_area dump, taps through viewportSharedTexture) |
 | `ImportanceSampledEnvironment.js` | Absent | — |
 | `LensflareNode.js` | Present | lensflare/LensflareNode (src/nodes/display/lensflare.rs:84); tests/nodes_display_wgsl.rs; webgpu_postprocessing_lensflare (graded); takes a texture: the caller writes convertToTexture()'s rtt(); no dispose() |
@@ -1460,33 +1460,31 @@ Partial: `colorSpaceToWorking`, `negateOnBackSide`, `viewportTexture`, `viewport
 
 ### compute/storage
 
-19 of 53 applicable present (3 Partial, 31 Absent, 0 N.A.).
+46 of 53 applicable present (7 Partial, 0 Absent, 0 N.A.).
 
-Missing (Absent): `storageElement`, `attributeArray`, `storageTexture3D`, `subgroupSize`, `textureBarrier`, `atomicFunc`, `subgroupElect`, `subgroupBallot`, `subgroupAdd`, `subgroupInclusiveAdd`, `subgroupExclusiveAdd`, `subgroupMul`, `subgroupInclusiveMul`, `subgroupExclusiveMul`, `subgroupAnd`, `subgroupOr`, `subgroupXor`, `subgroupMin`, `subgroupMax`, `subgroupAll`, `subgroupAny`, `subgroupBroadcastFirst`, `quadSwapX`, `quadSwapY`, `quadSwapDiagonal`, `subgroupBroadcast`, `subgroupShuffle`, `subgroupShuffleXor`, `subgroupShuffleUp`, `subgroupShuffleDown`, `quadBroadcast`.
-
-Partial: `globalId`, `localId`, `storageBarrier`.
+Partial: `globalId`, `localId`, `storageBarrier`, `subgroupElect`, `subgroupBroadcast`, `subgroupShuffle`, `quadBroadcast`.
 
 | three.js name | verdict | three-rs symbol | verified by | note |
 |---|---|---|---|---|
-| `storageElement` | Absent | — | — |  |
+| `storageElement` | Present | storage_element (src/nodes/tsl.rs:4851) | tests/nodes_tsl_batch.rs | `StorageArray::element` |
 | `computeKernel` | Present | ComputeFlow::workgroup_size (src/nodes/builder.rs:239) | tests/nodes_compute_indirect_wgsl.rs | field on ComputeFlow |
 | `compute` | Present | ComputeFlow (src/nodes/builder.rs:239), Renderer::compute (src/renderer/mod.rs:3670) | webgpu_compute_texture (graded) | struct, not .compute(count) |
-| `attributeArray` | Absent | — | — |  |
+| `attributeArray` | Present | attribute_array (src/nodes/tsl.rs:4840) | tests/nodes_tsl_batch.rs | `toAttribute()` steps per vertex; its `@location` is first-use order (docs/nodes.md §8, §84.7) |
 | `instancedArray` | Present | instanced_array (src/nodes/tsl.rs:3633) | tests/nodes_compute_indirect_wgsl.rs, webgpu_compute_points (graded) |  |
 | `storage` | Present | storage_struct (src/nodes/tsl.rs:3874) | webgpu_struct_drawindirect (graded) |  |
-| `storageTexture3D` | Absent | — | — |  |
+| `storageTexture3D` | Present | storage_texture_3d (src/nodes/tsl.rs:4137) | tests/nodes_tsl_batch.rs | one-argument form, as `storageTexture`; coordinate and value go to `textureStore` |
 | `storageTexture` | Present | storage_texture (src/nodes/tsl.rs:3169) | webgpu_compute_texture (graded) |  |
 | `textureStore` | Present | texture_store (src/nodes/tsl.rs:3224) | tests/nodes_texture_wgsl.rs, webgpu_compute_texture (graded) |  |
 | `numWorkgroups` | Present | num_workgroups (src/nodes/tsl.rs:2057) | indirect: used by src/nodes/builder.rs |  |
 | `workgroupId` | Present | workgroup_id (src/nodes/tsl.rs:2042) | tests/nodes_compute_indirect_wgsl.rs |  |
 | `globalId` | Partial | global_id (src/nodes/tsl.rs:2052) | — | no test or example calls it |
 | `localId` | Partial | local_id (src/nodes/tsl.rs:2047) | — | no test or example calls it |
-| `subgroupSize` | Absent | — | — | comment only: src/nodes/builder.rs |
+| `subgroupSize` | Present | subgroup_size (src/nodes/tsl.rs:2439) | tests/nodes_tsl_batch.rs, tests/renderer_compute_subgroups.rs | declared only in a kernel that uses subgroups (docs/nodes.md §8, §84.2) |
 | `workgroupBarrier` | Present | workgroup_barrier (src/nodes/tsl.rs:3997) | tests/nodes_compute_indirect_wgsl.rs |  |
 | `storageBarrier` | Partial | storage_barrier (src/nodes/tsl.rs:4002) | — | no test or example calls it |
-| `textureBarrier` | Absent | — | — | comment only: src/nodes/node.rs |
+| `textureBarrier` | Present | texture_barrier (src/nodes/tsl.rs:5335) | tests/nodes_tsl_batch.rs |  |
 | `workgroupArray` | Present | workgroup_array (src/nodes/tsl.rs:3967) | tests/nodes_compute_indirect_wgsl.rs |  |
-| `atomicFunc` | Absent | — | — |  |
+| `atomicFunc` | Present | atomic_func (src/nodes/tsl.rs:5242) | tests/nodes_tsl_batch.rs |  |
 | `atomicLoad` | Present | atomic_load (src/nodes/tsl.rs:3958) | tests/nodes_compute_indirect_wgsl.rs |  |
 | `atomicStore` | Present | atomic_store (src/nodes/tsl.rs:3938) | webgpu_struct_drawindirect (graded) |  |
 | `atomicAdd` | Present | atomic_add (src/nodes/tsl.rs:3938) | tests/nodes_compute_indirect_wgsl.rs |  |
@@ -1496,31 +1494,31 @@ Partial: `globalId`, `localId`, `storageBarrier`.
 | `atomicAnd` | Present | atomic_and (src/nodes/tsl.rs:3938) | indirect: used by src/nodes/tsl.rs |  |
 | `atomicOr` | Present | atomic_or (src/nodes/tsl.rs:3938) | indirect: used by src/nodes/tsl.rs |  |
 | `atomicXor` | Present | atomic_xor (src/nodes/tsl.rs:3938) | indirect: used by src/nodes/tsl.rs |  |
-| `subgroupElect` | Absent | — | — |  |
-| `subgroupBallot` | Absent | — | — |  |
-| `subgroupAdd` | Absent | — | — |  |
-| `subgroupInclusiveAdd` | Absent | — | — |  |
-| `subgroupExclusiveAdd` | Absent | — | — |  |
-| `subgroupMul` | Absent | — | — |  |
-| `subgroupInclusiveMul` | Absent | — | — |  |
-| `subgroupExclusiveMul` | Absent | — | — |  |
-| `subgroupAnd` | Absent | — | — |  |
-| `subgroupOr` | Absent | — | — |  |
-| `subgroupXor` | Absent | — | — |  |
-| `subgroupMin` | Absent | — | — |  |
-| `subgroupMax` | Absent | — | — |  |
-| `subgroupAll` | Absent | — | — |  |
-| `subgroupAny` | Absent | — | — |  |
-| `subgroupBroadcastFirst` | Absent | — | — |  |
-| `quadSwapX` | Absent | — | — |  |
-| `quadSwapY` | Absent | — | — |  |
-| `quadSwapDiagonal` | Absent | — | — |  |
-| `subgroupBroadcast` | Absent | — | — |  |
-| `subgroupShuffle` | Absent | — | — |  |
-| `subgroupShuffleXor` | Absent | — | — |  |
-| `subgroupShuffleUp` | Absent | — | — |  |
-| `subgroupShuffleDown` | Absent | — | — |  |
-| `quadBroadcast` | Absent | — | — |  |
+| `subgroupElect` | Partial | subgroup_elect (src/nodes/tsl/gpgpu.rs:34) | tests/nodes_tsl_batch.rs | WGSL matches three's, but naga 30 has no lowering for it (only a keyword, naga-30.0.1/src/keywords/wgsl.rs:430), so it cannot run natively |
+| `subgroupBallot` | Present | subgroup_ballot (src/nodes/tsl/gpgpu.rs:40) | tests/nodes_tsl_batch.rs | needs wgpu `SUBGROUP` (requested when the adapter has it; without it the kernel is skipped with three's message, and the web build never has it); docs/nodes.md §84 |
+| `subgroupAdd` | Present | subgroup_add (src/nodes/tsl/gpgpu.rs:58) | tests/nodes_tsl_batch.rs, tests/renderer_compute_subgroups.rs | needs wgpu `SUBGROUP` (requested when the adapter has it; without it the kernel is skipped with three's message, and the web build never has it); docs/nodes.md §84 |
+| `subgroupInclusiveAdd` | Present | subgroup_inclusive_add (src/nodes/tsl/gpgpu.rs:61) | tests/nodes_tsl_batch.rs | as `subgroupAdd` |
+| `subgroupExclusiveAdd` | Present | subgroup_exclusive_add (src/nodes/tsl/gpgpu.rs:64) | tests/nodes_tsl_batch.rs | as `subgroupAdd` |
+| `subgroupMul` | Present | subgroup_mul (src/nodes/tsl/gpgpu.rs:66) | tests/nodes_tsl_batch.rs | as `subgroupAdd` |
+| `subgroupInclusiveMul` | Present | subgroup_inclusive_mul (src/nodes/tsl/gpgpu.rs:68) | tests/nodes_tsl_batch.rs | as `subgroupAdd` |
+| `subgroupExclusiveMul` | Present | subgroup_exclusive_mul (src/nodes/tsl/gpgpu.rs:70) | tests/nodes_tsl_batch.rs | as `subgroupAdd` |
+| `subgroupAnd` | Present | subgroup_and (src/nodes/tsl/gpgpu.rs:72) | tests/nodes_tsl_batch.rs | as `subgroupAdd` |
+| `subgroupOr` | Present | subgroup_or (src/nodes/tsl/gpgpu.rs:74) | tests/nodes_tsl_batch.rs | as `subgroupAdd` |
+| `subgroupXor` | Present | subgroup_xor (src/nodes/tsl/gpgpu.rs:76) | tests/nodes_tsl_batch.rs | as `subgroupAdd` |
+| `subgroupMin` | Present | subgroup_min (src/nodes/tsl/gpgpu.rs:78) | tests/nodes_tsl_batch.rs | as `subgroupAdd` |
+| `subgroupMax` | Present | subgroup_max (src/nodes/tsl/gpgpu.rs:80) | tests/nodes_tsl_batch.rs | as `subgroupAdd` |
+| `subgroupAll` | Present | subgroup_all (src/nodes/tsl/gpgpu.rs:82) | tests/nodes_tsl_batch.rs | as `subgroupAdd` |
+| `subgroupAny` | Present | subgroup_any (src/nodes/tsl/gpgpu.rs:84) | tests/nodes_tsl_batch.rs | as `subgroupAdd` |
+| `subgroupBroadcastFirst` | Present | subgroup_broadcast_first (src/nodes/tsl/gpgpu.rs:86) | tests/nodes_tsl_batch.rs | as `subgroupAdd` |
+| `quadSwapX` | Present | quad_swap_x (src/nodes/tsl/gpgpu.rs:89) | tests/nodes_tsl_batch.rs | as `subgroupAdd` |
+| `quadSwapY` | Present | quad_swap_y (src/nodes/tsl/gpgpu.rs:91) | tests/nodes_tsl_batch.rs | as `subgroupAdd` |
+| `quadSwapDiagonal` | Present | quad_swap_diagonal (src/nodes/tsl/gpgpu.rs:94) | tests/nodes_tsl_batch.rs | as `subgroupAdd` |
+| `subgroupBroadcast` | Partial | subgroup_broadcast (src/nodes/tsl/gpgpu.rs:119) | tests/nodes_tsl_batch.rs | WGSL matches three's; naga 30 takes only a `u32` id (naga-30.0.1/src/valid/function.rs:718), so natively any scalar value with a `u32` id runs, at the cost of converting the value to `u32` (the id's type wins `getInputType()`'s tie); a vector value fails, and three's `int` ids do not run |
+| `subgroupShuffle` | Partial | subgroup_shuffle (src/nodes/tsl/gpgpu.rs:124) | tests/nodes_tsl_batch.rs | as `subgroupBroadcast`: three's `int` ids fail naga 30's `u32`-only gather index |
+| `subgroupShuffleXor` | Present | subgroup_shuffle_xor (src/nodes/tsl/gpgpu.rs:127) | tests/nodes_tsl_batch.rs | as `subgroupAdd` |
+| `subgroupShuffleUp` | Present | subgroup_shuffle_up (src/nodes/tsl/gpgpu.rs:130) | tests/nodes_tsl_batch.rs | as `subgroupAdd` |
+| `subgroupShuffleDown` | Present | subgroup_shuffle_down (src/nodes/tsl/gpgpu.rs:133) | tests/nodes_tsl_batch.rs | as `subgroupAdd` |
+| `quadBroadcast` | Partial | quad_broadcast (src/nodes/tsl/gpgpu.rs:143) | tests/nodes_tsl_batch.rs (naga only) | three cannot build it (`setParameterLength( 1 )`, SubgroupFunctionNode.js:591, then `generate()` throws on the missing id), so no fixture; the port takes the id WGSL needs, with `subgroupBroadcast`'s `u32`-only gap |
 
 ### materialx
 
@@ -1584,9 +1582,9 @@ Partial: none.
 
 ### utils
 
-43 of 67 applicable present (15 Partial, 9 Absent, 10 N.A.).
+46 of 67 applicable present (15 Partial, 6 Absent, 10 N.A.).
 
-Missing (Absent): `builtinShadowContext`, `builtinAOContext`, `builtinGIContext`, `subgroupIndex`, `invocationSubgroupIndex`, `uniformGroup`, `sharedUniformGroup`, `frameGroup`, `replaceDefaultUV`.
+Missing (Absent): `builtinShadowContext`, `builtinGIContext`, `uniformGroup`, `sharedUniformGroup`, `frameGroup`, `replaceDefaultUV`.
 
 Partial: `NodeShaderStage`, `cache`, `overrideNode`, `overrideNodes`, `sample`, `OnObjectUpdate`, `OnMaterialUpdate`, `OnFrameUpdate`, `OnAfterObjectUpdate`, `OnBeforeObjectUpdate`, `OnBeforeMaterialUpdate`, `OnBeforeFrameUpdate`, `OnBeforeRenderPipeline`, `OnAfterRenderPipeline`, `subBuild`.
 
@@ -1607,16 +1605,16 @@ Partial: `NodeShaderStage`, `cache`, `overrideNode`, `overrideNodes`, `sample`, 
 | `context` | Present | context (src/nodes/tsl.rs:145) | tests/nodes_custom.rs, webgpu_custom_fog_background (graded) |  |
 | `uniformFlow` | Present | uniform_flow, NodeRef::uniform_flow (src/nodes/tsl/utils.rs:29,386) | tests/nodes_tsl_batch.rs, tests/nodes_mx_library.rs | context key read by `select()`; MaterialX's `mx_select`/`mx_negate_if` use it |
 | `setName` | Present | set_name, NodeRef::set_name (src/nodes/tsl/utils.rs:44,395) | tests/nodes_tsl_batch.rs | the free function is the context key read by `uniform()`; the method renames a uniform in place, as `UniformNode.setName()` does; the key is not read by instanced attributes (docs/nodes.md §70.1) |
-| `builtinShadowContext` | Absent | — | — | needs a `getShadow` hook in the lighting context; the AO/GI context plumbing is in PR #267, so not forked here |
-| `builtinAOContext` | Absent | — | — | needs a `getAO` hook that the lighting models call on their ambient occlusion; that plumbing is in PR #267 |
-| `builtinGIContext` | Absent | — | — | as `builtinShadowContext`: waits for the AO context plumbing in PR #267 |
+| `builtinShadowContext` | Absent | — | — | needs a `getShadow` hook in the lighting context, alongside the AO one `PassNode::set_context_ao` plumbs |
+| `builtinAOContext` | Present | PassNode::set_context_ao (src/renderer/pass.rs), SetupContext::ambient_occlusion | tests/gtao_frames.rs; webgpu_postprocessing_ao (ungraded) | the pass multiplies the occlusion into every non-transparent material it draws; Basic, Lambert, Phong, Toon, Standard and Physical read it |
+| `builtinGIContext` | Absent | — | — | as `builtinShadowContext`: a `getGI` hook next to the AO one |
 | `label` | Present | label, NodeRef::label (src/nodes/tsl/utils.rs:51,402) | tests/nodes_tsl_batch.rs | deprecated (r179) alias of setName, with its two forms; `#[deprecated]` here too |
 | `overrideNode` | Partial | override_node (src/nodes/tsl.rs:99) | — | internal only (not public) |
 | `overrideNodes` | Partial | OverrideNodes (src/nodes/tsl.rs:67), Material::context_overrides | webgpu_deferred | a struct of the three accessors the ladder overrides, not an arbitrary node map |
 | `vertexIndex` | Present | vertex_index (src/nodes/tsl.rs:2026) | indirect: used by src/nodes/morph.rs |  |
 | `instanceIndex` | Present | instance_index (src/nodes/tsl.rs:2031) | tests/nodes_compute_indirect_wgsl.rs, webgpu_compute_points (graded) |  |
-| `subgroupIndex` | Absent | — | — | needs `enable subgroups;` and wgpu's SUBGROUP feature, which the renderer does not request; the subgroup family is Absent together |
-| `invocationSubgroupIndex` | Absent | — | — | as `subgroupIndex` |
+| `subgroupIndex` | Present | subgroup_index (src/nodes/tsl.rs:2448) | tests/nodes_tsl_batch.rs | compute only (docs/nodes.md §84.2); enables subgroups |
+| `invocationSubgroupIndex` | Present | invocation_subgroup_index (src/nodes/tsl.rs:2456) | tests/nodes_tsl_batch.rs | as `subgroupIndex` |
 | `invocationLocalIndex` | Present | invocation_local_index (src/nodes/tsl.rs:2036) | tests/nodes_compute_indirect_wgsl.rs |  |
 | `drawIndex` | N.A. | — | — | WebGL-only: three's `WGSLNodeBuilder.getDrawIndex()` returns `null` |
 | `struct` | Present | struct_type (src/nodes/tsl.rs:3837) | webgpu_struct_drawindirect (graded) |  |
@@ -1676,7 +1674,7 @@ Every graded example passes, so graded examples cannot rank the gaps. The rankin
 
 The first refresh of this matrix closed the previous top five. Velocity and TRAA (`velocity`, `positionPrevious`, `VelocityNode`, `TRAANode`, `MotionBlur`), the screen reads (`viewportSharedTexture`, `viewportTexture`, `viewportDepthTexture`, `viewportLinearDepth`, `linearDepth`, `viewportSafeUV`), `SkyMesh`, `CubeCamera` with a layered `CubeRenderTarget`, and the light probes (`LightProbe`, `LightProbeGenerator`, `LightProbeNode`, `LightProbeHelperGPU`, `getShIrradianceAt`) are Present. So is `transformNormalToView` (6 pages), with the rest of the accessors batch; `webgpu_tsl_raging_sea` now calls it. Of the screen reads only the shared copy has a graded page behind it; `viewportTexture`, `viewportDepthTexture`, `viewportLinearDepth` and `linearDepth` are defined but no gate or graded example renders them yet, so they stay Partial until a depth-reading page is ported.
 
-1. **The screen-space effect nodes** (`GTAONode`, `SSRNode`, `SSGINode`, `SSSNode`, `DenoiseNode`, `DepthOfFieldNode`; `ao()` 2 pages, `ssr()` 2, `ssgi()` 2, `sss()` 1, `dof()` 1, `denoise` 6). Each needs a velocity target and a temporal resolve, and both now exist; these pages are the direct payoff of the velocity work. Porting them also gives the depth reads (`viewportDepthTexture`, `linearDepth`, `getViewPosition`) their first graded consumer.
+1. **The screen-space effect nodes** (`SSRNode`, `SSGINode`, `SSSNode`, `DenoiseNode`, `DepthOfFieldNode`; `ssr()` 2 pages, `ssgi()` 2, `sss()` 1, `dof()` 1, `denoise` 6). `GTAONode` and `builtinAOContext` are Present now (`webgpu_postprocessing_ao`, ungraded: it is on three's e2e exception list). Each of the rest needs a velocity target and a temporal resolve, and both now exist; these pages are the direct payoff of the velocity work. Porting them also gives the depth reads (`viewportDepthTexture`, `linearDepth`, `getViewPosition`) their first graded consumer.
 2. **EventDispatcher** (issues 153, 159). 8 pages subscribe to `change` or `finished` events. In ordinary use these are render-on-demand behind OrbitControls and chaining animation clips when one ends, and neither works in the port today. `AnimationMixer` and `AnimationAction` fire nothing.
 3. **The TransformControls pages** (`webgpu_modifier_curve`, `webgpu_shadowmap_progressive`, `webgpu_tsl_compute_attractors_particles`). `FirstPersonControls` (8 pages), `FlyControls` (1) and now `TransformControls` are ported and gated against three's classes (`docs/controls.md`). What is left is wiring the gizmo into the pages: `webgpu_modifier_curve`'s port still leaves it out, and the viewer's controls hook is typed for `OrbitControls`.
 4. **`WaterMesh`** (2 pages) and the remaining display files (`OutlineNode`, `SMAANode`, `Lut3DNode`, `FilmNode`, 1 to 2 pages each). Small, self-contained, and each unlocks one page.
