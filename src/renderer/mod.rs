@@ -943,6 +943,13 @@ pub struct Renderer {
     /// as it stood after the last opaque draw. One per renderer, resized with
     /// the drawing buffer, and only ever created when something transmits.
     opaque_frame: Option<Texture>,
+    /// `PhysicalLightingModel`'s `viewportBackSideTexture` — a second
+    /// `viewportMipTexture()`, read by transmissive materials drawn with
+    /// `side === BackSide`. Same shape as [`Self::opaque_frame`], but it is a
+    /// separate node with its own `updateBefore()`, so it is copied before the
+    /// first back-side draw while the front-side copy waits for the first
+    /// front-side one. Only created when a transmissive item draws a back side.
+    back_side_frame: Option<Texture>,
     /// The pass [`Self::draw`] is building, while it builds it: where the
     /// viewport nodes' `copyFramebufferToTexture()` requests go. Saved and
     /// restored around each `draw`, so a nested render's copies stay its own.
@@ -1443,6 +1450,7 @@ impl Renderer {
             mrt: None,
             frame_buffer_target: None,
             opaque_frame: None,
+            back_side_frame: None,
             screen_reads: None,
             screen_read_textures: screen_reads::Destinations::default(),
             output_buffer_type: TextureType::HalfFloat,
@@ -2120,19 +2128,30 @@ impl Renderer {
         // ahead of the item walk, which borrows `self` for the default
         // material — is what `ViewportTextureNode`'s constructor does; the
         // *copy* into it happens mid-pass, in `draw()`.
-        let transmits = render_list.items().any(|item| {
+        //
+        // `viewportBackSideTexture` is the same again for the materials drawn
+        // with `side === BackSide`: those set so, and the back halves of the
+        // transparent `DoubleSide` split below.
+        let (mut transmits, mut transmits_back) = (false, false);
+        for item in render_list.items() {
             let object = item.node.borrow();
-            scene
-                .override_material
-                .as_ref()
-                .or(item.material(&object))
-                .is_some_and(|material| material.transmission > 0.0)
-        });
-        let opaque_frame = transmits.then(|| {
-            let (width, height) = self.drawing_buffer_size();
-            materials::transmission::OpaqueFrame {
-                texture: self.opaque_frame_texture(width, height),
+            let Some(material) = scene.override_material.as_ref().or(item.material(&object)) else {
+                continue;
+            };
+            if material.transmission > 0.0 {
+                transmits = true;
+                transmits_back |= material.side == Side::Back
+                    || (material.transparent
+                        && material.side == Side::Double
+                        && !material.force_single_pass);
             }
+        }
+        let (width, height) = self.drawing_buffer_size();
+        let opaque_frame = transmits.then(|| materials::transmission::OpaqueFrame {
+            texture: self.opaque_frame_texture(false, width, height),
+        });
+        let back_side_frame = transmits_back.then(|| materials::transmission::OpaqueFrame {
+            texture: self.opaque_frame_texture(true, width, height),
         });
 
         // `Renderer._renderScene()`'s two gated calls, plus
@@ -2324,10 +2343,16 @@ impl Renderer {
             if self.oit == Some(crate::nodes::display::OitRenderObjects::Accumulate) {
                 material.depth_write = false;
             }
-            // `viewportOpaqueMipTexture()` — one texture for the whole pass,
-            // handed to whichever materials transmit.
+            // `getTransmissionSample()`'s `material.side === BackSide ?
+            // viewportBackSideTexture : viewportFrontSideTexture` — one
+            // texture per side for the whole pass, handed to whichever
+            // materials transmit. `draw()` copies each before the first draw
+            // that reads it.
             let item_opaque_frame = (material.transmission > 0.0)
-                .then(|| opaque_frame.clone())
+                .then(|| match material.side {
+                    Side::Back => back_side_frame.clone(),
+                    _ => opaque_frame.clone(),
+                })
                 .flatten();
 
             // `this._currentRenderObjectFunction( object, scene, camera,
@@ -3562,21 +3587,36 @@ impl Renderer {
             .cloned();
 
         // `RenderList.push()` routes `material.transmission > 0` into the
-        // transparent list, and the first such draw is where
-        // `ViewportTextureNode.updateBefore()` fires: the pass ends, the
-        // resolved colour attachment is copied into the mipped viewport
-        // texture, and a second pass loads the same attachments and draws the
-        // rest. `None` — every pass on the ladder before this one — is one
-        // pass, byte for byte what it was.
-        let transmission_split = target
-            .color_texture
-            .is_some()
-            .then(|| {
-                items
+        // transparent list, and the first draw to read a viewport texture is
+        // where its `ViewportTextureNode.updateBefore()` fires: the pass ends,
+        // the resolved colour attachment is copied into the mipped texture,
+        // and a second pass loads the same attachments and draws the rest.
+        // `updateBeforeType` is `RENDER` and `NodeFrame` keys it on the
+        // texture `updateReference()` returns, so each texture is copied once
+        // per pass. With a back-side and a front-side texture that is two
+        // copies: the front one after the back faces are drawn, which is how
+        // three's front face of a glass sphere sees the sphere's own back.
+        // Empty — every pass with nothing transmissive — is one pass, byte
+        // for byte what it was.
+        let mut transmission_copies: Vec<(usize, Texture)> = Vec::new();
+        if target.color_texture.is_some() {
+            for (index, item) in items.iter().enumerate() {
+                let Some(frame) = item
+                    .setup
+                    .viewport_opaque_mip
+                    .as_ref()
+                    .filter(|_| item.material.transmission > 0.0)
+                else {
+                    continue;
+                };
+                if !transmission_copies
                     .iter()
-                    .position(|item| item.material.transmission > 0.0)
-            })
-            .flatten();
+                    .any(|(_, texture)| texture.id() == frame.texture.id())
+                {
+                    transmission_copies.push((index, frame.texture.clone()));
+                }
+            }
+        }
 
         // The copy requests this pass's draws make; see `screen_reads.rs`.
         let outer_screen_reads = self
@@ -3898,13 +3938,13 @@ impl Renderer {
         }
 
         // Every framebuffer copy, by the index of the draw it goes before:
-        // the transmission pass's first, then the viewport nodes' in the
+        // the transmission textures' first, then the viewport nodes' in the
         // order they asked. A stable sort keeps that order within an index.
         let screen_reads = std::mem::replace(&mut self.screen_reads, outer_screen_reads)
             .expect("three-rs: draw() installed its screen reads above");
-        let mut copies: Vec<(usize, screen_reads::FramebufferCopy)> = transmission_split
-            .map(|split| (split, screen_reads::FramebufferCopy::OpaqueFrame))
+        let mut copies: Vec<(usize, screen_reads::FramebufferCopy)> = transmission_copies
             .into_iter()
+            .map(|(index, texture)| (index, screen_reads::FramebufferCopy::OpaqueFrame(texture)))
             .chain(screen_reads.copies)
             .collect();
         copies.sort_by_key(|(index, _)| *index);
@@ -7567,15 +7607,21 @@ impl Renderer {
     /// `viewportOpaqueMipTexture()`'s texture — a full mip chain over a
     /// single-sampled copy of the colour attachment, in the framebuffer
     /// target's own format so that the copy is a straight
-    /// `copyTextureToTexture`.
+    /// `copyTextureToTexture`. With `back_side`, the same for
+    /// `PhysicalLightingModel`'s `viewportBackSideTexture`, a
+    /// `viewportMipTexture()` of its own.
     ///
     /// `own_gpu` is false: the renderer allocates it, fills it from the
     /// framebuffer and generates its mips, and `ensure_texture_2d()` passes it
     /// straight through.
-    fn opaque_frame_texture(&mut self, width: u32, height: u32) -> Texture {
+    fn opaque_frame_texture(&mut self, back_side: bool, width: u32, height: u32) -> Texture {
         let format = self.output_buffer_type.color_gpu_format();
-        let existing = self
-            .opaque_frame
+        let slot = if back_side {
+            &self.back_side_frame
+        } else {
+            &self.opaque_frame
+        };
+        let existing = slot
             .as_ref()
             .filter(|texture| texture.size() == (width, height) && texture.format() == format);
         if let Some(texture) = existing {
@@ -7586,7 +7632,11 @@ impl Renderer {
         // `GPUTexture` gets from three's `_getMipLevelCount()`.
         let mip_level_count = (width.max(height) as f32).log2().floor() as u32 + 1;
         let gpu = self.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("three-rs viewportOpaqueMipTexture"),
+            label: Some(if back_side {
+                "three-rs viewportBackSideTexture"
+            } else {
+                "three-rs viewportOpaqueMipTexture"
+            }),
             size: wgpu::Extent3d {
                 width,
                 height,
@@ -7602,13 +7652,23 @@ impl Renderer {
             view_formats: &[],
         });
 
-        // `defaultFramebuffer.minFilter = LinearMipmapLinearFilter` plus the
-        // `generateMipmaps: true` the mip variant of the node proxy sets.
+        // `new FramebufferTexture()`, whose `magFilter` is `NearestFilter`,
+        // then `defaultFramebuffer.minFilter = LinearMipmapLinearFilter` plus
+        // the `generateMipmaps: true` the mip variant of the node proxy sets.
+        // The nearest mag filter is not cosmetic: `textureBicubicLevel` reads
+        // the `floor( lod )` level with `textureSampleLevel( …, 0 )` wherever
+        // the LOD is below 1, and at an explicit level of 0 the sampler
+        // magnifies, so three's eight taps there are point samples.
         let texture = Texture::render_target(width, height, format);
         texture.set_generate_mipmaps(true);
         texture.set_min_filter(crate::textures::MinFilter::LinearMipmapLinear);
+        texture.set_mag_filter(crate::textures::TextureFilter::Nearest);
         texture.set_gpu(gpu);
-        self.opaque_frame = Some(texture.clone());
+        if back_side {
+            self.back_side_frame = Some(texture.clone());
+        } else {
+            self.opaque_frame = Some(texture.clone());
+        }
         texture
     }
 
@@ -7616,10 +7676,7 @@ impl Renderer {
     /// `renderer.copyFramebufferToTexture( framebufferTexture )` plus the
     /// `generateMipmaps` the mip variant asks for. The source is the resolved
     /// attachment, because an MSAA texture cannot be copied from.
-    fn copy_framebuffer_to_opaque_frame(&mut self, source: &wgpu::Texture) {
-        let Some(texture) = self.opaque_frame.clone() else {
-            return;
-        };
+    fn copy_framebuffer_to_opaque_frame(&mut self, source: &wgpu::Texture, texture: &Texture) {
         let gpu = texture.with_gpu(|gpu| gpu.clone());
         let mut encoder = self
             .device
