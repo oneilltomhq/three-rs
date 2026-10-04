@@ -25,7 +25,6 @@
 
 use std::rc::Rc;
 
-use crate::nodes::lines::LineSegmentsAttributes;
 use crate::nodes::node::FnDef;
 use crate::nodes::node::Type;
 use crate::nodes::tsl::*;
@@ -121,8 +120,9 @@ fn world_pos() -> NodeRef {
 ///
 /// Returns the statements to flow into the vertex stage and the clip-space
 /// position they leave in the `clip` var.
-fn mvp_line(attributes: &LineSegmentsAttributes, world_units: bool) -> (Vec<NodeRef>, NodeRef) {
-    let (instance_start, instance_end) = attributes.start_end();
+fn mvp_line(world_units: bool) -> (Vec<NodeRef>, NodeRef) {
+    let instance_start = attribute("instanceStart", Type::Vec3);
+    let instance_end = attribute("instanceEnd", Type::Vec3);
 
     // camera space
     let start = to_var(
@@ -323,8 +323,8 @@ fn mvp_line(attributes: &LineSegmentsAttributes, world_units: bool) -> (Vec<Node
 /// only thing that lets the fat line reuse `modelViewProjection`. Do not
 /// simplify it: `v_positionView` and `v_modelViewProjection` still appear after
 /// it in three's dump, and so do they here.
-pub(crate) fn setup_position(attributes: &LineSegmentsAttributes, world_units: bool) -> NodeRef {
-    let (statements, clip) = mvp_line(attributes, world_units);
+pub(crate) fn setup_position(world_units: bool) -> NodeRef {
+    let (statements, clip) = mvp_line(world_units);
     let local = to_var(
         None,
         model_world_matrix_inverse()
@@ -472,7 +472,6 @@ pub(crate) fn setup_diffuse_color(
     alpha_to_coverage: bool,
     world_units: bool,
     vertex_colors: bool,
-    attributes: &LineSegmentsAttributes,
     fragment: &mut Vec<NodeRef>,
 ) {
     fragment.push(
@@ -482,12 +481,12 @@ pub(crate) fn setup_diffuse_color(
     );
 
     if vertex_colors {
-        if let Some((color_start, color_end)) = attributes.color_start_end() {
-            let instance_color = position_geometry()
-                .y()
-                .less_than(float(0.5))
-                .select(color_start, color_end);
-            fragment.push(diffuse_color().rgb().mul_assign(instance_color));
-        }
+        let color_start = attribute("instanceColorStart", Type::Vec3);
+        let color_end = attribute("instanceColorEnd", Type::Vec3);
+        let instance_color = position_geometry()
+            .y()
+            .less_than(float(0.5))
+            .select(color_start, color_end);
+        fragment.push(diffuse_color().rgb().mul_assign(instance_color));
     }
 }

@@ -45,6 +45,7 @@ pub use render_target::{RenderTarget, RenderTargetOptions, OUTPUT_ATTACHMENT};
 pub use ssaa_pass::SsaaPassNode;
 
 use crate::cameras::{OrthographicCamera, PerspectiveCamera, RenderCamera};
+use crate::core::BufferKey;
 use crate::core::{BufferGeometry, Group, Index, Layers, Node};
 use crate::error::Error;
 use crate::geometries::{quad_geometry, sphere_geometry};
@@ -184,31 +185,24 @@ struct GeometryEntry {
 }
 
 struct GeometryGpu {
-    position: Option<wgpu::Buffer>,
-    normal: Option<wgpu::Buffer>,
-    uv: Option<wgpu::Buffer>,
-    /// Every other `geometry.attributes` entry, in insertion order — `color`
-    /// for a `vertexColors` material, and whatever a node graph's
-    /// `attribute( name )` names next. The three above are kept apart only
-    /// because the rest of the renderer reaches for them by name.
-    other: Vec<(String, wgpu::Buffer)>,
+    /// One vertex buffer per [`BufferKey`]: an attribute with its own array,
+    /// or an `InterleavedBuffer` shared by its views — three's
+    /// `backend.get( bufferAttribute )` after `_getBufferAttribute()` swaps a
+    /// view for its `data`. Each with the `version` it had when written, the
+    /// `attribute.version` against `bufferAttribute.version` of
+    /// `WebGPUAttributeUtils.updateAttribute()`; a geometry seen with a later
+    /// version has that one buffer re-written ([`Renderer::refresh_geometry`]).
+    /// A storage attribute's entry is the storage buffer itself, recorded by
+    /// [`Renderer::geometry_vertex_buffer`] the first time a draw reads it
+    /// (whoever made the buffer) and re-written there when its version moves.
+    buffers: Vec<(BufferKey, wgpu::Buffer, u32)>,
     index: Option<(wgpu::Buffer, wgpu::IndexFormat, u32)>,
     /// `Geometries.wireframes.get( geometry )` — the `getWireframeIndex()`
     /// buffer, built the first time a `wireframe` material draws this
     /// geometry and kept beside the triangle index for the geometry's life.
     wireframe_index: Option<(wgpu::Buffer, wgpu::IndexFormat, u32)>,
     vertex_count: u32,
-    /// The `BufferAttribute.version` each of [`UPLOADED_ATTRIBUTES`] had when
-    /// its buffer was written — three.js' `attribute.version` against
-    /// `bufferAttribute.version` in `WebGPUAttributeUtils.updateAttribute()`.
-    /// A geometry seen with a version past the one recorded here has that one
-    /// buffer re-written; see [`Renderer::refresh_geometry`].
-    versions: [u32; 3],
 }
-
-/// The geometry attributes the renderer uploads, in the order [`GeometryGpu`]
-/// stores their buffers and versions.
-const UPLOADED_ATTRIBUTES: [&str; 3] = ["position", "normal", "uv"];
 
 impl GeometryGpu {
     /// `Geometries.getIndex( renderObject )`: the wireframe index under a
@@ -221,37 +215,11 @@ impl GeometryGpu {
         }
     }
 
-    fn slot(&self, index: usize) -> Option<&wgpu::Buffer> {
-        match index {
-            0 => self.position.as_ref(),
-            1 => self.normal.as_ref(),
-            2 => self.uv.as_ref(),
-            other => panic!("three-rs: no uploaded attribute slot {other}"),
-        }
-    }
-
-    fn set_slot(&mut self, index: usize, buffer: wgpu::Buffer) {
-        match index {
-            0 => self.position = Some(buffer),
-            1 => self.normal = Some(buffer),
-            2 => self.uv = Some(buffer),
-            other => panic!("three-rs: no uploaded attribute slot {other}"),
-        }
-    }
-
-    fn attribute(&self, name: &str) -> &wgpu::Buffer {
-        let buffer = match UPLOADED_ATTRIBUTES
+    fn buffer(&self, key: BufferKey) -> Option<&wgpu::Buffer> {
+        self.buffers
             .iter()
-            .position(|candidate| *candidate == name)
-        {
-            Some(index) => self.slot(index),
-            None => self
-                .other
-                .iter()
-                .find(|(key, _)| key == name)
-                .map(|(_, buffer)| buffer),
-        };
-        buffer.unwrap_or_else(|| panic!("three-rs: the geometry has no {name} attribute"))
+            .find(|(candidate, _, _)| *candidate == key)
+            .map(|(_, buffer, _)| buffer)
     }
 }
 
@@ -2444,7 +2412,6 @@ impl Renderer {
                     morph: morph.clone(),
                     skin: skin.as_ref().map(|s| s.0),
                     batch: batch.clone(),
-                    line_segments: object.payload.line_segments().cloned(),
                     sprite: object.payload.is_sprite(),
                     mrt: mrt_context.clone(),
                     output: output_context.clone(),
@@ -2460,11 +2427,7 @@ impl Renderer {
                     // `builder.geometry.attributes.normal === undefined`.
                     geometry_missing_normal: !geometry.has_attribute("normal"),
                     has_tangent_attribute: geometry.has_attribute("tangent"),
-                    instanced_attributes: geometry
-                        .attributes()
-                        .filter(|(_, attribute)| attribute.is_instanced())
-                        .map(|(name, _)| name.to_string())
-                        .collect(),
+                    geometry_attributes: geometry.attribute_descs(),
                 },
                 // `NodeManager.getFogNode( scene )`: `scene.fogNode ||
                 // this.get( scene ).fogNode` — an explicit fog node wins over
@@ -2886,7 +2849,6 @@ impl Renderer {
                         // A fat line does not cast a shadow: three's shadow
                         // material takes the plain MVP path, which the quad
                         // geometry is not in.
-                        line_segments: None,
                         sprite: false,
                         // A shadow pass renders into a depth-only target; MRT
                         // is a colour-attachment feature and three.js's
@@ -2902,7 +2864,7 @@ impl Renderer {
                         // position node that reads `tangent` gets the
                         // attribute, or a zero on a geometry without one.
                         has_tangent_attribute: geometry.has_attribute("tangent"),
-                        instanced_attributes: Vec::new(),
+                        geometry_attributes: geometry.attribute_descs(),
                     },
                     fog: None,
                     model_world: item.matrix_world,
@@ -3299,7 +3261,6 @@ impl Renderer {
                         // A fat line does not cast a shadow: three's shadow
                         // material takes the plain MVP path, which the quad
                         // geometry is not in.
-                        line_segments: None,
                         sprite: false,
                         // A shadow pass renders into a depth-only target; MRT
                         // is a colour-attachment feature and three.js's
@@ -3315,7 +3276,7 @@ impl Renderer {
                         // position node that reads `tangent` gets the
                         // attribute, or a zero on a geometry without one.
                         has_tangent_attribute: geometry.has_attribute("tangent"),
-                        instanced_attributes: Vec::new(),
+                        geometry_attributes: geometry.attribute_descs(),
                     },
                     fog: None,
                     model_world: item.matrix_world,
@@ -3837,8 +3798,8 @@ impl Renderer {
                 .vertex_buffers()
                 .iter()
                 .map(|desc| match &desc.source {
-                    VertexBufferSource::Geometry(name) => {
-                        self.geometries[&geometry_id].gpu.attribute(name).clone()
+                    VertexBufferSource::Geometry(slot) => {
+                        self.geometry_vertex_buffer(&item.geometry, geometry_id, slot.name)
                     }
                     VertexBufferSource::Instance(buffer) => {
                         self.instance_buffer(buffer, &item.instance_matrix, &item.instance_color)
@@ -5138,8 +5099,7 @@ impl Renderer {
             NodeBuilder::new()
                 .with_output_components(output_components as u32)
                 .with_array_cameras(item.setup.array_cameras)
-                .build(&flow)
-                .with_instanced_attributes(&item.setup.instanced_attributes),
+                .build(&flow),
         );
         self.info.build.programs_compiled += 1;
         // A material that needs subgroups on a device without them has no
@@ -6877,22 +6837,21 @@ impl Renderer {
         }
         let owner = Rc::downgrade(geometry);
 
-        let vertex_buffer = |attribute: &crate::core::BufferAttribute| {
-            self.create_buffer_init(
+        // `createAttribute()` once per buffer: views of one interleaved
+        // buffer upload it once, a storage attribute not at all.
+        let mut buffers: Vec<(BufferKey, wgpu::Buffer, u32)> = Vec::new();
+        for (_, attribute) in geometry.attributes() {
+            let key = attribute.buffer_key();
+            if matches!(key, BufferKey::Storage(_)) || buffers.iter().any(|(k, _, _)| *k == key) {
+                continue;
+            }
+            let buffer = self.create_buffer_init(
                 "three-rs attribute",
-                &attribute_bytes(attribute),
+                &attribute.upload_bytes(),
                 wgpu::BufferUsages::VERTEX,
-            )
-        };
-
-        let position = geometry.position().map(vertex_buffer);
-        let normal = geometry.normal().map(vertex_buffer);
-        let uv = geometry.uv().map(vertex_buffer);
-        let other: Vec<(String, wgpu::Buffer)> = geometry
-            .attributes()
-            .filter(|(name, _)| !matches!(*name, "position" | "normal" | "uv"))
-            .map(|(name, attribute)| (name.to_string(), vertex_buffer(attribute)))
-            .collect();
+            );
+            buffers.push((key, buffer, attribute.version()));
+        }
 
         let index = geometry.index.as_ref().map(|index| {
             let (bytes, format): (Vec<u8>, wgpu::IndexFormat) = match index {
@@ -6906,40 +6865,20 @@ impl Renderer {
 
         let vertex_count = geometry.position().map(|p| p.count() as u32).unwrap_or(0);
 
-        let versions = UPLOADED_ATTRIBUTES.map(|name| {
-            geometry
-                .get_attribute(name)
-                .map(|attribute| attribute.version())
-                .unwrap_or(0)
-        });
-
         // One upload, and one `buffers_written` per attribute or index buffer
         // it wrote — the count a regression that re-uploads a live geometry
         // every frame moves off zero (issue #67).
         self.info.build.geometries_uploaded += 1;
-        self.info.build.buffers_written += [
-            position.is_some(),
-            normal.is_some(),
-            uv.is_some(),
-            index.is_some(),
-        ]
-        .iter()
-        .filter(|written| **written)
-        .count() as u64
-            + other.len() as u64;
+        self.info.build.buffers_written += buffers.len() as u64 + u64::from(index.is_some());
 
         self.geometries.insert(
             id,
             GeometryEntry {
                 gpu: GeometryGpu {
-                    position,
-                    normal,
-                    uv,
-                    other,
+                    buffers,
                     index,
                     wireframe_index: None,
                     vertex_count,
-                    versions,
                 },
                 owner,
             },
@@ -7015,11 +6954,17 @@ impl Renderer {
     /// [`set_needs_update`](crate::core::BufferAttribute::set_needs_update)
     /// since, re-written in place (issue #47).
     ///
-    /// Only the attributes whose version moved are touched, so a moved vertex
+    /// Only the buffers whose version moved are touched, so a moved vertex
     /// costs one `buffers_written` and no `geometries_uploaded`; the geometry
     /// keeps its id, its entry and every buffer that did not change. A write
     /// the same length reuses the buffer (`queue.write_buffer`); one that
     /// changed length has to reallocate, since a `wgpu::Buffer` is fixed size.
+    /// Every attribute is covered, and an interleaved buffer is one buffer
+    /// however many views it has. An attribute added after the first upload
+    /// is uploaded here, as three's `createAttribute()` would on first use.
+    ///
+    /// Buffers no current attribute keys (one replaced by `set_attribute` or
+    /// removed by `delete_attribute`) are dropped first.
     ///
     /// The index is not versioned: `BufferGeometry.index` is an [`Index`], not
     /// a [`BufferAttribute`](crate::core::BufferAttribute), so there is no
@@ -7027,54 +6972,143 @@ impl Renderer {
     fn refresh_geometry(&mut self, geometry: &Rc<BufferGeometry>) {
         let id = geometry.id();
 
-        for (slot, name) in UPLOADED_ATTRIBUTES.iter().enumerate() {
-            let Some(attribute) = geometry.get_attribute(name) else {
-                continue;
-            };
-            let version = attribute.version();
+        // A buffer whose attribute `set_attribute` replaced or
+        // `delete_attribute` removed is no longer any attribute's: drop it,
+        // rather than hold its memory for the geometry's life.
+        let gpu = &mut self
+            .geometries
+            .get_mut(&id)
+            .expect("three-rs: refresh_geometry() on an uploaded geometry")
+            .gpu;
+        gpu.buffers.retain(|(key, _, _)| {
+            geometry
+                .attributes()
+                .any(|(_, attribute)| attribute.buffer_key() == *key)
+        });
 
-            let entry = &self.geometries[&id];
-            if entry.gpu.versions[slot] == version {
+        for (name, attribute) in geometry.attributes() {
+            let key = attribute.buffer_key();
+            if matches!(key, BufferKey::Storage(_)) {
                 continue;
             }
-            // An attribute the first upload did not write (it arrived after the
-            // geometry was uploaded) has no buffer to refresh; the geometry's
-            // vertex layout was fixed at upload, so a new attribute needs a new
-            // geometry.
-            let Some(buffer) = entry.gpu.slot(slot).cloned() else {
-                continue;
-            };
+            let version = attribute.version();
+            let gpu = &self.geometries[&id].gpu;
+            let slot = gpu.buffers.iter().position(|(k, _, _)| *k == key);
+            if let Some(slot) = slot {
+                if gpu.buffers[slot].2 == version {
+                    continue;
+                }
+            }
 
-            let bytes = attribute_bytes(attribute);
-            let bytes: &[u8] = &bytes;
-
-            if buffer.size() == bytes.len() as u64 {
-                self.queue.write_buffer(&buffer, 0, bytes);
-            } else {
-                let buffer = self.create_buffer_init(
-                    "three-rs attribute",
-                    bytes,
-                    wgpu::BufferUsages::VERTEX,
-                );
-                let gpu = &mut self
-                    .geometries
-                    .get_mut(&id)
-                    .expect("three-rs: the entry was found above")
-                    .gpu;
-                gpu.set_slot(slot, buffer);
+            let bytes = attribute.upload_bytes();
+            let existing = slot.map(|slot| gpu.buffers[slot].1.clone());
+            match existing {
+                Some(buffer) if buffer.size() == bytes.len() as u64 => {
+                    self.queue.write_buffer(&buffer, 0, &bytes);
+                }
+                _ => {
+                    let buffer = self.create_buffer_init(
+                        "three-rs attribute",
+                        &bytes,
+                        wgpu::BufferUsages::VERTEX,
+                    );
+                    let gpu = &mut self
+                        .geometries
+                        .get_mut(&id)
+                        .expect("three-rs: the entry was found above")
+                        .gpu;
+                    match slot {
+                        Some(slot) => gpu.buffers[slot].1 = buffer,
+                        None => gpu.buffers.push((key, buffer, version)),
+                    }
+                }
             }
             let gpu = &mut self
                 .geometries
                 .get_mut(&id)
                 .expect("three-rs: the entry was found above")
                 .gpu;
-            gpu.versions[slot] = version;
-            if *name == "position" {
+            if let Some(entry) = gpu.buffers.iter_mut().find(|(k, _, _)| *k == key) {
+                entry.2 = version;
+            }
+            if name == "position" {
                 gpu.vertex_count = attribute.count() as u32;
             }
 
             self.info.build.buffers_written += 1;
         }
+    }
+
+    /// The vertex buffer behind the geometry attribute `name`: its own or its
+    /// interleaved buffer's upload, or — for a
+    /// [`StorageBufferAttribute`](crate::core::StorageBufferAttribute) — the
+    /// storage buffer a kernel writes, made here with the attribute's initial
+    /// contents if no kernel has made it yet.
+    fn geometry_vertex_buffer(
+        &mut self,
+        geometry: &BufferGeometry,
+        geometry_id: usize,
+        name: &str,
+    ) -> wgpu::Buffer {
+        let attribute = geometry
+            .get_attribute(name)
+            .unwrap_or_else(|| panic!("three-rs: the geometry has no {name} attribute"));
+        let key = attribute.buffer_key();
+        let BufferKey::Storage(id) = key else {
+            return self.geometries[&geometry_id]
+                .gpu
+                .buffer(key)
+                .unwrap_or_else(|| panic!("three-rs: the geometry has no {name} attribute"))
+                .clone();
+        };
+
+        // Keyed on the storage id and the attribute's version, as
+        // `refresh_geometry` keys its own buffers: the initial contents are
+        // built only when the buffer is first made or the version moved.
+        let version = attribute.version();
+        let gpu = &self.geometries[&geometry_id].gpu;
+        let slot = gpu.buffers.iter().position(|(k, _, _)| *k == key);
+        if let Some(slot) = slot {
+            if gpu.buffers[slot].2 == version {
+                return gpu.buffers[slot].1.clone();
+            }
+        }
+        let storage = attribute
+            .storage_buffer()
+            .expect("three-rs: a storage key has a storage attribute");
+        let buffer = match self.storage_buffers.get(&id.get()) {
+            Some(buffer) => {
+                let buffer = buffer.gpu.clone();
+                if slot.is_some() {
+                    // `updateAttribute()`: `needsUpdate` on the attribute
+                    // writes its array over what the GPU holds, kernel
+                    // output included. A buffer cannot grow, so a longer
+                    // array is cut to it.
+                    let init = storage.init_words(attribute.normalized);
+                    let bytes: &[u8] = bytemuck::cast_slice(&init);
+                    let len = bytes.len().min(buffer.size() as usize);
+                    self.queue.write_buffer(&buffer, 0, &bytes[..len]);
+                    self.info.build.buffers_written += 1;
+                }
+                buffer
+            }
+            // Neither a kernel nor an earlier draw has made it yet.
+            None => {
+                let init = storage.init_words(attribute.normalized);
+                self.storage_buffer(id.get(), (init.len() * 4) as u64, Some(&init))
+                    .gpu
+            }
+        };
+        let gpu = &mut self
+            .geometries
+            .get_mut(&geometry_id)
+            .expect("three-rs: the entry was read above")
+            .gpu;
+        match slot {
+            Some(slot) => gpu.buffers[slot].2 = version,
+            None => gpu.buffers.push((key, buffer.clone(), version)),
+        }
+        buffer
     }
 
     /// Dropped at the start of every `render()`: everything the renderer is
@@ -8329,22 +8363,6 @@ async fn pick_adapter(instance: &wgpu::Instance) -> Result<wgpu::Adapter, Error>
 /// One draw per component per instance — four per instance even when the range
 /// is a `vec3`, whose fourth component is a constant. A free function so a test
 /// can drive it in the order the program's vertex buffers report without a GPU.
-/// The bytes one geometry attribute is uploaded as.
-///
-/// `WebGPUAttributeUtils.createAttribute()` takes the GPU format from the
-/// attribute's own typed array. The port stores every attribute as `f32`, so an
-/// integer attribute (`skinIndex`) is converted back here — the values are
-/// small bone indices, exact in an `f32` either way.
-fn attribute_bytes(attribute: &crate::core::BufferAttribute) -> Vec<u8> {
-    let array = attribute.array();
-    if attribute.integer() {
-        let indices: Vec<u32> = array.iter().map(|v| *v as u32).collect();
-        bytemuck::cast_slice(&indices).to_vec()
-    } else {
-        bytemuck::cast_slice(array.as_slice()).to_vec()
-    }
-}
-
 #[doc(hidden)]
 pub fn fill_range(
     random: &mut DeterministicRandom,

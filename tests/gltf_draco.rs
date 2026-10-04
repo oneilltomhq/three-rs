@@ -339,7 +339,11 @@ fn check(name: &str) {
                 attribute.item_size, e.item_size,
                 "{at} {attribute_name}: itemSize"
             );
-            let got: Vec<f64> = attribute.array().iter().map(|&v| v as f64).collect();
+            // `data()`, not `array()`: `skinIndex` is a `Uint32Array`.
+            let got: Vec<f64> = {
+                let data = attribute.data();
+                (0..data.len()).map(|i| data.get(i)).collect()
+            };
             if let Some(failure) =
                 compare(&format!("{at} {attribute_name}"), &widened(e), &got, false)
             {

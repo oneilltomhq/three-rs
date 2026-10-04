@@ -9,34 +9,30 @@
 //! A fat line is a `Mesh`, not a `Line`: the segment list becomes instanced
 //! attributes over a fixed eight-vertex quad, and the vertex shader expands
 //! each instance into a screen-space ribbon. That is why `LineSegments2`
-//! returns a node whose payload is [`Payload::Mesh`], with the geometry the
-//! quad and the segments hanging off
-//! [`Mesh::line_segments`](crate::objects::Mesh::line_segments).
+//! returns a node whose payload is [`Payload::Mesh`], with
+//! [`Mesh::line_segments`](crate::objects::Mesh::line_segments) marking it as
+//! a fat line.
 
+use std::cell::Ref;
 use std::rc::Rc;
 
 use crate::core::{
-    BoundingBox, BoundingSphere, BufferAttribute, BufferGeometry, Intersection, Node, Raycaster,
-    RaycasterCamera,
+    BoundingBox, BoundingSphere, BufferAttribute, BufferGeometry, InterleavedBuffer, Intersection,
+    Node, Raycaster, RaycasterCamera,
 };
 use crate::materials::MeshBasicNodeMaterial;
 use crate::math::{Box3, Line3, Matrix4, Ray, Sphere, Vector2, Vector3, Vector4};
-use crate::nodes::lines::LineSegmentsAttributes;
 use crate::objects::{Mesh, Payload};
 
-/// `new LineSegmentsGeometry()` — the instanced quad, plus the segment and
-/// colour arrays set on it.
-///
-/// three.js is an `InstancedBufferGeometry` carrying five attributes: the
-/// shared `position` / `uv` quad and the three interleaved instanced pairs.
-/// The port splits them: the quad is a [`BufferGeometry`], and the instanced
-/// pairs are a [`LineSegmentsAttributes`] that travels with the object — see
-/// [`crate::nodes::lines`].
+/// `new LineSegmentsGeometry()` — an `InstancedBufferGeometry` carrying the
+/// shared `position` / `uv` quad and, once set, the interleaved instanced
+/// pairs: `instanceStart` / `instanceEnd` and `instanceColorStart` /
+/// `instanceColorEnd`, each pair two views of one
+/// `InstancedInterleavedBuffer( array, 6, 1 )`, exactly as three.js lays
+/// them out.
 #[derive(Clone)]
 pub struct LineSegmentsGeometry {
     geometry: BufferGeometry,
-    positions: Option<Rc<Vec<f32>>>,
-    colors: Option<Rc<Vec<f32>>>,
 }
 
 impl Default for LineSegmentsGeometry {
@@ -68,19 +64,15 @@ impl LineSegmentsGeometry {
         geometry.set_attribute("position", BufferAttribute::new(positions, 3));
         geometry.set_attribute("uv", BufferAttribute::new(uvs, 2));
 
-        Self {
-            geometry,
-            positions: None,
-            colors: None,
-        }
+        Self { geometry }
     }
 
     /// `setPositions( array )` — `xyz xyz` per segment, so a multiple of six.
     ///
-    /// three.js wraps the array in an `InstancedInterleavedBuffer( array, 6, 1
-    /// )` and takes two `InterleavedBufferAttribute` views at offsets 0 and 3;
-    /// the port keeps the array and builds the two views at setup time, which
-    /// is the same one vertex buffer of stride 24.
+    /// The array is wrapped in an `InstancedInterleavedBuffer( array, 6, 1 )`
+    /// and set as two `InterleavedBufferAttribute` views at offsets 0 and 3,
+    /// one vertex buffer of stride 24; `instanceCount` becomes the buffer's
+    /// count, one instance per segment.
     ///
     /// It also recomputes the bounding volumes, because the quad's own
     /// `position` says nothing about where the line is.
@@ -91,7 +83,17 @@ impl LineSegmentsGeometry {
             "three-rs: LineSegmentsGeometry::set_positions wants xyz xyz per segment, got {} floats",
             array.len()
         );
-        self.positions = Some(Rc::new(array));
+        let instance_buffer = Rc::new(InterleavedBuffer::new_instanced(array, 6, 1));
+        let count = instance_buffer.count();
+        self.geometry.set_attribute(
+            "instanceStart",
+            BufferAttribute::interleaved(instance_buffer.clone(), 3, 0, false),
+        );
+        self.geometry.set_attribute(
+            "instanceEnd",
+            BufferAttribute::interleaved(instance_buffer, 3, 3, false),
+        );
+        self.geometry.instance_count = Some(count);
         self.geometry.bounding_sphere = self.compute_bounding_sphere();
         self
     }
@@ -104,20 +106,28 @@ impl LineSegmentsGeometry {
             "three-rs: LineSegmentsGeometry::set_colors wants rgb rgb per segment, got {} floats",
             array.len()
         );
-        self.colors = Some(Rc::new(array));
+        let instance_color_buffer = Rc::new(InterleavedBuffer::new_instanced(array, 6, 1));
+        self.geometry.set_attribute(
+            "instanceColorStart",
+            BufferAttribute::interleaved(instance_color_buffer.clone(), 3, 0, false),
+        );
+        self.geometry.set_attribute(
+            "instanceColorEnd",
+            BufferAttribute::interleaved(instance_color_buffer, 3, 3, false),
+        );
         self
     }
 
     /// `geometry.instanceCount` — one instance per segment.
     pub fn instance_count(&self) -> usize {
-        self.positions.as_ref().map_or(0, |p| p.len() / 6)
+        self.geometry.instance_count.unwrap_or(0)
     }
 
     /// `LineSegmentsGeometry.computeBoundingBox()` — the union of the
     /// `instanceStart` and `instanceEnd` boxes, which over one interleaved
     /// array is just the box of every point in it.
     pub fn compute_bounding_box(&self) -> Option<BoundingBox> {
-        let positions = self.positions.as_ref()?;
+        let positions = segment_positions(&self.geometry)?;
         let mut bounding_box = BoundingBox::empty();
         for point in positions.as_chunks::<3>().0 {
             let v = Vector3::new(point[0] as f64, point[1] as f64, point[2] as f64);
@@ -129,7 +139,7 @@ impl LineSegmentsGeometry {
     /// `LineSegmentsGeometry.computeBoundingSphere()` — the box's centre, then
     /// the farthest endpoint from it.
     pub fn compute_bounding_sphere(&self) -> Option<BoundingSphere> {
-        let positions = self.positions.as_ref()?;
+        let positions = segment_positions(&self.geometry)?;
         let center = self.compute_bounding_box()?.center();
         let mut max_radius_sq: f64 = 0.0;
         for point in positions.as_chunks::<3>().0 {
@@ -142,29 +152,30 @@ impl LineSegmentsGeometry {
         })
     }
 
-    /// The instanced attributes, for
-    /// [`SetupContext::line_segments`](crate::materials::SetupContext).
-    ///
-    /// Panics if `set_positions` was never called: three.js would draw zero
-    /// instances and show nothing, which on this stack is a silent wrong
-    /// picture rather than an error.
-    pub fn attributes(&self) -> LineSegmentsAttributes {
-        let positions = self
-            .positions
-            .clone()
-            .expect("three-rs: LineSegmentsGeometry has no positions; call set_positions() first");
-        LineSegmentsAttributes {
-            positions,
-            colors: self.colors.clone(),
-            distances: None,
-            resolution: Vector2::new(0.0, 0.0),
-        }
-    }
-
-    /// The shared quad, ready for a `Mesh`.
+    /// The geometry, ready for a `Mesh`: the shared quad plus the
+    /// instanced, interleaved segment attributes.
     pub fn geometry(&self) -> &BufferGeometry {
         &self.geometry
     }
+}
+
+/// The `instanceStart` / `instanceEnd` interleaved array — `xyz xyz` per
+/// segment — or `None` before `set_positions`.
+fn segment_positions(geometry: &BufferGeometry) -> Option<Ref<'_, Vec<f32>>> {
+    let buffer = geometry.get_attribute("instanceStart")?.data_buffer()?;
+    Some(buffer.array())
+}
+
+/// `LineSegments2`'s own state beyond `Mesh`'s, which in three.js are
+/// properties on the object.
+#[derive(Clone, Debug, Default)]
+#[doc(hidden)]
+pub struct LineSegments2State {
+    /// `LineSegments2._resolution` — the renderer's viewport size in logical
+    /// pixels, written by `onBeforeRender()` every draw and read only by the
+    /// screen-space `raycast()`. `( 0, 0 )` until the first render, which
+    /// makes a screen-space raycast hit nothing, as in three.js.
+    pub resolution: Vector2,
 }
 
 /// `new LineGeometry()` — a `LineSegmentsGeometry` whose setters take a
@@ -239,7 +250,7 @@ impl LineSegments2 {
             material: Some(material),
             materials: Vec::new(),
             morph_target_influences: Vec::new(),
-            line_segments: Some(geometry.attributes()),
+            line_segments: Some(LineSegments2State::default()),
             count: None,
         });
         object.into_node()
@@ -263,7 +274,8 @@ impl Line2 {
 ///
 /// The segments are the instanced `instanceStart` / `instanceEnd` pairs, not
 /// the quad geometry, so the bounds tested first are
-/// `LineSegmentsGeometry`'s — the box and sphere of every endpoint.
+/// `LineSegmentsGeometry`'s — the box and sphere of every endpoint — and
+/// `segmentCount` is `min( geometry.instanceCount, instanceStart.count )`.
 pub(crate) fn raycast(
     mesh: &Mesh,
     matrix_world: &Matrix4,
@@ -294,7 +306,15 @@ pub(crate) fn raycast(
     let ray = &raycaster.ray;
     let line_width = material.linewidth + threshold;
 
-    let positions: &[f32] = &segments.positions;
+    let Some(positions) = segment_positions(&mesh.geometry) else {
+        return;
+    };
+    let segment_count = mesh
+        .geometry
+        .instance_count
+        .unwrap_or(usize::MAX)
+        .min(positions.len() / 6);
+    let positions: &[f32] = &positions[..segment_count * 6];
     let Some(bounds) = segment_bounds(positions) else {
         return;
     };

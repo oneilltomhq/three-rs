@@ -56,12 +56,6 @@ pub struct SetupContext {
     pub skin: Option<crate::nodes::skinning::SkinEntry>,
     /// `object.isBatchedMesh`: the three data textures `batch()` reads.
     pub batch: Option<crate::nodes::batch::BatchEntry>,
-    /// A `LineSegmentsGeometry`'s interleaved instanced attributes, which
-    /// `Line2NodeMaterial` reads as `instanceStart` / `instanceEnd` and
-    /// `instanceColorStart` / `instanceColorEnd`. See
-    /// [`crate::nodes::lines`] for why they travel here rather than on the
-    /// geometry.
-    pub line_segments: Option<crate::nodes::lines::LineSegmentsAttributes>,
     /// `object.center && object.center.isVector2` — the object is a `Sprite`,
     /// so `SpriteNodeMaterial.setupPositionView()` offsets the quad by
     /// `center - 0.5`. A `SpriteNodeMaterial` on anything else (the
@@ -105,12 +99,13 @@ pub struct SetupContext {
     /// gets the screen-derivative one. It changes both stages' code, so it is
     /// part of the program's cache key.
     pub has_tangent_attribute: bool,
-    /// The geometry's `InstancedBufferAttribute`s by name —
-    /// `isInstancedBufferAttribute`, which sets their vertex buffer's
-    /// `stepMode` to `instance`. It changes the pipeline, not the WGSL, and is
-    /// in the key for that reason; see
-    /// [`NodeProgram::instanced_attributes`](crate::nodes::NodeProgram).
-    pub instanced_attributes: Vec<String>,
+    /// `builder.geometry.attributes` — each attribute's name, typed-array
+    /// kind, item size, `normalized`, step mode and interleaved layout, from
+    /// [`BufferGeometry::attribute_descs`](crate::core::BufferGeometry::attribute_descs).
+    /// `AttributeNode` declares its vertex input in the attribute's own type
+    /// and the pipeline reads it in the attribute's own format, so both the
+    /// WGSL and the vertex layout depend on it, and it is in the key.
+    pub geometry_attributes: Vec<crate::core::AttributeDesc>,
     /// `viewportOpaqueMipTexture()` — the renderer's mipped copy of the frame
     /// as it stood when the last opaque object had been drawn, which is what a
     /// transmissive material reads through. `None` on every pass that makes no
@@ -146,6 +141,16 @@ pub struct SetupContext {
     /// [`ClippingContext`]: crate::nodes::clipping::ClippingContext
     #[doc(hidden)]
     pub clipping: Option<std::rc::Rc<crate::nodes::clipping::ClippingContext>>,
+}
+
+impl SetupContext {
+    /// `builder.hasGeometryAttribute( name )`, over
+    /// [`geometry_attributes`](Self::geometry_attributes).
+    pub(crate) fn has_geometry_attribute(&self, name: &str) -> bool {
+        self.geometry_attributes
+            .iter()
+            .any(|desc| desc.name == name)
+    }
 }
 
 /// `builtinAOContext( aoNode )` — the `getAO` hook a pass installs on the
@@ -459,16 +464,13 @@ fn setup_diffuse_color(
     // first and then adds the coverage multiply and the per-end colour. Its
     // `blending = NoBlending` is why `is_opaque()` above is false and the
     // `DiffuseColor.w = 1.0` line is absent from three's dump.
-    if material.kind == MaterialKind::Line2 {
-        if let Some(attributes) = &ctx.line_segments {
-            crate::materials::line2::setup_diffuse_color(
-                material.alpha_to_coverage,
-                material.world_units,
-                material.vertex_colors,
-                attributes,
-                fragment,
-            );
-        }
+    if material.kind == MaterialKind::Line2 && ctx.has_geometry_attribute("instanceStart") {
+        crate::materials::line2::setup_diffuse_color(
+            material.alpha_to_coverage,
+            material.world_units,
+            material.vertex_colors && ctx.has_geometry_attribute("instanceColorStart"),
+            fragment,
+        );
     }
 }
 
@@ -583,13 +585,10 @@ fn setup_inner(
     // `super.setupPosition()` last, so its `positionLocal.assign()` is the
     // first statement of the vertex flow — ahead of morphing and skinning,
     // neither of which a fat line has.
-    if material.kind == MaterialKind::Line2 {
-        if let Some(attributes) = &ctx.line_segments {
-            pre_vertex.push(crate::materials::line2::setup_position(
-                attributes,
-                material.world_units,
-            ));
-        }
+    if material.kind == MaterialKind::Line2 && ctx.has_geometry_attribute("instanceStart") {
+        pre_vertex.push(crate::materials::line2::setup_position(
+            material.world_units,
+        ));
     }
 
     // --- setupPosition: the `context.position` stack, flowed into the vertex
@@ -923,6 +922,7 @@ fn setup_inner(
         vertex_statements: clipping.hardware.iter().map(|(l, _)| l.clone()).collect(),
         position,
         geometry_has_tangent: ctx.has_tangent_attribute,
+        geometry_attributes: ctx.geometry_attributes.clone(),
         clip_distances: clipping.hardware.map_or(0, |(_, count)| count),
     }
 }

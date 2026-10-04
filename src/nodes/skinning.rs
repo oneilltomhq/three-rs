@@ -207,16 +207,21 @@ pub fn compute_skinning(mesh: &crate::core::Node) -> NodeRef {
             .get_attribute(name)
             .unwrap_or_else(|| panic!("three-rs: computeSkinning() needs `{name}`"))
     };
-    let position = storage_f32(&attribute("position").array(), Type::Vec3).to_read_only();
-    // `skinIndex` is a `Uint16Array` in three; `storage( …, 'uvec4' )` over it
-    // is a `u32` array on the GPU. The port keeps the indices as floats.
-    let indices: Vec<u32> = attribute("skinIndex")
-        .array()
-        .iter()
-        .map(|&v| v as u32)
-        .collect();
+    // `storage( attribute, 'vec3' / 'vec4' )` reads floats; the port hands
+    // the values over as floats whatever the array (a normalized `Uint16Array`
+    // skinWeight from `BufferGeometryLoader`, an interleaved position), which
+    // is what three's typed `getX()` would read.
+    let position = storage_f32(&attribute("position").to_f32_items(), Type::Vec3).to_read_only();
+    // `skinIndex` is a `Uint16Array` in three (a `Uint32Array` from the
+    // port's glTF loader, a `Float32Array` from hand-built geometry);
+    // `storage( …, 'uvec4' )` over it is a `u32` array on the GPU.
+    let indices: Vec<u32> = {
+        let data = attribute("skinIndex").data();
+        (0..data.len()).map(|i| data.get(i) as u32).collect()
+    };
     let skin_index = storage_data(&indices, Type::UVec4).to_read_only();
-    let skin_weight = storage_f32(&attribute("skinWeight").array(), Type::Vec4).to_read_only();
+    let skin_weight =
+        storage_f32(&attribute("skinWeight").to_f32_items(), Type::Vec4).to_read_only();
 
     let skinned = |read: fn(&crate::objects::SkinnedMesh) -> Vec<f64>| {
         let mesh = mesh.downgrade();
