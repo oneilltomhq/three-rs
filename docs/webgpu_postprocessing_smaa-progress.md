@@ -2,7 +2,7 @@
 
 Branch `smaa-pixel-pages`, stacked on `ssr-node` (#272).
 
-Status: **ported, not graded on this machine.** Three.js r187 scores 258 of
+Status: **ported, not graded on this machine.** Three.js 5f610f5 (r187dev) scores 258 of
 100000 pixels (0.258%) against its own
 `examples/screenshots/webgpu_postprocessing_smaa.jpg` here
 (`tools/dump-webgpu.mjs`' `actual.jpg`), over the 0.1% limit. The port scores
@@ -20,7 +20,7 @@ brick-textured, turning. They go through a scene pass and `smaa()` (§65 of
 
 | | pixels of 100000 |
 | --- | --- |
-| three.js r187 against its own reference JPEG | 258 |
+| three.js 5f610f5 (r187dev) against its own reference JPEG | 258 |
 | this port against the same JPEG | 258 |
 | this port against three's frame on this machine (graded scale) | 0 |
 | the same at 800x500, > 2 of 255 | 448 (max 33) |

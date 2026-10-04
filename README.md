@@ -251,14 +251,12 @@ asserts. The triangle counts are the CPU-side counts `renderer.info()` records
 for an indirect draw, as three's does, not what the GPU was told to draw.
 
 Some pages are ported but cannot be graded, because three's own e2e harness
-skips them or because three itself fails their reference on this machine.
-They are in the native viewer, not in the gallery or the browser shell:
+skips them. They are in the native viewer, not in the gallery or the
+browser shell:
 
 | example | why it has no grade |
 |---|---|
 | [`webgpu_postprocessing_traa`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_traa.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_traa-progress.md) | in three's e2e exception list (`test/e2e/puppeteer.js`, "Black screen"). It is gated instead on its resolve shader against three's dump and on `tests/traa_frames.rs` |
-| [`webgpu_postprocessing_smaa`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_smaa.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_smaa-progress.md) | three itself scores 258 against its own JPEG here (limit 100), all on the wireframe lines; the port scores the same 258, and no graded pixel differs from three's own frame |
-| [`webgpu_postprocessing_pixel`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_pixel.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_pixel-progress.md) | three itself scores 405 against its own JPEG here (limit 100); the port scores 417, 12 graded pixels from three's own frame, on the crystal's lit facets |
 
 Measured on Intel Iris Xe, Mesa 25.3.6, Fedora 43, against three.js 5f610f5
 (past r186, for the cube PMREM of 2f80402; the pin becomes the r187 tag once
@@ -325,7 +323,12 @@ cargo run --release --bin viewer -- shadowmap --headless --frames 40
 
 Opens the named example in a window (winit, tested on Wayland). All 86 graded
 examples are there, and so are the ungraded `webgpu_postprocessing_traa`,
-`webgpu_postprocessing_smaa` and `webgpu_postprocessing_pixel`. Each one animates, orbits, dollies and pans through
+`webgpu_postprocessing_smaa` and `webgpu_postprocessing_pixel`. The last two
+are ported but their e2e tests are `#[ignore]`d, because three itself fails
+their references on this machine; their
+[smaa](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_smaa-progress.md)
+and [pixel](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_pixel-progress.md)
+notes have the numbers. Each one animates, orbits, dollies and pans through
 its *own* `animate()`, `resize()` and `OrbitControls` — the viewer drives the
 example, it does not restate it. `--list` prints the examples with their keys,
 and a key stands in for the name on the command line; in the window, `[` and

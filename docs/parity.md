@@ -820,7 +820,7 @@ Graded examples: 85 (the README gallery plus `webgpu_textures_2d-array_compresse
 
 ### Supplementary: `examples/jsm/tsl/display/*.js`
 
-These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) and are not counted above. 16 Present, 32 Absent.
+These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) and are not counted above. 17 Present, 31 Absent.
 
 | file | status | three-rs port and check |
 |---|---|---|
@@ -851,7 +851,7 @@ These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) an
 | `OITPassNode.js` | Absent | — |
 | `OutlineNode.js` | Absent | — |
 | `ParallaxBarrierPassNode.js` | Absent | — |
-| `PixelationPassNode.js` | Present | pixelation_pass; tests/nodes_display_wgsl.rs (WGSL gate only, no graded rung) |
+| `PixelationPassNode.js` | Present | pixelation_pass; tests/nodes_display_wgsl.rs; webgpu_postprocessing_pixel (ported, ungraded: three.js fails its own reference on this machine) |
 | `radialBlur.js` | Present | radial_blur; webgpu_postprocessing_radial_blur |
 | `RecurrentDenoiseNode.js` | Absent | — |
 | `RetroPassNode.js` | Absent | — |
@@ -859,7 +859,7 @@ These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) an
 | `Sepia.js` | Absent | — |
 | `Shape.js` | Absent | (circle(); core shapeCircle exists in src/nodes/tsl.rs:3813, a different function) |
 | `SharpenNode.js` | Absent | — |
-| `SMAANode.js` | Absent | — |
+| `SMAANode.js` | Present | smaa/SmaaNode; tests/nodes_display_wgsl.rs (edges, weights and blend gates); webgpu_postprocessing_ssr (graded); webgpu_postprocessing_smaa (ported, ungraded: three.js fails its own reference on this machine) |
 | `SobelOperatorNode.js` | Present | sobel; webgpu_postprocessing_sobel |
 | `SSAAPassNode.js` | Present | SsaaPassNode (src/renderer/ssaa_pass.rs:130); webgpu_postprocessing_ssaa |
 | `SSAONode.js` | Absent | — |

@@ -2047,9 +2047,9 @@ fn webgpu_postprocessing_ssr() {
     });
 }
 
-/// Two spinning wireframe boxes through a scene pass and `SMAANode`'s edge,
-/// weight and blend passes, with the lookup textures decoded from three's
-/// base64 PNGs.
+/// Two spinning boxes, one white wireframe and one brick-textured, through a
+/// scene pass and `SMAANode`'s edge, weight and blend passes, with the lookup
+/// textures decoded from three's base64 PNGs.
 ///
 /// Not graded: three.js itself scores 0.258% (258 pixels) against its own
 /// `webgpu_postprocessing_smaa.jpg` on this machine, over the 0.1% limit,

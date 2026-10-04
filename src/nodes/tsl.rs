@@ -196,6 +196,15 @@ pub(crate) fn with_tangent_attribute<R>(has_tangent: bool, f: impl FnOnce() -> R
     f()
 }
 
+/// `builder.camera.isOrthographicCamera` for the whole of one material's
+/// setup. Three reads `builder.camera` directly; the port's flow is built
+/// before the builder exists, so the renderer hands the camera's kind down
+/// through `SetupContext::orthographic` and this installs it.
+pub(crate) fn with_orthographic_camera<R>(orthographic: bool, f: impl FnOnce() -> R) -> R {
+    let _camera = push_context(|cx| cx.orthographic_camera = orthographic);
+    f()
+}
+
 /// `builder.material.side` alone, for the window in which
 /// `NodeMaterial.setupNormal()` builds the material's normal node. three.js
 /// calls `setupNormal()` lazily from inside the build, so the side is already
@@ -2582,21 +2591,35 @@ accessor!(
 );
 /// `positionViewDirection`.
 ///
+/// `vec3( 0, 0, 1 )` when `builder.camera.isOrthographicCamera` — every view
+/// ray of an orthographic camera is parallel to its axis — and
+/// `positionView.negate().toVarying( 'v_positionViewDirection' ).normalize()`
+/// otherwise (`Position.js`). The camera's kind comes from the build context
+/// (`SetupContext::orthographic`), so the two forms get separate cells.
+///
 /// Not an `accessor!`: `overrideNodes` can replace it wholesale (§27), and a
 /// singleton cell would hand the replacement to the next material too.
 pub fn position_view_direction() -> NodeRef {
     if let Some(node) = override_node(|o| &o.position_view_direction) {
         return node;
     }
-    thread_local! { static CELL: Lazy<NodeRef> = const { Lazy::new() }; }
-    CELL.with(|c| {
-        c.get(|| {
-            to_var(
-                Some("positionViewDirection"),
-                to_varying(Some("v_positionViewDirection"), position_view().negate()).normalize(),
-            )
+    thread_local! {
+        static PERSPECTIVE: Lazy<NodeRef> = const { Lazy::new() };
+        static ORTHOGRAPHIC: Lazy<NodeRef> = const { Lazy::new() };
+    }
+    if current_context(|cx| cx.orthographic_camera) {
+        ORTHOGRAPHIC.with(|c| c.get(|| to_var(Some("positionViewDirection"), vec3(0.0, 0.0, 1.0))))
+    } else {
+        PERSPECTIVE.with(|c| {
+            c.get(|| {
+                to_var(
+                    Some("positionViewDirection"),
+                    to_varying(Some("v_positionViewDirection"), position_view().negate())
+                        .normalize(),
+                )
+            })
         })
-    })
+    }
 }
 /// `normalFlat` — `positionView.dFdx().cross( positionView.dFdy() ).normalize()
 /// .toVar( 'normalFlat' )`. `dpdy()` carries WGSL's sign flip, so this prints as

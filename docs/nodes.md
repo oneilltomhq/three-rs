@@ -2160,7 +2160,7 @@ tap on it becomes a `textureLoad` against `textureDimensions` instead of a
 `textureSample`. Three's `dump-mrt/m12` has four bare `texture_2d<f32>`
 bindings and not one `_sampler`.
 
-The port's three pieces:
+The port's four pieces:
 
 * `Texture::is_unfilterable()` — the predicate.
 * `tsl::texture_uv()` picks `SampleMode::Load` over `SampleMode::Sample` for

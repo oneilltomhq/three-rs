@@ -524,6 +524,10 @@ pub(crate) struct BuildContext {
     /// `tangent` vec4 through `modelViewMatrix`; without it, from the screen
     /// derivatives of `TangentUtils.js`.
     pub(crate) has_tangent: bool,
+    /// `builder.camera.isOrthographicCamera`: what `positionViewDirection`
+    /// branches on. The renderer keys the program on it through
+    /// `SetupContext::orthographic`.
+    pub(crate) orthographic_camera: bool,
     /// `setupPositionView`: `NodeMaterial.setupPositionView()`'s result, which
     /// `SpriteNodeMaterial` and `PointsNodeMaterial` override. `None` is the
     /// base class' `modelViewMatrix.mul( positionLocal ).xyz`.
@@ -551,6 +555,7 @@ impl Default for BuildContext {
             flat_shading: false,
             material_side: crate::materials::Side::Front,
             has_tangent: false,
+            orthographic_camera: false,
             setup_position_view: None,
             setup_clearcoat_normal: None,
             alpha_to_coverage_samples: false,
@@ -1300,9 +1305,12 @@ impl NodeBuilder {
 
     /// `generateWrapFunction( texture )`: declares the texture's
     /// `tsl_coord_*_2d` wrap function and its helpers, and returns its name.
-    /// Only a map carries wrap modes here; depth, data and pass textures keep
-    /// three's default `ClampToEdgeWrapping`. Out of line, like the other
-    /// texture helpers, to keep `generate()`'s debug-build frame small.
+    /// A `Texture2D` source — a map or a pass's render-target attachment
+    /// alike — reads its own `wrap_s` / `wrap_t` (an attachment's are
+    /// `ClampToEdgeWrapping` unless someone changed them). Every other source
+    /// (depth, data) is forced to three's default `ClampToEdgeWrapping`. Out
+    /// of line, like the other texture helpers, to keep `generate()`'s
+    /// debug-build frame small.
     #[inline(never)]
     fn wrap_function(&mut self, texture: &TextureSource) -> String {
         let (wrap_s, wrap_t) = match texture {

@@ -49,8 +49,8 @@ use crate::core::{BufferGeometry, Group, Index, Layers, Node};
 use crate::error::Error;
 use crate::geometries::{quad_geometry, sphere_geometry};
 use crate::lights::{
-    LightKind, LightObject, LightShadow, ShadowFilter, ShadowFilterMap, ShadowMapType,
-    CUBE_DIRECTIONS, CUBE_UPS,
+    LightKind, LightObject, LightShadow, ShadowCamera, ShadowFilter, ShadowFilterMap,
+    ShadowMapType, CUBE_DIRECTIONS, CUBE_UPS,
 };
 use crate::materials::phong::{LightDesc, ShadowMap};
 use crate::materials::{self, MeshBasicNodeMaterial, MrtContext, SetupContext, Side, ToneMapping};
@@ -1834,6 +1834,8 @@ impl Renderer {
                 // takes the same inline output transform as everything else.
                 setup: SetupContext {
                     output: output_context.clone(),
+                    // `builder.camera` is the scene camera for the skybox too.
+                    orthographic: camera.is_orthographic_camera(),
                     // The skybox is a draw like any other: three's
                     // `NodeMaterial.setup()` reads `renderer._mrt` for it too,
                     // so it writes every attachment. `webgpu_mrt`'s `diffuse`
@@ -2134,6 +2136,7 @@ impl Renderer {
                 key,
                 setup: SetupContext {
                     array_cameras: camera.sub_cameras().len(),
+                    orthographic: camera.is_orthographic_camera(),
                     environment: scene_environment,
                     // `builder.renderer.lighting.enabled`: a pass with lighting
                     // disabled builds its materials with no lights *and* no
@@ -2602,8 +2605,10 @@ impl Renderer {
                     material: materials::shadow_material_for(source, shadow_type),
                     key: MaterialKey::of(source).variant(VARIANT_SHADOW),
                     setup: SetupContext {
-                        // A shadow camera is never an `ArrayCamera`.
+                        // A shadow camera is never an `ArrayCamera`; a
+                        // directional light's is an `OrthographicCamera`.
                         array_cameras: 0,
+                        orthographic: matches!(shadow.camera, ShadowCamera::Orthographic(_)),
                         environment: None,
                         lighting_disabled: false,
                         viewport_opaque_mip: None,
@@ -2800,7 +2805,12 @@ impl Renderer {
                 geometry: self.quad_geometry(),
                 material,
                 key,
-                setup: SetupContext::default(),
+                // `QuadMesh` draws through its own
+                // `OrthographicCamera( - 1, 1, 1, - 1, 0, 1 )`.
+                setup: SetupContext {
+                    orthographic: true,
+                    ..SetupContext::default()
+                },
                 model_world: Matrix4::identity(),
                 instance_matrix: None,
                 instance_color: None,
@@ -2992,8 +3002,10 @@ impl Renderer {
                     material: materials::shadow_material_for(source, shadow_type),
                     key: MaterialKey::of(source).variant(VARIANT_SHADOW),
                     setup: SetupContext {
-                        // A shadow camera is never an `ArrayCamera`.
+                        // A shadow camera is never an `ArrayCamera`; a point light's
+                        // six are `PerspectiveCamera`s.
                         array_cameras: 0,
+                        orthographic: false,
                         environment: None,
                         lighting_disabled: false,
                         viewport_opaque_mip: None,
@@ -3177,7 +3189,12 @@ impl Renderer {
             geometry: self.quad_geometry(),
             material,
             key,
-            setup: SetupContext::default(),
+            // `QuadMesh` draws through its own
+            // `OrthographicCamera( - 1, 1, 1, - 1, 0, 1 )`.
+            setup: SetupContext {
+                orthographic: true,
+                ..SetupContext::default()
+            },
             model_world: Matrix4::identity(),
             instance_matrix: None,
             instance_color: None,
@@ -3904,7 +3921,12 @@ impl Renderer {
             geometry: self.quad_geometry(),
             material,
             key,
-            setup: SetupContext::default(),
+            // `QuadMesh` draws through its own
+            // `OrthographicCamera( - 1, 1, 1, - 1, 0, 1 )`.
+            setup: SetupContext {
+                orthographic: true,
+                ..SetupContext::default()
+            },
             model_world: Matrix4::identity(),
             instance_matrix: None,
             instance_color: None,

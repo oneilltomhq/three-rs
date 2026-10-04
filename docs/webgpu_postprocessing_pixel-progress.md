@@ -2,7 +2,7 @@
 
 Branch `smaa-pixel-pages`, stacked on `ssr-node` (#272).
 
-Status: **ported, not graded on this machine.** Three.js r187 scores 405 of
+Status: **ported, not graded on this machine.** Three.js 5f610f5 (r187dev) scores 405 of
 100000 pixels (0.405%) against its own
 `examples/screenshots/webgpu_postprocessing_pixel.jpg` here
 (`tools/dump-webgpu.mjs`' `actual.jpg`), over the 0.1% limit. The port scores
@@ -25,7 +25,7 @@ beyond the wrap fix below, plus `Renderer::size()` for `renderer.getSize()`.
 
 | | pixels of 100000 |
 | --- | --- |
-| three.js r187 against its own reference JPEG | 405 |
+| three.js 5f610f5 (r187dev) against its own reference JPEG | 405 |
 | this port against the same JPEG | 417 |
 | this port against three's frame on this machine (graded scale) | 12 |
 | the same at 800x500, > 2 of 255 | 3234 (max 36) |
@@ -74,3 +74,13 @@ clamped case emits the same text as before, and every existing
   asynchronously, and three's screenshot is taken once it is in.
 - `scene.add( spotLight.target )` is not repeated. The target stays at the
   origin, as three's does.
+
+## Merge note
+
+`gtao-denoise` (#267) also replaces `main`'s `wgsl::CLAMP_WRAP_SNIPPET`
+with a `NodeBuilder::wrap_function`, but with a different signature
+(`wgsl::wrap_function_name` / `wgsl::wrap_function`) and helper strings that
+end in `"\n"`, which three's do not. Whichever of the two lands second
+should keep this branch's `NodeBuilder::wrap_function` and
+`wgsl::wrap_function_2d` (with `CLAMP_WRAP_SNIPPET` gone, as here) and take
+only `Texture::wrapping()` from `gtao-denoise`.
