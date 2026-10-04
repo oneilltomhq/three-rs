@@ -529,9 +529,9 @@ impl NodeUpdate for SssState {
         // after that, into an MRT whose `output` is the velocity, so nothing
         // it writes reads it either.)
         if let Some(pass) = crate::nodes::frame::texture_update(self.depth.id()) {
-            let outer_shadow = renderer.context_shadow.take();
+            let mut renderer = renderer.save_state();
+            renderer.context_shadow = None;
             renderer.update_before_node(&pass);
-            renderer.context_shadow = outer_shadow;
         }
 
         // `setSize( renderer.getDrawingBufferSize() )`.
@@ -590,13 +590,7 @@ impl NodeUpdate for SssState {
             .get_or_insert_with(|| QuadMesh::new(material(&self.depth, &self.uniforms, frame_id)));
 
         // `_rendererState = RendererUtils.resetRendererState( renderer, … )`.
-        let previous_target = renderer.render_target();
-        let previous_mrt = renderer.mrt();
-        let previous_auto_clear = renderer.auto_clear;
-        let previous_clear_color = renderer.clear_color();
-        let previous_clear_alpha = renderer.clear_alpha();
-        renderer.set_mrt(None);
-        renderer.auto_clear = true;
+        let mut renderer = renderer.reset_state();
 
         // clear: white, no shadow where the quad discards (the sky).
         renderer.set_clear_color(Color::new(1.0, 1.0, 1.0), 1.0);
@@ -606,10 +600,7 @@ impl NodeUpdate for SssState {
         renderer.render_quad(quad);
 
         // `RendererUtils.restoreRendererState( renderer, _rendererState )`.
-        renderer.set_render_target(previous_target);
-        renderer.set_mrt(previous_mrt);
-        renderer.set_clear_color(previous_clear_color, previous_clear_alpha);
-        renderer.auto_clear = previous_auto_clear;
+        drop(renderer);
         true
     }
 }

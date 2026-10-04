@@ -30,7 +30,6 @@
 //! was removed in 0.2.0 (`docs/api.md` decision 10).
 
 use crate::materials::MeshBasicNodeMaterial;
-use crate::math::Color;
 use crate::nodes::tsl::{texture_uv, uv};
 use std::cell::Cell;
 use std::rc::Rc;
@@ -265,23 +264,13 @@ impl RttState {
         }
 
         // `resetRendererState( renderer, this._rendererState )`.
-        let previous_target = renderer.render_target();
-        let previous_mrt = renderer.mrt();
-        let previous_auto_clear = renderer.auto_clear;
-        let previous_clear_color = renderer.clear_color();
-        let previous_clear_alpha = renderer.clear_alpha();
-        renderer.set_mrt(None);
-        renderer.set_clear_color(Color::new(0.0, 0.0, 0.0), 1.0);
-        renderer.auto_clear = true;
+        let mut renderer = renderer.reset_state();
 
         renderer.set_render_target(Some(self.render_target.clone()));
         renderer.render_quad(&self.quad);
 
         // `restoreRendererState( renderer, this._rendererState )`.
-        renderer.set_render_target(previous_target);
-        renderer.set_mrt(previous_mrt);
-        renderer.set_clear_color(previous_clear_color, previous_clear_alpha);
-        renderer.auto_clear = previous_auto_clear;
+        drop(renderer);
     }
 }
 

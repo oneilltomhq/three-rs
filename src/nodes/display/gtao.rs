@@ -611,9 +611,9 @@ impl NodeUpdate for GtaoState {
         // from another pass would be updated later, with the context set,
         // so depth and normals are expected to come from the same pass.
         if let Some(pass) = crate::nodes::frame::texture_update(self.normal.id()) {
-            let outer_ao = renderer.context_ao.take();
+            let mut renderer = renderer.save_state();
+            renderer.context_ao = None;
             renderer.update_before_node(&pass);
-            renderer.context_ao = outer_ao;
         }
 
         // Update the temporal uniforms.
@@ -661,13 +661,7 @@ impl NodeUpdate for GtaoState {
         }
 
         // `_rendererState = RendererUtils.resetRendererState( renderer, … )`.
-        let previous_target = renderer.render_target();
-        let previous_mrt = renderer.mrt();
-        let previous_auto_clear = renderer.auto_clear;
-        let previous_clear_color = renderer.clear_color();
-        let previous_clear_alpha = renderer.clear_alpha();
-        renderer.set_mrt(None);
-        renderer.auto_clear = true;
+        let mut renderer = renderer.reset_state();
         // Clear to white: no occlusion where the quad discards (the sky).
         renderer.set_clear_color(Color::new(1.0, 1.0, 1.0), 1.0);
 
@@ -677,10 +671,7 @@ impl NodeUpdate for GtaoState {
         renderer.set_render_target(None);
 
         // `RendererUtils.restoreRendererState( renderer, _rendererState )`.
-        renderer.set_render_target(previous_target);
-        renderer.set_mrt(previous_mrt);
-        renderer.set_clear_color(previous_clear_color, previous_clear_alpha);
-        renderer.auto_clear = previous_auto_clear;
+        drop(renderer);
         true
     }
 }

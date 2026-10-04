@@ -551,10 +551,10 @@ impl OutlineState {
         target: &RenderTarget,
         selection: OutlineSelection,
     ) {
+        let mut renderer = renderer.save_state();
         renderer.set_render_target(Some(target.clone()));
-        let previous = renderer.outline_selection.replace(selection);
+        renderer.outline_selection = Some(selection);
         renderer.render_shared(&self.scene.borrow(), &self.camera);
-        renderer.outline_selection = previous;
     }
 }
 
@@ -574,19 +574,9 @@ impl NodeUpdate for OutlineState {
 
         let selection = self.selection_cache();
 
-        // `RendererUtils.resetRendererState()` — and `restoreRendererState()`
-        // at the end — for the state these draws touch.
-        let previous_target = renderer.render_target();
-        let previous_mrt = renderer.mrt();
-        let previous_auto_clear = renderer.auto_clear;
-        let previous_clear_color = renderer.clear_color();
-        let previous_clear_alpha = renderer.clear_alpha();
-        let restore = |renderer: &mut Renderer| {
-            renderer.set_render_target(previous_target.clone());
-            renderer.set_mrt(previous_mrt.clone());
-            renderer.set_clear_color(previous_clear_color, previous_clear_alpha);
-            renderer.auto_clear = previous_auto_clear;
-        };
+        // `RendererUtils.resetRendererState()`; the scope's drop is the
+        // `restoreRendererState()` on both exits.
+        let mut renderer = renderer.reset_state();
 
         // If no objects are selected, all subsequent passes can be skipped
         // since the outline would be empty anyway. The composite render target
@@ -594,21 +584,15 @@ impl NodeUpdate for OutlineState {
         // previously rendered outline does not linger on screen.
         if selection.is_empty() {
             if self.last_selection_count.get() > 0 {
-                renderer.set_mrt(None);
-                renderer.auto_clear = true;
                 renderer.set_render_target(Some(self.composite_buffer.clone()));
                 renderer.set_clear_color(Color::from_hex(0x000000), 0.0);
                 renderer.clear(true, self.composite_buffer.depth_buffer());
-                restore(renderer);
                 self.last_selection_count.set(0);
             }
             return true;
         }
 
         self.last_selection_count.set(selection.len());
-
-        renderer.set_mrt(None);
-        renderer.auto_clear = true;
 
         let (width, height) = renderer.drawing_buffer_size();
         self.set_size(width, height);
@@ -626,7 +610,7 @@ impl NodeUpdate for OutlineState {
 
         // 1. Draw non-selected objects in the depth buffer
         self.render_selection(
-            renderer,
+            &mut renderer,
             &self.depth_buffer,
             OutlineSelection {
                 selected: selected.clone(),
@@ -639,7 +623,7 @@ impl NodeUpdate for OutlineState {
         // 2. Draw only the selected objects by comparing the depth buffer of
         // non-selected objects
         self.render_selection(
-            renderer,
+            &mut renderer,
             &self.mask_buffer,
             OutlineSelection {
                 selected,
@@ -674,7 +658,7 @@ impl NodeUpdate for OutlineState {
         renderer.render_quad(&self.composite);
 
         // restore
-        restore(renderer);
+        drop(renderer);
         true
     }
 }

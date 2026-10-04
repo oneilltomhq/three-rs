@@ -33,11 +33,6 @@
 //! * `renderer.clear()` also clears stencil in three; the port's
 //!   [`Renderer::clear`] takes colour and depth only, as it allocates no
 //!   stencil buffer, so there is no stencil to clear.
-//!
-//! # Not ported
-//!
-//! * `RendererUtils.resetRendererState()` saves and restores only what the
-//!   pass changes; see `RendererState`.
 
 use std::cell::{RefCell, RefMut};
 use std::rc::Rc;
@@ -47,9 +42,7 @@ use crate::nodes::frame::register_texture_update;
 use crate::nodes::{NodeRef, NodeUpdate, NodeUpdateType};
 use crate::renderer::{PassNode, Renderer, SceneRef};
 
-use super::stereo_composite_pass::{
-    update_source_camera, RendererState, RENDERER_COORDINATE_SYSTEM,
-};
+use super::stereo_composite_pass::{update_source_camera, RENDERER_COORDINATE_SYSTEM};
 
 /// `stereoPass( scene, camera )`.
 pub fn stereo_pass(scene: SceneRef, camera: Rc<RefCell<PerspectiveCamera>>) -> StereoPassNode {
@@ -111,7 +104,7 @@ impl NodeUpdate for StereoState {
 
     /// `StereoPassNode.updateBefore( frame )`.
     fn update_before(&self, renderer: &mut Renderer) -> bool {
-        let state = RendererState::reset(renderer);
+        let mut renderer = renderer.reset_state();
 
         //
 
@@ -130,7 +123,7 @@ impl NodeUpdate for StereoState {
         let mut stereo = self.stereo.borrow_mut();
         // `setSize()`, the previous textures, `_cameraNear` / `_cameraFar`,
         // `setRenderTarget( renderTarget )` and `setMRT( this._mrt )`.
-        self.pass.render_with(renderer, near, far, |renderer| {
+        self.pass.render_with(&mut renderer, near, far, |renderer| {
             renderer.auto_clear = false;
             renderer.clear(true, true);
 
@@ -145,7 +138,7 @@ impl NodeUpdate for StereoState {
         });
 
         // restore
-        state.restore(renderer);
+        drop(renderer);
         true
     }
 
