@@ -379,6 +379,26 @@ fn traa_flicker_reduction_matches_three() {
 }
 
 #[test]
+fn taau_seed_matches_three() {
+    check("taau_seed", Region::Body);
+}
+
+#[test]
+fn taau_resolve_matches_three() {
+    check("taau_resolve", Region::Body);
+}
+
+#[test]
+fn taau_clip_aabb_matches_three() {
+    check("taau_resolve", Region::Function("clipAABB"));
+}
+
+#[test]
+fn taau_flicker_reduction_matches_three() {
+    check("taau_resolve", Region::Function("flickerReduction"));
+}
+
+#[test]
 fn anaglyph_matches_three() {
     check("anaglyph", Region::Body);
 }
@@ -502,22 +522,154 @@ fn sss_shadow_context_matches_three() {
     };
     let fog = SceneFog::Linear(Fog::new(Color::from_hex(0xa0a0a0), 10.0, 50.0)).node();
     let program = NodeBuilder::new().build(&setup(&material, &ctx, Some(&fog)));
-    // The port's Phong flow emits each accumulator's zero twice in a row:
-    // `irradiance`, `directDiffuse`, `directSpecular` and `indirectDiffuse =
-    // vec3<f32>( 0.0, 0.0, 0.0 );`, once from the var's lazy initialiser and
-    // once from the flow's explicit zero assign (`src/materials/
-    // node_material.rs`). three's dump has each once. It happens on main too,
-    // with or without the shadow context: issue #281. Only an adjacent repeat
-    // of the same line is dropped, so a missing or extra light term still
-    // shows.
-    let mut lines: Vec<&str> = program.fragment_wgsl.lines().collect();
-    lines.dedup();
-    let ours = fingerprint(&lines.join("\n"), Region::Body);
-    let three = fingerprint(
-        &fixture("webgpu_postprocessing_sss_m12_ground.wgsl"),
-        Region::Body,
-    );
+    let three_wgsl = fixture("webgpu_postprocessing_sss_m12_ground.wgsl");
+    let ours = fingerprint(&program.fragment_wgsl, Region::Body);
+    let three = fingerprint(&three_wgsl, Region::Body);
     assert_eq!(ours, three, "\n{}", program.fragment_wgsl);
+    // Issue #281: each accumulator's zero once, as three has it — not the
+    // var's lazy initialiser followed by an explicit zero assign. The
+    // fingerprint counts the literals, but this says which line is wrong.
+    assert_eq!(
+        accumulator_zeros(&program.fragment_wgsl),
+        accumulator_zeros(&three_wgsl),
+        "\n{}",
+        program.fragment_wgsl
+    );
+    // And each where three has it: the statement right after the zero is
+    // the one that first uses the accumulator, as in the dump.
+    let after_zero = |wgsl: &str| -> Vec<String> {
+        let body = region(wgsl, Region::Body);
+        let lines: Vec<&str> = body.lines().map(str::trim).collect();
+        lines
+            .windows(2)
+            .filter(|w| w[0].ends_with("= vec3<f32>( 0.0, 0.0, 0.0 );"))
+            .map(|w| {
+                let next = w[1].split(" = ").next().unwrap_or("");
+                format!("{} -> {}", w[0].split(" = ").next().unwrap_or(""), next)
+            })
+            .collect()
+    };
+    let ours = after_zero(&program.fragment_wgsl);
+    let ours: Vec<String> = ours.iter().map(|l| without_counter(l)).collect();
+    let three: Vec<String> = after_zero(&three_wgsl)
+        .iter()
+        .map(|l| without_counter(l))
+        .collect();
+    assert_eq!(ours, three, "\n{}", program.fragment_wgsl);
+}
+
+/// `let nodeConst3` / `nodeVar3` with the counter dropped: the two builders
+/// number their temps differently.
+fn without_counter(line: &str) -> String {
+    line.trim_end_matches(|c: char| c.is_ascii_digit())
+        .replace("let nodeConst", "nodeVar")
+}
+
+/// `LightingContextNode`'s accumulators (and the physical model's own vec3
+/// vars), each with how many `name = vec3<f32>( 0.0, 0.0, 0.0 );` lines
+/// `main()` has for it — the zero three emits once, where the var is first
+/// used.
+fn accumulator_zeros(wgsl: &str) -> BTreeMap<&'static str, usize> {
+    const NAMES: [&str; 12] = [
+        "irradiance",
+        "directDiffuse",
+        "directSpecular",
+        "indirectDiffuse",
+        "indirectSpecular",
+        "radiance",
+        "iblIrradiance",
+        "clearcoatRadiance",
+        "clearcoatSpecularDirect",
+        "clearcoatSpecularIndirect",
+        "sheenSpecularDirect",
+        "sheenSpecularIndirect",
+    ];
+    let body = region(wgsl, Region::Body);
+    NAMES
+        .iter()
+        .map(|name| {
+            let zero = format!("{name} = vec3<f32>( 0.0, 0.0, 0.0 );");
+            (*name, body.lines().filter(|l| l.trim() == zero).count())
+        })
+        .filter(|(_, n)| *n > 0)
+        .collect()
+}
+
+/// Issue #281 across the lit flows: Phong (with an ambient light, with a
+/// hemisphere light, with neither), Lambert, Toon, Standard and a clearcoated
+/// Physical each zero an accumulator once. The fingerprint gates above only see the Phong ground
+/// of `webgpu_postprocessing_sss`; this covers the other branches of
+/// `setup_phong` and the physical flow, none of which a fixture isolates.
+#[test]
+fn lit_accumulators_are_zeroed_once() {
+    use three_rs::{Color, MeshPhongNodeMaterial};
+
+    let light = |index, kind| LightDesc {
+        index,
+        kind,
+        shadow_map: None,
+    };
+    let scenes = [
+        (
+            "ambient",
+            vec![
+                light(0, LightKind::Ambient),
+                light(1, LightKind::Directional),
+            ],
+        ),
+        (
+            "hemisphere",
+            vec![light(0, LightKind::Hemisphere), light(1, LightKind::Point)],
+        ),
+        (
+            "direct only",
+            vec![light(0, LightKind::Directional), light(1, LightKind::Spot)],
+        ),
+        ("no lights", vec![]),
+    ];
+    let materials = [
+        (
+            "phong",
+            MeshPhongNodeMaterial::phong(Color::from_hex(0xcbcbcb)),
+        ),
+        (
+            "lambert",
+            MeshPhongNodeMaterial::lambert(Color::from_hex(0xcbcbcb)),
+        ),
+        (
+            "toon",
+            MeshPhongNodeMaterial::toon(Color::from_hex(0xcbcbcb), None),
+        ),
+        (
+            "standard",
+            MeshPhongNodeMaterial::standard(Color::from_hex(0xcbcbcb), 0.5, 0.5),
+        ),
+        ("clearcoat", {
+            let mut m = MeshPhongNodeMaterial::physical(Color::from_hex(0xcbcbcb), 0.5, 0.5);
+            m.clearcoat = 1.0;
+            m
+        }),
+    ];
+    for (material_name, material) in &materials {
+        for (scene, lights) in &scenes {
+            let ctx = SetupContext {
+                lights: lights.clone(),
+                ..SetupContext::default()
+            };
+            let program = NodeBuilder::new().build(&setup(material, &ctx, None));
+            let zeros = accumulator_zeros(&program.fragment_wgsl);
+            // The physical flow's own zeros are in what is checked.
+            if *material_name == "clearcoat" && !lights.is_empty() {
+                assert!(zeros.contains_key("clearcoatRadiance"), "{zeros:?}");
+                assert!(zeros.contains_key("radiance"), "{zeros:?}");
+            }
+            assert!(
+                zeros.values().all(|n| *n == 1),
+                "{material_name}, {scene}: {zeros:?}\n{}",
+                program.fragment_wgsl
+            );
+        }
+    }
 }
 
 #[test]
@@ -1192,6 +1344,118 @@ fn temporal_reproject_resolve_matches_three() {
 #[test]
 fn temporal_reproject_resolve_specular_matches_three() {
     check("temporal_reproject_resolve_specular", Region::Body);
+}
+
+#[test]
+fn ssr_denoise_page_ssr_matches_three() {
+    check("ssr_denoise_page_ssr", Region::Body);
+}
+
+#[test]
+fn ssr_denoise_page_denoise_matches_three() {
+    check("ssr_denoise_page_denoise", Region::Body);
+}
+
+#[test]
+fn ssr_denoise_page_grading_matches_three() {
+    check("ssr_denoise_page_grading", Region::Body);
+}
+
+#[test]
+fn ssr_denoise_page_sharpen_matches_three() {
+    check("ssr_denoise_page_sharpen", Region::Body);
+}
+
+/// webgpu_postprocessing_ssr_denoise `m14`: the dungeon's `Floor_Stone`, a
+/// glTF `MeshStandardMaterial` with one ORM texture behind its `aoMap`,
+/// `metalnessMap` and `roughnessMap`, drawn into the page's scene pass: the
+/// directional light's PCF shadow, the PMREM environment, the `output` /
+/// `normal` / `velocity` / `diffuseColor` MRT whose two deferred members read
+/// the map-folded metalness and roughness, and the page's lighting patch
+/// (`environment_specular` false), whose `vec3( 0 )` stands where `radiance`
+/// would in the indirect specular term.
+#[test]
+fn ssr_denoise_page_floor_matches_three() {
+    use three_rs::materials::phong::ShadowMap;
+    use three_rs::materials::{environment::Environment, MrtContext};
+    use three_rs::nodes::mrt;
+    use three_rs::nodes::pmrem_node::PmremEnvironment;
+    use three_rs::nodes::tsl::{
+        diffuse_color, material_metalness_value, material_roughness_value, normal_view,
+        output_property, pack_normal_to_rgb, vec4_join,
+    };
+    use three_rs::nodes::velocity::velocity;
+    use three_rs::textures::DepthTexture;
+
+    let orm = three_rs::Texture::new(2, 2, Some(vec![0; 16]));
+    let mut floor =
+        three_rs::MeshBasicNodeMaterial::standard(three_rs::Color::from_hex(0xffffff), 0.3, 1.0);
+    floor.ao_map = Some(orm.clone());
+    floor.metalness_map = Some(orm.clone());
+    floor.roughness_map = Some(orm);
+    floor.emissive = three_rs::Color::from_hex(0x000000);
+    floor.environment_specular = false;
+    floor.side = three_rs::materials::Side::Double;
+
+    let mut scene_mrt = mrt(vec![("output", output_property())]);
+    scene_mrt.set_deferred("diffuseColor", || {
+        vec4_join(vec![diffuse_color().rgb(), material_metalness_value()])
+    });
+    scene_mrt.set_deferred("normal", || {
+        vec4_join(vec![
+            pack_normal_to_rgb(normal_view()).rgb(),
+            material_roughness_value(),
+        ])
+    });
+    scene_mrt.set("velocity", velocity());
+    let environment =
+        PmremEnvironment::from_equirectangular(&three_rs::Texture::new(2, 1, Some(vec![0; 8])));
+    let ctx = SetupContext {
+        lights: vec![LightDesc {
+            index: 0,
+            kind: LightKind::Directional,
+            shadow_map: Some(ShadowMap::Planar(DepthTexture::new())),
+        }],
+        mrt: Some(MrtContext {
+            node: scene_mrt,
+            attachments: ["output", "normal", "velocity", "diffuseColor"]
+                .map(String::from)
+                .to_vec(),
+            output_types: Vec::new(),
+        }),
+        environment: Some(Environment::Pmrem(environment.handle())),
+        ..SetupContext::default()
+    };
+    let program = NodeBuilder::new().build(&setup(&floor, &ctx, None));
+    let three = fixture("webgpu_postprocessing_ssr_denoise_m14_floor_stone.wgsl");
+    // Not the whole body: the port's standard lighting differs from the dump
+    // in the ways `docs/nodes.md` §8 lists, none of them this page's. What
+    // the page changes is gated: the map-folded metalness and roughness the
+    // MRT re-reads, spelled out at each read; the patched indirect specular
+    // term; and the tail, `Output` and the four MRT members.
+    for which in [
+        Region::Statement("Roughness ="),
+        Region::Statement("mix( singleScatteringDielectric, singleScatteringMetallic, Metalness )"),
+        OIT_TAIL,
+    ] {
+        let ours = fingerprint(&program.fragment_wgsl, which);
+        assert_eq!(
+            ours,
+            fingerprint(&three, which),
+            "\n{}",
+            program.fragment_wgsl
+        );
+    }
+    // A fingerprint cannot tell `Metalness = nodeVarN` from the product
+    // spelled out; these lines can.
+    check_three_lines(
+        &program.fragment_wgsl,
+        "webgpu_postprocessing_ssr_denoise_m14_floor_stone.wgsl",
+        &[
+            "\tMetalness = ( object.nodeUniform5 * nodeVar1.z );",
+            "\tDiffuseContribution = ( DiffuseColor.xyz * vec3<f32>( ( 1.0 - ( object.nodeUniform5 * nodeVar1.z ) ) ) );",
+        ],
+    );
 }
 
 #[test]
