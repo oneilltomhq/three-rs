@@ -22,12 +22,12 @@ This matrix judges every exported name in three.js revision 5f610f5 (r187) — `
 | loaders | 20 | 2 | 2 | 12 | 4 | 12% |
 | renderers | 39 | 10 | 8 | 3 | 18 | 48% |
 | nodes | 141 | 101 | 27 | 8 | 5 | 74% |
-| tsl | 683 | 561 | 50 | 47 | 25 | 85% |
+| tsl | 683 | 567 | 50 | 41 | 25 | 86% |
 | addons/controls | 11 | 1 | 6 | 4 | 0 | 9% |
 | addons/loaders | 71 | 9 | 3 | 59 | 0 | 13% |
 | addons/postprocessing | 30 | 0 | 0 | 0 | 30 | — |
 | addons/other | 102 | 15 | 4 | 60 | 23 | 19% |
-| **total** | **1317** | **834** | **138** | **222** | **123** | **70%** |
+| **total** | **1317** | **840** | **138** | **216** | **123** | **70%** |
 
 TSL by family:
 
@@ -37,18 +37,18 @@ TSL by family:
 | operators | 68 | 51 | 1 | 2 | 14 |
 | conditionals/flow | 13 | 9 | 1 | 3 | 0 |
 | textures | 23 | 17 | 1 | 5 | 0 |
-| lighting/material | 121 | 94 | 8 | 19 | 0 |
+| lighting/material | 121 | 100 | 8 | 13 | 0 |
 | accessors | 95 | 79 | 8 | 7 | 1 |
 | display/postprocessing | 75 | 62 | 7 | 6 | 0 |
 | compute/storage | 53 | 46 | 7 | 0 | 0 |
 | materialx | 49 | 48 | 0 | 1 | 0 |
 | utils | 77 | 47 | 16 | 4 | 10 |
 
-Graded examples: 98 (the rows of the README's graded table, `webgpu_textures_2d-array_compressed` among them; its `rung!` spells the name with an underscore). 15 more are ported but `#[ignore]`d because three.js fails its own reference on this machine; a row whose only check is one of those is Partial.
+Graded examples: 99 (the rows of the README's graded table, `webgpu_textures_2d-array_compressed` among them; its `rung!` spells the name with an underscore). 15 more are ported but `#[ignore]`d because three.js fails its own reference on this machine; a row whose only check is one of those is Partial.
 
 ### Pages
 
-three ships 231 `webgpu_*` pages at 5f610f5. The README headline counts graded pages out of the gradeable ones, and the two tables below are what takes a page out of that denominator or keeps it out of the graded count (#293). A page is **N.A.** when no frame of it can be diffed against three's reference on a headless, session-less, media-less grading machine; the pieces of an N.A. page that are portable are judged as rows above, and the page itself is not a port target. A page is **ignored** when it is ported and its e2e test exists but is `#[ignore]`d because three.js itself fails its own reference screenshot on the grading machine (Intel Iris Xe, Mesa 25.3, Vulkan), so a pass or fail of the port says nothing. Of the 17 pages #293 lists, 16 are N.A. and one (`webgpu_sandbox`) turns out to be an ordinary scene and stays gradeable; 15 pages are ignored; 97 of the 215 gradeable pages are graded.
+three ships 231 `webgpu_*` pages at 5f610f5. The README headline counts graded pages out of the gradeable ones, and the two tables below are what takes a page out of that denominator or keeps it out of the graded count (#293). A page is **N.A.** when no frame of it can be diffed against three's reference on a headless, session-less, media-less grading machine; the pieces of an N.A. page that are portable are judged as rows above, and the page itself is not a port target. A page is **ignored** when it is ported and its e2e test exists but is `#[ignore]`d because three.js itself fails its own reference screenshot on the grading machine (Intel Iris Xe, Mesa 25.3, Vulkan), so a pass or fail of the port says nothing. Of the 17 pages #293 lists, 16 are N.A. and one (`webgpu_sandbox`) turns out to be an ordinary scene and stays gradeable; 15 pages are ignored; 99 of the 215 gradeable pages are graded.
 
 Three's own `test/e2e/puppeteer.js` still screenshots 13 of the 17 (it excepts only the three TSL editors and `webgpu_compute_audio`), so most have a reference JPEG; the third column says what that JPEG is a picture of and why diffing the port against it would not verify the page.
 
@@ -346,7 +346,7 @@ Ported, `#[ignore]`d. Each row gives three's own score against its reference JPE
 | `RawShaderMaterial` | N.A. | — | — | GLSL shaders |
 | `ShaderMaterial` | N.A. | — | — | GLSL shaders |
 | `PointsMaterial` | Partial | MaterialKind::Points, ::points (src/materials/mod.rs:811) | tests/renderer_points.rs; webgpu_instance_points, webgpu_compute_points | no size scalar (materialPointSize) or attenuated sprite-size branch (node_material.rs:880) |
-| `MeshPhysicalMaterial` | Partial | MaterialKind::Physical, ::physical (src/materials/mod.rs:939) | webgpu_clearcoat, webgpu_loader_gltf_sheen, webgpu_furnace_test, webgpu_materials_transmission | no iridescence (#229), dispersion, sheen/diffuseRoughness maps, anisotropic direct BRDF |
+| `MeshPhysicalMaterial` | Partial | MaterialKind::Physical, ::physical (src/materials/mod.rs:939) | webgpu_clearcoat, webgpu_loader_gltf_sheen, webgpu_furnace_test, webgpu_loader_gltf_iridescence, webgpu_materials_transmission | no dispersion, sheen/diffuseRoughness maps, anisotropic direct BRDF |
 | `MeshStandardMaterial` | Partial | MaterialKind::Standard, ::standard (src/materials/mod.rs:925) | webgpu_lights_physical, webgpu_loader_gltf | no displacementMap, lightMap, per-material envMapIntensity/Rotation; raw envMap ignored (needs pmrem_env) |
 | `MeshPhongMaterial` | Partial | MaterialKind::Phong, ::phong (src/materials/mod.rs:884) | webgpu_lights_phong, webgpu_shadowmap | no lightMap, specularMap, displacementMap; envMap and aoMap ignored (docs/api.md §7) |
 | `MeshToonMaterial` | Partial | MaterialKind::Toon, ::toon (src/materials/mod.rs:914) | webgpu_materials_toon | no lightMap, displacementMap; aoMap ignored |
@@ -369,7 +369,7 @@ Ported, `#[ignore]`d. Each row gives three's own score against its reference JPE
 | `MeshLambertNodeMaterial` | Partial | MeshLambertNodeMaterial alias (src/materials/mod.rs:954) | tests/room_environment.rs (kind only) | no graded render; no lightMap/specularMap/displacementMap, envMap/aoMap ignored |
 | `MeshPhongNodeMaterial` | Partial | MeshPhongNodeMaterial alias (src/materials/mod.rs:950), src/materials/phong.rs | webgpu_lights_phong | no lightMap, specularMap, displacementMap; envMap and aoMap ignored (docs/api.md §7) |
 | `MeshStandardNodeMaterial` | Partial | MeshStandardNodeMaterial alias (src/materials/mod.rs:966), src/materials/physical.rs | webgpu_lights_physical, webgpu_deferred | no displacementMap, lightMap, per-material envMapIntensity/Rotation |
-| `MeshPhysicalNodeMaterial` | Partial | MeshPhysicalNodeMaterial alias (src/materials/mod.rs:969), src/materials/physical.rs | webgpu_clearcoat, webgpu_materials_transmission | no iridescence (#229), dispersion, sheen/diffuseRoughness maps, anisotropic direct BRDF |
+| `MeshPhysicalNodeMaterial` | Partial | MeshPhysicalNodeMaterial alias (src/materials/mod.rs:969), src/materials/physical.rs | webgpu_clearcoat, webgpu_loader_gltf_iridescence, webgpu_materials_transmission | no dispersion, sheen/diffuseRoughness maps, anisotropic direct BRDF |
 | `MeshSSSNodeMaterial` | Absent | — | — | not ported |
 | `MeshToonNodeMaterial` | Partial | MeshToonNodeMaterial alias (src/materials/mod.rs:958), src/materials/toon.rs | webgpu_materials_toon | no lightMap, displacementMap; aoMap ignored |
 | `MeshMatcapNodeMaterial` | Absent | — | — | not ported |
@@ -528,7 +528,7 @@ Ported, `#[ignore]`d. Each row gives three's own score against its reference JPE
 | `BuiltinNode` | Partial | enum Builtin (src/nodes/node.rs:1156) | tests/nodes_compute_wgsl.rs | closed enum; no generic builtin(name) |
 | `ClippingNode` | Present | clipping, clipping_alpha, hardware_clipping (src/nodes/clipping.rs:175,216,262) | tests/nodes_clipping_wgsl.rs; webgpu_clipping (graded) | all three modes; the plane buffers' binding numbers differ (docs/nodes.md §8) |
 | `CubeTextureNode` | Present | cube_texture (src/nodes/tsl.rs:3581) | webgpu_materials_envmaps |  |
-| `MaterialNode` | Partial | material_color etc. (src/nodes/tsl.rs:2143) | webgpu_lights_physical | no iridescence/dash accessors; `material_metalness_value()` / `material_roughness_value()` are the map-resolved values (docs/nodes.md §89.2) |
+| `MaterialNode` | Partial | material_color etc. (src/nodes/tsl.rs:2143) | webgpu_lights_physical | no dash accessors; `material_metalness_value()` / `material_roughness_value()` are the map-resolved values (docs/nodes.md §89.2) |
 | `MaterialReferenceNode` | Partial | UniformSource::Material* (src/nodes/node.rs:172) | webgpu_lights_physical | fixed sources; no materialReference(name) |
 | `ModelNode` | Partial | model_world_matrix etc. (src/nodes/tsl.rs:2123,2133,2335) | all *_wgsl gates | no modelPosition/Scale/Direction/ViewPosition/Radius |
 | `Object3DNode` | Partial | object_world_matrix (src/nodes/tsl.rs:3789) | webgpu_skinning_points | only objectWorldMatrix |
@@ -621,7 +621,7 @@ Ported, `#[ignore]`d. Each row gives three's own score against its reference JPE
 | `SplitNode` | Present | Node::Swizzle (src/nodes/node.rs:1430) | all *_wgsl gates | a whole-vector swizzle collapses into its node at construction, except `saturation()`'s shared `.rgb`, whose suffix the builder drops as `SplitNode.generate()` does (docs/nodes.md §89.2) |
 | `StorageArrayElementNode` | Present | StorageArray.element (src/nodes/tsl.rs:3644) | webgpu_compute_points |  |
 | `PhongLightingModel` | Present | brdf_blinn_phong (src/materials/phong.rs:90) | webgpu_lights_phong |  |
-| `PhysicalLightingModel` | Partial | direct_light (src/materials/physical.rs:915) | webgpu_lights_physical, webgpu_loader_gltf, tests/nodes_display_wgsl.rs (ssr_denoise_page_floor) | no iridescence, dispersion, or direct anisotropic GGX; `webgpu_postprocessing_ssr_denoise`'s `indirectSpecular` patch is `MeshBasicNodeMaterial::environment_specular`, set per material (docs/nodes.md §89.2) |
+| `PhysicalLightingModel` | Partial | direct_light (src/materials/physical.rs:915) | webgpu_lights_physical, webgpu_loader_gltf, tests/nodes_display_wgsl.rs (ssr_denoise_page_floor) | no dispersion or direct anisotropic GGX; iridescence on webgpu_loader_gltf_iridescence (graded, docs/nodes.md §95); `webgpu_postprocessing_ssr_denoise`'s `indirectSpecular` patch is `MeshBasicNodeMaterial::environment_specular`, set per material (docs/nodes.md §89.2) |
 | `NodeUtils` | Present | align_of/size_of (src/nodes/wgsl.rs:453,463), CacheKey (src/nodes/builder.rs:409) | all *_wgsl gates | role only |
 
 ## addons/controls
@@ -660,7 +660,7 @@ Ported, `#[ignore]`d. Each row gives three's own score against its reference JPE
 | `FontLoader` | Present | FontLoader, Font (src/loaders/font_loader.rs:14) | tests/geometries_shape_oracle.rs; webgpu_materials_toon |  |
 | `GCodeLoader` | Absent | — | — |  |
 | `GLTFGaussianSplatLoaderExtension` | Absent | — | — |  |
-| `GLTFLoader` | Partial | GltfLoader (src/loaders/gltf_loader.rs:456) | tests/gltf_loader.rs, gltf_draco.rs, gltf_meshopt.rs; webgpu_loader_gltf | no cameras, KHR_lights_punctual, CUBICSPLINE (linearised), AVIF, primitive modes/dedup, iridescence/dispersion/instancing exts; #229. KHR_materials_unlit is a basic material (build_unlit_material, src/loaders/gltf_loader.rs:2019; tests/gltf_loader.rs coffee_mug_unlit_material) |
+| `GLTFLoader` | Partial | GltfLoader (src/loaders/gltf_loader.rs:456) | tests/gltf_loader.rs, gltf_draco.rs, gltf_meshopt.rs; webgpu_loader_gltf | no cameras, KHR_lights_punctual, CUBICSPLINE (linearised), AVIF, primitive modes/dedup, dispersion/instancing exts. KHR_materials_iridescence: tests/gltf_loader.rs iridescence_lamp_materials, webgpu_loader_gltf_iridescence; KHR_materials_unlit is a basic material (build_unlit_material, src/loaders/gltf_loader.rs:2019; tests/gltf_loader.rs coffee_mug_unlit_material) |
 | `GaussianSplatPLYLoader` | Absent | — | — |  |
 | `HDRCubeTextureLoader` | Present | HdrCubeTextureLoader (src/loaders/hdr_cube_texture_loader.rs:38) | tests/hdr_loader.rs; webgpu_pmrem_cubemap |  |
 | `HDRLoader` | Present | HdrLoader (src/loaders/hdr_loader.rs:75) | tests/hdr_loader.rs (bit-exact oracle); webgpu_pmrem_test |  |
@@ -1182,9 +1182,9 @@ Partial: `textureLoad`.
 
 ### lighting/material
 
-94 of 121 applicable present (8 Partial, 19 Absent, 0 N.A.).
+100 of 121 applicable present (8 Partial, 13 Absent, 0 N.A.).
 
-Missing (Absent): `iridescence`, `iridescenceIOR`, `iridescenceThickness`, `dashSize`, `gapSize`, `dispersion`, `retroreflectivity`, `materialIridescence`, `materialIridescenceIOR`, `materialIridescenceThickness`, `materialLineScale`, `materialLineDashSize`, `materialLineGapSize`, `materialLineDashOffset`, `materialDispersion`, `materialRetroreflectivity`, `materialReference`, `lightingContext`, `shadow`.
+Missing (Absent): `dashSize`, `gapSize`, `dispersion`, `retroreflectivity`, `materialLineScale`, `materialLineDashSize`, `materialLineGapSize`, `materialLineDashOffset`, `materialDispersion`, `materialRetroreflectivity`, `materialReference`, `lightingContext`, `shadow`.
 
 Partial: `attenuationDistance`, `lights`, `pointShadow`, `BRDF_GGX`, `D_GGX`, `DFGLUT`, `EnvironmentBRDF`, `V_GGX_SmithCorrelated`.
 
@@ -1202,9 +1202,9 @@ Partial: `attenuationDistance`, `lights`, `pointShadow`, `BRDF_GGX`, `D_GGX`, `D
 | `clearcoatRoughness` | Present | clearcoat_roughness (src/nodes/tsl.rs:2915) | webgpu_clearcoat (graded) |  |
 | `sheen` | Present | sheen (src/nodes/tsl.rs:2865) | webgpu_loader_gltf_sheen (graded) |  |
 | `sheenRoughness` | Present | sheen_roughness (src/nodes/tsl.rs:2868) | webgpu_loader_gltf_sheen (graded) |  |
-| `iridescence` | Absent | — | — | needs the iridescence feature: the iridescence fields, evalIridescence and Schlick_to_F0 in PhysicalLightingModel.start(), and BRDF_GGX's USE_IRIDESCENCE mix (issue 229; code on branch rung-gltf-iridescence) |
-| `iridescenceIOR` | Absent | — | — | needs the iridescence feature: the iridescence fields, evalIridescence and Schlick_to_F0 in PhysicalLightingModel.start(), and BRDF_GGX's USE_IRIDESCENCE mix (issue 229; code on branch rung-gltf-iridescence) |
-| `iridescenceThickness` | Absent | — | — | needs the iridescence feature: the iridescence fields, evalIridescence and Schlick_to_F0 in PhysicalLightingModel.start(), and BRDF_GGX's USE_IRIDESCENCE mix (issue 229; code on branch rung-gltf-iridescence) |
+| `iridescence` | Present | iridescence (src/nodes/tsl.rs:4026) | webgpu_loader_gltf_iridescence (graded) |  |
+| `iridescenceIOR` | Present | iridescence_ior (src/nodes/tsl.rs:4029) | webgpu_loader_gltf_iridescence (graded) |  |
+| `iridescenceThickness` | Present | iridescence_thickness (src/nodes/tsl.rs:4033) | webgpu_loader_gltf_iridescence (graded) |  |
 | `alphaT` | Present | alpha_t (src/nodes/tsl.rs:2903) | indirect: used by src/materials/node_material.rs |  |
 | `anisotropy` | Present | anisotropy (src/nodes/tsl.rs:2900) | webgpu_loader_gltf_anisotropy (graded) | IBL only; direct anisotropic BRDF not ported |
 | `anisotropyT` | Present | anisotropy_t (src/nodes/tsl.rs:2906) | indirect: used by src/materials/node_material.rs |  |
@@ -1246,9 +1246,9 @@ Partial: `attenuationDistance`, `lights`, `pointShadow`, `BRDF_GGX`, `D_GGX`, `D
 | `materialSheen` | Present | material_sheen (src/nodes/tsl.rs:1256) | indirect: used by src/renderer/mod.rs |  |
 | `materialSheenRoughness` | Present | material_sheen_roughness (src/nodes/tsl.rs:1276) | indirect: used by src/renderer/mod.rs |  |
 | `materialAnisotropy` | Present | material_anisotropy (src/nodes/tsl/lighting.rs:39) | tests/nodes_tsl_batch.rs (material_anisotropy_matches, material_anisotropy_map_matches); webgpu_loader_gltf_anisotropy (graded) | takes the material; the physical setup reads its vector from it |
-| `materialIridescence` | Absent | — | — | needs the iridescence feature: the iridescence fields, evalIridescence and Schlick_to_F0 in PhysicalLightingModel.start(), and BRDF_GGX's USE_IRIDESCENCE mix (issue 229; code on branch rung-gltf-iridescence) |
-| `materialIridescenceIOR` | Absent | — | — | needs the iridescence feature: the iridescence fields, evalIridescence and Schlick_to_F0 in PhysicalLightingModel.start(), and BRDF_GGX's USE_IRIDESCENCE mix (issue 229; code on branch rung-gltf-iridescence) |
-| `materialIridescenceThickness` | Absent | — | — | needs the iridescence feature: the iridescence fields, evalIridescence and Schlick_to_F0 in PhysicalLightingModel.start(), and BRDF_GGX's USE_IRIDESCENCE mix (issue 229; code on branch rung-gltf-iridescence) |
+| `materialIridescence` | Present | material_iridescence (src/nodes/tsl.rs:1720) | webgpu_loader_gltf_iridescence (graded) | no map branch, as in three |
+| `materialIridescenceIOR` | Present | material_iridescence_ior (src/nodes/tsl.rs:1730) | webgpu_loader_gltf_iridescence (graded) |  |
+| `materialIridescenceThickness` | Present | material_iridescence_thickness_max / _min (src/nodes/tsl.rs:1742), mapped in src/materials/node_material.rs | webgpu_loader_gltf_iridescence (graded); tests/nodes_display_wgsl.rs (gltf_iridescence_lamp_matches_three) | the range is two f32 uniforms, as three's two `reference`s |
 | `materialTransmission` | Present | material_transmission (src/nodes/tsl.rs:1330) | indirect: used by src/renderer/mod.rs |  |
 | `materialThickness` | Present | material_thickness (src/nodes/tsl.rs:1340) | indirect: used by src/renderer/mod.rs |  |
 | `materialIOR` | Present | material_ior (src/nodes/tsl.rs:1223) | indirect: used by src/renderer/mod.rs |  |
@@ -1293,7 +1293,7 @@ Partial: `attenuationDistance`, `lights`, `pointShadow`, `BRDF_GGX`, `D_GGX`, `D
 | `VSMShadowFilter` | Present | vsm_shadow_filter (src/lights/shadow_filter.rs:227) | indirect: used by src/lights/mod.rs |  |
 | `BRDF_EON` | Present | brdf_eon (src/materials/physical.rs:364) | indirect: used by src/materials/physical.rs |  |
 | `EON_DirectionalAlbedo` | Present | eon_directional_albedo (src/materials/physical.rs:339) | indirect: used by src/materials/physical.rs |  |
-| `BRDF_GGX` | Partial | brdf_ggx (src/materials/physical.rs:125) | webgpu_clearcoat (graded) | anisotropic and iridescence branches missing (issue 229) |
+| `BRDF_GGX` | Partial | brdf_ggx (src/materials/physical.rs:126) | webgpu_clearcoat (graded) | anisotropic branch missing; the iridescence branch is ported but no graded page reaches it (docs/nodes.md §95.2) |
 | `BRDF_Lambert` | Present | brdf_lambert (src/materials/phong.rs:66) | indirect: used by src/materials/toon.rs |  |
 | `BRDF_Sheen` | Present | brdf_sheen (src/materials/physical.rs:228) | indirect: used by src/materials/physical.rs |  |
 | `D_GGX` | Partial | d_ggx (src/materials/physical.rs:102) | — | internal only (not public) |
@@ -1301,7 +1301,7 @@ Partial: `attenuationDistance`, `lights`, `pointShadow`, `BRDF_GGX`, `D_GGX`, `D
 | `DFGLUT` | Partial | dfg_lut (src/materials/dfg_lut.rs:47) | — | internal only (not public) |
 | `EnvironmentBRDF` | Partial | Physical::environment_brdf (src/materials/physical.rs:569) | — | internal only (not public) |
 | `F_Schlick` | Present | f_schlick (src/materials/phong.rs:72) | indirect: used by src/materials/physical.rs |  |
-| `Schlick_to_F0` | Present | schlick_to_f0 (src/nodes/tsl/lighting.rs:188) | tests/nodes_tsl_batch.rs (schlick_to_f0_matches) | standalone: its callers in three are in PhysicalLightingModel.start()'s iridescence block (issue 229) |
+| `Schlick_to_F0` | Present | schlick_to_f0 (src/nodes/tsl/lighting.rs:188) | tests/nodes_tsl_batch.rs (schlick_to_f0_matches) | PhysicalLightingModel.start()'s iridescence block calls it; webgpu_loader_gltf_iridescence (graded) |
 | `V_GGX_SmithCorrelated` | Partial | v_ggx_smith_correlated (src/materials/physical.rs:63) | — | internal only (not public) |
 | `V_GGX_SmithCorrelated_Anisotropic` | Present | v_ggx_smith_correlated_anisotropic (src/nodes/tsl/lighting.rs:123) | tests/nodes_tsl_batch.rs (anisotropic_ggx_matches) | standalone: BRDF_GGX's anisotropic branch is not wired (docs/nodes.md §26.5) |
 | `LTC_Evaluate` | Present | ltc_evaluate (src/nodes/tsl/lighting.rs:379) | tests/nodes_tsl_batch.rs (ltc_matches) | standalone: no RectAreaLight (docs/nodes.md:3747) |

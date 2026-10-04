@@ -9506,6 +9506,114 @@ What it does not grade: iridescence (#229), the double-sided transmission
 pass, and `attenuationDistance` (the volume extension here leaves it at
 infinity).
 
+## 95. `webgpu_loader_gltf_iridescence`: a thin film over the specular lobe
+
+`KHR_materials_iridescence` puts a thin dielectric film on top of the
+material's specular interface. Light that reaches the base has crossed the film
+twice, and the reflections from its two interfaces interfere. The colour that
+comes back depends on the film's optical thickness, which is why the Khronos
+lamp shifts from magenta to green across its shade.
+
+### 95.1 What three does
+
+Three uses Belcour and Barla's model, in five pieces of
+`PhysicalLightingModel.js`: `evalIridescence`, `evalSensitivity`,
+`Fresnel0ToIor` / `IorToFresnel0`, the `useIridescence` branch of `start()`,
+and the `iridescenceF0` argument of `computeMultiscattering()`. `BRDF_GGX` has
+a sixth, the `USE_IRIDESCENCE` blend towards `iridescenceFresnel`.
+
+* `evalIridescence` has a `setLayout()`, so it is a WGSL `fn`, and its body
+  has control flow. `If( cosTheta2Sq.lessThan( 0 ), () => { return vec3( 1.0 ); } )`
+  is an early return on total internal reflection. `Loop( { start: 1, end: 2,
+  condition: '<=', name: 'm' }, … )` sums the two non-DC Airy terms into `I`,
+  which was declared with `toVar()` ahead of the loop together with `Cm`.
+  `phi12` and `phi23` are `.select()`s.
+* `start()` evaluates the film twice: once against the dielectric base
+  (`specularColor`) and once against the metallic one (`diffuseColor.rgb`).
+  It turns each result into an F0 with `Schlick_to_F0` at `dotNVi`.
+  `computeMultiscattering()` then blends its `f0` towards that F0:
+  `const Fr = iridescenceF0 ? iridescence.mix( f0, iridescenceF0 ) : f0;`.
+* `MaterialNode.IRIDESCENCE_THICKNESS` reads `iridescenceThicknessRange[1]`
+  when there is no map. With a map it reads
+  `max.sub( min ).mul( map.g ).add( min )`, where `min` is one `reference`
+  read twice, and the channel is green. `MaterialNode.IRIDESCENCE` has no map
+  branch, so glTF's `iridescenceTexture` goes unused.
+* `useIridescence` is `iridescence > 0`. A material that sets an IOR and a
+  thickness range but leaves the factor at 0 builds the shader it built
+  before.
+
+### 95.2 The port
+
+All six pieces are in `src/materials/physical.rs`. The glTF loader parses the
+extension into `GltfIridescence` (defaults 0, 1.3, `[ 100, 400 ]`) and sets
+`iridescence`, `iridescence_ior`, `iridescence_thickness_range` and
+`iridescence_thickness_map` on a physical material. It parses
+`iridescenceTexture` too, and nothing reads it, as in three.
+
+* The loop is `loop_options( "m", I32, 1, 2, "<=", … )`, so the header is
+  three's `m <= 2`.
+* `I` and `Cm` are `to_var`s, and a port var is written at its first read.
+  Without a fix, that read is inside the loop body, so both were reset on
+  every iteration and the lamp's shade showed no film at all (656 pixels on
+  the rung). `eval_iridescence_body` pushes the two var nodes as statements of
+  its `block()` before the loop, the way `ssr.rs` does, so their initial
+  values land where three's `toVar()` calls put them.
+* `Schlick_to_F0` is the existing `schlick_to_f0`.
+* With a map, the thickness shares one `…ThicknessMin` uniform node between
+  its two reads, so it is one uniform as in three. `…ThicknessMax` is
+  declared first, because three builds that `reference` first.
+* `iridescenceFresnel` is built but never emitted on this page. There are no
+  lights, so `direct()` and `BRDF_GGX` never run, and three's dump has no
+  `BRDF_GGX` either. It is ported so the first lit iridescent page is not
+  quietly different.
+
+Gates:
+
+* `nodes_display_wgsl::gltf_iridescence_lamp_matches_three` against
+  `webgpu_loader_gltf_iridescence_m14_lamp_iridescence.wgsl` (the
+  `IridescenceLampIridescence` material's fragment). It compares
+  `Region::Function("evalIridescence")`, the `Iridescence`,
+  `IridescenceIOR` and `IridescenceThickness` assigns, and the metallic
+  `mix( DiffuseColor.xyz, Schlick_to_F0( … ) )`. It does not compare the whole
+  body, for the reason below.
+* `gltf_loader::iridescence_lamp_materials` checks all three of the lamp's
+  materials: the factors, IORs, thickness ranges, and the `NoColorSpace`
+  thickness maps.
+* The e2e rung scores 0 of 100000 pixels.
+
+What differs:
+
+* **The dielectric F0's temp.** Three calls `computeMultiscattering` with the
+  dielectric F0 once, in `start()`. Its whole `Fr` is one shared temp:
+
+  ```
+  let nodeConst3 = mix( SpecularColor, Schlick_to_F0( evalIridescence( 1.0, IridescenceIOR, nodeConst2, IridescenceThickness, SpecularColor ), 1.0, nodeConst2 ), Iridescence );
+  ```
+
+  The port also builds a separate dielectric `singleScattering` /
+  `multiScattering` pair for indirect diffuse (the §8 "indirect-diffuse
+  block" item). So the dielectric F0 has two readers. `Schlick_to_F0` lands in
+  its own temp, and the `mix` is rebuilt for each reader:
+
+  ```
+  nodeVar8 = Schlick_to_F0( evalIridescence( 1.0, IridescenceIOR, nodeVar7, IridescenceThickness, SpecularColor ), 1.0, nodeVar7 );
+  nodeVar9 = mix( SpecularColor, nodeVar8, Iridescence );
+  …
+  nodeVar20 = mix( SpecularColor, nodeVar8, Iridescence );
+  ```
+
+  The values are the same. The metallic F0 has one reader in both, and its
+  statement is gated.
+
+The page itself (`examples/webgpu_loader_gltf_iridescence.rs`) has no lights,
+only the PMREM of `venice_sunset_1k.hdr` as environment and its cube as
+background. The detail that took it from 1548 pixels to 0 is the camera.
+OrbitControls auto-rotates at −0.5. With no `deltaTime`, each `update()` turns
+`2π / 3600 · speed`. Three's page calls `update()` three times before the
+screenshot: in `init()` after setting `autoRotate`, through its explicit
+`render()` in `init()`, and in the single animation frame the harness fires.
+The port makes the same three calls. Dispersion and retroreflection, the last
+two `PhysicalLightingModel` flags, are still off for every material.
 ## 96. `webgpu_materials_transmission` — an alpha map, and two transmission copies
 
 The transmission sphere page (`examples/webgpu_materials_transmission.rs`,

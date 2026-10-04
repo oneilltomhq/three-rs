@@ -337,6 +337,7 @@ PostprocessingOutline, webgpu_postprocessing_outline, "../../examples/webgpu_pos
 Oit, webgpu_oit, "../../examples/webgpu_oit.rs";
 Clipping, webgpu_clipping, "../../examples/webgpu_clipping.rs";
 ClippingStencil, webgpu_clipping_stencil, "../../examples/webgpu_clipping_stencil.rs";
+LoaderGltfIridescence, webgpu_loader_gltf_iridescence, "../../examples/webgpu_loader_gltf_iridescence.rs";
 MaterialsTransmission, webgpu_materials_transmission, "../../examples/webgpu_materials_transmission.rs";
 }
 
