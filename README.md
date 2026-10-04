@@ -55,7 +55,9 @@ that verifies each present row.
   three's previous-frame matrices and skinned `positionPrevious`, and temporal
   reprojection anti-aliasing (`traa`) on top of it. Weighted blended
   order-independent transparency (`oit_pass`), on per-attachment MRT blend
-  modes and clear colours.
+  modes and clear colours. A `PassNode` can draw its scene at a fraction of
+  the canvas and swap each draw's material, which is how `retroPass` draws a
+  scene the way a PS1 did.
 - **Addons.** `src/addons/` holds the `three/addons/…` tier that the graded
   examples import: `lines` (`LineSegmentsGeometry`, `LineGeometry`,
   `LineSegments2`, `Line2` — fat lines, with `Line2NodeMaterial` in core beside
@@ -77,8 +79,8 @@ that verifies each present row.
   `KHR_draco_mesh_compression`, `EXT_meshopt_compression`, `KHR_texture_basisu`,
   `KHR_texture_transform`, `EXT_texture_webp` / `EXT_texture_avif`, and the
   `KHR_materials_*` extensions: specular, ior, clearcoat, sheen, transmission,
-  volume, anisotropy, diffuse roughness, emissive strength), textures (PNG,
-  JPEG, GIF, WebP, AVIF), cube textures, KTX2, HDR and Ultra HDR, `BufferGeometryLoader`,
+  volume, anisotropy, diffuse roughness, emissive strength, unlit), textures
+  (PNG, JPEG, GIF, WebP, AVIF), cube textures, KTX2, HDR and Ultra HDR, `BufferGeometryLoader`,
   typeface.json fonts (`FontLoader`).
 - **Animation.** Interpolants, keyframe tracks, clips, `PropertyMixer`,
   `AnimationAction` and `AnimationMixer`.
@@ -269,9 +271,12 @@ a moment later (`tests/renderer_compute_indirect.rs`); the notes say what each
 asserts. The triangle counts are the CPU-side counts `renderer.info()` records
 for an indirect draw, as three's does, not what the GPU was told to draw.
 
-Some pages are ported but cannot be graded, because three's own e2e harness
-skips them. They are in the native viewer, not in the gallery or the
-browser shell:
+Some pages are ported but cannot be graded. Either three's own e2e harness
+skips them, or three.js itself misses its own reference screenshot on this
+machine, so a matching port would miss it too. Ten pages that three misses
+here are only `#[ignore]`d rungs in `tests/e2e/main.rs` (`docs/parity.md`
+counts them, with retro, as eleven). These two are in the native viewer, not
+in the gallery or the browser shell:
 
 | example | why it has no grade |
 |---|---|
@@ -281,6 +286,7 @@ browser shell:
 | [`webgpu_postprocessing_ssgi`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_ssgi.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_ssgi-progress.md) | in three's e2e exception list (`test/e2e/puppeteer.js`, "Black screen"). It is gated instead on its SSGI, composite and TRAA shaders against three's dump and on `tests/ssgi_frames.rs` |
 | [`webgpu_postprocessing_ao`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_ao.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_ao-progress.md) | in the same exception list. It is gated instead on its GTAO shader against three's dump and on `tests/gtao_frames.rs` |
 | [`webgpu_postprocessing_dof`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_dof.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_dof-progress.md) | in three's e2e exception list (`test/e2e/puppeteer.js`, "Black screen"). It is gated instead on each of `DepthOfFieldNode`'s seven distinct quad shaders against three's dump (`dof_*` in `tests/nodes_display_wgsl.rs`) |
+| [`webgpu_postprocessing_retro`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_retro.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_retro-progress.md) | three.js scores 1.5% against its own reference here, over the 0.1% limit, and the port scores the same 1503 pixels. It is gated instead on its two post-processing shaders against three's dump and on `tests/retro_frames.rs` |
 
 Measured on Intel Iris Xe, Mesa 25.3.6, Fedora 43, against three.js 5f610f5
 (past r186, for the cube PMREM of 2f80402; the pin becomes the r187 tag once
@@ -349,12 +355,13 @@ Opens the named example in a window (winit, tested on Wayland). All 94 graded
 examples are there, and so are the ungraded `webgpu_postprocessing_traa`, `webgpu_water`,
 `webgpu_postprocessing_sss`, `webgpu_postprocessing_ssgi`,
 `webgpu_postprocessing_ao`,
-`webgpu_postprocessing_dof`, `webgpu_postprocessing_smaa` and
-`webgpu_postprocessing_pixel`. The last two
+`webgpu_postprocessing_dof`, `webgpu_postprocessing_smaa`,
+`webgpu_postprocessing_pixel` and `webgpu_postprocessing_retro`. The last three
 are ported but their e2e tests are `#[ignore]`d, because three itself fails
 their references on this machine; their
-[smaa](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_smaa-progress.md)
-and [pixel](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_pixel-progress.md)
+[smaa](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_smaa-progress.md),
+[pixel](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_pixel-progress.md)
+and [retro](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_retro-progress.md)
 notes have the numbers. Each one animates, orbits, dollies and pans through
 its *own* `animate()`, `resize()` and `OrbitControls` — the viewer drives the
 example, it does not restate it. `--list` prints the examples with their keys,

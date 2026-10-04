@@ -332,6 +332,24 @@ impl Primitive {
     }
 }
 
+/// A render-object function that swaps the material a draw is made with —
+/// the part of `renderer.setRenderObjectFunction( ( object, scene, camera,
+/// geometry, material, … ) => renderer.renderObject( …, otherMaterial, … ) )`
+/// the ported passes use. Installed on the renderer by a pass for the length
+/// of its own render (see [`PassNode`]); the render loop asks it once per
+/// draw, where three calls the function.
+pub(crate) trait RenderObjectFunction {
+    /// The material to draw in place of `material`. `background` is the
+    /// skybox draw, whose material three builds as a plain `NodeMaterial`
+    /// (`Background.js`) where the port's is a basic one.
+    fn material(&self, material: &MeshBasicNodeMaterial, background: bool)
+        -> MeshBasicNodeMaterial;
+
+    /// What tags the derived material's cache key, so that its programs are
+    /// told apart from the source material's own: the function's identity.
+    fn variant(&self) -> u64;
+}
+
 /// One entry of the render list, already resolved to what the draw needs.
 #[derive(Clone)]
 struct Renderable {
@@ -439,6 +457,9 @@ const VARIANT_BACK_SIDE: u64 = 4;
 /// `ToonOutlinePassNode._getOutlineMaterial( source )`.
 const VARIANT_TOON_OUTLINE: u64 = 6;
 const VARIANT_FRONT_SIDE: u64 = 5;
+/// `MaterialKey::variant` (hashed with the function's own variant and the
+/// draw's) for a material a [`RenderObjectFunction`] derived.
+const VARIANT_RENDER_OBJECT_FUNCTION: u64 = 7;
 
 /// The two render-object functions `OutlineNode.updateBefore()` installs
 /// around its scene renders, together with the
@@ -909,6 +930,12 @@ pub struct Renderer {
     /// render-object function. See
     /// [`ToonOutlinePassNode`](crate::nodes::display::ToonOutlinePassNode).
     pub(crate) toon_outline: Option<Rc<MeshBasicNodeMaterial>>,
+    /// `renderer.setRenderObjectFunction()` as `RetroPassNode` sets it for the
+    /// duration of its own render: every draw, the background's included, is
+    /// made with the material the function derives from the draw's own. `None`
+    /// is three's default render-object function. See
+    /// [`RetroPassNode`](crate::nodes::display::RetroPassNode).
+    pub(crate) render_object_function: Option<Rc<dyn RenderObjectFunction>>,
     /// `renderer.setRenderObjectFunction()` as `OITPassNode` sets it for each
     /// of its two renders: which half of the scene the pass draws, and with
     /// `depthWrite` forced off for the accumulation half. `None` is three's
@@ -1436,6 +1463,7 @@ impl Renderer {
             context_shadow: None,
             context_ao: None,
             toon_outline: None,
+            render_object_function: None,
             oit: None,
             outline_selection: None,
             camera_layers: None,
@@ -1970,9 +1998,19 @@ impl Renderer {
         // in that list. `webgpu_deferred`'s transparent pass is the case that
         // shows it: no skybox behind the planes.
         if let Some((color_node, variant)) = background.filter(|_| self.opaque) {
-            let key = MaterialKey::of(&self.background_material).variant(variant);
+            let mut key = MaterialKey::of(&self.background_material).variant(variant);
             let mut material = self.background_material.clone();
             material.color_node = Some(color_node);
+            // `Background.update()` unshifts the skybox into the render list,
+            // so it goes through the render-object function like any draw.
+            if let Some(function) = &self.render_object_function {
+                material = function.material(&material, true);
+                key = key.variant(hash_of(&(
+                    VARIANT_RENDER_OBJECT_FUNCTION,
+                    function.variant(),
+                    key.variant,
+                )));
+            }
 
             items.push(Renderable {
                 object: None,
@@ -2322,6 +2360,21 @@ impl Renderer {
             let item_opaque_frame = (material.transmission > 0.0)
                 .then(|| opaque_frame.clone())
                 .flatten();
+
+            // `this._currentRenderObjectFunction( object, scene, camera,
+            // geometry, material, … )`: a pass's function draws the item with
+            // a material of its own, keyed on the source's.
+            let (material, key) = match &self.render_object_function {
+                Some(function) => (
+                    function.material(&material, false),
+                    key.variant(hash_of(&(
+                        VARIANT_RENDER_OBJECT_FUNCTION,
+                        function.variant(),
+                        key.variant,
+                    ))),
+                ),
+                None => (material, key),
+            };
 
             let renderable = Renderable {
                 object: Some(item.node.clone()),

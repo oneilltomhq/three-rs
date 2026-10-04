@@ -620,6 +620,15 @@ pub struct MeshBasicNodeMaterial {
     /// accessors `webgpu_deferred`'s resolve material reads out of the
     /// G-buffer instead of out of the geometry. See `docs/nodes.md` §27.
     pub context_overrides: Option<crate::nodes::tsl::OverrideNodes>,
+    /// `NodeMaterial.contextNode = context( { … } )` — builder-context keys
+    /// installed for the whole of the material's setup, the way
+    /// [`context`](crate::nodes::tsl::context) installs them for one subgraph.
+    /// The keys the port reads are the ones `RetroPassNode` sets: `getUV`,
+    /// which every [`texture`](crate::nodes::tsl::texture) tap of a material
+    /// map takes in place of its default `uv()`, and `getTextureLevel`, which
+    /// turns its `textureSample` into a `textureSampleLevel`. See
+    /// `docs/nodes.md` §79.
+    pub context_node: Option<crate::nodes::ContextValue>,
     /// `Material.side` — which face(s) are drawn.
     pub side: Side,
     /// `Material.visible` — `_projectObject()` skips an object whose material is
@@ -801,6 +810,7 @@ impl Default for MeshBasicNodeMaterial {
             roughness_node: None,
             depth_node: None,
             context_overrides: None,
+            context_node: None,
             fragment_node: None,
             output_node: None,
             backdrop_node: None,

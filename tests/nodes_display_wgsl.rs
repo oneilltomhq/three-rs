@@ -1117,3 +1117,33 @@ fn oit_accumulate_back_side_matches_three() {
         );
     }
 }
+
+#[test]
+fn retro_barrel_matches_three() {
+    check("retro_barrel", Region::Body);
+}
+
+#[test]
+fn retro_crt_matches_three() {
+    check("retro_crt", Region::Body);
+}
+
+#[test]
+fn bleach_bypass_matches_three() {
+    check("bleach_bypass", Region::Body);
+}
+
+#[test]
+fn sepia_matches_three() {
+    check("sepia", Region::Body);
+}
+
+#[test]
+fn film_matches_three() {
+    check("film", Region::Body);
+}
+
+#[test]
+fn film_no_intensity_matches_three() {
+    check("film_no_intensity", Region::Body);
+}

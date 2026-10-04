@@ -903,6 +903,71 @@ the page uses. Each is checked byte for byte against three's own loader.
 fixed when the node is built, so to change table, build a new `Lut3DNode`
 and set it as the pipeline's output. Three assigns `lutNode.value` instead.
 See `docs/nodes.md` §73.
+## A scene pass drawn as a PS1 would (`webgpu_postprocessing_retro`)
+
+`retro_pass` is a scene pass at a quarter of the canvas, nearest-filtered,
+that draws every classic material with snapped vertices and level-0 textures.
+The CRT functions then work on its texture:
+
+```rust
+let retro = retro_pass(
+    scene.clone(),
+    camera.clone(),
+    RetroPassOptions::default().affine_distortion(affine_distortion),
+);
+
+let mut output = retro.node();
+output = replace_default_uv(barrel_uv(curvature.clone(), uv()), output);
+output = color_bleeding(output, bleeding.add(distorted_delta));
+output = bayer_dither(output, color_depth_steps.clone());
+output = posterize(output, color_depth_steps);
+output = vignette(output, vignette_intensity, float(0.6), uv());
+output = scanlines(output, intensity, screen_size().y().mul(density), speed, uv());
+render_pipeline.output_node = Some(output);
+```
+
+**The pass swaps the materials.** Three's `RetroPassNode` installs a
+render-object function for the length of its own render. The port's
+`PassNode` can hold one too (`RenderObjectFunction`, crate-private), and the
+renderer asks it once per draw, the background's included. A material with
+no node slots set (one `GltfLoader` made, say) is drawn with the retro vertex,
+colour and context nodes. A node material is drawn as itself, which is what
+three's property copy amounts to. `docs/nodes.md` §79 has the details.
+
+**`replace_default_uv` reaches only taps built later.** It puts `getUV` in
+the builder context. The retro pass's texture reads it at build time, so it
+is distorted. A tap that already has its uv, `pass( … )`'s for instance,
+keeps it. `color_bleeding` makes an `rtt()` of its input, so the barrel
+distortion is rendered once into that target and the three bleed taps read
+the result.
+
+**The resolution scale.** `PassNode::set_resolution_scale( 0.25 )` makes the
+target `floor( size · 0.25 )`, at least one texel. It is on every
+`PassNode`, not just the retro one.
+
+`set_filter_textures( true )` keeps mipmaps on the next frame. Three's page
+follows it with `retro.dispose()` to drop its material cache. The port
+derives the material per draw and has no cache to drop.
+
+**There is no graded rung.** three.js itself misses its own reference
+screenshot for this page on this machine (1503 of 100 000 pixels against a
+0.1% limit), and the port scores the same 1503. So the e2e rung exists but is
+ignored. The page's two post-processing shaders are gated against three's
+dump in `tests/nodes_display_wgsl.rs`. `tests/retro_frames.rs` checks the
+pass on the GPU:
+
+- the target is a quarter of the canvas;
+- the frame is made of 4×4 blocks;
+- textures are level 0, and filtered with `set_filter_textures( true )`;
+- affine mapping moves the texture;
+- the sky's `normalWorld` is the back-side one.
+
+`docs/webgpu_postprocessing_retro-progress.md` has the scores. The example
+is in the native viewer (`viewer postprocessing_retro`).
+
+`FilmNode`, `Sepia.js` and `BleachBypass.js` are ported as `film`, `sepia`
+and `bleach`. No three page uses them, so they are gated against a dump page
+of the repo's own (`docs/nodes.md` §80).
 
 ## The display nodes of #144
 
