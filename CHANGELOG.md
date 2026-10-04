@@ -312,6 +312,16 @@ have their own sections after the release they ship with. The format follows [Ke
   `depth_texture_load`, `all`, `view_z_to_perspective_depth` and
   `get_view_position`. Also `Renderer::init_render_target` and
   `RenderPipeline::claim_view_offset`. (#165)
+- **`StereoCamera`** (`cameras`), a port of `StereoCamera.js`, and
+  **`addons::camera_utils::frame_corners`**, `CameraUtils.frameCorners()`.
+  Both are checked against three's own code run under node
+  (`tools/stereo_camera_reference.mjs`).
+- **The stereo display passes** (`nodes::display`): `stereo_pass`,
+  `anaglyph_pass` (all seven `AnaglyphAlgorithm`s in all three
+  `AnaglyphColorMode`s) and `parallax_barrier_pass`. The two composite quads
+  are gated against three's dumps, and `tests/stereo_frames.rs` checks where
+  each eye lands. See `docs/nodes.md` §81.
+- **`webgpu_display_stereo`** is graded: 0 of 100000 pixels.
 - **`outline`** (`nodes::display`), `OutlineNode.js`: selection outlines,
   with visible and hidden edges, `edgeThickness`, `edgeGlow` and
   `downSampleRatio`. Its two scene renders go through a crate-private

@@ -6330,7 +6330,7 @@ things that are not nodes:
 - Changing `focusDistance`, `focalLength` or `bokehScale` from a GUI. They
   are ordinary uniforms, so a host can set them, but no page here does.
 
-Sections 77 and 79 to 82 are reserved for the ports on sibling branches. They are numbered as those branches land.
+Sections 77, 79, 80 and 82 are reserved for the ports on sibling branches. They are numbered as those branches land.
 
 ## 67. TSL sweep 2: the accessors batch
 
@@ -7526,6 +7526,157 @@ parameters are called `v1` and `v2`. The two renamings now share
 The `ltc` probe evaluates the quad `( ±1, ±1, 2 )` with
 `mInv = mat3( modelWorldMatrix )`. The matrix only needs to be some mat3 that
 three cannot fold into a constant.
+
+## 81. The stereo display passes (`webgpu_display_stereo`)
+
+### 81.1 What three does
+
+`webgpu_display_stereo` renders the same scene through one of three passes:
+
+- **`stereoPass( scene, camera )`** is a `PassNode` that overrides
+  `updateBefore()`. It updates a `StereoCamera` (`aspect = 0.5`) from the
+  camera, then renders the scene twice into its own target: the left eye
+  into the left half's viewport and the right eye into the right half's. It
+  has no quad of its own, so the page's only quad is `RenderPipeline`'s.
+- **`StereoCompositePassNode`** is the abstract base of the other two. It
+  renders each eye into its own half-float target, `_renderTargetL` and
+  `_renderTargetR`, at the full drawing-buffer size, then draws a quad that
+  combines them into the pass's target. Both renders are bracketed by
+  `RendererUtils.resetRendererState()` and `restoreRendererState()`.
+- **`anaglyphPass`** overrides `updateStereoCamera()`. Instead of
+  `StereoCamera.update()`, it places each eye `eyeSep / 2` along the camera's
+  right axis. Through `CameraUtils.frameCorners()`, it frames a virtual
+  screen `planeDistance` in front of the camera from each eye, so anything on
+  that plane has zero parallax. The quad is
+  `vec4( clamp( Mₗ · L.rgb + Mᵣ · R.rgb ), max( L.a, R.a ) )`. `Mₗ` and `Mᵣ`
+  come from a table of seven algorithms (True, Grey, Colour, Half-Colour,
+  Dubois, Optimised, Compromise), each in three colour modes (red/cyan,
+  magenta/cyan, magenta/green).
+- **`parallaxBarrierPass`** draws a quad that takes the left eye where
+  `mod( screenCoordinate.y, 2 ) > 1` and the right eye elsewhere: alternate
+  rows.
+
+`StereoCamera.update()` caches the seven inputs of the eye projections. On a
+miss it rebuilds both eye projections as off-axis frusta, writing elements
+`[0]` and `[8]` of a copy of the camera's projection matrix. On every call it
+sets each eye's `matrixWorld` to the camera's, translated by `∓eyeSep / 2`.
+
+### 81.2 The port
+
+| three.js | port |
+|---|---|
+| `StereoCamera` | `cameras::StereoCamera` |
+| `CameraUtils.frameCorners` | `addons::camera_utils::frame_corners` |
+| `stereoPass` / `StereoPassNode` | `nodes::display::stereo_pass` / `StereoPassNode` |
+| `StereoCompositePassNode` | `CompositeState`, crate-private |
+| `anaglyphPass`, `AnaglyphAlgorithm`, `AnaglyphColorMode` | the same names in `nodes::display`, plus `anaglyph_matrices()` |
+| `parallaxBarrierPass` / `ParallaxBarrierPassNode` | `nodes::display::parallax_barrier_pass` / `ParallaxBarrierPassNode` |
+
+**The passes hold a `PassNode`.** Three subclasses `PassNode`; the port
+keeps one as a field, for its render target, its texture nodes and
+`renderTarget.samples = renderer.samples`. The pass's entry in the
+update-before registry (`register_texture_update`) is then pointed at the
+stereo node's own state, so the eyes are rendered where
+`PassNode.updateBefore()` would have rendered the scene once.
+
+`StereoPassNode` reuses the pass's own render bracket through
+`PassNode::render_with`, which is crate-private and new. That bracket sizes
+the target, sets samples, toggles previous textures, sets `cameraNear` /
+`cameraFar`, and saves and restores the target and MRT. It also applies the
+pass's `auto_clear_depth`, opaque / transparent, lighting and
+`camera_layers` settings, and restores them after. Three's
+`StereoPassNode.updateBefore()` applies none of these, but they are all
+inert at their defaults, which a stereo pass never changes. Inside the
+bracket, the pass clears colour and depth once (three's `renderer.clear()`
+also clears stencil, which the port does not allocate), then renders each
+eye with `render_nested` into its half's viewport.
+
+**The anaglyph eyes keep their world matrices.** `frame_corners` writes the
+eye's quaternion. The port then composes `matrix_world` from position,
+quaternion and scale, and inverts it, as three's override does. The eyes have
+`matrixAutoUpdate` off, so the render does not overwrite them.
+`tests/cameras_stereo_camera.rs` checks this through a full render update.
+
+**The colour matrices** are a 21-entry table, transcribed from three's
+`ANAGLYPH_MATRICES` and passed through the same row-major to column-major
+`createMatrixPair()`. The entries three sums in JavaScript are summed in the
+same order in `f64`. Changing `algorithm` or `colorMode` writes the two
+`mat3` uniforms, but only when the value changes, as three's setters do.
+
+### 81.3 Divergences
+
+- **The eyes' projections are WebGPU-style.** The port's `PerspectiveCamera`
+  defaults to a `[0, 1]` depth projection. On this page, three's camera keeps
+  the WebGL-style matrix its constructor built, and `StereoCamera.update()`
+  copies it. Under WebGPU's `[0, 1]` clip, that matrix maps view depth `d`
+  to `((f + n) d - 2fn) / ((f - n) d)`, which is `0` at `d = 2fn / (f + n)`.
+  So three's stereo and parallax eyes clip near at about twice `near`
+  (`0.1998` for the page's `0.1` / `100`), while the port's clip at `near`.
+  The spheres orbit at radius 5 and `OrbitControls` allows a distance of 1
+  to 25, so a sphere can enter that band, but nothing in the graded frame
+  comes that close.
+  `frame_corners` writes three's WebGL-style matrix whatever the coordinate
+  system, as three does, so the anaglyph eyes are the same in both.
+- **The source camera's world matrix is brought up to date first.** Three
+  never updates it inside a stereo pass, so on the page its eyes trail
+  `OrbitControls` by one update. The port's `look_at` does not touch the
+  world matrix at all, so the passes call `update_matrix_world` on the camera
+  before reading it. At rest, which is the graded frame, the two agree.
+- **No scissor.** `StereoPassNode` sets `renderTarget.scissorTest` and two
+  scissor rectangles, but `WebGPURenderer` reads the scissor test from the
+  canvas target only. In three they have no effect, while the port's
+  renderer would honour them. The viewports alone confine each eye, as in
+  three.
+- **The eye offset is per `StereoCamera`.** Three's `_eyeLeft` / `_eyeRight`
+  are module-scoped, so two stereo cameras with different `eyeSep` can read
+  each other's offset on a cache hit. Nothing in three's examples does this.
+- **`StereoCamera` is not `Clone`.** A `PerspectiveCamera` clone shares its
+  scene-graph node, so a clone would move the original's eyes.
+
+### 81.4 Gates
+
+- **CPU, against three's numbers.** `tools/stereo_camera_reference.mjs` runs
+  three r187dev's `StereoCamera`, `frameCorners` and `AnaglyphPassNode` in
+  node and asserts `REVISION`. Its output is
+  `tests/fixtures/stereo_camera/three_r187dev.json`.
+  `tests/cameras_stereo_camera.rs` checks against it, to 1e-12 relative:
+  - the page camera's eye projections and world matrices;
+  - the projection cache, through a sequence of updates;
+  - `frameCorners`;
+  - all 21 matrix pairs;
+  - the anaglyph eyes.
+- **WGSL.** `tests/nodes_display_wgsl.rs` checks the anaglyph and parallax
+  barrier quads against three's `m06` dumps of the page, set to each effect
+  (`tools/dump-pages/display_stereo_*.html`). The two `main()` bodies are
+  also byte-identical to three's (checked with `cmp` on the extracted
+  region). The parallax barrier's entry point lists `fragCoord` before the
+  varying, where three lists it after. `stereoPass` has no quad, and its
+  `RenderPipeline` output quad is the same module three builds for every
+  effect.
+- **GPU.** `tests/stereo_frames.rs` gives each eye its own colour through
+  layers 1 and 2, then checks every pixel:
+  - `stereoPass` puts the left eye in the left half and the right eye in the
+    right half;
+  - `parallaxBarrierPass` alternates rows, with the left eye on odd rows
+    from the top;
+  - `anaglyphPass` writes `clamp( Mₗ·L + Mᵣ·R )` with both eyes, with each
+    eye alone, and after a change of algorithm and colour mode.
+- **The rung** grades `webgpu_display_stereo` (the stereo effect, which is
+  the page's default) against three's screenshot.
+
+### 81.5 Not ported
+
+- The inspector GUI. The example exposes the GUI's `onChange` handlers as
+  `set_effect`, `set_eye_sep`, `set_anaglyph_algorithm`,
+  `set_anaglyph_color_mode` and `set_plane_distance`, and the binary takes an
+  `anaglyph` or `parallax_barrier` argument.
+- `material.contextNode = context( builder.getSharedContext() )` on the
+  composite quads. The port's quad materials build in their own context, as
+  every other display node's do.
+- The full `resetRendererState()`. The port saves and restores only what a
+  stereo pass changes: the render target, MRT, render-object function, clear
+  colour and alpha, and `autoClear`.
+- `dispose()`. The targets and materials are dropped with the node.
 
 ## 83. `Water2Mesh` (`webgpu_water`)
 

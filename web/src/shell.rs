@@ -325,6 +325,7 @@ LightprobeCubecamera, webgpu_lightprobe_cubecamera, "../../examples/webgpu_light
 Sky, webgpu_sky, "../../examples/webgpu_sky.rs";
 Backdrop, webgpu_backdrop, "../../examples/webgpu_backdrop.rs";
 PostprocessingMotionBlur, webgpu_postprocessing_motion_blur, "../../examples/webgpu_postprocessing_motion_blur.rs";
+DisplayStereo, webgpu_display_stereo, "../../examples/webgpu_display_stereo.rs";
 Ocean, webgpu_ocean, "../../examples/webgpu_ocean.rs";
 PostprocessingGodrays, webgpu_postprocessing_godrays, "../../examples/webgpu_postprocessing_godrays.rs";
 PostprocessingLensflare, webgpu_postprocessing_lensflare, "../../examples/webgpu_postprocessing_lensflare.rs";

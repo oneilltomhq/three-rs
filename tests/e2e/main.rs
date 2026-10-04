@@ -197,6 +197,9 @@ mod webgpu_backdrop;
 #[allow(dead_code)]
 mod webgpu_tsl_earth;
 
+#[path = "../../examples/webgpu_display_stereo.rs"]
+#[allow(dead_code)]
+mod webgpu_display_stereo;
 #[path = "../../examples/webgpu_ocean.rs"]
 #[allow(dead_code)]
 mod webgpu_ocean;
@@ -4288,6 +4291,57 @@ fn webgpu_equirectangular() {
     });
 }
 
+/// `StereoPassNode`: the scene rendered twice into one half-float target,
+/// the left eye of a `StereoCamera` (`aspect = 0.5`) into the left half and
+/// the right eye into the right, each half a viewport of the pass's target.
+/// Five hundred env-mapped spheres in front of the `Park3Med` cube; time is
+/// pinned, so they sit at `x = 5 cos( i )`, `y = 5 sin( 1.1 i )`.
+#[test]
+fn webgpu_display_stereo() {
+    let name = "webgpu_display_stereo";
+    let out = out_dir(name);
+    let _gpu = gpu();
+
+    let mut app = webgpu_display_stereo::init();
+    println!("adapter: {:?}", app.renderer.adapter_info());
+
+    webgpu_display_stereo::animate(&mut app);
+
+    let (width, height, pixels) = app.renderer.read_canvas_pixels().unwrap();
+    assert_eq!((width, height), (800, 500));
+
+    let actual = out.join("actual.png");
+    three_rs::testing::write_png(actual.to_str().unwrap(), width, height, &pixels);
+
+    let result = compare(name, &actual, &out);
+
+    println!(
+        "{name}: {:.1}% different ({} of {} pixels, {}x{}), limit {}%",
+        result.different_pixels,
+        result.num_different_pixels,
+        result.width * result.height,
+        result.width,
+        result.height,
+        result.max_different_pixels
+    );
+    println!("images: {}", out.display());
+
+    assert!(
+        result.pass,
+        "diff wrong in {:.1}% of pixels ({} pixels); see {}",
+        result.different_pixels,
+        result.num_different_pixels,
+        out.display()
+    );
+    // The draw calls and triangles the README's graded table records.
+    let info = app.renderer.info();
+    println!("{name}: info {info:?}");
+
+    steady_frame(name, &mut app, webgpu_display_stereo::animate, |app| {
+        app.renderer.device()
+    });
+}
+
 /// `SkyMesh`: the Preetham sky with the sun disc and the fbm cloud layer on a
 /// box scaled to 450 000, and a sphere reflecting it through a `CubeCamera`
 /// that renders the scene into a 256² half-float cube every frame. Rendering
@@ -6302,6 +6356,7 @@ fn steady_frame_builds_nothing() {
     rung!(webgpu_postprocessing_afterimage, 0, 2);
     rung!(webgpu_tsl_halftone);
     rung!(webgpu_sky);
+    rung!(webgpu_display_stereo);
     rung!(webgpu_ocean);
     rung!(webgpu_tsl_earth);
     rung!(webgpu_mirror);

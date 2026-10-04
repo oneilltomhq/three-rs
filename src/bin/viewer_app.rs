@@ -284,6 +284,7 @@ Sky, webgpu_sky, "../../examples/webgpu_sky.rs";
 Backdrop, webgpu_backdrop, "../../examples/webgpu_backdrop.rs";
 PostprocessingMotionBlur, webgpu_postprocessing_motion_blur, "../../examples/webgpu_postprocessing_motion_blur.rs";
 PostprocessingTraa, webgpu_postprocessing_traa, "../../examples/webgpu_postprocessing_traa.rs";
+DisplayStereo, webgpu_display_stereo, "../../examples/webgpu_display_stereo.rs";
 Ocean, webgpu_ocean, "../../examples/webgpu_ocean.rs";
 Water, webgpu_water, "../../examples/webgpu_water.rs";
 PostprocessingAo, webgpu_postprocessing_ao, "../../examples/webgpu_postprocessing_ao.rs";

@@ -306,6 +306,9 @@ mod webgpu_backdrop;
 #[path = "webgpu_cubemap_mix.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_cubemap_mix;
+#[path = "webgpu_display_stereo.rs"]
+#[allow(dead_code)] // only `init()` is called here
+mod webgpu_display_stereo;
 #[path = "webgpu_lightprobe.rs"]
 #[allow(dead_code)] // only `init()` is called here
 mod webgpu_lightprobe;
@@ -568,6 +571,9 @@ const GRADED: &[(&str, fn())] = &[
     ("webgpu_backdrop", || drop(webgpu_backdrop::init())),
     ("webgpu_postprocessing_motion_blur", || {
         drop(webgpu_postprocessing_motion_blur::init())
+    }),
+    ("webgpu_display_stereo", || {
+        drop(webgpu_display_stereo::init())
     }),
     ("webgpu_ocean", || drop(webgpu_ocean::init())),
     ("webgpu_postprocessing_godrays", || {

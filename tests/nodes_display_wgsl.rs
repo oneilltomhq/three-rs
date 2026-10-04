@@ -361,6 +361,16 @@ fn traa_flicker_reduction_matches_three() {
 }
 
 #[test]
+fn anaglyph_matches_three() {
+    check("anaglyph", Region::Body);
+}
+
+#[test]
+fn parallax_barrier_matches_three() {
+    check("parallax_barrier", Region::Body);
+}
+
+#[test]
 fn lut_3d_matches_three() {
     check("lut_3d", Region::Body);
 }

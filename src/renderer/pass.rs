@@ -562,6 +562,20 @@ impl PassNode {
             renderer.render(scene, camera)
         });
     }
+
+    /// `PassNode.updateBefore()`'s bracket — the target sized to the
+    /// drawing buffer, its samples, the previous textures, `cameraNear` /
+    /// `cameraFar`, `setRenderTarget()` / `setMRT()` and their restore —
+    /// around a render of the caller's: `StereoPassNode`'s two eyes.
+    pub(crate) fn render_with(
+        &self,
+        renderer: &mut Renderer,
+        near: f64,
+        far: f64,
+        render: impl FnOnce(&mut Renderer),
+    ) {
+        self.0.render_with(renderer, near, far, render);
+    }
 }
 
 impl PassState {
