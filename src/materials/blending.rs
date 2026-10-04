@@ -116,23 +116,65 @@ pub(crate) fn blend_operation(equation: BlendEquation) -> wgpu::BlendOperation {
     }
 }
 
-/// The blending fields of `Material` that `_getBlending()` reads. Taken as a
-/// struct rather than the whole material so the table can be unit-tested
-/// without building one, and so a second material type plugs into the same
-/// code.
+/// `BlendMode` (`three.js/src/renderers/common/BlendMode.js`) — the blending
+/// fields `_getBlending()` reads, as one value.
+///
+/// Three has two readers of the same seven fields: a `Material`, and a
+/// stand-alone `BlendMode` an MRT gives one of its attachments
+/// (`mrtNode.setBlendMode( name, blendMode )`). Here both are this struct: a
+/// material builds one from its own fields
+/// (`MeshBasicNodeMaterial::blend_mode`), and
+/// [`MrtNode::set_blend_mode`](crate::nodes::MrtNode::set_blend_mode) stores
+/// one per output name. `OITPassNode` is what needs the custom factors — its
+/// `accum` attachment blends `One`/`One` and its `revealage` one
+/// `Zero`/`OneMinusSrcColor`.
+///
+/// `Default` is `new BlendMode()`: `NormalBlending`, `SrcAlpha` /
+/// `OneMinusSrcAlpha` / `Add`, the three alpha overrides `null`.
+///
+/// Three's `BlendMode` spells the premultiply flag `premultiplyAlpha`, which
+/// `_getBlending()` (reading `premultipliedAlpha`) never sees, so on an MRT
+/// attachment it is always off. The field here is `premultiplied_alpha` —
+/// the material's spelling, the one the table reads — and it is `false` in
+/// every `BlendMode` the port builds for an MRT, which is the same result.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) struct BlendMode {
+pub struct BlendMode {
+    /// `blendMode.blending`.
     pub blending: Blending,
+    /// `material.premultipliedAlpha` — see the type's doc for why an MRT's is
+    /// always `false`.
     pub premultiplied_alpha: bool,
-    /// `Material.blendSrc` / `.blendDst` / `.blendEquation`.
+    /// `blendSrc`, used only by `CustomBlending`.
     pub blend_src: BlendFactor,
+    /// `blendDst`, used only by `CustomBlending`.
     pub blend_dst: BlendFactor,
+    /// `blendEquation`, used only by `CustomBlending`.
     pub blend_equation: BlendEquation,
-    /// `Material.blendSrcAlpha` / `.blendDstAlpha` / `.blendEquationAlpha` —
-    /// `null` in Three, meaning "use the colour one".
+    /// `blendSrcAlpha` — `null` in Three, meaning "use the colour one".
     pub blend_src_alpha: Option<BlendFactor>,
+    /// `blendDstAlpha` — `null` means [`blend_dst`](Self::blend_dst).
     pub blend_dst_alpha: Option<BlendFactor>,
+    /// `blendEquationAlpha` — `null` means
+    /// [`blend_equation`](Self::blend_equation).
     pub blend_equation_alpha: Option<BlendEquation>,
+}
+
+impl BlendMode {
+    /// `new BlendMode( blending )` — every other field at its default.
+    pub fn new(blending: Blending) -> Self {
+        Self {
+            blending,
+            ..Self::default()
+        }
+    }
+}
+
+/// `new BlendMode( blending )`, so a preset can be passed wherever a
+/// `BlendMode` is taken.
+impl From<Blending> for BlendMode {
+    fn from(blending: Blending) -> Self {
+        Self::new(blending)
+    }
 }
 
 impl Default for BlendMode {

@@ -312,6 +312,18 @@ have their own sections after the release they ship with. The format follows [Ke
   `depth_texture_load`, `all`, `view_z_to_perspective_depth` and
   `get_view_position`. Also `Renderer::init_render_target` and
   `RenderPipeline::claim_view_offset`. (#165)
+- **`oit_pass`** (`nodes::display`), `OITPassNode.js`: weighted blended
+  order-independent transparency. Transparent `NormalBlending` materials
+  accumulate into an `rgba16float` / `r8unorm` pair that shares the pass's
+  depth, and the composite does not depend on draw order.
+  `webgpu_oit` is graded at 0 of 100000 pixels. Its shaders are gated against
+  three's dump and `tests/oit_frames.rs` checks order independence on the
+  GPU. See `docs/nodes.md` §82.
+- **`BlendMode` is public** (`materials`), with `BlendMode::new( blending )`
+  and `From<Blending>`. `MrtNode::set_clear_color` / `clear_color` are three's
+  `setClearColor` / `getClearColor`: a per-attachment clear value.
+- **`RenderTarget::set_texture_name( 0, name )`** names the first
+  attachment, which used to answer only to `output` and panic otherwise.
 - **`StereoCamera`** (`cameras`), a port of `StereoCamera.js`, and
   **`addons::camera_utils::frame_corners`**, `CameraUtils.frameCorners()`.
   Both are checked against three's own code run under node
@@ -374,7 +386,8 @@ have their own sections after the release they ship with. The format follows [Ke
 - **`webgpu_postprocessing_dof_basic`** is graded: 36 of 100000 pixels. It
   is the page's own `boxBlur` + `smoothstep` mix, not `DepthOfFieldNode`.
 - **`tsl::output_struct()`**, `outputStruct()` as a material's `outputNode`.
-  Each member keeps its own type, where an `mrt()` member is a `vec4`.
+  Each member keeps its own type, where an `mrt()` member takes its
+  attachment's type.
 - **Red render targets**: `RenderTarget::set_red_format()`. A texture node
   over a one-channel map is now a `float` node read as `.x`, as three's
   `getTextureType()` makes it.
@@ -401,6 +414,13 @@ have their own sections after the release they ship with. The format follows [Ke
 
 ### Changed
 
+- **`MrtNode::set_blend_mode` takes `impl Into<BlendMode>`** rather than a
+  `Blending`, and returns `&mut Self` so calls chain. `blend_mode()` returns
+  a `BlendMode`. A bare `Blending` still converts. Under an MRT, a target's
+  first attachment now follows `getBlendMode( texture.name )` as in three:
+  the material's blending only when it is named `output`, and no blending
+  for any other unset name. Members take their attachment's channel count as
+  their type, so a one-channel attachment gets an `f32` output.
 - A plain texture sample built outside the fragment stage emits
   `textureSampleLevel( …, 0 )`, as three's `_generateTextureSample()` does.
   It used to emit `textureSample`, which WGSL rejects in a vertex shader.

@@ -20,14 +20,14 @@ This matrix judges every exported name in three.js revision 5f610f5 (r187) — `
 | materials | 36 | 4 | 19 | 11 | 2 | 12% |
 | textures | 18 | 8 | 4 | 1 | 5 | 62% |
 | loaders | 20 | 2 | 2 | 12 | 4 | 12% |
-| renderers | 39 | 9 | 9 | 3 | 18 | 43% |
+| renderers | 39 | 10 | 8 | 3 | 18 | 48% |
 | nodes | 141 | 100 | 27 | 9 | 5 | 74% |
 | tsl | 683 | 556 | 51 | 51 | 25 | 84% |
 | addons/controls | 11 | 1 | 6 | 4 | 0 | 9% |
 | addons/loaders | 71 | 9 | 3 | 59 | 0 | 13% |
 | addons/postprocessing | 30 | 0 | 0 | 0 | 30 | — |
 | addons/other | 102 | 14 | 4 | 61 | 23 | 18% |
-| **total** | **1317** | **817** | **137** | **240** | **123** | **68%** |
+| **total** | **1317** | **818** | **136** | **240** | **123** | **69%** |
 
 TSL by family:
 
@@ -44,7 +44,7 @@ TSL by family:
 | materialx | 49 | 48 | 0 | 1 | 0 |
 | utils | 77 | 47 | 15 | 5 | 10 |
 
-Graded examples: 93 (the README gallery plus `webgpu_textures_2d-array_compressed`, which has a live `rung!` but a hyphen in its name). 10 more are ported but `#[ignore]`d because three.js fails its own reference on this machine; a row whose only check is one of those is Partial.
+Graded examples: 94 (the README gallery plus `webgpu_textures_2d-array_compressed`, which has a live `rung!` but a hyphen in its name). 10 more are ported but `#[ignore]`d because three.js fails its own reference on this machine; a row whose only check is one of those is Partial.
 
 ## math
 
@@ -386,7 +386,7 @@ Graded examples: 93 (the README gallery plus `webgpu_textures_2d-array_compresse
 
 ## renderers
 
-39 rows: 9 Present, 9 Partial, 3 Absent, 18 N.A.
+39 rows: 10 Present, 8 Partial, 3 Absent, 18 N.A.
 
 | three.js name | verdict | three-rs symbol | verified by | note |
 |---|---|---|---|---|
@@ -424,7 +424,7 @@ Graded examples: 93 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `IndirectStorageBufferAttribute` | Present | IndirectStorageBufferAttribute (src/core/indirect_storage_buffer_attribute.rs:22) | tests/renderer_compute_indirect.rs; webgpu_struct_drawindirect |  |
 | `InspectorBase` | Absent | — | — | not ported |
 | `CanvasTarget` | Partial | private CanvasTarget (src/renderer/mod.rs:228) | tests/renderer_viewport.rs | private; one canvas per renderer, no setCanvasTarget |
-| `BlendMode` | Partial | pub(crate) BlendMode (src/materials/blending.rs:124), MrtNode::set_blend_mode (src/nodes/mrt.rs:124) | tests/renderer_blending.rs | not public; MRT blend takes a Blending preset only |
+| `BlendMode` | Present | BlendMode (src/materials/blending.rs:141), MrtNode::set_blend_mode (src/nodes/mrt.rs:138) | tests/renderer_blending.rs, webgpu_oit (CustomBlending One/One and Zero/OneMinusSrcColor per MRT attachment) | copy()/clone() are Rust's Copy |
 | `GLSLNodeBuilder` | N.A. | — | — | WebGL-only |
 | `BasicNodeLibrary` | N.A. | — | — | static dispatch |
 | `StandardNodeLibrary` | N.A. | — | — | static dispatch |
@@ -451,7 +451,7 @@ Graded examples: 93 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `InspectorNode` | N.A. | — | — | DOM inspector |
 | `IsolateNode` | Present | Node::Isolate (src/nodes/node.rs:1679), isolate (src/nodes/tsl.rs:158) | tests/nodes_custom.rs |  |
 | `LightingModel` | Partial | trait LightingModel (src/materials/lighting_model.rs:119) | webgpu_lights_custom (ungraded) | no directRectArea/ambientOcclusion; only ungraded example |
-| `MRTNode` | Present | MrtNode (src/nodes/mrt.rs:70) | tests/renderer_mrt.rs, webgpu_mrt |  |
+| `MRTNode` | Present | MrtNode (src/nodes/mrt.rs:71) | tests/renderer_mrt.rs, webgpu_mrt, webgpu_oit | setBlendMode takes a full BlendMode; setClearColor/getClearColor per attachment (src/nodes/mrt.rs:171) |
 | `Node` | Present | NodeRef / enum Node (src/nodes/node.rs:1687,1311) | all *_wgsl gates | name clashes with core::Node #250 |
 | `NodeAttribute` | Present | AttributeSlot (src/nodes/builder.rs:180) | all *_wgsl gates |  |
 | `NodeBuilder` | Present | NodeBuilder (src/nodes/builder.rs:650) | all *_wgsl gates |  |
@@ -822,7 +822,7 @@ Graded examples: 93 (the README gallery plus `webgpu_textures_2d-array_compresse
 
 ### Supplementary: `examples/jsm/tsl/display/*.js`
 
-These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) and are not counted above. 30 Present, 2 Partial, 16 Absent.
+These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) and are not counted above. 31 Present, 2 Partial, 15 Absent.
 
 | file | status | three-rs port and check |
 |---|---|---|
@@ -850,7 +850,7 @@ These 48 files are absent from raw.csv (the extraction skipped `tsl/display`) an
 | `LensflareNode.js` | Present | lensflare/LensflareNode (src/nodes/display/lensflare.rs:84); tests/nodes_display_wgsl.rs; webgpu_postprocessing_lensflare (graded); takes a texture: the caller writes convertToTexture()'s rtt(); no dispose() |
 | `Lut3DNode.js` | Present | lut_3d; tests/nodes_display_wgsl.rs; webgpu_postprocessing_3dlut (graded); the table is fixed when the node is built (no `lutNode.value` swap) |
 | `MotionBlur.js` | Present | motion_blur; tests/nodes_display_wgsl.rs; webgpu_postprocessing_motion_blur (graded) |
-| `OITPassNode.js` | Absent | — |
+| `OITPassNode.js` | Present | oit_pass (src/nodes/display/oit_pass.rs:124); tests/nodes_display_wgsl.rs (composite and both accumulation materials gated against three's webgpu_oit dump); tests/oit_frames.rs (draw-order independence on the GPU); webgpu_oit (graded); WebGL samples=0 branch, transmissionNode clause, autoClearColor/Stencil copies, setMRT and dispose not ported (docs/nodes.md §82.5) |
 | `OutlineNode.js` | Present | outline; tests/nodes_display_wgsl.rs (the depth and mask materials and the five quad shaders, dumped by three with an object selected, and the page's output); tests/outline_frames.rs; webgpu_postprocessing_outline (graded, empty selection) |
 | `ParallaxBarrierPassNode.js` | Present | parallax_barrier_pass/ParallaxBarrierPassNode; tests/nodes_display_wgsl.rs (quad gate), tests/stereo_frames.rs; webgpu_display_stereo's parallax-barrier effect (not the graded default) |
 | `PixelationPassNode.js` | Present | pixelation_pass/PixelationPassNode (src/nodes/display/pixelation_pass.rs:35,24); tests/nodes_display_wgsl.rs; webgpu_postprocessing_pixel (ported, ungraded: three.js fails its own reference on this machine) |

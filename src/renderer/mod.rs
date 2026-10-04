@@ -676,6 +676,16 @@ struct PassTarget {
     /// `mrtNode.setBlendMode( name, ... )` gives it a blend state of its own;
     /// the pipeline descriptor carries one `ColorTargetState` per attachment.
     extra_color_targets: Vec<ExtraColorTarget>,
+    /// Attachment 0's blend state when the MRT decides it rather than the
+    /// material: `MRTNode.getBlendMode( textures[ 0 ].name )` is
+    /// `MaterialBlending` only for an attachment named `output`, so a target
+    /// whose first attachment has another name — `OITPassNode`'s `accum` —
+    /// gets the MRT's own blend mode, or none. `None` here is the material's.
+    color_blend: Option<Option<wgpu::BlendState>>,
+    /// `renderContext.mrt.getClearColor( textures[ i ].name )` per colour
+    /// attachment, attachment 0 first: a value the pass clears that
+    /// attachment to in place of its default. Empty without an MRT.
+    clear_colors: Vec<Option<[f64; 4]>>,
     resolve: Option<wgpu::TextureView>,
     /// The single-sampled colour texture itself — the resolve target under
     /// MSAA and the attachment otherwise. `copyFramebufferToTexture()` copies
@@ -899,6 +909,12 @@ pub struct Renderer {
     /// render-object function. See
     /// [`ToonOutlinePassNode`](crate::nodes::display::ToonOutlinePassNode).
     pub(crate) toon_outline: Option<Rc<MeshBasicNodeMaterial>>,
+    /// `renderer.setRenderObjectFunction()` as `OITPassNode` sets it for each
+    /// of its two renders: which half of the scene the pass draws, and with
+    /// `depthWrite` forced off for the accumulation half. `None` is three's
+    /// default render-object function. See
+    /// [`OitPassNode`](crate::nodes::display::OitPassNode).
+    pub(crate) oit: Option<crate::nodes::display::OitRenderObjects>,
     /// `renderer.setRenderObjectFunction()` as `OutlineNode.updateBefore()`
     /// sets it for its two scene renders. `None` is three's default
     /// render-object function. See [`OutlineSelection`].
@@ -1420,6 +1436,7 @@ impl Renderer {
             context_shadow: None,
             context_ao: None,
             toon_outline: None,
+            oit: None,
             outline_selection: None,
             camera_layers: None,
             sort_objects: true,
@@ -1907,10 +1924,9 @@ impl Renderer {
         // flag, which the port has no field for.)
         let needs_previous_data = self.mrt.as_ref().is_some_and(|mrt| mrt.has("velocity"));
         let mrt_context = match (&self.render_target, &self.mrt) {
-            (Some(render_target), Some(node)) => Some(MrtContext {
-                node: node.clone(),
-                attachments: render_target.attachment_names(),
-            }),
+            (Some(render_target), Some(node)) => {
+                Some(MrtContext::for_target(node.clone(), render_target))
+            }
             _ => None,
         };
 
@@ -2151,6 +2167,21 @@ impl Renderer {
             }
         }
 
+        // `OITPassNode`'s two render-object functions, which three calls per
+        // render item *before* `renderObject()` splits a `DoubleSide`
+        // material in two — so both halves go, or neither.
+        if let Some(oit) = self.oit {
+            draws.retain(|(item, _)| {
+                let object = item.node.borrow();
+                let material = scene
+                    .override_material
+                    .as_ref()
+                    .or(item.material(&object))
+                    .unwrap_or(&self.default_material);
+                oit.draws(material)
+            });
+        }
+
         for (item, side) in draws {
             let object = item.node.borrow();
             // `renderItem.geometry` / `renderItem.material` — a `Mesh`, an
@@ -2280,6 +2311,11 @@ impl Renderer {
             let mut material = material.clone();
             if let Some(side) = side {
                 material.side = side;
+            }
+            // `_oitRenderObjectFunction`'s `material.depthWrite = false`
+            // around the draw: a pipeline-state change, not a program one.
+            if self.oit == Some(crate::nodes::display::OitRenderObjects::Accumulate) {
+                material.depth_write = false;
             }
             // `viewportOpaqueMipTexture()` — one texture for the whole pass,
             // handed to whichever materials transmit.
@@ -3271,6 +3307,8 @@ impl Renderer {
                 color: color_view,
                 extra_colors: Vec::new(),
                 extra_color_targets: Vec::new(),
+                color_blend: None,
+                clear_colors: Vec::new(),
                 resolve: None,
                 color_texture: None,
                 depth: Some(depth_view),
@@ -3602,7 +3640,9 @@ impl Renderer {
                     0
                 },
                 alpha_to_coverage: item.material.alpha_to_coverage,
-                blend: item.material.blend_state(),
+                blend: target
+                    .color_blend
+                    .unwrap_or_else(|| item.material.blend_state()),
                 topology: item.primitive.topology,
                 strip_index_format: item.primitive.strip_index_format,
             };
@@ -3933,23 +3973,32 @@ impl Renderer {
         clear: ClearOps,
         occlusion_query_set: Option<&wgpu::QuerySet>,
     ) {
-        let load = match clear.color {
-            Some(color) => wgpu::LoadOp::Clear(wgpu::Color {
-                r: color[0],
-                g: color[1],
-                b: color[2],
-                a: color[3],
-            }),
-            None => wgpu::LoadOp::Load,
-        };
-
         // One attachment per `renderTarget.textures` entry. They share the
         // pass's load op but not its clear *value*: `WebGPUBackend.beginRender()`
         // clears attachment 0 to `renderContext.clearColorValue` and every
-        // other one to `( 0, 0, 0, 1 )`. (`MRTNode.clearColors` is three's
-        // per-output override and nothing on this ladder sets one.)
-        // `webgpu_multiple_rendertargets` shows it: its `normal` half is black
-        // where the knot is not, not the scene's `0x222222`.
+        // other one to `( 0, 0, 0, 1 )`, unless the MRT has a clear colour of
+        // its own for that attachment's name (`mrt.getClearColor( name )`,
+        // which `OITPassNode` sets on both of its targets).
+        // `webgpu_multiple_rendertargets` shows the default: its `normal` half
+        // is black where the knot is not, not the scene's `0x222222`.
+        let load_for = |index: usize, default: [f64; 4]| match clear.color {
+            Some(_) => {
+                let color = target
+                    .clear_colors
+                    .get(index)
+                    .copied()
+                    .flatten()
+                    .unwrap_or(default);
+                wgpu::LoadOp::Clear(wgpu::Color {
+                    r: color[0],
+                    g: color[1],
+                    b: color[2],
+                    a: color[3],
+                })
+            }
+            None => wgpu::LoadOp::Load,
+        };
+        let load = load_for(0, clear.color.unwrap_or_default());
         let mut color_attachments = vec![Some(wgpu::RenderPassColorAttachment {
             view: &target.color,
             depth_slice: None,
@@ -3959,22 +4008,13 @@ impl Renderer {
                 store: wgpu::StoreOp::Store,
             },
         })];
-        let extra_load = match clear.color {
-            Some(_) => wgpu::LoadOp::Clear(wgpu::Color {
-                r: 0.0,
-                g: 0.0,
-                b: 0.0,
-                a: 1.0,
-            }),
-            None => wgpu::LoadOp::Load,
-        };
-        for (view, resolve) in &target.extra_colors {
+        for (index, (view, resolve)) in target.extra_colors.iter().enumerate() {
             color_attachments.push(Some(wgpu::RenderPassColorAttachment {
                 view,
                 depth_slice: None,
                 resolve_target: resolve.as_ref(),
                 ops: wgpu::Operations {
-                    load: extra_load,
+                    load: load_for(index + 1, [0.0, 0.0, 0.0, 1.0]),
                     store: wgpu::StoreOp::Store,
                 },
             }));
@@ -7607,14 +7647,30 @@ impl Renderer {
                     .mrt
                     .as_ref()
                     .and_then(|mrt| mrt.blend_mode(name))
-                    .and_then(|blending| {
-                        materials::blending::blending(&materials::BlendMode {
-                            blending,
-                            ..Default::default()
-                        })
-                    }),
+                    .and_then(|mode| materials::blending::blending(&mode)),
             })
             .collect();
+        // Attachment 0 goes through the same `getBlendMode( texture.name )`:
+        // an unset `output` is the `MaterialBlending` seed (the material's
+        // own state), and any other unset name is `_noBlending`.
+        let name0 = inner
+            .texture_name
+            .clone()
+            .unwrap_or_else(|| OUTPUT_ATTACHMENT.to_string());
+        let color_blend = self
+            .mrt
+            .as_ref()
+            .and_then(|mrt| match mrt.blend_mode(&name0) {
+                Some(mode) => Some(materials::blending::blending(&mode)),
+                None => (name0 != OUTPUT_ATTACHMENT).then_some(None),
+            });
+        let clear_colors: Vec<Option<[f64; 4]>> = match &self.mrt {
+            Some(mrt) => std::iter::once(name0.as_str())
+                .chain(inner.extra_textures.iter().map(|(name, _)| name.as_str()))
+                .map(|name| mrt.clear_color(name))
+                .collect(),
+            None => Vec::new(),
+        };
 
         let (depth_texture, depth_format) = match (&inner.depth_texture, &inner.depth) {
             (Some(depth_texture), _) => (
@@ -7642,6 +7698,8 @@ impl Renderer {
             color,
             extra_colors,
             extra_color_targets,
+            color_blend,
+            clear_colors,
             resolve,
             color_texture: Some(inner.texture.with_gpu(|gpu| gpu.clone())),
             depth,
@@ -7703,6 +7761,8 @@ impl Renderer {
             color,
             extra_colors: Vec::new(),
             extra_color_targets: Vec::new(),
+            color_blend: None,
+            clear_colors: Vec::new(),
             resolve,
             color_texture: Some(canvas.color.clone()),
             depth: depth.clone(),

@@ -213,6 +213,28 @@ impl std::hash::Hash for OutputContext {
 pub struct MrtContext {
     pub node: crate::nodes::MrtNode,
     pub attachments: Vec<String>,
+    /// `builder.getOutputType( index )` per attachment — the type
+    /// `MRTNode.setup()` converts that member to. Empty is `vec4` for every
+    /// attachment, which is every `RGBAFormat` target.
+    pub output_types: Vec<crate::nodes::Type>,
+}
+
+impl MrtContext {
+    /// `node` over `render_target`, as the renderer resolves it for a render
+    /// into that target: its attachment names, and `getOutputType( index )`
+    /// for each attachment ([`RenderTarget::output_types`]).
+    ///
+    /// [`RenderTarget::output_types`]: crate::renderer::RenderTarget::output_types
+    pub fn for_target(
+        node: crate::nodes::MrtNode,
+        render_target: &crate::renderer::RenderTarget,
+    ) -> Self {
+        Self {
+            node,
+            attachments: render_target.attachment_names(),
+            output_types: render_target.output_types(),
+        }
+    }
 }
 
 /// `Renderer._getShadowNodes( material )` composed with
@@ -820,7 +842,7 @@ fn setup_inner(
             Some(material_mrt) => context.node.merge(material_mrt),
             None => context.node.clone(),
         };
-        merged.members(&context.attachments)
+        merged.members(&context.attachments, &context.output_types)
     });
 
     // --- the vertex flow
@@ -853,13 +875,16 @@ fn setup_inner(
         .map(crate::nodes::tsl::resolve_fn_call);
     // `material.outputNode = outputStruct( … )`: the struct *is* the fragment
     // stage's result, written member by member as an MRT's is, but with each
-    // member's own type (see `MaterialFlow::mrt_typed`).
-    let (mrt, mrt_typed, material_output) = match material_output {
+    // member's own type: each member carries it (see `MaterialFlow::mrt`).
+    let (mrt, material_output) = match material_output {
         Some(node) => match node.node() {
-            crate::nodes::Node::OutputStruct { members } => (Some(members.clone()), true, None),
-            _ => (mrt, false, Some(node)),
+            crate::nodes::Node::OutputStruct { members } => (
+                Some(members.iter().map(|m| (m.clone(), m.ty())).collect()),
+                None,
+            ),
+            _ => (mrt, Some(node)),
         },
-        None => (mrt, false, None),
+        None => (mrt, None),
     };
     let (output_assign, output_node) = match &ctx.output {
         Some(context) => (
@@ -884,7 +909,6 @@ fn setup_inner(
         output_assign,
         output_node,
         mrt,
-        mrt_typed,
         emit_output_property: material.fragment_node.is_none(),
         // `setupHardwareClipping()`: after the vertex node, so the loop
         // reads the varyings the fragment stage asked for.

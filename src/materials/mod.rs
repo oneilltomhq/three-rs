@@ -19,8 +19,7 @@ pub use node_material::{
     tone_mapping_node, AoContext, MrtContext, OutputContext, SetupContext,
 };
 
-pub(crate) use blending::BlendMode;
-pub use blending::{BlendEquation, BlendFactor, Blending};
+pub use blending::{BlendEquation, BlendFactor, BlendMode, Blending};
 
 use std::cell::Cell;
 

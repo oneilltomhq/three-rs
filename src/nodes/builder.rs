@@ -3510,13 +3510,14 @@ pub struct MaterialFlow {
     /// fragment stage to `OutputStructNode`'s `struct OutputType { @location(
     /// i ) mi }` and one `output.mi = …` per member, in the flow rather than in
     /// the result section — which is what three.js's own dump shows.
-    pub mrt: Option<Vec<NodeRef>>,
-    /// Whether [`mrt`](Self::mrt) holds a material's own `outputStruct()`
-    /// members rather than an `MRTNode`'s. `MRTNode.setup()` wraps every
-    /// member in `vec4()`, so its struct is all `vec4<f32>`; a bare
-    /// `OutputStructNode` declares each member as its own type —
-    /// `DepthOfFieldNode`'s CoC pass writes two `f32`s.
-    pub mrt_typed: bool,
+    ///
+    /// Each member carries the WGSL type its `@location( i )` slot is
+    /// declared as. For an `MRTNode` that is the type `MRTNode.setup()`
+    /// converts it to (`builder.getOutputType( index )`): `vec4` for an
+    /// `RGBAFormat` attachment, `f32` for `OITPassNode`'s `RedFormat`
+    /// revealage. A bare `outputStruct()` declares each member as its own
+    /// type — `DepthOfFieldNode`'s CoC pass writes two `f32`s.
+    pub mrt: Option<Vec<(NodeRef, Type)>>,
     /// Vertex-stage statements, run before the position node.
     pub vertex_statements: Vec<NodeRef>,
     /// The clip-space position the vertex stage writes.
@@ -3538,18 +3539,6 @@ pub struct MaterialFlow {
     pub(crate) clip_distances: usize,
 }
 
-/// The WGSL type of one `OutputType` member: `vec4` for an `MRTNode`'s
-/// (`MRTNode.setup()` wraps each in `vec4()`), the member's own type for a
-/// bare `outputStruct()`.
-#[inline(never)]
-fn mrt_member_type(member: &NodeRef, typed: bool) -> Type {
-    if typed {
-        member.ty()
-    } else {
-        Type::Vec4
-    }
-}
-
 impl MaterialFlow {
     /// A flow that writes `output` from the fragment stage and `position`
     /// from the vertex stage, with no statements of its own, no depth, MRT or
@@ -3564,7 +3553,6 @@ impl MaterialFlow {
             output_assign: None,
             output_node: None,
             mrt: None,
-            mrt_typed: false,
             vertex_statements: Vec::new(),
             position,
             geometry_has_tangent: true,
@@ -3779,7 +3767,7 @@ impl NodeBuilder {
         if let Some(node) = &flow.output_node {
             self.analyze(node);
         }
-        for member in flow.mrt.iter().flatten() {
+        for (member, _) in flow.mrt.iter().flatten() {
             self.analyze(member);
         }
         self.stage = Stage::Vertex;
@@ -3840,14 +3828,8 @@ impl NodeBuilder {
         // `OutputStructNode.generate()`: one `output.mN = <member>` line per
         // member, pushed onto the *flow* — the entry point's result section is
         // then empty and only `return output;` is left.
-        let mrt_types = flow.mrt.as_ref().map(|members| {
-            members
-                .iter()
-                .map(|member| mrt_member_type(member, flow.mrt_typed))
-                .collect::<Vec<_>>()
-        });
-        if let (Some(members), Some(types)) = (&flow.mrt, &mrt_types) {
-            for (index, (member, ty)) in members.iter().zip(types).enumerate() {
+        if let Some(members) = &flow.mrt {
+            for (index, (member, ty)) in members.iter().enumerate() {
                 let snippet = self.format(member, *ty);
                 self.emit(format!("output.m{index} = {snippet};"));
             }
@@ -3862,7 +3844,10 @@ impl NodeBuilder {
         let fragment_wgsl = self.assemble_with_mrt(
             Stage::Fragment,
             &color,
-            mrt_types.as_deref(),
+            flow.mrt
+                .as_ref()
+                .map(|members| members.iter().map(|(_, ty)| *ty).collect::<Vec<_>>())
+                .as_deref(),
             flow.depth.is_some(),
         );
         let vertex_wgsl = self.assemble(Stage::Vertex, &position);
@@ -4257,9 +4242,9 @@ impl NodeBuilder {
 
     /// `mrt_members` is `Some(types)` for a fragment stage with an
     /// `OutputStructNode` result: the struct is `OutputType` with one
-    /// `@location( i ) mi : T` member per type, and the entry point's result
-    /// section is empty because `generate()` already wrote the assignments into
-    /// the flow.
+    /// `@location( i ) mi : <type>` member per entry, and the entry point's
+    /// result section is empty because `generate()` already wrote the
+    /// assignments into the flow.
     fn assemble_with_mrt(
         &self,
         stage: Stage,
