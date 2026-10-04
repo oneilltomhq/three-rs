@@ -2,6 +2,7 @@
 
 mod buffer_attribute;
 mod buffer_geometry;
+mod events;
 mod indirect_storage_buffer_attribute;
 mod layers;
 pub(crate) mod node;
@@ -16,6 +17,10 @@ pub use buffer_attribute::{
 };
 pub use buffer_geometry::{
     BoundingBox, BoundingSphere, BufferGeometry, DrawRange, GeometryId, Group, Index,
+};
+pub use events::{
+    ListenerHandle, ObjectRenderHook, SceneEvent, SceneEventListener, SceneEventListeners,
+    SceneEventType, SceneRenderHook,
 };
 pub use indirect_storage_buffer_attribute::IndirectStorageBufferAttribute;
 pub use layers::Layers;

@@ -30,6 +30,7 @@ three-rs/renderer_occlusion
 three-rs/renderer_pipeline_hooks
 three-rs/renderer_points
 three-rs/renderer_program_cache
+three-rs/renderer_render_hooks
 three-rs/renderer_sprites
 three-rs/renderer_textures
 three-rs/renderer_typed_attributes

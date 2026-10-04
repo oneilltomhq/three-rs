@@ -48,6 +48,13 @@ impl std::fmt::Debug for DataTexture {
 }
 
 impl DataTexture {
+    /// `dataTexture.dispose()` — drops this handle, and nothing more: a texture
+    /// handle is an `Rc`, so the renderer frees the GPU side once every handle
+    /// is gone, at the top of the next render (`docs/scene-graph.md`,
+    /// "Identity and eviction"). Dropping the handle does the same; this
+    /// exists so three.js code ports line for line.
+    pub fn dispose(self) {}
+
     /// `new DataTexture( new Float32Array( w * h * 4 ), w, h, RGBAFormat, FloatType )`.
     pub fn new_f32(data: Vec<f32>, width: u32, height: u32) -> Self {
         Self::new(DataTextureData::F32(data), width, height)

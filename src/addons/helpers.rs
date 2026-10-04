@@ -15,16 +15,21 @@ use crate::objects::Mesh;
 ///
 /// `sh` and `intensity` are live, as three's `onBeforeRender()` makes them —
 /// the uniforms read the probe each draw — so changing the probe changes the
-/// helper. The position and scale half of `onBeforeRender()` is
-/// [`update`](Self::update), which the port has no per-object render hook to
-/// call by itself; the constructor calls it once, as three's does.
+/// helper. The position and scale half of `onBeforeRender()` is the
+/// [`on_before_render`](crate::core::Object3D::on_before_render) the
+/// constructor installs on [`node`](Self::node), so the helper follows the
+/// probe by itself; the constructor also runs it once, as three's does.
 pub struct LightProbeHelper {
     /// The `Mesh` itself.
     pub node: Node,
     /// `this.lightProbe`.
     pub light_probe: Node,
-    /// `this.size` — the sphere's radius.
+    /// `this.size` — the sphere's radius. The installed hook reads its own
+    /// copy, which [`update`](Self::update) refreshes: after changing this,
+    /// call `update()` once.
     pub size: f64,
+    /// The installed hook's copy of `size`.
+    hook_size: std::rc::Rc<std::cell::Cell<f64>>,
 }
 
 impl LightProbeHelper {
@@ -80,18 +85,36 @@ impl LightProbeHelper {
         let node = Mesh::new(geometry, material);
         node.borrow_mut().object_type = "LightProbeHelper";
 
+        let probe = light_probe.downgrade();
+        let hook_size = std::rc::Rc::new(std::cell::Cell::new(size));
+        let shared_size = hook_size.clone();
+        node.borrow_mut()
+            .set_on_before_render(move |node, _renderer, _scene, _camera, _group| {
+                if let Some(probe) = probe.upgrade() {
+                    let position = probe.borrow().position;
+                    let size = shared_size.get();
+                    let mut object = node.borrow_mut();
+                    object.position = position;
+                    object.scale.set(size, size, size);
+                }
+            });
+
         let helper = Self {
             node,
             light_probe: light_probe.clone(),
             size,
+            hook_size,
         };
         helper.update();
         helper
     }
 
-    /// `onBeforeRender()`'s transform half: the helper sits where the probe
-    /// is, scaled to `size`.
+    /// `onBeforeRender()`'s transform half, run by hand: the helper sits where
+    /// the probe is, scaled to [`size`](Self::size). The renderer runs the
+    /// same thing before every draw of the helper, so this is only needed to
+    /// place it outside a render, or to apply a changed `size`.
     pub fn update(&self) {
+        self.hook_size.set(self.size);
         let position = self.light_probe.borrow().position;
         let mut object = self.node.borrow_mut();
         object.position = position;

@@ -66,6 +66,13 @@ impl std::fmt::Debug for Data3DTexture {
 }
 
 impl Data3DTexture {
+    /// `data3DTexture.dispose()` — drops this handle, and nothing more: a texture
+    /// handle is an `Rc`, so the renderer frees the GPU side once every handle
+    /// is gone, at the top of the next render (`docs/scene-graph.md`,
+    /// "Identity and eviction"). Dropping the handle does the same; this
+    /// exists so three.js code ports line for line.
+    pub fn dispose(self) {}
+
     /// `new Data3DTexture( data, width, height, depth )` with
     /// `texture.format` already applied as `format`: `RedFormat` +
     /// `UnsignedByteType` is [`wgpu::TextureFormat::R8Unorm`], the default

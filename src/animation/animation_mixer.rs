@@ -48,8 +48,9 @@
 //!   `TargetResolver` that fans out over its members; nothing in the mixer needs
 //!   to change to accept one, so there is nothing to stub here.
 //! - `EventDispatcher`: Three's mixer dispatches `'loop'` and `'finished'`.
-//!   There is no `EventDispatcher` port in this crate, so the state changes
-//!   happen and the notifications do not.
+//!   The crate's events are typed per dispatcher (`docs/api.md` decision 12)
+//!   and the mixer has none yet, so the state changes happen and the
+//!   notifications do not.
 //! - `clipAction( 'name' )` / `existingAction( 'name' )`: the string form calls
 //!   `AnimationClip.findByName( root, name )`, which reads `root.animations` off
 //!   an `Object3D`. Deferred to the object-tree branch; pass the clip itself.
@@ -280,7 +281,8 @@ pub struct MixerStats {
 
 /// `AnimationMixer`.
 ///
-/// Three extends `EventDispatcher`; that is not ported (see the module docs).
+/// Three extends `EventDispatcher`; the mixer's events are not ported (see the
+/// module docs).
 pub struct AnimationMixer {
     /// `_root` is `roots[ 0 ]`; the rest are the registered `optionalRoot`s.
     roots: Vec<Box<dyn TargetResolver>>,

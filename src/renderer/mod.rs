@@ -1920,6 +1920,10 @@ impl Renderer {
             .clone()
             .filter(|_| self.render_target.is_none());
 
+        // `sceneRef.onBeforeRender( this, scene, camera, renderTarget )`,
+        // after the matrix updates and before the projection.
+        self.call_scene_hook(scene, camera, false);
+
         // `Renderer._renderScene()`: `_projectObject()` walks the real scene
         // graph into the render list, `finish()`/`sort()` order it, and
         // `_background.update()` then unshifts the skybox, so it draws first.
@@ -2214,6 +2218,13 @@ impl Renderer {
                 oit.draws(material)
             });
         }
+
+        // `object.onBeforeRender( ... )`, which `renderObject()` calls once
+        // per item that the render-object function passes on — before the
+        // `DoubleSide` split, so once for both halves. The port records the
+        // whole pass after this, so every item's hook runs before any draw.
+        let hooked = self.hooked_items(&draws);
+        self.call_object_hooks(&hooked, scene, camera, false);
 
         for (item, side) in draws {
             let object = item.node.borrow();
@@ -2638,6 +2649,91 @@ impl Renderer {
         });
         self.render_list(&items, camera_uniforms, clear);
         self.occlusion_context = None;
+
+        // `object.onAfterRender( ... )` per item, then
+        // `sceneRef.onAfterRender( ... )` once the output pass is recorded.
+        self.call_object_hooks(&hooked, scene, camera, true);
+        self.call_scene_hook(scene, camera, true);
+    }
+
+    /// The items of this pass whose object has an `on_before_render` or
+    /// `on_after_render`, once each (a split `DoubleSide` item is two draws
+    /// but one `renderObject()` call), with the group the draw uses. Skips
+    /// what the outline pass's render-object function does not draw.
+    #[inline(never)]
+    fn hooked_items(&self, draws: &[(&RenderItem, Option<Side>)]) -> Vec<(Node, Option<Group>)> {
+        let mut hooked = Vec::new();
+        for (item, side) in draws {
+            if *side == Some(Side::Front) {
+                continue;
+            }
+            let object = item.node.borrow();
+            if object.on_before_render.is_none() && object.on_after_render.is_none() {
+                continue;
+            }
+            if let Some(selection) = &self.outline_selection {
+                if selection.material_for(&object).is_none() {
+                    continue;
+                }
+            }
+            drop(object);
+            hooked.push((item.node.clone(), item.group));
+        }
+        hooked
+    }
+
+    /// Calls `on_before_render` (or, with `after`, `on_after_render`) on each
+    /// of `hooked`. The hook is taken out of its object for the call, so it
+    /// can borrow its own node, and put back unless it installed another.
+    #[inline(never)]
+    fn call_object_hooks(
+        &self,
+        hooked: &[(Node, Option<Group>)],
+        scene: &Scene,
+        camera: &dyn RenderCamera,
+        after: bool,
+    ) {
+        for (node, group) in hooked {
+            let taken = {
+                let mut object = node.borrow_mut();
+                if after {
+                    object.on_after_render.take()
+                } else {
+                    object.on_before_render.take()
+                }
+            };
+            let Some(mut hook) = taken else { continue };
+            hook(node, self, scene, camera, group.as_ref());
+            let mut object = node.borrow_mut();
+            let slot = if after {
+                &mut object.on_after_render
+            } else {
+                &mut object.on_before_render
+            };
+            if slot.is_none() {
+                *slot = Some(hook);
+            }
+        }
+    }
+
+    /// Calls `scene.on_before_render` (or, with `after`,
+    /// `scene.on_after_render`) with the target the scene is drawn into:
+    /// three's `renderTarget`, which is the internal framebuffer target when
+    /// `render_list` will use one, else the renderer's render target.
+    #[inline(never)]
+    fn call_scene_hook(&mut self, scene: &Scene, camera: &dyn RenderCamera, after: bool) {
+        let hook = if after {
+            scene.on_after_render.as_ref()
+        } else {
+            scene.on_before_render.as_ref()
+        };
+        let Some(hook) = hook else { return };
+        let target = if self.needs_frame_buffer_target() && self.render_target.is_none() {
+            Some(self.frame_buffer_target())
+        } else {
+            self.render_target.clone()
+        };
+        hook(self, scene, camera, target.as_ref());
     }
 
     /// `ShadowNode.updateShadow()` for every shadow-casting light in the list:

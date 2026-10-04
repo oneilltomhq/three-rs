@@ -1,14 +1,17 @@
 //! Port of `three.js/test/unit/src/core/Object3D.tests.js`.
 //!
-//! The Rust `Object3D` has no parent/children yet (the scene graph is flat in
-//! the ladder so far), so every test that builds a hierarchy is skipped:
-//! `add/remove/removeFromParent/clear`, `attach`, `getObjectById/ByName/
-//! ByProperty`, `getObjectsByProperty`, `traverse*`, `updateMatrixWorld` and
-//! `updateWorldMatrix` (both are parent/child matrices), and the parent halves
-//! of `getWorldPosition`, `localToWorld` and `worldToLocal`. Also skipped:
-//! `Extending`, `Instancing`, `type`, `isObject3D`, `DEFAULT_MATRIX_AUTO_UPDATE`
-//! (no global defaults or auto-update flag), `toJSON`, `clone`, `copy`, and
-//! `localTransformVariableInstantiation` (a JS-only aliasing check).
+//! The transform tests run on a bare `Object3D`; the hierarchy tests
+//! (`add/remove/removeFromParent/clear`, `attach`, the `getObject*` lookups,
+//! `traverse*`, `updateMatrixWorld`, `updateWorldMatrix` and the parent halves
+//! of `getWorldPosition`, `localToWorld`, `worldToLocal`, `lookAt`) run on the
+//! scene-graph [`Node`]. Skipped: `Extending`, `Instancing`, `isObject3D`,
+//! `toJSON`, `clone`, `copy`, and `localTransformVariableInstantiation` (a
+//! JS-only aliasing check).
+//!
+//! three's file has no case for the `added` / `removed` / `childadded` /
+//! `childremoved` events; the `events_*` tests at the end check the port's
+//! `SceneEvent` dispatch against `Object3D.add()`, `remove()` and `attach()`
+//! as three.js writes them.
 
 mod support;
 
@@ -1115,5 +1118,243 @@ fn update_world_matrix() {
         parent.borrow().matrix_world.elements,
         identity.elements,
         "No effect to parent's world matrix if matrixWorldAutoUpdate is false"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Events: `Object3D.add()`, `remove()` and `attach()` dispatch `added` /
+// `childadded` and `removed` / `childremoved`. No QUnit counterpart.
+// ---------------------------------------------------------------------------
+
+use std::cell::RefCell;
+use std::rc::Rc;
+
+use three_rs::core::{SceneEvent, SceneEventType};
+
+/// One dispatched event as a listener saw it: the target's name, the event
+/// type, the child's name for the `child*` events, and the target's parent's
+/// name at the time of the call.
+type Seen = (String, SceneEventType, Option<String>, Option<String>);
+
+/// Listens for all four events on each of `nodes`, into one shared log.
+fn record(nodes: &[&Node]) -> Rc<RefCell<Vec<Seen>>> {
+    let log: Rc<RefCell<Vec<Seen>>> = Rc::default();
+    for node in nodes {
+        for ty in [
+            SceneEventType::Added,
+            SceneEventType::Removed,
+            SceneEventType::ChildAdded,
+            SceneEventType::ChildRemoved,
+        ] {
+            let log = log.clone();
+            node.add_event_listener(ty, move |event: &SceneEvent, target: &Node| {
+                log.borrow_mut().push((
+                    target.borrow().name.clone(),
+                    event.event_type(),
+                    event.child().map(|child| child.borrow().name.clone()),
+                    target.parent().map(|parent| parent.borrow().name.clone()),
+                ));
+            });
+        }
+    }
+    log
+}
+
+fn seen(target: &str, ty: SceneEventType, child: Option<&str>, parent: Option<&str>) -> Seen {
+    (
+        target.to_string(),
+        ty,
+        child.map(str::to_string),
+        parent.map(str::to_string),
+    )
+}
+
+#[test]
+fn events_add_dispatches_added_then_childadded() {
+    use SceneEventType::*;
+    let a = named("a");
+    let child = named("child");
+    let log = record(&[&a, &child]);
+
+    a.add(&child);
+    assert_eq!(
+        *log.borrow(),
+        vec![
+            // `object.parent = this` comes first, so the child already sees
+            // its parent.
+            seen("child", Added, None, Some("a")),
+            seen("a", ChildAdded, Some("child"), None),
+        ]
+    );
+}
+
+#[test]
+fn events_remove_dispatches_removed_then_childremoved() {
+    use SceneEventType::*;
+    let a = named("a");
+    let child = named("child");
+    a.add(&child);
+    let log = record(&[&a, &child]);
+
+    a.remove(&child);
+    assert_eq!(
+        *log.borrow(),
+        vec![
+            // `object.parent = null` comes first.
+            seen("child", Removed, None, None),
+            seen("a", ChildRemoved, Some("child"), None),
+        ]
+    );
+
+    log.borrow_mut().clear();
+    a.remove(&child);
+    assert!(
+        log.borrow().is_empty(),
+        "removing a non-child dispatches nothing"
+    );
+    child.remove_from_parent();
+    assert!(
+        log.borrow().is_empty(),
+        "nor does an orphan's removeFromParent()"
+    );
+}
+
+#[test]
+fn events_reparenting_removes_before_it_adds() {
+    use SceneEventType::*;
+    let a = named("a");
+    let b = named("b");
+    let child = named("child");
+    a.add(&child);
+    let log = record(&[&a, &b, &child]);
+
+    b.add(&child);
+    assert_eq!(
+        *log.borrow(),
+        vec![
+            seen("child", Removed, None, None),
+            seen("a", ChildRemoved, Some("child"), None),
+            seen("child", Added, None, Some("b")),
+            seen("b", ChildAdded, Some("child"), None),
+        ]
+    );
+}
+
+#[test]
+fn events_clear_removes_each_child_in_order() {
+    use SceneEventType::*;
+    let a = named("a");
+    let child1 = named("child1");
+    let child2 = named("child2");
+    a.add(&child1);
+    a.add(&child2);
+    let log = record(&[&a, &child1, &child2]);
+
+    a.clear();
+    assert_eq!(
+        *log.borrow(),
+        vec![
+            seen("child1", Removed, None, None),
+            seen("a", ChildRemoved, Some("child1"), None),
+            seen("child2", Removed, None, None),
+            seen("a", ChildRemoved, Some("child2"), None),
+        ]
+    );
+}
+
+#[test]
+fn events_add_self_dispatches_nothing() {
+    let a = named("a");
+    let log = record(&[&a]);
+    a.add(&a.clone());
+    assert!(log.borrow().is_empty());
+}
+
+#[test]
+fn events_attach_dispatches_after_the_world_matrix_update() {
+    use SceneEventType::*;
+    let a = named("a");
+    a.borrow_mut().position.set(1.0, 2.0, 3.0);
+    let b = named("b");
+    let child = named("child");
+    child.borrow_mut().position.set(5.0, 0.0, 0.0);
+    b.add(&child);
+    let log = record(&[&a, &b, &child]);
+
+    // The world position `attach()` preserves, as the `added` listener sees
+    // it: `updateWorldMatrix( false, true )` has run by then.
+    let world_at_added: Rc<RefCell<Option<Matrix4>>> = Rc::default();
+    let slot = world_at_added.clone();
+    child.add_event_listener(Added, move |_, target| {
+        *slot.borrow_mut() = Some(target.borrow().matrix_world);
+    });
+
+    a.attach(&child);
+    assert_eq!(
+        *log.borrow(),
+        vec![
+            seen("child", Removed, None, None),
+            seen("b", ChildRemoved, Some("child"), None),
+            seen("child", Added, None, Some("a")),
+            seen("a", ChildAdded, Some("child"), None),
+        ]
+    );
+    let world = world_at_added.borrow().expect("added was dispatched");
+    matrix_equals4(
+        &world,
+        &translation(5.0, 0.0, 0.0),
+        "world matrix at 'added'",
+    );
+}
+
+#[test]
+fn events_a_listener_can_change_the_tree() {
+    // Dispatch holds no borrow, so a listener may add to the tree, which
+    // dispatches again from inside the first dispatch.
+    let a = named("a");
+    let child = named("child");
+    let grandchild = named("grandchild");
+    let pending = RefCell::new(Some(grandchild.clone()));
+    child.add_event_listener(SceneEventType::Added, move |_, target| {
+        if let Some(grandchild) = pending.borrow_mut().take() {
+            target.add(&grandchild);
+        }
+    });
+    let log = record(&[&grandchild]);
+
+    a.add(&child);
+    same(
+        &child.children()[0],
+        &grandchild,
+        "the listener added a child",
+    );
+    assert_eq!(
+        *log.borrow(),
+        vec![seen(
+            "grandchild",
+            SceneEventType::Added,
+            None,
+            Some("child")
+        )]
+    );
+}
+
+#[test]
+fn events_clone_copies_no_listeners_and_no_hooks() {
+    // `copy()` does not copy `_listeners`, and the port's render hooks are
+    // boxed closures.
+    let a = named("a");
+    let log = record(&[&a]);
+    a.borrow_mut().set_on_before_render(|_, _, _, _, _| {});
+    a.borrow_mut().set_on_after_render(|_, _, _, _, _| {});
+
+    let copy = a.borrow().clone().into_node();
+    assert!(copy.borrow().on_before_render.is_none());
+    assert!(copy.borrow().on_after_render.is_none());
+    let parent = named("parent");
+    parent.add(&copy);
+    assert!(
+        log.borrow().is_empty(),
+        "the copy's add reached no listener of a's"
     );
 }

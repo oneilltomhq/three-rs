@@ -480,7 +480,97 @@ opaque: their fields are private, so the only way to get one is the
 constructor or accessor the owning type hands out, and a caller can never
 forge one that names a slot the table never allocated.
 
+## 12. Events are typed enums, render callbacks are closure fields, and `Drop` is `dispose()`
+
+three.js has one event mechanism, `EventDispatcher`: string-keyed listener
+arrays on objects, materials, geometries, textures, render targets, the
+animation mixer and the controls, with an untyped event object. The port has
+no such trait (issue #153, option C). Each thing three dispatches on gets the
+shape its events need:
+
+- **The scene graph** dispatches a `SceneEvent`: `Added`, `Removed`,
+  `ChildAdded(child)` and `ChildRemoved(child)`, the four events
+  `Object3D` dispatches, which are the whole set. `Node::add_event_listener(
+  SceneEventType, listener)` returns an opaque `ListenerHandle`, which stands
+  for the listener in `remove_event_listener` and `has_event_listener`
+  because a closure has no identity to compare. `Node::dispatch_event` copies
+  the listener list before calling it, as three's `listenerArray.slice( 0 )`
+  does, and holds no borrow during the calls: a listener may remove itself or
+  any other listener, borrow its node, or change the tree, which dispatches
+  again. A listener is `Fn(&SceneEvent, &Node)`, the second argument being
+  three's `event.target`; `Fn` because of that re-entrancy, and the target is
+  passed in so a listener need not capture, and so keep alive, its own node.
+  `add()` and `attach()` dispatch `Added` on the child and then `ChildAdded`
+  on the parent, once the link is made (and, for `attach()`, after the world
+  matrix update); `remove()`, and so `clear()` and `remove_from_parent()`,
+  dispatch `Removed` and then `ChildRemoved` once it is broken. The listeners
+  are a public field of opaque type, `Object3D::listeners`, so `Object3D {
+  .., ..Default::default() }` still builds outside the crate; `Clone` does
+  not copy them, as three's `copy()` does not.
+- **The animation mixer** does not dispatch three's `'loop'` and
+  `'finished'` yet: the state changes happen and the notifications do not.
+  When they land they are a queue the caller drains after `update()`, not
+  listeners, because the mixer is borrowed mutably while it updates.
+- **`dispose`** is `Drop`. A texture, render target or geometry is an `Rc`
+  handle and the renderer frees what it made for it once the last handle is
+  gone (`docs/scene-graph.md`, "Identity and eviction"); a material ages out.
+  `dispose(self)` on `Texture`, `CubeTexture`, `DataTexture`,
+  `Data3DTexture`, `DataArrayTexture`, `DepthTexture`, `CubeDepthTexture`,
+  `RenderTarget`, `CubeRenderTarget` and `MeshBasicNodeMaterial`, and
+  `dispose(self: Rc<Self>)` on `BufferGeometry`, are documented no-ops that
+  consume the handle, so three.js code ports line for line.
+
+Why not a string-keyed `EventDispatcher` trait: the event sets are closed and
+small, the data each event carries differs, and the one place three's
+dispatch does real work — the renderer releasing GPU memory on `dispose` —
+is already done by `Rc` counts with no call to forget. A string dispatcher
+would trade a compile error on a misspelt event or a wrong payload for a
+listener that silently never fires, and give every listener a `dyn Any` to
+downcast. A typed enum keeps three's names, one variant per event, and
+gains a variant if three's set grows.
+
+**Render callbacks** are `Option<Box<dyn ...>>` fields, set by assignment
+or by a `set_on_before_render` / `set_on_after_render` that spares writing
+the closure's argument types.
+
+- `Object3D::on_before_render` / `on_after_render` are an
+  `ObjectRenderHook`: `FnMut(&Node, &Renderer, &Scene, &dyn RenderCamera,
+  Option<&Group>)`. three passes `( renderer, scene, camera, geometry,
+  material, group )` with the object as `this`. The object comes first, as
+  its unborrowed `Node`: the renderer takes the hook out of the object for
+  the call, so the hook can borrow its own node or any other, and puts it back
+  unless the hook installed a replacement. The geometry and material are on
+  that node's payload. The renderer is `&Renderer`, not `&mut`: the hook runs
+  inside a render, and the port records a pass's draws only after every
+  before-hook of the pass has run, so a hook cannot draw or start a render.
+- `Scene::on_before_render` / `on_after_render` are a `SceneRenderHook`:
+  `Fn(&Renderer, &Scene, &dyn RenderCamera, Option<&RenderTarget>)`, three's
+  `( renderer, scene, camera, renderTarget )`. The target is the one the
+  scene is drawn into: the internal framebuffer target when one is used, else
+  the renderer's render target, so `None` is the canvas. `Fn`, not `FnMut`,
+  because the renderer holds the scene shared: a pass or a reflector renders
+  it again from inside its own render. The scene root's `Object3D` hooks are
+  never called; three calls an object's hook per draw, and the root is not
+  drawn.
+
+The renderer calls them in `Renderer._renderScene()`'s order, on every scene
+render, including those passes and reflectors make: the scene's before-hook
+after the scene's and camera's matrix updates and before the projection; each
+drawn object's before-hook once per render item, after the cull and the
+render-object filters (OIT, the outline selection) and once for both halves
+of a split `DoubleSide` draw; the draws, and the output pass if any; each
+object's after-hook; the scene's after-hook. Two differences from three
+follow from recording the pass afterwards. Every before-hook runs before any
+draw, where three interleaves them with the draws. A change a hook makes to
+the transform is seen next frame, as in three, because the draw uses the
+world matrix computed before it; a change to the material is seen this frame.
+The shadow passes draw from their own list and call no hooks, where three's
+`renderer.render()` of the shadow camera would.
+
 ## Where each decision came from
+
+Decision 12 is issue #153's option C and its maintainer decisions, built in
+#159.
 
 Decision 11 is the last of issue #14 (with #37).
 

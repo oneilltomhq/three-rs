@@ -313,6 +313,14 @@ impl Clone for BufferGeometry {
 }
 
 impl BufferGeometry {
+    /// `geometry.dispose()` — drops this handle, and nothing more. A mesh
+    /// holds its geometry as an `Rc`, which is what this takes; the renderer
+    /// frees the uploaded buffers once every handle is gone, at the top of the
+    /// next render (`docs/scene-graph.md`, "Identity and eviction"). Dropping
+    /// the `Rc` does the same; this exists so three.js code ports line for
+    /// line.
+    pub fn dispose(self: std::rc::Rc<Self>) {}
+
     /// `new BufferGeometry()`.
     pub fn new() -> Self {
         Self::default()

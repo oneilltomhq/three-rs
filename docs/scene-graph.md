@@ -73,8 +73,13 @@ from atomics. If the renderer is ever parallelised, the swap is mechanical.
   the tree: a fresh `id`, no parent, no children. Sharing the children's `Rc`s
   between two objects would give both the same child list with one `parent`
   pointer between them.
-- No `EventDispatcher`, so `add`/`remove`/`attach` dispatch no `added`,
-  `removed`, `childadded` or `childremoved` events.
+- `EventDispatcher` is typed: `add`/`remove`/`attach` dispatch a
+  `SceneEvent` (`Added`, `Removed`, `ChildAdded(child)`,
+  `ChildRemoved(child)`) at the points three dispatches its `'added'`,
+  `'removed'`, `'childadded'` and `'childremoved'`, and
+  `Node::add_event_listener` returns a `ListenerHandle` that stands for the
+  listener function. There is no string-keyed dispatcher; `docs/api.md`
+  decision 12 says why. `Clone` copies no listeners and no render hooks.
 
 ## The render path
 

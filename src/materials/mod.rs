@@ -894,6 +894,14 @@ impl Default for MeshBasicNodeMaterial {
 }
 
 impl MeshBasicNodeMaterial {
+    /// `material.dispose()` — drops this material, and nothing more. A
+    /// material is a value here and the renderer only sees per-frame clones,
+    /// so there is no count to read: what the renderer built for it ages out
+    /// once no render has drawn it for a few renders (`docs/scene-graph.md`,
+    /// "Identity and eviction"). Dropping the material does the same; this
+    /// exists so three.js code ports line for line.
+    pub fn dispose(self) {}
+
     /// `new MeshBasicMaterial()` — a white, opaque [`Basic`](MaterialKind::Basic)
     /// material. Equivalent to [`Default::default`].
     pub fn new() -> Self {
