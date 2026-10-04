@@ -28,7 +28,9 @@ use crate::textures::{
 
 pub use super::node::TextureSource;
 
+mod utils;
 mod wrappers;
+pub use utils::*;
 pub use wrappers::*;
 
 // ---------------------------------------------------------------------------

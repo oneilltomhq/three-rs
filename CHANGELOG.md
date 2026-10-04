@@ -68,6 +68,23 @@ have their own sections after the release they ship with. The format follows [Ke
     `light_map`, `light_map_intensity` (default 1), `specular_map` and
     `size` (default 1). The material flows do not apply `light_map` or
     `specular_map`, so both are reported by `unsupported_fields()`.
+- **TSL sweep 4**: the `three/tsl` utils names. Each one that emits WGSL is
+  gated against three's own dump in `tests/nodes_tsl_batch.rs`. See
+  `docs/nodes.md` §70.
+  - Context: `uniform_flow` makes a two-branch `select()` print WGSL's
+    `select()`. `set_name` names the first unnamed uniform under it. `label`
+    is three's deprecated alias of `set_name`. MaterialX's `mx_select` and
+    `mx_negate_if` now use `uniform_flow`, with byte-identical output.
+  - `bypass`, `vertex_stage` (method `to_vertex_stage`), `unpack_normal`,
+    `expression( snippet, type )`, `debug` with an optional `DebugCallback`,
+    `sample` with its `SampleNode` handle, and raw `wgsl( code, includes )`
+    for a `wgsl_fn`'s includes. `direction_to_color` and `color_to_direction`
+    are ported as three's deprecated aliases.
+  - Event hooks: `on_object_update`, `on_material_update`, `on_frame_update`,
+    `on_after_object_update`, `on_before_object_update`,
+    `on_before_material_update` and `on_before_frame_update`. Each is a
+    `void` node attached with `.bypass()`. Its callback runs in three's update
+    phase and receives the `Renderer`.
 - **`SkyMesh`** (`addons::objects`), a port of `examples/jsm/objects/SkyMesh.js`.
   It is the Preetham daylight model with a sun disc and an fbm cloud layer.
   Every uniform is a public `SettableValue`. `webgpu_sky` is graded green at 0

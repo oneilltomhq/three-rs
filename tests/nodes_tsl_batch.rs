@@ -18,7 +18,7 @@
 use three_rs::materials::{setup, MeshBasicNodeMaterial, SetupContext};
 use three_rs::math::Matrix2;
 use three_rs::nodes::tsl::*;
-use three_rs::nodes::{NodeBuilder, NodeRef};
+use three_rs::nodes::{NodeBuilder, NodeRef, Type};
 
 fn fragment(node: NodeRef) -> String {
     let mut material = MeshBasicNodeMaterial::new();
@@ -1310,4 +1310,234 @@ fn get_texture_index_finds_attachments() {
     assert_eq!(get_texture_index(&names, "output"), Some(0));
     assert_eq!(get_texture_index(&names, "emissive"), Some(2));
     assert_eq!(get_texture_index(&names, "depth"), None);
+}
+
+// ---------------------------------------------------------------------------
+// sweep 4: utils
+// ---------------------------------------------------------------------------
+
+#[test]
+fn bypass_matches() {
+    // Both forms: the free function and the method. Each call is a void
+    // `expression()`, which three adds to the flow as a line of its own.
+    assert_body(
+        "bypass",
+        vec4_join(vec![
+            bypass(x().mul(2.0), expression("let first = 1.0", Type::Void)),
+            y().bypass(expression("let second = 2.0", Type::Void)),
+            float(0.0),
+            float(1.0),
+        ]),
+    );
+}
+
+#[test]
+fn bypass_runs_its_call_once() {
+    // A second read is the cached output, not a second line.
+    let b = x().bypass(expression("let once = 1.0", Type::Void));
+    let wgsl = fragment(vec4_join(vec![b.clone(), b, float(0.0), float(1.0)]));
+    assert_eq!(wgsl.matches("let once = 1.0;").count(), 1, "{wgsl}");
+}
+
+#[test]
+fn uniform_flow_matches() {
+    // Three's unassigned `var<private> nodeVar0 : f32;` is in the port too.
+    assert_body(
+        "uniform_flow",
+        vec4_join(vec![
+            uniform_flow(x().greater_than(0.5).select(x().mul(2.0), y())),
+            float(0.0),
+            float(0.0),
+            float(1.0),
+        ]),
+    );
+    let ours = fragment(vec4_join(vec![
+        x().greater_than(0.5)
+            .select(x().mul(2.0), y())
+            .uniform_flow(),
+        float(0.0),
+        float(0.0),
+        float(1.0),
+    ]));
+    assert!(ours.contains("var<private> nodeVar0 : f32;"), "{ours}");
+    assert!(
+        fixture("uniform_flow").contains("var<private> nodeVar0 : f32;"),
+        "three's dump declares the unused var"
+    );
+}
+
+#[test]
+fn select_outside_uniform_flow_is_still_an_if() {
+    let ours = fragment(vec4_join(vec![
+        x().greater_than(0.5).select(x().mul(2.0), y()),
+        float(0.0),
+        float(0.0),
+        float(1.0),
+    ]));
+    assert!(ours.contains("if ( ( nodeVarying"), "{ours}");
+    assert!(!ours.contains("select("), "{ours}");
+}
+
+#[test]
+#[allow(deprecated)]
+fn set_name_matches() {
+    // Three numbers its third, unnamed, uniform `nodeUniform2` (the counter
+    // runs over named uniforms too); the port's is `nodeUniform0`.
+    let ours = fragment(vec4_join(vec![
+        set_name(uniform_value(Type::F32, vec![0.5]), "myValue"),
+        label(uniform_value(Type::F32, vec![0.25]), "otherValue"),
+        uniform_value(Type::F32, vec![0.75]),
+        float(1.0),
+    ]));
+    let theirs = fixture("set_name");
+    assert_eq!(
+        renumber_uniforms(&body(&ours)),
+        renumber_uniforms(&body(&theirs)),
+        "--- port ---\n{ours}"
+    );
+    for member in ["myValue : f32,", "otherValue : f32,"] {
+        assert!(theirs.contains(member));
+        assert!(ours.contains(member), "{member}\n{ours}");
+    }
+}
+
+#[test]
+fn set_name_names_only_the_first_uniform() {
+    // `delete builder.context.nodeName`: the second uniform under the same
+    // context is numbered as usual.
+    let ours = fragment(vec4_join(vec![
+        uniform_value(Type::F32, vec![0.5])
+            .add(uniform_value(Type::F32, vec![0.25]))
+            .set_name("first"),
+        float(0.0),
+        float(0.0),
+        float(1.0),
+    ]));
+    assert!(ours.contains("object.first"), "{ours}");
+    assert!(ours.contains("object.nodeUniform0"), "{ours}");
+    // A uniform with a name of its own keeps it.
+    let named = uniform(
+        three_rs::nodes::UniformSource::Value(vec![0.5]),
+        Type::F32,
+        three_rs::nodes::UniformGroup::Object,
+        Some("own"),
+    );
+    let ours = fragment(vec4_join(vec![
+        named.set_name("ignored"),
+        float(0.0),
+        float(0.0),
+        float(1.0),
+    ]));
+    assert!(ours.contains("object.own"), "{ours}");
+    assert!(!ours.contains("ignored"), "{ours}");
+}
+
+#[test]
+fn vertex_stage_matches() {
+    assert_body(
+        "vertex_stage",
+        vec4_join(vec![vertex_stage(position_local().mul(2.0)), float(1.0)]),
+    );
+}
+
+#[test]
+fn unpack_normal_matches() {
+    // Three's shared `xy` is a `let nodeConst0`; the port's a `var`.
+    assert_canonical(
+        "unpack_normal",
+        vec4_join(vec![unpack_normal(uv().sub(0.5)), float(1.0)]),
+    );
+}
+
+#[test]
+#[allow(deprecated)]
+fn color_direction_matches() {
+    assert_body(
+        "color_direction",
+        vec4_join(vec![
+            color_to_direction(vec3_join(vec![uv(), float(0.5)]))
+                .add(direction_to_color(vec3_join(vec![y(), x(), float(1.0)]))),
+            float(1.0),
+        ]),
+    );
+}
+
+#[test]
+fn expression_matches() {
+    assert_body(
+        "expression",
+        vec4_join(vec![
+            expression("sin( 1.0 )", Type::F32).add(x()),
+            expression("vec2<f32>( 0.25, 0.5 )", Type::Vec2),
+            float(1.0),
+        ]),
+    );
+}
+
+#[test]
+fn debug_matches_and_reports() {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    let seen: Rc<RefCell<Vec<(String, String)>>> = Rc::default();
+    let log = seen.clone();
+    let callback = three_rs::nodes::DebugCallback::new(move |info| {
+        log.borrow_mut()
+            .push((info.stage.to_string(), info.snippet.to_string()));
+    });
+    assert_body(
+        "debug",
+        vec4_join(vec![
+            debug(x().mul(2.0), None),
+            y().add(1.0).debug(Some(callback)),
+            float(0.0),
+            float(1.0),
+        ]),
+    );
+    let seen = seen.borrow();
+    assert!(
+        seen.iter().any(|(stage, snippet)| stage == "fragment"
+            && normalise(snippet) == "( nodeVarying.y + 1.0 )"),
+        "{seen:?}"
+    );
+}
+
+#[test]
+fn sample_matches() {
+    let s = sample(|coord| vec4_join(vec![coord.mul(2.0), float(0.0), float(1.0)]));
+    assert_body("sample", s.node().add(s.sample(vec2_join(vec![y(), x()]))));
+}
+
+#[test]
+fn wgsl_matches() {
+    let helper = wgsl(
+        "fn helperTwice( a : f32 ) -> f32 { return a * 2.0; }",
+        vec![],
+    );
+    let def = wgsl_fn(
+        "fn useHelper( a : f32 ) -> f32 { return helperTwice( a ); }",
+        vec![helper],
+    );
+    let node = vec4_join(vec![
+        call_wgsl(&def, vec![("a", x())]),
+        float(0.0),
+        float(0.0),
+        float(1.0),
+    ]);
+    let ours = fragment(node.clone());
+    assert_eq!(codes(&ours), codes(&fixture("wgsl")), "{ours}");
+    assert_body("wgsl", node);
+}
+
+#[test]
+fn event_nodes_emit_nothing() {
+    assert_body(
+        "event_nodes",
+        vec4_join(vec![
+            x().bypass(on_object_update(|_| {}))
+                .bypass(on_before_frame_update(|_| {})),
+            float(0.0),
+            float(0.0),
+            float(1.0),
+        ]),
+    );
 }

@@ -21,13 +21,13 @@ This matrix judges every exported name in three.js revision 5f610f5 (r187) — `
 | textures | 18 | 8 | 4 | 1 | 5 | 62% |
 | loaders | 20 | 2 | 2 | 12 | 4 | 12% |
 | renderers | 39 | 9 | 9 | 3 | 18 | 43% |
-| nodes | 141 | 96 | 27 | 13 | 5 | 71% |
-| tsl | 683 | 502 | 36 | 126 | 19 | 76% |
+| nodes | 141 | 100 | 26 | 10 | 5 | 74% |
+| tsl | 683 | 515 | 46 | 97 | 25 | 78% |
 | addons/controls | 9 | 0 | 2 | 7 | 0 | 0% |
 | addons/loaders | 71 | 6 | 2 | 63 | 0 | 8% |
 | addons/postprocessing | 30 | 0 | 0 | 0 | 30 | — |
 | addons/other | 102 | 11 | 4 | 64 | 23 | 14% |
-| **total** | **1315** | **751** | **117** | **330** | **117** | **63%** |
+| **total** | **1315** | **768** | **126** | **298** | **123** | **64%** |
 
 TSL by family:
 
@@ -42,7 +42,7 @@ TSL by family:
 | display/postprocessing | 75 | 61 | 7 | 7 | 0 |
 | compute/storage | 53 | 19 | 3 | 31 | 0 |
 | materialx | 49 | 48 | 0 | 1 | 0 |
-| utils | 77 | 29 | 5 | 39 | 4 |
+| utils | 77 | 42 | 15 | 10 | 10 |
 
 Graded examples: 85 (the README gallery plus `webgpu_textures_2d-array_compressed`, which has a live `rung!` but a hyphen in its name). 10 more are ported but `#[ignore]`d because three.js fails its own reference on this machine; a row whose only check is one of those is Partial.
 
@@ -432,7 +432,7 @@ Graded examples: 85 (the README gallery plus `webgpu_textures_2d-array_compresse
 
 ## nodes
 
-141 rows: 96 Present, 27 Partial, 13 Absent, 5 N.A.
+141 rows: 100 Present, 26 Partial, 10 Absent, 5 N.A.
 
 | three.js name | verdict | three-rs symbol | verified by | note |
 |---|---|---|---|---|
@@ -443,7 +443,7 @@ Graded examples: 85 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `ArrayNode` | Partial | const_array / Node::ConstArray (src/nodes/tsl.rs:323) | webgpu_depth_texture | f64 literals only; no array(type,count) or arrays of nodes |
 | `AssignNode` | Present | Node::Assign (src/nodes/node.rs:1403) | webgpu_compute_points |  |
 | `AttributeNode` | Present | Node::Attribute (src/nodes/node.rs:1346), attribute (src/nodes/tsl.rs:345) | all *_wgsl gates |  |
-| `BypassNode` | Absent | — | — | no bypass() |
+| `BypassNode` | Present | bypass (src/nodes/tsl/utils.rs:57) | tests/nodes_tsl_batch.rs | a statement-then-value `Node::Block` |
 | `ConstNode` | Present | Node::Const (src/nodes/node.rs:1313) | all *_wgsl gates |  |
 | `ContextNode` | Present | Node::Context (src/nodes/node.rs:1669), context (src/nodes/tsl.rs:145) | tests/nodes_custom.rs |  |
 | `IndexNode` | Partial | Builtin::VertexIndex/InstanceIndex (src/nodes/node.rs:1053) | webgpu_compute_points | no drawIndex or subgroup indices |
@@ -502,7 +502,7 @@ Graded examples: 85 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `VelocityNode` | Present | velocity (src/nodes/velocity.rs:64) | webgpu_postprocessing_motion_blur (graded); tests/velocity_frames.rs | previous model, camera and bone matrices tracked per frame; issue 163 closed |
 | `VertexColorNode` | Present | vertex_color (src/nodes/tsl.rs:2020) | webgpu_lines_fat, tests/renderer_vertex_colors.rs | no white fallback (deliberate, docs/nodes.md s8) |
 | `CodeNode` | Present | Node::Code (src/nodes/node.rs:1510), wgsl_fn (src/nodes/code.rs:59) | webgpu_tsl_interoperability |  |
-| `ExpressionNode` | Partial | Node::Discard/Return/Break (src/nodes/node.rs:1601,1605,1553) | webgpu_compute_points | no expression(snippet); no Continue |
+| `ExpressionNode` | Present | Node::Expression (src/nodes/node.rs:1842), expression (src/nodes/tsl/utils.rs:101) | tests/nodes_tsl_batch.rs | `discard`/`return`/`break` keep their own variants |
 | `FunctionCallNode` | Present | Node::CodeCall (src/nodes/node.rs:1513), call_wgsl (src/nodes/tsl.rs:4443) | webgpu_tsl_interoperability |  |
 | `FunctionNode` | Present | emit_code_fn (src/nodes/builder.rs:2766) | webgpu_tsl_interoperability |  |
 | `BumpMapNode` | Present | bump_map (src/nodes/tsl.rs:3312) | webgpu_tsl_earth, webgpu_lights_physical |  |
@@ -559,8 +559,8 @@ Graded examples: 85 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `ArrayElementNode` | Present | Node::Element (src/nodes/node.rs:1460), element (src/nodes/tsl.rs:1796) | webgpu_compute_points |  |
 | `ConvertNode` | Present | Node::Cast (src/nodes/node.rs:1439), convert_type (src/nodes/tsl/wrappers.rs:77) | all *_wgsl gates |  |
 | `CubeMapNode` | Present | from_equirectangular_texture (src/renderer/cube_render_target.rs:61) | webgpu_materials_envmaps |  |
-| `DebugNode` | Absent | — | — | no debug() |
-| `EventNode` | Partial | NodeUpdate trait (src/nodes/frame.rs:51), on_before_render (src/renderer/render_pipeline.rs:84) | tests/renderer_pipeline_hooks.rs | no OnObjectUpdate/OnMaterialUpdate/OnFrameUpdate TSL |
+| `DebugNode` | Present | Node::Debug (src/nodes/node.rs:1850), debug (src/nodes/tsl/utils.rs:113) | tests/nodes_tsl_batch.rs |  |
+| `EventNode` | Partial | EventNode / on_*_update (src/nodes/tsl/utils.rs:251), on_before_render (src/renderer/render_pipeline.rs:89) | tests/nodes_frame.rs, tests/renderer_pipeline_hooks.rs | callbacks get the Renderer, not the NodeFrame; the render-pipeline events are pipeline methods |
 | `FlipNode` | Present | flip_y (src/nodes/tsl.rs:1859) | webgpu_materials |  |
 | `FunctionOverloadingNode` | Partial | by_position (src/nodes/mx_noise.rs:833) | tests/nodes_mx_noise.rs | internal MaterialX use only; no overloadingFn() |
 | `JoinNode` | Present | Node::Join (src/nodes/node.rs:1453), vec4 (src/nodes/tsl.rs:298) | all *_wgsl gates |  |
@@ -570,7 +570,7 @@ Graded examples: 85 (the README gallery plus `webgpu_textures_2d-array_compresse
 | `ReflectorNode` | Present | ReflectorNode (src/nodes/reflector_node.rs:183) | webgpu_mirror |  |
 | `RotateNode` | Present | rotate (src/nodes/tsl.rs:733) | tests/nodes_tsl_batch.rs, webgpu_layers |  |
 | `RTTNode` | Present | rtt (src/nodes/display/rtt.rs:73) | webgpu_procedural_texture |  |
-| `SampleNode` | Absent | — | — | no sample() |
+| `SampleNode` | Present | SampleNode, sample (src/nodes/tsl/utils.rs:134,190) | tests/nodes_tsl_batch.rs |  |
 | `SetNode` | Partial | set_z (src/nodes/tsl.rs:1779) | webgpu_depth_texture | only .set_z; no general set() |
 | `SplitNode` | Present | Node::Swizzle (src/nodes/node.rs:1430) | all *_wgsl gates |  |
 | `StorageArrayElementNode` | Present | StorageArray.element (src/nodes/tsl.rs:3644) | webgpu_compute_points |  |
@@ -1582,11 +1582,11 @@ Partial: none.
 
 ### utils
 
-29 of 73 applicable present (5 Partial, 39 Absent, 4 N.A.).
+42 of 67 applicable present (15 Partial, 10 Absent, 10 N.A.).
 
-Missing (Absent): `defaultShaderStages`, `defaultBuildStages`, `shaderStages`, `vectorComponents`, `bypass`, `uniformFlow`, `setName`, `builtinShadowContext`, `builtinAOContext`, `builtinGIContext`, `label`, `overrideNodes`, `subgroupIndex`, `invocationSubgroupIndex`, `drawIndex`, `uniformGroup`, `sharedUniformGroup`, `frameGroup`, `objectGroup`, `vertexStage`, `unpackRGBToNormal`, `unpackNormal`, `directionToColor`, `colorToDirection`, `replaceDefaultUV`, `sample`, `OnObjectUpdate`, `OnMaterialUpdate`, `OnFrameUpdate`, `OnAfterObjectUpdate`, `OnBeforeObjectUpdate`, `OnBeforeMaterialUpdate`, `OnBeforeFrameUpdate`, `OnBeforeRenderPipeline`, `OnAfterRenderPipeline`, `expression`, `debug`, `addNodeElement`, `wgsl`.
+Missing (Absent): `builtinShadowContext`, `builtinAOContext`, `builtinGIContext`, `subgroupIndex`, `invocationSubgroupIndex`, `uniformGroup`, `sharedUniformGroup`, `frameGroup`, `unpackRGBToNormal`, `replaceDefaultUV`.
 
-Partial: `NodeShaderStage`, `cache`, `overrideNode`, `renderGroup`, `subBuild`.
+Partial: `NodeShaderStage`, `cache`, `overrideNode`, `overrideNodes`, `renderGroup`, `OnObjectUpdate`, `OnMaterialUpdate`, `OnFrameUpdate`, `OnAfterObjectUpdate`, `OnBeforeObjectUpdate`, `OnBeforeMaterialUpdate`, `OnBeforeFrameUpdate`, `OnBeforeRenderPipeline`, `OnAfterRenderPipeline`, `subBuild`.
 
 | three.js name | verdict | three-rs symbol | verified by | note |
 |---|---|---|---|---|
@@ -1594,50 +1594,50 @@ Partial: `NodeShaderStage`, `cache`, `overrideNode`, `renderGroup`, `subBuild`.
 | `NodeUpdateType` | Present | NodeUpdateType (src/nodes/frame.rs:30) | tests/nodes_frame.rs |  |
 | `NodeType` | Present | Type enum (src/nodes/node.rs:22) | tests/nodes_custom.rs | closed enum, not strings |
 | `NodeAccess` | Present | StorageAccess (src/nodes/node.rs:943) | tests/nodes_compute_indirect_wgsl.rs | renamed |
-| `defaultShaderStages` | Absent | — | — | comment only: src/nodes/builder.rs |
-| `defaultBuildStages` | Absent | — | — |  |
-| `shaderStages` | Absent | — | — |  |
-| `vectorComponents` | Absent | — | — |  |
+| `defaultShaderStages` | N.A. | — | — | JS metadata constant (`[ 'fragment', 'vertex' ]`); the port's stages are the closed `Stage` enum |
+| `defaultBuildStages` | N.A. | — | — | JS metadata constant; the port's stages are the closed `Stage` enum |
+| `shaderStages` | N.A. | — | — | JS metadata constant; the port's stages are the closed `Stage` enum |
+| `vectorComponents` | N.A. | — | — | JS metadata constant (`[ 'x', 'y', 'z', 'w' ]`); swizzles are typed methods |
 | `attribute` | Present | attribute (src/nodes/tsl.rs:345) | tests/nodes_wgsl_varying.rs, webgpu_struct_drawindirect (graded) |  |
-| `bypass` | Absent | — | — |  |
+| `bypass` | Present | bypass, NodeRef::bypass (src/nodes/tsl/utils.rs:57,359) | tests/nodes_tsl_batch.rs |  |
 | `isolate` | Present | isolate (src/nodes/tsl.rs:158) | tests/nodes_custom.rs |  |
 | `cache` | Partial | NodeBuilder::cache (src/nodes/builder.rs:1121) | — | internal only (not public) |
 | `context` | Present | context (src/nodes/tsl.rs:145) | tests/nodes_custom.rs, webgpu_custom_fog_background (graded) |  |
-| `uniformFlow` | Absent | — | — | comment only: src/nodes/materialx/mx_noise.rs |
-| `setName` | Absent | — | — | comment only: src/nodes/builder.rs |
-| `builtinShadowContext` | Absent | — | — |  |
+| `uniformFlow` | Present | uniform_flow, NodeRef::uniform_flow (src/nodes/tsl/utils.rs:29,364) | tests/nodes_tsl_batch.rs, tests/nodes_mx_library.rs | context key read by `select()`; MaterialX's `mx_select`/`mx_negate_if` use it |
+| `setName` | Present | set_name, NodeRef::set_name (src/nodes/tsl/utils.rs:38,369) | tests/nodes_tsl_batch.rs | context key read by `uniform()` |
+| `builtinShadowContext` | Absent | — | — | needs a `getShadow` hook in the lighting context; the AO/GI context plumbing is on the gtao-denoise branch, so not forked here |
 | `builtinAOContext` | Absent | — | — |  |
-| `builtinGIContext` | Absent | — | — |  |
-| `label` | Absent | — | — | comment only: src/bin/viewer_app.rs |
+| `builtinGIContext` | Absent | — | — | as `builtinShadowContext`: waits for the gtao-denoise branch's AO context plumbing |
+| `label` | Present | label, NodeRef::label (src/nodes/tsl/utils.rs:45,376) | tests/nodes_tsl_batch.rs | deprecated (r179) alias of setName; `#[deprecated]` here too |
 | `overrideNode` | Partial | override_node (src/nodes/tsl.rs:99) | — | internal only (not public) |
-| `overrideNodes` | Absent | — | — | comment only: src/materials/node_material.rs |
+| `overrideNodes` | Partial | OverrideNodes (src/nodes/tsl.rs:67), Material::context_overrides | webgpu_deferred | a struct of the three accessors the ladder overrides, not an arbitrary node map |
 | `vertexIndex` | Present | vertex_index (src/nodes/tsl.rs:2026) | indirect: used by src/nodes/morph.rs |  |
 | `instanceIndex` | Present | instance_index (src/nodes/tsl.rs:2031) | tests/nodes_compute_indirect_wgsl.rs, webgpu_compute_points (graded) |  |
-| `subgroupIndex` | Absent | — | — |  |
-| `invocationSubgroupIndex` | Absent | — | — |  |
+| `subgroupIndex` | Absent | — | — | needs `enable subgroups;` and wgpu's SUBGROUP feature, which the renderer does not request; the subgroup family is Absent together |
+| `invocationSubgroupIndex` | Absent | — | — | as `subgroupIndex` |
 | `invocationLocalIndex` | Present | invocation_local_index (src/nodes/tsl.rs:2036) | tests/nodes_compute_indirect_wgsl.rs |  |
-| `drawIndex` | Absent | — | — |  |
+| `drawIndex` | N.A. | — | — | WebGL-only: three's `WGSLNodeBuilder.getDrawIndex()` returns `null` |
 | `struct` | Present | struct_type (src/nodes/tsl.rs:3837) | webgpu_struct_drawindirect (graded) |  |
-| `uniformGroup` | Absent | — | — |  |
-| `sharedUniformGroup` | Absent | — | — | comment only: src/nodes/builder.rs |
-| `frameGroup` | Absent | — | — |  |
+| `uniformGroup` | Absent | — | — | UniformGroup is a closed enum mapped onto fixed bind groups; named user groups need renderer bind-group work |
+| `sharedUniformGroup` | Absent | — | — | as `uniformGroup`; only the internal `cameraIndex` shared group exists (UniformGroup::CameraIndex) |
+| `frameGroup` | Absent | — | — | as `uniformGroup`: no per-frame bind group; frame values live in the render group |
 | `renderGroup` | Partial | BufferSource::group_and_name (src/nodes/node.rs:726) | — | internal only (not public) |
-| `objectGroup` | Absent | — | — | comment only: src/nodes/node.rs |
+| `objectGroup` | Present | UniformGroup::Object (src/nodes/node.rs:137) | tests/nodes_tsl_batch.rs | an enum variant passed to `uniform()`, not a node |
 | `uniform` | Present | uniform_value (src/nodes/tsl.rs:350) | tests/nodes_custom.rs, webgpu_compute_points (graded) |  |
 | `varying` | Present | NodeRef::to_varying (src/nodes/tsl.rs) | tests/nodes_wgsl_varying.rs | method form |
-| `vertexStage` | Absent | — | — |  |
+| `vertexStage` | Present | vertex_stage, NodeRef::to_vertex_stage (src/nodes/tsl/utils.rs:63,381) | tests/nodes_tsl_batch.rs |  |
 | `oscSine` | Present | osc_sine (src/nodes/tsl.rs:4569) | tests/nodes_tsl_batch.rs, webgpu_cubemap_mix (graded) |  |
 | `oscSquare` | Present | osc_square (src/nodes/tsl/wrappers.rs:684) | tests/nodes_tsl_batch.rs |  |
 | `oscTriangle` | Present | osc_triangle (src/nodes/tsl/wrappers.rs:679) | tests/nodes_tsl_batch.rs |  |
 | `oscSawtooth` | Present | osc_sawtooth (src/nodes/tsl/wrappers.rs:689) | tests/nodes_tsl_batch.rs |  |
 | `packNormalToRGB` | Present | pack_normal_to_rgb (src/nodes/tsl.rs:4660) | webgpu_mesh_batch (graded) |  |
 | `unpackRGBToNormal` | Absent | — | — |  |
-| `unpackNormal` | Absent | — | — |  |
-| `directionToColor` | Absent | — | — | deprecated r185 alias of packNormalToRGB |
-| `colorToDirection` | Absent | — | — | deprecated r185 alias of unpackRGBToNormal |
+| `unpackNormal` | Present | unpack_normal (src/nodes/tsl/utils.rs:73) | tests/nodes_tsl_batch.rs |  |
+| `directionToColor` | Present | direction_to_color (src/nodes/tsl/utils.rs:82) | tests/nodes_tsl_batch.rs | deprecated r185 alias of packNormalToRGB; `#[deprecated]` here too |
+| `colorToDirection` | Present | color_to_direction (src/nodes/tsl/utils.rs:89) | tests/nodes_tsl_batch.rs | deprecated r185 alias of unpackRGBToNormal; `#[deprecated]` here too |
 | `remap` | Present | remap (src/nodes/tsl/wrappers.rs:734) | tests/nodes_tsl_batch.rs, webgpu_tsl_earth (graded) |  |
 | `remapClamp` | Present | remap_clamp (src/nodes/tsl/wrappers.rs:753) | tests/nodes_tsl_batch.rs, webgpu_tsl_halftone (graded) |  |
-| `replaceDefaultUV` | Absent | — | — |  |
+| `replaceDefaultUV` | Absent | — | — | `texture()` fixes its uv when it is called; texture_uv covers a per-call uv, but deferring every texture's default uv to a context is not done |
 | `rotateUV` | Present | rotate_uv (src/nodes/tsl/wrappers.rs:695) | tests/nodes_tsl_batch.rs |  |
 | `spherizeUV` | Present | spherize_uv (src/nodes/tsl/wrappers.rs:712) | tests/nodes_tsl_batch.rs, webgpu_tsl_vfx_flames (graded) |  |
 | `billboarding` | Present | billboarding (src/nodes/tsl/wrappers.rs:860) | webgpu_tsl_vfx_flames (graded) |  |
@@ -1645,24 +1645,24 @@ Partial: `NodeShaderStage`, `cache`, `overrideNode`, `renderGroup`, `subBuild`.
 | `time` | Present | time (src/nodes/tsl.rs:2294) | tests/nodes_custom.rs, webgpu_cubemap_mix (graded) |  |
 | `deltaTime` | Present | delta_time (src/nodes/tsl/wrappers.rs:791) | tests/nodes_tsl_batch.rs |  |
 | `frameId` | Present | frame_id (src/nodes/tsl/wrappers.rs:807) | tests/nodes_frame.rs |  |
-| `sample` | Absent | — | — | no SampleNode callback form; PmremHandle::sample etc. are texture methods (false positive) |
-| `OnObjectUpdate` | Absent | — | — | comment only: src/nodes/node.rs |
-| `OnMaterialUpdate` | Absent | — | — |  |
-| `OnFrameUpdate` | Absent | — | — |  |
-| `OnAfterObjectUpdate` | Absent | — | — |  |
-| `OnBeforeObjectUpdate` | Absent | — | — |  |
-| `OnBeforeMaterialUpdate` | Absent | — | — |  |
-| `OnBeforeFrameUpdate` | Absent | — | — |  |
-| `OnBeforeRenderPipeline` | Absent | — | — | comment only: src/cameras/mod.rs |
-| `OnAfterRenderPipeline` | Absent | — | — | comment only: src/renderer/render_pipeline.rs |
-| `expression` | Absent | — | — | comment only: src/lights/point_shadow.rs |
-| `debug` | Absent | — | — | comment only: src/bin/viewer_app.rs |
+| `sample` | Present | sample, SampleNode (src/nodes/tsl/utils.rs:190,134) | tests/nodes_tsl_batch.rs | three's unused `uv` argument is dropped |
+| `OnObjectUpdate` | Partial | on_object_update (src/nodes/tsl/utils.rs:316) | tests/nodes_frame.rs | callback gets the Renderer, not three's NodeFrame with object and material; attach with `.bypass()` |
+| `OnMaterialUpdate` | Partial | on_material_update (src/nodes/tsl/utils.rs:322) | tests/nodes_frame.rs | callback gets the Renderer, not three's NodeFrame with object and material; attach with `.bypass()` |
+| `OnFrameUpdate` | Partial | on_frame_update (src/nodes/tsl/utils.rs:327) | tests/nodes_frame.rs | callback gets the Renderer, not three's NodeFrame with object and material; attach with `.bypass()` |
+| `OnAfterObjectUpdate` | Partial | on_after_object_update (src/nodes/tsl/utils.rs:333) | tests/nodes_frame.rs | callback gets the Renderer, not three's NodeFrame with object and material; attach with `.bypass()` |
+| `OnBeforeObjectUpdate` | Partial | on_before_object_update (src/nodes/tsl/utils.rs:339) | tests/nodes_frame.rs | callback gets the Renderer, not three's NodeFrame with object and material; attach with `.bypass()` |
+| `OnBeforeMaterialUpdate` | Partial | on_before_material_update (src/nodes/tsl/utils.rs:344) | tests/nodes_frame.rs | callback gets the Renderer, not three's NodeFrame with object and material; attach with `.bypass()` |
+| `OnBeforeFrameUpdate` | Partial | on_before_frame_update (src/nodes/tsl/utils.rs:349) | tests/nodes_frame.rs | callback gets the Renderer, not three's NodeFrame with object and material; attach with `.bypass()` |
+| `OnBeforeRenderPipeline` | Partial | RenderPipeline::on_before_render (src/renderer/render_pipeline.rs:89) | tests/renderer_pipeline_hooks.rs | a method on the pipeline, not a node collected from its output graph |
+| `OnAfterRenderPipeline` | Partial | RenderPipeline::on_after_render (src/renderer/render_pipeline.rs:96) | tests/renderer_pipeline_hooks.rs | as `OnBeforeRenderPipeline` |
+| `expression` | Present | expression (src/nodes/tsl/utils.rs:101), Node::Expression | tests/nodes_tsl_batch.rs |  |
+| `debug` | Present | debug, NodeRef::debug (src/nodes/tsl/utils.rs:113,386), DebugCallback | tests/nodes_tsl_batch.rs | no callback logs to stderr in three's format; the callback gets stage, flow and snippet |
 | `subBuild` | Partial | in_sub_build (src/nodes/tsl.rs:168) | — | internal only (not public) |
 | `inspect` | N.A. | — | — | DOM inspector; InspectorNode.js |
-| `addNodeElement` | Absent | — | — |  |
+| `addNodeElement` | N.A. | — | — | removed API: three's export only throws |
 | `code` | Present | code (src/nodes/tsl.rs:4430) | tests/nodes_custom.rs, webgpu_materials (graded) |  |
 | `js` | N.A. | — | — | JS codegen; CodeNode.js |
-| `wgsl` | Absent | — | — | code() covers raw WGSL; TextureKind::declaration hit is a false positive |
+| `wgsl` | Present | wgsl (src/nodes/tsl/utils.rs:213) | tests/nodes_tsl_batch.rs | raw code for a wgslFn's includes |
 | `glsl` | N.A. | — | — | WebGL-only; CodeNode.js |
 | `glslFn` | N.A. | — | — | WebGL-only; FunctionNode.js |
 | `wgslFn` | Present | wgsl_fn (src/nodes/code.rs:59) | tests/nodes_wgsl_varying.rs, webgpu_materials (graded) |  |
