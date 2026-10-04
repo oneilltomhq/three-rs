@@ -61,7 +61,9 @@ that verifies each present row.
   (`TextGeometry`), `curve_modifier_gpu` (`Flow`), `lights`
   (`LightProbeGenerator`), `helpers` (`LightProbeHelper`), `objects::SkyMesh`
   (the Preetham sky with sun disc and clouds), `objects::WaterMesh` (a
-  reflective water surface over `reflector()`), and `controls`
+  reflective water surface over `reflector()`), `objects::Water2Mesh` (water
+  that mixes a mirror with a refracting screen read, scrolled along a flow
+  direction or flow map), and `controls`
   (`OrbitControls`, `FirstPersonControls`, `FlyControls`,
   `TransformControls`), ports of the JS
   classes graded against the JS classes themselves. An addon that
@@ -266,6 +268,7 @@ browser shell:
 | example | why it has no grade |
 |---|---|
 | [`webgpu_postprocessing_traa`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_traa.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_traa-progress.md) | in three's e2e exception list (`test/e2e/puppeteer.js`, "Black screen"). It is gated instead on its resolve shader against three's dump and on `tests/traa_frames.rs` |
+| [`webgpu_water`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_water.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_water-progress.md) | in three's e2e exception list (`test/e2e/puppeteer.js`, "1 min"). It is gated instead on the water's shaders against three's dumps (`tests/nodes_water_wgsl.rs`) and on `tests/water2_frames.rs` |
 | [`webgpu_postprocessing_sss`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_sss.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_sss-progress.md) | in the same exception list. It is gated instead on its SSS shader against three's dump and on `tests/sss_frames.rs` |
 | [`webgpu_postprocessing_ssgi`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_ssgi.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_ssgi-progress.md) | in three's e2e exception list (`test/e2e/puppeteer.js`, "Black screen"). It is gated instead on its SSGI, composite and TRAA shaders against three's dump and on `tests/ssgi_frames.rs` |
 | [`webgpu_postprocessing_ao`](https://github.com/oneilltomhq/three-rs/blob/main/examples/webgpu_postprocessing_ao.rs) · [notes](https://github.com/oneilltomhq/three-rs/blob/main/docs/webgpu_postprocessing_ao-progress.md) | in the same exception list. It is gated instead on its GTAO shader against three's dump and on `tests/gtao_frames.rs` |
@@ -335,7 +338,7 @@ cargo run --release --bin viewer -- shadowmap --headless --frames 40
 ```
 
 Opens the named example in a window (winit, tested on Wayland). All 90 graded
-examples are there, and so are the ungraded `webgpu_postprocessing_traa`,
+examples are there, and so are the ungraded `webgpu_postprocessing_traa`, `webgpu_water`,
 `webgpu_postprocessing_sss`, `webgpu_postprocessing_ssgi`,
 `webgpu_postprocessing_ao`,
 `webgpu_postprocessing_dof`, `webgpu_postprocessing_smaa` and

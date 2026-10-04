@@ -36,6 +36,7 @@ three-rs/sss_frames
 three-rs/traa_frames
 three-rs/gtao_frames
 three-rs/velocity_frames
+three-rs/water2_frames
 sdf-text/batched_text_culling
 sdf-text/batched_text_refill
 sdf-text/sdf_text_block
