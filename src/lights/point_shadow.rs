@@ -198,9 +198,10 @@ pub(crate) fn point_shadow_filtered(
     let result = to_var(None, float(1.0));
 
     // `viewZToPerspectiveDepth( viewZ.negate(), near, far )`. The negation is
-    // read three times, and `Node::Neg` is not one of the kinds the builder
-    // promotes on its own, so it is made a var here — which is also the var
-    // three.js' `toVar()`-free flow happens to produce.
+    // read three times, so it becomes a var — the var three.js' `toVar()`-free
+    // flow produces. The builder now promotes a `Node::Neg` read more than once
+    // on its own, so this `to_var` is redundant, but harmless: it names the
+    // same var.
     let neg_view_z = to_var(None, view_z.clone().negate());
     let dp = to_var(
         None,

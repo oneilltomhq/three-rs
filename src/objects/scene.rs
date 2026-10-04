@@ -73,6 +73,17 @@ pub struct Scene {
     /// the render-group uniform `BackgroundNode` puts on `getTextureLevel`, so
     /// changing it is a uniform write and not a new program.
     pub background_blurriness: f64,
+    /// `scene.backgroundIntensity` — the factor `BackgroundNode` multiplies
+    /// the background colour by. Like [`Scene::background_blurriness`] it is
+    /// a render-group uniform, so changing it is a uniform write.
+    pub background_intensity: f64,
+    /// `scene.environmentIntensity` — the factor `EnvironmentNode` scales the
+    /// radiance and irradiance of [`Scene::environment`] (or
+    /// [`Scene::environment_node`]) by, on every material that takes the
+    /// scene's environment instead of carrying its own. A material with its
+    /// own `pmrem_env` reads `envMapIntensity` instead, which the port keeps
+    /// at 1.
+    pub environment_intensity: f64,
     /// `scene.environment` — the default environment map for every material in
     /// the scene that does not carry one of its own.
     ///
@@ -124,6 +135,8 @@ impl Default for Scene {
             node: object.into_node(),
             background: None,
             background_blurriness: 0.0,
+            background_intensity: 1.0,
+            environment_intensity: 1.0,
             environment: None,
             environment_node: None,
             fog: None,

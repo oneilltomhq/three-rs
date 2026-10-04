@@ -348,3 +348,48 @@ fn traa_clip_aabb_matches_three() {
 fn traa_flicker_reduction_matches_three() {
     check("traa", Region::Function("flickerReduction"));
 }
+
+#[test]
+fn godrays_matches_three() {
+    check("godrays", Region::Body);
+}
+
+#[test]
+fn bilateral_blur_horizontal_matches_three() {
+    check("bilateral_blur_horizontal", Region::Body);
+}
+
+#[test]
+fn bilateral_blur_vertical_matches_three() {
+    check("bilateral_blur_vertical", Region::Body);
+}
+
+#[test]
+fn depth_aware_blend_matches_three() {
+    check("depth_aware_blend", Region::Body);
+}
+
+#[test]
+fn rtt_matches_three() {
+    check("rtt", Region::Body);
+}
+
+#[test]
+fn lensflare_matches_three() {
+    check("lensflare", Region::Body);
+}
+
+#[test]
+fn lensflare_gaussian_blur_horizontal_matches_three() {
+    check("lensflare_gaussian_blur_horizontal", Region::Body);
+}
+
+#[test]
+fn lensflare_gaussian_blur_vertical_matches_three() {
+    check("lensflare_gaussian_blur_vertical", Region::Body);
+}
+
+#[test]
+fn lensflare_composite_matches_three() {
+    check("lensflare_composite", Region::Body);
+}

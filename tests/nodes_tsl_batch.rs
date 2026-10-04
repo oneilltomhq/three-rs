@@ -3,8 +3,11 @@
 //! Every probe here is one material of `tests/fixtures/tsl_batch/probe.html`,
 //! a page that sets each TSL function as a `MeshBasicNodeMaterial`'s
 //! `fragmentNode`; `tests/fixtures/tsl_batch/<probe>.wgsl` is three's dumped
-//! fragment shader for it (`tools/dump.mjs` over that page). Each test builds
-//! the same node graph through the port and compares the `main` body.
+//! fragment shader for it (`tools/dump-webgpu.mjs` over that page). Each test
+//! builds the same node graph through the port and compares the `main` body.
+//! `<probe>.vertex.wgsl` is the same dump's vertex shader, kept for the
+//! probes whose vertex stage the port shapes itself (`tangentWorld`'s varying,
+//! `clipSpace`).
 //!
 //! The comparison normalises the one thing that legitimately differs between
 //! the two builders — the varying's number, which depends on how many
@@ -18,13 +21,30 @@
 use three_rs::materials::{setup, MeshBasicNodeMaterial, SetupContext};
 use three_rs::math::Matrix2;
 use three_rs::nodes::tsl::*;
-use three_rs::nodes::{NodeBuilder, NodeRef};
+use three_rs::nodes::{NodeBuilder, NodeProgram, NodeRef};
 
-fn fragment(node: NodeRef) -> String {
+/// The program for a `MeshBasicNodeMaterial` whose `fragmentNode` is `node`,
+/// set up for a geometry with or without a `tangent` attribute.
+fn program_for(node: NodeRef, has_tangent_attribute: bool) -> NodeProgram {
     let mut material = MeshBasicNodeMaterial::new();
     material.fragment_node = Some(node);
-    let flow = setup(&material, &SetupContext::default(), None);
-    NodeBuilder::new().build(&flow).fragment_wgsl
+    let ctx = SetupContext {
+        has_tangent_attribute,
+        ..SetupContext::default()
+    };
+    let flow = setup(&material, &ctx, None);
+    NodeBuilder::new().build(&flow)
+}
+
+/// The fragment shader on the probe page's default plane, which has no
+/// `tangent` attribute.
+fn fragment(node: NodeRef) -> String {
+    program_for(node, false).fragment_wgsl
+}
+
+/// The fragment shader on the page's `tangentPlane` (`computeTangents()`).
+fn fragment_with_tangents(node: NodeRef) -> String {
+    program_for(node, true).fragment_wgsl
 }
 
 fn fixture(name: &str) -> String {
@@ -84,7 +104,11 @@ fn inline_let(theirs: &str, name: &str) -> String {
 
 /// Asserts the port's `main` body equals three's.
 fn assert_body(name: &str, node: NodeRef) {
-    let ours = fragment(node);
+    assert_body_of(name, fragment(node));
+}
+
+/// [`assert_body`] for a shader already built.
+fn assert_body_of(name: &str, ours: String) {
     let theirs = fixture(name);
     assert_eq!(
         body(&ours),
@@ -452,5 +476,1220 @@ fn element_forms() {
             y().step(0.5),
             smoothstep(0.0, 1.0, uv()),
         ]),
+    );
+}
+
+#[test]
+fn pack_float() {
+    let uv4 = || vec4_join(vec![uv(), float(0.0), float(1.0)]);
+    assert_body(
+        "pack_float",
+        vec4_join(vec![
+            pack_snorm_2x16(uv()).to_float(),
+            pack_unorm_2x16(uv()).to_float(),
+            pack_half_2x16(uv()).to_float(),
+            pack_snorm_4x8(uv4())
+                .to_float()
+                .add(pack_unorm_4x8(uv4()).to_float()),
+        ]),
+    );
+}
+
+#[test]
+fn unpack_float() {
+    assert_body(
+        "unpack_float",
+        vec4_join(vec![
+            unpack_snorm_2x16(x().mul(1000.0).to_uint()),
+            unpack_unorm_2x16(y().mul(1000.0).to_uint()),
+        ])
+        .add(vec4_join(vec![
+            unpack_half_2x16(x().mul(100.0).to_uint()),
+            float(0.0),
+            float(1.0),
+        ]))
+        .add(unpack_snorm_4x8(y().mul(100.0).to_uint()))
+        .add(unpack_unorm_4x8(x().mul(10.0).to_uint())),
+    );
+}
+
+#[test]
+fn pack_4x8() {
+    assert_body(
+        "pack_4x8",
+        vec4_join(vec![
+            pack_4x_i8(ivec4(x().mul(10.0).to_int(), -2.0, 3.0, -4.0)).to_float(),
+            pack_4x_u8(uvec4(y().mul(10.0).to_uint(), 2.0, 3.0, 4.0)).to_float(),
+            pack_4x_i8_clamp(ivec4(x().mul(300.0).to_int(), -200.0, 3.0, 4.0)).to_float(),
+            pack_4x_u8_clamp(uvec4(y().mul(300.0).to_uint(), 2.0, 3.0, 4.0)).to_float(),
+        ]),
+    );
+}
+
+#[test]
+fn unpack_4x8() {
+    assert_body(
+        "unpack_4x8",
+        unpack_4x_i8(x().mul(1000.0).to_uint())
+            .to_vec4()
+            .add(unpack_4x_u8(y().mul(1000.0).to_uint()).to_vec4())
+            .add(vec4_join(vec![
+                dot_4u8_packed(x().mul(100.0).to_uint(), y().mul(100.0).to_uint()).to_float(),
+                dot_4i8_packed(x().mul(50.0).to_uint(), y().mul(50.0).to_uint()).to_float(),
+                float(0.0),
+                float(1.0),
+            ])),
+    );
+}
+
+#[test]
+fn all_any() {
+    assert_body(
+        "all_any",
+        vec4_join(vec![
+            all(bvec2(x().greater_than(0.5), y().greater_than(0.5))).to_float(),
+            any(bvec3(x().less_than(0.25), y().less_than(0.25), false)).to_float(),
+            uv().greater_than(vec2(0.5, 0.5)).all().to_float(),
+            uv().less_than(vec2(0.5, 0.5)).any().to_float(),
+        ]),
+    );
+}
+
+#[test]
+fn transform_normal_by_view_matrices() {
+    assert_body(
+        "transform_normal",
+        vec4_join(vec![
+            transform_normal_by_view_matrix(
+                vec3_join(vec![uv(), float(1.0)]),
+                camera_view_matrix(),
+            ),
+            float(1.0),
+        ])
+        .add(vec4_join(vec![
+            vec3_join(vec![y(), x(), float(1.0)])
+                .transform_normal_by_inverse_view_matrix(camera_view_matrix()),
+            float(0.0),
+        ])),
+    );
+}
+
+#[test]
+fn deprecated_aliases() {
+    assert_body(
+        "deprecated_aliases",
+        vec4_join(vec![
+            faceforward(
+                vec3_join(vec![uv(), float(1.0)]),
+                vec3(0.0, 0.0, 1.0),
+                vec3_join(vec![y(), x(), float(0.5)]),
+            ),
+            inversesqrt(x().add(1.0)),
+        ]),
+    );
+}
+
+/// `body` with the §8 let-vs-var divergence (`docs/nodes.md`) normalised
+/// away: `let nodeConstN = X;` becomes `nodeConstN = X;`, and every
+/// `nodeConstN` / `nodeVarN` is renamed `vK` in order of first appearance.
+/// Three numbers its `let`s and `var`s separately; the port writes both as
+/// `var`s and numbers them together, so the names differ while the
+/// statements, their order and every expression match.
+fn canonical(wgsl: &str) -> String {
+    let text = body(wgsl).replace("let nodeConst", "nodeConst");
+    let mut names: Vec<String> = Vec::new();
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    while i < text.len() {
+        let rest = &text[i..];
+        let name_len = ["nodeConst", "nodeVar"].iter().find_map(|p| {
+            let digits = rest
+                .strip_prefix(p)?
+                .bytes()
+                .take_while(u8::is_ascii_digit)
+                .count();
+            (digits > 0).then_some(p.len() + digits)
+        });
+        match name_len {
+            Some(len) => {
+                let name = &rest[..len];
+                let k = names.iter().position(|n| n == name).unwrap_or_else(|| {
+                    names.push(name.to_string());
+                    names.len() - 1
+                });
+                out.push_str(&format!("v{k}"));
+                i += len;
+            }
+            None => {
+                let c = rest.chars().next().unwrap();
+                out.push(c);
+                i += c.len_utf8();
+            }
+        }
+    }
+    out
+}
+
+/// Asserts the port's `main` equals three's up to [`canonical`].
+fn assert_canonical(name: &str, node: NodeRef) {
+    let ours = fragment(node);
+    assert_eq!(
+        canonical(&ours),
+        canonical(&fixture(name)),
+        "{name}: main differs\n--- port ---\n{ours}"
+    );
+}
+
+/// `nodeUniformN` renamed `uK` in order of first appearance.
+///
+/// Three numbers its unnamed uniforms across both stages, so a fragment's
+/// object uniforms start wherever the vertex stage's left off (and skip the
+/// vertex-only ones); the port's numbering differs while every uniform, its
+/// group and its type match.
+fn renumber_uniforms(text: &str) -> String {
+    let mut names: Vec<String> = Vec::new();
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(at) = rest.find("nodeUniform") {
+        out.push_str(&rest[..at]);
+        let tail = &rest[at + "nodeUniform".len()..];
+        let digits = tail.bytes().take_while(u8::is_ascii_digit).count();
+        let name = &rest[at..at + "nodeUniform".len() + digits];
+        let k = names.iter().position(|n| n == name).unwrap_or_else(|| {
+            names.push(name.to_string());
+            names.len() - 1
+        });
+        out.push_str(&format!("u{k}"));
+        rest = &tail[digits..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// The `var<uniform>` struct members of `wgsl`, as `member -> (buffer, type)`,
+/// and its bare `var name : type;` bindings (textures and samplers), with an
+/// empty buffer.
+fn uniform_declarations(wgsl: &str) -> std::collections::HashMap<String, (String, String)> {
+    let mut members = std::collections::HashMap::new();
+    for line in wgsl.lines() {
+        let line = line.trim();
+        let binding = if line.starts_with('@') {
+            line.find(" var ").map(|at| &line[at + 1..])
+        } else {
+            Some(line)
+        };
+        if let Some((name, ty)) = binding
+            .and_then(|binding| binding.strip_prefix("var "))
+            .and_then(|binding| binding.trim_end_matches(';').split_once(':'))
+        {
+            members.insert(
+                name.trim().to_string(),
+                (String::new(), ty.trim().to_string()),
+            );
+            continue;
+        }
+        let Some(declaration) = line.strip_prefix("var<uniform> ") else {
+            continue;
+        };
+        let (buffer, ty) = declaration
+            .trim_end_matches(';')
+            .split_once(':')
+            .expect("var<uniform> name : type;");
+        let open = format!("struct {} {{", ty.trim());
+        let start = wgsl.find(&open).unwrap_or_else(|| panic!("no `{open}`")) + open.len();
+        let end = wgsl[start..].find("};").expect("unterminated struct") + start;
+        for member in wgsl[start..end].lines() {
+            let member = member.trim().trim_end_matches(',');
+            if let Some((name, member_ty)) = member.split_once(':') {
+                members.insert(
+                    name.trim().to_string(),
+                    (buffer.trim().to_string(), member_ty.trim().to_string()),
+                );
+            }
+        }
+    }
+    members
+}
+
+/// The buffer and declared type of each unnamed uniform `main` reads, in
+/// order of first use: the order [`renumber_uniforms`] numbers them in, so
+/// entry `K` is uniform `uK`. The type is `None` when the shader reads a
+/// uniform it does not declare.
+fn used_uniforms(wgsl: &str) -> Vec<(String, Option<String>)> {
+    let declarations = uniform_declarations(wgsl);
+    let text = canonical(wgsl);
+    let mut seen: Vec<String> = Vec::new();
+    let mut used = Vec::new();
+    let mut rest = text.as_str();
+    while let Some(at) = rest.find("nodeUniform") {
+        let tail = &rest[at + "nodeUniform".len()..];
+        let digits = tail.bytes().take_while(u8::is_ascii_digit).count();
+        let name = rest[at..at + "nodeUniform".len() + digits].to_string();
+        if !seen.contains(&name) {
+            let buffer = rest[..at]
+                .strip_suffix('.')
+                .and_then(|before| before.rsplit(|c: char| !c.is_alphanumeric()).next())
+                .unwrap_or("")
+                .to_string();
+            let ty = declarations.get(&name).map(|(_, ty)| ty.clone());
+            used.push((buffer, ty));
+            seen.push(name);
+        }
+        rest = &tail[digits..];
+    }
+    used
+}
+
+/// [`assert_canonical`] with [`renumber_uniforms`] on both sides, plus each
+/// renumbered uniform's buffer and type, which the renaming hides.
+///
+/// Three's fragment dumps do not always declare what `main` reads (the
+/// `transform_normal_matrix` dump reads `object.nodeUniform0` with no object
+/// struct) and can declare members `main` never reads, so the types are
+/// compared uniform by uniform where three declares one, and the port must
+/// declare every uniform it reads.
+fn assert_renumbered(name: &str, node: NodeRef, theirs: &str) {
+    let ours = fragment(node);
+    assert_eq!(
+        renumber_uniforms(&canonical(&ours)),
+        renumber_uniforms(&canonical(theirs)),
+        "{name}: main differs\n--- port ---\n{ours}"
+    );
+    let (our_uniforms, their_uniforms) = (used_uniforms(&ours), used_uniforms(theirs));
+    assert_eq!(our_uniforms.len(), their_uniforms.len(), "{name}");
+    for (k, (ours_k, theirs_k)) in our_uniforms.iter().zip(&their_uniforms).enumerate() {
+        assert_eq!(
+            ours_k.0, theirs_k.0,
+            "{name}: u{k}'s buffer\n--- port ---\n{ours}"
+        );
+        let our_ty = ours_k
+            .1
+            .as_ref()
+            .unwrap_or_else(|| panic!("{name}: u{k} is read but not declared\n{ours}"));
+        if let Some(their_ty) = &theirs_k.1 {
+            assert_eq!(
+                our_ty, their_ty,
+                "{name}: u{k}'s type\n--- port ---\n{ours}"
+            );
+        }
+    }
+}
+
+/// [`codes`] with the port's fn-local `var nodeVarN : T; nodeVarN = X;`
+/// rewritten as three's `let nodeConstN = X;`, and every later `nodeVarN`
+/// read as `nodeConstN` — the §8 let-vs-var divergence inside a `fn`.
+fn codes_as_lets(wgsl: &str) -> String {
+    let mut text = codes(wgsl);
+    while let Some(at) = text.find("var nodeVar") {
+        let name_end = text[at + 4..].find(' ').unwrap() + at + 4;
+        let name = text[at + 4..name_end].to_string();
+        let decl_end = text[at..].find("; ").unwrap() + at + 2;
+        text.replace_range(at..decl_end, "");
+        let k = &name["nodeVar".len()..];
+        let assign = format!("{name} = ");
+        let first = text[at..].find(&assign).unwrap() + at;
+        text.replace_range(first..first + assign.len(), &format!("let nodeConst{k} = "));
+        let mut out = String::with_capacity(text.len());
+        let mut rest = text.as_str();
+        while let Some(i) = rest.find(&name) {
+            let after = &rest[i + name.len()..];
+            out.push_str(&rest[..i]);
+            if after.starts_with(|c: char| c.is_ascii_digit()) {
+                out.push_str(&name);
+            } else {
+                out.push_str(&format!("nodeConst{k}"));
+            }
+            rest = after;
+        }
+        out.push_str(rest);
+        text = out;
+    }
+    text
+}
+
+fn filterable_map() -> three_rs::textures::Texture {
+    three_rs::textures::Texture::new(16, 16, Some(vec![0; 4 * 16 * 16]))
+}
+
+#[test]
+fn equirect_direction_matches() {
+    // Three's `phi`, `cosPhi` and `theta` are `let`s; the port's are `var`s.
+    assert_canonical(
+        "equirect_direction",
+        vec4_join(vec![equirect_direction(uv()), float(1.0)])
+            .add(vec4_join(vec![equirect_direction(uv()), float(0.0)])),
+    );
+}
+
+#[test]
+fn matcap_uv_matches() {
+    // The `x` axis is three's `let nodeConst0`, a `var` here.
+    assert_canonical(
+        "matcap_uv",
+        vec4_join(vec![matcap_uv(), float(0.0), float(1.0)]),
+    );
+}
+
+#[test]
+fn max_mip_level_matches() {
+    let map = filterable_map();
+    let wgsl = fragment(vec4_join(vec![
+        max_mip_level(&map),
+        float(0.0),
+        float(0.0),
+        float(1.0),
+    ]));
+    assert_eq!(body(&wgsl), body(&fixture("max_mip_level")), "{wgsl}");
+    // A uniform, not a texture: no binding is declared for the map.
+    assert!(!wgsl.contains("texture_2d"), "{wgsl}");
+}
+
+#[test]
+fn spritesheet_uv_matches() {
+    // `frameNum` is three's `let nodeConstN`, a `var` here.
+    assert_canonical(
+        "spritesheet_uv",
+        vec4_join(vec![
+            spritesheet_uv(vec2(6.0, 4.0), uv(), time()),
+            spritesheet_uv(vec2(3.0, 3.0), uv(), float(0.0)),
+        ]),
+    );
+}
+
+#[test]
+fn triplanar_textures_matches() {
+    let map = filterable_map();
+    assert_canonical(
+        "triplanar_textures",
+        triplanar_textures(
+            &map,
+            None,
+            None,
+            float(2.0),
+            position_world(),
+            normal_world(),
+        ),
+    );
+}
+
+#[test]
+fn texture_bicubic_matches() {
+    let map = filterable_map();
+    assert_canonical("texture_bicubic", texture_bicubic(&map, uv(), float(0.5)));
+}
+
+#[test]
+fn texture_3d_load_and_level() {
+    let volume = three_rs::textures::Data3DTexture::new(
+        vec![0; 8 * 8 * 8],
+        8,
+        8,
+        8,
+        wgpu::TextureFormat::R8Unorm,
+    );
+    volume.set_min_filter(three_rs::textures::MinFilter::Linear);
+    volume.set_mag_filter(three_rs::textures::TextureFilter::Linear);
+    let coord = join(
+        three_rs::nodes::Type::IVec3,
+        vec![
+            x().mul(8.0).to_int(),
+            y().mul(8.0).to_int(),
+            float(2.0).to_int(),
+        ],
+    );
+    let wgsl = fragment(vec4_join(vec![
+        texture_3d_load(&volume, coord).x(),
+        texture_3d_level(&volume, vec3_join(vec![uv(), float(0.5)]), float(1.0)).x(),
+        float(0.0),
+        float(1.0),
+    ]));
+    // Three caches the level tap's `vec3( uv, 0.5 )` in a `let`; the port
+    // writes the join out at its one use (§8).
+    let theirs = inline_let(&body(&fixture("texture_3d")), "nodeConst0");
+    assert_eq!(body(&wgsl), theirs, "{wgsl}");
+    // One binding and one sampler serve both taps.
+    assert_eq!(wgsl.matches("texture_3d<f32>").count(), 1, "{wgsl}");
+    assert_eq!(wgsl.matches(": sampler").count(), 1, "{wgsl}");
+}
+
+#[test]
+fn bitangent_geometry_matches() {
+    // The probe draws `tangentPlane`, which has tangents.
+    assert_body_of(
+        "bitangent_geometry",
+        fragment_with_tangents(vec4_join(vec![bitangent_geometry(), float(1.0)])),
+    );
+}
+
+#[test]
+fn bitangent_local_matches() {
+    // The probe draws `tangentPlane`, which has tangents.
+    assert_body_of(
+        "bitangent_local",
+        fragment_with_tangents(vec4_join(vec![bitangent_local(), float(1.0)])),
+    );
+}
+
+#[test]
+fn bitangent_world_matches() {
+    // The probe draws `tangentPlane`, which has tangents.
+    assert_body_of(
+        "bitangent_world",
+        fragment_with_tangents(vec4_join(vec![
+            bitangent_world().add(tangent_world()),
+            float(1.0),
+        ])),
+    );
+}
+
+#[test]
+fn tangent_world_matches() {
+    assert_body(
+        "tangent_world_frame",
+        vec4_join(vec![tangent_world(), float(1.0)]),
+    );
+}
+
+#[test]
+fn parallax_matches() {
+    // Three splats the shared `scale` var for `tangentViewFrame` but writes it
+    // bare in `bitangentViewFrame`; the port splats both. `vec3 * f32` and
+    // `vec3 * vec3( f32 )` are the same value.
+    let theirs = fixture("parallax").replace(
+        "bitangentViewFrame = ( nodeConst5 * nodeVar0 );",
+        "bitangentViewFrame = ( nodeConst5 * vec3<f32>( nodeVar0 ) );",
+    );
+    assert_renumbered(
+        "parallax",
+        vec4_join(vec![
+            parallax_uv(uv(), float(0.1)).xy(),
+            parallax_direction().z(),
+            float(1.0),
+        ]),
+        &theirs,
+    );
+}
+
+#[test]
+fn camera_near_far_and_normal_matrix_match() {
+    assert_body(
+        "camera_near_far",
+        vec4_join(vec![
+            camera_near(),
+            camera_far(),
+            camera_normal_matrix()
+                .mul(vec3_join(vec![uv(), float(1.0)]))
+                .xy(),
+        ]),
+    );
+}
+
+#[test]
+fn model_scopes_match() {
+    assert_body(
+        "model_scopes",
+        vec4_join(vec![
+            model_direction()
+                .add(model_position())
+                .add(model_scale())
+                .add(model_view_position()),
+            model_radius(),
+        ]),
+    );
+}
+
+#[test]
+fn object_scopes_match() {
+    let target = three_rs::core::Object3D::new_node();
+    target.borrow_mut().position.set(1.0, 2.0, 3.0);
+    assert_body(
+        "object_scopes",
+        vec4_join(vec![
+            object_direction(&target)
+                .add(object_position(&target))
+                .add(object_scale(&target))
+                .add(object_view_position(&target)),
+            object_radius(&target).add(1.0),
+        ]),
+    );
+}
+
+#[test]
+fn model_view_precision_matches() {
+    let local = || vec4_join(vec![position_local(), float(1.0)]);
+    assert_renumbered(
+        "model_view_precision",
+        vec4_join(vec![
+            mediump_model_view_matrix()
+                .mul(local())
+                .xyz()
+                .add(highp_model_view_matrix().mul(local()).xyz())
+                .add(highp_model_normal_view_matrix().mul(normal_local())),
+            float(1.0),
+        ]),
+        &fixture("model_view_precision"),
+    );
+}
+
+#[test]
+fn transform_normal_matches() {
+    assert_renumbered(
+        "transform_normal_matrix",
+        vec4_join(vec![
+            transform_normal(vec3_join(vec![uv(), float(1.0)]), model_world_matrix())
+                .add(transform_normal(
+                    vec3_join(vec![y(), x(), float(1.0)]),
+                    camera_view_matrix(),
+                ))
+                .add(vec3_join(vec![x(), float(1.0), y()]).transform_normal(model_normal_matrix())),
+            float(1.0),
+        ]),
+        &fixture("transform_normal_matrix"),
+    );
+}
+
+#[test]
+fn transform_normal_to_view_matches() {
+    assert_renumbered(
+        "transform_normal_to_view",
+        vec4_join(vec![
+            transform_normal_to_view(vec3_join(vec![uv(), float(1.0)])),
+            float(1.0),
+        ]),
+        &fixture("transform_normal_to_view"),
+    );
+}
+
+#[test]
+fn reflect_refract_match() {
+    assert_renumbered(
+        "reflect_refract",
+        vec4_join(vec![
+            reflect_view().add(refract_view()).add(refract_vector()),
+            float(1.0),
+        ]),
+        &fixture("reflect_refract"),
+    );
+}
+
+#[test]
+fn clip_space_matches() {
+    assert_body("clip_space", clip_space().div(clip_space().w()));
+}
+
+// --- display: depth conversions, blend modes, colour grading ---
+
+#[test]
+fn depth_conversions_match() {
+    let view_z = || position_view().z();
+    assert_body(
+        "depth_conversions",
+        vec4_join(vec![
+            view_z_to_reversed_orthographic_depth(view_z(), camera_near(), camera_far()),
+            orthographic_depth_to_view_z(x(), camera_near(), camera_far()),
+            view_z_to_reversed_perspective_depth(view_z(), camera_near(), camera_far()),
+            float(1.0),
+        ]),
+    );
+}
+
+#[test]
+fn logarithmic_depth_matches() {
+    assert_canonical(
+        "logarithmic_depth",
+        vec4_join(vec![
+            view_z_to_logarithmic_depth(position_view().z(), camera_near(), camera_far()),
+            logarithmic_depth_to_view_z(x(), camera_near(), camera_far()),
+            float(0.0),
+            float(1.0),
+        ]),
+    );
+}
+
+#[test]
+fn blend_modes_match() {
+    let a = vec3_join(vec![uv(), float(0.5)]);
+    let b = vec3_join(vec![y(), float(0.25), x()]);
+    let ours = fragment(
+        vec4_join(vec![
+            blend_burn(a.clone(), b.clone())
+                .add(blend_dodge(a.clone(), b.clone()))
+                .add(blend_screen(a.clone(), b.clone())),
+            float(1.0),
+        ])
+        .add(blend_color(
+            vec4_join(vec![a, x()]),
+            vec4_join(vec![b, y()]),
+        )),
+    );
+    let theirs = fixture("blend_modes");
+    assert_eq!(canonical(&ours), canonical(&theirs), "--- port ---\n{ours}");
+    // `fn`-local `var` read back as three's `let`: `docs/nodes.md` §8.
+    assert_eq!(codes_as_lets(&ours), codes(&theirs), "--- port ---\n{ours}");
+}
+
+#[test]
+fn vibrance_matches() {
+    assert_canonical(
+        "vibrance",
+        vec4_join(vec![
+            vibrance(vec3_join(vec![uv(), float(0.5)]), x())
+                .add(vibrance(vec3_join(vec![y(), x(), float(0.25)]), float(0.0))),
+            float(1.0),
+        ]),
+    );
+}
+
+#[test]
+fn cdl_matches() {
+    let rec709 = || vec3(0.2126, 0.7152, 0.0722);
+    assert_canonical(
+        "cdl",
+        cdl(
+            vec4_join(vec![uv(), float(0.5), float(1.0)]),
+            vec3(1.1, 1.0, 0.9),
+            vec3(0.1, 0.1, 0.1),
+            vec3(1.2, 1.2, 1.2),
+            float(0.9),
+            rec709(),
+        )
+        .add(cdl(
+            vec4_join(vec![y(), x(), float(0.25), float(1.0)]),
+            vec3(1.0, 1.0, 1.0),
+            vec3(0.0, 0.0, 0.0),
+            vec3(1.0, 1.0, 1.0),
+            float(1.0),
+            rec709(),
+        )),
+    );
+}
+
+#[test]
+fn cineon_tone_mapping_matches() {
+    let ours = fragment(vec4_join(vec![
+        cineon_tone_mapping(vec3_join(vec![uv(), float(0.5)]), float(1.2)),
+        float(1.0),
+    ]));
+    let theirs = fixture("cineon_tone_mapping");
+    assert_eq!(body(&ours), body(&theirs), "--- port ---\n{ours}");
+    // `fn`-local `var` read back as three's `let`: `docs/nodes.md` §8.
+    assert_eq!(codes_as_lets(&ours), codes(&theirs), "--- port ---\n{ours}");
+}
+
+/// `ToneMappingNode` in `CineonToneMapping` mode: `vec4(
+/// cineonToneMapping( color.rgb, exposure ), color.a )`. The `fn` is the one
+/// three emits; the call's argument is `color.rgb` of a `vec4`, so only the
+/// call is pinned in `main`.
+#[test]
+fn cineon_tone_mapping_node_matches() {
+    let color = vec4_join(vec![uv(), float(0.5), float(1.0)]);
+    let ours = fragment(three_rs::materials::tone_mapping_node(
+        three_rs::materials::ToneMapping::Cineon,
+        float(1.2),
+        color,
+    ));
+    let theirs = fixture("cineon_tone_mapping");
+    // Only the call is pinned in `main`: `docs/nodes.md` §68.8.
+    assert!(
+        body(&ours).contains("cineonToneMapping( "),
+        "--- port ---\n{ours}"
+    );
+    // `fn`-local `var` read back as three's `let`: `docs/nodes.md` §8.
+    assert_eq!(codes_as_lets(&ours), codes(&theirs), "--- port ---\n{ours}");
+}
+
+// --- display: face direction, screen and viewport ---
+
+#[test]
+fn direction_to_face_direction_matches() {
+    use three_rs::materials::Side;
+    let mut material = MeshBasicNodeMaterial::new();
+    material.side = Side::Double;
+    material.fragment_node = Some(vec4_join(vec![
+        direction_to_face_direction(vec3_join(vec![uv(), float(1.0)]), Side::Double),
+        float(1.0),
+    ]));
+    let flow = setup(&material, &SetupContext::default(), None);
+    let ours = NodeBuilder::new().build(&flow).fragment_wgsl;
+    assert_eq!(
+        body(&ours),
+        body(&fixture("direction_to_face_direction")),
+        "--- port ---\n{ours}"
+    );
+}
+
+/// `directionToFaceDirection()` on a front- and a back-sided material: the
+/// vector as is, and the vector times `-1`. The side is passed, not read
+/// from the material (`docs/nodes.md` §68.3).
+#[test]
+fn direction_to_face_direction_single_sided_matches() {
+    use three_rs::materials::Side;
+    for (side, name) in [
+        (Side::Front, "direction_to_face_direction_front"),
+        (Side::Back, "direction_to_face_direction_back"),
+    ] {
+        let mut material = MeshBasicNodeMaterial::new();
+        material.side = side;
+        material.fragment_node = Some(vec4_join(vec![
+            direction_to_face_direction(vec3_join(vec![uv(), float(1.0)]), side),
+            float(1.0),
+        ]));
+        let flow = setup(&material, &SetupContext::default(), None);
+        let ours = NodeBuilder::new().build(&flow).fragment_wgsl;
+        assert_eq!(
+            body(&ours),
+            body(&fixture(name)),
+            "{name}\n--- port ---\n{ours}"
+        );
+    }
+}
+
+#[test]
+fn screen_position_matches() {
+    assert_canonical(
+        "screen_position",
+        vec4_join(vec![
+            get_screen_position(position_view(), camera_projection_matrix()),
+            float(0.0),
+            float(1.0),
+        ]),
+    );
+}
+
+#[test]
+fn normal_from_depth_matches() {
+    let depth = three_rs::DepthTexture::new();
+    // Unnamed uniforms renumbered in first-use order: `docs/nodes.md` §67.5.
+    assert_renumbered(
+        "normal_from_depth",
+        vec4_join(vec![
+            get_normal_from_depth(uv(), &depth, camera_projection_matrix_inverse()),
+            float(1.0),
+        ]),
+        &fixture("normal_from_depth"),
+    );
+}
+
+#[test]
+fn viewport_coords_match() {
+    // Unnamed uniforms renumbered in first-use order: `docs/nodes.md` §67.5.
+    assert_renumbered(
+        "viewport_coords",
+        vec4_join(vec![
+            viewport_uv(),
+            viewport_coordinate().div(screen_size()),
+        ]),
+        &fixture("viewport_coords"),
+    );
+}
+
+// --- lighting ---
+
+#[test]
+fn light_projection_uv_matches() {
+    // Unnamed uniforms renumbered in first-use order: `docs/nodes.md` §67.5.
+    assert_renumbered(
+        "light_projection_uv",
+        vec4_join(vec![
+            light_projection_uv(0, position_world()).add(light_projection_uv(
+                0,
+                vec4_join(vec![position_view(), float(1.0)]),
+            )),
+            float(1.0),
+        ]),
+        &fixture("light_projection_uv"),
+    );
+}
+
+#[test]
+fn direct_point_light_matches() {
+    let (light_direction, light_color) = direct_point_light(
+        vec3(1.0, 0.5, 0.25),
+        vec3_join(vec![uv(), float(1.0)]),
+        x(),
+        float(2.0),
+    );
+    assert_canonical(
+        "direct_point_light",
+        vec4_join(vec![light_direction.add(light_color), float(1.0)]),
+    );
+}
+
+#[test]
+fn parallax_correct_normal_matches() {
+    assert_canonical(
+        "parallax_correct_normal",
+        vec4_join(vec![
+            get_parallax_correct_normal(
+                normal_world(),
+                vec3(200.0, 100.0, 100.0),
+                vec3(0.0, -50.0, 0.0),
+            ),
+            float(1.0),
+        ]),
+    );
+}
+
+// --- material scopes ---
+
+/// [`fragment`] with `node` built from, and set on, a material `configure`
+/// has set up — the `MaterialNode` scopes read the material's maps.
+fn material_fragment(
+    configure: impl FnOnce(&mut MeshBasicNodeMaterial),
+    node: impl FnOnce(&MeshBasicNodeMaterial) -> NodeRef,
+) -> String {
+    let mut material = MeshBasicNodeMaterial::new();
+    configure(&mut material);
+    material.fragment_node = Some(node(&material));
+    let flow = setup(&material, &SetupContext::default(), None);
+    NodeBuilder::new().build(&flow).fragment_wgsl
+}
+
+/// [`assert_renumbered`] over [`material_fragment`], three's dump first
+/// passed through `fix`.
+fn assert_material(
+    name: &str,
+    configure: impl FnOnce(&mut MeshBasicNodeMaterial),
+    node: impl FnOnce(&MeshBasicNodeMaterial) -> NodeRef,
+    fix: impl FnOnce(String) -> String,
+) {
+    let ours = material_fragment(configure, node);
+    assert_eq!(
+        renumber_uniforms(&canonical(&ours)),
+        renumber_uniforms(&canonical(&fix(fixture(name)))),
+        "{name}: main differs\n--- port ---\n{ours}"
+    );
+}
+
+#[test]
+fn material_defaults_match() {
+    // Unnamed uniforms renumbered in first-use order: `docs/nodes.md` §67.5.
+    assert_material(
+        "material_defaults",
+        |_| {},
+        |m| {
+            vec4_join(vec![
+                material_normal(m)
+                    .add(material_clearcoat_normal(m))
+                    .add(material_light_map(m)),
+                material_ao(m).add(material_specular_strength(m)),
+            ])
+        },
+        |theirs| theirs,
+    );
+}
+
+#[test]
+fn material_maps_match() {
+    let map = filterable_map();
+    // Unnamed uniforms renumbered in first-use order: `docs/nodes.md` §67.5.
+    assert_material(
+        "material_maps",
+        |m| {
+            m.ao_map = Some(map.clone());
+            m.specular_map = Some(map.clone());
+            m.light_map = Some(map.clone());
+        },
+        |m| {
+            vec4_join(vec![
+                material_light_map(m),
+                material_ao(m).add(material_specular_strength(m)),
+            ])
+        },
+        // Three gives each `texture( map )` its own `uniform( map.matrix )`;
+        // the port shares one per map (`transformed_uv`). Same value.
+        // `docs/nodes.md` §41, "One uv-matrix uniform per texture".
+        |theirs| {
+            theirs
+                .replace("object.nodeUniform3 *", "object.nodeUniform1 *")
+                .replace("object.nodeUniform5 *", "object.nodeUniform1 *")
+        },
+    );
+}
+
+#[test]
+fn material_normal_maps_match() {
+    let map = filterable_map();
+    // Unnamed uniforms renumbered in first-use order: `docs/nodes.md` §67.5.
+    assert_material(
+        "material_normal_maps",
+        |m| {
+            m.normal_map = Some(map.clone());
+            m.clearcoat_normal_map = Some(map.clone());
+        },
+        |m| {
+            vec4_join(vec![
+                material_normal(m).add(material_clearcoat_normal(m)),
+                float(1.0),
+            ])
+        },
+        // The shared uv matrix, as in `material_maps_match` (`docs/nodes.md`
+        // §41, "One uv-matrix uniform per texture"), and the splat
+        // `parallax_matches` describes (`vec3 * f32` against `vec3 * vec3( f32 )`,
+        // `docs/nodes.md` §68.8).
+        |theirs| {
+            theirs
+                .replace("object.nodeUniform6 *", "object.nodeUniform4 *")
+                .replace(
+                    "bitangentViewFrame = ( nodeConst5 * nodeVar0 );",
+                    "bitangentViewFrame = ( nodeConst5 * vec3<f32>( nodeVar0 ) );",
+                )
+        },
+    );
+}
+
+/// `materialNormal`'s normal-map arm alone, `normalScale` read as the
+/// `normalScale` uniform.
+#[test]
+fn material_normal_map_matches() {
+    let map = filterable_map();
+    // Unnamed uniforms renumbered in first-use order: `docs/nodes.md` §67.5.
+    assert_material(
+        "material_normal_map",
+        |m| m.normal_map = Some(map.clone()),
+        |m| vec4_join(vec![material_normal(m), float(1.0)]),
+        // The splat `parallax_matches` describes (`vec3 * f32` against
+        // `vec3 * vec3( f32 )`, `docs/nodes.md` §68.8).
+        |theirs| {
+            theirs.replace(
+                "bitangentViewFrame = ( nodeConst5 * nodeVar0 );",
+                "bitangentViewFrame = ( nodeConst5 * vec3<f32>( nodeVar0 ) );",
+            )
+        },
+    );
+}
+
+/// `materialNormal`'s bump-map arm: `bumpMap( bump.r, bumpScale )`.
+#[test]
+fn material_normal_bump_matches() {
+    let map = filterable_map();
+    // Unnamed uniforms renumbered in first-use order: `docs/nodes.md` §67.5.
+    assert_material(
+        "material_normal_bump",
+        |m| {
+            m.bump_map = Some(map.clone());
+            m.bump_scale = 2.0;
+        },
+        |m| vec4_join(vec![material_normal(m), float(1.0)]),
+        // Three gives the twice-read `Hll = bump.r` a `let`; the builder does
+        // not promote a swizzle, so the port reads `.x` at each use
+        // (`docs/nodes.md` §8, "`toConst` on the shadow filter", and §68.8).
+        |theirs| {
+            theirs
+                .replace("\tlet nodeConst3 = nodeVar1.x;\n", "")
+                .replace("nodeConst3", "nodeVar1.x")
+        },
+    );
+}
+
+/// `materialNormal` and `materialClearcoatNormal` with no maps on a
+/// flat-shaded material: `normalView` is `normalFlat`.
+#[test]
+fn material_normal_flat_matches() {
+    // Unnamed uniforms renumbered in first-use order: `docs/nodes.md` §67.5.
+    assert_material(
+        "material_normal_flat",
+        |m| m.flat_shading = true,
+        |m| {
+            vec4_join(vec![
+                material_normal(m).add(material_clearcoat_normal(m)),
+                float(1.0),
+            ])
+        },
+        |theirs| theirs,
+    );
+}
+
+/// The two maps only an accessor reads are warned about, not failed on.
+#[test]
+fn accessor_only_maps_pass_check_supported() {
+    let map = filterable_map();
+    let mut material = MeshBasicNodeMaterial::new();
+    material.light_map = Some(map.clone());
+    material.specular_map = Some(map);
+    assert!(material.unsupported_fields().is_empty());
+    assert!(material.check_supported().is_ok());
+}
+
+#[test]
+fn material_point_size_matches() {
+    // Unnamed uniforms renumbered in first-use order: `docs/nodes.md` §67.5.
+    assert_material(
+        "material_point_size",
+        |m| m.size = 2.0,
+        |_| {
+            vec4_join(vec![
+                material_point_size(),
+                float(0.5),
+                float(0.25),
+                float(1.0),
+            ])
+        },
+        |theirs| theirs,
+    );
+}
+
+#[test]
+fn point_width_matches() {
+    let ours = fragment(vec4_join(vec![
+        point_width(),
+        float(0.0),
+        float(0.0),
+        float(1.0),
+    ]));
+    let theirs = fixture("point_width");
+    assert_eq!(body(&ours), body(&theirs), "--- port ---\n{ours}");
+    assert!(ours.contains("var<private> pointWidth : f32;"), "{ours}");
+}
+
+// --- passes ---
+
+#[test]
+fn depth_pass_matches() {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    let scene: three_rs::SceneRef = Rc::new(RefCell::new(three_rs::Scene::new()));
+    let camera: three_rs::CameraRef = Rc::new(RefCell::new(three_rs::PerspectiveCamera::new(
+        50.0, 1.0, 0.1, 100.0,
+    )));
+    let depth = three_rs::depth_pass(scene, camera);
+    // Unnamed uniforms renumbered in first-use order: `docs/nodes.md` §67.5.
+    assert_renumbered(
+        "depth_pass",
+        vec4_join(vec![
+            depth.node().to(three_rs::nodes::Type::Vec3),
+            float(1.0),
+        ]),
+        &fixture("depth_pass"),
+    );
+}
+
+#[test]
+fn get_texture_index_finds_attachments() {
+    // `getTextureIndex()` is a CPU helper: no shader to compare. Three's
+    // `textures` are `[ output, normal, emissive ]` named as below.
+    use three_rs::nodes::get_texture_index;
+    let names = ["output", "normal", "emissive"];
+    assert_eq!(get_texture_index(&names, "output"), Some(0));
+    assert_eq!(get_texture_index(&names, "emissive"), Some(2));
+    assert_eq!(get_texture_index(&names, "depth"), None);
+}
+
+/// The statements of a vertex `main`, from `// flow` to its `return`,
+/// normalised.
+fn vertex_body(wgsl: &str) -> String {
+    let start = wgsl.find("// flow").expect("no // flow");
+    let end = wgsl[start..].find("return ").expect("no return") + start;
+    normalise(&wgsl[start..end])
+}
+
+/// Asserts each statement is in three's vertex dump `<name>.vertex.wgsl` and
+/// in the port's vertex `main`.
+fn assert_vertex_contains(name: &str, ours: &str, statements: &[&str]) {
+    let theirs = vertex_body(&fixture(&format!("{name}.vertex")));
+    let got = vertex_body(ours);
+    for statement in statements {
+        let statement = normalise(statement);
+        assert!(
+            theirs.contains(&statement),
+            "{name}: the test's expectation is not in three's vertex dump: {statement}"
+        );
+        assert!(
+            got.contains(&statement),
+            "{name}: vertex main is missing `{statement}`\n--- port ---\n{ours}"
+        );
+    }
+}
+
+#[test]
+fn tangent_world_vertex_on_a_plane_without_tangents() {
+    // The probe's default plane has no `tangent` attribute. Three's
+    // `AttributeNode` then warns and writes `vec4()`'s default in its place,
+    // and the vertex stage declares no input for it (three's dump has only
+    // `position`); a `tangent` slot here would fail the draw for want of a
+    // vertex buffer.
+    let program = program_for(vec4_join(vec![tangent_world(), float(1.0)]), false);
+    assert!(
+        program.attributes.iter().all(|slot| slot.name != "tangent"),
+        "a tangent-less geometry must not get a `tangent` slot: {:?}",
+        program
+            .attributes
+            .iter()
+            .map(|slot| &slot.name)
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        !program.vertex_wgsl.contains("tangent : vec4<f32>"),
+        "{}",
+        program.vertex_wgsl
+    );
+    assert_vertex_contains(
+        "tangent_world_frame",
+        &program.vertex_wgsl,
+        &[
+            "tangentLocal = vec4<f32>( 0.0, 0.0, 0.0, 1.0 ).xyz;",
+            "v_tangentView = ( modelViewMatrix * vec4<f32>( tangentLocal, 0.0 ) ).xyz;",
+            "VERTEX_tangentView = normalize( v_tangentView );",
+            "varyings.v_tangentWorld = normalize( ( render.cameraWorldMatrix * vec4<f32>( VERTEX_tangentView, 0.0 ) ).xyz );",
+        ],
+    );
+
+    // With tangents, the same graph reads the attribute.
+    let program = program_for(vec4_join(vec![tangent_world(), float(1.0)]), true);
+    assert!(
+        program.attributes.iter().any(|slot| slot.name == "tangent"),
+        "{}",
+        program.vertex_wgsl
+    );
+    assert!(
+        vertex_body(&program.vertex_wgsl).contains("tangentLocal = tangent.xyz;"),
+        "{}",
+        program.vertex_wgsl
+    );
+}
+
+#[test]
+fn clip_space_vertex_writes_the_varying() {
+    let program = program_for(clip_space().div(clip_space().w()), false);
+    // Three's vertex output is the `VERTEX_`-prefixed var; the port's is not
+    // (`docs/nodes.md` §67.1), so only the assignment's shape is compared.
+    let theirs = vertex_body(&fixture("clip_space.vertex"));
+    assert!(
+        theirs.contains("varyings.v_clipSpace = VERTEX_v_modelViewProjection;"),
+        "{theirs}"
+    );
+    let got = vertex_body(&program.vertex_wgsl);
+    assert!(
+        got.contains("varyings.v_clipSpace = v_modelViewProjection;"),
+        "{}",
+        program.vertex_wgsl
+    );
+    assert!(
+        program
+            .vertex_wgsl
+            .contains("@location( 0 ) v_clipSpace : vec4<f32>"),
+        "{}",
+        program.vertex_wgsl
+    );
+}
+
+#[test]
+fn clip_space_outside_the_fragment_stage_is_zero() {
+    // Three's `Fn` warns and returns `vec4()` when built in the vertex stage.
+    let mut material = MeshBasicNodeMaterial::new();
+    material.position_node = Some(position_local().add(clip_space().xyz()));
+    let flow = setup(&material, &SetupContext::default(), None);
+    let program = NodeBuilder::new().build(&flow);
+    assert!(
+        !program.vertex_wgsl.contains("v_clipSpace"),
+        "{}",
+        program.vertex_wgsl
+    );
+    assert!(
+        program
+            .vertex_wgsl
+            .contains("vec4<f32>( 0.0, 0.0, 0.0, 0.0 ).xyz"),
+        "{}",
+        program.vertex_wgsl
     );
 }

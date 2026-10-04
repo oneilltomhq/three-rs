@@ -34,6 +34,85 @@ have their own sections after the release they ship with. The format follows [Ke
   `fly_controls.json`; `tests/addons_first_person_controls.rs` and
   `tests/addons_fly_controls.rs` replay the scripts and match every camera
   position and quaternion to 1e-9. See `docs/controls.md`.
+- **TSL sweep 1**: the last absent `three/tsl` math names and nine texture
+  utilities (`texture_bicubic_level` is now public), each gated against three's own WGSL dump in
+  `tests/nodes_tsl_batch.rs`.
+  - Packing: `pack_snorm_2x16`, `pack_unorm_2x16`, `pack_half_2x16`,
+    `pack_snorm_4x8`, `pack_unorm_4x8` and the five matching `unpack_*`,
+    which print WGSL's `pack2x16snorm` family.
+  - Packed 4x8 integers: `pack_4x_i8`, `pack_4x_u8`, `pack_4x_i8_clamp`,
+    `pack_4x_u8_clamp`, `unpack_4x_i8`, `unpack_4x_u8`, `dot_4u8_packed` and
+    `dot_4i8_packed`. These print the native builtins. Three's emulation for
+    devices without `packed_4x8_integer_dot_product` is not ported.
+  - `any` (function and method), `transform_normal_by_view_matrix`,
+    `transform_normal_by_inverse_view_matrix`, and the deprecated spellings
+    `faceforward` and `inversesqrt`. `all` already existed; it is now gated.
+  - Textures: `equirect_direction`, `matcap_uv`, `max_mip_level`,
+    `spritesheet_uv`, `triplanar_textures`, `texture_bicubic`,
+    `texture_bicubic_level`, `texture_3d_load` and `texture_3d_level`. The
+    functions that take a texture node in three take the `Texture` here,
+    as `triplanar_texture` already did.
+- **TSL sweep 2**: thirty-one `three/tsl` accessors, each gated against three's
+  own WGSL dump in `tests/nodes_tsl_batch.rs`. See `docs/nodes.md` §67.
+  - Tangent frame: `bitangent_geometry`, `bitangent_local`, `bitangent_world`,
+    `tangent_world`, and `tangent_geometry` and `tangent_local`, now public.
+    Also `parallax_direction` and `parallax_uv`.
+  - Camera: `camera_normal_matrix`. `camera_near` and `camera_far` already
+    existed and are now gated.
+  - Model and object: `model_direction`, `model_position`, `model_scale`,
+    `model_view_position` and `model_radius`, plus the `object_*` forms of
+    each, which take the target `&Node`. Also `mediump_model_view_matrix`,
+    `highp_model_view_matrix` and `highp_model_normal_view_matrix`.
+  - `transform_normal` (function and method), `transform_normal_to_view`,
+    `reflect_view`, `refract_view`, `refract_vector` and `clip_space`.
+  - `material_refraction_ratio`, with a new
+    `MeshBasicNodeMaterial::refraction_ratio`: 0.98 from `new`, `lambert`
+    and `phong`, whose three.js materials have `refractionRatio`, and 0
+    from the other constructors.
+  - `reflect_vector` is now cached per normal, like `refract_vector`.
+  - `object_direction` refreshes the target's world matrix and negates a
+    camera's direction, as `getWorldDirection()` does.
+  - A geometry without a `tangent` attribute no longer fails to draw when
+    the material reads the tangent in the vertex stage. The attribute
+    becomes three's `vec4( 0, 0, 0, 1 )` constant, with three's warning.
+  - `clip_space` warns and yields `vec4()` outside the fragment stage.
+  - `webgpu_tsl_raging_sea` uses the crate's `transform_normal_to_view` in
+    place of its local helper.
+- **TSL sweep 3**: twenty-nine display, lighting and material `three/tsl` names.
+  Every shader-building addition is gated against three's own WGSL dump in
+  `tests/nodes_tsl_batch.rs`; `get_texture_index`, a CPU helper, is
+  unit-tested only. Divergences are recorded in `docs/nodes.md` §68.
+  - Depth: `view_z_to_reversed_orthographic_depth`,
+    `orthographic_depth_to_view_z`, `view_z_to_reversed_perspective_depth`,
+    `view_z_to_logarithmic_depth` and `logarithmic_depth_to_view_z`.
+  - Colour: `blend_burn`, `blend_dodge`, `blend_screen`, `blend_color`,
+    `vibrance`, `cdl` and `cineon_tone_mapping`. `ToneMapping::Cineon`
+    selects it as a material or pass tone mapping, as `CineonToneMapping`
+    does.
+  - Screen: `get_screen_position`, `get_normal_from_depth`,
+    `viewport_coordinate` and `viewport_uv`. `screen_size` already existed
+    and is now gated. `direction_to_face_direction`, three's deprecated alias
+    of `negateOnBackSide`, takes the material side as a parameter.
+  - Passes: `depth_pass( scene, camera )`, whose node is the scene's linear
+    depth (`PassNode::a` follows it), and `PassNode::linear_depth_node`.
+    `nodes::get_texture_index` is the MRT name lookup; it takes attachment
+    names and returns an `Option`.
+  - Lighting: `light_projection_uv`, `direct_point_light` (returns the
+    `( lightDirection, lightColor )` pair) and `get_parallax_correct_normal`.
+    `shadow_matrix( i )` now returns one shared node per light, as three's
+    `lightShadowMatrix` does. The renderer now refreshes `light.shadow.matrix`
+    every render for a light whose shadow is not rendered (`cast_shadow` or
+    `shadow_map_enabled` off), as `lightShadowMatrix`'s render update does,
+    so `light_projection_uv` follows a light that casts nothing.
+  - Material: `material_normal`, `material_clearcoat_normal`,
+    `material_specular_strength`, `material_light_map` and `material_ao`.
+    Each takes the material it reads the maps from; `material_normal` and
+    `material_clearcoat_normal` also read its `side` and `flat_shading`. Also
+    `material_point_size` and `point_width`. New `MeshBasicNodeMaterial` fields:
+    `light_map`, `light_map_intensity` (default 1), `specular_map` and
+    `size` (default 1). The material flows do not apply `light_map` or
+    `specular_map`; the renderer warns once per material that only the
+    accessors read them, and `check_supported()` does not fail on them.
 - **`SkyMesh`** (`addons::objects`), a port of `examples/jsm/objects/SkyMesh.js`.
   It is the Preetham daylight model with a sun disc and an fbm cloud layer.
   Every uniform is a public `SettableValue`. `webgpu_sky` is graded green at 0
@@ -98,6 +177,23 @@ have their own sections after the release they ship with. The format follows [Ke
   `depth_texture_load`, `all`, `view_z_to_perspective_depth` and
   `get_view_position`. Also `Renderer::init_render_target` and
   `RenderPipeline::claim_view_offset`. (#165)
+- **`godrays`**, **`bilateral_blur`** and **`depth_aware_blend`**
+  (`nodes::display`), ports of `GodraysNode.js`, `BilateralBlurNode.js` and
+  `depthAwareBlend.js`. The godrays node ray-marches a point light's cube
+  shadow map. The `DirectionalLight` branch is not ported. Three's dump
+  gates all three shaders. `webgpu_postprocessing_godrays` is graded green
+  at 3 of 100000 pixels. See `docs/nodes.md` §74.
+- **`lensflare`** (`nodes::display`), a port of `LensflareNode.js`.
+  `webgpu_postprocessing_lensflare` is graded green at 0 of 100000 pixels.
+  Each quad the page adds is gated against three's dump. See `docs/nodes.md`
+  §75.
+- **`LightShadow::point_depth_texture()`**, three's
+  `light.shadow.map.depthTexture` for a point light. The renderer draws the
+  light's shadow into the texture it returns.
+- **`Scene::background_intensity`** and **`Scene::environment_intensity`**,
+  three's `scene.backgroundIntensity` and `scene.environmentIntensity`.
+- **`tsl::const_array_of`**, a literal array of vectors, and
+  `UniformArray::element_xyz`.
 
 ### Changed
 
@@ -117,6 +213,13 @@ have their own sections after the release they ship with. The format follows [Ke
 
 ### Fixed
 
+- A `negate()` read more than once becomes a shared `var`, as three's
+  `MathNode` does. It used to be inlined at every read.
+- A `Fn()` block read twice counts its result twice, so the result is
+  promoted to a `var` where three promotes it.
+- `GaussianBlurNode::render()` runs its input's update-before first. On the
+  first frame, a blur over an `rtt()` or another display node used to size
+  its targets from a 1×1 input.
 - A `HemisphereLight` with no `AmbientLight` beside it no longer has its
   irradiance overwritten with zero before the Phong, Lambert and Toon models
   read it.

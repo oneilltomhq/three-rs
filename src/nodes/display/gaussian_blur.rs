@@ -278,7 +278,14 @@ impl GaussianBlurNode {
     /// `GaussianBlurNode.updateBefore( frame )`: size the targets from the
     /// input (`map.image.width / height`), then the two passes, with the
     /// renderer's state reset around them.
+    ///
+    /// The input's own update-before runs first, if a node renders it, so
+    /// that a target sized from the drawing buffer (an `RttNode`, a display
+    /// node) has this frame's size before the blur reads it — on the first
+    /// frame it would otherwise still be 1×1.
     pub fn render(&self, renderer: &mut Renderer) {
+        renderer.update_texture_source(self.map.id());
+
         let previous_target = renderer.render_target();
         let previous_mrt = renderer.mrt();
         let previous_auto_clear = renderer.auto_clear;

@@ -732,6 +732,8 @@ pub struct NodeBuilder {
     /// `ArrayCamera`, which stand in for the plain uniforms wherever the
     /// graph reaches them. See [`with_array_cameras`](Self::with_array_cameras).
     array_cameras: Option<ArrayCameraNodes>,
+    /// [`MaterialFlow::geometry_has_tangent`] for the flow being built.
+    geometry_has_tangent: bool,
 }
 
 /// `Camera.js`' `ArrayCamera` arm: `uniformArray( matrices ).element(
@@ -782,6 +784,7 @@ impl NodeBuilder {
             usage: HashMap::new(),
             output_type: Type::Vec4,
             array_cameras: None,
+            geometry_has_tangent: true,
         };
         for s in &mut b.stages {
             // Statements in `fn main` sit one tab in.
@@ -833,6 +836,20 @@ impl NodeBuilder {
             _ => {}
         }
         if self.increase_usage(node) > 1 {
+            // A block is an inline `Fn()` call. In three's analyze stage
+            // `StackNode.build()` runs at every reach and builds every
+            // statement and then the `outputNode` each time, so all of them
+            // are counted again. The port re-counts only `result`: a block
+            // read twice counts its result twice, and a computed result
+            // becomes a var instead of being spelled out at each read
+            // (`depthAwareBlend()` under `renderOutput()`, which reads its
+            // colour's `.xyz` and `.w`). Re-counting the statements as well
+            // would change no WGSL: they are void statements and vars, whose
+            // promotion does not depend on a second count.
+            if let Node::Block { result, .. } = node.node() {
+                let result = result.clone();
+                self.analyze(&result);
+            }
             return;
         }
         // `ContextNode.analyze()`: counted like any node, and its node built
@@ -894,6 +911,11 @@ impl NodeBuilder {
     /// `builder.context.getViewZ`.
     pub fn context(&self, key: &str) -> Option<NodeRef> {
         current_context(|cx| cx.extra.get(key).cloned())
+    }
+
+    /// `builder.shaderStage === 'fragment'`.
+    pub(crate) fn is_fragment_stage(&self) -> bool {
+        self.stage == Stage::Fragment
     }
 
     fn children(&mut self, node: &NodeRef) -> Vec<NodeRef> {
@@ -1496,7 +1518,12 @@ impl NodeBuilder {
             // `UniformNode.generate()`: a `bool` uniform is a `u32` in the
             // buffer, converted once into a var — "cache to variable".
             Node::Uniform(u) => u.ty == Type::Bool,
-            Node::Op { .. } | Node::Math { .. } | Node::Join { .. } => self.usage_of(node) > 1,
+            // `negate()` is `MathNode.NEGATE`, so it is shared like any
+            // other math node (`GodraysNode`'s ray-plane `t`, read three
+            // times).
+            Node::Op { .. } | Node::Math { .. } | Node::Neg { .. } | Node::Join { .. } => {
+                self.usage_of(node) > 1
+            }
             // A call to an `Fn()` with a layout is a real function call, and
             // `FunctionCallNode` is a `TempNode`: cached once when shared.
             Node::Call { def, .. } if def.layout => self.usage_of(node) > 1,
@@ -1569,16 +1596,53 @@ impl NodeBuilder {
         }
     }
 
+    /// The packing builtins, kept out of [`Self::generate_inner`]'s frame (it
+    /// bounds node depth in debug builds).
+    ///
+    /// - `PackFloatNode` / `UnpackFloatNode`: `` `${ method }(${ snippet })` ``,
+    ///   the operand at its own type and no padding inside the parentheses.
+    /// - `Packed4x8IntegerNode`: `` `${ method }( ${ params } )` ``, each
+    ///   operand built at `getInputType()` — `ivec4` for `pack4xI8[Clamp]`,
+    ///   `uvec4` for `pack4xU8[Clamp]`, `uint` for the rest.
+    #[inline(never)]
+    fn generate_packing(&mut self, name: &str, args: &[NodeRef]) -> Option<String> {
+        let input = match name {
+            "pack2x16snorm" | "pack2x16unorm" | "pack2x16float" | "pack4x8snorm"
+            | "pack4x8unorm" | "unpack2x16snorm" | "unpack2x16unorm" | "unpack2x16float"
+            | "unpack4x8snorm" | "unpack4x8unorm" => {
+                let snippet = self.generate(&args[0]);
+                return Some(format!("{name}({snippet})"));
+            }
+            "pack4xI8" | "pack4xI8Clamp" => Type::IVec4,
+            "pack4xU8" | "pack4xU8Clamp" => Type::UVec4,
+            "unpack4xI8" | "unpack4xU8" | "dot4U8Packed" | "dot4I8Packed" => Type::U32,
+            _ => return None,
+        };
+        let parts: Vec<String> = args.iter().map(|a| self.format(a, input)).collect();
+        Some(format!("{name}( {} )", parts.join(", ")))
+    }
+
     fn generate_inner(&mut self, node: &NodeRef) -> String {
         match node.node() {
             Node::Const { ty, values } => wgsl::constant(*ty, values),
 
             Node::ConstArray { element_ty, values } => {
-                let parts: Vec<String> = values.iter().map(|v| wgsl::number(*v)).collect();
+                // A vector element is one `vec2<f32>( x, y )` per
+                // `components()` entries: `depthAwareBlend`'s Poisson disk,
+                // `array< vec2<f32>, 8 >( vec2<f32>( 0.493393, … ), … )`.
+                let width = element_ty.components().max(1);
+                let parts: Vec<String> = if width == 1 {
+                    values.iter().map(|v| wgsl::number(*v)).collect()
+                } else {
+                    values
+                        .chunks(width)
+                        .map(|chunk| wgsl::constant(*element_ty, chunk))
+                        .collect()
+                };
                 format!(
                     "array< {}, {} >( {} )",
                     wgsl::type_name(*element_ty),
-                    values.len(),
+                    parts.len(),
                     parts.join(", ")
                 )
             }
@@ -1624,6 +1688,14 @@ impl NodeBuilder {
             }
 
             Node::Attribute { name, ty } => {
+                // `AttributeNode.generate()`'s `hasGeometryAttribute()` miss:
+                // a warning and a typed zero, in either stage, and no slot.
+                if *name == "tangent" && !self.geometry_has_tangent {
+                    eprintln!(
+                        "three-rs: AttributeNode: Vertex attribute \"tangent\" not found on geometry."
+                    );
+                    return wgsl::default_constant(*ty);
+                }
                 if self.stage == Stage::Fragment {
                     return self.attribute_varying(node);
                 }
@@ -1918,6 +1990,9 @@ impl NodeBuilder {
             }
 
             Node::Math { name, args, ty } => {
+                if let Some(snippet) = self.generate_packing(name, args) {
+                    return snippet;
+                }
                 let (name, args, ty) = (*name, args.clone(), *ty);
                 // `WGSLNodeBuilder`'s `wgslPolyfill` table: a method that
                 // lowers to a `tsl_*` helper brings the helper's code with it.
@@ -1953,7 +2028,7 @@ impl NodeBuilder {
                         "dot" => self.format(a, input_ty),
                         "cross" | "reflect" | "normalize" | "transpose" | "tsl_inverse_mat2"
                         | "tsl_inverse_mat3" | "tsl_inverse_mat4" | "determinant" | "length"
-                        | "dpdx" | "- dpdy" | "inverseSqrt" | "all" => self.generate(a),
+                        | "dpdx" | "- dpdy" | "inverseSqrt" | "all" | "any" => self.generate(a),
                         // `select( f, t, cond )`'s condition is a bool, and the
                         // MaterialX helpers pass their own already-typed
                         // operands; nothing here is widened.
@@ -2927,6 +3002,14 @@ pub struct MaterialFlow {
     pub vertex_statements: Vec<NodeRef>,
     /// The clip-space position the vertex stage writes.
     pub position: NodeRef,
+    /// `builder.geometry.hasAttribute( 'tangent' )`, at build time.
+    /// `AttributeNode.generate()` checks the geometry for every attribute and,
+    /// when it is missing, warns and writes `builder.generateConst( type )` in
+    /// its place. The port knows only this one ahead of the draw, and the
+    /// vertex layer of [`tangent_world`](crate::nodes::tsl::tangent_world)
+    /// reads `tangent` whatever the geometry has, so it is the one checked.
+    /// `true` in [`MaterialFlow::new`]: a hand-made flow keeps the slot.
+    pub geometry_has_tangent: bool,
 }
 
 impl MaterialFlow {
@@ -2945,6 +3028,7 @@ impl MaterialFlow {
             mrt: None,
             vertex_statements: Vec::new(),
             position,
+            geometry_has_tangent: true,
         }
     }
 }
@@ -3105,9 +3189,20 @@ impl NodeBuilder {
     /// `NodeBuilder.build()`: analyse both stages, generate fragment then
     /// vertex, and assemble the vertex and fragment shader strings.
     pub fn build(mut self, flow: &MaterialFlow) -> NodeProgram {
+        // `builder.context.clipSpace = vertexNode` — what `clipSpace` reads.
+        let _clip_space = push_context(|cx| {
+            cx.extra.insert("clipSpace", flow.position.clone());
+        });
+        self.geometry_has_tangent = flow.geometry_has_tangent;
+        // Each stage's flow is analysed in that stage, as three's
+        // `build()` sets the shader stage before every stage's pass: a
+        // [`CustomNode`] that branches on the stage (`clip_space`) is set up
+        // in the stage that first reaches it.
+        self.stage = Stage::Vertex;
         for stmt in &flow.pre_vertex_statements {
             self.analyze(stmt);
         }
+        self.stage = Stage::Fragment;
         if let Some(node) = &flow.depth {
             self.analyze(node);
         }
@@ -3136,6 +3231,7 @@ impl NodeBuilder {
         for member in flow.mrt.iter().flatten() {
             self.analyze(member);
         }
+        self.stage = Stage::Vertex;
         for stmt in &flow.vertex_statements {
             self.analyze(stmt);
         }
